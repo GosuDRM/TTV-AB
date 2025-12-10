@@ -481,6 +481,21 @@ function _$wf() {
             }
 
             if (!info?.EncodingsM3U8) {
+                function _pruneStreamInfos() {
+                    const keys = Object.keys(StreamInfos);
+                    if (keys.length > 5) {
+                        const oldKey = keys[0]; // Simple FIFO
+                        delete StreamInfos[oldKey];
+
+                        for (const url in StreamInfosByUrl) {
+                            if (StreamInfosByUrl[url].ChannelName === oldKey) {
+                                delete StreamInfosByUrl[url];
+                            }
+                        }
+                    }
+                }
+
+                _pruneStreamInfos();
                 info = StreamInfos[channel] = {
                     ChannelName: channel,
                     IsShowingAd: false,
@@ -562,7 +577,21 @@ function _$hw() {
                 ${_$tk.toString()}
                 ${_$pm.toString()}
                 ${_$wj.toString()}
+                ${_$wj.toString()}
                 ${_$wf.toString()}
+
+                function _pruneStreamInfos() {
+                    const keys = Object.keys(StreamInfos);
+                    if (keys.length > 5) {
+                        const oldKey = keys[0];
+                        delete StreamInfos[oldKey];
+                        for (const url in StreamInfosByUrl) {
+                            if (StreamInfosByUrl[url].ChannelName === oldKey) {
+                                delete StreamInfosByUrl[url];
+                            }
+                        }
+                    }
+                }
                 
                 const _GQL_URL = '${_GQL_URL}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
