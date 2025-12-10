@@ -7,6 +7,7 @@ All notable changes to TTV AB will be documented in this file.
 ### Added
 - Instant toggle without page refresh
 - Bridge script for popup-to-content communication
+- Colored console logs with styled prefix badge
 
 ### Fixed
 - RegExp global flag error in `replaceAll()` calls
