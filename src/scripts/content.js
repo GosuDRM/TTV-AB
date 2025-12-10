@@ -202,8 +202,8 @@
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
             line = line
-                .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/, `$1${newAdUrl}$2`)
-                .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/, `$1${newAdUrl}$2`);
+                .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`)
+                .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`);
             lines[i] = line;
 
             if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAllSegments || AllSegmentsAreAdSegments)) {
@@ -390,12 +390,14 @@
                             const accessTokenResponse = await getAccessToken(streamInfo.ChannelName, realPlayerType);
                             if (accessTokenResponse.status === 200) {
                                 const accessToken = await accessTokenResponse.json();
-                                const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
-                                urlInfo.searchParams.set('sig', accessToken.data.streamPlaybackAccessToken.signature);
-                                urlInfo.searchParams.set('token', accessToken.data.streamPlaybackAccessToken.value);
-                                const encodingsM3u8Response = await realFetch(urlInfo.href);
-                                if (encodingsM3u8Response.status === 200) {
-                                    encodingsM3u8 = streamInfo.BackupEncodingsM3U8Cache[playerType] = await encodingsM3u8Response.text();
+                                if (accessToken?.data?.streamPlaybackAccessToken?.signature) {
+                                    const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
+                                    urlInfo.searchParams.set('sig', accessToken.data.streamPlaybackAccessToken.signature);
+                                    urlInfo.searchParams.set('token', accessToken.data.streamPlaybackAccessToken.value);
+                                    const encodingsM3u8Response = await realFetch(urlInfo.href);
+                                    if (encodingsM3u8Response.status === 200) {
+                                        encodingsM3u8 = streamInfo.BackupEncodingsM3U8Cache[playerType] = await encodingsM3u8Response.text();
+                                    }
                                 }
                             }
                         } catch (err) {
