@@ -1,0 +1,37 @@
+{
+    "manifest_version": 3,
+    "name": "TTV AB",
+    "version": "3.0.0",
+    "description": "Block ads on Twitch.tv live streams. No purple screens, prerolls, or midrolls. Lightweight adblocker.",
+    "permissions": [
+        "storage"
+    ],
+    "host_permissions": [
+        "*://*.twitch.tv/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.twitch.tv/*"
+            ],
+            "js": [
+                "src/scripts/content.js"
+            ],
+            "run_at": "document_start",
+            "world": "MAIN"
+        }
+    ],
+    "action": {
+        "default_popup": "src/popup/popup.html",
+        "default_icon": {
+            "16": "assets/icons/icon16.png",
+            "48": "assets/icons/icon48.png",
+            "128": "assets/icons/icon128.png"
+        }
+    },
+    "icons": {
+        "16": "assets/icons/icon16.png",
+        "48": "assets/icons/icon48.png",
+        "128": "assets/icons/icon128.png"
+    }
+}
