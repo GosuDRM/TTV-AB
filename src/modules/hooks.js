@@ -26,7 +26,6 @@ function _hookWorkerFetch() {
         }
     }
 
-    /* eslint-disable no-global-assign */
     fetch = async function (url, opts) {
         if (typeof url !== 'string') {
             return realFetch.apply(this, arguments);
@@ -214,9 +213,23 @@ function _hookWorker() {
 
             // Listen for messages from worker
             this.addEventListener('message', function (e) {
-                if (e.data?.key === 'AdBlocked') {
-                    _S.adsBlocked = e.data.count;
-                    window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
+                if (!e.data?.key) return;
+
+                switch (e.data.key) {
+                    case 'AdBlocked':
+                        _S.adsBlocked = e.data.count;
+                        _log('Ad blocked! Total: ' + e.data.count, 'success');
+                        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
+                        break;
+                    case 'AdDetected':
+                        _log('Ad detected, blocking...', 'warning');
+                        break;
+                    case 'AdEnded':
+                        _log('Ad ended', 'success');
+                        break;
+                    case 'Log':
+                        _log(e.data.message, e.data.type || 'info');
+                        break;
                 }
             });
 
@@ -226,7 +239,7 @@ function _hookWorker() {
             // Keep only the last 5 workers to prevent memory leaks
             if (_S.workers.length > 5) {
                 const oldWorker = _S.workers.shift();
-                try { oldWorker.terminate(); } catch (e) { /* Worker may already be terminated */ }
+                try { oldWorker.terminate(); } catch { /* Worker may already be terminated */ }
             }
         }
     };

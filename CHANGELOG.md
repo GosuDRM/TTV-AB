@@ -4,6 +4,18 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.0.9] - 2025-12-10
+
+### Fixed
+- **Ad detection logs now appear in main DevTools console** (previously hidden in Worker console)
+- Worker now sends AdDetected/AdEnded events to main window for proper logging
+- Version mismatch in popup UI (was showing v3.0.8)
+- Duplicate `@keyframes shimmer` animation definition in popup CSS
+- Duplicate JSDoc comment block for `updateStatus` function
+- Global `window.statusTimeout` pollution replaced with closure variable
+- Empty catch blocks now have proper error handling/comments
+- Build header comment placeholder text corrected
+
 ## [3.0.8] - 2025-12-10
 
 ### Added

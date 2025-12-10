@@ -41,15 +41,17 @@ document.addEventListener('DOMContentLoaded', function () {
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
             if (tabs[0] && tabs[0].url && tabs[0].url.includes('twitch.tv')) {
                 chrome.tabs.sendMessage(tabs[0].id, { action: 'toggle', enabled: enabled })
-                    .catch(() => { }); // Ignore errors if bridge isn't ready
+                    .catch((err) => {
+                        // Bridge may not be ready yet, this is expected on non-stream pages
+                        console.debug('TTV AB: Toggle message not delivered -', err.message);
+                    });
             }
         });
     });
 
-    /**
-     * Updates the visual status indicator
-     * @param {boolean} enabled - Whether ad blocking is enabled
-     */
+    // Timeout reference for status message reset
+    let statusTimeout = null;
+
     /**
      * Updates the visual status indicator and dynamic message
      * @param {boolean} enabled - Whether ad blocking is enabled
@@ -71,8 +73,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Reset message after 1.5s
         info.style.transition = 'color 0.3s ease';
-        if (window.statusTimeout) clearTimeout(window.statusTimeout);
-        window.statusTimeout = setTimeout(() => {
+        if (statusTimeout) clearTimeout(statusTimeout);
+        statusTimeout = setTimeout(() => {
             info.textContent = 'Changes take effect instantly';
             info.style.color = '#666';
         }, 1500);

@@ -31,6 +31,9 @@ async function _processM3U8(url, text, realFetch) {
         if (!info.IsShowingAd) {
             info.IsShowingAd = true;
             _log('Ad detected, blocking...', 'warning');
+            if (typeof self !== 'undefined' && self.postMessage) {
+                self.postMessage({ key: 'AdDetected' });
+            }
             _incrementAdsBlocked();
         }
 
@@ -41,7 +44,9 @@ async function _processM3U8(url, text, realFetch) {
                 if (lines[i].startsWith('#EXTINF') && i < len - 1) {
                     if (!lines[i].includes(',live') && !info.RequestedAds.has(lines[i + 1])) {
                         info.RequestedAds.add(lines[i + 1]);
-                        fetch(lines[i + 1]).then(r => r.blob()).catch(() => { });
+                        fetch(lines[i + 1]).then(r => r.blob()).catch(() => {
+                            // Prefetch failed - non-critical, ad will still be blocked
+                        });
                         break;
                     }
                 }
@@ -159,6 +164,9 @@ async function _processM3U8(url, text, realFetch) {
             info.BackupEncodingsM3U8Cache = [];
             info.ActiveBackupPlayerType = null;
             _log('Ad ended', 'success');
+            if (typeof self !== 'undefined' && self.postMessage) {
+                self.postMessage({ key: 'AdEnded' });
+            }
         }
     }
 

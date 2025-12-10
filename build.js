@@ -152,7 +152,7 @@ function build() {
  * - monitor.js   : Player crash detection and auto-recovery
  * - init.js      : Extension initialization and event listeners
  * 
- * Function names are minified (e.g., _log -> _$l) for smaller bundle size.
+ * Function names are minified (e.g., _log -> _$l, _init -> _$in) for smaller bundle size.
  * 
  * =============================================================================
  */

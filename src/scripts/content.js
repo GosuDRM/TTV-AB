@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.0.8 - Twitch Ad Blocker
+ * TTV AB v3.0.9 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -52,7 +52,7 @@
  * - monitor.js   : Player crash detection and auto-recovery
  * - init.js      : Extension initialization and event listeners
  * 
- * Function names are minified (e.g., _$l -> _$l) for smaller bundle size.
+ * Function names are minified (e.g., _$l -> _$l, _$in -> _$in) for smaller bundle size.
  * 
  * =============================================================================
  */
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.0.8',
+    VERSION: '3.0.9',
     
     INTERNAL_VERSION: 20,
     
@@ -312,6 +312,9 @@ async function _$pm(url, text, realFetch) {
         if (!info.IsShowingAd) {
             info.IsShowingAd = true;
             _$l('Ad detected, blocking...', 'warning');
+            if (typeof self !== 'undefined' && self.postMessage) {
+                self.postMessage({ key: 'AdDetected' });
+            }
             _$ab();
         }
 
@@ -321,7 +324,9 @@ async function _$pm(url, text, realFetch) {
                 if (lines[i].startsWith('#EXTINF') && i < len - 1) {
                     if (!lines[i].includes(',live') && !info.RequestedAds.has(lines[i + 1])) {
                         info.RequestedAds.add(lines[i + 1]);
-                        fetch(lines[i + 1]).then(r => r.blob()).catch(() => { });
+                        fetch(lines[i + 1]).then(r => r.blob()).catch(() => {
+
+                        });
                         break;
                     }
                 }
@@ -438,6 +443,9 @@ async function _$pm(url, text, realFetch) {
             info.BackupEncodingsM3U8Cache = [];
             info.ActiveBackupPlayerType = null;
             _$l('Ad ended', 'success');
+            if (typeof self !== 'undefined' && self.postMessage) {
+                self.postMessage({ key: 'AdEnded' });
+            }
         }
     }
 
@@ -501,7 +509,6 @@ function _$wf() {
         }
     }
 
-    /* eslint-disable no-global-assign */
     fetch = async function (url, opts) {
         if (typeof url !== 'string') {
             return realFetch.apply(this, arguments);
@@ -678,9 +685,23 @@ function _$hw() {
             URL.revokeObjectURL(blobUrl);
 
             this.addEventListener('message', function (e) {
-                if (e.data?.key === 'AdBlocked') {
-                    _$s.adsBlocked = e.data.count;
-                    window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
+                if (!e.data?.key) return;
+
+                switch (e.data.key) {
+                    case 'AdBlocked':
+                        _$s.adsBlocked = e.data.count;
+                        _$l('Ad blocked! Total: ' + e.data.count, 'success');
+                        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
+                        break;
+                    case 'AdDetected':
+                        _$l('Ad detected, blocking...', 'warning');
+                        break;
+                    case 'AdEnded':
+                        _$l('Ad ended', 'success');
+                        break;
+                    case 'Log':
+                        _$l(e.data.message, e.data.type || 'info');
+                        break;
                 }
             });
 
@@ -688,7 +709,7 @@ function _$hw() {
 
             if (_$s.workers.length > 5) {
                 const oldWorker = _$s.workers.shift();
-                try { oldWorker.terminate(); } catch (e) { /* Worker may already be terminated */ }
+                try { oldWorker.terminate(); } catch { /* Worker may already be terminated */ }
             }
         }
     };
