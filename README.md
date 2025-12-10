@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-3.0.3-purple)
+![Version](https://img.shields.io/badge/version-3.0.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -17,6 +17,7 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 - ✅ Manifest V3 compatible
 - ✅ Simple enable/disable toggle
 - ✅ Auto-refresh on player crash
+- ✅ Real-time ads blocked counter
 - ✅ Lightweight and fast
 
 ## Usage

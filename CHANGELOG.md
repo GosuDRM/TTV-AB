@@ -4,6 +4,14 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.0.4] - 2025-12-10
+
+### Added
+- Real-time "Ads Blocked" counter in popup
+- Subtle pulse animation when counter updates
+- Counter persists across sessions via chrome.storage
+- Bridge script sync for popup-to-content communication
+
 ## [3.0.3] - 2025-12-10
 
 ### Changed

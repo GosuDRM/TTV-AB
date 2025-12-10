@@ -124,6 +124,39 @@
             align-items: center;
         }
 
+        .counter-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .counter-label {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .counter-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #9146FF;
+            font-variant-numeric: tabular-nums;
+            transition: transform 0.15s ease, color 0.3s ease;
+        }
+
+        .counter-value.pulse {
+            transform: scale(1.2);
+            color: #4CAF50;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
         .status-label {
             font-size: 14px;
             color: #ccc;
@@ -266,7 +299,7 @@
         <div class="logo">TTV</div>
         <div class="header-content">
             <div class="title">TTV AB</div>
-            <div class="version">v3.0.1</div>
+            <div class="version">v3.0.4</div>
         </div>
         <button class="donate-btn" id="donateBtn" title="Support the developer">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -283,6 +316,10 @@
                 <div class="status-dot" id="statusDot"></div>
                 <span class="status-text" id="statusText">Active</span>
             </div>
+        </div>
+        <div class="counter-row">
+            <span class="counter-label">Ads Blocked</span>
+            <span class="counter-value" id="adsBlockedCount">0</span>
         </div>
     </div>
 

@@ -6,7 +6,8 @@
 const _S = {
     workers: [],
     conflicts: ['twitch', 'isVariantA'],
-    reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}']
+    reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
+    adsBlocked: 0
 };
 
 function _declareState(scope) {
@@ -32,4 +33,10 @@ function _declareState(scope) {
     scope.IsAdStrippingEnabled = true;
     scope.AdSegmentCache = new Map();
     scope.AllSegmentsAreAdSegments = false;
+}
+
+function _incrementAdsBlocked() {
+    _S.adsBlocked++;
+    // Dispatch event for real-time updates
+    window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _S.adsBlocked } }));
 }

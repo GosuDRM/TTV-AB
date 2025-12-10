@@ -20,6 +20,7 @@ async function _processM3U8(url, text, realFetch) {
         if (!info.IsShowingAd) {
             info.IsShowingAd = true;
             _log('Ad detected, blocking...', 'warning');
+            _incrementAdsBlocked(); // Increment counter
         }
 
         if (!info.IsMidroll) {

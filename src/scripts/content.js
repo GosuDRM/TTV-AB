@@ -4,7 +4,7 @@
  * HLS playlists and stripping ad segments.
  * 
  * @author GosuDRM
- * @version 3.0.3
+ * @version 3.0.4
  * @license MIT
  * @see https://github.com/GosuDRM/TTV-AB
  * @generated DO NOT EDIT - Built from src/modules/
@@ -22,7 +22,7 @@
      * @private
      */
     const _C = {
-        VERSION: '3.0.3',
+        VERSION: '3.0.4',
         INTERNAL_VERSION: 19,
         LOG_STYLES: {
             prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -54,7 +54,8 @@
     const _S = {
         workers: [],
         conflicts: ['twitch', 'isVariantA'],
-        reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}']
+        reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
+        adsBlocked: 0
     };
     
     function _declareState(scope) {
@@ -80,6 +81,12 @@
         scope.IsAdStrippingEnabled = true;
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
+    }
+    
+    function _incrementAdsBlocked() {
+        _S.adsBlocked++;
+        // Dispatch event for real-time updates
+        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _S.adsBlocked } }));
     }
     
 
@@ -249,6 +256,7 @@
             if (!info.IsShowingAd) {
                 info.IsShowingAd = true;
                 _log('Ad detected, blocking...', 'warning');
+                _incrementAdsBlocked(); // Increment counter
             }
     
             if (!info.IsMidroll) {

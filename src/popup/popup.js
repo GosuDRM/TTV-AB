@@ -10,12 +10,25 @@ document.addEventListener('DOMContentLoaded', function () {
     const toggle = document.getElementById('enableToggle');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
+    const adsBlockedCount = document.getElementById('adsBlockedCount');
 
-    // Initialize toggle state from storage
-    chrome.storage.local.get(['ttvAdblockEnabled'], function (result) {
+    // Initialize toggle state and counter from storage
+    chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked'], function (result) {
         const enabled = result.ttvAdblockEnabled !== false;
         toggle.checked = enabled;
         updateStatus(enabled);
+
+        // Initialize counter
+        const count = result.ttvAdsBlocked || 0;
+        adsBlockedCount.textContent = formatNumber(count);
+    });
+
+    // Listen for real-time counter updates
+    chrome.storage.onChanged.addListener(function (changes, namespace) {
+        if (namespace === 'local' && changes.ttvAdsBlocked) {
+            const newCount = changes.ttvAdsBlocked.newValue || 0;
+            animateCounter(adsBlockedCount, newCount);
+        }
     });
 
     // Persist toggle state changes and notify content script
@@ -45,6 +58,26 @@ document.addEventListener('DOMContentLoaded', function () {
             statusDot.classList.add('disabled');
             statusText.textContent = 'Disabled';
         }
+    }
+
+    /**
+     * Formats number with locale-specific separators
+     * @param {number} num - Number to format
+     * @returns {string} Formatted number
+     */
+    function formatNumber(num) {
+        return num.toLocaleString();
+    }
+
+    /**
+     * Animates the counter update with a subtle pulse
+     * @param {HTMLElement} element - Counter element
+     * @param {number} newValue - New count value
+     */
+    function animateCounter(element, newValue) {
+        element.textContent = formatNumber(newValue);
+        element.classList.add('pulse');
+        setTimeout(() => element.classList.remove('pulse'), 200);
     }
 
     // Donate button - opens PayPal in new tab
