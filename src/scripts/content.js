@@ -4,7 +4,7 @@
  * HLS playlists and stripping ad segments.
  * 
  * @author GosuDRM
- * @version 3.0.4
+ * @version 3.0.5
  * @license MIT
  * @see https://github.com/GosuDRM/TTV-AB
  * @generated DO NOT EDIT - Built from src/modules/
@@ -22,7 +22,7 @@
      * @private
      */
     const _C = {
-        VERSION: '3.0.4',
+        VERSION: '3.0.5',
         INTERNAL_VERSION: 19,
         LOG_STYLES: {
             prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',

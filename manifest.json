@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
+    "version": "3.0.5",
     "name": "TTV AB",
-    "version": "3.0.4",
     "description": "Block ads on Twitch.tv live streams. No purple screens, prerolls, or midrolls. Lightweight adblocker.",
     "permissions": [
         "storage"

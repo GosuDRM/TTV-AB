@@ -1,0 +1,8 @@
+{
+    "permissions": [
+        "storage"
+    ],
+    "host_permissions": [
+        "*://*.twitch.tv/*"
+    ]
+}

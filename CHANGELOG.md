@@ -4,6 +4,16 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.0.5] - 2025-12-10
+
+### Changed
+- Split manifest.json into separate config files (config/)
+- Build script now assembles manifest from config parts
+- Version auto-read from constants.js during build
+
+### Fixed
+- Ad counter now works correctly in worker context
+
 ## [3.0.4] - 2025-12-10
 
 ### Added
