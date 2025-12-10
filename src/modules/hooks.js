@@ -169,6 +169,7 @@ function _hookWorker() {
                         case 'UpdateDeviceId': GQLDeviceID = data.value; break;
                         case 'UpdateClientIntegrityHeader': ClientIntegrityHeader = data.value; break;
                         case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
+                        case 'UpdateToggleState': IsAdStrippingEnabled = data.value; break;
                     }
                 });
                 
@@ -191,8 +192,9 @@ function _hookWorker() {
             _S.workers.push(this);
 
             // Cleanup terminated workers
+            // Keep only the last 5 workers to prevent memory leaks
             if (_S.workers.length > 5) {
-                _S.workers = _S.workers.filter(w => w.onmessage !== null);
+                _S.workers.shift();
             }
         }
     };

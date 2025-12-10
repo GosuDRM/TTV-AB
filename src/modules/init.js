@@ -28,6 +28,10 @@ function _initToggleListener() {
     window.addEventListener('ttvab-toggle', function (e) {
         const enabled = e.detail?.enabled ?? true;
         IsAdStrippingEnabled = enabled;
+        // Broadcast to workers
+        for (const worker of _S.workers) {
+            worker.postMessage({ key: 'UpdateToggleState', value: enabled });
+        }
         _log('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
     });
 }
