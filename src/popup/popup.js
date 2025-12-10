@@ -50,14 +50,32 @@ document.addEventListener('DOMContentLoaded', function () {
      * Updates the visual status indicator
      * @param {boolean} enabled - Whether ad blocking is enabled
      */
+    /**
+     * Updates the visual status indicator and dynamic message
+     * @param {boolean} enabled - Whether ad blocking is enabled
+     */
     function updateStatus(enabled) {
+        const info = document.querySelector('.info');
+
         if (enabled) {
             statusDot.classList.remove('disabled');
             statusText.textContent = 'Active';
+            info.textContent = 'Ad blocking ENABLED';
+            info.style.color = '#4CAF50';
         } else {
             statusDot.classList.add('disabled');
             statusText.textContent = 'Disabled';
+            info.textContent = 'Ad blocking DISABLED';
+            info.style.color = '#f44336';
         }
+
+        // Reset message after 1.5s
+        info.style.transition = 'color 0.3s ease';
+        if (window.statusTimeout) clearTimeout(window.statusTimeout);
+        window.statusTimeout = setTimeout(() => {
+            info.textContent = 'Changes take effect instantly';
+            info.style.color = '#666';
+        }, 1500);
     }
 
     /**

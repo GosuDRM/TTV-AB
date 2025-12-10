@@ -87,27 +87,227 @@
         .title {
             font-size: 18px;
             font-weight: 600;
-            animation: title-glow 2.5s ease-in-out infinite;
+            position: relative;
+            color: #fff;
+            letter-spacing: 2px;
         }
 
-        @keyframes title-glow {
+        .title::before,
+        .title::after {
+            content: attr(data-text);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1a1a2e;
+        }
 
-            0%,
-            100% {
-                text-shadow: 0 0 2px rgba(145, 70, 255, 0.3);
-                color: #fff;
+        .title::before {
+            left: 2px;
+            text-shadow: -1px 0 #ff00c1;
+            clip: rect(44px, 450px, 56px, 0);
+            animation: glitch-anim-1 5s infinite linear alternate-reverse;
+        }
+
+        .title::after {
+            left: -2px;
+            text-shadow: -1px 0 #00fff9;
+            clip: rect(44px, 450px, 56px, 0);
+            animation: glitch-anim-2 5s infinite linear alternate-reverse;
+        }
+
+        @keyframes glitch-anim-1 {
+            0% {
+                clip: rect(30px, 9999px, 36px, 0);
+            }
+
+            5% {
+                clip: rect(67px, 9999px, 16px, 0);
+            }
+
+            10% {
+                clip: rect(74px, 9999px, 40px, 0);
+            }
+
+            15% {
+                clip: rect(96px, 9999px, 63px, 0);
+            }
+
+            20% {
+                clip: rect(10px, 9999px, 86px, 0);
+            }
+
+            25% {
+                clip: rect(59px, 9999px, 95px, 0);
+            }
+
+            30% {
+                clip: rect(21px, 9999px, 2px, 0);
+            }
+
+            35% {
+                clip: rect(98px, 9999px, 7px, 0);
+            }
+
+            40% {
+                clip: rect(63px, 9999px, 87px, 0);
+            }
+
+            45% {
+                clip: rect(8px, 9999px, 14px, 0);
             }
 
             50% {
-                text-shadow: 0 0 15px rgba(145, 70, 255, 0.8), 0 0 30px rgba(145, 70, 255, 0.4);
-                color: #c9a0ff;
+                clip: rect(52px, 9999px, 21px, 0);
+            }
+
+            55% {
+                clip: rect(39px, 9999px, 58px, 0);
+            }
+
+            60% {
+                clip: rect(50px, 9999px, 33px, 0);
+            }
+
+            65% {
+                clip: rect(7px, 9999px, 89px, 0);
+            }
+
+            70% {
+                clip: rect(92px, 9999px, 6px, 0);
+            }
+
+            75% {
+                clip: rect(43px, 9999px, 20px, 0);
+            }
+
+            80% {
+                clip: rect(18px, 9999px, 76px, 0);
+            }
+
+            85% {
+                clip: rect(75px, 9999px, 45px, 0);
+            }
+
+            90% {
+                clip: rect(36px, 9999px, 14px, 0);
+            }
+
+            95% {
+                clip: rect(24px, 9999px, 67px, 0);
+            }
+
+            100% {
+                clip: rect(48px, 9999px, 91px, 0);
+            }
+        }
+
+        @keyframes glitch-anim-2 {
+            0% {
+                clip: rect(65px, 9999px, 100px, 0);
+            }
+
+            5% {
+                clip: rect(52px, 9999px, 74px, 0);
+            }
+
+            10% {
+                clip: rect(79px, 9999px, 85px, 0);
+            }
+
+            15% {
+                clip: rect(75px, 9999px, 5px, 0);
+            }
+
+            20% {
+                clip: rect(67px, 9999px, 61px, 0);
+            }
+
+            25% {
+                clip: rect(14px, 9999px, 79px, 0);
+            }
+
+            30% {
+                clip: rect(1px, 9999px, 66px, 0);
+            }
+
+            35% {
+                clip: rect(86px, 9999px, 30px, 0);
+            }
+
+            40% {
+                clip: rect(23px, 9999px, 98px, 0);
+            }
+
+            45% {
+                clip: rect(85px, 9999px, 72px, 0);
+            }
+
+            50% {
+                clip: rect(71px, 9999px, 97px, 0);
+            }
+
+            55% {
+                clip: rect(2px, 9999px, 12px, 0);
+            }
+
+            60% {
+                clip: rect(59px, 9999px, 41px, 0);
+            }
+
+            65% {
+                clip: rect(54px, 9999px, 5px, 0);
+            }
+
+            70% {
+                clip: rect(38px, 9999px, 53px, 0);
+            }
+
+            75% {
+                clip: rect(32px, 9999px, 80px, 0);
+            }
+
+            80% {
+                clip: rect(5px, 9999px, 51px, 0);
+            }
+
+            85% {
+                clip: rect(6px, 9999px, 3px, 0);
+            }
+
+            90% {
+                clip: rect(98px, 9999px, 96px, 0);
+            }
+
+            95% {
+                clip: rect(45px, 9999px, 7px, 0);
+            }
+
+            100% {
+                clip: rect(31px, 9999px, 65px, 0);
             }
         }
 
         .version {
             font-size: 11px;
-            color: #888;
             margin-top: 2px;
+            font-weight: 500;
+            background: linear-gradient(to right, #666 0%, #fff 50%, #666 100%);
+            background-size: 200% auto;
+            color: #888;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 3s linear infinite;
+            display: inline-block;
+            opacity: 0.8;
+        }
+
+        @keyframes shimmer {
+            to {
+                background-position: 200% center;
+            }
         }
 
         .status-card {
@@ -168,11 +368,27 @@
             border-radius: 50%;
             background: #4CAF50;
             box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+            animation: status-pulse 2s ease-in-out infinite;
         }
 
         .status-dot.disabled {
             background: #f44336;
             box-shadow: 0 0 10px rgba(244, 67, 54, 0.5);
+            animation: none;
+        }
+
+        @keyframes status-pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 5px rgba(76, 175, 80, 0.4);
+                transform: scale(1);
+            }
+
+            50% {
+                box-shadow: 0 0 15px rgba(76, 175, 80, 0.9);
+                transform: scale(1.1);
+            }
         }
 
         .status-text {
@@ -214,9 +430,10 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(255, 255, 255, 0.2);
-            transition: 0.3s;
+            background: rgba(255, 255, 255, 0.15);
+            transition: all 0.4s ease;
             border-radius: 26px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
         }
 
         .slider:before {
@@ -227,16 +444,27 @@
             left: 3px;
             bottom: 3px;
             background: white;
-            transition: 0.3s;
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
             border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
 
         input:checked+.slider {
             background: linear-gradient(135deg, #9146FF 0%, #772CE8 100%);
+            box-shadow: 0 0 12px rgba(145, 70, 255, 0.5);
         }
 
         input:checked+.slider:before {
             transform: translateX(24px);
+        }
+
+        /* Tactile interaction */
+        .toggle:active .slider:before {
+            width: 24px;
+        }
+
+        input:checked:active .slider:before {
+            margin-left: -4px;
         }
 
         .info {
@@ -292,7 +520,7 @@
     <div class="header">
         <div class="logo">TTV</div>
         <div class="header-content">
-            <div class="title">TTV AB</div>
+            <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version">v3.0.7</div>
         </div>
         <button class="donate-btn" id="donateBtn" title="Support the developer">
