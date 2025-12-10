@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.0.3] - 2025-12-10
+
+### Changed
+- Refactored codebase into modular architecture (11 modules)
+- Added build.js script to compile modules into content.js
+- Minified internal variable/function names for obfuscation
+- Updated documentation with new file structure
+
 ## [3.0.2] - 2025-12-10
 
 ### Added

@@ -4,7 +4,7 @@
  * @private
  */
 const _C = {
-    VERSION: '3.0.2',
+    VERSION: '3.0.3',
     INTERNAL_VERSION: 19,
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',

@@ -30,7 +30,7 @@ const HEADER = `/**
  * HLS playlists and stripping ad segments.
  * 
  * @author GosuDRM
- * @version 3.0.2
+ * @version 3.0.3
  * @license MIT
  * @see https://github.com/GosuDRM/TTV-AB
  * @generated DO NOT EDIT - Built from src/modules/
