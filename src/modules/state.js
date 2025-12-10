@@ -37,6 +37,10 @@ function _declareState(scope) {
 
 function _incrementAdsBlocked() {
     _S.adsBlocked++;
-    // Dispatch event for real-time updates
-    window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _S.adsBlocked } }));
+    // Use postMessage in worker context, dispatchEvent in main thread
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _S.adsBlocked } }));
+    } else if (typeof self !== 'undefined' && self.postMessage) {
+        self.postMessage({ key: 'AdBlocked', count: _S.adsBlocked });
+    }
 }

@@ -98,6 +98,7 @@ function _hookWorker() {
                 const _S = ${JSON.stringify(_S)};
                 ${_log.toString()}
                 ${_declareState.toString()}
+                ${_incrementAdsBlocked.toString()}
                 ${_parseAttrs.toString()}
                 ${_getServerTime.toString()}
                 ${_replaceServerTime.toString()}
@@ -131,6 +132,15 @@ function _hookWorker() {
             `;
 
             super(URL.createObjectURL(new Blob([blob])), opts);
+
+            // Listen for AdBlocked messages from worker
+            this.addEventListener('message', function (e) {
+                if (e.data && e.data.key === 'AdBlocked') {
+                    _S.adsBlocked = e.data.count;
+                    window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
+                }
+            });
+
             _S.workers.push(this);
         }
     };

@@ -85,8 +85,12 @@
     
     function _incrementAdsBlocked() {
         _S.adsBlocked++;
-        // Dispatch event for real-time updates
-        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _S.adsBlocked } }));
+        // Use postMessage in worker context, dispatchEvent in main thread
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _S.adsBlocked } }));
+        } else if (typeof self !== 'undefined' && self.postMessage) {
+            self.postMessage({ key: 'AdBlocked', count: _S.adsBlocked });
+        }
     }
     
 
@@ -521,6 +525,7 @@
                     const _S = ${JSON.stringify(_S)};
                     ${_log.toString()}
                     ${_declareState.toString()}
+                    ${_incrementAdsBlocked.toString()}
                     ${_parseAttrs.toString()}
                     ${_getServerTime.toString()}
                     ${_replaceServerTime.toString()}
@@ -554,6 +559,15 @@
                 `;
     
                 super(URL.createObjectURL(new Blob([blob])), opts);
+    
+                // Listen for AdBlocked messages from worker
+                this.addEventListener('message', function (e) {
+                    if (e.data && e.data.key === 'AdBlocked') {
+                        _S.adsBlocked = e.data.count;
+                        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
+                    }
+                });
+    
                 _S.workers.push(this);
             }
         };
