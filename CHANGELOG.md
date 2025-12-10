@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Elastic bounce animation for toggle switch
 - Dynamic status message when toggling protection
 - Pulsing green light indicator for active status
+- Added animated description text to popup UI
 
 ## [3.0.6] - 2025-12-10
 
