@@ -4,6 +4,18 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.0.7] - 2025-12-10
+
+### Fixed
+- Ads blocked counter now properly persists across sessions
+- Counter no longer resets to 0 on page refresh or navigation
+- Bridge script now sends stored count to content script on load
+
+### Added
+- New `ttvab-init-count` event for counter synchronization
+- `_$ic()` function to initialize counter from stored value
+- Console log showing restored counter value on page load
+
 ## [3.0.6] - 2025-12-10
 
 ### Changed

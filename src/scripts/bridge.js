@@ -7,10 +7,16 @@
  * @license MIT
  */
 
-// Send initial state to content script
-chrome.storage.local.get(['ttvAdblockEnabled'], function (result) {
+// Send initial state and stored counter to content script
+chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked'], function (result) {
     const enabled = result.ttvAdblockEnabled !== false;
+    const storedCount = result.ttvAdsBlocked || 0;
+
+    // Send toggle state
     window.dispatchEvent(new CustomEvent('ttvab-toggle', { detail: { enabled } }));
+
+    // Send stored counter so content script can accumulate from it
+    window.dispatchEvent(new CustomEvent('ttvab-init-count', { detail: { count: storedCount } }));
 });
 
 // Listen for messages from popup
