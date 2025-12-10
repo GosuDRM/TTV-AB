@@ -99,10 +99,62 @@ function build() {
     const version = getVersion();
 
     const HEADER = `/**
- * TTV AB v${version}
+ * TTV AB v${version} - Twitch Ad Blocker
+ * 
  * @author GosuDRM
  * @license MIT
- * @see https://github.com/GosuDRM/TTV-AB
+ * @repository https://github.com/GosuDRM/TTV-AB
+ * @homepage https://github.com/GosuDRM/TTV-AB
+ * 
+ * This extension blocks advertisements on Twitch.tv live streams by intercepting
+ * and modifying video playlist (M3U8) data. All processing occurs LOCALLY within
+ * the user's browser. No user data is collected, stored, or transmitted.
+ * 
+ * REGARDING "REMOTE CODE" / "UNSAFE-EVAL":
+ * ----------------------------------------
+ * This extension intercepts Twitch's Web Worker creation to inject ad-blocking
+ * logic. The technique used is:
+ * 
+ * 1. Intercept: The native Worker constructor is overridden.
+ * 2. Fetch: The ORIGINAL worker script is fetched from Twitch's own servers.
+ * 3. Modify: Ad-blocking code is prepended to Twitch's worker code.
+ * 4. Execute: A new Blob URL is created and the patched worker is instantiated.
+ * 
+ * IMPORTANT SAFETY CLARIFICATIONS:
+ * - The ONLY code executed is Twitch's own worker code (from *.twitch.tv).
+ * - This extension does NOT download or execute any code from external/third-party servers.
+ * - The ad-blocking logic is bundled entirely within this file.
+ * - No eval() of user-provided or remotely-fetched arbitrary code occurs.
+ * 
+ * SOURCE CODE:
+ * The full, unminified source code is available at:
+ * https://github.com/GosuDRM/TTV-AB/tree/main/src/modules
+ * 
+ * PERMISSIONS USED:
+ * - storage: Save user's enable/disable preference and blocked ad count.
+ * - host_permissions (twitch.tv): Inject content script to block ads.
+ * 
+ * =============================================================================
+ * ARCHITECTURE OVERVIEW
+ * =============================================================================
+ * 
+ * This script is compiled from modular source files located in /src/modules/:
+ * 
+ * - constants.js : Configuration values and version info
+ * - state.js     : Shared state management (ad counts, worker refs)
+ * - logger.js    : Console logging with styled output
+ * - parser.js    : M3U8 playlist parsing and ad segment detection
+ * - api.js       : GraphQL requests to Twitch API for backup streams
+ * - processor.js : Core ad removal logic and stream switching
+ * - worker.js    : Worker patching utilities
+ * - hooks.js     : Native API hooks (Worker, fetch)
+ * - ui.js        : User notifications (welcome, donation prompts)
+ * - monitor.js   : Player crash detection and auto-recovery
+ * - init.js      : Extension initialization and event listeners
+ * 
+ * Function names are minified (e.g., _log -> _$l) for smaller bundle size.
+ * 
+ * =============================================================================
  */
 (function(){
 'use strict';
