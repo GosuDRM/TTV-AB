@@ -34,14 +34,6 @@ The extension intercepts Twitch's HLS video playlists and:
 - Fetches backup ad-free streams when ads are detected
 - Caches ad segments to prevent playback
 
-## Development
-
-To modify the extension, edit files in `src/modules/` then run:
-
-```bash
-node build.js
-```
-
 ## Author
 
 **GosuDRM**
