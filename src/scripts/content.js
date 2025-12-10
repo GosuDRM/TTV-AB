@@ -636,6 +636,8 @@
                 }
 
                 const newBlobStr = `
+                const LOG_STYLES = ${JSON.stringify(LOG_STYLES)};
+                ${log.toString()}
                 ${declareOptions.toString()}
                 ${parseAttributes.toString()}
                 ${getServerTimeFromM3u8.toString()}
