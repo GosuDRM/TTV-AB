@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.0.2] - 2025-12-10
+
+### Added
+- Auto-refresh on player crash detection (Error #2000, #1000, etc.)
+- MutationObserver for real-time crash detection
+- Visual notification banner when crash is detected
+- 1.5 second delay before automatic page refresh
+
 ## [3.0.1] - 2025-12-10
 
 ### Added

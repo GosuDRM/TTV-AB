@@ -15,7 +15,7 @@
     // CONSTANTS & VERSION
     // ===========================================
 
-    const VERSION = '3.0.1';
+    const VERSION = '3.0.2';
     const ourTtvabVersion = 19;
 
     // Console styling
@@ -955,6 +955,152 @@
             // localStorage unavailable
         }
     }
+
+    // ===========================================
+    // PLAYER CRASH DETECTION & AUTO-REFRESH
+    // ===========================================
+
+    /**
+     * Monitors for Twitch player crashes and automatically refreshes the page
+     * Detects error messages like "Error #2000" (network error) and similar
+     */
+    function initPlayerCrashMonitor() {
+        const ERROR_PATTERNS = [
+            'Error #1000',
+            'Error #2000',
+            'Error #3000',
+            'Error #4000',
+            'Error #5000',
+            'network error',
+            'content is not available'
+        ];
+
+        const REFRESH_DELAY = 1500; // 1.5 seconds delay before refresh
+        let isRefreshing = false;
+        let crashCheckInterval = null;
+
+        /**
+         * Checks if the player has crashed by looking for error indicators
+         * @returns {boolean} True if crash detected
+         */
+        function detectPlayerCrash() {
+            // Look for error text content on the page
+            const pageText = document.body?.innerText || '';
+            for (const pattern of ERROR_PATTERNS) {
+                if (pageText.toLowerCase().includes(pattern.toLowerCase())) {
+                    return pattern;
+                }
+            }
+
+            // Look for Twitch's error overlay elements
+            const errorElements = document.querySelectorAll(
+                '[data-a-target="player-overlay-content-gate"], ' +
+                '[data-a-target="player-error-modal"], ' +
+                '.content-overlay-gate, ' +
+                '.player-error'
+            );
+
+            for (const el of errorElements) {
+                const text = el.innerText || '';
+                for (const pattern of ERROR_PATTERNS) {
+                    if (text.toLowerCase().includes(pattern.toLowerCase())) {
+                        return pattern;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /**
+         * Handles player crash by showing a notification and refreshing
+         * @param {string} errorType - The detected error pattern
+         */
+        function handlePlayerCrash(errorType) {
+            if (isRefreshing) return;
+            isRefreshing = true;
+
+            log('Player crash detected: ' + errorType, 'error');
+            log('Auto-refreshing page in ' + (REFRESH_DELAY / 1000) + ' seconds...', 'warning');
+
+            // Show a brief notification
+            const toast = document.createElement('div');
+            toast.innerHTML = `
+                <style>
+                    #ttvab-refresh-notice {
+                        position: fixed;
+                        top: 20px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+                        color: white;
+                        padding: 12px 24px;
+                        border-radius: 8px;
+                        font-family: 'Segoe UI', sans-serif;
+                        font-size: 14px;
+                        font-weight: 500;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+                        z-index: 9999999;
+                        animation: ttvab-pulse 1s ease infinite;
+                    }
+                    @keyframes ttvab-pulse {
+                        0%, 100% { opacity: 1; }
+                        50% { opacity: 0.7; }
+                    }
+                </style>
+                <div id="ttvab-refresh-notice">
+                    ⚠️ Player crashed - Refreshing automatically...
+                </div>
+            `;
+            document.body.appendChild(toast);
+
+            // Refresh after delay
+            setTimeout(() => {
+                window.location.reload();
+            }, REFRESH_DELAY);
+        }
+
+        // Use MutationObserver to detect changes that might indicate a crash
+        const observer = new MutationObserver(() => {
+            const error = detectPlayerCrash();
+            if (error) {
+                handlePlayerCrash(error);
+                observer.disconnect();
+                if (crashCheckInterval) {
+                    clearInterval(crashCheckInterval);
+                }
+            }
+        });
+
+        // Start observing once DOM is ready
+        function startObserving() {
+            if (document.body) {
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    characterData: true
+                });
+
+                // Also do periodic checks as a fallback
+                crashCheckInterval = setInterval(() => {
+                    const error = detectPlayerCrash();
+                    if (error) {
+                        handlePlayerCrash(error);
+                        observer.disconnect();
+                        clearInterval(crashCheckInterval);
+                    }
+                }, 5000); // Check every 5 seconds
+
+                log('Player crash monitor active', 'info');
+            } else {
+                setTimeout(startObserving, 100);
+            }
+        }
+
+        startObserving();
+    }
+
+    initPlayerCrashMonitor();
 
     // Listen for toggle events from bridge script
     window.addEventListener('ttvab-toggle', function (e) {
