@@ -12,6 +12,21 @@ function _hookWorkerFetch() {
     _log('Worker fetch hooked', 'info');
     const realFetch = fetch;
 
+    function _pruneStreamInfos() {
+        const keys = Object.keys(StreamInfos);
+        if (keys.length > 5) {
+            const oldKey = keys[0]; // Simple FIFO
+            delete StreamInfos[oldKey];
+            // Also clean up by URL references
+            for (const url in StreamInfosByUrl) {
+                if (StreamInfosByUrl[url].ChannelName === oldKey) {
+                    delete StreamInfosByUrl[url];
+                }
+            }
+        }
+    }
+
+    /* eslint-disable no-global-assign */
     fetch = async function (url, opts) {
         if (typeof url !== 'string') {
             return realFetch.apply(this, arguments);
@@ -37,7 +52,7 @@ function _hookWorkerFetch() {
         // Handle channel HLS requests
         if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
             V2API = url.includes('/api/v2/');
-            const channelMatch = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/);
+            const channelMatch = (new URL(url)).pathname.match(/([^/]+)(?=\.\w+$)/);
             const channel = channelMatch?.[0];
 
             if (ForceAccessTokenPlayerType) {
@@ -63,20 +78,6 @@ function _hookWorkerFetch() {
 
             // Initialize stream info
             if (!info?.EncodingsM3U8) {
-                function _pruneStreamInfos() {
-                    const keys = Object.keys(StreamInfos);
-                    if (keys.length > 5) {
-                        const oldKey = keys[0]; // Simple FIFO
-                        delete StreamInfos[oldKey];
-                        // Also clean up by URL references
-                        for (const url in StreamInfosByUrl) {
-                            if (StreamInfosByUrl[url].ChannelName === oldKey) {
-                                delete StreamInfosByUrl[url];
-                            }
-                        }
-                    }
-                }
-
                 _pruneStreamInfos();
                 info = StreamInfos[channel] = {
                     ChannelName: channel,
