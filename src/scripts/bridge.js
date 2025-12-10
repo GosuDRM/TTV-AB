@@ -20,11 +20,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
     }
 });
-
-// Listen for storage changes (in case toggle happens from another tab)
-chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local' && changes.ttvAdblockEnabled) {
-        const enabled = changes.ttvAdblockEnabled.newValue !== false;
-        window.dispatchEvent(new CustomEvent('ttvab-toggle', { detail: { enabled } }));
-    }
-});

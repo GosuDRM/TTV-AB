@@ -4,7 +4,7 @@
  * HLS playlists and stripping ad segments.
  * 
  * @author GosuDRM
- * @version 3.0.0
+ * @version 3.0.1
  * @license MIT
  * @see https://github.com/GosuDRM/TTV-AB
  */
@@ -67,7 +67,6 @@
         scope.ForceAccessTokenPlayerType = 'site';
         scope.SkipPlayerReloadOnHevc = false;
         scope.AlwaysReloadPlayerOnAd = false;
-        scope.ReloadPlayerAfterAd = true;
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
         scope.HasTriggeredPlayerReload = false;
@@ -79,12 +78,6 @@
         scope.ClientIntegrityHeader = null;
         scope.AuthorizationHeader = undefined;
         scope.SimulatedAdsDepth = 0;
-        scope.PlayerBufferingFix = true;
-        scope.PlayerBufferingDelay = 500;
-        scope.PlayerBufferingSameStateCount = 3;
-        scope.PlayerBufferingDangerZone = 1;
-        scope.PlayerBufferingDoPlayerReload = false;
-        scope.PlayerBufferingMinRepeatDelay = 5000;
         scope.V2API = false;
         scope.IsAdStrippingEnabled = true;
         scope.AdSegmentCache = new Map();
@@ -99,7 +92,6 @@
 
     const twitchWorkers = [];
     const workerStringConflicts = ['twitch', 'isVariantA'];
-    const workerStringAllow = [];
     const workerStringReinsert = ['isVariantA', 'besuper/', '${patch_url}'];
 
     // ===========================================
@@ -117,7 +109,7 @@
         let proto = worker;
         while (proto) {
             const workerString = proto.toString();
-            if (workerStringConflicts.some((x) => workerString.includes(x)) && !workerStringAllow.some((x) => workerString.includes(x))) {
+            if (workerStringConflicts.some((x) => workerString.includes(x))) {
                 if (parent !== null) {
                     Object.setPrototypeOf(parent, Object.getPrototypeOf(proto));
                 }
@@ -157,7 +149,6 @@
     function isValidWorker(worker) {
         const workerString = worker.toString();
         return !workerStringConflicts.some((x) => workerString.includes(x))
-            || workerStringAllow.some((x) => workerString.includes(x))
             || workerStringReinsert.some((x) => workerString.includes(x));
     }
 
