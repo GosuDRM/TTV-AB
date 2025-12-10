@@ -4,70 +4,68 @@
  * HLS playlists and stripping ad segments.
  * 
  * @author GosuDRM
- * @version 3.0.1
+ * @version 3.0.2
  * @license MIT
  * @see https://github.com/GosuDRM/TTV-AB
+ * @generated DO NOT EDIT - Built from src/modules/
  */
-(function () {
+(function() {
     'use strict';
 
-    // ===========================================
-    // CONSTANTS & VERSION
-    // ===========================================
+    // ═══════════════════════════════════════════════════
+    // MODULE: CONSTANTS
+    // ═══════════════════════════════════════════════════
 
-    const VERSION = '3.0.2';
-    const ourTtvabVersion = 19;
-
-    // Console styling
-    const LOG_STYLES = {
-        prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
-        info: 'color: #9146FF; font-weight: 500;',
-        success: 'color: #4CAF50; font-weight: 500;',
-        warning: 'color: #FF9800; font-weight: 500;',
-        error: 'color: #f44336; font-weight: 500;'
+    /**
+     * TTV AB - Constants Module
+     * Core configuration and version info
+     * @private
+     */
+    const _C = {
+        VERSION: '3.0.2',
+        INTERNAL_VERSION: 19,
+        LOG_STYLES: {
+            prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
+            info: 'color: #9146FF; font-weight: 500;',
+            success: 'color: #4CAF50; font-weight: 500;',
+            warning: 'color: #FF9800; font-weight: 500;',
+            error: 'color: #f44336; font-weight: 500;'
+        },
+        AD_SIGNIFIER: 'stitched',
+        CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+        PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+        FALLBACK_TYPE: 'embed',
+        FORCE_TYPE: 'site',
+        RELOAD_TIME: 1500,
+        CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
+        REFRESH_DELAY: 1500
     };
+    
+
+    // ═══════════════════════════════════════════════════
+    // MODULE: STATE
+    // ═══════════════════════════════════════════════════
 
     /**
-     * Styled console logging
-     * @param {string} message - Message to log
-     * @param {string} type - Log type: 'info', 'success', 'warning', 'error'
+     * TTV AB - State Module
+     * Manages global state and worker references
+     * @private
      */
-    function log(message, type = 'info') {
-        const style = LOG_STYLES[type] || LOG_STYLES.info;
-        console.log('%cTTV AB%c ' + message, LOG_STYLES.prefix, style);
-    }
-
-    // Prevent duplicate script execution
-    if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= ourTtvabVersion) {
-        log('Skipping - another script is active', 'warning');
-        return;
-    }
-    window.ttvabVersion = ourTtvabVersion;
-
-    log('v' + VERSION + ' loaded', 'info');
-
-    // ===========================================
-    // CONFIGURATION
-    // ===========================================
-
-    /**
-     * Initializes global configuration options
-     * @param {Object} scope - The scope to attach options to (window or self)
-     */
-    function declareOptions(scope) {
-        scope.AdSignifier = 'stitched';
-        scope.ClientID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
-        scope.BackupPlayerTypes = [
-            'embed',
-            'site',
-            'autoplay',
-            'picture-by-picture-CACHED'
-        ];
-        scope.FallbackPlayerType = 'embed';
-        scope.ForceAccessTokenPlayerType = 'site';
+    const _S = {
+        workers: [],
+        conflicts: ['twitch', 'isVariantA'],
+        reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}']
+    };
+    
+    function _declareState(scope) {
+        scope.AdSignifier = _C.AD_SIGNIFIER;
+        scope.ClientID = _C.CLIENT_ID;
+        scope.BackupPlayerTypes = [..._C.PLAYER_TYPES];
+        scope.FallbackPlayerType = _C.FALLBACK_TYPE;
+        scope.ForceAccessTokenPlayerType = _C.FORCE_TYPE;
         scope.SkipPlayerReloadOnHevc = false;
         scope.AlwaysReloadPlayerOnAd = false;
-        scope.PlayerReloadMinimalRequestsTime = 1500;
+        scope.PlayerReloadMinimalRequestsTime = _C.RELOAD_TIME;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
         scope.HasTriggeredPlayerReload = false;
         scope.StreamInfos = [];
@@ -83,1037 +81,663 @@
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
     }
+    
 
-    declareOptions(window);
-
-    // ===========================================
-    // STATE VARIABLES
-    // ===========================================
-
-    const twitchWorkers = [];
-    const workerStringConflicts = ['twitch', 'isVariantA'];
-    const workerStringReinsert = ['isVariantA', 'besuper/', '${patch_url}'];
-
-    // ===========================================
-    // WORKER MANAGEMENT
-    // ===========================================
+    // ═══════════════════════════════════════════════════
+    // MODULE: LOGGER
+    // ═══════════════════════════════════════════════════
 
     /**
-     * Cleans worker prototype chain to remove conflicting scripts
-     * @param {Function} worker - Worker constructor
-     * @returns {Function} Cleaned worker
+     * TTV AB - Logger Module
+     * Styled console output
+     * @private
      */
-    function getCleanWorker(worker) {
-        let root = null;
-        let parent = null;
-        let proto = worker;
+    function _log(msg, type = 'info') {
+        const s = _C.LOG_STYLES[type] || _C.LOG_STYLES.info;
+        console.log('%cTTV AB%c ' + msg, _C.LOG_STYLES.prefix, s);
+    }
+    
+
+    // ═══════════════════════════════════════════════════
+    // MODULE: PARSER
+    // ═══════════════════════════════════════════════════
+
+    /**
+     * TTV AB - Parser Module
+     * M3U8 playlist parsing and manipulation
+     * @private
+     */
+    function _parseAttrs(str) {
+        const r = {};
+        const rx = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+        let m;
+        while ((m = rx.exec(str)) !== null) {
+            let v = m[2];
+            if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
+            r[m[1].toUpperCase()] = v;
+        }
+        return r;
+    }
+    
+    function _getServerTime(m3u8) {
+        if (V2API) {
+            const m = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
+            return m && m.length > 1 ? m[1] : null;
+        }
+        const m = m3u8.match('SERVER-TIME="([0-9.]+)"');
+        return m && m.length > 1 ? m[1] : null;
+    }
+    
+    function _replaceServerTime(m3u8, time) {
+        if (!time) return m3u8;
+        if (V2API) {
+            return m3u8.replace(/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/, `$1${time}$2`);
+        }
+        return m3u8.replace(new RegExp('(SERVER-TIME=")[0-9.]+"'), `SERVER-TIME="${time}"`);
+    }
+    
+    function _stripAds(text, stripAll, info) {
+        let stripped = false;
+        const lines = text.replaceAll('\r', '').split('\n');
+        const adUrl = 'https://twitch.tv';
+    
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i];
+            line = line
+                .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/, `$1${adUrl}$2`)
+                .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/, `$1${adUrl}$2`);
+            lines[i] = line;
+    
+            if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
+                const url = lines[i + 1];
+                if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
+                AdSegmentCache.set(url, Date.now());
+                stripped = true;
+            }
+            if (line.includes(AdSignifier)) stripped = true;
+        }
+    
+        if (stripped) {
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
+            }
+        } else {
+            info.NumStrippedAdSegments = 0;
+        }
+    
+        info.IsStrippingAdSegments = stripped;
+        AdSegmentCache.forEach((v, k, m) => { if (v < Date.now() - 120000) m.delete(k); });
+        return lines.join('\n');
+    }
+    
+    function _getStreamUrl(m3u8, res) {
+        const lines = m3u8.replaceAll('\r', '').split('\n');
+        const [tw, th] = res.Resolution.split('x').map(Number);
+        let matchUrl = null, matchFps = false, closeUrl = null, closeDiff = Infinity;
+    
+        for (let i = 0; i < lines.length - 1; i++) {
+            if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
+                const a = _parseAttrs(lines[i]);
+                const r = a['RESOLUTION'], f = a['FRAME-RATE'];
+                if (r) {
+                    if (r == res.Resolution && (!matchUrl || (!matchFps && f == res.FrameRate))) {
+                        matchUrl = lines[i + 1];
+                        matchFps = f == res.FrameRate;
+                        if (matchFps) return matchUrl;
+                    }
+                    const [w, h] = r.split('x').map(Number);
+                    const d = Math.abs((w * h) - (tw * th));
+                    if (d < closeDiff) { closeUrl = lines[i + 1]; closeDiff = d; }
+                }
+            }
+        }
+        return matchUrl || closeUrl;
+    }
+    
+
+    // ═══════════════════════════════════════════════════
+    // MODULE: API
+    // ═══════════════════════════════════════════════════
+
+    /**
+     * TTV AB - API Module
+     * Twitch GraphQL API interactions
+     * @private
+     */
+    async function _gqlReq(body) {
+        const h = { 'Client-Id': ClientID, 'Content-Type': 'application/json' };
+        if (GQLDeviceID) h['X-Device-Id'] = GQLDeviceID;
+        if (ClientVersion) h['Client-Version'] = ClientVersion;
+        if (ClientSession) h['Client-Session-Id'] = ClientSession;
+        if (ClientIntegrityHeader) h['Client-Integrity'] = ClientIntegrityHeader;
+        if (AuthorizationHeader) h['Authorization'] = AuthorizationHeader;
+        return fetch('https://gql.twitch.tv/gql', { method: 'POST', headers: h, body: JSON.stringify(body) });
+    }
+    
+    async function _getToken(channel, type) {
+        return _gqlReq({
+            operationName: 'PlaybackAccessToken_Template',
+            query: 'query PlaybackAccessToken_Template($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!) { streamPlaybackAccessToken(channelName: $login, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isLive) { value signature __typename } videoPlaybackAccessToken(id: $vodID, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isVod) { value signature __typename }}',
+            variables: { isLive: true, login: channel, isVod: false, vodID: '', playerType: type }
+        });
+    }
+    
+
+    // ═══════════════════════════════════════════════════
+    // MODULE: PROCESSOR
+    // ═══════════════════════════════════════════════════
+
+    /**
+     * TTV AB - Processor Module
+     * M3U8 stream processing and ad replacement
+     * @private
+     */
+    async function _processM3U8(url, text, realFetch) {
+        if (!IsAdStrippingEnabled) return text;
+        const info = StreamInfosByUrl[url];
+        if (!info) return text;
+    
+        if (HasTriggeredPlayerReload) {
+            HasTriggeredPlayerReload = false;
+            info.LastPlayerReload = Date.now();
+        }
+    
+        const hasAds = text.includes(AdSignifier) || SimulatedAdsDepth > 0;
+    
+        if (hasAds) {
+            info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
+            if (!info.IsShowingAd) {
+                info.IsShowingAd = true;
+                _log('Ad detected, blocking...', 'warning');
+            }
+    
+            if (!info.IsMidroll) {
+                const lines = text.replaceAll('\r', '').split('\n');
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].startsWith('#EXTINF') && lines.length > i + 1) {
+                        if (!lines[i].includes(',live') && !info.RequestedAds.has(lines[i + 1])) {
+                            info.RequestedAds.add(lines[i + 1]);
+                            fetch(lines[i + 1]).then(r => r.blob()).catch(() => { });
+                            break;
+                        }
+                    }
+                }
+            }
+    
+            const res = info.Urls[url];
+            if (!res) { _log('Missing resolution info for ' + url, 'warning'); return text; }
+    
+            const isHevc = res.Codecs.startsWith('hev') || res.Codecs.startsWith('hvc');
+            if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
+                info.IsUsingModifiedM3U8 = true;
+                info.LastPlayerReload = Date.now();
+            }
+    
+            let backupType = null, backupM3u8 = null, fallbackM3u8 = null;
+            let startIdx = 0, minimal = false;
+    
+            if (info.LastPlayerReload > Date.now() - PlayerReloadMinimalRequestsTime) {
+                startIdx = PlayerReloadMinimalRequestsPlayerIndex;
+                minimal = true;
+            }
+    
+            for (let pi = startIdx; !backupM3u8 && pi < BackupPlayerTypes.length; pi++) {
+                const pt = BackupPlayerTypes[pi];
+                const realPt = pt.replace('-CACHED', '');
+                const cached = pt != realPt;
+    
+                for (let j = 0; j < 2; j++) {
+                    let fresh = false;
+                    let enc = info.BackupEncodingsM3U8Cache[pt];
+    
+                    if (!enc) {
+                        fresh = true;
+                        try {
+                            const tokenRes = await _getToken(info.ChannelName, realPt);
+                            if (tokenRes.status === 200) {
+                                const token = await tokenRes.json();
+                                if (token?.data?.streamPlaybackAccessToken?.signature) {
+                                    const u = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + info.ChannelName + '.m3u8' + info.UsherParams);
+                                    u.searchParams.set('sig', token.data.streamPlaybackAccessToken.signature);
+                                    u.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                                    const encRes = await realFetch(u.href);
+                                    if (encRes.status === 200) enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                                }
+                            }
+                        } catch (e) { _log('Error getting backup: ' + e.message, 'error'); }
+                    }
+    
+                    if (enc) {
+                        try {
+                            const streamUrl = _getStreamUrl(enc, res);
+                            const streamRes = await realFetch(streamUrl);
+                            if (streamRes.status == 200) {
+                                const m3u8 = await streamRes.text();
+                                if (m3u8) {
+                                    if (pt == FallbackPlayerType) fallbackM3u8 = m3u8;
+                                    if ((!m3u8.includes(AdSignifier) && (SimulatedAdsDepth == 0 || pi >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && pi >= BackupPlayerTypes.length - 1)) {
+                                        backupType = pt; backupM3u8 = m3u8; break;
+                                    }
+                                    if (cached) break;
+                                    if (minimal) { backupType = pt; backupM3u8 = m3u8; break; }
+                                }
+                            }
+                        } catch (e) { }
+                    }
+    
+                    info.BackupEncodingsM3U8Cache[pt] = null;
+                    if (fresh) break;
+                }
+            }
+    
+            if (!backupM3u8 && fallbackM3u8) { backupType = FallbackPlayerType; backupM3u8 = fallbackM3u8; }
+            if (backupM3u8) text = backupM3u8;
+    
+            if (info.ActiveBackupPlayerType != backupType) {
+                info.ActiveBackupPlayerType = backupType;
+                _log('Using backup player type: ' + backupType, 'info');
+            }
+    
+            text = _stripAds(text, false, info);
+        } else {
+            if (info.IsShowingAd) {
+                info.IsShowingAd = false;
+                info.IsUsingModifiedM3U8 = false;
+                info.RequestedAds.clear();
+                info.BackupEncodingsM3U8Cache = [];
+                info.ActiveBackupPlayerType = null;
+                _log('Ad ended', 'success');
+            }
+        }
+    
+        return text;
+    }
+    
+
+    // ═══════════════════════════════════════════════════
+    // MODULE: WORKER
+    // ═══════════════════════════════════════════════════
+
+    /**
+     * TTV AB - Worker Module
+     * Web Worker management and prototype manipulation
+     * @private
+     */
+    function _getWasmJs(url) {
+        const x = new XMLHttpRequest();
+        x.open('GET', url, false);
+        x.overrideMimeType("text/javascript");
+        x.send();
+        return x.responseText;
+    }
+    
+    function _cleanWorker(w) {
+        let root = null, parent = null, proto = w;
         while (proto) {
-            const workerString = proto.toString();
-            if (workerStringConflicts.some((x) => workerString.includes(x))) {
-                if (parent !== null) {
-                    Object.setPrototypeOf(parent, Object.getPrototypeOf(proto));
-                }
+            const s = proto.toString();
+            if (_S.conflicts.some(x => s.includes(x))) {
+                if (parent !== null) Object.setPrototypeOf(parent, Object.getPrototypeOf(proto));
             } else {
-                if (root === null) {
-                    root = proto;
-                }
+                if (root === null) root = proto;
                 parent = proto;
             }
             proto = Object.getPrototypeOf(proto);
         }
         return root;
     }
-
-    function getWorkersForReinsert(worker) {
-        const result = [];
-        let proto = worker;
-        while (proto) {
-            const workerString = proto.toString();
-            if (workerStringReinsert.some((x) => workerString.includes(x))) {
-                result.push(proto);
-            }
-            proto = Object.getPrototypeOf(proto);
+    
+    function _getReinsert(w) {
+        const r = [];
+        let p = w;
+        while (p) {
+            const s = p.toString();
+            if (_S.reinsertPatterns.some(x => s.includes(x))) r.push(p);
+            p = Object.getPrototypeOf(p);
         }
-        return result;
+        return r;
     }
-
-    function reinsertWorkers(worker, reinsert) {
-        let parent = worker;
-        for (let i = 0; i < reinsert.length; i++) {
-            Object.setPrototypeOf(reinsert[i], parent);
-            parent = reinsert[i];
-        }
-        return parent;
+    
+    function _reinsert(w, r) {
+        let p = w;
+        for (let i = 0; i < r.length; i++) { Object.setPrototypeOf(r[i], p); p = r[i]; }
+        return p;
     }
-
-    function isValidWorker(worker) {
-        const workerString = worker.toString();
-        return !workerStringConflicts.some((x) => workerString.includes(x))
-            || workerStringReinsert.some((x) => workerString.includes(x));
+    
+    function _isValid(w) {
+        const s = w.toString();
+        return !_S.conflicts.some(x => s.includes(x)) || _S.reinsertPatterns.some(x => s.includes(x));
     }
+    
 
-    // ===========================================
-    // M3U8 PARSING & MANIPULATION
-    // ===========================================
+    // ═══════════════════════════════════════════════════
+    // MODULE: HOOKS
+    // ═══════════════════════════════════════════════════
 
     /**
-     * Parses HLS tag attributes into key-value pairs
-     * @param {string} str - HLS tag string
-     * @returns {Object} Parsed attributes
+     * TTV AB - Hooks Module
+     * Fetch and Worker interception
+     * @private
      */
-    function parseAttributes(str) {
-        const result = {};
-        const regex = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
-        let match;
-        while ((match = regex.exec(str)) !== null) {
-            let value = match[2];
-            if (value.startsWith('"') && value.endsWith('"')) {
-                value = value.slice(1, -1);
-            }
-            result[match[1].toUpperCase()] = value;
-        }
-        return result;
-    }
-
-    /**
-     * Extracts server time from M3U8 manifest
-     */
-    function getServerTimeFromM3u8(encodingsM3u8) {
-        if (V2API) {
-            const matches = encodingsM3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
-            return matches && matches.length > 1 ? matches[1] : null;
-        }
-        const matches = encodingsM3u8.match('SERVER-TIME="([0-9.]+)"');
-        return matches && matches.length > 1 ? matches[1] : null;
-    }
-
-    /**
-     * Replaces server time in M3U8 manifest
-     */
-    function replaceServerTimeInM3u8(encodingsM3u8, newServerTime) {
-        if (V2API) {
-            return newServerTime ? encodingsM3u8.replace(/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/, `$1${newServerTime}$2`) : encodingsM3u8;
-        }
-        return newServerTime ? encodingsM3u8.replace(new RegExp('(SERVER-TIME=")[0-9.]+"'), `SERVER-TIME="${newServerTime}"`) : encodingsM3u8;
-    }
-
-    /**
-     * Removes ad segments from M3U8 playlist
-     * @param {string} textStr - M3U8 content
-     * @param {boolean} stripAllSegments - Whether to strip all segments
-     * @param {Object} streamInfo - Stream metadata
-     * @returns {string} Cleaned M3U8 content
-     */
-    function stripAdSegments(textStr, stripAllSegments, streamInfo) {
-        let hasStrippedAdSegments = false;
-        const lines = textStr.replaceAll('\r', '').split('\n');
-        const newAdUrl = 'https://twitch.tv';
-
-        for (let i = 0; i < lines.length; i++) {
-            let line = lines[i];
-            line = line
-                .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`)
-                .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`);
-            lines[i] = line;
-
-            if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAllSegments || AllSegmentsAreAdSegments)) {
-                const segmentUrl = lines[i + 1];
-                if (!AdSegmentCache.has(segmentUrl)) {
-                    streamInfo.NumStrippedAdSegments++;
-                }
-                AdSegmentCache.set(segmentUrl, Date.now());
-                hasStrippedAdSegments = true;
-            }
-
-            if (line.includes(AdSignifier)) {
-                hasStrippedAdSegments = true;
-            }
-        }
-
-        if (hasStrippedAdSegments) {
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
-                    lines[i] = '';
-                }
-            }
-        } else {
-            streamInfo.NumStrippedAdSegments = 0;
-        }
-
-        streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
-
-        AdSegmentCache.forEach((value, key, map) => {
-            if (value < Date.now() - 120000) {
-                map.delete(key);
-            }
-        });
-
-        return lines.join('\n');
-    }
-
-    function getStreamUrlForResolution(encodingsM3u8, resolutionInfo) {
-        const encodingsLines = encodingsM3u8.replaceAll('\r', '').split('\n');
-        const [targetWidth, targetHeight] = resolutionInfo.Resolution.split('x').map(Number);
-        let matchedResolutionUrl = null;
-        let matchedFrameRate = false;
-        let closestResolutionUrl = null;
-        let closestResolutionDifference = Infinity;
-
-        for (let i = 0; i < encodingsLines.length - 1; i++) {
-            if (encodingsLines[i].startsWith('#EXT-X-STREAM-INF') && encodingsLines[i + 1].includes('.m3u8')) {
-                const attributes = parseAttributes(encodingsLines[i]);
-                const resolution = attributes['RESOLUTION'];
-                const frameRate = attributes['FRAME-RATE'];
-
-                if (resolution) {
-                    if (resolution == resolutionInfo.Resolution && (!matchedResolutionUrl || (!matchedFrameRate && frameRate == resolutionInfo.FrameRate))) {
-                        matchedResolutionUrl = encodingsLines[i + 1];
-                        matchedFrameRate = frameRate == resolutionInfo.FrameRate;
-                        if (matchedFrameRate) {
-                            return matchedResolutionUrl;
-                        }
-                    }
-                    const [width, height] = resolution.split('x').map(Number);
-                    const difference = Math.abs((width * height) - (targetWidth * targetHeight));
-                    if (difference < closestResolutionDifference) {
-                        closestResolutionUrl = encodingsLines[i + 1];
-                        closestResolutionDifference = difference;
-                    }
-                }
-            }
-        }
-        return matchedResolutionUrl || closestResolutionUrl;
-    }
-
-    // ===========================================
-    // TWITCH API
-    // ===========================================
-
-    /**
-     * Makes a GraphQL request to Twitch API
-     * @param {Object} body - GraphQL query body
-     * @returns {Promise<Response>} Fetch response
-     */
-    async function gqlRequest(body) {
-        const headers = {
-            'Client-Id': ClientID,
-            'Content-Type': 'application/json'
-        };
-        if (GQLDeviceID) headers['X-Device-Id'] = GQLDeviceID;
-        if (ClientVersion) headers['Client-Version'] = ClientVersion;
-        if (ClientSession) headers['Client-Session-Id'] = ClientSession;
-        if (ClientIntegrityHeader) headers['Client-Integrity'] = ClientIntegrityHeader;
-        if (AuthorizationHeader) headers['Authorization'] = AuthorizationHeader;
-
-        return fetch('https://gql.twitch.tv/gql', {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(body)
-        });
-    }
-
-    async function getAccessToken(channelName, playerType) {
-        const query = {
-            operationName: 'PlaybackAccessToken_Template',
-            query: 'query PlaybackAccessToken_Template($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!) { streamPlaybackAccessToken(channelName: $login, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isLive) { value signature __typename } videoPlaybackAccessToken(id: $vodID, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isVod) { value signature __typename }}',
-            variables: {
-                isLive: true,
-                login: channelName,
-                isVod: false,
-                vodID: '',
-                playerType: playerType
-            }
-        };
-        return gqlRequest(query);
-    }
-
-    async function processM3U8(url, textStr, realFetch) {
-        // Skip ad blocking if disabled
-        if (!IsAdStrippingEnabled) {
-            return textStr;
-        }
-
-        const streamInfo = StreamInfosByUrl[url];
-        if (!streamInfo) {
-            return textStr;
-        }
-
-        if (HasTriggeredPlayerReload) {
-            HasTriggeredPlayerReload = false;
-            streamInfo.LastPlayerReload = Date.now();
-        }
-
-        const haveAdTags = textStr.includes(AdSignifier) || SimulatedAdsDepth > 0;
-
-        if (haveAdTags) {
-            streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
-
-            if (!streamInfo.IsShowingAd) {
-                streamInfo.IsShowingAd = true;
-                log('Ad detected, blocking...', 'warning');
-            }
-
-            if (!streamInfo.IsMidroll) {
-                const lines = textStr.replaceAll('\r', '').split('\n');
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i];
-                    if (line.startsWith('#EXTINF') && lines.length > i + 1) {
-                        if (!line.includes(',live') && !streamInfo.RequestedAds.has(lines[i + 1])) {
-                            streamInfo.RequestedAds.add(lines[i + 1]);
-                            fetch(lines[i + 1]).then((response) => { response.blob(); }).catch(() => { });
-                            break;
-                        }
-                    }
-                }
-            }
-
-            const currentResolution = streamInfo.Urls[url];
-            if (!currentResolution) {
-                log('Missing resolution info for ' + url, 'warning');
-                return textStr;
-            }
-
-            const isHevc = currentResolution.Codecs.startsWith('hev') || currentResolution.Codecs.startsWith('hvc');
-            if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && streamInfo.ModifiedM3U8 && !streamInfo.IsUsingModifiedM3U8) {
-                streamInfo.IsUsingModifiedM3U8 = true;
-                streamInfo.LastPlayerReload = Date.now();
-            }
-
-            let backupPlayerType = null;
-            let backupM3u8 = null;
-            let fallbackM3u8 = null;
-            let startIndex = 0;
-            let isDoingMinimalRequests = false;
-
-            if (streamInfo.LastPlayerReload > Date.now() - PlayerReloadMinimalRequestsTime) {
-                startIndex = PlayerReloadMinimalRequestsPlayerIndex;
-                isDoingMinimalRequests = true;
-            }
-
-            for (let playerTypeIndex = startIndex; !backupM3u8 && playerTypeIndex < BackupPlayerTypes.length; playerTypeIndex++) {
-                const playerType = BackupPlayerTypes[playerTypeIndex];
-                const realPlayerType = playerType.replace('-CACHED', '');
-                const isFullyCachedPlayerType = playerType != realPlayerType;
-
-                for (let i = 0; i < 2; i++) {
-                    let isFreshM3u8 = false;
-                    let encodingsM3u8 = streamInfo.BackupEncodingsM3U8Cache[playerType];
-
-                    if (!encodingsM3u8) {
-                        isFreshM3u8 = true;
-                        try {
-                            const accessTokenResponse = await getAccessToken(streamInfo.ChannelName, realPlayerType);
-                            if (accessTokenResponse.status === 200) {
-                                const accessToken = await accessTokenResponse.json();
-                                if (accessToken?.data?.streamPlaybackAccessToken?.signature) {
-                                    const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
-                                    urlInfo.searchParams.set('sig', accessToken.data.streamPlaybackAccessToken.signature);
-                                    urlInfo.searchParams.set('token', accessToken.data.streamPlaybackAccessToken.value);
-                                    const encodingsM3u8Response = await realFetch(urlInfo.href);
-                                    if (encodingsM3u8Response.status === 200) {
-                                        encodingsM3u8 = streamInfo.BackupEncodingsM3U8Cache[playerType] = await encodingsM3u8Response.text();
-                                    }
-                                }
-                            }
-                        } catch (err) {
-                            log('Error getting backup stream: ' + err.message, 'error');
-                        }
-                    }
-
-                    if (encodingsM3u8) {
-                        try {
-                            const streamM3u8Url = getStreamUrlForResolution(encodingsM3u8, currentResolution);
-                            const streamM3u8Response = await realFetch(streamM3u8Url);
-                            if (streamM3u8Response.status == 200) {
-                                const m3u8Text = await streamM3u8Response.text();
-                                if (m3u8Text) {
-                                    if (playerType == FallbackPlayerType) {
-                                        fallbackM3u8 = m3u8Text;
-                                    }
-                                    if ((!m3u8Text.includes(AdSignifier) && (SimulatedAdsDepth == 0 || playerTypeIndex >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && playerTypeIndex >= BackupPlayerTypes.length - 1)) {
-                                        backupPlayerType = playerType;
-                                        backupM3u8 = m3u8Text;
-                                        break;
-                                    }
-                                    if (isFullyCachedPlayerType) {
-                                        break;
-                                    }
-                                    if (isDoingMinimalRequests) {
-                                        backupPlayerType = playerType;
-                                        backupM3u8 = m3u8Text;
-                                        break;
-                                    }
-                                }
-                            }
-                        } catch (err) { }
-                    }
-
-                    streamInfo.BackupEncodingsM3U8Cache[playerType] = null;
-                    if (isFreshM3u8) {
-                        break;
-                    }
-                }
-            }
-
-            if (!backupM3u8 && fallbackM3u8) {
-                backupPlayerType = FallbackPlayerType;
-                backupM3u8 = fallbackM3u8;
-            }
-
-            if (backupM3u8) {
-                textStr = backupM3u8;
-            }
-
-            if (streamInfo.ActiveBackupPlayerType != backupPlayerType) {
-                streamInfo.ActiveBackupPlayerType = backupPlayerType;
-                log('Using backup player type: ' + backupPlayerType, 'info');
-            }
-
-            textStr = stripAdSegments(textStr, false, streamInfo);
-
-        } else {
-            if (streamInfo.IsShowingAd) {
-                streamInfo.IsShowingAd = false;
-                streamInfo.IsUsingModifiedM3U8 = false;
-                streamInfo.RequestedAds.clear();
-                streamInfo.BackupEncodingsM3U8Cache = [];
-                streamInfo.ActiveBackupPlayerType = null;
-                log('Ad ended', 'success');
-            }
-        }
-
-        return textStr;
-    }
-
-    function getWasmWorkerJs(twitchBlobUrl) {
-        const req = new XMLHttpRequest();
-        req.open('GET', twitchBlobUrl, false);
-        req.overrideMimeType("text/javascript");
-        req.send();
-        return req.responseText;
-    }
-
-    // ===========================================
-    // FETCH HOOKS
-    // ===========================================
-
-    /**
-     * Hooks worker fetch to intercept M3U8 requests
-     */
-    function hookWorkerFetch() {
-        log('Worker fetch hooked', 'info');
-        const realFetch = fetch;
-        fetch = async function (url, options) {
+    function _hookWorkerFetch() {
+        _log('Worker fetch hooked', 'info');
+        const real = fetch;
+        fetch = async function (url, opts) {
             if (typeof url === 'string') {
                 if (AdSegmentCache.has(url)) {
-                    return new Promise(function (resolve, reject) {
-                        realFetch('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', options).then(function (response) {
-                            resolve(response);
-                        }).catch(function (err) {
-                            reject(err);
-                        });
+                    return new Promise((res, rej) => {
+                        real('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts)
+                            .then(r => res(r)).catch(e => rej(e));
                     });
                 }
-
+    
                 url = url.trimEnd();
                 if (url.endsWith('m3u8')) {
-                    return new Promise(function (resolve, reject) {
-                        const processAfter = async function (response) {
-                            if (response.status === 200) {
-                                resolve(new Response(await processM3U8(url, await response.text(), realFetch)));
-                            } else {
-                                resolve(response);
-                            }
+                    return new Promise((res, rej) => {
+                        const proc = async (r) => {
+                            if (r.status === 200) res(new Response(await _processM3U8(url, await r.text(), real)));
+                            else res(r);
                         };
-                        realFetch(url, options).then(function (response) {
-                            processAfter(response);
-                        }).catch(function (err) {
-                            reject(err);
-                        });
+                        real(url, opts).then(r => proc(r)).catch(e => rej(e));
                     });
                 } else if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
                     V2API = url.includes('/api/v2/');
-                    const channelName = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
-
+                    const ch = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
+    
                     if (ForceAccessTokenPlayerType) {
-                        const tempUrl = new URL(url);
-                        tempUrl.searchParams.delete('parent_domains');
-                        url = tempUrl.toString();
+                        const t = new URL(url);
+                        t.searchParams.delete('parent_domains');
+                        url = t.toString();
                     }
-
-                    return new Promise(function (resolve, reject) {
-                        const processAfter = async function (response) {
-                            if (response.status == 200) {
-                                const encodingsM3u8 = await response.text();
-                                const serverTime = getServerTimeFromM3u8(encodingsM3u8);
-                                let streamInfo = StreamInfos[channelName];
-
-                                if (streamInfo != null && streamInfo.EncodingsM3U8 != null && (await realFetch(streamInfo.EncodingsM3U8.match(/^https:.*\.m3u8$/m)[0])).status !== 200) {
-                                    streamInfo = null;
+    
+                    return new Promise((res, rej) => {
+                        const proc = async (r) => {
+                            if (r.status == 200) {
+                                const enc = await r.text();
+                                const time = _getServerTime(enc);
+                                let info = StreamInfos[ch];
+    
+                                if (info != null && info.EncodingsM3U8 != null && (await real(info.EncodingsM3U8.match(/^https:.*\.m3u8$/m)[0])).status !== 200) {
+                                    info = null;
                                 }
-
-                                if (streamInfo == null || streamInfo.EncodingsM3U8 == null) {
-                                    StreamInfos[channelName] = streamInfo = {
-                                        ChannelName: channelName,
-                                        IsShowingAd: false,
-                                        LastPlayerReload: 0,
-                                        EncodingsM3U8: encodingsM3u8,
-                                        ModifiedM3U8: null,
-                                        IsUsingModifiedM3U8: false,
-                                        UsherParams: (new URL(url)).search,
-                                        RequestedAds: new Set(),
-                                        Urls: [],
-                                        ResolutionList: [],
-                                        BackupEncodingsM3U8Cache: [],
-                                        ActiveBackupPlayerType: null,
-                                        IsMidroll: false,
-                                        IsStrippingAdSegments: false,
-                                        NumStrippedAdSegments: 0
+    
+                                if (info == null || info.EncodingsM3U8 == null) {
+                                    StreamInfos[ch] = info = {
+                                        ChannelName: ch, IsShowingAd: false, LastPlayerReload: 0,
+                                        EncodingsM3U8: enc, ModifiedM3U8: null, IsUsingModifiedM3U8: false,
+                                        UsherParams: (new URL(url)).search, RequestedAds: new Set(),
+                                        Urls: [], ResolutionList: [], BackupEncodingsM3U8Cache: [],
+                                        ActiveBackupPlayerType: null, IsMidroll: false,
+                                        IsStrippingAdSegments: false, NumStrippedAdSegments: 0
                                     };
-
-                                    const lines = encodingsM3u8.replaceAll('\r', '').split('\n');
+    
+                                    const lines = enc.replaceAll('\r', '').split('\n');
                                     for (let i = 0; i < lines.length - 1; i++) {
                                         if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
-                                            const attributes = parseAttributes(lines[i]);
-                                            const resolution = attributes['RESOLUTION'];
-                                            if (resolution) {
-                                                const resolutionInfo = {
-                                                    Resolution: resolution,
-                                                    FrameRate: attributes['FRAME-RATE'],
-                                                    Codecs: attributes['CODECS'],
-                                                    Url: lines[i + 1]
-                                                };
-                                                streamInfo.Urls[lines[i + 1]] = resolutionInfo;
-                                                streamInfo.ResolutionList.push(resolutionInfo);
+                                            const a = _parseAttrs(lines[i]);
+                                            const rs = a['RESOLUTION'];
+                                            if (rs) {
+                                                const ri = { Resolution: rs, FrameRate: a['FRAME-RATE'], Codecs: a['CODECS'], Url: lines[i + 1] };
+                                                info.Urls[lines[i + 1]] = ri;
+                                                info.ResolutionList.push(ri);
                                             }
-                                            StreamInfosByUrl[lines[i + 1]] = streamInfo;
+                                            StreamInfosByUrl[lines[i + 1]] = info;
                                         }
                                     }
-
-                                    log('Stream initialized: ' + channelName, 'success');
+                                    _log('Stream initialized: ' + ch, 'success');
                                 }
-
-                                streamInfo.LastPlayerReload = Date.now();
-                                resolve(new Response(replaceServerTimeInM3u8(streamInfo.IsUsingModifiedM3U8 ? streamInfo.ModifiedM3U8 : streamInfo.EncodingsM3U8, serverTime)));
+    
+                                info.LastPlayerReload = Date.now();
+                                res(new Response(_replaceServerTime(info.IsUsingModifiedM3U8 ? info.ModifiedM3U8 : info.EncodingsM3U8, time)));
                             } else {
-                                resolve(response);
+                                res(r);
                             }
                         };
-
-                        realFetch(url, options).then(function (response) {
-                            processAfter(response);
-                        }).catch(function (err) {
-                            reject(err);
-                        });
+                        real(url, opts).then(r => proc(r)).catch(e => rej(e));
                     });
                 }
             }
-            return realFetch.apply(this, arguments);
+            return real.apply(this, arguments);
         };
     }
-
-    function hookWindowWorker() {
-        const reinsert = getWorkersForReinsert(window.Worker);
-        const newWorker = class Worker extends getCleanWorker(window.Worker) {
-            constructor(twitchBlobUrl, options) {
-                let isTwitchWorker = false;
-                try {
-                    isTwitchWorker = new URL(twitchBlobUrl).origin.endsWith('.twitch.tv');
-                } catch { }
-
-                if (!isTwitchWorker) {
-                    super(twitchBlobUrl, options);
-                    return;
-                }
-
-                const newBlobStr = `
-                const LOG_STYLES = ${JSON.stringify(LOG_STYLES)};
-                ${log.toString()}
-                ${declareOptions.toString()}
-                ${parseAttributes.toString()}
-                ${getServerTimeFromM3u8.toString()}
-                ${replaceServerTimeInM3u8.toString()}
-                ${stripAdSegments.toString()}
-                ${getStreamUrlForResolution.toString()}
-                ${gqlRequest.toString()}
-                ${getAccessToken.toString()}
-                ${processM3U8.toString()}
-                ${getWasmWorkerJs.toString()}
-                ${hookWorkerFetch.toString()}
-                
-                const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
-                declareOptions(self);
-                GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
-                AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
-                ClientIntegrityHeader = ${ClientIntegrityHeader ? "'" + ClientIntegrityHeader + "'" : null};
-                ClientVersion = ${ClientVersion ? "'" + ClientVersion + "'" : null};
-                ClientSession = ${ClientSession ? "'" + ClientSession + "'" : null};
-                
-                self.addEventListener('message', function(e) {
-                    if (e.data.key == 'UpdateClientVersion') {
-                        ClientVersion = e.data.value;
-                    } else if (e.data.key == 'UpdateClientSession') {
-                        ClientSession = e.data.value;
-                    } else if (e.data.key == 'UpdateClientId') {
-                        ClientID = e.data.value;
-                    } else if (e.data.key == 'UpdateDeviceId') {
-                        GQLDeviceID = e.data.value;
-                    } else if (e.data.key == 'UpdateClientIntegrityHeader') {
-                        ClientIntegrityHeader = e.data.value;
-                    } else if (e.data.key == 'UpdateAuthorizationHeader') {
-                        AuthorizationHeader = e.data.value;
-                    }
-                });
-                
-                hookWorkerFetch();
-                eval(workerString);
-            `;
-
-                super(URL.createObjectURL(new Blob([newBlobStr])), options);
-                twitchWorkers.push(this);
+    
+    function _hookWorker() {
+        const reins = _getReinsert(window.Worker);
+        const W = class Worker extends _cleanWorker(window.Worker) {
+            constructor(url, opts) {
+                let tw = false;
+                try { tw = new URL(url).origin.endsWith('.twitch.tv'); } catch { }
+                if (!tw) { super(url, opts); return; }
+    
+                const blob = `
+                    const _C = ${JSON.stringify(_C)};
+                    const _S = ${JSON.stringify(_S)};
+                    ${_log.toString()}
+                    ${_declareState.toString()}
+                    ${_parseAttrs.toString()}
+                    ${_getServerTime.toString()}
+                    ${_replaceServerTime.toString()}
+                    ${_stripAds.toString()}
+                    ${_getStreamUrl.toString()}
+                    ${_gqlReq.toString()}
+                    ${_getToken.toString()}
+                    ${_processM3U8.toString()}
+                    ${_getWasmJs.toString()}
+                    ${_hookWorkerFetch.toString()}
+                    
+                    const ws = _getWasmJs('${url.replaceAll("'", "%27")}');
+                    _declareState(self);
+                    GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
+                    AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
+                    ClientIntegrityHeader = ${ClientIntegrityHeader ? "'" + ClientIntegrityHeader + "'" : null};
+                    ClientVersion = ${ClientVersion ? "'" + ClientVersion + "'" : null};
+                    ClientSession = ${ClientSession ? "'" + ClientSession + "'" : null};
+                    
+                    self.addEventListener('message', function(e) {
+                        if (e.data.key == 'UpdateClientVersion') ClientVersion = e.data.value;
+                        else if (e.data.key == 'UpdateClientSession') ClientSession = e.data.value;
+                        else if (e.data.key == 'UpdateClientId') ClientID = e.data.value;
+                        else if (e.data.key == 'UpdateDeviceId') GQLDeviceID = e.data.value;
+                        else if (e.data.key == 'UpdateClientIntegrityHeader') ClientIntegrityHeader = e.data.value;
+                        else if (e.data.key == 'UpdateAuthorizationHeader') AuthorizationHeader = e.data.value;
+                    });
+                    
+                    _hookWorkerFetch();
+                    eval(ws);
+                `;
+    
+                super(URL.createObjectURL(new Blob([blob])), opts);
+                _S.workers.push(this);
             }
         };
-
-        let workerInstance = reinsertWorkers(newWorker, reinsert);
+    
+        let inst = _reinsert(W, reins);
         Object.defineProperty(window, 'Worker', {
-            get: function () {
-                return workerInstance;
-            },
-            set: function (value) {
-                if (isValidWorker(value)) {
-                    workerInstance = value;
-                }
-            }
+            get: () => inst,
+            set: (v) => { if (_isValid(v)) inst = v; }
         });
     }
-
-    // Hook localStorage to get device ID
-    function hookLocalStorage() {
+    
+    function _hookStorage() {
         try {
-            const originalGetItem = localStorage.getItem.bind(localStorage);
-            localStorage.getItem = function (key) {
-                const value = originalGetItem(key);
-                if (key === 'unique_id' && value) {
-                    GQLDeviceID = value;
-                }
-                return value;
+            const orig = localStorage.getItem.bind(localStorage);
+            localStorage.getItem = function (k) {
+                const v = orig(k);
+                if (k === 'unique_id' && v) GQLDeviceID = v;
+                return v;
             };
-
-            // Try to get existing device ID
-            const existingId = originalGetItem('unique_id');
-            if (existingId) {
-                GQLDeviceID = existingId;
-            }
-        } catch (e) {
-            // localStorage hook failed, continue without it
-        }
+            const id = orig('unique_id');
+            if (id) GQLDeviceID = id;
+        } catch (e) { }
     }
-
-    /**
-     * Hooks main thread fetch to capture Twitch API headers
-     */
-    function hookMainFetch() {
-        const realFetch = window.fetch;
-        window.fetch = async function (url, options) {
+    
+    function _hookMainFetch() {
+        const real = window.fetch;
+        window.fetch = async function (url, opts) {
             if (typeof url === 'string' || url instanceof URL) {
-                const urlStr = url.toString();
-                if (urlStr.includes('gql.twitch.tv/gql')) {
-                    const response = await realFetch.apply(this, arguments);
-
-                    // Extract headers for worker
-                    if (options && options.headers) {
-                        const headers = options.headers;
-                        if (headers['Client-Integrity']) {
-                            ClientIntegrityHeader = headers['Client-Integrity'];
-                            twitchWorkers.forEach(w => w.postMessage({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader }));
-                        }
-                        if (headers['Authorization']) {
-                            AuthorizationHeader = headers['Authorization'];
-                            twitchWorkers.forEach(w => w.postMessage({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader }));
-                        }
-                        if (headers['Client-Version']) {
-                            ClientVersion = headers['Client-Version'];
-                            twitchWorkers.forEach(w => w.postMessage({ key: 'UpdateClientVersion', value: ClientVersion }));
-                        }
-                        if (headers['Client-Session-Id']) {
-                            ClientSession = headers['Client-Session-Id'];
-                            twitchWorkers.forEach(w => w.postMessage({ key: 'UpdateClientSession', value: ClientSession }));
-                        }
-                        if (headers['X-Device-Id']) {
-                            GQLDeviceID = headers['X-Device-Id'];
-                            twitchWorkers.forEach(w => w.postMessage({ key: 'UpdateDeviceId', value: GQLDeviceID }));
-                        }
+                const u = url.toString();
+                if (u.includes('gql.twitch.tv/gql')) {
+                    const r = await real.apply(this, arguments);
+                    if (opts && opts.headers) {
+                        const h = opts.headers;
+                        if (h['Client-Integrity']) { ClientIntegrityHeader = h['Client-Integrity']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader })); }
+                        if (h['Authorization']) { AuthorizationHeader = h['Authorization']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader })); }
+                        if (h['Client-Version']) { ClientVersion = h['Client-Version']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientVersion', value: ClientVersion })); }
+                        if (h['Client-Session-Id']) { ClientSession = h['Client-Session-Id']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientSession', value: ClientSession })); }
+                        if (h['X-Device-Id']) { GQLDeviceID = h['X-Device-Id']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateDeviceId', value: GQLDeviceID })); }
                     }
-
-                    return response;
+                    return r;
                 }
             }
-            return realFetch.apply(this, arguments);
+            return real.apply(this, arguments);
         };
     }
+    
 
-    // ===========================================
-    // UI COMPONENTS
-    // ===========================================
+    // ═══════════════════════════════════════════════════
+    // MODULE: UI
+    // ═══════════════════════════════════════════════════
 
     /**
-     * Shows a non-intrusive daily donation reminder toast
-     * Displays once per day, auto-dismisses after 15 seconds
+     * TTV AB - UI Module
+     * Toast notifications and user interface components
+     * @private
      */
-    function showDonationReminder() {
-        const STORAGE_KEY = 'ttvab_last_reminder';
-        const ONE_DAY = 24 * 60 * 60 * 1000;
-
+    function _showDonation() {
+        const K = 'ttvab_last_reminder', D = 86400000;
         try {
-            const lastShown = localStorage.getItem(STORAGE_KEY);
-            const now = Date.now();
-
-            if (lastShown && (now - parseInt(lastShown)) < ONE_DAY) {
-                return; // Already shown today
-            }
-
-            // Wait for page to load
+            const last = localStorage.getItem(K), now = Date.now();
+            if (last && (now - parseInt(last)) < D) return;
             setTimeout(() => {
-                const toast = document.createElement('div');
-                toast.id = 'ttvab-reminder';
-                toast.innerHTML = `
-                <style>
-                    #ttvab-reminder {
-                        position: fixed;
-                        bottom: 20px;
-                        right: 20px;
-                        background: linear-gradient(135deg, #9146FF 0%, #772CE8 100%);
-                        color: white;
-                        padding: 16px 20px;
-                        border-radius: 12px;
-                        font-family: 'Segoe UI', sans-serif;
-                        font-size: 14px;
-                        max-width: 320px;
-                        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-                        z-index: 999999;
-                        animation: ttvab-slide-in 0.3s ease;
-                    }
-                    @keyframes ttvab-slide-in {
-                        from { opacity: 0; transform: translateY(20px); }
-                        to { opacity: 1; transform: translateY(0); }
-                    }
-                    #ttvab-reminder-close {
-                        position: absolute;
-                        top: 8px;
-                        right: 10px;
-                        background: none;
-                        border: none;
-                        color: rgba(255,255,255,0.7);
-                        font-size: 18px;
-                        cursor: pointer;
-                        padding: 0;
-                        line-height: 1;
-                    }
-                    #ttvab-reminder-close:hover { color: white; }
-                    #ttvab-reminder-btn {
-                        display: inline-block;
-                        margin-top: 10px;
-                        padding: 8px 16px;
-                        background: white;
-                        color: #772CE8;
-                        border: none;
-                        border-radius: 6px;
-                        font-weight: 600;
-                        cursor: pointer;
-                        font-size: 13px;
-                    }
-                    #ttvab-reminder-btn:hover { background: #f0f0f0; }
-                </style>
-                <button id="ttvab-reminder-close">×</button>
-                <div style="margin-bottom:4px;font-weight:600;">💜 Enjoying TTV AB?</div>
-                <div style="opacity:0.9;">If this extension saves you from ads, consider buying me a coffee!</div>
-                <button id="ttvab-reminder-btn">Support the Developer</button>
-            `;
-
-                document.body.appendChild(toast);
-                localStorage.setItem(STORAGE_KEY, now.toString());
-
-                document.getElementById('ttvab-reminder-close').onclick = () => toast.remove();
-                document.getElementById('ttvab-reminder-btn').onclick = () => {
-                    window.open('https://paypal.me/GosuDRM', '_blank');
-                    toast.remove();
-                };
-
-                // Auto-dismiss after 15 seconds
-                setTimeout(() => {
-                    if (document.getElementById('ttvab-reminder')) {
-                        toast.style.animation = 'ttvab-slide-in 0.3s ease reverse';
-                        setTimeout(() => toast.remove(), 300);
-                    }
-                }, 15000);
-
-            }, 5000); // Show after 5 seconds
-        } catch (e) {
-            // localStorage not available, skip reminder
-        }
+                const t = document.createElement('div');
+                t.id = 'ttvab-reminder';
+                t.innerHTML = `<style>#ttvab-reminder{position:fixed;bottom:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:16px 20px;border-radius:12px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:999999;animation:ttvab-slide .3s ease}@keyframes ttvab-slide{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}#ttvab-reminder-close{position:absolute;top:8px;right:10px;background:none;border:none;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;padding:0;line-height:1}#ttvab-reminder-close:hover{color:#fff}#ttvab-reminder-btn{display:inline-block;margin-top:10px;padding:8px 16px;background:#fff;color:#772CE8;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px}#ttvab-reminder-btn:hover{background:#f0f0f0}</style><button id="ttvab-reminder-close">×</button><div style="margin-bottom:4px;font-weight:600">💜 Enjoying TTV AB?</div><div style="opacity:.9">If this extension saves you from ads, consider buying me a coffee!</div><button id="ttvab-reminder-btn">Support the Developer</button>`;
+                document.body.appendChild(t);
+                localStorage.setItem(K, now.toString());
+                document.getElementById('ttvab-reminder-close').onclick = () => t.remove();
+                document.getElementById('ttvab-reminder-btn').onclick = () => { window.open('https://paypal.me/GosuDRM', '_blank'); t.remove(); };
+                setTimeout(() => { if (document.getElementById('ttvab-reminder')) { t.style.animation = 'ttvab-slide .3s ease reverse'; setTimeout(() => t.remove(), 300); } }, 15000);
+            }, 5000);
+        } catch (e) { }
     }
-
-    // ===========================================
-    // INITIALIZATION
-    // ===========================================
-
-    /**
-     * Shows first-run welcome message with pin reminder
-     * Only displays once on first install
-     */
-    function showFirstRunMessage() {
-        const STORAGE_KEY = 'ttvab_first_run_shown';
-
+    
+    function _showWelcome() {
+        const K = 'ttvab_first_run_shown';
         try {
-            if (localStorage.getItem(STORAGE_KEY)) {
-                return;
-            }
-
+            if (localStorage.getItem(K)) return;
             setTimeout(() => {
-                const toast = document.createElement('div');
-                toast.id = 'ttvab-welcome';
-                toast.innerHTML = `
-                    <style>
-                        #ttvab-welcome {
-                            position: fixed;
-                            top: 20px;
-                            right: 20px;
-                            background: linear-gradient(135deg, #9146FF 0%, #772CE8 100%);
-                            color: white;
-                            padding: 20px 24px;
-                            border-radius: 16px;
-                            font-family: 'Segoe UI', sans-serif;
-                            font-size: 14px;
-                            max-width: 340px;
-                            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-                            z-index: 999999;
-                            animation: ttvab-welcome-in 0.4s ease;
-                        }
-                        @keyframes ttvab-welcome-in {
-                            from { opacity: 0; transform: translateY(-20px) scale(0.95); }
-                            to { opacity: 1; transform: translateY(0) scale(1); }
-                        }
-                        #ttvab-welcome-close {
-                            position: absolute;
-                            top: 10px;
-                            right: 12px;
-                            background: none;
-                            border: none;
-                            color: rgba(255,255,255,0.7);
-                            font-size: 20px;
-                            cursor: pointer;
-                            padding: 0;
-                            line-height: 1;
-                        }
-                        #ttvab-welcome-close:hover { color: white; }
-                        #ttvab-welcome h3 {
-                            margin: 0 0 8px 0;
-                            font-size: 18px;
-                        }
-                        #ttvab-welcome p {
-                            margin: 0 0 12px 0;
-                            opacity: 0.9;
-                            line-height: 1.4;
-                        }
-                        #ttvab-welcome .pin-tip {
-                            background: rgba(255,255,255,0.15);
-                            padding: 10px 12px;
-                            border-radius: 8px;
-                            font-size: 13px;
-                        }
-                        #ttvab-welcome .pin-tip strong {
-                            color: #fff;
-                        }
-                    </style>
-                    <button id="ttvab-welcome-close">×</button>
-                    <h3>🎉 TTV AB Installed!</h3>
-                    <p>Ads will now be blocked automatically on Twitch streams.</p>
-                    <div class="pin-tip">
-                        <strong>💡 Tip:</strong> Pin this extension for easy access!<br>
-                        Click 🧩 → Find TTV AB → Click 📌
-                    </div>
-                `;
-
-                document.body.appendChild(toast);
-                localStorage.setItem(STORAGE_KEY, 'true');
-
-                document.getElementById('ttvab-welcome-close').onclick = () => {
-                    toast.style.animation = 'ttvab-welcome-in 0.3s ease reverse';
-                    setTimeout(() => toast.remove(), 300);
-                };
-
-                // Auto-dismiss after 20 seconds
-                setTimeout(() => {
-                    if (document.getElementById('ttvab-welcome')) {
-                        toast.style.animation = 'ttvab-welcome-in 0.3s ease reverse';
-                        setTimeout(() => toast.remove(), 300);
-                    }
-                }, 20000);
-
+                const t = document.createElement('div');
+                t.id = 'ttvab-welcome';
+                t.innerHTML = `<style>#ttvab-welcome{position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:20px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:999999;animation:ttvab-w .4s ease}@keyframes ttvab-w{from{opacity:0;transform:translateY(-20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}#ttvab-welcome-close{position:absolute;top:10px;right:12px;background:none;border:none;color:rgba(255,255,255,.7);font-size:20px;cursor:pointer;padding:0;line-height:1}#ttvab-welcome-close:hover{color:#fff}#ttvab-welcome h3{margin:0 0 8px;font-size:18px}#ttvab-welcome p{margin:0 0 12px;opacity:.9;line-height:1.4}#ttvab-welcome .pin-tip{background:rgba(255,255,255,.15);padding:10px 12px;border-radius:8px;font-size:13px}#ttvab-welcome .pin-tip strong{color:#fff}</style><button id="ttvab-welcome-close">×</button><h3>🎉 TTV AB Installed!</h3><p>Ads will now be blocked automatically on Twitch streams.</p><div class="pin-tip"><strong>💡 Tip:</strong> Pin this extension for easy access!<br>Click 🧩 → Find TTV AB → Click 📌</div>`;
+                document.body.appendChild(t);
+                localStorage.setItem(K, 'true');
+                document.getElementById('ttvab-welcome-close').onclick = () => { t.style.animation = 'ttvab-w .3s ease reverse'; setTimeout(() => t.remove(), 300); };
+                setTimeout(() => { if (document.getElementById('ttvab-welcome')) { t.style.animation = 'ttvab-w .3s ease reverse'; setTimeout(() => t.remove(), 300); } }, 20000);
             }, 2000);
-        } catch (e) {
-            // localStorage unavailable
-        }
+        } catch (e) { }
     }
+    
 
-    // ===========================================
-    // PLAYER CRASH DETECTION & AUTO-REFRESH
-    // ===========================================
+    // ═══════════════════════════════════════════════════
+    // MODULE: MONITOR
+    // ═══════════════════════════════════════════════════
 
     /**
-     * Monitors for Twitch player crashes and automatically refreshes the page
-     * Detects error messages like "Error #2000" (network error) and similar
+     * TTV AB - Monitor Module
+     * Player crash detection and auto-refresh
+     * @private
      */
-    function initPlayerCrashMonitor() {
-        const ERROR_PATTERNS = [
-            'Error #1000',
-            'Error #2000',
-            'Error #3000',
-            'Error #4000',
-            'Error #5000',
-            'network error',
-            'content is not available'
-        ];
-
-        const REFRESH_DELAY = 1500; // 1.5 seconds delay before refresh
-        let isRefreshing = false;
-        let crashCheckInterval = null;
-
-        /**
-         * Checks if the player has crashed by looking for error indicators
-         * @returns {boolean} True if crash detected
-         */
-        function detectPlayerCrash() {
-            // Look for error text content on the page
-            const pageText = document.body?.innerText || '';
-            for (const pattern of ERROR_PATTERNS) {
-                if (pageText.toLowerCase().includes(pattern.toLowerCase())) {
-                    return pattern;
+    function _initCrashMonitor() {
+        let refreshing = false, interval = null;
+    
+        function detect() {
+            const text = document.body?.innerText || '';
+            for (const p of _C.CRASH_PATTERNS) {
+                if (text.toLowerCase().includes(p.toLowerCase())) return p;
+            }
+            const els = document.querySelectorAll('[data-a-target="player-overlay-content-gate"],[data-a-target="player-error-modal"],.content-overlay-gate,.player-error');
+            for (const el of els) {
+                const t = el.innerText || '';
+                for (const p of _C.CRASH_PATTERNS) {
+                    if (t.toLowerCase().includes(p.toLowerCase())) return p;
                 }
             }
-
-            // Look for Twitch's error overlay elements
-            const errorElements = document.querySelectorAll(
-                '[data-a-target="player-overlay-content-gate"], ' +
-                '[data-a-target="player-error-modal"], ' +
-                '.content-overlay-gate, ' +
-                '.player-error'
-            );
-
-            for (const el of errorElements) {
-                const text = el.innerText || '';
-                for (const pattern of ERROR_PATTERNS) {
-                    if (text.toLowerCase().includes(pattern.toLowerCase())) {
-                        return pattern;
-                    }
-                }
-            }
-
             return null;
         }
-
-        /**
-         * Handles player crash by showing a notification and refreshing
-         * @param {string} errorType - The detected error pattern
-         */
-        function handlePlayerCrash(errorType) {
-            if (isRefreshing) return;
-            isRefreshing = true;
-
-            log('Player crash detected: ' + errorType, 'error');
-            log('Auto-refreshing page in ' + (REFRESH_DELAY / 1000) + ' seconds...', 'warning');
-
-            // Show a brief notification
-            const toast = document.createElement('div');
-            toast.innerHTML = `
-                <style>
-                    #ttvab-refresh-notice {
-                        position: fixed;
-                        top: 20px;
-                        left: 50%;
-                        transform: translateX(-50%);
-                        background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
-                        color: white;
-                        padding: 12px 24px;
-                        border-radius: 8px;
-                        font-family: 'Segoe UI', sans-serif;
-                        font-size: 14px;
-                        font-weight: 500;
-                        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-                        z-index: 9999999;
-                        animation: ttvab-pulse 1s ease infinite;
-                    }
-                    @keyframes ttvab-pulse {
-                        0%, 100% { opacity: 1; }
-                        50% { opacity: 0.7; }
-                    }
-                </style>
-                <div id="ttvab-refresh-notice">
-                    ⚠️ Player crashed - Refreshing automatically...
-                </div>
-            `;
-            document.body.appendChild(toast);
-
-            // Refresh after delay
-            setTimeout(() => {
-                window.location.reload();
-            }, REFRESH_DELAY);
+    
+        function handle(err) {
+            if (refreshing) return;
+            refreshing = true;
+            _log('Player crash detected: ' + err, 'error');
+            _log('Auto-refreshing in ' + (_C.REFRESH_DELAY / 1000) + 's...', 'warning');
+            const t = document.createElement('div');
+            t.innerHTML = `<style>#ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-p 1s ease infinite}@keyframes ttvab-p{0%,100%{opacity:1}50%{opacity:.7}}</style><div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing automatically...</div>`;
+            document.body.appendChild(t);
+            setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
         }
-
-        // Use MutationObserver to detect changes that might indicate a crash
-        const observer = new MutationObserver(() => {
-            const error = detectPlayerCrash();
-            if (error) {
-                handlePlayerCrash(error);
-                observer.disconnect();
-                if (crashCheckInterval) {
-                    clearInterval(crashCheckInterval);
-                }
-            }
+    
+        const obs = new MutationObserver(() => {
+            const e = detect();
+            if (e) { handle(e); obs.disconnect(); if (interval) clearInterval(interval); }
         });
-
-        // Start observing once DOM is ready
-        function startObserving() {
+    
+        function start() {
             if (document.body) {
-                observer.observe(document.body, {
-                    childList: true,
-                    subtree: true,
-                    characterData: true
-                });
-
-                // Also do periodic checks as a fallback
-                crashCheckInterval = setInterval(() => {
-                    const error = detectPlayerCrash();
-                    if (error) {
-                        handlePlayerCrash(error);
-                        observer.disconnect();
-                        clearInterval(crashCheckInterval);
-                    }
-                }, 5000); // Check every 5 seconds
-
-                log('Player crash monitor active', 'info');
+                obs.observe(document.body, { childList: true, subtree: true, characterData: true });
+                interval = setInterval(() => {
+                    const e = detect();
+                    if (e) { handle(e); obs.disconnect(); clearInterval(interval); }
+                }, 5000);
+                _log('Player crash monitor active', 'info');
             } else {
-                setTimeout(startObserving, 100);
+                setTimeout(start, 100);
             }
         }
-
-        startObserving();
+        start();
     }
+    
 
-    initPlayerCrashMonitor();
+    // ═══════════════════════════════════════════════════
+    // MODULE: INIT
+    // ═══════════════════════════════════════════════════
 
-    // Listen for toggle events from bridge script
-    window.addEventListener('ttvab-toggle', function (e) {
-        const enabled = e.detail?.enabled ?? true;
-        IsAdStrippingEnabled = enabled;
-        log('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
-    });
+    /**
+     * TTV AB - Init Module
+     * Bootstrap and initialization
+     * @private
+     */
+    function _bootstrap() {
+        if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _C.INTERNAL_VERSION) {
+            _log('Skipping - another script is active', 'warning');
+            return false;
+        }
+        window.ttvabVersion = _C.INTERNAL_VERSION;
+        _log('v' + _C.VERSION + ' loaded', 'info');
+        return true;
+    }
+    
+    function _initToggleListener() {
+        window.addEventListener('ttvab-toggle', function (e) {
+            const enabled = e.detail?.enabled ?? true;
+            IsAdStrippingEnabled = enabled;
+            _log('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
+        });
+    }
+    
+    function _init() {
+        if (!_bootstrap()) return;
+        _declareState(window);
+        _hookStorage();
+        _hookWorker();
+        _hookMainFetch();
+        _initToggleListener();
+        _initCrashMonitor();
+        _showWelcome();
+        _showDonation();
+        _log('Initialized successfully', 'success');
+    }
+    
 
-    hookLocalStorage();
-    hookWindowWorker();
-    hookMainFetch();
-    showFirstRunMessage();
-    showDonationReminder();
 
-    log('Initialized successfully', 'success');
+    // Initialize
+    _init();
 })();
