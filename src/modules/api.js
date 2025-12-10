@@ -1,22 +1,57 @@
 /**
  * TTV AB - API Module
  * Twitch GraphQL API interactions
+ * @module api
  * @private
  */
-async function _gqlReq(body) {
-    const h = { 'Client-Id': ClientID, 'Content-Type': 'application/json' };
-    if (GQLDeviceID) h['X-Device-Id'] = GQLDeviceID;
-    if (ClientVersion) h['Client-Version'] = ClientVersion;
-    if (ClientSession) h['Client-Session-Id'] = ClientSession;
-    if (ClientIntegrityHeader) h['Client-Integrity'] = ClientIntegrityHeader;
-    if (AuthorizationHeader) h['Authorization'] = AuthorizationHeader;
-    return fetch('https://gql.twitch.tv/gql', { method: 'POST', headers: h, body: JSON.stringify(body) });
+
+/** @type {string} GraphQL endpoint */
+const _GQL_URL = 'https://gql.twitch.tv/gql';
+
+/**
+ * Make a GraphQL request to Twitch API
+ * @param {Object} body - Request body
+ * @returns {Promise<Response>} Fetch response
+ */
+function _gqlReq(body) {
+    const headers = {
+        'Content-Type': 'application/json',
+        'Client-ID': ClientID
+    };
+    if (GQLDeviceID) headers['X-Device-Id'] = GQLDeviceID;
+    if (ClientVersion) headers['Client-Version'] = ClientVersion;
+    if (ClientSession) headers['Client-Session-Id'] = ClientSession;
+    if (ClientIntegrityHeader) headers['Client-Integrity'] = ClientIntegrityHeader;
+    if (AuthorizationHeader) headers['Authorization'] = AuthorizationHeader;
+
+    return fetch(_GQL_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+    });
 }
 
-async function _getToken(channel, type) {
+/**
+ * Get stream playback access token
+ * @param {string} channel - Channel name
+ * @param {string} playerType - Player type
+ * @returns {Promise<Response>} Token response
+ */
+function _getToken(channel, playerType) {
     return _gqlReq({
-        operationName: 'PlaybackAccessToken_Template',
-        query: 'query PlaybackAccessToken_Template($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!) { streamPlaybackAccessToken(channelName: $login, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isLive) { value signature __typename } videoPlaybackAccessToken(id: $vodID, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isVod) { value signature __typename }}',
-        variables: { isLive: true, login: channel, isVod: false, vodID: '', playerType: type }
+        operationName: 'PlaybackAccessToken',
+        extensions: {
+            persistedQuery: {
+                version: 1,
+                sha256Hash: '0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712'
+            }
+        },
+        variables: {
+            isLive: true,
+            login: channel,
+            isVod: false,
+            vodID: '',
+            playerType
+        }
     });
 }

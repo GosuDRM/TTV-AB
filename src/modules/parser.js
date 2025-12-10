@@ -1,60 +1,99 @@
 /**
  * TTV AB - Parser Module
  * M3U8 playlist parsing and manipulation
+ * @module parser
  * @private
  */
+
+/** @type {RegExp} Attribute parsing regex (cached for performance) */
+const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+
+/**
+ * Parse M3U8 attributes into an object
+ * @param {string} str - Attribute string
+ * @returns {Object} Parsed attributes
+ */
 function _parseAttrs(str) {
-    const r = {};
-    const rx = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
-    let m;
-    while ((m = rx.exec(str)) !== null) {
-        let v = m[2];
-        if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
-        r[m[1].toUpperCase()] = v;
+    const result = Object.create(null);
+    let match;
+    _ATTR_REGEX.lastIndex = 0;
+    while ((match = _ATTR_REGEX.exec(str)) !== null) {
+        let value = match[2];
+        if (value[0] === '"' && value[value.length - 1] === '"') {
+            value = value.slice(1, -1);
+        }
+        result[match[1].toUpperCase()] = value;
     }
-    return r;
+    return result;
 }
 
+/**
+ * Extract server time from M3U8 playlist
+ * @param {string} m3u8 - Playlist content
+ * @returns {string|null} Server time or null
+ */
 function _getServerTime(m3u8) {
     if (V2API) {
-        const m = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
-        return m && m.length > 1 ? m[1] : null;
+        const match = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
+        return match?.[1] ?? null;
     }
-    const m = m3u8.match('SERVER-TIME="([0-9.]+)"');
-    return m && m.length > 1 ? m[1] : null;
+    const match = m3u8.match(/SERVER-TIME="([0-9.]+)"/);
+    return match?.[1] ?? null;
 }
 
+/**
+ * Replace server time in M3U8 playlist
+ * @param {string} m3u8 - Playlist content
+ * @param {string} time - New server time
+ * @returns {string} Modified playlist
+ */
 function _replaceServerTime(m3u8, time) {
     if (!time) return m3u8;
     if (V2API) {
         return m3u8.replace(/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/, `$1${time}$2`);
     }
-    return m3u8.replace(new RegExp('(SERVER-TIME=")[0-9.]+"'), `SERVER-TIME="${time}"`);
+    return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
 }
 
+/**
+ * Strip ad segments from M3U8 playlist
+ * @param {string} text - Playlist content
+ * @param {boolean} stripAll - Strip all segments
+ * @param {Object} info - Stream info object
+ * @returns {string} Cleaned playlist
+ */
 function _stripAds(text, stripAll, info) {
-    let stripped = false;
-    const lines = text.replaceAll('\r', '').split('\n');
+    const lines = text.split('\n');
+    const len = lines.length;
     const adUrl = 'https://twitch.tv';
+    let stripped = false;
+    let i = 0;
 
-    for (let i = 0; i < lines.length; i++) {
+    for (; i < len; i++) {
         let line = lines[i];
-        line = line
-            .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/, `$1${adUrl}$2`)
-            .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/, `$1${adUrl}$2`);
-        lines[i] = line;
 
-        if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
+        // Replace ad tracking URLs
+        if (line.includes('X-TV-TWITCH-AD')) {
+            line = line
+                .replace(/X-TV-TWITCH-AD-URL="[^"]*"/, `X-TV-TWITCH-AD-URL="${adUrl}"`)
+                .replace(/X-TV-TWITCH-AD-CLICK-TRACKING-URL="[^"]*"/, `X-TV-TWITCH-AD-CLICK-TRACKING-URL="${adUrl}"`);
+            lines[i] = line;
+        }
+
+        // Mark ad segments for caching
+        if (i < len - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());
             stripped = true;
         }
+
         if (line.includes(AdSignifier)) stripped = true;
     }
 
+    // Remove prefetch entries if stripping
     if (stripped) {
-        for (let i = 0; i < lines.length; i++) {
+        for (i = 0; i < len; i++) {
             if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
         }
     } else {
@@ -62,30 +101,55 @@ function _stripAds(text, stripAll, info) {
     }
 
     info.IsStrippingAdSegments = stripped;
-    AdSegmentCache.forEach((v, k, m) => { if (v < Date.now() - 120000) m.delete(k); });
+
+    // Cleanup old cache entries (older than 2 minutes)
+    const cutoff = Date.now() - 120000;
+    AdSegmentCache.forEach((v, k) => { if (v < cutoff) AdSegmentCache.delete(k); });
+
     return lines.join('\n');
 }
 
+/**
+ * Find matching stream URL for resolution
+ * @param {string} m3u8 - Master playlist
+ * @param {Object} res - Target resolution info
+ * @returns {string|null} Matching URL or closest match
+ */
 function _getStreamUrl(m3u8, res) {
-    const lines = m3u8.replaceAll('\r', '').split('\n');
+    const lines = m3u8.split('\n');
+    const len = lines.length;
     const [tw, th] = res.Resolution.split('x').map(Number);
-    let matchUrl = null, matchFps = false, closeUrl = null, closeDiff = Infinity;
+    const targetPixels = tw * th;
+    let matchUrl = null;
+    let matchFps = false;
+    let closeUrl = null;
+    let closeDiff = Infinity;
 
-    for (let i = 0; i < lines.length - 1; i++) {
-        if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
-            const a = _parseAttrs(lines[i]);
-            const r = a['RESOLUTION'], f = a['FRAME-RATE'];
-            if (r) {
-                if (r == res.Resolution && (!matchUrl || (!matchFps && f == res.FrameRate))) {
-                    matchUrl = lines[i + 1];
-                    matchFps = f == res.FrameRate;
-                    if (matchFps) return matchUrl;
-                }
-                const [w, h] = r.split('x').map(Number);
-                const d = Math.abs((w * h) - (tw * th));
-                if (d < closeDiff) { closeUrl = lines[i + 1]; closeDiff = d; }
+    for (let i = 0; i < len - 1; i++) {
+        const line = lines[i];
+        if (!line.startsWith('#EXT-X-STREAM-INF') || !lines[i + 1].includes('.m3u8')) continue;
+
+        const attrs = _parseAttrs(line);
+        const resolution = attrs.RESOLUTION;
+        const frameRate = attrs['FRAME-RATE'];
+
+        if (!resolution) continue;
+
+        if (resolution === res.Resolution) {
+            if (!matchUrl || (!matchFps && frameRate === res.FrameRate)) {
+                matchUrl = lines[i + 1];
+                matchFps = frameRate === res.FrameRate;
+                if (matchFps) return matchUrl;
             }
         }
+
+        const [w, h] = resolution.split('x').map(Number);
+        const diff = Math.abs((w * h) - targetPixels);
+        if (diff < closeDiff) {
+            closeUrl = lines[i + 1];
+            closeDiff = diff;
+        }
     }
+
     return matchUrl || closeUrl;
 }

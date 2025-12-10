@@ -1,10 +1,20 @@
 /**
  * TTV AB - Processor Module
  * M3U8 stream processing and ad replacement
+ * @module processor
  * @private
+ */
+
+/**
+ * Process M3U8 playlist and strip/replace ads
+ * @param {string} url - Playlist URL
+ * @param {string} text - Playlist content
+ * @param {Function} realFetch - Original fetch function
+ * @returns {Promise<string>} Processed playlist
  */
 async function _processM3U8(url, text, realFetch) {
     if (!IsAdStrippingEnabled) return text;
+
     const info = StreamInfosByUrl[url];
     if (!info) return text;
 
@@ -17,16 +27,18 @@ async function _processM3U8(url, text, realFetch) {
 
     if (hasAds) {
         info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
+
         if (!info.IsShowingAd) {
             info.IsShowingAd = true;
             _log('Ad detected, blocking...', 'warning');
-            _incrementAdsBlocked(); // Increment counter
+            _incrementAdsBlocked();
         }
 
+        // Pre-fetch ad segments for midroll (helps with timing)
         if (!info.IsMidroll) {
-            const lines = text.replaceAll('\r', '').split('\n');
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].startsWith('#EXTINF') && lines.length > i + 1) {
+            const lines = text.split('\n');
+            for (let i = 0, len = lines.length; i < len; i++) {
+                if (lines[i].startsWith('#EXTINF') && i < len - 1) {
                     if (!lines[i].includes(',live') && !info.RequestedAds.has(lines[i + 1])) {
                         info.RequestedAds.add(lines[i + 1]);
                         fetch(lines[i + 1]).then(r => r.blob()).catch(() => { });
@@ -37,26 +49,36 @@ async function _processM3U8(url, text, realFetch) {
         }
 
         const res = info.Urls[url];
-        if (!res) { _log('Missing resolution info for ' + url, 'warning'); return text; }
+        if (!res) {
+            _log('Missing resolution info for ' + url, 'warning');
+            return text;
+        }
 
-        const isHevc = res.Codecs.startsWith('hev') || res.Codecs.startsWith('hvc');
+        const isHevc = res.Codecs?.[0] === 'h' && (res.Codecs[1] === 'e' || res.Codecs[1] === 'v');
         if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
             info.IsUsingModifiedM3U8 = true;
             info.LastPlayerReload = Date.now();
         }
 
-        let backupType = null, backupM3u8 = null, fallbackM3u8 = null;
-        let startIdx = 0, minimal = false;
+        let backupType = null;
+        let backupM3u8 = null;
+        let fallbackM3u8 = null;
+        let startIdx = 0;
+        let minimal = false;
 
         if (info.LastPlayerReload > Date.now() - PlayerReloadMinimalRequestsTime) {
             startIdx = PlayerReloadMinimalRequestsPlayerIndex;
             minimal = true;
         }
 
-        for (let pi = startIdx; !backupM3u8 && pi < BackupPlayerTypes.length; pi++) {
-            const pt = BackupPlayerTypes[pi];
+        // Try backup player types
+        const playerTypes = BackupPlayerTypes;
+        const playerTypesLen = playerTypes.length;
+
+        for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
+            const pt = playerTypes[pi];
             const realPt = pt.replace('-CACHED', '');
-            const cached = pt != realPt;
+            const cached = pt !== realPt;
 
             for (let j = 0; j < 2; j++) {
                 let fresh = false;
@@ -68,30 +90,42 @@ async function _processM3U8(url, text, realFetch) {
                         const tokenRes = await _getToken(info.ChannelName, realPt);
                         if (tokenRes.status === 200) {
                             const token = await tokenRes.json();
-                            if (token?.data?.streamPlaybackAccessToken?.signature) {
-                                const u = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + info.ChannelName + '.m3u8' + info.UsherParams);
-                                u.searchParams.set('sig', token.data.streamPlaybackAccessToken.signature);
-                                u.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
-                                const encRes = await realFetch(u.href);
-                                if (encRes.status === 200) enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                            const sig = token?.data?.streamPlaybackAccessToken?.signature;
+                            if (sig) {
+                                const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                                usherUrl.searchParams.set('sig', sig);
+                                usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                                const encRes = await realFetch(usherUrl.href);
+                                if (encRes.status === 200) {
+                                    enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                                }
                             }
                         }
-                    } catch (e) { _log('Error getting backup: ' + e.message, 'error'); }
+                    } catch (e) {
+                        _log('Error getting backup: ' + e.message, 'error');
+                    }
                 }
 
                 if (enc) {
                     try {
                         const streamUrl = _getStreamUrl(enc, res);
                         const streamRes = await realFetch(streamUrl);
-                        if (streamRes.status == 200) {
+                        if (streamRes.status === 200) {
                             const m3u8 = await streamRes.text();
                             if (m3u8) {
-                                if (pt == FallbackPlayerType) fallbackM3u8 = m3u8;
-                                if ((!m3u8.includes(AdSignifier) && (SimulatedAdsDepth == 0 || pi >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && pi >= BackupPlayerTypes.length - 1)) {
-                                    backupType = pt; backupM3u8 = m3u8; break;
+                                if (pt === FallbackPlayerType) fallbackM3u8 = m3u8;
+                                const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
+                                const lastResort = !fallbackM3u8 && pi >= playerTypesLen - 1;
+                                if (noAds || lastResort) {
+                                    backupType = pt;
+                                    backupM3u8 = m3u8;
+                                    break;
                                 }
-                                if (cached) break;
-                                if (minimal) { backupType = pt; backupM3u8 = m3u8; break; }
+                                if (cached || minimal) {
+                                    backupType = pt;
+                                    backupM3u8 = m3u8;
+                                    break;
+                                }
                             }
                         }
                     } catch (e) {
@@ -104,10 +138,14 @@ async function _processM3U8(url, text, realFetch) {
             }
         }
 
-        if (!backupM3u8 && fallbackM3u8) { backupType = FallbackPlayerType; backupM3u8 = fallbackM3u8; }
+        if (!backupM3u8 && fallbackM3u8) {
+            backupType = FallbackPlayerType;
+            backupM3u8 = fallbackM3u8;
+        }
+
         if (backupM3u8) text = backupM3u8;
 
-        if (info.ActiveBackupPlayerType != backupType) {
+        if (info.ActiveBackupPlayerType !== backupType) {
             info.ActiveBackupPlayerType = backupType;
             _log('Using backup player type: ' + backupType, 'info');
         }

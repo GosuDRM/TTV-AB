@@ -1,49 +1,71 @@
 /**
  * TTV AB - Worker Module
- * Web Worker management and prototype manipulation
+ * Web Worker manipulation utilities
+ * @module worker
  * @private
  */
+
+/**
+ * Fetch and extract WASM JavaScript from worker URL
+ * @param {string} url - Worker URL
+ * @returns {string} JavaScript source
+ */
 function _getWasmJs(url) {
-    const x = new XMLHttpRequest();
-    x.open('GET', url, false);
-    x.overrideMimeType("text/javascript");
-    x.send();
-    return x.responseText;
+    const req = new XMLHttpRequest();
+    req.open('GET', url, false);
+    req.send();
+    return req.responseText;
 }
 
-function _cleanWorker(w) {
-    let root = null, parent = null, proto = w;
-    while (proto) {
-        const s = proto.toString();
-        if (_S.conflicts.some(x => s.includes(x))) {
-            if (parent !== null) Object.setPrototypeOf(parent, Object.getPrototypeOf(proto));
-        } else {
-            if (root === null) root = proto;
-            parent = proto;
+/**
+ * Create clean Worker class without conflicts
+ * @param {Function} W - Original Worker constructor
+ * @returns {Function} Cleaned Worker class
+ */
+function _cleanWorker(W) {
+    const proto = W.prototype;
+    for (const key of _S.conflicts) {
+        if (proto[key]) proto[key] = undefined;
+    }
+    return W;
+}
+
+/**
+ * Get reinsert function names from Worker
+ * @param {Function} W - Worker constructor
+ * @returns {string[]} Function names to reinsert
+ */
+function _getReinsert(W) {
+    const src = W.toString();
+    const result = [];
+    for (const pattern of _S.reinsertPatterns) {
+        if (src.includes(pattern)) result.push(pattern);
+    }
+    return result;
+}
+
+/**
+ * Reinsert functions into Worker class
+ * @param {Function} W - Worker constructor
+ * @param {string[]} names - Function names
+ * @returns {Function} Modified Worker
+ */
+function _reinsert(W, names) {
+    for (const name of names) {
+        if (typeof window[name] === 'function') {
+            W.prototype[name] = window[name];
         }
-        proto = Object.getPrototypeOf(proto);
     }
-    return root;
+    return W;
 }
 
-function _getReinsert(w) {
-    const r = [];
-    let p = w;
-    while (p) {
-        const s = p.toString();
-        if (_S.reinsertPatterns.some(x => s.includes(x))) r.push(p);
-        p = Object.getPrototypeOf(p);
-    }
-    return r;
-}
-
-function _reinsert(w, r) {
-    let p = w;
-    for (let i = 0; i < r.length; i++) { Object.setPrototypeOf(r[i], p); p = r[i]; }
-    return p;
-}
-
-function _isValid(w) {
-    const s = w.toString();
-    return !_S.conflicts.some(x => s.includes(x)) || _S.reinsertPatterns.some(x => s.includes(x));
+/**
+ * Validate Worker replacement
+ * @param {*} v - Value to check
+ * @returns {boolean} Is valid replacement
+ */
+function _isValid(v) {
+    if (typeof v !== 'function') return false;
+    const src = v.toString();
+    return !_S.conflicts.some(c => src.includes(c)) || !_S.reinsertPatterns.some(p => src.includes(p));
 }

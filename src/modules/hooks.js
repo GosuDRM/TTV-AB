@@ -1,101 +1,141 @@
 /**
  * TTV AB - Hooks Module
  * Fetch and Worker interception
+ * @module hooks
  * @private
+ */
+
+/**
+ * Hook fetch API inside Web Worker context
  */
 function _hookWorkerFetch() {
     _log('Worker fetch hooked', 'info');
-    const real = fetch;
+    const realFetch = fetch;
+
     fetch = async function (url, opts) {
-        if (typeof url === 'string') {
-            if (AdSegmentCache.has(url)) {
-                return new Promise((res, rej) => {
-                    real('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts)
-                        .then(r => res(r)).catch(e => rej(e));
-                });
-            }
-
-            url = url.trimEnd();
-            if (url.endsWith('m3u8')) {
-                return new Promise((res, rej) => {
-                    const proc = async (r) => {
-                        if (r.status === 200) res(new Response(await _processM3U8(url, await r.text(), real)));
-                        else res(r);
-                    };
-                    real(url, opts).then(r => proc(r)).catch(e => rej(e));
-                });
-            } else if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
-                V2API = url.includes('/api/v2/');
-                const ch = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
-
-                if (ForceAccessTokenPlayerType) {
-                    const t = new URL(url);
-                    t.searchParams.delete('parent_domains');
-                    url = t.toString();
-                }
-
-                return new Promise((res, rej) => {
-                    const proc = async (r) => {
-                        if (r.status == 200) {
-                            const enc = await r.text();
-                            const time = _getServerTime(enc);
-                            let info = StreamInfos[ch];
-
-                            if (info != null && info.EncodingsM3U8 != null && (await real(info.EncodingsM3U8.match(/^https:.*\.m3u8$/m)[0])).status !== 200) {
-                                info = null;
-                            }
-
-                            if (info == null || info.EncodingsM3U8 == null) {
-                                StreamInfos[ch] = info = {
-                                    ChannelName: ch, IsShowingAd: false, LastPlayerReload: 0,
-                                    EncodingsM3U8: enc, ModifiedM3U8: null, IsUsingModifiedM3U8: false,
-                                    UsherParams: (new URL(url)).search, RequestedAds: new Set(),
-                                    Urls: [], ResolutionList: [], BackupEncodingsM3U8Cache: [],
-                                    ActiveBackupPlayerType: null, IsMidroll: false,
-                                    IsStrippingAdSegments: false, NumStrippedAdSegments: 0
-                                };
-
-                                const lines = enc.replaceAll('\r', '').split('\n');
-                                for (let i = 0; i < lines.length - 1; i++) {
-                                    if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
-                                        const a = _parseAttrs(lines[i]);
-                                        const rs = a['RESOLUTION'];
-                                        if (rs) {
-                                            const ri = { Resolution: rs, FrameRate: a['FRAME-RATE'], Codecs: a['CODECS'], Url: lines[i + 1] };
-                                            info.Urls[lines[i + 1]] = ri;
-                                            info.ResolutionList.push(ri);
-                                        }
-                                        StreamInfosByUrl[lines[i + 1]] = info;
-                                    }
-                                }
-                                _log('Stream initialized: ' + ch, 'success');
-                            }
-
-                            info.LastPlayerReload = Date.now();
-                            res(new Response(_replaceServerTime(info.IsUsingModifiedM3U8 ? info.ModifiedM3U8 : info.EncodingsM3U8, time)));
-                        } else {
-                            res(r);
-                        }
-                    };
-                    real(url, opts).then(r => proc(r)).catch(e => rej(e));
-                });
-            }
+        if (typeof url !== 'string') {
+            return realFetch.apply(this, arguments);
         }
-        return real.apply(this, arguments);
+
+        // Return cached ad segment as empty video
+        if (AdSegmentCache.has(url)) {
+            return realFetch('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts);
+        }
+
+        url = url.trimEnd();
+
+        // Process M3U8 playlists
+        if (url.endsWith('m3u8')) {
+            const response = await realFetch(url, opts);
+            if (response.status === 200) {
+                const text = await response.text();
+                return new Response(await _processM3U8(url, text, realFetch));
+            }
+            return response;
+        }
+
+        // Handle channel HLS requests
+        if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
+            V2API = url.includes('/api/v2/');
+            const channelMatch = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/);
+            const channel = channelMatch?.[0];
+
+            if (ForceAccessTokenPlayerType) {
+                const urlObj = new URL(url);
+                urlObj.searchParams.delete('parent_domains');
+                url = urlObj.toString();
+            }
+
+            const response = await realFetch(url, opts);
+            if (response.status !== 200) return response;
+
+            const encodings = await response.text();
+            const serverTime = _getServerTime(encodings);
+            let info = StreamInfos[channel];
+
+            // Validate existing info
+            if (info?.EncodingsM3U8) {
+                const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
+                if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
+                    info = null;
+                }
+            }
+
+            // Initialize stream info
+            if (!info?.EncodingsM3U8) {
+                info = StreamInfos[channel] = {
+                    ChannelName: channel,
+                    IsShowingAd: false,
+                    LastPlayerReload: 0,
+                    EncodingsM3U8: encodings,
+                    ModifiedM3U8: null,
+                    IsUsingModifiedM3U8: false,
+                    UsherParams: (new URL(url)).search,
+                    RequestedAds: new Set(),
+                    Urls: Object.create(null),
+                    ResolutionList: [],
+                    BackupEncodingsM3U8Cache: [],
+                    ActiveBackupPlayerType: null,
+                    IsMidroll: false,
+                    IsStrippingAdSegments: false,
+                    NumStrippedAdSegments: 0
+                };
+
+                const lines = encodings.split('\n');
+                for (let i = 0, len = lines.length; i < len - 1; i++) {
+                    if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
+                        const attrs = _parseAttrs(lines[i]);
+                        const resolution = attrs.RESOLUTION;
+                        if (resolution) {
+                            const resInfo = {
+                                Resolution: resolution,
+                                FrameRate: attrs['FRAME-RATE'],
+                                Codecs: attrs.CODECS,
+                                Url: lines[i + 1]
+                            };
+                            info.Urls[lines[i + 1]] = resInfo;
+                            info.ResolutionList.push(resInfo);
+                        }
+                        StreamInfosByUrl[lines[i + 1]] = info;
+                    }
+                }
+                _log('Stream initialized: ' + channel, 'success');
+            }
+
+            info.LastPlayerReload = Date.now();
+            const playlist = info.IsUsingModifiedM3U8 ? info.ModifiedM3U8 : info.EncodingsM3U8;
+            return new Response(_replaceServerTime(playlist, serverTime));
+        }
+
+        return realFetch.apply(this, arguments);
     };
 }
 
+/**
+ * Hook Worker constructor to inject ad blocking
+ */
 function _hookWorker() {
-    const reins = _getReinsert(window.Worker);
-    const W = class Worker extends _cleanWorker(window.Worker) {
-        constructor(url, opts) {
-            let tw = false;
-            try { tw = new URL(url).origin.endsWith('.twitch.tv'); } catch { tw = false; }
-            if (!tw) { super(url, opts); return; }
+    const reinsertNames = _getReinsert(window.Worker);
 
-            const blob = `
+    const HookedWorker = class Worker extends _cleanWorker(window.Worker) {
+        constructor(url, opts) {
+            let isTwitch = false;
+            try {
+                isTwitch = new URL(url).origin.endsWith('.twitch.tv');
+            } catch {
+                isTwitch = false;
+            }
+
+            if (!isTwitch) {
+                super(url, opts);
+                return;
+            }
+
+            // Inject ad blocking code into worker
+            const injectedCode = `
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify(_S)};
+                const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
                 ${_log.toString()}
                 ${_declareState.toString()}
                 ${_incrementAdsBlocked.toString()}
@@ -110,36 +150,39 @@ function _hookWorker() {
                 ${_getWasmJs.toString()}
                 ${_hookWorkerFetch.toString()}
                 
-                const ws = _getWasmJs('${url.replaceAll("'", "%27")}');
+                const _GQL_URL = '${_GQL_URL}';
+                const wasmSource = _getWasmJs('${url.replaceAll("'", "%27")}');
                 _declareState(self);
-                GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
-                AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
-                ClientIntegrityHeader = ${ClientIntegrityHeader ? "'" + ClientIntegrityHeader + "'" : null};
-                ClientVersion = ${ClientVersion ? "'" + ClientVersion + "'" : null};
-                ClientSession = ${ClientSession ? "'" + ClientSession + "'" : null};
+                GQLDeviceID = ${GQLDeviceID ? `'${GQLDeviceID}'` : 'null'};
+                AuthorizationHeader = ${AuthorizationHeader ? `'${AuthorizationHeader}'` : 'undefined'};
+                ClientIntegrityHeader = ${ClientIntegrityHeader ? `'${ClientIntegrityHeader}'` : 'null'};
+                ClientVersion = ${ClientVersion ? `'${ClientVersion}'` : 'null'};
+                ClientSession = ${ClientSession ? `'${ClientSession}'` : 'null'};
                 
                 self.addEventListener('message', function(e) {
-                    if (e.data.key == 'UpdateClientVersion') ClientVersion = e.data.value;
-                    else if (e.data.key == 'UpdateClientSession') ClientSession = e.data.value;
-                    else if (e.data.key == 'UpdateClientId') ClientID = e.data.value;
-                    else if (e.data.key == 'UpdateDeviceId') GQLDeviceID = e.data.value;
-                    else if (e.data.key == 'UpdateClientIntegrityHeader') ClientIntegrityHeader = e.data.value;
-                    else if (e.data.key == 'UpdateAuthorizationHeader') AuthorizationHeader = e.data.value;
+                    const data = e.data;
+                    if (!data?.key) return;
+                    switch (data.key) {
+                        case 'UpdateClientVersion': ClientVersion = data.value; break;
+                        case 'UpdateClientSession': ClientSession = data.value; break;
+                        case 'UpdateClientId': ClientID = data.value; break;
+                        case 'UpdateDeviceId': GQLDeviceID = data.value; break;
+                        case 'UpdateClientIntegrityHeader': ClientIntegrityHeader = data.value; break;
+                        case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
+                    }
                 });
                 
                 _hookWorkerFetch();
-                eval(ws);
+                eval(wasmSource);
             `;
 
-            const blobUrl = URL.createObjectURL(new Blob([blob]));
+            const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
             super(blobUrl, opts);
-
-            // Revoke blob URL to free memory (worker already loaded)
             URL.revokeObjectURL(blobUrl);
 
-            // Listen for AdBlocked messages from worker
+            // Listen for messages from worker
             this.addEventListener('message', function (e) {
-                if (e.data && e.data.key === 'AdBlocked') {
+                if (e.data?.key === 'AdBlocked') {
                     _S.adsBlocked = e.data.count;
                     window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
                 }
@@ -147,53 +190,87 @@ function _hookWorker() {
 
             _S.workers.push(this);
 
-            // Clean up terminated workers periodically
+            // Cleanup terminated workers
             if (_S.workers.length > 5) {
                 _S.workers = _S.workers.filter(w => w.onmessage !== null);
             }
         }
     };
 
-    let inst = _reinsert(W, reins);
+    let workerInstance = _reinsert(HookedWorker, reinsertNames);
     Object.defineProperty(window, 'Worker', {
-        get: () => inst,
-        set: (v) => { if (_isValid(v)) inst = v; }
+        get: () => workerInstance,
+        set: (v) => { if (_isValid(v)) workerInstance = v; }
     });
 }
 
+/**
+ * Hook localStorage to capture device ID
+ */
 function _hookStorage() {
     try {
-        const orig = localStorage.getItem.bind(localStorage);
-        localStorage.getItem = function (k) {
-            const v = orig(k);
-            if (k === 'unique_id' && v) GQLDeviceID = v;
-            return v;
+        const originalGetItem = localStorage.getItem.bind(localStorage);
+        localStorage.getItem = function (key) {
+            const value = originalGetItem(key);
+            if (key === 'unique_id' && value) GQLDeviceID = value;
+            return value;
         };
-        const id = orig('unique_id');
-        if (id) GQLDeviceID = id;
+        const deviceId = originalGetItem('unique_id');
+        if (deviceId) GQLDeviceID = deviceId;
     } catch (e) {
         _log('Storage hook error: ' + e.message, 'warning');
     }
 }
 
+/**
+ * Hook main window fetch to capture auth headers
+ */
 function _hookMainFetch() {
-    const real = window.fetch;
+    const realFetch = window.fetch;
+
     window.fetch = async function (url, opts) {
         if (typeof url === 'string' || url instanceof URL) {
-            const u = url.toString();
-            if (u.includes('gql.twitch.tv/gql')) {
-                const r = await real.apply(this, arguments);
-                if (opts && opts.headers) {
+            const urlStr = url.toString();
+            if (urlStr.includes('gql.twitch.tv/gql')) {
+                const response = await realFetch.apply(this, arguments);
+
+                if (opts?.headers) {
                     const h = opts.headers;
-                    if (h['Client-Integrity']) { ClientIntegrityHeader = h['Client-Integrity']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader })); }
-                    if (h['Authorization']) { AuthorizationHeader = h['Authorization']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader })); }
-                    if (h['Client-Version']) { ClientVersion = h['Client-Version']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientVersion', value: ClientVersion })); }
-                    if (h['Client-Session-Id']) { ClientSession = h['Client-Session-Id']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientSession', value: ClientSession })); }
-                    if (h['X-Device-Id']) { GQLDeviceID = h['X-Device-Id']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateDeviceId', value: GQLDeviceID })); }
+                    const updates = [];
+
+                    if (h['Client-Integrity']) {
+                        ClientIntegrityHeader = h['Client-Integrity'];
+                        updates.push({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader });
+                    }
+                    if (h['Authorization']) {
+                        AuthorizationHeader = h['Authorization'];
+                        updates.push({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader });
+                    }
+                    if (h['Client-Version']) {
+                        ClientVersion = h['Client-Version'];
+                        updates.push({ key: 'UpdateClientVersion', value: ClientVersion });
+                    }
+                    if (h['Client-Session-Id']) {
+                        ClientSession = h['Client-Session-Id'];
+                        updates.push({ key: 'UpdateClientSession', value: ClientSession });
+                    }
+                    if (h['X-Device-Id']) {
+                        GQLDeviceID = h['X-Device-Id'];
+                        updates.push({ key: 'UpdateDeviceId', value: GQLDeviceID });
+                    }
+
+                    // Batch update workers
+                    if (updates.length > 0) {
+                        for (const worker of _S.workers) {
+                            for (const update of updates) {
+                                worker.postMessage(update);
+                            }
+                        }
+                    }
                 }
-                return r;
+                return response;
             }
         }
-        return real.apply(this, arguments);
+        return realFetch.apply(this, arguments);
     };
 }

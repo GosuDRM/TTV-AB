@@ -1,782 +1,906 @@
 /**
- * TTV AB - Content Script
- * Blocks ads on Twitch.tv live streams by intercepting
- * HLS playlists and stripping ad segments.
- * 
+ * TTV AB v3.0.6
  * @author GosuDRM
- * @version 3.0.5
  * @license MIT
  * @see https://github.com/GosuDRM/TTV-AB
- * @generated DO NOT EDIT - Built from src/modules/
  */
-(function () {
-    'use strict';
+(function(){
+'use strict';
 
-    // ═══════════════════════════════════════════════════
-    // MODULE: CONSTANTS
-    // ═══════════════════════════════════════════════════
+const _$c = {
+    
+    VERSION: '3.0.6',
+    
+    INTERNAL_VERSION: 20,
+    
+    LOG_STYLES: {
+        prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
+        info: 'color: #9146FF; font-weight: 500;',
+        success: 'color: #4CAF50; font-weight: 500;',
+        warning: 'color: #FF9800; font-weight: 500;',
+        error: 'color: #f44336; font-weight: 500;'
+    },
+    
+    AD_SIGNIFIER: 'stitched',
+    
+    CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+    
+    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+    
+    FALLBACK_TYPE: 'embed',
+    
+    FORCE_TYPE: 'site',
+    
+    RELOAD_TIME: 1500,
+    
+    CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
+    
+    REFRESH_DELAY: 1500
+};
 
-    /**
-     * TTV AB - Constants Module
-     * Core configuration and version info
-     * @private
-     */
-    const _C = {
-        VERSION: '3.0.5',
-        INTERNAL_VERSION: 19,
-        LOG_STYLES: {
-            prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
-            info: 'color: #9146FF; font-weight: 500;',
-            success: 'color: #4CAF50; font-weight: 500;',
-            warning: 'color: #FF9800; font-weight: 500;',
-            error: 'color: #f44336; font-weight: 500;'
-        },
-        AD_SIGNIFIER: 'stitched',
-        CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-        PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
-        FALLBACK_TYPE: 'embed',
-        FORCE_TYPE: 'site',
-        RELOAD_TIME: 1500,
-        CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
-        REFRESH_DELAY: 1500
-    };
+const _$s = {
+    
+    workers: [],
+    
+    conflicts: ['twitch', 'isVariantA'],
+    
+    reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
+    
+    adsBlocked: 0
+};
 
+function _$ds(scope) {
+    scope.AdSignifier = _$c.AD_SIGNIFIER;
+    scope.ClientID = _$c.CLIENT_ID;
+    scope.BackupPlayerTypes = [..._$c.PLAYER_TYPES];
+    scope.FallbackPlayerType = _$c.FALLBACK_TYPE;
+    scope.ForceAccessTokenPlayerType = _$c.FORCE_TYPE;
+    scope.SkipPlayerReloadOnHevc = false;
+    scope.AlwaysReloadPlayerOnAd = false;
+    scope.PlayerReloadMinimalRequestsTime = _$c.RELOAD_TIME;
+    scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
+    scope.HasTriggeredPlayerReload = false;
+    scope.StreamInfos = Object.create(null);
+    scope.StreamInfosByUrl = Object.create(null);
+    scope.GQLDeviceID = null;
+    scope.ClientVersion = null;
+    scope.ClientSession = null;
+    scope.ClientIntegrityHeader = null;
+    scope.AuthorizationHeader = undefined;
+    scope.SimulatedAdsDepth = 0;
+    scope.V2API = false;
+    scope.IsAdStrippingEnabled = true;
+    scope.AdSegmentCache = new Map();
+    scope.AllSegmentsAreAdSegments = false;
+}
 
-    // ═══════════════════════════════════════════════════
-    // MODULE: STATE
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - State Module
-     * Manages global state and worker references
-     * @private
-     */
-    const _S = {
-        workers: [],
-        conflicts: ['twitch', 'isVariantA'],
-        reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
-        adsBlocked: 0
-    };
-
-    function _declareState(scope) {
-        scope.AdSignifier = _C.AD_SIGNIFIER;
-        scope.ClientID = _C.CLIENT_ID;
-        scope.BackupPlayerTypes = [..._C.PLAYER_TYPES];
-        scope.FallbackPlayerType = _C.FALLBACK_TYPE;
-        scope.ForceAccessTokenPlayerType = _C.FORCE_TYPE;
-        scope.SkipPlayerReloadOnHevc = false;
-        scope.AlwaysReloadPlayerOnAd = false;
-        scope.PlayerReloadMinimalRequestsTime = _C.RELOAD_TIME;
-        scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
-        scope.HasTriggeredPlayerReload = false;
-        scope.StreamInfos = [];
-        scope.StreamInfosByUrl = [];
-        scope.GQLDeviceID = null;
-        scope.ClientVersion = null;
-        scope.ClientSession = null;
-        scope.ClientIntegrityHeader = null;
-        scope.AuthorizationHeader = undefined;
-        scope.SimulatedAdsDepth = 0;
-        scope.V2API = false;
-        scope.IsAdStrippingEnabled = true;
-        scope.AdSegmentCache = new Map();
-        scope.AllSegmentsAreAdSegments = false;
+function _$ab() {
+    _$s.adsBlocked++;
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _$s.adsBlocked } }));
+    } else if (typeof self !== 'undefined' && self.postMessage) {
+        self.postMessage({ key: 'AdBlocked', count: _$s.adsBlocked });
     }
+}
 
-    function _incrementAdsBlocked() {
-        _S.adsBlocked++;
-        // Use postMessage in worker context, dispatchEvent in main thread
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _S.adsBlocked } }));
-        } else if (typeof self !== 'undefined' && self.postMessage) {
-            self.postMessage({ key: 'AdBlocked', count: _S.adsBlocked });
+function _$l(msg, type = 'info') {
+    console.log('%cTTV AB%c ' + msg, _$c.LOG_STYLES.prefix, _$c.LOG_STYLES[type] || _$c.LOG_STYLES.info);
+}
+
+const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+
+function _$pa(str) {
+    const result = Object.create(null);
+    let match;
+    _ATTR_REGEX.lastIndex = 0;
+    while ((match = _ATTR_REGEX.exec(str)) !== null) {
+        let value = match[2];
+        if (value[0] === '"' && value[value.length - 1] === '"') {
+            value = value.slice(1, -1);
         }
+        result[match[1].toUpperCase()] = value;
     }
+    return result;
+}
 
-
-    // ═══════════════════════════════════════════════════
-    // MODULE: LOGGER
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - Logger Module
-     * Styled console output
-     * @private
-     */
-    function _log(msg, type = 'info') {
-        const s = _C.LOG_STYLES[type] || _C.LOG_STYLES.info;
-        console.log('%cTTV AB%c ' + msg, _C.LOG_STYLES.prefix, s);
+function _$gt(m3u8) {
+    if (V2API) {
+        const match = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
+        return match?.[1] ?? null;
     }
+    const match = m3u8.match(/SERVER-TIME="([0-9.]+)"/);
+    return match?.[1] ?? null;
+}
 
-
-    // ═══════════════════════════════════════════════════
-    // MODULE: PARSER
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - Parser Module
-     * M3U8 playlist parsing and manipulation
-     * @private
-     */
-    function _parseAttrs(str) {
-        const r = {};
-        const rx = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
-        let m;
-        while ((m = rx.exec(str)) !== null) {
-            let v = m[2];
-            if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
-            r[m[1].toUpperCase()] = v;
-        }
-        return r;
+function _$rt(m3u8, time) {
+    if (!time) return m3u8;
+    if (V2API) {
+        return m3u8.replace(/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/, `$1${time}$2`);
     }
+    return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
+}
 
-    function _getServerTime(m3u8) {
-        if (V2API) {
-            const m = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
-            return m && m.length > 1 ? m[1] : null;
-        }
-        const m = m3u8.match('SERVER-TIME="([0-9.]+)"');
-        return m && m.length > 1 ? m[1] : null;
-    }
+function _$sa(text, stripAll, info) {
+    const lines = text.split('\n');
+    const len = lines.length;
+    const adUrl = 'https://twitch.tv';
+    let stripped = false;
+    let i = 0;
 
-    function _replaceServerTime(m3u8, time) {
-        if (!time) return m3u8;
-        if (V2API) {
-            return m3u8.replace(/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/, `$1${time}$2`);
-        }
-        return m3u8.replace(new RegExp('(SERVER-TIME=")[0-9.]+"'), `SERVER-TIME="${time}"`);
-    }
+    for (; i < len; i++) {
+        let line = lines[i];
 
-    function _stripAds(text, stripAll, info) {
-        let stripped = false;
-        const lines = text.replaceAll('\r', '').split('\n');
-        const adUrl = 'https://twitch.tv';
-
-        for (let i = 0; i < lines.length; i++) {
-            let line = lines[i];
+        if (line.includes('X-TV-TWITCH-AD')) {
             line = line
-                .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/, `$1${adUrl}$2`)
-                .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/, `$1${adUrl}$2`);
+                .replace(/X-TV-TWITCH-AD-URL="[^"]*"/, `X-TV-TWITCH-AD-URL="${adUrl}"`)
+                .replace(/X-TV-TWITCH-AD-CLICK-TRACKING-URL="[^"]*"/, `X-TV-TWITCH-AD-CLICK-TRACKING-URL="${adUrl}"`);
             lines[i] = line;
-
-            if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
-                const url = lines[i + 1];
-                if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
-                AdSegmentCache.set(url, Date.now());
-                stripped = true;
-            }
-            if (line.includes(AdSignifier)) stripped = true;
         }
 
-        if (stripped) {
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
-            }
-        } else {
-            info.NumStrippedAdSegments = 0;
+        if (i < len - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
+            const url = lines[i + 1];
+            if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
+            AdSegmentCache.set(url, Date.now());
+            stripped = true;
         }
 
-        info.IsStrippingAdSegments = stripped;
-        AdSegmentCache.forEach((v, k, m) => { if (v < Date.now() - 120000) m.delete(k); });
-        return lines.join('\n');
+        if (line.includes(AdSignifier)) stripped = true;
     }
 
-    function _getStreamUrl(m3u8, res) {
-        const lines = m3u8.replaceAll('\r', '').split('\n');
-        const [tw, th] = res.Resolution.split('x').map(Number);
-        let matchUrl = null, matchFps = false, closeUrl = null, closeDiff = Infinity;
+    if (stripped) {
+        for (i = 0; i < len; i++) {
+            if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
+        }
+    } else {
+        info.NumStrippedAdSegments = 0;
+    }
 
-        for (let i = 0; i < lines.length - 1; i++) {
-            if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
-                const a = _parseAttrs(lines[i]);
-                const r = a['RESOLUTION'], f = a['FRAME-RATE'];
-                if (r) {
-                    if (r == res.Resolution && (!matchUrl || (!matchFps && f == res.FrameRate))) {
-                        matchUrl = lines[i + 1];
-                        matchFps = f == res.FrameRate;
-                        if (matchFps) return matchUrl;
+    info.IsStrippingAdSegments = stripped;
+
+    const cutoff = Date.now() - 120000;
+    AdSegmentCache.forEach((v, k) => { if (v < cutoff) AdSegmentCache.delete(k); });
+
+    return lines.join('\n');
+}
+
+function _$su(m3u8, res) {
+    const lines = m3u8.split('\n');
+    const len = lines.length;
+    const [tw, th] = res.Resolution.split('x').map(Number);
+    const targetPixels = tw * th;
+    let matchUrl = null;
+    let matchFps = false;
+    let closeUrl = null;
+    let closeDiff = Infinity;
+
+    for (let i = 0; i < len - 1; i++) {
+        const line = lines[i];
+        if (!line.startsWith('#EXT-X-STREAM-INF') || !lines[i + 1].includes('.m3u8')) continue;
+
+        const attrs = _$pa(line);
+        const resolution = attrs.RESOLUTION;
+        const frameRate = attrs['FRAME-RATE'];
+
+        if (!resolution) continue;
+
+        if (resolution === res.Resolution) {
+            if (!matchUrl || (!matchFps && frameRate === res.FrameRate)) {
+                matchUrl = lines[i + 1];
+                matchFps = frameRate === res.FrameRate;
+                if (matchFps) return matchUrl;
+            }
+        }
+
+        const [w, h] = resolution.split('x').map(Number);
+        const diff = Math.abs((w * h) - targetPixels);
+        if (diff < closeDiff) {
+            closeUrl = lines[i + 1];
+            closeDiff = diff;
+        }
+    }
+
+    return matchUrl || closeUrl;
+}
+
+const _GQL_URL = 'https://gql.twitch.tv/gql';
+
+function _$gq(body) {
+    const headers = {
+        'Content-Type': 'application/json',
+        'Client-ID': ClientID
+    };
+    if (GQLDeviceID) headers['X-Device-Id'] = GQLDeviceID;
+    if (ClientVersion) headers['Client-Version'] = ClientVersion;
+    if (ClientSession) headers['Client-Session-Id'] = ClientSession;
+    if (ClientIntegrityHeader) headers['Client-Integrity'] = ClientIntegrityHeader;
+    if (AuthorizationHeader) headers['Authorization'] = AuthorizationHeader;
+
+    return fetch(_GQL_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+    });
+}
+
+function _$tk(channel, playerType) {
+    return _$gq({
+        operationName: 'PlaybackAccessToken',
+        extensions: {
+            persistedQuery: {
+                version: 1,
+                sha256Hash: '0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712'
+            }
+        },
+        variables: {
+            isLive: true,
+            login: channel,
+            isVod: false,
+            vodID: '',
+            playerType
+        }
+    });
+}
+
+async function _$pm(url, text, realFetch) {
+    if (!IsAdStrippingEnabled) return text;
+
+    const info = StreamInfosByUrl[url];
+    if (!info) return text;
+
+    if (HasTriggeredPlayerReload) {
+        HasTriggeredPlayerReload = false;
+        info.LastPlayerReload = Date.now();
+    }
+
+    const hasAds = text.includes(AdSignifier) || SimulatedAdsDepth > 0;
+
+    if (hasAds) {
+        info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
+
+        if (!info.IsShowingAd) {
+            info.IsShowingAd = true;
+            _$l('Ad detected, blocking...', 'warning');
+            _$ab();
+        }
+
+        if (!info.IsMidroll) {
+            const lines = text.split('\n');
+            for (let i = 0, len = lines.length; i < len; i++) {
+                if (lines[i].startsWith('#EXTINF') && i < len - 1) {
+                    if (!lines[i].includes(',live') && !info.RequestedAds.has(lines[i + 1])) {
+                        info.RequestedAds.add(lines[i + 1]);
+                        fetch(lines[i + 1]).then(r => r.blob()).catch(() => { });
+                        break;
                     }
-                    const [w, h] = r.split('x').map(Number);
-                    const d = Math.abs((w * h) - (tw * th));
-                    if (d < closeDiff) { closeUrl = lines[i + 1]; closeDiff = d; }
                 }
             }
         }
-        return matchUrl || closeUrl;
-    }
 
+        const res = info.Urls[url];
+        if (!res) {
+            _$l('Missing resolution info for ' + url, 'warning');
+            return text;
+        }
 
-    // ═══════════════════════════════════════════════════
-    // MODULE: API
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - API Module
-     * Twitch GraphQL API interactions
-     * @private
-     */
-    async function _gqlReq(body) {
-        const h = { 'Client-Id': ClientID, 'Content-Type': 'application/json' };
-        if (GQLDeviceID) h['X-Device-Id'] = GQLDeviceID;
-        if (ClientVersion) h['Client-Version'] = ClientVersion;
-        if (ClientSession) h['Client-Session-Id'] = ClientSession;
-        if (ClientIntegrityHeader) h['Client-Integrity'] = ClientIntegrityHeader;
-        if (AuthorizationHeader) h['Authorization'] = AuthorizationHeader;
-        return fetch('https://gql.twitch.tv/gql', { method: 'POST', headers: h, body: JSON.stringify(body) });
-    }
-
-    async function _getToken(channel, type) {
-        return _gqlReq({
-            operationName: 'PlaybackAccessToken_Template',
-            query: 'query PlaybackAccessToken_Template($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!) { streamPlaybackAccessToken(channelName: $login, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isLive) { value signature __typename } videoPlaybackAccessToken(id: $vodID, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isVod) { value signature __typename }}',
-            variables: { isLive: true, login: channel, isVod: false, vodID: '', playerType: type }
-        });
-    }
-
-
-    // ═══════════════════════════════════════════════════
-    // MODULE: PROCESSOR
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - Processor Module
-     * M3U8 stream processing and ad replacement
-     * @private
-     */
-    async function _processM3U8(url, text, realFetch) {
-        if (!IsAdStrippingEnabled) return text;
-        const info = StreamInfosByUrl[url];
-        if (!info) return text;
-
-        if (HasTriggeredPlayerReload) {
-            HasTriggeredPlayerReload = false;
+        const isHevc = res.Codecs?.[0] === 'h' && (res.Codecs[1] === 'e' || res.Codecs[1] === 'v');
+        if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
+            info.IsUsingModifiedM3U8 = true;
             info.LastPlayerReload = Date.now();
         }
 
-        const hasAds = text.includes(AdSignifier) || SimulatedAdsDepth > 0;
+        let backupType = null;
+        let backupM3u8 = null;
+        let fallbackM3u8 = null;
+        let startIdx = 0;
+        let minimal = false;
 
-        if (hasAds) {
-            info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
-            if (!info.IsShowingAd) {
-                info.IsShowingAd = true;
-                _log('Ad detected, blocking...', 'warning');
-                _incrementAdsBlocked(); // Increment counter
-            }
+        if (info.LastPlayerReload > Date.now() - PlayerReloadMinimalRequestsTime) {
+            startIdx = PlayerReloadMinimalRequestsPlayerIndex;
+            minimal = true;
+        }
 
-            if (!info.IsMidroll) {
-                const lines = text.replaceAll('\r', '').split('\n');
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].startsWith('#EXTINF') && lines.length > i + 1) {
-                        if (!lines[i].includes(',live') && !info.RequestedAds.has(lines[i + 1])) {
-                            info.RequestedAds.add(lines[i + 1]);
-                            fetch(lines[i + 1]).then(r => r.blob()).catch(() => { });
-                            break;
+        const playerTypes = BackupPlayerTypes;
+        const playerTypesLen = playerTypes.length;
+
+        for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
+            const pt = playerTypes[pi];
+            const realPt = pt.replace('-CACHED', '');
+            const cached = pt !== realPt;
+
+            for (let j = 0; j < 2; j++) {
+                let fresh = false;
+                let enc = info.BackupEncodingsM3U8Cache[pt];
+
+                if (!enc) {
+                    fresh = true;
+                    try {
+                        const tokenRes = await _$tk(info.ChannelName, realPt);
+                        if (tokenRes.status === 200) {
+                            const token = await tokenRes.json();
+                            const sig = token?.data?.streamPlaybackAccessToken?.signature;
+                            if (sig) {
+                                const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                                usherUrl.searchParams.set('sig', sig);
+                                usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                                const encRes = await realFetch(usherUrl.href);
+                                if (encRes.status === 200) {
+                                    enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                                }
+                            }
                         }
+                    } catch (e) {
+                        _$l('Error getting backup: ' + e.message, 'error');
                     }
                 }
-            }
 
-            const res = info.Urls[url];
-            if (!res) { _log('Missing resolution info for ' + url, 'warning'); return text; }
-
-            const isHevc = res.Codecs.startsWith('hev') || res.Codecs.startsWith('hvc');
-            if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
-                info.IsUsingModifiedM3U8 = true;
-                info.LastPlayerReload = Date.now();
-            }
-
-            let backupType = null, backupM3u8 = null, fallbackM3u8 = null;
-            let startIdx = 0, minimal = false;
-
-            if (info.LastPlayerReload > Date.now() - PlayerReloadMinimalRequestsTime) {
-                startIdx = PlayerReloadMinimalRequestsPlayerIndex;
-                minimal = true;
-            }
-
-            for (let pi = startIdx; !backupM3u8 && pi < BackupPlayerTypes.length; pi++) {
-                const pt = BackupPlayerTypes[pi];
-                const realPt = pt.replace('-CACHED', '');
-                const cached = pt != realPt;
-
-                for (let j = 0; j < 2; j++) {
-                    let fresh = false;
-                    let enc = info.BackupEncodingsM3U8Cache[pt];
-
-                    if (!enc) {
-                        fresh = true;
-                        try {
-                            const tokenRes = await _getToken(info.ChannelName, realPt);
-                            if (tokenRes.status === 200) {
-                                const token = await tokenRes.json();
-                                if (token?.data?.streamPlaybackAccessToken?.signature) {
-                                    const u = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + info.ChannelName + '.m3u8' + info.UsherParams);
-                                    u.searchParams.set('sig', token.data.streamPlaybackAccessToken.signature);
-                                    u.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
-                                    const encRes = await realFetch(u.href);
-                                    if (encRes.status === 200) enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                if (enc) {
+                    try {
+                        const streamUrl = _$su(enc, res);
+                        const streamRes = await realFetch(streamUrl);
+                        if (streamRes.status === 200) {
+                            const m3u8 = await streamRes.text();
+                            if (m3u8) {
+                                if (pt === FallbackPlayerType) fallbackM3u8 = m3u8;
+                                const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
+                                const lastResort = !fallbackM3u8 && pi >= playerTypesLen - 1;
+                                if (noAds || lastResort) {
+                                    backupType = pt;
+                                    backupM3u8 = m3u8;
+                                    break;
+                                }
+                                if (cached || minimal) {
+                                    backupType = pt;
+                                    backupM3u8 = m3u8;
+                                    break;
                                 }
                             }
-                        } catch (e) { _log('Error getting backup: ' + e.message, 'error'); }
-                    }
-
-                    if (enc) {
-                        try {
-                            const streamUrl = _getStreamUrl(enc, res);
-                            const streamRes = await realFetch(streamUrl);
-                            if (streamRes.status == 200) {
-                                const m3u8 = await streamRes.text();
-                                if (m3u8) {
-                                    if (pt == FallbackPlayerType) fallbackM3u8 = m3u8;
-                                    if ((!m3u8.includes(AdSignifier) && (SimulatedAdsDepth == 0 || pi >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && pi >= BackupPlayerTypes.length - 1)) {
-                                        backupType = pt; backupM3u8 = m3u8; break;
-                                    }
-                                    if (cached) break;
-                                    if (minimal) { backupType = pt; backupM3u8 = m3u8; break; }
-                                }
-                            }
-                        } catch (e) {
-                            _log('Stream fetch error: ' + e.message, 'warning');
                         }
+                    } catch (e) {
+                        _$l('Stream fetch error: ' + e.message, 'warning');
                     }
+                }
 
-                    info.BackupEncodingsM3U8Cache[pt] = null;
-                    if (fresh) break;
+                info.BackupEncodingsM3U8Cache[pt] = null;
+                if (fresh) break;
+            }
+        }
+
+        if (!backupM3u8 && fallbackM3u8) {
+            backupType = FallbackPlayerType;
+            backupM3u8 = fallbackM3u8;
+        }
+
+        if (backupM3u8) text = backupM3u8;
+
+        if (info.ActiveBackupPlayerType !== backupType) {
+            info.ActiveBackupPlayerType = backupType;
+            _$l('Using backup player type: ' + backupType, 'info');
+        }
+
+        text = _$sa(text, false, info);
+    } else {
+        if (info.IsShowingAd) {
+            info.IsShowingAd = false;
+            info.IsUsingModifiedM3U8 = false;
+            info.RequestedAds.clear();
+            info.BackupEncodingsM3U8Cache = [];
+            info.ActiveBackupPlayerType = null;
+            _$l('Ad ended', 'success');
+        }
+    }
+
+    return text;
+}
+
+function _$wj(url) {
+    const req = new XMLHttpRequest();
+    req.open('GET', url, false);
+    req.send();
+    return req.responseText;
+}
+
+function _$cw(W) {
+    const proto = W.prototype;
+    for (const key of _$s.conflicts) {
+        if (proto[key]) proto[key] = undefined;
+    }
+    return W;
+}
+
+function _$gr(W) {
+    const src = W.toString();
+    const result = [];
+    for (const pattern of _$s.reinsertPatterns) {
+        if (src.includes(pattern)) result.push(pattern);
+    }
+    return result;
+}
+
+function _$ri(W, names) {
+    for (const name of names) {
+        if (typeof window[name] === 'function') {
+            W.prototype[name] = window[name];
+        }
+    }
+    return W;
+}
+
+function _$iv(v) {
+    if (typeof v !== 'function') return false;
+    const src = v.toString();
+    return !_$s.conflicts.some(c => src.includes(c)) || !_$s.reinsertPatterns.some(p => src.includes(p));
+}
+
+function _$wf() {
+    _$l('Worker fetch hooked', 'info');
+    const realFetch = fetch;
+
+    fetch = async function (url, opts) {
+        if (typeof url !== 'string') {
+            return realFetch.apply(this, arguments);
+        }
+
+        if (AdSegmentCache.has(url)) {
+            return realFetch('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts);
+        }
+
+        url = url.trimEnd();
+
+        if (url.endsWith('m3u8')) {
+            const response = await realFetch(url, opts);
+            if (response.status === 200) {
+                const text = await response.text();
+                return new Response(await _$pm(url, text, realFetch));
+            }
+            return response;
+        }
+
+        if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
+            V2API = url.includes('/api/v2/');
+            const channelMatch = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/);
+            const channel = channelMatch?.[0];
+
+            if (ForceAccessTokenPlayerType) {
+                const urlObj = new URL(url);
+                urlObj.searchParams.delete('parent_domains');
+                url = urlObj.toString();
+            }
+
+            const response = await realFetch(url, opts);
+            if (response.status !== 200) return response;
+
+            const encodings = await response.text();
+            const serverTime = _$gt(encodings);
+            let info = StreamInfos[channel];
+
+            if (info?.EncodingsM3U8) {
+                const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
+                if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
+                    info = null;
                 }
             }
 
-            if (!backupM3u8 && fallbackM3u8) { backupType = FallbackPlayerType; backupM3u8 = fallbackM3u8; }
-            if (backupM3u8) text = backupM3u8;
+            if (!info?.EncodingsM3U8) {
+                info = StreamInfos[channel] = {
+                    ChannelName: channel,
+                    IsShowingAd: false,
+                    LastPlayerReload: 0,
+                    EncodingsM3U8: encodings,
+                    ModifiedM3U8: null,
+                    IsUsingModifiedM3U8: false,
+                    UsherParams: (new URL(url)).search,
+                    RequestedAds: new Set(),
+                    Urls: Object.create(null),
+                    ResolutionList: [],
+                    BackupEncodingsM3U8Cache: [],
+                    ActiveBackupPlayerType: null,
+                    IsMidroll: false,
+                    IsStrippingAdSegments: false,
+                    NumStrippedAdSegments: 0
+                };
 
-            if (info.ActiveBackupPlayerType != backupType) {
-                info.ActiveBackupPlayerType = backupType;
-                _log('Using backup player type: ' + backupType, 'info');
-            }
-
-            text = _stripAds(text, false, info);
-        } else {
-            if (info.IsShowingAd) {
-                info.IsShowingAd = false;
-                info.IsUsingModifiedM3U8 = false;
-                info.RequestedAds.clear();
-                info.BackupEncodingsM3U8Cache = [];
-                info.ActiveBackupPlayerType = null;
-                _log('Ad ended', 'success');
-            }
-        }
-
-        return text;
-    }
-
-
-    // ═══════════════════════════════════════════════════
-    // MODULE: WORKER
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - Worker Module
-     * Web Worker management and prototype manipulation
-     * @private
-     */
-    function _getWasmJs(url) {
-        const x = new XMLHttpRequest();
-        x.open('GET', url, false);
-        x.overrideMimeType("text/javascript");
-        x.send();
-        return x.responseText;
-    }
-
-    function _cleanWorker(w) {
-        let root = null, parent = null, proto = w;
-        while (proto) {
-            const s = proto.toString();
-            if (_S.conflicts.some(x => s.includes(x))) {
-                if (parent !== null) Object.setPrototypeOf(parent, Object.getPrototypeOf(proto));
-            } else {
-                if (root === null) root = proto;
-                parent = proto;
-            }
-            proto = Object.getPrototypeOf(proto);
-        }
-        return root;
-    }
-
-    function _getReinsert(w) {
-        const r = [];
-        let p = w;
-        while (p) {
-            const s = p.toString();
-            if (_S.reinsertPatterns.some(x => s.includes(x))) r.push(p);
-            p = Object.getPrototypeOf(p);
-        }
-        return r;
-    }
-
-    function _reinsert(w, r) {
-        let p = w;
-        for (let i = 0; i < r.length; i++) { Object.setPrototypeOf(r[i], p); p = r[i]; }
-        return p;
-    }
-
-    function _isValid(w) {
-        const s = w.toString();
-        return !_S.conflicts.some(x => s.includes(x)) || _S.reinsertPatterns.some(x => s.includes(x));
-    }
-
-
-    // ═══════════════════════════════════════════════════
-    // MODULE: HOOKS
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - Hooks Module
-     * Fetch and Worker interception
-     * @private
-     */
-    function _hookWorkerFetch() {
-        _log('Worker fetch hooked', 'info');
-        const real = fetch;
-        fetch = async function (url, opts) {
-            if (typeof url === 'string') {
-                if (AdSegmentCache.has(url)) {
-                    return new Promise((res, rej) => {
-                        real('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts)
-                            .then(r => res(r)).catch(e => rej(e));
-                    });
-                }
-
-                url = url.trimEnd();
-                if (url.endsWith('m3u8')) {
-                    return new Promise((res, rej) => {
-                        const proc = async (r) => {
-                            if (r.status === 200) res(new Response(await _processM3U8(url, await r.text(), real)));
-                            else res(r);
-                        };
-                        real(url, opts).then(r => proc(r)).catch(e => rej(e));
-                    });
-                } else if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
-                    V2API = url.includes('/api/v2/');
-                    const ch = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
-
-                    if (ForceAccessTokenPlayerType) {
-                        const t = new URL(url);
-                        t.searchParams.delete('parent_domains');
-                        url = t.toString();
+                const lines = encodings.split('\n');
+                for (let i = 0, len = lines.length; i < len - 1; i++) {
+                    if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
+                        const attrs = _$pa(lines[i]);
+                        const resolution = attrs.RESOLUTION;
+                        if (resolution) {
+                            const resInfo = {
+                                Resolution: resolution,
+                                FrameRate: attrs['FRAME-RATE'],
+                                Codecs: attrs.CODECS,
+                                Url: lines[i + 1]
+                            };
+                            info.Urls[lines[i + 1]] = resInfo;
+                            info.ResolutionList.push(resInfo);
+                        }
+                        StreamInfosByUrl[lines[i + 1]] = info;
                     }
-
-                    return new Promise((res, rej) => {
-                        const proc = async (r) => {
-                            if (r.status == 200) {
-                                const enc = await r.text();
-                                const time = _getServerTime(enc);
-                                let info = StreamInfos[ch];
-
-                                if (info != null && info.EncodingsM3U8 != null && (await real(info.EncodingsM3U8.match(/^https:.*\.m3u8$/m)[0])).status !== 200) {
-                                    info = null;
-                                }
-
-                                if (info == null || info.EncodingsM3U8 == null) {
-                                    StreamInfos[ch] = info = {
-                                        ChannelName: ch, IsShowingAd: false, LastPlayerReload: 0,
-                                        EncodingsM3U8: enc, ModifiedM3U8: null, IsUsingModifiedM3U8: false,
-                                        UsherParams: (new URL(url)).search, RequestedAds: new Set(),
-                                        Urls: [], ResolutionList: [], BackupEncodingsM3U8Cache: [],
-                                        ActiveBackupPlayerType: null, IsMidroll: false,
-                                        IsStrippingAdSegments: false, NumStrippedAdSegments: 0
-                                    };
-
-                                    const lines = enc.replaceAll('\r', '').split('\n');
-                                    for (let i = 0; i < lines.length - 1; i++) {
-                                        if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
-                                            const a = _parseAttrs(lines[i]);
-                                            const rs = a['RESOLUTION'];
-                                            if (rs) {
-                                                const ri = { Resolution: rs, FrameRate: a['FRAME-RATE'], Codecs: a['CODECS'], Url: lines[i + 1] };
-                                                info.Urls[lines[i + 1]] = ri;
-                                                info.ResolutionList.push(ri);
-                                            }
-                                            StreamInfosByUrl[lines[i + 1]] = info;
-                                        }
-                                    }
-                                    _log('Stream initialized: ' + ch, 'success');
-                                }
-
-                                info.LastPlayerReload = Date.now();
-                                res(new Response(_replaceServerTime(info.IsUsingModifiedM3U8 ? info.ModifiedM3U8 : info.EncodingsM3U8, time)));
-                            } else {
-                                res(r);
-                            }
-                        };
-                        real(url, opts).then(r => proc(r)).catch(e => rej(e));
-                    });
                 }
+                _$l('Stream initialized: ' + channel, 'success');
             }
-            return real.apply(this, arguments);
-        };
-    }
 
-    function _hookWorker() {
-        const reins = _getReinsert(window.Worker);
-        const W = class Worker extends _cleanWorker(window.Worker) {
-            constructor(url, opts) {
-                let tw = false;
-                try { tw = new URL(url).origin.endsWith('.twitch.tv'); } catch { tw = false; }
-                if (!tw) { super(url, opts); return; }
+            info.LastPlayerReload = Date.now();
+            const playlist = info.IsUsingModifiedM3U8 ? info.ModifiedM3U8 : info.EncodingsM3U8;
+            return new Response(_$rt(playlist, serverTime));
+        }
 
-                const blob = `
-                    const _C = ${JSON.stringify(_C)};
-                    const _S = ${JSON.stringify(_S)};
-                    ${_log.toString()}
-                    ${_declareState.toString()}
-                    ${_incrementAdsBlocked.toString()}
-                    ${_parseAttrs.toString()}
-                    ${_getServerTime.toString()}
-                    ${_replaceServerTime.toString()}
-                    ${_stripAds.toString()}
-                    ${_getStreamUrl.toString()}
-                    ${_gqlReq.toString()}
-                    ${_getToken.toString()}
-                    ${_processM3U8.toString()}
-                    ${_getWasmJs.toString()}
-                    ${_hookWorkerFetch.toString()}
-                    
-                    const ws = _getWasmJs('${url.replaceAll("'", "%27")}');
-                    _declareState(self);
-                    GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
-                    AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
-                    ClientIntegrityHeader = ${ClientIntegrityHeader ? "'" + ClientIntegrityHeader + "'" : null};
-                    ClientVersion = ${ClientVersion ? "'" + ClientVersion + "'" : null};
-                    ClientSession = ${ClientSession ? "'" + ClientSession + "'" : null};
-                    
-                    self.addEventListener('message', function(e) {
-                        if (e.data.key == 'UpdateClientVersion') ClientVersion = e.data.value;
-                        else if (e.data.key == 'UpdateClientSession') ClientSession = e.data.value;
-                        else if (e.data.key == 'UpdateClientId') ClientID = e.data.value;
-                        else if (e.data.key == 'UpdateDeviceId') GQLDeviceID = e.data.value;
-                        else if (e.data.key == 'UpdateClientIntegrityHeader') ClientIntegrityHeader = e.data.value;
-                        else if (e.data.key == 'UpdateAuthorizationHeader') AuthorizationHeader = e.data.value;
-                    });
-                    
-                    _hookWorkerFetch();
-                    eval(ws);
-                `;
+        return realFetch.apply(this, arguments);
+    };
+}
 
-                const blobUrl = URL.createObjectURL(new Blob([blob]));
-                super(blobUrl, opts);
+function _$hw() {
+    const reinsertNames = _$gr(window.Worker);
 
-                // Revoke blob URL to free memory (worker already loaded)
-                URL.revokeObjectURL(blobUrl);
+    const HookedWorker = class Worker extends _$cw(window.Worker) {
+        constructor(url, opts) {
+            let isTwitch = false;
+            try {
+                isTwitch = new URL(url).origin.endsWith('.twitch.tv');
+            } catch {
+                isTwitch = false;
+            }
 
-                // Listen for AdBlocked messages from worker
-                this.addEventListener('message', function (e) {
-                    if (e.data && e.data.key === 'AdBlocked') {
-                        _S.adsBlocked = e.data.count;
-                        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
+            if (!isTwitch) {
+                super(url, opts);
+                return;
+            }
+
+            const injectedCode = `
+                const _$c = ${JSON.stringify(_$c)};
+                const _$s = ${JSON.stringify(_$s)};
+                const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
+                ${_$l.toString()}
+                ${_$ds.toString()}
+                ${_$ab.toString()}
+                ${_$pa.toString()}
+                ${_$gt.toString()}
+                ${_$rt.toString()}
+                ${_$sa.toString()}
+                ${_$su.toString()}
+                ${_$gq.toString()}
+                ${_$tk.toString()}
+                ${_$pm.toString()}
+                ${_$wj.toString()}
+                ${_$wf.toString()}
+                
+                const _GQL_URL = '${_GQL_URL}';
+                const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
+                _$ds(self);
+                GQLDeviceID = ${GQLDeviceID ? `'${GQLDeviceID}'` : 'null'};
+                AuthorizationHeader = ${AuthorizationHeader ? `'${AuthorizationHeader}'` : 'undefined'};
+                ClientIntegrityHeader = ${ClientIntegrityHeader ? `'${ClientIntegrityHeader}'` : 'null'};
+                ClientVersion = ${ClientVersion ? `'${ClientVersion}'` : 'null'};
+                ClientSession = ${ClientSession ? `'${ClientSession}'` : 'null'};
+                
+                self.addEventListener('message', function(e) {
+                    const data = e.data;
+                    if (!data?.key) return;
+                    switch (data.key) {
+                        case 'UpdateClientVersion': ClientVersion = data.value; break;
+                        case 'UpdateClientSession': ClientSession = data.value; break;
+                        case 'UpdateClientId': ClientID = data.value; break;
+                        case 'UpdateDeviceId': GQLDeviceID = data.value; break;
+                        case 'UpdateClientIntegrityHeader': ClientIntegrityHeader = data.value; break;
+                        case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
                     }
                 });
+                
+                _$wf();
+                eval(wasmSource);
+            `;
 
-                _S.workers.push(this);
+            const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
+            super(blobUrl, opts);
+            URL.revokeObjectURL(blobUrl);
 
-                // Clean up terminated workers periodically
-                if (_S.workers.length > 5) {
-                    _S.workers = _S.workers.filter(w => w.onmessage !== null);
+            this.addEventListener('message', function (e) {
+                if (e.data?.key === 'AdBlocked') {
+                    _$s.adsBlocked = e.data.count;
+                    window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
                 }
+            });
+
+            _$s.workers.push(this);
+
+            if (_$s.workers.length > 5) {
+                _$s.workers = _$s.workers.filter(w => w.onmessage !== null);
             }
-        };
-
-        let inst = _reinsert(W, reins);
-        Object.defineProperty(window, 'Worker', {
-            get: () => inst,
-            set: (v) => { if (_isValid(v)) inst = v; }
-        });
-    }
-
-    function _hookStorage() {
-        try {
-            const orig = localStorage.getItem.bind(localStorage);
-            localStorage.getItem = function (k) {
-                const v = orig(k);
-                if (k === 'unique_id' && v) GQLDeviceID = v;
-                return v;
-            };
-            const id = orig('unique_id');
-            if (id) GQLDeviceID = id;
-        } catch (e) {
-            _log('Storage hook error: ' + e.message, 'warning');
         }
-    }
+    };
 
-    function _hookMainFetch() {
-        const real = window.fetch;
-        window.fetch = async function (url, opts) {
-            if (typeof url === 'string' || url instanceof URL) {
-                const u = url.toString();
-                if (u.includes('gql.twitch.tv/gql')) {
-                    const r = await real.apply(this, arguments);
-                    if (opts && opts.headers) {
-                        const h = opts.headers;
-                        if (h['Client-Integrity']) { ClientIntegrityHeader = h['Client-Integrity']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader })); }
-                        if (h['Authorization']) { AuthorizationHeader = h['Authorization']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader })); }
-                        if (h['Client-Version']) { ClientVersion = h['Client-Version']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientVersion', value: ClientVersion })); }
-                        if (h['Client-Session-Id']) { ClientSession = h['Client-Session-Id']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateClientSession', value: ClientSession })); }
-                        if (h['X-Device-Id']) { GQLDeviceID = h['X-Device-Id']; _S.workers.forEach(w => w.postMessage({ key: 'UpdateDeviceId', value: GQLDeviceID })); }
+    let workerInstance = _$ri(HookedWorker, reinsertNames);
+    Object.defineProperty(window, 'Worker', {
+        get: () => workerInstance,
+        set: (v) => { if (_$iv(v)) workerInstance = v; }
+    });
+}
+
+function _$hs() {
+    try {
+        const originalGetItem = localStorage.getItem.bind(localStorage);
+        localStorage.getItem = function (key) {
+            const value = originalGetItem(key);
+            if (key === 'unique_id' && value) GQLDeviceID = value;
+            return value;
+        };
+        const deviceId = originalGetItem('unique_id');
+        if (deviceId) GQLDeviceID = deviceId;
+    } catch (e) {
+        _$l('Storage hook error: ' + e.message, 'warning');
+    }
+}
+
+function _$mf() {
+    const realFetch = window.fetch;
+
+    window.fetch = async function (url, opts) {
+        if (typeof url === 'string' || url instanceof URL) {
+            const urlStr = url.toString();
+            if (urlStr.includes('gql.twitch.tv/gql')) {
+                const response = await realFetch.apply(this, arguments);
+
+                if (opts?.headers) {
+                    const h = opts.headers;
+                    const updates = [];
+
+                    if (h['Client-Integrity']) {
+                        ClientIntegrityHeader = h['Client-Integrity'];
+                        updates.push({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader });
                     }
-                    return r;
+                    if (h['Authorization']) {
+                        AuthorizationHeader = h['Authorization'];
+                        updates.push({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader });
+                    }
+                    if (h['Client-Version']) {
+                        ClientVersion = h['Client-Version'];
+                        updates.push({ key: 'UpdateClientVersion', value: ClientVersion });
+                    }
+                    if (h['Client-Session-Id']) {
+                        ClientSession = h['Client-Session-Id'];
+                        updates.push({ key: 'UpdateClientSession', value: ClientSession });
+                    }
+                    if (h['X-Device-Id']) {
+                        GQLDeviceID = h['X-Device-Id'];
+                        updates.push({ key: 'UpdateDeviceId', value: GQLDeviceID });
+                    }
+
+                    if (updates.length > 0) {
+                        for (const worker of _$s.workers) {
+                            for (const update of updates) {
+                                worker.postMessage(update);
+                            }
+                        }
+                    }
+                }
+                return response;
+            }
+        }
+        return realFetch.apply(this, arguments);
+    };
+}
+
+const _REMINDER_KEY = 'ttvab_last_reminder';
+
+const _REMINDER_INTERVAL = 86400000;
+
+const _FIRST_RUN_KEY = 'ttvab_first_run_shown';
+
+function _$dn() {
+    try {
+        const lastReminder = localStorage.getItem(_REMINDER_KEY);
+        const now = Date.now();
+
+        if (lastReminder && (now - parseInt(lastReminder, 10)) < _REMINDER_INTERVAL) return;
+
+        setTimeout(() => {
+            const toast = document.createElement('div');
+            toast.id = 'ttvab-reminder';
+            toast.innerHTML = `
+                <style>
+                    #ttvab-reminder{position:fixed;bottom:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:16px 20px;border-radius:12px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:999999;animation:ttvab-slide .3s ease}
+                    @keyframes ttvab-slide{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+                    #ttvab-reminder-close{position:absolute;top:8px;right:10px;background:none;border:none;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;padding:0;line-height:1}
+                    #ttvab-reminder-close:hover{color:#fff}
+                    #ttvab-reminder-btn{display:inline-block;margin-top:10px;padding:8px 16px;background:#fff;color:#772CE8;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px}
+                    #ttvab-reminder-btn:hover{background:#f0f0f0}
+                </style>
+                <button id="ttvab-reminder-close">×</button>
+                <div style="margin-bottom:4px;font-weight:600">💜 Enjoying TTV AB?</div>
+                <div style="opacity:.9">If this extension saves you from ads, consider buying me a coffee!</div>
+                <button id="ttvab-reminder-btn">Support the Developer</button>
+            `;
+
+            document.body.appendChild(toast);
+            localStorage.setItem(_REMINDER_KEY, now.toString());
+
+            document.getElementById('ttvab-reminder-close').onclick = () => toast.remove();
+            document.getElementById('ttvab-reminder-btn').onclick = () => {
+                window.open('https://paypal.me/GosuDRM', '_blank');
+                toast.remove();
+            };
+
+            setTimeout(() => {
+                if (document.getElementById('ttvab-reminder')) {
+                    toast.style.animation = 'ttvab-slide .3s ease reverse';
+                    setTimeout(() => toast.remove(), 300);
+                }
+            }, 15000);
+        }, 5000);
+    } catch (e) {
+        _$l('Donation reminder error: ' + e.message, 'error');
+    }
+}
+
+function _$wc() {
+    try {
+        if (localStorage.getItem(_FIRST_RUN_KEY)) return;
+
+        setTimeout(() => {
+            const toast = document.createElement('div');
+            toast.id = 'ttvab-welcome';
+            toast.innerHTML = `
+                <style>
+                    #ttvab-welcome{position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:20px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:999999;animation:ttvab-welcome .4s ease}
+                    @keyframes ttvab-welcome{from{opacity:0;transform:translateY(-20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+                    #ttvab-welcome-close{position:absolute;top:10px;right:12px;background:none;border:none;color:rgba(255,255,255,.7);font-size:20px;cursor:pointer;padding:0;line-height:1}
+                    #ttvab-welcome-close:hover{color:#fff}
+                    #ttvab-welcome h3{margin:0 0 8px;font-size:18px}
+                    #ttvab-welcome p{margin:0 0 12px;opacity:.9;line-height:1.4}
+                    #ttvab-welcome .pin-tip{background:rgba(255,255,255,.15);padding:10px 12px;border-radius:8px;font-size:13px}
+                    #ttvab-welcome .pin-tip strong{color:#fff}
+                </style>
+                <button id="ttvab-welcome-close">×</button>
+                <h3>🎉 TTV AB Installed!</h3>
+                <p>Ads will now be blocked automatically on Twitch streams.</p>
+                <div class="pin-tip">
+                    <strong>💡 Tip:</strong> Pin this extension for easy access!<br>
+                    Click 🧩 → Find TTV AB → Click 📌
+                </div>
+            `;
+
+            document.body.appendChild(toast);
+            localStorage.setItem(_FIRST_RUN_KEY, 'true');
+
+            const closeHandler = () => {
+                toast.style.animation = 'ttvab-welcome .3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            };
+
+            document.getElementById('ttvab-welcome-close').onclick = closeHandler;
+
+            setTimeout(() => {
+                if (document.getElementById('ttvab-welcome')) closeHandler();
+            }, 20000);
+        }, 2000);
+    } catch (e) {
+        _$l('Welcome message error: ' + e.message, 'error');
+    }
+}
+
+function _$cm() {
+    let isRefreshing = false;
+    let checkInterval = null;
+
+    function detectCrash() {
+        const bodyText = document.body?.innerText?.toLowerCase() || '';
+        const patterns = _$c.CRASH_PATTERNS;
+
+        for (let i = 0, len = patterns.length; i < len; i++) {
+            if (bodyText.includes(patterns[i].toLowerCase())) {
+                return patterns[i];
+            }
+        }
+
+        const errorElements = document.querySelectorAll(
+            '[data-a-target="player-overlay-content-gate"],' +
+            '[data-a-target="player-error-modal"],' +
+            '.content-overlay-gate,' +
+            '.player-error'
+        );
+
+        for (const el of errorElements) {
+            const text = (el.innerText || '').toLowerCase();
+            for (let i = 0, len = patterns.length; i < len; i++) {
+                if (text.includes(patterns[i].toLowerCase())) {
+                    return patterns[i];
                 }
             }
-            return real.apply(this, arguments);
-        };
-    }
-
-
-    // ═══════════════════════════════════════════════════
-    // MODULE: UI
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - UI Module
-     * Toast notifications and user interface components
-     * @private
-     */
-    function _showDonation() {
-        const K = 'ttvab_last_reminder', D = 86400000;
-        try {
-            const last = localStorage.getItem(K), now = Date.now();
-            if (last && (now - parseInt(last)) < D) return;
-            setTimeout(() => {
-                const t = document.createElement('div');
-                t.id = 'ttvab-reminder';
-                t.innerHTML = `<style>#ttvab-reminder{position:fixed;bottom:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:16px 20px;border-radius:12px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:999999;animation:ttvab-slide .3s ease}@keyframes ttvab-slide{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}#ttvab-reminder-close{position:absolute;top:8px;right:10px;background:none;border:none;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;padding:0;line-height:1}#ttvab-reminder-close:hover{color:#fff}#ttvab-reminder-btn{display:inline-block;margin-top:10px;padding:8px 16px;background:#fff;color:#772CE8;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px}#ttvab-reminder-btn:hover{background:#f0f0f0}</style><button id="ttvab-reminder-close">×</button><div style="margin-bottom:4px;font-weight:600">💜 Enjoying TTV AB?</div><div style="opacity:.9">If this extension saves you from ads, consider buying me a coffee!</div><button id="ttvab-reminder-btn">Support the Developer</button>`;
-                document.body.appendChild(t);
-                localStorage.setItem(K, now.toString());
-                document.getElementById('ttvab-reminder-close').onclick = () => t.remove();
-                document.getElementById('ttvab-reminder-btn').onclick = () => { window.open('https://paypal.me/GosuDRM', '_blank'); t.remove(); };
-                setTimeout(() => { if (document.getElementById('ttvab-reminder')) { t.style.animation = 'ttvab-slide .3s ease reverse'; setTimeout(() => t.remove(), 300); } }, 15000);
-            }, 5000);
-        } catch (e) {
-            _log('Donation reminder error: ' + e.message, 'error');
         }
+
+        return null;
     }
 
-    function _showWelcome() {
-        const K = 'ttvab_first_run_shown';
-        try {
-            if (localStorage.getItem(K)) return;
-            setTimeout(() => {
-                const t = document.createElement('div');
-                t.id = 'ttvab-welcome';
-                t.innerHTML = `<style>#ttvab-welcome{position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:20px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:999999;animation:ttvab-w .4s ease}@keyframes ttvab-w{from{opacity:0;transform:translateY(-20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}#ttvab-welcome-close{position:absolute;top:10px;right:12px;background:none;border:none;color:rgba(255,255,255,.7);font-size:20px;cursor:pointer;padding:0;line-height:1}#ttvab-welcome-close:hover{color:#fff}#ttvab-welcome h3{margin:0 0 8px;font-size:18px}#ttvab-welcome p{margin:0 0 12px;opacity:.9;line-height:1.4}#ttvab-welcome .pin-tip{background:rgba(255,255,255,.15);padding:10px 12px;border-radius:8px;font-size:13px}#ttvab-welcome .pin-tip strong{color:#fff}</style><button id="ttvab-welcome-close">×</button><h3>🎉 TTV AB Installed!</h3><p>Ads will now be blocked automatically on Twitch streams.</p><div class="pin-tip"><strong>💡 Tip:</strong> Pin this extension for easy access!<br>Click 🧩 → Find TTV AB → Click 📌</div>`;
-                document.body.appendChild(t);
-                localStorage.setItem(K, 'true');
-                document.getElementById('ttvab-welcome-close').onclick = () => { t.style.animation = 'ttvab-w .3s ease reverse'; setTimeout(() => t.remove(), 300); };
-                setTimeout(() => { if (document.getElementById('ttvab-welcome')) { t.style.animation = 'ttvab-w .3s ease reverse'; setTimeout(() => t.remove(), 300); } }, 20000);
-            }, 2000);
-        } catch (e) {
-            _log('Welcome message error: ' + e.message, 'error');
+    function handleCrash(error) {
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        _$l('Player crash detected: ' + error, 'error');
+        _$l('Auto-refreshing in ' + (_$c.REFRESH_DELAY / 1000) + 's...', 'warning');
+
+        const banner = document.createElement('div');
+        banner.innerHTML = `
+            <style>
+                #ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-pulse 1s ease infinite}
+                @keyframes ttvab-pulse{0%,100%{opacity:1}50%{opacity:.7}}
+            </style>
+            <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing automatically...</div>
+        `;
+        document.body.appendChild(banner);
+
+        setTimeout(() => window.location.reload(), _$c.REFRESH_DELAY);
+    }
+
+    function start() {
+        if (!document.body) {
+            setTimeout(start, 100);
+            return;
         }
-    }
 
-
-    // ═══════════════════════════════════════════════════
-    // MODULE: MONITOR
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - Monitor Module
-     * Player crash detection and auto-refresh
-     * @private
-     */
-    function _initCrashMonitor() {
-        let refreshing = false, interval = null;
-
-        function detect() {
-            const text = document.body?.innerText || '';
-            for (const p of _C.CRASH_PATTERNS) {
-                if (text.toLowerCase().includes(p.toLowerCase())) return p;
+        const observer = new MutationObserver(() => {
+            const error = detectCrash();
+            if (error) {
+                handleCrash(error);
+                observer.disconnect();
+                if (checkInterval) clearInterval(checkInterval);
             }
-            const els = document.querySelectorAll('[data-a-target="player-overlay-content-gate"],[data-a-target="player-error-modal"],.content-overlay-gate,.player-error');
-            for (const el of els) {
-                const t = el.innerText || '';
-                for (const p of _C.CRASH_PATTERNS) {
-                    if (t.toLowerCase().includes(p.toLowerCase())) return p;
-                }
-            }
-            return null;
-        }
-
-        function handle(err) {
-            if (refreshing) return;
-            refreshing = true;
-            _log('Player crash detected: ' + err, 'error');
-            _log('Auto-refreshing in ' + (_C.REFRESH_DELAY / 1000) + 's...', 'warning');
-            const t = document.createElement('div');
-            t.innerHTML = `<style>#ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-p 1s ease infinite}@keyframes ttvab-p{0%,100%{opacity:1}50%{opacity:.7}}</style><div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing automatically...</div>`;
-            document.body.appendChild(t);
-            setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
-        }
-
-        const obs = new MutationObserver(() => {
-            const e = detect();
-            if (e) { handle(e); obs.disconnect(); if (interval) clearInterval(interval); }
         });
 
-        function start() {
-            if (document.body) {
-                obs.observe(document.body, { childList: true, subtree: true, characterData: true });
-                interval = setInterval(() => {
-                    const e = detect();
-                    if (e) { handle(e); obs.disconnect(); clearInterval(interval); }
-                }, 5000);
-                _log('Player crash monitor active', 'info');
-            } else {
-                setTimeout(start, 100);
-            }
-        }
-        start();
-    }
-
-
-    // ═══════════════════════════════════════════════════
-    // MODULE: INIT
-    // ═══════════════════════════════════════════════════
-
-    /**
-     * TTV AB - Init Module
-     * Bootstrap and initialization
-     * @private
-     */
-    function _bootstrap() {
-        if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _C.INTERNAL_VERSION) {
-            _log('Skipping - another script is active', 'warning');
-            return false;
-        }
-        window.ttvabVersion = _C.INTERNAL_VERSION;
-        _log('v' + _C.VERSION + ' loaded', 'info');
-        return true;
-    }
-
-    function _initToggleListener() {
-        window.addEventListener('ttvab-toggle', function (e) {
-            const enabled = e.detail?.enabled ?? true;
-            IsAdStrippingEnabled = enabled;
-            _log('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
         });
+
+        checkInterval = setInterval(() => {
+            const error = detectCrash();
+            if (error) {
+                handleCrash(error);
+                observer.disconnect();
+                clearInterval(checkInterval);
+            }
+        }, 5000);
+
+        _$l('Player crash monitor active', 'info');
     }
 
-    function _init() {
-        if (!_bootstrap()) return;
-        _declareState(window);
-        _hookStorage();
-        _hookWorker();
-        _hookMainFetch();
-        _initToggleListener();
-        _initCrashMonitor();
-        _showWelcome();
-        _showDonation();
-        _log('Initialized successfully', 'success');
+    start();
+}
+
+function _$bs() {
+
+    if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _$c.INTERNAL_VERSION) {
+        _$l('Skipping - another script is active', 'warning');
+        return false;
     }
 
+    window.ttvabVersion = _$c.INTERNAL_VERSION;
+    _$l('v' + _$c.VERSION + ' loaded', 'info');
+    return true;
+}
 
+function _$tl() {
+    window.addEventListener('ttvab-toggle', function (e) {
+        const enabled = e.detail?.enabled ?? true;
+        IsAdStrippingEnabled = enabled;
+        _$l('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
+    });
+}
 
-    // Initialize
-    _init();
+function _$in() {
+    if (!_$bs()) return;
+
+    _$ds(window);
+    _$hs();
+    _$hw();
+    _$mf();
+    _$tl();
+    _$cm();
+    _$wc();
+    _$dn();
+
+    _$l('Initialized successfully', 'success');
+}
+
+_$in();
 })();

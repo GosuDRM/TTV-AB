@@ -4,6 +4,22 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.0.6] - 2025-12-10
+
+### Changed
+- Complete codebase refactoring with clean architecture
+- Added JSDoc documentation to all functions
+- Optimized loops and variable caching for performance
+- Improved module organization with clear separation
+- Build script now minifies and obfuscates output
+- Reduced bundle size from 37KB to 32KB
+
+### Performance
+- Cached regex patterns for faster parsing
+- Used Object.create(null) for faster lookups
+- Optimized M3U8 parsing with early returns
+- Batched worker message updates
+
 ## [3.0.5] - 2025-12-10
 
 ### Changed
