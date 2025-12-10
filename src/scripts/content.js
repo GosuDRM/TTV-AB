@@ -318,6 +318,11 @@
     }
 
     async function processM3U8(url, textStr, realFetch) {
+        // Skip ad blocking if disabled
+        if (!IsAdStrippingEnabled) {
+            return textStr;
+        }
+
         const streamInfo = StreamInfosByUrl[url];
         if (!streamInfo) {
             return textStr;
@@ -938,6 +943,13 @@
             // localStorage unavailable
         }
     }
+
+    // Listen for toggle events from bridge script
+    window.addEventListener('ttvab-toggle', function (e) {
+        const enabled = e.detail?.enabled ?? true;
+        IsAdStrippingEnabled = enabled;
+        console.log('[TTV AB] Ad blocking ' + (enabled ? 'enabled' : 'disabled'));
+    });
 
     hookLocalStorage();
     hookWindowWorker();

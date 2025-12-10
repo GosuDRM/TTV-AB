@@ -18,11 +18,19 @@ document.addEventListener('DOMContentLoaded', function () {
         updateStatus(enabled);
     });
 
-    // Persist toggle state changes
+    // Persist toggle state changes and notify content script
     toggle.addEventListener('change', function () {
         const enabled = toggle.checked;
         chrome.storage.local.set({ ttvAdblockEnabled: enabled });
         updateStatus(enabled);
+
+        // Send message to active Twitch tab
+        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+            if (tabs[0] && tabs[0].url && tabs[0].url.includes('twitch.tv')) {
+                chrome.tabs.sendMessage(tabs[0].id, { action: 'toggle', enabled: enabled })
+                    .catch(() => { }); // Ignore errors if bridge isn't ready
+            }
+        });
     });
 
     /**
