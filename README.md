@@ -34,42 +34,6 @@ The extension intercepts Twitch's HLS video playlists and:
 - Fetches backup ad-free streams when ads are detected
 - Caches ad segments to prevent playback
 
-## Files
-
-```
-TTV AB/
-├── manifest.json           # Extension configuration
-├── build.js                # Build script (concatenates modules)
-├── README.md               # Documentation
-├── LICENSE                 # MIT License
-├── CHANGELOG.md            # Version history
-├── .gitignore              # Git ignore rules
-├── src/
-│   ├── modules/            # Source modules (edit these)
-│   │   ├── constants.js    # Configuration & version
-│   │   ├── state.js        # State management
-│   │   ├── logger.js       # Console logging
-│   │   ├── parser.js       # M3U8 parsing
-│   │   ├── api.js          # Twitch API
-│   │   ├── processor.js    # Ad processing
-│   │   ├── worker.js       # Worker management
-│   │   ├── hooks.js        # Fetch interception
-│   │   ├── ui.js           # Toast notifications
-│   │   ├── monitor.js      # Crash detection
-│   │   └── init.js         # Bootstrap
-│   ├── scripts/
-│   │   ├── content.js      # Built output (generated)
-│   │   └── bridge.js       # Popup communication
-│   └── popup/
-│       ├── popup.html      # Extension popup UI
-│       └── popup.js        # Toggle & donate
-└── assets/
-    └── icons/
-        ├── icon16.png
-        ├── icon48.png
-        └── icon128.png
-```
-
 ## Development
 
 To modify the extension, edit files in `src/modules/` then run:
