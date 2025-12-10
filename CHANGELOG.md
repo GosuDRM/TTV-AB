@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Ads blocked counter now properly persists across sessions
 - Counter no longer resets to 0 on page refresh or navigation
 - Bridge script now sends stored count to content script on load
+- Toggle Enable/Disable now works instantly for active streams without refresh
+- Fixed memory leak in stream info cache during long viewing sessions
 
 ### Added
 - New `ttvab-init-count` event for counter synchronization

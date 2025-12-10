@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.0.6
+ * TTV AB v3.0.7
  * @author GosuDRM
  * @license MIT
  * @see https://github.com/GosuDRM/TTV-AB
@@ -9,7 +9,7 @@
 
 const _$c = {
     
-    VERSION: '3.0.6',
+    VERSION: '3.0.7',
     
     INTERNAL_VERSION: 20,
     
