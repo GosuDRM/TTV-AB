@@ -4,6 +4,13 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.0.8] - 2025-12-10
+
+### Added
+- Detailed code documentation header for Chrome Web Store review process
+- Source code architecture breakdown with module descriptions
+- Safety clarifications and GitHub source links for transparency
+
 ## [3.0.7] - 2025-12-10
 
 ### Fixed
