@@ -896,6 +896,14 @@ function _$in() {
     if (!_$bs()) return;
 
     _$ds(window);
+
+    window.addEventListener('ttvab-init-count', function (e) {
+        if (e.detail && typeof e.detail.count === 'number') {
+            _$s.adsBlocked = e.detail.count;
+            _$l('Restored ads blocked count: ' + _$s.adsBlocked, 'info');
+        }
+    });
+
     _$hs();
     _$hw();
     _$mf();

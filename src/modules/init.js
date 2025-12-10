@@ -43,6 +43,15 @@ function _init() {
     if (!_bootstrap()) return;
 
     _declareState(window);
+
+    // Listen for initial accumulated count from bridge
+    window.addEventListener('ttvab-init-count', function (e) {
+        if (e.detail && typeof e.detail.count === 'number') {
+            _S.adsBlocked = e.detail.count;
+            _log('Restored ads blocked count: ' + _S.adsBlocked, 'info');
+        }
+    });
+
     _hookStorage();
     _hookWorker();
     _hookMainFetch();
