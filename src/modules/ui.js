@@ -18,7 +18,9 @@ function _showDonation() {
             document.getElementById('ttvab-reminder-btn').onclick = () => { window.open('https://paypal.me/GosuDRM', '_blank'); t.remove(); };
             setTimeout(() => { if (document.getElementById('ttvab-reminder')) { t.style.animation = 'ttvab-slide .3s ease reverse'; setTimeout(() => t.remove(), 300); } }, 15000);
         }, 5000);
-    } catch (e) { }
+    } catch (e) {
+        _log('Donation reminder error: ' + e.message, 'error');
+    }
 }
 
 function _showWelcome() {
@@ -34,5 +36,7 @@ function _showWelcome() {
             document.getElementById('ttvab-welcome-close').onclick = () => { t.style.animation = 'ttvab-w .3s ease reverse'; setTimeout(() => t.remove(), 300); };
             setTimeout(() => { if (document.getElementById('ttvab-welcome')) { t.style.animation = 'ttvab-w .3s ease reverse'; setTimeout(() => t.remove(), 300); } }, 20000);
         }, 2000);
-    } catch (e) { }
+    } catch (e) {
+        _log('Welcome message error: ' + e.message, 'error');
+    }
 }

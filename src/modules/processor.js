@@ -94,7 +94,9 @@ async function _processM3U8(url, text, realFetch) {
                                 if (minimal) { backupType = pt; backupM3u8 = m3u8; break; }
                             }
                         }
-                    } catch (e) { }
+                    } catch (e) {
+                        _log('Stream fetch error: ' + e.message, 'warning');
+                    }
                 }
 
                 info.BackupEncodingsM3U8Cache[pt] = null;

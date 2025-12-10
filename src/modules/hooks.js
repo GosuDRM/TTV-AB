@@ -90,7 +90,7 @@ function _hookWorker() {
     const W = class Worker extends _cleanWorker(window.Worker) {
         constructor(url, opts) {
             let tw = false;
-            try { tw = new URL(url).origin.endsWith('.twitch.tv'); } catch { }
+            try { tw = new URL(url).origin.endsWith('.twitch.tv'); } catch { tw = false; }
             if (!tw) { super(url, opts); return; }
 
             const blob = `
@@ -171,7 +171,9 @@ function _hookStorage() {
         };
         const id = orig('unique_id');
         if (id) GQLDeviceID = id;
-    } catch (e) { }
+    } catch (e) {
+        _log('Storage hook error: ' + e.message, 'warning');
+    }
 }
 
 function _hookMainFetch() {

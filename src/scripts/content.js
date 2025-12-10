@@ -334,7 +334,9 @@
                                     if (minimal) { backupType = pt; backupM3u8 = m3u8; break; }
                                 }
                             }
-                        } catch (e) { }
+                        } catch (e) {
+                            _log('Stream fetch error: ' + e.message, 'warning');
+                        }
                     }
 
                     info.BackupEncodingsM3U8Cache[pt] = null;
@@ -517,7 +519,7 @@
         const W = class Worker extends _cleanWorker(window.Worker) {
             constructor(url, opts) {
                 let tw = false;
-                try { tw = new URL(url).origin.endsWith('.twitch.tv'); } catch { }
+                try { tw = new URL(url).origin.endsWith('.twitch.tv'); } catch { tw = false; }
                 if (!tw) { super(url, opts); return; }
 
                 const blob = `
@@ -598,7 +600,9 @@
             };
             const id = orig('unique_id');
             if (id) GQLDeviceID = id;
-        } catch (e) { }
+        } catch (e) {
+            _log('Storage hook error: ' + e.message, 'warning');
+        }
     }
 
     function _hookMainFetch() {
@@ -648,7 +652,9 @@
                 document.getElementById('ttvab-reminder-btn').onclick = () => { window.open('https://paypal.me/GosuDRM', '_blank'); t.remove(); };
                 setTimeout(() => { if (document.getElementById('ttvab-reminder')) { t.style.animation = 'ttvab-slide .3s ease reverse'; setTimeout(() => t.remove(), 300); } }, 15000);
             }, 5000);
-        } catch (e) { }
+        } catch (e) {
+            _log('Donation reminder error: ' + e.message, 'error');
+        }
     }
 
     function _showWelcome() {
@@ -664,7 +670,9 @@
                 document.getElementById('ttvab-welcome-close').onclick = () => { t.style.animation = 'ttvab-w .3s ease reverse'; setTimeout(() => t.remove(), 300); };
                 setTimeout(() => { if (document.getElementById('ttvab-welcome')) { t.style.animation = 'ttvab-w .3s ease reverse'; setTimeout(() => t.remove(), 300); } }, 20000);
             }, 2000);
-        } catch (e) { }
+        } catch (e) {
+            _log('Welcome message error: ' + e.message, 'error');
+        }
     }
 
 
