@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.0.1] - 2025-12-10
+
+### Added
+- Instant toggle without page refresh
+- Bridge script for popup-to-content communication
+
+### Fixed
+- RegExp global flag error in `replaceAll()` calls
+- Null check for access token to prevent runtime errors
+
 ## [3.0.0] - 2025-12-10
 
 ### Added
