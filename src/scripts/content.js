@@ -18,14 +18,33 @@
     const VERSION = '3.0.1';
     const ourTtvabVersion = 19;
 
+    // Console styling
+    const LOG_STYLES = {
+        prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
+        info: 'color: #9146FF; font-weight: 500;',
+        success: 'color: #4CAF50; font-weight: 500;',
+        warning: 'color: #FF9800; font-weight: 500;',
+        error: 'color: #f44336; font-weight: 500;'
+    };
+
+    /**
+     * Styled console logging
+     * @param {string} message - Message to log
+     * @param {string} type - Log type: 'info', 'success', 'warning', 'error'
+     */
+    function log(message, type = 'info') {
+        const style = LOG_STYLES[type] || LOG_STYLES.info;
+        console.log('%cTTV AB%c ' + message, LOG_STYLES.prefix, style);
+    }
+
     // Prevent duplicate script execution
     if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= ourTtvabVersion) {
-        console.log('[TTV AB] Skipping - another script is active');
+        log('Skipping - another script is active', 'warning');
         return;
     }
     window.ttvabVersion = ourTtvabVersion;
 
-    console.log('[TTV AB] v' + VERSION + ' loaded');
+    log('v' + VERSION + ' loaded', 'info');
 
     // ===========================================
     // CONFIGURATION
@@ -340,7 +359,7 @@
 
             if (!streamInfo.IsShowingAd) {
                 streamInfo.IsShowingAd = true;
-                console.log('[TTV AB] Ad detected, blocking...');
+                log('Ad detected, blocking...', 'warning');
             }
 
             if (!streamInfo.IsMidroll) {
@@ -359,7 +378,7 @@
 
             const currentResolution = streamInfo.Urls[url];
             if (!currentResolution) {
-                console.log('[TTV AB] Missing resolution info for ' + url);
+                log('Missing resolution info for ' + url, 'warning');
                 return textStr;
             }
 
@@ -406,7 +425,7 @@
                                 }
                             }
                         } catch (err) {
-                            console.log('[TTV AB] Error getting backup stream:', err);
+                            log('Error getting backup stream: ' + err.message, 'error');
                         }
                     }
 
@@ -456,7 +475,7 @@
 
             if (streamInfo.ActiveBackupPlayerType != backupPlayerType) {
                 streamInfo.ActiveBackupPlayerType = backupPlayerType;
-                console.log('[TTV AB] Using backup player type: ' + backupPlayerType);
+                log('Using backup player type: ' + backupPlayerType, 'info');
             }
 
             textStr = stripAdSegments(textStr, false, streamInfo);
@@ -468,7 +487,7 @@
                 streamInfo.RequestedAds.clear();
                 streamInfo.BackupEncodingsM3U8Cache = [];
                 streamInfo.ActiveBackupPlayerType = null;
-                console.log('[TTV AB] Ad ended');
+                log('Ad ended', 'success');
             }
         }
 
@@ -491,7 +510,7 @@
      * Hooks worker fetch to intercept M3U8 requests
      */
     function hookWorkerFetch() {
-        console.log('[TTV AB] hookWorkerFetch');
+        log('Worker fetch hooked', 'info');
         const realFetch = fetch;
         fetch = async function (url, options) {
             if (typeof url === 'string') {
@@ -580,7 +599,7 @@
                                         }
                                     }
 
-                                    console.log('[TTV AB] Stream initialized: ' + channelName);
+                                    log('Stream initialized: ' + channelName, 'success');
                                 }
 
                                 streamInfo.LastPlayerReload = Date.now();
@@ -948,7 +967,7 @@
     window.addEventListener('ttvab-toggle', function (e) {
         const enabled = e.detail?.enabled ?? true;
         IsAdStrippingEnabled = enabled;
-        console.log('[TTV AB] Ad blocking ' + (enabled ? 'enabled' : 'disabled'));
+        log('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
     });
 
     hookLocalStorage();
@@ -957,5 +976,5 @@
     showFirstRunMessage();
     showDonationReminder();
 
-    console.log('[TTV AB] Initialized successfully');
+    log('Initialized successfully', 'success');
 })();
