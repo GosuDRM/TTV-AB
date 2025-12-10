@@ -164,7 +164,6 @@ function _hookWorker() {
                 ${_getToken.toString()}
                 ${_processM3U8.toString()}
                 ${_getWasmJs.toString()}
-                ${_getWasmJs.toString()}
                 ${_hookWorkerFetch.toString()}
                 
                 // Helper to prune old StreamInfos to prevent memory leaks
@@ -223,10 +222,11 @@ function _hookWorker() {
 
             _S.workers.push(this);
 
-            // Cleanup terminated workers
+            // Cleanup old workers
             // Keep only the last 5 workers to prevent memory leaks
             if (_S.workers.length > 5) {
-                _S.workers.shift();
+                const oldWorker = _S.workers.shift();
+                try { oldWorker.terminate(); } catch (e) { /* Worker may already be terminated */ }
             }
         }
     };

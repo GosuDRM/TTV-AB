@@ -630,7 +630,6 @@ function _$hw() {
                 ${_$tk.toString()}
                 ${_$pm.toString()}
                 ${_$wj.toString()}
-                ${_$wj.toString()}
                 ${_$wf.toString()}
 
                 function _pruneStreamInfos() {
@@ -688,7 +687,8 @@ function _$hw() {
             _$s.workers.push(this);
 
             if (_$s.workers.length > 5) {
-                _$s.workers.shift();
+                const oldWorker = _$s.workers.shift();
+                try { oldWorker.terminate(); } catch (e) { /* Worker may already be terminated */ }
             }
         }
     };

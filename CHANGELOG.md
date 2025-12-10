@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Source code architecture breakdown with module descriptions
 - Safety clarifications and GitHub source links for transparency
 
+### Fixed
+- Version display in popup now correctly shows v3.0.8 (was showing v3.0.7)
+- Removed duplicate `_getWasmJs` function injection in worker code
+- Fixed potential memory leak: old workers are now properly terminated when cleanup occurs
+
 ## [3.0.7] - 2025-12-10
 
 ### Fixed
