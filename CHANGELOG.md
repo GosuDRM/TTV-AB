@@ -17,6 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - New `ttvab-init-count` event for counter synchronization
 - `_$ic()` function to initialize counter from stored value
 - Console log showing restored counter value on page load
+- Cyberpunk "Glitch" animation effect for extension title
+- Metallic shimmer animation for version text
+- Elastic bounce animation for toggle switch
+- Dynamic status message when toggling protection
+- Pulsing green light indicator for active status
 
 ## [3.0.6] - 2025-12-10
 
