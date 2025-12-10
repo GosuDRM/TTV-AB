@@ -7,9 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 ## [3.0.5] - 2025-12-10
 
 ### Changed
-- Split manifest.json into separate config files (config/)
-- Build script now assembles manifest from config parts
-- Version auto-read from constants.js during build
+- Use i18n localization for manifest name/description
+- Add _locales/en/messages.json for extension metadata
+- Manifest now uses __MSG_extName__ and __MSG_extDesc__ placeholders
 
 ### Fixed
 - Ad counter now works correctly in worker context
