@@ -17,7 +17,8 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 - ✅ Manifest V3 compatible
 - ✅ Simple enable/disable toggle
 - ✅ Auto-refresh on player crash
-- ✅ Real-time ads blocked counter
+- ✅ Persistent "Ads Blocked" statistics
+- ✅ Modern, animated UI (Cyberpunk/Neon aesthetic)
 - ✅ Lightweight and fast
 
 ## Usage
@@ -45,6 +46,9 @@ The extension intercepts Twitch's HLS video playlists and:
 If you find this extension useful, consider supporting the developer:
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/GosuDRM)
+
+## Privacy
+This extension operates entirely locally and does not collect any user data. See [PRIVACY.md](PRIVACY.md) for details.
 
 ## License
 
