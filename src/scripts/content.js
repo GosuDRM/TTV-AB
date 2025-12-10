@@ -614,6 +614,7 @@ function _$hw() {
                         case 'UpdateClientIntegrityHeader': ClientIntegrityHeader = data.value; break;
                         case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': IsAdStrippingEnabled = data.value; break;
+                        case 'UpdateAdsBlocked': _$s.adsBlocked = data.value; break;
                     }
                 });
                 
@@ -930,6 +931,10 @@ function _$in() {
     window.addEventListener('ttvab-init-count', function (e) {
         if (e.detail && typeof e.detail.count === 'number') {
             _$s.adsBlocked = e.detail.count;
+
+            for (const worker of _$s.workers) {
+                worker.postMessage({ key: 'UpdateAdsBlocked', value: _$s.adsBlocked });
+            }
             _$l('Restored ads blocked count: ' + _$s.adsBlocked, 'info');
         }
     });

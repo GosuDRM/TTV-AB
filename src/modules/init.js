@@ -48,6 +48,10 @@ function _init() {
     window.addEventListener('ttvab-init-count', function (e) {
         if (e.detail && typeof e.detail.count === 'number') {
             _S.adsBlocked = e.detail.count;
+            // Sync to workers to prevent race condition reset
+            for (const worker of _S.workers) {
+                worker.postMessage({ key: 'UpdateAdsBlocked', value: _S.adsBlocked });
+            }
             _log('Restored ads blocked count: ' + _S.adsBlocked, 'info');
         }
     });

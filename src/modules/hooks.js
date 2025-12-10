@@ -201,6 +201,7 @@ function _hookWorker() {
                         case 'UpdateClientIntegrityHeader': ClientIntegrityHeader = data.value; break;
                         case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': IsAdStrippingEnabled = data.value; break;
+                        case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                     }
                 });
                 
