@@ -9,7 +9,7 @@
  * @see https://github.com/GosuDRM/TTV-AB
  * @generated DO NOT EDIT - Built from src/modules/
  */
-(function() {
+(function () {
     'use strict';
 
     // ═══════════════════════════════════════════════════
@@ -40,7 +40,7 @@
         CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
         REFRESH_DELAY: 1500
     };
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: STATE
@@ -57,7 +57,7 @@
         reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
         adsBlocked: 0
     };
-    
+
     function _declareState(scope) {
         scope.AdSignifier = _C.AD_SIGNIFIER;
         scope.ClientID = _C.CLIENT_ID;
@@ -82,7 +82,7 @@
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
     }
-    
+
     function _incrementAdsBlocked() {
         _S.adsBlocked++;
         // Use postMessage in worker context, dispatchEvent in main thread
@@ -92,7 +92,7 @@
             self.postMessage({ key: 'AdBlocked', count: _S.adsBlocked });
         }
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: LOGGER
@@ -107,7 +107,7 @@
         const s = _C.LOG_STYLES[type] || _C.LOG_STYLES.info;
         console.log('%cTTV AB%c ' + msg, _C.LOG_STYLES.prefix, s);
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: PARSER
@@ -129,7 +129,7 @@
         }
         return r;
     }
-    
+
     function _getServerTime(m3u8) {
         if (V2API) {
             const m = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
@@ -138,7 +138,7 @@
         const m = m3u8.match('SERVER-TIME="([0-9.]+)"');
         return m && m.length > 1 ? m[1] : null;
     }
-    
+
     function _replaceServerTime(m3u8, time) {
         if (!time) return m3u8;
         if (V2API) {
@@ -146,19 +146,19 @@
         }
         return m3u8.replace(new RegExp('(SERVER-TIME=")[0-9.]+"'), `SERVER-TIME="${time}"`);
     }
-    
+
     function _stripAds(text, stripAll, info) {
         let stripped = false;
         const lines = text.replaceAll('\r', '').split('\n');
         const adUrl = 'https://twitch.tv';
-    
+
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
             line = line
                 .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/, `$1${adUrl}$2`)
                 .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/, `$1${adUrl}$2`);
             lines[i] = line;
-    
+
             if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
                 const url = lines[i + 1];
                 if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
@@ -167,7 +167,7 @@
             }
             if (line.includes(AdSignifier)) stripped = true;
         }
-    
+
         if (stripped) {
             for (let i = 0; i < lines.length; i++) {
                 if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
@@ -175,17 +175,17 @@
         } else {
             info.NumStrippedAdSegments = 0;
         }
-    
+
         info.IsStrippingAdSegments = stripped;
         AdSegmentCache.forEach((v, k, m) => { if (v < Date.now() - 120000) m.delete(k); });
         return lines.join('\n');
     }
-    
+
     function _getStreamUrl(m3u8, res) {
         const lines = m3u8.replaceAll('\r', '').split('\n');
         const [tw, th] = res.Resolution.split('x').map(Number);
         let matchUrl = null, matchFps = false, closeUrl = null, closeDiff = Infinity;
-    
+
         for (let i = 0; i < lines.length - 1; i++) {
             if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
                 const a = _parseAttrs(lines[i]);
@@ -204,7 +204,7 @@
         }
         return matchUrl || closeUrl;
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: API
@@ -224,7 +224,7 @@
         if (AuthorizationHeader) h['Authorization'] = AuthorizationHeader;
         return fetch('https://gql.twitch.tv/gql', { method: 'POST', headers: h, body: JSON.stringify(body) });
     }
-    
+
     async function _getToken(channel, type) {
         return _gqlReq({
             operationName: 'PlaybackAccessToken_Template',
@@ -232,7 +232,7 @@
             variables: { isLive: true, login: channel, isVod: false, vodID: '', playerType: type }
         });
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: PROCESSOR
@@ -247,14 +247,14 @@
         if (!IsAdStrippingEnabled) return text;
         const info = StreamInfosByUrl[url];
         if (!info) return text;
-    
+
         if (HasTriggeredPlayerReload) {
             HasTriggeredPlayerReload = false;
             info.LastPlayerReload = Date.now();
         }
-    
+
         const hasAds = text.includes(AdSignifier) || SimulatedAdsDepth > 0;
-    
+
         if (hasAds) {
             info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
             if (!info.IsShowingAd) {
@@ -262,7 +262,7 @@
                 _log('Ad detected, blocking...', 'warning');
                 _incrementAdsBlocked(); // Increment counter
             }
-    
+
             if (!info.IsMidroll) {
                 const lines = text.replaceAll('\r', '').split('\n');
                 for (let i = 0; i < lines.length; i++) {
@@ -275,33 +275,33 @@
                     }
                 }
             }
-    
+
             const res = info.Urls[url];
             if (!res) { _log('Missing resolution info for ' + url, 'warning'); return text; }
-    
+
             const isHevc = res.Codecs.startsWith('hev') || res.Codecs.startsWith('hvc');
             if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
                 info.IsUsingModifiedM3U8 = true;
                 info.LastPlayerReload = Date.now();
             }
-    
+
             let backupType = null, backupM3u8 = null, fallbackM3u8 = null;
             let startIdx = 0, minimal = false;
-    
+
             if (info.LastPlayerReload > Date.now() - PlayerReloadMinimalRequestsTime) {
                 startIdx = PlayerReloadMinimalRequestsPlayerIndex;
                 minimal = true;
             }
-    
+
             for (let pi = startIdx; !backupM3u8 && pi < BackupPlayerTypes.length; pi++) {
                 const pt = BackupPlayerTypes[pi];
                 const realPt = pt.replace('-CACHED', '');
                 const cached = pt != realPt;
-    
+
                 for (let j = 0; j < 2; j++) {
                     let fresh = false;
                     let enc = info.BackupEncodingsM3U8Cache[pt];
-    
+
                     if (!enc) {
                         fresh = true;
                         try {
@@ -318,7 +318,7 @@
                             }
                         } catch (e) { _log('Error getting backup: ' + e.message, 'error'); }
                     }
-    
+
                     if (enc) {
                         try {
                             const streamUrl = _getStreamUrl(enc, res);
@@ -336,20 +336,20 @@
                             }
                         } catch (e) { }
                     }
-    
+
                     info.BackupEncodingsM3U8Cache[pt] = null;
                     if (fresh) break;
                 }
             }
-    
+
             if (!backupM3u8 && fallbackM3u8) { backupType = FallbackPlayerType; backupM3u8 = fallbackM3u8; }
             if (backupM3u8) text = backupM3u8;
-    
+
             if (info.ActiveBackupPlayerType != backupType) {
                 info.ActiveBackupPlayerType = backupType;
                 _log('Using backup player type: ' + backupType, 'info');
             }
-    
+
             text = _stripAds(text, false, info);
         } else {
             if (info.IsShowingAd) {
@@ -361,10 +361,10 @@
                 _log('Ad ended', 'success');
             }
         }
-    
+
         return text;
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: WORKER
@@ -382,7 +382,7 @@
         x.send();
         return x.responseText;
     }
-    
+
     function _cleanWorker(w) {
         let root = null, parent = null, proto = w;
         while (proto) {
@@ -397,7 +397,7 @@
         }
         return root;
     }
-    
+
     function _getReinsert(w) {
         const r = [];
         let p = w;
@@ -408,18 +408,18 @@
         }
         return r;
     }
-    
+
     function _reinsert(w, r) {
         let p = w;
         for (let i = 0; i < r.length; i++) { Object.setPrototypeOf(r[i], p); p = r[i]; }
         return p;
     }
-    
+
     function _isValid(w) {
         const s = w.toString();
         return !_S.conflicts.some(x => s.includes(x)) || _S.reinsertPatterns.some(x => s.includes(x));
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: HOOKS
@@ -441,7 +441,7 @@
                             .then(r => res(r)).catch(e => rej(e));
                     });
                 }
-    
+
                 url = url.trimEnd();
                 if (url.endsWith('m3u8')) {
                     return new Promise((res, rej) => {
@@ -454,24 +454,24 @@
                 } else if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
                     V2API = url.includes('/api/v2/');
                     const ch = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
-    
+
                     if (ForceAccessTokenPlayerType) {
                         const t = new URL(url);
                         t.searchParams.delete('parent_domains');
                         url = t.toString();
                     }
-    
+
                     return new Promise((res, rej) => {
                         const proc = async (r) => {
                             if (r.status == 200) {
                                 const enc = await r.text();
                                 const time = _getServerTime(enc);
                                 let info = StreamInfos[ch];
-    
+
                                 if (info != null && info.EncodingsM3U8 != null && (await real(info.EncodingsM3U8.match(/^https:.*\.m3u8$/m)[0])).status !== 200) {
                                     info = null;
                                 }
-    
+
                                 if (info == null || info.EncodingsM3U8 == null) {
                                     StreamInfos[ch] = info = {
                                         ChannelName: ch, IsShowingAd: false, LastPlayerReload: 0,
@@ -481,7 +481,7 @@
                                         ActiveBackupPlayerType: null, IsMidroll: false,
                                         IsStrippingAdSegments: false, NumStrippedAdSegments: 0
                                     };
-    
+
                                     const lines = enc.replaceAll('\r', '').split('\n');
                                     for (let i = 0; i < lines.length - 1; i++) {
                                         if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
@@ -497,7 +497,7 @@
                                     }
                                     _log('Stream initialized: ' + ch, 'success');
                                 }
-    
+
                                 info.LastPlayerReload = Date.now();
                                 res(new Response(_replaceServerTime(info.IsUsingModifiedM3U8 ? info.ModifiedM3U8 : info.EncodingsM3U8, time)));
                             } else {
@@ -511,7 +511,7 @@
             return real.apply(this, arguments);
         };
     }
-    
+
     function _hookWorker() {
         const reins = _getReinsert(window.Worker);
         const W = class Worker extends _cleanWorker(window.Worker) {
@@ -519,7 +519,7 @@
                 let tw = false;
                 try { tw = new URL(url).origin.endsWith('.twitch.tv'); } catch { }
                 if (!tw) { super(url, opts); return; }
-    
+
                 const blob = `
                     const _C = ${JSON.stringify(_C)};
                     const _S = ${JSON.stringify(_S)};
@@ -557,9 +557,13 @@
                     _hookWorkerFetch();
                     eval(ws);
                 `;
-    
-                super(URL.createObjectURL(new Blob([blob])), opts);
-    
+
+                const blobUrl = URL.createObjectURL(new Blob([blob]));
+                super(blobUrl, opts);
+
+                // Revoke blob URL to free memory (worker already loaded)
+                URL.revokeObjectURL(blobUrl);
+
                 // Listen for AdBlocked messages from worker
                 this.addEventListener('message', function (e) {
                     if (e.data && e.data.key === 'AdBlocked') {
@@ -567,18 +571,23 @@
                         window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: e.data.count } }));
                     }
                 });
-    
+
                 _S.workers.push(this);
+
+                // Clean up terminated workers periodically
+                if (_S.workers.length > 5) {
+                    _S.workers = _S.workers.filter(w => w.onmessage !== null);
+                }
             }
         };
-    
+
         let inst = _reinsert(W, reins);
         Object.defineProperty(window, 'Worker', {
             get: () => inst,
             set: (v) => { if (_isValid(v)) inst = v; }
         });
     }
-    
+
     function _hookStorage() {
         try {
             const orig = localStorage.getItem.bind(localStorage);
@@ -591,7 +600,7 @@
             if (id) GQLDeviceID = id;
         } catch (e) { }
     }
-    
+
     function _hookMainFetch() {
         const real = window.fetch;
         window.fetch = async function (url, opts) {
@@ -613,7 +622,7 @@
             return real.apply(this, arguments);
         };
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: UI
@@ -641,7 +650,7 @@
             }, 5000);
         } catch (e) { }
     }
-    
+
     function _showWelcome() {
         const K = 'ttvab_first_run_shown';
         try {
@@ -657,7 +666,7 @@
             }, 2000);
         } catch (e) { }
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: MONITOR
@@ -670,7 +679,7 @@
      */
     function _initCrashMonitor() {
         let refreshing = false, interval = null;
-    
+
         function detect() {
             const text = document.body?.innerText || '';
             for (const p of _C.CRASH_PATTERNS) {
@@ -685,7 +694,7 @@
             }
             return null;
         }
-    
+
         function handle(err) {
             if (refreshing) return;
             refreshing = true;
@@ -696,12 +705,12 @@
             document.body.appendChild(t);
             setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
         }
-    
+
         const obs = new MutationObserver(() => {
             const e = detect();
             if (e) { handle(e); obs.disconnect(); if (interval) clearInterval(interval); }
         });
-    
+
         function start() {
             if (document.body) {
                 obs.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -716,7 +725,7 @@
         }
         start();
     }
-    
+
 
     // ═══════════════════════════════════════════════════
     // MODULE: INIT
@@ -736,7 +745,7 @@
         _log('v' + _C.VERSION + ' loaded', 'info');
         return true;
     }
-    
+
     function _initToggleListener() {
         window.addEventListener('ttvab-toggle', function (e) {
             const enabled = e.detail?.enabled ?? true;
@@ -744,7 +753,7 @@
             _log('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
         });
     }
-    
+
     function _init() {
         if (!_bootstrap()) return;
         _declareState(window);
@@ -757,7 +766,7 @@
         _showDonation();
         _log('Initialized successfully', 'success');
     }
-    
+
 
 
     // Initialize

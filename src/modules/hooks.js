@@ -131,7 +131,11 @@ function _hookWorker() {
                 eval(ws);
             `;
 
-            super(URL.createObjectURL(new Blob([blob])), opts);
+            const blobUrl = URL.createObjectURL(new Blob([blob]));
+            super(blobUrl, opts);
+
+            // Revoke blob URL to free memory (worker already loaded)
+            URL.revokeObjectURL(blobUrl);
 
             // Listen for AdBlocked messages from worker
             this.addEventListener('message', function (e) {
@@ -142,6 +146,11 @@ function _hookWorker() {
             });
 
             _S.workers.push(this);
+
+            // Clean up terminated workers periodically
+            if (_S.workers.length > 5) {
+                _S.workers = _S.workers.filter(w => w.onmessage !== null);
+            }
         }
     };
 
