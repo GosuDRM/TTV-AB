@@ -217,9 +217,26 @@ function _$sa(text, stripAll, info, _isBackup = false) {
     let stripped = false;
     let i = 0;
 
+    let liveSegmentCount = 0;
+    let adSegmentCount = 0;
     const hasAdSignifier = text.includes(AdSignifier);
 
-    for (; i < len; i++) {
+    for (i = 0; i < len - 1; i++) {
+        const line = lines[i];
+        if (line.startsWith('#EXTINF')) {
+            if (line.includes(',live')) {
+                liveSegmentCount++;
+            } else {
+                adSegmentCount++;
+            }
+        }
+    }
+
+    const shouldStrip = (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) &&
+        adSegmentCount > 0 &&
+        (liveSegmentCount > 0 || stripAll);
+
+    for (i = 0; i < len; i++) {
         let line = lines[i];
 
         if (line.includes('X-TV-TWITCH-AD')) {
@@ -231,7 +248,7 @@ function _$sa(text, stripAll, info, _isBackup = false) {
 
         const isAdSegment = !line.includes(',live');
 
-        if (i < len - 1 && line.startsWith('#EXTINF') && isAdSegment && (hasAdSignifier || stripAll || AllSegmentsAreAdSegments)) {
+        if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());
@@ -404,7 +421,8 @@ async function _$pm(url, text, realFetch) {
 
         if (info.IsUsingFallbackStream) {
             _$l('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
-            text = _$sa(text, false, info, true);
+
+            text = _$sa(text, true, info, true);
             return text;
         }
 
@@ -471,7 +489,8 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false) {
     }
 
     const playerTypesLen = playerTypes.length;
-    const res = info.Urls[Object.keys(info.Urls)[0]]; // Use first available resolution info
+
+    const force480p = { Resolution: '852x480', FrameRate: '30' };
 
     for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
         const pt = playerTypes[pi];
@@ -519,7 +538,7 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false) {
 
             if (enc) {
                 try {
-                    const streamUrl = _$su(enc, res || {});
+                    const streamUrl = _$su(enc, force480p);
                     if (streamUrl) {
                         _$l(`[Trace] Fetching stream URL for ${pt}: ${streamUrl}`, 'info');
                         const streamRes = await realFetch(streamUrl);
