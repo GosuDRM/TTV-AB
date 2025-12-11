@@ -229,9 +229,7 @@ function _hookWorker() {
                     case 'AdEnded':
                         _log('Ad ended', 'success');
                         break;
-                    case 'Log':
-                        _log(e.data.message, e.data.type || 'info');
-                        break;
+
                 }
             });
 

@@ -160,7 +160,16 @@ function _$ab(channel) {
 }
 
 function _$l(msg, type = 'info') {
-    console.log('%cTTV AB%c ' + msg, _$c.LOG_STYLES.prefix, _$c.LOG_STYLES[type] || _$c.LOG_STYLES.info);
+    const text = typeof msg === 'object' ? JSON.stringify(msg) : String(msg);
+    const style = _$c.LOG_STYLES[type] || _$c.LOG_STYLES.info;
+
+    if (type === 'error') {
+        console.error('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
+    } else if (type === 'warning') {
+        console.warn('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
+    } else {
+        console.log('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
+    }
 }
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
@@ -726,9 +735,7 @@ function _$hw() {
                     case 'AdEnded':
                         _$l('Ad ended', 'success');
                         break;
-                    case 'Log':
-                        _$l(e.data.message, e.data.type || 'info');
-                        break;
+
                 }
             });
 
