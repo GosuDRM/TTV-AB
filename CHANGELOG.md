@@ -3,6 +3,11 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.3.2] - 2025-12-11
+
+### Fixed
+- **Startup Sync** - Implemented a handshake mechanism between content script and bridge to prevent race conditions where stats would show as 0 on heavy browser restarts
+
 ## [3.3.1] - 2025-12-11
 
 ### Performance

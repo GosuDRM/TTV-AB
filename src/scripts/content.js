@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.1 - Twitch Ad Blocker
+ * TTV AB v3.3.2 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.1',
+    VERSION: '3.3.2',
     
     INTERNAL_VERSION: 28,
     
@@ -1255,6 +1255,8 @@ function _$in() {
     _$al();
     _$wc();
     _$dn();
+
+    document.dispatchEvent(new CustomEvent('ttvab-request-state'));
 
     _$l('Initialized successfully', 'success');
 }

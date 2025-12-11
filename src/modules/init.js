@@ -223,5 +223,8 @@ function _init() {
     _showWelcome();
     _showDonation();
 
+    // Request state sync from bridge (Handshake)
+    document.dispatchEvent(new CustomEvent('ttvab-request-state'));
+
     _log('Initialized successfully', 'success');
 }

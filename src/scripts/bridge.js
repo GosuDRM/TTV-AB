@@ -134,12 +134,22 @@ chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked', 'ttvPopupsBlocke
     const storedAdsCount = result.ttvAdsBlocked || 0;
     const storedPopupsCount = result.ttvPopupsBlocked || 0;
 
-    // Send toggle state
-    document.dispatchEvent(new CustomEvent('ttvab-toggle', { detail: { enabled } }));
+    // Helper to broadcast state to content script
+    function broadcastState() {
+        // Send toggle state
+        document.dispatchEvent(new CustomEvent('ttvab-toggle', { detail: { enabled } }));
+        // Send stored counters
+        document.dispatchEvent(new CustomEvent('ttvab-init-count', { detail: { count: storedAdsCount } }));
+        document.dispatchEvent(new CustomEvent('ttvab-init-popups-count', { detail: { count: storedPopupsCount } }));
+    }
 
-    // Send stored counters so content script can accumulate from them
-    document.dispatchEvent(new CustomEvent('ttvab-init-count', { detail: { count: storedAdsCount } }));
-    document.dispatchEvent(new CustomEvent('ttvab-init-popups-count', { detail: { count: storedPopupsCount } }));
+    // Broadcast immediately on load
+    broadcastState();
+
+    // Listen for request from content script (handshake)
+    document.addEventListener('ttvab-request-state', function () {
+        broadcastState();
+    });
 });
 
 // Listen for messages from popup
