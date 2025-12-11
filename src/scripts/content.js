@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.5 - Twitch Ad Blocker
+ * TTV AB v3.6.6 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.5',
+    VERSION: '3.6.6',
     
     INTERNAL_VERSION: 28,
     
@@ -1114,14 +1114,16 @@ function _$bs() {
 }
 
 function _$tl() {
-    document.addEventListener('ttvab-toggle', function (e) {
-        const enabled = e.detail?.enabled ?? true;
-        IsAdStrippingEnabled = enabled;
+    window.addEventListener('message', function (e) {
+        if (e.data?.type === 'ttvab-toggle') {
+            const enabled = e.data.detail?.enabled ?? true;
+            IsAdStrippingEnabled = enabled;
 
-        for (const worker of _$s.workers) {
-            worker.postMessage({ key: 'UpdateToggleState', value: enabled });
+            for (const worker of _$s.workers) {
+                worker.postMessage({ key: 'UpdateToggleState', value: enabled });
+            }
+            _$l('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
         }
-        _$l('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
     });
 }
 
@@ -1322,20 +1324,20 @@ function _$in() {
 
     _$ds(window);
 
-    document.addEventListener('ttvab-init-count', function (e) {
-        if (e.detail && typeof e.detail.count === 'number') {
-            _$s.adsBlocked = e.detail.count;
+    window.addEventListener('message', function (e) {
+        if (!e.data?.type?.startsWith('ttvab-init-')) return;
+
+        if (e.data.type === 'ttvab-init-count' && typeof e.data.detail?.count === 'number') {
+            _$s.adsBlocked = e.data.detail.count;
 
             for (const worker of _$s.workers) {
                 worker.postMessage({ key: 'UpdateAdsBlocked', value: _$s.adsBlocked });
             }
             _$l('Restored ads blocked count: ' + _$s.adsBlocked, 'info');
         }
-    });
 
-    document.addEventListener('ttvab-init-popups-count', function (e) {
-        if (e.detail && typeof e.detail.count === 'number') {
-            _$s.popupsBlocked = e.detail.count;
+        if (e.data.type === 'ttvab-init-popups-count' && typeof e.data.detail?.count === 'number') {
+            _$s.popupsBlocked = e.data.detail.count;
             _$l('Restored popups blocked count: ' + _$s.popupsBlocked, 'info');
         }
     });
@@ -1350,7 +1352,7 @@ function _$in() {
     _$wc();
     _$dn();
 
-    document.dispatchEvent(new CustomEvent('ttvab-request-state'));
+    window.postMessage({ type: 'ttvab-request-state' }, '*');
 
     _$l('Initialized successfully', 'success');
 }

@@ -154,28 +154,30 @@ chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked', 'ttvPopupsBlocke
     const storedAdsCount = result.ttvAdsBlocked || 0;
     const storedPopupsCount = result.ttvPopupsBlocked || 0;
 
-    // Helper to broadcast state to content script
+    // Helper to broadcast state to content script via window.postMessage
     function broadcastState() {
         // Send toggle state
-        document.dispatchEvent(new CustomEvent('ttvab-toggle', { detail: { enabled } }));
+        window.postMessage({ type: 'ttvab-toggle', detail: { enabled } }, '*');
         // Send stored counters
-        document.dispatchEvent(new CustomEvent('ttvab-init-count', { detail: { count: storedAdsCount } }));
-        document.dispatchEvent(new CustomEvent('ttvab-init-popups-count', { detail: { count: storedPopupsCount } }));
+        window.postMessage({ type: 'ttvab-init-count', detail: { count: storedAdsCount } }, '*');
+        window.postMessage({ type: 'ttvab-init-popups-count', detail: { count: storedPopupsCount } }, '*');
     }
 
     // Broadcast immediately on load
     broadcastState();
 
     // Listen for request from content script (handshake)
-    document.addEventListener('ttvab-request-state', function () {
-        broadcastState();
+    window.addEventListener('message', function (e) {
+        if (e.data?.type === 'ttvab-request-state') {
+            broadcastState();
+        }
     });
 });
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'toggle') {
-        document.dispatchEvent(new CustomEvent('ttvab-toggle', { detail: { enabled: message.enabled } }));
+        window.postMessage({ type: 'ttvab-toggle', detail: { enabled: message.enabled } }, '*');
         sendResponse({ success: true });
     } else if (message.action === 'getAdsBlocked') {
         chrome.storage.local.get(['ttvAdsBlocked'], function (result) {

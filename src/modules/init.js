@@ -25,14 +25,16 @@ function _bootstrap() {
  * Set up toggle listener for enable/disable
  */
 function _initToggleListener() {
-    document.addEventListener('ttvab-toggle', function (e) {
-        const enabled = e.detail?.enabled ?? true;
-        IsAdStrippingEnabled = enabled;
-        // Broadcast to workers
-        for (const worker of _S.workers) {
-            worker.postMessage({ key: 'UpdateToggleState', value: enabled });
+    window.addEventListener('message', function (e) {
+        if (e.data?.type === 'ttvab-toggle') {
+            const enabled = e.data.detail?.enabled ?? true;
+            IsAdStrippingEnabled = enabled;
+            // Broadcast to workers
+            for (const worker of _S.workers) {
+                worker.postMessage({ key: 'UpdateToggleState', value: enabled });
+            }
+            _log('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
         }
-        _log('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
     });
 }
 
@@ -262,22 +264,21 @@ function _init() {
 
     _declareState(window);
 
-    // Listen for initial accumulated count from bridge
-    document.addEventListener('ttvab-init-count', function (e) {
-        if (e.detail && typeof e.detail.count === 'number') {
-            _S.adsBlocked = e.detail.count;
+    // Listen for initial accumulated count from bridge via window.postMessage
+    window.addEventListener('message', function (e) {
+        if (!e.data?.type?.startsWith('ttvab-init-')) return;
+
+        if (e.data.type === 'ttvab-init-count' && typeof e.data.detail?.count === 'number') {
+            _S.adsBlocked = e.data.detail.count;
             // Sync to workers to prevent race condition reset
             for (const worker of _S.workers) {
                 worker.postMessage({ key: 'UpdateAdsBlocked', value: _S.adsBlocked });
             }
             _log('Restored ads blocked count: ' + _S.adsBlocked, 'info');
         }
-    });
 
-    // Listen for initial popups count from bridge
-    document.addEventListener('ttvab-init-popups-count', function (e) {
-        if (e.detail && typeof e.detail.count === 'number') {
-            _S.popupsBlocked = e.detail.count;
+        if (e.data.type === 'ttvab-init-popups-count' && typeof e.data.detail?.count === 'number') {
+            _S.popupsBlocked = e.data.detail.count;
             _log('Restored popups blocked count: ' + _S.popupsBlocked, 'info');
         }
     });
@@ -293,7 +294,7 @@ function _init() {
     _showDonation();
 
     // Request state sync from bridge (Handshake)
-    document.dispatchEvent(new CustomEvent('ttvab-request-state'));
+    window.postMessage({ type: 'ttvab-request-state' }, '*');
 
     _log('Initialized successfully', 'success');
 }
