@@ -14,7 +14,9 @@ const _S = {
     /** Patterns requiring reinsert */
     reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
     /** Counter for blocked ads */
-    adsBlocked: 0
+    adsBlocked: 0,
+    /** Counter for blocked anti-adblock popups */
+    popupsBlocked: 0
 };
 
 /**

@@ -7,16 +7,18 @@
  * @license MIT
  */
 
-// Send initial state and stored counter to content script
-chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked'], function (result) {
+// Send initial state and stored counters to content script
+chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
     const enabled = result.ttvAdblockEnabled !== false;
-    const storedCount = result.ttvAdsBlocked || 0;
+    const storedAdsCount = result.ttvAdsBlocked || 0;
+    const storedPopupsCount = result.ttvPopupsBlocked || 0;
 
     // Send toggle state
     window.dispatchEvent(new CustomEvent('ttvab-toggle', { detail: { enabled } }));
 
-    // Send stored counter so content script can accumulate from it
-    window.dispatchEvent(new CustomEvent('ttvab-init-count', { detail: { count: storedCount } }));
+    // Send stored counters so content script can accumulate from them
+    window.dispatchEvent(new CustomEvent('ttvab-init-count', { detail: { count: storedAdsCount } }));
+    window.dispatchEvent(new CustomEvent('ttvab-init-popups-count', { detail: { count: storedPopupsCount } }));
 });
 
 // Listen for messages from popup
@@ -36,4 +38,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 window.addEventListener('ttvab-ad-blocked', function (e) {
     const count = e.detail?.count || 0;
     chrome.storage.local.set({ ttvAdsBlocked: count });
+});
+
+// Listen for popup blocked events from content script and sync to storage
+window.addEventListener('ttvab-popup-blocked', function (e) {
+    const count = e.detail?.count || 0;
+    chrome.storage.local.set({ ttvPopupsBlocked: count });
 });

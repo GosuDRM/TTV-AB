@@ -37,6 +37,141 @@ function _initToggleListener() {
 }
 
 /**
+ * Block anti-adblock popups using MutationObserver
+ * Watches for and removes the "Support [streamer] by disabling ad block" popup
+ */
+function _blockAntiAdblockPopup() {
+    // Selectors that match the anti-adblock popup elements
+    const POPUP_SELECTORS = [
+        '[data-a-target="player-overlay-click-handler"] + div[class*="ScAttach"]',
+        '[class*="consent-banner"]',
+        '[class*="AdblockModal"]',
+        '[aria-label*="ad block"]',
+        '[aria-label*="adblock"]'
+    ];
+
+    // Text patterns that indicate anti-adblock content
+    const POPUP_TEXT_PATTERNS = [
+        'disabling ad block',
+        'disable ad block',
+        'allow twitch ads',
+        'support.*by disabling',
+        'ad-free with turbo',
+        'viewers watch ads'
+    ];
+
+    /**
+     * Check if element contains anti-adblock content
+     * @param {Element} el - Element to check
+     * @returns {boolean}
+     */
+    function _isAntiAdblockElement(el) {
+        const text = el.textContent?.toLowerCase() || '';
+        return POPUP_TEXT_PATTERNS.some(function (pattern) {
+            return new RegExp(pattern, 'i').test(text);
+        });
+    }
+
+    /**
+     * Increment popup blocked counter and dispatch event
+     */
+    function _incrementPopupsBlocked() {
+        _S.popupsBlocked++;
+        window.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _S.popupsBlocked } }));
+    }
+
+    /**
+     * Remove anti-adblock popup if found
+     * @param {Element} el - Element to check and remove
+     */
+    function _removePopup(el) {
+        // Check for modal/overlay containers
+        const parent = el.closest('[class*="ScAttach"], [class*="modal"], [class*="overlay"], [role="dialog"]');
+        if (parent && _isAntiAdblockElement(parent)) {
+            parent.remove();
+            _incrementPopupsBlocked();
+            _log('Anti-adblock popup removed (Total: ' + _S.popupsBlocked + ')', 'success');
+            return true;
+        }
+        if (_isAntiAdblockElement(el)) {
+            el.remove();
+            _incrementPopupsBlocked();
+            _log('Anti-adblock popup removed (Total: ' + _S.popupsBlocked + ')', 'success');
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Scan for and remove existing popups
+     */
+    function _scanAndRemove() {
+        // Check by selectors
+        for (const selector of POPUP_SELECTORS) {
+            try {
+                const elements = document.querySelectorAll(selector);
+                for (const el of elements) {
+                    if (_isAntiAdblockElement(el)) {
+                        el.remove();
+                        _incrementPopupsBlocked();
+                        _log('Anti-adblock popup removed (Total: ' + _S.popupsBlocked + ')', 'success');
+                    }
+                }
+            } catch { /* Selector may fail */ }
+        }
+
+        // Check buttons with anti-adblock text
+        const buttons = document.querySelectorAll('button');
+        for (const btn of buttons) {
+            const text = btn.textContent?.toLowerCase() || '';
+            if (text.includes('allow twitch ads') || text.includes('try turbo')) {
+                // Find and remove the parent modal/overlay
+                const modal = btn.closest('[class*="ScAttach"], [class*="modal"], [role="dialog"], [class*="Layout"]');
+                if (modal && _isAntiAdblockElement(modal)) {
+                    modal.remove();
+                    _incrementPopupsBlocked();
+                    _log('Anti-adblock popup removed via button detection (Total: ' + _S.popupsBlocked + ')', 'success');
+                }
+            }
+        }
+    }
+
+    // Initial scan
+    _scanAndRemove();
+
+    // Watch for new popups
+    const observer = new MutationObserver(function (mutations) {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    _removePopup(node);
+                    // Also check children
+                    if (node.querySelectorAll) {
+                        const children = node.querySelectorAll('*');
+                        for (const child of children) {
+                            if (_isAntiAdblockElement(child)) {
+                                _removePopup(child);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+    });
+
+    // Periodic scan as backup (some popups may be dynamically modified)
+    setInterval(_scanAndRemove, 2000);
+
+    _log('Anti-adblocking enabled', 'success');
+}
+
+/**
  * Main initialization function
  */
 function _init() {
@@ -56,11 +191,20 @@ function _init() {
         }
     });
 
+    // Listen for initial popups count from bridge
+    window.addEventListener('ttvab-init-popups-count', function (e) {
+        if (e.detail && typeof e.detail.count === 'number') {
+            _S.popupsBlocked = e.detail.count;
+            _log('Restored popups blocked count: ' + _S.popupsBlocked, 'info');
+        }
+    });
+
     _hookStorage();
     _hookWorker();
     _hookMainFetch();
     _initToggleListener();
     _initCrashMonitor();
+    _blockAntiAdblockPopup();
     _showWelcome();
     _showDonation();
 

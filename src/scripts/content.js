@@ -98,7 +98,9 @@ const _$s = {
     
     reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
     
-    adsBlocked: 0
+    adsBlocked: 0,
+    
+    popupsBlocked: 0
 };
 
 function _$ds(scope) {
@@ -996,6 +998,117 @@ function _$tl() {
     });
 }
 
+function _blockAntiAdblockPopup() {
+
+    const POPUP_SELECTORS = [
+        '[data-a-target="player-overlay-click-handler"] + div[class*="ScAttach"]',
+        '[class*="consent-banner"]',
+        '[class*="AdblockModal"]',
+        '[aria-label*="ad block"]',
+        '[aria-label*="adblock"]'
+    ];
+
+    const POPUP_TEXT_PATTERNS = [
+        'disabling ad block',
+        'disable ad block',
+        'allow twitch ads',
+        'support.*by disabling',
+        'ad-free with turbo',
+        'viewers watch ads'
+    ];
+
+    function _isAntiAdblockElement(el) {
+        const text = el.textContent?.toLowerCase() || '';
+        return POPUP_TEXT_PATTERNS.some(function (pattern) {
+            return new RegExp(pattern, 'i').test(text);
+        });
+    }
+
+    function _incrementPopupsBlocked() {
+        _$s.popupsBlocked++;
+        window.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _$s.popupsBlocked } }));
+    }
+
+    function _removePopup(el) {
+
+        const parent = el.closest('[class*="ScAttach"], [class*="modal"], [class*="overlay"], [role="dialog"]');
+        if (parent && _isAntiAdblockElement(parent)) {
+            parent.remove();
+            _incrementPopupsBlocked();
+            _$l('Anti-adblock popup removed (Total: ' + _$s.popupsBlocked + ')', 'success');
+            return true;
+        }
+        if (_isAntiAdblockElement(el)) {
+            el.remove();
+            _incrementPopupsBlocked();
+            _$l('Anti-adblock popup removed (Total: ' + _$s.popupsBlocked + ')', 'success');
+            return true;
+        }
+        return false;
+    }
+
+    function _scanAndRemove() {
+
+        for (const selector of POPUP_SELECTORS) {
+            try {
+                const elements = document.querySelectorAll(selector);
+                for (const el of elements) {
+                    if (_isAntiAdblockElement(el)) {
+                        el.remove();
+                        _incrementPopupsBlocked();
+                        _$l('Anti-adblock popup removed (Total: ' + _$s.popupsBlocked + ')', 'success');
+                    }
+                }
+            } catch { /* Selector may fail */ }
+        }
+
+        const buttons = document.querySelectorAll('button');
+        for (const btn of buttons) {
+            const text = btn.textContent?.toLowerCase() || '';
+            if (text.includes('allow twitch ads') || text.includes('try turbo')) {
+
+                const modal = btn.closest('[class*="ScAttach"], [class*="modal"], [role="dialog"], [class*="Layout"]');
+                if (modal && _isAntiAdblockElement(modal)) {
+                    modal.remove();
+                    _incrementPopupsBlocked();
+                    _$l('Anti-adblock popup removed via button detection (Total: ' + _$s.popupsBlocked + ')', 'success');
+                }
+            }
+        }
+    }
+
+    _scanAndRemove();
+
+    const observer = new MutationObserver(function (mutations) {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    _removePopup(node);
+
+                    if (node.querySelectorAll) {
+                        const children = node.querySelectorAll('*');
+                        for (const child of children) {
+                            if (_isAntiAdblockElement(child)) {
+                                _removePopup(child);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+    });
+
+    setInterval(_scanAndRemove, 2000);
+
+    _$l('Anti-adblocking enabled', 'success');
+}
+
 function _$in() {
     if (!_$bs()) return;
 
@@ -1012,11 +1125,19 @@ function _$in() {
         }
     });
 
+    window.addEventListener('ttvab-init-popups-count', function (e) {
+        if (e.detail && typeof e.detail.count === 'number') {
+            _$s.popupsBlocked = e.detail.count;
+            _$l('Restored popups blocked count: ' + _$s.popupsBlocked, 'info');
+        }
+    });
+
     _$hs();
     _$hw();
     _$mf();
     _$tl();
     _$cm();
+    _blockAntiAdblockPopup();
     _$wc();
     _$dn();
 

@@ -11,23 +11,32 @@ document.addEventListener('DOMContentLoaded', function () {
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
     const adsBlockedCount = document.getElementById('adsBlockedCount');
+    const popupsBlockedCount = document.getElementById('popupsBlockedCount');
 
-    // Initialize toggle state and counter from storage
-    chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked'], function (result) {
+    // Initialize toggle state and counters from storage
+    chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
         const enabled = result.ttvAdblockEnabled !== false;
         toggle.checked = enabled;
         updateStatus(enabled);
 
-        // Initialize counter
-        const count = result.ttvAdsBlocked || 0;
-        adsBlockedCount.textContent = formatNumber(count);
+        // Initialize counters
+        const adsCount = result.ttvAdsBlocked || 0;
+        const popupsCount = result.ttvPopupsBlocked || 0;
+        adsBlockedCount.textContent = formatNumber(adsCount);
+        popupsBlockedCount.textContent = formatNumber(popupsCount);
     });
 
     // Listen for real-time counter updates
     chrome.storage.onChanged.addListener(function (changes, namespace) {
-        if (namespace === 'local' && changes.ttvAdsBlocked) {
-            const newCount = changes.ttvAdsBlocked.newValue || 0;
-            animateCounter(adsBlockedCount, newCount);
+        if (namespace === 'local') {
+            if (changes.ttvAdsBlocked) {
+                const newCount = changes.ttvAdsBlocked.newValue || 0;
+                animateCounter(adsBlockedCount, newCount);
+            }
+            if (changes.ttvPopupsBlocked) {
+                const newPopupsCount = changes.ttvPopupsBlocked.newValue || 0;
+                animateCounter(popupsBlockedCount, newPopupsCount);
+            }
         }
     });
 
