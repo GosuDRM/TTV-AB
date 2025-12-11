@@ -55,10 +55,20 @@ const MINIFY_MAP = {
     '_isValid': '_$iv',
     '_showDonation': '_$dn',
     '_showWelcome': '_$wc',
+    '_showAchievementUnlocked': '_$au',
+    '_initAchievementListener': '_$al',
+    '_blockAntiAdblockPopup': '_$bp',
     '_initCrashMonitor': '_$cm',
     '_bootstrap': '_$bs',
     '_initToggleListener': '_$tl',
-    '_init': '_$in'
+    '_init': '_$in',
+    // Additional internal identifiers
+    '_ATTR_REGEX': '_$ar',
+    '_REMINDER_KEY': '_$rk',
+    '_REMINDER_INTERVAL': '_$ri2',
+    '_FIRST_RUN_KEY': '_$fr',
+    '_ACHIEVEMENT_INFO': '_$ai',
+    '_GQL_URL': '_$gu'
 };
 
 function getVersion() {

@@ -163,13 +163,13 @@ function _$l(msg, type = 'info') {
     console.log('%cTTV AB%c ' + msg, _$c.LOG_STYLES.prefix, _$c.LOG_STYLES[type] || _$c.LOG_STYLES.info);
 }
 
-const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
 function _$pa(str) {
     const result = Object.create(null);
     let match;
-    _ATTR_REGEX.lastIndex = 0;
-    while ((match = _ATTR_REGEX.exec(str)) !== null) {
+    _$ar.lastIndex = 0;
+    while ((match = _$ar.exec(str)) !== null) {
         let value = match[2];
         if (value[0] === '"' && value[value.length - 1] === '"') {
             value = value.slice(1, -1);
@@ -278,7 +278,7 @@ function _$su(m3u8, res) {
     return matchUrl || closeUrl;
 }
 
-const _GQL_URL = 'https://gql.twitch.tv/gql';
+const _$gu = 'https://gql.twitch.tv/gql';
 
 function _$gq(body) {
     const headers = {
@@ -291,7 +291,7 @@ function _$gq(body) {
     if (ClientIntegrityHeader) headers['Client-Integrity'] = ClientIntegrityHeader;
     if (AuthorizationHeader) headers['Authorization'] = AuthorizationHeader;
 
-    return fetch(_GQL_URL, {
+    return fetch(_$gu, {
         method: 'POST',
         headers,
         body: JSON.stringify(body)
@@ -649,7 +649,7 @@ function _$hw() {
             const injectedCode = `
                 const _$c = ${JSON.stringify(_$c)};
                 const _$s = ${JSON.stringify(_$s)};
-                const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
+                const _$ar = ${_$ar.toString()};
                 ${_$l.toString()}
                 ${_$ds.toString()}
                 ${_$ab.toString()}
@@ -677,7 +677,7 @@ function _$hw() {
                     }
                 }
                 
-                const _GQL_URL = '${_GQL_URL}';
+                const _$gu = '${_$gu}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
                 _$ds(self);
                 GQLDeviceID = ${GQLDeviceID ? `'${GQLDeviceID}'` : 'null'};
@@ -812,18 +812,18 @@ function _$mf() {
     };
 }
 
-const _REMINDER_KEY = 'ttvab_last_reminder';
+const _$rk = 'ttvab_last_reminder';
 
-const _REMINDER_INTERVAL = 86400000;
+const _$ri2 = 86400000;
 
-const _FIRST_RUN_KEY = 'ttvab_first_run_shown';
+const _$fr = 'ttvab_first_run_shown';
 
 function _$dn() {
     try {
-        const lastReminder = localStorage.getItem(_REMINDER_KEY);
+        const lastReminder = localStorage.getItem(_$rk);
         const now = Date.now();
 
-        if (lastReminder && (now - parseInt(lastReminder, 10)) < _REMINDER_INTERVAL) return;
+        if (lastReminder && (now - parseInt(lastReminder, 10)) < _$ri2) return;
 
         setTimeout(() => {
             const toast = document.createElement('div');
@@ -844,7 +844,7 @@ function _$dn() {
             `;
 
             document.body.appendChild(toast);
-            localStorage.setItem(_REMINDER_KEY, now.toString());
+            localStorage.setItem(_$rk, now.toString());
 
             document.getElementById('ttvab-reminder-close').onclick = () => toast.remove();
             document.getElementById('ttvab-reminder-btn').onclick = () => {
@@ -866,7 +866,7 @@ function _$dn() {
 
 function _$wc() {
     try {
-        if (localStorage.getItem(_FIRST_RUN_KEY)) return;
+        if (localStorage.getItem(_$fr)) return;
 
         setTimeout(() => {
             const toast = document.createElement('div');
@@ -892,7 +892,7 @@ function _$wc() {
             `;
 
             document.body.appendChild(toast);
-            localStorage.setItem(_FIRST_RUN_KEY, 'true');
+            localStorage.setItem(_$fr, 'true');
 
             const closeHandler = () => {
                 toast.style.animation = 'ttvab-welcome .3s ease reverse';
@@ -910,7 +910,7 @@ function _$wc() {
     }
 }
 
-const _ACHIEVEMENT_INFO = {
+const _$ai = {
     'first_block': { name: 'Ad Slayer', icon: '⚔️', desc: 'Blocked your first ad!' },
     'block_10': { name: 'Blocker', icon: '🛡️', desc: 'Blocked 10 ads!' },
     'block_100': { name: 'Guardian', icon: '🔰', desc: 'Blocked 100 ads!' },
@@ -925,9 +925,9 @@ const _ACHIEVEMENT_INFO = {
     'channels_20': { name: 'Adventurer', icon: '🌍', desc: 'Blocked ads on 20 channels!' }
 };
 
-function _showAchievementUnlocked(achievementId) {
+function _$au(achievementId) {
     try {
-        const ach = _ACHIEVEMENT_INFO[achievementId];
+        const ach = _$ai[achievementId];
         if (!ach) return;
 
         const existing = document.getElementById('ttvab-achievement');
@@ -970,10 +970,10 @@ function _showAchievementUnlocked(achievementId) {
     }
 }
 
-function _initAchievementListener() {
+function _$al() {
     window.addEventListener('ttvab-achievement-unlocked', function (e) {
         if (e.detail && e.detail.id) {
-            _showAchievementUnlocked(e.detail.id);
+            _$au(e.detail.id);
         }
     });
 }
@@ -1091,7 +1091,7 @@ function _$tl() {
     });
 }
 
-function _blockAntiAdblockPopup() {
+function _$bp() {
 
     const POPUP_SELECTORS = [
         '[data-a-target="player-overlay-click-handler"] + div[class*="ScAttach"]',
@@ -1243,8 +1243,8 @@ function _$in() {
     _$mf();
     _$tl();
     _$cm();
-    _blockAntiAdblockPopup();
-    _initAchievementListener();
+    _$bp();
+    _$al();
     _$wc();
     _$dn();
 
