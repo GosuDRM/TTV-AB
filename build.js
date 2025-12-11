@@ -69,12 +69,11 @@ const MINIFY_MAP = {
     '_FIRST_RUN_KEY': '_$fr',
     '_ACHIEVEMENT_INFO': '_$ai',
     '_GQL_URL': '_$gu',
-    // UI helper functions
+    // UI helper functions (init.js internal)
     '_incrementPopupsBlocked': '_$pb',
-    '_isAntiAdblockElement': '_$ae',
-    '_removePopup': '_$rp',
     '_scanAndRemove': '_$sr',
     '_scheduleIdleScan': '_$is',
+    '_initPopupBlocker': '_$ipb',
     '_pruneStreamInfos': '_$ps'
 };
 

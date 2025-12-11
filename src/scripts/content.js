@@ -1124,12 +1124,12 @@ function _$tl() {
 
 function _$bp() {
 
-    function _initPopupBlocker() {
+    function _$ipb() {
         if (!document.body) {
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', _initPopupBlocker, { once: true });
+                document.addEventListener('DOMContentLoaded', _$ipb, { once: true });
             } else {
-                setTimeout(_initPopupBlocker, 50);
+                setTimeout(_$ipb, 50);
             }
             return;
         }
@@ -1237,7 +1237,7 @@ function _$bp() {
         _$l('Anti-adblock popup blocker active', 'success');
     }
 
-    _initPopupBlocker();
+    _$ipb();
 }
 
 function _$in() {
