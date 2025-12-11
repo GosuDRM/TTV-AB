@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-3.2.0-purple)
+![Version](https://img.shields.io/badge/version-3.2.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -41,15 +41,15 @@ The extension intercepts Twitch's HLS video playlists and:
 - Fetches backup ad-free streams when ads are detected
 - Caches ad segments to prevent playback
 
-## 🆕 Recent Changes
+## ✨ What's New
 
-### v3.2.0 (2025-12-11)
-- **Statistics Dashboard** - Collapsible panel with detailed ad blocking metrics
-- **Time Saved** - Shows estimated time saved from blocked ads
-- **Weekly Chart** - Visual sparkline showing last 7 days of blocking activity
-- **Top Channels** - Per-channel breakdown of ads blocked
-- **12 Achievement Badges** - Gamification with unlockable badges
-- Per-channel ad tracking
+### v3.2.x - Statistics Dashboard Update
+- **📊 Statistics Dashboard** - Collapsible panel with detailed ad blocking metrics
+- **⏱️ Time Saved** - Estimated time saved from blocked ads (~22s per ad)
+- **📈 Weekly Chart** - Visual sparkline showing last 7 days activity
+- **📺 Top Channels** - Per-channel breakdown of ads blocked (top 5)
+- **🏆 12 Achievement Badges** - Gamification with unlockable rewards
+- **🔄 Multi-tab Sync** - Toggle and counters sync across all open tabs
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
