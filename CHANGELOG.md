@@ -3,6 +3,16 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.4.9] - 2025-12-12
+
+### Fixed
+- **Popup Detection Timing** - Fixed popup blocker starting before DOM is ready by adding proper DOM-ready wait
+- **Popup Detection Coverage** - Added 4 new selectors and 4 new text patterns to catch more Twitch popup variants
+- **Popup Detection Speed** - Reduced scan throttle from 1s to 500ms for faster popup removal
+
+### Added
+- **Debug Logging** - Added visible console.log statements to confirm extension loads (shows 🚀 and ✅ emoji)
+
 ## [3.4.8] - 2025-12-12
 
 ### Added
