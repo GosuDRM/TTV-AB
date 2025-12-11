@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-3.2.7-purple)
+![Version](https://img.shields.io/badge/version-4.0.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -45,14 +45,12 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## ✨ What's New
 
-### v3.2.x - Big Update!
-- **🌐 Language Selector** - UI now available in 11 languages (EN, ES, FR, DE, PT, IT, JA, KO, ZH, RU)
-- **📊 Statistics Dashboard** - Collapsible panel with detailed ad blocking metrics
-- **⏱️ Time Saved** - Estimated time saved from blocked ads (~22s per ad)
-- **📈 Weekly Chart** - Visual sparkline showing last 7 days activity
-- **📺 Top Channels** - Per-channel breakdown of ads blocked (top 5)
-- **🏆 12 Achievement Badges** - Gamification with unlockable rewards
-- **🔄 Multi-tab Sync** - Toggle and counters sync across all open tabs
+### v4.0.0 - Major Update!
+- **CRITICAL: Removed Forced 480p** - Backup streams now use the same resolution as your main stream instead of being forced to 480p.
+- **Player Buffering Fix** - Monitors player state and automatically triggers pause/play when the player gets stuck buffering.
+- **Visibility State Protection** - Prevents Twitch from pausing the player when switching tabs during ad breaks.
+- **LocalStorage Preservation** - Preserves video quality, volume, and low latency settings.
+- **React Player Integration** - Direct integration with Twitch's React player components for more reliable player control.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
