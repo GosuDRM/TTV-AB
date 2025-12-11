@@ -38,6 +38,16 @@ The extension intercepts Twitch's HLS video playlists and:
 - Fetches backup ad-free streams when ads are detected
 - Caches ad segments to prevent playback
 
+## Recent Changes
+
+### v3.1.0 (2025-12-11)
+- **Anti-adblock popup blocker** - Automatically removes "Support [streamer] by disabling ad block" popups
+- New "Popups Blocked" counter in popup UI
+- Faster crash recovery (1.5s → 1s delay)
+- Fixed race condition for popups blocked counter
+
+See [CHANGELOG.md](CHANGELOG.md) for full version history.
+
 ## Author
 
 **GosuDRM**
@@ -46,7 +56,7 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## Support
 
-If you find this extension useful, consider supporting the developer:
+If you enjoy TTV AB, consider buying me a coffee! ☕ Your support helps keep this project alive!
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/GosuDRM)
 
@@ -56,5 +66,3 @@ This extension operates entirely locally and does not collect any user data. See
 ## License
 
 MIT License with Attribution - See [LICENSE](LICENSE) for details.
-
-Feel free to modify and use, but please credit the original author.
