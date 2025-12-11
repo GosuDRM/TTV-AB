@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.9.8] - 2025-12-12
+
+### Fixed
+- **CRITICAL: Stream Freeze During Ads** - Fixed overly aggressive ad stripping that was removing ALL segments (including live content) when no ad signifier was present. Now only strips segments when the playlist actually contains the `stitched` ad marker.
+- **Build System** - Added missing `_findBackupStream` to minification map, fixing runtime errors in worker injection.
+- **Version Sync** - Fixed version mismatch in popup.html (was showing v3.8.3, now correctly shows v3.9.7).
+- **ESLint Warnings** - Fixed `let` → `const` in api.js and renamed unused parameter in parser.js.
+
 ## [3.9.7] - 2025-12-12
 
 ### Fixed

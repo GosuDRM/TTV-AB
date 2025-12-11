@@ -63,12 +63,16 @@ function _replaceServerTime(m3u8, time) {
  * @param {boolean} [isBackup=false] - Is this a backup stream?
  * @returns {string} Cleaned playlist
  */
-function _stripAds(text, stripAll, info, isBackup = false) {
+function _stripAds(text, stripAll, info, _isBackup = false) {
     const lines = text.split('\n');
     const len = lines.length;
     const adUrl = 'https://twitch.tv';
     let stripped = false;
     let i = 0;
+
+    // CRITICAL: Only strip if the playlist actually contains the ad signifier
+    // Without this check, we strip ALL non-live segments which breaks playback
+    const hasAdSignifier = text.includes(AdSignifier);
 
     for (; i < len; i++) {
         let line = lines[i];
@@ -81,13 +85,15 @@ function _stripAds(text, stripAll, info, isBackup = false) {
             lines[i] = line;
         }
 
-        // Mark and REMOVE ad segments
+        // Mark and REMOVE ad segments - ONLY when we're actually in an ad
         // Twitch ad segments have #EXTINF without ',live' suffix
         // Live segments have #EXTINF:X.XXX,live
         // Ad segments have #EXTINF:X.XXX, (no 'live')
         const isAdSegment = !line.includes(',live');
 
-        if (i < len - 1 && line.startsWith('#EXTINF') && (isAdSegment || stripAll || AllSegmentsAreAdSegments)) {
+        // Only strip if: playlist has ad signifier OR stripAll flag OR allSegmentsAreAds
+        // This prevents stripping ALL content when there are no ads
+        if (i < len - 1 && line.startsWith('#EXTINF') && isAdSegment && (hasAdSignifier || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());
