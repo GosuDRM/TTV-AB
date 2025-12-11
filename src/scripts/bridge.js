@@ -152,29 +152,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Listen for ad blocked events from content script and sync to storage
+// Uses atomic increment to handle multiple tabs correctly
 window.addEventListener('ttvab-ad-blocked', function (e) {
-    const count = e.detail?.count || 0;
     const channel = e.detail?.channel || null;
 
-    // Save the counter
-    chrome.storage.local.set({ ttvAdsBlocked: count });
+    // Atomic increment: read current, add 1, write back
+    chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
+        const newCount = (result.ttvAdsBlocked || 0) + 1;
+        chrome.storage.local.set({ ttvAdsBlocked: newCount });
 
-    // Get popups count and do consolidated update
-    chrome.storage.local.get(['ttvPopupsBlocked'], function (result) {
-        updateStats('ads', channel, count, result.ttvPopupsBlocked || 0);
+        // Update stats with the new total
+        updateStats('ads', channel, newCount, result.ttvPopupsBlocked || 0);
     });
 });
 
 // Listen for popup blocked events from content script and sync to storage
+// Uses atomic increment to handle multiple tabs correctly
 window.addEventListener('ttvab-popup-blocked', function (e) {
-    const count = e.detail?.count || 0;
+    // Atomic increment: read current, add 1, write back
+    chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
+        const newCount = (result.ttvPopupsBlocked || 0) + 1;
+        chrome.storage.local.set({ ttvPopupsBlocked: newCount });
 
-    // Save the counter
-    chrome.storage.local.set({ ttvPopupsBlocked: count });
-
-    // Get ads count and do consolidated update
-    chrome.storage.local.get(['ttvAdsBlocked'], function (result) {
-        updateStats('popups', null, result.ttvAdsBlocked || 0, count);
+        // Update stats with the new total
+        updateStats('popups', null, result.ttvAdsBlocked || 0, newCount);
     });
 });
+
 
