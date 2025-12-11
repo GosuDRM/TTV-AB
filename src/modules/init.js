@@ -290,6 +290,14 @@ function _init() {
     _initCrashMonitor();
     _blockAntiAdblockPopup();
     _initAchievementListener();
+
+    // Enhanced player features
+    _hookVisibilityState();
+    _hookLocalStoragePreservation();
+    if (_C.BUFFERING_FIX) {
+        _monitorPlayerBuffering();
+    }
+
     _showWelcome();
     _showDonation();
 

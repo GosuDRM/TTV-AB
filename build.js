@@ -22,6 +22,7 @@ const MODULE_ORDER = [
     'processor.js',
     'worker.js',
     'hooks.js',
+    'player.js',
     'ui.js',
     'monitor.js',
     'init.js'
@@ -75,7 +76,17 @@ const MINIFY_MAP = {
     '_scanAndRemove': '_$sr',
     '_scheduleIdleScan': '_$is',
     '_initPopupBlocker': '_$ipb',
-    '_pruneStreamInfos': '_$ps'
+    '_pruneStreamInfos': '_$ps',
+    // Player module functions
+    '_PlayerBufferState': '_$pbs',
+    '_cachedPlayerRef': '_$cpr',
+    '_findReactRoot': '_$rr',
+    '_findReactNode': '_$rn',
+    '_getPlayerAndState': '_$gps',
+    '_doPlayerTask': '_$dpt',
+    '_monitorPlayerBuffering': '_$mpb',
+    '_hookVisibilityState': '_$hvs',
+    '_hookLocalStoragePreservation': '_$hlp'
 };
 
 function getVersion() {

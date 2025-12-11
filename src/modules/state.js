@@ -18,7 +18,9 @@ const _S = {
     /** Counter for blocked anti-adblock popups */
     popupsBlocked: 0,
     /** Current channel being watched (for per-channel stats) */
-    currentChannel: null
+    currentChannel: null,
+    /** Whether currently stripping ad segments (for UI) */
+    isActivelyStripping: false
 };
 
 /**
@@ -33,6 +35,7 @@ function _declareState(scope) {
     scope.ForceAccessTokenPlayerType = _C.FORCE_TYPE;
     scope.SkipPlayerReloadOnHevc = false;
     scope.AlwaysReloadPlayerOnAd = false;
+    scope.ReloadPlayerAfterAd = _C.RELOAD_AFTER_AD || true;
     scope.PlayerReloadMinimalRequestsTime = _C.RELOAD_TIME;
     scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
     scope.HasTriggeredPlayerReload = false;

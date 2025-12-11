@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.8 - Twitch Ad Blocker
+ * TTV AB v3.9.9 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.9.8',
+    VERSION: '3.9.9',
     
-    INTERNAL_VERSION: 36,
+    INTERNAL_VERSION: 37,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -93,6 +93,10 @@ const _$c = {
     
     AVG_AD_DURATION: 22,
     
+    BUFFERING_FIX: true,
+    
+    RELOAD_AFTER_AD: true,
+    
     ACHIEVEMENTS: [
         { id: 'first_block', name: 'Ad Slayer', icon: '⚔️', threshold: 1, type: 'ads', desc: 'Block your first ad' },
         { id: 'block_10', name: 'Blocker', icon: '🛡️', threshold: 10, type: 'ads', desc: 'Block 10 ads' },
@@ -121,7 +125,9 @@ const _$s = {
     
     popupsBlocked: 0,
     
-    currentChannel: null
+    currentChannel: null,
+    
+    isActivelyStripping: false
 };
 
 function _$ds(scope) {
@@ -132,6 +138,7 @@ function _$ds(scope) {
     scope.ForceAccessTokenPlayerType = _$c.FORCE_TYPE;
     scope.SkipPlayerReloadOnHevc = false;
     scope.AlwaysReloadPlayerOnAd = false;
+    scope.ReloadPlayerAfterAd = _$c.RELOAD_AFTER_AD || true;
     scope.PlayerReloadMinimalRequestsTime = _$c.RELOAD_TIME;
     scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
     scope.HasTriggeredPlayerReload = false;
@@ -421,8 +428,7 @@ async function _$pm(url, text, realFetch) {
 
         if (info.IsUsingFallbackStream) {
             _$l('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
-
-            text = _$sa(text, true, info, true);
+            text = _$sa(text, false, info, true);
             return text;
         }
 
@@ -466,6 +472,12 @@ async function _$pm(url, text, realFetch) {
             _$l('Ad ended', 'success');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdEnded' });
+
+                if (info.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
+                    self.postMessage({ key: 'ReloadPlayer' });
+                } else {
+                    self.postMessage({ key: 'PauseResumePlayer' });
+                }
             }
         }
     }
@@ -832,10 +844,24 @@ function _$hw() {
                         _$l('Ad blocked! Total: ' + e.data.count, 'success');
                         break;
                     case 'AdDetected':
+                        _$s.isActivelyStripping = true;
                         _$l('Ad detected, blocking...', 'warning');
                         break;
                     case 'AdEnded':
+                        _$s.isActivelyStripping = false;
                         _$l('Ad ended', 'success');
+                        break;
+                    case 'ReloadPlayer':
+                        _$l('Reloading player after ad', 'info');
+                        if (typeof _$dpt === 'function') {
+                            _$dpt(false, true);
+                        }
+                        break;
+                    case 'PauseResumePlayer':
+                        _$l('Resuming player after ad', 'info');
+                        if (typeof _$dpt === 'function') {
+                            _$dpt(true, false);
+                        }
                         break;
                 }
             });
@@ -965,6 +991,298 @@ function _$mf() {
         }
         return realFetch.apply(this, arguments);
     };
+}
+
+const _$pbs = {
+    position: 0,
+    bufferedPosition: 0,
+    bufferDuration: 0,
+    numSame: 0,
+    lastFixTime: 0,
+    isLive: true
+};
+
+let _$cpr = null;
+
+function _$rr() {
+    const rootNode = document.querySelector('#root');
+    if (!rootNode) return null;
+
+    if (rootNode._reactRootContainer?._internalRoot?.current) {
+        return rootNode._reactRootContainer._internalRoot.current;
+    }
+
+    const containerName = Object.keys(rootNode).find(x => x.startsWith('__reactContainer'));
+    if (containerName) {
+        return rootNode[containerName];
+    }
+
+    return null;
+}
+
+function _$rn(root, constraint) {
+    if (!root) return null;
+
+    if (root.stateNode && constraint(root.stateNode)) {
+        return root.stateNode;
+    }
+
+    let node = root.child;
+    while (node) {
+        const result = _$rn(node, constraint);
+        if (result) return result;
+        node = node.sibling;
+    }
+
+    return null;
+}
+
+function _$gps() {
+    const reactRoot = _$rr();
+    if (!reactRoot) return { player: null, state: null };
+
+    let player = _$rn(reactRoot, node =>
+        node.setPlayerActive && node.props?.mediaPlayerInstance
+    );
+    player = player?.props?.mediaPlayerInstance || null;
+
+    const playerState = _$rn(reactRoot, node =>
+        node.setSrc && node.setInitialPlaybackSettings
+    );
+
+    return { player, state: playerState };
+}
+
+function _$dpt(isPausePlay, isReload) {
+    const { player, state: playerState } = _$gps();
+
+    if (!player) {
+        _$l('Could not find player', 'warning');
+        return;
+    }
+
+    if (!playerState) {
+        _$l('Could not find player state', 'warning');
+        return;
+    }
+
+    if (player.isPaused() || player.core?.paused) return;
+
+    if (isPausePlay) {
+        player.pause();
+        player.play();
+        return;
+    }
+
+    if (isReload) {
+        const lsKeyQuality = 'video-quality';
+        const lsKeyMuted = 'video-muted';
+        const lsKeyVolume = 'volume';
+
+        let currentQualityLS = null;
+        let currentMutedLS = null;
+        let currentVolumeLS = null;
+
+        try {
+            currentQualityLS = localStorage.getItem(lsKeyQuality);
+            currentMutedLS = localStorage.getItem(lsKeyMuted);
+            currentVolumeLS = localStorage.getItem(lsKeyVolume);
+
+            if (player?.core?.state) {
+                localStorage.setItem(lsKeyMuted, JSON.stringify({ default: player.core.state.muted }));
+                localStorage.setItem(lsKeyVolume, player.core.state.volume);
+            }
+            if (player?.core?.state?.quality?.group) {
+                localStorage.setItem(lsKeyQuality, JSON.stringify({ default: player.core.state.quality.group }));
+            }
+        } catch { /* Ignore storage errors */ }
+
+        _$l('Reloading player', 'info');
+        playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
+
+        for (const worker of _$s.workers) {
+            worker.postMessage({ key: 'TriggeredPlayerReload' });
+        }
+
+        player.play();
+
+        if (currentQualityLS || currentMutedLS || currentVolumeLS) {
+            setTimeout(() => {
+                try {
+                    if (currentQualityLS) localStorage.setItem(lsKeyQuality, currentQualityLS);
+                    if (currentMutedLS) localStorage.setItem(lsKeyMuted, currentMutedLS);
+                    if (currentVolumeLS) localStorage.setItem(lsKeyVolume, currentVolumeLS);
+                } catch { /* Ignore */ }
+            }, 3000);
+        }
+    }
+}
+
+function _$mpb() {
+    const BUFFERING_DELAY = 500; // Check interval (ms)
+    const SAME_STATE_COUNT = 3;  // Trigger after this many same states
+    const DANGER_ZONE = 1;       // Buffer seconds before danger
+    const MIN_REPEAT_DELAY = 5000; // Min delay between fixes
+
+    function check() {
+        if (_$cpr) {
+            try {
+                const player = _$cpr.player;
+                const state = _$cpr.state;
+
+                if (!player.core) {
+                    _$cpr = null;
+                } else if (
+                    state?.props?.content?.type === 'live' &&
+                    !player.isPaused() &&
+                    !player.getHTMLVideoElement()?.ended &&
+                    _$pbs.lastFixTime <= Date.now() - MIN_REPEAT_DELAY
+                ) {
+                    const position = player.core?.state?.position || 0;
+                    const bufferedPosition = player.core?.state?.bufferedPosition || 0;
+                    const bufferDuration = player.getBufferDuration() || 0;
+
+                    if (
+                        position > 0 &&
+                        (_$pbs.position === position || bufferDuration < DANGER_ZONE) &&
+                        _$pbs.bufferedPosition === bufferedPosition &&
+                        _$pbs.bufferDuration >= bufferDuration &&
+                        (position !== 0 || bufferedPosition !== 0 || bufferDuration !== 0)
+                    ) {
+                        _$pbs.numSame++;
+
+                        if (_$pbs.numSame === SAME_STATE_COUNT) {
+                            _$l('Attempting to fix buffering (pos=' + position + ')', 'warning');
+                            _$dpt(true, false); // Pause/play
+                            _$pbs.lastFixTime = Date.now();
+                        }
+                    } else {
+                        _$pbs.numSame = 0;
+                    }
+
+                    _$pbs.position = position;
+                    _$pbs.bufferedPosition = bufferedPosition;
+                    _$pbs.bufferDuration = bufferDuration;
+                }
+            } catch (err) {
+                _$l('Buffer monitor error: ' + err.message, 'error');
+                _$cpr = null;
+            }
+        }
+
+        if (!_$cpr) {
+            const playerAndState = _$gps();
+            if (playerAndState.player && playerAndState.state) {
+                _$cpr = playerAndState;
+            }
+        }
+
+        const isLive = _$cpr?.state?.props?.content?.type === 'live';
+        _$pbs.isLive = isLive;
+
+        setTimeout(check, BUFFERING_DELAY);
+    }
+
+    check();
+    _$l('Player buffering monitor active', 'info');
+}
+
+function _$hvs() {
+    try {
+
+        Object.defineProperty(document, 'visibilityState', {
+            get: () => 'visible'
+        });
+    } catch { /* Already defined */ }
+
+    const hiddenGetter = document.__lookupGetter__('hidden');
+    const webkitHiddenGetter = document.__lookupGetter__('webkitHidden');
+
+    try {
+        Object.defineProperty(document, 'hidden', {
+            get: () => false
+        });
+    } catch { /* Already defined */ }
+
+    const blockEvent = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+    };
+
+    let wasVideoPlaying = true;
+
+    const handleVisibilityChange = e => {
+
+        if (typeof chrome !== 'undefined') {
+            const videos = document.getElementsByTagName('video');
+            if (videos.length > 0) {
+                const isHidden = (hiddenGetter?.apply(document) === true) ||
+                    (webkitHiddenGetter?.apply(document) === true);
+
+                if (isHidden) {
+                    wasVideoPlaying = !videos[0].paused && !videos[0].ended;
+                } else if (wasVideoPlaying && !videos[0].ended && videos[0].paused && videos[0].muted) {
+                    videos[0].play();
+                }
+            }
+        }
+        blockEvent(e);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange, true);
+    document.addEventListener('webkitvisibilitychange', handleVisibilityChange, true);
+    document.addEventListener('mozvisibilitychange', handleVisibilityChange, true);
+    document.addEventListener('hasFocus', blockEvent, true);
+
+    try {
+        if (/Firefox/.test(navigator.userAgent)) {
+            Object.defineProperty(document, 'mozHidden', { get: () => false });
+        } else {
+            Object.defineProperty(document, 'webkitHidden', { get: () => false });
+        }
+    } catch { /* Already defined */ }
+
+    _$l('Visibility state protection active', 'info');
+}
+
+function _$hlp() {
+    try {
+        const keysToCache = [
+            'video-quality',
+            'video-muted',
+            'volume',
+            'lowLatencyModeEnabled',
+            'persistenceEnabled'
+        ];
+
+        const cachedValues = new Map();
+
+        for (const key of keysToCache) {
+            cachedValues.set(key, localStorage.getItem(key));
+        }
+
+        const realSetItem = localStorage.setItem;
+        const realGetItem = localStorage.getItem;
+
+        localStorage.setItem = function (key, value) {
+            if (cachedValues.has(key)) {
+                cachedValues.set(key, value);
+            }
+            return realSetItem.apply(this, arguments);
+        };
+
+        localStorage.getItem = function (key) {
+            if (cachedValues.has(key)) {
+                return cachedValues.get(key);
+            }
+            return realGetItem.apply(this, arguments);
+        };
+
+        _$l('LocalStorage preservation active', 'info');
+    } catch (err) {
+        _$l('LocalStorage hooks failed: ' + err.message, 'warning');
+    }
 }
 
 const _$rk = 'ttvab_last_reminder';
@@ -1473,6 +1791,13 @@ function _$in() {
     _$cm();
     _$bp();
     _$al();
+
+    _$hvs();
+    _$hlp();
+    if (_$c.BUFFERING_FIX) {
+        _$mpb();
+    }
+
     _$wc();
     _$dn();
 

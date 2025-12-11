@@ -213,10 +213,24 @@ function _hookWorker() {
                         _log('Ad blocked! Total: ' + e.data.count, 'success');
                         break;
                     case 'AdDetected':
+                        _S.isActivelyStripping = true;
                         _log('Ad detected, blocking...', 'warning');
                         break;
                     case 'AdEnded':
+                        _S.isActivelyStripping = false;
                         _log('Ad ended', 'success');
+                        break;
+                    case 'ReloadPlayer':
+                        _log('Reloading player after ad', 'info');
+                        if (typeof _doPlayerTask === 'function') {
+                            _doPlayerTask(false, true);
+                        }
+                        break;
+                    case 'PauseResumePlayer':
+                        _log('Resuming player after ad', 'info');
+                        if (typeof _doPlayerTask === 'function') {
+                            _doPlayerTask(true, false);
+                        }
                         break;
                 }
             });

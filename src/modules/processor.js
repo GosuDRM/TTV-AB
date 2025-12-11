@@ -45,8 +45,7 @@ async function _processM3U8(url, text, realFetch) {
         // This prevents the infinite loop where we keep searching for backup streams.
         if (info.IsUsingFallbackStream) {
             _log('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
-            // Use stripAll=true to aggressively remove ALL ad segments
-            text = _stripAds(text, true, info, true);
+            text = _stripAds(text, false, info, true);
             return text;
         }
 
@@ -92,6 +91,12 @@ async function _processM3U8(url, text, realFetch) {
             _log('Ad ended', 'success');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdEnded' });
+                // Trigger player reload or pause/play for cleaner stream recovery
+                if (info.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
+                    self.postMessage({ key: 'ReloadPlayer' });
+                } else {
+                    self.postMessage({ key: 'PauseResumePlayer' });
+                }
             }
         }
     }
