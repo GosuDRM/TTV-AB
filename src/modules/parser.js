@@ -102,9 +102,13 @@ function _stripAds(text, stripAll, info) {
 
     info.IsStrippingAdSegments = stripped;
 
-    // Cleanup old cache entries (older than 2 minutes)
-    const cutoff = Date.now() - 120000;
-    AdSegmentCache.forEach((v, k) => { if (v < cutoff) AdSegmentCache.delete(k); });
+    // Cleanup old cache entries (older than 2 minutes) - run max once per 60s
+    const now = Date.now();
+    if (!info._lastCachePrune || now - info._lastCachePrune > 60000) {
+        info._lastCachePrune = now;
+        const cutoff = now - 120000;
+        AdSegmentCache.forEach((v, k) => { if (v < cutoff) AdSegmentCache.delete(k); });
+    }
 
     return lines.join('\n');
 }

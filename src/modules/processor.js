@@ -65,88 +65,7 @@ async function _processM3U8(url, text, realFetch) {
             info.LastPlayerReload = Date.now();
         }
 
-        let backupType = null;
-        let backupM3u8 = null;
-        let fallbackM3u8 = null;
-        let startIdx = 0;
-        let minimal = false;
-
-        if (info.LastPlayerReload > Date.now() - PlayerReloadMinimalRequestsTime) {
-            startIdx = PlayerReloadMinimalRequestsPlayerIndex;
-            minimal = true;
-        }
-
-        // Try backup player types
-        const playerTypes = BackupPlayerTypes;
-        const playerTypesLen = playerTypes.length;
-
-        for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
-            const pt = playerTypes[pi];
-            const realPt = pt.replace('-CACHED', '');
-            const cached = pt !== realPt;
-
-            for (let j = 0; j < 2; j++) {
-                let fresh = false;
-                let enc = info.BackupEncodingsM3U8Cache[pt];
-
-                if (!enc) {
-                    fresh = true;
-                    try {
-                        const tokenRes = await _getToken(info.ChannelName, realPt);
-                        if (tokenRes.status === 200) {
-                            const token = await tokenRes.json();
-                            const sig = token?.data?.streamPlaybackAccessToken?.signature;
-                            if (sig) {
-                                const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
-                                usherUrl.searchParams.set('sig', sig);
-                                usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
-                                const encRes = await realFetch(usherUrl.href);
-                                if (encRes.status === 200) {
-                                    enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        _log('Error getting backup: ' + e.message, 'error');
-                    }
-                }
-
-                if (enc) {
-                    try {
-                        const streamUrl = _getStreamUrl(enc, res);
-                        const streamRes = await realFetch(streamUrl);
-                        if (streamRes.status === 200) {
-                            const m3u8 = await streamRes.text();
-                            if (m3u8) {
-                                if (pt === FallbackPlayerType) fallbackM3u8 = m3u8;
-                                const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
-                                const lastResort = !fallbackM3u8 && pi >= playerTypesLen - 1;
-                                if (noAds || lastResort) {
-                                    backupType = pt;
-                                    backupM3u8 = m3u8;
-                                    break;
-                                }
-                                if (cached || minimal) {
-                                    backupType = pt;
-                                    backupM3u8 = m3u8;
-                                    break;
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        _log('Stream fetch error: ' + e.message, 'warning');
-                    }
-                }
-
-                info.BackupEncodingsM3U8Cache[pt] = null;
-                if (fresh) break;
-            }
-        }
-
-        if (!backupM3u8 && fallbackM3u8) {
-            backupType = FallbackPlayerType;
-            backupM3u8 = fallbackM3u8;
-        }
+        const { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(info, realFetch, startIdx, minimal);
 
         if (backupM3u8) text = backupM3u8;
 
@@ -171,4 +90,90 @@ async function _processM3U8(url, text, realFetch) {
     }
 
     return text;
+}
+
+/**
+ * Try to find a working backup stream without ads
+ * @param {Object} info - Stream info
+ * @param {Function} realFetch - Fetch function
+ * @param {number} startIdx - Starting index for player types
+ * @param {boolean} minimal - Minimal checks flag
+ * @returns {Promise<{type: string|null, m3u8: string|null}>}
+ */
+async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false) {
+    let backupType = null;
+    let backupM3u8 = null;
+    let fallbackM3u8 = null;
+
+    const playerTypes = BackupPlayerTypes;
+    const playerTypesLen = playerTypes.length;
+    const res = info.Urls[Object.keys(info.Urls)[0]]; // Use first available resolution info
+
+    for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
+        const pt = playerTypes[pi];
+        const realPt = pt.replace('-CACHED', '');
+        const cached = pt !== realPt;
+
+        for (let j = 0; j < 2; j++) {
+            let fresh = false;
+            let enc = info.BackupEncodingsM3U8Cache[pt];
+
+            if (!enc) {
+                fresh = true;
+                try {
+                    const tokenRes = await _getToken(info.ChannelName, realPt);
+                    if (tokenRes.status === 200) {
+                        const token = await tokenRes.json();
+                        const sig = token?.data?.streamPlaybackAccessToken?.signature;
+                        if (sig) {
+                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                            usherUrl.searchParams.set('sig', sig);
+                            usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                            const encRes = await realFetch(usherUrl.href);
+                            if (encRes.status === 200) {
+                                enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                            }
+                        }
+                    }
+                } catch (e) {
+                    _log('Error getting backup: ' + e.message, 'error');
+                }
+            }
+
+            if (enc) {
+                try {
+                    const streamUrl = _getStreamUrl(enc, res || {});
+                    if (streamUrl) {
+                        const streamRes = await realFetch(streamUrl);
+                        if (streamRes.status === 200) {
+                            const m3u8 = await streamRes.text();
+                            if (m3u8) {
+                                if (pt === FallbackPlayerType) fallbackM3u8 = m3u8;
+                                const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
+                                const lastResort = !fallbackM3u8 && pi >= playerTypesLen - 1;
+
+                                if (noAds || lastResort || cached || minimal) {
+                                    backupType = pt;
+                                    backupM3u8 = m3u8;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    _log('Stream fetch error: ' + e.message, 'warning');
+                }
+            }
+
+            info.BackupEncodingsM3U8Cache[pt] = null;
+            if (fresh) break;
+        }
+    }
+
+    if (!backupM3u8 && fallbackM3u8) {
+        backupType = FallbackPlayerType;
+        backupM3u8 = fallbackM3u8;
+    }
+
+    return { type: backupType, m3u8: backupM3u8 };
 }
