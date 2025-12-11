@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.10.0] - 2025-12-12
+
+### Fixed
+- **CRITICAL: Removed Forced 480p** - Backup streams now use the same resolution as your main stream instead of being forced to 480p. This prevents resolution-related ad targeting issues and maintains video quality during ad transitions.
+
+### Changed
+- `_findBackupStream` now accepts and uses the current resolution info
+- Version bump to 3.10.0
+
 ## [3.9.9] - 2025-12-12
 
 ### Added

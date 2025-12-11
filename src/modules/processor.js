@@ -61,7 +61,7 @@ async function _processM3U8(url, text, realFetch) {
             info.LastPlayerReload = Date.now();
         }
 
-        const { type: backupType, m3u8: backupM3u8, isFallback } = await _findBackupStream(info, realFetch);
+        const { type: backupType, m3u8: backupM3u8, isFallback } = await _findBackupStream(info, realFetch, 0, false, res);
 
         if (!backupM3u8) _log('Failed to find any backup stream', 'warning');
 
@@ -110,9 +110,10 @@ async function _processM3U8(url, text, realFetch) {
  * @param {Function} realFetch - Fetch function
  * @param {number} startIdx - Starting index for player types
  * @param {boolean} minimal - Minimal checks flag
- * @returns {Promise<{type: string|null, m3u8: string|null}>}
+ * @param {Object} currentResolution - Current stream resolution info
+ * @returns {Promise<{type: string|null, m3u8: string|null, isFallback: boolean}>}
  */
-async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false) {
+async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false, currentResolution = null) {
     let backupType = null;
     let backupM3u8 = null;
     let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
@@ -131,9 +132,9 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
 
     const playerTypesLen = playerTypes.length;
 
-    // FORCE 480p during ad blocking - lower resolutions often don't have ads
-    // This gives users a better chance of getting an ad-free stream
-    const force480p = { Resolution: '852x480', FrameRate: '30' };
+    // Use the current resolution instead of forcing 480p
+    // This maintains video quality and avoids resolution-specific ad targeting
+    const targetRes = currentResolution || { Resolution: '1920x1080', FrameRate: '60' };
 
     for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
         const pt = playerTypes[pi];
@@ -182,7 +183,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
 
             if (enc) {
                 try {
-                    const streamUrl = _getStreamUrl(enc, force480p);
+                    const streamUrl = _getStreamUrl(enc, targetRes);
                     if (streamUrl) {
                         _log(`[Trace] Fetching stream URL for ${pt}: ${streamUrl}`, 'info');
                         const streamRes = await realFetch(streamUrl);
