@@ -87,7 +87,7 @@ const _$c = {
     
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
     
-    REFRESH_DELAY: 1500
+    REFRESH_DELAY: 1000
 };
 
 const _$s = {

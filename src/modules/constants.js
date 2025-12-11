@@ -34,5 +34,5 @@ const _C = {
     /** Error patterns indicating player crash */
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
     /** Delay before auto-refresh (ms) */
-    REFRESH_DELAY: 1500
+    REFRESH_DELAY: 1000
 };
