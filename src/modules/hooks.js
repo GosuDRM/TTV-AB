@@ -219,7 +219,7 @@ function _hookWorker() {
                     case 'AdBlocked':
                         _S.adsBlocked = e.data.count;
                         _log('Ad blocked! Total: ' + e.data.count, 'success');
-                        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
+                        document.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
                             detail: { count: e.data.count, channel: e.data.channel || null }
                         }));
                         break;
