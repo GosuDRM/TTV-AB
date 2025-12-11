@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-3.1.0-purple)
+![Version](https://img.shields.io/badge/version-3.2.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -21,6 +21,9 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 - ✅ Simple enable/disable toggle
 - ✅ Auto-refresh on player crash
 - ✅ Persistent "Ads Blocked" & "Popups Blocked" statistics
+- ✅ **Statistics Dashboard** with time saved, weekly charts, and achievements
+- ✅ **12 Achievement Badges** to unlock as you block ads
+- ✅ Per-channel ad blocking breakdown
 - ✅ Modern, animated UI (Cyberpunk/Neon aesthetic)
 - ✅ Lightweight and fast
 
@@ -40,11 +43,13 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## 🆕 Recent Changes
 
-### v3.1.0 (2025-12-11)
-- **Anti-adblock popup blocker** - Automatically removes "Support [streamer] by disabling ad block" popups
-- New "Popups Blocked" counter in popup UI
-- Faster crash recovery (1.5s → 1s delay)
-- Fixed race condition for popups blocked counter
+### v3.2.0 (2025-12-11)
+- **Statistics Dashboard** - Collapsible panel with detailed ad blocking metrics
+- **Time Saved** - Shows estimated time saved from blocked ads
+- **Weekly Chart** - Visual sparkline showing last 7 days of blocking activity
+- **Top Channels** - Per-channel breakdown of ads blocked
+- **12 Achievement Badges** - Gamification with unlockable badges
+- Per-channel ad tracking
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

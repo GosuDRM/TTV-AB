@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.1.0 - Twitch Ad Blocker
+ * TTV AB v3.2.0 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.1.0',
+    VERSION: '3.2.0',
     
-    INTERNAL_VERSION: 20,
+    INTERNAL_VERSION: 21,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -87,7 +87,24 @@ const _$c = {
     
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
     
-    REFRESH_DELAY: 1000
+    REFRESH_DELAY: 1000,
+    
+    AVG_AD_DURATION: 22,
+    
+    ACHIEVEMENTS: [
+        { id: 'first_block', name: 'Ad Slayer', icon: '⚔️', threshold: 1, type: 'ads', desc: 'Block your first ad' },
+        { id: 'block_10', name: 'Blocker', icon: '🛡️', threshold: 10, type: 'ads', desc: 'Block 10 ads' },
+        { id: 'block_100', name: 'Guardian', icon: '🔰', threshold: 100, type: 'ads', desc: 'Block 100 ads' },
+        { id: 'block_500', name: 'Sentinel', icon: '🏰', threshold: 500, type: 'ads', desc: 'Block 500 ads' },
+        { id: 'block_1000', name: 'Legend', icon: '🏆', threshold: 1000, type: 'ads', desc: 'Block 1000 ads' },
+        { id: 'block_5000', name: 'Mythic', icon: '👑', threshold: 5000, type: 'ads', desc: 'Block 5000 ads' },
+        { id: 'popup_10', name: 'Popup Crusher', icon: '💥', threshold: 10, type: 'popups', desc: 'Block 10 popups' },
+        { id: 'popup_50', name: 'Popup Destroyer', icon: '🔥', threshold: 50, type: 'popups', desc: 'Block 50 popups' },
+        { id: 'time_1h', name: 'Hour Saver', icon: '⏱️', threshold: 3600, type: 'time', desc: 'Save 1 hour from ads' },
+        { id: 'time_10h', name: 'Time Master', icon: '⏰', threshold: 36000, type: 'time', desc: 'Save 10 hours from ads' },
+        { id: 'channels_5', name: 'Explorer', icon: '📺', threshold: 5, type: 'channels', desc: 'Block ads on 5 channels' },
+        { id: 'channels_20', name: 'Adventurer', icon: '🌍', threshold: 20, type: 'channels', desc: 'Block ads on 20 channels' }
+    ]
 };
 
 const _$s = {
@@ -100,7 +117,9 @@ const _$s = {
     
     adsBlocked: 0,
     
-    popupsBlocked: 0
+    popupsBlocked: 0,
+    
+    currentChannel: null
 };
 
 function _$ds(scope) {
@@ -128,12 +147,15 @@ function _$ds(scope) {
     scope.AllSegmentsAreAdSegments = false;
 }
 
-function _$ab() {
+function _$ab(channel) {
     _$s.adsBlocked++;
+    _$s.currentChannel = channel || null;
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _$s.adsBlocked } }));
+        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
+            detail: { count: _$s.adsBlocked, channel: channel || null }
+        }));
     } else if (typeof self !== 'undefined' && self.postMessage) {
-        self.postMessage({ key: 'AdBlocked', count: _$s.adsBlocked });
+        self.postMessage({ key: 'AdBlocked', count: _$s.adsBlocked, channel: channel || null });
     }
 }
 
@@ -315,9 +337,9 @@ async function _$pm(url, text, realFetch) {
             info.IsShowingAd = true;
             _$l('Ad detected, blocking...', 'warning');
             if (typeof self !== 'undefined' && self.postMessage) {
-                self.postMessage({ key: 'AdDetected' });
+                self.postMessage({ key: 'AdDetected', channel: info.ChannelName });
             }
-            _$ab();
+            _$ab(info.ChannelName);
         }
 
         if (!info.IsMidroll) {
@@ -885,6 +907,74 @@ function _$wc() {
     }
 }
 
+const _ACHIEVEMENT_INFO = {
+    'first_block': { name: 'Ad Slayer', icon: '⚔️', desc: 'Blocked your first ad!' },
+    'block_10': { name: 'Blocker', icon: '🛡️', desc: 'Blocked 10 ads!' },
+    'block_100': { name: 'Guardian', icon: '🔰', desc: 'Blocked 100 ads!' },
+    'block_500': { name: 'Sentinel', icon: '🏰', desc: 'Blocked 500 ads!' },
+    'block_1000': { name: 'Legend', icon: '🏆', desc: 'Blocked 1000 ads!' },
+    'block_5000': { name: 'Mythic', icon: '👑', desc: 'Blocked 5000 ads!' },
+    'popup_10': { name: 'Popup Crusher', icon: '💥', desc: 'Blocked 10 popups!' },
+    'popup_50': { name: 'Popup Destroyer', icon: '🔥', desc: 'Blocked 50 popups!' },
+    'time_1h': { name: 'Hour Saver', icon: '⏱️', desc: 'Saved 1 hour from ads!' },
+    'time_10h': { name: 'Time Master', icon: '⏰', desc: 'Saved 10 hours from ads!' },
+    'channels_5': { name: 'Explorer', icon: '📺', desc: 'Blocked ads on 5 channels!' },
+    'channels_20': { name: 'Adventurer', icon: '🌍', desc: 'Blocked ads on 20 channels!' }
+};
+
+function _showAchievementUnlocked(achievementId) {
+    try {
+        const ach = _ACHIEVEMENT_INFO[achievementId];
+        if (!ach) return;
+
+        const existing = document.getElementById('ttvab-achievement');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'ttvab-achievement';
+        toast.innerHTML = `
+            <style>
+                #ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}
+                @keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
+                @keyframes ttvab-ach-glow{0%,100%{box-shadow:0 0 10px rgba(145,70,255,.3)}50%{box-shadow:0 0 25px rgba(145,70,255,.6)}}
+                @keyframes ttvab-ach-shine{0%{background-position:-200% center}100%{background-position:200% center}}
+                #ttvab-achievement .ach-icon{font-size:40px;animation:ttvab-ach-bounce 1s ease infinite}
+                @keyframes ttvab-ach-bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+                #ttvab-achievement .ach-content{display:flex;flex-direction:column;gap:2px}
+                #ttvab-achievement .ach-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#9146FF;font-weight:600}
+                #ttvab-achievement .ach-name{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#9146FF 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:ttvab-ach-shine 2s linear infinite}
+                #ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}
+            </style>
+            <div class="ach-icon">${ach.icon}</div>
+            <div class="ach-content">
+                <div class="ach-label">🏆 Achievement Unlocked!</div>
+                <div class="ach-name">${ach.name}</div>
+                <div class="ach-desc">${ach.desc}</div>
+            </div>
+        `;
+
+        document.body.appendChild(toast);
+        _$l('Achievement unlocked: ' + ach.name, 'success');
+
+        setTimeout(() => {
+            if (document.getElementById('ttvab-achievement')) {
+                toast.style.animation = 'ttvab-ach-pop .3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, 4000);
+    } catch (e) {
+        _$l('Achievement notification error: ' + e.message, 'error');
+    }
+}
+
+function _initAchievementListener() {
+    window.addEventListener('ttvab-achievement-unlocked', function (e) {
+        if (e.detail && e.detail.id) {
+            _showAchievementUnlocked(e.detail.id);
+        }
+    });
+}
+
 function _$cm() {
     let isRefreshing = false;
     let checkInterval = null;
@@ -1151,6 +1241,7 @@ function _$in() {
     _$tl();
     _$cm();
     _blockAntiAdblockPopup();
+    _initAchievementListener();
     _$wc();
     _$dn();
 

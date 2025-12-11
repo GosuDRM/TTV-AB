@@ -32,9 +32,9 @@ async function _processM3U8(url, text, realFetch) {
             info.IsShowingAd = true;
             _log('Ad detected, blocking...', 'warning');
             if (typeof self !== 'undefined' && self.postMessage) {
-                self.postMessage({ key: 'AdDetected' });
+                self.postMessage({ key: 'AdDetected', channel: info.ChannelName });
             }
-            _incrementAdsBlocked();
+            _incrementAdsBlocked(info.ChannelName);
         }
 
         // Pre-fetch ad segments for midroll (helps with timing)

@@ -16,7 +16,9 @@ const _S = {
     /** Counter for blocked ads */
     adsBlocked: 0,
     /** Counter for blocked anti-adblock popups */
-    popupsBlocked: 0
+    popupsBlocked: 0,
+    /** Current channel being watched (for per-channel stats) */
+    currentChannel: null
 };
 
 /**
@@ -50,12 +52,16 @@ function _declareState(scope) {
 
 /**
  * Increment blocked ads counter and dispatch event
+ * @param {string} [channel] - Channel name where ad was blocked
  */
-function _incrementAdsBlocked() {
+function _incrementAdsBlocked(channel) {
     _S.adsBlocked++;
+    _S.currentChannel = channel || null;
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', { detail: { count: _S.adsBlocked } }));
+        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
+            detail: { count: _S.adsBlocked, channel: channel || null }
+        }));
     } else if (typeof self !== 'undefined' && self.postMessage) {
-        self.postMessage({ key: 'AdBlocked', count: _S.adsBlocked });
+        self.postMessage({ key: 'AdBlocked', count: _S.adsBlocked, channel: channel || null });
     }
 }

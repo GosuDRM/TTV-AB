@@ -420,6 +420,7 @@
             border-radius: 12px;
             padding: 14px 16px;
             border: 1px solid rgba(145, 70, 255, 0.3);
+            margin-top: 16px;
         }
 
         .toggle-label {
@@ -489,6 +490,207 @@
             color: #666;
         }
 
+        /* Statistics Panel Styles */
+        .stats-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(145, 70, 255, 0.08);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-top: 16px;
+            cursor: pointer;
+            border: 1px solid rgba(145, 70, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .stats-toggle:hover {
+            background: rgba(145, 70, 255, 0.15);
+            border-color: rgba(145, 70, 255, 0.4);
+        }
+
+        .stats-toggle-text {
+            font-size: 13px;
+            font-weight: 500;
+            color: #ccc;
+        }
+
+        .stats-toggle-arrow {
+            font-size: 10px;
+            color: #9146FF;
+            transition: transform 0.3s ease;
+        }
+
+        .stats-toggle.expanded .stats-toggle-arrow {
+            transform: rotate(180deg);
+        }
+
+        .stats-panel {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease, opacity 0.3s ease;
+            opacity: 0;
+        }
+
+        .stats-panel.expanded {
+            max-height: 400px;
+            opacity: 1;
+        }
+
+        .stats-content {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            padding: 14px;
+            margin-top: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .stats-section {
+            margin-bottom: 14px;
+        }
+
+        .stats-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .stats-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #888;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Weekly Chart */
+        .chart-container {
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+            height: 40px;
+            padding: 8px 0;
+        }
+
+        .chart-bar {
+            flex: 1;
+            background: linear-gradient(to top, #772CE8, #9146FF);
+            border-radius: 3px 3px 0 0;
+            min-height: 4px;
+            transition: height 0.3s ease;
+            position: relative;
+        }
+
+        .chart-bar:hover {
+            background: linear-gradient(to top, #9146FF, #b380ff);
+        }
+
+        .chart-avg {
+            text-align: center;
+            font-size: 10px;
+            color: #666;
+            margin-top: 6px;
+        }
+
+        /* Top Channels */
+        .channel-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .channel-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+        }
+
+        .channel-name {
+            color: #aaa;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 180px;
+        }
+
+        .channel-rank {
+            color: #666;
+            margin-right: 6px;
+        }
+
+        .channel-count {
+            color: #9146FF;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Achievements */
+        .achievements-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .achievements-progress {
+            font-size: 10px;
+            color: #666;
+        }
+
+        .achievements-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 6px;
+        }
+
+        .achievement-badge {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            font-size: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            opacity: 0.3;
+            filter: grayscale(1);
+            transition: all 0.3s ease;
+            cursor: default;
+        }
+
+        .achievement-badge.unlocked {
+            opacity: 1;
+            filter: grayscale(0);
+            background: rgba(145, 70, 255, 0.15);
+            border-color: rgba(145, 70, 255, 0.4);
+            box-shadow: 0 0 8px rgba(145, 70, 255, 0.3);
+        }
+
+        .achievement-badge.unlocked:hover {
+            transform: scale(1.15);
+        }
+
+        .next-achievement {
+            font-size: 10px;
+            color: #666;
+            margin-top: 8px;
+            text-align: center;
+        }
+
+        .next-achievement-name {
+            color: #9146FF;
+        }
+
+        .time-saved-row {
+            margin-top: 8px;
+            padding-top: 8px;
+        }
+
+        .time-saved-value {
+            color: #4CAF50 !important;
+        }
+
         .footer {
             margin-top: 20px;
             text-align: center;
@@ -526,7 +728,7 @@
         <div class="logo">TTV</div>
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
-            <div class="version">v3.1.0</div>
+            <div class="version">v3.2.0</div>
             <div class="description-text">Lightweight, powerful ad blocker designed specifically for Twitch.tv</div>
         </div>
         <button class="donate-btn" id="donateBtn" title="Support the developer">
@@ -552,6 +754,71 @@
         <div class="counter-row" style="margin-top: 8px; padding-top: 8px;">
             <span class="counter-label">Popups Blocked</span>
             <span class="counter-value" id="popupsBlockedCount">0</span>
+        </div>
+        <div class="counter-row time-saved-row">
+            <span class="counter-label">Est. Time Saved</span>
+            <span class="counter-value time-saved-value" id="timeSaved">~0s</span>
+        </div>
+    </div>
+
+    <!-- Statistics Toggle -->
+    <div class="stats-toggle" id="statsToggle">
+        <span class="stats-toggle-text">📊 Statistics</span>
+        <span class="stats-toggle-arrow">▼</span>
+    </div>
+
+    <!-- Collapsible Stats Panel -->
+    <div class="stats-panel" id="statsPanel">
+        <div class="stats-content">
+            <!-- Weekly Chart -->
+            <div class="stats-section">
+                <div class="stats-section-title">📈 Last 7 Days</div>
+                <div class="chart-container" id="weeklyChart">
+                    <div class="chart-bar" style="height: 20%;"></div>
+                    <div class="chart-bar" style="height: 40%;"></div>
+                    <div class="chart-bar" style="height: 60%;"></div>
+                    <div class="chart-bar" style="height: 80%;"></div>
+                    <div class="chart-bar" style="height: 50%;"></div>
+                    <div class="chart-bar" style="height: 70%;"></div>
+                    <div class="chart-bar" style="height: 100%;"></div>
+                </div>
+                <div class="chart-avg" id="chartAvg">avg: 0/day</div>
+            </div>
+
+            <!-- Top Channels -->
+            <div class="stats-section">
+                <div class="stats-section-title">🏠 Top Channels</div>
+                <div class="channel-list" id="channelList">
+                    <div class="channel-item">
+                        <span><span class="channel-rank">-</span><span class="channel-name">No data yet</span></span>
+                        <span class="channel-count">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Achievements -->
+            <div class="stats-section">
+                <div class="achievements-header">
+                    <div class="stats-section-title" style="margin-bottom: 0;">🏆 Achievements</div>
+                    <span class="achievements-progress" id="achievementsProgress">0/12</span>
+                </div>
+                <div class="achievements-grid" id="achievementsGrid">
+                    <div class="achievement-badge" title="Ad Slayer - Block your first ad">⚔️</div>
+                    <div class="achievement-badge" title="Blocker - Block 10 ads">🛡️</div>
+                    <div class="achievement-badge" title="Guardian - Block 100 ads">🔰</div>
+                    <div class="achievement-badge" title="Sentinel - Block 500 ads">🏰</div>
+                    <div class="achievement-badge" title="Legend - Block 1000 ads">🏆</div>
+                    <div class="achievement-badge" title="Mythic - Block 5000 ads">👑</div>
+                    <div class="achievement-badge" title="Popup Crusher - Block 10 popups">💥</div>
+                    <div class="achievement-badge" title="Popup Destroyer - Block 50 popups">🔥</div>
+                    <div class="achievement-badge" title="Hour Saver - Save 1 hour">⏱️</div>
+                    <div class="achievement-badge" title="Time Master - Save 10 hours">⏰</div>
+                    <div class="achievement-badge" title="Explorer - Block ads on 5 channels">📺</div>
+                    <div class="achievement-badge" title="Adventurer - Block ads on 20 channels">🌍</div>
+                </div>
+                <div class="next-achievement" id="nextAchievement">Next: <span class="next-achievement-name">Ad
+                        Slayer</span></div>
+            </div>
         </div>
     </div>
 

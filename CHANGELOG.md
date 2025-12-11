@@ -4,6 +4,26 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.2.0] - 2025-12-11
+
+### Added
+- **Statistics Dashboard** - Collapsible panel showing detailed ad blocking metrics
+- **Time Saved Display** - Estimated time saved from blocked ads (calculated at ~22s per ad)
+- **Weekly Chart** - Visual CSS sparkline showing last 7 days of blocking activity
+- **Top Channels** - Per-channel breakdown displaying top 5 channels by ads blocked
+- **12 Achievement Badges** - Gamification system with unlockable badges:
+  - Ad Slayer, Blocker, Guardian, Sentinel, Legend, Mythic (ad milestones)
+  - Popup Crusher, Popup Destroyer (popup milestones)
+  - Hour Saver, Time Master (time saved milestones)
+  - Explorer, Adventurer (channel diversity milestones)
+- Per-channel ad tracking with persistent storage
+- Daily stats tracking with automatic 30-day pruning
+- Achievements progress counter and "Next achievement" hint
+
+### Changed
+- Popup UI expanded with new statistics section
+- Bridge script enhanced for statistics sync
+
 ## [3.1.0] - 2025-12-11
 
 ### Added

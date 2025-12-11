@@ -219,6 +219,7 @@ function _init() {
     _initToggleListener();
     _initCrashMonitor();
     _blockAntiAdblockPopup();
+    _initAchievementListener();
     _showWelcome();
     _showDonation();
 

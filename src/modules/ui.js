@@ -111,3 +111,84 @@ function _showWelcome() {
         _log('Welcome message error: ' + e.message, 'error');
     }
 }
+
+/**
+ * Achievement definitions for notification display
+ * @type {Object}
+ */
+const _ACHIEVEMENT_INFO = {
+    'first_block': { name: 'Ad Slayer', icon: '⚔️', desc: 'Blocked your first ad!' },
+    'block_10': { name: 'Blocker', icon: '🛡️', desc: 'Blocked 10 ads!' },
+    'block_100': { name: 'Guardian', icon: '🔰', desc: 'Blocked 100 ads!' },
+    'block_500': { name: 'Sentinel', icon: '🏰', desc: 'Blocked 500 ads!' },
+    'block_1000': { name: 'Legend', icon: '🏆', desc: 'Blocked 1000 ads!' },
+    'block_5000': { name: 'Mythic', icon: '👑', desc: 'Blocked 5000 ads!' },
+    'popup_10': { name: 'Popup Crusher', icon: '💥', desc: 'Blocked 10 popups!' },
+    'popup_50': { name: 'Popup Destroyer', icon: '🔥', desc: 'Blocked 50 popups!' },
+    'time_1h': { name: 'Hour Saver', icon: '⏱️', desc: 'Saved 1 hour from ads!' },
+    'time_10h': { name: 'Time Master', icon: '⏰', desc: 'Saved 10 hours from ads!' },
+    'channels_5': { name: 'Explorer', icon: '📺', desc: 'Blocked ads on 5 channels!' },
+    'channels_20': { name: 'Adventurer', icon: '🌍', desc: 'Blocked ads on 20 channels!' }
+};
+
+/**
+ * Show achievement unlocked notification
+ * @param {string} achievementId - The achievement ID that was unlocked
+ */
+function _showAchievementUnlocked(achievementId) {
+    try {
+        const ach = _ACHIEVEMENT_INFO[achievementId];
+        if (!ach) return;
+
+        // Remove any existing achievement toast
+        const existing = document.getElementById('ttvab-achievement');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'ttvab-achievement';
+        toast.innerHTML = `
+            <style>
+                #ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}
+                @keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
+                @keyframes ttvab-ach-glow{0%,100%{box-shadow:0 0 10px rgba(145,70,255,.3)}50%{box-shadow:0 0 25px rgba(145,70,255,.6)}}
+                @keyframes ttvab-ach-shine{0%{background-position:-200% center}100%{background-position:200% center}}
+                #ttvab-achievement .ach-icon{font-size:40px;animation:ttvab-ach-bounce 1s ease infinite}
+                @keyframes ttvab-ach-bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+                #ttvab-achievement .ach-content{display:flex;flex-direction:column;gap:2px}
+                #ttvab-achievement .ach-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#9146FF;font-weight:600}
+                #ttvab-achievement .ach-name{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#9146FF 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:ttvab-ach-shine 2s linear infinite}
+                #ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}
+            </style>
+            <div class="ach-icon">${ach.icon}</div>
+            <div class="ach-content">
+                <div class="ach-label">🏆 Achievement Unlocked!</div>
+                <div class="ach-name">${ach.name}</div>
+                <div class="ach-desc">${ach.desc}</div>
+            </div>
+        `;
+
+        document.body.appendChild(toast);
+        _log('Achievement unlocked: ' + ach.name, 'success');
+
+        // Auto-hide after 4 seconds
+        setTimeout(() => {
+            if (document.getElementById('ttvab-achievement')) {
+                toast.style.animation = 'ttvab-ach-pop .3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, 4000);
+    } catch (e) {
+        _log('Achievement notification error: ' + e.message, 'error');
+    }
+}
+
+/**
+ * Initialize achievement unlock listener
+ */
+function _initAchievementListener() {
+    window.addEventListener('ttvab-achievement-unlocked', function (e) {
+        if (e.detail && e.detail.id) {
+            _showAchievementUnlocked(e.detail.id);
+        }
+    });
+}
