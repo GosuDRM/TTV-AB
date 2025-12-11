@@ -221,5 +221,3 @@ document.addEventListener('ttvab-popup-blocked', function (_e) {
         });
     });
 });
-
-

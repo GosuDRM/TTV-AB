@@ -16,7 +16,7 @@ function _initCrashMonitor() {
      * Detect crash patterns in page content
      * @returns {string|null} Matched error pattern or null
      */
-    function detectCrash(fromMutation = false) {
+    function detectCrash() {
         // Optimized: Removed full body innerText check.
         // 1. innerText triggers expensive Layout Reflow (bad for battery/perf)
         // 2. Body check causes false positives if error text appears in chat
@@ -84,7 +84,7 @@ function _initCrashMonitor() {
                 if (now - lastCheck < 2000) return;
                 lastCheck = now;
 
-                const error = detectCrash(true);
+                const error = detectCrash();
                 if (error) {
                     handleCrash(error);
                     observer.disconnect();

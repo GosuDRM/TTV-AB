@@ -50,7 +50,6 @@ function _blockAntiAdblockPopup() {
         '[aria-label*="adblock"]'
     ];
 
-    // Text patterns that indicate anti-adblock content
     // Text patterns that indicate anti-adblock content (pre-compiled for perf)
     const POPUP_REGEXES = [
         /disabling ad block/i,
@@ -83,27 +82,7 @@ function _blockAntiAdblockPopup() {
         document.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _S.popupsBlocked } }));
     }
 
-    /**
-     * Remove anti-adblock popup if found
-     * @param {Element} el - Element to check and remove
-     */
-    function _removePopup(el) {
-        // Check for modal/overlay containers
-        const parent = el.closest('[class*="ScAttach"], [class*="modal"], [class*="overlay"], [role="dialog"]');
-        if (parent && _isAntiAdblockElement(parent)) {
-            parent.remove();
-            _incrementPopupsBlocked();
-            _log('Anti-adblock popup removed (Total: ' + _S.popupsBlocked + ')', 'success');
-            return true;
-        }
-        if (_isAntiAdblockElement(el)) {
-            el.remove();
-            _incrementPopupsBlocked();
-            _log('Anti-adblock popup removed (Total: ' + _S.popupsBlocked + ')', 'success');
-            return true;
-        }
-        return false;
-    }
+
 
     /**
      * Scan for and remove existing popups
@@ -150,9 +129,7 @@ function _blockAntiAdblockPopup() {
     // Initial scan
     _scanAndRemove();
 
-    // Watch for new popups
-    // Watch for new popups
-    // Optimize: Use throttled scan instead of checking every added node (heavy CPU)
+    // Watch for new popups (Throttled scan instead of checking every added node)
     let scanTimeout = null;
     const observer = new MutationObserver(function () {
         if (scanTimeout) return;

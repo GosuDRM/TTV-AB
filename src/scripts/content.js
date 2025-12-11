@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.4.5 - Twitch Ad Blocker
+ * TTV AB v3.4.6 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.4.5',
+    VERSION: '3.4.6',
     
     INTERNAL_VERSION: 28,
     
@@ -975,7 +975,7 @@ function _$cm() {
     let isRefreshing = false;
     let checkInterval = null;
 
-    function detectCrash(fromMutation = false) {
+    function detectCrash() {
 
         const errorElements = document.querySelectorAll(
             '[data-a-target="player-overlay-content-gate"],' +
@@ -1029,7 +1029,7 @@ function _$cm() {
                 if (now - lastCheck < 2000) return;
                 lastCheck = now;
 
-                const error = detectCrash(true);
+                const error = detectCrash();
                 if (error) {
                     handleCrash(error);
                     observer.disconnect();
@@ -1119,24 +1119,6 @@ function _$bp() {
     function _$pb() {
         _$s.popupsBlocked++;
         document.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _$s.popupsBlocked } }));
-    }
-
-    function _$rp(el) {
-
-        const parent = el.closest('[class*="ScAttach"], [class*="modal"], [class*="overlay"], [role="dialog"]');
-        if (parent && _$ae(parent)) {
-            parent.remove();
-            _$pb();
-            _$l('Anti-adblock popup removed (Total: ' + _$s.popupsBlocked + ')', 'success');
-            return true;
-        }
-        if (_$ae(el)) {
-            el.remove();
-            _$pb();
-            _$l('Anti-adblock popup removed (Total: ' + _$s.popupsBlocked + ')', 'success');
-            return true;
-        }
-        return false;
     }
 
     function _$sr() {
