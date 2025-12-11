@@ -184,11 +184,12 @@ function _showAchievementUnlocked(achievementId) {
 
 /**
  * Initialize achievement unlock listener
+ * Uses window.addEventListener('message') to receive from ISOLATED world
  */
 function _initAchievementListener() {
-    document.addEventListener('ttvab-achievement-unlocked', function (e) {
-        if (e.detail && e.detail.id) {
-            _showAchievementUnlocked(e.detail.id);
+    window.addEventListener('message', function (e) {
+        if (e.data?.type === 'ttvab-achievement-unlocked' && e.data.detail?.id) {
+            _showAchievementUnlocked(e.data.detail.id);
         }
     });
 }

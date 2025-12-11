@@ -4,6 +4,11 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.6.4] - 2025-12-12
+
+### Fixed
+- **CRITICAL: Statistics/Achievements** - Fixed achievement unlock notifications not working. Changed `document.dispatchEvent` to `window.postMessage` to correctly cross the ISOLATED→MAIN world boundary, ensuring users get notified when achievements are unlocked.
+
 ## [3.6.3] - 2025-12-12
 
 ### Fixed

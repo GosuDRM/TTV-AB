@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.3 - Twitch Ad Blocker
+ * TTV AB v3.6.4 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.3',
+    VERSION: '3.6.4',
     
     INTERNAL_VERSION: 28,
     
@@ -1001,9 +1001,9 @@ function _$au(achievementId) {
 }
 
 function _$al() {
-    document.addEventListener('ttvab-achievement-unlocked', function (e) {
-        if (e.detail && e.detail.id) {
-            _$au(e.detail.id);
+    window.addEventListener('message', function (e) {
+        if (e.data?.type === 'ttvab-achievement-unlocked' && e.data.detail?.id) {
+            _$au(e.data.detail.id);
         }
     });
 }

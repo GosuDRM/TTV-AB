@@ -138,8 +138,9 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
             // 6. Single atomic write
             chrome.storage.local.set({ ttvStats: stats }, function () {
                 // Notify content script of new achievements after storage is saved
+                // Use window.postMessage to cross ISOLATED→MAIN world boundary
                 for (const id of newUnlocks) {
-                    document.dispatchEvent(new CustomEvent('ttvab-achievement-unlocked', { detail: { id: id } }));
+                    window.postMessage({ type: 'ttvab-achievement-unlocked', detail: { id: id } }, '*');
                 }
                 resolve();
             });
