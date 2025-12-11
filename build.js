@@ -44,6 +44,7 @@ const MINIFY_MAP = {
     '_gqlReq': '_$gq',
     '_getToken': '_$tk',
     '_processM3U8': '_$pm',
+    '_findBackupStream': '_$fb',
     '_getWasmJs': '_$wj',
     '_hookWorkerFetch': '_$wf',
     '_hookWorker': '_$hw',

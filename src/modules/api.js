@@ -43,7 +43,7 @@ function _gqlReq(body) {
  */
 async function _getToken(channel, playerType, realFetch) {
     const fetchFunc = realFetch || fetch;
-    let reqPlayerType = playerType;
+    const reqPlayerType = playerType;
 
     const body = {
         operationName: 'PlaybackAccessToken',

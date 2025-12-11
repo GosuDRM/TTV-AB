@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.7 - Twitch Ad Blocker
+ * TTV AB v3.9.8 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.9.7',
+    VERSION: '3.9.8',
     
     INTERNAL_VERSION: 36,
     
@@ -210,12 +210,14 @@ function _$rt(m3u8, time) {
     return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
 }
 
-function _$sa(text, stripAll, info, isBackup = false) {
+function _$sa(text, stripAll, info, _isBackup = false) {
     const lines = text.split('\n');
     const len = lines.length;
     const adUrl = 'https://twitch.tv';
     let stripped = false;
     let i = 0;
+
+    const hasAdSignifier = text.includes(AdSignifier);
 
     for (; i < len; i++) {
         let line = lines[i];
@@ -229,7 +231,7 @@ function _$sa(text, stripAll, info, isBackup = false) {
 
         const isAdSegment = !line.includes(',live');
 
-        if (i < len - 1 && line.startsWith('#EXTINF') && (isAdSegment || stripAll || AllSegmentsAreAdSegments)) {
+        if (i < len - 1 && line.startsWith('#EXTINF') && isAdSegment && (hasAdSignifier || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());
@@ -328,7 +330,7 @@ function _$gq(body) {
 
 async function _$tk(channel, playerType, realFetch) {
     const fetchFunc = realFetch || fetch;
-    let reqPlayerType = playerType;
+    const reqPlayerType = playerType;
 
     const body = {
         operationName: 'PlaybackAccessToken',
@@ -418,7 +420,7 @@ async function _$pm(url, text, realFetch) {
             info.LastPlayerReload = Date.now();
         }
 
-        const { type: backupType, m3u8: backupM3u8, isFallback } = await _findBackupStream(info, realFetch);
+        const { type: backupType, m3u8: backupM3u8, isFallback } = await _$fb(info, realFetch);
 
         if (!backupM3u8) _$l('Failed to find any backup stream', 'warning');
 
@@ -453,7 +455,7 @@ async function _$pm(url, text, realFetch) {
     return text;
 }
 
-async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false) {
+async function _$fb(info, realFetch, startIdx = 0, minimal = false) {
     let backupType = null;
     let backupM3u8 = null;
     let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
@@ -761,7 +763,7 @@ function _$hw() {
                 ${_$gq.toString()}
                 ${_$tk.toString()}
                 ${_$pm.toString()}
-                ${_findBackupStream.toString()}
+                ${_$fb.toString()}
                 ${_$wj.toString()}
                 ${_$wf.toString()}
                 
