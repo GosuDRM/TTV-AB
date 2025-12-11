@@ -9,7 +9,7 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 
 🔗 **Repository:** [https://github.com/GosuDRM/TTV-AB](https://github.com/GosuDRM/TTV-AB)
 
-![Extension Icon](assets/icons/icon128.png)
+![Extension Icon](assets/icons/icon128.png) ![Popup Screenshot](assets/popup-screenshot.png)
 
 ## ✨ Features
 
