@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.2.7 - Twitch Ad Blocker
+ * TTV AB v3.2.8 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.2.7',
+    VERSION: '3.2.8',
     
     INTERNAL_VERSION: 28,
     
@@ -982,13 +982,13 @@ function _$cm() {
     let isRefreshing = false;
     let checkInterval = null;
 
-    function detectCrash() {
-        const bodyText = document.body?.innerText?.toLowerCase() || '';
-        const patterns = _$c.CRASH_PATTERNS;
+    function detectCrash(fromMutation = false) {
 
-        for (let i = 0, len = patterns.length; i < len; i++) {
-            if (bodyText.includes(patterns[i].toLowerCase())) {
-                return patterns[i];
+        if (!fromMutation) {
+            const bodyText = document.body?.innerText?.toLowerCase() || '';
+            const patterns = _$c.CRASH_PATTERNS;
+            for (let i = 0, len = patterns.length; i < len; i++) {
+                if (bodyText.includes(patterns[i].toLowerCase())) return patterns[i];
             }
         }
 
@@ -1001,10 +1001,9 @@ function _$cm() {
 
         for (const el of errorElements) {
             const text = (el.innerText || '').toLowerCase();
+            const patterns = _$c.CRASH_PATTERNS;
             for (let i = 0, len = patterns.length; i < len; i++) {
-                if (text.includes(patterns[i].toLowerCase())) {
-                    return patterns[i];
-                }
+                if (text.includes(patterns[i].toLowerCase())) return patterns[i];
             }
         }
 
@@ -1038,7 +1037,7 @@ function _$cm() {
         }
 
         const observer = new MutationObserver(() => {
-            const error = detectCrash();
+            const error = detectCrash(true);
             if (error) {
                 handleCrash(error);
                 observer.disconnect();

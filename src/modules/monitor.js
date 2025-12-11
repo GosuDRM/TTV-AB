@@ -16,17 +16,18 @@ function _initCrashMonitor() {
      * Detect crash patterns in page content
      * @returns {string|null} Matched error pattern or null
      */
-    function detectCrash() {
-        const bodyText = document.body?.innerText?.toLowerCase() || '';
-        const patterns = _C.CRASH_PATTERNS;
-
-        for (let i = 0, len = patterns.length; i < len; i++) {
-            if (bodyText.includes(patterns[i].toLowerCase())) {
-                return patterns[i];
+    function detectCrash(fromMutation = false) {
+        // PERF: Skip full body check during mutations to avoid layout thrashing
+        // Only check full body on the slow interval or if specific elements aren't found
+        if (!fromMutation) {
+            const bodyText = document.body?.innerText?.toLowerCase() || '';
+            const patterns = _C.CRASH_PATTERNS;
+            for (let i = 0, len = patterns.length; i < len; i++) {
+                if (bodyText.includes(patterns[i].toLowerCase())) return patterns[i];
             }
         }
 
-        // Check specific error elements
+        // Check specific error elements (efficient)
         const errorElements = document.querySelectorAll(
             '[data-a-target="player-overlay-content-gate"],' +
             '[data-a-target="player-error-modal"],' +
@@ -36,10 +37,9 @@ function _initCrashMonitor() {
 
         for (const el of errorElements) {
             const text = (el.innerText || '').toLowerCase();
+            const patterns = _C.CRASH_PATTERNS;
             for (let i = 0, len = patterns.length; i < len; i++) {
-                if (text.includes(patterns[i].toLowerCase())) {
-                    return patterns[i];
-                }
+                if (text.includes(patterns[i].toLowerCase())) return patterns[i];
             }
         }
 
@@ -82,7 +82,7 @@ function _initCrashMonitor() {
 
         // MutationObserver for real-time detection
         const observer = new MutationObserver(() => {
-            const error = detectCrash();
+            const error = detectCrash(true);
             if (error) {
                 handleCrash(error);
                 observer.disconnect();
