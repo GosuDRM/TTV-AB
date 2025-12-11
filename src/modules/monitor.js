@@ -17,15 +17,10 @@ function _initCrashMonitor() {
      * @returns {string|null} Matched error pattern or null
      */
     function detectCrash(fromMutation = false) {
-        // PERF: Skip full body check during mutations to avoid layout thrashing
-        // Only check full body on the slow interval or if specific elements aren't found
-        if (!fromMutation) {
-            const bodyText = document.body?.innerText?.toLowerCase() || '';
-            const patterns = _C.CRASH_PATTERNS;
-            for (let i = 0, len = patterns.length; i < len; i++) {
-                if (bodyText.includes(patterns[i].toLowerCase())) return patterns[i];
-            }
-        }
+        // Optimized: Removed full body innerText check.
+        // 1. innerText triggers expensive Layout Reflow (bad for battery/perf)
+        // 2. Body check causes false positives if error text appears in chat
+        // We rely solely on specific error element selectors below.
 
         // Check specific error elements (efficient)
         const errorElements = document.querySelectorAll(

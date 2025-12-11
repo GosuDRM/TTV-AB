@@ -3,6 +3,12 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.3.8] - 2025-12-11
+
+### Improved
+- **Network Efficiency** - Removed wasteful pre-fetching of ad video segments, saving bandwidth and battery
+- **Rendering Performance** - Removed expensive full-page text scanning from crash monitor, preventing layout thrashing and false positives from chat messages
+
 ## [3.3.7] - 2025-12-11
 
 ### Improved

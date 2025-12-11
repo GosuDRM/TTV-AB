@@ -37,21 +37,8 @@ async function _processM3U8(url, text, realFetch) {
             }
         }
 
-        // Pre-fetch ad segments for midroll (helps with timing)
-        if (!info.IsMidroll) {
-            const lines = text.split('\n');
-            for (let i = 0, len = lines.length; i < len; i++) {
-                if (lines[i].startsWith('#EXTINF') && i < len - 1) {
-                    if (!lines[i].includes(',live') && !info.RequestedAds.has(lines[i + 1])) {
-                        info.RequestedAds.add(lines[i + 1]);
-                        fetch(lines[i + 1]).then(r => r.blob()).catch(() => {
-                            // Prefetch failed - non-critical, ad will still be blocked
-                        });
-                        break;
-                    }
-                }
-            }
-        }
+        // Pre-fetch removed - using bandwidth for ads we intend to block is wasteful
+        // and doesn't significantly improve backup stream timing.
 
         const res = info.Urls[url];
         if (!res) {

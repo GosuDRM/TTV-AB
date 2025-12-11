@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.7 - Twitch Ad Blocker
+ * TTV AB v3.3.8 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.7',
+    VERSION: '3.3.8',
     
     INTERNAL_VERSION: 28,
     
@@ -355,21 +355,6 @@ async function _$pm(url, text, realFetch) {
             _$l('Ad detected, blocking...', 'warning');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdDetected', channel: info.ChannelName });
-            }
-        }
-
-        if (!info.IsMidroll) {
-            const lines = text.split('\n');
-            for (let i = 0, len = lines.length; i < len; i++) {
-                if (lines[i].startsWith('#EXTINF') && i < len - 1) {
-                    if (!lines[i].includes(',live') && !info.RequestedAds.has(lines[i + 1])) {
-                        info.RequestedAds.add(lines[i + 1]);
-                        fetch(lines[i + 1]).then(r => r.blob()).catch(() => {
-
-                        });
-                        break;
-                    }
-                }
             }
         }
 
@@ -995,14 +980,6 @@ function _$cm() {
     let checkInterval = null;
 
     function detectCrash(fromMutation = false) {
-
-        if (!fromMutation) {
-            const bodyText = document.body?.innerText?.toLowerCase() || '';
-            const patterns = _$c.CRASH_PATTERNS;
-            for (let i = 0, len = patterns.length; i < len; i++) {
-                if (bodyText.includes(patterns[i].toLowerCase())) return patterns[i];
-            }
-        }
 
         const errorElements = document.querySelectorAll(
             '[data-a-target="player-overlay-content-gate"],' +
