@@ -271,25 +271,28 @@ window.addEventListener('message', function (e) {
     if (e.data.type === 'ttvab-fetch-proxy') {
         const { url, requestId } = e.data.detail;
         if (url && requestId) {
-            fetch(url)
-                .then(res => {
-                    if (res.ok) return res.text();
-                    throw new Error('Status: ' + res.status);
-                })
-                .then(text => {
-                    // Send success response
+            // Delegate fetch to background service worker to bypass CORS
+            chrome.runtime.sendMessage({
+                type: 'fetch-proxy',
+                detail: { url, requestId }
+            }, (response) => {
+                if (chrome.runtime.lastError) {
                     window.postMessage({
                         type: 'ttvab-fetch-proxy-response',
-                        detail: { requestId, success: true, data: text }
+                        detail: { requestId, success: false, error: chrome.runtime.lastError.message }
                     }, '*');
-                })
-                .catch(err => {
-                    // Send failure response
+                } else {
                     window.postMessage({
                         type: 'ttvab-fetch-proxy-response',
-                        detail: { requestId, success: false, error: err.message }
+                        detail: {
+                            requestId,
+                            success: response?.success,
+                            data: response?.data,
+                            error: response?.error
+                        }
                     }, '*');
-                });
+                }
+            });
         }
     }
 });
