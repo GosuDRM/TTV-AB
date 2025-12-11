@@ -141,6 +141,8 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             } else {
                                 _log(`Backup usher fetch failed for ${pt}: ${encRes.status}`, 'warning');
                             }
+                        } else {
+                            _log(`[Trace] No signature found in token for ${pt}`, 'warning');
                         }
                     } else {
                         _log(`Backup token fetch failed for ${pt}: ${tokenRes.status}`, 'warning');
@@ -175,7 +177,14 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                     _log(`[Trace] Selected backup: ${pt}`, 'success');
                                     break;
                                 } else {
-                                    _log(`[Trace] Rejected ${pt} (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
+                                    // FORCE FALLBACK if we have nothing else and this stream works (even if ads)
+                                    // This prevents black screen death spiral
+                                    if (!fallbackM3u8) {
+                                        fallbackM3u8 = m3u8;
+                                        backupType = FallbackPlayerType; // Pretend it's fallback
+                                        _log(`[Trace] Saved ${pt} as emergency fallback (HasAds=true)`, 'warning');
+                                    }
+                                    _log(`[Trace] Rejected ${pt} but saved as emergency (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
                                 }
                             } else {
                                 _log(`[Trace] Stream content empty for ${pt}`, 'warning');

@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.8.2 - Twitch Ad Blocker
+ * TTV AB v3.8.3 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.8.2',
+    VERSION: '3.8.3',
     
     INTERNAL_VERSION: 28,
     
@@ -457,6 +457,8 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             } else {
                                 _$l(`Backup usher fetch failed for ${pt}: ${encRes.status}`, 'warning');
                             }
+                        } else {
+                            _$l(`[Trace] No signature found in token for ${pt}`, 'warning');
                         }
                     } else {
                         _$l(`Backup token fetch failed for ${pt}: ${tokenRes.status}`, 'warning');
@@ -491,7 +493,13 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                     _$l(`[Trace] Selected backup: ${pt}`, 'success');
                                     break;
                                 } else {
-                                    _$l(`[Trace] Rejected ${pt} (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
+
+                                    if (!fallbackM3u8) {
+                                        fallbackM3u8 = m3u8;
+                                        backupType = FallbackPlayerType; // Pretend it's fallback
+                                        _$l(`[Trace] Saved ${pt} as emergency fallback (HasAds=true)`, 'warning');
+                                    }
+                                    _$l(`[Trace] Rejected ${pt} but saved as emergency (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
                                 }
                             } else {
                                 _$l(`[Trace] Stream content empty for ${pt}`, 'warning');
