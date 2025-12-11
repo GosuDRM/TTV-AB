@@ -95,7 +95,7 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
         const unlocked = stats.achievements || [];
         const timeSaved = totalAdsBlocked * AVG_AD_DURATION;
         const channelCount = Object.keys(stats.channels).length;
-        let newUnlocks = [];
+        const newUnlocks = [];
 
         for (const ach of ACHIEVEMENTS) {
             if (unlocked.includes(ach.id)) continue;
@@ -172,7 +172,7 @@ window.addEventListener('ttvab-ad-blocked', function (e) {
 
 // Listen for popup blocked events from content script and sync to storage
 // Uses atomic increment to handle multiple tabs correctly
-window.addEventListener('ttvab-popup-blocked', function (e) {
+window.addEventListener('ttvab-popup-blocked', function (_e) {
     // Atomic increment: read current, add 1, write back
     chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
         const newCount = (result.ttvPopupsBlocked || 0) + 1;
