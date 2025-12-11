@@ -81,8 +81,14 @@ function _initCrashMonitor() {
         }
 
         // MutationObserver for real-time detection
+        let lastCheck = 0;
         const observer = new MutationObserver(() => {
             try {
+                // PERF: Throttle checks to max once per 2 seconds to save battery
+                const now = Date.now();
+                if (now - lastCheck < 2000) return;
+                lastCheck = now;
+
                 const error = detectCrash(true);
                 if (error) {
                     handleCrash(error);

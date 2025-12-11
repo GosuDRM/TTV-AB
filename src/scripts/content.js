@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.5 - Twitch Ad Blocker
+ * TTV AB v3.3.6 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.5',
+    VERSION: '3.3.6',
     
     INTERNAL_VERSION: 28,
     
@@ -1048,8 +1048,14 @@ function _$cm() {
             return;
         }
 
+        let lastCheck = 0;
         const observer = new MutationObserver(() => {
             try {
+
+                const now = Date.now();
+                if (now - lastCheck < 2000) return;
+                lastCheck = now;
+
                 const error = detectCrash(true);
                 if (error) {
                     handleCrash(error);
