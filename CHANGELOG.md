@@ -3,6 +3,11 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.3.7] - 2025-12-11
+
+### Improved
+- **CPU Usage** - Optimized anti-adblock detection to use a throttled scanner instead of inspecting every DOM element, eliminating lag during high-volume chat activity
+
 ## [3.3.6] - 2025-12-11
 
 ### Improved

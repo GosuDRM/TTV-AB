@@ -140,27 +140,18 @@ function _blockAntiAdblockPopup() {
     _scanAndRemove();
 
     // Watch for new popups
-    const observer = new MutationObserver(function (mutations) {
-        for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    _removePopup(node);
-                    // Also check children
-                    if (node.querySelectorAll) {
-                        const children = node.querySelectorAll('*');
-                        for (const child of children) {
-                            if (_isAntiAdblockElement(child)) {
-                                _removePopup(child);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    // Watch for new popups
+    // Optimize: Use throttled scan instead of checking every added node (heavy CPU)
+    let scanTimeout = null;
+    const observer = new MutationObserver(function () {
+        if (scanTimeout) return;
+        scanTimeout = setTimeout(() => {
+            _scanAndRemove();
+            scanTimeout = null;
+        }, 1000); // Check at most once per second
     });
 
-    observer.observe(document.documentElement, {
+    observer.observe(document.body || document.documentElement, {
         childList: true,
         subtree: true
     });

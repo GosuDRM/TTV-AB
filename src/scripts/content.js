@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.6 - Twitch Ad Blocker
+ * TTV AB v3.3.7 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.6',
+    VERSION: '3.3.7',
     
     INTERNAL_VERSION: 28,
     
@@ -1195,27 +1195,16 @@ function _$bp() {
 
     _$sr();
 
-    const observer = new MutationObserver(function (mutations) {
-        for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    _$rp(node);
-
-                    if (node.querySelectorAll) {
-                        const children = node.querySelectorAll('*');
-                        for (const child of children) {
-                            if (_$ae(child)) {
-                                _$rp(child);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    let scanTimeout = null;
+    const observer = new MutationObserver(function () {
+        if (scanTimeout) return;
+        scanTimeout = setTimeout(() => {
+            _$sr();
+            scanTimeout = null;
+        }, 1000); // Check at most once per second
     });
 
-    observer.observe(document.documentElement, {
+    observer.observe(document.body || document.documentElement, {
         childList: true,
         subtree: true
     });
