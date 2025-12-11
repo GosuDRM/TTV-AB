@@ -60,9 +60,10 @@ function _replaceServerTime(m3u8, time) {
  * @param {string} text - Playlist content
  * @param {boolean} stripAll - Strip all segments
  * @param {Object} info - Stream info object
+ * @param {boolean} [isBackup=false] - Is this a backup stream?
  * @returns {string} Cleaned playlist
  */
-function _stripAds(text, stripAll, info) {
+function _stripAds(text, stripAll, info, isBackup = false) {
     const lines = text.split('\n');
     const len = lines.length;
     const adUrl = 'https://twitch.tv';
@@ -81,7 +82,10 @@ function _stripAds(text, stripAll, info) {
         }
 
         // Mark and REMOVE ad segments
-        if (i < len - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
+        // If isBackup is true, we trust the stream more and only strip if forced (stripAll) or explicit ad tags (AdSignifier elsewhere)
+        // We SKIP the heuristic (!,live) check for backups to prevent deleting valid content
+        const isAdSegment = !line.includes(',live') && !isBackup;
+        if (i < len - 1 && line.startsWith('#EXTINF') && (isAdSegment || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());

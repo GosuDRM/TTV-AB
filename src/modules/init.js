@@ -178,7 +178,7 @@ function _blockAntiAdblockPopup() {
                             return true;
                         }
                     }
-                } catch (e) {
+                } catch {
                     // Invalid selector, skip
                 }
             }

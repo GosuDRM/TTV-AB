@@ -64,7 +64,8 @@ async function _processM3U8(url, text, realFetch) {
             _log('Using backup player type: ' + backupType, 'info');
         }
 
-        text = _stripAds(text, false, info);
+        // Pass true for isBackup if we found a backup stream
+        text = _stripAds(text, false, info, !!backupM3u8);
     } else {
         if (info.IsShowingAd) {
             info.IsShowingAd = false;

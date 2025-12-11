@@ -1,6 +1,8 @@
 import globals from "globals";
+import js from "@eslint/js";
 
 export default [
+    js.configs.recommended,
     {
         files: ["**/*.js"],
         languageOptions: {
@@ -10,6 +12,7 @@ export default [
                 ...globals.browser,
                 ...globals.webextensions,
                 chrome: "readonly",
+                fetch: "writable",
                 // Content script globals
                 _C: "readonly",
                 _S: "readonly",
@@ -73,14 +76,24 @@ export default [
             }
         },
         rules: {
-            "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+            "no-unused-vars": ["warn", { "argsIgnorePattern": "^(_|e$|err$)", "varsIgnorePattern": "^_" }],
             "no-undef": "error",
+            "no-redeclare": "off",
             "no-console": "off",
             "semi": ["warn", "always"],
             "eqeqeq": ["warn", "always"],
             "curly": ["warn", "multi-line"],
             "no-var": "warn",
             "prefer-const": "warn"
+        }
+    },
+    {
+        files: ["build.js"],
+        languageOptions: {
+            sourceType: "commonjs",
+            globals: {
+                ...globals.node
+            }
         }
     },
     {

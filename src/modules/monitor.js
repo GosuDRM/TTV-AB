@@ -90,7 +90,7 @@ function _initCrashMonitor() {
                     observer.disconnect();
                     if (checkInterval) clearInterval(checkInterval);
                 }
-            } catch (e) { /* Ignore */ }
+            } catch { /* Ignore */ }
         });
 
         observer.observe(document.body, {
@@ -108,7 +108,7 @@ function _initCrashMonitor() {
                     observer.disconnect();
                     clearInterval(checkInterval);
                 }
-            } catch (e) {
+            } catch {
                 // Ignore monitor errors to keep extension alive
             }
         }, 5000);

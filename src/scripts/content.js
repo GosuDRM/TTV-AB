@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.7.7 - Twitch Ad Blocker
+ * TTV AB v3.7.8 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.7.7',
+    VERSION: '3.7.8',
     
     INTERNAL_VERSION: 28,
     
@@ -210,7 +210,7 @@ function _$rt(m3u8, time) {
     return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
 }
 
-function _$sa(text, stripAll, info) {
+function _$sa(text, stripAll, info, isBackup = false) {
     const lines = text.split('\n');
     const len = lines.length;
     const adUrl = 'https://twitch.tv';
@@ -227,7 +227,8 @@ function _$sa(text, stripAll, info) {
             lines[i] = line;
         }
 
-        if (i < len - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
+        const isAdSegment = !line.includes(',live') && !isBackup;
+        if (i < len - 1 && line.startsWith('#EXTINF') && (isAdSegment || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());
@@ -389,7 +390,7 @@ async function _$pm(url, text, realFetch) {
             _$l('Using backup player type: ' + backupType, 'info');
         }
 
-        text = _$sa(text, false, info);
+        text = _$sa(text, false, info, !!backupM3u8);
     } else {
         if (info.IsShowingAd) {
             info.IsShowingAd = false;
@@ -1079,7 +1080,7 @@ function _$cm() {
                     observer.disconnect();
                     if (checkInterval) clearInterval(checkInterval);
                 }
-            } catch (e) { /* Ignore */ }
+            } catch { /* Ignore */ }
         });
 
         observer.observe(document.body, {
@@ -1096,7 +1097,7 @@ function _$cm() {
                     observer.disconnect();
                     clearInterval(checkInterval);
                 }
-            } catch (e) {
+            } catch {
 
             }
         }, 5000);
@@ -1253,7 +1254,7 @@ function _$bp() {
                             return true;
                         }
                     }
-                } catch (e) {
+                } catch {
 
                 }
             }

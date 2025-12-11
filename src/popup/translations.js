@@ -2,7 +2,7 @@
  * TTV AB - Translations
  * UI text for all supported languages
  */
-const TRANSLATIONS = {
+const TRANSLATIONS = { // eslint-disable-line no-unused-vars
     en: {
         status: 'Status',
         active: 'Active',
