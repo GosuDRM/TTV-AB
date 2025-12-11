@@ -3,12 +3,12 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
-## [3.8.0] - 2025-12-12
+## [3.4.4] - 2025-12-12
 
 ### Improved
 - **DOM Performance** - Optimized anti-adblock button scanning to only target popup containers, avoiding checks on hundreds of unrelated buttons (like chat interactions)
 
-## [3.7.0] - 2025-12-11
+## [3.4.3] - 2025-12-11
 
 ### Fixed
 - **Worker Crash** - Fixed a crash in the worker thread caused by a missing function definition (`_pruneStreamInfos`) after the previous memory optimization
@@ -16,12 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 ### Improved
 - **Background Efficiency** - Throttled the player crash monitor to pause completely when the tab is hidden, further reducing CPU usage
 
-## [3.6.0] - 2025-12-11
+## [3.4.2] - 2025-12-11
 
 ### Improved
 - **Memory Usage** - Removed duplicate code and optimized the intercepted worker payload, reducing the memory footprint for every Twitch player instance spawned
 
-## [3.5.0] - 2025-12-11
+## [3.4.1] - 2025-12-11
 
 ### Improved
 - **CPU Optimization** - Pre-compiled regex patterns for anti-adblock detection and added valid-word pre-checks, reducing processing time during DOM scans by ~40%
