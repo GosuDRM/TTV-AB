@@ -4,6 +4,12 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.2.7] - 2025-12-11
+
+### Added
+- **Language Selector** - Choose from 11 languages in popup footer (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU)
+- Dynamic UI translation with instant language switching
+
 ## [3.2.6] - 2025-12-11
 
 ### Fixed

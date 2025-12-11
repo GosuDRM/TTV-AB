@@ -699,11 +699,35 @@
 
         .footer {
             margin-top: 20px;
-            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             font-size: 10px;
             color: #555;
             padding-top: 12px;
             border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .lang-selector {
+            background: rgba(30, 30, 50, 0.8);
+            color: #aaa;
+            border: 1px solid rgba(145, 70, 255, 0.3);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 10px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .lang-selector:hover {
+            border-color: rgba(145, 70, 255, 0.6);
+            color: #fff;
+        }
+
+        .lang-selector:focus {
+            border-color: #9146FF;
+            box-shadow: 0 0 8px rgba(145, 70, 255, 0.3);
         }
 
         .footer-text {
@@ -734,7 +758,7 @@
         <div class="logo">TTV</div>
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
-            <div class="version">v3.2.6</div>
+            <div class="version">v3.2.7</div>
             <div class="description-text">Lightweight, powerful ad blocker designed specifically for Twitch.tv</div>
         </div>
         <button class="donate-btn" id="donateBtn" title="Support the developer">
@@ -747,29 +771,29 @@
 
     <div class="status-card">
         <div class="status-row">
-            <span class="status-label">Status</span>
+            <span class="status-label" data-i18n="status">Status</span>
             <div class="status-indicator">
                 <div class="status-dot" id="statusDot"></div>
-                <span class="status-text" id="statusText">Active</span>
+                <span class="status-text" id="statusText" data-i18n="active">Active</span>
             </div>
         </div>
         <div class="counter-row">
-            <span class="counter-label">Ads Blocked</span>
+            <span class="counter-label" data-i18n="adsBlocked">Ads Blocked</span>
             <span class="counter-value" id="adsBlockedCount">0</span>
         </div>
         <div class="counter-row" style="margin-top: 8px; padding-top: 8px;">
-            <span class="counter-label">Popups Blocked</span>
+            <span class="counter-label" data-i18n="popupsBlocked">Popups Blocked</span>
             <span class="counter-value" id="popupsBlockedCount">0</span>
         </div>
         <div class="counter-row time-saved-row">
-            <span class="counter-label">Est. Time Saved</span>
+            <span class="counter-label" data-i18n="timeSaved">Est. Time Saved</span>
             <span class="counter-value time-saved-value" id="timeSaved">~0s</span>
         </div>
     </div>
 
     <!-- Statistics Toggle -->
     <div class="stats-toggle" id="statsToggle">
-        <span class="stats-toggle-text">📊 Statistics</span>
+        <span class="stats-toggle-text">📊 <span data-i18n="statistics">Statistics</span></span>
         <span class="stats-toggle-arrow">▼</span>
     </div>
 
@@ -778,7 +802,7 @@
         <div class="stats-content">
             <!-- Weekly Chart -->
             <div class="stats-section">
-                <div class="stats-section-title">📈 Last 7 Days</div>
+                <div class="stats-section-title">📈 <span data-i18n="last7Days">Last 7 Days</span></div>
                 <div class="chart-container" id="weeklyChart">
                     <div class="chart-bar" style="height: 20%;"></div>
                     <div class="chart-bar" style="height: 40%;"></div>
@@ -793,8 +817,8 @@
 
             <!-- Top Channels -->
             <div class="stats-section">
-                <div class="stats-section-title">🏠 Top Channels</div>
-                <div class="stats-desc">Channels where you've blocked the most ads</div>
+                <div class="stats-section-title">🏠 <span data-i18n="topChannels">Top Channels</span></div>
+                <div class="stats-desc" data-i18n="topChannelsDesc">Channels where you've blocked the most ads</div>
                 <div class="channel-list" id="channelList">
                     <div class="channel-item">
                         <span><span class="channel-rank">-</span><span class="channel-name">No data yet</span></span>
@@ -830,7 +854,7 @@
     </div>
 
     <div class="toggle-container">
-        <span class="toggle-label">Ad Blocking</span>
+        <span class="toggle-label" data-i18n="adBlocking">Ad Blocking</span>
         <label class="toggle">
             <input type="checkbox" id="enableToggle" checked>
             <span class="slider"></span>
@@ -838,13 +862,29 @@
     </div>
 
     <div class="info">
-        Changes take effect instantly
+        <span data-i18n="changesInstantly">Changes take effect instantly</span>
     </div>
 
     <div class="footer">
-        <span class="footer-text">TTV AB — by </span><a href="#" id="authorLink" class="author-link">GosuDRM</a>
+        <select id="langSelector" class="lang-selector" title="Language">
+            <option value="auto">🌐 Auto</option>
+            <option value="en">🇬🇧 English</option>
+            <option value="es">🇪🇸 Español</option>
+            <option value="fr">🇫🇷 Français</option>
+            <option value="de">🇩🇪 Deutsch</option>
+            <option value="pt">🇵🇹 Português</option>
+            <option value="it">🇮🇹 Italiano</option>
+            <option value="ja">🇯🇵 日本語</option>
+            <option value="ko">🇰🇷 한국어</option>
+            <option value="zh_CN">🇨🇳 简体中文</option>
+            <option value="zh_TW">🇹🇼 繁體中文</option>
+            <option value="ru">🇷🇺 Русский</option>
+        </select>
+        <span><span class="footer-text">TTV AB — by </span><a href="#" id="authorLink"
+                class="author-link">GosuDRM</a></span>
     </div>
 
+    <script src="translations.js"></script>
     <script src="popup.js"></script>
 </body>
 

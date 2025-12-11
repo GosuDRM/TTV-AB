@@ -21,6 +21,49 @@ document.addEventListener('DOMContentLoaded', function () {
     const achievementsGrid = document.getElementById('achievementsGrid');
     const achievementsProgress = document.getElementById('achievementsProgress');
     const nextAchievement = document.getElementById('nextAchievement');
+    const langSelector = document.getElementById('langSelector');
+
+    /** Storage key for language preference */
+    const LANG_KEY = 'ttvab_lang';
+
+    /**
+     * Get current language code
+     * @returns {string} Language code (e.g., 'en', 'es')
+     */
+    function getLang() {
+        const saved = localStorage.getItem(LANG_KEY);
+        if (saved && saved !== 'auto') return saved;
+        // Get browser language, handle zh-CN/zh-TW specially
+        const browserLang = navigator.language;
+        if (browserLang.startsWith('zh')) {
+            return browserLang.includes('TW') || browserLang.includes('Hant') ? 'zh_TW' : 'zh_CN';
+        }
+        return browserLang.split('-')[0];
+    }
+
+    /**
+     * Apply translations to all elements with data-i18n attribute
+     * @param {string} lang - Language code
+     */
+    function applyTranslations(lang) {
+        const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.dataset.i18n;
+            if (t[key]) el.textContent = t[key];
+        });
+    }
+
+    // Initialize language selector
+    const currentLang = localStorage.getItem(LANG_KEY) || 'auto';
+    langSelector.value = currentLang;
+    applyTranslations(getLang());
+
+    // Language change handler
+    langSelector.addEventListener('change', function (e) {
+        const lang = e.target.value;
+        localStorage.setItem(LANG_KEY, lang);
+        applyTranslations(lang === 'auto' ? getLang() : lang);
+    });
 
     /** 
      * Average ad duration in seconds
@@ -118,9 +161,10 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderChannels(channelsData) {
         const entries = Object.entries(channelsData || {});
         if (entries.length === 0) {
+            const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
             channelList.innerHTML = `
                 <div class="channel-item">
-                    <span><span class="channel-rank">-</span><span class="channel-name">No data yet</span></span>
+                    <span><span class="channel-rank">-</span><span class="channel-name">${t.noDataYet}</span></span>
                     <span class="channel-count">-</span>
                 </div>
             `;
@@ -177,9 +221,11 @@ document.addEventListener('DOMContentLoaded', function () {
         achievementsProgress.textContent = `${unlockedCount}/12`;
 
         if (nextAch) {
-            nextAchievement.innerHTML = `Next: <span class="next-achievement-name">${nextAch.icon} ${nextAch.name}</span>`;
+            const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
+            nextAchievement.innerHTML = `${t.next}: <span class="next-achievement-name">${nextAch.icon} ${nextAch.name}</span>`;
         } else {
-            nextAchievement.innerHTML = `<span class="next-achievement-name">🎉 All unlocked!</span>`;
+            const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
+            nextAchievement.innerHTML = `<span class="next-achievement-name">🎉 ${t.allUnlocked}</span>`;
         }
     }
 
