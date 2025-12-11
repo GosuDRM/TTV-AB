@@ -62,7 +62,15 @@ document.addEventListener('DOMContentLoaded', function () {
     langSelector.addEventListener('change', function (e) {
         const lang = e.target.value;
         localStorage.setItem(LANG_KEY, lang);
-        applyTranslations(lang === 'auto' ? getLang() : lang);
+        // When 'auto', derive actual language from browser settings
+        const effectiveLang = lang === 'auto' ? (() => {
+            const browserLang = navigator.language;
+            if (browserLang.startsWith('zh')) {
+                return browserLang.includes('TW') || browserLang.includes('Hant') ? 'zh_TW' : 'zh_CN';
+            }
+            return browserLang.split('-')[0];
+        })() : lang;
+        applyTranslations(effectiveLang);
     });
 
     /** 
