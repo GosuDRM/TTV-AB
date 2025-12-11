@@ -3,6 +3,15 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.6.0] - 2025-12-12
+
+### Fixed
+- **CRITICAL: Cross-World Communication** - Fixed ad/popup counters not updating due to document events not crossing the MAIN→ISOLATED content script world boundary. Now uses `window.postMessage()` which correctly crosses worlds.
+
+### Changed
+- Consolidated event listeners in bridge.js into single message handler
+- Removed emoji from all error log messages
+
 ## [3.5.1] - 2025-12-12
 
 ### Changed
@@ -26,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - **Popup Detection Speed** - Reduced scan throttle from 1s to 500ms for faster popup removal
 
 ### Added
-- **Debug Logging** - Added visible console.log statements to confirm extension loads (shows 🚀 and ✅ emoji)
+- **Debug Logging** - Added visible console.log statements to confirm extension loads
 
 ## [3.4.8] - 2025-12-12
 

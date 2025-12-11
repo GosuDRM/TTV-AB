@@ -57,7 +57,11 @@ function _blockAntiAdblockPopup() {
          */
         function _incrementPopupsBlocked() {
             _S.popupsBlocked++;
-            document.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _S.popupsBlocked } }));
+            // Use window.postMessage to cross MAIN→ISOLATED world boundary
+            window.postMessage({
+                type: 'ttvab-popup-blocked',
+                detail: { count: _S.popupsBlocked }
+            }, '*');
             _log('Popup blocked! Count: ' + _S.popupsBlocked, 'success');
         }
 

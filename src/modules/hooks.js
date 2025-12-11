@@ -205,9 +205,11 @@ function _hookWorker() {
                 switch (e.data.key) {
                     case 'AdBlocked':
                         _S.adsBlocked = e.data.count;
-                        document.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
+                        // Use window.postMessage to cross MAIN→ISOLATED world boundary
+                        window.postMessage({
+                            type: 'ttvab-ad-blocked',
                             detail: { count: e.data.count, channel: e.data.channel || null }
-                        }));
+                        }, '*');
                         _log('Ad blocked! Total: ' + e.data.count, 'success');
                         break;
                     case 'AdDetected':

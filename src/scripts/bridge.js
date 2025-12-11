@@ -184,96 +184,86 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// Listen for ad blocked events from content script and sync to storage
-// Uses StorageQueue to prevent race conditions
-document.addEventListener('ttvab-ad-blocked', function (e) {
-    const channel = e.detail?.channel || null;
-    const eventCount = e.detail?.count;
+// Listen for events from MAIN world via window.postMessage
+// This is required because document events don't cross the MAIN→ISOLATED world boundary
+let adsEventsSinceCheck = 0;
+let lastKnownAdsCount = 0;
 
-    StorageQueue.add(() => {
-        return new Promise((resolve) => {
-            chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
-                if (chrome.runtime.lastError) {
-                    console.error('[TTV AB] ❌ Counter Error: Failed to read storage -', chrome.runtime.lastError.message);
-                    resolve();
-                    return;
-                }
+window.addEventListener('message', function (e) {
+    // Only handle our own messages
+    if (!e.data?.type?.startsWith('ttvab-')) return;
 
-                const oldCount = result.ttvAdsBlocked || 0;
-                const newCount = oldCount + 1;
+    if (e.data.type === 'ttvab-ad-blocked') {
+        const channel = e.data.detail?.channel || null;
+        adsEventsSinceCheck++;
 
-                chrome.storage.local.set({ ttvAdsBlocked: newCount }, async function () {
+        StorageQueue.add(() => {
+            return new Promise((resolve) => {
+                chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
                     if (chrome.runtime.lastError) {
-                        console.error('[TTV AB] ❌ Counter Error: Failed to save ads blocked count -', chrome.runtime.lastError.message);
+                        console.error('[TTV AB] Counter Error: Failed to read storage -', chrome.runtime.lastError.message);
                         resolve();
                         return;
                     }
 
-                    // Verify the counter was actually updated
-                    chrome.storage.local.get(['ttvAdsBlocked'], function (verifyResult) {
+                    const oldCount = result.ttvAdsBlocked || 0;
+                    const newCount = oldCount + 1;
+
+                    chrome.storage.local.set({ ttvAdsBlocked: newCount }, async function () {
                         if (chrome.runtime.lastError) {
-                            console.error('[TTV AB] ❌ Counter Error: Failed to verify count -', chrome.runtime.lastError.message);
-                        } else if (verifyResult.ttvAdsBlocked !== newCount) {
-                            console.error('[TTV AB] ❌ Counter Error: Count mismatch! Expected:', newCount, 'Got:', verifyResult.ttvAdsBlocked);
+                            console.error('[TTV AB] Counter Error: Failed to save ads blocked count -', chrome.runtime.lastError.message);
+                            resolve();
+                            return;
                         }
-                    });
 
-                    // Update stats with the new total
-                    try {
-                        await updateStats('ads', channel, newCount, result.ttvPopupsBlocked || 0);
-                    } catch (statsErr) {
-                        console.error('[TTV AB] ❌ Stats Error: Failed to update stats -', statsErr.message);
-                    }
-                    resolve();
+                        // Update stats with the new total
+                        try {
+                            await updateStats('ads', channel, newCount, result.ttvPopupsBlocked || 0);
+                        } catch (statsErr) {
+                            console.error('[TTV AB] Stats Error: Failed to update stats -', statsErr.message);
+                        }
+                        resolve();
+                    });
                 });
             });
         });
-    });
-});
+    }
 
-// Listen for popup blocked events from content script and sync to storage
-// Uses StorageQueue to prevent race conditions
-document.addEventListener('ttvab-popup-blocked', function (_e) {
-    StorageQueue.add(() => {
-        return new Promise((resolve) => {
-            chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
-                if (chrome.runtime.lastError) {
-                    console.error('[TTV AB] ❌ Counter Error: Failed to read storage for popups -', chrome.runtime.lastError.message);
-                    resolve();
-                    return;
-                }
-
-                const oldCount = result.ttvPopupsBlocked || 0;
-                const newCount = oldCount + 1;
-
-                chrome.storage.local.set({ ttvPopupsBlocked: newCount }, async function () {
+    if (e.data.type === 'ttvab-popup-blocked') {
+        StorageQueue.add(() => {
+            return new Promise((resolve) => {
+                chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
                     if (chrome.runtime.lastError) {
-                        console.error('[TTV AB] ❌ Counter Error: Failed to save popups blocked count -', chrome.runtime.lastError.message);
+                        console.error('[TTV AB] Counter Error: Failed to read storage for popups -', chrome.runtime.lastError.message);
                         resolve();
                         return;
                     }
 
-                    // Update stats with the new total
-                    try {
-                        await updateStats('popups', null, result.ttvAdsBlocked || 0, newCount);
-                    } catch (statsErr) {
-                        console.error('[TTV AB] ❌ Stats Error: Failed to update popup stats -', statsErr.message);
-                    }
-                    resolve();
+                    const oldCount = result.ttvPopupsBlocked || 0;
+                    const newCount = oldCount + 1;
+
+                    chrome.storage.local.set({ ttvPopupsBlocked: newCount }, async function () {
+                        if (chrome.runtime.lastError) {
+                            console.error('[TTV AB] Counter Error: Failed to save popups blocked count -', chrome.runtime.lastError.message);
+                            resolve();
+                            return;
+                        }
+
+                        // Update stats with the new total
+                        try {
+                            await updateStats('popups', null, result.ttvAdsBlocked || 0, newCount);
+                        } catch (statsErr) {
+                            console.error('[TTV AB] Stats Error: Failed to update popup stats -', statsErr.message);
+                        }
+                        resolve();
+                    });
                 });
             });
         });
-    });
+    }
 });
 
 // Periodic health check for counter functionality (every 60 seconds)
-let lastKnownAdsCount = 0;
-let adsEventsSinceCheck = 0;
-
-document.addEventListener('ttvab-ad-blocked', function () {
-    adsEventsSinceCheck++;
-});
-
 setInterval(function () {
     if (adsEventsSinceCheck > 0) {
         chrome.storage.local.get(['ttvAdsBlocked'], function (result) {
@@ -282,7 +272,7 @@ setInterval(function () {
             const actualIncrease = currentCount - lastKnownAdsCount;
 
             if (actualIncrease < expectedIncrease) {
-                console.error('[TTV AB] ⚠️ Counter Health Check Failed: Expected +' + expectedIncrease + ' ads, but only +' + actualIncrease + ' recorded. Some ad blocks may not be counted.');
+                console.error('[TTV AB] Counter Health Check Failed: Expected +' + expectedIncrease + ' ads, but only +' + actualIncrease + ' recorded.');
             }
 
             lastKnownAdsCount = currentCount;
