@@ -8,9 +8,9 @@
 /** @type {Object} Configuration constants */
 const _C = {
     /** Extension version */
-    VERSION: '3.2.0',
+    VERSION: '3.2.1',
     /** Internal version for conflict detection */
-    INTERNAL_VERSION: 21,
+    INTERNAL_VERSION: 22,
     /** Console log styling */
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',

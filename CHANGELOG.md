@@ -4,6 +4,16 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.2.1] - 2025-12-11
+
+### Fixed
+- **Race condition in stats storage** - Consolidated three separate storage update functions into single atomic operation to prevent data overwrites during rapid ad blocking
+- **Unbounded channel storage** - Added pruning to keep only top 100 channels by ad count, preventing storage bloat over time
+
+### Changed
+- Moved achievement definitions to module-level constant in bridge.js
+- Achievement notifications now dispatch after storage write completes
+
 ## [3.2.0] - 2025-12-11
 
 ### Added
