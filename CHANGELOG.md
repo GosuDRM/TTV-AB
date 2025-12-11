@@ -3,6 +3,11 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.4.8] - 2025-12-12
+
+### Added
+- **Counter Diagnostics** - Added comprehensive error logging when the ads blocked counter fails to update, including storage read/write errors, count verification, and a periodic health check that alerts if ad block events are being lost
+
 ## [3.4.7] - 2025-12-12
 
 ### Added
