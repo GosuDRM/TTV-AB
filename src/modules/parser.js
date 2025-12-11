@@ -80,12 +80,20 @@ function _stripAds(text, stripAll, info) {
             lines[i] = line;
         }
 
-        // Mark ad segments for caching
+        // Mark and REMOVE ad segments
         if (i < len - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());
             stripped = true;
+
+            // Wipe lines from manifest
+            lines[i] = '';      // Remove #EXTINF
+            lines[i + 1] = '';  // Remove URL
+            // i++ will happen in loop, need to skip the URL line effectively?
+            // Actually, if we wipe lines[i+1], next iteration i+1 will see empty line.
+            // Better to increment i to skip processing the URL line next iteration
+            i++;
         }
 
         if (line.includes(AdSignifier)) stripped = true;
@@ -94,7 +102,7 @@ function _stripAds(text, stripAll, info) {
     // Remove prefetch entries if stripping
     if (stripped) {
         for (i = 0; i < len; i++) {
-            if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
+            if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
         }
     } else {
         info.NumStrippedAdSegments = 0;
@@ -110,7 +118,8 @@ function _stripAds(text, stripAll, info) {
         AdSegmentCache.forEach((v, k) => { if (v < cutoff) AdSegmentCache.delete(k); });
     }
 
-    return lines.join('\n');
+    // Filter out empty lines to finalize splicing
+    return lines.filter(l => l !== '').join('\n');
 }
 
 /**

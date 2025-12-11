@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.6 - Twitch Ad Blocker
+ * TTV AB v3.6.7 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.6',
+    VERSION: '3.6.7',
     
     INTERNAL_VERSION: 28,
     
@@ -230,6 +230,11 @@ function _$sa(text, stripAll, info) {
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());
             stripped = true;
+
+            lines[i] = '';      // Remove #EXTINF
+            lines[i + 1] = '';  // Remove URL
+
+            i++;
         }
 
         if (line.includes(AdSignifier)) stripped = true;
@@ -237,7 +242,7 @@ function _$sa(text, stripAll, info) {
 
     if (stripped) {
         for (i = 0; i < len; i++) {
-            if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
+            if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
         }
     } else {
         info.NumStrippedAdSegments = 0;
@@ -252,7 +257,7 @@ function _$sa(text, stripAll, info) {
         AdSegmentCache.forEach((v, k) => { if (v < cutoff) AdSegmentCache.delete(k); });
     }
 
-    return lines.join('\n');
+    return lines.filter(l => l !== '').join('\n');
 }
 
 function _$su(m3u8, res) {
