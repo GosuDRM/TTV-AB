@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.1 - Twitch Ad Blocker
+ * TTV AB v3.9.2 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.9.1',
+    VERSION: '3.9.2',
     
     INTERNAL_VERSION: 36,
     
@@ -338,7 +338,7 @@ async function _$tk(channel, playerType, realFetch) {
         extensions: {
             persistedQuery: {
                 version: 1,
-                sha256Hash: '0828119ded1c1347796643485968151039e959311a3e18a005117582ffca227d'
+                sha256Hash: 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9'
             }
         },
         variables: {
@@ -346,7 +346,8 @@ async function _$tk(channel, playerType, realFetch) {
             login: channel,
             isVod: false,
             vodID: '',
-            playerType: reqPlayerType
+            playerType: reqPlayerType,
+            platform: reqPlayerType === 'autoplay' ? 'android' : 'web'
         }
     };
 

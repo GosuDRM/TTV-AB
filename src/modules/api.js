@@ -53,7 +53,7 @@ async function _getToken(channel, playerType, realFetch) {
         extensions: {
             persistedQuery: {
                 version: 1,
-                sha256Hash: '0828119ded1c1347796643485968151039e959311a3e18a005117582ffca227d'
+                sha256Hash: 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9'
             }
         },
         variables: {
@@ -61,7 +61,8 @@ async function _getToken(channel, playerType, realFetch) {
             login: channel,
             isVod: false,
             vodID: '',
-            playerType: reqPlayerType
+            playerType: reqPlayerType,
+            platform: reqPlayerType === 'autoplay' ? 'android' : 'web'
         }
     };
 
