@@ -22,6 +22,7 @@ function _gqlReq(body) {
     if (ClientVersion) headers['Client-Version'] = ClientVersion;
     if (ClientSession) headers['Client-Session-Id'] = ClientSession;
     if (ClientIntegrityHeader) headers['Client-Integrity'] = ClientIntegrityHeader;
+    else _log('GQL Warning: No Client-Integrity header found!', 'warning');
     if (AuthorizationHeader) headers['Authorization'] = AuthorizationHeader;
 
     return fetch(_GQL_URL, {

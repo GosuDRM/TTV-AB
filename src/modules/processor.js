@@ -57,6 +57,8 @@ async function _processM3U8(url, text, realFetch) {
 
         const { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(info, realFetch);
 
+        if (!backupM3u8) _log('Failed to find any backup stream', 'warning');
+
         if (backupM3u8) text = backupM3u8;
 
         if (info.ActiveBackupPlayerType !== backupType) {
@@ -134,8 +136,12 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             const encRes = await realFetch(usherUrl.href);
                             if (encRes.status === 200) {
                                 enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                            } else {
+                                _log(`Backup usher fetch failed for ${pt}: ${encRes.status}`, 'warning');
                             }
                         }
+                    } else {
+                        _log(`Backup token fetch failed for ${pt}: ${tokenRes.status}`, 'warning');
                     }
                 } catch (e) {
                     _log('Error getting backup: ' + e.message, 'error');
@@ -160,7 +166,11 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                     break;
                                 }
                             }
+                        } else {
+                            _log(`Backup stream fetch failed for ${pt}: ${streamRes.status}`, 'warning');
                         }
+                    } else {
+                        _log(`No matching stream URL found for ${pt}`, 'warning');
                     }
                 } catch (e) {
                     _log('Stream fetch error: ' + e.message, 'warning');
