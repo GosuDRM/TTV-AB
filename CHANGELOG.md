@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 
 ### Performance
 - Use `requestIdleCallback` for anti-adblock popup scan (lighter CPU usage during idle time)
+- Reduce crash detection auto-refresh delay from 1.5s to 1s for faster recovery
 
 ## [3.0.9] - 2025-12-10
 
