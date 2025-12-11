@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.4 - Twitch Ad Blocker
+ * TTV AB v3.3.5 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.4',
+    VERSION: '3.3.5',
     
     INTERNAL_VERSION: 28,
     
@@ -308,6 +308,9 @@ function _$gq(body) {
         method: 'POST',
         headers,
         body: JSON.stringify(body)
+    }).then(res => {
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+        return res;
     });
 }
 
@@ -1046,12 +1049,14 @@ function _$cm() {
         }
 
         const observer = new MutationObserver(() => {
-            const error = detectCrash(true);
-            if (error) {
-                handleCrash(error);
-                observer.disconnect();
-                if (checkInterval) clearInterval(checkInterval);
-            }
+            try {
+                const error = detectCrash(true);
+                if (error) {
+                    handleCrash(error);
+                    observer.disconnect();
+                    if (checkInterval) clearInterval(checkInterval);
+                }
+            } catch (e) { /* Ignore */ }
         });
 
         observer.observe(document.body, {
@@ -1061,11 +1066,15 @@ function _$cm() {
         });
 
         checkInterval = setInterval(() => {
-            const error = detectCrash();
-            if (error) {
-                handleCrash(error);
-                observer.disconnect();
-                clearInterval(checkInterval);
+            try {
+                const error = detectCrash();
+                if (error) {
+                    handleCrash(error);
+                    observer.disconnect();
+                    clearInterval(checkInterval);
+                }
+            } catch (e) {
+
             }
         }, 5000);
 

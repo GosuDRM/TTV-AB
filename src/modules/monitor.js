@@ -82,12 +82,14 @@ function _initCrashMonitor() {
 
         // MutationObserver for real-time detection
         const observer = new MutationObserver(() => {
-            const error = detectCrash(true);
-            if (error) {
-                handleCrash(error);
-                observer.disconnect();
-                if (checkInterval) clearInterval(checkInterval);
-            }
+            try {
+                const error = detectCrash(true);
+                if (error) {
+                    handleCrash(error);
+                    observer.disconnect();
+                    if (checkInterval) clearInterval(checkInterval);
+                }
+            } catch (e) { /* Ignore */ }
         });
 
         observer.observe(document.body, {
@@ -98,11 +100,15 @@ function _initCrashMonitor() {
 
         // Fallback interval check
         checkInterval = setInterval(() => {
-            const error = detectCrash();
-            if (error) {
-                handleCrash(error);
-                observer.disconnect();
-                clearInterval(checkInterval);
+            try {
+                const error = detectCrash();
+                if (error) {
+                    handleCrash(error);
+                    observer.disconnect();
+                    clearInterval(checkInterval);
+                }
+            } catch (e) {
+                // Ignore monitor errors to keep extension alive
             }
         }, 5000);
 

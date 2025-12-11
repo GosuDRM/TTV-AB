@@ -28,6 +28,9 @@ function _gqlReq(body) {
         method: 'POST',
         headers,
         body: JSON.stringify(body)
+    }).then(res => {
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+        return res;
     });
 }
 
