@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.5 - Twitch Ad Blocker
+ * TTV AB v3.9.6 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.9.5',
+    VERSION: '3.9.6',
     
     INTERNAL_VERSION: 36,
     
@@ -409,6 +409,12 @@ async function _$pm(url, text, realFetch) {
             }
         }
 
+        if (info.IsUsingFallbackStream) {
+            _$l('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
+            text = _$sa(text, false, info, true);
+            return text;
+        }
+
         const res = info.Urls[url];
         if (!res) {
             _$l('Missing resolution info for ' + url, 'warning');
@@ -421,9 +427,14 @@ async function _$pm(url, text, realFetch) {
             info.LastPlayerReload = Date.now();
         }
 
-        const { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(info, realFetch);
+        const { type: backupType, m3u8: backupM3u8, isFallback } = await _findBackupStream(info, realFetch);
 
         if (!backupM3u8) _$l('Failed to find any backup stream', 'warning');
+
+        if (isFallback) {
+            info.IsUsingFallbackStream = true;
+            _$l('Entering fallback mode - will strip ads from stream', 'info');
+        }
 
         if (backupM3u8) text = backupM3u8;
 
@@ -437,6 +448,7 @@ async function _$pm(url, text, realFetch) {
         if (info.IsShowingAd) {
             info.IsShowingAd = false;
             info.IsUsingModifiedM3U8 = false;
+            info.IsUsingFallbackStream = false; // Exit fallback mode when ads end
             info.RequestedAds.clear();
             info.BackupEncodingsM3U8Cache = [];
             info.ActiveBackupPlayerType = null;
@@ -562,13 +574,15 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
         }
     }
 
+    let isFallback = false;
     if (!backupM3u8 && fallbackM3u8) {
         backupType = fallbackType || FallbackPlayerType;
         backupM3u8 = fallbackM3u8;
+        isFallback = true; // Mark this as a fallback (ad-laden) stream
         _$l(`[Trace] Using fallback stream (will strip ads): ${backupType}`, 'warning');
     }
 
-    return { type: backupType, m3u8: backupM3u8 };
+    return { type: backupType, m3u8: backupM3u8, isFallback };
 }
 
 function _$wj(url) {
