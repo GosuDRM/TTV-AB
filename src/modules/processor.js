@@ -166,7 +166,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                 const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
                                 const lastResort = pi >= playerTypesLen - 1;
 
-                                if (noAds || lastResort || cached || minimal) {
+                                if (noAds || minimal) {
                                     backupType = pt;
                                     backupM3u8 = m3u8;
                                     _log(`[Trace] Selected backup: ${pt}`, 'success');

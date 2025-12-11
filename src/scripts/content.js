@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.8.6 - Twitch Ad Blocker
+ * TTV AB v3.8.7 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.8.6',
+    VERSION: '3.8.7',
     
-    INTERNAL_VERSION: 31,
+    INTERNAL_VERSION: 32,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -487,7 +487,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                 const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
                                 const lastResort = pi >= playerTypesLen - 1;
 
-                                if (noAds || lastResort || cached || minimal) {
+                                if (noAds || minimal) {
                                     backupType = pt;
                                     backupM3u8 = m3u8;
                                     _$l(`[Trace] Selected backup: ${pt}`, 'success');
