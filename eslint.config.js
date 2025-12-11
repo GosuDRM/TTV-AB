@@ -66,7 +66,9 @@ export default [
                 _getReinsert: "readonly",
                 _reinsert: "readonly",
                 _isValid: "readonly",
-                _GQL_URL: "readonly"
+                _GQL_URL: "readonly",
+                // Popup globals
+                TRANSLATIONS: "readonly"
             }
         },
         rules: {
