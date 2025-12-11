@@ -68,7 +68,14 @@ const MINIFY_MAP = {
     '_REMINDER_INTERVAL': '_$ri2',
     '_FIRST_RUN_KEY': '_$fr',
     '_ACHIEVEMENT_INFO': '_$ai',
-    '_GQL_URL': '_$gu'
+    '_GQL_URL': '_$gu',
+    // UI helper functions
+    '_incrementPopupsBlocked': '_$pb',
+    '_isAntiAdblockElement': '_$ae',
+    '_removePopup': '_$rp',
+    '_scanAndRemove': '_$sr',
+    '_scheduleIdleScan': '_$is',
+    '_pruneStreamInfos': '_$ps'
 };
 
 function getVersion() {
