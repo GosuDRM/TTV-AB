@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.3 - Twitch Ad Blocker
+ * TTV AB v3.3.4 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.3',
+    VERSION: '3.3.4',
     
     INTERNAL_VERSION: 28,
     
@@ -348,11 +348,11 @@ async function _$pm(url, text, realFetch) {
 
         if (!info.IsShowingAd) {
             info.IsShowingAd = true;
+            _$ab(info.ChannelName);
             _$l('Ad detected, blocking...', 'warning');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdDetected', channel: info.ChannelName });
             }
-            _$ab(info.ChannelName);
         }
 
         if (!info.IsMidroll) {
@@ -726,10 +726,10 @@ function _$hw() {
                 switch (e.data.key) {
                     case 'AdBlocked':
                         _$s.adsBlocked = e.data.count;
-                        _$l('Ad blocked! Total: ' + e.data.count, 'success');
                         document.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
                             detail: { count: e.data.count, channel: e.data.channel || null }
                         }));
+                        _$l('Ad blocked! Total: ' + e.data.count, 'success');
                         break;
                     case 'AdDetected':
                         _$l('Ad detected, blocking...', 'warning');

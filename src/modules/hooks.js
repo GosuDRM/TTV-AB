@@ -218,10 +218,10 @@ function _hookWorker() {
                 switch (e.data.key) {
                     case 'AdBlocked':
                         _S.adsBlocked = e.data.count;
-                        _log('Ad blocked! Total: ' + e.data.count, 'success');
                         document.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
                             detail: { count: e.data.count, channel: e.data.channel || null }
                         }));
+                        _log('Ad blocked! Total: ' + e.data.count, 'success');
                         break;
                     case 'AdDetected':
                         _log('Ad detected, blocking...', 'warning');
