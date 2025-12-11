@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.10.0 - Twitch Ad Blocker
+ * TTV AB v4.0.0 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.10.0',
+    VERSION: '4.0.0',
     
     INTERNAL_VERSION: 38,
     
