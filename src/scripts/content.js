@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.8.5 - Twitch Ad Blocker
+ * TTV AB v3.8.6 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.8.5',
+    VERSION: '3.8.6',
     
-    INTERNAL_VERSION: 30,
+    INTERNAL_VERSION: 31,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -328,7 +328,7 @@ function _$gq(body) {
 
 function _$tk(channel, playerType) {
     let reqPlayerType = playerType;
-    if (reqPlayerType === FallbackPlayerType && ForceAccessTokenPlayerType) {
+    if (ForceAccessTokenPlayerType) {
         reqPlayerType = ForceAccessTokenPlayerType;
     }
 
@@ -484,12 +484,8 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             const m3u8 = await streamRes.text();
                             if (m3u8) {
                                 _$l(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
-                                if (pt === FallbackPlayerType) {
-                                    fallbackM3u8 = m3u8;
-                                    _$l(`[Trace] Set fallbackM3u8 from ${pt}`, 'info');
-                                }
                                 const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
-                                const lastResort = !fallbackM3u8 && pi >= playerTypesLen - 1;
+                                const lastResort = pi >= playerTypesLen - 1;
 
                                 if (noAds || lastResort || cached || minimal) {
                                     backupType = pt;

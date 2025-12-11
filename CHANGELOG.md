@@ -4,6 +4,12 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.8.6] - 2025-12-12
+
+### Fixed
+- **Backup Stream Availability** - Generalized the token retrieval fix to apply to all backup player types. This resolves issues where `autoplay` and `picture-by-picture` streams were failing to load due to missing token signatures.
+- **Stability Improvement** - Fixed a potential reference error in the stream processing logic (removed leftover legacy fallback code).
+
 ## [3.8.5] - 2025-12-12
 
 ### Fixed

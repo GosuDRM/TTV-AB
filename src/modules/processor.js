@@ -163,12 +163,8 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             const m3u8 = await streamRes.text();
                             if (m3u8) {
                                 _log(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
-                                if (pt === FallbackPlayerType) {
-                                    fallbackM3u8 = m3u8;
-                                    _log(`[Trace] Set fallbackM3u8 from ${pt}`, 'info');
-                                }
                                 const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
-                                const lastResort = !fallbackM3u8 && pi >= playerTypesLen - 1;
+                                const lastResort = pi >= playerTypesLen - 1;
 
                                 if (noAds || lastResort || cached || minimal) {
                                     backupType = pt;

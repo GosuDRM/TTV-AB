@@ -43,7 +43,7 @@ function _gqlReq(body) {
  */
 function _getToken(channel, playerType) {
     let reqPlayerType = playerType;
-    if (reqPlayerType === FallbackPlayerType && ForceAccessTokenPlayerType) {
+    if (ForceAccessTokenPlayerType) {
         reqPlayerType = ForceAccessTokenPlayerType;
     }
 
