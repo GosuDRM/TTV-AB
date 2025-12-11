@@ -52,7 +52,7 @@ async function _processM3U8(url, text, realFetch) {
             info.LastPlayerReload = Date.now();
         }
 
-        const { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(info, realFetch, startIdx, minimal);
+        const { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(info, realFetch);
 
         if (backupM3u8) text = backupM3u8;
 
@@ -92,7 +92,17 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
     let backupM3u8 = null;
     let fallbackM3u8 = null;
 
-    const playerTypes = BackupPlayerTypes;
+    // Optimization: Try the last successful backup type first (Sticky)
+    // This saves unnecessary network requests for types that didn't work previously
+    let playerTypes = [...BackupPlayerTypes];
+    if (info.ActiveBackupPlayerType) {
+        const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
+        if (idx > -1) {
+            playerTypes.splice(idx, 1);
+            playerTypes.unshift(info.ActiveBackupPlayerType);
+        }
+    }
+
     const playerTypesLen = playerTypes.length;
     const res = info.Urls[Object.keys(info.Urls)[0]]; // Use first available resolution info
 

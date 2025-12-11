@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.9 - Twitch Ad Blocker
+ * TTV AB v3.3.10 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.9',
+    VERSION: '3.3.10',
     
     INTERNAL_VERSION: 28,
     
@@ -370,7 +370,7 @@ async function _$pm(url, text, realFetch) {
             info.LastPlayerReload = Date.now();
         }
 
-        const { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(info, realFetch, startIdx, minimal);
+        const { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(info, realFetch);
 
         if (backupM3u8) text = backupM3u8;
 
@@ -402,7 +402,15 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
     let backupM3u8 = null;
     let fallbackM3u8 = null;
 
-    const playerTypes = BackupPlayerTypes;
+    let playerTypes = [...BackupPlayerTypes];
+    if (info.ActiveBackupPlayerType) {
+        const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
+        if (idx > -1) {
+            playerTypes.splice(idx, 1);
+            playerTypes.unshift(info.ActiveBackupPlayerType);
+        }
+    }
+
     const playerTypesLen = playerTypes.length;
     const res = info.Urls[Object.keys(info.Urls)[0]]; // Use first available resolution info
 

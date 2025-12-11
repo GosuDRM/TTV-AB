@@ -3,6 +3,14 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.3.10] - 2025-12-11
+
+### Fixed
+- **Critical Crash** - Fixed a `ReferenceError` that would cause the player to crash immediately upon detecting an ad
+
+### Improved
+- **Smart Network Use** - Implemented "sticky" backup stream selection: the extension now remembers which backup player worked last and tries it first, saving 1-2 network requests every 2 seconds during ad breaks
+
 ## [3.3.9] - 2025-12-11
 
 ### Improved
