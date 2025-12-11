@@ -124,16 +124,24 @@ function _blockAntiAdblockPopup() {
         }
 
         // Check buttons with anti-adblock text
-        const buttons = document.querySelectorAll('button');
+        // Optimization: Only check buttons inside potential modal/overlay containers
+        const buttons = document.querySelectorAll(
+            '[class*="modal"] button, [class*="overlay"] button, [role="dialog"] button, [class*="ScAttach"] button'
+        );
         for (const btn of buttons) {
-            const text = btn.textContent?.toLowerCase() || '';
-            if (text.includes('allow twitch ads') || text.includes('try turbo')) {
-                // Find and remove the parent modal/overlay
-                const modal = btn.closest('[class*="ScAttach"], [class*="modal"], [role="dialog"], [class*="Layout"]');
-                if (modal && _isAntiAdblockElement(modal)) {
-                    modal.remove();
-                    _incrementPopupsBlocked();
-                    _log('Anti-adblock popup removed via button detection (Total: ' + _S.popupsBlocked + ')', 'success');
+            const text = btn.textContent || '';
+            if (!text) continue;
+
+            // Fast check for keywords
+            if (text.includes('Twitch') || text.includes('Turbo') || text.includes('ads')) {
+                if (/allow twitch ads|try turbo/i.test(text)) {
+                    // Find and remove the parent modal/overlay
+                    const modal = btn.closest('[class*="ScAttach"], [class*="modal"], [role="dialog"], [class*="Layout"]');
+                    if (modal && _isAntiAdblockElement(modal)) {
+                        modal.remove();
+                        _incrementPopupsBlocked();
+                        _log('Anti-adblock popup removed via button detection (Total: ' + _S.popupsBlocked + ')', 'success');
+                    }
                 }
             }
         }

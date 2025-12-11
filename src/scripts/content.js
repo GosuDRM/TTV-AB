@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.13 - Twitch Ad Blocker
+ * TTV AB v3.3.14 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.13',
+    VERSION: '3.3.14',
     
     INTERNAL_VERSION: 28,
     
@@ -1154,16 +1154,22 @@ function _$bp() {
             } catch { /* Selector may fail */ }
         }
 
-        const buttons = document.querySelectorAll('button');
+        const buttons = document.querySelectorAll(
+            '[class*="modal"] button, [class*="overlay"] button, [role="dialog"] button, [class*="ScAttach"] button'
+        );
         for (const btn of buttons) {
-            const text = btn.textContent?.toLowerCase() || '';
-            if (text.includes('allow twitch ads') || text.includes('try turbo')) {
+            const text = btn.textContent || '';
+            if (!text) continue;
 
-                const modal = btn.closest('[class*="ScAttach"], [class*="modal"], [role="dialog"], [class*="Layout"]');
-                if (modal && _$ae(modal)) {
-                    modal.remove();
-                    _$pb();
-                    _$l('Anti-adblock popup removed via button detection (Total: ' + _$s.popupsBlocked + ')', 'success');
+            if (text.includes('Twitch') || text.includes('Turbo') || text.includes('ads')) {
+                if (/allow twitch ads|try turbo/i.test(text)) {
+
+                    const modal = btn.closest('[class*="ScAttach"], [class*="modal"], [role="dialog"], [class*="Layout"]');
+                    if (modal && _$ae(modal)) {
+                        modal.remove();
+                        _$pb();
+                        _$l('Anti-adblock popup removed via button detection (Total: ' + _$s.popupsBlocked + ')', 'success');
+                    }
                 }
             }
         }
