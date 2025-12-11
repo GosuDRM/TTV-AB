@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.2 - Twitch Ad Blocker
+ * TTV AB v3.6.3 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.2',
+    VERSION: '3.6.3',
     
     INTERNAL_VERSION: 28,
     
@@ -1127,35 +1127,7 @@ function _$tl() {
 
 function _$bp() {
 
-    function _injectBlockingCSS() {
-        const style = document.createElement('style');
-        style.id = 'ttvab-popup-blocker';
-        style.textContent = `
-            /* Hide popups containing anti-adblock text */
-            [class*="ScAttach"]:has(button),
-            [class*="Layout"]:has([data-a-target="player-overlay-click-handler"]) ~ div:has(button),
-            div[class*="ScBalloon"]:has(button),
-            div[aria-describedby]:has(button):has([class*="CoreText"]) {
-                display: none !important;
-                visibility: hidden !important;
-                opacity: 0 !important;
-                pointer-events: none !important;
-            }
-            /* Backup: hide any fixed overlay with subscribe/turbo buttons */
-            div[style*="position: fixed"]:has(button:is([class*="ScCoreButton"])),
-            div[style*="position:fixed"]:has(button:is([class*="ScCoreButton"])) {
-                display: none !important;
-            }
-        `;
-
-        if (document.head) {
-            document.head.appendChild(style);
-        } else if (document.documentElement) {
-            document.documentElement.appendChild(style);
-        }
-    }
-
-    _injectBlockingCSS();
+    let lastBlockTime = 0;
 
     function _$ipb() {
         if (!document.body) {
@@ -1168,18 +1140,33 @@ function _$bp() {
         }
 
         function _$pb() {
+            const now = Date.now();
+            if (now - lastBlockTime < 1000) return; // Debounce 1 second
+            lastBlockTime = now;
+
             _$s.popupsBlocked++;
 
             window.postMessage({
                 type: 'ttvab-popup-blocked',
                 detail: { count: _$s.popupsBlocked }
             }, '*');
-            _$l('Popup blocked! Count: ' + _$s.popupsBlocked, 'success');
+            _$l('Popup blocked! Total: ' + _$s.popupsBlocked, 'success');
+        }
+
+        function _hasAdblockText(el) {
+            const text = (el.textContent || '').toLowerCase();
+            return (
+                text.includes('allow twitch ads') ||
+                text.includes('try turbo') ||
+                (text.includes('support') && text.includes('by disabling ad block')) ||
+                (text.includes('viewers watch ads') && text.includes('turbo'))
+            );
         }
 
         function _$sr() {
 
             const allButtons = document.querySelectorAll('button');
+
             for (const btn of allButtons) {
                 const btnText = (btn.textContent || '').trim().toLowerCase();
 
@@ -1189,16 +1176,23 @@ function _$bp() {
                     let popup = btn.parentElement;
                     let attempts = 0;
 
-                    while (popup && attempts < 15) {
+                    while (popup && attempts < 20) {
 
                         const style = window.getComputedStyle(popup);
                         const isOverlay = style.position === 'fixed' || style.position === 'absolute';
                         const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
                         const hasZIndex = parseInt(style.zIndex) > 100;
+                        const isPopupClass = popup.className && (
+                            popup.className.includes('ScAttach') ||
+                            popup.className.includes('Balloon') ||
+                            popup.className.includes('Layer') ||
+                            popup.className.includes('Modal') ||
+                            popup.className.includes('Overlay')
+                        );
 
-                        if ((isOverlay || hasZIndex) && (hasBackground || isLarge)) {
-                            _$l('Removing popup container: ' + (popup.className || popup.tagName), 'success');
+                        if ((isOverlay || hasZIndex || isPopupClass) && (hasBackground || isLarge)) {
+                            _$l('Removing popup: ' + (popup.className || popup.tagName), 'success');
                             popup.remove();
                             _$pb();
                             return true;
@@ -1209,7 +1203,7 @@ function _$bp() {
                     }
 
                     const fallback = btn.closest('div[class]');
-                    if (fallback) {
+                    if (fallback && _hasAdblockText(fallback)) {
                         _$l('Removing popup (fallback): ' + fallback.className, 'warning');
                         fallback.remove();
                         _$pb();
@@ -1218,31 +1212,35 @@ function _$bp() {
                 }
             }
 
-            const textPatterns = [
-                'support',
-                'by disabling ad block',
-                'viewers watch ads',
-                'go ad-free',
-                'ad-free with'
+            const popupSelectors = [
+                'div[class*="ScAttach"][class*="ScBalloon"]',
+                'div[class*="tw-balloon"]',
+                'div[class*="consent"]',
+                'div[data-a-target="consent-banner"]',
+                'div[class*="Layout"][class*="Overlay"]'
             ];
 
-            const overlayDivs = document.querySelectorAll(
-                'div[class*="ScAttach"], div[class*="Layer"], div[class*="Overlay"], ' +
-                'div[class*="Balloon"], div[class*="Modal"], ' +
-                'div[style*="position: fixed"], div[style*="position:fixed"]'
-            );
+            for (const selector of popupSelectors) {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    for (const el of elements) {
+                        if (_hasAdblockText(el)) {
+                            _$l('Removing popup by selector: ' + selector, 'success');
+                            el.remove();
+                            _$pb();
+                            return true;
+                        }
+                    }
+                } catch (e) {
 
-            for (const div of overlayDivs) {
-                const text = (div.textContent || '').toLowerCase();
-
-                let matches = 0;
-                for (const pattern of textPatterns) {
-                    if (text.includes(pattern)) matches++;
                 }
+            }
 
-                if (matches >= 2 && (text.includes('allow twitch ads') || text.includes('try turbo') || text.includes('subscribe'))) {
-                    _$l('Removing popup by text match: ' + (div.className || 'unnamed'), 'success');
-                    div.remove();
+            const overlays = document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]');
+            for (const el of overlays) {
+                if (_hasAdblockText(el) && el.offsetWidth > 200 && el.offsetHeight > 100) {
+                    _$l('Removing popup overlay', 'success');
+                    el.remove();
                     _$pb();
                     return true;
                 }
@@ -1251,11 +1249,27 @@ function _$bp() {
             return false;
         }
 
-        _$sr();
+        if (_$sr()) {
+            _$l('Popup removed on initial scan', 'success');
+        }
 
         let isScanning = false;
-        const observer = new MutationObserver(function () {
+        const observer = new MutationObserver(function (mutations) {
             if (isScanning) return;
+
+            let shouldScan = false;
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType === 1) { // Element node
+                        shouldScan = true;
+                        break;
+                    }
+                }
+                if (shouldScan) break;
+            }
+
+            if (!shouldScan) return;
+
             isScanning = true;
 
             requestAnimationFrame(() => {
@@ -1270,17 +1284,17 @@ function _$bp() {
         });
 
         function _$is() {
-            if (document.hidden) {
-                setTimeout(_$is, 3000);
-                return;
-            }
-
-            _$sr();
-            setTimeout(_$is, 1000);
+            const delay = document.hidden ? 2000 : 500;
+            setTimeout(() => {
+                if (!document.hidden) {
+                    _$sr();
+                }
+                _$is();
+            }, delay);
         }
-        setTimeout(_$is, 500);
+        _$is();
 
-        _$l('Anti-adblock popup blocker active (CSS + DOM)', 'success');
+        _$l('Anti-adblock popup blocker active', 'success');
     }
 
     _$ipb();

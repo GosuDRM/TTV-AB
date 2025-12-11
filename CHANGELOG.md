@@ -4,6 +4,18 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.6.3] - 2025-12-12
+
+### Fixed
+- **Popup Blocker Compatibility** - Removed CSS `:has()` selectors that caused compatibility issues in some browser contexts
+- **Popup Detection** - Improved DOM tree walking (20 levels) with class name pattern matching for Twitch popup elements
+- **Counter Debouncing** - Added 1-second debounce to prevent duplicate popup blocked counts
+
+### Improved
+- **Popup Detection Speed** - Reduced periodic scan interval from 1s to 500ms
+- **MutationObserver** - Now only scans when element nodes are added (faster filtering)
+- **Popup Class Detection** - Added checks for ScAttach, Balloon, Layer, Modal, Overlay class patterns
+
 ## [3.6.2] - 2025-12-12
 
 ### Fixed
