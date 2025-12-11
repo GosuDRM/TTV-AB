@@ -182,38 +182,48 @@ _$in();
 })();
 `;
 
-    let content = HEADER;
-    let moduleCount = 0;
+    // Build with error handling
+    try {
+        let content = HEADER;
+        let moduleCount = 0;
 
-    for (const mod of MODULE_ORDER) {
-        const modPath = path.join(MODULES_DIR, mod);
-        if (fs.existsSync(modPath)) {
-            let modContent = fs.readFileSync(modPath, 'utf8');
+        for (const mod of MODULE_ORDER) {
+            const modPath = path.join(MODULES_DIR, mod);
+            if (fs.existsSync(modPath)) {
+                let modContent = fs.readFileSync(modPath, 'utf8');
 
-            // Remove module-level JSDoc comments
-            modContent = modContent.replace(/^\/\*\*[\s\S]*?\*\/\n/m, '');
+                // Remove module-level JSDoc comments
+                modContent = modContent.replace(/^\/\*\*[\s\S]*?\*\/\n/m, '');
 
-            content += modContent + '\n';
-            moduleCount++;
-            console.log(`  ✓ ${mod}`);
-        } else {
-            console.error(`  ✗ Missing: ${mod}`);
+                content += modContent + '\n';
+                moduleCount++;
+                console.log(`  ✓ ${mod}`);
+            } else {
+                throw new Error(`Critical: Missing module ${mod}`);
+            }
         }
+
+        content += FOOTER;
+
+        // Minify
+        console.log('\n🔧 Minifying...');
+        content = minifyCode(content);
+
+        fs.writeFileSync(OUTPUT_FILE, content);
+
+        const stats = fs.statSync(OUTPUT_FILE);
+        const buildTime = new Date().toLocaleTimeString();
+
+        console.log(`\n✅ Build complete at ${buildTime}!`);
+        console.log(`   Version: ${version}`);
+        console.log(`   Modules: ${moduleCount}`);
+        console.log(`   Size: ${(stats.size / 1024).toFixed(2)} KB`);
+
+    } catch (err) {
+        console.error('\n❌ Build Failed:');
+        console.error(`   ${err.message}`);
+        process.exit(1);
     }
-
-    content += FOOTER;
-
-    // Minify
-    console.log('\n🔧 Minifying...');
-    content = minifyCode(content);
-
-    fs.writeFileSync(OUTPUT_FILE, content);
-
-    const stats = fs.statSync(OUTPUT_FILE);
-    console.log(`\n✅ Build complete!`);
-    console.log(`   Version: ${version}`);
-    console.log(`   Modules: ${moduleCount}`);
-    console.log(`   Size: ${(stats.size / 1024).toFixed(2)} KB`);
 }
 
 build();
