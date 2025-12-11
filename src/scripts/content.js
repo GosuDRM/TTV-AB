@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.8.8 - Twitch Ad Blocker
+ * TTV AB v3.8.9 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.8.8',
+    VERSION: '3.8.9',
     
-    INTERNAL_VERSION: 33,
+    INTERNAL_VERSION: 34,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -79,7 +79,7 @@ const _$c = {
     
     GQL_URL: 'https://gql.twitch.tv/gql',
     
-    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED', '480p'],
     
     FALLBACK_TYPE: 'embed',
     
@@ -328,7 +328,7 @@ function _$gq(body) {
 
 function _$tk(channel, playerType) {
     let reqPlayerType = playerType;
-    if (ForceAccessTokenPlayerType && playerType !== 'embed') {
+    if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p') {
         reqPlayerType = ForceAccessTokenPlayerType;
     }
 

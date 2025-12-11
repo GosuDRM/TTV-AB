@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.8.9] - 2025-12-12
+
+### Added
+- **New Backup Option** - Added `480p` as a backup player type. This provides a robust fallback for situations where `embed` tokens fail due to missing integrity headers or other network issues. `480p` streams are often ad-free and reliable.
+
+### Fixed
+- **Backup Token Handling** - Excluded `480p` from forced `site` token generation to ensure it receives its specific, valid token.
+
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [3.8.8] - 2025-12-12

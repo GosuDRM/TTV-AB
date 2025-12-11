@@ -8,9 +8,9 @@
 /** @type {Object} Configuration constants */
 const _C = {
     /** Extension version */
-    VERSION: '3.8.8',
+    VERSION: '3.8.9',
     /** Internal version for conflict detection */
-    INTERNAL_VERSION: 33,
+    INTERNAL_VERSION: 34,
     /** Console log styling */
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -26,7 +26,7 @@ const _C = {
     /** Twitch GQL URL */
     GQL_URL: 'https://gql.twitch.tv/gql',
     /** Backup player types to try */
-    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED', '480p'],
     /** Fallback player type */
     FALLBACK_TYPE: 'embed',
     /** Forced player type for tokens */
