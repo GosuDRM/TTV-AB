@@ -71,6 +71,13 @@ export default [
                 _isValid: "readonly",
                 _GQL_URL: "readonly",
                 _findBackupStream: "readonly",
+                // Player module functions
+                _doPlayerTask: "readonly",
+                _getPlayerAndState: "readonly",
+                _monitorPlayerBuffering: "readonly",
+                _hookVisibilityState: "readonly",
+                _hookLocalStoragePreservation: "readonly",
+                ReloadPlayerAfterAd: "writable",
                 // Popup globals
                 TRANSLATIONS: "readonly"
             }

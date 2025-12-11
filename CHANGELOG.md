@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.9.9] - 2025-12-12
+
+### Added
+- **Player Buffering Fix** - Monitors player state and automatically triggers pause/play when the player gets stuck buffering, preventing infinite spinners
+- **Visibility State Protection** - Prevents Twitch from pausing the player when switching tabs during ad breaks, ensuring continuous stream playback
+- **LocalStorage Preservation** - Preserves video quality, volume, and low latency settings when the player reloads during ad transitions
+- **React Player Integration** - Direct integration with Twitch's React player components for more reliable player control
+
+### Fixed
+- **Smoother Ad Transitions** - Player now automatically reloads or pause/plays after ads end for cleaner stream recovery
+- **Player State Tracking** - Added active stripping state tracking for better UI feedback
+
+### Changed
+- Enhanced player module architecture with modular React-based controls
+- Version bump to 3.9.9
+
 ## [3.9.8] - 2025-12-12
 
 ### Added

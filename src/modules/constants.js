@@ -8,9 +8,9 @@
 /** @type {Object} Configuration constants */
 const _C = {
     /** Extension version */
-    VERSION: '3.9.8',
+    VERSION: '3.9.9',
     /** Internal version for conflict detection */
-    INTERNAL_VERSION: 36,
+    INTERNAL_VERSION: 37,
     /** Console log styling */
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -42,6 +42,10 @@ const _C = {
      * SYNC: Must match popup.js and bridge.js
      */
     AVG_AD_DURATION: 22,
+    /** Enable player buffering fix (pause/play on buffer stalls) */
+    BUFFERING_FIX: true,
+    /** Reload player after ad ends (cleaner transition) */
+    RELOAD_AFTER_AD: true,
     /** Achievement badges definitions */
     ACHIEVEMENTS: [
         { id: 'first_block', name: 'Ad Slayer', icon: '⚔️', threshold: 1, type: 'ads', desc: 'Block your first ad' },
