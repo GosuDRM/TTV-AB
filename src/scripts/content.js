@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.7 - Twitch Ad Blocker
+ * TTV AB v3.6.8 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.7',
+    VERSION: '3.6.8',
     
     INTERNAL_VERSION: 28,
     
@@ -77,7 +77,9 @@ const _$c = {
     
     CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
     
-    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+    ENC_URL: 'aHR0cHM6Ly9hcGkudHR2LmxvbC9wbGF5bGlzdA==',
+    
+    PLAYER_TYPES: ['proxy', 'embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
     
     FALLBACK_TYPE: 'embed',
     
@@ -434,17 +436,31 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
             if (!enc) {
                 fresh = true;
                 try {
-                    const tokenRes = await _$tk(info.ChannelName, realPt);
-                    if (tokenRes.status === 200) {
-                        const token = await tokenRes.json();
-                        const sig = token?.data?.streamPlaybackAccessToken?.signature;
-                        if (sig) {
-                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
-                            usherUrl.searchParams.set('sig', sig);
-                            usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
-                            const encRes = await realFetch(usherUrl.href);
+                    if (realPt === 'proxy') {
+
+                        try {
+                            const url = atob(_$c.ENC_URL) + '/' + info.ChannelName + '.m3u8%3Fallow_source=true&allow_audio_only=true';
+                            const encRes = await realFetch(url);
                             if (encRes.status === 200) {
                                 enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                            }
+                        } catch (e) {
+                            _$l('Proxy fetch error: ' + e.message, 'warning');
+                        }
+                    } else {
+
+                        const tokenRes = await _$tk(info.ChannelName, realPt);
+                        if (tokenRes.status === 200) {
+                            const token = await tokenRes.json();
+                            const sig = token?.data?.streamPlaybackAccessToken?.signature;
+                            if (sig) {
+                                const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                                usherUrl.searchParams.set('sig', sig);
+                                usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                                const encRes = await realFetch(usherUrl.href);
+                                if (encRes.status === 200) {
+                                    enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                                }
                             }
                         }
                     }

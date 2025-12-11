@@ -118,17 +118,31 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
             if (!enc) {
                 fresh = true;
                 try {
-                    const tokenRes = await _getToken(info.ChannelName, realPt);
-                    if (tokenRes.status === 200) {
-                        const token = await tokenRes.json();
-                        const sig = token?.data?.streamPlaybackAccessToken?.signature;
-                        if (sig) {
-                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
-                            usherUrl.searchParams.set('sig', sig);
-                            usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
-                            const encRes = await realFetch(usherUrl.href);
+                    if (realPt === 'proxy') {
+                        // Use external proxy as backup
+                        try {
+                            const url = atob(_C.ENC_URL) + '/' + info.ChannelName + '.m3u8%3Fallow_source=true&allow_audio_only=true';
+                            const encRes = await realFetch(url);
                             if (encRes.status === 200) {
                                 enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                            }
+                        } catch (e) {
+                            _log('Proxy fetch error: ' + e.message, 'warning');
+                        }
+                    } else {
+                        // Standard Twitch usher fetch
+                        const tokenRes = await _getToken(info.ChannelName, realPt);
+                        if (tokenRes.status === 200) {
+                            const token = await tokenRes.json();
+                            const sig = token?.data?.streamPlaybackAccessToken?.signature;
+                            if (sig) {
+                                const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                                usherUrl.searchParams.set('sig', sig);
+                                usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                                const encRes = await realFetch(usherUrl.href);
+                                if (encRes.status === 200) {
+                                    enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                                }
                             }
                         }
                     }

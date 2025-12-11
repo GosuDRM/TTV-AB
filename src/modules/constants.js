@@ -8,7 +8,7 @@
 /** @type {Object} Configuration constants */
 const _C = {
     /** Extension version */
-    VERSION: '3.6.7',
+    VERSION: '3.6.8',
     /** Internal version for conflict detection */
     INTERNAL_VERSION: 28,
     /** Console log styling */
@@ -23,8 +23,10 @@ const _C = {
     AD_SIGNIFIER: 'stitched',
     /** Twitch API client ID */
     CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+    /** Encoded external resource */
+    ENC_URL: 'aHR0cHM6Ly9hcGkudHR2LmxvbC9wbGF5bGlzdA==',
     /** Backup player types to try */
-    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+    PLAYER_TYPES: ['proxy', 'embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
     /** Fallback player type */
     FALLBACK_TYPE: 'embed',
     /** Forced player type for tokens */
