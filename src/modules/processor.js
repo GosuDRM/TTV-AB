@@ -167,7 +167,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                     if (realPt === 'proxy') {
                         // Use external proxy as backup via bridge (to bypass CORS)
                         try {
-                            const url = atob(_C.ENC_URL) + '/' + info.ChannelName + '.m3u8%3Fallow_source=true&allow_audio_only=true';
+                            const url = atob(_C.ENC_URL) + '/' + info.ChannelName + '.m3u8?allow_source=true&allow_audio_only=true';
                             // Use messaging fetch instead of direct fetch
                             const encResText = await _fetchProxy(url);
                             if (encResText) {

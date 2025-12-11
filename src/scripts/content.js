@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.7.4 - Twitch Ad Blocker
+ * TTV AB v3.7.5 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.7.4',
+    VERSION: '3.7.5',
     
     INTERNAL_VERSION: 28,
     
@@ -473,7 +473,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                     if (realPt === 'proxy') {
 
                         try {
-                            const url = atob(_$c.ENC_URL) + '/' + info.ChannelName + '.m3u8%3Fallow_source=true&allow_audio_only=true';
+                            const url = atob(_$c.ENC_URL) + '/' + info.ChannelName + '.m3u8?allow_source=true&allow_audio_only=true';
 
                             const encResText = await _fetchProxy(url);
                             if (encResText) {

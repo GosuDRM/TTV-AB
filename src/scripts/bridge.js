@@ -285,6 +285,9 @@ window.addEventListener('message', function (e) {
                     }, '*');
                 } else {
                     console.log('[TTV AB] Bridge: Background response', response?.success);
+                    if (!response?.success) {
+                        console.error('[TTV AB] Bridge: Background Error Details:', response?.error);
+                    }
                     window.postMessage({
                         type: 'ttvab-fetch-proxy-response',
                         detail: {
