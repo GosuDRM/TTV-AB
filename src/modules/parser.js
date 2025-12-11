@@ -82,9 +82,19 @@ function _stripAds(text, stripAll, info, isBackup = false) {
         }
 
         // Mark and REMOVE ad segments
-        // If isBackup is true, we trust the stream more and only strip if forced (stripAll) or explicit ad tags (AdSignifier elsewhere)
-        // We SKIP the heuristic (!,live) check for backups to prevent deleting valid content
-        const isAdSegment = !line.includes(',live') && !isBackup;
+        // For backup streams: Only use EXPLICIT ad markers to avoid stripping valid content
+        // For main streams: Use heuristic (!,live) which is more aggressive
+        let isAdSegment;
+        if (isBackup) {
+            // For backup: only strip if next line contains explicit ad markers
+            const nextLine = i < len - 1 ? lines[i + 1] : '';
+            isAdSegment = nextLine.includes('stitched-ad') || nextLine.includes('/adsquared/') ||
+                line.includes(AdSignifier) || nextLine.includes(AdSignifier);
+        } else {
+            // For main stream: use heuristic (non-live segments are ads)
+            isAdSegment = !line.includes(',live');
+        }
+
         if (i < len - 1 && line.startsWith('#EXTINF') && (isAdSegment || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
@@ -94,9 +104,6 @@ function _stripAds(text, stripAll, info, isBackup = false) {
             // Wipe lines from manifest
             lines[i] = '';      // Remove #EXTINF
             lines[i + 1] = '';  // Remove URL
-            // i++ will happen in loop, need to skip the URL line effectively?
-            // Actually, if we wipe lines[i+1], next iteration i+1 will see empty line.
-            // Better to increment i to skip processing the URL line next iteration
             i++;
         }
 
