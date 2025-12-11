@@ -101,6 +101,7 @@ function _initCrashMonitor() {
 
         // Fallback interval check
         checkInterval = setInterval(() => {
+            if (document.hidden) return;
             try {
                 const error = detectCrash();
                 if (error) {

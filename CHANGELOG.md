@@ -3,6 +3,14 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.3.13] - 2025-12-11
+
+### Fixed
+- **Worker Crash** - Fixed a crash in the worker thread caused by a missing function definition (`_pruneStreamInfos`) after the previous memory optimization
+
+### Improved
+- **Background Efficiency** - Throttled the player crash monitor to pause completely when the tab is hidden, further reducing CPU usage
+
 ## [3.3.12] - 2025-12-11
 
 ### Improved

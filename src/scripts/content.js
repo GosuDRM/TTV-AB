@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.12 - Twitch Ad Blocker
+ * TTV AB v3.3.13 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.12',
+    VERSION: '3.3.13',
     
     INTERNAL_VERSION: 28,
     
@@ -670,6 +670,7 @@ function _$hw() {
                 ${_$pm.toString()}
                 ${_$wj.toString()}
                 ${_$wf.toString()}
+                ${_$ps.toString()}
                 
                 const _$gu = '${_$gu}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
@@ -1044,6 +1045,7 @@ function _$cm() {
         });
 
         checkInterval = setInterval(() => {
+            if (document.hidden) return;
             try {
                 const error = detectCrash();
                 if (error) {

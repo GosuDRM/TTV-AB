@@ -1,6 +1,6 @@
 {
   "name": "ttv-ab",
-  "version": "3.3.12",
+  "version": "3.3.13",
   "description": "Twitch Ad Blocker",
   "devDependencies": {
     "@eslint/js": "^9.39.1",
