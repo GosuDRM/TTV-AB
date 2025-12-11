@@ -159,16 +159,21 @@ function _blockAntiAdblockPopup() {
     // Periodic scan as backup using requestIdleCallback for minimal CPU impact
     // Falls back to setTimeout if requestIdleCallback is not available
     function _scheduleIdleScan() {
+        if (document.hidden) {
+            setTimeout(_scheduleIdleScan, 5000); // Check visibility again in 5s
+            return;
+        }
+
         if (typeof requestIdleCallback === 'function') {
             requestIdleCallback(function () {
                 _scanAndRemove();
-                setTimeout(_scheduleIdleScan, 2000);
+                setTimeout(_scheduleIdleScan, 10000); // Check every 10s (was 2s)
             }, { timeout: 3000 });
         } else {
             setTimeout(function () {
                 _scanAndRemove();
                 _scheduleIdleScan();
-            }, 2000);
+            }, 10000);
         }
     }
     _scheduleIdleScan();

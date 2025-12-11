@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.8 - Twitch Ad Blocker
+ * TTV AB v3.3.9 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.8',
+    VERSION: '3.3.9',
     
     INTERNAL_VERSION: 28,
     
@@ -1187,16 +1187,21 @@ function _$bp() {
     });
 
     function _$is() {
+        if (document.hidden) {
+            setTimeout(_$is, 5000); // Check visibility again in 5s
+            return;
+        }
+
         if (typeof requestIdleCallback === 'function') {
             requestIdleCallback(function () {
                 _$sr();
-                setTimeout(_$is, 2000);
+                setTimeout(_$is, 10000); // Check every 10s (was 2s)
             }, { timeout: 3000 });
         } else {
             setTimeout(function () {
                 _$sr();
                 _$is();
-            }, 2000);
+            }, 10000);
         }
     }
     _$is();
