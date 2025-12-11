@@ -41,7 +41,8 @@ function _gqlReq(body) {
  * @param {string} playerType - Player type
  * @returns {Promise<Response>} Token response
  */
-async function _getToken(channel, playerType) {
+async function _getToken(channel, playerType, realFetch) {
+    const fetchFunc = realFetch || fetch;
     let reqPlayerType = playerType;
     if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p' && playerType !== 'thunderdome') {
         reqPlayerType = ForceAccessTokenPlayerType;
@@ -69,7 +70,7 @@ async function _getToken(channel, playerType) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
-        const res = await realFetch(_GQL_URL, {
+        const res = await fetchFunc(_GQL_URL, {
             method: 'POST',
             headers: {
                 'Client-ID': _C.CLIENT_ID,

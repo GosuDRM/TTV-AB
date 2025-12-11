@@ -125,7 +125,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                 fresh = true;
                 try {
                     // Standard Twitch usher fetch
-                    const tokenRes = await _getToken(info.ChannelName, realPt);
+                    const tokenRes = await _getToken(info.ChannelName, realPt, realFetch);
                     if (tokenRes.status === 200) {
                         const token = await tokenRes.json();
                         const sig = token?.data?.streamPlaybackAccessToken?.signature;

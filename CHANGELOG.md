@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.9.1] - 2025-12-12
+
+### Fixed
+- **Critical Fix** - Fixed `realFetch` reference error in token generation that caused backup streams to fail.
+
 ## [3.9.0] - 2025-12-12
 
 ### Added

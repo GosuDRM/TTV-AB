@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.0 - Twitch Ad Blocker
+ * TTV AB v3.9.1 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.9.0',
+    VERSION: '3.9.1',
     
-    INTERNAL_VERSION: 35,
+    INTERNAL_VERSION: 36,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -326,7 +326,8 @@ function _$gq(body) {
     });
 }
 
-async function _$tk(channel, playerType) {
+async function _$tk(channel, playerType, realFetch) {
+    const fetchFunc = realFetch || fetch;
     let reqPlayerType = playerType;
     if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p' && playerType !== 'thunderdome') {
         reqPlayerType = ForceAccessTokenPlayerType;
@@ -354,7 +355,7 @@ async function _$tk(channel, playerType) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
-        const res = await realFetch(_$gu, {
+        const res = await fetchFunc(_$gu, {
             method: 'POST',
             headers: {
                 'Client-ID': _$c.CLIENT_ID,
@@ -472,7 +473,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                 fresh = true;
                 try {
 
-                    const tokenRes = await _$tk(info.ChannelName, realPt);
+                    const tokenRes = await _$tk(info.ChannelName, realPt, realFetch);
                     if (tokenRes.status === 200) {
                         const token = await tokenRes.json();
                         const sig = token?.data?.streamPlaybackAccessToken?.signature;
