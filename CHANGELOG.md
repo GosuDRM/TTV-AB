@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.9.6] - 2025-12-12
+
+### Fixed
+- **CRITICAL: Break infinite backup stream loop** - When using a fallback stream with ad stripping, subsequent playlist refreshes no longer restart the backup search. Added `IsUsingFallbackStream` flag to track fallback mode and skip redundant searches, preventing CPU-intensive infinite loops.
+
+### Changed
+- `_findBackupStream` now returns `isFallback` flag to indicate when a fallback (ad-laden) stream is being used
+- `_processM3U8` enters fallback mode and stays there until ads end, avoiding repeated backup searches
+
 ## [3.9.5] - 2025-12-12
 
 ### Fixed

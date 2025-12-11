@@ -40,8 +40,14 @@ async function _processM3U8(url, text, realFetch) {
             }
         }
 
-        // Pre-fetch removed - using bandwidth for ads we intend to block is wasteful
-        // and doesn't significantly improve backup stream timing.
+        // If we're already in fallback mode (using ad-stripped fallback stream),
+        // DON'T restart the backup stream search - just keep stripping ads from current stream.
+        // This prevents the infinite loop where we keep searching for backup streams.
+        if (info.IsUsingFallbackStream) {
+            _log('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
+            text = _stripAds(text, false, info, true);
+            return text;
+        }
 
         const res = info.Urls[url];
         if (!res) {
@@ -55,9 +61,15 @@ async function _processM3U8(url, text, realFetch) {
             info.LastPlayerReload = Date.now();
         }
 
-        const { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(info, realFetch);
+        const { type: backupType, m3u8: backupM3u8, isFallback } = await _findBackupStream(info, realFetch);
 
         if (!backupM3u8) _log('Failed to find any backup stream', 'warning');
+
+        // Mark fallback mode if we're using a fallback stream (stream with ads that we'll strip)
+        if (isFallback) {
+            info.IsUsingFallbackStream = true;
+            _log('Entering fallback mode - will strip ads from stream', 'info');
+        }
 
         if (backupM3u8) text = backupM3u8;
 
@@ -72,6 +84,7 @@ async function _processM3U8(url, text, realFetch) {
         if (info.IsShowingAd) {
             info.IsShowingAd = false;
             info.IsUsingModifiedM3U8 = false;
+            info.IsUsingFallbackStream = false; // Exit fallback mode when ads end
             info.RequestedAds.clear();
             info.BackupEncodingsM3U8Cache = [];
             info.ActiveBackupPlayerType = null;
@@ -214,11 +227,13 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
 
     // Last resort: Use fallback stream if no ad-free stream found
     // This allows ad stripping to work even when all streams have ads
+    let isFallback = false;
     if (!backupM3u8 && fallbackM3u8) {
         backupType = fallbackType || FallbackPlayerType;
         backupM3u8 = fallbackM3u8;
+        isFallback = true; // Mark this as a fallback (ad-laden) stream
         _log(`[Trace] Using fallback stream (will strip ads): ${backupType}`, 'warning');
     }
 
-    return { type: backupType, m3u8: backupM3u8 };
+    return { type: backupType, m3u8: backupM3u8, isFallback };
 }
