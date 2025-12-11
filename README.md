@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-3.2.6-purple)
+![Version](https://img.shields.io/badge/version-3.2.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -23,6 +23,7 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 - ✅ Persistent "Ads Blocked" & "Popups Blocked" statistics
 - ✅ **Statistics Dashboard** with time saved, weekly charts, and achievements
 - ✅ **12 Achievement Badges** to unlock as you block ads
+- ✅ **Language Selector** - 11 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU)
 - ✅ Per-channel ad blocking breakdown
 - ✅ Modern, animated UI (Cyberpunk/Neon aesthetic)
 - ✅ Lightweight and fast
@@ -33,6 +34,7 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 2. Open any live stream
 3. Ads will be automatically blocked
 4. Click the extension icon and use the toggle to enable/disable
+5. Change language via the dropdown in the footer
 
 ## ⚙️ How It Works
 
@@ -43,7 +45,8 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## ✨ What's New
 
-### v3.2.x - Statistics Dashboard Update
+### v3.2.x - Big Update!
+- **🌐 Language Selector** - UI now available in 11 languages (EN, ES, FR, DE, PT, IT, JA, KO, ZH, RU)
 - **📊 Statistics Dashboard** - Collapsible panel with detailed ad blocking metrics
 - **⏱️ Time Saved** - Estimated time saved from blocked ads (~22s per ad)
 - **📈 Weekly Chart** - Visual sparkline showing last 7 days activity
