@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.11 - Twitch Ad Blocker
+ * TTV AB v3.3.12 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.11',
+    VERSION: '3.3.12',
     
     INTERNAL_VERSION: 28,
     
@@ -670,19 +670,6 @@ function _$hw() {
                 ${_$pm.toString()}
                 ${_$wj.toString()}
                 ${_$wf.toString()}
-
-                function _$ps() {
-                    const keys = Object.keys(StreamInfos);
-                    if (keys.length > 5) {
-                        const oldKey = keys[0];
-                        delete StreamInfos[oldKey];
-                        for (const url in StreamInfosByUrl) {
-                            if (StreamInfosByUrl[url].ChannelName === oldKey) {
-                                delete StreamInfosByUrl[url];
-                            }
-                        }
-                    }
-                }
                 
                 const _$gu = '${_$gu}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');

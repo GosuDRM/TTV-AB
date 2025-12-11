@@ -165,20 +165,6 @@ function _hookWorker() {
                 ${_getWasmJs.toString()}
                 ${_hookWorkerFetch.toString()}
                 
-                // Helper to prune old StreamInfos to prevent memory leaks
-                function _pruneStreamInfos() {
-                    const keys = Object.keys(StreamInfos);
-                    if (keys.length > 5) {
-                        const oldKey = keys[0];
-                        delete StreamInfos[oldKey];
-                        for (const url in StreamInfosByUrl) {
-                            if (StreamInfosByUrl[url].ChannelName === oldKey) {
-                                delete StreamInfosByUrl[url];
-                            }
-                        }
-                    }
-                }
-                
                 const _GQL_URL = '${_GQL_URL}';
                 const wasmSource = _getWasmJs('${url.replaceAll("'", "%27")}');
                 _declareState(self);
