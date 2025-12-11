@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.2 - Twitch Ad Blocker
+ * TTV AB v3.9.3 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.9.2',
+    VERSION: '3.9.3',
     
     INTERNAL_VERSION: 36,
     
@@ -329,9 +329,6 @@ function _$gq(body) {
 async function _$tk(channel, playerType, realFetch) {
     const fetchFunc = realFetch || fetch;
     let reqPlayerType = playerType;
-    if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p' && playerType !== 'thunderdome') {
-        reqPlayerType = ForceAccessTokenPlayerType;
-    }
 
     const body = {
         operationName: 'PlaybackAccessToken',

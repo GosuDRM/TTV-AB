@@ -8,7 +8,7 @@
 /** @type {Object} Configuration constants */
 const _C = {
     /** Extension version */
-    VERSION: '3.9.2',
+    VERSION: '3.9.3',
     /** Internal version for conflict detection */
     INTERNAL_VERSION: 36,
     /** Console log styling */

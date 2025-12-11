@@ -44,9 +44,6 @@ function _gqlReq(body) {
 async function _getToken(channel, playerType, realFetch) {
     const fetchFunc = realFetch || fetch;
     let reqPlayerType = playerType;
-    if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p' && playerType !== 'thunderdome') {
-        reqPlayerType = ForceAccessTokenPlayerType;
-    }
 
     const body = {
         operationName: 'PlaybackAccessToken',
