@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.7.0 - Twitch Ad Blocker
+ * TTV AB v3.7.1 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.7.0',
+    VERSION: '3.7.1',
     
     INTERNAL_VERSION: 28,
     
@@ -343,6 +343,38 @@ function _$tk(channel, playerType) {
     });
 }
 
+const PendingRequests = new Map();
+
+function _fetchProxy(url) {
+    if (typeof self === 'undefined' || !self.postMessage) return null;
+    return new Promise((resolve) => {
+        const requestId = Math.random().toString(36).substring(2);
+        PendingRequests.set(requestId, resolve);
+        self.postMessage({ key: 'FetchProxy', url, requestId });
+
+        setTimeout(() => {
+            if (PendingRequests.has(requestId)) {
+                PendingRequests.delete(requestId);
+                resolve(null);
+            }
+        }, 5000);
+    });
+}
+
+function _handleProxyResponse(data) {
+    if (data.key === 'FetchProxyResponse' && data.requestId) {
+        const resolve = PendingRequests.get(data.requestId);
+        if (resolve) {
+            PendingRequests.delete(data.requestId);
+            if (data.success && data.data) {
+                resolve(data.data);
+            } else {
+                resolve(null);
+            }
+        }
+    }
+}
+
 async function _$pm(url, text, realFetch) {
     if (!IsAdStrippingEnabled) return text;
 
@@ -440,9 +472,10 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
 
                         try {
                             const url = atob(_$c.ENC_URL) + '/' + info.ChannelName + '.m3u8%3Fallow_source=true&allow_audio_only=true';
-                            const encRes = await realFetch(url);
-                            if (encRes.status === 200) {
-                                enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+
+                            const encResText = await _fetchProxy(url);
+                            if (encResText) {
+                                enc = info.BackupEncodingsM3U8Cache[pt] = encResText;
                             }
                         } catch (e) {
                             _$l('Proxy fetch error: ' + e.message, 'warning');
@@ -662,6 +695,7 @@ function _$wf() {
 
 function _$hw() {
     const reinsertNames = _$gr(window.Worker);
+    const PendingRequestsStr = 'const PendingRequests = new Map();';
 
     const HookedWorker = class Worker extends _$cw(window.Worker) {
         constructor(url, opts) {
@@ -695,6 +729,9 @@ function _$hw() {
                 ${_findBackupStream.toString()}
                 ${_$wj.toString()}
                 ${_$wf.toString()}
+                ${PendingRequestsStr}
+                ${_fetchProxy.toString()}
+                ${_handleProxyResponse.toString()}
                 
                 const _$gu = '${_$gu}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
@@ -717,6 +754,7 @@ function _$hw() {
                         case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _$s.adsBlocked = data.value; break;
+                        case 'FetchProxyResponse': _handleProxyResponse(data); break;
                     }
                 });
                 
@@ -746,6 +784,13 @@ function _$hw() {
                         break;
                     case 'AdEnded':
                         _$l('Ad ended', 'success');
+                        break;
+                    case 'FetchProxy':
+
+                        window.postMessage({
+                            type: 'ttvab-fetch-proxy',
+                            detail: { url: e.data.url, requestId: e.data.requestId }
+                        }, '*');
                         break;
 
                 }
@@ -1359,6 +1404,19 @@ function _$in() {
         if (e.data.type === 'ttvab-init-popups-count' && typeof e.data.detail?.count === 'number') {
             _$s.popupsBlocked = e.data.detail.count;
             _$l('Restored popups blocked count: ' + _$s.popupsBlocked, 'info');
+        }
+
+        if (e.data.type === 'ttvab-fetch-proxy-response') {
+
+            for (const worker of _$s.workers) {
+                worker.postMessage({
+                    key: 'FetchProxyResponse',
+                    requestId: e.data.detail.requestId,
+                    success: e.data.detail.success,
+                    data: e.data.detail.data,
+                    error: e.data.detail.error
+                });
+            }
         }
     });
 

@@ -131,6 +131,7 @@ function _hookWorkerFetch() {
  */
 function _hookWorker() {
     const reinsertNames = _getReinsert(window.Worker);
+    const PendingRequestsStr = 'const PendingRequests = new Map();';
 
     const HookedWorker = class Worker extends _cleanWorker(window.Worker) {
         constructor(url, opts) {
@@ -165,6 +166,9 @@ function _hookWorker() {
                 ${_findBackupStream.toString()}
                 ${_getWasmJs.toString()}
                 ${_hookWorkerFetch.toString()}
+                ${PendingRequestsStr}
+                ${_fetchProxy.toString()}
+                ${_handleProxyResponse.toString()}
                 
                 const _GQL_URL = '${_GQL_URL}';
                 const wasmSource = _getWasmJs('${url.replaceAll("'", "%27")}');
@@ -187,6 +191,7 @@ function _hookWorker() {
                         case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
+                        case 'FetchProxyResponse': _handleProxyResponse(data); break;
                     }
                 });
                 
@@ -217,6 +222,13 @@ function _hookWorker() {
                         break;
                     case 'AdEnded':
                         _log('Ad ended', 'success');
+                        break;
+                    case 'FetchProxy':
+                        // Relay fetch request to bridge (Isolated World) via window
+                        window.postMessage({
+                            type: 'ttvab-fetch-proxy',
+                            detail: { url: e.data.url, requestId: e.data.requestId }
+                        }, '*');
                         break;
 
                 }

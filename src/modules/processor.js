@@ -6,6 +6,50 @@
  */
 
 /**
+ * Global state for proxy fetch requests
+ */
+const PendingRequests = new Map();
+
+/**
+ * Fetch text content using main thread proxy (bypasses CORS)
+ * @param {string} url - URL to fetch
+ * @returns {Promise<string|null>} Response text or null
+ */
+function _fetchProxy(url) {
+    if (typeof self === 'undefined' || !self.postMessage) return null;
+    return new Promise((resolve) => {
+        const requestId = Math.random().toString(36).substring(2);
+        PendingRequests.set(requestId, resolve);
+        self.postMessage({ key: 'FetchProxy', url, requestId });
+        // Timeout after 5s
+        setTimeout(() => {
+            if (PendingRequests.has(requestId)) {
+                PendingRequests.delete(requestId);
+                resolve(null);
+            }
+        }, 5000);
+    });
+}
+
+/**
+ * Handle incoming proxy responses
+ * @param {Object} data - Message data
+ */
+function _handleProxyResponse(data) {
+    if (data.key === 'FetchProxyResponse' && data.requestId) {
+        const resolve = PendingRequests.get(data.requestId);
+        if (resolve) {
+            PendingRequests.delete(data.requestId);
+            if (data.success && data.data) {
+                resolve(data.data);
+            } else {
+                resolve(null);
+            }
+        }
+    }
+}
+
+/**
  * Process M3U8 playlist and strip/replace ads
  * @param {string} url - Playlist URL
  * @param {string} text - Playlist content
@@ -119,12 +163,13 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                 fresh = true;
                 try {
                     if (realPt === 'proxy') {
-                        // Use external proxy as backup
+                        // Use external proxy as backup via bridge (to bypass CORS)
                         try {
                             const url = atob(_C.ENC_URL) + '/' + info.ChannelName + '.m3u8%3Fallow_source=true&allow_audio_only=true';
-                            const encRes = await realFetch(url);
-                            if (encRes.status === 200) {
-                                enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                            // Use messaging fetch instead of direct fetch
+                            const encResText = await _fetchProxy(url);
+                            if (encResText) {
+                                enc = info.BackupEncodingsM3U8Cache[pt] = encResText;
                             }
                         } catch (e) {
                             _log('Proxy fetch error: ' + e.message, 'warning');

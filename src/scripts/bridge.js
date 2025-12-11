@@ -267,6 +267,31 @@ window.addEventListener('message', function (e) {
             });
         });
     }
+
+    if (e.data.type === 'ttvab-fetch-proxy') {
+        const { url, requestId } = e.data.detail;
+        if (url && requestId) {
+            fetch(url)
+                .then(res => {
+                    if (res.ok) return res.text();
+                    throw new Error('Status: ' + res.status);
+                })
+                .then(text => {
+                    // Send success response
+                    window.postMessage({
+                        type: 'ttvab-fetch-proxy-response',
+                        detail: { requestId, success: true, data: text }
+                    }, '*');
+                })
+                .catch(err => {
+                    // Send failure response
+                    window.postMessage({
+                        type: 'ttvab-fetch-proxy-response',
+                        detail: { requestId, success: false, error: err.message }
+                    }, '*');
+                });
+        }
+    }
 });
 
 // Periodic health check for counter functionality (every 60 seconds)
