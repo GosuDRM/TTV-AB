@@ -45,6 +45,22 @@ const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
 
 /**
+ * Queue for serializing storage operations to prevent race conditions
+ */
+const StorageQueue = {
+    _chain: Promise.resolve(),
+    /**
+     * Add a task to the queue
+     * @param {Function} task - Function that returns a Promise
+     */
+    add(task) {
+        this._chain = this._chain.then(task).catch(err => {
+            console.error('TTV AB Storage Error:', err);
+        });
+    }
+};
+
+/**
  * Consolidated stats update function - fixes race condition by doing single atomic read/write
  * @param {string} type - 'ads' or 'popups'
  * @param {string|null} channel - Channel name (for ads only)
@@ -52,78 +68,81 @@ const MAX_CHANNELS = 100;
  * @param {number} totalPopupsBlocked - Current total popups blocked
  */
 function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
-    chrome.storage.local.get(['ttvStats'], function (result) {
-        const stats = result.ttvStats || { daily: {}, channels: {}, achievements: [] };
-        const today = getTodayKey();
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['ttvStats'], function (result) {
+            const stats = result.ttvStats || { daily: {}, channels: {}, achievements: [] };
+            const today = getTodayKey();
 
-        // 1. Update daily stats
-        if (!stats.daily[today]) {
-            stats.daily[today] = { ads: 0, popups: 0 };
-        }
-        stats.daily[today][type]++;
-        stats.lastBlockedAt = Date.now();
-        if (!stats.firstBlockedAt) {
-            stats.firstBlockedAt = Date.now();
-        }
-
-        // 2. Prune old daily entries (keep last 30 days)
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 30);
-        const cutoffKey = cutoff.toISOString().split('T')[0];
-        for (const key in stats.daily) {
-            if (key < cutoffKey) {
-                delete stats.daily[key];
+            // 1. Update daily stats
+            if (!stats.daily[today]) {
+                stats.daily[today] = { ads: 0, popups: 0 };
             }
-        }
-
-        // 3. Update channel stats (for ads only)
-        if (type === 'ads' && channel) {
-            if (!stats.channels[channel]) {
-                stats.channels[channel] = 0;
-            }
-            stats.channels[channel]++;
-
-            // 4. Prune channels to top MAX_CHANNELS by count
-            const channelEntries = Object.entries(stats.channels);
-            if (channelEntries.length > MAX_CHANNELS) {
-                channelEntries.sort((a, b) => b[1] - a[1]);
-                stats.channels = Object.fromEntries(channelEntries.slice(0, MAX_CHANNELS));
-            }
-        }
-
-        // 5. Check achievements
-        const unlocked = stats.achievements || [];
-        const timeSaved = totalAdsBlocked * AVG_AD_DURATION;
-        const channelCount = Object.keys(stats.channels).length;
-        const newUnlocks = [];
-
-        for (const ach of ACHIEVEMENTS) {
-            if (unlocked.includes(ach.id)) continue;
-
-            let value = 0;
-            switch (ach.type) {
-                case 'ads': value = totalAdsBlocked; break;
-                case 'popups': value = totalPopupsBlocked; break;
-                case 'time': value = timeSaved; break;
-                case 'channels': value = channelCount; break;
+            stats.daily[today][type]++;
+            stats.lastBlockedAt = Date.now();
+            if (!stats.firstBlockedAt) {
+                stats.firstBlockedAt = Date.now();
             }
 
-            if (value >= ach.threshold) {
-                unlocked.push(ach.id);
-                newUnlocks.push(ach.id);
+            // 2. Prune old daily entries (keep last 30 days)
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 30);
+            const cutoffKey = cutoff.toISOString().split('T')[0];
+            for (const key in stats.daily) {
+                if (key < cutoffKey) {
+                    delete stats.daily[key];
+                }
             }
-        }
 
-        if (newUnlocks.length > 0) {
-            stats.achievements = unlocked;
-        }
+            // 3. Update channel stats (for ads only)
+            if (type === 'ads' && channel) {
+                if (!stats.channels[channel]) {
+                    stats.channels[channel] = 0;
+                }
+                stats.channels[channel]++;
 
-        // 6. Single atomic write
-        chrome.storage.local.set({ ttvStats: stats }, function () {
-            // Notify content script of new achievements after storage is saved
-            for (const id of newUnlocks) {
-                document.dispatchEvent(new CustomEvent('ttvab-achievement-unlocked', { detail: { id: id } }));
+                // 4. Prune channels to top MAX_CHANNELS by count
+                const channelEntries = Object.entries(stats.channels);
+                if (channelEntries.length > MAX_CHANNELS) {
+                    channelEntries.sort((a, b) => b[1] - a[1]);
+                    stats.channels = Object.fromEntries(channelEntries.slice(0, MAX_CHANNELS));
+                }
             }
+
+            // 5. Check achievements
+            const unlocked = stats.achievements || [];
+            const timeSaved = totalAdsBlocked * AVG_AD_DURATION;
+            const channelCount = Object.keys(stats.channels).length;
+            const newUnlocks = [];
+
+            for (const ach of ACHIEVEMENTS) {
+                if (unlocked.includes(ach.id)) continue;
+
+                let value = 0;
+                switch (ach.type) {
+                    case 'ads': value = totalAdsBlocked; break;
+                    case 'popups': value = totalPopupsBlocked; break;
+                    case 'time': value = timeSaved; break;
+                    case 'channels': value = channelCount; break;
+                }
+
+                if (value >= ach.threshold) {
+                    unlocked.push(ach.id);
+                    newUnlocks.push(ach.id);
+                }
+            }
+
+            if (newUnlocks.length > 0) {
+                stats.achievements = unlocked;
+            }
+
+            // 6. Single atomic write
+            chrome.storage.local.set({ ttvStats: stats }, function () {
+                // Notify content script of new achievements after storage is saved
+                for (const id of newUnlocks) {
+                    document.dispatchEvent(new CustomEvent('ttvab-achievement-unlocked', { detail: { id: id } }));
+                }
+                resolve();
+            });
         });
     });
 }
@@ -167,29 +186,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Listen for ad blocked events from content script and sync to storage
 // Uses atomic increment to handle multiple tabs correctly
+// Listen for ad blocked events from content script and sync to storage
+// Uses StorageQueue to prevent race conditions
 document.addEventListener('ttvab-ad-blocked', function (e) {
     const channel = e.detail?.channel || null;
 
-    // Atomic increment: read current, add 1, write back
-    chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
-        const newCount = (result.ttvAdsBlocked || 0) + 1;
-        chrome.storage.local.set({ ttvAdsBlocked: newCount });
-
-        // Update stats with the new total
-        updateStats('ads', channel, newCount, result.ttvPopupsBlocked || 0);
+    StorageQueue.add(() => {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
+                const newCount = (result.ttvAdsBlocked || 0) + 1;
+                chrome.storage.local.set({ ttvAdsBlocked: newCount }, async function () {
+                    // Update stats with the new total
+                    await updateStats('ads', channel, newCount, result.ttvPopupsBlocked || 0);
+                    resolve();
+                });
+            });
+        });
     });
 });
 
 // Listen for popup blocked events from content script and sync to storage
-// Uses atomic increment to handle multiple tabs correctly
+// Uses StorageQueue to prevent race conditions
 document.addEventListener('ttvab-popup-blocked', function (_e) {
-    // Atomic increment: read current, add 1, write back
-    chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
-        const newCount = (result.ttvPopupsBlocked || 0) + 1;
-        chrome.storage.local.set({ ttvPopupsBlocked: newCount });
-
-        // Update stats with the new total
-        updateStats('popups', null, result.ttvAdsBlocked || 0, newCount);
+    StorageQueue.add(() => {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(['ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
+                const newCount = (result.ttvPopupsBlocked || 0) + 1;
+                chrome.storage.local.set({ ttvPopupsBlocked: newCount }, async function () {
+                    // Update stats with the new total
+                    await updateStats('popups', null, result.ttvAdsBlocked || 0, newCount);
+                    resolve();
+                });
+            });
+        });
     });
 });
 

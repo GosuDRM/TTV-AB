@@ -3,6 +3,11 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.3.3] - 2025-12-11
+
+### Fixed
+- **Counter Race Condition** - Implemented a `StorageQueue` system in the bridge script to serialize ad/popup block events, ensuring no counts are lost when multiple events occur simultaneously across tabs
+
 ## [3.3.2] - 2025-12-11
 
 ### Fixed
