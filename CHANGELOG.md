@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.8.10] - 2025-12-12
+
+### Added
+- **Backup Player Types** - Added `thunderdome` to backup player types.
+- **Improved Priority** - Reordered backup priority to try `480p` and `thunderdome` earlier, before retrying `site` or `autoplay`.
+- **timeout protection** - Added timeout to token fetching to prevent hangs on slow network/responses.
+
+### Fixed
+- **Hang Fix** - Fixed potential hang in backup stream search by adding timeouts to internal API calls.
+
 ## [3.8.9] - 2025-12-12
 
 ### Added

@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.8.9 - Twitch Ad Blocker
+ * TTV AB v3.8.10 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.8.9',
+    VERSION: '3.8.10',
     
-    INTERNAL_VERSION: 34,
+    INTERNAL_VERSION: 35,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -79,7 +79,7 @@ const _$c = {
     
     GQL_URL: 'https://gql.twitch.tv/gql',
     
-    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED', '480p'],
+    PLAYER_TYPES: ['embed', '480p', 'thunderdome', 'site', 'autoplay', 'picture-by-picture-CACHED'],
     
     FALLBACK_TYPE: 'embed',
     
@@ -326,18 +326,18 @@ function _$gq(body) {
     });
 }
 
-function _$tk(channel, playerType) {
+async function _$tk(channel, playerType) {
     let reqPlayerType = playerType;
-    if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p') {
+    if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p' && playerType !== 'thunderdome') {
         reqPlayerType = ForceAccessTokenPlayerType;
     }
 
-    return _$gq({
+    const body = {
         operationName: 'PlaybackAccessToken',
         extensions: {
             persistedQuery: {
                 version: 1,
-                sha256Hash: '0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712'
+                sha256Hash: '0828119ded1c1347796643485968151039e959311a3e18a005117582ffca227d'
             }
         },
         variables: {
@@ -347,7 +347,33 @@ function _$tk(channel, playerType) {
             vodID: '',
             playerType: reqPlayerType
         }
-    });
+    };
+
+    try {
+        _$l(`[Trace] Requesting token for ${playerType} (req=${reqPlayerType})`, 'info');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+        const res = await realFetch(_$gu, {
+            method: 'POST',
+            headers: {
+                'Client-ID': _$c.CLIENT_ID,
+                'Client-Integrity': ClientIntegrityHeader || '',
+                'X-Device-Id': GQLDeviceID || 'oauth',
+                'Authorization': AuthorizationHeader || undefined,
+                'Client-Version': ClientVersion || 'k8s-v1'
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        _$l(`[Trace] Token response for ${playerType}: ${res.status}`, 'info');
+        return res;
+    } catch (e) {
+        _$l(`Token fetch error for ${playerType}: ${e.message}`, 'error');
+        return { status: 0, json: () => Promise.resolve({}) };
+    }
 }
 
 async function _$pm(url, text, realFetch) {

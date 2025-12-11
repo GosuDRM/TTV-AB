@@ -41,18 +41,18 @@ function _gqlReq(body) {
  * @param {string} playerType - Player type
  * @returns {Promise<Response>} Token response
  */
-function _getToken(channel, playerType) {
+async function _getToken(channel, playerType) {
     let reqPlayerType = playerType;
-    if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p') {
+    if (ForceAccessTokenPlayerType && playerType !== 'embed' && playerType !== '480p' && playerType !== 'thunderdome') {
         reqPlayerType = ForceAccessTokenPlayerType;
     }
 
-    return _gqlReq({
+    const body = {
         operationName: 'PlaybackAccessToken',
         extensions: {
             persistedQuery: {
                 version: 1,
-                sha256Hash: '0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712'
+                sha256Hash: '0828119ded1c1347796643485968151039e959311a3e18a005117582ffca227d'
             }
         },
         variables: {
@@ -62,5 +62,31 @@ function _getToken(channel, playerType) {
             vodID: '',
             playerType: reqPlayerType
         }
-    });
+    };
+
+    try {
+        _log(`[Trace] Requesting token for ${playerType} (req=${reqPlayerType})`, 'info');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+        const res = await realFetch(_GQL_URL, {
+            method: 'POST',
+            headers: {
+                'Client-ID': _C.CLIENT_ID,
+                'Client-Integrity': ClientIntegrityHeader || '',
+                'X-Device-Id': GQLDeviceID || 'oauth',
+                'Authorization': AuthorizationHeader || undefined,
+                'Client-Version': ClientVersion || 'k8s-v1'
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        _log(`[Trace] Token response for ${playerType}: ${res.status}`, 'info');
+        return res;
+    } catch (e) {
+        _log(`Token fetch error for ${playerType}: ${e.message}`, 'error');
+        return { status: 0, json: () => Promise.resolve({}) };
+    }
 }
