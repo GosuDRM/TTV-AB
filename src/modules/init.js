@@ -281,20 +281,6 @@ function _init() {
             _S.popupsBlocked = e.data.detail.count;
             _log('Restored popups blocked count: ' + _S.popupsBlocked, 'info');
         }
-
-        if (e.data.type === 'ttvab-fetch-proxy-response') {
-            // Relay response to all workers (broadcast)
-            _log('Proxy: Relaying response to workers', 'info');
-            for (const worker of _S.workers) {
-                worker.postMessage({
-                    key: 'FetchProxyResponse',
-                    requestId: e.data.detail.requestId,
-                    success: e.data.detail.success,
-                    data: e.data.detail.data,
-                    error: e.data.detail.error
-                });
-            }
-        }
     });
 
     _hookStorage();

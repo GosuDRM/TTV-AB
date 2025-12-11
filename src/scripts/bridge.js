@@ -267,40 +267,6 @@ window.addEventListener('message', function (e) {
             });
         });
     }
-
-    if (e.data.type === 'ttvab-fetch-proxy') {
-        const { url, requestId } = e.data.detail;
-        console.log('[TTV AB] Bridge: Delegate proxy fetch', url);
-        if (url && requestId) {
-            // Delegate fetch to background service worker to bypass CORS
-            chrome.runtime.sendMessage({
-                type: 'fetch-proxy',
-                detail: { url, requestId }
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error('[TTV AB] Bridge: Background error', chrome.runtime.lastError.message);
-                    window.postMessage({
-                        type: 'ttvab-fetch-proxy-response',
-                        detail: { requestId, success: false, error: chrome.runtime.lastError.message }
-                    }, '*');
-                } else {
-                    console.log('[TTV AB] Bridge: Background response', response?.success);
-                    if (!response?.success) {
-                        console.error('[TTV AB] Bridge: Background Error Details:', response?.error);
-                    }
-                    window.postMessage({
-                        type: 'ttvab-fetch-proxy-response',
-                        detail: {
-                            requestId,
-                            success: response?.success,
-                            data: response?.data,
-                            error: response?.error
-                        }
-                    }, '*');
-                }
-            });
-        }
-    }
 });
 
 // Periodic health check for counter functionality (every 60 seconds)

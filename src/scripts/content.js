@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.7.6 - Twitch Ad Blocker
+ * TTV AB v3.7.7 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.7.6',
+    VERSION: '3.7.7',
     
     INTERNAL_VERSION: 28,
     
@@ -77,9 +77,9 @@ const _$c = {
     
     CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
     
-    ENC_URL: 'aHR0cHM6Ly9hcGkudHR2LmxvbC9wbGF5bGlzdA==',
+    GQL_URL: 'https://gql.twitch.tv/gql',
     
-    PLAYER_TYPES: ['proxy', 'embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
     
     FALLBACK_TYPE: 'embed',
     
@@ -343,40 +343,6 @@ function _$tk(channel, playerType) {
     });
 }
 
-const PendingRequests = new Map();
-
-function _fetchProxy(url) {
-    if (typeof self === 'undefined' || !self.postMessage) return null;
-    return new Promise((resolve) => {
-        const requestId = Math.random().toString(36).substring(2);
-        _$l('Proxy: Worker sending request ' + requestId, 'info');
-        PendingRequests.set(requestId, resolve);
-        self.postMessage({ key: 'FetchProxy', url, requestId });
-
-        setTimeout(() => {
-            if (PendingRequests.has(requestId)) {
-                _$l('Proxy: Worker timeout ' + requestId, 'warning');
-                PendingRequests.delete(requestId);
-                resolve(null);
-            }
-        }, 5000);
-    });
-}
-
-function _handleProxyResponse(data) {
-    if (data.key === 'FetchProxyResponse' && data.requestId) {
-        const resolve = PendingRequests.get(data.requestId);
-        if (resolve) {
-            PendingRequests.delete(data.requestId);
-            if (data.success && data.data) {
-                resolve(data.data);
-            } else {
-                resolve(null);
-            }
-        }
-    }
-}
-
 async function _$pm(url, text, realFetch) {
     if (!IsAdStrippingEnabled) return text;
 
@@ -470,32 +436,18 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
             if (!enc) {
                 fresh = true;
                 try {
-                    if (realPt === 'proxy') {
 
-                        try {
-                            const url = atob(_$c.ENC_URL) + '/' + info.ChannelName + '.m3u8?allow_source=true&allow_audio_only=true';
-
-                            const encResText = await _fetchProxy(url);
-                            if (encResText) {
-                                enc = info.BackupEncodingsM3U8Cache[pt] = encResText;
-                            }
-                        } catch (e) {
-                            _$l('Proxy fetch error: ' + e.message, 'warning');
-                        }
-                    } else {
-
-                        const tokenRes = await _$tk(info.ChannelName, realPt);
-                        if (tokenRes.status === 200) {
-                            const token = await tokenRes.json();
-                            const sig = token?.data?.streamPlaybackAccessToken?.signature;
-                            if (sig) {
-                                const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
-                                usherUrl.searchParams.set('sig', sig);
-                                usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
-                                const encRes = await realFetch(usherUrl.href);
-                                if (encRes.status === 200) {
-                                    enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
-                                }
+                    const tokenRes = await _$tk(info.ChannelName, realPt);
+                    if (tokenRes.status === 200) {
+                        const token = await tokenRes.json();
+                        const sig = token?.data?.streamPlaybackAccessToken?.signature;
+                        if (sig) {
+                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                            usherUrl.searchParams.set('sig', sig);
+                            usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                            const encRes = await realFetch(usherUrl.href);
+                            if (encRes.status === 200) {
+                                enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
                             }
                         }
                     }
@@ -697,7 +649,6 @@ function _$wf() {
 
 function _$hw() {
     const reinsertNames = _$gr(window.Worker);
-    const PendingRequestsStr = 'const PendingRequests = new Map();';
 
     const HookedWorker = class Worker extends _$cw(window.Worker) {
         constructor(url, opts) {
@@ -731,9 +682,6 @@ function _$hw() {
                 ${_findBackupStream.toString()}
                 ${_$wj.toString()}
                 ${_$wf.toString()}
-                ${PendingRequestsStr}
-                ${_fetchProxy.toString()}
-                ${_handleProxyResponse.toString()}
                 
                 const _$gu = '${_$gu}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
@@ -756,7 +704,6 @@ function _$hw() {
                         case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _$s.adsBlocked = data.value; break;
-                        case 'FetchProxyResponse': _handleProxyResponse(data); break;
                     }
                 });
                 
@@ -787,15 +734,6 @@ function _$hw() {
                     case 'AdEnded':
                         _$l('Ad ended', 'success');
                         break;
-                    case 'FetchProxy':
-                        _$l('Proxy: Worker requesting ' + e.data.url, 'info');
-
-                        window.postMessage({
-                            type: 'ttvab-fetch-proxy',
-                            detail: { url: e.data.url, requestId: e.data.requestId }
-                        }, '*');
-                        break;
-
                 }
             });
 
@@ -1407,20 +1345,6 @@ function _$in() {
         if (e.data.type === 'ttvab-init-popups-count' && typeof e.data.detail?.count === 'number') {
             _$s.popupsBlocked = e.data.detail.count;
             _$l('Restored popups blocked count: ' + _$s.popupsBlocked, 'info');
-        }
-
-        if (e.data.type === 'ttvab-fetch-proxy-response') {
-
-            _$l('Proxy: Relaying response to workers', 'info');
-            for (const worker of _$s.workers) {
-                worker.postMessage({
-                    key: 'FetchProxyResponse',
-                    requestId: e.data.detail.requestId,
-                    success: e.data.detail.success,
-                    data: e.data.detail.data,
-                    error: e.data.detail.error
-                });
-            }
         }
     });
 

@@ -8,49 +8,6 @@
 /**
  * Global state for proxy fetch requests
  */
-const PendingRequests = new Map();
-
-/**
- * Fetch text content using main thread proxy (bypasses CORS)
- * @param {string} url - URL to fetch
- * @returns {Promise<string|null>} Response text or null
- */
-function _fetchProxy(url) {
-    if (typeof self === 'undefined' || !self.postMessage) return null;
-    return new Promise((resolve) => {
-        const requestId = Math.random().toString(36).substring(2);
-        _log('Proxy: Worker sending request ' + requestId, 'info');
-        PendingRequests.set(requestId, resolve);
-        self.postMessage({ key: 'FetchProxy', url, requestId });
-        // Timeout after 5s
-        setTimeout(() => {
-            if (PendingRequests.has(requestId)) {
-                _log('Proxy: Worker timeout ' + requestId, 'warning');
-                PendingRequests.delete(requestId);
-                resolve(null);
-            }
-        }, 5000);
-    });
-}
-
-/**
- * Handle incoming proxy responses
- * @param {Object} data - Message data
- */
-function _handleProxyResponse(data) {
-    if (data.key === 'FetchProxyResponse' && data.requestId) {
-        const resolve = PendingRequests.get(data.requestId);
-        if (resolve) {
-            PendingRequests.delete(data.requestId);
-            if (data.success && data.data) {
-                resolve(data.data);
-            } else {
-                resolve(null);
-            }
-        }
-    }
-}
-
 /**
  * Process M3U8 playlist and strip/replace ads
  * @param {string} url - Playlist URL
@@ -164,32 +121,18 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
             if (!enc) {
                 fresh = true;
                 try {
-                    if (realPt === 'proxy') {
-                        // Use external proxy as backup via bridge (to bypass CORS)
-                        try {
-                            const url = atob(_C.ENC_URL) + '/' + info.ChannelName + '.m3u8?allow_source=true&allow_audio_only=true';
-                            // Use messaging fetch instead of direct fetch
-                            const encResText = await _fetchProxy(url);
-                            if (encResText) {
-                                enc = info.BackupEncodingsM3U8Cache[pt] = encResText;
-                            }
-                        } catch (e) {
-                            _log('Proxy fetch error: ' + e.message, 'warning');
-                        }
-                    } else {
-                        // Standard Twitch usher fetch
-                        const tokenRes = await _getToken(info.ChannelName, realPt);
-                        if (tokenRes.status === 200) {
-                            const token = await tokenRes.json();
-                            const sig = token?.data?.streamPlaybackAccessToken?.signature;
-                            if (sig) {
-                                const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
-                                usherUrl.searchParams.set('sig', sig);
-                                usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
-                                const encRes = await realFetch(usherUrl.href);
-                                if (encRes.status === 200) {
-                                    enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
-                                }
+                    // Standard Twitch usher fetch
+                    const tokenRes = await _getToken(info.ChannelName, realPt);
+                    if (tokenRes.status === 200) {
+                        const token = await tokenRes.json();
+                        const sig = token?.data?.streamPlaybackAccessToken?.signature;
+                        if (sig) {
+                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                            usherUrl.searchParams.set('sig', sig);
+                            usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                            const encRes = await realFetch(usherUrl.href);
+                            if (encRes.status === 200) {
+                                enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
                             }
                         }
                     }
