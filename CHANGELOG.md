@@ -4,6 +4,18 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.1.0] - 2025-12-11
+
+### Added
+- **Anti-adblock popup blocker** - Automatically detects and removes Twitch's "Support [streamer] by disabling ad block" popups
+- New "Popups Blocked" counter in popup UI to track removed popups
+- MutationObserver for real-time popup detection
+- Periodic scan as backup for dynamically modified popups
+- Console log "Anti-adblocking enabled" on initialization
+
+### Fixed
+- Race condition for popups blocked counter (stored count now restored on init)
+
 ## [3.0.9] - 2025-12-10
 
 ### Fixed
