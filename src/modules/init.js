@@ -165,8 +165,22 @@ function _blockAntiAdblockPopup() {
         subtree: true
     });
 
-    // Periodic scan as backup (some popups may be dynamically modified)
-    setInterval(_scanAndRemove, 2000);
+    // Periodic scan as backup using requestIdleCallback for minimal CPU impact
+    // Falls back to setTimeout if requestIdleCallback is not available
+    function _scheduleIdleScan() {
+        if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(function () {
+                _scanAndRemove();
+                setTimeout(_scheduleIdleScan, 2000);
+            }, { timeout: 3000 });
+        } else {
+            setTimeout(function () {
+                _scanAndRemove();
+                _scheduleIdleScan();
+            }, 2000);
+        }
+    }
+    _scheduleIdleScan();
 
     _log('Anti-adblocking enabled', 'success');
 }

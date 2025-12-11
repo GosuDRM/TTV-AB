@@ -1104,7 +1104,20 @@ function _blockAntiAdblockPopup() {
         subtree: true
     });
 
-    setInterval(_scanAndRemove, 2000);
+    function _scheduleIdleScan() {
+        if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(function () {
+                _scanAndRemove();
+                setTimeout(_scheduleIdleScan, 2000);
+            }, { timeout: 3000 });
+        } else {
+            setTimeout(function () {
+                _scanAndRemove();
+                _scheduleIdleScan();
+            }, 2000);
+        }
+    }
+    _scheduleIdleScan();
 
     _$l('Anti-adblocking enabled', 'success');
 }
