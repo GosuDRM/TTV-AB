@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.9 - Twitch Ad Blocker
+ * TTV AB v3.10.0 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.9.9',
+    VERSION: '3.10.0',
     
-    INTERNAL_VERSION: 37,
+    INTERNAL_VERSION: 38,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -444,7 +444,7 @@ async function _$pm(url, text, realFetch) {
             info.LastPlayerReload = Date.now();
         }
 
-        const { type: backupType, m3u8: backupM3u8, isFallback } = await _$fb(info, realFetch);
+        const { type: backupType, m3u8: backupM3u8, isFallback } = await _$fb(info, realFetch, 0, false, res);
 
         if (!backupM3u8) _$l('Failed to find any backup stream', 'warning');
 
@@ -485,7 +485,7 @@ async function _$pm(url, text, realFetch) {
     return text;
 }
 
-async function _$fb(info, realFetch, startIdx = 0, minimal = false) {
+async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResolution = null) {
     let backupType = null;
     let backupM3u8 = null;
     let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
@@ -502,7 +502,7 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false) {
 
     const playerTypesLen = playerTypes.length;
 
-    const force480p = { Resolution: '852x480', FrameRate: '30' };
+    const targetRes = currentResolution || { Resolution: '1920x1080', FrameRate: '60' };
 
     for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
         const pt = playerTypes[pi];
@@ -550,7 +550,7 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false) {
 
             if (enc) {
                 try {
-                    const streamUrl = _$su(enc, force480p);
+                    const streamUrl = _$su(enc, targetRes);
                     if (streamUrl) {
                         _$l(`[Trace] Fetching stream URL for ${pt}: ${streamUrl}`, 'info');
                         const streamRes = await realFetch(streamUrl);
