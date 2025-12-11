@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.4 - Twitch Ad Blocker
+ * TTV AB v3.6.5 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.4',
+    VERSION: '3.6.5',
     
     INTERNAL_VERSION: 28,
     
@@ -1192,8 +1192,19 @@ function _$bp() {
                         );
 
                         if ((isOverlay || hasZIndex || isPopupClass) && (hasBackground || isLarge)) {
-                            _$l('Removing popup: ' + (popup.className || popup.tagName), 'success');
-                            popup.remove();
+
+                            if (popup.querySelector('video')) {
+                                popup = popup.parentElement;
+                                attempts++;
+                                continue;
+                            }
+
+                            _$l('Hiding popup: ' + (popup.className || popup.tagName), 'success');
+                            popup.style.display = 'none';
+                            popup.style.visibility = 'hidden';
+
+                            popup.setAttribute('style', (popup.getAttribute('style') || '') + '; display: none !important; visibility: hidden !important;');
+
                             _$pb();
                             return true;
                         }
@@ -1204,8 +1215,9 @@ function _$bp() {
 
                     const fallback = btn.closest('div[class]');
                     if (fallback && _hasAdblockText(fallback)) {
-                        _$l('Removing popup (fallback): ' + fallback.className, 'warning');
-                        fallback.remove();
+                        _$l('Hiding popup (fallback): ' + fallback.className, 'warning');
+                        fallback.style.display = 'none';
+                        fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');
                         _$pb();
                         return true;
                     }
@@ -1225,8 +1237,9 @@ function _$bp() {
                     const elements = document.querySelectorAll(selector);
                     for (const el of elements) {
                         if (_hasAdblockText(el)) {
-                            _$l('Removing popup by selector: ' + selector, 'success');
-                            el.remove();
+                            _$l('Hiding popup by selector: ' + selector, 'success');
+                            el.style.display = 'none';
+                            el.setAttribute('style', (el.getAttribute('style') || '') + '; display: none !important;');
                             _$pb();
                             return true;
                         }
@@ -1239,8 +1252,12 @@ function _$bp() {
             const overlays = document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]');
             for (const el of overlays) {
                 if (_hasAdblockText(el) && el.offsetWidth > 200 && el.offsetHeight > 100) {
-                    _$l('Removing popup overlay', 'success');
-                    el.remove();
+
+                    if (el.querySelector('video')) continue;
+
+                    _$l('Hiding popup overlay', 'success');
+                    el.style.display = 'none';
+                    el.setAttribute('style', (el.getAttribute('style') || '') + '; display: none !important;');
                     _$pb();
                     return true;
                 }

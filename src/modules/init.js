@@ -119,10 +119,21 @@ function _blockAntiAdblockPopup() {
                             popup.className.includes('Overlay')
                         );
 
-                        // If this looks like a popup container, remove it
+                        // If this looks like a popup container, hide it (don't remove!)
                         if ((isOverlay || hasZIndex || isPopupClass) && (hasBackground || isLarge)) {
-                            _log('Removing popup: ' + (popup.className || popup.tagName), 'success');
-                            popup.remove();
+                            // Verify it's not the player itself
+                            if (popup.querySelector('video')) {
+                                popup = popup.parentElement;
+                                attempts++;
+                                continue;
+                            }
+
+                            _log('Hiding popup: ' + (popup.className || popup.tagName), 'success');
+                            popup.style.display = 'none';
+                            popup.style.visibility = 'hidden';
+                            // Also set important style locally just in case
+                            popup.setAttribute('style', (popup.getAttribute('style') || '') + '; display: none !important; visibility: hidden !important;');
+
                             _incrementPopupsBlocked();
                             return true;
                         }
@@ -131,11 +142,12 @@ function _blockAntiAdblockPopup() {
                         attempts++;
                     }
 
-                    // Fallback: remove closest container with a class
+                    // Fallback: hide closest container with a class
                     const fallback = btn.closest('div[class]');
                     if (fallback && _hasAdblockText(fallback)) {
-                        _log('Removing popup (fallback): ' + fallback.className, 'warning');
-                        fallback.remove();
+                        _log('Hiding popup (fallback): ' + fallback.className, 'warning');
+                        fallback.style.display = 'none';
+                        fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');
                         _incrementPopupsBlocked();
                         return true;
                     }
@@ -156,8 +168,9 @@ function _blockAntiAdblockPopup() {
                     const elements = document.querySelectorAll(selector);
                     for (const el of elements) {
                         if (_hasAdblockText(el)) {
-                            _log('Removing popup by selector: ' + selector, 'success');
-                            el.remove();
+                            _log('Hiding popup by selector: ' + selector, 'success');
+                            el.style.display = 'none';
+                            el.setAttribute('style', (el.getAttribute('style') || '') + '; display: none !important;');
                             _incrementPopupsBlocked();
                             return true;
                         }
@@ -171,8 +184,12 @@ function _blockAntiAdblockPopup() {
             const overlays = document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]');
             for (const el of overlays) {
                 if (_hasAdblockText(el) && el.offsetWidth > 200 && el.offsetHeight > 100) {
-                    _log('Removing popup overlay', 'success');
-                    el.remove();
+                    // Safety check: don't hide player
+                    if (el.querySelector('video')) continue;
+
+                    _log('Hiding popup overlay', 'success');
+                    el.style.display = 'none';
+                    el.setAttribute('style', (el.getAttribute('style') || '') + '; display: none !important;');
                     _incrementPopupsBlocked();
                     return true;
                 }

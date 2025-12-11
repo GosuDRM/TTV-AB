@@ -4,6 +4,11 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.6.5] - 2025-12-12
+
+### Fixed
+- **CRITICAL: Player Crash Fix** - Changed popup blocker to use `display: none` instead of removing elements from the DOM. This fix prevents the Twitch player from crashing (showing a "？" error) when a popup is blocked, as removing elements was breaking the player's internal state.
+
 ## [3.6.4] - 2025-12-12
 
 ### Fixed
