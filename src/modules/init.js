@@ -51,13 +51,14 @@ function _blockAntiAdblockPopup() {
     ];
 
     // Text patterns that indicate anti-adblock content
-    const POPUP_TEXT_PATTERNS = [
-        'disabling ad block',
-        'disable ad block',
-        'allow twitch ads',
-        'support.*by disabling',
-        'ad-free with turbo',
-        'viewers watch ads'
+    // Text patterns that indicate anti-adblock content (pre-compiled for perf)
+    const POPUP_REGEXES = [
+        /disabling ad block/i,
+        /disable ad block/i,
+        /allow twitch ads/i,
+        /support.*by disabling/i,
+        /ad-free with turbo/i,
+        /viewers watch ads/i
     ];
 
     /**
@@ -66,10 +67,12 @@ function _blockAntiAdblockPopup() {
      * @returns {boolean}
      */
     function _isAntiAdblockElement(el) {
-        const text = el.textContent?.toLowerCase() || '';
-        return POPUP_TEXT_PATTERNS.some(function (pattern) {
-            return new RegExp(pattern, 'i').test(text);
-        });
+        const text = el.textContent || '';
+        if (!text) return false;
+        // Optimization: Check includes first for common words before regex
+        if (!text.includes('ad') && !text.includes('Ad') && !text.includes('Turbo')) return false;
+
+        return POPUP_REGEXES.some(regex => regex.test(text));
     }
 
     /**

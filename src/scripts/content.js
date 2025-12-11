@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.3.10 - Twitch Ad Blocker
+ * TTV AB v3.3.11 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.3.10',
+    VERSION: '3.3.11',
     
     INTERNAL_VERSION: 28,
     
@@ -1109,20 +1109,22 @@ function _$bp() {
         '[aria-label*="adblock"]'
     ];
 
-    const POPUP_TEXT_PATTERNS = [
-        'disabling ad block',
-        'disable ad block',
-        'allow twitch ads',
-        'support.*by disabling',
-        'ad-free with turbo',
-        'viewers watch ads'
+    const POPUP_REGEXES = [
+        /disabling ad block/i,
+        /disable ad block/i,
+        /allow twitch ads/i,
+        /support.*by disabling/i,
+        /ad-free with turbo/i,
+        /viewers watch ads/i
     ];
 
     function _$ae(el) {
-        const text = el.textContent?.toLowerCase() || '';
-        return POPUP_TEXT_PATTERNS.some(function (pattern) {
-            return new RegExp(pattern, 'i').test(text);
-        });
+        const text = el.textContent || '';
+        if (!text) return false;
+
+        if (!text.includes('ad') && !text.includes('Ad') && !text.includes('Turbo')) return false;
+
+        return POPUP_REGEXES.some(regex => regex.test(text));
     }
 
     function _$pb() {
