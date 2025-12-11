@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [3.8.10] - 2025-12-12
+## [3.9.0] - 2025-12-12
 
 ### Added
 - **Backup Player Types** - Added `thunderdome` to backup player types.
