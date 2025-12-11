@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.9 - Twitch Ad Blocker
+ * TTV AB v3.6.10 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.9',
+    VERSION: '3.6.10',
     
     INTERNAL_VERSION: 28,
     
@@ -1136,6 +1136,7 @@ function _$bs() {
 
 function _$tl() {
     window.addEventListener('message', function (e) {
+        if (e.source !== window) return;
         if (e.data?.type === 'ttvab-toggle') {
             const enabled = e.data.detail?.enabled ?? true;
             IsAdStrippingEnabled = enabled;
@@ -1344,6 +1345,7 @@ function _$in() {
     _$ds(window);
 
     window.addEventListener('message', function (e) {
+        if (e.source !== window) return;
         if (!e.data?.type?.startsWith('ttvab-init-')) return;
 
         if (e.data.type === 'ttvab-init-count' && typeof e.data.detail?.count === 'number') {

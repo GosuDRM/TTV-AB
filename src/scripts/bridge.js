@@ -193,6 +193,9 @@ let adsEventsSinceCheck = 0;
 let lastKnownAdsCount = 0;
 
 window.addEventListener('message', function (e) {
+    // Only accept messages from the same window (Cross-World)
+    if (e.source !== window) return;
+
     // Only handle our own messages
     if (!e.data?.type?.startsWith('ttvab-')) return;
 

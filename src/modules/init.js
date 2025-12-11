@@ -26,6 +26,7 @@ function _bootstrap() {
  */
 function _initToggleListener() {
     window.addEventListener('message', function (e) {
+        if (e.source !== window) return;
         if (e.data?.type === 'ttvab-toggle') {
             const enabled = e.data.detail?.enabled ?? true;
             IsAdStrippingEnabled = enabled;
@@ -264,6 +265,7 @@ function _init() {
 
     // Listen for initial accumulated count from bridge via window.postMessage
     window.addEventListener('message', function (e) {
+        if (e.source !== window) return;
         if (!e.data?.type?.startsWith('ttvab-init-')) return;
 
         if (e.data.type === 'ttvab-init-count' && typeof e.data.detail?.count === 'number') {
