@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.1 - Twitch Ad Blocker
+ * TTV AB v3.6.2 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.1',
+    VERSION: '3.6.2',
     
     INTERNAL_VERSION: 28,
     
@@ -150,11 +150,14 @@ function _$ds(scope) {
 function _$ab(channel) {
     _$s.adsBlocked++;
     _$s.currentChannel = channel || null;
+
     if (typeof window !== 'undefined') {
-        document.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
+        window.postMessage({
+            type: 'ttvab-ad-blocked',
             detail: { count: _$s.adsBlocked, channel: channel || null }
-        }));
+        }, '*');
     } else if (typeof self !== 'undefined' && self.postMessage) {
+
         self.postMessage({ key: 'AdBlocked', count: _$s.adsBlocked, channel: channel || null });
     }
 }
@@ -1124,6 +1127,36 @@ function _$tl() {
 
 function _$bp() {
 
+    function _injectBlockingCSS() {
+        const style = document.createElement('style');
+        style.id = 'ttvab-popup-blocker';
+        style.textContent = `
+            /* Hide popups containing anti-adblock text */
+            [class*="ScAttach"]:has(button),
+            [class*="Layout"]:has([data-a-target="player-overlay-click-handler"]) ~ div:has(button),
+            div[class*="ScBalloon"]:has(button),
+            div[aria-describedby]:has(button):has([class*="CoreText"]) {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+            /* Backup: hide any fixed overlay with subscribe/turbo buttons */
+            div[style*="position: fixed"]:has(button:is([class*="ScCoreButton"])),
+            div[style*="position:fixed"]:has(button:is([class*="ScCoreButton"])) {
+                display: none !important;
+            }
+        `;
+
+        if (document.head) {
+            document.head.appendChild(style);
+        } else if (document.documentElement) {
+            document.documentElement.appendChild(style);
+        }
+    }
+
+    _injectBlockingCSS();
+
     function _$ipb() {
         if (!document.body) {
             if (document.readyState === 'loading') {
@@ -1156,17 +1189,19 @@ function _$bp() {
                     let popup = btn.parentElement;
                     let attempts = 0;
 
-                    while (popup && attempts < 10) {
+                    while (popup && attempts < 15) {
+
                         const style = window.getComputedStyle(popup);
                         const isOverlay = style.position === 'fixed' || style.position === 'absolute';
                         const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
+                        const hasZIndex = parseInt(style.zIndex) > 100;
 
-                        if ((isOverlay || hasBackground) && isLarge) {
-                            _$l('Removing popup container: ' + popup.className, 'success');
+                        if ((isOverlay || hasZIndex) && (hasBackground || isLarge)) {
+                            _$l('Removing popup container: ' + (popup.className || popup.tagName), 'success');
                             popup.remove();
                             _$pb();
-                            return; // Stop after removing
+                            return true;
                         }
 
                         popup = popup.parentElement;
@@ -1175,9 +1210,10 @@ function _$bp() {
 
                     const fallback = btn.closest('div[class]');
                     if (fallback) {
-                        _$l('Removing popup (fallback)', 'warning');
+                        _$l('Removing popup (fallback): ' + fallback.className, 'warning');
                         fallback.remove();
                         _$pb();
+                        return true;
                     }
                 }
             }
@@ -1186,10 +1222,16 @@ function _$bp() {
                 'support',
                 'by disabling ad block',
                 'viewers watch ads',
-                'go ad-free'
+                'go ad-free',
+                'ad-free with'
             ];
 
-            const overlayDivs = document.querySelectorAll('div[class*="ScAttach"], div[class*="Layer"], div[class*="Overlay"], div[style*="position: fixed"], div[style*="position:fixed"]');
+            const overlayDivs = document.querySelectorAll(
+                'div[class*="ScAttach"], div[class*="Layer"], div[class*="Overlay"], ' +
+                'div[class*="Balloon"], div[class*="Modal"], ' +
+                'div[style*="position: fixed"], div[style*="position:fixed"]'
+            );
+
             for (const div of overlayDivs) {
                 const text = (div.textContent || '').toLowerCase();
 
@@ -1198,24 +1240,28 @@ function _$bp() {
                     if (text.includes(pattern)) matches++;
                 }
 
-                if (matches >= 2 && (text.includes('allow twitch ads') || text.includes('try turbo'))) {
-                    _$l('Removing popup by text match', 'success');
+                if (matches >= 2 && (text.includes('allow twitch ads') || text.includes('try turbo') || text.includes('subscribe'))) {
+                    _$l('Removing popup by text match: ' + (div.className || 'unnamed'), 'success');
                     div.remove();
                     _$pb();
-                    return;
+                    return true;
                 }
             }
+
+            return false;
         }
 
         _$sr();
 
-        let scanTimeout = null;
+        let isScanning = false;
         const observer = new MutationObserver(function () {
-            if (scanTimeout) return;
-            scanTimeout = setTimeout(() => {
+            if (isScanning) return;
+            isScanning = true;
+
+            requestAnimationFrame(() => {
                 _$sr();
-                scanTimeout = null;
-            }, 300); // Fast: 300ms
+                isScanning = false;
+            });
         });
 
         observer.observe(document.body, {
@@ -1230,11 +1276,11 @@ function _$bp() {
             }
 
             _$sr();
-            setTimeout(_$is, 2000); // Every 2 seconds
+            setTimeout(_$is, 1000);
         }
-        setTimeout(_$is, 1000); // Start after 1s
+        setTimeout(_$is, 500);
 
-        _$l('Anti-adblock popup blocker active', 'success');
+        _$l('Anti-adblock popup blocker active (CSS + DOM)', 'success');
     }
 
     _$ipb();

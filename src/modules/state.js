@@ -57,11 +57,16 @@ function _declareState(scope) {
 function _incrementAdsBlocked(channel) {
     _S.adsBlocked++;
     _S.currentChannel = channel || null;
+
+    // CRITICAL: Use window.postMessage() to cross MAIN→ISOLATED world boundary
+    // document.dispatchEvent() does NOT work across content script worlds!
     if (typeof window !== 'undefined') {
-        document.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
+        window.postMessage({
+            type: 'ttvab-ad-blocked',
             detail: { count: _S.adsBlocked, channel: channel || null }
-        }));
+        }, '*');
     } else if (typeof self !== 'undefined' && self.postMessage) {
+        // Worker context - use worker's postMessage
         self.postMessage({ key: 'AdBlocked', count: _S.adsBlocked, channel: channel || null });
     }
 }

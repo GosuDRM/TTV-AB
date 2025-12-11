@@ -4,6 +4,20 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.6.2] - 2025-12-12
+
+### Fixed
+- **CRITICAL: Cross-World Communication** - Fixed counter updates not working because `document.dispatchEvent()` doesn't cross MAIN→ISOLATED content script worlds. Changed to `window.postMessage()` which correctly crosses the boundary.
+
+### Improved
+- **Popup Blocker v2** - Complete rewrite with multi-strategy approach:
+  - Strategy 1: CSS injection for instant hiding (works before JS runs)
+  - Strategy 2: Button text detection with DOM tree walking (15 levels)
+  - Strategy 3: Text pattern matching on overlay elements
+  - Faster scanning via `requestAnimationFrame` instead of setTimeout
+  - Added z-index detection for popup containers
+  - More selector patterns: Balloon, Modal, subscribe buttons
+
 ## [3.6.1] - 2025-12-12
 
 ### Improved
