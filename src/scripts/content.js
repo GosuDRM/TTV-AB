@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.6 - Twitch Ad Blocker
+ * TTV AB v3.9.7 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.9.6',
+    VERSION: '3.9.7',
     
     INTERNAL_VERSION: 36,
     
@@ -227,16 +227,7 @@ function _$sa(text, stripAll, info, isBackup = false) {
             lines[i] = line;
         }
 
-        let isAdSegment;
-        if (isBackup) {
-
-            const nextLine = i < len - 1 ? lines[i + 1] : '';
-            isAdSegment = nextLine.includes('stitched-ad') || nextLine.includes('/adsquared/') ||
-                line.includes(AdSignifier) || nextLine.includes(AdSignifier);
-        } else {
-
-            isAdSegment = !line.includes(',live');
-        }
+        const isAdSegment = !line.includes(',live');
 
         if (i < len - 1 && line.startsWith('#EXTINF') && (isAdSegment || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];

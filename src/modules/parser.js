@@ -82,18 +82,10 @@ function _stripAds(text, stripAll, info, isBackup = false) {
         }
 
         // Mark and REMOVE ad segments
-        // For backup streams: Only use EXPLICIT ad markers to avoid stripping valid content
-        // For main streams: Use heuristic (!,live) which is more aggressive
-        let isAdSegment;
-        if (isBackup) {
-            // For backup: only strip if next line contains explicit ad markers
-            const nextLine = i < len - 1 ? lines[i + 1] : '';
-            isAdSegment = nextLine.includes('stitched-ad') || nextLine.includes('/adsquared/') ||
-                line.includes(AdSignifier) || nextLine.includes(AdSignifier);
-        } else {
-            // For main stream: use heuristic (non-live segments are ads)
-            isAdSegment = !line.includes(',live');
-        }
+        // Twitch ad segments have #EXTINF without ',live' suffix
+        // Live segments have #EXTINF:X.XXX,live
+        // Ad segments have #EXTINF:X.XXX, (no 'live')
+        const isAdSegment = !line.includes(',live');
 
         if (i < len - 1 && line.startsWith('#EXTINF') && (isAdSegment || stripAll || AllSegmentsAreAdSegments)) {
             const url = lines[i + 1];
