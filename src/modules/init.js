@@ -284,6 +284,7 @@ function _init() {
 
         if (e.data.type === 'ttvab-fetch-proxy-response') {
             // Relay response to all workers (broadcast)
+            _log('Proxy: Relaying response to workers', 'info');
             for (const worker of _S.workers) {
                 worker.postMessage({
                     key: 'FetchProxyResponse',

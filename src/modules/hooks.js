@@ -224,6 +224,7 @@ function _hookWorker() {
                         _log('Ad ended', 'success');
                         break;
                     case 'FetchProxy':
+                        _log('Proxy: Worker requesting ' + e.data.url, 'info');
                         // Relay fetch request to bridge (Isolated World) via window
                         window.postMessage({
                             type: 'ttvab-fetch-proxy',

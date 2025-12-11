@@ -19,11 +19,13 @@ function _fetchProxy(url) {
     if (typeof self === 'undefined' || !self.postMessage) return null;
     return new Promise((resolve) => {
         const requestId = Math.random().toString(36).substring(2);
+        _log('Proxy: Worker sending request ' + requestId, 'info');
         PendingRequests.set(requestId, resolve);
         self.postMessage({ key: 'FetchProxy', url, requestId });
         // Timeout after 5s
         setTimeout(() => {
             if (PendingRequests.has(requestId)) {
+                _log('Proxy: Worker timeout ' + requestId, 'warning');
                 PendingRequests.delete(requestId);
                 resolve(null);
             }

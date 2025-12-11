@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.7.3 - Twitch Ad Blocker
+ * TTV AB v3.7.4 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.7.3',
+    VERSION: '3.7.4',
     
     INTERNAL_VERSION: 28,
     
@@ -349,11 +349,13 @@ function _fetchProxy(url) {
     if (typeof self === 'undefined' || !self.postMessage) return null;
     return new Promise((resolve) => {
         const requestId = Math.random().toString(36).substring(2);
+        _$l('Proxy: Worker sending request ' + requestId, 'info');
         PendingRequests.set(requestId, resolve);
         self.postMessage({ key: 'FetchProxy', url, requestId });
 
         setTimeout(() => {
             if (PendingRequests.has(requestId)) {
+                _$l('Proxy: Worker timeout ' + requestId, 'warning');
                 PendingRequests.delete(requestId);
                 resolve(null);
             }
@@ -786,6 +788,7 @@ function _$hw() {
                         _$l('Ad ended', 'success');
                         break;
                     case 'FetchProxy':
+                        _$l('Proxy: Worker requesting ' + e.data.url, 'info');
 
                         window.postMessage({
                             type: 'ttvab-fetch-proxy',
@@ -1408,6 +1411,7 @@ function _$in() {
 
         if (e.data.type === 'ttvab-fetch-proxy-response') {
 
+            _$l('Proxy: Relaying response to workers', 'info');
             for (const worker of _$s.workers) {
                 worker.postMessage({
                     key: 'FetchProxyResponse',
