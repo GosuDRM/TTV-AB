@@ -4,6 +4,11 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.2.3] - 2025-12-11
+
+### Fixed
+- **Per-channel statistics not working** - Channel name was not being forwarded from worker to bridge, causing all channel stats to be null
+
 ## [3.2.2] - 2025-12-11
 
 ### Security
