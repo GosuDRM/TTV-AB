@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.8 - Twitch Ad Blocker
+ * TTV AB v3.6.9 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.8',
+    VERSION: '3.6.9',
     
     INTERNAL_VERSION: 28,
     
@@ -1293,9 +1293,8 @@ function _$bp() {
             _$l('Popup removed on initial scan', 'success');
         }
 
-        let isScanning = false;
+        let debounceTimer = null;
         const observer = new MutationObserver(function (mutations) {
-            if (isScanning) return;
 
             let shouldScan = false;
             for (const mutation of mutations) {
@@ -1310,12 +1309,11 @@ function _$bp() {
 
             if (!shouldScan) return;
 
-            isScanning = true;
-
-            requestAnimationFrame(() => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
                 _$sr();
-                isScanning = false;
-            });
+                debounceTimer = null;
+            }, 500);
         });
 
         observer.observe(document.body, {

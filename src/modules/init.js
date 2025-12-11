@@ -206,10 +206,8 @@ function _blockAntiAdblockPopup() {
         }
 
         // Watch for new popups - scan on any DOM change
-        let isScanning = false;
+        let debounceTimer = null;
         const observer = new MutationObserver(function (mutations) {
-            if (isScanning) return;
-
             // Quick check if any added nodes might be a popup
             let shouldScan = false;
             for (const mutation of mutations) {
@@ -224,12 +222,12 @@ function _blockAntiAdblockPopup() {
 
             if (!shouldScan) return;
 
-            isScanning = true;
-            // Use requestAnimationFrame for next paint
-            requestAnimationFrame(() => {
+            // Debounce scan to reduce CPU usage
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
                 _scanAndRemove();
-                isScanning = false;
-            });
+                debounceTimer = null;
+            }, 500);
         });
 
         observer.observe(document.body, {
