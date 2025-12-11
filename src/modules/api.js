@@ -42,6 +42,11 @@ function _gqlReq(body) {
  * @returns {Promise<Response>} Token response
  */
 function _getToken(channel, playerType) {
+    let reqPlayerType = playerType;
+    if (reqPlayerType === FallbackPlayerType && ForceAccessTokenPlayerType) {
+        reqPlayerType = ForceAccessTokenPlayerType;
+    }
+
     return _gqlReq({
         operationName: 'PlaybackAccessToken',
         extensions: {
@@ -55,7 +60,7 @@ function _getToken(channel, playerType) {
             login: channel,
             isVod: false,
             vodID: '',
-            playerType
+            playerType: reqPlayerType
         }
     });
 }
