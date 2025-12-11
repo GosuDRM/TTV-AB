@@ -3,6 +3,16 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.5.0] - 2025-12-12
+
+### Changed
+- **MAJOR: Popup Detection Rewrite** - Complete rewrite of anti-adblock popup detection:
+  - Now scans ALL buttons on page for "Allow Twitch Ads" / "Try Turbo" exact text
+  - Walks up DOM tree to find popup container using computed styles (position, background)
+  - Fallback strategy using text pattern matching on overlay elements
+  - Faster scanning: 300ms throttle, 2 second periodic check
+  - Debug logging shows exact button text found
+
 ## [3.4.9] - 2025-12-12
 
 ### Fixed

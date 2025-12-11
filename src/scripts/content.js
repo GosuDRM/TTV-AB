@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.4.9 - Twitch Ad Blocker
+ * TTV AB v3.5.0 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.4.9',
+    VERSION: '3.5.0',
     
     INTERNAL_VERSION: 28,
     
@@ -1128,7 +1128,6 @@ function _$bp() {
 
     function _initPopupBlocker() {
         if (!document.body) {
-
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', _initPopupBlocker, { once: true });
             } else {
@@ -1137,82 +1136,71 @@ function _$bp() {
             return;
         }
 
-        const POPUP_SELECTORS = [
-            '[data-a-target="player-overlay-click-handler"] + div[class*="ScAttach"]',
-            '[class*="consent-banner"]',
-            '[class*="AdblockModal"]',
-            '[aria-label*="ad block"]',
-            '[aria-label*="adblock"]',
-
-            '[class*="ScLayersManager"] > div[class*="ScAttach"]',
-            '[data-a-target*="ad-banner"]',
-            '[class*="player-ad-overlay"]',
-            '[class*="video-player__overlay"] div[class*="ScAttach"]'
-        ];
-
-        const POPUP_REGEXES = [
-            /disabling ad block/i,
-            /disable ad block/i,
-            /allow twitch ads/i,
-            /support.*by disabling/i,
-            /ad-free with turbo/i,
-            /viewers watch ads/i,
-
-            /subscribe.*ad.?free/i,
-            /watching.*ads/i,
-            /blocking ads/i,
-            /detect.*ad.?block/i
-        ];
-
-        function _$ae(el) {
-            const text = el.textContent || '';
-            if (!text) return false;
-
-            if (!text.includes('ad') && !text.includes('Ad') &&
-                !text.includes('Turbo') && !text.includes('block') &&
-                !text.includes('Block') && !text.includes('support')) return false;
-
-            return POPUP_REGEXES.some(regex => regex.test(text));
-        }
-
         function _$pb() {
             _$s.popupsBlocked++;
             document.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _$s.popupsBlocked } }));
-            _$l('📊 Popup blocked event dispatched, count: ' + _$s.popupsBlocked, 'info');
+            _$l('📊 Popup blocked! Count: ' + _$s.popupsBlocked, 'success');
         }
 
         function _$sr() {
 
-            for (const selector of POPUP_SELECTORS) {
-                try {
-                    const elements = document.querySelectorAll(selector);
-                    for (const el of elements) {
-                        if (_$ae(el)) {
-                            el.remove();
+            const allButtons = document.querySelectorAll('button');
+            for (const btn of allButtons) {
+                const btnText = (btn.textContent || '').trim().toLowerCase();
+
+                if (btnText === 'allow twitch ads' || btnText === 'try turbo') {
+                    _$l('🎯 Found anti-adblock button: "' + btnText + '"', 'warning');
+
+                    let popup = btn.parentElement;
+                    let attempts = 0;
+
+                    while (popup && attempts < 10) {
+                        const style = window.getComputedStyle(popup);
+                        const isOverlay = style.position === 'fixed' || style.position === 'absolute';
+                        const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
+                        const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
+
+                        if ((isOverlay || hasBackground) && isLarge) {
+                            _$l('🗑️ Removing popup container: ' + popup.className, 'success');
+                            popup.remove();
                             _$pb();
-                            _$l('Anti-adblock popup removed (Total: ' + _$s.popupsBlocked + ')', 'success');
+                            return; // Stop after removing
                         }
+
+                        popup = popup.parentElement;
+                        attempts++;
                     }
-                } catch { /* Selector may fail */ }
+
+                    const fallback = btn.closest('div[class]');
+                    if (fallback) {
+                        _$l('🗑️ Removing fallback container', 'warning');
+                        fallback.remove();
+                        _$pb();
+                    }
+                }
             }
 
-            const buttons = document.querySelectorAll(
-                '[class*="modal"] button, [class*="overlay"] button, [role="dialog"] button, [class*="ScAttach"] button, [class*="Layout"] button'
-            );
-            for (const btn of buttons) {
-                const text = btn.textContent || '';
-                if (!text) continue;
+            const textPatterns = [
+                'support',
+                'by disabling ad block',
+                'viewers watch ads',
+                'go ad-free'
+            ];
 
-                if (text.includes('Twitch') || text.includes('Turbo') || text.includes('ads') || text.includes('Ads') || text.includes('block')) {
-                    if (/allow twitch ads|try turbo|disable.*block|subscribe/i.test(text)) {
+            const overlayDivs = document.querySelectorAll('div[class*="ScAttach"], div[class*="Layer"], div[class*="Overlay"], div[style*="position: fixed"], div[style*="position:fixed"]');
+            for (const div of overlayDivs) {
+                const text = (div.textContent || '').toLowerCase();
 
-                        const modal = btn.closest('[class*="ScAttach"], [class*="modal"], [role="dialog"], [class*="Layout"], [class*="overlay"]');
-                        if (modal && _$ae(modal)) {
-                            modal.remove();
-                            _$pb();
-                            _$l('Anti-adblock popup removed via button detection (Total: ' + _$s.popupsBlocked + ')', 'success');
-                        }
-                    }
+                let matches = 0;
+                for (const pattern of textPatterns) {
+                    if (text.includes(pattern)) matches++;
+                }
+
+                if (matches >= 2 && (text.includes('allow twitch ads') || text.includes('try turbo'))) {
+                    _$l('🗑️ Removing popup by text match', 'success');
+                    div.remove();
+                    _$pb();
+                    return;
                 }
             }
         }
@@ -1225,7 +1213,7 @@ function _$bp() {
             scanTimeout = setTimeout(() => {
                 _$sr();
                 scanTimeout = null;
-            }, 500); // Reduced to 500ms for faster popup detection
+            }, 300); // Fast: 300ms
         });
 
         observer.observe(document.body, {
@@ -1235,23 +1223,14 @@ function _$bp() {
 
         function _$is() {
             if (document.hidden) {
-                setTimeout(_$is, 5000);
+                setTimeout(_$is, 3000);
                 return;
             }
 
-            if (typeof requestIdleCallback === 'function') {
-                requestIdleCallback(function () {
-                    _$sr();
-                    setTimeout(_$is, 5000); // More frequent: every 5s
-                }, { timeout: 2000 });
-            } else {
-                setTimeout(function () {
-                    _$sr();
-                    _$is();
-                }, 5000);
-            }
+            _$sr();
+            setTimeout(_$is, 2000); // Every 2 seconds
         }
-        _$is();
+        setTimeout(_$is, 1000); // Start after 1s
 
         _$l('Anti-adblock popup blocker active', 'success');
     }

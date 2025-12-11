@@ -49,7 +49,6 @@ function _blockAntiAdblockPopup() {
     // Wait for DOM to be ready before setting up observers
     function _initPopupBlocker() {
         if (!document.body) {
-            // DOM not ready, wait and retry
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', _initPopupBlocker, { once: true });
             } else {
@@ -58,97 +57,87 @@ function _blockAntiAdblockPopup() {
             return;
         }
 
-        // Selectors that match the anti-adblock popup elements (expanded)
-        const POPUP_SELECTORS = [
-            '[data-a-target="player-overlay-click-handler"] + div[class*="ScAttach"]',
-            '[class*="consent-banner"]',
-            '[class*="AdblockModal"]',
-            '[aria-label*="ad block"]',
-            '[aria-label*="adblock"]',
-            // Additional selectors for broader coverage
-            '[class*="ScLayersManager"] > div[class*="ScAttach"]',
-            '[data-a-target*="ad-banner"]',
-            '[class*="player-ad-overlay"]',
-            '[class*="video-player__overlay"] div[class*="ScAttach"]'
-        ];
-
-        // Text patterns that indicate anti-adblock content (pre-compiled for perf)
-        const POPUP_REGEXES = [
-            /disabling ad block/i,
-            /disable ad block/i,
-            /allow twitch ads/i,
-            /support.*by disabling/i,
-            /ad-free with turbo/i,
-            /viewers watch ads/i,
-            // Additional patterns
-            /subscribe.*ad.?free/i,
-            /watching.*ads/i,
-            /blocking ads/i,
-            /detect.*ad.?block/i
-        ];
-
-        /**
-         * Check if element contains anti-adblock content
-         * @param {Element} el - Element to check
-         * @returns {boolean}
-         */
-        function _isAntiAdblockElement(el) {
-            const text = el.textContent || '';
-            if (!text) return false;
-            // Expanded pre-check keywords
-            if (!text.includes('ad') && !text.includes('Ad') &&
-                !text.includes('Turbo') && !text.includes('block') &&
-                !text.includes('Block') && !text.includes('support')) return false;
-
-            return POPUP_REGEXES.some(regex => regex.test(text));
-        }
-
         /**
          * Increment popup blocked counter and dispatch event
          */
         function _incrementPopupsBlocked() {
             _S.popupsBlocked++;
             document.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _S.popupsBlocked } }));
-            _log('📊 Popup blocked event dispatched, count: ' + _S.popupsBlocked, 'info');
+            _log('📊 Popup blocked! Count: ' + _S.popupsBlocked, 'success');
         }
 
         /**
-         * Scan for and remove existing popups
+         * Find and remove the popup by looking for specific button text
+         * This is the most reliable method - find buttons, walk up to popup container
          */
         function _scanAndRemove() {
-            // Check by selectors
-            for (const selector of POPUP_SELECTORS) {
-                try {
-                    const elements = document.querySelectorAll(selector);
-                    for (const el of elements) {
-                        if (_isAntiAdblockElement(el)) {
-                            el.remove();
+            // Strategy 1: Find buttons with exact anti-adblock text
+            const allButtons = document.querySelectorAll('button');
+            for (const btn of allButtons) {
+                const btnText = (btn.textContent || '').trim().toLowerCase();
+
+                // Check for the exact popup buttons
+                if (btnText === 'allow twitch ads' || btnText === 'try turbo') {
+                    _log('🎯 Found anti-adblock button: "' + btnText + '"', 'warning');
+
+                    // Walk up the DOM to find the popup container
+                    let popup = btn.parentElement;
+                    let attempts = 0;
+
+                    // Walk up max 10 levels to find a suitable container
+                    while (popup && attempts < 10) {
+                        const style = window.getComputedStyle(popup);
+                        const isOverlay = style.position === 'fixed' || style.position === 'absolute';
+                        const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
+                        const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
+
+                        // If this looks like a popup container, remove it
+                        if ((isOverlay || hasBackground) && isLarge) {
+                            _log('🗑️ Removing popup container: ' + popup.className, 'success');
+                            popup.remove();
                             _incrementPopupsBlocked();
-                            _log('Anti-adblock popup removed (Total: ' + _S.popupsBlocked + ')', 'success');
+                            return; // Stop after removing
                         }
+
+                        popup = popup.parentElement;
+                        attempts++;
                     }
-                } catch { /* Selector may fail */ }
+
+                    // Fallback: if we couldn't find a good container, just hide the button's closest parent
+                    const fallback = btn.closest('div[class]');
+                    if (fallback) {
+                        _log('🗑️ Removing fallback container', 'warning');
+                        fallback.remove();
+                        _incrementPopupsBlocked();
+                    }
+                }
             }
 
-            // Check buttons with anti-adblock text (expanded scope)
-            const buttons = document.querySelectorAll(
-                '[class*="modal"] button, [class*="overlay"] button, [role="dialog"] button, [class*="ScAttach"] button, [class*="Layout"] button'
-            );
-            for (const btn of buttons) {
-                const text = btn.textContent || '';
-                if (!text) continue;
+            // Strategy 2: Find any element with anti-adblock text content
+            const textPatterns = [
+                'support',
+                'by disabling ad block',
+                'viewers watch ads',
+                'go ad-free'
+            ];
 
-                // Expanded fast check for keywords
-                if (text.includes('Twitch') || text.includes('Turbo') || text.includes('ads') || text.includes('Ads') || text.includes('block')) {
-                    if (/allow twitch ads|try turbo|disable.*block|subscribe/i.test(text)) {
-                        // Find and remove the parent modal/overlay
-                        const modal = btn.closest('[class*="ScAttach"], [class*="modal"], [role="dialog"], [class*="Layout"], [class*="overlay"]');
-                        if (modal && _isAntiAdblockElement(modal)) {
-                            modal.remove();
-                            _incrementPopupsBlocked();
-                            _log('Anti-adblock popup removed via button detection (Total: ' + _S.popupsBlocked + ')', 'success');
-                        }
-                    }
+            // Check divs that might be popup overlays
+            const overlayDivs = document.querySelectorAll('div[class*="ScAttach"], div[class*="Layer"], div[class*="Overlay"], div[style*="position: fixed"], div[style*="position:fixed"]');
+            for (const div of overlayDivs) {
+                const text = (div.textContent || '').toLowerCase();
+
+                // Check if this div contains multiple anti-adblock keywords
+                let matches = 0;
+                for (const pattern of textPatterns) {
+                    if (text.includes(pattern)) matches++;
+                }
+
+                // If 2+ patterns match and has the buttons, it's the popup
+                if (matches >= 2 && (text.includes('allow twitch ads') || text.includes('try turbo'))) {
+                    _log('🗑️ Removing popup by text match', 'success');
+                    div.remove();
+                    _incrementPopupsBlocked();
+                    return;
                 }
             }
         }
@@ -156,14 +145,14 @@ function _blockAntiAdblockPopup() {
         // Initial scan
         _scanAndRemove();
 
-        // Watch for new popups (Throttled scan instead of checking every added node)
+        // Watch for new popups - scan on any DOM change
         let scanTimeout = null;
         const observer = new MutationObserver(function () {
             if (scanTimeout) return;
             scanTimeout = setTimeout(() => {
                 _scanAndRemove();
                 scanTimeout = null;
-            }, 500); // Reduced to 500ms for faster popup detection
+            }, 300); // Fast: 300ms
         });
 
         observer.observe(document.body, {
@@ -171,26 +160,17 @@ function _blockAntiAdblockPopup() {
             subtree: true
         });
 
-        // Periodic scan as backup using requestIdleCallback for minimal CPU impact
+        // Aggressive periodic scan
         function _scheduleIdleScan() {
             if (document.hidden) {
-                setTimeout(_scheduleIdleScan, 5000);
+                setTimeout(_scheduleIdleScan, 3000);
                 return;
             }
 
-            if (typeof requestIdleCallback === 'function') {
-                requestIdleCallback(function () {
-                    _scanAndRemove();
-                    setTimeout(_scheduleIdleScan, 5000); // More frequent: every 5s
-                }, { timeout: 2000 });
-            } else {
-                setTimeout(function () {
-                    _scanAndRemove();
-                    _scheduleIdleScan();
-                }, 5000);
-            }
+            _scanAndRemove();
+            setTimeout(_scheduleIdleScan, 2000); // Every 2 seconds
         }
-        _scheduleIdleScan();
+        setTimeout(_scheduleIdleScan, 1000); // Start after 1s
 
         _log('Anti-adblock popup blocker active', 'success');
     }
