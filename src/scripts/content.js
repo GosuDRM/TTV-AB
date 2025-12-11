@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.8.7 - Twitch Ad Blocker
+ * TTV AB v3.8.8 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.8.7',
+    VERSION: '3.8.8',
     
-    INTERNAL_VERSION: 32,
+    INTERNAL_VERSION: 33,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -328,7 +328,7 @@ function _$gq(body) {
 
 function _$tk(channel, playerType) {
     let reqPlayerType = playerType;
-    if (ForceAccessTokenPlayerType) {
+    if (ForceAccessTokenPlayerType && playerType !== 'embed') {
         reqPlayerType = ForceAccessTokenPlayerType;
     }
 

@@ -43,7 +43,7 @@ function _gqlReq(body) {
  */
 function _getToken(channel, playerType) {
     let reqPlayerType = playerType;
-    if (ForceAccessTokenPlayerType) {
+    if (ForceAccessTokenPlayerType && playerType !== 'embed') {
         reqPlayerType = ForceAccessTokenPlayerType;
     }
 
