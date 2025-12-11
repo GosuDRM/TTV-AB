@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.7.8 - Twitch Ad Blocker
+ * TTV AB v3.7.9 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.7.8',
+    VERSION: '3.7.9',
     
     INTERNAL_VERSION: 28,
     
@@ -810,28 +810,43 @@ function _$mf() {
             if (urlStr.includes('gql.twitch.tv/gql')) {
                 const response = await realFetch.apply(this, arguments);
 
-                if (opts?.headers) {
-                    const h = opts.headers;
-                    const updates = [];
+                let headers = opts?.headers;
 
-                    if (h['Client-Integrity']) {
-                        ClientIntegrityHeader = h['Client-Integrity'];
+                if (url instanceof Request) {
+                    headers = url.headers;
+                }
+
+                if (headers) {
+                    const getHeader = (key) => {
+                        if (headers instanceof Headers) return headers.get(key) || headers.get(key.toLowerCase());
+                        return headers[key] || headers[key.toLowerCase()];
+                    };
+
+                    const updates = [];
+                    const integrity = getHeader('Client-Integrity');
+                    const auth = getHeader('Authorization');
+                    const version = getHeader('Client-Version');
+                    const session = getHeader('Client-Session-Id');
+                    const device = getHeader('X-Device-Id');
+
+                    if (integrity) {
+                        ClientIntegrityHeader = integrity;
                         updates.push({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader });
                     }
-                    if (h['Authorization']) {
-                        AuthorizationHeader = h['Authorization'];
+                    if (auth) {
+                        AuthorizationHeader = auth;
                         updates.push({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader });
                     }
-                    if (h['Client-Version']) {
-                        ClientVersion = h['Client-Version'];
+                    if (version) {
+                        ClientVersion = version;
                         updates.push({ key: 'UpdateClientVersion', value: ClientVersion });
                     }
-                    if (h['Client-Session-Id']) {
-                        ClientSession = h['Client-Session-Id'];
+                    if (session) {
+                        ClientSession = session;
                         updates.push({ key: 'UpdateClientSession', value: ClientSession });
                     }
-                    if (h['X-Device-Id']) {
-                        GQLDeviceID = h['X-Device-Id'];
+                    if (device) {
+                        GQLDeviceID = device;
                         updates.push({ key: 'UpdateDeviceId', value: GQLDeviceID });
                     }
 

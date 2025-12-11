@@ -304,28 +304,45 @@ function _hookMainFetch() {
             if (urlStr.includes('gql.twitch.tv/gql')) {
                 const response = await realFetch.apply(this, arguments);
 
-                if (opts?.headers) {
-                    const h = opts.headers;
-                    const updates = [];
+                // Extract headers safely (could be plain object or Headers object)
+                let headers = opts?.headers;
 
-                    if (h['Client-Integrity']) {
-                        ClientIntegrityHeader = h['Client-Integrity'];
+                // Handle Fetch API Request object as first argument
+                if (url instanceof Request) {
+                    headers = url.headers;
+                }
+
+                if (headers) {
+                    const getHeader = (key) => {
+                        if (headers instanceof Headers) return headers.get(key) || headers.get(key.toLowerCase());
+                        return headers[key] || headers[key.toLowerCase()];
+                    };
+
+                    const updates = [];
+                    const integrity = getHeader('Client-Integrity');
+                    const auth = getHeader('Authorization');
+                    const version = getHeader('Client-Version');
+                    const session = getHeader('Client-Session-Id');
+                    const device = getHeader('X-Device-Id');
+
+                    if (integrity) {
+                        ClientIntegrityHeader = integrity;
                         updates.push({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader });
                     }
-                    if (h['Authorization']) {
-                        AuthorizationHeader = h['Authorization'];
+                    if (auth) {
+                        AuthorizationHeader = auth;
                         updates.push({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader });
                     }
-                    if (h['Client-Version']) {
-                        ClientVersion = h['Client-Version'];
+                    if (version) {
+                        ClientVersion = version;
                         updates.push({ key: 'UpdateClientVersion', value: ClientVersion });
                     }
-                    if (h['Client-Session-Id']) {
-                        ClientSession = h['Client-Session-Id'];
+                    if (session) {
+                        ClientSession = session;
                         updates.push({ key: 'UpdateClientSession', value: ClientSession });
                     }
-                    if (h['X-Device-Id']) {
-                        GQLDeviceID = h['X-Device-Id'];
+                    if (device) {
+                        GQLDeviceID = device;
                         updates.push({ key: 'UpdateDeviceId', value: GQLDeviceID });
                     }
 
