@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 ### Fixed
 - Race condition for popups blocked counter (stored count now restored on init)
 
+### Performance
+- Use `requestIdleCallback` for anti-adblock popup scan (lighter CPU usage during idle time)
+
 ## [3.0.9] - 2025-12-10
 
 ### Fixed
