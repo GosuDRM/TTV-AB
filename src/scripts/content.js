@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.4.4 - Twitch Ad Blocker
+ * TTV AB v3.4.5 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.4.4',
+    VERSION: '3.4.5',
     
     INTERNAL_VERSION: 28,
     
@@ -668,9 +668,9 @@ function _$hw() {
                 ${_$gq.toString()}
                 ${_$tk.toString()}
                 ${_$pm.toString()}
+                ${_findBackupStream.toString()}
                 ${_$wj.toString()}
                 ${_$wf.toString()}
-                ${_$ps.toString()}
                 
                 const _$gu = '${_$gu}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');

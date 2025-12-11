@@ -162,9 +162,9 @@ function _hookWorker() {
                 ${_gqlReq.toString()}
                 ${_getToken.toString()}
                 ${_processM3U8.toString()}
+                ${_findBackupStream.toString()}
                 ${_getWasmJs.toString()}
                 ${_hookWorkerFetch.toString()}
-                ${_pruneStreamInfos.toString()}
                 
                 const _GQL_URL = '${_GQL_URL}';
                 const wasmSource = _getWasmJs('${url.replaceAll("'", "%27")}');
