@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.5.0 - Twitch Ad Blocker
+ * TTV AB v3.5.1 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.5.0',
+    VERSION: '3.5.1',
     
     INTERNAL_VERSION: 28,
     
@@ -1098,16 +1098,12 @@ function _$cm() {
 
 function _$bs() {
 
-    console.log('[TTV AB] 🚀 Extension starting...');
-
     if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _$c.INTERNAL_VERSION) {
-        console.log('[TTV AB] ⚠️ Skipping - another script is active');
         _$l('Skipping - another script is active', 'warning');
         return false;
     }
 
     window.ttvabVersion = _$c.INTERNAL_VERSION;
-    console.log('[TTV AB] ✅ v' + _$c.VERSION + ' loaded successfully');
     _$l('v' + _$c.VERSION + ' loaded', 'info');
     return true;
 }
@@ -1139,7 +1135,7 @@ function _$bp() {
         function _$pb() {
             _$s.popupsBlocked++;
             document.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _$s.popupsBlocked } }));
-            _$l('📊 Popup blocked! Count: ' + _$s.popupsBlocked, 'success');
+            _$l('Popup blocked! Count: ' + _$s.popupsBlocked, 'success');
         }
 
         function _$sr() {
@@ -1149,7 +1145,7 @@ function _$bp() {
                 const btnText = (btn.textContent || '').trim().toLowerCase();
 
                 if (btnText === 'allow twitch ads' || btnText === 'try turbo') {
-                    _$l('🎯 Found anti-adblock button: "' + btnText + '"', 'warning');
+                    _$l('Found anti-adblock button: "' + btnText + '"', 'warning');
 
                     let popup = btn.parentElement;
                     let attempts = 0;
@@ -1161,7 +1157,7 @@ function _$bp() {
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
 
                         if ((isOverlay || hasBackground) && isLarge) {
-                            _$l('🗑️ Removing popup container: ' + popup.className, 'success');
+                            _$l('Removing popup container: ' + popup.className, 'success');
                             popup.remove();
                             _$pb();
                             return; // Stop after removing
@@ -1173,7 +1169,7 @@ function _$bp() {
 
                     const fallback = btn.closest('div[class]');
                     if (fallback) {
-                        _$l('🗑️ Removing fallback container', 'warning');
+                        _$l('Removing popup (fallback)', 'warning');
                         fallback.remove();
                         _$pb();
                     }
@@ -1197,7 +1193,7 @@ function _$bp() {
                 }
 
                 if (matches >= 2 && (text.includes('allow twitch ads') || text.includes('try turbo'))) {
-                    _$l('🗑️ Removing popup by text match', 'success');
+                    _$l('Removing popup by text match', 'success');
                     div.remove();
                     _$pb();
                     return;

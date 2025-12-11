@@ -3,6 +3,11 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+## [3.5.1] - 2025-12-12
+
+### Changed
+- **Console Logging** - Removed emoji from console logs, now uses clean styled "[TTV AB]" prefix consistently
+
 ## [3.5.0] - 2025-12-12
 
 ### Changed

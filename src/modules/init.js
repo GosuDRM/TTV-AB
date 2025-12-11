@@ -10,18 +10,13 @@
  * @returns {boolean} True if initialization should continue
  */
 function _bootstrap() {
-    // Debug: Confirm extension is running (visible even if styling fails)
-    console.log('[TTV AB] 🚀 Extension starting...');
-
     // Skip if newer version is already running
     if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _C.INTERNAL_VERSION) {
-        console.log('[TTV AB] ⚠️ Skipping - another script is active');
         _log('Skipping - another script is active', 'warning');
         return false;
     }
 
     window.ttvabVersion = _C.INTERNAL_VERSION;
-    console.log('[TTV AB] ✅ v' + _C.VERSION + ' loaded successfully');
     _log('v' + _C.VERSION + ' loaded', 'info');
     return true;
 }
@@ -63,7 +58,7 @@ function _blockAntiAdblockPopup() {
         function _incrementPopupsBlocked() {
             _S.popupsBlocked++;
             document.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _S.popupsBlocked } }));
-            _log('📊 Popup blocked! Count: ' + _S.popupsBlocked, 'success');
+            _log('Popup blocked! Count: ' + _S.popupsBlocked, 'success');
         }
 
         /**
@@ -78,7 +73,7 @@ function _blockAntiAdblockPopup() {
 
                 // Check for the exact popup buttons
                 if (btnText === 'allow twitch ads' || btnText === 'try turbo') {
-                    _log('🎯 Found anti-adblock button: "' + btnText + '"', 'warning');
+                    _log('Found anti-adblock button: "' + btnText + '"', 'warning');
 
                     // Walk up the DOM to find the popup container
                     let popup = btn.parentElement;
@@ -93,7 +88,7 @@ function _blockAntiAdblockPopup() {
 
                         // If this looks like a popup container, remove it
                         if ((isOverlay || hasBackground) && isLarge) {
-                            _log('🗑️ Removing popup container: ' + popup.className, 'success');
+                            _log('Removing popup container: ' + popup.className, 'success');
                             popup.remove();
                             _incrementPopupsBlocked();
                             return; // Stop after removing
@@ -106,7 +101,7 @@ function _blockAntiAdblockPopup() {
                     // Fallback: if we couldn't find a good container, just hide the button's closest parent
                     const fallback = btn.closest('div[class]');
                     if (fallback) {
-                        _log('🗑️ Removing fallback container', 'warning');
+                        _log('Removing popup (fallback)', 'warning');
                         fallback.remove();
                         _incrementPopupsBlocked();
                     }
@@ -134,7 +129,7 @@ function _blockAntiAdblockPopup() {
 
                 // If 2+ patterns match and has the buttons, it's the popup
                 if (matches >= 2 && (text.includes('allow twitch ads') || text.includes('try turbo'))) {
-                    _log('🗑️ Removing popup by text match', 'success');
+                    _log('Removing popup by text match', 'success');
                     div.remove();
                     _incrementPopupsBlocked();
                     return;
