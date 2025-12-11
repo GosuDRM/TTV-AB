@@ -58,7 +58,7 @@ function _incrementAdsBlocked(channel) {
     _S.adsBlocked++;
     _S.currentChannel = channel || null;
     if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
+        document.dispatchEvent(new CustomEvent('ttvab-ad-blocked', {
             detail: { count: _S.adsBlocked, channel: channel || null }
         }));
     } else if (typeof self !== 'undefined' && self.postMessage) {

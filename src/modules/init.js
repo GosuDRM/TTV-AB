@@ -25,7 +25,7 @@ function _bootstrap() {
  * Set up toggle listener for enable/disable
  */
 function _initToggleListener() {
-    window.addEventListener('ttvab-toggle', function (e) {
+    document.addEventListener('ttvab-toggle', function (e) {
         const enabled = e.detail?.enabled ?? true;
         IsAdStrippingEnabled = enabled;
         // Broadcast to workers
@@ -77,7 +77,7 @@ function _blockAntiAdblockPopup() {
      */
     function _incrementPopupsBlocked() {
         _S.popupsBlocked++;
-        window.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _S.popupsBlocked } }));
+        document.dispatchEvent(new CustomEvent('ttvab-popup-blocked', { detail: { count: _S.popupsBlocked } }));
     }
 
     /**
@@ -194,7 +194,7 @@ function _init() {
     _declareState(window);
 
     // Listen for initial accumulated count from bridge
-    window.addEventListener('ttvab-init-count', function (e) {
+    document.addEventListener('ttvab-init-count', function (e) {
         if (e.detail && typeof e.detail.count === 'number') {
             _S.adsBlocked = e.detail.count;
             // Sync to workers to prevent race condition reset
@@ -206,7 +206,7 @@ function _init() {
     });
 
     // Listen for initial popups count from bridge
-    window.addEventListener('ttvab-init-popups-count', function (e) {
+    document.addEventListener('ttvab-init-popups-count', function (e) {
         if (e.detail && typeof e.detail.count === 'number') {
             _S.popupsBlocked = e.detail.count;
             _log('Restored popups blocked count: ' + _S.popupsBlocked, 'info');

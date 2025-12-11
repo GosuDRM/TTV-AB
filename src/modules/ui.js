@@ -186,7 +186,7 @@ function _showAchievementUnlocked(achievementId) {
  * Initialize achievement unlock listener
  */
 function _initAchievementListener() {
-    window.addEventListener('ttvab-achievement-unlocked', function (e) {
+    document.addEventListener('ttvab-achievement-unlocked', function (e) {
         if (e.detail && e.detail.id) {
             _showAchievementUnlocked(e.detail.id);
         }

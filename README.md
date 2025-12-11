@@ -14,7 +14,7 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 ## ✨ Features
 
 - ✅ Blocks preroll and midroll ads
-- ✅ Blocks anti-adblock popups ("Support streamer by disabling ad block")
+- ✅ **Blocks anti-adblock popups** ("Support streamer by disabling ad block")
 - ✅ No purple screen errors
 - ✅ Works with all stream qualities
 - ✅ Manifest V3 compatible
