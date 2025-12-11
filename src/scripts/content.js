@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.2.4 - Twitch Ad Blocker
+ * TTV AB v3.2.5 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.2.4',
+    VERSION: '3.2.5',
     
-    INTERNAL_VERSION: 25,
+    INTERNAL_VERSION: 26,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -512,7 +512,8 @@ function _$ri(W, names) {
 function _$iv(v) {
     if (typeof v !== 'function') return false;
     const src = v.toString();
-    return !_$s.conflicts.some(c => src.includes(c)) || !_$s.reinsertPatterns.some(p => src.includes(p));
+
+    return !_$s.conflicts.some(c => src.includes(c)) && !_$s.reinsertPatterns.some(p => src.includes(p));
 }
 
 function _$wf() {

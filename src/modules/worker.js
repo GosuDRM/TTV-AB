@@ -67,5 +67,6 @@ function _reinsert(W, names) {
 function _isValid(v) {
     if (typeof v !== 'function') return false;
     const src = v.toString();
-    return !_S.conflicts.some(c => src.includes(c)) || !_S.reinsertPatterns.some(p => src.includes(p));
+    // Valid if no conflicts AND no reinsert patterns (both must be clean)
+    return !_S.conflicts.some(c => src.includes(c)) && !_S.reinsertPatterns.some(p => src.includes(p));
 }
