@@ -4,6 +4,11 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.8.0] - 2025-12-12
+
+### Fixed
+- **Integrity Token Capture** - Completely overhauled the network interception hook to support the `Request` object interface used by modern Twitch players. This is a critical fix for the "Integrity Check Failed" errors that were blocking backup stream playback.
+
 ## [3.7.9] - 2025-12-12
 
 ### Fixed

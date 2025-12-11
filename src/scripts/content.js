@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.7.9 - Twitch Ad Blocker
+ * TTV AB v3.8.0 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.7.9',
+    VERSION: '3.8.0',
     
     INTERNAL_VERSION: 28,
     
@@ -805,8 +805,8 @@ function _$mf() {
     const realFetch = window.fetch;
 
     window.fetch = async function (url, opts) {
-        if (typeof url === 'string' || url instanceof URL) {
-            const urlStr = url.toString();
+        if (url) {
+            const urlStr = (url instanceof Request) ? url.url : url.toString();
             if (urlStr.includes('gql.twitch.tv/gql')) {
                 const response = await realFetch.apply(this, arguments);
 

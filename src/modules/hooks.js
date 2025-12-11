@@ -299,8 +299,8 @@ function _hookMainFetch() {
     const realFetch = window.fetch;
 
     window.fetch = async function (url, opts) {
-        if (typeof url === 'string' || url instanceof URL) {
-            const urlStr = url.toString();
+        if (url) {
+            const urlStr = (url instanceof Request) ? url.url : url.toString();
             if (urlStr.includes('gql.twitch.tv/gql')) {
                 const response = await realFetch.apply(this, arguments);
 
