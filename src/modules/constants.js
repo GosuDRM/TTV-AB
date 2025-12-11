@@ -35,7 +35,10 @@ const _C = {
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
     /** Delay before auto-refresh (ms) */
     REFRESH_DELAY: 1000,
-    /** Average Twitch ad duration in seconds (for time saved calculation) */
+    /** 
+     * Average Twitch ad duration in seconds (for time saved calculation)
+     * SYNC: Must match popup.js and bridge.js
+     */
     AVG_AD_DURATION: 22,
     /** Achievement badges definitions */
     ACHIEVEMENTS: [

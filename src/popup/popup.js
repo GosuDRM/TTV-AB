@@ -22,7 +22,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const achievementsProgress = document.getElementById('achievementsProgress');
     const nextAchievement = document.getElementById('nextAchievement');
 
-    /** Average ad duration in seconds */
+    /** 
+     * Average ad duration in seconds
+     * SYNC: Must match constants.js and bridge.js
+     */
     const AVG_AD_DURATION = 22;
 
     /** Achievement definitions (must match constants.js) */

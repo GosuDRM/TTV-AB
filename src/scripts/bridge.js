@@ -34,7 +34,11 @@ const ACHIEVEMENTS = [
     { id: 'channels_20', threshold: 20, type: 'channels' }
 ];
 
-/** @type {number} Average ad duration in seconds */
+/** 
+ * Average ad duration in seconds
+ * SYNC: Must match constants.js and popup.js
+ * @type {number} 
+ */
 const AVG_AD_DURATION = 22;
 
 /** @type {number} Maximum channels to store */
