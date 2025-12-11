@@ -70,11 +70,31 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
     let stripped = false;
     let i = 0;
 
-    // CRITICAL: Only strip if the playlist actually contains the ad signifier
-    // Without this check, we strip ALL non-live segments which breaks playback
+    // First pass: Count live vs ad segments to determine stripping strategy
+    let liveSegmentCount = 0;
+    let adSegmentCount = 0;
     const hasAdSignifier = text.includes(AdSignifier);
 
-    for (; i < len; i++) {
+    for (i = 0; i < len - 1; i++) {
+        const line = lines[i];
+        if (line.startsWith('#EXTINF')) {
+            if (line.includes(',live')) {
+                liveSegmentCount++;
+            } else {
+                adSegmentCount++;
+            }
+        }
+    }
+
+    // Decision logic:
+    // - If no ad segments: don't strip anything (normal playback)
+    // - If ALL segments are ads: don't strip (nothing to preserve, let player buffer)
+    // - If MIXED (some live, some ads): strip ad segments to show live content
+    const shouldStrip = (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) &&
+        adSegmentCount > 0 &&
+        (liveSegmentCount > 0 || stripAll);
+
+    for (i = 0; i < len; i++) {
         let line = lines[i];
 
         // Replace ad tracking URLs
@@ -85,15 +105,10 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
             lines[i] = line;
         }
 
-        // Mark and REMOVE ad segments - ONLY when we're actually in an ad
-        // Twitch ad segments have #EXTINF without ',live' suffix
-        // Live segments have #EXTINF:X.XXX,live
-        // Ad segments have #EXTINF:X.XXX, (no 'live')
+        // Only strip if we should (see decision logic above)
         const isAdSegment = !line.includes(',live');
 
-        // Only strip if: playlist has ad signifier OR stripAll flag OR allSegmentsAreAds
-        // This prevents stripping ALL content when there are no ads
-        if (i < len - 1 && line.startsWith('#EXTINF') && isAdSegment && (hasAdSignifier || stripAll || AllSegmentsAreAdSegments)) {
+        if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
             const url = lines[i + 1];
             if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
             AdSegmentCache.set(url, Date.now());

@@ -4,10 +4,14 @@ All notable changes to TTV AB will be documented in this file.
 
 ## [3.9.8] - 2025-12-12
 
+### Added
+- **Force 480p Backup Streams** - When ads are detected, backup streams now specifically request 480p resolution. Lower resolutions often don't have embedded ads, giving users a better chance of ad-free viewing.
+- **Aggressive Ad Stripping** - In fallback mode, now uses `stripAll=true` to remove ALL non-live segments, ensuring no ads slip through.
+
 ### Fixed
-- **CRITICAL: Stream Freeze During Ads** - Fixed overly aggressive ad stripping that was removing ALL segments (including live content) when no ad signifier was present. Now only strips segments when the playlist actually contains the `stitched` ad marker.
+- **Stream Freeze During Ads** - Fixed overly aggressive ad stripping that was removing ALL segments (including live content) when no ad signifier was present. Now uses two-pass logic to count live vs ad segments before deciding whether to strip.
 - **Build System** - Added missing `_findBackupStream` to minification map, fixing runtime errors in worker injection.
-- **Version Sync** - Fixed version mismatch in popup.html (was showing v3.8.3, now correctly shows v3.9.7).
+- **Version Sync** - Fixed version mismatch in popup.html (was showing v3.8.3, now correctly shows v3.9.8).
 - **ESLint Warnings** - Fixed `let` → `const` in api.js and renamed unused parameter in parser.js.
 
 ## [3.9.7] - 2025-12-12

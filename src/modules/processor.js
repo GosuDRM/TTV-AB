@@ -45,7 +45,8 @@ async function _processM3U8(url, text, realFetch) {
         // This prevents the infinite loop where we keep searching for backup streams.
         if (info.IsUsingFallbackStream) {
             _log('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
-            text = _stripAds(text, false, info, true);
+            // Use stripAll=true to aggressively remove ALL ad segments
+            text = _stripAds(text, true, info, true);
             return text;
         }
 
@@ -124,7 +125,10 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
     }
 
     const playerTypesLen = playerTypes.length;
-    const res = info.Urls[Object.keys(info.Urls)[0]]; // Use first available resolution info
+
+    // FORCE 480p during ad blocking - lower resolutions often don't have ads
+    // This gives users a better chance of getting an ad-free stream
+    const force480p = { Resolution: '852x480', FrameRate: '30' };
 
     for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
         const pt = playerTypes[pi];
@@ -173,7 +177,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
 
             if (enc) {
                 try {
-                    const streamUrl = _getStreamUrl(enc, res || {});
+                    const streamUrl = _getStreamUrl(enc, force480p);
                     if (streamUrl) {
                         _log(`[Trace] Fetching stream URL for ${pt}: ${streamUrl}`, 'info');
                         const streamRes = await realFetch(streamUrl);
