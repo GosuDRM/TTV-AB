@@ -94,7 +94,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
 
     // Optimization: Try the last successful backup type first (Sticky)
     // This saves unnecessary network requests for types that didn't work previously
-    let playerTypes = [...BackupPlayerTypes];
+    const playerTypes = [...BackupPlayerTypes];
     if (info.ActiveBackupPlayerType) {
         const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
         if (idx > -1) {

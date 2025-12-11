@@ -67,6 +67,7 @@ export default [
                 _reinsert: "readonly",
                 _isValid: "readonly",
                 _GQL_URL: "readonly",
+                _findBackupStream: "readonly",
                 // Popup globals
                 TRANSLATIONS: "readonly"
             }

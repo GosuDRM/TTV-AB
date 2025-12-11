@@ -245,7 +245,7 @@ function _hookWorker() {
                     setTimeout(function () {
                         try {
                             // Create a new worker using the hooked Worker constructor
-                            const newWorker = new window.Worker(workerUrl, workerOpts);
+                            new window.Worker(workerUrl, workerOpts);
                             _log('Worker restarted successfully', 'success');
                             restartAttempts = 0; // Reset on success
                         } catch (restartErr) {

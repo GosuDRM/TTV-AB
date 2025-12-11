@@ -3,6 +3,17 @@
 All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
+
+## [3.6.1] - 2025-12-12
+
+### Improved
+- **Code Quality Audit** - Comprehensive codebase audit confirming no memory leaks, no race conditions, and Chrome Web Store compliance
+
+### Fixed
+- **ESLint Configuration** - Added missing `_findBackupStream` global to suppress false positive error
+- **Const Correctness** - Changed `let` to `const` for `playerTypes` in processor.js (never reassigned)
+- **Dead Code Cleanup** - Removed unused `newWorker` variable in worker restart logic
+
 ## [3.6.0] - 2025-12-12
 
 ### Fixed
