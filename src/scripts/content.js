@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.6.10 - Twitch Ad Blocker
+ * TTV AB v3.7.0 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.6.10',
+    VERSION: '3.7.0',
     
     INTERNAL_VERSION: 28,
     
@@ -1098,8 +1098,7 @@ function _$cm() {
 
         observer.observe(document.body, {
             childList: true,
-            subtree: true,
-            characterData: true
+            subtree: true
         });
 
         checkInterval = setInterval(() => {

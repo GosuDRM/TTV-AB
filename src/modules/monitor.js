@@ -95,8 +95,7 @@ function _initCrashMonitor() {
 
         observer.observe(document.body, {
             childList: true,
-            subtree: true,
-            characterData: true
+            subtree: true
         });
 
         // Fallback interval check
