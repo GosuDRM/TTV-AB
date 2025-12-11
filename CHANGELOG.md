@@ -4,6 +4,11 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.8.4] - 2025-12-12
+
+### Removed
+- **Emergency Fallback** - Removed the fallback mechanism that would allow streams with ads to play if no ad-free backup was found. This ensures users do not see ads, even if it results in a black screen (user preference).
+
 ## [3.8.3] - 2025-12-12
 
 ### Fixed

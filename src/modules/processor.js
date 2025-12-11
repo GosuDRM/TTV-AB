@@ -96,7 +96,6 @@ async function _processM3U8(url, text, realFetch) {
 async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false) {
     let backupType = null;
     let backupM3u8 = null;
-    let fallbackM3u8 = null;
 
     // Optimization: Try the last successful backup type first (Sticky)
     // This saves unnecessary network requests for types that didn't work previously
@@ -177,14 +176,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                     _log(`[Trace] Selected backup: ${pt}`, 'success');
                                     break;
                                 } else {
-                                    // FORCE FALLBACK if we have nothing else and this stream works (even if ads)
-                                    // This prevents black screen death spiral
-                                    if (!fallbackM3u8) {
-                                        fallbackM3u8 = m3u8;
-                                        backupType = FallbackPlayerType; // Pretend it's fallback
-                                        _log(`[Trace] Saved ${pt} as emergency fallback (HasAds=true)`, 'warning');
-                                    }
-                                    _log(`[Trace] Rejected ${pt} but saved as emergency (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
+                                    _log(`[Trace] Rejected ${pt} (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
                                 }
                             } else {
                                 _log(`[Trace] Stream content empty for ${pt}`, 'warning');
@@ -203,11 +195,6 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
             info.BackupEncodingsM3U8Cache[pt] = null;
             if (fresh) break;
         }
-    }
-
-    if (!backupM3u8 && fallbackM3u8) {
-        backupType = FallbackPlayerType;
-        backupM3u8 = fallbackM3u8;
     }
 
     return { type: backupType, m3u8: backupM3u8 };

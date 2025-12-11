@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.8.3 - Twitch Ad Blocker
+ * TTV AB v3.8.4 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '3.8.3',
+    VERSION: '3.8.4',
     
-    INTERNAL_VERSION: 28,
+    INTERNAL_VERSION: 29,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -414,7 +414,6 @@ async function _$pm(url, text, realFetch) {
 async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false) {
     let backupType = null;
     let backupM3u8 = null;
-    let fallbackM3u8 = null;
 
     const playerTypes = [...BackupPlayerTypes];
     if (info.ActiveBackupPlayerType) {
@@ -493,13 +492,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                     _$l(`[Trace] Selected backup: ${pt}`, 'success');
                                     break;
                                 } else {
-
-                                    if (!fallbackM3u8) {
-                                        fallbackM3u8 = m3u8;
-                                        backupType = FallbackPlayerType; // Pretend it's fallback
-                                        _$l(`[Trace] Saved ${pt} as emergency fallback (HasAds=true)`, 'warning');
-                                    }
-                                    _$l(`[Trace] Rejected ${pt} but saved as emergency (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
+                                    _$l(`[Trace] Rejected ${pt} (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
                                 }
                             } else {
                                 _$l(`[Trace] Stream content empty for ${pt}`, 'warning');
@@ -518,11 +511,6 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
             info.BackupEncodingsM3U8Cache[pt] = null;
             if (fresh) break;
         }
-    }
-
-    if (!backupM3u8 && fallbackM3u8) {
-        backupType = FallbackPlayerType;
-        backupM3u8 = fallbackM3u8;
     }
 
     return { type: backupType, m3u8: backupM3u8 };
