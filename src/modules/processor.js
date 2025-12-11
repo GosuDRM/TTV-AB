@@ -96,6 +96,8 @@ async function _processM3U8(url, text, realFetch) {
 async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false) {
     let backupType = null;
     let backupM3u8 = null;
+    let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
+    let fallbackType = null; // Track which player type the fallback came from
 
     // Optimization: Try the last successful backup type first (Sticky)
     // This saves unnecessary network requests for types that didn't work previously
@@ -114,25 +116,28 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
     for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
         const pt = playerTypes[pi];
         const realPt = pt.replace('-CACHED', '');
-        const cached = pt !== realPt;
+        const isFullyCachedPlayerType = pt !== realPt;
         _log(`[Trace] Checking player type: ${pt} (Fallback=${FallbackPlayerType})`, 'info');
 
         for (let j = 0; j < 2; j++) {
-            let fresh = false;
+            let isFreshM3u8 = false;
             let enc = info.BackupEncodingsM3U8Cache[pt];
 
             if (!enc) {
-                fresh = true;
+                isFreshM3u8 = true;
                 try {
                     // Standard Twitch usher fetch
                     const tokenRes = await _getToken(info.ChannelName, realPt, realFetch);
                     if (tokenRes.status === 200) {
                         const token = await tokenRes.json();
                         const sig = token?.data?.streamPlaybackAccessToken?.signature;
-                        if (sig) {
+                        const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
+
+                        // Check for valid token components
+                        if (sig && tokenValue) {
                             const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
                             usherUrl.searchParams.set('sig', sig);
-                            usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                            usherUrl.searchParams.set('token', tokenValue);
                             const encRes = await realFetch(usherUrl.href);
                             if (encRes.status === 200) {
                                 enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
@@ -141,7 +146,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                 _log(`Backup usher fetch failed for ${pt}: ${encRes.status}`, 'warning');
                             }
                         } else {
-                            _log(`[Trace] No signature found in token for ${pt}`, 'warning');
+                            _log(`[Trace] Missing token data for ${pt} (sig=${!!sig}, value=${!!tokenValue})`, 'warning');
                         }
                     } else {
                         _log(`Backup token fetch failed for ${pt}: ${tokenRes.status}`, 'warning');
@@ -163,16 +168,30 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             const m3u8 = await streamRes.text();
                             if (m3u8) {
                                 _log(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
-                                const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
-                                const lastResort = pi >= playerTypesLen - 1;
 
+                                // Store any valid M3U8 as potential fallback for ad stripping
+                                // Prioritize FallbackPlayerType but accept any working stream
+                                if (!fallbackM3u8 || pt === FallbackPlayerType) {
+                                    fallbackM3u8 = m3u8;
+                                    fallbackType = pt;
+                                }
+
+                                const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
+                                const isLastResort = pi >= playerTypesLen - 1;
+
+                                // Accept stream if: no ads, minimal mode, or it's the last player type
                                 if (noAds || minimal) {
                                     backupType = pt;
                                     backupM3u8 = m3u8;
-                                    _log(`[Trace] Selected backup: ${pt}`, 'success');
+                                    _log(`[Trace] Selected backup: ${pt}${noAds ? '' : ' (last resort)'}`, 'success');
                                     break;
                                 } else {
-                                    _log(`[Trace] Rejected ${pt} (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
+                                    _log(`[Trace] Rejected ${pt} (HasAds=true, LastResort=${isLastResort})`, 'warning');
+
+                                    // For fully cached types, don't retry
+                                    if (isFullyCachedPlayerType) {
+                                        break;
+                                    }
                                 }
                             } else {
                                 _log(`[Trace] Stream content empty for ${pt}`, 'warning');
@@ -189,8 +208,16 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
             }
 
             info.BackupEncodingsM3U8Cache[pt] = null;
-            if (fresh) break;
+            if (isFreshM3u8) break;
         }
+    }
+
+    // Last resort: Use fallback stream if no ad-free stream found
+    // This allows ad stripping to work even when all streams have ads
+    if (!backupM3u8 && fallbackM3u8) {
+        backupType = fallbackType || FallbackPlayerType;
+        backupM3u8 = fallbackM3u8;
+        _log(`[Trace] Using fallback stream (will strip ads): ${backupType}`, 'warning');
     }
 
     return { type: backupType, m3u8: backupM3u8 };

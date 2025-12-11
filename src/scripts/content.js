@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.9.3 - Twitch Ad Blocker
+ * TTV AB v3.9.4 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.9.3',
+    VERSION: '3.9.4',
     
     INTERNAL_VERSION: 36,
     
@@ -79,9 +79,9 @@ const _$c = {
     
     GQL_URL: 'https://gql.twitch.tv/gql',
     
-    PLAYER_TYPES: ['embed', '480p', 'thunderdome', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
     
-    FALLBACK_TYPE: 'embed',
+    FALLBACK_TYPE: 'site',
     
     FORCE_TYPE: 'site',
     
@@ -444,6 +444,8 @@ async function _$pm(url, text, realFetch) {
 async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false) {
     let backupType = null;
     let backupM3u8 = null;
+    let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
+    let fallbackType = null; // Track which player type the fallback came from
 
     const playerTypes = [...BackupPlayerTypes];
     if (info.ActiveBackupPlayerType) {
@@ -460,25 +462,27 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
     for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
         const pt = playerTypes[pi];
         const realPt = pt.replace('-CACHED', '');
-        const cached = pt !== realPt;
+        const isFullyCachedPlayerType = pt !== realPt;
         _$l(`[Trace] Checking player type: ${pt} (Fallback=${FallbackPlayerType})`, 'info');
 
         for (let j = 0; j < 2; j++) {
-            let fresh = false;
+            let isFreshM3u8 = false;
             let enc = info.BackupEncodingsM3U8Cache[pt];
 
             if (!enc) {
-                fresh = true;
+                isFreshM3u8 = true;
                 try {
 
                     const tokenRes = await _$tk(info.ChannelName, realPt, realFetch);
                     if (tokenRes.status === 200) {
                         const token = await tokenRes.json();
                         const sig = token?.data?.streamPlaybackAccessToken?.signature;
-                        if (sig) {
+                        const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
+
+                        if (sig && tokenValue) {
                             const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
                             usherUrl.searchParams.set('sig', sig);
-                            usherUrl.searchParams.set('token', token.data.streamPlaybackAccessToken.value);
+                            usherUrl.searchParams.set('token', tokenValue);
                             const encRes = await realFetch(usherUrl.href);
                             if (encRes.status === 200) {
                                 enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
@@ -487,7 +491,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                                 _$l(`Backup usher fetch failed for ${pt}: ${encRes.status}`, 'warning');
                             }
                         } else {
-                            _$l(`[Trace] No signature found in token for ${pt}`, 'warning');
+                            _$l(`[Trace] Missing token data for ${pt} (sig=${!!sig}, value=${!!tokenValue})`, 'warning');
                         }
                     } else {
                         _$l(`Backup token fetch failed for ${pt}: ${tokenRes.status}`, 'warning');
@@ -509,16 +513,26 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             const m3u8 = await streamRes.text();
                             if (m3u8) {
                                 _$l(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
+
+                                if (!fallbackM3u8 || pt === FallbackPlayerType) {
+                                    fallbackM3u8 = m3u8;
+                                    fallbackType = pt;
+                                }
+
                                 const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
-                                const lastResort = pi >= playerTypesLen - 1;
+                                const isLastResort = pi >= playerTypesLen - 1;
 
                                 if (noAds || minimal) {
                                     backupType = pt;
                                     backupM3u8 = m3u8;
-                                    _$l(`[Trace] Selected backup: ${pt}`, 'success');
+                                    _$l(`[Trace] Selected backup: ${pt}${noAds ? '' : ' (last resort)'}`, 'success');
                                     break;
                                 } else {
-                                    _$l(`[Trace] Rejected ${pt} (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
+                                    _$l(`[Trace] Rejected ${pt} (HasAds=true, LastResort=${isLastResort})`, 'warning');
+
+                                    if (isFullyCachedPlayerType) {
+                                        break;
+                                    }
                                 }
                             } else {
                                 _$l(`[Trace] Stream content empty for ${pt}`, 'warning');
@@ -535,8 +549,14 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
             }
 
             info.BackupEncodingsM3U8Cache[pt] = null;
-            if (fresh) break;
+            if (isFreshM3u8) break;
         }
+    }
+
+    if (!backupM3u8 && fallbackM3u8) {
+        backupType = fallbackType || FallbackPlayerType;
+        backupM3u8 = fallbackM3u8;
+        _$l(`[Trace] Using fallback stream (will strip ads): ${backupType}`, 'warning');
     }
 
     return { type: backupType, m3u8: backupM3u8 };

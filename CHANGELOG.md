@@ -2,6 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [3.9.4] - 2025-12-12
+
+### Fixed
+- **Backup Stream Fallback (Major Fix)** - Fixed issue where fallback streams were never captured because:
+  - Changed `FallbackPlayerType` from `'embed'` to `'site'` since only `site` player type returns valid tokens (embed/autoplay/picture-by-picture require Client-Integrity header)
+  - Updated fallback logic to store ANY valid M3U8 fetch as fallback (not just FallbackPlayerType)
+  - Added `fallbackType` tracking to correctly identify which player type provided the fallback
+
+- **Removed Invalid Player Types** - Removed `480p` and `thunderdome` from `PLAYER_TYPES` as they never return valid tokens from Twitch's API
+
+### Changed
+- Backup player types now aligned with vaft.js for best compatibility: `['embed', 'site', 'autoplay', 'picture-by-picture-CACHED']`
+- When no ad-free stream is found, extension now uses fallback stream with ad segment stripping instead of failing entirely
+
 ## [3.9.3] - 2025-12-12
 
 ### Fixed
