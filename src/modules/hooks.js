@@ -220,6 +220,41 @@ function _hookWorker() {
                 }
             });
 
+            // Worker crash detection and auto-restart
+            const workerUrl = url;
+            const workerOpts = opts;
+            let restartAttempts = 0;
+            const MAX_RESTART_ATTEMPTS = 3;
+            const workerSelf = this;
+
+            this.addEventListener('error', function (e) {
+                _log('Worker crashed: ' + (e.message || 'Unknown error'), 'error');
+
+                // Remove crashed worker from the list
+                const idx = _S.workers.indexOf(workerSelf);
+                if (idx > -1) _S.workers.splice(idx, 1);
+
+                // Auto-restart with exponential backoff
+                if (restartAttempts < MAX_RESTART_ATTEMPTS) {
+                    restartAttempts++;
+                    const delay = Math.pow(2, restartAttempts) * 500; // 1s, 2s, 4s
+                    _log('Auto-restarting worker in ' + (delay / 1000) + 's (attempt ' + restartAttempts + '/' + MAX_RESTART_ATTEMPTS + ')', 'warning');
+
+                    setTimeout(function () {
+                        try {
+                            // Create a new worker using the hooked Worker constructor
+                            const newWorker = new window.Worker(workerUrl, workerOpts);
+                            _log('Worker restarted successfully', 'success');
+                            restartAttempts = 0; // Reset on success
+                        } catch (restartErr) {
+                            _log('Worker restart failed: ' + restartErr.message, 'error');
+                        }
+                    }, delay);
+                } else {
+                    _log('Worker restart limit reached. Please refresh the page.', 'error');
+                }
+            });
+
             _S.workers.push(this);
 
             // Cleanup old workers

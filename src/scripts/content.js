@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.4.6 - Twitch Ad Blocker
+ * TTV AB v3.4.7 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.4.6',
+    VERSION: '3.4.7',
     
     INTERNAL_VERSION: 28,
     
@@ -722,6 +722,38 @@ function _$hw() {
                         _$l('Ad ended', 'success');
                         break;
 
+                }
+            });
+
+            const workerUrl = url;
+            const workerOpts = opts;
+            let restartAttempts = 0;
+            const MAX_RESTART_ATTEMPTS = 3;
+            const workerSelf = this;
+
+            this.addEventListener('error', function (e) {
+                _$l('Worker crashed: ' + (e.message || 'Unknown error'), 'error');
+
+                const idx = _$s.workers.indexOf(workerSelf);
+                if (idx > -1) _$s.workers.splice(idx, 1);
+
+                if (restartAttempts < MAX_RESTART_ATTEMPTS) {
+                    restartAttempts++;
+                    const delay = Math.pow(2, restartAttempts) * 500; // 1s, 2s, 4s
+                    _$l('Auto-restarting worker in ' + (delay / 1000) + 's (attempt ' + restartAttempts + '/' + MAX_RESTART_ATTEMPTS + ')', 'warning');
+
+                    setTimeout(function () {
+                        try {
+
+                            const newWorker = new window.Worker(workerUrl, workerOpts);
+                            _$l('Worker restarted successfully', 'success');
+                            restartAttempts = 0; // Reset on success
+                        } catch (restartErr) {
+                            _$l('Worker restart failed: ' + restartErr.message, 'error');
+                        }
+                    }, delay);
+                } else {
+                    _$l('Worker restart limit reached. Please refresh the page.', 'error');
                 }
             });
 
