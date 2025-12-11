@@ -237,13 +237,12 @@ document.addEventListener('DOMContentLoaded', function () {
         chrome.storage.local.set({ ttvAdblockEnabled: enabled });
         updateStatus(enabled);
 
-        // Send message to active Twitch tab
-        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-            if (tabs[0] && tabs[0].url && tabs[0].url.includes('twitch.tv')) {
-                chrome.tabs.sendMessage(tabs[0].id, { action: 'toggle', enabled: enabled })
-                    .catch((err) => {
-                        // Bridge may not be ready yet, this is expected on non-stream pages
-                        console.debug('TTV AB: Toggle message not delivered -', err.message);
+        // Send message to ALL Twitch tabs (not just active)
+        chrome.tabs.query({ url: '*://*.twitch.tv/*' }, function (tabs) {
+            for (const tab of tabs) {
+                chrome.tabs.sendMessage(tab.id, { action: 'toggle', enabled: enabled })
+                    .catch(() => {
+                        // Bridge may not be ready on some pages, ignore
                     });
             }
         });
