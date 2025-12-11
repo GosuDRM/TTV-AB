@@ -8,7 +8,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'fetch-proxy') {
         const { url, requestId } = message.detail;
 
-        fetch(url)
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            },
+            cache: 'no-store',
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer'
+        })
             .then(res => {
                 if (res.ok) return res.text();
                 throw new Error('Status: ' + res.status);
