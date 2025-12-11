@@ -98,6 +98,17 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     /**
+     * Escape HTML entities to prevent XSS
+     * @param {string} str - String to escape
+     * @returns {string} Escaped string
+     */
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    /**
      * Render top channels list
      * @param {Object} channelsData - Channels stats object
      */
@@ -118,7 +129,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         channelList.innerHTML = top5.map((entry, i) => `
             <div class="channel-item">
-                <span><span class="channel-rank">${i + 1}.</span><span class="channel-name">${entry[0]}</span></span>
+                <span><span class="channel-rank">${i + 1}.</span><span class="channel-name">${escapeHtml(entry[0])}</span></span>
                 <span class="channel-count">${entry[1].toLocaleString()}</span>
             </div>
         `).join('');

@@ -4,6 +4,11 @@ All notable changes to TTV AB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.2.2] - 2025-12-11
+
+### Security
+- **XSS protection** - Added HTML escaping for channel names in popup to prevent potential injection attacks
+
 ## [3.2.1] - 2025-12-11
 
 ### Fixed
