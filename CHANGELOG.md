@@ -161,12 +161,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 ## [3.6.5] - 2025-12-12
 
 ### Fixed
-- **CRITICAL: Player Crash Fix** - Changed popup blocker to use `display: none` instead of removing elements from the DOM. This fix prevents the Twitch player from crashing (showing a "？" error) when a popup is blocked, as removing elements was breaking the player's internal state.
+- **CRITICAL: Player Crash Fix** - Changed popup blocker to use `display: none` instead of removing elements from the DOM. This fix prevents the Twitch player from crashing (showing a "ï¼Ÿ" error) when a popup is blocked, as removing elements was breaking the player's internal state.
 
 ## [3.6.4] - 2025-12-12
 
 ### Fixed
-- **CRITICAL: Statistics/Achievements** - Fixed achievement unlock notifications not working. Changed `document.dispatchEvent` to `window.postMessage` to correctly cross the ISOLATED→MAIN world boundary, ensuring users get notified when achievements are unlocked.
+- **CRITICAL: Statistics/Achievements** - Fixed achievement unlock notifications not working. Changed `document.dispatchEvent` to `window.postMessage` to correctly cross the ISOLATEDâ†’MAIN world boundary, ensuring users get notified when achievements are unlocked.
 
 ## [3.6.3] - 2025-12-12
 
@@ -183,7 +183,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 ## [3.6.2] - 2025-12-12
 
 ### Fixed
-- **CRITICAL: Cross-World Communication** - Fixed counter updates not working because `document.dispatchEvent()` doesn't cross MAIN→ISOLATED content script worlds. Changed to `window.postMessage()` which correctly crosses the boundary.
+- **CRITICAL: Cross-World Communication** - Fixed counter updates not working because `document.dispatchEvent()` doesn't cross MAINâ†’ISOLATED content script worlds. Changed to `window.postMessage()` which correctly crosses the boundary.
 
 ### Improved
 - **Popup Blocker v2** - Complete rewrite with multi-strategy approach:
@@ -207,7 +207,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 ## [3.6.0] - 2025-12-12
 
 ### Fixed
-- **CRITICAL: Cross-World Communication** - Fixed ad/popup counters not updating due to document events not crossing the MAIN→ISOLATED content script world boundary. Now uses `window.postMessage()` which correctly crosses worlds.
+- **CRITICAL: Cross-World Communication** - Fixed ad/popup counters not updating due to document events not crossing the MAINâ†’ISOLATED content script world boundary. Now uses `window.postMessage()` which correctly crosses worlds.
 
 ### Changed
 - Consolidated event listeners in bridge.js into single message handler

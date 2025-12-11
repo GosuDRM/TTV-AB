@@ -8,7 +8,7 @@
 /** @type {Object} Configuration constants */
 const _C = {
     /** Extension version */
-    VERSION: '3.9.3',
+    VERSION: '3.9.4',
     /** Internal version for conflict detection */
     INTERNAL_VERSION: 36,
     /** Console log styling */
@@ -26,9 +26,9 @@ const _C = {
     /** Twitch GQL URL */
     GQL_URL: 'https://gql.twitch.tv/gql',
     /** Backup player types to try */
-    PLAYER_TYPES: ['embed', '480p', 'thunderdome', 'site', 'autoplay', 'picture-by-picture-CACHED'],
-    /** Fallback player type */
-    FALLBACK_TYPE: 'embed',
+    PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
+    /** Fallback player type - site works best as it returns valid tokens */
+    FALLBACK_TYPE: 'site',
     /** Forced player type for tokens */
     FORCE_TYPE: 'site',
     /** Minimum time between reloads (ms) */
