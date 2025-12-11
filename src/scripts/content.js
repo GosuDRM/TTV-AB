@@ -1,5 +1,5 @@
 /**
- * TTV AB v3.8.1 - Twitch Ad Blocker
+ * TTV AB v3.8.2 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '3.8.1',
+    VERSION: '3.8.2',
     
     INTERNAL_VERSION: 28,
     
@@ -275,7 +275,7 @@ function _$su(m3u8, res) {
 
     for (let i = 0; i < len - 1; i++) {
         const line = lines[i];
-        if (!line.startsWith('#EXT-X-STREAM-INF') || !lines[i + 1].includes('.m3u8')) continue;
+        if (!line.startsWith('#EXT-X-STREAM-INF') || !lines[i + 1].includes('.m3u8') || lines[i + 1].includes('processing')) continue;
 
         const attrs = _$pa(line);
         const resolution = attrs.RESOLUTION;
@@ -432,6 +432,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
         const pt = playerTypes[pi];
         const realPt = pt.replace('-CACHED', '');
         const cached = pt !== realPt;
+        _$l(`[Trace] Checking player type: ${pt} (Fallback=${FallbackPlayerType})`, 'info');
 
         for (let j = 0; j < 2; j++) {
             let fresh = false;
@@ -452,6 +453,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             const encRes = await realFetch(usherUrl.href);
                             if (encRes.status === 200) {
                                 enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                                _$l(`[Trace] Got encoding M3U8 for ${pt}. Length: ${enc.length}`, 'info');
                             } else {
                                 _$l(`Backup usher fetch failed for ${pt}: ${encRes.status}`, 'warning');
                             }
@@ -462,25 +464,37 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                 } catch (e) {
                     _$l('Error getting backup: ' + e.message, 'error');
                 }
+            } else {
+                _$l(`[Trace] Using cached encoding for ${pt}`, 'info');
             }
 
             if (enc) {
                 try {
                     const streamUrl = _$su(enc, res || {});
                     if (streamUrl) {
+                        _$l(`[Trace] Fetching stream URL for ${pt}: ${streamUrl}`, 'info');
                         const streamRes = await realFetch(streamUrl);
                         if (streamRes.status === 200) {
                             const m3u8 = await streamRes.text();
                             if (m3u8) {
-                                if (pt === FallbackPlayerType) fallbackM3u8 = m3u8;
+                                _$l(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
+                                if (pt === FallbackPlayerType) {
+                                    fallbackM3u8 = m3u8;
+                                    _$l(`[Trace] Set fallbackM3u8 from ${pt}`, 'info');
+                                }
                                 const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
                                 const lastResort = !fallbackM3u8 && pi >= playerTypesLen - 1;
 
                                 if (noAds || lastResort || cached || minimal) {
                                     backupType = pt;
                                     backupM3u8 = m3u8;
+                                    _$l(`[Trace] Selected backup: ${pt}`, 'success');
                                     break;
+                                } else {
+                                    _$l(`[Trace] Rejected ${pt} (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
                                 }
+                            } else {
+                                _$l(`[Trace] Stream content empty for ${pt}`, 'warning');
                             }
                         } else {
                             _$l(`Backup stream fetch failed for ${pt}: ${streamRes.status}`, 'warning');

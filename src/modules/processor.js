@@ -116,6 +116,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
         const pt = playerTypes[pi];
         const realPt = pt.replace('-CACHED', '');
         const cached = pt !== realPt;
+        _log(`[Trace] Checking player type: ${pt} (Fallback=${FallbackPlayerType})`, 'info');
 
         for (let j = 0; j < 2; j++) {
             let fresh = false;
@@ -136,6 +137,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                             const encRes = await realFetch(usherUrl.href);
                             if (encRes.status === 200) {
                                 enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+                                _log(`[Trace] Got encoding M3U8 for ${pt}. Length: ${enc.length}`, 'info');
                             } else {
                                 _log(`Backup usher fetch failed for ${pt}: ${encRes.status}`, 'warning');
                             }
@@ -146,25 +148,37 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false)
                 } catch (e) {
                     _log('Error getting backup: ' + e.message, 'error');
                 }
+            } else {
+                _log(`[Trace] Using cached encoding for ${pt}`, 'info');
             }
 
             if (enc) {
                 try {
                     const streamUrl = _getStreamUrl(enc, res || {});
                     if (streamUrl) {
+                        _log(`[Trace] Fetching stream URL for ${pt}: ${streamUrl}`, 'info');
                         const streamRes = await realFetch(streamUrl);
                         if (streamRes.status === 200) {
                             const m3u8 = await streamRes.text();
                             if (m3u8) {
-                                if (pt === FallbackPlayerType) fallbackM3u8 = m3u8;
+                                _log(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
+                                if (pt === FallbackPlayerType) {
+                                    fallbackM3u8 = m3u8;
+                                    _log(`[Trace] Set fallbackM3u8 from ${pt}`, 'info');
+                                }
                                 const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
                                 const lastResort = !fallbackM3u8 && pi >= playerTypesLen - 1;
 
                                 if (noAds || lastResort || cached || minimal) {
                                     backupType = pt;
                                     backupM3u8 = m3u8;
+                                    _log(`[Trace] Selected backup: ${pt}`, 'success');
                                     break;
+                                } else {
+                                    _log(`[Trace] Rejected ${pt} (HasAds=${!noAds}, LastResort=${lastResort})`, 'warning');
                                 }
+                            } else {
+                                _log(`[Trace] Stream content empty for ${pt}`, 'warning');
                             }
                         } else {
                             _log(`Backup stream fetch failed for ${pt}: ${streamRes.status}`, 'warning');

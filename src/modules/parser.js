@@ -144,7 +144,7 @@ function _getStreamUrl(m3u8, res) {
 
     for (let i = 0; i < len - 1; i++) {
         const line = lines[i];
-        if (!line.startsWith('#EXT-X-STREAM-INF') || !lines[i + 1].includes('.m3u8')) continue;
+        if (!line.startsWith('#EXT-X-STREAM-INF') || !lines[i + 1].includes('.m3u8') || lines[i + 1].includes('processing')) continue;
 
         const attrs = _parseAttrs(line);
         const resolution = attrs.RESOLUTION;
