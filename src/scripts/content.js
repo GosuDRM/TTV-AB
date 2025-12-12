@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.0.0 - Twitch Ad Blocker
+ * TTV AB v4.0.1 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.0.0',
+    VERSION: '4.0.1',
     
     INTERNAL_VERSION: 38,
     
@@ -1603,7 +1603,11 @@ function _$bp() {
             return (
                 text.includes('allow twitch ads') ||
                 text.includes('try turbo') ||
-                (text.includes('support') && text.includes('by disabling ad block')) ||
+                text.includes('commercials') ||
+                text.includes('whitelist') ||
+                text.includes('ad blocker') ||
+                (text.includes('support') && (text.includes('ads') || text.includes('ad block'))) ||
+                (text.includes('disable') && (text.includes('extension') || text.includes('ad block'))) ||
                 (text.includes('viewers watch ads') && text.includes('turbo'))
             );
         }
@@ -1615,7 +1619,7 @@ function _$bp() {
             for (const btn of allButtons) {
                 const btnText = (btn.textContent || '').trim().toLowerCase();
 
-                if (btnText === 'allow twitch ads' || btnText === 'try turbo') {
+                if (_hasAdblockText(btn)) {
                     _$l('Found anti-adblock button: "' + btnText + '"', 'warning');
 
                     let popup = btn.parentElement;
@@ -1674,6 +1678,7 @@ function _$bp() {
                 'div[class*="tw-balloon"]',
                 'div[class*="consent"]',
                 'div[data-a-target="consent-banner"]',
+                'div[data-test-selector="ad-banner"]',
                 'div[class*="Layout"][class*="Overlay"]'
             ];
 
