@@ -16,6 +16,7 @@ The Extension operates entirely locally on your device.
 The Extension uses your browser's local storage (`chrome.storage.local`) for the sole purpose of:
 - Saving your preference for the "Enable/Disable" toggle.
 - Persisting the "Ads Blocked" counter statistic across sessions.
+- Persisting the "Popups Blocked" counter statistic across sessions.
 This data never leaves your browser.
 
 ## 4. Third-Party Services
