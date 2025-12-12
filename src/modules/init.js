@@ -83,7 +83,11 @@ function _blockAntiAdblockPopup() {
             return (
                 text.includes('allow twitch ads') ||
                 text.includes('try turbo') ||
-                (text.includes('support') && text.includes('by disabling ad block')) ||
+                text.includes('commercials') ||
+                text.includes('whitelist') ||
+                text.includes('ad blocker') ||
+                (text.includes('support') && (text.includes('ads') || text.includes('ad block'))) ||
+                (text.includes('disable') && (text.includes('extension') || text.includes('ad block'))) ||
                 (text.includes('viewers watch ads') && text.includes('turbo'))
             );
         }
@@ -98,8 +102,8 @@ function _blockAntiAdblockPopup() {
             for (const btn of allButtons) {
                 const btnText = (btn.textContent || '').trim().toLowerCase();
 
-                // Check for the exact popup buttons
-                if (btnText === 'allow twitch ads' || btnText === 'try turbo') {
+                // Check if button text matches any adblock strings (fuzzy match)
+                if (_hasAdblockText(btn)) {
                     _log('Found anti-adblock button: "' + btnText + '"', 'warning');
 
                     // Walk up the DOM to find the popup container
@@ -163,6 +167,7 @@ function _blockAntiAdblockPopup() {
                 'div[class*="tw-balloon"]',
                 'div[class*="consent"]',
                 'div[data-a-target="consent-banner"]',
+                'div[data-test-selector="ad-banner"]',
                 'div[class*="Layout"][class*="Overlay"]'
             ];
 
