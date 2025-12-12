@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.0.1 - Twitch Ad Blocker
+ * TTV AB v4.0.3 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.0.1',
+    VERSION: '4.0.3',
     
     INTERNAL_VERSION: 38,
     
@@ -1584,6 +1584,19 @@ function _$bp() {
             return;
         }
 
+        if (!document.getElementById('ttvab-popup-style')) {
+            const style = document.createElement('style');
+            style.id = 'ttvab-popup-style';
+            style.textContent = `
+                div[data-test-selector="ad-banner"],
+                div[data-a-target="consent-banner"] {
+                    display: none !important;
+                    visibility: hidden !important;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
         function _$pb() {
             const now = Date.now();
             if (now - lastBlockTime < 1000) return; // Debounce 1 second
@@ -1614,15 +1627,21 @@ function _$bp() {
 
         function _$sr() {
 
-            const allButtons = document.querySelectorAll('button');
+            const detectionNodes = document.querySelectorAll('button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span');
 
-            for (const btn of allButtons) {
-                const btnText = (btn.textContent || '').trim().toLowerCase();
+            for (const node of detectionNodes) {
 
-                if (_hasAdblockText(btn)) {
-                    _$l('Found anti-adblock button: "' + btnText + '"', 'warning');
+                if (node.tagName === 'SPAN' && node.textContent.length < 10) continue;
 
-                    let popup = btn.parentElement;
+                if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
+
+                if (_hasAdblockText(node)) {
+                    const nodeText = (node.textContent || '').trim().substring(0, 50);
+                    _$l('Found adblock text in <' + node.tagName + '>: "' + nodeText + '"', 'warning');
+
+                    node.setAttribute('data-ttvab-blocked', 'true');
+
+                    let popup = node.parentElement;
                     let attempts = 0;
 
                     while (popup && attempts < 20) {
@@ -1632,7 +1651,7 @@ function _$bp() {
                         const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
                         const hasZIndex = parseInt(style.zIndex) > 100;
-                        const isPopupClass = popup.className && (
+                        const isPopupClass = popup.className && (typeof popup.className === 'string') && (
                             popup.className.includes('ScAttach') ||
                             popup.className.includes('Balloon') ||
                             popup.className.includes('Layer') ||
@@ -1648,11 +1667,11 @@ function _$bp() {
                                 continue;
                             }
 
-                            _$l('Hiding popup: ' + (popup.className || popup.tagName), 'success');
+                            _$l('Hiding popup container: ' + (popup.className || popup.tagName), 'success');
                             popup.style.display = 'none';
                             popup.style.visibility = 'hidden';
-
                             popup.setAttribute('style', (popup.getAttribute('style') || '') + '; display: none !important; visibility: hidden !important;');
+                            popup.setAttribute('data-ttvab-blocked', 'true');
 
                             _$pb();
                             return true;
@@ -1662,11 +1681,12 @@ function _$bp() {
                         attempts++;
                     }
 
-                    const fallback = btn.closest('div[class]');
-                    if (fallback && _hasAdblockText(fallback)) {
-                        _$l('Hiding popup (fallback): ' + fallback.className, 'warning');
+                    const fallback = node.closest('div[class]');
+                    if (fallback) {
+                        _$l('Hiding popup (fallback logic): ' + fallback.className, 'warning');
                         fallback.style.display = 'none';
                         fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');
+                        fallback.setAttribute('data-ttvab-blocked', 'true');
                         _$pb();
                         return true;
                     }
