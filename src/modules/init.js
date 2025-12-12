@@ -58,6 +58,20 @@ function _blockAntiAdblockPopup() {
             return;
         }
 
+        // Inject CSS for proactive blocking
+        if (!document.getElementById('ttvab-popup-style')) {
+            const style = document.createElement('style');
+            style.id = 'ttvab-popup-style';
+            style.textContent = `
+                div[data-test-selector="ad-banner"],
+                div[data-a-target="consent-banner"] {
+                    display: none !important;
+                    visibility: hidden !important;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
         /**
          * Increment popup blocked counter and dispatch event
          */
@@ -96,18 +110,26 @@ function _blockAntiAdblockPopup() {
          * Find and remove the popup by looking for specific patterns
          */
         function _scanAndRemove() {
-            // Strategy 1: Find buttons with exact anti-adblock text
-            const allButtons = document.querySelectorAll('button');
+            // Strategy 1: Find buttons AND headers with adblock text
+            // Twitch sometimes uses divs or anchors as buttons
+            const detectionNodes = document.querySelectorAll('button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span');
 
-            for (const btn of allButtons) {
-                const btnText = (btn.textContent || '').trim().toLowerCase();
+            for (const node of detectionNodes) {
+                // Optimization: Skip small elements unless they are buttons
+                if (node.tagName === 'SPAN' && node.textContent.length < 10) continue;
 
-                // Check if button text matches any adblock strings (fuzzy match)
-                if (_hasAdblockText(btn)) {
-                    _log('Found anti-adblock button: "' + btnText + '"', 'warning');
+                // SKIP: Element is already hidden or processed
+                if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
+
+                if (_hasAdblockText(node)) {
+                    const nodeText = (node.textContent || '').trim().substring(0, 50);
+                    _log('Found adblock text in <' + node.tagName + '>: "' + nodeText + '"', 'warning');
+
+                    // Mark this node as processed so we don't scan it again
+                    node.setAttribute('data-ttvab-blocked', 'true');
 
                     // Walk up the DOM to find the popup container
-                    let popup = btn.parentElement;
+                    let popup = node.parentElement;
                     let attempts = 0;
 
                     // Walk up max 20 levels to find a suitable container
@@ -118,7 +140,7 @@ function _blockAntiAdblockPopup() {
                         const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
                         const hasZIndex = parseInt(style.zIndex) > 100;
-                        const isPopupClass = popup.className && (
+                        const isPopupClass = popup.className && (typeof popup.className === 'string') && (
                             popup.className.includes('ScAttach') ||
                             popup.className.includes('Balloon') ||
                             popup.className.includes('Layer') ||
@@ -135,11 +157,14 @@ function _blockAntiAdblockPopup() {
                                 continue;
                             }
 
-                            _log('Hiding popup: ' + (popup.className || popup.tagName), 'success');
+                            // Verify we didn't just hide the header itself if it wasn't the container
+                            // But usually hiding the header is better than nothing if we can't find container
+
+                            _log('Hiding popup container: ' + (popup.className || popup.tagName), 'success');
                             popup.style.display = 'none';
                             popup.style.visibility = 'hidden';
-                            // Also set important style locally just in case
                             popup.setAttribute('style', (popup.getAttribute('style') || '') + '; display: none !important; visibility: hidden !important;');
+                            popup.setAttribute('data-ttvab-blocked', 'true');
 
                             _incrementPopupsBlocked();
                             return true;
@@ -149,12 +174,13 @@ function _blockAntiAdblockPopup() {
                         attempts++;
                     }
 
-                    // Fallback: hide closest container with a class
-                    const fallback = btn.closest('div[class]');
-                    if (fallback && _hasAdblockText(fallback)) {
-                        _log('Hiding popup (fallback): ' + fallback.className, 'warning');
+                    // Fallback: Use closest div with a class if loop failed
+                    const fallback = node.closest('div[class]');
+                    if (fallback) {
+                        _log('Hiding popup (fallback logic): ' + fallback.className, 'warning');
                         fallback.style.display = 'none';
                         fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');
+                        fallback.setAttribute('data-ttvab-blocked', 'true');
                         _incrementPopupsBlocked();
                         return true;
                     }

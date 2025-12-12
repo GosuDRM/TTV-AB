@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.0.3] - 2025-12-12
+
+### Fixed
+- **Popup Counter Loop** - Fixed a bug where the anti-adblock detection would repeatedly find and count the same hidden elements, causing the "Popups Blocked" counter to inflate massively. Detection now correctly ignores already-processed or hidden elements.
+
+## [4.0.2] - 2025-12-12
+
+### Fixed
+- **Persistent Anti-Adblock** - Further refined popup detection to handle non-button elements (divs, spans, headers) that contain ad-blocking warnings. Added proactive CSS injection for known ad-banner data attributes (`data-test-selector="ad-banner"`).
+
 ## [4.0.1] - 2025-12-12
 
 ### Fixed
