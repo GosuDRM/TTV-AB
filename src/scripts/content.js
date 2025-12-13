@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.0.3 - Twitch Ad Blocker
+ * TTV AB v4.0.4 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,9 +61,9 @@
 
 const _$c = {
     
-    VERSION: '4.0.3',
+    VERSION: '4.0.4',
     
-    INTERNAL_VERSION: 38,
+    INTERNAL_VERSION: 39,
     
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -1625,6 +1625,35 @@ function _$bp() {
             );
         }
 
+        const SAFELIST_SELECTORS = [
+            '[data-a-target="chat-scroller"]',
+            '[data-a-target="right-column-chat-bar"]',
+            '[data-test-selector="chat-room-component"]',
+            '[class*="chat-room"]',
+            '[class*="chat-shell"]',
+            '[class*="right-column"]',
+            '[class*="RightColumn"]',
+            '[class*="ChatShell"]',
+            '[class*="ChatRoom"]',
+            '[class*="video-player"]',
+            '[class*="VideoPlayer"]',
+            '[data-a-target="video-player"]',
+            'video'
+        ];
+
+        function _isSafeElement(el) {
+            if (!el) return false;
+            for (const selector of SAFELIST_SELECTORS) {
+                try {
+
+                    if (el.matches && el.matches(selector)) return true;
+
+                    if (el.querySelector && el.querySelector(selector)) return true;
+                } catch { /* Invalid selector */ }
+            }
+            return false;
+        }
+
         function _$sr() {
 
             const detectionNodes = document.querySelectorAll('button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span');
@@ -1634,6 +1663,8 @@ function _$bp() {
                 if (node.tagName === 'SPAN' && node.textContent.length < 10) continue;
 
                 if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
+
+                if (_isSafeElement(node) || node.closest('[class*="chat"]') || node.closest('[class*="Chat"]')) continue;
 
                 if (_hasAdblockText(node)) {
                     const nodeText = (node.textContent || '').trim().substring(0, 50);
@@ -1646,17 +1677,25 @@ function _$bp() {
 
                     while (popup && attempts < 20) {
 
+                        if (_isSafeElement(popup)) {
+                            _$l('Skipping - hit safelisted element: ' + (popup.className || popup.tagName), 'info');
+                            break;
+                        }
+
                         const style = window.getComputedStyle(popup);
                         const isOverlay = style.position === 'fixed' || style.position === 'absolute';
                         const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
                         const hasZIndex = parseInt(style.zIndex) > 100;
-                        const isPopupClass = popup.className && (typeof popup.className === 'string') && (
-                            popup.className.includes('ScAttach') ||
-                            popup.className.includes('Balloon') ||
-                            popup.className.includes('Layer') ||
-                            popup.className.includes('Modal') ||
-                            popup.className.includes('Overlay')
+
+                        const className = (popup.className && typeof popup.className === 'string') ? popup.className : '';
+                        const isPopupClass = (
+                            (className.includes('ScAttach') && className.includes('Balloon')) ||
+                            className.includes('Modal') ||
+                            className.includes('consent') ||
+                            className.includes('Consent') ||
+                            (className.includes('Overlay') && !className.includes('Column') && !className.includes('Chat')) ||
+                            (className.includes('Layer') && className.includes('Balloon'))
                         );
 
                         if ((isOverlay || hasZIndex || isPopupClass) && (hasBackground || isLarge)) {
@@ -1665,6 +1704,11 @@ function _$bp() {
                                 popup = popup.parentElement;
                                 attempts++;
                                 continue;
+                            }
+
+                            if (_isSafeElement(popup)) {
+                                _$l('Skipping potential popup - contains safelisted content', 'warning');
+                                break;
                             }
 
                             _$l('Hiding popup container: ' + (popup.className || popup.tagName), 'success');
@@ -1681,8 +1725,8 @@ function _$bp() {
                         attempts++;
                     }
 
-                    const fallback = node.closest('div[class]');
-                    if (fallback) {
+                    const fallback = node.closest('div[class*="Balloon"], div[class*="consent"], div[class*="Modal"]');
+                    if (fallback && !_isSafeElement(fallback)) {
                         _$l('Hiding popup (fallback logic): ' + fallback.className, 'warning');
                         fallback.style.display = 'none';
                         fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');

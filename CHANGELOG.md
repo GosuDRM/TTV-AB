@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.0.4] - 2025-12-13
+
+### Fixed
+- **Chat Sidebar Destruction** - Fixed popup blocker accidentally hiding the Twitch chat sidebar. The issue was overly broad class name matching (`'Layer'`, `'Overlay'`) that would match chat layout components. Added safelist for chat/player/column elements and made popup class detection more specific.
+
 ## [4.0.3] - 2025-12-12
 
 ### Fixed

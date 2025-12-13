@@ -107,6 +107,42 @@ function _blockAntiAdblockPopup() {
         }
 
         /**
+         * Safelist: Elements matching these selectors should NEVER be hidden
+         * This protects chat, video player, and main layout components
+         */
+        const SAFELIST_SELECTORS = [
+            '[data-a-target="chat-scroller"]',
+            '[data-a-target="right-column-chat-bar"]',
+            '[data-test-selector="chat-room-component"]',
+            '[class*="chat-room"]',
+            '[class*="chat-shell"]',
+            '[class*="right-column"]',
+            '[class*="RightColumn"]',
+            '[class*="ChatShell"]',
+            '[class*="ChatRoom"]',
+            '[class*="video-player"]',
+            '[class*="VideoPlayer"]',
+            '[data-a-target="video-player"]',
+            'video'
+        ];
+
+        /**
+         * Check if element or any ancestor matches safelist
+         */
+        function _isSafeElement(el) {
+            if (!el) return false;
+            for (const selector of SAFELIST_SELECTORS) {
+                try {
+                    // Check if element itself matches
+                    if (el.matches && el.matches(selector)) return true;
+                    // Check if element contains any safelisted elements
+                    if (el.querySelector && el.querySelector(selector)) return true;
+                } catch { /* Invalid selector */ }
+            }
+            return false;
+        }
+
+        /**
          * Find and remove the popup by looking for specific patterns
          */
         function _scanAndRemove() {
@@ -121,6 +157,9 @@ function _blockAntiAdblockPopup() {
                 // SKIP: Element is already hidden or processed
                 if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
 
+                // SKIP: Element is inside a safelisted component (e.g., chat)
+                if (_isSafeElement(node) || node.closest('[class*="chat"]') || node.closest('[class*="Chat"]')) continue;
+
                 if (_hasAdblockText(node)) {
                     const nodeText = (node.textContent || '').trim().substring(0, 50);
                     _log('Found adblock text in <' + node.tagName + '>: "' + nodeText + '"', 'warning');
@@ -134,18 +173,29 @@ function _blockAntiAdblockPopup() {
 
                     // Walk up max 20 levels to find a suitable container
                     while (popup && attempts < 20) {
+                        // SAFETY CHECK: Stop if we hit a safelisted element
+                        if (_isSafeElement(popup)) {
+                            _log('Skipping - hit safelisted element: ' + (popup.className || popup.tagName), 'info');
+                            break;
+                        }
+
                         // Check if this element looks like a popup
                         const style = window.getComputedStyle(popup);
                         const isOverlay = style.position === 'fixed' || style.position === 'absolute';
                         const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
                         const hasZIndex = parseInt(style.zIndex) > 100;
-                        const isPopupClass = popup.className && (typeof popup.className === 'string') && (
-                            popup.className.includes('ScAttach') ||
-                            popup.className.includes('Balloon') ||
-                            popup.className.includes('Layer') ||
-                            popup.className.includes('Modal') ||
-                            popup.className.includes('Overlay')
+                        
+                        // More specific popup class detection - require stronger signals
+                        // 'Layer' and 'Overlay' alone are too broad (used by chat sidebar)
+                        const className = (popup.className && typeof popup.className === 'string') ? popup.className : '';
+                        const isPopupClass = (
+                            (className.includes('ScAttach') && className.includes('Balloon')) ||
+                            className.includes('Modal') ||
+                            className.includes('consent') ||
+                            className.includes('Consent') ||
+                            (className.includes('Overlay') && !className.includes('Column') && !className.includes('Chat')) ||
+                            (className.includes('Layer') && className.includes('Balloon'))
                         );
 
                         // If this looks like a popup container, hide it (don't remove!)
@@ -157,8 +207,11 @@ function _blockAntiAdblockPopup() {
                                 continue;
                             }
 
-                            // Verify we didn't just hide the header itself if it wasn't the container
-                            // But usually hiding the header is better than nothing if we can't find container
+                            // FINAL SAFETY: Don't hide if this would affect chat/player
+                            if (_isSafeElement(popup)) {
+                                _log('Skipping potential popup - contains safelisted content', 'warning');
+                                break;
+                            }
 
                             _log('Hiding popup container: ' + (popup.className || popup.tagName), 'success');
                             popup.style.display = 'none';
@@ -174,9 +227,10 @@ function _blockAntiAdblockPopup() {
                         attempts++;
                     }
 
-                    // Fallback: Use closest div with a class if loop failed
-                    const fallback = node.closest('div[class]');
-                    if (fallback) {
+                    // Fallback: Only hide immediate parent with specific popup-like class
+                    // Much more conservative than before
+                    const fallback = node.closest('div[class*="Balloon"], div[class*="consent"], div[class*="Modal"]');
+                    if (fallback && !_isSafeElement(fallback)) {
                         _log('Hiding popup (fallback logic): ' + fallback.className, 'warning');
                         fallback.style.display = 'none';
                         fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');
