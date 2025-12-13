@@ -185,7 +185,7 @@ function _blockAntiAdblockPopup() {
                         const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
                         const hasZIndex = parseInt(style.zIndex) > 100;
-                        
+
                         // More specific popup class detection - require stronger signals
                         // 'Layer' and 'Overlay' alone are too broad (used by chat sidebar)
                         const className = (popup.className && typeof popup.className === 'string') ? popup.className : '';
@@ -293,6 +293,7 @@ function _blockAntiAdblockPopup() {
 
         // Watch for new popups - scan on any DOM change
         let debounceTimer = null;
+        let lastImmediateScan = 0;
         const observer = new MutationObserver(function (mutations) {
             // Quick check if any added nodes might be a popup
             let shouldScan = false;
@@ -308,12 +309,19 @@ function _blockAntiAdblockPopup() {
 
             if (!shouldScan) return;
 
-            // Debounce scan to reduce CPU usage
+            // Immediate scan if we haven't scanned in the last 100ms (for instant blocking)
+            const now = Date.now();
+            if (now - lastImmediateScan > 100) {
+                lastImmediateScan = now;
+                _scanAndRemove();
+            }
+
+            // Also debounce a follow-up scan for any elements that render after a short delay
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 _scanAndRemove();
                 debounceTimer = null;
-            }, 500);
+            }, 50);
         });
 
         observer.observe(document.body, {

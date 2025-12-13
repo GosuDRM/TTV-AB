@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.0.5] - 2025-12-13
+
+### Improved
+- **Instant Popup Blocking** - Reduced popup detection delay from 500ms to near-instant (~50ms). Added immediate scan on DOM mutation plus a fast 50ms follow-up scan, ensuring anti-adblock popups are hidden before they become visible to users.
+
 ## [4.0.4] - 2025-12-13
 
 ### Fixed
