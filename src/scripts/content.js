@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.0.6 - Twitch Ad Blocker
+ * TTV AB v4.0.7 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.0.6',
+    VERSION: '4.0.7',
     
     INTERNAL_VERSION: 39,
     
@@ -224,9 +224,17 @@ function _$sa(text, stripAll, info, _isBackup = false) {
     let stripped = false;
     let i = 0;
 
+    const hasAdSignifier = text.includes(AdSignifier);
+    if (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) {
+        for (i = 0; i < len; i++) {
+            if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
+                lines[i] = '';
+            }
+        }
+    }
+
     let liveSegmentCount = 0;
     let adSegmentCount = 0;
-    const hasAdSignifier = text.includes(AdSignifier);
 
     for (i = 0; i < len - 1; i++) {
         const line = lines[i];
@@ -239,9 +247,7 @@ function _$sa(text, stripAll, info, _isBackup = false) {
         }
     }
 
-    const shouldStrip = (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) &&
-        adSegmentCount > 0 &&
-        (liveSegmentCount > 0 || stripAll);
+    const shouldStrip = (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) && adSegmentCount > 0;
 
     for (i = 0; i < len; i++) {
         let line = lines[i];
@@ -256,9 +262,16 @@ function _$sa(text, stripAll, info, _isBackup = false) {
         const isAdSegment = !line.includes(',live');
 
         if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
-            const url = lines[i + 1];
-            if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
-            AdSegmentCache.set(url, Date.now());
+            const segmentUrl = lines[i + 1];
+
+            if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
+                info.RequestedAds.add(segmentUrl);
+
+                fetch(segmentUrl).then(r => r.blob()).catch(() => { });
+            }
+
+            if (!AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
+            AdSegmentCache.set(segmentUrl, Date.now());
             stripped = true;
 
             lines[i] = '';      // Remove #EXTINF
@@ -269,11 +282,7 @@ function _$sa(text, stripAll, info, _isBackup = false) {
         if (line.includes(AdSignifier)) stripped = true;
     }
 
-    if (stripped) {
-        for (i = 0; i < len; i++) {
-            if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
-        }
-    } else {
+    if (!stripped) {
         info.NumStrippedAdSegments = 0;
     }
 

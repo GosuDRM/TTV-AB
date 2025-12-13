@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.0.7] - 2025-12-13
+
+### Fixed
+- **Pre-emptive Prefetch Blocking** - Now removes `#EXT-X-TWITCH-PREFETCH` entries FIRST before any stripping. This prevents the player from pre-downloading ad segments before they can be removed.
+- **Aggressive Ad Stripping** - Now strips ads even when ALL segments are ads (previously would let them play to avoid empty playlists). Brief buffering is preferable to showing ads.
+- **Ad Slot Consumption** - Pre-fetches ad `.ts` segments to "consume" ad slots on Twitch's side, making backup streams cleaner and less likely to contain ads.
+
 ## [4.0.6] - 2025-12-13
 
 ### Added
