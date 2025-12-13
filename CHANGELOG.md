@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.0.8] - 2025-12-13
+
+### Cleaned
+- **Dead Code Removal** - Removed 7 unused code items to reduce bundle size by ~2.6 KB:
+  - Removed `GQL_URL`, `AVG_AD_DURATION`, `ACHIEVEMENTS` from `constants.js` (duplicates exist locally in popup.js/bridge.js)
+  - Removed unused `_gqlReq()` function from `api.js` (was injected but never called)
+  - Removed `isLive` from `_PlayerBufferState` in `player.js` (set but never read)
+  - Removed `currentChannel` and `isActivelyStripping` from `_S` state in `state.js` (set but never read)
+
+### Fixed
+- **Version Sync** - Fixed popup.html showing outdated version (was stuck at v4.0.3)
+
 ## [4.0.7] - 2025-12-13
 
 ### Fixed

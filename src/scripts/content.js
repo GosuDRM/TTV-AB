@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.0.7 - Twitch Ad Blocker
+ * TTV AB v4.0.8 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.0.7',
+    VERSION: '4.0.8',
     
     INTERNAL_VERSION: 39,
     
@@ -76,9 +76,7 @@ const _$c = {
     AD_SIGNIFIER: 'stitched',
     
     CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-    
-    GQL_URL: 'https://gql.twitch.tv/gql',
-    
+
     PLAYER_TYPES: ['embed', 'site', 'autoplay', 'picture-by-picture-CACHED'],
     
     FALLBACK_TYPE: 'site',
@@ -91,26 +89,9 @@ const _$c = {
     
     REFRESH_DELAY: 1000,
     
-    AVG_AD_DURATION: 22,
-    
     BUFFERING_FIX: true,
     
-    RELOAD_AFTER_AD: true,
-    
-    ACHIEVEMENTS: [
-        { id: 'first_block', name: 'Ad Slayer', icon: '⚔️', threshold: 1, type: 'ads', desc: 'Block your first ad' },
-        { id: 'block_10', name: 'Blocker', icon: '🛡️', threshold: 10, type: 'ads', desc: 'Block 10 ads' },
-        { id: 'block_100', name: 'Guardian', icon: '🔰', threshold: 100, type: 'ads', desc: 'Block 100 ads' },
-        { id: 'block_500', name: 'Sentinel', icon: '🏰', threshold: 500, type: 'ads', desc: 'Block 500 ads' },
-        { id: 'block_1000', name: 'Legend', icon: '🏆', threshold: 1000, type: 'ads', desc: 'Block 1000 ads' },
-        { id: 'block_5000', name: 'Mythic', icon: '👑', threshold: 5000, type: 'ads', desc: 'Block 5000 ads' },
-        { id: 'popup_10', name: 'Popup Crusher', icon: '💥', threshold: 10, type: 'popups', desc: 'Block 10 popups' },
-        { id: 'popup_50', name: 'Popup Destroyer', icon: '🔥', threshold: 50, type: 'popups', desc: 'Block 50 popups' },
-        { id: 'time_1h', name: 'Hour Saver', icon: '⏱️', threshold: 3600, type: 'time', desc: 'Save 1 hour from ads' },
-        { id: 'time_10h', name: 'Time Master', icon: '⏰', threshold: 36000, type: 'time', desc: 'Save 10 hours from ads' },
-        { id: 'channels_5', name: 'Explorer', icon: '📺', threshold: 5, type: 'channels', desc: 'Block ads on 5 channels' },
-        { id: 'channels_20', name: 'Adventurer', icon: '🌍', threshold: 20, type: 'channels', desc: 'Block ads on 20 channels' }
-    ]
+    RELOAD_AFTER_AD: true
 };
 
 const _$s = {
@@ -123,11 +104,7 @@ const _$s = {
     
     adsBlocked: 0,
     
-    popupsBlocked: 0,
-    
-    currentChannel: null,
-    
-    isActivelyStripping: false
+    popupsBlocked: 0
 };
 
 function _$ds(scope) {
@@ -158,7 +135,6 @@ function _$ds(scope) {
 
 function _$ab(channel) {
     _$s.adsBlocked++;
-    _$s.currentChannel = channel || null;
 
     if (typeof window !== 'undefined') {
         window.postMessage({
@@ -338,28 +314,6 @@ function _$su(m3u8, res) {
 }
 
 const _$gu = 'https://gql.twitch.tv/gql';
-
-function _$gq(body) {
-    const headers = {
-        'Content-Type': 'application/json',
-        'Client-ID': ClientID
-    };
-    if (GQLDeviceID) headers['X-Device-Id'] = GQLDeviceID;
-    if (ClientVersion) headers['Client-Version'] = ClientVersion;
-    if (ClientSession) headers['Client-Session-Id'] = ClientSession;
-    if (ClientIntegrityHeader) headers['Client-Integrity'] = ClientIntegrityHeader;
-    else _$l('GQL Warning: No Client-Integrity header found!', 'warning');
-    if (AuthorizationHeader) headers['Authorization'] = AuthorizationHeader;
-
-    return fetch(_$gu, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body)
-    }).then(res => {
-        if (!res.ok) throw new Error(`Status ${res.status}`);
-        return res;
-    });
-}
 
 async function _$tk(channel, playerType, realFetch) {
     const fetchFunc = realFetch || fetch;
@@ -833,7 +787,6 @@ function _$hw() {
                 ${_$rt.toString()}
                 ${_$sa.toString()}
                 ${_$su.toString()}
-                ${_$gq.toString()}
                 ${_$tk.toString()}
                 ${_$pm.toString()}
                 ${_$fb.toString()}
@@ -886,11 +839,9 @@ function _$hw() {
                         _$l('Ad blocked! Total: ' + e.data.count, 'success');
                         break;
                     case 'AdDetected':
-                        _$s.isActivelyStripping = true;
                         _$l('Ad detected, blocking...', 'warning');
                         break;
                     case 'AdEnded':
-                        _$s.isActivelyStripping = false;
                         _$l('Ad ended', 'success');
                         break;
                     case 'ReloadPlayer':
@@ -1040,8 +991,7 @@ const _$pbs = {
     bufferedPosition: 0,
     bufferDuration: 0,
     numSame: 0,
-    lastFixTime: 0,
-    isLive: true
+    lastFixTime: 0
 };
 
 let _$cpr = null;
@@ -1218,9 +1168,6 @@ function _$mpb() {
                 _$cpr = playerAndState;
             }
         }
-
-        const isLive = _$cpr?.state?.props?.content?.type === 'live';
-        _$pbs.isLive = isLive;
 
         setTimeout(check, BUFFERING_DELAY);
     }
