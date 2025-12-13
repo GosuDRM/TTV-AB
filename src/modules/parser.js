@@ -70,10 +70,20 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
     let stripped = false;
     let i = 0;
 
+    // Remove prefetch entries FIRST before any stripping
+    // This prevents the player from pre-downloading ad segments before we strip them
+    const hasAdSignifier = text.includes(AdSignifier);
+    if (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) {
+        for (i = 0; i < len; i++) {
+            if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
+                lines[i] = '';
+            }
+        }
+    }
+
     // First pass: Count live vs ad segments to determine stripping strategy
     let liveSegmentCount = 0;
     let adSegmentCount = 0;
-    const hasAdSignifier = text.includes(AdSignifier);
 
     for (i = 0; i < len - 1; i++) {
         const line = lines[i];
@@ -86,13 +96,11 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
         }
     }
 
-    // Decision logic:
-    // - If no ad segments: don't strip anything (normal playback)
-    // - If ALL segments are ads: don't strip (nothing to preserve, let player buffer)
-    // - If MIXED (some live, some ads): strip ad segments to show live content
-    const shouldStrip = (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) &&
-        adSegmentCount > 0 &&
-        (liveSegmentCount > 0 || stripAll);
+    // Aggressive stripping mode
+    // Previous logic: Don't strip if ALL segments are ads (would cause empty playlist)
+    // New logic: Strip ads even if all are ads - player will buffer briefly but no ads play
+    // The brief buffering is preferable to showing ads
+    const shouldStrip = (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) && adSegmentCount > 0;
 
     for (i = 0; i < len; i++) {
         let line = lines[i];
@@ -105,13 +113,22 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
             lines[i] = line;
         }
 
-        // Only strip if we should (see decision logic above)
+        // Strip ad segments
         const isAdSegment = !line.includes(',live');
 
         if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
-            const url = lines[i + 1];
-            if (!AdSegmentCache.has(url)) info.NumStrippedAdSegments++;
-            AdSegmentCache.set(url, Date.now());
+            const segmentUrl = lines[i + 1];
+
+            // Pre-fetch ad segment to "consume" it faster
+            // This helps clear ad slots from Twitch's side, making backup streams cleaner
+            if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
+                info.RequestedAds.add(segmentUrl);
+                // Fire-and-forget fetch to consume the ad slot
+                fetch(segmentUrl).then(r => r.blob()).catch(() => { });
+            }
+
+            if (!AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
+            AdSegmentCache.set(segmentUrl, Date.now());
             stripped = true;
 
             // Wipe lines from manifest
@@ -123,12 +140,7 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
         if (line.includes(AdSignifier)) stripped = true;
     }
 
-    // Remove prefetch entries if stripping
-    if (stripped) {
-        for (i = 0; i < len; i++) {
-            if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) lines[i] = '';
-        }
-    } else {
+    if (!stripped) {
         info.NumStrippedAdSegments = 0;
     }
 
