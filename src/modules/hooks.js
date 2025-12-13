@@ -85,6 +85,7 @@ function _hookWorkerFetch() {
                     EncodingsM3U8: encodings,
                     ModifiedM3U8: null,
                     IsUsingModifiedM3U8: false,
+                    IsUsingFallbackStream: false,
                     UsherParams: (new URL(url)).search,
                     RequestedAds: new Set(),
                     Urls: Object.create(null),
