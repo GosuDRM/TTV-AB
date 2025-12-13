@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.0.5 - Twitch Ad Blocker
+ * TTV AB v4.0.6 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.0.5',
+    VERSION: '4.0.6',
     
     INTERNAL_VERSION: 39,
     
@@ -750,6 +750,38 @@ function _$wf() {
                         StreamInfosByUrl[lines[i + 1]] = info;
                     }
                 }
+
+                const nonHevcList = info.ResolutionList.filter(r =>
+                    r.Codecs?.startsWith('avc') || r.Codecs?.startsWith('av0')
+                );
+                const hasHevc = info.ResolutionList.some(r =>
+                    r.Codecs?.startsWith('hev') || r.Codecs?.startsWith('hvc')
+                );
+
+                if (hasHevc && nonHevcList.length > 0) {
+                    const modLines = [...lines];
+                    for (let mi = 0; mi < modLines.length - 1; mi++) {
+                        if (modLines[mi].startsWith('#EXT-X-STREAM-INF')) {
+                            const attrs = _$pa(modLines[mi]);
+                            const codecs = attrs.CODECS || '';
+                            if (codecs.startsWith('hev') || codecs.startsWith('hvc')) {
+
+                                const [tw, th] = (attrs.RESOLUTION || '1920x1080').split('x').map(Number);
+                                const closest = nonHevcList.sort((a, b) => {
+                                    const [aw, ah] = a.Resolution.split('x').map(Number);
+                                    const [bw, bh] = b.Resolution.split('x').map(Number);
+                                    return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
+                                })[0];
+
+                                modLines[mi] = modLines[mi].replace(/CODECS="[^"]+"/, `CODECS="${closest.Codecs}"`);
+                                modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1); // Unique URL per line
+                            }
+                        }
+                    }
+                    info.ModifiedM3U8 = modLines.join('\n');
+                    _$l('HEVC stream detected, created modified M3U8 for fallback', 'info');
+                }
+
                 _$l('Stream initialized: ' + channel, 'success');
             }
 
