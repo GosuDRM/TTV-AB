@@ -114,6 +114,41 @@ function _hookWorkerFetch() {
                         StreamInfosByUrl[lines[i + 1]] = info;
                     }
                 }
+
+                // HEVC/4K Support: Create modified M3U8 with codec swapping
+                // When a stream has HEVC qualities, Chrome can't play them during ad transitions
+                // This creates a fallback M3U8 that swaps HEVC resolutions to closest AVC equivalents
+                const nonHevcList = info.ResolutionList.filter(r =>
+                    r.Codecs?.startsWith('avc') || r.Codecs?.startsWith('av0')
+                );
+                const hasHevc = info.ResolutionList.some(r =>
+                    r.Codecs?.startsWith('hev') || r.Codecs?.startsWith('hvc')
+                );
+
+                if (hasHevc && nonHevcList.length > 0) {
+                    const modLines = [...lines];
+                    for (let mi = 0; mi < modLines.length - 1; mi++) {
+                        if (modLines[mi].startsWith('#EXT-X-STREAM-INF')) {
+                            const attrs = _parseAttrs(modLines[mi]);
+                            const codecs = attrs.CODECS || '';
+                            if (codecs.startsWith('hev') || codecs.startsWith('hvc')) {
+                                // Find closest AVC resolution by pixel count
+                                const [tw, th] = (attrs.RESOLUTION || '1920x1080').split('x').map(Number);
+                                const closest = nonHevcList.sort((a, b) => {
+                                    const [aw, ah] = a.Resolution.split('x').map(Number);
+                                    const [bw, bh] = b.Resolution.split('x').map(Number);
+                                    return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
+                                })[0];
+                                // Swap codecs and URL
+                                modLines[mi] = modLines[mi].replace(/CODECS="[^"]+"/, `CODECS="${closest.Codecs}"`);
+                                modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1); // Unique URL per line
+                            }
+                        }
+                    }
+                    info.ModifiedM3U8 = modLines.join('\n');
+                    _log('HEVC stream detected, created modified M3U8 for fallback', 'info');
+                }
+
                 _log('Stream initialized: ' + channel, 'success');
             }
 

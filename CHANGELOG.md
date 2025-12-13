@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.0.6] - 2025-12-13
+
+### Added
+- **HEVC/4K Stream Support** - Added codec swapping logic for streams with HEVC (4K) qualities. When ads are detected on HEVC streams, the extension now generates a fallback M3U8 that swaps HEVC resolutions to their closest AVC equivalents, preventing Chrome playback errors during ad transitions.
+
 ## [4.0.5] - 2025-12-13
 
 ### Improved
