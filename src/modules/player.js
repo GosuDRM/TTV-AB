@@ -14,8 +14,7 @@ const _PlayerBufferState = {
     bufferedPosition: 0,
     bufferDuration: 0,
     numSame: 0,
-    lastFixTime: 0,
-    isLive: true
+    lastFixTime: 0
 };
 
 /**
@@ -229,10 +228,6 @@ function _monitorPlayerBuffering() {
                 _cachedPlayerRef = playerAndState;
             }
         }
-
-        // Track live state for UI updates
-        const isLive = _cachedPlayerRef?.state?.props?.content?.type === 'live';
-        _PlayerBufferState.isLive = isLive;
 
         setTimeout(check, BUFFERING_DELAY);
     }

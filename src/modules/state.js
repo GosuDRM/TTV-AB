@@ -16,11 +16,7 @@ const _S = {
     /** Counter for blocked ads */
     adsBlocked: 0,
     /** Counter for blocked anti-adblock popups */
-    popupsBlocked: 0,
-    /** Current channel being watched (for per-channel stats) */
-    currentChannel: null,
-    /** Whether currently stripping ad segments (for UI) */
-    isActivelyStripping: false
+    popupsBlocked: 0
 };
 
 /**
@@ -59,7 +55,6 @@ function _declareState(scope) {
  */
 function _incrementAdsBlocked(channel) {
     _S.adsBlocked++;
-    _S.currentChannel = channel || null;
 
     // CRITICAL: Use window.postMessage() to cross MAIN→ISOLATED world boundary
     // document.dispatchEvent() does NOT work across content script worlds!

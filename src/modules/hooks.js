@@ -195,7 +195,6 @@ function _hookWorker() {
                 ${_replaceServerTime.toString()}
                 ${_stripAds.toString()}
                 ${_getStreamUrl.toString()}
-                ${_gqlReq.toString()}
                 ${_getToken.toString()}
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}
@@ -249,11 +248,9 @@ function _hookWorker() {
                         _log('Ad blocked! Total: ' + e.data.count, 'success');
                         break;
                     case 'AdDetected':
-                        _S.isActivelyStripping = true;
                         _log('Ad detected, blocking...', 'warning');
                         break;
                     case 'AdEnded':
-                        _S.isActivelyStripping = false;
                         _log('Ad ended', 'success');
                         break;
                     case 'ReloadPlayer':

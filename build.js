@@ -42,7 +42,6 @@ const MINIFY_MAP = {
     '_replaceServerTime': '_$rt',
     '_stripAds': '_$sa',
     '_getStreamUrl': '_$su',
-    '_gqlReq': '_$gq',
     '_getToken': '_$tk',
     '_processM3U8': '_$pm',
     '_findBackupStream': '_$fb',
