@@ -81,18 +81,13 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
         }
     }
 
-    // First pass: Count live vs ad segments to determine stripping strategy
-    let liveSegmentCount = 0;
+    // First pass: Count ad segments to determine stripping strategy
     let adSegmentCount = 0;
 
     for (i = 0; i < len - 1; i++) {
         const line = lines[i];
-        if (line.startsWith('#EXTINF')) {
-            if (line.includes(',live')) {
-                liveSegmentCount++;
-            } else {
-                adSegmentCount++;
-            }
+        if (line.startsWith('#EXTINF') && !line.includes(',live')) {
+            adSegmentCount++;
         }
     }
 
