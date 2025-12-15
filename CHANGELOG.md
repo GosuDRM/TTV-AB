@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.0.9] - 2025-12-15
+
+### Fixed
+- **Player Reload Loop** - Disabled automatic player reload after ads end (`RELOAD_AFTER_AD: false`). This was causing a continuous reload cycle where the player would constantly refresh during ad breaks, disrupting viewing experience.
+
+### Cleaned
+- **Dead Code Removal** - Removed unused `liveSegmentCount` variable from `parser.js` (was counted but never read).
+
+### Changed
+- **Backup Player Priority** - Reordered backup player types to `['embed', 'autoplay', 'site', 'picture-by-picture-CACHED']` with `embed` as the primary backup. The `embed` player type typically has fewer ads and doesn't trigger reload loops.
+- **Fallback/Force Type** - Changed from `site` to `embed` for more stable ad-free streams.
+- **Reload Cooldown** - Increased minimum time between player reloads from 1500ms to 2000ms for stability.
+
 ## [4.0.8] - 2025-12-13
 
 ### Cleaned
