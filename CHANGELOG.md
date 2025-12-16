@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.1.0] - 2025-12-16
+
+### Fixed
+- **Cross-Tab Interference** - Auto-refresh on player crash now only triggers when the Twitch tab is in the foreground. Previously, refreshing a background Twitch tab would cause browser resource contention that could crash video players in other tabs (e.g., Viu, Netflix). Now, if the tab is hidden when a crash is detected, the refresh is queued and will occur when the user switches back to the Twitch tab.
+
 ## [4.0.9] - 2025-12-15
 
 ### Fixed

@@ -50,21 +50,39 @@ function _initCrashMonitor() {
         isRefreshing = true;
 
         _log('Player crash detected: ' + error, 'error');
-        _log('Auto-refreshing in ' + (_C.REFRESH_DELAY / 1000) + 's...', 'warning');
 
-        // Show notification banner
-        const banner = document.createElement('div');
-        banner.innerHTML = `
-            <style>
-                #ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-pulse 1s ease infinite}
-                @keyframes ttvab-pulse{0%,100%{opacity:1}50%{opacity:.7}}
-            </style>
-            <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing automatically...</div>
-        `;
-        document.body.appendChild(banner);
+        // Only auto-refresh if tab is visible to avoid disrupting other tabs
+        // When refreshing a background tab, browser resource contention can crash
+        // video players in other tabs (e.g., Viu, Netflix, etc.)
+        if (document.hidden) {
+            _log('Tab is hidden, will refresh when tab becomes visible...', 'warning');
 
-        setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
+            // Queue refresh for when user returns to this tab
+            document.addEventListener('visibilitychange', function onVisible() {
+                if (!document.hidden) {
+                    document.removeEventListener('visibilitychange', onVisible);
+                    _log('Tab now visible, refreshing...', 'warning');
+                    window.location.reload();
+                }
+            });
+        } else {
+            _log('Auto-refreshing in ' + (_C.REFRESH_DELAY / 1000) + 's...', 'warning');
+
+            // Show notification banner
+            const banner = document.createElement('div');
+            banner.innerHTML = `
+                <style>
+                    #ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-pulse 1s ease infinite}
+                    @keyframes ttvab-pulse{0%,100%{opacity:1}50%{opacity:.7}}
+                </style>
+                <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing automatically...</div>
+            `;
+            document.body.appendChild(banner);
+
+            setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
+        }
     }
+
 
     /**
      * Start monitoring
