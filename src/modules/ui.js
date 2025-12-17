@@ -7,8 +7,8 @@
 
 /** @type {string} Storage key for donation reminder */
 const _REMINDER_KEY = 'ttvab_last_reminder';
-/** @type {number} Reminder interval (24 hours) */
-const _REMINDER_INTERVAL = 86400000;
+/** @type {number} Reminder interval (72 hours) */
+const _REMINDER_INTERVAL = 259200000;
 /** @type {string} Storage key for first run */
 const _FIRST_RUN_KEY = 'ttvab_first_run_shown';
 
@@ -49,7 +49,6 @@ function _showDonation() {
                 toast.remove();
             };
 
-            // Auto-hide after 15 seconds
             setTimeout(() => {
                 if (document.getElementById('ttvab-reminder')) {
                     toast.style.animation = 'ttvab-slide .3s ease reverse';
@@ -102,10 +101,9 @@ function _showWelcome() {
 
             document.getElementById('ttvab-welcome-close').onclick = closeHandler;
 
-            // Auto-hide after 20 seconds
             setTimeout(() => {
                 if (document.getElementById('ttvab-welcome')) closeHandler();
-            }, 20000);
+            }, 10000);
         }, 2000);
     } catch (e) {
         _log('Welcome message error: ' + e.message, 'error');
@@ -140,7 +138,6 @@ function _showAchievementUnlocked(achievementId) {
         const ach = _ACHIEVEMENT_INFO[achievementId];
         if (!ach) return;
 
-        // Remove any existing achievement toast
         const existing = document.getElementById('ttvab-achievement');
         if (existing) existing.remove();
 
@@ -170,7 +167,6 @@ function _showAchievementUnlocked(achievementId) {
         document.body.appendChild(toast);
         _log('Achievement unlocked: ' + ach.name, 'success');
 
-        // Auto-hide after 4 seconds
         setTimeout(() => {
             if (document.getElementById('ttvab-achievement')) {
                 toast.style.animation = 'ttvab-ach-pop .3s ease reverse';

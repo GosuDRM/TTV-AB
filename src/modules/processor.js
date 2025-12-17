@@ -6,9 +6,6 @@
  */
 
 /**
- * Global state for proxy fetch requests
- */
-/**
  * Process M3U8 playlist and strip/replace ads
  * @param {string} url - Playlist URL
  * @param {string} text - Playlist content
@@ -40,9 +37,6 @@ async function _processM3U8(url, text, realFetch) {
             }
         }
 
-        // If we're already in fallback mode (using ad-stripped fallback stream),
-        // DON'T restart the backup stream search - just keep stripping ads from current stream.
-        // This prevents the infinite loop where we keep searching for backup streams.
         if (info.IsUsingFallbackStream) {
             _log('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
             text = _stripAds(text, false, info, true);
@@ -65,7 +59,6 @@ async function _processM3U8(url, text, realFetch) {
 
         if (!backupM3u8) _log('Failed to find any backup stream', 'warning');
 
-        // Mark fallback mode if we're using a fallback stream (stream with ads that we'll strip)
         if (isFallback) {
             info.IsUsingFallbackStream = true;
             _log('Entering fallback mode - will strip ads from stream', 'info');
@@ -78,7 +71,6 @@ async function _processM3U8(url, text, realFetch) {
             _log('Using backup player type: ' + backupType, 'info');
         }
 
-        // Pass true for isBackup if we found a backup stream
         text = _stripAds(text, false, info, !!backupM3u8);
     } else {
         if (info.IsShowingAd) {
@@ -91,7 +83,6 @@ async function _processM3U8(url, text, realFetch) {
             _log('Ad ended', 'success');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdEnded' });
-                // Trigger player reload or pause/play for cleaner stream recovery
                 if (info.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
                     self.postMessage({ key: 'ReloadPlayer' });
                 } else {
@@ -117,10 +108,8 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false,
     let backupType = null;
     let backupM3u8 = null;
     let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
-    let fallbackType = null; // Track which player type the fallback came from
+    let fallbackType = null;
 
-    // Optimization: Try the last successful backup type first (Sticky)
-    // This saves unnecessary network requests for types that didn't work previously
     const playerTypes = [...BackupPlayerTypes];
     if (info.ActiveBackupPlayerType) {
         const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
@@ -132,8 +121,6 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false,
 
     const playerTypesLen = playerTypes.length;
 
-    // Use the current resolution instead of forcing 480p
-    // This maintains video quality and avoids resolution-specific ad targeting
     const targetRes = currentResolution || { Resolution: '1920x1080', FrameRate: '60' };
 
     for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
@@ -149,14 +136,12 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false,
             if (!enc) {
                 isFreshM3u8 = true;
                 try {
-                    // Standard Twitch usher fetch
                     const tokenRes = await _getToken(info.ChannelName, realPt, realFetch);
                     if (tokenRes.status === 200) {
                         const token = await tokenRes.json();
                         const sig = token?.data?.streamPlaybackAccessToken?.signature;
                         const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
 
-                        // Check for valid token components
                         if (sig && tokenValue) {
                             const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
                             usherUrl.searchParams.set('sig', sig);

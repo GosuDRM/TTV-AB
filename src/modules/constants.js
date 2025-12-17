@@ -8,7 +8,7 @@
 /** @type {Object} Configuration constants */
 const _C = {
     /** Extension version */
-    VERSION: '4.1.0',
+    VERSION: '4.1.1',
     /** Internal version for conflict detection */
     INTERNAL_VERSION: 40,
     /** Console log styling */
@@ -35,7 +35,7 @@ const _C = {
     /** Error patterns indicating player crash */
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
     /** Delay before auto-refresh (ms) */
-    REFRESH_DELAY: 1000,
+    REFRESH_DELAY: 500,
     /** Enable player buffering fix (pause/play on buffer stalls) */
     BUFFERING_FIX: true,
     /** Reload player after ad ends - disabled to prevent reload loop */

@@ -17,7 +17,6 @@ function _hookWorkerFetch() {
         if (keys.length > 5) {
             const oldKey = keys[0]; // Simple FIFO
             delete StreamInfos[oldKey];
-            // Also clean up by URL references
             for (const url in StreamInfosByUrl) {
                 if (StreamInfosByUrl[url].ChannelName === oldKey) {
                     delete StreamInfosByUrl[url];
@@ -31,14 +30,12 @@ function _hookWorkerFetch() {
             return realFetch.apply(this, arguments);
         }
 
-        // Return cached ad segment as empty video
         if (AdSegmentCache.has(url)) {
             return realFetch('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts);
         }
 
         url = url.trimEnd();
 
-        // Process M3U8 playlists
         if (url.endsWith('m3u8')) {
             const response = await realFetch(url, opts);
             if (response.status === 200) {
@@ -48,7 +45,6 @@ function _hookWorkerFetch() {
             return response;
         }
 
-        // Handle channel HLS requests
         if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
             V2API = url.includes('/api/v2/');
             const channelMatch = (new URL(url)).pathname.match(/([^/]+)(?=\.\w+$)/);
@@ -67,7 +63,6 @@ function _hookWorkerFetch() {
             const serverTime = _getServerTime(encodings);
             let info = StreamInfos[channel];
 
-            // Validate existing info
             if (info?.EncodingsM3U8) {
                 const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
                 if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
@@ -75,7 +70,6 @@ function _hookWorkerFetch() {
                 }
             }
 
-            // Initialize stream info
             if (!info?.EncodingsM3U8) {
                 _pruneStreamInfos();
                 info = StreamInfos[channel] = {
@@ -116,9 +110,6 @@ function _hookWorkerFetch() {
                     }
                 }
 
-                // HEVC/4K Support: Create modified M3U8 with codec swapping
-                // When a stream has HEVC qualities, Chrome can't play them during ad transitions
-                // This creates a fallback M3U8 that swaps HEVC resolutions to closest AVC equivalents
                 const nonHevcList = info.ResolutionList.filter(r =>
                     r.Codecs?.startsWith('avc') || r.Codecs?.startsWith('av0')
                 );
@@ -133,14 +124,12 @@ function _hookWorkerFetch() {
                             const attrs = _parseAttrs(modLines[mi]);
                             const codecs = attrs.CODECS || '';
                             if (codecs.startsWith('hev') || codecs.startsWith('hvc')) {
-                                // Find closest AVC resolution by pixel count
                                 const [tw, th] = (attrs.RESOLUTION || '1920x1080').split('x').map(Number);
                                 const closest = nonHevcList.sort((a, b) => {
                                     const [aw, ah] = a.Resolution.split('x').map(Number);
                                     const [bw, bh] = b.Resolution.split('x').map(Number);
                                     return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
                                 })[0];
-                                // Swap codecs and URL
                                 modLines[mi] = modLines[mi].replace(/CODECS="[^"]+"/, `CODECS="${closest.Codecs}"`);
                                 modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1); // Unique URL per line
                             }
@@ -182,7 +171,6 @@ function _hookWorker() {
                 return;
             }
 
-            // Inject ad blocking code into worker
             const injectedCode = `
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify(_S)};
@@ -233,14 +221,12 @@ function _hookWorker() {
             super(blobUrl, opts);
             URL.revokeObjectURL(blobUrl);
 
-            // Listen for messages from worker
             this.addEventListener('message', function (e) {
                 if (!e.data?.key) return;
 
                 switch (e.data.key) {
                     case 'AdBlocked':
                         _S.adsBlocked = e.data.count;
-                        // Use window.postMessage to cross MAIN→ISOLATED world boundary
                         window.postMessage({
                             type: 'ttvab-ad-blocked',
                             detail: { count: e.data.count, channel: e.data.channel || null }
@@ -268,7 +254,6 @@ function _hookWorker() {
                 }
             });
 
-            // Worker crash detection and auto-restart
             const workerUrl = url;
             const workerOpts = opts;
             let restartAttempts = 0;
@@ -278,11 +263,9 @@ function _hookWorker() {
             this.addEventListener('error', function (e) {
                 _log('Worker crashed: ' + (e.message || 'Unknown error'), 'error');
 
-                // Remove crashed worker from the list
                 const idx = _S.workers.indexOf(workerSelf);
                 if (idx > -1) _S.workers.splice(idx, 1);
 
-                // Auto-restart with exponential backoff
                 if (restartAttempts < MAX_RESTART_ATTEMPTS) {
                     restartAttempts++;
                     const delay = Math.pow(2, restartAttempts) * 500; // 1s, 2s, 4s
@@ -290,7 +273,6 @@ function _hookWorker() {
 
                     setTimeout(function () {
                         try {
-                            // Create a new worker using the hooked Worker constructor
                             new window.Worker(workerUrl, workerOpts);
                             _log('Worker restarted successfully', 'success');
                             restartAttempts = 0; // Reset on success
@@ -305,8 +287,6 @@ function _hookWorker() {
 
             _S.workers.push(this);
 
-            // Cleanup old workers
-            // Keep only the last 5 workers to prevent memory leaks
             if (_S.workers.length > 5) {
                 const oldWorker = _S.workers.shift();
                 try { oldWorker.terminate(); } catch { /* Worker may already be terminated */ }
@@ -351,10 +331,8 @@ function _hookMainFetch() {
             if (urlStr.includes('gql.twitch.tv/gql')) {
                 const response = await realFetch.apply(this, arguments);
 
-                // Extract headers safely (could be plain object or Headers object)
                 let headers = opts?.headers;
 
-                // Handle Fetch API Request object as first argument
                 if (url instanceof Request) {
                     headers = url.headers;
                 }
@@ -393,7 +371,6 @@ function _hookMainFetch() {
                         updates.push({ key: 'UpdateDeviceId', value: GQLDeviceID });
                     }
 
-                    // Batch update workers
                     if (updates.length > 0) {
                         for (const worker of _S.workers) {
                             for (const update of updates) {
