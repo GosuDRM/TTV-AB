@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.1.0 - Twitch Ad Blocker
+ * TTV AB v4.1.1 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.1.0',
+    VERSION: '4.1.1',
     
     INTERNAL_VERSION: 40,
     
@@ -87,7 +87,7 @@ const _$c = {
     
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
     
-    REFRESH_DELAY: 1000,
+    REFRESH_DELAY: 500,
     
     BUFFERING_FIX: true,
     
@@ -115,7 +115,7 @@ function _$ds(scope) {
     scope.ForceAccessTokenPlayerType = _$c.FORCE_TYPE;
     scope.SkipPlayerReloadOnHevc = false;
     scope.AlwaysReloadPlayerOnAd = false;
-    scope.ReloadPlayerAfterAd = _$c.RELOAD_AFTER_AD || true;
+    scope.ReloadPlayerAfterAd = _$c.RELOAD_AFTER_AD ?? true;
     scope.PlayerReloadMinimalRequestsTime = _$c.RELOAD_TIME;
     scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
     scope.HasTriggeredPlayerReload = false;
@@ -430,7 +430,6 @@ async function _$pm(url, text, realFetch) {
             _$l('Ad ended', 'success');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdEnded' });
-
                 if (info.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
                     self.postMessage({ key: 'ReloadPlayer' });
                 } else {
@@ -447,7 +446,7 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
     let backupType = null;
     let backupM3u8 = null;
     let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
-    let fallbackType = null; // Track which player type the fallback came from
+    let fallbackType = null;
 
     const playerTypes = [...BackupPlayerTypes];
     if (info.ActiveBackupPlayerType) {
@@ -475,7 +474,6 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
             if (!enc) {
                 isFreshM3u8 = true;
                 try {
-
                     const tokenRes = await _$tk(info.ChannelName, realPt, realFetch);
                     if (tokenRes.status === 200) {
                         const token = await tokenRes.json();
@@ -616,7 +614,6 @@ function _$wf() {
         if (keys.length > 5) {
             const oldKey = keys[0]; // Simple FIFO
             delete StreamInfos[oldKey];
-
             for (const url in StreamInfosByUrl) {
                 if (StreamInfosByUrl[url].ChannelName === oldKey) {
                     delete StreamInfosByUrl[url];
@@ -724,14 +721,12 @@ function _$wf() {
                             const attrs = _$pa(modLines[mi]);
                             const codecs = attrs.CODECS || '';
                             if (codecs.startsWith('hev') || codecs.startsWith('hvc')) {
-
                                 const [tw, th] = (attrs.RESOLUTION || '1920x1080').split('x').map(Number);
                                 const closest = nonHevcList.sort((a, b) => {
                                     const [aw, ah] = a.Resolution.split('x').map(Number);
                                     const [bw, bh] = b.Resolution.split('x').map(Number);
                                     return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
                                 })[0];
-
                                 modLines[mi] = modLines[mi].replace(/CODECS="[^"]+"/, `CODECS="${closest.Codecs}"`);
                                 modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1); // Unique URL per line
                             }
@@ -826,7 +821,6 @@ function _$hw() {
                 switch (e.data.key) {
                     case 'AdBlocked':
                         _$s.adsBlocked = e.data.count;
-
                         window.postMessage({
                             type: 'ttvab-ad-blocked',
                             detail: { count: e.data.count, channel: e.data.channel || null }
@@ -873,7 +867,6 @@ function _$hw() {
 
                     setTimeout(function () {
                         try {
-
                             new window.Worker(workerUrl, workerOpts);
                             _$l('Worker restarted successfully', 'success');
                             restartAttempts = 0; // Reset on success
@@ -1173,7 +1166,6 @@ function _$mpb() {
 
 function _$hvs() {
     try {
-
         Object.defineProperty(document, 'visibilityState', {
             get: () => 'visible'
         });
@@ -1197,7 +1189,6 @@ function _$hvs() {
     let wasVideoPlaying = true;
 
     const handleVisibilityChange = e => {
-
         if (typeof chrome !== 'undefined') {
             const videos = document.getElementsByTagName('video');
             if (videos.length > 0) {
@@ -1271,7 +1262,7 @@ function _$hlp() {
 
 const _$rk = 'ttvab_last_reminder';
 
-const _$ri2 = 86400000;
+const _$ri2 = 259200000;
 
 const _$fr = 'ttvab_first_run_shown';
 
@@ -1360,7 +1351,7 @@ function _$wc() {
 
             setTimeout(() => {
                 if (document.getElementById('ttvab-welcome')) closeHandler();
-            }, 20000);
+            }, 10000);
         }, 2000);
     } catch (e) {
         _$l('Welcome message error: ' + e.message, 'error');
@@ -1440,7 +1431,6 @@ function _$cm() {
     let checkInterval = null;
 
     function detectCrash() {
-
         const errorElements = document.querySelectorAll(
             '[data-a-target="player-overlay-content-gate"],' +
             '[data-a-target="player-error-modal"],' +
@@ -1501,7 +1491,6 @@ function _$cm() {
         let lastCheck = 0;
         const observer = new MutationObserver(() => {
             try {
-
                 const now = Date.now();
                 if (now - lastCheck < 2000) return;
                 lastCheck = now;
@@ -1541,7 +1530,6 @@ function _$cm() {
 }
 
 function _$bs() {
-
     if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _$c.INTERNAL_VERSION) {
         _$l('Skipping - another script is active', 'warning');
         return false;
@@ -1558,7 +1546,6 @@ function _$tl() {
         if (e.data?.type === 'ttvab-toggle') {
             const enabled = e.data.detail?.enabled ?? true;
             IsAdStrippingEnabled = enabled;
-
             for (const worker of _$s.workers) {
                 worker.postMessage({ key: 'UpdateToggleState', value: enabled });
             }
@@ -1600,7 +1587,6 @@ function _$bp() {
             lastBlockTime = now;
 
             _$s.popupsBlocked++;
-
             window.postMessage({
                 type: 'ttvab-popup-blocked',
                 detail: { count: _$s.popupsBlocked }
@@ -1642,9 +1628,7 @@ function _$bp() {
             if (!el) return false;
             for (const selector of SAFELIST_SELECTORS) {
                 try {
-
                     if (el.matches && el.matches(selector)) return true;
-
                     if (el.querySelector && el.querySelector(selector)) return true;
                 } catch { /* Invalid selector */ }
             }
@@ -1652,11 +1636,9 @@ function _$bp() {
         }
 
         function _$sr() {
-
             const detectionNodes = document.querySelectorAll('button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span');
 
             for (const node of detectionNodes) {
-
                 if (node.tagName === 'SPAN' && node.textContent.length < 10) continue;
 
                 if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
@@ -1673,7 +1655,6 @@ function _$bp() {
                     let attempts = 0;
 
                     while (popup && attempts < 20) {
-
                         if (_isSafeElement(popup)) {
                             _$l('Skipping - hit safelisted element: ' + (popup.className || popup.tagName), 'info');
                             break;
@@ -1696,7 +1677,6 @@ function _$bp() {
                         );
 
                         if ((isOverlay || hasZIndex || isPopupClass) && (hasBackground || isLarge)) {
-
                             if (popup.querySelector('video')) {
                                 popup = popup.parentElement;
                                 attempts++;
@@ -1763,7 +1743,6 @@ function _$bp() {
             const overlays = document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]');
             for (const el of overlays) {
                 if (_hasAdblockText(el) && el.offsetWidth > 200 && el.offsetHeight > 100) {
-
                     if (el.querySelector('video')) continue;
 
                     _$l('Hiding popup overlay', 'success');
@@ -1784,7 +1763,6 @@ function _$bp() {
         let debounceTimer = null;
         let lastImmediateScan = 0;
         const observer = new MutationObserver(function (mutations) {
-
             let shouldScan = false;
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
@@ -1844,7 +1822,6 @@ function _$in() {
 
         if (e.data.type === 'ttvab-init-count' && typeof e.data.detail?.count === 'number') {
             _$s.adsBlocked = e.data.detail.count;
-
             for (const worker of _$s.workers) {
                 worker.postMessage({ key: 'UpdateAdsBlocked', value: _$s.adsBlocked });
             }

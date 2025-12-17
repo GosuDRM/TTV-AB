@@ -17,12 +17,6 @@ function _initCrashMonitor() {
      * @returns {string|null} Matched error pattern or null
      */
     function detectCrash() {
-        // Optimized: Removed full body innerText check.
-        // 1. innerText triggers expensive Layout Reflow (bad for battery/perf)
-        // 2. Body check causes false positives if error text appears in chat
-        // We rely solely on specific error element selectors below.
-
-        // Check specific error elements (efficient)
         const errorElements = document.querySelectorAll(
             '[data-a-target="player-overlay-content-gate"],' +
             '[data-a-target="player-error-modal"],' +
@@ -51,13 +45,9 @@ function _initCrashMonitor() {
 
         _log('Player crash detected: ' + error, 'error');
 
-        // Only auto-refresh if tab is visible to avoid disrupting other tabs
-        // When refreshing a background tab, browser resource contention can crash
-        // video players in other tabs (e.g., Viu, Netflix, etc.)
         if (document.hidden) {
             _log('Tab is hidden, will refresh when tab becomes visible...', 'warning');
 
-            // Queue refresh for when user returns to this tab
             document.addEventListener('visibilitychange', function onVisible() {
                 if (!document.hidden) {
                     document.removeEventListener('visibilitychange', onVisible);
@@ -68,7 +58,6 @@ function _initCrashMonitor() {
         } else {
             _log('Auto-refreshing in ' + (_C.REFRESH_DELAY / 1000) + 's...', 'warning');
 
-            // Show notification banner
             const banner = document.createElement('div');
             banner.innerHTML = `
                 <style>
@@ -93,11 +82,9 @@ function _initCrashMonitor() {
             return;
         }
 
-        // MutationObserver for real-time detection
         let lastCheck = 0;
         const observer = new MutationObserver(() => {
             try {
-                // PERF: Throttle checks to max once per 2 seconds to save battery
                 const now = Date.now();
                 if (now - lastCheck < 2000) return;
                 lastCheck = now;
@@ -116,7 +103,6 @@ function _initCrashMonitor() {
             subtree: true
         });
 
-        // Fallback interval check
         checkInterval = setInterval(() => {
             if (document.hidden) return;
             try {

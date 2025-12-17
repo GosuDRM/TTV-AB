@@ -31,12 +31,10 @@ function _findReactRoot() {
     const rootNode = document.querySelector('#root');
     if (!rootNode) return null;
 
-    // Try modern React 18+ container
     if (rootNode._reactRootContainer?._internalRoot?.current) {
         return rootNode._reactRootContainer._internalRoot.current;
     }
 
-    // Try React 17 style
     const containerName = Object.keys(rootNode).find(x => x.startsWith('__reactContainer'));
     if (containerName) {
         return rootNode[containerName];
@@ -76,13 +74,11 @@ function _getPlayerAndState() {
     const reactRoot = _findReactRoot();
     if (!reactRoot) return { player: null, state: null };
 
-    // Find player component
     let player = _findReactNode(reactRoot, node =>
         node.setPlayerActive && node.props?.mediaPlayerInstance
     );
     player = player?.props?.mediaPlayerInstance || null;
 
-    // Find player state component
     const playerState = _findReactNode(reactRoot, node =>
         node.setSrc && node.setInitialPlaybackSettings
     );
@@ -108,7 +104,6 @@ function _doPlayerTask(isPausePlay, isReload) {
         return;
     }
 
-    // Don't interrupt if paused
     if (player.isPaused() || player.core?.paused) return;
 
     if (isPausePlay) {
@@ -131,7 +126,6 @@ function _doPlayerTask(isPausePlay, isReload) {
             currentMutedLS = localStorage.getItem(lsKeyMuted);
             currentVolumeLS = localStorage.getItem(lsKeyVolume);
 
-            // Preserve current quality if localStorage hooks failed
             if (player?.core?.state) {
                 localStorage.setItem(lsKeyMuted, JSON.stringify({ default: player.core.state.muted }));
                 localStorage.setItem(lsKeyVolume, player.core.state.volume);
@@ -144,14 +138,12 @@ function _doPlayerTask(isPausePlay, isReload) {
         _log('Reloading player', 'info');
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
 
-        // Notify workers of reload
         for (const worker of _S.workers) {
             worker.postMessage({ key: 'TriggeredPlayerReload' });
         }
 
         player.play();
 
-        // Restore settings after reload
         if (currentQualityLS || currentMutedLS || currentVolumeLS) {
             setTimeout(() => {
                 try {
@@ -192,7 +184,6 @@ function _monitorPlayerBuffering() {
                     const bufferedPosition = player.core?.state?.bufferedPosition || 0;
                     const bufferDuration = player.getBufferDuration() || 0;
 
-                    // Check if stuck
                     if (
                         position > 0 &&
                         (_PlayerBufferState.position === position || bufferDuration < DANGER_ZONE) &&
@@ -221,7 +212,6 @@ function _monitorPlayerBuffering() {
             }
         }
 
-        // Refresh player reference if needed
         if (!_cachedPlayerRef) {
             const playerAndState = _getPlayerAndState();
             if (playerAndState.player && playerAndState.state) {
@@ -242,13 +232,11 @@ function _monitorPlayerBuffering() {
  */
 function _hookVisibilityState() {
     try {
-        // Override visibilityState to always appear visible
         Object.defineProperty(document, 'visibilityState', {
             get: () => 'visible'
         });
     } catch { /* Already defined */ }
 
-    // Cache original hidden getters
     const hiddenGetter = document.__lookupGetter__('hidden');
     const webkitHiddenGetter = document.__lookupGetter__('webkitHidden');
 
@@ -258,7 +246,6 @@ function _hookVisibilityState() {
         });
     } catch { /* Already defined */ }
 
-    // Block visibility change events
     const blockEvent = e => {
         e.preventDefault();
         e.stopPropagation();
@@ -268,7 +255,6 @@ function _hookVisibilityState() {
     let wasVideoPlaying = true;
 
     const handleVisibilityChange = e => {
-        // Handle video play state restoration
         if (typeof chrome !== 'undefined') {
             const videos = document.getElementsByTagName('video');
             if (videos.length > 0) {
@@ -317,7 +303,6 @@ function _hookLocalStoragePreservation() {
 
         const cachedValues = new Map();
 
-        // Pre-cache current values
         for (const key of keysToCache) {
             cachedValues.set(key, localStorage.getItem(key));
         }

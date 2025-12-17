@@ -96,25 +96,18 @@ function getVersion() {
 }
 
 function minifyCode(code) {
-    // Apply name replacements
     let result = code;
     for (const [original, minified] of Object.entries(MINIFY_MAP)) {
         result = result.replace(new RegExp(`\\b${original}\\b`, 'g'), minified);
     }
 
-    // Remove multi-line comments (but keep JSDoc for header)
     result = result.replace(/\/\*\*[\s\S]*?\*\//g, (match, offset) => {
-        // Keep only the first JSDoc (header)
         return offset < 50 ? match : '';
     });
 
-    // Remove single-line comments
     result = result.replace(/^\s*\/\/.*$/gm, '');
-
-    // Remove empty lines
     result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
 
-    // Remove module separator comments
     result = result.replace(/\s*\/\/ ═+\n\s*\/\/ MODULE:.*\n\s*\/\/ ═+\n/g, '\n');
 
     return result;

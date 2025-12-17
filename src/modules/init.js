@@ -10,7 +10,6 @@
  * @returns {boolean} True if initialization should continue
  */
 function _bootstrap() {
-    // Skip if newer version is already running
     if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _C.INTERNAL_VERSION) {
         _log('Skipping - another script is active', 'warning');
         return false;
@@ -30,7 +29,6 @@ function _initToggleListener() {
         if (e.data?.type === 'ttvab-toggle') {
             const enabled = e.data.detail?.enabled ?? true;
             IsAdStrippingEnabled = enabled;
-            // Broadcast to workers
             for (const worker of _S.workers) {
                 worker.postMessage({ key: 'UpdateToggleState', value: enabled });
             }
@@ -47,7 +45,6 @@ function _blockAntiAdblockPopup() {
     // Track if we've already blocked a popup recently (avoid duplicate logs)
     let lastBlockTime = 0;
 
-    // Wait for DOM to be ready before setting up observers
     function _initPopupBlocker() {
         if (!document.body) {
             if (document.readyState === 'loading') {
@@ -58,7 +55,6 @@ function _blockAntiAdblockPopup() {
             return;
         }
 
-        // Inject CSS for proactive blocking
         if (!document.getElementById('ttvab-popup-style')) {
             const style = document.createElement('style');
             style.id = 'ttvab-popup-style';
@@ -81,7 +77,6 @@ function _blockAntiAdblockPopup() {
             lastBlockTime = now;
 
             _S.popupsBlocked++;
-            // Use window.postMessage to cross MAIN→ISOLATED world boundary
             window.postMessage({
                 type: 'ttvab-popup-blocked',
                 detail: { count: _S.popupsBlocked }
@@ -133,9 +128,7 @@ function _blockAntiAdblockPopup() {
             if (!el) return false;
             for (const selector of SAFELIST_SELECTORS) {
                 try {
-                    // Check if element itself matches
                     if (el.matches && el.matches(selector)) return true;
-                    // Check if element contains any safelisted elements
                     if (el.querySelector && el.querySelector(selector)) return true;
                 } catch { /* Invalid selector */ }
             }
@@ -146,34 +139,25 @@ function _blockAntiAdblockPopup() {
          * Find and remove the popup by looking for specific patterns
          */
         function _scanAndRemove() {
-            // Strategy 1: Find buttons AND headers with adblock text
-            // Twitch sometimes uses divs or anchors as buttons
             const detectionNodes = document.querySelectorAll('button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span');
 
             for (const node of detectionNodes) {
-                // Optimization: Skip small elements unless they are buttons
                 if (node.tagName === 'SPAN' && node.textContent.length < 10) continue;
 
-                // SKIP: Element is already hidden or processed
                 if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
 
-                // SKIP: Element is inside a safelisted component (e.g., chat)
                 if (_isSafeElement(node) || node.closest('[class*="chat"]') || node.closest('[class*="Chat"]')) continue;
 
                 if (_hasAdblockText(node)) {
                     const nodeText = (node.textContent || '').trim().substring(0, 50);
                     _log('Found adblock text in <' + node.tagName + '>: "' + nodeText + '"', 'warning');
 
-                    // Mark this node as processed so we don't scan it again
                     node.setAttribute('data-ttvab-blocked', 'true');
 
-                    // Walk up the DOM to find the popup container
                     let popup = node.parentElement;
                     let attempts = 0;
 
-                    // Walk up max 20 levels to find a suitable container
                     while (popup && attempts < 20) {
-                        // SAFETY CHECK: Stop if we hit a safelisted element
                         if (_isSafeElement(popup)) {
                             _log('Skipping - hit safelisted element: ' + (popup.className || popup.tagName), 'info');
                             break;
@@ -186,8 +170,6 @@ function _blockAntiAdblockPopup() {
                         const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
                         const hasZIndex = parseInt(style.zIndex) > 100;
 
-                        // More specific popup class detection - require stronger signals
-                        // 'Layer' and 'Overlay' alone are too broad (used by chat sidebar)
                         const className = (popup.className && typeof popup.className === 'string') ? popup.className : '';
                         const isPopupClass = (
                             (className.includes('ScAttach') && className.includes('Balloon')) ||
@@ -198,16 +180,13 @@ function _blockAntiAdblockPopup() {
                             (className.includes('Layer') && className.includes('Balloon'))
                         );
 
-                        // If this looks like a popup container, hide it (don't remove!)
                         if ((isOverlay || hasZIndex || isPopupClass) && (hasBackground || isLarge)) {
-                            // Verify it's not the player itself
                             if (popup.querySelector('video')) {
                                 popup = popup.parentElement;
                                 attempts++;
                                 continue;
                             }
 
-                            // FINAL SAFETY: Don't hide if this would affect chat/player
                             if (_isSafeElement(popup)) {
                                 _log('Skipping potential popup - contains safelisted content', 'warning');
                                 break;
@@ -227,8 +206,6 @@ function _blockAntiAdblockPopup() {
                         attempts++;
                     }
 
-                    // Fallback: Only hide immediate parent with specific popup-like class
-                    // Much more conservative than before
                     const fallback = node.closest('div[class*="Balloon"], div[class*="consent"], div[class*="Modal"]');
                     if (fallback && !_isSafeElement(fallback)) {
                         _log('Hiding popup (fallback logic): ' + fallback.className, 'warning');
@@ -241,7 +218,6 @@ function _blockAntiAdblockPopup() {
                 }
             }
 
-            // Strategy 2: Scan for known Twitch popup class patterns
             const popupSelectors = [
                 'div[class*="ScAttach"][class*="ScBalloon"]',
                 'div[class*="tw-balloon"]',
@@ -268,11 +244,9 @@ function _blockAntiAdblockPopup() {
                 }
             }
 
-            // Strategy 3: Find fixed/absolute positioned elements with adblock text
             const overlays = document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]');
             for (const el of overlays) {
                 if (_hasAdblockText(el) && el.offsetWidth > 200 && el.offsetHeight > 100) {
-                    // Safety check: don't hide player
                     if (el.querySelector('video')) continue;
 
                     _log('Hiding popup overlay', 'success');
@@ -286,16 +260,13 @@ function _blockAntiAdblockPopup() {
             return false;
         }
 
-        // Initial scan
         if (_scanAndRemove()) {
             _log('Popup removed on initial scan', 'success');
         }
 
-        // Watch for new popups - scan on any DOM change
         let debounceTimer = null;
         let lastImmediateScan = 0;
         const observer = new MutationObserver(function (mutations) {
-            // Quick check if any added nodes might be a popup
             let shouldScan = false;
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
@@ -309,14 +280,12 @@ function _blockAntiAdblockPopup() {
 
             if (!shouldScan) return;
 
-            // Immediate scan if we haven't scanned in the last 100ms (for instant blocking)
             const now = Date.now();
             if (now - lastImmediateScan > 100) {
                 lastImmediateScan = now;
                 _scanAndRemove();
             }
 
-            // Also debounce a follow-up scan for any elements that render after a short delay
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 _scanAndRemove();
@@ -329,7 +298,6 @@ function _blockAntiAdblockPopup() {
             subtree: true
         });
 
-        // Periodic scan as backup (every 500ms when visible, 2s when hidden)
         function _scheduleIdleScan() {
             const delay = document.hidden ? 2000 : 500;
             setTimeout(() => {
@@ -344,7 +312,6 @@ function _blockAntiAdblockPopup() {
         _log('Anti-adblock popup blocker active', 'success');
     }
 
-    // Start initialization
     _initPopupBlocker();
 }
 
@@ -356,14 +323,12 @@ function _init() {
 
     _declareState(window);
 
-    // Listen for initial accumulated count from bridge via window.postMessage
     window.addEventListener('message', function (e) {
         if (e.source !== window) return;
         if (!e.data?.type?.startsWith('ttvab-init-')) return;
 
         if (e.data.type === 'ttvab-init-count' && typeof e.data.detail?.count === 'number') {
             _S.adsBlocked = e.data.detail.count;
-            // Sync to workers to prevent race condition reset
             for (const worker of _S.workers) {
                 worker.postMessage({ key: 'UpdateAdsBlocked', value: _S.adsBlocked });
             }
@@ -384,7 +349,6 @@ function _init() {
     _blockAntiAdblockPopup();
     _initAchievementListener();
 
-    // Enhanced player features
     _hookVisibilityState();
     _hookLocalStoragePreservation();
     if (_C.BUFFERING_FIX) {
@@ -394,7 +358,6 @@ function _init() {
     _showWelcome();
     _showDonation();
 
-    // Request state sync from bridge (Handshake)
     window.postMessage({ type: 'ttvab-request-state' }, '*');
 
     _log('Initialized successfully', 'success');
