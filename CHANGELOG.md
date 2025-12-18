@@ -10,6 +10,7 @@ All notable changes to TTV AB will be documented in this file.
 ### Cleaned
 - **Unused Parameter** - Removed unused `_isBackup` parameter from `_stripAds()` function in `parser.js`.
 - **Header Handling** - Refactored Authorization header in `api.js` to only include when set (avoids undefined values in headers).
+- **Popup Detection Logging** - Changed popup detection log from `warning` to `info` so it doesn't appear in DevTools Errors panel.
 
 ## [4.1.3] - 2025-12-18
 

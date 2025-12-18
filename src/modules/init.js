@@ -149,7 +149,7 @@ function _blockAntiAdblockPopup() {
 
                 if (_hasAdblockText(node)) {
                     const nodeText = (node.textContent || '').trim().substring(0, 50);
-                    _log('Found adblock text in <' + node.tagName + '>: "' + nodeText + '"', 'warning');
+                    _log('Found adblock text in <' + node.tagName + '>: "' + nodeText + '"', 'info');
 
                     node.setAttribute('data-ttvab-blocked', 'true');
 
