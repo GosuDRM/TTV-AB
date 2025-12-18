@@ -42,7 +42,6 @@ function _initToggleListener() {
  * Uses multiple strategies for maximum effectiveness
  */
 function _blockAntiAdblockPopup() {
-    // Track if we've already blocked a popup recently (avoid duplicate logs)
     let lastBlockTime = 0;
 
     function _initPopupBlocker() {

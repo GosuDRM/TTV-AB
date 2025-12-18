@@ -39,7 +39,7 @@ async function _processM3U8(url, text, realFetch) {
 
         if (info.IsUsingFallbackStream) {
             _log('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
-            text = _stripAds(text, false, info, true);
+            text = _stripAds(text, false, info);
             return text;
         }
 
@@ -71,9 +71,12 @@ async function _processM3U8(url, text, realFetch) {
             _log('Using backup player type: ' + backupType, 'info');
         }
 
-        text = _stripAds(text, false, info, !!backupM3u8);
+        text = _stripAds(text, false, info);
     } else {
         if (info.IsShowingAd) {
+            // Save state before reset for post-ad behavior decision
+            const wasUsingModifiedM3U8 = info.IsUsingModifiedM3U8;
+
             info.IsShowingAd = false;
             info.IsUsingModifiedM3U8 = false;
             info.IsUsingFallbackStream = false; // Exit fallback mode when ads end
@@ -83,7 +86,7 @@ async function _processM3U8(url, text, realFetch) {
             _log('Ad ended', 'success');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdEnded' });
-                if (info.IsUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
+                if (wasUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
                     self.postMessage({ key: 'ReloadPlayer' });
                 } else {
                     self.postMessage({ key: 'PauseResumePlayer' });

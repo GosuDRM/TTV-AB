@@ -41,15 +41,21 @@ async function _getToken(channel, playerType, realFetch) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
+        const headers = {
+            'Client-ID': _C.CLIENT_ID,
+            'Client-Integrity': __TTVAB_STATE__.ClientIntegrityHeader || '',
+            'X-Device-Id': __TTVAB_STATE__.GQLDeviceID || 'oauth',
+            'Client-Version': __TTVAB_STATE__.ClientVersion || 'k8s-v1'
+        };
+
+        // Only include Authorization header if set (avoid undefined in headers)
+        if (__TTVAB_STATE__.AuthorizationHeader) {
+            headers['Authorization'] = __TTVAB_STATE__.AuthorizationHeader;
+        }
+
         const res = await fetchFunc(_GQL_URL, {
             method: 'POST',
-            headers: {
-                'Client-ID': _C.CLIENT_ID,
-                'Client-Integrity': __TTVAB_STATE__.ClientIntegrityHeader || '',
-                'X-Device-Id': __TTVAB_STATE__.GQLDeviceID || 'oauth',
-                'Authorization': __TTVAB_STATE__.AuthorizationHeader || undefined,
-                'Client-Version': __TTVAB_STATE__.ClientVersion || 'k8s-v1'
-            },
+            headers,
             body: JSON.stringify(body),
             signal: controller.signal
         });
