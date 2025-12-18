@@ -45,10 +45,10 @@ async function _getToken(channel, playerType, realFetch) {
             method: 'POST',
             headers: {
                 'Client-ID': _C.CLIENT_ID,
-                'Client-Integrity': ClientIntegrityHeader || '',
-                'X-Device-Id': GQLDeviceID || 'oauth',
-                'Authorization': AuthorizationHeader || undefined,
-                'Client-Version': ClientVersion || 'k8s-v1'
+                'Client-Integrity': __TTVAB_STATE__.ClientIntegrityHeader || '',
+                'X-Device-Id': __TTVAB_STATE__.GQLDeviceID || 'oauth',
+                'Authorization': __TTVAB_STATE__.AuthorizationHeader || undefined,
+                'Client-Version': __TTVAB_STATE__.ClientVersion || 'k8s-v1'
             },
             body: JSON.stringify(body),
             signal: controller.signal

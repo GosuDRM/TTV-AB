@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.1.1 - Twitch Ad Blocker
+ * TTV AB v4.1.2 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.1.1',
+    VERSION: '4.1.2',
     
     INTERNAL_VERSION: 40,
     
@@ -108,29 +108,31 @@ const _$s = {
 };
 
 function _$ds(scope) {
-    scope.AdSignifier = _$c.AD_SIGNIFIER;
-    scope.ClientID = _$c.CLIENT_ID;
-    scope.BackupPlayerTypes = [..._$c.PLAYER_TYPES];
-    scope.FallbackPlayerType = _$c.FALLBACK_TYPE;
-    scope.ForceAccessTokenPlayerType = _$c.FORCE_TYPE;
-    scope.SkipPlayerReloadOnHevc = false;
-    scope.AlwaysReloadPlayerOnAd = false;
-    scope.ReloadPlayerAfterAd = _$c.RELOAD_AFTER_AD ?? true;
-    scope.PlayerReloadMinimalRequestsTime = _$c.RELOAD_TIME;
-    scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
-    scope.HasTriggeredPlayerReload = false;
-    scope.StreamInfos = Object.create(null);
-    scope.StreamInfosByUrl = Object.create(null);
-    scope.GQLDeviceID = null;
-    scope.ClientVersion = null;
-    scope.ClientSession = null;
-    scope.ClientIntegrityHeader = null;
-    scope.AuthorizationHeader = undefined;
-    scope.SimulatedAdsDepth = 0;
-    scope.V2API = false;
-    scope.IsAdStrippingEnabled = true;
-    scope.AdSegmentCache = new Map();
-    scope.AllSegmentsAreAdSegments = false;
+    scope.__TTVAB_STATE__ = {
+        AdSignifier: _$c.AD_SIGNIFIER,
+        ClientID: _$c.CLIENT_ID,
+        BackupPlayerTypes: [..._$c.PLAYER_TYPES],
+        FallbackPlayerType: _$c.FALLBACK_TYPE,
+        ForceAccessTokenPlayerType: _$c.FORCE_TYPE,
+        SkipPlayerReloadOnHevc: false,
+        AlwaysReloadPlayerOnAd: false,
+        ReloadPlayerAfterAd: _$c.RELOAD_AFTER_AD ?? true,
+        PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
+        PlayerReloadMinimalRequestsPlayerIndex: 0,
+        HasTriggeredPlayerReload: false,
+        StreamInfos: Object.create(null),
+        StreamInfosByUrl: Object.create(null),
+        GQLDeviceID: null,
+        ClientVersion: null,
+        ClientSession: null,
+        ClientIntegrityHeader: null,
+        AuthorizationHeader: undefined,
+        SimulatedAdsDepth: 0,
+        V2API: false,
+        IsAdStrippingEnabled: true,
+        AdSegmentCache: new Map(),
+        AllSegmentsAreAdSegments: false
+    };
 }
 
 function _$ab(channel) {
@@ -177,7 +179,7 @@ function _$pa(str) {
 }
 
 function _$gt(m3u8) {
-    if (V2API) {
+    if (__TTVAB_STATE__.V2API) {
         const match = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
         return match?.[1] ?? null;
     }
@@ -187,7 +189,7 @@ function _$gt(m3u8) {
 
 function _$rt(m3u8, time) {
     if (!time) return m3u8;
-    if (V2API) {
+    if (__TTVAB_STATE__.V2API) {
         return m3u8.replace(/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/, `$1${time}$2`);
     }
     return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
@@ -200,8 +202,8 @@ function _$sa(text, stripAll, info, _isBackup = false) {
     let stripped = false;
     let i = 0;
 
-    const hasAdSignifier = text.includes(AdSignifier);
-    if (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) {
+    const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
+    if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
         for (i = 0; i < len; i++) {
             if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
                 lines[i] = '';
@@ -218,7 +220,7 @@ function _$sa(text, stripAll, info, _isBackup = false) {
         }
     }
 
-    const shouldStrip = (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) && adSegmentCount > 0;
+    const shouldStrip = (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) && adSegmentCount > 0;
 
     for (i = 0; i < len; i++) {
         let line = lines[i];
@@ -241,8 +243,8 @@ function _$sa(text, stripAll, info, _isBackup = false) {
                 fetch(segmentUrl).then(r => r.blob()).catch(() => { });
             }
 
-            if (!AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
-            AdSegmentCache.set(segmentUrl, Date.now());
+            if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
+            __TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
             stripped = true;
 
             lines[i] = '';      // Remove #EXTINF
@@ -250,7 +252,7 @@ function _$sa(text, stripAll, info, _isBackup = false) {
             i++;
         }
 
-        if (line.includes(AdSignifier)) stripped = true;
+        if (line.includes(__TTVAB_STATE__.AdSignifier)) stripped = true;
     }
 
     if (!stripped) {
@@ -260,10 +262,10 @@ function _$sa(text, stripAll, info, _isBackup = false) {
     info.IsStrippingAdSegments = stripped;
 
     const now = Date.now();
-    if (!info._lastCachePrune || now - info._lastCachePrune > 60000) {
-        info._lastCachePrune = now;
+    if (!globalThis._lastAdCachePrune || now - globalThis._lastAdCachePrune > 60000) {
+        globalThis._lastAdCachePrune = now;
         const cutoff = now - 120000;
-        AdSegmentCache.forEach((v, k) => { if (v < cutoff) AdSegmentCache.delete(k); });
+        __TTVAB_STATE__.AdSegmentCache.forEach((v, k) => { if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k); });
     }
 
     return lines.filter(l => l !== '').join('\n');
@@ -341,10 +343,10 @@ async function _$tk(channel, playerType, realFetch) {
             method: 'POST',
             headers: {
                 'Client-ID': _$c.CLIENT_ID,
-                'Client-Integrity': ClientIntegrityHeader || '',
-                'X-Device-Id': GQLDeviceID || 'oauth',
-                'Authorization': AuthorizationHeader || undefined,
-                'Client-Version': ClientVersion || 'k8s-v1'
+                'Client-Integrity': __TTVAB_STATE__.ClientIntegrityHeader || '',
+                'X-Device-Id': __TTVAB_STATE__.GQLDeviceID || 'oauth',
+                'Authorization': __TTVAB_STATE__.AuthorizationHeader || undefined,
+                'Client-Version': __TTVAB_STATE__.ClientVersion || 'k8s-v1'
             },
             body: JSON.stringify(body),
             signal: controller.signal
@@ -360,17 +362,17 @@ async function _$tk(channel, playerType, realFetch) {
 }
 
 async function _$pm(url, text, realFetch) {
-    if (!IsAdStrippingEnabled) return text;
+    if (!__TTVAB_STATE__.IsAdStrippingEnabled) return text;
 
-    const info = StreamInfosByUrl[url];
+    const info = __TTVAB_STATE__.StreamInfosByUrl[url];
     if (!info) return text;
 
-    if (HasTriggeredPlayerReload) {
-        HasTriggeredPlayerReload = false;
+    if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
+        __TTVAB_STATE__.HasTriggeredPlayerReload = false;
         info.LastPlayerReload = Date.now();
     }
 
-    const hasAds = text.includes(AdSignifier) || SimulatedAdsDepth > 0;
+    const hasAds = text.includes(__TTVAB_STATE__.AdSignifier) || __TTVAB_STATE__.SimulatedAdsDepth > 0;
 
     if (hasAds) {
         info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
@@ -397,7 +399,7 @@ async function _$pm(url, text, realFetch) {
         }
 
         const isHevc = res.Codecs?.[0] === 'h' && (res.Codecs[1] === 'e' || res.Codecs[1] === 'v');
-        if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
+        if (((isHevc && !__TTVAB_STATE__.SkipPlayerReloadOnHevc) || __TTVAB_STATE__.AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
             info.IsUsingModifiedM3U8 = true;
             info.LastPlayerReload = Date.now();
         }
@@ -430,7 +432,7 @@ async function _$pm(url, text, realFetch) {
             _$l('Ad ended', 'success');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdEnded' });
-                if (info.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
+                if (info.IsUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
                     self.postMessage({ key: 'ReloadPlayer' });
                 } else {
                     self.postMessage({ key: 'PauseResumePlayer' });
@@ -448,7 +450,7 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
     let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
     let fallbackType = null;
 
-    const playerTypes = [...BackupPlayerTypes];
+    const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
     if (info.ActiveBackupPlayerType) {
         const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
         if (idx > -1) {
@@ -465,7 +467,7 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
         const pt = playerTypes[pi];
         const realPt = pt.replace('-CACHED', '');
         const isFullyCachedPlayerType = pt !== realPt;
-        _$l(`[Trace] Checking player type: ${pt} (Fallback=${FallbackPlayerType})`, 'info');
+        _$l(`[Trace] Checking player type: ${pt} (Fallback=${__TTVAB_STATE__.FallbackPlayerType})`, 'info');
 
         for (let j = 0; j < 2; j++) {
             let isFreshM3u8 = false;
@@ -481,7 +483,7 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
                         const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
 
                         if (sig && tokenValue) {
-                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${__TTVAB_STATE__.V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
                             usherUrl.searchParams.set('sig', sig);
                             usherUrl.searchParams.set('token', tokenValue);
                             const encRes = await realFetch(usherUrl.href);
@@ -515,12 +517,12 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
                             if (m3u8) {
                                 _$l(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
 
-                                if (!fallbackM3u8 || pt === FallbackPlayerType) {
+                                if (!fallbackM3u8 || pt === __TTVAB_STATE__.FallbackPlayerType) {
                                     fallbackM3u8 = m3u8;
                                     fallbackType = pt;
                                 }
 
-                                const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
+                                const noAds = !m3u8.includes(__TTVAB_STATE__.AdSignifier) && (__TTVAB_STATE__.SimulatedAdsDepth === 0 || pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
                                 const isLastResort = pi >= playerTypesLen - 1;
 
                                 if (noAds || minimal) {
@@ -556,7 +558,7 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
 
     let isFallback = false;
     if (!backupM3u8 && fallbackM3u8) {
-        backupType = fallbackType || FallbackPlayerType;
+        backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
         backupM3u8 = fallbackM3u8;
         isFallback = true; // Mark this as a fallback (ad-laden) stream
         _$l(`[Trace] Using fallback stream (will strip ads): ${backupType}`, 'warning');
@@ -610,13 +612,13 @@ function _$wf() {
     const realFetch = fetch;
 
     function _$ps() {
-        const keys = Object.keys(StreamInfos);
+        const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
         if (keys.length > 5) {
             const oldKey = keys[0]; // Simple FIFO
-            delete StreamInfos[oldKey];
-            for (const url in StreamInfosByUrl) {
-                if (StreamInfosByUrl[url].ChannelName === oldKey) {
-                    delete StreamInfosByUrl[url];
+            delete __TTVAB_STATE__.StreamInfos[oldKey];
+            for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
+                if (__TTVAB_STATE__.StreamInfosByUrl[url].ChannelName === oldKey) {
+                    delete __TTVAB_STATE__.StreamInfosByUrl[url];
                 }
             }
         }
@@ -627,7 +629,7 @@ function _$wf() {
             return realFetch.apply(this, arguments);
         }
 
-        if (AdSegmentCache.has(url)) {
+        if (__TTVAB_STATE__.AdSegmentCache.has(url)) {
             return realFetch('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts);
         }
 
@@ -643,11 +645,11 @@ function _$wf() {
         }
 
         if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
-            V2API = url.includes('/api/v2/');
+            __TTVAB_STATE__.V2API = url.includes('/api/v2/');
             const channelMatch = (new URL(url)).pathname.match(/([^/]+)(?=\.\w+$)/);
             const channel = channelMatch?.[0];
 
-            if (ForceAccessTokenPlayerType) {
+            if (__TTVAB_STATE__.ForceAccessTokenPlayerType) {
                 const urlObj = new URL(url);
                 urlObj.searchParams.delete('parent_domains');
                 url = urlObj.toString();
@@ -658,7 +660,7 @@ function _$wf() {
 
             const encodings = await response.text();
             const serverTime = _$gt(encodings);
-            let info = StreamInfos[channel];
+            let info = __TTVAB_STATE__.StreamInfos[channel];
 
             if (info?.EncodingsM3U8) {
                 const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
@@ -669,7 +671,7 @@ function _$wf() {
 
             if (!info?.EncodingsM3U8) {
                 _$ps();
-                info = StreamInfos[channel] = {
+                info = __TTVAB_STATE__.StreamInfos[channel] = {
                     ChannelName: channel,
                     IsShowingAd: false,
                     LastPlayerReload: 0,
@@ -703,7 +705,7 @@ function _$wf() {
                             info.Urls[lines[i + 1]] = resInfo;
                             info.ResolutionList.push(resInfo);
                         }
-                        StreamInfosByUrl[lines[i + 1]] = info;
+                        __TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
                     }
                 }
 
@@ -786,23 +788,23 @@ function _$hw() {
                 const _$gu = '${_$gu}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
                 _$ds(self);
-                GQLDeviceID = ${GQLDeviceID ? `'${GQLDeviceID}'` : 'null'};
-                AuthorizationHeader = ${AuthorizationHeader ? `'${AuthorizationHeader}'` : 'undefined'};
-                ClientIntegrityHeader = ${ClientIntegrityHeader ? `'${ClientIntegrityHeader}'` : 'null'};
-                ClientVersion = ${ClientVersion ? `'${ClientVersion}'` : 'null'};
-                ClientSession = ${ClientSession ? `'${ClientSession}'` : 'null'};
+                __TTVAB_STATE__.GQLDeviceID = ${__TTVAB_STATE__.GQLDeviceID ? `'${__TTVAB_STATE__.GQLDeviceID}'` : 'null'};
+                __TTVAB_STATE__.AuthorizationHeader = ${__TTVAB_STATE__.AuthorizationHeader ? `'${__TTVAB_STATE__.AuthorizationHeader}'` : 'undefined'};
+                __TTVAB_STATE__.ClientIntegrityHeader = ${__TTVAB_STATE__.ClientIntegrityHeader ? `'${__TTVAB_STATE__.ClientIntegrityHeader}'` : 'null'};
+                __TTVAB_STATE__.ClientVersion = ${__TTVAB_STATE__.ClientVersion ? `'${__TTVAB_STATE__.ClientVersion}'` : 'null'};
+                __TTVAB_STATE__.ClientSession = ${__TTVAB_STATE__.ClientSession ? `'${__TTVAB_STATE__.ClientSession}'` : 'null'};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;
                     if (!data?.key) return;
                     switch (data.key) {
-                        case 'UpdateClientVersion': ClientVersion = data.value; break;
-                        case 'UpdateClientSession': ClientSession = data.value; break;
-                        case 'UpdateClientId': ClientID = data.value; break;
-                        case 'UpdateDeviceId': GQLDeviceID = data.value; break;
-                        case 'UpdateClientIntegrityHeader': ClientIntegrityHeader = data.value; break;
-                        case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
-                        case 'UpdateToggleState': IsAdStrippingEnabled = data.value; break;
+                        case 'UpdateClientVersion': __TTVAB_STATE__.ClientVersion = data.value; break;
+                        case 'UpdateClientSession': __TTVAB_STATE__.ClientSession = data.value; break;
+                        case 'UpdateClientId': __TTVAB_STATE__.ClientID = data.value; break;
+                        case 'UpdateDeviceId': __TTVAB_STATE__.GQLDeviceID = data.value; break;
+                        case 'UpdateClientIntegrityHeader': __TTVAB_STATE__.ClientIntegrityHeader = data.value; break;
+                        case 'UpdateAuthorizationHeader': __TTVAB_STATE__.AuthorizationHeader = data.value; break;
+                        case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _$s.adsBlocked = data.value; break;
                     }
                 });
@@ -900,11 +902,11 @@ function _$hs() {
         const originalGetItem = localStorage.getItem.bind(localStorage);
         localStorage.getItem = function (key) {
             const value = originalGetItem(key);
-            if (key === 'unique_id' && value) GQLDeviceID = value;
+            if (key === 'unique_id' && value) __TTVAB_STATE__.GQLDeviceID = value;
             return value;
         };
         const deviceId = originalGetItem('unique_id');
-        if (deviceId) GQLDeviceID = deviceId;
+        if (deviceId) __TTVAB_STATE__.GQLDeviceID = deviceId;
     } catch (e) {
         _$l('Storage hook error: ' + e.message, 'warning');
     }
@@ -939,24 +941,24 @@ function _$mf() {
                     const device = getHeader('X-Device-Id');
 
                     if (integrity) {
-                        ClientIntegrityHeader = integrity;
-                        updates.push({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader });
+                        __TTVAB_STATE__.ClientIntegrityHeader = integrity;
+                        updates.push({ key: 'UpdateClientIntegrityHeader', value: __TTVAB_STATE__.ClientIntegrityHeader });
                     }
                     if (auth) {
-                        AuthorizationHeader = auth;
-                        updates.push({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader });
+                        __TTVAB_STATE__.AuthorizationHeader = auth;
+                        updates.push({ key: 'UpdateAuthorizationHeader', value: __TTVAB_STATE__.AuthorizationHeader });
                     }
                     if (version) {
-                        ClientVersion = version;
-                        updates.push({ key: 'UpdateClientVersion', value: ClientVersion });
+                        __TTVAB_STATE__.ClientVersion = version;
+                        updates.push({ key: 'UpdateClientVersion', value: __TTVAB_STATE__.ClientVersion });
                     }
                     if (session) {
-                        ClientSession = session;
-                        updates.push({ key: 'UpdateClientSession', value: ClientSession });
+                        __TTVAB_STATE__.ClientSession = session;
+                        updates.push({ key: 'UpdateClientSession', value: __TTVAB_STATE__.ClientSession });
                     }
                     if (device) {
-                        GQLDeviceID = device;
-                        updates.push({ key: 'UpdateDeviceId', value: GQLDeviceID });
+                        __TTVAB_STATE__.GQLDeviceID = device;
+                        updates.push({ key: 'UpdateDeviceId', value: __TTVAB_STATE__.GQLDeviceID });
                     }
 
                     if (updates.length > 0) {
@@ -1429,6 +1431,7 @@ function _$al() {
 function _$cm() {
     let isRefreshing = false;
     let checkInterval = null;
+    let reloadAttempts = 0;
 
     function detectCrash() {
         const errorElements = document.querySelectorAll(
@@ -1452,6 +1455,26 @@ function _$cm() {
     function handleCrash(error) {
         if (isRefreshing) return;
         isRefreshing = true;
+
+        if (reloadAttempts < 3) {
+            reloadAttempts++;
+            _$l('Player crash detected (' + error + '). Attempting soft reload ' + reloadAttempts + '/3...', 'warning');
+
+            const toast = document.createElement('div');
+            toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:8px 16px;border-radius:4px;z-index:99999;font-family:sans-serif;font-size:12px;pointer-events:none;transition:opacity 0.5s';
+            toast.textContent = 'TTV AB: Fixing player... (' + reloadAttempts + ')';
+            document.body.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 500); }, 2000);
+
+            if (typeof _$dpt === 'function') {
+                _$dpt(false, true);
+            }
+
+            setTimeout(() => {
+                isRefreshing = false;
+            }, 3000);
+            return;
+        }
 
         _$l('Player crash detected: ' + error, 'error');
 
@@ -1498,8 +1521,14 @@ function _$cm() {
                 const error = detectCrash();
                 if (error) {
                     handleCrash(error);
-                    observer.disconnect();
-                    if (checkInterval) clearInterval(checkInterval);
+
+                    if (reloadAttempts >= 3) {
+                        observer.disconnect();
+                        if (checkInterval) clearInterval(checkInterval);
+                    }
+                } else {
+
+                    if (reloadAttempts > 0) reloadAttempts = 0;
                 }
             } catch { /* Ignore */ }
         });
@@ -1515,8 +1544,12 @@ function _$cm() {
                 const error = detectCrash();
                 if (error) {
                     handleCrash(error);
-                    observer.disconnect();
-                    clearInterval(checkInterval);
+                    if (reloadAttempts >= 3) {
+                        observer.disconnect();
+                        clearInterval(checkInterval);
+                    }
+                } else {
+                    if (reloadAttempts > 0) reloadAttempts = 0;
                 }
             } catch {
 
@@ -1545,7 +1578,7 @@ function _$tl() {
         if (e.source !== window) return;
         if (e.data?.type === 'ttvab-toggle') {
             const enabled = e.data.detail?.enabled ?? true;
-            IsAdStrippingEnabled = enabled;
+            __TTVAB_STATE__.IsAdStrippingEnabled = enabled;
             for (const worker of _$s.workers) {
                 worker.postMessage({ key: 'UpdateToggleState', value: enabled });
             }

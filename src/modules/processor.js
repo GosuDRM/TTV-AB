@@ -13,17 +13,17 @@
  * @returns {Promise<string>} Processed playlist
  */
 async function _processM3U8(url, text, realFetch) {
-    if (!IsAdStrippingEnabled) return text;
+    if (!__TTVAB_STATE__.IsAdStrippingEnabled) return text;
 
-    const info = StreamInfosByUrl[url];
+    const info = __TTVAB_STATE__.StreamInfosByUrl[url];
     if (!info) return text;
 
-    if (HasTriggeredPlayerReload) {
-        HasTriggeredPlayerReload = false;
+    if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
+        __TTVAB_STATE__.HasTriggeredPlayerReload = false;
         info.LastPlayerReload = Date.now();
     }
 
-    const hasAds = text.includes(AdSignifier) || SimulatedAdsDepth > 0;
+    const hasAds = text.includes(__TTVAB_STATE__.AdSignifier) || __TTVAB_STATE__.SimulatedAdsDepth > 0;
 
     if (hasAds) {
         info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
@@ -50,7 +50,7 @@ async function _processM3U8(url, text, realFetch) {
         }
 
         const isHevc = res.Codecs?.[0] === 'h' && (res.Codecs[1] === 'e' || res.Codecs[1] === 'v');
-        if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
+        if (((isHevc && !__TTVAB_STATE__.SkipPlayerReloadOnHevc) || __TTVAB_STATE__.AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
             info.IsUsingModifiedM3U8 = true;
             info.LastPlayerReload = Date.now();
         }
@@ -83,7 +83,7 @@ async function _processM3U8(url, text, realFetch) {
             _log('Ad ended', 'success');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdEnded' });
-                if (info.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
+                if (info.IsUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
                     self.postMessage({ key: 'ReloadPlayer' });
                 } else {
                     self.postMessage({ key: 'PauseResumePlayer' });
@@ -110,7 +110,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false,
     let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
     let fallbackType = null;
 
-    const playerTypes = [...BackupPlayerTypes];
+    const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
     if (info.ActiveBackupPlayerType) {
         const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
         if (idx > -1) {
@@ -127,7 +127,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false,
         const pt = playerTypes[pi];
         const realPt = pt.replace('-CACHED', '');
         const isFullyCachedPlayerType = pt !== realPt;
-        _log(`[Trace] Checking player type: ${pt} (Fallback=${FallbackPlayerType})`, 'info');
+        _log(`[Trace] Checking player type: ${pt} (Fallback=${__TTVAB_STATE__.FallbackPlayerType})`, 'info');
 
         for (let j = 0; j < 2; j++) {
             let isFreshM3u8 = false;
@@ -143,7 +143,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false,
                         const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
 
                         if (sig && tokenValue) {
-                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
+                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${__TTVAB_STATE__.V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
                             usherUrl.searchParams.set('sig', sig);
                             usherUrl.searchParams.set('token', tokenValue);
                             const encRes = await realFetch(usherUrl.href);
@@ -178,13 +178,13 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false,
                                 _log(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
 
                                 // Store any valid M3U8 as potential fallback for ad stripping
-                                // Prioritize FallbackPlayerType but accept any working stream
-                                if (!fallbackM3u8 || pt === FallbackPlayerType) {
+                                // Prioritize __TTVAB_STATE__.FallbackPlayerType but accept any working stream
+                                if (!fallbackM3u8 || pt === __TTVAB_STATE__.FallbackPlayerType) {
                                     fallbackM3u8 = m3u8;
                                     fallbackType = pt;
                                 }
 
-                                const noAds = !m3u8.includes(AdSignifier) && (SimulatedAdsDepth === 0 || pi >= SimulatedAdsDepth - 1);
+                                const noAds = !m3u8.includes(__TTVAB_STATE__.AdSignifier) && (__TTVAB_STATE__.SimulatedAdsDepth === 0 || pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
                                 const isLastResort = pi >= playerTypesLen - 1;
 
                                 // Accept stream if: no ads, minimal mode, or it's the last player type
@@ -224,7 +224,7 @@ async function _findBackupStream(info, realFetch, startIdx = 0, minimal = false,
     // This allows ad stripping to work even when all streams have ads
     let isFallback = false;
     if (!backupM3u8 && fallbackM3u8) {
-        backupType = fallbackType || FallbackPlayerType;
+        backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
         backupM3u8 = fallbackM3u8;
         isFallback = true; // Mark this as a fallback (ad-laden) stream
         _log(`[Trace] Using fallback stream (will strip ads): ${backupType}`, 'warning');

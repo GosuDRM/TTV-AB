@@ -13,13 +13,13 @@ function _hookWorkerFetch() {
     const realFetch = fetch;
 
     function _pruneStreamInfos() {
-        const keys = Object.keys(StreamInfos);
+        const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
         if (keys.length > 5) {
             const oldKey = keys[0]; // Simple FIFO
-            delete StreamInfos[oldKey];
-            for (const url in StreamInfosByUrl) {
-                if (StreamInfosByUrl[url].ChannelName === oldKey) {
-                    delete StreamInfosByUrl[url];
+            delete __TTVAB_STATE__.StreamInfos[oldKey];
+            for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
+                if (__TTVAB_STATE__.StreamInfosByUrl[url].ChannelName === oldKey) {
+                    delete __TTVAB_STATE__.StreamInfosByUrl[url];
                 }
             }
         }
@@ -30,7 +30,7 @@ function _hookWorkerFetch() {
             return realFetch.apply(this, arguments);
         }
 
-        if (AdSegmentCache.has(url)) {
+        if (__TTVAB_STATE__.AdSegmentCache.has(url)) {
             return realFetch('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts);
         }
 
@@ -46,11 +46,11 @@ function _hookWorkerFetch() {
         }
 
         if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
-            V2API = url.includes('/api/v2/');
+            __TTVAB_STATE__.V2API = url.includes('/api/v2/');
             const channelMatch = (new URL(url)).pathname.match(/([^/]+)(?=\.\w+$)/);
             const channel = channelMatch?.[0];
 
-            if (ForceAccessTokenPlayerType) {
+            if (__TTVAB_STATE__.ForceAccessTokenPlayerType) {
                 const urlObj = new URL(url);
                 urlObj.searchParams.delete('parent_domains');
                 url = urlObj.toString();
@@ -61,7 +61,7 @@ function _hookWorkerFetch() {
 
             const encodings = await response.text();
             const serverTime = _getServerTime(encodings);
-            let info = StreamInfos[channel];
+            let info = __TTVAB_STATE__.StreamInfos[channel];
 
             if (info?.EncodingsM3U8) {
                 const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
@@ -72,7 +72,7 @@ function _hookWorkerFetch() {
 
             if (!info?.EncodingsM3U8) {
                 _pruneStreamInfos();
-                info = StreamInfos[channel] = {
+                info = __TTVAB_STATE__.StreamInfos[channel] = {
                     ChannelName: channel,
                     IsShowingAd: false,
                     LastPlayerReload: 0,
@@ -106,7 +106,7 @@ function _hookWorkerFetch() {
                             info.Urls[lines[i + 1]] = resInfo;
                             info.ResolutionList.push(resInfo);
                         }
-                        StreamInfosByUrl[lines[i + 1]] = info;
+                        __TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
                     }
                 }
 
@@ -192,23 +192,23 @@ function _hookWorker() {
                 const _GQL_URL = '${_GQL_URL}';
                 const wasmSource = _getWasmJs('${url.replaceAll("'", "%27")}');
                 _declareState(self);
-                GQLDeviceID = ${GQLDeviceID ? `'${GQLDeviceID}'` : 'null'};
-                AuthorizationHeader = ${AuthorizationHeader ? `'${AuthorizationHeader}'` : 'undefined'};
-                ClientIntegrityHeader = ${ClientIntegrityHeader ? `'${ClientIntegrityHeader}'` : 'null'};
-                ClientVersion = ${ClientVersion ? `'${ClientVersion}'` : 'null'};
-                ClientSession = ${ClientSession ? `'${ClientSession}'` : 'null'};
+                __TTVAB_STATE__.GQLDeviceID = ${__TTVAB_STATE__.GQLDeviceID ? `'${__TTVAB_STATE__.GQLDeviceID}'` : 'null'};
+                __TTVAB_STATE__.AuthorizationHeader = ${__TTVAB_STATE__.AuthorizationHeader ? `'${__TTVAB_STATE__.AuthorizationHeader}'` : 'undefined'};
+                __TTVAB_STATE__.ClientIntegrityHeader = ${__TTVAB_STATE__.ClientIntegrityHeader ? `'${__TTVAB_STATE__.ClientIntegrityHeader}'` : 'null'};
+                __TTVAB_STATE__.ClientVersion = ${__TTVAB_STATE__.ClientVersion ? `'${__TTVAB_STATE__.ClientVersion}'` : 'null'};
+                __TTVAB_STATE__.ClientSession = ${__TTVAB_STATE__.ClientSession ? `'${__TTVAB_STATE__.ClientSession}'` : 'null'};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;
                     if (!data?.key) return;
                     switch (data.key) {
-                        case 'UpdateClientVersion': ClientVersion = data.value; break;
-                        case 'UpdateClientSession': ClientSession = data.value; break;
-                        case 'UpdateClientId': ClientID = data.value; break;
-                        case 'UpdateDeviceId': GQLDeviceID = data.value; break;
-                        case 'UpdateClientIntegrityHeader': ClientIntegrityHeader = data.value; break;
-                        case 'UpdateAuthorizationHeader': AuthorizationHeader = data.value; break;
-                        case 'UpdateToggleState': IsAdStrippingEnabled = data.value; break;
+                        case 'UpdateClientVersion': __TTVAB_STATE__.ClientVersion = data.value; break;
+                        case 'UpdateClientSession': __TTVAB_STATE__.ClientSession = data.value; break;
+                        case 'UpdateClientId': __TTVAB_STATE__.ClientID = data.value; break;
+                        case 'UpdateDeviceId': __TTVAB_STATE__.GQLDeviceID = data.value; break;
+                        case 'UpdateClientIntegrityHeader': __TTVAB_STATE__.ClientIntegrityHeader = data.value; break;
+                        case 'UpdateAuthorizationHeader': __TTVAB_STATE__.AuthorizationHeader = data.value; break;
+                        case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                     }
                 });
@@ -309,11 +309,11 @@ function _hookStorage() {
         const originalGetItem = localStorage.getItem.bind(localStorage);
         localStorage.getItem = function (key) {
             const value = originalGetItem(key);
-            if (key === 'unique_id' && value) GQLDeviceID = value;
+            if (key === 'unique_id' && value) __TTVAB_STATE__.GQLDeviceID = value;
             return value;
         };
         const deviceId = originalGetItem('unique_id');
-        if (deviceId) GQLDeviceID = deviceId;
+        if (deviceId) __TTVAB_STATE__.GQLDeviceID = deviceId;
     } catch (e) {
         _log('Storage hook error: ' + e.message, 'warning');
     }
@@ -351,24 +351,24 @@ function _hookMainFetch() {
                     const device = getHeader('X-Device-Id');
 
                     if (integrity) {
-                        ClientIntegrityHeader = integrity;
-                        updates.push({ key: 'UpdateClientIntegrityHeader', value: ClientIntegrityHeader });
+                        __TTVAB_STATE__.ClientIntegrityHeader = integrity;
+                        updates.push({ key: 'UpdateClientIntegrityHeader', value: __TTVAB_STATE__.ClientIntegrityHeader });
                     }
                     if (auth) {
-                        AuthorizationHeader = auth;
-                        updates.push({ key: 'UpdateAuthorizationHeader', value: AuthorizationHeader });
+                        __TTVAB_STATE__.AuthorizationHeader = auth;
+                        updates.push({ key: 'UpdateAuthorizationHeader', value: __TTVAB_STATE__.AuthorizationHeader });
                     }
                     if (version) {
-                        ClientVersion = version;
-                        updates.push({ key: 'UpdateClientVersion', value: ClientVersion });
+                        __TTVAB_STATE__.ClientVersion = version;
+                        updates.push({ key: 'UpdateClientVersion', value: __TTVAB_STATE__.ClientVersion });
                     }
                     if (session) {
-                        ClientSession = session;
-                        updates.push({ key: 'UpdateClientSession', value: ClientSession });
+                        __TTVAB_STATE__.ClientSession = session;
+                        updates.push({ key: 'UpdateClientSession', value: __TTVAB_STATE__.ClientSession });
                     }
                     if (device) {
-                        GQLDeviceID = device;
-                        updates.push({ key: 'UpdateDeviceId', value: GQLDeviceID });
+                        __TTVAB_STATE__.GQLDeviceID = device;
+                        updates.push({ key: 'UpdateDeviceId', value: __TTVAB_STATE__.GQLDeviceID });
                     }
 
                     if (updates.length > 0) {

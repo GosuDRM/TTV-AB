@@ -33,7 +33,7 @@ function _parseAttrs(str) {
  * @returns {string|null} Server time or null
  */
 function _getServerTime(m3u8) {
-    if (V2API) {
+    if (__TTVAB_STATE__.V2API) {
         const match = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
         return match?.[1] ?? null;
     }
@@ -49,7 +49,7 @@ function _getServerTime(m3u8) {
  */
 function _replaceServerTime(m3u8, time) {
     if (!time) return m3u8;
-    if (V2API) {
+    if (__TTVAB_STATE__.V2API) {
         return m3u8.replace(/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/, `$1${time}$2`);
     }
     return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
@@ -72,8 +72,8 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
 
     // Remove prefetch entries FIRST before any stripping
     // This prevents the player from pre-downloading ad segments before we strip them
-    const hasAdSignifier = text.includes(AdSignifier);
-    if (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) {
+    const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
+    if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
         for (i = 0; i < len; i++) {
             if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
                 lines[i] = '';
@@ -95,7 +95,7 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
     // Previous logic: Don't strip if ALL segments are ads (would cause empty playlist)
     // New logic: Strip ads even if all are ads - player will buffer briefly but no ads play
     // The brief buffering is preferable to showing ads
-    const shouldStrip = (hasAdSignifier || stripAll || AllSegmentsAreAdSegments) && adSegmentCount > 0;
+    const shouldStrip = (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) && adSegmentCount > 0;
 
     for (i = 0; i < len; i++) {
         let line = lines[i];
@@ -122,8 +122,8 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
                 fetch(segmentUrl).then(r => r.blob()).catch(() => { });
             }
 
-            if (!AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
-            AdSegmentCache.set(segmentUrl, Date.now());
+            if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
+            __TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
             stripped = true;
 
             // Wipe lines from manifest
@@ -132,7 +132,7 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
             i++;
         }
 
-        if (line.includes(AdSignifier)) stripped = true;
+        if (line.includes(__TTVAB_STATE__.AdSignifier)) stripped = true;
     }
 
     if (!stripped) {
@@ -142,11 +142,12 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
     info.IsStrippingAdSegments = stripped;
 
     // Cleanup old cache entries (older than 2 minutes) - run max once per 60s
+    // Use global throttle to prevent race conditions when Info object is recreated
     const now = Date.now();
-    if (!info._lastCachePrune || now - info._lastCachePrune > 60000) {
-        info._lastCachePrune = now;
+    if (!globalThis._lastAdCachePrune || now - globalThis._lastAdCachePrune > 60000) {
+        globalThis._lastAdCachePrune = now;
         const cutoff = now - 120000;
-        AdSegmentCache.forEach((v, k) => { if (v < cutoff) AdSegmentCache.delete(k); });
+        __TTVAB_STATE__.AdSegmentCache.forEach((v, k) => { if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k); });
     }
 
     // Filter out empty lines to finalize splicing

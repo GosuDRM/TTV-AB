@@ -50,12 +50,24 @@ const MAX_CHANNELS = 100;
 const StorageQueue = {
     _chain: Promise.resolve(),
     /**
-     * Add a task to the queue
+     * Add a task to the queue with retry logic
      * @param {Function} task - Function that returns a Promise
      */
     add(task) {
-        this._chain = this._chain.then(task).catch(err => {
-            console.error('TTV AB Storage Error:', err);
+        const withRetry = async () => {
+            const maxRetries = 3;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    return await task();
+                } catch (err) {
+                    if (i === maxRetries - 1) throw err;
+                    await new Promise(r => setTimeout(r, Math.pow(2, i) * 200)); // 200, 400, 800ms
+                }
+            }
+        };
+
+        this._chain = this._chain.then(withRetry).catch(err => {
+            console.error('TTV AB Storage Error after retries:', err);
         });
     }
 };
