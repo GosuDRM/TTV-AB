@@ -197,6 +197,7 @@ function _hookWorker() {
                 __TTVAB_STATE__.ClientIntegrityHeader = ${__TTVAB_STATE__.ClientIntegrityHeader ? `'${__TTVAB_STATE__.ClientIntegrityHeader}'` : 'null'};
                 __TTVAB_STATE__.ClientVersion = ${__TTVAB_STATE__.ClientVersion ? `'${__TTVAB_STATE__.ClientVersion}'` : 'null'};
                 __TTVAB_STATE__.ClientSession = ${__TTVAB_STATE__.ClientSession ? `'${__TTVAB_STATE__.ClientSession}'` : 'null'};
+                __TTVAB_STATE__.PlaybackAccessTokenHash = ${__TTVAB_STATE__.PlaybackAccessTokenHash ? `'${__TTVAB_STATE__.PlaybackAccessTokenHash}'` : 'null'};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;
@@ -210,6 +211,7 @@ function _hookWorker() {
                         case 'UpdateAuthorizationHeader': __TTVAB_STATE__.AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
+                        case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                     }
                 });
                 
@@ -335,6 +337,27 @@ function _hookMainFetch() {
 
                 if (url instanceof Request) {
                     headers = url.headers;
+                    // Try to inspect request body for hash
+                    try {
+                        const clone = url.clone();
+                        clone.json().then(data => {
+                            const operations = Array.isArray(data) ? data : [data];
+                            for (const op of operations) {
+                                if (op.operationName === 'PlaybackAccessToken' && op.extensions?.persistedQuery?.sha256Hash) {
+                                    const hash = op.extensions.persistedQuery.sha256Hash;
+                                    if (__TTVAB_STATE__.PlaybackAccessTokenHash !== hash) {
+                                        __TTVAB_STATE__.PlaybackAccessTokenHash = hash;
+                                        // Broadcast to workers
+                                        for (const worker of _S.workers) {
+                                            worker.postMessage({ key: 'UpdateGQLHash', value: hash });
+                                        }
+                                        // log only once per change
+                                        // _log('Captured new GQL Hash: ' + hash.substring(0,8)+'...', 'info'); 
+                                    }
+                                }
+                            }
+                        }).catch(() => { });
+                    } catch (e) { /* ignore body read errors */ }
                 }
 
                 if (headers) {

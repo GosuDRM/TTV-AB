@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.1.3] - 2025-12-18
+
+### Fixed
+- **Dynamic GraphQL Hash** - Implemented dynamic capture of the `PlaybackAccessToken` GraphQL hash. The extension now intercepts the hash from legitimate player requests instead of using a hardcoded value, ensuring continued functionality even when Twitch rotates their API security hashes.
+
 ## [4.1.2] - 2025-12-18
 
 ### Fixed

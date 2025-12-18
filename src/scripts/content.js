@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.1.2 - Twitch Ad Blocker
+ * TTV AB v4.1.3 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.1.2',
+    VERSION: '4.1.3',
     
     INTERNAL_VERSION: 40,
     
@@ -131,7 +131,8 @@ function _$ds(scope) {
         V2API: false,
         IsAdStrippingEnabled: true,
         AdSegmentCache: new Map(),
-        AllSegmentsAreAdSegments: false
+        AllSegmentsAreAdSegments: false,
+        PlaybackAccessTokenHash: null
     };
 }
 
@@ -321,7 +322,7 @@ async function _$tk(channel, playerType, realFetch) {
         extensions: {
             persistedQuery: {
                 version: 1,
-                sha256Hash: 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9'
+                sha256Hash: __TTVAB_STATE__.PlaybackAccessTokenHash || 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9'
             }
         },
         variables: {
@@ -793,6 +794,7 @@ function _$hw() {
                 __TTVAB_STATE__.ClientIntegrityHeader = ${__TTVAB_STATE__.ClientIntegrityHeader ? `'${__TTVAB_STATE__.ClientIntegrityHeader}'` : 'null'};
                 __TTVAB_STATE__.ClientVersion = ${__TTVAB_STATE__.ClientVersion ? `'${__TTVAB_STATE__.ClientVersion}'` : 'null'};
                 __TTVAB_STATE__.ClientSession = ${__TTVAB_STATE__.ClientSession ? `'${__TTVAB_STATE__.ClientSession}'` : 'null'};
+                __TTVAB_STATE__.PlaybackAccessTokenHash = ${__TTVAB_STATE__.PlaybackAccessTokenHash ? `'${__TTVAB_STATE__.PlaybackAccessTokenHash}'` : 'null'};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;
@@ -806,6 +808,7 @@ function _$hw() {
                         case 'UpdateAuthorizationHeader': __TTVAB_STATE__.AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _$s.adsBlocked = data.value; break;
+                        case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                     }
                 });
                 
@@ -925,6 +928,26 @@ function _$mf() {
 
                 if (url instanceof Request) {
                     headers = url.headers;
+
+                    try {
+                        const clone = url.clone();
+                        clone.json().then(data => {
+                            const operations = Array.isArray(data) ? data : [data];
+                            for (const op of operations) {
+                                if (op.operationName === 'PlaybackAccessToken' && op.extensions?.persistedQuery?.sha256Hash) {
+                                    const hash = op.extensions.persistedQuery.sha256Hash;
+                                    if (__TTVAB_STATE__.PlaybackAccessTokenHash !== hash) {
+                                        __TTVAB_STATE__.PlaybackAccessTokenHash = hash;
+
+                                        for (const worker of _$s.workers) {
+                                            worker.postMessage({ key: 'UpdateGQLHash', value: hash });
+                                        }
+
+                                    }
+                                }
+                            }
+                        }).catch(() => { });
+                    } catch (e) { /* ignore body read errors */ }
                 }
 
                 if (headers) {
