@@ -24,29 +24,31 @@ const _S = {
  * @param {Object} scope - Target scope (window/self)
  */
 function _declareState(scope) {
-    scope.AdSignifier = _C.AD_SIGNIFIER;
-    scope.ClientID = _C.CLIENT_ID;
-    scope.BackupPlayerTypes = [..._C.PLAYER_TYPES];
-    scope.FallbackPlayerType = _C.FALLBACK_TYPE;
-    scope.ForceAccessTokenPlayerType = _C.FORCE_TYPE;
-    scope.SkipPlayerReloadOnHevc = false;
-    scope.AlwaysReloadPlayerOnAd = false;
-    scope.ReloadPlayerAfterAd = _C.RELOAD_AFTER_AD ?? true;
-    scope.PlayerReloadMinimalRequestsTime = _C.RELOAD_TIME;
-    scope.PlayerReloadMinimalRequestsPlayerIndex = 0;
-    scope.HasTriggeredPlayerReload = false;
-    scope.StreamInfos = Object.create(null);
-    scope.StreamInfosByUrl = Object.create(null);
-    scope.GQLDeviceID = null;
-    scope.ClientVersion = null;
-    scope.ClientSession = null;
-    scope.ClientIntegrityHeader = null;
-    scope.AuthorizationHeader = undefined;
-    scope.SimulatedAdsDepth = 0;
-    scope.V2API = false;
-    scope.IsAdStrippingEnabled = true;
-    scope.AdSegmentCache = new Map();
-    scope.AllSegmentsAreAdSegments = false;
+    scope.__TTVAB_STATE__ = {
+        AdSignifier: _C.AD_SIGNIFIER,
+        ClientID: _C.CLIENT_ID,
+        BackupPlayerTypes: [..._C.PLAYER_TYPES],
+        FallbackPlayerType: _C.FALLBACK_TYPE,
+        ForceAccessTokenPlayerType: _C.FORCE_TYPE,
+        SkipPlayerReloadOnHevc: false,
+        AlwaysReloadPlayerOnAd: false,
+        ReloadPlayerAfterAd: _C.RELOAD_AFTER_AD ?? true,
+        PlayerReloadMinimalRequestsTime: _C.RELOAD_TIME,
+        PlayerReloadMinimalRequestsPlayerIndex: 0,
+        HasTriggeredPlayerReload: false,
+        StreamInfos: Object.create(null),
+        StreamInfosByUrl: Object.create(null),
+        GQLDeviceID: null,
+        ClientVersion: null,
+        ClientSession: null,
+        ClientIntegrityHeader: null,
+        AuthorizationHeader: undefined,
+        SimulatedAdsDepth: 0,
+        V2API: false,
+        IsAdStrippingEnabled: true,
+        AdSegmentCache: new Map(),
+        AllSegmentsAreAdSegments: false
+    };
 }
 
 /**
