@@ -60,10 +60,9 @@ function _replaceServerTime(m3u8, time) {
  * @param {string} text - Playlist content
  * @param {boolean} stripAll - Strip all segments
  * @param {Object} info - Stream info object
- * @param {boolean} [isBackup=false] - Is this a backup stream?
  * @returns {string} Cleaned playlist
  */
-function _stripAds(text, stripAll, info, _isBackup = false) {
+function _stripAds(text, stripAll, info) {
     const lines = text.split('\n');
     const len = lines.length;
     const adUrl = 'https://twitch.tv';
@@ -71,7 +70,6 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
     let i = 0;
 
     // Remove prefetch entries FIRST before any stripping
-    // This prevents the player from pre-downloading ad segments before we strip them
     const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
     if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
         for (i = 0; i < len; i++) {
@@ -91,9 +89,7 @@ function _stripAds(text, stripAll, info, _isBackup = false) {
         }
     }
 
-    // Aggressive stripping mode
-    // Previous logic: Don't strip if ALL segments are ads (would cause empty playlist)
-    // New logic: Strip ads even if all are ads - player will buffer briefly but no ads play
+    // Strip ads even if all are ads - player will buffer briefly but no ads play
     // The brief buffering is preferable to showing ads
     const shouldStrip = (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) && adSegmentCount > 0;
 

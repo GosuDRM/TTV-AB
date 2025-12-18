@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.1.4] - 2025-12-18
+
+### Fixed
+- **Dead Code Check** - Fixed bug in `processor.js` where `IsUsingModifiedM3U8` was checked after being reset to `false`, making the check always return false. Now correctly saves the value before reset to determine post-ad player behavior.
+
+### Cleaned
+- **Unused Parameter** - Removed unused `_isBackup` parameter from `_stripAds()` function in `parser.js`.
+- **Header Handling** - Refactored Authorization header in `api.js` to only include when set (avoids undefined values in headers).
+
 ## [4.1.3] - 2025-12-18
 
 ### Fixed

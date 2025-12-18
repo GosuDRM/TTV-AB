@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.1.3 - Twitch Ad Blocker
+ * TTV AB v4.1.4 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.1.3',
+    VERSION: '4.1.4',
     
     INTERNAL_VERSION: 40,
     
@@ -145,7 +145,6 @@ function _$ab(channel) {
             detail: { count: _$s.adsBlocked, channel: channel || null }
         }, '*');
     } else if (typeof self !== 'undefined' && self.postMessage) {
-
         self.postMessage({ key: 'AdBlocked', count: _$s.adsBlocked, channel: channel || null });
     }
 }
@@ -196,7 +195,7 @@ function _$rt(m3u8, time) {
     return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
 }
 
-function _$sa(text, stripAll, info, _isBackup = false) {
+function _$sa(text, stripAll, info) {
     const lines = text.split('\n');
     const len = lines.length;
     const adUrl = 'https://twitch.tv';
@@ -340,15 +339,20 @@ async function _$tk(channel, playerType, realFetch) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
+        const headers = {
+            'Client-ID': _$c.CLIENT_ID,
+            'Client-Integrity': __TTVAB_STATE__.ClientIntegrityHeader || '',
+            'X-Device-Id': __TTVAB_STATE__.GQLDeviceID || 'oauth',
+            'Client-Version': __TTVAB_STATE__.ClientVersion || 'k8s-v1'
+        };
+
+        if (__TTVAB_STATE__.AuthorizationHeader) {
+            headers['Authorization'] = __TTVAB_STATE__.AuthorizationHeader;
+        }
+
         const res = await fetchFunc(_$gu, {
             method: 'POST',
-            headers: {
-                'Client-ID': _$c.CLIENT_ID,
-                'Client-Integrity': __TTVAB_STATE__.ClientIntegrityHeader || '',
-                'X-Device-Id': __TTVAB_STATE__.GQLDeviceID || 'oauth',
-                'Authorization': __TTVAB_STATE__.AuthorizationHeader || undefined,
-                'Client-Version': __TTVAB_STATE__.ClientVersion || 'k8s-v1'
-            },
+            headers,
             body: JSON.stringify(body),
             signal: controller.signal
         });
@@ -389,7 +393,7 @@ async function _$pm(url, text, realFetch) {
 
         if (info.IsUsingFallbackStream) {
             _$l('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
-            text = _$sa(text, false, info, true);
+            text = _$sa(text, false, info);
             return text;
         }
 
@@ -421,9 +425,12 @@ async function _$pm(url, text, realFetch) {
             _$l('Using backup player type: ' + backupType, 'info');
         }
 
-        text = _$sa(text, false, info, !!backupM3u8);
+        text = _$sa(text, false, info);
     } else {
         if (info.IsShowingAd) {
+
+            const wasUsingModifiedM3U8 = info.IsUsingModifiedM3U8;
+
             info.IsShowingAd = false;
             info.IsUsingModifiedM3U8 = false;
             info.IsUsingFallbackStream = false; // Exit fallback mode when ads end
@@ -433,7 +440,7 @@ async function _$pm(url, text, realFetch) {
             _$l('Ad ended', 'success');
             if (typeof self !== 'undefined' && self.postMessage) {
                 self.postMessage({ key: 'AdEnded' });
-                if (info.IsUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
+                if (wasUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
                     self.postMessage({ key: 'ReloadPlayer' });
                 } else {
                     self.postMessage({ key: 'PauseResumePlayer' });
@@ -1580,7 +1587,6 @@ function _$tl() {
 }
 
 function _$bp() {
-
     let lastBlockTime = 0;
 
     function _$ipb() {
