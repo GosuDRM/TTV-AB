@@ -47,7 +47,8 @@ function _declareState(scope) {
         V2API: false,
         IsAdStrippingEnabled: true,
         AdSegmentCache: new Map(),
-        AllSegmentsAreAdSegments: false
+        AllSegmentsAreAdSegments: false,
+        PlaybackAccessTokenHash: null
     };
 }
 
