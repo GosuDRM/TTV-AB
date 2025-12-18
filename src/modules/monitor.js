@@ -11,7 +11,6 @@
 function _initCrashMonitor() {
     let isRefreshing = false;
     let checkInterval = null;
-    let reloadAttempts = 0;
 
     /**
      * Detect crash patterns in page content
@@ -44,30 +43,6 @@ function _initCrashMonitor() {
         if (isRefreshing) return;
         isRefreshing = true;
 
-        // Try soft reload first (up to 3 times)
-        if (reloadAttempts < 3) {
-            reloadAttempts++;
-            _log('Player crash detected (' + error + '). Attempting soft reload ' + reloadAttempts + '/3...', 'warning');
-
-            // Show a temporary toast for feedback
-            const toast = document.createElement('div');
-            toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:8px 16px;border-radius:4px;z-index:99999;font-family:sans-serif;font-size:12px;pointer-events:none;transition:opacity 0.5s';
-            toast.textContent = 'TTV AB: Fixing player... (' + reloadAttempts + ')';
-            document.body.appendChild(toast);
-            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 500); }, 2000);
-
-            if (typeof _doPlayerTask === 'function') {
-                _doPlayerTask(false, true);
-            }
-
-            // Reset refreshing flag after delay to allow recovery
-            setTimeout(() => {
-                isRefreshing = false;
-            }, 3000);
-            return;
-        }
-
-        // Full Page Reload (Fallback)
         _log('Player crash detected: ' + error, 'error');
 
         if (document.hidden) {
@@ -97,7 +72,6 @@ function _initCrashMonitor() {
         }
     }
 
-
     /**
      * Start monitoring
      */
@@ -117,14 +91,8 @@ function _initCrashMonitor() {
                 const error = detectCrash();
                 if (error) {
                     handleCrash(error);
-                    // Only disconnect if we are doing a full page reload (exhausted attempts)
-                    if (reloadAttempts >= 3) {
-                        observer.disconnect();
-                        if (checkInterval) clearInterval(checkInterval);
-                    }
-                } else {
-                    // Healthy state, reset attempts
-                    if (reloadAttempts > 0) reloadAttempts = 0;
+                    observer.disconnect();
+                    if (checkInterval) clearInterval(checkInterval);
                 }
             } catch { /* Ignore */ }
         });
@@ -140,12 +108,8 @@ function _initCrashMonitor() {
                 const error = detectCrash();
                 if (error) {
                     handleCrash(error);
-                    if (reloadAttempts >= 3) {
-                        observer.disconnect();
-                        clearInterval(checkInterval);
-                    }
-                } else {
-                    if (reloadAttempts > 0) reloadAttempts = 0;
+                    observer.disconnect();
+                    clearInterval(checkInterval);
                 }
             } catch {
                 // Ignore monitor errors to keep extension alive

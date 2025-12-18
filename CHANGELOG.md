@@ -5,7 +5,7 @@ All notable changes to TTV AB will be documented in this file.
 ## [4.1.2] - 2025-12-18
 
 ### Fixed
-- **Aggressive Page Reload** - Fixed an issue where the accidental player crash monitor would aggressively reload the entire page. Now attempts to soft-reload the player (up to 3 times) before resorting to a full page refresh, preserving chat sessions and user state. A "Fixing player..." toast provides visual feedback during this process.
+
 - **Global Namespace Pollution** - Refactored internal state management to namespace all global variables (e.g., `AdSignifier`, `ClientID`) under `window.__TTVAB_STATE__`, preventing potential conflicts with Twitch's own code or other extensions.
 - **Storage Reliability** - Added retry logic (3 attempts with exponential backoff) to `StorageQueue`, preventing statistic updates (ads blocked count) from being lost during high-load periods or storage quota limits.
 - **Memory Leak Prevention** - Fixed a race condition in `AdSegmentCache` pruning where cache cleanup relied on stream info objects that could be recreated. Pruning now uses a robust global throttle to ensure old ad segments are reliably cleared from memory every minute.
