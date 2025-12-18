@@ -1,5 +1,5 @@
 /**
- * TTV AB v4.1.4 - Twitch Ad Blocker
+ * TTV AB v4.1.5 - Twitch Ad Blocker
  * 
  * @author GosuDRM
  * @license MIT
@@ -61,7 +61,7 @@
 
 const _$c = {
     
-    VERSION: '4.1.4',
+    VERSION: '4.1.5',
     
     INTERNAL_VERSION: 40,
     
@@ -202,6 +202,10 @@ function _$sa(text, stripAll, info) {
     let stripped = false;
     let i = 0;
 
+    let lastStrippedExtinf = null;
+    let lastStrippedUrl = null;
+    let strippedCount = 0;
+
     const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
     if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
         for (i = 0; i < len; i++) {
@@ -212,11 +216,18 @@ function _$sa(text, stripAll, info) {
     }
 
     let adSegmentCount = 0;
+    let liveSegmentCount = 0;
 
     for (i = 0; i < len - 1; i++) {
         const line = lines[i];
-        if (line.startsWith('#EXTINF') && !line.includes(',live')) {
-            adSegmentCount++;
+        if (line.startsWith('#EXTINF')) {
+            const segmentUrl = lines[i + 1];
+            const isProcessing = segmentUrl && (segmentUrl.includes('processing') || segmentUrl.includes('/_404/'));
+            if (!line.includes(',live') || isProcessing) {
+                adSegmentCount++;
+            } else {
+                liveSegmentCount++;
+            }
         }
     }
 
@@ -232,10 +243,14 @@ function _$sa(text, stripAll, info) {
             lines[i] = line;
         }
 
-        const isAdSegment = !line.includes(',live');
+        const isAdSegment = !line.includes(',live') || (i < len - 1 && (lines[i + 1].includes('processing') || lines[i + 1].includes('/_404/')));
 
         if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
             const segmentUrl = lines[i + 1];
+
+            lastStrippedExtinf = lines[i];
+            lastStrippedUrl = segmentUrl;
+            strippedCount++;
 
             if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
                 info.RequestedAds.add(segmentUrl);
@@ -268,7 +283,16 @@ function _$sa(text, stripAll, info) {
         __TTVAB_STATE__.AdSegmentCache.forEach((v, k) => { if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k); });
     }
 
-    return lines.filter(l => l !== '').join('\n');
+    const result = lines.filter(l => l !== '');
+
+    const hasRemainingSegments = result.some(l => l.startsWith('#EXTINF'));
+    if (!hasRemainingSegments && strippedCount > 0 && lastStrippedExtinf && lastStrippedUrl) {
+        _$l('[Recovery] Empty playlist detected - restoring last segment to prevent crash', 'warning');
+        result.push(lastStrippedExtinf);
+        result.push(lastStrippedUrl);
+    }
+
+    return result.join('\n');
 }
 
 function _$su(m3u8, res) {
@@ -392,7 +416,7 @@ async function _$pm(url, text, realFetch) {
         }
 
         if (info.IsUsingFallbackStream) {
-            _$l('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
+
             text = _$sa(text, false, info);
             return text;
         }

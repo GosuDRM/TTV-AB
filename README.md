@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.1.4-purple)
+![Version](https://img.shields.io/badge/version-4.1.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -48,12 +48,9 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## ✨ What's New
 
-### v4.0.0 - Major Update!
-- **CRITICAL: Removed Forced 480p** - Backup streams now use the same resolution as your main stream instead of being forced to 480p.
-- **Player Buffering Fix** - Monitors player state and automatically triggers pause/play when the player gets stuck buffering.
-- **Visibility State Protection** - Prevents Twitch from pausing the player when switching tabs during ad breaks.
-- **LocalStorage Preservation** - Preserves video quality, volume, and low latency settings.
-- **React Player Integration** - Direct integration with Twitch's React player components for more reliable player control.
+### v4.1.5
+- **Ad Fallback Processing Errors** - Fixed an issue where the extension was serving "processing" (404) segments during ad fallback mode, causing the player to throw "Failed to fetch" errors.
+- **Empty Playlist Black Screen** - Fixed a critical issue where stripping all ad segments would crash the player. Now keeps at least one segment to prevent black screen.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

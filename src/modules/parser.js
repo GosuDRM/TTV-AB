@@ -69,6 +69,11 @@ function _stripAds(text, stripAll, info) {
     let stripped = false;
     let i = 0;
 
+    // Track last stripped segment for recovery (prevent empty playlist crash)
+    let lastStrippedExtinf = null;
+    let lastStrippedUrl = null;
+    let strippedCount = 0;
+
     // Remove prefetch entries FIRST before any stripping
     const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
     if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
@@ -79,13 +84,20 @@ function _stripAds(text, stripAll, info) {
         }
     }
 
-    // First pass: Count ad segments to determine stripping strategy
+    // First pass: Count ad segments and live segments
     let adSegmentCount = 0;
+    let liveSegmentCount = 0;
 
     for (i = 0; i < len - 1; i++) {
         const line = lines[i];
-        if (line.startsWith('#EXTINF') && !line.includes(',live')) {
-            adSegmentCount++;
+        if (line.startsWith('#EXTINF')) {
+            const segmentUrl = lines[i + 1];
+            const isProcessing = segmentUrl && (segmentUrl.includes('processing') || segmentUrl.includes('/_404/'));
+            if (!line.includes(',live') || isProcessing) {
+                adSegmentCount++;
+            } else {
+                liveSegmentCount++;
+            }
         }
     }
 
@@ -105,10 +117,15 @@ function _stripAds(text, stripAll, info) {
         }
 
         // Strip ad segments
-        const isAdSegment = !line.includes(',live');
+        const isAdSegment = !line.includes(',live') || (i < len - 1 && (lines[i + 1].includes('processing') || lines[i + 1].includes('/_404/')));
 
         if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
             const segmentUrl = lines[i + 1];
+
+            // Save before wiping 
+            lastStrippedExtinf = lines[i];
+            lastStrippedUrl = segmentUrl;
+            strippedCount++;
 
             // Pre-fetch ad segment to "consume" it faster
             // This helps clear ad slots from Twitch's side, making backup streams cleaner
@@ -146,8 +163,18 @@ function _stripAds(text, stripAll, info) {
         __TTVAB_STATE__.AdSegmentCache.forEach((v, k) => { if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k); });
     }
 
-    // Filter out empty lines to finalize splicing
-    return lines.filter(l => l !== '').join('\n');
+    // Filter out empty lines
+    const result = lines.filter(l => l !== '');
+
+    // Check if we stripped ALL segments (empty playlist = player crash/black screen)
+    const hasRemainingSegments = result.some(l => l.startsWith('#EXTINF'));
+    if (!hasRemainingSegments && strippedCount > 0 && lastStrippedExtinf && lastStrippedUrl) {
+        _log('[Recovery] Empty playlist detected - restoring last segment to prevent crash', 'warning');
+        result.push(lastStrippedExtinf);
+        result.push(lastStrippedUrl);
+    }
+
+    return result.join('\n');
 }
 
 /**

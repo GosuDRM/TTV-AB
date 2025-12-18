@@ -38,7 +38,7 @@ async function _processM3U8(url, text, realFetch) {
         }
 
         if (info.IsUsingFallbackStream) {
-            _log('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
+            // _log('[Trace] Already in fallback mode, stripping ads without re-searching', 'info');
             text = _stripAds(text, false, info);
             return text;
         }

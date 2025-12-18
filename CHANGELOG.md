@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.1.5] - 2025-12-19
+
+### Fixed
+- **Ad Fallback Processing Errors** - Fixed an issue where the extension was serving "processing" (404) segments during ad fallback mode, causing the player to throw "Failed to fetch" errors. The parser now correctly detects and strips these placeholder segments, ensuring smoother playback.
+- **Empty Playlist Black Screen** - Fixed a critical issue where stripping ALL ad segments would create an empty playlist, causing the player to crash with a black screen. Now keeps at least one segment when all would otherwise be stripped, preventing player crashes while still blocking ads.
+
 ## [4.1.4] - 2025-12-18
 
 ### Fixed
