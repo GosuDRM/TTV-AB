@@ -1,13 +1,5 @@
-/**
- * TTV AB - Hooks Module
- * Fetch and Worker interception
- * @module hooks
- * @private
- */
+// TTV AB - Hooks
 
-/**
- * Hook fetch API inside Web Worker context
- */
 function _hookWorkerFetch() {
     _log('Worker fetch hooked', 'info');
     const realFetch = fetch;
@@ -15,7 +7,7 @@ function _hookWorkerFetch() {
     function _pruneStreamInfos() {
         const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
         if (keys.length > 5) {
-            const oldKey = keys[0]; // Simple FIFO
+            const oldKey = keys[0];
             delete __TTVAB_STATE__.StreamInfos[oldKey];
             for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
                 if (__TTVAB_STATE__.StreamInfosByUrl[url].ChannelName === oldKey) {
@@ -131,12 +123,12 @@ function _hookWorkerFetch() {
                                     return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
                                 })[0];
                                 modLines[mi] = modLines[mi].replace(/CODECS="[^"]+"/, `CODECS="${closest.Codecs}"`);
-                                modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1); // Unique URL per line
+                                modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1);
                             }
                         }
                     }
                     info.ModifiedM3U8 = modLines.join('\n');
-                    _log('HEVC stream detected, created modified M3U8 for fallback', 'info');
+                    _log('HEVC stream detected, created fallback M3U8', 'info');
                 }
 
                 _log('Stream initialized: ' + channel, 'success');
@@ -151,9 +143,6 @@ function _hookWorkerFetch() {
     };
 }
 
-/**
- * Hook Worker constructor to inject ad blocking
- */
 function _hookWorker() {
     const reinsertNames = _getReinsert(window.Worker);
 
@@ -242,13 +231,13 @@ function _hookWorker() {
                         _log('Ad ended', 'success');
                         break;
                     case 'ReloadPlayer':
-                        _log('Reloading player after ad', 'info');
+                        _log('Reloading player', 'info');
                         if (typeof _doPlayerTask === 'function') {
                             _doPlayerTask(false, true);
                         }
                         break;
                     case 'PauseResumePlayer':
-                        _log('Resuming player after ad', 'info');
+                        _log('Resuming player', 'info');
                         if (typeof _doPlayerTask === 'function') {
                             _doPlayerTask(true, false);
                         }
@@ -270,20 +259,20 @@ function _hookWorker() {
 
                 if (restartAttempts < MAX_RESTART_ATTEMPTS) {
                     restartAttempts++;
-                    const delay = Math.pow(2, restartAttempts) * 500; // 1s, 2s, 4s
-                    _log('Auto-restarting worker in ' + (delay / 1000) + 's (attempt ' + restartAttempts + '/' + MAX_RESTART_ATTEMPTS + ')', 'warning');
+                    const delay = Math.pow(2, restartAttempts) * 500;
+                    _log('Restarting worker in ' + (delay / 1000) + 's (attempt ' + restartAttempts + '/' + MAX_RESTART_ATTEMPTS + ')', 'warning');
 
                     setTimeout(function () {
                         try {
                             new window.Worker(workerUrl, workerOpts);
-                            _log('Worker restarted successfully', 'success');
-                            restartAttempts = 0; // Reset on success
+                            _log('Worker restarted', 'success');
+                            restartAttempts = 0;
                         } catch (restartErr) {
                             _log('Worker restart failed: ' + restartErr.message, 'error');
                         }
                     }, delay);
                 } else {
-                    _log('Worker restart limit reached. Please refresh the page.', 'error');
+                    _log('Worker restart limit reached', 'error');
                 }
             });
 
@@ -291,7 +280,7 @@ function _hookWorker() {
 
             if (_S.workers.length > 5) {
                 const oldWorker = _S.workers.shift();
-                try { oldWorker.terminate(); } catch { /* Worker may already be terminated */ }
+                try { oldWorker.terminate(); } catch { }
             }
         }
     };
@@ -303,9 +292,6 @@ function _hookWorker() {
     });
 }
 
-/**
- * Hook localStorage to capture device ID
- */
 function _hookStorage() {
     try {
         const originalGetItem = localStorage.getItem.bind(localStorage);
@@ -321,9 +307,6 @@ function _hookStorage() {
     }
 }
 
-/**
- * Hook main window fetch to capture auth headers
- */
 function _hookMainFetch() {
     const realFetch = window.fetch;
 
@@ -337,7 +320,6 @@ function _hookMainFetch() {
 
                 if (url instanceof Request) {
                     headers = url.headers;
-                    // Try to inspect request body for hash
                     try {
                         const clone = url.clone();
                         clone.json().then(data => {
@@ -347,17 +329,14 @@ function _hookMainFetch() {
                                     const hash = op.extensions.persistedQuery.sha256Hash;
                                     if (__TTVAB_STATE__.PlaybackAccessTokenHash !== hash) {
                                         __TTVAB_STATE__.PlaybackAccessTokenHash = hash;
-                                        // Broadcast to workers
                                         for (const worker of _S.workers) {
                                             worker.postMessage({ key: 'UpdateGQLHash', value: hash });
                                         }
-                                        // log only once per change
-                                        // _log('Captured new GQL Hash: ' + hash.substring(0,8)+'...', 'info'); 
                                     }
                                 }
                             }
                         }).catch(() => { });
-                    } catch (e) { /* ignore body read errors */ }
+                    } catch (_e) { }
                 }
 
                 if (headers) {

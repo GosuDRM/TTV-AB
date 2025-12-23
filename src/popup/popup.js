@@ -1,10 +1,4 @@
-/**
- * TTV AB - Popup Script
- * Handles extension popup UI interactions
- * 
- * @author GosuDRM
- * @license MIT
- */
+// TTV AB - Popup Script
 
 document.addEventListener('DOMContentLoaded', function () {
     const toggle = document.getElementById('enableToggle');
@@ -23,17 +17,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const nextAchievement = document.getElementById('nextAchievement');
     const langSelector = document.getElementById('langSelector');
 
-    /** Storage key for language preference */
     const LANG_KEY = 'ttvab_lang';
 
-    /**
-     * Get current language code
-     * @returns {string} Language code (e.g., 'en', 'es')
-     */
     function getLang() {
         const saved = localStorage.getItem(LANG_KEY);
         if (saved && saved !== 'auto') return saved;
-        // Get browser language, handle zh-CN/zh-TW specially
         const browserLang = navigator.language;
         if (browserLang.startsWith('zh')) {
             return browserLang.includes('TW') || browserLang.includes('Hant') ? 'zh_TW' : 'zh_CN';
@@ -41,10 +29,6 @@ document.addEventListener('DOMContentLoaded', function () {
         return browserLang.split('-')[0];
     }
 
-    /**
-     * Apply translations to all elements with data-i18n attribute
-     * @param {string} lang - Language code
-     */
     function applyTranslations(lang) {
         const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
         document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -53,16 +37,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Initialize language selector
     const currentLang = localStorage.getItem(LANG_KEY) || 'auto';
     langSelector.value = currentLang;
     applyTranslations(getLang());
 
-    // Language change handler
     langSelector.addEventListener('change', function (e) {
         const lang = e.target.value;
         localStorage.setItem(LANG_KEY, lang);
-        // When 'auto', derive actual language from browser settings
         const effectiveLang = lang === 'auto' ? (() => {
             const browserLang = navigator.language;
             if (browserLang.startsWith('zh')) {
@@ -73,13 +54,8 @@ document.addEventListener('DOMContentLoaded', function () {
         applyTranslations(effectiveLang);
     });
 
-    /** 
-     * Average ad duration in seconds
-     * SYNC: Must match constants.js and bridge.js
-     */
     const AVG_AD_DURATION = 22;
 
-    /** Achievement definitions (must match constants.js) */
     const ACHIEVEMENTS = [
         { id: 'first_block', name: 'Ad Slayer', icon: '⚔️', threshold: 1, type: 'ads' },
         { id: 'block_10', name: 'Blocker', icon: '🛡️', threshold: 10, type: 'ads' },
@@ -95,11 +71,6 @@ document.addEventListener('DOMContentLoaded', function () {
         { id: 'channels_20', name: 'Adventurer', icon: '🌍', threshold: 20, type: 'channels' }
     ];
 
-    /**
-     * Format time saved as human-readable string
-     * @param {number} seconds - Total seconds saved
-     * @returns {string} Formatted time string
-     */
     function formatTimeSaved(seconds) {
         if (seconds < 60) return `~${seconds}s`;
         const hours = Math.floor(seconds / 3600);
@@ -109,19 +80,11 @@ document.addEventListener('DOMContentLoaded', function () {
         return `~${minutes}m ${secs}s`;
     }
 
-    /**
-     * Update time saved display
-     * @param {number} adsCount - Number of ads blocked
-     */
     function updateTimeSaved(adsCount) {
         const seconds = adsCount * AVG_AD_DURATION;
         timeSaved.textContent = formatTimeSaved(seconds);
     }
 
-    /**
-     * Get last 7 days date keys
-     * @returns {string[]} Array of date strings
-     */
     function getLast7Days() {
         const days = [];
         for (let i = 6; i >= 0; i--) {
@@ -132,10 +95,6 @@ document.addEventListener('DOMContentLoaded', function () {
         return days;
     }
 
-    /**
-     * Render weekly chart
-     * @param {Object} dailyData - Daily stats object
-     */
     function renderChart(dailyData) {
         const days = getLast7Days();
         const values = days.map(d => (dailyData[d]?.ads || 0) + (dailyData[d]?.popups || 0));
@@ -151,21 +110,12 @@ document.addEventListener('DOMContentLoaded', function () {
         chartAvg.textContent = `avg: ${avg}/day`;
     }
 
-    /**
-     * Escape HTML entities to prevent XSS
-     * @param {string} str - String to escape
-     * @returns {string} Escaped string
-     */
     function escapeHtml(str) {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
     }
 
-    /**
-     * Render top channels list
-     * @param {Object} channelsData - Channels stats object
-     */
     function renderChannels(channelsData) {
         const entries = Object.entries(channelsData || {});
         if (entries.length === 0) {
@@ -190,13 +140,6 @@ document.addEventListener('DOMContentLoaded', function () {
         `).join('');
     }
 
-    /**
-     * Render achievements badges
-     * @param {string[]} unlocked - Array of unlocked achievement IDs
-     * @param {number} adsBlocked - Total ads blocked
-     * @param {number} popupsBlocked - Total popups blocked
-     * @param {number} channelCount - Number of unique channels
-     */
     function renderAchievements(unlocked, adsBlocked, popupsBlocked, channelCount) {
         const badges = achievementsGrid.querySelectorAll('.achievement-badge');
         const timeSavedSecs = adsBlocked * AVG_AD_DURATION;
@@ -211,7 +154,6 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 badges[i].classList.remove('unlocked');
                 if (!nextAch) {
-                    // Find next achievement to unlock
                     let value = 0;
                     switch (ach.type) {
                         case 'ads': value = adsBlocked; break;
@@ -237,9 +179,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    /**
-     * Load and render all statistics
-     */
     function loadStatistics() {
         chrome.storage.local.get(['ttvStats', 'ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
             const stats = result.ttvStats || { daily: {}, channels: {}, achievements: [] };
@@ -253,13 +192,11 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Initialize toggle state and counters from storage
     chrome.storage.local.get(['ttvAdblockEnabled', 'ttvAdsBlocked', 'ttvPopupsBlocked'], function (result) {
         const enabled = result.ttvAdblockEnabled !== false;
         toggle.checked = enabled;
         updateStatus(enabled);
 
-        // Initialize counters
         const adsCount = result.ttvAdsBlocked || 0;
         const popupsCount = result.ttvPopupsBlocked || 0;
         adsBlockedCount.textContent = formatNumber(adsCount);
@@ -267,10 +204,8 @@ document.addEventListener('DOMContentLoaded', function () {
         updateTimeSaved(adsCount);
     });
 
-    // Load statistics on popup open
     loadStatistics();
 
-    // Listen for real-time counter updates
     chrome.storage.onChanged.addListener(function (changes, namespace) {
         if (namespace === 'local') {
             if (changes.ttvAdsBlocked) {
@@ -288,36 +223,26 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Persist toggle state changes and notify content script
     toggle.addEventListener('change', function () {
         const enabled = toggle.checked;
         chrome.storage.local.set({ ttvAdblockEnabled: enabled });
         updateStatus(enabled);
 
-        // Send message to ALL Twitch tabs (not just active)
         chrome.tabs.query({ url: '*://*.twitch.tv/*' }, function (tabs) {
             for (const tab of tabs) {
                 chrome.tabs.sendMessage(tab.id, { action: 'toggle', enabled: enabled })
-                    .catch(() => {
-                        // Bridge may not be ready on some pages, ignore
-                    });
+                    .catch(() => { });
             }
         });
     });
 
-    // Stats panel toggle
     statsToggle.addEventListener('click', function () {
         statsToggle.classList.toggle('expanded');
         statsPanel.classList.toggle('expanded');
     });
 
-    // Timeout reference for status message reset
     let statusTimeout = null;
 
-    /**
-     * Updates the visual status indicator and dynamic message
-     * @param {boolean} enabled - Whether ad blocking is enabled
-     */
     function updateStatus(enabled) {
         const info = document.querySelector('.info');
 
@@ -333,7 +258,6 @@ document.addEventListener('DOMContentLoaded', function () {
             info.style.color = '#f44336';
         }
 
-        // Reset message after 1.5s
         info.style.transition = 'color 0.3s ease';
         if (statusTimeout) clearTimeout(statusTimeout);
         statusTimeout = setTimeout(() => {
@@ -342,35 +266,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 1500);
     }
 
-    /**
-     * Formats number with locale-specific separators
-     * @param {number} num - Number to format
-     * @returns {string} Formatted number
-     */
     function formatNumber(num) {
         return num.toLocaleString();
     }
 
-    /**
-     * Animates the counter update with a subtle pulse
-     * @param {HTMLElement} element - Counter element
-     * @param {number} newValue - New count value
-     */
     function animateCounter(element, newValue) {
         element.textContent = formatNumber(newValue);
         element.classList.add('pulse');
         setTimeout(() => element.classList.remove('pulse'), 200);
     }
 
-    // Donate button - opens PayPal in new tab
     const donateBtn = document.getElementById('donateBtn');
     if (donateBtn) {
         donateBtn.addEventListener('click', function () {
-            window.open('https://paypal.me/GosuDRM', '_blank');
+            window.open('https://ko-fi.com/gosudrm', '_blank');
         });
     }
 
-    // Author link - opens GitHub profile
     const authorLink = document.getElementById('authorLink');
     if (authorLink) {
         authorLink.addEventListener('click', function (e) {
@@ -379,4 +291,3 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 });
-

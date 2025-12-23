@@ -1,3 +1,4 @@
+// TTV AB - ESLint Config
 import globals from "globals";
 import js from "@eslint/js";
 
@@ -13,12 +14,11 @@ export default [
                 ...globals.webextensions,
                 chrome: "readonly",
                 fetch: "writable",
-                // Content script globals
+                __TTVAB_STATE__: "writable",
                 _C: "readonly",
                 _S: "readonly",
                 _log: "readonly",
                 _ATTR_REGEX: "readonly",
-                // State variables
                 StreamInfos: "writable",
                 StreamInfosByUrl: "writable",
                 AdSignifier: "writable",
@@ -41,7 +41,6 @@ export default [
                 SkipPlayerReloadOnHevc: "writable",
                 AlwaysReloadPlayerOnAd: "writable",
                 AllSegmentsAreAdSegments: "writable",
-                // Functions defined in other modules
                 _declareState: "readonly",
                 _incrementAdsBlocked: "readonly",
                 _parseAttrs: "readonly",
@@ -71,22 +70,21 @@ export default [
                 _isValid: "readonly",
                 _GQL_URL: "readonly",
                 _findBackupStream: "readonly",
-                // Player module functions
                 _doPlayerTask: "readonly",
                 _getPlayerAndState: "readonly",
                 _monitorPlayerBuffering: "readonly",
                 _hookVisibilityState: "readonly",
                 _hookLocalStoragePreservation: "readonly",
                 ReloadPlayerAfterAd: "writable",
-                // Popup globals
                 TRANSLATIONS: "readonly"
             }
         },
         rules: {
-            "no-unused-vars": ["warn", { "argsIgnorePattern": "^(_|e$|err$)", "varsIgnorePattern": "^_" }],
+            "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }],
             "no-undef": "error",
             "no-redeclare": "off",
             "no-console": "off",
+            "no-empty": ["error", { "allowEmptyCatch": true }],
             "semi": ["warn", "always"],
             "eqeqeq": ["warn", "always"],
             "curly": ["warn", "multi-line"],

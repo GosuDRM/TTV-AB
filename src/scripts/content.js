@@ -1,70 +1,11 @@
-/**
- * TTV AB v4.1.5 - Twitch Ad Blocker
- * 
- * @author GosuDRM
- * @license MIT
- * @repository https://github.com/GosuDRM/TTV-AB
- * @homepage https://github.com/GosuDRM/TTV-AB
- * 
- * This extension blocks advertisements on Twitch.tv live streams by intercepting
- * and modifying video playlist (M3U8) data. All processing occurs LOCALLY within
- * the user's browser. No user data is collected, stored, or transmitted.
- * 
- * REGARDING "REMOTE CODE" / "UNSAFE-EVAL":
- * ----------------------------------------
- * This extension intercepts Twitch's Web Worker creation to inject ad-blocking
- * logic. The technique used is:
- * 
- * 1. Intercept: The native Worker constructor is overridden.
- * 2. Fetch: The ORIGINAL worker script is fetched from Twitch's own servers.
- * 3. Modify: Ad-blocking code is prepended to Twitch's worker code.
- * 4. Execute: A new Blob URL is created and the patched worker is instantiated.
- * 
- * IMPORTANT SAFETY CLARIFICATIONS:
- * - The ONLY code executed is Twitch's own worker code (from *.twitch.tv).
- * - This extension does NOT download or execute any code from external/third-party servers.
- * - The ad-blocking logic is bundled entirely within this file.
- * - No eval() of user-provided or remotely-fetched arbitrary code occurs.
- * 
- * SOURCE CODE:
- * The full, unminified source code is available at:
- * https://github.com/GosuDRM/TTV-AB/tree/main/src/modules
- * 
- * PERMISSIONS USED:
- * - storage: Save user's enable/disable preference and blocked ad count.
- * - host_permissions (twitch.tv): Inject content script to block ads.
- * 
- * =============================================================================
- * ARCHITECTURE OVERVIEW
- * =============================================================================
- * 
- * This script is compiled from modular source files located in /src/modules/:
- * 
- * - constants.js : Configuration values and version info
- * - state.js     : Shared state management (ad counts, worker refs)
- * - logger.js    : Console logging with styled output
- * - parser.js    : M3U8 playlist parsing and ad segment detection
- * - api.js       : GraphQL requests to Twitch API for backup streams
- * - processor.js : Core ad removal logic and stream switching
- * - worker.js    : Worker patching utilities
- * - hooks.js     : Native API hooks (Worker, fetch)
- * - ui.js        : User notifications (welcome, donation prompts)
- * - monitor.js   : Player crash detection and auto-recovery
- * - init.js      : Extension initialization and event listeners
- * 
- * Function names are minified (e.g., _$l -> _$l, _$in -> _$in) for smaller bundle size.
- * 
- * =============================================================================
- */
+
+
 (function(){
 'use strict';
 
 const _$c = {
-    
-    VERSION: '4.1.5',
-    
+    VERSION: '4.1.6',
     INTERNAL_VERSION: 40,
-    
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
         info: 'color: #9146FF; font-weight: 500;',
@@ -72,38 +13,23 @@ const _$c = {
         warning: 'color: #FF9800; font-weight: 500;',
         error: 'color: #f44336; font-weight: 500;'
     },
-    
     AD_SIGNIFIER: 'stitched',
-    
     CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-
-    PLAYER_TYPES: ['embed', 'autoplay', 'site', 'picture-by-picture-CACHED'],
-    
+    PLAYER_TYPES: ['embed', 'popout', 'autoplay'],
     FALLBACK_TYPE: 'embed',
-    
-    FORCE_TYPE: 'embed',
-    
+    FORCE_TYPE: 'popout',
     RELOAD_TIME: 2000,
-    
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
-    
     REFRESH_DELAY: 500,
-    
     BUFFERING_FIX: true,
-    
     RELOAD_AFTER_AD: false
-};
+};
 
 const _$s = {
-    
     workers: [],
-    
     conflicts: ['twitch', 'isVariantA'],
-    
     reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
-    
     adsBlocked: 0,
-    
     popupsBlocked: 0
 };
 
@@ -118,7 +44,7 @@ function _$ds(scope) {
         AlwaysReloadPlayerOnAd: false,
         ReloadPlayerAfterAd: _$c.RELOAD_AFTER_AD ?? true,
         PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
-        PlayerReloadMinimalRequestsPlayerIndex: 0,
+        PlayerReloadMinimalRequestsPlayerIndex: 2,
         HasTriggeredPlayerReload: false,
         StreamInfos: Object.create(null),
         StreamInfosByUrl: Object.create(null),
@@ -138,16 +64,12 @@ function _$ds(scope) {
 
 function _$ab(channel) {
     _$s.adsBlocked++;
-
     if (typeof window !== 'undefined') {
-        window.postMessage({
-            type: 'ttvab-ad-blocked',
-            detail: { count: _$s.adsBlocked, channel: channel || null }
-        }, '*');
+        window.postMessage({ type: 'ttvab-ad-blocked', detail: { count: _$s.adsBlocked, channel: channel || null } }, '*');
     } else if (typeof self !== 'undefined' && self.postMessage) {
         self.postMessage({ key: 'AdBlocked', count: _$s.adsBlocked, channel: channel || null });
     }
-}
+}
 
 function _$l(msg, type = 'info') {
     const text = typeof msg === 'object' ? JSON.stringify(msg) : String(msg);
@@ -160,7 +82,7 @@ function _$l(msg, type = 'info') {
     } else {
         console.log('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
     }
-}
+}
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
@@ -201,7 +123,6 @@ function _$sa(text, stripAll, info) {
     const adUrl = 'https://twitch.tv';
     let stripped = false;
     let i = 0;
-
     let lastStrippedExtinf = null;
     let lastStrippedUrl = null;
     let strippedCount = 0;
@@ -216,7 +137,7 @@ function _$sa(text, stripAll, info) {
     }
 
     let adSegmentCount = 0;
-    let liveSegmentCount = 0;
+    let _liveSegmentCount = 0;
 
     for (i = 0; i < len - 1; i++) {
         const line = lines[i];
@@ -226,7 +147,7 @@ function _$sa(text, stripAll, info) {
             if (!line.includes(',live') || isProcessing) {
                 adSegmentCount++;
             } else {
-                liveSegmentCount++;
+                _liveSegmentCount++;
             }
         }
     }
@@ -247,23 +168,20 @@ function _$sa(text, stripAll, info) {
 
         if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
             const segmentUrl = lines[i + 1];
-
             lastStrippedExtinf = lines[i];
             lastStrippedUrl = segmentUrl;
             strippedCount++;
 
             if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
                 info.RequestedAds.add(segmentUrl);
-
                 fetch(segmentUrl).then(r => r.blob()).catch(() => { });
             }
 
             if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
             __TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
             stripped = true;
-
-            lines[i] = '';      // Remove #EXTINF
-            lines[i + 1] = '';  // Remove URL
+            lines[i] = '';
+            lines[i + 1] = '';
             i++;
         }
 
@@ -283,11 +201,10 @@ function _$sa(text, stripAll, info) {
         __TTVAB_STATE__.AdSegmentCache.forEach((v, k) => { if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k); });
     }
 
-    const result = lines.filter(l => l !== '');
-
+    const result = lines.filter(l => l !== '');
     const hasRemainingSegments = result.some(l => l.startsWith('#EXTINF'));
     if (!hasRemainingSegments && strippedCount > 0 && lastStrippedExtinf && lastStrippedUrl) {
-        _$l('[Recovery] Empty playlist detected - restoring last segment to prevent crash', 'warning');
+        _$l('[Recovery] Empty playlist - restoring last segment', 'warning');
         result.push(lastStrippedExtinf);
         result.push(lastStrippedUrl);
     }
@@ -332,7 +249,7 @@ function _$su(m3u8, res) {
     }
 
     return matchUrl || closeUrl;
-}
+}
 
 const _$gu = 'https://gql.twitch.tv/gql';
 
@@ -359,9 +276,9 @@ async function _$tk(channel, playerType, realFetch) {
     };
 
     try {
-        _$l(`[Trace] Requesting token for ${playerType} (req=${reqPlayerType})`, 'info');
+        _$l(`[Trace] Requesting token for ${playerType}`, 'info');
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
         const headers = {
             'Client-ID': _$c.CLIENT_ID,
@@ -382,13 +299,13 @@ async function _$tk(channel, playerType, realFetch) {
         });
 
         clearTimeout(timeoutId);
-        _$l(`[Trace] Token response for ${playerType}: ${res.status}`, 'info');
+        _$l(`[Trace] Token response: ${res.status}`, 'info');
         return res;
     } catch (e) {
-        _$l(`Token fetch error for ${playerType}: ${e.message}`, 'error');
+        _$l(`Token fetch error: ${e.message}`, 'error');
         return { status: 0, json: () => Promise.resolve({}) };
     }
-}
+}
 
 async function _$pm(url, text, realFetch) {
     if (!__TTVAB_STATE__.IsAdStrippingEnabled) return text;
@@ -416,7 +333,6 @@ async function _$pm(url, text, realFetch) {
         }
 
         if (info.IsUsingFallbackStream) {
-
             text = _$sa(text, false, info);
             return text;
         }
@@ -435,29 +351,28 @@ async function _$pm(url, text, realFetch) {
 
         const { type: backupType, m3u8: backupM3u8, isFallback } = await _$fb(info, realFetch, 0, false, res);
 
-        if (!backupM3u8) _$l('Failed to find any backup stream', 'warning');
+        if (!backupM3u8) _$l('Failed to find backup stream', 'warning');
 
         if (isFallback) {
             info.IsUsingFallbackStream = true;
-            _$l('Entering fallback mode - will strip ads from stream', 'info');
+            _$l('Entering fallback mode - stripping ads', 'info');
         }
 
         if (backupM3u8) text = backupM3u8;
 
         if (info.ActiveBackupPlayerType !== backupType) {
             info.ActiveBackupPlayerType = backupType;
-            _$l('Using backup player type: ' + backupType, 'info');
+            _$l('Using backup: ' + backupType, 'info');
         }
 
         text = _$sa(text, false, info);
     } else {
         if (info.IsShowingAd) {
-
             const wasUsingModifiedM3U8 = info.IsUsingModifiedM3U8;
 
             info.IsShowingAd = false;
             info.IsUsingModifiedM3U8 = false;
-            info.IsUsingFallbackStream = false; // Exit fallback mode when ads end
+            info.IsUsingFallbackStream = false;
             info.RequestedAds.clear();
             info.BackupEncodingsM3U8Cache = [];
             info.ActiveBackupPlayerType = null;
@@ -479,7 +394,7 @@ async function _$pm(url, text, realFetch) {
 async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResolution = null) {
     let backupType = null;
     let backupM3u8 = null;
-    let fallbackM3u8 = null; // Store fallback stream (with ads) for last resort stripping
+    let fallbackM3u8 = null;
     let fallbackType = null;
 
     const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
@@ -492,14 +407,13 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
     }
 
     const playerTypesLen = playerTypes.length;
-
     const targetRes = currentResolution || { Resolution: '1920x1080', FrameRate: '60' };
 
     for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
         const pt = playerTypes[pi];
         const realPt = pt.replace('-CACHED', '');
         const isFullyCachedPlayerType = pt !== realPt;
-        _$l(`[Trace] Checking player type: ${pt} (Fallback=${__TTVAB_STATE__.FallbackPlayerType})`, 'info');
+        _$l(`[Trace] Checking: ${pt}`, 'info');
 
         for (let j = 0; j < 2; j++) {
             let isFreshM3u8 = false;
@@ -521,65 +435,53 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
                             const encRes = await realFetch(usherUrl.href);
                             if (encRes.status === 200) {
                                 enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
-                                _$l(`[Trace] Got encoding M3U8 for ${pt}. Length: ${enc.length}`, 'info');
                             } else {
-                                _$l(`Backup usher fetch failed for ${pt}: ${encRes.status}`, 'warning');
+                                _$l(`Usher failed for ${pt}: ${encRes.status}`, 'warning');
                             }
                         } else {
-                            _$l(`[Trace] Missing token data for ${pt} (sig=${!!sig}, value=${!!tokenValue})`, 'warning');
+                            _$l(`[Trace] Missing token for ${pt}`, 'warning');
                         }
                     } else {
-                        _$l(`Backup token fetch failed for ${pt}: ${tokenRes.status}`, 'warning');
+                        _$l(`Token failed for ${pt}: ${tokenRes.status}`, 'warning');
                     }
                 } catch (e) {
-                    _$l('Error getting backup: ' + e.message, 'error');
+                    _$l('Backup error: ' + e.message, 'error');
                 }
-            } else {
-                _$l(`[Trace] Using cached encoding for ${pt}`, 'info');
             }
 
             if (enc) {
                 try {
                     const streamUrl = _$su(enc, targetRes);
                     if (streamUrl) {
-                        _$l(`[Trace] Fetching stream URL for ${pt}: ${streamUrl}`, 'info');
                         const streamRes = await realFetch(streamUrl);
                         if (streamRes.status === 200) {
                             const m3u8 = await streamRes.text();
                             if (m3u8) {
-                                _$l(`[Trace] Got stream M3U8 for ${pt}. Length: ${m3u8.length}`, 'info');
-
                                 if (!fallbackM3u8 || pt === __TTVAB_STATE__.FallbackPlayerType) {
                                     fallbackM3u8 = m3u8;
                                     fallbackType = pt;
                                 }
 
                                 const noAds = !m3u8.includes(__TTVAB_STATE__.AdSignifier) && (__TTVAB_STATE__.SimulatedAdsDepth === 0 || pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
-                                const isLastResort = pi >= playerTypesLen - 1;
 
                                 if (noAds || minimal) {
                                     backupType = pt;
                                     backupM3u8 = m3u8;
-                                    _$l(`[Trace] Selected backup: ${pt}${noAds ? '' : ' (last resort)'}`, 'success');
+                                    _$l(`[Trace] Selected: ${pt}`, 'success');
                                     break;
                                 } else {
-                                    _$l(`[Trace] Rejected ${pt} (HasAds=true, LastResort=${isLastResort})`, 'warning');
-
-                                    if (isFullyCachedPlayerType) {
-                                        break;
-                                    }
+                                    _$l(`[Trace] Rejected ${pt} (has ads)`, 'warning');
+                                    if (isFullyCachedPlayerType) break;
                                 }
-                            } else {
-                                _$l(`[Trace] Stream content empty for ${pt}`, 'warning');
                             }
                         } else {
-                            _$l(`Backup stream fetch failed for ${pt}: ${streamRes.status}`, 'warning');
+                            _$l(`Stream failed for ${pt}: ${streamRes.status}`, 'warning');
                         }
                     } else {
-                        _$l(`No matching stream URL found for ${pt}`, 'warning');
+                        _$l(`No stream URL for ${pt}`, 'warning');
                     }
                 } catch (e) {
-                    _$l('Stream fetch error: ' + e.message, 'warning');
+                    _$l('Stream error: ' + e.message, 'warning');
                 }
             }
 
@@ -592,12 +494,12 @@ async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResol
     if (!backupM3u8 && fallbackM3u8) {
         backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
         backupM3u8 = fallbackM3u8;
-        isFallback = true; // Mark this as a fallback (ad-laden) stream
-        _$l(`[Trace] Using fallback stream (will strip ads): ${backupType}`, 'warning');
+        isFallback = true;
+        _$l(`[Trace] Using fallback: ${backupType}`, 'warning');
     }
 
     return { type: backupType, m3u8: backupM3u8, isFallback };
-}
+}
 
 function _$wj(url) {
     const req = new XMLHttpRequest();
@@ -635,9 +537,8 @@ function _$ri(W, names) {
 function _$iv(v) {
     if (typeof v !== 'function') return false;
     const src = v.toString();
-
     return !_$s.conflicts.some(c => src.includes(c)) && !_$s.reinsertPatterns.some(p => src.includes(p));
-}
+}
 
 function _$wf() {
     _$l('Worker fetch hooked', 'info');
@@ -646,7 +547,7 @@ function _$wf() {
     function _$ps() {
         const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
         if (keys.length > 5) {
-            const oldKey = keys[0]; // Simple FIFO
+            const oldKey = keys[0];
             delete __TTVAB_STATE__.StreamInfos[oldKey];
             for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
                 if (__TTVAB_STATE__.StreamInfosByUrl[url].ChannelName === oldKey) {
@@ -762,12 +663,12 @@ function _$wf() {
                                     return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
                                 })[0];
                                 modLines[mi] = modLines[mi].replace(/CODECS="[^"]+"/, `CODECS="${closest.Codecs}"`);
-                                modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1); // Unique URL per line
+                                modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1);
                             }
                         }
                     }
                     info.ModifiedM3U8 = modLines.join('\n');
-                    _$l('HEVC stream detected, created modified M3U8 for fallback', 'info');
+                    _$l('HEVC stream detected, created fallback M3U8', 'info');
                 }
 
                 _$l('Stream initialized: ' + channel, 'success');
@@ -870,13 +771,13 @@ function _$hw() {
                         _$l('Ad ended', 'success');
                         break;
                     case 'ReloadPlayer':
-                        _$l('Reloading player after ad', 'info');
+                        _$l('Reloading player', 'info');
                         if (typeof _$dpt === 'function') {
                             _$dpt(false, true);
                         }
                         break;
                     case 'PauseResumePlayer':
-                        _$l('Resuming player after ad', 'info');
+                        _$l('Resuming player', 'info');
                         if (typeof _$dpt === 'function') {
                             _$dpt(true, false);
                         }
@@ -898,20 +799,20 @@ function _$hw() {
 
                 if (restartAttempts < MAX_RESTART_ATTEMPTS) {
                     restartAttempts++;
-                    const delay = Math.pow(2, restartAttempts) * 500; // 1s, 2s, 4s
-                    _$l('Auto-restarting worker in ' + (delay / 1000) + 's (attempt ' + restartAttempts + '/' + MAX_RESTART_ATTEMPTS + ')', 'warning');
+                    const delay = Math.pow(2, restartAttempts) * 500;
+                    _$l('Restarting worker in ' + (delay / 1000) + 's (attempt ' + restartAttempts + '/' + MAX_RESTART_ATTEMPTS + ')', 'warning');
 
                     setTimeout(function () {
                         try {
                             new window.Worker(workerUrl, workerOpts);
-                            _$l('Worker restarted successfully', 'success');
-                            restartAttempts = 0; // Reset on success
+                            _$l('Worker restarted', 'success');
+                            restartAttempts = 0;
                         } catch (restartErr) {
                             _$l('Worker restart failed: ' + restartErr.message, 'error');
                         }
                     }, delay);
                 } else {
-                    _$l('Worker restart limit reached. Please refresh the page.', 'error');
+                    _$l('Worker restart limit reached', 'error');
                 }
             });
 
@@ -919,7 +820,7 @@ function _$hw() {
 
             if (_$s.workers.length > 5) {
                 const oldWorker = _$s.workers.shift();
-                try { oldWorker.terminate(); } catch { /* Worker may already be terminated */ }
+                try { oldWorker.terminate(); } catch { }
             }
         }
     };
@@ -959,7 +860,6 @@ function _$mf() {
 
                 if (url instanceof Request) {
                     headers = url.headers;
-
                     try {
                         const clone = url.clone();
                         clone.json().then(data => {
@@ -969,16 +869,14 @@ function _$mf() {
                                     const hash = op.extensions.persistedQuery.sha256Hash;
                                     if (__TTVAB_STATE__.PlaybackAccessTokenHash !== hash) {
                                         __TTVAB_STATE__.PlaybackAccessTokenHash = hash;
-
                                         for (const worker of _$s.workers) {
                                             worker.postMessage({ key: 'UpdateGQLHash', value: hash });
                                         }
-
                                     }
                                 }
                             }
                         }).catch(() => { });
-                    } catch (e) { /* ignore body read errors */ }
+                    } catch (_e) { }
                 }
 
                 if (headers) {
@@ -1028,7 +926,7 @@ function _$mf() {
         }
         return realFetch.apply(this, arguments);
     };
-}
+}
 
 const _$pbs = {
     position: 0,
@@ -1131,7 +1029,7 @@ function _$dpt(isPausePlay, isReload) {
             if (player?.core?.state?.quality?.group) {
                 localStorage.setItem(lsKeyQuality, JSON.stringify({ default: player.core.state.quality.group }));
             }
-        } catch { /* Ignore storage errors */ }
+        } catch { }
 
         _$l('Reloading player', 'info');
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
@@ -1148,17 +1046,17 @@ function _$dpt(isPausePlay, isReload) {
                     if (currentQualityLS) localStorage.setItem(lsKeyQuality, currentQualityLS);
                     if (currentMutedLS) localStorage.setItem(lsKeyMuted, currentMutedLS);
                     if (currentVolumeLS) localStorage.setItem(lsKeyVolume, currentVolumeLS);
-                } catch { /* Ignore */ }
+                } catch { }
             }, 3000);
         }
     }
 }
 
 function _$mpb() {
-    const BUFFERING_DELAY = 500; // Check interval (ms)
-    const SAME_STATE_COUNT = 3;  // Trigger after this many same states
-    const DANGER_ZONE = 1;       // Buffer seconds before danger
-    const MIN_REPEAT_DELAY = 5000; // Min delay between fixes
+    const BUFFERING_DELAY = 500;
+    const SAME_STATE_COUNT = 3;
+    const DANGER_ZONE = 1;
+    const MIN_REPEAT_DELAY = 5000;
 
     function check() {
         if (_$cpr) {
@@ -1179,7 +1077,7 @@ function _$mpb() {
                     const bufferDuration = player.getBufferDuration() || 0;
 
                     if (
-                        position > 0 &&
+                        position > 5 &&
                         (_$pbs.position === position || bufferDuration < DANGER_ZONE) &&
                         _$pbs.bufferedPosition === bufferedPosition &&
                         _$pbs.bufferDuration >= bufferDuration &&
@@ -1188,8 +1086,8 @@ function _$mpb() {
                         _$pbs.numSame++;
 
                         if (_$pbs.numSame === SAME_STATE_COUNT) {
-                            _$l('Attempting to fix buffering (pos=' + position + ')', 'warning');
-                            _$dpt(true, false); // Pause/play
+                            _$l('Attempting buffer fix (pos=' + position + ')', 'warning');
+                            _$dpt(true, false);
                             _$pbs.lastFixTime = Date.now();
                         }
                     } else {
@@ -1217,7 +1115,7 @@ function _$mpb() {
     }
 
     check();
-    _$l('Player buffering monitor active', 'info');
+    _$l('Buffer monitor active', 'info');
 }
 
 function _$hvs() {
@@ -1225,7 +1123,7 @@ function _$hvs() {
         Object.defineProperty(document, 'visibilityState', {
             get: () => 'visible'
         });
-    } catch { /* Already defined */ }
+    } catch { }
 
     const hiddenGetter = document.__lookupGetter__('hidden');
     const webkitHiddenGetter = document.__lookupGetter__('webkitHidden');
@@ -1234,7 +1132,7 @@ function _$hvs() {
         Object.defineProperty(document, 'hidden', {
             get: () => false
         });
-    } catch { /* Already defined */ }
+    } catch { }
 
     const blockEvent = e => {
         e.preventDefault();
@@ -1272,9 +1170,9 @@ function _$hvs() {
         } else {
             Object.defineProperty(document, 'webkitHidden', { get: () => false });
         }
-    } catch { /* Already defined */ }
+    } catch { }
 
-    _$l('Visibility state protection active', 'info');
+    _$l('Visibility protection active', 'info');
 }
 
 function _$hlp() {
@@ -1314,12 +1212,10 @@ function _$hlp() {
     } catch (err) {
         _$l('LocalStorage hooks failed: ' + err.message, 'warning');
     }
-}
+}
 
 const _$rk = 'ttvab_last_reminder';
-
-const _$ri2 = 259200000;
-
+const _$ri2 = 432000000;
 const _$fr = 'ttvab_first_run_shown';
 
 function _$dn() {
@@ -1352,7 +1248,7 @@ function _$dn() {
 
             document.getElementById('ttvab-reminder-close').onclick = () => toast.remove();
             document.getElementById('ttvab-reminder-btn').onclick = () => {
-                window.open('https://paypal.me/GosuDRM', '_blank');
+                window.open('https://ko-fi.com/gosudrm', '_blank');
                 toast.remove();
             };
 
@@ -1443,7 +1339,6 @@ function _$au(achievementId) {
             <style>
                 #ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}
                 @keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
-                @keyframes ttvab-ach-glow{0%,100%{box-shadow:0 0 10px rgba(145,70,255,.3)}50%{box-shadow:0 0 25px rgba(145,70,255,.6)}}
                 @keyframes ttvab-ach-shine{0%{background-position:-200% center}100%{background-position:200% center}}
                 #ttvab-achievement .ach-icon{font-size:40px;animation:ttvab-ach-bounce 1s ease infinite}
                 @keyframes ttvab-ach-bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
@@ -1470,7 +1365,7 @@ function _$au(achievementId) {
             }
         }, 4000);
     } catch (e) {
-        _$l('Achievement notification error: ' + e.message, 'error');
+        _$l('Achievement error: ' + e.message, 'error');
     }
 }
 
@@ -1480,7 +1375,7 @@ function _$al() {
             _$au(e.data.detail.id);
         }
     });
-}
+}
 
 function _$cm() {
     let isRefreshing = false;
@@ -1509,20 +1404,20 @@ function _$cm() {
         if (isRefreshing) return;
         isRefreshing = true;
 
-        _$l('Player crash detected: ' + error, 'error');
+        _$l('Player crash: ' + error, 'error');
 
         if (document.hidden) {
-            _$l('Tab is hidden, will refresh when tab becomes visible...', 'warning');
+            _$l('Tab hidden, will refresh when visible', 'warning');
 
             document.addEventListener('visibilitychange', function onVisible() {
                 if (!document.hidden) {
                     document.removeEventListener('visibilitychange', onVisible);
-                    _$l('Tab now visible, refreshing...', 'warning');
+                    _$l('Tab visible, refreshing...', 'warning');
                     window.location.reload();
                 }
             });
         } else {
-            _$l('Auto-refreshing in ' + (_$c.REFRESH_DELAY / 1000) + 's...', 'warning');
+            _$l('Auto-refreshing...', 'warning');
 
             const banner = document.createElement('div');
             banner.innerHTML = `
@@ -1530,7 +1425,7 @@ function _$cm() {
                     #ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-pulse 1s ease infinite}
                     @keyframes ttvab-pulse{0%,100%{opacity:1}50%{opacity:.7}}
                 </style>
-                <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing automatically...</div>
+                <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing...</div>
             `;
             document.body.appendChild(banner);
 
@@ -1557,7 +1452,7 @@ function _$cm() {
                     observer.disconnect();
                     if (checkInterval) clearInterval(checkInterval);
                 }
-            } catch { /* Ignore */ }
+            } catch { }
         });
 
         observer.observe(document.body, {
@@ -1574,16 +1469,14 @@ function _$cm() {
                     observer.disconnect();
                     clearInterval(checkInterval);
                 }
-            } catch {
-
-            }
+            } catch { }
         }, 5000);
 
-        _$l('Player crash monitor active', 'info');
+        _$l('Crash monitor active', 'info');
     }
 
     start();
-}
+}
 
 function _$bs() {
     if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _$c.INTERNAL_VERSION) {
@@ -1638,7 +1531,7 @@ function _$bp() {
 
         function _$pb() {
             const now = Date.now();
-            if (now - lastBlockTime < 1000) return; // Debounce 1 second
+            if (now - lastBlockTime < 1000) return;
             lastBlockTime = now;
 
             _$s.popupsBlocked++;
@@ -1685,7 +1578,7 @@ function _$bp() {
                 try {
                     if (el.matches && el.matches(selector)) return true;
                     if (el.querySelector && el.querySelector(selector)) return true;
-                } catch { /* Invalid selector */ }
+                } catch { }
             }
             return false;
         }
@@ -1695,25 +1588,17 @@ function _$bp() {
 
             for (const node of detectionNodes) {
                 if (node.tagName === 'SPAN' && node.textContent.length < 10) continue;
-
                 if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
-
                 if (_isSafeElement(node) || node.closest('[class*="chat"]') || node.closest('[class*="Chat"]')) continue;
 
                 if (_hasAdblockText(node)) {
-                    const nodeText = (node.textContent || '').trim().substring(0, 50);
-                    _$l('Found adblock text in <' + node.tagName + '>: "' + nodeText + '"', 'info');
-
                     node.setAttribute('data-ttvab-blocked', 'true');
 
                     let popup = node.parentElement;
                     let attempts = 0;
 
                     while (popup && attempts < 20) {
-                        if (_isSafeElement(popup)) {
-                            _$l('Skipping - hit safelisted element: ' + (popup.className || popup.tagName), 'info');
-                            break;
-                        }
+                        if (_isSafeElement(popup)) break;
 
                         const style = window.getComputedStyle(popup);
                         const isOverlay = style.position === 'fixed' || style.position === 'absolute';
@@ -1738,12 +1623,9 @@ function _$bp() {
                                 continue;
                             }
 
-                            if (_isSafeElement(popup)) {
-                                _$l('Skipping potential popup - contains safelisted content', 'warning');
-                                break;
-                            }
+                            if (_isSafeElement(popup)) break;
 
-                            _$l('Hiding popup container: ' + (popup.className || popup.tagName), 'success');
+                            _$l('Hiding popup: ' + (popup.className || popup.tagName), 'success');
                             popup.style.display = 'none';
                             popup.style.visibility = 'hidden';
                             popup.setAttribute('style', (popup.getAttribute('style') || '') + '; display: none !important; visibility: hidden !important;');
@@ -1759,7 +1641,7 @@ function _$bp() {
 
                     const fallback = node.closest('div[class*="Balloon"], div[class*="consent"], div[class*="Modal"]');
                     if (fallback && !_isSafeElement(fallback)) {
-                        _$l('Hiding popup (fallback logic): ' + fallback.className, 'warning');
+                        _$l('Hiding popup (fallback)', 'warning');
                         fallback.style.display = 'none';
                         fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');
                         fallback.setAttribute('data-ttvab-blocked', 'true');
@@ -1783,16 +1665,14 @@ function _$bp() {
                     const elements = document.querySelectorAll(selector);
                     for (const el of elements) {
                         if (_hasAdblockText(el)) {
-                            _$l('Hiding popup by selector: ' + selector, 'success');
+                            _$l('Hiding popup by selector', 'success');
                             el.style.display = 'none';
                             el.setAttribute('style', (el.getAttribute('style') || '') + '; display: none !important;');
                             _$pb();
                             return true;
                         }
                     }
-                } catch {
-
-                }
+                } catch { }
             }
 
             const overlays = document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]');
@@ -1821,7 +1701,7 @@ function _$bp() {
             let shouldScan = false;
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
-                    if (node.nodeType === 1) { // Element node
+                    if (node.nodeType === 1) {
                         shouldScan = true;
                         break;
                     }
@@ -1860,7 +1740,7 @@ function _$bp() {
         }
         _$is();
 
-        _$l('Anti-adblock popup blocker active', 'success');
+        _$l('Popup blocker active', 'success');
     }
 
     _$ipb();
@@ -1880,12 +1760,12 @@ function _$in() {
             for (const worker of _$s.workers) {
                 worker.postMessage({ key: 'UpdateAdsBlocked', value: _$s.adsBlocked });
             }
-            _$l('Restored ads blocked count: ' + _$s.adsBlocked, 'info');
+            _$l('Restored ads count: ' + _$s.adsBlocked, 'info');
         }
 
         if (e.data.type === 'ttvab-init-popups-count' && typeof e.data.detail?.count === 'number') {
             _$s.popupsBlocked = e.data.detail.count;
-            _$l('Restored popups blocked count: ' + _$s.popupsBlocked, 'info');
+            _$l('Restored popups count: ' + _$s.popupsBlocked, 'info');
         }
     });
 

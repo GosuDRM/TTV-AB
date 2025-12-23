@@ -1,28 +1,13 @@
-/**
- * TTV AB - State Module
- * Global state management and runtime variables
- * @module state
- * @private
- */
+// TTV AB - State
 
-/** @type {Object} Runtime state container */
 const _S = {
-    /** Active worker instances */
     workers: [],
-    /** Conflict detection patterns */
     conflicts: ['twitch', 'isVariantA'],
-    /** Patterns requiring reinsert */
     reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
-    /** Counter for blocked ads */
     adsBlocked: 0,
-    /** Counter for blocked anti-adblock popups */
     popupsBlocked: 0
 };
 
-/**
- * Initialize runtime state on a scope (window or self)
- * @param {Object} scope - Target scope (window/self)
- */
 function _declareState(scope) {
     scope.__TTVAB_STATE__ = {
         AdSignifier: _C.AD_SIGNIFIER,
@@ -34,7 +19,7 @@ function _declareState(scope) {
         AlwaysReloadPlayerOnAd: false,
         ReloadPlayerAfterAd: _C.RELOAD_AFTER_AD ?? true,
         PlayerReloadMinimalRequestsTime: _C.RELOAD_TIME,
-        PlayerReloadMinimalRequestsPlayerIndex: 0,
+        PlayerReloadMinimalRequestsPlayerIndex: 2,
         HasTriggeredPlayerReload: false,
         StreamInfos: Object.create(null),
         StreamInfosByUrl: Object.create(null),
@@ -52,18 +37,10 @@ function _declareState(scope) {
     };
 }
 
-/**
- * Increment blocked ads counter and dispatch event
- * @param {string} [channel] - Channel name where ad was blocked
- */
 function _incrementAdsBlocked(channel) {
     _S.adsBlocked++;
-
     if (typeof window !== 'undefined') {
-        window.postMessage({
-            type: 'ttvab-ad-blocked',
-            detail: { count: _S.adsBlocked, channel: channel || null }
-        }, '*');
+        window.postMessage({ type: 'ttvab-ad-blocked', detail: { count: _S.adsBlocked, channel: channel || null } }, '*');
     } else if (typeof self !== 'undefined' && self.postMessage) {
         self.postMessage({ key: 'AdBlocked', count: _S.adsBlocked, channel: channel || null });
     }

@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.1.6] - 2025-12-24
+
+### Changed
+- **Backup Player Type Priority** - Reordered backup player types from `['embed', 'autoplay', 'site', 'picture-by-picture-CACHED']` to `['embed', 'popout', 'autoplay']`. The `popout` player type now replaces `site` as the secondary backup.
+- **Force Player Type Update** - Changed `ForceAccessTokenPlayerType` from `'embed'` to `'popout'` to reduce preroll ads.
+- **Player Reload Index** - Changed `PlayerReloadMinimalRequestsPlayerIndex` from `0` (embed) to `2` (autoplay) for improved stability.
+
+### Fixed
+- **Preroll Buffer Fix** - Relaxed buffer position check from `position > 0` to `position > 5` to prevent issues with preroll ads causing player stalls.
+
 ## [4.1.5] - 2025-12-19
 
 ### Fixed

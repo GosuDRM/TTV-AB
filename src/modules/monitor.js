@@ -1,21 +1,9 @@
-/**
- * TTV AB - Monitor Module
- * Player crash detection and auto-refresh
- * @module monitor
- * @private
- */
+// TTV AB - Monitor
 
-/**
- * Initialize player crash monitoring
- */
 function _initCrashMonitor() {
     let isRefreshing = false;
     let checkInterval = null;
 
-    /**
-     * Detect crash patterns in page content
-     * @returns {string|null} Matched error pattern or null
-     */
     function detectCrash() {
         const errorElements = document.querySelectorAll(
             '[data-a-target="player-overlay-content-gate"],' +
@@ -35,28 +23,24 @@ function _initCrashMonitor() {
         return null;
     }
 
-    /**
-     * Handle detected crash
-     * @param {string} error - Error message
-     */
     function handleCrash(error) {
         if (isRefreshing) return;
         isRefreshing = true;
 
-        _log('Player crash detected: ' + error, 'error');
+        _log('Player crash: ' + error, 'error');
 
         if (document.hidden) {
-            _log('Tab is hidden, will refresh when tab becomes visible...', 'warning');
+            _log('Tab hidden, will refresh when visible', 'warning');
 
             document.addEventListener('visibilitychange', function onVisible() {
                 if (!document.hidden) {
                     document.removeEventListener('visibilitychange', onVisible);
-                    _log('Tab now visible, refreshing...', 'warning');
+                    _log('Tab visible, refreshing...', 'warning');
                     window.location.reload();
                 }
             });
         } else {
-            _log('Auto-refreshing in ' + (_C.REFRESH_DELAY / 1000) + 's...', 'warning');
+            _log('Auto-refreshing...', 'warning');
 
             const banner = document.createElement('div');
             banner.innerHTML = `
@@ -64,7 +48,7 @@ function _initCrashMonitor() {
                     #ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-pulse 1s ease infinite}
                     @keyframes ttvab-pulse{0%,100%{opacity:1}50%{opacity:.7}}
                 </style>
-                <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing automatically...</div>
+                <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing...</div>
             `;
             document.body.appendChild(banner);
 
@@ -72,9 +56,6 @@ function _initCrashMonitor() {
         }
     }
 
-    /**
-     * Start monitoring
-     */
     function start() {
         if (!document.body) {
             setTimeout(start, 100);
@@ -94,7 +75,7 @@ function _initCrashMonitor() {
                     observer.disconnect();
                     if (checkInterval) clearInterval(checkInterval);
                 }
-            } catch { /* Ignore */ }
+            } catch { }
         });
 
         observer.observe(document.body, {
@@ -111,12 +92,10 @@ function _initCrashMonitor() {
                     observer.disconnect();
                     clearInterval(checkInterval);
                 }
-            } catch {
-                // Ignore monitor errors to keep extension alive
-            }
+            } catch { }
         }, 5000);
 
-        _log('Player crash monitor active', 'info');
+        _log('Crash monitor active', 'info');
     }
 
     start();

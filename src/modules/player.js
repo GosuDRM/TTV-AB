@@ -1,14 +1,5 @@
-/**
- * TTV AB - Player Module
- * Twitch player control and React integration
- * @module player
- * @private
- */
+// TTV AB - Player
 
-/**
- * Player state for buffering monitoring
- * @type {Object}
- */
 const _PlayerBufferState = {
     position: 0,
     bufferedPosition: 0,
@@ -17,16 +8,8 @@ const _PlayerBufferState = {
     lastFixTime: 0
 };
 
-/**
- * Cached player reference for performance
- * @type {Object|null}
- */
 let _cachedPlayerRef = null;
 
-/**
- * Find React root node in DOM
- * @returns {Object|null} React internal root node
- */
 function _findReactRoot() {
     const rootNode = document.querySelector('#root');
     if (!rootNode) return null;
@@ -43,12 +26,6 @@ function _findReactRoot() {
     return null;
 }
 
-/**
- * Recursively search React fiber tree for matching node
- * @param {Object} root - React fiber node
- * @param {Function} constraint - Matching function
- * @returns {Object|null} Matching state node
- */
 function _findReactNode(root, constraint) {
     if (!root) return null;
 
@@ -66,10 +43,6 @@ function _findReactNode(root, constraint) {
     return null;
 }
 
-/**
- * Get Twitch player and state instances from React tree
- * @returns {{player: Object|null, state: Object|null}}
- */
 function _getPlayerAndState() {
     const reactRoot = _findReactRoot();
     if (!reactRoot) return { player: null, state: null };
@@ -86,11 +59,6 @@ function _getPlayerAndState() {
     return { player, state: playerState };
 }
 
-/**
- * Execute player task (pause/play or reload)
- * @param {boolean} isPausePlay - Do pause/play cycle
- * @param {boolean} isReload - Do player reload
- */
 function _doPlayerTask(isPausePlay, isReload) {
     const { player, state: playerState } = _getPlayerAndState();
 
@@ -133,7 +101,7 @@ function _doPlayerTask(isPausePlay, isReload) {
             if (player?.core?.state?.quality?.group) {
                 localStorage.setItem(lsKeyQuality, JSON.stringify({ default: player.core.state.quality.group }));
             }
-        } catch { /* Ignore storage errors */ }
+        } catch { }
 
         _log('Reloading player', 'info');
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
@@ -150,21 +118,17 @@ function _doPlayerTask(isPausePlay, isReload) {
                     if (currentQualityLS) localStorage.setItem(lsKeyQuality, currentQualityLS);
                     if (currentMutedLS) localStorage.setItem(lsKeyMuted, currentMutedLS);
                     if (currentVolumeLS) localStorage.setItem(lsKeyVolume, currentVolumeLS);
-                } catch { /* Ignore */ }
+                } catch { }
             }, 3000);
         }
     }
 }
 
-/**
- * Monitor player for buffering issues and auto-fix
- * Uses pause/play or reload to recover from stalls
- */
 function _monitorPlayerBuffering() {
-    const BUFFERING_DELAY = 500; // Check interval (ms)
-    const SAME_STATE_COUNT = 3;  // Trigger after this many same states
-    const DANGER_ZONE = 1;       // Buffer seconds before danger
-    const MIN_REPEAT_DELAY = 5000; // Min delay between fixes
+    const BUFFERING_DELAY = 500;
+    const SAME_STATE_COUNT = 3;
+    const DANGER_ZONE = 1;
+    const MIN_REPEAT_DELAY = 5000;
 
     function check() {
         if (_cachedPlayerRef) {
@@ -185,7 +149,7 @@ function _monitorPlayerBuffering() {
                     const bufferDuration = player.getBufferDuration() || 0;
 
                     if (
-                        position > 0 &&
+                        position > 5 &&
                         (_PlayerBufferState.position === position || bufferDuration < DANGER_ZONE) &&
                         _PlayerBufferState.bufferedPosition === bufferedPosition &&
                         _PlayerBufferState.bufferDuration >= bufferDuration &&
@@ -194,8 +158,8 @@ function _monitorPlayerBuffering() {
                         _PlayerBufferState.numSame++;
 
                         if (_PlayerBufferState.numSame === SAME_STATE_COUNT) {
-                            _log('Attempting to fix buffering (pos=' + position + ')', 'warning');
-                            _doPlayerTask(true, false); // Pause/play
+                            _log('Attempting buffer fix (pos=' + position + ')', 'warning');
+                            _doPlayerTask(true, false);
                             _PlayerBufferState.lastFixTime = Date.now();
                         }
                     } else {
@@ -223,19 +187,15 @@ function _monitorPlayerBuffering() {
     }
 
     check();
-    _log('Player buffering monitor active', 'info');
+    _log('Buffer monitor active', 'info');
 }
 
-/**
- * Hook visibility state to prevent player pause when tab is hidden
- * Twitch pauses the player when switching tabs during ads - this prevents that
- */
 function _hookVisibilityState() {
     try {
         Object.defineProperty(document, 'visibilityState', {
             get: () => 'visible'
         });
-    } catch { /* Already defined */ }
+    } catch { }
 
     const hiddenGetter = document.__lookupGetter__('hidden');
     const webkitHiddenGetter = document.__lookupGetter__('webkitHidden');
@@ -244,7 +204,7 @@ function _hookVisibilityState() {
         Object.defineProperty(document, 'hidden', {
             get: () => false
         });
-    } catch { /* Already defined */ }
+    } catch { }
 
     const blockEvent = e => {
         e.preventDefault();
@@ -282,15 +242,11 @@ function _hookVisibilityState() {
         } else {
             Object.defineProperty(document, 'webkitHidden', { get: () => false });
         }
-    } catch { /* Already defined */ }
+    } catch { }
 
-    _log('Visibility state protection active', 'info');
+    _log('Visibility protection active', 'info');
 }
 
-/**
- * Hook localStorage to preserve player settings across reloads
- * Caches quality, volume, low latency, and mini player settings
- */
 function _hookLocalStoragePreservation() {
     try {
         const keysToCache = [

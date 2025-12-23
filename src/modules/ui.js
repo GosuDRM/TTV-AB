@@ -1,20 +1,9 @@
-/**
- * TTV AB - UI Module
- * Toast notifications and user interface
- * @module ui
- * @private
- */
+// TTV AB - UI
 
-/** @type {string} Storage key for donation reminder */
 const _REMINDER_KEY = 'ttvab_last_reminder';
-/** @type {number} Reminder interval (72 hours) */
-const _REMINDER_INTERVAL = 259200000;
-/** @type {string} Storage key for first run */
+const _REMINDER_INTERVAL = 432000000;
 const _FIRST_RUN_KEY = 'ttvab_first_run_shown';
 
-/**
- * Show donation reminder toast
- */
 function _showDonation() {
     try {
         const lastReminder = localStorage.getItem(_REMINDER_KEY);
@@ -45,7 +34,7 @@ function _showDonation() {
 
             document.getElementById('ttvab-reminder-close').onclick = () => toast.remove();
             document.getElementById('ttvab-reminder-btn').onclick = () => {
-                window.open('https://paypal.me/GosuDRM', '_blank');
+                window.open('https://ko-fi.com/gosudrm', '_blank');
                 toast.remove();
             };
 
@@ -61,9 +50,6 @@ function _showDonation() {
     }
 }
 
-/**
- * Show welcome message on first install
- */
 function _showWelcome() {
     try {
         if (localStorage.getItem(_FIRST_RUN_KEY)) return;
@@ -110,10 +96,6 @@ function _showWelcome() {
     }
 }
 
-/**
- * Achievement definitions for notification display
- * @type {Object}
- */
 const _ACHIEVEMENT_INFO = {
     'first_block': { name: 'Ad Slayer', icon: '⚔️', desc: 'Blocked your first ad!' },
     'block_10': { name: 'Blocker', icon: '🛡️', desc: 'Blocked 10 ads!' },
@@ -129,10 +111,6 @@ const _ACHIEVEMENT_INFO = {
     'channels_20': { name: 'Adventurer', icon: '🌍', desc: 'Blocked ads on 20 channels!' }
 };
 
-/**
- * Show achievement unlocked notification
- * @param {string} achievementId - The achievement ID that was unlocked
- */
 function _showAchievementUnlocked(achievementId) {
     try {
         const ach = _ACHIEVEMENT_INFO[achievementId];
@@ -147,7 +125,6 @@ function _showAchievementUnlocked(achievementId) {
             <style>
                 #ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}
                 @keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
-                @keyframes ttvab-ach-glow{0%,100%{box-shadow:0 0 10px rgba(145,70,255,.3)}50%{box-shadow:0 0 25px rgba(145,70,255,.6)}}
                 @keyframes ttvab-ach-shine{0%{background-position:-200% center}100%{background-position:200% center}}
                 #ttvab-achievement .ach-icon{font-size:40px;animation:ttvab-ach-bounce 1s ease infinite}
                 @keyframes ttvab-ach-bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
@@ -174,14 +151,10 @@ function _showAchievementUnlocked(achievementId) {
             }
         }, 4000);
     } catch (e) {
-        _log('Achievement notification error: ' + e.message, 'error');
+        _log('Achievement error: ' + e.message, 'error');
     }
 }
 
-/**
- * Initialize achievement unlock listener
- * Uses window.addEventListener('message') to receive from ISOLATED world
- */
 function _initAchievementListener() {
     window.addEventListener('message', function (e) {
         if (e.data?.type === 'ttvab-achievement-unlocked' && e.data.detail?.id) {
