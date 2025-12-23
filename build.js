@@ -1,18 +1,11 @@
 #!/usr/bin/env node
-/**
- * TTV AB - Build Script
- * Compiles modules into an optimized, minified content script
- * 
- * @author GosuDRM
- * @license MIT
- */
+// TTV AB - Build Script
 const fs = require('fs');
 const path = require('path');
 
 const MODULES_DIR = path.join(__dirname, 'src', 'modules');
 const OUTPUT_FILE = path.join(__dirname, 'src', 'scripts', 'content.js');
 
-// Module load order (dependencies first)
 const MODULE_ORDER = [
     'constants.js',
     'state.js',
@@ -28,12 +21,9 @@ const MODULE_ORDER = [
     'init.js'
 ];
 
-// Minification mappings for obfuscation
 const MINIFY_MAP = {
-    // Constants
     '_C': '_$c',
     '_S': '_$s',
-    // Functions (keep some readable for debugging)
     '_log': '_$l',
     '_declareState': '_$ds',
     '_incrementAdsBlocked': '_$ab',
@@ -63,20 +53,17 @@ const MINIFY_MAP = {
     '_bootstrap': '_$bs',
     '_initToggleListener': '_$tl',
     '_init': '_$in',
-    // Additional internal identifiers
     '_ATTR_REGEX': '_$ar',
     '_REMINDER_KEY': '_$rk',
     '_REMINDER_INTERVAL': '_$ri2',
     '_FIRST_RUN_KEY': '_$fr',
     '_ACHIEVEMENT_INFO': '_$ai',
     '_GQL_URL': '_$gu',
-    // UI helper functions (init.js internal)
     '_incrementPopupsBlocked': '_$pb',
     '_scanAndRemove': '_$sr',
     '_scheduleIdleScan': '_$is',
     '_initPopupBlocker': '_$ipb',
     '_pruneStreamInfos': '_$ps',
-    // Player module functions
     '_PlayerBufferState': '_$pbs',
     '_cachedPlayerRef': '_$cpr',
     '_findReactRoot': '_$rr',
@@ -107,7 +94,6 @@ function minifyCode(code) {
 
     result = result.replace(/^\s*\/\/.*$/gm, '');
     result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
-
     result = result.replace(/\s*\/\/ ═+\n\s*\/\/ MODULE:.*\n\s*\/\/ ═+\n/g, '\n');
 
     return result;
@@ -118,64 +104,8 @@ function build() {
 
     const version = getVersion();
 
-    const HEADER = `/**
- * TTV AB v${version} - Twitch Ad Blocker
- * 
- * @author GosuDRM
- * @license MIT
- * @repository https://github.com/GosuDRM/TTV-AB
- * @homepage https://github.com/GosuDRM/TTV-AB
- * 
- * This extension blocks advertisements on Twitch.tv live streams by intercepting
- * and modifying video playlist (M3U8) data. All processing occurs LOCALLY within
- * the user's browser. No user data is collected, stored, or transmitted.
- * 
- * REGARDING "REMOTE CODE" / "UNSAFE-EVAL":
- * ----------------------------------------
- * This extension intercepts Twitch's Web Worker creation to inject ad-blocking
- * logic. The technique used is:
- * 
- * 1. Intercept: The native Worker constructor is overridden.
- * 2. Fetch: The ORIGINAL worker script is fetched from Twitch's own servers.
- * 3. Modify: Ad-blocking code is prepended to Twitch's worker code.
- * 4. Execute: A new Blob URL is created and the patched worker is instantiated.
- * 
- * IMPORTANT SAFETY CLARIFICATIONS:
- * - The ONLY code executed is Twitch's own worker code (from *.twitch.tv).
- * - This extension does NOT download or execute any code from external/third-party servers.
- * - The ad-blocking logic is bundled entirely within this file.
- * - No eval() of user-provided or remotely-fetched arbitrary code occurs.
- * 
- * SOURCE CODE:
- * The full, unminified source code is available at:
- * https://github.com/GosuDRM/TTV-AB/tree/main/src/modules
- * 
- * PERMISSIONS USED:
- * - storage: Save user's enable/disable preference and blocked ad count.
- * - host_permissions (twitch.tv): Inject content script to block ads.
- * 
- * =============================================================================
- * ARCHITECTURE OVERVIEW
- * =============================================================================
- * 
- * This script is compiled from modular source files located in /src/modules/:
- * 
- * - constants.js : Configuration values and version info
- * - state.js     : Shared state management (ad counts, worker refs)
- * - logger.js    : Console logging with styled output
- * - parser.js    : M3U8 playlist parsing and ad segment detection
- * - api.js       : GraphQL requests to Twitch API for backup streams
- * - processor.js : Core ad removal logic and stream switching
- * - worker.js    : Worker patching utilities
- * - hooks.js     : Native API hooks (Worker, fetch)
- * - ui.js        : User notifications (welcome, donation prompts)
- * - monitor.js   : Player crash detection and auto-recovery
- * - init.js      : Extension initialization and event listeners
- * 
- * Function names are minified (e.g., _log -> _$l, _init -> _$in) for smaller bundle size.
- * 
- * =============================================================================
- */
+    const HEADER = `// TTV AB v${version} - Twitch Ad Blocker
+// https://github.com/GosuDRM/TTV-AB | MIT License
 (function(){
 'use strict';
 `;
@@ -185,7 +115,6 @@ _$in();
 })();
 `;
 
-    // Build with error handling
     try {
         let content = HEADER;
         let moduleCount = 0;
@@ -194,10 +123,7 @@ _$in();
             const modPath = path.join(MODULES_DIR, mod);
             if (fs.existsSync(modPath)) {
                 let modContent = fs.readFileSync(modPath, 'utf8');
-
-                // Remove module-level JSDoc comments
                 modContent = modContent.replace(/^\/\*\*[\s\S]*?\*\/\n/m, '');
-
                 content += modContent + '\n';
                 moduleCount++;
                 console.log(`  ✓ ${mod}`);
@@ -208,7 +134,6 @@ _$in();
 
         content += FOOTER;
 
-        // Minify
         console.log('\n🔧 Minifying...');
         content = minifyCode(content);
 

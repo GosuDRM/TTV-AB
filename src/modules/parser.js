@@ -1,18 +1,7 @@
-/**
- * TTV AB - Parser Module
- * M3U8 playlist parsing and manipulation
- * @module parser
- * @private
- */
+// TTV AB - Parser
 
-/** @type {RegExp} Attribute parsing regex (cached for performance) */
 const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
-/**
- * Parse M3U8 attributes into an object
- * @param {string} str - Attribute string
- * @returns {Object} Parsed attributes
- */
 function _parseAttrs(str) {
     const result = Object.create(null);
     let match;
@@ -27,11 +16,6 @@ function _parseAttrs(str) {
     return result;
 }
 
-/**
- * Extract server time from M3U8 playlist
- * @param {string} m3u8 - Playlist content
- * @returns {string|null} Server time or null
- */
 function _getServerTime(m3u8) {
     if (__TTVAB_STATE__.V2API) {
         const match = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
@@ -41,12 +25,6 @@ function _getServerTime(m3u8) {
     return match?.[1] ?? null;
 }
 
-/**
- * Replace server time in M3U8 playlist
- * @param {string} m3u8 - Playlist content
- * @param {string} time - New server time
- * @returns {string} Modified playlist
- */
 function _replaceServerTime(m3u8, time) {
     if (!time) return m3u8;
     if (__TTVAB_STATE__.V2API) {
@@ -55,26 +33,16 @@ function _replaceServerTime(m3u8, time) {
     return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
 }
 
-/**
- * Strip ad segments from M3U8 playlist
- * @param {string} text - Playlist content
- * @param {boolean} stripAll - Strip all segments
- * @param {Object} info - Stream info object
- * @returns {string} Cleaned playlist
- */
 function _stripAds(text, stripAll, info) {
     const lines = text.split('\n');
     const len = lines.length;
     const adUrl = 'https://twitch.tv';
     let stripped = false;
     let i = 0;
-
-    // Track last stripped segment for recovery (prevent empty playlist crash)
     let lastStrippedExtinf = null;
     let lastStrippedUrl = null;
     let strippedCount = 0;
 
-    // Remove prefetch entries FIRST before any stripping
     const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
     if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
         for (i = 0; i < len; i++) {
@@ -84,9 +52,8 @@ function _stripAds(text, stripAll, info) {
         }
     }
 
-    // First pass: Count ad segments and live segments
     let adSegmentCount = 0;
-    let liveSegmentCount = 0;
+    let _liveSegmentCount = 0;
 
     for (i = 0; i < len - 1; i++) {
         const line = lines[i];
@@ -96,19 +63,16 @@ function _stripAds(text, stripAll, info) {
             if (!line.includes(',live') || isProcessing) {
                 adSegmentCount++;
             } else {
-                liveSegmentCount++;
+                _liveSegmentCount++;
             }
         }
     }
 
-    // Strip ads even if all are ads - player will buffer briefly but no ads play
-    // The brief buffering is preferable to showing ads
     const shouldStrip = (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) && adSegmentCount > 0;
 
     for (i = 0; i < len; i++) {
         let line = lines[i];
 
-        // Replace ad tracking URLs
         if (line.includes('X-TV-TWITCH-AD')) {
             line = line
                 .replace(/X-TV-TWITCH-AD-URL="[^"]*"/, `X-TV-TWITCH-AD-URL="${adUrl}"`)
@@ -116,32 +80,24 @@ function _stripAds(text, stripAll, info) {
             lines[i] = line;
         }
 
-        // Strip ad segments
         const isAdSegment = !line.includes(',live') || (i < len - 1 && (lines[i + 1].includes('processing') || lines[i + 1].includes('/_404/')));
 
         if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
             const segmentUrl = lines[i + 1];
-
-            // Save before wiping 
             lastStrippedExtinf = lines[i];
             lastStrippedUrl = segmentUrl;
             strippedCount++;
 
-            // Pre-fetch ad segment to "consume" it faster
-            // This helps clear ad slots from Twitch's side, making backup streams cleaner
             if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
                 info.RequestedAds.add(segmentUrl);
-                // Fire-and-forget fetch to consume the ad slot
                 fetch(segmentUrl).then(r => r.blob()).catch(() => { });
             }
 
             if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
             __TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
             stripped = true;
-
-            // Wipe lines from manifest
-            lines[i] = '';      // Remove #EXTINF
-            lines[i + 1] = '';  // Remove URL
+            lines[i] = '';
+            lines[i + 1] = '';
             i++;
         }
 
@@ -154,8 +110,6 @@ function _stripAds(text, stripAll, info) {
 
     info.IsStrippingAdSegments = stripped;
 
-    // Cleanup old cache entries (older than 2 minutes) - run max once per 60s
-    // Use global throttle to prevent race conditions when Info object is recreated
     const now = Date.now();
     if (!globalThis._lastAdCachePrune || now - globalThis._lastAdCachePrune > 60000) {
         globalThis._lastAdCachePrune = now;
@@ -163,13 +117,12 @@ function _stripAds(text, stripAll, info) {
         __TTVAB_STATE__.AdSegmentCache.forEach((v, k) => { if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k); });
     }
 
-    // Filter out empty lines
     const result = lines.filter(l => l !== '');
 
-    // Check if we stripped ALL segments (empty playlist = player crash/black screen)
+    // Prevent empty playlist crash
     const hasRemainingSegments = result.some(l => l.startsWith('#EXTINF'));
     if (!hasRemainingSegments && strippedCount > 0 && lastStrippedExtinf && lastStrippedUrl) {
-        _log('[Recovery] Empty playlist detected - restoring last segment to prevent crash', 'warning');
+        _log('[Recovery] Empty playlist - restoring last segment', 'warning');
         result.push(lastStrippedExtinf);
         result.push(lastStrippedUrl);
     }
@@ -177,12 +130,6 @@ function _stripAds(text, stripAll, info) {
     return result.join('\n');
 }
 
-/**
- * Find matching stream URL for resolution
- * @param {string} m3u8 - Master playlist
- * @param {Object} res - Target resolution info
- * @returns {string|null} Matching URL or closest match
- */
 function _getStreamUrl(m3u8, res) {
     const lines = m3u8.split('\n');
     const len = lines.length;

@@ -1,19 +1,7 @@
-/**
- * TTV AB - API Module
- * Twitch GraphQL API interactions
- * @module api
- * @private
- */
+// TTV AB - API
 
-/** @type {string} GraphQL endpoint */
 const _GQL_URL = 'https://gql.twitch.tv/gql';
 
-/**
- * Get stream playback access token
- * @param {string} channel - Channel name
- * @param {string} playerType - Player type
- * @returns {Promise<Response>} Token response
- */
 async function _getToken(channel, playerType, realFetch) {
     const fetchFunc = realFetch || fetch;
     const reqPlayerType = playerType;
@@ -37,9 +25,9 @@ async function _getToken(channel, playerType, realFetch) {
     };
 
     try {
-        _log(`[Trace] Requesting token for ${playerType} (req=${reqPlayerType})`, 'info');
+        _log(`[Trace] Requesting token for ${playerType}`, 'info');
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
         const headers = {
             'Client-ID': _C.CLIENT_ID,
@@ -48,7 +36,6 @@ async function _getToken(channel, playerType, realFetch) {
             'Client-Version': __TTVAB_STATE__.ClientVersion || 'k8s-v1'
         };
 
-        // Only include Authorization header if set (avoid undefined in headers)
         if (__TTVAB_STATE__.AuthorizationHeader) {
             headers['Authorization'] = __TTVAB_STATE__.AuthorizationHeader;
         }
@@ -61,10 +48,10 @@ async function _getToken(channel, playerType, realFetch) {
         });
 
         clearTimeout(timeoutId);
-        _log(`[Trace] Token response for ${playerType}: ${res.status}`, 'info');
+        _log(`[Trace] Token response: ${res.status}`, 'info');
         return res;
     } catch (e) {
-        _log(`Token fetch error for ${playerType}: ${e.message}`, 'error');
+        _log(`Token fetch error: ${e.message}`, 'error');
         return { status: 0, json: () => Promise.resolve({}) };
     }
 }

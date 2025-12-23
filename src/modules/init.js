@@ -1,14 +1,5 @@
-/**
- * TTV AB - Init Module
- * Bootstrap and initialization
- * @module init
- * @private
- */
+// TTV AB - Init
 
-/**
- * Check for conflicts and set up version tracking
- * @returns {boolean} True if initialization should continue
- */
 function _bootstrap() {
     if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _C.INTERNAL_VERSION) {
         _log('Skipping - another script is active', 'warning');
@@ -20,9 +11,6 @@ function _bootstrap() {
     return true;
 }
 
-/**
- * Set up toggle listener for enable/disable
- */
 function _initToggleListener() {
     window.addEventListener('message', function (e) {
         if (e.source !== window) return;
@@ -37,10 +25,6 @@ function _initToggleListener() {
     });
 }
 
-/**
- * Block anti-adblock popups using aggressive DOM detection
- * Uses multiple strategies for maximum effectiveness
- */
 function _blockAntiAdblockPopup() {
     let lastBlockTime = 0;
 
@@ -67,12 +51,9 @@ function _blockAntiAdblockPopup() {
             document.head.appendChild(style);
         }
 
-        /**
-         * Increment popup blocked counter and dispatch event
-         */
         function _incrementPopupsBlocked() {
             const now = Date.now();
-            if (now - lastBlockTime < 1000) return; // Debounce 1 second
+            if (now - lastBlockTime < 1000) return;
             lastBlockTime = now;
 
             _S.popupsBlocked++;
@@ -83,9 +64,6 @@ function _blockAntiAdblockPopup() {
             _log('Popup blocked! Total: ' + _S.popupsBlocked, 'success');
         }
 
-        /**
-         * Check if element or its children contain anti-adblock text
-         */
         function _hasAdblockText(el) {
             const text = (el.textContent || '').toLowerCase();
             return (
@@ -100,10 +78,6 @@ function _blockAntiAdblockPopup() {
             );
         }
 
-        /**
-         * Safelist: Elements matching these selectors should NEVER be hidden
-         * This protects chat, video player, and main layout components
-         */
         const SAFELIST_SELECTORS = [
             '[data-a-target="chat-scroller"]',
             '[data-a-target="right-column-chat-bar"]',
@@ -120,49 +94,34 @@ function _blockAntiAdblockPopup() {
             'video'
         ];
 
-        /**
-         * Check if element or any ancestor matches safelist
-         */
         function _isSafeElement(el) {
             if (!el) return false;
             for (const selector of SAFELIST_SELECTORS) {
                 try {
                     if (el.matches && el.matches(selector)) return true;
                     if (el.querySelector && el.querySelector(selector)) return true;
-                } catch { /* Invalid selector */ }
+                } catch { }
             }
             return false;
         }
 
-        /**
-         * Find and remove the popup by looking for specific patterns
-         */
         function _scanAndRemove() {
             const detectionNodes = document.querySelectorAll('button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span');
 
             for (const node of detectionNodes) {
                 if (node.tagName === 'SPAN' && node.textContent.length < 10) continue;
-
                 if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
-
                 if (_isSafeElement(node) || node.closest('[class*="chat"]') || node.closest('[class*="Chat"]')) continue;
 
                 if (_hasAdblockText(node)) {
-                    const nodeText = (node.textContent || '').trim().substring(0, 50);
-                    _log('Found adblock text in <' + node.tagName + '>: "' + nodeText + '"', 'info');
-
                     node.setAttribute('data-ttvab-blocked', 'true');
 
                     let popup = node.parentElement;
                     let attempts = 0;
 
                     while (popup && attempts < 20) {
-                        if (_isSafeElement(popup)) {
-                            _log('Skipping - hit safelisted element: ' + (popup.className || popup.tagName), 'info');
-                            break;
-                        }
+                        if (_isSafeElement(popup)) break;
 
-                        // Check if this element looks like a popup
                         const style = window.getComputedStyle(popup);
                         const isOverlay = style.position === 'fixed' || style.position === 'absolute';
                         const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
@@ -186,12 +145,9 @@ function _blockAntiAdblockPopup() {
                                 continue;
                             }
 
-                            if (_isSafeElement(popup)) {
-                                _log('Skipping potential popup - contains safelisted content', 'warning');
-                                break;
-                            }
+                            if (_isSafeElement(popup)) break;
 
-                            _log('Hiding popup container: ' + (popup.className || popup.tagName), 'success');
+                            _log('Hiding popup: ' + (popup.className || popup.tagName), 'success');
                             popup.style.display = 'none';
                             popup.style.visibility = 'hidden';
                             popup.setAttribute('style', (popup.getAttribute('style') || '') + '; display: none !important; visibility: hidden !important;');
@@ -207,7 +163,7 @@ function _blockAntiAdblockPopup() {
 
                     const fallback = node.closest('div[class*="Balloon"], div[class*="consent"], div[class*="Modal"]');
                     if (fallback && !_isSafeElement(fallback)) {
-                        _log('Hiding popup (fallback logic): ' + fallback.className, 'warning');
+                        _log('Hiding popup (fallback)', 'warning');
                         fallback.style.display = 'none';
                         fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');
                         fallback.setAttribute('data-ttvab-blocked', 'true');
@@ -231,16 +187,14 @@ function _blockAntiAdblockPopup() {
                     const elements = document.querySelectorAll(selector);
                     for (const el of elements) {
                         if (_hasAdblockText(el)) {
-                            _log('Hiding popup by selector: ' + selector, 'success');
+                            _log('Hiding popup by selector', 'success');
                             el.style.display = 'none';
                             el.setAttribute('style', (el.getAttribute('style') || '') + '; display: none !important;');
                             _incrementPopupsBlocked();
                             return true;
                         }
                     }
-                } catch {
-                    // Invalid selector, skip
-                }
+                } catch { }
             }
 
             const overlays = document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]');
@@ -269,7 +223,7 @@ function _blockAntiAdblockPopup() {
             let shouldScan = false;
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
-                    if (node.nodeType === 1) { // Element node
+                    if (node.nodeType === 1) {
                         shouldScan = true;
                         break;
                     }
@@ -308,15 +262,12 @@ function _blockAntiAdblockPopup() {
         }
         _scheduleIdleScan();
 
-        _log('Anti-adblock popup blocker active', 'success');
+        _log('Popup blocker active', 'success');
     }
 
     _initPopupBlocker();
 }
 
-/**
- * Main initialization function
- */
 function _init() {
     if (!_bootstrap()) return;
 
@@ -331,12 +282,12 @@ function _init() {
             for (const worker of _S.workers) {
                 worker.postMessage({ key: 'UpdateAdsBlocked', value: _S.adsBlocked });
             }
-            _log('Restored ads blocked count: ' + _S.adsBlocked, 'info');
+            _log('Restored ads count: ' + _S.adsBlocked, 'info');
         }
 
         if (e.data.type === 'ttvab-init-popups-count' && typeof e.data.detail?.count === 'number') {
             _S.popupsBlocked = e.data.detail.count;
-            _log('Restored popups blocked count: ' + _S.popupsBlocked, 'info');
+            _log('Restored popups count: ' + _S.popupsBlocked, 'info');
         }
     });
 

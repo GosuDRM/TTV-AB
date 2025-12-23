@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.1.5-purple)
+![Version](https://img.shields.io/badge/version-4.1.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -48,6 +48,10 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## ✨ What's New
 
+### v4.1.6
+- **Backup Player Type Priority** - Updated player types to `['embed', 'popout', 'autoplay']` with `popout` as the force type
+- **Preroll Buffer Fix** - Relaxed buffer check to prevent preroll issues
+
 ### v4.1.5
 - **Ad Fallback Processing Errors** - Fixed an issue where the extension was serving "processing" (404) segments during ad fallback mode, causing the player to throw "Failed to fetch" errors.
 - **Empty Playlist Black Screen** - Fixed a critical issue where stripping all ad segments would crash the player. Now keeps at least one segment to prevent black screen.
@@ -64,7 +68,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 If you enjoy TTV AB, consider buying me a coffee! ☕ Your support helps keep this project alive!
 
-[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/GosuDRM)
+[![Donate](https://img.shields.io/badge/Donate-Ko--fi-FF5E5B.svg)](https://ko-fi.com/gosudrm)
 
 ## 🔒 Privacy
 This extension operates entirely locally and does not collect any user data. See [PRIVACY.md](PRIVACY.md) for details.
