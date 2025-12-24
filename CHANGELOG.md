@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.1.7] - 2025-12-25
+
+### Fixed
+- **Endless Buffering Fix** - Increased segment recovery threshold from 1 to 3 segments when all segments are stripped. This gives the player adequate buffer runway to prevent endless buffering/spinning during ad breaks.
+- **Smart Prefetch Preservation** - Prefetch entries (`#EXT-X-TWITCH-PREFETCH`) are now only stripped if they point to known ad segments. Previously ALL prefetch entries were removed during ad detection, preventing the player from buffering ahead on live content.
+
 ## [4.1.6] - 2025-12-24
 
 ### Changed

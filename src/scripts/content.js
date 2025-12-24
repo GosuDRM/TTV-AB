@@ -4,7 +4,7 @@
 'use strict';
 
 const _$c = {
-    VERSION: '4.1.6',
+    VERSION: '4.1.7',
     INTERNAL_VERSION: 40,
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -123,15 +123,21 @@ function _$sa(text, stripAll, info) {
     const adUrl = 'https://twitch.tv';
     let stripped = false;
     let i = 0;
-    let lastStrippedExtinf = null;
-    let lastStrippedUrl = null;
-    let strippedCount = 0;
+    const strippedSegments = [];
+    const MAX_RECOVERY_SEGMENTS = 3;
 
     const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
+
     if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
         for (i = 0; i < len; i++) {
             if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
-                lines[i] = '';
+                const prefetchUrl = lines[i].substring('#EXT-X-TWITCH-PREFETCH:'.length).trim();
+                const isAdPrefetch = __TTVAB_STATE__.AdSegmentCache.has(prefetchUrl) ||
+                    prefetchUrl.includes('stitched-ad') ||
+                    prefetchUrl.includes('/adsquared/');
+                if (isAdPrefetch) {
+                    lines[i] = '';
+                }
             }
         }
     }
@@ -168,9 +174,11 @@ function _$sa(text, stripAll, info) {
 
         if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
             const segmentUrl = lines[i + 1];
-            lastStrippedExtinf = lines[i];
-            lastStrippedUrl = segmentUrl;
-            strippedCount++;
+
+            strippedSegments.push({ extinf: lines[i], url: segmentUrl });
+            if (strippedSegments.length > MAX_RECOVERY_SEGMENTS) {
+                strippedSegments.shift();
+            }
 
             if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
                 info.RequestedAds.add(segmentUrl);
@@ -201,12 +209,15 @@ function _$sa(text, stripAll, info) {
         __TTVAB_STATE__.AdSegmentCache.forEach((v, k) => { if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k); });
     }
 
-    const result = lines.filter(l => l !== '');
+    const result = lines.filter(l => l !== '');
+
     const hasRemainingSegments = result.some(l => l.startsWith('#EXTINF'));
-    if (!hasRemainingSegments && strippedCount > 0 && lastStrippedExtinf && lastStrippedUrl) {
-        _$l('[Recovery] Empty playlist - restoring last segment', 'warning');
-        result.push(lastStrippedExtinf);
-        result.push(lastStrippedUrl);
+    if (!hasRemainingSegments && strippedSegments.length > 0) {
+        _$l(`[Recovery] Empty playlist - restoring ${strippedSegments.length} segment(s)`, 'warning');
+        for (const seg of strippedSegments) {
+            result.push(seg.extinf);
+            result.push(seg.url);
+        }
     }
 
     return result.join('\n');
@@ -769,6 +780,23 @@ function _$hw() {
                         break;
                     case 'AdEnded':
                         _$l('Ad ended', 'success');
+                        try {
+                            const pipSelectors = [
+                                '[data-a-target="video-player-pip-container"]',
+                                '[data-a-target="video-player-mini-player"]',
+                                '.video-player__pip-container',
+                                '.video-player__mini-player',
+                                '.mini-player',
+                                '[class*="mini-player"]',
+                                '[class*="pip-container"]'
+                            ];
+                            pipSelectors.forEach(sel => {
+                                document.querySelectorAll(sel).forEach(el => {
+                                    el.style.display = 'none';
+                                    el.remove();
+                                });
+                            });
+                        } catch (_e) { }
                         break;
                     case 'ReloadPlayer':
                         _$l('Reloading player', 'info');

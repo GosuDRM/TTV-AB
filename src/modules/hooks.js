@@ -229,6 +229,23 @@ function _hookWorker() {
                         break;
                     case 'AdEnded':
                         _log('Ad ended', 'success');
+                        try {
+                            const pipSelectors = [
+                                '[data-a-target="video-player-pip-container"]',
+                                '[data-a-target="video-player-mini-player"]',
+                                '.video-player__pip-container',
+                                '.video-player__mini-player',
+                                '.mini-player',
+                                '[class*="mini-player"]',
+                                '[class*="pip-container"]'
+                            ];
+                            pipSelectors.forEach(sel => {
+                                document.querySelectorAll(sel).forEach(el => {
+                                    el.style.display = 'none';
+                                    el.remove();
+                                });
+                            });
+                        } catch (_e) { }
                         break;
                     case 'ReloadPlayer':
                         _log('Reloading player', 'info');

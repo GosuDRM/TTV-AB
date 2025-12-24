@@ -39,15 +39,21 @@ function _stripAds(text, stripAll, info) {
     const adUrl = 'https://twitch.tv';
     let stripped = false;
     let i = 0;
-    let lastStrippedExtinf = null;
-    let lastStrippedUrl = null;
-    let strippedCount = 0;
+    const strippedSegments = [];
+    const MAX_RECOVERY_SEGMENTS = 3;
 
     const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
+
     if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
         for (i = 0; i < len; i++) {
             if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
-                lines[i] = '';
+                const prefetchUrl = lines[i].substring('#EXT-X-TWITCH-PREFETCH:'.length).trim();
+                const isAdPrefetch = __TTVAB_STATE__.AdSegmentCache.has(prefetchUrl) ||
+                    prefetchUrl.includes('stitched-ad') ||
+                    prefetchUrl.includes('/adsquared/');
+                if (isAdPrefetch) {
+                    lines[i] = '';
+                }
             }
         }
     }
@@ -84,9 +90,11 @@ function _stripAds(text, stripAll, info) {
 
         if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
             const segmentUrl = lines[i + 1];
-            lastStrippedExtinf = lines[i];
-            lastStrippedUrl = segmentUrl;
-            strippedCount++;
+
+            strippedSegments.push({ extinf: lines[i], url: segmentUrl });
+            if (strippedSegments.length > MAX_RECOVERY_SEGMENTS) {
+                strippedSegments.shift();
+            }
 
             if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
                 info.RequestedAds.add(segmentUrl);
@@ -119,12 +127,13 @@ function _stripAds(text, stripAll, info) {
 
     const result = lines.filter(l => l !== '');
 
-    // Prevent empty playlist crash
     const hasRemainingSegments = result.some(l => l.startsWith('#EXTINF'));
-    if (!hasRemainingSegments && strippedCount > 0 && lastStrippedExtinf && lastStrippedUrl) {
-        _log('[Recovery] Empty playlist - restoring last segment', 'warning');
-        result.push(lastStrippedExtinf);
-        result.push(lastStrippedUrl);
+    if (!hasRemainingSegments && strippedSegments.length > 0) {
+        _log(`[Recovery] Empty playlist - restoring ${strippedSegments.length} segment(s)`, 'warning');
+        for (const seg of strippedSegments) {
+            result.push(seg.extinf);
+            result.push(seg.url);
+        }
     }
 
     return result.join('\n');
