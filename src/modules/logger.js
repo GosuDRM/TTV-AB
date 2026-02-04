@@ -7,7 +7,7 @@ function _log(msg, type = 'info') {
     if (type === 'error') {
         console.error('%cTTV AB%c ' + text, _C.LOG_STYLES.prefix, style);
     } else if (type === 'warning') {
-        console.warn('%cTTV AB%c ' + text, _C.LOG_STYLES.prefix, style);
+        console.info('%cTTV AB%c ' + text, _C.LOG_STYLES.prefix, style);
     } else {
         console.log('%cTTV AB%c ' + text, _C.LOG_STYLES.prefix, style);
     }

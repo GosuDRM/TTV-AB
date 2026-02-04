@@ -1,7 +1,7 @@
 // TTV AB - Constants
 
 const _C = {
-    VERSION: '4.1.7',
+    VERSION: '4.1.8',
     INTERNAL_VERSION: 40,
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -19,5 +19,7 @@ const _C = {
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
     REFRESH_DELAY: 500,
     BUFFERING_FIX: true,
-    RELOAD_AFTER_AD: false
+    RELOAD_AFTER_AD: false,
+    PLAYER_BUFFERING_DO_PLAYER_RELOAD: true,
+    ALWAYS_RELOAD_PLAYER_ON_AD: true
 };

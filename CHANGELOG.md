@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.1.8] - 2026-02-04
+
+### Fixed
+- **Buffering Fix** - Implemented a forced player reload when buffering loops are detected, replacing the previous pause/play release mechanism. This effectively breaks "endless buffering" cycles caused by ad insertion logic.
+- **Ad Transition Stability** - Enabled automatic player reload when ads are detected (`ALWAYS_RELOAD_PLAYER_ON_AD`), preventing the player from getting stuck in a buffering state during ad breaks.
+
 ## [4.1.7] - 2025-12-25
 
 ### Fixed

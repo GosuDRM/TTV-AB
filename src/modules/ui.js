@@ -1,7 +1,7 @@
 // TTV AB - UI
 
 const _REMINDER_KEY = 'ttvab_last_reminder';
-const _REMINDER_INTERVAL = 432000000;
+const _REMINDER_INTERVAL = 1209600000;
 const _FIRST_RUN_KEY = 'ttvab_first_run_shown';
 
 function _showDonation() {
@@ -9,7 +9,12 @@ function _showDonation() {
         const lastReminder = localStorage.getItem(_REMINDER_KEY);
         const now = Date.now();
 
-        if (lastReminder && (now - parseInt(lastReminder, 10)) < _REMINDER_INTERVAL) return;
+        if (!lastReminder) {
+            localStorage.setItem(_REMINDER_KEY, now.toString());
+            return;
+        }
+
+        if ((now - parseInt(lastReminder, 10)) < _REMINDER_INTERVAL) return;
 
         setTimeout(() => {
             const toast = document.createElement('div');

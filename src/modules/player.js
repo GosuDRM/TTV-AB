@@ -159,7 +159,11 @@ function _monitorPlayerBuffering() {
 
                         if (_PlayerBufferState.numSame === SAME_STATE_COUNT) {
                             _log('Attempting buffer fix (pos=' + position + ')', 'warning');
-                            _doPlayerTask(true, false);
+                            if (__TTVAB_STATE__.PlayerBufferingDoPlayerReload) {
+                                _doPlayerTask(false, true);
+                            } else {
+                                _doPlayerTask(true, false);
+                            }
                             _PlayerBufferState.lastFixTime = Date.now();
                         }
                     } else {
