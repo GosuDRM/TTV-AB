@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.1.7-purple)
+![Version](https://img.shields.io/badge/version-4.1.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -47,6 +47,10 @@ The extension intercepts Twitch's HLS video playlists and:
 - Caches ad segments to prevent playback
 
 ## ✨ What's New
+
+### v4.1.8
+- **Buffering Fix** - Implemented forced player reload on buffer loops to permanently fix the "endless buffering" issue.
+- **Improved Ad Stability** - Added proactive player reload when ads start to prevent stalls.
 
 ### v4.1.7
 - **Endless Buffering Fix** - Increased segment recovery threshold from 1 to 3 segments for better buffer runway
