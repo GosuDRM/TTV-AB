@@ -4,7 +4,7 @@
 'use strict';
 
 const _$c = {
-    VERSION: '4.1.7',
+    VERSION: '4.1.8',
     INTERNAL_VERSION: 40,
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
@@ -22,7 +22,9 @@ const _$c = {
     CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
     REFRESH_DELAY: 500,
     BUFFERING_FIX: true,
-    RELOAD_AFTER_AD: false
+    RELOAD_AFTER_AD: false,
+    PLAYER_BUFFERING_DO_PLAYER_RELOAD: true,
+    ALWAYS_RELOAD_PLAYER_ON_AD: true
 };
 
 const _$s = {
@@ -41,7 +43,8 @@ function _$ds(scope) {
         FallbackPlayerType: _$c.FALLBACK_TYPE,
         ForceAccessTokenPlayerType: _$c.FORCE_TYPE,
         SkipPlayerReloadOnHevc: false,
-        AlwaysReloadPlayerOnAd: false,
+        AlwaysReloadPlayerOnAd: _$c.ALWAYS_RELOAD_PLAYER_ON_AD ?? false,
+        PlayerBufferingDoPlayerReload: _$c.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
         ReloadPlayerAfterAd: _$c.RELOAD_AFTER_AD ?? true,
         PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
         PlayerReloadMinimalRequestsPlayerIndex: 2,
@@ -78,7 +81,7 @@ function _$l(msg, type = 'info') {
     if (type === 'error') {
         console.error('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
     } else if (type === 'warning') {
-        console.warn('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
+        console.info('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
     } else {
         console.log('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
     }
@@ -1115,7 +1118,11 @@ function _$mpb() {
 
                         if (_$pbs.numSame === SAME_STATE_COUNT) {
                             _$l('Attempting buffer fix (pos=' + position + ')', 'warning');
-                            _$dpt(true, false);
+                            if (__TTVAB_STATE__.PlayerBufferingDoPlayerReload) {
+                                _$dpt(false, true);
+                            } else {
+                                _$dpt(true, false);
+                            }
                             _$pbs.lastFixTime = Date.now();
                         }
                     } else {
@@ -1243,7 +1250,7 @@ function _$hlp() {
 }
 
 const _$rk = 'ttvab_last_reminder';
-const _$ri2 = 432000000;
+const _$ri2 = 1209600000; // 14 days
 const _$fr = 'ttvab_first_run_shown';
 
 function _$dn() {
@@ -1251,7 +1258,12 @@ function _$dn() {
         const lastReminder = localStorage.getItem(_$rk);
         const now = Date.now();
 
-        if (lastReminder && (now - parseInt(lastReminder, 10)) < _$ri2) return;
+        if (!lastReminder) {
+            localStorage.setItem(_$rk, now.toString());
+            return;
+        }
+
+        if ((now - parseInt(lastReminder, 10)) < _$ri2) return;
 
         setTimeout(() => {
             const toast = document.createElement('div');
