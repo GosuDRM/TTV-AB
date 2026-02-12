@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.1.9] - 2026-02-12
+### Fixed
+- **Twitch Player Structure Compatibility** - Added compatibility handling for Twitch's player object change where `core` can now be nested under `player.playerInstance.core` (while preserving support for `player.core`).
+- **Player State Reads** - Updated pause, volume, quality, and buffering state checks to use the compatibility resolver so reload and buffering logic continue to work across both player structures.
+
 ## [4.1.8] - 2026-02-04
 
 ### Fixed

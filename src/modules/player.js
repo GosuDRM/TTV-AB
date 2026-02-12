@@ -10,6 +10,10 @@ const _PlayerBufferState = {
 
 let _cachedPlayerRef = null;
 
+function _getPlayerCore(player) {
+    return player?.playerInstance?.core || player?.core || null;
+}
+
 function _findReactRoot() {
     const rootNode = document.querySelector('#root');
     if (!rootNode) return null;
@@ -72,7 +76,8 @@ function _doPlayerTask(isPausePlay, isReload) {
         return;
     }
 
-    if (player.isPaused() || player.core?.paused) return;
+    const playerCore = _getPlayerCore(player);
+    if (player.isPaused() || playerCore?.paused) return;
 
     if (isPausePlay) {
         player.pause();
@@ -94,12 +99,12 @@ function _doPlayerTask(isPausePlay, isReload) {
             currentMutedLS = localStorage.getItem(lsKeyMuted);
             currentVolumeLS = localStorage.getItem(lsKeyVolume);
 
-            if (player?.core?.state) {
-                localStorage.setItem(lsKeyMuted, JSON.stringify({ default: player.core.state.muted }));
-                localStorage.setItem(lsKeyVolume, player.core.state.volume);
+            if (playerCore?.state) {
+                localStorage.setItem(lsKeyMuted, JSON.stringify({ default: playerCore.state.muted }));
+                localStorage.setItem(lsKeyVolume, playerCore.state.volume);
             }
-            if (player?.core?.state?.quality?.group) {
-                localStorage.setItem(lsKeyQuality, JSON.stringify({ default: player.core.state.quality.group }));
+            if (playerCore?.state?.quality?.group) {
+                localStorage.setItem(lsKeyQuality, JSON.stringify({ default: playerCore.state.quality.group }));
             }
         } catch { }
 
@@ -135,8 +140,9 @@ function _monitorPlayerBuffering() {
             try {
                 const player = _cachedPlayerRef.player;
                 const state = _cachedPlayerRef.state;
+                const playerCore = _getPlayerCore(player);
 
-                if (!player.core) {
+                if (!playerCore) {
                     _cachedPlayerRef = null;
                 } else if (
                     state?.props?.content?.type === 'live' &&
@@ -144,8 +150,8 @@ function _monitorPlayerBuffering() {
                     !player.getHTMLVideoElement()?.ended &&
                     _PlayerBufferState.lastFixTime <= Date.now() - MIN_REPEAT_DELAY
                 ) {
-                    const position = player.core?.state?.position || 0;
-                    const bufferedPosition = player.core?.state?.bufferedPosition || 0;
+                    const position = playerCore?.state?.position || 0;
+                    const bufferedPosition = playerCore?.state?.bufferedPosition || 0;
                     const bufferDuration = player.getBufferDuration() || 0;
 
                     if (

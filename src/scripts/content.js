@@ -4,8 +4,8 @@
 'use strict';
 
 const _$c = {
-    VERSION: '4.1.8',
-    INTERNAL_VERSION: 40,
+    VERSION: '4.1.9',
+    INTERNAL_VERSION: 41,
     LOG_STYLES: {
         prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
         info: 'color: #9146FF; font-weight: 500;',
@@ -957,7 +957,7 @@ function _$mf() {
         }
         return realFetch.apply(this, arguments);
     };
-}
+}
 
 const _$pbs = {
     position: 0,
@@ -968,6 +968,10 @@ const _$pbs = {
 };
 
 let _$cpr = null;
+
+function _$gpc(player) {
+    return player?.playerInstance?.core || player?.core || null;
+}
 
 function _$rr() {
     const rootNode = document.querySelector('#root');
@@ -1031,7 +1035,8 @@ function _$dpt(isPausePlay, isReload) {
         return;
     }
 
-    if (player.isPaused() || player.core?.paused) return;
+    const playerCore = _$gpc(player);
+    if (player.isPaused() || playerCore?.paused) return;
 
     if (isPausePlay) {
         player.pause();
@@ -1053,12 +1058,12 @@ function _$dpt(isPausePlay, isReload) {
             currentMutedLS = localStorage.getItem(lsKeyMuted);
             currentVolumeLS = localStorage.getItem(lsKeyVolume);
 
-            if (player?.core?.state) {
-                localStorage.setItem(lsKeyMuted, JSON.stringify({ default: player.core.state.muted }));
-                localStorage.setItem(lsKeyVolume, player.core.state.volume);
+            if (playerCore?.state) {
+                localStorage.setItem(lsKeyMuted, JSON.stringify({ default: playerCore.state.muted }));
+                localStorage.setItem(lsKeyVolume, playerCore.state.volume);
             }
-            if (player?.core?.state?.quality?.group) {
-                localStorage.setItem(lsKeyQuality, JSON.stringify({ default: player.core.state.quality.group }));
+            if (playerCore?.state?.quality?.group) {
+                localStorage.setItem(lsKeyQuality, JSON.stringify({ default: playerCore.state.quality.group }));
             }
         } catch { }
 
@@ -1094,8 +1099,9 @@ function _$mpb() {
             try {
                 const player = _$cpr.player;
                 const state = _$cpr.state;
+                const playerCore = _$gpc(player);
 
-                if (!player.core) {
+                if (!playerCore) {
                     _$cpr = null;
                 } else if (
                     state?.props?.content?.type === 'live' &&
@@ -1103,8 +1109,8 @@ function _$mpb() {
                     !player.getHTMLVideoElement()?.ended &&
                     _$pbs.lastFixTime <= Date.now() - MIN_REPEAT_DELAY
                 ) {
-                    const position = player.core?.state?.position || 0;
-                    const bufferedPosition = player.core?.state?.bufferedPosition || 0;
+                    const position = playerCore?.state?.position || 0;
+                    const bufferedPosition = playerCore?.state?.bufferedPosition || 0;
                     const bufferDuration = player.getBufferDuration() || 0;
 
                     if (
@@ -1247,10 +1253,10 @@ function _$hlp() {
     } catch (err) {
         _$l('LocalStorage hooks failed: ' + err.message, 'warning');
     }
-}
+}
 
 const _$rk = 'ttvab_last_reminder';
-const _$ri2 = 1209600000; // 14 days
+const _$ri2 = 1209600000;
 const _$fr = 'ttvab_first_run_shown';
 
 function _$dn() {

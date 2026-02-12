@@ -66,6 +66,7 @@ const MINIFY_MAP = {
     '_pruneStreamInfos': '_$ps',
     '_PlayerBufferState': '_$pbs',
     '_cachedPlayerRef': '_$cpr',
+    '_getPlayerCore': '_$gpc',
     '_findReactRoot': '_$rr',
     '_findReactNode': '_$rn',
     '_getPlayerAndState': '_$gps',
