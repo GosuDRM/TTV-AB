@@ -49,16 +49,8 @@ The extension intercepts Twitch's HLS video playlists and:
 ## ✨ What's New
 
 ### v4.1.9
-- **Buffering Fix** - Implemented forced player reload on buffer loops to permanently fix the "endless buffering" issue.
-- **Improved Ad Stability** - Added proactive player reload when ads start to prevent stalls.
-
-### v4.1.7
-- **Endless Buffering Fix** - Increased segment recovery threshold from 1 to 3 segments for better buffer runway
-- **Smart Prefetch Preservation** - Prefetch entries now only stripped if they point to known ad segments
-
-### v4.1.6
-- **Backup Player Type Priority** - Updated player types to `['embed', 'popout', 'autoplay']` with `popout` as the force type
-- **Preroll Buffer Fix** - Relaxed buffer check to prevent preroll issues
+- **Twitch Player Structure Compatibility** - Added support for Twitch's updated player shape where `core` may be under `player.playerInstance.core` (with fallback to `player.core`).
+- **Player State Reads** - Updated pause, volume, quality, and buffering checks to use the compatibility resolver so reload/buffering logic works on both structures.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
