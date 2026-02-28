@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.0] - 2026-02-28
+
+### Changed
+- **Ad-Block Update** - Synchronized internal ad-block logic settings for improved streamer support and ad bypassing.
+- **Player Reload Action** - Sends an immediate reload message to the player upon HEVC codec swaps and ad boundaries to improve stability.
+- **Minimal Requests Optimization** - Limits backup stream fetch connections shortly after player reloads, preventing excessive requests.
+- **HEVC Stream Stability Fix** - Enforces precise segment stripping boundaries for mixed-codec HEVC payloads directly within the parsing logic.
+- **Buffering Logic Optimization** - Transitioned player buffer tracking constants into the state configuration, ensuring accurate pre-roll limit boundaries and minimal repeat delays.
+
 ## [4.1.9] - 2026-02-12
 ### Fixed
 - **Twitch Player Structure Compatibility** - Added compatibility handling for Twitch's player object change where `core` can now be nested under `player.playerInstance.core` (while preserving support for `player.core`).

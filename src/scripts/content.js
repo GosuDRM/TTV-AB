@@ -4,717 +4,851 @@
 'use strict';
 
 const _$c = {
-    VERSION: '4.1.9',
-    INTERNAL_VERSION: 41,
-    LOG_STYLES: {
-        prefix: 'background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;',
-        info: 'color: #9146FF; font-weight: 500;',
-        success: 'color: #4CAF50; font-weight: 500;',
-        warning: 'color: #FF9800; font-weight: 500;',
-        error: 'color: #f44336; font-weight: 500;'
-    },
-    AD_SIGNIFIER: 'stitched',
-    CLIENT_ID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-    PLAYER_TYPES: ['embed', 'popout', 'autoplay'],
-    FALLBACK_TYPE: 'embed',
-    FORCE_TYPE: 'popout',
-    RELOAD_TIME: 2000,
-    CRASH_PATTERNS: ['Error #1000', 'Error #2000', 'Error #3000', 'Error #4000', 'Error #5000', 'network error', 'content is not available'],
-    REFRESH_DELAY: 500,
-    BUFFERING_FIX: true,
-    RELOAD_AFTER_AD: false,
-    PLAYER_BUFFERING_DO_PLAYER_RELOAD: true,
-    ALWAYS_RELOAD_PLAYER_ON_AD: true
-};
+	VERSION: "4.2.0",
+	INTERNAL_VERSION: 42,
+	LOG_STYLES: {
+		prefix:
+			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
+		info: "color: #9146FF; font-weight: 500;",
+		success: "color: #4CAF50; font-weight: 500;",
+		warning: "color: #FF9800; font-weight: 500;",
+		error: "color: #f44336; font-weight: 500;",
+	},
+	AD_SIGNIFIER: "stitched",
+	CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
+	PLAYER_TYPES: ["embed", "popout", "autoplay"],
+	FALLBACK_TYPE: "embed",
+	FORCE_TYPE: "popout",
+	RELOAD_TIME: 1500,
+	CRASH_PATTERNS: [
+		"Error #1000",
+		"Error #2000",
+		"Error #3000",
+		"Error #4000",
+		"Error #5000",
+		"network error",
+		"content is not available",
+	],
+	REFRESH_DELAY: 500,
+	BUFFERING_FIX: true,
+	RELOAD_AFTER_AD: true,
+	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
+	ALWAYS_RELOAD_PLAYER_ON_AD: false,
+};
 
 const _$s = {
-    workers: [],
-    conflicts: ['twitch', 'isVariantA'],
-    reinsertPatterns: ['isVariantA', 'besuper/', '${patch_url}'],
-    adsBlocked: 0,
-    popupsBlocked: 0
+	workers: [],
+	conflicts: ["twitch", "isVariantA"],
+	reinsertPatterns: ["isVariantA", "besuper/", "${patch_url}"],
+	adsBlocked: 0,
+	popupsBlocked: 0,
 };
 
 function _$ds(scope) {
-    scope.__TTVAB_STATE__ = {
-        AdSignifier: _$c.AD_SIGNIFIER,
-        ClientID: _$c.CLIENT_ID,
-        BackupPlayerTypes: [..._$c.PLAYER_TYPES],
-        FallbackPlayerType: _$c.FALLBACK_TYPE,
-        ForceAccessTokenPlayerType: _$c.FORCE_TYPE,
-        SkipPlayerReloadOnHevc: false,
-        AlwaysReloadPlayerOnAd: _$c.ALWAYS_RELOAD_PLAYER_ON_AD ?? false,
-        PlayerBufferingDoPlayerReload: _$c.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
-        ReloadPlayerAfterAd: _$c.RELOAD_AFTER_AD ?? true,
-        PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
-        PlayerReloadMinimalRequestsPlayerIndex: 2,
-        HasTriggeredPlayerReload: false,
-        StreamInfos: Object.create(null),
-        StreamInfosByUrl: Object.create(null),
-        GQLDeviceID: null,
-        ClientVersion: null,
-        ClientSession: null,
-        ClientIntegrityHeader: null,
-        AuthorizationHeader: undefined,
-        SimulatedAdsDepth: 0,
-        V2API: false,
-        IsAdStrippingEnabled: true,
-        AdSegmentCache: new Map(),
-        AllSegmentsAreAdSegments: false,
-        PlaybackAccessTokenHash: null
-    };
+	scope.__TTVAB_STATE__ = {
+		AdSignifier: _$c.AD_SIGNIFIER,
+		ClientID: _$c.CLIENT_ID,
+		BackupPlayerTypes: [..._$c.PLAYER_TYPES],
+		FallbackPlayerType: _$c.FALLBACK_TYPE,
+		ForceAccessTokenPlayerType: _$c.FORCE_TYPE,
+		SkipPlayerReloadOnHevc: false,
+		AlwaysReloadPlayerOnAd: _$c.ALWAYS_RELOAD_PLAYER_ON_AD ?? false,
+		PlayerBufferingDoPlayerReload:
+			_$c.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
+		ReloadPlayerAfterAd: _$c.RELOAD_AFTER_AD ?? true,
+		PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
+		PlayerReloadMinimalRequestsPlayerIndex: 2,
+		HasTriggeredPlayerReload: false,
+		StreamInfos: Object.create(null),
+		StreamInfosByUrl: Object.create(null),
+		GQLDeviceID: null,
+		ClientVersion: null,
+		ClientSession: null,
+		ClientIntegrityHeader: null,
+		AuthorizationHeader: undefined,
+		SimulatedAdsDepth: 0,
+		V2API: false,
+		IsAdStrippingEnabled: true,
+		AdSegmentCache: new Map(),
+		PlayerBufferingDelay: 600,
+		PlayerBufferingSameStateCount: 3,
+		PlayerBufferingDangerZone: 1,
+		PlayerBufferingMinRepeatDelay: 8000,
+		PlayerBufferingPrerollCheckEnabled: false,
+		PlayerBufferingPrerollCheckOffset: 5,
+		AllSegmentsAreAdSegments: false,
+		PlaybackAccessTokenHash: null,
+	};
 }
 
 function _$ab(channel) {
-    _$s.adsBlocked++;
-    if (typeof window !== 'undefined') {
-        window.postMessage({ type: 'ttvab-ad-blocked', detail: { count: _$s.adsBlocked, channel: channel || null } }, '*');
-    } else if (typeof self !== 'undefined' && self.postMessage) {
-        self.postMessage({ key: 'AdBlocked', count: _$s.adsBlocked, channel: channel || null });
-    }
-}
+	_$s.adsBlocked++;
+	if (typeof window !== "undefined") {
+		window.postMessage(
+			{
+				type: "ttvab-ad-blocked",
+				detail: { count: _$s.adsBlocked, channel: channel || null },
+			},
+			"*",
+		);
+	} else if (typeof self !== "undefined" && self.postMessage) {
+		self.postMessage({
+			key: "AdBlocked",
+			count: _$s.adsBlocked,
+			channel: channel || null,
+		});
+	}
+}
 
-function _$l(msg, type = 'info') {
-    const text = typeof msg === 'object' ? JSON.stringify(msg) : String(msg);
-    const style = _$c.LOG_STYLES[type] || _$c.LOG_STYLES.info;
+function _$l(msg, type = "info") {
+	const text = typeof msg === "object" ? JSON.stringify(msg) : String(msg);
+	const style = _$c.LOG_STYLES[type] || _$c.LOG_STYLES.info;
 
-    if (type === 'error') {
-        console.error('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
-    } else if (type === 'warning') {
-        console.info('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
-    } else {
-        console.log('%cTTV AB%c ' + text, _$c.LOG_STYLES.prefix, style);
-    }
-}
+	if (type === "error") {
+		console.error(`%cTTV AB%c ${text}`, _$c.LOG_STYLES.prefix, style);
+	} else if (type === "warning") {
+		console.info(`%cTTV AB%c ${text}`, _$c.LOG_STYLES.prefix, style);
+	} else {
+		console.log(`%cTTV AB%c ${text}`, _$c.LOG_STYLES.prefix, style);
+	}
+}
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
 function _$pa(str) {
-    const result = Object.create(null);
-    let match;
-    _$ar.lastIndex = 0;
-    while ((match = _$ar.exec(str)) !== null) {
-        let value = match[2];
-        if (value[0] === '"' && value[value.length - 1] === '"') {
-            value = value.slice(1, -1);
-        }
-        result[match[1].toUpperCase()] = value;
-    }
-    return result;
+	const result = Object.create(null);
+	_$ar.lastIndex = 0;
+	let match = _$ar.exec(str);
+	while (match !== null) {
+		let value = match[2];
+		if (value[0] === '"' && value[value.length - 1] === '"') {
+			value = value.slice(1, -1);
+		}
+		result[match[1].toUpperCase()] = value;
+		match = _$ar.exec(str);
+	}
+	return result;
 }
 
 function _$gt(m3u8) {
-    if (__TTVAB_STATE__.V2API) {
-        const match = m3u8.match(/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/);
-        return match?.[1] ?? null;
-    }
-    const match = m3u8.match(/SERVER-TIME="([0-9.]+)"/);
-    return match?.[1] ?? null;
+	if (__TTVAB_STATE__.V2API) {
+		const match = m3u8.match(
+			/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/,
+		);
+		return match?.[1] ?? null;
+	}
+	const match = m3u8.match(/SERVER-TIME="([0-9.]+)"/);
+	return match?.[1] ?? null;
 }
 
 function _$rt(m3u8, time) {
-    if (!time) return m3u8;
-    if (__TTVAB_STATE__.V2API) {
-        return m3u8.replace(/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/, `$1${time}$2`);
-    }
-    return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
+	if (!time) return m3u8;
+	if (__TTVAB_STATE__.V2API) {
+		return m3u8.replace(
+			/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/,
+			`$1${time}$2`,
+		);
+	}
+	return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
 }
 
 function _$sa(text, stripAll, info) {
-    const lines = text.split('\n');
-    const len = lines.length;
-    const adUrl = 'https://twitch.tv';
-    let stripped = false;
-    let i = 0;
-    const strippedSegments = [];
-    const MAX_RECOVERY_SEGMENTS = 3;
+	const lines = text.split("\n");
+	const len = lines.length;
+	const adUrl = "https://twitch.tv";
+	let stripped = false;
+	let i = 0;
+	const strippedSegments = [];
+	const MAX_RECOVERY_SEGMENTS = 3;
 
-    const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
+	const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
 
-    if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
-        for (i = 0; i < len; i++) {
-            if (lines[i] && lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
-                const prefetchUrl = lines[i].substring('#EXT-X-TWITCH-PREFETCH:'.length).trim();
-                const isAdPrefetch = __TTVAB_STATE__.AdSegmentCache.has(prefetchUrl) ||
-                    prefetchUrl.includes('stitched-ad') ||
-                    prefetchUrl.includes('/adsquared/');
-                if (isAdPrefetch) {
-                    lines[i] = '';
-                }
-            }
-        }
-    }
+	if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
+		for (i = 0; i < len; i++) {
+			if (lines[i]?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+				const prefetchUrl = lines[i]
+					.substring("#EXT-X-TWITCH-PREFETCH:".length)
+					.trim();
+				const isAdPrefetch =
+					__TTVAB_STATE__.AdSegmentCache.has(prefetchUrl) ||
+					prefetchUrl.includes("stitched-ad") ||
+					prefetchUrl.includes("/adsquared/");
+				if (isAdPrefetch) {
+					lines[i] = "";
+				}
+			}
+		}
+	}
 
-    let adSegmentCount = 0;
-    let _liveSegmentCount = 0;
+	let adSegmentCount = 0;
+	let _liveSegmentCount = 0;
 
-    for (i = 0; i < len - 1; i++) {
-        const line = lines[i];
-        if (line.startsWith('#EXTINF')) {
-            const segmentUrl = lines[i + 1];
-            const isProcessing = segmentUrl && (segmentUrl.includes('processing') || segmentUrl.includes('/_404/'));
-            if (!line.includes(',live') || isProcessing) {
-                adSegmentCount++;
-            } else {
-                _liveSegmentCount++;
-            }
-        }
-    }
+	for (i = 0; i < len - 1; i++) {
+		const line = lines[i];
+		if (line.startsWith("#EXTINF")) {
+			const segmentUrl = lines[i + 1];
+			const isProcessing =
+				segmentUrl &&
+				(segmentUrl.includes("processing") || segmentUrl.includes("/_404/"));
+			if (!line.includes(",live") || isProcessing) {
+				adSegmentCount++;
+			} else {
+				_liveSegmentCount++;
+			}
+		}
+	}
 
-    const shouldStrip = (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) && adSegmentCount > 0;
+	const shouldStrip =
+		(hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) &&
+		adSegmentCount > 0;
 
-    for (i = 0; i < len; i++) {
-        let line = lines[i];
+	for (i = 0; i < len; i++) {
+		let line = lines[i];
 
-        if (line.includes('X-TV-TWITCH-AD')) {
-            line = line
-                .replace(/X-TV-TWITCH-AD-URL="[^"]*"/, `X-TV-TWITCH-AD-URL="${adUrl}"`)
-                .replace(/X-TV-TWITCH-AD-CLICK-TRACKING-URL="[^"]*"/, `X-TV-TWITCH-AD-CLICK-TRACKING-URL="${adUrl}"`);
-            lines[i] = line;
-        }
+		if (line.includes("X-TV-TWITCH-AD")) {
+			line = line
+				.replace(/X-TV-TWITCH-AD-URL="[^"]*"/, `X-TV-TWITCH-AD-URL="${adUrl}"`)
+				.replace(
+					/X-TV-TWITCH-AD-CLICK-TRACKING-URL="[^"]*"/,
+					`X-TV-TWITCH-AD-CLICK-TRACKING-URL="${adUrl}"`,
+				);
+			lines[i] = line;
+		}
 
-        const isAdSegment = !line.includes(',live') || (i < len - 1 && (lines[i + 1].includes('processing') || lines[i + 1].includes('/_404/')));
+		const isAdSegment =
+			!line.includes(",live") ||
+			(i < len - 1 &&
+				(lines[i + 1].includes("processing") ||
+					lines[i + 1].includes("/_404/")));
 
-        if (shouldStrip && i < len - 1 && line.startsWith('#EXTINF') && isAdSegment) {
-            const segmentUrl = lines[i + 1];
+		if (
+			shouldStrip &&
+			i < len - 1 &&
+			line.startsWith("#EXTINF") &&
+			isAdSegment
+		) {
+			const segmentUrl = lines[i + 1];
 
-            strippedSegments.push({ extinf: lines[i], url: segmentUrl });
-            if (strippedSegments.length > MAX_RECOVERY_SEGMENTS) {
-                strippedSegments.shift();
-            }
+			strippedSegments.push({ extinf: lines[i], url: segmentUrl });
+			if (strippedSegments.length > MAX_RECOVERY_SEGMENTS) {
+				strippedSegments.shift();
+			}
 
-            if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
-                info.RequestedAds.add(segmentUrl);
-                fetch(segmentUrl).then(r => r.blob()).catch(() => { });
-            }
+			if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
+				info.RequestedAds.add(segmentUrl);
+				fetch(segmentUrl)
+					.then((r) => r.blob())
+					.catch(() => {});
+			}
 
-            if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl)) info.NumStrippedAdSegments++;
-            __TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
-            stripped = true;
-            lines[i] = '';
-            lines[i + 1] = '';
-            i++;
-        }
+			if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl))
+				info.NumStrippedAdSegments++;
+			__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
+			stripped = true;
+			lines[i] = "";
+			lines[i + 1] = "";
+			i++;
+		}
 
-        if (line.includes(__TTVAB_STATE__.AdSignifier)) stripped = true;
-    }
+		if (line.includes(__TTVAB_STATE__.AdSignifier)) stripped = true;
+	}
 
-    if (!stripped) {
-        info.NumStrippedAdSegments = 0;
-    }
+	if (!stripped) {
+		info.NumStrippedAdSegments = 0;
+	}
 
-    info.IsStrippingAdSegments = stripped;
+	info.IsStrippingAdSegments = stripped;
 
-    const now = Date.now();
-    if (!globalThis._lastAdCachePrune || now - globalThis._lastAdCachePrune > 60000) {
-        globalThis._lastAdCachePrune = now;
-        const cutoff = now - 120000;
-        __TTVAB_STATE__.AdSegmentCache.forEach((v, k) => { if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k); });
-    }
+	const now = Date.now();
+	if (
+		!globalThis._lastAdCachePrune ||
+		now - globalThis._lastAdCachePrune > 60000
+	) {
+		globalThis._lastAdCachePrune = now;
+		const cutoff = now - 120000;
+		__TTVAB_STATE__.AdSegmentCache.forEach((v, k) => {
+			if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k);
+		});
+	}
 
-    const result = lines.filter(l => l !== '');
+	const result = lines.filter((l) => l !== "");
 
-    const hasRemainingSegments = result.some(l => l.startsWith('#EXTINF'));
-    if (!hasRemainingSegments && strippedSegments.length > 0) {
-        _$l(`[Recovery] Empty playlist - restoring ${strippedSegments.length} segment(s)`, 'warning');
-        for (const seg of strippedSegments) {
-            result.push(seg.extinf);
-            result.push(seg.url);
-        }
-    }
+	const hasRemainingSegments = result.some((l) => l.startsWith("#EXTINF"));
+	if (!hasRemainingSegments && strippedSegments.length > 0) {
+		_$l(
+			`[Recovery] Empty playlist - restoring ${strippedSegments.length} segment(s)`,
+			"warning",
+		);
+		for (const seg of strippedSegments) {
+			result.push(seg.extinf);
+			result.push(seg.url);
+		}
+	}
 
-    return result.join('\n');
+	return result.join("\n");
 }
 
 function _$su(m3u8, res) {
-    const lines = m3u8.split('\n');
-    const len = lines.length;
-    const [tw, th] = res.Resolution.split('x').map(Number);
-    const targetPixels = tw * th;
-    let matchUrl = null;
-    let matchFps = false;
-    let closeUrl = null;
-    let closeDiff = Infinity;
+	const lines = m3u8.split("\n");
+	const len = lines.length;
+	const [tw, th] = res.Resolution.split("x").map(Number);
+	const targetPixels = tw * th;
+	let matchUrl = null;
+	let matchFps = false;
+	let closeUrl = null;
+	let closeDiff = Infinity;
 
-    for (let i = 0; i < len - 1; i++) {
-        const line = lines[i];
-        if (!line.startsWith('#EXT-X-STREAM-INF') || !lines[i + 1].includes('.m3u8') || lines[i + 1].includes('processing')) continue;
+	for (let i = 0; i < len - 1; i++) {
+		const line = lines[i];
+		if (
+			!line.startsWith("#EXT-X-STREAM-INF") ||
+			!lines[i + 1].includes(".m3u8") ||
+			lines[i + 1].includes("processing")
+		)
+			continue;
 
-        const attrs = _$pa(line);
-        const resolution = attrs.RESOLUTION;
-        const frameRate = attrs['FRAME-RATE'];
+		const attrs = _$pa(line);
+		const resolution = attrs.RESOLUTION;
+		const frameRate = attrs["FRAME-RATE"];
 
-        if (!resolution) continue;
+		if (!resolution) continue;
 
-        if (resolution === res.Resolution) {
-            if (!matchUrl || (!matchFps && frameRate === res.FrameRate)) {
-                matchUrl = lines[i + 1];
-                matchFps = frameRate === res.FrameRate;
-                if (matchFps) return matchUrl;
-            }
-        }
+		if (resolution === res.Resolution) {
+			if (!matchUrl || (!matchFps && frameRate === res.FrameRate)) {
+				matchUrl = lines[i + 1];
+				matchFps = frameRate === res.FrameRate;
+				if (matchFps) return matchUrl;
+			}
+		}
 
-        const [w, h] = resolution.split('x').map(Number);
-        const diff = Math.abs((w * h) - targetPixels);
-        if (diff < closeDiff) {
-            closeUrl = lines[i + 1];
-            closeDiff = diff;
-        }
-    }
+		const [w, h] = resolution.split("x").map(Number);
+		const diff = Math.abs(w * h - targetPixels);
+		if (diff < closeDiff) {
+			closeUrl = lines[i + 1];
+			closeDiff = diff;
+		}
+	}
 
-    return matchUrl || closeUrl;
-}
-
-const _$gu = 'https://gql.twitch.tv/gql';
-
-async function _$tk(channel, playerType, realFetch) {
-    const fetchFunc = realFetch || fetch;
-    const reqPlayerType = playerType;
-
-    const body = {
-        operationName: 'PlaybackAccessToken',
-        extensions: {
-            persistedQuery: {
-                version: 1,
-                sha256Hash: __TTVAB_STATE__.PlaybackAccessTokenHash || 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9'
-            }
-        },
-        variables: {
-            isLive: true,
-            login: channel,
-            isVod: false,
-            vodID: '',
-            playerType: reqPlayerType,
-            platform: reqPlayerType === 'autoplay' ? 'android' : 'web'
-        }
-    };
-
-    try {
-        _$l(`[Trace] Requesting token for ${playerType}`, 'info');
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const headers = {
-            'Client-ID': _$c.CLIENT_ID,
-            'Client-Integrity': __TTVAB_STATE__.ClientIntegrityHeader || '',
-            'X-Device-Id': __TTVAB_STATE__.GQLDeviceID || 'oauth',
-            'Client-Version': __TTVAB_STATE__.ClientVersion || 'k8s-v1'
-        };
-
-        if (__TTVAB_STATE__.AuthorizationHeader) {
-            headers['Authorization'] = __TTVAB_STATE__.AuthorizationHeader;
-        }
-
-        const res = await fetchFunc(_$gu, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-        _$l(`[Trace] Token response: ${res.status}`, 'info');
-        return res;
-    } catch (e) {
-        _$l(`Token fetch error: ${e.message}`, 'error');
-        return { status: 0, json: () => Promise.resolve({}) };
-    }
-}
-
-async function _$pm(url, text, realFetch) {
-    if (!__TTVAB_STATE__.IsAdStrippingEnabled) return text;
-
-    const info = __TTVAB_STATE__.StreamInfosByUrl[url];
-    if (!info) return text;
-
-    if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
-        __TTVAB_STATE__.HasTriggeredPlayerReload = false;
-        info.LastPlayerReload = Date.now();
-    }
-
-    const hasAds = text.includes(__TTVAB_STATE__.AdSignifier) || __TTVAB_STATE__.SimulatedAdsDepth > 0;
-
-    if (hasAds) {
-        info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
-
-        if (!info.IsShowingAd) {
-            info.IsShowingAd = true;
-            _$ab(info.ChannelName);
-            _$l('Ad detected, blocking...', 'warning');
-            if (typeof self !== 'undefined' && self.postMessage) {
-                self.postMessage({ key: 'AdDetected', channel: info.ChannelName });
-            }
-        }
-
-        if (info.IsUsingFallbackStream) {
-            text = _$sa(text, false, info);
-            return text;
-        }
-
-        const res = info.Urls[url];
-        if (!res) {
-            _$l('Missing resolution info for ' + url, 'warning');
-            return text;
-        }
-
-        const isHevc = res.Codecs?.[0] === 'h' && (res.Codecs[1] === 'e' || res.Codecs[1] === 'v');
-        if (((isHevc && !__TTVAB_STATE__.SkipPlayerReloadOnHevc) || __TTVAB_STATE__.AlwaysReloadPlayerOnAd) && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8) {
-            info.IsUsingModifiedM3U8 = true;
-            info.LastPlayerReload = Date.now();
-        }
-
-        const { type: backupType, m3u8: backupM3u8, isFallback } = await _$fb(info, realFetch, 0, false, res);
-
-        if (!backupM3u8) _$l('Failed to find backup stream', 'warning');
-
-        if (isFallback) {
-            info.IsUsingFallbackStream = true;
-            _$l('Entering fallback mode - stripping ads', 'info');
-        }
-
-        if (backupM3u8) text = backupM3u8;
-
-        if (info.ActiveBackupPlayerType !== backupType) {
-            info.ActiveBackupPlayerType = backupType;
-            _$l('Using backup: ' + backupType, 'info');
-        }
-
-        text = _$sa(text, false, info);
-    } else {
-        if (info.IsShowingAd) {
-            const wasUsingModifiedM3U8 = info.IsUsingModifiedM3U8;
-
-            info.IsShowingAd = false;
-            info.IsUsingModifiedM3U8 = false;
-            info.IsUsingFallbackStream = false;
-            info.RequestedAds.clear();
-            info.BackupEncodingsM3U8Cache = [];
-            info.ActiveBackupPlayerType = null;
-            _$l('Ad ended', 'success');
-            if (typeof self !== 'undefined' && self.postMessage) {
-                self.postMessage({ key: 'AdEnded' });
-                if (wasUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
-                    self.postMessage({ key: 'ReloadPlayer' });
-                } else {
-                    self.postMessage({ key: 'PauseResumePlayer' });
-                }
-            }
-        }
-    }
-
-    return text;
+	return matchUrl || closeUrl;
 }
 
-async function _$fb(info, realFetch, startIdx = 0, minimal = false, currentResolution = null) {
-    let backupType = null;
-    let backupM3u8 = null;
-    let fallbackM3u8 = null;
-    let fallbackType = null;
+const _$gu = "https://gql.twitch.tv/gql";
 
-    const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
-    if (info.ActiveBackupPlayerType) {
-        const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
-        if (idx > -1) {
-            playerTypes.splice(idx, 1);
-            playerTypes.unshift(info.ActiveBackupPlayerType);
-        }
-    }
+async function _$tk(channel, playerType, realFetch) {
+	const fetchFunc = realFetch || fetch;
+	const reqPlayerType = playerType;
 
-    const playerTypesLen = playerTypes.length;
-    const targetRes = currentResolution || { Resolution: '1920x1080', FrameRate: '60' };
+	const body = {
+		operationName: "PlaybackAccessToken",
+		extensions: {
+			persistedQuery: {
+				version: 1,
+				sha256Hash:
+					__TTVAB_STATE__.PlaybackAccessTokenHash ||
+					"ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9",
+			},
+		},
+		variables: {
+			isLive: true,
+			login: channel,
+			isVod: false,
+			vodID: "",
+			playerType: reqPlayerType,
+			platform: reqPlayerType === "autoplay" ? "android" : "web",
+		},
+	};
 
-    for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
-        const pt = playerTypes[pi];
-        const realPt = pt.replace('-CACHED', '');
-        const isFullyCachedPlayerType = pt !== realPt;
-        _$l(`[Trace] Checking: ${pt}`, 'info');
+	try {
+		_$l(`[Trace] Requesting token for ${playerType}`, "info");
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        for (let j = 0; j < 2; j++) {
-            let isFreshM3u8 = false;
-            let enc = info.BackupEncodingsM3U8Cache[pt];
+		const headers = {
+			"Client-ID": _$c.CLIENT_ID,
+			"Client-Integrity": __TTVAB_STATE__.ClientIntegrityHeader || "",
+			"X-Device-Id": __TTVAB_STATE__.GQLDeviceID || "oauth",
+			"Client-Version": __TTVAB_STATE__.ClientVersion || "k8s-v1",
+		};
 
-            if (!enc) {
-                isFreshM3u8 = true;
-                try {
-                    const tokenRes = await _$tk(info.ChannelName, realPt, realFetch);
-                    if (tokenRes.status === 200) {
-                        const token = await tokenRes.json();
-                        const sig = token?.data?.streamPlaybackAccessToken?.signature;
-                        const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
+		if (__TTVAB_STATE__.AuthorizationHeader) {
+			headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
+		}
 
-                        if (sig && tokenValue) {
-                            const usherUrl = new URL(`https://usher.ttvnw.net/api/${__TTVAB_STATE__.V2API ? 'v2/' : ''}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`);
-                            usherUrl.searchParams.set('sig', sig);
-                            usherUrl.searchParams.set('token', tokenValue);
-                            const encRes = await realFetch(usherUrl.href);
-                            if (encRes.status === 200) {
-                                enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
-                            } else {
-                                _$l(`Usher failed for ${pt}: ${encRes.status}`, 'warning');
-                            }
-                        } else {
-                            _$l(`[Trace] Missing token for ${pt}`, 'warning');
-                        }
-                    } else {
-                        _$l(`Token failed for ${pt}: ${tokenRes.status}`, 'warning');
-                    }
-                } catch (e) {
-                    _$l('Backup error: ' + e.message, 'error');
-                }
-            }
+		const res = await fetchFunc(_$gu, {
+			method: "POST",
+			headers,
+			body: JSON.stringify(body),
+			signal: controller.signal,
+		});
 
-            if (enc) {
-                try {
-                    const streamUrl = _$su(enc, targetRes);
-                    if (streamUrl) {
-                        const streamRes = await realFetch(streamUrl);
-                        if (streamRes.status === 200) {
-                            const m3u8 = await streamRes.text();
-                            if (m3u8) {
-                                if (!fallbackM3u8 || pt === __TTVAB_STATE__.FallbackPlayerType) {
-                                    fallbackM3u8 = m3u8;
-                                    fallbackType = pt;
-                                }
+		clearTimeout(timeoutId);
+		_$l(`[Trace] Token response: ${res.status}`, "info");
+		return res;
+	} catch (e) {
+		_$l(`Token fetch error: ${e.message}`, "error");
+		return { status: 0, json: () => Promise.resolve({}) };
+	}
+}
 
-                                const noAds = !m3u8.includes(__TTVAB_STATE__.AdSignifier) && (__TTVAB_STATE__.SimulatedAdsDepth === 0 || pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
+async function _$pm(url, text, realFetch) {
+	if (!__TTVAB_STATE__.IsAdStrippingEnabled) return text;
 
-                                if (noAds || minimal) {
-                                    backupType = pt;
-                                    backupM3u8 = m3u8;
-                                    _$l(`[Trace] Selected: ${pt}`, 'success');
-                                    break;
-                                } else {
-                                    _$l(`[Trace] Rejected ${pt} (has ads)`, 'warning');
-                                    if (isFullyCachedPlayerType) break;
-                                }
-                            }
-                        } else {
-                            _$l(`Stream failed for ${pt}: ${streamRes.status}`, 'warning');
-                        }
-                    } else {
-                        _$l(`No stream URL for ${pt}`, 'warning');
-                    }
-                } catch (e) {
-                    _$l('Stream error: ' + e.message, 'warning');
-                }
-            }
+	const info = __TTVAB_STATE__.StreamInfosByUrl[url];
+	if (!info) return text;
 
-            info.BackupEncodingsM3U8Cache[pt] = null;
-            if (isFreshM3u8) break;
-        }
-    }
+	if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
+		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+		info.LastPlayerReload = Date.now();
+	}
 
-    let isFallback = false;
-    if (!backupM3u8 && fallbackM3u8) {
-        backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
-        backupM3u8 = fallbackM3u8;
-        isFallback = true;
-        _$l(`[Trace] Using fallback: ${backupType}`, 'warning');
-    }
+	const hasAds =
+		text.includes(__TTVAB_STATE__.AdSignifier) ||
+		__TTVAB_STATE__.SimulatedAdsDepth > 0;
 
-    return { type: backupType, m3u8: backupM3u8, isFallback };
-}
+	if (hasAds) {
+		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
+
+		if (!info.IsShowingAd) {
+			info.IsShowingAd = true;
+			_$ab(info.ChannelName);
+			_$l("Ad detected, blocking...", "warning");
+			if (typeof self !== "undefined" && self.postMessage) {
+				self.postMessage({ key: "AdDetected", channel: info.ChannelName });
+			}
+		}
+
+		if (info.IsUsingFallbackStream) {
+			text = _$sa(text, false, info);
+			return text;
+		}
+
+		const res = info.Urls[url];
+		if (!res) {
+			_$l(`Missing resolution info for ${url}`, "warning");
+			return text;
+		}
+
+		const isHevc =
+			res.Codecs?.[0] === "h" &&
+			(res.Codecs[1] === "e" || res.Codecs[1] === "v");
+		if (
+			((isHevc && !__TTVAB_STATE__.SkipPlayerReloadOnHevc) ||
+				__TTVAB_STATE__.AlwaysReloadPlayerOnAd) &&
+			info.ModifiedM3U8 &&
+			!info.IsUsingModifiedM3U8
+		) {
+			info.IsUsingModifiedM3U8 = true;
+			info.LastPlayerReload = Date.now();
+			if (typeof self !== "undefined" && self.postMessage) {
+				self.postMessage({ key: "ReloadPlayer" });
+			}
+		}
+
+		let startIdx = 0;
+		let minimal = false;
+		if (
+			info.LastPlayerReload >
+			Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
+		) {
+			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
+			minimal = true;
+		}
+
+		const {
+			type: backupType,
+			m3u8: backupM3u8,
+			isFallback,
+		} = await _$fb(info, realFetch, startIdx, minimal, res);
+
+		if (!backupM3u8) _$l("Failed to find backup stream", "warning");
+
+		if (isFallback) {
+			info.IsUsingFallbackStream = true;
+			_$l("Entering fallback mode - stripping ads", "info");
+		}
+
+		if (backupM3u8) text = backupM3u8;
+
+		if (info.ActiveBackupPlayerType !== backupType) {
+			info.ActiveBackupPlayerType = backupType;
+			_$l(`Using backup: ${backupType}`, "info");
+		}
+
+		const stripHevc = isHevc && info.ModifiedM3U8;
+		if (__TTVAB_STATE__.IsAdStrippingEnabled || stripHevc) {
+			text = _$sa(text, stripHevc, info);
+		}
+	} else {
+		if (info.IsShowingAd) {
+			const wasUsingModifiedM3U8 = info.IsUsingModifiedM3U8;
+
+			info.IsShowingAd = false;
+			info.IsUsingModifiedM3U8 = false;
+			info.IsUsingFallbackStream = false;
+			info.RequestedAds.clear();
+			info.BackupEncodingsM3U8Cache = [];
+			info.ActiveBackupPlayerType = null;
+			_$l("Ad ended", "success");
+			if (typeof self !== "undefined" && self.postMessage) {
+				self.postMessage({ key: "AdEnded" });
+				if (wasUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
+					self.postMessage({ key: "ReloadPlayer" });
+				} else {
+					self.postMessage({ key: "PauseResumePlayer" });
+				}
+			}
+		}
+	}
+
+	return text;
+}
+
+async function _$fb(
+	info,
+	realFetch,
+	startIdx = 0,
+	minimal = false,
+	currentResolution = null,
+) {
+	let backupType = null;
+	let backupM3u8 = null;
+	let fallbackM3u8 = null;
+	let fallbackType = null;
+
+	const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
+	if (info.ActiveBackupPlayerType) {
+		const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
+		if (idx > -1) {
+			playerTypes.splice(idx, 1);
+			playerTypes.unshift(info.ActiveBackupPlayerType);
+		}
+	}
+
+	const playerTypesLen = playerTypes.length;
+	const targetRes = currentResolution || {
+		Resolution: "1920x1080",
+		FrameRate: "60",
+	};
+
+	for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
+		const pt = playerTypes[pi];
+		const realPt = pt.replace("-CACHED", "");
+		const isFullyCachedPlayerType = pt !== realPt;
+		_$l(`[Trace] Checking: ${pt}`, "info");
+
+		for (let j = 0; j < 2; j++) {
+			let isFreshM3u8 = false;
+			let enc = info.BackupEncodingsM3U8Cache[pt];
+
+			if (!enc) {
+				isFreshM3u8 = true;
+				try {
+					const tokenRes = await _$tk(info.ChannelName, realPt, realFetch);
+					if (tokenRes.status === 200) {
+						const token = await tokenRes.json();
+						const sig = token?.data?.streamPlaybackAccessToken?.signature;
+						const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
+
+						if (sig && tokenValue) {
+							const usherUrl = new URL(
+								`https://usher.ttvnw.net/api/${__TTVAB_STATE__.V2API ? "v2/" : ""}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`,
+							);
+							usherUrl.searchParams.set("sig", sig);
+							usherUrl.searchParams.set("token", tokenValue);
+							const encRes = await realFetch(usherUrl.href);
+							if (encRes.status === 200) {
+								enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+							} else {
+								_$l(`Usher failed for ${pt}: ${encRes.status}`, "warning");
+							}
+						} else {
+							_$l(`[Trace] Missing token for ${pt}`, "warning");
+						}
+					} else {
+						_$l(`Token failed for ${pt}: ${tokenRes.status}`, "warning");
+					}
+				} catch (e) {
+					_$l(`Backup error: ${e.message}`, "error");
+				}
+			}
+
+			if (enc) {
+				try {
+					const streamUrl = _$su(enc, targetRes);
+					if (streamUrl) {
+						const streamRes = await realFetch(streamUrl);
+						if (streamRes.status === 200) {
+							const m3u8 = await streamRes.text();
+							if (m3u8) {
+								if (
+									!fallbackM3u8 ||
+									pt === __TTVAB_STATE__.FallbackPlayerType
+								) {
+									fallbackM3u8 = m3u8;
+									fallbackType = pt;
+								}
+
+								const noAds =
+									!m3u8.includes(__TTVAB_STATE__.AdSignifier) &&
+									(__TTVAB_STATE__.SimulatedAdsDepth === 0 ||
+										pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
+
+								if (noAds || minimal) {
+									backupType = pt;
+									backupM3u8 = m3u8;
+									_$l(`[Trace] Selected: ${pt}`, "success");
+									break;
+								} else {
+									_$l(`[Trace] Rejected ${pt} (has ads)`, "warning");
+									if (isFullyCachedPlayerType) break;
+								}
+							}
+						} else {
+							_$l(`Stream failed for ${pt}: ${streamRes.status}`, "warning");
+						}
+					} else {
+						_$l(`No stream URL for ${pt}`, "warning");
+					}
+				} catch (e) {
+					_$l(`Stream error: ${e.message}`, "warning");
+				}
+			}
+
+			info.BackupEncodingsM3U8Cache[pt] = null;
+			if (isFreshM3u8) break;
+		}
+	}
+
+	let isFallback = false;
+	if (!backupM3u8 && fallbackM3u8) {
+		backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
+		backupM3u8 = fallbackM3u8;
+		isFallback = true;
+		_$l(`[Trace] Using fallback: ${backupType}`, "warning");
+	}
+
+	return { type: backupType, m3u8: backupM3u8, isFallback };
+}
 
 function _$wj(url) {
-    const req = new XMLHttpRequest();
-    req.open('GET', url, false);
-    req.send();
-    return req.responseText;
+	const req = new XMLHttpRequest();
+	req.open("GET", url, false);
+	req.send();
+	return req.responseText;
 }
 
 function _$cw(W) {
-    const proto = W.prototype;
-    for (const key of _$s.conflicts) {
-        if (proto[key]) proto[key] = undefined;
-    }
-    return W;
+	const proto = W.prototype;
+	for (const key of _$s.conflicts) {
+		if (proto[key]) proto[key] = undefined;
+	}
+	return W;
 }
 
 function _$gr(W) {
-    const src = W.toString();
-    const result = [];
-    for (const pattern of _$s.reinsertPatterns) {
-        if (src.includes(pattern)) result.push(pattern);
-    }
-    return result;
+	const src = W.toString();
+	const result = [];
+	for (const pattern of _$s.reinsertPatterns) {
+		if (src.includes(pattern)) result.push(pattern);
+	}
+	return result;
 }
 
 function _$ri(W, names) {
-    for (const name of names) {
-        if (typeof window[name] === 'function') {
-            W.prototype[name] = window[name];
-        }
-    }
-    return W;
+	for (const name of names) {
+		if (typeof window[name] === "function") {
+			W.prototype[name] = window[name];
+		}
+	}
+	return W;
 }
 
 function _$iv(v) {
-    if (typeof v !== 'function') return false;
-    const src = v.toString();
-    return !_$s.conflicts.some(c => src.includes(c)) && !_$s.reinsertPatterns.some(p => src.includes(p));
-}
+	if (typeof v !== "function") return false;
+	const src = v.toString();
+	return (
+		!_$s.conflicts.some((c) => src.includes(c)) &&
+		!_$s.reinsertPatterns.some((p) => src.includes(p))
+	);
+}
 
 function _$wf() {
-    _$l('Worker fetch hooked', 'info');
-    const realFetch = fetch;
+	_$l("Worker fetch hooked", "info");
+	const realFetch = fetch;
 
-    function _$ps() {
-        const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
-        if (keys.length > 5) {
-            const oldKey = keys[0];
-            delete __TTVAB_STATE__.StreamInfos[oldKey];
-            for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
-                if (__TTVAB_STATE__.StreamInfosByUrl[url].ChannelName === oldKey) {
-                    delete __TTVAB_STATE__.StreamInfosByUrl[url];
-                }
-            }
-        }
-    }
+	function _$ps() {
+		const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
+		if (keys.length > 5) {
+			const oldKey = keys[0];
+			delete __TTVAB_STATE__.StreamInfos[oldKey];
+			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
+				if (__TTVAB_STATE__.StreamInfosByUrl[url].ChannelName === oldKey) {
+					delete __TTVAB_STATE__.StreamInfosByUrl[url];
+				}
+			}
+		}
+	}
 
-    fetch = async function (url, opts) {
-        if (typeof url !== 'string') {
-            return realFetch.apply(this, arguments);
-        }
+	fetch = async function (...args) {
+		let [url, opts] = args;
+		if (typeof url !== "string") {
+			return realFetch.apply(this, args);
+		}
 
-        if (__TTVAB_STATE__.AdSegmentCache.has(url)) {
-            return realFetch('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292', opts);
-        }
+		if (__TTVAB_STATE__.AdSegmentCache.has(url)) {
+			return realFetch(
+				"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292",
+				opts,
+			);
+		}
 
-        url = url.trimEnd();
+		url = url.trimEnd();
 
-        if (url.endsWith('m3u8')) {
-            const response = await realFetch(url, opts);
-            if (response.status === 200) {
-                const text = await response.text();
-                return new Response(await _$pm(url, text, realFetch));
-            }
-            return response;
-        }
+		if (url.endsWith("m3u8")) {
+			const response = await realFetch(url, opts);
+			if (response.status === 200) {
+				const text = await response.text();
+				return new Response(await _$pm(url, text, realFetch));
+			}
+			return response;
+		}
 
-        if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
-            __TTVAB_STATE__.V2API = url.includes('/api/v2/');
-            const channelMatch = (new URL(url)).pathname.match(/([^/]+)(?=\.\w+$)/);
-            const channel = channelMatch?.[0];
+		if (url.includes("/channel/hls/") && !url.includes("picture-by-picture")) {
+			__TTVAB_STATE__.V2API = url.includes("/api/v2/");
+			const channelMatch = new URL(url).pathname.match(/([^/]+)(?=\.\w+$)/);
+			const channel = channelMatch?.[0];
 
-            if (__TTVAB_STATE__.ForceAccessTokenPlayerType) {
-                const urlObj = new URL(url);
-                urlObj.searchParams.delete('parent_domains');
-                url = urlObj.toString();
-            }
+			if (__TTVAB_STATE__.ForceAccessTokenPlayerType) {
+				const urlObj = new URL(url);
+				urlObj.searchParams.delete("parent_domains");
+				url = urlObj.toString();
+			}
 
-            const response = await realFetch(url, opts);
-            if (response.status !== 200) return response;
+			const response = await realFetch(url, opts);
+			if (response.status !== 200) return response;
 
-            const encodings = await response.text();
-            const serverTime = _$gt(encodings);
-            let info = __TTVAB_STATE__.StreamInfos[channel];
+			const encodings = await response.text();
+			const serverTime = _$gt(encodings);
+			let info = __TTVAB_STATE__.StreamInfos[channel];
 
-            if (info?.EncodingsM3U8) {
-                const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
-                if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
-                    info = null;
-                }
-            }
+			if (info?.EncodingsM3U8) {
+				const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
+				if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
+					info = null;
+				}
+			}
 
-            if (!info?.EncodingsM3U8) {
-                _$ps();
-                info = __TTVAB_STATE__.StreamInfos[channel] = {
-                    ChannelName: channel,
-                    IsShowingAd: false,
-                    LastPlayerReload: 0,
-                    EncodingsM3U8: encodings,
-                    ModifiedM3U8: null,
-                    IsUsingModifiedM3U8: false,
-                    IsUsingFallbackStream: false,
-                    UsherParams: (new URL(url)).search,
-                    RequestedAds: new Set(),
-                    Urls: Object.create(null),
-                    ResolutionList: [],
-                    BackupEncodingsM3U8Cache: [],
-                    ActiveBackupPlayerType: null,
-                    IsMidroll: false,
-                    IsStrippingAdSegments: false,
-                    NumStrippedAdSegments: 0
-                };
+			if (!info?.EncodingsM3U8) {
+				_$ps();
+				info = __TTVAB_STATE__.StreamInfos[channel] = {
+					ChannelName: channel,
+					IsShowingAd: false,
+					LastPlayerReload: 0,
+					EncodingsM3U8: encodings,
+					ModifiedM3U8: null,
+					IsUsingModifiedM3U8: false,
+					IsUsingFallbackStream: false,
+					UsherParams: new URL(url).search,
+					RequestedAds: new Set(),
+					Urls: Object.create(null),
+					ResolutionList: [],
+					BackupEncodingsM3U8Cache: [],
+					ActiveBackupPlayerType: null,
+					IsMidroll: false,
+					IsStrippingAdSegments: false,
+					NumStrippedAdSegments: 0,
+				};
 
-                const lines = encodings.split('\n');
-                for (let i = 0, len = lines.length; i < len - 1; i++) {
-                    if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
-                        const attrs = _$pa(lines[i]);
-                        const resolution = attrs.RESOLUTION;
-                        if (resolution) {
-                            const resInfo = {
-                                Resolution: resolution,
-                                FrameRate: attrs['FRAME-RATE'],
-                                Codecs: attrs.CODECS,
-                                Url: lines[i + 1]
-                            };
-                            info.Urls[lines[i + 1]] = resInfo;
-                            info.ResolutionList.push(resInfo);
-                        }
-                        __TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
-                    }
-                }
+				const lines = encodings.split("\n");
+				for (let i = 0, len = lines.length; i < len - 1; i++) {
+					if (
+						lines[i].startsWith("#EXT-X-STREAM-INF") &&
+						lines[i + 1].includes(".m3u8")
+					) {
+						const attrs = _$pa(lines[i]);
+						const resolution = attrs.RESOLUTION;
+						if (resolution) {
+							const resInfo = {
+								Resolution: resolution,
+								FrameRate: attrs["FRAME-RATE"],
+								Codecs: attrs.CODECS,
+								Url: lines[i + 1],
+							};
+							info.Urls[lines[i + 1]] = resInfo;
+							info.ResolutionList.push(resInfo);
+						}
+						__TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
+					}
+				}
 
-                const nonHevcList = info.ResolutionList.filter(r =>
-                    r.Codecs?.startsWith('avc') || r.Codecs?.startsWith('av0')
-                );
-                const hasHevc = info.ResolutionList.some(r =>
-                    r.Codecs?.startsWith('hev') || r.Codecs?.startsWith('hvc')
-                );
+				const nonHevcList = info.ResolutionList.filter(
+					(r) => r.Codecs?.startsWith("avc") || r.Codecs?.startsWith("av0"),
+				);
+				const hasHevc = info.ResolutionList.some(
+					(r) => r.Codecs?.startsWith("hev") || r.Codecs?.startsWith("hvc"),
+				);
 
-                if (hasHevc && nonHevcList.length > 0) {
-                    const modLines = [...lines];
-                    for (let mi = 0; mi < modLines.length - 1; mi++) {
-                        if (modLines[mi].startsWith('#EXT-X-STREAM-INF')) {
-                            const attrs = _$pa(modLines[mi]);
-                            const codecs = attrs.CODECS || '';
-                            if (codecs.startsWith('hev') || codecs.startsWith('hvc')) {
-                                const [tw, th] = (attrs.RESOLUTION || '1920x1080').split('x').map(Number);
-                                const closest = nonHevcList.sort((a, b) => {
-                                    const [aw, ah] = a.Resolution.split('x').map(Number);
-                                    const [bw, bh] = b.Resolution.split('x').map(Number);
-                                    return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
-                                })[0];
-                                modLines[mi] = modLines[mi].replace(/CODECS="[^"]+"/, `CODECS="${closest.Codecs}"`);
-                                modLines[mi + 1] = closest.Url + ' '.repeat(mi + 1);
-                            }
-                        }
-                    }
-                    info.ModifiedM3U8 = modLines.join('\n');
-                    _$l('HEVC stream detected, created fallback M3U8', 'info');
-                }
+				if (hasHevc && nonHevcList.length > 0) {
+					const modLines = [...lines];
+					for (let mi = 0; mi < modLines.length - 1; mi++) {
+						if (modLines[mi].startsWith("#EXT-X-STREAM-INF")) {
+							const attrs = _$pa(modLines[mi]);
+							const codecs = attrs.CODECS || "";
+							if (codecs.startsWith("hev") || codecs.startsWith("hvc")) {
+								const [tw, th] = (attrs.RESOLUTION || "1920x1080")
+									.split("x")
+									.map(Number);
+								const closest = nonHevcList.sort((a, b) => {
+									const [aw, ah] = a.Resolution.split("x").map(Number);
+									const [bw, bh] = b.Resolution.split("x").map(Number);
+									return (
+										Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th)
+									);
+								})[0];
+								modLines[mi] = modLines[mi].replace(
+									/CODECS="[^"]+"/,
+									`CODECS="${closest.Codecs}"`,
+								);
+								modLines[mi + 1] = closest.Url + " ".repeat(mi + 1);
+							}
+						}
+					}
+					info.ModifiedM3U8 = modLines.join("\n");
+					_$l("HEVC stream detected, created fallback M3U8", "info");
+				}
 
-                _$l('Stream initialized: ' + channel, 'success');
-            }
+				_$l(`Stream initialized: ${channel}`, "success");
+			}
 
-            info.LastPlayerReload = Date.now();
-            const playlist = info.IsUsingModifiedM3U8 ? info.ModifiedM3U8 : info.EncodingsM3U8;
-            return new Response(_$rt(playlist, serverTime));
-        }
+			info.LastPlayerReload = Date.now();
+			const playlist = info.IsUsingModifiedM3U8
+				? info.ModifiedM3U8
+				: info.EncodingsM3U8;
+			return new Response(_$rt(playlist, serverTime));
+		}
 
-        return realFetch.apply(this, arguments);
-    };
+		return realFetch.apply(this, args);
+	};
 }
 
 function _$hw() {
-    const reinsertNames = _$gr(window.Worker);
+	const reinsertNames = _$gr(window.Worker);
 
-    const HookedWorker = class Worker extends _$cw(window.Worker) {
-        constructor(url, opts) {
-            let isTwitch = false;
-            try {
-                isTwitch = new URL(url).origin.endsWith('.twitch.tv');
-            } catch {
-                isTwitch = false;
-            }
+	const HookedWorker = class Worker extends _$cw(window.Worker) {
+		constructor(url, opts) {
+			let isTwitch = false;
+			try {
+				isTwitch = new URL(url).origin.endsWith(".twitch.tv");
+			} catch {
+				isTwitch = false;
+			}
 
-            if (!isTwitch) {
-                super(url, opts);
-                return;
-            }
+			if (!isTwitch) {
+				super(url, opts);
+				return;
+			}
 
-            const injectedCode = `
+			const injectedCode = `
                 const _$c = ${JSON.stringify(_$c)};
                 const _$s = ${JSON.stringify(_$s)};
                 const _$ar = ${_$ar.toString()};
@@ -735,12 +869,12 @@ function _$hw() {
                 const _$gu = '${_$gu}';
                 const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
                 _$ds(self);
-                __TTVAB_STATE__.GQLDeviceID = ${__TTVAB_STATE__.GQLDeviceID ? `'${__TTVAB_STATE__.GQLDeviceID}'` : 'null'};
-                __TTVAB_STATE__.AuthorizationHeader = ${__TTVAB_STATE__.AuthorizationHeader ? `'${__TTVAB_STATE__.AuthorizationHeader}'` : 'undefined'};
-                __TTVAB_STATE__.ClientIntegrityHeader = ${__TTVAB_STATE__.ClientIntegrityHeader ? `'${__TTVAB_STATE__.ClientIntegrityHeader}'` : 'null'};
-                __TTVAB_STATE__.ClientVersion = ${__TTVAB_STATE__.ClientVersion ? `'${__TTVAB_STATE__.ClientVersion}'` : 'null'};
-                __TTVAB_STATE__.ClientSession = ${__TTVAB_STATE__.ClientSession ? `'${__TTVAB_STATE__.ClientSession}'` : 'null'};
-                __TTVAB_STATE__.PlaybackAccessTokenHash = ${__TTVAB_STATE__.PlaybackAccessTokenHash ? `'${__TTVAB_STATE__.PlaybackAccessTokenHash}'` : 'null'};
+                __TTVAB_STATE__.GQLDeviceID = ${__TTVAB_STATE__.GQLDeviceID ? `'${__TTVAB_STATE__.GQLDeviceID}'` : "null"};
+                __TTVAB_STATE__.AuthorizationHeader = ${__TTVAB_STATE__.AuthorizationHeader ? `'${__TTVAB_STATE__.AuthorizationHeader}'` : "undefined"};
+                __TTVAB_STATE__.ClientIntegrityHeader = ${__TTVAB_STATE__.ClientIntegrityHeader ? `'${__TTVAB_STATE__.ClientIntegrityHeader}'` : "null"};
+                __TTVAB_STATE__.ClientVersion = ${__TTVAB_STATE__.ClientVersion ? `'${__TTVAB_STATE__.ClientVersion}'` : "null"};
+                __TTVAB_STATE__.ClientSession = ${__TTVAB_STATE__.ClientSession ? `'${__TTVAB_STATE__.ClientSession}'` : "null"};
+                __TTVAB_STATE__.PlaybackAccessTokenHash = ${__TTVAB_STATE__.PlaybackAccessTokenHash ? `'${__TTVAB_STATE__.PlaybackAccessTokenHash}'` : "null"};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;
@@ -762,519 +896,595 @@ function _$hw() {
                 eval(wasmSource);
             `;
 
-            const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
-            super(blobUrl, opts);
-            URL.revokeObjectURL(blobUrl);
+			const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
+			super(blobUrl, opts);
+			URL.revokeObjectURL(blobUrl);
 
-            this.addEventListener('message', function (e) {
-                if (!e.data?.key) return;
+			this.addEventListener("message", (e) => {
+				if (!e.data?.key) return;
 
-                switch (e.data.key) {
-                    case 'AdBlocked':
-                        _$s.adsBlocked = e.data.count;
-                        window.postMessage({
-                            type: 'ttvab-ad-blocked',
-                            detail: { count: e.data.count, channel: e.data.channel || null }
-                        }, '*');
-                        _$l('Ad blocked! Total: ' + e.data.count, 'success');
-                        break;
-                    case 'AdDetected':
-                        _$l('Ad detected, blocking...', 'warning');
-                        break;
-                    case 'AdEnded':
-                        _$l('Ad ended', 'success');
-                        try {
-                            const pipSelectors = [
-                                '[data-a-target="video-player-pip-container"]',
-                                '[data-a-target="video-player-mini-player"]',
-                                '.video-player__pip-container',
-                                '.video-player__mini-player',
-                                '.mini-player',
-                                '[class*="mini-player"]',
-                                '[class*="pip-container"]'
-                            ];
-                            pipSelectors.forEach(sel => {
-                                document.querySelectorAll(sel).forEach(el => {
-                                    el.style.display = 'none';
-                                    el.remove();
-                                });
-                            });
-                        } catch (_e) { }
-                        break;
-                    case 'ReloadPlayer':
-                        _$l('Reloading player', 'info');
-                        if (typeof _$dpt === 'function') {
-                            _$dpt(false, true);
-                        }
-                        break;
-                    case 'PauseResumePlayer':
-                        _$l('Resuming player', 'info');
-                        if (typeof _$dpt === 'function') {
-                            _$dpt(true, false);
-                        }
-                        break;
-                }
-            });
+				switch (e.data.key) {
+					case "AdBlocked":
+						_$s.adsBlocked = e.data.count;
+						window.postMessage(
+							{
+								type: "ttvab-ad-blocked",
+								detail: {
+									count: e.data.count,
+									channel: e.data.channel || null,
+								},
+							},
+							"*",
+						);
+						_$l(`Ad blocked! Total: ${e.data.count}`, "success");
+						break;
+					case "AdDetected":
+						_$l("Ad detected, blocking...", "warning");
+						break;
+					case "AdEnded":
+						_$l("Ad ended", "success");
+						try {
+							const pipSelectors = [
+								'[data-a-target="video-player-pip-container"]',
+								'[data-a-target="video-player-mini-player"]',
+								".video-player__pip-container",
+								".video-player__mini-player",
+								".mini-player",
+								'[class*="mini-player"]',
+								'[class*="pip-container"]',
+							];
+							pipSelectors.forEach((sel) => {
+								document.querySelectorAll(sel).forEach((el) => {
+									el.style.display = "none";
+									el.remove();
+								});
+							});
+						} catch (_e) {}
+						break;
+					case "ReloadPlayer":
+						_$l("Reloading player", "info");
+						if (typeof _$dpt === "function") {
+							_$dpt(false, true);
+						}
+						break;
+					case "PauseResumePlayer":
+						_$l("Resuming player", "info");
+						if (typeof _$dpt === "function") {
+							_$dpt(true, false);
+						}
+						break;
+				}
+			});
 
-            const workerUrl = url;
-            const workerOpts = opts;
-            let restartAttempts = 0;
-            const MAX_RESTART_ATTEMPTS = 3;
-            const workerSelf = this;
+			const workerUrl = url;
+			const workerOpts = opts;
+			let restartAttempts = 0;
+			const MAX_RESTART_ATTEMPTS = 3;
 
-            this.addEventListener('error', function (e) {
-                _$l('Worker crashed: ' + (e.message || 'Unknown error'), 'error');
+			this.addEventListener("error", (e) => {
+				_$l(`Worker crashed: ${e.message || "Unknown error"}`, "error");
 
-                const idx = _$s.workers.indexOf(workerSelf);
-                if (idx > -1) _$s.workers.splice(idx, 1);
+				const idx = _$s.workers.indexOf(this);
+				if (idx > -1) _$s.workers.splice(idx, 1);
 
-                if (restartAttempts < MAX_RESTART_ATTEMPTS) {
-                    restartAttempts++;
-                    const delay = Math.pow(2, restartAttempts) * 500;
-                    _$l('Restarting worker in ' + (delay / 1000) + 's (attempt ' + restartAttempts + '/' + MAX_RESTART_ATTEMPTS + ')', 'warning');
+				if (restartAttempts < MAX_RESTART_ATTEMPTS) {
+					restartAttempts++;
+					const delay = 2 ** restartAttempts * 500;
+					_$l(
+						"Restarting worker in " +
+							delay / 1000 +
+							"s (attempt " +
+							restartAttempts +
+							"/" +
+							MAX_RESTART_ATTEMPTS +
+							")",
+						"warning",
+					);
 
-                    setTimeout(function () {
-                        try {
-                            new window.Worker(workerUrl, workerOpts);
-                            _$l('Worker restarted', 'success');
-                            restartAttempts = 0;
-                        } catch (restartErr) {
-                            _$l('Worker restart failed: ' + restartErr.message, 'error');
-                        }
-                    }, delay);
-                } else {
-                    _$l('Worker restart limit reached', 'error');
-                }
-            });
+					setTimeout(() => {
+						try {
+							new window.Worker(workerUrl, workerOpts);
+							_$l("Worker restarted", "success");
+							restartAttempts = 0;
+						} catch (restartErr) {
+							_$l(`Worker restart failed: ${restartErr.message}`, "error");
+						}
+					}, delay);
+				} else {
+					_$l("Worker restart limit reached", "error");
+				}
+			});
 
-            _$s.workers.push(this);
+			_$s.workers.push(this);
 
-            if (_$s.workers.length > 5) {
-                const oldWorker = _$s.workers.shift();
-                try { oldWorker.terminate(); } catch { }
-            }
-        }
-    };
+			if (_$s.workers.length > 5) {
+				const oldWorker = _$s.workers.shift();
+				try {
+					oldWorker.terminate();
+				} catch {}
+			}
+		}
+	};
 
-    let workerInstance = _$ri(HookedWorker, reinsertNames);
-    Object.defineProperty(window, 'Worker', {
-        get: () => workerInstance,
-        set: (v) => { if (_$iv(v)) workerInstance = v; }
-    });
+	let workerInstance = _$ri(HookedWorker, reinsertNames);
+	Object.defineProperty(window, "Worker", {
+		get: () => workerInstance,
+		set: (v) => {
+			if (_$iv(v)) workerInstance = v;
+		},
+	});
 }
 
 function _$hs() {
-    try {
-        const originalGetItem = localStorage.getItem.bind(localStorage);
-        localStorage.getItem = function (key) {
-            const value = originalGetItem(key);
-            if (key === 'unique_id' && value) __TTVAB_STATE__.GQLDeviceID = value;
-            return value;
-        };
-        const deviceId = originalGetItem('unique_id');
-        if (deviceId) __TTVAB_STATE__.GQLDeviceID = deviceId;
-    } catch (e) {
-        _$l('Storage hook error: ' + e.message, 'warning');
-    }
+	try {
+		const originalGetItem = localStorage.getItem.bind(localStorage);
+		localStorage.getItem = (key) => {
+			const value = originalGetItem(key);
+			if (key === "unique_id" && value) __TTVAB_STATE__.GQLDeviceID = value;
+			return value;
+		};
+		const deviceId = originalGetItem("unique_id");
+		if (deviceId) __TTVAB_STATE__.GQLDeviceID = deviceId;
+	} catch (e) {
+		_$l(`Storage hook error: ${e.message}`, "warning");
+	}
 }
 
 function _$mf() {
-    const realFetch = window.fetch;
+	const realFetch = window.fetch;
 
-    window.fetch = async function (url, opts) {
-        if (url) {
-            const urlStr = (url instanceof Request) ? url.url : url.toString();
-            if (urlStr.includes('gql.twitch.tv/gql')) {
-                const response = await realFetch.apply(this, arguments);
+	window.fetch = async function (...args) {
+		const [url, opts] = args;
+		if (url) {
+			const urlStr = url instanceof Request ? url.url : url.toString();
+			if (urlStr.includes("gql.twitch.tv/gql")) {
+				const response = await realFetch.apply(this, args);
 
-                let headers = opts?.headers;
+				let headers = opts?.headers;
 
-                if (url instanceof Request) {
-                    headers = url.headers;
-                    try {
-                        const clone = url.clone();
-                        clone.json().then(data => {
-                            const operations = Array.isArray(data) ? data : [data];
-                            for (const op of operations) {
-                                if (op.operationName === 'PlaybackAccessToken' && op.extensions?.persistedQuery?.sha256Hash) {
-                                    const hash = op.extensions.persistedQuery.sha256Hash;
-                                    if (__TTVAB_STATE__.PlaybackAccessTokenHash !== hash) {
-                                        __TTVAB_STATE__.PlaybackAccessTokenHash = hash;
-                                        for (const worker of _$s.workers) {
-                                            worker.postMessage({ key: 'UpdateGQLHash', value: hash });
-                                        }
-                                    }
-                                }
-                            }
-                        }).catch(() => { });
-                    } catch (_e) { }
-                }
+				if (url instanceof Request) {
+					headers = url.headers;
+					try {
+						const clone = url.clone();
+						clone
+							.json()
+							.then((data) => {
+								const operations = Array.isArray(data) ? data : [data];
+								for (const op of operations) {
+									if (
+										op.operationName === "PlaybackAccessToken" &&
+										op.extensions?.persistedQuery?.sha256Hash
+									) {
+										const hash = op.extensions.persistedQuery.sha256Hash;
+										if (__TTVAB_STATE__.PlaybackAccessTokenHash !== hash) {
+											__TTVAB_STATE__.PlaybackAccessTokenHash = hash;
+											for (const worker of _$s.workers) {
+												worker.postMessage({
+													key: "UpdateGQLHash",
+													value: hash,
+												});
+											}
+										}
+									}
+								}
+							})
+							.catch(() => {});
+					} catch (_e) {}
+				}
 
-                if (headers) {
-                    const getHeader = (key) => {
-                        if (headers instanceof Headers) return headers.get(key) || headers.get(key.toLowerCase());
-                        return headers[key] || headers[key.toLowerCase()];
-                    };
+				if (headers) {
+					const getHeader = (key) => {
+						if (headers instanceof Headers)
+							return headers.get(key) || headers.get(key.toLowerCase());
+						return headers[key] || headers[key.toLowerCase()];
+					};
 
-                    const updates = [];
-                    const integrity = getHeader('Client-Integrity');
-                    const auth = getHeader('Authorization');
-                    const version = getHeader('Client-Version');
-                    const session = getHeader('Client-Session-Id');
-                    const device = getHeader('X-Device-Id');
+					const updates = [];
+					const integrity = getHeader("Client-Integrity");
+					const auth = getHeader("Authorization");
+					const version = getHeader("Client-Version");
+					const session = getHeader("Client-Session-Id");
+					const device = getHeader("X-Device-Id");
 
-                    if (integrity) {
-                        __TTVAB_STATE__.ClientIntegrityHeader = integrity;
-                        updates.push({ key: 'UpdateClientIntegrityHeader', value: __TTVAB_STATE__.ClientIntegrityHeader });
-                    }
-                    if (auth) {
-                        __TTVAB_STATE__.AuthorizationHeader = auth;
-                        updates.push({ key: 'UpdateAuthorizationHeader', value: __TTVAB_STATE__.AuthorizationHeader });
-                    }
-                    if (version) {
-                        __TTVAB_STATE__.ClientVersion = version;
-                        updates.push({ key: 'UpdateClientVersion', value: __TTVAB_STATE__.ClientVersion });
-                    }
-                    if (session) {
-                        __TTVAB_STATE__.ClientSession = session;
-                        updates.push({ key: 'UpdateClientSession', value: __TTVAB_STATE__.ClientSession });
-                    }
-                    if (device) {
-                        __TTVAB_STATE__.GQLDeviceID = device;
-                        updates.push({ key: 'UpdateDeviceId', value: __TTVAB_STATE__.GQLDeviceID });
-                    }
+					if (integrity) {
+						__TTVAB_STATE__.ClientIntegrityHeader = integrity;
+						updates.push({
+							key: "UpdateClientIntegrityHeader",
+							value: __TTVAB_STATE__.ClientIntegrityHeader,
+						});
+					}
+					if (auth) {
+						__TTVAB_STATE__.AuthorizationHeader = auth;
+						updates.push({
+							key: "UpdateAuthorizationHeader",
+							value: __TTVAB_STATE__.AuthorizationHeader,
+						});
+					}
+					if (version) {
+						__TTVAB_STATE__.ClientVersion = version;
+						updates.push({
+							key: "UpdateClientVersion",
+							value: __TTVAB_STATE__.ClientVersion,
+						});
+					}
+					if (session) {
+						__TTVAB_STATE__.ClientSession = session;
+						updates.push({
+							key: "UpdateClientSession",
+							value: __TTVAB_STATE__.ClientSession,
+						});
+					}
+					if (device) {
+						__TTVAB_STATE__.GQLDeviceID = device;
+						updates.push({
+							key: "UpdateDeviceId",
+							value: __TTVAB_STATE__.GQLDeviceID,
+						});
+					}
 
-                    if (updates.length > 0) {
-                        for (const worker of _$s.workers) {
-                            for (const update of updates) {
-                                worker.postMessage(update);
-                            }
-                        }
-                    }
-                }
-                return response;
-            }
-        }
-        return realFetch.apply(this, arguments);
-    };
+					if (updates.length > 0) {
+						for (const worker of _$s.workers) {
+							for (const update of updates) {
+								worker.postMessage(update);
+							}
+						}
+					}
+				}
+				return response;
+			}
+		}
+		return realFetch.apply(this, args);
+	};
 }
 
 const _$pbs = {
-    position: 0,
-    bufferedPosition: 0,
-    bufferDuration: 0,
-    numSame: 0,
-    lastFixTime: 0
+	position: 0,
+	bufferedPosition: 0,
+	bufferDuration: 0,
+	numSame: 0,
+	lastFixTime: 0,
 };
 
 let _$cpr = null;
 
 function _$gpc(player) {
-    return player?.playerInstance?.core || player?.core || null;
+	return player?.playerInstance?.core || player?.core || null;
 }
 
 function _$rr() {
-    const rootNode = document.querySelector('#root');
-    if (!rootNode) return null;
+	const rootNode = document.querySelector("#root");
+	if (!rootNode) return null;
 
-    if (rootNode._reactRootContainer?._internalRoot?.current) {
-        return rootNode._reactRootContainer._internalRoot.current;
-    }
+	if (rootNode._reactRootContainer?._internalRoot?.current) {
+		return rootNode._reactRootContainer._internalRoot.current;
+	}
 
-    const containerName = Object.keys(rootNode).find(x => x.startsWith('__reactContainer'));
-    if (containerName) {
-        return rootNode[containerName];
-    }
+	const containerName = Object.keys(rootNode).find((x) =>
+		x.startsWith("__reactContainer"),
+	);
+	if (containerName) {
+		return rootNode[containerName];
+	}
 
-    return null;
+	return null;
 }
 
 function _$rn(root, constraint) {
-    if (!root) return null;
+	if (!root) return null;
 
-    if (root.stateNode && constraint(root.stateNode)) {
-        return root.stateNode;
-    }
+	if (root.stateNode && constraint(root.stateNode)) {
+		return root.stateNode;
+	}
 
-    let node = root.child;
-    while (node) {
-        const result = _$rn(node, constraint);
-        if (result) return result;
-        node = node.sibling;
-    }
+	let node = root.child;
+	while (node) {
+		const result = _$rn(node, constraint);
+		if (result) return result;
+		node = node.sibling;
+	}
 
-    return null;
+	return null;
 }
 
 function _$gps() {
-    const reactRoot = _$rr();
-    if (!reactRoot) return { player: null, state: null };
+	const reactRoot = _$rr();
+	if (!reactRoot) return { player: null, state: null };
 
-    let player = _$rn(reactRoot, node =>
-        node.setPlayerActive && node.props?.mediaPlayerInstance
-    );
-    player = player?.props?.mediaPlayerInstance || null;
+	let player = _$rn(
+		reactRoot,
+		(node) => node.setPlayerActive && node.props?.mediaPlayerInstance,
+	);
+	player = player?.props?.mediaPlayerInstance || null;
 
-    const playerState = _$rn(reactRoot, node =>
-        node.setSrc && node.setInitialPlaybackSettings
-    );
+	const playerState = _$rn(
+		reactRoot,
+		(node) => node.setSrc && node.setInitialPlaybackSettings,
+	);
 
-    return { player, state: playerState };
+	return { player, state: playerState };
 }
 
 function _$dpt(isPausePlay, isReload) {
-    const { player, state: playerState } = _$gps();
+	const { player, state: playerState } = _$gps();
 
-    if (!player) {
-        _$l('Could not find player', 'warning');
-        return;
-    }
+	if (!player) {
+		_$l("Could not find player", "warning");
+		return;
+	}
 
-    if (!playerState) {
-        _$l('Could not find player state', 'warning');
-        return;
-    }
+	if (!playerState) {
+		_$l("Could not find player state", "warning");
+		return;
+	}
 
-    const playerCore = _$gpc(player);
-    if (player.isPaused() || playerCore?.paused) return;
+	const playerCore = _$gpc(player);
+	if (player.isPaused() || playerCore?.paused) return;
 
-    if (isPausePlay) {
-        player.pause();
-        player.play();
-        return;
-    }
+	if (isPausePlay) {
+		player.pause();
+		player.play();
+		return;
+	}
 
-    if (isReload) {
-        const lsKeyQuality = 'video-quality';
-        const lsKeyMuted = 'video-muted';
-        const lsKeyVolume = 'volume';
+	if (isReload) {
+		const lsKeyQuality = "video-quality";
+		const lsKeyMuted = "video-muted";
+		const lsKeyVolume = "volume";
 
-        let currentQualityLS = null;
-        let currentMutedLS = null;
-        let currentVolumeLS = null;
+		let currentQualityLS = null;
+		let currentMutedLS = null;
+		let currentVolumeLS = null;
 
-        try {
-            currentQualityLS = localStorage.getItem(lsKeyQuality);
-            currentMutedLS = localStorage.getItem(lsKeyMuted);
-            currentVolumeLS = localStorage.getItem(lsKeyVolume);
+		try {
+			currentQualityLS = localStorage.getItem(lsKeyQuality);
+			currentMutedLS = localStorage.getItem(lsKeyMuted);
+			currentVolumeLS = localStorage.getItem(lsKeyVolume);
 
-            if (playerCore?.state) {
-                localStorage.setItem(lsKeyMuted, JSON.stringify({ default: playerCore.state.muted }));
-                localStorage.setItem(lsKeyVolume, playerCore.state.volume);
-            }
-            if (playerCore?.state?.quality?.group) {
-                localStorage.setItem(lsKeyQuality, JSON.stringify({ default: playerCore.state.quality.group }));
-            }
-        } catch { }
+			if (playerCore?.state) {
+				localStorage.setItem(
+					lsKeyMuted,
+					JSON.stringify({ default: playerCore.state.muted }),
+				);
+				localStorage.setItem(lsKeyVolume, playerCore.state.volume);
+			}
+			if (playerCore?.state?.quality?.group) {
+				localStorage.setItem(
+					lsKeyQuality,
+					JSON.stringify({ default: playerCore.state.quality.group }),
+				);
+			}
+		} catch {}
 
-        _$l('Reloading player', 'info');
-        playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
+		_$l("Reloading player", "info");
+		playerState.setSrc({
+			isNewMediaPlayerInstance: true,
+			refreshAccessToken: true,
+		});
 
-        for (const worker of _$s.workers) {
-            worker.postMessage({ key: 'TriggeredPlayerReload' });
-        }
+		for (const worker of _$s.workers) {
+			worker.postMessage({ key: "TriggeredPlayerReload" });
+		}
 
-        player.play();
+		player.play();
 
-        if (currentQualityLS || currentMutedLS || currentVolumeLS) {
-            setTimeout(() => {
-                try {
-                    if (currentQualityLS) localStorage.setItem(lsKeyQuality, currentQualityLS);
-                    if (currentMutedLS) localStorage.setItem(lsKeyMuted, currentMutedLS);
-                    if (currentVolumeLS) localStorage.setItem(lsKeyVolume, currentVolumeLS);
-                } catch { }
-            }, 3000);
-        }
-    }
+		if (currentQualityLS || currentMutedLS || currentVolumeLS) {
+			setTimeout(() => {
+				try {
+					if (currentQualityLS)
+						localStorage.setItem(lsKeyQuality, currentQualityLS);
+					if (currentMutedLS) localStorage.setItem(lsKeyMuted, currentMutedLS);
+					if (currentVolumeLS)
+						localStorage.setItem(lsKeyVolume, currentVolumeLS);
+				} catch {}
+			}, 3000);
+		}
+	}
 }
 
 function _$mpb() {
-    const BUFFERING_DELAY = 500;
-    const SAME_STATE_COUNT = 3;
-    const DANGER_ZONE = 1;
-    const MIN_REPEAT_DELAY = 5000;
+	function check() {
+		if (_$cpr) {
+			try {
+				const player = _$cpr.player;
+				const state = _$cpr.state;
+				const playerCore = _$gpc(player);
 
-    function check() {
-        if (_$cpr) {
-            try {
-                const player = _$cpr.player;
-                const state = _$cpr.state;
-                const playerCore = _$gpc(player);
+				if (!playerCore) {
+					_$cpr = null;
+				} else if (
+					state?.props?.content?.type === "live" &&
+					!player.isPaused() &&
+					!player.getHTMLVideoElement()?.ended &&
+					_$pbs.lastFixTime <=
+						Date.now() - __TTVAB_STATE__.PlayerBufferingMinRepeatDelay
+				) {
+					const position = playerCore?.state?.position || 0;
+					const bufferedPosition = playerCore?.state?.bufferedPosition || 0;
+					const bufferDuration = player.getBufferDuration() || 0;
 
-                if (!playerCore) {
-                    _$cpr = null;
-                } else if (
-                    state?.props?.content?.type === 'live' &&
-                    !player.isPaused() &&
-                    !player.getHTMLVideoElement()?.ended &&
-                    _$pbs.lastFixTime <= Date.now() - MIN_REPEAT_DELAY
-                ) {
-                    const position = playerCore?.state?.position || 0;
-                    const bufferedPosition = playerCore?.state?.bufferedPosition || 0;
-                    const bufferDuration = player.getBufferDuration() || 0;
+					if (
+						(!__TTVAB_STATE__.PlayerBufferingPrerollCheckEnabled ||
+							position > __TTVAB_STATE__.PlayerBufferingPrerollCheckOffset) &&
+						(_$pbs.position === position ||
+							bufferDuration < __TTVAB_STATE__.PlayerBufferingDangerZone) &&
+						_$pbs.bufferedPosition === bufferedPosition &&
+						_$pbs.bufferDuration >= bufferDuration &&
+						(position !== 0 || bufferedPosition !== 0 || bufferDuration !== 0)
+					) {
+						_$pbs.numSame++;
 
-                    if (
-                        position > 5 &&
-                        (_$pbs.position === position || bufferDuration < DANGER_ZONE) &&
-                        _$pbs.bufferedPosition === bufferedPosition &&
-                        _$pbs.bufferDuration >= bufferDuration &&
-                        (position !== 0 || bufferedPosition !== 0 || bufferDuration !== 0)
-                    ) {
-                        _$pbs.numSame++;
+						if (
+							_$pbs.numSame ===
+							__TTVAB_STATE__.PlayerBufferingSameStateCount
+						) {
+							_$l(`Attempting buffer fix (pos=${position})`, "warning");
+							if (__TTVAB_STATE__.PlayerBufferingDoPlayerReload) {
+								_$dpt(false, true);
+							} else {
+								_$dpt(true, false);
+							}
+							_$pbs.lastFixTime = Date.now();
+						}
+					} else {
+						_$pbs.numSame = 0;
+					}
 
-                        if (_$pbs.numSame === SAME_STATE_COUNT) {
-                            _$l('Attempting buffer fix (pos=' + position + ')', 'warning');
-                            if (__TTVAB_STATE__.PlayerBufferingDoPlayerReload) {
-                                _$dpt(false, true);
-                            } else {
-                                _$dpt(true, false);
-                            }
-                            _$pbs.lastFixTime = Date.now();
-                        }
-                    } else {
-                        _$pbs.numSame = 0;
-                    }
+					_$pbs.position = position;
+					_$pbs.bufferedPosition = bufferedPosition;
+					_$pbs.bufferDuration = bufferDuration;
+				}
+			} catch (err) {
+				_$l(`Buffer monitor error: ${err.message}`, "error");
+				_$cpr = null;
+			}
+		}
 
-                    _$pbs.position = position;
-                    _$pbs.bufferedPosition = bufferedPosition;
-                    _$pbs.bufferDuration = bufferDuration;
-                }
-            } catch (err) {
-                _$l('Buffer monitor error: ' + err.message, 'error');
-                _$cpr = null;
-            }
-        }
+		if (!_$cpr) {
+			const playerAndState = _$gps();
+			if (playerAndState.player && playerAndState.state) {
+				_$cpr = playerAndState;
+			}
+		}
 
-        if (!_$cpr) {
-            const playerAndState = _$gps();
-            if (playerAndState.player && playerAndState.state) {
-                _$cpr = playerAndState;
-            }
-        }
+		setTimeout(check, __TTVAB_STATE__.PlayerBufferingDelay);
+	}
 
-        setTimeout(check, BUFFERING_DELAY);
-    }
-
-    check();
-    _$l('Buffer monitor active', 'info');
+	check();
+	_$l("Buffer monitor active", "info");
 }
 
 function _$hvs() {
-    try {
-        Object.defineProperty(document, 'visibilityState', {
-            get: () => 'visible'
-        });
-    } catch { }
+	try {
+		Object.defineProperty(document, "visibilityState", {
+			get: () => "visible",
+		});
+	} catch {}
 
-    const hiddenGetter = document.__lookupGetter__('hidden');
-    const webkitHiddenGetter = document.__lookupGetter__('webkitHidden');
+	const hiddenGetter = document.__lookupGetter__("hidden");
+	const webkitHiddenGetter = document.__lookupGetter__("webkitHidden");
 
-    try {
-        Object.defineProperty(document, 'hidden', {
-            get: () => false
-        });
-    } catch { }
+	try {
+		Object.defineProperty(document, "hidden", {
+			get: () => false,
+		});
+	} catch {}
 
-    const blockEvent = e => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-    };
+	const blockEvent = (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		e.stopImmediatePropagation();
+	};
 
-    let wasVideoPlaying = true;
+	let wasVideoPlaying = true;
 
-    const handleVisibilityChange = e => {
-        if (typeof chrome !== 'undefined') {
-            const videos = document.getElementsByTagName('video');
-            if (videos.length > 0) {
-                const isHidden = (hiddenGetter?.apply(document) === true) ||
-                    (webkitHiddenGetter?.apply(document) === true);
+	const handleVisibilityChange = (e) => {
+		if (typeof chrome !== "undefined") {
+			const videos = document.getElementsByTagName("video");
+			if (videos.length > 0) {
+				const isHidden =
+					hiddenGetter?.apply(document) === true ||
+					webkitHiddenGetter?.apply(document) === true;
 
-                if (isHidden) {
-                    wasVideoPlaying = !videos[0].paused && !videos[0].ended;
-                } else if (wasVideoPlaying && !videos[0].ended && videos[0].paused && videos[0].muted) {
-                    videos[0].play();
-                }
-            }
-        }
-        blockEvent(e);
-    };
+				if (isHidden) {
+					wasVideoPlaying = !videos[0].paused && !videos[0].ended;
+				} else if (
+					wasVideoPlaying &&
+					!videos[0].ended &&
+					videos[0].paused &&
+					videos[0].muted
+				) {
+					videos[0].play();
+				}
+			}
+		}
+		blockEvent(e);
+	};
 
-    document.addEventListener('visibilitychange', handleVisibilityChange, true);
-    document.addEventListener('webkitvisibilitychange', handleVisibilityChange, true);
-    document.addEventListener('mozvisibilitychange', handleVisibilityChange, true);
-    document.addEventListener('hasFocus', blockEvent, true);
+	document.addEventListener("visibilitychange", handleVisibilityChange, true);
+	document.addEventListener(
+		"webkitvisibilitychange",
+		handleVisibilityChange,
+		true,
+	);
+	document.addEventListener(
+		"mozvisibilitychange",
+		handleVisibilityChange,
+		true,
+	);
+	document.addEventListener("hasFocus", blockEvent, true);
 
-    try {
-        if (/Firefox/.test(navigator.userAgent)) {
-            Object.defineProperty(document, 'mozHidden', { get: () => false });
-        } else {
-            Object.defineProperty(document, 'webkitHidden', { get: () => false });
-        }
-    } catch { }
+	try {
+		if (/Firefox/.test(navigator.userAgent)) {
+			Object.defineProperty(document, "mozHidden", { get: () => false });
+		} else {
+			Object.defineProperty(document, "webkitHidden", { get: () => false });
+		}
+	} catch {}
 
-    _$l('Visibility protection active', 'info');
+	_$l("Visibility protection active", "info");
 }
 
 function _$hlp() {
-    try {
-        const keysToCache = [
-            'video-quality',
-            'video-muted',
-            'volume',
-            'lowLatencyModeEnabled',
-            'persistenceEnabled'
-        ];
+	try {
+		const keysToCache = [
+			"video-quality",
+			"video-muted",
+			"volume",
+			"lowLatencyModeEnabled",
+			"persistenceEnabled",
+		];
 
-        const cachedValues = new Map();
+		const cachedValues = new Map();
 
-        for (const key of keysToCache) {
-            cachedValues.set(key, localStorage.getItem(key));
-        }
+		for (const key of keysToCache) {
+			cachedValues.set(key, localStorage.getItem(key));
+		}
 
-        const realSetItem = localStorage.setItem;
-        const realGetItem = localStorage.getItem;
+		const realSetItem = localStorage.setItem;
+		const realGetItem = localStorage.getItem;
 
-        localStorage.setItem = function (key, value) {
-            if (cachedValues.has(key)) {
-                cachedValues.set(key, value);
-            }
-            return realSetItem.apply(this, arguments);
-        };
+		localStorage.setItem = function (...args) {
+			const [key, value] = args;
+			if (cachedValues.has(key)) {
+				cachedValues.set(key, value);
+			}
+			return realSetItem.apply(this, args);
+		};
 
-        localStorage.getItem = function (key) {
-            if (cachedValues.has(key)) {
-                return cachedValues.get(key);
-            }
-            return realGetItem.apply(this, arguments);
-        };
+		localStorage.getItem = function (...args) {
+			const [key] = args;
+			if (cachedValues.has(key)) {
+				return cachedValues.get(key);
+			}
+			return realGetItem.apply(this, args);
+		};
 
-        _$l('LocalStorage preservation active', 'info');
-    } catch (err) {
-        _$l('LocalStorage hooks failed: ' + err.message, 'warning');
-    }
+		_$l("LocalStorage preservation active", "info");
+	} catch (err) {
+		_$l(`LocalStorage hooks failed: ${err.message}`, "warning");
+	}
 }
 
-const _$rk = 'ttvab_last_reminder';
+const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;
-const _$fr = 'ttvab_first_run_shown';
+const _$fr = "ttvab_first_run_shown";
 
 function _$dn() {
-    try {
-        const lastReminder = localStorage.getItem(_$rk);
-        const now = Date.now();
+	try {
+		const lastReminder = localStorage.getItem(_$rk);
+		const now = Date.now();
 
-        if (!lastReminder) {
-            localStorage.setItem(_$rk, now.toString());
-            return;
-        }
+		if (!lastReminder) {
+			localStorage.setItem(_$rk, now.toString());
+			return;
+		}
 
-        if ((now - parseInt(lastReminder, 10)) < _$ri2) return;
+		if (now - parseInt(lastReminder, 10) < _$ri2) return;
 
-        setTimeout(() => {
-            const toast = document.createElement('div');
-            toast.id = 'ttvab-reminder';
-            toast.innerHTML = `
+		setTimeout(() => {
+			const toast = document.createElement("div");
+			toast.id = "ttvab-reminder";
+			toast.innerHTML = `
                 <style>
                     #ttvab-reminder{position:fixed;bottom:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:16px 20px;border-radius:12px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:999999;animation:ttvab-slide .3s ease}
                     @keyframes ttvab-slide{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -1289,35 +1499,36 @@ function _$dn() {
                 <button id="ttvab-reminder-btn">Support the Developer</button>
             `;
 
-            document.body.appendChild(toast);
-            localStorage.setItem(_$rk, now.toString());
+			document.body.appendChild(toast);
+			localStorage.setItem(_$rk, now.toString());
 
-            document.getElementById('ttvab-reminder-close').onclick = () => toast.remove();
-            document.getElementById('ttvab-reminder-btn').onclick = () => {
-                window.open('https://ko-fi.com/gosudrm', '_blank');
-                toast.remove();
-            };
+			document.getElementById("ttvab-reminder-close").onclick = () =>
+				toast.remove();
+			document.getElementById("ttvab-reminder-btn").onclick = () => {
+				window.open("https://ko-fi.com/gosudrm", "_blank");
+				toast.remove();
+			};
 
-            setTimeout(() => {
-                if (document.getElementById('ttvab-reminder')) {
-                    toast.style.animation = 'ttvab-slide .3s ease reverse';
-                    setTimeout(() => toast.remove(), 300);
-                }
-            }, 15000);
-        }, 5000);
-    } catch (e) {
-        _$l('Donation reminder error: ' + e.message, 'error');
-    }
+			setTimeout(() => {
+				if (document.getElementById("ttvab-reminder")) {
+					toast.style.animation = "ttvab-slide .3s ease reverse";
+					setTimeout(() => toast.remove(), 300);
+				}
+			}, 15000);
+		}, 5000);
+	} catch (e) {
+		_$l(`Donation reminder error: ${e.message}`, "error");
+	}
 }
 
 function _$wc() {
-    try {
-        if (localStorage.getItem(_$fr)) return;
+	try {
+		if (localStorage.getItem(_$fr)) return;
 
-        setTimeout(() => {
-            const toast = document.createElement('div');
-            toast.id = 'ttvab-welcome';
-            toast.innerHTML = `
+		setTimeout(() => {
+			const toast = document.createElement("div");
+			toast.id = "ttvab-welcome";
+			toast.innerHTML = `
                 <style>
                     #ttvab-welcome{position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:20px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:999999;animation:ttvab-welcome .4s ease}
                     @keyframes ttvab-welcome{from{opacity:0;transform:translateY(-20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
@@ -1337,51 +1548,63 @@ function _$wc() {
                 </div>
             `;
 
-            document.body.appendChild(toast);
-            localStorage.setItem(_$fr, 'true');
+			document.body.appendChild(toast);
+			localStorage.setItem(_$fr, "true");
 
-            const closeHandler = () => {
-                toast.style.animation = 'ttvab-welcome .3s ease reverse';
-                setTimeout(() => toast.remove(), 300);
-            };
+			const closeHandler = () => {
+				toast.style.animation = "ttvab-welcome .3s ease reverse";
+				setTimeout(() => toast.remove(), 300);
+			};
 
-            document.getElementById('ttvab-welcome-close').onclick = closeHandler;
+			document.getElementById("ttvab-welcome-close").onclick = closeHandler;
 
-            setTimeout(() => {
-                if (document.getElementById('ttvab-welcome')) closeHandler();
-            }, 10000);
-        }, 2000);
-    } catch (e) {
-        _$l('Welcome message error: ' + e.message, 'error');
-    }
+			setTimeout(() => {
+				if (document.getElementById("ttvab-welcome")) closeHandler();
+			}, 10000);
+		}, 2000);
+	} catch (e) {
+		_$l(`Welcome message error: ${e.message}`, "error");
+	}
 }
 
 const _$ai = {
-    'first_block': { name: 'Ad Slayer', icon: '⚔️', desc: 'Blocked your first ad!' },
-    'block_10': { name: 'Blocker', icon: '🛡️', desc: 'Blocked 10 ads!' },
-    'block_100': { name: 'Guardian', icon: '🔰', desc: 'Blocked 100 ads!' },
-    'block_500': { name: 'Sentinel', icon: '🏰', desc: 'Blocked 500 ads!' },
-    'block_1000': { name: 'Legend', icon: '🏆', desc: 'Blocked 1000 ads!' },
-    'block_5000': { name: 'Mythic', icon: '👑', desc: 'Blocked 5000 ads!' },
-    'popup_10': { name: 'Popup Crusher', icon: '💥', desc: 'Blocked 10 popups!' },
-    'popup_50': { name: 'Popup Destroyer', icon: '🔥', desc: 'Blocked 50 popups!' },
-    'time_1h': { name: 'Hour Saver', icon: '⏱️', desc: 'Saved 1 hour from ads!' },
-    'time_10h': { name: 'Time Master', icon: '⏰', desc: 'Saved 10 hours from ads!' },
-    'channels_5': { name: 'Explorer', icon: '📺', desc: 'Blocked ads on 5 channels!' },
-    'channels_20': { name: 'Adventurer', icon: '🌍', desc: 'Blocked ads on 20 channels!' }
+	first_block: { name: "Ad Slayer", icon: "⚔️", desc: "Blocked your first ad!" },
+	block_10: { name: "Blocker", icon: "🛡️", desc: "Blocked 10 ads!" },
+	block_100: { name: "Guardian", icon: "🔰", desc: "Blocked 100 ads!" },
+	block_500: { name: "Sentinel", icon: "🏰", desc: "Blocked 500 ads!" },
+	block_1000: { name: "Legend", icon: "🏆", desc: "Blocked 1000 ads!" },
+	block_5000: { name: "Mythic", icon: "👑", desc: "Blocked 5000 ads!" },
+	popup_10: { name: "Popup Crusher", icon: "💥", desc: "Blocked 10 popups!" },
+	popup_50: { name: "Popup Destroyer", icon: "🔥", desc: "Blocked 50 popups!" },
+	time_1h: { name: "Hour Saver", icon: "⏱️", desc: "Saved 1 hour from ads!" },
+	time_10h: {
+		name: "Time Master",
+		icon: "⏰",
+		desc: "Saved 10 hours from ads!",
+	},
+	channels_5: {
+		name: "Explorer",
+		icon: "📺",
+		desc: "Blocked ads on 5 channels!",
+	},
+	channels_20: {
+		name: "Adventurer",
+		icon: "🌍",
+		desc: "Blocked ads on 20 channels!",
+	},
 };
 
 function _$au(achievementId) {
-    try {
-        const ach = _$ai[achievementId];
-        if (!ach) return;
+	try {
+		const ach = _$ai[achievementId];
+		if (!ach) return;
 
-        const existing = document.getElementById('ttvab-achievement');
-        if (existing) existing.remove();
+		const existing = document.getElementById("ttvab-achievement");
+		if (existing) existing.remove();
 
-        const toast = document.createElement('div');
-        toast.id = 'ttvab-achievement';
-        toast.innerHTML = `
+		const toast = document.createElement("div");
+		toast.id = "ttvab-achievement";
+		toast.innerHTML = `
             <style>
                 #ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}
                 @keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
@@ -1401,440 +1624,507 @@ function _$au(achievementId) {
             </div>
         `;
 
-        document.body.appendChild(toast);
-        _$l('Achievement unlocked: ' + ach.name, 'success');
+		document.body.appendChild(toast);
+		_$l(`Achievement unlocked: ${ach.name}`, "success");
 
-        setTimeout(() => {
-            if (document.getElementById('ttvab-achievement')) {
-                toast.style.animation = 'ttvab-ach-pop .3s ease reverse';
-                setTimeout(() => toast.remove(), 300);
-            }
-        }, 4000);
-    } catch (e) {
-        _$l('Achievement error: ' + e.message, 'error');
-    }
+		setTimeout(() => {
+			if (document.getElementById("ttvab-achievement")) {
+				toast.style.animation = "ttvab-ach-pop .3s ease reverse";
+				setTimeout(() => toast.remove(), 300);
+			}
+		}, 4000);
+	} catch (e) {
+		_$l(`Achievement error: ${e.message}`, "error");
+	}
 }
 
 function _$al() {
-    window.addEventListener('message', function (e) {
-        if (e.data?.type === 'ttvab-achievement-unlocked' && e.data.detail?.id) {
-            _$au(e.data.detail.id);
-        }
-    });
-}
+	window.addEventListener("message", (e) => {
+		if (e.data?.type === "ttvab-achievement-unlocked" && e.data.detail?.id) {
+			_$au(e.data.detail.id);
+		}
+	});
+}
 
 function _$cm() {
-    let isRefreshing = false;
-    let checkInterval = null;
+	let isRefreshing = false;
+	let checkInterval = null;
 
-    function detectCrash() {
-        const errorElements = document.querySelectorAll(
-            '[data-a-target="player-overlay-content-gate"],' +
-            '[data-a-target="player-error-modal"],' +
-            '.content-overlay-gate,' +
-            '.player-error'
-        );
+	function detectCrash() {
+		const errorElements = document.querySelectorAll(
+			'[data-a-target="player-overlay-content-gate"],' +
+				'[data-a-target="player-error-modal"],' +
+				".content-overlay-gate," +
+				".player-error",
+		);
 
-        for (const el of errorElements) {
-            const text = (el.innerText || '').toLowerCase();
-            const patterns = _$c.CRASH_PATTERNS;
-            for (let i = 0, len = patterns.length; i < len; i++) {
-                if (text.includes(patterns[i].toLowerCase())) return patterns[i];
-            }
-        }
+		for (const el of errorElements) {
+			const text = (el.innerText || "").toLowerCase();
+			const patterns = _$c.CRASH_PATTERNS;
+			for (let i = 0, len = patterns.length; i < len; i++) {
+				if (text.includes(patterns[i].toLowerCase())) return patterns[i];
+			}
+		}
 
-        return null;
-    }
+		return null;
+	}
 
-    function handleCrash(error) {
-        if (isRefreshing) return;
-        isRefreshing = true;
+	function handleCrash(error) {
+		if (isRefreshing) return;
+		isRefreshing = true;
 
-        _$l('Player crash: ' + error, 'error');
+		_$l(`Player crash: ${error}`, "error");
 
-        if (document.hidden) {
-            _$l('Tab hidden, will refresh when visible', 'warning');
+		if (document.hidden) {
+			_$l("Tab hidden, will refresh when visible", "warning");
 
-            document.addEventListener('visibilitychange', function onVisible() {
-                if (!document.hidden) {
-                    document.removeEventListener('visibilitychange', onVisible);
-                    _$l('Tab visible, refreshing...', 'warning');
-                    window.location.reload();
-                }
-            });
-        } else {
-            _$l('Auto-refreshing...', 'warning');
+			document.addEventListener("visibilitychange", function onVisible() {
+				if (!document.hidden) {
+					document.removeEventListener("visibilitychange", onVisible);
+					_$l("Tab visible, refreshing...", "warning");
+					window.location.reload();
+				}
+			});
+		} else {
+			_$l("Auto-refreshing...", "warning");
 
-            const banner = document.createElement('div');
-            banner.innerHTML = `
+			const banner = document.createElement("div");
+			banner.innerHTML = `
                 <style>
                     #ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-pulse 1s ease infinite}
                     @keyframes ttvab-pulse{0%,100%{opacity:1}50%{opacity:.7}}
                 </style>
                 <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing...</div>
             `;
-            document.body.appendChild(banner);
+			document.body.appendChild(banner);
 
-            setTimeout(() => window.location.reload(), _$c.REFRESH_DELAY);
-        }
-    }
+			setTimeout(() => window.location.reload(), _$c.REFRESH_DELAY);
+		}
+	}
 
-    function start() {
-        if (!document.body) {
-            setTimeout(start, 100);
-            return;
-        }
+	function start() {
+		if (!document.body) {
+			setTimeout(start, 100);
+			return;
+		}
 
-        let lastCheck = 0;
-        const observer = new MutationObserver(() => {
-            try {
-                const now = Date.now();
-                if (now - lastCheck < 2000) return;
-                lastCheck = now;
+		let lastCheck = 0;
+		const observer = new MutationObserver(() => {
+			try {
+				const now = Date.now();
+				if (now - lastCheck < 2000) return;
+				lastCheck = now;
 
-                const error = detectCrash();
-                if (error) {
-                    handleCrash(error);
-                    observer.disconnect();
-                    if (checkInterval) clearInterval(checkInterval);
-                }
-            } catch { }
-        });
+				const error = detectCrash();
+				if (error) {
+					handleCrash(error);
+					observer.disconnect();
+					if (checkInterval) clearInterval(checkInterval);
+				}
+			} catch {}
+		});
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+		observer.observe(document.body, {
+			childList: true,
+			subtree: true,
+		});
 
-        checkInterval = setInterval(() => {
-            if (document.hidden) return;
-            try {
-                const error = detectCrash();
-                if (error) {
-                    handleCrash(error);
-                    observer.disconnect();
-                    clearInterval(checkInterval);
-                }
-            } catch { }
-        }, 5000);
+		checkInterval = setInterval(() => {
+			if (document.hidden) return;
+			try {
+				const error = detectCrash();
+				if (error) {
+					handleCrash(error);
+					observer.disconnect();
+					clearInterval(checkInterval);
+				}
+			} catch {}
+		}, 5000);
 
-        _$l('Crash monitor active', 'info');
-    }
+		_$l("Crash monitor active", "info");
+	}
 
-    start();
-}
+	start();
+}
 
 function _$bs() {
-    if (typeof window.ttvabVersion !== 'undefined' && window.ttvabVersion >= _$c.INTERNAL_VERSION) {
-        _$l('Skipping - another script is active', 'warning');
-        return false;
-    }
+	if (
+		typeof window.ttvabVersion !== "undefined" &&
+		window.ttvabVersion >= _$c.INTERNAL_VERSION
+	) {
+		_$l("Skipping - another script is active", "warning");
+		return false;
+	}
 
-    window.ttvabVersion = _$c.INTERNAL_VERSION;
-    _$l('v' + _$c.VERSION + ' loaded', 'info');
-    return true;
+	window.ttvabVersion = _$c.INTERNAL_VERSION;
+	_$l(`v${_$c.VERSION} loaded`, "info");
+	return true;
 }
 
 function _$tl() {
-    window.addEventListener('message', function (e) {
-        if (e.source !== window) return;
-        if (e.data?.type === 'ttvab-toggle') {
-            const enabled = e.data.detail?.enabled ?? true;
-            __TTVAB_STATE__.IsAdStrippingEnabled = enabled;
-            for (const worker of _$s.workers) {
-                worker.postMessage({ key: 'UpdateToggleState', value: enabled });
-            }
-            _$l('Ad blocking ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'warning');
-        }
-    });
+	window.addEventListener("message", (e) => {
+		if (e.source !== window) return;
+		if (e.data?.type === "ttvab-toggle") {
+			const enabled = e.data.detail?.enabled ?? true;
+			__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
+			for (const worker of _$s.workers) {
+				worker.postMessage({ key: "UpdateToggleState", value: enabled });
+			}
+			_$l(
+				`Ad blocking ${enabled ? "enabled" : "disabled"}`,
+				enabled ? "success" : "warning",
+			);
+		}
+	});
 }
 
 function _$bp() {
-    let lastBlockTime = 0;
+	let lastBlockTime = 0;
 
-    function _$ipb() {
-        if (!document.body) {
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', _$ipb, { once: true });
-            } else {
-                setTimeout(_$ipb, 50);
-            }
-            return;
-        }
+	function _$ipb() {
+		if (!document.body) {
+			if (document.readyState === "loading") {
+				document.addEventListener("DOMContentLoaded", _$ipb, {
+					once: true,
+				});
+			} else {
+				setTimeout(_$ipb, 50);
+			}
+			return;
+		}
 
-        if (!document.getElementById('ttvab-popup-style')) {
-            const style = document.createElement('style');
-            style.id = 'ttvab-popup-style';
-            style.textContent = `
+		if (!document.getElementById("ttvab-popup-style")) {
+			const style = document.createElement("style");
+			style.id = "ttvab-popup-style";
+			style.textContent = `
                 div[data-test-selector="ad-banner"],
                 div[data-a-target="consent-banner"] {
                     display: none !important;
                     visibility: hidden !important;
                 }
             `;
-            document.head.appendChild(style);
-        }
+			document.head.appendChild(style);
+		}
 
-        function _$pb() {
-            const now = Date.now();
-            if (now - lastBlockTime < 1000) return;
-            lastBlockTime = now;
+		function _$pb() {
+			const now = Date.now();
+			if (now - lastBlockTime < 1000) return;
+			lastBlockTime = now;
 
-            _$s.popupsBlocked++;
-            window.postMessage({
-                type: 'ttvab-popup-blocked',
-                detail: { count: _$s.popupsBlocked }
-            }, '*');
-            _$l('Popup blocked! Total: ' + _$s.popupsBlocked, 'success');
-        }
+			_$s.popupsBlocked++;
+			window.postMessage(
+				{
+					type: "ttvab-popup-blocked",
+					detail: { count: _$s.popupsBlocked },
+				},
+				"*",
+			);
+			_$l(`Popup blocked! Total: ${_$s.popupsBlocked}`, "success");
+		}
 
-        function _hasAdblockText(el) {
-            const text = (el.textContent || '').toLowerCase();
-            return (
-                text.includes('allow twitch ads') ||
-                text.includes('try turbo') ||
-                text.includes('commercials') ||
-                text.includes('whitelist') ||
-                text.includes('ad blocker') ||
-                (text.includes('support') && (text.includes('ads') || text.includes('ad block'))) ||
-                (text.includes('disable') && (text.includes('extension') || text.includes('ad block'))) ||
-                (text.includes('viewers watch ads') && text.includes('turbo'))
-            );
-        }
+		function _hasAdblockText(el) {
+			const text = (el.textContent || "").toLowerCase();
+			return (
+				text.includes("allow twitch ads") ||
+				text.includes("try turbo") ||
+				text.includes("commercials") ||
+				text.includes("whitelist") ||
+				text.includes("ad blocker") ||
+				(text.includes("support") &&
+					(text.includes("ads") || text.includes("ad block"))) ||
+				(text.includes("disable") &&
+					(text.includes("extension") || text.includes("ad block"))) ||
+				(text.includes("viewers watch ads") && text.includes("turbo"))
+			);
+		}
 
-        const SAFELIST_SELECTORS = [
-            '[data-a-target="chat-scroller"]',
-            '[data-a-target="right-column-chat-bar"]',
-            '[data-test-selector="chat-room-component"]',
-            '[class*="chat-room"]',
-            '[class*="chat-shell"]',
-            '[class*="right-column"]',
-            '[class*="RightColumn"]',
-            '[class*="ChatShell"]',
-            '[class*="ChatRoom"]',
-            '[class*="video-player"]',
-            '[class*="VideoPlayer"]',
-            '[data-a-target="video-player"]',
-            'video'
-        ];
+		const SAFELIST_SELECTORS = [
+			'[data-a-target="chat-scroller"]',
+			'[data-a-target="right-column-chat-bar"]',
+			'[data-test-selector="chat-room-component"]',
+			'[class*="chat-room"]',
+			'[class*="chat-shell"]',
+			'[class*="right-column"]',
+			'[class*="RightColumn"]',
+			'[class*="ChatShell"]',
+			'[class*="ChatRoom"]',
+			'[class*="video-player"]',
+			'[class*="VideoPlayer"]',
+			'[data-a-target="video-player"]',
+			"video",
+		];
 
-        function _isSafeElement(el) {
-            if (!el) return false;
-            for (const selector of SAFELIST_SELECTORS) {
-                try {
-                    if (el.matches && el.matches(selector)) return true;
-                    if (el.querySelector && el.querySelector(selector)) return true;
-                } catch { }
-            }
-            return false;
-        }
+		function _isSafeElement(el) {
+			if (!el) return false;
+			for (const selector of SAFELIST_SELECTORS) {
+				try {
+					if (el.matches?.(selector)) return true;
+					if (el.querySelector?.(selector)) return true;
+				} catch {}
+			}
+			return false;
+		}
 
-        function _$sr() {
-            const detectionNodes = document.querySelectorAll('button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span');
+		function _$sr() {
+			const detectionNodes = document.querySelectorAll(
+				'button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span',
+			);
 
-            for (const node of detectionNodes) {
-                if (node.tagName === 'SPAN' && node.textContent.length < 10) continue;
-                if (node.offsetParent === null || node.hasAttribute('data-ttvab-blocked')) continue;
-                if (_isSafeElement(node) || node.closest('[class*="chat"]') || node.closest('[class*="Chat"]')) continue;
+			for (const node of detectionNodes) {
+				if (node.tagName === "SPAN" && node.textContent.length < 10) continue;
+				if (
+					node.offsetParent === null ||
+					node.hasAttribute("data-ttvab-blocked")
+				)
+					continue;
+				if (
+					_isSafeElement(node) ||
+					node.closest('[class*="chat"]') ||
+					node.closest('[class*="Chat"]')
+				)
+					continue;
 
-                if (_hasAdblockText(node)) {
-                    node.setAttribute('data-ttvab-blocked', 'true');
+				if (_hasAdblockText(node)) {
+					node.setAttribute("data-ttvab-blocked", "true");
 
-                    let popup = node.parentElement;
-                    let attempts = 0;
+					let popup = node.parentElement;
+					let attempts = 0;
 
-                    while (popup && attempts < 20) {
-                        if (_isSafeElement(popup)) break;
+					while (popup && attempts < 20) {
+						if (_isSafeElement(popup)) break;
 
-                        const style = window.getComputedStyle(popup);
-                        const isOverlay = style.position === 'fixed' || style.position === 'absolute';
-                        const hasBackground = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
-                        const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
-                        const hasZIndex = parseInt(style.zIndex) > 100;
+						const style = window.getComputedStyle(popup);
+						const isOverlay =
+							style.position === "fixed" || style.position === "absolute";
+						const hasBackground =
+							style.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+							style.backgroundColor !== "transparent";
+						const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
+						const hasZIndex = parseInt(style.zIndex, 10) > 100;
 
-                        const className = (popup.className && typeof popup.className === 'string') ? popup.className : '';
-                        const isPopupClass = (
-                            (className.includes('ScAttach') && className.includes('Balloon')) ||
-                            className.includes('Modal') ||
-                            className.includes('consent') ||
-                            className.includes('Consent') ||
-                            (className.includes('Overlay') && !className.includes('Column') && !className.includes('Chat')) ||
-                            (className.includes('Layer') && className.includes('Balloon'))
-                        );
+						const className =
+							popup.className && typeof popup.className === "string"
+								? popup.className
+								: "";
+						const isPopupClass =
+							(className.includes("ScAttach") &&
+								className.includes("Balloon")) ||
+							className.includes("Modal") ||
+							className.includes("consent") ||
+							className.includes("Consent") ||
+							(className.includes("Overlay") &&
+								!className.includes("Column") &&
+								!className.includes("Chat")) ||
+							(className.includes("Layer") && className.includes("Balloon"));
 
-                        if ((isOverlay || hasZIndex || isPopupClass) && (hasBackground || isLarge)) {
-                            if (popup.querySelector('video')) {
-                                popup = popup.parentElement;
-                                attempts++;
-                                continue;
-                            }
+						if (
+							(isOverlay || hasZIndex || isPopupClass) &&
+							(hasBackground || isLarge)
+						) {
+							if (popup.querySelector("video")) {
+								popup = popup.parentElement;
+								attempts++;
+								continue;
+							}
 
-                            if (_isSafeElement(popup)) break;
+							if (_isSafeElement(popup)) break;
 
-                            _$l('Hiding popup: ' + (popup.className || popup.tagName), 'success');
-                            popup.style.display = 'none';
-                            popup.style.visibility = 'hidden';
-                            popup.setAttribute('style', (popup.getAttribute('style') || '') + '; display: none !important; visibility: hidden !important;');
-                            popup.setAttribute('data-ttvab-blocked', 'true');
+							_$l(
+								`Hiding popup: ${popup.className || popup.tagName}`,
+								"success",
+							);
+							popup.style.display = "none";
+							popup.style.visibility = "hidden";
+							popup.setAttribute(
+								"style",
+								(popup.getAttribute("style") || "") +
+									"; display: none !important; visibility: hidden !important;",
+							);
+							popup.setAttribute("data-ttvab-blocked", "true");
 
-                            _$pb();
-                            return true;
-                        }
+							_$pb();
+							return true;
+						}
 
-                        popup = popup.parentElement;
-                        attempts++;
-                    }
+						popup = popup.parentElement;
+						attempts++;
+					}
 
-                    const fallback = node.closest('div[class*="Balloon"], div[class*="consent"], div[class*="Modal"]');
-                    if (fallback && !_isSafeElement(fallback)) {
-                        _$l('Hiding popup (fallback)', 'warning');
-                        fallback.style.display = 'none';
-                        fallback.setAttribute('style', (fallback.getAttribute('style') || '') + '; display: none !important;');
-                        fallback.setAttribute('data-ttvab-blocked', 'true');
-                        _$pb();
-                        return true;
-                    }
-                }
-            }
+					const fallback = node.closest(
+						'div[class*="Balloon"], div[class*="consent"], div[class*="Modal"]',
+					);
+					if (fallback && !_isSafeElement(fallback)) {
+						_$l("Hiding popup (fallback)", "warning");
+						fallback.style.display = "none";
+						fallback.setAttribute(
+							"style",
+							(fallback.getAttribute("style") || "") +
+								"; display: none !important;",
+						);
+						fallback.setAttribute("data-ttvab-blocked", "true");
+						_$pb();
+						return true;
+					}
+				}
+			}
 
-            const popupSelectors = [
-                'div[class*="ScAttach"][class*="ScBalloon"]',
-                'div[class*="tw-balloon"]',
-                'div[class*="consent"]',
-                'div[data-a-target="consent-banner"]',
-                'div[data-test-selector="ad-banner"]',
-                'div[class*="Layout"][class*="Overlay"]'
-            ];
+			const popupSelectors = [
+				'div[class*="ScAttach"][class*="ScBalloon"]',
+				'div[class*="tw-balloon"]',
+				'div[class*="consent"]',
+				'div[data-a-target="consent-banner"]',
+				'div[data-test-selector="ad-banner"]',
+				'div[class*="Layout"][class*="Overlay"]',
+			];
 
-            for (const selector of popupSelectors) {
-                try {
-                    const elements = document.querySelectorAll(selector);
-                    for (const el of elements) {
-                        if (_hasAdblockText(el)) {
-                            _$l('Hiding popup by selector', 'success');
-                            el.style.display = 'none';
-                            el.setAttribute('style', (el.getAttribute('style') || '') + '; display: none !important;');
-                            _$pb();
-                            return true;
-                        }
-                    }
-                } catch { }
-            }
+			for (const selector of popupSelectors) {
+				try {
+					const elements = document.querySelectorAll(selector);
+					for (const el of elements) {
+						if (_hasAdblockText(el)) {
+							_$l("Hiding popup by selector", "success");
+							el.style.display = "none";
+							el.setAttribute(
+								"style",
+								(el.getAttribute("style") || "") +
+									"; display: none !important;",
+							);
+							_$pb();
+							return true;
+						}
+					}
+				} catch {}
+			}
 
-            const overlays = document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]');
-            for (const el of overlays) {
-                if (_hasAdblockText(el) && el.offsetWidth > 200 && el.offsetHeight > 100) {
-                    if (el.querySelector('video')) continue;
+			const overlays = document.querySelectorAll(
+				'div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]',
+			);
+			for (const el of overlays) {
+				if (
+					_hasAdblockText(el) &&
+					el.offsetWidth > 200 &&
+					el.offsetHeight > 100
+				) {
+					if (el.querySelector("video")) continue;
 
-                    _$l('Hiding popup overlay', 'success');
-                    el.style.display = 'none';
-                    el.setAttribute('style', (el.getAttribute('style') || '') + '; display: none !important;');
-                    _$pb();
-                    return true;
-                }
-            }
+					_$l("Hiding popup overlay", "success");
+					el.style.display = "none";
+					el.setAttribute(
+						"style",
+						`${el.getAttribute("style") || ""}; display: none !important;`,
+					);
+					_$pb();
+					return true;
+				}
+			}
 
-            return false;
-        }
+			return false;
+		}
 
-        if (_$sr()) {
-            _$l('Popup removed on initial scan', 'success');
-        }
+		if (_$sr()) {
+			_$l("Popup removed on initial scan", "success");
+		}
 
-        let debounceTimer = null;
-        let lastImmediateScan = 0;
-        const observer = new MutationObserver(function (mutations) {
-            let shouldScan = false;
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType === 1) {
-                        shouldScan = true;
-                        break;
-                    }
-                }
-                if (shouldScan) break;
-            }
+		let debounceTimer = null;
+		let lastImmediateScan = 0;
+		const observer = new MutationObserver((mutations) => {
+			let shouldScan = false;
+			for (const mutation of mutations) {
+				for (const node of mutation.addedNodes) {
+					if (node.nodeType === 1) {
+						shouldScan = true;
+						break;
+					}
+				}
+				if (shouldScan) break;
+			}
 
-            if (!shouldScan) return;
+			if (!shouldScan) return;
 
-            const now = Date.now();
-            if (now - lastImmediateScan > 100) {
-                lastImmediateScan = now;
-                _$sr();
-            }
+			const now = Date.now();
+			if (now - lastImmediateScan > 100) {
+				lastImmediateScan = now;
+				_$sr();
+			}
 
-            if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                _$sr();
-                debounceTimer = null;
-            }, 50);
-        });
+			if (debounceTimer) clearTimeout(debounceTimer);
+			debounceTimer = setTimeout(() => {
+				_$sr();
+				debounceTimer = null;
+			}, 50);
+		});
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+		observer.observe(document.body, {
+			childList: true,
+			subtree: true,
+		});
 
-        function _$is() {
-            const delay = document.hidden ? 2000 : 500;
-            setTimeout(() => {
-                if (!document.hidden) {
-                    _$sr();
-                }
-                _$is();
-            }, delay);
-        }
-        _$is();
+		function _$is() {
+			const delay = document.hidden ? 2000 : 500;
+			setTimeout(() => {
+				if (!document.hidden) {
+					_$sr();
+				}
+				_$is();
+			}, delay);
+		}
+		_$is();
 
-        _$l('Popup blocker active', 'success');
-    }
+		_$l("Popup blocker active", "success");
+	}
 
-    _$ipb();
+	_$ipb();
 }
 
 function _$in() {
-    if (!_$bs()) return;
+	if (!_$bs()) return;
 
-    _$ds(window);
+	_$ds(window);
 
-    window.addEventListener('message', function (e) {
-        if (e.source !== window) return;
-        if (!e.data?.type?.startsWith('ttvab-init-')) return;
+	window.addEventListener("message", (e) => {
+		if (e.source !== window) return;
+		if (!e.data?.type?.startsWith("ttvab-init-")) return;
 
-        if (e.data.type === 'ttvab-init-count' && typeof e.data.detail?.count === 'number') {
-            _$s.adsBlocked = e.data.detail.count;
-            for (const worker of _$s.workers) {
-                worker.postMessage({ key: 'UpdateAdsBlocked', value: _$s.adsBlocked });
-            }
-            _$l('Restored ads count: ' + _$s.adsBlocked, 'info');
-        }
+		if (
+			e.data.type === "ttvab-init-count" &&
+			typeof e.data.detail?.count === "number"
+		) {
+			_$s.adsBlocked = e.data.detail.count;
+			for (const worker of _$s.workers) {
+				worker.postMessage({ key: "UpdateAdsBlocked", value: _$s.adsBlocked });
+			}
+			_$l(`Restored ads count: ${_$s.adsBlocked}`, "info");
+		}
 
-        if (e.data.type === 'ttvab-init-popups-count' && typeof e.data.detail?.count === 'number') {
-            _$s.popupsBlocked = e.data.detail.count;
-            _$l('Restored popups count: ' + _$s.popupsBlocked, 'info');
-        }
-    });
+		if (
+			e.data.type === "ttvab-init-popups-count" &&
+			typeof e.data.detail?.count === "number"
+		) {
+			_$s.popupsBlocked = e.data.detail.count;
+			_$l(`Restored popups count: ${_$s.popupsBlocked}`, "info");
+		}
+	});
 
-    _$hs();
-    _$hw();
-    _$mf();
-    _$tl();
-    _$cm();
-    _$bp();
-    _$al();
+	_$hs();
+	_$hw();
+	_$mf();
+	_$tl();
+	_$cm();
+	_$bp();
+	_$al();
 
-    _$hvs();
-    _$hlp();
-    if (_$c.BUFFERING_FIX) {
-        _$mpb();
-    }
+	_$hvs();
+	_$hlp();
+	if (_$c.BUFFERING_FIX) {
+		_$mpb();
+	}
 
-    _$wc();
-    _$dn();
+	_$wc();
+	_$dn();
 
-    window.postMessage({ type: 'ttvab-request-state' }, '*');
+	window.postMessage({ type: "ttvab-request-state" }, "*");
 
-    _$l('Initialized successfully', 'success');
+	_$l("Initialized successfully", "success");
 }
 
 _$in();
