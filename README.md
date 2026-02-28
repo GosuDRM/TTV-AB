@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.1.9-purple)
+![Version](https://img.shields.io/badge/version-4.2.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -48,9 +48,10 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## ✨ What's New
 
-### v4.1.9
-- **Twitch Player Structure Compatibility** - Added support for Twitch's updated player shape where `core` may be under `player.playerInstance.core` (with fallback to `player.core`).
-- **Player State Reads** - Updated pause, volume, quality, and buffering checks to use the compatibility resolver so reload/buffering logic works on both structures.
+### v4.2.0
+- **Ad-Block Logic Sync** - Synchronized internal settings and bounds for improved streamer support and ad bypassing.
+- **Player Reload & HEVC Stability** - Optimized minimal requests for backup streams and improved HEVC codec stripping logic, vastly increasing connection stability.
+- **Buffering Optimization** - Moved player loop limits into global state configuration for faster and more reliable ad-free continuation.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

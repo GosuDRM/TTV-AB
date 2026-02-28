@@ -1,25 +1,25 @@
 // TTV AB - UI
 
-const _REMINDER_KEY = 'ttvab_last_reminder';
+const _REMINDER_KEY = "ttvab_last_reminder";
 const _REMINDER_INTERVAL = 1209600000;
-const _FIRST_RUN_KEY = 'ttvab_first_run_shown';
+const _FIRST_RUN_KEY = "ttvab_first_run_shown";
 
 function _showDonation() {
-    try {
-        const lastReminder = localStorage.getItem(_REMINDER_KEY);
-        const now = Date.now();
+	try {
+		const lastReminder = localStorage.getItem(_REMINDER_KEY);
+		const now = Date.now();
 
-        if (!lastReminder) {
-            localStorage.setItem(_REMINDER_KEY, now.toString());
-            return;
-        }
+		if (!lastReminder) {
+			localStorage.setItem(_REMINDER_KEY, now.toString());
+			return;
+		}
 
-        if ((now - parseInt(lastReminder, 10)) < _REMINDER_INTERVAL) return;
+		if (now - parseInt(lastReminder, 10) < _REMINDER_INTERVAL) return;
 
-        setTimeout(() => {
-            const toast = document.createElement('div');
-            toast.id = 'ttvab-reminder';
-            toast.innerHTML = `
+		setTimeout(() => {
+			const toast = document.createElement("div");
+			toast.id = "ttvab-reminder";
+			toast.innerHTML = `
                 <style>
                     #ttvab-reminder{position:fixed;bottom:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:16px 20px;border-radius:12px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:999999;animation:ttvab-slide .3s ease}
                     @keyframes ttvab-slide{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -34,35 +34,36 @@ function _showDonation() {
                 <button id="ttvab-reminder-btn">Support the Developer</button>
             `;
 
-            document.body.appendChild(toast);
-            localStorage.setItem(_REMINDER_KEY, now.toString());
+			document.body.appendChild(toast);
+			localStorage.setItem(_REMINDER_KEY, now.toString());
 
-            document.getElementById('ttvab-reminder-close').onclick = () => toast.remove();
-            document.getElementById('ttvab-reminder-btn').onclick = () => {
-                window.open('https://ko-fi.com/gosudrm', '_blank');
-                toast.remove();
-            };
+			document.getElementById("ttvab-reminder-close").onclick = () =>
+				toast.remove();
+			document.getElementById("ttvab-reminder-btn").onclick = () => {
+				window.open("https://ko-fi.com/gosudrm", "_blank");
+				toast.remove();
+			};
 
-            setTimeout(() => {
-                if (document.getElementById('ttvab-reminder')) {
-                    toast.style.animation = 'ttvab-slide .3s ease reverse';
-                    setTimeout(() => toast.remove(), 300);
-                }
-            }, 15000);
-        }, 5000);
-    } catch (e) {
-        _log('Donation reminder error: ' + e.message, 'error');
-    }
+			setTimeout(() => {
+				if (document.getElementById("ttvab-reminder")) {
+					toast.style.animation = "ttvab-slide .3s ease reverse";
+					setTimeout(() => toast.remove(), 300);
+				}
+			}, 15000);
+		}, 5000);
+	} catch (e) {
+		_log(`Donation reminder error: ${e.message}`, "error");
+	}
 }
 
 function _showWelcome() {
-    try {
-        if (localStorage.getItem(_FIRST_RUN_KEY)) return;
+	try {
+		if (localStorage.getItem(_FIRST_RUN_KEY)) return;
 
-        setTimeout(() => {
-            const toast = document.createElement('div');
-            toast.id = 'ttvab-welcome';
-            toast.innerHTML = `
+		setTimeout(() => {
+			const toast = document.createElement("div");
+			toast.id = "ttvab-welcome";
+			toast.innerHTML = `
                 <style>
                     #ttvab-welcome{position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:20px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:999999;animation:ttvab-welcome .4s ease}
                     @keyframes ttvab-welcome{from{opacity:0;transform:translateY(-20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
@@ -82,51 +83,63 @@ function _showWelcome() {
                 </div>
             `;
 
-            document.body.appendChild(toast);
-            localStorage.setItem(_FIRST_RUN_KEY, 'true');
+			document.body.appendChild(toast);
+			localStorage.setItem(_FIRST_RUN_KEY, "true");
 
-            const closeHandler = () => {
-                toast.style.animation = 'ttvab-welcome .3s ease reverse';
-                setTimeout(() => toast.remove(), 300);
-            };
+			const closeHandler = () => {
+				toast.style.animation = "ttvab-welcome .3s ease reverse";
+				setTimeout(() => toast.remove(), 300);
+			};
 
-            document.getElementById('ttvab-welcome-close').onclick = closeHandler;
+			document.getElementById("ttvab-welcome-close").onclick = closeHandler;
 
-            setTimeout(() => {
-                if (document.getElementById('ttvab-welcome')) closeHandler();
-            }, 10000);
-        }, 2000);
-    } catch (e) {
-        _log('Welcome message error: ' + e.message, 'error');
-    }
+			setTimeout(() => {
+				if (document.getElementById("ttvab-welcome")) closeHandler();
+			}, 10000);
+		}, 2000);
+	} catch (e) {
+		_log(`Welcome message error: ${e.message}`, "error");
+	}
 }
 
 const _ACHIEVEMENT_INFO = {
-    'first_block': { name: 'Ad Slayer', icon: '⚔️', desc: 'Blocked your first ad!' },
-    'block_10': { name: 'Blocker', icon: '🛡️', desc: 'Blocked 10 ads!' },
-    'block_100': { name: 'Guardian', icon: '🔰', desc: 'Blocked 100 ads!' },
-    'block_500': { name: 'Sentinel', icon: '🏰', desc: 'Blocked 500 ads!' },
-    'block_1000': { name: 'Legend', icon: '🏆', desc: 'Blocked 1000 ads!' },
-    'block_5000': { name: 'Mythic', icon: '👑', desc: 'Blocked 5000 ads!' },
-    'popup_10': { name: 'Popup Crusher', icon: '💥', desc: 'Blocked 10 popups!' },
-    'popup_50': { name: 'Popup Destroyer', icon: '🔥', desc: 'Blocked 50 popups!' },
-    'time_1h': { name: 'Hour Saver', icon: '⏱️', desc: 'Saved 1 hour from ads!' },
-    'time_10h': { name: 'Time Master', icon: '⏰', desc: 'Saved 10 hours from ads!' },
-    'channels_5': { name: 'Explorer', icon: '📺', desc: 'Blocked ads on 5 channels!' },
-    'channels_20': { name: 'Adventurer', icon: '🌍', desc: 'Blocked ads on 20 channels!' }
+	first_block: { name: "Ad Slayer", icon: "⚔️", desc: "Blocked your first ad!" },
+	block_10: { name: "Blocker", icon: "🛡️", desc: "Blocked 10 ads!" },
+	block_100: { name: "Guardian", icon: "🔰", desc: "Blocked 100 ads!" },
+	block_500: { name: "Sentinel", icon: "🏰", desc: "Blocked 500 ads!" },
+	block_1000: { name: "Legend", icon: "🏆", desc: "Blocked 1000 ads!" },
+	block_5000: { name: "Mythic", icon: "👑", desc: "Blocked 5000 ads!" },
+	popup_10: { name: "Popup Crusher", icon: "💥", desc: "Blocked 10 popups!" },
+	popup_50: { name: "Popup Destroyer", icon: "🔥", desc: "Blocked 50 popups!" },
+	time_1h: { name: "Hour Saver", icon: "⏱️", desc: "Saved 1 hour from ads!" },
+	time_10h: {
+		name: "Time Master",
+		icon: "⏰",
+		desc: "Saved 10 hours from ads!",
+	},
+	channels_5: {
+		name: "Explorer",
+		icon: "📺",
+		desc: "Blocked ads on 5 channels!",
+	},
+	channels_20: {
+		name: "Adventurer",
+		icon: "🌍",
+		desc: "Blocked ads on 20 channels!",
+	},
 };
 
 function _showAchievementUnlocked(achievementId) {
-    try {
-        const ach = _ACHIEVEMENT_INFO[achievementId];
-        if (!ach) return;
+	try {
+		const ach = _ACHIEVEMENT_INFO[achievementId];
+		if (!ach) return;
 
-        const existing = document.getElementById('ttvab-achievement');
-        if (existing) existing.remove();
+		const existing = document.getElementById("ttvab-achievement");
+		if (existing) existing.remove();
 
-        const toast = document.createElement('div');
-        toast.id = 'ttvab-achievement';
-        toast.innerHTML = `
+		const toast = document.createElement("div");
+		toast.id = "ttvab-achievement";
+		toast.innerHTML = `
             <style>
                 #ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}
                 @keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
@@ -146,24 +159,24 @@ function _showAchievementUnlocked(achievementId) {
             </div>
         `;
 
-        document.body.appendChild(toast);
-        _log('Achievement unlocked: ' + ach.name, 'success');
+		document.body.appendChild(toast);
+		_log(`Achievement unlocked: ${ach.name}`, "success");
 
-        setTimeout(() => {
-            if (document.getElementById('ttvab-achievement')) {
-                toast.style.animation = 'ttvab-ach-pop .3s ease reverse';
-                setTimeout(() => toast.remove(), 300);
-            }
-        }, 4000);
-    } catch (e) {
-        _log('Achievement error: ' + e.message, 'error');
-    }
+		setTimeout(() => {
+			if (document.getElementById("ttvab-achievement")) {
+				toast.style.animation = "ttvab-ach-pop .3s ease reverse";
+				setTimeout(() => toast.remove(), 300);
+			}
+		}, 4000);
+	} catch (e) {
+		_log(`Achievement error: ${e.message}`, "error");
+	}
 }
 
 function _initAchievementListener() {
-    window.addEventListener('message', function (e) {
-        if (e.data?.type === 'ttvab-achievement-unlocked' && e.data.detail?.id) {
-            _showAchievementUnlocked(e.data.detail.id);
-        }
-    });
+	window.addEventListener("message", (e) => {
+		if (e.data?.type === "ttvab-achievement-unlocked" && e.data.detail?.id) {
+			_showAchievementUnlocked(e.data.detail.id);
+		}
+	});
 }
