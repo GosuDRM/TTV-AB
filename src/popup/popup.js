@@ -1,4 +1,4 @@
-// TTV AB - Popup Script
+﻿// TTV AB - Popup Script
 
 document.addEventListener("DOMContentLoaded", () => {
 	const toggle = document.getElementById("enableToggle");
@@ -49,14 +49,14 @@ document.addEventListener("DOMContentLoaded", () => {
 		const effectiveLang =
 			lang === "auto"
 				? (() => {
-						const browserLang = navigator.language;
-						if (browserLang.startsWith("zh")) {
-							return browserLang.includes("TW") || browserLang.includes("Hant")
-								? "zh_TW"
-								: "zh_CN";
-						}
-						return browserLang.split("-")[0];
-					})()
+					const browserLang = navigator.language;
+					if (browserLang.startsWith("zh")) {
+						return browserLang.includes("TW") || browserLang.includes("Hant")
+							? "zh_TW"
+							: "zh_CN";
+					}
+					return browserLang.split("-")[0];
+				})()
 				: lang;
 		applyTranslations(effectiveLang);
 	});
@@ -343,7 +343,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			for (const tab of tabs) {
 				chrome.tabs
 					.sendMessage(tab.id, { action: "toggle", enabled: enabled })
-					.catch(() => {});
+					.catch(() => { });
 			}
 		});
 	});
