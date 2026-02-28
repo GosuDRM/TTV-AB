@@ -1,5 +1,5 @@
-// TTV AB - Translations
-const _TRANSLATIONS = {
+﻿// TTV AB - Translations
+const TRANSLATIONS = {
 	// eslint-disable-line no-unused-vars
 	en: {
 		status: "Status",
