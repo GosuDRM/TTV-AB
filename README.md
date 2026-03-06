@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.2.0-purple)
+![Version](https://img.shields.io/badge/version-4.2.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -48,10 +48,10 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## ✨ What's New
 
-### v4.2.0
-- **Ad-Block Logic Sync** - Synchronized internal settings and bounds for improved streamer support and ad bypassing.
-- **Player Reload & HEVC Stability** - Optimized minimal requests for backup streams and improved HEVC codec stripping logic, vastly increasing connection stability.
-- **Buffering Optimization** - Moved player loop limits into global state configuration for faster and more reliable ad-free continuation.
+### v4.2.1
+- **Playback Token Parity** - Playback token requests now mirror Twitch page traffic more closely by forwarding session and language headers while only sending integrity headers when available.
+- **Backup Retry Reduction** - Backup player types that already fail to return a usable token, or already return ad-marked playlists, are now skipped on later retries during the same ad cycle.
+- **Worker Fetch Hardening** - Worker request handling now supports Request objects, preserves response metadata, and keeps ad-segment replacement behavior consistent across playlist fetch paths.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

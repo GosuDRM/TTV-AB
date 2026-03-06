@@ -30,13 +30,20 @@ async function _getToken(channel, playerType, realFetch) {
 		_log(`[Trace] Requesting token for ${playerType}`, "info");
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 5000);
+		const acceptLanguage =
+			navigator?.languages?.join(",") || navigator?.language || "en-US";
 
 		const headers = {
 			"Client-ID": _C.CLIENT_ID,
-			"Client-Integrity": __TTVAB_STATE__.ClientIntegrityHeader || "",
 			"X-Device-Id": __TTVAB_STATE__.GQLDeviceID || "oauth",
 			"Client-Version": __TTVAB_STATE__.ClientVersion || "k8s-v1",
+			"Client-Session-Id": __TTVAB_STATE__.ClientSession || "",
+			"Accept-Language": acceptLanguage,
 		};
+
+		if (__TTVAB_STATE__.ClientIntegrityHeader) {
+			headers["Client-Integrity"] = __TTVAB_STATE__.ClientIntegrityHeader;
+		}
 
 		if (__TTVAB_STATE__.AuthorizationHeader) {
 			headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;

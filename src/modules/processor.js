@@ -20,6 +20,8 @@ async function _processM3U8(url, text, realFetch) {
 
 		if (!info.IsShowingAd) {
 			info.IsShowingAd = true;
+			info.FailedBackupPlayerTypes?.clear?.();
+			info.RejectedBackupPlayerTypes?.clear?.();
 			_incrementAdsBlocked(info.ChannelName);
 			_log("Ad detected, blocking...", "warning");
 			if (typeof self !== "undefined" && self.postMessage) {
@@ -96,6 +98,8 @@ async function _processM3U8(url, text, realFetch) {
 			info.IsUsingModifiedM3U8 = false;
 			info.IsUsingFallbackStream = false;
 			info.RequestedAds.clear();
+			info.FailedBackupPlayerTypes?.clear?.();
+			info.RejectedBackupPlayerTypes?.clear?.();
 			info.BackupEncodingsM3U8Cache = [];
 			info.ActiveBackupPlayerType = null;
 			_log("Ad ended", "success");
@@ -144,6 +148,14 @@ async function _findBackupStream(
 		const pt = playerTypes[pi];
 		const realPt = pt.replace("-CACHED", "");
 		const isFullyCachedPlayerType = pt !== realPt;
+		if (info.FailedBackupPlayerTypes?.has?.(pt)) {
+			_log(`[Trace] Skipping ${pt} (previous token failure)`, "warning");
+			continue;
+		}
+		if (info.RejectedBackupPlayerTypes?.has?.(pt)) {
+			_log(`[Trace] Skipping ${pt} (previous ad playlist)`, "warning");
+			continue;
+		}
 		_log(`[Trace] Checking: ${pt}`, "info");
 
 		for (let j = 0; j < 2; j++) {
@@ -160,6 +172,8 @@ async function _findBackupStream(
 						const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
 
 						if (sig && tokenValue) {
+							info.FailedBackupPlayerTypes?.delete?.(pt);
+							info.RejectedBackupPlayerTypes?.delete?.(pt);
 							const usherUrl = new URL(
 								`https://usher.ttvnw.net/api/${__TTVAB_STATE__.V2API ? "v2/" : ""}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`,
 							);
@@ -172,12 +186,15 @@ async function _findBackupStream(
 								_log(`Usher failed for ${pt}: ${encRes.status}`, "warning");
 							}
 						} else {
+							info.FailedBackupPlayerTypes?.add?.(pt);
 							_log(`[Trace] Missing token for ${pt}`, "warning");
 						}
 					} else {
+						info.FailedBackupPlayerTypes?.add?.(pt);
 						_log(`Token failed for ${pt}: ${tokenRes.status}`, "warning");
 					}
 				} catch (e) {
+					info.FailedBackupPlayerTypes?.add?.(pt);
 					_log(`Backup error: ${e.message}`, "error");
 				}
 			}
@@ -204,11 +221,13 @@ async function _findBackupStream(
 										pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
 
 								if (noAds || minimal) {
+									info.RejectedBackupPlayerTypes?.delete?.(pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
 									_log(`[Trace] Selected: ${pt}`, "success");
 									break;
 								} else {
+									info.RejectedBackupPlayerTypes?.add?.(pt);
 									_log(`[Trace] Rejected ${pt} (has ads)`, "warning");
 									if (isFullyCachedPlayerType) break;
 								}
