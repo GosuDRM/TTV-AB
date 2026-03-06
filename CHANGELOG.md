@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.1] - 2026-03-06
+
+### Changed
+- **Playback Token Parity** - Playback token requests now include session and language headers captured from Twitch while only sending `Client-Integrity` when a real value is available.
+- **Worker Fetch Compatibility** - Hardened worker fetch interception to support `Request`-based playlist requests, preserve response metadata, and keep ad-segment replacement behavior consistent across HLS fetch paths.
+- **Worker State Sync** - Worker bootstrap state injection now uses safe JSON serialization and propagates additional runtime flags needed by the main script.
+
+### Fixed
+- **Backup Retry Loop** - Backup player types that already fail to return a usable token, or already resolve to ad-marked playlists, are now skipped on later retries during the same ad cycle. This reduces wasted backup attempts and accelerates fallback selection.
+
 ## [4.2.0] - 2026-02-28
 
 ### Changed
@@ -10,6 +20,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Minimal Requests Optimization** - Limits backup stream fetch connections shortly after player reloads, preventing excessive requests.
 - **HEVC Stream Stability Fix** - Enforces precise segment stripping boundaries for mixed-codec HEVC payloads directly within the parsing logic.
 - **Buffering Logic Optimization** - Transitioned player buffer tracking constants into the state configuration, ensuring accurate pre-roll limit boundaries and minimal repeat delays.
+- **Code Quality Pass** - Performed an extensive dead code audit checking for usage across all decoupled modules. Integrated Biome formatting/linting and resolved all syntax warnings resulting in a robust and completely lint-free bundle.
 
 ## [4.1.9] - 2026-02-12
 ### Fixed

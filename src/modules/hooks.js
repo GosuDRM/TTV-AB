@@ -3,6 +3,8 @@
 function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
 	const realFetch = fetch;
+	const EMPTY_SEGMENT_URL =
+		"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292";
 
 	function _pruneStreamInfos() {
 		const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
@@ -18,27 +20,41 @@ function _hookWorkerFetch() {
 	}
 
 	fetch = async function (...args) {
-		let [url, opts] = args;
-		if (typeof url !== "string") {
+		const [resource, opts] = args;
+		const requestUrl =
+			typeof resource === "string"
+				? resource
+				: resource instanceof URL
+					? resource.href
+					: typeof Request !== "undefined" && resource instanceof Request
+						? resource.url
+						: null;
+
+		if (!requestUrl) {
 			return realFetch.apply(this, args);
 		}
 
-		if (__TTVAB_STATE__.AdSegmentCache.has(url)) {
-			return realFetch(
-				"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292",
-				opts,
-			);
-		}
-
-		url = url.trimEnd();
-
-		if (url.endsWith("m3u8")) {
-			const response = await realFetch(url, opts);
-			if (response.status === 200) {
-				const text = await response.text();
-				return new Response(await _processM3U8(url, text, realFetch));
+		const getFetchArgs = (nextUrl) => {
+			if (typeof resource === "string" || resource instanceof URL) {
+				return [nextUrl, opts];
 			}
-			return response;
+
+			if (typeof Request !== "undefined" && resource instanceof Request) {
+				return [new Request(nextUrl, resource), opts];
+			}
+
+			return args;
+		};
+
+		let url = requestUrl.trimEnd();
+		const responseInit = (response) => ({
+			status: response.status,
+			statusText: response.statusText,
+			headers: response.headers,
+		});
+
+		if (__TTVAB_STATE__.AdSegmentCache.has(url)) {
+			return realFetch(EMPTY_SEGMENT_URL);
 		}
 
 		if (url.includes("/channel/hls/") && !url.includes("picture-by-picture")) {
@@ -52,7 +68,7 @@ function _hookWorkerFetch() {
 				url = urlObj.toString();
 			}
 
-			const response = await realFetch(url, opts);
+			const response = await realFetch.apply(this, getFetchArgs(url));
 			if (response.status !== 200) return response;
 
 			const encodings = await response.text();
@@ -78,6 +94,8 @@ function _hookWorkerFetch() {
 					IsUsingFallbackStream: false,
 					UsherParams: new URL(url).search,
 					RequestedAds: new Set(),
+					FailedBackupPlayerTypes: new Set(),
+					RejectedBackupPlayerTypes: new Set(),
 					Urls: Object.create(null),
 					ResolutionList: [],
 					BackupEncodingsM3U8Cache: [],
@@ -152,7 +170,22 @@ function _hookWorkerFetch() {
 			const playlist = info.IsUsingModifiedM3U8
 				? info.ModifiedM3U8
 				: info.EncodingsM3U8;
-			return new Response(_replaceServerTime(playlist, serverTime));
+			return new Response(
+				_replaceServerTime(playlist, serverTime),
+				responseInit(response),
+			);
+		}
+
+		if (/\.m3u8(?:$|\?)/.test(url)) {
+			const response = await realFetch.apply(this, getFetchArgs(url));
+			if (response.status === 200) {
+				const text = await response.text();
+				return new Response(
+					await _processM3U8(url, text, realFetch),
+					responseInit(response),
+				);
+			}
+			return response;
 		}
 
 		return realFetch.apply(this, args);
@@ -197,12 +230,13 @@ function _hookWorker() {
                 const _GQL_URL = '${_GQL_URL}';
                 const wasmSource = _getWasmJs('${url.replaceAll("'", "%27")}');
                 _declareState(self);
-                __TTVAB_STATE__.GQLDeviceID = ${__TTVAB_STATE__.GQLDeviceID ? `'${__TTVAB_STATE__.GQLDeviceID}'` : "null"};
-                __TTVAB_STATE__.AuthorizationHeader = ${__TTVAB_STATE__.AuthorizationHeader ? `'${__TTVAB_STATE__.AuthorizationHeader}'` : "undefined"};
-                __TTVAB_STATE__.ClientIntegrityHeader = ${__TTVAB_STATE__.ClientIntegrityHeader ? `'${__TTVAB_STATE__.ClientIntegrityHeader}'` : "null"};
-                __TTVAB_STATE__.ClientVersion = ${__TTVAB_STATE__.ClientVersion ? `'${__TTVAB_STATE__.ClientVersion}'` : "null"};
-                __TTVAB_STATE__.ClientSession = ${__TTVAB_STATE__.ClientSession ? `'${__TTVAB_STATE__.ClientSession}'` : "null"};
-                __TTVAB_STATE__.PlaybackAccessTokenHash = ${__TTVAB_STATE__.PlaybackAccessTokenHash ? `'${__TTVAB_STATE__.PlaybackAccessTokenHash}'` : "null"};
+                __TTVAB_STATE__.GQLDeviceID = ${JSON.stringify(__TTVAB_STATE__.GQLDeviceID)};
+                __TTVAB_STATE__.AuthorizationHeader = ${JSON.stringify(__TTVAB_STATE__.AuthorizationHeader)};
+                __TTVAB_STATE__.ClientIntegrityHeader = ${JSON.stringify(__TTVAB_STATE__.ClientIntegrityHeader)};
+                __TTVAB_STATE__.ClientVersion = ${JSON.stringify(__TTVAB_STATE__.ClientVersion)};
+                __TTVAB_STATE__.ClientSession = ${JSON.stringify(__TTVAB_STATE__.ClientSession)};
+                __TTVAB_STATE__.PlaybackAccessTokenHash = ${JSON.stringify(__TTVAB_STATE__.PlaybackAccessTokenHash)};
+                __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;
@@ -217,6 +251,7 @@ function _hookWorker() {
                         case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
+                        case 'TriggeredPlayerReload': __TTVAB_STATE__.HasTriggeredPlayerReload = true; break;
                     }
                 });
                 

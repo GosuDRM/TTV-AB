@@ -29,3 +29,6 @@ build/
 # Temporary files
 tmp/
 temp/
+
+# Local tooling
+tools/
