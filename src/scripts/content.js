@@ -1,11 +1,11 @@
-
-
+// TTV AB v4.2.2 - Twitch Ad Blocker
+// Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.2.1",
-	INTERNAL_VERSION: 43,
+	VERSION: "4.2.2",
+	INTERNAL_VERSION: 44,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -16,10 +16,14 @@ const _$c = {
 	},
 	AD_SIGNIFIER: "stitched",
 	CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
-	PLAYER_TYPES: ["embed", "popout", "autoplay"],
+	PLAYER_TYPES: ["embed", "popout", "picture-by-picture", "autoplay"],
 	FALLBACK_TYPE: "embed",
 	FORCE_TYPE: "popout",
 	RELOAD_TIME: 1500,
+	PLAYER_RELOAD_DEBOUNCE_MS: 1500,
+	AD_CYCLE_STALE_MS: 30000,
+	AD_RECOVERY_RELOAD_COOLDOWN_MS: 10000,
+	AD_RECOVERY_CRASH_GRACE_PERIOD_MS: 6000,
 	CRASH_PATTERNS: [
 		"Error #1000",
 		"Error #2000",
@@ -44,6 +48,29 @@ const _$s = {
 	popupsBlocked: 0,
 };
 
+function _broadcastWorkers(messages) {
+	const queue = Array.isArray(messages) ? messages : [messages];
+	if (queue.length === 0 || _$s.workers.length === 0) return;
+
+	const aliveWorkers = [];
+	for (const worker of _$s.workers) {
+		let isAlive = true;
+		for (const message of queue) {
+			try {
+				worker.postMessage(message);
+			} catch {
+				isAlive = false;
+				break;
+			}
+		}
+		if (isAlive) {
+			aliveWorkers.push(worker);
+		}
+	}
+
+	_$s.workers = aliveWorkers;
+}
+
 function _$ds(scope) {
 	scope.__TTVAB_STATE__ = {
 		AdSignifier: _$c.AD_SIGNIFIER,
@@ -57,10 +84,25 @@ function _$ds(scope) {
 			_$c.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
 		ReloadPlayerAfterAd: _$c.RELOAD_AFTER_AD ?? true,
 		PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
-		PlayerReloadMinimalRequestsPlayerIndex: 2,
+		PlayerReloadMinimalRequestsPlayerIndex: Math.max(
+			0,
+			_$c.PLAYER_TYPES.indexOf(_$c.FALLBACK_TYPE),
+		),
+		PlayerReloadDebounceMs: _$c.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
+		AdCycleStaleMs: _$c.AD_CYCLE_STALE_MS ?? 30000,
+		AdRecoveryReloadCooldownMs: _$c.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
+		AdRecoveryCrashGracePeriodMs: _$c.AD_RECOVERY_CRASH_GRACE_PERIOD_MS ?? 6000,
 		HasTriggeredPlayerReload: false,
+		LastPlayerReloadAt: 0,
+		LastAdDetectedAt: 0,
+		LastAdRecoveryReloadAt: 0,
+		AdCycleStartedAt: 0,
+		CurrentAdChannel: null,
+		PinnedBackupPlayerType: null,
+		PinnedBackupPlayerChannel: null,
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
+		LastPlaylistUrl: null,
 		GQLDeviceID: null,
 		ClientVersion: null,
 		ClientSession: null,
@@ -78,6 +120,7 @@ function _$ds(scope) {
 		PlayerBufferingPrerollCheckOffset: 5,
 		AllSegmentsAreAdSegments: false,
 		PlaybackAccessTokenHash: null,
+		LastNativePlaybackAccessTokenPlayerType: null,
 	};
 }
 
@@ -152,6 +195,46 @@ function _$rt(m3u8, time) {
 	return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
 }
 
+function _hasExplicitAdMetadata(text) {
+	return (
+		typeof text === "string" &&
+		(text.includes(__TTVAB_STATE__.AdSignifier) ||
+			text.includes("X-TV-TWITCH-AD") ||
+			text.includes("stitched-ad") ||
+			text.includes("/adsquared/") ||
+			text.includes("SCTE35-OUT") ||
+			text.includes("MIDROLL") ||
+			text.includes("midroll"))
+	);
+}
+
+function _isKnownAdSegmentUrl(segmentUrl) {
+	const url = String(segmentUrl || "");
+	if (!url) return false;
+	return (
+		__TTVAB_STATE__.AdSegmentCache.has(url) ||
+		url.includes(__TTVAB_STATE__.AdSignifier) ||
+		url.includes("stitched-ad") ||
+		url.includes("/adsquared/") ||
+		url.includes("processing") ||
+		url.includes("/_404/")
+	);
+}
+
+function _playlistHasKnownAdSegments(text) {
+	if (typeof text !== "string" || !text) return false;
+	const lines = text.split("\n");
+	for (let index = 0; index < lines.length - 1; index++) {
+		if (
+			lines[index].startsWith("#EXTINF") &&
+			_isKnownAdSegmentUrl(lines[index + 1])
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function _$sa(text, stripAll, info) {
 	const lines = text.split("\n");
 	const len = lines.length;
@@ -159,20 +242,27 @@ function _$sa(text, stripAll, info) {
 	let stripped = false;
 	let i = 0;
 	const strippedSegments = [];
-	const MAX_RECOVERY_SEGMENTS = 3;
+	const MAX_RECOVERY_SEGMENTS = 6;
 
-	const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
+	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
+	const hasKnownAdSegments = _playlistHasKnownAdSegments(text);
+	const forceStripAllSegments =
+		stripAll ||
+		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
+		(hasExplicitAdMetadata && !hasKnownAdSegments);
 
-	if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
+	if (
+		hasExplicitAdMetadata ||
+		hasKnownAdSegments ||
+		stripAll ||
+		__TTVAB_STATE__.AllSegmentsAreAdSegments
+	) {
 		for (i = 0; i < len; i++) {
 			if (lines[i]?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
 				const prefetchUrl = lines[i]
 					.substring("#EXT-X-TWITCH-PREFETCH:".length)
 					.trim();
-				const isAdPrefetch =
-					__TTVAB_STATE__.AdSegmentCache.has(prefetchUrl) ||
-					prefetchUrl.includes("stitched-ad") ||
-					prefetchUrl.includes("/adsquared/");
+				const isAdPrefetch = _isKnownAdSegmentUrl(prefetchUrl);
 				if (isAdPrefetch) {
 					lines[i] = "";
 				}
@@ -187,10 +277,9 @@ function _$sa(text, stripAll, info) {
 		const line = lines[i];
 		if (line.startsWith("#EXTINF")) {
 			const segmentUrl = lines[i + 1];
-			const isProcessing =
-				segmentUrl &&
-				(segmentUrl.includes("processing") || segmentUrl.includes("/_404/"));
-			if (!line.includes(",live") || isProcessing) {
+			const isAdSegment =
+				forceStripAllSegments || _isKnownAdSegmentUrl(segmentUrl);
+			if (isAdSegment) {
 				adSegmentCount++;
 			} else {
 				_liveSegmentCount++;
@@ -199,8 +288,11 @@ function _$sa(text, stripAll, info) {
 	}
 
 	const shouldStrip =
-		(hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) &&
-		adSegmentCount > 0;
+		(hasExplicitAdMetadata ||
+			hasKnownAdSegments ||
+			stripAll ||
+			__TTVAB_STATE__.AllSegmentsAreAdSegments) &&
+		(adSegmentCount > 0 || forceStripAllSegments);
 
 	for (i = 0; i < len; i++) {
 		let line = lines[i];
@@ -216,10 +308,7 @@ function _$sa(text, stripAll, info) {
 		}
 
 		const isAdSegment =
-			!line.includes(",live") ||
-			(i < len - 1 &&
-				(lines[i + 1].includes("processing") ||
-					lines[i + 1].includes("/_404/")));
+			forceStripAllSegments || _isKnownAdSegmentUrl(lines[i + 1]);
 
 		if (
 			shouldStrip &&
@@ -274,7 +363,11 @@ function _$sa(text, stripAll, info) {
 	const result = lines.filter((l) => l !== "");
 
 	const hasRemainingSegments = result.some((l) => l.startsWith("#EXTINF"));
-	if (!hasRemainingSegments && strippedSegments.length > 0) {
+	if (
+		!hasRemainingSegments &&
+		strippedSegments.length > 0 &&
+		!forceStripAllSegments
+	) {
 		_$l(
 			`[Recovery] Empty playlist - restoring ${strippedSegments.length} segment(s)`,
 			"warning",
@@ -288,7 +381,7 @@ function _$sa(text, stripAll, info) {
 	return result.join("\n");
 }
 
-function _$su(m3u8, res) {
+function _$su(m3u8, res, baseUrl = null) {
 	const lines = m3u8.split("\n");
 	const len = lines.length;
 	const [tw, th] = res.Resolution.split("x").map(Number);
@@ -297,6 +390,14 @@ function _$su(m3u8, res) {
 	let matchFps = false;
 	let closeUrl = null;
 	let closeDiff = Infinity;
+	const resolveUrl = (candidate) => {
+		if (!baseUrl) return candidate;
+		try {
+			return new URL(candidate, baseUrl).href;
+		} catch {
+			return candidate;
+		}
+	};
 
 	for (let i = 0; i < len - 1; i++) {
 		const line = lines[i];
@@ -315,7 +416,7 @@ function _$su(m3u8, res) {
 
 		if (resolution === res.Resolution) {
 			if (!matchUrl || (!matchFps && frameRate === res.FrameRate)) {
-				matchUrl = lines[i + 1];
+				matchUrl = resolveUrl(lines[i + 1]);
 				matchFps = frameRate === res.FrameRate;
 				if (matchFps) return matchUrl;
 			}
@@ -324,7 +425,7 @@ function _$su(m3u8, res) {
 		const [w, h] = resolution.split("x").map(Number);
 		const diff = Math.abs(w * h - targetPixels);
 		if (diff < closeDiff) {
-			closeUrl = lines[i + 1];
+			closeUrl = resolveUrl(lines[i + 1]);
 			closeDiff = diff;
 		}
 	}
@@ -332,11 +433,46 @@ function _$su(m3u8, res) {
 	return matchUrl || closeUrl;
 }
 
+function _getFallbackResolution(info, url) {
+	const resolutionList = Array.isArray(info?.ResolutionList)
+		? info.ResolutionList.filter(Boolean)
+		: [];
+	if (resolutionList.length === 0) {
+		return null;
+	}
+
+	if (url) {
+		const direct = resolutionList.find(
+			(entry) => entry.Url === url || entry.RawUrl === url,
+		);
+		if (direct) return direct;
+	}
+
+	const activeType = info?.ActiveBackupPlayerType || null;
+	if (activeType && typeof info?.ActiveBackupResolution === "string") {
+		const active = resolutionList.find(
+			(entry) => entry.Resolution === info.ActiveBackupResolution,
+		);
+		if (active) return active;
+	}
+
+	return [...resolutionList].sort((a, b) => {
+		const [aw, ah] = String(a?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		const [bw, bh] = String(b?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		return bw * bh - aw * ah;
+	})[0];
+}
+
 const _$gu = "https://gql.twitch.tv/gql";
 
 async function _$tk(channel, playerType, realFetch) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
+	let timeoutId = null;
 
 	const body = {
 		operationName: "PlaybackAccessToken",
@@ -361,7 +497,7 @@ async function _$tk(channel, playerType, realFetch) {
 	try {
 		_$l(`[Trace] Requesting token for ${playerType}`, "info");
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 5000);
+		timeoutId = setTimeout(() => controller.abort(), 5000);
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
 
@@ -388,20 +524,100 @@ async function _$tk(channel, playerType, realFetch) {
 			signal: controller.signal,
 		});
 
-		clearTimeout(timeoutId);
 		_$l(`[Trace] Token response: ${res.status}`, "info");
 		return res;
 	} catch (e) {
 		_$l(`Token fetch error: ${e.message}`, "error");
 		return { status: 0, json: () => Promise.resolve({}) };
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }
 
-async function _$pm(url, text, realFetch) {
-	if (!__TTVAB_STATE__.IsAdStrippingEnabled) return text;
+function _resetStreamAdState(info) {
+	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
+	const wasUsingFallbackStream = Boolean(info?.IsUsingFallbackStream);
 
-	const info = __TTVAB_STATE__.StreamInfosByUrl[url];
+	info.IsShowingAd = false;
+	info.IsUsingModifiedM3U8 = false;
+	info.IsUsingFallbackStream = false;
+	info.RequestedAds.clear();
+	info.FailedBackupPlayerTypes?.clear?.();
+	info.RejectedBackupPlayerTypes?.clear?.();
+	info.BackupEncodingsM3U8Cache = [];
+	info.ActiveBackupPlayerType = null;
+	info.ActiveBackupResolution = null;
+	info.IsMidroll = false;
+	info.IsStrippingAdSegments = false;
+	info.NumStrippedAdSegments = 0;
+
+	return { wasUsingModifiedM3U8, wasUsingFallbackStream };
+}
+
+function _getStreamInfoForPlaylist(url) {
+	const normalizedUrl = typeof url === "string" ? url.trimEnd() : "";
+	const byUrl =
+		__TTVAB_STATE__.StreamInfosByUrl[normalizedUrl] ||
+		__TTVAB_STATE__.StreamInfosByUrl[url];
+	if (byUrl) return byUrl;
+
+	const infos = Object.values(__TTVAB_STATE__.StreamInfos || {}).filter(
+		Boolean,
+	);
+	if (infos.length === 0) return null;
+	if (infos.length === 1) return infos[0];
+
+	return [...infos].sort((a, b) => {
+		const aTime = a?.LastPlayerReload || 0;
+		const bTime = b?.LastPlayerReload || 0;
+		if (bTime !== aTime) return bTime - aTime;
+		if (a?.IsShowingAd !== b?.IsShowingAd) {
+			return Number(b?.IsShowingAd) - Number(a?.IsShowingAd);
+		}
+		return 0;
+	})[0];
+}
+
+function _hasPlaylistAdMarkers(text) {
+	return (
+		typeof text === "string" &&
+		(text.includes("X-TV-TWITCH-AD") ||
+			text.includes("stitched-ad") ||
+			text.includes("/adsquared/") ||
+			text.includes("SCTE35-OUT") ||
+			text.includes('"MIDROLL"') ||
+			text.includes('"midroll"'))
+	);
+}
+
+async function _$pm(url, text, realFetch) {
+	const info = _getStreamInfoForPlaylist(url);
 	if (!info) return text;
+	__TTVAB_STATE__.LastPlaylistUrl = url;
+
+	if (!__TTVAB_STATE__.IsAdStrippingEnabled) {
+		if (
+			info.IsShowingAd ||
+			info.IsUsingModifiedM3U8 ||
+			info.IsUsingFallbackStream
+		) {
+			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
+				_resetStreamAdState(info);
+			_$l("Ad blocking disabled - restoring native stream state", "info");
+			if (
+				(wasUsingModifiedM3U8 || wasUsingFallbackStream) &&
+				typeof self !== "undefined" &&
+				self.postMessage
+			) {
+				self.postMessage({
+					key: "ReloadPlayer",
+					reason: "restore-native",
+					channel: info.ChannelName,
+				});
+			}
+		}
+		return text;
+	}
 
 	if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
 		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
@@ -409,7 +625,8 @@ async function _$pm(url, text, realFetch) {
 	}
 
 	const hasAds =
-		text.includes(__TTVAB_STATE__.AdSignifier) ||
+		_hasPlaylistAdMarkers(text) ||
+		_playlistHasKnownAdSegments(text) ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
 
 	if (hasAds) {
@@ -417,6 +634,8 @@ async function _$pm(url, text, realFetch) {
 
 		if (!info.IsShowingAd) {
 			info.IsShowingAd = true;
+			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
+			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
 			info.FailedBackupPlayerTypes?.clear?.();
 			info.RejectedBackupPlayerTypes?.clear?.();
 			_$ab(info.ChannelName);
@@ -431,15 +650,20 @@ async function _$pm(url, text, realFetch) {
 			return text;
 		}
 
-		const res = info.Urls[url];
+		const res =
+			info.Urls?.[url] ||
+			info.Urls?.[url.trimEnd()] ||
+			_getFallbackResolution(info, url);
 		if (!res) {
-			_$l(`Missing resolution info for ${url}`, "warning");
-			return text;
+			_$l(
+				`Missing resolution info for ${url}; using generic fallback`,
+				"warning",
+			);
 		}
 
 		const isHevc =
-			res.Codecs?.[0] === "h" &&
-			(res.Codecs[1] === "e" || res.Codecs[1] === "v");
+			res?.Codecs?.[0] === "h" &&
+			(res?.Codecs?.[1] === "e" || res?.Codecs?.[1] === "v");
 		if (
 			((isHevc && !__TTVAB_STATE__.SkipPlayerReloadOnHevc) ||
 				__TTVAB_STATE__.AlwaysReloadPlayerOnAd) &&
@@ -449,7 +673,11 @@ async function _$pm(url, text, realFetch) {
 			info.IsUsingModifiedM3U8 = true;
 			info.LastPlayerReload = Date.now();
 			if (typeof self !== "undefined" && self.postMessage) {
-				self.postMessage({ key: "ReloadPlayer" });
+				self.postMessage({
+					key: "ReloadPlayer",
+					reason: "ad-recovery",
+					channel: info.ChannelName,
+				});
 			}
 		}
 
@@ -478,9 +706,17 @@ async function _$pm(url, text, realFetch) {
 
 		if (backupM3u8) text = backupM3u8;
 
+		info.ActiveBackupResolution = res?.Resolution || null;
 		if (info.ActiveBackupPlayerType !== backupType) {
 			info.ActiveBackupPlayerType = backupType;
 			_$l(`Using backup: ${backupType}`, "info");
+			if (backupType && typeof self !== "undefined" && self.postMessage) {
+				self.postMessage({
+					key: "BackupPlayerTypeSelected",
+					value: backupType,
+					channel: info.ChannelName,
+				});
+			}
 		}
 
 		const stripHevc = isHevc && info.ModifiedM3U8;
@@ -489,21 +725,19 @@ async function _$pm(url, text, realFetch) {
 		}
 	} else {
 		if (info.IsShowingAd) {
-			const wasUsingModifiedM3U8 = info.IsUsingModifiedM3U8;
-
-			info.IsShowingAd = false;
-			info.IsUsingModifiedM3U8 = false;
-			info.IsUsingFallbackStream = false;
-			info.RequestedAds.clear();
-			info.FailedBackupPlayerTypes?.clear?.();
-			info.RejectedBackupPlayerTypes?.clear?.();
-			info.BackupEncodingsM3U8Cache = [];
-			info.ActiveBackupPlayerType = null;
+			const { wasUsingModifiedM3U8 } = _resetStreamAdState(info);
+			__TTVAB_STATE__.CurrentAdChannel = null;
+			__TTVAB_STATE__.PinnedBackupPlayerType = null;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			_$l("Ad ended", "success");
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded" });
 				if (wasUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
-					self.postMessage({ key: "ReloadPlayer" });
+					self.postMessage({
+						key: "ReloadPlayer",
+						reason: "ad-ended",
+						channel: info.ChannelName,
+					});
 				} else {
 					self.postMessage({ key: "PauseResumePlayer" });
 				}
@@ -518,7 +752,7 @@ async function _$fb(
 	info,
 	realFetch,
 	startIdx = 0,
-	minimal = false,
+	_minimal = false,
 	currentResolution = null,
 ) {
 	let backupType = null;
@@ -527,6 +761,27 @@ async function _$fb(
 	let fallbackType = null;
 
 	const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
+	const pinnedBackupPlayerType = __TTVAB_STATE__.PinnedBackupPlayerType;
+	const isPinnedForChannel =
+		pinnedBackupPlayerType &&
+		(!__TTVAB_STATE__.PinnedBackupPlayerChannel ||
+			__TTVAB_STATE__.PinnedBackupPlayerChannel === info.ChannelName);
+	if (!info.ActiveBackupPlayerType && isPinnedForChannel) {
+		const pinnedIdx = playerTypes.indexOf(pinnedBackupPlayerType);
+		if (pinnedIdx > -1) {
+			playerTypes.splice(pinnedIdx, 1);
+			playerTypes.unshift(pinnedBackupPlayerType);
+		}
+	}
+	const preferredNativePlayerType =
+		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType;
+	if (!info.ActiveBackupPlayerType && preferredNativePlayerType) {
+		const preferredIdx = playerTypes.indexOf(preferredNativePlayerType);
+		if (preferredIdx > -1) {
+			playerTypes.splice(preferredIdx, 1);
+			playerTypes.unshift(preferredNativePlayerType);
+		}
+	}
 	if (info.ActiveBackupPlayerType) {
 		const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
 		if (idx > -1) {
@@ -557,7 +812,14 @@ async function _$fb(
 
 		for (let j = 0; j < 2; j++) {
 			let isFreshM3u8 = false;
-			let enc = info.BackupEncodingsM3U8Cache[pt];
+			let invalidateCache = false;
+			const encCache = info.BackupEncodingsM3U8Cache[pt];
+			let enc =
+				typeof encCache === "string" ? encCache : encCache?.m3u8 || null;
+			let encBaseUrl =
+				typeof encCache === "object" && encCache?.baseUrl
+					? encCache.baseUrl
+					: info.UsherBaseUrl;
 
 			if (!enc) {
 				isFreshM3u8 = true;
@@ -578,7 +840,12 @@ async function _$fb(
 							usherUrl.searchParams.set("token", tokenValue);
 							const encRes = await realFetch(usherUrl.href);
 							if (encRes.status === 200) {
-								enc = info.BackupEncodingsM3U8Cache[pt] = await encRes.text();
+								enc = await encRes.text();
+								encBaseUrl = usherUrl.href;
+								info.BackupEncodingsM3U8Cache[pt] = {
+									m3u8: enc,
+									baseUrl: encBaseUrl,
+								};
 							} else {
 								_$l(`Usher failed for ${pt}: ${encRes.status}`, "warning");
 							}
@@ -598,7 +865,7 @@ async function _$fb(
 
 			if (enc) {
 				try {
-					const streamUrl = _$su(enc, targetRes);
+					const streamUrl = _$su(enc, targetRes, encBaseUrl);
 					if (streamUrl) {
 						const streamRes = await realFetch(streamUrl);
 						if (streamRes.status === 200) {
@@ -612,12 +879,16 @@ async function _$fb(
 									fallbackType = pt;
 								}
 
+								const candidateHasAds =
+									_hasPlaylistAdMarkers(m3u8) ||
+									_hasExplicitAdMetadata(m3u8) ||
+									_playlistHasKnownAdSegments(m3u8);
 								const noAds =
-									!m3u8.includes(__TTVAB_STATE__.AdSignifier) &&
+									!candidateHasAds &&
 									(__TTVAB_STATE__.SimulatedAdsDepth === 0 ||
 										pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
 
-								if (noAds || minimal) {
+								if (noAds) {
 									info.RejectedBackupPlayerTypes?.delete?.(pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
@@ -626,21 +897,27 @@ async function _$fb(
 								} else {
 									info.RejectedBackupPlayerTypes?.add?.(pt);
 									_$l(`[Trace] Rejected ${pt} (has ads)`, "warning");
+									invalidateCache = true;
 									if (isFullyCachedPlayerType) break;
 								}
 							}
 						} else {
 							_$l(`Stream failed for ${pt}: ${streamRes.status}`, "warning");
+							invalidateCache = true;
 						}
 					} else {
 						_$l(`No stream URL for ${pt}`, "warning");
+						invalidateCache = true;
 					}
 				} catch (e) {
 					_$l(`Stream error: ${e.message}`, "warning");
+					invalidateCache = true;
 				}
 			}
 
-			info.BackupEncodingsM3U8Cache[pt] = null;
+			if (invalidateCache) {
+				info.BackupEncodingsM3U8Cache[pt] = null;
+			}
 			if (isFreshM3u8) break;
 		}
 	}
@@ -664,11 +941,18 @@ function _$wj(url) {
 }
 
 function _$cw(W) {
-	const proto = W.prototype;
+	const CleanWorker = class extends W {};
+	const proto = CleanWorker.prototype;
 	for (const key of _$s.conflicts) {
-		if (proto[key]) proto[key] = undefined;
+		if (key in proto) {
+			Object.defineProperty(proto, key, {
+				configurable: true,
+				writable: true,
+				value: undefined,
+			});
+		}
 	}
-	return W;
+	return CleanWorker;
 }
 
 function _$gr(W) {
@@ -717,6 +1001,90 @@ function _$wf() {
 		}
 	}
 
+	function _syncStreamInfo(_channel, info, encodings, usherUrl) {
+		const wasUsingModifiedM3U8 = Boolean(info.IsUsingModifiedM3U8);
+		info.EncodingsM3U8 = encodings;
+		info.UsherBaseUrl = usherUrl;
+		info.UsherParams = new URL(usherUrl).search;
+		info.Urls = Object.create(null);
+		info.ResolutionList = [];
+		info.BackupEncodingsM3U8Cache = [];
+		info.ModifiedM3U8 = null;
+
+		for (const variantUrl in __TTVAB_STATE__.StreamInfosByUrl) {
+			if (__TTVAB_STATE__.StreamInfosByUrl[variantUrl] === info) {
+				delete __TTVAB_STATE__.StreamInfosByUrl[variantUrl];
+			}
+		}
+
+		const lines = encodings.split("\n");
+		for (let i = 0, len = lines.length; i < len - 1; i++) {
+			if (
+				lines[i].startsWith("#EXT-X-STREAM-INF") &&
+				lines[i + 1].includes(".m3u8")
+			) {
+				const attrs = _$pa(lines[i]);
+				const resolution = attrs.RESOLUTION;
+				let variantUrl = lines[i + 1];
+				try {
+					variantUrl = new URL(variantUrl, usherUrl).href;
+				} catch {}
+				if (resolution) {
+					const resInfo = {
+						Resolution: resolution,
+						FrameRate: attrs["FRAME-RATE"],
+						Codecs: attrs.CODECS,
+						RawUrl: lines[i + 1],
+						Url: variantUrl,
+					};
+					info.Urls[variantUrl] = resInfo;
+					info.Urls[lines[i + 1]] = resInfo;
+					info.ResolutionList.push(resInfo);
+				}
+				__TTVAB_STATE__.StreamInfosByUrl[variantUrl] = info;
+				__TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
+			}
+		}
+
+		const nonHevcList = info.ResolutionList.filter(
+			(r) => r.Codecs?.startsWith("avc") || r.Codecs?.startsWith("av0"),
+		);
+		const hasHevc = info.ResolutionList.some(
+			(r) => r.Codecs?.startsWith("hev") || r.Codecs?.startsWith("hvc"),
+		);
+
+		if (hasHevc && nonHevcList.length > 0) {
+			const modLines = [...lines];
+			for (let mi = 0; mi < modLines.length - 1; mi++) {
+				if (modLines[mi].startsWith("#EXT-X-STREAM-INF")) {
+					const attrs = _$pa(modLines[mi]);
+					const codecs = attrs.CODECS || "";
+					if (codecs.startsWith("hev") || codecs.startsWith("hvc")) {
+						const [tw, th] = (attrs.RESOLUTION || "1920x1080")
+							.split("x")
+							.map(Number);
+						const closest = [...nonHevcList].sort((a, b) => {
+							const [aw, ah] = a.Resolution.split("x").map(Number);
+							const [bw, bh] = b.Resolution.split("x").map(Number);
+							return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
+						})[0];
+						modLines[mi] = modLines[mi].replace(
+							/CODECS="[^"]+"/,
+							`CODECS="${closest.Codecs}"`,
+						);
+						modLines[mi + 1] = closest.RawUrl || closest.Url;
+					}
+				}
+			}
+			info.ModifiedM3U8 = modLines.join("\n");
+			_$l("HEVC stream detected, created fallback M3U8", "info");
+		}
+
+		if (wasUsingModifiedM3U8 && !info.ModifiedM3U8) {
+			info.IsUsingModifiedM3U8 = false;
+		}
+	}
+
 	fetch = async function (...args) {
 		const [resource, opts] = args;
 		const requestUrl =
@@ -755,7 +1123,7 @@ function _$wf() {
 			return realFetch(EMPTY_SEGMENT_URL);
 		}
 
-		if (url.includes("/channel/hls/") && !url.includes("picture-by-picture")) {
+		if (url.includes("/channel/hls/")) {
 			__TTVAB_STATE__.V2API = url.includes("/api/v2/");
 			const channelMatch = new URL(url).pathname.match(/([^/]+)(?=\.\w+$)/);
 			const channel = channelMatch?.[0];
@@ -780,7 +1148,8 @@ function _$wf() {
 				}
 			}
 
-			if (!info?.EncodingsM3U8) {
+			const isNewInfo = !info?.EncodingsM3U8;
+			if (isNewInfo) {
 				_$ps();
 				info = __TTVAB_STATE__.StreamInfos[channel] = {
 					ChannelName: channel,
@@ -790,6 +1159,7 @@ function _$wf() {
 					ModifiedM3U8: null,
 					IsUsingModifiedM3U8: false,
 					IsUsingFallbackStream: false,
+					UsherBaseUrl: url,
 					UsherParams: new URL(url).search,
 					RequestedAds: new Set(),
 					FailedBackupPlayerTypes: new Set(),
@@ -798,69 +1168,16 @@ function _$wf() {
 					ResolutionList: [],
 					BackupEncodingsM3U8Cache: [],
 					ActiveBackupPlayerType: null,
+					ActiveBackupResolution: null,
 					IsMidroll: false,
 					IsStrippingAdSegments: false,
 					NumStrippedAdSegments: 0,
 				};
+			}
 
-				const lines = encodings.split("\n");
-				for (let i = 0, len = lines.length; i < len - 1; i++) {
-					if (
-						lines[i].startsWith("#EXT-X-STREAM-INF") &&
-						lines[i + 1].includes(".m3u8")
-					) {
-						const attrs = _$pa(lines[i]);
-						const resolution = attrs.RESOLUTION;
-						if (resolution) {
-							const resInfo = {
-								Resolution: resolution,
-								FrameRate: attrs["FRAME-RATE"],
-								Codecs: attrs.CODECS,
-								Url: lines[i + 1],
-							};
-							info.Urls[lines[i + 1]] = resInfo;
-							info.ResolutionList.push(resInfo);
-						}
-						__TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
-					}
-				}
+			_syncStreamInfo(channel, info, encodings, url);
 
-				const nonHevcList = info.ResolutionList.filter(
-					(r) => r.Codecs?.startsWith("avc") || r.Codecs?.startsWith("av0"),
-				);
-				const hasHevc = info.ResolutionList.some(
-					(r) => r.Codecs?.startsWith("hev") || r.Codecs?.startsWith("hvc"),
-				);
-
-				if (hasHevc && nonHevcList.length > 0) {
-					const modLines = [...lines];
-					for (let mi = 0; mi < modLines.length - 1; mi++) {
-						if (modLines[mi].startsWith("#EXT-X-STREAM-INF")) {
-							const attrs = _$pa(modLines[mi]);
-							const codecs = attrs.CODECS || "";
-							if (codecs.startsWith("hev") || codecs.startsWith("hvc")) {
-								const [tw, th] = (attrs.RESOLUTION || "1920x1080")
-									.split("x")
-									.map(Number);
-								const closest = nonHevcList.sort((a, b) => {
-									const [aw, ah] = a.Resolution.split("x").map(Number);
-									const [bw, bh] = b.Resolution.split("x").map(Number);
-									return (
-										Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th)
-									);
-								})[0];
-								modLines[mi] = modLines[mi].replace(
-									/CODECS="[^"]+"/,
-									`CODECS="${closest.Codecs}"`,
-								);
-								modLines[mi + 1] = closest.Url + " ".repeat(mi + 1);
-							}
-						}
-					}
-					info.ModifiedM3U8 = modLines.join("\n");
-					_$l("HEVC stream detected, created fallback M3U8", "info");
-				}
-
+			if (isNewInfo) {
 				_$l(`Stream initialized: ${channel}`, "success");
 			}
 
@@ -892,12 +1209,45 @@ function _$wf() {
 
 function _$hw() {
 	const reinsertNames = _$gr(window.Worker);
+	const isAllowedWorkerHost = (hostname) => {
+		const host = String(hostname || "").toLowerCase();
+		return (
+			host === "twitch.tv" ||
+			host.endsWith(".twitch.tv") ||
+			host === "ttvnw.net" ||
+			host.endsWith(".ttvnw.net") ||
+			host === "twitchcdn.net" ||
+			host.endsWith(".twitchcdn.net")
+		);
+	};
+	const normalizeWorkerUrl = (url) => {
+		if (url instanceof URL) return url.href;
+		return new URL(String(url), window.location.href).href;
+	};
+	const isTwitchWorkerUrl = (workerUrl) => {
+		const parsed = new URL(workerUrl);
+		if (isAllowedWorkerHost(parsed.hostname)) {
+			return true;
+		}
+
+		if (parsed.protocol === "blob:") {
+			const pageHost = window.location.hostname;
+			return (
+				isAllowedWorkerHost(pageHost) &&
+				parsed.origin === window.location.origin
+			);
+		}
+
+		return false;
+	};
 
 	const HookedWorker = class Worker extends _$cw(window.Worker) {
 		constructor(url, opts) {
 			let isTwitch = false;
+			let workerSourceUrl = null;
 			try {
-				isTwitch = new URL(url).origin.endsWith(".twitch.tv");
+				workerSourceUrl = normalizeWorkerUrl(url);
+				isTwitch = isTwitchWorkerUrl(workerSourceUrl);
 			} catch {
 				isTwitch = false;
 			}
@@ -917,16 +1267,23 @@ function _$hw() {
                 ${_$pa.toString()}
                 ${_$gt.toString()}
                 ${_$rt.toString()}
+                ${_hasExplicitAdMetadata.toString()}
+                ${_isKnownAdSegmentUrl.toString()}
+                ${_playlistHasKnownAdSegments.toString()}
                 ${_$sa.toString()}
                 ${_$su.toString()}
+                ${_getFallbackResolution.toString()}
                 ${_$tk.toString()}
+                ${_resetStreamAdState.toString()}
+                ${_getStreamInfoForPlaylist.toString()}
+                ${_hasPlaylistAdMarkers.toString()}
                 ${_$pm.toString()}
                 ${_$fb.toString()}
                 ${_$wj.toString()}
                 ${_$wf.toString()}
                 
                 const _$gu = '${_$gu}';
-                const wasmSource = _$wj('${url.replaceAll("'", "%27")}');
+                const wasmSource = _$wj('${workerSourceUrl.replaceAll("'", "%27")}');
                 _$ds(self);
                 __TTVAB_STATE__.GQLDeviceID = ${JSON.stringify(__TTVAB_STATE__.GQLDeviceID)};
                 __TTVAB_STATE__.AuthorizationHeader = ${JSON.stringify(__TTVAB_STATE__.AuthorizationHeader)};
@@ -934,6 +1291,10 @@ function _$hw() {
                 __TTVAB_STATE__.ClientVersion = ${JSON.stringify(__TTVAB_STATE__.ClientVersion)};
                 __TTVAB_STATE__.ClientSession = ${JSON.stringify(__TTVAB_STATE__.ClientSession)};
                 __TTVAB_STATE__.PlaybackAccessTokenHash = ${JSON.stringify(__TTVAB_STATE__.PlaybackAccessTokenHash)};
+                __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = ${JSON.stringify(__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType)};
+                __TTVAB_STATE__.CurrentAdChannel = ${JSON.stringify(__TTVAB_STATE__.CurrentAdChannel)};
+                __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerType)};
+                __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
                 
                 self.addEventListener('message', function(e) {
@@ -949,6 +1310,11 @@ function _$hw() {
                         case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _$s.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
+                        case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;
+                        case 'UpdatePinnedBackupPlayerType':
+                            __TTVAB_STATE__.PinnedBackupPlayerType = data.value || null;
+                            __TTVAB_STATE__.PinnedBackupPlayerChannel = data.channel || null;
+                            break;
                         case 'TriggeredPlayerReload': __TTVAB_STATE__.HasTriggeredPlayerReload = true; break;
                     }
                 });
@@ -980,9 +1346,47 @@ function _$hw() {
 						_$l(`Ad blocked! Total: ${e.data.count}`, "success");
 						break;
 					case "AdDetected":
+						{
+							const now = Date.now();
+							const channel =
+								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+							const shouldStartNewCycle =
+								!__TTVAB_STATE__.CurrentAdChannel ||
+								__TTVAB_STATE__.CurrentAdChannel !== channel ||
+								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
+									__TTVAB_STATE__.AdCycleStaleMs;
+							if (shouldStartNewCycle) {
+								__TTVAB_STATE__.AdCycleStartedAt = now;
+								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+								__TTVAB_STATE__.PinnedBackupPlayerType = null;
+								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
+							}
+							__TTVAB_STATE__.CurrentAdChannel = channel;
+							__TTVAB_STATE__.LastAdDetectedAt = now;
+						}
 						_$l("Ad detected, blocking...", "warning");
 						break;
+					case "BackupPlayerTypeSelected":
+						__TTVAB_STATE__.PinnedBackupPlayerType = e.data.value || null;
+						__TTVAB_STATE__.PinnedBackupPlayerChannel =
+							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+						_broadcastWorkers({
+							key: "UpdatePinnedBackupPlayerType",
+							value: __TTVAB_STATE__.PinnedBackupPlayerType,
+							channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
+						});
+						_$l(`Pinned backup type: ${e.data.value}`, "info");
+						break;
 					case "AdEnded":
+						__TTVAB_STATE__.CurrentAdChannel = null;
+						__TTVAB_STATE__.PinnedBackupPlayerType = null;
+						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+						__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+						_broadcastWorkers({
+							key: "UpdatePinnedBackupPlayerType",
+							value: null,
+							channel: null,
+						});
 						_$l("Ad ended", "success");
 						try {
 							const pipSelectors = [
@@ -1003,9 +1407,12 @@ function _$hw() {
 						} catch (_e) {}
 						break;
 					case "ReloadPlayer":
-						_$l("Reloading player", "info");
+						_$l(`Reloading player (${e.data.reason || "manual"})`, "info");
 						if (typeof _$dpt === "function") {
-							_$dpt(false, true);
+							_$dpt(false, true, {
+								reason: e.data.reason || "manual",
+								channel: e.data.channel || null,
+							});
 						}
 						break;
 					case "PauseResumePlayer":
@@ -1093,44 +1500,124 @@ function _$hs() {
 
 function _$mf() {
 	const realFetch = window.fetch;
+	const updateWorkers = (updates) => {
+		_broadcastWorkers(updates);
+	};
+	const rewritePlaybackAccessTokenBody = (bodyText) => {
+		if (
+			!__TTVAB_STATE__.ForceAccessTokenPlayerType ||
+			typeof bodyText !== "string" ||
+			!bodyText
+		) {
+			return { bodyText, changed: false };
+		}
+
+		try {
+			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType;
+			const parsed = JSON.parse(bodyText);
+			const operations = Array.isArray(parsed) ? parsed : [parsed];
+			let changed = false;
+			let previousPlayerType = null;
+
+			for (const op of operations) {
+				if (op?.operationName !== "PlaybackAccessToken") continue;
+				if (!op.variables || typeof op.variables !== "object") continue;
+				if (
+					typeof op.variables.playerType === "string" &&
+					op.variables.playerType !== forceType
+				) {
+					previousPlayerType = previousPlayerType || op.variables.playerType;
+					op.variables.playerType = forceType;
+					op.variables.platform = forceType === "autoplay" ? "android" : "web";
+					changed = true;
+				}
+			}
+
+			if (changed) {
+				_$l(
+					`Replaced native PlaybackAccessToken player type '${previousPlayerType}' with '${forceType}'`,
+					"info",
+				);
+				return {
+					bodyText: JSON.stringify(parsed),
+					changed: true,
+				};
+			}
+		} catch {}
+
+		return { bodyText, changed: false };
+	};
+	const updatePlaybackAccessTokenHash = (hash) => {
+		if (!hash || __TTVAB_STATE__.PlaybackAccessTokenHash === hash) return;
+		__TTVAB_STATE__.PlaybackAccessTokenHash = hash;
+		updateWorkers([{ key: "UpdateGQLHash", value: hash }]);
+	};
+	const updateNativePlaybackAccessTokenPlayerType = (playerType) => {
+		if (
+			!playerType ||
+			__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType === playerType
+		) {
+			return;
+		}
+		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = playerType;
+		updateWorkers([
+			{
+				key: "UpdateLastNativePlaybackAccessTokenPlayerType",
+				value: playerType,
+			},
+		]);
+	};
+	const processGqlBody = (bodyText) => {
+		if (typeof bodyText !== "string" || !bodyText) return;
+		try {
+			const data = JSON.parse(bodyText);
+			const operations = Array.isArray(data) ? data : [data];
+			for (const op of operations) {
+				if (
+					op?.operationName === "PlaybackAccessToken" &&
+					op.extensions?.persistedQuery?.sha256Hash
+				) {
+					updatePlaybackAccessTokenHash(
+						op.extensions.persistedQuery.sha256Hash,
+					);
+					if (typeof op.variables?.playerType === "string") {
+						updateNativePlaybackAccessTokenPlayerType(op.variables.playerType);
+					}
+				}
+			}
+		} catch {}
+	};
 
 	window.fetch = async function (...args) {
 		const [url, opts] = args;
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
 			if (urlStr.includes("gql.twitch.tv/gql")) {
-				const response = await realFetch.apply(this, args);
-
+				let nextArgs = args;
 				let headers = opts?.headers;
 
 				if (url instanceof Request) {
 					headers = url.headers;
 					try {
 						const clone = url.clone();
-						clone
-							.json()
-							.then((data) => {
-								const operations = Array.isArray(data) ? data : [data];
-								for (const op of operations) {
-									if (
-										op.operationName === "PlaybackAccessToken" &&
-										op.extensions?.persistedQuery?.sha256Hash
-									) {
-										const hash = op.extensions.persistedQuery.sha256Hash;
-										if (__TTVAB_STATE__.PlaybackAccessTokenHash !== hash) {
-											__TTVAB_STATE__.PlaybackAccessTokenHash = hash;
-											for (const worker of _$s.workers) {
-												worker.postMessage({
-													key: "UpdateGQLHash",
-													value: hash,
-												});
-											}
-										}
-									}
-								}
-							})
-							.catch(() => {});
+						const text = await clone.text();
+						const rewritten = rewritePlaybackAccessTokenBody(text);
+						processGqlBody(rewritten.bodyText);
+						if (rewritten.changed) {
+							nextArgs = [
+								new Request(url, {
+									...(opts || {}),
+									body: rewritten.bodyText,
+								}),
+							];
+						}
 					} catch (_e) {}
+				} else if (typeof opts?.body === "string") {
+					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
+					processGqlBody(rewritten.bodyText);
+					if (rewritten.changed) {
+						nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
+					}
 				}
 
 				if (headers) {
@@ -1183,15 +1670,9 @@ function _$mf() {
 						});
 					}
 
-					if (updates.length > 0) {
-						for (const worker of _$s.workers) {
-							for (const update of updates) {
-								worker.postMessage(update);
-							}
-						}
-					}
+					updateWorkers(updates);
 				}
-				return response;
+				return realFetch.apply(this, nextArgs);
 			}
 		}
 		return realFetch.apply(this, args);
@@ -1265,7 +1746,7 @@ function _$gps() {
 	return { player, state: playerState };
 }
 
-function _$dpt(isPausePlay, isReload) {
+function _$dpt(isPausePlay, isReload, options = {}) {
 	const { player, state: playerState } = _$gps();
 
 	if (!player) {
@@ -1284,10 +1765,40 @@ function _$dpt(isPausePlay, isReload) {
 	if (isPausePlay) {
 		player.pause();
 		player.play();
-		return;
+		return true;
 	}
 
 	if (isReload) {
+		const reason = options.reason || "manual";
+		const now = Date.now();
+		const lastPlayerReloadAt = __TTVAB_STATE__.LastPlayerReloadAt || 0;
+		if (
+			lastPlayerReloadAt &&
+			now - lastPlayerReloadAt < __TTVAB_STATE__.PlayerReloadDebounceMs
+		) {
+			_$l(`Suppressing duplicate reload (${reason})`, "warning");
+			return false;
+		}
+
+		if (
+			reason === "ad-recovery" &&
+			__TTVAB_STATE__.CurrentAdChannel &&
+			__TTVAB_STATE__.LastAdRecoveryReloadAt &&
+			now - __TTVAB_STATE__.LastAdRecoveryReloadAt <
+				__TTVAB_STATE__.AdRecoveryReloadCooldownMs
+		) {
+			_$l(
+				`Suppressing duplicate ad recovery reload for ${__TTVAB_STATE__.CurrentAdChannel}`,
+				"warning",
+			);
+			return false;
+		}
+
+		__TTVAB_STATE__.LastPlayerReloadAt = now;
+		if (reason === "ad-recovery") {
+			__TTVAB_STATE__.LastAdRecoveryReloadAt = now;
+		}
+
 		const lsKeyQuality = "video-quality";
 		const lsKeyMuted = "video-muted";
 		const lsKeyVolume = "volume";
@@ -1322,9 +1833,7 @@ function _$dpt(isPausePlay, isReload) {
 			refreshAccessToken: true,
 		});
 
-		for (const worker of _$s.workers) {
-			worker.postMessage({ key: "TriggeredPlayerReload" });
-		}
+		_broadcastWorkers({ key: "TriggeredPlayerReload" });
 
 		player.play();
 
@@ -1339,7 +1848,11 @@ function _$dpt(isPausePlay, isReload) {
 				} catch {}
 			}, 3000);
 		}
+
+		return true;
 	}
+
+	return false;
 }
 
 function _$mpb() {
@@ -1415,14 +1928,21 @@ function _$mpb() {
 }
 
 function _$hvs() {
+	window.__TTVAB_NATIVE_VISIBILITY__ = {
+		hidden: document.__lookupGetter__("hidden") || null,
+		webkitHidden: document.__lookupGetter__("webkitHidden") || null,
+		mozHidden: document.__lookupGetter__("mozHidden") || null,
+		visibilityState: document.__lookupGetter__("visibilityState") || null,
+	};
+
 	try {
 		Object.defineProperty(document, "visibilityState", {
 			get: () => "visible",
 		});
 	} catch {}
 
-	const hiddenGetter = document.__lookupGetter__("hidden");
-	const webkitHiddenGetter = document.__lookupGetter__("webkitHidden");
+	const hiddenGetter = window.__TTVAB_NATIVE_VISIBILITY__.hidden;
+	const webkitHiddenGetter = window.__TTVAB_NATIVE_VISIBILITY__.webkitHidden;
 
 	try {
 		Object.defineProperty(document, "hidden", {
@@ -1690,10 +2210,10 @@ function _$au(achievementId) {
 
 		setTimeout(() => {
 			if (document.getElementById("ttvab-achievement")) {
-				toast.style.animation = "ttvab-ach-pop .3s ease reverse";
-				setTimeout(() => toast.remove(), 300);
+				toast.style.animation = "ttvab-ach-pop .5s ease reverse";
+				setTimeout(() => toast.remove(), 500);
 			}
-		}, 4000);
+		}, 5000);
 	} catch (e) {
 		_$l(`Achievement error: ${e.message}`, "error");
 	}
@@ -1710,6 +2230,23 @@ function _$al() {
 function _$cm() {
 	let isRefreshing = false;
 	let checkInterval = null;
+	let lastDeferredCrashAt = 0;
+
+	function isDocumentHidden() {
+		const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
+		try {
+			if (typeof nativeVisibility?.hidden === "function") {
+				return nativeVisibility.hidden.call(document) === true;
+			}
+			if (typeof nativeVisibility?.webkitHidden === "function") {
+				return nativeVisibility.webkitHidden.call(document) === true;
+			}
+			if (typeof nativeVisibility?.mozHidden === "function") {
+				return nativeVisibility.mozHidden.call(document) === true;
+			}
+		} catch {}
+		return document.hidden;
+	}
 
 	function detectCrash() {
 		const errorElements = document.querySelectorAll(
@@ -1732,15 +2269,38 @@ function _$cm() {
 
 	function handleCrash(error) {
 		if (isRefreshing) return;
+
+		const now = Date.now();
+		const activeAdChannel = __TTVAB_STATE__.CurrentAdChannel;
+		const lastRecoveryActivity = Math.max(
+			__TTVAB_STATE__.LastAdRecoveryReloadAt || 0,
+			__TTVAB_STATE__.LastAdDetectedAt || 0,
+		);
+		if (
+			error === "Error #2000" &&
+			activeAdChannel &&
+			lastRecoveryActivity &&
+			now - lastRecoveryActivity < __TTVAB_STATE__.AdRecoveryCrashGracePeriodMs
+		) {
+			if (now - lastDeferredCrashAt > 2000) {
+				_$l(
+					`Player error during ad recovery for ${activeAdChannel}; waiting before refresh`,
+					"warning",
+				);
+				lastDeferredCrashAt = now;
+			}
+			return;
+		}
+
 		isRefreshing = true;
 
 		_$l(`Player crash: ${error}`, "error");
 
-		if (document.hidden) {
+		if (isDocumentHidden()) {
 			_$l("Tab hidden, will refresh when visible", "warning");
 
 			document.addEventListener("visibilitychange", function onVisible() {
-				if (!document.hidden) {
+				if (!isDocumentHidden()) {
 					document.removeEventListener("visibilitychange", onVisible);
 					_$l("Tab visible, refreshing...", "warning");
 					window.location.reload();
@@ -1791,7 +2351,7 @@ function _$cm() {
 		});
 
 		checkInterval = setInterval(() => {
-			if (document.hidden) return;
+			if (isDocumentHidden()) return;
 			try {
 				const error = detectCrash();
 				if (error) {
@@ -1828,9 +2388,7 @@ function _$tl() {
 		if (e.data?.type === "ttvab-toggle") {
 			const enabled = e.data.detail?.enabled ?? true;
 			__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
-			for (const worker of _$s.workers) {
-				worker.postMessage({ key: "UpdateToggleState", value: enabled });
-			}
+			_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
 			_$l(
 				`Ad blocking ${enabled ? "enabled" : "disabled"}`,
 				enabled ? "success" : "warning",
@@ -2082,6 +2640,22 @@ function _$bp() {
 			return false;
 		}
 
+		function _isDocumentHidden() {
+			const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
+			try {
+				if (typeof nativeVisibility?.hidden === "function") {
+					return nativeVisibility.hidden.call(document) === true;
+				}
+				if (typeof nativeVisibility?.webkitHidden === "function") {
+					return nativeVisibility.webkitHidden.call(document) === true;
+				}
+				if (typeof nativeVisibility?.mozHidden === "function") {
+					return nativeVisibility.mozHidden.call(document) === true;
+				}
+			} catch {}
+			return document.hidden;
+		}
+
 		if (_$sr()) {
 			_$l("Popup removed on initial scan", "success");
 		}
@@ -2121,9 +2695,9 @@ function _$bp() {
 		});
 
 		function _$is() {
-			const delay = document.hidden ? 2000 : 500;
+			const delay = _isDocumentHidden() ? 2000 : 500;
 			setTimeout(() => {
-				if (!document.hidden) {
+				if (!_isDocumentHidden()) {
 					_$sr();
 				}
 				_$is();
@@ -2151,9 +2725,7 @@ function _$in() {
 			typeof e.data.detail?.count === "number"
 		) {
 			_$s.adsBlocked = e.data.detail.count;
-			for (const worker of _$s.workers) {
-				worker.postMessage({ key: "UpdateAdsBlocked", value: _$s.adsBlocked });
-			}
+			_broadcastWorkers({ key: "UpdateAdsBlocked", value: _$s.adsBlocked });
 			_$l(`Restored ads count: ${_$s.adsBlocked}`, "info");
 		}
 

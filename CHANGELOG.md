@@ -2,6 +2,45 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.2] - 2026-03-09
+
+### Changed
+- **Stream Mapping Refresh** - Master playlist refreshes now rebuild `StreamInfosByUrl`, resolution lists, usher params, and related backup caches on every successful usher fetch. This keeps backup selection aligned with Twitch's latest rotated playlist URLs instead of reusing stale stream metadata.
+- **Relative Variant URL Mapping** - Stream metadata now stores both raw and resolved variant URLs from master playlists, improving compatibility with Twitch manifests that return relative playlist paths.
+- **Fallback Resolution Recovery** - Ad processing now falls back to the best known resolution entry when the current media playlist URL is missing from the active stream map, instead of immediately giving up on backup selection.
+- **GraphQL Hash Sync** - The main-page fetch hook now extracts `PlaybackAccessToken` persisted-query hashes from both `fetch(Request)` and `fetch(url, opts)` traffic, so backup token requests stay synchronized with Twitch hash rotations across both request styles.
+- **Forced Native Token Alignment** - Native page `PlaybackAccessToken` requests are now rewritten to the configured forced player type and matching platform, keeping the main player on the intended recovery path instead of falling back to Twitch's default token flow during ad handling.
+- **Worker URL Compatibility** - Worker interception now normalizes relative worker URLs and `URL` objects before Twitch-origin checks and injected worker bootstrap loading.
+- **Conservative Playlist Stripping** - Media playlist stripping now relies on explicit ad metadata and known ad-segment URL patterns instead of treating broad classes of non-`,live` segments as ads. This reduces false-positive stripping on current Twitch playlists.
+- **Explicit Ad Marker Detection** - Ad detection now requires concrete Twitch ad markers instead of treating generic `stitched` text as an ad signal, reducing false-positive recovery and refresh loops during normal playback.
+- **Segment-Level Ad Detection** - Recovery now also detects ad playlists from known ad segment URLs, restoring real ad blocking for playlists that no longer expose strong top-level ad markers.
+- **Fallback Ad Validation Alignment** - Fallback selection now uses the same explicit metadata and segment-level ad checks as playlist stripping, preventing ad-bearing backup playlists from being treated as clean candidates.
+- **Adaptive Backup Selection** - Backup recovery now tracks the last native `PlaybackAccessToken` player type Twitch used and prioritizes that player type first during ad recovery, reducing wasted retries before a usable backup path is found.
+- **Ad-Cycle Backup Pinning** - Once a backup player type is selected for an active ad cycle, that choice now stays pinned across worker restarts so recovery does not restart from a cold state on every reload.
+- **Duplicate Recovery Reload Suppression** - Player reload requests are now debounced globally and rate-limited during ad recovery, reducing repeated reload loops inside the same ad window.
+- **Minimal Recovery Hardening** - Post-reload minimal recovery no longer accepts ad-bearing backup playlists just to reduce request count, preferring reliable ad blocking over unsafe fast-path playback.
+- **Local-Date Statistics** - Daily stats and the popup's weekly chart now bucket events by the user's local day instead of UTC, preventing day rollover drift and mislabeled chart points in non-UTC timezones.
+- **Build Banner Preservation** - Generated bundles now keep a top-of-file banner comment so `src/scripts/content.js` starts with an identifiable header instead of a blank line or raw wrapper line.
+- **Popup Localization Coverage** - The popup now localizes its remaining static and dynamic UI copy, including the header description, footer text, chart labels, achievement labels/tooltips, and next-achievement text instead of mixing translated and hardcoded English strings.
+
+### Fixed
+- **Worker Prototype Mutation** - `_cleanWorker()` no longer mutates the native `Worker.prototype` globally; it now sanitizes a derived worker class so the page's original worker implementation remains intact.
+- **Worker Broadcast Drift** - Shared worker update broadcasts now automatically drop dead workers after postMessage failures, keeping runtime state sync cleaner after worker crashes or reloads.
+- **Worker Bootstrap Helper Sync** - Injected worker bootstraps now include all parser/processor helpers required by the current runtime, fixing player crashes such as `MediaPlaylist ... _getStreamInfoForPlaylist is not defined`.
+- **Bridge Toggle Desync** - The isolated bridge now keeps its cached enabled state and startup counters synchronized with `chrome.storage.onChanged`, preventing stale `ttvab-request-state` rebroadcasts after popup toggles.
+- **Immediate Toggle Re-Broadcast** - The bridge now updates its in-memory toggle state before rebroadcasting, removing the short stale-state window immediately after popup toggles.
+- **Backup Cache Invalidation** - Successful backup master playlist caches are no longer discarded after every attempt; caches now survive until a real fetch failure or ad-bearing candidate requires invalidation.
+- **Token Timeout Cleanup** - Backup token fetches now always clear their abort timeout in a `finally` block, preventing orphaned timers after failed or aborted requests.
+- **Toggle Recovery State** - Disabling ad blocking during an active ad cycle now clears fallback and modified-playlist runtime state immediately instead of leaving the player stuck on rewritten manifests until a later transition.
+- **Hidden-Tab Crash Guard** - Crash monitoring now reads preserved native visibility getters, so hidden Twitch tabs stay protected from unwanted auto-refresh even while visibility spoofing is active.
+- **Hidden-Tab Popup Scan** - Idle popup scans now also use preserved native visibility getters, reducing unnecessary hidden-tab DOM scanning after visibility spoofing is active.
+- **Ad Recovery Crash Grace** - `Error #2000` crashes that occur immediately during an active ad recovery window now get a short grace period before auto-refresh, reducing false-positive page reloads while the player is still stabilizing.
+- **HEVC Fallback Playlist URIs** - HEVC-to-AVC fallback master playlists now emit valid replacement variant URLs without trailing whitespace, preventing malformed playlist entries during codec fallback.
+- **Metadata-Only Fallback Ads** - Ad-marked fallback playlists now force-strip their media segments even when Twitch does not expose easily matchable ad segment URLs, closing a visible ad leak in fallback mode.
+- **Empty Playlist Buffering Loop** - When stripping would otherwise empty a playlist, recovery now restores up to 6 recent segments instead of 3, giving the player more runway to stabilize after ad transitions.
+- **Popup Localization Drift** - Popup status text now stays localized after toggles, storage updates, and language changes instead of reverting parts of the UI back to English.
+- **Translation Quality Pass** - Improved weaker popup wording in German, Russian, and Simplified Chinese so toggle states and counter labels read more naturally.
+
 ## [4.2.1] - 2026-03-06
 
 ### Changed

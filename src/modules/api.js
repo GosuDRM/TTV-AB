@@ -5,6 +5,7 @@ const _GQL_URL = "https://gql.twitch.tv/gql";
 async function _getToken(channel, playerType, realFetch) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
+	let timeoutId = null;
 
 	const body = {
 		operationName: "PlaybackAccessToken",
@@ -29,7 +30,7 @@ async function _getToken(channel, playerType, realFetch) {
 	try {
 		_log(`[Trace] Requesting token for ${playerType}`, "info");
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 5000);
+		timeoutId = setTimeout(() => controller.abort(), 5000);
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
 
@@ -56,11 +57,12 @@ async function _getToken(channel, playerType, realFetch) {
 			signal: controller.signal,
 		});
 
-		clearTimeout(timeoutId);
 		_log(`[Trace] Token response: ${res.status}`, "info");
 		return res;
 	} catch (e) {
 		_log(`Token fetch error: ${e.message}`, "error");
 		return { status: 0, json: () => Promise.resolve({}) };
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }

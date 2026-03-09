@@ -1,8 +1,8 @@
 {
-    "extName": {
-        "message": "TTV AB - Lightweight, powerful ad blocker for Twitch.tv"
-    },
-    "extDesc": {
-        "message": "Block ads on Twitch.tv live streams. No purple screens, prerolls, or midrolls. Lightweight adblocker."
-    }
+	"extName": {
+		"message": "TTV AB - Lightweight, powerful ad blocker for Twitch.tv"
+	},
+	"extDesc": {
+		"message": "Block ads on Twitch.tv live streams. No purple screens, prerolls, or midrolls. Lightweight adblocker."
+	}
 }

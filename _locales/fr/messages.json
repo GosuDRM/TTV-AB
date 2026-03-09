@@ -1,8 +1,8 @@
 {
-    "extName": {
-        "message": "TTV AB - Bloqueur de publicités léger et puissant pour Twitch.tv"
-    },
-    "extDesc": {
-        "message": "Bloquez les publicités sur les streams Twitch.tv. Fini les écrans violets, pre-rolls et mid-rolls. Bloqueur léger."
-    }
+	"extName": {
+		"message": "TTV AB - Bloqueur de publicités léger et puissant pour Twitch.tv"
+	},
+	"extDesc": {
+		"message": "Bloquez les publicités sur les streams Twitch.tv. Fini les écrans violets, pre-rolls et mid-rolls. Bloqueur léger."
+	}
 }

@@ -19,6 +19,90 @@ function _hookWorkerFetch() {
 		}
 	}
 
+	function _syncStreamInfo(_channel, info, encodings, usherUrl) {
+		const wasUsingModifiedM3U8 = Boolean(info.IsUsingModifiedM3U8);
+		info.EncodingsM3U8 = encodings;
+		info.UsherBaseUrl = usherUrl;
+		info.UsherParams = new URL(usherUrl).search;
+		info.Urls = Object.create(null);
+		info.ResolutionList = [];
+		info.BackupEncodingsM3U8Cache = [];
+		info.ModifiedM3U8 = null;
+
+		for (const variantUrl in __TTVAB_STATE__.StreamInfosByUrl) {
+			if (__TTVAB_STATE__.StreamInfosByUrl[variantUrl] === info) {
+				delete __TTVAB_STATE__.StreamInfosByUrl[variantUrl];
+			}
+		}
+
+		const lines = encodings.split("\n");
+		for (let i = 0, len = lines.length; i < len - 1; i++) {
+			if (
+				lines[i].startsWith("#EXT-X-STREAM-INF") &&
+				lines[i + 1].includes(".m3u8")
+			) {
+				const attrs = _parseAttrs(lines[i]);
+				const resolution = attrs.RESOLUTION;
+				let variantUrl = lines[i + 1];
+				try {
+					variantUrl = new URL(variantUrl, usherUrl).href;
+				} catch {}
+				if (resolution) {
+					const resInfo = {
+						Resolution: resolution,
+						FrameRate: attrs["FRAME-RATE"],
+						Codecs: attrs.CODECS,
+						RawUrl: lines[i + 1],
+						Url: variantUrl,
+					};
+					info.Urls[variantUrl] = resInfo;
+					info.Urls[lines[i + 1]] = resInfo;
+					info.ResolutionList.push(resInfo);
+				}
+				__TTVAB_STATE__.StreamInfosByUrl[variantUrl] = info;
+				__TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
+			}
+		}
+
+		const nonHevcList = info.ResolutionList.filter(
+			(r) => r.Codecs?.startsWith("avc") || r.Codecs?.startsWith("av0"),
+		);
+		const hasHevc = info.ResolutionList.some(
+			(r) => r.Codecs?.startsWith("hev") || r.Codecs?.startsWith("hvc"),
+		);
+
+		if (hasHevc && nonHevcList.length > 0) {
+			const modLines = [...lines];
+			for (let mi = 0; mi < modLines.length - 1; mi++) {
+				if (modLines[mi].startsWith("#EXT-X-STREAM-INF")) {
+					const attrs = _parseAttrs(modLines[mi]);
+					const codecs = attrs.CODECS || "";
+					if (codecs.startsWith("hev") || codecs.startsWith("hvc")) {
+						const [tw, th] = (attrs.RESOLUTION || "1920x1080")
+							.split("x")
+							.map(Number);
+						const closest = [...nonHevcList].sort((a, b) => {
+							const [aw, ah] = a.Resolution.split("x").map(Number);
+							const [bw, bh] = b.Resolution.split("x").map(Number);
+							return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
+						})[0];
+						modLines[mi] = modLines[mi].replace(
+							/CODECS="[^"]+"/,
+							`CODECS="${closest.Codecs}"`,
+						);
+						modLines[mi + 1] = closest.RawUrl || closest.Url;
+					}
+				}
+			}
+			info.ModifiedM3U8 = modLines.join("\n");
+			_log("HEVC stream detected, created fallback M3U8", "info");
+		}
+
+		if (wasUsingModifiedM3U8 && !info.ModifiedM3U8) {
+			info.IsUsingModifiedM3U8 = false;
+		}
+	}
+
 	fetch = async function (...args) {
 		const [resource, opts] = args;
 		const requestUrl =
@@ -57,7 +141,7 @@ function _hookWorkerFetch() {
 			return realFetch(EMPTY_SEGMENT_URL);
 		}
 
-		if (url.includes("/channel/hls/") && !url.includes("picture-by-picture")) {
+		if (url.includes("/channel/hls/")) {
 			__TTVAB_STATE__.V2API = url.includes("/api/v2/");
 			const channelMatch = new URL(url).pathname.match(/([^/]+)(?=\.\w+$)/);
 			const channel = channelMatch?.[0];
@@ -82,7 +166,8 @@ function _hookWorkerFetch() {
 				}
 			}
 
-			if (!info?.EncodingsM3U8) {
+			const isNewInfo = !info?.EncodingsM3U8;
+			if (isNewInfo) {
 				_pruneStreamInfos();
 				info = __TTVAB_STATE__.StreamInfos[channel] = {
 					ChannelName: channel,
@@ -92,6 +177,7 @@ function _hookWorkerFetch() {
 					ModifiedM3U8: null,
 					IsUsingModifiedM3U8: false,
 					IsUsingFallbackStream: false,
+					UsherBaseUrl: url,
 					UsherParams: new URL(url).search,
 					RequestedAds: new Set(),
 					FailedBackupPlayerTypes: new Set(),
@@ -100,69 +186,16 @@ function _hookWorkerFetch() {
 					ResolutionList: [],
 					BackupEncodingsM3U8Cache: [],
 					ActiveBackupPlayerType: null,
+					ActiveBackupResolution: null,
 					IsMidroll: false,
 					IsStrippingAdSegments: false,
 					NumStrippedAdSegments: 0,
 				};
+			}
 
-				const lines = encodings.split("\n");
-				for (let i = 0, len = lines.length; i < len - 1; i++) {
-					if (
-						lines[i].startsWith("#EXT-X-STREAM-INF") &&
-						lines[i + 1].includes(".m3u8")
-					) {
-						const attrs = _parseAttrs(lines[i]);
-						const resolution = attrs.RESOLUTION;
-						if (resolution) {
-							const resInfo = {
-								Resolution: resolution,
-								FrameRate: attrs["FRAME-RATE"],
-								Codecs: attrs.CODECS,
-								Url: lines[i + 1],
-							};
-							info.Urls[lines[i + 1]] = resInfo;
-							info.ResolutionList.push(resInfo);
-						}
-						__TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
-					}
-				}
+			_syncStreamInfo(channel, info, encodings, url);
 
-				const nonHevcList = info.ResolutionList.filter(
-					(r) => r.Codecs?.startsWith("avc") || r.Codecs?.startsWith("av0"),
-				);
-				const hasHevc = info.ResolutionList.some(
-					(r) => r.Codecs?.startsWith("hev") || r.Codecs?.startsWith("hvc"),
-				);
-
-				if (hasHevc && nonHevcList.length > 0) {
-					const modLines = [...lines];
-					for (let mi = 0; mi < modLines.length - 1; mi++) {
-						if (modLines[mi].startsWith("#EXT-X-STREAM-INF")) {
-							const attrs = _parseAttrs(modLines[mi]);
-							const codecs = attrs.CODECS || "";
-							if (codecs.startsWith("hev") || codecs.startsWith("hvc")) {
-								const [tw, th] = (attrs.RESOLUTION || "1920x1080")
-									.split("x")
-									.map(Number);
-								const closest = nonHevcList.sort((a, b) => {
-									const [aw, ah] = a.Resolution.split("x").map(Number);
-									const [bw, bh] = b.Resolution.split("x").map(Number);
-									return (
-										Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th)
-									);
-								})[0];
-								modLines[mi] = modLines[mi].replace(
-									/CODECS="[^"]+"/,
-									`CODECS="${closest.Codecs}"`,
-								);
-								modLines[mi + 1] = closest.Url + " ".repeat(mi + 1);
-							}
-						}
-					}
-					info.ModifiedM3U8 = modLines.join("\n");
-					_log("HEVC stream detected, created fallback M3U8", "info");
-				}
-
+			if (isNewInfo) {
 				_log(`Stream initialized: ${channel}`, "success");
 			}
 
@@ -194,12 +227,45 @@ function _hookWorkerFetch() {
 
 function _hookWorker() {
 	const reinsertNames = _getReinsert(window.Worker);
+	const isAllowedWorkerHost = (hostname) => {
+		const host = String(hostname || "").toLowerCase();
+		return (
+			host === "twitch.tv" ||
+			host.endsWith(".twitch.tv") ||
+			host === "ttvnw.net" ||
+			host.endsWith(".ttvnw.net") ||
+			host === "twitchcdn.net" ||
+			host.endsWith(".twitchcdn.net")
+		);
+	};
+	const normalizeWorkerUrl = (url) => {
+		if (url instanceof URL) return url.href;
+		return new URL(String(url), window.location.href).href;
+	};
+	const isTwitchWorkerUrl = (workerUrl) => {
+		const parsed = new URL(workerUrl);
+		if (isAllowedWorkerHost(parsed.hostname)) {
+			return true;
+		}
+
+		if (parsed.protocol === "blob:") {
+			const pageHost = window.location.hostname;
+			return (
+				isAllowedWorkerHost(pageHost) &&
+				parsed.origin === window.location.origin
+			);
+		}
+
+		return false;
+	};
 
 	const HookedWorker = class Worker extends _cleanWorker(window.Worker) {
 		constructor(url, opts) {
 			let isTwitch = false;
+			let workerSourceUrl = null;
 			try {
-				isTwitch = new URL(url).origin.endsWith(".twitch.tv");
+				workerSourceUrl = normalizeWorkerUrl(url);
+				isTwitch = isTwitchWorkerUrl(workerSourceUrl);
 			} catch {
 				isTwitch = false;
 			}
@@ -219,16 +285,23 @@ function _hookWorker() {
                 ${_parseAttrs.toString()}
                 ${_getServerTime.toString()}
                 ${_replaceServerTime.toString()}
+                ${_hasExplicitAdMetadata.toString()}
+                ${_isKnownAdSegmentUrl.toString()}
+                ${_playlistHasKnownAdSegments.toString()}
                 ${_stripAds.toString()}
                 ${_getStreamUrl.toString()}
+                ${_getFallbackResolution.toString()}
                 ${_getToken.toString()}
+                ${_resetStreamAdState.toString()}
+                ${_getStreamInfoForPlaylist.toString()}
+                ${_hasPlaylistAdMarkers.toString()}
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}
                 ${_getWasmJs.toString()}
                 ${_hookWorkerFetch.toString()}
                 
                 const _GQL_URL = '${_GQL_URL}';
-                const wasmSource = _getWasmJs('${url.replaceAll("'", "%27")}');
+                const wasmSource = _getWasmJs('${workerSourceUrl.replaceAll("'", "%27")}');
                 _declareState(self);
                 __TTVAB_STATE__.GQLDeviceID = ${JSON.stringify(__TTVAB_STATE__.GQLDeviceID)};
                 __TTVAB_STATE__.AuthorizationHeader = ${JSON.stringify(__TTVAB_STATE__.AuthorizationHeader)};
@@ -236,6 +309,10 @@ function _hookWorker() {
                 __TTVAB_STATE__.ClientVersion = ${JSON.stringify(__TTVAB_STATE__.ClientVersion)};
                 __TTVAB_STATE__.ClientSession = ${JSON.stringify(__TTVAB_STATE__.ClientSession)};
                 __TTVAB_STATE__.PlaybackAccessTokenHash = ${JSON.stringify(__TTVAB_STATE__.PlaybackAccessTokenHash)};
+                __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = ${JSON.stringify(__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType)};
+                __TTVAB_STATE__.CurrentAdChannel = ${JSON.stringify(__TTVAB_STATE__.CurrentAdChannel)};
+                __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerType)};
+                __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
                 
                 self.addEventListener('message', function(e) {
@@ -251,6 +328,11 @@ function _hookWorker() {
                         case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
+                        case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;
+                        case 'UpdatePinnedBackupPlayerType':
+                            __TTVAB_STATE__.PinnedBackupPlayerType = data.value || null;
+                            __TTVAB_STATE__.PinnedBackupPlayerChannel = data.channel || null;
+                            break;
                         case 'TriggeredPlayerReload': __TTVAB_STATE__.HasTriggeredPlayerReload = true; break;
                     }
                 });
@@ -282,9 +364,47 @@ function _hookWorker() {
 						_log(`Ad blocked! Total: ${e.data.count}`, "success");
 						break;
 					case "AdDetected":
+						{
+							const now = Date.now();
+							const channel =
+								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+							const shouldStartNewCycle =
+								!__TTVAB_STATE__.CurrentAdChannel ||
+								__TTVAB_STATE__.CurrentAdChannel !== channel ||
+								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
+									__TTVAB_STATE__.AdCycleStaleMs;
+							if (shouldStartNewCycle) {
+								__TTVAB_STATE__.AdCycleStartedAt = now;
+								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+								__TTVAB_STATE__.PinnedBackupPlayerType = null;
+								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
+							}
+							__TTVAB_STATE__.CurrentAdChannel = channel;
+							__TTVAB_STATE__.LastAdDetectedAt = now;
+						}
 						_log("Ad detected, blocking...", "warning");
 						break;
+					case "BackupPlayerTypeSelected":
+						__TTVAB_STATE__.PinnedBackupPlayerType = e.data.value || null;
+						__TTVAB_STATE__.PinnedBackupPlayerChannel =
+							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+						_broadcastWorkers({
+							key: "UpdatePinnedBackupPlayerType",
+							value: __TTVAB_STATE__.PinnedBackupPlayerType,
+							channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
+						});
+						_log(`Pinned backup type: ${e.data.value}`, "info");
+						break;
 					case "AdEnded":
+						__TTVAB_STATE__.CurrentAdChannel = null;
+						__TTVAB_STATE__.PinnedBackupPlayerType = null;
+						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+						__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+						_broadcastWorkers({
+							key: "UpdatePinnedBackupPlayerType",
+							value: null,
+							channel: null,
+						});
 						_log("Ad ended", "success");
 						try {
 							const pipSelectors = [
@@ -305,9 +425,12 @@ function _hookWorker() {
 						} catch (_e) {}
 						break;
 					case "ReloadPlayer":
-						_log("Reloading player", "info");
+						_log(`Reloading player (${e.data.reason || "manual"})`, "info");
 						if (typeof _doPlayerTask === "function") {
-							_doPlayerTask(false, true);
+							_doPlayerTask(false, true, {
+								reason: e.data.reason || "manual",
+								channel: e.data.channel || null,
+							});
 						}
 						break;
 					case "PauseResumePlayer":
@@ -395,44 +518,124 @@ function _hookStorage() {
 
 function _hookMainFetch() {
 	const realFetch = window.fetch;
+	const updateWorkers = (updates) => {
+		_broadcastWorkers(updates);
+	};
+	const rewritePlaybackAccessTokenBody = (bodyText) => {
+		if (
+			!__TTVAB_STATE__.ForceAccessTokenPlayerType ||
+			typeof bodyText !== "string" ||
+			!bodyText
+		) {
+			return { bodyText, changed: false };
+		}
+
+		try {
+			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType;
+			const parsed = JSON.parse(bodyText);
+			const operations = Array.isArray(parsed) ? parsed : [parsed];
+			let changed = false;
+			let previousPlayerType = null;
+
+			for (const op of operations) {
+				if (op?.operationName !== "PlaybackAccessToken") continue;
+				if (!op.variables || typeof op.variables !== "object") continue;
+				if (
+					typeof op.variables.playerType === "string" &&
+					op.variables.playerType !== forceType
+				) {
+					previousPlayerType = previousPlayerType || op.variables.playerType;
+					op.variables.playerType = forceType;
+					op.variables.platform = forceType === "autoplay" ? "android" : "web";
+					changed = true;
+				}
+			}
+
+			if (changed) {
+				_log(
+					`Replaced native PlaybackAccessToken player type '${previousPlayerType}' with '${forceType}'`,
+					"info",
+				);
+				return {
+					bodyText: JSON.stringify(parsed),
+					changed: true,
+				};
+			}
+		} catch {}
+
+		return { bodyText, changed: false };
+	};
+	const updatePlaybackAccessTokenHash = (hash) => {
+		if (!hash || __TTVAB_STATE__.PlaybackAccessTokenHash === hash) return;
+		__TTVAB_STATE__.PlaybackAccessTokenHash = hash;
+		updateWorkers([{ key: "UpdateGQLHash", value: hash }]);
+	};
+	const updateNativePlaybackAccessTokenPlayerType = (playerType) => {
+		if (
+			!playerType ||
+			__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType === playerType
+		) {
+			return;
+		}
+		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = playerType;
+		updateWorkers([
+			{
+				key: "UpdateLastNativePlaybackAccessTokenPlayerType",
+				value: playerType,
+			},
+		]);
+	};
+	const processGqlBody = (bodyText) => {
+		if (typeof bodyText !== "string" || !bodyText) return;
+		try {
+			const data = JSON.parse(bodyText);
+			const operations = Array.isArray(data) ? data : [data];
+			for (const op of operations) {
+				if (
+					op?.operationName === "PlaybackAccessToken" &&
+					op.extensions?.persistedQuery?.sha256Hash
+				) {
+					updatePlaybackAccessTokenHash(
+						op.extensions.persistedQuery.sha256Hash,
+					);
+					if (typeof op.variables?.playerType === "string") {
+						updateNativePlaybackAccessTokenPlayerType(op.variables.playerType);
+					}
+				}
+			}
+		} catch {}
+	};
 
 	window.fetch = async function (...args) {
 		const [url, opts] = args;
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
 			if (urlStr.includes("gql.twitch.tv/gql")) {
-				const response = await realFetch.apply(this, args);
-
+				let nextArgs = args;
 				let headers = opts?.headers;
 
 				if (url instanceof Request) {
 					headers = url.headers;
 					try {
 						const clone = url.clone();
-						clone
-							.json()
-							.then((data) => {
-								const operations = Array.isArray(data) ? data : [data];
-								for (const op of operations) {
-									if (
-										op.operationName === "PlaybackAccessToken" &&
-										op.extensions?.persistedQuery?.sha256Hash
-									) {
-										const hash = op.extensions.persistedQuery.sha256Hash;
-										if (__TTVAB_STATE__.PlaybackAccessTokenHash !== hash) {
-											__TTVAB_STATE__.PlaybackAccessTokenHash = hash;
-											for (const worker of _S.workers) {
-												worker.postMessage({
-													key: "UpdateGQLHash",
-													value: hash,
-												});
-											}
-										}
-									}
-								}
-							})
-							.catch(() => {});
+						const text = await clone.text();
+						const rewritten = rewritePlaybackAccessTokenBody(text);
+						processGqlBody(rewritten.bodyText);
+						if (rewritten.changed) {
+							nextArgs = [
+								new Request(url, {
+									...(opts || {}),
+									body: rewritten.bodyText,
+								}),
+							];
+						}
 					} catch (_e) {}
+				} else if (typeof opts?.body === "string") {
+					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
+					processGqlBody(rewritten.bodyText);
+					if (rewritten.changed) {
+						nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
+					}
 				}
 
 				if (headers) {
@@ -485,15 +688,9 @@ function _hookMainFetch() {
 						});
 					}
 
-					if (updates.length > 0) {
-						for (const worker of _S.workers) {
-							for (const update of updates) {
-								worker.postMessage(update);
-							}
-						}
-					}
+					updateWorkers(updates);
 				}
-				return response;
+				return realFetch.apply(this, nextArgs);
 			}
 		}
 		return realFetch.apply(this, args);

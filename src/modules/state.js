@@ -8,6 +8,29 @@ const _S = {
 	popupsBlocked: 0,
 };
 
+function _broadcastWorkers(messages) {
+	const queue = Array.isArray(messages) ? messages : [messages];
+	if (queue.length === 0 || _S.workers.length === 0) return;
+
+	const aliveWorkers = [];
+	for (const worker of _S.workers) {
+		let isAlive = true;
+		for (const message of queue) {
+			try {
+				worker.postMessage(message);
+			} catch {
+				isAlive = false;
+				break;
+			}
+		}
+		if (isAlive) {
+			aliveWorkers.push(worker);
+		}
+	}
+
+	_S.workers = aliveWorkers;
+}
+
 function _declareState(scope) {
 	scope.__TTVAB_STATE__ = {
 		AdSignifier: _C.AD_SIGNIFIER,
@@ -21,10 +44,25 @@ function _declareState(scope) {
 			_C.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
 		ReloadPlayerAfterAd: _C.RELOAD_AFTER_AD ?? true,
 		PlayerReloadMinimalRequestsTime: _C.RELOAD_TIME,
-		PlayerReloadMinimalRequestsPlayerIndex: 2,
+		PlayerReloadMinimalRequestsPlayerIndex: Math.max(
+			0,
+			_C.PLAYER_TYPES.indexOf(_C.FALLBACK_TYPE),
+		),
+		PlayerReloadDebounceMs: _C.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
+		AdCycleStaleMs: _C.AD_CYCLE_STALE_MS ?? 30000,
+		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
+		AdRecoveryCrashGracePeriodMs: _C.AD_RECOVERY_CRASH_GRACE_PERIOD_MS ?? 6000,
 		HasTriggeredPlayerReload: false,
+		LastPlayerReloadAt: 0,
+		LastAdDetectedAt: 0,
+		LastAdRecoveryReloadAt: 0,
+		AdCycleStartedAt: 0,
+		CurrentAdChannel: null,
+		PinnedBackupPlayerType: null,
+		PinnedBackupPlayerChannel: null,
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
+		LastPlaylistUrl: null,
 		GQLDeviceID: null,
 		ClientVersion: null,
 		ClientSession: null,
@@ -42,6 +80,7 @@ function _declareState(scope) {
 		PlayerBufferingPrerollCheckOffset: 5,
 		AllSegmentsAreAdSegments: false,
 		PlaybackAccessTokenHash: null,
+		LastNativePlaybackAccessTokenPlayerType: null,
 	};
 }
 

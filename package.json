@@ -1,9 +1,14 @@
 {
-  "name": "ttv-ab",
-  "version": "4.2.1",
-  "description": "Twitch Ad Blocker",
-  "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "globals": "^16.5.0"
-  }
+	"name": "ttv-ab",
+	"version": "4.2.2",
+	"description": "Twitch Ad Blocker",
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.6",
+		"knip": "^5.86.0"
+	},
+	"scripts": {
+		"knip": "knip --production",
+		"lint": "biome check .",
+		"build": "node build.js"
+	}
 }

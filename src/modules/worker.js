@@ -8,11 +8,18 @@ function _getWasmJs(url) {
 }
 
 function _cleanWorker(W) {
-	const proto = W.prototype;
+	const CleanWorker = class extends W {};
+	const proto = CleanWorker.prototype;
 	for (const key of _S.conflicts) {
-		if (proto[key]) proto[key] = undefined;
+		if (key in proto) {
+			Object.defineProperty(proto, key, {
+				configurable: true,
+				writable: true,
+				value: undefined,
+			});
+		}
 	}
-	return W;
+	return CleanWorker;
 }
 
 function _getReinsert(W) {

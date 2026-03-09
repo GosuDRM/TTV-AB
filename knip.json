@@ -1,0 +1,17 @@
+{
+	"$schema": "https://unpkg.com/knip@5.86.0/schema.json",
+	"entry": [
+		"build.js!",
+		"src/modules/*.js!",
+		"src/popup/popup.js!",
+		"src/popup/translations.js!",
+		"src/scripts/bridge.js!",
+		"src/popup/popup.html!"
+	],
+	"project": [
+		"build.js!",
+		"src/**/*.js!",
+		"src/**/*.html!",
+		"!src/scripts/content.js"
+	]
+}
