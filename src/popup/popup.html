@@ -694,7 +694,7 @@
         }
 
         .time-saved-value {
-            color: #4CAF50 !important;
+            color: #4CAF50;
         }
 
         .footer {
@@ -758,8 +758,8 @@
         <div class="logo">TTV</div>
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
-            <div class="version">v4.2.1</div>
-            <div class="description-text">Lightweight, powerful ad blocker designed specifically for Twitch.tv</div>
+            <div class="version">v4.2.2</div>
+            <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically for Twitch.tv</div>
         </div>
         <button class="donate-btn" id="donateBtn" title="Support the developer">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -830,7 +830,7 @@
             <!-- Achievements -->
             <div class="stats-section">
                 <div class="achievements-header">
-                    <div class="stats-section-title" style="margin-bottom: 0;">🏆 Achievements</div>
+                    <div class="stats-section-title" id="achievementsTitle" style="margin-bottom: 0;">🏆 Achievements</div>
                     <span class="achievements-progress" id="achievementsProgress">0/12</span>
                 </div>
                 <div class="achievements-grid" id="achievementsGrid">
@@ -880,8 +880,8 @@
             <option value="zh_TW">🇹🇼 繁體中文</option>
             <option value="ru">🇷🇺 Русский</option>
         </select>
-        <span><span class="footer-text">TTV AB — by </span><a href="#" id="authorLink"
-                class="author-link">GosuDRM</a></span>
+        <span><a href="#" id="repoLink" class="author-link footer-text">TTV AB</a><span id="footerText"> — by </span><a href="#"
+                id="authorLink" class="author-link">GosuDRM</a></span>
     </div>
 
     <script src="translations.js"></script>

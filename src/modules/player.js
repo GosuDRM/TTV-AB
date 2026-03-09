@@ -67,7 +67,7 @@ function _getPlayerAndState() {
 	return { player, state: playerState };
 }
 
-function _doPlayerTask(isPausePlay, isReload) {
+function _doPlayerTask(isPausePlay, isReload, options = {}) {
 	const { player, state: playerState } = _getPlayerAndState();
 
 	if (!player) {
@@ -86,10 +86,40 @@ function _doPlayerTask(isPausePlay, isReload) {
 	if (isPausePlay) {
 		player.pause();
 		player.play();
-		return;
+		return true;
 	}
 
 	if (isReload) {
+		const reason = options.reason || "manual";
+		const now = Date.now();
+		const lastPlayerReloadAt = __TTVAB_STATE__.LastPlayerReloadAt || 0;
+		if (
+			lastPlayerReloadAt &&
+			now - lastPlayerReloadAt < __TTVAB_STATE__.PlayerReloadDebounceMs
+		) {
+			_log(`Suppressing duplicate reload (${reason})`, "warning");
+			return false;
+		}
+
+		if (
+			reason === "ad-recovery" &&
+			__TTVAB_STATE__.CurrentAdChannel &&
+			__TTVAB_STATE__.LastAdRecoveryReloadAt &&
+			now - __TTVAB_STATE__.LastAdRecoveryReloadAt <
+				__TTVAB_STATE__.AdRecoveryReloadCooldownMs
+		) {
+			_log(
+				`Suppressing duplicate ad recovery reload for ${__TTVAB_STATE__.CurrentAdChannel}`,
+				"warning",
+			);
+			return false;
+		}
+
+		__TTVAB_STATE__.LastPlayerReloadAt = now;
+		if (reason === "ad-recovery") {
+			__TTVAB_STATE__.LastAdRecoveryReloadAt = now;
+		}
+
 		const lsKeyQuality = "video-quality";
 		const lsKeyMuted = "video-muted";
 		const lsKeyVolume = "volume";
@@ -124,9 +154,7 @@ function _doPlayerTask(isPausePlay, isReload) {
 			refreshAccessToken: true,
 		});
 
-		for (const worker of _S.workers) {
-			worker.postMessage({ key: "TriggeredPlayerReload" });
-		}
+		_broadcastWorkers({ key: "TriggeredPlayerReload" });
 
 		player.play();
 
@@ -141,7 +169,11 @@ function _doPlayerTask(isPausePlay, isReload) {
 				} catch {}
 			}, 3000);
 		}
+
+		return true;
 	}
+
+	return false;
 }
 
 function _monitorPlayerBuffering() {
@@ -217,14 +249,21 @@ function _monitorPlayerBuffering() {
 }
 
 function _hookVisibilityState() {
+	window.__TTVAB_NATIVE_VISIBILITY__ = {
+		hidden: document.__lookupGetter__("hidden") || null,
+		webkitHidden: document.__lookupGetter__("webkitHidden") || null,
+		mozHidden: document.__lookupGetter__("mozHidden") || null,
+		visibilityState: document.__lookupGetter__("visibilityState") || null,
+	};
+
 	try {
 		Object.defineProperty(document, "visibilityState", {
 			get: () => "visible",
 		});
 	} catch {}
 
-	const hiddenGetter = document.__lookupGetter__("hidden");
-	const webkitHiddenGetter = document.__lookupGetter__("webkitHidden");
+	const hiddenGetter = window.__TTVAB_NATIVE_VISIBILITY__.hidden;
+	const webkitHiddenGetter = window.__TTVAB_NATIVE_VISIBILITY__.webkitHidden;
 
 	try {
 		Object.defineProperty(document, "hidden", {

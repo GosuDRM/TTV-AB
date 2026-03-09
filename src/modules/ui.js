@@ -164,10 +164,10 @@ function _showAchievementUnlocked(achievementId) {
 
 		setTimeout(() => {
 			if (document.getElementById("ttvab-achievement")) {
-				toast.style.animation = "ttvab-ach-pop .3s ease reverse";
-				setTimeout(() => toast.remove(), 300);
+				toast.style.animation = "ttvab-ach-pop .5s ease reverse";
+				setTimeout(() => toast.remove(), 500);
 			}
-		}, 4000);
+		}, 5000);
 	} catch (e) {
 		_log(`Achievement error: ${e.message}`, "error");
 	}

@@ -20,9 +20,7 @@ function _initToggleListener() {
 		if (e.data?.type === "ttvab-toggle") {
 			const enabled = e.data.detail?.enabled ?? true;
 			__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
-			for (const worker of _S.workers) {
-				worker.postMessage({ key: "UpdateToggleState", value: enabled });
-			}
+			_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
 			_log(
 				`Ad blocking ${enabled ? "enabled" : "disabled"}`,
 				enabled ? "success" : "warning",
@@ -274,6 +272,22 @@ function _blockAntiAdblockPopup() {
 			return false;
 		}
 
+		function _isDocumentHidden() {
+			const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
+			try {
+				if (typeof nativeVisibility?.hidden === "function") {
+					return nativeVisibility.hidden.call(document) === true;
+				}
+				if (typeof nativeVisibility?.webkitHidden === "function") {
+					return nativeVisibility.webkitHidden.call(document) === true;
+				}
+				if (typeof nativeVisibility?.mozHidden === "function") {
+					return nativeVisibility.mozHidden.call(document) === true;
+				}
+			} catch {}
+			return document.hidden;
+		}
+
 		if (_scanAndRemove()) {
 			_log("Popup removed on initial scan", "success");
 		}
@@ -313,9 +327,9 @@ function _blockAntiAdblockPopup() {
 		});
 
 		function _scheduleIdleScan() {
-			const delay = document.hidden ? 2000 : 500;
+			const delay = _isDocumentHidden() ? 2000 : 500;
 			setTimeout(() => {
-				if (!document.hidden) {
+				if (!_isDocumentHidden()) {
 					_scanAndRemove();
 				}
 				_scheduleIdleScan();
@@ -343,9 +357,7 @@ function _init() {
 			typeof e.data.detail?.count === "number"
 		) {
 			_S.adsBlocked = e.data.detail.count;
-			for (const worker of _S.workers) {
-				worker.postMessage({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
-			}
+			_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
 			_log(`Restored ads count: ${_S.adsBlocked}`, "info");
 		}
 

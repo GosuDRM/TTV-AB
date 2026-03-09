@@ -16,6 +16,10 @@ document.addEventListener("DOMContentLoaded", () => {
 	const achievementsProgress = document.getElementById("achievementsProgress");
 	const nextAchievement = document.getElementById("nextAchievement");
 	const langSelector = document.getElementById("langSelector");
+	const descriptionText = document.getElementById("descriptionText");
+	const achievementsTitle = document.getElementById("achievementsTitle");
+	const footerText = document.getElementById("footerText");
+	const repoLink = document.getElementById("repoLink");
 
 	const LANG_KEY = "ttvab_lang";
 
@@ -31,12 +35,55 @@ document.addEventListener("DOMContentLoaded", () => {
 		return browserLang.split("-")[0];
 	}
 
+	function getLocaleTag() {
+		const lang = getLang();
+		return lang === "auto" ? navigator.language : lang.replace("_", "-");
+	}
+
+	function formatTemplate(template, values) {
+		return String(template || "").replace(/\{(\w+)\}/g, (_match, key) => {
+			return values[key] ?? "";
+		});
+	}
+
+	function getDateKey(date = new Date()) {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, "0");
+		const day = String(date.getDate()).padStart(2, "0");
+		return `${year}-${month}-${day}`;
+	}
+
+	function parseDateKey(dateKey) {
+		const [year, month, day] = String(dateKey)
+			.split("-")
+			.map((value) => Number.parseInt(value, 10));
+		return new Date(year, (month || 1) - 1, day || 1);
+	}
+
+	function getTranslations() {
+		return TRANSLATIONS[getLang()] || TRANSLATIONS.en;
+	}
+
+	function getAchievementTranslation(id) {
+		const t = getTranslations();
+		return t.achievementsMap?.[id] || TRANSLATIONS.en.achievementsMap[id];
+	}
+
 	function applyTranslations(lang) {
 		const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
 		document.querySelectorAll("[data-i18n]").forEach((el) => {
 			const key = el.dataset.i18n;
 			if (t[key]) el.textContent = t[key];
 		});
+		descriptionText.textContent = t.descriptionText;
+		const donateButton = document.getElementById("donateBtn");
+		if (donateButton) donateButton.title = t.supportDeveloper;
+		langSelector.title = t.language;
+		achievementsTitle.textContent = `🏆 ${t.achievements}`;
+		footerText.textContent = t.footerBy;
+		chartAvg.textContent = formatTemplate(t.avgPerDay, { avg: 0 });
+		const firstAchievement = t.achievementsMap.first_block;
+		nextAchievement.innerHTML = `${t.next}: <span class="next-achievement-name">⚔️ ${firstAchievement.name}</span>`;
 	}
 
 	const currentLang = localStorage.getItem(LANG_KEY) || "auto";
@@ -49,16 +96,17 @@ document.addEventListener("DOMContentLoaded", () => {
 		const effectiveLang =
 			lang === "auto"
 				? (() => {
-					const browserLang = navigator.language;
-					if (browserLang.startsWith("zh")) {
-						return browserLang.includes("TW") || browserLang.includes("Hant")
-							? "zh_TW"
-							: "zh_CN";
-					}
-					return browserLang.split("-")[0];
-				})()
+						const browserLang = navigator.language;
+						if (browserLang.startsWith("zh")) {
+							return browserLang.includes("TW") || browserLang.includes("Hant")
+								? "zh_TW"
+								: "zh_CN";
+						}
+						return browserLang.split("-")[0];
+					})()
 				: lang;
 		applyTranslations(effectiveLang);
+		updateStatus(toggle.checked);
 	});
 
 	const AVG_AD_DURATION = 22;
@@ -66,78 +114,67 @@ document.addEventListener("DOMContentLoaded", () => {
 	const ACHIEVEMENTS = [
 		{
 			id: "first_block",
-			name: "Ad Slayer",
 			icon: "⚔️",
 			threshold: 1,
 			type: "ads",
 		},
-		{ id: "block_10", name: "Blocker", icon: "🛡️", threshold: 10, type: "ads" },
+		{ id: "block_10", icon: "🛡️", threshold: 10, type: "ads" },
 		{
 			id: "block_100",
-			name: "Guardian",
 			icon: "🔰",
 			threshold: 100,
 			type: "ads",
 		},
 		{
 			id: "block_500",
-			name: "Sentinel",
 			icon: "🏰",
 			threshold: 500,
 			type: "ads",
 		},
 		{
 			id: "block_1000",
-			name: "Legend",
 			icon: "🏆",
 			threshold: 1000,
 			type: "ads",
 		},
 		{
 			id: "block_5000",
-			name: "Mythic",
 			icon: "👑",
 			threshold: 5000,
 			type: "ads",
 		},
 		{
 			id: "popup_10",
-			name: "Popup Crusher",
 			icon: "💥",
 			threshold: 10,
 			type: "popups",
 		},
 		{
 			id: "popup_50",
-			name: "Popup Destroyer",
 			icon: "🔥",
 			threshold: 50,
 			type: "popups",
 		},
 		{
 			id: "time_1h",
-			name: "Hour Saver",
 			icon: "⏱️",
 			threshold: 3600,
 			type: "time",
 		},
 		{
 			id: "time_10h",
-			name: "Time Master",
 			icon: "⏰",
 			threshold: 36000,
 			type: "time",
 		},
 		{
 			id: "channels_5",
-			name: "Explorer",
 			icon: "📺",
 			threshold: 5,
 			type: "channels",
 		},
 		{
 			id: "channels_20",
-			name: "Adventurer",
 			icon: "🌍",
 			threshold: 20,
 			type: "channels",
@@ -163,30 +200,32 @@ document.addEventListener("DOMContentLoaded", () => {
 		for (let i = 6; i >= 0; i--) {
 			const d = new Date();
 			d.setDate(d.getDate() - i);
-			days.push(d.toISOString().split("T")[0]);
+			days.push(getDateKey(d));
 		}
 		return days;
 	}
 
 	function renderChart(dailyData) {
+		const t = getTranslations();
 		const days = getLast7Days();
 		const values = days.map(
 			(d) => (dailyData[d]?.ads || 0) + (dailyData[d]?.popups || 0),
 		);
 		const max = Math.max(...values, 1);
 		const avg = Math.round(values.reduce((a, b) => a + b, 0) / 7);
+		const formatter = new Intl.DateTimeFormat(getLocaleTag(), {
+			weekday: "short",
+		});
 
 		weeklyChart.innerHTML = values
 			.map((v, i) => {
 				const height = Math.max((v / max) * 100, 8);
-				const dayName = new Date(days[i]).toLocaleDateString("en", {
-					weekday: "short",
-				});
-				return `<div class="chart-bar" style="height: ${height}%;" title="${dayName}: ${v} blocked"></div>`;
+				const dayName = formatter.format(parseDateKey(days[i]));
+				return `<div class="chart-bar" style="height: ${height}%;" title="${dayName}: ${v}"></div>`;
 			})
 			.join("");
 
-		chartAvg.textContent = `avg: ${avg}/day`;
+		chartAvg.textContent = formatTemplate(t.avgPerDay, { avg });
 	}
 
 	function escapeHtml(str) {
@@ -231,11 +270,14 @@ document.addEventListener("DOMContentLoaded", () => {
 	) {
 		const badges = achievementsGrid.querySelectorAll(".achievement-badge");
 		const timeSavedSecs = adsBlocked * AVG_AD_DURATION;
+		const t = getTranslations();
 		let unlockedCount = 0;
 		let nextAch = null;
 
 		ACHIEVEMENTS.forEach((ach, i) => {
+			const achievementText = getAchievementTranslation(ach.id);
 			const isUnlocked = unlocked.includes(ach.id);
+			badges[i].title = `${achievementText.name} - ${achievementText.desc}`;
 			if (isUnlocked) {
 				badges[i].classList.add("unlocked");
 				unlockedCount++;
@@ -267,10 +309,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		achievementsProgress.textContent = `${unlockedCount}/12`;
 
 		if (nextAch) {
-			const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
-			nextAchievement.innerHTML = `${t.next}: <span class="next-achievement-name">${nextAch.icon} ${nextAch.name}</span>`;
+			const achievementText = getAchievementTranslation(nextAch.id);
+			nextAchievement.innerHTML = `${t.next}: <span class="next-achievement-name">${nextAch.icon} ${achievementText.name}</span>`;
 		} else {
-			const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
 			nextAchievement.innerHTML = `<span class="next-achievement-name">🎉 ${t.allUnlocked}</span>`;
 		}
 	}
@@ -343,7 +384,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			for (const tab of tabs) {
 				chrome.tabs
 					.sendMessage(tab.id, { action: "toggle", enabled: enabled })
-					.catch(() => { });
+					.catch(() => {});
 			}
 		});
 	});
@@ -357,23 +398,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function updateStatus(enabled) {
 		const info = document.querySelector(".info");
+		const t = getTranslations();
 
 		if (enabled) {
 			statusDot.classList.remove("disabled");
-			statusText.textContent = "Active";
-			info.textContent = "Ad blocking ENABLED";
+			statusText.textContent = t.active;
+			info.textContent = `${t.adBlocking}: ${t.active}`;
 			info.style.color = "#4CAF50";
 		} else {
 			statusDot.classList.add("disabled");
-			statusText.textContent = "Disabled";
-			info.textContent = "Ad blocking DISABLED";
+			statusText.textContent = t.inactive;
+			info.textContent = `${t.adBlocking}: ${t.inactive}`;
 			info.style.color = "#f44336";
 		}
 
 		info.style.transition = "color 0.3s ease";
 		if (statusTimeout) clearTimeout(statusTimeout);
 		statusTimeout = setTimeout(() => {
-			info.textContent = "Changes take effect instantly";
+			info.textContent = t.changesInstantly;
 			info.style.color = "#666";
 		}, 1500);
 	}
@@ -392,6 +434,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	if (donateBtn) {
 		donateBtn.addEventListener("click", () => {
 			window.open("https://ko-fi.com/gosudrm", "_blank");
+		});
+	}
+
+	if (repoLink) {
+		repoLink.addEventListener("click", (e) => {
+			e.preventDefault();
+			window.open("https://github.com/GosuDRM/TTV-AB", "_blank");
 		});
 	}
 

@@ -39,6 +39,46 @@ function _replaceServerTime(m3u8, time) {
 	return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
 }
 
+function _hasExplicitAdMetadata(text) {
+	return (
+		typeof text === "string" &&
+		(text.includes(__TTVAB_STATE__.AdSignifier) ||
+			text.includes("X-TV-TWITCH-AD") ||
+			text.includes("stitched-ad") ||
+			text.includes("/adsquared/") ||
+			text.includes("SCTE35-OUT") ||
+			text.includes("MIDROLL") ||
+			text.includes("midroll"))
+	);
+}
+
+function _isKnownAdSegmentUrl(segmentUrl) {
+	const url = String(segmentUrl || "");
+	if (!url) return false;
+	return (
+		__TTVAB_STATE__.AdSegmentCache.has(url) ||
+		url.includes(__TTVAB_STATE__.AdSignifier) ||
+		url.includes("stitched-ad") ||
+		url.includes("/adsquared/") ||
+		url.includes("processing") ||
+		url.includes("/_404/")
+	);
+}
+
+function _playlistHasKnownAdSegments(text) {
+	if (typeof text !== "string" || !text) return false;
+	const lines = text.split("\n");
+	for (let index = 0; index < lines.length - 1; index++) {
+		if (
+			lines[index].startsWith("#EXTINF") &&
+			_isKnownAdSegmentUrl(lines[index + 1])
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function _stripAds(text, stripAll, info) {
 	const lines = text.split("\n");
 	const len = lines.length;
@@ -46,20 +86,27 @@ function _stripAds(text, stripAll, info) {
 	let stripped = false;
 	let i = 0;
 	const strippedSegments = [];
-	const MAX_RECOVERY_SEGMENTS = 3;
+	const MAX_RECOVERY_SEGMENTS = 6;
 
-	const hasAdSignifier = text.includes(__TTVAB_STATE__.AdSignifier);
+	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
+	const hasKnownAdSegments = _playlistHasKnownAdSegments(text);
+	const forceStripAllSegments =
+		stripAll ||
+		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
+		(hasExplicitAdMetadata && !hasKnownAdSegments);
 
-	if (hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) {
+	if (
+		hasExplicitAdMetadata ||
+		hasKnownAdSegments ||
+		stripAll ||
+		__TTVAB_STATE__.AllSegmentsAreAdSegments
+	) {
 		for (i = 0; i < len; i++) {
 			if (lines[i]?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
 				const prefetchUrl = lines[i]
 					.substring("#EXT-X-TWITCH-PREFETCH:".length)
 					.trim();
-				const isAdPrefetch =
-					__TTVAB_STATE__.AdSegmentCache.has(prefetchUrl) ||
-					prefetchUrl.includes("stitched-ad") ||
-					prefetchUrl.includes("/adsquared/");
+				const isAdPrefetch = _isKnownAdSegmentUrl(prefetchUrl);
 				if (isAdPrefetch) {
 					lines[i] = "";
 				}
@@ -74,10 +121,9 @@ function _stripAds(text, stripAll, info) {
 		const line = lines[i];
 		if (line.startsWith("#EXTINF")) {
 			const segmentUrl = lines[i + 1];
-			const isProcessing =
-				segmentUrl &&
-				(segmentUrl.includes("processing") || segmentUrl.includes("/_404/"));
-			if (!line.includes(",live") || isProcessing) {
+			const isAdSegment =
+				forceStripAllSegments || _isKnownAdSegmentUrl(segmentUrl);
+			if (isAdSegment) {
 				adSegmentCount++;
 			} else {
 				_liveSegmentCount++;
@@ -86,8 +132,11 @@ function _stripAds(text, stripAll, info) {
 	}
 
 	const shouldStrip =
-		(hasAdSignifier || stripAll || __TTVAB_STATE__.AllSegmentsAreAdSegments) &&
-		adSegmentCount > 0;
+		(hasExplicitAdMetadata ||
+			hasKnownAdSegments ||
+			stripAll ||
+			__TTVAB_STATE__.AllSegmentsAreAdSegments) &&
+		(adSegmentCount > 0 || forceStripAllSegments);
 
 	for (i = 0; i < len; i++) {
 		let line = lines[i];
@@ -103,10 +152,7 @@ function _stripAds(text, stripAll, info) {
 		}
 
 		const isAdSegment =
-			!line.includes(",live") ||
-			(i < len - 1 &&
-				(lines[i + 1].includes("processing") ||
-					lines[i + 1].includes("/_404/")));
+			forceStripAllSegments || _isKnownAdSegmentUrl(lines[i + 1]);
 
 		if (
 			shouldStrip &&
@@ -161,7 +207,11 @@ function _stripAds(text, stripAll, info) {
 	const result = lines.filter((l) => l !== "");
 
 	const hasRemainingSegments = result.some((l) => l.startsWith("#EXTINF"));
-	if (!hasRemainingSegments && strippedSegments.length > 0) {
+	if (
+		!hasRemainingSegments &&
+		strippedSegments.length > 0 &&
+		!forceStripAllSegments
+	) {
 		_log(
 			`[Recovery] Empty playlist - restoring ${strippedSegments.length} segment(s)`,
 			"warning",
@@ -175,7 +225,7 @@ function _stripAds(text, stripAll, info) {
 	return result.join("\n");
 }
 
-function _getStreamUrl(m3u8, res) {
+function _getStreamUrl(m3u8, res, baseUrl = null) {
 	const lines = m3u8.split("\n");
 	const len = lines.length;
 	const [tw, th] = res.Resolution.split("x").map(Number);
@@ -184,6 +234,14 @@ function _getStreamUrl(m3u8, res) {
 	let matchFps = false;
 	let closeUrl = null;
 	let closeDiff = Infinity;
+	const resolveUrl = (candidate) => {
+		if (!baseUrl) return candidate;
+		try {
+			return new URL(candidate, baseUrl).href;
+		} catch {
+			return candidate;
+		}
+	};
 
 	for (let i = 0; i < len - 1; i++) {
 		const line = lines[i];
@@ -202,7 +260,7 @@ function _getStreamUrl(m3u8, res) {
 
 		if (resolution === res.Resolution) {
 			if (!matchUrl || (!matchFps && frameRate === res.FrameRate)) {
-				matchUrl = lines[i + 1];
+				matchUrl = resolveUrl(lines[i + 1]);
 				matchFps = frameRate === res.FrameRate;
 				if (matchFps) return matchUrl;
 			}
@@ -211,10 +269,44 @@ function _getStreamUrl(m3u8, res) {
 		const [w, h] = resolution.split("x").map(Number);
 		const diff = Math.abs(w * h - targetPixels);
 		if (diff < closeDiff) {
-			closeUrl = lines[i + 1];
+			closeUrl = resolveUrl(lines[i + 1]);
 			closeDiff = diff;
 		}
 	}
 
 	return matchUrl || closeUrl;
+}
+
+function _getFallbackResolution(info, url) {
+	const resolutionList = Array.isArray(info?.ResolutionList)
+		? info.ResolutionList.filter(Boolean)
+		: [];
+	if (resolutionList.length === 0) {
+		return null;
+	}
+
+	if (url) {
+		const direct = resolutionList.find(
+			(entry) => entry.Url === url || entry.RawUrl === url,
+		);
+		if (direct) return direct;
+	}
+
+	const activeType = info?.ActiveBackupPlayerType || null;
+	if (activeType && typeof info?.ActiveBackupResolution === "string") {
+		const active = resolutionList.find(
+			(entry) => entry.Resolution === info.ActiveBackupResolution,
+		);
+		if (active) return active;
+	}
+
+	return [...resolutionList].sort((a, b) => {
+		const [aw, ah] = String(a?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		const [bw, bh] = String(b?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		return bw * bh - aw * ah;
+	})[0];
 }

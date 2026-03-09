@@ -1,8 +1,15 @@
-// TTV AB - Bridge Script (ISOLATED world)
+// TTV AB - Bridge Script
 // https://github.com/GosuDRM/TTV-AB | MIT License
 
+function getDateKey(date = new Date()) {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+}
+
 function getTodayKey() {
-	return new Date().toISOString().split("T")[0];
+	return getDateKey(new Date());
 }
 
 const ACHIEVEMENTS = [
@@ -22,6 +29,11 @@ const ACHIEVEMENTS = [
 
 const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
+const bridgeState = {
+	enabled: true,
+	storedAdsCount: 0,
+	storedPopupsCount: 0,
+};
 
 const StorageQueue = {
 	_chain: Promise.resolve(),
@@ -65,7 +77,7 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 
 			const cutoff = new Date();
 			cutoff.setDate(cutoff.getDate() - 30);
-			const cutoffKey = cutoff.toISOString().split("T")[0];
+			const cutoffKey = getDateKey(cutoff);
 			for (const key in stats.daily) {
 				if (key < cutoffKey) {
 					delete stats.daily[key];
@@ -137,20 +149,26 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 chrome.storage.local.get(
 	["ttvAdblockEnabled", "ttvAdsBlocked", "ttvPopupsBlocked"],
 	(result) => {
-		const enabled = result.ttvAdblockEnabled !== false;
-		const storedAdsCount = result.ttvAdsBlocked || 0;
-		const storedPopupsCount = result.ttvPopupsBlocked || 0;
+		bridgeState.enabled = result.ttvAdblockEnabled !== false;
+		bridgeState.storedAdsCount = result.ttvAdsBlocked || 0;
+		bridgeState.storedPopupsCount = result.ttvPopupsBlocked || 0;
 
 		function broadcastState() {
-			window.postMessage({ type: "ttvab-toggle", detail: { enabled } }, "*");
 			window.postMessage(
-				{ type: "ttvab-init-count", detail: { count: storedAdsCount } },
+				{ type: "ttvab-toggle", detail: { enabled: bridgeState.enabled } },
+				"*",
+			);
+			window.postMessage(
+				{
+					type: "ttvab-init-count",
+					detail: { count: bridgeState.storedAdsCount },
+				},
 				"*",
 			);
 			window.postMessage(
 				{
 					type: "ttvab-init-popups-count",
-					detail: { count: storedPopupsCount },
+					detail: { count: bridgeState.storedPopupsCount },
 				},
 				"*",
 			);
@@ -163,15 +181,30 @@ chrome.storage.local.get(
 				broadcastState();
 			}
 		});
+
+		chrome.storage.onChanged.addListener((changes, namespace) => {
+			if (namespace !== "local") return;
+			if (changes.ttvAdblockEnabled) {
+				bridgeState.enabled = changes.ttvAdblockEnabled.newValue !== false;
+			}
+			if (changes.ttvAdsBlocked) {
+				bridgeState.storedAdsCount = changes.ttvAdsBlocked.newValue || 0;
+			}
+			if (changes.ttvPopupsBlocked) {
+				bridgeState.storedPopupsCount = changes.ttvPopupsBlocked.newValue || 0;
+			}
+		});
 	},
 );
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (message.action === "toggle") {
+		bridgeState.enabled = message.enabled !== false;
 		window.postMessage(
-			{ type: "ttvab-toggle", detail: { enabled: message.enabled } },
+			{ type: "ttvab-toggle", detail: { enabled: bridgeState.enabled } },
 			"*",
 		);
+		chrome.storage.local.set({ ttvAdblockEnabled: bridgeState.enabled });
 		sendResponse({ success: true });
 	} else if (message.action === "getAdsBlocked") {
 		chrome.storage.local.get(["ttvAdsBlocked"], (result) => {

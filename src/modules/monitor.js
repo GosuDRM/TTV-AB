@@ -3,6 +3,23 @@
 function _initCrashMonitor() {
 	let isRefreshing = false;
 	let checkInterval = null;
+	let lastDeferredCrashAt = 0;
+
+	function isDocumentHidden() {
+		const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
+		try {
+			if (typeof nativeVisibility?.hidden === "function") {
+				return nativeVisibility.hidden.call(document) === true;
+			}
+			if (typeof nativeVisibility?.webkitHidden === "function") {
+				return nativeVisibility.webkitHidden.call(document) === true;
+			}
+			if (typeof nativeVisibility?.mozHidden === "function") {
+				return nativeVisibility.mozHidden.call(document) === true;
+			}
+		} catch {}
+		return document.hidden;
+	}
 
 	function detectCrash() {
 		const errorElements = document.querySelectorAll(
@@ -25,15 +42,38 @@ function _initCrashMonitor() {
 
 	function handleCrash(error) {
 		if (isRefreshing) return;
+
+		const now = Date.now();
+		const activeAdChannel = __TTVAB_STATE__.CurrentAdChannel;
+		const lastRecoveryActivity = Math.max(
+			__TTVAB_STATE__.LastAdRecoveryReloadAt || 0,
+			__TTVAB_STATE__.LastAdDetectedAt || 0,
+		);
+		if (
+			error === "Error #2000" &&
+			activeAdChannel &&
+			lastRecoveryActivity &&
+			now - lastRecoveryActivity < __TTVAB_STATE__.AdRecoveryCrashGracePeriodMs
+		) {
+			if (now - lastDeferredCrashAt > 2000) {
+				_log(
+					`Player error during ad recovery for ${activeAdChannel}; waiting before refresh`,
+					"warning",
+				);
+				lastDeferredCrashAt = now;
+			}
+			return;
+		}
+
 		isRefreshing = true;
 
 		_log(`Player crash: ${error}`, "error");
 
-		if (document.hidden) {
+		if (isDocumentHidden()) {
 			_log("Tab hidden, will refresh when visible", "warning");
 
 			document.addEventListener("visibilitychange", function onVisible() {
-				if (!document.hidden) {
+				if (!isDocumentHidden()) {
 					document.removeEventListener("visibilitychange", onVisible);
 					_log("Tab visible, refreshing...", "warning");
 					window.location.reload();
@@ -84,7 +124,7 @@ function _initCrashMonitor() {
 		});
 
 		checkInterval = setInterval(() => {
-			if (document.hidden) return;
+			if (isDocumentHidden()) return;
 			try {
 				const error = detectCrash();
 				if (error) {
