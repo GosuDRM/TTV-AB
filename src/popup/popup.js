@@ -81,9 +81,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		langSelector.title = t.language;
 		achievementsTitle.textContent = `🏆 ${t.achievements}`;
 		footerText.textContent = t.footerBy;
-		chartAvg.textContent = formatTemplate(t.avgPerDay, { avg: 0 });
-		const firstAchievement = t.achievementsMap.first_block;
-		nextAchievement.innerHTML = `${t.next}: <span class="next-achievement-name">⚔️ ${firstAchievement.name}</span>`;
 	}
 
 	const currentLang = localStorage.getItem(LANG_KEY) || "auto";
@@ -106,6 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
 					})()
 				: lang;
 		applyTranslations(effectiveLang);
+		loadStatistics();
 		updateStatus(toggle.checked);
 	});
 
@@ -275,6 +273,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		let nextAch = null;
 
 		ACHIEVEMENTS.forEach((ach, i) => {
+			if (!badges[i]) return;
 			const achievementText = getAchievementTranslation(ach.id);
 			const isUnlocked = unlocked.includes(ach.id);
 			badges[i].title = `${achievementText.name} - ${achievementText.desc}`;
@@ -306,7 +305,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 		});
 
-		achievementsProgress.textContent = `${unlockedCount}/12`;
+		achievementsProgress.textContent = `${unlockedCount}/${ACHIEVEMENTS.length}`;
 
 		if (nextAch) {
 			const achievementText = getAchievementTranslation(nextAch.id);

@@ -62,7 +62,7 @@ function _initCrashMonitor() {
 				);
 				lastDeferredCrashAt = now;
 			}
-			return;
+			return false;
 		}
 
 		isRefreshing = true;
@@ -94,6 +94,8 @@ function _initCrashMonitor() {
 
 			setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
 		}
+
+		return true;
 	}
 
 	function start() {
@@ -110,8 +112,7 @@ function _initCrashMonitor() {
 				lastCheck = now;
 
 				const error = detectCrash();
-				if (error) {
-					handleCrash(error);
+				if (error && handleCrash(error)) {
 					observer.disconnect();
 					if (checkInterval) clearInterval(checkInterval);
 				}
@@ -127,8 +128,7 @@ function _initCrashMonitor() {
 			if (isDocumentHidden()) return;
 			try {
 				const error = detectCrash();
-				if (error) {
-					handleCrash(error);
+				if (error && handleCrash(error)) {
 					observer.disconnect();
 					clearInterval(checkInterval);
 				}

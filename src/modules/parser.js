@@ -151,36 +151,37 @@ function _stripAds(text, stripAll, info) {
 			lines[i] = line;
 		}
 
-		const isAdSegment =
-			forceStripAllSegments || _isKnownAdSegmentUrl(lines[i + 1]);
+		if (shouldStrip && i < len - 1 && line.startsWith("#EXTINF")) {
+			const isAdSegment =
+				forceStripAllSegments || _isKnownAdSegmentUrl(lines[i + 1]);
 
-		if (
-			shouldStrip &&
-			i < len - 1 &&
-			line.startsWith("#EXTINF") &&
-			isAdSegment
-		) {
-			const segmentUrl = lines[i + 1];
+			if (isAdSegment) {
+				const segmentUrl = lines[i + 1];
 
-			strippedSegments.push({ extinf: lines[i], url: segmentUrl });
-			if (strippedSegments.length > MAX_RECOVERY_SEGMENTS) {
-				strippedSegments.shift();
+				strippedSegments.push({ extinf: lines[i], url: segmentUrl });
+				if (strippedSegments.length > MAX_RECOVERY_SEGMENTS) {
+					strippedSegments.shift();
+				}
+
+				if (
+					segmentUrl &&
+					!info.RequestedAds.has(segmentUrl) &&
+					!info.IsMidroll
+				) {
+					info.RequestedAds.add(segmentUrl);
+					fetch(segmentUrl)
+						.then((r) => r.blob())
+						.catch(() => {});
+				}
+
+				if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl))
+					info.NumStrippedAdSegments++;
+				__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
+				stripped = true;
+				lines[i] = "";
+				lines[i + 1] = "";
+				i++;
 			}
-
-			if (segmentUrl && !info.RequestedAds.has(segmentUrl) && !info.IsMidroll) {
-				info.RequestedAds.add(segmentUrl);
-				fetch(segmentUrl)
-					.then((r) => r.blob())
-					.catch(() => {});
-			}
-
-			if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl))
-				info.NumStrippedAdSegments++;
-			__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
-			stripped = true;
-			lines[i] = "";
-			lines[i + 1] = "";
-			i++;
 		}
 
 		if (line.includes(__TTVAB_STATE__.AdSignifier)) stripped = true;

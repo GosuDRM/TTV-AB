@@ -2,6 +2,69 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.4] - 2026-03-10
+
+### Changed
+- **Display Ad Detection Tightening** - Refined stream-display and picture-in-picture shell detection so DOM-side cleanup now requires stronger visible ad signals near the main player before it counts or collapses anything.
+- **Ad Label Gating** - Visible `Ad` labels near the player are no longer treated as enough on their own; DOM-side display-ad cleanup now also requires a matching shell, PIP, or layout-state signal before it counts as a blocked ad.
+- **Explicit vs Inferred Display Shell Handling** - DOM-side stream-display cleanup now separates explicit ad evidence from inferred shell geometry. Explicit player-ad nodes or promo CTAs can count as blocked ads, while geometry-only shell inference is limited to silent layout cleanup.
+- **Player Surface Safety** - Limited display-ad cleanup to explicit ad nodes and layout reset paths, reducing cases where broad player overlay removal could blank the video surface or mis-handle stale ad events.
+- **Offline Page Ad Handling** - Added dedicated offline channel-page promo ad detection so Twitch's non-live "watch after this break" cards can be hidden and counted without relying on live player ad flow.
+
+### Fixed
+- **False-Positive Ad Counts** - Clean channels are less likely to increment `Ads Blocked` from leftover stream-display layout classes or unrelated page elements.
+- **Label-Only False Positives** - Fixed cases where ordinary player UI or transient `Ad` labels could increment `Ads Blocked` even though no real worker-side ad cycle or display-ad shell was present.
+- **Geometry-Only Shell False Positives** - Fixed cases where inferred stream-display wrappers on normal layouts could still fire `ttvab-ad-blocked` and achievements even though only silent shell cleanup should have run.
+- **Black Screen With Audio** - Fixed a regression where overly broad display-ad cleanup could leave the player visually black while audio kept playing.
+- **Stale Cross-Channel Ad Events** - DOM-side ad handling now ignores stale `ttvab-ad-blocked` events from other channels instead of applying cleanup to the wrong tab.
+- **Warning Log Level** - Warning messages were silently routed to `console.info` instead of `console.warn`, making them invisible when filtering by console level.
+- **Backup Cache Data Structure** - `BackupEncodingsM3U8Cache` was initialized as an `Array` but used with string keys, causing silent data loss if the cache was ever serialized.
+- **Minify Name Collision** - `_reinsert` minified to `_$ri` which was a substring of `_REMINDER_INTERVAL`'s `_$ri2`, risking interference across replacement passes.
+- **Tab Visibility Auto-Resume** - Auto-resume after visibility change required the video to be muted, preventing unmuted streams from resuming on tab refocus.
+- **Playlist Parser Out-of-Bounds** - The final ad-strip loop computed `lines[i+1]` outside the bounds guard, performing unnecessary work on the last line.
+- **Null TextContent Guard** - Popup scan could throw on nodes with null `textContent` during span-length checks.
+- **Health-Check False Alarms** - The bridge counter health-check could false-alarm when the `StorageQueue` hadn't finished flushing yet.
+- **Popup Chart Average Reset** - `applyTranslations` reset the weekly chart average display to 0 on every language change instead of preserving the real value.
+- **Worker Blob URL Timing** - `URL.revokeObjectURL` was called synchronously after worker creation, risking revocation before the browser loaded the blob.
+- **Missing Reserved Routes** - `_getCurrentChannelName` in the popup blocker was missing `"jobs"` and `"wallet"` from its reserved-routes set, differing from the equivalent check in the worker hook.
+- **Incomplete Minify Map** - 8 internal function names (`_hasPlaylistAdMarkers`, `_syncStreamInfo`, `_resetStreamAdState`, `_getStreamInfoForPlaylist`, `_getFallbackResolution`, `_hasExplicitAdMetadata`, `_isKnownAdSegmentUrl`, `_playlistHasKnownAdSegments`) were missing from the build minification map.
+- **DOM/Worker Double-Count** - Display-ad shell and promoted-page ad detection on the DOM side could both fire `_incrementAdsBlocked` while the worker's HLS ad detection already counted the same ad, inflating the Ads Blocked counter.
+- **localStorage Hook Chaining** - `_hookLocalStoragePreservation` was initialized after `_hookStorage`, causing the preservation hook to capture the already-wrapped `getItem` instead of the real one. Reordered to preserve the native reference.
+- **Perpetual Backup Skip** - `LastPlayerReload` was set on every master playlist refresh, not just actual player reloads. This kept the minimal-requests window perpetually active, permanently skipping early backup player types during ad recovery.
+- **Buffer Fix Counter** - After the buffering fix triggered a pause/play or reload, `numSame` was not reset to 0, preventing re-triggering if the same stall persisted after the fix attempt.
+- **Crash Monitor Death** - The crash monitor's MutationObserver and interval were disconnected even when `handleCrash` returned early (during `Error #2000` ad-recovery grace period), permanently killing crash detection.
+- **Backup Cache Wipe During Ads** - `_syncStreamInfo` cleared `BackupEncodingsM3U8Cache` on every master playlist refresh, forcing expensive token and usher re-fetches during active ad breaks instead of reusing cached backups.
+- **Next-Achievement Overwrite** - `applyTranslations` in the popup unconditionally reset the next-achievement hint to the first achievement ("Ad Slayer") on every language change, ignoring the user's actual progress.
+- **Stats Silent Failure** - `updateStats` in the bridge script did not check `chrome.runtime.lastError`, causing silent data loss and false achievement notifications when storage operations failed.
+- **Achievement Persistence** - The `stats.achievements` array was only written to storage when new achievements unlocked, leaving it uninitialized (`undefined`) until the first unlock.
+- **Request-State Source Check** - The `ttvab-request-state` message handler in the bridge was missing an `e.source === window` guard, allowing iframes to trigger state broadcasts.
+- **Achievement Progress Denominator** - The popup showed a hardcoded `/12` achievement count instead of using the actual `ACHIEVEMENTS.length`.
+- **Achievement Badge Guard** - `renderAchievements` could throw on `badges[i]` if the popup HTML had fewer badge elements than the `ACHIEVEMENTS` array.
+- **Worker Header Updates Dropped** - `_hookMainFetch` sent batched header updates (Client-Integrity, Authorization, Client-Version, etc.) to workers as a single array message, but the worker's message handler expected individual `{key, value}` messages. All header updates were silently dropped for the entire session.
+- **Stream Info Fallback Sort** - `_getStreamInfoForPlaylist`'s fallback sort used `LastPlayerReload` as tiebreaker, which was `0` for most streams. Now uses a new `LastActivityAt` field set on every master playlist poll.
+- **Stale Stream Check Flooding** - The liveness check for existing stream info fetched a variant URL on every master playlist poll (15-30 extra requests/minute). Now throttled to once every 10 seconds.
+- **Hook Chaining Order** - Restored `_hookStorage()` before `_hookLocalStoragePreservation()` so that `unique_id` reads through the preservation hook's fallback path still go through the device ID capture hook.
+- **Missing Minify Entry** - `_broadcastWorkers` was missing from the build minification map, leaving it unminified in the output.
+- **Cross-Tab Counter Race** - Each tab's bridge did a non-atomic read-increment-write on `ttvAdsBlocked`, causing lost counts when multiple tabs blocked ads simultaneously. Replaced with debounced delta-based flush that reads fresh values at write time.
+- **Cross-Tab Stats Clobber** - The `ttvStats` object suffered the same cross-tab race, with concurrent writes from different tabs overwriting each other's channel/daily data. Now batched via the same debounced flush.
+- **Health Check False Positives** - The counter health check produced false alarms in multi-tab scenarios because it didn't account for cross-tab increments. Removed in favor of the self-correcting delta-based approach.
+- **Toggle State Not Propagated** - The `chrome.storage.onChanged` listener updated `bridgeState.enabled` but never posted `ttvab-toggle` to the content script, causing stale toggle state when the popup's `sendMessage` failed to reach a tab.
+
+## [4.2.3] - 2026-03-10
+
+### Changed
+- **Ad Recovery Stability** - Reworked backup stream recovery so Twitch token, playlist, and reload handling stay synchronized more reliably during preroll and midroll transitions.
+- **Native Token Control** - Tightened native `PlaybackAccessToken` handling so the player follows the intended recovery path more consistently instead of drifting back to Twitch's default token flow.
+- **Display Ad Shell Handling** - Expanded DOM-side cleanup for Twitch's newer stream-display / picture-in-picture ad layouts, including direct shell selectors, layout-state resets, and post-block rescans when the player leaves white `L`-shaped ad framing behind.
+- **Worker and Playlist Hardening** - Strengthened worker bootstrap, playlist parsing, and fallback validation so recovery is less likely to stall, misclassify playback, or accept ad-bearing backup content.
+- **Popup, Stats, and Localization Polish** - Consolidated the popup, local-day stats, and localization fixes shipped during the 4.2.2 cycle into the current release baseline.
+
+### Fixed
+- **Visible Ad Shells After Blocked Ads** - Stream-display ad shells that could survive after `ttvab-ad-blocked` now get explicit DOM collapse and player-layout reset handling, reducing cases where the ad video is blocked but the visual shell stays on screen.
+- **Reload and Buffer Loops** - Reduced duplicate ad-recovery reloads, false-positive refreshes, and unstable fallback transitions that could bounce the player during ad windows.
+- **Fallback Ad Leaks** - Closed several cases where ad-marked or metadata-only fallback playlists could still slip through as apparently clean playback.
+- **Worker Runtime Regressions** - Fixed helper injection, worker sync drift, and compatibility issues that could break recovery or crash the player after Twitch updates.
+
 ## [4.2.2] - 2026-03-09
 
 ### Changed

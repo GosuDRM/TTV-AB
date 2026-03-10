@@ -25,6 +25,7 @@ const MINIFY_MAP = {
 	_S: "_$s",
 	_log: "_$l",
 	_declareState: "_$ds",
+	_broadcastWorkers: "_$bw",
 	_incrementAdsBlocked: "_$ab",
 	_parseAttrs: "_$pa",
 	_getServerTime: "_$gt",
@@ -41,7 +42,7 @@ const MINIFY_MAP = {
 	_hookMainFetch: "_$mf",
 	_cleanWorker: "_$cw",
 	_getReinsert: "_$gr",
-	_reinsert: "_$ri",
+	_reinsert: "_$re",
 	_isValid: "_$iv",
 	_showDonation: "_$dn",
 	_showWelcome: "_$wc",
@@ -73,6 +74,14 @@ const MINIFY_MAP = {
 	_monitorPlayerBuffering: "_$mpb",
 	_hookVisibilityState: "_$hvs",
 	_hookLocalStoragePreservation: "_$hlp",
+	_hasPlaylistAdMarkers: "_$hpa",
+	_syncStreamInfo: "_$si",
+	_resetStreamAdState: "_$rsa",
+	_getStreamInfoForPlaylist: "_$gsi",
+	_getFallbackResolution: "_$gfr",
+	_hasExplicitAdMetadata: "_$hem",
+	_isKnownAdSegmentUrl: "_$kas",
+	_playlistHasKnownAdSegments: "_$pka",
 };
 
 function getVersion() {

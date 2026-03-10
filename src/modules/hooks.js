@@ -26,7 +26,9 @@ function _hookWorkerFetch() {
 		info.UsherParams = new URL(usherUrl).search;
 		info.Urls = Object.create(null);
 		info.ResolutionList = [];
-		info.BackupEncodingsM3U8Cache = [];
+		if (!info.IsShowingAd) {
+			info.BackupEncodingsM3U8Cache = Object.create(null);
+		}
 		info.ModifiedM3U8 = null;
 
 		for (const variantUrl in __TTVAB_STATE__.StreamInfosByUrl) {
@@ -160,9 +162,14 @@ function _hookWorkerFetch() {
 			let info = __TTVAB_STATE__.StreamInfos[channel];
 
 			if (info?.EncodingsM3U8) {
-				const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
-				if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
-					info = null;
+				const now = Date.now();
+				const lastStaleCheck = info._lastStaleCheckAt || 0;
+				if (now - lastStaleCheck > 10000) {
+					info._lastStaleCheckAt = now;
+					const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
+					if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
+						info = null;
+					}
 				}
 			}
 
@@ -184,22 +191,23 @@ function _hookWorkerFetch() {
 					RejectedBackupPlayerTypes: new Set(),
 					Urls: Object.create(null),
 					ResolutionList: [],
-					BackupEncodingsM3U8Cache: [],
+					BackupEncodingsM3U8Cache: Object.create(null),
 					ActiveBackupPlayerType: null,
 					ActiveBackupResolution: null,
 					IsMidroll: false,
 					IsStrippingAdSegments: false,
 					NumStrippedAdSegments: 0,
+					LastActivityAt: Date.now(),
 				};
 			}
 
 			_syncStreamInfo(channel, info, encodings, url);
+			info.LastActivityAt = Date.now();
 
 			if (isNewInfo) {
 				_log(`Stream initialized: ${channel}`, "success");
 			}
 
-			info.LastPlayerReload = Date.now();
 			const playlist = info.IsUsingModifiedM3U8
 				? info.ModifiedM3U8
 				: info.EncodingsM3U8;
@@ -343,13 +351,49 @@ function _hookWorker() {
 
 			const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
 			super(blobUrl, opts);
-			URL.revokeObjectURL(blobUrl);
+			setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+
+			const getCurrentPageChannel = () => {
+				const match = window.location.pathname.match(/^\/([^/?#]+)/);
+				const candidate = match?.[1] || null;
+				if (!candidate) return null;
+				const reserved = new Set([
+					"browse",
+					"directory",
+					"downloads",
+					"drops",
+					"following",
+					"friends",
+					"inventory",
+					"jobs",
+					"messages",
+					"search",
+					"settings",
+					"subscriptions",
+					"turbo",
+					"videos",
+					"wallet",
+				]);
+				return reserved.has(candidate.toLowerCase()) ? null : candidate;
+			};
+			const isStaleChannelEvent = (channel) => {
+				if (!channel) return false;
+				const currentChannel = getCurrentPageChannel();
+				return Boolean(currentChannel && currentChannel !== channel);
+			};
 
 			this.addEventListener("message", (e) => {
 				if (!e.data?.key) return;
 
 				switch (e.data.key) {
 					case "AdBlocked":
+						if (isStaleChannelEvent(e.data.channel || null)) {
+							_log(
+								`Ignoring stale AdBlocked event for ${e.data.channel}`,
+								"info",
+							);
+							break;
+						}
 						_S.adsBlocked = e.data.count;
 						window.postMessage(
 							{
@@ -364,6 +408,13 @@ function _hookWorker() {
 						_log(`Ad blocked! Total: ${e.data.count}`, "success");
 						break;
 					case "AdDetected":
+						if (isStaleChannelEvent(e.data.channel || null)) {
+							_log(
+								`Ignoring stale AdDetected event for ${e.data.channel}`,
+								"info",
+							);
+							break;
+						}
 						{
 							const now = Date.now();
 							const channel =
@@ -385,6 +436,13 @@ function _hookWorker() {
 						_log("Ad detected, blocking...", "warning");
 						break;
 					case "BackupPlayerTypeSelected":
+						if (isStaleChannelEvent(e.data.channel || null)) {
+							_log(
+								`Ignoring stale backup selection for ${e.data.channel}`,
+								"info",
+							);
+							break;
+						}
 						__TTVAB_STATE__.PinnedBackupPlayerType = e.data.value || null;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel =
 							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
@@ -396,6 +454,13 @@ function _hookWorker() {
 						_log(`Pinned backup type: ${e.data.value}`, "info");
 						break;
 					case "AdEnded":
+						if (isStaleChannelEvent(e.data.channel || null)) {
+							_log(
+								`Ignoring stale AdEnded event for ${e.data.channel}`,
+								"info",
+							);
+							break;
+						}
 						__TTVAB_STATE__.CurrentAdChannel = null;
 						__TTVAB_STATE__.PinnedBackupPlayerType = null;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
@@ -407,7 +472,7 @@ function _hookWorker() {
 						});
 						_log("Ad ended", "success");
 						try {
-							const pipSelectors = [
+							const removableSelectors = [
 								'[data-a-target="video-player-pip-container"]',
 								'[data-a-target="video-player-mini-player"]',
 								".video-player__pip-container",
@@ -415,16 +480,75 @@ function _hookWorker() {
 								".mini-player",
 								'[class*="mini-player"]',
 								'[class*="pip-container"]',
+								'div[data-test-selector="display-ad"]',
+								'[data-a-target="ads-banner"]',
 							];
-							pipSelectors.forEach((sel) => {
+							const resetOnlySelectors = [
+								".stream-display-ad",
+								'[class*="stream-display-ad"]',
+								".video-player--stream-display-ad",
+								'[class*="video-player--stream-display-ad"]',
+							];
+							removableSelectors.forEach((sel) => {
 								document.querySelectorAll(sel).forEach((el) => {
 									el.style.display = "none";
 									el.remove();
 								});
 							});
+							resetOnlySelectors.forEach((sel) => {
+								document.querySelectorAll(sel).forEach((el) => {
+									if (
+										typeof el.className === "string" &&
+										el.className.includes("stream-display-ad")
+									) {
+										el.className = el.className
+											.split(/\s+/)
+											.filter(
+												(className) =>
+													className && !className.includes("stream-display-ad"),
+											)
+											.join(" ");
+									}
+									if (
+										el.querySelector?.("video") ||
+										el.matches?.('[data-a-target="video-player"]') ||
+										el.matches?.('[class*="video-player"]')
+									) {
+										el.style.removeProperty("display");
+										el.style.removeProperty("visibility");
+										el.style.setProperty("padding", "0", "important");
+										el.style.setProperty("margin", "0", "important");
+										el.style.setProperty(
+											"background",
+											"transparent",
+											"important",
+										);
+										el.style.setProperty(
+											"background-color",
+											"transparent",
+											"important",
+										);
+										el.style.setProperty("width", "100%", "important");
+										el.style.setProperty("height", "100%", "important");
+										el.style.setProperty("max-width", "100%", "important");
+										el.style.setProperty("max-height", "100%", "important");
+										el.style.setProperty("inset", "0", "important");
+									} else {
+										el.style.display = "none";
+										el.remove();
+									}
+								});
+							});
 						} catch (_e) {}
 						break;
 					case "ReloadPlayer":
+						if (isStaleChannelEvent(e.data.channel || null)) {
+							_log(
+								`Ignoring stale ReloadPlayer event for ${e.data.channel}`,
+								"info",
+							);
+							break;
+						}
 						_log(`Reloading player (${e.data.reason || "manual"})`, "info");
 						if (typeof _doPlayerTask === "function") {
 							_doPlayerTask(false, true, {
@@ -519,7 +643,13 @@ function _hookStorage() {
 function _hookMainFetch() {
 	const realFetch = window.fetch;
 	const updateWorkers = (updates) => {
-		_broadcastWorkers(updates);
+		if (Array.isArray(updates)) {
+			for (const msg of updates) {
+				_broadcastWorkers(msg);
+			}
+		} else {
+			_broadcastWorkers(updates);
+		}
 	};
 	const rewritePlaybackAccessTokenBody = (bodyText) => {
 		if (
