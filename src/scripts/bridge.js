@@ -246,10 +246,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 				return;
 			}
 			bridgeState.enabled = nextEnabled;
-			window.postMessage(
-				{ type: "ttvab-toggle", detail: { enabled: bridgeState.enabled } },
-				"*",
-			);
 			sendResponse({ success: true });
 		});
 		return true;
