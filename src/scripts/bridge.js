@@ -68,11 +68,12 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 				return;
 			}
 			const safeResult = result || {};
-			const stats = safeResult.ttvStats || {
-				daily: {},
-				channels: {},
-				achievements: [],
-			};
+			const stats = safeResult.ttvStats || {};
+			stats.daily = stats.daily || {};
+			stats.channels = stats.channels || {};
+			stats.achievements = Array.isArray(stats.achievements)
+				? stats.achievements
+				: [];
 			const today = getTodayKey();
 
 			if (!stats.daily[today]) {
