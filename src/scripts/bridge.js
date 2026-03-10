@@ -292,6 +292,10 @@ function flushCounters() {
 								"[TTV AB] Storage write error:",
 								chrome.runtime.lastError.message,
 							);
+							pendingAdsDelta += adsDelta;
+							pendingPopupsDelta += popupsDelta;
+							pendingAdChannels.push(...channels);
+							scheduleFlush();
 							resolve();
 							return;
 						}
