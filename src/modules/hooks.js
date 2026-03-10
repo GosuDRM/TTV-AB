@@ -40,8 +40,8 @@ function _hookWorkerFetch() {
 		const lines = encodings.split("\n");
 		for (let i = 0, len = lines.length; i < len - 1; i++) {
 			if (
-				lines[i].startsWith("#EXT-X-STREAM-INF") &&
-				lines[i + 1].includes(".m3u8")
+				lines[i]?.startsWith("#EXT-X-STREAM-INF") &&
+				lines[i + 1]?.includes(".m3u8")
 			) {
 				const attrs = _parseAttrs(lines[i]);
 				const resolution = attrs.RESOLUTION;
@@ -76,7 +76,7 @@ function _hookWorkerFetch() {
 		if (hasHevc && nonHevcList.length > 0) {
 			const modLines = [...lines];
 			for (let mi = 0; mi < modLines.length - 1; mi++) {
-				if (modLines[mi].startsWith("#EXT-X-STREAM-INF")) {
+				if (modLines[mi]?.startsWith("#EXT-X-STREAM-INF")) {
 					const attrs = _parseAttrs(modLines[mi]);
 					const codecs = attrs.CODECS || "";
 					if (codecs.startsWith("hev") || codecs.startsWith("hvc")) {

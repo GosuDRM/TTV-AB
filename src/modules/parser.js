@@ -70,7 +70,7 @@ function _playlistHasKnownAdSegments(text) {
 	const lines = text.split("\n");
 	for (let index = 0; index < lines.length - 1; index++) {
 		if (
-			lines[index].startsWith("#EXTINF") &&
+			lines[index]?.startsWith("#EXTINF") &&
 			_isKnownAdSegmentUrl(lines[index + 1])
 		) {
 			return true;
@@ -119,7 +119,7 @@ function _stripAds(text, stripAll, info) {
 
 	for (i = 0; i < len - 1; i++) {
 		const line = lines[i];
-		if (line.startsWith("#EXTINF")) {
+		if (line?.startsWith("#EXTINF")) {
 			const segmentUrl = lines[i + 1];
 			const isAdSegment =
 				forceStripAllSegments || _isKnownAdSegmentUrl(segmentUrl);
@@ -141,7 +141,7 @@ function _stripAds(text, stripAll, info) {
 	for (i = 0; i < len; i++) {
 		let line = lines[i];
 
-		if (line.includes("X-TV-TWITCH-AD")) {
+		if (line?.includes("X-TV-TWITCH-AD")) {
 			line = line
 				.replace(/X-TV-TWITCH-AD-URL="[^"]*"/, `X-TV-TWITCH-AD-URL="${adUrl}"`)
 				.replace(
@@ -151,7 +151,7 @@ function _stripAds(text, stripAll, info) {
 			lines[i] = line;
 		}
 
-		if (shouldStrip && i < len - 1 && line.startsWith("#EXTINF")) {
+		if (shouldStrip && i < len - 1 && line?.startsWith("#EXTINF")) {
 			const isAdSegment =
 				forceStripAllSegments || _isKnownAdSegmentUrl(lines[i + 1]);
 
@@ -207,7 +207,7 @@ function _stripAds(text, stripAll, info) {
 
 	const result = lines.filter((l) => l !== "");
 
-	const hasRemainingSegments = result.some((l) => l.startsWith("#EXTINF"));
+	const hasRemainingSegments = result.some((l) => l?.startsWith("#EXTINF"));
 	if (
 		!hasRemainingSegments &&
 		strippedSegments.length > 0 &&
@@ -247,9 +247,9 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 	for (let i = 0; i < len - 1; i++) {
 		const line = lines[i];
 		if (
-			!line.startsWith("#EXT-X-STREAM-INF") ||
-			!lines[i + 1].includes(".m3u8") ||
-			lines[i + 1].includes("processing")
+			!line?.startsWith("#EXT-X-STREAM-INF") ||
+			!lines[i + 1]?.includes(".m3u8") ||
+			lines[i + 1]?.includes("processing")
 		)
 			continue;
 
