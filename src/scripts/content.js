@@ -732,7 +732,7 @@ async function _$pm(url, text, realFetch) {
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			_$l("Ad ended", "success");
 			if (typeof self !== "undefined" && self.postMessage) {
-				self.postMessage({ key: "AdEnded" });
+				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
 				if (wasUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
 					self.postMessage({
 						key: "ReloadPlayer",
