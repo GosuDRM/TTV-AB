@@ -1323,6 +1323,7 @@ function _$hw() {
                         case 'UpdateAdsBlocked': _$s.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                         case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;
+                        case 'UpdateCurrentAdChannel': __TTVAB_STATE__.CurrentAdChannel = data.value || null; break;
                         case 'UpdatePinnedBackupPlayerType':
                             __TTVAB_STATE__.PinnedBackupPlayerType = data.value || null;
                             __TTVAB_STATE__.PinnedBackupPlayerChannel = data.channel || null;
@@ -1419,6 +1420,10 @@ function _$hw() {
 							__TTVAB_STATE__.CurrentAdChannel = channel;
 							__TTVAB_STATE__.LastAdDetectedAt = now;
 						}
+						_$bw({
+							key: "UpdateCurrentAdChannel",
+							value: __TTVAB_STATE__.CurrentAdChannel,
+						});
 						_$l("Ad detected, blocking...", "warning");
 						break;
 					case "BackupPlayerTypeSelected":
@@ -1461,6 +1466,10 @@ function _$hw() {
 						__TTVAB_STATE__.PinnedBackupPlayerType = null;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 						__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+						_$bw({
+							key: "UpdateCurrentAdChannel",
+							value: null,
+						});
 						_$bw({
 							key: "UpdatePinnedBackupPlayerType",
 							value: null,
@@ -1617,6 +1626,22 @@ function _$hw() {
 			});
 
 			_$s.workers.push(this);
+			try {
+				this.postMessage({
+					key: "UpdateToggleState",
+					value: __TTVAB_STATE__.IsAdStrippingEnabled,
+				});
+				this.postMessage({ key: "UpdateAdsBlocked", value: _$s.adsBlocked });
+				this.postMessage({
+					key: "UpdateCurrentAdChannel",
+					value: __TTVAB_STATE__.CurrentAdChannel,
+				});
+				this.postMessage({
+					key: "UpdatePinnedBackupPlayerType",
+					value: __TTVAB_STATE__.PinnedBackupPlayerType,
+					channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
+				});
+			} catch {}
 
 			if (_$s.workers.length > 5) {
 				const oldWorker = _$s.workers.shift();
