@@ -69,6 +69,10 @@ async function _processM3U8(url, text, realFetch) {
 		) {
 			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
 				_resetStreamAdState(info);
+			__TTVAB_STATE__.CurrentAdChannel = null;
+			__TTVAB_STATE__.PinnedBackupPlayerType = null;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			_log("Ad blocking disabled - restoring native stream state", "info");
 			if (
 				(wasUsingModifiedM3U8 || wasUsingFallbackStream) &&
