@@ -241,6 +241,11 @@ function _blockAntiAdblockPopup() {
 				return false;
 			}
 
+			_log(
+				"Display ad shell stale: cleaning up residual shell/layout artifacts",
+				"info",
+			);
+
 			staleNodes.forEach((el) => {
 				if (
 					el.querySelector?.("video") ||
@@ -689,6 +694,12 @@ function _blockAntiAdblockPopup() {
 				didCountCurrentDisplayAdShell = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
+				if (!hasExplicitDisplayAdSignal) {
+					_log(
+						"Display ad shell inferred: resetting layout without counting blocked ad",
+						"info",
+					);
+				}
 			}
 
 			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShell) {
@@ -696,7 +707,10 @@ function _blockAntiAdblockPopup() {
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
 					_incrementAdsBlocked(_getCurrentChannelName());
 				}
-				_log("Display ad shell detected, collapsing layout", "warning");
+				_log(
+					"Display ad shell confirmed: counting blocked ad and collapsing shell",
+					"warning",
+				);
 			}
 
 			for (const shellNode of [
