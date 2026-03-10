@@ -390,15 +390,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	toggle.addEventListener("change", () => {
 		const enabled = toggle.checked;
-		chrome.storage.local.set({ ttvAdblockEnabled: enabled });
-		updateStatus(enabled);
-
-		chrome.tabs.query({ url: "*://*.twitch.tv/*" }, (tabs) => {
-			for (const tab of tabs) {
-				chrome.tabs
-					.sendMessage(tab.id, { action: "toggle", enabled: enabled })
-					.catch(() => {});
+		const previousEnabled = !enabled;
+		chrome.storage.local.set({ ttvAdblockEnabled: enabled }, () => {
+			if (chrome.runtime.lastError) {
+				console.error(
+					"[TTV AB] Popup toggle write error:",
+					chrome.runtime.lastError.message,
+				);
+				toggle.checked = previousEnabled;
+				updateStatus(previousEnabled);
+				return;
 			}
+			updateStatus(enabled);
+			chrome.tabs.query({ url: "*://*.twitch.tv/*" }, (tabs) => {
+				for (const tab of tabs) {
+					chrome.tabs
+						.sendMessage(tab.id, { action: "toggle", enabled: enabled })
+						.catch(() => {});
+				}
+			});
 		});
 	});
 
