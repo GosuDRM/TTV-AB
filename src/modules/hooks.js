@@ -432,6 +432,10 @@ function _hookWorker() {
 							}
 							__TTVAB_STATE__.CurrentAdChannel = channel;
 							__TTVAB_STATE__.LastAdDetectedAt = now;
+							_log(
+								`[Trace] AdDetected accepted channel=${channel || "unknown"} newCycle=${shouldStartNewCycle}`,
+								"info",
+							);
 						}
 						_log("Ad detected, blocking...", "warning");
 						break;
@@ -451,6 +455,10 @@ function _hookWorker() {
 								__TTVAB_STATE__.PinnedBackupPlayerType === nextPinnedType &&
 								__TTVAB_STATE__.PinnedBackupPlayerChannel === nextPinnedChannel
 							) {
+								_log(
+									`[Trace] BackupPlayerTypeSelected ignored (duplicate) channel=${nextPinnedChannel || "unknown"} type=${nextPinnedType || "null"}`,
+									"info",
+								);
 								break;
 							}
 							__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
@@ -461,6 +469,10 @@ function _hookWorker() {
 							value: __TTVAB_STATE__.PinnedBackupPlayerType,
 							channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 						});
+						_log(
+							`[Trace] BackupPlayerTypeSelected accepted channel=${__TTVAB_STATE__.PinnedBackupPlayerChannel || "unknown"} type=${__TTVAB_STATE__.PinnedBackupPlayerType || "null"}`,
+							"info",
+						);
 						_log(`Pinned backup type: ${e.data.value}`, "info");
 						break;
 					case "AdEnded":
@@ -471,6 +483,10 @@ function _hookWorker() {
 							);
 							break;
 						}
+						_log(
+							`[Trace] AdEnded accepted channel=${e.data.channel || __TTVAB_STATE__.CurrentAdChannel || "unknown"}`,
+							"info",
+						);
 						__TTVAB_STATE__.CurrentAdChannel = null;
 						__TTVAB_STATE__.PinnedBackupPlayerType = null;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
