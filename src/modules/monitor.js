@@ -79,6 +79,7 @@ function _initCrashMonitor() {
 					window.location.reload();
 				}
 			});
+			setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
 		} else {
 			_log("Auto-refreshing...", "warning");
 
