@@ -631,6 +631,18 @@ function _hookWorker() {
 			});
 
 			_S.workers.push(this);
+			try {
+				this.postMessage({
+					key: "UpdateToggleState",
+					value: __TTVAB_STATE__.IsAdStrippingEnabled,
+				});
+				this.postMessage({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
+				this.postMessage({
+					key: "UpdatePinnedBackupPlayerType",
+					value: __TTVAB_STATE__.PinnedBackupPlayerType,
+					channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
+				});
+			} catch {}
 
 			if (_S.workers.length > 5) {
 				const oldWorker = _S.workers.shift();
