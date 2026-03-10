@@ -148,7 +148,9 @@ function _doPlayerTask(isPausePlay, isReload, options = {}) {
 			}
 		} catch {}
 
-		_log("Reloading player", "info");
+		if (reason === "manual") {
+			_log("Reloading player", "info");
+		}
 		playerState.setSrc({
 			isNewMediaPlayerInstance: true,
 			refreshAccessToken: true,
