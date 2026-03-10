@@ -337,6 +337,7 @@ function _hookWorker() {
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                         case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;
+                        case 'UpdateCurrentAdChannel': __TTVAB_STATE__.CurrentAdChannel = data.value || null; break;
                         case 'UpdatePinnedBackupPlayerType':
                             __TTVAB_STATE__.PinnedBackupPlayerType = data.value || null;
                             __TTVAB_STATE__.PinnedBackupPlayerChannel = data.channel || null;
@@ -433,6 +434,10 @@ function _hookWorker() {
 							__TTVAB_STATE__.CurrentAdChannel = channel;
 							__TTVAB_STATE__.LastAdDetectedAt = now;
 						}
+						_broadcastWorkers({
+							key: "UpdateCurrentAdChannel",
+							value: __TTVAB_STATE__.CurrentAdChannel,
+						});
 						_log("Ad detected, blocking...", "warning");
 						break;
 					case "BackupPlayerTypeSelected":
@@ -475,6 +480,10 @@ function _hookWorker() {
 						__TTVAB_STATE__.PinnedBackupPlayerType = null;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 						__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+						_broadcastWorkers({
+							key: "UpdateCurrentAdChannel",
+							value: null,
+						});
 						_broadcastWorkers({
 							key: "UpdatePinnedBackupPlayerType",
 							value: null,
@@ -637,6 +646,10 @@ function _hookWorker() {
 					value: __TTVAB_STATE__.IsAdStrippingEnabled,
 				});
 				this.postMessage({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
+				this.postMessage({
+					key: "UpdateCurrentAdChannel",
+					value: __TTVAB_STATE__.CurrentAdChannel,
+				});
 				this.postMessage({
 					key: "UpdatePinnedBackupPlayerType",
 					value: __TTVAB_STATE__.PinnedBackupPlayerType,
