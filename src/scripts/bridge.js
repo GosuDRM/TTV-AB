@@ -267,7 +267,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 				});
 				return;
 			}
-			bridgeState.enabled = nextEnabled;
 			sendResponse({ success: true });
 		});
 		return true;
