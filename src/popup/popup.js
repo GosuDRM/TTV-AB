@@ -319,13 +319,20 @@ document.addEventListener("DOMContentLoaded", () => {
 		chrome.storage.local.get(
 			["ttvStats", "ttvAdsBlocked", "ttvPopupsBlocked"],
 			(result) => {
-				const stats = result.ttvStats || {
+				if (chrome.runtime.lastError) {
+					console.error(
+						"[TTV AB] Popup stats read error:",
+						chrome.runtime.lastError.message,
+					);
+				}
+				const safeResult = result || {};
+				const stats = safeResult.ttvStats || {
 					daily: {},
 					channels: {},
 					achievements: [],
 				};
-				const adsCount = result.ttvAdsBlocked || 0;
-				const popupsCount = result.ttvPopupsBlocked || 0;
+				const adsCount = safeResult.ttvAdsBlocked || 0;
+				const popupsCount = safeResult.ttvPopupsBlocked || 0;
 				const channelCount = Object.keys(stats.channels || {}).length;
 
 				renderChart(stats.daily || {});
