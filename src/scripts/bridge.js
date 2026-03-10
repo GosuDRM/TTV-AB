@@ -176,10 +176,7 @@ chrome.storage.local.get(
 		bridgeState.storedAdsCount = safeResult.ttvAdsBlocked || 0;
 		bridgeState.storedPopupsCount = safeResult.ttvPopupsBlocked || 0;
 
-		function broadcastState(source = "unknown") {
-			console.info(
-				`[TTV AB][Trace] broadcastState source=${source} enabled=${bridgeState.enabled} ads=${bridgeState.storedAdsCount} popups=${bridgeState.storedPopupsCount}`,
-			);
+		function broadcastState() {
 			window.postMessage(
 				{ type: "ttvab-toggle", detail: { enabled: bridgeState.enabled } },
 				"*",
@@ -200,12 +197,12 @@ chrome.storage.local.get(
 			);
 		}
 
-		broadcastState("init");
+		broadcastState();
 
 		window.addEventListener("message", (e) => {
 			if (e.source !== window) return;
 			if (e.data?.type === "ttvab-request-state") {
-				broadcastState("request-state");
+				broadcastState();
 			}
 		});
 

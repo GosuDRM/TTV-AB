@@ -19,14 +19,7 @@ function _initToggleListener() {
 		if (e.source !== window) return;
 		if (e.data?.type === "ttvab-toggle") {
 			const enabled = e.data.detail?.enabled ?? true;
-			if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) {
-				_log(
-					`[Trace] Toggle ignored (duplicate) enabled=${enabled}`,
-					"info",
-				);
-				return;
-			}
-			_log(`[Trace] Toggle accepted enabled=${enabled}`, "info");
+			if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
 			__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
 			_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
 			_log(
@@ -1071,14 +1064,7 @@ function _init() {
 			e.data.type === "ttvab-init-count" &&
 			typeof e.data.detail?.count === "number"
 		) {
-			if (_S.adsBlocked === e.data.detail.count) {
-				_log(
-					`[Trace] Init ads count ignored (duplicate) count=${e.data.detail.count}`,
-					"info",
-				);
-				return;
-			}
-			_log(`[Trace] Init ads count accepted count=${e.data.detail.count}`, "info");
+			if (_S.adsBlocked === e.data.detail.count) return;
 			_S.adsBlocked = e.data.detail.count;
 			_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
 			_log(`Restored ads count: ${_S.adsBlocked}`, "info");
@@ -1088,17 +1074,7 @@ function _init() {
 			e.data.type === "ttvab-init-popups-count" &&
 			typeof e.data.detail?.count === "number"
 		) {
-			if (_S.popupsBlocked === e.data.detail.count) {
-				_log(
-					`[Trace] Init popups count ignored (duplicate) count=${e.data.detail.count}`,
-					"info",
-				);
-				return;
-			}
-			_log(
-				`[Trace] Init popups count accepted count=${e.data.detail.count}`,
-				"info",
-			);
+			if (_S.popupsBlocked === e.data.detail.count) return;
 			_S.popupsBlocked = e.data.detail.count;
 			_log(`Restored popups count: ${_S.popupsBlocked}`, "info");
 		}
