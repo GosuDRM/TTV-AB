@@ -645,7 +645,6 @@ async function _$pm(url, text, realFetch) {
 			info.FailedBackupPlayerTypes?.clear?.();
 			info.RejectedBackupPlayerTypes?.clear?.();
 			_$ab(info.ChannelName);
-			_$l("Ad detected, blocking...", "warning");
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdDetected", channel: info.ChannelName });
 			}
@@ -1977,7 +1976,9 @@ function _$dpt(isPausePlay, isReload, options = {}) {
 			}
 		} catch {}
 
-		_$l("Reloading player", "info");
+		if (reason === "manual") {
+			_$l("Reloading player", "info");
+		}
 		playerState.setSrc({
 			isNewMediaPlayerInstance: true,
 			refreshAccessToken: true,
@@ -2445,14 +2446,18 @@ function _$cm() {
 		if (isDocumentHidden()) {
 			_$l("Tab hidden, will refresh when visible", "warning");
 
+			const refreshTimer = setTimeout(
+				() => window.location.reload(),
+				_$c.REFRESH_DELAY,
+			);
 			document.addEventListener("visibilitychange", function onVisible() {
 				if (!isDocumentHidden()) {
 					document.removeEventListener("visibilitychange", onVisible);
+					clearTimeout(refreshTimer);
 					_$l("Tab visible, refreshing...", "warning");
 					window.location.reload();
 				}
 			});
-			setTimeout(() => window.location.reload(), _$c.REFRESH_DELAY);
 		} else {
 			_$l("Auto-refreshing...", "warning");
 
