@@ -231,12 +231,8 @@ chrome.storage.local.get(
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (message.action === "toggle") {
-		bridgeState.enabled = message.enabled !== false;
-		window.postMessage(
-			{ type: "ttvab-toggle", detail: { enabled: bridgeState.enabled } },
-			"*",
-		);
-		chrome.storage.local.set({ ttvAdblockEnabled: bridgeState.enabled }, () => {
+		const nextEnabled = message.enabled !== false;
+		chrome.storage.local.set({ ttvAdblockEnabled: nextEnabled }, () => {
 			if (chrome.runtime.lastError) {
 				console.error(
 					"[TTV AB] Toggle write error:",
@@ -248,6 +244,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 				});
 				return;
 			}
+			bridgeState.enabled = nextEnabled;
+			window.postMessage(
+				{ type: "ttvab-toggle", detail: { enabled: bridgeState.enabled } },
+				"*",
+			);
 			sendResponse({ success: true });
 		});
 		return true;
