@@ -373,6 +373,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	chrome.storage.onChanged.addListener((changes, namespace) => {
 		if (namespace === "local") {
+			if (changes.ttvAdblockEnabled) {
+				const enabled = changes.ttvAdblockEnabled.newValue !== false;
+				toggle.checked = enabled;
+				updateStatus(enabled);
+			}
 			if (changes.ttvAdsBlocked) {
 				const newCount = changes.ttvAdsBlocked.newValue || 0;
 				animateCounter(adsBlockedCount, newCount);
