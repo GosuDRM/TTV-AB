@@ -968,11 +968,7 @@ function _blockAntiAdblockPopup() {
 			if (event.data?.type !== "ttvab-ad-blocked") return;
 			const currentChannel = _getCurrentChannelName();
 			const blockedChannel = event.data?.detail?.channel || null;
-			if (
-				blockedChannel &&
-				currentChannel &&
-				blockedChannel !== currentChannel
-			) {
+			if (blockedChannel && blockedChannel !== currentChannel) {
 				return;
 			}
 			_scanAndRemove();
