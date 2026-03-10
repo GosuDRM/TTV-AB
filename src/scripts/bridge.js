@@ -311,9 +311,10 @@ function flushCounters() {
 						return;
 					}
 
+					const safeResult = result || {};
 					const updates = {};
-					const newAds = (result.ttvAdsBlocked || 0) + adsDelta;
-					const newPopups = (result.ttvPopupsBlocked || 0) + popupsDelta;
+					const newAds = (safeResult.ttvAdsBlocked || 0) + adsDelta;
+					const newPopups = (safeResult.ttvPopupsBlocked || 0) + popupsDelta;
 					if (adsDelta > 0) updates.ttvAdsBlocked = newAds;
 					if (popupsDelta > 0) updates.ttvPopupsBlocked = newPopups;
 
