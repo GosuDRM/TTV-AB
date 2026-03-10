@@ -59,6 +59,14 @@ const StorageQueue = {
 function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 	return new Promise((resolve) => {
 		chrome.storage.local.get(["ttvStats"], (result) => {
+			if (chrome.runtime.lastError) {
+				console.error(
+					"[TTV AB] Stats read error:",
+					chrome.runtime.lastError.message,
+				);
+				resolve();
+				return;
+			}
 			const stats = result.ttvStats || {
 				daily: {},
 				channels: {},
@@ -129,11 +137,17 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 				}
 			}
 
-			if (newUnlocks.length > 0) {
-				stats.achievements = unlocked;
-			}
+			stats.achievements = unlocked;
 
 			chrome.storage.local.set({ ttvStats: stats }, () => {
+				if (chrome.runtime.lastError) {
+					console.error(
+						"[TTV AB] Stats write error:",
+						chrome.runtime.lastError.message,
+					);
+					resolve();
+					return;
+				}
 				for (const id of newUnlocks) {
 					window.postMessage(
 						{ type: "ttvab-achievement-unlocked", detail: { id: id } },
@@ -177,6 +191,7 @@ chrome.storage.local.get(
 		broadcastState();
 
 		window.addEventListener("message", (e) => {
+			if (e.source !== window) return;
 			if (e.data?.type === "ttvab-request-state") {
 				broadcastState();
 			}
@@ -185,7 +200,17 @@ chrome.storage.local.get(
 		chrome.storage.onChanged.addListener((changes, namespace) => {
 			if (namespace !== "local") return;
 			if (changes.ttvAdblockEnabled) {
+				const wasEnabled = bridgeState.enabled;
 				bridgeState.enabled = changes.ttvAdblockEnabled.newValue !== false;
+				if (bridgeState.enabled !== wasEnabled) {
+					window.postMessage(
+						{
+							type: "ttvab-toggle",
+							detail: { enabled: bridgeState.enabled },
+						},
+						"*",
+					);
+				}
 			}
 			if (changes.ttvAdsBlocked) {
 				bridgeState.storedAdsCount = changes.ttvAdsBlocked.newValue || 0;
@@ -214,8 +239,82 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	}
 });
 
-let adsEventsSinceCheck = 0;
-let lastKnownAdsCount = 0;
+let pendingAdsDelta = 0;
+let pendingPopupsDelta = 0;
+let pendingAdChannels = [];
+let flushTimeout = null;
+
+function scheduleFlush() {
+	if (flushTimeout) return;
+	flushTimeout = setTimeout(() => {
+		flushTimeout = null;
+		flushCounters();
+	}, 200);
+}
+
+function flushCounters() {
+	const adsDelta = pendingAdsDelta;
+	const popupsDelta = pendingPopupsDelta;
+	const channels = pendingAdChannels.slice();
+	pendingAdsDelta = 0;
+	pendingPopupsDelta = 0;
+	pendingAdChannels = [];
+
+	if (adsDelta === 0 && popupsDelta === 0) return;
+
+	StorageQueue.add(() => {
+		return new Promise((resolve) => {
+			chrome.storage.local.get(
+				["ttvAdsBlocked", "ttvPopupsBlocked"],
+				(result) => {
+					if (chrome.runtime.lastError) {
+						console.error(
+							"[TTV AB] Storage read error:",
+							chrome.runtime.lastError.message,
+						);
+						pendingAdsDelta += adsDelta;
+						pendingPopupsDelta += popupsDelta;
+						pendingAdChannels.push(...channels);
+						scheduleFlush();
+						resolve();
+						return;
+					}
+
+					const updates = {};
+					const newAds = (result.ttvAdsBlocked || 0) + adsDelta;
+					const newPopups = (result.ttvPopupsBlocked || 0) + popupsDelta;
+					if (adsDelta > 0) updates.ttvAdsBlocked = newAds;
+					if (popupsDelta > 0) updates.ttvPopupsBlocked = newPopups;
+
+					chrome.storage.local.set(updates, async () => {
+						if (chrome.runtime.lastError) {
+							console.error(
+								"[TTV AB] Storage write error:",
+								chrome.runtime.lastError.message,
+							);
+							resolve();
+							return;
+						}
+
+						try {
+							for (const ch of channels) {
+								await updateStats("ads", ch, newAds, newPopups);
+							}
+							if (popupsDelta > 0) {
+								for (let i = 0; i < popupsDelta; i++) {
+									await updateStats("popups", null, newAds, newPopups);
+								}
+							}
+						} catch (statsErr) {
+							console.error("[TTV AB] Stats error:", statsErr.message);
+						}
+						resolve();
+					});
+				},
+			);
+		});
+	});
+}
 
 window.addEventListener("message", (e) => {
 	if (e.source !== window) return;
@@ -223,121 +322,13 @@ window.addEventListener("message", (e) => {
 
 	if (e.data.type === "ttvab-ad-blocked") {
 		const channel = e.data.detail?.channel || null;
-		adsEventsSinceCheck++;
-
-		StorageQueue.add(() => {
-			return new Promise((resolve) => {
-				chrome.storage.local.get(
-					["ttvAdsBlocked", "ttvPopupsBlocked"],
-					(result) => {
-						if (chrome.runtime.lastError) {
-							console.error(
-								"[TTV AB] Storage read error:",
-								chrome.runtime.lastError.message,
-							);
-							resolve();
-							return;
-						}
-
-						const oldCount = result.ttvAdsBlocked || 0;
-						const newCount = oldCount + 1;
-
-						chrome.storage.local.set({ ttvAdsBlocked: newCount }, async () => {
-							if (chrome.runtime.lastError) {
-								console.error(
-									"[TTV AB] Storage write error:",
-									chrome.runtime.lastError.message,
-								);
-								resolve();
-								return;
-							}
-
-							try {
-								await updateStats(
-									"ads",
-									channel,
-									newCount,
-									result.ttvPopupsBlocked || 0,
-								);
-							} catch (statsErr) {
-								console.error("[TTV AB] Stats error:", statsErr.message);
-							}
-							resolve();
-						});
-					},
-				);
-			});
-		});
+		pendingAdsDelta++;
+		if (channel) pendingAdChannels.push(channel);
+		scheduleFlush();
 	}
 
 	if (e.data.type === "ttvab-popup-blocked") {
-		StorageQueue.add(() => {
-			return new Promise((resolve) => {
-				chrome.storage.local.get(
-					["ttvAdsBlocked", "ttvPopupsBlocked"],
-					(result) => {
-						if (chrome.runtime.lastError) {
-							console.error(
-								"[TTV AB] Storage read error:",
-								chrome.runtime.lastError.message,
-							);
-							resolve();
-							return;
-						}
-
-						const oldCount = result.ttvPopupsBlocked || 0;
-						const newCount = oldCount + 1;
-
-						chrome.storage.local.set(
-							{ ttvPopupsBlocked: newCount },
-							async () => {
-								if (chrome.runtime.lastError) {
-									console.error(
-										"[TTV AB] Storage write error:",
-										chrome.runtime.lastError.message,
-									);
-									resolve();
-									return;
-								}
-
-								try {
-									await updateStats(
-										"popups",
-										null,
-										result.ttvAdsBlocked || 0,
-										newCount,
-									);
-								} catch (statsErr) {
-									console.error("[TTV AB] Stats error:", statsErr.message);
-								}
-								resolve();
-							},
-						);
-					},
-				);
-			});
-		});
+		pendingPopupsDelta++;
+		scheduleFlush();
 	}
 });
-
-setInterval(() => {
-	if (adsEventsSinceCheck > 0) {
-		chrome.storage.local.get(["ttvAdsBlocked"], (result) => {
-			const currentCount = result.ttvAdsBlocked || 0;
-			const expectedIncrease = adsEventsSinceCheck;
-			const actualIncrease = currentCount - lastKnownAdsCount;
-
-			if (actualIncrease < expectedIncrease) {
-				console.error(
-					"[TTV AB] Counter health check failed: Expected +" +
-						expectedIncrease +
-						", got +" +
-						actualIncrease,
-				);
-			}
-
-			lastKnownAdsCount = currentCount;
-			adsEventsSinceCheck = 0;
-		});
-	}
-}, 60000);

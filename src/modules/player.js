@@ -219,6 +219,7 @@ function _monitorPlayerBuffering() {
 								_doPlayerTask(true, false);
 							}
 							_PlayerBufferState.lastFixTime = Date.now();
+							_PlayerBufferState.numSame = 0;
 						}
 					} else {
 						_PlayerBufferState.numSame = 0;
@@ -289,12 +290,7 @@ function _hookVisibilityState() {
 
 				if (isHidden) {
 					wasVideoPlaying = !videos[0].paused && !videos[0].ended;
-				} else if (
-					wasVideoPlaying &&
-					!videos[0].ended &&
-					videos[0].paused &&
-					videos[0].muted
-				) {
+				} else if (wasVideoPlaying && !videos[0].ended && videos[0].paused) {
 					videos[0].play();
 				}
 			}

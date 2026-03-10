@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.2.2-purple)
+![Version](https://img.shields.io/badge/version-4.2.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -17,7 +17,6 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
   <img src="assets/popup-screenshot2.png" alt="Stats Screenshot" width="300">
 </p>
 
-The current UI is a placeholder for now. The focus has been on making ad blocking stable first; visual polish will come later.
 
 ## ✨ Features
 
@@ -53,31 +52,20 @@ The extension intercepts Twitch's HLS video playlists and:
 
 ## ✨ What's New
 
-### v4.2.2
-- **Live Stream Mapping Refresh** - Master playlist refreshes now rebuild per-stream URL and resolution mappings, preventing stale usher data from blocking backup stream selection after Twitch rotates playlist URLs.
-- **Relative Playlist Resilience** - Variant playlist mappings now keep both raw and fully resolved URLs, so backup selection survives relative HLS entries and Twitch URL rotation more reliably.
-- **Fallback Resolution Recovery** - Ad processing now falls back to the best known stream resolution when the current playlist URL is not mapped, avoiding hard failures during backup lookup.
-- **GQL Hash Capture Hardening** - The main fetch hook now captures `PlaybackAccessToken` hashes from both `fetch(Request)` and `fetch(url, opts)` calls, keeping backup token generation aligned with Twitch.
-- **Forced Native Token Alignment** - Native page `PlaybackAccessToken` requests are now rewritten to the configured forced player type and matching platform parameters, so the main player starts from the intended recovery path instead of drifting back to Twitch's default token flow.
-- **Worker Hook Compatibility** - Worker interception now supports relative URLs and `URL` objects safely, while keeping native `Worker.prototype` untouched.
-- **Worker Bootstrap Crash Fix** - Injected worker bootstraps now include the helper functions required by the current parser and processor runtime, fixing `MediaPlaylist` crashes such as `_getStreamInfoForPlaylist is not defined`.
-- **Worker Broadcast Cleanup** - Worker state updates now prune dead workers automatically, reducing stale sync state after worker crashes or restarts.
-- **Safer Playlist Stripping** - Media playlists now strip only explicit ad metadata and known ad-segment URL patterns instead of broadly classifying non-`,live` segments as ads.
-- **False-Positive Ad Detection Fix** - The ad gate now requires explicit Twitch ad markers instead of triggering on generic `stitched` text alone, reducing cases where normal playback is misclassified as an ad break and forced into recovery.
-- **Segment-Level Ad Detection Recovery** - Ad handling now also checks known ad segment URLs directly, so real ad playlists still enter blocking mode even when top-level playlist markers are sparse.
-- **Fallback Ad Leak Fix** - Fallback playlist selection and playlist stripping now use the same ad-signal checks, so a backup playlist that is still ad-marked can no longer be accepted as "clean" and then leak visible ads during recovery.
-- **Metadata-Driven Segment Stripping** - When Twitch serves an ad-marked fallback playlist without easily identifiable ad segment URLs, the stripper now force-removes those media segments instead of letting the ad render through fallback mode.
-- **Recovery Buffer Improvement** - Empty-playlist recovery now restores up to 6 recent segments instead of 3, reducing post-ad buffering loops and spinner stalls.
-- **Adaptive Backup Selection** - Backup stream recovery now remembers the last native `PlaybackAccessToken` player type Twitch used successfully and prioritizes that path first during ad recovery, reducing wasted retries before playback stabilizes.
-- **Ad-Cycle Backup Pinning** - Once a backup player type is selected for an active ad break, the runtime now pins that choice across worker restarts instead of restarting backup selection from scratch on every reload.
-- **Duplicate Reload Suppression** - Player reload requests are now debounced and rate-limited during ad recovery, reducing repeated reload loops and visible playback churn during a single ad cycle.
-- **Crash Recovery Grace Window** - The crash monitor now waits briefly before refreshing on `Error #2000` during active ad recovery, giving the player time to stabilize instead of force-refreshing on the first transient error.
-- **Minimal Recovery Hardening** - Post-reload minimal recovery no longer accepts ad-bearing backup playlists just to keep playback moving, preferring correctness over briefly showing ads.
-- **Backup Cache Reuse Fix** - Backup master playlists are now kept cached across successful attempts and only invalidated on real failures or ad-bearing results, cutting unnecessary token churn during ad recovery.
-- **Toggle State Sync** - Bridge state rebroadcasts now stay in sync with storage updates so popup toggles and `ttvab-request-state` cannot drift apart.
-- **Local-Day Statistics** - Daily blocking statistics and weekly charts now use the user's local calendar day instead of UTC day boundaries, preventing day rollover glitches around midnight in non-UTC timezones.
-- **Hidden-Tab Popup Scan Fix** - The popup blocker now respects Twitch's preserved native visibility getters, so hidden tabs stop doing visible-tab idle scan work after visibility spoofing is enabled.
-- **Token Timeout Cleanup** - Backup token requests now always clear their abort timer, including failed requests.
+### v4.2.4
+- **Display Ad Detection Tightening** - Refined stream-display and PIP shell detection to require stronger visible ad signals before counting or collapsing anything.
+- **Ad Label Gating** - Visible `Ad` labels near the player are no longer enough on their own; DOM-side cleanup now also requires a matching shell, PIP, or layout-state signal.
+- **Offline Page Ad Handling** - Dedicated offline channel-page promo ad detection so Twitch's non-live "watch after this break" cards can be hidden and counted correctly.
+- **False-Positive Ad Count Fixes** - Clean channels are less likely to increment `Ads Blocked` from leftover layout classes, label-only false positives, or geometry-only shell inference.
+- **Black Screen With Audio Fix** - Fixed a regression where overly broad display-ad cleanup could leave the player visually black while audio kept playing.
+- **30+ Bug Fixes** - Includes fixes for backup cache data structure, minify name collision, tab visibility auto-resume, popup chart average reset, worker header updates, cross-tab counter races, and more.
+
+### v4.2.3
+- **Ad Recovery Stability** - Reworked backup stream recovery so Twitch token, playlist, and reload handling stay synchronized more reliably during preroll and midroll transitions.
+- **Display Ad Shell Handling** - Expanded DOM-side cleanup for Twitch's newer stream-display / PIP ad layouts.
+- **Worker and Playlist Hardening** - Strengthened worker bootstrap, playlist parsing, and fallback validation for more robust recovery.
+- **Reload and Buffer Loop Fixes** - Reduced duplicate ad-recovery reloads, false-positive refreshes, and unstable fallback transitions.
+- **Cross-Tab Bug Fixes** - Fixed cross-tab counter races, stats clobber, health check false positives, and toggle state propagation across all open tabs.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

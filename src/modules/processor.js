@@ -10,7 +10,7 @@ function _resetStreamAdState(info) {
 	info.RequestedAds.clear();
 	info.FailedBackupPlayerTypes?.clear?.();
 	info.RejectedBackupPlayerTypes?.clear?.();
-	info.BackupEncodingsM3U8Cache = [];
+	info.BackupEncodingsM3U8Cache = Object.create(null);
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
 	info.IsMidroll = false;
@@ -34,8 +34,8 @@ function _getStreamInfoForPlaylist(url) {
 	if (infos.length === 1) return infos[0];
 
 	return [...infos].sort((a, b) => {
-		const aTime = a?.LastPlayerReload || 0;
-		const bTime = b?.LastPlayerReload || 0;
+		const aTime = a?.LastActivityAt || 0;
+		const bTime = b?.LastActivityAt || 0;
 		if (bTime !== aTime) return bTime - aTime;
 		if (a?.IsShowingAd !== b?.IsShowingAd) {
 			return Number(b?.IsShowingAd) - Number(a?.IsShowingAd);
@@ -337,18 +337,17 @@ async function _findBackupStream(
 						if (streamRes.status === 200) {
 							const m3u8 = await streamRes.text();
 							if (m3u8) {
-								if (
-									!fallbackM3u8 ||
-									pt === __TTVAB_STATE__.FallbackPlayerType
-								) {
-									fallbackM3u8 = m3u8;
-									fallbackType = pt;
-								}
-
 								const candidateHasAds =
 									_hasPlaylistAdMarkers(m3u8) ||
 									_hasExplicitAdMetadata(m3u8) ||
 									_playlistHasKnownAdSegments(m3u8);
+								if (
+									!candidateHasAds &&
+									(!fallbackM3u8 || pt === __TTVAB_STATE__.FallbackPlayerType)
+								) {
+									fallbackM3u8 = m3u8;
+									fallbackType = pt;
+								}
 								const noAds =
 									!candidateHasAds &&
 									(__TTVAB_STATE__.SimulatedAdsDepth === 0 ||

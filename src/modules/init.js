@@ -31,6 +31,44 @@ function _initToggleListener() {
 
 function _blockAntiAdblockPopup() {
 	let lastBlockTime = 0;
+	let isDisplayAdShellActive = false;
+	let isPromotedPageAdActive = false;
+	let didCountCurrentDisplayAdShell = false;
+	let pendingDisplayAdShellSince = 0;
+	let pendingDisplayAdShellSignature = null;
+	let lastPathname = window.location.pathname;
+	const EXPLICIT_DISPLAY_AD_SELECTORS = [
+		'div[data-test-selector="ad-banner"]',
+		'div[data-test-selector="display-ad"]',
+		'[data-a-target="ads-banner"]',
+	];
+	const DISPLAY_AD_SHELL_SELECTORS = [
+		".stream-display-ad",
+		'[class*="stream-display-ad"]',
+	];
+	const PIP_SELECTORS = [
+		'[data-a-target="video-player-pip-container"]',
+		'[data-a-target="video-player-mini-player"]',
+		".video-player__pip-container",
+		".video-player__mini-player",
+		".mini-player",
+		'[class*="mini-player"]',
+		'[class*="pip-container"]',
+	];
+	const STREAM_DISPLAY_LAYOUT_SELECTORS = [
+		".video-player--stream-display-ad",
+		'[class*="video-player--stream-display-ad"]',
+	];
+	const OFFLINE_PAGE_SIGNAL_SELECTORS = [
+		'[data-a-target="stream-offline-status"]',
+		'[data-test-selector*="offline"]',
+		'[class*="offline-status"]',
+		'[class*="offline-page"]',
+	];
+	const PROMOTED_PAGE_CTA_PATTERN =
+		/^(learn more|shop now|watch now|play now|install|download|get offer|see more)$/i;
+	const PLAYER_AD_CTA_PATTERN =
+		/^(learn more|shop now|watch now|play now|get offer|see more|see details|install|download)$/i;
 
 	function _initPopupBlocker() {
 		if (!document.body) {
@@ -49,6 +87,8 @@ function _blockAntiAdblockPopup() {
 			style.id = "ttvab-popup-style";
 			style.textContent = `
                 div[data-test-selector="ad-banner"],
+                div[data-test-selector="display-ad"],
+                div[data-a-target="ads-banner"],
                 div[data-a-target="consent-banner"] {
                     display: none !important;
                     visibility: hidden !important;
@@ -71,6 +111,616 @@ function _blockAntiAdblockPopup() {
 				"*",
 			);
 			_log(`Popup blocked! Total: ${_S.popupsBlocked}`, "success");
+		}
+
+		function _getCurrentChannelName() {
+			const match = window.location.pathname.match(/^\/([^/?#]+)/);
+			const candidate = match?.[1] || null;
+			if (!candidate) return null;
+			const reserved = new Set([
+				"browse",
+				"directory",
+				"downloads",
+				"drops",
+				"following",
+				"friends",
+				"inventory",
+				"jobs",
+				"messages",
+				"search",
+				"settings",
+				"subscriptions",
+				"turbo",
+				"videos",
+				"wallet",
+			]);
+			return reserved.has(candidate.toLowerCase()) ? null : candidate;
+		}
+
+		function _hideElement(el) {
+			if (!el) return;
+			el.style.setProperty("display", "none", "important");
+			el.style.setProperty("visibility", "hidden", "important");
+			el.setAttribute("data-ttvab-blocked", "true");
+		}
+
+		function _resetStreamDisplayLayout(el) {
+			if (!el) return;
+
+			if (
+				typeof el.className === "string" &&
+				el.className.includes("stream-display-ad")
+			) {
+				el.className = el.className
+					.split(/\s+/)
+					.filter(
+						(className) =>
+							className && !className.includes("stream-display-ad"),
+					)
+					.join(" ");
+			}
+
+			el.style.setProperty("padding", "0", "important");
+			el.style.setProperty("margin", "0", "important");
+			el.style.setProperty("background", "transparent", "important");
+			el.style.setProperty("background-color", "transparent", "important");
+			el.style.setProperty("width", "100%", "important");
+			el.style.setProperty("height", "100%", "important");
+			el.style.setProperty("max-width", "100%", "important");
+			el.style.setProperty("max-height", "100%", "important");
+			el.style.setProperty("inset", "0", "important");
+			el.setAttribute("data-ttvab-display-shell-reset", "true");
+		}
+
+		function _restoreStreamDisplayLayout(el) {
+			if (!el) return;
+
+			if (
+				typeof el.className === "string" &&
+				el.className.includes("stream-display-ad")
+			) {
+				el.className = el.className
+					.split(/\s+/)
+					.filter(
+						(className) =>
+							className && !className.includes("stream-display-ad"),
+					)
+					.join(" ");
+			}
+
+			[
+				"display",
+				"visibility",
+				"padding",
+				"margin",
+				"background",
+				"background-color",
+				"width",
+				"height",
+				"max-width",
+				"max-height",
+				"inset",
+				"left",
+				"right",
+				"top",
+				"bottom",
+				"grid-template-columns",
+				"grid-template-areas",
+				"grid-auto-columns",
+				"grid-auto-flow",
+				"column-gap",
+				"gap",
+				"justify-content",
+				"align-items",
+				"flex",
+				"flex-basis",
+			].forEach((property) => {
+				el.style.removeProperty(property);
+			});
+
+			el.removeAttribute("data-ttvab-display-shell-reset");
+			el.removeAttribute("data-ttvab-blocked");
+		}
+
+		function _cleanupStaleDisplayAdShell(
+			displayShellNodes,
+			pipContainers,
+			layoutRoots,
+			inferredLayoutWrappers = [],
+		) {
+			const staleNodes = [
+				...displayShellNodes,
+				...layoutRoots,
+				...inferredLayoutWrappers,
+				...Array.from(
+					document.querySelectorAll('[data-ttvab-display-shell-reset="true"]'),
+				),
+			].filter((el, index, list) => el && list.indexOf(el) === index);
+
+			if (staleNodes.length === 0 && pipContainers.length === 0) {
+				return false;
+			}
+
+			staleNodes.forEach((el) => {
+				if (
+					el.querySelector?.("video") ||
+					el.matches?.('[data-a-target="video-player"]') ||
+					el.matches?.('[class*="video-player"]')
+				) {
+					_restoreStreamDisplayLayout(el);
+					return;
+				}
+
+				el.style.removeProperty("display");
+				el.style.removeProperty("visibility");
+				if (
+					el.hasAttribute("data-ttvab-blocked") ||
+					el.hasAttribute("data-ttvab-display-shell-reset")
+				) {
+					el.remove();
+				}
+			});
+
+			pipContainers.forEach((el) => {
+				if (el.querySelector?.("video")) {
+					_restoreStreamDisplayLayout(el);
+					return;
+				}
+
+				el.style.removeProperty("display");
+				el.style.removeProperty("visibility");
+				if (el.hasAttribute("data-ttvab-blocked")) {
+					el.remove();
+				}
+			});
+
+			return true;
+		}
+
+		function _resetDisplayAdShellState() {
+			isDisplayAdShellActive = false;
+			isPromotedPageAdActive = false;
+			didCountCurrentDisplayAdShell = false;
+			pendingDisplayAdShellSince = 0;
+			pendingDisplayAdShellSignature = null;
+		}
+
+		function _queryUniqueElements(selectors) {
+			return selectors
+				.flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+				.filter((el, index, list) => el && list.indexOf(el) === index);
+		}
+
+		function _cleanupAllKnownDisplayArtifacts() {
+			const displayShellNodes = _queryUniqueElements(
+				DISPLAY_AD_SHELL_SELECTORS,
+			);
+			const pipContainers = _queryUniqueElements(PIP_SELECTORS);
+			const layoutRoots = _queryUniqueElements(STREAM_DISPLAY_LAYOUT_SELECTORS);
+			const explicitDisplayNodes = _queryUniqueElements(
+				EXPLICIT_DISPLAY_AD_SELECTORS,
+			);
+			_cleanupStaleDisplayAdShell(
+				displayShellNodes,
+				pipContainers,
+				layoutRoots,
+			);
+
+			explicitDisplayNodes.forEach((el) => {
+				el.style.removeProperty("display");
+				el.style.removeProperty("visibility");
+				if (el.hasAttribute("data-ttvab-blocked")) {
+					el.remove();
+				}
+			});
+		}
+
+		function _handleRouteChange() {
+			const pathname = window.location.pathname;
+			if (pathname === lastPathname) return;
+			lastPathname = pathname;
+			_resetDisplayAdShellState();
+			_cleanupAllKnownDisplayArtifacts();
+			_scanAndRemove();
+		}
+
+		function _hasDisplayAdLabel() {
+			const directLabel = document.querySelector(
+				'[data-a-target="video-ad-label"], [data-test-selector="ad-label"], [class*="ad-countdown"]',
+			);
+			if (
+				directLabel &&
+				_isVisibleElement(directLabel) &&
+				_isNearMainPlayer(directLabel) &&
+				_looksLikeAdLabel(directLabel.textContent || "")
+			) {
+				return true;
+			}
+
+			const playerRoots = document.querySelectorAll(
+				'[data-a-target="video-player"], [class*="video-player"], video',
+			);
+			const adLabelPattern = /^ad(?:\s+\d+(?::\d+)?(?:\s+of\s+\d+)?)?$/i;
+
+			for (const root of playerRoots) {
+				if (!_isVisibleElement(root)) continue;
+				const nodes = root.querySelectorAll("span, p");
+				const rootRect = root.getBoundingClientRect();
+				if (rootRect.width < 320 || rootRect.height < 180) continue;
+				for (const node of nodes) {
+					const text = (node.textContent || "").trim();
+					if (!text || text.length > 18 || !adLabelPattern.test(text)) continue;
+					if (!_isVisibleElement(node)) continue;
+					const rect = node.getBoundingClientRect();
+					if (
+						rect.width > 0 &&
+						rect.height > 0 &&
+						rect.top < rootRect.top + 140 &&
+						rect.right > rootRect.right - 260
+					) {
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
+		function _isVisibleElement(el) {
+			if (!el) return false;
+			const rect = el.getBoundingClientRect();
+			const style = window.getComputedStyle(el);
+			return (
+				rect.width > 0 &&
+				rect.height > 0 &&
+				style.display !== "none" &&
+				style.visibility !== "hidden"
+			);
+		}
+
+		function _getMainPlayerElement() {
+			const candidates = document.querySelectorAll(
+				'video, [data-a-target="video-player"]',
+			);
+			let bestElement = null;
+			let bestArea = 0;
+
+			for (const candidate of candidates) {
+				if (!_isVisibleElement(candidate)) continue;
+				const rect = candidate.getBoundingClientRect();
+				const area = rect.width * rect.height;
+				if (rect.width < 320 || rect.height < 180) continue;
+				if (area > bestArea) {
+					bestArea = area;
+					bestElement = candidate;
+				}
+			}
+
+			return bestElement;
+		}
+
+		function _getMainPlayerRect() {
+			const player = _getMainPlayerElement();
+			return player ? player.getBoundingClientRect() : null;
+		}
+
+		function _getInferredDisplayAdLayoutWrappers() {
+			const player = _getMainPlayerElement();
+			const playerRect = player?.getBoundingClientRect();
+			if (!player || !playerRect) return [];
+
+			const wrappers = [];
+			let current = player.parentElement;
+			for (let depth = 0; depth < 6 && current; depth += 1) {
+				if (_isSafeElement(current)) break;
+				if (!_isVisibleElement(current)) {
+					current = current.parentElement;
+					continue;
+				}
+
+				const rect = current.getBoundingClientRect();
+				const extraTop = Math.max(0, playerRect.top - rect.top);
+				const extraLeft = Math.max(0, playerRect.left - rect.left);
+				const extraRight = Math.max(0, rect.right - playerRect.right);
+				const extraBottom = Math.max(0, rect.bottom - playerRect.bottom);
+				const hasLargeInset =
+					extraTop > 24 ||
+					extraLeft > 24 ||
+					extraRight > 72 ||
+					extraBottom > 24;
+				if (!hasLargeInset) {
+					current = current.parentElement;
+					continue;
+				}
+
+				if (
+					rect.width > window.innerWidth * 0.92 ||
+					rect.height > window.innerHeight * 0.92
+				) {
+					current = current.parentElement;
+					continue;
+				}
+
+				const style = window.getComputedStyle(current);
+				const hasBackground =
+					style.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+					style.backgroundColor !== "transparent";
+				const hasStructuredLayout =
+					style.display === "grid" ||
+					style.display === "flex" ||
+					style.position === "relative";
+				if (!hasBackground && !hasStructuredLayout) {
+					current = current.parentElement;
+					continue;
+				}
+
+				wrappers.push(current);
+				current = current.parentElement;
+			}
+
+			return wrappers.filter(
+				(el, index, list) => el && list.indexOf(el) === index,
+			);
+		}
+
+		function _isNearMainPlayer(el) {
+			if (!el || !_isVisibleElement(el)) return false;
+			const playerRect = _getMainPlayerRect();
+			if (!playerRect) return false;
+
+			const rect = el.getBoundingClientRect();
+			const horizontalMargin = Math.max(
+				120,
+				Math.min(260, playerRect.width * 0.2),
+			);
+			const verticalMargin = Math.max(
+				80,
+				Math.min(180, playerRect.height * 0.2),
+			);
+
+			return !(
+				rect.right < playerRect.left - horizontalMargin ||
+				rect.left > playerRect.right + horizontalMargin ||
+				rect.bottom < playerRect.top - verticalMargin ||
+				rect.top > playerRect.bottom + verticalMargin
+			);
+		}
+
+		function _looksLikeAdLabel(text) {
+			const normalized = String(text || "")
+				.replace(/\s+/g, " ")
+				.trim()
+				.toLowerCase();
+			return (
+				normalized === "ad" ||
+				normalized === "ad 0" ||
+				/^ad\s+[0-9:]+(?:\s+of\s+\d+)?$/.test(normalized) ||
+				/^ad\s*ⓘ$/.test(normalized)
+			);
+		}
+
+		function _hasDisplayAdCtaNearPlayer() {
+			const ctas = document.querySelectorAll("a, button");
+			for (const cta of ctas) {
+				if (!_isVisibleElement(cta) || !_isNearMainPlayer(cta)) continue;
+				const text = (cta.textContent || "").replace(/\s+/g, " ").trim();
+				if (!PLAYER_AD_CTA_PATTERN.test(text)) continue;
+
+				const rect = cta.getBoundingClientRect();
+				if (rect.width < 40 || rect.height < 20) continue;
+				return true;
+			}
+			return false;
+		}
+
+		function _hasOfflinePageSignal() {
+			for (const selector of OFFLINE_PAGE_SIGNAL_SELECTORS) {
+				const el = document.querySelector(selector);
+				if (el && _isVisibleElement(el)) {
+					return true;
+				}
+			}
+
+			let checked = 0;
+			const nodes = document.querySelectorAll("span, p, div");
+			for (const node of nodes) {
+				if (checked++ > 200) break;
+				if (!_isVisibleElement(node)) continue;
+				const text = (node.textContent || "").trim();
+				if (!text || text.length > 12) continue;
+				if (text.toUpperCase() !== "OFFLINE") continue;
+				const rect = node.getBoundingClientRect();
+				if (rect.top < window.innerHeight * 0.6) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		function _collapsePromotedPageAd() {
+			if (!_hasOfflinePageSignal()) {
+				isPromotedPageAdActive = false;
+				return false;
+			}
+
+			const ctas = document.querySelectorAll("a, button");
+			for (const cta of ctas) {
+				if (!_isVisibleElement(cta)) continue;
+				const text = (cta.textContent || "").replace(/\s+/g, " ").trim();
+				if (!PROMOTED_PAGE_CTA_PATTERN.test(text)) continue;
+
+				let card = cta;
+				for (let depth = 0; depth < 6 && card; depth += 1) {
+					card = card.parentElement;
+					if (!card || _isSafeElement(card)) break;
+
+					const rect = card.getBoundingClientRect();
+					if (
+						rect.width < 180 ||
+						rect.height < 100 ||
+						rect.width > window.innerWidth * 0.75 ||
+						rect.height > window.innerHeight * 0.85
+					) {
+						continue;
+					}
+
+					const hasAdLabel = Array.from(
+						card.querySelectorAll("span, p, div"),
+					).some((node) => {
+						if (!_isVisibleElement(node)) return false;
+						return _looksLikeAdLabel(node.textContent || "");
+					});
+
+					if (!hasAdLabel) continue;
+
+					if (!isPromotedPageAdActive) {
+						isPromotedPageAdActive = true;
+						if (!__TTVAB_STATE__.CurrentAdChannel) {
+							_incrementAdsBlocked(_getCurrentChannelName());
+						}
+						_log("Offline/promoted page ad detected, hiding card", "warning");
+					}
+
+					_hideElement(card);
+					return true;
+				}
+			}
+
+			isPromotedPageAdActive = false;
+			return false;
+		}
+
+		function _collapseDisplayAdShell() {
+			const adBanners = Array.from(
+				document.querySelectorAll('div[data-test-selector="ad-banner"]'),
+			).filter((el) => _isVisibleElement(el) && _isNearMainPlayer(el));
+			const explicitDisplayAdNodes = EXPLICIT_DISPLAY_AD_SELECTORS.flatMap(
+				(selector) => Array.from(document.querySelectorAll(selector)),
+			).filter(
+				(el, index, list) =>
+					_isVisibleElement(el) &&
+					_isNearMainPlayer(el) &&
+					list.indexOf(el) === index,
+			);
+			const displayShellNodes = DISPLAY_AD_SHELL_SELECTORS.flatMap((selector) =>
+				Array.from(document.querySelectorAll(selector)),
+			).filter(
+				(el, index, list) =>
+					_isVisibleElement(el) &&
+					_isNearMainPlayer(el) &&
+					list.indexOf(el) === index,
+			);
+			const pipContainers = PIP_SELECTORS.flatMap((selector) =>
+				Array.from(document.querySelectorAll(selector)),
+			).filter(
+				(el, index, list) =>
+					_isVisibleElement(el) &&
+					_isNearMainPlayer(el) &&
+					list.indexOf(el) === index,
+			);
+			const layoutRoots = STREAM_DISPLAY_LAYOUT_SELECTORS.flatMap((selector) =>
+				Array.from(document.querySelectorAll(selector)),
+			).filter(
+				(el, index, list) =>
+					_isVisibleElement(el) &&
+					_isNearMainPlayer(el) &&
+					list.indexOf(el) === index,
+			);
+			const hasAdLabel = _hasDisplayAdLabel();
+			const hasDisplayAdCta = _hasDisplayAdCtaNearPlayer();
+			const inferredLayoutWrappers = hasAdLabel
+				? _getInferredDisplayAdLayoutWrappers()
+				: [];
+			const hasExplicitShellLayoutSignal =
+				displayShellNodes.length > 0 ||
+				pipContainers.length > 0 ||
+				layoutRoots.length > 0;
+			const hasInferredDisplayAdSignal =
+				hasAdLabel &&
+				(hasExplicitShellLayoutSignal || inferredLayoutWrappers.length > 0);
+			const hasExplicitDisplayAdSignal =
+				adBanners.length > 0 ||
+				explicitDisplayAdNodes.length > 0 ||
+				(hasDisplayAdCta && hasInferredDisplayAdSignal);
+			const hasDisplayAdSignal =
+				hasExplicitDisplayAdSignal || hasInferredDisplayAdSignal;
+
+			if (!hasDisplayAdSignal) {
+				_cleanupStaleDisplayAdShell(
+					displayShellNodes,
+					pipContainers,
+					layoutRoots,
+				);
+				isDisplayAdShellActive = false;
+				didCountCurrentDisplayAdShell = false;
+				pendingDisplayAdShellSince = 0;
+				pendingDisplayAdShellSignature = null;
+				return false;
+			}
+
+			const signalSignature = [
+				adBanners.length,
+				explicitDisplayAdNodes.length,
+				displayShellNodes.length,
+				pipContainers.length,
+				layoutRoots.length,
+				hasDisplayAdCta ? 1 : 0,
+				hasExplicitDisplayAdSignal ? inferredLayoutWrappers.length : 0,
+				hasInferredDisplayAdSignal ? 1 : 0,
+				hasAdLabel ? 1 : 0,
+			].join(":");
+			const now = Date.now();
+
+			if (!isDisplayAdShellActive) {
+				if (pendingDisplayAdShellSignature !== signalSignature) {
+					pendingDisplayAdShellSignature = signalSignature;
+					pendingDisplayAdShellSince = now;
+					return false;
+				}
+
+				if (now - pendingDisplayAdShellSince < 350) {
+					return false;
+				}
+			}
+
+			if (!isDisplayAdShellActive) {
+				isDisplayAdShellActive = true;
+				didCountCurrentDisplayAdShell = false;
+				pendingDisplayAdShellSince = 0;
+				pendingDisplayAdShellSignature = null;
+			}
+
+			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShell) {
+				didCountCurrentDisplayAdShell = true;
+				if (!__TTVAB_STATE__.CurrentAdChannel) {
+					_incrementAdsBlocked(_getCurrentChannelName());
+				}
+				_log("Display ad shell detected, collapsing layout", "warning");
+			}
+
+			for (const shellNode of [
+				...explicitDisplayAdNodes,
+				...displayShellNodes,
+			]) {
+				if (shellNode.querySelector?.("video")) {
+					_resetStreamDisplayLayout(shellNode);
+				} else {
+					_hideElement(shellNode);
+				}
+			}
+
+			layoutRoots.forEach((el) => {
+				_resetStreamDisplayLayout(el);
+			});
+			inferredLayoutWrappers.forEach((el) => {
+				_resetStreamDisplayLayout(el);
+			});
+			pipContainers.forEach((el) => {
+				_hideElement(el);
+			});
+
+			return true;
 		}
 
 		function _hasAdblockText(el) {
@@ -117,12 +767,21 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _scanAndRemove() {
+			if (_collapseDisplayAdShell()) {
+				return true;
+			}
+
+			if (_collapsePromotedPageAd()) {
+				return true;
+			}
+
 			const detectionNodes = document.querySelectorAll(
 				'button, [role="button"], a, div[class*="Button"], h1, h2, h3, h4, div[class*="Header"], p, span',
 			);
 
 			for (const node of detectionNodes) {
-				if (node.tagName === "SPAN" && node.textContent.length < 10) continue;
+				if (node.tagName === "SPAN" && (node.textContent || "").length < 10)
+					continue;
 				if (
 					node.offsetParent === null ||
 					node.hasAttribute("data-ttvab-blocked")
@@ -184,8 +843,6 @@ function _blockAntiAdblockPopup() {
 								`Hiding popup: ${popup.className || popup.tagName}`,
 								"success",
 							);
-							popup.style.display = "none";
-							popup.style.visibility = "hidden";
 							popup.setAttribute(
 								"style",
 								(popup.getAttribute("style") || "") +
@@ -292,6 +949,38 @@ function _blockAntiAdblockPopup() {
 			_log("Popup removed on initial scan", "success");
 		}
 
+		window.addEventListener("message", (event) => {
+			if (event.source !== window) return;
+			if (event.data?.type !== "ttvab-ad-blocked") return;
+			const currentChannel = _getCurrentChannelName();
+			const blockedChannel = event.data?.detail?.channel || null;
+			if (
+				blockedChannel &&
+				currentChannel &&
+				blockedChannel !== currentChannel
+			) {
+				return;
+			}
+			_scanAndRemove();
+			setTimeout(_scanAndRemove, 50);
+			setTimeout(_scanAndRemove, 250);
+		});
+
+		window.addEventListener("popstate", _handleRouteChange, true);
+
+		const originalPushState = history.pushState;
+		const originalReplaceState = history.replaceState;
+		history.pushState = function (...args) {
+			const result = originalPushState.apply(this, args);
+			_handleRouteChange();
+			return result;
+		};
+		history.replaceState = function (...args) {
+			const result = originalReplaceState.apply(this, args);
+			_handleRouteChange();
+			return result;
+		};
+
 		let debounceTimer = null;
 		let lastImmediateScan = 0;
 		const observer = new MutationObserver((mutations) => {
@@ -307,6 +996,8 @@ function _blockAntiAdblockPopup() {
 			}
 
 			if (!shouldScan) return;
+
+			_handleRouteChange();
 
 			const now = Date.now();
 			if (now - lastImmediateScan > 100) {
@@ -329,6 +1020,7 @@ function _blockAntiAdblockPopup() {
 		function _scheduleIdleScan() {
 			const delay = _isDocumentHidden() ? 2000 : 500;
 			setTimeout(() => {
+				_handleRouteChange();
 				if (!_isDocumentHidden()) {
 					_scanAndRemove();
 				}
