@@ -72,14 +72,18 @@ function _initCrashMonitor() {
 		if (isDocumentHidden()) {
 			_log("Tab hidden, will refresh when visible", "warning");
 
+			const refreshTimer = setTimeout(
+				() => window.location.reload(),
+				_C.REFRESH_DELAY,
+			);
 			document.addEventListener("visibilitychange", function onVisible() {
 				if (!isDocumentHidden()) {
 					document.removeEventListener("visibilitychange", onVisible);
+					clearTimeout(refreshTimer);
 					_log("Tab visible, refreshing...", "warning");
 					window.location.reload();
 				}
 			});
-			setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
 		} else {
 			_log("Auto-refreshing...", "warning");
 
