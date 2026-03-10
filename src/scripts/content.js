@@ -226,7 +226,7 @@ function _$pka(text) {
 	const lines = text.split("\n");
 	for (let index = 0; index < lines.length - 1; index++) {
 		if (
-			lines[index].startsWith("#EXTINF") &&
+			lines[index]?.startsWith("#EXTINF") &&
 			_$kas(lines[index + 1])
 		) {
 			return true;
@@ -275,7 +275,7 @@ function _$sa(text, stripAll, info) {
 
 	for (i = 0; i < len - 1; i++) {
 		const line = lines[i];
-		if (line.startsWith("#EXTINF")) {
+		if (line?.startsWith("#EXTINF")) {
 			const segmentUrl = lines[i + 1];
 			const isAdSegment =
 				forceStripAllSegments || _$kas(segmentUrl);
@@ -297,7 +297,7 @@ function _$sa(text, stripAll, info) {
 	for (i = 0; i < len; i++) {
 		let line = lines[i];
 
-		if (line.includes("X-TV-TWITCH-AD")) {
+		if (line?.includes("X-TV-TWITCH-AD")) {
 			line = line
 				.replace(/X-TV-TWITCH-AD-URL="[^"]*"/, `X-TV-TWITCH-AD-URL="${adUrl}"`)
 				.replace(
@@ -307,7 +307,7 @@ function _$sa(text, stripAll, info) {
 			lines[i] = line;
 		}
 
-		if (shouldStrip && i < len - 1 && line.startsWith("#EXTINF")) {
+		if (shouldStrip && i < len - 1 && line?.startsWith("#EXTINF")) {
 			const isAdSegment =
 				forceStripAllSegments || _$kas(lines[i + 1]);
 
@@ -363,7 +363,7 @@ function _$sa(text, stripAll, info) {
 
 	const result = lines.filter((l) => l !== "");
 
-	const hasRemainingSegments = result.some((l) => l.startsWith("#EXTINF"));
+	const hasRemainingSegments = result.some((l) => l?.startsWith("#EXTINF"));
 	if (
 		!hasRemainingSegments &&
 		strippedSegments.length > 0 &&
@@ -403,9 +403,9 @@ function _$su(m3u8, res, baseUrl = null) {
 	for (let i = 0; i < len - 1; i++) {
 		const line = lines[i];
 		if (
-			!line.startsWith("#EXT-X-STREAM-INF") ||
-			!lines[i + 1].includes(".m3u8") ||
-			lines[i + 1].includes("processing")
+			!line?.startsWith("#EXT-X-STREAM-INF") ||
+			!lines[i + 1]?.includes(".m3u8") ||
+			lines[i + 1]?.includes("processing")
 		)
 			continue;
 
@@ -1026,8 +1026,8 @@ function _$wf() {
 		const lines = encodings.split("\n");
 		for (let i = 0, len = lines.length; i < len - 1; i++) {
 			if (
-				lines[i].startsWith("#EXT-X-STREAM-INF") &&
-				lines[i + 1].includes(".m3u8")
+				lines[i]?.startsWith("#EXT-X-STREAM-INF") &&
+				lines[i + 1]?.includes(".m3u8")
 			) {
 				const attrs = _$pa(lines[i]);
 				const resolution = attrs.RESOLUTION;
@@ -1062,7 +1062,7 @@ function _$wf() {
 		if (hasHevc && nonHevcList.length > 0) {
 			const modLines = [...lines];
 			for (let mi = 0; mi < modLines.length - 1; mi++) {
-				if (modLines[mi].startsWith("#EXT-X-STREAM-INF")) {
+				if (modLines[mi]?.startsWith("#EXT-X-STREAM-INF")) {
 					const attrs = _$pa(modLines[mi]);
 					const codecs = attrs.CODECS || "";
 					if (codecs.startsWith("hev") || codecs.startsWith("hvc")) {
