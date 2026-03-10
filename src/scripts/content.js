@@ -1771,8 +1771,18 @@ function _$mf() {
 
 				if (headers) {
 					const getHeader = (key) => {
-						if (headers instanceof Headers)
+						if (headers instanceof Headers) {
 							return headers.get(key) || headers.get(key.toLowerCase());
+						}
+						if (Array.isArray(headers)) {
+							const target = key.toLowerCase();
+							const entry = headers.find(
+								(header) =>
+									Array.isArray(header) &&
+									String(header[0] || "").toLowerCase() === target,
+							);
+							return entry?.[1];
+						}
 						return headers[key] || headers[key.toLowerCase()];
 					};
 
