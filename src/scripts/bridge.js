@@ -163,9 +163,16 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 chrome.storage.local.get(
 	["ttvAdblockEnabled", "ttvAdsBlocked", "ttvPopupsBlocked"],
 	(result) => {
-		bridgeState.enabled = result.ttvAdblockEnabled !== false;
-		bridgeState.storedAdsCount = result.ttvAdsBlocked || 0;
-		bridgeState.storedPopupsCount = result.ttvPopupsBlocked || 0;
+		if (chrome.runtime.lastError) {
+			console.error(
+				"[TTV AB] Init read error:",
+				chrome.runtime.lastError.message,
+			);
+		}
+		const safeResult = result || {};
+		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
+		bridgeState.storedAdsCount = safeResult.ttvAdsBlocked || 0;
+		bridgeState.storedPopupsCount = safeResult.ttvPopupsBlocked || 0;
 
 		function broadcastState() {
 			window.postMessage(
