@@ -1523,22 +1523,37 @@ function _$hw() {
 							});
 						} catch (_e) {}
 						break;
-					case "ReloadPlayer":
-						if (isStaleChannelEvent(e.data.channel || null)) {
+					case "ReloadPlayer": {
+						const reason = e.data.reason || "manual";
+						const channel = e.data.channel || null;
+						const currentChannel = getCurrentPageChannel();
+						const requiresStrictChannelMatch = reason === "ad-recovery";
+						if (isStaleChannelEvent(channel)) {
 							_$l(
-								`Ignoring stale ReloadPlayer event for ${e.data.channel}`,
+								`Ignoring stale ReloadPlayer event for ${channel}`,
 								"info",
 							);
 							break;
 						}
-						_$l(`Reloading player (${e.data.reason || "manual"})`, "info");
+						if (
+							requiresStrictChannelMatch &&
+							(!channel || !currentChannel || currentChannel !== channel)
+						) {
+							_$l(
+								`Ignoring ReloadPlayer event without strict channel match for ${channel || "unknown"}`,
+								"info",
+							);
+							break;
+						}
+						_$l(`Reloading player (${reason})`, "info");
 						if (typeof _$dpt === "function") {
 							_$dpt(false, true, {
-								reason: e.data.reason || "manual",
-								channel: e.data.channel || null,
+								reason,
+								channel,
 							});
 						}
 						break;
+					}
 					case "PauseResumePlayer":
 						_$l("Resuming player", "info");
 						if (typeof _$dpt === "function") {
@@ -2735,6 +2750,11 @@ function _$bp() {
 				return false;
 			}
 
+			_$l(
+				"Display ad shell stale: cleaning up residual shell/layout artifacts",
+				"info",
+			);
+
 			staleNodes.forEach((el) => {
 				if (
 					el.querySelector?.("video") ||
@@ -3183,6 +3203,12 @@ function _$bp() {
 				didCountCurrentDisplayAdShell = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
+				if (!hasExplicitDisplayAdSignal) {
+					_$l(
+						"Display ad shell inferred: resetting layout without counting blocked ad",
+						"info",
+					);
+				}
 			}
 
 			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShell) {
@@ -3190,7 +3216,10 @@ function _$bp() {
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
 					_$ab(_getCurrentChannelName());
 				}
-				_$l("Display ad shell detected, collapsing layout", "warning");
+				_$l(
+					"Display ad shell confirmed: counting blocked ad and collapsing shell",
+					"warning",
+				);
 			}
 
 			for (const shellNode of [
@@ -3448,11 +3477,7 @@ function _$bp() {
 			if (event.data?.type !== "ttvab-ad-blocked") return;
 			const currentChannel = _getCurrentChannelName();
 			const blockedChannel = event.data?.detail?.channel || null;
-			if (
-				blockedChannel &&
-				currentChannel &&
-				blockedChannel !== currentChannel
-			) {
+			if (blockedChannel && blockedChannel !== currentChannel) {
 				return;
 			}
 			_$sr();
