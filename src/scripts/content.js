@@ -2614,6 +2614,11 @@ function _$bp() {
 		}
 
 		if (!document.getElementById("ttvab-popup-style")) {
+			const styleMount = document.head || document.documentElement;
+			if (!styleMount) {
+				setTimeout(_$ipb, 50);
+				return;
+			}
 			const style = document.createElement("style");
 			style.id = "ttvab-popup-style";
 			style.textContent = `
@@ -2625,7 +2630,7 @@ function _$bp() {
                     visibility: hidden !important;
                 }
             `;
-			document.head.appendChild(style);
+			styleMount.appendChild(style);
 		}
 
 		function _$pb() {

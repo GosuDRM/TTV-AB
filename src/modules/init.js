@@ -84,6 +84,11 @@ function _blockAntiAdblockPopup() {
 		}
 
 		if (!document.getElementById("ttvab-popup-style")) {
+			const styleMount = document.head || document.documentElement;
+			if (!styleMount) {
+				setTimeout(_initPopupBlocker, 50);
+				return;
+			}
 			const style = document.createElement("style");
 			style.id = "ttvab-popup-style";
 			style.textContent = `
@@ -95,7 +100,7 @@ function _blockAntiAdblockPopup() {
                     visibility: hidden !important;
                 }
             `;
-			document.head.appendChild(style);
+			styleMount.appendChild(style);
 		}
 
 		function _incrementPopupsBlocked() {
