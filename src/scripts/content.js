@@ -1905,9 +1905,9 @@ function _$dpt(isPausePlay, isReload, options = {}) {
 	}
 
 	const playerCore = _$gpc(player);
-	if (player.isPaused() || playerCore?.paused) return;
 
 	if (isPausePlay) {
+		if (player.isPaused() || playerCore?.paused) return;
 		player.pause();
 		player.play();
 		return true;
