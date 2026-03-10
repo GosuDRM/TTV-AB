@@ -736,7 +736,6 @@ async function _$pm(url, text, realFetch) {
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
-			_$l("Ad ended", "success");
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
 				if (wasUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
@@ -2535,6 +2534,7 @@ function _$tl() {
 		if (e.source !== window) return;
 		if (e.data?.type === "ttvab-toggle") {
 			const enabled = e.data.detail?.enabled ?? true;
+			if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
 			__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
 			_$bw({ key: "UpdateToggleState", value: enabled });
 			_$l(
@@ -3574,6 +3574,7 @@ function _$in() {
 			e.data.type === "ttvab-init-count" &&
 			typeof e.data.detail?.count === "number"
 		) {
+			if (_$s.adsBlocked === e.data.detail.count) return;
 			_$s.adsBlocked = e.data.detail.count;
 			_$bw({ key: "UpdateAdsBlocked", value: _$s.adsBlocked });
 			_$l(`Restored ads count: ${_$s.adsBlocked}`, "info");
@@ -3583,6 +3584,7 @@ function _$in() {
 			e.data.type === "ttvab-init-popups-count" &&
 			typeof e.data.detail?.count === "number"
 		) {
+			if (_$s.popupsBlocked === e.data.detail.count) return;
 			_$s.popupsBlocked = e.data.detail.count;
 			_$l(`Restored popups count: ${_$s.popupsBlocked}`, "info");
 		}
