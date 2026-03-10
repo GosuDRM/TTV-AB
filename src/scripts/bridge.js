@@ -147,6 +147,27 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 						"[TTV AB] Stats write error:",
 						chrome.runtime.lastError.message,
 					);
+					StorageQueue.add(
+						() =>
+							new Promise((retryResolve) => {
+								chrome.storage.local.set({ ttvStats: stats }, () => {
+									if (chrome.runtime.lastError) {
+										console.error(
+											"[TTV AB] Stats retry write error:",
+											chrome.runtime.lastError.message,
+										);
+									} else {
+										for (const id of newUnlocks) {
+											window.postMessage(
+												{ type: "ttvab-achievement-unlocked", detail: { id: id } },
+												"*",
+											);
+										}
+									}
+									retryResolve();
+								});
+							}),
+					);
 					resolve();
 					return;
 				}
