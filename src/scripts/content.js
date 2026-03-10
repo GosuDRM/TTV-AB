@@ -604,12 +604,17 @@ async function _$pm(url, text, realFetch) {
 		) {
 			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
 				_$rsa(info);
+			__TTVAB_STATE__.CurrentAdChannel = null;
+			__TTVAB_STATE__.PinnedBackupPlayerType = null;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			_$l("Ad blocking disabled - restoring native stream state", "info");
 			if (
 				(wasUsingModifiedM3U8 || wasUsingFallbackStream) &&
 				typeof self !== "undefined" &&
 				self.postMessage
 			) {
+				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
 				self.postMessage({
 					key: "ReloadPlayer",
 					reason: "restore-native",
@@ -730,6 +735,7 @@ async function _$pm(url, text, realFetch) {
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			_$l("Ad ended", "success");
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
@@ -2447,6 +2453,7 @@ function _$cm() {
 					window.location.reload();
 				}
 			});
+			setTimeout(() => window.location.reload(), _$c.REFRESH_DELAY);
 		} else {
 			_$l("Auto-refreshing...", "warning");
 
