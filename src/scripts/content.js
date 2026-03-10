@@ -470,6 +470,30 @@ function _$gfr(info, url) {
 
 const _$gu = "https://gql.twitch.tv/gql";
 
+function _extractPlaybackAccessToken(payload) {
+	const tokenSources = [
+		payload?.data?.streamPlaybackAccessToken,
+		payload?.data?.videoPlaybackAccessToken,
+		payload?.streamPlaybackAccessToken,
+		payload?.videoPlaybackAccessToken,
+	].filter(Boolean);
+
+	for (const token of tokenSources) {
+		const signature = token?.signature || token?.sig || null;
+		const value = token?.value || token?.token || null;
+		if (signature && value) {
+			return { signature, value };
+		}
+	}
+
+	return {
+		signature: null,
+		value: null,
+		hasAnySignature: tokenSources.some((token) => Boolean(token?.signature || token?.sig)),
+		hasAnyValue: tokenSources.some((token) => Boolean(token?.value || token?.token)),
+	};
+}
+
 async function _$tk(channel, playerType, realFetch) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
@@ -832,8 +856,9 @@ async function _$fb(
 					const tokenRes = await _$tk(info.ChannelName, realPt, realFetch);
 					if (tokenRes.status === 200) {
 						const token = await tokenRes.json();
-						const sig = token?.data?.streamPlaybackAccessToken?.signature;
-						const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
+						const extractedToken = _extractPlaybackAccessToken(token);
+						const sig = extractedToken?.signature;
+						const tokenValue = extractedToken?.value;
 
 						if (sig && tokenValue) {
 							info.FailedBackupPlayerTypes?.delete?.(pt);
@@ -856,7 +881,16 @@ async function _$fb(
 							}
 						} else {
 							info.FailedBackupPlayerTypes?.add?.(pt);
-							_$l(`[Trace] Missing token for ${pt}`, "warning");
+							const missingParts = [
+								extractedToken?.hasAnySignature ? null : "signature",
+								extractedToken?.hasAnyValue ? null : "value",
+							]
+								.filter(Boolean)
+								.join("+");
+							_$l(
+								`[Trace] Missing token ${missingParts || "parts"} for ${pt}`,
+								"warning",
+							);
 						}
 					} else {
 						info.FailedBackupPlayerTypes?.add?.(pt);
@@ -880,10 +914,12 @@ async function _$fb(
 									_$hpa(m3u8) ||
 									_$hem(m3u8) ||
 									_$pka(m3u8);
-								if (
-									!candidateHasAds &&
-									(!fallbackM3u8 || pt === __TTVAB_STATE__.FallbackPlayerType)
-								) {
+								const canPromoteFallback =
+									!fallbackM3u8 ||
+									pt === __TTVAB_STATE__.FallbackPlayerType ||
+									(fallbackType !== __TTVAB_STATE__.FallbackPlayerType &&
+										!candidateHasAds);
+								if (canPromoteFallback) {
 									fallbackM3u8 = m3u8;
 									fallbackType = pt;
 								}
@@ -1285,6 +1321,7 @@ function _$hw() {
                 ${_$sa.toString()}
                 ${_$su.toString()}
                 ${_$gfr.toString()}
+                ${_extractPlaybackAccessToken.toString()}
                 ${_$tk.toString()}
                 ${_$rsa.toString()}
                 ${_$gsi.toString()}

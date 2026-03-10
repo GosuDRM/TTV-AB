@@ -299,6 +299,7 @@ function _hookWorker() {
                 ${_stripAds.toString()}
                 ${_getStreamUrl.toString()}
                 ${_getFallbackResolution.toString()}
+                ${_extractPlaybackAccessToken.toString()}
                 ${_getToken.toString()}
                 ${_resetStreamAdState.toString()}
                 ${_getStreamInfoForPlaylist.toString()}

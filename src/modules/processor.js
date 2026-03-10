@@ -297,8 +297,9 @@ async function _findBackupStream(
 					const tokenRes = await _getToken(info.ChannelName, realPt, realFetch);
 					if (tokenRes.status === 200) {
 						const token = await tokenRes.json();
-						const sig = token?.data?.streamPlaybackAccessToken?.signature;
-						const tokenValue = token?.data?.streamPlaybackAccessToken?.value;
+						const extractedToken = _extractPlaybackAccessToken(token);
+						const sig = extractedToken?.signature;
+						const tokenValue = extractedToken?.value;
 
 						if (sig && tokenValue) {
 							info.FailedBackupPlayerTypes?.delete?.(pt);
@@ -321,7 +322,16 @@ async function _findBackupStream(
 							}
 						} else {
 							info.FailedBackupPlayerTypes?.add?.(pt);
-							_log(`[Trace] Missing token for ${pt}`, "warning");
+							const missingParts = [
+								extractedToken?.hasAnySignature ? null : "signature",
+								extractedToken?.hasAnyValue ? null : "value",
+							]
+								.filter(Boolean)
+								.join("+");
+							_log(
+								`[Trace] Missing token ${missingParts || "parts"} for ${pt}`,
+								"warning",
+							);
 						}
 					} else {
 						info.FailedBackupPlayerTypes?.add?.(pt);
@@ -345,10 +355,12 @@ async function _findBackupStream(
 									_hasPlaylistAdMarkers(m3u8) ||
 									_hasExplicitAdMetadata(m3u8) ||
 									_playlistHasKnownAdSegments(m3u8);
-								if (
-									!candidateHasAds &&
-									(!fallbackM3u8 || pt === __TTVAB_STATE__.FallbackPlayerType)
-								) {
+								const canPromoteFallback =
+									!fallbackM3u8 ||
+									pt === __TTVAB_STATE__.FallbackPlayerType ||
+									(fallbackType !== __TTVAB_STATE__.FallbackPlayerType &&
+										!candidateHasAds);
+								if (canPromoteFallback) {
 									fallbackM3u8 = m3u8;
 									fallbackType = pt;
 								}

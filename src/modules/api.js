@@ -2,6 +2,30 @@
 
 const _GQL_URL = "https://gql.twitch.tv/gql";
 
+function _extractPlaybackAccessToken(payload) {
+	const tokenSources = [
+		payload?.data?.streamPlaybackAccessToken,
+		payload?.data?.videoPlaybackAccessToken,
+		payload?.streamPlaybackAccessToken,
+		payload?.videoPlaybackAccessToken,
+	].filter(Boolean);
+
+	for (const token of tokenSources) {
+		const signature = token?.signature || token?.sig || null;
+		const value = token?.value || token?.token || null;
+		if (signature && value) {
+			return { signature, value };
+		}
+	}
+
+	return {
+		signature: null,
+		value: null,
+		hasAnySignature: tokenSources.some((token) => Boolean(token?.signature || token?.sig)),
+		hasAnyValue: tokenSources.some((token) => Boolean(token?.value || token?.token)),
+	};
+}
+
 async function _getToken(channel, playerType, realFetch) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
