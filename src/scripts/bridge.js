@@ -253,6 +253,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		return true;
 	} else if (message.action === "getAdsBlocked") {
 		chrome.storage.local.get(["ttvAdsBlocked"], (result) => {
+			if (chrome.runtime.lastError) {
+				console.error(
+					"[TTV AB] Ads count read error:",
+					chrome.runtime.lastError.message,
+				);
+				sendResponse({ count: 0, error: chrome.runtime.lastError.message });
+				return;
+			}
 			sendResponse({ count: result.ttvAdsBlocked || 0 });
 		});
 		return true;
