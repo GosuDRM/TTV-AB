@@ -1059,6 +1059,7 @@ function _init() {
 			e.data.type === "ttvab-init-count" &&
 			typeof e.data.detail?.count === "number"
 		) {
+			if (_S.adsBlocked === e.data.detail.count) return;
 			_S.adsBlocked = e.data.detail.count;
 			_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
 			_log(`Restored ads count: ${_S.adsBlocked}`, "info");
@@ -1068,6 +1069,7 @@ function _init() {
 			e.data.type === "ttvab-init-popups-count" &&
 			typeof e.data.detail?.count === "number"
 		) {
+			if (_S.popupsBlocked === e.data.detail.count) return;
 			_S.popupsBlocked = e.data.detail.count;
 			_log(`Restored popups count: ${_S.popupsBlocked}`, "info");
 		}
