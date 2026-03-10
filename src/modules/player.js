@@ -81,9 +81,9 @@ function _doPlayerTask(isPausePlay, isReload, options = {}) {
 	}
 
 	const playerCore = _getPlayerCore(player);
-	if (player.isPaused() || playerCore?.paused) return;
 
 	if (isPausePlay) {
+		if (player.isPaused() || playerCore?.paused) return;
 		player.pause();
 		player.play();
 		return true;
