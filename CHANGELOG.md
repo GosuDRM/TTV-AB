@@ -2,6 +2,32 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.5] - 2026-03-10
+
+### Fixed
+- **Worker Crash Loops** - Hardened worker/bootstrap message handling and playlist parsing to prevent restart loops caused by malformed or non-standard frontpage, home, and outstream worker contexts.
+- **Worker Runtime State Sync** - Newly created or restarted workers now receive current toggle state, blocked-ad counts, current ad channel, and pinned backup player state immediately instead of waiting for later rebroadcasts.
+- **Intentional Worker Eviction** - Workers intentionally terminated during worker-cap cleanup are no longer misclassified as crashes and restarted unnecessarily.
+- **Paused-Player Recovery** - Recovery reloads are no longer suppressed just because Twitch reports the player as paused.
+- **Ad-End Channel Handling** - Worker `AdEnded` events now carry channel context so stale-channel protection can correctly reject old ad-end events.
+- **Native-Restore Cleanup** - Disabling ad blocking during an active ad cycle now clears stale ad-cycle and page-side recovery state more reliably when returning to native playback.
+
+### Sync / State / Toggle
+- **Duplicate Toggle Propagation** - Removed overlapping popup and bridge rebroadcast paths so toggle changes are applied once through the canonical storage-sync flow.
+- **Toggle State Ordering** - Bridge toggle handling now lets storage changes drive canonical runtime state updates, avoiding out-of-order bridge-state mutation.
+- **Duplicate Startup Replay** - Startup count/toggle replay now ignores identical restores instead of reapplying duplicate state or rebroadcasting redundant worker updates.
+- **Duplicate Backup Selection Churn** - Repeated same-value backup selection events no longer reapply pinned backup state or rebroadcast unnecessary worker updates.
+
+### Statistics / Achievements
+- **Storage Failure Hardening** - Added guards for popup and bridge storage read/write failure paths so toggle state, counters, and popup statistics fail safely instead of silently drifting or throwing.
+- **Counter Persistence Reliability** - Counter deltas are now requeued after storage write failures instead of being silently dropped.
+- **Stats Retry Safety** - Stats updates now retry from fresh storage state after write failures, avoiding stale snapshot overwrites and reducing lost achievement/stat updates.
+- **Stats Read Guards** - Hardened `getAdsBlocked`, `updateStats`, `flushCounters`, popup init, and popup statistics reads against empty or failed storage results.
+
+### Stability
+- **Hidden-Tab Crash Recovery** - Hidden-tab crash recovery now has a fallback refresh path and avoids duplicate refresh triggers when the tab becomes visible before the timer fires.
+- **Wrong-Route Rescan Safety** - Channel-tagged ad-blocked rescans are now ignored on the wrong route instead of triggering follow-up cleanup outside the active channel context.
+
 ## [4.2.4] - 2026-03-10
 
 ### Changed

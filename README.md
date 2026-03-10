@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.2.4-purple)
+![Version](https://img.shields.io/badge/version-4.2.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -51,6 +51,13 @@ The extension intercepts Twitch's HLS video playlists and:
 - Caches ad segments to prevent playback
 
 ## ✨ What's New
+
+### v4.2.5
+- **Worker Crash Loop Fixes** - Hardened worker/bootstrap message handling and playlist parsing so malformed frontpage, home, and outstream worker contexts are less likely to crash and restart continuously.
+- **Worker State Sync** - New and restarted workers now receive current toggle, counter, ad-cycle, and pinned backup state immediately.
+- **Toggle / Startup Sync Fixes** - Removed duplicate toggle propagation paths and reduced redundant startup state replay.
+- **Stats & Storage Hardening** - Added stronger popup/bridge storage guards and safer stats retry behavior to reduce lost counts, stale stats, and achievement drift.
+- **Recovery / Stability Fixes** - Improved hidden-tab crash recovery, stale ad-cycle cleanup, paused-player recovery, and stale-channel handling during restore/ad-end flows.
 
 ### v4.2.4
 - **Display Ad Detection Tightening** - Refined stream-display and PIP shell detection to require stronger visible ad signals before counting or collapsing anything.
