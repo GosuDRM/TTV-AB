@@ -263,7 +263,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 				sendResponse({ count: 0, error: chrome.runtime.lastError.message });
 				return;
 			}
-			sendResponse({ count: result.ttvAdsBlocked || 0 });
+			const safeResult = result || {};
+			sendResponse({ count: safeResult.ttvAdsBlocked || 0 });
 		});
 		return true;
 	}
