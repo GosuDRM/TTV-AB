@@ -1429,9 +1429,19 @@ function _$hw() {
 							);
 							break;
 						}
-						__TTVAB_STATE__.PinnedBackupPlayerType = e.data.value || null;
-						__TTVAB_STATE__.PinnedBackupPlayerChannel =
-							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+						{
+							const nextPinnedType = e.data.value || null;
+							const nextPinnedChannel =
+								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+							if (
+								__TTVAB_STATE__.PinnedBackupPlayerType === nextPinnedType &&
+								__TTVAB_STATE__.PinnedBackupPlayerChannel === nextPinnedChannel
+							) {
+								break;
+							}
+							__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
+							__TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedChannel;
+						}
 						_$bw({
 							key: "UpdatePinnedBackupPlayerType",
 							value: __TTVAB_STATE__.PinnedBackupPlayerType,
