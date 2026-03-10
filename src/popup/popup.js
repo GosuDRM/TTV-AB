@@ -408,6 +408,13 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 			updateStatus(enabled);
 			chrome.tabs.query({ url: "*://*.twitch.tv/*" }, (tabs) => {
+				if (chrome.runtime.lastError) {
+					console.error(
+						"[TTV AB] Popup tabs query error:",
+						chrome.runtime.lastError.message,
+					);
+					return;
+				}
 				for (const tab of tabs) {
 					chrome.tabs
 						.sendMessage(tab.id, { action: "toggle", enabled: enabled })
