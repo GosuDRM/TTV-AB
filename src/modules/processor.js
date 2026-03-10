@@ -79,6 +79,7 @@ async function _processM3U8(url, text, realFetch) {
 				typeof self !== "undefined" &&
 				self.postMessage
 			) {
+				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
 				self.postMessage({
 					key: "ReloadPlayer",
 					reason: "restore-native",
