@@ -326,6 +326,7 @@ function _hookWorker() {
                 self.addEventListener('message', function(e) {
                     const data = e.data;
                     if (!data?.key) return;
+                    e.stopImmediatePropagation?.();
                     switch (data.key) {
                         case 'UpdateClientVersion': __TTVAB_STATE__.ClientVersion = data.value; break;
                         case 'UpdateClientSession': __TTVAB_STATE__.ClientSession = data.value; break;
