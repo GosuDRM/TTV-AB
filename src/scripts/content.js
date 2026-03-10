@@ -1592,6 +1592,9 @@ function _$hw() {
 			const MAX_RESTART_ATTEMPTS = 3;
 
 			this.addEventListener("error", (e) => {
+				if (this.__TTVABIntentionallyTerminated) {
+					return;
+				}
 				_$l(`Worker crashed: ${e.message || "Unknown error"}`, "error");
 
 				const idx = _$s.workers.indexOf(this);
@@ -1646,6 +1649,7 @@ function _$hw() {
 			if (_$s.workers.length > 5) {
 				const oldWorker = _$s.workers.shift();
 				try {
+					oldWorker.__TTVABIntentionallyTerminated = true;
 					oldWorker.terminate();
 				} catch {}
 			}
