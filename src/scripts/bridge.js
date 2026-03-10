@@ -67,7 +67,8 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 				resolve();
 				return;
 			}
-			const stats = result.ttvStats || {
+			const safeResult = result || {};
+			const stats = safeResult.ttvStats || {
 				daily: {},
 				channels: {},
 				achievements: [],
