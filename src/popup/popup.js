@@ -343,12 +343,19 @@ document.addEventListener("DOMContentLoaded", () => {
 	chrome.storage.local.get(
 		["ttvAdblockEnabled", "ttvAdsBlocked", "ttvPopupsBlocked"],
 		(result) => {
-			const enabled = result.ttvAdblockEnabled !== false;
+			if (chrome.runtime.lastError) {
+				console.error(
+					"[TTV AB] Popup init read error:",
+					chrome.runtime.lastError.message,
+				);
+			}
+			const safeResult = result || {};
+			const enabled = safeResult.ttvAdblockEnabled !== false;
 			toggle.checked = enabled;
 			updateStatus(enabled);
 
-			const adsCount = result.ttvAdsBlocked || 0;
-			const popupsCount = result.ttvPopupsBlocked || 0;
+			const adsCount = safeResult.ttvAdsBlocked || 0;
+			const popupsCount = safeResult.ttvPopupsBlocked || 0;
 			adsBlockedCount.textContent = formatNumber(adsCount);
 			popupsBlockedCount.textContent = formatNumber(popupsCount);
 			updateTimeSaved(adsCount);
