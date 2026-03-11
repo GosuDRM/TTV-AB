@@ -24,6 +24,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Stats Retry Safety** - Stats updates now retry from fresh storage state after write failures, avoiding stale snapshot overwrites and reducing lost achievement/stat updates.
 - **Stats Read Guards** - Hardened `getAdsBlocked`, `updateStats`, `flushCounters`, popup init, and popup statistics reads against empty or failed storage results.
 - **Stats Schema Hardening** - Popup and bridge now normalize malformed stats shapes, finite counts, per-channel totals, chart data, and achievement lists before rendering or writing.
+- **Finite Count Validation** - Runtime message restores and popup/bridge counter paths now reject `NaN` and other non-finite values instead of treating any JavaScript `number` as valid state.
 - **Retry Loop Bounding** - Bridge counter flushes and stats refreshes now cap retry chaining on persistent storage failures instead of requeuing forever.
 
 ### Runtime / Build Integrity
