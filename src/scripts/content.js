@@ -2656,6 +2656,25 @@ const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;
 const _$fr = "ttvab_first_run_shown";
 
+function _getUiStorageItem(key) {
+	try {
+		return localStorage.getItem(key);
+	} catch (e) {
+		_$l(`UI storage read error for ${key}: ${e.message}`, "error");
+		return null;
+	}
+}
+
+function _setUiStorageItem(key, value) {
+	try {
+		localStorage.setItem(key, value);
+		return true;
+	} catch (e) {
+		_$l(`UI storage write error for ${key}: ${e.message}`, "error");
+		return false;
+	}
+}
+
 function _escapeUiText(value) {
 	const div = document.createElement("div");
 	div.textContent = String(value ?? "");
@@ -2664,17 +2683,17 @@ function _escapeUiText(value) {
 
 function _$dn() {
 	try {
-		const lastReminder = localStorage.getItem(_$rk);
+		const lastReminder = _getUiStorageItem(_$rk);
 		const now = Date.now();
 
 		if (!lastReminder) {
-			localStorage.setItem(_$rk, now.toString());
+			_setUiStorageItem(_$rk, now.toString());
 			return;
 		}
 
 		const lastReminderMs = Number.parseInt(lastReminder, 10);
 		if (!Number.isFinite(lastReminderMs) || lastReminderMs > now) {
-			localStorage.setItem(_$rk, now.toString());
+			_setUiStorageItem(_$rk, now.toString());
 			return;
 		}
 
@@ -2699,7 +2718,7 @@ function _$dn() {
             `;
 
 			document.body.appendChild(toast);
-			localStorage.setItem(_$rk, now.toString());
+			_setUiStorageItem(_$rk, now.toString());
 
 			document.getElementById("ttvab-reminder-close").onclick = () =>
 				toast.remove();
@@ -2728,7 +2747,7 @@ function _$dn() {
 
 function _$wc() {
 	try {
-		if (localStorage.getItem(_$fr)) return;
+		if (_getUiStorageItem(_$fr)) return;
 
 		setTimeout(() => {
 			const toast = document.createElement("div");
@@ -2754,7 +2773,7 @@ function _$wc() {
             `;
 
 			document.body.appendChild(toast);
-			localStorage.setItem(_$fr, "true");
+			_setUiStorageItem(_$fr, "true");
 
 			const closeHandler = () => {
 				toast.style.animation = "ttvab-welcome .3s ease reverse";
