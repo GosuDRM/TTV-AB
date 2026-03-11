@@ -340,6 +340,14 @@ document.addEventListener("DOMContentLoaded", () => {
 		return trimmed !== "" ? trimmed : null;
 	}
 
+	function isPlainObject(value) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) {
+			return false;
+		}
+		const prototype = Object.getPrototypeOf(value);
+		return prototype === Object.prototype || prototype === null;
+	}
+
 	function createChannelsMap() {
 		return Object.create(null);
 	}
@@ -541,16 +549,10 @@ document.addEventListener("DOMContentLoaded", () => {
 					);
 				}
 				const safeResult = result || {};
-				const stats =
-					safeResult.ttvStats && typeof safeResult.ttvStats === "object"
-						? safeResult.ttvStats
-						: {};
-				const daily =
-					stats.daily &&
-					typeof stats.daily === "object" &&
-					!Array.isArray(stats.daily)
-						? stats.daily
-						: {};
+				const stats = isPlainObject(safeResult.ttvStats)
+					? safeResult.ttvStats
+					: {};
+				const daily = isPlainObject(stats.daily) ? stats.daily : {};
 				const channels = normalizeChannelsMap(stats.channels);
 				const achievements = Array.isArray(stats.achievements)
 					? [
