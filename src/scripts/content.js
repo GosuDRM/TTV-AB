@@ -2739,7 +2739,7 @@ function _$dn() {
 			}
 
 			setTimeout(() => {
-				if (document.getElementById("ttvab-reminder")) {
+				if (toast.isConnected) {
 					toast.style.animation = "ttvab-slide .3s ease reverse";
 					setTimeout(() => toast.remove(), 300);
 				}
@@ -2791,7 +2791,7 @@ function _$wc() {
 			}
 
 			setTimeout(() => {
-				if (document.getElementById("ttvab-welcome")) closeHandler();
+				if (toast.isConnected) closeHandler();
 			}, 10000);
 		}, 2000);
 	} catch (e) {
