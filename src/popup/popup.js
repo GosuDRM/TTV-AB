@@ -85,10 +85,12 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	const savedLang = localStorage.getItem(LANG_KEY);
-	const currentLang =
-		savedLang === "auto" || !savedLang || TRANSLATIONS[savedLang]
-			? savedLang || "auto"
-			: "auto";
+	const hasValidSavedLang =
+		savedLang === "auto" || !savedLang || TRANSLATIONS[savedLang];
+	const currentLang = hasValidSavedLang ? savedLang || "auto" : "auto";
+	if (!hasValidSavedLang) {
+		localStorage.setItem(LANG_KEY, "auto");
+	}
 	langSelector.value = currentLang;
 	applyTranslations(getLang());
 
