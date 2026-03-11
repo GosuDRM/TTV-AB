@@ -2863,6 +2863,7 @@ function _$au(achievementId) {
 		const ach = _$ai[achievementId];
 		if (!ach) return;
 
+		if (!document.body) return;
 		const existing = document.getElementById("ttvab-achievement");
 		if (existing) existing.remove();
 
