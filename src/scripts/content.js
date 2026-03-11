@@ -2529,6 +2529,7 @@ function _$au(achievementId) {
 
 function _$al() {
 	window.addEventListener("message", (e) => {
+		if (e.source !== window) return;
 		if (e.data?.type === "ttvab-achievement-unlocked" && e.data.detail?.id) {
 			_$au(e.data.detail.id);
 		}
