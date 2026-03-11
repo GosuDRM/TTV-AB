@@ -430,11 +430,10 @@ function validateSharedDefinitions() {
 			"Popup statistics panel must start hidden with matching aria-hidden state",
 		);
 	}
-	if (
-		!popupHtmlSource.includes('id="versionText" aria-label="Version">v</div>')
-	) {
+	const expectedPopupVersionMarkup = `id="versionText" aria-label="Version ${constantsVersion}">v${constantsVersion}</div>`;
+	if (!popupHtmlSource.includes(expectedPopupVersionMarkup)) {
 		throw new Error(
-			"Popup version label must keep the static v placeholder for runtime manifest sync",
+			`Popup version badge must ship with a static synced fallback label/value: ${expectedPopupVersionMarkup}`,
 		);
 	}
 	for (const requiredPopupId of [
