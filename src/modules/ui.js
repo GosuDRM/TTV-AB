@@ -175,6 +175,7 @@ function _showAchievementUnlocked(achievementId) {
 
 function _initAchievementListener() {
 	window.addEventListener("message", (e) => {
+		if (e.source !== window) return;
 		if (e.data?.type === "ttvab-achievement-unlocked" && e.data.detail?.id) {
 			_showAchievementUnlocked(e.data.detail.id);
 		}
