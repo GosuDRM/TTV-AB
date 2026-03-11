@@ -193,12 +193,7 @@ chrome.storage.local.get(
 		bridgeState.storedAdsCount = safeResult.ttvAdsBlocked || 0;
 		bridgeState.storedDomAdsCount = safeResult.ttvDomAdsBlocked || 0;
 
-		if (
-			Object.prototype.hasOwnProperty.call(
-				safeResult,
-				"ttvReloadAfterAdsEnabled",
-			)
-		) {
+		if (Object.hasOwn(safeResult, "ttvReloadAfterAdsEnabled")) {
 			chrome.storage.local.remove(["ttvReloadAfterAdsEnabled"], () => {
 				if (chrome.runtime.lastError) {
 					console.warn(
