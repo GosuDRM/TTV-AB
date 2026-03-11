@@ -628,6 +628,21 @@ function validateSharedDefinitions() {
 			source: apiSource,
 		},
 		{
+			consumer: "_getToken",
+			helper: "_fetchViaWorkerBridge",
+			source: apiSource,
+		},
+		{
+			consumer: "_fetchViaWorkerBridge",
+			helper: "_isWorkerContext",
+			source: apiSource,
+		},
+		{
+			consumer: "_fetchViaWorkerBridge",
+			helper: "_createFetchRelayResponse",
+			source: apiSource,
+		},
+		{
 			consumer: "_extractPlaybackAccessToken",
 			helper: "_collectPlaybackAccessTokenSources",
 			source: apiSource,

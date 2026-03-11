@@ -13,7 +13,7 @@ const _C = {
 	},
 	AD_SIGNIFIER: "stitched",
 	CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
-	PLAYER_TYPES: ["embed", "popout", "picture-by-picture", "autoplay"],
+	PLAYER_TYPES: ["embed", "popout", "autoplay"],
 	FALLBACK_TYPE: "embed",
 	FORCE_TYPE: "popout",
 	RELOAD_TIME: 1500,
