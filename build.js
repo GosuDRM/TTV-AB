@@ -627,6 +627,21 @@ function validateSharedDefinitions() {
 			helper: "_extractPlaybackAccessToken",
 			source: apiSource,
 		},
+		{
+			consumer: "_extractPlaybackAccessToken",
+			helper: "_collectPlaybackAccessTokenSources",
+			source: apiSource,
+		},
+		{
+			consumer: "_extractPlaybackAccessToken",
+			helper: "_summarizePlaybackAccessTokenPayload",
+			source: apiSource,
+		},
+		{
+			consumer: "_extractPlaybackAccessToken",
+			helper: "_getPlaybackAccessTokenErrors",
+			source: apiSource,
+		},
 	];
 	for (const { consumer, helper, source } of requiredInjectedPairs) {
 		const consumerBody = extractLiteral(

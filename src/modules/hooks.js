@@ -311,6 +311,9 @@ function _hookWorker() {
                 ${_getStreamUrl.toString()}
                 ${_getFallbackResolution.toString()}
                 ${_getStreamVariantInfo.toString()}
+                ${_collectPlaybackAccessTokenSources.toString()}
+                ${_summarizePlaybackAccessTokenPayload.toString()}
+                ${_getPlaybackAccessTokenErrors.toString()}
                 ${_extractPlaybackAccessToken.toString()}
                 ${_getToken.toString()}
                 ${_resetStreamAdState.toString()}
