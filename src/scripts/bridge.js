@@ -110,10 +110,6 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 				stats.daily[today][type] = 0;
 			}
 			stats.daily[today][type]++;
-			stats.lastBlockedAt = Date.now();
-			if (!stats.firstBlockedAt) {
-				stats.firstBlockedAt = Date.now();
-			}
 
 			const cutoff = new Date();
 			cutoff.setDate(cutoff.getDate() - 30);
