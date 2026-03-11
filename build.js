@@ -117,6 +117,13 @@ function extractLiteral(source, startToken, openChar, closeChar) {
 	return null;
 }
 
+function normalizeCodeSnippet(code) {
+	return String(code || "")
+		.replace(/\/\/.*$/gm, "")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
 function validateSharedDefinitions() {
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
@@ -131,6 +138,18 @@ function validateSharedDefinitions() {
 	const processorSource = fs.readFileSync(processorPath, "utf8");
 	const apiSource = fs.readFileSync(apiPath, "utf8");
 
+	const bridgeGetDateKeyLiteral = extractLiteral(
+		bridgeSource,
+		"function getDateKey(",
+		"{",
+		"}",
+	);
+	const popupGetDateKeyLiteral = extractLiteral(
+		popupSource,
+		"function getDateKey(",
+		"{",
+		"}",
+	);
 	const popupAvgAdDurationMatch = popupSource.match(
 		/const AVG_AD_DURATION = (\d+);/,
 	);
@@ -157,6 +176,8 @@ function validateSharedDefinitions() {
 	);
 
 	if (
+		!bridgeGetDateKeyLiteral ||
+		!popupGetDateKeyLiteral ||
 		!popupAvgAdDurationMatch ||
 		!bridgeAvgAdDurationMatch ||
 		!popupAchievementsLiteral ||
@@ -164,6 +185,13 @@ function validateSharedDefinitions() {
 		!uiAchievementInfoLiteral
 	) {
 		throw new Error("Failed to parse shared popup/bridge definitions");
+	}
+
+	if (
+		normalizeCodeSnippet(popupGetDateKeyLiteral) !==
+		normalizeCodeSnippet(bridgeGetDateKeyLiteral)
+	) {
+		throw new Error("Popup and bridge getDateKey implementations are out of sync");
 	}
 
 	const popupAvgAdDuration = Number.parseInt(popupAvgAdDurationMatch[1], 10);
