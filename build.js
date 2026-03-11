@@ -231,6 +231,14 @@ function validateSharedDefinitions() {
 		throw new Error("UI achievement metadata is out of sync with popup achievements");
 	}
 
+	for (const achievement of popupAchievements) {
+		if (uiAchievementInfo[achievement.id]?.icon !== achievement.icon) {
+			throw new Error(
+				`UI achievement icon mismatch for ${achievement.id}`,
+			);
+		}
+	}
+
 	const injectedHelpers = new Set(
 		[...hooksSource.matchAll(/\$\{(_[A-Za-z0-9]+)\.toString\(\)\}/g)].map(
 			(match) => match[1],
