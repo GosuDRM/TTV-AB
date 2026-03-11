@@ -120,13 +120,13 @@ function updateStats(
 			) {
 				stats.daily[today] = { ads: 0, domAds: 0 };
 			}
-			if (typeof stats.daily[today].ads !== "number") {
+			if (!Number.isFinite(stats.daily[today].ads)) {
 				stats.daily[today].ads = 0;
 			}
-			if (typeof stats.daily[today].domAds !== "number") {
+			if (!Number.isFinite(stats.daily[today].domAds)) {
 				stats.daily[today].domAds = 0;
 			}
-			if (typeof stats.daily[today][type] !== "number") {
+			if (!Number.isFinite(stats.daily[today][type])) {
 				stats.daily[today][type] = 0;
 			}
 			stats.daily[today][type]++;
