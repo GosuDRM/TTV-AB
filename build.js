@@ -144,6 +144,33 @@ function normalizeCodeSnippet(code) {
 function validateSharedDefinitions() {
 	const { constantsVersion, packageVersion, manifestVersion } =
 		readVersionSources();
+	const manifest = JSON.parse(
+		fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"),
+	);
+	for (const contentScript of manifest.content_scripts || []) {
+		for (const file of contentScript.js || []) {
+			if (!fs.existsSync(path.join(__dirname, file))) {
+				throw new Error(`Manifest content script is missing: ${file}`);
+			}
+		}
+	}
+	if (manifest.action?.default_popup) {
+		if (!fs.existsSync(path.join(__dirname, manifest.action.default_popup))) {
+			throw new Error(
+				`Manifest default_popup is missing: ${manifest.action.default_popup}`,
+			);
+		}
+	}
+	for (const iconGroup of [
+		manifest.icons || {},
+		manifest.action?.default_icon || {},
+	]) {
+		for (const iconPath of Object.values(iconGroup)) {
+			if (!fs.existsSync(path.join(__dirname, iconPath))) {
+				throw new Error(`Manifest icon is missing: ${iconPath}`);
+			}
+		}
+	}
 	if (
 		!constantsVersion ||
 		constantsVersion !== packageVersion ||
