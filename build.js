@@ -371,6 +371,19 @@ function validateSharedDefinitions() {
 		);
 	}
 
+	for (const source of [popupSource, uiSource]) {
+		for (const match of source.matchAll(/window\.open\(([\s\S]*?)\);/g)) {
+			if (
+				match[1].includes('"_blank"') &&
+				!match[1].includes("noopener,noreferrer")
+			) {
+				throw new Error(
+					"Found unsafe window.open call without noopener,noreferrer",
+				);
+			}
+		}
+	}
+
 	const popupDomIds = new Set(
 		[...popupSource.matchAll(/getElementById\("([^"]+)"\)/g)].map(
 			(match) => match[1],
