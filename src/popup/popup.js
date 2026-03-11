@@ -2,6 +2,7 @@
 
 document.addEventListener("DOMContentLoaded", () => {
 	const toggle = document.getElementById("enableToggle");
+	const reloadAfterAdsToggle = document.getElementById("reloadAfterAdsToggle");
 	const statusDot = document.getElementById("statusDot");
 	const statusText = document.getElementById("statusText");
 	const adsBlockedCount = document.getElementById("adsBlockedCount");
@@ -348,7 +349,12 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	chrome.storage.local.get(
-		["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+		[
+			"ttvAdblockEnabled",
+			"ttvReloadAfterAdsEnabled",
+			"ttvAdsBlocked",
+			"ttvDomAdsBlocked",
+		],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -358,7 +364,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 			const safeResult = result || {};
 			const enabled = safeResult.ttvAdblockEnabled !== false;
+			const reloadAfterAdsEnabled =
+				safeResult.ttvReloadAfterAdsEnabled !== false;
 			toggle.checked = enabled;
+			reloadAfterAdsToggle.checked = reloadAfterAdsEnabled;
 			updateStatus(enabled);
 
 			const adsCount = safeResult.ttvAdsBlocked || 0;
@@ -382,6 +391,10 @@ document.addEventListener("DOMContentLoaded", () => {
 				const newCount = changes.ttvAdsBlocked.newValue || 0;
 				animateCounter(adsBlockedCount, newCount);
 				updateTimeSaved(newCount);
+			}
+			if (changes.ttvReloadAfterAdsEnabled) {
+				reloadAfterAdsToggle.checked =
+					changes.ttvReloadAfterAdsEnabled.newValue !== false;
 			}
 			if (changes.ttvDomAdsBlocked) {
 				const newDomAdsCount = changes.ttvDomAdsBlocked.newValue || 0;
@@ -407,6 +420,20 @@ document.addEventListener("DOMContentLoaded", () => {
 				return;
 			}
 			updateStatus(enabled);
+		});
+	});
+
+	reloadAfterAdsToggle.addEventListener("change", () => {
+		const enabled = reloadAfterAdsToggle.checked;
+		const previousEnabled = !enabled;
+		chrome.storage.local.set({ ttvReloadAfterAdsEnabled: enabled }, () => {
+			if (chrome.runtime.lastError) {
+				console.error(
+					"[TTV AB] Reload-after-ads toggle write error:",
+					chrome.runtime.lastError.message,
+				);
+				reloadAfterAdsToggle.checked = previousEnabled;
+			}
 		});
 	});
 
