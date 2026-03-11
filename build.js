@@ -480,6 +480,9 @@ function validateSharedDefinitions() {
 		"ttvReloadAfterAdsEnabled",
 		"ReloadPlayerAfterAd",
 		"ttvab-reload-after-ads-toggle",
+		"RejectedBackupPlayerTypes",
+		"LastPlaylistUrl",
+		"AdCycleStartedAt",
 	]) {
 		if (
 			popupSource.includes(forbidden) ||
