@@ -20,6 +20,12 @@ function normalizeCount(value) {
 		: 0;
 }
 
+function normalizeChannelName(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	return trimmed !== "" ? trimmed : null;
+}
+
 const ACHIEVEMENTS = [
 	{ id: "first_block", threshold: 1, type: "ads" },
 	{ id: "block_10", threshold: 10, type: "ads" },
@@ -142,9 +148,12 @@ function updateStats(
 				}
 			}
 
-			if (type === "ads" && channel) {
-				stats.channels[channel] = normalizeCount(stats.channels[channel]);
-				stats.channels[channel]++;
+			const safeChannel = normalizeChannelName(channel);
+			if (type === "ads" && safeChannel) {
+				stats.channels[safeChannel] = normalizeCount(
+					stats.channels[safeChannel],
+				);
+				stats.channels[safeChannel]++;
 
 				const channelEntries = Object.entries(stats.channels).map(
 					([channelName, count]) => [channelName, normalizeCount(count)],
@@ -397,8 +406,7 @@ window.addEventListener("message", (e) => {
 		e.data.type === "ttvab-ad-blocked" &&
 		Number.isFinite(e.data.detail?.count)
 	) {
-		const channel =
-			typeof e.data.detail?.channel === "string" ? e.data.detail.channel : null;
+		const channel = normalizeChannelName(e.data.detail?.channel);
 		pendingAdsDelta++;
 		if (channel) pendingAdChannels.push(channel);
 		scheduleFlush();
