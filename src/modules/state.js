@@ -82,11 +82,15 @@ function _declareState(scope) {
 
 function _incrementAdsBlocked(channel) {
 	_S.adsBlocked++;
+	const count = Number.isFinite(_S.adsBlocked)
+		? Math.max(0, Math.trunc(_S.adsBlocked))
+		: 0;
+	_S.adsBlocked = count;
 	if (typeof window !== "undefined") {
 		window.postMessage(
 			{
 				type: "ttvab-ad-blocked",
-				detail: { count: _S.adsBlocked, channel: channel || null },
+				detail: { count, channel: channel || null },
 			},
 			"*",
 		);
@@ -101,12 +105,16 @@ function _incrementAdsBlocked(channel) {
 
 function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 	_S.domAdsBlocked++;
+	const count = Number.isFinite(_S.domAdsBlocked)
+		? Math.max(0, Math.trunc(_S.domAdsBlocked))
+		: 0;
+	_S.domAdsBlocked = count;
 	if (typeof window !== "undefined") {
 		window.postMessage(
 			{
 				type: "ttvab-dom-ad-cleanup",
 				detail: {
-					count: _S.domAdsBlocked,
+					count,
 					kind,
 					channel: channel || null,
 				},

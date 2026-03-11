@@ -439,7 +439,7 @@ function _$su(m3u8, res, baseUrl = null) {
 			}
 		}
 
-		const [w, h] = resolution.split("x").map(Number);
+		const [w, h] = String(resolution || "0x0").split("x").map(Number);
 		const area = (Number.isFinite(w) ? w : 0) * (Number.isFinite(h) ? h : 0);
 		const safeTargetPixels = Number.isFinite(targetPixels) ? targetPixels : 0;
 		const diff = Math.abs(area - safeTargetPixels);

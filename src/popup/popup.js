@@ -261,7 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			})
 			.join("");
 
-		chartAvg.textContent = formatTemplate(t.avgPerDay, { avg });
+		chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), { avg });
 	}
 
 	function escapeHtml(str) {
@@ -278,7 +278,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
 			channelList.innerHTML = `
                 <div class="channel-item">
-                    <span><span class="channel-rank">-</span><span class="channel-name">${escapeHtml(t.noDataYet)}</span></span>
+                    <span><span class="channel-rank">-</span><span class="channel-name">${escapeHtml(String(t.noDataYet ?? ""))}</span></span>
                     <span class="channel-count">-</span>
                 </div>
             `;
@@ -355,11 +355,11 @@ document.addEventListener("DOMContentLoaded", () => {
 		nextAchievementName.className = "next-achievement-name";
 		if (nextAch) {
 			const achievementText = getAchievementTranslation(nextAch.id);
-			nextAchievement.append(`${t.next}: `);
+			nextAchievement.append(`${String(t.next ?? "")}: `);
 			nextAchievementName.textContent = `${nextAch.icon} ${achievementText.name}`;
 			nextAchievement.append(nextAchievementName);
 		} else {
-			nextAchievementName.textContent = `🎉 ${t.allUnlocked}`;
+			nextAchievementName.textContent = `🎉 ${String(t.allUnlocked ?? "")}`;
 			nextAchievement.append(nextAchievementName);
 		}
 	}
@@ -503,7 +503,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function formatNumber(num) {
-		return normalizeCount(num).toLocaleString();
+		return new Intl.NumberFormat(getLocaleTag()).format(normalizeCount(num));
 	}
 
 	function animateCounter(element, newValue) {
