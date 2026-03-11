@@ -669,6 +669,17 @@
             filter: grayscale(1);
             transition: all 0.3s ease;
             cursor: default;
+            color: inherit;
+            font-family: inherit;
+            font-weight: inherit;
+            line-height: 1;
+            padding: 0;
+            appearance: none;
+        }
+
+        .achievement-badge:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
         }
 
         .achievement-badge.unlocked {
@@ -679,7 +690,8 @@
             box-shadow: 0 0 8px rgba(145, 70, 255, 0.3);
         }
 
-        .achievement-badge.unlocked:hover {
+        .achievement-badge.unlocked:hover,
+        .achievement-badge.unlocked:focus-visible {
             transform: scale(1.15);
         }
 
@@ -840,18 +852,18 @@
                     <span class="achievements-progress" id="achievementsProgress" aria-live="polite" aria-atomic="true">0/12</span>
                 </div>
                 <div class="achievements-grid" id="achievementsGrid">
-                    <div class="achievement-badge" tabindex="0" title="Ad Slayer - Block your first ad">⚔️</div>
-                    <div class="achievement-badge" tabindex="0" title="Blocker - Block 10 ads">🛡️</div>
-                    <div class="achievement-badge" tabindex="0" title="Guardian - Block 100 ads">🔰</div>
-                    <div class="achievement-badge" tabindex="0" title="Sentinel - Block 500 ads">🏰</div>
-                    <div class="achievement-badge" tabindex="0" title="Legend - Block 1000 ads">🏆</div>
-                    <div class="achievement-badge" tabindex="0" title="Mythic - Block 5000 ads">👑</div>
-                    <div class="achievement-badge" tabindex="0" title="DOM Cleaner - Block 10 DOM ads">💥</div>
-                    <div class="achievement-badge" tabindex="0" title="DOM Sweeper - Block 50 DOM ads">🔥</div>
-                    <div class="achievement-badge" tabindex="0" title="Hour Saver - Save 1 hour">⏱️</div>
-                    <div class="achievement-badge" tabindex="0" title="Time Master - Save 10 hours">⏰</div>
-                    <div class="achievement-badge" tabindex="0" title="Explorer - Block ads on 5 channels">📺</div>
-                    <div class="achievement-badge" tabindex="0" title="Adventurer - Block ads on 20 channels">🌍</div>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Ad Slayer - Block your first ad">⚔️</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Blocker - Block 10 ads">🛡️</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Guardian - Block 100 ads">🔰</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Sentinel - Block 500 ads">🏰</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Legend - Block 1000 ads">🏆</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Mythic - Block 5000 ads">👑</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="DOM Cleaner - Block 10 DOM ads">💥</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="DOM Sweeper - Block 50 DOM ads">🔥</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Hour Saver - Save 1 hour">⏱️</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Time Master - Save 10 hours">⏰</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Explorer - Block ads on 5 channels">📺</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Adventurer - Block ads on 20 channels">🌍</button>
                 </div>
                 <div class="next-achievement" id="nextAchievement" aria-live="polite" aria-atomic="true">Next: <span class="next-achievement-name">Ad
                         Slayer</span></div>
