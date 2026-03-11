@@ -327,11 +327,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
 		achievementsProgress.textContent = `${unlockedCount}/${ACHIEVEMENTS.length}`;
 
+		nextAchievement.textContent = "";
+		const nextAchievementName = document.createElement("span");
+		nextAchievementName.className = "next-achievement-name";
 		if (nextAch) {
 			const achievementText = getAchievementTranslation(nextAch.id);
-			nextAchievement.innerHTML = `${t.next}: <span class="next-achievement-name">${nextAch.icon} ${achievementText.name}</span>`;
+			nextAchievement.append(`${t.next}: `);
+			nextAchievementName.textContent = `${nextAch.icon} ${achievementText.name}`;
+			nextAchievement.append(nextAchievementName);
 		} else {
-			nextAchievement.innerHTML = `<span class="next-achievement-name">🎉 ${t.allUnlocked}</span>`;
+			nextAchievementName.textContent = `🎉 ${t.allUnlocked}`;
+			nextAchievement.append(nextAchievementName);
 		}
 	}
 
