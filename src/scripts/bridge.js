@@ -68,9 +68,16 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 				return;
 			}
 			const safeResult = result || {};
-			const stats = safeResult.ttvStats || {};
-			stats.daily = stats.daily || {};
-			stats.channels = stats.channels || {};
+			const stats =
+				safeResult.ttvStats && typeof safeResult.ttvStats === "object"
+					? safeResult.ttvStats
+					: {};
+			stats.daily =
+				stats.daily && typeof stats.daily === "object" ? stats.daily : {};
+			stats.channels =
+				stats.channels && typeof stats.channels === "object"
+					? stats.channels
+					: {};
 			stats.achievements = Array.isArray(stats.achievements)
 				? stats.achievements
 				: [];
