@@ -2391,7 +2391,11 @@ function _$dn() {
 			document.getElementById("ttvab-reminder-close").onclick = () =>
 				toast.remove();
 			document.getElementById("ttvab-reminder-btn").onclick = () => {
-				window.open("https://ko-fi.com/gosudrm", "_blank");
+				window.open(
+					"https://ko-fi.com/gosudrm",
+					"_blank",
+					"noopener,noreferrer",
+				);
 				toast.remove();
 			};
 
