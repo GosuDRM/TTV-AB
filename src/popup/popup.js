@@ -349,9 +349,15 @@ document.addEventListener("DOMContentLoaded", () => {
 						? safeResult.ttvStats
 						: {};
 				const daily =
-					stats.daily && typeof stats.daily === "object" ? stats.daily : {};
+					stats.daily &&
+					typeof stats.daily === "object" &&
+					!Array.isArray(stats.daily)
+						? stats.daily
+						: {};
 				const channels =
-					stats.channels && typeof stats.channels === "object"
+					stats.channels &&
+					typeof stats.channels === "object" &&
+					!Array.isArray(stats.channels)
 						? stats.channels
 						: {};
 				const achievements = Array.isArray(stats.achievements)
