@@ -48,7 +48,6 @@ function _declareState(scope) {
 		PlayerReloadDebounceMs: _C.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
 		AdCycleStaleMs: _C.AD_CYCLE_STALE_MS ?? 30000,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
-		AdRecoveryCrashGracePeriodMs: _C.AD_RECOVERY_CRASH_GRACE_PERIOD_MS ?? 6000,
 		HasTriggeredPlayerReload: false,
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
@@ -76,6 +75,7 @@ function _declareState(scope) {
 		AllSegmentsAreAdSegments: false,
 		PlaybackAccessTokenHash: null,
 		LastNativePlaybackAccessTokenPlayerType: null,
+		PageChannel: null,
 	};
 }
 

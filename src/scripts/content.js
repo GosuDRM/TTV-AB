@@ -23,22 +23,11 @@ const _$c = {
 	PLAYER_RELOAD_DEBOUNCE_MS: 1500,
 	AD_CYCLE_STALE_MS: 30000,
 	AD_RECOVERY_RELOAD_COOLDOWN_MS: 10000,
-	AD_RECOVERY_CRASH_GRACE_PERIOD_MS: 6000,
-	CRASH_PATTERNS: [
-		"Error #1000",
-		"Error #2000",
-		"Error #3000",
-		"Error #4000",
-		"Error #5000",
-		"network error",
-		"content is not available",
-	],
-	REFRESH_DELAY: 500,
 	BUFFERING_FIX: true,
 	RELOAD_AFTER_AD: true,
 	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
 	ALWAYS_RELOAD_PLAYER_ON_AD: false,
-};
+};
 
 const _$s = {
 	workers: [],
@@ -88,7 +77,6 @@ function _$ds(scope) {
 		PlayerReloadDebounceMs: _$c.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
 		AdCycleStaleMs: _$c.AD_CYCLE_STALE_MS ?? 30000,
 		AdRecoveryReloadCooldownMs: _$c.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
-		AdRecoveryCrashGracePeriodMs: _$c.AD_RECOVERY_CRASH_GRACE_PERIOD_MS ?? 6000,
 		HasTriggeredPlayerReload: false,
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
@@ -116,6 +104,7 @@ function _$ds(scope) {
 		AllSegmentsAreAdSegments: false,
 		PlaybackAccessTokenHash: null,
 		LastNativePlaybackAccessTokenPlayerType: null,
+		PageChannel: null,
 	};
 }
 
@@ -667,8 +656,47 @@ function _$hpa(text) {
 }
 
 async function _$pm(url, text, realFetch) {
-	const info = _$gsi(url);
-	if (!info) return text;
+	let info = _$gsi(url);
+	if (!info) {
+		if (
+			!_$hpa(text) &&
+			!_$pka(text) &&
+			__TTVAB_STATE__.SimulatedAdsDepth === 0
+		) {
+			return text;
+		}
+		const channel =
+			__TTVAB_STATE__.CurrentAdChannel ||
+			Object.keys(__TTVAB_STATE__.StreamInfos || {})[0] ||
+			__TTVAB_STATE__.PageChannel ||
+			null;
+		if (!channel) return text;
+		info = {
+			ChannelName: channel,
+			IsShowingAd: false,
+			LastPlayerReload: 0,
+			EncodingsM3U8: null,
+			ModifiedM3U8: null,
+			IsUsingModifiedM3U8: false,
+			IsUsingFallbackStream: false,
+			UsherBaseUrl: "",
+			UsherParams: "",
+			RequestedAds: new Set(),
+			FailedBackupPlayerTypes: new Set(),
+			Urls: Object.create(null),
+			ResolutionList: [],
+			BackupEncodingsM3U8Cache: Object.create(null),
+			ActiveBackupPlayerType: null,
+			ActiveBackupResolution: null,
+			IsMidroll: false,
+			IsStrippingAdSegments: false,
+			NumStrippedAdSegments: 0,
+			LastActivityAt: Date.now(),
+		};
+		__TTVAB_STATE__.StreamInfos[channel] = info;
+		__TTVAB_STATE__.StreamInfosByUrl[url] = info;
+		_$l(`Synthetic stream info created for ${channel}`, "warning");
+	}
 
 	if (!__TTVAB_STATE__.IsAdStrippingEnabled) {
 		if (
@@ -973,15 +1001,15 @@ async function _$fb(
 								const promotionPolicy =
 									typeof _getFallbackPromotionPolicy === "function"
 										? _getFallbackPromotionPolicy({
-												candidateHasAds,
-												candidateIsPlayable: Boolean(m3u8),
-												simulatedAdsDepthSatisfied,
-											})
+											candidateHasAds,
+											candidateIsPlayable: Boolean(m3u8),
+											simulatedAdsDepthSatisfied,
+										})
 										: {
-												allowSelectedPromotion: false,
-												allowFallbackPromotion: false,
-												reason: "policy-unavailable",
-											};
+											allowSelectedPromotion: false,
+											allowFallbackPromotion: false,
+											reason: "policy-unavailable",
+										};
 								const canPromoteFallback =
 									promotionPolicy.allowFallbackPromotion &&
 									(!fallbackM3u8 ||
@@ -1397,6 +1425,7 @@ function _$hw() {
                 ${_$sv.toString()}
                 ${_$su.toString()}
                 ${_$gfr.toString()}
+                ${_$sv.toString()}
                 ${_extractPlaybackAccessToken.toString()}
                 ${_$tk.toString()}
                 ${_$rsa.toString()}
@@ -1422,6 +1451,7 @@ function _$hw() {
                 __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerType)};
                 __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
+                __TTVAB_STATE__.PageChannel = ${JSON.stringify((window.location.pathname.match(/^\/([a-zA-Z0-9_]+)/) || [])[1] || null)};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;
@@ -2554,120 +2584,6 @@ function _$al() {
 	});
 }
 
-function _$cm() {
-	let checkInterval = null;
-	let lastDeferredCrashAt = 0;
-
-	function isDocumentHidden() {
-		const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
-		try {
-			if (typeof nativeVisibility?.hidden === "function") {
-				return nativeVisibility.hidden.call(document) === true;
-			}
-			if (typeof nativeVisibility?.webkitHidden === "function") {
-				return nativeVisibility.webkitHidden.call(document) === true;
-			}
-			if (typeof nativeVisibility?.mozHidden === "function") {
-				return nativeVisibility.mozHidden.call(document) === true;
-			}
-		} catch {}
-		return document.hidden;
-	}
-
-	function detectCrash() {
-		const errorElements = document.querySelectorAll(
-			'[data-a-target="player-overlay-content-gate"],' +
-				'[data-a-target="player-error-modal"],' +
-				".content-overlay-gate," +
-				".player-error",
-		);
-
-		for (const el of errorElements) {
-			const text = (el.innerText || "").toLowerCase();
-			const patterns = _$c.CRASH_PATTERNS;
-			for (let i = 0, len = patterns.length; i < len; i++) {
-				if (text.includes(patterns[i].toLowerCase())) return patterns[i];
-			}
-		}
-
-		return null;
-	}
-
-	function handleCrash(error) {
-		const now = Date.now();
-		const activeAdChannel = __TTVAB_STATE__.CurrentAdChannel;
-		const lastRecoveryActivity = Math.max(
-			__TTVAB_STATE__.LastAdRecoveryReloadAt || 0,
-			__TTVAB_STATE__.LastAdDetectedAt || 0,
-		);
-		if (
-			error === "Error #2000" &&
-			activeAdChannel &&
-			lastRecoveryActivity &&
-			now - lastRecoveryActivity < __TTVAB_STATE__.AdRecoveryCrashGracePeriodMs
-		) {
-			if (now - lastDeferredCrashAt > 2000) {
-				_$l(
-					`Player error during ad recovery for ${activeAdChannel}; waiting before in-player recovery`,
-					"warning",
-				);
-				lastDeferredCrashAt = now;
-			}
-			return false;
-		}
-		if (now - lastDeferredCrashAt > 5000) {
-			_$l(
-				`Player crash detected (${error}) but whole-page refresh is disabled`,
-				"error",
-			);
-			lastDeferredCrashAt = now;
-		}
-		return false;
-	}
-
-	function start() {
-		if (!document.body) {
-			setTimeout(start, 100);
-			return;
-		}
-
-		let lastCheck = 0;
-		const observer = new MutationObserver(() => {
-			try {
-				const now = Date.now();
-				if (now - lastCheck < 2000) return;
-				lastCheck = now;
-
-				const error = detectCrash();
-				if (error && handleCrash(error)) {
-					observer.disconnect();
-					if (checkInterval) clearInterval(checkInterval);
-				}
-			} catch {}
-		});
-
-		observer.observe(document.body, {
-			childList: true,
-			subtree: true,
-		});
-
-		checkInterval = setInterval(() => {
-			if (isDocumentHidden()) return;
-			try {
-				const error = detectCrash();
-				if (error && handleCrash(error)) {
-					observer.disconnect();
-					clearInterval(checkInterval);
-				}
-			} catch {}
-		}, 5000);
-
-		_$l("Crash monitor active", "info");
-	}
-
-	start();
-}
-
 function _$bs() {
 	if (
 		typeof window.ttvabVersion !== "undefined" &&
@@ -3765,7 +3681,10 @@ function _$in() {
 	_$hw();
 	_$mf();
 	_$tl();
+<<<<<<< HEAD
 	_$l("Crash monitor temporarily disabled for debugging", "warning");
+=======
+>>>>>>> 65e7c08 (fix: ad loop when master manifest not intercepted, remove crash monitor)
 	_$bp();
 	_$al();
 

@@ -310,6 +310,7 @@ function _hookWorker() {
                 ${_getStreamVariantInfo.toString()}
                 ${_getStreamUrl.toString()}
                 ${_getFallbackResolution.toString()}
+                ${_getStreamVariantInfo.toString()}
                 ${_extractPlaybackAccessToken.toString()}
                 ${_getToken.toString()}
                 ${_resetStreamAdState.toString()}
@@ -335,6 +336,7 @@ function _hookWorker() {
                 __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerType)};
                 __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
+                __TTVAB_STATE__.PageChannel = ${JSON.stringify((window.location.pathname.match(/^\/([a-zA-Z0-9_]+)/) || [])[1] || null)};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;

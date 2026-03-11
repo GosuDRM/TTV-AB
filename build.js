@@ -16,7 +16,6 @@ const MODULE_ORDER = [
 	"hooks.js",
 	"player.js",
 	"ui.js",
-	"monitor.js",
 	"init.js",
 ];
 
@@ -50,7 +49,7 @@ const MINIFY_MAP = {
 	_showAchievementUnlocked: "_$au",
 	_initAchievementListener: "_$al",
 	_blockAntiAdblockPopup: "_$bp",
-	_initCrashMonitor: "_$cm",
+
 	_bootstrap: "_$bs",
 	_initToggleListener: "_$tl",
 	_init: "_$in",
@@ -600,6 +599,7 @@ function validateSharedDefinitions() {
 		"AdCycleStartedAt",
 		"UpdateClientId",
 		"_incrementPopupsBlocked",
+		"_initCrashMonitor",
 		"firstBlockedAt",
 		"lastBlockedAt",
 		"ClientID:",
