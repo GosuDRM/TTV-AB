@@ -3545,7 +3545,8 @@ function _$bp() {
 							style.backgroundColor !== "rgba(0, 0, 0, 0)" &&
 							style.backgroundColor !== "transparent";
 						const isLarge = popup.offsetWidth > 200 && popup.offsetHeight > 100;
-						const hasZIndex = parseInt(style.zIndex, 10) > 100;
+						const zIndex = Number.parseInt(style.zIndex, 10);
+						const hasZIndex = Number.isFinite(zIndex) && zIndex > 100;
 
 						const className =
 							popup.className && typeof popup.className === "string"
