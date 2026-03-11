@@ -315,6 +315,22 @@ function validateSharedDefinitions() {
 		}
 	}
 
+	const popupLanguageOptions = [
+		...popupHtmlSource.matchAll(/<option value="([^"]+)"/g),
+	]
+		.map((match) => match[1])
+		.filter((value) => value !== "auto")
+		.sort();
+	const translationLanguages = Object.keys(translations).sort();
+	if (
+		JSON.stringify(popupLanguageOptions) !==
+		JSON.stringify(translationLanguages)
+	) {
+		throw new Error(
+			"Popup language selector options are out of sync with translations",
+		);
+	}
+
 	const initReservedRoutesLiteral = extractLiteral(
 		initSource,
 		"const reserved = new Set([",
