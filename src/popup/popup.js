@@ -50,6 +50,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	const LANG_KEY = "ttvab_lang";
 
+	function getStoredLanguage() {
+		try {
+			return localStorage.getItem(LANG_KEY);
+		} catch (error) {
+			console.error("[TTV AB] Popup language read error:", error);
+			return null;
+		}
+	}
+
+	function setStoredLanguage(language) {
+		try {
+			localStorage.setItem(LANG_KEY, language);
+			return true;
+		} catch (error) {
+			console.error("[TTV AB] Popup language write error:", error);
+			return false;
+		}
+	}
+
 	function normalizeLanguage(language) {
 		const candidate = String(language || "").trim();
 		if (!candidate || candidate === "auto") return "en";
@@ -65,7 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function getLang() {
-		const saved = localStorage.getItem(LANG_KEY);
+		const saved = getStoredLanguage();
 		if (saved && saved !== "auto" && TRANSLATIONS[saved]) return saved;
 		return normalizeLanguage(navigator.language);
 	}
@@ -150,12 +169,12 @@ document.addEventListener("DOMContentLoaded", () => {
 		footerText.textContent = t.footerBy;
 	}
 
-	const savedLang = localStorage.getItem(LANG_KEY);
+	const savedLang = getStoredLanguage();
 	const hasValidSavedLang =
 		savedLang === "auto" || !savedLang || TRANSLATIONS[savedLang];
 	const currentLang = hasValidSavedLang ? savedLang || "auto" : "auto";
 	if (!hasValidSavedLang) {
-		localStorage.setItem(LANG_KEY, "auto");
+		setStoredLanguage("auto");
 	}
 	langSelector.value = currentLang;
 	applyTranslations(getLang());
@@ -169,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	langSelector.addEventListener("change", (e) => {
 		const lang = e.target.value;
-		localStorage.setItem(LANG_KEY, lang);
+		setStoredLanguage(lang);
 		const effectiveLang =
 			lang === "auto" ? normalizeLanguage(navigator.language) : lang;
 		applyTranslations(effectiveLang);
