@@ -185,6 +185,11 @@ function validateSharedDefinitions() {
 			`Manifest homepage_url must match the canonical repository: ${manifest.homepage_url || "missing"}`,
 		);
 	}
+	if (manifest.short_name !== "TTV AB") {
+		throw new Error(
+			`Manifest short_name must match the canonical short name: ${manifest.short_name || "missing"}`,
+		);
+	}
 	if (
 		!constantsVersion ||
 		constantsVersion !== packageVersion ||
