@@ -434,6 +434,7 @@
         .toggle-label {
             font-size: 14px;
             font-weight: 500;
+            cursor: pointer;
         }
 
         .toggle {
@@ -897,11 +898,11 @@
     </div>
 
     <div class="toggle-container">
-        <span class="toggle-label" data-i18n="adBlocking">Ad Blocking</span>
-        <label class="toggle">
+        <label class="toggle-label" for="enableToggle" data-i18n="adBlocking">Ad Blocking</label>
+        <span class="toggle">
             <input type="checkbox" id="enableToggle" checked aria-label="Ad Blocking">
             <span class="slider"></span>
-        </label>
+        </span>
     </div>
 
     <div class="info" id="infoText">
