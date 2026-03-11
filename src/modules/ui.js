@@ -57,7 +57,9 @@ function _showDonation() {
 					"_blank",
 					"noopener,noreferrer",
 				);
-				toast.remove();
+				if (toast.isConnected) {
+					toast.remove();
+				}
 			};
 
 			setTimeout(() => {

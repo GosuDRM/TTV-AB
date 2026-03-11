@@ -255,6 +255,10 @@ function validateSharedDefinitions() {
 	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
 	const workerSource = fs.readFileSync(workerPath, "utf8");
+	const parserSource = fs.readFileSync(
+		path.join(__dirname, "src", "modules", "parser.js"),
+		"utf8",
+	);
 	const processorSource = fs.readFileSync(processorPath, "utf8");
 	const apiSource = fs.readFileSync(apiPath, "utf8");
 
@@ -567,6 +571,19 @@ function validateSharedDefinitions() {
 			(match) => match[1],
 		),
 	);
+	for (const requiredParserSnippet of [
+		'Resolution: String(attrs.RESOLUTION || "0x0")',
+		"FrameRate: Number.isFinite(frameRate) ? frameRate : 0",
+		"Bandwidth: Number.isFinite(bandwidth) ? Math.max(0, bandwidth) : 0",
+		'Codecs: String(attrs.CODECS || "")',
+		'Name: String(attrs.VIDEO || "")',
+	]) {
+		if (!parserSource.includes(requiredParserSnippet)) {
+			throw new Error(
+				`Missing normalized parser metadata snippet: ${requiredParserSnippet}`,
+			);
+		}
+	}
 	if ((hooksSource.match(/eval\(wasmSource\)/g) || []).length !== 1) {
 		throw new Error("Unexpected eval(wasmSource) usage in hooks.js");
 	}

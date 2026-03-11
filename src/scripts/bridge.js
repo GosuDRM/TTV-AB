@@ -233,7 +233,10 @@ chrome.storage.local.get(
 
 		function broadcastState() {
 			window.postMessage(
-				{ type: "ttvab-toggle", detail: { enabled: bridgeState.enabled } },
+				{
+					type: "ttvab-toggle",
+					detail: { enabled: Boolean(bridgeState.enabled) },
+				},
 				"*",
 			);
 			window.postMessage(
