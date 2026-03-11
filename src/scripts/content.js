@@ -100,7 +100,6 @@ function _$ds(scope) {
 		PinnedBackupPlayerChannel: null,
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
-		LastPlaylistUrl: null,
 		GQLDeviceID: null,
 		ClientVersion: null,
 		ClientSession: null,
@@ -636,7 +635,6 @@ function _$hpa(text) {
 async function _$pm(url, text, realFetch) {
 	const info = _$gsi(url);
 	if (!info) return text;
-	__TTVAB_STATE__.LastPlaylistUrl = url;
 
 	if (!__TTVAB_STATE__.IsAdStrippingEnabled) {
 		if (

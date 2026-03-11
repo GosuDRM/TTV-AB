@@ -60,7 +60,6 @@ function _declareState(scope) {
 		PinnedBackupPlayerChannel: null,
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
-		LastPlaylistUrl: null,
 		GQLDeviceID: null,
 		ClientVersion: null,
 		ClientSession: null,
