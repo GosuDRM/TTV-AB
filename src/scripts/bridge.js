@@ -227,7 +227,7 @@ chrome.storage.local.get(
 			);
 		}
 		const safeResult = result || {};
-		bridgeState.enabled = safeResult.ttvAdblockEnabled === false ? false : true;
+		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
 		bridgeState.storedDomAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 
@@ -268,8 +268,7 @@ chrome.storage.local.get(
 			if (namespace !== "local") return;
 			if (changes.ttvAdblockEnabled) {
 				const wasEnabled = bridgeState.enabled;
-				bridgeState.enabled =
-					changes.ttvAdblockEnabled.newValue === false ? false : true;
+				bridgeState.enabled = changes.ttvAdblockEnabled.newValue !== false;
 				if (bridgeState.enabled !== wasEnabled) {
 					window.postMessage(
 						{

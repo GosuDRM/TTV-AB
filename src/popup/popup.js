@@ -90,7 +90,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
 		document.querySelectorAll("[data-i18n]").forEach((el) => {
 			const key = el.dataset.i18n;
-			if (typeof key === "string" && Object.prototype.hasOwnProperty.call(t, key)) el.textContent = String(t[key]);
+			if (typeof key === "string" && Object.hasOwn(t, key)) {
+				el.textContent = String(t[key]);
+			}
 		});
 		descriptionText.textContent = t.descriptionText;
 		const donateButton = document.getElementById("donateBtn");
@@ -326,7 +328,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		ACHIEVEMENTS.forEach((ach, i) => {
 			if (!badges[i]) return;
 			const achievementText = getAchievementTranslation(ach.id);
-			const isUnlocked = unlocked.includes(ach.id);
+			const isUnlocked = safeUnlocked.includes(ach.id);
 			badges[i].title = `${achievementText.name} - ${achievementText.desc}`;
 			if (isUnlocked) {
 				badges[i].classList.add("unlocked");
@@ -427,7 +429,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				);
 			}
 			const safeResult = result || {};
-			const enabled = safeResult.ttvAdblockEnabled === false ? false : true;
+			const enabled = safeResult.ttvAdblockEnabled !== false;
 			toggle.checked = enabled;
 			updateStatus(enabled);
 
@@ -444,8 +446,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	chrome.storage.onChanged.addListener((changes, namespace) => {
 		if (namespace !== "local") return;
 		if (changes.ttvAdblockEnabled) {
-			const enabled =
-				changes.ttvAdblockEnabled.newValue === false ? false : true;
+			const enabled = changes.ttvAdblockEnabled.newValue !== false;
 			toggle.checked = enabled;
 			updateStatus(enabled);
 		}
