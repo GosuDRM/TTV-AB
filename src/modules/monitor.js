@@ -1,7 +1,7 @@
 // TTV AB - Monitor
 
 function _initCrashMonitor() {
-	let isRefreshing = false;
+	const isRefreshing = false;
 	let checkInterval = null;
 	let lastDeferredCrashAt = 0;
 	let lastPlayerRecoveryAt = 0;
@@ -92,7 +92,7 @@ function _initCrashMonitor() {
 	}
 
 	function handleCrash(error) {
-		if (isRefreshing) return;
+		if (isRefreshing) return false;
 
 		const now = Date.now();
 		const activeAdChannel = __TTVAB_STATE__.CurrentAdChannel;
@@ -108,7 +108,7 @@ function _initCrashMonitor() {
 		) {
 			if (now - lastDeferredCrashAt > 2000) {
 				_log(
-					`Player error during ad recovery for ${activeAdChannel}; waiting before refresh`,
+					`Player error during ad recovery for ${activeAdChannel}; waiting before in-player recovery`,
 					"warning",
 				);
 				lastDeferredCrashAt = now;
@@ -118,43 +118,14 @@ function _initCrashMonitor() {
 		if (attemptPlayerRecovery(error, now)) {
 			return false;
 		}
-
-		isRefreshing = true;
-
-		_log(`Player crash: ${error}`, "error");
-
-		if (isDocumentHidden()) {
-			_log("Tab hidden, will refresh when visible", "warning");
-
-			const refreshTimer = setTimeout(
-				() => window.location.reload(),
-				_C.REFRESH_DELAY,
+		if (now - lastDeferredCrashAt > 5000) {
+			_log(
+				`Player crash detected (${error}) but whole-page refresh is disabled`,
+				"error",
 			);
-			document.addEventListener("visibilitychange", function onVisible() {
-				if (!isDocumentHidden()) {
-					document.removeEventListener("visibilitychange", onVisible);
-					clearTimeout(refreshTimer);
-					_log("Tab visible, refreshing...", "warning");
-					window.location.reload();
-				}
-			});
-		} else {
-			_log("Auto-refreshing...", "warning");
-
-			const banner = document.createElement("div");
-			banner.innerHTML = `
-                <style>
-                    #ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-pulse 1s ease infinite}
-                    @keyframes ttvab-pulse{0%,100%{opacity:1}50%{opacity:.7}}
-                </style>
-                <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing...</div>
-            `;
-			document.body.appendChild(banner);
-
-			setTimeout(() => window.location.reload(), _C.REFRESH_DELAY);
+			lastDeferredCrashAt = now;
 		}
-
-		return true;
+		return false;
 	}
 
 	function start() {
