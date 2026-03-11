@@ -140,6 +140,12 @@ document.addEventListener("DOMContentLoaded", () => {
 		const donateButton = document.getElementById("donateBtn");
 		if (donateButton) donateButton.title = t.supportDeveloper;
 		langSelector.title = t.language;
+		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
+		statsToggle.setAttribute(
+			"aria-label",
+			String(t.statistics ?? "Statistics"),
+		);
+		toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
 		achievementsTitle.textContent = `🏆 ${t.achievements}`;
 		footerText.textContent = t.footerBy;
 	}
