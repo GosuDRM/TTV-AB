@@ -31,7 +31,6 @@ const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
 const bridgeState = {
 	enabled: true,
-	reloadAfterAdsEnabled: true,
 	storedAdsCount: 0,
 	storedDomAdsCount: 0,
 };
@@ -176,12 +175,7 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 }
 
 chrome.storage.local.get(
-	[
-		"ttvAdblockEnabled",
-		"ttvReloadAfterAdsEnabled",
-		"ttvAdsBlocked",
-		"ttvDomAdsBlocked",
-	],
+	["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
 	(result) => {
 		if (chrome.runtime.lastError) {
 			console.error(
@@ -191,21 +185,12 @@ chrome.storage.local.get(
 		}
 		const safeResult = result || {};
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
-		bridgeState.reloadAfterAdsEnabled =
-			safeResult.ttvReloadAfterAdsEnabled !== false;
 		bridgeState.storedAdsCount = safeResult.ttvAdsBlocked || 0;
 		bridgeState.storedDomAdsCount = safeResult.ttvDomAdsBlocked || 0;
 
 		function broadcastState() {
 			window.postMessage(
 				{ type: "ttvab-toggle", detail: { enabled: bridgeState.enabled } },
-				"*",
-			);
-			window.postMessage(
-				{
-					type: "ttvab-reload-after-ads-toggle",
-					detail: { enabled: bridgeState.reloadAfterAdsEnabled },
-				},
 				"*",
 			);
 			window.postMessage(
@@ -243,20 +228,6 @@ chrome.storage.local.get(
 						{
 							type: "ttvab-toggle",
 							detail: { enabled: bridgeState.enabled },
-						},
-						"*",
-					);
-				}
-			}
-			if (changes.ttvReloadAfterAdsEnabled) {
-				const wasEnabled = bridgeState.reloadAfterAdsEnabled;
-				bridgeState.reloadAfterAdsEnabled =
-					changes.ttvReloadAfterAdsEnabled.newValue !== false;
-				if (bridgeState.reloadAfterAdsEnabled !== wasEnabled) {
-					window.postMessage(
-						{
-							type: "ttvab-reload-after-ads-toggle",
-							detail: { enabled: bridgeState.reloadAfterAdsEnabled },
 						},
 						"*",
 					);

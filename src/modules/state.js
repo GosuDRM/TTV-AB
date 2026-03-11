@@ -42,7 +42,6 @@ function _declareState(scope) {
 		AlwaysReloadPlayerOnAd: _C.ALWAYS_RELOAD_PLAYER_ON_AD ?? false,
 		PlayerBufferingDoPlayerReload:
 			_C.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
-		ReloadPlayerAfterAd: _C.RELOAD_AFTER_AD ?? true,
 		PlayerReloadMinimalRequestsTime: _C.RELOAD_TIME,
 		PlayerReloadMinimalRequestsPlayerIndex: Math.max(
 			0,
