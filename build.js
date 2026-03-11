@@ -338,6 +338,17 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	for (const [linkId, title] of [
+		["repoLink", "Open the TTV AB GitHub repository"],
+		["authorLink", "Open the GosuDRM GitHub profile"],
+	]) {
+		if (!popupHtmlSource.includes(`id="${linkId}"`)) continue;
+		if (!popupHtmlSource.includes(`title="${title}"`)) {
+			throw new Error(
+				`Popup HTML ${linkId} link must preserve the hover title: ${title}`,
+			);
+		}
+	}
 	if (!popupHtmlSource.includes('<button type="button" class="stats-toggle"')) {
 		throw new Error(
 			"Popup statistics toggle must remain a native button element",
