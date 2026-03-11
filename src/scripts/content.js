@@ -1513,6 +1513,9 @@ function _$hw() {
                 ${_$su.toString()}
                 ${_$gfr.toString()}
                 ${_$sv.toString()}
+                ${_collectPlaybackAccessTokenSources.toString()}
+                ${_summarizePlaybackAccessTokenPayload.toString()}
+                ${_getPlaybackAccessTokenErrors.toString()}
                 ${_extractPlaybackAccessToken.toString()}
                 ${_$tk.toString()}
                 ${_$rsa.toString()}
