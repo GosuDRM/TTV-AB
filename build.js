@@ -170,6 +170,19 @@ function validateSharedDefinitions() {
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
 	const readmeSource = fs.readFileSync(readmePath, "utf8");
 	const localeDirectories = fs.readdirSync(localesPath).sort();
+	for (const localeDir of localeDirectories) {
+		const messages = JSON.parse(
+			fs.readFileSync(
+				path.join(localesPath, localeDir, "messages.json"),
+				"utf8",
+			),
+		);
+		if (!messages.extName?.message || !messages.extDesc?.message) {
+			throw new Error(
+				`Locale ${localeDir} is missing extName or extDesc in messages.json`,
+			);
+		}
+	}
 	if (
 		!readmeSource.includes(`version-${constantsVersion}-`) ||
 		!readmeSource.includes(`### v${constantsVersion}`)
