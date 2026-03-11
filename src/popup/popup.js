@@ -638,10 +638,17 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	});
 
+	let toggleWriteInFlight = false;
+
 	toggle.addEventListener("change", () => {
+		if (toggleWriteInFlight) return;
+		toggleWriteInFlight = true;
+		toggle.disabled = true;
 		const enabled = toggle.checked;
 		const previousEnabled = !enabled;
 		chrome.storage.local.set({ ttvAdblockEnabled: enabled }, () => {
+			toggleWriteInFlight = false;
+			toggle.disabled = false;
 			if (chrome.runtime.lastError) {
 				console.error(
 					"[TTV AB] Popup toggle write error:",
