@@ -208,7 +208,7 @@ function _showAchievementUnlocked(achievementId) {
 		_log(`Achievement unlocked: ${ach.name}`, "success");
 
 		setTimeout(() => {
-			if (document.getElementById("ttvab-achievement")) {
+			if (toast.isConnected) {
 				toast.style.animation = "ttvab-ach-pop .5s ease reverse";
 				setTimeout(() => toast.remove(), 500);
 			}
