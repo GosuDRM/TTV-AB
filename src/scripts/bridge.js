@@ -56,7 +56,13 @@ const StorageQueue = {
 	},
 };
 
-function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
+function updateStats(
+	type,
+	channel,
+	totalAdsBlocked,
+	totalDomAdsBlocked,
+	retryDepth = 0,
+) {
 	if (!["ads", "domAds"].includes(type)) {
 		return Promise.resolve();
 	}
@@ -181,9 +187,17 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 						"[TTV AB] Stats write error:",
 						chrome.runtime.lastError.message,
 					);
-					StorageQueue.add(() =>
-						updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked),
-					);
+					if (retryDepth < 2) {
+						StorageQueue.add(() =>
+							updateStats(
+								type,
+								channel,
+								totalAdsBlocked,
+								totalDomAdsBlocked,
+								retryDepth + 1,
+							),
+						);
+					}
 					resolve();
 					return;
 				}
