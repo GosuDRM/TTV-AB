@@ -277,6 +277,40 @@ function validateSharedDefinitions() {
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
+	const translationsContext = {};
+	Function(
+		"context",
+		`${translationsSource}; context.TRANSLATIONS = TRANSLATIONS;`,
+	)(translationsContext);
+	const translationEntries = Object.entries(
+		translationsContext.TRANSLATIONS || {},
+	);
+	const flattenTranslationKeys = (value, prefix = "") => {
+		let keys = [];
+		for (const [key, nested] of Object.entries(value || {})) {
+			const nextPrefix = prefix ? `${prefix}.${key}` : key;
+			if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+				keys = keys.concat(flattenTranslationKeys(nested, nextPrefix));
+			} else {
+				keys.push(nextPrefix);
+			}
+		}
+		return keys;
+	};
+	const baseTranslationKeys = new Set(
+		flattenTranslationKeys(translationsContext.TRANSLATIONS?.en || {}),
+	);
+	for (const [localeName, localeTranslations] of translationEntries) {
+		const localeKeys = new Set(flattenTranslationKeys(localeTranslations));
+		const missingKeys = [...baseTranslationKeys].filter(
+			(key) => !localeKeys.has(key),
+		);
+		if (missingKeys.length > 0) {
+			throw new Error(
+				`Popup translations for ${localeName} are missing keys: ${missingKeys.join(", ")}`,
+			);
+		}
+	}
 	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
 	const workerSource = fs.readFileSync(workerPath, "utf8");

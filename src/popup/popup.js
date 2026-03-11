@@ -50,21 +50,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	const LANG_KEY = "ttvab_lang";
 
+	function normalizeLanguage(language) {
+		const candidate = String(language || "").trim();
+		if (!candidate || candidate === "auto") return "en";
+		if (candidate.startsWith("zh")) {
+			const normalized =
+				candidate.includes("TW") || candidate.includes("Hant")
+					? "zh_TW"
+					: "zh_CN";
+			return TRANSLATIONS[normalized] ? normalized : "en";
+		}
+		const base = candidate.split("-")[0];
+		return TRANSLATIONS[base] ? base : "en";
+	}
+
 	function getLang() {
 		const saved = localStorage.getItem(LANG_KEY);
 		if (saved && saved !== "auto" && TRANSLATIONS[saved]) return saved;
-		const browserLang = navigator.language;
-		if (browserLang.startsWith("zh")) {
-			return browserLang.includes("TW") || browserLang.includes("Hant")
-				? "zh_TW"
-				: "zh_CN";
-		}
-		return browserLang.split("-")[0];
+		return normalizeLanguage(navigator.language);
 	}
 
 	function getLocaleTag() {
 		const lang = getLang();
-		return lang === "auto" ? navigator.language : lang.replace("_", "-");
+		return lang === "auto"
+			? normalizeLanguage(navigator.language).replace("_", "-")
+			: lang.replace("_", "-");
 	}
 
 	function formatTemplate(template, values) {
@@ -155,17 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const lang = e.target.value;
 		localStorage.setItem(LANG_KEY, lang);
 		const effectiveLang =
-			lang === "auto"
-				? (() => {
-						const browserLang = navigator.language;
-						if (browserLang.startsWith("zh")) {
-							return browserLang.includes("TW") || browserLang.includes("Hant")
-								? "zh_TW"
-								: "zh_CN";
-						}
-						return browserLang.split("-")[0];
-					})()
-				: lang;
+			lang === "auto" ? normalizeLanguage(navigator.language) : lang;
 		applyTranslations(effectiveLang);
 		loadStatistics();
 		updateStatus(toggle.checked);
