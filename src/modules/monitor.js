@@ -4,6 +4,13 @@ function _initCrashMonitor() {
 	let isRefreshing = false;
 	let checkInterval = null;
 	let lastDeferredCrashAt = 0;
+	let lastPlayerRecoveryAt = 0;
+	let recoveryWindowStartedAt = 0;
+	let recoveryAttempts = 0;
+	let pendingPlayerRecoveryTimer = null;
+	const PLAYER_RECOVERY_COOLDOWN_MS = 8000;
+	const PLAYER_RECOVERY_WINDOW_MS = 45000;
+	const MAX_PLAYER_RECOVERY_ATTEMPTS = 2;
 
 	function isDocumentHidden() {
 		const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
@@ -40,6 +47,50 @@ function _initCrashMonitor() {
 		return null;
 	}
 
+	function attemptPlayerRecovery(error, now) {
+		if (typeof _doPlayerTask !== "function") {
+			return false;
+		}
+		if (
+			lastPlayerRecoveryAt &&
+			now - lastPlayerRecoveryAt < PLAYER_RECOVERY_COOLDOWN_MS
+		) {
+			return false;
+		}
+		if (
+			!recoveryWindowStartedAt ||
+			now - recoveryWindowStartedAt > PLAYER_RECOVERY_WINDOW_MS
+		) {
+			recoveryWindowStartedAt = now;
+			recoveryAttempts = 0;
+		}
+		if (recoveryAttempts >= MAX_PLAYER_RECOVERY_ATTEMPTS) {
+			return false;
+		}
+		const didReload = _doPlayerTask(false, true, { reason: "player-crash" });
+		if (!didReload) {
+			return false;
+		}
+		recoveryAttempts++;
+		lastPlayerRecoveryAt = now;
+		_log(
+			`Recovered player crash (${error}) with in-player reload (${recoveryAttempts}/${MAX_PLAYER_RECOVERY_ATTEMPTS})`,
+			"warning",
+		);
+		if (pendingPlayerRecoveryTimer) {
+			clearTimeout(pendingPlayerRecoveryTimer);
+		}
+		pendingPlayerRecoveryTimer = setTimeout(() => {
+			const activeError = detectCrash();
+			if (!activeError) {
+				recoveryAttempts = 0;
+				recoveryWindowStartedAt = 0;
+			}
+			pendingPlayerRecoveryTimer = null;
+		}, 6000);
+		return true;
+	}
+
 	function handleCrash(error) {
 		if (isRefreshing) return;
 
@@ -62,6 +113,9 @@ function _initCrashMonitor() {
 				);
 				lastDeferredCrashAt = now;
 			}
+			return false;
+		}
+		if (attemptPlayerRecovery(error, now)) {
 			return false;
 		}
 
