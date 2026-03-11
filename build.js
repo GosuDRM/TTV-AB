@@ -527,7 +527,7 @@ function validateSharedDefinitions() {
 	const dynamicPopupTitleAttrCount = (popupSource.match(/title="\$\{/g) || [])
 		.length;
 	if (
-		dynamicPopupInnerHtmlCount !== 1 ||
+		dynamicPopupInnerHtmlCount !== 0 ||
 		dynamicUiInnerHtmlCount !== 1 ||
 		dynamicPopupTitleAttrCount !== 1
 	) {

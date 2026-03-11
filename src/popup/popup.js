@@ -346,34 +346,47 @@ document.addEventListener("DOMContentLoaded", () => {
 		return div.innerHTML;
 	}
 
+	function createChannelItem(rank, name, countText) {
+		const item = document.createElement("div");
+		item.className = "channel-item";
+
+		const left = document.createElement("span");
+		const rankSpan = document.createElement("span");
+		rankSpan.className = "channel-rank";
+		rankSpan.textContent = rank;
+		const nameSpan = document.createElement("span");
+		nameSpan.className = "channel-name";
+		nameSpan.textContent = name;
+		left.append(rankSpan, nameSpan);
+
+		const count = document.createElement("span");
+		count.className = "channel-count";
+		count.textContent = countText;
+
+		item.append(left, count);
+		return item;
+	}
+
 	function renderChannels(channelsData) {
 		const entries = Object.entries(channelsData || {}).map(
 			([channel, count]) => [channel, normalizeCount(count)],
 		);
+		channelList.replaceChildren();
 		if (entries.length === 0) {
 			const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
-			channelList.innerHTML = `
-                <div class="channel-item">
-                    <span><span class="channel-rank">-</span><span class="channel-name">${escapeHtml(String(t.noDataYet ?? ""))}</span></span>
-                    <span class="channel-count">-</span>
-                </div>
-            `;
+			channelList.append(
+				createChannelItem("-", String(t.noDataYet ?? ""), "-"),
+			);
 			return;
 		}
 
 		entries.sort((a, b) => b[1] - a[1]);
 		const top5 = entries.slice(0, 5);
-
-		channelList.innerHTML = top5
-			.map(
-				(entry, i) => `
-            <div class="channel-item">
-                <span><span class="channel-rank">${i + 1}.</span><span class="channel-name">${escapeHtml(entry[0])}</span></span>
-                <span class="channel-count">${entry[1].toLocaleString()}</span>
-            </div>
-        `,
-			)
-			.join("");
+		for (const [index, entry] of top5.entries()) {
+			channelList.append(
+				createChannelItem(`${index + 1}.`, entry[0], entry[1].toLocaleString()),
+			);
+		}
 	}
 
 	function renderAchievements(
