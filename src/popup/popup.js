@@ -359,7 +359,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			const bar = document.createElement("div");
 			bar.className = "chart-bar";
 			bar.style.height = `${height}%`;
-			bar.title = `${dayName}: ${value}`;
+			bar.title = `${dayName}: ${formatNumber(value)}`;
 			weeklyChart.append(bar);
 		}
 

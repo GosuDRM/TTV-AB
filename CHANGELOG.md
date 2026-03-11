@@ -12,6 +12,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Stats Write Batching** - Bridge stats updates now coalesce repeated channel and DOM-ad increments before writing, reducing redundant storage churn during bursty ad events.
 - **UI Toast Reinit Guards** - Welcome, donation, and achievement toast wiring now avoids duplicate scheduling/listeners on repeated initialization and skips rendering when the page body is unavailable.
 - **Achievement Toast Body Guard** - Runtime achievement toasts now bail out cleanly if Twitch navigation or early initialization leaves `document.body` temporarily unavailable.
+- **Chart Tooltip Locale Formatting** - Popup weekly chart tooltips now format counts with the active popup locale instead of raw browser-default digits.
 
 ### Changed
 - **Popup Build Validation** - Build-time validation now checks that all popup element IDs required by `popup.js` still exist in `popup.html`.
