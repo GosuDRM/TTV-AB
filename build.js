@@ -405,6 +405,14 @@ function validateSharedDefinitions() {
 		);
 	}
 	if (
+		manifest.default_locale &&
+		!translationLanguages.includes(manifest.default_locale)
+	) {
+		throw new Error(
+			`Manifest default_locale is missing from popup translations: ${manifest.default_locale}`,
+		);
+	}
+	if (
 		!readmeSource.includes(`${translationLanguages.length} languages supported`)
 	) {
 		throw new Error(
