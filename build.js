@@ -411,6 +411,21 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	for (const [name, source] of [
+		["popup.js", popupSource],
+		["bridge.js", bridgeSource],
+	]) {
+		const storageListenerCount = (
+			source.match(/chrome\.storage\.onChanged\.addListener/g) || []
+		).length;
+		const localScopeGuardCount = (source.match(/namespace !== "local"/g) || [])
+			.length;
+		if (storageListenerCount !== localScopeGuardCount) {
+			throw new Error(
+				`${name} has ${storageListenerCount} storage listeners but ${localScopeGuardCount} local-area guards`,
+			);
+		}
+	}
 
 	const popupDomIds = new Set(
 		[...popupSource.matchAll(/getElementById\("([^"]+)"\)/g)].map(
