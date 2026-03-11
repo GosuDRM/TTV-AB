@@ -2727,6 +2727,10 @@ function _$bs() {
 	return true;
 }
 
+function _normalizeCounterValue(value) {
+	return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
 function _$tl() {
 	window.addEventListener("message", (e) => {
 		if (e.source !== window) return;
@@ -3779,7 +3783,7 @@ function _$in() {
 			e.data.type === "ttvab-init-count" &&
 			Number.isFinite(e.data.detail?.count)
 		) {
-			const restoredCount = Math.max(0, Math.trunc(e.data.detail.count));
+			const restoredCount = _normalizeCounterValue(e.data.detail.count);
 			if (_$s.adsBlocked === restoredCount) return;
 			_$s.adsBlocked = restoredCount;
 			_$bw({ key: "UpdateAdsBlocked", value: _$s.adsBlocked });
@@ -3790,7 +3794,7 @@ function _$in() {
 			e.data.type === "ttvab-init-dom-ads-count" &&
 			Number.isFinite(e.data.detail?.count)
 		) {
-			const restoredCount = Math.max(0, Math.trunc(e.data.detail.count));
+			const restoredCount = _normalizeCounterValue(e.data.detail.count);
 			if (_$s.domAdsBlocked === restoredCount) return;
 			_$s.domAdsBlocked = restoredCount;
 			_$l(`Restored DOM cleanup count: ${_$s.domAdsBlocked}`, "info");
