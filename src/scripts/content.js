@@ -1403,7 +1403,6 @@ function _$hw() {
                     switch (data.key) {
                         case 'UpdateClientVersion': __TTVAB_STATE__.ClientVersion = data.value; break;
                         case 'UpdateClientSession': __TTVAB_STATE__.ClientSession = data.value; break;
-                        case 'UpdateClientId': __TTVAB_STATE__.ClientID = data.value; break;
                         case 'UpdateDeviceId': __TTVAB_STATE__.GQLDeviceID = data.value; break;
                         case 'UpdateClientIntegrityHeader': __TTVAB_STATE__.ClientIntegrityHeader = data.value; break;
                         case 'UpdateAuthorizationHeader': __TTVAB_STATE__.AuthorizationHeader = data.value; break;
