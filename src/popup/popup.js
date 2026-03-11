@@ -328,14 +328,18 @@ document.addEventListener("DOMContentLoaded", () => {
 			weekday: "short",
 		});
 
-		weeklyChart.innerHTML = values
-			.map((v, i) => {
-				const height = Math.max((v / max) * 100, 8);
-				const dayName = parsedDays[i] ? formatter.format(parsedDays[i]) : "?";
-				const safeDayName = escapeHtml(dayName);
-				return `<div class="chart-bar" style="height: ${height}%;" title="${safeDayName}: ${v}"></div>`;
-			})
-			.join("");
+		weeklyChart.replaceChildren();
+		for (const [index, value] of values.entries()) {
+			const height = Math.max((value / max) * 100, 8);
+			const dayName = parsedDays[index]
+				? formatter.format(parsedDays[index])
+				: "?";
+			const bar = document.createElement("div");
+			bar.className = "chart-bar";
+			bar.style.height = `${height}%`;
+			bar.title = `${dayName}: ${value}`;
+			weeklyChart.append(bar);
+		}
 
 		chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), { avg });
 	}
