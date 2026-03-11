@@ -37,7 +37,7 @@ function _getStreamInfoForPlaylist(url) {
 		const bTime = b?.LastActivityAt || 0;
 		if (bTime !== aTime) return bTime - aTime;
 		if (a?.IsShowingAd !== b?.IsShowingAd) {
-			return Number(b?.IsShowingAd) - Number(a?.IsShowingAd);
+			return (b?.IsShowingAd ? 1 : 0) - (a?.IsShowingAd ? 1 : 0);
 		}
 		return 0;
 	})[0];
