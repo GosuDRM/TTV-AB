@@ -399,7 +399,8 @@ function _$su(m3u8, res, baseUrl = null) {
 	const lines = m3u8.split("\n");
 	const len = lines.length;
 	const [tw, th] = res.Resolution.split("x").map(Number);
-	const targetPixels = tw * th;
+	const targetPixels =
+		(Number.isFinite(tw) ? tw : 0) * (Number.isFinite(th) ? th : 0);
 	let matchUrl = null;
 	let matchFps = false;
 	let closeUrl = null;
