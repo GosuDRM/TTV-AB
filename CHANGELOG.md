@@ -58,6 +58,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Worker Helper Dependency Coverage** - Build validation now also checks the helper dependency chain used by playback-token parsing so worker bundles cannot reference newly introduced token helpers without injecting them too.
 - **Shared Definition Parity Checks** - Build-time guards now keep popup, bridge, UI, locales, README, changelog, and manifest metadata synchronized for achievements, translations, routes, versions, and documented counts.
 - **Localized Manifest Guardrails** - `build.js` now fails if `manifest.json` stops using `__MSG_extName__` / `__MSG_extDesc__`, protecting locale-backed extension naming from accidental plain-string drift.
+- **Popup Status Message Tuning** - Opening the popup or receiving remote state syncs now keeps the helper text stable on `Changes take effect instantly`; the temporary green/red status flash is reserved for user-initiated toggle changes.
 - **Native Player-Type Truth Source** - Native player-type state is now learned from token responses instead of request bodies, so observational `site` requests no longer overwrite the effective `popout` state.
 - **Message Payload Validation** - Page-side message listeners now require trusted same-window sources plus well-typed payloads for toggles, counts, channels, and achievement ids before mutating runtime state.
 - **Removed-Path Lockouts** - Build-time guards now fail if removed reload-after-ads, dead backup-tracking, stale stats, or dead worker-message identifiers reappear in live source.

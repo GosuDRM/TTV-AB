@@ -628,7 +628,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			const safeResult = result || {};
 			const enabled = safeResult.ttvAdblockEnabled !== false;
 			toggle.checked = enabled;
-			updateStatus(enabled);
+			updateStatus(enabled, false);
 
 			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
 			const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
@@ -645,7 +645,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		if (changes.ttvAdblockEnabled) {
 			const enabled = changes.ttvAdblockEnabled.newValue !== false;
 			toggle.checked = enabled;
-			updateStatus(enabled);
+			updateStatus(enabled, false);
 		}
 		if (changes.ttvAdsBlocked) {
 			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
@@ -681,7 +681,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				updateStatus(previousEnabled);
 				return;
 			}
-			updateStatus(enabled);
+			updateStatus(enabled, true);
 		});
 	});
 
@@ -759,8 +759,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	let statusTimeout = null;
 
-	function updateStatus(enabled) {
+	function updateStatus(enabled, showTransientMessage = false) {
 		const t = getTranslations();
+
+		if (statusTimeout) {
+			clearTimeout(statusTimeout);
+			statusTimeout = null;
+		}
+		infoText.style.transition = "color 0.3s ease";
+		if (!showTransientMessage) {
+			statusDot.classList.toggle("disabled", !enabled);
+			statusText.textContent = enabled ? t.active : t.inactive;
+			infoText.textContent = t.changesInstantly;
+			infoText.style.color = "#666";
+			return;
+		}
 
 		if (enabled) {
 			statusDot.classList.remove("disabled");
@@ -774,8 +787,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			infoText.style.color = "#f44336";
 		}
 
-		infoText.style.transition = "color 0.3s ease";
-		if (statusTimeout) clearTimeout(statusTimeout);
 		statusTimeout = setTimeout(() => {
 			infoText.textContent = t.changesInstantly;
 			infoText.style.color = "#666";
