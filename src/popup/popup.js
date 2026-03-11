@@ -556,6 +556,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				renderChart(daily);
 				renderChannels(channels);
 				renderAchievements(achievements, adsCount, domAdsCount, channelCount);
+				syncExpandedStatsPanelHeight();
 			},
 		);
 	}
@@ -624,6 +625,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	let statsTransitionCleanup = null;
 
+	function syncExpandedStatsPanelHeight() {
+		if (statsPanel.hidden || !statsPanel.classList.contains("expanded")) return;
+		statsPanel.style.maxHeight = `${statsPanel.scrollHeight}px`;
+	}
+
 	function setStatsPanelExpanded(isExpanded) {
 		if (typeof statsTransitionCleanup === "function") {
 			statsTransitionCleanup();
@@ -631,12 +637,17 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 		if (isExpanded) {
 			statsPanel.hidden = false;
+			statsPanel.style.maxHeight = "0px";
 			statsPanel.classList.add("expanded");
 			statsPanel.setAttribute("aria-hidden", "false");
 			statsToggle.classList.add("expanded");
 			statsToggle.setAttribute("aria-expanded", "true");
+			requestAnimationFrame(() => {
+				syncExpandedStatsPanelHeight();
+			});
 			return;
 		}
+		statsPanel.style.maxHeight = `${statsPanel.scrollHeight}px`;
 		statsPanel.classList.remove("expanded");
 		statsPanel.setAttribute("aria-hidden", "true");
 		statsToggle.classList.remove("expanded");
@@ -644,6 +655,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		if (statsPanel.contains(document.activeElement)) {
 			statsToggle.focus();
 		}
+		requestAnimationFrame(() => {
+			statsPanel.style.maxHeight = "0px";
+		});
 		const handleTransitionEnd = (event) => {
 			if (event.target !== statsPanel || event.propertyName !== "max-height") {
 				return;
