@@ -5,6 +5,7 @@ All notable changes to TTV AB will be documented in this file.
 ## [4.2.6] - 2026-03-11
 
 ### Fixed
+- **Localized Footer Link Labels** - The popup now localizes the repository and author footer link tooltips/aria labels instead of leaving those accessibility labels stuck in English after a language change.
 - **Popup Link Guard Parity** - The popup now treats the canonical donate/repository/author links as required UI nodes too, so packaging or HTML drift fails fast instead of silently dropping footer actions.
 - **Popup Startup Guards** - The popup now exits safely with a clear console error if required UI elements are missing instead of throwing null-access errors.
 - **Achievement Translation Fallbacks** - Popup achievement rendering now falls back safely when a locale entry is missing or malformed.
