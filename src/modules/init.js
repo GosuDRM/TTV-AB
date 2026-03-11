@@ -1097,7 +1097,7 @@ function _init() {
 	_hookWorker();
 	_hookMainFetch();
 	_initToggleListener();
-	_initCrashMonitor();
+	_log("Crash monitor temporarily disabled for debugging", "warning");
 	_blockAntiAdblockPopup();
 	_initAchievementListener();
 
