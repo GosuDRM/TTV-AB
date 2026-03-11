@@ -167,6 +167,10 @@ function validateSharedDefinitions() {
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
 	const popupSource = fs.readFileSync(popupPath, "utf8");
+	const popupHtmlSource = fs.readFileSync(
+		path.join(__dirname, "src", "popup", "popup.html"),
+		"utf8",
+	);
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
@@ -278,6 +282,15 @@ function validateSharedDefinitions() {
 		if (uiAchievementInfo[achievement.id]?.icon !== achievement.icon) {
 			throw new Error(`UI achievement icon mismatch for ${achievement.id}`);
 		}
+	}
+
+	const popupBadgeCount = (
+		popupHtmlSource.match(/class="achievement-badge"/g) || []
+	).length;
+	if (popupBadgeCount !== popupAchievements.length) {
+		throw new Error(
+			`Popup achievement badge count mismatch: html=${popupBadgeCount}, config=${popupAchievements.length}`,
+		);
 	}
 
 	const injectedHelpers = new Set(
