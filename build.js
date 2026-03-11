@@ -154,6 +154,7 @@ function validateSharedDefinitions() {
 		);
 	}
 	const readmePath = path.join(__dirname, "README.md");
+	const localesPath = path.join(__dirname, "_locales");
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
 	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
@@ -168,6 +169,7 @@ function validateSharedDefinitions() {
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
 	const readmeSource = fs.readFileSync(readmePath, "utf8");
+	const localeDirectories = fs.readdirSync(localesPath).sort();
 	if (
 		!readmeSource.includes(`version-${constantsVersion}-`) ||
 		!readmeSource.includes(`### v${constantsVersion}`)
@@ -328,6 +330,13 @@ function validateSharedDefinitions() {
 	) {
 		throw new Error(
 			"Popup language selector options are out of sync with translations",
+		);
+	}
+	if (
+		JSON.stringify(localeDirectories) !== JSON.stringify(translationLanguages)
+	) {
+		throw new Error(
+			"_locales directories are out of sync with popup translations",
 		);
 	}
 
