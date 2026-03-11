@@ -59,7 +59,6 @@ const MINIFY_MAP = {
 	_FIRST_RUN_KEY: "_$fr",
 	_ACHIEVEMENT_INFO: "_$ai",
 	_GQL_URL: "_$gu",
-	_incrementPopupsBlocked: "_$pb",
 	_scanAndRemove: "_$sr",
 	_scheduleIdleScan: "_$is",
 	_initPopupBlocker: "_$ipb",
