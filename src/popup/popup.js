@@ -462,7 +462,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			if (!badges[i]) return;
 			const achievementText = getAchievementTranslation(ach.id);
 			const isUnlocked = safeUnlocked.includes(ach.id);
-			badges[i].title = `${achievementText.name} - ${achievementText.desc}`;
+			const badgeLabel = `${achievementText.name} - ${achievementText.desc}`;
+			badges[i].title = badgeLabel;
+			badges[i].setAttribute("aria-label", badgeLabel);
+			badges[i].setAttribute("aria-pressed", String(isUnlocked));
 			if (isUnlocked) {
 				badges[i].classList.add("unlocked");
 				unlockedCount++;
@@ -611,6 +614,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function toggleStatsPanel() {
 		const isExpanded = statsPanel.classList.toggle("expanded");
+		statsPanel.hidden = !isExpanded;
+		statsPanel.setAttribute("aria-hidden", String(!isExpanded));
 		statsToggle.classList.toggle("expanded", isExpanded);
 		statsToggle.setAttribute("aria-expanded", String(isExpanded));
 	}
