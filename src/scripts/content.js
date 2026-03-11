@@ -771,6 +771,8 @@ async function _$pm(url, text, realFetch) {
 		}
 	} else {
 		if (info.IsShowingAd) {
+			const hadWorkingBackupPath =
+				Boolean(info.IsUsingFallbackStream) || Boolean(info.ActiveBackupPlayerType);
 			const { wasUsingModifiedM3U8 } = _$rsa(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -778,13 +780,20 @@ async function _$pm(url, text, realFetch) {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				if (wasUsingModifiedM3U8 || __TTVAB_STATE__.ReloadPlayerAfterAd) {
+				const shouldReloadAfterAd =
+					wasUsingModifiedM3U8 ||
+					(__TTVAB_STATE__.ReloadPlayerAfterAd && hadWorkingBackupPath);
+				if (shouldReloadAfterAd) {
 					self.postMessage({
 						key: "ReloadPlayer",
 						reason: "ad-ended",
 						channel: info.ChannelName,
 					});
 				} else {
+					_$l(
+						"Skipping ad-ended reload after unresolved backup recovery",
+						"warning",
+					);
 					self.postMessage({ key: "PauseResumePlayer" });
 				}
 			}
@@ -962,11 +971,18 @@ async function _$fb(
 								const simulatedAdsDepthSatisfied =
 									__TTVAB_STATE__.SimulatedAdsDepth === 0 ||
 									pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1;
-								const promotionPolicy = _getFallbackPromotionPolicy({
-									candidateHasAds,
-									candidateIsPlayable: Boolean(m3u8),
-									simulatedAdsDepthSatisfied,
-								});
+								const promotionPolicy =
+									typeof _getFallbackPromotionPolicy === "function"
+										? _getFallbackPromotionPolicy({
+											candidateHasAds,
+											candidateIsPlayable: Boolean(m3u8),
+											simulatedAdsDepthSatisfied,
+										})
+										: {
+											allowSelectedPromotion: false,
+											allowFallbackPromotion: false,
+											reason: "policy-unavailable",
+										};
 								const canPromoteFallback =
 									promotionPolicy.allowFallbackPromotion &&
 									(!fallbackM3u8 ||
@@ -1377,6 +1393,7 @@ function _$hw() {
                 ${_$rsa.toString()}
                 ${_$gsi.toString()}
                 ${_$hpa.toString()}
+                ${_getFallbackPromotionPolicy.toString()}
                 ${_$pm.toString()}
                 ${_$fb.toString()}
                 ${_$wj.toString()}
