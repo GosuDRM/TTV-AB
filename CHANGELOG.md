@@ -19,6 +19,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Localized Auto Language Label** - The popup language selector now localizes its `Auto` option and build validation keeps that dedicated option wired up.
 
 ### Changed
+- **Privacy Disclosure Validation** - Build-time validation now fails if `PRIVACY.md` drops the documented toggle/counter/language/reminder local-storage disclosures or the explicit on-device-only wording.
 - **Popup Build Validation** - Build-time validation now checks that all popup element IDs required by `popup.js` still exist in `popup.html`.
 - **Release Metadata Sync** - Synchronized version references plus canonical npm/package metadata across package, package-lock, manifest, constants, README, changelog, and generated build output for 4.2.6.
 
