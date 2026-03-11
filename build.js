@@ -154,6 +154,7 @@ function validateSharedDefinitions() {
 		);
 	}
 	const readmePath = path.join(__dirname, "README.md");
+	const changelogPath = path.join(__dirname, "CHANGELOG.md");
 	const localesPath = path.join(__dirname, "_locales");
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
@@ -169,6 +170,7 @@ function validateSharedDefinitions() {
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
 	const readmeSource = fs.readFileSync(readmePath, "utf8");
+	const changelogSource = fs.readFileSync(changelogPath, "utf8");
 	const localeDirectories = fs.readdirSync(localesPath).sort();
 	for (const localeDir of localeDirectories) {
 		const messages = JSON.parse(
@@ -189,6 +191,11 @@ function validateSharedDefinitions() {
 	) {
 		throw new Error(
 			`README version markers are out of sync with ${constantsVersion}`,
+		);
+	}
+	if (!changelogSource.includes(`## [${constantsVersion}]`)) {
+		throw new Error(
+			`CHANGELOG top version markers are out of sync with ${constantsVersion}`,
 		);
 	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
