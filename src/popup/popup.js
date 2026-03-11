@@ -158,6 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function applyTranslations(lang) {
 		const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+		document.documentElement.lang = String((lang || "en").replace("_", "-"));
 		document.querySelectorAll("[data-i18n]").forEach((el) => {
 			const key = el.dataset.i18n;
 			if (typeof key === "string" && Object.hasOwn(t, key)) {
