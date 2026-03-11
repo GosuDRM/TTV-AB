@@ -163,6 +163,7 @@ function validateSharedDefinitions() {
 		"popup",
 		"translations.js",
 	);
+	const initPath = path.join(__dirname, "src", "modules", "init.js");
 	const hooksPath = path.join(__dirname, "src", "modules", "hooks.js");
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
@@ -174,6 +175,7 @@ function validateSharedDefinitions() {
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
+	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
 	const processorSource = fs.readFileSync(processorPath, "utf8");
 	const apiSource = fs.readFileSync(apiPath, "utf8");
@@ -302,6 +304,29 @@ function validateSharedDefinitions() {
 		if (!popupHtmlSource.includes(`id="${domId}"`)) {
 			throw new Error(`Popup HTML is missing required element id ${domId}`);
 		}
+	}
+
+	const initReservedRoutesLiteral = extractLiteral(
+		initSource,
+		"const reserved = new Set([",
+		"[",
+		"]",
+	);
+	const hookReservedRoutesLiteral = extractLiteral(
+		hooksSource,
+		"const reserved = new Set([",
+		"[",
+		"]",
+	);
+	if (
+		!initReservedRoutesLiteral ||
+		!hookReservedRoutesLiteral ||
+		normalizeCodeSnippet(initReservedRoutesLiteral) !==
+			normalizeCodeSnippet(hookReservedRoutesLiteral)
+	) {
+		throw new Error(
+			"Reserved route lists are out of sync between init and hooks",
+		);
 	}
 
 	const injectedHelpers = new Set(
