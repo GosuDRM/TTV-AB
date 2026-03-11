@@ -8,7 +8,8 @@ function _collectPlaybackAccessTokenSources(payload) {
 	const tokenSources = [];
 
 	const pushTokenSource = (value) => {
-		if (!value || typeof value !== "object" || tokenSources.includes(value)) return;
+		if (!value || typeof value !== "object" || tokenSources.includes(value))
+			return;
 		tokenSources.push(value);
 	};
 
@@ -133,9 +134,11 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 		return null;
 	}
 
-	const pendingRequests =
-		__TTVAB_STATE__.PendingFetchRequests ||
-		(__TTVAB_STATE__.PendingFetchRequests = new Map());
+	let pendingRequests = __TTVAB_STATE__.PendingFetchRequests;
+	if (!pendingRequests) {
+		pendingRequests = new Map();
+		__TTVAB_STATE__.PendingFetchRequests = pendingRequests;
+	}
 	const nextSeq = (__TTVAB_STATE__.FetchRequestSeq || 0) + 1;
 	__TTVAB_STATE__.FetchRequestSeq = nextSeq;
 	const requestId = `fetch-${Date.now()}-${nextSeq}`;
@@ -160,7 +163,9 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 				reject(
 					error instanceof Error
 						? error
-						: new Error(String(error?.message || error || "fetch relay failed")),
+						: new Error(
+								String(error?.message || error || "fetch relay failed"),
+							),
 				);
 			},
 		});

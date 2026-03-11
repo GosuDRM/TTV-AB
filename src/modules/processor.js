@@ -116,29 +116,24 @@ async function _processM3U8(url, text, realFetch) {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
 				wasUsingBackupStream,
-			} =
-				_resetStreamAdState(info);
+			} = _resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			_log("Ad blocking disabled - restoring native stream state", "info");
 			if (
-				(
-					wasUsingModifiedM3U8 ||
+				(wasUsingModifiedM3U8 ||
 					wasUsingFallbackStream ||
-					wasUsingBackupStream
-				) &&
+					wasUsingBackupStream) &&
 				typeof self !== "undefined" &&
 				self.postMessage
 			) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
 				if (
-					(
-						wasUsingModifiedM3U8 ||
+					(wasUsingModifiedM3U8 ||
 						wasUsingFallbackStream ||
-						wasUsingBackupStream
-					) &&
+						wasUsingBackupStream) &&
 					__TTVAB_STATE__.ReloadAfterAd
 				) {
 					info.LastPlayerReload = Date.now();
@@ -255,8 +250,7 @@ async function _processM3U8(url, text, realFetch) {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
 				wasUsingBackupStream,
-			} =
-				_resetStreamAdState(info);
+			} = _resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
@@ -264,11 +258,9 @@ async function _processM3U8(url, text, realFetch) {
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
 				if (
-					(
-						wasUsingModifiedM3U8 ||
+					(wasUsingModifiedM3U8 ||
 						wasUsingFallbackStream ||
-						wasUsingBackupStream
-					) &&
+						wasUsingBackupStream) &&
 					__TTVAB_STATE__.ReloadAfterAd
 				) {
 					info.LastPlayerReload = Date.now();
@@ -428,15 +420,15 @@ async function _findBackupStream(
 								const promotionPolicy =
 									typeof _getFallbackPromotionPolicy === "function"
 										? _getFallbackPromotionPolicy({
-											candidateHasAds,
-											candidateIsPlayable: Boolean(m3u8),
-											simulatedAdsDepthSatisfied,
-										})
+												candidateHasAds,
+												candidateIsPlayable: Boolean(m3u8),
+												simulatedAdsDepthSatisfied,
+											})
 										: {
-											allowSelectedPromotion: false,
-											allowFallbackPromotion: false,
-											reason: "policy-unavailable",
-										};
+												allowSelectedPromotion: false,
+												allowFallbackPromotion: false,
+												reason: "policy-unavailable",
+											};
 								const canPromoteFallback =
 									promotionPolicy.allowFallbackPromotion &&
 									(!fallbackM3u8 ||

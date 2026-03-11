@@ -27,7 +27,7 @@ const _$c = {
 	RELOAD_AFTER_AD: true,
 	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
 	ALWAYS_RELOAD_PLAYER_ON_AD: false,
-};
+};
 
 const _$s = {
 	workers: [],
@@ -518,7 +518,8 @@ function _collectPlaybackAccessTokenSources(payload) {
 	const tokenSources = [];
 
 	const pushTokenSource = (value) => {
-		if (!value || typeof value !== "object" || tokenSources.includes(value)) return;
+		if (!value || typeof value !== "object" || tokenSources.includes(value))
+			return;
 		tokenSources.push(value);
 	};
 
@@ -643,9 +644,11 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 		return null;
 	}
 
-	const pendingRequests =
-		__TTVAB_STATE__.PendingFetchRequests ||
-		(__TTVAB_STATE__.PendingFetchRequests = new Map());
+	let pendingRequests = __TTVAB_STATE__.PendingFetchRequests;
+	if (!pendingRequests) {
+		pendingRequests = new Map();
+		__TTVAB_STATE__.PendingFetchRequests = pendingRequests;
+	}
 	const nextSeq = (__TTVAB_STATE__.FetchRequestSeq || 0) + 1;
 	__TTVAB_STATE__.FetchRequestSeq = nextSeq;
 	const requestId = `fetch-${Date.now()}-${nextSeq}`;
@@ -670,7 +673,9 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 				reject(
 					error instanceof Error
 						? error
-						: new Error(String(error?.message || error || "fetch relay failed")),
+						: new Error(
+								String(error?.message || error || "fetch relay failed"),
+							),
 				);
 			},
 		});
@@ -882,29 +887,24 @@ async function _$pm(url, text, realFetch) {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
 				wasUsingBackupStream,
-			} =
-				_$rsa(info);
+			} = _$rsa(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			_$l("Ad blocking disabled - restoring native stream state", "info");
 			if (
-				(
-					wasUsingModifiedM3U8 ||
+				(wasUsingModifiedM3U8 ||
 					wasUsingFallbackStream ||
-					wasUsingBackupStream
-				) &&
+					wasUsingBackupStream) &&
 				typeof self !== "undefined" &&
 				self.postMessage
 			) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
 				if (
-					(
-						wasUsingModifiedM3U8 ||
+					(wasUsingModifiedM3U8 ||
 						wasUsingFallbackStream ||
-						wasUsingBackupStream
-					) &&
+						wasUsingBackupStream) &&
 					__TTVAB_STATE__.ReloadAfterAd
 				) {
 					info.LastPlayerReload = Date.now();
@@ -1021,8 +1021,7 @@ async function _$pm(url, text, realFetch) {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
 				wasUsingBackupStream,
-			} =
-				_$rsa(info);
+			} = _$rsa(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
@@ -1030,11 +1029,9 @@ async function _$pm(url, text, realFetch) {
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
 				if (
-					(
-						wasUsingModifiedM3U8 ||
+					(wasUsingModifiedM3U8 ||
 						wasUsingFallbackStream ||
-						wasUsingBackupStream
-					) &&
+						wasUsingBackupStream) &&
 					__TTVAB_STATE__.ReloadAfterAd
 				) {
 					info.LastPlayerReload = Date.now();
@@ -1194,15 +1191,15 @@ async function _$fb(
 								const promotionPolicy =
 									typeof _getFallbackPromotionPolicy === "function"
 										? _getFallbackPromotionPolicy({
-											candidateHasAds,
-											candidateIsPlayable: Boolean(m3u8),
-											simulatedAdsDepthSatisfied,
-										})
+												candidateHasAds,
+												candidateIsPlayable: Boolean(m3u8),
+												simulatedAdsDepthSatisfied,
+											})
 										: {
-											allowSelectedPromotion: false,
-											allowFallbackPromotion: false,
-											reason: "policy-unavailable",
-										};
+												allowSelectedPromotion: false,
+												allowFallbackPromotion: false,
+												reason: "policy-unavailable",
+											};
 								const canPromoteFallback =
 									promotionPolicy.allowFallbackPromotion &&
 									(!fallbackM3u8 ||
@@ -1472,7 +1469,10 @@ function _$wf() {
 			headers: response.headers,
 		});
 
-		if (__TTVAB_STATE__.AdSegmentCache.has(url) || (typeof _$kas === 'function' && _$kas(url))) {
+		if (
+			__TTVAB_STATE__.AdSegmentCache.has(url) ||
+			(typeof _$kas === "function" && _$kas(url))
+		) {
 			return realFetch(EMPTY_SEGMENT_URL);
 		}
 
@@ -1830,7 +1830,7 @@ function _$hw() {
 						});
 						_$l("Ad detected, blocking...", "warning");
 						break;
-					case "BackupPlayerTypeSelected":
+					case "BackupPlayerTypeSelected": {
 						if (isStaleChannelEvent(e.data.channel || null)) {
 							_$l(
 								`Ignoring stale backup selection for ${e.data.channel}`,
@@ -1856,6 +1856,7 @@ function _$hw() {
 						});
 						_$l(`Pinned backup type: ${e.data.value}`, "info");
 						break;
+					}
 					case "AdEnded":
 						if (isStaleChannelEvent(e.data.channel || null)) {
 							_$l(
@@ -2070,10 +2071,7 @@ function _$mf() {
 		}
 	};
 	const rewritePlaybackAccessTokenBody = (bodyText) => {
-		if (
-			typeof bodyText !== "string" ||
-			!bodyText
-		) {
+		if (typeof bodyText !== "string" || !bodyText) {
 			return { bodyText, changed: false };
 		}
 
@@ -2471,7 +2469,10 @@ function _$mpb() {
 					state?.props?.content?.type === "live" &&
 					player.getHTMLVideoElement()?.ended
 				) {
-					_$l("Player hit end of stream during live playback. Recovering...", "warning");
+					_$l(
+						"Player hit end of stream during live playback. Recovering...",
+						"warning",
+					);
 					_$dpt(false, true, { reason: "ad-recovery" });
 					_$pbs.lastFixTime = Date.now();
 				} else if (

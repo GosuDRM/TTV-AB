@@ -192,7 +192,10 @@ function _monitorPlayerBuffering() {
 					state?.props?.content?.type === "live" &&
 					player.getHTMLVideoElement()?.ended
 				) {
-					_log("Player hit end of stream during live playback. Recovering...", "warning");
+					_log(
+						"Player hit end of stream during live playback. Recovering...",
+						"warning",
+					);
 					_doPlayerTask(false, true, { reason: "ad-recovery" });
 					_PlayerBufferState.lastFixTime = Date.now();
 				} else if (
