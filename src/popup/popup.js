@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	const versionText = document.getElementById("versionText");
 	const achievementsTitle = document.getElementById("achievementsTitle");
 	const footerText = document.getElementById("footerText");
+	const infoText = document.getElementById("infoText");
 	const repoLink = document.getElementById("repoLink");
 	const requiredElements = {
 		toggle,
@@ -41,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		versionText,
 		achievementsTitle,
 		footerText,
+		infoText,
 	};
 	for (const [name, element] of Object.entries(requiredElements)) {
 		if (element) continue;
@@ -402,7 +404,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const top5 = entries.slice(0, 5);
 		for (const [index, entry] of top5.entries()) {
 			channelList.append(
-				createChannelItem(`${index + 1}.`, entry[0], entry[1].toLocaleString()),
+				createChannelItem(`${index + 1}.`, entry[0], formatNumber(entry[1])),
 			);
 		}
 	}
@@ -594,26 +596,25 @@ document.addEventListener("DOMContentLoaded", () => {
 	let statusTimeout = null;
 
 	function updateStatus(enabled) {
-		const info = document.querySelector(".info");
 		const t = getTranslations();
 
 		if (enabled) {
 			statusDot.classList.remove("disabled");
 			statusText.textContent = t.active;
-			info.textContent = `${t.adBlocking}: ${t.active}`;
-			info.style.color = "#4CAF50";
+			infoText.textContent = `${t.adBlocking}: ${t.active}`;
+			infoText.style.color = "#4CAF50";
 		} else {
 			statusDot.classList.add("disabled");
 			statusText.textContent = t.inactive;
-			info.textContent = `${t.adBlocking}: ${t.inactive}`;
-			info.style.color = "#f44336";
+			infoText.textContent = `${t.adBlocking}: ${t.inactive}`;
+			infoText.style.color = "#f44336";
 		}
 
-		info.style.transition = "color 0.3s ease";
+		infoText.style.transition = "color 0.3s ease";
 		if (statusTimeout) clearTimeout(statusTimeout);
 		statusTimeout = setTimeout(() => {
-			info.textContent = t.changesInstantly;
-			info.style.color = "#666";
+			infoText.textContent = t.changesInstantly;
+			infoText.style.color = "#666";
 		}, 1500);
 	}
 

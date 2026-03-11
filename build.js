@@ -289,6 +289,7 @@ function validateSharedDefinitions() {
 		"versionText",
 		"achievementsTitle",
 		"footerText",
+		"infoText",
 	]) {
 		if (!popupHtmlSource.includes(`id="${requiredPopupId}"`)) {
 			throw new Error(`Popup HTML is missing required id: ${requiredPopupId}`);
