@@ -73,21 +73,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function normalizeLanguage(language) {
 		const candidate = String(language || "").trim();
-		if (!candidate || candidate === "auto") return "en";
-		if (candidate.startsWith("zh")) {
+		if (!candidate || candidate.toLowerCase() === "auto") return "en";
+		const normalizedCandidate = candidate.replace(/-/g, "_");
+		if (TRANSLATIONS[normalizedCandidate]) {
+			return normalizedCandidate;
+		}
+		const lowerCandidate = candidate.toLowerCase();
+		if (lowerCandidate.startsWith("zh")) {
 			const normalized =
-				candidate.includes("TW") || candidate.includes("Hant")
+				lowerCandidate.includes("tw") || lowerCandidate.includes("hant")
 					? "zh_TW"
 					: "zh_CN";
 			return TRANSLATIONS[normalized] ? normalized : "en";
 		}
-		const base = candidate.split("-")[0];
+		const base = lowerCandidate.split(/[-_]/)[0];
 		return TRANSLATIONS[base] ? base : "en";
 	}
 
 	function getLang() {
 		const saved = getStoredLanguage();
-		if (saved && saved !== "auto" && TRANSLATIONS[saved]) return saved;
+		if (saved && saved !== "auto") {
+			return normalizeLanguage(saved);
+		}
 		return normalizeLanguage(navigator.language);
 	}
 
@@ -177,11 +184,25 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	const savedLang = getStoredLanguage();
+	const normalizedSavedLang =
+		savedLang && savedLang !== "auto"
+			? normalizeLanguage(savedLang)
+			: savedLang;
 	const hasValidSavedLang =
-		savedLang === "auto" || !savedLang || TRANSLATIONS[savedLang];
-	const currentLang = hasValidSavedLang ? savedLang || "auto" : "auto";
+		normalizedSavedLang === "auto" ||
+		!normalizedSavedLang ||
+		TRANSLATIONS[normalizedSavedLang];
+	const currentLang = hasValidSavedLang
+		? normalizedSavedLang || "auto"
+		: "auto";
 	if (!hasValidSavedLang) {
 		setStoredLanguage("auto");
+	} else if (
+		normalizedSavedLang &&
+		normalizedSavedLang !== savedLang &&
+		normalizedSavedLang !== "auto"
+	) {
+		setStoredLanguage(normalizedSavedLang);
 	}
 	langSelector.value = currentLang;
 	applyTranslations(getLang());
