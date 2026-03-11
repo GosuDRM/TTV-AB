@@ -338,23 +338,26 @@ document.addEventListener("DOMContentLoaded", () => {
 					);
 				}
 				const safeResult = result || {};
-				const stats = safeResult.ttvStats || {
-					daily: {},
-					channels: {},
-					achievements: [],
-				};
+				const stats =
+					safeResult.ttvStats && typeof safeResult.ttvStats === "object"
+						? safeResult.ttvStats
+						: {};
+				const daily =
+					stats.daily && typeof stats.daily === "object" ? stats.daily : {};
+				const channels =
+					stats.channels && typeof stats.channels === "object"
+						? stats.channels
+						: {};
+				const achievements = Array.isArray(stats.achievements)
+					? stats.achievements
+					: [];
 				const adsCount = safeResult.ttvAdsBlocked || 0;
 				const domAdsCount = safeResult.ttvDomAdsBlocked || 0;
-				const channelCount = Object.keys(stats.channels || {}).length;
+				const channelCount = Object.keys(channels).length;
 
-				renderChart(stats.daily || {});
-				renderChannels(stats.channels);
-				renderAchievements(
-					stats.achievements || [],
-					adsCount,
-					domAdsCount,
-					channelCount,
-				);
+				renderChart(daily);
+				renderChannels(channels);
+				renderAchievements(achievements, adsCount, domAdsCount, channelCount);
 			},
 		);
 	}
