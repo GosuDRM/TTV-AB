@@ -1259,7 +1259,7 @@ function _$wf() {
 			headers: response.headers,
 		});
 
-		if (__TTVAB_STATE__.AdSegmentCache.has(url)) {
+		if (__TTVAB_STATE__.AdSegmentCache.has(url) || (typeof _$kas === 'function' && _$kas(url))) {
 			return realFetch(EMPTY_SEGMENT_URL);
 		}
 

@@ -150,7 +150,7 @@ function _hookWorkerFetch() {
 			headers: response.headers,
 		});
 
-		if (__TTVAB_STATE__.AdSegmentCache.has(url)) {
+		if (__TTVAB_STATE__.AdSegmentCache.has(url) || (typeof _isKnownAdSegmentUrl === 'function' && _isKnownAdSegmentUrl(url))) {
 			return realFetch(EMPTY_SEGMENT_URL);
 		}
 
