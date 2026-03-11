@@ -34,6 +34,14 @@ function isPlainObject(value) {
 	return prototype === Object.prototype || prototype === null;
 }
 
+function getBridgeMessageData(value) {
+	return isPlainObject(value) ? value : null;
+}
+
+function getBridgeMessageDetail(value) {
+	return isPlainObject(value) ? value : null;
+}
+
 function createChannelsMap() {
 	return Object.create(null);
 }
@@ -319,9 +327,9 @@ chrome.storage.local.get(
 
 		window.addEventListener("message", (e) => {
 			if (e.source !== window) return;
-			if (e.data?.type === "ttvab-request-state") {
-				broadcastState();
-			}
+			const message = getBridgeMessageData(e.data);
+			if (!message || message.type !== "ttvab-request-state") return;
+			broadcastState();
 		});
 
 		chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -534,14 +542,14 @@ function flushCounters() {
 
 window.addEventListener("message", (e) => {
 	if (e.source !== window) return;
-	if (!e.data?.type?.startsWith("ttvab-")) return;
+	const message = getBridgeMessageData(e.data);
+	if (!message) return;
+	const detail = getBridgeMessageDetail(message.detail);
 
-	if (
-		e.data.type === "ttvab-ad-blocked" &&
-		Number.isFinite(e.data.detail?.count)
-	) {
-		const channel = normalizeChannelName(e.data.detail?.channel);
-		const delta = queueTotalDelta("ads", e.data.detail.count);
+	if (message.type === "ttvab-ad-blocked") {
+		if (!detail || !Number.isFinite(detail.count)) return;
+		const channel = normalizeChannelName(detail.channel);
+		const delta = queueTotalDelta("ads", detail.count);
 		if (channel && delta > 0) {
 			for (let i = 0; i < delta; i++) {
 				pendingAdChannels.push(channel);
@@ -550,13 +558,12 @@ window.addEventListener("message", (e) => {
 		if (delta > 0) {
 			scheduleFlush();
 		}
+		return;
 	}
 
-	if (
-		e.data.type === "ttvab-dom-ad-cleanup" &&
-		Number.isFinite(e.data.detail?.count)
-	) {
-		const delta = queueTotalDelta("domAds", e.data.detail.count);
+	if (message.type === "ttvab-dom-ad-cleanup") {
+		if (!detail || !Number.isFinite(detail.count)) return;
+		const delta = queueTotalDelta("domAds", detail.count);
 		if (delta > 0) {
 			scheduleFlush();
 		}

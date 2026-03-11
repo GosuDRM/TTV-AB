@@ -198,12 +198,18 @@ const _ACHIEVEMENT_INFO = {
 	},
 };
 
-function _isTrustedUiMessage(event) {
-	return (
-		event.source === window &&
-		event.origin === window.location.origin &&
-		typeof event.data?.type === "string"
-	);
+function _getTrustedUiMessage(event) {
+	if (
+		event.source !== window ||
+		event.origin !== window.location.origin ||
+		!event.data ||
+		typeof event.data !== "object" ||
+		Array.isArray(event.data) ||
+		typeof event.data.type !== "string"
+	) {
+		return null;
+	}
+	return event.data;
 }
 
 function _showAchievementUnlocked(achievementId) {
@@ -256,12 +262,15 @@ function _initAchievementListener() {
 	if (uiFlags.achievementListenerInitialized) return;
 	uiFlags.achievementListenerInitialized = true;
 	window.addEventListener("message", (e) => {
-		if (!_isTrustedUiMessage(e)) return;
-		if (
-			e.data.type === "ttvab-achievement-unlocked" &&
-			typeof e.data.detail?.id === "string"
-		) {
-			_showAchievementUnlocked(e.data.detail.id);
-		}
+		const message = _getTrustedUiMessage(e);
+		if (!message || message.type !== "ttvab-achievement-unlocked") return;
+		const detail =
+			message.detail &&
+			typeof message.detail === "object" &&
+			!Array.isArray(message.detail)
+				? message.detail
+				: null;
+		if (typeof detail?.id !== "string") return;
+		_showAchievementUnlocked(detail.id);
 	});
 }
