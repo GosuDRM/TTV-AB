@@ -93,7 +93,11 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 				: [];
 			const today = getTodayKey();
 
-			if (!stats.daily[today]) {
+			if (
+				!stats.daily[today] ||
+				typeof stats.daily[today] !== "object" ||
+				Array.isArray(stats.daily[today])
+			) {
 				stats.daily[today] = { ads: 0, domAds: 0 };
 			}
 			if (typeof stats.daily[today].ads !== "number") {
