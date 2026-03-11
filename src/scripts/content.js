@@ -3655,7 +3655,7 @@ function _$bp() {
 		window.addEventListener("message", (event) => {
 			if (event.source !== window) return;
 			if (event.data?.type !== "ttvab-ad-blocked") return;
-			if (typeof event.data.detail?.count !== "number") return;
+			if (!Number.isFinite(event.data.detail?.count)) return;
 			const currentChannel = _getCurrentChannelName();
 			const blockedChannel =
 				typeof event.data.detail?.channel === "string"
@@ -3749,7 +3749,7 @@ function _$in() {
 
 		if (
 			e.data.type === "ttvab-init-count" &&
-			typeof e.data.detail?.count === "number"
+			Number.isFinite(e.data.detail?.count)
 		) {
 			if (_$s.adsBlocked === e.data.detail.count) return;
 			_$s.adsBlocked = e.data.detail.count;
@@ -3759,7 +3759,7 @@ function _$in() {
 
 		if (
 			e.data.type === "ttvab-init-dom-ads-count" &&
-			typeof e.data.detail?.count === "number"
+			Number.isFinite(e.data.detail?.count)
 		) {
 			if (_$s.domAdsBlocked === e.data.detail.count) return;
 			_$s.domAdsBlocked = e.data.detail.count;
