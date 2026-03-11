@@ -196,6 +196,54 @@ function validateSharedDefinitions() {
 			`Manifest short_name must match the canonical short name: ${manifest.short_name || "missing"}`,
 		);
 	}
+	const expectedPermissions = ["storage"];
+	if (
+		JSON.stringify([...(manifest.permissions || [])].sort()) !==
+		JSON.stringify(expectedPermissions)
+	) {
+		throw new Error(
+			`Manifest permissions must remain limited to ${expectedPermissions.join(", ")}: ${JSON.stringify(manifest.permissions || [])}`,
+		);
+	}
+	const expectedHostPermissions = ["*://*.twitch.tv/*"];
+	if (
+		JSON.stringify([...(manifest.host_permissions || [])].sort()) !==
+		JSON.stringify(expectedHostPermissions)
+	) {
+		throw new Error(
+			`Manifest host_permissions must remain limited to ${expectedHostPermissions.join(", ")}: ${JSON.stringify(manifest.host_permissions || [])}`,
+		);
+	}
+	const expectedContentScripts = [
+		{
+			matches: ["*://*.twitch.tv/*"],
+			js: ["src/scripts/content.js"],
+			run_at: "document_start",
+			world: "MAIN",
+		},
+		{
+			matches: ["*://*.twitch.tv/*"],
+			js: ["src/scripts/bridge.js"],
+			run_at: "document_start",
+			world: "ISOLATED",
+		},
+	];
+	const comparableContentScripts = (manifest.content_scripts || []).map(
+		({ matches = [], js = [], run_at = null, world = null }) => ({
+			matches: [...matches],
+			js: [...js],
+			run_at,
+			world,
+		}),
+	);
+	if (
+		JSON.stringify(comparableContentScripts) !==
+		JSON.stringify(expectedContentScripts)
+	) {
+		throw new Error(
+			`Manifest content_scripts drift detected: ${JSON.stringify(comparableContentScripts)}`,
+		);
+	}
 	if (
 		!constantsVersion ||
 		constantsVersion !== packageVersion ||
