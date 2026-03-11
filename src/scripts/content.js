@@ -2850,12 +2850,18 @@ const _$ai = {
 	},
 };
 
-function _isTrustedUiMessage(event) {
-	return (
-		event.source === window &&
-		event.origin === window.location.origin &&
-		typeof event.data?.type === "string"
-	);
+function _getTrustedUiMessage(event) {
+	if (
+		event.source !== window ||
+		event.origin !== window.location.origin ||
+		!event.data ||
+		typeof event.data !== "object" ||
+		Array.isArray(event.data) ||
+		typeof event.data.type !== "string"
+	) {
+		return null;
+	}
+	return event.data;
 }
 
 function _$au(achievementId) {
@@ -2908,13 +2914,16 @@ function _$al() {
 	if (uiFlags.achievementListenerInitialized) return;
 	uiFlags.achievementListenerInitialized = true;
 	window.addEventListener("message", (e) => {
-		if (!_isTrustedUiMessage(e)) return;
-		if (
-			e.data.type === "ttvab-achievement-unlocked" &&
-			typeof e.data.detail?.id === "string"
-		) {
-			_$au(e.data.detail.id);
-		}
+		const message = _getTrustedUiMessage(e);
+		if (!message || message.type !== "ttvab-achievement-unlocked") return;
+		const detail =
+			message.detail &&
+			typeof message.detail === "object" &&
+			!Array.isArray(message.detail)
+				? message.detail
+				: null;
+		if (typeof detail?.id !== "string") return;
+		_$au(detail.id);
 	});
 }
 
@@ -2940,21 +2949,39 @@ function _normalizeCounterValue(value) {
 		: 0;
 }
 
+function _getTrustedBridgeMessageData(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return null;
+	}
+	return value;
+}
+
+function _getTrustedBridgeMessageDetail(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return null;
+	}
+	return value;
+}
+
 function _$tl() {
 	window.addEventListener("message", (e) => {
 		if (e.source !== window) return;
-		if (e.data?.type === "ttvab-toggle") {
-			if (typeof e.data.detail?.enabled !== "boolean") return;
-			const enabled = e.data.detail.enabled;
-			if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
-			__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
-			_$bw({ key: "UpdateToggleState", value: enabled });
-			_$l(
-				`Ad blocking ${enabled ? "enabled" : "disabled"}`,
-				enabled ? "success" : "warning",
-			);
+		const message = _getTrustedBridgeMessageData(e.data);
+		const detail = _getTrustedBridgeMessageDetail(message?.detail);
+		if (
+			message?.type !== "ttvab-toggle" ||
+			typeof detail?.enabled !== "boolean"
+		) {
 			return;
 		}
+		const enabled = detail.enabled;
+		if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
+		__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
+		_$bw({ key: "UpdateToggleState", value: enabled });
+		_$l(
+			`Ad blocking ${enabled ? "enabled" : "disabled"}`,
+			enabled ? "success" : "warning",
+		);
 	});
 }
 
@@ -3896,13 +3923,17 @@ function _$bp() {
 
 		window.addEventListener("message", (event) => {
 			if (event.source !== window) return;
-			if (event.data?.type !== "ttvab-ad-blocked") return;
-			if (!Number.isFinite(event.data.detail?.count)) return;
+			const message = _getTrustedBridgeMessageData(event.data);
+			const detail = _getTrustedBridgeMessageDetail(message?.detail);
+			if (
+				message?.type !== "ttvab-ad-blocked" ||
+				!Number.isFinite(detail?.count)
+			) {
+				return;
+			}
 			const currentChannel = _getCurrentChannelName();
 			const blockedChannel =
-				typeof event.data.detail?.channel === "string"
-					? event.data.detail.channel
-					: null;
+				typeof detail.channel === "string" ? detail.channel : null;
 			if (blockedChannel && blockedChannel !== currentChannel) {
 				return;
 			}
@@ -3987,24 +4018,24 @@ function _$in() {
 
 	window.addEventListener("message", (e) => {
 		if (e.source !== window) return;
-		if (!e.data?.type?.startsWith("ttvab-init-")) return;
+		const message = _getTrustedBridgeMessageData(e.data);
+		const detail = _getTrustedBridgeMessageDetail(message?.detail);
+		if (!message || !detail) return;
 
-		if (
-			e.data.type === "ttvab-init-count" &&
-			Number.isFinite(e.data.detail?.count)
-		) {
-			const restoredCount = _normalizeCounterValue(e.data.detail.count);
+		if (message.type === "ttvab-init-count" && Number.isFinite(detail.count)) {
+			const restoredCount = _normalizeCounterValue(detail.count);
 			if (_$s.adsBlocked === restoredCount) return;
 			_$s.adsBlocked = restoredCount;
 			_$bw({ key: "UpdateAdsBlocked", value: _$s.adsBlocked });
 			_$l(`Restored ads count: ${_$s.adsBlocked}`, "info");
+			return;
 		}
 
 		if (
-			e.data.type === "ttvab-init-dom-ads-count" &&
-			Number.isFinite(e.data.detail?.count)
+			message.type === "ttvab-init-dom-ads-count" &&
+			Number.isFinite(detail.count)
 		) {
-			const restoredCount = _normalizeCounterValue(e.data.detail.count);
+			const restoredCount = _normalizeCounterValue(detail.count);
 			if (_$s.domAdsBlocked === restoredCount) return;
 			_$s.domAdsBlocked = restoredCount;
 			_$l(`Restored DOM cleanup count: ${_$s.domAdsBlocked}`, "info");
