@@ -239,14 +239,14 @@ chrome.storage.local.get(
 			window.postMessage(
 				{
 					type: "ttvab-init-count",
-					detail: { count: bridgeState.storedAdsCount },
+					detail: { count: normalizeCount(bridgeState.storedAdsCount) },
 				},
 				"*",
 			);
 			window.postMessage(
 				{
 					type: "ttvab-init-dom-ads-count",
-					detail: { count: bridgeState.storedDomAdsCount },
+					detail: { count: normalizeCount(bridgeState.storedDomAdsCount) },
 				},
 				"*",
 			);
