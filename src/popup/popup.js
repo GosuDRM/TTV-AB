@@ -5,7 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	const statusDot = document.getElementById("statusDot");
 	const statusText = document.getElementById("statusText");
 	const adsBlockedCount = document.getElementById("adsBlockedCount");
-	const popupsBlockedCount = document.getElementById("popupsBlockedCount");
+	const domAdsBlockedCount = document.getElementById("domAdsBlockedCount");
 	const timeSaved = document.getElementById("timeSaved");
 	const statsToggle = document.getElementById("statsToggle");
 	const statsPanel = document.getElementById("statsPanel");
@@ -145,13 +145,13 @@ document.addEventListener("DOMContentLoaded", () => {
 			id: "popup_10",
 			icon: "💥",
 			threshold: 10,
-			type: "popups",
+			type: "domAds",
 		},
 		{
 			id: "popup_50",
 			icon: "🔥",
 			threshold: 50,
-			type: "popups",
+			type: "domAds",
 		},
 		{
 			id: "time_1h",
@@ -207,7 +207,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const t = getTranslations();
 		const days = getLast7Days();
 		const values = days.map(
-			(d) => (dailyData[d]?.ads || 0) + (dailyData[d]?.popups || 0),
+			(d) => (dailyData[d]?.ads || 0) + (dailyData[d]?.domAds || 0),
 		);
 		const max = Math.max(...values, 1);
 		const avg = Math.round(values.reduce((a, b) => a + b, 0) / 7);
@@ -263,7 +263,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	function renderAchievements(
 		unlocked,
 		adsBlocked,
-		popupsBlocked,
+		domAdsBlocked,
 		channelCount,
 	) {
 		const badges = achievementsGrid.querySelectorAll(".achievement-badge");
@@ -288,8 +288,8 @@ document.addEventListener("DOMContentLoaded", () => {
 						case "ads":
 							value = adsBlocked;
 							break;
-						case "popups":
-							value = popupsBlocked;
+						case "domAds":
+							value = domAdsBlocked;
 							break;
 						case "time":
 							value = timeSavedSecs;
@@ -317,7 +317,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function loadStatistics() {
 		chrome.storage.local.get(
-			["ttvStats", "ttvAdsBlocked", "ttvPopupsBlocked"],
+			["ttvStats", "ttvAdsBlocked", "ttvDomAdsBlocked"],
 			(result) => {
 				if (chrome.runtime.lastError) {
 					console.error(
@@ -332,7 +332,7 @@ document.addEventListener("DOMContentLoaded", () => {
 					achievements: [],
 				};
 				const adsCount = safeResult.ttvAdsBlocked || 0;
-				const popupsCount = safeResult.ttvPopupsBlocked || 0;
+				const domAdsCount = safeResult.ttvDomAdsBlocked || 0;
 				const channelCount = Object.keys(stats.channels || {}).length;
 
 				renderChart(stats.daily || {});
@@ -340,7 +340,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				renderAchievements(
 					stats.achievements || [],
 					adsCount,
-					popupsCount,
+					domAdsCount,
 					channelCount,
 				);
 			},
@@ -348,7 +348,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	chrome.storage.local.get(
-		["ttvAdblockEnabled", "ttvAdsBlocked", "ttvPopupsBlocked"],
+		["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -362,9 +362,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			updateStatus(enabled);
 
 			const adsCount = safeResult.ttvAdsBlocked || 0;
-			const popupsCount = safeResult.ttvPopupsBlocked || 0;
+			const domAdsCount = safeResult.ttvDomAdsBlocked || 0;
 			adsBlockedCount.textContent = formatNumber(adsCount);
-			popupsBlockedCount.textContent = formatNumber(popupsCount);
+			domAdsBlockedCount.textContent = formatNumber(domAdsCount);
 			updateTimeSaved(adsCount);
 		},
 	);
@@ -383,9 +383,9 @@ document.addEventListener("DOMContentLoaded", () => {
 				animateCounter(adsBlockedCount, newCount);
 				updateTimeSaved(newCount);
 			}
-			if (changes.ttvPopupsBlocked) {
-				const newPopupsCount = changes.ttvPopupsBlocked.newValue || 0;
-				animateCounter(popupsBlockedCount, newPopupsCount);
+			if (changes.ttvDomAdsBlocked) {
+				const newDomAdsCount = changes.ttvDomAdsBlocked.newValue || 0;
+				animateCounter(domAdsBlockedCount, newDomAdsCount);
 			}
 			if (changes.ttvStats) {
 				loadStatistics();

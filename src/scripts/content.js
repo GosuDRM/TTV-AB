@@ -45,7 +45,7 @@ const _$s = {
 	conflicts: ["twitch", "isVariantA"],
 	reinsertPatterns: ["isVariantA", "besuper/", "${patch_url}"],
 	adsBlocked: 0,
-	popupsBlocked: 0,
+	domAdsBlocked: 0,
 };
 
 function _$bw(messages) {
@@ -140,6 +140,23 @@ function _$ab(channel) {
 			count: _$s.adsBlocked,
 			channel: channel || null,
 		});
+	}
+}
+
+function _incrementDomAdsBlocked(kind = "generic", channel = null) {
+	_$s.domAdsBlocked++;
+	if (typeof window !== "undefined") {
+		window.postMessage(
+			{
+				type: "ttvab-dom-ad-cleanup",
+				detail: {
+					count: _$s.domAdsBlocked,
+					kind,
+					channel: channel || null,
+				},
+			},
+			"*",
+		);
 	}
 }
 
@@ -2423,8 +2440,8 @@ const _$ai = {
 	block_500: { name: "Sentinel", icon: "🏰", desc: "Blocked 500 ads!" },
 	block_1000: { name: "Legend", icon: "🏆", desc: "Blocked 1000 ads!" },
 	block_5000: { name: "Mythic", icon: "👑", desc: "Blocked 5000 ads!" },
-	popup_10: { name: "Popup Crusher", icon: "💥", desc: "Blocked 10 popups!" },
-	popup_50: { name: "Popup Destroyer", icon: "🔥", desc: "Blocked 50 popups!" },
+	popup_10: { name: "DOM Cleaner", icon: "💥", desc: "Blocked 10 DOM ads!" },
+	popup_50: { name: "DOM Sweeper", icon: "🔥", desc: "Blocked 50 DOM ads!" },
 	time_1h: { name: "Hour Saver", icon: "⏱️", desc: "Saved 1 hour from ads!" },
 	time_10h: {
 		name: "Time Master",
@@ -2744,20 +2761,14 @@ function _$bp() {
 			styleMount.appendChild(style);
 		}
 
-		function _$pb() {
+		function _incrementDomCleanup(kind) {
 			const now = Date.now();
 			if (now - lastBlockTime < 1000) return;
 			lastBlockTime = now;
 
-			_$s.popupsBlocked++;
-			window.postMessage(
-				{
-					type: "ttvab-popup-blocked",
-					detail: { count: _$s.popupsBlocked },
-				},
-				"*",
-			);
-			_$l(`Popup blocked! Total: ${_$s.popupsBlocked}`, "success");
+			const channel = _getCurrentChannelName();
+			_incrementDomAdsBlocked(kind, channel);
+			_$l(`DOM ad cleanup (${kind}) total: ${_$s.domAdsBlocked}`, "success");
 		}
 
 		function _getCurrentChannelName() {
@@ -3235,6 +3246,7 @@ function _$bp() {
 					}
 
 					_hideElement(card);
+					_incrementDomCleanup("promoted-card");
 					return true;
 				}
 			}
@@ -3351,6 +3363,7 @@ function _$bp() {
 
 			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShell) {
 				didCountCurrentDisplayAdShell = true;
+				_incrementDomCleanup("display-shell");
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
 					_$ab(_getCurrentChannelName());
 				}
@@ -3511,7 +3524,7 @@ function _$bp() {
 							);
 							popup.setAttribute("data-ttvab-blocked", "true");
 
-							_$pb();
+							_incrementDomCleanup("overlay-ad");
 							return true;
 						}
 
@@ -3531,7 +3544,7 @@ function _$bp() {
 								"; display: none !important;",
 						);
 						fallback.setAttribute("data-ttvab-blocked", "true");
-						_$pb();
+						_incrementDomCleanup("overlay-ad");
 						return true;
 					}
 				}
@@ -3558,7 +3571,7 @@ function _$bp() {
 								(el.getAttribute("style") || "") +
 									"; display: none !important;",
 							);
-							_$pb();
+							_incrementDomCleanup("overlay-ad");
 							return true;
 						}
 					}
@@ -3582,7 +3595,7 @@ function _$bp() {
 						"style",
 						`${el.getAttribute("style") || ""}; display: none !important;`,
 					);
-					_$pb();
+					_incrementDomCleanup("overlay-ad");
 					return true;
 				}
 			}
@@ -3712,12 +3725,12 @@ function _$in() {
 		}
 
 		if (
-			e.data.type === "ttvab-init-popups-count" &&
+			e.data.type === "ttvab-init-dom-ads-count" &&
 			typeof e.data.detail?.count === "number"
 		) {
-			if (_$s.popupsBlocked === e.data.detail.count) return;
-			_$s.popupsBlocked = e.data.detail.count;
-			_$l(`Restored popups count: ${_$s.popupsBlocked}`, "info");
+			if (_$s.domAdsBlocked === e.data.detail.count) return;
+			_$s.domAdsBlocked = e.data.detail.count;
+			_$l(`Restored DOM cleanup count: ${_$s.domAdsBlocked}`, "info");
 		}
 	});
 

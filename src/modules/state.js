@@ -5,7 +5,7 @@ const _S = {
 	conflicts: ["twitch", "isVariantA"],
 	reinsertPatterns: ["isVariantA", "besuper/", "${patch_url}"],
 	adsBlocked: 0,
-	popupsBlocked: 0,
+	domAdsBlocked: 0,
 };
 
 function _broadcastWorkers(messages) {
@@ -100,5 +100,22 @@ function _incrementAdsBlocked(channel) {
 			count: _S.adsBlocked,
 			channel: channel || null,
 		});
+	}
+}
+
+function _incrementDomAdsBlocked(kind = "generic", channel = null) {
+	_S.domAdsBlocked++;
+	if (typeof window !== "undefined") {
+		window.postMessage(
+			{
+				type: "ttvab-dom-ad-cleanup",
+				detail: {
+					count: _S.domAdsBlocked,
+					kind,
+					channel: channel || null,
+				},
+			},
+			"*",
+		);
 	}
 }
