@@ -20,7 +20,13 @@ function _showDonation() {
 			return;
 		}
 
-		if (now - parseInt(lastReminder, 10) < _REMINDER_INTERVAL) return;
+		const lastReminderMs = Number.parseInt(lastReminder, 10);
+		if (!Number.isFinite(lastReminderMs)) {
+			localStorage.setItem(_REMINDER_KEY, now.toString());
+			return;
+		}
+
+		if (now - lastReminderMs < _REMINDER_INTERVAL) return;
 
 		setTimeout(() => {
 			const toast = document.createElement("div");
