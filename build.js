@@ -485,6 +485,9 @@ function validateSharedDefinitions() {
 		"AdCycleStartedAt",
 		"UpdateClientId",
 		"_incrementPopupsBlocked",
+		"firstBlockedAt",
+		"lastBlockedAt",
+		"ClientID:",
 	]) {
 		if (
 			popupSource.includes(forbidden) ||
