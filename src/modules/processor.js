@@ -117,7 +117,12 @@ async function _processM3U8(url, text, realFetch) {
 				self.postMessage
 			) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				self.postMessage({ key: "PauseResumePlayer" });
+				if ((wasUsingModifiedM3U8 || wasUsingFallbackStream) && __TTVAB_STATE__.ReloadAfterAd) {
+					info.LastPlayerReload = Date.now();
+					self.postMessage({ key: "ReloadPlayer" });
+				} else {
+					self.postMessage({ key: "PauseResumePlayer" });
+				}
 			}
 		}
 		return text;
@@ -220,14 +225,20 @@ async function _processM3U8(url, text, realFetch) {
 		}
 	} else {
 		if (info.IsShowingAd) {
-			_resetStreamAdState(info);
+			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
+				_resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				self.postMessage({ key: "PauseResumePlayer" });
+				if ((wasUsingModifiedM3U8 || wasUsingFallbackStream) && __TTVAB_STATE__.ReloadAfterAd) {
+					info.LastPlayerReload = Date.now();
+					self.postMessage({ key: "ReloadPlayer" });
+				} else {
+					self.postMessage({ key: "PauseResumePlayer" });
+				}
 			}
 		}
 	}

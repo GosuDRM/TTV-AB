@@ -67,6 +67,7 @@ function _$ds(scope) {
 		FallbackPlayerType: _$c.FALLBACK_TYPE,
 		ForceAccessTokenPlayerType: _$c.FORCE_TYPE,
 		SkipPlayerReloadOnHevc: false,
+		ReloadAfterAd: _$c.RELOAD_AFTER_AD ?? true,
 		PlayerBufferingDoPlayerReload:
 			_$c.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
 		PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
@@ -718,7 +719,12 @@ async function _$pm(url, text, realFetch) {
 				self.postMessage
 			) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				self.postMessage({ key: "PauseResumePlayer" });
+				if ((wasUsingModifiedM3U8 || wasUsingFallbackStream) && __TTVAB_STATE__.ReloadAfterAd) {
+					info.LastPlayerReload = Date.now();
+					self.postMessage({ key: "ReloadPlayer" });
+				} else {
+					self.postMessage({ key: "PauseResumePlayer" });
+				}
 			}
 		}
 		return text;
@@ -821,14 +827,20 @@ async function _$pm(url, text, realFetch) {
 		}
 	} else {
 		if (info.IsShowingAd) {
-			_$rsa(info);
+			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
+				_$rsa(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				self.postMessage({ key: "PauseResumePlayer" });
+				if ((wasUsingModifiedM3U8 || wasUsingFallbackStream) && __TTVAB_STATE__.ReloadAfterAd) {
+					info.LastPlayerReload = Date.now();
+					self.postMessage({ key: "ReloadPlayer" });
+				} else {
+					self.postMessage({ key: "PauseResumePlayer" });
+				}
 			}
 		}
 	}
@@ -1689,6 +1701,12 @@ function _$hw() {
 							_$dpt(true, false);
 						}
 						break;
+					case "ReloadPlayer":
+						_$l("Reloading player", "info");
+						if (typeof _$dpt === "function") {
+							_$dpt(false, true);
+						}
+						break;
 				}
 			});
 
@@ -2198,6 +2216,13 @@ function _$mpb() {
 
 				if (!playerCore) {
 					_$cpr = null;
+				} else if (
+					state?.props?.content?.type === "live" &&
+					player.getHTMLVideoElement()?.ended
+				) {
+					_$l("Player hit end of stream during live playback. Recovering...", "warning");
+					_$dpt(false, true, { reason: "ad-recovery" });
+					_$pbs.lastFixTime = Date.now();
 				} else if (
 					state?.props?.content?.type === "live" &&
 					!player.isPaused() &&
