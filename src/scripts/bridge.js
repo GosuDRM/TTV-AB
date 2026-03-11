@@ -26,11 +26,15 @@ function normalizeChannelName(value) {
 	return trimmed !== "" ? trimmed : null;
 }
 
+function createChannelsMap() {
+	return Object.create(null);
+}
+
 function normalizeChannelsMap(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return {};
+		return createChannelsMap();
 	}
-	const normalized = {};
+	const normalized = createChannelsMap();
 	for (const [channelName, count] of Object.entries(value)) {
 		const safeChannel = normalizeChannelName(channelName);
 		if (!safeChannel) continue;
@@ -466,7 +470,7 @@ function flushCounters() {
 
 						flushRetryCount = 0;
 						try {
-							const channelTotals = {};
+							const channelTotals = createChannelsMap();
 							for (const ch of channels) {
 								channelTotals[ch] = normalizeCount(channelTotals[ch]) + 1;
 							}
