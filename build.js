@@ -483,6 +483,8 @@ function validateSharedDefinitions() {
 		"RejectedBackupPlayerTypes",
 		"LastPlaylistUrl",
 		"AdCycleStartedAt",
+		"UpdateClientId",
+		"_incrementPopupsBlocked",
 	]) {
 		if (
 			popupSource.includes(forbidden) ||
