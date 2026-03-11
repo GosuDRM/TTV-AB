@@ -3655,8 +3655,12 @@ function _$bp() {
 		window.addEventListener("message", (event) => {
 			if (event.source !== window) return;
 			if (event.data?.type !== "ttvab-ad-blocked") return;
+			if (typeof event.data.detail?.count !== "number") return;
 			const currentChannel = _getCurrentChannelName();
-			const blockedChannel = event.data?.detail?.channel || null;
+			const blockedChannel =
+				typeof event.data.detail?.channel === "string"
+					? event.data.detail.channel
+					: null;
 			if (blockedChannel && blockedChannel !== currentChannel) {
 				return;
 			}
