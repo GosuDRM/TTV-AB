@@ -393,6 +393,13 @@ function validateSharedDefinitions() {
 			`README language count is out of sync with ${translationLanguages.length} supported locales`,
 		);
 	}
+	if (
+		!readmeSource.includes(`**${popupAchievements.length} Achievement Badges**`)
+	) {
+		throw new Error(
+			`README achievement count is out of sync with ${popupAchievements.length} configured achievements`,
+		);
+	}
 
 	const initReservedRoutesLiteral = extractLiteral(
 		initSource,
