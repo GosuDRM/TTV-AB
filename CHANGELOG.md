@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [4.2.5] - 2026-03-10
+## [4.2.5] - 2026-03-11
 
 ### Fixed
 - **Worker Crash Loops** - Hardened worker/bootstrap message handling and playlist parsing to prevent restart loops caused by malformed or non-standard frontpage, home, and outstream worker contexts.
