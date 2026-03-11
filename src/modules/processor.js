@@ -374,8 +374,16 @@ async function _findBackupStream(
 							]
 								.filter(Boolean)
 								.join("+");
+							const tokenErrors = Array.isArray(extractedToken?.errors)
+								? extractedToken.errors.slice(0, 2).join(" | ")
+								: "";
+							const tokenContext = tokenErrors
+								? ` errors=${tokenErrors}`
+								: extractedToken?.summary
+									? ` payload=${extractedToken.summary}`
+									: "";
 							_log(
-								`[Trace] Missing token ${missingParts || "parts"} for ${pt}`,
+								`[Trace] Missing token ${missingParts || "parts"} for ${pt}${tokenContext}`,
 								"warning",
 							);
 						}

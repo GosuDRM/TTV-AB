@@ -2,14 +2,85 @@
 
 const _GQL_URL = "https://gql.twitch.tv/gql";
 
+function _collectPlaybackAccessTokenSources(payload) {
+	const queue = Array.isArray(payload) ? [...payload] : [payload];
+	const seen = new Set();
+	const tokenSources = [];
+
+	const pushTokenSource = (value) => {
+		if (!value || typeof value !== "object" || tokenSources.includes(value)) return;
+		tokenSources.push(value);
+	};
+
+	while (queue.length > 0) {
+		const current = queue.shift();
+		if (!current || typeof current !== "object" || seen.has(current)) continue;
+		seen.add(current);
+
+		pushTokenSource(current?.data?.streamPlaybackAccessToken);
+		pushTokenSource(current?.data?.videoPlaybackAccessToken);
+		pushTokenSource(current?.streamPlaybackAccessToken);
+		pushTokenSource(current?.videoPlaybackAccessToken);
+
+		if (
+			current?.__typename === "PlaybackAccessToken" ||
+			typeof current?.signature === "string" ||
+			typeof current?.sig === "string" ||
+			typeof current?.value === "string" ||
+			typeof current?.token === "string"
+		) {
+			pushTokenSource(current);
+		}
+
+		const values = Array.isArray(current) ? current : Object.values(current);
+		for (const value of values) {
+			if (value && typeof value === "object") queue.push(value);
+		}
+	}
+
+	return tokenSources;
+}
+
+function _summarizePlaybackAccessTokenPayload(payload) {
+	if (Array.isArray(payload)) {
+		const firstKeys =
+			payload[0] && typeof payload[0] === "object"
+				? Object.keys(payload[0]).slice(0, 6).join(",")
+				: "";
+		return `array(len=${payload.length}${firstKeys ? `, first=${firstKeys}` : ""})`;
+	}
+
+	if (payload && typeof payload === "object") {
+		const keys = Object.keys(payload).slice(0, 8).join(",");
+		return `object(${keys || "no-keys"})`;
+	}
+
+	return typeof payload;
+}
+
+function _getPlaybackAccessTokenErrors(payload) {
+	const entries = Array.isArray(payload) ? payload : [payload];
+	const messages = [];
+
+	for (const entry of entries) {
+		if (!Array.isArray(entry?.errors)) continue;
+		for (const error of entry.errors) {
+			const message =
+				error?.message ||
+				error?.extensions?.message ||
+				error?.extensions?.error ||
+				null;
+			if (typeof message === "string" && message) {
+				messages.push(message);
+			}
+		}
+	}
+
+	return messages;
+}
+
 function _extractPlaybackAccessToken(payload) {
-	const tokenData = Array.isArray(payload) ? payload[0] : payload;
-	const tokenSources = [
-		tokenData?.data?.streamPlaybackAccessToken,
-		tokenData?.data?.videoPlaybackAccessToken,
-		tokenData?.streamPlaybackAccessToken,
-		tokenData?.videoPlaybackAccessToken,
-	].filter(Boolean);
+	const tokenSources = _collectPlaybackAccessTokenSources(payload);
 
 	for (const token of tokenSources) {
 		const signature = token?.signature || token?.sig || null;
@@ -28,6 +99,8 @@ function _extractPlaybackAccessToken(payload) {
 		hasAnyValue: tokenSources.some((token) =>
 			Boolean(token?.value || token?.token),
 		),
+		errors: _getPlaybackAccessTokenErrors(payload),
+		summary: _summarizePlaybackAccessTokenPayload(payload),
 	};
 }
 

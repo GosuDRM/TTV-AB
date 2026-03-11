@@ -781,13 +781,8 @@ function _hookMainFetch() {
 			const payload = await response.clone().json();
 			const operations = Array.isArray(payload) ? payload : [payload];
 			for (const op of operations) {
-				const token =
-					op?.data?.streamPlaybackAccessToken ||
-					op?.data?.videoPlaybackAccessToken ||
-					op?.streamPlaybackAccessToken ||
-					op?.videoPlaybackAccessToken ||
-					null;
-				const tokenValue = token?.value || token?.token || null;
+				const extractedToken = _extractPlaybackAccessToken(op);
+				const tokenValue = extractedToken?.value || null;
 				if (typeof tokenValue !== "string" || !tokenValue) continue;
 				try {
 					const tokenPayload = JSON.parse(tokenValue);
