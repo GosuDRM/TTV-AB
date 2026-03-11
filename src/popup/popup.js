@@ -306,8 +306,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		domAdsBlocked,
 		channelCount,
 	) {
+		const safeAdsBlocked = normalizeCount(adsBlocked);
+		const safeDomAdsBlocked = normalizeCount(domAdsBlocked);
 		const badges = achievementsGrid.querySelectorAll(".achievement-badge");
-		const timeSavedSecs = adsBlocked * AVG_AD_DURATION;
+		const timeSavedSecs = safeAdsBlocked * AVG_AD_DURATION;
 		const t = getTranslations();
 		let unlockedCount = 0;
 		let nextAch = null;
@@ -326,10 +328,10 @@ document.addEventListener("DOMContentLoaded", () => {
 					let value = 0;
 					switch (ach.type) {
 						case "ads":
-							value = adsBlocked;
+							value = safeAdsBlocked;
 							break;
 						case "domAds":
-							value = domAdsBlocked;
+							value = safeDomAdsBlocked;
 							break;
 						case "time":
 							value = timeSavedSecs;
