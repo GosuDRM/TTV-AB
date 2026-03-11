@@ -23,6 +23,14 @@ All notable changes to TTV AB will be documented in this file.
 - **Counter Persistence Reliability** - Counter deltas are now requeued after storage write failures instead of being silently dropped.
 - **Stats Retry Safety** - Stats updates now retry from fresh storage state after write failures, avoiding stale snapshot overwrites and reducing lost achievement/stat updates.
 - **Stats Read Guards** - Hardened `getAdsBlocked`, `updateStats`, `flushCounters`, popup init, and popup statistics reads against empty or failed storage results.
+- **Stats Schema Hardening** - Popup and bridge now normalize malformed stats shapes, finite counts, per-channel totals, chart data, and achievement lists before rendering or writing.
+- **Retry Loop Bounding** - Bridge counter flushes and stats refreshes now cap retry chaining on persistent storage failures instead of requeuing forever.
+
+### Runtime / Build Integrity
+- **Worker Helper Injection Guard** - Build-time validation now fails if worker-injected helpers like `_getFallbackPromotionPolicy` or `_extractPlaybackAccessToken` are referenced without being bundled.
+- **Shared Definition Parity Checks** - Build-time guards now keep popup, bridge, UI, locales, README, changelog, and manifest metadata synchronized for achievements, translations, routes, versions, and documented counts.
+- **Native Player-Type Truth Source** - Native player-type state is now learned from token responses instead of request bodies, so observational `site` requests no longer overwrite the effective `popout` state.
+- **Message Payload Validation** - Page-side message listeners now require well-typed payloads for toggles, counts, channels, and achievement ids before mutating runtime state.
 
 ### Stability
 - **Hidden-Tab Crash Recovery** - Hidden-tab crash recovery now has a fallback refresh path and avoids duplicate refresh triggers when the tab becomes visible before the timer fires.
