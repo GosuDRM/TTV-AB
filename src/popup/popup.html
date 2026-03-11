@@ -755,10 +755,10 @@
 
 <body>
     <div class="header">
-        <div class="logo">TTV</div>
+        <div class="logo" aria-hidden="true">TTV</div>
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
-            <div class="version" id="versionText">v</div>
+            <div class="version" id="versionText" aria-label="Version">v</div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically for Twitch.tv</div>
         </div>
         <button class="donate-btn" id="donateBtn" title="Support the developer">
@@ -773,7 +773,7 @@
         <div class="status-row">
             <span class="status-label" data-i18n="status">Status</span>
             <div class="status-indicator">
-                <div class="status-dot" id="statusDot"></div>
+                <div class="status-dot" id="statusDot" aria-hidden="true"></div>
                 <span class="status-text" id="statusText" data-i18n="active" aria-live="polite" aria-atomic="true">Active</span>
             </div>
         </div>
