@@ -11,6 +11,11 @@ All notable changes to TTV AB will be documented in this file.
 - **Paused-Player Recovery** - Recovery reloads are no longer suppressed just because Twitch reports the player as paused.
 - **Ad-End Channel Handling** - Worker `AdEnded` events now carry channel context so stale-channel protection can correctly reject old ad-end events.
 - **Native-Restore Cleanup** - Disabling ad blocking during an active ad cycle now clears stale ad-cycle and page-side recovery state more reliably when returning to native playback.
+- **Playback Token Parsing** - `_extractPlaybackAccessToken` now unwraps nested, batched, and array GraphQL payloads more defensively and preserves payload/error diagnostics when Twitch returns unexpected response shapes.
+- **Worker Backup Token Requests** - Backup `PlaybackAccessToken` fetches now relay through the page fetch context instead of depending on direct worker request behavior that could return unusable `server error` responses.
+- **Backup Switch Recovery** - Selecting a usable backup player type now triggers a guarded player reload and tracks backup-stream state so the player actually leaves Twitch's static ad shell instead of getting stuck with ad audio still playing.
+- **Post-Ad Freeze Recovery** - Added a direct ad-end reload path so the player is less likely to remain frozen or visually stale after Twitch hands playback back to the native stream.
+- **Fallback Candidate Tightening** - Reduced dead-end fallback churn by removing weaker backup candidates and tightening minimal-request fallback selection around the more reliable recovery paths.
 
 ### Sync / State / Toggle
 - **Duplicate Toggle Propagation** - Removed overlapping popup and bridge rebroadcast paths so toggle changes are applied once through the canonical storage-sync flow.
@@ -29,6 +34,7 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Runtime / Build Integrity
 - **Worker Helper Injection Guard** - Build-time validation now fails if worker-injected helpers like `_getFallbackPromotionPolicy` or `_extractPlaybackAccessToken` are referenced without being bundled.
+- **Worker Helper Dependency Coverage** - Build validation now also checks the helper dependency chain used by playback-token parsing so worker bundles cannot reference newly introduced token helpers without injecting them too.
 - **Shared Definition Parity Checks** - Build-time guards now keep popup, bridge, UI, locales, README, changelog, and manifest metadata synchronized for achievements, translations, routes, versions, and documented counts.
 - **Native Player-Type Truth Source** - Native player-type state is now learned from token responses instead of request bodies, so observational `site` requests no longer overwrite the effective `popout` state.
 - **Message Payload Validation** - Page-side message listeners now require trusted same-window sources plus well-typed payloads for toggles, counts, channels, and achievement ids before mutating runtime state.
@@ -44,6 +50,10 @@ All notable changes to TTV AB will be documented in this file.
 ### Stability
 - **Hidden-Tab Crash Recovery** - Hidden-tab crash recovery now has a fallback refresh path and avoids duplicate refresh triggers when the tab becomes visible before the timer fires.
 - **Wrong-Route Rescan Safety** - Channel-tagged ad-blocked rescans are now ignored on the wrong route instead of triggering follow-up cleanup outside the active channel context.
+
+### Tooling
+- **Biome Cleanup** - Resolved remaining Biome formatting and lint violations so the repo stays clean under the current lint baseline.
+- **Knip 6 Readiness** - Updated the `knip` dependency and schema to `6.0.0-0` and reverified the production scan with the new analyzer baseline.
 
 ## [4.2.4] - 2026-03-10
 

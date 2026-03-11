@@ -55,9 +55,12 @@ The extension intercepts Twitch's HLS video playlists and:
 ### v4.2.5
 - **Worker Crash Loop Fixes** - Hardened worker/bootstrap message handling and playlist parsing so malformed frontpage, home, and outstream worker contexts are less likely to crash and restart continuously.
 - **Worker State Sync** - New and restarted workers now receive current toggle, counter, ad-cycle, and pinned backup state immediately.
+- **Backup Recovery Hardening** - Tightened playback token parsing, backup token request routing, and fallback selection so Twitch's newer GraphQL and worker behaviors are handled more reliably during ads.
+- **Player Recovery Fixes** - Added guarded reloads when backup playback is selected and when ads end to reduce frozen, static, or audio-only recovery failures.
 - **Toggle / Startup Sync Fixes** - Removed duplicate toggle propagation paths and reduced redundant startup state replay.
 - **Stats & Storage Hardening** - Added stronger popup/bridge storage guards and safer stats retry behavior to reduce lost counts, stale stats, and achievement drift.
-- **Recovery / Stability Fixes** - Improved hidden-tab crash recovery, stale ad-cycle cleanup, paused-player recovery, and stale-channel handling during restore/ad-end flows.
+- **Recovery / Stability Fixes** - Improved hidden-tab crash recovery, stale ad-cycle cleanup, paused-player recovery, stale-channel handling during restore/ad-end flows, and post-ad player restore behavior.
+- **Tooling Maintenance** - Build validation, Biome cleanup, and `knip` checks were tightened so worker helper mismatches and dead-code drift are caught earlier.
 
 ### v4.2.4
 - **Display Ad Detection Tightening** - Refined stream-display and PIP shell detection to require stronger visible ad signals before counting or collapsing anything.
@@ -75,6 +78,17 @@ The extension intercepts Twitch's HLS video playlists and:
 - **Cross-Tab Bug Fixes** - Fixed cross-tab counter races, stats clobber, health check false positives, and toggle state propagation across all open tabs.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
+
+## Development
+
+```sh
+npm install
+npm run build
+npm run lint
+npm run knip
+```
+
+`npm run knip` is expected to pass cleanly with the current `knip` 6 prerelease configuration.
 
 ## ❤️ Support
 
