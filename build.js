@@ -205,6 +205,34 @@ function validateSharedDefinitions() {
 			`Version mismatch: constants=${constantsVersion || "missing"}, package=${packageVersion}, manifest=${manifestVersion}`,
 		);
 	}
+	if (packageJson.homepage !== canonicalRepoUrl) {
+		throw new Error(
+			`package homepage must match the canonical repository: ${packageJson.homepage || "missing"}`,
+		);
+	}
+	if (packageJson.repository?.type !== "git") {
+		throw new Error(
+			`package repository.type must be git: ${packageJson.repository?.type || "missing"}`,
+		);
+	}
+	if (
+		packageJson.repository?.url !== `${canonicalRepoUrl}.git` &&
+		packageJson.repository?.url !== `git+${canonicalRepoUrl}.git`
+	) {
+		throw new Error(
+			`package repository.url must match the canonical repository: ${packageJson.repository?.url || "missing"}`,
+		);
+	}
+	if (packageJson.bugs?.url !== `${canonicalRepoUrl}/issues`) {
+		throw new Error(
+			`package bugs.url must match the canonical issue tracker: ${packageJson.bugs?.url || "missing"}`,
+		);
+	}
+	if (packageJson.license !== "MIT") {
+		throw new Error(
+			`package license must remain MIT: ${packageJson.license || "missing"}`,
+		);
+	}
 	if (packageLock.name !== packageJson.name) {
 		throw new Error(
 			`package-lock name mismatch: package=${packageJson.name || "missing"}, lock=${packageLock.name || "missing"}`,
