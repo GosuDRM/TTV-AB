@@ -210,10 +210,11 @@ document.addEventListener("DOMContentLoaded", () => {
 	];
 
 	function formatTimeSaved(seconds) {
-		if (seconds < 60) return `~${seconds}s`;
-		const hours = Math.floor(seconds / 3600);
-		const minutes = Math.floor((seconds % 3600) / 60);
-		const secs = seconds % 60;
+		const safeSeconds = normalizeCount(seconds);
+		if (safeSeconds < 60) return `~${safeSeconds}s`;
+		const hours = Math.floor(safeSeconds / 3600);
+		const minutes = Math.floor((safeSeconds % 3600) / 60);
+		const secs = safeSeconds % 60;
 		if (hours > 0) return `~${hours}h ${minutes}m`;
 		return `~${minutes}m ${secs}s`;
 	}
