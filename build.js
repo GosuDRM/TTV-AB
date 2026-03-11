@@ -396,6 +396,21 @@ function validateSharedDefinitions() {
 			`Unexpected dynamic innerHTML footprint: popup=${dynamicPopupInnerHtmlCount}, ui=${dynamicUiInnerHtmlCount}`,
 		);
 	}
+	for (const [name, source] of [
+		["init.js", initSource],
+		["ui.js", uiSource],
+		["bridge.js", bridgeSource],
+	]) {
+		const messageListenerCount = (
+			source.match(/window\.addEventListener\("message"/g) || []
+		).length;
+		const sourceGuardCount = (source.match(/source !== window/g) || []).length;
+		if (messageListenerCount !== sourceGuardCount) {
+			throw new Error(
+				`${name} has ${messageListenerCount} message listeners but ${sourceGuardCount} source guards`,
+			);
+		}
+	}
 
 	const popupDomIds = new Set(
 		[...popupSource.matchAll(/getElementById\("([^"]+)"\)/g)].map(
