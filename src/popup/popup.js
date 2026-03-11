@@ -404,7 +404,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			weeklyChart.append(bar);
 		}
 
-		chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), { avg });
+		chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), {
+			avg: formatNumber(avg),
+		});
 	}
 
 	function createChannelItem(rank, name, countText) {
