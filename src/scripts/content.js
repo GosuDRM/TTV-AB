@@ -2826,6 +2826,14 @@ const _$ai = {
 	},
 };
 
+function _isTrustedUiMessage(event) {
+	return (
+		event.source === window &&
+		event.origin === window.location.origin &&
+		typeof event.data?.type === "string"
+	);
+}
+
 function _$au(achievementId) {
 	try {
 		const ach = _$ai[achievementId];
@@ -2872,9 +2880,9 @@ function _$au(achievementId) {
 
 function _$al() {
 	window.addEventListener("message", (e) => {
-		if (e.source !== window) return;
+		if (!_isTrustedUiMessage(e)) return;
 		if (
-			e.data?.type === "ttvab-achievement-unlocked" &&
+			e.data.type === "ttvab-achievement-unlocked" &&
 			typeof e.data.detail?.id === "string"
 		) {
 			_$au(e.data.detail.id);

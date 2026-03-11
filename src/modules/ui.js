@@ -174,6 +174,14 @@ const _ACHIEVEMENT_INFO = {
 	},
 };
 
+function _isTrustedUiMessage(event) {
+	return (
+		event.source === window &&
+		event.origin === window.location.origin &&
+		typeof event.data?.type === "string"
+	);
+}
+
 function _showAchievementUnlocked(achievementId) {
 	try {
 		const ach = _ACHIEVEMENT_INFO[achievementId];
@@ -220,9 +228,9 @@ function _showAchievementUnlocked(achievementId) {
 
 function _initAchievementListener() {
 	window.addEventListener("message", (e) => {
-		if (e.source !== window) return;
+		if (!_isTrustedUiMessage(e)) return;
 		if (
-			e.data?.type === "ttvab-achievement-unlocked" &&
+			e.data.type === "ttvab-achievement-unlocked" &&
 			typeof e.data.detail?.id === "string"
 		) {
 			_showAchievementUnlocked(e.data.detail.id);
