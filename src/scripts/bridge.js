@@ -73,6 +73,17 @@ function updateStats(
 					"[TTV AB] Stats read error:",
 					chrome.runtime.lastError.message,
 				);
+				if (retryDepth < 2) {
+					StorageQueue.add(() =>
+						updateStats(
+							type,
+							channel,
+							totalAdsBlocked,
+							totalDomAdsBlocked,
+							retryDepth + 1,
+						),
+					);
+				}
 				resolve();
 				return;
 			}
