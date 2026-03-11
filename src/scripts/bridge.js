@@ -179,9 +179,14 @@ function updateStats(
 				);
 				if (channelEntries.length > MAX_CHANNELS) {
 					channelEntries.sort((a, b) => b[1] - a[1]);
-					stats.channels = Object.fromEntries(
-						channelEntries.slice(0, MAX_CHANNELS),
-					);
+					const trimmedChannels = createChannelsMap();
+					for (const [channelName, count] of channelEntries.slice(
+						0,
+						MAX_CHANNELS,
+					)) {
+						trimmedChannels[channelName] = count;
+					}
+					stats.channels = trimmedChannels;
 				}
 			}
 
