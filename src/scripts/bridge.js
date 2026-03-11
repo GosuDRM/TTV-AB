@@ -197,8 +197,12 @@ chrome.storage.local.get(
 		}
 		const safeResult = result || {};
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
-		bridgeState.storedAdsCount = safeResult.ttvAdsBlocked || 0;
-		bridgeState.storedDomAdsCount = safeResult.ttvDomAdsBlocked || 0;
+		bridgeState.storedAdsCount = Number.isFinite(safeResult.ttvAdsBlocked)
+			? safeResult.ttvAdsBlocked
+			: 0;
+		bridgeState.storedDomAdsCount = Number.isFinite(safeResult.ttvDomAdsBlocked)
+			? safeResult.ttvDomAdsBlocked
+			: 0;
 
 		if (Object.hasOwn(safeResult, "ttvReloadAfterAdsEnabled")) {
 			chrome.storage.local.remove(["ttvReloadAfterAdsEnabled"], () => {
