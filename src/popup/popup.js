@@ -192,7 +192,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	} catch {}
 
 	langSelector.addEventListener("change", (e) => {
-		const lang = e.target.value;
+		const nextSelector = e.currentTarget;
+		if (!(nextSelector instanceof HTMLSelectElement)) return;
+		const lang = nextSelector.value;
 		setStoredLanguage(lang);
 		const effectiveLang =
 			lang === "auto" ? normalizeLanguage(navigator.language) : lang;
