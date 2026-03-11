@@ -34,7 +34,6 @@ function _broadcastWorkers(messages) {
 function _declareState(scope) {
 	scope.__TTVAB_STATE__ = {
 		AdSignifier: _C.AD_SIGNIFIER,
-		ClientID: _C.CLIENT_ID,
 		BackupPlayerTypes: [..._C.PLAYER_TYPES],
 		FallbackPlayerType: _C.FALLBACK_TYPE,
 		ForceAccessTokenPlayerType: _C.FORCE_TYPE,

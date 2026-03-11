@@ -74,7 +74,6 @@ function _$bw(messages) {
 function _$ds(scope) {
 	scope.__TTVAB_STATE__ = {
 		AdSignifier: _$c.AD_SIGNIFIER,
-		ClientID: _$c.CLIENT_ID,
 		BackupPlayerTypes: [..._$c.PLAYER_TYPES],
 		FallbackPlayerType: _$c.FALLBACK_TYPE,
 		ForceAccessTokenPlayerType: _$c.FORCE_TYPE,
