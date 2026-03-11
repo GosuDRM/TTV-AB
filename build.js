@@ -147,6 +147,14 @@ function validateSharedDefinitions() {
 	const manifest = JSON.parse(
 		fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"),
 	);
+	if (
+		manifest.default_locale &&
+		!fs.existsSync(path.join(__dirname, "_locales", manifest.default_locale))
+	) {
+		throw new Error(
+			`Manifest default_locale directory is missing: ${manifest.default_locale}`,
+		);
+	}
 	for (const contentScript of manifest.content_scripts || []) {
 		for (const file of contentScript.js || []) {
 			if (!fs.existsSync(path.join(__dirname, file))) {
