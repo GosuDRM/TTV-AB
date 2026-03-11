@@ -2720,18 +2720,23 @@ function _$dn() {
 			document.body.appendChild(toast);
 			_setUiStorageItem(_$rk, now.toString());
 
-			document.getElementById("ttvab-reminder-close").onclick = () =>
-				toast.remove();
-			document.getElementById("ttvab-reminder-btn").onclick = () => {
-				window.open(
-					"https://ko-fi.com/gosudrm",
-					"_blank",
-					"noopener,noreferrer",
-				);
-				if (toast.isConnected) {
-					toast.remove();
-				}
-			};
+			const reminderClose = document.getElementById("ttvab-reminder-close");
+			if (reminderClose) {
+				reminderClose.onclick = () => toast.remove();
+			}
+			const reminderButton = document.getElementById("ttvab-reminder-btn");
+			if (reminderButton) {
+				reminderButton.onclick = () => {
+					window.open(
+						"https://ko-fi.com/gosudrm",
+						"_blank",
+						"noopener,noreferrer",
+					);
+					if (toast.isConnected) {
+						toast.remove();
+					}
+				};
+			}
 
 			setTimeout(() => {
 				if (document.getElementById("ttvab-reminder")) {
@@ -2780,7 +2785,10 @@ function _$wc() {
 				setTimeout(() => toast.remove(), 300);
 			};
 
-			document.getElementById("ttvab-welcome-close").onclick = closeHandler;
+			const welcomeClose = document.getElementById("ttvab-welcome-close");
+			if (welcomeClose) {
+				welcomeClose.onclick = closeHandler;
+			}
 
 			setTimeout(() => {
 				if (document.getElementById("ttvab-welcome")) closeHandler();
