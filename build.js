@@ -529,7 +529,7 @@ function validateSharedDefinitions() {
 	if (
 		dynamicPopupInnerHtmlCount !== 0 ||
 		dynamicUiInnerHtmlCount !== 1 ||
-		dynamicPopupTitleAttrCount !== 1
+		dynamicPopupTitleAttrCount !== 0
 	) {
 		throw new Error(
 			`Unexpected dynamic HTML footprint: popupInner=${dynamicPopupInnerHtmlCount}, uiInner=${dynamicUiInnerHtmlCount}, popupTitle=${dynamicPopupTitleAttrCount}`,
