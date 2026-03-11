@@ -398,12 +398,18 @@ document.addEventListener("DOMContentLoaded", () => {
 				updateStatus(enabled);
 			}
 			if (changes.ttvAdsBlocked) {
-				const newCount = changes.ttvAdsBlocked.newValue || 0;
+				const newCount = Number.isFinite(changes.ttvAdsBlocked.newValue)
+					? changes.ttvAdsBlocked.newValue
+					: 0;
 				animateCounter(adsBlockedCount, newCount);
 				updateTimeSaved(newCount);
 			}
 			if (changes.ttvDomAdsBlocked) {
-				const newDomAdsCount = changes.ttvDomAdsBlocked.newValue || 0;
+				const newDomAdsCount = Number.isFinite(
+					changes.ttvDomAdsBlocked.newValue,
+				)
+					? changes.ttvDomAdsBlocked.newValue
+					: 0;
 				animateCounter(domAdsBlockedCount, newDomAdsCount);
 			}
 			if (changes.ttvStats) {
