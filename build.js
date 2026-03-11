@@ -674,6 +674,20 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	const englishAchievementFallbackLabels = popupAchievements.map(
+		(achievement) => {
+			const text = translations.en?.achievementsMap?.[achievement.id];
+			return `${text?.name || achievement.id} - ${text?.desc || ""}`;
+		},
+	);
+	if (
+		JSON.stringify(popupAchievementFallbackLabels.map(({ title }) => title)) !==
+		JSON.stringify(englishAchievementFallbackLabels)
+	) {
+		throw new Error(
+			"Popup achievement badge fallback labels are out of sync with English translations",
+		);
+	}
 
 	const popupNormalizeCount = extractLiteral(
 		popupSource,
