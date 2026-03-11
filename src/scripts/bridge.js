@@ -57,6 +57,9 @@ const StorageQueue = {
 };
 
 function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
+	if (!["ads", "domAds"].includes(type)) {
+		return Promise.resolve();
+	}
 	return new Promise((resolve) => {
 		chrome.storage.local.get(["ttvStats"], (result) => {
 			if (chrome.runtime.lastError) {
