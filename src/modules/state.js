@@ -55,7 +55,6 @@ function _declareState(scope) {
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
 		LastAdRecoveryReloadAt: 0,
-		AdCycleStartedAt: 0,
 		CurrentAdChannel: null,
 		PinnedBackupPlayerType: null,
 		PinnedBackupPlayerChannel: null,
