@@ -87,7 +87,16 @@ function getVersion() {
 	const constantsPath = path.join(MODULES_DIR, "constants.js");
 	const content = fs.readFileSync(constantsPath, "utf8");
 	const match = content.match(/VERSION:\s*['"]([^'"]+)['"]/);
-	return match ? match[1] : "3.0.0";
+	if (match) return match[1];
+
+	try {
+		const packageJson = JSON.parse(
+			fs.readFileSync(path.join(__dirname, "package.json"), "utf8"),
+		);
+		return packageJson.version || "0.0.0";
+	} catch {
+		return "0.0.0";
+	}
 }
 
 function minifyCode(code) {
