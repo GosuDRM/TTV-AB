@@ -398,8 +398,12 @@ document.addEventListener("DOMContentLoaded", () => {
 			toggle.checked = enabled;
 			updateStatus(enabled);
 
-			const adsCount = safeResult.ttvAdsBlocked || 0;
-			const domAdsCount = safeResult.ttvDomAdsBlocked || 0;
+			const adsCount = Number.isFinite(safeResult.ttvAdsBlocked)
+				? safeResult.ttvAdsBlocked
+				: 0;
+			const domAdsCount = Number.isFinite(safeResult.ttvDomAdsBlocked)
+				? safeResult.ttvDomAdsBlocked
+				: 0;
 			adsBlockedCount.textContent = formatNumber(adsCount);
 			domAdsBlockedCount.textContent = formatNumber(domAdsCount);
 			updateTimeSaved(adsCount);
