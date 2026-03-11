@@ -293,6 +293,17 @@ function validateSharedDefinitions() {
 		);
 	}
 
+	const popupDomIds = new Set(
+		[...popupSource.matchAll(/getElementById\("([^"]+)"\)/g)].map(
+			(match) => match[1],
+		),
+	);
+	for (const domId of popupDomIds) {
+		if (!popupHtmlSource.includes(`id="${domId}"`)) {
+			throw new Error(`Popup HTML is missing required element id ${domId}`);
+		}
+	}
+
 	const injectedHelpers = new Set(
 		[...hooksSource.matchAll(/\$\{(_[A-Za-z0-9]+)\.toString\(\)\}/g)].map(
 			(match) => match[1],
