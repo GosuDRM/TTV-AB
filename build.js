@@ -176,6 +176,11 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	if (manifest.action?.default_title !== "__MSG_extName__") {
+		throw new Error(
+			`Manifest action.default_title must remain localized via __MSG_extName__: ${manifest.action?.default_title || "missing"}`,
+		);
+	}
 	for (const iconGroup of [
 		manifest.icons || {},
 		manifest.action?.default_icon || {},
