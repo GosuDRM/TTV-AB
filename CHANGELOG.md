@@ -7,6 +7,7 @@ All notable changes to TTV AB will be documented in this file.
 ### Fixed
 - **Popup Startup Guards** - The popup now exits safely with a clear console error if required UI elements are missing instead of throwing null-access errors.
 - **Achievement Translation Fallbacks** - Popup achievement rendering now falls back safely when a locale entry is missing or malformed.
+- **Channel Stats Canonicalization** - Popup and bridge stats now normalize channel names to a lowercase canonical form and merge malformed duplicate entries so per-channel counts do not split across `Channel`/`channel` variants.
 
 ### Changed
 - **Popup Build Validation** - Build-time validation now checks that all popup element IDs required by `popup.js` still exist in `popup.html`.

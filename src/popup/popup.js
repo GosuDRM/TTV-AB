@@ -294,6 +294,26 @@ document.addEventListener("DOMContentLoaded", () => {
 			: 0;
 	}
 
+	function normalizeChannelName(value) {
+		if (typeof value !== "string") return null;
+		const trimmed = value.trim().toLowerCase();
+		return trimmed !== "" ? trimmed : null;
+	}
+
+	function normalizeChannelsMap(value) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) {
+			return {};
+		}
+		const normalized = {};
+		for (const [channelName, count] of Object.entries(value)) {
+			const safeChannel = normalizeChannelName(channelName);
+			if (!safeChannel) continue;
+			normalized[safeChannel] =
+				normalizeCount(normalized[safeChannel]) + normalizeCount(count);
+		}
+		return normalized;
+	}
+
 	function updateTimeSaved(adsCount) {
 		const seconds = normalizeCount(adsCount) * AVG_AD_DURATION;
 		timeSaved.textContent = formatTimeSaved(seconds);
@@ -475,12 +495,7 @@ document.addEventListener("DOMContentLoaded", () => {
 					!Array.isArray(stats.daily)
 						? stats.daily
 						: {};
-				const channels =
-					stats.channels &&
-					typeof stats.channels === "object" &&
-					!Array.isArray(stats.channels)
-						? stats.channels
-						: {};
+				const channels = normalizeChannelsMap(stats.channels);
 				const achievements = Array.isArray(stats.achievements)
 					? [
 							...new Set(
