@@ -580,6 +580,12 @@ function _hookWorker() {
 							_doPlayerTask(true, false);
 						}
 						break;
+					case "ReloadPlayer":
+						_log("Reloading player", "info");
+						if (typeof _doPlayerTask === "function") {
+							_doPlayerTask(false, true);
+						}
+						break;
 				}
 			});
 

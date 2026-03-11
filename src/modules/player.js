@@ -190,6 +190,13 @@ function _monitorPlayerBuffering() {
 					_cachedPlayerRef = null;
 				} else if (
 					state?.props?.content?.type === "live" &&
+					player.getHTMLVideoElement()?.ended
+				) {
+					_log("Player hit end of stream during live playback. Recovering...", "warning");
+					_doPlayerTask(false, true, { reason: "ad-recovery" });
+					_PlayerBufferState.lastFixTime = Date.now();
+				} else if (
+					state?.props?.content?.type === "live" &&
 					!player.isPaused() &&
 					!player.getHTMLVideoElement()?.ended &&
 					_PlayerBufferState.lastFixTime <=
