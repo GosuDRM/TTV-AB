@@ -128,7 +128,12 @@ function validateSharedDefinitions() {
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
 	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
-	const translationsPath = path.join(__dirname, "src", "popup", "translations.js");
+	const translationsPath = path.join(
+		__dirname,
+		"src",
+		"popup",
+		"translations.js",
+	);
 	const hooksPath = path.join(__dirname, "src", "modules", "hooks.js");
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
@@ -193,7 +198,9 @@ function validateSharedDefinitions() {
 		normalizeCodeSnippet(popupGetDateKeyLiteral) !==
 		normalizeCodeSnippet(bridgeGetDateKeyLiteral)
 	) {
-		throw new Error("Popup and bridge getDateKey implementations are out of sync");
+		throw new Error(
+			"Popup and bridge getDateKey implementations are out of sync",
+		);
 	}
 
 	const popupAvgAdDuration = Number.parseInt(popupAvgAdDurationMatch[1], 10);
@@ -202,9 +209,7 @@ function validateSharedDefinitions() {
 		throw new Error("Popup and bridge AVG_AD_DURATION are out of sync");
 	}
 
-	const popupAchievements = Function(
-		`return (${popupAchievementsLiteral});`,
-	)();
+	const popupAchievements = Function(`return (${popupAchievementsLiteral});`)();
 	const bridgeAchievements = Function(
 		`return (${bridgeAchievementsLiteral});`,
 	)();
@@ -218,29 +223,31 @@ function validateSharedDefinitions() {
 		threshold,
 		type,
 	}));
-	const bridgeComparable = bridgeAchievements.map(({ id, threshold, type }) => ({
-		id,
-		threshold,
-		type,
-	}));
+	const bridgeComparable = bridgeAchievements.map(
+		({ id, threshold, type }) => ({
+			id,
+			threshold,
+			type,
+		}),
+	);
 
 	if (JSON.stringify(popupComparable) !== JSON.stringify(bridgeComparable)) {
-		throw new Error(
-			"Popup and bridge achievement definitions are out of sync",
-		);
+		throw new Error("Popup and bridge achievement definitions are out of sync");
 	}
 
-	const popupIds = popupAchievements.map((achievement) => achievement.id).sort();
+	const popupIds = popupAchievements
+		.map((achievement) => achievement.id)
+		.sort();
 	const uiIds = Object.keys(uiAchievementInfo).sort();
 	if (JSON.stringify(popupIds) !== JSON.stringify(uiIds)) {
-		throw new Error("UI achievement metadata is out of sync with popup achievements");
+		throw new Error(
+			"UI achievement metadata is out of sync with popup achievements",
+		);
 	}
 
 	for (const achievement of popupAchievements) {
 		if (uiAchievementInfo[achievement.id]?.icon !== achievement.icon) {
-			throw new Error(
-				`UI achievement icon mismatch for ${achievement.id}`,
-			);
+			throw new Error(`UI achievement icon mismatch for ${achievement.id}`);
 		}
 	}
 
@@ -262,7 +269,12 @@ function validateSharedDefinitions() {
 		},
 	];
 	for (const { consumer, helper, source } of requiredInjectedPairs) {
-		const consumerBody = extractLiteral(source, `function ${consumer}(`, "{", "}");
+		const consumerBody = extractLiteral(
+			source,
+			`function ${consumer}(`,
+			"{",
+			"}",
+		);
 		if (consumerBody?.includes(helper) && !injectedHelpers.has(helper)) {
 			throw new Error(
 				`${consumer} depends on ${helper}, but ${helper} is not injected into the worker bundle`,
