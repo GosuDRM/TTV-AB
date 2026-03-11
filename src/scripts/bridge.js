@@ -309,14 +309,32 @@ chrome.storage.local.get(
 				}
 			}
 			if (changes.ttvAdsBlocked) {
-				bridgeState.storedAdsCount = normalizeCount(
-					changes.ttvAdsBlocked.newValue,
-				);
+				const nextAdsCount = normalizeCount(changes.ttvAdsBlocked.newValue);
+				if (nextAdsCount !== bridgeState.storedAdsCount) {
+					bridgeState.storedAdsCount = nextAdsCount;
+					window.postMessage(
+						{
+							type: "ttvab-init-count",
+							detail: { count: nextAdsCount },
+						},
+						"*",
+					);
+				}
 			}
 			if (changes.ttvDomAdsBlocked) {
-				bridgeState.storedDomAdsCount = normalizeCount(
+				const nextDomAdsCount = normalizeCount(
 					changes.ttvDomAdsBlocked.newValue,
 				);
+				if (nextDomAdsCount !== bridgeState.storedDomAdsCount) {
+					bridgeState.storedDomAdsCount = nextDomAdsCount;
+					window.postMessage(
+						{
+							type: "ttvab-init-dom-ads-count",
+							detail: { count: nextDomAdsCount },
+						},
+						"*",
+					);
+				}
 			}
 		});
 	},
