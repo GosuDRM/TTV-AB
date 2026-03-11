@@ -99,6 +99,91 @@ function getVersion() {
 	}
 }
 
+function extractLiteral(source, startToken, openChar, closeChar) {
+	const start = source.indexOf(startToken);
+	if (start === -1) return null;
+	const openIndex = source.indexOf(openChar, start);
+	if (openIndex === -1) return null;
+	let depth = 0;
+	for (let i = openIndex; i < source.length; i++) {
+		if (source[i] === openChar) depth++;
+		else if (source[i] === closeChar) {
+			depth--;
+			if (depth === 0) {
+				return source.slice(openIndex, i + 1);
+			}
+		}
+	}
+	return null;
+}
+
+function validateSharedDefinitions() {
+	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
+	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
+	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
+	const popupSource = fs.readFileSync(popupPath, "utf8");
+	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
+	const uiSource = fs.readFileSync(uiPath, "utf8");
+
+	const popupAchievementsLiteral = extractLiteral(
+		popupSource,
+		"const ACHIEVEMENTS =",
+		"[",
+		"]",
+	);
+	const bridgeAchievementsLiteral = extractLiteral(
+		bridgeSource,
+		"const ACHIEVEMENTS =",
+		"[",
+		"]",
+	);
+	const uiAchievementInfoLiteral = extractLiteral(
+		uiSource,
+		"const _ACHIEVEMENT_INFO =",
+		"{",
+		"}",
+	);
+
+	if (
+		!popupAchievementsLiteral ||
+		!bridgeAchievementsLiteral ||
+		!uiAchievementInfoLiteral
+	) {
+		throw new Error("Failed to parse shared achievement definitions");
+	}
+
+	const popupAchievements = Function(
+		`return (${popupAchievementsLiteral});`,
+	)();
+	const bridgeAchievements = Function(
+		`return (${bridgeAchievementsLiteral});`,
+	)();
+	const uiAchievementInfo = Function(`return (${uiAchievementInfoLiteral});`)();
+
+	const popupComparable = popupAchievements.map(({ id, threshold, type }) => ({
+		id,
+		threshold,
+		type,
+	}));
+	const bridgeComparable = bridgeAchievements.map(({ id, threshold, type }) => ({
+		id,
+		threshold,
+		type,
+	}));
+
+	if (JSON.stringify(popupComparable) !== JSON.stringify(bridgeComparable)) {
+		throw new Error(
+			"Popup and bridge achievement definitions are out of sync",
+		);
+	}
+
+	const popupIds = popupAchievements.map((achievement) => achievement.id).sort();
+	const uiIds = Object.keys(uiAchievementInfo).sort();
+	if (JSON.stringify(popupIds) !== JSON.stringify(uiIds)) {
+		throw new Error("UI achievement metadata is out of sync with popup achievements");
+	}
+}
+
 function minifyCode(code) {
 	let result = code;
 	const leadingCommentBlock = result.match(/^(?:\/\/.*\r?\n)+/)?.[0] || "";
@@ -122,6 +207,7 @@ function minifyCode(code) {
 function build() {
 	console.log("Building TTV AB...\n");
 
+	validateSharedDefinitions();
 	const version = getVersion();
 
 	const HEADER = `// TTV AB v${version} - Twitch Ad Blocker
