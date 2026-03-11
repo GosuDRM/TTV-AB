@@ -572,34 +572,6 @@ function _hookWorker() {
 							});
 						} catch (_e) {}
 						break;
-					case "ReloadPlayer": {
-						const reason = e.data.reason || "manual";
-						const channel = e.data.channel || null;
-						const currentChannel = getCurrentPageChannel();
-						const requiresStrictChannelMatch = reason === "ad-recovery";
-						if (isStaleChannelEvent(channel)) {
-							_log(`Ignoring stale ReloadPlayer event for ${channel}`, "info");
-							break;
-						}
-						if (
-							requiresStrictChannelMatch &&
-							(!channel || !currentChannel || currentChannel !== channel)
-						) {
-							_log(
-								`Ignoring ReloadPlayer event without strict channel match for ${channel || "unknown"}`,
-								"info",
-							);
-							break;
-						}
-						_log(`Reloading player (${reason})`, "info");
-						if (typeof _doPlayerTask === "function") {
-							_doPlayerTask(false, true, {
-								reason,
-								channel,
-							});
-						}
-						break;
-					}
 					case "PauseResumePlayer":
 						_log("Resuming player", "info");
 						if (typeof _doPlayerTask === "function") {
