@@ -359,6 +359,13 @@ function validateSharedDefinitions() {
 			"Popup statistics panel must start hidden with matching aria-hidden state",
 		);
 	}
+	if (
+		!popupHtmlSource.includes('id="versionText" aria-label="Version">v</div>')
+	) {
+		throw new Error(
+			"Popup version label must keep the static v placeholder for runtime manifest sync",
+		);
+	}
 	for (const requiredPopupId of [
 		"enableToggle",
 		"statusDot",
