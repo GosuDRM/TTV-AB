@@ -179,6 +179,11 @@ function validateSharedDefinitions() {
 			}
 		}
 	}
+	if (manifest.homepage_url !== "https://github.com/GosuDRM/TTV-AB") {
+		throw new Error(
+			`Manifest homepage_url must match the canonical repository: ${manifest.homepage_url || "missing"}`,
+		);
+	}
 	if (
 		!constantsVersion ||
 		constantsVersion !== packageVersion ||
