@@ -226,6 +226,20 @@ function _stripAds(text, stripAll, info) {
 	return result.join("\n");
 }
 
+function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
+	const frameRate = Number.parseFloat(attrs?.["FRAME-RATE"]);
+	const bandwidth = Number.parseInt(attrs?.BANDWIDTH, 10);
+	return {
+		Resolution: String(attrs.RESOLUTION || "0x0"),
+		FrameRate: Number.isFinite(frameRate) ? frameRate : 0,
+		Bandwidth: Number.isFinite(bandwidth) ? Math.max(0, bandwidth) : 0,
+		Codecs: String(attrs.CODECS || ""),
+		Name: String(attrs.VIDEO || ""),
+		RawUrl: rawUrl,
+		Url: variantUrl,
+	};
+}
+
 function _getStreamUrl(m3u8, res, baseUrl = null) {
 	const lines = m3u8.split("\n");
 	const len = lines.length;
