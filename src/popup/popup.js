@@ -166,7 +166,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 		descriptionText.textContent = t.descriptionText;
 		const donateButton = document.getElementById("donateBtn");
-		if (donateButton) donateButton.title = t.supportDeveloper;
+		if (donateButton) {
+			donateButton.title = t.supportDeveloper;
+			donateButton.setAttribute(
+				"aria-label",
+				String(t.supportDeveloper ?? "Support the developer"),
+			);
+		}
 		langSelector.title = t.language;
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
 		langSelector.setAttribute("aria-describedby", "descriptionText");
@@ -657,25 +663,11 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	if (repoLink) {
-		repoLink.addEventListener("click", (e) => {
-			e.preventDefault();
-			window.open(
-				"https://github.com/GosuDRM/TTV-AB",
-				"_blank",
-				"noopener,noreferrer",
-			);
-		});
+		repoLink.setAttribute("aria-label", "Open the TTV AB GitHub repository");
 	}
 
 	const authorLink = document.getElementById("authorLink");
 	if (authorLink) {
-		authorLink.addEventListener("click", (e) => {
-			e.preventDefault();
-			window.open(
-				"https://github.com/GosuDRM",
-				"_blank",
-				"noopener,noreferrer",
-			);
-		});
+		authorLink.setAttribute("aria-label", "Open the GosuDRM GitHub profile");
 	}
 });
