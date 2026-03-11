@@ -703,10 +703,14 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	if (repoLink) {
-		repoLink.setAttribute("aria-label", "Open the TTV AB GitHub repository");
+		const repoLabel = "Open the TTV AB GitHub repository";
+		repoLink.title = repoLabel;
+		repoLink.setAttribute("aria-label", repoLabel);
 	}
 
 	if (authorLink) {
-		authorLink.setAttribute("aria-label", "Open the GosuDRM GitHub profile");
+		const authorLabel = "Open the GosuDRM GitHub profile";
+		authorLink.title = authorLabel;
+		authorLink.setAttribute("aria-label", authorLabel);
 	}
 });
