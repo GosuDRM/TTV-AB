@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	const footerText = document.getElementById("footerText");
 	const infoText = document.getElementById("infoText");
 	const repoLink = document.getElementById("repoLink");
+	const authorLink = document.getElementById("authorLink");
 	const requiredElements = {
 		toggle,
 		statusDot,
@@ -43,6 +44,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		achievementsTitle,
 		footerText,
 		infoText,
+		repoLink,
+		authorLink,
 	};
 	for (const [name, element] of Object.entries(requiredElements)) {
 		if (element) continue;
@@ -655,7 +658,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		repoLink.setAttribute("aria-label", "Open the TTV AB GitHub repository");
 	}
 
-	const authorLink = document.getElementById("authorLink");
 	if (authorLink) {
 		authorLink.setAttribute("aria-label", "Open the GosuDRM GitHub profile");
 	}

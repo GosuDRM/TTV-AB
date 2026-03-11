@@ -5,6 +5,7 @@ All notable changes to TTV AB will be documented in this file.
 ## [4.2.6] - 2026-03-11
 
 ### Fixed
+- **Popup Link Guard Parity** - The popup now treats the canonical donate/repository/author links as required UI nodes too, so packaging or HTML drift fails fast instead of silently dropping footer actions.
 - **Popup Startup Guards** - The popup now exits safely with a clear console error if required UI elements are missing instead of throwing null-access errors.
 - **Achievement Translation Fallbacks** - Popup achievement rendering now falls back safely when a locale entry is missing or malformed.
 - **Channel Stats Canonicalization** - Popup and bridge stats now normalize channel names to a lowercase canonical form and merge malformed duplicate entries so per-channel counts do not split across `Channel`/`channel` variants.

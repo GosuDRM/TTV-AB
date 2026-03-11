@@ -364,6 +364,9 @@ function validateSharedDefinitions() {
 		"achievementsTitle",
 		"footerText",
 		"infoText",
+		"donateBtn",
+		"repoLink",
+		"authorLink",
 	]) {
 		if (!popupHtmlSource.includes(`id="${requiredPopupId}"`)) {
 			throw new Error(`Popup HTML is missing required id: ${requiredPopupId}`);
