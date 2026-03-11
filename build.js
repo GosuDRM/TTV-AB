@@ -419,9 +419,24 @@ function validateSharedDefinitions() {
 		}
 		return keys;
 	};
-	const baseTranslationKeys = new Set(
-		flattenTranslationKeys(translationsContext.TRANSLATIONS?.en || {}),
-	);
+	const baseTranslations = translationsContext.TRANSLATIONS?.en || {};
+	const baseTranslationKeys = new Set(flattenTranslationKeys(baseTranslations));
+	const placeholderPattern = /\{(\w+)\}/g;
+	const getPlaceholders = (value) => {
+		return [
+			...new Set(
+				Array.from(
+					String(value || "").matchAll(placeholderPattern),
+					(match) => match[1],
+				),
+			),
+		].sort();
+	};
+	const getNestedTranslationValue = (value, keyPath) => {
+		return keyPath
+			.split(".")
+			.reduce((currentValue, key) => currentValue?.[key], value);
+	};
 	for (const [localeName, localeTranslations] of translationEntries) {
 		const localeKeys = new Set(flattenTranslationKeys(localeTranslations));
 		const missingKeys = [...baseTranslationKeys].filter(
@@ -431,6 +446,21 @@ function validateSharedDefinitions() {
 			throw new Error(
 				`Popup translations for ${localeName} are missing keys: ${missingKeys.join(", ")}`,
 			);
+		}
+		for (const keyPath of baseTranslationKeys) {
+			const basePlaceholders = getPlaceholders(
+				getNestedTranslationValue(baseTranslations, keyPath),
+			);
+			const localePlaceholders = getPlaceholders(
+				getNestedTranslationValue(localeTranslations, keyPath),
+			);
+			if (
+				JSON.stringify(basePlaceholders) !== JSON.stringify(localePlaceholders)
+			) {
+				throw new Error(
+					`Popup translations for ${localeName} have placeholder drift at ${keyPath}: expected ${basePlaceholders.join(", ") || "none"}, got ${localePlaceholders.join(", ") || "none"}`,
+				);
+			}
 		}
 	}
 	const initSource = fs.readFileSync(initPath, "utf8");
