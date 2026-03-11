@@ -211,6 +211,7 @@ function _showAchievementUnlocked(achievementId) {
 		const ach = _ACHIEVEMENT_INFO[achievementId];
 		if (!ach) return;
 
+		if (!document.body) return;
 		const existing = document.getElementById("ttvab-achievement");
 		if (existing) existing.remove();
 
