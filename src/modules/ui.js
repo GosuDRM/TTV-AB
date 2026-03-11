@@ -4,6 +4,25 @@ const _REMINDER_KEY = "ttvab_last_reminder";
 const _REMINDER_INTERVAL = 1209600000;
 const _FIRST_RUN_KEY = "ttvab_first_run_shown";
 
+function _getUiStorageItem(key) {
+	try {
+		return localStorage.getItem(key);
+	} catch (e) {
+		_log(`UI storage read error for ${key}: ${e.message}`, "error");
+		return null;
+	}
+}
+
+function _setUiStorageItem(key, value) {
+	try {
+		localStorage.setItem(key, value);
+		return true;
+	} catch (e) {
+		_log(`UI storage write error for ${key}: ${e.message}`, "error");
+		return false;
+	}
+}
+
 function _escapeUiText(value) {
 	const div = document.createElement("div");
 	div.textContent = String(value ?? "");
@@ -12,17 +31,17 @@ function _escapeUiText(value) {
 
 function _showDonation() {
 	try {
-		const lastReminder = localStorage.getItem(_REMINDER_KEY);
+		const lastReminder = _getUiStorageItem(_REMINDER_KEY);
 		const now = Date.now();
 
 		if (!lastReminder) {
-			localStorage.setItem(_REMINDER_KEY, now.toString());
+			_setUiStorageItem(_REMINDER_KEY, now.toString());
 			return;
 		}
 
 		const lastReminderMs = Number.parseInt(lastReminder, 10);
 		if (!Number.isFinite(lastReminderMs) || lastReminderMs > now) {
-			localStorage.setItem(_REMINDER_KEY, now.toString());
+			_setUiStorageItem(_REMINDER_KEY, now.toString());
 			return;
 		}
 
@@ -47,7 +66,7 @@ function _showDonation() {
             `;
 
 			document.body.appendChild(toast);
-			localStorage.setItem(_REMINDER_KEY, now.toString());
+			_setUiStorageItem(_REMINDER_KEY, now.toString());
 
 			document.getElementById("ttvab-reminder-close").onclick = () =>
 				toast.remove();
@@ -76,7 +95,7 @@ function _showDonation() {
 
 function _showWelcome() {
 	try {
-		if (localStorage.getItem(_FIRST_RUN_KEY)) return;
+		if (_getUiStorageItem(_FIRST_RUN_KEY)) return;
 
 		setTimeout(() => {
 			const toast = document.createElement("div");
@@ -102,7 +121,7 @@ function _showWelcome() {
             `;
 
 			document.body.appendChild(toast);
-			localStorage.setItem(_FIRST_RUN_KEY, "true");
+			_setUiStorageItem(_FIRST_RUN_KEY, "true");
 
 			const closeHandler = () => {
 				toast.style.animation = "ttvab-welcome .3s ease reverse";
