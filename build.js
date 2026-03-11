@@ -719,6 +719,34 @@ function validateSharedDefinitions() {
 			throw new Error(`Popup HTML is missing required element id ${domId}`);
 		}
 	}
+	const popupSetupSource = popupSource.split("const requiredElements =", 1)[0];
+	const popupElementBindings = [
+		...popupSetupSource.matchAll(
+			/const\s+(\w+)\s*=\s*document\.getElementById\("([^"]+)"\);/g,
+		),
+	];
+	const requiredElementsLiteral = extractLiteral(
+		popupSource,
+		"const requiredElements =",
+		"{",
+		"}",
+	);
+	if (!requiredElementsLiteral) {
+		throw new Error("Popup script is missing the requiredElements guard map");
+	}
+	const requiredElementNames = new Set(
+		Array.from(
+			requiredElementsLiteral.matchAll(/\b(\w+)\s*,?/g),
+			(match) => match[1],
+		),
+	);
+	for (const [_, variableName, domId] of popupElementBindings) {
+		if (!requiredElementNames.has(variableName)) {
+			throw new Error(
+				`Popup element binding ${variableName} (${domId}) is missing from requiredElements`,
+			);
+		}
+	}
 
 	if (!popupHtmlSource.includes('<option value="auto" id="langAutoOption">')) {
 		throw new Error(
