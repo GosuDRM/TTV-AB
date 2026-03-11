@@ -82,7 +82,6 @@ function _$ds(scope) {
 		AlwaysReloadPlayerOnAd: _$c.ALWAYS_RELOAD_PLAYER_ON_AD ?? false,
 		PlayerBufferingDoPlayerReload:
 			_$c.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
-		ReloadPlayerAfterAd: _$c.RELOAD_AFTER_AD ?? true,
 		PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
 		PlayerReloadMinimalRequestsPlayerIndex: Math.max(
 			0,
@@ -771,8 +770,6 @@ async function _$pm(url, text, realFetch) {
 		}
 	} else {
 		if (info.IsShowingAd) {
-			const hadWorkingBackupPath =
-				Boolean(info.IsUsingFallbackStream) || Boolean(info.ActiveBackupPlayerType);
 			const { wasUsingModifiedM3U8 } = _$rsa(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -780,20 +777,13 @@ async function _$pm(url, text, realFetch) {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				const shouldReloadAfterAd =
-					wasUsingModifiedM3U8 ||
-					(__TTVAB_STATE__.ReloadPlayerAfterAd && hadWorkingBackupPath);
-				if (shouldReloadAfterAd) {
+				if (wasUsingModifiedM3U8) {
 					self.postMessage({
 						key: "ReloadPlayer",
 						reason: "ad-ended",
 						channel: info.ChannelName,
 					});
 				} else {
-					_$l(
-						"Skipping ad-ended reload after unresolved backup recovery",
-						"warning",
-					);
 					self.postMessage({ key: "PauseResumePlayer" });
 				}
 			}
@@ -2702,15 +2692,6 @@ function _$tl() {
 				enabled ? "success" : "warning",
 			);
 			return;
-		}
-		if (e.data?.type === "ttvab-reload-after-ads-toggle") {
-			const enabled = e.data.detail?.enabled ?? true;
-			if (__TTVAB_STATE__.ReloadPlayerAfterAd === enabled) return;
-			__TTVAB_STATE__.ReloadPlayerAfterAd = enabled;
-			_$l(
-				`Post-ad auto refresh ${enabled ? "enabled" : "disabled"}`,
-				enabled ? "success" : "warning",
-			);
 		}
 	});
 }

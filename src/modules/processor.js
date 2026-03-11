@@ -195,8 +195,6 @@ async function _processM3U8(url, text, realFetch) {
 		}
 	} else {
 		if (info.IsShowingAd) {
-			const hadWorkingBackupPath =
-				Boolean(info.IsUsingFallbackStream) || Boolean(info.ActiveBackupPlayerType);
 			const { wasUsingModifiedM3U8 } = _resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -204,20 +202,13 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				const shouldReloadAfterAd =
-					wasUsingModifiedM3U8 ||
-					(__TTVAB_STATE__.ReloadPlayerAfterAd && hadWorkingBackupPath);
-				if (shouldReloadAfterAd) {
+				if (wasUsingModifiedM3U8) {
 					self.postMessage({
 						key: "ReloadPlayer",
 						reason: "ad-ended",
 						channel: info.ChannelName,
 					});
 				} else {
-					_log(
-						"Skipping ad-ended reload after unresolved backup recovery",
-						"warning",
-					);
 					self.postMessage({ key: "PauseResumePlayer" });
 				}
 			}
