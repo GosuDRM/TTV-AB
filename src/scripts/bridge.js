@@ -12,6 +12,10 @@ function getTodayKey() {
 	return getDateKey(new Date());
 }
 
+function normalizeCount(value) {
+	return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
 const ACHIEVEMENTS = [
 	{ id: "first_block", threshold: 1, type: "ads" },
 	{ id: "block_10", threshold: 10, type: "ads" },
@@ -120,15 +124,9 @@ function updateStats(
 			) {
 				stats.daily[today] = { ads: 0, domAds: 0 };
 			}
-			if (!Number.isFinite(stats.daily[today].ads)) {
-				stats.daily[today].ads = 0;
-			}
-			if (!Number.isFinite(stats.daily[today].domAds)) {
-				stats.daily[today].domAds = 0;
-			}
-			if (!Number.isFinite(stats.daily[today][type])) {
-				stats.daily[today][type] = 0;
-			}
+			stats.daily[today].ads = normalizeCount(stats.daily[today].ads);
+			stats.daily[today].domAds = normalizeCount(stats.daily[today].domAds);
+			stats.daily[today][type] = normalizeCount(stats.daily[today][type]);
 			stats.daily[today][type]++;
 
 			const cutoff = new Date();
@@ -141,16 +139,11 @@ function updateStats(
 			}
 
 			if (type === "ads" && channel) {
-				if (!Number.isFinite(stats.channels[channel])) {
-					stats.channels[channel] = 0;
-				}
+				stats.channels[channel] = normalizeCount(stats.channels[channel]);
 				stats.channels[channel]++;
 
 				const channelEntries = Object.entries(stats.channels).map(
-					([channelName, count]) => [
-						channelName,
-						Number.isFinite(count) ? count : 0,
-					],
+					([channelName, count]) => [channelName, normalizeCount(count)],
 				);
 				if (channelEntries.length > MAX_CHANNELS) {
 					channelEntries.sort((a, b) => b[1] - a[1]);
@@ -235,12 +228,8 @@ chrome.storage.local.get(
 		}
 		const safeResult = result || {};
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
-		bridgeState.storedAdsCount = Number.isFinite(safeResult.ttvAdsBlocked)
-			? safeResult.ttvAdsBlocked
-			: 0;
-		bridgeState.storedDomAdsCount = Number.isFinite(safeResult.ttvDomAdsBlocked)
-			? safeResult.ttvDomAdsBlocked
-			: 0;
+		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
+		bridgeState.storedDomAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 
 		function broadcastState() {
 			window.postMessage(
@@ -288,18 +277,14 @@ chrome.storage.local.get(
 				}
 			}
 			if (changes.ttvAdsBlocked) {
-				bridgeState.storedAdsCount = Number.isFinite(
+				bridgeState.storedAdsCount = normalizeCount(
 					changes.ttvAdsBlocked.newValue,
-				)
-					? changes.ttvAdsBlocked.newValue
-					: 0;
+				);
 			}
 			if (changes.ttvDomAdsBlocked) {
-				bridgeState.storedDomAdsCount = Number.isFinite(
+				bridgeState.storedDomAdsCount = normalizeCount(
 					changes.ttvDomAdsBlocked.newValue,
-				)
-					? changes.ttvDomAdsBlocked.newValue
-					: 0;
+				);
 			}
 		});
 	},
@@ -352,12 +337,8 @@ function flushCounters() {
 
 					const safeResult = result || {};
 					const updates = {};
-					const baseAds = Number.isFinite(safeResult.ttvAdsBlocked)
-						? safeResult.ttvAdsBlocked
-						: 0;
-					const baseDomAds = Number.isFinite(safeResult.ttvDomAdsBlocked)
-						? safeResult.ttvDomAdsBlocked
-						: 0;
+					const baseAds = normalizeCount(safeResult.ttvAdsBlocked);
+					const baseDomAds = normalizeCount(safeResult.ttvDomAdsBlocked);
 					const newAds = baseAds + adsDelta;
 					const newDomAds = baseDomAds + domAdsDelta;
 					if (adsDelta > 0) updates.ttvAdsBlocked = newAds;

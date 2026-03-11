@@ -218,6 +218,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		return `~${minutes}m ${secs}s`;
 	}
 
+	function normalizeCount(value) {
+		return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+	}
+
 	function updateTimeSaved(adsCount) {
 		const seconds = adsCount * AVG_AD_DURATION;
 		timeSaved.textContent = formatTimeSaved(seconds);
@@ -238,10 +242,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		const days = getLast7Days();
 		const parsedDays = days.map((dayKey) => parseDateKey(dayKey));
 		const values = days.map((d) => {
-			const ads = Number.isFinite(dailyData[d]?.ads) ? dailyData[d].ads : 0;
-			const domAds = Number.isFinite(dailyData[d]?.domAds)
-				? dailyData[d].domAds
-				: 0;
+			const ads = normalizeCount(dailyData[d]?.ads);
+			const domAds = normalizeCount(dailyData[d]?.domAds);
 			return ads + domAds;
 		});
 		const max = Math.max(...values, 1);
@@ -269,7 +271,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function renderChannels(channelsData) {
 		const entries = Object.entries(channelsData || {}).map(
-			([channel, count]) => [channel, Number.isFinite(count) ? count : 0],
+			([channel, count]) => [channel, normalizeCount(count)],
 		);
 		if (entries.length === 0) {
 			const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
@@ -392,12 +394,8 @@ document.addEventListener("DOMContentLoaded", () => {
 							),
 						]
 					: [];
-				const adsCount = Number.isFinite(safeResult.ttvAdsBlocked)
-					? safeResult.ttvAdsBlocked
-					: 0;
-				const domAdsCount = Number.isFinite(safeResult.ttvDomAdsBlocked)
-					? safeResult.ttvDomAdsBlocked
-					: 0;
+				const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
+				const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 				const channelCount = Object.keys(channels).length;
 
 				renderChart(daily);
@@ -421,12 +419,8 @@ document.addEventListener("DOMContentLoaded", () => {
 			toggle.checked = enabled;
 			updateStatus(enabled);
 
-			const adsCount = Number.isFinite(safeResult.ttvAdsBlocked)
-				? safeResult.ttvAdsBlocked
-				: 0;
-			const domAdsCount = Number.isFinite(safeResult.ttvDomAdsBlocked)
-				? safeResult.ttvDomAdsBlocked
-				: 0;
+			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
+			const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 			adsBlockedCount.textContent = formatNumber(adsCount);
 			domAdsBlockedCount.textContent = formatNumber(domAdsCount);
 			updateTimeSaved(adsCount);
@@ -443,16 +437,12 @@ document.addEventListener("DOMContentLoaded", () => {
 			updateStatus(enabled);
 		}
 		if (changes.ttvAdsBlocked) {
-			const newCount = Number.isFinite(changes.ttvAdsBlocked.newValue)
-				? changes.ttvAdsBlocked.newValue
-				: 0;
+			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
 			animateCounter(adsBlockedCount, newCount);
 			updateTimeSaved(newCount);
 		}
 		if (changes.ttvDomAdsBlocked) {
-			const newDomAdsCount = Number.isFinite(changes.ttvDomAdsBlocked.newValue)
-				? changes.ttvDomAdsBlocked.newValue
-				: 0;
+			const newDomAdsCount = normalizeCount(changes.ttvDomAdsBlocked.newValue);
 			animateCounter(domAdsBlockedCount, newDomAdsCount);
 		}
 		if (changes.ttvStats) {
