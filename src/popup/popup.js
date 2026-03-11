@@ -499,7 +499,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			return;
 		}
 
-		entries.sort((a, b) => b[1] - a[1]);
+		entries.sort((a, b) => {
+			const countDiff = b[1] - a[1];
+			return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
+		});
 		const top5 = entries.slice(0, 5);
 		for (const [index, entry] of top5.entries()) {
 			channelList.append(
