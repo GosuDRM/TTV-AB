@@ -476,6 +476,22 @@ function validateSharedDefinitions() {
 	if ((workerSource.match(/new XMLHttpRequest\(\)/g) || []).length !== 1) {
 		throw new Error("Unexpected XMLHttpRequest bootstrap usage in worker.js");
 	}
+	for (const forbidden of [
+		"ttvReloadAfterAdsEnabled",
+		"ReloadPlayerAfterAd",
+		"ttvab-reload-after-ads-toggle",
+	]) {
+		if (
+			popupSource.includes(forbidden) ||
+			bridgeSource.includes(forbidden) ||
+			initSource.includes(forbidden) ||
+			processorSource.includes(forbidden)
+		) {
+			throw new Error(
+				`Removed reload-after-ads feature residue found: ${forbidden}`,
+			);
+		}
+	}
 
 	const requiredInjectedPairs = [
 		{
