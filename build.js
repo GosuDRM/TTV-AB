@@ -386,6 +386,13 @@ function validateSharedDefinitions() {
 			"_locales directories are out of sync with popup translations",
 		);
 	}
+	if (
+		!readmeSource.includes(`${translationLanguages.length} languages supported`)
+	) {
+		throw new Error(
+			`README language count is out of sync with ${translationLanguages.length} supported locales`,
+		);
+	}
 
 	const initReservedRoutesLiteral = extractLiteral(
 		initSource,
