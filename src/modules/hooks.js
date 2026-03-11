@@ -698,7 +698,6 @@ function _hookStorage() {
 
 function _hookMainFetch() {
 	const realFetch = window.fetch;
-	const RealRequest = window.Request;
 	const updateWorkers = (updates) => {
 		if (Array.isArray(updates)) {
 			for (const msg of updates) {
@@ -809,58 +808,6 @@ function _hookMainFetch() {
 			}
 		} catch {}
 	};
-	const getRequestUrl = (input) => {
-		if (!input) return null;
-		if (typeof input === "string") return input;
-		if (typeof URL !== "undefined" && input instanceof URL) return input.toString();
-		if (typeof RealRequest !== "undefined" && input instanceof RealRequest) {
-			return input.url;
-		}
-		return input?.url || input?.toString?.() || null;
-	};
-	const rewriteGqlInit = (input, init) => {
-		const url = getRequestUrl(input);
-		if (!url?.includes("gql.twitch.tv/gql")) {
-			return { init, bodyText: null, forcedPlayerType: null, changed: false };
-		}
-		const bodySource = init?.body;
-		if (
-			typeof bodySource !== "string" &&
-			!(typeof URLSearchParams !== "undefined" && bodySource instanceof URLSearchParams)
-		) {
-			return { init, bodyText: null, forcedPlayerType: null, changed: false };
-		}
-		const bodyText =
-			typeof bodySource === "string" ? bodySource : bodySource.toString();
-		const rewritten = rewritePlaybackAccessTokenBody(bodyText);
-		if (!rewritten.changed) {
-			return {
-				init,
-				bodyText: rewritten.bodyText,
-				forcedPlayerType: rewritten.forcedPlayerType,
-				changed: false,
-			};
-		}
-		return {
-			init: { ...(init || {}), body: rewritten.bodyText },
-			bodyText: rewritten.bodyText,
-			forcedPlayerType: rewritten.forcedPlayerType,
-			changed: true,
-		};
-	};
-
-	if (typeof RealRequest !== "undefined") {
-		const TTVABRequest = function (input, init) {
-			const rewritten = rewriteGqlInit(input, init);
-			if (rewritten.bodyText) {
-				processGqlBody(rewritten.bodyText, rewritten.forcedPlayerType);
-			}
-			return new RealRequest(input, rewritten.init);
-		};
-		TTVABRequest.prototype = RealRequest.prototype;
-		Object.setPrototypeOf(TTVABRequest, RealRequest);
-		window.Request = TTVABRequest;
-	}
 
 	window.fetch = async function (...args) {
 		const [url, opts] = args;
