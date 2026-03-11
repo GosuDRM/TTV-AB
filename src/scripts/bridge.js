@@ -142,7 +142,7 @@ function updateStats(
 			const cutoff = new Date();
 			cutoff.setDate(cutoff.getDate() - 30);
 			const cutoffKey = getDateKey(cutoff);
-			for (const key in stats.daily) {
+			for (const key of Object.keys(stats.daily)) {
 				if (key < cutoffKey) {
 					delete stats.daily[key];
 				}
