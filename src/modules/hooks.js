@@ -87,8 +87,12 @@ function _hookWorkerFetch() {
 							(Number.isFinite(tw) ? tw : 1920) *
 							(Number.isFinite(th) ? th : 1080);
 						const closest = [...nonHevcList].sort((a, b) => {
-							const [aw, ah] = a.Resolution.split("x").map(Number);
-							const [bw, bh] = b.Resolution.split("x").map(Number);
+							const [aw, ah] = String(a?.Resolution || "0x0")
+								.split("x")
+								.map(Number);
+							const [bw, bh] = String(b?.Resolution || "0x0")
+								.split("x")
+								.map(Number);
 							const aArea =
 								(Number.isFinite(aw) ? aw : 0) * (Number.isFinite(ah) ? ah : 0);
 							const bArea =
