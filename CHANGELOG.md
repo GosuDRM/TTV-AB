@@ -31,7 +31,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Worker Helper Injection Guard** - Build-time validation now fails if worker-injected helpers like `_getFallbackPromotionPolicy` or `_extractPlaybackAccessToken` are referenced without being bundled.
 - **Shared Definition Parity Checks** - Build-time guards now keep popup, bridge, UI, locales, README, changelog, and manifest metadata synchronized for achievements, translations, routes, versions, and documented counts.
 - **Native Player-Type Truth Source** - Native player-type state is now learned from token responses instead of request bodies, so observational `site` requests no longer overwrite the effective `popout` state.
-- **Message Payload Validation** - Page-side message listeners now require well-typed payloads for toggles, counts, channels, and achievement ids before mutating runtime state.
+- **Message Payload Validation** - Page-side message listeners now require trusted same-window sources plus well-typed payloads for toggles, counts, channels, and achievement ids before mutating runtime state.
 - **Removed-Path Lockouts** - Build-time guards now fail if removed reload-after-ads, dead backup-tracking, stale stats, or dead worker-message identifiers reappear in live source.
 - **Removed-Feature Residue Cleanup** - Deleted the last leftover bridge cleanup wiring for the removed reload-after-ads setting so the feature is fully gone instead of being lazily migrated forever.
 - **Intentional Sharp-Edge Isolation** - Build-time checks now keep the worker bootstrap `eval(wasmSource)` and synchronous worker-source XHR isolated to their known bootstrap path instead of silently spreading.
