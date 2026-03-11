@@ -17,13 +17,12 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
   <img src="assets/popup-screenshot2.png" alt="Stats Screenshot" width="300">
 </p>
 
-
-## ✨ Features
+## Features
 
 - ✅ Blocks preroll and midroll ads
 - ✅ **Blocks anti-adblock popups** ("Support streamer by disabling ad block")
 - ✅ No purple screen errors
-- ✅ Works with all stream qualities
+- ✅ Restores your chosen quality after ad recovery
 - ✅ Manifest V3 compatible
 - ✅ Simple enable/disable toggle
 - ✅ Auto-refresh on player crash
@@ -35,7 +34,7 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 - ✅ Modern, animated UI (Cyberpunk/Neon aesthetic)
 - ✅ Lightweight and fast
 
-## 📖 Usage
+## Usage
 
 1. Navigate to [twitch.tv](https://twitch.tv)
 2. Open any live stream
@@ -43,14 +42,16 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 4. Click the extension icon and use the toggle to enable/disable
 5. Change language via the dropdown in the footer
 
-## ⚙️ How It Works
+## How It Works
 
 The extension intercepts Twitch's HLS video playlists and:
 - Strips ad segments from M3U8 playlists
 - Fetches backup ad-free streams when ads are detected
 - Caches ad segments to prevent playback
 
-## ✨ What's New
+During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
+
+## What's New
 
 ### v4.2.5
 - **Worker Crash Loop Fixes** - Hardened worker/bootstrap message handling and playlist parsing so malformed frontpage, home, and outstream worker contexts are less likely to crash and restart continuously.
@@ -90,16 +91,16 @@ npm run knip
 
 `npm run knip` is expected to pass cleanly with the current `knip` 6 prerelease configuration.
 
-## ❤️ Support
+## Support
 
-If you enjoy TTV AB, consider buying me a coffee! ☕ Your support helps keep this project alive!
+If you enjoy TTV AB, consider buying me a coffee! Your support helps keep this project alive.
 
 [![Donate](https://img.shields.io/badge/Donate-Ko--fi-FF5E5B.svg)](https://ko-fi.com/gosudrm)
 
-## 🔒 Privacy
+## Privacy
+
 This extension operates entirely locally and does not collect any user data. See [PRIVACY.md](PRIVACY.md) for details.
 
-## 📄 License
+## License
 
 MIT License with Attribution - See [LICENSE](LICENSE) for details.
-
