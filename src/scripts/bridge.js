@@ -423,7 +423,7 @@ window.addEventListener("message", (e) => {
 
 	if (
 		e.data.type === "ttvab-ad-blocked" &&
-		typeof e.data.detail?.count === "number"
+		Number.isFinite(e.data.detail?.count)
 	) {
 		const channel =
 			typeof e.data.detail?.channel === "string" ? e.data.detail.channel : null;
@@ -434,7 +434,7 @@ window.addEventListener("message", (e) => {
 
 	if (
 		e.data.type === "ttvab-dom-ad-cleanup" &&
-		typeof e.data.detail?.count === "number"
+		Number.isFinite(e.data.detail?.count)
 	) {
 		pendingDomAdsDelta++;
 		scheduleFlush();

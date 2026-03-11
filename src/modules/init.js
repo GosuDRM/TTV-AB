@@ -970,7 +970,7 @@ function _blockAntiAdblockPopup() {
 		window.addEventListener("message", (event) => {
 			if (event.source !== window) return;
 			if (event.data?.type !== "ttvab-ad-blocked") return;
-			if (typeof event.data.detail?.count !== "number") return;
+			if (!Number.isFinite(event.data.detail?.count)) return;
 			const currentChannel = _getCurrentChannelName();
 			const blockedChannel =
 				typeof event.data.detail?.channel === "string"
@@ -1064,7 +1064,7 @@ function _init() {
 
 		if (
 			e.data.type === "ttvab-init-count" &&
-			typeof e.data.detail?.count === "number"
+			Number.isFinite(e.data.detail?.count)
 		) {
 			if (_S.adsBlocked === e.data.detail.count) return;
 			_S.adsBlocked = e.data.detail.count;
@@ -1074,7 +1074,7 @@ function _init() {
 
 		if (
 			e.data.type === "ttvab-init-dom-ads-count" &&
-			typeof e.data.detail?.count === "number"
+			Number.isFinite(e.data.detail?.count)
 		) {
 			if (_S.domAdsBlocked === e.data.detail.count) return;
 			_S.domAdsBlocked = e.data.detail.count;
