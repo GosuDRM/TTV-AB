@@ -343,6 +343,11 @@ function validateSharedDefinitions() {
 			"Popup statistics toggle must remain a native button element",
 		);
 	}
+	if (!popupHtmlSource.includes('id="statsPanel" hidden aria-hidden="true"')) {
+		throw new Error(
+			"Popup statistics panel must start hidden with matching aria-hidden state",
+		);
+	}
 	for (const requiredPopupId of [
 		"enableToggle",
 		"statusDot",
