@@ -147,6 +147,12 @@ function validateSharedDefinitions() {
 	const manifest = JSON.parse(
 		fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"),
 	);
+	const packageJson = JSON.parse(
+		fs.readFileSync(path.join(__dirname, "package.json"), "utf8"),
+	);
+	const packageLock = JSON.parse(
+		fs.readFileSync(path.join(__dirname, "package-lock.json"), "utf8"),
+	);
 	const canonicalRepoUrl = "https://github.com/GosuDRM/TTV-AB";
 	if (
 		manifest.default_locale &&
@@ -197,6 +203,19 @@ function validateSharedDefinitions() {
 	) {
 		throw new Error(
 			`Version mismatch: constants=${constantsVersion || "missing"}, package=${packageVersion}, manifest=${manifestVersion}`,
+		);
+	}
+	if (packageLock.name !== packageJson.name) {
+		throw new Error(
+			`package-lock name mismatch: package=${packageJson.name || "missing"}, lock=${packageLock.name || "missing"}`,
+		);
+	}
+	if (
+		packageLock.version !== packageVersion ||
+		packageLock.packages?.[""]?.version !== packageVersion
+	) {
+		throw new Error(
+			`package-lock version mismatch: package=${packageVersion}, lock=${packageLock.version || "missing"}, root=${packageLock.packages?.[""]?.version || "missing"}`,
 		);
 	}
 	const readmePath = path.join(__dirname, "README.md");
