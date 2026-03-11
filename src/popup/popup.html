@@ -496,6 +496,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            width: 100%;
             background: rgba(145, 70, 255, 0.08);
             border-radius: 10px;
             padding: 12px 14px;
@@ -503,6 +504,10 @@
             cursor: pointer;
             border: 1px solid rgba(145, 70, 255, 0.2);
             transition: all 0.3s ease;
+            appearance: none;
+            color: inherit;
+            font: inherit;
+            text-align: left;
         }
 
         .stats-toggle:hover {
@@ -793,10 +798,10 @@
     </div>
 
     <!-- Statistics Toggle -->
-    <div class="stats-toggle" id="statsToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="statsPanel" aria-label="Statistics">
+    <button type="button" class="stats-toggle" id="statsToggle" aria-expanded="false" aria-controls="statsPanel" aria-label="Statistics">
         <span class="stats-toggle-text">📊 <span data-i18n="statistics">Statistics</span></span>
         <span class="stats-toggle-arrow">▼</span>
-    </div>
+    </button>
 
     <!-- Collapsible Stats Panel -->
     <div class="stats-panel" id="statsPanel">

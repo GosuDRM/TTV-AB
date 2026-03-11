@@ -614,11 +614,6 @@ document.addEventListener("DOMContentLoaded", () => {
 	statsToggle.addEventListener("click", () => {
 		toggleStatsPanel();
 	});
-	statsToggle.addEventListener("keydown", (e) => {
-		if (e.key !== "Enter" && e.key !== " ") return;
-		e.preventDefault();
-		toggleStatsPanel();
-	});
 
 	let statusTimeout = null;
 

@@ -338,6 +338,11 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	if (!popupHtmlSource.includes('<button type="button" class="stats-toggle"')) {
+		throw new Error(
+			"Popup statistics toggle must remain a native button element",
+		);
+	}
 	for (const requiredPopupId of [
 		"enableToggle",
 		"statusDot",
