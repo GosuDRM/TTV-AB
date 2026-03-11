@@ -723,22 +723,17 @@ function _blockAntiAdblockPopup() {
 				didCountCurrentDisplayAdShell = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
-				if (!hasExplicitDisplayAdSignal) {
-					_log(
-						"Display ad shell inferred: resetting layout without counting blocked ad",
-						"info",
-					);
-				}
 			}
 
-			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShell) {
+			if (!didCountCurrentDisplayAdShell) {
 				didCountCurrentDisplayAdShell = true;
 				_incrementDomCleanup("display-shell");
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
 					_incrementAdsBlocked(_getCurrentChannelName());
 				}
+				const logType = hasExplicitDisplayAdSignal ? "confirmed" : "inferred";
 				_log(
-					"Display ad shell confirmed: counting blocked ad and collapsing shell",
+					`Display ad shell ${logType}: counting blocked ad and collapsing shell`,
 					"warning",
 				);
 			}
