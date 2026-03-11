@@ -259,41 +259,6 @@ chrome.storage.local.get(
 	},
 );
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-	if (message.action === "toggle") {
-		const nextEnabled = message.enabled !== false;
-		chrome.storage.local.set({ ttvAdblockEnabled: nextEnabled }, () => {
-			if (chrome.runtime.lastError) {
-				console.error(
-					"[TTV AB] Toggle write error:",
-					chrome.runtime.lastError.message,
-				);
-				sendResponse({
-					success: false,
-					error: chrome.runtime.lastError.message,
-				});
-				return;
-			}
-			sendResponse({ success: true });
-		});
-		return true;
-	} else if (message.action === "getAdsBlocked") {
-		chrome.storage.local.get(["ttvAdsBlocked"], (result) => {
-			if (chrome.runtime.lastError) {
-				console.error(
-					"[TTV AB] Ads count read error:",
-					chrome.runtime.lastError.message,
-				);
-				sendResponse({ count: 0, error: chrome.runtime.lastError.message });
-				return;
-			}
-			const safeResult = result || {};
-			sendResponse({ count: safeResult.ttvAdsBlocked || 0 });
-		});
-		return true;
-	}
-});
-
 let pendingAdsDelta = 0;
 let pendingDomAdsDelta = 0;
 let pendingAdChannels = [];
