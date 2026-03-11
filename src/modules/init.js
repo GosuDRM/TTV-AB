@@ -1097,10 +1097,6 @@ function _init() {
 	_hookWorker();
 	_hookMainFetch();
 	_initToggleListener();
-<<<<<<< HEAD
-	_log("Crash monitor temporarily disabled for debugging", "warning");
-=======
->>>>>>> 65e7c08 (fix: ad loop when master manifest not intercepted, remove crash monitor)
 	_blockAntiAdblockPopup();
 	_initAchievementListener();
 
