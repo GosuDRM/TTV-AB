@@ -83,10 +83,19 @@ function _hookWorkerFetch() {
 						const [tw, th] = (attrs.RESOLUTION || "1920x1080")
 							.split("x")
 							.map(Number);
+						const targetArea =
+							(Number.isFinite(tw) ? tw : 1920) *
+							(Number.isFinite(th) ? th : 1080);
 						const closest = [...nonHevcList].sort((a, b) => {
 							const [aw, ah] = a.Resolution.split("x").map(Number);
 							const [bw, bh] = b.Resolution.split("x").map(Number);
-							return Math.abs(aw * ah - tw * th) - Math.abs(bw * bh - tw * th);
+							const aArea =
+								(Number.isFinite(aw) ? aw : 0) * (Number.isFinite(ah) ? ah : 0);
+							const bArea =
+								(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
+							return (
+								Math.abs(aArea - targetArea) - Math.abs(bArea - targetArea)
+							);
 						})[0];
 						modLines[mi] = modLines[mi].replace(
 							/CODECS="[^"]+"/,

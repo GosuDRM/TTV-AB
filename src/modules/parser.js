@@ -308,6 +308,10 @@ function _getFallbackResolution(info, url) {
 		const [bw, bh] = String(b?.Resolution || "0x0")
 			.split("x")
 			.map(Number);
-		return bw * bh - aw * ah;
+		const aArea =
+			(Number.isFinite(aw) ? aw : 0) * (Number.isFinite(ah) ? ah : 0);
+		const bArea =
+			(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
+		return bArea - aArea;
 	})[0];
 }
