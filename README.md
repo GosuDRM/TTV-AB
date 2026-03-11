@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.2.5-purple)
+![Version](https://img.shields.io/badge/version-4.2.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
@@ -52,6 +52,12 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.2.6
+- **Popup Safety Guards** - Popup startup now fails safely when required UI nodes are missing instead of throwing on null element access.
+- **Achievement Fallback Safety** - Popup achievement labels now fall back cleanly if a translation entry is missing or malformed.
+- **Build Validation Hardening** - `build.js` now verifies that all popup IDs required by the popup script still exist in `popup.html`.
+- **Docs / Metadata Sync** - Version markers and release notes were synchronized for the 4.2.6 release.
 
 ### v4.2.5
 - **Worker Crash Loop Fixes** - Hardened worker/bootstrap message handling and playlist parsing so malformed frontpage, home, and outstream worker contexts are less likely to crash and restart continuously.
