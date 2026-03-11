@@ -258,7 +258,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
 			channelList.innerHTML = `
                 <div class="channel-item">
-                    <span><span class="channel-rank">-</span><span class="channel-name">${t.noDataYet}</span></span>
+                    <span><span class="channel-rank">-</span><span class="channel-name">${escapeHtml(t.noDataYet)}</span></span>
                     <span class="channel-count">-</span>
                 </div>
             `;
