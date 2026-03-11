@@ -245,7 +245,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function renderChannels(channelsData) {
-		const entries = Object.entries(channelsData || {});
+		const entries = Object.entries(channelsData || {}).map(
+			([channel, count]) => [channel, Number.isFinite(count) ? count : 0],
+		);
 		if (entries.length === 0) {
 			const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
 			channelList.innerHTML = `
