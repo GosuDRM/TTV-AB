@@ -31,6 +31,13 @@ All notable changes to TTV AB will be documented in this file.
 - **Shared Definition Parity Checks** - Build-time guards now keep popup, bridge, UI, locales, README, changelog, and manifest metadata synchronized for achievements, translations, routes, versions, and documented counts.
 - **Native Player-Type Truth Source** - Native player-type state is now learned from token responses instead of request bodies, so observational `site` requests no longer overwrite the effective `popout` state.
 - **Message Payload Validation** - Page-side message listeners now require well-typed payloads for toggles, counts, channels, and achievement ids before mutating runtime state.
+- **Removed-Path Lockouts** - Build-time guards now fail if removed reload-after-ads, dead backup-tracking, stale stats, or dead worker-message identifiers reappear in live source.
+- **Intentional Sharp-Edge Isolation** - Build-time checks now keep the worker bootstrap `eval(wasmSource)` and synchronous worker-source XHR isolated to their known bootstrap path instead of silently spreading.
+
+### Popup / UI Hardening
+- **Safer External Opens** - Popup footer, donate buttons, and runtime UI reminder opens now use `noopener,noreferrer`, and build validation now enforces that `_blank` opens keep that opener-safe pattern.
+- **DOM-Safe Rendering** - Popup next-achievement rendering and runtime achievement toasts now avoid or escape dynamic HTML content instead of trusting interpolated strings.
+- **Popup State Recovery** - Popup language, counters, channels, charts, and achievements now normalize malformed persisted values before rendering so corrupted local state does not break the popup.
 
 ### Stability
 - **Hidden-Tab Crash Recovery** - Hidden-tab crash recovery now has a fallback refresh path and avoids duplicate refresh triggers when the tab becomes visible before the timer fires.
