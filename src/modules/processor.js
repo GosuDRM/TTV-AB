@@ -368,23 +368,12 @@ async function _findBackupStream(
 									!candidateHasAds &&
 									(__TTVAB_STATE__.SimulatedAdsDepth === 0 ||
 										pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
-								const shouldUseAdMarkedFallbackNow =
-									candidateHasAds &&
-									(_minimal || pt === __TTVAB_STATE__.FallbackPlayerType) &&
-									!backupM3u8;
 
-								if (noAds || shouldUseAdMarkedFallbackNow) {
+								if (noAds) {
 									info.RejectedBackupPlayerTypes?.delete?.(pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
-									if (shouldUseAdMarkedFallbackNow) {
-										_log(
-											`[Trace] Using ad-marked fallback now: ${pt}`,
-											"warning",
-										);
-									} else {
-										_log(`[Trace] Selected: ${pt}`, "success");
-									}
+									_log(`[Trace] Selected: ${pt}`, "success");
 									break;
 								} else {
 									_log(`[Trace] Rejected ${pt} (has ads)`, "warning");
