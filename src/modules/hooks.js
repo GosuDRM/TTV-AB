@@ -870,35 +870,38 @@ function _hookMainFetch() {
 					const session = getHeader("Client-Session-Id");
 					const device = getHeader("X-Device-Id");
 
-					if (integrity) {
+					if (
+						integrity &&
+						__TTVAB_STATE__.ClientIntegrityHeader !== integrity
+					) {
 						__TTVAB_STATE__.ClientIntegrityHeader = integrity;
 						updates.push({
 							key: "UpdateClientIntegrityHeader",
 							value: __TTVAB_STATE__.ClientIntegrityHeader,
 						});
 					}
-					if (auth) {
+					if (auth && __TTVAB_STATE__.AuthorizationHeader !== auth) {
 						__TTVAB_STATE__.AuthorizationHeader = auth;
 						updates.push({
 							key: "UpdateAuthorizationHeader",
 							value: __TTVAB_STATE__.AuthorizationHeader,
 						});
 					}
-					if (version) {
+					if (version && __TTVAB_STATE__.ClientVersion !== version) {
 						__TTVAB_STATE__.ClientVersion = version;
 						updates.push({
 							key: "UpdateClientVersion",
 							value: __TTVAB_STATE__.ClientVersion,
 						});
 					}
-					if (session) {
+					if (session && __TTVAB_STATE__.ClientSession !== session) {
 						__TTVAB_STATE__.ClientSession = session;
 						updates.push({
 							key: "UpdateClientSession",
 							value: __TTVAB_STATE__.ClientSession,
 						});
 					}
-					if (device) {
+					if (device && __TTVAB_STATE__.GQLDeviceID !== device) {
 						__TTVAB_STATE__.GQLDeviceID = device;
 						updates.push({
 							key: "UpdateDeviceId",
