@@ -198,6 +198,16 @@ document.addEventListener("DOMContentLoaded", () => {
 		toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
 		achievementsTitle.textContent = `🏆 ${t.achievements}`;
 		footerText.textContent = t.footerBy;
+		const repoLabel = String(
+			t.repoLinkLabel ?? "Open the TTV AB GitHub repository",
+		);
+		repoLink.title = repoLabel;
+		repoLink.setAttribute("aria-label", repoLabel);
+		const authorLabel = String(
+			t.authorLinkLabel ?? "Open the GosuDRM GitHub profile",
+		);
+		authorLink.title = authorLabel;
+		authorLink.setAttribute("aria-label", authorLabel);
 	}
 
 	const savedLang = getStoredLanguage();
@@ -740,17 +750,5 @@ document.addEventListener("DOMContentLoaded", () => {
 		element.textContent = formatNumber(normalizeCount(newValue));
 		element.classList.add("pulse");
 		setTimeout(() => element.classList.remove("pulse"), 200);
-	}
-
-	if (repoLink) {
-		const repoLabel = "Open the TTV AB GitHub repository";
-		repoLink.title = repoLabel;
-		repoLink.setAttribute("aria-label", repoLabel);
-	}
-
-	if (authorLink) {
-		const authorLabel = "Open the GosuDRM GitHub profile";
-		authorLink.title = authorLabel;
-		authorLink.setAttribute("aria-label", authorLabel);
 	}
 });
