@@ -131,6 +131,12 @@ function validateSharedDefinitions() {
 	const processorSource = fs.readFileSync(processorPath, "utf8");
 	const apiSource = fs.readFileSync(apiPath, "utf8");
 
+	const popupAvgAdDurationMatch = popupSource.match(
+		/const AVG_AD_DURATION = (\d+);/,
+	);
+	const bridgeAvgAdDurationMatch = bridgeSource.match(
+		/const AVG_AD_DURATION = (\d+);/,
+	);
 	const popupAchievementsLiteral = extractLiteral(
 		popupSource,
 		"const ACHIEVEMENTS =",
@@ -151,11 +157,19 @@ function validateSharedDefinitions() {
 	);
 
 	if (
+		!popupAvgAdDurationMatch ||
+		!bridgeAvgAdDurationMatch ||
 		!popupAchievementsLiteral ||
 		!bridgeAchievementsLiteral ||
 		!uiAchievementInfoLiteral
 	) {
-		throw new Error("Failed to parse shared achievement definitions");
+		throw new Error("Failed to parse shared popup/bridge definitions");
+	}
+
+	const popupAvgAdDuration = Number.parseInt(popupAvgAdDurationMatch[1], 10);
+	const bridgeAvgAdDuration = Number.parseInt(bridgeAvgAdDurationMatch[1], 10);
+	if (popupAvgAdDuration !== bridgeAvgAdDuration) {
+		throw new Error("Popup and bridge AVG_AD_DURATION are out of sync");
 	}
 
 	const popupAchievements = Function(
