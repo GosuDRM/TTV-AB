@@ -324,35 +324,6 @@ async function _findBackupStream(
 	let fallbackType = null;
 
 	const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
-	const pinnedBackupPlayerType = __TTVAB_STATE__.PinnedBackupPlayerType;
-	const isPinnedForChannel =
-		pinnedBackupPlayerType &&
-		(!__TTVAB_STATE__.PinnedBackupPlayerChannel ||
-			__TTVAB_STATE__.PinnedBackupPlayerChannel === info.ChannelName);
-	if (!info.ActiveBackupPlayerType && isPinnedForChannel) {
-		const pinnedIdx = playerTypes.indexOf(pinnedBackupPlayerType);
-		if (pinnedIdx > -1) {
-			playerTypes.splice(pinnedIdx, 1);
-			playerTypes.unshift(pinnedBackupPlayerType);
-		}
-	}
-	const preferredNativePlayerType =
-		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType;
-	if (!info.ActiveBackupPlayerType && preferredNativePlayerType) {
-		const preferredIdx = playerTypes.indexOf(preferredNativePlayerType);
-		if (preferredIdx > -1) {
-			playerTypes.splice(preferredIdx, 1);
-			playerTypes.unshift(preferredNativePlayerType);
-		}
-	}
-	if (info.ActiveBackupPlayerType) {
-		const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
-		if (idx > -1) {
-			playerTypes.splice(idx, 1);
-			playerTypes.unshift(info.ActiveBackupPlayerType);
-		}
-	}
-
 	const playerTypesLen = playerTypes.length;
 	const targetRes = currentResolution || {
 		Resolution: "1920x1080",
@@ -440,6 +411,13 @@ async function _findBackupStream(
 						if (streamRes.status === 200) {
 							const m3u8 = await streamRes.text();
 							if (m3u8) {
+								if (
+									pt === __TTVAB_STATE__.FallbackPlayerType &&
+									!fallbackM3u8
+								) {
+									fallbackM3u8 = m3u8;
+									fallbackType = pt;
+								}
 								const candidateHasAds =
 									_hasPlaylistAdMarkers(m3u8) ||
 									_hasExplicitAdMetadata(m3u8) ||
@@ -474,14 +452,28 @@ async function _findBackupStream(
 									backupM3u8 = m3u8;
 									_log(`[Trace] Selected: ${pt}`, "success");
 									break;
-								} else {
+								}
+								if (isFullyCachedPlayerType) {
 									_log(
 										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
 										"warning",
 									);
-									invalidateCache = true;
-									if (isFullyCachedPlayerType) break;
+									break;
 								}
+								if (_minimal) {
+									backupType = pt;
+									backupM3u8 = m3u8;
+									_log(
+										`[Trace] Selected minimal: ${pt} (${promotionPolicy.reason})`,
+										"warning",
+									);
+									break;
+								}
+								_log(
+									`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
+									"warning",
+								);
+								invalidateCache = true;
 							}
 						} else {
 							_log(`Stream failed for ${pt}: ${streamRes.status}`, "warning");

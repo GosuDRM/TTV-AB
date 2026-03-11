@@ -44,7 +44,9 @@ function _declareState(scope) {
 		PlayerReloadMinimalRequestsTime: _C.RELOAD_TIME,
 		PlayerReloadMinimalRequestsPlayerIndex: Math.max(
 			0,
-			_C.PLAYER_TYPES.indexOf(_C.FALLBACK_TYPE),
+			_C.PLAYER_TYPES.indexOf("autoplay") > -1
+				? _C.PLAYER_TYPES.indexOf("autoplay")
+				: _C.PLAYER_TYPES.indexOf(_C.FALLBACK_TYPE),
 		),
 		PlayerReloadDebounceMs: _C.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
 		AdCycleStaleMs: _C.AD_CYCLE_STALE_MS ?? 30000,
@@ -77,6 +79,8 @@ function _declareState(scope) {
 		PlaybackAccessTokenHash: null,
 		LastNativePlaybackAccessTokenPlayerType: null,
 		PageChannel: null,
+		PendingFetchRequests: new Map(),
+		FetchRequestSeq: 0,
 	};
 }
 

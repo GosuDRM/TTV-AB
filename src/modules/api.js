@@ -104,6 +104,78 @@ function _extractPlaybackAccessToken(payload) {
 	};
 }
 
+function _isWorkerContext() {
+	return (
+		typeof WorkerGlobalScope !== "undefined" &&
+		typeof self !== "undefined" &&
+		self instanceof WorkerGlobalScope
+	);
+}
+
+function _createFetchRelayResponse(payload) {
+	if (!payload || typeof payload !== "object") {
+		throw new Error("invalid fetch relay response");
+	}
+
+	if (payload.error) {
+		throw new Error(payload.error);
+	}
+
+	return new Response(payload.body ?? "", {
+		status: payload.status,
+		statusText: payload.statusText,
+		headers: payload.headers,
+	});
+}
+
+async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
+	if (!_isWorkerContext() || typeof self?.postMessage !== "function") {
+		return null;
+	}
+
+	const pendingRequests =
+		__TTVAB_STATE__.PendingFetchRequests ||
+		(__TTVAB_STATE__.PendingFetchRequests = new Map());
+	const nextSeq = (__TTVAB_STATE__.FetchRequestSeq || 0) + 1;
+	__TTVAB_STATE__.FetchRequestSeq = nextSeq;
+	const requestId = `fetch-${Date.now()}-${nextSeq}`;
+
+	return new Promise((resolve, reject) => {
+		const timeoutId = setTimeout(() => {
+			pendingRequests.delete(requestId);
+			reject(new Error("fetch relay timeout"));
+		}, timeoutMs);
+
+		pendingRequests.set(requestId, {
+			resolve: (payload) => {
+				clearTimeout(timeoutId);
+				try {
+					resolve(_createFetchRelayResponse(payload));
+				} catch (error) {
+					reject(error);
+				}
+			},
+			reject: (error) => {
+				clearTimeout(timeoutId);
+				reject(
+					error instanceof Error
+						? error
+						: new Error(String(error?.message || error || "fetch relay failed")),
+				);
+			},
+		});
+
+		self.postMessage({
+			key: "FetchRequest",
+			value: {
+				id: requestId,
+				url,
+				options,
+			},
+		});
+	});
+}
+
 async function _getToken(channel, playerType, realFetch) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
@@ -152,12 +224,27 @@ async function _getToken(channel, playerType, realFetch) {
 			headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
 		}
 
-		const res = await fetchFunc(_GQL_URL, {
+		const requestOptions = {
 			method: "POST",
 			headers,
 			body: JSON.stringify(body),
-			signal: controller.signal,
-		});
+		};
+		let res = null;
+
+		if (typeof _fetchViaWorkerBridge === "function") {
+			try {
+				res = await _fetchViaWorkerBridge(_GQL_URL, requestOptions, 5000);
+			} catch (bridgeError) {
+				_log(`Token relay error: ${bridgeError.message}`, "warning");
+			}
+		}
+
+		if (!res) {
+			res = await fetchFunc(_GQL_URL, {
+				...requestOptions,
+				signal: controller.signal,
+			});
+		}
 
 		_log(`[Trace] Token response: ${res.status}`, "info");
 		return res;

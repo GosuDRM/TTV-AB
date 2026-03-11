@@ -16,7 +16,7 @@ const _$c = {
 	},
 	AD_SIGNIFIER: "stitched",
 	CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
-	PLAYER_TYPES: ["embed", "popout", "picture-by-picture", "autoplay"],
+	PLAYER_TYPES: ["embed", "popout", "autoplay"],
 	FALLBACK_TYPE: "embed",
 	FORCE_TYPE: "popout",
 	RELOAD_TIME: 1500,
@@ -73,7 +73,9 @@ function _$ds(scope) {
 		PlayerReloadMinimalRequestsTime: _$c.RELOAD_TIME,
 		PlayerReloadMinimalRequestsPlayerIndex: Math.max(
 			0,
-			_$c.PLAYER_TYPES.indexOf(_$c.FALLBACK_TYPE),
+			_$c.PLAYER_TYPES.indexOf("autoplay") > -1
+				? _$c.PLAYER_TYPES.indexOf("autoplay")
+				: _$c.PLAYER_TYPES.indexOf(_$c.FALLBACK_TYPE),
 		),
 		PlayerReloadDebounceMs: _$c.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
 		AdCycleStaleMs: _$c.AD_CYCLE_STALE_MS ?? 30000,
@@ -106,6 +108,8 @@ function _$ds(scope) {
 		PlaybackAccessTokenHash: null,
 		LastNativePlaybackAccessTokenPlayerType: null,
 		PageChannel: null,
+		PendingFetchRequests: new Map(),
+		FetchRequestSeq: 0,
 	};
 }
 
@@ -610,6 +614,78 @@ function _extractPlaybackAccessToken(payload) {
 	};
 }
 
+function _isWorkerContext() {
+	return (
+		typeof WorkerGlobalScope !== "undefined" &&
+		typeof self !== "undefined" &&
+		self instanceof WorkerGlobalScope
+	);
+}
+
+function _createFetchRelayResponse(payload) {
+	if (!payload || typeof payload !== "object") {
+		throw new Error("invalid fetch relay response");
+	}
+
+	if (payload.error) {
+		throw new Error(payload.error);
+	}
+
+	return new Response(payload.body ?? "", {
+		status: payload.status,
+		statusText: payload.statusText,
+		headers: payload.headers,
+	});
+}
+
+async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
+	if (!_isWorkerContext() || typeof self?.postMessage !== "function") {
+		return null;
+	}
+
+	const pendingRequests =
+		__TTVAB_STATE__.PendingFetchRequests ||
+		(__TTVAB_STATE__.PendingFetchRequests = new Map());
+	const nextSeq = (__TTVAB_STATE__.FetchRequestSeq || 0) + 1;
+	__TTVAB_STATE__.FetchRequestSeq = nextSeq;
+	const requestId = `fetch-${Date.now()}-${nextSeq}`;
+
+	return new Promise((resolve, reject) => {
+		const timeoutId = setTimeout(() => {
+			pendingRequests.delete(requestId);
+			reject(new Error("fetch relay timeout"));
+		}, timeoutMs);
+
+		pendingRequests.set(requestId, {
+			resolve: (payload) => {
+				clearTimeout(timeoutId);
+				try {
+					resolve(_createFetchRelayResponse(payload));
+				} catch (error) {
+					reject(error);
+				}
+			},
+			reject: (error) => {
+				clearTimeout(timeoutId);
+				reject(
+					error instanceof Error
+						? error
+						: new Error(String(error?.message || error || "fetch relay failed")),
+				);
+			},
+		});
+
+		self.postMessage({
+			key: "FetchRequest",
+			value: {
+				id: requestId,
+				url,
+				options,
+			},
+		});
+	});
+}
+
 async function _$tk(channel, playerType, realFetch) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
@@ -658,12 +734,27 @@ async function _$tk(channel, playerType, realFetch) {
 			headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
 		}
 
-		const res = await fetchFunc(_$gu, {
+		const requestOptions = {
 			method: "POST",
 			headers,
 			body: JSON.stringify(body),
-			signal: controller.signal,
-		});
+		};
+		let res = null;
+
+		if (typeof _fetchViaWorkerBridge === "function") {
+			try {
+				res = await _fetchViaWorkerBridge(_$gu, requestOptions, 5000);
+			} catch (bridgeError) {
+				_$l(`Token relay error: ${bridgeError.message}`, "warning");
+			}
+		}
+
+		if (!res) {
+			res = await fetchFunc(_$gu, {
+				...requestOptions,
+				signal: controller.signal,
+			});
+		}
 
 		_$l(`[Trace] Token response: ${res.status}`, "info");
 		return res;
@@ -999,35 +1090,6 @@ async function _$fb(
 	let fallbackType = null;
 
 	const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
-	const pinnedBackupPlayerType = __TTVAB_STATE__.PinnedBackupPlayerType;
-	const isPinnedForChannel =
-		pinnedBackupPlayerType &&
-		(!__TTVAB_STATE__.PinnedBackupPlayerChannel ||
-			__TTVAB_STATE__.PinnedBackupPlayerChannel === info.ChannelName);
-	if (!info.ActiveBackupPlayerType && isPinnedForChannel) {
-		const pinnedIdx = playerTypes.indexOf(pinnedBackupPlayerType);
-		if (pinnedIdx > -1) {
-			playerTypes.splice(pinnedIdx, 1);
-			playerTypes.unshift(pinnedBackupPlayerType);
-		}
-	}
-	const preferredNativePlayerType =
-		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType;
-	if (!info.ActiveBackupPlayerType && preferredNativePlayerType) {
-		const preferredIdx = playerTypes.indexOf(preferredNativePlayerType);
-		if (preferredIdx > -1) {
-			playerTypes.splice(preferredIdx, 1);
-			playerTypes.unshift(preferredNativePlayerType);
-		}
-	}
-	if (info.ActiveBackupPlayerType) {
-		const idx = playerTypes.indexOf(info.ActiveBackupPlayerType);
-		if (idx > -1) {
-			playerTypes.splice(idx, 1);
-			playerTypes.unshift(info.ActiveBackupPlayerType);
-		}
-	}
-
 	const playerTypesLen = playerTypes.length;
 	const targetRes = currentResolution || {
 		Resolution: "1920x1080",
@@ -1115,6 +1177,13 @@ async function _$fb(
 						if (streamRes.status === 200) {
 							const m3u8 = await streamRes.text();
 							if (m3u8) {
+								if (
+									pt === __TTVAB_STATE__.FallbackPlayerType &&
+									!fallbackM3u8
+								) {
+									fallbackM3u8 = m3u8;
+									fallbackType = pt;
+								}
 								const candidateHasAds =
 									_$hpa(m3u8) ||
 									_$hem(m3u8) ||
@@ -1149,14 +1218,28 @@ async function _$fb(
 									backupM3u8 = m3u8;
 									_$l(`[Trace] Selected: ${pt}`, "success");
 									break;
-								} else {
+								}
+								if (isFullyCachedPlayerType) {
 									_$l(
 										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
 										"warning",
 									);
-									invalidateCache = true;
-									if (isFullyCachedPlayerType) break;
+									break;
 								}
+								if (_minimal) {
+									backupType = pt;
+									backupM3u8 = m3u8;
+									_$l(
+										`[Trace] Selected minimal: ${pt} (${promotionPolicy.reason})`,
+										"warning",
+									);
+									break;
+								}
+								_$l(
+									`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
+									"warning",
+								);
+								invalidateCache = true;
 							}
 						} else {
 							_$l(`Stream failed for ${pt}: ${streamRes.status}`, "warning");
@@ -1555,6 +1638,9 @@ function _$hw() {
                 ${_summarizePlaybackAccessTokenPayload.toString()}
                 ${_getPlaybackAccessTokenErrors.toString()}
                 ${_extractPlaybackAccessToken.toString()}
+                ${_isWorkerContext.toString()}
+                ${_createFetchRelayResponse.toString()}
+                ${_fetchViaWorkerBridge.toString()}
                 ${_$tk.toString()}
                 ${_$rsa.toString()}
                 ${_$gsi.toString()}
@@ -1600,6 +1686,21 @@ function _$hw() {
                             __TTVAB_STATE__.PinnedBackupPlayerType = data.value || null;
                             __TTVAB_STATE__.PinnedBackupPlayerChannel = data.channel || null;
                             break;
+                        case 'FetchResponse':
+                            {
+                                const responseData = data.value;
+                                const requestId = responseData?.id || null;
+                                const pendingRequests = __TTVAB_STATE__.PendingFetchRequests;
+                                if (!requestId || !pendingRequests?.has(requestId)) break;
+                                const pendingRequest = pendingRequests.get(requestId);
+                                pendingRequests.delete(requestId);
+                                if (responseData?.error) {
+                                    pendingRequest.reject(responseData.error);
+                                } else {
+                                    pendingRequest.resolve(responseData);
+                                }
+                            }
+                            break;
                         case 'TriggeredPlayerReload': __TTVAB_STATE__.HasTriggeredPlayerReload = true; break;
                     }
                 });
@@ -1640,11 +1741,43 @@ function _$hw() {
 				const currentChannel = getCurrentPageChannel();
 				return Boolean(currentChannel && currentChannel !== channel);
 			};
+			const handleWorkerFetchRequest = async (fetchRequest) => {
+				const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
+				try {
+					const response = await rawFetch(
+						fetchRequest?.url,
+						fetchRequest?.options || {},
+					);
+					const body = await response.text();
+					return {
+						id: fetchRequest?.id || null,
+						status: response.status,
+						statusText: response.statusText,
+						headers: Object.fromEntries(response.headers.entries()),
+						body,
+					};
+				} catch (error) {
+					return {
+						id: fetchRequest?.id || null,
+						error: error?.message || String(error),
+					};
+				}
+			};
 
 			this.addEventListener("message", (e) => {
 				if (!e.data?.key) return;
 
 				switch (e.data.key) {
+					case "FetchRequest":
+						void handleWorkerFetchRequest(e.data.value).then((responseData) => {
+							try {
+								this.postMessage({
+									key: "FetchResponse",
+									value: responseData,
+								});
+							} catch {}
+						});
+						break;
 					case "AdBlocked":
 						if (isStaleChannelEvent(e.data.channel || null)) {
 							_$l(
@@ -1722,17 +1855,6 @@ function _$hw() {
 							channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 						});
 						_$l(`Pinned backup type: ${e.data.value}`, "info");
-						if (
-							nextPinnedType &&
-							__TTVAB_STATE__.CurrentAdChannel === nextPinnedChannel &&
-							typeof _$dpt === "function"
-						) {
-							_$l(
-								`Reloading player for backup switch: ${nextPinnedType}`,
-								"warning",
-							);
-							_$dpt(false, true, { reason: "ad-recovery" });
-						}
 						break;
 					case "AdEnded":
 						if (isStaleChannelEvent(e.data.channel || null)) {
@@ -1937,6 +2059,7 @@ function _$hs() {
 
 function _$mf() {
 	const realFetch = window.fetch;
+	window.__TTVAB_REAL_FETCH__ = realFetch;
 	const updateWorkers = (updates) => {
 		if (Array.isArray(updates)) {
 			for (const msg of updates) {
@@ -1955,12 +2078,7 @@ function _$mf() {
 		}
 
 		try {
-			const forceType =
-				(
-					__TTVAB_STATE__.CurrentAdChannel &&
-					__TTVAB_STATE__.PinnedBackupPlayerType
-				) ||
-				__TTVAB_STATE__.ForceAccessTokenPlayerType;
+			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType;
 			if (!forceType) {
 				return { bodyText, changed: false };
 			}

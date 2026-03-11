@@ -316,6 +316,9 @@ function _hookWorker() {
                 ${_summarizePlaybackAccessTokenPayload.toString()}
                 ${_getPlaybackAccessTokenErrors.toString()}
                 ${_extractPlaybackAccessToken.toString()}
+                ${_isWorkerContext.toString()}
+                ${_createFetchRelayResponse.toString()}
+                ${_fetchViaWorkerBridge.toString()}
                 ${_getToken.toString()}
                 ${_resetStreamAdState.toString()}
                 ${_getStreamInfoForPlaylist.toString()}
@@ -361,6 +364,21 @@ function _hookWorker() {
                             __TTVAB_STATE__.PinnedBackupPlayerType = data.value || null;
                             __TTVAB_STATE__.PinnedBackupPlayerChannel = data.channel || null;
                             break;
+                        case 'FetchResponse':
+                            {
+                                const responseData = data.value;
+                                const requestId = responseData?.id || null;
+                                const pendingRequests = __TTVAB_STATE__.PendingFetchRequests;
+                                if (!requestId || !pendingRequests?.has(requestId)) break;
+                                const pendingRequest = pendingRequests.get(requestId);
+                                pendingRequests.delete(requestId);
+                                if (responseData?.error) {
+                                    pendingRequest.reject(responseData.error);
+                                } else {
+                                    pendingRequest.resolve(responseData);
+                                }
+                            }
+                            break;
                         case 'TriggeredPlayerReload': __TTVAB_STATE__.HasTriggeredPlayerReload = true; break;
                     }
                 });
@@ -401,11 +419,43 @@ function _hookWorker() {
 				const currentChannel = getCurrentPageChannel();
 				return Boolean(currentChannel && currentChannel !== channel);
 			};
+			const handleWorkerFetchRequest = async (fetchRequest) => {
+				const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
+				try {
+					const response = await rawFetch(
+						fetchRequest?.url,
+						fetchRequest?.options || {},
+					);
+					const body = await response.text();
+					return {
+						id: fetchRequest?.id || null,
+						status: response.status,
+						statusText: response.statusText,
+						headers: Object.fromEntries(response.headers.entries()),
+						body,
+					};
+				} catch (error) {
+					return {
+						id: fetchRequest?.id || null,
+						error: error?.message || String(error),
+					};
+				}
+			};
 
 			this.addEventListener("message", (e) => {
 				if (!e.data?.key) return;
 
 				switch (e.data.key) {
+					case "FetchRequest":
+						void handleWorkerFetchRequest(e.data.value).then((responseData) => {
+							try {
+								this.postMessage({
+									key: "FetchResponse",
+									value: responseData,
+								});
+							} catch {}
+						});
+						break;
 					case "AdBlocked":
 						if (isStaleChannelEvent(e.data.channel || null)) {
 							_log(
@@ -483,17 +533,6 @@ function _hookWorker() {
 							channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 						});
 						_log(`Pinned backup type: ${e.data.value}`, "info");
-						if (
-							nextPinnedType &&
-							__TTVAB_STATE__.CurrentAdChannel === nextPinnedChannel &&
-							typeof _doPlayerTask === "function"
-						) {
-							_log(
-								`Reloading player for backup switch: ${nextPinnedType}`,
-								"warning",
-							);
-							_doPlayerTask(false, true, { reason: "ad-recovery" });
-						}
 						break;
 					case "AdEnded":
 						if (isStaleChannelEvent(e.data.channel || null)) {
@@ -698,6 +737,7 @@ function _hookStorage() {
 
 function _hookMainFetch() {
 	const realFetch = window.fetch;
+	window.__TTVAB_REAL_FETCH__ = realFetch;
 	const updateWorkers = (updates) => {
 		if (Array.isArray(updates)) {
 			for (const msg of updates) {
@@ -716,12 +756,7 @@ function _hookMainFetch() {
 		}
 
 		try {
-			const forceType =
-				(
-					__TTVAB_STATE__.CurrentAdChannel &&
-					__TTVAB_STATE__.PinnedBackupPlayerType
-				) ||
-				__TTVAB_STATE__.ForceAccessTokenPlayerType;
+			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType;
 			if (!forceType) {
 				return { bodyText, changed: false };
 			}
