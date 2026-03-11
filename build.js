@@ -147,6 +147,7 @@ function validateSharedDefinitions() {
 	const manifest = JSON.parse(
 		fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"),
 	);
+	const canonicalRepoUrl = "https://github.com/GosuDRM/TTV-AB";
 	if (
 		manifest.default_locale &&
 		!fs.existsSync(path.join(__dirname, "_locales", manifest.default_locale))
@@ -179,7 +180,7 @@ function validateSharedDefinitions() {
 			}
 		}
 	}
-	if (manifest.homepage_url !== "https://github.com/GosuDRM/TTV-AB") {
+	if (manifest.homepage_url !== canonicalRepoUrl) {
 		throw new Error(
 			`Manifest homepage_url must match the canonical repository: ${manifest.homepage_url || "missing"}`,
 		);
@@ -228,6 +229,12 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	if (!readmeSource.includes(canonicalRepoUrl)) {
+		throw new Error("README is missing the canonical repository URL");
+	}
+	if (!privacySource.includes(canonicalRepoUrl)) {
+		throw new Error("PRIVACY is missing the canonical repository URL");
+	}
 	if (
 		!readmeSource.includes(`version-${constantsVersion}-`) ||
 		!readmeSource.includes(`### v${constantsVersion}`)
@@ -250,6 +257,9 @@ function validateSharedDefinitions() {
 		);
 	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
+	if (!popupSource.includes(`"${canonicalRepoUrl}"`)) {
+		throw new Error("Popup repo link must target the canonical repository URL");
+	}
 	const popupHtmlSource = fs.readFileSync(
 		path.join(__dirname, "src", "popup", "popup.html"),
 		"utf8",
