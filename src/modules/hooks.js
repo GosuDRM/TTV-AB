@@ -195,6 +195,7 @@ function _hookWorkerFetch() {
 					ModifiedM3U8: null,
 					IsUsingModifiedM3U8: false,
 					IsUsingFallbackStream: false,
+					IsUsingBackupStream: false,
 					UsherBaseUrl: url,
 					UsherParams: new URL(url).search,
 					RequestedAds: new Set(),
@@ -465,25 +466,34 @@ function _hookWorker() {
 							);
 							break;
 						}
-						{
-							const nextPinnedType = e.data.value || null;
-							const nextPinnedChannel =
-								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
-							if (
-								__TTVAB_STATE__.PinnedBackupPlayerType === nextPinnedType &&
-								__TTVAB_STATE__.PinnedBackupPlayerChannel === nextPinnedChannel
-							) {
-								break;
-							}
-							__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
-							__TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedChannel;
+						const nextPinnedType = e.data.value || null;
+						const nextPinnedChannel =
+							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+						if (
+							__TTVAB_STATE__.PinnedBackupPlayerType === nextPinnedType &&
+							__TTVAB_STATE__.PinnedBackupPlayerChannel === nextPinnedChannel
+						) {
+							break;
 						}
+						__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
+						__TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedChannel;
 						_broadcastWorkers({
 							key: "UpdatePinnedBackupPlayerType",
 							value: __TTVAB_STATE__.PinnedBackupPlayerType,
 							channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 						});
 						_log(`Pinned backup type: ${e.data.value}`, "info");
+						if (
+							nextPinnedType &&
+							__TTVAB_STATE__.CurrentAdChannel === nextPinnedChannel &&
+							typeof _doPlayerTask === "function"
+						) {
+							_log(
+								`Reloading player for backup switch: ${nextPinnedType}`,
+								"warning",
+							);
+							_doPlayerTask(false, true, { reason: "ad-recovery" });
+						}
 						break;
 					case "AdEnded":
 						if (isStaleChannelEvent(e.data.channel || null)) {
@@ -699,7 +709,6 @@ function _hookMainFetch() {
 	};
 	const rewritePlaybackAccessTokenBody = (bodyText) => {
 		if (
-			!__TTVAB_STATE__.ForceAccessTokenPlayerType ||
 			typeof bodyText !== "string" ||
 			!bodyText
 		) {
@@ -707,7 +716,15 @@ function _hookMainFetch() {
 		}
 
 		try {
-			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType;
+			const forceType =
+				(
+					__TTVAB_STATE__.CurrentAdChannel &&
+					__TTVAB_STATE__.PinnedBackupPlayerType
+				) ||
+				__TTVAB_STATE__.ForceAccessTokenPlayerType;
+			if (!forceType) {
+				return { bodyText, changed: false };
+			}
 			const parsed = JSON.parse(bodyText);
 			const operations = Array.isArray(parsed) ? parsed : [parsed];
 			let changed = false;
