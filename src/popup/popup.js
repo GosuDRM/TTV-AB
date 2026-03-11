@@ -58,7 +58,15 @@ document.addEventListener("DOMContentLoaded", () => {
 		const [year, month, day] = String(dateKey)
 			.split("-")
 			.map((value) => Number.parseInt(value, 10));
-		return new Date(year, (month || 1) - 1, day || 1);
+		if (
+			!Number.isFinite(year) ||
+			!Number.isFinite(month) ||
+			!Number.isFinite(day)
+		) {
+			return null;
+		}
+		const date = new Date(year, month - 1, day);
+		return Number.isNaN(date.getTime()) ? null : date;
 	}
 
 	function getTranslations() {
@@ -220,6 +228,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	function renderChart(dailyData) {
 		const t = getTranslations();
 		const days = getLast7Days();
+		const parsedDays = days.map((dayKey) => parseDateKey(dayKey));
 		const values = days.map((d) => {
 			const ads = Number.isFinite(dailyData[d]?.ads) ? dailyData[d].ads : 0;
 			const domAds = Number.isFinite(dailyData[d]?.domAds)
@@ -236,7 +245,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		weeklyChart.innerHTML = values
 			.map((v, i) => {
 				const height = Math.max((v / max) * 100, 8);
-				const dayName = formatter.format(parseDateKey(days[i]));
+				const dayName = parsedDays[i] ? formatter.format(parsedDays[i]) : "?";
 				return `<div class="chart-bar" style="height: ${height}%;" title="${dayName}: ${v}"></div>`;
 			})
 			.join("");
