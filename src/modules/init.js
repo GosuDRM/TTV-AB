@@ -103,20 +103,14 @@ function _blockAntiAdblockPopup() {
 			styleMount.appendChild(style);
 		}
 
-		function _incrementPopupsBlocked() {
+		function _incrementDomCleanup(kind) {
 			const now = Date.now();
 			if (now - lastBlockTime < 1000) return;
 			lastBlockTime = now;
 
-			_S.popupsBlocked++;
-			window.postMessage(
-				{
-					type: "ttvab-popup-blocked",
-					detail: { count: _S.popupsBlocked },
-				},
-				"*",
-			);
-			_log(`Popup blocked! Total: ${_S.popupsBlocked}`, "success");
+			const channel = _getCurrentChannelName();
+			_incrementDomAdsBlocked(kind, channel);
+			_log(`DOM ad cleanup (${kind}) total: ${_S.domAdsBlocked}`, "success");
 		}
 
 		function _getCurrentChannelName() {
@@ -594,6 +588,7 @@ function _blockAntiAdblockPopup() {
 					}
 
 					_hideElement(card);
+					_incrementDomCleanup("promoted-card");
 					return true;
 				}
 			}
@@ -710,6 +705,7 @@ function _blockAntiAdblockPopup() {
 
 			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShell) {
 				didCountCurrentDisplayAdShell = true;
+				_incrementDomCleanup("display-shell");
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
 					_incrementAdsBlocked(_getCurrentChannelName());
 				}
@@ -870,7 +866,7 @@ function _blockAntiAdblockPopup() {
 							);
 							popup.setAttribute("data-ttvab-blocked", "true");
 
-							_incrementPopupsBlocked();
+							_incrementDomCleanup("overlay-ad");
 							return true;
 						}
 
@@ -890,7 +886,7 @@ function _blockAntiAdblockPopup() {
 								"; display: none !important;",
 						);
 						fallback.setAttribute("data-ttvab-blocked", "true");
-						_incrementPopupsBlocked();
+						_incrementDomCleanup("overlay-ad");
 						return true;
 					}
 				}
@@ -917,7 +913,7 @@ function _blockAntiAdblockPopup() {
 								(el.getAttribute("style") || "") +
 									"; display: none !important;",
 							);
-							_incrementPopupsBlocked();
+							_incrementDomCleanup("overlay-ad");
 							return true;
 						}
 					}
@@ -941,7 +937,7 @@ function _blockAntiAdblockPopup() {
 						"style",
 						`${el.getAttribute("style") || ""}; display: none !important;`,
 					);
-					_incrementPopupsBlocked();
+					_incrementDomCleanup("overlay-ad");
 					return true;
 				}
 			}
@@ -1071,12 +1067,12 @@ function _init() {
 		}
 
 		if (
-			e.data.type === "ttvab-init-popups-count" &&
+			e.data.type === "ttvab-init-dom-ads-count" &&
 			typeof e.data.detail?.count === "number"
 		) {
-			if (_S.popupsBlocked === e.data.detail.count) return;
-			_S.popupsBlocked = e.data.detail.count;
-			_log(`Restored popups count: ${_S.popupsBlocked}`, "info");
+			if (_S.domAdsBlocked === e.data.detail.count) return;
+			_S.domAdsBlocked = e.data.detail.count;
+			_log(`Restored DOM cleanup count: ${_S.domAdsBlocked}`, "info");
 		}
 	});
 

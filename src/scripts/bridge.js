@@ -19,8 +19,8 @@ const ACHIEVEMENTS = [
 	{ id: "block_500", threshold: 500, type: "ads" },
 	{ id: "block_1000", threshold: 1000, type: "ads" },
 	{ id: "block_5000", threshold: 5000, type: "ads" },
-	{ id: "popup_10", threshold: 10, type: "popups" },
-	{ id: "popup_50", threshold: 50, type: "popups" },
+	{ id: "popup_10", threshold: 10, type: "domAds" },
+	{ id: "popup_50", threshold: 50, type: "domAds" },
 	{ id: "time_1h", threshold: 3600, type: "time" },
 	{ id: "time_10h", threshold: 36000, type: "time" },
 	{ id: "channels_5", threshold: 5, type: "channels" },
@@ -32,7 +32,7 @@ const MAX_CHANNELS = 100;
 const bridgeState = {
 	enabled: true,
 	storedAdsCount: 0,
-	storedPopupsCount: 0,
+	storedDomAdsCount: 0,
 };
 
 const StorageQueue = {
@@ -56,7 +56,7 @@ const StorageQueue = {
 	},
 };
 
-function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
+function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 	return new Promise((resolve) => {
 		chrome.storage.local.get(["ttvStats"], (result) => {
 			if (chrome.runtime.lastError) {
@@ -77,7 +77,16 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 			const today = getTodayKey();
 
 			if (!stats.daily[today]) {
-				stats.daily[today] = { ads: 0, popups: 0 };
+				stats.daily[today] = { ads: 0, domAds: 0 };
+			}
+			if (typeof stats.daily[today].ads !== "number") {
+				stats.daily[today].ads = 0;
+			}
+			if (typeof stats.daily[today].domAds !== "number") {
+				stats.daily[today].domAds = 0;
+			}
+			if (typeof stats.daily[today][type] !== "number") {
+				stats.daily[today][type] = 0;
 			}
 			stats.daily[today][type]++;
 			stats.lastBlockedAt = Date.now();
@@ -122,8 +131,8 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 					case "ads":
 						value = totalAdsBlocked;
 						break;
-					case "popups":
-						value = totalPopupsBlocked;
+					case "domAds":
+						value = totalDomAdsBlocked;
 						break;
 					case "time":
 						value = timeSaved;
@@ -148,7 +157,7 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 						chrome.runtime.lastError.message,
 					);
 					StorageQueue.add(() =>
-						updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked),
+						updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked),
 					);
 					resolve();
 					return;
@@ -166,7 +175,7 @@ function updateStats(type, channel, totalAdsBlocked, totalPopupsBlocked) {
 }
 
 chrome.storage.local.get(
-	["ttvAdblockEnabled", "ttvAdsBlocked", "ttvPopupsBlocked"],
+	["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
 	(result) => {
 		if (chrome.runtime.lastError) {
 			console.error(
@@ -177,7 +186,7 @@ chrome.storage.local.get(
 		const safeResult = result || {};
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
 		bridgeState.storedAdsCount = safeResult.ttvAdsBlocked || 0;
-		bridgeState.storedPopupsCount = safeResult.ttvPopupsBlocked || 0;
+		bridgeState.storedDomAdsCount = safeResult.ttvDomAdsBlocked || 0;
 
 		function broadcastState() {
 			window.postMessage(
@@ -193,8 +202,8 @@ chrome.storage.local.get(
 			);
 			window.postMessage(
 				{
-					type: "ttvab-init-popups-count",
-					detail: { count: bridgeState.storedPopupsCount },
+					type: "ttvab-init-dom-ads-count",
+					detail: { count: bridgeState.storedDomAdsCount },
 				},
 				"*",
 			);
@@ -227,8 +236,8 @@ chrome.storage.local.get(
 			if (changes.ttvAdsBlocked) {
 				bridgeState.storedAdsCount = changes.ttvAdsBlocked.newValue || 0;
 			}
-			if (changes.ttvPopupsBlocked) {
-				bridgeState.storedPopupsCount = changes.ttvPopupsBlocked.newValue || 0;
+			if (changes.ttvDomAdsBlocked) {
+				bridgeState.storedDomAdsCount = changes.ttvDomAdsBlocked.newValue || 0;
 			}
 		});
 	},
@@ -270,7 +279,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 let pendingAdsDelta = 0;
-let pendingPopupsDelta = 0;
+let pendingDomAdsDelta = 0;
 let pendingAdChannels = [];
 let flushTimeout = null;
 
@@ -284,18 +293,18 @@ function scheduleFlush() {
 
 function flushCounters() {
 	const adsDelta = pendingAdsDelta;
-	const popupsDelta = pendingPopupsDelta;
+	const domAdsDelta = pendingDomAdsDelta;
 	const channels = pendingAdChannels.slice();
 	pendingAdsDelta = 0;
-	pendingPopupsDelta = 0;
+	pendingDomAdsDelta = 0;
 	pendingAdChannels = [];
 
-	if (adsDelta === 0 && popupsDelta === 0) return;
+	if (adsDelta === 0 && domAdsDelta === 0) return;
 
 	StorageQueue.add(() => {
 		return new Promise((resolve) => {
 			chrome.storage.local.get(
-				["ttvAdsBlocked", "ttvPopupsBlocked"],
+				["ttvAdsBlocked", "ttvDomAdsBlocked"],
 				(result) => {
 					if (chrome.runtime.lastError) {
 						console.error(
@@ -303,7 +312,7 @@ function flushCounters() {
 							chrome.runtime.lastError.message,
 						);
 						pendingAdsDelta += adsDelta;
-						pendingPopupsDelta += popupsDelta;
+						pendingDomAdsDelta += domAdsDelta;
 						pendingAdChannels.push(...channels);
 						scheduleFlush();
 						resolve();
@@ -313,9 +322,9 @@ function flushCounters() {
 					const safeResult = result || {};
 					const updates = {};
 					const newAds = (safeResult.ttvAdsBlocked || 0) + adsDelta;
-					const newPopups = (safeResult.ttvPopupsBlocked || 0) + popupsDelta;
+					const newDomAds = (safeResult.ttvDomAdsBlocked || 0) + domAdsDelta;
 					if (adsDelta > 0) updates.ttvAdsBlocked = newAds;
-					if (popupsDelta > 0) updates.ttvPopupsBlocked = newPopups;
+					if (domAdsDelta > 0) updates.ttvDomAdsBlocked = newDomAds;
 
 					chrome.storage.local.set(updates, async () => {
 						if (chrome.runtime.lastError) {
@@ -324,7 +333,7 @@ function flushCounters() {
 								chrome.runtime.lastError.message,
 							);
 							pendingAdsDelta += adsDelta;
-							pendingPopupsDelta += popupsDelta;
+							pendingDomAdsDelta += domAdsDelta;
 							pendingAdChannels.push(...channels);
 							scheduleFlush();
 							resolve();
@@ -333,11 +342,11 @@ function flushCounters() {
 
 						try {
 							for (const ch of channels) {
-								await updateStats("ads", ch, newAds, newPopups);
+								await updateStats("ads", ch, newAds, newDomAds);
 							}
-							if (popupsDelta > 0) {
-								for (let i = 0; i < popupsDelta; i++) {
-									await updateStats("popups", null, newAds, newPopups);
+							if (domAdsDelta > 0) {
+								for (let i = 0; i < domAdsDelta; i++) {
+									await updateStats("domAds", null, newAds, newDomAds);
 								}
 							}
 						} catch (statsErr) {
@@ -362,8 +371,8 @@ window.addEventListener("message", (e) => {
 		scheduleFlush();
 	}
 
-	if (e.data.type === "ttvab-popup-blocked") {
-		pendingPopupsDelta++;
+	if (e.data.type === "ttvab-dom-ad-cleanup") {
+		pendingDomAdsDelta++;
 		scheduleFlush();
 	}
 });
