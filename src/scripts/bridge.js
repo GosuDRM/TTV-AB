@@ -22,8 +22,22 @@ function normalizeCount(value) {
 
 function normalizeChannelName(value) {
 	if (typeof value !== "string") return null;
-	const trimmed = value.trim();
+	const trimmed = value.trim().toLowerCase();
 	return trimmed !== "" ? trimmed : null;
+}
+
+function normalizeChannelsMap(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return {};
+	}
+	const normalized = {};
+	for (const [channelName, count] of Object.entries(value)) {
+		const safeChannel = normalizeChannelName(channelName);
+		if (!safeChannel) continue;
+		normalized[safeChannel] =
+			normalizeCount(normalized[safeChannel]) + normalizeCount(count);
+	}
+	return normalized;
 }
 
 const ACHIEVEMENTS = [
@@ -112,12 +126,7 @@ function updateStats(
 				!Array.isArray(stats.daily)
 					? stats.daily
 					: {};
-			stats.channels =
-				stats.channels &&
-				typeof stats.channels === "object" &&
-				!Array.isArray(stats.channels)
-					? stats.channels
-					: {};
+			stats.channels = normalizeChannelsMap(stats.channels);
 			stats.achievements = Array.isArray(stats.achievements)
 				? [
 						...new Set(
