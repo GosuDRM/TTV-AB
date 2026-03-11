@@ -309,13 +309,30 @@ function validateSharedDefinitions() {
 		);
 	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
-	if (!popupSource.includes(`"${canonicalRepoUrl}"`)) {
-		throw new Error("Popup repo link must target the canonical repository URL");
-	}
 	const popupHtmlSource = fs.readFileSync(
 		path.join(__dirname, "src", "popup", "popup.html"),
 		"utf8",
 	);
+	if (!popupHtmlSource.includes(`href="${canonicalRepoUrl}"`)) {
+		throw new Error(
+			"Popup HTML repo link must target the canonical repository URL",
+		);
+	}
+	if (!popupHtmlSource.includes('href="https://github.com/GosuDRM"')) {
+		throw new Error(
+			"Popup HTML author link must target the GosuDRM GitHub profile",
+		);
+	}
+	for (const requiredPopupLinkAttr of [
+		'target="_blank"',
+		'rel="noopener noreferrer"',
+	]) {
+		if (!popupHtmlSource.includes(requiredPopupLinkAttr)) {
+			throw new Error(
+				`Popup HTML footer links are missing ${requiredPopupLinkAttr}`,
+			);
+		}
+	}
 	for (const requiredPopupId of [
 		"enableToggle",
 		"statusDot",
