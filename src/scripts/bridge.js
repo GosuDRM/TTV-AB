@@ -111,12 +111,17 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 			}
 
 			if (type === "ads" && channel) {
-				if (!stats.channels[channel]) {
+				if (!Number.isFinite(stats.channels[channel])) {
 					stats.channels[channel] = 0;
 				}
 				stats.channels[channel]++;
 
-				const channelEntries = Object.entries(stats.channels);
+				const channelEntries = Object.entries(stats.channels).map(
+					([channelName, count]) => [
+						channelName,
+						Number.isFinite(count) ? count : 0,
+					],
+				);
 				if (channelEntries.length > MAX_CHANNELS) {
 					channelEntries.sort((a, b) => b[1] - a[1]);
 					stats.channels = Object.fromEntries(
