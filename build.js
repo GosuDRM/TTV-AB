@@ -538,6 +538,15 @@ function validateSharedDefinitions() {
 			`Popup achievement badge count mismatch: html=${popupBadgeCount}, config=${popupAchievements.length}`,
 		);
 	}
+	const popupAchievementButtonCount = (
+		popupHtmlSource.match(/<button type="button" class="achievement-badge"/g) ||
+		[]
+	).length;
+	if (popupAchievementButtonCount !== popupAchievements.length) {
+		throw new Error(
+			`Popup achievement badges must remain native buttons: buttons=${popupAchievementButtonCount}, config=${popupAchievements.length}`,
+		);
+	}
 
 	const popupNormalizeCount = extractLiteral(
 		popupSource,
