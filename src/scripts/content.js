@@ -1850,9 +1850,6 @@ function _$mf() {
 					updatePlaybackAccessTokenHash(
 						op.extensions.persistedQuery.sha256Hash,
 					);
-					if (typeof op.variables?.playerType === "string") {
-						updateNativePlaybackAccessTokenPlayerType(op.variables.playerType);
-					}
 				}
 			}
 		} catch {}
