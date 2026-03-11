@@ -160,6 +160,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		if (donateButton) donateButton.title = t.supportDeveloper;
 		langSelector.title = t.language;
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
+		langSelector.setAttribute("aria-describedby", "descriptionText");
 		versionText.setAttribute(
 			"aria-label",
 			`Version ${versionText.textContent}`,
