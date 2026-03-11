@@ -256,7 +256,8 @@ document.addEventListener("DOMContentLoaded", () => {
 			.map((v, i) => {
 				const height = Math.max((v / max) * 100, 8);
 				const dayName = parsedDays[i] ? formatter.format(parsedDays[i]) : "?";
-				return `<div class="chart-bar" style="height: ${height}%;" title="${dayName}: ${v}"></div>`;
+				const safeDayName = escapeHtml(dayName);
+				return `<div class="chart-bar" style="height: ${height}%;" title="${safeDayName}: ${v}"></div>`;
 			})
 			.join("");
 
