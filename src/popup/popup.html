@@ -497,6 +497,16 @@
             outline-offset: 2px;
         }
 
+        .toggle input:disabled+.slider {
+            cursor: progress;
+            opacity: 0.65;
+            box-shadow: none;
+        }
+
+        .toggle input:disabled+.slider:before {
+            box-shadow: none;
+        }
+
         .info {
             margin-top: 16px;
             text-align: center;
