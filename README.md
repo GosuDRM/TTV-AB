@@ -25,7 +25,7 @@ A lightweight Chromium-based browser extension that blocks ads on Twitch.tv stre
 - ✅ Restores your chosen quality after ad recovery
 - ✅ Manifest V3 compatible
 - ✅ Simple enable/disable toggle
-- ✅ Auto-refresh on player crash
+- ✅ Accessible popup controls and live-updating stats
 - ✅ Persistent "Ads Blocked" & "DOM Ads Blocked" statistics
 - ✅ **Statistics Dashboard** with time saved, weekly charts, and achievements
 - ✅ **12 Achievement Badges** to unlock as you block ads
