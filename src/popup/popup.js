@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	const nextAchievement = document.getElementById("nextAchievement");
 	const langSelector = document.getElementById("langSelector");
 	const descriptionText = document.getElementById("descriptionText");
+	const versionText = document.getElementById("versionText");
 	const achievementsTitle = document.getElementById("achievementsTitle");
 	const footerText = document.getElementById("footerText");
 	const repoLink = document.getElementById("repoLink");
@@ -86,6 +87,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	const currentLang = localStorage.getItem(LANG_KEY) || "auto";
 	langSelector.value = currentLang;
 	applyTranslations(getLang());
+
+	try {
+		const manifest = chrome.runtime?.getManifest?.();
+		if (manifest?.version && versionText) {
+			versionText.textContent = `v${manifest.version}`;
+		}
+	} catch {}
 
 	langSelector.addEventListener("change", (e) => {
 		const lang = e.target.value;
