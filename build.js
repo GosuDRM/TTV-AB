@@ -391,9 +391,15 @@ function validateSharedDefinitions() {
 	const dynamicUiInnerHtmlCount = (
 		uiSource.match(/innerHTML\s*=\s*`[^`]*\$\{/g) || []
 	).length;
-	if (dynamicPopupInnerHtmlCount !== 1 || dynamicUiInnerHtmlCount !== 1) {
+	const dynamicPopupTitleAttrCount = (popupSource.match(/title="\$\{/g) || [])
+		.length;
+	if (
+		dynamicPopupInnerHtmlCount !== 1 ||
+		dynamicUiInnerHtmlCount !== 1 ||
+		dynamicPopupTitleAttrCount !== 1
+	) {
 		throw new Error(
-			`Unexpected dynamic innerHTML footprint: popup=${dynamicPopupInnerHtmlCount}, ui=${dynamicUiInnerHtmlCount}`,
+			`Unexpected dynamic HTML footprint: popupInner=${dynamicPopupInnerHtmlCount}, uiInner=${dynamicUiInnerHtmlCount}, popupTitle=${dynamicPopupTitleAttrCount}`,
 		);
 	}
 	for (const [name, source] of [
