@@ -340,12 +340,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), { avg });
 	}
 
-	function escapeHtml(str) {
-		const div = document.createElement("div");
-		div.textContent = str;
-		return div.innerHTML;
-	}
-
 	function createChannelItem(rank, name, countText) {
 		const item = document.createElement("div");
 		item.className = "channel-item";
