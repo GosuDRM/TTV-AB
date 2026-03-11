@@ -2720,11 +2720,11 @@ function _$dn() {
 			document.body.appendChild(toast);
 			_setUiStorageItem(_$rk, now.toString());
 
-			const reminderClose = document.getElementById("ttvab-reminder-close");
+			const reminderClose = toast.querySelector("#ttvab-reminder-close");
 			if (reminderClose) {
 				reminderClose.onclick = () => toast.remove();
 			}
-			const reminderButton = document.getElementById("ttvab-reminder-btn");
+			const reminderButton = toast.querySelector("#ttvab-reminder-btn");
 			if (reminderButton) {
 				reminderButton.onclick = () => {
 					window.open(
@@ -2785,7 +2785,7 @@ function _$wc() {
 				setTimeout(() => toast.remove(), 300);
 			};
 
-			const welcomeClose = document.getElementById("ttvab-welcome-close");
+			const welcomeClose = toast.querySelector("#ttvab-welcome-close");
 			if (welcomeClose) {
 				welcomeClose.onclick = closeHandler;
 			}
