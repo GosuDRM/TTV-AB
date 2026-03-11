@@ -150,7 +150,10 @@ function _hookWorkerFetch() {
 			headers: response.headers,
 		});
 
-		if (__TTVAB_STATE__.AdSegmentCache.has(url) || (typeof _isKnownAdSegmentUrl === 'function' && _isKnownAdSegmentUrl(url))) {
+		if (
+			__TTVAB_STATE__.AdSegmentCache.has(url) ||
+			(typeof _isKnownAdSegmentUrl === "function" && _isKnownAdSegmentUrl(url))
+		) {
 			return realFetch(EMPTY_SEGMENT_URL);
 		}
 
@@ -508,7 +511,7 @@ function _hookWorker() {
 						});
 						_log("Ad detected, blocking...", "warning");
 						break;
-					case "BackupPlayerTypeSelected":
+					case "BackupPlayerTypeSelected": {
 						if (isStaleChannelEvent(e.data.channel || null)) {
 							_log(
 								`Ignoring stale backup selection for ${e.data.channel}`,
@@ -534,6 +537,7 @@ function _hookWorker() {
 						});
 						_log(`Pinned backup type: ${e.data.value}`, "info");
 						break;
+					}
 					case "AdEnded":
 						if (isStaleChannelEvent(e.data.channel || null)) {
 							_log(
@@ -748,10 +752,7 @@ function _hookMainFetch() {
 		}
 	};
 	const rewritePlaybackAccessTokenBody = (bodyText) => {
-		if (
-			typeof bodyText !== "string" ||
-			!bodyText
-		) {
+		if (typeof bodyText !== "string" || !bodyText) {
 			return { bodyText, changed: false };
 		}
 
