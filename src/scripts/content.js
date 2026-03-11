@@ -122,11 +122,16 @@ function _$ds(scope) {
 
 function _$ab(channel) {
 	_$s.adsBlocked++;
+	const count = Number.isFinite(_$s.adsBlocked)
+		? Math.max(0, Math.trunc(_$s.adsBlocked))
+		: 0;
+	_$s.adsBlocked = count;
+	const safeChannel = typeof channel === "string" ? channel : null;
 	if (typeof window !== "undefined") {
 		window.postMessage(
 			{
 				type: "ttvab-ad-blocked",
-				detail: { count: _$s.adsBlocked, channel: channel || null },
+				detail: { count, channel: safeChannel },
 			},
 			"*",
 		);
@@ -134,21 +139,27 @@ function _$ab(channel) {
 		self.postMessage({
 			key: "AdBlocked",
 			count: _$s.adsBlocked,
-			channel: channel || null,
+			channel: safeChannel,
 		});
 	}
 }
 
 function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 	_$s.domAdsBlocked++;
+	const count = Number.isFinite(_$s.domAdsBlocked)
+		? Math.max(0, Math.trunc(_$s.domAdsBlocked))
+		: 0;
+	const safeKind = typeof kind === "string" ? kind : "generic";
+	const safeChannel = typeof channel === "string" ? channel : null;
+	_$s.domAdsBlocked = count;
 	if (typeof window !== "undefined") {
 		window.postMessage(
 			{
 				type: "ttvab-dom-ad-cleanup",
 				detail: {
-					count: _$s.domAdsBlocked,
-					kind,
-					channel: channel || null,
+					count,
+					kind: safeKind,
+					channel: safeChannel,
 				},
 			},
 			"*",
@@ -395,7 +406,7 @@ function _$sa(text, stripAll, info) {
 	return result.join("\n");
 }
 
-function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
+function _$sv(attrs, rawUrl, variantUrl) {
 	const frameRate = Number.parseFloat(attrs?.["FRAME-RATE"]);
 	const bandwidth = Number.parseInt(attrs?.BANDWIDTH, 10);
 	return {
@@ -453,7 +464,9 @@ function _$su(m3u8, res, baseUrl = null) {
 			}
 		}
 
-		const [w, h] = String(resolution || "0x0").split("x").map(Number);
+		const [w, h] = String(resolution || "0x0")
+			.split("x")
+			.map(Number);
 		const area = (Number.isFinite(w) ? w : 0) * (Number.isFinite(h) ? h : 0);
 		const safeTargetPixels = Number.isFinite(targetPixels) ? targetPixels : 0;
 		const diff = Math.abs(area - safeTargetPixels);
@@ -1144,7 +1157,7 @@ function _$wf() {
 					variantUrl = new URL(variantUrl, usherUrl).href;
 				} catch {}
 				if (resolution) {
-					const resInfo = _getStreamVariantInfo(
+					const resInfo = _$sv(
 						attrs,
 						lines[i + 1],
 						variantUrl,
@@ -1401,6 +1414,7 @@ function _$hw() {
                 ${_$kas.toString()}
                 ${_$pka.toString()}
                 ${_$sa.toString()}
+                ${_$sv.toString()}
                 ${_$su.toString()}
                 ${_$gfr.toString()}
                 ${_extractPlaybackAccessToken.toString()}
@@ -2406,7 +2420,7 @@ function _$dn() {
 		}
 
 		const lastReminderMs = Number.parseInt(lastReminder, 10);
-		if (!Number.isFinite(lastReminderMs)) {
+		if (!Number.isFinite(lastReminderMs) || lastReminderMs > now) {
 			localStorage.setItem(_$rk, now.toString());
 			return;
 		}
@@ -2442,7 +2456,9 @@ function _$dn() {
 					"_blank",
 					"noopener,noreferrer",
 				);
-				toast.remove();
+				if (toast.isConnected) {
+					toast.remove();
+				}
 			};
 
 			setTimeout(() => {
@@ -2587,9 +2603,16 @@ function _$al() {
 }
 
 function _$cm() {
-	let isRefreshing = false;
+	const isRefreshing = false;
 	let checkInterval = null;
 	let lastDeferredCrashAt = 0;
+	let lastPlayerRecoveryAt = 0;
+	let recoveryWindowStartedAt = 0;
+	let recoveryAttempts = 0;
+	let pendingPlayerRecoveryTimer = null;
+	const PLAYER_RECOVERY_COOLDOWN_MS = 8000;
+	const PLAYER_RECOVERY_WINDOW_MS = 45000;
+	const MAX_PLAYER_RECOVERY_ATTEMPTS = 2;
 
 	function isDocumentHidden() {
 		const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
@@ -2626,8 +2649,52 @@ function _$cm() {
 		return null;
 	}
 
+	function attemptPlayerRecovery(error, now) {
+		if (typeof _$dpt !== "function") {
+			return false;
+		}
+		if (
+			lastPlayerRecoveryAt &&
+			now - lastPlayerRecoveryAt < PLAYER_RECOVERY_COOLDOWN_MS
+		) {
+			return false;
+		}
+		if (
+			!recoveryWindowStartedAt ||
+			now - recoveryWindowStartedAt > PLAYER_RECOVERY_WINDOW_MS
+		) {
+			recoveryWindowStartedAt = now;
+			recoveryAttempts = 0;
+		}
+		if (recoveryAttempts >= MAX_PLAYER_RECOVERY_ATTEMPTS) {
+			return false;
+		}
+		const didReload = _$dpt(false, true, { reason: "player-crash" });
+		if (!didReload) {
+			return false;
+		}
+		recoveryAttempts++;
+		lastPlayerRecoveryAt = now;
+		_$l(
+			`Recovered player crash (${error}) with in-player reload (${recoveryAttempts}/${MAX_PLAYER_RECOVERY_ATTEMPTS})`,
+			"warning",
+		);
+		if (pendingPlayerRecoveryTimer) {
+			clearTimeout(pendingPlayerRecoveryTimer);
+		}
+		pendingPlayerRecoveryTimer = setTimeout(() => {
+			const activeError = detectCrash();
+			if (!activeError) {
+				recoveryAttempts = 0;
+				recoveryWindowStartedAt = 0;
+			}
+			pendingPlayerRecoveryTimer = null;
+		}, 6000);
+		return true;
+	}
+
 	function handleCrash(error) {
-		if (isRefreshing) return;
+		if (isRefreshing) return false;
 
 		const now = Date.now();
 		const activeAdChannel = __TTVAB_STATE__.CurrentAdChannel;
@@ -2643,50 +2710,24 @@ function _$cm() {
 		) {
 			if (now - lastDeferredCrashAt > 2000) {
 				_$l(
-					`Player error during ad recovery for ${activeAdChannel}; waiting before refresh`,
+					`Player error during ad recovery for ${activeAdChannel}; waiting before in-player recovery`,
 					"warning",
 				);
 				lastDeferredCrashAt = now;
 			}
 			return false;
 		}
-
-		isRefreshing = true;
-
-		_$l(`Player crash: ${error}`, "error");
-
-		if (isDocumentHidden()) {
-			_$l("Tab hidden, will refresh when visible", "warning");
-
-			const refreshTimer = setTimeout(
-				() => window.location.reload(),
-				_$c.REFRESH_DELAY,
-			);
-			document.addEventListener("visibilitychange", function onVisible() {
-				if (!isDocumentHidden()) {
-					document.removeEventListener("visibilitychange", onVisible);
-					clearTimeout(refreshTimer);
-					_$l("Tab visible, refreshing...", "warning");
-					window.location.reload();
-				}
-			});
-		} else {
-			_$l("Auto-refreshing...", "warning");
-
-			const banner = document.createElement("div");
-			banner.innerHTML = `
-                <style>
-                    #ttvab-refresh-notice{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#f44336 0%,#d32f2f 100%);color:#fff;padding:12px 24px;border-radius:8px;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:9999999;animation:ttvab-pulse 1s ease infinite}
-                    @keyframes ttvab-pulse{0%,100%{opacity:1}50%{opacity:.7}}
-                </style>
-                <div id="ttvab-refresh-notice">⚠️ Player crashed - Refreshing...</div>
-            `;
-			document.body.appendChild(banner);
-
-			setTimeout(() => window.location.reload(), _$c.REFRESH_DELAY);
+		if (attemptPlayerRecovery(error, now)) {
+			return false;
 		}
-
-		return true;
+		if (now - lastDeferredCrashAt > 5000) {
+			_$l(
+				`Player crash detected (${error}) but whole-page refresh is disabled`,
+				"error",
+			);
+			lastDeferredCrashAt = now;
+		}
+		return false;
 	}
 
 	function start() {
@@ -2747,7 +2788,11 @@ function _$bs() {
 }
 
 function _normalizeCounterValue(value) {
-	return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+	const numericValue =
+		typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+	return Number.isFinite(numericValue)
+		? Math.max(0, Math.trunc(numericValue))
+		: 0;
 }
 
 function _$tl() {
@@ -3825,7 +3870,7 @@ function _$in() {
 	_$hw();
 	_$mf();
 	_$tl();
-	_$cm();
+	_$l("Crash monitor temporarily disabled for debugging", "warning");
 	_$bp();
 	_$al();
 
