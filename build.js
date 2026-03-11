@@ -373,6 +373,27 @@ function validateSharedDefinitions() {
 		);
 	}
 
+	const popupNormalizeCount = extractLiteral(
+		popupSource,
+		"function normalizeCount(",
+		"{",
+		"}",
+	);
+	const bridgeNormalizeCount = extractLiteral(
+		bridgeSource,
+		"function normalizeCount(",
+		"{",
+		"}",
+	);
+	if (
+		!popupNormalizeCount ||
+		!bridgeNormalizeCount ||
+		normalizeCodeSnippet(popupNormalizeCount) !==
+			normalizeCodeSnippet(bridgeNormalizeCount)
+	) {
+		throw new Error("Popup and bridge normalizeCount helpers are out of sync");
+	}
+
 	for (const source of [popupSource, uiSource]) {
 		for (const match of source.matchAll(/window\.open\(([\s\S]*?)\);/g)) {
 			if (
