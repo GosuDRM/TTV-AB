@@ -174,14 +174,13 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 	});
 }
 
-chrome.storage.local.remove(["ttvReloadAfterAdsEnabled"], () => {
-	if (chrome.runtime.lastError) {
-		console.warn("[TTV AB] Cleanup warning:", chrome.runtime.lastError.message);
-	}
-});
-
 chrome.storage.local.get(
-	["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+	[
+		"ttvAdblockEnabled",
+		"ttvAdsBlocked",
+		"ttvDomAdsBlocked",
+		"ttvReloadAfterAdsEnabled",
+	],
 	(result) => {
 		if (chrome.runtime.lastError) {
 			console.error(
@@ -193,6 +192,17 @@ chrome.storage.local.get(
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
 		bridgeState.storedAdsCount = safeResult.ttvAdsBlocked || 0;
 		bridgeState.storedDomAdsCount = safeResult.ttvDomAdsBlocked || 0;
+
+		if (Object.hasOwn(safeResult, "ttvReloadAfterAdsEnabled")) {
+			chrome.storage.local.remove(["ttvReloadAfterAdsEnabled"], () => {
+				if (chrome.runtime.lastError) {
+					console.warn(
+						"[TTV AB] Cleanup warning:",
+						chrome.runtime.lastError.message,
+					);
+				}
+			});
+		}
 
 		function broadcastState() {
 			window.postMessage(
