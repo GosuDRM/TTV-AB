@@ -38,6 +38,10 @@ function createChannelsMap() {
 	return Object.create(null);
 }
 
+function createDailyStatsMap() {
+	return Object.create(null);
+}
+
 function normalizeChannelsMap(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return createChannelsMap();
@@ -48,6 +52,22 @@ function normalizeChannelsMap(value) {
 		if (!safeChannel) continue;
 		normalized[safeChannel] =
 			normalizeCount(normalized[safeChannel]) + normalizeCount(count);
+	}
+	return normalized;
+}
+
+function normalizeDailyStatsMap(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return createDailyStatsMap();
+	}
+	const normalized = createDailyStatsMap();
+	for (const [dateKey, entry] of Object.entries(value)) {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) continue;
+		const safeEntry = isPlainObject(entry) ? entry : {};
+		normalized[dateKey] = {
+			ads: normalizeCount(safeEntry.ads),
+			domAds: normalizeCount(safeEntry.domAds),
+		};
 	}
 	return normalized;
 }
@@ -137,7 +157,7 @@ function updateStats(
 			const stats = isPlainObject(safeResult.ttvStats)
 				? safeResult.ttvStats
 				: {};
-			stats.daily = isPlainObject(stats.daily) ? stats.daily : {};
+			stats.daily = normalizeDailyStatsMap(stats.daily);
 			stats.channels = normalizeChannelsMap(stats.channels);
 			stats.achievements = Array.isArray(stats.achievements)
 				? [

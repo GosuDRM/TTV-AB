@@ -372,6 +372,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		return Object.create(null);
 	}
 
+	function createDailyStatsMap() {
+		return Object.create(null);
+	}
+
 	function normalizeChannelsMap(value) {
 		if (!value || typeof value !== "object" || Array.isArray(value)) {
 			return createChannelsMap();
@@ -382,6 +386,22 @@ document.addEventListener("DOMContentLoaded", () => {
 			if (!safeChannel) continue;
 			normalized[safeChannel] =
 				normalizeCount(normalized[safeChannel]) + normalizeCount(count);
+		}
+		return normalized;
+	}
+
+	function normalizeDailyStatsMap(value) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) {
+			return createDailyStatsMap();
+		}
+		const normalized = createDailyStatsMap();
+		for (const [dateKey, entry] of Object.entries(value)) {
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) continue;
+			const safeEntry = isPlainObject(entry) ? entry : {};
+			normalized[dateKey] = {
+				ads: normalizeCount(safeEntry.ads),
+				domAds: normalizeCount(safeEntry.domAds),
+			};
 		}
 		return normalized;
 	}
@@ -572,7 +592,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				const stats = isPlainObject(safeResult.ttvStats)
 					? safeResult.ttvStats
 					: {};
-				const daily = isPlainObject(stats.daily) ? stats.daily : {};
+				const daily = normalizeDailyStatsMap(stats.daily);
 				const channels = normalizeChannelsMap(stats.channels);
 				const achievements = Array.isArray(stats.achievements)
 					? [
