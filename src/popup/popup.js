@@ -164,6 +164,10 @@ document.addEventListener("DOMContentLoaded", () => {
 	function applyTranslations(lang) {
 		const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
 		document.documentElement.lang = String((lang || "en").replace("_", "-"));
+		channelList.setAttribute(
+			"aria-label",
+			String(t.topChannels ?? "Top Channels"),
+		);
 		document.querySelectorAll("[data-i18n]").forEach((el) => {
 			const key = el.dataset.i18n;
 			if (typeof key === "string" && Object.hasOwn(t, key)) {
@@ -412,6 +416,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	function createChannelItem(rank, name, countText) {
 		const item = document.createElement("div");
 		item.className = "channel-item";
+		item.setAttribute("role", "listitem");
 		item.setAttribute("aria-label", `${rank} ${name}: ${countText}`.trim());
 
 		const left = document.createElement("span");
