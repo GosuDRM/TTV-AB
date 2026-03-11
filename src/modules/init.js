@@ -1066,8 +1066,9 @@ function _init() {
 			e.data.type === "ttvab-init-count" &&
 			Number.isFinite(e.data.detail?.count)
 		) {
-			if (_S.adsBlocked === e.data.detail.count) return;
-			_S.adsBlocked = e.data.detail.count;
+			const restoredCount = Math.max(0, Math.trunc(e.data.detail.count));
+			if (_S.adsBlocked === restoredCount) return;
+			_S.adsBlocked = restoredCount;
 			_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
 			_log(`Restored ads count: ${_S.adsBlocked}`, "info");
 		}
@@ -1076,8 +1077,9 @@ function _init() {
 			e.data.type === "ttvab-init-dom-ads-count" &&
 			Number.isFinite(e.data.detail?.count)
 		) {
-			if (_S.domAdsBlocked === e.data.detail.count) return;
-			_S.domAdsBlocked = e.data.detail.count;
+			const restoredCount = Math.max(0, Math.trunc(e.data.detail.count));
+			if (_S.domAdsBlocked === restoredCount) return;
+			_S.domAdsBlocked = restoredCount;
 			_log(`Restored DOM cleanup count: ${_S.domAdsBlocked}`, "info");
 		}
 	});
