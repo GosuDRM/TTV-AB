@@ -385,13 +385,26 @@ function validateSharedDefinitions() {
 		"{",
 		"}",
 	);
+	const initNormalizeCount = extractLiteral(
+		initSource,
+		"function _normalizeCounterValue(",
+		"{",
+		"}",
+	);
 	if (
 		!popupNormalizeCount ||
 		!bridgeNormalizeCount ||
+		!initNormalizeCount ||
 		normalizeCodeSnippet(popupNormalizeCount) !==
-			normalizeCodeSnippet(bridgeNormalizeCount)
+			normalizeCodeSnippet(bridgeNormalizeCount) ||
+		normalizeCodeSnippet(popupNormalizeCount).replace(
+			"function normalizeCount(value)",
+			"function _normalizeCounterValue(value)",
+		) !== normalizeCodeSnippet(initNormalizeCount)
 	) {
-		throw new Error("Popup and bridge normalizeCount helpers are out of sync");
+		throw new Error(
+			"Popup, bridge, and init counter normalizers are out of sync",
+		);
 	}
 
 	for (const source of [popupSource, uiSource]) {
