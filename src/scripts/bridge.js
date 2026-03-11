@@ -261,10 +261,18 @@ chrome.storage.local.get(
 				}
 			}
 			if (changes.ttvAdsBlocked) {
-				bridgeState.storedAdsCount = changes.ttvAdsBlocked.newValue || 0;
+				bridgeState.storedAdsCount = Number.isFinite(
+					changes.ttvAdsBlocked.newValue,
+				)
+					? changes.ttvAdsBlocked.newValue
+					: 0;
 			}
 			if (changes.ttvDomAdsBlocked) {
-				bridgeState.storedDomAdsCount = changes.ttvDomAdsBlocked.newValue || 0;
+				bridgeState.storedDomAdsCount = Number.isFinite(
+					changes.ttvDomAdsBlocked.newValue,
+				)
+					? changes.ttvDomAdsBlocked.newValue
+					: 0;
 			}
 		});
 	},
