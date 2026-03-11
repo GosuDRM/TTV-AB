@@ -89,9 +89,14 @@ function updateStats(
 	channel,
 	totalAdsBlocked,
 	totalDomAdsBlocked,
+	countDelta = 1,
 	retryDepth = 0,
 ) {
 	if (!["ads", "domAds"].includes(type)) {
+		return Promise.resolve();
+	}
+	const safeDelta = normalizeCount(countDelta);
+	if (safeDelta <= 0) {
 		return Promise.resolve();
 	}
 	return new Promise((resolve) => {
@@ -108,6 +113,7 @@ function updateStats(
 							channel,
 							totalAdsBlocked,
 							totalDomAdsBlocked,
+							safeDelta,
 							retryDepth + 1,
 						),
 					);
@@ -146,7 +152,7 @@ function updateStats(
 			stats.daily[today].ads = normalizeCount(stats.daily[today].ads);
 			stats.daily[today].domAds = normalizeCount(stats.daily[today].domAds);
 			stats.daily[today][type] = normalizeCount(stats.daily[today][type]);
-			stats.daily[today][type]++;
+			stats.daily[today][type] += safeDelta;
 
 			const cutoff = new Date();
 			cutoff.setDate(cutoff.getDate() - 30);
@@ -162,7 +168,7 @@ function updateStats(
 				stats.channels[safeChannel] = normalizeCount(
 					stats.channels[safeChannel],
 				);
-				stats.channels[safeChannel]++;
+				stats.channels[safeChannel] += safeDelta;
 
 				const channelEntries = Object.entries(stats.channels).map(
 					([channelName, count]) => [channelName, normalizeCount(count)],
@@ -220,6 +226,7 @@ function updateStats(
 								channel,
 								totalAdsBlocked,
 								totalDomAdsBlocked,
+								safeDelta,
 								retryDepth + 1,
 							),
 						);
@@ -388,13 +395,29 @@ function flushCounters() {
 
 						flushRetryCount = 0;
 						try {
+							const channelTotals = {};
 							for (const ch of channels) {
-								await updateStats("ads", ch, newAds, newDomAds);
+								channelTotals[ch] = normalizeCount(channelTotals[ch]) + 1;
+							}
+							for (const [channelName, channelDelta] of Object.entries(
+								channelTotals,
+							)) {
+								await updateStats(
+									"ads",
+									channelName,
+									newAds,
+									newDomAds,
+									channelDelta,
+								);
 							}
 							if (domAdsDelta > 0) {
-								for (let i = 0; i < domAdsDelta; i++) {
-									await updateStats("domAds", null, newAds, newDomAds);
-								}
+								await updateStats(
+									"domAds",
+									null,
+									newAds,
+									newDomAds,
+									domAdsDelta,
+								);
 							}
 						} catch (statsErr) {
 							console.error("[TTV AB] Stats error:", statsErr.message);
