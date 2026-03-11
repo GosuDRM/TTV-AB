@@ -191,6 +191,16 @@ function validateSharedDefinitions() {
 			`Manifest homepage_url must match the canonical repository: ${manifest.homepage_url || "missing"}`,
 		);
 	}
+	if (manifest.name !== "__MSG_extName__") {
+		throw new Error(
+			`Manifest name must remain localized via __MSG_extName__: ${manifest.name || "missing"}`,
+		);
+	}
+	if (manifest.description !== "__MSG_extDesc__") {
+		throw new Error(
+			`Manifest description must remain localized via __MSG_extDesc__: ${manifest.description || "missing"}`,
+		);
+	}
 	if (manifest.short_name !== "TTV AB") {
 		throw new Error(
 			`Manifest short_name must match the canonical short name: ${manifest.short_name || "missing"}`,
