@@ -346,6 +346,31 @@ let pendingAdChannels = [];
 let flushTimeout = null;
 let flushRetryCount = 0;
 
+function queueTotalDelta(kind, nextTotal) {
+	const safeNextTotal = normalizeCount(nextTotal);
+	if (kind === "ads") {
+		const queuedTotal =
+			normalizeCount(bridgeState.storedAdsCount) +
+			normalizeCount(pendingAdsDelta);
+		const delta = safeNextTotal - queuedTotal;
+		if (delta > 0) {
+			pendingAdsDelta += delta;
+		}
+		return delta;
+	}
+	if (kind === "domAds") {
+		const queuedTotal =
+			normalizeCount(bridgeState.storedDomAdsCount) +
+			normalizeCount(pendingDomAdsDelta);
+		const delta = safeNextTotal - queuedTotal;
+		if (delta > 0) {
+			pendingDomAdsDelta += delta;
+		}
+		return delta;
+	}
+	return 0;
+}
+
 function scheduleFlush() {
 	if (flushTimeout) return;
 	flushTimeout = setTimeout(() => {
@@ -457,16 +482,24 @@ window.addEventListener("message", (e) => {
 		Number.isFinite(e.data.detail?.count)
 	) {
 		const channel = normalizeChannelName(e.data.detail?.channel);
-		pendingAdsDelta++;
-		if (channel) pendingAdChannels.push(channel);
-		scheduleFlush();
+		const delta = queueTotalDelta("ads", e.data.detail.count);
+		if (channel && delta > 0) {
+			for (let i = 0; i < delta; i++) {
+				pendingAdChannels.push(channel);
+			}
+		}
+		if (delta > 0) {
+			scheduleFlush();
+		}
 	}
 
 	if (
 		e.data.type === "ttvab-dom-ad-cleanup" &&
 		Number.isFinite(e.data.detail?.count)
 	) {
-		pendingDomAdsDelta++;
-		scheduleFlush();
+		const delta = queueTotalDelta("domAds", e.data.detail.count);
+		if (delta > 0) {
+			scheduleFlush();
+		}
 	}
 });
