@@ -13,7 +13,11 @@ function getTodayKey() {
 }
 
 function normalizeCount(value) {
-	return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+	const numericValue =
+		typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+	return Number.isFinite(numericValue)
+		? Math.max(0, Math.trunc(numericValue))
+		: 0;
 }
 
 const ACHIEVEMENTS = [
