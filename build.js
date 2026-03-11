@@ -379,6 +379,18 @@ function validateSharedDefinitions() {
 		"{",
 		"}",
 	);
+	const popupFormatNumber = extractLiteral(
+		popupSource,
+		"function formatNumber(",
+		"{",
+		"}",
+	);
+	const popupUpdateTimeSaved = extractLiteral(
+		popupSource,
+		"function updateTimeSaved(",
+		"{",
+		"}",
+	);
 	const bridgeNormalizeCount = extractLiteral(
 		bridgeSource,
 		"function normalizeCount(",
@@ -393,6 +405,8 @@ function validateSharedDefinitions() {
 	);
 	if (
 		!popupNormalizeCount ||
+		!popupFormatNumber ||
+		!popupUpdateTimeSaved ||
 		!bridgeNormalizeCount ||
 		!initNormalizeCount ||
 		normalizeCodeSnippet(popupNormalizeCount) !==
@@ -400,7 +414,9 @@ function validateSharedDefinitions() {
 		normalizeCodeSnippet(popupNormalizeCount).replace(
 			"function normalizeCount(value)",
 			"function _normalizeCounterValue(value)",
-		) !== normalizeCodeSnippet(initNormalizeCount)
+		) !== normalizeCodeSnippet(initNormalizeCount) ||
+		!popupFormatNumber.includes("normalizeCount(num)") ||
+		!popupUpdateTimeSaved.includes("normalizeCount(adsCount)")
 	) {
 		throw new Error(
 			"Popup, bridge, and init counter normalizers are out of sync",
