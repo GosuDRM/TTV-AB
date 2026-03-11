@@ -517,9 +517,19 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	});
 
+	function toggleStatsPanel() {
+		const isExpanded = statsPanel.classList.toggle("expanded");
+		statsToggle.classList.toggle("expanded", isExpanded);
+		statsToggle.setAttribute("aria-expanded", String(isExpanded));
+	}
+
 	statsToggle.addEventListener("click", () => {
-		statsToggle.classList.toggle("expanded");
-		statsPanel.classList.toggle("expanded");
+		toggleStatsPanel();
+	});
+	statsToggle.addEventListener("keydown", (e) => {
+		if (e.key !== "Enter" && e.key !== " ") return;
+		e.preventDefault();
+		toggleStatsPanel();
 	});
 
 	let statusTimeout = null;
