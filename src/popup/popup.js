@@ -223,7 +223,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function updateTimeSaved(adsCount) {
-		const seconds = adsCount * AVG_AD_DURATION;
+		const seconds = normalizeCount(adsCount) * AVG_AD_DURATION;
 		timeSaved.textContent = formatTimeSaved(seconds);
 	}
 
