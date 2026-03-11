@@ -21,6 +21,32 @@ document.addEventListener("DOMContentLoaded", () => {
 	const achievementsTitle = document.getElementById("achievementsTitle");
 	const footerText = document.getElementById("footerText");
 	const repoLink = document.getElementById("repoLink");
+	const requiredElements = {
+		toggle,
+		statusDot,
+		statusText,
+		adsBlockedCount,
+		domAdsBlockedCount,
+		timeSaved,
+		statsToggle,
+		statsPanel,
+		weeklyChart,
+		chartAvg,
+		channelList,
+		achievementsGrid,
+		achievementsProgress,
+		nextAchievement,
+		langSelector,
+		descriptionText,
+		versionText,
+		achievementsTitle,
+		footerText,
+	};
+	for (const [name, element] of Object.entries(requiredElements)) {
+		if (element) continue;
+		console.error(`[TTV AB] Popup missing required element: ${name}`);
+		return;
+	}
 
 	const LANG_KEY = "ttvab_lang";
 
@@ -83,7 +109,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function getAchievementTranslation(id) {
 		const t = getTranslations();
-		return t.achievementsMap?.[id] || TRANSLATIONS.en.achievementsMap[id];
+		return (
+			t.achievementsMap?.[id] ||
+			TRANSLATIONS.en.achievementsMap[id] || {
+				name: String(id || "Achievement"),
+				desc: "",
+			}
+		);
 	}
 
 	function applyTranslations(lang) {

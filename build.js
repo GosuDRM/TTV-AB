@@ -249,6 +249,31 @@ function validateSharedDefinitions() {
 		path.join(__dirname, "src", "popup", "popup.html"),
 		"utf8",
 	);
+	for (const requiredPopupId of [
+		"enableToggle",
+		"statusDot",
+		"statusText",
+		"adsBlockedCount",
+		"domAdsBlockedCount",
+		"timeSaved",
+		"statsToggle",
+		"statsPanel",
+		"weeklyChart",
+		"chartAvg",
+		"channelList",
+		"achievementsGrid",
+		"achievementsProgress",
+		"nextAchievement",
+		"langSelector",
+		"descriptionText",
+		"versionText",
+		"achievementsTitle",
+		"footerText",
+	]) {
+		if (!popupHtmlSource.includes(`id="${requiredPopupId}"`)) {
+			throw new Error(`Popup HTML is missing required id: ${requiredPopupId}`);
+		}
+	}
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");

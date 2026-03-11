@@ -1,10 +1,10 @@
-// TTV AB v4.2.5 - Twitch Ad Blocker
+// TTV AB v4.2.6 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.2.5",
+	VERSION: "4.2.6",
 	INTERNAL_VERSION: 47,
 	LOG_STYLES: {
 		prefix:

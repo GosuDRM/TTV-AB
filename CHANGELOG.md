@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.6] - 2026-03-11
+
+### Fixed
+- **Popup Startup Guards** - The popup now exits safely with a clear console error if required UI elements are missing instead of throwing null-access errors.
+- **Achievement Translation Fallbacks** - Popup achievement rendering now falls back safely when a locale entry is missing or malformed.
+
+### Changed
+- **Popup Build Validation** - Build-time validation now checks that all popup element IDs required by `popup.js` still exist in `popup.html`.
+- **Release Metadata Sync** - Synchronized version references across package, manifest, constants, README, changelog, and generated build output for 4.2.6.
+
 ## [4.2.5] - 2026-03-11
 
 ### Fixed
