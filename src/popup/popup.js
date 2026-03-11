@@ -308,6 +308,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	) {
 		const safeAdsBlocked = normalizeCount(adsBlocked);
 		const safeDomAdsBlocked = normalizeCount(domAdsBlocked);
+		const safeChannelCount = normalizeCount(channelCount);
 		const badges = achievementsGrid.querySelectorAll(".achievement-badge");
 		const timeSavedSecs = safeAdsBlocked * AVG_AD_DURATION;
 		const t = getTranslations();
@@ -337,7 +338,7 @@ document.addEventListener("DOMContentLoaded", () => {
 							value = timeSavedSecs;
 							break;
 						case "channels":
-							value = channelCount;
+							value = safeChannelCount;
 							break;
 					}
 					if (value < ach.threshold) {
