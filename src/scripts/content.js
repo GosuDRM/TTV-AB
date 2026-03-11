@@ -2371,7 +2371,13 @@ function _$dn() {
 			return;
 		}
 
-		if (now - parseInt(lastReminder, 10) < _$ri2) return;
+		const lastReminderMs = Number.parseInt(lastReminder, 10);
+		if (!Number.isFinite(lastReminderMs)) {
+			localStorage.setItem(_$rk, now.toString());
+			return;
+		}
+
+		if (now - lastReminderMs < _$ri2) return;
 
 		setTimeout(() => {
 			const toast = document.createElement("div");
