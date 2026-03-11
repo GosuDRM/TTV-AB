@@ -155,7 +155,7 @@ function updateStats(
 
 			const unlocked = stats.achievements || [];
 			const timeSaved = totalAdsBlocked * AVG_AD_DURATION;
-			const channelCount = Object.keys(stats.channels).length;
+			const channelCount = normalizeCount(Object.keys(stats.channels).length);
 			const newUnlocks = [];
 
 			for (const ach of ACHIEVEMENTS) {
