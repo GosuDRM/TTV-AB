@@ -3,11 +3,12 @@
 const _GQL_URL = "https://gql.twitch.tv/gql";
 
 function _extractPlaybackAccessToken(payload) {
+	const tokenData = Array.isArray(payload) ? payload[0] : payload;
 	const tokenSources = [
-		payload?.data?.streamPlaybackAccessToken,
-		payload?.data?.videoPlaybackAccessToken,
-		payload?.streamPlaybackAccessToken,
-		payload?.videoPlaybackAccessToken,
+		tokenData?.data?.streamPlaybackAccessToken,
+		tokenData?.data?.videoPlaybackAccessToken,
+		tokenData?.streamPlaybackAccessToken,
+		tokenData?.videoPlaybackAccessToken,
 	].filter(Boolean);
 
 	for (const token of tokenSources) {
