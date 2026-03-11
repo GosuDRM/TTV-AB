@@ -543,7 +543,9 @@ function validateSharedDefinitions() {
 		const messageListenerCount = (
 			source.match(/window\.addEventListener\("message"/g) || []
 		).length;
-		const sourceGuardCount = (source.match(/source !== window/g) || []).length;
+		const sourceGuardCount = (
+			source.match(/source !== window|source === window/g) || []
+		).length;
 		if (messageListenerCount !== sourceGuardCount) {
 			throw new Error(
 				`${name} has ${messageListenerCount} message listeners but ${sourceGuardCount} source guards`,
