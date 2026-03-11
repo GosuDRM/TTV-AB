@@ -189,6 +189,7 @@ function validateSharedDefinitions() {
 		);
 	}
 	const readmePath = path.join(__dirname, "README.md");
+	const privacyPath = path.join(__dirname, "PRIVACY.md");
 	const changelogPath = path.join(__dirname, "CHANGELOG.md");
 	const localesPath = path.join(__dirname, "_locales");
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
@@ -205,6 +206,7 @@ function validateSharedDefinitions() {
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
 	const readmeSource = fs.readFileSync(readmePath, "utf8");
+	const privacySource = fs.readFileSync(privacyPath, "utf8");
 	const changelogSource = fs.readFileSync(changelogPath, "utf8");
 	const localeDirectories = fs.readdirSync(localesPath).sort();
 	for (const localeDir of localeDirectories) {
@@ -231,6 +233,14 @@ function validateSharedDefinitions() {
 	if (!changelogSource.includes(`## [${constantsVersion}]`)) {
 		throw new Error(
 			`CHANGELOG top version markers are out of sync with ${constantsVersion}`,
+		);
+	}
+	if (
+		!readmeSource.includes("DOM Ads Blocked") ||
+		!privacySource.includes("DOM Ads Blocked")
+	) {
+		throw new Error(
+			"README or PRIVACY metric wording is out of sync with DOM Ads Blocked",
 		);
 	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
