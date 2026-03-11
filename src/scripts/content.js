@@ -584,7 +584,6 @@ function _$rsa(info) {
 	info.IsUsingFallbackStream = false;
 	info.RequestedAds.clear();
 	info.FailedBackupPlayerTypes?.clear?.();
-	info.RejectedBackupPlayerTypes?.clear?.();
 	info.BackupEncodingsM3U8Cache = Object.create(null);
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
@@ -683,7 +682,6 @@ async function _$pm(url, text, realFetch) {
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
 			info.FailedBackupPlayerTypes?.clear?.();
-			info.RejectedBackupPlayerTypes?.clear?.();
 			_$ab(info.ChannelName);
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdDetected", channel: info.ChannelName });
@@ -877,10 +875,6 @@ async function _$fb(
 			_$l(`[Trace] Skipping ${pt} (previous token failure)`, "warning");
 			continue;
 		}
-		if (info.RejectedBackupPlayerTypes?.has?.(pt)) {
-			_$l(`[Trace] Skipping ${pt} (previous ad playlist)`, "warning");
-			continue;
-		}
 		_$l(`[Trace] Checking: ${pt}`, "info");
 
 		for (let j = 0; j < 2; j++) {
@@ -906,7 +900,6 @@ async function _$fb(
 
 						if (sig && tokenValue) {
 							info.FailedBackupPlayerTypes?.delete?.(pt);
-							info.RejectedBackupPlayerTypes?.delete?.(pt);
 							const usherUrl = new URL(
 								`https://usher.ttvnw.net/api/${__TTVAB_STATE__.V2API ? "v2/" : ""}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`,
 							);
@@ -984,7 +977,6 @@ async function _$fb(
 								}
 
 								if (promotionPolicy.allowSelectedPromotion) {
-									info.RejectedBackupPlayerTypes?.delete?.(pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
 									_$l(`[Trace] Selected: ${pt}`, "success");
@@ -1267,7 +1259,6 @@ function _$wf() {
 					UsherParams: new URL(url).search,
 					RequestedAds: new Set(),
 					FailedBackupPlayerTypes: new Set(),
-					RejectedBackupPlayerTypes: new Set(),
 					Urls: Object.create(null),
 					ResolutionList: [],
 					BackupEncodingsM3U8Cache: Object.create(null),
