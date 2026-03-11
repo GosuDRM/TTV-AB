@@ -310,8 +310,9 @@ chrome.storage.local.get(
 			}
 			if (changes.ttvAdsBlocked) {
 				const nextAdsCount = normalizeCount(changes.ttvAdsBlocked.newValue);
-				if (nextAdsCount !== bridgeState.storedAdsCount) {
-					bridgeState.storedAdsCount = nextAdsCount;
+				const previousAdsCount = bridgeState.storedAdsCount;
+				reconcilePendingDelta("ads", nextAdsCount);
+				if (nextAdsCount !== previousAdsCount) {
 					window.postMessage(
 						{
 							type: "ttvab-init-count",
@@ -325,8 +326,9 @@ chrome.storage.local.get(
 				const nextDomAdsCount = normalizeCount(
 					changes.ttvDomAdsBlocked.newValue,
 				);
-				if (nextDomAdsCount !== bridgeState.storedDomAdsCount) {
-					bridgeState.storedDomAdsCount = nextDomAdsCount;
+				const previousDomAdsCount = bridgeState.storedDomAdsCount;
+				reconcilePendingDelta("domAds", nextDomAdsCount);
+				if (nextDomAdsCount !== previousDomAdsCount) {
 					window.postMessage(
 						{
 							type: "ttvab-init-dom-ads-count",
@@ -345,6 +347,32 @@ let pendingDomAdsDelta = 0;
 let pendingAdChannels = [];
 let flushTimeout = null;
 let flushRetryCount = 0;
+
+function reconcilePendingDelta(kind, nextStoredCount) {
+	const safeStoredCount = normalizeCount(nextStoredCount);
+	if (kind === "ads") {
+		const queuedTotal =
+			normalizeCount(bridgeState.storedAdsCount) +
+			normalizeCount(pendingAdsDelta);
+		if (safeStoredCount !== queuedTotal) {
+			pendingAdsDelta = 0;
+			pendingAdChannels = [];
+			flushRetryCount = 0;
+		}
+		bridgeState.storedAdsCount = safeStoredCount;
+		return;
+	}
+	if (kind === "domAds") {
+		const queuedTotal =
+			normalizeCount(bridgeState.storedDomAdsCount) +
+			normalizeCount(pendingDomAdsDelta);
+		if (safeStoredCount !== queuedTotal) {
+			pendingDomAdsDelta = 0;
+			flushRetryCount = 0;
+		}
+		bridgeState.storedDomAdsCount = safeStoredCount;
+	}
+}
 
 function queueTotalDelta(kind, nextTotal) {
 	const safeNextTotal = normalizeCount(nextTotal);
