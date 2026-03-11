@@ -128,12 +128,14 @@ function validateSharedDefinitions() {
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
 	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
+	const translationsPath = path.join(__dirname, "src", "popup", "translations.js");
 	const hooksPath = path.join(__dirname, "src", "modules", "hooks.js");
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
 	const popupSource = fs.readFileSync(popupPath, "utf8");
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
+	const translationsSource = fs.readFileSync(translationsPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
 	const processorSource = fs.readFileSync(processorPath, "utf8");
 	const apiSource = fs.readFileSync(apiPath, "utf8");
@@ -207,6 +209,9 @@ function validateSharedDefinitions() {
 		`return (${bridgeAchievementsLiteral});`,
 	)();
 	const uiAchievementInfo = Function(`return (${uiAchievementInfoLiteral});`)();
+	const translations = Function(
+		`${translationsSource}; return TRANSLATIONS;`,
+	)();
 
 	const popupComparable = popupAchievements.map(({ id, threshold, type }) => ({
 		id,
@@ -262,6 +267,32 @@ function validateSharedDefinitions() {
 			throw new Error(
 				`${consumer} depends on ${helper}, but ${helper} is not injected into the worker bundle`,
 			);
+		}
+	}
+
+	const requiredTranslationKeys = [
+		"adBlocking",
+		"domAdsBlocked",
+		"descriptionText",
+		"changesInstantly",
+		"achievements",
+		"next",
+		"allUnlocked",
+		"noDataYet",
+		"avgPerDay",
+	];
+	for (const [lang, locale] of Object.entries(translations)) {
+		for (const key of requiredTranslationKeys) {
+			if (!(key in locale)) {
+				throw new Error(`Missing translation key ${key} for locale ${lang}`);
+			}
+		}
+		for (const achievementId of popupIds) {
+			if (!locale.achievementsMap?.[achievementId]) {
+				throw new Error(
+					`Missing achievement translation ${achievementId} for locale ${lang}`,
+				);
+			}
 		}
 	}
 }
