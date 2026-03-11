@@ -90,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
 		document.querySelectorAll("[data-i18n]").forEach((el) => {
 			const key = el.dataset.i18n;
-			if (t[key]) el.textContent = t[key];
+			if (key && Object.hasOwn(t, key)) el.textContent = String(t[key]);
 		});
 		descriptionText.textContent = t.descriptionText;
 		const donateButton = document.getElementById("donateBtn");
