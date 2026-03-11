@@ -121,9 +121,15 @@ function validateSharedDefinitions() {
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
 	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
+	const hooksPath = path.join(__dirname, "src", "modules", "hooks.js");
+	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
+	const apiPath = path.join(__dirname, "src", "modules", "api.js");
 	const popupSource = fs.readFileSync(popupPath, "utf8");
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
+	const hooksSource = fs.readFileSync(hooksPath, "utf8");
+	const processorSource = fs.readFileSync(processorPath, "utf8");
+	const apiSource = fs.readFileSync(apiPath, "utf8");
 
 	const popupAchievementsLiteral = extractLiteral(
 		popupSource,
@@ -181,6 +187,32 @@ function validateSharedDefinitions() {
 	const uiIds = Object.keys(uiAchievementInfo).sort();
 	if (JSON.stringify(popupIds) !== JSON.stringify(uiIds)) {
 		throw new Error("UI achievement metadata is out of sync with popup achievements");
+	}
+
+	const injectedHelpers = new Set(
+		[...hooksSource.matchAll(/\$\{(_[A-Za-z0-9]+)\.toString\(\)\}/g)].map(
+			(match) => match[1],
+		),
+	);
+	const requiredInjectedPairs = [
+		{
+			consumer: "_findBackupStream",
+			helper: "_getFallbackPromotionPolicy",
+			source: processorSource,
+		},
+		{
+			consumer: "_getToken",
+			helper: "_extractPlaybackAccessToken",
+			source: apiSource,
+		},
+	];
+	for (const { consumer, helper, source } of requiredInjectedPairs) {
+		const consumerBody = extractLiteral(source, `function ${consumer}(`, "{", "}");
+		if (consumerBody?.includes(helper) && !injectedHelpers.has(helper)) {
+			throw new Error(
+				`${consumer} depends on ${helper}, but ${helper} is not injected into the worker bundle`,
+			);
+		}
 	}
 }
 
