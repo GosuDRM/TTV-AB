@@ -79,7 +79,11 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 					? stats.channels
 					: {};
 			stats.achievements = Array.isArray(stats.achievements)
-				? stats.achievements
+				? [
+						...new Set(
+							stats.achievements.filter((id) => typeof id === "string"),
+						),
+					]
 				: [];
 			const today = getTodayKey();
 
