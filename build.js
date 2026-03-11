@@ -596,6 +596,23 @@ function validateSharedDefinitions() {
 			`Popup achievement badges must remain native buttons: buttons=${popupAchievementButtonCount}, config=${popupAchievements.length}`,
 		);
 	}
+	const popupAchievementFallbackLabels = [
+		...popupHtmlSource.matchAll(
+			/<button type="button" class="achievement-badge"[^>]*title="([^"]+)"[^>]*aria-label="([^"]+)"/g,
+		),
+	].map((match) => ({ title: match[1], label: match[2] }));
+	if (popupAchievementFallbackLabels.length !== popupAchievements.length) {
+		throw new Error(
+			`Popup achievement badges must keep static aria-label fallbacks: labels=${popupAchievementFallbackLabels.length}, config=${popupAchievements.length}`,
+		);
+	}
+	for (const { title, label } of popupAchievementFallbackLabels) {
+		if (title !== label) {
+			throw new Error(
+				`Popup achievement badge fallback aria-label must match title: ${title} !== ${label}`,
+			);
+		}
+	}
 
 	const popupNormalizeCount = extractLiteral(
 		popupSource,
