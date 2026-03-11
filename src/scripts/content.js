@@ -95,7 +95,6 @@ function _$ds(scope) {
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
 		LastAdRecoveryReloadAt: 0,
-		AdCycleStartedAt: 0,
 		CurrentAdChannel: null,
 		PinnedBackupPlayerType: null,
 		PinnedBackupPlayerChannel: null,
@@ -1503,7 +1502,6 @@ function _$hw() {
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
 									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
-								__TTVAB_STATE__.AdCycleStartedAt = now;
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;

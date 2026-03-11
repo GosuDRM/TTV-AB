@@ -428,7 +428,6 @@ function _hookWorker() {
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
 									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
-								__TTVAB_STATE__.AdCycleStartedAt = now;
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
