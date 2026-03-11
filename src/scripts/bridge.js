@@ -73,9 +73,15 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 					? safeResult.ttvStats
 					: {};
 			stats.daily =
-				stats.daily && typeof stats.daily === "object" ? stats.daily : {};
+				stats.daily &&
+				typeof stats.daily === "object" &&
+				!Array.isArray(stats.daily)
+					? stats.daily
+					: {};
 			stats.channels =
-				stats.channels && typeof stats.channels === "object"
+				stats.channels &&
+				typeof stats.channels === "object" &&
+				!Array.isArray(stats.channels)
 					? stats.channels
 					: {};
 			stats.achievements = Array.isArray(stats.achievements)
