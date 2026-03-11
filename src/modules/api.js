@@ -21,8 +21,12 @@ function _extractPlaybackAccessToken(payload) {
 	return {
 		signature: null,
 		value: null,
-		hasAnySignature: tokenSources.some((token) => Boolean(token?.signature || token?.sig)),
-		hasAnyValue: tokenSources.some((token) => Boolean(token?.value || token?.token)),
+		hasAnySignature: tokenSources.some((token) =>
+			Boolean(token?.signature || token?.sig),
+		),
+		hasAnyValue: tokenSources.some((token) =>
+			Boolean(token?.value || token?.token),
+		),
 	};
 }
 

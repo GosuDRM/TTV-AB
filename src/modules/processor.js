@@ -382,15 +382,15 @@ async function _findBackupStream(
 								const promotionPolicy =
 									typeof _getFallbackPromotionPolicy === "function"
 										? _getFallbackPromotionPolicy({
-											candidateHasAds,
-											candidateIsPlayable: Boolean(m3u8),
-											simulatedAdsDepthSatisfied,
-										})
+												candidateHasAds,
+												candidateIsPlayable: Boolean(m3u8),
+												simulatedAdsDepthSatisfied,
+											})
 										: {
-											allowSelectedPromotion: false,
-											allowFallbackPromotion: false,
-											reason: "policy-unavailable",
-										};
+												allowSelectedPromotion: false,
+												allowFallbackPromotion: false,
+												reason: "policy-unavailable",
+											};
 								const canPromoteFallback =
 									promotionPolicy.allowFallbackPromotion &&
 									(!fallbackM3u8 ||

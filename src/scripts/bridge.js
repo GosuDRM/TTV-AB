@@ -176,10 +176,7 @@ function updateStats(type, channel, totalAdsBlocked, totalDomAdsBlocked) {
 
 chrome.storage.local.remove(["ttvReloadAfterAdsEnabled"], () => {
 	if (chrome.runtime.lastError) {
-		console.warn(
-			"[TTV AB] Cleanup warning:",
-			chrome.runtime.lastError.message,
-		);
+		console.warn("[TTV AB] Cleanup warning:", chrome.runtime.lastError.message);
 	}
 });
 

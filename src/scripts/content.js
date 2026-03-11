@@ -505,8 +505,12 @@ function _extractPlaybackAccessToken(payload) {
 	return {
 		signature: null,
 		value: null,
-		hasAnySignature: tokenSources.some((token) => Boolean(token?.signature || token?.sig)),
-		hasAnyValue: tokenSources.some((token) => Boolean(token?.value || token?.token)),
+		hasAnySignature: tokenSources.some((token) =>
+			Boolean(token?.signature || token?.sig),
+		),
+		hasAnyValue: tokenSources.some((token) =>
+			Boolean(token?.value || token?.token),
+		),
 	};
 }
 
@@ -957,15 +961,15 @@ async function _$fb(
 								const promotionPolicy =
 									typeof _getFallbackPromotionPolicy === "function"
 										? _getFallbackPromotionPolicy({
-											candidateHasAds,
-											candidateIsPlayable: Boolean(m3u8),
-											simulatedAdsDepthSatisfied,
-										})
+												candidateHasAds,
+												candidateIsPlayable: Boolean(m3u8),
+												simulatedAdsDepthSatisfied,
+											})
 										: {
-											allowSelectedPromotion: false,
-											allowFallbackPromotion: false,
-											reason: "policy-unavailable",
-										};
+												allowSelectedPromotion: false,
+												allowFallbackPromotion: false,
+												reason: "policy-unavailable",
+											};
 								const canPromoteFallback =
 									promotionPolicy.allowFallbackPromotion &&
 									(!fallbackM3u8 ||
@@ -1639,10 +1643,7 @@ function _$hw() {
 						const currentChannel = getCurrentPageChannel();
 						const requiresStrictChannelMatch = reason === "ad-recovery";
 						if (isStaleChannelEvent(channel)) {
-							_$l(
-								`Ignoring stale ReloadPlayer event for ${channel}`,
-								"info",
-							);
+							_$l(`Ignoring stale ReloadPlayer event for ${channel}`, "info");
 							break;
 						}
 						if (
