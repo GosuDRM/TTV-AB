@@ -218,6 +218,34 @@ async function _processM3U8(url, text, realFetch) {
 	return text;
 }
 
+function _getFallbackPromotionPolicy({
+	candidateHasAds,
+	candidateIsPlayable,
+	simulatedAdsDepthSatisfied,
+}) {
+	const base = {
+		allowSelectedPromotion: false,
+		allowFallbackPromotion: false,
+		reason: "deny-by-default",
+	};
+
+	if (!candidateIsPlayable) {
+		return { ...base, reason: "not-playable" };
+	}
+	if (candidateHasAds) {
+		return { ...base, reason: "ad-marked" };
+	}
+	if (!simulatedAdsDepthSatisfied) {
+		return { ...base, reason: "simulated-ads-depth" };
+	}
+
+	return {
+		allowSelectedPromotion: true,
+		allowFallbackPromotion: true,
+		reason: "clean-playable",
+	};
+}
+
 async function _findBackupStream(
 	info,
 	realFetch,
@@ -355,28 +383,35 @@ async function _findBackupStream(
 									_hasPlaylistAdMarkers(m3u8) ||
 									_hasExplicitAdMetadata(m3u8) ||
 									_playlistHasKnownAdSegments(m3u8);
+								const simulatedAdsDepthSatisfied =
+									__TTVAB_STATE__.SimulatedAdsDepth === 0 ||
+									pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1;
+								const promotionPolicy = _getFallbackPromotionPolicy({
+									candidateHasAds,
+									candidateIsPlayable: Boolean(m3u8),
+									simulatedAdsDepthSatisfied,
+								});
 								const canPromoteFallback =
-									!fallbackM3u8 ||
-									pt === __TTVAB_STATE__.FallbackPlayerType ||
-									(fallbackType !== __TTVAB_STATE__.FallbackPlayerType &&
-										!candidateHasAds);
+									promotionPolicy.allowFallbackPromotion &&
+									(!fallbackM3u8 ||
+										pt === __TTVAB_STATE__.FallbackPlayerType ||
+										fallbackType !== __TTVAB_STATE__.FallbackPlayerType);
 								if (canPromoteFallback) {
 									fallbackM3u8 = m3u8;
 									fallbackType = pt;
 								}
-								const noAds =
-									!candidateHasAds &&
-									(__TTVAB_STATE__.SimulatedAdsDepth === 0 ||
-										pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1);
 
-								if (noAds) {
+								if (promotionPolicy.allowSelectedPromotion) {
 									info.RejectedBackupPlayerTypes?.delete?.(pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
 									_log(`[Trace] Selected: ${pt}`, "success");
 									break;
 								} else {
-									_log(`[Trace] Rejected ${pt} (has ads)`, "warning");
+									_log(
+										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
+										"warning",
+									);
 									invalidateCache = true;
 									if (isFullyCachedPlayerType) break;
 								}
