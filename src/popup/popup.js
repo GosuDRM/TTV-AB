@@ -351,8 +351,12 @@ document.addEventListener("DOMContentLoaded", () => {
 				const achievements = Array.isArray(stats.achievements)
 					? stats.achievements
 					: [];
-				const adsCount = safeResult.ttvAdsBlocked || 0;
-				const domAdsCount = safeResult.ttvDomAdsBlocked || 0;
+				const adsCount = Number.isFinite(safeResult.ttvAdsBlocked)
+					? safeResult.ttvAdsBlocked
+					: 0;
+				const domAdsCount = Number.isFinite(safeResult.ttvDomAdsBlocked)
+					? safeResult.ttvDomAdsBlocked
+					: 0;
 				const channelCount = Object.keys(channels).length;
 
 				renderChart(daily);
