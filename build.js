@@ -385,6 +385,17 @@ function validateSharedDefinitions() {
 			}
 		}
 	}
+	const dynamicPopupInnerHtmlCount = (
+		popupSource.match(/innerHTML\s*=\s*`[^`]*\$\{/g) || []
+	).length;
+	const dynamicUiInnerHtmlCount = (
+		uiSource.match(/innerHTML\s*=\s*`[^`]*\$\{/g) || []
+	).length;
+	if (dynamicPopupInnerHtmlCount !== 1 || dynamicUiInnerHtmlCount !== 1) {
+		throw new Error(
+			`Unexpected dynamic innerHTML footprint: popup=${dynamicPopupInnerHtmlCount}, ui=${dynamicUiInnerHtmlCount}`,
+		);
+	}
 
 	const popupDomIds = new Set(
 		[...popupSource.matchAll(/getElementById\("([^"]+)"\)/g)].map(
