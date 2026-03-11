@@ -1862,6 +1862,31 @@ function _$mf() {
 			}
 		} catch {}
 	};
+	const processGqlResponse = async (response) => {
+		if (!response || response.status !== 200) return;
+		try {
+			const payload = await response.clone().json();
+			const operations = Array.isArray(payload) ? payload : [payload];
+			for (const op of operations) {
+				const token =
+					op?.data?.streamPlaybackAccessToken ||
+					op?.data?.videoPlaybackAccessToken ||
+					op?.streamPlaybackAccessToken ||
+					op?.videoPlaybackAccessToken ||
+					null;
+				const tokenValue = token?.value || token?.token || null;
+				if (typeof tokenValue !== "string" || !tokenValue) continue;
+				try {
+					const tokenPayload = JSON.parse(tokenValue);
+					const effectivePlayerType =
+						tokenPayload?.playerType || tokenPayload?.player_type || null;
+					if (typeof effectivePlayerType === "string") {
+						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
+					}
+				} catch {}
+			}
+		} catch {}
+	};
 
 	window.fetch = async function (...args) {
 		const [url, opts] = args;
@@ -1957,7 +1982,9 @@ function _$mf() {
 
 					updateWorkers(updates);
 				}
-				return realFetch.apply(this, nextArgs);
+				const response = await realFetch.apply(this, nextArgs);
+				await processGqlResponse(response);
+				return response;
 			}
 		}
 		return realFetch.apply(this, args);
