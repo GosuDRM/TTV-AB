@@ -351,7 +351,11 @@ document.addEventListener("DOMContentLoaded", () => {
 						? stats.channels
 						: {};
 				const achievements = Array.isArray(stats.achievements)
-					? stats.achievements
+					? [
+							...new Set(
+								stats.achievements.filter((id) => typeof id === "string"),
+							),
+						]
 					: [];
 				const adsCount = Number.isFinite(safeResult.ttvAdsBlocked)
 					? safeResult.ttvAdsBlocked
