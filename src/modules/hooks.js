@@ -568,10 +568,7 @@ function _hookWorker() {
 						const currentChannel = getCurrentPageChannel();
 						const requiresStrictChannelMatch = reason === "ad-recovery";
 						if (isStaleChannelEvent(channel)) {
-							_log(
-								`Ignoring stale ReloadPlayer event for ${channel}`,
-								"info",
-							);
+							_log(`Ignoring stale ReloadPlayer event for ${channel}`, "info");
 							break;
 						}
 						if (
