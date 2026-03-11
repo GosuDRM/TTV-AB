@@ -38,7 +38,6 @@ function _declareState(scope) {
 		FallbackPlayerType: _C.FALLBACK_TYPE,
 		ForceAccessTokenPlayerType: _C.FORCE_TYPE,
 		SkipPlayerReloadOnHevc: false,
-		AlwaysReloadPlayerOnAd: _C.ALWAYS_RELOAD_PLAYER_ON_AD ?? false,
 		PlayerBufferingDoPlayerReload:
 			_C.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
 		PlayerReloadMinimalRequestsTime: _C.RELOAD_TIME,
