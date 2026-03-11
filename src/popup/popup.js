@@ -412,6 +412,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	function createChannelItem(rank, name, countText) {
 		const item = document.createElement("div");
 		item.className = "channel-item";
+		item.setAttribute("aria-label", `${rank} ${name}: ${countText}`.trim());
 
 		const left = document.createElement("span");
 		const rankSpan = document.createElement("span");
@@ -420,6 +421,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		const nameSpan = document.createElement("span");
 		nameSpan.className = "channel-name";
 		nameSpan.textContent = name;
+		nameSpan.title = name;
+		nameSpan.setAttribute("aria-label", name);
 		left.append(rankSpan, nameSpan);
 
 		const count = document.createElement("span");
