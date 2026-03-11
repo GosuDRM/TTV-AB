@@ -16,7 +16,7 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Changed
 - **Popup Build Validation** - Build-time validation now checks that all popup element IDs required by `popup.js` still exist in `popup.html`.
-- **Release Metadata Sync** - Synchronized version references across package, package-lock, manifest, constants, README, changelog, and generated build output for 4.2.6.
+- **Release Metadata Sync** - Synchronized version references plus canonical npm/package metadata across package, package-lock, manifest, constants, README, changelog, and generated build output for 4.2.6.
 
 ## [4.2.5] - 2026-03-11
 

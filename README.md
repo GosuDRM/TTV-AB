@@ -58,7 +58,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Popup Safety Guards** - Popup startup now fails safely when required UI nodes are missing instead of throwing on null element access.
 - **Achievement Fallback Safety** - Popup achievement labels now fall back cleanly if a translation entry is missing or malformed.
 - **Build Validation Hardening** - `build.js` now verifies that all popup IDs required by the popup script still exist in `popup.html`.
-- **Docs / Metadata Sync** - Version markers, package-lock parity, and release notes were synchronized for the 4.2.6 release.
+- **Docs / Metadata Sync** - Version markers, npm/package metadata, package-lock parity, and release notes were synchronized for the 4.2.6 release.
 
 ### v4.2.5
 - **Worker Crash Loop Fixes** - Hardened worker/bootstrap message handling and playlist parsing so malformed frontpage, home, and outstream worker contexts are less likely to crash and restart continuously.
