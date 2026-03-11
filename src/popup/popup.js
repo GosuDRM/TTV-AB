@@ -218,9 +218,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	function renderChart(dailyData) {
 		const t = getTranslations();
 		const days = getLast7Days();
-		const values = days.map(
-			(d) => (dailyData[d]?.ads || 0) + (dailyData[d]?.domAds || 0),
-		);
+		const values = days.map((d) => {
+			const ads = Number.isFinite(dailyData[d]?.ads) ? dailyData[d].ads : 0;
+			const domAds = Number.isFinite(dailyData[d]?.domAds)
+				? dailyData[d].domAds
+				: 0;
+			return ads + domAds;
+		});
 		const max = Math.max(...values, 1);
 		const avg = Math.round(values.reduce((a, b) => a + b, 0) / 7);
 		const formatter = new Intl.DateTimeFormat(getLocaleTag(), {
