@@ -188,7 +188,6 @@ function _hookWorkerFetch() {
 					UsherParams: new URL(url).search,
 					RequestedAds: new Set(),
 					FailedBackupPlayerTypes: new Set(),
-					RejectedBackupPlayerTypes: new Set(),
 					Urls: Object.create(null),
 					ResolutionList: [],
 					BackupEncodingsM3U8Cache: Object.create(null),
