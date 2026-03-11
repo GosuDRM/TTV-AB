@@ -2355,6 +2355,12 @@ const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;
 const _$fr = "ttvab_first_run_shown";
 
+function _escapeUiText(value) {
+	const div = document.createElement("div");
+	div.textContent = String(value ?? "");
+	return div.innerHTML;
+}
+
 function _$dn() {
 	try {
 		const lastReminder = localStorage.getItem(_$rk);
@@ -2506,11 +2512,11 @@ function _$au(achievementId) {
                 #ttvab-achievement .ach-name{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#9146FF 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:ttvab-ach-shine 2s linear infinite}
                 #ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}
             </style>
-            <div class="ach-icon">${ach.icon}</div>
+            <div class="ach-icon">${_escapeUiText(ach.icon)}</div>
             <div class="ach-content">
                 <div class="ach-label">🏆 Achievement Unlocked!</div>
-                <div class="ach-name">${ach.name}</div>
-                <div class="ach-desc">${ach.desc}</div>
+                <div class="ach-name">${_escapeUiText(ach.name)}</div>
+                <div class="ach-desc">${_escapeUiText(ach.desc)}</div>
             </div>
         `;
 
