@@ -3,10 +3,12 @@
 function _resetStreamAdState(info) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
 	const wasUsingFallbackStream = Boolean(info?.IsUsingFallbackStream);
+	const wasUsingBackupStream = Boolean(info?.IsUsingBackupStream);
 
 	info.IsShowingAd = false;
 	info.IsUsingModifiedM3U8 = false;
 	info.IsUsingFallbackStream = false;
+	info.IsUsingBackupStream = false;
 	info.RequestedAds.clear();
 	info.FailedBackupPlayerTypes?.clear?.();
 	info.BackupEncodingsM3U8Cache = Object.create(null);
@@ -16,7 +18,11 @@ function _resetStreamAdState(info) {
 	info.IsStrippingAdSegments = false;
 	info.NumStrippedAdSegments = 0;
 
-	return { wasUsingModifiedM3U8, wasUsingFallbackStream };
+	return {
+		wasUsingModifiedM3U8,
+		wasUsingFallbackStream,
+		wasUsingBackupStream,
+	};
 }
 
 function _getStreamInfoForPlaylist(url) {
@@ -79,6 +85,7 @@ async function _processM3U8(url, text, realFetch) {
 			ModifiedM3U8: null,
 			IsUsingModifiedM3U8: false,
 			IsUsingFallbackStream: false,
+			IsUsingBackupStream: false,
 			UsherBaseUrl: "",
 			UsherParams: "",
 			RequestedAds: new Set(),
@@ -102,9 +109,14 @@ async function _processM3U8(url, text, realFetch) {
 		if (
 			info.IsShowingAd ||
 			info.IsUsingModifiedM3U8 ||
-			info.IsUsingFallbackStream
+			info.IsUsingFallbackStream ||
+			info.IsUsingBackupStream
 		) {
-			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
+			const {
+				wasUsingModifiedM3U8,
+				wasUsingFallbackStream,
+				wasUsingBackupStream,
+			} =
 				_resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -112,12 +124,23 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			_log("Ad blocking disabled - restoring native stream state", "info");
 			if (
-				(wasUsingModifiedM3U8 || wasUsingFallbackStream) &&
+				(
+					wasUsingModifiedM3U8 ||
+					wasUsingFallbackStream ||
+					wasUsingBackupStream
+				) &&
 				typeof self !== "undefined" &&
 				self.postMessage
 			) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				if ((wasUsingModifiedM3U8 || wasUsingFallbackStream) && __TTVAB_STATE__.ReloadAfterAd) {
+				if (
+					(
+						wasUsingModifiedM3U8 ||
+						wasUsingFallbackStream ||
+						wasUsingBackupStream
+					) &&
+					__TTVAB_STATE__.ReloadAfterAd
+				) {
 					info.LastPlayerReload = Date.now();
 					self.postMessage({ key: "ReloadPlayer" });
 				} else {
@@ -204,7 +227,10 @@ async function _processM3U8(url, text, realFetch) {
 			_log("Entering fallback mode - stripping ads", "info");
 		}
 
-		if (backupM3u8) text = backupM3u8;
+		if (backupM3u8) {
+			info.IsUsingBackupStream = true;
+			text = backupM3u8;
+		}
 
 		info.ActiveBackupResolution = res?.Resolution || null;
 		if (info.ActiveBackupPlayerType !== backupType) {
@@ -225,7 +251,11 @@ async function _processM3U8(url, text, realFetch) {
 		}
 	} else {
 		if (info.IsShowingAd) {
-			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
+			const {
+				wasUsingModifiedM3U8,
+				wasUsingFallbackStream,
+				wasUsingBackupStream,
+			} =
 				_resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -233,7 +263,14 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				if ((wasUsingModifiedM3U8 || wasUsingFallbackStream) && __TTVAB_STATE__.ReloadAfterAd) {
+				if (
+					(
+						wasUsingModifiedM3U8 ||
+						wasUsingFallbackStream ||
+						wasUsingBackupStream
+					) &&
+					__TTVAB_STATE__.ReloadAfterAd
+				) {
 					info.LastPlayerReload = Date.now();
 					self.postMessage({ key: "ReloadPlayer" });
 				} else {
