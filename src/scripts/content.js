@@ -3674,10 +3674,6 @@ function _$in() {
 	_$hw();
 	_$mf();
 	_$tl();
-<<<<<<< HEAD
-	_$l("Crash monitor temporarily disabled for debugging", "warning");
-=======
->>>>>>> 65e7c08 (fix: ad loop when master manifest not intercepted, remove crash monitor)
 	_$bp();
 	_$al();
 
