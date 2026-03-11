@@ -86,11 +86,12 @@ function _incrementAdsBlocked(channel) {
 		? Math.max(0, Math.trunc(_S.adsBlocked))
 		: 0;
 	_S.adsBlocked = count;
+	const safeChannel = typeof channel === "string" ? channel : null;
 	if (typeof window !== "undefined") {
 		window.postMessage(
 			{
 				type: "ttvab-ad-blocked",
-				detail: { count, channel: channel || null },
+				detail: { count, channel: safeChannel },
 			},
 			"*",
 		);
@@ -98,7 +99,7 @@ function _incrementAdsBlocked(channel) {
 		self.postMessage({
 			key: "AdBlocked",
 			count: _S.adsBlocked,
-			channel: channel || null,
+			channel: safeChannel,
 		});
 	}
 }
@@ -108,6 +109,8 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 	const count = Number.isFinite(_S.domAdsBlocked)
 		? Math.max(0, Math.trunc(_S.domAdsBlocked))
 		: 0;
+	const safeKind = typeof kind === "string" ? kind : "generic";
+	const safeChannel = typeof channel === "string" ? channel : null;
 	_S.domAdsBlocked = count;
 	if (typeof window !== "undefined") {
 		window.postMessage(
@@ -115,8 +118,8 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 				type: "ttvab-dom-ad-cleanup",
 				detail: {
 					count,
-					kind,
-					channel: channel || null,
+					kind: safeKind,
+					channel: safeChannel,
 				},
 			},
 			"*",
