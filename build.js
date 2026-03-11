@@ -957,6 +957,7 @@ function validateSharedDefinitions() {
 		"autoLanguage",
 		"repoLinkLabel",
 		"authorLinkLabel",
+		"versionLabel",
 	];
 	for (const [lang, locale] of Object.entries(translations)) {
 		for (const key of requiredTranslationKeys) {
