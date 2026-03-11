@@ -189,7 +189,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		langAutoOption.textContent = `🌐 ${String(t.autoLanguage ?? "Auto")}`;
 		versionText.setAttribute(
 			"aria-label",
-			`Version ${versionText.textContent}`,
+			formatTemplate(String(t.versionLabel ?? "Version {version}"), {
+				version: versionText.textContent,
+			}),
 		);
 		statsToggle.setAttribute(
 			"aria-label",
@@ -238,7 +240,15 @@ document.addEventListener("DOMContentLoaded", () => {
 		const manifest = chrome.runtime?.getManifest?.();
 		if (manifest?.version && versionText) {
 			versionText.textContent = `v${manifest.version}`;
-			versionText.setAttribute("aria-label", `Version ${manifest.version}`);
+			versionText.setAttribute(
+				"aria-label",
+				formatTemplate(
+					String(getTranslations().versionLabel ?? "Version {version}"),
+					{
+						version: manifest.version,
+					},
+				),
+			);
 		}
 	} catch {}
 
