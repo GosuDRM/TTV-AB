@@ -395,6 +395,20 @@ function _$sa(text, stripAll, info) {
 	return result.join("\n");
 }
 
+function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
+	const frameRate = Number.parseFloat(attrs?.["FRAME-RATE"]);
+	const bandwidth = Number.parseInt(attrs?.BANDWIDTH, 10);
+	return {
+		Resolution: String(attrs.RESOLUTION || "0x0"),
+		FrameRate: Number.isFinite(frameRate) ? frameRate : 0,
+		Bandwidth: Number.isFinite(bandwidth) ? Math.max(0, bandwidth) : 0,
+		Codecs: String(attrs.CODECS || ""),
+		Name: String(attrs.VIDEO || ""),
+		RawUrl: rawUrl,
+		Url: variantUrl,
+	};
+}
+
 function _$su(m3u8, res, baseUrl = null) {
 	const lines = m3u8.split("\n");
 	const len = lines.length;
@@ -1130,13 +1144,11 @@ function _$wf() {
 					variantUrl = new URL(variantUrl, usherUrl).href;
 				} catch {}
 				if (resolution) {
-					const resInfo = {
-						Resolution: resolution,
-						FrameRate: attrs["FRAME-RATE"],
-						Codecs: attrs.CODECS,
-						RawUrl: lines[i + 1],
-						Url: variantUrl,
-					};
+					const resInfo = _getStreamVariantInfo(
+						attrs,
+						lines[i + 1],
+						variantUrl,
+					);
 					info.Urls[variantUrl] = resInfo;
 					info.Urls[lines[i + 1]] = resInfo;
 					info.ResolutionList.push(resInfo);

@@ -50,13 +50,11 @@ function _hookWorkerFetch() {
 					variantUrl = new URL(variantUrl, usherUrl).href;
 				} catch {}
 				if (resolution) {
-					const resInfo = {
-						Resolution: resolution,
-						FrameRate: attrs["FRAME-RATE"],
-						Codecs: attrs.CODECS,
-						RawUrl: lines[i + 1],
-						Url: variantUrl,
-					};
+					const resInfo = _getStreamVariantInfo(
+						attrs,
+						lines[i + 1],
+						variantUrl,
+					);
 					info.Urls[variantUrl] = resInfo;
 					info.Urls[lines[i + 1]] = resInfo;
 					info.ResolutionList.push(resInfo);
