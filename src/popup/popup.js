@@ -655,13 +655,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		setTimeout(() => element.classList.remove("pulse"), 200);
 	}
 
-	const donateBtn = document.getElementById("donateBtn");
-	if (donateBtn) {
-		donateBtn.addEventListener("click", () => {
-			window.open("https://ko-fi.com/gosudrm", "_blank", "noopener,noreferrer");
-		});
-	}
-
 	if (repoLink) {
 		repoLink.setAttribute("aria-label", "Open the TTV AB GitHub repository");
 	}

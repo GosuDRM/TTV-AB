@@ -323,6 +323,11 @@ function validateSharedDefinitions() {
 			"Popup HTML author link must target the GosuDRM GitHub profile",
 		);
 	}
+	if (!popupHtmlSource.includes('href="https://ko-fi.com/gosudrm"')) {
+		throw new Error(
+			"Popup HTML donate link must target the canonical Ko-fi URL",
+		);
+	}
 	for (const requiredPopupLinkAttr of [
 		'target="_blank"',
 		'rel="noopener noreferrer"',
