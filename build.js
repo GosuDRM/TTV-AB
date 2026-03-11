@@ -308,6 +308,19 @@ function validateSharedDefinitions() {
 			"README or PRIVACY metric wording is out of sync with DOM Ads Blocked",
 		);
 	}
+	for (const requiredPrivacyPhrase of [
+		"enable/disable toggle",
+		'"Ads Blocked" and "DOM Ads Blocked" counters',
+		"selected language",
+		"welcome/donation reminder dismissal timing",
+		"stays on your device",
+	]) {
+		if (!privacySource.includes(requiredPrivacyPhrase)) {
+			throw new Error(
+				`PRIVACY is missing required storage disclosure text: ${requiredPrivacyPhrase}`,
+			);
+		}
+	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
 	const popupHtmlSource = fs.readFileSync(
 		path.join(__dirname, "src", "popup", "popup.html"),
