@@ -83,20 +83,37 @@ const MINIFY_MAP = {
 	_playlistHasKnownAdSegments: "_$pka",
 };
 
-function getVersion() {
+function readVersionSources() {
 	const constantsPath = path.join(MODULES_DIR, "constants.js");
-	const content = fs.readFileSync(constantsPath, "utf8");
-	const match = content.match(/VERSION:\s*['"]([^'"]+)['"]/);
-	if (match) return match[1];
+	const constantsContent = fs.readFileSync(constantsPath, "utf8");
+	const constantsMatch = constantsContent.match(/VERSION:\s*['"]([^'"]+)['"]/);
+	let packageVersion = "0.0.0";
+	let manifestVersion = "0.0.0";
 
 	try {
 		const packageJson = JSON.parse(
 			fs.readFileSync(path.join(__dirname, "package.json"), "utf8"),
 		);
-		return packageJson.version || "0.0.0";
-	} catch {
-		return "0.0.0";
-	}
+		packageVersion = packageJson.version || packageVersion;
+	} catch {}
+
+	try {
+		const manifest = JSON.parse(
+			fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"),
+		);
+		manifestVersion = manifest.version || manifestVersion;
+	} catch {}
+
+	return {
+		constantsVersion: constantsMatch?.[1] || null,
+		packageVersion,
+		manifestVersion,
+	};
+}
+
+function getVersion() {
+	const { constantsVersion, packageVersion } = readVersionSources();
+	return constantsVersion || packageVersion || "0.0.0";
 }
 
 function extractLiteral(source, startToken, openChar, closeChar) {
@@ -125,6 +142,18 @@ function normalizeCodeSnippet(code) {
 }
 
 function validateSharedDefinitions() {
+	const { constantsVersion, packageVersion, manifestVersion } =
+		readVersionSources();
+	if (
+		!constantsVersion ||
+		constantsVersion !== packageVersion ||
+		constantsVersion !== manifestVersion
+	) {
+		throw new Error(
+			`Version mismatch: constants=${constantsVersion || "missing"}, package=${packageVersion}, manifest=${manifestVersion}`,
+		);
+	}
+
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
 	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
