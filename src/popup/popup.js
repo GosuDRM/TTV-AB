@@ -419,7 +419,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				);
 			}
 			const safeResult = result || {};
-			const enabled = safeResult.ttvAdblockEnabled !== false;
+			const enabled = safeResult.ttvAdblockEnabled === false ? false : true;
 			toggle.checked = enabled;
 			updateStatus(enabled);
 
@@ -436,7 +436,8 @@ document.addEventListener("DOMContentLoaded", () => {
 	chrome.storage.onChanged.addListener((changes, namespace) => {
 		if (namespace !== "local") return;
 		if (changes.ttvAdblockEnabled) {
-			const enabled = changes.ttvAdblockEnabled.newValue !== false;
+			const enabled =
+				changes.ttvAdblockEnabled.newValue === false ? false : true;
 			toggle.checked = enabled;
 			updateStatus(enabled);
 		}
