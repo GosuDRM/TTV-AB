@@ -396,14 +396,21 @@ window.addEventListener("message", (e) => {
 	if (e.source !== window) return;
 	if (!e.data?.type?.startsWith("ttvab-")) return;
 
-	if (e.data.type === "ttvab-ad-blocked") {
-		const channel = e.data.detail?.channel || null;
+	if (
+		e.data.type === "ttvab-ad-blocked" &&
+		typeof e.data.detail?.count === "number"
+	) {
+		const channel =
+			typeof e.data.detail?.channel === "string" ? e.data.detail.channel : null;
 		pendingAdsDelta++;
 		if (channel) pendingAdChannels.push(channel);
 		scheduleFlush();
 	}
 
-	if (e.data.type === "ttvab-dom-ad-cleanup") {
+	if (
+		e.data.type === "ttvab-dom-ad-cleanup" &&
+		typeof e.data.detail?.count === "number"
+	) {
 		pendingDomAdsDelta++;
 		scheduleFlush();
 	}
