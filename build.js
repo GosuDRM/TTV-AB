@@ -153,7 +153,7 @@ function validateSharedDefinitions() {
 			`Version mismatch: constants=${constantsVersion || "missing"}, package=${packageVersion}, manifest=${manifestVersion}`,
 		);
 	}
-
+	const readmePath = path.join(__dirname, "README.md");
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
 	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
@@ -167,6 +167,15 @@ function validateSharedDefinitions() {
 	const hooksPath = path.join(__dirname, "src", "modules", "hooks.js");
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
+	const readmeSource = fs.readFileSync(readmePath, "utf8");
+	if (
+		!readmeSource.includes(`version-${constantsVersion}-`) ||
+		!readmeSource.includes(`### v${constantsVersion}`)
+	) {
+		throw new Error(
+			`README version markers are out of sync with ${constantsVersion}`,
+		);
+	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
 	const popupHtmlSource = fs.readFileSync(
 		path.join(__dirname, "src", "popup", "popup.html"),
