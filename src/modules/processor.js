@@ -56,8 +56,47 @@ function _hasPlaylistAdMarkers(text) {
 }
 
 async function _processM3U8(url, text, realFetch) {
-	const info = _getStreamInfoForPlaylist(url);
-	if (!info) return text;
+	let info = _getStreamInfoForPlaylist(url);
+	if (!info) {
+		if (
+			!_hasPlaylistAdMarkers(text) &&
+			!_playlistHasKnownAdSegments(text) &&
+			__TTVAB_STATE__.SimulatedAdsDepth === 0
+		) {
+			return text;
+		}
+		const channel =
+			__TTVAB_STATE__.CurrentAdChannel ||
+			Object.keys(__TTVAB_STATE__.StreamInfos || {})[0] ||
+			__TTVAB_STATE__.PageChannel ||
+			null;
+		if (!channel) return text;
+		info = {
+			ChannelName: channel,
+			IsShowingAd: false,
+			LastPlayerReload: 0,
+			EncodingsM3U8: null,
+			ModifiedM3U8: null,
+			IsUsingModifiedM3U8: false,
+			IsUsingFallbackStream: false,
+			UsherBaseUrl: "",
+			UsherParams: "",
+			RequestedAds: new Set(),
+			FailedBackupPlayerTypes: new Set(),
+			Urls: Object.create(null),
+			ResolutionList: [],
+			BackupEncodingsM3U8Cache: Object.create(null),
+			ActiveBackupPlayerType: null,
+			ActiveBackupResolution: null,
+			IsMidroll: false,
+			IsStrippingAdSegments: false,
+			NumStrippedAdSegments: 0,
+			LastActivityAt: Date.now(),
+		};
+		__TTVAB_STATE__.StreamInfos[channel] = info;
+		__TTVAB_STATE__.StreamInfosByUrl[url] = info;
+		_log(`Synthetic stream info created for ${channel}`, "warning");
+	}
 
 	if (!__TTVAB_STATE__.IsAdStrippingEnabled) {
 		if (
@@ -362,15 +401,15 @@ async function _findBackupStream(
 								const promotionPolicy =
 									typeof _getFallbackPromotionPolicy === "function"
 										? _getFallbackPromotionPolicy({
-												candidateHasAds,
-												candidateIsPlayable: Boolean(m3u8),
-												simulatedAdsDepthSatisfied,
-											})
+											candidateHasAds,
+											candidateIsPlayable: Boolean(m3u8),
+											simulatedAdsDepthSatisfied,
+										})
 										: {
-												allowSelectedPromotion: false,
-												allowFallbackPromotion: false,
-												reason: "policy-unavailable",
-											};
+											allowSelectedPromotion: false,
+											allowFallbackPromotion: false,
+											reason: "policy-unavailable",
+										};
 								const canPromoteFallback =
 									promotionPolicy.allowFallbackPromotion &&
 									(!fallbackM3u8 ||
