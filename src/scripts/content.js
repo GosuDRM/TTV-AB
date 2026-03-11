@@ -1729,27 +1729,13 @@ function _$mf() {
 			_$bw(updates);
 		}
 	};
-	const getBodyText = async (body) => {
-		if (!body) return null;
-		if (typeof body === "string") return body;
-		if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
-			return body.toString();
-		}
-		if (typeof Blob !== "undefined" && body instanceof Blob) {
-			return await body.text();
-		}
-		if (typeof body?.text === "function") {
-			return await body.text();
-		}
-		return null;
-	};
 	const rewritePlaybackAccessTokenBody = (bodyText) => {
 		if (
 			!__TTVAB_STATE__.ForceAccessTokenPlayerType ||
 			typeof bodyText !== "string" ||
 			!bodyText
 		) {
-			return { bodyText, changed: false, forcedPlayerType: null };
+			return { bodyText, changed: false };
 		}
 
 		try {
@@ -1781,12 +1767,11 @@ function _$mf() {
 				return {
 					bodyText: JSON.stringify(parsed),
 					changed: true,
-					forcedPlayerType: forceType,
 				};
 			}
 		} catch {}
 
-		return { bodyText, changed: false, forcedPlayerType: null };
+		return { bodyText, changed: false };
 	};
 	const updatePlaybackAccessTokenHash = (hash) => {
 		if (!hash || __TTVAB_STATE__.PlaybackAccessTokenHash === hash) return;
@@ -1808,7 +1793,7 @@ function _$mf() {
 			},
 		]);
 	};
-	const processGqlBody = (bodyText, effectivePlayerType = null) => {
+	const processGqlBody = (bodyText) => {
 		if (typeof bodyText !== "string" || !bodyText) return;
 		try {
 			const data = JSON.parse(bodyText);
@@ -1821,9 +1806,7 @@ function _$mf() {
 					updatePlaybackAccessTokenHash(
 						op.extensions.persistedQuery.sha256Hash,
 					);
-					if (typeof effectivePlayerType === "string") {
-						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
-					} else if (typeof op.variables?.playerType === "string") {
+					if (typeof op.variables?.playerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(op.variables.playerType);
 					}
 				}
@@ -1840,14 +1823,12 @@ function _$mf() {
 				let headers = opts?.headers;
 
 				if (url instanceof Request) {
-					headers = opts?.headers || url.headers;
+					headers = url.headers;
 					try {
-						const text = await getBodyText(url.clone());
+						const clone = url.clone();
+						const text = await clone.text();
 						const rewritten = rewritePlaybackAccessTokenBody(text);
-						processGqlBody(
-							rewritten.bodyText,
-							rewritten.forcedPlayerType,
-						);
+						processGqlBody(rewritten.bodyText);
 						if (rewritten.changed) {
 							nextArgs = [
 								new Request(url, {
@@ -1857,18 +1838,12 @@ function _$mf() {
 							];
 						}
 					} catch (_e) {}
-				} else {
-					try {
-						const bodyText = await getBodyText(opts?.body);
-						const rewritten = rewritePlaybackAccessTokenBody(bodyText);
-						processGqlBody(
-							rewritten.bodyText,
-							rewritten.forcedPlayerType,
-						);
-						if (rewritten.changed) {
-							nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
-						}
-					} catch (_e) {}
+				} else if (typeof opts?.body === "string") {
+					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
+					processGqlBody(rewritten.bodyText);
+					if (rewritten.changed) {
+						nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
+					}
 				}
 
 				if (headers) {
