@@ -612,12 +612,45 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	});
 
+	let statsTransitionCleanup = null;
+
+	function setStatsPanelExpanded(isExpanded) {
+		if (typeof statsTransitionCleanup === "function") {
+			statsTransitionCleanup();
+			statsTransitionCleanup = null;
+		}
+		if (isExpanded) {
+			statsPanel.hidden = false;
+			statsPanel.classList.add("expanded");
+			statsPanel.setAttribute("aria-hidden", "false");
+			statsToggle.classList.add("expanded");
+			statsToggle.setAttribute("aria-expanded", "true");
+			return;
+		}
+		statsPanel.classList.remove("expanded");
+		statsPanel.setAttribute("aria-hidden", "true");
+		statsToggle.classList.remove("expanded");
+		statsToggle.setAttribute("aria-expanded", "false");
+		if (statsPanel.contains(document.activeElement)) {
+			statsToggle.focus();
+		}
+		const handleTransitionEnd = (event) => {
+			if (event.target !== statsPanel || event.propertyName !== "max-height") {
+				return;
+			}
+			statsPanel.hidden = true;
+			statsPanel.removeEventListener("transitionend", handleTransitionEnd);
+			statsTransitionCleanup = null;
+		};
+		statsTransitionCleanup = () => {
+			statsPanel.removeEventListener("transitionend", handleTransitionEnd);
+		};
+		statsPanel.addEventListener("transitionend", handleTransitionEnd);
+	}
+
 	function toggleStatsPanel() {
-		const isExpanded = statsPanel.classList.toggle("expanded");
-		statsPanel.hidden = !isExpanded;
-		statsPanel.setAttribute("aria-hidden", String(!isExpanded));
-		statsToggle.classList.toggle("expanded", isExpanded);
-		statsToggle.setAttribute("aria-expanded", String(isExpanded));
+		const isExpanded = !statsPanel.classList.contains("expanded");
+		setStatsPanelExpanded(isExpanded);
 	}
 
 	statsToggle.addEventListener("click", () => {
