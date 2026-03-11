@@ -18,7 +18,8 @@ function _initToggleListener() {
 	window.addEventListener("message", (e) => {
 		if (e.source !== window) return;
 		if (e.data?.type === "ttvab-toggle") {
-			const enabled = e.data.detail?.enabled ?? true;
+			if (typeof e.data.detail?.enabled !== "boolean") return;
+			const enabled = e.data.detail.enabled;
 			if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
 			__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
 			_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
