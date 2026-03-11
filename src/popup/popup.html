@@ -83,6 +83,13 @@
             box-shadow: 0 4px 20px rgba(238, 90, 90, 0.6);
         }
 
+        .donate-btn:focus-visible {
+            outline: 2px solid rgba(255, 255, 255, 0.9);
+            outline-offset: 2px;
+            animation: none;
+            transform: scale(1.08);
+        }
+
         .donate-btn svg {
             width: 18px;
             height: 18px;
@@ -484,6 +491,11 @@
             margin-left: -4px;
         }
 
+        .toggle input:focus-visible+.slider {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
+        }
+
         .info {
             margin-top: 16px;
             text-align: center;
@@ -513,6 +525,13 @@
         .stats-toggle:hover {
             background: rgba(145, 70, 255, 0.15);
             border-color: rgba(145, 70, 255, 0.4);
+        }
+
+        .stats-toggle:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
+            background: rgba(145, 70, 255, 0.18);
+            border-color: rgba(145, 70, 255, 0.55);
         }
 
         .stats-toggle-text {
@@ -765,6 +784,13 @@
 
         .author-link:hover {
             opacity: 0.8;
+            text-decoration: underline;
+        }
+
+        .author-link:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
+            border-radius: 4px;
             text-decoration: underline;
         }
     </style>
