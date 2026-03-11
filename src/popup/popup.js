@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function getLang() {
 		const saved = localStorage.getItem(LANG_KEY);
-		if (saved && saved !== "auto") return saved;
+		if (saved && saved !== "auto" && TRANSLATIONS[saved]) return saved;
 		const browserLang = navigator.language;
 		if (browserLang.startsWith("zh")) {
 			return browserLang.includes("TW") || browserLang.includes("Hant")
@@ -84,7 +84,11 @@ document.addEventListener("DOMContentLoaded", () => {
 		footerText.textContent = t.footerBy;
 	}
 
-	const currentLang = localStorage.getItem(LANG_KEY) || "auto";
+	const savedLang = localStorage.getItem(LANG_KEY);
+	const currentLang =
+		savedLang === "auto" || !savedLang || TRANSLATIONS[savedLang]
+			? savedLang || "auto"
+			: "auto";
 	langSelector.value = currentLang;
 	applyTranslations(getLang());
 
