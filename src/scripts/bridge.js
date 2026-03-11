@@ -314,6 +314,7 @@ let pendingAdsDelta = 0;
 let pendingDomAdsDelta = 0;
 let pendingAdChannels = [];
 let flushTimeout = null;
+let flushRetryCount = 0;
 
 function scheduleFlush() {
 	if (flushTimeout) return;
@@ -346,7 +347,10 @@ function flushCounters() {
 						pendingAdsDelta += adsDelta;
 						pendingDomAdsDelta += domAdsDelta;
 						pendingAdChannels.push(...channels);
-						scheduleFlush();
+						if (flushRetryCount < 2) {
+							flushRetryCount++;
+							scheduleFlush();
+						}
 						resolve();
 						return;
 					}
@@ -373,11 +377,15 @@ function flushCounters() {
 							pendingAdsDelta += adsDelta;
 							pendingDomAdsDelta += domAdsDelta;
 							pendingAdChannels.push(...channels);
-							scheduleFlush();
+							if (flushRetryCount < 2) {
+								flushRetryCount++;
+								scheduleFlush();
+							}
 							resolve();
 							return;
 						}
 
+						flushRetryCount = 0;
 						try {
 							for (const ch of channels) {
 								await updateStats("ads", ch, newAds, newDomAds);
