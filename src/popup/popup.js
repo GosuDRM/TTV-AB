@@ -500,7 +500,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function formatNumber(num) {
-		return num.toLocaleString();
+		return normalizeCount(num).toLocaleString();
 	}
 
 	function animateCounter(element, newValue) {
