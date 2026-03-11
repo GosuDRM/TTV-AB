@@ -31,6 +31,7 @@ const MINIFY_MAP = {
 	_getServerTime: "_$gt",
 	_replaceServerTime: "_$rt",
 	_stripAds: "_$sa",
+	_getStreamVariantInfo: "_$sv",
 	_getStreamUrl: "_$su",
 	_getToken: "_$tk",
 	_processM3U8: "_$pm",

@@ -307,6 +307,7 @@ function _hookWorker() {
                 ${_isKnownAdSegmentUrl.toString()}
                 ${_playlistHasKnownAdSegments.toString()}
                 ${_stripAds.toString()}
+                ${_getStreamVariantInfo.toString()}
                 ${_getStreamUrl.toString()}
                 ${_getFallbackResolution.toString()}
                 ${_extractPlaybackAccessToken.toString()}
