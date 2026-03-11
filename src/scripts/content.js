@@ -2684,6 +2684,16 @@ function _$tl() {
 				`Ad blocking ${enabled ? "enabled" : "disabled"}`,
 				enabled ? "success" : "warning",
 			);
+			return;
+		}
+		if (e.data?.type === "ttvab-reload-after-ads-toggle") {
+			const enabled = e.data.detail?.enabled ?? true;
+			if (__TTVAB_STATE__.ReloadPlayerAfterAd === enabled) return;
+			__TTVAB_STATE__.ReloadPlayerAfterAd = enabled;
+			_$l(
+				`Post-ad auto refresh ${enabled ? "enabled" : "disabled"}`,
+				enabled ? "success" : "warning",
+			);
 		}
 	});
 }
