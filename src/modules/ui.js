@@ -21,7 +21,7 @@ function _showDonation() {
 		}
 
 		const lastReminderMs = Number.parseInt(lastReminder, 10);
-		if (!Number.isFinite(lastReminderMs)) {
+		if (!Number.isFinite(lastReminderMs) || lastReminderMs > now) {
 			localStorage.setItem(_REMINDER_KEY, now.toString());
 			return;
 		}
