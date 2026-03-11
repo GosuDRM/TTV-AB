@@ -915,10 +915,6 @@ async function _$fb(
 		const pt = playerTypes[pi];
 		const realPt = pt.replace("-CACHED", "");
 		const isFullyCachedPlayerType = pt !== realPt;
-		if (info.FailedBackupPlayerTypes?.has?.(pt)) {
-			_$l(`[Trace] Skipping ${pt} (previous token failure)`, "warning");
-			continue;
-		}
 		_$l(`[Trace] Checking: ${pt}`, "info");
 
 		for (let j = 0; j < 2; j++) {
@@ -961,7 +957,6 @@ async function _$fb(
 								_$l(`Usher failed for ${pt}: ${encRes.status}`, "warning");
 							}
 						} else {
-							info.FailedBackupPlayerTypes?.add?.(pt);
 							const missingParts = [
 								extractedToken?.hasAnySignature ? null : "signature",
 								extractedToken?.hasAnyValue ? null : "value",
@@ -974,11 +969,9 @@ async function _$fb(
 							);
 						}
 					} else {
-						info.FailedBackupPlayerTypes?.add?.(pt);
 						_$l(`Token failed for ${pt}: ${tokenRes.status}`, "warning");
 					}
 				} catch (e) {
-					info.FailedBackupPlayerTypes?.add?.(pt);
 					_$l(`Backup error: ${e.message}`, "error");
 				}
 			}

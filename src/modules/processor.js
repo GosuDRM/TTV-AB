@@ -315,10 +315,6 @@ async function _findBackupStream(
 		const pt = playerTypes[pi];
 		const realPt = pt.replace("-CACHED", "");
 		const isFullyCachedPlayerType = pt !== realPt;
-		if (info.FailedBackupPlayerTypes?.has?.(pt)) {
-			_log(`[Trace] Skipping ${pt} (previous token failure)`, "warning");
-			continue;
-		}
 		_log(`[Trace] Checking: ${pt}`, "info");
 
 		for (let j = 0; j < 2; j++) {
@@ -361,7 +357,6 @@ async function _findBackupStream(
 								_log(`Usher failed for ${pt}: ${encRes.status}`, "warning");
 							}
 						} else {
-							info.FailedBackupPlayerTypes?.add?.(pt);
 							const missingParts = [
 								extractedToken?.hasAnySignature ? null : "signature",
 								extractedToken?.hasAnyValue ? null : "value",
@@ -374,11 +369,9 @@ async function _findBackupStream(
 							);
 						}
 					} else {
-						info.FailedBackupPlayerTypes?.add?.(pt);
 						_log(`Token failed for ${pt}: ${tokenRes.status}`, "warning");
 					}
 				} catch (e) {
-					info.FailedBackupPlayerTypes?.add?.(pt);
 					_log(`Backup error: ${e.message}`, "error");
 				}
 			}
