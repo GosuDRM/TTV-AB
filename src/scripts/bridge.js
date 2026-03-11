@@ -353,8 +353,14 @@ function flushCounters() {
 
 					const safeResult = result || {};
 					const updates = {};
-					const newAds = (safeResult.ttvAdsBlocked || 0) + adsDelta;
-					const newDomAds = (safeResult.ttvDomAdsBlocked || 0) + domAdsDelta;
+					const baseAds = Number.isFinite(safeResult.ttvAdsBlocked)
+						? safeResult.ttvAdsBlocked
+						: 0;
+					const baseDomAds = Number.isFinite(safeResult.ttvDomAdsBlocked)
+						? safeResult.ttvDomAdsBlocked
+						: 0;
+					const newAds = baseAds + adsDelta;
+					const newDomAds = baseDomAds + domAdsDelta;
 					if (adsDelta > 0) updates.ttvAdsBlocked = newAds;
 					if (domAdsDelta > 0) updates.ttvDomAdsBlocked = newDomAds;
 
