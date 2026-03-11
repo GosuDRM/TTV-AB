@@ -6,6 +6,7 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Fixed
 - **Popup Version Fallback Sync** - The popup now ships with a static `v4.2.6` fallback label/value so the badge stays accurate and screen-reader friendly even if runtime manifest hydration is delayed or unavailable.
+- **Localized Toolbar Title** - The extension action now declares a localized manifest `default_title`, so the browser toolbar tooltip stays translatable and consistent with the published extension name.
 - **Localized Version Accessibility Label** - The popup version badge now localizes its aria label instead of always announcing an English `Version ...` string in non-English locales.
 - **Localized Footer Link Labels** - The popup now localizes the repository and author footer link tooltips/aria labels instead of leaving those accessibility labels stuck in English after a language change.
 - **Popup Link Guard Parity** - The popup now treats the canonical donate/repository/author links as required UI nodes too, so packaging or HTML drift fails fast instead of silently dropping footer actions.
