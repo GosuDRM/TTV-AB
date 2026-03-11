@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	const achievementsProgress = document.getElementById("achievementsProgress");
 	const nextAchievement = document.getElementById("nextAchievement");
 	const langSelector = document.getElementById("langSelector");
+	const langAutoOption = document.getElementById("langAutoOption");
 	const descriptionText = document.getElementById("descriptionText");
 	const versionText = document.getElementById("versionText");
 	const achievementsTitle = document.getElementById("achievementsTitle");
@@ -39,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		achievementsProgress,
 		nextAchievement,
 		langSelector,
+		langAutoOption,
 		descriptionText,
 		versionText,
 		achievementsTitle,
@@ -180,6 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		langSelector.title = t.language;
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
 		langSelector.setAttribute("aria-describedby", "descriptionText");
+		langAutoOption.textContent = `🌐 ${String(t.autoLanguage ?? "Auto")}`;
 		versionText.setAttribute(
 			"aria-label",
 			`Version ${versionText.textContent}`,
