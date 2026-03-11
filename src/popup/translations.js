@@ -25,6 +25,7 @@ const TRANSLATIONS = {
 		avgPerDay: "avg: {avg}/day",
 		footerBy: " — by ",
 		language: "Language",
+		autoLanguage: "Auto",
 		achievementsMap: {
 			first_block: { name: "Ad Slayer", desc: "Blocked your first ad!" },
 			block_10: { name: "Blocker", desc: "Blocked 10 ads!" },
@@ -69,6 +70,7 @@ const TRANSLATIONS = {
 		avgPerDay: "prom: {avg}/dia",
 		footerBy: " — por ",
 		language: "Idioma",
+		autoLanguage: "Auto",
 		achievementsMap: {
 			first_block: {
 				name: "Cazador de anuncios",
@@ -125,6 +127,7 @@ const TRANSLATIONS = {
 		avgPerDay: "moy: {avg}/jour",
 		footerBy: " — par ",
 		language: "Langue",
+		autoLanguage: "Auto",
 		achievementsMap: {
 			first_block: {
 				name: "Tueur de pubs",
@@ -169,6 +172,7 @@ const TRANSLATIONS = {
 		avgPerDay: "Schnitt: {avg}/Tag",
 		footerBy: " — von ",
 		language: "Sprache",
+		autoLanguage: "Auto",
 		achievementsMap: {
 			first_block: {
 				name: "Ad-Jaeger",
@@ -216,6 +220,7 @@ const TRANSLATIONS = {
 		avgPerDay: "media: {avg}/dia",
 		footerBy: " — por ",
 		language: "Idioma",
+		autoLanguage: "Auto",
 		achievementsMap: {
 			first_block: {
 				name: "Cacador de anuncios",
@@ -275,6 +280,7 @@ const TRANSLATIONS = {
 		avgPerDay: "media: {avg}/giorno",
 		footerBy: " — di ",
 		language: "Lingua",
+		autoLanguage: "Auto",
 		achievementsMap: {
 			first_block: {
 				name: "Cacciatore di ads",
@@ -327,6 +333,7 @@ const TRANSLATIONS = {
 		avgPerDay: "平均: {avg}/日",
 		footerBy: " — 作者 ",
 		language: "言語",
+		autoLanguage: "自動",
 		achievementsMap: {
 			first_block: {
 				name: "広告スレイヤー",
@@ -382,6 +389,7 @@ const TRANSLATIONS = {
 		avgPerDay: "평균: {avg}/일",
 		footerBy: " — 제작자 ",
 		language: "언어",
+		autoLanguage: "자동",
 		achievementsMap: {
 			first_block: { name: "광고 사냥꾼", desc: "첫 광고를 차단했습니다" },
 			block_10: { name: "블로커", desc: "광고 10개를 차단했습니다" },
@@ -425,6 +433,7 @@ const TRANSLATIONS = {
 		avgPerDay: "平均: {avg}/天",
 		footerBy: " — 作者 ",
 		language: "语言",
+		autoLanguage: "自动",
 		achievementsMap: {
 			first_block: { name: "广告猎手", desc: "成功拦截你的第一条广告" },
 			block_10: { name: "拦截者", desc: "已拦截10条广告" },
@@ -462,6 +471,7 @@ const TRANSLATIONS = {
 		avgPerDay: "平均: {avg}/天",
 		footerBy: " — 作者 ",
 		language: "語言",
+		autoLanguage: "自動",
 		achievementsMap: {
 			first_block: { name: "廣告獵手", desc: "成功攔截你的第一則廣告" },
 			block_10: { name: "攔截者", desc: "已攔截10則廣告" },
@@ -500,6 +510,7 @@ const TRANSLATIONS = {
 		avgPerDay: "среднее: {avg}/день",
 		footerBy: " — от ",
 		language: "Язык",
+		autoLanguage: "Авто",
 		achievementsMap: {
 			first_block: {
 				name: "Истребитель рекламы",

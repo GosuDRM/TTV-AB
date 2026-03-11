@@ -364,6 +364,7 @@ function validateSharedDefinitions() {
 		"achievementsProgress",
 		"nextAchievement",
 		"langSelector",
+		"langAutoOption",
 		"descriptionText",
 		"versionText",
 		"achievementsTitle",
@@ -671,6 +672,11 @@ function validateSharedDefinitions() {
 		}
 	}
 
+	if (!popupHtmlSource.includes('<option value="auto" id="langAutoOption">')) {
+		throw new Error(
+			'Popup language selector must include a dedicated auto option with id="langAutoOption"',
+		);
+	}
 	const popupLanguageOptions = [
 		...popupHtmlSource.matchAll(/<option value="([^"]+)"/g),
 	]
@@ -855,6 +861,7 @@ function validateSharedDefinitions() {
 		"allUnlocked",
 		"noDataYet",
 		"avgPerDay",
+		"autoLanguage",
 	];
 	for (const [lang, locale] of Object.entries(translations)) {
 		for (const key of requiredTranslationKeys) {
