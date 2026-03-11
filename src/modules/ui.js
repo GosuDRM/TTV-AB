@@ -3,6 +3,7 @@
 const _REMINDER_KEY = "ttvab_last_reminder";
 const _REMINDER_INTERVAL = 1209600000;
 const _FIRST_RUN_KEY = "ttvab_first_run_shown";
+const _UI_FLAGS_KEY = "__TTVAB_UI_FLAGS__";
 
 function _getUiStorageItem(key) {
 	try {
@@ -29,8 +30,24 @@ function _escapeUiText(value) {
 	return div.innerHTML;
 }
 
+function _getUiFlags() {
+	const existing = window[_UI_FLAGS_KEY];
+	if (existing && typeof existing === "object") {
+		return existing;
+	}
+	const flags = {
+		achievementListenerInitialized: false,
+		welcomeScheduled: false,
+		donationScheduled: false,
+	};
+	window[_UI_FLAGS_KEY] = flags;
+	return flags;
+}
+
 function _showDonation() {
 	try {
+		const uiFlags = _getUiFlags();
+		if (uiFlags.donationScheduled) return;
 		const lastReminder = _getUiStorageItem(_REMINDER_KEY);
 		const now = Date.now();
 
@@ -47,7 +64,10 @@ function _showDonation() {
 
 		if (now - lastReminderMs < _REMINDER_INTERVAL) return;
 
+		uiFlags.donationScheduled = true;
 		setTimeout(() => {
+			uiFlags.donationScheduled = false;
+			if (document.getElementById("ttvab-reminder") || !document.body) return;
 			const toast = document.createElement("div");
 			toast.id = "ttvab-reminder";
 			toast.innerHTML = `
@@ -100,9 +120,13 @@ function _showDonation() {
 
 function _showWelcome() {
 	try {
-		if (_getUiStorageItem(_FIRST_RUN_KEY)) return;
+		const uiFlags = _getUiFlags();
+		if (uiFlags.welcomeScheduled || _getUiStorageItem(_FIRST_RUN_KEY)) return;
 
+		uiFlags.welcomeScheduled = true;
 		setTimeout(() => {
+			uiFlags.welcomeScheduled = false;
+			if (document.getElementById("ttvab-welcome") || !document.body) return;
 			const toast = document.createElement("div");
 			toast.id = "ttvab-welcome";
 			toast.innerHTML = `
@@ -227,6 +251,9 @@ function _showAchievementUnlocked(achievementId) {
 }
 
 function _initAchievementListener() {
+	const uiFlags = _getUiFlags();
+	if (uiFlags.achievementListenerInitialized) return;
+	uiFlags.achievementListenerInitialized = true;
 	window.addEventListener("message", (e) => {
 		if (!_isTrustedUiMessage(e)) return;
 		if (
