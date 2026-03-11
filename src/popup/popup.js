@@ -239,12 +239,16 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function renderChart(dailyData) {
+		const safeDailyData =
+			dailyData && typeof dailyData === "object" && !Array.isArray(dailyData)
+				? dailyData
+				: {};
 		const t = getTranslations();
 		const days = getLast7Days();
 		const parsedDays = days.map((dayKey) => parseDateKey(dayKey));
 		const values = days.map((d) => {
-			const ads = normalizeCount(dailyData[d]?.ads);
-			const domAds = normalizeCount(dailyData[d]?.domAds);
+			const ads = normalizeCount(safeDailyData[d]?.ads);
+			const domAds = normalizeCount(safeDailyData[d]?.domAds);
 			return ads + domAds;
 		});
 		const max = Math.max(...values, 1);
@@ -307,6 +311,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		domAdsBlocked,
 		channelCount,
 	) {
+		const safeUnlocked = Array.isArray(unlocked)
+			? [...new Set(unlocked.filter((id) => typeof id === "string"))]
+			: [];
 		const safeAdsBlocked = normalizeCount(adsBlocked);
 		const safeDomAdsBlocked = normalizeCount(domAdsBlocked);
 		const safeChannelCount = normalizeCount(channelCount);
