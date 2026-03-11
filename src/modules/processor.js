@@ -58,7 +58,6 @@ function _hasPlaylistAdMarkers(text) {
 async function _processM3U8(url, text, realFetch) {
 	const info = _getStreamInfoForPlaylist(url);
 	if (!info) return text;
-	__TTVAB_STATE__.LastPlaylistUrl = url;
 
 	if (!__TTVAB_STATE__.IsAdStrippingEnabled) {
 		if (
