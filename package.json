@@ -4,7 +4,7 @@
 	"description": "Twitch Ad Blocker",
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",
-		"knip": "^5.86.0"
+		"knip": "^6.0.0-0"
 	},
 	"scripts": {
 		"knip": "knip --production",
