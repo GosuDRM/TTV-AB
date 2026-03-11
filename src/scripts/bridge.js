@@ -26,6 +26,14 @@ function normalizeChannelName(value) {
 	return trimmed !== "" ? trimmed : null;
 }
 
+function isPlainObject(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
+}
+
 function createChannelsMap() {
 	return Object.create(null);
 }
@@ -126,16 +134,10 @@ function updateStats(
 				return;
 			}
 			const safeResult = result || {};
-			const stats =
-				safeResult.ttvStats && typeof safeResult.ttvStats === "object"
-					? safeResult.ttvStats
-					: {};
-			stats.daily =
-				stats.daily &&
-				typeof stats.daily === "object" &&
-				!Array.isArray(stats.daily)
-					? stats.daily
-					: {};
+			const stats = isPlainObject(safeResult.ttvStats)
+				? safeResult.ttvStats
+				: {};
+			stats.daily = isPlainObject(stats.daily) ? stats.daily : {};
 			stats.channels = normalizeChannelsMap(stats.channels);
 			stats.achievements = Array.isArray(stats.achievements)
 				? [
