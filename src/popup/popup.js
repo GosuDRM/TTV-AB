@@ -658,16 +658,30 @@ document.addEventListener("DOMContentLoaded", () => {
 		requestAnimationFrame(() => {
 			statsPanel.style.maxHeight = "0px";
 		});
+		const finalizeCollapse = () => {
+			statsPanel.hidden = true;
+			statsPanel.removeEventListener("transitionend", handleTransitionEnd);
+			if (collapseFallbackTimeout) {
+				clearTimeout(collapseFallbackTimeout);
+				collapseFallbackTimeout = null;
+			}
+			statsTransitionCleanup = null;
+		};
 		const handleTransitionEnd = (event) => {
 			if (event.target !== statsPanel || event.propertyName !== "max-height") {
 				return;
 			}
-			statsPanel.hidden = true;
-			statsPanel.removeEventListener("transitionend", handleTransitionEnd);
-			statsTransitionCleanup = null;
+			finalizeCollapse();
 		};
+		let collapseFallbackTimeout = setTimeout(() => {
+			finalizeCollapse();
+		}, 250);
 		statsTransitionCleanup = () => {
 			statsPanel.removeEventListener("transitionend", handleTransitionEnd);
+			if (collapseFallbackTimeout) {
+				clearTimeout(collapseFallbackTimeout);
+				collapseFallbackTimeout = null;
+			}
 		};
 		statsPanel.addEventListener("transitionend", handleTransitionEnd);
 	}
