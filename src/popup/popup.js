@@ -501,14 +501,18 @@ document.addEventListener("DOMContentLoaded", () => {
 	const donateBtn = document.getElementById("donateBtn");
 	if (donateBtn) {
 		donateBtn.addEventListener("click", () => {
-			window.open("https://ko-fi.com/gosudrm", "_blank");
+			window.open("https://ko-fi.com/gosudrm", "_blank", "noopener,noreferrer");
 		});
 	}
 
 	if (repoLink) {
 		repoLink.addEventListener("click", (e) => {
 			e.preventDefault();
-			window.open("https://github.com/GosuDRM/TTV-AB", "_blank");
+			window.open(
+				"https://github.com/GosuDRM/TTV-AB",
+				"_blank",
+				"noopener,noreferrer",
+			);
 		});
 	}
 
@@ -516,7 +520,11 @@ document.addEventListener("DOMContentLoaded", () => {
 	if (authorLink) {
 		authorLink.addEventListener("click", (e) => {
 			e.preventDefault();
-			window.open("https://github.com/GosuDRM", "_blank");
+			window.open(
+				"https://github.com/GosuDRM",
+				"_blank",
+				"noopener,noreferrer",
+			);
 		});
 	}
 });
