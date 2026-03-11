@@ -2655,6 +2655,7 @@ function _$hlp() {
 const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;
 const _$fr = "ttvab_first_run_shown";
+const _UI_FLAGS_KEY = "__TTVAB_UI_FLAGS__";
 
 function _getUiStorageItem(key) {
 	try {
@@ -2681,8 +2682,24 @@ function _escapeUiText(value) {
 	return div.innerHTML;
 }
 
+function _getUiFlags() {
+	const existing = window[_UI_FLAGS_KEY];
+	if (existing && typeof existing === "object") {
+		return existing;
+	}
+	const flags = {
+		achievementListenerInitialized: false,
+		welcomeScheduled: false,
+		donationScheduled: false,
+	};
+	window[_UI_FLAGS_KEY] = flags;
+	return flags;
+}
+
 function _$dn() {
 	try {
+		const uiFlags = _getUiFlags();
+		if (uiFlags.donationScheduled) return;
 		const lastReminder = _getUiStorageItem(_$rk);
 		const now = Date.now();
 
@@ -2699,7 +2716,10 @@ function _$dn() {
 
 		if (now - lastReminderMs < _$ri2) return;
 
+		uiFlags.donationScheduled = true;
 		setTimeout(() => {
+			uiFlags.donationScheduled = false;
+			if (document.getElementById("ttvab-reminder") || !document.body) return;
 			const toast = document.createElement("div");
 			toast.id = "ttvab-reminder";
 			toast.innerHTML = `
@@ -2752,9 +2772,13 @@ function _$dn() {
 
 function _$wc() {
 	try {
-		if (_getUiStorageItem(_$fr)) return;
+		const uiFlags = _getUiFlags();
+		if (uiFlags.welcomeScheduled || _getUiStorageItem(_$fr)) return;
 
+		uiFlags.welcomeScheduled = true;
 		setTimeout(() => {
+			uiFlags.welcomeScheduled = false;
+			if (document.getElementById("ttvab-welcome") || !document.body) return;
 			const toast = document.createElement("div");
 			toast.id = "ttvab-welcome";
 			toast.innerHTML = `
@@ -2879,6 +2903,9 @@ function _$au(achievementId) {
 }
 
 function _$al() {
+	const uiFlags = _getUiFlags();
+	if (uiFlags.achievementListenerInitialized) return;
+	uiFlags.achievementListenerInitialized = true;
 	window.addEventListener("message", (e) => {
 		if (!_isTrustedUiMessage(e)) return;
 		if (

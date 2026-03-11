@@ -10,6 +10,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Channel Stats Canonicalization** - Popup and bridge stats now normalize channel names to a lowercase canonical form and merge malformed duplicate entries so per-channel counts do not split across `Channel`/`channel` variants.
 - **Popup Status / Locale Hardening** - Status messaging now uses a required dedicated info node, and channel totals now respect the popup's active locale formatting instead of falling back to the browser default.
 - **Stats Write Batching** - Bridge stats updates now coalesce repeated channel and DOM-ad increments before writing, reducing redundant storage churn during bursty ad events.
+- **UI Toast Reinit Guards** - Welcome, donation, and achievement toast wiring now avoids duplicate scheduling/listeners on repeated initialization and skips rendering when the page body is unavailable.
 
 ### Changed
 - **Popup Build Validation** - Build-time validation now checks that all popup element IDs required by `popup.js` still exist in `popup.html`.
