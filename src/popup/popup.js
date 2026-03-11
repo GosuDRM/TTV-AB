@@ -503,7 +503,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function animateCounter(element, newValue) {
-		element.textContent = formatNumber(newValue);
+		element.textContent = formatNumber(normalizeCount(newValue));
 		element.classList.add("pulse");
 		setTimeout(() => element.classList.remove("pulse"), 200);
 	}
