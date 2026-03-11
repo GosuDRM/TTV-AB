@@ -160,6 +160,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		if (donateButton) donateButton.title = t.supportDeveloper;
 		langSelector.title = t.language;
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
+		versionText.setAttribute(
+			"aria-label",
+			`Version ${versionText.textContent}`,
+		);
 		statsToggle.setAttribute(
 			"aria-label",
 			String(t.statistics ?? "Statistics"),
@@ -183,6 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const manifest = chrome.runtime?.getManifest?.();
 		if (manifest?.version && versionText) {
 			versionText.textContent = `v${manifest.version}`;
+			versionText.setAttribute("aria-label", `Version ${manifest.version}`);
 		}
 	} catch {}
 
