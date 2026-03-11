@@ -794,6 +794,46 @@
             border-radius: 4px;
             text-decoration: underline;
         }
+
+        @media (prefers-reduced-motion: reduce) {
+            .description-text,
+            .version,
+            .footer-text,
+            .status-dot,
+            .donate-btn,
+            .title::before,
+            .title::after {
+                animation: none;
+            }
+
+            .donate-btn,
+            .donate-btn:hover,
+            .donate-btn:focus-visible,
+            .status-dot,
+            .slider,
+            .slider:before,
+            .chart-bar,
+            .stats-toggle,
+            .stats-toggle-arrow,
+            .stats-panel,
+            .counter-value,
+            .achievement-badge,
+            .achievement-badge.unlocked,
+            .author-link,
+            .lang-selector,
+            .info {
+                transition: none;
+            }
+
+            .donate-btn:hover,
+            .donate-btn:focus-visible,
+            .achievement-badge.unlocked:hover,
+            .achievement-badge.unlocked:focus-visible,
+            .chart-bar:hover,
+            .counter-value.pulse {
+                transform: none;
+            }
+        }
     </style>
 </head>
 
