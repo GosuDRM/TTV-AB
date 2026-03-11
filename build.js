@@ -203,6 +203,7 @@ function validateSharedDefinitions() {
 	);
 	const initPath = path.join(__dirname, "src", "modules", "init.js");
 	const hooksPath = path.join(__dirname, "src", "modules", "hooks.js");
+	const workerPath = path.join(__dirname, "src", "modules", "worker.js");
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
 	const readmeSource = fs.readFileSync(readmePath, "utf8");
@@ -253,6 +254,7 @@ function validateSharedDefinitions() {
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
 	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
+	const workerSource = fs.readFileSync(workerPath, "utf8");
 	const processorSource = fs.readFileSync(processorPath, "utf8");
 	const apiSource = fs.readFileSync(apiPath, "utf8");
 
@@ -468,6 +470,13 @@ function validateSharedDefinitions() {
 			(match) => match[1],
 		),
 	);
+	if ((hooksSource.match(/eval\(wasmSource\)/g) || []).length !== 1) {
+		throw new Error("Unexpected eval(wasmSource) usage in hooks.js");
+	}
+	if ((workerSource.match(/new XMLHttpRequest\(\)/g) || []).length !== 1) {
+		throw new Error("Unexpected XMLHttpRequest bootstrap usage in worker.js");
+	}
+
 	const requiredInjectedPairs = [
 		{
 			consumer: "_findBackupStream",
