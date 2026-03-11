@@ -229,7 +229,9 @@ function _stripAds(text, stripAll, info) {
 function _getStreamUrl(m3u8, res, baseUrl = null) {
 	const lines = m3u8.split("\n");
 	const len = lines.length;
-	const [tw, th] = res.Resolution.split("x").map(Number);
+	const [tw, th] = String(res?.Resolution || "0x0")
+		.split("x")
+		.map(Number);
 	const targetPixels =
 		(Number.isFinite(tw) ? tw : 0) * (Number.isFinite(th) ? th : 0);
 	let matchUrl = null;
