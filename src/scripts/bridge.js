@@ -104,8 +104,9 @@ function normalizeDailyStatsMap(value) {
 		return createDailyStatsMap();
 	}
 	const normalized = createDailyStatsMap();
+	const todayKey = getTodayKey();
 	for (const [dateKey, entry] of Object.entries(value)) {
-		if (!isValidDateKey(dateKey)) continue;
+		if (!isValidDateKey(dateKey) || dateKey > todayKey) continue;
 		const safeEntry = isPlainObject(entry) ? entry : {};
 		normalized[dateKey] = {
 			ads: normalizeCount(safeEntry.ads),
