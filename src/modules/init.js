@@ -62,7 +62,8 @@ function _blockAntiAdblockPopup() {
 	let lastBlockTime = 0;
 	let isDisplayAdShellActive = false;
 	let isPromotedPageAdActive = false;
-	let didCountCurrentDisplayAdShell = false;
+	let didCountCurrentDisplayAdShellCleanup = false;
+	let didCountCurrentDisplayAdShellAd = false;
 	let pendingDisplayAdShellSince = 0;
 	let pendingDisplayAdShellSignature = null;
 	let lastPathname = window.location.pathname;
@@ -313,7 +314,8 @@ function _blockAntiAdblockPopup() {
 		function _resetDisplayAdShellState() {
 			isDisplayAdShellActive = false;
 			isPromotedPageAdActive = false;
-			didCountCurrentDisplayAdShell = false;
+			didCountCurrentDisplayAdShellCleanup = false;
+			didCountCurrentDisplayAdShellAd = false;
 			pendingDisplayAdShellSince = 0;
 			pendingDisplayAdShellSignature = null;
 		}
@@ -687,7 +689,8 @@ function _blockAntiAdblockPopup() {
 					layoutRoots,
 				);
 				isDisplayAdShellActive = false;
-				didCountCurrentDisplayAdShell = false;
+				didCountCurrentDisplayAdShellCleanup = false;
+				didCountCurrentDisplayAdShellAd = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
 				return false;
@@ -720,20 +723,32 @@ function _blockAntiAdblockPopup() {
 
 			if (!isDisplayAdShellActive) {
 				isDisplayAdShellActive = true;
-				didCountCurrentDisplayAdShell = false;
+				didCountCurrentDisplayAdShellCleanup = false;
+				didCountCurrentDisplayAdShellAd = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
+				if (!hasExplicitDisplayAdSignal) {
+					_incrementDomCleanup("display-shell-inferred");
+					didCountCurrentDisplayAdShellCleanup = true;
+					_log(
+						"Display ad shell inferred: counting DOM cleanup and resetting layout",
+						"info",
+					);
+				}
 			}
 
-			if (!didCountCurrentDisplayAdShell) {
-				didCountCurrentDisplayAdShell = true;
+			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShellCleanup) {
 				_incrementDomCleanup("display-shell");
+				didCountCurrentDisplayAdShellCleanup = true;
+			}
+
+			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShellAd) {
+				didCountCurrentDisplayAdShellAd = true;
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
 					_incrementAdsBlocked(_getCurrentChannelName());
 				}
-				const logType = hasExplicitDisplayAdSignal ? "confirmed" : "inferred";
 				_log(
-					`Display ad shell ${logType}: counting blocked ad and collapsing shell`,
+					"Display ad shell confirmed: counting blocked ad and collapsing shell",
 					"warning",
 				);
 			}

@@ -771,42 +771,42 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 
 	let statusTimeout = null;
+	let transientStatusState = null;
+
+	function renderStatusHelperText(translations) {
+		if (transientStatusState === null) {
+			infoText.textContent = translations.changesInstantly;
+			infoText.style.color = "#666";
+			return;
+		}
+		infoText.textContent = `${translations.adBlocking}: ${transientStatusState ? translations.active : translations.inactive}`;
+		infoText.style.color = transientStatusState ? "#4CAF50" : "#f44336";
+	}
 
 	function updateStatus(enabled, showTransientMessage = false) {
 		const t = getTranslations();
-
-		if (statusTimeout) {
-			clearTimeout(statusTimeout);
-			statusTimeout = null;
-		}
 		const prefersReducedMotion =
 			window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 		infoText.style.transition = prefersReducedMotion
 			? "none"
 			: "color 0.3s ease";
+		statusDot.classList.toggle("disabled", !enabled);
+		statusText.textContent = enabled ? t.active : t.inactive;
 		if (!showTransientMessage) {
-			statusDot.classList.toggle("disabled", !enabled);
-			statusText.textContent = enabled ? t.active : t.inactive;
-			infoText.textContent = t.changesInstantly;
-			infoText.style.color = "#666";
+			renderStatusHelperText(t);
 			return;
 		}
 
-		if (enabled) {
-			statusDot.classList.remove("disabled");
-			statusText.textContent = t.active;
-			infoText.textContent = `${t.adBlocking}: ${t.active}`;
-			infoText.style.color = "#4CAF50";
-		} else {
-			statusDot.classList.add("disabled");
-			statusText.textContent = t.inactive;
-			infoText.textContent = `${t.adBlocking}: ${t.inactive}`;
-			infoText.style.color = "#f44336";
+		if (statusTimeout) {
+			clearTimeout(statusTimeout);
+			statusTimeout = null;
 		}
-
+		transientStatusState = enabled;
+		renderStatusHelperText(t);
 		statusTimeout = setTimeout(() => {
-			infoText.textContent = t.changesInstantly;
-			infoText.style.color = "#666";
+			transientStatusState = null;
+			renderStatusHelperText(getTranslations());
+			statusTimeout = null;
 		}, 1500);
 	}
 
