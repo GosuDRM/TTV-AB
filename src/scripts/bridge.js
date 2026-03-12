@@ -50,6 +50,29 @@ function createDailyStatsMap() {
 	return Object.create(null);
 }
 
+function isValidDateKey(value) {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+		return false;
+	}
+	const [year, month, day] = String(value)
+		.split("-")
+		.map((part) => Number.parseInt(part, 10));
+	if (
+		!Number.isFinite(year) ||
+		!Number.isFinite(month) ||
+		!Number.isFinite(day)
+	) {
+		return false;
+	}
+	const date = new Date(year, month - 1, day);
+	return (
+		!Number.isNaN(date.getTime()) &&
+		date.getFullYear() === year &&
+		date.getMonth() === month - 1 &&
+		date.getDate() === day
+	);
+}
+
 function normalizeChannelsMap(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return createChannelsMap();
@@ -70,7 +93,7 @@ function normalizeDailyStatsMap(value) {
 	}
 	const normalized = createDailyStatsMap();
 	for (const [dateKey, entry] of Object.entries(value)) {
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) continue;
+		if (!isValidDateKey(dateKey)) continue;
 		const safeEntry = isPlainObject(entry) ? entry : {};
 		normalized[dateKey] = {
 			ads: normalizeCount(safeEntry.ads),
