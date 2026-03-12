@@ -149,6 +149,7 @@ function syncPopupHtmlFallbacks() {
 		"popup",
 		"translations.js",
 	);
+	const popupHtmlSource = fs.readFileSync(popupHtmlPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
 	const translations = Function(
 		`${translationsSource}; return TRANSLATIONS;`,
@@ -162,9 +163,8 @@ function syncPopupHtmlFallbacks() {
 	const chartBars = Array.from(
 		{ length: 7 },
 		() =>
-			'                    <div class="chart-bar" style="height: 0%;"></div>',
+			'                    <div class="chart-bar" style="height: 0%; min-height: 0;"></div>',
 	).join("\n");
-	const popupHtmlSource = fs.readFileSync(popupHtmlPath, "utf8");
 	const eol = popupHtmlSource.includes("\r\n") ? "\r\n" : "\n";
 	const expectedChartSection =
 		`            <div class="stats-section">\n                <div class="stats-section-title">📈 <span data-i18n="last7Days">${chartTitle}</span></div>\n                <div class="chart-container" id="weeklyChart">\n${chartBars}\n                </div>\n                <div class="chart-avg" id="chartAvg">${chartAverage}</div>\n            </div>`.replaceAll(
