@@ -703,6 +703,25 @@ function validateSharedDefinitions() {
 		);
 	}
 
+	const firstAchievement = popupAchievements[0] || null;
+	const firstAchievementFallback = firstAchievement
+		? `${firstAchievement.icon} ${translations.en?.achievementsMap?.[firstAchievement.id]?.name || firstAchievement.id}`
+		: null;
+	const expectedAchievementsProgressMarkup = `id="achievementsProgress" aria-live="polite" aria-atomic="true">0/${popupAchievements.length}</span>`;
+	if (!popupHtmlSource.includes(expectedAchievementsProgressMarkup)) {
+		throw new Error(
+			`Popup achievements fallback progress must default to 0/${popupAchievements.length}`,
+		);
+	}
+	if (firstAchievementFallback) {
+		const expectedNextAchievementMarkup = `id="nextAchievement" aria-live="polite" aria-atomic="true">Next: <span class="next-achievement-name">${firstAchievementFallback}</span></div>`;
+		if (!popupHtmlSource.includes(expectedNextAchievementMarkup)) {
+			throw new Error(
+				"Popup next-achievement fallback is out of sync with the first configured achievement",
+			);
+		}
+	}
+
 	const popupNormalizeCount = extractLiteral(
 		popupSource,
 		"function normalizeCount(",
