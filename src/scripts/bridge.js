@@ -415,7 +415,7 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 
 function queueTotalDelta(kind, nextTotal) {
 	const safeNextTotal = normalizeCount(nextTotal);
-	const maxMessageDelta = 1;
+	const maxMessageDelta = 50;
 	if (kind === "ads") {
 		const queuedTotal =
 			normalizeCount(bridgeState.storedAdsCount) +
