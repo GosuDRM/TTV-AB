@@ -141,6 +141,45 @@ function normalizeCodeSnippet(code) {
 		.trim();
 }
 
+function syncPopupHtmlFallbacks() {
+	const popupHtmlPath = path.join(__dirname, "src", "popup", "popup.html");
+	const translationsPath = path.join(
+		__dirname,
+		"src",
+		"popup",
+		"translations.js",
+	);
+	const translationsSource = fs.readFileSync(translationsPath, "utf8");
+	const translations = Function(
+		`${translationsSource}; return TRANSLATIONS;`,
+	)();
+	const english = translations.en || {};
+	const chartTitle = String(english.last7Days || "This Week");
+	const chartAverage = String(english.avgPerDay || "avg: {avg}/day").replace(
+		"{avg}",
+		"0",
+	);
+	const chartBars = Array.from(
+		{ length: 7 },
+		() =>
+			'                    <div class="chart-bar" style="height: 0%;"></div>',
+	).join("\n");
+	const popupHtmlSource = fs.readFileSync(popupHtmlPath, "utf8");
+	const eol = popupHtmlSource.includes("\r\n") ? "\r\n" : "\n";
+	const expectedChartSection =
+		`            <div class="stats-section">\n                <div class="stats-section-title">📈 <span data-i18n="last7Days">${chartTitle}</span></div>\n                <div class="chart-container" id="weeklyChart">\n${chartBars}\n                </div>\n                <div class="chart-avg" id="chartAvg">${chartAverage}</div>\n            </div>`.replaceAll(
+			"\n",
+			eol,
+		);
+	const syncedPopupHtmlSource = popupHtmlSource.replace(
+		/ {12}<div class="stats-section">\r?\n {16}<div class="stats-section-title">📈 <span data-i18n="last7Days">[\s\S]*?<\/div>\r?\n {16}<div class="chart-avg" id="chartAvg">[\s\S]*?<\/div>\r?\n {12}<\/div>/,
+		expectedChartSection,
+	);
+	if (syncedPopupHtmlSource !== popupHtmlSource) {
+		fs.writeFileSync(popupHtmlPath, syncedPopupHtmlSource);
+	}
+}
+
 function validateSharedDefinitions() {
 	const { constantsVersion, packageVersion, manifestVersion } =
 		readVersionSources();
@@ -1158,6 +1197,7 @@ function minifyCode(code) {
 function build() {
 	console.log("Building TTV AB...\n");
 
+	syncPopupHtmlFallbacks();
 	validateSharedDefinitions();
 	const version = getVersion();
 
