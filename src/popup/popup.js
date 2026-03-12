@@ -199,14 +199,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
 		achievementsTitle.textContent = `🏆 ${t.achievements}`;
 		footerText.textContent = t.footerBy;
-		const repoLabel = String(
-			t.repoLinkLabel ?? "Open the TTV AB GitHub repository",
-		);
+		const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
 		repoLink.title = repoLabel;
 		repoLink.setAttribute("aria-label", repoLabel);
-		const authorLabel = String(
-			t.authorLinkLabel ?? "Open the GosuDRM GitHub profile",
-		);
+		const authorLabel = String(t.authorLinkLabel ?? "Open GosuDRM on GitHub");
 		authorLink.title = authorLabel;
 		authorLink.setAttribute("aria-label", authorLabel);
 	}
