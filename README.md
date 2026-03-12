@@ -72,21 +72,6 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Recovery / Stability Fixes** - Improved hidden-tab crash recovery, stale ad-cycle cleanup, paused-player recovery, stale-channel handling during restore/ad-end flows, and post-ad player restore behavior.
 - **Tooling Maintenance** - Build validation, Biome cleanup, and `knip` checks were tightened so worker helper mismatches and dead-code drift are caught earlier.
 
-### v4.2.4
-- **Display Ad Detection Tightening** - Refined stream-display and PIP shell detection to require stronger visible ad signals before counting or collapsing anything.
-- **Ad Label Gating** - Visible `Ad` labels near the player are no longer enough on their own; DOM-side cleanup now also requires a matching shell, PIP, or layout-state signal.
-- **Offline Page Ad Handling** - Dedicated offline channel-page promo ad detection so Twitch's non-live "watch after this break" cards can be hidden and counted correctly.
-- **False-Positive Ad Count Fixes** - Clean channels are less likely to increment `Ads Blocked` from leftover layout classes, label-only false positives, or geometry-only shell inference.
-- **Black Screen With Audio Fix** - Fixed a regression where overly broad display-ad cleanup could leave the player visually black while audio kept playing.
-- **30+ Bug Fixes** - Includes fixes for backup cache data structure, minify name collision, tab visibility auto-resume, popup chart average reset, worker header updates, cross-tab counter races, and more.
-
-### v4.2.3
-- **Ad Recovery Stability** - Reworked backup stream recovery so Twitch token, playlist, and reload handling stay synchronized more reliably during preroll and midroll transitions.
-- **Display Ad Shell Handling** - Expanded DOM-side cleanup for Twitch's newer stream-display / PIP ad layouts.
-- **Worker and Playlist Hardening** - Strengthened worker bootstrap, playlist parsing, and fallback validation for more robust recovery.
-- **Reload and Buffer Loop Fixes** - Reduced duplicate ad-recovery reloads, false-positive refreshes, and unstable fallback transitions.
-- **Cross-Tab Bug Fixes** - Fixed cross-tab counter races, stats clobber, health check false positives, and toggle state propagation across all open tabs.
-
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ## Development
