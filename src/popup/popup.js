@@ -245,7 +245,9 @@ document.addEventListener("DOMContentLoaded", () => {
 				),
 			);
 		}
-	} catch {}
+	} catch (error) {
+		console.error("[TTV AB] Popup manifest read error:", error);
+	}
 
 	langSelector.addEventListener("change", (e) => {
 		const nextSelector = e.currentTarget;
