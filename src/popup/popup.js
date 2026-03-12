@@ -763,7 +763,11 @@ document.addEventListener("DOMContentLoaded", () => {
 			clearTimeout(statusTimeout);
 			statusTimeout = null;
 		}
-		infoText.style.transition = "color 0.3s ease";
+		const prefersReducedMotion =
+			window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+		infoText.style.transition = prefersReducedMotion
+			? "none"
+			: "color 0.3s ease";
 		if (!showTransientMessage) {
 			statusDot.classList.toggle("disabled", !enabled);
 			statusText.textContent = enabled ? t.active : t.inactive;
