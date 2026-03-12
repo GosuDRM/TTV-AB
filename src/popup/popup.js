@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	const achievementsTitle = document.getElementById("achievementsTitle");
 	const footerText = document.getElementById("footerText");
 	const infoText = document.getElementById("infoText");
+	const donateButton = document.getElementById("donateBtn");
 	const repoLink = document.getElementById("repoLink");
 	const authorLink = document.getElementById("authorLink");
 	const requiredElements = {
@@ -46,6 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		achievementsTitle,
 		footerText,
 		infoText,
+		donateButton,
 		repoLink,
 		authorLink,
 	};
@@ -175,14 +177,11 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 		});
 		descriptionText.textContent = t.descriptionText;
-		const donateButton = document.getElementById("donateBtn");
-		if (donateButton) {
-			donateButton.title = t.supportDeveloper;
-			donateButton.setAttribute(
-				"aria-label",
-				String(t.supportDeveloper ?? "Support the developer"),
-			);
-		}
+		donateButton.title = t.supportDeveloper;
+		donateButton.setAttribute(
+			"aria-label",
+			String(t.supportDeveloper ?? "Support the developer"),
+		);
 		langSelector.title = t.language;
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
 		langSelector.setAttribute("aria-describedby", "descriptionText");
