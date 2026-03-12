@@ -163,7 +163,7 @@ function syncPopupHtmlFallbacks() {
 	const chartBars = Array.from(
 		{ length: 7 },
 		() =>
-			'                    <div class="chart-bar" style="height: 0%; min-height: 0;"></div>',
+			'                    <div class="chart-bar" style="height: 0%;"></div>',
 	).join("\n");
 	const eol = popupHtmlSource.includes("\r\n") ? "\r\n" : "\n";
 	const expectedChartSection =
