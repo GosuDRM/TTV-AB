@@ -2180,19 +2180,23 @@ function _$mf() {
 				let headers = opts?.headers;
 
 				if (url instanceof Request) {
-					headers = url.headers;
+					let effectiveRequest = url;
 					try {
-						const clone = url.clone();
-						const text = await clone.text();
+						if (opts && Object.keys(opts).length > 0) {
+							effectiveRequest = new Request(url, opts);
+						}
+						headers = effectiveRequest.headers;
+						const text = await effectiveRequest.clone().text();
 						const rewritten = rewritePlaybackAccessTokenBody(text);
 						processGqlBody(rewritten.bodyText);
 						if (rewritten.changed) {
 							nextArgs = [
-								new Request(url, {
-									...(opts || {}),
+								new Request(effectiveRequest, {
 									body: rewritten.bodyText,
 								}),
 							];
+						} else if (effectiveRequest !== url || args.length !== 1) {
+							nextArgs = [effectiveRequest];
 						}
 					} catch (_e) {}
 				} else if (typeof opts?.body === "string") {
