@@ -462,6 +462,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			const bar = document.createElement("div");
 			bar.className = "chart-bar";
 			bar.style.height = `${height}%`;
+			if (height === 0) {
+				bar.style.minHeight = "0";
+			}
 			const summary = `${dayName}: ${formatNumber(value)}`;
 			bar.title = summary;
 			bar.setAttribute("role", "img");
