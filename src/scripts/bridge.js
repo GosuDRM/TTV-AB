@@ -84,7 +84,19 @@ function normalizeChannelsMap(value) {
 		normalized[safeChannel] =
 			normalizeCount(normalized[safeChannel]) + normalizeCount(count);
 	}
-	return normalized;
+	const channelEntries = Object.entries(normalized);
+	if (channelEntries.length <= MAX_CHANNELS) {
+		return normalized;
+	}
+	channelEntries.sort((a, b) => {
+		const countDiff = normalizeCount(b[1]) - normalizeCount(a[1]);
+		return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
+	});
+	const trimmed = createChannelsMap();
+	for (const [channelName, count] of channelEntries.slice(0, MAX_CHANNELS)) {
+		trimmed[channelName] = normalizeCount(count);
+	}
+	return trimmed;
 }
 
 function normalizeDailyStatsMap(value) {
