@@ -23,7 +23,7 @@ function normalizeCount(value) {
 function normalizeChannelName(value) {
 	if (typeof value !== "string") return null;
 	const trimmed = value.trim().toLowerCase();
-	return trimmed !== "" ? trimmed : null;
+	return /^[a-z0-9_]{1,25}$/.test(trimmed) ? trimmed : null;
 }
 
 function isPlainObject(value) {
