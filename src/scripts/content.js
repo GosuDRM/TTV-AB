@@ -27,7 +27,7 @@ const _$c = {
 	RELOAD_AFTER_AD: true,
 	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
 	ALWAYS_RELOAD_PLAYER_ON_AD: false,
-};
+};
 
 const _$s = {
 	workers: [],
@@ -158,7 +158,7 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 			"*",
 		);
 	}
-}
+}
 
 function _$l(msg, type = "info") {
 	const text = typeof msg === "object" ? JSON.stringify(msg) : String(msg);
@@ -171,7 +171,7 @@ function _$l(msg, type = "info") {
 	} else {
 		console.log(`%cTTV AB%c ${text}`, _$c.LOG_STYLES.prefix, style);
 	}
-}
+}
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
@@ -508,7 +508,7 @@ function _$gfr(info, url) {
 			(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
 		return bArea - aArea;
 	})[0];
-}
+}
 
 const _$gu = "https://gql.twitch.tv/gql";
 
@@ -769,7 +769,7 @@ async function _$tk(channel, playerType, realFetch) {
 	} finally {
 		clearTimeout(timeoutId);
 	}
-}
+}
 
 function _$rsa(info) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
@@ -2279,7 +2279,7 @@ function _$mf() {
 		}
 		return realFetch.apply(this, args);
 	};
-}
+}
 
 const _$pbs = {
 	position: 0,
@@ -2654,7 +2654,7 @@ function _$hlp() {
 	} catch (err) {
 		_$l(`LocalStorage hooks failed: ${err.message}`, "warning");
 	}
-}
+}
 
 const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;
@@ -2949,7 +2949,7 @@ function _$al() {
 		if (typeof detail?.id !== "string") return;
 		_$au(detail.id);
 	});
-}
+}
 
 function _$bs() {
 	if (
