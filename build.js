@@ -831,6 +831,9 @@ function validateSharedDefinitions() {
 			/const\s+(\w+)\s*=\s*document\.getElementById\("([^"]+)"\);/g,
 		),
 	];
+	const popupBoundDomIds = new Set(
+		popupElementBindings.map(([, , domId]) => domId),
+	);
 	const requiredElementsLiteral = extractLiteral(
 		popupSource,
 		"const requiredElements =",
@@ -850,6 +853,38 @@ function validateSharedDefinitions() {
 		if (!requiredElementNames.has(variableName)) {
 			throw new Error(
 				`Popup element binding ${variableName} (${domId}) is missing from requiredElements`,
+			);
+		}
+	}
+	for (const requiredPopupId of [
+		"enableToggle",
+		"statusDot",
+		"statusText",
+		"adsBlockedCount",
+		"domAdsBlockedCount",
+		"timeSaved",
+		"statsToggle",
+		"statsPanel",
+		"weeklyChart",
+		"chartAvg",
+		"channelList",
+		"achievementsGrid",
+		"achievementsProgress",
+		"nextAchievement",
+		"langSelector",
+		"langAutoOption",
+		"descriptionText",
+		"versionText",
+		"achievementsTitle",
+		"footerText",
+		"infoText",
+		"donateBtn",
+		"repoLink",
+		"authorLink",
+	]) {
+		if (!popupBoundDomIds.has(requiredPopupId)) {
+			throw new Error(
+				`Popup startup guard is missing a top-level binding for ${requiredPopupId}`,
 			);
 		}
 	}
