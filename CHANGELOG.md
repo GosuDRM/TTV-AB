@@ -954,4 +954,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Additional ad blocking methods
 - Statistics tracking
 
-<!-- test push noop -->
