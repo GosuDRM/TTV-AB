@@ -117,6 +117,9 @@ const ACHIEVEMENTS = [
 	{ id: "channels_5", threshold: 5, type: "channels" },
 	{ id: "channels_20", threshold: 20, type: "channels" },
 ];
+const ACHIEVEMENT_IDS = new Set(
+	ACHIEVEMENTS.map((achievement) => achievement.id),
+);
 
 const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
@@ -193,7 +196,9 @@ function updateStats(
 			stats.achievements = Array.isArray(stats.achievements)
 				? [
 						...new Set(
-							stats.achievements.filter((id) => typeof id === "string"),
+							stats.achievements.filter(
+								(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
+							),
 						),
 					]
 				: [];
