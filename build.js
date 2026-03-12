@@ -415,8 +415,8 @@ function validateSharedDefinitions() {
 		}
 	}
 	for (const [linkId, title] of [
-		["repoLink", "Open the TTV AB GitHub repository"],
-		["authorLink", "Open the GosuDRM GitHub profile"],
+		["repoLink", "Open TTV AB on GitHub"],
+		["authorLink", "Open GosuDRM on GitHub"],
 	]) {
 		if (!popupHtmlSource.includes(`id="${linkId}"`)) continue;
 		if (!popupHtmlSource.includes(`title="${title}"`)) {
