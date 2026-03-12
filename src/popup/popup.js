@@ -176,13 +176,13 @@ document.addEventListener("DOMContentLoaded", () => {
 				el.textContent = String(t[key]);
 			}
 		});
-		descriptionText.textContent = t.descriptionText;
-		donateButton.title = t.supportDeveloper;
+		descriptionText.textContent = String(t.descriptionText ?? "");
+		donateButton.title = String(t.supportDeveloper ?? "Support GosuDRM");
 		donateButton.setAttribute(
 			"aria-label",
 			String(t.supportDeveloper ?? "Support GosuDRM"),
 		);
-		langSelector.title = t.language;
+		langSelector.title = String(t.language ?? "Language");
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
 		langSelector.setAttribute("aria-describedby", "descriptionText");
 		langAutoOption.textContent = `🌐 ${String(t.autoLanguage ?? "Auto")}`;
@@ -197,8 +197,8 @@ document.addEventListener("DOMContentLoaded", () => {
 			String(t.statistics ?? "Statistics"),
 		);
 		toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
-		achievementsTitle.textContent = `🏆 ${t.achievements}`;
-		footerText.textContent = t.footerBy;
+		achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
+		footerText.textContent = String(t.footerBy ?? " — by ");
 		const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
 		repoLink.title = repoLabel;
 		repoLink.setAttribute("aria-label", repoLabel);
