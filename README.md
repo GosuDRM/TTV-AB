@@ -55,10 +55,12 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v4.2.6
-- **Popup Safety Guards** - Popup startup now fails safely when required UI nodes are missing instead of throwing on null element access.
-- **Achievement Fallback Safety** - Popup achievement labels now fall back cleanly if a translation entry is missing or malformed.
-- **Build Validation Hardening** - `build.js` now verifies that all popup IDs required by the popup script still exist in `popup.html`.
-- **Docs / Metadata Sync** - Version markers, npm/package metadata, package-lock parity, and release notes were synchronized for the 4.2.6 release.
+- **Popup Hardening Pass** - The popup now guards required UI nodes, storage failures, malformed saved stats, invalid locale values, and missing translation entries so it fails safely instead of breaking the UI.
+- **Accessibility & UX Polish** - Improved keyboard/focus handling, native button semantics, live-region announcements, chart labels, helper text stability, reduced-motion behavior, and clearer footer/version accessibility labels.
+- **Stats Reliability & Normalization** - Channel names, counters, daily buckets, achievement lists, and malformed persisted stats are now normalized more defensively; repeated stat writes are batched to reduce storage churn.
+- **UI Toast Safety** - Welcome, donation, and achievement toasts now avoid duplicate scheduling/listeners, guard storage access and missing `document.body`, and keep external opens opener-safe.
+- **Localization Cleanup** - Popup copy, footer hover labels, version labels, auto-language text, and locale metadata were polished so all shipped languages read more naturally.
+- **Build / Release Guardrails** - `build.js` now enforces popup element/link wiring, locale parity, manifest/package metadata sync, docs wording, achievement parity, and other release-integrity checks for 4.2.6.
 
 ### v4.2.5
 - **Worker Crash Loop Fixes** - Hardened worker/bootstrap message handling and playlist parsing so malformed frontpage, home, and outstream worker contexts are less likely to crash and restart continuously.
