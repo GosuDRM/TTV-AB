@@ -850,7 +850,7 @@ function validateSharedDefinitions() {
 		.length;
 	if (
 		dynamicPopupInnerHtmlCount !== 0 ||
-		dynamicUiInnerHtmlCount !== 1 ||
+		dynamicUiInnerHtmlCount !== 0 ||
 		dynamicPopupTitleAttrCount !== 0
 	) {
 		throw new Error(

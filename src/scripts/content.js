@@ -27,7 +27,7 @@ const _$c = {
 	RELOAD_AFTER_AD: true,
 	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
 	ALWAYS_RELOAD_PLAYER_ON_AD: false,
-};
+};
 
 const _$s = {
 	workers: [],
@@ -158,7 +158,7 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 			"*",
 		);
 	}
-}
+}
 
 function _$l(msg, type = "info") {
 	const text = typeof msg === "object" ? JSON.stringify(msg) : String(msg);
@@ -171,7 +171,7 @@ function _$l(msg, type = "info") {
 	} else {
 		console.log(`%cTTV AB%c ${text}`, _$c.LOG_STYLES.prefix, style);
 	}
-}
+}
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
@@ -508,7 +508,7 @@ function _$gfr(info, url) {
 			(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
 		return bArea - aArea;
 	})[0];
-}
+}
 
 const _$gu = "https://gql.twitch.tv/gql";
 
@@ -769,7 +769,7 @@ async function _$tk(channel, playerType, realFetch) {
 	} finally {
 		clearTimeout(timeoutId);
 	}
-}
+}
 
 function _$rsa(info) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
@@ -2275,7 +2275,7 @@ function _$mf() {
 		}
 		return realFetch.apply(this, args);
 	};
-}
+}
 
 const _$pbs = {
 	position: 0,
@@ -2650,7 +2650,7 @@ function _$hlp() {
 	} catch (err) {
 		_$l(`LocalStorage hooks failed: ${err.message}`, "warning");
 	}
-}
+}
 
 const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;
@@ -2850,6 +2850,23 @@ const _$ai = {
 	},
 };
 
+function _ensureAchievementToastStyles() {
+	if (document.getElementById("ttvab-achievement-style")) return;
+	const style = document.createElement("style");
+	style.id = "ttvab-achievement-style";
+	style.textContent =
+		"#ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}" +
+		"@keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}" +
+		"@keyframes ttvab-ach-shine{0%{background-position:-200% center}100%{background-position:200% center}}" +
+		"#ttvab-achievement .ach-icon{font-size:40px;animation:ttvab-ach-bounce 1s ease infinite}" +
+		"@keyframes ttvab-ach-bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}" +
+		"#ttvab-achievement .ach-content{display:flex;flex-direction:column;gap:2px}" +
+		"#ttvab-achievement .ach-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#9146FF;font-weight:600}" +
+		"#ttvab-achievement .ach-name{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#9146FF 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:ttvab-ach-shine 2s linear infinite}" +
+		"#ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}";
+	document.head?.appendChild(style);
+}
+
 function _getTrustedUiMessage(event) {
 	if (
 		event.source !== window ||
@@ -2870,30 +2887,33 @@ function _$au(achievementId) {
 		if (!ach) return;
 
 		if (!document.body) return;
+		_ensureAchievementToastStyles();
 		const existing = document.getElementById("ttvab-achievement");
 		if (existing) existing.remove();
 
 		const toast = document.createElement("div");
 		toast.id = "ttvab-achievement";
-		toast.innerHTML = `
-            <style>
-                #ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}
-                @keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
-                @keyframes ttvab-ach-shine{0%{background-position:-200% center}100%{background-position:200% center}}
-                #ttvab-achievement .ach-icon{font-size:40px;animation:ttvab-ach-bounce 1s ease infinite}
-                @keyframes ttvab-ach-bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
-                #ttvab-achievement .ach-content{display:flex;flex-direction:column;gap:2px}
-                #ttvab-achievement .ach-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#9146FF;font-weight:600}
-                #ttvab-achievement .ach-name{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#9146FF 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:ttvab-ach-shine 2s linear infinite}
-                #ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}
-            </style>
-            <div class="ach-icon">${_escapeUiText(ach.icon)}</div>
-            <div class="ach-content">
-                <div class="ach-label">🏆 Achievement Unlocked!</div>
-                <div class="ach-name">${_escapeUiText(ach.name)}</div>
-                <div class="ach-desc">${_escapeUiText(ach.desc)}</div>
-            </div>
-        `;
+		const icon = document.createElement("div");
+		icon.className = "ach-icon";
+		icon.textContent = String(ach.icon ?? "");
+
+		const content = document.createElement("div");
+		content.className = "ach-content";
+
+		const label = document.createElement("div");
+		label.className = "ach-label";
+		label.textContent = "Achievement Unlocked!";
+
+		const name = document.createElement("div");
+		name.className = "ach-name";
+		name.textContent = String(ach.name ?? "");
+
+		const desc = document.createElement("div");
+		desc.className = "ach-desc";
+		desc.textContent = String(ach.desc ?? "");
+
+		content.append(label, name, desc);
+		toast.append(icon, content);
 
 		document.body.appendChild(toast);
 		_$l(`Achievement unlocked: ${ach.name}`, "success");
@@ -2925,7 +2945,7 @@ function _$al() {
 		if (typeof detail?.id !== "string") return;
 		_$au(detail.id);
 	});
-}
+}
 
 function _$bs() {
 	if (
@@ -2989,7 +3009,8 @@ function _$bp() {
 	let lastBlockTime = 0;
 	let isDisplayAdShellActive = false;
 	let isPromotedPageAdActive = false;
-	let didCountCurrentDisplayAdShell = false;
+	let didCountCurrentDisplayAdShellCleanup = false;
+	let didCountCurrentDisplayAdShellAd = false;
 	let pendingDisplayAdShellSince = 0;
 	let pendingDisplayAdShellSignature = null;
 	let lastPathname = window.location.pathname;
@@ -3240,7 +3261,8 @@ function _$bp() {
 		function _resetDisplayAdShellState() {
 			isDisplayAdShellActive = false;
 			isPromotedPageAdActive = false;
-			didCountCurrentDisplayAdShell = false;
+			didCountCurrentDisplayAdShellCleanup = false;
+			didCountCurrentDisplayAdShellAd = false;
 			pendingDisplayAdShellSince = 0;
 			pendingDisplayAdShellSignature = null;
 		}
@@ -3614,7 +3636,8 @@ function _$bp() {
 					layoutRoots,
 				);
 				isDisplayAdShellActive = false;
-				didCountCurrentDisplayAdShell = false;
+				didCountCurrentDisplayAdShellCleanup = false;
+				didCountCurrentDisplayAdShellAd = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
 				return false;
@@ -3647,20 +3670,32 @@ function _$bp() {
 
 			if (!isDisplayAdShellActive) {
 				isDisplayAdShellActive = true;
-				didCountCurrentDisplayAdShell = false;
+				didCountCurrentDisplayAdShellCleanup = false;
+				didCountCurrentDisplayAdShellAd = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
+				if (!hasExplicitDisplayAdSignal) {
+					_incrementDomCleanup("display-shell-inferred");
+					didCountCurrentDisplayAdShellCleanup = true;
+					_$l(
+						"Display ad shell inferred: counting DOM cleanup and resetting layout",
+						"info",
+					);
+				}
 			}
 
-			if (!didCountCurrentDisplayAdShell) {
-				didCountCurrentDisplayAdShell = true;
+			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShellCleanup) {
 				_incrementDomCleanup("display-shell");
+				didCountCurrentDisplayAdShellCleanup = true;
+			}
+
+			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShellAd) {
+				didCountCurrentDisplayAdShellAd = true;
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
 					_$ab(_getCurrentChannelName());
 				}
-				const logType = hasExplicitDisplayAdSignal ? "confirmed" : "inferred";
 				_$l(
-					`Display ad shell ${logType}: counting blocked ad and collapsing shell`,
+					"Display ad shell confirmed: counting blocked ad and collapsing shell",
 					"warning",
 				);
 			}

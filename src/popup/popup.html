@@ -12,12 +12,21 @@
             box-sizing: border-box;
         }
 
-        body {
+        html {
             width: 300px;
+            max-width: 300px;
+            overflow-x: hidden;
+            background: #1a1a2e;
+        }
+
+        body {
+            width: 100%;
+            min-height: 100%;
             padding: 20px;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             color: #fff;
+            overflow-x: hidden;
         }
 
         .header {
