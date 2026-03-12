@@ -512,15 +512,27 @@ function flushCounters() {
 							for (const ch of channels) {
 								channelTotals[ch] = normalizeCount(channelTotals[ch]) + 1;
 							}
+							let scopedAdsDelta = 0;
 							for (const [channelName, channelDelta] of Object.entries(
 								channelTotals,
 							)) {
+								scopedAdsDelta += normalizeCount(channelDelta);
 								await updateStats(
 									"ads",
 									channelName,
 									newAds,
 									newDomAds,
 									channelDelta,
+								);
+							}
+							const unscopedAdsDelta = Math.max(0, adsDelta - scopedAdsDelta);
+							if (unscopedAdsDelta > 0) {
+								await updateStats(
+									"ads",
+									null,
+									newAds,
+									newDomAds,
+									unscopedAdsDelta,
 								);
 							}
 							if (domAdsDelta > 0) {
