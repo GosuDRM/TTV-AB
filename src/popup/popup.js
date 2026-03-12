@@ -186,10 +186,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
 		langSelector.setAttribute("aria-describedby", "descriptionText");
 		langAutoOption.textContent = `🌐 ${String(t.autoLanguage ?? "Auto")}`;
+		const accessibleVersion = String(versionText.textContent || "")
+			.replace(/^v/i, "")
+			.trim();
 		versionText.setAttribute(
 			"aria-label",
 			formatTemplate(String(t.versionLabel ?? "Version {version}"), {
-				version: versionText.textContent,
+				version: accessibleVersion,
 			}),
 		);
 		statsToggle.setAttribute(
