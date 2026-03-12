@@ -407,6 +407,9 @@ function validateSharedDefinitions() {
 	for (const [elementId, title] of [
 		["donateBtn", "Support GosuDRM"],
 		["channelList", "Top Channels"],
+		["statsToggle", "Statistics"],
+		["enableToggle", "Ad Blocking"],
+		["langSelector", "Language"],
 	]) {
 		if (!popupHtmlSource.includes(`id="${elementId}"`)) continue;
 		if (
