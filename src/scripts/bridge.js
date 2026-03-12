@@ -119,7 +119,7 @@ const StorageQueue = {
 		};
 
 		this._chain = this._chain.then(withRetry).catch((err) => {
-			console.error("TTV AB Storage Error:", err);
+			console.error("[TTV AB] Storage queue error:", err);
 		});
 	},
 };
