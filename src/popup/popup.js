@@ -126,6 +126,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function parseDateKey(dateKey) {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) {
+			return null;
+		}
 		const [year, month, day] = String(dateKey)
 			.split("-")
 			.map((value) => Number.parseInt(value, 10));
