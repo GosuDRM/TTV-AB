@@ -5,26 +5,21 @@ All notable changes to TTV AB will be documented in this file.
 ## [4.2.6] - 2026-03-11
 
 ### Fixed
-- **Popup Version Fallback Sync** - The popup now ships with a static `v4.2.6` fallback label/value so the badge stays accurate and screen-reader friendly even if runtime manifest hydration is delayed or unavailable.
-- **Localized Toolbar Title** - The extension action now declares a localized manifest `default_title`, so the browser toolbar tooltip stays translatable and consistent with the published extension name.
-- **Localized Version Accessibility Label** - The popup version badge now localizes its aria label instead of always announcing an English `Version ...` string in non-English locales.
-- **Localized Footer Link Labels** - The popup now localizes the repository and author footer link tooltips/aria labels instead of leaving those accessibility labels stuck in English after a language change.
-- **Popup Link Guard Parity** - The popup now treats the canonical donate/repository/author links as required UI nodes too, so packaging or HTML drift fails fast instead of silently dropping footer actions.
-- **Popup Startup Guards** - The popup now exits safely with a clear console error if required UI elements are missing instead of throwing null-access errors.
-- **Achievement Translation Fallbacks** - Popup achievement rendering now falls back safely when a locale entry is missing or malformed.
-- **Channel Stats Canonicalization** - Popup and bridge stats now normalize channel names to a lowercase canonical form and merge malformed duplicate entries so per-channel counts do not split across `Channel`/`channel` variants.
-- **Popup Status / Locale Hardening** - Status messaging now uses a required dedicated info node, and channel totals now respect the popup's active locale formatting instead of falling back to the browser default.
-- **Stats Write Batching** - Bridge stats updates now coalesce repeated channel and DOM-ad increments before writing, reducing redundant storage churn during bursty ad events.
-- **UI Toast Reinit Guards** - Welcome, donation, and achievement toast wiring now avoids duplicate scheduling/listeners on repeated initialization and skips rendering when the page body is unavailable.
-- **Achievement Toast Body Guard** - Runtime achievement toasts now bail out cleanly if Twitch navigation or early initialization leaves `document.body` temporarily unavailable.
-- **Chart Tooltip Locale Formatting** - Popup weekly chart tooltips now format counts with the active popup locale instead of raw browser-default digits.
-- **Localized Auto Language Label** - The popup language selector now localizes its `Auto` option and build validation keeps that dedicated option wired up.
-- **Popup Achievement Fallback Parity** - The popup's static achievement progress and next-achievement fallback copy now stay aligned with the configured achievement list, including the first-achievement icon, and build validation now catches future drift before release.
+- **Popup Safety Guards** - The popup now exits safely when required UI nodes are missing, guards startup/toggle/statistics storage failures, normalizes malformed persisted counters/stats, and recovers invalid saved locale values instead of breaking the UI.
+- **Popup Accessibility / Interaction Polish** - Improved keyboard and focus behavior for the stats toggle and achievement badges, restored native button/label semantics, stabilized helper status messaging, added chart/list semantics, localized live labels, and preserved reduced-motion behavior.
+- **Footer / Version Label Cleanup** - Footer link hover text and aria labels were tightened to shorter, more natural wording across locales, and the version badge now keeps both its static fallback text and localized accessibility label in sync.
+- **Achievement Rendering Hardening** - Popup achievement labels, progress, and next-achievement messaging now fall back safely when locale data is missing or malformed, while runtime toast rendering escapes dynamic text and avoids body/null timing crashes.
+- **Channel / Counter Normalization** - Popup and bridge logic now normalize channel names, channel totals, daily buckets, achievement lists, numeric-string counters, finite event counts, and malformed stats maps so persisted data is rendered consistently.
+- **Stats Write Reliability** - Repeated ad and DOM-ad increments are now batched more safely, retry paths are bounded, fresh storage state is re-read after failures, and queued deltas are dropped when stored totals reset so stale writes do not clobber good data.
+- **Bridge / Message Validation** - Bridge and page message handlers now require same-window trusted payload shapes, finite counts, boolean toggle state, and string achievement ids before mutating runtime or popup state.
+- **UI Toast Safety** - Welcome, donation, and achievement toasts now avoid duplicate scheduling/listeners, guard localStorage access, reuse existing nodes more safely, skip rendering when `document.body` is unavailable, and use opener-safe external links.
+- **Popup Stats Presentation** - Weekly chart bars now keep localized number formatting and explicit aria labels, collapse transitions are more stable, the panel resizes to content, and top-channel rows render through safe DOM APIs instead of string HTML.
+- **Locale Polish** - Popup copy and extension metadata across all shipped locales were reviewed and updated so phrasing, labels, and descriptions read more naturally.
 
 ### Changed
-- **Privacy Disclosure Validation** - Build-time validation now fails if `PRIVACY.md` drops the documented toggle/counter/language/reminder local-storage disclosures or the explicit on-device-only wording.
-- **Popup Build Validation** - Build-time validation now checks that all popup element IDs required by `popup.js` still exist in `popup.html`.
-- **Release Metadata Sync** - Synchronized version references plus canonical npm/package metadata across package, package-lock, manifest, constants, README, changelog, and generated build output for 4.2.6.
+- **Build Validation Expansion** - `build.js` now validates popup element/link wiring, translation coverage and placeholders, shared counter/date/achievement definitions, locale-directory parity, canonical repo/homepage metadata, safe external-link behavior, and docs wording around privacy/storage metrics.
+- **Manifest / Metadata Sync** - The manifest now keeps localized action titles plus canonical homepage/short-name metadata, while package/package-lock/README/changelog/generated bundle metadata are enforced in sync for the 4.2.6 release line.
+- **Docs Refresh** - README and changelog release notes were expanded to better reflect the full 4.2.6 popup, stats, localization, and validation hardening work.
 
 ## [4.2.5] - 2026-03-11
 
