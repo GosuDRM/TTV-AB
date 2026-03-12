@@ -335,6 +335,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			type: "channels",
 		},
 	];
+	const ACHIEVEMENT_IDS = new Set(
+		ACHIEVEMENTS.map((achievement) => achievement.id),
+	);
 
 	function formatTimeSaved(seconds) {
 		const safeSeconds = normalizeCount(seconds);
@@ -531,7 +534,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		channelCount,
 	) {
 		const safeUnlocked = Array.isArray(unlocked)
-			? [...new Set(unlocked.filter((id) => typeof id === "string"))]
+			? [
+					...new Set(
+						unlocked.filter(
+							(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
+						),
+					),
+				]
 			: [];
 		const safeAdsBlocked = normalizeCount(adsBlocked);
 		const safeDomAdsBlocked = normalizeCount(domAdsBlocked);
@@ -613,7 +622,9 @@ document.addEventListener("DOMContentLoaded", () => {
 				const achievements = Array.isArray(stats.achievements)
 					? [
 							...new Set(
-								stats.achievements.filter((id) => typeof id === "string"),
+								stats.achievements.filter(
+									(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
+								),
 							),
 						]
 					: [];
