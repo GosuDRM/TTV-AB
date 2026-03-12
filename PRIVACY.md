@@ -5,7 +5,7 @@
 This Privacy Policy explains how TTV AB ("the Extension") handles your data.
 
 ## 1. Data Collection
-This extension does **not** collect, store, share, or transmit any personal data, usage data, or browsing history.
+This extension does **not** collect, share, or transmit any personal data, usage data, or browsing history to the developer or any third party. It only stores the limited on-device extension state described below.
 
 ## 2. Local Processing
 The Extension operates entirely locally on your device.

@@ -93,7 +93,7 @@ If you enjoy TTV AB, consider buying me a coffee! Your support helps keep this p
 
 ## Privacy
 
-This extension operates entirely locally and does not collect any user data. See [PRIVACY.md](PRIVACY.md) for details.
+This extension operates entirely locally and does not send any browsing or usage data off your device. See [PRIVACY.md](PRIVACY.md) for details.
 
 ## License
 
