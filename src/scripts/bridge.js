@@ -415,25 +415,28 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 
 function queueTotalDelta(kind, nextTotal) {
 	const safeNextTotal = normalizeCount(nextTotal);
+	const maxMessageDelta = 1;
 	if (kind === "ads") {
 		const queuedTotal =
 			normalizeCount(bridgeState.storedAdsCount) +
 			normalizeCount(pendingAdsDelta);
 		const delta = safeNextTotal - queuedTotal;
-		if (delta > 0) {
-			pendingAdsDelta += delta;
+		const safeDelta = Math.min(Math.max(delta, 0), maxMessageDelta);
+		if (safeDelta > 0) {
+			pendingAdsDelta += safeDelta;
 		}
-		return delta;
+		return safeDelta;
 	}
 	if (kind === "domAds") {
 		const queuedTotal =
 			normalizeCount(bridgeState.storedDomAdsCount) +
 			normalizeCount(pendingDomAdsDelta);
 		const delta = safeNextTotal - queuedTotal;
-		if (delta > 0) {
-			pendingDomAdsDelta += delta;
+		const safeDelta = Math.min(Math.max(delta, 0), maxMessageDelta);
+		if (safeDelta > 0) {
+			pendingDomAdsDelta += safeDelta;
 		}
-		return delta;
+		return safeDelta;
 	}
 	return 0;
 }
