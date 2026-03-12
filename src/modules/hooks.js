@@ -23,7 +23,7 @@ function _hookWorkerFetch() {
 		const wasUsingModifiedM3U8 = Boolean(info.IsUsingModifiedM3U8);
 		info.EncodingsM3U8 = encodings;
 		info.UsherBaseUrl = usherUrl;
-		info.UsherParams = new URL(usherUrl).search;
+		info.UsherParams = new URL(usherUrl, window.location.href).search;
 		info.Urls = Object.create(null);
 		info.ResolutionList = [];
 		if (!info.IsShowingAd) {
@@ -158,15 +158,23 @@ function _hookWorkerFetch() {
 		}
 
 		if (url.includes("/channel/hls/")) {
-			__TTVAB_STATE__.V2API = url.includes("/api/v2/");
-			const channelMatch = new URL(url).pathname.match(/([^/]+)(?=\.\w+$)/);
-			const channel = channelMatch?.[0];
+			let parsedHlsUrl = null;
+			try {
+				parsedHlsUrl = new URL(url, window.location.href);
+			} catch {
+				return realFetch.apply(this, args);
+			}
+			__TTVAB_STATE__.V2API = parsedHlsUrl.pathname.includes("/api/v2/");
+			const channelMatch = parsedHlsUrl.pathname.match(/([^/]+)(?=\.\w+$)/);
+			const channel = channelMatch?.[0] || null;
+			if (!channel) {
+				return realFetch.apply(this, getFetchArgs(parsedHlsUrl.toString()));
+			}
 
 			if (__TTVAB_STATE__.ForceAccessTokenPlayerType) {
-				const urlObj = new URL(url);
-				urlObj.searchParams.delete("parent_domains");
-				url = urlObj.toString();
+				parsedHlsUrl.searchParams.delete("parent_domains");
 			}
+			url = parsedHlsUrl.toString();
 
 			const response = await realFetch.apply(this, getFetchArgs(url));
 			if (response.status !== 200) return response;
@@ -200,7 +208,7 @@ function _hookWorkerFetch() {
 					IsUsingFallbackStream: false,
 					IsUsingBackupStream: false,
 					UsherBaseUrl: url,
-					UsherParams: new URL(url).search,
+					UsherParams: parsedHlsUrl.search,
 					RequestedAds: new Set(),
 					FailedBackupPlayerTypes: new Set(),
 					Urls: Object.create(null),
