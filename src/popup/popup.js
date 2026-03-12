@@ -412,10 +412,15 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function getLast7Days() {
+		const startOfWeek = new Date();
+		startOfWeek.setHours(0, 0, 0, 0);
+		const dayOfWeek = startOfWeek.getDay();
+		const daysSinceMonday = (dayOfWeek + 6) % 7;
+		startOfWeek.setDate(startOfWeek.getDate() - daysSinceMonday);
 		const days = [];
-		for (let i = 6; i >= 0; i--) {
-			const d = new Date();
-			d.setDate(d.getDate() - i);
+		for (let i = 0; i < 7; i++) {
+			const d = new Date(startOfWeek);
+			d.setDate(startOfWeek.getDate() + i);
 			days.push(getDateKey(d));
 		}
 		return days;
@@ -428,21 +433,29 @@ document.addEventListener("DOMContentLoaded", () => {
 				: {};
 		const t = getTranslations();
 		const days = getLast7Days();
+		const todayKey = getDateKey();
 		const parsedDays = days.map((dayKey) => parseDateKey(dayKey));
 		const values = days.map((d) => {
+			if (d > todayKey) return 0;
 			const ads = normalizeCount(safeDailyData[d]?.ads);
 			const domAds = normalizeCount(safeDailyData[d]?.domAds);
 			return ads + domAds;
 		});
 		const max = Math.max(...values, 1);
-		const avg = Math.round(values.reduce((a, b) => a + b, 0) / 7);
+		const completedDayCount = Math.max(
+			1,
+			days.filter((dayKey) => dayKey <= todayKey).length,
+		);
+		const avg = Math.round(
+			values.reduce((a, b) => a + b, 0) / completedDayCount,
+		);
 		const formatter = new Intl.DateTimeFormat(getLocaleTag(), {
 			weekday: "short",
 		});
 
 		weeklyChart.replaceChildren();
 		for (const [index, value] of values.entries()) {
-			const height = Math.max((value / max) * 100, 8);
+			const height = value > 0 ? Math.max((value / max) * 100, 8) : 0;
 			const dayName = parsedDays[index]
 				? formatter.format(parsedDays[index])
 				: "?";
