@@ -414,8 +414,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			return createDailyStatsMap();
 		}
 		const normalized = createDailyStatsMap();
+		const todayKey = getDateKey();
 		for (const [dateKey, entry] of Object.entries(value)) {
-			if (!parseDateKey(dateKey)) continue;
+			if (!parseDateKey(dateKey) || dateKey > todayKey) continue;
 			const safeEntry = isPlainObject(entry) ? entry : {};
 			normalized[dateKey] = {
 				ads: normalizeCount(safeEntry.ads),
