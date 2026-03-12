@@ -180,7 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		donateButton.title = t.supportDeveloper;
 		donateButton.setAttribute(
 			"aria-label",
-			String(t.supportDeveloper ?? "Support the developer"),
+			String(t.supportDeveloper ?? "Support GosuDRM"),
 		);
 		langSelector.title = t.language;
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));

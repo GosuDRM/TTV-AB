@@ -21,7 +21,7 @@ const TRANSLATIONS = {
 		next: "Next",
 		descriptionText:
 			"Lightweight, powerful ad blocker designed specifically for Twitch.tv",
-		supportDeveloper: "Support the developer",
+		supportDeveloper: "Support GosuDRM",
 		repoLinkLabel: "Open TTV AB on GitHub",
 		authorLinkLabel: "Open GosuDRM on GitHub",
 		versionLabel: "Version {version}",
