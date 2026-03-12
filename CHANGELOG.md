@@ -19,6 +19,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Achievement Toast Body Guard** - Runtime achievement toasts now bail out cleanly if Twitch navigation or early initialization leaves `document.body` temporarily unavailable.
 - **Chart Tooltip Locale Formatting** - Popup weekly chart tooltips now format counts with the active popup locale instead of raw browser-default digits.
 - **Localized Auto Language Label** - The popup language selector now localizes its `Auto` option and build validation keeps that dedicated option wired up.
+- **Popup Achievement Fallback Parity** - The popup's static achievement progress and next-achievement fallback copy now stay aligned with the configured achievement list, including the first-achievement icon, and build validation now catches future drift before release.
 
 ### Changed
 - **Privacy Disclosure Validation** - Build-time validation now fails if `PRIVACY.md` drops the documented toggle/counter/language/reminder local-storage disclosures or the explicit on-device-only wording.
