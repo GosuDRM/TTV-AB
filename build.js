@@ -404,6 +404,20 @@ function validateSharedDefinitions() {
 			"Popup HTML donate link must target the canonical Ko-fi URL",
 		);
 	}
+	for (const [elementId, title] of [
+		["donateBtn", "Support GosuDRM"],
+		["channelList", "Top Channels"],
+	]) {
+		if (!popupHtmlSource.includes(`id="${elementId}"`)) continue;
+		if (
+			!popupHtmlSource.includes(`title="${title}"`) &&
+			!popupHtmlSource.includes(`aria-label="${title}"`)
+		) {
+			throw new Error(
+				`Popup HTML ${elementId} must preserve the fallback accessibility label: ${title}`,
+			);
+		}
+	}
 	for (const requiredPopupLinkAttr of [
 		'target="_blank"',
 		'rel="noopener noreferrer"',
