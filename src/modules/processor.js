@@ -138,14 +138,9 @@ async function _processM3U8(url, text, realFetch) {
 				self.postMessage
 			) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				if (
-					(wasUsingModifiedM3U8 ||
-						wasUsingFallbackStream ||
-						wasUsingBackupStream) &&
-					__TTVAB_STATE__.ReloadAfterAd
-				) {
+				if (__TTVAB_STATE__.ReloadAfterAd) {
 					info.LastPlayerReload = Date.now();
-					self.postMessage({ key: "ReloadPlayer" });
+					self.postMessage({ key: "ReloadPlayer", channel: info.ChannelName });
 				}
 			}
 		}
@@ -290,7 +285,7 @@ async function _processM3U8(url, text, realFetch) {
 					__TTVAB_STATE__.ReloadAfterAd
 				) {
 					info.LastPlayerReload = Date.now();
-					self.postMessage({ key: "ReloadPlayer" });
+					self.postMessage({ key: "ReloadPlayer", channel: info.ChannelName });
 				}
 			}
 		}
