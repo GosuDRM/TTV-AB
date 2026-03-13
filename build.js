@@ -1,9 +1,14 @@
 // TTV AB - Build Script
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 const MODULES_DIR = path.join(__dirname, "src", "modules");
 const OUTPUT_FILE = path.join(__dirname, "src", "scripts", "content.js");
+const DIST_DIR = path.join(__dirname, "dist");
+const GENERATED_SOURCE_FILES = new Set([
+	path.relative(__dirname, OUTPUT_FILE).replaceAll("\\", "/"),
+]);
 
 const MODULE_ORDER = [
 	"constants.js",
@@ -141,12 +146,58 @@ function normalizeCodeSnippet(code) {
 		.trim();
 }
 
+function syncPopupHtmlFallbacks() {
+	const popupHtmlPath = path.join(__dirname, "src", "popup", "popup.html");
+	const translationsPath = path.join(
+		__dirname,
+		"src",
+		"popup",
+		"translations.js",
+	);
+	const popupHtmlSource = fs.readFileSync(popupHtmlPath, "utf8");
+	const translationsSource = fs.readFileSync(translationsPath, "utf8");
+	const translations = Function(
+		`${translationsSource}; return TRANSLATIONS;`,
+	)();
+	const english = translations.en || {};
+	const chartTitle = String(english.last7Days || "This Week");
+	const chartAverage = String(english.avgPerDay || "avg: {avg}/day").replace(
+		"{avg}",
+		"0",
+	);
+	const chartBars = Array.from(
+		{ length: 7 },
+		() =>
+			'                    <div class="chart-bar" style="height: 0%;"></div>',
+	).join("\n");
+	const eol = popupHtmlSource.includes("\r\n") ? "\r\n" : "\n";
+	const expectedChartSection =
+		`            <div class="stats-section">\n                <div class="stats-section-title">📈 <span data-i18n="last7Days">${chartTitle}</span></div>\n                <div class="chart-container" id="weeklyChart">\n${chartBars}\n                </div>\n                <div class="chart-avg" id="chartAvg">${chartAverage}</div>\n            </div>`.replaceAll(
+			"\n",
+			eol,
+		);
+	const syncedPopupHtmlSource = popupHtmlSource.replace(
+		/ {12}<div class="stats-section">\r?\n {16}<div class="stats-section-title">📈 <span data-i18n="last7Days">[\s\S]*?<\/div>\r?\n {16}<div class="chart-avg" id="chartAvg">[\s\S]*?<\/div>\r?\n {12}<\/div>/,
+		expectedChartSection,
+	);
+	if (syncedPopupHtmlSource !== popupHtmlSource) {
+		fs.writeFileSync(popupHtmlPath, syncedPopupHtmlSource);
+	}
+}
+
 function validateSharedDefinitions() {
 	const { constantsVersion, packageVersion, manifestVersion } =
 		readVersionSources();
 	const manifest = JSON.parse(
 		fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"),
 	);
+	const packageJson = JSON.parse(
+		fs.readFileSync(path.join(__dirname, "package.json"), "utf8"),
+	);
+	const packageLock = JSON.parse(
+		fs.readFileSync(path.join(__dirname, "package-lock.json"), "utf8"),
+	);
+	const canonicalRepoUrl = "https://github.com/GosuDRM/TTV-AB";
 	if (
 		manifest.default_locale &&
 		!fs.existsSync(path.join(__dirname, "_locales", manifest.default_locale))
@@ -157,7 +208,14 @@ function validateSharedDefinitions() {
 	}
 	for (const contentScript of manifest.content_scripts || []) {
 		for (const file of contentScript.js || []) {
-			if (!fs.existsSync(path.join(__dirname, file))) {
+			const normalizedFile = String(file).replaceAll("\\", "/");
+			if (
+				GENERATED_SOURCE_FILES.has(normalizedFile) &&
+				!fs.existsSync(path.join(__dirname, normalizedFile))
+			) {
+				continue;
+			}
+			if (!fs.existsSync(path.join(__dirname, normalizedFile))) {
 				throw new Error(`Manifest content script is missing: ${file}`);
 			}
 		}
@@ -169,6 +227,11 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	if (manifest.action?.default_title !== "__MSG_extName__") {
+		throw new Error(
+			`Manifest action.default_title must remain localized via __MSG_extName__: ${manifest.action?.default_title || "missing"}`,
+		);
+	}
 	for (const iconGroup of [
 		manifest.icons || {},
 		manifest.action?.default_icon || {},
@@ -179,6 +242,74 @@ function validateSharedDefinitions() {
 			}
 		}
 	}
+	if (manifest.homepage_url !== canonicalRepoUrl) {
+		throw new Error(
+			`Manifest homepage_url must match the canonical repository: ${manifest.homepage_url || "missing"}`,
+		);
+	}
+	if (manifest.name !== "__MSG_extName__") {
+		throw new Error(
+			`Manifest name must remain localized via __MSG_extName__: ${manifest.name || "missing"}`,
+		);
+	}
+	if (manifest.description !== "__MSG_extDesc__") {
+		throw new Error(
+			`Manifest description must remain localized via __MSG_extDesc__: ${manifest.description || "missing"}`,
+		);
+	}
+	if (manifest.short_name !== "TTV AB") {
+		throw new Error(
+			`Manifest short_name must match the canonical short name: ${manifest.short_name || "missing"}`,
+		);
+	}
+	const expectedPermissions = ["storage"];
+	if (
+		JSON.stringify([...(manifest.permissions || [])].sort()) !==
+		JSON.stringify(expectedPermissions)
+	) {
+		throw new Error(
+			`Manifest permissions must remain limited to ${expectedPermissions.join(", ")}: ${JSON.stringify(manifest.permissions || [])}`,
+		);
+	}
+	const expectedHostPermissions = ["*://*.twitch.tv/*"];
+	if (
+		JSON.stringify([...(manifest.host_permissions || [])].sort()) !==
+		JSON.stringify(expectedHostPermissions)
+	) {
+		throw new Error(
+			`Manifest host_permissions must remain limited to ${expectedHostPermissions.join(", ")}: ${JSON.stringify(manifest.host_permissions || [])}`,
+		);
+	}
+	const expectedContentScripts = [
+		{
+			matches: ["*://*.twitch.tv/*"],
+			js: ["src/scripts/content.js"],
+			run_at: "document_start",
+			world: "MAIN",
+		},
+		{
+			matches: ["*://*.twitch.tv/*"],
+			js: ["src/scripts/bridge.js"],
+			run_at: "document_start",
+			world: "ISOLATED",
+		},
+	];
+	const comparableContentScripts = (manifest.content_scripts || []).map(
+		({ matches = [], js = [], run_at = null, world = null }) => ({
+			matches: [...matches],
+			js: [...js],
+			run_at,
+			world,
+		}),
+	);
+	if (
+		JSON.stringify(comparableContentScripts) !==
+		JSON.stringify(expectedContentScripts)
+	) {
+		throw new Error(
+			`Manifest content_scripts drift detected: ${JSON.stringify(comparableContentScripts)}`,
+		);
+	}
 	if (
 		!constantsVersion ||
 		constantsVersion !== packageVersion ||
@@ -186,6 +317,47 @@ function validateSharedDefinitions() {
 	) {
 		throw new Error(
 			`Version mismatch: constants=${constantsVersion || "missing"}, package=${packageVersion}, manifest=${manifestVersion}`,
+		);
+	}
+	if (packageJson.homepage !== canonicalRepoUrl) {
+		throw new Error(
+			`package homepage must match the canonical repository: ${packageJson.homepage || "missing"}`,
+		);
+	}
+	if (packageJson.repository?.type !== "git") {
+		throw new Error(
+			`package repository.type must be git: ${packageJson.repository?.type || "missing"}`,
+		);
+	}
+	if (
+		packageJson.repository?.url !== `${canonicalRepoUrl}.git` &&
+		packageJson.repository?.url !== `git+${canonicalRepoUrl}.git`
+	) {
+		throw new Error(
+			`package repository.url must match the canonical repository: ${packageJson.repository?.url || "missing"}`,
+		);
+	}
+	if (packageJson.bugs?.url !== `${canonicalRepoUrl}/issues`) {
+		throw new Error(
+			`package bugs.url must match the canonical issue tracker: ${packageJson.bugs?.url || "missing"}`,
+		);
+	}
+	if (packageJson.license !== "MIT") {
+		throw new Error(
+			`package license must remain MIT: ${packageJson.license || "missing"}`,
+		);
+	}
+	if (packageLock.name !== packageJson.name) {
+		throw new Error(
+			`package-lock name mismatch: package=${packageJson.name || "missing"}, lock=${packageLock.name || "missing"}`,
+		);
+	}
+	if (
+		packageLock.version !== packageVersion ||
+		packageLock.packages?.[""]?.version !== packageVersion
+	) {
+		throw new Error(
+			`package-lock version mismatch: package=${packageVersion}, lock=${packageLock.version || "missing"}, root=${packageLock.packages?.[""]?.version || "missing"}`,
 		);
 	}
 	const readmePath = path.join(__dirname, "README.md");
@@ -223,6 +395,12 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	if (!readmeSource.includes(canonicalRepoUrl)) {
+		throw new Error("README is missing the canonical repository URL");
+	}
+	if (!privacySource.includes(canonicalRepoUrl)) {
+		throw new Error("PRIVACY is missing the canonical repository URL");
+	}
 	if (
 		!readmeSource.includes(`version-${constantsVersion}-`) ||
 		!readmeSource.includes(`### v${constantsVersion}`)
@@ -244,14 +422,190 @@ function validateSharedDefinitions() {
 			"README or PRIVACY metric wording is out of sync with DOM Ads Blocked",
 		);
 	}
+	for (const requiredPrivacyPhrase of [
+		"enable/disable toggle",
+		'"Ads Blocked" and "DOM Ads Blocked" counters',
+		"selected language",
+		"welcome/donation reminder dismissal timing",
+		"stays on your device",
+	]) {
+		if (!privacySource.includes(requiredPrivacyPhrase)) {
+			throw new Error(
+				`PRIVACY is missing required storage disclosure text: ${requiredPrivacyPhrase}`,
+			);
+		}
+	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
 	const popupHtmlSource = fs.readFileSync(
 		path.join(__dirname, "src", "popup", "popup.html"),
 		"utf8",
 	);
+	if (!popupHtmlSource.includes(`href="${canonicalRepoUrl}"`)) {
+		throw new Error(
+			"Popup HTML repo link must target the canonical repository URL",
+		);
+	}
+	if (!popupHtmlSource.includes('href="https://github.com/GosuDRM"')) {
+		throw new Error(
+			"Popup HTML author link must target the GosuDRM GitHub profile",
+		);
+	}
+	if (!popupHtmlSource.includes('href="https://ko-fi.com/gosudrm"')) {
+		throw new Error(
+			"Popup HTML donate link must target the canonical Ko-fi URL",
+		);
+	}
+	for (const [elementId, title] of [
+		["donateBtn", "Support GosuDRM"],
+		["channelList", "Top Channels"],
+		["statsToggle", "Statistics"],
+		["enableToggle", "Ad Blocking"],
+		["langSelector", "Language"],
+	]) {
+		if (!popupHtmlSource.includes(`id="${elementId}"`)) continue;
+		if (
+			!popupHtmlSource.includes(`title="${title}"`) &&
+			!popupHtmlSource.includes(`aria-label="${title}"`)
+		) {
+			throw new Error(
+				`Popup HTML ${elementId} must preserve the fallback accessibility label: ${title}`,
+			);
+		}
+	}
+	for (const requiredPopupLinkAttr of [
+		'target="_blank"',
+		'rel="noopener noreferrer"',
+	]) {
+		if (!popupHtmlSource.includes(requiredPopupLinkAttr)) {
+			throw new Error(
+				`Popup HTML footer links are missing ${requiredPopupLinkAttr}`,
+			);
+		}
+	}
+	for (const [linkId, title] of [
+		["repoLink", "Open TTV AB on GitHub"],
+		["authorLink", "Open GosuDRM on GitHub"],
+	]) {
+		if (!popupHtmlSource.includes(`id="${linkId}"`)) continue;
+		if (!popupHtmlSource.includes(`title="${title}"`)) {
+			throw new Error(
+				`Popup HTML ${linkId} link must preserve the hover title: ${title}`,
+			);
+		}
+	}
+	if (!popupHtmlSource.includes('<button type="button" class="stats-toggle"')) {
+		throw new Error(
+			"Popup statistics toggle must remain a native button element",
+		);
+	}
+	if (!popupHtmlSource.includes('id="statsPanel" hidden aria-hidden="true"')) {
+		throw new Error(
+			"Popup statistics panel must start hidden with matching aria-hidden state",
+		);
+	}
+	const expectedPopupVersionMarkup = `id="versionText" aria-label="Version ${constantsVersion}">v${constantsVersion}</div>`;
+	if (!popupHtmlSource.includes(expectedPopupVersionMarkup)) {
+		throw new Error(
+			`Popup version badge must ship with a static synced fallback label/value: ${expectedPopupVersionMarkup}`,
+		);
+	}
+	for (const requiredPopupId of [
+		"enableToggle",
+		"statusDot",
+		"statusText",
+		"adsBlockedCount",
+		"domAdsBlockedCount",
+		"timeSaved",
+		"statsToggle",
+		"statsPanel",
+		"weeklyChart",
+		"chartAvg",
+		"channelList",
+		"achievementsGrid",
+		"achievementsProgress",
+		"nextAchievement",
+		"langSelector",
+		"langAutoOption",
+		"descriptionText",
+		"versionText",
+		"achievementsTitle",
+		"footerText",
+		"infoText",
+		"donateBtn",
+		"repoLink",
+		"authorLink",
+	]) {
+		if (!popupHtmlSource.includes(`id="${requiredPopupId}"`)) {
+			throw new Error(`Popup HTML is missing required id: ${requiredPopupId}`);
+		}
+	}
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
+	const translationsContext = {};
+	Function(
+		"context",
+		`${translationsSource}; context.TRANSLATIONS = TRANSLATIONS;`,
+	)(translationsContext);
+	const translationEntries = Object.entries(
+		translationsContext.TRANSLATIONS || {},
+	);
+	const flattenTranslationKeys = (value, prefix = "") => {
+		let keys = [];
+		for (const [key, nested] of Object.entries(value || {})) {
+			const nextPrefix = prefix ? `${prefix}.${key}` : key;
+			if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+				keys = keys.concat(flattenTranslationKeys(nested, nextPrefix));
+			} else {
+				keys.push(nextPrefix);
+			}
+		}
+		return keys;
+	};
+	const baseTranslations = translationsContext.TRANSLATIONS?.en || {};
+	const baseTranslationKeys = new Set(flattenTranslationKeys(baseTranslations));
+	const placeholderPattern = /\{(\w+)\}/g;
+	const getPlaceholders = (value) => {
+		return [
+			...new Set(
+				Array.from(
+					String(value || "").matchAll(placeholderPattern),
+					(match) => match[1],
+				),
+			),
+		].sort();
+	};
+	const getNestedTranslationValue = (value, keyPath) => {
+		return keyPath
+			.split(".")
+			.reduce((currentValue, key) => currentValue?.[key], value);
+	};
+	for (const [localeName, localeTranslations] of translationEntries) {
+		const localeKeys = new Set(flattenTranslationKeys(localeTranslations));
+		const missingKeys = [...baseTranslationKeys].filter(
+			(key) => !localeKeys.has(key),
+		);
+		if (missingKeys.length > 0) {
+			throw new Error(
+				`Popup translations for ${localeName} are missing keys: ${missingKeys.join(", ")}`,
+			);
+		}
+		for (const keyPath of baseTranslationKeys) {
+			const basePlaceholders = getPlaceholders(
+				getNestedTranslationValue(baseTranslations, keyPath),
+			);
+			const localePlaceholders = getPlaceholders(
+				getNestedTranslationValue(localeTranslations, keyPath),
+			);
+			if (
+				JSON.stringify(basePlaceholders) !== JSON.stringify(localePlaceholders)
+			) {
+				throw new Error(
+					`Popup translations for ${localeName} have placeholder drift at ${keyPath}: expected ${basePlaceholders.join(", ") || "none"}, got ${localePlaceholders.join(", ") || "none"}`,
+				);
+			}
+		}
+	}
 	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
 	const workerSource = fs.readFileSync(workerPath, "utf8");
@@ -376,6 +730,65 @@ function validateSharedDefinitions() {
 			`Popup achievement badge count mismatch: html=${popupBadgeCount}, config=${popupAchievements.length}`,
 		);
 	}
+	const popupAchievementButtonCount = (
+		popupHtmlSource.match(/<button type="button" class="achievement-badge"/g) ||
+		[]
+	).length;
+	if (popupAchievementButtonCount !== popupAchievements.length) {
+		throw new Error(
+			`Popup achievement badges must remain native buttons: buttons=${popupAchievementButtonCount}, config=${popupAchievements.length}`,
+		);
+	}
+	const popupAchievementFallbackLabels = [
+		...popupHtmlSource.matchAll(
+			/<button type="button" class="achievement-badge"[^>]*title="([^"]+)"[^>]*aria-label="([^"]+)"/g,
+		),
+	].map((match) => ({ title: match[1], label: match[2] }));
+	if (popupAchievementFallbackLabels.length !== popupAchievements.length) {
+		throw new Error(
+			`Popup achievement badges must keep static aria-label fallbacks: labels=${popupAchievementFallbackLabels.length}, config=${popupAchievements.length}`,
+		);
+	}
+	for (const { title, label } of popupAchievementFallbackLabels) {
+		if (title !== label) {
+			throw new Error(
+				`Popup achievement badge fallback aria-label must match title: ${title} !== ${label}`,
+			);
+		}
+	}
+	const englishAchievementFallbackLabels = popupAchievements.map(
+		(achievement) => {
+			const text = translations.en?.achievementsMap?.[achievement.id];
+			return `${text?.name || achievement.id} - ${text?.desc || ""}`;
+		},
+	);
+	if (
+		JSON.stringify(popupAchievementFallbackLabels.map(({ title }) => title)) !==
+		JSON.stringify(englishAchievementFallbackLabels)
+	) {
+		throw new Error(
+			"Popup achievement badge fallback labels are out of sync with English translations",
+		);
+	}
+
+	const firstAchievement = popupAchievements[0] || null;
+	const firstAchievementFallback = firstAchievement
+		? `${firstAchievement.icon} ${translations.en?.achievementsMap?.[firstAchievement.id]?.name || firstAchievement.id}`
+		: null;
+	const expectedAchievementsProgressMarkup = `id="achievementsProgress" aria-live="polite" aria-atomic="true">0/${popupAchievements.length}</span>`;
+	if (!popupHtmlSource.includes(expectedAchievementsProgressMarkup)) {
+		throw new Error(
+			`Popup achievements fallback progress must default to 0/${popupAchievements.length}`,
+		);
+	}
+	if (firstAchievementFallback) {
+		const expectedNextAchievementMarkup = `id="nextAchievement" aria-live="polite" aria-atomic="true">Next: <span class="next-achievement-name">${firstAchievementFallback}</span></div>`;
+		if (!popupHtmlSource.includes(expectedNextAchievementMarkup)) {
+			throw new Error(
+				"Popup next-achievement fallback is out of sync with the first configured achievement",
+			);
+		}
+	}
 
 	const popupNormalizeCount = extractLiteral(
 		popupSource,
@@ -448,9 +861,9 @@ function validateSharedDefinitions() {
 	const dynamicPopupTitleAttrCount = (popupSource.match(/title="\$\{/g) || [])
 		.length;
 	if (
-		dynamicPopupInnerHtmlCount !== 1 ||
-		dynamicUiInnerHtmlCount !== 1 ||
-		dynamicPopupTitleAttrCount !== 1
+		dynamicPopupInnerHtmlCount !== 0 ||
+		dynamicUiInnerHtmlCount !== 0 ||
+		dynamicPopupTitleAttrCount !== 0
 	) {
 		throw new Error(
 			`Unexpected dynamic HTML footprint: popupInner=${dynamicPopupInnerHtmlCount}, uiInner=${dynamicUiInnerHtmlCount}, popupTitle=${dynamicPopupTitleAttrCount}`,
@@ -464,7 +877,9 @@ function validateSharedDefinitions() {
 		const messageListenerCount = (
 			source.match(/window\.addEventListener\("message"/g) || []
 		).length;
-		const sourceGuardCount = (source.match(/source !== window/g) || []).length;
+		const sourceGuardCount = (
+			source.match(/source !== window|source === window/g) || []
+		).length;
 		if (messageListenerCount !== sourceGuardCount) {
 			throw new Error(
 				`${name} has ${messageListenerCount} message listeners but ${sourceGuardCount} source guards`,
@@ -497,7 +912,75 @@ function validateSharedDefinitions() {
 			throw new Error(`Popup HTML is missing required element id ${domId}`);
 		}
 	}
+	const popupSetupSource = popupSource.split("const requiredElements =", 1)[0];
+	const popupElementBindings = [
+		...popupSetupSource.matchAll(
+			/const\s+(\w+)\s*=\s*document\.getElementById\("([^"]+)"\);/g,
+		),
+	];
+	const popupBoundDomIds = new Set(
+		popupElementBindings.map(([, , domId]) => domId),
+	);
+	const requiredElementsLiteral = extractLiteral(
+		popupSource,
+		"const requiredElements =",
+		"{",
+		"}",
+	);
+	if (!requiredElementsLiteral) {
+		throw new Error("Popup script is missing the requiredElements guard map");
+	}
+	const requiredElementNames = new Set(
+		Array.from(
+			requiredElementsLiteral.matchAll(/\b(\w+)\s*,?/g),
+			(match) => match[1],
+		),
+	);
+	for (const [_, variableName, domId] of popupElementBindings) {
+		if (!requiredElementNames.has(variableName)) {
+			throw new Error(
+				`Popup element binding ${variableName} (${domId}) is missing from requiredElements`,
+			);
+		}
+	}
+	for (const requiredPopupId of [
+		"enableToggle",
+		"statusDot",
+		"statusText",
+		"adsBlockedCount",
+		"domAdsBlockedCount",
+		"timeSaved",
+		"statsToggle",
+		"statsPanel",
+		"weeklyChart",
+		"chartAvg",
+		"channelList",
+		"achievementsGrid",
+		"achievementsProgress",
+		"nextAchievement",
+		"langSelector",
+		"langAutoOption",
+		"descriptionText",
+		"versionText",
+		"achievementsTitle",
+		"footerText",
+		"infoText",
+		"donateBtn",
+		"repoLink",
+		"authorLink",
+	]) {
+		if (!popupBoundDomIds.has(requiredPopupId)) {
+			throw new Error(
+				`Popup startup guard is missing a top-level binding for ${requiredPopupId}`,
+			);
+		}
+	}
 
+	if (!popupHtmlSource.includes('<option value="auto" id="langAutoOption">')) {
+		throw new Error(
+			'Popup language selector must include a dedicated auto option with id="langAutoOption"',
+		);
+	}
 	const popupLanguageOptions = [
 		...popupHtmlSource.matchAll(/<option value="([^"]+)"/g),
 	]
@@ -682,6 +1165,10 @@ function validateSharedDefinitions() {
 		"allUnlocked",
 		"noDataYet",
 		"avgPerDay",
+		"autoLanguage",
+		"repoLinkLabel",
+		"authorLinkLabel",
+		"versionLabel",
 	];
 	for (const [lang, locale] of Object.entries(translations)) {
 		for (const key of requiredTranslationKeys) {
@@ -719,11 +1206,105 @@ function minifyCode(code) {
 	return result;
 }
 
+function packageFirefox(version) {
+	const stageDir = path.join(DIST_DIR, "firefox-package");
+	const outputFile = path.join(DIST_DIR, `TTV-AB-v${version}-firefox.xpi`);
+	const zipOutputFile = path.join(DIST_DIR, `TTV-AB-v${version}-firefox.zip`);
+
+	fs.rmSync(stageDir, { recursive: true, force: true });
+	fs.rmSync(outputFile, { force: true });
+	fs.rmSync(zipOutputFile, { force: true });
+	fs.mkdirSync(stageDir, { recursive: true });
+
+	fs.copyFileSync(
+		path.join(__dirname, "manifest.json"),
+		path.join(stageDir, "manifest.json"),
+	);
+	fs.copyFileSync(
+		path.join(__dirname, "LICENSE"),
+		path.join(stageDir, "LICENSE"),
+	);
+	fs.cpSync(path.join(__dirname, "_locales"), path.join(stageDir, "_locales"), {
+		recursive: true,
+	});
+	fs.cpSync(path.join(__dirname, "assets"), path.join(stageDir, "assets"), {
+		recursive: true,
+	});
+	fs.cpSync(path.join(__dirname, "src"), path.join(stageDir, "src"), {
+		recursive: true,
+	});
+
+	const entries = fs.readdirSync(stageDir);
+	execFileSync(
+		"tar",
+		["-a", "-cf", zipOutputFile, "-C", stageDir, ...entries],
+		{ stdio: "inherit" },
+	);
+	fs.copyFileSync(zipOutputFile, outputFile);
+
+	console.log(`  ZIP: ${path.relative(__dirname, zipOutputFile)}`);
+	console.log(`  XPI: ${path.relative(__dirname, outputFile)}`);
+}
+
+function packageFirefoxSource(version) {
+	const stageDir = path.join(DIST_DIR, "firefox-source-package");
+	const outputFile = path.join(
+		DIST_DIR,
+		`TTV-AB-v${version}-firefox-source.zip`,
+	);
+	const includedPaths = [
+		".gitignore",
+		"biome.json",
+		"build.js",
+		"CHANGELOG.md",
+		"knip.json",
+		"LICENSE",
+		"manifest.json",
+		"package-lock.json",
+		"package.json",
+		"PRIVACY.md",
+		"README.md",
+		"_locales",
+		"assets",
+		path.join("src", "modules"),
+		path.join("src", "popup"),
+		path.join("src", "scripts", "bridge.js"),
+	];
+
+	fs.rmSync(stageDir, { recursive: true, force: true });
+	fs.rmSync(outputFile, { force: true });
+	fs.mkdirSync(stageDir, { recursive: true });
+
+	for (const relativePath of includedPaths) {
+		const sourcePath = path.join(__dirname, relativePath);
+		const targetPath = path.join(stageDir, relativePath);
+		const stat = fs.statSync(sourcePath);
+		if (stat.isDirectory()) {
+			fs.cpSync(sourcePath, targetPath, { recursive: true });
+		} else {
+			fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+			fs.copyFileSync(sourcePath, targetPath);
+		}
+	}
+
+	const entries = fs.readdirSync(stageDir);
+	execFileSync("tar", ["-a", "-cf", outputFile, "-C", stageDir, ...entries], {
+		stdio: "inherit",
+	});
+
+	console.log(`  Source ZIP: ${path.relative(__dirname, outputFile)}`);
+}
+
 function build() {
 	console.log("Building TTV AB...\n");
 
+	syncPopupHtmlFallbacks();
 	validateSharedDefinitions();
 	const version = getVersion();
+	const shouldPackageFirefox = process.argv.includes("--firefox-package");
+	const shouldPackageFirefoxSource = process.argv.includes(
+		"--firefox-source-package",
+	);
 
 	const HEADER = `// TTV AB v${version} - Twitch Ad Blocker
 // Built file: src/scripts/content.js
@@ -761,6 +1342,16 @@ _$in();
 
 		const stats = fs.statSync(OUTPUT_FILE);
 		const buildTime = new Date().toLocaleTimeString();
+
+		if (shouldPackageFirefox) {
+			console.log("\nPackaging Firefox XPI...");
+			packageFirefox(version);
+		}
+
+		if (shouldPackageFirefoxSource) {
+			console.log("\nPackaging Firefox source ZIP...");
+			packageFirefoxSource(version);
+		}
 
 		console.log(`\nBuild complete at ${buildTime}`);
 		console.log(`  Version: ${version}`);

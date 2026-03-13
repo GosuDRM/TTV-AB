@@ -20,6 +20,102 @@ function normalizeCount(value) {
 		: 0;
 }
 
+function normalizeChannelName(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim().toLowerCase();
+	return /^[a-z0-9_]{1,25}$/.test(trimmed) ? trimmed : null;
+}
+
+function isPlainObject(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
+}
+
+function getBridgeMessageData(value) {
+	return isPlainObject(value) ? value : null;
+}
+
+function getBridgeMessageDetail(value) {
+	return isPlainObject(value) ? value : null;
+}
+
+function createChannelsMap() {
+	return Object.create(null);
+}
+
+function createDailyStatsMap() {
+	return Object.create(null);
+}
+
+function isValidDateKey(value) {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+		return false;
+	}
+	const [year, month, day] = String(value)
+		.split("-")
+		.map((part) => Number.parseInt(part, 10));
+	if (
+		!Number.isFinite(year) ||
+		!Number.isFinite(month) ||
+		!Number.isFinite(day)
+	) {
+		return false;
+	}
+	const date = new Date(year, month - 1, day);
+	return (
+		!Number.isNaN(date.getTime()) &&
+		date.getFullYear() === year &&
+		date.getMonth() === month - 1 &&
+		date.getDate() === day
+	);
+}
+
+function normalizeChannelsMap(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return createChannelsMap();
+	}
+	const normalized = createChannelsMap();
+	for (const [channelName, count] of Object.entries(value)) {
+		const safeChannel = normalizeChannelName(channelName);
+		if (!safeChannel) continue;
+		normalized[safeChannel] =
+			normalizeCount(normalized[safeChannel]) + normalizeCount(count);
+	}
+	const channelEntries = Object.entries(normalized);
+	if (channelEntries.length <= MAX_CHANNELS) {
+		return normalized;
+	}
+	channelEntries.sort((a, b) => {
+		const countDiff = normalizeCount(b[1]) - normalizeCount(a[1]);
+		return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
+	});
+	const trimmed = createChannelsMap();
+	for (const [channelName, count] of channelEntries.slice(0, MAX_CHANNELS)) {
+		trimmed[channelName] = normalizeCount(count);
+	}
+	return trimmed;
+}
+
+function normalizeDailyStatsMap(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return createDailyStatsMap();
+	}
+	const normalized = createDailyStatsMap();
+	const todayKey = getTodayKey();
+	for (const [dateKey, entry] of Object.entries(value)) {
+		if (!isValidDateKey(dateKey) || dateKey > todayKey) continue;
+		const safeEntry = isPlainObject(entry) ? entry : {};
+		normalized[dateKey] = {
+			ads: normalizeCount(safeEntry.ads),
+			domAds: normalizeCount(safeEntry.domAds),
+		};
+	}
+	return normalized;
+}
+
 const ACHIEVEMENTS = [
 	{ id: "first_block", threshold: 1, type: "ads" },
 	{ id: "block_10", threshold: 10, type: "ads" },
@@ -34,6 +130,9 @@ const ACHIEVEMENTS = [
 	{ id: "channels_5", threshold: 5, type: "channels" },
 	{ id: "channels_20", threshold: 20, type: "channels" },
 ];
+const ACHIEVEMENT_IDS = new Set(
+	ACHIEVEMENTS.map((achievement) => achievement.id),
+);
 
 const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
@@ -59,7 +158,7 @@ const StorageQueue = {
 		};
 
 		this._chain = this._chain.then(withRetry).catch((err) => {
-			console.error("TTV AB Storage Error:", err);
+			console.error("[TTV AB] Storage queue error:", err);
 		});
 	},
 };
@@ -69,9 +168,14 @@ function updateStats(
 	channel,
 	totalAdsBlocked,
 	totalDomAdsBlocked,
+	countDelta = 1,
 	retryDepth = 0,
 ) {
 	if (!["ads", "domAds"].includes(type)) {
+		return Promise.resolve();
+	}
+	const safeDelta = normalizeCount(countDelta);
+	if (safeDelta <= 0) {
 		return Promise.resolve();
 	}
 	return new Promise((resolve) => {
@@ -88,6 +192,7 @@ function updateStats(
 							channel,
 							totalAdsBlocked,
 							totalDomAdsBlocked,
+							safeDelta,
 							retryDepth + 1,
 						),
 					);
@@ -96,26 +201,17 @@ function updateStats(
 				return;
 			}
 			const safeResult = result || {};
-			const stats =
-				safeResult.ttvStats && typeof safeResult.ttvStats === "object"
-					? safeResult.ttvStats
-					: {};
-			stats.daily =
-				stats.daily &&
-				typeof stats.daily === "object" &&
-				!Array.isArray(stats.daily)
-					? stats.daily
-					: {};
-			stats.channels =
-				stats.channels &&
-				typeof stats.channels === "object" &&
-				!Array.isArray(stats.channels)
-					? stats.channels
-					: {};
+			const stats = isPlainObject(safeResult.ttvStats)
+				? safeResult.ttvStats
+				: {};
+			stats.daily = normalizeDailyStatsMap(stats.daily);
+			stats.channels = normalizeChannelsMap(stats.channels);
 			stats.achievements = Array.isArray(stats.achievements)
 				? [
 						...new Set(
-							stats.achievements.filter((id) => typeof id === "string"),
+							stats.achievements.filter(
+								(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
+							),
 						),
 					]
 				: [];
@@ -131,29 +227,37 @@ function updateStats(
 			stats.daily[today].ads = normalizeCount(stats.daily[today].ads);
 			stats.daily[today].domAds = normalizeCount(stats.daily[today].domAds);
 			stats.daily[today][type] = normalizeCount(stats.daily[today][type]);
-			stats.daily[today][type]++;
+			stats.daily[today][type] += safeDelta;
 
 			const cutoff = new Date();
 			cutoff.setDate(cutoff.getDate() - 30);
 			const cutoffKey = getDateKey(cutoff);
-			for (const key in stats.daily) {
+			for (const key of Object.keys(stats.daily)) {
 				if (key < cutoffKey) {
 					delete stats.daily[key];
 				}
 			}
 
-			if (type === "ads" && channel) {
-				stats.channels[channel] = normalizeCount(stats.channels[channel]);
-				stats.channels[channel]++;
+			const safeChannel = normalizeChannelName(channel);
+			if (type === "ads" && safeChannel) {
+				stats.channels[safeChannel] = normalizeCount(
+					stats.channels[safeChannel],
+				);
+				stats.channels[safeChannel] += safeDelta;
 
 				const channelEntries = Object.entries(stats.channels).map(
 					([channelName, count]) => [channelName, normalizeCount(count)],
 				);
 				if (channelEntries.length > MAX_CHANNELS) {
 					channelEntries.sort((a, b) => b[1] - a[1]);
-					stats.channels = Object.fromEntries(
-						channelEntries.slice(0, MAX_CHANNELS),
-					);
+					const trimmedChannels = createChannelsMap();
+					for (const [channelName, count] of channelEntries.slice(
+						0,
+						MAX_CHANNELS,
+					)) {
+						trimmedChannels[channelName] = count;
+					}
+					stats.channels = trimmedChannels;
 				}
 			}
 
@@ -202,6 +306,7 @@ function updateStats(
 								channel,
 								totalAdsBlocked,
 								totalDomAdsBlocked,
+								safeDelta,
 								retryDepth + 1,
 							),
 						);
@@ -263,9 +368,9 @@ chrome.storage.local.get(
 
 		window.addEventListener("message", (e) => {
 			if (e.source !== window) return;
-			if (e.data?.type === "ttvab-request-state") {
-				broadcastState();
-			}
+			const message = getBridgeMessageData(e.data);
+			if (!message || message.type !== "ttvab-request-state") return;
+			broadcastState();
 		});
 
 		chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -284,14 +389,34 @@ chrome.storage.local.get(
 				}
 			}
 			if (changes.ttvAdsBlocked) {
-				bridgeState.storedAdsCount = normalizeCount(
-					changes.ttvAdsBlocked.newValue,
-				);
+				const nextAdsCount = normalizeCount(changes.ttvAdsBlocked.newValue);
+				const previousAdsCount = bridgeState.storedAdsCount;
+				reconcilePendingDelta("ads", nextAdsCount);
+				if (nextAdsCount !== previousAdsCount) {
+					window.postMessage(
+						{
+							type: "ttvab-init-count",
+							detail: { count: nextAdsCount },
+						},
+						"*",
+					);
+				}
 			}
 			if (changes.ttvDomAdsBlocked) {
-				bridgeState.storedDomAdsCount = normalizeCount(
+				const nextDomAdsCount = normalizeCount(
 					changes.ttvDomAdsBlocked.newValue,
 				);
+				const previousDomAdsCount = bridgeState.storedDomAdsCount;
+				reconcilePendingDelta("domAds", nextDomAdsCount);
+				if (nextDomAdsCount !== previousDomAdsCount) {
+					window.postMessage(
+						{
+							type: "ttvab-init-dom-ads-count",
+							detail: { count: nextDomAdsCount },
+						},
+						"*",
+					);
+				}
 			}
 		});
 	},
@@ -302,6 +427,60 @@ let pendingDomAdsDelta = 0;
 let pendingAdChannels = [];
 let flushTimeout = null;
 let flushRetryCount = 0;
+
+function reconcilePendingDelta(kind, nextStoredCount) {
+	const safeStoredCount = normalizeCount(nextStoredCount);
+	if (kind === "ads") {
+		const queuedTotal =
+			normalizeCount(bridgeState.storedAdsCount) +
+			normalizeCount(pendingAdsDelta);
+		if (safeStoredCount !== queuedTotal) {
+			pendingAdsDelta = 0;
+			pendingAdChannels = [];
+			flushRetryCount = 0;
+		}
+		bridgeState.storedAdsCount = safeStoredCount;
+		return;
+	}
+	if (kind === "domAds") {
+		const queuedTotal =
+			normalizeCount(bridgeState.storedDomAdsCount) +
+			normalizeCount(pendingDomAdsDelta);
+		if (safeStoredCount !== queuedTotal) {
+			pendingDomAdsDelta = 0;
+			flushRetryCount = 0;
+		}
+		bridgeState.storedDomAdsCount = safeStoredCount;
+	}
+}
+
+function queueTotalDelta(kind, nextTotal) {
+	const safeNextTotal = normalizeCount(nextTotal);
+	const maxMessageDelta = 50;
+	if (kind === "ads") {
+		const queuedTotal =
+			normalizeCount(bridgeState.storedAdsCount) +
+			normalizeCount(pendingAdsDelta);
+		const delta = safeNextTotal - queuedTotal;
+		const safeDelta = Math.min(Math.max(delta, 0), maxMessageDelta);
+		if (safeDelta > 0) {
+			pendingAdsDelta += safeDelta;
+		}
+		return safeDelta;
+	}
+	if (kind === "domAds") {
+		const queuedTotal =
+			normalizeCount(bridgeState.storedDomAdsCount) +
+			normalizeCount(pendingDomAdsDelta);
+		const delta = safeNextTotal - queuedTotal;
+		const safeDelta = Math.min(Math.max(delta, 0), maxMessageDelta);
+		if (safeDelta > 0) {
+			pendingDomAdsDelta += safeDelta;
+		}
+		return safeDelta;
+	}
+	return 0;
+}
 
 function scheduleFlush() {
 	if (flushTimeout) return;
@@ -370,13 +549,41 @@ function flushCounters() {
 
 						flushRetryCount = 0;
 						try {
+							const channelTotals = createChannelsMap();
 							for (const ch of channels) {
-								await updateStats("ads", ch, newAds, newDomAds);
+								channelTotals[ch] = normalizeCount(channelTotals[ch]) + 1;
+							}
+							let scopedAdsDelta = 0;
+							for (const [channelName, channelDelta] of Object.entries(
+								channelTotals,
+							)) {
+								scopedAdsDelta += normalizeCount(channelDelta);
+								await updateStats(
+									"ads",
+									channelName,
+									newAds,
+									newDomAds,
+									channelDelta,
+								);
+							}
+							const unscopedAdsDelta = Math.max(0, adsDelta - scopedAdsDelta);
+							if (unscopedAdsDelta > 0) {
+								await updateStats(
+									"ads",
+									null,
+									newAds,
+									newDomAds,
+									unscopedAdsDelta,
+								);
 							}
 							if (domAdsDelta > 0) {
-								for (let i = 0; i < domAdsDelta; i++) {
-									await updateStats("domAds", null, newAds, newDomAds);
-								}
+								await updateStats(
+									"domAds",
+									null,
+									newAds,
+									newDomAds,
+									domAdsDelta,
+								);
 							}
 						} catch (statsErr) {
 							console.error("[TTV AB] Stats error:", statsErr.message);
@@ -391,24 +598,30 @@ function flushCounters() {
 
 window.addEventListener("message", (e) => {
 	if (e.source !== window) return;
-	if (!e.data?.type?.startsWith("ttvab-")) return;
+	const message = getBridgeMessageData(e.data);
+	if (!message) return;
+	const detail = getBridgeMessageDetail(message.detail);
 
-	if (
-		e.data.type === "ttvab-ad-blocked" &&
-		Number.isFinite(e.data.detail?.count)
-	) {
-		const channel =
-			typeof e.data.detail?.channel === "string" ? e.data.detail.channel : null;
-		pendingAdsDelta++;
-		if (channel) pendingAdChannels.push(channel);
-		scheduleFlush();
+	if (message.type === "ttvab-ad-blocked") {
+		if (!detail || !Number.isFinite(detail.count)) return;
+		const channel = normalizeChannelName(detail.channel);
+		const delta = queueTotalDelta("ads", detail.count);
+		if (channel && delta > 0) {
+			for (let i = 0; i < delta; i++) {
+				pendingAdChannels.push(channel);
+			}
+		}
+		if (delta > 0) {
+			scheduleFlush();
+		}
+		return;
 	}
 
-	if (
-		e.data.type === "ttvab-dom-ad-cleanup" &&
-		Number.isFinite(e.data.detail?.count)
-	) {
-		pendingDomAdsDelta++;
-		scheduleFlush();
+	if (message.type === "ttvab-dom-ad-cleanup") {
+		if (!detail || !Number.isFinite(detail.count)) return;
+		const delta = queueTotalDelta("domAds", detail.count);
+		if (delta > 0) {
+			scheduleFlush();
+		}
 	}
 });

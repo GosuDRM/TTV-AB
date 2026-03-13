@@ -1,11 +1,11 @@
 # Privacy Policy for TTV AB
 
-**Last Updated:** December 10, 2025
+**Last Updated:** March 12, 2026
 
 This Privacy Policy explains how TTV AB ("the Extension") handles your data.
 
 ## 1. Data Collection
-This extension does **not** collect, store, share, or transmit any personal data, usage data, or browsing history.
+This extension does **not** collect, share, or transmit any personal data, usage data, or browsing history to the developer or any third party. It only stores the limited on-device extension state described below.
 
 ## 2. Local Processing
 The Extension operates entirely locally on your device.
@@ -13,11 +13,14 @@ The Extension operates entirely locally on your device.
 - No data regarding these requests is sent to any external server.
 
 ## 3. Storage Permissions
-The Extension uses your browser's local storage (`chrome.storage.local`) for the sole purpose of:
-- Saving your preference for the "Enable/Disable" toggle.
-- Persisting the "Ads Blocked" counter statistic across sessions.
-- Persisting the "DOM Ads Blocked" counter statistic across sessions.
-This data never leaves your browser.
+The Extension uses browser-local storage only for extension functionality and presentation state. That includes:
+- Saving your preference for the ad blocking enable/disable toggle.
+- Persisting the total "Ads Blocked" and "DOM Ads Blocked" counters across sessions.
+- Storing the local statistics dashboard data shown in the popup, including recent daily totals, per-channel aggregate counts, and unlocked achievement IDs.
+- Remembering popup presentation preferences such as the selected language.
+- Remembering one-time or infrequent local UI state such as welcome/donation reminder dismissal timing.
+
+This data stays on your device, is not transmitted to the developer, and is not used for analytics or tracking.
 
 ## 4. Third-Party Services
 The Extension does not integrate with any third-party analytics, tracking tools, or advertising networks.

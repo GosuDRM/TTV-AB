@@ -22,21 +22,39 @@ function _normalizeCounterValue(value) {
 		: 0;
 }
 
+function _getTrustedBridgeMessageData(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return null;
+	}
+	return value;
+}
+
+function _getTrustedBridgeMessageDetail(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return null;
+	}
+	return value;
+}
+
 function _initToggleListener() {
 	window.addEventListener("message", (e) => {
 		if (e.source !== window) return;
-		if (e.data?.type === "ttvab-toggle") {
-			if (typeof e.data.detail?.enabled !== "boolean") return;
-			const enabled = e.data.detail.enabled;
-			if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
-			__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
-			_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
-			_log(
-				`Ad blocking ${enabled ? "enabled" : "disabled"}`,
-				enabled ? "success" : "warning",
-			);
+		const message = _getTrustedBridgeMessageData(e.data);
+		const detail = _getTrustedBridgeMessageDetail(message?.detail);
+		if (
+			message?.type !== "ttvab-toggle" ||
+			typeof detail?.enabled !== "boolean"
+		) {
 			return;
 		}
+		const enabled = detail.enabled;
+		if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
+		__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
+		_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
+		_log(
+			`Ad blocking ${enabled ? "enabled" : "disabled"}`,
+			enabled ? "success" : "warning",
+		);
 	});
 }
 
@@ -44,9 +62,12 @@ function _blockAntiAdblockPopup() {
 	let lastBlockTime = 0;
 	let isDisplayAdShellActive = false;
 	let isPromotedPageAdActive = false;
-	let didCountCurrentDisplayAdShell = false;
+	let didCountCurrentDisplayAdShellCleanup = false;
+	let didCountCurrentDisplayAdShellAd = false;
 	let pendingDisplayAdShellSince = 0;
 	let pendingDisplayAdShellSignature = null;
+	let lastStaleDisplayArtifactSignature = null;
+	let lastStaleDisplayArtifactCleanupAt = 0;
 	let lastPathname = window.location.pathname;
 	const EXPLICIT_DISPLAY_AD_SELECTORS = [
 		'div[data-test-selector="ad-banner"]',
@@ -232,6 +253,43 @@ function _blockAntiAdblockPopup() {
 			el.removeAttribute("data-ttvab-blocked");
 		}
 
+		function _resetStaleDisplayArtifactCleanupDeduper() {
+			lastStaleDisplayArtifactSignature = null;
+			lastStaleDisplayArtifactCleanupAt = 0;
+		}
+
+		function _isDisplayAdShellArtifact(el) {
+			if (!el) return false;
+			if (
+				el.hasAttribute?.("data-ttvab-blocked") ||
+				el.hasAttribute?.("data-ttvab-display-shell-reset")
+			) {
+				return true;
+			}
+
+			return (
+				typeof el.className === "string" &&
+				el.className.includes("stream-display-ad")
+			);
+		}
+
+		function _getDisplayAdArtifactSignature(el) {
+			if (!el) return "";
+			const className =
+				typeof el.className === "string"
+					? el.className.split(/\s+/).filter(Boolean).sort().join(".")
+					: "";
+			return [
+				el.tagName || "",
+				el.id || "",
+				el.getAttribute?.("data-a-target") || "",
+				el.getAttribute?.("data-test-selector") || "",
+				className,
+				el.hasAttribute?.("data-ttvab-blocked") ? "blocked" : "",
+				el.hasAttribute?.("data-ttvab-display-shell-reset") ? "reset" : "",
+			].join(":");
+		}
+
 		function _cleanupStaleDisplayAdShell(
 			displayShellNodes,
 			pipContainers,
@@ -245,11 +303,36 @@ function _blockAntiAdblockPopup() {
 				...Array.from(
 					document.querySelectorAll('[data-ttvab-display-shell-reset="true"]'),
 				),
-			].filter((el, index, list) => el && list.indexOf(el) === index);
+			]
+				.filter((el, index, list) => el && list.indexOf(el) === index)
+				.filter(_isDisplayAdShellArtifact);
+			const stalePipContainers = pipContainers
+				.filter((el, index, list) => el && list.indexOf(el) === index)
+				.filter(
+					(el) =>
+						el.hasAttribute?.("data-ttvab-blocked") ||
+						el.hasAttribute?.("data-ttvab-display-shell-reset"),
+				);
 
-			if (staleNodes.length === 0 && pipContainers.length === 0) {
+			if (staleNodes.length === 0 && stalePipContainers.length === 0) {
+				_resetStaleDisplayArtifactCleanupDeduper();
 				return false;
 			}
+
+			const staleSignature = [...staleNodes, ...stalePipContainers]
+				.map(_getDisplayAdArtifactSignature)
+				.sort()
+				.join("|");
+			const now = Date.now();
+			if (
+				staleSignature &&
+				staleSignature === lastStaleDisplayArtifactSignature &&
+				now - lastStaleDisplayArtifactCleanupAt < 1000
+			) {
+				return false;
+			}
+			lastStaleDisplayArtifactSignature = staleSignature;
+			lastStaleDisplayArtifactCleanupAt = now;
 
 			_log(
 				"Display ad shell stale: cleaning up residual shell/layout artifacts",
@@ -276,7 +359,7 @@ function _blockAntiAdblockPopup() {
 				}
 			});
 
-			pipContainers.forEach((el) => {
+			stalePipContainers.forEach((el) => {
 				if (el.querySelector?.("video")) {
 					_restoreStreamDisplayLayout(el);
 					return;
@@ -295,7 +378,8 @@ function _blockAntiAdblockPopup() {
 		function _resetDisplayAdShellState() {
 			isDisplayAdShellActive = false;
 			isPromotedPageAdActive = false;
-			didCountCurrentDisplayAdShell = false;
+			didCountCurrentDisplayAdShellCleanup = false;
+			didCountCurrentDisplayAdShellAd = false;
 			pendingDisplayAdShellSince = 0;
 			pendingDisplayAdShellSignature = null;
 		}
@@ -335,6 +419,7 @@ function _blockAntiAdblockPopup() {
 			if (pathname === lastPathname) return;
 			lastPathname = pathname;
 			_resetDisplayAdShellState();
+			_resetStaleDisplayArtifactCleanupDeduper();
 			_cleanupAllKnownDisplayArtifacts();
 			_scanAndRemove();
 		}
@@ -669,11 +754,13 @@ function _blockAntiAdblockPopup() {
 					layoutRoots,
 				);
 				isDisplayAdShellActive = false;
-				didCountCurrentDisplayAdShell = false;
+				didCountCurrentDisplayAdShellCleanup = false;
+				didCountCurrentDisplayAdShellAd = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
 				return false;
 			}
+			_resetStaleDisplayArtifactCleanupDeduper();
 
 			const signalSignature = [
 				adBanners.length,
@@ -702,20 +789,27 @@ function _blockAntiAdblockPopup() {
 
 			if (!isDisplayAdShellActive) {
 				isDisplayAdShellActive = true;
-				didCountCurrentDisplayAdShell = false;
+				didCountCurrentDisplayAdShellCleanup = false;
+				didCountCurrentDisplayAdShellAd = false;
 				pendingDisplayAdShellSince = 0;
 				pendingDisplayAdShellSignature = null;
 				if (!hasExplicitDisplayAdSignal) {
+					_incrementDomCleanup("display-shell-inferred");
+					didCountCurrentDisplayAdShellCleanup = true;
 					_log(
-						"Display ad shell inferred: resetting layout without counting blocked ad",
+						"Display ad shell inferred: counting DOM cleanup and resetting layout",
 						"info",
 					);
 				}
 			}
 
-			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShell) {
-				didCountCurrentDisplayAdShell = true;
+			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShellCleanup) {
 				_incrementDomCleanup("display-shell");
+				didCountCurrentDisplayAdShellCleanup = true;
+			}
+
+			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShellAd) {
+				didCountCurrentDisplayAdShellAd = true;
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
 					_incrementAdsBlocked(_getCurrentChannelName());
 				}
@@ -978,13 +1072,17 @@ function _blockAntiAdblockPopup() {
 
 		window.addEventListener("message", (event) => {
 			if (event.source !== window) return;
-			if (event.data?.type !== "ttvab-ad-blocked") return;
-			if (!Number.isFinite(event.data.detail?.count)) return;
+			const message = _getTrustedBridgeMessageData(event.data);
+			const detail = _getTrustedBridgeMessageDetail(message?.detail);
+			if (
+				message?.type !== "ttvab-ad-blocked" ||
+				!Number.isFinite(detail?.count)
+			) {
+				return;
+			}
 			const currentChannel = _getCurrentChannelName();
 			const blockedChannel =
-				typeof event.data.detail?.channel === "string"
-					? event.data.detail.channel
-					: null;
+				typeof detail.channel === "string" ? detail.channel : null;
 			if (blockedChannel && blockedChannel !== currentChannel) {
 				return;
 			}
@@ -1069,24 +1167,24 @@ function _init() {
 
 	window.addEventListener("message", (e) => {
 		if (e.source !== window) return;
-		if (!e.data?.type?.startsWith("ttvab-init-")) return;
+		const message = _getTrustedBridgeMessageData(e.data);
+		const detail = _getTrustedBridgeMessageDetail(message?.detail);
+		if (!message || !detail) return;
 
-		if (
-			e.data.type === "ttvab-init-count" &&
-			Number.isFinite(e.data.detail?.count)
-		) {
-			const restoredCount = _normalizeCounterValue(e.data.detail.count);
+		if (message.type === "ttvab-init-count" && Number.isFinite(detail.count)) {
+			const restoredCount = _normalizeCounterValue(detail.count);
 			if (_S.adsBlocked === restoredCount) return;
 			_S.adsBlocked = restoredCount;
 			_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
 			_log(`Restored ads count: ${_S.adsBlocked}`, "info");
+			return;
 		}
 
 		if (
-			e.data.type === "ttvab-init-dom-ads-count" &&
-			Number.isFinite(e.data.detail?.count)
+			message.type === "ttvab-init-dom-ads-count" &&
+			Number.isFinite(detail.count)
 		) {
-			const restoredCount = _normalizeCounterValue(e.data.detail.count);
+			const restoredCount = _normalizeCounterValue(detail.count);
 			if (_S.domAdsBlocked === restoredCount) return;
 			_S.domAdsBlocked = restoredCount;
 			_log(`Restored DOM cleanup count: ${_S.domAdsBlocked}`, "info");

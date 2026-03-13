@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -12,9 +12,45 @@
             box-sizing: border-box;
         }
 
-        body {
+        html {
             width: 300px;
+            max-width: 300px;
+            overflow-x: hidden;
+            scrollbar-gutter: stable;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(145, 70, 255, 0.9) rgba(255, 255, 255, 0.08);
+            background: #1a1a2e;
+        }
+
+        html::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        html::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 999px;
+        }
+
+        html::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #9146FF 0%, #772CE8 100%);
+            border: 2px solid #1a1a2e;
+            border-radius: 999px;
+        }
+
+        html::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(180deg, #a25bff 0%, #8a42ff 100%);
+        }
+
+        html::-webkit-scrollbar-corner {
+            background: transparent;
+        }
+
+        body {
+            width: 100%;
+            min-height: 100%;
             padding: 20px;
+            overflow-x: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             color: #fff;
@@ -60,6 +96,7 @@
             transition: all 0.3s ease;
             box-shadow: 0 2px 8px rgba(238, 90, 90, 0.3);
             animation: pulse 2s ease-in-out infinite;
+            text-decoration: none;
         }
 
         @keyframes pulse {
@@ -80,6 +117,13 @@
             animation: none;
             transform: scale(1.15);
             box-shadow: 0 4px 20px rgba(238, 90, 90, 0.6);
+        }
+
+        .donate-btn:focus-visible {
+            outline: 2px solid rgba(255, 255, 255, 0.9);
+            outline-offset: 2px;
+            animation: none;
+            transform: scale(1.08);
         }
 
         .donate-btn svg {
@@ -426,6 +470,7 @@
         .toggle-label {
             font-size: 14px;
             font-weight: 500;
+            cursor: pointer;
         }
 
         .toggle {
@@ -483,6 +528,21 @@
             margin-left: -4px;
         }
 
+        .toggle input:focus-visible+.slider {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
+        }
+
+        .toggle input:disabled+.slider {
+            cursor: progress;
+            opacity: 0.65;
+            box-shadow: none;
+        }
+
+        .toggle input:disabled+.slider:before {
+            box-shadow: none;
+        }
+
         .info {
             margin-top: 16px;
             text-align: center;
@@ -495,6 +555,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            width: 100%;
             background: rgba(145, 70, 255, 0.08);
             border-radius: 10px;
             padding: 12px 14px;
@@ -502,11 +563,22 @@
             cursor: pointer;
             border: 1px solid rgba(145, 70, 255, 0.2);
             transition: all 0.3s ease;
+            appearance: none;
+            color: inherit;
+            font: inherit;
+            text-align: left;
         }
 
         .stats-toggle:hover {
             background: rgba(145, 70, 255, 0.15);
             border-color: rgba(145, 70, 255, 0.4);
+        }
+
+        .stats-toggle:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
+            background: rgba(145, 70, 255, 0.18);
+            border-color: rgba(145, 70, 255, 0.55);
         }
 
         .stats-toggle-text {
@@ -533,7 +605,6 @@
         }
 
         .stats-panel.expanded {
-            max-height: 400px;
             opacity: 1;
         }
 
@@ -663,6 +734,17 @@
             filter: grayscale(1);
             transition: all 0.3s ease;
             cursor: default;
+            color: inherit;
+            font-family: inherit;
+            font-weight: inherit;
+            line-height: 1;
+            padding: 0;
+            appearance: none;
+        }
+
+        .achievement-badge:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
         }
 
         .achievement-badge.unlocked {
@@ -673,7 +755,8 @@
             box-shadow: 0 0 8px rgba(145, 70, 255, 0.3);
         }
 
-        .achievement-badge.unlocked:hover {
+        .achievement-badge.unlocked:hover,
+        .achievement-badge.unlocked:focus-visible {
             transform: scale(1.15);
         }
 
@@ -750,77 +833,123 @@
             opacity: 0.8;
             text-decoration: underline;
         }
+
+        .author-link:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
+            border-radius: 4px;
+            text-decoration: underline;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .description-text,
+            .version,
+            .footer-text,
+            .status-dot,
+            .donate-btn,
+            .title::before,
+            .title::after {
+                animation: none;
+            }
+
+            .donate-btn,
+            .donate-btn:hover,
+            .donate-btn:focus-visible,
+            .status-dot,
+            .slider,
+            .slider:before,
+            .chart-bar,
+            .stats-toggle,
+            .stats-toggle-arrow,
+            .stats-panel,
+            .counter-value,
+            .achievement-badge,
+            .achievement-badge.unlocked,
+            .author-link,
+            .lang-selector,
+            .info {
+                transition: none;
+            }
+
+            .donate-btn:hover,
+            .donate-btn:focus-visible,
+            .achievement-badge.unlocked:hover,
+            .achievement-badge.unlocked:focus-visible,
+            .chart-bar:hover,
+            .counter-value.pulse {
+                transform: none;
+            }
+        }
     </style>
 </head>
 
 <body>
     <div class="header">
-        <div class="logo">TTV</div>
+        <div class="logo" aria-hidden="true">TTV</div>
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
-            <div class="version" id="versionText">v</div>
+            <div class="version" id="versionText" aria-label="Version 4.2.7">v4.2.7</div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically for Twitch.tv</div>
         </div>
-        <button class="donate-btn" id="donateBtn" title="Support the developer">
+        <a class="donate-btn" id="donateBtn" href="https://ko-fi.com/gosudrm" target="_blank" rel="noopener noreferrer" title="Support GosuDRM" aria-label="Support GosuDRM">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path
                     d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
             </svg>
-        </button>
+        </a>
     </div>
 
     <div class="status-card">
         <div class="status-row">
             <span class="status-label" data-i18n="status">Status</span>
             <div class="status-indicator">
-                <div class="status-dot" id="statusDot"></div>
-                <span class="status-text" id="statusText" data-i18n="active">Active</span>
+                <div class="status-dot" id="statusDot" aria-hidden="true"></div>
+                <span class="status-text" id="statusText" data-i18n="active" role="status" aria-live="polite" aria-atomic="true">Active</span>
             </div>
         </div>
         <div class="counter-row">
             <span class="counter-label" data-i18n="adsBlocked">Ads Blocked</span>
-            <span class="counter-value" id="adsBlockedCount">0</span>
+            <span class="counter-value" id="adsBlockedCount" aria-live="polite" aria-atomic="true">0</span>
         </div>
         <div class="counter-row" style="margin-top: 8px; padding-top: 8px;">
             <span class="counter-label" data-i18n="domAdsBlocked">DOM Ads Blocked</span>
-            <span class="counter-value" id="domAdsBlockedCount">0</span>
+            <span class="counter-value" id="domAdsBlockedCount" aria-live="polite" aria-atomic="true">0</span>
         </div>
         <div class="counter-row time-saved-row">
             <span class="counter-label" data-i18n="timeSaved">Est. Time Saved</span>
-            <span class="counter-value time-saved-value" id="timeSaved">~0s</span>
+            <span class="counter-value time-saved-value" id="timeSaved" aria-live="polite" aria-atomic="true">~0s</span>
         </div>
     </div>
 
     <!-- Statistics Toggle -->
-    <div class="stats-toggle" id="statsToggle">
+    <button type="button" class="stats-toggle" id="statsToggle" aria-expanded="false" aria-controls="statsPanel" aria-label="Statistics">
         <span class="stats-toggle-text">📊 <span data-i18n="statistics">Statistics</span></span>
         <span class="stats-toggle-arrow">▼</span>
-    </div>
+    </button>
 
     <!-- Collapsible Stats Panel -->
-    <div class="stats-panel" id="statsPanel">
+    <div class="stats-panel" id="statsPanel" hidden aria-hidden="true">
         <div class="stats-content">
             <!-- Weekly Chart -->
             <div class="stats-section">
-                <div class="stats-section-title">📈 <span data-i18n="last7Days">Last 7 Days</span></div>
+                <div class="stats-section-title">📈 <span data-i18n="last7Days">This Week</span></div>
                 <div class="chart-container" id="weeklyChart">
-                    <div class="chart-bar" style="height: 20%;"></div>
-                    <div class="chart-bar" style="height: 40%;"></div>
-                    <div class="chart-bar" style="height: 60%;"></div>
-                    <div class="chart-bar" style="height: 80%;"></div>
-                    <div class="chart-bar" style="height: 50%;"></div>
-                    <div class="chart-bar" style="height: 70%;"></div>
-                    <div class="chart-bar" style="height: 100%;"></div>
+                    <div class="chart-bar" style="height: 0%;"></div>
+                    <div class="chart-bar" style="height: 0%;"></div>
+                    <div class="chart-bar" style="height: 0%;"></div>
+                    <div class="chart-bar" style="height: 0%;"></div>
+                    <div class="chart-bar" style="height: 0%;"></div>
+                    <div class="chart-bar" style="height: 0%;"></div>
+                    <div class="chart-bar" style="height: 0%;"></div>
                 </div>
                 <div class="chart-avg" id="chartAvg">avg: 0/day</div>
             </div>
-
             <!-- Top Channels -->
             <div class="stats-section">
                 <div class="stats-section-title">🏠 <span data-i18n="topChannels">Top Channels</span></div>
                 <div class="stats-desc" data-i18n="topChannelsDesc">Channels where you've blocked the most ads</div>
-                <div class="channel-list" id="channelList">
-                    <div class="channel-item">
+                <div class="channel-list" id="channelList" role="list" aria-label="Top Channels">
+                    <div class="channel-item" role="listitem">
                         <span><span class="channel-rank">-</span><span class="channel-name">No data yet</span></span>
                         <span class="channel-count">-</span>
                     </div>
@@ -831,43 +960,42 @@
             <div class="stats-section">
                 <div class="achievements-header">
                     <div class="stats-section-title" id="achievementsTitle" style="margin-bottom: 0;">🏆 Achievements</div>
-                    <span class="achievements-progress" id="achievementsProgress">0/12</span>
+                    <span class="achievements-progress" id="achievementsProgress" aria-live="polite" aria-atomic="true">0/12</span>
                 </div>
                 <div class="achievements-grid" id="achievementsGrid">
-                    <div class="achievement-badge" title="Ad Slayer - Block your first ad">⚔️</div>
-                    <div class="achievement-badge" title="Blocker - Block 10 ads">🛡️</div>
-                    <div class="achievement-badge" title="Guardian - Block 100 ads">🔰</div>
-                    <div class="achievement-badge" title="Sentinel - Block 500 ads">🏰</div>
-                    <div class="achievement-badge" title="Legend - Block 1000 ads">🏆</div>
-                    <div class="achievement-badge" title="Mythic - Block 5000 ads">👑</div>
-                    <div class="achievement-badge" title="DOM Cleaner - Block 10 DOM ads">💥</div>
-                    <div class="achievement-badge" title="DOM Sweeper - Block 50 DOM ads">🔥</div>
-                    <div class="achievement-badge" title="Hour Saver - Save 1 hour">⏱️</div>
-                    <div class="achievement-badge" title="Time Master - Save 10 hours">⏰</div>
-                    <div class="achievement-badge" title="Explorer - Block ads on 5 channels">📺</div>
-                    <div class="achievement-badge" title="Adventurer - Block ads on 20 channels">🌍</div>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Ad Slayer - Blocked your first ad!" aria-label="Ad Slayer - Blocked your first ad!">⚔️</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Blocker - Blocked 10 ads!" aria-label="Blocker - Blocked 10 ads!">🛡️</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Guardian - Blocked 100 ads!" aria-label="Guardian - Blocked 100 ads!">🔰</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Sentinel - Blocked 500 ads!" aria-label="Sentinel - Blocked 500 ads!">🏰</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Legend - Blocked 1000 ads!" aria-label="Legend - Blocked 1000 ads!">🏆</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Mythic - Blocked 5000 ads!" aria-label="Mythic - Blocked 5000 ads!">👑</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="DOM Cleaner - Blocked 10 DOM ads!" aria-label="DOM Cleaner - Blocked 10 DOM ads!">💥</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="DOM Sweeper - Blocked 50 DOM ads!" aria-label="DOM Sweeper - Blocked 50 DOM ads!">🔥</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Hour Saver - Saved 1 hour from ads!" aria-label="Hour Saver - Saved 1 hour from ads!">⏱️</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Time Master - Saved 10 hours from ads!" aria-label="Time Master - Saved 10 hours from ads!">⏰</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Explorer - Blocked ads on 5 channels!" aria-label="Explorer - Blocked ads on 5 channels!">📺</button>
+                    <button type="button" class="achievement-badge" aria-pressed="false" title="Adventurer - Blocked ads on 20 channels!" aria-label="Adventurer - Blocked ads on 20 channels!">🌍</button>
                 </div>
-                <div class="next-achievement" id="nextAchievement">Next: <span class="next-achievement-name">Ad
-                        Slayer</span></div>
+                <div class="next-achievement" id="nextAchievement" aria-live="polite" aria-atomic="true">Next: <span class="next-achievement-name">⚔️ Ad Slayer</span></div>
             </div>
         </div>
     </div>
 
     <div class="toggle-container">
-        <span class="toggle-label" data-i18n="adBlocking">Ad Blocking</span>
+        <label class="toggle-label" for="enableToggle" data-i18n="adBlocking">Ad Blocking</label>
         <label class="toggle">
-            <input type="checkbox" id="enableToggle" checked>
+            <input type="checkbox" id="enableToggle" checked aria-label="Ad Blocking">
             <span class="slider"></span>
         </label>
     </div>
 
-    <div class="info">
+    <div class="info" id="infoText">
         <span data-i18n="changesInstantly">Changes take effect instantly</span>
     </div>
 
     <div class="footer">
-        <select id="langSelector" class="lang-selector" title="Language">
-            <option value="auto">🌐 Auto</option>
+        <select id="langSelector" class="lang-selector" title="Language" aria-label="Language" aria-describedby="descriptionText">
+            <option value="auto" id="langAutoOption">🌐 Auto</option>
             <option value="en">🇬🇧 English</option>
             <option value="es">🇪🇸 Español</option>
             <option value="fr">🇫🇷 Français</option>
@@ -880,8 +1008,8 @@
             <option value="zh_TW">🇹🇼 繁體中文</option>
             <option value="ru">🇷🇺 Русский</option>
         </select>
-        <span><a href="#" id="repoLink" class="author-link footer-text">TTV AB</a><span id="footerText"> — by </span><a href="#"
-                id="authorLink" class="author-link">GosuDRM</a></span>
+        <span><a href="https://github.com/GosuDRM/TTV-AB" target="_blank" rel="noopener noreferrer" id="repoLink" class="author-link footer-text" title="Open TTV AB on GitHub" aria-label="Open TTV AB on GitHub">TTV AB</a><span id="footerText"> — by </span><a href="https://github.com/GosuDRM"
+                target="_blank" rel="noopener noreferrer" id="authorLink" class="author-link" title="Open GosuDRM on GitHub" aria-label="Open GosuDRM on GitHub">GosuDRM</a></span>
     </div>
 
     <script src="translations.js"></script>

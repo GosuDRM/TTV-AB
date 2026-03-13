@@ -67,6 +67,73 @@ function _getPlayerAndState() {
 	return { player, state: playerState };
 }
 
+function _clearAdResumeIntent() {
+	__TTVAB_STATE__.ShouldResumeAfterAd = false;
+	__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
+}
+
+function _rememberPlayerPlaybackForAd(channel = null) {
+	const safeChannel =
+		typeof channel === "string"
+			? channel
+			: __TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel || null;
+	const { player, state: playerState } = _getPlayerAndState();
+
+	let shouldResumeAfterAd = false;
+	if (player && playerState?.props?.content?.type === "live") {
+		const playerCore = _getPlayerCore(player);
+		const video = player.getHTMLVideoElement?.() || null;
+		shouldResumeAfterAd = !(
+			player.isPaused?.() ||
+			playerCore?.paused ||
+			video?.paused ||
+			video?.ended
+		);
+	}
+
+	__TTVAB_STATE__.ShouldResumeAfterAd = shouldResumeAfterAd;
+	__TTVAB_STATE__.ShouldResumeAfterAdChannel = shouldResumeAfterAd
+		? safeChannel
+		: null;
+}
+
+function _resumePlayerAfterAdIfNeeded(channel = null) {
+	const safeChannel = typeof channel === "string" ? channel : null;
+	const expectedChannel = __TTVAB_STATE__.ShouldResumeAfterAdChannel || null;
+	const shouldResume =
+		__TTVAB_STATE__.ShouldResumeAfterAd === true &&
+		(!safeChannel || !expectedChannel || safeChannel === expectedChannel);
+
+	_clearAdResumeIntent();
+	if (!shouldResume) return false;
+
+	const { player, state: playerState } = _getPlayerAndState();
+	if (!player || playerState?.props?.content?.type !== "live") {
+		return false;
+	}
+
+	const playerCore = _getPlayerCore(player);
+	const video = player.getHTMLVideoElement?.() || null;
+	if (video?.ended) {
+		_log("Player ended after ad; deferring recovery to buffer monitor", "info");
+		return false;
+	}
+
+	const isPaused = Boolean(
+		player.isPaused?.() || playerCore?.paused || video?.paused,
+	);
+	if (!isPaused) return false;
+
+	try {
+		player.play();
+		_log("Resuming player after ad", "info");
+		return true;
+	} catch (err) {
+		_log(`Post-ad resume failed: ${err.message}`, "warning");
+		return false;
+	}
+}
+
 function _doPlayerTask(isPausePlay, isReload, options = {}) {
 	const { player, state: playerState } = _getPlayerAndState();
 
