@@ -22,6 +22,8 @@ const _$c = {
 	RELOAD_TIME: 1500,
 	PLAYER_RELOAD_DEBOUNCE_MS: 1500,
 	AD_CYCLE_STALE_MS: 30000,
+	AD_END_GRACE_MS: 2500,
+	AD_END_MIN_CLEAN_PLAYLISTS: 2,
 	AD_RECOVERY_RELOAD_COOLDOWN_MS: 10000,
 	BUFFERING_FIX: true,
 	RELOAD_AFTER_AD: false,
@@ -79,6 +81,8 @@ function _$ds(scope) {
 		),
 		PlayerReloadDebounceMs: _$c.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
 		AdCycleStaleMs: _$c.AD_CYCLE_STALE_MS ?? 30000,
+		AdEndGraceMs: _$c.AD_END_GRACE_MS ?? 2500,
+		AdEndMinCleanPlaylists: _$c.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
 		AdRecoveryReloadCooldownMs: _$c.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
 		HasTriggeredPlayerReload: false,
 		LastPlayerReloadAt: 0,
@@ -160,7 +164,7 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 			"*",
 		);
 	}
-}
+}
 
 function _$l(msg, type = "info") {
 	const text = typeof msg === "object" ? JSON.stringify(msg) : String(msg);
@@ -173,7 +177,7 @@ function _$l(msg, type = "info") {
 	} else {
 		console.log(`%cTTV AB%c ${text}`, _$c.LOG_STYLES.prefix, style);
 	}
-}
+}
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
@@ -510,7 +514,7 @@ function _$gfr(info, url) {
 			(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
 		return bArea - aArea;
 	})[0];
-}
+}
 
 const _$gu = "https://gql.twitch.tv/gql";
 
@@ -771,7 +775,7 @@ async function _$tk(channel, playerType, realFetch) {
 	} finally {
 		clearTimeout(timeoutId);
 	}
-}
+}
 
 function _$rsa(info) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
@@ -790,6 +794,8 @@ function _$rsa(info) {
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
 	info.NumStrippedAdSegments = 0;
+	info.PendingAdEndAt = 0;
+	info.CleanPlaylistCount = 0;
 
 	return {
 		wasUsingModifiedM3U8,
@@ -834,6 +840,10 @@ function _$hpa(text) {
 	);
 }
 
+function _playlistHasMediaSegments(text) {
+	return typeof text === "string" && text.includes("#EXTINF");
+}
+
 async function _$pm(url, text, realFetch) {
 	let info = _$gsi(url);
 	if (!info) {
@@ -871,6 +881,8 @@ async function _$pm(url, text, realFetch) {
 			IsMidroll: false,
 			IsStrippingAdSegments: false,
 			NumStrippedAdSegments: 0,
+			PendingAdEndAt: 0,
+			CleanPlaylistCount: 0,
 			LastActivityAt: Date.now(),
 		};
 		__TTVAB_STATE__.StreamInfos[channel] = info;
@@ -926,8 +938,11 @@ async function _$pm(url, text, realFetch) {
 		_$hpa(text) ||
 		_$pka(text) ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
+	const hasMediaSegments = _playlistHasMediaSegments(text);
 
 	if (hasAds) {
+		info.PendingAdEndAt = 0;
+		info.CleanPlaylistCount = 0;
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
 
 		if (!info.IsShowingAd) {
@@ -1016,7 +1031,24 @@ async function _$pm(url, text, realFetch) {
 			text = _$sa(text, stripHevc, info);
 		}
 	} else {
-		if (info.IsShowingAd) {
+		if (info.IsShowingAd && hasMediaSegments) {
+			const now = Date.now();
+			if (!info.PendingAdEndAt) {
+				info.PendingAdEndAt = now;
+				info.CleanPlaylistCount = 1;
+				return text;
+			}
+
+			info.CleanPlaylistCount = (info.CleanPlaylistCount || 0) + 1;
+			if (
+				now - info.PendingAdEndAt <
+					__TTVAB_STATE__.AdEndGraceMs ||
+				info.CleanPlaylistCount <
+					__TTVAB_STATE__.AdEndMinCleanPlaylists
+			) {
+				return text;
+			}
+
 			const {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
@@ -1266,7 +1298,7 @@ async function _$fb(
 	}
 
 	return { type: backupType, m3u8: backupM3u8, isFallback };
-}
+}
 
 function _$wj(url) {
 	const req = new XMLHttpRequest();
@@ -1315,7 +1347,7 @@ function _$iv(v) {
 		!_$s.conflicts.some((c) => src.includes(c)) &&
 		!_$s.reinsertPatterns.some((p) => src.includes(p))
 	);
-}
+}
 
 function _$wf() {
 	_$l("Worker fetch hooked", "info");
@@ -1528,6 +1560,8 @@ function _$wf() {
 					IsMidroll: false,
 					IsStrippingAdSegments: false,
 					NumStrippedAdSegments: 0,
+					PendingAdEndAt: 0,
+					CleanPlaylistCount: 0,
 					LastActivityAt: Date.now(),
 				};
 			}
@@ -2285,7 +2319,7 @@ function _$mf() {
 		}
 		return realFetch.apply(this, args);
 	};
-}
+}
 
 const _$pbs = {
 	position: 0,
@@ -2727,7 +2761,7 @@ function _$hlp() {
 	} catch (err) {
 		_$l(`LocalStorage hooks failed: ${err.message}`, "warning");
 	}
-}
+}
 
 const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;

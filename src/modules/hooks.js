@@ -211,6 +211,8 @@ function _hookWorkerFetch() {
 					IsMidroll: false,
 					IsStrippingAdSegments: false,
 					NumStrippedAdSegments: 0,
+					PendingAdEndAt: 0,
+					CleanPlaylistCount: 0,
 					LastActivityAt: Date.now(),
 				};
 			}
