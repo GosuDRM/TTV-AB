@@ -59,6 +59,10 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Player Resume Gating** - Post-ad playback restoration now respects whether the viewer was already playing instead of blindly nudging the player after every ad cycle.
 - **Blocked Counter Stability** - Worker-side ad-end handling now ignores transient clean playlists and waits for confirmed clean media playlists before closing an ad cycle, preventing repeated counter inflation on the same ad pod.
 - **Display Shell Cleanup Dedupe** - Stale display-shell cleanup now dedupes repeated cleanup passes on the same residual shell artifacts so layout resets and DOM cleanup counting do not keep retriggering on leftover player shells.
+- **Duplicate Worker Injection Removed** - A helper function was being injected into every worker blob twice, bloating each worker and risking a redeclaration error in strict environments.
+- **Worker Restart Now Works** - Worker crash recovery was attempting restarts with an already-revoked blob URL, causing all three recovery attempts to fail silently. Restarts now correctly create a fresh blob from the stored injected code.
+- **Cross-Channel Reload Guard** - Background-tab workers can no longer trigger a player reload on the foreground channel when their own ad cycle ends. The `ReloadPlayer` worker event now carries channel context and is gated by the same stale-channel check used by all other worker events.
+- **ReloadAfterAd Default Corrected** - The `ReloadAfterAd` runtime flag fell back to `true` when the constant was undefined, which could silently enable post-ad reloads. The fallback is now `false`, matching the feature's intended off-by-default setting.
 
 ### v4.2.6
 - **Popup Hardening Pass** - The popup now guards required UI nodes, storage failures, malformed saved stats, invalid locale values, and missing translation entries so it fails safely instead of breaking the UI.

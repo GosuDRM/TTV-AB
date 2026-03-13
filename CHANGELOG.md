@@ -9,9 +9,14 @@ All notable changes to TTV AB will be documented in this file.
 - **Post-Ad Resume Safety** - Player resume intent is now tracked across ad cycles so playback is only resumed when the viewer had actually been watching before Twitch interrupted the stream.
 - **Blocked Counter Inflation** - Worker ad-end detection now waits for confirmed clean media playlists instead of treating a transient clean-looking playlist as the end of the ad, which stops repeated `AdBlocked` increments during a single ad pod.
 - **Stale Display Shell Cleanup Churn** - Residual display-shell and mini-player artifacts are now signature-deduped during stale cleanup, preventing repeated DOM cleanup counting and redundant layout-reset passes on the same leftover shell.
+- **Duplicate Worker Helper Injection** - `_getStreamVariantInfo` was being serialised into the worker blob twice, doubling that code path in every spawned worker and risking a redeclaration error in strict-mode contexts. The duplicate injection has been removed.
+- **Worker Restart Failure** - Worker auto-restart was calling `new Worker(blobUrl)` with a URL that had already been revoked via `URL.revokeObjectURL`, causing all restart attempts to silently fail with a `SecurityError`. The injected code is now stored so each restart creates a fresh blob URL.
+- **Cross-Channel Player Reload** - `ReloadPlayer` messages from the worker carried no channel identifier, allowing a background tab's worker completing an ad cycle to trigger a player reload on a different foreground channel. The message now carries the channel name and the handler applies stale-channel gating consistent with other worker events.
+- **ReloadAfterAd Default** - The `ReloadAfterAd` state flag used `?? true` as its undefined-fallback, which would silently enable post-ad player reloads if the constant was ever absent. The fallback is now `?? false`, matching the constant's intended default.
 
 ### Changed
 - **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.7 release line.
+
 
 ## [4.2.6] - 2026-03-11
 
