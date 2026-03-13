@@ -328,6 +328,7 @@ function _hookWorker() {
                 ${_resetStreamAdState.toString()}
                 ${_getStreamInfoForPlaylist.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
+                ${_playlistHasMediaSegments.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}

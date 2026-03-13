@@ -1,11 +1,11 @@
-// TTV AB v4.2.6 - Twitch Ad Blocker
+// TTV AB v4.2.7 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.2.6",
-	INTERNAL_VERSION: 47,
+	VERSION: "4.2.7",
+	INTERNAL_VERSION: 48,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -1677,6 +1677,7 @@ function _$hw() {
                 ${_$rsa.toString()}
                 ${_$gsi.toString()}
                 ${_$hpa.toString()}
+                ${_playlistHasMediaSegments.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_$pm.toString()}
                 ${_$fb.toString()}
