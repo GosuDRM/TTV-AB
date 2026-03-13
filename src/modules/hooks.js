@@ -48,7 +48,7 @@ function _hookWorkerFetch() {
 				let variantUrl = lines[i + 1];
 				try {
 					variantUrl = new URL(variantUrl, usherUrl).href;
-				} catch {}
+				} catch { }
 				if (resolution) {
 					const resInfo = _getStreamVariantInfo(
 						attrs,
@@ -316,7 +316,6 @@ function _hookWorker() {
                 ${_getStreamVariantInfo.toString()}
                 ${_getStreamUrl.toString()}
                 ${_getFallbackResolution.toString()}
-                ${_getStreamVariantInfo.toString()}
                 ${_collectPlaybackAccessTokenSources.toString()}
                 ${_summarizePlaybackAccessTokenPayload.toString()}
                 ${_getPlaybackAccessTokenErrors.toString()}
@@ -397,6 +396,8 @@ function _hookWorker() {
 			super(blobUrl, opts);
 			setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
 
+			this.__ttvabInjectedCode = injectedCode;
+
 			const getCurrentPageChannel = () => {
 				const match = window.location.pathname.match(/^\/([^/?#]+)/);
 				const candidate = match?.[1] || null;
@@ -459,7 +460,7 @@ function _hookWorker() {
 									key: "FetchResponse",
 									value: responseData,
 								});
-							} catch {}
+							} catch { }
 						});
 						break;
 					case "AdBlocked":
@@ -499,7 +500,7 @@ function _hookWorker() {
 								!__TTVAB_STATE__.CurrentAdChannel ||
 								__TTVAB_STATE__.CurrentAdChannel !== channel ||
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
-									__TTVAB_STATE__.AdCycleStaleMs;
+								__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -634,7 +635,7 @@ function _hookWorker() {
 									}
 								});
 							});
-						} catch (_e) {}
+						} catch (_e) { }
 						if (typeof _resumePlayerAfterAdIfNeeded === "function") {
 							setTimeout(() => {
 								_resumePlayerAfterAdIfNeeded(e.data.channel || null);
@@ -648,9 +649,16 @@ function _hookWorker() {
 						}
 						break;
 					case "ReloadPlayer":
+						if (isStaleChannelEvent(e.data.channel || null)) {
+							_log(
+								`Ignoring stale ReloadPlayer event for ${e.data.channel}`,
+								"info",
+							);
+							break;
+						}
 						_log("Reloading player", "info");
 						if (typeof _doPlayerTask === "function") {
-							_doPlayerTask(false, true);
+							_doPlayerTask(false, true, { reason: "ad-recovery" });
 						}
 						break;
 				}
@@ -675,18 +683,22 @@ function _hookWorker() {
 					const delay = 2 ** restartAttempts * 500;
 					_log(
 						"Restarting worker in " +
-							delay / 1000 +
-							"s (attempt " +
-							restartAttempts +
-							"/" +
-							MAX_RESTART_ATTEMPTS +
-							")",
+						delay / 1000 +
+						"s (attempt " +
+						restartAttempts +
+						"/" +
+						MAX_RESTART_ATTEMPTS +
+						")",
 						"warning",
 					);
 
 					setTimeout(() => {
 						try {
-							new window.Worker(workerUrl, workerOpts);
+							const restartCode = this.__ttvabInjectedCode;
+							if (!restartCode) throw new Error("No injected code stored for restart");
+							const restartBlobUrl = URL.createObjectURL(new Blob([restartCode]));
+							new window.Worker(restartBlobUrl, workerOpts);
+							setTimeout(() => URL.revokeObjectURL(restartBlobUrl), 0);
 							_log("Worker restarted", "success");
 							restartAttempts = 0;
 						} catch (restartErr) {
@@ -714,14 +726,14 @@ function _hookWorker() {
 					value: __TTVAB_STATE__.PinnedBackupPlayerType,
 					channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 				});
-			} catch {}
+			} catch { }
 
 			if (_S.workers.length > 5) {
 				const oldWorker = _S.workers.shift();
 				try {
 					oldWorker.__TTVABIntentionallyTerminated = true;
 					oldWorker.terminate();
-				} catch {}
+				} catch { }
 			}
 		}
 	};
@@ -801,7 +813,7 @@ function _hookMainFetch() {
 					changed: true,
 				};
 			}
-		} catch {}
+		} catch { }
 
 		return { bodyText, changed: false };
 	};
@@ -840,7 +852,7 @@ function _hookMainFetch() {
 					);
 				}
 			}
-		} catch {}
+		} catch { }
 	};
 	const processGqlResponse = async (response) => {
 		if (!response || response.status !== 200) return;
@@ -858,9 +870,9 @@ function _hookMainFetch() {
 					if (typeof effectivePlayerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
 					}
-				} catch {}
+				} catch { }
 			}
-		} catch {}
+		} catch { }
 	};
 
 	window.fetch = async function (...args) {
@@ -890,7 +902,7 @@ function _hookMainFetch() {
 						} else if (effectiveRequest !== url || args.length !== 1) {
 							nextArgs = [effectiveRequest];
 						}
-					} catch (_e) {}
+					} catch (_e) { }
 				} else if (typeof opts?.body === "string") {
 					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
 					processGqlBody(rewritten.bodyText);
