@@ -2,6 +2,41 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.7] - 2026-03-13
+
+### Fixed
+- **Post-Ad Reload Loops** - Ad recovery no longer drops back into a native reload path right after `AdEnded`, preventing the player from immediately restarting the same ad cycle.
+- **Post-Ad Resume Safety** - Player resume intent is now tracked across ad cycles so playback is only resumed when the viewer had actually been watching before Twitch interrupted the stream.
+- **Blocked Counter Inflation** - Worker ad-end detection now waits for confirmed clean media playlists instead of treating a transient clean-looking playlist as the end of the ad, which stops repeated `AdBlocked` increments during a single ad pod.
+- **Stale Display Shell Cleanup Churn** - Residual display-shell and mini-player artifacts are now signature-deduped during stale cleanup, preventing repeated DOM cleanup counting and redundant layout-reset passes on the same leftover shell.
+- **Duplicate Worker Helper Injection** - `_getStreamVariantInfo` was being serialised into the worker blob twice, doubling that code path in every spawned worker and risking a redeclaration error in strict-mode contexts. The duplicate injection has been removed.
+- **Worker Restart Failure** - Worker auto-restart was calling `new Worker(blobUrl)` with a URL that had already been revoked via `URL.revokeObjectURL`, causing all restart attempts to silently fail with a `SecurityError`. The injected code is now stored so each restart creates a fresh blob URL.
+- **Cross-Channel Player Reload** - `ReloadPlayer` messages from the worker carried no channel identifier, allowing a background tab's worker completing an ad cycle to trigger a player reload on a different foreground channel. The message now carries the channel name and the handler applies stale-channel gating consistent with other worker events.
+- **ReloadAfterAd Default** - The `ReloadAfterAd` state flag used `?? true` as its undefined-fallback, which would silently enable post-ad player reloads if the constant was ever absent. The fallback is now `?? false`, matching the constant's intended default.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.7 release line.
+
+
+## [4.2.6] - 2026-03-11
+
+### Fixed
+- **Popup Safety Guards** - The popup now exits safely when required UI nodes are missing, guards startup/toggle/statistics storage failures, normalizes malformed persisted counters/stats, and recovers invalid saved locale values instead of breaking the UI.
+- **Popup Accessibility / Interaction Polish** - Improved keyboard and focus behavior for the stats toggle and achievement badges, restored native button/label semantics, stabilized helper status messaging, added chart/list semantics, localized live labels, and preserved reduced-motion behavior.
+- **Footer / Version Label Cleanup** - Footer link hover text and aria labels were tightened to shorter, more natural wording across locales, and the version badge now keeps both its static fallback text and localized accessibility label in sync.
+- **Achievement Rendering Hardening** - Popup achievement labels, progress, and next-achievement messaging now fall back safely when locale data is missing or malformed, while runtime toast rendering escapes dynamic text and avoids body/null timing crashes.
+- **Channel / Counter Normalization** - Popup and bridge logic now normalize channel names, channel totals, daily buckets, achievement lists, numeric-string counters, finite event counts, and malformed stats maps so persisted data is rendered consistently.
+- **Stats Write Reliability** - Repeated ad and DOM-ad increments are now batched more safely, retry paths are bounded, fresh storage state is re-read after failures, and queued deltas are dropped when stored totals reset so stale writes do not clobber good data.
+- **Bridge / Message Validation** - Bridge and page message handlers now require same-window trusted payload shapes, finite counts, boolean toggle state, and string achievement ids before mutating runtime or popup state.
+- **UI Toast Safety** - Welcome, donation, and achievement toasts now avoid duplicate scheduling/listeners, guard localStorage access, reuse existing nodes more safely, skip rendering when `document.body` is unavailable, and use opener-safe external links.
+- **Popup Stats Presentation** - Weekly chart bars now keep localized number formatting and explicit aria labels, collapse transitions are more stable, the panel resizes to content, and top-channel rows render through safe DOM APIs instead of string HTML.
+- **Locale Polish** - Popup copy and extension metadata across all shipped locales were reviewed and updated so phrasing, labels, and descriptions read more naturally.
+
+### Changed
+- **Build Validation Expansion** - `build.js` now validates popup element/link wiring, translation coverage and placeholders, shared counter/date/achievement definitions, locale-directory parity, canonical repo/homepage metadata, safe external-link behavior, and docs wording around privacy/storage metrics.
+- **Manifest / Metadata Sync** - The manifest now keeps localized action titles plus canonical homepage/short-name metadata, while package/package-lock/README/changelog/generated bundle metadata are enforced in sync for the 4.2.6 release line.
+- **Docs Refresh** - README and changelog release notes were expanded to better reflect the full 4.2.6 popup, stats, localization, and validation hardening work.
+
 ## [4.2.5] - 2026-03-11
 
 ### Fixed
@@ -36,6 +71,8 @@ All notable changes to TTV AB will be documented in this file.
 - **Worker Helper Injection Guard** - Build-time validation now fails if worker-injected helpers like `_getFallbackPromotionPolicy` or `_extractPlaybackAccessToken` are referenced without being bundled.
 - **Worker Helper Dependency Coverage** - Build validation now also checks the helper dependency chain used by playback-token parsing so worker bundles cannot reference newly introduced token helpers without injecting them too.
 - **Shared Definition Parity Checks** - Build-time guards now keep popup, bridge, UI, locales, README, changelog, and manifest metadata synchronized for achievements, translations, routes, versions, and documented counts.
+- **Localized Manifest Guardrails** - `build.js` now fails if `manifest.json` stops using `__MSG_extName__` / `__MSG_extDesc__`, protecting locale-backed extension naming from accidental plain-string drift.
+- **Popup Status Message Tuning** - Opening the popup or receiving remote state syncs now keeps the helper text stable on `Changes take effect instantly`; the temporary green/red status flash is reserved for user-initiated toggle changes.
 - **Native Player-Type Truth Source** - Native player-type state is now learned from token responses instead of request bodies, so observational `site` requests no longer overwrite the effective `popout` state.
 - **Message Payload Validation** - Page-side message listeners now require trusted same-window sources plus well-typed payloads for toggles, counts, channels, and achievement ids before mutating runtime state.
 - **Removed-Path Lockouts** - Build-time guards now fail if removed reload-after-ads, dead backup-tracking, stale stats, or dead worker-message identifiers reappear in live source.
@@ -929,4 +966,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Additional ad blocking methods
 - Statistics tracking
 
-<!-- test push noop -->

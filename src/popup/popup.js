@@ -16,29 +16,100 @@ document.addEventListener("DOMContentLoaded", () => {
 	const achievementsProgress = document.getElementById("achievementsProgress");
 	const nextAchievement = document.getElementById("nextAchievement");
 	const langSelector = document.getElementById("langSelector");
+	const langAutoOption = document.getElementById("langAutoOption");
 	const descriptionText = document.getElementById("descriptionText");
 	const versionText = document.getElementById("versionText");
 	const achievementsTitle = document.getElementById("achievementsTitle");
 	const footerText = document.getElementById("footerText");
+	const infoText = document.getElementById("infoText");
+	const donateButton = document.getElementById("donateBtn");
 	const repoLink = document.getElementById("repoLink");
+	const authorLink = document.getElementById("authorLink");
+	const requiredElements = {
+		toggle,
+		statusDot,
+		statusText,
+		adsBlockedCount,
+		domAdsBlockedCount,
+		timeSaved,
+		statsToggle,
+		statsPanel,
+		weeklyChart,
+		chartAvg,
+		channelList,
+		achievementsGrid,
+		achievementsProgress,
+		nextAchievement,
+		langSelector,
+		langAutoOption,
+		descriptionText,
+		versionText,
+		achievementsTitle,
+		footerText,
+		infoText,
+		donateButton,
+		repoLink,
+		authorLink,
+	};
+	for (const [name, element] of Object.entries(requiredElements)) {
+		if (element) continue;
+		console.error(`[TTV AB] Popup missing required element: ${name}`);
+		return;
+	}
 
 	const LANG_KEY = "ttvab_lang";
 
-	function getLang() {
-		const saved = localStorage.getItem(LANG_KEY);
-		if (saved && saved !== "auto" && TRANSLATIONS[saved]) return saved;
-		const browserLang = navigator.language;
-		if (browserLang.startsWith("zh")) {
-			return browserLang.includes("TW") || browserLang.includes("Hant")
-				? "zh_TW"
-				: "zh_CN";
+	function getStoredLanguage() {
+		try {
+			return localStorage.getItem(LANG_KEY);
+		} catch (error) {
+			console.error("[TTV AB] Popup language read error:", error);
+			return null;
 		}
-		return browserLang.split("-")[0];
+	}
+
+	function setStoredLanguage(language) {
+		try {
+			localStorage.setItem(LANG_KEY, language);
+			return true;
+		} catch (error) {
+			console.error("[TTV AB] Popup language write error:", error);
+			return false;
+		}
+	}
+
+	function normalizeLanguage(language) {
+		const candidate = String(language || "").trim();
+		if (!candidate || candidate.toLowerCase() === "auto") return "en";
+		const normalizedCandidate = candidate.replace(/-/g, "_");
+		if (TRANSLATIONS[normalizedCandidate]) {
+			return normalizedCandidate;
+		}
+		const lowerCandidate = candidate.toLowerCase();
+		if (lowerCandidate.startsWith("zh")) {
+			const normalized =
+				lowerCandidate.includes("tw") || lowerCandidate.includes("hant")
+					? "zh_TW"
+					: "zh_CN";
+			return TRANSLATIONS[normalized] ? normalized : "en";
+		}
+		const base = lowerCandidate.split(/[-_]/)[0];
+		return TRANSLATIONS[base] ? base : "en";
+	}
+
+	function getLang() {
+		const saved = getStoredLanguage();
+		if (saved && saved !== "auto") {
+			return normalizeLanguage(saved);
+		}
+		return normalizeLanguage(navigator.language);
 	}
 
 	function getLocaleTag() {
 		const lang = getLang();
-		return lang === "auto" ? navigator.language : lang.replace("_", "-");
+		return lang === "auto"
+			? normalizeLanguage(navigator.language).replace("_", "-")
+			: lang.replace("_", "-");
 	}
 
 	function formatTemplate(template, values) {
@@ -83,31 +154,82 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function getAchievementTranslation(id) {
 		const t = getTranslations();
-		return t.achievementsMap?.[id] || TRANSLATIONS.en.achievementsMap[id];
+		return (
+			t.achievementsMap?.[id] ||
+			TRANSLATIONS.en.achievementsMap[id] || {
+				name: String(id || "Achievement"),
+				desc: "",
+			}
+		);
 	}
 
 	function applyTranslations(lang) {
 		const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+		document.documentElement.lang = String((lang || "en").replace("_", "-"));
+		channelList.setAttribute(
+			"aria-label",
+			String(t.topChannels ?? "Top Channels"),
+		);
 		document.querySelectorAll("[data-i18n]").forEach((el) => {
 			const key = el.dataset.i18n;
 			if (typeof key === "string" && Object.hasOwn(t, key)) {
 				el.textContent = String(t[key]);
 			}
 		});
-		descriptionText.textContent = t.descriptionText;
-		const donateButton = document.getElementById("donateBtn");
-		if (donateButton) donateButton.title = t.supportDeveloper;
-		langSelector.title = t.language;
-		achievementsTitle.textContent = `🏆 ${t.achievements}`;
-		footerText.textContent = t.footerBy;
+		descriptionText.textContent = String(t.descriptionText ?? "");
+		donateButton.title = String(t.supportDeveloper ?? "Support GosuDRM");
+		donateButton.setAttribute(
+			"aria-label",
+			String(t.supportDeveloper ?? "Support GosuDRM"),
+		);
+		langSelector.title = String(t.language ?? "Language");
+		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
+		langSelector.setAttribute("aria-describedby", "descriptionText");
+		langAutoOption.textContent = `🌐 ${String(t.autoLanguage ?? "Auto")}`;
+		const accessibleVersion = String(versionText.textContent || "")
+			.replace(/^v/i, "")
+			.trim();
+		versionText.setAttribute(
+			"aria-label",
+			formatTemplate(String(t.versionLabel ?? "Version {version}"), {
+				version: accessibleVersion,
+			}),
+		);
+		statsToggle.setAttribute(
+			"aria-label",
+			String(t.statistics ?? "Statistics"),
+		);
+		toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
+		achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
+		footerText.textContent = String(t.footerBy ?? " — by ");
+		const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
+		repoLink.title = repoLabel;
+		repoLink.setAttribute("aria-label", repoLabel);
+		const authorLabel = String(t.authorLinkLabel ?? "Open GosuDRM on GitHub");
+		authorLink.title = authorLabel;
+		authorLink.setAttribute("aria-label", authorLabel);
 	}
 
-	const savedLang = localStorage.getItem(LANG_KEY);
+	const savedLang = getStoredLanguage();
+	const normalizedSavedLang =
+		savedLang && savedLang !== "auto"
+			? normalizeLanguage(savedLang)
+			: savedLang;
 	const hasValidSavedLang =
-		savedLang === "auto" || !savedLang || TRANSLATIONS[savedLang];
-	const currentLang = hasValidSavedLang ? savedLang || "auto" : "auto";
+		normalizedSavedLang === "auto" ||
+		!normalizedSavedLang ||
+		TRANSLATIONS[normalizedSavedLang];
+	const currentLang = hasValidSavedLang
+		? normalizedSavedLang || "auto"
+		: "auto";
 	if (!hasValidSavedLang) {
-		localStorage.setItem(LANG_KEY, "auto");
+		setStoredLanguage("auto");
+	} else if (
+		normalizedSavedLang &&
+		normalizedSavedLang !== savedLang &&
+		normalizedSavedLang !== "auto"
+	) {
+		setStoredLanguage(normalizedSavedLang);
 	}
 	langSelector.value = currentLang;
 	applyTranslations(getLang());
@@ -116,24 +238,27 @@ document.addEventListener("DOMContentLoaded", () => {
 		const manifest = chrome.runtime?.getManifest?.();
 		if (manifest?.version && versionText) {
 			versionText.textContent = `v${manifest.version}`;
+			versionText.setAttribute(
+				"aria-label",
+				formatTemplate(
+					String(getTranslations().versionLabel ?? "Version {version}"),
+					{
+						version: manifest.version,
+					},
+				),
+			);
 		}
-	} catch {}
+	} catch (error) {
+		console.error("[TTV AB] Popup manifest read error:", error);
+	}
 
 	langSelector.addEventListener("change", (e) => {
-		const lang = e.target.value;
-		localStorage.setItem(LANG_KEY, lang);
+		const nextSelector = e.currentTarget;
+		if (!(nextSelector instanceof HTMLSelectElement)) return;
+		const lang = nextSelector.value;
+		setStoredLanguage(lang);
 		const effectiveLang =
-			lang === "auto"
-				? (() => {
-						const browserLang = navigator.language;
-						if (browserLang.startsWith("zh")) {
-							return browserLang.includes("TW") || browserLang.includes("Hant")
-								? "zh_TW"
-								: "zh_CN";
-						}
-						return browserLang.split("-")[0];
-					})()
-				: lang;
+			lang === "auto" ? normalizeLanguage(navigator.language) : lang;
 		applyTranslations(effectiveLang);
 		loadStatistics();
 		updateStatus(toggle.checked);
@@ -229,16 +354,73 @@ document.addEventListener("DOMContentLoaded", () => {
 			: 0;
 	}
 
+	function normalizeChannelName(value) {
+		if (typeof value !== "string") return null;
+		const trimmed = value.trim().toLowerCase();
+		return /^[a-z0-9_]{1,25}$/.test(trimmed) ? trimmed : null;
+	}
+
+	function isPlainObject(value) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) {
+			return false;
+		}
+		const prototype = Object.getPrototypeOf(value);
+		return prototype === Object.prototype || prototype === null;
+	}
+
+	function createChannelsMap() {
+		return Object.create(null);
+	}
+
+	function createDailyStatsMap() {
+		return Object.create(null);
+	}
+
+	function normalizeChannelsMap(value) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) {
+			return createChannelsMap();
+		}
+		const normalized = createChannelsMap();
+		for (const [channelName, count] of Object.entries(value)) {
+			const safeChannel = normalizeChannelName(channelName);
+			if (!safeChannel) continue;
+			normalized[safeChannel] =
+				normalizeCount(normalized[safeChannel]) + normalizeCount(count);
+		}
+		return normalized;
+	}
+
+	function normalizeDailyStatsMap(value) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) {
+			return createDailyStatsMap();
+		}
+		const normalized = createDailyStatsMap();
+		for (const [dateKey, entry] of Object.entries(value)) {
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) continue;
+			const safeEntry = isPlainObject(entry) ? entry : {};
+			normalized[dateKey] = {
+				ads: normalizeCount(safeEntry.ads),
+				domAds: normalizeCount(safeEntry.domAds),
+			};
+		}
+		return normalized;
+	}
+
 	function updateTimeSaved(adsCount) {
 		const seconds = normalizeCount(adsCount) * AVG_AD_DURATION;
 		timeSaved.textContent = formatTimeSaved(seconds);
 	}
 
 	function getLast7Days() {
+		const startOfWeek = new Date();
+		startOfWeek.setHours(0, 0, 0, 0);
+		const dayOfWeek = startOfWeek.getDay();
+		const daysSinceMonday = (dayOfWeek + 6) % 7;
+		startOfWeek.setDate(startOfWeek.getDate() - daysSinceMonday);
 		const days = [];
-		for (let i = 6; i >= 0; i--) {
-			const d = new Date();
-			d.setDate(d.getDate() - i);
+		for (let i = 0; i < 7; i++) {
+			const d = new Date(startOfWeek);
+			d.setDate(startOfWeek.getDate() + i);
 			days.push(getDateKey(d));
 		}
 		return days;
@@ -251,64 +433,95 @@ document.addEventListener("DOMContentLoaded", () => {
 				: {};
 		const t = getTranslations();
 		const days = getLast7Days();
+		const todayKey = getDateKey();
 		const parsedDays = days.map((dayKey) => parseDateKey(dayKey));
 		const values = days.map((d) => {
+			if (d > todayKey) return 0;
 			const ads = normalizeCount(safeDailyData[d]?.ads);
 			const domAds = normalizeCount(safeDailyData[d]?.domAds);
 			return ads + domAds;
 		});
 		const max = Math.max(...values, 1);
-		const avg = Math.round(values.reduce((a, b) => a + b, 0) / 7);
+		const completedDayCount = Math.max(
+			1,
+			days.filter((dayKey) => dayKey <= todayKey).length,
+		);
+		const avg = Math.round(
+			values.reduce((a, b) => a + b, 0) / completedDayCount,
+		);
 		const formatter = new Intl.DateTimeFormat(getLocaleTag(), {
 			weekday: "short",
 		});
 
-		weeklyChart.innerHTML = values
-			.map((v, i) => {
-				const height = Math.max((v / max) * 100, 8);
-				const dayName = parsedDays[i] ? formatter.format(parsedDays[i]) : "?";
-				const safeDayName = escapeHtml(dayName);
-				return `<div class="chart-bar" style="height: ${height}%;" title="${safeDayName}: ${v}"></div>`;
-			})
-			.join("");
+		weeklyChart.replaceChildren();
+		for (const [index, value] of values.entries()) {
+			const height = value > 0 ? Math.max((value / max) * 100, 8) : 0;
+			const dayName = parsedDays[index]
+				? formatter.format(parsedDays[index])
+				: "?";
+			const bar = document.createElement("div");
+			bar.className = "chart-bar";
+			bar.style.height = `${height}%`;
+			const summary = `${dayName}: ${formatNumber(value)}`;
+			bar.title = summary;
+			bar.setAttribute("role", "img");
+			bar.setAttribute("aria-label", summary);
+			weeklyChart.append(bar);
+		}
 
-		chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), { avg });
+		chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), {
+			avg: formatNumber(avg),
+		});
 	}
 
-	function escapeHtml(str) {
-		const div = document.createElement("div");
-		div.textContent = str;
-		return div.innerHTML;
+	function createChannelItem(rank, name, countText) {
+		const item = document.createElement("div");
+		item.className = "channel-item";
+		item.setAttribute("role", "listitem");
+		item.setAttribute("aria-label", `${rank} ${name}: ${countText}`.trim());
+
+		const left = document.createElement("span");
+		const rankSpan = document.createElement("span");
+		rankSpan.className = "channel-rank";
+		rankSpan.textContent = rank;
+		const nameSpan = document.createElement("span");
+		nameSpan.className = "channel-name";
+		nameSpan.textContent = name;
+		nameSpan.title = name;
+		nameSpan.setAttribute("aria-label", name);
+		left.append(rankSpan, nameSpan);
+
+		const count = document.createElement("span");
+		count.className = "channel-count";
+		count.textContent = countText;
+
+		item.append(left, count);
+		return item;
 	}
 
 	function renderChannels(channelsData) {
 		const entries = Object.entries(channelsData || {}).map(
 			([channel, count]) => [channel, normalizeCount(count)],
 		);
+		channelList.replaceChildren();
 		if (entries.length === 0) {
 			const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
-			channelList.innerHTML = `
-                <div class="channel-item">
-                    <span><span class="channel-rank">-</span><span class="channel-name">${escapeHtml(String(t.noDataYet ?? ""))}</span></span>
-                    <span class="channel-count">-</span>
-                </div>
-            `;
+			channelList.append(
+				createChannelItem("-", String(t.noDataYet ?? ""), "-"),
+			);
 			return;
 		}
 
-		entries.sort((a, b) => b[1] - a[1]);
+		entries.sort((a, b) => {
+			const countDiff = b[1] - a[1];
+			return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
+		});
 		const top5 = entries.slice(0, 5);
-
-		channelList.innerHTML = top5
-			.map(
-				(entry, i) => `
-            <div class="channel-item">
-                <span><span class="channel-rank">${i + 1}.</span><span class="channel-name">${escapeHtml(entry[0])}</span></span>
-                <span class="channel-count">${entry[1].toLocaleString()}</span>
-            </div>
-        `,
-			)
-			.join("");
+		for (const [index, entry] of top5.entries()) {
+			channelList.append(
+				createChannelItem(`${index + 1}.`, entry[0], formatNumber(entry[1])),
+			);
+		}
 	}
 
 	function renderAchievements(
@@ -333,7 +546,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			if (!badges[i]) return;
 			const achievementText = getAchievementTranslation(ach.id);
 			const isUnlocked = safeUnlocked.includes(ach.id);
-			badges[i].title = `${achievementText.name} - ${achievementText.desc}`;
+			const badgeLabel = `${achievementText.name} - ${achievementText.desc}`;
+			badges[i].title = badgeLabel;
+			badges[i].setAttribute("aria-label", badgeLabel);
+			badges[i].setAttribute("aria-pressed", String(isUnlocked));
 			if (isUnlocked) {
 				badges[i].classList.add("unlocked");
 				unlockedCount++;
@@ -389,22 +605,11 @@ document.addEventListener("DOMContentLoaded", () => {
 					);
 				}
 				const safeResult = result || {};
-				const stats =
-					safeResult.ttvStats && typeof safeResult.ttvStats === "object"
-						? safeResult.ttvStats
-						: {};
-				const daily =
-					stats.daily &&
-					typeof stats.daily === "object" &&
-					!Array.isArray(stats.daily)
-						? stats.daily
-						: {};
-				const channels =
-					stats.channels &&
-					typeof stats.channels === "object" &&
-					!Array.isArray(stats.channels)
-						? stats.channels
-						: {};
+				const stats = isPlainObject(safeResult.ttvStats)
+					? safeResult.ttvStats
+					: {};
+				const daily = normalizeDailyStatsMap(stats.daily);
+				const channels = normalizeChannelsMap(stats.channels);
 				const achievements = Array.isArray(stats.achievements)
 					? [
 							...new Set(
@@ -419,6 +624,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				renderChart(daily);
 				renderChannels(channels);
 				renderAchievements(achievements, adsCount, domAdsCount, channelCount);
+				syncExpandedStatsPanelHeight();
 			},
 		);
 	}
@@ -435,7 +641,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			const safeResult = result || {};
 			const enabled = safeResult.ttvAdblockEnabled !== false;
 			toggle.checked = enabled;
-			updateStatus(enabled);
+			updateStatus(enabled, false);
 
 			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
 			const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
@@ -452,7 +658,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		if (changes.ttvAdblockEnabled) {
 			const enabled = changes.ttvAdblockEnabled.newValue !== false;
 			toggle.checked = enabled;
-			updateStatus(enabled);
+			updateStatus(enabled, false);
 		}
 		if (changes.ttvAdsBlocked) {
 			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
@@ -468,10 +674,17 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	});
 
+	let toggleWriteInFlight = false;
+
 	toggle.addEventListener("change", () => {
+		if (toggleWriteInFlight) return;
+		toggleWriteInFlight = true;
+		toggle.disabled = true;
 		const enabled = toggle.checked;
 		const previousEnabled = !enabled;
 		chrome.storage.local.set({ ttvAdblockEnabled: enabled }, () => {
+			toggleWriteInFlight = false;
+			toggle.disabled = false;
 			if (chrome.runtime.lastError) {
 				console.error(
 					"[TTV AB] Popup toggle write error:",
@@ -481,38 +694,119 @@ document.addEventListener("DOMContentLoaded", () => {
 				updateStatus(previousEnabled);
 				return;
 			}
-			updateStatus(enabled);
+			updateStatus(enabled, true);
 		});
 	});
 
+	let statsTransitionCleanup = null;
+
+	function syncExpandedStatsPanelHeight() {
+		if (statsPanel.hidden || !statsPanel.classList.contains("expanded")) return;
+		statsPanel.style.maxHeight = `${statsPanel.scrollHeight}px`;
+	}
+
+	function setStatsPanelExpanded(isExpanded) {
+		if (typeof statsTransitionCleanup === "function") {
+			statsTransitionCleanup();
+			statsTransitionCleanup = null;
+		}
+		if (isExpanded) {
+			statsPanel.hidden = false;
+			statsPanel.style.maxHeight = "0px";
+			statsPanel.classList.add("expanded");
+			statsPanel.setAttribute("aria-hidden", "false");
+			statsToggle.classList.add("expanded");
+			statsToggle.setAttribute("aria-expanded", "true");
+			requestAnimationFrame(() => {
+				syncExpandedStatsPanelHeight();
+			});
+			return;
+		}
+		statsPanel.style.maxHeight = `${statsPanel.scrollHeight}px`;
+		statsPanel.classList.remove("expanded");
+		statsPanel.setAttribute("aria-hidden", "true");
+		statsToggle.classList.remove("expanded");
+		statsToggle.setAttribute("aria-expanded", "false");
+		if (statsPanel.contains(document.activeElement)) {
+			statsToggle.focus();
+		}
+		requestAnimationFrame(() => {
+			statsPanel.style.maxHeight = "0px";
+		});
+		const finalizeCollapse = () => {
+			statsPanel.hidden = true;
+			statsPanel.removeEventListener("transitionend", handleTransitionEnd);
+			if (collapseFallbackTimeout) {
+				clearTimeout(collapseFallbackTimeout);
+				collapseFallbackTimeout = null;
+			}
+			statsTransitionCleanup = null;
+		};
+		const handleTransitionEnd = (event) => {
+			if (event.target !== statsPanel || event.propertyName !== "max-height") {
+				return;
+			}
+			finalizeCollapse();
+		};
+		let collapseFallbackTimeout = setTimeout(() => {
+			finalizeCollapse();
+		}, 250);
+		statsTransitionCleanup = () => {
+			statsPanel.removeEventListener("transitionend", handleTransitionEnd);
+			if (collapseFallbackTimeout) {
+				clearTimeout(collapseFallbackTimeout);
+				collapseFallbackTimeout = null;
+			}
+		};
+		statsPanel.addEventListener("transitionend", handleTransitionEnd);
+	}
+
+	function toggleStatsPanel() {
+		const isExpanded = !statsPanel.classList.contains("expanded");
+		setStatsPanelExpanded(isExpanded);
+	}
+
 	statsToggle.addEventListener("click", () => {
-		statsToggle.classList.toggle("expanded");
-		statsPanel.classList.toggle("expanded");
+		toggleStatsPanel();
 	});
 
 	let statusTimeout = null;
+	let transientStatusState = null;
 
-	function updateStatus(enabled) {
-		const info = document.querySelector(".info");
+	function renderStatusHelperText(translations) {
+		if (transientStatusState === null) {
+			infoText.textContent = translations.changesInstantly;
+			infoText.style.color = "#666";
+			return;
+		}
+		infoText.textContent = `${translations.adBlocking}: ${transientStatusState ? translations.active : translations.inactive}`;
+		infoText.style.color = transientStatusState ? "#4CAF50" : "#f44336";
+	}
+
+	function updateStatus(enabled, showTransientMessage = false) {
 		const t = getTranslations();
-
-		if (enabled) {
-			statusDot.classList.remove("disabled");
-			statusText.textContent = t.active;
-			info.textContent = `${t.adBlocking}: ${t.active}`;
-			info.style.color = "#4CAF50";
-		} else {
-			statusDot.classList.add("disabled");
-			statusText.textContent = t.inactive;
-			info.textContent = `${t.adBlocking}: ${t.inactive}`;
-			info.style.color = "#f44336";
+		const prefersReducedMotion =
+			window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+		infoText.style.transition = prefersReducedMotion
+			? "none"
+			: "color 0.3s ease";
+		statusDot.classList.toggle("disabled", !enabled);
+		statusText.textContent = enabled ? t.active : t.inactive;
+		if (!showTransientMessage) {
+			renderStatusHelperText(t);
+			return;
 		}
 
-		info.style.transition = "color 0.3s ease";
-		if (statusTimeout) clearTimeout(statusTimeout);
+		if (statusTimeout) {
+			clearTimeout(statusTimeout);
+			statusTimeout = null;
+		}
+		transientStatusState = enabled;
+		renderStatusHelperText(t);
 		statusTimeout = setTimeout(() => {
-			info.textContent = t.changesInstantly;
-			info.style.color = "#666";
+			transientStatusState = null;
+			renderStatusHelperText(getTranslations());
+			statusTimeout = null;
 		}, 1500);
 	}
 
@@ -524,35 +818,5 @@ document.addEventListener("DOMContentLoaded", () => {
 		element.textContent = formatNumber(normalizeCount(newValue));
 		element.classList.add("pulse");
 		setTimeout(() => element.classList.remove("pulse"), 200);
-	}
-
-	const donateBtn = document.getElementById("donateBtn");
-	if (donateBtn) {
-		donateBtn.addEventListener("click", () => {
-			window.open("https://ko-fi.com/gosudrm", "_blank", "noopener,noreferrer");
-		});
-	}
-
-	if (repoLink) {
-		repoLink.addEventListener("click", (e) => {
-			e.preventDefault();
-			window.open(
-				"https://github.com/GosuDRM/TTV-AB",
-				"_blank",
-				"noopener,noreferrer",
-			);
-		});
-	}
-
-	const authorLink = document.getElementById("authorLink");
-	if (authorLink) {
-		authorLink.addEventListener("click", (e) => {
-			e.preventDefault();
-			window.open(
-				"https://github.com/GosuDRM",
-				"_blank",
-				"noopener,noreferrer",
-			);
-		});
 	}
 });

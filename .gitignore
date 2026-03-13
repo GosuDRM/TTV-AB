@@ -34,3 +34,6 @@ temp/
 # Local tooling
 tools/
 .openclaw/
+
+# Chrome repo reference (not part of this extension)
+main_repo/

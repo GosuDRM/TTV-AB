@@ -3,6 +3,26 @@
 const _REMINDER_KEY = "ttvab_last_reminder";
 const _REMINDER_INTERVAL = 1209600000;
 const _FIRST_RUN_KEY = "ttvab_first_run_shown";
+const _UI_FLAGS_KEY = "__TTVAB_UI_FLAGS__";
+
+function _getUiStorageItem(key) {
+	try {
+		return localStorage.getItem(key);
+	} catch (e) {
+		_log(`UI storage read error for ${key}: ${e.message}`, "error");
+		return null;
+	}
+}
+
+function _setUiStorageItem(key, value) {
+	try {
+		localStorage.setItem(key, value);
+		return true;
+	} catch (e) {
+		_log(`UI storage write error for ${key}: ${e.message}`, "error");
+		return false;
+	}
+}
 
 function _escapeUiText(value) {
 	const div = document.createElement("div");
@@ -10,25 +30,44 @@ function _escapeUiText(value) {
 	return div.innerHTML;
 }
 
+function _getUiFlags() {
+	const existing = window[_UI_FLAGS_KEY];
+	if (existing && typeof existing === "object") {
+		return existing;
+	}
+	const flags = {
+		achievementListenerInitialized: false,
+		welcomeScheduled: false,
+		donationScheduled: false,
+	};
+	window[_UI_FLAGS_KEY] = flags;
+	return flags;
+}
+
 function _showDonation() {
 	try {
-		const lastReminder = localStorage.getItem(_REMINDER_KEY);
+		const uiFlags = _getUiFlags();
+		if (uiFlags.donationScheduled) return;
+		const lastReminder = _getUiStorageItem(_REMINDER_KEY);
 		const now = Date.now();
 
 		if (!lastReminder) {
-			localStorage.setItem(_REMINDER_KEY, now.toString());
+			_setUiStorageItem(_REMINDER_KEY, now.toString());
 			return;
 		}
 
 		const lastReminderMs = Number.parseInt(lastReminder, 10);
 		if (!Number.isFinite(lastReminderMs) || lastReminderMs > now) {
-			localStorage.setItem(_REMINDER_KEY, now.toString());
+			_setUiStorageItem(_REMINDER_KEY, now.toString());
 			return;
 		}
 
 		if (now - lastReminderMs < _REMINDER_INTERVAL) return;
 
+		uiFlags.donationScheduled = true;
 		setTimeout(() => {
+			uiFlags.donationScheduled = false;
+			if (document.getElementById("ttvab-reminder") || !document.body) return;
 			const toast = document.createElement("div");
 			toast.id = "ttvab-reminder";
 			toast.innerHTML = `
@@ -47,23 +86,28 @@ function _showDonation() {
             `;
 
 			document.body.appendChild(toast);
-			localStorage.setItem(_REMINDER_KEY, now.toString());
+			_setUiStorageItem(_REMINDER_KEY, now.toString());
 
-			document.getElementById("ttvab-reminder-close").onclick = () =>
-				toast.remove();
-			document.getElementById("ttvab-reminder-btn").onclick = () => {
-				window.open(
-					"https://ko-fi.com/gosudrm",
-					"_blank",
-					"noopener,noreferrer",
-				);
-				if (toast.isConnected) {
-					toast.remove();
-				}
-			};
+			const reminderClose = toast.querySelector("#ttvab-reminder-close");
+			if (reminderClose) {
+				reminderClose.onclick = () => toast.remove();
+			}
+			const reminderButton = toast.querySelector("#ttvab-reminder-btn");
+			if (reminderButton) {
+				reminderButton.onclick = () => {
+					window.open(
+						"https://ko-fi.com/gosudrm",
+						"_blank",
+						"noopener,noreferrer",
+					);
+					if (toast.isConnected) {
+						toast.remove();
+					}
+				};
+			}
 
 			setTimeout(() => {
-				if (document.getElementById("ttvab-reminder")) {
+				if (toast.isConnected) {
 					toast.style.animation = "ttvab-slide .3s ease reverse";
 					setTimeout(() => toast.remove(), 300);
 				}
@@ -76,9 +120,13 @@ function _showDonation() {
 
 function _showWelcome() {
 	try {
-		if (localStorage.getItem(_FIRST_RUN_KEY)) return;
+		const uiFlags = _getUiFlags();
+		if (uiFlags.welcomeScheduled || _getUiStorageItem(_FIRST_RUN_KEY)) return;
 
+		uiFlags.welcomeScheduled = true;
 		setTimeout(() => {
+			uiFlags.welcomeScheduled = false;
+			if (document.getElementById("ttvab-welcome") || !document.body) return;
 			const toast = document.createElement("div");
 			toast.id = "ttvab-welcome";
 			toast.innerHTML = `
@@ -102,17 +150,20 @@ function _showWelcome() {
             `;
 
 			document.body.appendChild(toast);
-			localStorage.setItem(_FIRST_RUN_KEY, "true");
+			_setUiStorageItem(_FIRST_RUN_KEY, "true");
 
 			const closeHandler = () => {
 				toast.style.animation = "ttvab-welcome .3s ease reverse";
 				setTimeout(() => toast.remove(), 300);
 			};
 
-			document.getElementById("ttvab-welcome-close").onclick = closeHandler;
+			const welcomeClose = toast.querySelector("#ttvab-welcome-close");
+			if (welcomeClose) {
+				welcomeClose.onclick = closeHandler;
+			}
 
 			setTimeout(() => {
-				if (document.getElementById("ttvab-welcome")) closeHandler();
+				if (toast.isConnected) closeHandler();
 			}, 10000);
 		}, 2000);
 	} catch (e) {
@@ -147,41 +198,76 @@ const _ACHIEVEMENT_INFO = {
 	},
 };
 
+function _ensureAchievementToastStyles() {
+	if (document.getElementById("ttvab-achievement-style")) return;
+	const style = document.createElement("style");
+	style.id = "ttvab-achievement-style";
+	style.textContent =
+		"#ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}" +
+		"@keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}" +
+		"@keyframes ttvab-ach-shine{0%{background-position:-200% center}100%{background-position:200% center}}" +
+		"#ttvab-achievement .ach-icon{font-size:40px;animation:ttvab-ach-bounce 1s ease infinite}" +
+		"@keyframes ttvab-ach-bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}" +
+		"#ttvab-achievement .ach-content{display:flex;flex-direction:column;gap:2px}" +
+		"#ttvab-achievement .ach-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#9146FF;font-weight:600}" +
+		"#ttvab-achievement .ach-name{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#9146FF 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:ttvab-ach-shine 2s linear infinite}" +
+		"#ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}";
+	document.head?.appendChild(style);
+}
+
+function _getTrustedUiMessage(event) {
+	if (
+		event.source !== window ||
+		event.origin !== window.location.origin ||
+		!event.data ||
+		typeof event.data !== "object" ||
+		Array.isArray(event.data) ||
+		typeof event.data.type !== "string"
+	) {
+		return null;
+	}
+	return event.data;
+}
+
 function _showAchievementUnlocked(achievementId) {
 	try {
 		const ach = _ACHIEVEMENT_INFO[achievementId];
 		if (!ach) return;
 
+		if (!document.body) return;
+		_ensureAchievementToastStyles();
 		const existing = document.getElementById("ttvab-achievement");
 		if (existing) existing.remove();
 
 		const toast = document.createElement("div");
 		toast.id = "ttvab-achievement";
-		toast.innerHTML = `
-            <style>
-                #ttvab-achievement{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:#fff;padding:16px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 20px rgba(145,70,255,.3);z-index:9999999;animation:ttvab-ach-pop .5s cubic-bezier(0.34,1.56,0.64,1);border:2px solid rgba(145,70,255,.5);display:flex;align-items:center;gap:16px}
-                @keyframes ttvab-ach-pop{from{opacity:0;transform:translateX(-50%) scale(.5) translateY(-20px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
-                @keyframes ttvab-ach-shine{0%{background-position:-200% center}100%{background-position:200% center}}
-                #ttvab-achievement .ach-icon{font-size:40px;animation:ttvab-ach-bounce 1s ease infinite}
-                @keyframes ttvab-ach-bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
-                #ttvab-achievement .ach-content{display:flex;flex-direction:column;gap:2px}
-                #ttvab-achievement .ach-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#9146FF;font-weight:600}
-                #ttvab-achievement .ach-name{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#9146FF 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:ttvab-ach-shine 2s linear infinite}
-                #ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}
-            </style>
-            <div class="ach-icon">${_escapeUiText(ach.icon)}</div>
-            <div class="ach-content">
-                <div class="ach-label">🏆 Achievement Unlocked!</div>
-                <div class="ach-name">${_escapeUiText(ach.name)}</div>
-                <div class="ach-desc">${_escapeUiText(ach.desc)}</div>
-            </div>
-        `;
+		const icon = document.createElement("div");
+		icon.className = "ach-icon";
+		icon.textContent = String(ach.icon ?? "");
+
+		const content = document.createElement("div");
+		content.className = "ach-content";
+
+		const label = document.createElement("div");
+		label.className = "ach-label";
+		label.textContent = "Achievement Unlocked!";
+
+		const name = document.createElement("div");
+		name.className = "ach-name";
+		name.textContent = String(ach.name ?? "");
+
+		const desc = document.createElement("div");
+		desc.className = "ach-desc";
+		desc.textContent = String(ach.desc ?? "");
+
+		content.append(label, name, desc);
+		toast.append(icon, content);
 
 		document.body.appendChild(toast);
 		_log(`Achievement unlocked: ${ach.name}`, "success");
 
 		setTimeout(() => {
-			if (document.getElementById("ttvab-achievement")) {
+			if (toast.isConnected) {
 				toast.style.animation = "ttvab-ach-pop .5s ease reverse";
 				setTimeout(() => toast.remove(), 500);
 			}
@@ -192,13 +278,19 @@ function _showAchievementUnlocked(achievementId) {
 }
 
 function _initAchievementListener() {
+	const uiFlags = _getUiFlags();
+	if (uiFlags.achievementListenerInitialized) return;
+	uiFlags.achievementListenerInitialized = true;
 	window.addEventListener("message", (e) => {
-		if (e.source !== window) return;
-		if (
-			e.data?.type === "ttvab-achievement-unlocked" &&
-			typeof e.data.detail?.id === "string"
-		) {
-			_showAchievementUnlocked(e.data.detail.id);
-		}
+		const message = _getTrustedUiMessage(e);
+		if (!message || message.type !== "ttvab-achievement-unlocked") return;
+		const detail =
+			message.detail &&
+			typeof message.detail === "object" &&
+			!Array.isArray(message.detail)
+				? message.detail
+				: null;
+		if (typeof detail?.id !== "string") return;
+		_showAchievementUnlocked(detail.id);
 	});
 }

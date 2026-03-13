@@ -17,6 +17,8 @@ function _resetStreamAdState(info) {
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
 	info.NumStrippedAdSegments = 0;
+	info.PendingAdEndAt = 0;
+	info.CleanPlaylistCount = 0;
 
 	return {
 		wasUsingModifiedM3U8,
@@ -61,6 +63,10 @@ function _hasPlaylistAdMarkers(text) {
 	);
 }
 
+function _playlistHasMediaSegments(text) {
+	return typeof text === "string" && text.includes("#EXTINF");
+}
+
 async function _processM3U8(url, text, realFetch) {
 	let info = _getStreamInfoForPlaylist(url);
 	if (!info) {
@@ -98,6 +104,8 @@ async function _processM3U8(url, text, realFetch) {
 			IsMidroll: false,
 			IsStrippingAdSegments: false,
 			NumStrippedAdSegments: 0,
+			PendingAdEndAt: 0,
+			CleanPlaylistCount: 0,
 			LastActivityAt: Date.now(),
 		};
 		__TTVAB_STATE__.StreamInfos[channel] = info;
@@ -130,16 +138,9 @@ async function _processM3U8(url, text, realFetch) {
 				self.postMessage
 			) {
 				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
-				if (
-					(wasUsingModifiedM3U8 ||
-						wasUsingFallbackStream ||
-						wasUsingBackupStream) &&
-					__TTVAB_STATE__.ReloadAfterAd
-				) {
+				if (__TTVAB_STATE__.ReloadAfterAd) {
 					info.LastPlayerReload = Date.now();
-					self.postMessage({ key: "ReloadPlayer" });
-				} else {
-					self.postMessage({ key: "PauseResumePlayer" });
+					self.postMessage({ key: "ReloadPlayer", channel: info.ChannelName });
 				}
 			}
 		}
@@ -155,8 +156,11 @@ async function _processM3U8(url, text, realFetch) {
 		_hasPlaylistAdMarkers(text) ||
 		_playlistHasKnownAdSegments(text) ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
+	const hasMediaSegments = _playlistHasMediaSegments(text);
 
 	if (hasAds) {
+		info.PendingAdEndAt = 0;
+		info.CleanPlaylistCount = 0;
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
 
 		if (!info.IsShowingAd) {
@@ -245,7 +249,24 @@ async function _processM3U8(url, text, realFetch) {
 			text = _stripAds(text, stripHevc, info);
 		}
 	} else {
-		if (info.IsShowingAd) {
+		if (info.IsShowingAd && hasMediaSegments) {
+			const now = Date.now();
+			if (!info.PendingAdEndAt) {
+				info.PendingAdEndAt = now;
+				info.CleanPlaylistCount = 1;
+				return text;
+			}
+
+			info.CleanPlaylistCount = (info.CleanPlaylistCount || 0) + 1;
+			if (
+				now - info.PendingAdEndAt <
+					__TTVAB_STATE__.AdEndGraceMs ||
+				info.CleanPlaylistCount <
+					__TTVAB_STATE__.AdEndMinCleanPlaylists
+			) {
+				return text;
+			}
+
 			const {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
@@ -264,9 +285,7 @@ async function _processM3U8(url, text, realFetch) {
 					__TTVAB_STATE__.ReloadAfterAd
 				) {
 					info.LastPlayerReload = Date.now();
-					self.postMessage({ key: "ReloadPlayer" });
-				} else {
-					self.postMessage({ key: "PauseResumePlayer" });
+					self.postMessage({ key: "ReloadPlayer", channel: info.ChannelName });
 				}
 			}
 		}
