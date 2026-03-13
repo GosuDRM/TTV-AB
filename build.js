@@ -366,6 +366,7 @@ function validateSharedDefinitions() {
 	const workerPath = path.join(__dirname, "src", "modules", "worker.js");
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
+	const constantsPath = path.join(__dirname, "src", "modules", "constants.js");
 	const readmeSource = fs.readFileSync(readmePath, "utf8");
 	const privacySource = fs.readFileSync(privacyPath, "utf8");
 	const changelogSource = fs.readFileSync(changelogPath, "utf8");
@@ -603,6 +604,15 @@ function validateSharedDefinitions() {
 	);
 	const processorSource = fs.readFileSync(processorPath, "utf8");
 	const apiSource = fs.readFileSync(apiPath, "utf8");
+	const constantsSource = fs.readFileSync(constantsPath, "utf8");
+	const reloadAfterAdMatch = constantsSource.match(
+		/RELOAD_AFTER_AD:\s*(true|false)/,
+	);
+	if (reloadAfterAdMatch?.[1] !== "false") {
+		throw new Error(
+			"RELOAD_AFTER_AD must remain false to avoid post-ad reload loops",
+		);
+	}
 
 	const bridgeGetDateKeyLiteral = extractLiteral(
 		bridgeSource,
