@@ -50,6 +50,8 @@ function _declareState(scope) {
 		),
 		PlayerReloadDebounceMs: _C.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
 		AdCycleStaleMs: _C.AD_CYCLE_STALE_MS ?? 30000,
+		AdEndGraceMs: _C.AD_END_GRACE_MS ?? 2500,
+		AdEndMinCleanPlaylists: _C.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
 		HasTriggeredPlayerReload: false,
 		LastPlayerReloadAt: 0,
