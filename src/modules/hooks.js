@@ -501,6 +501,9 @@ function _hookWorker() {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
+								if (typeof _rememberPlayerPlaybackForAd === "function") {
+									_rememberPlayerPlaybackForAd(channel);
+								}
 							}
 							__TTVAB_STATE__.CurrentAdChannel = channel;
 							__TTVAB_STATE__.LastAdDetectedAt = now;
@@ -629,6 +632,11 @@ function _hookWorker() {
 								});
 							});
 						} catch (_e) {}
+						if (typeof _resumePlayerAfterAdIfNeeded === "function") {
+							setTimeout(() => {
+								_resumePlayerAfterAdIfNeeded(e.data.channel || null);
+							}, 150);
+						}
 						break;
 					case "PauseResumePlayer":
 						_log("Resuming player", "info");
