@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.8] - 2026-03-13
+
+### Fixed
+- **Display Ad Flash** - Display ad overlays (banners, labels, countdown timers) are no longer briefly visible before being hidden. Expanded the injected CSS ruleset to cover ad label and countdown selectors so the browser hides them before any JavaScript runs.
+- **Display Ad Confirmation Delay** - Reduced the confirmation delay for display ad shell detection. Explicit ad signals (Twitch's own ad-banner and display-ad data attributes) now trigger immediate cleanup with no delay. Inferred signals (heuristic layout detection) use a shorter 150ms confirmation window, down from 350ms.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.8 release line.
+
+
 ## [4.2.7] - 2026-03-13
 
 ### Fixed
