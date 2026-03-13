@@ -1,11 +1,11 @@
-// TTV AB v4.2.7 - Twitch Ad Blocker
+// TTV AB v4.2.8 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.2.7",
-	INTERNAL_VERSION: 48,
+	VERSION: "4.2.8",
+	INTERNAL_VERSION: 49,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -3192,7 +3192,10 @@ function _$bp() {
                 div[data-test-selector="ad-banner"],
                 div[data-test-selector="display-ad"],
                 div[data-a-target="ads-banner"],
-                div[data-a-target="consent-banner"] {
+                div[data-a-target="consent-banner"],
+                [data-a-target="video-ad-label"],
+                [data-test-selector="ad-label"],
+                [class*="ad-countdown"] {
                     display: none !important;
                     visibility: hidden !important;
                 }
@@ -3845,10 +3848,10 @@ function _$bp() {
 				if (pendingDisplayAdShellSignature !== signalSignature) {
 					pendingDisplayAdShellSignature = signalSignature;
 					pendingDisplayAdShellSince = now;
-					return false;
+					if (!hasExplicitDisplayAdSignal) return false;
 				}
 
-				if (now - pendingDisplayAdShellSince < 350) {
+				if (!hasExplicitDisplayAdSignal && now - pendingDisplayAdShellSince < 150) {
 					return false;
 				}
 			}

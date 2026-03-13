@@ -126,7 +126,10 @@ function _blockAntiAdblockPopup() {
                 div[data-test-selector="ad-banner"],
                 div[data-test-selector="display-ad"],
                 div[data-a-target="ads-banner"],
-                div[data-a-target="consent-banner"] {
+                div[data-a-target="consent-banner"],
+                [data-a-target="video-ad-label"],
+                [data-test-selector="ad-label"],
+                [class*="ad-countdown"] {
                     display: none !important;
                     visibility: hidden !important;
                 }
@@ -779,10 +782,10 @@ function _blockAntiAdblockPopup() {
 				if (pendingDisplayAdShellSignature !== signalSignature) {
 					pendingDisplayAdShellSignature = signalSignature;
 					pendingDisplayAdShellSince = now;
-					return false;
+					if (!hasExplicitDisplayAdSignal) return false;
 				}
 
-				if (now - pendingDisplayAdShellSince < 350) {
+				if (!hasExplicitDisplayAdSignal && now - pendingDisplayAdShellSince < 150) {
 					return false;
 				}
 			}
