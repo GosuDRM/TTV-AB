@@ -138,8 +138,6 @@ async function _processM3U8(url, text, realFetch) {
 				) {
 					info.LastPlayerReload = Date.now();
 					self.postMessage({ key: "ReloadPlayer" });
-				} else {
-					self.postMessage({ key: "PauseResumePlayer" });
 				}
 			}
 		}
@@ -265,8 +263,6 @@ async function _processM3U8(url, text, realFetch) {
 				) {
 					info.LastPlayerReload = Date.now();
 					self.postMessage({ key: "ReloadPlayer" });
-				} else {
-					self.postMessage({ key: "PauseResumePlayer" });
 				}
 			}
 		}

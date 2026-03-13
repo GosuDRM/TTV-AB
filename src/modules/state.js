@@ -58,6 +58,8 @@ function _declareState(scope) {
 		CurrentAdChannel: null,
 		PinnedBackupPlayerType: null,
 		PinnedBackupPlayerChannel: null,
+		ShouldResumeAfterAd: false,
+		ShouldResumeAfterAdChannel: null,
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
 		GQLDeviceID: null,

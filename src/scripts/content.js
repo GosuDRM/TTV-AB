@@ -87,6 +87,8 @@ function _$ds(scope) {
 		CurrentAdChannel: null,
 		PinnedBackupPlayerType: null,
 		PinnedBackupPlayerChannel: null,
+		ShouldResumeAfterAd: false,
+		ShouldResumeAfterAdChannel: null,
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
 		GQLDeviceID: null,
@@ -909,8 +911,6 @@ async function _$pm(url, text, realFetch) {
 				) {
 					info.LastPlayerReload = Date.now();
 					self.postMessage({ key: "ReloadPlayer" });
-				} else {
-					self.postMessage({ key: "PauseResumePlayer" });
 				}
 			}
 		}
@@ -1036,8 +1036,6 @@ async function _$pm(url, text, realFetch) {
 				) {
 					info.LastPlayerReload = Date.now();
 					self.postMessage({ key: "ReloadPlayer" });
-				} else {
-					self.postMessage({ key: "PauseResumePlayer" });
 				}
 			}
 		}
@@ -1820,6 +1818,9 @@ function _$hw() {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
+								if (typeof _$rpfa === "function") {
+									_$rpfa(channel);
+								}
 							}
 							__TTVAB_STATE__.CurrentAdChannel = channel;
 							__TTVAB_STATE__.LastAdDetectedAt = now;
@@ -1948,6 +1949,11 @@ function _$hw() {
 								});
 							});
 						} catch (_e) {}
+						if (typeof _$rpa === "function") {
+							setTimeout(() => {
+								_$rpa(e.data.channel || null);
+							}, 150);
+						}
 						break;
 					case "PauseResumePlayer":
 						_$l("Resuming player", "info");
@@ -2346,6 +2352,73 @@ function _$gps() {
 	);
 
 	return { player, state: playerState };
+}
+
+function _$cari() {
+	__TTVAB_STATE__.ShouldResumeAfterAd = false;
+	__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
+}
+
+function _$rpfa(channel = null) {
+	const safeChannel =
+		typeof channel === "string"
+			? channel
+			: __TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel || null;
+	const { player, state: playerState } = _$gps();
+
+	let shouldResumeAfterAd = false;
+	if (player && playerState?.props?.content?.type === "live") {
+		const playerCore = _$gpc(player);
+		const video = player.getHTMLVideoElement?.() || null;
+		shouldResumeAfterAd = !(
+			player.isPaused?.() ||
+			playerCore?.paused ||
+			video?.paused ||
+			video?.ended
+		);
+	}
+
+	__TTVAB_STATE__.ShouldResumeAfterAd = shouldResumeAfterAd;
+	__TTVAB_STATE__.ShouldResumeAfterAdChannel = shouldResumeAfterAd
+		? safeChannel
+		: null;
+}
+
+function _$rpa(channel = null) {
+	const safeChannel = typeof channel === "string" ? channel : null;
+	const expectedChannel = __TTVAB_STATE__.ShouldResumeAfterAdChannel || null;
+	const shouldResume =
+		__TTVAB_STATE__.ShouldResumeAfterAd === true &&
+		(!safeChannel || !expectedChannel || safeChannel === expectedChannel);
+
+	_$cari();
+	if (!shouldResume) return false;
+
+	const { player, state: playerState } = _$gps();
+	if (!player || playerState?.props?.content?.type !== "live") {
+		return false;
+	}
+
+	const playerCore = _$gpc(player);
+	const video = player.getHTMLVideoElement?.() || null;
+	if (video?.ended) {
+		_$l("Player ended after ad; deferring recovery to buffer monitor", "info");
+		return false;
+	}
+
+	const isPaused = Boolean(
+		player.isPaused?.() || playerCore?.paused || video?.paused,
+	);
+	if (!isPaused) return false;
+
+	try {
+		player.play();
+		_$l("Resuming player after ad", "info");
+		return true;
+	} catch (err) {
+		_$l(`Post-ad resume failed: ${err.message}`, "warning");
+		return false;
+	}
 }
 
 function _$dpt(isPausePlay, isReload, options = {}) {
