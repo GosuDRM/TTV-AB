@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.2.6-purple)
+![Version](https://img.shields.io/badge/version-4.2.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -53,6 +53,12 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.2.7
+- **Post-Ad Reload Loop Fix** - Ad recovery no longer falls back into a native post-ad reload path that could immediately restart the same ad sequence.
+- **Player Resume Gating** - Post-ad playback restoration now respects whether the viewer was already playing instead of blindly nudging the player after every ad cycle.
+- **Blocked Counter Stability** - Worker-side ad-end handling now ignores transient clean playlists and waits for confirmed clean media playlists before closing an ad cycle, preventing repeated counter inflation on the same ad pod.
+- **Display Shell Cleanup Dedupe** - Stale display-shell cleanup now dedupes repeated cleanup passes on the same residual shell artifacts so layout resets and DOM cleanup counting do not keep retriggering on leftover player shells.
 
 ### v4.2.6
 - **Popup Hardening Pass** - The popup now guards required UI nodes, storage failures, malformed saved stats, invalid locale values, and missing translation entries so it fails safely instead of breaking the UI.

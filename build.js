@@ -1102,6 +1102,11 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_processM3U8",
+			helper: "_playlistHasMediaSegments",
+			source: processorSource,
+		},
+		{
 			consumer: "_findBackupStream",
 			helper: "_getFallbackPromotionPolicy",
 			source: processorSource,

@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.7] - 2026-03-13
+
+### Fixed
+- **Post-Ad Reload Loops** - Ad recovery no longer drops back into a native reload path right after `AdEnded`, preventing the player from immediately restarting the same ad cycle.
+- **Post-Ad Resume Safety** - Player resume intent is now tracked across ad cycles so playback is only resumed when the viewer had actually been watching before Twitch interrupted the stream.
+- **Blocked Counter Inflation** - Worker ad-end detection now waits for confirmed clean media playlists instead of treating a transient clean-looking playlist as the end of the ad, which stops repeated `AdBlocked` increments during a single ad pod.
+- **Stale Display Shell Cleanup Churn** - Residual display-shell and mini-player artifacts are now signature-deduped during stale cleanup, preventing repeated DOM cleanup counting and redundant layout-reset passes on the same leftover shell.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.7 release line.
+
 ## [4.2.6] - 2026-03-11
 
 ### Fixed
