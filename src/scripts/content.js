@@ -1,11 +1,11 @@
-// TTV AB v4.2.8 - Twitch Ad Blocker
+// TTV AB v4.2.9 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.2.8",
-	INTERNAL_VERSION: 49,
+	VERSION: "4.2.9",
+	INTERNAL_VERSION: 50,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -125,6 +125,9 @@ function _$ab(channel) {
 		? Math.max(0, Math.trunc(_$s.adsBlocked))
 		: 0;
 	_$s.adsBlocked = count;
+	if (typeof _$bw === "function") {
+		_$bw({ key: "UpdateAdsBlocked", value: _$s.adsBlocked });
+	}
 	const safeChannel = typeof channel === "string" ? channel : null;
 	if (typeof window !== "undefined") {
 		window.postMessage(
@@ -2118,20 +2121,162 @@ function _$mf() {
 			_$bw(updates);
 		}
 	};
+	const RESERVED_PAGE_SEGMENTS = new Set([
+		"browse",
+		"directory",
+		"downloads",
+		"drops",
+		"following",
+		"friends",
+		"inventory",
+		"jobs",
+		"messages",
+		"search",
+		"settings",
+		"subscriptions",
+		"turbo",
+		"videos",
+		"wallet",
+	]);
+	const PREEMPTIVE_AD_AVOID_CONFIRM_MS = 4500;
+	const PREEMPTIVE_AD_AVOID_COOLDOWN_MS = 10 * 60 * 1000;
+	const PREEMPTIVE_AD_AVOID_PRUNE_MS = 60 * 60 * 1000;
+	const preemptiveAdAvoids = new Map();
+	const getCurrentPageChannel = () => {
+		const match = window.location.pathname.match(/^\/([^/?#]+)/);
+		const candidate = match?.[1] || null;
+		if (!candidate) return null;
+		return RESERVED_PAGE_SEGMENTS.has(candidate.toLowerCase())
+			? null
+			: candidate;
+	};
+	const normalizeChannelName = (value) => {
+		if (typeof value !== "string") return null;
+		const trimmed = value.trim().toLowerCase();
+		return trimmed ? trimmed : null;
+	};
+	const prunePreemptiveAdAvoids = (now = Date.now()) => {
+		for (const [channel, entry] of preemptiveAdAvoids.entries()) {
+			const lastTouchedAt = Math.max(
+				entry?.lastObservedAt || 0,
+				entry?.lastCountedAt || 0,
+				entry?.scheduledAt || 0,
+			);
+			if (now - lastTouchedAt <= PREEMPTIVE_AD_AVOID_PRUNE_MS) continue;
+			if (entry?.timerId) {
+				clearTimeout(entry.timerId);
+			}
+			preemptiveAdAvoids.delete(channel);
+		}
+	};
+	const schedulePreemptiveAdAvoid = (candidate) => {
+		const safeChannel =
+			typeof candidate?.channel === "string" ? candidate.channel.trim() : "";
+		const normalizedChannel = normalizeChannelName(safeChannel);
+		const originalPlayerType =
+			typeof candidate?.previousPlayerType === "string"
+				? candidate.previousPlayerType
+				: null;
+		const forceType =
+			typeof candidate?.forceType === "string" ? candidate.forceType : null;
+		const tokenPlayerType =
+			typeof candidate?.tokenPlayerType === "string"
+				? candidate.tokenPlayerType
+				: null;
+		const isAdCapable =
+			candidate?.showAds === true || candidate?.serverAds === true;
+
+		if (
+			!normalizedChannel ||
+			originalPlayerType !== "site" ||
+			!forceType ||
+			!isAdCapable
+		) {
+			return;
+		}
+
+		if (tokenPlayerType && tokenPlayerType !== forceType) {
+			return;
+		}
+
+		const now = Date.now();
+		prunePreemptiveAdAvoids(now);
+		const existing = preemptiveAdAvoids.get(normalizedChannel);
+		if (existing?.timerId) {
+			clearTimeout(existing.timerId);
+		}
+
+		const nextEntry = {
+			channel: safeChannel,
+			normalizedChannel,
+			previousPlayerType: originalPlayerType,
+			forceType,
+			tokenPlayerType: tokenPlayerType || forceType,
+			showAds: candidate?.showAds === true,
+			serverAds: candidate?.serverAds === true,
+			lastObservedAt: now,
+			lastCountedAt: existing?.lastCountedAt || 0,
+			scheduledAt: now + PREEMPTIVE_AD_AVOID_CONFIRM_MS,
+			timerId: null,
+		};
+
+		nextEntry.timerId = window.setTimeout(() => {
+			const current = preemptiveAdAvoids.get(normalizedChannel);
+			if (!current || current !== nextEntry) return;
+			current.timerId = null;
+
+			const confirmNow = Date.now();
+			const currentPageChannel = normalizeChannelName(getCurrentPageChannel());
+			if (currentPageChannel && currentPageChannel !== normalizedChannel) {
+				return;
+			}
+
+			if (
+				current.lastCountedAt &&
+				confirmNow - current.lastCountedAt < PREEMPTIVE_AD_AVOID_COOLDOWN_MS
+			) {
+				return;
+			}
+
+			const activeAdChannel = normalizeChannelName(
+				__TTVAB_STATE__.CurrentAdChannel,
+			);
+			const lastAdDetectedAt = Number(__TTVAB_STATE__.LastAdDetectedAt || 0);
+			const adDetectedRecently =
+				activeAdChannel === normalizedChannel ||
+				(confirmNow - lastAdDetectedAt <= PREEMPTIVE_AD_AVOID_CONFIRM_MS &&
+					lastAdDetectedAt > 0);
+
+			if (adDetectedRecently) {
+				return;
+			}
+
+			_$ab(current.channel);
+			current.lastCountedAt = confirmNow;
+			current.lastObservedAt = confirmNow;
+			_$l(
+				`Preemptively blocked ad-capable native playback for ${current.channel} (${current.previousPlayerType} -> ${current.forceType}). Total: ${_$s.adsBlocked}`,
+				"success",
+			);
+		}, PREEMPTIVE_AD_AVOID_CONFIRM_MS);
+
+		preemptiveAdAvoids.set(normalizedChannel, nextEntry);
+	};
 	const rewritePlaybackAccessTokenBody = (bodyText) => {
 		if (typeof bodyText !== "string" || !bodyText) {
-			return { bodyText, changed: false };
+			return { bodyText, changed: false, rewrites: [] };
 		}
 
 		try {
 			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType;
 			if (!forceType) {
-				return { bodyText, changed: false };
+				return { bodyText, changed: false, rewrites: [] };
 			}
 			const parsed = JSON.parse(bodyText);
 			const operations = Array.isArray(parsed) ? parsed : [parsed];
 			let changed = false;
 			let previousPlayerType = null;
+			const rewrites = [];
 
 			for (const op of operations) {
 				if (op?.operationName !== "PlaybackAccessToken") continue;
@@ -2140,9 +2285,17 @@ function _$mf() {
 					typeof op.variables.playerType === "string" &&
 					op.variables.playerType !== forceType
 				) {
-					previousPlayerType = previousPlayerType || op.variables.playerType;
+					const nextPreviousPlayerType = op.variables.playerType;
+					previousPlayerType =
+						previousPlayerType || nextPreviousPlayerType;
 					op.variables.playerType = forceType;
 					op.variables.platform = forceType === "autoplay" ? "android" : "web";
+					rewrites.push({
+						channel:
+							op.variables.login || op.variables.channelLogin || null,
+						previousPlayerType: nextPreviousPlayerType,
+						forceType,
+					});
 					changed = true;
 				}
 			}
@@ -2155,11 +2308,12 @@ function _$mf() {
 				return {
 					bodyText: JSON.stringify(parsed),
 					changed: true,
+					rewrites,
 				};
 			}
 		} catch { }
 
-		return { bodyText, changed: false };
+		return { bodyText, changed: false, rewrites: [] };
 	};
 	const updatePlaybackAccessTokenHash = (hash) => {
 		if (!hash || __TTVAB_STATE__.PlaybackAccessTokenHash === hash) return;
@@ -2198,21 +2352,42 @@ function _$mf() {
 			}
 		} catch { }
 	};
-	const processGqlResponse = async (response) => {
+	const processGqlResponse = async (response, requestRewrites = []) => {
 		if (!response || response.status !== 200) return;
 		try {
 			const payload = await response.clone().json();
 			const operations = Array.isArray(payload) ? payload : [payload];
+			const playbackRewriteQueue = Array.isArray(requestRewrites)
+				? [...requestRewrites]
+				: [];
 			for (const op of operations) {
+				let rewriteContext = null;
+				if (op?.data?.streamPlaybackAccessToken || op?.streamPlaybackAccessToken) {
+					rewriteContext = playbackRewriteQueue.shift() || null;
+				}
 				const extractedToken = _extractPlaybackAccessToken(op);
 				const tokenValue = extractedToken?.value || null;
 				if (typeof tokenValue !== "string" || !tokenValue) continue;
 				try {
 					const tokenPayload = JSON.parse(tokenValue);
+					const tokenShowAds =
+						tokenPayload?.showAds ?? tokenPayload?.show_ads ?? null;
+					const tokenServerAds =
+						tokenPayload?.serverAds ?? tokenPayload?.server_ads ?? null;
 					const effectivePlayerType =
 						tokenPayload?.playerType || tokenPayload?.player_type || null;
 					if (typeof effectivePlayerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
+					}
+					if (rewriteContext) {
+						schedulePreemptiveAdAvoid({
+							channel: rewriteContext.channel,
+							previousPlayerType: rewriteContext.previousPlayerType,
+							forceType: rewriteContext.forceType,
+							tokenPlayerType: effectivePlayerType,
+							showAds: tokenShowAds === true,
+							serverAds: tokenServerAds === true,
+						});
 					}
 				} catch { }
 			}
@@ -2226,6 +2401,7 @@ function _$mf() {
 			if (urlStr.includes("gql.twitch.tv/gql")) {
 				let nextArgs = args;
 				let headers = opts?.headers;
+				let requestRewrites = [];
 
 				if (url instanceof Request) {
 					let effectiveRequest = url;
@@ -2236,6 +2412,7 @@ function _$mf() {
 						headers = effectiveRequest.headers;
 						const text = await effectiveRequest.clone().text();
 						const rewritten = rewritePlaybackAccessTokenBody(text);
+						requestRewrites = rewritten.rewrites;
 						processGqlBody(rewritten.bodyText);
 						if (rewritten.changed) {
 							nextArgs = [
@@ -2249,6 +2426,7 @@ function _$mf() {
 					} catch (_e) { }
 				} else if (typeof opts?.body === "string") {
 					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
+					requestRewrites = rewritten.rewrites;
 					processGqlBody(rewritten.bodyText);
 					if (rewritten.changed) {
 						nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
@@ -2321,7 +2499,7 @@ function _$mf() {
 					updateWorkers(updates);
 				}
 				const response = await realFetch.apply(this, nextArgs);
-				await processGqlResponse(response);
+				await processGqlResponse(response, requestRewrites);
 				return response;
 			}
 		}
@@ -3134,6 +3312,7 @@ function _$bp() {
 	let pendingDisplayAdShellSignature = null;
 	let lastStaleDisplayArtifactSignature = null;
 	let lastStaleDisplayArtifactCleanupAt = 0;
+	let lastCountedStaleDisplayArtifactSignature = null;
 	let lastPathname = window.location.pathname;
 	const EXPLICIT_DISPLAY_AD_SELECTORS = [
 		'div[data-test-selector="ad-banner"]',
@@ -3325,6 +3504,7 @@ function _$bp() {
 		function _resetStaleDisplayArtifactCleanupDeduper() {
 			lastStaleDisplayArtifactSignature = null;
 			lastStaleDisplayArtifactCleanupAt = 0;
+			lastCountedStaleDisplayArtifactSignature = null;
 		}
 
 		function _isDisplayAdShellArtifact(el) {
@@ -3407,6 +3587,13 @@ function _$bp() {
 				"Display ad shell stale: cleaning up residual shell/layout artifacts",
 				"info",
 			);
+			if (
+				staleSignature &&
+				staleSignature !== lastCountedStaleDisplayArtifactSignature
+			) {
+				_incrementDomCleanup("display-shell-stale");
+				lastCountedStaleDisplayArtifactSignature = staleSignature;
+			}
 
 			staleNodes.forEach((el) => {
 				if (
