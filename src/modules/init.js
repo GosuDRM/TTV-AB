@@ -320,7 +320,6 @@ function _blockAntiAdblockPopup() {
 				);
 
 			if (staleNodes.length === 0 && stalePipContainers.length === 0) {
-				_resetStaleDisplayArtifactCleanupDeduper();
 				return false;
 			}
 
@@ -431,7 +430,6 @@ function _blockAntiAdblockPopup() {
 			if (pathname === lastPathname) return;
 			lastPathname = pathname;
 			_resetDisplayAdShellState();
-			_resetStaleDisplayArtifactCleanupDeduper();
 			_cleanupAllKnownDisplayArtifacts();
 			_scanAndRemove();
 		}
@@ -772,7 +770,6 @@ function _blockAntiAdblockPopup() {
 				pendingDisplayAdShellSignature = null;
 				return false;
 			}
-			_resetStaleDisplayArtifactCleanupDeduper();
 
 			const signalSignature = [
 				adBanners.length,
@@ -893,7 +890,7 @@ function _blockAntiAdblockPopup() {
 				try {
 					if (el.matches?.(selector)) return true;
 					if (el.querySelector?.(selector)) return true;
-				} catch {}
+				} catch { }
 			}
 			return false;
 		}
@@ -979,7 +976,7 @@ function _blockAntiAdblockPopup() {
 							popup.setAttribute(
 								"style",
 								(popup.getAttribute("style") || "") +
-									"; display: none !important; visibility: hidden !important;",
+								"; display: none !important; visibility: hidden !important;",
 							);
 							popup.setAttribute("data-ttvab-blocked", "true");
 
@@ -1000,7 +997,7 @@ function _blockAntiAdblockPopup() {
 						fallback.setAttribute(
 							"style",
 							(fallback.getAttribute("style") || "") +
-								"; display: none !important;",
+							"; display: none !important;",
 						);
 						fallback.setAttribute("data-ttvab-blocked", "true");
 						_incrementDomCleanup("overlay-ad");
@@ -1028,13 +1025,13 @@ function _blockAntiAdblockPopup() {
 							el.setAttribute(
 								"style",
 								(el.getAttribute("style") || "") +
-									"; display: none !important;",
+								"; display: none !important;",
 							);
 							_incrementDomCleanup("overlay-ad");
 							return true;
 						}
 					}
-				} catch {}
+				} catch { }
 			}
 
 			const overlays = document.querySelectorAll(
@@ -1074,7 +1071,7 @@ function _blockAntiAdblockPopup() {
 				if (typeof nativeVisibility?.mozHidden === "function") {
 					return nativeVisibility.mozHidden.call(document) === true;
 				}
-			} catch {}
+			} catch { }
 			return document.hidden;
 		}
 

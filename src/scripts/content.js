@@ -1,10 +1,10 @@
-// TTV AB v4.2.9 - Twitch Ad Blocker
+// TTV AB v4.3.0 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.2.9",
+	VERSION: "4.3.0",
 	INTERNAL_VERSION: 50,
 	LOG_STYLES: {
 		prefix:
@@ -26,7 +26,7 @@ const _$c = {
 	AD_END_MIN_CLEAN_PLAYLISTS: 2,
 	AD_RECOVERY_RELOAD_COOLDOWN_MS: 10000,
 	BUFFERING_FIX: true,
-	RELOAD_AFTER_AD: true,
+	RELOAD_AFTER_AD: false,
 	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
 	ALWAYS_RELOAD_PLAYER_ON_AD: false,
 };
@@ -2121,6 +2121,9 @@ function _$mf() {
 			_$bw(updates);
 		}
 	};
+	const enablePreemptiveAdAvoidCounting =
+		typeof navigator !== "undefined" &&
+		/firefox/i.test(String(navigator.userAgent || ""));
 	const RESERVED_PAGE_SEGMENTS = new Set([
 		"browse",
 		"directory",
@@ -2170,6 +2173,10 @@ function _$mf() {
 		}
 	};
 	const schedulePreemptiveAdAvoid = (candidate) => {
+		if (!enablePreemptiveAdAvoidCounting) {
+			return;
+		}
+
 		const safeChannel =
 			typeof candidate?.channel === "string" ? candidate.channel.trim() : "";
 		const normalizedChannel = normalizeChannelName(safeChannel);
@@ -2290,12 +2297,13 @@ function _$mf() {
 						previousPlayerType || nextPreviousPlayerType;
 					op.variables.playerType = forceType;
 					op.variables.platform = forceType === "autoplay" ? "android" : "web";
-					rewrites.push({
-						channel:
-							op.variables.login || op.variables.channelLogin || null,
-						previousPlayerType: nextPreviousPlayerType,
-						forceType,
-					});
+					if (enablePreemptiveAdAvoidCounting) {
+						rewrites.push({
+							channel: op.variables.login || op.variables.channelLogin || null,
+							previousPlayerType: nextPreviousPlayerType,
+							forceType,
+						});
+					}
 					changed = true;
 				}
 			}
@@ -3564,7 +3572,6 @@ function _$bp() {
 				);
 
 			if (staleNodes.length === 0 && stalePipContainers.length === 0) {
-				_resetStaleDisplayArtifactCleanupDeduper();
 				return false;
 			}
 
@@ -3675,7 +3682,6 @@ function _$bp() {
 			if (pathname === lastPathname) return;
 			lastPathname = pathname;
 			_resetDisplayAdShellState();
-			_resetStaleDisplayArtifactCleanupDeduper();
 			_cleanupAllKnownDisplayArtifacts();
 			_$sr();
 		}
@@ -4016,7 +4022,6 @@ function _$bp() {
 				pendingDisplayAdShellSignature = null;
 				return false;
 			}
-			_resetStaleDisplayArtifactCleanupDeduper();
 
 			const signalSignature = [
 				adBanners.length,
