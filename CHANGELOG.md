@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.9] - 2026-03-14
+
+### Fixed
+- **Firefox Counter Sync** - Bridge message parsing now normalizes cross-realm page payloads before validating them, so `Ads Blocked` and `DOM Ads Blocked` updates from the page context are no longer dropped in Firefox.
+- **Firefox Stale Display-Shell DOM Counting** - Residual display-shell cleanup now counts `DOM Ads Blocked` once per unique stale shell/layout artifact, so Firefox's visible cleanup work is reflected without inflating repeated passes on the same leftover shell.
+- **Firefox Silent Native Ad Avoid Counting** - Preemptive native `PlaybackAccessToken` rewrites from `site` to the forced recovery player type now confirm ad-capable token responses and count one `Ads Blocked` event per channel cooldown even when the worker never reaches a visible `AdDetected` cycle.
+- **Firefox Worker Count Sync** - Page-side `Ads Blocked` increments now rebroadcast the updated total back into active workers so later worker events cannot overwrite a newer page-side counter value.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.9 release line.
+
 ## [4.2.8] - 2026-03-13
 
 ### Fixed

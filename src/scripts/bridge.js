@@ -34,12 +34,50 @@ function isPlainObject(value) {
 	return prototype === Object.prototype || prototype === null;
 }
 
+function isBridgeMessageObject(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	try {
+		return Object.prototype.toString.call(value) === "[object Object]";
+	} catch {
+		return false;
+	}
+}
+
+function readBridgeMessageProperty(value, key) {
+	try {
+		return value?.[key];
+	} catch {
+		return undefined;
+	}
+}
+
 function getBridgeMessageData(value) {
-	return isPlainObject(value) ? value : null;
+	if (!isBridgeMessageObject(value)) return null;
+	const type = readBridgeMessageProperty(value, "type");
+	if (typeof type !== "string" || type.trim() === "") {
+		return null;
+	}
+	return {
+		type,
+		detail: readBridgeMessageProperty(value, "detail"),
+	};
 }
 
 function getBridgeMessageDetail(value) {
-	return isPlainObject(value) ? value : null;
+	if (!isBridgeMessageObject(value)) return null;
+	const count = readBridgeMessageProperty(value, "count");
+	const kind = readBridgeMessageProperty(value, "kind");
+	const channel = readBridgeMessageProperty(value, "channel");
+	return {
+		count:
+			typeof count === "string" && count.trim() !== ""
+				? Number(count)
+				: count,
+		kind: typeof kind === "string" ? kind : null,
+		channel: typeof channel === "string" ? channel : null,
+	};
 }
 
 function createChannelsMap() {

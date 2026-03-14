@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.2.8-purple)
+![Version](https://img.shields.io/badge/version-4.2.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -53,6 +53,11 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.2.9
+- **Firefox Counter Sync Fix** - Cross-realm bridge messages are now normalized before storage updates, so `Ads Blocked` and `DOM Ads Blocked` persist correctly in Firefox instead of getting dropped by strict object-shape checks.
+- **Firefox DOM Cleanup Counter Fix** - Repeated stale display-shell cleanup now increments `DOM Ads Blocked` once per unique residual ad-shell artifact, so Firefox cleanup activity is reflected instead of silently staying at `0`.
+- **Firefox Silent Native Avoid Counting** - When Firefox preemptively reroutes an ad-capable native `PlaybackAccessToken` request from `site` to the forced recovery player type, the extension now confirms and counts that avoided ad once with an explicit console log instead of leaving `Ads Blocked` unchanged.
 
 ### v4.2.8
 - **Display Ad Flash Fix** - Display ad overlays (banners, labels, countdown timers) are no longer briefly visible before being hidden. Expanded CSS coverage and optimized detection timing.

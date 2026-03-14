@@ -94,6 +94,9 @@ function _incrementAdsBlocked(channel) {
 		? Math.max(0, Math.trunc(_S.adsBlocked))
 		: 0;
 	_S.adsBlocked = count;
+	if (typeof _broadcastWorkers === "function") {
+		_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
+	}
 	const safeChannel = typeof channel === "string" ? channel : null;
 	if (typeof window !== "undefined") {
 		window.postMessage(
