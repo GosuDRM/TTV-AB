@@ -774,6 +774,9 @@ function _hookMainFetch() {
 			_broadcastWorkers(updates);
 		}
 	};
+	const enablePreemptiveAdAvoidCounting =
+		typeof navigator !== "undefined" &&
+		/firefox/i.test(String(navigator.userAgent || ""));
 	const RESERVED_PAGE_SEGMENTS = new Set([
 		"browse",
 		"directory",
@@ -823,6 +826,10 @@ function _hookMainFetch() {
 		}
 	};
 	const schedulePreemptiveAdAvoid = (candidate) => {
+		if (!enablePreemptiveAdAvoidCounting) {
+			return;
+		}
+
 		const safeChannel =
 			typeof candidate?.channel === "string" ? candidate.channel.trim() : "";
 		const normalizedChannel = normalizeChannelName(safeChannel);
@@ -943,12 +950,13 @@ function _hookMainFetch() {
 						previousPlayerType || nextPreviousPlayerType;
 					op.variables.playerType = forceType;
 					op.variables.platform = forceType === "autoplay" ? "android" : "web";
-					rewrites.push({
-						channel:
-							op.variables.login || op.variables.channelLogin || null,
-						previousPlayerType: nextPreviousPlayerType,
-						forceType,
-					});
+					if (enablePreemptiveAdAvoidCounting) {
+						rewrites.push({
+							channel: op.variables.login || op.variables.channelLogin || null,
+							previousPlayerType: nextPreviousPlayerType,
+							forceType,
+						});
+					}
 					changed = true;
 				}
 			}

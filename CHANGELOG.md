@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.0] - 2026-03-14
+
+### Fixed
+- **DOM Ad Counter Timing** - Fixed an issue where the `DOM Ads Blocked` counter would erroneously increment when navigating between channels on Firefox. `_handleRouteChange` no longer aggressively resets the deduplication cache, allowing old React layout shells to correctly be ignored during transition states.
+- **Ported Firefox Optimizations** - Ported the "Preemptive Ad Avoid" system and synchronized worker reload logic from the main repository to improve ad mitigation and ensure feature parity.
+- **Overall Stability** - Prevented old React layout artifact signatures from triggering false positive ad detections across the board.
+
+
 ## [4.2.9] - 2026-03-14
 
 ### Fixed

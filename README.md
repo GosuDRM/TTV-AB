@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.2.9-purple)
+![Version](https://img.shields.io/badge/version-4.3.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -54,7 +54,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v4.2.9
+### v4.3.0
+- **Ported Firefox Optimizations** - Ported the "Preemptive Ad Avoid" system and synchronized worker reload logic from the main repository to improve ad mitigation and ensure feature parity.
 - **Firefox Counter Sync Fix** - Cross-realm bridge messages are now normalized before storage updates, so `Ads Blocked` and `DOM Ads Blocked` persist correctly in Firefox instead of getting dropped by strict object-shape checks.
 - **Firefox DOM Cleanup Counter Fix** - Repeated stale display-shell cleanup now increments `DOM Ads Blocked` once per unique residual ad-shell artifact, so Firefox cleanup activity is reflected instead of silently staying at `0`.
 - **Firefox Silent Native Avoid Counting** - When Firefox preemptively reroutes an ad-capable native `PlaybackAccessToken` request from `site` to the forced recovery player type, the extension now confirms and counts that avoided ad once with an explicit console log instead of leaving `Ads Blocked` unchanged.
