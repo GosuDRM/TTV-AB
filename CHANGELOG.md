@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.2.9] - 2026-03-14
+
+### Fixed
+- **Shared Counter Sync** - Page-side `Ads Blocked` increments now rebroadcast the updated total into active workers so later worker events cannot overwrite newer totals during recovery.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.9 release line.
+
 ## [4.2.8] - 2026-03-13
 
 ### Fixed

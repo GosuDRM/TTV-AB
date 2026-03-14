@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.2.8-purple)
+![Version](https://img.shields.io/badge/version-4.2.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -53,6 +53,9 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.2.9
+- **Counter Path Hardening** - Shared ad-count broadcasts now stay synchronized across page and worker contexts, preventing newer totals from being overwritten during recovery.
 
 ### v4.2.8
 - **Display Ad Flash Fix** - Display ad overlays (banners, labels, countdown timers) are no longer briefly visible before being hidden. Expanded CSS coverage and optimized detection timing.

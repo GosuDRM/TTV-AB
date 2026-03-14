@@ -68,7 +68,11 @@ function _blockAntiAdblockPopup() {
 	let pendingDisplayAdShellSignature = null;
 	let lastStaleDisplayArtifactSignature = null;
 	let lastStaleDisplayArtifactCleanupAt = 0;
+	let lastCountedStaleDisplayArtifactSignature = null;
 	let lastPathname = window.location.pathname;
+	const isFirefoxRuntime =
+		typeof navigator !== "undefined" &&
+		/firefox/i.test(String(navigator.userAgent || ""));
 	const EXPLICIT_DISPLAY_AD_SELECTORS = [
 		'div[data-test-selector="ad-banner"]',
 		'div[data-test-selector="display-ad"]',
@@ -259,6 +263,7 @@ function _blockAntiAdblockPopup() {
 		function _resetStaleDisplayArtifactCleanupDeduper() {
 			lastStaleDisplayArtifactSignature = null;
 			lastStaleDisplayArtifactCleanupAt = 0;
+			lastCountedStaleDisplayArtifactSignature = null;
 		}
 
 		function _isDisplayAdShellArtifact(el) {
@@ -341,6 +346,14 @@ function _blockAntiAdblockPopup() {
 				"Display ad shell stale: cleaning up residual shell/layout artifacts",
 				"info",
 			);
+			if (
+				isFirefoxRuntime &&
+				staleSignature &&
+				staleSignature !== lastCountedStaleDisplayArtifactSignature
+			) {
+				_incrementDomCleanup("display-shell-stale");
+				lastCountedStaleDisplayArtifactSignature = staleSignature;
+			}
 
 			staleNodes.forEach((el) => {
 				if (
@@ -785,7 +798,10 @@ function _blockAntiAdblockPopup() {
 					if (!hasExplicitDisplayAdSignal) return false;
 				}
 
-				if (!hasExplicitDisplayAdSignal && now - pendingDisplayAdShellSince < 150) {
+				if (
+					!hasExplicitDisplayAdSignal &&
+					now - pendingDisplayAdShellSince < 150
+				) {
 					return false;
 				}
 			}

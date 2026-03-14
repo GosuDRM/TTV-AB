@@ -1,9 +1,14 @@
 // TTV AB - Build Script
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 const MODULES_DIR = path.join(__dirname, "src", "modules");
 const OUTPUT_FILE = path.join(__dirname, "src", "scripts", "content.js");
+const DIST_DIR = path.join(__dirname, "dist");
+const GENERATED_SOURCE_FILES = new Set([
+	path.relative(__dirname, OUTPUT_FILE).replaceAll("\\", "/"),
+]);
 
 const MODULE_ORDER = [
 	"constants.js",
@@ -90,6 +95,9 @@ function readVersionSources() {
 	const constantsPath = path.join(MODULES_DIR, "constants.js");
 	const constantsContent = fs.readFileSync(constantsPath, "utf8");
 	const constantsMatch = constantsContent.match(/VERSION:\s*['"]([^'"]+)['"]/);
+	const internalVersionMatch = constantsContent.match(
+		/INTERNAL_VERSION:\s*(\d+)/,
+	);
 	let packageVersion = "0.0.0";
 	let manifestVersion = "0.0.0";
 
@@ -109,6 +117,9 @@ function readVersionSources() {
 
 	return {
 		constantsVersion: constantsMatch?.[1] || null,
+		constantsInternalVersion: internalVersionMatch?.[1]
+			? Number.parseInt(internalVersionMatch[1], 10)
+			: null,
 		packageVersion,
 		manifestVersion,
 	};
@@ -206,7 +217,14 @@ function validateSharedDefinitions() {
 	}
 	for (const contentScript of manifest.content_scripts || []) {
 		for (const file of contentScript.js || []) {
-			if (!fs.existsSync(path.join(__dirname, file))) {
+			const normalizedFile = String(file).replaceAll("\\", "/");
+			if (
+				GENERATED_SOURCE_FILES.has(normalizedFile) &&
+				!fs.existsSync(path.join(__dirname, normalizedFile))
+			) {
+				continue;
+			}
+			if (!fs.existsSync(path.join(__dirname, normalizedFile))) {
 				throw new Error(`Manifest content script is missing: ${file}`);
 			}
 		}
@@ -1192,6 +1210,57 @@ function validateSharedDefinitions() {
 	}
 }
 
+function getBuildMeta() {
+	const {
+		constantsVersion,
+		constantsInternalVersion,
+		packageVersion,
+		manifestVersion,
+	} = readVersionSources();
+
+	return {
+		version: constantsVersion || packageVersion || manifestVersion || "0.0.0",
+		internalVersion: constantsInternalVersion,
+	};
+}
+
+function packageChrome(baseMeta) {
+	const version = baseMeta.version;
+	const stageDir = path.join(DIST_DIR, "chrome-package");
+	const zipOutputFile = path.join(DIST_DIR, `TTV-AB-v${version}-chrome.zip`);
+
+	fs.rmSync(stageDir, { recursive: true, force: true });
+	fs.rmSync(zipOutputFile, { force: true });
+	fs.mkdirSync(stageDir, { recursive: true });
+
+	fs.copyFileSync(
+		path.join(__dirname, "manifest.json"),
+		path.join(stageDir, "manifest.json"),
+	);
+	fs.copyFileSync(
+		path.join(__dirname, "LICENSE"),
+		path.join(stageDir, "LICENSE"),
+	);
+	fs.cpSync(path.join(__dirname, "_locales"), path.join(stageDir, "_locales"), {
+		recursive: true,
+	});
+	fs.cpSync(path.join(__dirname, "assets"), path.join(stageDir, "assets"), {
+		recursive: true,
+	});
+	fs.cpSync(path.join(__dirname, "src"), path.join(stageDir, "src"), {
+		recursive: true,
+	});
+
+	const entries = fs.readdirSync(stageDir);
+	execFileSync(
+		"tar",
+		["-a", "-cf", zipOutputFile, "-C", stageDir, ...entries],
+		{ stdio: "inherit" },
+	);
+
+	console.log(`  ZIP: ${path.relative(__dirname, zipOutputFile)}`);
+}
+
 function minifyCode(code) {
 	let result = code;
 	const leadingCommentBlock = result.match(/^(?:\/\/.*\r?\n)+/)?.[0] || "";
@@ -1217,7 +1286,8 @@ function build() {
 
 	syncPopupHtmlFallbacks();
 	validateSharedDefinitions();
-	const version = getVersion();
+	const baseMeta = getBuildMeta();
+	const version = baseMeta.version;
 
 	const HEADER = `// TTV AB v${version} - Twitch Ad Blocker
 // Built file: src/scripts/content.js
@@ -1255,6 +1325,9 @@ _$in();
 
 		const stats = fs.statSync(OUTPUT_FILE);
 		const buildTime = new Date().toLocaleTimeString();
+
+		console.log("\nPackaging Chrome ZIP...");
+		packageChrome(baseMeta);
 
 		console.log(`\nBuild complete at ${buildTime}`);
 		console.log(`  Version: ${version}`);
