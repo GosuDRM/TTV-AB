@@ -124,6 +124,16 @@ function _resumePlayerAfterAdIfNeeded(channel = null) {
 	);
 	if (!isPaused) return false;
 
+	const now = Date.now();
+	if (
+		__TTVAB_STATE__.LastAdRecoveryResumeAt &&
+		now - __TTVAB_STATE__.LastAdRecoveryResumeAt < 1500
+	) {
+		_log("Suppressing duplicate programmatic resume", "warning");
+		return false;
+	}
+	__TTVAB_STATE__.LastAdRecoveryResumeAt = now;
+
 	try {
 		player.play();
 		_log("Resuming player after ad", "info");
