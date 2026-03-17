@@ -259,10 +259,8 @@ async function _processM3U8(url, text, realFetch) {
 
 			info.CleanPlaylistCount = (info.CleanPlaylistCount || 0) + 1;
 			if (
-				now - info.PendingAdEndAt <
-					__TTVAB_STATE__.AdEndGraceMs ||
-				info.CleanPlaylistCount <
-					__TTVAB_STATE__.AdEndMinCleanPlaylists
+				now - info.PendingAdEndAt < __TTVAB_STATE__.AdEndGraceMs ||
+				info.CleanPlaylistCount < __TTVAB_STATE__.AdEndMinCleanPlaylists
 			) {
 				return text;
 			}
