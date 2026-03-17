@@ -378,8 +378,6 @@ function _blockAntiAdblockPopup() {
 		function _resetDisplayAdShellState() {
 			isDisplayAdShellActive = false;
 			isPromotedPageAdActive = false;
-			didCountCurrentDisplayAdShellCleanup = false;
-			didCountCurrentDisplayAdShellAd = false;
 			pendingDisplayAdShellSince = 0;
 			pendingDisplayAdShellSignature = null;
 		}
@@ -420,6 +418,17 @@ function _blockAntiAdblockPopup() {
 			lastPathname = pathname;
 			_resetDisplayAdShellState();
 			_resetStaleDisplayArtifactCleanupDeduper();
+
+			const hasExplicitAdSignals = document.querySelector(
+				[...EXPLICIT_DISPLAY_AD_SELECTORS, ...DISPLAY_AD_SHELL_SELECTORS].join(
+					",",
+				),
+			);
+			if (!hasExplicitAdSignals) {
+				didCountCurrentDisplayAdShellCleanup = false;
+				didCountCurrentDisplayAdShellAd = false;
+			}
+
 			_cleanupAllKnownDisplayArtifacts();
 			_scanAndRemove();
 		}
