@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.1] - 2026-03-17
+
+### Fixed
+- **DOM Counter Race Condition** - Persisted DOM deduplication state across route changes so stale picture-in-picture shells are only counted once.
+- **Post-Ad Player Resume** - Added state-gating to player resumes after ads so it respects the user's manual pause choice.
+- **Transient Ad-End Resets** - Debounced ad-end evaluations in the processor to prevent premature test resets from spurious clean playlists.
+- **Worker Initialization Guards** - Guarded worker blob instantiation to prevent SecurityErrors on revoked URLs during crash recovery, and strictly checked worker reloads against current channel contexts.
+- **Unused Variables** - Removed unused variables in the worker hooks to resolve Biome linter warnings.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.1 release line.
+
 ## [4.2.7] - 2026-03-13
 
 ### Fixed

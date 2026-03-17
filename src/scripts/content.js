@@ -1,10 +1,10 @@
-// TTV AB v4.2.7 - Twitch Ad Blocker
+// TTV AB v4.3.1 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.2.7",
+	VERSION: "4.3.1",
 	INTERNAL_VERSION: 48,
 	LOG_STYLES: {
 		prefix:
@@ -164,7 +164,7 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 			"*",
 		);
 	}
-}
+}
 
 function _$l(msg, type = "info") {
 	const text = typeof msg === "object" ? JSON.stringify(msg) : String(msg);
@@ -177,7 +177,7 @@ function _$l(msg, type = "info") {
 	} else {
 		console.log(`%cTTV AB%c ${text}`, _$c.LOG_STYLES.prefix, style);
 	}
-}
+}
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
@@ -514,7 +514,7 @@ function _$gfr(info, url) {
 			(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
 		return bArea - aArea;
 	})[0];
-}
+}
 
 const _$gu = "https://gql.twitch.tv/gql";
 
@@ -775,7 +775,7 @@ async function _$tk(channel, playerType, realFetch) {
 	} finally {
 		clearTimeout(timeoutId);
 	}
-}
+}
 
 function _$rsa(info) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
@@ -1036,10 +1036,8 @@ async function _$pm(url, text, realFetch) {
 
 			info.CleanPlaylistCount = (info.CleanPlaylistCount || 0) + 1;
 			if (
-				now - info.PendingAdEndAt <
-					__TTVAB_STATE__.AdEndGraceMs ||
-				info.CleanPlaylistCount <
-					__TTVAB_STATE__.AdEndMinCleanPlaylists
+				now - info.PendingAdEndAt < __TTVAB_STATE__.AdEndGraceMs ||
+				info.CleanPlaylistCount < __TTVAB_STATE__.AdEndMinCleanPlaylists
 			) {
 				return text;
 			}
@@ -1293,7 +1291,7 @@ async function _$fb(
 	}
 
 	return { type: backupType, m3u8: backupM3u8, isFallback };
-}
+}
 
 function _$wj(url) {
 	const req = new XMLHttpRequest();
@@ -1342,7 +1340,7 @@ function _$iv(v) {
 		!_$s.conflicts.some((c) => src.includes(c)) &&
 		!_$s.reinsertPatterns.some((p) => src.includes(p))
 	);
-}
+}
 
 function _$wf() {
 	_$l("Worker fetch hooked", "info");
@@ -1392,7 +1390,7 @@ function _$wf() {
 				let variantUrl = lines[i + 1];
 				try {
 					variantUrl = new URL(variantUrl, usherUrl).href;
-				} catch { }
+				} catch {}
 				if (resolution) {
 					const resInfo = _$sv(
 						attrs,
@@ -1804,7 +1802,7 @@ function _$hw() {
 									key: "FetchResponse",
 									value: responseData,
 								});
-							} catch { }
+							} catch {}
 						});
 						break;
 					case "AdBlocked":
@@ -1844,7 +1842,7 @@ function _$hw() {
 								!__TTVAB_STATE__.CurrentAdChannel ||
 								__TTVAB_STATE__.CurrentAdChannel !== channel ||
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
-								__TTVAB_STATE__.AdCycleStaleMs;
+									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -1979,7 +1977,7 @@ function _$hw() {
 									}
 								});
 							});
-						} catch (_e) { }
+						} catch (_e) {}
 						if (typeof _$rpa === "function") {
 							setTimeout(() => {
 								_$rpa(e.data.channel || null);
@@ -2027,20 +2025,23 @@ function _$hw() {
 					const delay = 2 ** restartAttempts * 500;
 					_$l(
 						"Restarting worker in " +
-						delay / 1000 +
-						"s (attempt " +
-						restartAttempts +
-						"/" +
-						MAX_RESTART_ATTEMPTS +
-						")",
+							delay / 1000 +
+							"s (attempt " +
+							restartAttempts +
+							"/" +
+							MAX_RESTART_ATTEMPTS +
+							")",
 						"warning",
 					);
 
 					setTimeout(() => {
 						try {
 							const restartCode = this.__ttvabInjectedCode;
-							if (!restartCode) throw new Error("No injected code stored for restart");
-							const restartBlobUrl = URL.createObjectURL(new Blob([restartCode]));
+							if (!restartCode)
+								throw new Error("No injected code stored for restart");
+							const restartBlobUrl = URL.createObjectURL(
+								new Blob([restartCode]),
+							);
 							new window.Worker(restartBlobUrl, workerOpts);
 							setTimeout(() => URL.revokeObjectURL(restartBlobUrl), 0);
 							_$l("Worker restarted", "success");
@@ -2070,14 +2071,14 @@ function _$hw() {
 					value: __TTVAB_STATE__.PinnedBackupPlayerType,
 					channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 				});
-			} catch { }
+			} catch {}
 
 			if (_$s.workers.length > 5) {
 				const oldWorker = _$s.workers.shift();
 				try {
 					oldWorker.__TTVABIntentionallyTerminated = true;
 					oldWorker.terminate();
-				} catch { }
+				} catch {}
 			}
 		}
 	};
@@ -2157,7 +2158,7 @@ function _$mf() {
 					changed: true,
 				};
 			}
-		} catch { }
+		} catch {}
 
 		return { bodyText, changed: false };
 	};
@@ -2196,7 +2197,7 @@ function _$mf() {
 					);
 				}
 			}
-		} catch { }
+		} catch {}
 	};
 	const processGqlResponse = async (response) => {
 		if (!response || response.status !== 200) return;
@@ -2214,9 +2215,9 @@ function _$mf() {
 					if (typeof effectivePlayerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
 					}
-				} catch { }
+				} catch {}
 			}
-		} catch { }
+		} catch {}
 	};
 
 	window.fetch = async function (...args) {
@@ -2246,7 +2247,7 @@ function _$mf() {
 						} else if (effectiveRequest !== url || args.length !== 1) {
 							nextArgs = [effectiveRequest];
 						}
-					} catch (_e) { }
+					} catch (_e) {}
 				} else if (typeof opts?.body === "string") {
 					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
 					processGqlBody(rewritten.bodyText);
@@ -2327,7 +2328,7 @@ function _$mf() {
 		}
 		return realFetch.apply(this, args);
 	};
-}
+}
 
 const _$pbs = {
 	position: 0,
@@ -2452,6 +2453,16 @@ function _$rpa(channel = null) {
 		player.isPaused?.() || playerCore?.paused || video?.paused,
 	);
 	if (!isPaused) return false;
+
+	const now = Date.now();
+	if (
+		__TTVAB_STATE__.LastAdRecoveryResumeAt &&
+		now - __TTVAB_STATE__.LastAdRecoveryResumeAt < 1500
+	) {
+		_$l("Suppressing duplicate programmatic resume", "warning");
+		return false;
+	}
+	__TTVAB_STATE__.LastAdRecoveryResumeAt = now;
 
 	try {
 		player.play();
@@ -2769,7 +2780,7 @@ function _$hlp() {
 	} catch (err) {
 		_$l(`LocalStorage hooks failed: ${err.message}`, "warning");
 	}
-}
+}
 
 const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;
@@ -3444,8 +3455,6 @@ function _$bp() {
 		function _resetDisplayAdShellState() {
 			isDisplayAdShellActive = false;
 			isPromotedPageAdActive = false;
-			didCountCurrentDisplayAdShellCleanup = false;
-			didCountCurrentDisplayAdShellAd = false;
 			pendingDisplayAdShellSince = 0;
 			pendingDisplayAdShellSignature = null;
 		}
@@ -3486,6 +3495,17 @@ function _$bp() {
 			lastPathname = pathname;
 			_resetDisplayAdShellState();
 			_resetStaleDisplayArtifactCleanupDeduper();
+
+			const hasExplicitAdSignals = document.querySelector(
+				[...EXPLICIT_DISPLAY_AD_SELECTORS, ...DISPLAY_AD_SHELL_SELECTORS].join(
+					",",
+				),
+			);
+			if (!hasExplicitAdSignals) {
+				didCountCurrentDisplayAdShellCleanup = false;
+				didCountCurrentDisplayAdShellAd = false;
+			}
+
 			_cleanupAllKnownDisplayArtifacts();
 			_$sr();
 		}
