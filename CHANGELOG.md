@@ -2,34 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [4.3.0] - 2026-03-14
+## [4.3.1] - 2026-03-17
 
 ### Fixed
-- **DOM Ad Counter Timing** - Fixed an issue where the `DOM Ads Blocked` counter would erroneously increment when navigating between channels on Firefox. `_handleRouteChange` no longer aggressively resets the deduplication cache, allowing old React layout shells to correctly be ignored during transition states.
-- **Ported Firefox Optimizations** - Ported the "Preemptive Ad Avoid" system and synchronized worker reload logic from the main repository to improve ad mitigation and ensure feature parity.
-- **Overall Stability** - Prevented old React layout artifact signatures from triggering false positive ad detections across the board.
-
-
-## [4.2.9] - 2026-03-14
-
-### Fixed
-- **Firefox Counter Sync** - Bridge message parsing now normalizes cross-realm page payloads before validating them, so `Ads Blocked` and `DOM Ads Blocked` updates from the page context are no longer dropped in Firefox.
-- **Firefox Stale Display-Shell DOM Counting** - Residual display-shell cleanup now counts `DOM Ads Blocked` once per unique stale shell/layout artifact, so Firefox's visible cleanup work is reflected without inflating repeated passes on the same leftover shell.
-- **Firefox Silent Native Ad Avoid Counting** - Preemptive native `PlaybackAccessToken` rewrites from `site` to the forced recovery player type now confirm ad-capable token responses and count one `Ads Blocked` event per channel cooldown even when the worker never reaches a visible `AdDetected` cycle.
-- **Firefox Worker Count Sync** - Page-side `Ads Blocked` increments now rebroadcast the updated total back into active workers so later worker events cannot overwrite a newer page-side counter value.
+- **DOM Counter Race Condition** - Persisted DOM deduplication state across route changes so stale picture-in-picture shells are only counted once.
+- **Post-Ad Player Resume** - Added state-gating to player resumes after ads so it respects the user's manual pause choice.
+- **Transient Ad-End Resets** - Debounced ad-end evaluations in the processor to prevent premature test resets from spurious clean playlists.
+- **Worker Initialization Guards** - Guarded worker blob instantiation to prevent SecurityErrors on revoked URLs during crash recovery, and strictly checked worker reloads against current channel contexts.
+- **Unused Variables** - Removed unused variables in the worker hooks to resolve Biome linter warnings.
 
 ### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.9 release line.
-
-## [4.2.8] - 2026-03-13
-
-### Fixed
-- **Display Ad Flash** - Display ad overlays (banners, labels, countdown timers) are no longer briefly visible before being hidden. Expanded the injected CSS ruleset to cover ad label and countdown selectors so the browser hides them before any JavaScript runs.
-- **Display Ad Confirmation Delay** - Reduced the confirmation delay for display ad shell detection. Explicit ad signals (Twitch's own ad-banner and display-ad data attributes) now trigger immediate cleanup with no delay. Inferred signals (heuristic layout detection) use a shorter 150ms confirmation window, down from 350ms.
-
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.8 release line.
-
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.1 release line.
 
 ## [4.2.7] - 2026-03-13
 

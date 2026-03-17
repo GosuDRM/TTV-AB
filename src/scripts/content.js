@@ -1,10 +1,10 @@
-// TTV AB v4.3.0 - Twitch Ad Blocker
+// TTV AB v4.3.1 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.3.0",
+	VERSION: "4.3.1",
 	INTERNAL_VERSION: 50,
 	LOG_STYLES: {
 		prefix:
@@ -29,7 +29,7 @@ const _$c = {
 	RELOAD_AFTER_AD: false,
 	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
 	ALWAYS_RELOAD_PLAYER_ON_AD: false,
-};
+};
 
 const _$s = {
 	workers: [],
@@ -2639,6 +2639,16 @@ function _resumePlayerAfterAdIfNeeded(channel = null) {
 	);
 	if (!isPaused) return false;
 
+	const now = Date.now();
+	if (
+		__TTVAB_STATE__.LastAdRecoveryResumeAt &&
+		now - __TTVAB_STATE__.LastAdRecoveryResumeAt < 1500
+	) {
+		_$l("Suppressing duplicate programmatic resume", "warning");
+		return false;
+	}
+	__TTVAB_STATE__.LastAdRecoveryResumeAt = now;
+
 	try {
 		player.play();
 		_$l("Resuming player after ad", "info");
@@ -3250,7 +3260,7 @@ function _$al() {
 		if (typeof detail?.id !== "string") return;
 		_$au(detail.id);
 	});
-}
+}
 
 function _$bs() {
 	if (
@@ -4142,7 +4152,7 @@ function _$bp() {
 				try {
 					if (el.matches?.(selector)) return true;
 					if (el.querySelector?.(selector)) return true;
-				} catch {}
+				} catch { }
 			}
 			return false;
 		}
@@ -4228,7 +4238,7 @@ function _$bp() {
 							popup.setAttribute(
 								"style",
 								(popup.getAttribute("style") || "") +
-									"; display: none !important; visibility: hidden !important;",
+								"; display: none !important; visibility: hidden !important;",
 							);
 							popup.setAttribute("data-ttvab-blocked", "true");
 
@@ -4249,7 +4259,7 @@ function _$bp() {
 						fallback.setAttribute(
 							"style",
 							(fallback.getAttribute("style") || "") +
-								"; display: none !important;",
+							"; display: none !important;",
 						);
 						fallback.setAttribute("data-ttvab-blocked", "true");
 						_incrementDomCleanup("overlay-ad");
@@ -4277,13 +4287,13 @@ function _$bp() {
 							el.setAttribute(
 								"style",
 								(el.getAttribute("style") || "") +
-									"; display: none !important;",
+								"; display: none !important;",
 							);
 							_incrementDomCleanup("overlay-ad");
 							return true;
 						}
 					}
-				} catch {}
+				} catch { }
 			}
 
 			const overlays = document.querySelectorAll(
@@ -4323,7 +4333,7 @@ function _$bp() {
 				if (typeof nativeVisibility?.mozHidden === "function") {
 					return nativeVisibility.mozHidden.call(document) === true;
 				}
-			} catch {}
+			} catch { }
 			return document.hidden;
 		}
 
