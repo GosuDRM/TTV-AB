@@ -48,7 +48,7 @@ function _hookWorkerFetch() {
 				let variantUrl = lines[i + 1];
 				try {
 					variantUrl = new URL(variantUrl, usherUrl).href;
-				} catch { }
+				} catch {}
 				if (resolution) {
 					const resInfo = _getStreamVariantInfo(
 						attrs,
@@ -460,7 +460,7 @@ function _hookWorker() {
 									key: "FetchResponse",
 									value: responseData,
 								});
-							} catch { }
+							} catch {}
 						});
 						break;
 					case "AdBlocked":
@@ -500,7 +500,7 @@ function _hookWorker() {
 								!__TTVAB_STATE__.CurrentAdChannel ||
 								__TTVAB_STATE__.CurrentAdChannel !== channel ||
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
-								__TTVAB_STATE__.AdCycleStaleMs;
+									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -635,7 +635,7 @@ function _hookWorker() {
 									}
 								});
 							});
-						} catch (_e) { }
+						} catch (_e) {}
 						if (typeof _resumePlayerAfterAdIfNeeded === "function") {
 							setTimeout(() => {
 								_resumePlayerAfterAdIfNeeded(e.data.channel || null);
@@ -664,7 +664,7 @@ function _hookWorker() {
 				}
 			});
 
-			const workerUrl = url;
+			const _workerUrl = url;
 			const workerOpts = opts;
 			let restartAttempts = 0;
 			const MAX_RESTART_ATTEMPTS = 3;
@@ -683,20 +683,23 @@ function _hookWorker() {
 					const delay = 2 ** restartAttempts * 500;
 					_log(
 						"Restarting worker in " +
-						delay / 1000 +
-						"s (attempt " +
-						restartAttempts +
-						"/" +
-						MAX_RESTART_ATTEMPTS +
-						")",
+							delay / 1000 +
+							"s (attempt " +
+							restartAttempts +
+							"/" +
+							MAX_RESTART_ATTEMPTS +
+							")",
 						"warning",
 					);
 
 					setTimeout(() => {
 						try {
 							const restartCode = this.__ttvabInjectedCode;
-							if (!restartCode) throw new Error("No injected code stored for restart");
-							const restartBlobUrl = URL.createObjectURL(new Blob([restartCode]));
+							if (!restartCode)
+								throw new Error("No injected code stored for restart");
+							const restartBlobUrl = URL.createObjectURL(
+								new Blob([restartCode]),
+							);
 							new window.Worker(restartBlobUrl, workerOpts);
 							setTimeout(() => URL.revokeObjectURL(restartBlobUrl), 0);
 							_log("Worker restarted", "success");
@@ -726,14 +729,14 @@ function _hookWorker() {
 					value: __TTVAB_STATE__.PinnedBackupPlayerType,
 					channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 				});
-			} catch { }
+			} catch {}
 
 			if (_S.workers.length > 5) {
 				const oldWorker = _S.workers.shift();
 				try {
 					oldWorker.__TTVABIntentionallyTerminated = true;
 					oldWorker.terminate();
-				} catch { }
+				} catch {}
 			}
 		}
 	};
@@ -813,7 +816,7 @@ function _hookMainFetch() {
 					changed: true,
 				};
 			}
-		} catch { }
+		} catch {}
 
 		return { bodyText, changed: false };
 	};
@@ -852,7 +855,7 @@ function _hookMainFetch() {
 					);
 				}
 			}
-		} catch { }
+		} catch {}
 	};
 	const processGqlResponse = async (response) => {
 		if (!response || response.status !== 200) return;
@@ -870,9 +873,9 @@ function _hookMainFetch() {
 					if (typeof effectivePlayerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
 					}
-				} catch { }
+				} catch {}
 			}
-		} catch { }
+		} catch {}
 	};
 
 	window.fetch = async function (...args) {
@@ -902,7 +905,7 @@ function _hookMainFetch() {
 						} else if (effectiveRequest !== url || args.length !== 1) {
 							nextArgs = [effectiveRequest];
 						}
-					} catch (_e) { }
+					} catch (_e) {}
 				} else if (typeof opts?.body === "string") {
 					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
 					processGqlBody(rewritten.bodyText);
