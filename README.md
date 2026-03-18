@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.4-purple)
+![Version](https://img.shields.io/badge/version-4.3.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -53,6 +53,11 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.3.5
+- **Post-Ad Audio Recovery** - The page now suppresses competing `video` and `audio` elements during ad recovery and restores their exact audio state after `AdEnded`, preventing delayed or doubled audio from lingering backup players.
+- **Ad Event Channel Normalization** - Worker ad events now normalize observed channel names before stale-channel checks so post-ad cleanup runs reliably across Twitch route casing/format differences.
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle now target the 4.3.5 release line.
 
 ### v4.3.4
 - **Monkey Patch Reduction** - Removed the history and `localStorage` preservation monkey patches in favor of URL-aware route handling and scoped player-preference snapshot/restore.

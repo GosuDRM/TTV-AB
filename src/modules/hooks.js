@@ -410,6 +410,11 @@ function _hookWorker() {
 			super(blobUrl, opts);
 			setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
 
+			const normalizeObservedChannelName = (value) => {
+				if (typeof value !== "string") return null;
+				const trimmed = value.trim().toLowerCase();
+				return trimmed || null;
+			};
 			const getCurrentPageChannel = () => {
 				const match = window.location.pathname.match(/^\/([^/?#]+)/);
 				const candidate = match?.[1] || null;
@@ -431,12 +436,16 @@ function _hookWorker() {
 					"videos",
 					"wallet",
 				]);
-				return reserved.has(candidate.toLowerCase()) ? null : candidate;
+				const normalizedCandidate = normalizeObservedChannelName(candidate);
+				return normalizedCandidate && !reserved.has(normalizedCandidate)
+					? normalizedCandidate
+					: null;
 			};
 			const isStaleChannelEvent = (channel) => {
-				if (!channel) return false;
+				const safeChannel = normalizeObservedChannelName(channel);
+				if (!safeChannel) return false;
 				const currentChannel = getCurrentPageChannel();
-				return Boolean(currentChannel && currentChannel !== channel);
+				return Boolean(currentChannel && currentChannel !== safeChannel);
 			};
 			const handleWorkerFetchRequest = async (fetchRequest) => {
 				const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
@@ -506,8 +515,9 @@ function _hookWorker() {
 						}
 						{
 							const now = Date.now();
-							const channel =
-								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+							const channel = normalizeObservedChannelName(
+								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
+							);
 							const shouldStartNewCycle =
 								!__TTVAB_STATE__.CurrentAdChannel ||
 								__TTVAB_STATE__.CurrentAdChannel !== channel ||
@@ -517,6 +527,17 @@ function _hookWorker() {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
+								if (typeof _suppressCompetingMediaDuringAd === "function") {
+									_suppressCompetingMediaDuringAd(channel);
+									setTimeout(
+										() => _suppressCompetingMediaDuringAd(channel),
+										80,
+									);
+									setTimeout(
+										() => _suppressCompetingMediaDuringAd(channel),
+										350,
+									);
+								}
 								if (typeof _rememberPlayerPlaybackForAd === "function") {
 									_rememberPlayerPlaybackForAd(channel);
 								}
@@ -539,8 +560,9 @@ function _hookWorker() {
 							break;
 						}
 						const nextPinnedType = e.data.value || null;
-						const nextPinnedChannel =
-							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+						const nextPinnedChannel = normalizeObservedChannelName(
+							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
+						);
 						if (
 							__TTVAB_STATE__.PinnedBackupPlayerType === nextPinnedType &&
 							__TTVAB_STATE__.PinnedBackupPlayerChannel === nextPinnedChannel
@@ -549,6 +571,13 @@ function _hookWorker() {
 						}
 						__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedChannel;
+						if (typeof _suppressCompetingMediaDuringAd === "function") {
+							_suppressCompetingMediaDuringAd(nextPinnedChannel);
+							setTimeout(
+								() => _suppressCompetingMediaDuringAd(nextPinnedChannel),
+								120,
+							);
+						}
 						_broadcastWorkers({
 							key: "UpdatePinnedBackupPlayerType",
 							value: __TTVAB_STATE__.PinnedBackupPlayerType,
@@ -648,6 +677,9 @@ function _hookWorker() {
 								});
 							});
 						} catch (_e) {}
+						if (typeof _restoreSuppressedMediaAfterAd === "function") {
+							_restoreSuppressedMediaAfterAd(e.data.channel || null);
+						}
 						if (typeof _resumePlayerAfterAdIfNeeded === "function") {
 							setTimeout(() => {
 								_resumePlayerAfterAdIfNeeded(e.data.channel || null);

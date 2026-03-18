@@ -1,11 +1,11 @@
-// TTV AB v4.3.4 - Twitch Ad Blocker
+// TTV AB v4.3.5 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.3.4",
-	INTERNAL_VERSION: 49,
+	VERSION: "4.3.5",
+	INTERNAL_VERSION: 50,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -1752,6 +1752,11 @@ function _$hw() {
 			super(blobUrl, opts);
 			setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
 
+			const normalizeObservedChannelName = (value) => {
+				if (typeof value !== "string") return null;
+				const trimmed = value.trim().toLowerCase();
+				return trimmed || null;
+			};
 			const getCurrentPageChannel = () => {
 				const match = window.location.pathname.match(/^\/([^/?#]+)/);
 				const candidate = match?.[1] || null;
@@ -1773,12 +1778,16 @@ function _$hw() {
 					"videos",
 					"wallet",
 				]);
-				return reserved.has(candidate.toLowerCase()) ? null : candidate;
+				const normalizedCandidate = normalizeObservedChannelName(candidate);
+				return normalizedCandidate && !reserved.has(normalizedCandidate)
+					? normalizedCandidate
+					: null;
 			};
 			const isStaleChannelEvent = (channel) => {
-				if (!channel) return false;
+				const safeChannel = normalizeObservedChannelName(channel);
+				if (!safeChannel) return false;
 				const currentChannel = getCurrentPageChannel();
-				return Boolean(currentChannel && currentChannel !== channel);
+				return Boolean(currentChannel && currentChannel !== safeChannel);
 			};
 			const handleWorkerFetchRequest = async (fetchRequest) => {
 				const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
@@ -1848,8 +1857,9 @@ function _$hw() {
 						}
 						{
 							const now = Date.now();
-							const channel =
-								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+							const channel = normalizeObservedChannelName(
+								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
+							);
 							const shouldStartNewCycle =
 								!__TTVAB_STATE__.CurrentAdChannel ||
 								__TTVAB_STATE__.CurrentAdChannel !== channel ||
@@ -1859,6 +1869,17 @@ function _$hw() {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
+								if (typeof _suppressCompetingMediaDuringAd === "function") {
+									_suppressCompetingMediaDuringAd(channel);
+									setTimeout(
+										() => _suppressCompetingMediaDuringAd(channel),
+										80,
+									);
+									setTimeout(
+										() => _suppressCompetingMediaDuringAd(channel),
+										350,
+									);
+								}
 								if (typeof _$rpfa === "function") {
 									_$rpfa(channel);
 								}
@@ -1881,8 +1902,9 @@ function _$hw() {
 							break;
 						}
 						const nextPinnedType = e.data.value || null;
-						const nextPinnedChannel =
-							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+						const nextPinnedChannel = normalizeObservedChannelName(
+							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
+						);
 						if (
 							__TTVAB_STATE__.PinnedBackupPlayerType === nextPinnedType &&
 							__TTVAB_STATE__.PinnedBackupPlayerChannel === nextPinnedChannel
@@ -1891,6 +1913,13 @@ function _$hw() {
 						}
 						__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedChannel;
+						if (typeof _suppressCompetingMediaDuringAd === "function") {
+							_suppressCompetingMediaDuringAd(nextPinnedChannel);
+							setTimeout(
+								() => _suppressCompetingMediaDuringAd(nextPinnedChannel),
+								120,
+							);
+						}
 						_$bw({
 							key: "UpdatePinnedBackupPlayerType",
 							value: __TTVAB_STATE__.PinnedBackupPlayerType,
@@ -1990,6 +2019,9 @@ function _$hw() {
 								});
 							});
 						} catch (_e) {}
+						if (typeof _restoreSuppressedMediaAfterAd === "function") {
+							_restoreSuppressedMediaAfterAd(e.data.channel || null);
+						}
 						if (typeof _$rpa === "function") {
 							setTimeout(() => {
 								_$rpa(e.data.channel || null);
@@ -2330,6 +2362,11 @@ const _$pbs = {
 };
 
 let _$cpr = null;
+const _AdAudioSuppressionState = {
+	suppressedMedia: new Map(),
+	activeChannel: null,
+	lastSuppressedCount: 0,
+};
 const _$ppk = [
 	"video-quality",
 	"video-muted",
@@ -2395,6 +2432,120 @@ function _$gps() {
 	return { player, state: playerState };
 }
 
+function _normalizePlayerChannel(channel = null) {
+	if (typeof channel !== "string") return null;
+	const trimmed = channel.trim().toLowerCase();
+	return trimmed || null;
+}
+
+function _getFallbackPrimaryVideoElement() {
+	const videos = Array.from(document.querySelectorAll("video"));
+	let bestVideo = null;
+	let bestArea = 0;
+
+	for (const video of videos) {
+		if (!(video instanceof HTMLMediaElement)) continue;
+		const rect = video.getBoundingClientRect();
+		const area = Math.max(0, rect.width) * Math.max(0, rect.height);
+		if (area <= 0) continue;
+		if (area > bestArea) {
+			bestArea = area;
+			bestVideo = video;
+		}
+	}
+
+	return bestVideo;
+}
+
+function _getPrimaryMediaElement() {
+	const { player } = _$gps();
+	const playerVideo = player?.getHTMLVideoElement?.() || null;
+	if (playerVideo instanceof HTMLMediaElement && playerVideo.isConnected) {
+		return playerVideo;
+	}
+	return _getFallbackPrimaryVideoElement();
+}
+
+function _suppressCompetingMediaDuringAd(channel = null) {
+	const safeChannel =
+		_normalizePlayerChannel(channel) ||
+		_normalizePlayerChannel(__TTVAB_STATE__.CurrentAdChannel) ||
+		_normalizePlayerChannel(__TTVAB_STATE__.PageChannel);
+	const primaryMedia = _getPrimaryMediaElement();
+	let suppressedCount = 0;
+
+	for (const media of document.querySelectorAll("video, audio")) {
+		if (!(media instanceof HTMLMediaElement)) continue;
+		if (!media.isConnected || media.ended) continue;
+		if (primaryMedia && media === primaryMedia) continue;
+		if (media.paused && (media.muted || Number(media.volume ?? 1) === 0)) {
+			continue;
+		}
+
+		if (!_AdAudioSuppressionState.suppressedMedia.has(media)) {
+			_AdAudioSuppressionState.suppressedMedia.set(media, {
+				muted: media.muted,
+				defaultMuted: media.defaultMuted,
+				volume: Number.isFinite(media.volume) ? media.volume : 1,
+			});
+		}
+
+		try {
+			media.defaultMuted = true;
+			media.muted = true;
+			media.volume = 0;
+			media.setAttribute("data-ttvab-audio-suppressed", "true");
+			suppressedCount += 1;
+		} catch {}
+	}
+
+	_AdAudioSuppressionState.activeChannel = safeChannel;
+	_AdAudioSuppressionState.lastSuppressedCount = suppressedCount;
+	if (suppressedCount > 0) {
+		_$l(
+			`Suppressed ${suppressedCount} competing media element${suppressedCount === 1 ? "" : "s"} during ad recovery`,
+			"info",
+		);
+	}
+	return suppressedCount;
+}
+
+function _restoreSuppressedMediaAfterAd(channel = null) {
+	const safeChannel = _normalizePlayerChannel(channel);
+	const activeChannel = _AdAudioSuppressionState.activeChannel;
+	if (safeChannel && activeChannel && safeChannel !== activeChannel) {
+		return 0;
+	}
+
+	let restoredCount = 0;
+	for (const [
+		media,
+		state,
+	] of _AdAudioSuppressionState.suppressedMedia.entries()) {
+		if (!(media instanceof HTMLMediaElement)) continue;
+		try {
+			media.defaultMuted = Boolean(state.defaultMuted);
+			media.muted = Boolean(state.muted);
+			if (Number.isFinite(state.volume)) {
+				media.volume = Math.min(1, Math.max(0, state.volume));
+			}
+			media.removeAttribute("data-ttvab-audio-suppressed");
+			restoredCount += 1;
+		} catch {}
+	}
+
+	_AdAudioSuppressionState.suppressedMedia.clear();
+	_AdAudioSuppressionState.activeChannel = null;
+	_AdAudioSuppressionState.lastSuppressedCount = 0;
+	if (restoredCount > 0) {
+		_$l(
+			`Restored ${restoredCount} suppressed media element${restoredCount === 1 ? "" : "s"} after ad`,
+			"info",
+		);
+	}
+	return restoredCount;
+}
+
 function _$cari() {
 	__TTVAB_STATE__.ShouldResumeAfterAd = false;
 	__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
@@ -2402,9 +2553,9 @@ function _$cari() {
 
 function _$rpfa(channel = null) {
 	const safeChannel =
-		typeof channel === "string"
-			? channel
-			: __TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel || null;
+		_normalizePlayerChannel(channel) ||
+		_normalizePlayerChannel(__TTVAB_STATE__.CurrentAdChannel) ||
+		_normalizePlayerChannel(__TTVAB_STATE__.PageChannel);
 	const { player, state: playerState } = _$gps();
 
 	let shouldResumeAfterAd = false;
@@ -2426,7 +2577,7 @@ function _$rpfa(channel = null) {
 }
 
 function _$rpa(channel = null) {
-	const safeChannel = typeof channel === "string" ? channel : null;
+	const safeChannel = _normalizePlayerChannel(channel);
 	const expectedChannel = __TTVAB_STATE__.ShouldResumeAfterAdChannel || null;
 	const shouldResume =
 		__TTVAB_STATE__.ShouldResumeAfterAd === true &&

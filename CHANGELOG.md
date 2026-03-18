@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.5] - 2026-03-19
+
+### Fixed
+- **Post-Ad Audio Delay** - During ad recovery the page now suppresses competing `video` and `audio` elements, then restores their original mute/volume state when the ad ends so stale backup-player audio cannot linger behind native playback.
+- **Ad-End Channel Matching** - Worker ad events now normalize observed channel names before stale-channel checks, preventing valid `AdEnded` cleanup from being skipped because of casing or route-format differences.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.5 release line.
+
 ## [4.3.4] - 2026-03-18
 
 ### Fixed
