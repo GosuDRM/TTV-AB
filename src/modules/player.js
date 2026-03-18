@@ -9,6 +9,11 @@ const _PlayerBufferState = {
 };
 
 let _cachedPlayerRef = null;
+const _AdAudioSuppressionState = {
+	suppressedMedia: new Map(),
+	activeChannel: null,
+	lastSuppressedCount: 0,
+};
 
 function _getPlayerCore(player) {
 	return player?.playerInstance?.core || player?.core || null;
@@ -65,6 +70,117 @@ function _getPlayerAndState() {
 	);
 
 	return { player, state: playerState };
+}
+
+function _normalizePlayerChannel(channel = null) {
+	if (typeof channel !== "string") return null;
+	const trimmed = channel.trim().toLowerCase();
+	return trimmed || null;
+}
+
+function _getFallbackPrimaryVideoElement() {
+	const videos = Array.from(document.querySelectorAll("video"));
+	let bestVideo = null;
+	let bestArea = 0;
+
+	for (const video of videos) {
+		if (!(video instanceof HTMLMediaElement)) continue;
+		const rect = video.getBoundingClientRect();
+		const area = Math.max(0, rect.width) * Math.max(0, rect.height);
+		if (area <= 0) continue;
+		if (area > bestArea) {
+			bestArea = area;
+			bestVideo = video;
+		}
+	}
+
+	return bestVideo;
+}
+
+function _getPrimaryMediaElement() {
+	const { player } = _getPlayerAndState();
+	const playerVideo = player?.getHTMLVideoElement?.() || null;
+	if (playerVideo instanceof HTMLMediaElement && playerVideo.isConnected) {
+		return playerVideo;
+	}
+	return _getFallbackPrimaryVideoElement();
+}
+
+function _suppressCompetingMediaDuringAd(channel = null) {
+	const safeChannel =
+		_normalizePlayerChannel(channel) ||
+		_normalizePlayerChannel(__TTVAB_STATE__.CurrentAdChannel) ||
+		_normalizePlayerChannel(__TTVAB_STATE__.PageChannel);
+	const primaryMedia = _getPrimaryMediaElement();
+	let suppressedCount = 0;
+
+	for (const media of document.querySelectorAll("video, audio")) {
+		if (!(media instanceof HTMLMediaElement)) continue;
+		if (!media.isConnected || media.ended) continue;
+		if (primaryMedia && media === primaryMedia) continue;
+		if (media.paused && (media.muted || Number(media.volume ?? 1) === 0)) {
+			continue;
+		}
+
+		if (!_AdAudioSuppressionState.suppressedMedia.has(media)) {
+			_AdAudioSuppressionState.suppressedMedia.set(media, {
+				muted: media.muted,
+				defaultMuted: media.defaultMuted,
+				volume: Number.isFinite(media.volume) ? media.volume : 1,
+			});
+		}
+
+		try {
+			media.defaultMuted = true;
+			media.muted = true;
+			media.volume = 0;
+			media.setAttribute("data-ttvab-audio-suppressed", "true");
+			suppressedCount += 1;
+		} catch { }
+	}
+
+	_AdAudioSuppressionState.activeChannel = safeChannel;
+	_AdAudioSuppressionState.lastSuppressedCount = suppressedCount;
+	if (suppressedCount > 0) {
+		_log(
+			`Suppressed ${suppressedCount} competing media element${suppressedCount === 1 ? "" : "s"} during ad recovery`,
+			"info",
+		);
+	}
+	return suppressedCount;
+}
+
+function _restoreSuppressedMediaAfterAd(channel = null) {
+	const safeChannel = _normalizePlayerChannel(channel);
+	const activeChannel = _AdAudioSuppressionState.activeChannel;
+	if (safeChannel && activeChannel && safeChannel !== activeChannel) {
+		return 0;
+	}
+
+	let restoredCount = 0;
+	for (const [media, state] of _AdAudioSuppressionState.suppressedMedia.entries()) {
+		if (!(media instanceof HTMLMediaElement)) continue;
+		try {
+			media.defaultMuted = Boolean(state.defaultMuted);
+			media.muted = Boolean(state.muted);
+			if (Number.isFinite(state.volume)) {
+				media.volume = Math.min(1, Math.max(0, state.volume));
+			}
+			media.removeAttribute("data-ttvab-audio-suppressed");
+			restoredCount += 1;
+		} catch { }
+	}
+
+	_AdAudioSuppressionState.suppressedMedia.clear();
+	_AdAudioSuppressionState.activeChannel = null;
+	_AdAudioSuppressionState.lastSuppressedCount = 0;
+	if (restoredCount > 0) {
+		_log(
+			`Restored ${restoredCount} suppressed media element${restoredCount === 1 ? "" : "s"} after ad`,
+			"info",
+		);
+	}
+	return restoredCount;
 }
 
 function _clearAdResumeIntent() {

@@ -168,9 +168,12 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
 			info.FailedBackupPlayerTypes?.clear?.();
-			_incrementAdsBlocked(info.ChannelName);
 			if (typeof self !== "undefined" && self.postMessage) {
-				self.postMessage({ key: "AdDetected", channel: info.ChannelName });
+				self.postMessage({
+					key: "AdDetected",
+					channel: info.ChannelName,
+					source: "playlist-ad",
+				});
 			}
 		}
 

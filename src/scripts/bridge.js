@@ -26,6 +26,12 @@ function normalizeChannelName(value) {
 	return /^[a-z0-9_]{1,25}$/.test(trimmed) ? trimmed : null;
 }
 
+function normalizeCounterEventId(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	return /^[a-z0-9:_-]{1,200}$/i.test(trimmed) ? trimmed : null;
+}
+
 function isPlainObject(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return false;
@@ -68,15 +74,24 @@ function getBridgeMessageData(value) {
 function getBridgeMessageDetail(value) {
 	if (!isBridgeMessageObject(value)) return null;
 	const count = readBridgeMessageProperty(value, "count");
+	const delta = readBridgeMessageProperty(value, "delta");
 	const kind = readBridgeMessageProperty(value, "kind");
 	const channel = readBridgeMessageProperty(value, "channel");
+	const eventId = readBridgeMessageProperty(value, "eventId");
+	const source = readBridgeMessageProperty(value, "source");
 	return {
 		count:
 			typeof count === "string" && count.trim() !== ""
 				? Number(count)
 				: count,
+		delta:
+			typeof delta === "string" && delta.trim() !== ""
+				? Number(delta)
+				: delta,
 		kind: typeof kind === "string" ? kind : null,
 		channel: typeof channel === "string" ? channel : null,
+		eventId: typeof eventId === "string" ? eventId : null,
+		source: typeof source === "string" ? source : null,
 	};
 }
 
@@ -174,11 +189,14 @@ const ACHIEVEMENT_IDS = new Set(
 
 const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
+const MAX_SEEN_COUNTER_EVENTS = 2000;
+const COUNTER_EVENT_TTL_MS = 15 * 60 * 1000;
 const bridgeState = {
 	enabled: true,
 	storedAdsCount: 0,
 	storedDomAdsCount: 0,
 };
+const seenCounterEvents = new Map();
 
 const StorageQueue = {
 	_chain: Promise.resolve(),
@@ -466,6 +484,30 @@ let pendingAdChannels = [];
 let flushTimeout = null;
 let flushRetryCount = 0;
 
+function pruneSeenCounterEvents(now = Date.now()) {
+	for (const [eventId, seenAt] of seenCounterEvents.entries()) {
+		if (now - seenAt <= COUNTER_EVENT_TTL_MS) continue;
+		seenCounterEvents.delete(eventId);
+	}
+	while (seenCounterEvents.size > MAX_SEEN_COUNTER_EVENTS) {
+		const oldestEventId = seenCounterEvents.keys().next().value;
+		if (!oldestEventId) break;
+		seenCounterEvents.delete(oldestEventId);
+	}
+}
+
+function rememberCounterEvent(eventId, now = Date.now()) {
+	const safeEventId = normalizeCounterEventId(eventId);
+	if (!safeEventId) return false;
+	pruneSeenCounterEvents(now);
+	if (seenCounterEvents.has(safeEventId)) {
+		return false;
+	}
+	seenCounterEvents.set(safeEventId, now);
+	pruneSeenCounterEvents(now);
+	return true;
+}
+
 function reconcilePendingDelta(kind, nextStoredCount) {
 	const safeStoredCount = normalizeCount(nextStoredCount);
 	if (kind === "ads") {
@@ -490,6 +532,22 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 		}
 		bridgeState.storedDomAdsCount = safeStoredCount;
 	}
+}
+
+function queueExplicitDelta(kind, delta) {
+	const safeDelta = normalizeCount(delta);
+	if (safeDelta <= 0) {
+		return 0;
+	}
+	if (kind === "ads") {
+		pendingAdsDelta += safeDelta;
+		return safeDelta;
+	}
+	if (kind === "domAds") {
+		pendingDomAdsDelta += safeDelta;
+		return safeDelta;
+	}
+	return 0;
 }
 
 function queueTotalDelta(kind, nextTotal) {
@@ -643,7 +701,24 @@ window.addEventListener("message", (e) => {
 	if (message.type === "ttvab-ad-blocked") {
 		if (!detail || !Number.isFinite(detail.count)) return;
 		const channel = normalizeChannelName(detail.channel);
-		const delta = queueTotalDelta("ads", detail.count);
+		const eventId = normalizeCounterEventId(detail.eventId);
+		let delta = 0;
+		if (eventId) {
+			const explicitDelta = normalizeCount(detail.delta);
+			if (explicitDelta <= 0) {
+				console.warn(
+					"[TTV AB] Ignoring ad-blocked event with invalid delta:",
+					eventId,
+				);
+				return;
+			}
+			if (!rememberCounterEvent(eventId)) {
+				return;
+			}
+			delta = queueExplicitDelta("ads", explicitDelta);
+		} else {
+			delta = queueTotalDelta("ads", detail.count);
+		}
 		if (channel && delta > 0) {
 			for (let i = 0; i < delta; i++) {
 				pendingAdChannels.push(channel);
@@ -657,7 +732,24 @@ window.addEventListener("message", (e) => {
 
 	if (message.type === "ttvab-dom-ad-cleanup") {
 		if (!detail || !Number.isFinite(detail.count)) return;
-		const delta = queueTotalDelta("domAds", detail.count);
+		const eventId = normalizeCounterEventId(detail.eventId);
+		let delta = 0;
+		if (eventId) {
+			const explicitDelta = normalizeCount(detail.delta);
+			if (explicitDelta <= 0) {
+				console.warn(
+					"[TTV AB] Ignoring dom-ad event with invalid delta:",
+					eventId,
+				);
+				return;
+			}
+			if (!rememberCounterEvent(eventId)) {
+				return;
+			}
+			delta = queueExplicitDelta("domAds", explicitDelta);
+		} else {
+			delta = queueTotalDelta("domAds", detail.count);
+		}
 		if (delta > 0) {
 			scheduleFlush();
 		}

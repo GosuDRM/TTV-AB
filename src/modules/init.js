@@ -169,7 +169,10 @@ function _blockAntiAdblockPopup() {
 				"videos",
 				"wallet",
 			]);
-			return reserved.has(candidate.toLowerCase()) ? null : candidate;
+			const normalizedCandidate = candidate.trim().toLowerCase();
+			return normalizedCandidate && !reserved.has(normalizedCandidate)
+				? normalizedCandidate
+				: null;
 		}
 
 		function _hideElement(el) {
@@ -684,13 +687,16 @@ function _blockAntiAdblockPopup() {
 
 					if (!hasAdLabel) continue;
 
-					if (!isPromotedPageAdActive) {
-						isPromotedPageAdActive = true;
-						if (!__TTVAB_STATE__.CurrentAdChannel) {
-							_incrementAdsBlocked(_getCurrentChannelName());
+						if (!isPromotedPageAdActive) {
+							isPromotedPageAdActive = true;
+							if (!__TTVAB_STATE__.CurrentAdChannel) {
+								_incrementAdsBlocked(
+									_getCurrentChannelName(),
+									"promoted-card",
+								);
+							}
+							_log("Offline/promoted page ad detected, hiding card", "warning");
 						}
-						_log("Offline/promoted page ad detected, hiding card", "warning");
-					}
 
 					_hideElement(card);
 					_incrementDomCleanup("promoted-card");
@@ -820,7 +826,7 @@ function _blockAntiAdblockPopup() {
 			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShellAd) {
 				didCountCurrentDisplayAdShellAd = true;
 				if (!__TTVAB_STATE__.CurrentAdChannel) {
-					_incrementAdsBlocked(_getCurrentChannelName());
+					_incrementAdsBlocked(_getCurrentChannelName(), "display-shell");
 				}
 				_log(
 					"Display ad shell confirmed: counting blocked ad and collapsing shell",
@@ -1091,7 +1097,9 @@ function _blockAntiAdblockPopup() {
 			}
 			const currentChannel = _getCurrentChannelName();
 			const blockedChannel =
-				typeof detail.channel === "string" ? detail.channel : null;
+				typeof detail.channel === "string"
+					? detail.channel.trim().toLowerCase() || null
+					: null;
 			if (blockedChannel && blockedChannel !== currentChannel) {
 				return;
 			}

@@ -6,6 +6,7 @@ const _S = {
 	reinsertPatterns: ["isVariantA", "besuper/", "${patch_url}"],
 	adsBlocked: 0,
 	domAdsBlocked: 0,
+	counterEventSeq: 0,
 };
 
 function _broadcastWorkers(messages) {
@@ -88,7 +89,39 @@ function _declareState(scope) {
 	};
 }
 
-function _incrementAdsBlocked(channel) {
+function _normalizeCounterChannel(channel) {
+	if (typeof channel !== "string") return null;
+	const trimmed = channel.trim().toLowerCase();
+	return trimmed || null;
+}
+
+function _normalizeCounterLabel(value, fallback = "generic") {
+	if (typeof value !== "string") return fallback;
+	const normalized = value
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]+/g, "-")
+		.replace(/-{2,}/g, "-")
+		.replace(/^-+|-+$/g, "");
+	return normalized || fallback;
+}
+
+function _createCounterEventId(type, channel = null, label = "generic") {
+	_S.counterEventSeq = Number.isFinite(_S.counterEventSeq)
+		? Math.max(0, Math.trunc(_S.counterEventSeq)) + 1
+		: 1;
+	if (_S.counterEventSeq > 1_000_000_000) {
+		_S.counterEventSeq = 1;
+	}
+
+	const safeType = _normalizeCounterLabel(type, "counter");
+	const safeChannel = _normalizeCounterChannel(channel) || "global";
+	const safeLabel = _normalizeCounterLabel(label, "generic");
+
+	return `${safeType}:${Date.now()}:${_S.counterEventSeq}:${safeChannel}:${safeLabel}`;
+}
+
+function _incrementAdsBlocked(channel, source = "unknown") {
 	_S.adsBlocked++;
 	const count = Number.isFinite(_S.adsBlocked)
 		? Math.max(0, Math.trunc(_S.adsBlocked))
@@ -97,12 +130,20 @@ function _incrementAdsBlocked(channel) {
 	if (typeof _broadcastWorkers === "function") {
 		_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
 	}
-	const safeChannel = typeof channel === "string" ? channel : null;
+	const safeChannel = _normalizeCounterChannel(channel);
+	const safeSource = _normalizeCounterLabel(source, "unknown");
+	const eventId = _createCounterEventId("ads", safeChannel, safeSource);
 	if (typeof window !== "undefined") {
 		window.postMessage(
 			{
 				type: "ttvab-ad-blocked",
-				detail: { count, channel: safeChannel },
+				detail: {
+					count,
+					delta: 1,
+					channel: safeChannel,
+					eventId,
+					source: safeSource,
+				},
 			},
 			"*",
 		);
@@ -110,7 +151,10 @@ function _incrementAdsBlocked(channel) {
 		self.postMessage({
 			key: "AdBlocked",
 			count: _S.adsBlocked,
+			delta: 1,
 			channel: safeChannel,
+			eventId,
+			source: safeSource,
 		});
 	}
 }
@@ -120,8 +164,9 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 	const count = Number.isFinite(_S.domAdsBlocked)
 		? Math.max(0, Math.trunc(_S.domAdsBlocked))
 		: 0;
-	const safeKind = typeof kind === "string" ? kind : "generic";
-	const safeChannel = typeof channel === "string" ? channel : null;
+	const safeKind = _normalizeCounterLabel(kind, "generic");
+	const safeChannel = _normalizeCounterChannel(channel);
+	const eventId = _createCounterEventId("dom-ads", safeChannel, safeKind);
 	_S.domAdsBlocked = count;
 	if (typeof window !== "undefined") {
 		window.postMessage(
@@ -129,8 +174,10 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 				type: "ttvab-dom-ad-cleanup",
 				detail: {
 					count,
+					delta: 1,
 					kind: safeKind,
 					channel: safeChannel,
+					eventId,
 				},
 			},
 			"*",

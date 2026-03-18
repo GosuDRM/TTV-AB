@@ -1206,6 +1206,69 @@ function minifyCode(code) {
 	return result;
 }
 
+function createZipArchive(sourceDir, outputFile) {
+	const entries = fs.readdirSync(sourceDir);
+	if (entries.length === 0) {
+		throw new Error(`Cannot package empty directory: ${sourceDir}`);
+	}
+
+	try {
+		execFileSync("zip", ["-qr", outputFile, ...entries], {
+			cwd: sourceDir,
+			stdio: "inherit",
+		});
+		return;
+	} catch (error) {
+		if (error?.code !== "ENOENT") {
+			throw error;
+		}
+	}
+
+	const pythonScript = `
+import os
+import sys
+import zipfile
+
+source_dir = sys.argv[1]
+output_file = sys.argv[2]
+
+with zipfile.ZipFile(output_file, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    for root, dirnames, filenames in os.walk(source_dir):
+        dirnames.sort()
+        filenames.sort()
+        for filename in filenames:
+            file_path = os.path.join(root, filename)
+            arcname = os.path.relpath(file_path, source_dir).replace(os.sep, "/")
+            archive.write(file_path, arcname)
+`.trim();
+
+	let lastError = null;
+	for (const [pythonCommand, prefixArgs] of [
+		["python3", []],
+		["python", []],
+		["py", ["-3"]],
+	]) {
+		try {
+			execFileSync(
+				pythonCommand,
+				[...prefixArgs, "-c", pythonScript, sourceDir, outputFile],
+				{ stdio: "inherit" },
+			);
+			return;
+		} catch (error) {
+			if (error?.code === "ENOENT") {
+				lastError = error;
+				continue;
+			}
+			throw error;
+		}
+	}
+
+	throw new Error(
+		`Could not find a ZIP writer. Install 'zip' or a Python runtime. Last error: ${lastError?.message || "none"}`,
+	);
+}
+
 function packageFirefox(version) {
 	const stageDir = path.join(DIST_DIR, "firefox-package");
 	const outputFile = path.join(DIST_DIR, `TTV-AB-v${version}-firefox.xpi`);
@@ -1234,12 +1297,7 @@ function packageFirefox(version) {
 		recursive: true,
 	});
 
-	const entries = fs.readdirSync(stageDir);
-	execFileSync(
-		"tar",
-		["-a", "-cf", zipOutputFile, "-C", stageDir, ...entries],
-		{ stdio: "inherit" },
-	);
+	createZipArchive(stageDir, zipOutputFile);
 	fs.copyFileSync(zipOutputFile, outputFile);
 
 	console.log(`  ZIP: ${path.relative(__dirname, zipOutputFile)}`);
@@ -1287,10 +1345,7 @@ function packageFirefoxSource(version) {
 		}
 	}
 
-	const entries = fs.readdirSync(stageDir);
-	execFileSync("tar", ["-a", "-cf", outputFile, "-C", stageDir, ...entries], {
-		stdio: "inherit",
-	});
+	createZipArchive(stageDir, outputFile);
 
 	console.log(`  Source ZIP: ${path.relative(__dirname, outputFile)}`);
 }

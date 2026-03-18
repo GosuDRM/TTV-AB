@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.1-purple)
+![Version](https://img.shields.io/badge/version-4.3.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -49,10 +49,24 @@ The extension intercepts Twitch's HLS video playlists and:
 - Strips ad segments from M3U8 playlists
 - Fetches backup ad-free streams when ads are detected
 - Caches ad segments to prevent playback
+- Suppresses competing media elements during ad recovery so duplicate audio does not overlap the active player
 
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.3.3
+- **Immediate Counter Updates** - `Ads Blocked` now increments on the first confirmed `AdDetected` cycle start, so the popup reflects a blocked ad as soon as recovery begins instead of waiting for a later cleanup path.
+- **Counter Pipeline Rework** - `Ads Blocked` and `DOM Ads Blocked` now flow through explicit counter events with event IDs and deltas instead of relying on inferred total jumps, which removes a whole class of silent drift and replay bugs.
+- **False-Positive Counter Fix** - Firefox no longer treats ad-capable playback token metadata as proof of a blocked ad, so switching channels does not inflate the `Ads Blocked` total.
+- **Stale Worker Resync** - Rejected stale worker counter events now immediately resync the worker-side total instead of letting background state drift and reappear later as a jump.
+- **Duplicate Audio Suppression** - Active ad recovery now suppresses competing Twitch media elements and restores them after `AdEnded`, preventing the double-audio playback that could happen when backup playback starts.
+- **Channel Normalization Hardening** - Counter routing and follow-up cleanup now normalize channel names consistently, avoiding silent mismatches caused by channel-case differences.
+- **Firefox Packaging Fix** - Firefox package builds now emit real ZIP/XPI archives with extension-safe forward-slash paths, so temporary installs and packaged loads work correctly.
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.3 release line.
+
+### v4.3.2
+- **Firefox Logic Alignment** - Finalized the port of v4.3.1 core logic into the Firefox-specific codebase while retaining specialized DOM tracking fixes.
 
 ### v4.3.1
 - **DOM Ad Cleanup Improvements** - Hardened the DOM ad counter logic against route-change race conditions.

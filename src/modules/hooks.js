@@ -398,6 +398,11 @@ function _hookWorker() {
 
 			this.__ttvabInjectedCode = injectedCode;
 
+			const normalizeObservedChannelName = (value) => {
+				if (typeof value !== "string") return null;
+				const trimmed = value.trim().toLowerCase();
+				return trimmed ? trimmed : null;
+			};
 			const getCurrentPageChannel = () => {
 				const match = window.location.pathname.match(/^\/([^/?#]+)/);
 				const candidate = match?.[1] || null;
@@ -419,12 +424,17 @@ function _hookWorker() {
 					"videos",
 					"wallet",
 				]);
-				return reserved.has(candidate.toLowerCase()) ? null : candidate;
+				const normalizedCandidate = normalizeObservedChannelName(candidate);
+				return normalizedCandidate &&
+					!reserved.has(normalizedCandidate)
+					? normalizedCandidate
+					: null;
 			};
 			const isStaleChannelEvent = (channel) => {
-				if (!channel) return false;
+				const safeChannel = normalizeObservedChannelName(channel);
+				if (!safeChannel) return false;
 				const currentChannel = getCurrentPageChannel();
-				return Boolean(currentChannel && currentChannel !== channel);
+				return Boolean(currentChannel && currentChannel !== safeChannel);
 			};
 			const handleWorkerFetchRequest = async (fetchRequest) => {
 				const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
@@ -464,25 +474,65 @@ function _hookWorker() {
 						});
 						break;
 					case "AdBlocked":
-						if (isStaleChannelEvent(e.data.channel || null)) {
-							_log(
-								`Ignoring stale AdBlocked event for ${e.data.channel}`,
-								"info",
+						{
+							const safeChannel = normalizeObservedChannelName(
+								e.data.channel || null,
 							);
-							break;
-						}
-						_S.adsBlocked = e.data.count;
-						window.postMessage(
-							{
-								type: "ttvab-ad-blocked",
-								detail: {
-									count: e.data.count,
-									channel: e.data.channel || null,
+							const safeEventId =
+								typeof e.data.eventId === "string" &&
+								e.data.eventId.trim() !== ""
+									? e.data.eventId.trim()
+									: null;
+							const safeSource =
+								typeof e.data.source === "string" &&
+								e.data.source.trim() !== ""
+									? e.data.source.trim().toLowerCase()
+									: null;
+							const safeDelta = Number.isFinite(e.data.delta)
+								? Math.max(1, Math.trunc(e.data.delta))
+								: 1;
+							const safeCount = Number.isFinite(e.data.count)
+								? Math.max(0, Math.trunc(e.data.count))
+								: null;
+							if (safeCount === null) {
+								_log("Ignoring malformed AdBlocked event count", "warning");
+								try {
+									this.postMessage({
+										key: "UpdateAdsBlocked",
+										value: _S.adsBlocked,
+									});
+								} catch { }
+								break;
+							}
+							if (isStaleChannelEvent(safeChannel)) {
+								_log(
+									`Ignoring stale AdBlocked event for ${e.data.channel}`,
+									"info",
+								);
+								try {
+									this.postMessage({
+										key: "UpdateAdsBlocked",
+										value: _S.adsBlocked,
+									});
+								} catch { }
+								break;
+							}
+							_S.adsBlocked = safeCount;
+							window.postMessage(
+								{
+									type: "ttvab-ad-blocked",
+									detail: {
+										count: safeCount,
+										delta: safeDelta,
+										channel: safeChannel,
+										eventId: safeEventId,
+										source: safeSource,
+									},
 								},
-							},
-							"*",
-						);
-						_log(`Ad blocked! Total: ${e.data.count}`, "success");
+								"*",
+							);
+							_log(`Ad blocked! Total: ${safeCount}`, "success");
+						}
 						break;
 					case "AdDetected":
 						if (isStaleChannelEvent(e.data.channel || null)) {
@@ -494,8 +544,14 @@ function _hookWorker() {
 						}
 						{
 							const now = Date.now();
-							const channel =
-								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+							const channel = normalizeObservedChannelName(
+								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
+							);
+							const source =
+								typeof e.data.source === "string" &&
+								e.data.source.trim() !== ""
+									? e.data.source.trim().toLowerCase()
+									: "playlist-ad";
 							const shouldStartNewCycle =
 								!__TTVAB_STATE__.CurrentAdChannel ||
 								__TTVAB_STATE__.CurrentAdChannel !== channel ||
@@ -505,6 +561,12 @@ function _hookWorker() {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
+								_incrementAdsBlocked(channel, source);
+								if (typeof _suppressCompetingMediaDuringAd === "function") {
+									_suppressCompetingMediaDuringAd(channel);
+									setTimeout(() => _suppressCompetingMediaDuringAd(channel), 80);
+									setTimeout(() => _suppressCompetingMediaDuringAd(channel), 350);
+								}
 								if (typeof _rememberPlayerPlaybackForAd === "function") {
 									_rememberPlayerPlaybackForAd(channel);
 								}
@@ -537,6 +599,13 @@ function _hookWorker() {
 						}
 						__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedChannel;
+						if (typeof _suppressCompetingMediaDuringAd === "function") {
+							_suppressCompetingMediaDuringAd(nextPinnedChannel);
+							setTimeout(
+								() => _suppressCompetingMediaDuringAd(nextPinnedChannel),
+								120,
+							);
+						}
 						_broadcastWorkers({
 							key: "UpdatePinnedBackupPlayerType",
 							value: __TTVAB_STATE__.PinnedBackupPlayerType,
@@ -636,6 +705,9 @@ function _hookWorker() {
 								});
 							});
 						} catch (_e) { }
+						if (typeof _restoreSuppressedMediaAfterAd === "function") {
+							_restoreSuppressedMediaAfterAd(e.data.channel || null);
+						}
 						if (typeof _resumePlayerAfterAdIfNeeded === "function") {
 							setTimeout(() => {
 								_resumePlayerAfterAdIfNeeded(e.data.channel || null);
@@ -774,154 +846,6 @@ function _hookMainFetch() {
 			_broadcastWorkers(updates);
 		}
 	};
-	const enablePreemptiveAdAvoidCounting =
-		typeof navigator !== "undefined" &&
-		/firefox/i.test(String(navigator.userAgent || ""));
-	const RESERVED_PAGE_SEGMENTS = new Set([
-		"browse",
-		"directory",
-		"downloads",
-		"drops",
-		"following",
-		"friends",
-		"inventory",
-		"jobs",
-		"messages",
-		"search",
-		"settings",
-		"subscriptions",
-		"turbo",
-		"videos",
-		"wallet",
-	]);
-	const PREEMPTIVE_AD_AVOID_CONFIRM_MS = 4500;
-	const PREEMPTIVE_AD_AVOID_COOLDOWN_MS = 10 * 60 * 1000;
-	const PREEMPTIVE_AD_AVOID_PRUNE_MS = 60 * 60 * 1000;
-	const preemptiveAdAvoids = new Map();
-	const getCurrentPageChannel = () => {
-		const match = window.location.pathname.match(/^\/([^/?#]+)/);
-		const candidate = match?.[1] || null;
-		if (!candidate) return null;
-		return RESERVED_PAGE_SEGMENTS.has(candidate.toLowerCase())
-			? null
-			: candidate;
-	};
-	const normalizeChannelName = (value) => {
-		if (typeof value !== "string") return null;
-		const trimmed = value.trim().toLowerCase();
-		return trimmed ? trimmed : null;
-	};
-	const prunePreemptiveAdAvoids = (now = Date.now()) => {
-		for (const [channel, entry] of preemptiveAdAvoids.entries()) {
-			const lastTouchedAt = Math.max(
-				entry?.lastObservedAt || 0,
-				entry?.lastCountedAt || 0,
-				entry?.scheduledAt || 0,
-			);
-			if (now - lastTouchedAt <= PREEMPTIVE_AD_AVOID_PRUNE_MS) continue;
-			if (entry?.timerId) {
-				clearTimeout(entry.timerId);
-			}
-			preemptiveAdAvoids.delete(channel);
-		}
-	};
-	const schedulePreemptiveAdAvoid = (candidate) => {
-		if (!enablePreemptiveAdAvoidCounting) {
-			return;
-		}
-
-		const safeChannel =
-			typeof candidate?.channel === "string" ? candidate.channel.trim() : "";
-		const normalizedChannel = normalizeChannelName(safeChannel);
-		const originalPlayerType =
-			typeof candidate?.previousPlayerType === "string"
-				? candidate.previousPlayerType
-				: null;
-		const forceType =
-			typeof candidate?.forceType === "string" ? candidate.forceType : null;
-		const tokenPlayerType =
-			typeof candidate?.tokenPlayerType === "string"
-				? candidate.tokenPlayerType
-				: null;
-		const isAdCapable =
-			candidate?.showAds === true || candidate?.serverAds === true;
-
-		if (
-			!normalizedChannel ||
-			originalPlayerType !== "site" ||
-			!forceType ||
-			!isAdCapable
-		) {
-			return;
-		}
-
-		if (tokenPlayerType && tokenPlayerType !== forceType) {
-			return;
-		}
-
-		const now = Date.now();
-		prunePreemptiveAdAvoids(now);
-		const existing = preemptiveAdAvoids.get(normalizedChannel);
-		if (existing?.timerId) {
-			clearTimeout(existing.timerId);
-		}
-
-		const nextEntry = {
-			channel: safeChannel,
-			normalizedChannel,
-			previousPlayerType: originalPlayerType,
-			forceType,
-			tokenPlayerType: tokenPlayerType || forceType,
-			showAds: candidate?.showAds === true,
-			serverAds: candidate?.serverAds === true,
-			lastObservedAt: now,
-			lastCountedAt: existing?.lastCountedAt || 0,
-			scheduledAt: now + PREEMPTIVE_AD_AVOID_CONFIRM_MS,
-			timerId: null,
-		};
-
-		nextEntry.timerId = window.setTimeout(() => {
-			const current = preemptiveAdAvoids.get(normalizedChannel);
-			if (!current || current !== nextEntry) return;
-			current.timerId = null;
-
-			const confirmNow = Date.now();
-			const currentPageChannel = normalizeChannelName(getCurrentPageChannel());
-			if (currentPageChannel && currentPageChannel !== normalizedChannel) {
-				return;
-			}
-
-			if (
-				current.lastCountedAt &&
-				confirmNow - current.lastCountedAt < PREEMPTIVE_AD_AVOID_COOLDOWN_MS
-			) {
-				return;
-			}
-
-			const activeAdChannel = normalizeChannelName(
-				__TTVAB_STATE__.CurrentAdChannel,
-			);
-			const lastAdDetectedAt = Number(__TTVAB_STATE__.LastAdDetectedAt || 0);
-			const adDetectedRecently =
-				activeAdChannel === normalizedChannel ||
-				(confirmNow - lastAdDetectedAt <= PREEMPTIVE_AD_AVOID_CONFIRM_MS &&
-					lastAdDetectedAt > 0);
-
-			if (adDetectedRecently) {
-				return;
-			}
-
-			_incrementAdsBlocked(current.channel);
-			current.lastCountedAt = confirmNow;
-			current.lastObservedAt = confirmNow;
-			_log(
-				`Preemptively blocked ad-capable native playback for ${current.channel} (${current.previousPlayerType} -> ${current.forceType}). Total: ${_S.adsBlocked}`,
-				"success",
-			);
-		}, PREEMPTIVE_AD_AVOID_CONFIRM_MS);
-
-		preemptiveAdAvoids.set(normalizedChannel, nextEntry);
-	};
 	const rewritePlaybackAccessTokenBody = (bodyText) => {
 		if (typeof bodyText !== "string" || !bodyText) {
 			return { bodyText, changed: false, rewrites: [] };
@@ -936,7 +860,6 @@ function _hookMainFetch() {
 			const operations = Array.isArray(parsed) ? parsed : [parsed];
 			let changed = false;
 			let previousPlayerType = null;
-			const rewrites = [];
 
 			for (const op of operations) {
 				if (op?.operationName !== "PlaybackAccessToken") continue;
@@ -950,13 +873,6 @@ function _hookMainFetch() {
 						previousPlayerType || nextPreviousPlayerType;
 					op.variables.playerType = forceType;
 					op.variables.platform = forceType === "autoplay" ? "android" : "web";
-					if (enablePreemptiveAdAvoidCounting) {
-						rewrites.push({
-							channel: op.variables.login || op.variables.channelLogin || null,
-							previousPlayerType: nextPreviousPlayerType,
-							forceType,
-						});
-					}
 					changed = true;
 				}
 			}
@@ -969,7 +885,7 @@ function _hookMainFetch() {
 				return {
 					bodyText: JSON.stringify(parsed),
 					changed: true,
-					rewrites,
+					rewrites: [],
 				};
 			}
 		} catch { }
@@ -1013,42 +929,23 @@ function _hookMainFetch() {
 			}
 		} catch { }
 	};
-	const processGqlResponse = async (response, requestRewrites = []) => {
+	const processGqlResponse = async (response) => {
 		if (!response || response.status !== 200) return;
 		try {
 			const payload = await response.clone().json();
 			const operations = Array.isArray(payload) ? payload : [payload];
-			const playbackRewriteQueue = Array.isArray(requestRewrites)
-				? [...requestRewrites]
-				: [];
 			for (const op of operations) {
-				let rewriteContext = null;
-				if (op?.data?.streamPlaybackAccessToken || op?.streamPlaybackAccessToken) {
-					rewriteContext = playbackRewriteQueue.shift() || null;
-				}
 				const extractedToken = _extractPlaybackAccessToken(op);
 				const tokenValue = extractedToken?.value || null;
 				if (typeof tokenValue !== "string" || !tokenValue) continue;
 				try {
 					const tokenPayload = JSON.parse(tokenValue);
-					const tokenShowAds =
-						tokenPayload?.showAds ?? tokenPayload?.show_ads ?? null;
-					const tokenServerAds =
-						tokenPayload?.serverAds ?? tokenPayload?.server_ads ?? null;
+					// These token flags are advisory and commonly stay true across
+					// ordinary channel switches, so they must not drive the blocked counter.
 					const effectivePlayerType =
 						tokenPayload?.playerType || tokenPayload?.player_type || null;
 					if (typeof effectivePlayerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
-					}
-					if (rewriteContext) {
-						schedulePreemptiveAdAvoid({
-							channel: rewriteContext.channel,
-							previousPlayerType: rewriteContext.previousPlayerType,
-							forceType: rewriteContext.forceType,
-							tokenPlayerType: effectivePlayerType,
-							showAds: tokenShowAds === true,
-							serverAds: tokenServerAds === true,
-						});
 					}
 				} catch { }
 			}
@@ -1062,7 +959,6 @@ function _hookMainFetch() {
 			if (urlStr.includes("gql.twitch.tv/gql")) {
 				let nextArgs = args;
 				let headers = opts?.headers;
-				let requestRewrites = [];
 
 				if (url instanceof Request) {
 					let effectiveRequest = url;
@@ -1073,7 +969,6 @@ function _hookMainFetch() {
 						headers = effectiveRequest.headers;
 						const text = await effectiveRequest.clone().text();
 						const rewritten = rewritePlaybackAccessTokenBody(text);
-						requestRewrites = rewritten.rewrites;
 						processGqlBody(rewritten.bodyText);
 						if (rewritten.changed) {
 							nextArgs = [
@@ -1084,10 +979,9 @@ function _hookMainFetch() {
 						} else if (effectiveRequest !== url || args.length !== 1) {
 							nextArgs = [effectiveRequest];
 						}
-					} catch (_e) { }
+						} catch (_e) { }
 				} else if (typeof opts?.body === "string") {
 					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
-					requestRewrites = rewritten.rewrites;
 					processGqlBody(rewritten.bodyText);
 					if (rewritten.changed) {
 						nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
@@ -1160,7 +1054,7 @@ function _hookMainFetch() {
 					updateWorkers(updates);
 				}
 				const response = await realFetch.apply(this, nextArgs);
-				await processGqlResponse(response, requestRewrites);
+				await processGqlResponse(response);
 				return response;
 			}
 		}

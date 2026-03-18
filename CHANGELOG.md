@@ -2,6 +2,25 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.3] - 2026-03-18
+
+### Fixed
+- **Immediate Blocked Counter Timing** - `Ads Blocked` now increments on the first confirmed `AdDetected` cycle start instead of waiting for a later `AdBlocked` relay or cleanup path, so the popup updates as soon as ad recovery begins.
+- **False-Positive Blocked Counter** - Firefox no longer preemptively increments `Ads Blocked` from `PlaybackAccessToken` ad-capability flags alone. The counter now advances only on playlist-confirmed or DOM-confirmed ad evidence, so normal channel switches do not inflate totals.
+- **Event-Driven Counter Persistence** - Counter updates now carry explicit event IDs and deltas through the page, worker, and bridge layers instead of relying on inferred absolute-total jumps, eliminating hidden replay and drift paths in the blocked-counter pipeline.
+- **Stale Worker Counter Drift** - When a stale worker reports an `AdBlocked` event for the wrong channel, the page now rejects that event and immediately resyncs the worker's counter state so old background workers cannot silently diverge and later snap totals forward.
+- **Duplicate Audio During Ad Recovery** - When Twitch spawned or reactivated secondary media elements during backup playback, audio could overlap with the primary player. Active ad recovery now suppresses competing media elements, reapplies suppression when backup playback is pinned, and restores their previous state after `AdEnded`.
+- **Channel Comparison Consistency** - Counter-related channel comparisons now normalize observed route and event channel names consistently, avoiding silent mismatches from case differences.
+- **Firefox Package Archive Validity** - Firefox package outputs now use real ZIP/XPI archives with forward-slash entry paths, fixing temporary-install failures caused by tar-shaped archives or backslash-separated ZIP entries.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.3 release line.
+
+## [4.3.2] - 2026-03-17
+
+### Changed
+- **Firefox Logic Alignment** - Finalized the port of v4.3.1 core logic into the Firefox-specific codebase while retaining specialized DOM tracking fixes.
+
 ## [4.3.1] - 2026-03-17
 
 ### Fixed
