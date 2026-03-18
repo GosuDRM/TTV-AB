@@ -222,6 +222,20 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	if (manifest.background?.service_worker !== "src/scripts/background.js") {
+		throw new Error(
+			`Manifest background.service_worker must remain src/scripts/background.js: ${manifest.background?.service_worker || "missing"}`,
+		);
+	}
+	if (manifest.background?.service_worker) {
+		if (
+			!fs.existsSync(path.join(__dirname, manifest.background.service_worker))
+		) {
+			throw new Error(
+				`Manifest background service_worker is missing: ${manifest.background.service_worker}`,
+			);
+		}
+	}
 	if (manifest.action?.default_title !== "__MSG_extName__") {
 		throw new Error(
 			`Manifest action.default_title must remain localized via __MSG_extName__: ${manifest.action?.default_title || "missing"}`,
@@ -361,6 +375,12 @@ function validateSharedDefinitions() {
 	const localesPath = path.join(__dirname, "_locales");
 	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
 	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
+	const backgroundPath = path.join(
+		__dirname,
+		"src",
+		"scripts",
+		"background.js",
+	);
 	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
 	const translationsPath = path.join(
 		__dirname,
@@ -536,6 +556,7 @@ function validateSharedDefinitions() {
 		}
 	}
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
+	const backgroundSource = fs.readFileSync(backgroundPath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
 	const translationsContext = {};
@@ -621,8 +642,8 @@ function validateSharedDefinitions() {
 		);
 	}
 
-	const bridgeGetDateKeyLiteral = extractLiteral(
-		bridgeSource,
+	const backgroundGetDateKeyLiteral = extractLiteral(
+		backgroundSource,
 		"function getDateKey(",
 		"{",
 		"}",
@@ -636,7 +657,7 @@ function validateSharedDefinitions() {
 	const popupAvgAdDurationMatch = popupSource.match(
 		/const AVG_AD_DURATION = (\d+);/,
 	);
-	const bridgeAvgAdDurationMatch = bridgeSource.match(
+	const backgroundAvgAdDurationMatch = backgroundSource.match(
 		/const AVG_AD_DURATION = (\d+);/,
 	);
 	const popupAchievementsLiteral = extractLiteral(
@@ -645,8 +666,8 @@ function validateSharedDefinitions() {
 		"[",
 		"]",
 	);
-	const bridgeAchievementsLiteral = extractLiteral(
-		bridgeSource,
+	const backgroundAchievementsLiteral = extractLiteral(
+		backgroundSource,
 		"const ACHIEVEMENTS =",
 		"[",
 		"]",
@@ -659,35 +680,38 @@ function validateSharedDefinitions() {
 	);
 
 	if (
-		!bridgeGetDateKeyLiteral ||
+		!backgroundGetDateKeyLiteral ||
 		!popupGetDateKeyLiteral ||
 		!popupAvgAdDurationMatch ||
-		!bridgeAvgAdDurationMatch ||
+		!backgroundAvgAdDurationMatch ||
 		!popupAchievementsLiteral ||
-		!bridgeAchievementsLiteral ||
+		!backgroundAchievementsLiteral ||
 		!uiAchievementInfoLiteral
 	) {
-		throw new Error("Failed to parse shared popup/bridge definitions");
+		throw new Error("Failed to parse shared popup/background definitions");
 	}
 
 	if (
 		normalizeCodeSnippet(popupGetDateKeyLiteral) !==
-		normalizeCodeSnippet(bridgeGetDateKeyLiteral)
+		normalizeCodeSnippet(backgroundGetDateKeyLiteral)
 	) {
 		throw new Error(
-			"Popup and bridge getDateKey implementations are out of sync",
+			"Popup and background getDateKey implementations are out of sync",
 		);
 	}
 
 	const popupAvgAdDuration = Number.parseInt(popupAvgAdDurationMatch[1], 10);
-	const bridgeAvgAdDuration = Number.parseInt(bridgeAvgAdDurationMatch[1], 10);
-	if (popupAvgAdDuration !== bridgeAvgAdDuration) {
-		throw new Error("Popup and bridge AVG_AD_DURATION are out of sync");
+	const backgroundAvgAdDuration = Number.parseInt(
+		backgroundAvgAdDurationMatch[1],
+		10,
+	);
+	if (popupAvgAdDuration !== backgroundAvgAdDuration) {
+		throw new Error("Popup and background AVG_AD_DURATION are out of sync");
 	}
 
 	const popupAchievements = Function(`return (${popupAchievementsLiteral});`)();
-	const bridgeAchievements = Function(
-		`return (${bridgeAchievementsLiteral});`,
+	const backgroundAchievements = Function(
+		`return (${backgroundAchievementsLiteral});`,
 	)();
 	const uiAchievementInfo = Function(`return (${uiAchievementInfoLiteral});`)();
 	const translations = Function(
@@ -699,7 +723,7 @@ function validateSharedDefinitions() {
 		threshold,
 		type,
 	}));
-	const bridgeComparable = bridgeAchievements.map(
+	const backgroundComparable = backgroundAchievements.map(
 		({ id, threshold, type }) => ({
 			id,
 			threshold,
@@ -707,8 +731,12 @@ function validateSharedDefinitions() {
 		}),
 	);
 
-	if (JSON.stringify(popupComparable) !== JSON.stringify(bridgeComparable)) {
-		throw new Error("Popup and bridge achievement definitions are out of sync");
+	if (
+		JSON.stringify(popupComparable) !== JSON.stringify(backgroundComparable)
+	) {
+		throw new Error(
+			"Popup and background achievement definitions are out of sync",
+		);
 	}
 
 	const popupIds = popupAchievements
@@ -813,8 +841,8 @@ function validateSharedDefinitions() {
 		"{",
 		"}",
 	);
-	const bridgeNormalizeCount = extractLiteral(
-		bridgeSource,
+	const backgroundNormalizeCount = extractLiteral(
+		backgroundSource,
 		"function normalizeCount(",
 		"{",
 		"}",
@@ -829,10 +857,10 @@ function validateSharedDefinitions() {
 		!popupNormalizeCount ||
 		!popupFormatNumber ||
 		!popupUpdateTimeSaved ||
-		!bridgeNormalizeCount ||
+		!backgroundNormalizeCount ||
 		!initNormalizeCount ||
 		normalizeCodeSnippet(popupNormalizeCount) !==
-			normalizeCodeSnippet(bridgeNormalizeCount) ||
+			normalizeCodeSnippet(backgroundNormalizeCount) ||
 		normalizeCodeSnippet(popupNormalizeCount).replace(
 			"function normalizeCount(value)",
 			"function _normalizeCounterValue(value)",
@@ -841,7 +869,7 @@ function validateSharedDefinitions() {
 		!popupUpdateTimeSaved.includes("normalizeCount(adsCount)")
 	) {
 		throw new Error(
-			"Popup, bridge, and init counter normalizers are out of sync",
+			"Popup, background, and init counter normalizers are out of sync",
 		);
 	}
 

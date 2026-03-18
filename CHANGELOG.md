@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.6] - 2026-03-19
+
+### Fixed
+- **Cross-Tab Counter / Stats Races** - Persisted counters and statistics now update through a dedicated extension background worker, eliminating the per-tab read/modify/write races that could lose totals, daily buckets, per-channel stats, and achievement unlocks.
+- **Backup Policy Bypass** - Backup stream selection no longer promotes fallback or minimal-mode playlists after the clean-playback policy rejected them, preventing ad-marked backups from slipping back into playback.
+- **Token Relay Fallback** - Backup token requests now create a fresh abort controller for direct-fetch fallback after a relay timeout, so relay failures do not poison the retry path with an already-aborted signal.
+- **Bridge Event Validation** - The bridge now ignores cross-channel and malformed DOM cleanup events before they reach persisted counters, reducing bad state from stale or invalid page-side events.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, the bridge/background scripts, and the generated bundle were bumped to the 4.3.6 release line.
+
 ## [4.3.5] - 2026-03-19
 
 ### Fixed

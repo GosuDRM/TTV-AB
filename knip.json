@@ -5,6 +5,7 @@
 		"src/modules/*.js!",
 		"src/popup/popup.js!",
 		"src/popup/translations.js!",
+		"src/scripts/background.js!",
 		"src/scripts/bridge.js!",
 		"src/popup/popup.html!"
 	],

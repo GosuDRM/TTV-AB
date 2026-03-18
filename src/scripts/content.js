@@ -1,11 +1,11 @@
-// TTV AB v4.3.5 - Twitch Ad Blocker
+// TTV AB v4.3.6 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.3.5",
-	INTERNAL_VERSION: 50,
+	VERSION: "4.3.6",
+	INTERNAL_VERSION: 51,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -724,8 +724,6 @@ async function _$tk(channel, playerType, realFetch) {
 
 	try {
 		_$l(`[Trace] Requesting token for ${playerType}`, "info");
-		const controller = new AbortController();
-		timeoutId = setTimeout(() => controller.abort(), 5000);
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
 
@@ -761,6 +759,8 @@ async function _$tk(channel, playerType, realFetch) {
 		}
 
 		if (!res) {
+			const controller = new AbortController();
+			timeoutId = setTimeout(() => controller.abort(), 5000);
 			res = await fetchFunc(_$gu, {
 				...requestOptions,
 				signal: controller.signal,
@@ -981,20 +981,18 @@ async function _$pm(url, text, realFetch) {
 		}
 
 		let startIdx = 0;
-		let minimal = false;
 		if (
 			info.LastPlayerReload >
 			Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
 		) {
 			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
-			minimal = true;
 		}
 
 		const {
 			type: backupType,
 			m3u8: backupM3u8,
 			isFallback,
-		} = await _$fb(info, realFetch, startIdx, minimal, res);
+		} = await _$fb(info, realFetch, startIdx, res);
 
 		if (!backupM3u8) _$l("Failed to find backup stream", "warning");
 
@@ -1101,7 +1099,6 @@ async function _$fb(
 	info,
 	realFetch,
 	startIdx = 0,
-	_minimal = false,
 	currentResolution = null,
 ) {
 	let backupType = null;
@@ -1197,13 +1194,6 @@ async function _$fb(
 						if (streamRes.status === 200) {
 							const m3u8 = await streamRes.text();
 							if (m3u8) {
-								if (
-									pt === __TTVAB_STATE__.FallbackPlayerType &&
-									!fallbackM3u8
-								) {
-									fallbackM3u8 = m3u8;
-									fallbackType = pt;
-								}
 								const candidateHasAds =
 									_$hpa(m3u8) ||
 									_$hem(m3u8) ||
@@ -1242,15 +1232,6 @@ async function _$fb(
 								if (isFullyCachedPlayerType) {
 									_$l(
 										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
-										"warning",
-									);
-									break;
-								}
-								if (_minimal) {
-									backupType = pt;
-									backupM3u8 = m3u8;
-									_$l(
-										`[Trace] Selected minimal: ${pt} (${promotionPolicy.reason})`,
 										"warning",
 									);
 									break;

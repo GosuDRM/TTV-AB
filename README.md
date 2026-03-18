@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.5-purple)
+![Version](https://img.shields.io/badge/version-4.3.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,16 +56,15 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
+### v4.3.6
+- **Serialized Counter Persistence** - Counter and stats writes now run through a dedicated extension background worker instead of per-tab storage read/modify/write loops, preventing tabs from clobbering totals, daily stats, channels, and achievements.
+- **Backup Stream Policy Fix** - Backup and fallback selection no longer bypass clean-playback policy in minimal or fallback paths, so rejected ad-marked playlists are not promoted back into playback.
+- **Token Relay Recovery** - Backup token fetches now fall back cleanly after relay timeouts instead of reusing an already-aborted request signal.
+
 ### v4.3.5
 - **Post-Ad Audio Recovery** - The page now suppresses competing `video` and `audio` elements during ad recovery and restores their exact audio state after `AdEnded`, preventing delayed or doubled audio from lingering backup players.
 - **Ad Event Channel Normalization** - Worker ad events now normalize observed channel names before stale-channel checks so post-ad cleanup runs reliably across Twitch route casing/format differences.
 - **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle now target the 4.3.5 release line.
-
-### v4.3.4
-- **Monkey Patch Reduction** - Removed the history and `localStorage` preservation monkey patches in favor of URL-aware route handling and scoped player-preference snapshot/restore.
-- **Worker Restart Fix** - Crash recovery now recreates workers from the original Twitch worker URL instead of trying to restart from a stale injected blob.
-- **Device ID Sync Cleanup** - Twitch `unique_id` capture now uses direct sync points during init and GQL interception instead of overriding `localStorage.getItem`.
-- **Tooling Refresh** - Updated Biome to `2.4.7`, Knip to `6.0.0-1`, and synchronized the release metadata/docs to the 4.3.4 line.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
