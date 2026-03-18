@@ -8,6 +8,8 @@
 
 A lightweight browser extension that blocks ads on Twitch.tv streams.
 
+Note: The current extension icon is just a placeholder and will probably get replaced in a future update if I stop being lazy.
+
 ## Install
 
 - Chrome Web Store: [TTV AB - Lightweight, powerful ad blocker](https://chromewebstore.google.com/detail/ttv-ab-lightweight-powerf/mlifbfmeoafhcccmppaolojdglcbkdkg) `(Latest)`
@@ -64,23 +66,6 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Worker Restart Fix** - Crash recovery now recreates workers from the original Twitch worker URL instead of trying to restart from a stale injected blob.
 - **Device ID Sync Cleanup** - Twitch `unique_id` capture now uses direct sync points during init and GQL interception instead of overriding `localStorage.getItem`.
 - **Tooling Refresh** - Updated Biome to `2.4.7`, Knip to `6.0.0-1`, and synchronized the release metadata/docs to the 4.3.4 line.
-
-### v4.3.1
-- **DOM Ad Cleanup Improvements** - Hardened the DOM ad counter logic against route-change race conditions.
-- **Post-Ad Player Resume** - The extension now tracks pausing intent and preserves paused states after ad interruptions.
-- **Ad-End Stability** - Ad-end checks are now debounced to survive brief buffering or clean playlist flashes without resetting.
-- **Worker Crash Recovery** - Fixed blob URL lifecycle issues to ensure workers can successfully restart after crashing, and scoped ad-reload messages safely.
-
-### v4.2.7
-- **Post-Ad Reload Loop Fix** - Ad recovery no longer falls back into a native post-ad reload path that could immediately restart the same ad sequence.
-- **Player Resume Gating** - Post-ad playback restoration now respects whether the viewer was already playing instead of blindly nudging the player after every ad cycle.
-- **Blocked Counter Stability** - Worker-side ad-end handling now ignores transient clean playlists and waits for confirmed clean media playlists before closing an ad cycle, preventing repeated counter inflation on the same ad pod.
-- **Display Shell Cleanup Dedupe** - Stale display-shell cleanup now dedupes repeated cleanup passes on the same residual shell artifacts so layout resets and DOM cleanup counting do not keep retriggering on leftover player shells.
-- **Duplicate Worker Injection Removed** - A helper function was being injected into every worker blob twice, bloating each worker and risking a redeclaration error in strict environments.
-- **Worker Restart Now Works** - Worker crash recovery was attempting restarts with an already-revoked blob URL, causing all three recovery attempts to fail silently. Restarts now correctly create a fresh blob from the stored injected code.
-- **Cross-Channel Reload Guard** - Background-tab workers can no longer trigger a player reload on the foreground channel when their own ad cycle ends. The `ReloadPlayer` worker event now carries channel context and is gated by the same stale-channel check used by all other worker events.
-- **ReloadAfterAd Default Corrected** - The `ReloadAfterAd` runtime flag fell back to `true` when the constant was undefined, which could silently enable post-ad reloads. The fallback is now `false`, matching the feature's intended off-by-default setting.
-
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
