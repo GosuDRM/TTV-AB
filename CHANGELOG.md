@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.6] - 2026-03-19
+
+### Fixed
+- **Cross-Tab Counter / Stats Races** - Firefox now serializes `Ads Blocked`, `DOM Ads Blocked`, daily stats, channels, and achievement writes through a dedicated background script instead of per-tab storage read/modify/write loops, preventing tabs from clobbering each other.
+- **Backup Policy Bypass** - Backup stream selection no longer promotes rejected playlists through minimal-request or fallback side paths, so ad-marked candidates stay rejected during recovery.
+- **Token Relay Fallback** - Backup token fetches now use a fresh abort path for direct fallback requests, so a timed-out relay attempt does not poison the fallback request with an already-aborted signal.
+
+### Changed
+- **Firefox Background Wiring** - `manifest.json`, `build.js`, `knip.json`, and Firefox source packaging now include and validate the new background script entry.
+- **Release / Tooling Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, generated bundle, Biome schema/version, and Knip schema/version were bumped to the 4.3.6 release line.
+
 ## [4.3.3] - 2026-03-18
 
 ### Fixed

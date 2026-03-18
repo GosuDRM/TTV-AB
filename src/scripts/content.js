@@ -1,11 +1,11 @@
-// TTV AB v4.3.3 - Twitch Ad Blocker
+// TTV AB v4.3.6 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.3.3",
-	INTERNAL_VERSION: 51,
+	VERSION: "4.3.6",
+	INTERNAL_VERSION: 52,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -29,7 +29,7 @@ const _$c = {
 	RELOAD_AFTER_AD: false,
 	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
 	ALWAYS_RELOAD_PLAYER_ON_AD: false,
-};
+};
 
 const _$s = {
 	workers: [],
@@ -227,7 +227,7 @@ function _$l(msg, type = "info") {
 	} else {
 		console.log(`%cTTV AB%c ${text}`, _$c.LOG_STYLES.prefix, style);
 	}
-}
+}
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
@@ -564,7 +564,7 @@ function _$gfr(info, url) {
 			(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
 		return bArea - aArea;
 	})[0];
-}
+}
 
 const _$gu = "https://gql.twitch.tv/gql";
 
@@ -774,8 +774,6 @@ async function _$tk(channel, playerType, realFetch) {
 
 	try {
 		_$l(`[Trace] Requesting token for ${playerType}`, "info");
-		const controller = new AbortController();
-		timeoutId = setTimeout(() => controller.abort(), 5000);
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
 
@@ -811,6 +809,8 @@ async function _$tk(channel, playerType, realFetch) {
 		}
 
 		if (!res) {
+			const controller = new AbortController();
+			timeoutId = setTimeout(() => controller.abort(), 5000);
 			res = await fetchFunc(_$gu, {
 				...requestOptions,
 				signal: controller.signal,
@@ -825,7 +825,7 @@ async function _$tk(channel, playerType, realFetch) {
 	} finally {
 		clearTimeout(timeoutId);
 	}
-}
+}
 
 function _$rsa(info) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
@@ -1034,20 +1034,18 @@ async function _$pm(url, text, realFetch) {
 		}
 
 		let startIdx = 0;
-		let minimal = false;
 		if (
 			info.LastPlayerReload >
 			Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
 		) {
 			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
-			minimal = true;
 		}
 
 		const {
 			type: backupType,
 			m3u8: backupM3u8,
 			isFallback,
-		} = await _$fb(info, realFetch, startIdx, minimal, res);
+		} = await _$fb(info, realFetch, startIdx, res);
 
 		if (!backupM3u8) _$l("Failed to find backup stream", "warning");
 
@@ -1089,10 +1087,8 @@ async function _$pm(url, text, realFetch) {
 
 			info.CleanPlaylistCount = (info.CleanPlaylistCount || 0) + 1;
 			if (
-				now - info.PendingAdEndAt <
-					__TTVAB_STATE__.AdEndGraceMs ||
-				info.CleanPlaylistCount <
-					__TTVAB_STATE__.AdEndMinCleanPlaylists
+				now - info.PendingAdEndAt < __TTVAB_STATE__.AdEndGraceMs ||
+				info.CleanPlaylistCount < __TTVAB_STATE__.AdEndMinCleanPlaylists
 			) {
 				return text;
 			}
@@ -1156,7 +1152,6 @@ async function _$fb(
 	info,
 	realFetch,
 	startIdx = 0,
-	_minimal = false,
 	currentResolution = null,
 ) {
 	let backupType = null;
@@ -1252,13 +1247,6 @@ async function _$fb(
 						if (streamRes.status === 200) {
 							const m3u8 = await streamRes.text();
 							if (m3u8) {
-								if (
-									pt === __TTVAB_STATE__.FallbackPlayerType &&
-									!fallbackM3u8
-								) {
-									fallbackM3u8 = m3u8;
-									fallbackType = pt;
-								}
 								const candidateHasAds =
 									_$hpa(m3u8) ||
 									_$hem(m3u8) ||
@@ -1301,15 +1289,6 @@ async function _$fb(
 									);
 									break;
 								}
-								if (_minimal) {
-									backupType = pt;
-									backupM3u8 = m3u8;
-									_$l(
-										`[Trace] Selected minimal: ${pt} (${promotionPolicy.reason})`,
-										"warning",
-									);
-									break;
-								}
 								_$l(
 									`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
 									"warning",
@@ -1346,7 +1325,7 @@ async function _$fb(
 	}
 
 	return { type: backupType, m3u8: backupM3u8, isFallback };
-}
+}
 
 function _$wj(url) {
 	const req = new XMLHttpRequest();
@@ -1395,7 +1374,7 @@ function _$iv(v) {
 		!_$s.conflicts.some((c) => src.includes(c)) &&
 		!_$s.reinsertPatterns.some((p) => src.includes(p))
 	);
-}
+}
 
 function _$wf() {
 	_$l("Worker fetch hooked", "info");
@@ -1445,7 +1424,7 @@ function _$wf() {
 				let variantUrl = lines[i + 1];
 				try {
 					variantUrl = new URL(variantUrl, usherUrl).href;
-				} catch { }
+				} catch {}
 				if (resolution) {
 					const resInfo = _$sv(
 						attrs,
@@ -1822,8 +1801,7 @@ function _$hw() {
 					"wallet",
 				]);
 				const normalizedCandidate = normalizeObservedChannelName(candidate);
-				return normalizedCandidate &&
-					!reserved.has(normalizedCandidate)
+				return normalizedCandidate && !reserved.has(normalizedCandidate)
 					? normalizedCandidate
 					: null;
 			};
@@ -1867,7 +1845,7 @@ function _$hw() {
 									key: "FetchResponse",
 									value: responseData,
 								});
-							} catch { }
+							} catch {}
 						});
 						break;
 					case "AdBlocked":
@@ -1881,8 +1859,7 @@ function _$hw() {
 									? e.data.eventId.trim()
 									: null;
 							const safeSource =
-								typeof e.data.source === "string" &&
-								e.data.source.trim() !== ""
+								typeof e.data.source === "string" && e.data.source.trim() !== ""
 									? e.data.source.trim().toLowerCase()
 									: null;
 							const safeDelta = Number.isFinite(e.data.delta)
@@ -1898,7 +1875,7 @@ function _$hw() {
 										key: "UpdateAdsBlocked",
 										value: _$s.adsBlocked,
 									});
-								} catch { }
+								} catch {}
 								break;
 							}
 							if (isStaleChannelEvent(safeChannel)) {
@@ -1911,7 +1888,7 @@ function _$hw() {
 										key: "UpdateAdsBlocked",
 										value: _$s.adsBlocked,
 									});
-								} catch { }
+								} catch {}
 								break;
 							}
 							_$s.adsBlocked = safeCount;
@@ -1945,15 +1922,14 @@ function _$hw() {
 								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
 							);
 							const source =
-								typeof e.data.source === "string" &&
-								e.data.source.trim() !== ""
+								typeof e.data.source === "string" && e.data.source.trim() !== ""
 									? e.data.source.trim().toLowerCase()
 									: "playlist-ad";
 							const shouldStartNewCycle =
 								!__TTVAB_STATE__.CurrentAdChannel ||
 								__TTVAB_STATE__.CurrentAdChannel !== channel ||
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
-								__TTVAB_STATE__.AdCycleStaleMs;
+									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -1961,8 +1937,14 @@ function _$hw() {
 								_$ab(channel, source);
 								if (typeof _suppressCompetingMediaDuringAd === "function") {
 									_suppressCompetingMediaDuringAd(channel);
-									setTimeout(() => _suppressCompetingMediaDuringAd(channel), 80);
-									setTimeout(() => _suppressCompetingMediaDuringAd(channel), 350);
+									setTimeout(
+										() => _suppressCompetingMediaDuringAd(channel),
+										80,
+									);
+									setTimeout(
+										() => _suppressCompetingMediaDuringAd(channel),
+										350,
+									);
 								}
 								if (typeof _rememberPlayerPlaybackForAd === "function") {
 									_rememberPlayerPlaybackForAd(channel);
@@ -2101,7 +2083,7 @@ function _$hw() {
 									}
 								});
 							});
-						} catch (_e) { }
+						} catch (_e) {}
 						if (typeof _restoreSuppressedMediaAfterAd === "function") {
 							_restoreSuppressedMediaAfterAd(e.data.channel || null);
 						}
@@ -2133,7 +2115,6 @@ function _$hw() {
 				}
 			});
 
-			const workerUrl = url;
 			const workerOpts = opts;
 			let restartAttempts = 0;
 			const MAX_RESTART_ATTEMPTS = 3;
@@ -2152,20 +2133,23 @@ function _$hw() {
 					const delay = 2 ** restartAttempts * 500;
 					_$l(
 						"Restarting worker in " +
-						delay / 1000 +
-						"s (attempt " +
-						restartAttempts +
-						"/" +
-						MAX_RESTART_ATTEMPTS +
-						")",
+							delay / 1000 +
+							"s (attempt " +
+							restartAttempts +
+							"/" +
+							MAX_RESTART_ATTEMPTS +
+							")",
 						"warning",
 					);
 
 					setTimeout(() => {
 						try {
 							const restartCode = this.__ttvabInjectedCode;
-							if (!restartCode) throw new Error("No injected code stored for restart");
-							const restartBlobUrl = URL.createObjectURL(new Blob([restartCode]));
+							if (!restartCode)
+								throw new Error("No injected code stored for restart");
+							const restartBlobUrl = URL.createObjectURL(
+								new Blob([restartCode]),
+							);
 							new window.Worker(restartBlobUrl, workerOpts);
 							setTimeout(() => URL.revokeObjectURL(restartBlobUrl), 0);
 							_$l("Worker restarted", "success");
@@ -2195,14 +2179,14 @@ function _$hw() {
 					value: __TTVAB_STATE__.PinnedBackupPlayerType,
 					channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 				});
-			} catch { }
+			} catch {}
 
 			if (_$s.workers.length > 5) {
 				const oldWorker = _$s.workers.shift();
 				try {
 					oldWorker.__TTVABIntentionallyTerminated = true;
 					oldWorker.terminate();
-				} catch { }
+				} catch {}
 			}
 		}
 	};
@@ -2266,8 +2250,7 @@ function _$mf() {
 					op.variables.playerType !== forceType
 				) {
 					const nextPreviousPlayerType = op.variables.playerType;
-					previousPlayerType =
-						previousPlayerType || nextPreviousPlayerType;
+					previousPlayerType = previousPlayerType || nextPreviousPlayerType;
 					op.variables.playerType = forceType;
 					op.variables.platform = forceType === "autoplay" ? "android" : "web";
 					changed = true;
@@ -2285,7 +2268,7 @@ function _$mf() {
 					rewrites: [],
 				};
 			}
-		} catch { }
+		} catch {}
 
 		return { bodyText, changed: false, rewrites: [] };
 	};
@@ -2324,7 +2307,7 @@ function _$mf() {
 					);
 				}
 			}
-		} catch { }
+		} catch {}
 	};
 	const processGqlResponse = async (response) => {
 		if (!response || response.status !== 200) return;
@@ -2343,9 +2326,9 @@ function _$mf() {
 					if (typeof effectivePlayerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
 					}
-				} catch { }
+				} catch {}
 			}
-		} catch { }
+		} catch {}
 	};
 
 	window.fetch = async function (...args) {
@@ -2375,7 +2358,7 @@ function _$mf() {
 						} else if (effectiveRequest !== url || args.length !== 1) {
 							nextArgs = [effectiveRequest];
 						}
-						} catch (_e) { }
+					} catch (_e) {}
 				} else if (typeof opts?.body === "string") {
 					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
 					processGqlBody(rewritten.bodyText);
@@ -2456,7 +2439,7 @@ function _$mf() {
 		}
 		return realFetch.apply(this, args);
 	};
-}
+}
 
 const _$pbs = {
 	position: 0,
@@ -2594,7 +2577,7 @@ function _suppressCompetingMediaDuringAd(channel = null) {
 			media.volume = 0;
 			media.setAttribute("data-ttvab-audio-suppressed", "true");
 			suppressedCount += 1;
-		} catch { }
+		} catch {}
 	}
 
 	_AdAudioSuppressionState.activeChannel = safeChannel;
@@ -2616,7 +2599,10 @@ function _restoreSuppressedMediaAfterAd(channel = null) {
 	}
 
 	let restoredCount = 0;
-	for (const [media, state] of _AdAudioSuppressionState.suppressedMedia.entries()) {
+	for (const [
+		media,
+		state,
+	] of _AdAudioSuppressionState.suppressedMedia.entries()) {
 		if (!(media instanceof HTMLMediaElement)) continue;
 		try {
 			media.defaultMuted = Boolean(state.defaultMuted);
@@ -2626,7 +2612,7 @@ function _restoreSuppressedMediaAfterAd(channel = null) {
 			}
 			media.removeAttribute("data-ttvab-audio-suppressed");
 			restoredCount += 1;
-		} catch { }
+		} catch {}
 	}
 
 	_AdAudioSuppressionState.suppressedMedia.clear();
@@ -3024,7 +3010,7 @@ function _$hlp() {
 	} catch (err) {
 		_$l(`LocalStorage hooks failed: ${err.message}`, "warning");
 	}
-}
+}
 
 const _$rk = "ttvab_last_reminder";
 const _$ri2 = 1209600000;
@@ -3319,7 +3305,7 @@ function _$al() {
 		if (typeof detail?.id !== "string") return;
 		_$au(detail.id);
 	});
-}
+}
 
 function _$bs() {
 	if (
@@ -4008,16 +3994,13 @@ function _$bp() {
 
 					if (!hasAdLabel) continue;
 
-						if (!isPromotedPageAdActive) {
-							isPromotedPageAdActive = true;
-							if (!__TTVAB_STATE__.CurrentAdChannel) {
-								_$ab(
-									_getCurrentChannelName(),
-									"promoted-card",
-								);
-							}
-							_$l("Offline/promoted page ad detected, hiding card", "warning");
+					if (!isPromotedPageAdActive) {
+						isPromotedPageAdActive = true;
+						if (!__TTVAB_STATE__.CurrentAdChannel) {
+							_$ab(_getCurrentChannelName(), "promoted-card");
 						}
+						_$l("Offline/promoted page ad detected, hiding card", "warning");
+					}
 
 					_hideElement(card);
 					_incrementDomCleanup("promoted-card");
@@ -4118,7 +4101,10 @@ function _$bp() {
 					if (!hasExplicitDisplayAdSignal) return false;
 				}
 
-				if (!hasExplicitDisplayAdSignal && now - pendingDisplayAdShellSince < 150) {
+				if (
+					!hasExplicitDisplayAdSignal &&
+					now - pendingDisplayAdShellSince < 150
+				) {
 					return false;
 				}
 			}
@@ -4217,7 +4203,7 @@ function _$bp() {
 				try {
 					if (el.matches?.(selector)) return true;
 					if (el.querySelector?.(selector)) return true;
-				} catch { }
+				} catch {}
 			}
 			return false;
 		}
@@ -4303,7 +4289,7 @@ function _$bp() {
 							popup.setAttribute(
 								"style",
 								(popup.getAttribute("style") || "") +
-								"; display: none !important; visibility: hidden !important;",
+									"; display: none !important; visibility: hidden !important;",
 							);
 							popup.setAttribute("data-ttvab-blocked", "true");
 
@@ -4324,7 +4310,7 @@ function _$bp() {
 						fallback.setAttribute(
 							"style",
 							(fallback.getAttribute("style") || "") +
-							"; display: none !important;",
+								"; display: none !important;",
 						);
 						fallback.setAttribute("data-ttvab-blocked", "true");
 						_incrementDomCleanup("overlay-ad");
@@ -4352,13 +4338,13 @@ function _$bp() {
 							el.setAttribute(
 								"style",
 								(el.getAttribute("style") || "") +
-								"; display: none !important;",
+									"; display: none !important;",
 							);
 							_incrementDomCleanup("overlay-ad");
 							return true;
 						}
 					}
-				} catch { }
+				} catch {}
 			}
 
 			const overlays = document.querySelectorAll(
@@ -4398,7 +4384,7 @@ function _$bp() {
 				if (typeof nativeVisibility?.mozHidden === "function") {
 					return nativeVisibility.mozHidden.call(document) === true;
 				}
-			} catch { }
+			} catch {}
 			return document.hidden;
 		}
 

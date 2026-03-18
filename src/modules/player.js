@@ -136,7 +136,7 @@ function _suppressCompetingMediaDuringAd(channel = null) {
 			media.volume = 0;
 			media.setAttribute("data-ttvab-audio-suppressed", "true");
 			suppressedCount += 1;
-		} catch { }
+		} catch {}
 	}
 
 	_AdAudioSuppressionState.activeChannel = safeChannel;
@@ -158,7 +158,10 @@ function _restoreSuppressedMediaAfterAd(channel = null) {
 	}
 
 	let restoredCount = 0;
-	for (const [media, state] of _AdAudioSuppressionState.suppressedMedia.entries()) {
+	for (const [
+		media,
+		state,
+	] of _AdAudioSuppressionState.suppressedMedia.entries()) {
 		if (!(media instanceof HTMLMediaElement)) continue;
 		try {
 			media.defaultMuted = Boolean(state.defaultMuted);
@@ -168,7 +171,7 @@ function _restoreSuppressedMediaAfterAd(channel = null) {
 			}
 			media.removeAttribute("data-ttvab-audio-suppressed");
 			restoredCount += 1;
-		} catch { }
+		} catch {}
 	}
 
 	_AdAudioSuppressionState.suppressedMedia.clear();

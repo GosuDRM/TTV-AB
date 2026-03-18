@@ -207,20 +207,18 @@ async function _processM3U8(url, text, realFetch) {
 		}
 
 		let startIdx = 0;
-		let minimal = false;
 		if (
 			info.LastPlayerReload >
 			Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
 		) {
 			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
-			minimal = true;
 		}
 
 		const {
 			type: backupType,
 			m3u8: backupM3u8,
 			isFallback,
-		} = await _findBackupStream(info, realFetch, startIdx, minimal, res);
+		} = await _findBackupStream(info, realFetch, startIdx, res);
 
 		if (!backupM3u8) _log("Failed to find backup stream", "warning");
 
@@ -262,10 +260,8 @@ async function _processM3U8(url, text, realFetch) {
 
 			info.CleanPlaylistCount = (info.CleanPlaylistCount || 0) + 1;
 			if (
-				now - info.PendingAdEndAt <
-					__TTVAB_STATE__.AdEndGraceMs ||
-				info.CleanPlaylistCount <
-					__TTVAB_STATE__.AdEndMinCleanPlaylists
+				now - info.PendingAdEndAt < __TTVAB_STATE__.AdEndGraceMs ||
+				info.CleanPlaylistCount < __TTVAB_STATE__.AdEndMinCleanPlaylists
 			) {
 				return text;
 			}
@@ -329,7 +325,6 @@ async function _findBackupStream(
 	info,
 	realFetch,
 	startIdx = 0,
-	_minimal = false,
 	currentResolution = null,
 ) {
 	let backupType = null;
@@ -425,13 +420,6 @@ async function _findBackupStream(
 						if (streamRes.status === 200) {
 							const m3u8 = await streamRes.text();
 							if (m3u8) {
-								if (
-									pt === __TTVAB_STATE__.FallbackPlayerType &&
-									!fallbackM3u8
-								) {
-									fallbackM3u8 = m3u8;
-									fallbackType = pt;
-								}
 								const candidateHasAds =
 									_hasPlaylistAdMarkers(m3u8) ||
 									_hasExplicitAdMetadata(m3u8) ||
@@ -470,15 +458,6 @@ async function _findBackupStream(
 								if (isFullyCachedPlayerType) {
 									_log(
 										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
-										"warning",
-									);
-									break;
-								}
-								if (_minimal) {
-									backupType = pt;
-									backupM3u8 = m3u8;
-									_log(
-										`[Trace] Selected minimal: ${pt} (${promotionPolicy.reason})`,
 										"warning",
 									);
 									break;

@@ -1,10 +1,10 @@
 {
 	"name": "ttv-ab",
-	"version": "4.3.3",
+	"version": "4.3.6",
 	"description": "Twitch Ad Blocker",
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.6",
-		"knip": "^6.0.0-0"
+		"@biomejs/biome": "^2.4.8",
+		"knip": "^6.0.0-1"
 	},
 	"scripts": {
 		"knip": "knip --production",

@@ -48,7 +48,7 @@ function _hookWorkerFetch() {
 				let variantUrl = lines[i + 1];
 				try {
 					variantUrl = new URL(variantUrl, usherUrl).href;
-				} catch { }
+				} catch {}
 				if (resolution) {
 					const resInfo = _getStreamVariantInfo(
 						attrs,
@@ -425,8 +425,7 @@ function _hookWorker() {
 					"wallet",
 				]);
 				const normalizedCandidate = normalizeObservedChannelName(candidate);
-				return normalizedCandidate &&
-					!reserved.has(normalizedCandidate)
+				return normalizedCandidate && !reserved.has(normalizedCandidate)
 					? normalizedCandidate
 					: null;
 			};
@@ -470,7 +469,7 @@ function _hookWorker() {
 									key: "FetchResponse",
 									value: responseData,
 								});
-							} catch { }
+							} catch {}
 						});
 						break;
 					case "AdBlocked":
@@ -484,8 +483,7 @@ function _hookWorker() {
 									? e.data.eventId.trim()
 									: null;
 							const safeSource =
-								typeof e.data.source === "string" &&
-								e.data.source.trim() !== ""
+								typeof e.data.source === "string" && e.data.source.trim() !== ""
 									? e.data.source.trim().toLowerCase()
 									: null;
 							const safeDelta = Number.isFinite(e.data.delta)
@@ -501,7 +499,7 @@ function _hookWorker() {
 										key: "UpdateAdsBlocked",
 										value: _S.adsBlocked,
 									});
-								} catch { }
+								} catch {}
 								break;
 							}
 							if (isStaleChannelEvent(safeChannel)) {
@@ -514,7 +512,7 @@ function _hookWorker() {
 										key: "UpdateAdsBlocked",
 										value: _S.adsBlocked,
 									});
-								} catch { }
+								} catch {}
 								break;
 							}
 							_S.adsBlocked = safeCount;
@@ -548,15 +546,14 @@ function _hookWorker() {
 								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
 							);
 							const source =
-								typeof e.data.source === "string" &&
-								e.data.source.trim() !== ""
+								typeof e.data.source === "string" && e.data.source.trim() !== ""
 									? e.data.source.trim().toLowerCase()
 									: "playlist-ad";
 							const shouldStartNewCycle =
 								!__TTVAB_STATE__.CurrentAdChannel ||
 								__TTVAB_STATE__.CurrentAdChannel !== channel ||
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
-								__TTVAB_STATE__.AdCycleStaleMs;
+									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -564,8 +561,14 @@ function _hookWorker() {
 								_incrementAdsBlocked(channel, source);
 								if (typeof _suppressCompetingMediaDuringAd === "function") {
 									_suppressCompetingMediaDuringAd(channel);
-									setTimeout(() => _suppressCompetingMediaDuringAd(channel), 80);
-									setTimeout(() => _suppressCompetingMediaDuringAd(channel), 350);
+									setTimeout(
+										() => _suppressCompetingMediaDuringAd(channel),
+										80,
+									);
+									setTimeout(
+										() => _suppressCompetingMediaDuringAd(channel),
+										350,
+									);
 								}
 								if (typeof _rememberPlayerPlaybackForAd === "function") {
 									_rememberPlayerPlaybackForAd(channel);
@@ -704,7 +707,7 @@ function _hookWorker() {
 									}
 								});
 							});
-						} catch (_e) { }
+						} catch (_e) {}
 						if (typeof _restoreSuppressedMediaAfterAd === "function") {
 							_restoreSuppressedMediaAfterAd(e.data.channel || null);
 						}
@@ -736,7 +739,6 @@ function _hookWorker() {
 				}
 			});
 
-			const workerUrl = url;
 			const workerOpts = opts;
 			let restartAttempts = 0;
 			const MAX_RESTART_ATTEMPTS = 3;
@@ -755,20 +757,23 @@ function _hookWorker() {
 					const delay = 2 ** restartAttempts * 500;
 					_log(
 						"Restarting worker in " +
-						delay / 1000 +
-						"s (attempt " +
-						restartAttempts +
-						"/" +
-						MAX_RESTART_ATTEMPTS +
-						")",
+							delay / 1000 +
+							"s (attempt " +
+							restartAttempts +
+							"/" +
+							MAX_RESTART_ATTEMPTS +
+							")",
 						"warning",
 					);
 
 					setTimeout(() => {
 						try {
 							const restartCode = this.__ttvabInjectedCode;
-							if (!restartCode) throw new Error("No injected code stored for restart");
-							const restartBlobUrl = URL.createObjectURL(new Blob([restartCode]));
+							if (!restartCode)
+								throw new Error("No injected code stored for restart");
+							const restartBlobUrl = URL.createObjectURL(
+								new Blob([restartCode]),
+							);
 							new window.Worker(restartBlobUrl, workerOpts);
 							setTimeout(() => URL.revokeObjectURL(restartBlobUrl), 0);
 							_log("Worker restarted", "success");
@@ -798,14 +803,14 @@ function _hookWorker() {
 					value: __TTVAB_STATE__.PinnedBackupPlayerType,
 					channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
 				});
-			} catch { }
+			} catch {}
 
 			if (_S.workers.length > 5) {
 				const oldWorker = _S.workers.shift();
 				try {
 					oldWorker.__TTVABIntentionallyTerminated = true;
 					oldWorker.terminate();
-				} catch { }
+				} catch {}
 			}
 		}
 	};
@@ -869,8 +874,7 @@ function _hookMainFetch() {
 					op.variables.playerType !== forceType
 				) {
 					const nextPreviousPlayerType = op.variables.playerType;
-					previousPlayerType =
-						previousPlayerType || nextPreviousPlayerType;
+					previousPlayerType = previousPlayerType || nextPreviousPlayerType;
 					op.variables.playerType = forceType;
 					op.variables.platform = forceType === "autoplay" ? "android" : "web";
 					changed = true;
@@ -888,7 +892,7 @@ function _hookMainFetch() {
 					rewrites: [],
 				};
 			}
-		} catch { }
+		} catch {}
 
 		return { bodyText, changed: false, rewrites: [] };
 	};
@@ -927,7 +931,7 @@ function _hookMainFetch() {
 					);
 				}
 			}
-		} catch { }
+		} catch {}
 	};
 	const processGqlResponse = async (response) => {
 		if (!response || response.status !== 200) return;
@@ -947,9 +951,9 @@ function _hookMainFetch() {
 					if (typeof effectivePlayerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
 					}
-				} catch { }
+				} catch {}
 			}
-		} catch { }
+		} catch {}
 	};
 
 	window.fetch = async function (...args) {
@@ -979,7 +983,7 @@ function _hookMainFetch() {
 						} else if (effectiveRequest !== url || args.length !== 1) {
 							nextArgs = [effectiveRequest];
 						}
-						} catch (_e) { }
+					} catch (_e) {}
 				} else if (typeof opts?.body === "string") {
 					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
 					processGqlBody(rewritten.bodyText);

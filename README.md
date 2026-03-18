@@ -1,12 +1,14 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.3-purple)
+![Version](https://img.shields.io/badge/version-4.3.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks ads on Twitch.tv streams.
+
+Note: The current extension icon is just a placeholder and will probably get replaced in a future update if I stop being lazy.
 
 ## Install
 
@@ -55,34 +57,17 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
+### v4.3.6
+- **Serialized Counter Persistence** - Firefox now persists `Ads Blocked`, `DOM Ads Blocked`, daily stats, channels, and achievements through a dedicated background script instead of per-tab storage read/modify/write loops, so tabs no longer clobber each other.
+- **Backup Stream Policy Fix** - Backup and fallback promotion no longer bypass clean-playback policy in minimal or fallback paths, so ad-marked playlists are not promoted back into playback after reload-driven recovery.
+- **Token Relay Recovery** - Backup token fetches now fall back cleanly after relay timeouts instead of reusing an already-aborted request signal.
+- **Tooling / Packaging Sync** - Firefox now ships the new background script in source packages, and the repo is updated to the current `biome` and `knip` release line.
+
 ### v4.3.3
 - **Immediate Counter Updates** - `Ads Blocked` now increments on the first confirmed `AdDetected` cycle start, so the popup reflects a blocked ad as soon as recovery begins instead of waiting for a later cleanup path.
 - **Counter Pipeline Rework** - `Ads Blocked` and `DOM Ads Blocked` now flow through explicit counter events with event IDs and deltas instead of relying on inferred total jumps, which removes a whole class of silent drift and replay bugs.
-- **False-Positive Counter Fix** - Firefox no longer treats ad-capable playback token metadata as proof of a blocked ad, so switching channels does not inflate the `Ads Blocked` total.
-- **Stale Worker Resync** - Rejected stale worker counter events now immediately resync the worker-side total instead of letting background state drift and reappear later as a jump.
 - **Duplicate Audio Suppression** - Active ad recovery now suppresses competing Twitch media elements and restores them after `AdEnded`, preventing the double-audio playback that could happen when backup playback starts.
-- **Channel Normalization Hardening** - Counter routing and follow-up cleanup now normalize channel names consistently, avoiding silent mismatches caused by channel-case differences.
 - **Firefox Packaging Fix** - Firefox package builds now emit real ZIP/XPI archives with extension-safe forward-slash paths, so temporary installs and packaged loads work correctly.
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.3 release line.
-
-### v4.3.2
-- **Firefox Logic Alignment** - Finalized the port of v4.3.1 core logic into the Firefox-specific codebase while retaining specialized DOM tracking fixes.
-
-### v4.3.1
-- **DOM Ad Cleanup Improvements** - Hardened the DOM ad counter logic against route-change race conditions.
-- **Post-Ad Player Resume** - The extension now tracks pausing intent and preserves paused states after ad interruptions.
-- **Ad-End Stability** - Ad-end checks are now debounced to survive brief buffering or clean playlist flashes without resetting.
-- **Worker Crash Recovery** - Fixed blob URL lifecycle issues to ensure workers can successfully restart after crashing, and scoped ad-reload messages safely.
-
-### v4.2.7
-- **Post-Ad Reload Loop Fix** - Ad recovery no longer falls back into a native post-ad reload path that could immediately restart the same ad sequence.
-- **Player Resume Gating** - Post-ad playback restoration now respects whether the viewer was already playing instead of blindly nudging the player after every ad cycle.
-- **Blocked Counter Stability** - Worker-side ad-end handling now ignores transient clean playlists and waits for confirmed clean media playlists before closing an ad cycle, preventing repeated counter inflation on the same ad pod.
-- **Display Shell Cleanup Dedupe** - Stale display-shell cleanup now dedupes repeated cleanup passes on the same residual shell artifacts so layout resets and DOM cleanup counting do not keep retriggering on leftover player shells.
-- **Duplicate Worker Injection Removed** - A helper function was being injected into every worker blob twice, bloating each worker and risking a redeclaration error in strict environments.
-- **Worker Restart Now Works** - Worker crash recovery was attempting restarts with an already-revoked blob URL, causing all three recovery attempts to fail silently. Restarts now correctly create a fresh blob from the stored injected code.
-- **Cross-Channel Reload Guard** - Background-tab workers can no longer trigger a player reload on the foreground channel when their own ad cycle ends. The `ReloadPlayer` worker event now carries channel context and is gated by the same stale-channel check used by all other worker events.
-- **ReloadAfterAd Default Corrected** - The `ReloadAfterAd` runtime flag fell back to `true` when the constant was undefined, which could silently enable post-ad reloads. The fallback is now `false`, matching the feature's intended off-by-default setting.
 
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
