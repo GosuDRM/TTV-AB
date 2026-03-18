@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.1-purple)
+![Version](https://img.shields.io/badge/version-4.3.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -53,6 +53,12 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.3.4
+- **Monkey Patch Reduction** - Removed the history and `localStorage` preservation monkey patches in favor of URL-aware route handling and scoped player-preference snapshot/restore.
+- **Worker Restart Fix** - Crash recovery now recreates workers from the original Twitch worker URL instead of trying to restart from a stale injected blob.
+- **Device ID Sync Cleanup** - Twitch `unique_id` capture now uses direct sync points during init and GQL interception instead of overriding `localStorage.getItem`.
+- **Tooling Refresh** - Updated Biome to `2.4.7`, Knip to `6.0.0-1`, and synchronized the release metadata/docs to the 4.3.4 line.
 
 ### v4.3.1
 - **DOM Ad Cleanup Improvements** - Hardened the DOM ad counter logic against route-change race conditions.

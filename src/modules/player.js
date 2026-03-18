@@ -9,6 +9,13 @@ const _PlayerBufferState = {
 };
 
 let _cachedPlayerRef = null;
+const _PLAYER_PREFERENCE_KEYS = [
+	"video-quality",
+	"video-muted",
+	"volume",
+	"lowLatencyModeEnabled",
+	"persistenceEnabled",
+];
 
 function _getPlayerCore(player) {
 	return player?.playerInstance?.core || player?.core || null;
@@ -144,6 +151,52 @@ function _resumePlayerAfterAdIfNeeded(channel = null) {
 	}
 }
 
+function _capturePlayerPreferenceSnapshot(playerCore = null) {
+	const snapshot = Object.create(null);
+
+	try {
+		for (const key of _PLAYER_PREFERENCE_KEYS) {
+			snapshot[key] = localStorage.getItem(key);
+		}
+
+		if (playerCore?.state) {
+			snapshot["video-muted"] = JSON.stringify({
+				default: Boolean(playerCore.state.muted),
+			});
+			snapshot.volume = String(playerCore.state.volume);
+		}
+
+		if (playerCore?.state?.quality?.group) {
+			snapshot["video-quality"] = JSON.stringify({
+				default: playerCore.state.quality.group,
+			});
+		}
+	} catch (err) {
+		_log(`Preference snapshot failed: ${err.message}`, "warning");
+		return null;
+	}
+
+	return snapshot;
+}
+
+function _restorePlayerPreferenceSnapshot(snapshot) {
+	if (!snapshot || typeof snapshot !== "object") return;
+
+	try {
+		for (const key of _PLAYER_PREFERENCE_KEYS) {
+			if (!Object.hasOwn(snapshot, key)) continue;
+			const value = snapshot[key];
+			if (value === null || typeof value === "undefined") {
+				localStorage.removeItem(key);
+				continue;
+			}
+			localStorage.setItem(key, String(value));
+		}
+	} catch (err) {
+		_log(`Preference restore failed: ${err.message}`, "warning");
+	}
+}
+
 function _doPlayerTask(isPausePlay, isReload, options = {}) {
 	const { player, state: playerState } = _getPlayerAndState();
 
@@ -196,34 +249,7 @@ function _doPlayerTask(isPausePlay, isReload, options = {}) {
 		if (reason === "ad-recovery") {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = now;
 		}
-
-		const lsKeyQuality = "video-quality";
-		const lsKeyMuted = "video-muted";
-		const lsKeyVolume = "volume";
-
-		let currentQualityLS = null;
-		let currentMutedLS = null;
-		let currentVolumeLS = null;
-
-		try {
-			currentQualityLS = localStorage.getItem(lsKeyQuality);
-			currentMutedLS = localStorage.getItem(lsKeyMuted);
-			currentVolumeLS = localStorage.getItem(lsKeyVolume);
-
-			if (playerCore?.state) {
-				localStorage.setItem(
-					lsKeyMuted,
-					JSON.stringify({ default: playerCore.state.muted }),
-				);
-				localStorage.setItem(lsKeyVolume, playerCore.state.volume);
-			}
-			if (playerCore?.state?.quality?.group) {
-				localStorage.setItem(
-					lsKeyQuality,
-					JSON.stringify({ default: playerCore.state.quality.group }),
-				);
-			}
-		} catch {}
+		const preferenceSnapshot = _capturePlayerPreferenceSnapshot(playerCore);
 
 		if (reason === "manual") {
 			_log("Reloading player", "info");
@@ -237,15 +263,9 @@ function _doPlayerTask(isPausePlay, isReload, options = {}) {
 
 		player.play();
 
-		if (currentQualityLS || currentMutedLS || currentVolumeLS) {
+		if (preferenceSnapshot) {
 			setTimeout(() => {
-				try {
-					if (currentQualityLS)
-						localStorage.setItem(lsKeyQuality, currentQualityLS);
-					if (currentMutedLS) localStorage.setItem(lsKeyMuted, currentMutedLS);
-					if (currentVolumeLS)
-						localStorage.setItem(lsKeyVolume, currentVolumeLS);
-				} catch {}
+				_restorePlayerPreferenceSnapshot(preferenceSnapshot);
 			}, 3000);
 		}
 
@@ -409,45 +429,4 @@ function _hookVisibilityState() {
 	} catch {}
 
 	_log("Visibility protection active", "info");
-}
-
-function _hookLocalStoragePreservation() {
-	try {
-		const keysToCache = [
-			"video-quality",
-			"video-muted",
-			"volume",
-			"lowLatencyModeEnabled",
-			"persistenceEnabled",
-		];
-
-		const cachedValues = new Map();
-
-		for (const key of keysToCache) {
-			cachedValues.set(key, localStorage.getItem(key));
-		}
-
-		const realSetItem = localStorage.setItem;
-		const realGetItem = localStorage.getItem;
-
-		localStorage.setItem = function (...args) {
-			const [key, value] = args;
-			if (cachedValues.has(key)) {
-				cachedValues.set(key, value);
-			}
-			return realSetItem.apply(this, args);
-		};
-
-		localStorage.getItem = function (...args) {
-			const [key] = args;
-			if (cachedValues.has(key)) {
-				return cachedValues.get(key);
-			}
-			return realGetItem.apply(this, args);
-		};
-
-		_log("LocalStorage preservation active", "info");
-	} catch (err) {
-		_log(`LocalStorage hooks failed: ${err.message}`, "warning");
-	}
 }

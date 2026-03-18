@@ -1,11 +1,11 @@
-// TTV AB v4.3.1 - Twitch Ad Blocker
+// TTV AB v4.3.4 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.3.1",
-	INTERNAL_VERSION: 48,
+	VERSION: "4.3.4",
+	INTERNAL_VERSION: 49,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -1591,7 +1591,21 @@ function _$wf() {
 	};
 }
 
+function _$sd() {
+	try {
+		const deviceId = localStorage.getItem("unique_id");
+		if (typeof deviceId === "string" && deviceId) {
+			__TTVAB_STATE__.GQLDeviceID = deviceId;
+			return deviceId;
+		}
+	} catch (e) {
+		_$l(`Device ID sync error: ${e.message}`, "warning");
+	}
+	return null;
+}
+
 function _$hw() {
+	_$sd();
 	const reinsertNames = _$gr(window.Worker);
 	const isAllowedWorkerHost = (hostname) => {
 		const host = String(hostname || "").toLowerCase();
@@ -1737,8 +1751,6 @@ function _$hw() {
 			const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
 			super(blobUrl, opts);
 			setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
-
-			this.__ttvabInjectedCode = injectedCode;
 
 			const getCurrentPageChannel = () => {
 				const match = window.location.pathname.match(/^\/([^/?#]+)/);
@@ -2006,7 +2018,7 @@ function _$hw() {
 				}
 			});
 
-			const workerUrl = url;
+			const _workerUrl = url;
 			const workerOpts = opts;
 			let restartAttempts = 0;
 			const MAX_RESTART_ATTEMPTS = 3;
@@ -2036,14 +2048,7 @@ function _$hw() {
 
 					setTimeout(() => {
 						try {
-							const restartCode = this.__ttvabInjectedCode;
-							if (!restartCode)
-								throw new Error("No injected code stored for restart");
-							const restartBlobUrl = URL.createObjectURL(
-								new Blob([restartCode]),
-							);
-							new window.Worker(restartBlobUrl, workerOpts);
-							setTimeout(() => URL.revokeObjectURL(restartBlobUrl), 0);
+							new window.Worker(_workerUrl, workerOpts);
 							_$l("Worker restarted", "success");
 							restartAttempts = 0;
 						} catch (restartErr) {
@@ -2090,21 +2095,6 @@ function _$hw() {
 			if (_$iv(v)) workerInstance = v;
 		},
 	});
-}
-
-function _$hs() {
-	try {
-		const originalGetItem = localStorage.getItem.bind(localStorage);
-		localStorage.getItem = (key) => {
-			const value = originalGetItem(key);
-			if (key === "unique_id" && value) __TTVAB_STATE__.GQLDeviceID = value;
-			return value;
-		};
-		const deviceId = originalGetItem("unique_id");
-		if (deviceId) __TTVAB_STATE__.GQLDeviceID = deviceId;
-	} catch (e) {
-		_$l(`Storage hook error: ${e.message}`, "warning");
-	}
 }
 
 function _$mf() {
@@ -2225,6 +2215,7 @@ function _$mf() {
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
 			if (urlStr.includes("gql.twitch.tv/gql")) {
+				_$sd();
 				let nextArgs = args;
 				let headers = opts?.headers;
 
@@ -2339,6 +2330,13 @@ const _$pbs = {
 };
 
 let _$cpr = null;
+const _$ppk = [
+	"video-quality",
+	"video-muted",
+	"volume",
+	"lowLatencyModeEnabled",
+	"persistenceEnabled",
+];
 
 function _$gpc(player) {
 	return player?.playerInstance?.core || player?.core || null;
@@ -2474,6 +2472,52 @@ function _$rpa(channel = null) {
 	}
 }
 
+function _$cps(playerCore = null) {
+	const snapshot = Object.create(null);
+
+	try {
+		for (const key of _$ppk) {
+			snapshot[key] = localStorage.getItem(key);
+		}
+
+		if (playerCore?.state) {
+			snapshot["video-muted"] = JSON.stringify({
+				default: Boolean(playerCore.state.muted),
+			});
+			snapshot.volume = String(playerCore.state.volume);
+		}
+
+		if (playerCore?.state?.quality?.group) {
+			snapshot["video-quality"] = JSON.stringify({
+				default: playerCore.state.quality.group,
+			});
+		}
+	} catch (err) {
+		_$l(`Preference snapshot failed: ${err.message}`, "warning");
+		return null;
+	}
+
+	return snapshot;
+}
+
+function _$rps2(snapshot) {
+	if (!snapshot || typeof snapshot !== "object") return;
+
+	try {
+		for (const key of _$ppk) {
+			if (!Object.hasOwn(snapshot, key)) continue;
+			const value = snapshot[key];
+			if (value === null || typeof value === "undefined") {
+				localStorage.removeItem(key);
+				continue;
+			}
+			localStorage.setItem(key, String(value));
+		}
+	} catch (err) {
+		_$l(`Preference restore failed: ${err.message}`, "warning");
+	}
+}
+
 function _$dpt(isPausePlay, isReload, options = {}) {
 	const { player, state: playerState } = _$gps();
 
@@ -2526,34 +2570,7 @@ function _$dpt(isPausePlay, isReload, options = {}) {
 		if (reason === "ad-recovery") {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = now;
 		}
-
-		const lsKeyQuality = "video-quality";
-		const lsKeyMuted = "video-muted";
-		const lsKeyVolume = "volume";
-
-		let currentQualityLS = null;
-		let currentMutedLS = null;
-		let currentVolumeLS = null;
-
-		try {
-			currentQualityLS = localStorage.getItem(lsKeyQuality);
-			currentMutedLS = localStorage.getItem(lsKeyMuted);
-			currentVolumeLS = localStorage.getItem(lsKeyVolume);
-
-			if (playerCore?.state) {
-				localStorage.setItem(
-					lsKeyMuted,
-					JSON.stringify({ default: playerCore.state.muted }),
-				);
-				localStorage.setItem(lsKeyVolume, playerCore.state.volume);
-			}
-			if (playerCore?.state?.quality?.group) {
-				localStorage.setItem(
-					lsKeyQuality,
-					JSON.stringify({ default: playerCore.state.quality.group }),
-				);
-			}
-		} catch {}
+		const preferenceSnapshot = _$cps(playerCore);
 
 		if (reason === "manual") {
 			_$l("Reloading player", "info");
@@ -2567,15 +2584,9 @@ function _$dpt(isPausePlay, isReload, options = {}) {
 
 		player.play();
 
-		if (currentQualityLS || currentMutedLS || currentVolumeLS) {
+		if (preferenceSnapshot) {
 			setTimeout(() => {
-				try {
-					if (currentQualityLS)
-						localStorage.setItem(lsKeyQuality, currentQualityLS);
-					if (currentMutedLS) localStorage.setItem(lsKeyMuted, currentMutedLS);
-					if (currentVolumeLS)
-						localStorage.setItem(lsKeyVolume, currentVolumeLS);
-				} catch {}
+				_$rps2(preferenceSnapshot);
 			}, 3000);
 		}
 
@@ -2739,47 +2750,6 @@ function _$hvs() {
 	} catch {}
 
 	_$l("Visibility protection active", "info");
-}
-
-function _$hlp() {
-	try {
-		const keysToCache = [
-			"video-quality",
-			"video-muted",
-			"volume",
-			"lowLatencyModeEnabled",
-			"persistenceEnabled",
-		];
-
-		const cachedValues = new Map();
-
-		for (const key of keysToCache) {
-			cachedValues.set(key, localStorage.getItem(key));
-		}
-
-		const realSetItem = localStorage.setItem;
-		const realGetItem = localStorage.getItem;
-
-		localStorage.setItem = function (...args) {
-			const [key, value] = args;
-			if (cachedValues.has(key)) {
-				cachedValues.set(key, value);
-			}
-			return realSetItem.apply(this, args);
-		};
-
-		localStorage.getItem = function (...args) {
-			const [key] = args;
-			if (cachedValues.has(key)) {
-				return cachedValues.get(key);
-			}
-			return realGetItem.apply(this, args);
-		};
-
-		_$l("LocalStorage preservation active", "info");
-	} catch (err) {
-		_$l(`LocalStorage hooks failed: ${err.message}`, "warning");
-	}
 }
 
 const _$rk = "ttvab_last_reminder";
@@ -3145,7 +3115,7 @@ function _$bp() {
 	let pendingDisplayAdShellSignature = null;
 	let lastStaleDisplayArtifactSignature = null;
 	let lastStaleDisplayArtifactCleanupAt = 0;
-	let lastPathname = window.location.pathname;
+	let lastRouteUrl = window.location.href;
 	const EXPLICIT_DISPLAY_AD_SELECTORS = [
 		'div[data-test-selector="ad-banner"]',
 		'div[data-test-selector="display-ad"]',
@@ -3489,10 +3459,11 @@ function _$bp() {
 			});
 		}
 
-		function _handleRouteChange() {
-			const pathname = window.location.pathname;
-			if (pathname === lastPathname) return;
-			lastPathname = pathname;
+		function _handleRouteChange(force = false) {
+			const routeUrl = window.location.href;
+			const shouldForce = force === true;
+			if (!shouldForce && routeUrl === lastRouteUrl) return false;
+			lastRouteUrl = routeUrl;
 			_resetDisplayAdShellState();
 			_resetStaleDisplayArtifactCleanupDeduper();
 
@@ -3508,6 +3479,7 @@ function _$bp() {
 
 			_cleanupAllKnownDisplayArtifacts();
 			_$sr();
+			return true;
 		}
 
 		function _hasDisplayAdLabel() {
@@ -4178,19 +4150,7 @@ function _$bp() {
 		});
 
 		window.addEventListener("popstate", _handleRouteChange, true);
-
-		const originalPushState = history.pushState;
-		const originalReplaceState = history.replaceState;
-		history.pushState = function (...args) {
-			const result = originalPushState.apply(this, args);
-			_handleRouteChange();
-			return result;
-		};
-		history.replaceState = function (...args) {
-			const result = originalReplaceState.apply(this, args);
-			_handleRouteChange();
-			return result;
-		};
+		window.addEventListener("hashchange", _handleRouteChange, true);
 
 		let debounceTimer = null;
 		let lastImmediateScan = 0;
@@ -4277,7 +4237,7 @@ function _$in() {
 		}
 	});
 
-	_$hs();
+	_$sd();
 	_$hw();
 	_$mf();
 	_$tl();
@@ -4285,7 +4245,6 @@ function _$in() {
 	_$al();
 
 	_$hvs();
-	_$hlp();
 	if (_$c.BUFFERING_FIX) {
 		_$mpb();
 	}

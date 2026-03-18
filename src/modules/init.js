@@ -68,7 +68,7 @@ function _blockAntiAdblockPopup() {
 	let pendingDisplayAdShellSignature = null;
 	let lastStaleDisplayArtifactSignature = null;
 	let lastStaleDisplayArtifactCleanupAt = 0;
-	let lastPathname = window.location.pathname;
+	let lastRouteUrl = window.location.href;
 	const EXPLICIT_DISPLAY_AD_SELECTORS = [
 		'div[data-test-selector="ad-banner"]',
 		'div[data-test-selector="display-ad"]',
@@ -412,10 +412,11 @@ function _blockAntiAdblockPopup() {
 			});
 		}
 
-		function _handleRouteChange() {
-			const pathname = window.location.pathname;
-			if (pathname === lastPathname) return;
-			lastPathname = pathname;
+		function _handleRouteChange(force = false) {
+			const routeUrl = window.location.href;
+			const shouldForce = force === true;
+			if (!shouldForce && routeUrl === lastRouteUrl) return false;
+			lastRouteUrl = routeUrl;
 			_resetDisplayAdShellState();
 			_resetStaleDisplayArtifactCleanupDeduper();
 
@@ -431,6 +432,7 @@ function _blockAntiAdblockPopup() {
 
 			_cleanupAllKnownDisplayArtifacts();
 			_scanAndRemove();
+			return true;
 		}
 
 		function _hasDisplayAdLabel() {
@@ -1101,19 +1103,7 @@ function _blockAntiAdblockPopup() {
 		});
 
 		window.addEventListener("popstate", _handleRouteChange, true);
-
-		const originalPushState = history.pushState;
-		const originalReplaceState = history.replaceState;
-		history.pushState = function (...args) {
-			const result = originalPushState.apply(this, args);
-			_handleRouteChange();
-			return result;
-		};
-		history.replaceState = function (...args) {
-			const result = originalReplaceState.apply(this, args);
-			_handleRouteChange();
-			return result;
-		};
+		window.addEventListener("hashchange", _handleRouteChange, true);
 
 		let debounceTimer = null;
 		let lastImmediateScan = 0;
@@ -1200,7 +1190,7 @@ function _init() {
 		}
 	});
 
-	_hookStorage();
+	_syncStoredDeviceId();
 	_hookWorker();
 	_hookMainFetch();
 	_initToggleListener();
@@ -1208,7 +1198,6 @@ function _init() {
 	_initAchievementListener();
 
 	_hookVisibilityState();
-	_hookLocalStoragePreservation();
 	if (_C.BUFFERING_FIX) {
 		_monitorPlayerBuffering();
 	}

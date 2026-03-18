@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.4] - 2026-03-18
+
+### Fixed
+- **Worker Crash Recovery** - Worker restarts now recreate the original Twitch worker instead of attempting to relaunch from a stale injected blob URL.
+- **Player Preference Preservation** - Player quality, mute, volume, and related preferences are now preserved through explicit snapshot/restore during reloads instead of a global `localStorage` monkey patch.
+- **Route-Change Handling** - Popup-blocker route resets no longer monkey-patch `history.pushState` / `history.replaceState`; URL changes are now handled through native events and the existing DOM observers.
+- **Device ID Capture** - Twitch `unique_id` synchronization no longer overrides `localStorage.getItem`; the runtime now syncs the device ID directly during initialization, worker bootstrapping, and GQL interception.
+
+### Changed
+- **Tooling Updates** - Updated Biome to `2.4.7` and Knip to `6.0.0-1`, including the corresponding schema metadata refresh.
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.4 release line.
+
 ## [4.3.1] - 2026-03-17
 
 ### Fixed

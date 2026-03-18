@@ -249,7 +249,21 @@ function _hookWorkerFetch() {
 	};
 }
 
+function _syncStoredDeviceId() {
+	try {
+		const deviceId = localStorage.getItem("unique_id");
+		if (typeof deviceId === "string" && deviceId) {
+			__TTVAB_STATE__.GQLDeviceID = deviceId;
+			return deviceId;
+		}
+	} catch (e) {
+		_log(`Device ID sync error: ${e.message}`, "warning");
+	}
+	return null;
+}
+
 function _hookWorker() {
+	_syncStoredDeviceId();
 	const reinsertNames = _getReinsert(window.Worker);
 	const isAllowedWorkerHost = (hostname) => {
 		const host = String(hostname || "").toLowerCase();
@@ -395,8 +409,6 @@ function _hookWorker() {
 			const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
 			super(blobUrl, opts);
 			setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
-
-			this.__ttvabInjectedCode = injectedCode;
 
 			const getCurrentPageChannel = () => {
 				const match = window.location.pathname.match(/^\/([^/?#]+)/);
@@ -694,14 +706,7 @@ function _hookWorker() {
 
 					setTimeout(() => {
 						try {
-							const restartCode = this.__ttvabInjectedCode;
-							if (!restartCode)
-								throw new Error("No injected code stored for restart");
-							const restartBlobUrl = URL.createObjectURL(
-								new Blob([restartCode]),
-							);
-							new window.Worker(restartBlobUrl, workerOpts);
-							setTimeout(() => URL.revokeObjectURL(restartBlobUrl), 0);
+							new window.Worker(_workerUrl, workerOpts);
 							_log("Worker restarted", "success");
 							restartAttempts = 0;
 						} catch (restartErr) {
@@ -748,21 +753,6 @@ function _hookWorker() {
 			if (_isValid(v)) workerInstance = v;
 		},
 	});
-}
-
-function _hookStorage() {
-	try {
-		const originalGetItem = localStorage.getItem.bind(localStorage);
-		localStorage.getItem = (key) => {
-			const value = originalGetItem(key);
-			if (key === "unique_id" && value) __TTVAB_STATE__.GQLDeviceID = value;
-			return value;
-		};
-		const deviceId = originalGetItem("unique_id");
-		if (deviceId) __TTVAB_STATE__.GQLDeviceID = deviceId;
-	} catch (e) {
-		_log(`Storage hook error: ${e.message}`, "warning");
-	}
 }
 
 function _hookMainFetch() {
@@ -883,6 +873,7 @@ function _hookMainFetch() {
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
 			if (urlStr.includes("gql.twitch.tv/gql")) {
+				_syncStoredDeviceId();
 				let nextArgs = args;
 				let headers = opts?.headers;
 
