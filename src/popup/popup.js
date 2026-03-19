@@ -80,7 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function normalizeLanguage(language) {
 		const candidate = String(language || "").trim();
-		if (!candidate || candidate.toLowerCase() === "auto") return "en";
+		if (!candidate || candidate.toLowerCase() === "auto") return null;
 		const normalizedCandidate = candidate.replace(/-/g, "_");
 		if (TRANSLATIONS[normalizedCandidate]) {
 			return normalizedCandidate;
@@ -88,28 +88,76 @@ document.addEventListener("DOMContentLoaded", () => {
 		const lowerCandidate = candidate.toLowerCase();
 		if (lowerCandidate.startsWith("zh")) {
 			const normalized =
-				lowerCandidate.includes("tw") || lowerCandidate.includes("hant")
+				lowerCandidate.includes("tw") ||
+				lowerCandidate.includes("hk") ||
+				lowerCandidate.includes("mo") ||
+				lowerCandidate.includes("hant")
 					? "zh_TW"
 					: "zh_CN";
-			return TRANSLATIONS[normalized] ? normalized : "en";
+			return TRANSLATIONS[normalized] ? normalized : null;
 		}
 		const base = lowerCandidate.split(/[-_]/)[0];
-		return TRANSLATIONS[base] ? base : "en";
+		return TRANSLATIONS[base] ? base : null;
+	}
+
+	function normalizeLocaleTag(language) {
+		const candidate = String(language || "").trim();
+		if (!candidate) return "";
+		return candidate.replace(/_/g, "-");
+	}
+
+	function getAutoLanguageCandidates() {
+		const candidates = [];
+		try {
+			const uiLanguage = chrome.i18n?.getUILanguage?.();
+			if (uiLanguage) {
+				candidates.push(uiLanguage);
+			}
+		} catch (error) {
+			console.error("[TTV AB] Popup UI language read error:", error);
+		}
+		if (Array.isArray(navigator.languages)) {
+			candidates.push(...navigator.languages);
+		}
+		if (navigator.language) {
+			candidates.push(navigator.language);
+		}
+		return [
+			...new Set(candidates.map((value) => String(value || "").trim())),
+		].filter(Boolean);
+	}
+
+	function getAutoLanguageState() {
+		for (const candidate of getAutoLanguageCandidates()) {
+			const normalizedLanguage = normalizeLanguage(candidate);
+			if (!normalizedLanguage) continue;
+			return {
+				language: normalizedLanguage,
+				localeTag:
+					normalizeLocaleTag(candidate) ||
+					normalizedLanguage.replace(/_/g, "-"),
+			};
+		}
+		return {
+			language: "en",
+			localeTag: "en",
+		};
 	}
 
 	function getLang() {
 		const saved = getStoredLanguage();
 		if (saved && saved !== "auto") {
-			return normalizeLanguage(saved);
+			return normalizeLanguage(saved) || "en";
 		}
-		return normalizeLanguage(navigator.language);
+		return getAutoLanguageState().language;
 	}
 
 	function getLocaleTag() {
-		const lang = getLang();
-		return lang === "auto"
-			? normalizeLanguage(navigator.language).replace("_", "-")
-			: lang.replace("_", "-");
+		const saved = getStoredLanguage();
+		if (saved && saved !== "auto") {
+			return normalizeLocaleTag(saved) || getLang().replace(/_/g, "-");
+		}
+		return getAutoLanguageState().localeTag;
 	}
 
 	function formatTemplate(template, values) {
@@ -218,10 +266,12 @@ document.addEventListener("DOMContentLoaded", () => {
 		savedLang && savedLang !== "auto"
 			? normalizeLanguage(savedLang)
 			: savedLang;
+	const hasExplicitSavedLang =
+		typeof savedLang === "string" && savedLang.trim() !== "";
 	const hasValidSavedLang =
+		!hasExplicitSavedLang ||
 		normalizedSavedLang === "auto" ||
-		!normalizedSavedLang ||
-		TRANSLATIONS[normalizedSavedLang];
+		Boolean(normalizedSavedLang && TRANSLATIONS[normalizedSavedLang]);
 	const currentLang = hasValidSavedLang
 		? normalizedSavedLang || "auto"
 		: "auto";
@@ -261,7 +311,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const lang = nextSelector.value;
 		setStoredLanguage(lang);
 		const effectiveLang =
-			lang === "auto" ? normalizeLanguage(navigator.language) : lang;
+			lang === "auto" ? getAutoLanguageState().language : lang;
 		applyTranslations(effectiveLang);
 		loadStatistics();
 		updateStatus(toggle.checked);

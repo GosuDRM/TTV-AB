@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.7-purple)
+![Version](https://img.shields.io/badge/version-4.3.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -55,6 +55,11 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.3.8
+- **Auto Locale Selection Fix** - `Auto` now resolves from Chrome's UI locale and preferred-language list instead of only `navigator.language`, and it correctly maps Traditional Chinese variants like `zh-HK` and `zh-MO`.
+- **Locale Copy Polish** - Updated shipped non-English popup and manifest strings to read more naturally, reducing awkward direct translations and grammar issues.
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle now target the 4.3.8 release line.
 
 ### v4.3.7
 - **Lower-Third Display Ad Detection** - DOM cleanup now treats Twitch's `sda-iframe-*` / `Stream Display Ad` lower-third iframes as explicit display-ad signals, so Amazon-backed lower-third banners are collapsed reliably.

@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.8] - 2026-03-19
+
+### Fixed
+- **Auto Locale Resolution** - The popup's `Auto` language mode now prefers Chrome's UI locale plus the browser's preferred-language list instead of only `navigator.language`, and it correctly treats Traditional Chinese variants like `zh-HK` and `zh-MO` as `zh_TW`.
+
+### Changed
+- **Locale Polish** - Refined shipped non-English popup strings and manifest locale metadata so labels, descriptions, and helper text read more naturally across the supported locales.
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, the bridge/background scripts, and the generated bundle were bumped to the 4.3.8 release line.
+
 ## [4.3.7] - 2026-03-19
 
 ### Fixed
