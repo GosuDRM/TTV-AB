@@ -617,8 +617,13 @@ function _hookWorker() {
 								".mini-player",
 								'[class*="mini-player"]',
 								'[class*="pip-container"]',
-								'div[data-test-selector="display-ad"]',
+								'[data-test-selector="display-ad"]',
+								'[data-test-selector="ad-banner"]',
 								'[data-a-target="ads-banner"]',
+								'iframe[data-test-selector^="sda-iframe-"]',
+								'iframe[title="Stream Display Ad"]',
+								'iframe[class*="stream-display-ad__iframe_lower-third"]',
+								'[data-ttvab-player-ad-banner="true"]',
 							];
 							const resetOnlySelectors = [
 								".stream-display-ad",

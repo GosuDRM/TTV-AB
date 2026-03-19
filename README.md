@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.6-purple)
+![Version](https://img.shields.io/badge/version-4.3.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -55,6 +55,10 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.3.7
+- **Lower-Third Display Ad Detection** - DOM cleanup now treats Twitch's `sda-iframe-*` / `Stream Display Ad` lower-third iframes as explicit display-ad signals, so Amazon-backed lower-third banners are collapsed reliably.
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle now target the 4.3.7 release line.
 
 ### v4.3.6
 - **Serialized Counter Persistence** - Counter and stats writes now run through a dedicated extension background worker instead of per-tab storage read/modify/write loops, preventing tabs from clobbering totals, daily stats, channels, and achievements.

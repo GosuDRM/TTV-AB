@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.7] - 2026-03-19
+
+### Fixed
+- **Lower-Third Display Ad Iframes** - The DOM blocker now treats Twitch `sda-iframe-*` / `Stream Display Ad` lower-third iframes as explicit display-ad signals, so Amazon-backed `srcdoc` lower-third banners are hidden and cleaned up reliably during and after ad recovery.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, the bridge/background scripts, and the generated bundle were bumped to the 4.3.7 release line.
+
 ## [4.3.6] - 2026-03-19
 
 ### Fixed

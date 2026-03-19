@@ -69,10 +69,19 @@ function _blockAntiAdblockPopup() {
 	let lastStaleDisplayArtifactSignature = null;
 	let lastStaleDisplayArtifactCleanupAt = 0;
 	let lastRouteUrl = window.location.href;
+	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
+		'[data-ttvab-player-ad-banner="true"]';
+	const LOWER_THIRD_DISPLAY_AD_SELECTORS = [
+		'iframe[data-test-selector^="sda-iframe-"]',
+		'iframe[title="Stream Display Ad"]',
+		'iframe[class*="stream-display-ad__iframe_lower-third"]',
+	];
 	const EXPLICIT_DISPLAY_AD_SELECTORS = [
-		'div[data-test-selector="ad-banner"]',
-		'div[data-test-selector="display-ad"]',
+		'[data-test-selector="ad-banner"]',
+		'[data-test-selector="display-ad"]',
 		'[data-a-target="ads-banner"]',
+		...LOWER_THIRD_DISPLAY_AD_SELECTORS,
+		PLAYER_SURFACE_AD_MARKER_SELECTOR,
 	];
 	const DISPLAY_AD_SHELL_SELECTORS = [
 		".stream-display-ad",
@@ -98,9 +107,9 @@ function _blockAntiAdblockPopup() {
 		'[class*="offline-page"]',
 	];
 	const PROMOTED_PAGE_CTA_PATTERN =
-		/^(learn more|shop now|watch now|play now|install|download|get offer|see more)$/i;
+		/^(learn more|shop(?: now| on amazon)?|watch now|play now|install|download|get offer|see more)$/i;
 	const PLAYER_AD_CTA_PATTERN =
-		/^(learn more|shop now|watch now|play now|get offer|see more|see details|install|download)$/i;
+		/^(learn more|shop(?: now| on amazon)?|watch now|play now|get offer|see more|see details|install|download)$/i;
 
 	function _initPopupBlocker() {
 		if (!document.body) {
@@ -123,10 +132,12 @@ function _blockAntiAdblockPopup() {
 			const style = document.createElement("style");
 			style.id = "ttvab-popup-style";
 			style.textContent = `
-                div[data-test-selector="ad-banner"],
-                div[data-test-selector="display-ad"],
-                div[data-a-target="ads-banner"],
-                div[data-a-target="consent-banner"] {
+                [data-test-selector="ad-banner"],
+                [data-test-selector="display-ad"],
+                [data-a-target="ads-banner"],
+                [data-a-target="consent-banner"],
+                ${LOWER_THIRD_DISPLAY_AD_SELECTORS.join(",\n                ")},
+                ${PLAYER_SURFACE_AD_MARKER_SELECTOR} {
                     display: none !important;
                     visibility: hidden !important;
                 }
@@ -301,6 +312,9 @@ function _blockAntiAdblockPopup() {
 				...layoutRoots,
 				...inferredLayoutWrappers,
 				...Array.from(
+					document.querySelectorAll(PLAYER_SURFACE_AD_MARKER_SELECTOR),
+				),
+				...Array.from(
 					document.querySelectorAll('[data-ttvab-display-shell-reset="true"]'),
 				),
 			]
@@ -420,11 +434,10 @@ function _blockAntiAdblockPopup() {
 			_resetDisplayAdShellState();
 			_resetStaleDisplayArtifactCleanupDeduper();
 
-			const hasExplicitAdSignals = document.querySelector(
-				[...EXPLICIT_DISPLAY_AD_SELECTORS, ...DISPLAY_AD_SHELL_SELECTORS].join(
-					",",
-				),
-			);
+			const hasExplicitAdSignals = _queryUniqueElements([
+				...EXPLICIT_DISPLAY_AD_SELECTORS,
+				...DISPLAY_AD_SHELL_SELECTORS,
+			]).some((el) => _isVisibleElement(el));
 			if (!hasExplicitAdSignals) {
 				didCountCurrentDisplayAdShellCleanup = false;
 				didCountCurrentDisplayAdShellAd = false;
@@ -513,6 +526,86 @@ function _blockAntiAdblockPopup() {
 		function _getMainPlayerRect() {
 			const player = _getMainPlayerElement();
 			return player ? player.getBoundingClientRect() : null;
+		}
+
+		function _getRectOverlap(startA, endA, startB, endB) {
+			return Math.max(0, Math.min(endA, endB) - Math.max(startA, startB));
+		}
+
+		function _isLikelyPlayerOverlayRect(rect, playerRect) {
+			if (!rect || !playerRect) return false;
+			if (rect.width < 140 || rect.height < 32) return false;
+			if (rect.width > Math.max(playerRect.width * 1.08, 960)) return false;
+			if (rect.height > Math.max(220, playerRect.height * 0.45)) return false;
+
+			const horizontalOverlap = _getRectOverlap(
+				rect.left,
+				rect.right,
+				playerRect.left,
+				playerRect.right,
+			);
+			if (horizontalOverlap < Math.min(rect.width, playerRect.width) * 0.35) {
+				return false;
+			}
+
+			const verticalOverlap = _getRectOverlap(
+				rect.top,
+				rect.bottom,
+				playerRect.top,
+				playerRect.bottom,
+			);
+			if (verticalOverlap <= 0) return false;
+
+			return rect.bottom > playerRect.top + playerRect.height * 0.45;
+		}
+
+		function _markPlayerAdBannerContainer(seed) {
+			if (!seed) return null;
+			const playerRect = _getMainPlayerRect();
+			if (!playerRect) return null;
+
+			let current = seed;
+			for (let depth = 0; depth < 6 && current; depth += 1) {
+				if (_isVisibleElement(current)) {
+					const rect = current.getBoundingClientRect();
+					if (_isLikelyPlayerOverlayRect(rect, playerRect)) {
+						current.setAttribute("data-ttvab-player-ad-banner", "true");
+						return current;
+					}
+				}
+
+				if (depth > 0 && _isSafeElement(current)) break;
+				current = current.parentElement;
+			}
+
+			return null;
+		}
+
+		function _getAmazonPlayerAdNodes() {
+			const nodes = [];
+			const ctas = document.querySelectorAll("a, button, [role='button']");
+
+			for (const cta of ctas) {
+				if (!_isVisibleElement(cta) || !_isNearMainPlayer(cta)) continue;
+				const text = [
+					cta.textContent || "",
+					cta.getAttribute("aria-label") || "",
+					cta.getAttribute("title") || "",
+				]
+					.join(" ")
+					.replace(/\s+/g, " ")
+					.trim();
+				if (!/\bshop on amazon\b/i.test(text)) continue;
+
+				const container = _markPlayerAdBannerContainer(cta);
+				if (container) {
+					nodes.push(container);
+				}
+			}
+
+			return nodes.filter(
+				(el, index, list) => el && list.indexOf(el) === index,
+			);
 		}
 
 		function _getInferredDisplayAdLayoutWrappers() {
@@ -705,11 +798,15 @@ function _blockAntiAdblockPopup() {
 
 		function _collapseDisplayAdShell() {
 			const adBanners = Array.from(
-				document.querySelectorAll('div[data-test-selector="ad-banner"]'),
+				document.querySelectorAll('[data-test-selector="ad-banner"]'),
 			).filter((el) => _isVisibleElement(el) && _isNearMainPlayer(el));
-			const explicitDisplayAdNodes = EXPLICIT_DISPLAY_AD_SELECTORS.flatMap(
-				(selector) => Array.from(document.querySelectorAll(selector)),
-			).filter(
+			const amazonPlayerAdNodes = _getAmazonPlayerAdNodes();
+			const explicitDisplayAdNodes = [
+				...EXPLICIT_DISPLAY_AD_SELECTORS.flatMap((selector) =>
+					Array.from(document.querySelectorAll(selector)),
+				),
+				...amazonPlayerAdNodes,
+			].filter(
 				(el, index, list) =>
 					_isVisibleElement(el) &&
 					_isNearMainPlayer(el) &&
@@ -1012,8 +1109,8 @@ function _blockAntiAdblockPopup() {
 				'div[class*="ScAttach"][class*="ScBalloon"]',
 				'div[class*="tw-balloon"]',
 				'div[class*="consent"]',
-				'div[data-a-target="consent-banner"]',
-				'div[data-test-selector="ad-banner"]',
+				'[data-a-target="consent-banner"]',
+				'[data-test-selector="ad-banner"]',
 				'div[class*="Layout"][class*="Overlay"]',
 			];
 
