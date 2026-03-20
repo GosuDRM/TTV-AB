@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.4.0] - 2026-03-21
+
+### Fixed
+- **Display Ad Feedback Button Artifacts** - Player-side display-ad cleanup now upgrades matched `Ad` labels to their enclosing feedback-button wrapper when Twitch renders the `Leave feedback for this Ad` overlay, so the full lingering control is hidden instead of only the inner text node.
+
 ## [4.3.9] - 2026-03-21
 
 ### Fixed

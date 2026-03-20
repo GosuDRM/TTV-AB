@@ -71,6 +71,12 @@ function _blockAntiAdblockPopup() {
 	let lastRouteUrl = window.location.href;
 	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
 		'[data-ttvab-player-ad-banner="true"]';
+	const DISPLAY_AD_LABEL_SELECTORS = [
+		'[data-a-target="video-ad-label"]',
+		'[data-test-selector="ad-label"]',
+		'[class*="ad-countdown"]',
+		'[aria-label="Ad"]',
+	];
 	const LOWER_THIRD_DISPLAY_AD_SELECTORS = [
 		'iframe[data-test-selector^="sda-iframe-"]',
 		'iframe[title="Stream Display Ad"]',
@@ -110,6 +116,7 @@ function _blockAntiAdblockPopup() {
 		/^(learn more|shop(?: now| on amazon)?|watch now|play now|install|download|get offer|see more)$/i;
 	const PLAYER_AD_CTA_PATTERN =
 		/^(learn more|shop(?: now| on amazon)?|watch now|play now|get offer|see more|see details|install|download)$/i;
+	const DISPLAY_AD_FEEDBACK_BUTTON_PATTERN = /\bleave feedback\b.*\bad\b/i;
 
 	function _initPopupBlocker() {
 		if (!document.body) {
@@ -448,18 +455,76 @@ function _blockAntiAdblockPopup() {
 			return true;
 		}
 
+		function _pushUniqueDisplayAdLabel(labels, seen, el) {
+			if (!el || seen.has(el)) return;
+			labels.push(el);
+			seen.add(el);
+		}
+
+		function _isDisplayAdFeedbackButton(el) {
+			const ariaLabel = String(el?.getAttribute?.("aria-label") || "")
+				.replace(/\s+/g, " ")
+				.trim();
+			return DISPLAY_AD_FEEDBACK_BUTTON_PATTERN.test(ariaLabel);
+		}
+
+		function _getDisplayAdLabelTarget(node, rootRect = null) {
+			if (!node) return null;
+			let target =
+				node.closest?.('button[aria-label], [role="button"][aria-label]') ||
+				node;
+			if (
+				target !== node &&
+				(!_isDisplayAdFeedbackButton(target) || !_isVisibleElement(target))
+			) {
+				target = node;
+			}
+
+			for (let depth = 0; depth < 4 && target; depth += 1) {
+				const parent = target.parentElement;
+				if (!parent || _isSafeElement(parent) || !_isVisibleElement(parent)) {
+					break;
+				}
+				const rect = parent.getBoundingClientRect();
+				const isCompactPlayerOverlay =
+					rect.width > 0 &&
+					rect.height > 0 &&
+					rect.width <= 280 &&
+					rect.height <= 80 &&
+					(rootRect
+						? rect.top < rootRect.top + 160 &&
+							rect.right > rootRect.right - 320 &&
+							rect.left > rootRect.left - 40 &&
+							rect.bottom > rootRect.top - 20
+						: _isNearMainPlayer(parent));
+				if (!isCompactPlayerOverlay) break;
+				target = parent;
+			}
+
+			return target;
+		}
+
 		function _getDisplayAdLabels() {
 			const labels = [];
-			const directLabel = document.querySelector(
-				'[data-a-target="video-ad-label"], [data-test-selector="ad-label"], [class*="ad-countdown"]',
-			);
-			if (
-				directLabel &&
-				_isVisibleElement(directLabel) &&
-				_isNearMainPlayer(directLabel) &&
-				_looksLikeAdLabel(directLabel.textContent || "")
-			) {
-				labels.push(directLabel);
+			const seen = new Set();
+			const directLabels = _queryUniqueElements(DISPLAY_AD_LABEL_SELECTORS);
+			for (const directLabel of directLabels) {
+				const text =
+					directLabel.getAttribute?.("aria-label") ||
+					directLabel.textContent ||
+					"";
+				if (
+					!_isVisibleElement(directLabel) ||
+					!_isNearMainPlayer(directLabel) ||
+					!_looksLikeAdLabel(text)
+				) {
+					continue;
+				}
+				_pushUniqueDisplayAdLabel(
+					labels,
+					seen,
+					_getDisplayAdLabelTarget(directLabel),
+				);
 			}
 
 			const playerRoots = document.querySelectorAll(
@@ -468,12 +533,21 @@ function _blockAntiAdblockPopup() {
 
 			for (const root of playerRoots) {
 				if (!_isVisibleElement(root)) continue;
-				const nodes = root.querySelectorAll("span, p");
+				const nodes = root.querySelectorAll(
+					'span, p, [aria-label="Ad"], button[aria-label], [role="button"][aria-label]',
+				);
 				const rootRect = root.getBoundingClientRect();
 				if (rootRect.width < 320 || rootRect.height < 180) continue;
 				for (const node of nodes) {
-					const text = node.textContent || "";
-					if (!text || text.length > 18 || !_looksLikeAdLabel(text)) continue;
+					const text =
+						node.getAttribute?.("aria-label") || node.textContent || "";
+					if (
+						!text ||
+						text.length > 48 ||
+						(!_looksLikeAdLabel(text) && !_isDisplayAdFeedbackButton(node))
+					) {
+						continue;
+					}
 					if (!_isVisibleElement(node)) continue;
 					const rect = node.getBoundingClientRect();
 					if (
@@ -482,7 +556,11 @@ function _blockAntiAdblockPopup() {
 						rect.top < rootRect.top + 140 &&
 						rect.right > rootRect.right - 260
 					) {
-						labels.push(node);
+						_pushUniqueDisplayAdLabel(
+							labels,
+							seen,
+							_getDisplayAdLabelTarget(node, rootRect),
+						);
 					}
 				}
 			}

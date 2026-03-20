@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.9-purple)
+![Version](https://img.shields.io/badge/version-4.4.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -55,6 +55,9 @@ The extension intercepts Twitch's HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v4.4.0
+- **Display Ad Feedback Overlay Cleanup** - Player-side display-ad cleanup now targets Twitch's feedback button wrapper as well as the tiny `Ad` label itself, removing leftover `Leave feedback for this Ad` overlays that could remain near the stream player.
 
 ### v4.3.9
 - **Display Ad Label Cleanup** - The DOM blocker now collects and hides lingering player-side ad labels directly, removing leftover `Ad` / countdown-style badges that could remain visible after display-ad cleanup.
