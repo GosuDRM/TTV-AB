@@ -58,16 +58,13 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ### v4.3.9
 - **Display Ad Label Cleanup** - The DOM blocker now collects and hides lingering player-side ad labels directly, removing leftover `Ad` / countdown-style badges that could remain visible after display-ad cleanup.
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle now target the 4.3.9 release line.
 
 ### v4.3.8
 - **Auto Locale Selection Fix** - `Auto` now resolves from Chrome's UI locale and preferred-language list instead of only `navigator.language`, and it correctly maps Traditional Chinese variants like `zh-HK` and `zh-MO`.
 - **Locale Copy Polish** - Updated shipped non-English popup and manifest strings to read more naturally, reducing awkward direct translations and grammar issues.
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle now target the 4.3.8 release line.
 
 ### v4.3.7
 - **Lower-Third Display Ad Detection** - DOM cleanup now treats Twitch's `sda-iframe-*` / `Stream Display Ad` lower-third iframes as explicit display-ad signals, so Amazon-backed lower-third banners are collapsed reliably.
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle now target the 4.3.7 release line.
 
 ### v4.3.6
 - **Serialized Counter Persistence** - Counter and stats writes now run through a dedicated extension background worker instead of per-tab storage read/modify/write loops, preventing tabs from clobbering totals, daily stats, channels, and achievements.
@@ -77,7 +74,6 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ### v4.3.5
 - **Post-Ad Audio Recovery** - The page now suppresses competing `video` and `audio` elements during ad recovery and restores their exact audio state after `AdEnded`, preventing delayed or doubled audio from lingering backup players.
 - **Ad Event Channel Normalization** - Worker ad events now normalize observed channel names before stale-channel checks so post-ad cleanup runs reliably across Twitch route casing/format differences.
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle now target the 4.3.5 release line.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

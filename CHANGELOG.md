@@ -7,9 +7,6 @@ All notable changes to TTV AB will be documented in this file.
 ### Fixed
 - **Lingering Display Ad Labels** - Display-ad cleanup now gathers matching player-side ad label elements and hides them directly, removing leftover `Ad` / countdown-style badges that could remain visible near the stream player.
 
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.9 release line.
-
 ## [4.3.8] - 2026-03-19
 
 ### Fixed
@@ -17,15 +14,11 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Changed
 - **Locale Polish** - Refined shipped non-English popup strings and manifest locale metadata so labels, descriptions, and helper text read more naturally across the supported locales.
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, the bridge/background scripts, and the generated bundle were bumped to the 4.3.8 release line.
 
 ## [4.3.7] - 2026-03-19
 
 ### Fixed
 - **Lower-Third Display Ad Iframes** - The DOM blocker now treats Twitch `sda-iframe-*` / `Stream Display Ad` lower-third iframes as explicit display-ad signals, so Amazon-backed `srcdoc` lower-third banners are hidden and cleaned up reliably during and after ad recovery.
-
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, the bridge/background scripts, and the generated bundle were bumped to the 4.3.7 release line.
 
 ## [4.3.6] - 2026-03-19
 
@@ -35,17 +28,11 @@ All notable changes to TTV AB will be documented in this file.
 - **Token Relay Fallback** - Backup token requests now create a fresh abort controller for direct-fetch fallback after a relay timeout, so relay failures do not poison the retry path with an already-aborted signal.
 - **Bridge Event Validation** - The bridge now ignores cross-channel and malformed DOM cleanup events before they reach persisted counters, reducing bad state from stale or invalid page-side events.
 
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, the bridge/background scripts, and the generated bundle were bumped to the 4.3.6 release line.
-
 ## [4.3.5] - 2026-03-19
 
 ### Fixed
 - **Post-Ad Audio Delay** - During ad recovery the page now suppresses competing `video` and `audio` elements, then restores their original mute/volume state when the ad ends so stale backup-player audio cannot linger behind native playback.
 - **Ad-End Channel Matching** - Worker ad events now normalize observed channel names before stale-channel checks, preventing valid `AdEnded` cleanup from being skipped because of casing or route-format differences.
-
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.5 release line.
 
 ## [4.3.4] - 2026-03-18
 
@@ -57,7 +44,6 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Changed
 - **Tooling Updates** - Updated Biome to `2.4.7` and Knip to `6.0.0-1`, including the corresponding schema metadata refresh.
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.4 release line.
 
 ## [4.3.1] - 2026-03-17
 
@@ -67,9 +53,6 @@ All notable changes to TTV AB will be documented in this file.
 - **Transient Ad-End Resets** - Debounced ad-end evaluations in the processor to prevent premature test resets from spurious clean playlists.
 - **Worker Initialization Guards** - Guarded worker blob instantiation to prevent SecurityErrors on revoked URLs during crash recovery, and strictly checked worker reloads against current channel contexts.
 - **Unused Variables** - Removed unused variables in the worker hooks to resolve Biome linter warnings.
-
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.1 release line.
 
 ## [4.2.7] - 2026-03-13
 
@@ -82,9 +65,6 @@ All notable changes to TTV AB will be documented in this file.
 - **Worker Restart Failure** - Worker auto-restart was calling `new Worker(blobUrl)` with a URL that had already been revoked via `URL.revokeObjectURL`, causing all restart attempts to silently fail with a `SecurityError`. The injected code is now stored so each restart creates a fresh blob URL.
 - **Cross-Channel Player Reload** - `ReloadPlayer` messages from the worker carried no channel identifier, allowing a background tab's worker completing an ad cycle to trigger a player reload on a different foreground channel. The message now carries the channel name and the handler applies stale-channel gating consistent with other worker events.
 - **ReloadAfterAd Default** - The `ReloadAfterAd` state flag used `?? true` as its undefined-fallback, which would silently enable post-ad player reloads if the constant was ever absent. The fallback is now `?? false`, matching the constant's intended default.
-
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.7 release line.
 
 
 ## [4.2.6] - 2026-03-11
