@@ -67,6 +67,79 @@ function _playlistHasMediaSegments(text) {
 	return typeof text === "string" && text.includes("#EXTINF");
 }
 
+function _createSyntheticStreamInfo(playbackContext, url = "") {
+	const normalizedContext = _normalizePlaybackContext(playbackContext);
+	if (!normalizedContext.MediaKey) return null;
+
+	const info = {
+		MediaType: normalizedContext.MediaType,
+		MediaKey: normalizedContext.MediaKey,
+		ChannelName: normalizedContext.ChannelName,
+		VodID: normalizedContext.VodID,
+		IsShowingAd: false,
+		LastPlayerReload: 0,
+		EncodingsM3U8: null,
+		ModifiedM3U8: null,
+		IsUsingModifiedM3U8: false,
+		IsUsingFallbackStream: false,
+		IsUsingBackupStream: false,
+		UsherBaseUrl: "",
+		UsherParams: "",
+		RequestedAds: new Set(),
+		FailedBackupPlayerTypes: new Set(),
+		Urls: Object.create(null),
+		ResolutionList: [],
+		BackupEncodingsM3U8Cache: Object.create(null),
+		ActiveBackupPlayerType: null,
+		ActiveBackupResolution: null,
+		IsMidroll: false,
+		IsStrippingAdSegments: false,
+		NumStrippedAdSegments: 0,
+		PendingAdEndAt: 0,
+		CleanPlaylistCount: 0,
+		LastActivityAt: Date.now(),
+	};
+
+	__TTVAB_STATE__.StreamInfos[normalizedContext.MediaKey] = info;
+	if (url) {
+		__TTVAB_STATE__.StreamInfosByUrl[url] = info;
+	}
+
+	const logTarget =
+		normalizedContext.MediaType === "vod"
+			? `vod ${normalizedContext.VodID}`
+			: normalizedContext.ChannelName;
+	_log(`Synthetic stream info created for ${logTarget}`, "warning");
+	return info;
+}
+
+function _buildUsherPlaybackUrl(info, sig, token) {
+	let usherUrl = null;
+
+	if (typeof info?.UsherBaseUrl === "string" && info.UsherBaseUrl) {
+		try {
+			usherUrl = new URL(info.UsherBaseUrl);
+		} catch {}
+	}
+
+	if (!usherUrl) {
+		const routePath =
+			info?.MediaType === "vod" && info?.VodID
+				? `vod/${info.VodID}.m3u8`
+				: info?.ChannelName
+					? `channel/hls/${info.ChannelName}.m3u8`
+					: null;
+		if (!routePath) return null;
+		usherUrl = new URL(
+			`https://usher.ttvnw.net/api/${__TTVAB_STATE__.V2API ? "v2/" : ""}${routePath}${info?.UsherParams || ""}`,
+		);
+	}
+
+	usherUrl.searchParams.set("sig", sig);
+	usherUrl.searchParams.set("token", token);
+	return usherUrl;
+}
+
 async function _processM3U8(url, text, realFetch) {
 	let info = _getStreamInfoForPlaylist(url);
 	if (!info) {
@@ -77,41 +150,20 @@ async function _processM3U8(url, text, realFetch) {
 		) {
 			return text;
 		}
-		const channel =
-			__TTVAB_STATE__.CurrentAdChannel ||
-			Object.keys(__TTVAB_STATE__.StreamInfos || {})[0] ||
-			__TTVAB_STATE__.PageChannel ||
-			null;
-		if (!channel) return text;
-		info = {
-			ChannelName: channel,
-			IsShowingAd: false,
-			LastPlayerReload: 0,
-			EncodingsM3U8: null,
-			ModifiedM3U8: null,
-			IsUsingModifiedM3U8: false,
-			IsUsingFallbackStream: false,
-			IsUsingBackupStream: false,
-			UsherBaseUrl: "",
-			UsherParams: "",
-			RequestedAds: new Set(),
-			FailedBackupPlayerTypes: new Set(),
-			Urls: Object.create(null),
-			ResolutionList: [],
-			BackupEncodingsM3U8Cache: Object.create(null),
-			ActiveBackupPlayerType: null,
-			ActiveBackupResolution: null,
-			IsMidroll: false,
-			IsStrippingAdSegments: false,
-			NumStrippedAdSegments: 0,
-			PendingAdEndAt: 0,
-			CleanPlaylistCount: 0,
-			LastActivityAt: Date.now(),
-		};
-		__TTVAB_STATE__.StreamInfos[channel] = info;
-		__TTVAB_STATE__.StreamInfosByUrl[url] = info;
-		_log(`Synthetic stream info created for ${channel}`, "warning");
+		info = _createSyntheticStreamInfo(
+			{
+				MediaType: __TTVAB_STATE__.PageMediaType,
+				ChannelName:
+					__TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel,
+				VodID: __TTVAB_STATE__.PageVodID,
+				MediaKey:
+					__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.PageMediaKey,
+			},
+			url,
+		);
+		if (!info) return text;
 	}
+	info.LastActivityAt = Date.now();
 
 	if (!__TTVAB_STATE__.IsAdStrippingEnabled) {
 		if (
@@ -126,8 +178,10 @@ async function _processM3U8(url, text, realFetch) {
 				wasUsingBackupStream,
 			} = _resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
+			__TTVAB_STATE__.CurrentAdMediaKey = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			_log("Ad blocking disabled - restoring native stream state", "info");
 			if (
@@ -137,10 +191,22 @@ async function _processM3U8(url, text, realFetch) {
 				typeof self !== "undefined" &&
 				self.postMessage
 			) {
-				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
+				self.postMessage(
+					_createPageScopedWorkerEvent({
+						key: "AdEnded",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+					}),
+				);
 				if (__TTVAB_STATE__.ReloadAfterAd) {
 					info.LastPlayerReload = Date.now();
-					self.postMessage({ key: "ReloadPlayer", channel: info.ChannelName });
+					self.postMessage(
+						_createPageScopedWorkerEvent({
+							key: "ReloadPlayer",
+							channel: info.ChannelName,
+							mediaKey: info.MediaKey,
+						}),
+					);
 				}
 			}
 		}
@@ -166,11 +232,18 @@ async function _processM3U8(url, text, realFetch) {
 		if (!info.IsShowingAd) {
 			info.IsShowingAd = true;
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
+			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
 			info.FailedBackupPlayerTypes?.clear?.();
-			_incrementAdsBlocked(info.ChannelName);
+			_incrementAdsBlocked(info.ChannelName, info.MediaKey);
 			if (typeof self !== "undefined" && self.postMessage) {
-				self.postMessage({ key: "AdDetected", channel: info.ChannelName });
+				self.postMessage(
+					_createPageScopedWorkerEvent({
+						key: "AdDetected",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+					}),
+				);
 			}
 		}
 
@@ -234,11 +307,14 @@ async function _processM3U8(url, text, realFetch) {
 			info.ActiveBackupPlayerType = backupType;
 			_log(`Using backup: ${backupType}`, "info");
 			if (backupType && typeof self !== "undefined" && self.postMessage) {
-				self.postMessage({
-					key: "BackupPlayerTypeSelected",
-					value: backupType,
-					channel: info.ChannelName,
-				});
+				self.postMessage(
+					_createPageScopedWorkerEvent({
+						key: "BackupPlayerTypeSelected",
+						value: backupType,
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+					}),
+				);
 			}
 		}
 
@@ -269,11 +345,19 @@ async function _processM3U8(url, text, realFetch) {
 				wasUsingBackupStream,
 			} = _resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
+			__TTVAB_STATE__.CurrentAdMediaKey = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			if (typeof self !== "undefined" && self.postMessage) {
-				self.postMessage({ key: "AdEnded", channel: info.ChannelName });
+				self.postMessage(
+					_createPageScopedWorkerEvent({
+						key: "AdEnded",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+					}),
+				);
 				if (
 					(wasUsingModifiedM3U8 ||
 						wasUsingFallbackStream ||
@@ -281,7 +365,13 @@ async function _processM3U8(url, text, realFetch) {
 					__TTVAB_STATE__.ReloadAfterAd
 				) {
 					info.LastPlayerReload = Date.now();
-					self.postMessage({ key: "ReloadPlayer", channel: info.ChannelName });
+					self.postMessage(
+						_createPageScopedWorkerEvent({
+							key: "ReloadPlayer",
+							channel: info.ChannelName,
+							mediaKey: info.MediaKey,
+						}),
+					);
 				}
 			}
 		}
@@ -356,7 +446,7 @@ async function _findBackupStream(
 			if (!enc) {
 				isFreshM3u8 = true;
 				try {
-					const tokenRes = await _getToken(info.ChannelName, realPt, realFetch);
+					const tokenRes = await _getToken(info, realPt, realFetch);
 					if (tokenRes.status === 200) {
 						const token = await tokenRes.json();
 						const extractedToken = _extractPlaybackAccessToken(token);
@@ -365,11 +455,12 @@ async function _findBackupStream(
 
 						if (sig && tokenValue) {
 							info.FailedBackupPlayerTypes?.delete?.(pt);
-							const usherUrl = new URL(
-								`https://usher.ttvnw.net/api/${__TTVAB_STATE__.V2API ? "v2/" : ""}channel/hls/${info.ChannelName}.m3u8${info.UsherParams}`,
-							);
-							usherUrl.searchParams.set("sig", sig);
-							usherUrl.searchParams.set("token", tokenValue);
+							const usherUrl = _buildUsherPlaybackUrl(info, sig, tokenValue);
+							if (!usherUrl) {
+								_log(`Missing usher context for ${pt}`, "warning");
+								invalidateCache = true;
+								continue;
+							}
 							const encRes = await realFetch(usherUrl.href);
 							if (encRes.status === 200) {
 								enc = await encRes.text();

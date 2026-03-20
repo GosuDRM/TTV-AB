@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.0] - 2026-03-21
+
+### Highlights
+- **VOD Ad Blocking Support** - Added `/videos/<id>` playback-context detection plus VOD usher and token handling so Twitch VODs run through the same ad-strip and backup-stream recovery flow as live streams.
+- **Playback Context Isolation** - Worker state, stale-event checks, and post-ad cleanup now track a shared media key, preventing live and VOD routes from leaking ad or recovery events into the wrong player.
+- **Current-Live VOD Event Routing** - When Twitch serves an active livestream's VOD page through the live channel transport, worker ad and reload events now keep the page's media key so recovery is not rejected as stale.
+- **Live-to-VOD SPA Player Recovery** - Route changes from a live stream into its VOD now trigger a guarded player resync when Twitch leaves the old live player attached, preventing the large static `?` placeholder until a manual refresh.
+- **DOM Scan Performance Hardening** - Popup and display-ad cleanup now coalesces repeated rescans, ignores noisy chat-only DOM mutations, and backs off idle polling so the extension does not keep hammering full-page scans during normal playback.
+- **VOD Display-Ad Overlay Detection** - Player-side display-ad cleanup now recognizes generic `Learn More` CTA overlays and the `right after this ad break` banner shell, improving cleanup on current-live VOD pages.
+- **Direct Amazon MP4 VOD Ads** - VOD cleanup now detects standalone `m.media-amazon.com` ad video playback near the main player, suppresses that injected media element, nudges playback back onto the actual archive stream, and now requires matching player-ad UI signals so live/VOD transition media is not treated as a standalone ad.
+- **New Lower-Third SDA Banner Variant** - Added explicit handling for Twitch's `data-test-selector="sda-frame"` / `#stream-lowerthird` lower-third subscription-display banner so the newer DOM variant is hidden like the older iframe-based SDA banners.
+
 ## [4.4.0] - 2026-03-21
 
 ### Fixed

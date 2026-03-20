@@ -1,6 +1,200 @@
 // TTV AB - Parser
 
 const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+const _RESERVED_ROUTE_SEGMENTS = new Set([
+	"browse",
+	"directory",
+	"downloads",
+	"drops",
+	"following",
+	"friends",
+	"inventory",
+	"jobs",
+	"messages",
+	"search",
+	"settings",
+	"subscriptions",
+	"turbo",
+	"videos",
+	"wallet",
+]);
+
+function _normalizeChannelName(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim().toLowerCase();
+	return /^[a-z0-9_]{1,25}$/.test(trimmed) ? trimmed : null;
+}
+
+function _normalizeVodID(value) {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		value = String(Math.trunc(value));
+	}
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	return /^\d+$/.test(trimmed) ? trimmed : null;
+}
+
+function _buildMediaKey(mediaType, channelName = null, vodID = null) {
+	if (mediaType === "vod") {
+		const safeVodID = _normalizeVodID(vodID);
+		return safeVodID ? `vod:${safeVodID}` : null;
+	}
+
+	const safeChannel = _normalizeChannelName(channelName);
+	return safeChannel ? `live:${safeChannel}` : null;
+}
+
+function _normalizeMediaKey(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim().toLowerCase();
+	if (trimmed.startsWith("live:")) {
+		return _buildMediaKey("live", trimmed.slice(5), null);
+	}
+	if (trimmed.startsWith("vod:")) {
+		return _buildMediaKey("vod", null, trimmed.slice(4));
+	}
+	return null;
+}
+
+function _normalizePlaybackContext(context) {
+	const channelName = _normalizeChannelName(
+		context?.ChannelName ?? context?.channelName ?? context?.login ?? null,
+	);
+	const vodID = _normalizeVodID(
+		context?.VodID ?? context?.vodID ?? context?.videoID ?? null,
+	);
+	const explicitMediaType =
+		context?.MediaType === "vod" || context?.mediaType === "vod"
+			? "vod"
+			: context?.MediaType === "live" || context?.mediaType === "live"
+				? "live"
+				: null;
+	const explicitMediaKey = _normalizeMediaKey(
+		context?.MediaKey ?? context?.mediaKey ?? null,
+	);
+
+	if (explicitMediaKey?.startsWith("vod:")) {
+		const normalizedVodID = explicitMediaKey.slice(4);
+		return {
+			MediaType: "vod",
+			ChannelName: null,
+			VodID: normalizedVodID,
+			MediaKey: explicitMediaKey,
+		};
+	}
+
+	if (explicitMediaKey?.startsWith("live:")) {
+		const normalizedChannelName = explicitMediaKey.slice(5);
+		return {
+			MediaType: "live",
+			ChannelName: normalizedChannelName,
+			VodID: null,
+			MediaKey: explicitMediaKey,
+		};
+	}
+
+	if (explicitMediaType === "vod" && vodID) {
+		return {
+			MediaType: "vod",
+			ChannelName: null,
+			VodID: vodID,
+			MediaKey: _buildMediaKey("vod", null, vodID),
+		};
+	}
+
+	if ((explicitMediaType === "live" || !explicitMediaType) && channelName) {
+		return {
+			MediaType: "live",
+			ChannelName: channelName,
+			VodID: null,
+			MediaKey: _buildMediaKey("live", channelName, null),
+		};
+	}
+
+	if (vodID) {
+		return {
+			MediaType: "vod",
+			ChannelName: null,
+			VodID: vodID,
+			MediaKey: _buildMediaKey("vod", null, vodID),
+		};
+	}
+
+	return {
+		MediaType: null,
+		ChannelName: null,
+		VodID: null,
+		MediaKey: null,
+	};
+}
+
+function _getPlaybackContextFromUrl(rawUrl) {
+	let pathname = "";
+	try {
+		const baseUrl =
+			typeof globalThis?.location?.href === "string"
+				? globalThis.location.href
+				: "https://www.twitch.tv/";
+		pathname = new URL(String(rawUrl || ""), baseUrl).pathname;
+	} catch {
+		pathname = typeof rawUrl === "string" ? rawUrl : "";
+	}
+
+	const segments = String(pathname || "")
+		.split("/")
+		.filter(Boolean);
+	const firstSegment = segments[0] || null;
+	const liveChannel = _normalizeChannelName(firstSegment);
+	if (liveChannel && !_RESERVED_ROUTE_SEGMENTS.has(liveChannel)) {
+		return _normalizePlaybackContext({
+			MediaType: "live",
+			ChannelName: liveChannel,
+		});
+	}
+
+	if (String(firstSegment || "").toLowerCase() === "videos") {
+		return _normalizePlaybackContext({
+			MediaType: "vod",
+			VodID: segments[1] || null,
+		});
+	}
+
+	return _normalizePlaybackContext(null);
+}
+
+function _getPlaybackContextFromUsherUrl(rawUrl) {
+	let parsedUrl = null;
+	try {
+		const baseUrl =
+			typeof globalThis?.location?.href === "string"
+				? globalThis.location.href
+				: "https://www.twitch.tv/";
+		parsedUrl = new URL(String(rawUrl || ""), baseUrl);
+	} catch {
+		return null;
+	}
+
+	const pathname = parsedUrl.pathname;
+	const liveMatch = pathname.match(
+		/\/(?:api\/v2\/)?channel\/hls\/([^/?#]+)\.m3u8$/i,
+	);
+	if (liveMatch?.[1]) {
+		return _normalizePlaybackContext({
+			MediaType: "live",
+			ChannelName: liveMatch[1],
+		});
+	}
+
+	const vodMatch = pathname.match(/\/(?:api\/v2\/)?vod\/(\d+)\.m3u8$/i);
+	if (vodMatch?.[1]) {
+		return _normalizePlaybackContext({
+			MediaType: "vod",
+			VodID: vodMatch[1],
+		});
+	}
+
+	return null;
+}
 
 function _parseAttrs(str) {
 	const result = Object.create(null);

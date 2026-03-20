@@ -1059,26 +1059,29 @@ function validateSharedDefinitions() {
 		);
 	}
 
-	const initReservedRoutesLiteral = extractLiteral(
-		initSource,
-		"const reserved = new Set([",
+	const sharedReservedRoutesLiteral = extractLiteral(
+		parserSource,
+		"const _RESERVED_ROUTE_SEGMENTS = new Set([",
 		"[",
 		"]",
 	);
-	const hookReservedRoutesLiteral = extractLiteral(
-		hooksSource,
-		"const reserved = new Set([",
-		"[",
-		"]",
-	);
+	if (!sharedReservedRoutesLiteral) {
+		throw new Error("Shared reserved route list is missing from parser.js");
+	}
 	if (
-		!initReservedRoutesLiteral ||
-		!hookReservedRoutesLiteral ||
-		normalizeCodeSnippet(initReservedRoutesLiteral) !==
-			normalizeCodeSnippet(hookReservedRoutesLiteral)
+		initSource.includes("const reserved = new Set([") ||
+		hooksSource.includes("const reserved = new Set([")
 	) {
 		throw new Error(
-			"Reserved route lists are out of sync between init and hooks",
+			"Reserved route lists must be sourced from the shared parser helper",
+		);
+	}
+	if (
+		!initSource.includes("_getPlaybackContextFromUrl(window.location.href)") ||
+		!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")
+	) {
+		throw new Error(
+			"Init and hooks must resolve route context through _getPlaybackContextFromUrl",
 		);
 	}
 

@@ -69,6 +69,13 @@ function _blockAntiAdblockPopup() {
 	let lastStaleDisplayArtifactSignature = null;
 	let lastStaleDisplayArtifactCleanupAt = 0;
 	let lastRouteUrl = window.location.href;
+	let activeDirectPlayerAdMediaSignature = null;
+	let didCountCurrentDirectPlayerAdMedia = false;
+	let lastPlaybackContextChangeAt = 0;
+	let pendingRoutePlayerResyncTimer = null;
+	let scheduledScanTimer = null;
+	let scheduledScanForce = false;
+	let lastScanAt = 0;
 	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
 		'[data-ttvab-player-ad-banner="true"]';
 	const DISPLAY_AD_LABEL_SELECTORS = [
@@ -81,6 +88,9 @@ function _blockAntiAdblockPopup() {
 		'iframe[data-test-selector^="sda-iframe-"]',
 		'iframe[title="Stream Display Ad"]',
 		'iframe[class*="stream-display-ad__iframe_lower-third"]',
+		'[data-test-selector="sda-frame"]',
+		"#stream-lowerthird",
+		'[class*="stream-display-ad__frame_lower-third"]',
 	];
 	const EXPLICIT_DISPLAY_AD_SELECTORS = [
 		'[data-test-selector="ad-banner"]',
@@ -116,7 +126,37 @@ function _blockAntiAdblockPopup() {
 		/^(learn more|shop(?: now| on amazon)?|watch now|play now|install|download|get offer|see more)$/i;
 	const PLAYER_AD_CTA_PATTERN =
 		/^(learn more|shop(?: now| on amazon)?|watch now|play now|get offer|see more|see details|install|download)$/i;
+	const PLAYER_AD_OVERLAY_TEXT_PATTERN =
+		/\bright after this ad break\b|\bstick around to support the channel\b/i;
+	const DIRECT_PLAYER_AD_MEDIA_URL_PATTERN =
+		/^https:\/\/m\.media-amazon\.com\/.*\.mp4(?:$|\?)/i;
 	const DISPLAY_AD_FEEDBACK_BUTTON_PATTERN = /\bleave feedback\b.*\bad\b/i;
+	const MUTATION_NOISE_SELECTORS = [
+		'[data-a-target="chat-scroller"]',
+		'[data-a-target="right-column-chat-bar"]',
+		'[data-test-selector="chat-room-component"]',
+		'[class*="chat-room"]',
+		'[class*="chat-shell"]',
+		'[class*="right-column"]',
+		'[class*="RightColumn"]',
+		'[class*="ChatShell"]',
+		'[class*="ChatRoom"]',
+	];
+	const RELEVANT_MUTATION_SELECTOR = [
+		"video",
+		"audio",
+		"iframe",
+		'[data-test-selector*="ad"]',
+		'[data-a-target*="ad"]',
+		'[class*="display-ad"]',
+		'[class*="stream-display-ad"]',
+		'[class*="video-player"]',
+		'[class*="VideoPlayer"]',
+		'[data-a-target="video-player"]',
+		"[role='button']",
+		"button",
+		"a",
+	].join(", ");
 
 	function _initPopupBlocker() {
 		if (!document.body) {
@@ -163,27 +203,7 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _getCurrentChannelName() {
-			const match = window.location.pathname.match(/^\/([^/?#]+)/);
-			const candidate = match?.[1] || null;
-			if (!candidate) return null;
-			const reserved = new Set([
-				"browse",
-				"directory",
-				"downloads",
-				"drops",
-				"following",
-				"friends",
-				"inventory",
-				"jobs",
-				"messages",
-				"search",
-				"settings",
-				"subscriptions",
-				"turbo",
-				"videos",
-				"wallet",
-			]);
-			return reserved.has(candidate.toLowerCase()) ? null : candidate;
+			return _getPlaybackContextFromUrl(window.location.href).ChannelName;
 		}
 
 		function _hideElement(el) {
@@ -401,6 +421,12 @@ function _blockAntiAdblockPopup() {
 			isPromotedPageAdActive = false;
 			pendingDisplayAdShellSince = 0;
 			pendingDisplayAdShellSignature = null;
+			_resetDirectPlayerAdMediaState();
+		}
+
+		function _resetDirectPlayerAdMediaState() {
+			activeDirectPlayerAdMediaSignature = null;
+			didCountCurrentDirectPlayerAdMedia = false;
 		}
 
 		function _queryUniqueElements(selectors) {
@@ -433,11 +459,94 @@ function _blockAntiAdblockPopup() {
 			});
 		}
 
+		function _clearPendingRoutePlayerResync() {
+			if (!pendingRoutePlayerResyncTimer) return;
+			clearTimeout(pendingRoutePlayerResyncTimer);
+			pendingRoutePlayerResyncTimer = null;
+		}
+
+		function _scheduleRoutePlayerResync(previousContext, currentContext) {
+			const previousMediaKey = _normalizeMediaKey(previousContext?.MediaKey);
+			const currentMediaKey = _normalizeMediaKey(currentContext?.MediaKey);
+			if (
+				!previousMediaKey ||
+				!currentMediaKey ||
+				previousMediaKey === currentMediaKey
+			) {
+				_clearPendingRoutePlayerResync();
+				return;
+			}
+
+			_clearPendingRoutePlayerResync();
+
+			let attempts = 0;
+			const tryResync = () => {
+				attempts += 1;
+
+				const playerState =
+					typeof _getPlayerAndState === "function"
+						? _getPlayerAndState()
+						: { player: null, state: null };
+				const player = playerState?.player || null;
+				const state = playerState?.state || null;
+				const primaryMedia =
+					typeof _getPrimaryMediaElement === "function"
+						? _getPrimaryMediaElement()
+						: null;
+				const primarySrc = _getMediaSourceUrl(primaryMedia);
+				const playerContentType =
+					state?.props?.content?.type === "live" ||
+					state?.props?.content?.type === "vod"
+						? state.props.content.type
+						: null;
+				const hasPrimaryMedia = primaryMedia instanceof HTMLMediaElement;
+				const shouldReload =
+					DIRECT_PLAYER_AD_MEDIA_URL_PATTERN.test(primarySrc) ||
+					(currentContext.MediaType &&
+						playerContentType &&
+						playerContentType !== currentContext.MediaType) ||
+					(attempts >= 4 && player && !hasPrimaryMedia);
+
+				if (shouldReload && typeof _doPlayerTask === "function") {
+					_log(
+						`Reloading player after route change (${previousMediaKey} -> ${currentMediaKey})`,
+						"warning",
+					);
+					_doPlayerTask(false, true, { reason: "route-change" });
+					pendingRoutePlayerResyncTimer = null;
+					return;
+				}
+
+				if (attempts >= 6) {
+					pendingRoutePlayerResyncTimer = null;
+					return;
+				}
+
+				pendingRoutePlayerResyncTimer = setTimeout(tryResync, 250);
+			};
+
+			pendingRoutePlayerResyncTimer = setTimeout(tryResync, 150);
+		}
+
 		function _handleRouteChange(force = false) {
 			const routeUrl = window.location.href;
 			const shouldForce = force === true;
 			if (!shouldForce && routeUrl === lastRouteUrl) return false;
 			lastRouteUrl = routeUrl;
+			const previousContext = _normalizePlaybackContext({
+				MediaType: __TTVAB_STATE__.PageMediaType,
+				ChannelName: __TTVAB_STATE__.PageChannel,
+				VodID: __TTVAB_STATE__.PageVodID,
+				MediaKey: __TTVAB_STATE__.PageMediaKey,
+			});
+			const currentContext = _syncPagePlaybackContext();
+			const didMediaKeyChange =
+				previousContext.MediaKey !== currentContext.MediaKey;
+			if (didMediaKeyChange) {
+				lastPlaybackContextChangeAt = Date.now();
+				_resetDirectPlayerAdMediaState();
+				_scheduleRoutePlayerResync(previousContext, currentContext);
+			}
 			_resetDisplayAdShellState();
 			_resetStaleDisplayArtifactCleanupDeduper();
 
@@ -606,13 +715,23 @@ function _blockAntiAdblockPopup() {
 			return player ? player.getBoundingClientRect() : null;
 		}
 
+		function _getMediaSourceUrl(media) {
+			return String(media?.currentSrc || media?.src || "").trim();
+		}
+
 		function _getRectOverlap(startA, endA, startB, endB) {
 			return Math.max(0, Math.min(endA, endB) - Math.max(startA, startB));
 		}
 
-		function _isLikelyPlayerOverlayRect(rect, playerRect) {
+		function _isLikelyPlayerOverlayRect(
+			rect,
+			playerRect,
+			{ allowTopBand = false } = {},
+		) {
 			if (!rect || !playerRect) return false;
-			if (rect.width < 140 || rect.height < 32) return false;
+			if (rect.width < (allowTopBand ? 140 : 80) || rect.height < 24) {
+				return false;
+			}
 			if (rect.width > Math.max(playerRect.width * 1.08, 960)) return false;
 			if (rect.height > Math.max(220, playerRect.height * 0.45)) return false;
 
@@ -634,10 +753,17 @@ function _blockAntiAdblockPopup() {
 			);
 			if (verticalOverlap <= 0) return false;
 
+			if (allowTopBand) {
+				return (
+					rect.top < playerRect.top + Math.max(160, playerRect.height * 0.28) &&
+					rect.bottom < playerRect.top + Math.max(220, playerRect.height * 0.42)
+				);
+			}
+
 			return rect.bottom > playerRect.top + playerRect.height * 0.45;
 		}
 
-		function _markPlayerAdBannerContainer(seed) {
+		function _markPlayerAdBannerContainer(seed, options = {}) {
 			if (!seed) return null;
 			const playerRect = _getMainPlayerRect();
 			if (!playerRect) return null;
@@ -646,7 +772,7 @@ function _blockAntiAdblockPopup() {
 			for (let depth = 0; depth < 6 && current; depth += 1) {
 				if (_isVisibleElement(current)) {
 					const rect = current.getBoundingClientRect();
-					if (_isLikelyPlayerOverlayRect(rect, playerRect)) {
+					if (_isLikelyPlayerOverlayRect(rect, playerRect, options)) {
 						current.setAttribute("data-ttvab-player-ad-banner", "true");
 						return current;
 					}
@@ -659,7 +785,7 @@ function _blockAntiAdblockPopup() {
 			return null;
 		}
 
-		function _getAmazonPlayerAdNodes() {
+		function _getPlayerAdCallToActionNodes() {
 			const nodes = [];
 			const ctas = document.querySelectorAll("a, button, [role='button']");
 
@@ -673,11 +799,54 @@ function _blockAntiAdblockPopup() {
 					.join(" ")
 					.replace(/\s+/g, " ")
 					.trim();
-				if (!/\bshop on amazon\b/i.test(text)) continue;
+				if (!PLAYER_AD_CTA_PATTERN.test(text)) continue;
 
 				const container = _markPlayerAdBannerContainer(cta);
 				if (container) {
 					nodes.push(container);
+				}
+			}
+
+			return nodes.filter(
+				(el, index, list) => el && list.indexOf(el) === index,
+			);
+		}
+
+		function _getPlayerAdBannerTextNodes() {
+			const nodes = [];
+			const playerRect = _getMainPlayerRect();
+			if (!playerRect) return nodes;
+
+			const candidates = document.querySelectorAll(
+				"span, p, div, h1, h2, h3, [role='heading']",
+			);
+			for (const node of candidates) {
+				if (!_isVisibleElement(node) || !_isNearMainPlayer(node)) continue;
+				const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+				if (
+					text.length < 24 ||
+					text.length > 180 ||
+					!PLAYER_AD_OVERLAY_TEXT_PATTERN.test(text)
+				) {
+					continue;
+				}
+
+				const container = _markPlayerAdBannerContainer(node, {
+					allowTopBand: true,
+				});
+				if (container) {
+					nodes.push(container);
+					continue;
+				}
+
+				const rect = node.getBoundingClientRect();
+				if (
+					rect.width >= 220 &&
+					rect.top < playerRect.top + Math.max(160, playerRect.height * 0.28) &&
+					rect.bottom < playerRect.top + Math.max(220, playerRect.height * 0.42)
+				) {
+					node.setAttribute("data-ttvab-player-ad-banner", "true");
+					nodes.push(node);
 				}
 			}
 
@@ -768,6 +937,175 @@ function _blockAntiAdblockPopup() {
 			);
 		}
 
+		function _hasDirectPlayerAdUiSignal() {
+			const candidateNodes = [
+				..._getDisplayAdLabels(),
+				..._getPlayerAdCallToActionNodes(),
+				..._getPlayerAdBannerTextNodes(),
+				...DISPLAY_AD_SHELL_SELECTORS.flatMap((selector) =>
+					Array.from(document.querySelectorAll(selector)),
+				),
+				...LOWER_THIRD_DISPLAY_AD_SELECTORS.flatMap((selector) =>
+					Array.from(document.querySelectorAll(selector)),
+				),
+			];
+
+			return candidateNodes.some(
+				(el, index, list) =>
+					el &&
+					list.indexOf(el) === index &&
+					_isVisibleElement(el) &&
+					_isNearMainPlayer(el),
+			);
+		}
+
+		function _isDirectPlayerAdMedia(media) {
+			if (!(media instanceof HTMLMediaElement)) return false;
+			if (!media.isConnected || media.ended) return false;
+
+			const src = _getMediaSourceUrl(media);
+			if (!DIRECT_PLAYER_AD_MEDIA_URL_PATTERN.test(src)) return false;
+
+			return _isVisibleElement(media) && _isNearMainPlayer(media);
+		}
+
+		function _suppressDirectPlayerAdMedia(media) {
+			if (!_isDirectPlayerAdMedia(media)) return false;
+
+			try {
+				if (typeof _pausePlaybackTarget === "function") {
+					_pausePlaybackTarget(media);
+				} else {
+					media.pause();
+				}
+				media.defaultMuted = true;
+				media.muted = true;
+				media.volume = 0;
+				if (Number.isFinite(media.duration) && media.duration > 0) {
+					media.currentTime = media.duration;
+				}
+			} catch {}
+
+			_hideElement(media);
+			media.setAttribute("data-ttvab-player-ad-media", "true");
+			return true;
+		}
+
+		function _resumePlaybackAfterDirectPlayerAd() {
+			const currentContext = _getPlaybackContextFromUrl(window.location.href);
+			const primaryMedia =
+				typeof _getPrimaryMediaElement === "function"
+					? _getPrimaryMediaElement()
+					: null;
+			const playerState =
+				typeof _getPlayerAndState === "function"
+					? _getPlayerAndState()
+					: { player: null };
+			const player = playerState?.player || null;
+			const shouldReloadPrimary =
+				primaryMedia instanceof HTMLMediaElement &&
+				DIRECT_PLAYER_AD_MEDIA_URL_PATTERN.test(
+					_getMediaSourceUrl(primaryMedia),
+				);
+			const didRecentlyChangePlaybackContext =
+				lastPlaybackContextChangeAt > 0 &&
+				Date.now() - lastPlaybackContextChangeAt < 1500;
+
+			if (shouldReloadPrimary && typeof _doPlayerTask === "function") {
+				setTimeout(
+					() => {
+						_doPlayerTask(false, true, {
+							reason: didRecentlyChangePlaybackContext
+								? "route-change"
+								: "ad-recovery",
+						});
+					},
+					didRecentlyChangePlaybackContext ? 150 : 0,
+				);
+				return;
+			}
+
+			const resume = () => {
+				if (typeof _playPlaybackTarget === "function") {
+					_playPlaybackTarget(
+						primaryMedia,
+						currentContext.ChannelName,
+						currentContext.MediaKey,
+					);
+					_playPlaybackTarget(
+						player,
+						currentContext.ChannelName,
+						currentContext.MediaKey,
+					);
+					return;
+				}
+				try {
+					primaryMedia?.play?.();
+				} catch {}
+				try {
+					player?.play?.();
+				} catch {}
+			};
+
+			setTimeout(resume, 0);
+			setTimeout(resume, 120);
+			setTimeout(resume, 350);
+		}
+
+		function _collapseDirectPlayerAdMedia() {
+			const currentContext = _getPlaybackContextFromUrl(window.location.href);
+			if (currentContext.MediaType !== "vod") {
+				_resetDirectPlayerAdMediaState();
+				return false;
+			}
+
+			if (!_hasDirectPlayerAdUiSignal()) {
+				_resetDirectPlayerAdMediaState();
+				return false;
+			}
+
+			const adMediaNodes = Array.from(
+				document.querySelectorAll("video, audio"),
+			).filter(_isDirectPlayerAdMedia);
+			if (adMediaNodes.length === 0) {
+				_resetDirectPlayerAdMediaState();
+				return false;
+			}
+
+			const signature = adMediaNodes
+				.map((media) => _getMediaSourceUrl(media))
+				.sort()
+				.join("|");
+			if (signature !== activeDirectPlayerAdMediaSignature) {
+				activeDirectPlayerAdMediaSignature = signature;
+				didCountCurrentDirectPlayerAdMedia = false;
+			}
+
+			const didSuppressAny = adMediaNodes.some(_suppressDirectPlayerAdMedia);
+			if (!didSuppressAny) return false;
+
+			if (!didCountCurrentDirectPlayerAdMedia) {
+				didCountCurrentDirectPlayerAdMedia = true;
+				if (
+					!__TTVAB_STATE__.CurrentAdChannel &&
+					!__TTVAB_STATE__.CurrentAdMediaKey
+				) {
+					_incrementAdsBlocked(
+						currentContext.ChannelName,
+						currentContext.MediaKey,
+					);
+				}
+				_incrementDomCleanup("direct-media-ad");
+				_log(
+					"Direct Amazon MP4 ad detected on VOD, suppressing injected media",
+					"warning",
+				);
+			}
+
+			_resumePlaybackAfterDirectPlayerAd();
+			return true;
+		}
+
 		function _looksLikeAdLabel(text) {
 			const normalized = String(text || "")
 				.replace(/\s+/g, " ")
@@ -779,20 +1117,6 @@ function _blockAntiAdblockPopup() {
 				/^ad\s+[0-9:]+(?:\s+of\s+\d+)?$/.test(normalized) ||
 				/^ad\s*ⓘ$/.test(normalized)
 			);
-		}
-
-		function _hasDisplayAdCtaNearPlayer() {
-			const ctas = document.querySelectorAll("a, button");
-			for (const cta of ctas) {
-				if (!_isVisibleElement(cta) || !_isNearMainPlayer(cta)) continue;
-				const text = (cta.textContent || "").replace(/\s+/g, " ").trim();
-				if (!PLAYER_AD_CTA_PATTERN.test(text)) continue;
-
-				const rect = cta.getBoundingClientRect();
-				if (rect.width < 40 || rect.height < 20) continue;
-				return true;
-			}
-			return false;
 		}
 
 		function _hasOfflinePageSignal() {
@@ -858,8 +1182,17 @@ function _blockAntiAdblockPopup() {
 
 					if (!isPromotedPageAdActive) {
 						isPromotedPageAdActive = true;
-						if (!__TTVAB_STATE__.CurrentAdChannel) {
-							_incrementAdsBlocked(_getCurrentChannelName());
+						if (
+							!__TTVAB_STATE__.CurrentAdChannel &&
+							!__TTVAB_STATE__.CurrentAdMediaKey
+						) {
+							const currentContext = _getPlaybackContextFromUrl(
+								window.location.href,
+							);
+							_incrementAdsBlocked(
+								currentContext.ChannelName,
+								currentContext.MediaKey,
+							);
 						}
 						_log("Offline/promoted page ad detected, hiding card", "warning");
 					}
@@ -878,12 +1211,14 @@ function _blockAntiAdblockPopup() {
 			const adBanners = Array.from(
 				document.querySelectorAll('[data-test-selector="ad-banner"]'),
 			).filter((el) => _isVisibleElement(el) && _isNearMainPlayer(el));
-			const amazonPlayerAdNodes = _getAmazonPlayerAdNodes();
+			const playerAdCallToActionNodes = _getPlayerAdCallToActionNodes();
+			const playerAdBannerTextNodes = _getPlayerAdBannerTextNodes();
 			const explicitDisplayAdNodes = [
 				...EXPLICIT_DISPLAY_AD_SELECTORS.flatMap((selector) =>
 					Array.from(document.querySelectorAll(selector)),
 				),
-				...amazonPlayerAdNodes,
+				...playerAdCallToActionNodes,
+				...playerAdBannerTextNodes,
 			].filter(
 				(el, index, list) =>
 					_isVisibleElement(el) &&
@@ -916,7 +1251,8 @@ function _blockAntiAdblockPopup() {
 			);
 			const adLabels = _getDisplayAdLabels();
 			const hasAdLabel = adLabels.length > 0;
-			const hasDisplayAdCta = _hasDisplayAdCtaNearPlayer();
+			const hasDisplayAdCta = playerAdCallToActionNodes.length > 0;
+			const hasOverlayBanner = playerAdBannerTextNodes.length > 0;
 			const inferredLayoutWrappers = hasAdLabel
 				? _getInferredDisplayAdLayoutWrappers()
 				: [];
@@ -960,6 +1296,7 @@ function _blockAntiAdblockPopup() {
 				pipContainers.length,
 				layoutRoots.length,
 				hasDisplayAdCta ? 1 : 0,
+				hasOverlayBanner ? 1 : 0,
 				hasExplicitDisplayAdSignal ? inferredLayoutWrappers.length : 0,
 				hasInferredDisplayAdSignal ? 1 : 0,
 				hasAdLabel ? 1 : 0,
@@ -1001,8 +1338,17 @@ function _blockAntiAdblockPopup() {
 
 			if (hasExplicitDisplayAdSignal && !didCountCurrentDisplayAdShellAd) {
 				didCountCurrentDisplayAdShellAd = true;
-				if (!__TTVAB_STATE__.CurrentAdChannel) {
-					_incrementAdsBlocked(_getCurrentChannelName());
+				if (
+					!__TTVAB_STATE__.CurrentAdChannel &&
+					!__TTVAB_STATE__.CurrentAdMediaKey
+				) {
+					const currentContext = _getPlaybackContextFromUrl(
+						window.location.href,
+					);
+					_incrementAdsBlocked(
+						currentContext.ChannelName,
+						currentContext.MediaKey,
+					);
 				}
 				_log(
 					"Display ad shell confirmed: counting blocked ad and collapsing shell",
@@ -1078,6 +1424,10 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _scanAndRemove() {
+			if (_collapseDirectPlayerAdMedia()) {
+				return true;
+			}
+
 			if (_collapseDisplayAdShell()) {
 				return true;
 			}
@@ -1257,7 +1607,70 @@ function _blockAntiAdblockPopup() {
 			return document.hidden;
 		}
 
-		if (_scanAndRemove()) {
+		function _runScan(force = false) {
+			const now = Date.now();
+			if (!force && now - lastScanAt < 250) {
+				return false;
+			}
+			lastScanAt = now;
+			return _scanAndRemove();
+		}
+
+		function _queueScan(delay = 0, force = false) {
+			scheduledScanForce = scheduledScanForce || force;
+			if (scheduledScanTimer) return;
+
+			scheduledScanTimer = setTimeout(
+				() => {
+					scheduledScanTimer = null;
+					const nextForce = scheduledScanForce;
+					scheduledScanForce = false;
+					const waitMs = Math.max(0, 250 - (Date.now() - lastScanAt));
+					if (!nextForce && waitMs > 0) {
+						_queueScan(waitMs, false);
+						return;
+					}
+					_runScan(nextForce);
+				},
+				Math.max(0, delay),
+			);
+		}
+
+		function _shouldScanForMutationNode(node) {
+			if (!(node instanceof Element)) return false;
+
+			for (const selector of MUTATION_NOISE_SELECTORS) {
+				try {
+					if (node.closest?.(selector)) return false;
+				} catch {}
+			}
+
+			try {
+				if (
+					node.matches?.(RELEVANT_MUTATION_SELECTOR) ||
+					node.querySelector?.(RELEVANT_MUTATION_SELECTOR)
+				) {
+					return true;
+				}
+			} catch {}
+
+			if (_isNearMainPlayer(node)) {
+				return true;
+			}
+
+			try {
+				const style = window.getComputedStyle(node);
+				const isOverlayLike =
+					style.position === "fixed" || style.position === "absolute";
+				if (isOverlayLike && node.offsetWidth > 180 && node.offsetHeight > 80) {
+					return true;
+				}
+			} catch {}
+
+			return false;
+		}
+
+		if (_runScan(true)) {
 			_log("Popup removed on initial scan", "success");
 		}
 
@@ -1271,15 +1684,28 @@ function _blockAntiAdblockPopup() {
 			) {
 				return;
 			}
-			const currentChannel = _getCurrentChannelName();
+			const currentContext = _getPlaybackContextFromUrl(window.location.href);
 			const blockedChannel =
 				typeof detail.channel === "string" ? detail.channel : null;
-			if (blockedChannel && blockedChannel !== currentChannel) {
+			const blockedMediaKey =
+				typeof detail.mediaKey === "string" ? detail.mediaKey : null;
+			if (
+				blockedMediaKey &&
+				currentContext.MediaKey &&
+				blockedMediaKey !== currentContext.MediaKey
+			) {
 				return;
 			}
-			_scanAndRemove();
-			setTimeout(_scanAndRemove, 50);
-			setTimeout(_scanAndRemove, 250);
+			if (
+				!blockedMediaKey &&
+				blockedChannel &&
+				blockedChannel !== currentContext.ChannelName
+			) {
+				return;
+			}
+			_runScan(true);
+			setTimeout(() => _queueScan(0, true), 120);
+			setTimeout(() => _queueScan(0, true), 300);
 		});
 
 		window.addEventListener("popstate", _handleRouteChange, true);
@@ -1291,7 +1717,7 @@ function _blockAntiAdblockPopup() {
 			let shouldScan = false;
 			for (const mutation of mutations) {
 				for (const node of mutation.addedNodes) {
-					if (node.nodeType === 1) {
+					if (_shouldScanForMutationNode(node)) {
 						shouldScan = true;
 						break;
 					}
@@ -1304,16 +1730,16 @@ function _blockAntiAdblockPopup() {
 			_handleRouteChange();
 
 			const now = Date.now();
-			if (now - lastImmediateScan > 100) {
+			if (now - lastImmediateScan > 250) {
 				lastImmediateScan = now;
-				_scanAndRemove();
+				_queueScan(0);
 			}
 
 			if (debounceTimer) clearTimeout(debounceTimer);
 			debounceTimer = setTimeout(() => {
-				_scanAndRemove();
+				_queueScan(0);
 				debounceTimer = null;
-			}, 50);
+			}, 120);
 		});
 
 		observer.observe(document.body, {
@@ -1322,11 +1748,11 @@ function _blockAntiAdblockPopup() {
 		});
 
 		function _scheduleIdleScan() {
-			const delay = _isDocumentHidden() ? 2000 : 500;
+			const delay = _isDocumentHidden() ? 5000 : 2000;
 			setTimeout(() => {
 				_handleRouteChange();
 				if (!_isDocumentHidden()) {
-					_scanAndRemove();
+					_queueScan(0);
 				}
 				_scheduleIdleScan();
 			}, delay);
@@ -1343,6 +1769,7 @@ function _init() {
 	if (!_bootstrap()) return;
 
 	_declareState(window);
+	_syncPagePlaybackContext({ broadcast: false });
 
 	window.addEventListener("message", (e) => {
 		if (e.source !== window) return;
@@ -1378,6 +1805,7 @@ function _init() {
 	_initAchievementListener();
 
 	_hookVisibilityState();
+	_monitorPlaybackIntent();
 	if (_C.BUFFERING_FIX) {
 		_monitorPlayerBuffering();
 	}

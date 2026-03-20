@@ -181,10 +181,22 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 	});
 }
 
-async function _getToken(channel, playerType, realFetch) {
+async function _getToken(playbackContext, playerType, realFetch) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
 	let timeoutId = null;
+	const normalizedContext =
+		typeof playbackContext === "string"
+			? _normalizePlaybackContext({
+					MediaType: "live",
+					ChannelName: playbackContext,
+				})
+			: _normalizePlaybackContext(playbackContext);
+	const isVodRequest =
+		normalizedContext.MediaType === "vod" && Boolean(normalizedContext.VodID);
+	const logTarget = isVodRequest
+		? `vod ${normalizedContext.VodID}`
+		: normalizedContext.ChannelName || "unknown";
 
 	const body = {
 		operationName: "PlaybackAccessToken",
@@ -197,17 +209,17 @@ async function _getToken(channel, playerType, realFetch) {
 			},
 		},
 		variables: {
-			isLive: true,
-			login: channel,
-			isVod: false,
-			vodID: "",
+			isLive: !isVodRequest,
+			login: isVodRequest ? "" : normalizedContext.ChannelName || "",
+			isVod: isVodRequest,
+			vodID: isVodRequest ? normalizedContext.VodID || "" : "",
 			playerType: reqPlayerType,
 			platform: reqPlayerType === "autoplay" ? "android" : "web",
 		},
 	};
 
 	try {
-		_log(`[Trace] Requesting token for ${playerType}`, "info");
+		_log(`[Trace] Requesting token for ${playerType} (${logTarget})`, "info");
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
 
