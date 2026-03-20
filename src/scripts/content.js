@@ -1,11 +1,11 @@
-// TTV AB v4.3.8 - Twitch Ad Blocker
+// TTV AB v4.3.9 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "4.3.8",
-	INTERNAL_VERSION: 53,
+	VERSION: "4.3.9",
+	INTERNAL_VERSION: 54,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -3632,7 +3632,8 @@ function _$bp() {
 			return true;
 		}
 
-		function _hasDisplayAdLabel() {
+		function _getDisplayAdLabels() {
+			const labels = [];
 			const directLabel = document.querySelector(
 				'[data-a-target="video-ad-label"], [data-test-selector="ad-label"], [class*="ad-countdown"]',
 			);
@@ -3642,13 +3643,12 @@ function _$bp() {
 				_isNearMainPlayer(directLabel) &&
 				_looksLikeAdLabel(directLabel.textContent || "")
 			) {
-				return true;
+				labels.push(directLabel);
 			}
 
 			const playerRoots = document.querySelectorAll(
 				'[data-a-target="video-player"], [class*="video-player"], video',
 			);
-			const adLabelPattern = /^ad(?:\s+\d+(?::\d+)?(?:\s+of\s+\d+)?)?$/i;
 
 			for (const root of playerRoots) {
 				if (!_isVisibleElement(root)) continue;
@@ -3656,8 +3656,8 @@ function _$bp() {
 				const rootRect = root.getBoundingClientRect();
 				if (rootRect.width < 320 || rootRect.height < 180) continue;
 				for (const node of nodes) {
-					const text = (node.textContent || "").trim();
-					if (!text || text.length > 18 || !adLabelPattern.test(text)) continue;
+					const text = node.textContent || "";
+					if (!text || text.length > 18 || !_looksLikeAdLabel(text)) continue;
 					if (!_isVisibleElement(node)) continue;
 					const rect = node.getBoundingClientRect();
 					if (
@@ -3666,12 +3666,12 @@ function _$bp() {
 						rect.top < rootRect.top + 140 &&
 						rect.right > rootRect.right - 260
 					) {
-						return true;
+						labels.push(node);
 					}
 				}
 			}
 
-			return false;
+			return labels;
 		}
 
 		function _isVisibleElement(el) {
@@ -4020,7 +4020,8 @@ function _$bp() {
 					_isNearMainPlayer(el) &&
 					list.indexOf(el) === index,
 			);
-			const hasAdLabel = _hasDisplayAdLabel();
+			const adLabels = _getDisplayAdLabels();
+			const hasAdLabel = adLabels.length > 0;
 			const hasDisplayAdCta = _hasDisplayAdCtaNearPlayer();
 			const inferredLayoutWrappers = hasAdLabel
 				? _getInferredDisplayAdLayoutWrappers()
@@ -4038,6 +4039,10 @@ function _$bp() {
 				(hasDisplayAdCta && hasInferredDisplayAdSignal);
 			const hasDisplayAdSignal =
 				hasExplicitDisplayAdSignal || hasInferredDisplayAdSignal;
+
+			adLabels.forEach((el) => {
+				_hideElement(el);
+			});
 
 			if (!hasDisplayAdSignal) {
 				_cleanupStaleDisplayAdShell(

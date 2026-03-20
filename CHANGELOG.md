@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [4.3.9] - 2026-03-21
+
+### Fixed
+- **Lingering Display Ad Labels** - Display-ad cleanup now gathers matching player-side ad label elements and hides them directly, removing leftover `Ad` / countdown-style badges that could remain visible near the stream player.
+
+### Changed
+- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.9 release line.
+
 ## [4.3.8] - 2026-03-19
 
 ### Fixed

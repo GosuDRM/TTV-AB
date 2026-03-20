@@ -448,7 +448,8 @@ function _blockAntiAdblockPopup() {
 			return true;
 		}
 
-		function _hasDisplayAdLabel() {
+		function _getDisplayAdLabels() {
+			const labels = [];
 			const directLabel = document.querySelector(
 				'[data-a-target="video-ad-label"], [data-test-selector="ad-label"], [class*="ad-countdown"]',
 			);
@@ -458,13 +459,12 @@ function _blockAntiAdblockPopup() {
 				_isNearMainPlayer(directLabel) &&
 				_looksLikeAdLabel(directLabel.textContent || "")
 			) {
-				return true;
+				labels.push(directLabel);
 			}
 
 			const playerRoots = document.querySelectorAll(
 				'[data-a-target="video-player"], [class*="video-player"], video',
 			);
-			const adLabelPattern = /^ad(?:\s+\d+(?::\d+)?(?:\s+of\s+\d+)?)?$/i;
 
 			for (const root of playerRoots) {
 				if (!_isVisibleElement(root)) continue;
@@ -472,8 +472,8 @@ function _blockAntiAdblockPopup() {
 				const rootRect = root.getBoundingClientRect();
 				if (rootRect.width < 320 || rootRect.height < 180) continue;
 				for (const node of nodes) {
-					const text = (node.textContent || "").trim();
-					if (!text || text.length > 18 || !adLabelPattern.test(text)) continue;
+					const text = node.textContent || "";
+					if (!text || text.length > 18 || !_looksLikeAdLabel(text)) continue;
 					if (!_isVisibleElement(node)) continue;
 					const rect = node.getBoundingClientRect();
 					if (
@@ -482,12 +482,12 @@ function _blockAntiAdblockPopup() {
 						rect.top < rootRect.top + 140 &&
 						rect.right > rootRect.right - 260
 					) {
-						return true;
+						labels.push(node);
 					}
 				}
 			}
 
-			return false;
+			return labels;
 		}
 
 		function _isVisibleElement(el) {
@@ -836,7 +836,8 @@ function _blockAntiAdblockPopup() {
 					_isNearMainPlayer(el) &&
 					list.indexOf(el) === index,
 			);
-			const hasAdLabel = _hasDisplayAdLabel();
+			const adLabels = _getDisplayAdLabels();
+			const hasAdLabel = adLabels.length > 0;
 			const hasDisplayAdCta = _hasDisplayAdCtaNearPlayer();
 			const inferredLayoutWrappers = hasAdLabel
 				? _getInferredDisplayAdLayoutWrappers()
@@ -854,6 +855,10 @@ function _blockAntiAdblockPopup() {
 				(hasDisplayAdCta && hasInferredDisplayAdSignal);
 			const hasDisplayAdSignal =
 				hasExplicitDisplayAdSignal || hasInferredDisplayAdSignal;
+
+			adLabels.forEach((el) => {
+				_hideElement(el);
+			});
 
 			if (!hasDisplayAdSignal) {
 				_cleanupStaleDisplayAdShell(
