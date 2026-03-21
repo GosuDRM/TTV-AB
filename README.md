@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.0.0-purple)
+![Version](https://img.shields.io/badge/version-5.0.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v5.0.1
+- **Channel Navigation Pause Fix** - Switching between Twitch channels now clears stale pause intent from the previous player instance so the next stream is less likely to load in a paused state during SPA navigation.
+- **Post-Ad Resume Hardening** - Ad-end and buffer-fix recovery now recheck paused playback and issue guarded resume retries, reducing cases where the player stayed paused until a manual click after ads.
 
 ### v5.0.0
 - **VOD Ad Blocking Support** - Added VOD route, playlist, and playback-token handling so Twitch `/videos/<id>` playback uses the same ad-strip and recovery pipeline as live streams.

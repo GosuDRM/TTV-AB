@@ -143,6 +143,16 @@ function _clearUserPauseIntent(channel = null, mediaKey = null) {
 	return true;
 }
 
+function _resetPlaybackIntentForNavigation(
+	channel = null,
+	mediaKey = null,
+	durationMs = 2500,
+) {
+	_PlaybackIntentState.userPausedMediaKey = null;
+	_PlaybackIntentState.userPausedAt = 0;
+	_suppressPauseIntent(channel, mediaKey, durationMs);
+}
+
 function _hasUserPauseIntent(channel = null, mediaKey = null) {
 	if (!_PlaybackIntentState.userPausedMediaKey) return false;
 
@@ -237,6 +247,15 @@ function _syncPrimaryMediaPlaybackIntent() {
 		if (_wasRecentProgrammaticPlaybackAction("pause")) return;
 		if (media.ended) return;
 		if (_isPauseIntentSuppressed(null, __TTVAB_STATE__.PageMediaKey)) return;
+		if (!media.isConnected) return;
+
+		const currentPrimaryMedia = _getPrimaryMediaElement();
+		if (
+			currentPrimaryMedia instanceof HTMLMediaElement &&
+			currentPrimaryMedia !== media
+		) {
+			return;
+		}
 
 		const mediaKey = _resolvePlayerMediaKey(null, __TTVAB_STATE__.PageMediaKey);
 		if (!mediaKey) return;
@@ -311,6 +330,23 @@ function _resumeActivePlayerIfPaused(channel = null, mediaKey = null) {
 	if (!isPaused) return false;
 
 	return _playPlaybackTarget(player, safeChannel, safeMediaKey);
+}
+
+function _scheduleResumeRetries(
+	channel = null,
+	mediaKey = null,
+	delays = [120, 350, 900],
+) {
+	if (!Array.isArray(delays) || delays.length === 0) return;
+
+	for (const delay of delays) {
+		if (!Number.isFinite(delay) || delay < 0) continue;
+		setTimeout(() => {
+			try {
+				_resumeActivePlayerIfPaused(channel, mediaKey);
+			} catch {}
+		}, delay);
+	}
 }
 
 function _getFallbackPrimaryVideoElement() {
@@ -565,12 +601,31 @@ function _doPlayerTask(isPausePlay, isReload, options = {}) {
 	const playerCore = _getPlayerCore(player);
 
 	if (isPausePlay) {
-		if (player.isPaused() || playerCore?.paused) return;
+		if (player.isPaused() || playerCore?.paused) {
+			const didResume = _playPlaybackTarget(
+				player,
+				__TTVAB_STATE__.PageChannel,
+				__TTVAB_STATE__.PageMediaKey,
+			);
+			if (didResume) {
+				_scheduleResumeRetries(
+					__TTVAB_STATE__.PageChannel,
+					__TTVAB_STATE__.PageMediaKey,
+					[80, 220, 500],
+				);
+			}
+			return didResume;
+		}
 		_pausePlaybackTarget(player);
 		_playPlaybackTarget(
 			player,
 			__TTVAB_STATE__.PageChannel,
 			__TTVAB_STATE__.PageMediaKey,
+		);
+		_scheduleResumeRetries(
+			__TTVAB_STATE__.PageChannel,
+			__TTVAB_STATE__.PageMediaKey,
+			[80, 220, 500],
 		);
 		return true;
 	}
@@ -628,6 +683,11 @@ function _doPlayerTask(isPausePlay, isReload, options = {}) {
 			player,
 			__TTVAB_STATE__.PageChannel,
 			__TTVAB_STATE__.PageMediaKey,
+		);
+		_scheduleResumeRetries(
+			__TTVAB_STATE__.PageChannel,
+			__TTVAB_STATE__.PageMediaKey,
+			[180, 500, 1100],
 		);
 
 		if (preferenceSnapshot) {

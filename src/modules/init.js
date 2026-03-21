@@ -544,6 +544,13 @@ function _blockAntiAdblockPopup() {
 				previousContext.MediaKey !== currentContext.MediaKey;
 			if (didMediaKeyChange) {
 				lastPlaybackContextChangeAt = Date.now();
+				if (typeof _resetPlaybackIntentForNavigation === "function") {
+					_resetPlaybackIntentForNavigation(
+						currentContext.ChannelName,
+						currentContext.MediaKey,
+						3000,
+					);
+				}
 				_resetDirectPlayerAdMediaState();
 				_scheduleRoutePlayerResync(previousContext, currentContext);
 			}

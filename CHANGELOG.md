@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.1] - 2026-03-21
+
+### Highlights
+- **Channel Navigation Pause Fix** - SPA channel switches now clear stale pause intent from the previous player instance and ignore disconnected/non-primary media pause events, preventing the next stream from inheriting a paused state.
+- **Post-Ad Resume Hardening** - Ad-end and buffer-fix recovery now suppress false pause intent and run guarded resume retries so playback is less likely to remain paused until a manual click after ads.
+
 ## [5.0.0] - 2026-03-21
 
 ### Highlights

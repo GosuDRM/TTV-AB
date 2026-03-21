@@ -740,6 +740,19 @@ function _hookWorker() {
 							key: "UpdatePinnedBackupPlayerContext",
 							value: null,
 						});
+						if (typeof _clearUserPauseIntent === "function") {
+							_clearUserPauseIntent(
+								e.data.channel || null,
+								e.data.mediaKey || null,
+							);
+						}
+						if (typeof _suppressPauseIntent === "function") {
+							_suppressPauseIntent(
+								e.data.channel || null,
+								e.data.mediaKey || null,
+								3000,
+							);
+						}
 						_log("Ad ended", "success");
 						try {
 							const removableSelectors = [
@@ -828,6 +841,27 @@ function _hookWorker() {
 									e.data.mediaKey || null,
 								);
 							}, 150);
+						}
+						if (typeof _scheduleResumeRetries === "function") {
+							_scheduleResumeRetries(
+								e.data.channel || null,
+								e.data.mediaKey || null,
+								[250, 700, 1400, 2400],
+							);
+						}
+						if (typeof _resumeActivePlayerIfPaused === "function") {
+							setTimeout(() => {
+								_resumeActivePlayerIfPaused(
+									e.data.channel || null,
+									e.data.mediaKey || null,
+								);
+							}, 320);
+							setTimeout(() => {
+								_resumeActivePlayerIfPaused(
+									e.data.channel || null,
+									e.data.mediaKey || null,
+								);
+							}, 850);
 						}
 						break;
 					case "PauseResumePlayer":
