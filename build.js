@@ -6,9 +6,6 @@ const { execFileSync } = require("node:child_process");
 const MODULES_DIR = path.join(__dirname, "src", "modules");
 const OUTPUT_FILE = path.join(__dirname, "src", "scripts", "content.js");
 const DIST_DIR = path.join(__dirname, "dist");
-const GENERATED_SOURCE_FILES = new Set([
-	path.relative(__dirname, OUTPUT_FILE).replaceAll("\\", "/"),
-]);
 
 const MODULE_ORDER = [
 	"constants.js",
@@ -42,6 +39,7 @@ const MINIFY_MAP = {
 	_findBackupStream: "_$fb",
 	_getWasmJs: "_$wj",
 	_hookWorkerFetch: "_$wf",
+	_syncStoredDeviceId: "_$sd",
 	_hookWorker: "_$hw",
 	_hookStorage: "_$hs",
 	_hookMainFetch: "_$mf",
@@ -74,10 +72,16 @@ const MINIFY_MAP = {
 	_findReactRoot: "_$rr",
 	_findReactNode: "_$rn",
 	_getPlayerAndState: "_$gps",
+	_clearAdResumeIntent: "_$cari",
+	_rememberPlayerPlaybackForAd: "_$rpfa",
+	_resumePlayerAfterAdIfNeeded: "_$rpa",
+	_capturePlayerPreferenceSnapshot: "_$cps",
+	_restorePlayerPreferenceSnapshot: "_$rps2",
 	_doPlayerTask: "_$dpt",
 	_monitorPlayerBuffering: "_$mpb",
 	_hookVisibilityState: "_$hvs",
 	_hookLocalStoragePreservation: "_$hlp",
+	_PLAYER_PREFERENCE_KEYS: "_$ppk",
 	_hasPlaylistAdMarkers: "_$hpa",
 	_syncStreamInfo: "_$si",
 	_resetStreamAdState: "_$rsa",
@@ -208,14 +212,7 @@ function validateSharedDefinitions() {
 	}
 	for (const contentScript of manifest.content_scripts || []) {
 		for (const file of contentScript.js || []) {
-			const normalizedFile = String(file).replaceAll("\\", "/");
-			if (
-				GENERATED_SOURCE_FILES.has(normalizedFile) &&
-				!fs.existsSync(path.join(__dirname, normalizedFile))
-			) {
-				continue;
-			}
-			if (!fs.existsSync(path.join(__dirname, normalizedFile))) {
+			if (!fs.existsSync(path.join(__dirname, file))) {
 				throw new Error(`Manifest content script is missing: ${file}`);
 			}
 		}
@@ -407,6 +404,7 @@ function validateSharedDefinitions() {
 	const workerPath = path.join(__dirname, "src", "modules", "worker.js");
 	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
 	const apiPath = path.join(__dirname, "src", "modules", "api.js");
+	const constantsPath = path.join(__dirname, "src", "modules", "constants.js");
 	const readmeSource = fs.readFileSync(readmePath, "utf8");
 	const privacySource = fs.readFileSync(privacyPath, "utf8");
 	const changelogSource = fs.readFileSync(changelogPath, "utf8");
@@ -645,6 +643,15 @@ function validateSharedDefinitions() {
 	);
 	const processorSource = fs.readFileSync(processorPath, "utf8");
 	const apiSource = fs.readFileSync(apiPath, "utf8");
+	const constantsSource = fs.readFileSync(constantsPath, "utf8");
+	const reloadAfterAdMatch = constantsSource.match(
+		/RELOAD_AFTER_AD:\s*(true|false)/,
+	);
+	if (reloadAfterAdMatch?.[1] !== "false") {
+		throw new Error(
+			"RELOAD_AFTER_AD must remain false to avoid post-ad reload loops",
+		);
+	}
 
 	const backgroundGetDateKeyLiteral = extractLiteral(
 		backgroundSource,
@@ -915,9 +922,11 @@ function validateSharedDefinitions() {
 			source.match(/window\.addEventListener\("message"/g) || []
 		).length;
 		const sourceGuardCount = (
-			source.match(/source !== window|source === window/g) || []
+			source.match(
+				/source !== window|source === window|_isTrustedWindowMessageSource\(|isTrustedWindowSource\(/g,
+			) || []
 		).length;
-		if (messageListenerCount !== sourceGuardCount) {
+		if (sourceGuardCount < messageListenerCount) {
 			throw new Error(
 				`${name} has ${messageListenerCount} message listeners but ${sourceGuardCount} source guards`,
 			);
@@ -1063,26 +1072,29 @@ function validateSharedDefinitions() {
 		);
 	}
 
-	const initReservedRoutesLiteral = extractLiteral(
-		initSource,
-		"const reserved = new Set([",
+	const sharedReservedRoutesLiteral = extractLiteral(
+		parserSource,
+		"const _RESERVED_ROUTE_SEGMENTS = new Set([",
 		"[",
 		"]",
 	);
-	const hookReservedRoutesLiteral = extractLiteral(
-		hooksSource,
-		"const reserved = new Set([",
-		"[",
-		"]",
-	);
+	if (!sharedReservedRoutesLiteral) {
+		throw new Error("Shared reserved route list is missing from parser.js");
+	}
 	if (
-		!initReservedRoutesLiteral ||
-		!hookReservedRoutesLiteral ||
-		normalizeCodeSnippet(initReservedRoutesLiteral) !==
-			normalizeCodeSnippet(hookReservedRoutesLiteral)
+		initSource.includes("const reserved = new Set([") ||
+		hooksSource.includes("const reserved = new Set([")
 	) {
 		throw new Error(
-			"Reserved route lists are out of sync between init and hooks",
+			"Reserved route lists must be sourced from the shared parser helper",
+		);
+	}
+	if (
+		!initSource.includes("_getPlaybackContextFromUrl(window.location.href)") ||
+		!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")
+	) {
+		throw new Error(
+			"Init and hooks must resolve route context through _getPlaybackContextFromUrl",
 		);
 	}
 
@@ -1137,6 +1149,11 @@ function validateSharedDefinitions() {
 	}
 
 	const requiredInjectedPairs = [
+		{
+			consumer: "_processM3U8",
+			helper: "_playlistHasMediaSegments",
+			source: processorSource,
+		},
 		{
 			consumer: "_findBackupStream",
 			helper: "_getFallbackPromotionPolicy",
@@ -1436,20 +1453,17 @@ _$in();
 		const stats = fs.statSync(OUTPUT_FILE);
 		const buildTime = new Date().toLocaleTimeString();
 
-		if (shouldPackageFirefox) {
-			console.log("\nPackaging Firefox XPI...");
-			packageFirefox(version);
-		}
-
-		if (shouldPackageFirefoxSource) {
-			console.log("\nPackaging Firefox source ZIP...");
-			packageFirefoxSource(version);
-		}
-
 		console.log(`\nBuild complete at ${buildTime}`);
 		console.log(`  Version: ${version}`);
 		console.log(`  Modules: ${moduleCount}`);
 		console.log(`  Size: ${(stats.size / 1024).toFixed(2)} KB`);
+
+		if (shouldPackageFirefox) {
+			packageFirefox(version);
+		}
+		if (shouldPackageFirefoxSource) {
+			packageFirefoxSource(version);
+		}
 	} catch (err) {
 		console.error("\nBuild failed:");
 		console.error(`  ${err.message}`);

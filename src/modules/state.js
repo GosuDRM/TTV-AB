@@ -32,6 +32,80 @@ function _broadcastWorkers(messages) {
 	_S.workers = aliveWorkers;
 }
 
+function _setPagePlaybackContext(context, options = {}) {
+	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) {
+		return _normalizePlaybackContext(context);
+	}
+
+	const normalizedContext = _normalizePlaybackContext(context);
+	const previousMediaKey = __TTVAB_STATE__.PageMediaKey || null;
+	let didResetAdScopedState = false;
+	const hasChanged =
+		__TTVAB_STATE__.PageMediaType !== normalizedContext.MediaType ||
+		__TTVAB_STATE__.PageChannel !== normalizedContext.ChannelName ||
+		__TTVAB_STATE__.PageVodID !== normalizedContext.VodID ||
+		previousMediaKey !== normalizedContext.MediaKey;
+
+	__TTVAB_STATE__.PageMediaType = normalizedContext.MediaType;
+	__TTVAB_STATE__.PageChannel = normalizedContext.ChannelName;
+	__TTVAB_STATE__.PageVodID = normalizedContext.VodID;
+	__TTVAB_STATE__.PageMediaKey = normalizedContext.MediaKey;
+
+	if (
+		hasChanged &&
+		previousMediaKey &&
+		previousMediaKey !== normalizedContext.MediaKey &&
+		(__TTVAB_STATE__.CurrentAdMediaKey === previousMediaKey ||
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey === previousMediaKey)
+	) {
+		__TTVAB_STATE__.CurrentAdChannel = null;
+		__TTVAB_STATE__.CurrentAdMediaKey = null;
+		__TTVAB_STATE__.PinnedBackupPlayerType = null;
+		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+		__TTVAB_STATE__.ShouldResumeAfterAd = false;
+		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
+		__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+		didResetAdScopedState = true;
+	}
+
+	if (options.broadcast !== false && hasChanged) {
+		const messages = [
+			{
+				key: "UpdatePageContext",
+				value: {
+					mediaType: normalizedContext.MediaType,
+					channelName: normalizedContext.ChannelName,
+					vodID: normalizedContext.VodID,
+					mediaKey: normalizedContext.MediaKey,
+				},
+			},
+		];
+		if (didResetAdScopedState) {
+			messages.push({
+				key: "UpdateCurrentAdContext",
+				value: null,
+			});
+			messages.push({
+				key: "UpdatePinnedBackupPlayerContext",
+				value: null,
+			});
+		}
+		_broadcastWorkers(messages);
+	}
+
+	return normalizedContext;
+}
+
+function _syncPagePlaybackContext(options = {}) {
+	return _setPagePlaybackContext(
+		_getPlaybackContextFromUrl(globalThis?.location?.href || ""),
+		options,
+	);
+}
+
 function _declareState(scope) {
 	scope.__TTVAB_STATE__ = {
 		AdSignifier: _C.AD_SIGNIFIER,
@@ -58,11 +132,15 @@ function _declareState(scope) {
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
 		LastAdRecoveryReloadAt: 0,
+		LastAdRecoveryResumeAt: 0,
 		CurrentAdChannel: null,
+		CurrentAdMediaKey: null,
 		PinnedBackupPlayerType: null,
 		PinnedBackupPlayerChannel: null,
+		PinnedBackupPlayerMediaKey: null,
 		ShouldResumeAfterAd: false,
 		ShouldResumeAfterAdChannel: null,
+		ShouldResumeAfterAdMediaKey: null,
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
 		GQLDeviceID: null,
@@ -83,9 +161,33 @@ function _declareState(scope) {
 		AllSegmentsAreAdSegments: false,
 		PlaybackAccessTokenHash: null,
 		LastNativePlaybackAccessTokenPlayerType: null,
+		PageMediaType: null,
 		PageChannel: null,
+		PageVodID: null,
+		PageMediaKey: null,
 		PendingFetchRequests: new Map(),
 		FetchRequestSeq: 0,
+	};
+}
+
+function _getPageScopedPlaybackEventContext() {
+	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) {
+		return {
+			pageChannel: null,
+			pageMediaKey: null,
+		};
+	}
+
+	const pageContext = _normalizePlaybackContext({
+		MediaType: __TTVAB_STATE__.PageMediaType,
+		ChannelName: __TTVAB_STATE__.PageChannel,
+		VodID: __TTVAB_STATE__.PageVodID,
+		MediaKey: __TTVAB_STATE__.PageMediaKey,
+	});
+
+	return {
+		pageChannel: pageContext.ChannelName,
+		pageMediaKey: pageContext.MediaKey,
 	};
 }
 
@@ -121,18 +223,20 @@ function _createCounterEventId(type, channel = null, label = "generic") {
 	return `${safeType}:${Date.now()}:${_S.counterEventSeq}:${safeChannel}:${safeLabel}`;
 }
 
-function _incrementAdsBlocked(channel, source = "unknown") {
+function _incrementAdsBlocked(channel, mediaKey = null, source = "unknown") {
 	_S.adsBlocked++;
 	const count = Number.isFinite(_S.adsBlocked)
 		? Math.max(0, Math.trunc(_S.adsBlocked))
 		: 0;
 	_S.adsBlocked = count;
-	if (typeof _broadcastWorkers === "function") {
-		_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
-	}
 	const safeChannel = _normalizeCounterChannel(channel);
+	const safeMediaKey =
+		_normalizeMediaKey(mediaKey) ||
+		_buildMediaKey("live", safeChannel, null) ||
+		null;
 	const safeSource = _normalizeCounterLabel(source, "unknown");
 	const eventId = _createCounterEventId("ads", safeChannel, safeSource);
+	const pageEventContext = _getPageScopedPlaybackEventContext();
 	if (typeof window !== "undefined") {
 		window.postMessage(
 			{
@@ -141,8 +245,11 @@ function _incrementAdsBlocked(channel, source = "unknown") {
 					count,
 					delta: 1,
 					channel: safeChannel,
+					mediaKey: safeMediaKey,
 					eventId,
 					source: safeSource,
+					pageChannel: pageEventContext.pageChannel,
+					pageMediaKey: pageEventContext.pageMediaKey,
 				},
 			},
 			"*",
@@ -153,10 +260,22 @@ function _incrementAdsBlocked(channel, source = "unknown") {
 			count: _S.adsBlocked,
 			delta: 1,
 			channel: safeChannel,
+			mediaKey: safeMediaKey,
 			eventId,
 			source: safeSource,
+			pageChannel: pageEventContext.pageChannel,
+			pageMediaKey: pageEventContext.pageMediaKey,
 		});
 	}
+}
+
+function _createPageScopedWorkerEvent(value = null) {
+	const pageEventContext = _getPageScopedPlaybackEventContext();
+	return {
+		...(value && typeof value === "object" ? value : {}),
+		pageChannel: pageEventContext.pageChannel,
+		pageMediaKey: pageEventContext.pageMediaKey,
+	};
 }
 
 function _incrementDomAdsBlocked(kind = "generic", channel = null) {

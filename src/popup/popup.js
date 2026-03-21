@@ -80,7 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function normalizeLanguage(language) {
 		const candidate = String(language || "").trim();
-		if (!candidate || candidate.toLowerCase() === "auto") return "en";
+		if (!candidate || candidate.toLowerCase() === "auto") return null;
 		const normalizedCandidate = candidate.replace(/-/g, "_");
 		if (TRANSLATIONS[normalizedCandidate]) {
 			return normalizedCandidate;
@@ -88,28 +88,76 @@ document.addEventListener("DOMContentLoaded", () => {
 		const lowerCandidate = candidate.toLowerCase();
 		if (lowerCandidate.startsWith("zh")) {
 			const normalized =
-				lowerCandidate.includes("tw") || lowerCandidate.includes("hant")
+				lowerCandidate.includes("tw") ||
+				lowerCandidate.includes("hk") ||
+				lowerCandidate.includes("mo") ||
+				lowerCandidate.includes("hant")
 					? "zh_TW"
 					: "zh_CN";
-			return TRANSLATIONS[normalized] ? normalized : "en";
+			return TRANSLATIONS[normalized] ? normalized : null;
 		}
 		const base = lowerCandidate.split(/[-_]/)[0];
-		return TRANSLATIONS[base] ? base : "en";
+		return TRANSLATIONS[base] ? base : null;
+	}
+
+	function normalizeLocaleTag(language) {
+		const candidate = String(language || "").trim();
+		if (!candidate) return "";
+		return candidate.replace(/_/g, "-");
+	}
+
+	function getAutoLanguageCandidates() {
+		const candidates = [];
+		try {
+			const uiLanguage = chrome.i18n?.getUILanguage?.();
+			if (uiLanguage) {
+				candidates.push(uiLanguage);
+			}
+		} catch (error) {
+			console.error("[TTV AB] Popup UI language read error:", error);
+		}
+		if (Array.isArray(navigator.languages)) {
+			candidates.push(...navigator.languages);
+		}
+		if (navigator.language) {
+			candidates.push(navigator.language);
+		}
+		return [
+			...new Set(candidates.map((value) => String(value || "").trim())),
+		].filter(Boolean);
+	}
+
+	function getAutoLanguageState() {
+		for (const candidate of getAutoLanguageCandidates()) {
+			const normalizedLanguage = normalizeLanguage(candidate);
+			if (!normalizedLanguage) continue;
+			return {
+				language: normalizedLanguage,
+				localeTag:
+					normalizeLocaleTag(candidate) ||
+					normalizedLanguage.replace(/_/g, "-"),
+			};
+		}
+		return {
+			language: "en",
+			localeTag: "en",
+		};
 	}
 
 	function getLang() {
 		const saved = getStoredLanguage();
 		if (saved && saved !== "auto") {
-			return normalizeLanguage(saved);
+			return normalizeLanguage(saved) || "en";
 		}
-		return normalizeLanguage(navigator.language);
+		return getAutoLanguageState().language;
 	}
 
 	function getLocaleTag() {
-		const lang = getLang();
-		return lang === "auto"
-			? normalizeLanguage(navigator.language).replace("_", "-")
-			: lang.replace("_", "-");
+		const saved = getStoredLanguage();
+		if (saved && saved !== "auto") {
+			return normalizeLocaleTag(saved) || getLang().replace(/_/g, "-");
+		}
+		return getAutoLanguageState().localeTag;
 	}
 
 	function formatTemplate(template, values) {
@@ -126,6 +174,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function parseDateKey(dateKey) {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) {
+			return null;
+		}
 		const [year, month, day] = String(dateKey)
 			.split("-")
 			.map((value) => Number.parseInt(value, 10));
@@ -215,10 +266,12 @@ document.addEventListener("DOMContentLoaded", () => {
 		savedLang && savedLang !== "auto"
 			? normalizeLanguage(savedLang)
 			: savedLang;
+	const hasExplicitSavedLang =
+		typeof savedLang === "string" && savedLang.trim() !== "";
 	const hasValidSavedLang =
+		!hasExplicitSavedLang ||
 		normalizedSavedLang === "auto" ||
-		!normalizedSavedLang ||
-		TRANSLATIONS[normalizedSavedLang];
+		Boolean(normalizedSavedLang && TRANSLATIONS[normalizedSavedLang]);
 	const currentLang = hasValidSavedLang
 		? normalizedSavedLang || "auto"
 		: "auto";
@@ -258,13 +311,20 @@ document.addEventListener("DOMContentLoaded", () => {
 		const lang = nextSelector.value;
 		setStoredLanguage(lang);
 		const effectiveLang =
-			lang === "auto" ? normalizeLanguage(navigator.language) : lang;
+			lang === "auto" ? getAutoLanguageState().language : lang;
 		applyTranslations(effectiveLang);
 		loadStatistics();
 		updateStatus(toggle.checked);
 	});
 
 	const AVG_AD_DURATION = 22;
+	const MAX_CHANNELS = 100;
+	const ADS_PREVIEW_KEY = "ttvAdsBlockedPreview";
+	const DOM_ADS_PREVIEW_KEY = "ttvDomAdsBlockedPreview";
+	const POPUP_COUNTER_POLL_MS = 400;
+	let lastRenderedAdsCount = 0;
+	let lastRenderedDomAdsCount = 0;
+	let popupCounterPollId = null;
 
 	const ACHIEVEMENTS = [
 		{
@@ -335,6 +395,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			type: "channels",
 		},
 	];
+	const ACHIEVEMENT_IDS = new Set(
+		ACHIEVEMENTS.map((achievement) => achievement.id),
+	);
 
 	function formatTimeSaved(seconds) {
 		const safeSeconds = normalizeCount(seconds);
@@ -368,6 +431,27 @@ document.addEventListener("DOMContentLoaded", () => {
 		return prototype === Object.prototype || prototype === null;
 	}
 
+	function coerceMessageObject(value) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) {
+			return null;
+		}
+		if (isPlainObject(value)) {
+			return value;
+		}
+		try {
+			const cloned = JSON.parse(JSON.stringify(value));
+			return isPlainObject(cloned) ? cloned : null;
+		} catch {}
+		try {
+			const cloned = Object.create(null);
+			for (const [key, entryValue] of Object.entries(value)) {
+				cloned[key] = entryValue;
+			}
+			return cloned;
+		} catch {}
+		return null;
+	}
+
 	function createChannelsMap() {
 		return Object.create(null);
 	}
@@ -387,7 +471,19 @@ document.addEventListener("DOMContentLoaded", () => {
 			normalized[safeChannel] =
 				normalizeCount(normalized[safeChannel]) + normalizeCount(count);
 		}
-		return normalized;
+		const channelEntries = Object.entries(normalized);
+		if (channelEntries.length <= MAX_CHANNELS) {
+			return normalized;
+		}
+		channelEntries.sort((a, b) => {
+			const countDiff = normalizeCount(b[1]) - normalizeCount(a[1]);
+			return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
+		});
+		const trimmed = createChannelsMap();
+		for (const [channelName, count] of channelEntries.slice(0, MAX_CHANNELS)) {
+			trimmed[channelName] = normalizeCount(count);
+		}
+		return trimmed;
 	}
 
 	function normalizeDailyStatsMap(value) {
@@ -395,8 +491,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			return createDailyStatsMap();
 		}
 		const normalized = createDailyStatsMap();
+		const todayKey = getDateKey();
 		for (const [dateKey, entry] of Object.entries(value)) {
-			if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) continue;
+			if (!parseDateKey(dateKey) || dateKey > todayKey) continue;
 			const safeEntry = isPlainObject(entry) ? entry : {};
 			normalized[dateKey] = {
 				ads: normalizeCount(safeEntry.ads),
@@ -409,6 +506,101 @@ document.addEventListener("DOMContentLoaded", () => {
 	function updateTimeSaved(adsCount) {
 		const seconds = normalizeCount(adsCount) * AVG_AD_DURATION;
 		timeSaved.textContent = formatTimeSaved(seconds);
+	}
+
+	function resolveCounterState(result) {
+		const safeResult = isPlainObject(result) ? result : {};
+		const adsCount = Math.max(
+			normalizeCount(safeResult.ttvAdsBlocked),
+			normalizeCount(safeResult[ADS_PREVIEW_KEY]),
+		);
+		const domAdsCount = Math.max(
+			normalizeCount(safeResult.ttvDomAdsBlocked),
+			normalizeCount(safeResult[DOM_ADS_PREVIEW_KEY]),
+		);
+		return { adsCount, domAdsCount };
+	}
+
+	function applyCounterState(
+		adsCount,
+		domAdsCount,
+		{ animate = false, refreshStats = false } = {},
+	) {
+		const safeAdsCount = normalizeCount(adsCount);
+		const safeDomAdsCount = normalizeCount(domAdsCount);
+		const didAdsChange = safeAdsCount !== lastRenderedAdsCount;
+		const didDomAdsChange = safeDomAdsCount !== lastRenderedDomAdsCount;
+
+		if (didAdsChange) {
+			if (animate) {
+				animateCounter(adsBlockedCount, safeAdsCount);
+			} else {
+				adsBlockedCount.textContent = formatNumber(safeAdsCount);
+			}
+			lastRenderedAdsCount = safeAdsCount;
+		}
+
+		if (didDomAdsChange) {
+			if (animate) {
+				animateCounter(domAdsBlockedCount, safeDomAdsCount);
+			} else {
+				domAdsBlockedCount.textContent = formatNumber(safeDomAdsCount);
+			}
+			lastRenderedDomAdsCount = safeDomAdsCount;
+		}
+
+		updateTimeSaved(safeAdsCount);
+
+		if (refreshStats && (didAdsChange || didDomAdsChange)) {
+			loadStatistics();
+		}
+	}
+
+	function refreshCounterState({ animate = false, refreshStats = false } = {}) {
+		const applyStorageFallback = () => {
+			chrome.storage.local.get(
+				[
+					"ttvAdsBlocked",
+					"ttvDomAdsBlocked",
+					ADS_PREVIEW_KEY,
+					DOM_ADS_PREVIEW_KEY,
+				],
+				(result) => {
+					if (chrome.runtime.lastError) {
+						console.error(
+							"[TTV AB] Popup counter refresh error:",
+							chrome.runtime.lastError.message,
+						);
+					}
+					const { adsCount, domAdsCount } = resolveCounterState(result);
+					applyCounterState(adsCount, domAdsCount, {
+						animate,
+						refreshStats,
+					});
+				},
+			);
+		};
+
+		try {
+			chrome.runtime.sendMessage({ type: "ttvab-get-counters" }, (response) => {
+				if (chrome.runtime.lastError) {
+					applyStorageFallback();
+					return;
+				}
+				const safeResponse = coerceMessageObject(response);
+				const safeCounts = coerceMessageObject(safeResponse?.counts);
+				if (!safeResponse?.ok || !safeCounts) {
+					applyStorageFallback();
+					return;
+				}
+				applyCounterState(safeCounts.ads, safeCounts.domAds, {
+					animate,
+					refreshStats,
+				});
+			});
+		} catch {
+			applyStorageFallback();
+		}
 	}
 
 	function getLast7Days() {
@@ -531,7 +723,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		channelCount,
 	) {
 		const safeUnlocked = Array.isArray(unlocked)
-			? [...new Set(unlocked.filter((id) => typeof id === "string"))]
+			? [
+					...new Set(
+						unlocked.filter(
+							(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
+						),
+					),
+				]
 			: [];
 		const safeAdsBlocked = normalizeCount(adsBlocked);
 		const safeDomAdsBlocked = normalizeCount(domAdsBlocked);
@@ -596,7 +794,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function loadStatistics() {
 		chrome.storage.local.get(
-			["ttvStats", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+			[
+				"ttvStats",
+				"ttvAdsBlocked",
+				"ttvDomAdsBlocked",
+				ADS_PREVIEW_KEY,
+				DOM_ADS_PREVIEW_KEY,
+			],
 			(result) => {
 				if (chrome.runtime.lastError) {
 					console.error(
@@ -613,12 +817,21 @@ document.addEventListener("DOMContentLoaded", () => {
 				const achievements = Array.isArray(stats.achievements)
 					? [
 							...new Set(
-								stats.achievements.filter((id) => typeof id === "string"),
+								stats.achievements.filter(
+									(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
+								),
 							),
 						]
 					: [];
-				const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
-				const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
+				const resolvedCounts = resolveCounterState(safeResult);
+				const adsCount = Math.max(
+					resolvedCounts.adsCount,
+					lastRenderedAdsCount,
+				);
+				const domAdsCount = Math.max(
+					resolvedCounts.domAdsCount,
+					lastRenderedDomAdsCount,
+				);
 				const channelCount = Object.keys(channels).length;
 
 				renderChart(daily);
@@ -630,7 +843,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	chrome.storage.local.get(
-		["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+		[
+			"ttvAdblockEnabled",
+			"ttvAdsBlocked",
+			"ttvDomAdsBlocked",
+			ADS_PREVIEW_KEY,
+			DOM_ADS_PREVIEW_KEY,
+		],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -643,11 +862,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			toggle.checked = enabled;
 			updateStatus(enabled, false);
 
-			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
-			const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
-			adsBlockedCount.textContent = formatNumber(adsCount);
-			domAdsBlockedCount.textContent = formatNumber(domAdsCount);
-			updateTimeSaved(adsCount);
+			const { adsCount, domAdsCount } = resolveCounterState(safeResult);
+			applyCounterState(adsCount, domAdsCount);
+			refreshCounterState({ refreshStats: true });
 		},
 	);
 
@@ -660,19 +877,65 @@ document.addEventListener("DOMContentLoaded", () => {
 			toggle.checked = enabled;
 			updateStatus(enabled, false);
 		}
-		if (changes.ttvAdsBlocked) {
-			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
-			animateCounter(adsBlockedCount, newCount);
-			updateTimeSaved(newCount);
-		}
-		if (changes.ttvDomAdsBlocked) {
-			const newDomAdsCount = normalizeCount(changes.ttvDomAdsBlocked.newValue);
-			animateCounter(domAdsBlockedCount, newDomAdsCount);
-		}
-		if (changes.ttvStats) {
+		const hasAdsCountChange = Boolean(
+			changes.ttvAdsBlocked || changes[ADS_PREVIEW_KEY],
+		);
+		const hasDomAdsCountChange = Boolean(
+			changes.ttvDomAdsBlocked || changes[DOM_ADS_PREVIEW_KEY],
+		);
+		if (hasAdsCountChange || hasDomAdsCountChange) {
+			refreshCounterState({ animate: true, refreshStats: true });
+		} else if (changes.ttvStats) {
 			loadStatistics();
 		}
 	});
+
+	chrome.runtime.onMessage.addListener((rawMessage) => {
+		const message = coerceMessageObject(rawMessage);
+		const detail = coerceMessageObject(message?.detail);
+		if (message?.type !== "ttvab-popup-counter-preview" || !detail) {
+			return undefined;
+		}
+
+		applyCounterState(detail.adsCount, detail.domAdsCount, {
+			animate: true,
+			refreshStats: true,
+		});
+		return undefined;
+	});
+
+	function startPopupCounterPolling() {
+		if (popupCounterPollId) return;
+		popupCounterPollId = setInterval(() => {
+			if (document.visibilityState !== "visible") return;
+			refreshCounterState({ refreshStats: true });
+		}, POPUP_COUNTER_POLL_MS);
+	}
+
+	function stopPopupCounterPolling() {
+		if (!popupCounterPollId) return;
+		clearInterval(popupCounterPollId);
+		popupCounterPollId = null;
+	}
+
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "visible") {
+			refreshCounterState({ refreshStats: true });
+			startPopupCounterPolling();
+			return;
+		}
+		stopPopupCounterPolling();
+	});
+
+	window.addEventListener("focus", () => {
+		refreshCounterState({ refreshStats: true });
+	});
+
+	window.addEventListener("beforeunload", () => {
+		stopPopupCounterPolling();
+	});
+
+	startPopupCounterPolling();
 
 	let toggleWriteInFlight = false;
 

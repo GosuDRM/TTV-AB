@@ -2,35 +2,67 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.0] - 2026-03-21
+
+### Highlights
+- **VOD Ad Blocking Support** - Added `/videos/<id>` playback-context detection plus VOD usher and token handling so Twitch VODs run through the same ad-strip and backup-stream recovery flow as live streams.
+- **Playback Context Isolation** - Worker state, stale-event checks, and post-ad cleanup now track a shared media key, preventing live and VOD routes from leaking ad or recovery events into the wrong player.
+- **Current-Live VOD Event Routing** - When Twitch serves an active livestream's VOD page through the live channel transport, worker ad and reload events now keep the page's media key so recovery is not rejected as stale.
+- **Live-to-VOD SPA Player Recovery** - Route changes from a live stream into its VOD now trigger a guarded player resync when Twitch leaves the old live player attached, preventing the large static `?` placeholder until a manual refresh.
+- **Firefox Counter Sync Hardening** - The Firefox page, bridge, background, and popup counter path now tolerates Firefox's wrapped cross-context messages and uses a direct background preview path, so blocked-ad counters increase as soon as ad blocking starts instead of sticking at `0`.
+- **Firefox Post-Ad Resume Hardening** - Firefox ad-end, buffer-fix, and route-navigation recovery now clears false pause intent, retries guarded resumes, and treats stale media pauses more defensively so playback is less likely to remain paused after ads or channel changes.
+- **DOM Scan Performance Hardening** - Popup and display-ad cleanup now coalesces repeated rescans, ignores noisy chat-only DOM mutations, and backs off idle polling so the extension does not keep hammering full-page scans during normal playback.
+- **VOD Display-Ad Overlay Detection** - Player-side display-ad cleanup now recognizes generic `Learn More` CTA overlays and the `right after this ad break` banner shell, improving cleanup on current-live VOD pages.
+- **Direct Amazon MP4 VOD Ads** - VOD cleanup now detects standalone `m.media-amazon.com` ad video playback near the main player, suppresses that injected media element, nudges playback back onto the actual archive stream, and now requires matching player-ad UI signals so live/VOD transition media is not treated as a standalone ad.
+- **New Lower-Third SDA Banner Variant** - Added explicit handling for Twitch's `data-test-selector="sda-frame"` / `#stream-lowerthird` lower-third subscription-display banner so the newer DOM variant is hidden like the older iframe-based SDA banners.
+
+## [4.4.0] - 2026-03-21
+
+### Fixed
+- **Display Ad Feedback Button Artifacts** - Player-side display-ad cleanup now upgrades matched `Ad` labels to their enclosing feedback-button wrapper when Twitch renders the `Leave feedback for this Ad` overlay, so the full lingering control is hidden instead of only the inner text node.
+
+## [4.3.9] - 2026-03-21
+
+### Fixed
+- **Lingering Display Ad Labels** - Display-ad cleanup now gathers matching player-side ad label elements and hides them directly, removing leftover `Ad` / countdown-style badges that could remain visible near the stream player.
+
+## [4.3.8] - 2026-03-19
+
+### Fixed
+- **Auto Locale Resolution** - The popup's `Auto` language mode now prefers Chrome's UI locale plus the browser's preferred-language list instead of only `navigator.language`, and it correctly treats Traditional Chinese variants like `zh-HK` and `zh-MO` as `zh_TW`.
+
+### Changed
+- **Locale Polish** - Refined shipped non-English popup strings and manifest locale metadata so labels, descriptions, and helper text read more naturally across the supported locales.
+
+## [4.3.7] - 2026-03-19
+
+### Fixed
+- **Lower-Third Display Ad Iframes** - The DOM blocker now treats Twitch `sda-iframe-*` / `Stream Display Ad` lower-third iframes as explicit display-ad signals, so Amazon-backed `srcdoc` lower-third banners are hidden and cleaned up reliably during and after ad recovery.
+
 ## [4.3.6] - 2026-03-19
 
 ### Fixed
-- **Cross-Tab Counter / Stats Races** - Firefox now serializes `Ads Blocked`, `DOM Ads Blocked`, daily stats, channels, and achievement writes through a dedicated background script instead of per-tab storage read/modify/write loops, preventing tabs from clobbering each other.
-- **Backup Policy Bypass** - Backup stream selection no longer promotes rejected playlists through minimal-request or fallback side paths, so ad-marked candidates stay rejected during recovery.
-- **Token Relay Fallback** - Backup token fetches now use a fresh abort path for direct fallback requests, so a timed-out relay attempt does not poison the fallback request with an already-aborted signal.
+- **Cross-Tab Counter / Stats Races** - Persisted counters and statistics now update through a dedicated extension background worker, eliminating the per-tab read/modify/write races that could lose totals, daily buckets, per-channel stats, and achievement unlocks.
+- **Backup Policy Bypass** - Backup stream selection no longer promotes fallback or minimal-mode playlists after the clean-playback policy rejected them, preventing ad-marked backups from slipping back into playback.
+- **Token Relay Fallback** - Backup token requests now create a fresh abort controller for direct-fetch fallback after a relay timeout, so relay failures do not poison the retry path with an already-aborted signal.
+- **Bridge Event Validation** - The bridge now ignores cross-channel and malformed DOM cleanup events before they reach persisted counters, reducing bad state from stale or invalid page-side events.
 
-### Changed
-- **Firefox Background Wiring** - `manifest.json`, `build.js`, `knip.json`, and Firefox source packaging now include and validate the new background script entry.
-- **Release / Tooling Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, generated bundle, Biome schema/version, and Knip schema/version were bumped to the 4.3.6 release line.
-
-## [4.3.3] - 2026-03-18
+## [4.3.5] - 2026-03-19
 
 ### Fixed
-- **Immediate Blocked Counter Timing** - `Ads Blocked` now increments on the first confirmed `AdDetected` cycle start instead of waiting for a later `AdBlocked` relay or cleanup path, so the popup updates as soon as ad recovery begins.
-- **False-Positive Blocked Counter** - Firefox no longer preemptively increments `Ads Blocked` from `PlaybackAccessToken` ad-capability flags alone. The counter now advances only on playlist-confirmed or DOM-confirmed ad evidence, so normal channel switches do not inflate totals.
-- **Event-Driven Counter Persistence** - Counter updates now carry explicit event IDs and deltas through the page, worker, and bridge layers instead of relying on inferred absolute-total jumps, eliminating hidden replay and drift paths in the blocked-counter pipeline.
-- **Stale Worker Counter Drift** - When a stale worker reports an `AdBlocked` event for the wrong channel, the page now rejects that event and immediately resyncs the worker's counter state so old background workers cannot silently diverge and later snap totals forward.
-- **Duplicate Audio During Ad Recovery** - When Twitch spawned or reactivated secondary media elements during backup playback, audio could overlap with the primary player. Active ad recovery now suppresses competing media elements, reapplies suppression when backup playback is pinned, and restores their previous state after `AdEnded`.
-- **Channel Comparison Consistency** - Counter-related channel comparisons now normalize observed route and event channel names consistently, avoiding silent mismatches from case differences.
-- **Firefox Package Archive Validity** - Firefox package outputs now use real ZIP/XPI archives with forward-slash entry paths, fixing temporary-install failures caused by tar-shaped archives or backslash-separated ZIP entries.
+- **Post-Ad Audio Delay** - During ad recovery the page now suppresses competing `video` and `audio` elements, then restores their original mute/volume state when the ad ends so stale backup-player audio cannot linger behind native playback.
+- **Ad-End Channel Matching** - Worker ad events now normalize observed channel names before stale-channel checks, preventing valid `AdEnded` cleanup from being skipped because of casing or route-format differences.
+
+## [4.3.4] - 2026-03-18
+
+### Fixed
+- **Worker Crash Recovery** - Worker restarts now recreate the original Twitch worker instead of attempting to relaunch from a stale injected blob URL.
+- **Player Preference Preservation** - Player quality, mute, volume, and related preferences are now preserved through explicit snapshot/restore during reloads instead of a global `localStorage` monkey patch.
+- **Route-Change Handling** - Popup-blocker route resets no longer monkey-patch `history.pushState` / `history.replaceState`; URL changes are now handled through native events and the existing DOM observers.
+- **Device ID Capture** - Twitch `unique_id` synchronization no longer overrides `localStorage.getItem`; the runtime now syncs the device ID directly during initialization, worker bootstrapping, and GQL interception.
 
 ### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.3 release line.
-
-## [4.3.2] - 2026-03-17
-
-### Changed
-- **Firefox Logic Alignment** - Finalized the port of v4.3.1 core logic into the Firefox-specific codebase while retaining specialized DOM tracking fixes.
+- **Tooling Updates** - Updated Biome to `2.4.7` and Knip to `6.0.0-1`, including the corresponding schema metadata refresh.
 
 ## [4.3.1] - 2026-03-17
 
@@ -40,9 +72,6 @@ All notable changes to TTV AB will be documented in this file.
 - **Transient Ad-End Resets** - Debounced ad-end evaluations in the processor to prevent premature test resets from spurious clean playlists.
 - **Worker Initialization Guards** - Guarded worker blob instantiation to prevent SecurityErrors on revoked URLs during crash recovery, and strictly checked worker reloads against current channel contexts.
 - **Unused Variables** - Removed unused variables in the worker hooks to resolve Biome linter warnings.
-
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.3.1 release line.
 
 ## [4.2.7] - 2026-03-13
 
@@ -55,9 +84,6 @@ All notable changes to TTV AB will be documented in this file.
 - **Worker Restart Failure** - Worker auto-restart was calling `new Worker(blobUrl)` with a URL that had already been revoked via `URL.revokeObjectURL`, causing all restart attempts to silently fail with a `SecurityError`. The injected code is now stored so each restart creates a fresh blob URL.
 - **Cross-Channel Player Reload** - `ReloadPlayer` messages from the worker carried no channel identifier, allowing a background tab's worker completing an ad cycle to trigger a player reload on a different foreground channel. The message now carries the channel name and the handler applies stale-channel gating consistent with other worker events.
 - **ReloadAfterAd Default** - The `ReloadAfterAd` state flag used `?? true` as its undefined-fallback, which would silently enable post-ad player reloads if the constant was ever absent. The fallback is now `?? false`, matching the constant's intended default.
-
-### Changed
-- **Release Sync** - README, changelog, manifest, package metadata, popup fallback HTML, source constants, and the generated bundle were bumped to the 4.2.7 release line.
 
 
 ## [4.2.6] - 2026-03-11

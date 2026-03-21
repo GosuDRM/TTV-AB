@@ -1,14 +1,12 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-4.3.6-purple)
+![Version](https://img.shields.io/badge/version-5.0.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
-A lightweight browser extension that blocks ads on Twitch.tv streams.
-
-Note: The current extension icon is just a placeholder and will probably get replaced in a future update if I stop being lazy.
+A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
 
 ## Install
 
@@ -22,9 +20,10 @@ Note: The current extension icon is just a placeholder and will probably get rep
 
 ## Features
 
-- ✅ Blocks preroll and midroll ads
+- ✅ Blocks preroll and midroll ads on live streams and VODs
+- ✅ Supports both live playback and Twitch `/videos/<id>` archives
 - ✅ **Blocks anti-adblock popups** ("Support streamer by disabling ad block")
-- ✅ No purple screen errors
+- ✅ Avoids purple-screen playback interruptions
 - ✅ Restores your chosen quality after ad recovery
 - ✅ Manifest V3 compatible
 - ✅ Simple enable/disable toggle
@@ -40,35 +39,45 @@ Note: The current extension icon is just a placeholder and will probably get rep
 ## Usage
 
 1. Navigate to [twitch.tv](https://twitch.tv)
-2. Open any live stream
+2. Open any live stream or VOD
 3. Ads will be automatically blocked
 4. Click the extension icon and use the toggle to enable/disable
 5. Change language via the dropdown in the footer
 
 ## How It Works
 
-The extension intercepts Twitch's HLS video playlists and:
-- Strips ad segments from M3U8 playlists
-- Fetches backup ad-free streams when ads are detected
-- Caches ad segments to prevent playback
-- Suppresses competing media elements during ad recovery so duplicate audio does not overlap the active player
+The extension intercepts Twitch's live and VOD HLS video playlists and:
+- Strips ad-marked segments from M3U8 playlists when Twitch injects them
+- Fetches backup ad-free streams when Twitch forces playback onto an ad path
+- Collapses player-side display-ad shells and overlay banners
+- Suppresses injected direct video ads on VOD pages and returns playback to the real archive stream
+- Caches known ad segments to reduce repeated playback disruption
 
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
 
-### v4.3.6
-- **Serialized Counter Persistence** - Firefox now persists `Ads Blocked`, `DOM Ads Blocked`, daily stats, channels, and achievements through a dedicated background script instead of per-tab storage read/modify/write loops, so tabs no longer clobber each other.
-- **Backup Stream Policy Fix** - Backup and fallback promotion no longer bypass clean-playback policy in minimal or fallback paths, so ad-marked playlists are not promoted back into playback after reload-driven recovery.
-- **Token Relay Recovery** - Backup token fetches now fall back cleanly after relay timeouts instead of reusing an already-aborted request signal.
-- **Tooling / Packaging Sync** - Firefox now ships the new background script in source packages, and the repo is updated to the current `biome` and `knip` release line.
+### v5.0.0
+- **VOD Ad Blocking Support** - Added VOD route, playlist, and playback-token handling so Twitch `/videos/<id>` playback uses the same ad-strip and recovery pipeline as live streams.
+- **Playback Context Hardening** - Stream state, worker messages, route changes, and post-ad recovery now track a shared media key, preventing stale live/VOD events from crossing into the wrong player.
+- **Current-Live VOD Recovery** - Active livestream VOD pages now keep page-scoped ad and reload events even when Twitch serves playback through the live channel transport, fixing ads that could still slip through on the current stream archive.
+- **Live-to-VOD Player Resync** - Navigating from a live stream to its VOD in Twitch's SPA flow now triggers a guarded player resync when the old live player state lingers, preventing the large static `?` placeholder that previously required a manual refresh.
+- **Firefox Counter Sync Hardening** - Hardened the Firefox `MAIN` / `ISOLATED` / background / popup message pipeline so `Ads Blocked` and `DOM Ads Blocked` update immediately when ad blocking starts instead of getting dropped or snapped back to zero.
+- **Firefox Post-Ad Resume Hardening** - Firefox ad-end, buffer-fix, and route-change recovery now suppress false pause intent and retry guarded resumes so Twitch is less likely to leave the player stuck paused after ads or SPA channel navigation.
+- **DOM Scan Performance Hardening** - Player-side popup and display-ad cleanup now coalesces rescans, ignores noisy chat-only mutations, and backs off idle polling, reducing the periodic buffering and whole-browser lag that could appear from overly aggressive full-page DOM scans.
+- **Player Overlay Cleanup** - Display-ad cleanup now recognizes the newer player-side `Learn More` CTA and `right after this ad break` banner shell, collapsing VOD ad overlays more reliably.
+- **Direct VOD Video-Ad Suppression** - VOD pages now detect Twitch's injected Amazon MP4 ad media and force playback back to the real archive stream instead of letting the standalone ad video run to completion, while requiring matching ad-UI signals so live/VOD route transitions are not misclassified as standalone ads.
+- **Lower-Third Banner Coverage** - Added support for Twitch's newer `sda-frame` / `stream-lowerthird` lower-third subscription and display-ad banner variant so it is treated as an explicit DOM ad target.
 
-### v4.3.3
-- **Immediate Counter Updates** - `Ads Blocked` now increments on the first confirmed `AdDetected` cycle start, so the popup reflects a blocked ad as soon as recovery begins instead of waiting for a later cleanup path.
-- **Counter Pipeline Rework** - `Ads Blocked` and `DOM Ads Blocked` now flow through explicit counter events with event IDs and deltas instead of relying on inferred total jumps, which removes a whole class of silent drift and replay bugs.
-- **Duplicate Audio Suppression** - Active ad recovery now suppresses competing Twitch media elements and restores them after `AdEnded`, preventing the double-audio playback that could happen when backup playback starts.
-- **Firefox Packaging Fix** - Firefox package builds now emit real ZIP/XPI archives with extension-safe forward-slash paths, so temporary installs and packaged loads work correctly.
+### v4.4.0
+- **Display Ad Feedback Overlay Cleanup** - Player-side display-ad cleanup now targets Twitch's feedback button wrapper as well as the tiny `Ad` label itself, removing leftover `Leave feedback for this Ad` overlays that could remain near the stream player.
 
+### v4.3.9
+- **Display Ad Label Cleanup** - The DOM blocker now collects and hides lingering player-side ad labels directly, removing leftover `Ad` / countdown-style badges that could remain visible after display-ad cleanup.
+
+### v4.3.8
+- **Auto Locale Selection Fix** - `Auto` now resolves from Chrome's UI locale and preferred-language list instead of only `navigator.language`, and it correctly maps Traditional Chinese variants like `zh-HK` and `zh-MO`.
+- **Locale Copy Polish** - Updated shipped non-English popup and manifest strings to read more naturally, reducing awkward direct translations and grammar issues.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

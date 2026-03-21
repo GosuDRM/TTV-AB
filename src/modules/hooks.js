@@ -10,16 +10,17 @@ function _hookWorkerFetch() {
 		const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
 		if (keys.length > 5) {
 			const oldKey = keys[0];
+			const oldInfo = __TTVAB_STATE__.StreamInfos[oldKey];
 			delete __TTVAB_STATE__.StreamInfos[oldKey];
 			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
-				if (__TTVAB_STATE__.StreamInfosByUrl[url].ChannelName === oldKey) {
+				if (__TTVAB_STATE__.StreamInfosByUrl[url] === oldInfo) {
 					delete __TTVAB_STATE__.StreamInfosByUrl[url];
 				}
 			}
 		}
 	}
 
-	function _syncStreamInfo(_channel, info, encodings, usherUrl) {
+	function _syncStreamInfo(info, encodings, usherUrl) {
 		const wasUsingModifiedM3U8 = Boolean(info.IsUsingModifiedM3U8);
 		info.EncodingsM3U8 = encodings;
 		info.UsherBaseUrl = usherUrl;
@@ -157,10 +158,13 @@ function _hookWorkerFetch() {
 			return realFetch(EMPTY_SEGMENT_URL);
 		}
 
-		if (url.includes("/channel/hls/")) {
+		const playbackContext = _getPlaybackContextFromUsherUrl(url);
+		if (playbackContext?.MediaKey) {
 			__TTVAB_STATE__.V2API = url.includes("/api/v2/");
-			const channelMatch = new URL(url).pathname.match(/([^/]+)(?=\.\w+$)/);
-			const channel = channelMatch?.[0];
+			const logTarget =
+				playbackContext.MediaType === "vod"
+					? `vod ${playbackContext.VodID}`
+					: playbackContext.ChannelName;
 
 			if (__TTVAB_STATE__.ForceAccessTokenPlayerType) {
 				const urlObj = new URL(url);
@@ -173,7 +177,7 @@ function _hookWorkerFetch() {
 
 			const encodings = await response.text();
 			const serverTime = _getServerTime(encodings);
-			let info = __TTVAB_STATE__.StreamInfos[channel];
+			let info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
 
 			if (info?.EncodingsM3U8) {
 				const now = Date.now();
@@ -190,8 +194,11 @@ function _hookWorkerFetch() {
 			const isNewInfo = !info?.EncodingsM3U8;
 			if (isNewInfo) {
 				_pruneStreamInfos();
-				info = __TTVAB_STATE__.StreamInfos[channel] = {
-					ChannelName: channel,
+				info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey] = {
+					MediaType: playbackContext.MediaType,
+					MediaKey: playbackContext.MediaKey,
+					ChannelName: playbackContext.ChannelName,
+					VodID: playbackContext.VodID,
 					IsShowingAd: false,
 					LastPlayerReload: 0,
 					EncodingsM3U8: encodings,
@@ -215,13 +222,18 @@ function _hookWorkerFetch() {
 					CleanPlaylistCount: 0,
 					LastActivityAt: Date.now(),
 				};
+			} else {
+				info.MediaType = playbackContext.MediaType;
+				info.MediaKey = playbackContext.MediaKey;
+				info.ChannelName = playbackContext.ChannelName;
+				info.VodID = playbackContext.VodID;
 			}
 
-			_syncStreamInfo(channel, info, encodings, url);
+			_syncStreamInfo(info, encodings, url);
 			info.LastActivityAt = Date.now();
 
 			if (isNewInfo) {
-				_log(`Stream initialized: ${channel}`, "success");
+				_log(`Stream initialized: ${logTarget}`, "success");
 			}
 
 			const playlist = info.IsUsingModifiedM3U8
@@ -249,7 +261,21 @@ function _hookWorkerFetch() {
 	};
 }
 
+function _syncStoredDeviceId() {
+	try {
+		const deviceId = localStorage.getItem("unique_id");
+		if (typeof deviceId === "string" && deviceId) {
+			__TTVAB_STATE__.GQLDeviceID = deviceId;
+			return deviceId;
+		}
+	} catch (e) {
+		_log(`Device ID sync error: ${e.message}`, "warning");
+	}
+	return null;
+}
+
 function _hookWorker() {
+	_syncStoredDeviceId();
 	const reinsertNames = _getReinsert(window.Worker);
 	const isAllowedWorkerHost = (hostname) => {
 		const host = String(hostname || "").toLowerCase();
@@ -299,13 +325,26 @@ function _hookWorker() {
 				return;
 			}
 
+			const pagePlaybackContext = _syncPagePlaybackContext({
+				broadcast: false,
+			});
+
 			const injectedCode = `
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify(_S)};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
                 ${_log.toString()}
                 ${_declareState.toString()}
+                ${_getPageScopedPlaybackEventContext.toString()}
+                ${_createPageScopedWorkerEvent.toString()}
                 ${_incrementAdsBlocked.toString()}
+                ${_normalizeChannelName.toString()}
+                ${_normalizeVodID.toString()}
+                ${_buildMediaKey.toString()}
+                ${_normalizeMediaKey.toString()}
+                ${_normalizePlaybackContext.toString()}
+                ${_getPlaybackContextFromUrl.toString()}
+                ${_getPlaybackContextFromUsherUrl.toString()}
                 ${_parseAttrs.toString()}
                 ${_getServerTime.toString()}
                 ${_replaceServerTime.toString()}
@@ -326,6 +365,8 @@ function _hookWorker() {
                 ${_getToken.toString()}
                 ${_resetStreamAdState.toString()}
                 ${_getStreamInfoForPlaylist.toString()}
+                ${_createSyntheticStreamInfo.toString()}
+                ${_buildUsherPlaybackUrl.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
                 ${_playlistHasMediaSegments.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
@@ -345,10 +386,15 @@ function _hookWorker() {
                 __TTVAB_STATE__.PlaybackAccessTokenHash = ${JSON.stringify(__TTVAB_STATE__.PlaybackAccessTokenHash)};
                 __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = ${JSON.stringify(__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType)};
                 __TTVAB_STATE__.CurrentAdChannel = ${JSON.stringify(__TTVAB_STATE__.CurrentAdChannel)};
+                __TTVAB_STATE__.CurrentAdMediaKey = ${JSON.stringify(__TTVAB_STATE__.CurrentAdMediaKey)};
                 __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerType)};
                 __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
+                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerMediaKey)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
-                __TTVAB_STATE__.PageChannel = ${JSON.stringify((window.location.pathname.match(/^\/([a-zA-Z0-9_]+)/) || [])[1] || null)};
+                __TTVAB_STATE__.PageMediaType = ${JSON.stringify(pagePlaybackContext.MediaType)};
+                __TTVAB_STATE__.PageChannel = ${JSON.stringify(pagePlaybackContext.ChannelName)};
+                __TTVAB_STATE__.PageVodID = ${JSON.stringify(pagePlaybackContext.VodID)};
+                __TTVAB_STATE__.PageMediaKey = ${JSON.stringify(pagePlaybackContext.MediaKey)};
                 
                 self.addEventListener('message', function(e) {
                     const data = e.data;
@@ -364,10 +410,40 @@ function _hookWorker() {
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                         case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;
-                        case 'UpdateCurrentAdChannel': __TTVAB_STATE__.CurrentAdChannel = data.value || null; break;
+                        case 'UpdatePageContext':
+                            {
+                                const nextPageContext = _normalizePlaybackContext(data.value);
+                                __TTVAB_STATE__.PageMediaType = nextPageContext.MediaType;
+                                __TTVAB_STATE__.PageChannel = nextPageContext.ChannelName;
+                                __TTVAB_STATE__.PageVodID = nextPageContext.VodID;
+                                __TTVAB_STATE__.PageMediaKey = nextPageContext.MediaKey;
+                            }
+                            break;
+                        case 'UpdateCurrentAdContext':
+                            {
+                                const nextAdContext = _normalizePlaybackContext(data.value);
+                                __TTVAB_STATE__.CurrentAdChannel = nextAdContext.ChannelName;
+                                __TTVAB_STATE__.CurrentAdMediaKey = nextAdContext.MediaKey;
+                            }
+                            break;
+                        case 'UpdateCurrentAdChannel':
+                            __TTVAB_STATE__.CurrentAdChannel = data.value || null;
+                            __TTVAB_STATE__.CurrentAdMediaKey =
+                                _buildMediaKey('live', data.value || null, null);
+                            break;
                         case 'UpdatePinnedBackupPlayerType':
                             __TTVAB_STATE__.PinnedBackupPlayerType = data.value || null;
                             __TTVAB_STATE__.PinnedBackupPlayerChannel = data.channel || null;
+                            __TTVAB_STATE__.PinnedBackupPlayerMediaKey =
+                                _buildMediaKey('live', data.channel || null, null);
+                            break;
+                        case 'UpdatePinnedBackupPlayerContext':
+                            {
+                                const nextPinnedContext = _normalizePlaybackContext(data.value);
+                                __TTVAB_STATE__.PinnedBackupPlayerType = data.value?.type || null;
+                                __TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedContext.ChannelName;
+                                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = nextPinnedContext.MediaKey;
+                            }
                             break;
                         case 'FetchResponse':
                             {
@@ -396,44 +472,32 @@ function _hookWorker() {
 			super(blobUrl, opts);
 			setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
 
-			this.__ttvabInjectedCode = injectedCode;
+			const getCurrentPageContext = () =>
+				_getPlaybackContextFromUrl(window.location.href);
+			const isStalePlaybackEvent = (message) => {
+				const currentContext = getCurrentPageContext();
+				const pageScopedMediaKey = _normalizeMediaKey(
+					message?.pageMediaKey || null,
+				);
+				if (pageScopedMediaKey && currentContext.MediaKey) {
+					return currentContext.MediaKey !== pageScopedMediaKey;
+				}
 
-			const normalizeObservedChannelName = (value) => {
-				if (typeof value !== "string") return null;
-				const trimmed = value.trim().toLowerCase();
-				return trimmed ? trimmed : null;
-			};
-			const getCurrentPageChannel = () => {
-				const match = window.location.pathname.match(/^\/([^/?#]+)/);
-				const candidate = match?.[1] || null;
-				if (!candidate) return null;
-				const reserved = new Set([
-					"browse",
-					"directory",
-					"downloads",
-					"drops",
-					"following",
-					"friends",
-					"inventory",
-					"jobs",
-					"messages",
-					"search",
-					"settings",
-					"subscriptions",
-					"turbo",
-					"videos",
-					"wallet",
-				]);
-				const normalizedCandidate = normalizeObservedChannelName(candidate);
-				return normalizedCandidate && !reserved.has(normalizedCandidate)
-					? normalizedCandidate
-					: null;
-			};
-			const isStaleChannelEvent = (channel) => {
-				const safeChannel = normalizeObservedChannelName(channel);
-				if (!safeChannel) return false;
-				const currentChannel = getCurrentPageChannel();
-				return Boolean(currentChannel && currentChannel !== safeChannel);
+				const eventContext = _normalizePlaybackContext({
+					MediaKey: message?.mediaKey || null,
+					ChannelName: message?.channel || null,
+					VodID: message?.vodID || null,
+				});
+				if (eventContext.MediaKey && currentContext.MediaKey) {
+					return currentContext.MediaKey !== eventContext.MediaKey;
+				}
+				if (eventContext.ChannelName) {
+					return Boolean(
+						currentContext.ChannelName &&
+							currentContext.ChannelName !== eventContext.ChannelName,
+					);
+				}
+				return false;
 			};
 			const handleWorkerFetchRequest = async (fetchRequest) => {
 				const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
@@ -473,171 +537,221 @@ function _hookWorker() {
 						});
 						break;
 					case "AdBlocked":
-						{
-							const safeChannel = normalizeObservedChannelName(
-								e.data.channel || null,
+						if (isStalePlaybackEvent(e.data)) {
+							_log(
+								`Ignoring stale AdBlocked event for ${e.data.mediaKey || e.data.channel}`,
+								"info",
 							);
-							const safeEventId =
-								typeof e.data.eventId === "string" &&
-								e.data.eventId.trim() !== ""
-									? e.data.eventId.trim()
-									: null;
-							const safeSource =
-								typeof e.data.source === "string" && e.data.source.trim() !== ""
-									? e.data.source.trim().toLowerCase()
-									: null;
-							const safeDelta = Number.isFinite(e.data.delta)
-								? Math.max(1, Math.trunc(e.data.delta))
-								: 1;
-							const safeCount = Number.isFinite(e.data.count)
-								? Math.max(0, Math.trunc(e.data.count))
-								: null;
-							if (safeCount === null) {
-								_log("Ignoring malformed AdBlocked event count", "warning");
-								try {
-									this.postMessage({
-										key: "UpdateAdsBlocked",
-										value: _S.adsBlocked,
-									});
-								} catch {}
-								break;
-							}
-							if (isStaleChannelEvent(safeChannel)) {
-								_log(
-									`Ignoring stale AdBlocked event for ${e.data.channel}`,
-									"info",
-								);
-								try {
-									this.postMessage({
-										key: "UpdateAdsBlocked",
-										value: _S.adsBlocked,
-									});
-								} catch {}
-								break;
-							}
-							_S.adsBlocked = safeCount;
-							window.postMessage(
-								{
-									type: "ttvab-ad-blocked",
-									detail: {
-										count: safeCount,
-										delta: safeDelta,
-										channel: safeChannel,
-										eventId: safeEventId,
-										source: safeSource,
-									},
-								},
-								"*",
-							);
-							_log(`Ad blocked! Total: ${safeCount}`, "success");
+							break;
 						}
+						_S.adsBlocked = Math.max(
+							Number.isFinite(_S.adsBlocked) ? _S.adsBlocked : 0,
+							Number.isFinite(e.data.count) ? e.data.count : 0,
+						);
+						_log(`Ad blocked! Total: ${e.data.count}`, "success");
 						break;
 					case "AdDetected":
-						if (isStaleChannelEvent(e.data.channel || null)) {
+						if (isStalePlaybackEvent(e.data)) {
 							_log(
-								`Ignoring stale AdDetected event for ${e.data.channel}`,
+								`Ignoring stale AdDetected event for ${e.data.mediaKey || e.data.channel}`,
 								"info",
 							);
 							break;
 						}
 						{
 							const now = Date.now();
-							const channel = normalizeObservedChannelName(
-								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
-							);
-							const source =
-								typeof e.data.source === "string" && e.data.source.trim() !== ""
-									? e.data.source.trim().toLowerCase()
-									: "playlist-ad";
+							const detectedContext = _normalizePlaybackContext({
+								MediaType: __TTVAB_STATE__.PageMediaType,
+								ChannelName:
+									e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
+								VodID: __TTVAB_STATE__.PageVodID,
+								MediaKey:
+									e.data.mediaKey ||
+									__TTVAB_STATE__.CurrentAdMediaKey ||
+									__TTVAB_STATE__.PageMediaKey,
+							});
+							const channel = detectedContext.ChannelName;
+							const mediaKey = detectedContext.MediaKey;
 							const shouldStartNewCycle =
-								!__TTVAB_STATE__.CurrentAdChannel ||
-								__TTVAB_STATE__.CurrentAdChannel !== channel ||
+								!__TTVAB_STATE__.CurrentAdMediaKey ||
+								__TTVAB_STATE__.CurrentAdMediaKey !== mediaKey ||
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
 									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
-								_incrementAdsBlocked(channel, source);
+								__TTVAB_STATE__.PinnedBackupPlayerMediaKey = mediaKey;
+								if (typeof _incrementAdsBlocked === "function") {
+									_incrementAdsBlocked(
+										channel,
+										mediaKey,
+										e.data.source || "playlist-ad",
+									);
+								}
+								if (typeof _suppressPauseIntent === "function") {
+									_suppressPauseIntent(channel, mediaKey, 4000);
+								}
 								if (typeof _suppressCompetingMediaDuringAd === "function") {
-									_suppressCompetingMediaDuringAd(channel);
+									_suppressCompetingMediaDuringAd(channel, mediaKey);
 									setTimeout(
-										() => _suppressCompetingMediaDuringAd(channel),
+										() => _suppressCompetingMediaDuringAd(channel, mediaKey),
 										80,
 									);
 									setTimeout(
-										() => _suppressCompetingMediaDuringAd(channel),
+										() => _suppressCompetingMediaDuringAd(channel, mediaKey),
 										350,
 									);
 								}
 								if (typeof _rememberPlayerPlaybackForAd === "function") {
-									_rememberPlayerPlaybackForAd(channel);
+									_rememberPlayerPlaybackForAd(channel, mediaKey);
+								}
+								if (typeof _resumeActivePlayerIfPaused === "function") {
+									setTimeout(
+										() => _resumeActivePlayerIfPaused(channel, mediaKey),
+										180,
+									);
+									setTimeout(
+										() => _resumeActivePlayerIfPaused(channel, mediaKey),
+										650,
+									);
+									setTimeout(
+										() => _resumeActivePlayerIfPaused(channel, mediaKey),
+										1400,
+									);
 								}
 							}
 							__TTVAB_STATE__.CurrentAdChannel = channel;
+							__TTVAB_STATE__.CurrentAdMediaKey = mediaKey;
 							__TTVAB_STATE__.LastAdDetectedAt = now;
 						}
 						_broadcastWorkers({
-							key: "UpdateCurrentAdChannel",
-							value: __TTVAB_STATE__.CurrentAdChannel,
+							key: "UpdateCurrentAdContext",
+							value: {
+								channelName: __TTVAB_STATE__.CurrentAdChannel,
+								mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
+							},
 						});
 						_log("Ad detected, blocking...", "warning");
 						break;
 					case "BackupPlayerTypeSelected": {
-						if (isStaleChannelEvent(e.data.channel || null)) {
+						if (isStalePlaybackEvent(e.data)) {
 							_log(
-								`Ignoring stale backup selection for ${e.data.channel}`,
+								`Ignoring stale backup selection for ${e.data.mediaKey || e.data.channel}`,
 								"info",
 							);
 							break;
 						}
 						const nextPinnedType = e.data.value || null;
-						const nextPinnedChannel =
-							e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+						const nextPinnedContext = _normalizePlaybackContext({
+							MediaType: __TTVAB_STATE__.PageMediaType,
+							ChannelName:
+								e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
+							VodID: __TTVAB_STATE__.PageVodID,
+							MediaKey:
+								e.data.mediaKey ||
+								__TTVAB_STATE__.CurrentAdMediaKey ||
+								__TTVAB_STATE__.PageMediaKey,
+						});
 						if (
 							__TTVAB_STATE__.PinnedBackupPlayerType === nextPinnedType &&
-							__TTVAB_STATE__.PinnedBackupPlayerChannel === nextPinnedChannel
+							__TTVAB_STATE__.PinnedBackupPlayerChannel ===
+								nextPinnedContext.ChannelName &&
+							__TTVAB_STATE__.PinnedBackupPlayerMediaKey ===
+								nextPinnedContext.MediaKey
 						) {
 							break;
 						}
 						__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
-						__TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedChannel;
+						__TTVAB_STATE__.PinnedBackupPlayerChannel =
+							nextPinnedContext.ChannelName;
+						__TTVAB_STATE__.PinnedBackupPlayerMediaKey =
+							nextPinnedContext.MediaKey;
+						if (typeof _suppressPauseIntent === "function") {
+							_suppressPauseIntent(
+								nextPinnedContext.ChannelName,
+								nextPinnedContext.MediaKey,
+								3000,
+							);
+						}
 						if (typeof _suppressCompetingMediaDuringAd === "function") {
-							_suppressCompetingMediaDuringAd(nextPinnedChannel);
+							_suppressCompetingMediaDuringAd(
+								nextPinnedContext.ChannelName,
+								nextPinnedContext.MediaKey,
+							);
 							setTimeout(
-								() => _suppressCompetingMediaDuringAd(nextPinnedChannel),
+								() =>
+									_suppressCompetingMediaDuringAd(
+										nextPinnedContext.ChannelName,
+										nextPinnedContext.MediaKey,
+									),
 								120,
 							);
 						}
+						if (typeof _resumeActivePlayerIfPaused === "function") {
+							setTimeout(
+								() =>
+									_resumeActivePlayerIfPaused(
+										nextPinnedContext.ChannelName,
+										nextPinnedContext.MediaKey,
+									),
+								180,
+							);
+							setTimeout(
+								() =>
+									_resumeActivePlayerIfPaused(
+										nextPinnedContext.ChannelName,
+										nextPinnedContext.MediaKey,
+									),
+								650,
+							);
+						}
 						_broadcastWorkers({
-							key: "UpdatePinnedBackupPlayerType",
-							value: __TTVAB_STATE__.PinnedBackupPlayerType,
-							channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
+							key: "UpdatePinnedBackupPlayerContext",
+							value: {
+								type: __TTVAB_STATE__.PinnedBackupPlayerType,
+								channelName: __TTVAB_STATE__.PinnedBackupPlayerChannel,
+								mediaKey: __TTVAB_STATE__.PinnedBackupPlayerMediaKey,
+							},
 						});
 						_log(`Pinned backup type: ${e.data.value}`, "info");
 						break;
 					}
 					case "AdEnded":
-						if (isStaleChannelEvent(e.data.channel || null)) {
+						if (isStalePlaybackEvent(e.data)) {
 							_log(
-								`Ignoring stale AdEnded event for ${e.data.channel}`,
+								`Ignoring stale AdEnded event for ${e.data.mediaKey || e.data.channel}`,
 								"info",
 							);
 							break;
 						}
 						__TTVAB_STATE__.CurrentAdChannel = null;
+						__TTVAB_STATE__.CurrentAdMediaKey = null;
 						__TTVAB_STATE__.PinnedBackupPlayerType = null;
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+						__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 						__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 						_broadcastWorkers({
-							key: "UpdateCurrentAdChannel",
+							key: "UpdateCurrentAdContext",
 							value: null,
 						});
 						_broadcastWorkers({
-							key: "UpdatePinnedBackupPlayerType",
+							key: "UpdatePinnedBackupPlayerContext",
 							value: null,
-							channel: null,
 						});
+						if (typeof _clearUserPauseIntent === "function") {
+							_clearUserPauseIntent(
+								e.data.channel || null,
+								e.data.mediaKey || null,
+							);
+						}
+						if (typeof _suppressPauseIntent === "function") {
+							_suppressPauseIntent(
+								e.data.channel || null,
+								e.data.mediaKey || null,
+								3000,
+							);
+						}
 						_log("Ad ended", "success");
 						try {
 							const removableSelectors = [
@@ -648,8 +762,13 @@ function _hookWorker() {
 								".mini-player",
 								'[class*="mini-player"]',
 								'[class*="pip-container"]',
-								'div[data-test-selector="display-ad"]',
+								'[data-test-selector="display-ad"]',
+								'[data-test-selector="ad-banner"]',
 								'[data-a-target="ads-banner"]',
+								'iframe[data-test-selector^="sda-iframe-"]',
+								'iframe[title="Stream Display Ad"]',
+								'iframe[class*="stream-display-ad__iframe_lower-third"]',
+								'[data-ttvab-player-ad-banner="true"]',
 							];
 							const resetOnlySelectors = [
 								".stream-display-ad",
@@ -709,12 +828,39 @@ function _hookWorker() {
 							});
 						} catch (_e) {}
 						if (typeof _restoreSuppressedMediaAfterAd === "function") {
-							_restoreSuppressedMediaAfterAd(e.data.channel || null);
+							_restoreSuppressedMediaAfterAd(
+								e.data.channel || null,
+								e.data.mediaKey || null,
+							);
 						}
 						if (typeof _resumePlayerAfterAdIfNeeded === "function") {
 							setTimeout(() => {
-								_resumePlayerAfterAdIfNeeded(e.data.channel || null);
+								_resumePlayerAfterAdIfNeeded(
+									e.data.channel || null,
+									e.data.mediaKey || null,
+								);
 							}, 150);
+						}
+						if (typeof _scheduleResumeRetries === "function") {
+							_scheduleResumeRetries(
+								e.data.channel || null,
+								e.data.mediaKey || null,
+								[250, 700, 1400, 2400],
+							);
+						}
+						if (typeof _resumeActivePlayerIfPaused === "function") {
+							setTimeout(() => {
+								_resumeActivePlayerIfPaused(
+									e.data.channel || null,
+									e.data.mediaKey || null,
+								);
+							}, 320);
+							setTimeout(() => {
+								_resumeActivePlayerIfPaused(
+									e.data.channel || null,
+									e.data.mediaKey || null,
+								);
+							}, 850);
 						}
 						break;
 					case "PauseResumePlayer":
@@ -724,9 +870,9 @@ function _hookWorker() {
 						}
 						break;
 					case "ReloadPlayer":
-						if (isStaleChannelEvent(e.data.channel || null)) {
+						if (isStalePlaybackEvent(e.data)) {
 							_log(
-								`Ignoring stale ReloadPlayer event for ${e.data.channel}`,
+								`Ignoring stale ReloadPlayer event for ${e.data.mediaKey || e.data.channel}`,
 								"info",
 							);
 							break;
@@ -739,6 +885,7 @@ function _hookWorker() {
 				}
 			});
 
+			const _workerUrl = url;
 			const workerOpts = opts;
 			let restartAttempts = 0;
 			const MAX_RESTART_ATTEMPTS = 3;
@@ -768,14 +915,7 @@ function _hookWorker() {
 
 					setTimeout(() => {
 						try {
-							const restartCode = this.__ttvabInjectedCode;
-							if (!restartCode)
-								throw new Error("No injected code stored for restart");
-							const restartBlobUrl = URL.createObjectURL(
-								new Blob([restartCode]),
-							);
-							new window.Worker(restartBlobUrl, workerOpts);
-							setTimeout(() => URL.revokeObjectURL(restartBlobUrl), 0);
+							new window.Worker(_workerUrl, workerOpts);
 							_log("Worker restarted", "success");
 							restartAttempts = 0;
 						} catch (restartErr) {
@@ -795,13 +935,28 @@ function _hookWorker() {
 				});
 				this.postMessage({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
 				this.postMessage({
-					key: "UpdateCurrentAdChannel",
-					value: __TTVAB_STATE__.CurrentAdChannel,
+					key: "UpdatePageContext",
+					value: {
+						mediaType: __TTVAB_STATE__.PageMediaType,
+						channelName: __TTVAB_STATE__.PageChannel,
+						vodID: __TTVAB_STATE__.PageVodID,
+						mediaKey: __TTVAB_STATE__.PageMediaKey,
+					},
 				});
 				this.postMessage({
-					key: "UpdatePinnedBackupPlayerType",
-					value: __TTVAB_STATE__.PinnedBackupPlayerType,
-					channel: __TTVAB_STATE__.PinnedBackupPlayerChannel,
+					key: "UpdateCurrentAdContext",
+					value: {
+						channelName: __TTVAB_STATE__.CurrentAdChannel,
+						mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
+					},
+				});
+				this.postMessage({
+					key: "UpdatePinnedBackupPlayerContext",
+					value: {
+						type: __TTVAB_STATE__.PinnedBackupPlayerType,
+						channelName: __TTVAB_STATE__.PinnedBackupPlayerChannel,
+						mediaKey: __TTVAB_STATE__.PinnedBackupPlayerMediaKey,
+					},
 				});
 			} catch {}
 
@@ -824,21 +979,6 @@ function _hookWorker() {
 	});
 }
 
-function _hookStorage() {
-	try {
-		const originalGetItem = localStorage.getItem.bind(localStorage);
-		localStorage.getItem = (key) => {
-			const value = originalGetItem(key);
-			if (key === "unique_id" && value) __TTVAB_STATE__.GQLDeviceID = value;
-			return value;
-		};
-		const deviceId = originalGetItem("unique_id");
-		if (deviceId) __TTVAB_STATE__.GQLDeviceID = deviceId;
-	} catch (e) {
-		_log(`Storage hook error: ${e.message}`, "warning");
-	}
-}
-
 function _hookMainFetch() {
 	const realFetch = window.fetch;
 	window.__TTVAB_REAL_FETCH__ = realFetch;
@@ -853,13 +993,13 @@ function _hookMainFetch() {
 	};
 	const rewritePlaybackAccessTokenBody = (bodyText) => {
 		if (typeof bodyText !== "string" || !bodyText) {
-			return { bodyText, changed: false, rewrites: [] };
+			return { bodyText, changed: false };
 		}
 
 		try {
 			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType;
 			if (!forceType) {
-				return { bodyText, changed: false, rewrites: [] };
+				return { bodyText, changed: false };
 			}
 			const parsed = JSON.parse(bodyText);
 			const operations = Array.isArray(parsed) ? parsed : [parsed];
@@ -873,8 +1013,7 @@ function _hookMainFetch() {
 					typeof op.variables.playerType === "string" &&
 					op.variables.playerType !== forceType
 				) {
-					const nextPreviousPlayerType = op.variables.playerType;
-					previousPlayerType = previousPlayerType || nextPreviousPlayerType;
+					previousPlayerType = previousPlayerType || op.variables.playerType;
 					op.variables.playerType = forceType;
 					op.variables.platform = forceType === "autoplay" ? "android" : "web";
 					changed = true;
@@ -889,12 +1028,11 @@ function _hookMainFetch() {
 				return {
 					bodyText: JSON.stringify(parsed),
 					changed: true,
-					rewrites: [],
 				};
 			}
 		} catch {}
 
-		return { bodyText, changed: false, rewrites: [] };
+		return { bodyText, changed: false };
 	};
 	const updatePlaybackAccessTokenHash = (hash) => {
 		if (!hash || __TTVAB_STATE__.PlaybackAccessTokenHash === hash) return;
@@ -944,8 +1082,6 @@ function _hookMainFetch() {
 				if (typeof tokenValue !== "string" || !tokenValue) continue;
 				try {
 					const tokenPayload = JSON.parse(tokenValue);
-					// These token flags are advisory and commonly stay true across
-					// ordinary channel switches, so they must not drive the blocked counter.
 					const effectivePlayerType =
 						tokenPayload?.playerType || tokenPayload?.player_type || null;
 					if (typeof effectivePlayerType === "string") {
@@ -961,6 +1097,7 @@ function _hookMainFetch() {
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
 			if (urlStr.includes("gql.twitch.tv/gql")) {
+				_syncStoredDeviceId();
 				let nextArgs = args;
 				let headers = opts?.headers;
 

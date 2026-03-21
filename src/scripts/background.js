@@ -34,12 +34,33 @@ function isPlainObject(value) {
 	return prototype === Object.prototype || prototype === null;
 }
 
+function coerceMessageObject(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return null;
+	}
+	if (isPlainObject(value)) {
+		return value;
+	}
+	try {
+		const cloned = JSON.parse(JSON.stringify(value));
+		return isPlainObject(cloned) ? cloned : null;
+	} catch {}
+	try {
+		const cloned = Object.create(null);
+		for (const [key, entryValue] of Object.entries(value)) {
+			cloned[key] = entryValue;
+		}
+		return cloned;
+	} catch {}
+	return null;
+}
+
 function getMessageData(value) {
-	return isPlainObject(value) ? value : null;
+	return coerceMessageObject(value);
 }
 
 function getMessageDetail(value) {
-	return isPlainObject(value) ? value : null;
+	return coerceMessageObject(value);
 }
 
 function createChannelsMap() {
@@ -138,6 +159,11 @@ const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
 
 let persistChain = Promise.resolve();
+const liveCounterState = {
+	ads: 0,
+	domAds: 0,
+	hydrated: false,
+};
 
 function storageLocalGet(keys) {
 	return new Promise((resolve, reject) => {
@@ -161,6 +187,57 @@ function storageLocalSet(value) {
 			resolve();
 		});
 	});
+}
+
+function broadcastPopupCounterPreview(adsCount, domAdsCount) {
+	try {
+		chrome.runtime.sendMessage({
+			type: "ttvab-popup-counter-preview",
+			detail: {
+				adsCount: normalizeCount(adsCount),
+				domAdsCount: normalizeCount(domAdsCount),
+			},
+		});
+	} catch {}
+}
+
+async function ensureLiveCounterState() {
+	if (liveCounterState.hydrated) {
+		return {
+			ads: normalizeCount(liveCounterState.ads),
+			domAds: normalizeCount(liveCounterState.domAds),
+		};
+	}
+
+	const stored = await storageLocalGet(["ttvAdsBlocked", "ttvDomAdsBlocked"]);
+	liveCounterState.ads = normalizeCount(stored.ttvAdsBlocked);
+	liveCounterState.domAds = normalizeCount(stored.ttvDomAdsBlocked);
+	liveCounterState.hydrated = true;
+	return {
+		ads: liveCounterState.ads,
+		domAds: liveCounterState.domAds,
+	};
+}
+
+async function getLiveCounterState() {
+	return ensureLiveCounterState();
+}
+
+async function applyLiveCounterPreview(detail) {
+	const safeDetail = getMessageDetail(detail);
+	const previewAds = normalizeCount(safeDetail?.adsCount);
+	const previewDomAds = normalizeCount(safeDetail?.domAdsCount);
+	const current = await ensureLiveCounterState();
+
+	liveCounterState.ads = Math.max(current.ads, previewAds);
+	liveCounterState.domAds = Math.max(current.domAds, previewDomAds);
+
+	broadcastPopupCounterPreview(liveCounterState.ads, liveCounterState.domAds);
+
+	return {
+		ads: liveCounterState.ads,
+		domAds: liveCounterState.domAds,
+	};
 }
 
 function normalizeAchievementList(value) {
@@ -304,6 +381,12 @@ async function persistCounterDelta(detail) {
 		ttvStats: stats,
 	});
 
+	liveCounterState.ads = nextAds;
+	liveCounterState.domAds = nextDomAds;
+	liveCounterState.hydrated = true;
+
+	broadcastPopupCounterPreview(nextAds, nextDomAds);
+
 	return {
 		ok: true,
 		counts: {
@@ -324,7 +407,61 @@ function enqueuePersist(task) {
 
 chrome.runtime.onMessage.addListener((rawMessage, _sender, sendResponse) => {
 	const message = getMessageData(rawMessage);
-	if (!message || message.type !== "ttvab-persist-counters") {
+	if (!message) {
+		return undefined;
+	}
+
+	if (message.type === "ttvab-get-counters") {
+		enqueuePersist(async () => {
+			try {
+				const counts = await getLiveCounterState();
+				return { ok: true, counts };
+			} catch (error) {
+				return {
+					ok: false,
+					error: error instanceof Error ? error.message : String(error),
+				};
+			}
+		})
+			.then((response) => {
+				sendResponse(response);
+			})
+			.catch((error) => {
+				sendResponse({
+					ok: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			});
+
+		return true;
+	}
+
+	if (message.type === "ttvab-preview-counters") {
+		enqueuePersist(async () => {
+			try {
+				const counts = await applyLiveCounterPreview(message.detail);
+				return { ok: true, counts };
+			} catch (error) {
+				return {
+					ok: false,
+					error: error instanceof Error ? error.message : String(error),
+				};
+			}
+		})
+			.then((response) => {
+				sendResponse(response);
+			})
+			.catch((error) => {
+				sendResponse({
+					ok: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			});
+
+		return true;
+	}
+
+	if (message.type !== "ttvab-persist-counters") {
 		return undefined;
 	}
 

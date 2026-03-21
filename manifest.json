@@ -1,6 +1,8 @@
 {
 	"manifest_version": 3,
-	"version": "4.3.6",
+	"version": "5.0.0",
+	"homepage_url": "https://github.com/GosuDRM/TTV-AB",
+	"short_name": "TTV AB",
 	"name": "__MSG_extName__",
 	"description": "__MSG_extDesc__",
 	"default_locale": "en",
@@ -9,16 +11,6 @@
 	},
 	"permissions": ["storage"],
 	"host_permissions": ["*://*.twitch.tv/*"],
-	"browser_specific_settings": {
-		"gecko": {
-			"id": "{71e91189-9cd2-4e46-895d-bcc38f0053c4}",
-			"strict_min_version": "142.0",
-			"data_collection_permissions": {
-				"required": ["none"],
-				"optional": []
-			}
-		}
-	},
 	"content_scripts": [
 		{
 			"matches": ["*://*.twitch.tv/*"],
@@ -35,18 +27,26 @@
 	],
 	"action": {
 		"default_popup": "src/popup/popup.html",
+		"default_title": "__MSG_extName__",
 		"default_icon": {
 			"16": "assets/icons/icon16.png",
 			"48": "assets/icons/icon48.png",
 			"128": "assets/icons/icon128.png"
-		},
-		"default_title": "__MSG_extName__"
+		}
 	},
 	"icons": {
 		"16": "assets/icons/icon16.png",
 		"48": "assets/icons/icon48.png",
 		"128": "assets/icons/icon128.png"
 	},
-	"homepage_url": "https://github.com/GosuDRM/TTV-AB",
-	"short_name": "TTV AB"
+	"browser_specific_settings": {
+		"gecko": {
+			"id": "{71e91189-9cd2-4e46-895d-bcc38f0053c4}",
+			"strict_min_version": "142.0",
+			"data_collection_permissions": {
+				"required": ["none"],
+				"optional": []
+			}
+		}
+	}
 }
