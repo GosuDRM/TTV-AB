@@ -1,6 +1,6 @@
 {
 	"name": "ttv-ab",
-	"version": "5.0.0",
+	"version": "5.0.1",
 	"description": "Twitch Ad Blocker",
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.8",

@@ -1,10 +1,10 @@
-// TTV AB v5.0.0 - Twitch Ad Blocker
+// TTV AB v5.0.1 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 
 const _$c = {
-	VERSION: "5.0.0",
+	VERSION: "5.0.1",
 	INTERNAL_VERSION: 56,
 	LOG_STYLES: {
 		prefix:
@@ -4246,6 +4246,9 @@ function _$bp() {
 	let scheduledScanTimer = null;
 	let scheduledScanForce = false;
 	let lastScanAt = 0;
+	let cachedMainPlayerElement;
+	let cachedMainPlayerRect;
+	let cachedPlayerOverlayRoots;
 	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
 		'[data-ttvab-player-ad-banner="true"]';
 	const DISPLAY_AD_LABEL_SELECTORS = [
@@ -4323,9 +4326,6 @@ function _$bp() {
 		'[class*="video-player"]',
 		'[class*="VideoPlayer"]',
 		'[data-a-target="video-player"]',
-		"[role='button']",
-		"button",
-		"a",
 	].join(", ");
 
 	function _$ipb() {
@@ -4621,6 +4621,105 @@ function _$bp() {
 				.filter((el, index, list) => el && list.indexOf(el) === index);
 		}
 
+		function _resetPlayerDetectionCaches() {
+			cachedMainPlayerElement = undefined;
+			cachedMainPlayerRect = undefined;
+			cachedPlayerOverlayRoots = undefined;
+		}
+
+		function _pushUniqueElement(list, el) {
+			if (!el || list.includes(el)) return;
+			list.push(el);
+		}
+
+		function _queryWithinRoots(roots, selector) {
+			const matches = [];
+			const seen = new Set();
+			for (const root of roots) {
+				if (!(root instanceof Element)) continue;
+				try {
+					if (root.matches?.(selector) && !seen.has(root)) {
+						seen.add(root);
+						matches.push(root);
+					}
+				} catch {}
+				try {
+					for (const node of root.querySelectorAll(selector)) {
+						if (!seen.has(node)) {
+							seen.add(node);
+							matches.push(node);
+						}
+					}
+				} catch {}
+			}
+			return matches;
+		}
+
+		function _getPlayerOverlaySearchRoots() {
+			if (cachedPlayerOverlayRoots !== undefined) {
+				return cachedPlayerOverlayRoots;
+			}
+
+			const player = _getMainPlayerElement();
+			const playerRect = _getMainPlayerRect();
+			if (!(player instanceof Element) || !playerRect) {
+				cachedPlayerOverlayRoots = [];
+				return cachedPlayerOverlayRoots;
+			}
+
+			const roots = [];
+			let current =
+				player.closest?.('[data-a-target="video-player"]') ||
+				player.parentElement ||
+				player;
+			const maxWidth = Math.min(
+				window.innerWidth * 0.9,
+				playerRect.width + 520,
+			);
+			const maxHeight = Math.min(
+				window.innerHeight * 0.9,
+				playerRect.height + 380,
+			);
+
+			for (let depth = 0; depth < 5 && current; depth += 1) {
+				const rect = current.getBoundingClientRect();
+				const overlapsPlayer =
+					_getRectOverlap(
+						rect.left,
+						rect.right,
+						playerRect.left,
+						playerRect.right,
+					) > 0 &&
+					_getRectOverlap(
+						rect.top,
+						rect.bottom,
+						playerRect.top,
+						playerRect.bottom,
+					) > 0;
+
+				if (overlapsPlayer && rect.width > 0 && rect.height > 0) {
+					_pushUniqueElement(roots, current);
+				}
+
+				if (
+					rect.width > maxWidth ||
+					rect.height > maxHeight ||
+					(depth > 0 && _isSafeElement(current))
+				) {
+					break;
+				}
+
+				current = current.parentElement;
+			}
+
+			if (roots.length === 0) {
+				_pushUniqueElement(roots, player);
+			}
+
+			cachedPlayerOverlayRoots = roots;
+			return cachedPlayerOverlayRoots;
+		}
+
 		function _cleanupAllKnownDisplayArtifacts() {
 			const displayShellNodes = _queryUniqueElements(
 				DISPLAY_AD_SHELL_SELECTORS,
@@ -4719,6 +4818,7 @@ function _$bp() {
 			const shouldForce = force === true;
 			if (!shouldForce && routeUrl === lastRouteUrl) return false;
 			lastRouteUrl = routeUrl;
+			_resetPlayerDetectionCaches();
 			const previousContext = _normalizePlaybackContext({
 				MediaType: __TTVAB_STATE__.PageMediaType,
 				ChannelName: __TTVAB_STATE__.PageChannel,
@@ -4809,7 +4909,16 @@ function _$bp() {
 		function _getDisplayAdLabels() {
 			const labels = [];
 			const seen = new Set();
-			const directLabels = _queryUniqueElements(DISPLAY_AD_LABEL_SELECTORS);
+			const playerRect = _getMainPlayerRect();
+			const searchRoots = _getPlayerOverlaySearchRoots();
+			if (!playerRect || searchRoots.length === 0) {
+				return labels;
+			}
+
+			const directLabels = _queryWithinRoots(
+				searchRoots,
+				DISPLAY_AD_LABEL_SELECTORS.join(", "),
+			);
 			for (const directLabel of directLabels) {
 				const text =
 					directLabel.getAttribute?.("aria-label") ||
@@ -4817,7 +4926,7 @@ function _$bp() {
 					"";
 				if (
 					!_isVisibleElement(directLabel) ||
-					!_isNearMainPlayer(directLabel) ||
+					!_isNearMainPlayer(directLabel, playerRect) ||
 					!_looksLikeAdLabel(text)
 				) {
 					continue;
@@ -4829,7 +4938,8 @@ function _$bp() {
 				);
 			}
 
-			const playerRoots = document.querySelectorAll(
+			const playerRoots = _queryWithinRoots(
+				searchRoots,
 				'[data-a-target="video-player"], [class*="video-player"], video',
 			);
 
@@ -4883,6 +4993,10 @@ function _$bp() {
 		}
 
 		function _getMainPlayerElement() {
+			if (cachedMainPlayerElement !== undefined) {
+				return cachedMainPlayerElement;
+			}
+
 			const candidates = document.querySelectorAll(
 				'video, [data-a-target="video-player"]',
 			);
@@ -4900,12 +5014,18 @@ function _$bp() {
 				}
 			}
 
-			return bestElement;
+			cachedMainPlayerElement = bestElement;
+			return cachedMainPlayerElement;
 		}
 
 		function _getMainPlayerRect() {
+			if (cachedMainPlayerRect !== undefined) {
+				return cachedMainPlayerRect;
+			}
+
 			const player = _getMainPlayerElement();
-			return player ? player.getBoundingClientRect() : null;
+			cachedMainPlayerRect = player ? player.getBoundingClientRect() : null;
+			return cachedMainPlayerRect;
 		}
 
 		function _getMediaSourceUrl(media) {
@@ -4980,10 +5100,18 @@ function _$bp() {
 
 		function _getPlayerAdCallToActionNodes() {
 			const nodes = [];
-			const ctas = document.querySelectorAll("a, button, [role='button']");
+			const playerRect = _getMainPlayerRect();
+			if (!playerRect) return nodes;
+
+			const ctas = _queryWithinRoots(
+				_getPlayerOverlaySearchRoots(),
+				"a, button, [role='button']",
+			);
 
 			for (const cta of ctas) {
-				if (!_isVisibleElement(cta) || !_isNearMainPlayer(cta)) continue;
+				if (!_isVisibleElement(cta) || !_isNearMainPlayer(cta, playerRect)) {
+					continue;
+				}
 				const text = [
 					cta.textContent || "",
 					cta.getAttribute("aria-label") || "",
@@ -5010,11 +5138,14 @@ function _$bp() {
 			const playerRect = _getMainPlayerRect();
 			if (!playerRect) return nodes;
 
-			const candidates = document.querySelectorAll(
+			const candidates = _queryWithinRoots(
+				_getPlayerOverlaySearchRoots(),
 				"span, p, div, h1, h2, h3, [role='heading']",
 			);
 			for (const node of candidates) {
-				if (!_isVisibleElement(node) || !_isNearMainPlayer(node)) continue;
+				if (!_isVisibleElement(node) || !_isNearMainPlayer(node, playerRect)) {
+					continue;
+				}
 				const text = (node.textContent || "").replace(/\s+/g, " ").trim();
 				if (
 					text.length < 24 ||
@@ -5107,30 +5238,33 @@ function _$bp() {
 			);
 		}
 
-		function _isNearMainPlayer(el) {
+		function _isNearMainPlayer(el, playerRect = null) {
 			if (!el || !_isVisibleElement(el)) return false;
-			const playerRect = _getMainPlayerRect();
-			if (!playerRect) return false;
+			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
+			if (!resolvedPlayerRect) return false;
 
 			const rect = el.getBoundingClientRect();
 			const horizontalMargin = Math.max(
 				120,
-				Math.min(260, playerRect.width * 0.2),
+				Math.min(260, resolvedPlayerRect.width * 0.2),
 			);
 			const verticalMargin = Math.max(
 				80,
-				Math.min(180, playerRect.height * 0.2),
+				Math.min(180, resolvedPlayerRect.height * 0.2),
 			);
 
 			return !(
-				rect.right < playerRect.left - horizontalMargin ||
-				rect.left > playerRect.right + horizontalMargin ||
-				rect.bottom < playerRect.top - verticalMargin ||
-				rect.top > playerRect.bottom + verticalMargin
+				rect.right < resolvedPlayerRect.left - horizontalMargin ||
+				rect.left > resolvedPlayerRect.right + horizontalMargin ||
+				rect.bottom < resolvedPlayerRect.top - verticalMargin ||
+				rect.top > resolvedPlayerRect.bottom + verticalMargin
 			);
 		}
 
 		function _hasDirectPlayerAdUiSignal() {
+			const playerRect = _getMainPlayerRect();
+			if (!playerRect) return false;
+
 			const candidateNodes = [
 				..._getDisplayAdLabels(),
 				..._getPlayerAdCallToActionNodes(),
@@ -5148,18 +5282,21 @@ function _$bp() {
 					el &&
 					list.indexOf(el) === index &&
 					_isVisibleElement(el) &&
-					_isNearMainPlayer(el),
+					_isNearMainPlayer(el, playerRect),
 			);
 		}
 
-		function _isDirectPlayerAdMedia(media) {
+		function _isDirectPlayerAdMedia(media, playerRect = null) {
 			if (!(media instanceof HTMLMediaElement)) return false;
 			if (!media.isConnected || media.ended) return false;
 
 			const src = _getMediaSourceUrl(media);
 			if (!DIRECT_PLAYER_AD_MEDIA_URL_PATTERN.test(src)) return false;
 
-			return _isVisibleElement(media) && _isNearMainPlayer(media);
+			return (
+				_isVisibleElement(media) &&
+				_isNearMainPlayer(media, playerRect || _getMainPlayerRect())
+			);
 		}
 
 		function _suppressDirectPlayerAdMedia(media) {
@@ -5257,9 +5394,10 @@ function _$bp() {
 				return false;
 			}
 
+			const playerRect = _getMainPlayerRect();
 			const adMediaNodes = Array.from(
 				document.querySelectorAll("video, audio"),
-			).filter(_isDirectPlayerAdMedia);
+			).filter((media) => _isDirectPlayerAdMedia(media, playerRect));
 			if (adMediaNodes.length === 0) {
 				_resetDirectPlayerAdMediaState();
 				return false;
@@ -5801,6 +5939,7 @@ function _$bp() {
 		}
 
 		function _runScan(force = false) {
+			_resetPlayerDetectionCaches();
 			const now = Date.now();
 			if (!force && now - lastScanAt < 250) {
 				return false;
@@ -5907,6 +6046,7 @@ function _$bp() {
 		let debounceTimer = null;
 		let lastImmediateScan = 0;
 		const observer = new MutationObserver((mutations) => {
+			_resetPlayerDetectionCaches();
 			let shouldScan = false;
 			for (const mutation of mutations) {
 				for (const node of mutation.addedNodes) {
