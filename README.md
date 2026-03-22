@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.0.1-purple)
+![Version](https://img.shields.io/badge/version-5.0.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,6 +57,11 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
+### v5.0.2
+- **Twitch Page Stutter Fix** - Reduced the player-side DOM cleanup hot path that could make Twitch pages hitch or briefly freeze when ad UI appeared, especially during prerolls, display ads, or popup detection.
+- **Overlay Scan Scope Reduction** - Player CTA, banner, and ad-label detection now searches near the active player instead of repeatedly sweeping the full page, cutting expensive layout work during normal playback.
+- **Mutation Noise Filtering** - Generic button and link churn no longer counts as an ad-scan trigger, so routine Twitch UI updates do not keep scheduling unnecessary rescans.
+
 ### v5.0.1
 - **Channel Navigation Pause Fix** - Switching between Twitch channels now clears stale pause intent from the previous player instance so the next stream is less likely to load in a paused state during SPA navigation.
 - **Post-Ad Resume Hardening** - Ad-end and buffer-fix recovery now recheck paused playback and issue guarded resume retries, reducing cases where the player stayed paused until a manual click after ads.
@@ -70,16 +75,6 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Player Overlay Cleanup** - Display-ad cleanup now recognizes the newer player-side `Learn More` CTA and `right after this ad break` banner shell, collapsing VOD ad overlays more reliably.
 - **Direct VOD Video-Ad Suppression** - VOD pages now detect Twitch's injected Amazon MP4 ad media and force playback back to the real archive stream instead of letting the standalone ad video run to completion, while requiring matching ad-UI signals so live/VOD route transitions are not misclassified as standalone ads.
 - **Lower-Third Banner Coverage** - Added support for Twitch's newer `sda-frame` / `stream-lowerthird` lower-third subscription and display-ad banner variant so it is treated as an explicit DOM ad target.
-
-### v4.4.0
-- **Display Ad Feedback Overlay Cleanup** - Player-side display-ad cleanup now targets Twitch's feedback button wrapper as well as the tiny `Ad` label itself, removing leftover `Leave feedback for this Ad` overlays that could remain near the stream player.
-
-### v4.3.9
-- **Display Ad Label Cleanup** - The DOM blocker now collects and hides lingering player-side ad labels directly, removing leftover `Ad` / countdown-style badges that could remain visible after display-ad cleanup.
-
-### v4.3.8
-- **Auto Locale Selection Fix** - `Auto` now resolves from Chrome's UI locale and preferred-language list instead of only `navigator.language`, and it correctly maps Traditional Chinese variants like `zh-HK` and `zh-MO`.
-- **Locale Copy Polish** - Updated shipped non-English popup and manifest strings to read more naturally, reducing awkward direct translations and grammar issues.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

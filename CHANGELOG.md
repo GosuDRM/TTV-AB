@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.2] - 2026-03-23
+
+### Fixed
+- **Twitch Page Stutter** - Reduced the popup/display-ad cleanup hot path that could make Twitch pages hitch or briefly freeze when ad UI appeared, especially during prerolls, display ads, or popup detection.
+- **Player Overlay Search Scope** - CTA, banner, and ad-label detection now searches near the active player instead of repeatedly sweeping the full document, cutting unnecessary layout and selector work during normal playback.
+- **Mutation Scan Noise** - Generic button and link churn no longer counts as an ad-scan trigger, so routine Twitch UI updates do not keep scheduling extra rescans.
+
 ## [5.0.1] - 2026-03-21
 
 ### Highlights
