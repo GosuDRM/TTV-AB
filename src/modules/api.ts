@@ -223,7 +223,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
 
-		const headers = {
+		const headers: Record<string, string> = {
 			"Client-ID": _C.CLIENT_ID,
 			"X-Device-Id": __TTVAB_STATE__.GQLDeviceID || "oauth",
 			"Client-Version": __TTVAB_STATE__.ClientVersion || "k8s-v1",

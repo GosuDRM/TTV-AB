@@ -26,12 +26,18 @@ function normalizeChannelName(value) {
 	return /^[a-z0-9_]{1,25}$/.test(trimmed) ? trimmed : null;
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is PlainObject {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return false;
 	}
 	const prototype = Object.getPrototypeOf(value);
-	return prototype === Object.prototype || prototype === null;
+	if (prototype === null) {
+		return true;
+	}
+	return (
+		Object.prototype.toString.call(value) === "[object Object]" &&
+		Object.getPrototypeOf(prototype) === null
+	);
 }
 
 function getMessageData(value) {
@@ -42,11 +48,11 @@ function getMessageDetail(value) {
 	return isPlainObject(value) ? value : null;
 }
 
-function createChannelsMap() {
+function createChannelsMap(): TTVABChannelMap {
 	return Object.create(null);
 }
 
-function createDailyStatsMap() {
+function createDailyStatsMap(): TTVABDailyStatsMap {
 	return Object.create(null);
 }
 
@@ -107,7 +113,7 @@ function normalizeDailyStatsMap(value) {
 	const todayKey = getTodayKey();
 	for (const [dateKey, entry] of Object.entries(value)) {
 		if (!isValidDateKey(dateKey) || dateKey > todayKey) continue;
-		const safeEntry = isPlainObject(entry) ? entry : {};
+		const safeEntry: PlainObject = isPlainObject(entry) ? entry : {};
 		normalized[dateKey] = {
 			ads: normalizeCount(safeEntry.ads),
 			domAds: normalizeCount(safeEntry.domAds),
@@ -137,9 +143,9 @@ const ACHIEVEMENT_IDS = new Set(
 const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
 
-let persistChain = Promise.resolve();
+let persistChain: Promise<unknown> = Promise.resolve();
 
-function storageLocalGet(keys) {
+function storageLocalGet(keys): Promise<PlainObject> {
 	return new Promise((resolve, reject) => {
 		chrome.storage.local.get(keys, (result) => {
 			if (chrome.runtime.lastError) {
@@ -151,8 +157,8 @@ function storageLocalGet(keys) {
 	});
 }
 
-function storageLocalSet(value) {
-	return new Promise((resolve, reject) => {
+function storageLocalSet(value): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
 		chrome.storage.local.set(value, () => {
 			if (chrome.runtime.lastError) {
 				reject(new Error(chrome.runtime.lastError.message));
@@ -175,7 +181,7 @@ function normalizeAchievementList(value) {
 		: [];
 }
 
-function normalizeStatsState(value) {
+function normalizeStatsState(value): TTVABStatsState {
 	const safeStats = isPlainObject(value) ? value : {};
 	return {
 		daily: normalizeDailyStatsMap(safeStats.daily),
@@ -184,17 +190,22 @@ function normalizeStatsState(value) {
 	};
 }
 
-function normalizeChannelDeltaMap(value, maxTotal) {
+function normalizeChannelDeltaMap(value, maxTotal): TTVABChannelMap {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return createChannelsMap();
 	}
 	let remaining = normalizeCount(maxTotal);
-	const sortedEntries = Object.entries(value)
-		.map(([channelName, count]) => [
-			normalizeChannelName(channelName),
-			normalizeCount(count),
-		])
-		.filter(([channelName, count]) => channelName && count > 0)
+	const sortedEntries = (Object.entries(value) as Array<[string, unknown]>)
+		.map(
+			([channelName, count]) =>
+				[normalizeChannelName(channelName), normalizeCount(count)] as [
+					string | null,
+					number,
+				],
+		)
+		.filter(([channelName, count]) => Boolean(channelName) && count > 0)
+		/** biome-ignore lint/style/noNonNullAssertion: filtered above */
+		.map(([channelName, count]) => [channelName!, count] as [string, number])
 		.sort((a, b) => {
 			const countDiff = normalizeCount(b[1]) - normalizeCount(a[1]);
 			return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);

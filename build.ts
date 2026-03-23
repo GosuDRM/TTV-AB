@@ -1,9 +1,32 @@
 // TTV AB - Build Script
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
-const MODULES_DIR = path.join(__dirname, "src", "modules");
-const OUTPUT_FILE = path.join(__dirname, "src", "scripts", "content.js");
+const SOURCE_ROOT = fs.existsSync(path.join(__dirname, "package.json"))
+	? __dirname
+	: path.resolve(__dirname, "..");
+const DIST_DIR = path.join(SOURCE_ROOT, "dist");
+const MODULES_DIR = path.join(DIST_DIR, "src", "modules");
+const OUTPUT_FILE = path.join(DIST_DIR, "src", "scripts", "content.js");
+type TranslationLocale = Record<string, unknown> & {
+	achievementsMap?: Record<
+		string,
+		{
+			name?: string;
+			desc?: string;
+		}
+	>;
+};
+const RUNTIME_TSCONFIGS = ["tsconfig.json", "tsconfig.runtime.json"];
+const STATIC_ROOT_FILES = [
+	"manifest.json",
+	"CHANGELOG.md",
+	"LICENSE",
+	"PRIVACY.md",
+	"README.md",
+];
+const STATIC_ROOT_DIRECTORIES = ["assets", "_locales"];
 
 const MODULE_ORDER = [
 	"constants.js",
@@ -99,14 +122,14 @@ function readVersionSources() {
 
 	try {
 		const packageJson = JSON.parse(
-			fs.readFileSync(path.join(__dirname, "package.json"), "utf8"),
+			fs.readFileSync(path.join(SOURCE_ROOT, "package.json"), "utf8"),
 		);
 		packageVersion = packageJson.version || packageVersion;
 	} catch {}
 
 	try {
 		const manifest = JSON.parse(
-			fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"),
+			fs.readFileSync(path.join(SOURCE_ROOT, "manifest.json"), "utf8"),
 		);
 		manifestVersion = manifest.version || manifestVersion;
 	} catch {}
@@ -148,14 +171,37 @@ function normalizeCodeSnippet(code) {
 		.trim();
 }
 
+function copyFileToDist(relativePath) {
+	const sourcePath = path.join(SOURCE_ROOT, relativePath);
+	const destinationPath = path.join(DIST_DIR, relativePath);
+	fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+	fs.copyFileSync(sourcePath, destinationPath);
+}
+
+function copyDirectoryToDist(relativePath) {
+	const sourcePath = path.join(SOURCE_ROOT, relativePath);
+	const destinationPath = path.join(DIST_DIR, relativePath);
+	fs.cpSync(sourcePath, destinationPath, { recursive: true });
+}
+
+function prepareDistStaticFiles() {
+	for (const relativePath of STATIC_ROOT_FILES) {
+		copyFileToDist(relativePath);
+	}
+	for (const relativePath of STATIC_ROOT_DIRECTORIES) {
+		copyDirectoryToDist(relativePath);
+	}
+}
+
 function syncPopupHtmlFallbacks() {
-	const popupHtmlPath = path.join(__dirname, "src", "popup", "popup.html");
+	const popupHtmlPath = path.join(SOURCE_ROOT, "src", "popup", "popup.html");
 	const translationsPath = path.join(
-		__dirname,
+		DIST_DIR,
 		"src",
 		"popup",
 		"translations.js",
 	);
+	const outputPopupHtmlPath = path.join(DIST_DIR, "src", "popup", "popup.html");
 	const popupHtmlSource = fs.readFileSync(popupHtmlPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
 	const translations = Function(
@@ -182,27 +228,26 @@ function syncPopupHtmlFallbacks() {
 		/ {12}<div class="stats-section">\r?\n {16}<div class="stats-section-title">📈 <span data-i18n="last7Days">[\s\S]*?<\/div>\r?\n {16}<div class="chart-avg" id="chartAvg">[\s\S]*?<\/div>\r?\n {12}<\/div>/,
 		expectedChartSection,
 	);
-	if (syncedPopupHtmlSource !== popupHtmlSource) {
-		fs.writeFileSync(popupHtmlPath, syncedPopupHtmlSource);
-	}
+	fs.mkdirSync(path.dirname(outputPopupHtmlPath), { recursive: true });
+	fs.writeFileSync(outputPopupHtmlPath, syncedPopupHtmlSource);
 }
 
 function validateSharedDefinitions() {
 	const { constantsVersion, packageVersion, manifestVersion } =
 		readVersionSources();
 	const manifest = JSON.parse(
-		fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"),
+		fs.readFileSync(path.join(DIST_DIR, "manifest.json"), "utf8"),
 	);
 	const packageJson = JSON.parse(
-		fs.readFileSync(path.join(__dirname, "package.json"), "utf8"),
+		fs.readFileSync(path.join(SOURCE_ROOT, "package.json"), "utf8"),
 	);
 	const packageLock = JSON.parse(
-		fs.readFileSync(path.join(__dirname, "package-lock.json"), "utf8"),
+		fs.readFileSync(path.join(SOURCE_ROOT, "package-lock.json"), "utf8"),
 	);
 	const canonicalRepoUrl = "https://github.com/GosuDRM/TTV-AB";
 	if (
 		manifest.default_locale &&
-		!fs.existsSync(path.join(__dirname, "_locales", manifest.default_locale))
+		!fs.existsSync(path.join(DIST_DIR, "_locales", manifest.default_locale))
 	) {
 		throw new Error(
 			`Manifest default_locale directory is missing: ${manifest.default_locale}`,
@@ -210,13 +255,13 @@ function validateSharedDefinitions() {
 	}
 	for (const contentScript of manifest.content_scripts || []) {
 		for (const file of contentScript.js || []) {
-			if (!fs.existsSync(path.join(__dirname, file))) {
+			if (!fs.existsSync(path.join(DIST_DIR, file))) {
 				throw new Error(`Manifest content script is missing: ${file}`);
 			}
 		}
 	}
 	if (manifest.action?.default_popup) {
-		if (!fs.existsSync(path.join(__dirname, manifest.action.default_popup))) {
+		if (!fs.existsSync(path.join(DIST_DIR, manifest.action.default_popup))) {
 			throw new Error(
 				`Manifest default_popup is missing: ${manifest.action.default_popup}`,
 			);
@@ -229,7 +274,7 @@ function validateSharedDefinitions() {
 	}
 	if (manifest.background?.service_worker) {
 		if (
-			!fs.existsSync(path.join(__dirname, manifest.background.service_worker))
+			!fs.existsSync(path.join(DIST_DIR, manifest.background.service_worker))
 		) {
 			throw new Error(
 				`Manifest background service_worker is missing: ${manifest.background.service_worker}`,
@@ -246,7 +291,7 @@ function validateSharedDefinitions() {
 		manifest.action?.default_icon || {},
 	]) {
 		for (const iconPath of Object.values(iconGroup)) {
-			if (!fs.existsSync(path.join(__dirname, iconPath))) {
+			if (!fs.existsSync(path.join(DIST_DIR, iconPath))) {
 				throw new Error(`Manifest icon is missing: ${iconPath}`);
 			}
 		}
@@ -369,31 +414,26 @@ function validateSharedDefinitions() {
 			`package-lock version mismatch: package=${packageVersion}, lock=${packageLock.version || "missing"}, root=${packageLock.packages?.[""]?.version || "missing"}`,
 		);
 	}
-	const readmePath = path.join(__dirname, "README.md");
-	const privacyPath = path.join(__dirname, "PRIVACY.md");
-	const changelogPath = path.join(__dirname, "CHANGELOG.md");
-	const localesPath = path.join(__dirname, "_locales");
-	const popupPath = path.join(__dirname, "src", "popup", "popup.js");
-	const bridgePath = path.join(__dirname, "src", "scripts", "bridge.js");
-	const backgroundPath = path.join(
-		__dirname,
-		"src",
-		"scripts",
-		"background.js",
-	);
-	const uiPath = path.join(__dirname, "src", "modules", "ui.js");
+	const readmePath = path.join(SOURCE_ROOT, "README.md");
+	const privacyPath = path.join(SOURCE_ROOT, "PRIVACY.md");
+	const changelogPath = path.join(SOURCE_ROOT, "CHANGELOG.md");
+	const localesPath = path.join(SOURCE_ROOT, "_locales");
+	const popupPath = path.join(DIST_DIR, "src", "popup", "popup.js");
+	const bridgePath = path.join(DIST_DIR, "src", "scripts", "bridge.js");
+	const backgroundPath = path.join(DIST_DIR, "src", "scripts", "background.js");
+	const uiPath = path.join(DIST_DIR, "src", "modules", "ui.js");
 	const translationsPath = path.join(
-		__dirname,
+		DIST_DIR,
 		"src",
 		"popup",
 		"translations.js",
 	);
-	const initPath = path.join(__dirname, "src", "modules", "init.js");
-	const hooksPath = path.join(__dirname, "src", "modules", "hooks.js");
-	const workerPath = path.join(__dirname, "src", "modules", "worker.js");
-	const processorPath = path.join(__dirname, "src", "modules", "processor.js");
-	const apiPath = path.join(__dirname, "src", "modules", "api.js");
-	const constantsPath = path.join(__dirname, "src", "modules", "constants.js");
+	const initPath = path.join(DIST_DIR, "src", "modules", "init.js");
+	const hooksPath = path.join(DIST_DIR, "src", "modules", "hooks.js");
+	const workerPath = path.join(DIST_DIR, "src", "modules", "worker.js");
+	const processorPath = path.join(DIST_DIR, "src", "modules", "processor.js");
+	const apiPath = path.join(DIST_DIR, "src", "modules", "api.js");
+	const constantsPath = path.join(DIST_DIR, "src", "modules", "constants.js");
 	const readmeSource = fs.readFileSync(readmePath, "utf8");
 	const privacySource = fs.readFileSync(privacyPath, "utf8");
 	const changelogSource = fs.readFileSync(changelogPath, "utf8");
@@ -453,7 +493,7 @@ function validateSharedDefinitions() {
 	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
 	const popupHtmlSource = fs.readFileSync(
-		path.join(__dirname, "src", "popup", "popup.html"),
+		path.join(DIST_DIR, "src", "popup", "popup.html"),
 		"utf8",
 	);
 	if (!popupHtmlSource.includes(`href="${canonicalRepoUrl}"`)) {
@@ -559,7 +599,9 @@ function validateSharedDefinitions() {
 	const backgroundSource = fs.readFileSync(backgroundPath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
-	const translationsContext = {};
+	const translationsContext: {
+		TRANSLATIONS?: Record<string, TranslationLocale>;
+	} = {};
 	Function(
 		"context",
 		`${translationsSource}; context.TRANSLATIONS = TRANSLATIONS;`,
@@ -627,7 +669,7 @@ function validateSharedDefinitions() {
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
 	const workerSource = fs.readFileSync(workerPath, "utf8");
 	const parserSource = fs.readFileSync(
-		path.join(__dirname, "src", "modules", "parser.js"),
+		path.join(DIST_DIR, "src", "modules", "parser.js"),
 		"utf8",
 	);
 	const processorSource = fs.readFileSync(processorPath, "utf8");
@@ -716,7 +758,7 @@ function validateSharedDefinitions() {
 	const uiAchievementInfo = Function(`return (${uiAchievementInfoLiteral});`)();
 	const translations = Function(
 		`${translationsSource}; return TRANSLATIONS;`,
-	)();
+	)() as Record<string, TranslationLocale>;
 
 	const popupComparable = popupAchievements.map(({ id, threshold, type }) => ({
 		id,
@@ -1247,24 +1289,41 @@ function minifyCode(code) {
 	return result;
 }
 
+function compileTypeScriptSources() {
+	console.log("Compiling TypeScript...\n");
+	const tscBinPath = require.resolve("typescript/bin/tsc");
+	fs.rmSync(DIST_DIR, { recursive: true, force: true });
+
+	for (const configPath of RUNTIME_TSCONFIGS) {
+		execFileSync(process.execPath, [tscBinPath, "-p", configPath], {
+			cwd: SOURCE_ROOT,
+			stdio: "inherit",
+		});
+		console.log(`  OK ${configPath}`);
+	}
+
+	console.log("");
+}
+
 function build() {
 	console.log("Building TTV AB...\n");
 
-	syncPopupHtmlFallbacks();
-	validateSharedDefinitions();
-	const version = getVersion();
+	try {
+		compileTypeScriptSources();
+		prepareDistStaticFiles();
+		syncPopupHtmlFallbacks();
+		const version = getVersion();
 
-	const HEADER = `// TTV AB v${version} - Twitch Ad Blocker
+		const HEADER = `// TTV AB v${version} - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 `;
 
-	const FOOTER = `
+		const FOOTER = `
 _$in();
 })();`;
 
-	try {
 		let content = HEADER;
 		let moduleCount = 0;
 
@@ -1286,7 +1345,13 @@ _$in();
 		console.log("\nMinifying...");
 		content = minifyCode(content).trimStart();
 
+		fs.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
 		fs.writeFileSync(OUTPUT_FILE, content);
+		validateSharedDefinitions();
+		fs.rmSync(path.join(DIST_DIR, "src", "modules"), {
+			recursive: true,
+			force: true,
+		});
 
 		const stats = fs.statSync(OUTPUT_FILE);
 		const buildTime = new Date().toLocaleTimeString();

@@ -117,7 +117,7 @@ function _hookWorkerFetch() {
 		}
 	}
 
-	fetch = async function (...args) {
+	globalThis.fetch = async function (...args) {
 		const [resource, opts] = args;
 		const requestUrl =
 			typeof resource === "string"
@@ -545,17 +545,18 @@ function _hookWorker() {
 							break;
 						}
 						_S.adsBlocked = e.data.count;
-						window.postMessage(
-							{
-								type: "ttvab-ad-blocked",
-								detail: {
-									count: e.data.count,
-									channel: e.data.channel || null,
-									mediaKey: e.data.mediaKey || null,
-								},
-							},
-							"*",
-						);
+						{
+							const detail = {
+								count: e.data.count,
+								delta: Number.isFinite(e.data.delta) ? e.data.delta : 1,
+								channel: e.data.channel || null,
+								mediaKey: e.data.mediaKey || null,
+								pageChannel: e.data.pageChannel || null,
+								pageMediaKey: e.data.pageMediaKey || null,
+							};
+							_emitInternalMessage("ttvab-ad-blocked", detail);
+							_sendBridgeMessage("ttvab-ad-blocked", detail);
+						}
 						_log(`Ad blocked! Total: ${e.data.count}`, "success");
 						break;
 					case "AdDetected":
@@ -890,6 +891,7 @@ function _hookWorker() {
 			const workerOpts = opts;
 			let restartAttempts = 0;
 			const MAX_RESTART_ATTEMPTS = 3;
+			const MAX_ACTIVE_WORKERS = 2;
 
 			this.addEventListener("error", (e) => {
 				if (this.__TTVABIntentionallyTerminated) {
@@ -915,6 +917,34 @@ function _hookWorker() {
 					);
 
 					setTimeout(() => {
+						if (this.__TTVABIntentionallyTerminated) {
+							return;
+						}
+						const currentContext = _getPlaybackContextFromUrl(
+							window.location.href,
+						);
+						const initialMediaKey = _normalizeMediaKey(
+							pagePlaybackContext.MediaKey,
+						);
+						const currentMediaKey = _normalizeMediaKey(currentContext.MediaKey);
+						const initialChannel = _normalizeChannelName(
+							pagePlaybackContext.ChannelName,
+						);
+						const currentChannel = _normalizeChannelName(
+							currentContext.ChannelName,
+						);
+						if (
+							(initialMediaKey &&
+								currentMediaKey &&
+								initialMediaKey !== currentMediaKey) ||
+							(!initialMediaKey &&
+								initialChannel &&
+								currentChannel &&
+								initialChannel !== currentChannel)
+						) {
+							_log("Skipping stale worker restart after navigation", "info");
+							return;
+						}
 						try {
 							new window.Worker(_workerUrl, workerOpts);
 							_log("Worker restarted", "success");
@@ -928,6 +958,8 @@ function _hookWorker() {
 				}
 			});
 
+			this.__TTVABCreatedAt = Date.now();
+			this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
 			_S.workers.push(this);
 			try {
 				this.postMessage({
@@ -961,7 +993,7 @@ function _hookWorker() {
 				});
 			} catch {}
 
-			if (_S.workers.length > 5) {
+			if (_S.workers.length > MAX_ACTIVE_WORKERS) {
 				const oldWorker = _S.workers.shift();
 				try {
 					oldWorker.__TTVABIntentionallyTerminated = true;

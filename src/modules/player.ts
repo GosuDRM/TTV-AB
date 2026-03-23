@@ -585,7 +585,11 @@ function _restorePlayerPreferenceSnapshot(snapshot) {
 	}
 }
 
-function _doPlayerTask(isPausePlay, isReload, options = {}) {
+function _doPlayerTask(
+	isPausePlay,
+	isReload,
+	options: { reason?: string } = {},
+) {
 	const { player, state: playerState } = _getPlayerAndState();
 
 	if (!player) {

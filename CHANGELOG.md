@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.3] - 2026-03-24
+
+### Changed
+- **JavaScript-to-TypeScript Repo Conversion** - The repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution for wider Node compatibility, unpacked-extension loading now targets `dist/manifest.json`, and Chrome store packaging can be generated locally with `npm run package:chrome`.
+
+### Fixed
+- **Spoofable Bridge Messages** - Sensitive page-to-extension state sync no longer relies on raw `window.postMessage` traffic for toggles, counter restores, achievements, and ad-count persistence events. A dedicated `MessagePort` bridge now carries those messages through a private channel instead.
+- **Counter / Worker Event Hardening** - Bridge-side stat persistence no longer stops retrying after a couple of transient runtime failures, DOM cleanup kinds now stay aligned with emitted runtime events, explicit per-event deltas are preserved through the bridge pipeline, VOD/live route filtering now uses media keys instead of only live-channel names, and stale worker restarts are skipped after Twitch SPA navigation.
+- **DOM Scan / Navigation Hot Path** - Player-side popup, display-ad, and direct-media detection no longer repeat the same full-document selector passes and O(nÂ²) dedupe patterns on every scan. The runtime now reuses Set-based selector dedupe, combines visible/near-player checks, filters mutation noise with grouped selectors, tries the cheaper targeted popup selectors before the broad fallback sweep, defers route-change rescans into a short settled burst, and keeps fewer stale Twitch workers alive during SPA channel navigation.
+
 ## [5.0.2] - 2026-03-23
 
 ### Fixed

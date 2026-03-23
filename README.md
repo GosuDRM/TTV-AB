@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.0.2-purple)
+![Version](https://img.shields.io/badge/version-5.0.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,6 +57,12 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
+### v5.0.3
+- **JavaScript-to-TypeScript Repo Conversion** - The repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution for wider Node compatibility, unpacked extension loading now targets `dist/manifest.json`, and Chrome store packaging can be generated locally with `npm run package:chrome`.
+- **Private Bridge Channel** - Sensitive page-to-extension state sync now uses a dedicated `MessagePort` instead of raw page-visible `window.postMessage` traffic, reducing spoofing risk for toggles, counters, and achievement events.
+- **Stats / Worker Hardening** - Background counter persistence now retries with backoff instead of giving up after transient failures, the bridge keeps DOM cleanup kinds and route-aware media keys aligned across live and VOD navigation, and stale worker restarts are skipped after Twitch SPA route changes.
+- **Performance Tuning** - The player-side DOM scanner now does less duplicate selector work during popup, display-ad, and direct-media checks by using Set-based dedupe, grouped mutation noise filtering, cheaper targeted popup detection before broad fallback sweeps, and more settled rescan scheduling during Twitch SPA channel navigation.
+
 ### v5.0.2
 - **Twitch Page Stutter Fix** - Reduced the player-side DOM cleanup hot path that could make Twitch pages hitch or briefly freeze when ad UI appeared, especially during prerolls, display ads, or popup detection.
 - **Overlay Scan Scope Reduction** - Player CTA, banner, and ad-label detection now searches near the active player instead of repeatedly sweeping the full page, cutting expensive layout work during normal playback.
@@ -83,11 +89,15 @@ See [CHANGELOG.md](CHANGELOG.md) for full version history.
 ```sh
 npm install
 npm run build
+npm run package:chrome
 npm run lint
 npm run knip
 ```
 
-`npm run knip` is expected to pass cleanly with the current `knip` 6 prerelease configuration.
+Load the unpacked extension from `dist/manifest.json` after `npm run build`.
+Create a Chrome Web Store upload archive with `npm run package:chrome`; it writes `ttv-ab-<version>-chrome-store.zip` at the repo root.
+
+`npm run knip` is expected to pass cleanly with the current `knip` 6.0.3 configuration.
 
 ## Support
 

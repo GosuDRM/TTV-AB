@@ -7,6 +7,103 @@ const _S = {
 	adsBlocked: 0,
 	domAdsBlocked: 0,
 };
+const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
+const _internalMessageTarget = new EventTarget();
+const _pendingBridgeMessages: PlainObject[] = [];
+let _bridgePort: MessagePort | null = null;
+let _bridgePortHandshakeBound = false;
+
+function _getStructuredMessageData(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return null;
+	}
+	return value;
+}
+
+function _emitInternalMessage(type, detail = null) {
+	if (typeof type !== "string" || !type) return;
+	_internalMessageTarget.dispatchEvent(
+		new CustomEvent(type, {
+			detail,
+		}),
+	);
+}
+
+function _onInternalMessage(type, handler) {
+	_internalMessageTarget.addEventListener(type, (event) => {
+		const detail =
+			event instanceof CustomEvent
+				? event.detail
+				: (event as PlainObject).detail;
+		handler(detail);
+	});
+}
+
+function _flushBridgeMessageQueue() {
+	if (!_bridgePort) return;
+	while (_pendingBridgeMessages.length > 0) {
+		const nextMessage = _pendingBridgeMessages[0];
+		try {
+			_bridgePort.postMessage(nextMessage);
+			_pendingBridgeMessages.shift();
+		} catch {
+			break;
+		}
+	}
+}
+
+function _attachBridgePort(port) {
+	if (!port || typeof port.postMessage !== "function") return false;
+	if (_bridgePort === port) return true;
+	if (_bridgePort) {
+		try {
+			_bridgePort.close();
+		} catch {}
+	}
+	_bridgePort = port;
+	_bridgePort.addEventListener("message", (event) => {
+		const message = _getStructuredMessageData(event.data);
+		if (typeof message?.type !== "string") return;
+		_emitInternalMessage(message.type, message.detail ?? null);
+	});
+	_bridgePort.start?.();
+	_flushBridgeMessageQueue();
+	return true;
+}
+
+function _bindBridgePortHandshake() {
+	if (_bridgePortHandshakeBound || typeof window === "undefined") return;
+	_bridgePortHandshakeBound = true;
+	const handleBridgePortInit = (event) => {
+		if (event.source !== window) return;
+		const message = _getStructuredMessageData(event.data);
+		if (
+			message?.type !== _BRIDGE_PORT_INIT_MESSAGE ||
+			!Array.isArray(event.ports) ||
+			event.ports.length !== 1
+		) {
+			return;
+		}
+		if (!_attachBridgePort(event.ports[0])) return;
+		window.removeEventListener("message", handleBridgePortInit, true);
+		event.stopImmediatePropagation?.();
+		_sendBridgeMessage("ttvab-bridge-ready");
+	};
+	window.addEventListener("message", handleBridgePortInit, true);
+}
+
+function _sendBridgeMessage(type, detail = null) {
+	if (typeof type !== "string" || !type) return false;
+	const message = { type, detail };
+	if (_bridgePort) {
+		try {
+			_bridgePort.postMessage(message);
+			return true;
+		} catch {}
+	}
+	_pendingBridgeMessages.push(message);
+	return false;
+}
 
 function _broadcastWorkers(messages) {
 	const queue = Array.isArray(messages) ? messages : [messages];
@@ -31,7 +128,10 @@ function _broadcastWorkers(messages) {
 	_S.workers = aliveWorkers;
 }
 
-function _setPagePlaybackContext(context, options = {}) {
+function _setPagePlaybackContext(
+	context,
+	options: { broadcast?: boolean } = {},
+) {
 	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) {
 		return _normalizePlaybackContext(context);
 	}
@@ -202,24 +302,22 @@ function _incrementAdsBlocked(channel, mediaKey = null) {
 		_buildMediaKey("live", safeChannel, null) ||
 		null;
 	const pageEventContext = _getPageScopedPlaybackEventContext();
+	const detail = {
+		count,
+		delta: 1,
+		channel: safeChannel,
+		mediaKey: safeMediaKey,
+		pageChannel: pageEventContext.pageChannel,
+		pageMediaKey: pageEventContext.pageMediaKey,
+	};
 	if (typeof window !== "undefined") {
-		window.postMessage(
-			{
-				type: "ttvab-ad-blocked",
-				detail: {
-					count,
-					channel: safeChannel,
-					mediaKey: safeMediaKey,
-					pageChannel: pageEventContext.pageChannel,
-					pageMediaKey: pageEventContext.pageMediaKey,
-				},
-			},
-			"*",
-		);
+		_emitInternalMessage("ttvab-ad-blocked", detail);
+		_sendBridgeMessage("ttvab-ad-blocked", detail);
 	} else if (typeof self !== "undefined" && self.postMessage) {
 		self.postMessage({
 			key: "AdBlocked",
 			count: _S.adsBlocked,
+			delta: 1,
 			channel: safeChannel,
 			mediaKey: safeMediaKey,
 			pageChannel: pageEventContext.pageChannel,
@@ -246,16 +344,16 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 	const safeChannel = typeof channel === "string" ? channel : null;
 	_S.domAdsBlocked = count;
 	if (typeof window !== "undefined") {
-		window.postMessage(
-			{
-				type: "ttvab-dom-ad-cleanup",
-				detail: {
-					count,
-					kind: safeKind,
-					channel: safeChannel,
-				},
-			},
-			"*",
-		);
+		const pageEventContext = _getPageScopedPlaybackEventContext();
+		const detail = {
+			count,
+			delta: 1,
+			kind: safeKind,
+			channel: safeChannel,
+			pageChannel: pageEventContext.pageChannel,
+			pageMediaKey: pageEventContext.pageMediaKey,
+		};
+		_emitInternalMessage("ttvab-dom-ad-cleanup", detail);
+		_sendBridgeMessage("ttvab-dom-ad-cleanup", detail);
 	}
 }

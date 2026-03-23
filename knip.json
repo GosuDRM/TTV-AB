@@ -1,18 +1,14 @@
 {
-	"$schema": "https://unpkg.com/knip@6.0.0-1/schema.json",
+	"$schema": "https://unpkg.com/knip@6.0.3/schema.json",
 	"entry": [
-		"build.js!",
-		"src/modules/*.js!",
-		"src/popup/popup.js!",
-		"src/popup/translations.js!",
-		"src/scripts/background.js!",
-		"src/scripts/bridge.js!",
+		"build.ts!",
+		"src/types/browser-globals.d.ts!",
+		"src/modules/*.ts!",
+		"src/popup/popup.ts!",
+		"src/popup/translations.ts!",
+		"src/scripts/background.ts!",
+		"src/scripts/bridge.ts!",
 		"src/popup/popup.html!"
 	],
-	"project": [
-		"build.js!",
-		"src/**/*.js!",
-		"src/**/*.html!",
-		"!src/scripts/content.js"
-	]
+	"project": ["build.ts!", "src/**/*.ts!", "src/**/*.d.ts!", "src/**/*.html!"]
 }

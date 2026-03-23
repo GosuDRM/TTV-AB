@@ -34,9 +34,12 @@ function _getStreamInfoForPlaylist(url) {
 		__TTVAB_STATE__.StreamInfosByUrl[url];
 	if (byUrl) return byUrl;
 
-	const infos = Object.values(__TTVAB_STATE__.StreamInfos || {}).filter(
-		Boolean,
-	);
+	const infos = (
+		Object.values(__TTVAB_STATE__.StreamInfos || {}) as Array<{
+			LastActivityAt?: number;
+			IsShowingAd?: boolean;
+		}>
+	).filter(Boolean);
 	if (infos.length === 0) return null;
 	if (infos.length === 1) return infos[0];
 
