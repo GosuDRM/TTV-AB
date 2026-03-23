@@ -4,6 +4,11 @@ const _REMINDER_KEY = "ttvab_last_reminder";
 const _REMINDER_INTERVAL = 1209600000;
 const _FIRST_RUN_KEY = "ttvab_first_run_shown";
 const _UI_FLAGS_KEY = "__TTVAB_UI_FLAGS__";
+type UiFlags = {
+	achievementListenerInitialized: boolean;
+	welcomeScheduled: boolean;
+	donationScheduled: boolean;
+};
 
 function _getUiStorageItem(key) {
 	try {
@@ -30,12 +35,12 @@ function _escapeUiText(value) {
 	return div.innerHTML;
 }
 
-function _getUiFlags() {
+function _getUiFlags(): UiFlags {
 	const existing = window[_UI_FLAGS_KEY];
 	if (existing && typeof existing === "object") {
-		return existing;
+		return existing as UiFlags;
 	}
-	const flags = {
+	const flags: UiFlags = {
 		achievementListenerInitialized: false,
 		welcomeScheduled: false,
 		donationScheduled: false,
@@ -215,20 +220,6 @@ function _ensureAchievementToastStyles() {
 	document.head?.appendChild(style);
 }
 
-function _getTrustedUiMessage(event) {
-	if (
-		event.source !== window ||
-		event.origin !== window.location.origin ||
-		!event.data ||
-		typeof event.data !== "object" ||
-		Array.isArray(event.data) ||
-		typeof event.data.type !== "string"
-	) {
-		return null;
-	}
-	return event.data;
-}
-
 function _showAchievementUnlocked(achievementId) {
 	try {
 		const ach = _ACHIEVEMENT_INFO[achievementId];
@@ -281,16 +272,12 @@ function _initAchievementListener() {
 	const uiFlags = _getUiFlags();
 	if (uiFlags.achievementListenerInitialized) return;
 	uiFlags.achievementListenerInitialized = true;
-	window.addEventListener("message", (e) => {
-		const message = _getTrustedUiMessage(e);
-		if (!message || message.type !== "ttvab-achievement-unlocked") return;
-		const detail =
-			message.detail &&
-			typeof message.detail === "object" &&
-			!Array.isArray(message.detail)
-				? message.detail
+	_onInternalMessage("ttvab-achievement-unlocked", (detail) => {
+		const safeDetail =
+			detail && typeof detail === "object" && !Array.isArray(detail)
+				? detail
 				: null;
-		if (typeof detail?.id !== "string") return;
-		_showAchievementUnlocked(detail.id);
+		if (typeof safeDetail?.id !== "string") return;
+		_showAchievementUnlocked(safeDetail.id);
 	});
 }

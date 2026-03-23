@@ -22,13 +22,6 @@ function _normalizeCounterValue(value) {
 		: 0;
 }
 
-function _getTrustedBridgeMessageData(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return null;
-	}
-	return value;
-}
-
 function _getTrustedBridgeMessageDetail(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return null;
@@ -36,29 +29,15 @@ function _getTrustedBridgeMessageDetail(value) {
 	return value;
 }
 
-function _isTrustedWindowMessageSource(source) {
-	if (!source) return false;
-	if (source === window) return true;
-	try {
-		if (typeof window.wrappedJSObject !== "undefined") {
-			return source === window.wrappedJSObject;
-		}
-	} catch {}
-	return false;
+function _bindBridgePort() {
+	_bindBridgePortHandshake();
 }
 
 function _initToggleListener() {
-	window.addEventListener("message", (e) => {
-		if (!_isTrustedWindowMessageSource(e.source)) return;
-		const message = _getTrustedBridgeMessageData(e.data);
-		const detail = _getTrustedBridgeMessageDetail(message?.detail);
-		if (
-			message?.type !== "ttvab-toggle" ||
-			typeof detail?.enabled !== "boolean"
-		) {
-			return;
-		}
-		const enabled = detail.enabled;
+	_onInternalMessage("ttvab-toggle", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (typeof safeDetail?.enabled !== "boolean") return;
+		const enabled = safeDetail.enabled;
 		if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
 		__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
 		_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
@@ -84,12 +63,13 @@ function _blockAntiAdblockPopup() {
 	let didCountCurrentDirectPlayerAdMedia = false;
 	let lastPlaybackContextChangeAt = 0;
 	let pendingRoutePlayerResyncTimer = null;
+	let pendingRouteScanTimers: ReturnType<typeof setTimeout>[] = [];
 	let scheduledScanTimer = null;
 	let scheduledScanForce = false;
 	let lastScanAt = 0;
-	let cachedMainPlayerElement;
-	let cachedMainPlayerRect;
-	let cachedPlayerOverlayRoots;
+	let cachedMainPlayerElement: Element | null = null;
+	let cachedMainPlayerRect: DOMRect | null = null;
+	let cachedPlayerOverlayRoots: Element[] | null = null;
 	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
 		'[data-ttvab-player-ad-banner="true"]';
 	const DISPLAY_AD_LABEL_SELECTORS = [
@@ -156,6 +136,7 @@ function _blockAntiAdblockPopup() {
 		'[class*="ChatShell"]',
 		'[class*="ChatRoom"]',
 	];
+	const MUTATION_NOISE_SELECTOR_GROUP = MUTATION_NOISE_SELECTORS.join(", ");
 	const RELEVANT_MUTATION_SELECTOR = [
 		"video",
 		"audio",
@@ -316,26 +297,10 @@ function _blockAntiAdblockPopup() {
 				return true;
 			}
 
-			if (
-				typeof el.className !== "string" ||
-				!el.className.includes("stream-display-ad")
-			) {
-				return false;
-			}
-
-			const hasMedia = Boolean(el.querySelector?.("video, audio"));
-			if (hasMedia) return false;
-
-			const rect = el.getBoundingClientRect();
-			const style = window.getComputedStyle(el);
-			const looksCollapsedArtifact =
-				rect.width <= 1 ||
-				rect.height <= 1 ||
-				style.display === "none" ||
-				style.visibility === "hidden" ||
-				style.opacity === "0";
-
-			return looksCollapsedArtifact;
+			return (
+				typeof el.className === "string" &&
+				el.className.includes("stream-display-ad")
+			);
 		}
 
 		function _getDisplayAdArtifactSignature(el) {
@@ -361,26 +326,28 @@ function _blockAntiAdblockPopup() {
 			layoutRoots,
 			inferredLayoutWrappers = [],
 		) {
-			const staleNodes = [
-				...displayShellNodes,
-				...layoutRoots,
-				...inferredLayoutWrappers,
-				...Array.from(
-					document.querySelectorAll(PLAYER_SURFACE_AD_MARKER_SELECTOR),
-				),
-				...Array.from(
-					document.querySelectorAll('[data-ttvab-display-shell-reset="true"]'),
-				),
-			]
-				.filter((el, index, list) => el && list.indexOf(el) === index)
-				.filter(_isDisplayAdShellArtifact);
-			const stalePipContainers = pipContainers
-				.filter((el, index, list) => el && list.indexOf(el) === index)
-				.filter(
-					(el) =>
-						el.hasAttribute?.("data-ttvab-blocked") ||
-						el.hasAttribute?.("data-ttvab-display-shell-reset"),
-				);
+			const staleNodes = _filterUniqueElements(
+				[
+					...displayShellNodes,
+					...layoutRoots,
+					...inferredLayoutWrappers,
+					...Array.from(
+						document.querySelectorAll(PLAYER_SURFACE_AD_MARKER_SELECTOR),
+					),
+					...Array.from(
+						document.querySelectorAll(
+							'[data-ttvab-display-shell-reset="true"]',
+						),
+					),
+				],
+				_isDisplayAdShellArtifact,
+			);
+			const stalePipContainers = _filterUniqueElements(
+				pipContainers,
+				(el) =>
+					el.hasAttribute?.("data-ttvab-blocked") ||
+					el.hasAttribute?.("data-ttvab-display-shell-reset"),
+			);
 
 			if (staleNodes.length === 0 && stalePipContainers.length === 0) {
 				_resetStaleDisplayArtifactCleanupDeduper();
@@ -457,9 +424,32 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _queryUniqueElements(selectors) {
-			return selectors
-				.flatMap((selector) => Array.from(document.querySelectorAll(selector)))
-				.filter((el, index, list) => el && list.indexOf(el) === index);
+			const matches = [];
+			const seen = new Set();
+			for (const selector of selectors) {
+				try {
+					for (const node of document.querySelectorAll(selector)) {
+						if (!seen.has(node)) {
+							seen.add(node);
+							matches.push(node);
+						}
+					}
+				} catch {}
+			}
+			return matches;
+		}
+
+		function _filterUniqueElements(elements, predicate = null) {
+			const matches = [];
+			const seen = new Set();
+			for (const el of elements) {
+				if (!el || seen.has(el)) continue;
+				seen.add(el);
+				if (!predicate || predicate(el)) {
+					matches.push(el);
+				}
+			}
+			return matches;
 		}
 
 		function _resetPlayerDetectionCaches() {
@@ -591,6 +581,28 @@ function _blockAntiAdblockPopup() {
 			pendingRoutePlayerResyncTimer = null;
 		}
 
+		function _clearPendingRouteScans() {
+			if (pendingRouteScanTimers.length === 0) return;
+			for (const timer of pendingRouteScanTimers) {
+				clearTimeout(timer);
+			}
+			pendingRouteScanTimers = [];
+		}
+
+		function _scheduleRouteChangeScans() {
+			_clearPendingRouteScans();
+			const delays = _isDocumentHidden() ? [180, 700] : [60, 220, 550];
+			for (const delay of delays) {
+				const timer = setTimeout(() => {
+					pendingRouteScanTimers = pendingRouteScanTimers.filter(
+						(value) => value !== timer,
+					);
+					_queueScan(0, true);
+				}, delay);
+				pendingRouteScanTimers.push(timer);
+			}
+		}
+
 		function _scheduleRoutePlayerResync(previousContext, currentContext) {
 			const previousMediaKey = _normalizeMediaKey(previousContext?.MediaKey);
 			const currentMediaKey = _normalizeMediaKey(currentContext?.MediaKey);
@@ -694,7 +706,7 @@ function _blockAntiAdblockPopup() {
 			}
 
 			_cleanupAllKnownDisplayArtifacts();
-			_scanAndRemove();
+			_scheduleRouteChangeScans();
 			return true;
 		}
 
@@ -766,8 +778,7 @@ function _blockAntiAdblockPopup() {
 					directLabel.textContent ||
 					"";
 				if (
-					!_isVisibleElement(directLabel) ||
-					!_isNearMainPlayer(directLabel, playerRect) ||
+					!_isVisibleNearPlayerElement(directLabel, playerRect) ||
 					!_looksLikeAdLabel(text)
 				) {
 					continue;
@@ -950,7 +961,7 @@ function _blockAntiAdblockPopup() {
 			);
 
 			for (const cta of ctas) {
-				if (!_isVisibleElement(cta) || !_isNearMainPlayer(cta, playerRect)) {
+				if (!_isVisibleNearPlayerElement(cta, playerRect)) {
 					continue;
 				}
 				const text = [
@@ -969,9 +980,7 @@ function _blockAntiAdblockPopup() {
 				}
 			}
 
-			return nodes.filter(
-				(el, index, list) => el && list.indexOf(el) === index,
-			);
+			return _filterUniqueElements(nodes);
 		}
 
 		function _getPlayerAdBannerTextNodes() {
@@ -984,7 +993,7 @@ function _blockAntiAdblockPopup() {
 				"span, p, div, h1, h2, h3, [role='heading']",
 			);
 			for (const node of candidates) {
-				if (!_isVisibleElement(node) || !_isNearMainPlayer(node, playerRect)) {
+				if (!_isVisibleNearPlayerElement(node, playerRect)) {
 					continue;
 				}
 				const text = (node.textContent || "").replace(/\s+/g, " ").trim();
@@ -1015,9 +1024,7 @@ function _blockAntiAdblockPopup() {
 				}
 			}
 
-			return nodes.filter(
-				(el, index, list) => el && list.indexOf(el) === index,
-			);
+			return _filterUniqueElements(nodes);
 		}
 
 		function _getInferredDisplayAdLayoutWrappers() {
@@ -1074,56 +1081,58 @@ function _blockAntiAdblockPopup() {
 				current = current.parentElement;
 			}
 
-			return wrappers.filter(
-				(el, index, list) => el && list.indexOf(el) === index,
-			);
+			return _filterUniqueElements(wrappers);
 		}
 
-		function _isNearMainPlayer(el, playerRect = null) {
-			if (!el || !_isVisibleElement(el)) return false;
-			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
-			if (!resolvedPlayerRect) return false;
+		function _isNearPlayerRect(el, playerRect) {
+			if (!el || !playerRect) return false;
 
 			const rect = el.getBoundingClientRect();
 			const horizontalMargin = Math.max(
 				120,
-				Math.min(260, resolvedPlayerRect.width * 0.2),
+				Math.min(260, playerRect.width * 0.2),
 			);
 			const verticalMargin = Math.max(
 				80,
-				Math.min(180, resolvedPlayerRect.height * 0.2),
+				Math.min(180, playerRect.height * 0.2),
 			);
 
 			return !(
-				rect.right < resolvedPlayerRect.left - horizontalMargin ||
-				rect.left > resolvedPlayerRect.right + horizontalMargin ||
-				rect.bottom < resolvedPlayerRect.top - verticalMargin ||
-				rect.top > resolvedPlayerRect.bottom + verticalMargin
+				rect.right < playerRect.left - horizontalMargin ||
+				rect.left > playerRect.right + horizontalMargin ||
+				rect.bottom < playerRect.top - verticalMargin ||
+				rect.top > playerRect.bottom + verticalMargin
 			);
+		}
+
+		function _isVisibleNearPlayerElement(el, playerRect = null) {
+			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
+			return (
+				Boolean(resolvedPlayerRect) &&
+				_isVisibleElement(el) &&
+				_isNearPlayerRect(el, resolvedPlayerRect)
+			);
+		}
+
+		function _isNearMainPlayer(el, playerRect = null) {
+			return _isVisibleNearPlayerElement(el, playerRect);
 		}
 
 		function _hasDirectPlayerAdUiSignal() {
 			const playerRect = _getMainPlayerRect();
 			if (!playerRect) return false;
 
-			const candidateNodes = [
-				..._getDisplayAdLabels(),
-				..._getPlayerAdCallToActionNodes(),
-				..._getPlayerAdBannerTextNodes(),
-				...DISPLAY_AD_SHELL_SELECTORS.flatMap((selector) =>
-					Array.from(document.querySelectorAll(selector)),
-				),
-				...LOWER_THIRD_DISPLAY_AD_SELECTORS.flatMap((selector) =>
-					Array.from(document.querySelectorAll(selector)),
-				),
-			];
-
-			return candidateNodes.some(
-				(el, index, list) =>
-					el &&
-					list.indexOf(el) === index &&
-					_isVisibleElement(el) &&
-					_isNearMainPlayer(el, playerRect),
+			return (
+				_filterUniqueElements(
+					[
+						..._getDisplayAdLabels(),
+						..._getPlayerAdCallToActionNodes(),
+						..._getPlayerAdBannerTextNodes(),
+						..._queryUniqueElements(DISPLAY_AD_SHELL_SELECTORS),
+						..._queryUniqueElements(LOWER_THIRD_DISPLAY_AD_SELECTORS),
+					],
+					(el) => _isVisibleNearPlayerElement(el, playerRect),
+				).length > 0
 			);
 		}
 
@@ -1134,9 +1143,9 @@ function _blockAntiAdblockPopup() {
 			const src = _getMediaSourceUrl(media);
 			if (!DIRECT_PLAYER_AD_MEDIA_URL_PATTERN.test(src)) return false;
 
-			return (
-				_isVisibleElement(media) &&
-				_isNearMainPlayer(media, playerRect || _getMainPlayerRect())
+			return _isVisibleNearPlayerElement(
+				media,
+				playerRect || _getMainPlayerRect(),
 			);
 		}
 
@@ -1236,9 +1245,12 @@ function _blockAntiAdblockPopup() {
 			}
 
 			const playerRect = _getMainPlayerRect();
-			const adMediaNodes = Array.from(
-				document.querySelectorAll("video, audio"),
-			).filter((media) => _isDirectPlayerAdMedia(media, playerRect));
+			const adMediaNodes = [];
+			for (const media of document.querySelectorAll("video, audio")) {
+				if (_isDirectPlayerAdMedia(media, playerRect)) {
+					adMediaNodes.push(media);
+				}
+			}
 			if (adMediaNodes.length === 0) {
 				_resetDirectPlayerAdMediaState();
 				return false;
@@ -1380,46 +1392,34 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _collapseDisplayAdShell() {
-			const adBanners = Array.from(
-				document.querySelectorAll('[data-test-selector="ad-banner"]'),
-			).filter((el) => _isVisibleElement(el) && _isNearMainPlayer(el));
+			const playerRect = _getMainPlayerRect();
+			const isVisibleNearPlayer = (el) =>
+				_isVisibleNearPlayerElement(el, playerRect);
+			const adBanners = _filterUniqueElements(
+				_queryUniqueElements(['[data-test-selector="ad-banner"]']),
+				isVisibleNearPlayer,
+			);
 			const playerAdCallToActionNodes = _getPlayerAdCallToActionNodes();
 			const playerAdBannerTextNodes = _getPlayerAdBannerTextNodes();
-			const explicitDisplayAdNodes = [
-				...EXPLICIT_DISPLAY_AD_SELECTORS.flatMap((selector) =>
-					Array.from(document.querySelectorAll(selector)),
-				),
-				...playerAdCallToActionNodes,
-				...playerAdBannerTextNodes,
-			].filter(
-				(el, index, list) =>
-					_isVisibleElement(el) &&
-					_isNearMainPlayer(el) &&
-					list.indexOf(el) === index,
+			const explicitDisplayAdNodes = _filterUniqueElements(
+				[
+					..._queryUniqueElements(EXPLICIT_DISPLAY_AD_SELECTORS),
+					...playerAdCallToActionNodes,
+					...playerAdBannerTextNodes,
+				],
+				isVisibleNearPlayer,
 			);
-			const displayShellNodes = DISPLAY_AD_SHELL_SELECTORS.flatMap((selector) =>
-				Array.from(document.querySelectorAll(selector)),
-			).filter(
-				(el, index, list) =>
-					_isVisibleElement(el) &&
-					_isNearMainPlayer(el) &&
-					list.indexOf(el) === index,
+			const displayShellNodes = _filterUniqueElements(
+				_queryUniqueElements(DISPLAY_AD_SHELL_SELECTORS),
+				isVisibleNearPlayer,
 			);
-			const pipContainers = PIP_SELECTORS.flatMap((selector) =>
-				Array.from(document.querySelectorAll(selector)),
-			).filter(
-				(el, index, list) =>
-					_isVisibleElement(el) &&
-					_isNearMainPlayer(el) &&
-					list.indexOf(el) === index,
+			const pipContainers = _filterUniqueElements(
+				_queryUniqueElements(PIP_SELECTORS),
+				isVisibleNearPlayer,
 			);
-			const layoutRoots = STREAM_DISPLAY_LAYOUT_SELECTORS.flatMap((selector) =>
-				Array.from(document.querySelectorAll(selector)),
-			).filter(
-				(el, index, list) =>
-					_isVisibleElement(el) &&
-					_isNearMainPlayer(el) &&
-					list.indexOf(el) === index,
+			const layoutRoots = _filterUniqueElements(
+				_queryUniqueElements(STREAM_DISPLAY_LAYOUT_SELECTORS),
+				isVisibleNearPlayer,
 			);
 			const adLabels = _getDisplayAdLabels();
 			const hasAdLabel = adLabels.length > 0;
@@ -1583,15 +1583,24 @@ function _blockAntiAdblockPopup() {
 			'[data-a-target="video-player"]',
 			"video",
 		];
+		const SAFELIST_SELECTOR_GROUP = SAFELIST_SELECTORS.join(", ");
+		const POPUP_SCAN_SELECTORS = [
+			'div[class*="ScAttach"][class*="ScBalloon"]',
+			'div[class*="tw-balloon"]',
+			'div[class*="consent"]',
+			'[data-a-target="consent-banner"]',
+			'[data-test-selector="ad-banner"]',
+			'div[class*="Layout"][class*="Overlay"]',
+		];
 
 		function _isSafeElement(el) {
 			if (!el) return false;
-			for (const selector of SAFELIST_SELECTORS) {
-				try {
-					if (el.matches?.(selector)) return true;
-					if (el.querySelector?.(selector)) return true;
-				} catch {}
-			}
+			try {
+				if (el.matches?.(SAFELIST_SELECTOR_GROUP)) return true;
+			} catch {}
+			try {
+				if (el.querySelector?.(SAFELIST_SELECTOR_GROUP)) return true;
+			} catch {}
 			return false;
 		}
 
@@ -1606,6 +1615,47 @@ function _blockAntiAdblockPopup() {
 
 			if (_collapsePromotedPageAd()) {
 				return true;
+			}
+
+			for (const selector of POPUP_SCAN_SELECTORS) {
+				try {
+					const elements = document.querySelectorAll(selector);
+					for (const el of elements) {
+						if (_hasAdblockText(el)) {
+							_log("Hiding popup by selector", "success");
+							el.style.display = "none";
+							el.setAttribute(
+								"style",
+								(el.getAttribute("style") || "") +
+									"; display: none !important;",
+							);
+							_incrementDomCleanup("overlay-ad");
+							return true;
+						}
+					}
+				} catch {}
+			}
+
+			const overlays = document.querySelectorAll(
+				'div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]',
+			);
+			for (const el of overlays) {
+				if (
+					_hasAdblockText(el) &&
+					el.offsetWidth > 200 &&
+					el.offsetHeight > 100
+				) {
+					if (el.querySelector("video")) continue;
+
+					_log("Hiding popup overlay", "success");
+					el.style.display = "none";
+					el.setAttribute(
+						"style",
+						`${el.getAttribute("style") || ""}; display: none !important;`,
+					);
+					_incrementDomCleanup("overlay-ad");
+					return true;
+				}
 			}
 
 			const detectionNodes = document.querySelectorAll(
@@ -1710,56 +1760,6 @@ function _blockAntiAdblockPopup() {
 				}
 			}
 
-			const popupSelectors = [
-				'div[class*="ScAttach"][class*="ScBalloon"]',
-				'div[class*="tw-balloon"]',
-				'div[class*="consent"]',
-				'[data-a-target="consent-banner"]',
-				'[data-test-selector="ad-banner"]',
-				'div[class*="Layout"][class*="Overlay"]',
-			];
-
-			for (const selector of popupSelectors) {
-				try {
-					const elements = document.querySelectorAll(selector);
-					for (const el of elements) {
-						if (_hasAdblockText(el)) {
-							_log("Hiding popup by selector", "success");
-							el.style.display = "none";
-							el.setAttribute(
-								"style",
-								(el.getAttribute("style") || "") +
-									"; display: none !important;",
-							);
-							_incrementDomCleanup("overlay-ad");
-							return true;
-						}
-					}
-				} catch {}
-			}
-
-			const overlays = document.querySelectorAll(
-				'div[style*="position: fixed"], div[style*="position:fixed"], div[style*="z-index"]',
-			);
-			for (const el of overlays) {
-				if (
-					_hasAdblockText(el) &&
-					el.offsetWidth > 200 &&
-					el.offsetHeight > 100
-				) {
-					if (el.querySelector("video")) continue;
-
-					_log("Hiding popup overlay", "success");
-					el.style.display = "none";
-					el.setAttribute(
-						"style",
-						`${el.getAttribute("style") || ""}; display: none !important;`,
-					);
-					_incrementDomCleanup("overlay-ad");
-					return true;
-				}
-			}
-
 			return false;
 		}
 
@@ -1812,11 +1812,9 @@ function _blockAntiAdblockPopup() {
 		function _shouldScanForMutationNode(node) {
 			if (!(node instanceof Element)) return false;
 
-			for (const selector of MUTATION_NOISE_SELECTORS) {
-				try {
-					if (node.closest?.(selector)) return false;
-				} catch {}
-			}
+			try {
+				if (node.closest?.(MUTATION_NOISE_SELECTOR_GROUP)) return false;
+			} catch {}
 
 			try {
 				if (
@@ -1847,21 +1845,14 @@ function _blockAntiAdblockPopup() {
 			_log("Popup removed on initial scan", "success");
 		}
 
-		window.addEventListener("message", (event) => {
-			if (!_isTrustedWindowMessageSource(event.source)) return;
-			const message = _getTrustedBridgeMessageData(event.data);
-			const detail = _getTrustedBridgeMessageDetail(message?.detail);
-			if (
-				message?.type !== "ttvab-ad-blocked" ||
-				!Number.isFinite(detail?.count)
-			) {
-				return;
-			}
+		_onInternalMessage("ttvab-ad-blocked", (detail) => {
+			const safeDetail = _getTrustedBridgeMessageDetail(detail);
+			if (!Number.isFinite(safeDetail?.count)) return;
 			const currentContext = _getPlaybackContextFromUrl(window.location.href);
 			const blockedChannel =
-				typeof detail.channel === "string" ? detail.channel : null;
+				typeof safeDetail.channel === "string" ? safeDetail.channel : null;
 			const blockedMediaKey =
-				typeof detail.mediaKey === "string" ? detail.mediaKey : null;
+				typeof safeDetail.mediaKey === "string" ? safeDetail.mediaKey : null;
 			if (
 				blockedMediaKey &&
 				currentContext.MediaKey &&
@@ -1881,8 +1872,8 @@ function _blockAntiAdblockPopup() {
 			setTimeout(() => _queueScan(0, true), 300);
 		});
 
-		window.addEventListener("popstate", _handleRouteChange, true);
-		window.addEventListener("hashchange", _handleRouteChange, true);
+		window.addEventListener("popstate", () => _handleRouteChange(), true);
+		window.addEventListener("hashchange", () => _handleRouteChange(), true);
 
 		let debounceTimer = null;
 		let lastImmediateScan = 0;
@@ -1901,7 +1892,14 @@ function _blockAntiAdblockPopup() {
 
 			if (!shouldScan) return;
 
-			_handleRouteChange();
+			if (_handleRouteChange()) {
+				if (debounceTimer) {
+					clearTimeout(debounceTimer);
+					debounceTimer = null;
+				}
+				lastImmediateScan = Date.now();
+				return;
+			}
 
 			const now = Date.now();
 			if (now - lastImmediateScan > 250) {
@@ -1924,8 +1922,8 @@ function _blockAntiAdblockPopup() {
 		function _scheduleIdleScan() {
 			const delay = _isDocumentHidden() ? 5000 : 2000;
 			setTimeout(() => {
-				_handleRouteChange();
-				if (!_isDocumentHidden()) {
+				const didRouteChange = _handleRouteChange();
+				if (!didRouteChange && !_isDocumentHidden()) {
 					_queueScan(0);
 				}
 				_scheduleIdleScan();
@@ -1942,33 +1940,27 @@ function _blockAntiAdblockPopup() {
 function _init() {
 	if (!_bootstrap()) return;
 
+	_bindBridgePort();
 	_declareState(window);
 	_syncPagePlaybackContext({ broadcast: false });
 
-	window.addEventListener("message", (e) => {
-		if (!_isTrustedWindowMessageSource(e.source)) return;
-		const message = _getTrustedBridgeMessageData(e.data);
-		const detail = _getTrustedBridgeMessageDetail(message?.detail);
-		if (!message || !detail) return;
+	_onInternalMessage("ttvab-init-count", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (!Number.isFinite(safeDetail?.count)) return;
+		const restoredCount = _normalizeCounterValue(safeDetail.count);
+		if (_S.adsBlocked === restoredCount) return;
+		_S.adsBlocked = restoredCount;
+		_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
+		_log(`Restored ads count: ${_S.adsBlocked}`, "info");
+	});
 
-		if (message.type === "ttvab-init-count" && Number.isFinite(detail.count)) {
-			const restoredCount = _normalizeCounterValue(detail.count);
-			if (_S.adsBlocked === restoredCount) return;
-			_S.adsBlocked = restoredCount;
-			_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
-			_log(`Restored ads count: ${_S.adsBlocked}`, "info");
-			return;
-		}
-
-		if (
-			message.type === "ttvab-init-dom-ads-count" &&
-			Number.isFinite(detail.count)
-		) {
-			const restoredCount = _normalizeCounterValue(detail.count);
-			if (_S.domAdsBlocked === restoredCount) return;
-			_S.domAdsBlocked = restoredCount;
-			_log(`Restored DOM cleanup count: ${_S.domAdsBlocked}`, "info");
-		}
+	_onInternalMessage("ttvab-init-dom-ads-count", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (!Number.isFinite(safeDetail?.count)) return;
+		const restoredCount = _normalizeCounterValue(safeDetail.count);
+		if (_S.domAdsBlocked === restoredCount) return;
+		_S.domAdsBlocked = restoredCount;
+		_log(`Restored DOM cleanup count: ${_S.domAdsBlocked}`, "info");
 	});
 
 	_syncStoredDeviceId();
@@ -1987,7 +1979,7 @@ function _init() {
 	_showWelcome();
 	_showDonation();
 
-	window.postMessage({ type: "ttvab-request-state" }, "*");
+	_sendBridgeMessage("ttvab-request-state");
 
 	_log("Initialized successfully", "success");
 }

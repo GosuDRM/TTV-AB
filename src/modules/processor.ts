@@ -34,9 +34,12 @@ function _getStreamInfoForPlaylist(url) {
 		__TTVAB_STATE__.StreamInfosByUrl[url];
 	if (byUrl) return byUrl;
 
-	const infos = Object.values(__TTVAB_STATE__.StreamInfos || {}).filter(
-		Boolean,
-	);
+	const infos = (
+		Object.values(__TTVAB_STATE__.StreamInfos || {}) as Array<{
+			LastActivityAt?: number;
+			IsShowingAd?: boolean;
+		}>
+	).filter(Boolean);
 	if (infos.length === 0) return null;
 	if (infos.length === 1) return infos[0];
 
@@ -235,13 +238,13 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
 			info.FailedBackupPlayerTypes?.clear?.();
+			_incrementAdsBlocked(info.ChannelName, info.MediaKey);
 			if (typeof self !== "undefined" && self.postMessage) {
 				self.postMessage(
 					_createPageScopedWorkerEvent({
 						key: "AdDetected",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
-						source: info.IsMidroll ? "midroll" : "playlist-ad",
 					}),
 				);
 			}

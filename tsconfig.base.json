@@ -1,0 +1,15 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"strict": false,
+		"noImplicitAny": false,
+		"noEmitOnError": true,
+		"skipLibCheck": true,
+		"allowJs": false,
+		"checkJs": false,
+		"sourceMap": false,
+		"declaration": false,
+		"removeComments": false,
+		"newLine": "lf"
+	}
+}

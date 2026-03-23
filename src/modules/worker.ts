@@ -1,5 +1,7 @@
 // TTV AB - Worker Utils
 
+type WorkerConstructor = new (...args: unknown[]) => Worker;
+
 function _getWasmJs(url) {
 	const req = new XMLHttpRequest();
 	req.open("GET", url, false);
@@ -7,7 +9,7 @@ function _getWasmJs(url) {
 	return req.responseText;
 }
 
-function _cleanWorker(W) {
+function _cleanWorker(W: WorkerConstructor): WorkerConstructor {
 	const CleanWorker = class extends W {};
 	const proto = CleanWorker.prototype;
 	for (const key of _S.conflicts) {
@@ -19,7 +21,7 @@ function _cleanWorker(W) {
 			});
 		}
 	}
-	return CleanWorker;
+	return CleanWorker as WorkerConstructor;
 }
 
 function _getReinsert(W) {

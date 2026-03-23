@@ -1,0 +1,12 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"module": "preserve",
+		"moduleDetection": "force",
+		"rootDir": ".",
+		"outDir": "dist",
+		"lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+		"types": ["chrome"]
+	},
+	"include": ["src/popup/**/*.ts", "src/scripts/**/*.ts", "src/types/**/*.d.ts"]
+}

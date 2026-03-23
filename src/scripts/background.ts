@@ -1,4 +1,4 @@
-// TTV AB - Background Script
+// TTV AB - Background Service Worker
 // https://github.com/GosuDRM/TTV-AB | MIT License
 
 function getDateKey(date = new Date()) {
@@ -26,48 +26,33 @@ function normalizeChannelName(value) {
 	return /^[a-z0-9_]{1,25}$/.test(trimmed) ? trimmed : null;
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is PlainObject {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return false;
 	}
 	const prototype = Object.getPrototypeOf(value);
-	return prototype === Object.prototype || prototype === null;
-}
-
-function coerceMessageObject(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return null;
+	if (prototype === null) {
+		return true;
 	}
-	if (isPlainObject(value)) {
-		return value;
-	}
-	try {
-		const cloned = JSON.parse(JSON.stringify(value));
-		return isPlainObject(cloned) ? cloned : null;
-	} catch {}
-	try {
-		const cloned = Object.create(null);
-		for (const [key, entryValue] of Object.entries(value)) {
-			cloned[key] = entryValue;
-		}
-		return cloned;
-	} catch {}
-	return null;
+	return (
+		Object.prototype.toString.call(value) === "[object Object]" &&
+		Object.getPrototypeOf(prototype) === null
+	);
 }
 
 function getMessageData(value) {
-	return coerceMessageObject(value);
+	return isPlainObject(value) ? value : null;
 }
 
 function getMessageDetail(value) {
-	return coerceMessageObject(value);
+	return isPlainObject(value) ? value : null;
 }
 
-function createChannelsMap() {
+function createChannelsMap(): TTVABChannelMap {
 	return Object.create(null);
 }
 
-function createDailyStatsMap() {
+function createDailyStatsMap(): TTVABDailyStatsMap {
 	return Object.create(null);
 }
 
@@ -128,7 +113,7 @@ function normalizeDailyStatsMap(value) {
 	const todayKey = getTodayKey();
 	for (const [dateKey, entry] of Object.entries(value)) {
 		if (!isValidDateKey(dateKey) || dateKey > todayKey) continue;
-		const safeEntry = isPlainObject(entry) ? entry : {};
+		const safeEntry: PlainObject = isPlainObject(entry) ? entry : {};
 		normalized[dateKey] = {
 			ads: normalizeCount(safeEntry.ads),
 			domAds: normalizeCount(safeEntry.domAds),
@@ -158,14 +143,9 @@ const ACHIEVEMENT_IDS = new Set(
 const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
 
-let persistChain = Promise.resolve();
-const liveCounterState = {
-	ads: 0,
-	domAds: 0,
-	hydrated: false,
-};
+let persistChain: Promise<unknown> = Promise.resolve();
 
-function storageLocalGet(keys) {
+function storageLocalGet(keys): Promise<PlainObject> {
 	return new Promise((resolve, reject) => {
 		chrome.storage.local.get(keys, (result) => {
 			if (chrome.runtime.lastError) {
@@ -177,8 +157,8 @@ function storageLocalGet(keys) {
 	});
 }
 
-function storageLocalSet(value) {
-	return new Promise((resolve, reject) => {
+function storageLocalSet(value): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
 		chrome.storage.local.set(value, () => {
 			if (chrome.runtime.lastError) {
 				reject(new Error(chrome.runtime.lastError.message));
@@ -187,57 +167,6 @@ function storageLocalSet(value) {
 			resolve();
 		});
 	});
-}
-
-function broadcastPopupCounterPreview(adsCount, domAdsCount) {
-	try {
-		chrome.runtime.sendMessage({
-			type: "ttvab-popup-counter-preview",
-			detail: {
-				adsCount: normalizeCount(adsCount),
-				domAdsCount: normalizeCount(domAdsCount),
-			},
-		});
-	} catch {}
-}
-
-async function ensureLiveCounterState() {
-	if (liveCounterState.hydrated) {
-		return {
-			ads: normalizeCount(liveCounterState.ads),
-			domAds: normalizeCount(liveCounterState.domAds),
-		};
-	}
-
-	const stored = await storageLocalGet(["ttvAdsBlocked", "ttvDomAdsBlocked"]);
-	liveCounterState.ads = normalizeCount(stored.ttvAdsBlocked);
-	liveCounterState.domAds = normalizeCount(stored.ttvDomAdsBlocked);
-	liveCounterState.hydrated = true;
-	return {
-		ads: liveCounterState.ads,
-		domAds: liveCounterState.domAds,
-	};
-}
-
-async function getLiveCounterState() {
-	return ensureLiveCounterState();
-}
-
-async function applyLiveCounterPreview(detail) {
-	const safeDetail = getMessageDetail(detail);
-	const previewAds = normalizeCount(safeDetail?.adsCount);
-	const previewDomAds = normalizeCount(safeDetail?.domAdsCount);
-	const current = await ensureLiveCounterState();
-
-	liveCounterState.ads = Math.max(current.ads, previewAds);
-	liveCounterState.domAds = Math.max(current.domAds, previewDomAds);
-
-	broadcastPopupCounterPreview(liveCounterState.ads, liveCounterState.domAds);
-
-	return {
-		ads: liveCounterState.ads,
-		domAds: liveCounterState.domAds,
-	};
 }
 
 function normalizeAchievementList(value) {
@@ -252,7 +181,7 @@ function normalizeAchievementList(value) {
 		: [];
 }
 
-function normalizeStatsState(value) {
+function normalizeStatsState(value): TTVABStatsState {
 	const safeStats = isPlainObject(value) ? value : {};
 	return {
 		daily: normalizeDailyStatsMap(safeStats.daily),
@@ -261,17 +190,22 @@ function normalizeStatsState(value) {
 	};
 }
 
-function normalizeChannelDeltaMap(value, maxTotal) {
+function normalizeChannelDeltaMap(value, maxTotal): TTVABChannelMap {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return createChannelsMap();
 	}
 	let remaining = normalizeCount(maxTotal);
-	const sortedEntries = Object.entries(value)
-		.map(([channelName, count]) => [
-			normalizeChannelName(channelName),
-			normalizeCount(count),
-		])
-		.filter(([channelName, count]) => channelName && count > 0)
+	const sortedEntries = (Object.entries(value) as Array<[string, unknown]>)
+		.map(
+			([channelName, count]) =>
+				[normalizeChannelName(channelName), normalizeCount(count)] as [
+					string | null,
+					number,
+				],
+		)
+		.filter(([channelName, count]) => Boolean(channelName) && count > 0)
+		/** biome-ignore lint/style/noNonNullAssertion: filtered above */
+		.map(([channelName, count]) => [channelName!, count] as [string, number])
 		.sort((a, b) => {
 			const countDiff = normalizeCount(b[1]) - normalizeCount(a[1]);
 			return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
@@ -381,12 +315,6 @@ async function persistCounterDelta(detail) {
 		ttvStats: stats,
 	});
 
-	liveCounterState.ads = nextAds;
-	liveCounterState.domAds = nextDomAds;
-	liveCounterState.hydrated = true;
-
-	broadcastPopupCounterPreview(nextAds, nextDomAds);
-
 	return {
 		ok: true,
 		counts: {
@@ -407,61 +335,7 @@ function enqueuePersist(task) {
 
 chrome.runtime.onMessage.addListener((rawMessage, _sender, sendResponse) => {
 	const message = getMessageData(rawMessage);
-	if (!message) {
-		return undefined;
-	}
-
-	if (message.type === "ttvab-get-counters") {
-		enqueuePersist(async () => {
-			try {
-				const counts = await getLiveCounterState();
-				return { ok: true, counts };
-			} catch (error) {
-				return {
-					ok: false,
-					error: error instanceof Error ? error.message : String(error),
-				};
-			}
-		})
-			.then((response) => {
-				sendResponse(response);
-			})
-			.catch((error) => {
-				sendResponse({
-					ok: false,
-					error: error instanceof Error ? error.message : String(error),
-				});
-			});
-
-		return true;
-	}
-
-	if (message.type === "ttvab-preview-counters") {
-		enqueuePersist(async () => {
-			try {
-				const counts = await applyLiveCounterPreview(message.detail);
-				return { ok: true, counts };
-			} catch (error) {
-				return {
-					ok: false,
-					error: error instanceof Error ? error.message : String(error),
-				};
-			}
-		})
-			.then((response) => {
-				sendResponse(response);
-			})
-			.catch((error) => {
-				sendResponse({
-					ok: false,
-					error: error instanceof Error ? error.message : String(error),
-				});
-			});
-
-		return true;
-	}
-
-	if (message.type !== "ttvab-persist-counters") {
+	if (!message || message.type !== "ttvab-persist-counters") {
 		return undefined;
 	}
 

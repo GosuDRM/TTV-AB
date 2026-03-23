@@ -1,30 +1,70 @@
 ﻿// TTV AB - Popup Script
 
 document.addEventListener("DOMContentLoaded", () => {
-	const toggle = document.getElementById("enableToggle");
-	const statusDot = document.getElementById("statusDot");
-	const statusText = document.getElementById("statusText");
-	const adsBlockedCount = document.getElementById("adsBlockedCount");
-	const domAdsBlockedCount = document.getElementById("domAdsBlockedCount");
-	const timeSaved = document.getElementById("timeSaved");
-	const statsToggle = document.getElementById("statsToggle");
-	const statsPanel = document.getElementById("statsPanel");
-	const weeklyChart = document.getElementById("weeklyChart");
-	const chartAvg = document.getElementById("chartAvg");
-	const channelList = document.getElementById("channelList");
-	const achievementsGrid = document.getElementById("achievementsGrid");
-	const achievementsProgress = document.getElementById("achievementsProgress");
-	const nextAchievement = document.getElementById("nextAchievement");
-	const langSelector = document.getElementById("langSelector");
-	const langAutoOption = document.getElementById("langAutoOption");
-	const descriptionText = document.getElementById("descriptionText");
-	const versionText = document.getElementById("versionText");
-	const achievementsTitle = document.getElementById("achievementsTitle");
-	const footerText = document.getElementById("footerText");
-	const infoText = document.getElementById("infoText");
-	const donateButton = document.getElementById("donateBtn");
-	const repoLink = document.getElementById("repoLink");
-	const authorLink = document.getElementById("authorLink");
+	const toggle = document.getElementById(
+		"enableToggle",
+	) as HTMLInputElement | null;
+	const statusDot = document.getElementById("statusDot") as HTMLElement | null;
+	const statusText = document.getElementById(
+		"statusText",
+	) as HTMLElement | null;
+	const adsBlockedCount = document.getElementById(
+		"adsBlockedCount",
+	) as HTMLElement | null;
+	const domAdsBlockedCount = document.getElementById(
+		"domAdsBlockedCount",
+	) as HTMLElement | null;
+	const timeSaved = document.getElementById("timeSaved") as HTMLElement | null;
+	const statsToggle = document.getElementById(
+		"statsToggle",
+	) as HTMLButtonElement | null;
+	const statsPanel = document.getElementById(
+		"statsPanel",
+	) as HTMLElement | null;
+	const weeklyChart = document.getElementById(
+		"weeklyChart",
+	) as HTMLElement | null;
+	const chartAvg = document.getElementById("chartAvg") as HTMLElement | null;
+	const channelList = document.getElementById(
+		"channelList",
+	) as HTMLElement | null;
+	const achievementsGrid = document.getElementById(
+		"achievementsGrid",
+	) as HTMLElement | null;
+	const achievementsProgress = document.getElementById(
+		"achievementsProgress",
+	) as HTMLElement | null;
+	const nextAchievement = document.getElementById(
+		"nextAchievement",
+	) as HTMLElement | null;
+	const langSelector = document.getElementById(
+		"langSelector",
+	) as HTMLSelectElement | null;
+	const langAutoOption = document.getElementById(
+		"langAutoOption",
+	) as HTMLOptionElement | null;
+	const descriptionText = document.getElementById(
+		"descriptionText",
+	) as HTMLElement | null;
+	const versionText = document.getElementById(
+		"versionText",
+	) as HTMLElement | null;
+	const achievementsTitle = document.getElementById(
+		"achievementsTitle",
+	) as HTMLElement | null;
+	const footerText = document.getElementById(
+		"footerText",
+	) as HTMLElement | null;
+	const infoText = document.getElementById("infoText") as HTMLElement | null;
+	const donateButton = document.getElementById(
+		"donateBtn",
+	) as HTMLAnchorElement | null;
+	const repoLink = document.getElementById(
+		"repoLink",
+	) as HTMLAnchorElement | null;
+	const authorLink = document.getElementById(
+		"authorLink",
+	) as HTMLAnchorElement | null;
 	const requiredElements = {
 		toggle,
 		statusDot,
@@ -221,7 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			"aria-label",
 			String(t.topChannels ?? "Top Channels"),
 		);
-		document.querySelectorAll("[data-i18n]").forEach((el) => {
+		document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
 			const key = el.dataset.i18n;
 			if (typeof key === "string" && Object.hasOwn(t, key)) {
 				el.textContent = String(t[key]);
@@ -319,12 +359,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	const AVG_AD_DURATION = 22;
 	const MAX_CHANNELS = 100;
-	const ADS_PREVIEW_KEY = "ttvAdsBlockedPreview";
-	const DOM_ADS_PREVIEW_KEY = "ttvDomAdsBlockedPreview";
-	const POPUP_COUNTER_POLL_MS = 400;
-	let lastRenderedAdsCount = 0;
-	let lastRenderedDomAdsCount = 0;
-	let popupCounterPollId = null;
 
 	const ACHIEVEMENTS = [
 		{
@@ -423,40 +457,25 @@ document.addEventListener("DOMContentLoaded", () => {
 		return /^[a-z0-9_]{1,25}$/.test(trimmed) ? trimmed : null;
 	}
 
-	function isPlainObject(value) {
+	function isPlainObject(value: unknown): value is PlainObject {
 		if (!value || typeof value !== "object" || Array.isArray(value)) {
 			return false;
 		}
 		const prototype = Object.getPrototypeOf(value);
-		return prototype === Object.prototype || prototype === null;
+		if (prototype === null) {
+			return true;
+		}
+		return (
+			Object.prototype.toString.call(value) === "[object Object]" &&
+			Object.getPrototypeOf(prototype) === null
+		);
 	}
 
-	function coerceMessageObject(value) {
-		if (!value || typeof value !== "object" || Array.isArray(value)) {
-			return null;
-		}
-		if (isPlainObject(value)) {
-			return value;
-		}
-		try {
-			const cloned = JSON.parse(JSON.stringify(value));
-			return isPlainObject(cloned) ? cloned : null;
-		} catch {}
-		try {
-			const cloned = Object.create(null);
-			for (const [key, entryValue] of Object.entries(value)) {
-				cloned[key] = entryValue;
-			}
-			return cloned;
-		} catch {}
-		return null;
-	}
-
-	function createChannelsMap() {
+	function createChannelsMap(): TTVABChannelMap {
 		return Object.create(null);
 	}
 
-	function createDailyStatsMap() {
+	function createDailyStatsMap(): TTVABDailyStatsMap {
 		return Object.create(null);
 	}
 
@@ -508,101 +527,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		timeSaved.textContent = formatTimeSaved(seconds);
 	}
 
-	function resolveCounterState(result) {
-		const safeResult = isPlainObject(result) ? result : {};
-		const adsCount = Math.max(
-			normalizeCount(safeResult.ttvAdsBlocked),
-			normalizeCount(safeResult[ADS_PREVIEW_KEY]),
-		);
-		const domAdsCount = Math.max(
-			normalizeCount(safeResult.ttvDomAdsBlocked),
-			normalizeCount(safeResult[DOM_ADS_PREVIEW_KEY]),
-		);
-		return { adsCount, domAdsCount };
-	}
-
-	function applyCounterState(
-		adsCount,
-		domAdsCount,
-		{ animate = false, refreshStats = false } = {},
-	) {
-		const safeAdsCount = normalizeCount(adsCount);
-		const safeDomAdsCount = normalizeCount(domAdsCount);
-		const didAdsChange = safeAdsCount !== lastRenderedAdsCount;
-		const didDomAdsChange = safeDomAdsCount !== lastRenderedDomAdsCount;
-
-		if (didAdsChange) {
-			if (animate) {
-				animateCounter(adsBlockedCount, safeAdsCount);
-			} else {
-				adsBlockedCount.textContent = formatNumber(safeAdsCount);
-			}
-			lastRenderedAdsCount = safeAdsCount;
-		}
-
-		if (didDomAdsChange) {
-			if (animate) {
-				animateCounter(domAdsBlockedCount, safeDomAdsCount);
-			} else {
-				domAdsBlockedCount.textContent = formatNumber(safeDomAdsCount);
-			}
-			lastRenderedDomAdsCount = safeDomAdsCount;
-		}
-
-		updateTimeSaved(safeAdsCount);
-
-		if (refreshStats && (didAdsChange || didDomAdsChange)) {
-			loadStatistics();
-		}
-	}
-
-	function refreshCounterState({ animate = false, refreshStats = false } = {}) {
-		const applyStorageFallback = () => {
-			chrome.storage.local.get(
-				[
-					"ttvAdsBlocked",
-					"ttvDomAdsBlocked",
-					ADS_PREVIEW_KEY,
-					DOM_ADS_PREVIEW_KEY,
-				],
-				(result) => {
-					if (chrome.runtime.lastError) {
-						console.error(
-							"[TTV AB] Popup counter refresh error:",
-							chrome.runtime.lastError.message,
-						);
-					}
-					const { adsCount, domAdsCount } = resolveCounterState(result);
-					applyCounterState(adsCount, domAdsCount, {
-						animate,
-						refreshStats,
-					});
-				},
-			);
-		};
-
-		try {
-			chrome.runtime.sendMessage({ type: "ttvab-get-counters" }, (response) => {
-				if (chrome.runtime.lastError) {
-					applyStorageFallback();
-					return;
-				}
-				const safeResponse = coerceMessageObject(response);
-				const safeCounts = coerceMessageObject(safeResponse?.counts);
-				if (!safeResponse?.ok || !safeCounts) {
-					applyStorageFallback();
-					return;
-				}
-				applyCounterState(safeCounts.ads, safeCounts.domAds, {
-					animate,
-					refreshStats,
-				});
-			});
-		} catch {
-			applyStorageFallback();
-		}
-	}
-
 	function getLast7Days() {
 		const startOfWeek = new Date();
 		startOfWeek.setHours(0, 0, 0, 0);
@@ -622,7 +546,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const safeDailyData =
 			dailyData && typeof dailyData === "object" && !Array.isArray(dailyData)
 				? dailyData
-				: {};
+				: ({} as TTVABDailyStatsMap);
 		const t = getTranslations();
 		const days = getLast7Days();
 		const todayKey = getDateKey();
@@ -692,8 +616,11 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function renderChannels(channelsData) {
-		const entries = Object.entries(channelsData || {}).map(
-			([channel, count]) => [channel, normalizeCount(count)],
+		const entries = (
+			Object.entries(channelsData || {}) as Array<[string, unknown]>
+		).map(
+			([channel, count]) =>
+				[channel, normalizeCount(count)] as [string, number],
 		);
 		channelList.replaceChildren();
 		if (entries.length === 0) {
@@ -734,25 +661,29 @@ document.addEventListener("DOMContentLoaded", () => {
 		const safeAdsBlocked = normalizeCount(adsBlocked);
 		const safeDomAdsBlocked = normalizeCount(domAdsBlocked);
 		const safeChannelCount = normalizeCount(channelCount);
-		const badges = achievementsGrid.querySelectorAll(".achievement-badge");
+		const badges =
+			achievementsGrid.querySelectorAll<HTMLButtonElement>(
+				".achievement-badge",
+			);
 		const timeSavedSecs = safeAdsBlocked * AVG_AD_DURATION;
 		const t = getTranslations();
 		let unlockedCount = 0;
 		let nextAch = null;
 
 		ACHIEVEMENTS.forEach((ach, i) => {
-			if (!badges[i]) return;
+			const badge = badges[i];
+			if (!badge) return;
 			const achievementText = getAchievementTranslation(ach.id);
 			const isUnlocked = safeUnlocked.includes(ach.id);
 			const badgeLabel = `${achievementText.name} - ${achievementText.desc}`;
-			badges[i].title = badgeLabel;
-			badges[i].setAttribute("aria-label", badgeLabel);
-			badges[i].setAttribute("aria-pressed", String(isUnlocked));
+			badge.title = badgeLabel;
+			badge.setAttribute("aria-label", badgeLabel);
+			badge.setAttribute("aria-pressed", String(isUnlocked));
 			if (isUnlocked) {
-				badges[i].classList.add("unlocked");
+				badge.classList.add("unlocked");
 				unlockedCount++;
 			} else {
-				badges[i].classList.remove("unlocked");
+				badge.classList.remove("unlocked");
 				if (!nextAch) {
 					let value = 0;
 					switch (ach.type) {
@@ -794,13 +725,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function loadStatistics() {
 		chrome.storage.local.get(
-			[
-				"ttvStats",
-				"ttvAdsBlocked",
-				"ttvDomAdsBlocked",
-				ADS_PREVIEW_KEY,
-				DOM_ADS_PREVIEW_KEY,
-			],
+			["ttvStats", "ttvAdsBlocked", "ttvDomAdsBlocked"],
 			(result) => {
 				if (chrome.runtime.lastError) {
 					console.error(
@@ -808,10 +733,10 @@ document.addEventListener("DOMContentLoaded", () => {
 						chrome.runtime.lastError.message,
 					);
 				}
-				const safeResult = result || {};
+				const safeResult = (result || {}) as PlainObject;
 				const stats = isPlainObject(safeResult.ttvStats)
 					? safeResult.ttvStats
-					: {};
+					: ({} as PlainObject);
 				const daily = normalizeDailyStatsMap(stats.daily);
 				const channels = normalizeChannelsMap(stats.channels);
 				const achievements = Array.isArray(stats.achievements)
@@ -823,15 +748,8 @@ document.addEventListener("DOMContentLoaded", () => {
 							),
 						]
 					: [];
-				const resolvedCounts = resolveCounterState(safeResult);
-				const adsCount = Math.max(
-					resolvedCounts.adsCount,
-					lastRenderedAdsCount,
-				);
-				const domAdsCount = Math.max(
-					resolvedCounts.domAdsCount,
-					lastRenderedDomAdsCount,
-				);
+				const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
+				const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 				const channelCount = Object.keys(channels).length;
 
 				renderChart(daily);
@@ -843,13 +761,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	chrome.storage.local.get(
-		[
-			"ttvAdblockEnabled",
-			"ttvAdsBlocked",
-			"ttvDomAdsBlocked",
-			ADS_PREVIEW_KEY,
-			DOM_ADS_PREVIEW_KEY,
-		],
+		["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -857,14 +769,16 @@ document.addEventListener("DOMContentLoaded", () => {
 					chrome.runtime.lastError.message,
 				);
 			}
-			const safeResult = result || {};
+			const safeResult = (result || {}) as PlainObject;
 			const enabled = safeResult.ttvAdblockEnabled !== false;
 			toggle.checked = enabled;
 			updateStatus(enabled, false);
 
-			const { adsCount, domAdsCount } = resolveCounterState(safeResult);
-			applyCounterState(adsCount, domAdsCount);
-			refreshCounterState({ refreshStats: true });
+			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
+			const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
+			adsBlockedCount.textContent = formatNumber(adsCount);
+			domAdsBlockedCount.textContent = formatNumber(domAdsCount);
+			updateTimeSaved(adsCount);
 		},
 	);
 
@@ -877,65 +791,19 @@ document.addEventListener("DOMContentLoaded", () => {
 			toggle.checked = enabled;
 			updateStatus(enabled, false);
 		}
-		const hasAdsCountChange = Boolean(
-			changes.ttvAdsBlocked || changes[ADS_PREVIEW_KEY],
-		);
-		const hasDomAdsCountChange = Boolean(
-			changes.ttvDomAdsBlocked || changes[DOM_ADS_PREVIEW_KEY],
-		);
-		if (hasAdsCountChange || hasDomAdsCountChange) {
-			refreshCounterState({ animate: true, refreshStats: true });
-		} else if (changes.ttvStats) {
+		if (changes.ttvAdsBlocked) {
+			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
+			animateCounter(adsBlockedCount, newCount);
+			updateTimeSaved(newCount);
+		}
+		if (changes.ttvDomAdsBlocked) {
+			const newDomAdsCount = normalizeCount(changes.ttvDomAdsBlocked.newValue);
+			animateCounter(domAdsBlockedCount, newDomAdsCount);
+		}
+		if (changes.ttvStats) {
 			loadStatistics();
 		}
 	});
-
-	chrome.runtime.onMessage.addListener((rawMessage) => {
-		const message = coerceMessageObject(rawMessage);
-		const detail = coerceMessageObject(message?.detail);
-		if (message?.type !== "ttvab-popup-counter-preview" || !detail) {
-			return undefined;
-		}
-
-		applyCounterState(detail.adsCount, detail.domAdsCount, {
-			animate: true,
-			refreshStats: true,
-		});
-		return undefined;
-	});
-
-	function startPopupCounterPolling() {
-		if (popupCounterPollId) return;
-		popupCounterPollId = setInterval(() => {
-			if (document.visibilityState !== "visible") return;
-			refreshCounterState({ refreshStats: true });
-		}, POPUP_COUNTER_POLL_MS);
-	}
-
-	function stopPopupCounterPolling() {
-		if (!popupCounterPollId) return;
-		clearInterval(popupCounterPollId);
-		popupCounterPollId = null;
-	}
-
-	document.addEventListener("visibilitychange", () => {
-		if (document.visibilityState === "visible") {
-			refreshCounterState({ refreshStats: true });
-			startPopupCounterPolling();
-			return;
-		}
-		stopPopupCounterPolling();
-	});
-
-	window.addEventListener("focus", () => {
-		refreshCounterState({ refreshStats: true });
-	});
-
-	window.addEventListener("beforeunload", () => {
-		stopPopupCounterPolling();
-	});
-
-	startPopupCounterPolling();
 
 	let toggleWriteInFlight = false;
 
@@ -1054,7 +922,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			? "none"
 			: "color 0.3s ease";
 		statusDot.classList.toggle("disabled", !enabled);
-		statusText.textContent = enabled ? t.active : t.inactive;
+		statusText.textContent = String(enabled ? t.active : t.inactive);
 		if (!showTransientMessage) {
 			renderStatusHelperText(t);
 			return;

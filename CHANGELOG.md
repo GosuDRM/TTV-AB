@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.3] - 2026-03-24
+
+### Changed
+- **JavaScript-to-TypeScript Repo Conversion** - The Firefox repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution, unpacked-extension loading targets `dist/manifest.json`, and Firefox package/source archives are now emitted from the built `dist/` output.
+
+### Fixed
+- **Firefox Bridge / Counter Hardening** - The Firefox build now carries the newer page-to-bridge counter pipeline, route-aware live/VOD media-key filtering, retrying counter persistence, stale-worker restart guards, and cross-realm-safe payload handling so `Ads Blocked` and `DOM Ads Blocked` stay aligned across Twitch SPA navigation.
+- **DOM Scan / Navigation Hot Path** - Player-side popup, display-ad, and direct-media detection no longer repeat the same full-document selector passes and O(nÂ²) dedupe patterns on every scan. The runtime now reuses Set-based selector dedupe, combines visible/near-player checks, filters mutation noise with grouped selectors, tries the cheaper targeted popup selectors before the broad fallback sweep, defers route-change rescans into a short settled burst, and keeps fewer stale Twitch workers alive during SPA channel navigation.
+
 ## [5.0.1] - 2026-03-23
 
 ### Fixed

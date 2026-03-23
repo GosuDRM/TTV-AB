@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.0.1-purple)
+![Version](https://img.shields.io/badge/version-5.0.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,6 +57,11 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
+### v5.0.3
+- **JavaScript-to-TypeScript Repo Conversion** - The Firefox repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution, unpacked-extension loading targets `dist/manifest.json`, and Firefox package/source archives are generated from the built `dist/` output.
+- **Firefox Bridge / Counter Hardening** - The Firefox build now carries the newer page-to-bridge counter pipeline, route-aware live/VOD media-key filtering, retrying counter persistence, stale-worker restart guards, and cross-realm-safe payload handling so `Ads Blocked` and `DOM Ads Blocked` remain in sync across Twitch SPA navigation.
+- **Performance Tuning** - The player-side DOM scanner now does less duplicate selector work during popup, display-ad, and direct-media checks by using Set-based dedupe, grouped mutation noise filtering, cheaper targeted popup detection before broad fallback sweeps, and more settled rescan scheduling during Twitch SPA channel navigation.
+
 ### v5.0.1
 - **Firefox Stutter Fix** - Reduced the player-side DOM cleanup hot path that could make Twitch pages hitch or briefly freeze in Firefox when ad UI appeared, especially around prerolls, display ads, or popup detection.
 - **Overlay Scan Scope Reduction** - Player CTA, banner, and ad-label detection now searches near the active player instead of repeatedly sweeping the full page, cutting expensive layout work during normal playback.
@@ -74,16 +79,6 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Direct VOD Video-Ad Suppression** - VOD pages now detect Twitch's injected Amazon MP4 ad media and force playback back to the real archive stream instead of letting the standalone ad video run to completion, while requiring matching ad-UI signals so live/VOD route transitions are not misclassified as standalone ads.
 - **Lower-Third Banner Coverage** - Added support for Twitch's newer `sda-frame` / `stream-lowerthird` lower-third subscription and display-ad banner variant so it is treated as an explicit DOM ad target.
 
-### v4.4.0
-- **Display Ad Feedback Overlay Cleanup** - Player-side display-ad cleanup now targets Twitch's feedback button wrapper as well as the tiny `Ad` label itself, removing leftover `Leave feedback for this Ad` overlays that could remain near the stream player.
-
-### v4.3.9
-- **Display Ad Label Cleanup** - The DOM blocker now collects and hides lingering player-side ad labels directly, removing leftover `Ad` / countdown-style badges that could remain visible after display-ad cleanup.
-
-### v4.3.8
-- **Auto Locale Selection Fix** - `Auto` now resolves from Chrome's UI locale and preferred-language list instead of only `navigator.language`, and it correctly maps Traditional Chinese variants like `zh-HK` and `zh-MO`.
-- **Locale Copy Polish** - Updated shipped non-English popup and manifest strings to read more naturally, reducing awkward direct translations and grammar issues.
-
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ## Development
@@ -91,11 +86,19 @@ See [CHANGELOG.md](CHANGELOG.md) for full version history.
 ```sh
 npm install
 npm run build
+npm run build:firefox
+npm run build:firefox-source
+npm run typecheck
 npm run lint
 npm run knip
 ```
 
-`npm run knip` is expected to pass cleanly with the current `knip` 6 prerelease configuration.
+Load the unpacked Firefox extension from `dist/manifest.json` after `npm run build`.
+
+`npm run build:firefox` writes the signed-upload package pair to `dist/TTV-AB-v<version>-firefox.zip` and `dist/TTV-AB-v<version>-firefox.xpi`.
+`npm run build:firefox-source` writes the Firefox source bundle to `dist/TTV-AB-v<version>-firefox-source.zip`.
+
+`npm run knip` is expected to pass cleanly with the current `knip` 6.0.3 configuration.
 
 ## Support
 
