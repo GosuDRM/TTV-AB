@@ -32,6 +32,9 @@ const _PlaybackRecoveryTimeoutState = {
 		mediaKey: string | null;
 	}>(),
 };
+const _PLAYBACK_INTENT_MONITOR_DELAY_MS = 500;
+const _PLAYBACK_INTENT_IDLE_SYNC_DELAY_MS = 1500;
+const _PLAYBACK_INTENT_NO_MEDIA_ROUTE_DELAY_MS = 3000;
 const _PLAYER_PREFERENCE_KEYS = [
 	"video-quality",
 	"video-muted",
@@ -351,14 +354,33 @@ function _syncPrimaryMediaPlaybackIntent() {
 
 function _monitorPlaybackIntent() {
 	let lastSyncedMediaKey = null;
+	let lastSyncAttemptAt = 0;
 
 	function check() {
+		let nextDelay = _PLAYBACK_INTENT_MONITOR_DELAY_MS;
 		try {
 			const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
-			if (currentMediaKey !== lastSyncedMediaKey || !_PlaybackIntentState.observedMedia?.isConnected) {
+			const observedMedia = _PlaybackIntentState.observedMedia;
+			const didLoseObservedMedia = Boolean(
+				observedMedia && !observedMedia.isConnected,
+			);
+			const idleSyncDelay = currentMediaKey
+				? _PLAYBACK_INTENT_IDLE_SYNC_DELAY_MS
+				: _PLAYBACK_INTENT_NO_MEDIA_ROUTE_DELAY_MS;
+			const now = Date.now();
+			if (
+				currentMediaKey !== lastSyncedMediaKey ||
+				didLoseObservedMedia ||
+				(!observedMedia?.isConnected &&
+					now - lastSyncAttemptAt >= idleSyncDelay)
+			) {
+				lastSyncAttemptAt = now;
 				_syncPrimaryMediaPlaybackIntent();
 				lastSyncedMediaKey = currentMediaKey;
 			}
+			nextDelay = _PlaybackIntentState.observedMedia?.isConnected
+				? _PLAYBACK_INTENT_MONITOR_DELAY_MS
+				: idleSyncDelay;
 
 			if (
 				currentMediaKey &&
@@ -379,7 +401,7 @@ function _monitorPlaybackIntent() {
 			_log(`Playback intent monitor error: ${err.message}`, "warning");
 		}
 
-		setTimeout(check, 500);
+		setTimeout(check, nextDelay);
 	}
 
 	check();
@@ -449,21 +471,35 @@ function _getFallbackPrimaryVideoElement() {
 
 let _cachedPrimaryMediaElement = null;
 let _cachedPrimaryMediaElementKey = null;
+let _cachedPrimaryMediaElementSearchedAt = 0;
 
 function _getPrimaryMediaElement() {
 	const currentMediaKey = __TTVAB_STATE__.PageMediaKey;
-	if (_cachedPrimaryMediaElement && _cachedPrimaryMediaElementKey === currentMediaKey && _cachedPrimaryMediaElement.isConnected) {
-		return _cachedPrimaryMediaElement;
+	const now = Date.now();
+	if (_cachedPrimaryMediaElementKey === currentMediaKey) {
+		if (_cachedPrimaryMediaElement?.isConnected) {
+			return _cachedPrimaryMediaElement;
+		}
+		if (
+			_cachedPrimaryMediaElement === null &&
+			now - _cachedPrimaryMediaElementSearchedAt <
+				_PLAYBACK_INTENT_IDLE_SYNC_DELAY_MS
+		) {
+			return null;
+		}
 	}
 
 	const { player } = _getPlayerAndState();
 	const playerVideo = player?.getHTMLVideoElement?.() || null;
-	const media = (playerVideo instanceof HTMLMediaElement && playerVideo.isConnected) 
-		? playerVideo 
-		: _getFallbackPrimaryVideoElement();
-	
-	_cachedPrimaryMediaElement = media;
+	const media =
+		playerVideo instanceof HTMLMediaElement && playerVideo.isConnected
+			? playerVideo
+			: _getFallbackPrimaryVideoElement();
+
+	_cachedPrimaryMediaElement =
+		media instanceof HTMLMediaElement && media.isConnected ? media : null;
 	_cachedPrimaryMediaElementKey = currentMediaKey;
+	_cachedPrimaryMediaElementSearchedAt = now;
 	return media;
 }
 
