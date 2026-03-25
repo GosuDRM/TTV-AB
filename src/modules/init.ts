@@ -57,24 +57,27 @@ function _blockAntiAdblockPopup() {
 	let pendingDisplayAdShellSince = 0;
 	let pendingDisplayAdShellSignature = null;
 	let lastStaleDisplayArtifactSignature = null;
-    let lastStaleDisplayArtifactCleanupAt = 0;
-    let lastRouteUrl = window.location.href;
-    let activeDirectPlayerAdMediaSignature = null;
-    let didCountCurrentDirectPlayerAdMedia = false;
-    let lastPlaybackContextChangeAt = 0;
-    let pendingRoutePlayerResyncTimer = null;
-    let pendingRouteScanTimers: ReturnType<typeof setTimeout>[] = [];
-    let scheduledScanTimer = null;
-    let scheduledScanForce = false;
-    let lastScanAt = 0;
-    let lastRelevantScanTriggerAt = Date.now();
-    let consecutiveCleanIdleScans = 0;
-    let cachedMainPlayerElement: Element | null = null;
-    let cachedMainPlayerRect: DOMRect | null = null;
-    let cachedPlayerOverlayRoots: Element[] | null = null;
-    const VISIBLE_IDLE_SCAN_DELAYS = [2000, 4000, 8000, 15000];
-    const PLAYER_SURFACE_AD_MARKER_SELECTOR =
-        '[data-ttvab-player-ad-banner="true"]';
+	let lastStaleDisplayArtifactCleanupAt = 0;
+	let lastDisplayAdShellSignalAt = 0;
+	let lastRouteUrl = window.location.href;
+	let activeDirectPlayerAdMediaSignature = null;
+	let didCountCurrentDirectPlayerAdMedia = false;
+	let lastPlaybackContextChangeAt = 0;
+	let pendingRoutePlayerResyncTimer = null;
+	let pendingRouteScanTimers: ReturnType<typeof setTimeout>[] = [];
+	let scheduledScanTimer = null;
+	let scheduledScanForce = false;
+	let lastScanAt = 0;
+	let lastRelevantScanTriggerAt = Date.now();
+	let consecutiveCleanIdleScans = 0;
+	let cachedMainPlayerElement: Element | null = null;
+	let cachedMainPlayerRect: DOMRect | null = null;
+	let cachedPlayerOverlayRoots: Element[] | null = null;
+	const VISIBLE_IDLE_SCAN_DELAYS = [2000, 4000, 8000, 15000];
+	const STALE_DISPLAY_ARTIFACT_RECENT_SIGNAL_MS = 15000;
+	const STALE_DISPLAY_ARTIFACT_SAME_SIGNATURE_COOLDOWN_MS = 10000;
+	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
+		'[data-ttvab-player-ad-banner="true"]';
 	const DISPLAY_AD_LABEL_SELECTORS = [
 		'[data-a-target="video-ad-label"]',
 		'[data-test-selector="ad-label"]',
@@ -311,19 +314,29 @@ function _blockAntiAdblockPopup() {
 			lastStaleDisplayArtifactCleanupAt = 0;
 		}
 
-		function _isDisplayAdShellArtifact(el) {
+		function _hasDisplayAdShellArtifactClass(el) {
+			const className = typeof el?.className === "string" ? el.className : "";
+			return (
+				className.includes("stream-display-ad") ||
+				className.includes("video-player--stream-display-ad")
+			);
+		}
+
+		function _isDisplayAdShellArtifact(
+			el,
+			options: { allowClassArtifacts?: boolean } = {},
+		) {
+			const { allowClassArtifacts = false } = options;
 			if (!el) return false;
 			if (
 				el.hasAttribute?.("data-ttvab-blocked") ||
-				el.hasAttribute?.("data-ttvab-display-shell-reset")
+				el.hasAttribute?.("data-ttvab-display-shell-reset") ||
+				el.getAttribute?.("data-ttvab-player-ad-banner") === "true"
 			) {
 				return true;
 			}
 
-			return (
-				typeof el.className === "string" &&
-				el.className.includes("stream-display-ad")
-			);
+			return allowClassArtifacts && _hasDisplayAdShellArtifactClass(el);
 		}
 
 		function _getDisplayAdArtifactSignature(el) {
@@ -348,7 +361,9 @@ function _blockAntiAdblockPopup() {
 			pipContainers,
 			layoutRoots,
 			inferredLayoutWrappers = [],
+			options: { allowClassArtifacts?: boolean } = {},
 		) {
+			const { allowClassArtifacts = false } = options;
 			const staleNodes = _filterUniqueElements(
 				[
 					...displayShellNodes,
@@ -363,7 +378,7 @@ function _blockAntiAdblockPopup() {
 						),
 					),
 				],
-				_isDisplayAdShellArtifact,
+				(el) => _isDisplayAdShellArtifact(el, { allowClassArtifacts }),
 			);
 			const stalePipContainers = _filterUniqueElements(
 				pipContainers,
@@ -385,7 +400,8 @@ function _blockAntiAdblockPopup() {
 			if (
 				staleSignature &&
 				staleSignature === lastStaleDisplayArtifactSignature &&
-				now - lastStaleDisplayArtifactCleanupAt < 1000
+				now - lastStaleDisplayArtifactCleanupAt <
+					STALE_DISPLAY_ARTIFACT_SAME_SIGNATURE_COOLDOWN_MS
 			) {
 				return false;
 			}
@@ -438,6 +454,7 @@ function _blockAntiAdblockPopup() {
 			isPromotedPageAdActive = false;
 			pendingDisplayAdShellSince = 0;
 			pendingDisplayAdShellSignature = null;
+			lastDisplayAdShellSignalAt = 0;
 			_resetDirectPlayerAdMediaState();
 		}
 
@@ -620,6 +637,7 @@ function _blockAntiAdblockPopup() {
 				pipContainers,
 				layoutRoots,
 				_getInferredDisplayAdLayoutWrappers(),
+				{ allowClassArtifacts: true },
 			);
 
 			explicitDisplayNodes.forEach((el) => {
@@ -1537,11 +1555,23 @@ function _blockAntiAdblockPopup() {
 				_hideElement(el);
 			});
 
+			const now = Date.now();
+			if (hasDisplayAdSignal) {
+				lastDisplayAdShellSignalAt = now;
+			}
+
 			if (!hasDisplayAdSignal) {
+				const allowRecentClassArtifactCleanup =
+					isDisplayAdShellActive ||
+					(now - lastDisplayAdShellSignalAt <
+						STALE_DISPLAY_ARTIFACT_RECENT_SIGNAL_MS &&
+						lastDisplayAdShellSignalAt > 0);
 				_cleanupStaleDisplayAdShell(
 					displayShellNodes,
 					pipContainers,
 					layoutRoots,
+					[],
+					{ allowClassArtifacts: allowRecentClassArtifactCleanup },
 				);
 				isDisplayAdShellActive = false;
 				didCountCurrentDisplayAdShellCleanup = false;
@@ -1564,8 +1594,6 @@ function _blockAntiAdblockPopup() {
 				hasInferredDisplayAdSignal ? 1 : 0,
 				hasAdLabel ? 1 : 0,
 			].join(":");
-			const now = Date.now();
-
 			if (!isDisplayAdShellActive) {
 				if (pendingDisplayAdShellSignature !== signalSignature) {
 					pendingDisplayAdShellSignature = signalSignature;
@@ -1945,6 +1973,7 @@ function _blockAntiAdblockPopup() {
 			return false;
 		}
 
+		_cleanupAllKnownDisplayArtifacts();
 		if (_runScan(true)) {
 			_log("Popup removed on initial scan", "success");
 		}
