@@ -253,9 +253,27 @@ function _blockAntiAdblockPopup() {
 			el.style.setProperty("background-color", "transparent", "important");
 			el.style.setProperty("width", "100%", "important");
 			el.style.setProperty("height", "100%", "important");
+			el.style.setProperty("min-width", "0", "important");
+			el.style.setProperty("min-height", "0", "important");
 			el.style.setProperty("max-width", "100%", "important");
 			el.style.setProperty("max-height", "100%", "important");
 			el.style.setProperty("inset", "0", "important");
+			el.style.setProperty("grid-template-columns", "minmax(0, 1fr)", "important");
+			el.style.setProperty("grid-template-rows", "minmax(0, 1fr)", "important");
+			el.style.setProperty("grid-template-areas", "none", "important");
+			el.style.setProperty("grid-auto-columns", "minmax(0, 1fr)", "important");
+			el.style.setProperty("grid-auto-rows", "minmax(0, 1fr)", "important");
+			el.style.setProperty("grid-auto-flow", "row", "important");
+			el.style.setProperty("column-gap", "0", "important");
+			el.style.setProperty("row-gap", "0", "important");
+			el.style.setProperty("gap", "0", "important");
+			el.style.setProperty("justify-content", "stretch", "important");
+			el.style.setProperty("justify-items", "stretch", "important");
+			el.style.setProperty("align-content", "stretch", "important");
+			el.style.setProperty("align-items", "stretch", "important");
+			el.style.setProperty("flex", "1 1 auto", "important");
+			el.style.setProperty("flex-basis", "auto", "important");
+			el.style.setProperty("overflow", "hidden", "important");
 			el.setAttribute("data-ttvab-display-shell-reset", "true");
 		}
 
@@ -284,6 +302,8 @@ function _blockAntiAdblockPopup() {
 				"background-color",
 				"width",
 				"height",
+				"min-width",
+				"min-height",
 				"max-width",
 				"max-height",
 				"inset",
@@ -292,15 +312,21 @@ function _blockAntiAdblockPopup() {
 				"top",
 				"bottom",
 				"grid-template-columns",
+				"grid-template-rows",
 				"grid-template-areas",
 				"grid-auto-columns",
+				"grid-auto-rows",
 				"grid-auto-flow",
 				"column-gap",
+				"row-gap",
 				"gap",
 				"justify-content",
+				"justify-items",
+				"align-content",
 				"align-items",
 				"flex",
 				"flex-basis",
+				"overflow",
 			].forEach((property) => {
 				el.style.removeProperty(property);
 			});
@@ -414,6 +440,12 @@ function _blockAntiAdblockPopup() {
 			);
 
 			staleNodes.forEach((el) => {
+				if (_hasDisplayAdShellArtifactClass(el)) {
+					// Keep class-based display-shell roots collapsed until Twitch
+					// drops the stale layout classes from the live player wrapper.
+					_resetStreamDisplayLayout(el);
+					return;
+				}
 				if (
 					el.querySelector?.("video") ||
 					el.matches?.('[data-a-target="video-player"]') ||
