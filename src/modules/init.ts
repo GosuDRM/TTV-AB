@@ -1598,9 +1598,6 @@ function _blockAntiAdblockPopup() {
 			try {
 				if (el.matches?.(SAFELIST_SELECTOR_GROUP)) return true;
 			} catch {}
-			try {
-				if (el.querySelector?.(SAFELIST_SELECTOR_GROUP)) return true;
-			} catch {}
 			return false;
 		}
 
