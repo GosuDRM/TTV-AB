@@ -62,6 +62,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ### v5.0.6
 - **Lingering Display Shell Layout Flattening** - Stale display-shell roots now stay flattened until Twitch clears leftover shell classes, preventing black L-shaped layout artifacts from lingering beside the live player after ad cleanup.
 - **Lower-Third Layout Wrapper Collapse** - Lower-third display-ad wrappers near the player are now promoted into the layout-reset path, preventing bottom black bars from staying behind after the ad iframe is hidden.
+- **Right-Side Inset Wrapper Collapse** - Explicit display-shell ads now also probe inferred side-inset player wrappers even without an ad label, preventing right-edge black columns from lingering after the DOM ad is hidden.
 
 ### v5.0.5
 - **Navigation Cleanup Hardening** - Twitch SPA channel and live/VOD route changes now clear stale competing-media suppression state so old media elements do not stay retained or muted across long sessions.
