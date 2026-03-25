@@ -1192,6 +1192,71 @@ function _blockAntiAdblockPopup() {
 			return _filterUniqueElements(wrappers);
 		}
 
+		function _getLowerThirdDisplayAdLayoutWrappers(nodes, playerRect = null) {
+			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
+			if (!resolvedPlayerRect || !Array.isArray(nodes) || nodes.length === 0) {
+				return [];
+			}
+
+			const wrappers = [];
+			const seen = new Set();
+			for (const seed of nodes) {
+				if (!(seed instanceof Element)) continue;
+
+				let current = seed.parentElement;
+				for (let depth = 0; depth < 6 && current; depth += 1) {
+					if (_isSafeElement(current)) break;
+					if (!_isVisibleNearPlayerElement(current, resolvedPlayerRect)) {
+						current = current.parentElement;
+						continue;
+					}
+
+					const rect = current.getBoundingClientRect();
+					const extraTop = Math.max(0, resolvedPlayerRect.top - rect.top);
+					const extraLeft = Math.max(0, resolvedPlayerRect.left - rect.left);
+					const extraRight = Math.max(0, rect.right - resolvedPlayerRect.right);
+					const extraBottom = Math.max(0, rect.bottom - resolvedPlayerRect.bottom);
+					const hasBottomBand = extraBottom > 10 || rect.height > resolvedPlayerRect.height + 16;
+					const hasSideInset = extraLeft > 24 || extraRight > 24 || extraTop > 24;
+					const className =
+						typeof current.className === "string" ? current.className : "";
+					const hasLowerThirdMarker =
+						current.id === "stream-lowerthird" ||
+						current.getAttribute?.("data-test-selector") === "sda-frame" ||
+						className.includes("lower-third") ||
+						className.includes("stream-display-ad");
+					if (!hasBottomBand && !hasSideInset && !hasLowerThirdMarker) {
+						current = current.parentElement;
+						continue;
+					}
+
+					if (
+						rect.width > Math.min(window.innerWidth * 0.96, resolvedPlayerRect.width + 260) ||
+						rect.height > Math.min(window.innerHeight * 0.92, resolvedPlayerRect.height + 180)
+					) {
+						current = current.parentElement;
+						continue;
+					}
+
+					const style = window.getComputedStyle(current);
+					const hasStructuredLayout =
+						style.display === "grid" ||
+						style.display === "flex" ||
+						style.position === "relative" ||
+						style.position === "absolute";
+					if (!hasStructuredLayout && !hasLowerThirdMarker) {
+						current = current.parentElement;
+						continue;
+					}
+
+					_pushUniqueElement(wrappers, current, seen);
+					current = current.parentElement;
+				}
+			}
+
+			return wrappers;
+		}
+
 		function _isNearPlayerRect(el, playerRect) {
 			if (!el || !playerRect) return false;
 
@@ -1550,6 +1615,10 @@ function _blockAntiAdblockPopup() {
 				],
 				isVisibleNearPlayer,
 			);
+			const lowerThirdDisplayAdNodes = _filterUniqueElements(
+				_queryUniqueElements(LOWER_THIRD_DISPLAY_AD_SELECTORS),
+				isVisibleNearPlayer,
+			);
 			const displayShellNodes = _filterUniqueElements(
 				_queryUniqueElements(DISPLAY_AD_SHELL_SELECTORS),
 				isVisibleNearPlayer,
@@ -1566,6 +1635,10 @@ function _blockAntiAdblockPopup() {
 			const hasAdLabel = adLabels.length > 0;
 			const hasDisplayAdCta = playerAdCallToActionNodes.length > 0;
 			const hasOverlayBanner = playerAdBannerTextNodes.length > 0;
+			const lowerThirdLayoutWrappers = _getLowerThirdDisplayAdLayoutWrappers(
+				lowerThirdDisplayAdNodes,
+				playerRect,
+			);
 			const inferredLayoutWrappers = hasAdLabel
 				? _getInferredDisplayAdLayoutWrappers()
 				: [];
@@ -1620,6 +1693,7 @@ function _blockAntiAdblockPopup() {
 				displayShellNodes.length,
 				pipContainers.length,
 				layoutRoots.length,
+				lowerThirdLayoutWrappers.length,
 				hasDisplayAdCta ? 1 : 0,
 				hasOverlayBanner ? 1 : 0,
 				hasExplicitDisplayAdSignal ? inferredLayoutWrappers.length : 0,
@@ -1691,6 +1765,9 @@ function _blockAntiAdblockPopup() {
 			}
 
 			layoutRoots.forEach((el) => {
+				_resetStreamDisplayLayout(el);
+			});
+			lowerThirdLayoutWrappers.forEach((el) => {
 				_resetStreamDisplayLayout(el);
 			});
 			inferredLayoutWrappers.forEach((el) => {
