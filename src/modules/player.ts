@@ -25,6 +25,13 @@ const _PlaybackIntentState = {
 	suppressedPauseMediaKey: null,
 	suppressedPauseUntil: 0,
 };
+const _PlaybackRecoveryTimeoutState = {
+	timeouts: new Set<{
+		id: ReturnType<typeof setTimeout>;
+		channel: string | null;
+		mediaKey: string | null;
+	}>(),
+};
 const _PLAYER_PREFERENCE_KEYS = [
 	"video-quality",
 	"video-muted",
@@ -106,6 +113,72 @@ function _resolvePlayerMediaKey(channel = null, mediaKey = null) {
 		_buildMediaKey("live", __TTVAB_STATE__.PageChannel, null) ||
 		null
 	);
+}
+
+function _getCurrentPlaybackRecoveryContext() {
+	return {
+		channel:
+			_normalizePlayerChannel(__TTVAB_STATE__.PageChannel) ||
+			_normalizePlayerChannel(__TTVAB_STATE__.CurrentAdChannel) ||
+			null,
+		mediaKey:
+			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
+			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ||
+			null,
+	};
+}
+
+function _isPlaybackRecoveryContextCurrent(channel = null, mediaKey = null) {
+	const targetMediaKey = _normalizeMediaKey(mediaKey);
+	const targetChannel = _normalizePlayerChannel(channel);
+	const currentContext = _getCurrentPlaybackRecoveryContext();
+
+	if (targetMediaKey) {
+		if (!currentContext.mediaKey) return false;
+		return currentContext.mediaKey === targetMediaKey;
+	}
+
+	if (targetChannel) {
+		if (!currentContext.channel) return false;
+		return currentContext.channel === targetChannel;
+	}
+
+	return true;
+}
+
+function _clearPlaybackRecoveryTimeouts() {
+	for (const entry of _PlaybackRecoveryTimeoutState.timeouts) {
+		clearTimeout(entry.id);
+	}
+	_PlaybackRecoveryTimeoutState.timeouts.clear();
+}
+
+function _schedulePlaybackRecoveryTimeout(
+	callback,
+	delay = 0,
+	channel = null,
+	mediaKey = null,
+) {
+	if (typeof callback !== "function") return null;
+
+	const entry = {
+		id: 0 as ReturnType<typeof setTimeout>,
+		channel: _normalizePlayerChannel(channel),
+		mediaKey: _resolvePlayerMediaKey(channel, mediaKey),
+	};
+
+	entry.id = setTimeout(() => {
+		_PlaybackRecoveryTimeoutState.timeouts.delete(entry);
+		if (!_isPlaybackRecoveryContextCurrent(entry.channel, entry.mediaKey)) {
+			return;
+		}
+		try {
+			callback();
+		} catch {}
+	}, Math.max(0, delay));
+
+	_PlaybackRecoveryTimeoutState.timeouts.add(entry);
+	return entry.id;
 }
 
 function _markProgrammaticPause() {
@@ -346,11 +419,12 @@ function _scheduleResumeRetries(
 
 	for (const delay of delays) {
 		if (!Number.isFinite(delay) || delay < 0) continue;
-		setTimeout(() => {
-			try {
-				_resumeActivePlayerIfPaused(channel, mediaKey);
-			} catch {}
-		}, delay);
+		_schedulePlaybackRecoveryTimeout(
+			() => _resumeActivePlayerIfPaused(channel, mediaKey),
+			delay,
+			channel,
+			mediaKey,
+		);
 	}
 }
 

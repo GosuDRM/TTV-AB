@@ -708,6 +708,9 @@ function _blockAntiAdblockPopup() {
 				if (typeof _clearSuppressedMediaTracking === "function") {
 					_clearSuppressedMediaTracking({ restoreConnected: true });
 				}
+				if (typeof _clearPlaybackRecoveryTimeouts === "function") {
+					_clearPlaybackRecoveryTimeouts();
+				}
 				_resetDirectPlayerAdMediaState();
 				_scheduleRoutePlayerResync(previousContext, currentContext);
 			}
@@ -1205,7 +1208,7 @@ function _blockAntiAdblockPopup() {
 				Date.now() - lastPlaybackContextChangeAt < 1500;
 
 			if (shouldReloadPrimary && typeof _doPlayerTask === "function") {
-				setTimeout(
+				_schedulePlaybackRecoveryTimeout(
 					() => {
 						_doPlayerTask(false, true, {
 							reason: didRecentlyChangePlaybackContext
@@ -1214,6 +1217,8 @@ function _blockAntiAdblockPopup() {
 						});
 					},
 					didRecentlyChangePlaybackContext ? 150 : 0,
+					currentContext.ChannelName,
+					currentContext.MediaKey,
 				);
 				return;
 			}
@@ -1240,9 +1245,24 @@ function _blockAntiAdblockPopup() {
 				} catch { }
 			};
 
-			setTimeout(resume, 0);
-			setTimeout(resume, 120);
-			setTimeout(resume, 350);
+			_schedulePlaybackRecoveryTimeout(
+				resume,
+				0,
+				currentContext.ChannelName,
+				currentContext.MediaKey,
+			);
+			_schedulePlaybackRecoveryTimeout(
+				resume,
+				120,
+				currentContext.ChannelName,
+				currentContext.MediaKey,
+			);
+			_schedulePlaybackRecoveryTimeout(
+				resume,
+				350,
+				currentContext.ChannelName,
+				currentContext.MediaKey,
+			);
 		}
 
 		function _collapseDirectPlayerAdMedia() {

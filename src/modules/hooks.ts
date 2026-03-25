@@ -592,6 +592,9 @@ function _hookWorker() {
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
 									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
+								if (typeof _clearPlaybackRecoveryTimeouts === "function") {
+									_clearPlaybackRecoveryTimeouts();
+								}
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
@@ -601,30 +604,40 @@ function _hookWorker() {
 								}
 								if (typeof _suppressCompetingMediaDuringAd === "function") {
 									_suppressCompetingMediaDuringAd(channel, mediaKey);
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _suppressCompetingMediaDuringAd(channel, mediaKey),
 										80,
+										channel,
+										mediaKey,
 									);
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _suppressCompetingMediaDuringAd(channel, mediaKey),
 										350,
+										channel,
+										mediaKey,
 									);
 								}
 								if (typeof _rememberPlayerPlaybackForAd === "function") {
 									_rememberPlayerPlaybackForAd(channel, mediaKey);
 								}
 								if (typeof _resumeActivePlayerIfPaused === "function") {
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _resumeActivePlayerIfPaused(channel, mediaKey),
 										180,
+										channel,
+										mediaKey,
 									);
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _resumeActivePlayerIfPaused(channel, mediaKey),
 										650,
+										channel,
+										mediaKey,
 									);
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _resumeActivePlayerIfPaused(channel, mediaKey),
 										1400,
+										channel,
+										mediaKey,
 									);
 								}
 							}
@@ -686,31 +699,37 @@ function _hookWorker() {
 								nextPinnedContext.ChannelName,
 								nextPinnedContext.MediaKey,
 							);
-							setTimeout(
+							_schedulePlaybackRecoveryTimeout(
 								() =>
 									_suppressCompetingMediaDuringAd(
 										nextPinnedContext.ChannelName,
 										nextPinnedContext.MediaKey,
 									),
 								120,
+								nextPinnedContext.ChannelName,
+								nextPinnedContext.MediaKey,
 							);
 						}
 						if (typeof _resumeActivePlayerIfPaused === "function") {
-							setTimeout(
+							_schedulePlaybackRecoveryTimeout(
 								() =>
 									_resumeActivePlayerIfPaused(
 										nextPinnedContext.ChannelName,
 										nextPinnedContext.MediaKey,
 									),
 								180,
+								nextPinnedContext.ChannelName,
+								nextPinnedContext.MediaKey,
 							);
-							setTimeout(
+							_schedulePlaybackRecoveryTimeout(
 								() =>
 									_resumeActivePlayerIfPaused(
 										nextPinnedContext.ChannelName,
 										nextPinnedContext.MediaKey,
 									),
 								650,
+								nextPinnedContext.ChannelName,
+								nextPinnedContext.MediaKey,
 							);
 						}
 						_broadcastWorkers({
@@ -738,6 +757,9 @@ function _hookWorker() {
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 						__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 						__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+						if (typeof _clearPlaybackRecoveryTimeouts === "function") {
+							_clearPlaybackRecoveryTimeouts();
+						}
 						_broadcastWorkers({
 							key: "UpdateCurrentAdContext",
 							value: null,
@@ -841,12 +863,17 @@ function _hookWorker() {
 							);
 						}
 						if (typeof _resumePlayerAfterAdIfNeeded === "function") {
-							setTimeout(() => {
-								_resumePlayerAfterAdIfNeeded(
-									e.data.channel || null,
-									e.data.mediaKey || null,
-								);
-							}, 150);
+							_schedulePlaybackRecoveryTimeout(
+								() => {
+									_resumePlayerAfterAdIfNeeded(
+										e.data.channel || null,
+										e.data.mediaKey || null,
+									);
+								},
+								150,
+								e.data.channel || null,
+								e.data.mediaKey || null,
+							);
 						}
 						if (typeof _scheduleResumeRetries === "function") {
 							_scheduleResumeRetries(
@@ -856,18 +883,28 @@ function _hookWorker() {
 							);
 						}
 						if (typeof _resumeActivePlayerIfPaused === "function") {
-							setTimeout(() => {
-								_resumeActivePlayerIfPaused(
-									e.data.channel || null,
-									e.data.mediaKey || null,
-								);
-							}, 320);
-							setTimeout(() => {
-								_resumeActivePlayerIfPaused(
-									e.data.channel || null,
-									e.data.mediaKey || null,
-								);
-							}, 850);
+							_schedulePlaybackRecoveryTimeout(
+								() => {
+									_resumeActivePlayerIfPaused(
+										e.data.channel || null,
+										e.data.mediaKey || null,
+									);
+								},
+								320,
+								e.data.channel || null,
+								e.data.mediaKey || null,
+							);
+							_schedulePlaybackRecoveryTimeout(
+								() => {
+									_resumeActivePlayerIfPaused(
+										e.data.channel || null,
+										e.data.mediaKey || null,
+									);
+								},
+								850,
+								e.data.channel || null,
+								e.data.mediaKey || null,
+							);
 						}
 						break;
 					case "PauseResumePlayer":
