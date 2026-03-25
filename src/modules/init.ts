@@ -564,6 +564,7 @@ function _blockAntiAdblockPopup() {
 				displayShellNodes,
 				pipContainers,
 				layoutRoots,
+				_getInferredDisplayAdLayoutWrappers(),
 			);
 
 			explicitDisplayNodes.forEach((el) => {
