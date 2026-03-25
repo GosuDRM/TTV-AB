@@ -453,9 +453,9 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _resetPlayerDetectionCaches() {
-			cachedMainPlayerElement = undefined;
-			cachedMainPlayerRect = undefined;
-			cachedPlayerOverlayRoots = undefined;
+			cachedMainPlayerElement = null;
+			cachedMainPlayerRect = null;
+			cachedPlayerOverlayRoots = null;
 		}
 
 		function _pushUniqueElement(list, el) {
