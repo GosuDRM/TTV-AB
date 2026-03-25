@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.0.5-purple)
+![Version](https://img.shields.io/badge/version-5.0.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -58,6 +58,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v5.0.6
+- **Lingering Display Shell Layout Flattening** - Stale display-shell roots now stay flattened until Twitch clears leftover shell classes, preventing black L-shaped layout artifacts from lingering beside the live player after ad cleanup.
+- **Lower-Third Layout Wrapper Collapse** - Lower-third display-ad wrappers near the player are now promoted into the layout-reset path, preventing bottom black bars from staying behind after the ad iframe is hidden.
 
 ### v5.0.5
 - **Navigation Cleanup Hardening** - Twitch SPA channel and live/VOD route changes now clear stale competing-media suppression state so old media elements do not stay retained or muted across long sessions.
