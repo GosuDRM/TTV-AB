@@ -9,6 +9,7 @@ const _PlayerBufferState = {
 };
 
 let _cachedPlayerRef = null;
+let _cachedPlayerRefMediaKey = null;
 const _AdAudioSuppressionState = {
 	suppressedMedia: new Map(),
 	activeMediaKey: null,
@@ -98,6 +99,21 @@ function _getPlayerAndState() {
 	);
 
 	return { player, state: playerState };
+}
+
+function _resetPlayerBufferMonitorState() {
+	_PlayerBufferState.position = 0;
+	_PlayerBufferState.bufferedPosition = 0;
+	_PlayerBufferState.bufferDuration = 0;
+	_PlayerBufferState.numSame = 0;
+}
+
+function _clearCachedPlayerRef(resetBufferState = true) {
+	_cachedPlayerRef = null;
+	_cachedPlayerRefMediaKey = null;
+	if (resetBufferState) {
+		_resetPlayerBufferMonitorState();
+	}
 }
 
 function _normalizePlayerChannel(channel = null) {
@@ -887,6 +903,23 @@ function _doPlayerTask(
 
 function _monitorPlayerBuffering() {
 	function check() {
+		const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
+		const hasLivePlaybackContext =
+			__TTVAB_STATE__.PageMediaType === "live" && Boolean(currentMediaKey);
+		let nextDelay = __TTVAB_STATE__.PlayerBufferingDelay;
+		if (!hasLivePlaybackContext) {
+			_clearCachedPlayerRef();
+			setTimeout(
+				check,
+				Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000),
+			);
+			return;
+		}
+
+		if (_cachedPlayerRefMediaKey !== currentMediaKey) {
+			_clearCachedPlayerRef();
+		}
+
 		if (_cachedPlayerRef) {
 			try {
 				const player = _cachedPlayerRef.player;
@@ -894,7 +927,12 @@ function _monitorPlayerBuffering() {
 				const playerCore = _getPlayerCore(player);
 
 				if (!playerCore) {
-					_cachedPlayerRef = null;
+					_clearCachedPlayerRef();
+				} else if (
+					state?.props?.content?.type &&
+					state.props.content.type !== "live"
+				) {
+					_clearCachedPlayerRef();
 				} else if (
 					state?.props?.content?.type === "live" &&
 					player.getHTMLVideoElement()?.ended
@@ -950,7 +988,7 @@ function _monitorPlayerBuffering() {
 				}
 			} catch (err) {
 				_log(`Buffer monitor error: ${err.message}`, "error");
-				_cachedPlayerRef = null;
+				_clearCachedPlayerRef();
 			}
 		}
 
@@ -958,10 +996,11 @@ function _monitorPlayerBuffering() {
 			const playerAndState = _getPlayerAndState();
 			if (playerAndState.player && playerAndState.state) {
 				_cachedPlayerRef = playerAndState;
+				_cachedPlayerRefMediaKey = currentMediaKey;
 			}
 		}
 
-		setTimeout(check, __TTVAB_STATE__.PlayerBufferingDelay);
+		setTimeout(check, nextDelay);
 	}
 
 	check();
