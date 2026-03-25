@@ -277,11 +277,16 @@ function _syncPrimaryMediaPlaybackIntent() {
 }
 
 function _monitorPlaybackIntent() {
+	let lastSyncedMediaKey = null;
+
 	function check() {
 		try {
-			_syncPrimaryMediaPlaybackIntent();
-
 			const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
+			if (currentMediaKey !== lastSyncedMediaKey || !_PlaybackIntentState.observedMedia?.isConnected) {
+				_syncPrimaryMediaPlaybackIntent();
+				lastSyncedMediaKey = currentMediaKey;
+			}
+
 			if (
 				currentMediaKey &&
 				_PlaybackIntentState.userPausedMediaKey &&
