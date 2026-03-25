@@ -8,6 +8,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Lingering Display Shell Layout Flattening** - Stale display-shell roots now stay flattened until Twitch clears leftover shell classes, preventing black L-shaped layout artifacts from lingering beside the live player after ad cleanup.
 - **Lower-Third Layout Wrapper Collapse** - Lower-third display-ad wrappers near the player are now promoted into the layout-reset path, preventing bottom black bars from staying behind after the ad iframe is hidden.
 - **Right-Side Inset Wrapper Collapse** - Explicit display-shell ads now also probe inferred side-inset player wrappers even without an ad label, preventing right-edge black columns from lingering after the DOM ad is hidden.
+- **Ad Recovery Resume Hardening** - Post-ad resume intent now survives transient player pauses and keeps retrying through the live buffer monitor until playback actually resumes, reducing cases where ad recovery leaves the stream paused.
 
 ## [5.0.5] - 2026-03-25
 
