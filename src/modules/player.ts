@@ -368,13 +368,24 @@ function _getFallbackPrimaryVideoElement() {
 	return bestVideo;
 }
 
+let _cachedPrimaryMediaElement = null;
+let _cachedPrimaryMediaElementKey = null;
+
 function _getPrimaryMediaElement() {
+	const currentMediaKey = __TTVAB_STATE__.PageMediaKey;
+	if (_cachedPrimaryMediaElement && _cachedPrimaryMediaElementKey === currentMediaKey && _cachedPrimaryMediaElement.isConnected) {
+		return _cachedPrimaryMediaElement;
+	}
+
 	const { player } = _getPlayerAndState();
 	const playerVideo = player?.getHTMLVideoElement?.() || null;
-	if (playerVideo instanceof HTMLMediaElement && playerVideo.isConnected) {
-		return playerVideo;
-	}
-	return _getFallbackPrimaryVideoElement();
+	const media = (playerVideo instanceof HTMLMediaElement && playerVideo.isConnected) 
+		? playerVideo 
+		: _getFallbackPrimaryVideoElement();
+	
+	_cachedPrimaryMediaElement = media;
+	_cachedPrimaryMediaElementKey = currentMediaKey;
+	return media;
 }
 
 function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
