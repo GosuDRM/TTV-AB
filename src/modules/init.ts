@@ -57,21 +57,24 @@ function _blockAntiAdblockPopup() {
 	let pendingDisplayAdShellSince = 0;
 	let pendingDisplayAdShellSignature = null;
 	let lastStaleDisplayArtifactSignature = null;
-	let lastStaleDisplayArtifactCleanupAt = 0;
-	let lastRouteUrl = window.location.href;
-	let activeDirectPlayerAdMediaSignature = null;
-	let didCountCurrentDirectPlayerAdMedia = false;
-	let lastPlaybackContextChangeAt = 0;
-	let pendingRoutePlayerResyncTimer = null;
-	let pendingRouteScanTimers: ReturnType<typeof setTimeout>[] = [];
-	let scheduledScanTimer = null;
-	let scheduledScanForce = false;
-	let lastScanAt = 0;
-	let cachedMainPlayerElement: Element | null = null;
-	let cachedMainPlayerRect: DOMRect | null = null;
-	let cachedPlayerOverlayRoots: Element[] | null = null;
-	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
-		'[data-ttvab-player-ad-banner="true"]';
+    let lastStaleDisplayArtifactCleanupAt = 0;
+    let lastRouteUrl = window.location.href;
+    let activeDirectPlayerAdMediaSignature = null;
+    let didCountCurrentDirectPlayerAdMedia = false;
+    let lastPlaybackContextChangeAt = 0;
+    let pendingRoutePlayerResyncTimer = null;
+    let pendingRouteScanTimers: ReturnType<typeof setTimeout>[] = [];
+    let scheduledScanTimer = null;
+    let scheduledScanForce = false;
+    let lastScanAt = 0;
+    let lastRelevantScanTriggerAt = Date.now();
+    let consecutiveCleanIdleScans = 0;
+    let cachedMainPlayerElement: Element | null = null;
+    let cachedMainPlayerRect: DOMRect | null = null;
+    let cachedPlayerOverlayRoots: Element[] | null = null;
+    const VISIBLE_IDLE_SCAN_DELAYS = [2000, 4000, 8000, 15000];
+    const PLAYER_SURFACE_AD_MARKER_SELECTOR =
+        '[data-ttvab-player-ad-banner="true"]';
 	const DISPLAY_AD_LABEL_SELECTORS = [
 		'[data-a-target="video-ad-label"]',
 		'[data-test-selector="ad-label"]',
@@ -469,6 +472,35 @@ function _blockAntiAdblockPopup() {
 			cachedPlayerOverlayRoots = null;
 		}
 
+		function _markIdleScanInterest() {
+			lastRelevantScanTriggerAt = Date.now();
+			consecutiveCleanIdleScans = 0;
+		}
+
+		function _recordIdleScanResult(didWork) {
+			if (didWork) {
+				_markIdleScanInterest();
+				return;
+			}
+			consecutiveCleanIdleScans = Math.min(
+				consecutiveCleanIdleScans + 1,
+				VISIBLE_IDLE_SCAN_DELAYS.length - 1,
+			);
+		}
+
+		function _getIdleScanDelay() {
+			if (_isDocumentHidden()) return 5000;
+			if (Date.now() - lastRelevantScanTriggerAt < 4000) {
+				return VISIBLE_IDLE_SCAN_DELAYS[0];
+			}
+			return VISIBLE_IDLE_SCAN_DELAYS[
+				Math.min(
+					consecutiveCleanIdleScans,
+					VISIBLE_IDLE_SCAN_DELAYS.length - 1,
+				)
+			];
+		}
+
 		function _pushUniqueElement(list, el, seen = null) {
 			if (!el) return;
 			if (seen ? seen.has(el) : list.includes(el)) return;
@@ -686,6 +718,7 @@ function _blockAntiAdblockPopup() {
 			const shouldForce = force === true;
 			if (!shouldForce && routeUrl === lastRouteUrl) return false;
 			lastRouteUrl = routeUrl;
+			_markIdleScanInterest();
 			_resetPlayerDetectionCaches();
 			const previousContext = _normalizePlaybackContext({
 				MediaType: __TTVAB_STATE__.PageMediaType,
@@ -1894,6 +1927,7 @@ function _blockAntiAdblockPopup() {
 		_onInternalMessage("ttvab-ad-blocked", (detail) => {
 			const safeDetail = _getTrustedBridgeMessageDetail(detail);
 			if (!Number.isFinite(safeDetail?.count)) return;
+			_markIdleScanInterest();
 			const currentContext = _getPlaybackContextFromUrl(window.location.href);
 			const blockedChannel =
 				typeof safeDetail.channel === "string" ? safeDetail.channel : null;
@@ -1938,6 +1972,7 @@ function _blockAntiAdblockPopup() {
 			}
 
 			if (!shouldScan) return;
+			_markIdleScanInterest();
 
 			if (_handleRouteChange()) {
 				if (debounceTimer) {
@@ -1967,11 +2002,11 @@ function _blockAntiAdblockPopup() {
 		});
 
 		function _scheduleIdleScan() {
-			const delay = _isDocumentHidden() ? 5000 : 2000;
+			const delay = _getIdleScanDelay();
 			setTimeout(() => {
 				const didRouteChange = _handleRouteChange();
-				if (!didRouteChange && !_isDocumentHidden()) {
-					_queueScan(0);
+				if (!didRouteChange && !_isDocumentHidden() && !scheduledScanTimer) {
+					_recordIdleScanResult(_runScan(false));
 				}
 				_scheduleIdleScan();
 			}, delay);
