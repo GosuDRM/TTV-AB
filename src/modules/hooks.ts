@@ -596,6 +596,7 @@ function _hookWorker() {
 									_clearPlaybackRecoveryTimeouts();
 								}
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+								__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
 								__TTVAB_STATE__.PinnedBackupPlayerMediaKey = mediaKey;
@@ -757,6 +758,7 @@ function _hookWorker() {
 						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 						__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 						__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+						__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
 						if (typeof _clearPlaybackRecoveryTimeouts === "function") {
 							_clearPlaybackRecoveryTimeouts();
 						}

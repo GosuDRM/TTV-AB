@@ -36,6 +36,7 @@ const _PlaybackRecoveryTimeoutState = {
 const _PLAYBACK_INTENT_MONITOR_DELAY_MS = 500;
 const _PLAYBACK_INTENT_IDLE_SYNC_DELAY_MS = 1500;
 const _PLAYBACK_INTENT_NO_MEDIA_ROUTE_DELAY_MS = 3000;
+const _AD_RESUME_INTENT_WINDOW_MS = 15000;
 const _PLAYER_PREFERENCE_KEYS = [
 	"video-quality",
 	"video-muted",
@@ -106,6 +107,7 @@ function _resetPlayerBufferMonitorState() {
 	_PlayerBufferState.bufferedPosition = 0;
 	_PlayerBufferState.bufferDuration = 0;
 	_PlayerBufferState.numSame = 0;
+	_PlayerBufferState.lastFixTime = 0;
 }
 
 function _clearCachedPlayerRef(resetBufferState = true) {
@@ -653,6 +655,26 @@ function _clearAdResumeIntent() {
 	__TTVAB_STATE__.ShouldResumeAfterAd = false;
 	__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
 	__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+	__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
+}
+
+function _hasPendingAdResumeIntent(channel = null, mediaKey = null) {
+	const until = Number(__TTVAB_STATE__.ShouldResumeAfterAdUntil) || 0;
+	if (__TTVAB_STATE__.ShouldResumeAfterAd !== true || until <= Date.now()) {
+		if (__TTVAB_STATE__.ShouldResumeAfterAd === true) {
+			_clearAdResumeIntent();
+		}
+		return false;
+	}
+
+	const safeChannel = _normalizePlayerChannel(channel);
+	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	const expectedChannel = __TTVAB_STATE__.ShouldResumeAfterAdChannel || null;
+	const expectedMediaKey = __TTVAB_STATE__.ShouldResumeAfterAdMediaKey || null;
+	return (
+		(!safeMediaKey || !expectedMediaKey || safeMediaKey === expectedMediaKey) &&
+		(!safeChannel || !expectedChannel || safeChannel === expectedChannel)
+	);
 }
 
 function _rememberPlayerPlaybackForAd(channel = null, mediaKey = null) {
@@ -665,14 +687,9 @@ function _rememberPlayerPlaybackForAd(channel = null, mediaKey = null) {
 
 	let shouldResumeAfterAd = false;
 	if (player && playerState?.props?.content) {
-		const playerCore = _getPlayerCore(player);
 		const video = player.getHTMLVideoElement?.() || null;
-		shouldResumeAfterAd = !(
-			player.isPaused?.() ||
-			playerCore?.paused ||
-			video?.paused ||
-			video?.ended
-		);
+		shouldResumeAfterAd =
+			!video?.ended && !_hasUserPauseIntent(safeChannel, safeMediaKey);
 	}
 
 	__TTVAB_STATE__.ShouldResumeAfterAd = shouldResumeAfterAd;
@@ -682,20 +699,15 @@ function _rememberPlayerPlaybackForAd(channel = null, mediaKey = null) {
 	__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = shouldResumeAfterAd
 		? safeMediaKey
 		: null;
+	__TTVAB_STATE__.ShouldResumeAfterAdUntil = shouldResumeAfterAd
+		? Date.now() + _AD_RESUME_INTENT_WINDOW_MS
+		: 0;
 }
 
 function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
-	const expectedChannel = __TTVAB_STATE__.ShouldResumeAfterAdChannel || null;
-	const expectedMediaKey = __TTVAB_STATE__.ShouldResumeAfterAdMediaKey || null;
-	const shouldResume =
-		__TTVAB_STATE__.ShouldResumeAfterAd === true &&
-		(!safeMediaKey || !expectedMediaKey || safeMediaKey === expectedMediaKey) &&
-		(!safeChannel || !expectedChannel || safeChannel === expectedChannel);
-
-	if (!shouldResume) return false;
-	_clearAdResumeIntent();
+	if (!_hasPendingAdResumeIntent(safeChannel, safeMediaKey)) return false;
 
 	const { player, state: playerState } = _getPlayerAndState();
 	if (!player || !playerState?.props?.content) {
@@ -709,10 +721,18 @@ function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 		return false;
 	}
 
+	if (_hasUserPauseIntent(safeChannel, safeMediaKey)) {
+		_clearAdResumeIntent();
+		return false;
+	}
+
 	const isPaused = Boolean(
 		player.isPaused?.() || playerCore?.paused || video?.paused,
 	);
-	if (!isPaused) return false;
+	if (!isPaused) {
+		_clearAdResumeIntent();
+		return false;
+	}
 
 	const now = Date.now();
 	if (
@@ -726,9 +746,33 @@ function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 
 	const didResume = _playPlaybackTarget(player, safeChannel, safeMediaKey);
 	if (!didResume) {
-		_log("Skipping post-ad resume because playback is user-paused", "info");
+		if (_hasUserPauseIntent(safeChannel, safeMediaKey)) {
+			_clearAdResumeIntent();
+			_log("Skipping post-ad resume because playback is user-paused", "info");
+		}
 		return false;
 	}
+
+	_schedulePlaybackRecoveryTimeout(
+		() => {
+			const { player: confirmPlayer } = _getPlayerAndState();
+			const confirmCore = _getPlayerCore(confirmPlayer);
+			const confirmVideo = confirmPlayer?.getHTMLVideoElement?.() || null;
+			if (
+				confirmVideo?.ended ||
+				!(
+					confirmPlayer?.isPaused?.() ||
+					confirmCore?.paused ||
+					confirmVideo?.paused
+				)
+			) {
+				_clearAdResumeIntent();
+			}
+		},
+		900,
+		safeChannel,
+		safeMediaKey,
+	);
 
 	_log("Resuming player after ad", "info");
 	return true;
@@ -943,6 +987,30 @@ function _monitorPlayerBuffering() {
 					);
 					_doPlayerTask(false, true, { reason: "ad-recovery" });
 					_PlayerBufferState.lastFixTime = Date.now();
+				} else if (
+					state?.props?.content?.type === "live" &&
+					_hasPendingAdResumeIntent(
+						__TTVAB_STATE__.PageChannel,
+						currentMediaKey,
+					)
+				) {
+					const isPaused = Boolean(
+						player.isPaused?.() ||
+						playerCore?.paused ||
+						player.getHTMLVideoElement()?.paused,
+					);
+					if (!isPaused) {
+						_clearAdResumeIntent();
+					} else if (
+						(!__TTVAB_STATE__.LastAdRecoveryResumeAt ||
+							Date.now() - __TTVAB_STATE__.LastAdRecoveryResumeAt >= 1500) &&
+						_resumePlayerAfterAdIfNeeded(
+							__TTVAB_STATE__.PageChannel,
+							currentMediaKey,
+						)
+					) {
+						_PlayerBufferState.lastFixTime = Date.now();
+					}
 				} else if (
 					state?.props?.content?.type === "live" &&
 					!player.isPaused() &&

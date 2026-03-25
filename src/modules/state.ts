@@ -165,6 +165,7 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.ShouldResumeAfterAd = false;
 		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
 		__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
 		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
 		didResetAdScopedState = true;
@@ -240,6 +241,7 @@ function _declareState(scope) {
 		ShouldResumeAfterAd: false,
 		ShouldResumeAfterAdChannel: null,
 		ShouldResumeAfterAdMediaKey: null,
+		ShouldResumeAfterAdUntil: 0,
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
 		GQLDeviceID: null,
