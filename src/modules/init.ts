@@ -153,6 +153,15 @@ function _blockAntiAdblockPopup() {
 		'[class*="VideoPlayer"]',
 		'[data-a-target="video-player"]',
 	].join(", ");
+	const MUTATION_PLAYER_CONTAINER_SELECTOR_GROUP = [
+		'[data-a-target="video-player"]',
+		'[class*="video-player"]',
+		'[class*="VideoPlayer"]',
+	].join(", ");
+	const MUTATION_OVERLAY_CLASS_PATTERN =
+		/(?:Overlay|Balloon|Modal|Consent|consent|display-ad|stream-display-ad)/i;
+	const MUTATION_AD_SIGNAL_PATTERN =
+		/\bad\b|\bpromo\b|learn more|support the channel|right after this ad break/i;
 
 	function _initPopupBlocker() {
 		if (!document.body) {
@@ -1904,15 +1913,31 @@ function _blockAntiAdblockPopup() {
 				}
 			} catch { }
 
-			if (_isNearMainPlayer(node)) {
-				return true;
-			}
-
 			try {
-				const isFixed = (node as HTMLElement).style?.position === "fixed" || (node as HTMLElement).style?.position === "absolute";
-				const hasOverlayClass = typeof node.className === "string" &&
-					(node.className.includes("Overlay") || node.className.includes("Balloon") || node.className.includes("Modal"));
-				if ((isFixed || hasOverlayClass) && (node as HTMLElement).offsetWidth > 180 && (node as HTMLElement).offsetHeight > 80) {
+				const className =
+					typeof node.className === "string" ? node.className : "";
+				const ariaLabel = String(node.getAttribute?.("aria-label") || "")
+					.replace(/\s+/g, " ")
+					.trim();
+				const dataSignal = String(
+					node.getAttribute?.("data-a-target") ||
+						node.getAttribute?.("data-test-selector") ||
+						"",
+				);
+				const inlinePosition = String(
+					(node as HTMLElement).style?.position || "",
+				).toLowerCase();
+				if (
+					MUTATION_OVERLAY_CLASS_PATTERN.test(className) ||
+					MUTATION_AD_SIGNAL_PATTERN.test(ariaLabel) ||
+					MUTATION_AD_SIGNAL_PATTERN.test(dataSignal)
+				) {
+					return true;
+				}
+				if (
+					(inlinePosition === "fixed" || inlinePosition === "absolute") &&
+					node.closest?.(MUTATION_PLAYER_CONTAINER_SELECTOR_GROUP)
+				) {
 					return true;
 				}
 			} catch { }
