@@ -78,6 +78,7 @@ function _blockAntiAdblockPopup() {
 		'[class*="ad-countdown"]',
 		'[aria-label="Ad"]',
 	];
+	const DISPLAY_AD_LABEL_SELECTOR_GROUP = DISPLAY_AD_LABEL_SELECTORS.join(", ");
 	const LOWER_THIRD_DISPLAY_AD_SELECTORS = [
 		'iframe[data-test-selector^="sda-iframe-"]',
 		'iframe[title="Stream Display Ad"]',
@@ -774,7 +775,7 @@ function _blockAntiAdblockPopup() {
 
 			const directLabels = _queryWithinRoots(
 				searchRoots,
-				DISPLAY_AD_LABEL_SELECTORS.join(", "),
+				DISPLAY_AD_LABEL_SELECTOR_GROUP,
 			);
 			for (const directLabel of directLabels) {
 				const text =
