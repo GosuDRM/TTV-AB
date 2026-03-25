@@ -1313,13 +1313,14 @@ function _blockAntiAdblockPopup() {
 			}
 
 			let checked = 0;
-			const nodes = document.querySelectorAll("span, p, div");
+			const nodes = document.querySelectorAll("span, p");
 			for (const node of nodes) {
-				if (checked++ > 200) break;
-				if (!_isVisibleElement(node)) continue;
+				if (checked++ > 120) break;
+				if (node.childElementCount > 0) continue;
 				const text = (node.textContent || "").trim();
 				if (!text || text.length > 12) continue;
 				if (text.toUpperCase() !== "OFFLINE") continue;
+				if (!_isVisibleElement(node)) continue;
 				const rect = node.getBoundingClientRect();
 				if (rect.top < window.innerHeight * 0.6) {
 					return true;
