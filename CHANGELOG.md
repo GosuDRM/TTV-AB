@@ -12,6 +12,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Live Buffer Monitor Scoping** - The live buffer watchdog now sleeps off non-live routes and drops cached player references when the active media key changes, preventing stale player polling after channel navigation.
 - **MutationObserver Hot-Path Cleanup** - The observer prefilter now stays layout-free before it schedules a deferred scan, avoiding near-player detection and size reads inside the synchronous callback.
 - **Stale Display Shell Cleanup Scoping** - Residual display-shell cleanup now only trusts recent real display-ad activity or extension-owned markers, reducing repeated stale cleanup passes and log noise without changing blocked-ad or DOM cleanup counting behavior.
+- **Lingering Display Shell Layout Flattening** - Stale display-shell roots now stay flattened until Twitch clears the leftover shell classes, preventing black L-shaped layout artifacts from lingering beside the live player after ad cleanup.
 
 ## [5.0.4] - 2026-03-25
 
