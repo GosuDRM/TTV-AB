@@ -12,6 +12,8 @@ All notable changes to TTV AB will be documented in this file.
 - **MutationObserver Calm Down** - Avoided triggering synchronous layout flushes inside the MutationObserver callback (which could run dozens of times per second during heavy chat).
 - **Scan Pipeline Early Returns** - Added early-return shortcuts to the display-ad cleanup scan, bypassing 20+ heavy DOM queries on every cycle during clean native playback.
 - **Player Monitor Stabilized** - The 500ms playback intent monitor now caches the active React/fiber tree lookup and skips the traversal entirely when the stream's media key hasn't changed.
+- **Counter Route Hardening** - Worker `Ads Blocked` persistence now accepts the page-scoped media key in addition to the stream media key, so current-live VOD pages no longer drop valid ad counts when Twitch serves `/videos/<id>` playback through the live channel transport.
+- **DOM Cleanup Counter Scope** - The DOM cleanup debounce now applies per cleanup kind instead of globally, preventing one overlay/display cleanup from suppressing a different cleanup that lands within the same second without changing scan cadence or adding new hot-path work.
 
 ## [5.0.3] - 2026-03-24
 - **JavaScript-to-TypeScript Repo Conversion** - The repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution for wider Node compatibility, unpacked-extension loading now targets `dist/manifest.json`, and Chrome store packaging can be generated locally with `npm run package:chrome`.

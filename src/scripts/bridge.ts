@@ -469,7 +469,9 @@ function handlePageBridgeMessage(rawMessage) {
 	const currentMediaKey = currentPlaybackContext.mediaKey;
 	if (message.type === "ttvab-ad-blocked") {
 		if (!detail || !Number.isFinite(detail.count)) return;
-		const blockedMediaKey = normalizeMediaKey(detail.mediaKey);
+		const blockedMediaKey = normalizeMediaKey(
+			detail.pageMediaKey || detail.mediaKey,
+		);
 		const blockedChannel = normalizeChannelName(detail.channel);
 		if (
 			blockedMediaKey &&

@@ -49,7 +49,7 @@ function _initToggleListener() {
 }
 
 function _blockAntiAdblockPopup() {
-	let lastBlockTime = 0;
+	const lastDomCleanupAtByKind = Object.create(null) as Record<string, number>;
 	let isDisplayAdShellActive = false;
 	let isPromotedPageAdActive = false;
 	let didCountCurrentDisplayAdShellCleanup = false;
@@ -185,10 +185,20 @@ function _blockAntiAdblockPopup() {
 			styleMount.appendChild(style);
 		}
 
-		function _incrementDomCleanup(kind) {
+		function _shouldDebounceDomCleanup(kind) {
+			const safeKind =
+				typeof kind === "string" && kind.trim() ? kind.trim() : "generic";
 			const now = Date.now();
-			if (now - lastBlockTime < 1000) return;
-			lastBlockTime = now;
+			const lastCleanupAt = Number(lastDomCleanupAtByKind[safeKind]) || 0;
+			if (now - lastCleanupAt < 1000) {
+				return true;
+			}
+			lastDomCleanupAtByKind[safeKind] = now;
+			return false;
+		}
+
+		function _incrementDomCleanup(kind) {
+			if (_shouldDebounceDomCleanup(kind)) return;
 
 			const channel = _getCurrentChannelName();
 			_incrementDomAdsBlocked(kind, channel);
@@ -1864,8 +1874,9 @@ function _blockAntiAdblockPopup() {
 			const currentContext = _getPlaybackContextFromUrl(window.location.href);
 			const blockedChannel =
 				typeof safeDetail.channel === "string" ? safeDetail.channel : null;
-			const blockedMediaKey =
-				typeof safeDetail.mediaKey === "string" ? safeDetail.mediaKey : null;
+			const blockedMediaKey = _normalizeMediaKey(
+				safeDetail.pageMediaKey || safeDetail.mediaKey,
+			);
 			if (
 				blockedMediaKey &&
 				currentContext.MediaKey &&

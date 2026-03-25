@@ -53,6 +53,8 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 - Suppresses injected direct video ads on VOD pages and returns playback to the real archive stream
 - Caches known ad segments to reduce repeated playback disruption
 
+`Ads Blocked` tracks confirmed worker-side playlist ad detections plus a few page-side fallback recoveries when Twitch injects direct media or explicit player-shell ads. `DOM Ads Blocked` tracks separate player-side cleanup events such as overlays, display shells, and popup removal. Both counters persist through the background worker using page-scoped media keys so live routes and `/videos/<id>` playback stay aligned without adding extra DOM scans or observers.
+
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
@@ -65,6 +67,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **MutationObserver Calm Down** - Avoided triggering synchronous layout flushes inside the MutationObserver callback (which could run dozens of times per second during heavy chat).
 - **Scan Pipeline Early Returns** - Added early-return shortcuts to the display-ad cleanup scan, bypassing 20+ heavy DOM queries on every cycle during clean native playback.
 - **Player Monitor Stabilized** - The 500ms playback intent monitor now caches the active React/fiber tree lookup and skips the traversal entirely when the stream's media key hasn't changed.
+- **Counter Route Hardening** - Worker `Ads Blocked` events now persist against the page-scoped media key as well as the stream media key, so current-live VOD pages no longer lose valid counts when Twitch serves `/videos/<id>` playback through live-channel transport.
+- **DOM Cleanup Counter Scope** - The `DOM Ads Blocked` debounce now applies per cleanup kind instead of globally, preventing one overlay/display cleanup from suppressing a different cleanup that happens in the same second while keeping the same constant-time event cost.
 
 ### v5.0.3
 - **JavaScript-to-TypeScript Repo Conversion** - The repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution for wider Node compatibility, unpacked extension loading now targets `dist/manifest.json`, and Chrome store packaging can be generated locally with `npm run package:chrome`.
