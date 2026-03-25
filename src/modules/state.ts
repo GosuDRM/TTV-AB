@@ -246,7 +246,7 @@ function _declareState(scope) {
 		ClientVersion: null,
 		ClientSession: null,
 		ClientIntegrityHeader: null,
-		AuthorizationHeader: undefined,
+		AuthorizationHeader: null,
 		SimulatedAdsDepth: 0,
 		V2API: false,
 		IsAdStrippingEnabled: true,
