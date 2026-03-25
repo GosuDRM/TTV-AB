@@ -435,7 +435,7 @@ function _blockAntiAdblockPopup() {
 							matches.push(node);
 						}
 					}
-				} catch {}
+				} catch { }
 			}
 			return matches;
 		}
@@ -476,7 +476,7 @@ function _blockAntiAdblockPopup() {
 						seen.add(root);
 						matches.push(root);
 					}
-				} catch {}
+				} catch { }
 				try {
 					for (const node of root.querySelectorAll(selector)) {
 						if (!seen.has(node)) {
@@ -484,7 +484,7 @@ function _blockAntiAdblockPopup() {
 							matches.push(node);
 						}
 					}
-				} catch {}
+				} catch { }
 			}
 			return matches;
 		}
@@ -639,7 +639,7 @@ function _blockAntiAdblockPopup() {
 				const primarySrc = _getMediaSourceUrl(primaryMedia);
 				const playerContentType =
 					state?.props?.content?.type === "live" ||
-					state?.props?.content?.type === "vod"
+						state?.props?.content?.type === "vod"
 						? state.props.content.type
 						: null;
 				const hasPrimaryMedia = primaryMedia instanceof HTMLMediaElement;
@@ -753,9 +753,9 @@ function _blockAntiAdblockPopup() {
 					rect.height <= 80 &&
 					(rootRect
 						? rect.top < rootRect.top + 160 &&
-							rect.right > rootRect.right - 320 &&
-							rect.left > rootRect.left - 40 &&
-							rect.bottom > rootRect.top - 20
+						rect.right > rootRect.right - 320 &&
+						rect.left > rootRect.left - 40 &&
+						rect.bottom > rootRect.top - 20
 						: _isNearMainPlayer(parent));
 				if (!isCompactPlayerOverlay) break;
 				target = parent;
@@ -1164,7 +1164,7 @@ function _blockAntiAdblockPopup() {
 				if (Number.isFinite(media.duration) && media.duration > 0) {
 					media.currentTime = media.duration;
 				}
-			} catch {}
+			} catch { }
 
 			_hideElement(media);
 			media.setAttribute("data-ttvab-player-ad-media", "true");
@@ -1221,10 +1221,10 @@ function _blockAntiAdblockPopup() {
 				}
 				try {
 					primaryMedia?.play?.();
-				} catch {}
+				} catch { }
 				try {
 					player?.play?.();
-				} catch {}
+				} catch { }
 			};
 
 			setTimeout(resume, 0);
@@ -1298,7 +1298,7 @@ function _blockAntiAdblockPopup() {
 			return (
 				normalized === "ad" ||
 				normalized === "ad 0" ||
-				/^ad\s+[0-9:]+(?:\s+of\s+\d+)?$/.test(normalized) ||
+				/^ad\s+[0-9:]+(?:\s+of\s+\d+)?(?:\s*ⓘ)?$/.test(normalized) ||
 				/^ad\s*ⓘ$/.test(normalized)
 			);
 		}
@@ -1405,7 +1405,7 @@ function _blockAntiAdblockPopup() {
 				}
 				if (!hasAnySignal && document.querySelector('[data-test-selector="ad-banner"]')) hasAnySignal = true;
 				if (!hasAnySignal && document.querySelector(EXPLICIT_DISPLAY_AD_SELECTORS.join(", "))) hasAnySignal = true;
-				
+
 				if (!hasAnySignal) return false;
 			}
 
@@ -1613,7 +1613,7 @@ function _blockAntiAdblockPopup() {
 			if (!el) return false;
 			try {
 				if (el.matches?.(SAFELIST_SELECTOR_GROUP)) return true;
-			} catch {}
+			} catch { }
 			return false;
 		}
 
@@ -1640,13 +1640,13 @@ function _blockAntiAdblockPopup() {
 							el.setAttribute(
 								"style",
 								(el.getAttribute("style") || "") +
-									"; display: none !important;",
+								"; display: none !important;",
 							);
 							_incrementDomCleanup("overlay-ad");
 							return true;
 						}
 					}
-				} catch {}
+				} catch { }
 			}
 
 			const overlays = document.querySelectorAll(
@@ -1743,7 +1743,7 @@ function _blockAntiAdblockPopup() {
 							popup.setAttribute(
 								"style",
 								(popup.getAttribute("style") || "") +
-									"; display: none !important; visibility: hidden !important;",
+								"; display: none !important; visibility: hidden !important;",
 							);
 							popup.setAttribute("data-ttvab-blocked", "true");
 
@@ -1764,7 +1764,7 @@ function _blockAntiAdblockPopup() {
 						fallback.setAttribute(
 							"style",
 							(fallback.getAttribute("style") || "") +
-								"; display: none !important;",
+							"; display: none !important;",
 						);
 						fallback.setAttribute("data-ttvab-blocked", "true");
 						_incrementDomCleanup("overlay-ad");
@@ -1788,7 +1788,7 @@ function _blockAntiAdblockPopup() {
 				if (typeof nativeVisibility?.mozHidden === "function") {
 					return nativeVisibility.mozHidden.call(document) === true;
 				}
-			} catch {}
+			} catch { }
 			return document.hidden;
 		}
 
@@ -1827,7 +1827,7 @@ function _blockAntiAdblockPopup() {
 
 			try {
 				if (node.closest?.(MUTATION_NOISE_SELECTOR_GROUP)) return false;
-			} catch {}
+			} catch { }
 
 			try {
 				if (
@@ -1836,7 +1836,7 @@ function _blockAntiAdblockPopup() {
 				) {
 					return true;
 				}
-			} catch {}
+			} catch { }
 
 			if (_isNearMainPlayer(node)) {
 				return true;
@@ -1844,12 +1844,12 @@ function _blockAntiAdblockPopup() {
 
 			try {
 				const isFixed = (node as HTMLElement).style?.position === "fixed" || (node as HTMLElement).style?.position === "absolute";
-				const hasOverlayClass = typeof node.className === "string" && 
+				const hasOverlayClass = typeof node.className === "string" &&
 					(node.className.includes("Overlay") || node.className.includes("Balloon") || node.className.includes("Modal"));
 				if ((isFixed || hasOverlayClass) && (node as HTMLElement).offsetWidth > 180 && (node as HTMLElement).offsetHeight > 80) {
 					return true;
 				}
-			} catch {}
+			} catch { }
 
 			return false;
 		}

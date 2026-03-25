@@ -9,18 +9,30 @@
 	"background": {
 		"service_worker": "src/scripts/background.js"
 	},
-	"permissions": ["storage"],
-	"host_permissions": ["*://*.twitch.tv/*"],
+	"permissions": [
+		"storage"
+	],
+	"host_permissions": [
+		"*://*.twitch.tv/*"
+	],
 	"content_scripts": [
 		{
-			"matches": ["*://*.twitch.tv/*"],
-			"js": ["src/scripts/content.js"],
+			"matches": [
+				"*://*.twitch.tv/*"
+			],
+			"js": [
+				"src/scripts/content.js"
+			],
 			"run_at": "document_start",
 			"world": "MAIN"
 		},
 		{
-			"matches": ["*://*.twitch.tv/*"],
-			"js": ["src/scripts/bridge.js"],
+			"matches": [
+				"*://*.twitch.tv/*"
+			],
+			"js": [
+				"src/scripts/bridge.js"
+			],
 			"run_at": "document_start",
 			"world": "ISOLATED"
 		}
