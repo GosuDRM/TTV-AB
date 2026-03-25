@@ -11,6 +11,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Playback Intent Heartbeat Backoff** - The 500ms playback intent monitor now slows down during no-media gaps and caches empty primary-media lookups, reducing repeated React/player discovery on non-playback pages and during Twitch SPA transition windows.
 - **Live Buffer Monitor Scoping** - The live buffer watchdog now sleeps off non-live routes and drops cached player references when the active media key changes, preventing stale player polling after channel navigation.
 - **MutationObserver Hot-Path Cleanup** - The observer prefilter now stays layout-free before it schedules a deferred scan, avoiding near-player detection and size reads inside the synchronous callback.
+- **Stale Display Shell Cleanup Scoping** - Residual display-shell cleanup now only trusts recent real display-ad activity or extension-owned markers, reducing repeated stale cleanup passes and log noise without changing blocked-ad or DOM cleanup counting behavior.
 
 ## [5.0.4] - 2026-03-25
 
