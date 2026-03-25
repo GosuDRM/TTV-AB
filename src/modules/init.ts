@@ -835,14 +835,9 @@ function _blockAntiAdblockPopup() {
 
 		function _isVisibleElement(el) {
 			if (!el) return false;
-			const rect = el.getBoundingClientRect();
+			if ((el as HTMLElement).offsetWidth <= 0 || (el as HTMLElement).offsetHeight <= 0) return false;
 			const style = window.getComputedStyle(el);
-			return (
-				rect.width > 0 &&
-				rect.height > 0 &&
-				style.display !== "none" &&
-				style.visibility !== "hidden"
-			);
+			return style.display !== "none" && style.visibility !== "hidden";
 		}
 
 		function _getMainPlayerElement() {
