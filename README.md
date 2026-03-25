@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.0.4-purple)
+![Version](https://img.shields.io/badge/version-5.0.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -59,6 +59,14 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
+### v5.0.5
+- **Navigation Cleanup Hardening** - Twitch SPA channel and live/VOD route changes now clear stale competing-media suppression state so old media elements do not stay retained or muted across long sessions.
+- **Stale Recovery Timeout Cancellation** - Ad-detected and ad-ended player recovery retries are now tracked against the active media context and canceled on navigation, preventing old-channel resume/reload work from firing after a route switch.
+- **Idle Scan Backoff** - The DOM cleanup watchdog now backs off its idle polling during stable clean playback and ramps back up only after relevant mutations, ad events, or route changes, reducing periodic whole-page scan cost during long watches.
+- **Playback Intent Heartbeat Backoff** - The 500ms playback intent monitor now slows down during no-media gaps and caches empty primary-media lookups, reducing repeated React/player discovery on non-playback pages and Twitch SPA transition windows.
+- **Live Buffer Monitor Scoping** - The live buffer watchdog now sleeps off non-live routes and drops cached player references when the active media key changes, preventing stale player polling after channel navigation.
+- **MutationObserver Hot-Path Cleanup** - The observer prefilter now stays layout-free before it schedules a deferred scan, avoiding near-player detection and size reads inside the synchronous callback.
+
 ### v5.0.4
 - **Performance Audit & Fixes** - Fixed 9 distinct hot-path performance bugs in the ad-scanning and player monitoring pipelines.
 - **Cache Hit Restoration** - Fixed broken `undefined` cache guards in player and overlay bounding-box lookups (which recently broke after migrating to `null` sentinels), restoring zero-cost cache hits on every scan cycle.
@@ -94,6 +102,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Player Overlay Cleanup** - Display-ad cleanup now recognizes the newer player-side `Learn More` CTA and `right after this ad break` banner shell, collapsing VOD ad overlays more reliably.
 - **Direct VOD Video-Ad Suppression** - VOD pages now detect Twitch's injected Amazon MP4 ad media and force playback back to the real archive stream instead of letting the standalone ad video run to completion, while requiring matching ad-UI signals so live/VOD route transitions are not misclassified as standalone ads.
 - **Lower-Third Banner Coverage** - Added support for Twitch's newer `sda-frame` / `stream-lowerthird` lower-third subscription and display-ad banner variant so it is treated as an explicit DOM ad target.
+
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

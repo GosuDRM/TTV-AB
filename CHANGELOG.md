@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.5] - 2026-03-25
+
+### Fixed
+- **Navigation Cleanup Hardening** - Twitch SPA route changes now clear stale competing-media suppression state so old media elements do not stay retained or muted across long channel-hopping sessions.
+- **Stale Recovery Timeout Cancellation** - Ad-detected, backup-selection, and ad-ended playback recovery retries are now tracked against the active media context and canceled on navigation, preventing old-channel resume/reload work from waking up after a route change.
+- **Idle DOM Scan Backoff** - The page-side DOM cleanup watchdog now backs off its idle polling during stable clean playback and ramps back up on relevant ad or route activity, cutting periodic whole-page scan work during long sessions.
+- **Playback Intent Heartbeat Backoff** - The 500ms playback intent monitor now slows down during no-media gaps and caches empty primary-media lookups, reducing repeated React/player discovery on non-playback pages and during Twitch SPA transition windows.
+- **Live Buffer Monitor Scoping** - The live buffer watchdog now sleeps off non-live routes and drops cached player references when the active media key changes, preventing stale player polling after channel navigation.
+- **MutationObserver Hot-Path Cleanup** - The observer prefilter now stays layout-free before it schedules a deferred scan, avoiding near-player detection and size reads inside the synchronous callback.
+
 ## [5.0.4] - 2026-03-25
 
 ### Fixed
