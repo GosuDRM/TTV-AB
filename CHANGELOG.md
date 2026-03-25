@@ -2,9 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [5.0.3] - 2026-03-24
+## [5.0.4] - 2026-03-25
 
-### Changed
+### Fixed
+- **Performance Audit & Fixes** - Fixed 9 distinct hot-path performance bugs in the ad-scanning and player monitoring pipelines.
+- **Cache Hit Restoration** - Fixed broken `undefined` cache guards in player and overlay bounding-box lookups (which recently broke after migrating to `null` sentinels), restoring zero-cost cache hits on every scan cycle.
+- **Layout Thrashing Removed** - Removed expensive per-node `getBoundingClientRect()` and `getComputedStyle()` calls from the visible element checks, replacing them with cheap `offsetWidth`/`offsetHeight` fast paths.
+- **Set Deduplication** - Replaced O(n) array lookups in the overlay bounding-box aggregator with O(1) Set tracking.
+- **MutationObserver Calm Down** - Avoided triggering synchronous layout flushes inside the MutationObserver callback (which could run dozens of times per second during heavy chat).
+- **Scan Pipeline Early Returns** - Added early-return shortcuts to the display-ad cleanup scan, bypassing 20+ heavy DOM queries on every cycle during clean native playback.
+- **Player Monitor Stabilized** - The 500ms playback intent monitor now caches the active React/fiber tree lookup and skips the traversal entirely when the stream's media key hasn't changed.
+
+## [5.0.3] - 2026-03-24
 - **JavaScript-to-TypeScript Repo Conversion** - The repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution for wider Node compatibility, unpacked-extension loading now targets `dist/manifest.json`, and Chrome store packaging can be generated locally with `npm run package:chrome`.
 
 ### Fixed
