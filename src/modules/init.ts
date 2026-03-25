@@ -1827,10 +1827,10 @@ function _blockAntiAdblockPopup() {
 			}
 
 			try {
-				const style = window.getComputedStyle(node);
-				const isOverlayLike =
-					style.position === "fixed" || style.position === "absolute";
-				if (isOverlayLike && node.offsetWidth > 180 && node.offsetHeight > 80) {
+				const isFixed = (node as HTMLElement).style?.position === "fixed" || (node as HTMLElement).style?.position === "absolute";
+				const hasOverlayClass = typeof node.className === "string" && 
+					(node.className.includes("Overlay") || node.className.includes("Balloon") || node.className.includes("Modal"));
+				if ((isFixed || hasOverlayClass) && (node as HTMLElement).offsetWidth > 180 && (node as HTMLElement).offsetHeight > 80) {
 					return true;
 				}
 			} catch {}
