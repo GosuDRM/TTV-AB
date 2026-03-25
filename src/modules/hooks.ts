@@ -9,7 +9,11 @@ function _hookWorkerFetch() {
 	function _pruneStreamInfos() {
 		const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
 		if (keys.length > 5) {
-			const oldKey = keys[0];
+			const oldKey = keys.sort(
+				(a, b) =>
+					(__TTVAB_STATE__.StreamInfos[a]?.LastActivityAt || 0) -
+					(__TTVAB_STATE__.StreamInfos[b]?.LastActivityAt || 0),
+			)[0];
 			const oldInfo = __TTVAB_STATE__.StreamInfos[oldKey];
 			delete __TTVAB_STATE__.StreamInfos[oldKey];
 			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
