@@ -499,8 +499,8 @@ function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 		(!safeMediaKey || !expectedMediaKey || safeMediaKey === expectedMediaKey) &&
 		(!safeChannel || !expectedChannel || safeChannel === expectedChannel);
 
-	_clearAdResumeIntent();
 	if (!shouldResume) return false;
+	_clearAdResumeIntent();
 
 	const { player, state: playerState } = _getPlayerAndState();
 	if (!player || !playerState?.props?.content) {
