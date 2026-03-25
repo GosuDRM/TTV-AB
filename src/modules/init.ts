@@ -1639,7 +1639,15 @@ function _blockAntiAdblockPopup() {
 				lowerThirdDisplayAdNodes,
 				playerRect,
 			);
-			const inferredLayoutWrappers = hasAdLabel
+			const shouldProbeInferredLayoutWrappers =
+				hasAdLabel ||
+				hasDisplayAdCta ||
+				hasOverlayBanner ||
+				adBanners.length > 0 ||
+				explicitDisplayAdNodes.length > 0 ||
+				displayShellNodes.length > 0 ||
+				lowerThirdDisplayAdNodes.length > 0;
+			const inferredLayoutWrappers = shouldProbeInferredLayoutWrappers
 				? _getInferredDisplayAdLayoutWrappers()
 				: [];
 			const hasExplicitShellLayoutSignal =
