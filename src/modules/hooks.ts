@@ -1043,14 +1043,17 @@ function _hookMainFetch() {
 			for (const op of operations) {
 				if (op?.operationName !== "PlaybackAccessToken") continue;
 				if (!op.variables || typeof op.variables !== "object") continue;
-				if (
-					typeof op.variables.playerType === "string" &&
-					op.variables.playerType !== forceType
-				) {
-					previousPlayerType = previousPlayerType || op.variables.playerType;
-					op.variables.playerType = forceType;
-					op.variables.platform = forceType === "autoplay" ? "android" : "web";
-					changed = true;
+				if (typeof op.variables.playerType === "string") {
+					if (op.variables.playerType !== forceType) {
+						previousPlayerType = previousPlayerType || op.variables.playerType;
+						op.variables.playerType = forceType;
+						changed = true;
+					}
+					const expectedPlatform = forceType === "autoplay" ? "android" : "web";
+					if (op.variables.platform !== expectedPlatform) {
+						op.variables.platform = expectedPlatform;
+						changed = true;
+					}
 				}
 			}
 
