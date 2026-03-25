@@ -487,7 +487,7 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _getPlayerOverlaySearchRoots() {
-			if (cachedPlayerOverlayRoots !== undefined) {
+			if (cachedPlayerOverlayRoots !== null) {
 				return cachedPlayerOverlayRoots;
 			}
 
@@ -846,7 +846,7 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _getMainPlayerElement() {
-			if (cachedMainPlayerElement !== undefined) {
+			if (cachedMainPlayerElement !== null) {
 				return cachedMainPlayerElement;
 			}
 
@@ -872,7 +872,7 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _getMainPlayerRect() {
-			if (cachedMainPlayerRect !== undefined) {
+			if (cachedMainPlayerRect !== null) {
 				return cachedMainPlayerRect;
 			}
 
