@@ -382,6 +382,59 @@ function _blockAntiAdblockPopup() {
 			].join(":");
 		}
 
+		function _shouldKeepDisplayAdLayoutCollapsed(el, playerRect = null) {
+			if (!el) return false;
+			if (_hasDisplayAdShellArtifactClass(el)) return true;
+			if (!el.hasAttribute?.("data-ttvab-display-shell-reset")) return false;
+
+			const isPlayerLayoutWrapper = Boolean(
+				el.querySelector?.("video") ||
+				el.matches?.('[data-a-target="video-player"]') ||
+				el.matches?.('[class*="video-player"]'),
+			);
+			if (!isPlayerLayoutWrapper) return false;
+
+			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
+			if (!resolvedPlayerRect) return true;
+
+			const rect = el.getBoundingClientRect();
+			const extraTop = Math.max(0, resolvedPlayerRect.top - rect.top);
+			const extraLeft = Math.max(0, resolvedPlayerRect.left - rect.left);
+			const extraRight = Math.max(0, rect.right - resolvedPlayerRect.right);
+			const extraBottom = Math.max(0, rect.bottom - resolvedPlayerRect.bottom);
+			const className =
+				typeof el.className === "string" ? el.className : "";
+			const hasResidualInset =
+				extraTop > 24 ||
+				extraLeft > 24 ||
+				extraRight > 24 ||
+				extraBottom > 10 ||
+				rect.width > resolvedPlayerRect.width + 24 ||
+				rect.height > resolvedPlayerRect.height + 12;
+			const hasResidualLayoutMarker =
+				el.id === "stream-lowerthird" ||
+				el.getAttribute?.("data-test-selector") === "sda-frame" ||
+				className.includes("lower-third") ||
+				className.includes("display-ad") ||
+				className.includes("stream-display-ad") ||
+				className.includes("video-player--stream-display-ad");
+			const style = window.getComputedStyle(el);
+			const hasStructuredLayout =
+				style.display === "grid" ||
+				style.display === "flex" ||
+				style.position === "relative" ||
+				style.position === "absolute";
+			const hasResidualGap =
+				style.columnGap !== "0px" ||
+				style.rowGap !== "0px" ||
+				style.gap !== "0px";
+
+			return (
+				hasResidualLayoutMarker ||
+				(hasResidualInset && (hasStructuredLayout || hasResidualGap))
+			);
+		}
+
 		function _cleanupStaleDisplayAdShell(
 			displayShellNodes,
 			pipContainers,
@@ -433,6 +486,7 @@ function _blockAntiAdblockPopup() {
 			}
 			lastStaleDisplayArtifactSignature = staleSignature;
 			lastStaleDisplayArtifactCleanupAt = now;
+			const activePlayerRect = _getMainPlayerRect();
 
 			_log(
 				"Display ad shell stale: cleaning up residual shell/layout artifacts",
@@ -440,9 +494,7 @@ function _blockAntiAdblockPopup() {
 			);
 
 			staleNodes.forEach((el) => {
-				if (_hasDisplayAdShellArtifactClass(el)) {
-					// Keep class-based display-shell roots collapsed until Twitch
-					// drops the stale layout classes from the live player wrapper.
+				if (_shouldKeepDisplayAdLayoutCollapsed(el, activePlayerRect)) {
 					_resetStreamDisplayLayout(el);
 					return;
 				}
