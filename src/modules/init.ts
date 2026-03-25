@@ -705,6 +705,9 @@ function _blockAntiAdblockPopup() {
 						3000,
 					);
 				}
+				if (typeof _clearSuppressedMediaTracking === "function") {
+					_clearSuppressedMediaTracking({ restoreConnected: true });
+				}
 				_resetDirectPlayerAdMediaState();
 				_scheduleRoutePlayerResync(previousContext, currentContext);
 			}
