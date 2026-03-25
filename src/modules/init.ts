@@ -1393,6 +1393,21 @@ function _blockAntiAdblockPopup() {
 
 		function _collapseDisplayAdShell() {
 			const playerRect = _getMainPlayerRect();
+
+			if (!isDisplayAdShellActive) {
+				let hasAnySignal = false;
+				for (const selector of DISPLAY_AD_LABEL_SELECTORS) {
+					if (document.querySelector(selector)) {
+						hasAnySignal = true;
+						break;
+					}
+				}
+				if (!hasAnySignal && document.querySelector('[data-test-selector="ad-banner"]')) hasAnySignal = true;
+				if (!hasAnySignal && document.querySelector(EXPLICIT_DISPLAY_AD_SELECTORS.join(", "))) hasAnySignal = true;
+				
+				if (!hasAnySignal) return false;
+			}
+
 			const isVisibleNearPlayer = (el) =>
 				_isVisibleNearPlayerElement(el, playerRect);
 			const adBanners = _filterUniqueElements(
