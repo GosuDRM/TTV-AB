@@ -458,8 +458,10 @@ function _blockAntiAdblockPopup() {
 			cachedPlayerOverlayRoots = null;
 		}
 
-		function _pushUniqueElement(list, el) {
-			if (!el || list.includes(el)) return;
+		function _pushUniqueElement(list, el, seen = null) {
+			if (!el) return;
+			if (seen ? seen.has(el) : list.includes(el)) return;
+			if (seen) seen.add(el);
 			list.push(el);
 		}
 
@@ -499,6 +501,7 @@ function _blockAntiAdblockPopup() {
 			}
 
 			const roots = [];
+			const seen = new Set();
 			let current =
 				player.closest?.('[data-a-target="video-player"]') ||
 				player.parentElement ||
@@ -529,7 +532,7 @@ function _blockAntiAdblockPopup() {
 					) > 0;
 
 				if (overlapsPlayer && rect.width > 0 && rect.height > 0) {
-					_pushUniqueElement(roots, current);
+					_pushUniqueElement(roots, current, seen);
 				}
 
 				if (
@@ -544,7 +547,7 @@ function _blockAntiAdblockPopup() {
 			}
 
 			if (roots.length === 0) {
-				_pushUniqueElement(roots, player);
+				_pushUniqueElement(roots, player, seen);
 			}
 
 			cachedPlayerOverlayRoots = roots;
