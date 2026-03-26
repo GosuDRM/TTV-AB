@@ -431,6 +431,7 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 		.map(Number);
 	const targetPixels =
 		(Number.isFinite(tw) ? tw : 0) * (Number.isFinite(th) ? th : 0);
+	const targetFrameRate = Number.parseFloat(String(res?.FrameRate ?? ""));
 	let matchUrl = null;
 	let matchFps = false;
 	let closeUrl = null;
@@ -456,13 +457,18 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 		const attrs = _parseAttrs(line);
 		const resolution = attrs.RESOLUTION;
 		const frameRate = attrs["FRAME-RATE"];
+		const parsedFrameRate = Number.parseFloat(String(frameRate ?? ""));
+		const matchesFrameRate =
+			Number.isFinite(targetFrameRate) && Number.isFinite(parsedFrameRate)
+				? Math.abs(parsedFrameRate - targetFrameRate) < 0.01
+				: String(frameRate || "") === String(res?.FrameRate || "");
 
 		if (!resolution) continue;
 
 		if (resolution === res.Resolution) {
-			if (!matchUrl || (!matchFps && frameRate === res.FrameRate)) {
+			if (!matchUrl || (!matchFps && matchesFrameRate)) {
 				matchUrl = resolveUrl(lines[i + 1]);
-				matchFps = frameRate === res.FrameRate;
+				matchFps = matchesFrameRate;
 				if (matchFps) return matchUrl;
 			}
 		}
