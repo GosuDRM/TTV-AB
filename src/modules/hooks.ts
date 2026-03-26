@@ -450,6 +450,22 @@ function _hookWorker() {
                                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = nextPinnedContext.MediaKey;
                             }
                             break;
+                        case 'ResetPlaybackRecoveryState':
+                            __TTVAB_STATE__.HasTriggeredPlayerReload = false;
+                            __TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+                            __TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+                            __TTVAB_STATE__.ShouldResumeAfterAd = false;
+                            __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
+                            __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+                            __TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
+                            if (data.value?.clearAdContext) {
+                                __TTVAB_STATE__.CurrentAdChannel = null;
+                                __TTVAB_STATE__.CurrentAdMediaKey = null;
+                                __TTVAB_STATE__.PinnedBackupPlayerType = null;
+                                __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+                                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+                            }
+                            break;
                         case 'FetchResponse':
                             {
                                 const responseData = data.value;

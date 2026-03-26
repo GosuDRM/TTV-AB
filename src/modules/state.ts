@@ -143,16 +143,27 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.PageChannel !== normalizedContext.ChannelName ||
 		__TTVAB_STATE__.PageVodID !== normalizedContext.VodID ||
 		previousMediaKey !== normalizedContext.MediaKey;
+	const didMediaKeyChange = previousMediaKey !== normalizedContext.MediaKey;
 
 	__TTVAB_STATE__.PageMediaType = normalizedContext.MediaType;
 	__TTVAB_STATE__.PageChannel = normalizedContext.ChannelName;
 	__TTVAB_STATE__.PageVodID = normalizedContext.VodID;
 	__TTVAB_STATE__.PageMediaKey = normalizedContext.MediaKey;
 
+	if (didMediaKeyChange) {
+		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+		__TTVAB_STATE__.LastPlayerReloadAt = 0;
+		__TTVAB_STATE__.ShouldResumeAfterAd = false;
+		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
+		__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
+		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+	}
+
 	if (
-		hasChanged &&
+		didMediaKeyChange &&
 		previousMediaKey &&
-		previousMediaKey !== normalizedContext.MediaKey &&
 		(__TTVAB_STATE__.CurrentAdMediaKey === previousMediaKey ||
 			__TTVAB_STATE__.PinnedBackupPlayerMediaKey === previousMediaKey)
 	) {
@@ -171,7 +182,7 @@ function _setPagePlaybackContext(
 	}
 
 	if (options.broadcast !== false && hasChanged) {
-		const messages = [
+		const messages: Array<{ key: string; value: unknown }> = [
 			{
 				key: "UpdatePageContext",
 				value: {
@@ -182,6 +193,14 @@ function _setPagePlaybackContext(
 				},
 			},
 		];
+		if (didMediaKeyChange) {
+			messages.push({
+				key: "ResetPlaybackRecoveryState",
+				value: {
+					clearAdContext: didResetAdScopedState,
+				},
+			});
+		}
 		if (didResetAdScopedState) {
 			messages.push({
 				key: "UpdateCurrentAdContext",
