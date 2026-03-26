@@ -829,6 +829,58 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	});
 
+	function parseTransitionTimeToMs(value) {
+		const trimmedValue = String(value || "").trim();
+		if (!trimmedValue) return 0;
+		if (trimmedValue.endsWith("ms")) {
+			return Math.max(0, Number.parseFloat(trimmedValue) || 0);
+		}
+		if (trimmedValue.endsWith("s")) {
+			return Math.max(0, (Number.parseFloat(trimmedValue) || 0) * 1000);
+		}
+		return Math.max(0, Number.parseFloat(trimmedValue) || 0);
+	}
+
+	function getTransitionTimeoutMs(element, propertyName, fallbackMs = 0) {
+		const computedStyle = window.getComputedStyle(element);
+		const transitionProperties = computedStyle.transitionProperty
+			.split(",")
+			.map((value) => value.trim());
+		const transitionDurations = computedStyle.transitionDuration
+			.split(",")
+			.map(parseTransitionTimeToMs);
+		const transitionDelays = computedStyle.transitionDelay
+			.split(",")
+			.map(parseTransitionTimeToMs);
+		const transitionCount = Math.max(
+			transitionProperties.length,
+			transitionDurations.length,
+			transitionDelays.length,
+		);
+		let matchedTimeoutMs = 0;
+		let maxTimeoutMs = 0;
+
+		for (let index = 0; index < transitionCount; index++) {
+			const property =
+				transitionProperties[
+					index % Math.max(transitionProperties.length, 1)
+				] || "";
+			const duration =
+				transitionDurations[index % Math.max(transitionDurations.length, 1)] ||
+				0;
+			const delay =
+				transitionDelays[index % Math.max(transitionDelays.length, 1)] || 0;
+			const totalMs = duration + delay;
+			maxTimeoutMs = Math.max(maxTimeoutMs, totalMs);
+			if (property === propertyName || property === "all") {
+				matchedTimeoutMs = Math.max(matchedTimeoutMs, totalMs);
+			}
+		}
+
+		const resolvedTimeoutMs = matchedTimeoutMs || maxTimeoutMs || fallbackMs;
+		return resolvedTimeoutMs > 0 ? Math.ceil(resolvedTimeoutMs + 50) : 0;
+	}
+
 	let statsTransitionCleanup = null;
 
 	function syncExpandedStatsPanelHeight() {
@@ -879,9 +931,16 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 			finalizeCollapse();
 		};
+		const collapseFallbackDelayMs = getTransitionTimeoutMs(
+			statsPanel,
+			"max-height",
+			window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true
+				? 0
+				: 450,
+		);
 		let collapseFallbackTimeout = setTimeout(() => {
 			finalizeCollapse();
-		}, 250);
+		}, collapseFallbackDelayMs);
 		statsTransitionCleanup = () => {
 			statsPanel.removeEventListener("transitionend", handleTransitionEnd);
 			if (collapseFallbackTimeout) {
