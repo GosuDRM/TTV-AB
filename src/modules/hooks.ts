@@ -495,30 +495,36 @@ function _hookWorker() {
 
 			const getCurrentPageContext = () =>
 				_getPlaybackContextFromUrl(window.location.href);
-			const isStalePlaybackEvent = (message) => {
-				const currentContext = getCurrentPageContext();
-				const pageScopedMediaKey = _normalizeMediaKey(
-					message?.pageMediaKey || null,
-				);
-				if (pageScopedMediaKey && currentContext.MediaKey) {
-					return currentContext.MediaKey !== pageScopedMediaKey;
-				}
-
-				const eventContext = _normalizePlaybackContext({
-					MediaKey: message?.mediaKey || null,
-					ChannelName: message?.channel || null,
+			const normalizeMessagePlaybackContext = (message) =>
+				_normalizePlaybackContext({
+					MediaKey: message?.pageMediaKey || message?.mediaKey || null,
+					ChannelName: message?.pageChannel || message?.channel || null,
 					VodID: message?.vodID || null,
 				});
-				if (eventContext.MediaKey && currentContext.MediaKey) {
-					return currentContext.MediaKey !== eventContext.MediaKey;
+			const isPlaybackContextMismatch = (expectedContext, currentContext) => {
+				const normalizedExpectedContext =
+					_normalizePlaybackContext(expectedContext);
+				const normalizedCurrentContext =
+					_normalizePlaybackContext(currentContext);
+				if (normalizedExpectedContext.MediaKey) {
+					return (
+						normalizedCurrentContext.MediaKey !==
+						normalizedExpectedContext.MediaKey
+					);
 				}
-				if (eventContext.ChannelName) {
-					return Boolean(
-						currentContext.ChannelName &&
-							currentContext.ChannelName !== eventContext.ChannelName,
+				if (normalizedExpectedContext.ChannelName) {
+					return (
+						normalizedCurrentContext.ChannelName !==
+						normalizedExpectedContext.ChannelName
 					);
 				}
 				return false;
+			};
+			const isStalePlaybackEvent = (message) => {
+				return isPlaybackContextMismatch(
+					normalizeMessagePlaybackContext(message),
+					getCurrentPageContext(),
+				);
 			};
 			const handleWorkerFetchRequest = async (fetchRequest) => {
 				const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
@@ -983,24 +989,8 @@ function _hookWorker() {
 						const currentContext = _getPlaybackContextFromUrl(
 							window.location.href,
 						);
-						const initialMediaKey = _normalizeMediaKey(
-							pagePlaybackContext.MediaKey,
-						);
-						const currentMediaKey = _normalizeMediaKey(currentContext.MediaKey);
-						const initialChannel = _normalizeChannelName(
-							pagePlaybackContext.ChannelName,
-						);
-						const currentChannel = _normalizeChannelName(
-							currentContext.ChannelName,
-						);
 						if (
-							(initialMediaKey &&
-								currentMediaKey &&
-								initialMediaKey !== currentMediaKey) ||
-							(!initialMediaKey &&
-								initialChannel &&
-								currentChannel &&
-								initialChannel !== currentChannel)
+							isPlaybackContextMismatch(pagePlaybackContext, currentContext)
 						) {
 							_log("Skipping stale worker restart after navigation", "info");
 							return;

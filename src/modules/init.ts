@@ -2150,27 +2150,23 @@ function _blockAntiAdblockPopup() {
 		_onInternalMessage("ttvab-ad-blocked", (detail) => {
 			const safeDetail = _getTrustedBridgeMessageDetail(detail);
 			if (!Number.isFinite(safeDetail?.count)) return;
-			_markIdleScanInterest();
 			const currentContext = _getPlaybackContextFromUrl(window.location.href);
-			const blockedChannel =
-				typeof safeDetail.channel === "string" ? safeDetail.channel : null;
-			const blockedMediaKey = _normalizeMediaKey(
-				safeDetail.pageMediaKey || safeDetail.mediaKey,
-			);
-			if (
-				blockedMediaKey &&
-				currentContext.MediaKey &&
-				blockedMediaKey !== currentContext.MediaKey
+			const eventContext = _normalizePlaybackContext({
+				MediaKey: safeDetail.pageMediaKey || safeDetail.mediaKey || null,
+				ChannelName: safeDetail.pageChannel || safeDetail.channel || null,
+				VodID: safeDetail.vodID || null,
+			});
+			if (eventContext.MediaKey) {
+				if (eventContext.MediaKey !== currentContext.MediaKey) {
+					return;
+				}
+			} else if (
+				eventContext.ChannelName &&
+				eventContext.ChannelName !== currentContext.ChannelName
 			) {
 				return;
 			}
-			if (
-				!blockedMediaKey &&
-				blockedChannel &&
-				blockedChannel !== currentContext.ChannelName
-			) {
-				return;
-			}
+			_markIdleScanInterest();
 			_runScan(true);
 			setTimeout(() => _queueScan(0, true), 120);
 			setTimeout(() => _queueScan(0, true), 300);
