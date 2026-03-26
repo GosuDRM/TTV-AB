@@ -136,6 +136,34 @@ function getCurrentPlaybackContext() {
 	};
 }
 
+function getMessagePlaybackContext(detail) {
+	const safeDetail = getBridgeMessageDetail(detail);
+	const channelName = normalizeChannelName(
+		safeDetail?.pageChannel || safeDetail?.channel,
+	);
+	return {
+		channelName,
+		mediaKey:
+			normalizeMediaKey(safeDetail?.pageMediaKey || safeDetail?.mediaKey) ||
+			buildMediaKey("live", channelName, null),
+	};
+}
+
+function playbackContextsMatch(
+	expectedPlaybackContext,
+	currentPlaybackContext,
+) {
+	if (expectedPlaybackContext?.mediaKey) {
+		return currentPlaybackContext.mediaKey === expectedPlaybackContext.mediaKey;
+	}
+	if (expectedPlaybackContext?.channelName) {
+		return (
+			currentPlaybackContext.channelName === expectedPlaybackContext.channelName
+		);
+	}
+	return true;
+}
+
 const BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const BRIDGE_HANDSHAKE_RETRY_MS = 75;
 const FLUSH_DELAY_MS = 200;
@@ -254,10 +282,8 @@ function broadcastState() {
 function reconcilePendingDelta(kind, nextStoredCount) {
 	const safeStoredCount = normalizeCount(nextStoredCount);
 	if (kind === "ads") {
-		const queuedTotal =
-			normalizeCount(bridgeState.storedAdsCount) +
-			normalizeCount(pendingAdsDelta);
-		if (safeStoredCount !== queuedTotal) {
+		const previousStoredCount = normalizeCount(bridgeState.storedAdsCount);
+		if (safeStoredCount < previousStoredCount) {
 			pendingAdsDelta = 0;
 			pendingAdChannels = createChannelsMap();
 			flushRetryCount = 0;
@@ -266,10 +292,8 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 		return;
 	}
 	if (kind === "domAds") {
-		const queuedTotal =
-			normalizeCount(bridgeState.storedDomAdsCount) +
-			normalizeCount(pendingDomAdsDelta);
-		if (safeStoredCount !== queuedTotal) {
+		const previousStoredCount = normalizeCount(bridgeState.storedDomAdsCount);
+		if (safeStoredCount < previousStoredCount) {
 			pendingDomAdsDelta = 0;
 			flushRetryCount = 0;
 		}
@@ -456,6 +480,7 @@ function handlePageBridgeMessage(rawMessage) {
 		pageBridgeConnected = true;
 		clearHandshakeRetryTimeout();
 		flushPageMessages();
+		broadcastState();
 		return;
 	}
 	if (message.type === "ttvab-request-state") {
@@ -465,22 +490,15 @@ function handlePageBridgeMessage(rawMessage) {
 
 	const detail = getBridgeMessageDetail(message.detail);
 	const currentPlaybackContext = getCurrentPlaybackContext();
-	const currentChannel = currentPlaybackContext.channelName;
-	const currentMediaKey = currentPlaybackContext.mediaKey;
 	if (message.type === "ttvab-ad-blocked") {
 		if (!detail || !Number.isFinite(detail.count)) return;
-		const blockedMediaKey = normalizeMediaKey(detail.mediaKey);
-		const blockedChannel = normalizeChannelName(detail.channel);
-		if (
-			blockedMediaKey &&
-			currentMediaKey &&
-			blockedMediaKey !== currentMediaKey
-		) {
+		const eventPlaybackContext = getMessagePlaybackContext(detail);
+		if (!playbackContextsMatch(eventPlaybackContext, currentPlaybackContext)) {
 			return;
 		}
-		if (blockedChannel && currentChannel && blockedChannel !== currentChannel) {
-			return;
-		}
+		const blockedChannel = normalizeChannelName(
+			detail.channel || eventPlaybackContext.channelName,
+		);
 		const delta =
 			Number.isFinite(detail.delta) && normalizeCount(detail.delta) > 0
 				? queueExplicitDelta("ads", detail.delta)
@@ -500,18 +518,8 @@ function handlePageBridgeMessage(rawMessage) {
 		const cleanupKind =
 			typeof detail.kind === "string" ? detail.kind.trim().toLowerCase() : "";
 		if (!KNOWN_DOM_CLEANUP_KINDS.has(cleanupKind)) return;
-		const cleanupMediaKey = normalizeMediaKey(
-			detail.pageMediaKey || detail.mediaKey,
-		);
-		const cleanupChannel = normalizeChannelName(detail.channel);
-		if (
-			cleanupMediaKey &&
-			currentMediaKey &&
-			cleanupMediaKey !== currentMediaKey
-		) {
-			return;
-		}
-		if (cleanupChannel && currentChannel && cleanupChannel !== currentChannel) {
+		const eventPlaybackContext = getMessagePlaybackContext(detail);
+		if (!playbackContextsMatch(eventPlaybackContext, currentPlaybackContext)) {
 			return;
 		}
 		const delta =

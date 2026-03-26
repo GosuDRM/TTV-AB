@@ -25,6 +25,7 @@ const _PlaybackIntentState = {
 	suppressedPauseMediaKey: null,
 	suppressedPauseUntil: 0,
 };
+const _AD_RESUME_INTENT_WINDOW_MS = 15000;
 const _PLAYER_PREFERENCE_KEYS = [
 	"video-quality",
 	"video-muted",
@@ -458,6 +459,26 @@ function _clearAdResumeIntent() {
 	__TTVAB_STATE__.ShouldResumeAfterAd = false;
 	__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
 	__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+	__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
+}
+
+function _hasPendingAdResumeIntent(channel = null, mediaKey = null) {
+	const until = Number(__TTVAB_STATE__.ShouldResumeAfterAdUntil) || 0;
+	if (__TTVAB_STATE__.ShouldResumeAfterAd !== true || until <= Date.now()) {
+		if (__TTVAB_STATE__.ShouldResumeAfterAd === true) {
+			_clearAdResumeIntent();
+		}
+		return false;
+	}
+
+	const safeChannel = _normalizePlayerChannel(channel);
+	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	const expectedChannel = __TTVAB_STATE__.ShouldResumeAfterAdChannel || null;
+	const expectedMediaKey = __TTVAB_STATE__.ShouldResumeAfterAdMediaKey || null;
+	return (
+		(!safeMediaKey || !expectedMediaKey || safeMediaKey === expectedMediaKey) &&
+		(!safeChannel || !expectedChannel || safeChannel === expectedChannel)
+	);
 }
 
 function _rememberPlayerPlaybackForAd(channel = null, mediaKey = null) {
@@ -470,14 +491,9 @@ function _rememberPlayerPlaybackForAd(channel = null, mediaKey = null) {
 
 	let shouldResumeAfterAd = false;
 	if (player && playerState?.props?.content) {
-		const playerCore = _getPlayerCore(player);
 		const video = player.getHTMLVideoElement?.() || null;
-		shouldResumeAfterAd = !(
-			player.isPaused?.() ||
-			playerCore?.paused ||
-			video?.paused ||
-			video?.ended
-		);
+		shouldResumeAfterAd =
+			!video?.ended && !_hasUserPauseIntent(safeChannel, safeMediaKey);
 	}
 
 	__TTVAB_STATE__.ShouldResumeAfterAd = shouldResumeAfterAd;
@@ -487,20 +503,15 @@ function _rememberPlayerPlaybackForAd(channel = null, mediaKey = null) {
 	__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = shouldResumeAfterAd
 		? safeMediaKey
 		: null;
+	__TTVAB_STATE__.ShouldResumeAfterAdUntil = shouldResumeAfterAd
+		? Date.now() + _AD_RESUME_INTENT_WINDOW_MS
+		: 0;
 }
 
 function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
-	const expectedChannel = __TTVAB_STATE__.ShouldResumeAfterAdChannel || null;
-	const expectedMediaKey = __TTVAB_STATE__.ShouldResumeAfterAdMediaKey || null;
-	const shouldResume =
-		__TTVAB_STATE__.ShouldResumeAfterAd === true &&
-		(!safeMediaKey || !expectedMediaKey || safeMediaKey === expectedMediaKey) &&
-		(!safeChannel || !expectedChannel || safeChannel === expectedChannel);
-
-	_clearAdResumeIntent();
-	if (!shouldResume) return false;
+	if (!_hasPendingAdResumeIntent(safeChannel, safeMediaKey)) return false;
 
 	const { player, state: playerState } = _getPlayerAndState();
 	if (!player || !playerState?.props?.content) {
@@ -514,10 +525,18 @@ function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 		return false;
 	}
 
+	if (_hasUserPauseIntent(safeChannel, safeMediaKey)) {
+		_clearAdResumeIntent();
+		return false;
+	}
+
 	const isPaused = Boolean(
 		player.isPaused?.() || playerCore?.paused || video?.paused,
 	);
-	if (!isPaused) return false;
+	if (!isPaused) {
+		_clearAdResumeIntent();
+		return false;
+	}
 
 	const now = Date.now();
 	if (
@@ -531,9 +550,29 @@ function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 
 	const didResume = _playPlaybackTarget(player, safeChannel, safeMediaKey);
 	if (!didResume) {
-		_log("Skipping post-ad resume because playback is user-paused", "info");
+		if (_hasUserPauseIntent(safeChannel, safeMediaKey)) {
+			_clearAdResumeIntent();
+			_log("Skipping post-ad resume because playback is user-paused", "info");
+		}
 		return false;
 	}
+
+	setTimeout(() => {
+		if (!_hasPendingAdResumeIntent(safeChannel, safeMediaKey)) return;
+		const { player: confirmPlayer } = _getPlayerAndState();
+		const confirmCore = _getPlayerCore(confirmPlayer);
+		const confirmVideo = confirmPlayer?.getHTMLVideoElement?.() || null;
+		if (
+			confirmVideo?.ended ||
+			!(
+				confirmPlayer?.isPaused?.() ||
+				confirmCore?.paused ||
+				confirmVideo?.paused
+			)
+		) {
+			_clearAdResumeIntent();
+		}
+	}, 900);
 
 	_log("Resuming player after ad", "info");
 	return true;

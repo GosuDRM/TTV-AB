@@ -49,7 +49,7 @@ function _initToggleListener() {
 }
 
 function _blockAntiAdblockPopup() {
-	let lastBlockTime = 0;
+	const lastDomCleanupAtByKind = Object.create(null) as Record<string, number>;
 	let isDisplayAdShellActive = false;
 	let isPromotedPageAdActive = false;
 	let didCountCurrentDisplayAdShellCleanup = false;
@@ -58,6 +58,7 @@ function _blockAntiAdblockPopup() {
 	let pendingDisplayAdShellSignature = null;
 	let lastStaleDisplayArtifactSignature = null;
 	let lastStaleDisplayArtifactCleanupAt = 0;
+	let lastDisplayAdShellSignalAt = 0;
 	let lastRouteUrl = window.location.href;
 	let activeDirectPlayerAdMediaSignature = null;
 	let didCountCurrentDirectPlayerAdMedia = false;
@@ -70,6 +71,8 @@ function _blockAntiAdblockPopup() {
 	let cachedMainPlayerElement: Element | null = null;
 	let cachedMainPlayerRect: DOMRect | null = null;
 	let cachedPlayerOverlayRoots: Element[] | null = null;
+	const STALE_DISPLAY_ARTIFACT_RECENT_SIGNAL_MS = 15000;
+	const STALE_DISPLAY_ARTIFACT_SAME_SIGNATURE_COOLDOWN_MS = 10000;
 	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
 		'[data-ttvab-player-ad-banner="true"]';
 	const DISPLAY_AD_LABEL_SELECTORS = [
@@ -184,10 +187,20 @@ function _blockAntiAdblockPopup() {
 			styleMount.appendChild(style);
 		}
 
-		function _incrementDomCleanup(kind) {
+		function _shouldDebounceDomCleanup(kind) {
+			const safeKind =
+				typeof kind === "string" && kind.trim() ? kind.trim() : "generic";
 			const now = Date.now();
-			if (now - lastBlockTime < 1000) return;
-			lastBlockTime = now;
+			const lastCleanupAt = Number(lastDomCleanupAtByKind[safeKind]) || 0;
+			if (now - lastCleanupAt < 1000) {
+				return true;
+			}
+			lastDomCleanupAtByKind[safeKind] = now;
+			return false;
+		}
+
+		function _incrementDomCleanup(kind) {
+			if (_shouldDebounceDomCleanup(kind)) return;
 
 			const channel = _getCurrentChannelName();
 			_incrementDomAdsBlocked(kind, channel);
@@ -227,9 +240,31 @@ function _blockAntiAdblockPopup() {
 			el.style.setProperty("background-color", "transparent", "important");
 			el.style.setProperty("width", "100%", "important");
 			el.style.setProperty("height", "100%", "important");
+			el.style.setProperty("min-width", "0", "important");
+			el.style.setProperty("min-height", "0", "important");
 			el.style.setProperty("max-width", "100%", "important");
 			el.style.setProperty("max-height", "100%", "important");
 			el.style.setProperty("inset", "0", "important");
+			el.style.setProperty(
+				"grid-template-columns",
+				"minmax(0, 1fr)",
+				"important",
+			);
+			el.style.setProperty("grid-template-rows", "minmax(0, 1fr)", "important");
+			el.style.setProperty("grid-template-areas", "none", "important");
+			el.style.setProperty("grid-auto-columns", "minmax(0, 1fr)", "important");
+			el.style.setProperty("grid-auto-rows", "minmax(0, 1fr)", "important");
+			el.style.setProperty("grid-auto-flow", "row", "important");
+			el.style.setProperty("column-gap", "0", "important");
+			el.style.setProperty("row-gap", "0", "important");
+			el.style.setProperty("gap", "0", "important");
+			el.style.setProperty("justify-content", "stretch", "important");
+			el.style.setProperty("justify-items", "stretch", "important");
+			el.style.setProperty("align-content", "stretch", "important");
+			el.style.setProperty("align-items", "stretch", "important");
+			el.style.setProperty("flex", "1 1 auto", "important");
+			el.style.setProperty("flex-basis", "auto", "important");
+			el.style.setProperty("overflow", "hidden", "important");
 			el.setAttribute("data-ttvab-display-shell-reset", "true");
 		}
 
@@ -258,6 +293,8 @@ function _blockAntiAdblockPopup() {
 				"background-color",
 				"width",
 				"height",
+				"min-width",
+				"min-height",
 				"max-width",
 				"max-height",
 				"inset",
@@ -266,15 +303,21 @@ function _blockAntiAdblockPopup() {
 				"top",
 				"bottom",
 				"grid-template-columns",
+				"grid-template-rows",
 				"grid-template-areas",
 				"grid-auto-columns",
+				"grid-auto-rows",
 				"grid-auto-flow",
 				"column-gap",
+				"row-gap",
 				"gap",
 				"justify-content",
+				"justify-items",
+				"align-content",
 				"align-items",
 				"flex",
 				"flex-basis",
+				"overflow",
 			].forEach((property) => {
 				el.style.removeProperty(property);
 			});
@@ -288,19 +331,29 @@ function _blockAntiAdblockPopup() {
 			lastStaleDisplayArtifactCleanupAt = 0;
 		}
 
-		function _isDisplayAdShellArtifact(el) {
+		function _hasDisplayAdShellArtifactClass(el) {
+			const className = typeof el?.className === "string" ? el.className : "";
+			return (
+				className.includes("stream-display-ad") ||
+				className.includes("video-player--stream-display-ad")
+			);
+		}
+
+		function _isDisplayAdShellArtifact(
+			el,
+			options: { allowClassArtifacts?: boolean } = {},
+		) {
+			const { allowClassArtifacts = false } = options;
 			if (!el) return false;
 			if (
 				el.hasAttribute?.("data-ttvab-blocked") ||
-				el.hasAttribute?.("data-ttvab-display-shell-reset")
+				el.hasAttribute?.("data-ttvab-display-shell-reset") ||
+				el.getAttribute?.("data-ttvab-player-ad-banner") === "true"
 			) {
 				return true;
 			}
 
-			return (
-				typeof el.className === "string" &&
-				el.className.includes("stream-display-ad")
-			);
+			return allowClassArtifacts && _hasDisplayAdShellArtifactClass(el);
 		}
 
 		function _getDisplayAdArtifactSignature(el) {
@@ -320,12 +373,66 @@ function _blockAntiAdblockPopup() {
 			].join(":");
 		}
 
+		function _shouldKeepDisplayAdLayoutCollapsed(el, playerRect = null) {
+			if (!el) return false;
+			if (_hasDisplayAdShellArtifactClass(el)) return true;
+			if (!el.hasAttribute?.("data-ttvab-display-shell-reset")) return false;
+
+			const isPlayerLayoutWrapper = Boolean(
+				el.querySelector?.("video") ||
+					el.matches?.('[data-a-target="video-player"]') ||
+					el.matches?.('[class*="video-player"]'),
+			);
+			if (!isPlayerLayoutWrapper) return false;
+
+			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
+			if (!resolvedPlayerRect) return true;
+
+			const rect = el.getBoundingClientRect();
+			const extraTop = Math.max(0, resolvedPlayerRect.top - rect.top);
+			const extraLeft = Math.max(0, resolvedPlayerRect.left - rect.left);
+			const extraRight = Math.max(0, rect.right - resolvedPlayerRect.right);
+			const extraBottom = Math.max(0, rect.bottom - resolvedPlayerRect.bottom);
+			const className = typeof el.className === "string" ? el.className : "";
+			const hasResidualInset =
+				extraTop > 24 ||
+				extraLeft > 24 ||
+				extraRight > 24 ||
+				extraBottom > 10 ||
+				rect.width > resolvedPlayerRect.width + 24 ||
+				rect.height > resolvedPlayerRect.height + 12;
+			const hasResidualLayoutMarker =
+				el.id === "stream-lowerthird" ||
+				el.getAttribute?.("data-test-selector") === "sda-frame" ||
+				className.includes("lower-third") ||
+				className.includes("display-ad") ||
+				className.includes("stream-display-ad") ||
+				className.includes("video-player--stream-display-ad");
+			const style = window.getComputedStyle(el);
+			const hasStructuredLayout =
+				style.display === "grid" ||
+				style.display === "flex" ||
+				style.position === "relative" ||
+				style.position === "absolute";
+			const hasResidualGap =
+				style.columnGap !== "0px" ||
+				style.rowGap !== "0px" ||
+				style.gap !== "0px";
+
+			return (
+				hasResidualLayoutMarker ||
+				(hasResidualInset && (hasStructuredLayout || hasResidualGap))
+			);
+		}
+
 		function _cleanupStaleDisplayAdShell(
 			displayShellNodes,
 			pipContainers,
 			layoutRoots,
 			inferredLayoutWrappers = [],
+			options: { allowClassArtifacts?: boolean } = {},
 		) {
+			const { allowClassArtifacts = false } = options;
 			const staleNodes = _filterUniqueElements(
 				[
 					...displayShellNodes,
@@ -340,7 +447,7 @@ function _blockAntiAdblockPopup() {
 						),
 					),
 				],
-				_isDisplayAdShellArtifact,
+				(el) => _isDisplayAdShellArtifact(el, { allowClassArtifacts }),
 			);
 			const stalePipContainers = _filterUniqueElements(
 				pipContainers,
@@ -362,12 +469,14 @@ function _blockAntiAdblockPopup() {
 			if (
 				staleSignature &&
 				staleSignature === lastStaleDisplayArtifactSignature &&
-				now - lastStaleDisplayArtifactCleanupAt < 1000
+				now - lastStaleDisplayArtifactCleanupAt <
+					STALE_DISPLAY_ARTIFACT_SAME_SIGNATURE_COOLDOWN_MS
 			) {
 				return false;
 			}
 			lastStaleDisplayArtifactSignature = staleSignature;
 			lastStaleDisplayArtifactCleanupAt = now;
+			const activePlayerRect = _getMainPlayerRect();
 
 			_log(
 				"Display ad shell stale: cleaning up residual shell/layout artifacts",
@@ -375,6 +484,10 @@ function _blockAntiAdblockPopup() {
 			);
 
 			staleNodes.forEach((el) => {
+				if (_shouldKeepDisplayAdLayoutCollapsed(el, activePlayerRect)) {
+					_resetStreamDisplayLayout(el);
+					return;
+				}
 				if (
 					el.querySelector?.("video") ||
 					el.matches?.('[data-a-target="video-player"]') ||
@@ -415,6 +528,7 @@ function _blockAntiAdblockPopup() {
 			isPromotedPageAdActive = false;
 			pendingDisplayAdShellSince = 0;
 			pendingDisplayAdShellSignature = null;
+			lastDisplayAdShellSignalAt = 0;
 			_resetDirectPlayerAdMediaState();
 		}
 
@@ -458,8 +572,10 @@ function _blockAntiAdblockPopup() {
 			cachedPlayerOverlayRoots = undefined;
 		}
 
-		function _pushUniqueElement(list, el) {
-			if (!el || list.includes(el)) return;
+		function _pushUniqueElement(list, el, seen = null) {
+			if (!el) return;
+			if (seen ? seen.has(el) : list.includes(el)) return;
+			if (seen) seen.add(el);
 			list.push(el);
 		}
 
@@ -564,6 +680,8 @@ function _blockAntiAdblockPopup() {
 				displayShellNodes,
 				pipContainers,
 				layoutRoots,
+				_getInferredDisplayAdLayoutWrappers(),
+				{ allowClassArtifacts: true },
 			);
 
 			explicitDisplayNodes.forEach((el) => {
@@ -1084,6 +1202,84 @@ function _blockAntiAdblockPopup() {
 			return _filterUniqueElements(wrappers);
 		}
 
+		function _getLowerThirdDisplayAdLayoutWrappers(nodes, playerRect = null) {
+			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
+			if (!resolvedPlayerRect || !Array.isArray(nodes) || nodes.length === 0) {
+				return [];
+			}
+
+			const wrappers = [];
+			const seen = new Set();
+			for (const seed of nodes) {
+				if (!(seed instanceof Element)) continue;
+
+				let current = seed.parentElement;
+				for (let depth = 0; depth < 6 && current; depth += 1) {
+					if (_isSafeElement(current)) break;
+					if (!_isVisibleNearPlayerElement(current, resolvedPlayerRect)) {
+						current = current.parentElement;
+						continue;
+					}
+
+					const rect = current.getBoundingClientRect();
+					const extraTop = Math.max(0, resolvedPlayerRect.top - rect.top);
+					const extraLeft = Math.max(0, resolvedPlayerRect.left - rect.left);
+					const extraRight = Math.max(0, rect.right - resolvedPlayerRect.right);
+					const extraBottom = Math.max(
+						0,
+						rect.bottom - resolvedPlayerRect.bottom,
+					);
+					const hasBottomBand =
+						extraBottom > 10 || rect.height > resolvedPlayerRect.height + 16;
+					const hasSideInset =
+						extraLeft > 24 || extraRight > 24 || extraTop > 24;
+					const className =
+						typeof current.className === "string" ? current.className : "";
+					const hasLowerThirdMarker =
+						current.id === "stream-lowerthird" ||
+						current.getAttribute?.("data-test-selector") === "sda-frame" ||
+						className.includes("lower-third") ||
+						className.includes("stream-display-ad");
+					if (!hasBottomBand && !hasSideInset && !hasLowerThirdMarker) {
+						current = current.parentElement;
+						continue;
+					}
+
+					if (
+						rect.width >
+							Math.min(
+								window.innerWidth * 0.96,
+								resolvedPlayerRect.width + 260,
+							) ||
+						rect.height >
+							Math.min(
+								window.innerHeight * 0.92,
+								resolvedPlayerRect.height + 180,
+							)
+					) {
+						current = current.parentElement;
+						continue;
+					}
+
+					const style = window.getComputedStyle(current);
+					const hasStructuredLayout =
+						style.display === "grid" ||
+						style.display === "flex" ||
+						style.position === "relative" ||
+						style.position === "absolute";
+					if (!hasStructuredLayout && !hasLowerThirdMarker) {
+						current = current.parentElement;
+						continue;
+					}
+
+					_pushUniqueElement(wrappers, current, seen);
+					current = current.parentElement;
+				}
+			}
+
+			return wrappers;
+		}
+
 		function _isNearPlayerRect(el, playerRect) {
 			if (!el || !playerRect) return false;
 
@@ -1409,6 +1605,10 @@ function _blockAntiAdblockPopup() {
 				],
 				isVisibleNearPlayer,
 			);
+			const lowerThirdDisplayAdNodes = _filterUniqueElements(
+				_queryUniqueElements(LOWER_THIRD_DISPLAY_AD_SELECTORS),
+				isVisibleNearPlayer,
+			);
 			const displayShellNodes = _filterUniqueElements(
 				_queryUniqueElements(DISPLAY_AD_SHELL_SELECTORS),
 				isVisibleNearPlayer,
@@ -1425,7 +1625,19 @@ function _blockAntiAdblockPopup() {
 			const hasAdLabel = adLabels.length > 0;
 			const hasDisplayAdCta = playerAdCallToActionNodes.length > 0;
 			const hasOverlayBanner = playerAdBannerTextNodes.length > 0;
-			const inferredLayoutWrappers = hasAdLabel
+			const lowerThirdLayoutWrappers = _getLowerThirdDisplayAdLayoutWrappers(
+				lowerThirdDisplayAdNodes,
+				playerRect,
+			);
+			const shouldProbeInferredLayoutWrappers =
+				hasAdLabel ||
+				hasDisplayAdCta ||
+				hasOverlayBanner ||
+				adBanners.length > 0 ||
+				explicitDisplayAdNodes.length > 0 ||
+				displayShellNodes.length > 0 ||
+				lowerThirdDisplayAdNodes.length > 0;
+			const inferredLayoutWrappers = shouldProbeInferredLayoutWrappers
 				? _getInferredDisplayAdLayoutWrappers()
 				: [];
 			const hasExplicitShellLayoutSignal =
@@ -1446,11 +1658,23 @@ function _blockAntiAdblockPopup() {
 				_hideElement(el);
 			});
 
+			const now = Date.now();
+			if (hasDisplayAdSignal) {
+				lastDisplayAdShellSignalAt = now;
+			}
+
 			if (!hasDisplayAdSignal) {
+				const allowRecentClassArtifactCleanup =
+					isDisplayAdShellActive ||
+					(now - lastDisplayAdShellSignalAt <
+						STALE_DISPLAY_ARTIFACT_RECENT_SIGNAL_MS &&
+						lastDisplayAdShellSignalAt > 0);
 				_cleanupStaleDisplayAdShell(
 					displayShellNodes,
 					pipContainers,
 					layoutRoots,
+					[],
+					{ allowClassArtifacts: allowRecentClassArtifactCleanup },
 				);
 				isDisplayAdShellActive = false;
 				didCountCurrentDisplayAdShellCleanup = false;
@@ -1467,13 +1691,13 @@ function _blockAntiAdblockPopup() {
 				displayShellNodes.length,
 				pipContainers.length,
 				layoutRoots.length,
+				lowerThirdLayoutWrappers.length,
 				hasDisplayAdCta ? 1 : 0,
 				hasOverlayBanner ? 1 : 0,
 				hasExplicitDisplayAdSignal ? inferredLayoutWrappers.length : 0,
 				hasInferredDisplayAdSignal ? 1 : 0,
 				hasAdLabel ? 1 : 0,
 			].join(":");
-			const now = Date.now();
 
 			if (!isDisplayAdShellActive) {
 				if (pendingDisplayAdShellSignature !== signalSignature) {
@@ -1540,6 +1764,9 @@ function _blockAntiAdblockPopup() {
 			}
 
 			layoutRoots.forEach((el) => {
+				_resetStreamDisplayLayout(el);
+			});
+			lowerThirdLayoutWrappers.forEach((el) => {
 				_resetStreamDisplayLayout(el);
 			});
 			inferredLayoutWrappers.forEach((el) => {
@@ -1881,11 +2108,14 @@ function _blockAntiAdblockPopup() {
 			_resetPlayerDetectionCaches();
 			let shouldScan = false;
 			for (const mutation of mutations) {
-				for (const node of mutation.addedNodes) {
-					if (_shouldScanForMutationNode(node)) {
-						shouldScan = true;
-						break;
+				for (const nodes of [mutation.addedNodes, mutation.removedNodes]) {
+					for (const node of nodes) {
+						if (_shouldScanForMutationNode(node)) {
+							shouldScan = true;
+							break;
+						}
 					}
+					if (shouldScan) break;
 				}
 				if (shouldScan) break;
 			}
