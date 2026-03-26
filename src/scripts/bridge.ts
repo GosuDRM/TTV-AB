@@ -452,6 +452,7 @@ function handlePageBridgeMessage(rawMessage) {
 		pageBridgeConnected = true;
 		clearHandshakeRetryTimeout();
 		flushPageMessages();
+		broadcastState();
 		return;
 	}
 	if (message.type === "ttvab-request-state") {
