@@ -85,7 +85,6 @@ function _bindBridgePortHandshake() {
 			return;
 		}
 		if (!_attachBridgePort(event.ports[0])) return;
-		window.removeEventListener("message", handleBridgePortInit, true);
 		event.stopImmediatePropagation?.();
 		_sendBridgeMessage("ttvab-bridge-ready");
 	};
