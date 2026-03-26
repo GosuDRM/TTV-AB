@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.0.3-purple)
+![Version](https://img.shields.io/badge/version-5.0.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,14 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v5.0.7
+- **Firefox Parity Hardening** - The Firefox fork now carries the current bridge, recovery, and display-shell hardening line while keeping the Firefox-specific MV3 packaging flow unchanged.
+- **Counter / Bridge Reliability** - Queued local ad-counter deltas now survive cross-tab storage races, page bridge handshakes can reconnect after port drops, and reconnected ports immediately replay the current toggle plus counter state.
+- **Playback Context Isolation** - Route and media-key changes now clear stale recovery state, worker and bridge events are rejected as soon as navigation leaves the originating playback context, and stale worker restarts are skipped after Twitch SPA navigation.
+- **Display-Shell Cleanup Hardening** - Removed ad nodes now trigger immediate stale-shell cleanup, residual player-layout wrappers stay collapsed until Twitch fully clears them, and lower-third plus side-inset display-ad layouts are flattened more reliably.
+- **Post-Ad Resume Hardening** - Resume intent now survives transient no-player and paused-state windows until playback actually resumes, reducing cases where Twitch leaves the player paused after ad recovery.
+- **Backup Matching / Popup Polish** - Backup stream selection now numerically matches same-resolution frame rates, and the popup statistics panel now derives its collapse fallback from the real transition timing instead of a shorter hardcoded timeout.
 
 ### v5.0.3
 - **JavaScript-to-TypeScript Repo Conversion** - The Firefox repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution, unpacked-extension loading targets `dist/manifest.json`, and Firefox package/source archives are generated from the built `dist/` output.

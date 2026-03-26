@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.7] - 2026-03-27
+
+### Fixed
+- **Firefox Parity Hardening** - Ported the current recovery and bridge hardening line into the Firefox fork while preserving Firefox-specific MV3 packaging and build surfaces.
+- **Counter / Bridge Reliability** - Queued local ad-counter deltas now survive cross-tab storage races, page bridge handshakes can reconnect after port drops, and reconnected ports immediately replay the current toggle plus counter state.
+- **Playback Context Isolation** - Route and media-key changes now clear stale recovery state, worker and bridge events are rejected as soon as navigation leaves the originating playback context, and stale worker restarts are skipped after Twitch SPA navigation.
+- **Display-Shell Cleanup Hardening** - Removed ad nodes now trigger immediate stale-shell cleanup, residual player-layout wrappers stay collapsed until Twitch fully clears them, and lower-third plus side-inset display-ad layouts are flattened more reliably.
+- **Post-Ad Resume Hardening** - Resume intent now survives transient no-player and paused-state windows until playback actually resumes, reducing cases where Twitch leaves the player paused after ad recovery.
+- **Backup Variant Matching** - Backup stream selection now numerically matches same-resolution frame rates so `30fps` and `60fps` fallbacks choose the intended clean variant.
+- **Popup Transition Timing** - The popup statistics panel now derives its collapse fallback from the actual computed transition timing instead of a shorter hardcoded timeout.
+
 ## [5.0.3] - 2026-03-24
 
 ### Changed
