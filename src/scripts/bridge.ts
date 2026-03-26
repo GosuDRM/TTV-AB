@@ -254,10 +254,8 @@ function broadcastState() {
 function reconcilePendingDelta(kind, nextStoredCount) {
 	const safeStoredCount = normalizeCount(nextStoredCount);
 	if (kind === "ads") {
-		const queuedTotal =
-			normalizeCount(bridgeState.storedAdsCount) +
-			normalizeCount(pendingAdsDelta);
-		if (safeStoredCount !== queuedTotal) {
+		const previousStoredCount = normalizeCount(bridgeState.storedAdsCount);
+		if (safeStoredCount < previousStoredCount) {
 			pendingAdsDelta = 0;
 			pendingAdChannels = createChannelsMap();
 			flushRetryCount = 0;
@@ -266,10 +264,8 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 		return;
 	}
 	if (kind === "domAds") {
-		const queuedTotal =
-			normalizeCount(bridgeState.storedDomAdsCount) +
-			normalizeCount(pendingDomAdsDelta);
-		if (safeStoredCount !== queuedTotal) {
+		const previousStoredCount = normalizeCount(bridgeState.storedDomAdsCount);
+		if (safeStoredCount < previousStoredCount) {
 			pendingDomAdsDelta = 0;
 			flushRetryCount = 0;
 		}
