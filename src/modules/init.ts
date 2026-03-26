@@ -2185,11 +2185,14 @@ function _blockAntiAdblockPopup() {
 			_resetPlayerDetectionCaches();
 			let shouldScan = false;
 			for (const mutation of mutations) {
-				for (const node of mutation.addedNodes) {
-					if (_shouldScanForMutationNode(node)) {
-						shouldScan = true;
-						break;
+				for (const nodes of [mutation.addedNodes, mutation.removedNodes]) {
+					for (const node of nodes) {
+						if (_shouldScanForMutationNode(node)) {
+							shouldScan = true;
+							break;
+						}
 					}
+					if (shouldScan) break;
 				}
 				if (shouldScan) break;
 			}
