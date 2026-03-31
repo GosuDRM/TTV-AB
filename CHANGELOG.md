@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.1.0] - 2026-04-01
+
+### Fixed
+- **Infinite Buffer Fix Loop** - Resolved a race condition where the extension's buffer recovery logic (which rapidly pauses and plays the stream) could be ignored by Twitch's React player causing the stream to stick in a paused state and spam `EventEmitter` memory leak warnings.
+- **Buffer Fix Reload Failsafe** - If the stream buffer stalls and the lightweight recovery fix fails 3 consecutive times, the extension will now automatically escalate to a full playlist reload to force the stream to recover.
+
 ## [5.0.9] - 2026-04-01
 
 ### Fixed

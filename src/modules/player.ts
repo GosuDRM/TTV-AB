@@ -6,6 +6,7 @@ const _PlayerBufferState = {
 	bufferDuration: 0,
 	numSame: 0,
 	lastFixTime: 0,
+	fixAttempts: 0,
 };
 
 let _cachedPlayerRef = null;
@@ -665,16 +666,18 @@ function _doPlayerTask(
 			3000,
 		);
 		_pausePlaybackTarget(player);
-		_playPlaybackTarget(
-			player,
-			__TTVAB_STATE__.PageChannel,
-			__TTVAB_STATE__.PageMediaKey,
-		);
-		_scheduleResumeRetries(
-			__TTVAB_STATE__.PageChannel,
-			__TTVAB_STATE__.PageMediaKey,
-			[80, 220, 500],
-		);
+		setTimeout(() => {
+			_playPlaybackTarget(
+				player,
+				__TTVAB_STATE__.PageChannel,
+				__TTVAB_STATE__.PageMediaKey,
+			);
+			_scheduleResumeRetries(
+				__TTVAB_STATE__.PageChannel,
+				__TTVAB_STATE__.PageMediaKey,
+				[150, 400, 800],
+			);
+		}, 60);
 		return true;
 	}
 
@@ -831,7 +834,11 @@ function _monitorPlayerBuffering() {
 							__TTVAB_STATE__.PlayerBufferingSameStateCount
 						) {
 							_log(`Attempting buffer fix (pos=${position})`, "warning");
-							if (__TTVAB_STATE__.PlayerBufferingDoPlayerReload) {
+							_PlayerBufferState.fixAttempts++;
+							if (
+								__TTVAB_STATE__.PlayerBufferingDoPlayerReload ||
+								_PlayerBufferState.fixAttempts >= 3
+							) {
 								_doPlayerTask(false, true);
 							} else {
 								_doPlayerTask(true, false);
@@ -841,6 +848,7 @@ function _monitorPlayerBuffering() {
 						}
 					} else {
 						_PlayerBufferState.numSame = 0;
+						_PlayerBufferState.fixAttempts = 0;
 					}
 
 					_PlayerBufferState.position = position;
