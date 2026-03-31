@@ -259,6 +259,18 @@ function _isKnownAdSegmentUrl(segmentUrl) {
 	);
 }
 
+function _isAdSegmentByUrl(segmentUrl) {
+	const url = String(segmentUrl || "");
+	if (!url) return false;
+	return (
+		url.includes(__TTVAB_STATE__.AdSignifier) ||
+		url.includes("stitched-ad") ||
+		url.includes("/adsquared/") ||
+		url.includes("processing") ||
+		url.includes("/_404/")
+	);
+}
+
 function _playlistHasKnownAdSegments(text) {
 	if (typeof text !== "string" || !text) return false;
 	const lines = text.split("\n");
@@ -266,6 +278,20 @@ function _playlistHasKnownAdSegments(text) {
 		if (
 			lines[index]?.startsWith("#EXTINF") &&
 			_isKnownAdSegmentUrl(lines[index + 1])
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function _playlistHasActiveAdSegments(text) {
+	if (typeof text !== "string" || !text) return false;
+	const lines = text.split("\n");
+	for (let index = 0; index < lines.length - 1; index++) {
+		if (
+			lines[index]?.startsWith("#EXTINF") &&
+			_isAdSegmentByUrl(lines[index + 1])
 		) {
 			return true;
 		}

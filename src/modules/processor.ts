@@ -148,7 +148,7 @@ async function _processM3U8(url, text, realFetch) {
 	if (!info) {
 		if (
 			!_hasPlaylistAdMarkers(text) &&
-			!_playlistHasKnownAdSegments(text) &&
+			!_playlistHasActiveAdSegments(text) &&
 			__TTVAB_STATE__.SimulatedAdsDepth === 0
 		) {
 			return text;
@@ -223,7 +223,7 @@ async function _processM3U8(url, text, realFetch) {
 
 	const hasAds =
 		_hasPlaylistAdMarkers(text) ||
-		_playlistHasKnownAdSegments(text) ||
+		_playlistHasActiveAdSegments(text) ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
 	const hasMediaSegments = _playlistHasMediaSegments(text);
 
