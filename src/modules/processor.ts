@@ -12,6 +12,7 @@ function _resetStreamAdState(info) {
 	info.RequestedAds.clear();
 	info.FailedBackupPlayerTypes?.clear?.();
 	info.BackupEncodingsM3U8Cache = Object.create(null);
+	__TTVAB_STATE__.AdSegmentCache.clear();
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
 	info.IsMidroll = false;
