@@ -659,6 +659,11 @@ function _doPlayerTask(
 			}
 			return didResume;
 		}
+		_suppressPauseIntent(
+			__TTVAB_STATE__.PageChannel,
+			__TTVAB_STATE__.PageMediaKey,
+			3000,
+		);
 		_pausePlaybackTarget(player);
 		_playPlaybackTarget(
 			player,
