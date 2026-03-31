@@ -213,7 +213,7 @@ function _markProgrammaticPlay() {
 function _wasRecentProgrammaticPlaybackAction(kind) {
 	const now = Date.now();
 	if (kind === "pause") {
-		return now - (_PlaybackIntentState.lastProgrammaticPauseAt || 0) < 750;
+		return now - (_PlaybackIntentState.lastProgrammaticPauseAt || 0) < 1500;
 	}
 	if (kind === "play") {
 		return now - (_PlaybackIntentState.lastProgrammaticPlayAt || 0) < 1500;
@@ -279,7 +279,7 @@ function _isPauseIntentSuppressed(channel = null, mediaKey = null) {
 	}
 
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
-	if (!safeMediaKey) return false;
+	if (!safeMediaKey) return true;
 	return _PlaybackIntentState.suppressedPauseMediaKey === safeMediaKey;
 }
 
@@ -933,6 +933,40 @@ function _doPlayerTask(
 			[180, 500, 1100],
 		);
 
+		if (reason === "ad-recovery") {
+			setTimeout(() => {
+				try {
+					const { player: livePlayer, state: liveState } =
+						_getPlayerAndState();
+					if (
+						liveState?.props?.content?.type === "live" &&
+						livePlayer
+					) {
+						const liveCore = _getPlayerCore(livePlayer);
+						const liveVideo = livePlayer.getHTMLVideoElement?.();
+						if (
+							liveVideo &&
+							!liveVideo.ended &&
+							liveVideo.buffered?.length > 0
+						) {
+							const liveEdge = liveVideo.buffered.end(
+								liveVideo.buffered.length - 1,
+							);
+							const currentPos =
+								liveCore?.state?.position || liveVideo.currentTime || 0;
+							if (liveEdge - currentPos > 2) {
+								liveVideo.currentTime = Math.max(0, liveEdge - 0.5);
+								_log(
+									`Post-ad live edge seek (drift=${(liveEdge - currentPos).toFixed(1)}s)`,
+									"info",
+								);
+							}
+						}
+					}
+				} catch {}
+			}, 1500);
+		}
+
 		if (preferenceSnapshot) {
 			setTimeout(() => {
 				_restorePlayerPreferenceSnapshot(preferenceSnapshot);
@@ -1053,6 +1087,26 @@ function _monitorPlayerBuffering() {
 					_PlayerBufferState.position = position;
 					_PlayerBufferState.bufferedPosition = bufferedPosition;
 					_PlayerBufferState.bufferDuration = bufferDuration;
+
+					const driftVideo = player.getHTMLVideoElement?.();
+					if (
+						driftVideo &&
+						!driftVideo.ended &&
+						driftVideo.buffered?.length > 0
+					) {
+						const driftLiveEdge = driftVideo.buffered.end(
+							driftVideo.buffered.length - 1,
+						);
+						const driftAmount = driftLiveEdge - position;
+						if (driftAmount > 4) {
+							driftVideo.currentTime = Math.max(0, driftLiveEdge - 0.5);
+							_log(
+								`A/V desync corrected (drift=${driftAmount.toFixed(1)}s)`,
+								"warning",
+							);
+							_PlayerBufferState.lastFixTime = Date.now();
+						}
+					}
 				}
 			} catch (err) {
 				_log(`Buffer monitor error: ${err.message}`, "error");

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.0.7-purple)
+![Version](https://img.shields.io/badge/version-5.0.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -58,6 +58,11 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v5.0.8
+- **Post-Ad Player Pause Fix** - Widened the programmatic-pause detection guard window and made pause-intent suppression null-safe so Twitch's native ad-transition pause events are no longer misinterpreted as user intent, which previously could leave the player stuck paused after ad recovery.
+- **Post-Ad Audio/Video Desync Fix** - After an ad-recovery player reload on a live stream, playback now explicitly seeks to the live buffer edge when the video position drifts more than 2 seconds behind, preventing the audio-ahead / video-behind desync that could persist after ad breaks.
+- **Live Playback A/V Drift Correction** - The buffer monitor now continuously checks for audio/video sync drift during live playback and auto-corrects by seeking to the live edge when the video position falls more than 4 seconds behind the buffered head, catching desync that develops gradually after ad transitions.
 
 ### v5.0.7
 - **Queued Counter Delta Preservation** - Persisted ad counters now preserve queued local deltas when another Twitch tab updates storage first, preventing valid ad and DOM-ad counts plus per-channel attribution from being dropped before the background flush completes.

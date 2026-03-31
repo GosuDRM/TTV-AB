@@ -1,8 +1,8 @@
 // TTV AB - Constants
 
 const _C = {
-	VERSION: "5.0.7",
-	INTERNAL_VERSION: 63,
+	VERSION: "5.0.8",
+	INTERNAL_VERSION: 64,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",

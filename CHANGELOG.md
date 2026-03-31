@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.0.8] - 2026-04-01
+
+### Fixed
+- **Post-Ad Player Pause Fix** - Widened the programmatic-pause detection guard window and made pause-intent suppression null-safe so Twitch's native ad-transition pause events are no longer misinterpreted as user intent, which previously could leave the player stuck paused after ad recovery.
+- **Post-Ad Audio/Video Desync Fix** - After an ad-recovery player reload on a live stream, playback now explicitly seeks to the live buffer edge when the video position drifts more than 2 seconds behind, preventing the audio-ahead / video-behind desync that could persist after ad breaks.
+- **Live Playback A/V Drift Correction** - The buffer monitor now continuously checks for audio/video sync drift during live playback and auto-corrects by seeking to the live edge when the video position falls more than 4 seconds behind the buffered head, catching desync that develops gradually after ad transitions.
+
 ## [5.0.7] - 2026-03-27
 
 ### Fixed
