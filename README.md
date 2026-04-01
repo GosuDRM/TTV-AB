@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.1.0-purple)
+![Version](https://img.shields.io/badge/version-5.1.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -58,6 +58,12 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v5.1.1
+- **Post-Ad Pause Intent Preservation** - Ad end cleanup no longer clears a real user pause and auto-resume retries only run when playback was actually active before the ad cycle.
+- **Buffer Lifecycle Reset Hardening** - Buffer-fix counters, cached player references, and reload cooldown state now reset on reloads, route changes, and toggle-off transitions so new streams do not inherit stale recovery state.
+- **Live-Edge Buffer Guard** - The buffer monitor no longer treats a temporary empty live edge as a hard stall, so it will not force a pause/play cycle while Twitch is simply waiting for the next live segment.
+- **Toggle-Off Recovery Cleanup** - Disabling ad blocking now immediately clears page and worker ad-recovery state, restores suppressed media, and stops lingering post-ad resume behavior instead of waiting for a later playlist transition.
 
 ### v5.1.0
 - **Infinite Buffer Fix Loop** - Resolved a race condition where the extension's buffer recovery logic (which rapidly pauses and plays the stream) could be ignored by Twitch's React player causing the stream to stick in a paused state and spam `EventEmitter` memory leak warnings.

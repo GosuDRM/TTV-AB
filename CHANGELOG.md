@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.1.1] - 2026-04-01
+
+### Fixed
+- **Post-Ad Pause Intent Preservation** - Ad end cleanup no longer clears a real user pause, and the delayed resume path now only runs when the stream was actually playing before the ad cycle started.
+- **Buffer Lifecycle Reset Hardening** - Buffer-fix counters, cached player references, and recovery cooldown state now reset on reloads, route changes, and disable transitions so fresh playback sessions do not inherit stale recovery state.
+- **Live-Edge Buffer Guard** - The buffer monitor now distinguishes a true frozen player from a temporary empty live edge, skipping the old pause/play recovery in that state and only escalating to a reload if live-edge starvation persists.
+- **Toggle-Off Recovery Cleanup** - Disabling ad blocking now immediately clears page and worker ad-recovery state, restores suppressed media, and stops stale post-ad resume behavior without waiting for another playlist transition.
+- **Stream State Isolation** - Stream-info fallback now prefers the active media key, and per-stream reset no longer clears the shared ad-segment quarantine cache for unrelated playback contexts.
+
 ## [5.1.0] - 2026-04-01
 
 ### Fixed

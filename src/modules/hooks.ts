@@ -774,161 +774,168 @@ function _hookWorker() {
 							);
 							break;
 						}
-						__TTVAB_STATE__.CurrentAdChannel = null;
-						__TTVAB_STATE__.CurrentAdMediaKey = null;
-						__TTVAB_STATE__.PinnedBackupPlayerType = null;
-						__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
-						__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-						__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
-						__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
-						if (typeof _clearPlaybackRecoveryTimeouts === "function") {
-							_clearPlaybackRecoveryTimeouts();
-						}
-						_broadcastWorkers({
-							key: "UpdateCurrentAdContext",
-							value: null,
-						});
-						_broadcastWorkers({
-							key: "UpdatePinnedBackupPlayerContext",
-							value: null,
-						});
-						if (typeof _clearUserPauseIntent === "function") {
-							_clearUserPauseIntent(
-								e.data.channel || null,
-								e.data.mediaKey || null,
-							);
-						}
-						if (typeof _suppressPauseIntent === "function") {
-							_suppressPauseIntent(
-								e.data.channel || null,
-								e.data.mediaKey || null,
-								3000,
-							);
-						}
-						_log("Ad ended", "success");
-						try {
-							const removableSelectors = [
-								'[data-a-target="video-player-pip-container"]',
-								'[data-a-target="video-player-mini-player"]',
-								".video-player__pip-container",
-								".video-player__mini-player",
-								".mini-player",
-								'[class*="mini-player"]',
-								'[class*="pip-container"]',
-								'[data-test-selector="display-ad"]',
-								'[data-test-selector="ad-banner"]',
-								'[data-a-target="ads-banner"]',
-								'iframe[data-test-selector^="sda-iframe-"]',
-								'iframe[title="Stream Display Ad"]',
-								'iframe[class*="stream-display-ad__iframe_lower-third"]',
-								'[data-ttvab-player-ad-banner="true"]',
-							];
-							const resetOnlySelectors = [
-								".stream-display-ad",
-								'[class*="stream-display-ad"]',
-								".video-player--stream-display-ad",
-								'[class*="video-player--stream-display-ad"]',
-							];
-							removableSelectors.forEach((sel) => {
-								document.querySelectorAll(sel).forEach((el) => {
-									el.style.display = "none";
-									el.remove();
-								});
+						{
+							const channel = e.data.channel || null;
+							const mediaKey = e.data.mediaKey || null;
+							const shouldAttemptPostAdResume =
+								typeof _canAttemptAdResume === "function"
+									? _canAttemptAdResume(channel, mediaKey)
+									: typeof _hasPendingAdResumeIntent === "function"
+										? _hasPendingAdResumeIntent(channel, mediaKey)
+										: false;
+							__TTVAB_STATE__.CurrentAdChannel = null;
+							__TTVAB_STATE__.CurrentAdMediaKey = null;
+							__TTVAB_STATE__.PinnedBackupPlayerType = null;
+							__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+							__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+							__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+							if (typeof _clearPlaybackRecoveryTimeouts === "function") {
+								_clearPlaybackRecoveryTimeouts();
+							}
+							_broadcastWorkers({
+								key: "UpdateCurrentAdContext",
+								value: null,
 							});
-							resetOnlySelectors.forEach((sel) => {
-								document.querySelectorAll(sel).forEach((el) => {
-									if (
-										typeof el.className === "string" &&
-										el.className.includes("stream-display-ad")
-									) {
-										el.className = el.className
-											.split(/\s+/)
-											.filter(
-												(className) =>
-													className && !className.includes("stream-display-ad"),
-											)
-											.join(" ");
-									}
-									if (
-										el.querySelector?.("video") ||
-										el.matches?.('[data-a-target="video-player"]') ||
-										el.matches?.('[class*="video-player"]')
-									) {
-										el.style.removeProperty("display");
-										el.style.removeProperty("visibility");
-										el.style.setProperty("padding", "0", "important");
-										el.style.setProperty("margin", "0", "important");
-										el.style.setProperty(
-											"background",
-											"transparent",
-											"important",
-										);
-										el.style.setProperty(
-											"background-color",
-											"transparent",
-											"important",
-										);
-										el.style.setProperty("width", "100%", "important");
-										el.style.setProperty("height", "100%", "important");
-										el.style.setProperty("max-width", "100%", "important");
-										el.style.setProperty("max-height", "100%", "important");
-										el.style.setProperty("inset", "0", "important");
-									} else {
+							_broadcastWorkers({
+								key: "UpdatePinnedBackupPlayerContext",
+								value: null,
+							});
+							if (typeof _resetPlayerBufferMonitorState === "function") {
+								_resetPlayerBufferMonitorState();
+							}
+							if (
+								!shouldAttemptPostAdResume &&
+								typeof _clearAdResumeIntent === "function"
+							) {
+								_clearAdResumeIntent();
+							}
+							if (typeof _suppressPauseIntent === "function") {
+								_suppressPauseIntent(channel, mediaKey, 3000);
+							}
+							_log("Ad ended", "success");
+							try {
+								const removableSelectors = [
+									'[data-a-target="video-player-pip-container"]',
+									'[data-a-target="video-player-mini-player"]',
+									".video-player__pip-container",
+									".video-player__mini-player",
+									".mini-player",
+									'[class*="mini-player"]',
+									'[class*="pip-container"]',
+									'[data-test-selector="display-ad"]',
+									'[data-test-selector="ad-banner"]',
+									'[data-a-target="ads-banner"]',
+									'iframe[data-test-selector^="sda-iframe-"]',
+									'iframe[title="Stream Display Ad"]',
+									'iframe[class*="stream-display-ad__iframe_lower-third"]',
+									'[data-ttvab-player-ad-banner="true"]',
+								];
+								const resetOnlySelectors = [
+									".stream-display-ad",
+									'[class*="stream-display-ad"]',
+									".video-player--stream-display-ad",
+									'[class*="video-player--stream-display-ad"]',
+								];
+								removableSelectors.forEach((sel) => {
+									document.querySelectorAll(sel).forEach((el) => {
 										el.style.display = "none";
 										el.remove();
-									}
+									});
 								});
-							});
-						} catch (_e) {}
-						if (typeof _restoreSuppressedMediaAfterAd === "function") {
-							_restoreSuppressedMediaAfterAd(
-								e.data.channel || null,
-								e.data.mediaKey || null,
-							);
-						}
-						if (typeof _resumePlayerAfterAdIfNeeded === "function") {
-							_schedulePlaybackRecoveryTimeout(
-								() => {
-									_resumePlayerAfterAdIfNeeded(
-										e.data.channel || null,
-										e.data.mediaKey || null,
-									);
-								},
-								150,
-								e.data.channel || null,
-								e.data.mediaKey || null,
-							);
-						}
-						if (typeof _scheduleResumeRetries === "function") {
-							_scheduleResumeRetries(
-								e.data.channel || null,
-								e.data.mediaKey || null,
-								[250, 700, 1400, 2400],
-							);
-						}
-						if (typeof _resumeActivePlayerIfPaused === "function") {
-							_schedulePlaybackRecoveryTimeout(
-								() => {
-									_resumeActivePlayerIfPaused(
-										e.data.channel || null,
-										e.data.mediaKey || null,
-									);
-								},
-								320,
-								e.data.channel || null,
-								e.data.mediaKey || null,
-							);
-							_schedulePlaybackRecoveryTimeout(
-								() => {
-									_resumeActivePlayerIfPaused(
-										e.data.channel || null,
-										e.data.mediaKey || null,
-									);
-								},
-								850,
-								e.data.channel || null,
-								e.data.mediaKey || null,
-							);
+								resetOnlySelectors.forEach((sel) => {
+									document.querySelectorAll(sel).forEach((el) => {
+										if (
+											typeof el.className === "string" &&
+											el.className.includes("stream-display-ad")
+										) {
+											el.className = el.className
+												.split(/\s+/)
+												.filter(
+													(className) =>
+														className &&
+														!className.includes("stream-display-ad"),
+												)
+												.join(" ");
+										}
+										if (
+											el.querySelector?.("video") ||
+											el.matches?.('[data-a-target="video-player"]') ||
+											el.matches?.('[class*="video-player"]')
+										) {
+											el.style.removeProperty("display");
+											el.style.removeProperty("visibility");
+											el.style.setProperty("padding", "0", "important");
+											el.style.setProperty("margin", "0", "important");
+											el.style.setProperty(
+												"background",
+												"transparent",
+												"important",
+											);
+											el.style.setProperty(
+												"background-color",
+												"transparent",
+												"important",
+											);
+											el.style.setProperty("width", "100%", "important");
+											el.style.setProperty("height", "100%", "important");
+											el.style.setProperty("max-width", "100%", "important");
+											el.style.setProperty("max-height", "100%", "important");
+											el.style.setProperty("inset", "0", "important");
+										} else {
+											el.style.display = "none";
+											el.remove();
+										}
+									});
+								});
+							} catch (_e) {}
+							if (typeof _restoreSuppressedMediaAfterAd === "function") {
+								_restoreSuppressedMediaAfterAd(channel, mediaKey);
+							}
+							if (
+								shouldAttemptPostAdResume &&
+								typeof _resumePlayerAfterAdIfNeeded === "function"
+							) {
+								_schedulePlaybackRecoveryTimeout(
+									() => {
+										_resumePlayerAfterAdIfNeeded(channel, mediaKey);
+									},
+									150,
+									channel,
+									mediaKey,
+								);
+							}
+							if (
+								shouldAttemptPostAdResume &&
+								typeof _scheduleResumeRetries === "function"
+							) {
+								_scheduleResumeRetries(
+									channel,
+									mediaKey,
+									[250, 700, 1400, 2400],
+									{ requireAdResumeIntent: true },
+								);
+							}
+							if (
+								shouldAttemptPostAdResume &&
+								typeof _resumeActivePlayerAfterAd === "function"
+							) {
+								_schedulePlaybackRecoveryTimeout(
+									() => {
+										_resumeActivePlayerAfterAd(channel, mediaKey);
+									},
+									320,
+									channel,
+									mediaKey,
+								);
+								_schedulePlaybackRecoveryTimeout(
+									() => {
+										_resumeActivePlayerAfterAd(channel, mediaKey);
+									},
+									850,
+									channel,
+									mediaKey,
+								);
+							}
 						}
 						break;
 					case "PauseResumePlayer":
