@@ -80,7 +80,7 @@ npm run knip
 Load the unpacked extension from `dist/manifest.json` after `npm run build`.
 Create a Chrome Web Store upload archive with `npm run package:chrome`; it writes `ttv-ab-<version>-chrome-store.zip` at the repo root.
 
-`npm run knip` is expected to pass cleanly with the current `knip` 6.0.3 configuration.
+`npm run knip` is expected to pass cleanly with the current `knip` 6.1.1 configuration.
 
 ## Support
 
