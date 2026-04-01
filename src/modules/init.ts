@@ -40,6 +40,38 @@ function _initToggleListener() {
 		const enabled = safeDetail.enabled;
 		if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
 		__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
+		if (!enabled) {
+			__TTVAB_STATE__.CurrentAdChannel = null;
+			__TTVAB_STATE__.CurrentAdMediaKey = null;
+			__TTVAB_STATE__.PinnedBackupPlayerType = null;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+			__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+			__TTVAB_STATE__.LastPlayerReloadAt = 0;
+			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+			__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+			if (typeof _clearAdResumeIntent === "function") {
+				_clearAdResumeIntent();
+			}
+			if (typeof _restoreSuppressedMediaAfterAd === "function") {
+				_restoreSuppressedMediaAfterAd();
+			}
+			if (typeof _resetBufferingMonitorState === "function") {
+				_resetBufferingMonitorState({ clearCachedPlayerRef: true });
+			}
+			_broadcastWorkers({
+				key: "ResetPlaybackRecoveryState",
+				value: { clearAdContext: true },
+			});
+			_broadcastWorkers({
+				key: "UpdateCurrentAdContext",
+				value: null,
+			});
+			_broadcastWorkers({
+				key: "UpdatePinnedBackupPlayerContext",
+				value: null,
+			});
+		}
 		_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
 		_log(
 			`Ad blocking ${enabled ? "enabled" : "disabled"}`,
@@ -807,6 +839,12 @@ function _blockAntiAdblockPopup() {
 						currentContext.MediaKey,
 						3000,
 					);
+				}
+				if (typeof _restoreSuppressedMediaAfterAd === "function") {
+					_restoreSuppressedMediaAfterAd();
+				}
+				if (typeof _resetBufferingMonitorState === "function") {
+					_resetBufferingMonitorState({ clearCachedPlayerRef: true });
 				}
 				_resetDirectPlayerAdMediaState();
 				_scheduleRoutePlayerResync(previousContext, currentContext);

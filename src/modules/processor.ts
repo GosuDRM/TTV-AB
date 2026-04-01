@@ -12,7 +12,6 @@ function _resetStreamAdState(info) {
 	info.RequestedAds.clear();
 	info.FailedBackupPlayerTypes?.clear?.();
 	info.BackupEncodingsM3U8Cache = Object.create(null);
-	__TTVAB_STATE__.AdSegmentCache.clear();
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
 	info.IsMidroll = false;
@@ -34,6 +33,15 @@ function _getStreamInfoForPlaylist(url) {
 		__TTVAB_STATE__.StreamInfosByUrl[normalizedUrl] ||
 		__TTVAB_STATE__.StreamInfosByUrl[url];
 	if (byUrl) return byUrl;
+
+	const scopedMediaKeys = [
+		_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey),
+		_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey),
+	].filter(Boolean);
+	for (const mediaKey of scopedMediaKeys) {
+		const scopedInfo = __TTVAB_STATE__.StreamInfos?.[mediaKey];
+		if (scopedInfo) return scopedInfo;
+	}
 
 	const infos = (
 		Object.values(__TTVAB_STATE__.StreamInfos || {}) as Array<{
