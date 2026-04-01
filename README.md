@@ -65,28 +65,6 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Live-Edge Buffer Guard** - The buffer monitor no longer treats a temporary empty live edge as a hard stall, so it will not force a pause/play cycle while Twitch is simply waiting for the next live segment.
 - **Toggle-Off Recovery Cleanup** - Disabling ad blocking now immediately clears page and worker ad-recovery state, restores suppressed media, and stops lingering post-ad resume behavior instead of waiting for a later playlist transition.
 
-### v5.1.0
-- **Infinite Buffer Fix Loop** - Resolved a race condition where the extension's buffer recovery logic (which rapidly pauses and plays the stream) could be ignored by Twitch's React player causing the stream to stick in a paused state and spam `EventEmitter` memory leak warnings.
-- **Buffer Fix Reload Failsafe** - If the stream buffer stalls and the lightweight recovery fix fails 3 consecutive times, the extension will now automatically escalate to a full playlist reload to force the stream to recover.
-
-### v5.0.9
-- **Buffer Fix Pause Freeze** - Fixed a race condition where the extension's programmatic playback pause during a buffer recovery attempt could be misinterpreted as a user-initiated pause, which would permanently block subsequent resume attempts and leave the player stuck in a paused state.
-
-### v5.0.8
-- **Post-Ad Player Pause Fix** - Widened the programmatic-pause detection guard window and made pause-intent suppression null-safe so Twitch's native ad-transition pause events are no longer misinterpreted as user intent, which previously could leave the player stuck paused after ad recovery.
-- **Post-Ad Audio/Video Desync Fix** - After an ad-recovery player reload on a live stream, playback now explicitly seeks to the live buffer edge when the video position drifts more than 2 seconds behind, preventing the audio-ahead / video-behind desync that could persist after ad breaks.
-- **Live Playback A/V Drift Correction** - The buffer monitor now continuously checks for audio/video sync drift during live playback and auto-corrects by seeking to the live edge when the video position falls more than 4 seconds behind the buffered head, catching desync that develops gradually after ad transitions.
-
-### v5.0.7
-- **Queued Counter Delta Preservation** - Persisted ad counters now preserve queued local deltas when another Twitch tab updates storage first, preventing valid ad and DOM-ad counts plus per-channel attribution from being dropped before the background flush completes.
-- **Bridge Handshake Reconnects** - Page-side bridge handshakes can now bind again after a port disconnect, allowing the isolated bridge channel to recover cleanly instead of retrying forever against a one-time listener.
-- **Exact Backup Variant Framerate Matching** - Backup stream selection now compares parsed frame rates numerically, so same-resolution `30fps` and `60fps` variants pick the correct clean fallback instead of the first resolution match.
-- **Playback Context Recovery Reset** - Route and media-context changes now clear stale reload and recovery cooldown state, preventing the previous stream's recovery markers from suppressing a required reload on the next stream.
-- **Removal-Triggered Stale Shell Cleanup** - DOM ad cleanup now reacts to ad-node removals as well as additions, so lingering display-shell wrappers collapse immediately when Twitch tears the ad DOM out of the player.
-- **Bridge Reconnect State Replay** - Reconnected page-side bridge ports now immediately replay the current toggle and counter state, preventing stale enabled status or ad counts after a transient port drop.
-- **Stale Navigation Event Rejection** - Worker, bridge, and rescan paths now reject playback events as soon as Twitch navigation leaves the originating media context, preventing old-stream counters, reloads, and cleanup work from leaking into later routes.
-- **Popup Transition Timing** - The popup statistics panel now derives its collapse fallback from the actual computed transition timing, preventing the close animation from snapping shut before the CSS transition finishes.
-
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ## Development
