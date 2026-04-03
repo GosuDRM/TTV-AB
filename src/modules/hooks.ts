@@ -7,21 +7,19 @@ function _hookWorkerFetch() {
 		"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292";
 
 	function _pruneStreamInfos() {
-		const entries = Object.entries(__TTVAB_STATE__.StreamInfos || {}) as Array<
-			[string, { LastActivityAt?: number }]
-		>;
-		if (entries.length <= 5) return;
-
-		const [oldKey, oldInfo] =
-			entries.sort(
-				(a, b) => (a[1]?.LastActivityAt || 0) - (b[1]?.LastActivityAt || 0),
-			)[0] || [];
-		if (!oldKey || !oldInfo) return;
-
-		delete __TTVAB_STATE__.StreamInfos[oldKey];
-		for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
-			if (__TTVAB_STATE__.StreamInfosByUrl[url] === oldInfo) {
-				delete __TTVAB_STATE__.StreamInfosByUrl[url];
+		const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
+		if (keys.length > 5) {
+			const oldKey = keys.sort(
+				(a, b) =>
+					(__TTVAB_STATE__.StreamInfos[a]?.LastActivityAt || 0) -
+					(__TTVAB_STATE__.StreamInfos[b]?.LastActivityAt || 0),
+			)[0];
+			const oldInfo = __TTVAB_STATE__.StreamInfos[oldKey];
+			delete __TTVAB_STATE__.StreamInfos[oldKey];
+			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
+				if (__TTVAB_STATE__.StreamInfosByUrl[url] === oldInfo) {
+					delete __TTVAB_STATE__.StreamInfosByUrl[url];
+				}
 			}
 		}
 	}
@@ -192,6 +190,7 @@ function _hookWorkerFetch() {
 					info._lastStaleCheckAt = now;
 					const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
 					if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
+						delete __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
 						info = null;
 					}
 				}
@@ -615,7 +614,11 @@ function _hookWorker() {
 								now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
 									__TTVAB_STATE__.AdCycleStaleMs;
 							if (shouldStartNewCycle) {
+								if (typeof _clearPlaybackRecoveryTimeouts === "function") {
+									_clearPlaybackRecoveryTimeouts();
+								}
 								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+								__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
 								__TTVAB_STATE__.PinnedBackupPlayerMediaKey = mediaKey;
@@ -624,30 +627,40 @@ function _hookWorker() {
 								}
 								if (typeof _suppressCompetingMediaDuringAd === "function") {
 									_suppressCompetingMediaDuringAd(channel, mediaKey);
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _suppressCompetingMediaDuringAd(channel, mediaKey),
 										80,
+										channel,
+										mediaKey,
 									);
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _suppressCompetingMediaDuringAd(channel, mediaKey),
 										350,
+										channel,
+										mediaKey,
 									);
 								}
 								if (typeof _rememberPlayerPlaybackForAd === "function") {
 									_rememberPlayerPlaybackForAd(channel, mediaKey);
 								}
 								if (typeof _resumeActivePlayerIfPaused === "function") {
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _resumeActivePlayerIfPaused(channel, mediaKey),
 										180,
+										channel,
+										mediaKey,
 									);
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _resumeActivePlayerIfPaused(channel, mediaKey),
 										650,
+										channel,
+										mediaKey,
 									);
-									setTimeout(
+									_schedulePlaybackRecoveryTimeout(
 										() => _resumeActivePlayerIfPaused(channel, mediaKey),
 										1400,
+										channel,
+										mediaKey,
 									);
 								}
 							}
@@ -709,31 +722,37 @@ function _hookWorker() {
 								nextPinnedContext.ChannelName,
 								nextPinnedContext.MediaKey,
 							);
-							setTimeout(
+							_schedulePlaybackRecoveryTimeout(
 								() =>
 									_suppressCompetingMediaDuringAd(
 										nextPinnedContext.ChannelName,
 										nextPinnedContext.MediaKey,
 									),
 								120,
+								nextPinnedContext.ChannelName,
+								nextPinnedContext.MediaKey,
 							);
 						}
 						if (typeof _resumeActivePlayerIfPaused === "function") {
-							setTimeout(
+							_schedulePlaybackRecoveryTimeout(
 								() =>
 									_resumeActivePlayerIfPaused(
 										nextPinnedContext.ChannelName,
 										nextPinnedContext.MediaKey,
 									),
 								180,
+								nextPinnedContext.ChannelName,
+								nextPinnedContext.MediaKey,
 							);
-							setTimeout(
+							_schedulePlaybackRecoveryTimeout(
 								() =>
 									_resumeActivePlayerIfPaused(
 										nextPinnedContext.ChannelName,
 										nextPinnedContext.MediaKey,
 									),
 								650,
+								nextPinnedContext.ChannelName,
+								nextPinnedContext.MediaKey,
 							);
 						}
 						_broadcastWorkers({
@@ -756,8 +775,8 @@ function _hookWorker() {
 							break;
 						}
 						{
-							const channel = e.data.channel || null;
-							const mediaKey = e.data.mediaKey || null;
+							const channel = e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+							const mediaKey = e.data.mediaKey || __TTVAB_STATE__.CurrentAdMediaKey || null;
 							const shouldAttemptPostAdResume =
 								typeof _canAttemptAdResume === "function"
 									? _canAttemptAdResume(channel, mediaKey)
@@ -770,6 +789,9 @@ function _hookWorker() {
 							__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 							__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 							__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+							if (typeof _clearPlaybackRecoveryTimeouts === "function") {
+								_clearPlaybackRecoveryTimeouts();
+							}
 							_broadcastWorkers({
 								key: "UpdateCurrentAdContext",
 								value: null,
@@ -778,8 +800,8 @@ function _hookWorker() {
 								key: "UpdatePinnedBackupPlayerContext",
 								value: null,
 							});
-							if (typeof _resetBufferingMonitorState === "function") {
-								_resetBufferingMonitorState();
+							if (typeof _resetPlayerBufferMonitorState === "function") {
+								_resetPlayerBufferMonitorState();
 							}
 							if (
 								!shouldAttemptPostAdResume &&
@@ -873,9 +895,14 @@ function _hookWorker() {
 								shouldAttemptPostAdResume &&
 								typeof _resumePlayerAfterAdIfNeeded === "function"
 							) {
-								setTimeout(() => {
-									_resumePlayerAfterAdIfNeeded(channel, mediaKey);
-								}, 150);
+								_schedulePlaybackRecoveryTimeout(
+									() => {
+										_resumePlayerAfterAdIfNeeded(channel, mediaKey);
+									},
+									150,
+									channel,
+									mediaKey,
+								);
 							}
 							if (
 								shouldAttemptPostAdResume &&
@@ -892,12 +919,22 @@ function _hookWorker() {
 								shouldAttemptPostAdResume &&
 								typeof _resumeActivePlayerAfterAd === "function"
 							) {
-								setTimeout(() => {
-									_resumeActivePlayerAfterAd(channel, mediaKey);
-								}, 320);
-								setTimeout(() => {
-									_resumeActivePlayerAfterAd(channel, mediaKey);
-								}, 850);
+								_schedulePlaybackRecoveryTimeout(
+									() => {
+										_resumeActivePlayerAfterAd(channel, mediaKey);
+									},
+									320,
+									channel,
+									mediaKey,
+								);
+								_schedulePlaybackRecoveryTimeout(
+									() => {
+										_resumeActivePlayerAfterAd(channel, mediaKey);
+									},
+									850,
+									channel,
+									mediaKey,
+								);
 							}
 						}
 						break;
@@ -1062,14 +1099,17 @@ function _hookMainFetch() {
 			for (const op of operations) {
 				if (op?.operationName !== "PlaybackAccessToken") continue;
 				if (!op.variables || typeof op.variables !== "object") continue;
-				if (
-					typeof op.variables.playerType === "string" &&
-					op.variables.playerType !== forceType
-				) {
-					previousPlayerType = previousPlayerType || op.variables.playerType;
-					op.variables.playerType = forceType;
-					op.variables.platform = forceType === "autoplay" ? "android" : "web";
-					changed = true;
+				if (typeof op.variables.playerType === "string") {
+					if (op.variables.playerType !== forceType) {
+						previousPlayerType = previousPlayerType || op.variables.playerType;
+						op.variables.playerType = forceType;
+						changed = true;
+					}
+					const expectedPlatform = forceType === "autoplay" ? "android" : "web";
+					if (op.variables.platform !== expectedPlatform) {
+						op.variables.platform = expectedPlatform;
+						changed = true;
+					}
 				}
 			}
 

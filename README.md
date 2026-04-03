@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.1.1-purple)
+![Version](https://img.shields.io/badge/version-5.1.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -41,7 +41,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 1. Navigate to [twitch.tv](https://twitch.tv)
 2. Open any live stream or VOD
 3. Ads will be automatically blocked
-4. Click the extension icon and use the toggle to enable/disable
+4. Click the extension icon and use the toggles to adjust ad blocking or buffer fix
 5. Change language via the dropdown in the footer
 
 ## How It Works
@@ -53,57 +53,19 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 - Suppresses injected direct video ads on VOD pages and returns playback to the real archive stream
 - Caches known ad segments to reduce repeated playback disruption
 
+`Ads Blocked` tracks confirmed worker-side playlist ad detections plus a few page-side fallback recoveries when Twitch injects direct media or explicit player-shell ads. `DOM Ads Blocked` tracks separate player-side cleanup events such as overlays, display shells, and popup removal. Both counters persist through the background worker using page-scoped media keys so live routes and `/videos/<id>` playback stay aligned without adding extra DOM scans or observers.
+
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
 
-### v5.1.1
-- **Post-Ad Pause Intent Preservation** - Ad end cleanup no longer clears a real user pause and auto-resume retries only run when playback was actually active before the ad cycle.
-- **Buffer Lifecycle Reset Hardening** - Buffer-fix counters, cached player references, and reload cooldown state now reset on reloads, route changes, and toggle-off transitions so new streams do not inherit stale recovery state.
-- **Live-Edge Buffer Guard** - The buffer monitor no longer treats a temporary empty live edge as a hard stall, so it will not force a pause/play cycle while Twitch is simply waiting for the next live segment.
-- **Toggle-Off Recovery Cleanup** - Disabling ad blocking now immediately clears page and worker ad-recovery state, restores suppressed media, and stops lingering post-ad resume behavior instead of waiting for a later playlist transition.
-
-### v5.1.0
-- **Infinite Buffer Fix Loop** - Resolved a race condition where the extension's buffer recovery logic (which rapidly pauses and plays the stream) could be ignored by Twitch's React player causing the stream to stick in a paused state and spam `EventEmitter` memory leak warnings.
-- **Buffer Fix Reload Failsafe** - If the stream buffer stalls and the lightweight recovery fix fails 3 consecutive times, the extension will now automatically escalate to a full playlist reload to force the stream to recover.
-
-### v5.0.9
-- **Buffer Fix Pause Freeze** - Fixed a race condition where the extension's programmatic playback pause during a buffer recovery attempt could be misinterpreted as a user-initiated pause, which would permanently block subsequent resume attempts and leave the player stuck in a paused state.
-
-### v5.0.8
-- **Post-Ad Player Pause Fix** - Widened the programmatic-pause detection guard and made pause-intent suppression null-safe so Twitch's ad-transition pauses no longer leave the player stuck paused after ad recovery.
-- **Post-Ad Audio/Video Desync Fix** - After an ad-recovery player reload, live playback now seeks to the buffer edge when video drifts behind, preventing audio-ahead / video-behind desync after ad breaks.
-- **Live A/V Drift Correction** - The buffer monitor now auto-corrects audio/video sync drift during live playback by seeking to the live edge when video falls more than 4 seconds behind.
-
-### v5.0.7
-- **Firefox Parity Hardening** - The Firefox fork now carries the current bridge, recovery, and display-shell hardening line while keeping the Firefox-specific MV3 packaging flow unchanged.
-- **Counter / Bridge Reliability** - Queued local ad-counter deltas now survive cross-tab storage races, page bridge handshakes can reconnect after port drops, and reconnected ports immediately replay the current toggle plus counter state.
-- **Playback Context Isolation** - Route and media-key changes now clear stale recovery state, worker and bridge events are rejected as soon as navigation leaves the originating playback context, and stale worker restarts are skipped after Twitch SPA navigation.
-- **Display-Shell Cleanup Hardening** - Removed ad nodes now trigger immediate stale-shell cleanup, residual player-layout wrappers stay collapsed until Twitch fully clears them, and lower-third plus side-inset display-ad layouts are flattened more reliably.
-- **Post-Ad Resume Hardening** - Resume intent now survives transient no-player and paused-state windows until playback actually resumes, reducing cases where Twitch leaves the player paused after ad recovery.
-- **Backup Matching / Popup Polish** - Backup stream selection now numerically matches same-resolution frame rates, and the popup statistics panel now derives its collapse fallback from the real transition timing instead of a shorter hardcoded timeout.
-
-### v5.0.3
-- **JavaScript-to-TypeScript Repo Conversion** - The Firefox repo was converted from checked-in JavaScript source files to a TypeScript-based layout, `npm run build` now compiles the TypeScript build runner before execution, unpacked-extension loading targets `dist/manifest.json`, and Firefox package/source archives are generated from the built `dist/` output.
-- **Firefox Bridge / Counter Hardening** - The Firefox build now carries the newer page-to-bridge counter pipeline, route-aware live/VOD media-key filtering, retrying counter persistence, stale-worker restart guards, and cross-realm-safe payload handling so `Ads Blocked` and `DOM Ads Blocked` remain in sync across Twitch SPA navigation.
-- **Performance Tuning** - The player-side DOM scanner now does less duplicate selector work during popup, display-ad, and direct-media checks by using Set-based dedupe, grouped mutation noise filtering, cheaper targeted popup detection before broad fallback sweeps, and more settled rescan scheduling during Twitch SPA channel navigation.
-
-### v5.0.1
-- **Firefox Stutter Fix** - Reduced the player-side DOM cleanup hot path that could make Twitch pages hitch or briefly freeze in Firefox when ad UI appeared, especially around prerolls, display ads, or popup detection.
-- **Overlay Scan Scope Reduction** - Player CTA, banner, and ad-label detection now searches near the active player instead of repeatedly sweeping the full page, cutting expensive layout work during normal playback.
-- **Mutation Noise Filtering** - Generic button and link churn no longer counts as an ad-scan trigger, so routine Twitch UI updates do not keep scheduling unnecessary rescans.
-
-### v5.0.0
-- **VOD Ad Blocking Support** - Added VOD route, playlist, and playback-token handling so Twitch `/videos/<id>` playback uses the same ad-strip and recovery pipeline as live streams.
-- **Playback Context Hardening** - Stream state, worker messages, route changes, and post-ad recovery now track a shared media key, preventing stale live/VOD events from crossing into the wrong player.
-- **Current-Live VOD Recovery** - Active livestream VOD pages now keep page-scoped ad and reload events even when Twitch serves playback through the live channel transport, fixing ads that could still slip through on the current stream archive.
-- **Live-to-VOD Player Resync** - Navigating from a live stream to its VOD in Twitch's SPA flow now triggers a guarded player resync when the old live player state lingers, preventing the large static `?` placeholder that previously required a manual refresh.
-- **Firefox Counter Sync Hardening** - Hardened the Firefox `MAIN` / `ISOLATED` / background / popup message pipeline so `Ads Blocked` and `DOM Ads Blocked` update immediately when ad blocking starts instead of getting dropped or snapped back to zero.
-- **Firefox Post-Ad Resume Hardening** - Firefox ad-end, buffer-fix, and route-change recovery now suppress false pause intent and retry guarded resumes so Twitch is less likely to leave the player stuck paused after ads or SPA channel navigation.
-- **DOM Scan Performance Hardening** - Player-side popup and display-ad cleanup now coalesces rescans, ignores noisy chat-only mutations, and backs off idle polling, reducing the periodic buffering and whole-browser lag that could appear from overly aggressive full-page DOM scans.
-- **Player Overlay Cleanup** - Display-ad cleanup now recognizes the newer player-side `Learn More` CTA and `right after this ad break` banner shell, collapsing VOD ad overlays more reliably.
-- **Direct VOD Video-Ad Suppression** - VOD pages now detect Twitch's injected Amazon MP4 ad media and force playback back to the real archive stream instead of letting the standalone ad video run to completion, while requiring matching ad-UI signals so live/VOD route transitions are not misclassified as standalone ads.
-- **Lower-Third Banner Coverage** - Added support for Twitch's newer `sda-frame` / `stream-lowerthird` lower-third subscription and display-ad banner variant so it is treated as an explicit DOM ad target.
+### v5.1.2
+- **Buffer Fix Toggle** - Added a new "Buffer Fix" toggle to the popup UI, allowing users to enable or disable the experimental player buffer recovery behavior dynamically without needing to reload the page or extension.
+- **Toggle UI Redesign** - Compacted the popup layout into a sleek dual-toggle container, giving both Ad Blocking and Buffer Fix controls equal prominence without expanding the popup's spatial footprint.
+- **Ad Cleanup Zero-Width Obfuscation** - Hardened internal DOM ad detection against zero-width Unicode characters (`\u200B`, `\u200C`, etc.) which Twitch was using to obfuscate "Ad" labels and bypass cleanup.
+- **Ad Cleanup Pipeline Optimization** - Refactored the DOM ad and shell cleanup routines so direct media stripping, display shell flattening, and promoted page collapsing all execute in a single sweep rather than short-circuiting on the first match.
+- **Buffer Recovery Stability** - Changed the buffer fix recovery chain to explicitly re-fetch the live Twitch player instance before applying unpause intent, preventing the script from crashing or operating on a recycled React fragment.
+- **Cross-World Bridge Plumbing** - Added full isolated-bridge protocol support for the new buffer toggle, ensuring real-time toggle changes serialize reliably into the page context.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

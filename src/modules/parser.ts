@@ -357,17 +357,6 @@ function _stripAds(text, stripAll, info) {
 					strippedSegments.shift();
 				}
 
-				if (
-					segmentUrl &&
-					!info.RequestedAds.has(segmentUrl) &&
-					!info.IsMidroll
-				) {
-					info.RequestedAds.add(segmentUrl);
-					fetch(segmentUrl)
-						.then((r) => r.blob())
-						.catch(() => {});
-				}
-
 				if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl))
 					info.NumStrippedAdSegments++;
 				__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());

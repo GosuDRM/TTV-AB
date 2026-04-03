@@ -18,7 +18,7 @@ type TranslationLocale = Record<string, unknown> & {
 		}
 	>;
 };
-const RUNTIME_TSCONFIGS = ["tsconfig.json", "tsconfig.runtime.json"];
+const RUNTIME_TSCONFIGS = ["tsconfig.modules.json", "tsconfig.runtime.json"];
 const STATIC_ROOT_FILES = [
 	"manifest.json",
 	"CHANGELOG.md",
@@ -198,6 +198,8 @@ function cleanDistRuntimeOutputs() {
 		...STATIC_ROOT_FILES,
 		...STATIC_ROOT_DIRECTORIES,
 		"src",
+		"tsconfig.modules.tsbuildinfo",
+		"tsconfig.runtime.tsbuildinfo",
 		"firefox-package",
 		"firefox-source-package",
 	];
@@ -1484,6 +1486,7 @@ function packageFirefoxSource(version) {
 		"tsconfig.base.json",
 		"tsconfig.build.json",
 		"tsconfig.json",
+		"tsconfig.modules.json",
 		"tsconfig.runtime.json",
 	];
 
