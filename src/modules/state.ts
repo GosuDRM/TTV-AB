@@ -273,7 +273,7 @@ function _declareState(scope) {
 		IsBufferFixEnabled: _C.BUFFERING_FIX,
 		AdSegmentCache: new Map(),
 		PlayerBufferingDelay: 600,
-		PlayerBufferingSameStateCount: 3,
+		PlayerBufferingSameStateCount: 5,
 		PlayerBufferingDangerZone: 1,
 		PlayerBufferingMinRepeatDelay: 8000,
 		PlayerBufferingPrerollCheckEnabled: false,

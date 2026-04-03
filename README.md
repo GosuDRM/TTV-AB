@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.1.2-purple)
+![Version](https://img.shields.io/badge/version-5.1.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -59,13 +59,11 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v5.1.2
-- **Buffer Fix Toggle** - Added a new "Buffer Fix" toggle to the popup UI, allowing users to enable or disable the experimental player buffer recovery behavior dynamically without needing to reload the page or extension.
-- **Toggle UI Redesign** - Compacted the popup layout into a sleek dual-toggle container, giving both Ad Blocking and Buffer Fix controls equal prominence without expanding the popup's spatial footprint.
-- **Ad Cleanup Zero-Width Obfuscation** - Hardened internal DOM ad detection against zero-width Unicode characters (`\u200B`, `\u200C`, etc.) which Twitch was using to obfuscate "Ad" labels and bypass cleanup.
-- **Ad Cleanup Pipeline Optimization** - Refactored the DOM ad and shell cleanup routines so direct media stripping, display shell flattening, and promoted page collapsing all execute in a single sweep rather than short-circuiting on the first match.
-- **Buffer Recovery Stability** - Changed the buffer fix recovery chain to explicitly re-fetch the live Twitch player instance before applying unpause intent, preventing the script from crashing or operating on a recycled React fragment.
-- **Cross-World Bridge Plumbing** - Added full isolated-bridge protocol support for the new buffer toggle, ensuring real-time toggle changes serialize reliably into the page context.
+### v5.1.3
+- **Post-Ad Recovery Without Buffer Fix** - Fixed a regression where disabling the Buffer Fix toggle could leave live playback stuck on a loading spinner after ads because the post-ad recovery path stopped before it could resume or reload the player.
+- **Ad-Recovery / Buffer-Fix Separation** - Kept the Buffer Fix toggle scoped to normal live-buffer interventions only, while preserving the dedicated post-ad resume and reload safety net so ad blocking still recovers cleanly when Twitch ends playback at ad exit.
+- **Less Aggressive Buffer Fix** - Tightened live stall detection so the buffer fix no longer fires just because Twitch is intentionally running a low-buffer catch-up window with future data still available.
+- **Safer Live-Edge Drift Correction** - Limited automatic live-edge seeks to cases where the media element still reports future-ready playback data, avoiding forced jumps during active rebuffers.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
