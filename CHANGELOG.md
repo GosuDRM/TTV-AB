@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.1.3] - 2026-04-04
+
+### Fixed
+- **Post-Ad Recovery Without Buffer Fix** - Fixed a regression where disabling the Buffer Fix toggle could leave live playback stuck on a loading spinner after ads because the post-ad recovery path exited before it could resume or reload the player.
+- **Ad-Recovery / Buffer-Fix Separation** - Kept the Buffer Fix toggle scoped to normal live-buffer interventions only, while preserving the dedicated post-ad resume and reload safety net so ad blocking still recovers cleanly when Twitch ends playback at ad exit.
+- **Less Aggressive Buffer Fix** - Tightened live stall detection so the buffer fix no longer fires just because Twitch is intentionally running a low-buffer catch-up window with future data still available.
+- **Safer Live-Edge Drift Correction** - Limited automatic live-edge seeks to cases where the media element still reports future-ready playback data, avoiding forced jumps during active rebuffers.
+
 ## [5.1.2] - 2026-04-03
 
 ### Added

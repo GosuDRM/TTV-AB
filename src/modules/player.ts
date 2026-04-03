@@ -1100,11 +1100,22 @@ function _doPlayerTask(
 
 function _monitorPlayerBuffering() {
 	function check() {
-		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
+		const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
+		const hasPendingPostAdResume =
+			_hasPendingAdResumeIntent(__TTVAB_STATE__.PageChannel, currentMediaKey) ||
+			_hasPendingAdResumeIntent(
+				__TTVAB_STATE__.CurrentAdChannel,
+				__TTVAB_STATE__.CurrentAdMediaKey,
+			);
+		const hasAdRecoveryContext = Boolean(
+			__TTVAB_STATE__.CurrentAdMediaKey ||
+				__TTVAB_STATE__.CurrentAdChannel ||
+				hasPendingPostAdResume,
+		);
+		if (!__TTVAB_STATE__.IsBufferFixEnabled && !hasAdRecoveryContext) {
 			setTimeout(check, Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000));
 			return;
 		}
-		const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
 		const hasLivePlaybackContext =
 			__TTVAB_STATE__.PageMediaType === "live" && Boolean(currentMediaKey);
 		const nextDelay = __TTVAB_STATE__.PlayerBufferingDelay;
@@ -1136,7 +1147,8 @@ function _monitorPlayerBuffering() {
 					_clearCachedPlayerRef();
 				} else if (
 					state?.props?.content?.type === "live" &&
-					player.getHTMLVideoElement()?.ended
+					player.getHTMLVideoElement()?.ended &&
+					(__TTVAB_STATE__.IsBufferFixEnabled || hasAdRecoveryContext)
 				) {
 					const recoveryReason =
 						__TTVAB_STATE__.CurrentAdMediaKey ||
@@ -1151,10 +1163,7 @@ function _monitorPlayerBuffering() {
 					_PlayerBufferState.lastFixTime = Date.now();
 				} else if (
 					state?.props?.content?.type === "live" &&
-					_hasPendingAdResumeIntent(
-						__TTVAB_STATE__.PageChannel,
-						currentMediaKey,
-					)
+					hasPendingPostAdResume
 				) {
 					const isPaused = Boolean(
 						player.isPaused?.() ||
@@ -1174,6 +1183,7 @@ function _monitorPlayerBuffering() {
 						_PlayerBufferState.lastFixTime = Date.now();
 					}
 				} else if (
+					__TTVAB_STATE__.IsBufferFixEnabled &&
 					state?.props?.content?.type === "live" &&
 					!player.isPaused() &&
 					!player.getHTMLVideoElement()?.ended &&
@@ -1246,9 +1256,7 @@ function _monitorPlayerBuffering() {
 						(!__TTVAB_STATE__.PlayerBufferingPrerollCheckEnabled ||
 							position > __TTVAB_STATE__.PlayerBufferingPrerollCheckOffset) &&
 						hasPlaybackState &&
-						(isStablePosition ||
-							(bufferDuration < __TTVAB_STATE__.PlayerBufferingDangerZone &&
-								hasFutureData)) &&
+						isStablePosition &&
 						isStableBufferedPosition &&
 						isBufferRegressing
 					) {
@@ -1297,7 +1305,7 @@ function _monitorPlayerBuffering() {
 							driftVideo.buffered.length - 1,
 						);
 						const driftAmount = driftLiveEdge - position;
-						if (driftAmount > 4 && isStablePosition) {
+						if (driftAmount > 4 && isStablePosition && hasFutureData && readyState >= 3) {
 							driftVideo.currentTime = Math.max(0, driftLiveEdge - 0.5);
 							_log(
 								`A/V desync corrected (drift=${driftAmount.toFixed(1)}s)`,
