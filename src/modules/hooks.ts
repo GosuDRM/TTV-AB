@@ -775,8 +775,8 @@ function _hookWorker() {
 							break;
 						}
 						{
-							const channel = e.data.channel || null;
-							const mediaKey = e.data.mediaKey || null;
+							const channel = e.data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
+							const mediaKey = e.data.mediaKey || __TTVAB_STATE__.CurrentAdMediaKey || null;
 							const shouldAttemptPostAdResume =
 								typeof _canAttemptAdResume === "function"
 									? _canAttemptAdResume(channel, mediaKey)

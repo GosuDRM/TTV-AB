@@ -18,7 +18,7 @@ type TranslationLocale = Record<string, unknown> & {
 		}
 	>;
 };
-const RUNTIME_TSCONFIGS = ["tsconfig.json", "tsconfig.runtime.json"];
+const RUNTIME_TSCONFIGS = ["tsconfig.modules.json", "tsconfig.runtime.json"];
 const STATIC_ROOT_FILES = [
 	"manifest.json",
 	"CHANGELOG.md",

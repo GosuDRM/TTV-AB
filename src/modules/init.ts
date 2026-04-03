@@ -81,6 +81,21 @@ function _initToggleListener() {
 			enabled ? "success" : "warning",
 		);
 	});
+
+	_onInternalMessage("ttvab-toggle-buffer-fix", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (typeof safeDetail?.enabled !== "boolean") return;
+		const enabled = safeDetail.enabled;
+		if (__TTVAB_STATE__.IsBufferFixEnabled === enabled) return;
+		__TTVAB_STATE__.IsBufferFixEnabled = enabled;
+		if (!enabled && typeof _resetPlayerBufferMonitorState === "function") {
+			_resetPlayerBufferMonitorState();
+		}
+		_log(
+			`Buffer fix ${enabled ? "enabled" : "disabled"}`,
+			enabled ? "success" : "warning",
+		);
+	});
 }
 
 function _blockAntiAdblockPopup() {
@@ -1589,6 +1604,7 @@ function _blockAntiAdblockPopup() {
 
 		function _looksLikeAdLabel(text) {
 			const normalized = String(text || "")
+				.replace(/[\u200B\u200C\u200D\uFEFF\u00AD]/g, "")
 				.replace(/\s+/g, " ")
 				.trim()
 				.toLowerCase();
@@ -1953,17 +1969,21 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _scanAndRemove() {
+			let didTargetedCleanup = false;
+
 			if (_collapseDirectPlayerAdMedia()) {
-				return true;
+				didTargetedCleanup = true;
 			}
 
 			if (_collapseDisplayAdShell()) {
-				return true;
+				didTargetedCleanup = true;
 			}
 
 			if (_collapsePromotedPageAd()) {
-				return true;
+				didTargetedCleanup = true;
 			}
+
+			if (didTargetedCleanup) return true;
 
 			for (const selector of POPUP_SCAN_SELECTORS) {
 				try {

@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.1.2] - 2026-04-03
+
+### Added
+- **Buffer Fix Toggle** - Added a new "Buffer Fix" toggle to the popup UI, allowing users to enable or disable the experimental player buffer recovery behavior dynamically without needing to reload the page or extension.
+- **Toggle UI Redesign** - Compacted the popup layout into a sleek dual-toggle container, giving both Ad Blocking and Buffer Fix controls equal prominence without expanding the popup's spatial footprint.
+
+### Fixed
+- **Ad Cleanup Zero-Width Obfuscation** - Hardened internal DOM ad detection against zero-width Unicode characters (`\u200B`, `\u200C`, etc.) which Twitch was using to obfuscate "Ad" labels and bypass cleanup.
+- **Ad Cleanup Pipeline Optimization** - Refactored the DOM ad and shell cleanup routines so direct media stripping, display shell flattening, and promoted page collapsing all execute in a single sweep rather than short-circuiting on the first match.
+- **Buffer Recovery Stability** - Changed the buffer fix recovery chain to explicitly re-fetch the live Twitch player instance before applying unpause intent, preventing the script from crashing or operating on a recycled React fragment.
+- **Cross-World Bridge Plumbing** - Added full isolated-bridge protocol support for the new buffer toggle, ensuring real-time toggle changes serialize reliably into the page context.
+- **VS Code Type Resolution** - Refactored `tsconfig.json` into a proper Solution Project configuration separating global module contexts from module-scoped runtime contexts to fix IDE type-checking collisions.
+
 ## [5.1.1] - 2026-04-01
 
 ### Fixed

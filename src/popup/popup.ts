@@ -1,4 +1,4 @@
-﻿// TTV AB - Popup Script
+// TTV AB - Popup Script
 
 document.addEventListener("DOMContentLoaded", () => {
 	const toggle = document.getElementById(
@@ -56,6 +56,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		"footerText",
 	) as HTMLElement | null;
 	const infoText = document.getElementById("infoText") as HTMLElement | null;
+	const bufferFixToggle = document.getElementById(
+		"bufferFixToggle",
+	) as HTMLInputElement | null;
 	const donateButton = document.getElementById(
 		"donateBtn",
 	) as HTMLAnchorElement | null;
@@ -87,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		achievementsTitle,
 		footerText,
 		infoText,
+		bufferFixToggle,
 		donateButton,
 		repoLink,
 		authorLink,
@@ -291,6 +295,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			String(t.statistics ?? "Statistics"),
 		);
 		toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
+		bufferFixToggle.setAttribute("aria-label", String(t.bufferFix ?? "Buffer Fix"));
 		achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
 		footerText.textContent = String(t.footerBy ?? " — by ");
 		const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
@@ -761,7 +766,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	chrome.storage.local.get(
-		["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+		["ttvAdblockEnabled", "ttvBufferFixEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -771,7 +776,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 			const safeResult = (result || {}) as PlainObject;
 			const enabled = safeResult.ttvAdblockEnabled !== false;
+			const bufferFixEnabled = safeResult.ttvBufferFixEnabled !== false;
 			toggle.checked = enabled;
+			bufferFixToggle.checked = bufferFixEnabled;
 			updateStatus(enabled, false);
 
 			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
@@ -790,6 +797,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			const enabled = changes.ttvAdblockEnabled.newValue !== false;
 			toggle.checked = enabled;
 			updateStatus(enabled, false);
+		}
+		if (changes.ttvBufferFixEnabled) {
+			const bufferFixEnabled = changes.ttvBufferFixEnabled.newValue !== false;
+			bufferFixToggle.checked = bufferFixEnabled;
 		}
 		if (changes.ttvAdsBlocked) {
 			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
@@ -826,6 +837,30 @@ document.addEventListener("DOMContentLoaded", () => {
 				return;
 			}
 			updateStatus(enabled, true);
+		});
+	});
+
+	let bufferFixWriteInFlight = false;
+
+	bufferFixToggle.addEventListener("change", () => {
+		if (bufferFixWriteInFlight) return;
+		bufferFixWriteInFlight = true;
+		bufferFixToggle.disabled = true;
+		const enabled = bufferFixToggle.checked;
+		const previousEnabled = !enabled;
+		chrome.storage.local.set({ ttvBufferFixEnabled: enabled }, () => {
+			bufferFixWriteInFlight = false;
+			bufferFixToggle.disabled = false;
+			if (chrome.runtime.lastError) {
+				console.error(
+					"[TTV AB] Popup buffer fix toggle write error:",
+					chrome.runtime.lastError.message,
+				);
+				bufferFixToggle.checked = previousEnabled;
+				updateStatus(previousEnabled, false, "bufferFix");
+				return;
+			}
+			updateStatus(enabled, true, "bufferFix");
 		});
 	});
 
@@ -962,26 +997,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	let statusTimeout = null;
 	let transientStatusState = null;
+	let transientStatusType = null;
 
 	function renderStatusHelperText(translations) {
-		if (transientStatusState === null) {
+		if (transientStatusState === null || transientStatusType === null) {
 			infoText.textContent = translations.changesInstantly;
 			infoText.style.color = "#666";
 			return;
 		}
-		infoText.textContent = `${translations.adBlocking}: ${transientStatusState ? translations.active : translations.inactive}`;
+		const label = transientStatusType === "bufferFix" ? translations.bufferFix : translations.adBlocking;
+		infoText.textContent = `${label}: ${transientStatusState ? translations.active : translations.inactive}`;
 		infoText.style.color = transientStatusState ? "#4CAF50" : "#f44336";
 	}
 
-	function updateStatus(enabled, showTransientMessage = false) {
+	function updateStatus(enabled, showTransientMessage = false, toggleType = "adblock") {
 		const t = getTranslations();
 		const prefersReducedMotion =
 			window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 		infoText.style.transition = prefersReducedMotion
 			? "none"
 			: "color 0.3s ease";
-		statusDot.classList.toggle("disabled", !enabled);
-		statusText.textContent = String(enabled ? t.active : t.inactive);
+		if (toggleType === "adblock") {
+			statusDot.classList.toggle("disabled", !enabled);
+			statusText.textContent = String(enabled ? t.active : t.inactive);
+		}
 		if (!showTransientMessage) {
 			renderStatusHelperText(t);
 			return;
@@ -992,9 +1031,11 @@ document.addEventListener("DOMContentLoaded", () => {
 			statusTimeout = null;
 		}
 		transientStatusState = enabled;
+		transientStatusType = toggleType;
 		renderStatusHelperText(t);
 		statusTimeout = setTimeout(() => {
 			transientStatusState = null;
+			transientStatusType = null;
 			renderStatusHelperText(getTranslations());
 			statusTimeout = null;
 		}, 1500);

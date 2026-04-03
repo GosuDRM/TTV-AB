@@ -254,6 +254,7 @@ function postAchievementUnlock(id) {
 
 const bridgeState = {
 	enabled: true,
+	bufferFixEnabled: true,
 	storedAdsCount: 0,
 	storedDomAdsCount: 0,
 };
@@ -270,6 +271,9 @@ let flushRetryCount = 0;
 function broadcastState() {
 	sendToPage("ttvab-toggle", {
 		enabled: Boolean(bridgeState.enabled),
+	});
+	sendToPage("ttvab-toggle-buffer-fix", {
+		enabled: Boolean(bridgeState.bufferFixEnabled),
 	});
 	sendToPage("ttvab-init-count", {
 		count: normalizeCount(bridgeState.storedAdsCount),
@@ -421,7 +425,7 @@ function flushCounters() {
 }
 
 chrome.storage.local.get(
-	["ttvAdblockEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+	["ttvAdblockEnabled", "ttvBufferFixEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
 	(result) => {
 		if (chrome.runtime.lastError) {
 			console.error(
@@ -431,6 +435,7 @@ chrome.storage.local.get(
 		}
 		const safeResult = result || {};
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
+		bridgeState.bufferFixEnabled = safeResult.ttvBufferFixEnabled !== false;
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
 		bridgeState.storedDomAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 
@@ -444,6 +449,15 @@ chrome.storage.local.get(
 				if (bridgeState.enabled !== wasEnabled) {
 					sendToPage("ttvab-toggle", {
 						enabled: bridgeState.enabled,
+					});
+				}
+			}
+			if (changes.ttvBufferFixEnabled) {
+				const wasBufferFixEnabled = bridgeState.bufferFixEnabled;
+				bridgeState.bufferFixEnabled = changes.ttvBufferFixEnabled.newValue !== false;
+				if (bridgeState.bufferFixEnabled !== wasBufferFixEnabled) {
+					sendToPage("ttvab-toggle-buffer-fix", {
+						enabled: bridgeState.bufferFixEnabled,
 					});
 				}
 			}

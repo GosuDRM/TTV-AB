@@ -430,18 +430,27 @@
         }
 
         .toggle-container {
+            background: rgba(145, 70, 255, 0.1);
+            border-radius: 12px;
+            padding: 0;
+            border: 1px solid rgba(145, 70, 255, 0.3);
+            margin-top: 16px;
+            overflow: hidden;
+        }
+
+        .toggle-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: rgba(145, 70, 255, 0.1);
-            border-radius: 12px;
-            padding: 14px 16px;
-            border: 1px solid rgba(145, 70, 255, 0.3);
-            margin-top: 16px;
+            padding: 10px 14px;
+        }
+
+        .toggle-row + .toggle-row {
+            border-top: 1px solid rgba(145, 70, 255, 0.15);
         }
 
         .toggle-label {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
         }
@@ -862,7 +871,7 @@
         <div class="logo" aria-hidden="true">TTV</div>
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
-	            <div class="version" id="versionText" aria-label="Version 5.1.1">v5.1.1</div>
+	            <div class="version" id="versionText" aria-label="Version 5.1.2">v5.1.2</div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
                 for Twitch.tv</div>
         </div>
@@ -980,11 +989,20 @@
     </div>
 
     <div class="toggle-container">
-        <label class="toggle-label" for="enableToggle" data-i18n="adBlocking">Ad Blocking</label>
-        <label class="toggle">
-            <input type="checkbox" id="enableToggle" checked aria-label="Ad Blocking">
-            <span class="slider"></span>
-        </label>
+        <div class="toggle-row">
+            <label class="toggle-label" for="enableToggle" data-i18n="adBlocking">Ad Blocking</label>
+            <label class="toggle">
+                <input type="checkbox" id="enableToggle" checked aria-label="Ad Blocking">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-row">
+            <label class="toggle-label" for="bufferFixToggle" data-i18n="bufferFix">Buffer Fix</label>
+            <label class="toggle">
+                <input type="checkbox" id="bufferFixToggle" checked aria-label="Buffer Fix">
+                <span class="slider"></span>
+            </label>
+        </div>
     </div>
 
     <div class="info" id="infoText">

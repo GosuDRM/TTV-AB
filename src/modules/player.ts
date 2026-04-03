@@ -463,7 +463,8 @@ function _monitorPlaybackIntent() {
 				_PlaybackIntentState.userPausedMediaKey &&
 				_PlaybackIntentState.userPausedMediaKey !== currentMediaKey
 			) {
-				_clearUserPauseIntent();
+				_PlaybackIntentState.userPausedMediaKey = null;
+				_PlaybackIntentState.userPausedAt = 0;
 			}
 			if (
 				_PlaybackIntentState.suppressedPauseMediaKey &&
@@ -975,8 +976,10 @@ function _doPlayerTask(
 		);
 		_pausePlaybackTarget(player);
 		setTimeout(() => {
+			const { player: freshPlayer } = _getPlayerAndState();
+			const resumeTarget = freshPlayer || player;
 			_playPlaybackTarget(
-				player,
+				resumeTarget,
 				__TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.PageMediaKey,
 			);
@@ -1097,6 +1100,10 @@ function _doPlayerTask(
 
 function _monitorPlayerBuffering() {
 	function check() {
+		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
+			setTimeout(check, Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000));
+			return;
+		}
 		const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
 		const hasLivePlaybackContext =
 			__TTVAB_STATE__.PageMediaType === "live" && Boolean(currentMediaKey);
@@ -1290,7 +1297,7 @@ function _monitorPlayerBuffering() {
 							driftVideo.buffered.length - 1,
 						);
 						const driftAmount = driftLiveEdge - position;
-						if (driftAmount > 4) {
+						if (driftAmount > 4 && isStablePosition) {
 							driftVideo.currentTime = Math.max(0, driftLiveEdge - 0.5);
 							_log(
 								`A/V desync corrected (drift=${driftAmount.toFixed(1)}s)`,

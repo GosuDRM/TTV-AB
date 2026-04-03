@@ -270,6 +270,7 @@ function _declareState(scope) {
 		SimulatedAdsDepth: 0,
 		V2API: false,
 		IsAdStrippingEnabled: true,
+		IsBufferFixEnabled: _C.BUFFERING_FIX,
 		AdSegmentCache: new Map(),
 		PlayerBufferingDelay: 600,
 		PlayerBufferingSameStateCount: 3,
