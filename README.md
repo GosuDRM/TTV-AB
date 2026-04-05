@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-5.1.3-purple)
+![Version](https://img.shields.io/badge/version-5.1.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -53,17 +53,19 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 - Suppresses injected direct video ads on VOD pages and returns playback to the real archive stream
 - Caches known ad segments to reduce repeated playback disruption
 
-`Ads Blocked` tracks confirmed worker-side playlist ad detections plus a few page-side fallback recoveries when Twitch injects direct media or explicit player-shell ads. `DOM Ads Blocked` tracks separate player-side cleanup events such as overlays, display shells, and popup removal. Both counters persist through the background worker using page-scoped media keys so live routes and `/videos/<id>` playback stay aligned without adding extra DOM scans or observers.
-
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
 
-### v5.1.3
-- **Post-Ad Recovery Without Buffer Fix** - Fixed a regression where disabling the Buffer Fix toggle could leave live playback stuck on a loading spinner after ads because the post-ad recovery path stopped before it could resume or reload the player.
-- **Ad-Recovery / Buffer-Fix Separation** - Kept the Buffer Fix toggle scoped to normal live-buffer interventions only, while preserving the dedicated post-ad resume and reload safety net so ad blocking still recovers cleanly when Twitch ends playback at ad exit.
-- **Less Aggressive Buffer Fix** - Tightened live stall detection so the buffer fix no longer fires just because Twitch is intentionally running a low-buffer catch-up window with future data still available.
-- **Safer Live-Edge Drift Correction** - Limited automatic live-edge seeks to cases where the media element still reports future-ready playback data, avoiding forced jumps during active rebuffers.
+### v5.1.4
+- **Counter / Route Hardening** - Ad and DOM-ad counters now survive Twitch SPA route changes and tab closes, and reserved Twitch routes such as `/popout/<channel>/player` no longer get misclassified as ordinary channel pages.
+- **Bridge Session Tightening** - The isolated page bridge now rejects unsolicited session rebinds, reducing the chance of forged page-side counter or toggle events replacing the active extension port.
+- **Safer Buffer Recovery** - Buffer-fix recovery now honors the real paused state and uses the media element clock for live-edge drift correction, preventing false pause/play or seek interventions during healthy playback.
+- **Ad-Blocking Recovery Safety** - Backup streams are only promoted when they contain real media segments, playlist URL matching now survives token/query churn, and metadata-only strip paths no longer hand Twitch an empty playlist if backup recovery is unavailable.
+- **Post-Ad Spinner Recovery** - Post-ad recovery now stays armed until Twitch playback is actually healthy again, and a stuck loading spinner after backup/fallback playback now escalates into one guarded native-player reload instead of spinning indefinitely.
+- **Background Tab Backoff** - Playback-intent sync and buffer monitoring now use Twitch's native visibility state and slow down aggressively in hidden tabs, reducing background CPU churn when multiple Twitch tabs are open.
+- **Popup / Mutation Scan Optimization** - Popup cleanup now searches bounded overlay roots instead of walking the whole document, and the MutationObserver no longer runs subtree-wide selector scans before deciding whether a deferred cleanup is needed.
+- **Multi-Tab Counter Fanout Reduction** - Cross-tab ad-count restores no longer rebroadcast into every worker in every open tab, cutting unnecessary message traffic while keeping totals in sync.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

@@ -46,6 +46,42 @@ function normalizeMediaKey(value) {
 	return null;
 }
 
+const RESERVED_ROUTE_SEGMENTS = new Set([
+	"browse",
+	"clip",
+	"clips",
+	"collections",
+	"dashboard",
+	"directory",
+	"downloads",
+	"drops",
+	"embed",
+	"event",
+	"following",
+	"friends",
+	"inventory",
+	"jobs",
+	"manager",
+	"messages",
+	"moderator",
+	"p",
+	"player",
+	"popout",
+	"prime",
+	"products",
+	"search",
+	"settings",
+	"store",
+	"subscriptions",
+	"team",
+	"turbo",
+	"u",
+	"user",
+	"video",
+	"videos",
+	"wallet",
+]);
+
 function isPlainObject(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return false;
@@ -101,33 +137,37 @@ function getCurrentPlaybackContext() {
 	const segments = window.location.pathname.split("/").filter(Boolean);
 	const firstSegment = segments[0] || null;
 	const lowerFirstSegment = String(firstSegment || "").toLowerCase();
-	if (lowerFirstSegment === "videos") {
+	if (lowerFirstSegment === "videos" || lowerFirstSegment === "video") {
 		const vodID = normalizeVodID(segments[1] || null);
 		return {
 			channelName: null,
 			mediaKey: buildMediaKey("vod", null, vodID),
 		};
 	}
-	const reserved = new Set([
-		"browse",
-		"directory",
-		"downloads",
-		"drops",
-		"following",
-		"friends",
-		"inventory",
-		"jobs",
-		"messages",
-		"search",
-		"settings",
-		"subscriptions",
-		"turbo",
-		"videos",
-		"wallet",
-	]);
+
+	if (lowerFirstSegment === "popout") {
+		const channelName = normalizeChannelName(segments[1] || null);
+		const isPlayerRoute = String(segments[2] || "").toLowerCase() === "player";
+		return {
+			channelName: channelName && isPlayerRoute ? channelName : null,
+			mediaKey:
+				channelName && isPlayerRoute
+					? buildMediaKey("live", channelName, null)
+					: null,
+		};
+	}
+
+	if (lowerFirstSegment === "embed" || lowerFirstSegment === "moderator") {
+		const channelName = normalizeChannelName(segments[1] || null);
+		return {
+			channelName,
+			mediaKey: buildMediaKey("live", channelName, null),
+		};
+	}
+
 	const normalizedCandidate = normalizeChannelName(firstSegment);
 	const channelName =
-		normalizedCandidate && !reserved.has(normalizedCandidate)
+		normalizedCandidate && !RESERVED_ROUTE_SEGMENTS.has(normalizedCandidate)
 			? normalizedCandidate
 			: null;
 	return {
@@ -165,6 +205,7 @@ function playbackContextsMatch(
 }
 
 const BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
+const BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const BRIDGE_HANDSHAKE_RETRY_MS = 75;
 const FLUSH_DELAY_MS = 200;
 const MAX_FLUSH_RETRY_DELAY_MS = 2000;
@@ -172,6 +213,26 @@ const pendingPageMessages = [];
 let pageBridgePort = null;
 let pageBridgeConnected = false;
 let handshakeRetryTimeout = null;
+let bridgeSessionToken = null;
+
+function createBridgeSessionToken() {
+	const values = new Uint8Array(24);
+	if (globalThis.crypto?.getRandomValues) {
+		globalThis.crypto.getRandomValues(values);
+		return Array.from(values, (value) => value.toString(16).padStart(2, "0")).join(
+			"",
+		);
+	}
+	return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+}
+
+function getBridgeSessionToken() {
+	if (typeof bridgeSessionToken === "string" && bridgeSessionToken.length >= 16) {
+		return bridgeSessionToken;
+	}
+	bridgeSessionToken = createBridgeSessionToken();
+	return bridgeSessionToken;
+}
 
 function flushPageMessages() {
 	if (!pageBridgeConnected || !pageBridgePort) return;
@@ -215,6 +276,7 @@ function clearHandshakeRetryTimeout() {
 function bindPageBridgePort(port) {
 	if (!port || typeof port.postMessage !== "function") return false;
 	if (pageBridgePort === port) return true;
+	if (pageBridgeConnected && pageBridgePort) return false;
 	if (pageBridgePort) {
 		try {
 			pageBridgePort.close();
@@ -229,6 +291,7 @@ function bindPageBridgePort(port) {
 }
 
 function startBridgeHandshake() {
+	if (pageBridgeConnected && pageBridgePort) return;
 	clearHandshakeRetryTimeout();
 	pageBridgeConnected = false;
 	const channel = new MessageChannel();
@@ -236,6 +299,9 @@ function startBridgeHandshake() {
 	window.postMessage(
 		{
 			type: BRIDGE_PORT_INIT_MESSAGE,
+			detail: {
+				token: getBridgeSessionToken(),
+			},
 		},
 		window.location.origin,
 		[channel.port2],
@@ -267,6 +333,12 @@ let pendingDomAdsDelta = 0;
 let pendingAdChannels = createChannelsMap();
 let flushTimeout = null;
 let flushRetryCount = 0;
+
+function clearScheduledFlush() {
+	if (!flushTimeout) return;
+	clearTimeout(flushTimeout);
+	flushTimeout = null;
+}
 
 function broadcastState() {
 	sendToPage("ttvab-toggle", {
@@ -372,7 +444,9 @@ function scheduleFlush(delay = FLUSH_DELAY_MS) {
 	);
 }
 
-function flushCounters() {
+function flushCounters(options: { fireAndForget?: boolean } = {}) {
+	const fireAndForget = options.fireAndForget === true;
+	clearScheduledFlush();
 	const adsDelta = pendingAdsDelta;
 	const domAdsDelta = pendingDomAdsDelta;
 	const channelDeltas = pendingAdChannels;
@@ -383,15 +457,26 @@ function flushCounters() {
 
 	if (adsDelta === 0 && domAdsDelta === 0) return;
 
-	chrome.runtime.sendMessage(
-		{
-			type: "ttvab-persist-counters",
-			detail: {
-				adsDelta,
-				domAdsDelta,
-				channelDeltas,
-			},
+	const payload = {
+		type: "ttvab-persist-counters",
+		detail: {
+			adsDelta,
+			domAdsDelta,
+			channelDeltas,
 		},
+	};
+
+	if (fireAndForget) {
+		try {
+			chrome.runtime.sendMessage(payload, () => {
+				void chrome.runtime.lastError;
+			});
+		} catch {}
+		return;
+	}
+
+	chrome.runtime.sendMessage(
+		payload,
 		(response) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -422,6 +507,10 @@ function flushCounters() {
 			}
 		},
 	);
+}
+
+function flushPendingCountersOnPageExit() {
+	flushCounters({ fireAndForget: true });
 }
 
 chrome.storage.local.get(
@@ -490,7 +579,11 @@ chrome.storage.local.get(
 function handlePageBridgeMessage(rawMessage) {
 	const message = getBridgeMessageData(rawMessage);
 	if (!message) return;
-	if (message.type === "ttvab-bridge-ready") {
+	if (message.type === BRIDGE_READY_MESSAGE) {
+		const detail = getBridgeMessageDetail(message.detail);
+		if (detail?.token !== getBridgeSessionToken()) {
+			return;
+		}
 		pageBridgeConnected = true;
 		clearHandshakeRetryTimeout();
 		flushPageMessages();
@@ -503,13 +596,9 @@ function handlePageBridgeMessage(rawMessage) {
 	}
 
 	const detail = getBridgeMessageDetail(message.detail);
-	const currentPlaybackContext = getCurrentPlaybackContext();
 	if (message.type === "ttvab-ad-blocked") {
 		if (!detail || !Number.isFinite(detail.count)) return;
 		const eventPlaybackContext = getMessagePlaybackContext(detail);
-		if (!playbackContextsMatch(eventPlaybackContext, currentPlaybackContext)) {
-			return;
-		}
 		const blockedChannel = normalizeChannelName(
 			detail.channel || eventPlaybackContext.channelName,
 		);
@@ -532,10 +621,6 @@ function handlePageBridgeMessage(rawMessage) {
 		const cleanupKind =
 			typeof detail.kind === "string" ? detail.kind.trim().toLowerCase() : "";
 		if (!KNOWN_DOM_CLEANUP_KINDS.has(cleanupKind)) return;
-		const eventPlaybackContext = getMessagePlaybackContext(detail);
-		if (!playbackContextsMatch(eventPlaybackContext, currentPlaybackContext)) {
-			return;
-		}
 		const delta =
 			Number.isFinite(detail.delta) && normalizeCount(detail.delta) > 0
 				? queueExplicitDelta("domAds", detail.delta)
@@ -545,5 +630,8 @@ function handlePageBridgeMessage(rawMessage) {
 		}
 	}
 }
+
+window.addEventListener("pagehide", flushPendingCountersOnPageExit, true);
+window.addEventListener("beforeunload", flushPendingCountersOnPageExit, true);
 
 startBridgeHandshake();

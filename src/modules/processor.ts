@@ -27,12 +27,57 @@ function _resetStreamAdState(info) {
 	};
 }
 
+function _shouldReloadNativePlayerAfterAdReset({
+	wasUsingModifiedM3U8,
+	wasUsingFallbackStream,
+	wasUsingBackupStream,
+}: {
+	wasUsingModifiedM3U8?: boolean;
+	wasUsingFallbackStream?: boolean;
+	wasUsingBackupStream?: boolean;
+}) {
+	return Boolean(
+		__TTVAB_STATE__.ReloadAfterAd ||
+			wasUsingModifiedM3U8 ||
+			wasUsingFallbackStream ||
+			wasUsingBackupStream,
+	);
+}
+
+function _getPlaylistUrlAliases(url, baseUrl = null) {
+	const aliases = new Set<string>();
+	const pushAlias = (value) => {
+		if (typeof value !== "string") return;
+		const trimmed = value.trimEnd();
+		if (!trimmed) return;
+		aliases.add(trimmed);
+	};
+
+	pushAlias(url);
+
+	try {
+		const fallbackBase =
+			typeof globalThis?.location?.href === "string"
+				? globalThis.location.href
+				: null;
+		const parsed = new URL(
+			String(url || ""),
+			typeof baseUrl === "string" && baseUrl ? baseUrl : fallbackBase || undefined,
+		);
+		parsed.hash = "";
+		pushAlias(parsed.toString());
+		pushAlias(`${parsed.origin}${parsed.pathname}`);
+		pushAlias(parsed.pathname);
+	} catch {}
+
+	return [...aliases];
+}
+
 function _getStreamInfoForPlaylist(url) {
-	const normalizedUrl = typeof url === "string" ? url.trimEnd() : "";
-	const byUrl =
-		__TTVAB_STATE__.StreamInfosByUrl[normalizedUrl] ||
-		__TTVAB_STATE__.StreamInfosByUrl[url];
-	if (byUrl) return byUrl;
+	for (const alias of _getPlaylistUrlAliases(url)) {
+		const byUrl = __TTVAB_STATE__.StreamInfosByUrl[alias];
+		if (byUrl) return byUrl;
+	}
 
 	const scopedMediaKeys = [
 		_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey),
@@ -61,6 +106,28 @@ function _getStreamInfoForPlaylist(url) {
 		}
 		return 0;
 	})[0];
+}
+
+function _getSyntheticPlaybackContextForPlaylist(url) {
+	const urlContext = _getPlaybackContextFromUsherUrl(url);
+	if (urlContext?.MediaKey) {
+		return urlContext;
+	}
+
+	const adContext = _normalizePlaybackContext({
+		ChannelName: __TTVAB_STATE__.CurrentAdChannel,
+		MediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
+	});
+	if (adContext.MediaKey) {
+		return adContext;
+	}
+
+	return _normalizePlaybackContext({
+		MediaType: __TTVAB_STATE__.PageMediaType,
+		ChannelName: __TTVAB_STATE__.PageChannel,
+		VodID: __TTVAB_STATE__.PageVodID,
+		MediaKey: __TTVAB_STATE__.PageMediaKey,
+	});
 }
 
 function _hasPlaylistAdMarkers(text) {
@@ -114,7 +181,9 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 
 	__TTVAB_STATE__.StreamInfos[normalizedContext.MediaKey] = info;
 	if (url) {
-		__TTVAB_STATE__.StreamInfosByUrl[url] = info;
+		for (const alias of _getPlaylistUrlAliases(url)) {
+			__TTVAB_STATE__.StreamInfosByUrl[alias] = info;
+		}
 	}
 
 	const logTarget =
@@ -157,20 +226,13 @@ async function _processM3U8(url, text, realFetch) {
 	if (!info) {
 		if (
 			!_hasPlaylistAdMarkers(text) &&
-			!_playlistHasKnownAdSegments(text) &&
+			!_playlistHasKnownAdSegments(text, { includeCached: false }) &&
 			__TTVAB_STATE__.SimulatedAdsDepth === 0
 		) {
 			return text;
 		}
 		info = _createSyntheticStreamInfo(
-			{
-				MediaType: __TTVAB_STATE__.PageMediaType,
-				ChannelName:
-					__TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel,
-				VodID: __TTVAB_STATE__.PageVodID,
-				MediaKey:
-					__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.PageMediaKey,
-			},
+			_getSyntheticPlaybackContextForPlaylist(url),
 			url,
 		);
 		if (!info) return text;
@@ -210,7 +272,13 @@ async function _processM3U8(url, text, realFetch) {
 						mediaKey: info.MediaKey,
 					}),
 				);
-				if (__TTVAB_STATE__.ReloadAfterAd) {
+				if (
+					_shouldReloadNativePlayerAfterAdReset({
+						wasUsingModifiedM3U8,
+						wasUsingFallbackStream,
+						wasUsingBackupStream,
+					})
+				) {
 					info.LastPlayerReload = Date.now();
 					self.postMessage(
 						_createPageScopedWorkerEvent({
@@ -230,9 +298,14 @@ async function _processM3U8(url, text, realFetch) {
 		info.LastPlayerReload = Date.now();
 	}
 
+	const hasExplicitKnownAdSegments = _playlistHasKnownAdSegments(text, {
+		includeCached: false,
+	});
+	const hasActiveCycleKnownAdSegments = _playlistHasKnownAdSegments(text);
 	const hasAds =
 		_hasPlaylistAdMarkers(text) ||
-		_playlistHasKnownAdSegments(text) ||
+		hasExplicitKnownAdSegments ||
+		(info.IsShowingAd && hasActiveCycleKnownAdSegments) ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
 	const hasMediaSegments = _playlistHasMediaSegments(text);
 
@@ -264,10 +337,14 @@ async function _processM3U8(url, text, realFetch) {
 			return text;
 		}
 
-		const res =
-			info.Urls?.[url] ||
-			info.Urls?.[url.trimEnd()] ||
-			_getFallbackResolution(info, url);
+		let res = null;
+		for (const alias of _getPlaylistUrlAliases(url)) {
+			res = info.Urls?.[alias] || null;
+			if (res) break;
+		}
+		if (!res) {
+			res = _getFallbackResolution(info, url);
+		}
 		if (!res) {
 			_log(
 				`Missing resolution info for ${url}; using generic fallback`,
@@ -371,10 +448,11 @@ async function _processM3U8(url, text, realFetch) {
 					}),
 				);
 				if (
-					(wasUsingModifiedM3U8 ||
-						wasUsingFallbackStream ||
-						wasUsingBackupStream) &&
-					__TTVAB_STATE__.ReloadAfterAd
+					_shouldReloadNativePlayerAfterAdReset({
+						wasUsingModifiedM3U8,
+						wasUsingFallbackStream,
+						wasUsingBackupStream,
+					})
 				) {
 					info.LastPlayerReload = Date.now();
 					self.postMessage(
@@ -520,6 +598,8 @@ async function _findBackupStream(
 						if (streamRes.status === 200) {
 							const m3u8 = await streamRes.text();
 							if (m3u8) {
+								const candidateIsPlayable =
+									_playlistHasMediaSegments(m3u8);
 								const candidateHasAds =
 									_hasPlaylistAdMarkers(m3u8) ||
 									_hasExplicitAdMetadata(m3u8) ||
@@ -531,7 +611,7 @@ async function _findBackupStream(
 									typeof _getFallbackPromotionPolicy === "function"
 										? _getFallbackPromotionPolicy({
 												candidateHasAds,
-												candidateIsPlayable: Boolean(m3u8),
+												candidateIsPlayable,
 												simulatedAdsDepthSatisfied,
 											})
 										: {
