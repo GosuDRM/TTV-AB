@@ -8,10 +8,12 @@ const _S = {
 	domAdsBlocked: 0,
 };
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
+const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const _internalMessageTarget = new EventTarget();
 const _pendingBridgeMessages: PlainObject[] = [];
 let _bridgePort: MessagePort | null = null;
 let _bridgePortHandshakeBound = false;
+let _bridgeSessionToken: string | null = null;
 
 function _getStructuredMessageData(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -52,15 +54,26 @@ function _flushBridgeMessageQueue() {
 	}
 }
 
-function _attachBridgePort(port) {
-	if (!port || typeof port.postMessage !== "function") return false;
-	if (_bridgePort === port) return true;
+function _attachBridgePort(port, sessionToken = null) {
+	if (
+		!port ||
+		typeof port.postMessage !== "function" ||
+		typeof sessionToken !== "string" ||
+		sessionToken.length < 16
+	) {
+		return false;
+	}
+	if (_bridgePort === port && _bridgeSessionToken === sessionToken) return true;
+	if (_bridgePort && _bridgeSessionToken && _bridgeSessionToken !== sessionToken) {
+		return false;
+	}
 	if (_bridgePort) {
 		try {
 			_bridgePort.close();
 		} catch {}
 	}
 	_bridgePort = port;
+	_bridgeSessionToken = sessionToken;
 	_bridgePort.addEventListener("message", (event) => {
 		const message = _getStructuredMessageData(event.data);
 		if (typeof message?.type !== "string") return;
@@ -77,16 +90,24 @@ function _bindBridgePortHandshake() {
 	const handleBridgePortInit = (event) => {
 		if (event.source !== window) return;
 		const message = _getStructuredMessageData(event.data);
+		const sessionToken =
+			typeof message?.detail?.token === "string"
+				? String(message.detail.token)
+				: null;
 		if (
 			message?.type !== _BRIDGE_PORT_INIT_MESSAGE ||
+			typeof sessionToken !== "string" ||
+			sessionToken.length < 16 ||
 			!Array.isArray(event.ports) ||
 			event.ports.length !== 1
 		) {
 			return;
 		}
-		if (!_attachBridgePort(event.ports[0])) return;
+		if (!_attachBridgePort(event.ports[0], sessionToken)) return;
 		event.stopImmediatePropagation?.();
-		_sendBridgeMessage("ttvab-bridge-ready");
+		_sendBridgeMessage(_BRIDGE_READY_MESSAGE, {
+			token: sessionToken,
+		});
 	};
 	window.addEventListener("message", handleBridgePortInit, true);
 }

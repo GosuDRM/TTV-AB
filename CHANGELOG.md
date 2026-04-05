@@ -2,6 +2,23 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [5.1.4] - 2026-04-05
+
+### Fixed
+- **Counter Persistence On Navigation / Close** - Bridge-side ad and DOM-ad counter deltas now survive Twitch SPA route changes and flush on tab close, preventing valid blocked-ad totals from being lost during channel switches or page unloads.
+- **Reserved Twitch Route Parsing** - Playback-context parsing now recognizes Twitch popout, embed, and moderator routes correctly instead of treating reserved path segments as live channel names.
+- **Bridge Session Rebind Hardening** - The page bridge now binds to a per-session token and rejects unrelated later port swaps, reducing spoofable page-side event injection into counter and toggle state.
+- **Buffer Recovery Pause-State Guard** - Buffer-fix recovery now checks the player wrapper, core state, and media element together before attempting pause/play or reload recovery, avoiding false interventions on already-paused playback.
+- **Media-Clock Drift Correction** - Live-edge drift repair now uses the actual HTML media clock instead of stale core position snapshots, preventing unnecessary seek jumps during healthy live playback.
+- **Backup Playlist Playability Gate** - Ad recovery no longer promotes non-empty but unplayable backup playlists; candidate backups must contain real media segments before they can replace the current stream.
+- **Playlist URL Alias Matching** - Worker-side stream-info and resolution lookup now normalize playlist URL aliases so token/query churn and current-live VOD transport mismatches do not break backup recovery routing.
+- **Metadata-Only Strip Empty-Playlist Recovery** - When Twitch marks an ad playlist only with metadata tags, the strip path now restores stripped segments rather than returning an empty playlist if no clean backup is available.
+- **Post-Ad Spinner Recovery** - Post-ad recovery intent now survives Twitch's false "not paused" loading state, fallback/backup ad exits now escalate into one guarded native-player reload when playback remains unhealthy, and ad-start intent is preserved even if the player instance is still being rebuilt.
+- **Hidden-Tab Monitor Backoff** - Playback-intent and live-buffer watchdog loops now consult Twitch's native visibility state and back off sharply in hidden tabs, reducing background CPU work when several Twitch tabs are open.
+- **Popup Fallback Scan Scope** - Anti-popup cleanup no longer walks every button, link, heading, paragraph, and span in the document; it now inspects bounded popup-root candidates and only searches text inside those overlays.
+- **MutationObserver Hot-Path Trimming** - DOM mutation prefiltering no longer does subtree-wide `querySelector(...)` checks inside the synchronous observer callback, and hidden tabs now defer rescan bursts until the page is visible again.
+- **Cross-Tab Counter Fanout Reduction** - Storage-driven `Ads Blocked` restores no longer rebroadcast absolute count updates into every worker in each open tab; worker-side totals now reconcile from the reported event delta instead.
+
 ## [5.1.3] - 2026-04-04
 
 ### Fixed
@@ -1108,4 +1125,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Firefox support
 - Additional ad blocking methods
 - Statistics tracking
+
+
 

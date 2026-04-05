@@ -60,12 +60,23 @@ function _hookWorkerFetch() {
 						lines[i + 1],
 						variantUrl,
 					);
-					info.Urls[variantUrl] = resInfo;
-					info.Urls[lines[i + 1]] = resInfo;
+					for (const alias of _getPlaylistUrlAliases(variantUrl)) {
+						info.Urls[alias] = resInfo;
+					}
+					for (const alias of _getPlaylistUrlAliases(
+						lines[i + 1],
+						usherUrl,
+					)) {
+						info.Urls[alias] = resInfo;
+					}
 					info.ResolutionList.push(resInfo);
 				}
-				__TTVAB_STATE__.StreamInfosByUrl[variantUrl] = info;
-				__TTVAB_STATE__.StreamInfosByUrl[lines[i + 1]] = info;
+				for (const alias of _getPlaylistUrlAliases(variantUrl)) {
+					__TTVAB_STATE__.StreamInfosByUrl[alias] = info;
+				}
+				for (const alias of _getPlaylistUrlAliases(lines[i + 1], usherUrl)) {
+					__TTVAB_STATE__.StreamInfosByUrl[alias] = info;
+				}
 			}
 		}
 
@@ -155,9 +166,16 @@ function _hookWorkerFetch() {
 			headers: response.headers,
 		});
 
+		const shouldBlockCachedAdSegments = Boolean(
+			__TTVAB_STATE__.CurrentAdMediaKey ||
+				__TTVAB_STATE__.CurrentAdChannel ||
+				__TTVAB_STATE__.SimulatedAdsDepth > 0,
+		);
 		if (
-			__TTVAB_STATE__.AdSegmentCache.has(url) ||
-			(typeof _isKnownAdSegmentUrl === "function" && _isKnownAdSegmentUrl(url))
+			typeof _isKnownAdSegmentUrl === "function" &&
+			_isKnownAdSegmentUrl(url, {
+				includeCached: shouldBlockCachedAdSegments,
+			})
 		) {
 			return realFetch(EMPTY_SEGMENT_URL);
 		}
@@ -354,12 +372,14 @@ function _hookWorker() {
                 ${_getServerTime.toString()}
                 ${_replaceServerTime.toString()}
                 ${_hasExplicitAdMetadata.toString()}
+                ${_isExplicitKnownAdSegmentUrl.toString()}
                 ${_isKnownAdSegmentUrl.toString()}
                 ${_playlistHasKnownAdSegments.toString()}
                 ${_stripAds.toString()}
                 ${_getStreamVariantInfo.toString()}
                 ${_getStreamUrl.toString()}
                 ${_getFallbackResolution.toString()}
+                ${_getPlaylistUrlAliases.toString()}
                 ${_collectPlaybackAccessTokenSources.toString()}
                 ${_summarizePlaybackAccessTokenPayload.toString()}
                 ${_getPlaybackAccessTokenErrors.toString()}
@@ -370,6 +390,7 @@ function _hookWorker() {
                 ${_getToken.toString()}
                 ${_resetStreamAdState.toString()}
                 ${_getStreamInfoForPlaylist.toString()}
+                ${_getSyntheticPlaybackContextForPlaylist.toString()}
                 ${_createSyntheticStreamInfo.toString()}
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
@@ -571,11 +592,28 @@ function _hookWorker() {
 							);
 							break;
 						}
-						_S.adsBlocked = e.data.count;
+						{
+							const reportedCount = Number.isFinite(e.data.count)
+								? Math.max(0, Math.trunc(e.data.count))
+								: 0;
+							const reportedDelta = Number.isFinite(e.data.delta)
+								? Math.max(1, Math.trunc(e.data.delta))
+								: 1;
+							const currentCount = Number.isFinite(_S.adsBlocked)
+								? Math.max(0, Math.trunc(_S.adsBlocked))
+								: 0;
+							const nextCount =
+								reportedCount > currentCount
+									? reportedCount
+									: currentCount + reportedDelta;
+							_S.adsBlocked = nextCount;
+						}
 						{
 							const detail = {
-								count: e.data.count,
-								delta: Number.isFinite(e.data.delta) ? e.data.delta : 1,
+								count: _S.adsBlocked,
+								delta: Number.isFinite(e.data.delta)
+									? Math.max(1, Math.trunc(e.data.delta))
+									: 1,
 								channel: e.data.channel || null,
 								mediaKey: e.data.mediaKey || null,
 								pageChannel: e.data.pageChannel || null,
@@ -584,7 +622,7 @@ function _hookWorker() {
 							_emitInternalMessage("ttvab-ad-blocked", detail);
 							_sendBridgeMessage("ttvab-ad-blocked", detail);
 						}
-						_log(`Ad blocked! Total: ${e.data.count}`, "success");
+						_log(`Ad blocked! Total: ${_S.adsBlocked}`, "success");
 						break;
 					case "AdDetected":
 						if (isStalePlaybackEvent(e.data)) {

@@ -3,18 +3,35 @@
 const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 const _RESERVED_ROUTE_SEGMENTS = new Set([
 	"browse",
+	"clip",
+	"clips",
+	"collections",
+	"dashboard",
 	"directory",
 	"downloads",
 	"drops",
+	"embed",
+	"event",
 	"following",
 	"friends",
 	"inventory",
 	"jobs",
+	"manager",
 	"messages",
+	"moderator",
+	"p",
+	"player",
+	"popout",
+	"prime",
+	"products",
 	"search",
 	"settings",
+	"store",
 	"subscriptions",
+	"team",
 	"turbo",
+	"u",
+	"user",
 	"videos",
 	"wallet",
 ]);
@@ -144,18 +161,45 @@ function _getPlaybackContextFromUrl(rawUrl) {
 		.split("/")
 		.filter(Boolean);
 	const firstSegment = segments[0] || null;
+	const lowerFirstSegment = String(firstSegment || "").toLowerCase();
+
+	if (lowerFirstSegment === "videos" || lowerFirstSegment === "video") {
+		return _normalizePlaybackContext({
+			MediaType: "vod",
+			VodID: segments[1] || null,
+		});
+	}
+
+	if (lowerFirstSegment === "popout") {
+		const popoutChannel = _normalizeChannelName(segments[1] || null);
+		if (
+			popoutChannel &&
+			String(segments[2] || "").toLowerCase() === "player"
+		) {
+			return _normalizePlaybackContext({
+				MediaType: "live",
+				ChannelName: popoutChannel,
+			});
+		}
+		return _normalizePlaybackContext(null);
+	}
+
+	if (lowerFirstSegment === "embed" || lowerFirstSegment === "moderator") {
+		const nestedChannel = _normalizeChannelName(segments[1] || null);
+		if (nestedChannel) {
+			return _normalizePlaybackContext({
+				MediaType: "live",
+				ChannelName: nestedChannel,
+			});
+		}
+		return _normalizePlaybackContext(null);
+	}
+
 	const liveChannel = _normalizeChannelName(firstSegment);
 	if (liveChannel && !_RESERVED_ROUTE_SEGMENTS.has(liveChannel)) {
 		return _normalizePlaybackContext({
 			MediaType: "live",
 			ChannelName: liveChannel,
-		});
-	}
-
-	if (String(firstSegment || "").toLowerCase() === "videos") {
-		return _normalizePlaybackContext({
-			MediaType: "vod",
-			VodID: segments[1] || null,
 		});
 	}
 
@@ -246,11 +290,10 @@ function _hasExplicitAdMetadata(text) {
 	);
 }
 
-function _isKnownAdSegmentUrl(segmentUrl) {
+function _isExplicitKnownAdSegmentUrl(segmentUrl) {
 	const url = String(segmentUrl || "");
 	if (!url) return false;
 	return (
-		__TTVAB_STATE__.AdSegmentCache.has(url) ||
 		url.includes(__TTVAB_STATE__.AdSignifier) ||
 		url.includes("stitched-ad") ||
 		url.includes("/adsquared/") ||
@@ -259,13 +302,29 @@ function _isKnownAdSegmentUrl(segmentUrl) {
 	);
 }
 
-function _playlistHasKnownAdSegments(text) {
+function _isKnownAdSegmentUrl(
+	segmentUrl,
+	options: { includeCached?: boolean } = {},
+) {
+	const url = String(segmentUrl || "");
+	if (!url) return false;
+	const includeCached = options.includeCached !== false;
+	return (
+		(includeCached && __TTVAB_STATE__.AdSegmentCache.has(url)) ||
+		_isExplicitKnownAdSegmentUrl(url)
+	);
+}
+
+function _playlistHasKnownAdSegments(
+	text,
+	options: { includeCached?: boolean } = {},
+) {
 	if (typeof text !== "string" || !text) return false;
 	const lines = text.split("\n");
 	for (let index = 0; index < lines.length - 1; index++) {
 		if (
 			lines[index]?.startsWith("#EXTINF") &&
-			_isKnownAdSegmentUrl(lines[index + 1])
+			_isKnownAdSegmentUrl(lines[index + 1], options)
 		) {
 			return true;
 		}
@@ -280,7 +339,6 @@ function _stripAds(text, stripAll, info) {
 	let stripped = false;
 	let i = 0;
 	const strippedSegments = [];
-	const MAX_RECOVERY_SEGMENTS = 6;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
 	const hasKnownAdSegments = _playlistHasKnownAdSegments(text);
@@ -288,6 +346,7 @@ function _stripAds(text, stripAll, info) {
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
 		(hasExplicitAdMetadata && !hasKnownAdSegments);
+	const maxRecoverySegments = forceStripAllSegments ? len : 6;
 
 	if (
 		hasExplicitAdMetadata ||
@@ -353,7 +412,7 @@ function _stripAds(text, stripAll, info) {
 				const segmentUrl = lines[i + 1];
 
 				strippedSegments.push({ extinf: lines[i], url: segmentUrl });
-				if (strippedSegments.length > MAX_RECOVERY_SEGMENTS) {
+				if (strippedSegments.length > maxRecoverySegments) {
 					strippedSegments.shift();
 				}
 
@@ -391,11 +450,7 @@ function _stripAds(text, stripAll, info) {
 	const result = lines.filter((l) => l !== "");
 
 	const hasRemainingSegments = result.some((l) => l?.startsWith("#EXTINF"));
-	if (
-		!hasRemainingSegments &&
-		strippedSegments.length > 0 &&
-		!forceStripAllSegments
-	) {
+	if (!hasRemainingSegments && strippedSegments.length > 0) {
 		_log(
 			`[Recovery] Empty playlist - restoring ${strippedSegments.length} segment(s)`,
 			"warning",
