@@ -170,7 +170,7 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 			},
 		});
 
-		self.postMessage({
+		_postWorkerBridgeMessage(self, {
 			key: "FetchRequest",
 			value: {
 				id: requestId,

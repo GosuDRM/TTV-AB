@@ -430,6 +430,7 @@ function validateSharedDefinitions() {
 	);
 	const initPath = path.join(DIST_DIR, "src", "modules", "init.js");
 	const hooksPath = path.join(DIST_DIR, "src", "modules", "hooks.js");
+	const statePath = path.join(DIST_DIR, "src", "modules", "state.js");
 	const workerPath = path.join(DIST_DIR, "src", "modules", "worker.js");
 	const processorPath = path.join(DIST_DIR, "src", "modules", "processor.js");
 	const apiPath = path.join(DIST_DIR, "src", "modules", "api.js");
@@ -667,6 +668,7 @@ function validateSharedDefinitions() {
 	}
 	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
+	const stateSource = fs.readFileSync(statePath, "utf8");
 	const workerSource = fs.readFileSync(workerPath, "utf8");
 	const parserSource = fs.readFileSync(
 		path.join(DIST_DIR, "src", "modules", "parser.js"),
@@ -1145,11 +1147,23 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	if ((hooksSource.match(/eval\(wasmSource\)/g) || []).length !== 1) {
-		throw new Error("Unexpected eval(wasmSource) usage in hooks.js");
+	if (hooksSource.includes("eval(wasmSource)")) {
+		throw new Error(
+			"hooks.js must not eval synchronously fetched worker source",
+		);
 	}
-	if ((workerSource.match(/new XMLHttpRequest\(\)/g) || []).length !== 1) {
-		throw new Error("Unexpected XMLHttpRequest bootstrap usage in worker.js");
+	if (
+		!hooksSource.includes(
+			"await import(${JSON.stringify(workerSourceUrl)});",
+		) ||
+		!hooksSource.includes("importScripts(${JSON.stringify(workerSourceUrl)});")
+	) {
+		throw new Error("Unexpected worker bootstrap loader usage in hooks.js");
+	}
+	if (workerSource.includes("new XMLHttpRequest()")) {
+		throw new Error(
+			"worker.js must not use synchronous XMLHttpRequest bootstrap loading",
+		);
 	}
 	for (const forbidden of [
 		"ttvReloadAfterAdsEnabled",
@@ -1209,6 +1223,11 @@ function validateSharedDefinitions() {
 			source: apiSource,
 		},
 		{
+			consumer: "_fetchViaWorkerBridge",
+			helper: "_postWorkerBridgeMessage",
+			source: apiSource,
+		},
+		{
 			consumer: "_extractPlaybackAccessToken",
 			helper: "_collectPlaybackAccessTokenSources",
 			source: apiSource,
@@ -1222,6 +1241,16 @@ function validateSharedDefinitions() {
 			consumer: "_extractPlaybackAccessToken",
 			helper: "_getPlaybackAccessTokenErrors",
 			source: apiSource,
+		},
+		{
+			consumer: "_incrementAdsBlocked",
+			helper: "_postWorkerBridgeMessage",
+			source: stateSource,
+		},
+		{
+			consumer: "_postWorkerBridgeMessage",
+			helper: "_createWorkerBridgeMessage",
+			source: stateSource,
 		},
 	];
 	for (const { consumer, helper, source } of requiredInjectedPairs) {

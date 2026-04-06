@@ -172,10 +172,7 @@ function _getPlaybackContextFromUrl(rawUrl) {
 
 	if (lowerFirstSegment === "popout") {
 		const popoutChannel = _normalizeChannelName(segments[1] || null);
-		if (
-			popoutChannel &&
-			String(segments[2] || "").toLowerCase() === "player"
-		) {
+		if (popoutChannel && String(segments[2] || "").toLowerCase() === "player") {
 			return _normalizePlaybackContext({
 				MediaType: "live",
 				ChannelName: popoutChannel,
@@ -192,6 +189,10 @@ function _getPlaybackContextFromUrl(rawUrl) {
 				ChannelName: nestedChannel,
 			});
 		}
+		return _normalizePlaybackContext(null);
+	}
+
+	if (segments.length !== 1) {
 		return _normalizePlaybackContext(null);
 	}
 
@@ -418,7 +419,14 @@ function _stripAds(text, stripAll, info) {
 
 				if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl))
 					info.NumStrippedAdSegments++;
-				__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
+
+				if (
+					!forceStripAllSegments ||
+					_isExplicitKnownAdSegmentUrl(segmentUrl)
+				) {
+					__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
+				}
+
 				stripped = true;
 				lines[i] = "";
 				lines[i + 1] = "";

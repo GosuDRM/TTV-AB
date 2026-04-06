@@ -2,6 +2,37 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.0] - 2026-04-07
+
+### Fixed
+- **Exit-Time Counter Flush Durability** - Bridge-side ad and DOM-ad counter flushes now persist each pending batch before unload-time delivery and replay them safely, preventing valid totals from being dropped when Twitch tabs close or MV3/runtime delivery is late.
+- **Cross-Tab Counter Replay Queue Race** - Pending bridge counter flushes are no longer stored in a single shared `localStorage` array; each flush now persists under its own key so simultaneous Twitch tabs cannot overwrite or resurrect each other's replay batches.
+- **Single-Slot Retry Starvation** - Counter persistence retries now track each failed flush independently instead of keeping only one in-memory retry payload, so transient runtime failures no longer strand older batches until the next page reload.
+- **DOM Counter Startup / Toggle Drift** - Page-side `DOM Ads Blocked` counting now waits for the resolved toggle state and stored DOM count before incrementing, and it no longer keeps counting while ad blocking is disabled.
+- **DOM Counter Route Debounce Suppression** - DOM cleanup debounce is now scoped to the current playback route/media instead of only the cleanup kind, so the next stream or page does not lose a legitimate same-kind DOM cleanup count during fast Twitch SPA navigation.
+- **Worker Eviction Regression** - Worker tracking no longer hard-caps active Twitch workers at two, preventing legitimate player, mini-player, or preview workers from being terminated during normal site use.
+- **Reload Preference Restore Race** - Delayed native-player preference restoration is now scoped to the originating playback context, so channel or VOD navigation cannot restore stale quality, mute, or volume settings onto the next route.
+- **Long Ad Resume Expiry** - Post-ad resume intent now stays armed across longer Twitch ad pods instead of expiring after the original short window and leaving playback paused or stalled at ad exit.
+- **Ad-Ended Cleanup Recovery Jank** - Post-ad artifact cleanup no longer does a large synchronous DOM sweep directly inside the `AdEnded` recovery task; cleanup is now deferred and grouped so playback resume and media restore stay responsive.
+- **DOM Display-Ad Signal Coverage** - Display-shell detection now uses bounded near-player preflight signals and includes CTA-only and banner-text-only Twitch variants, so newer player-surface display ads reach the existing collapse path reliably.
+- **Popup Cleanup Starvation** - Anti-adblock / Turbo popup cleanup now runs even when the same scan already suppressed another DOM ad path, preventing overlays from surviving just because display-shell or direct-media cleanup matched first.
+- **Popup Fallback Scan Gating** - The broad anti-popup fallback sweep now only runs on forced scans, recent popup-like mutations, recent popup cleanup, or a low-frequency background interval, reducing steady-state whole-page scan cost during normal playback.
+- **Turbo Popup Copy Detection** - Popup detection now recognizes newer Twitch anti-adblock wording such as `Consider Turbo`, `ad-free viewing`, and `fully enjoy Twitch`, improving cleanup against current Twitch copy changes.
+- **Channel Subpage Playback Context Leak** - Twitch channel subpages such as `/channel/videos`, `/channel/about`, and similar non-player routes no longer inherit the live playback context just because the first path segment matches a channel name.
+- **SPA Recovery Timeout Staleness** - Playback recovery timers now validate against the current URL-derived route context immediately instead of waiting for delayed page-state sync, preventing stale resume or reload callbacks from firing after Twitch SPA navigation.
+- **Stale Worker Navigation Leakage** - Worker `AdDetected`, `AdEnded`, and `ReloadPlayer` events now validate against the event's own stream context before accepting the rebased page context, preventing old workers from mutating the next Twitch route after SPA navigation.
+- **Per-Stream Reload Marker Scoping** - Player reload markers now carry explicit playback context and are consumed only by the matching playlist stream, preventing multi-context workers from applying reload hints to the wrong stream.
+- **Worker Bridge Protocol Collisions** - Hooked worker control messages now travel through a private TTV AB bridge envelope, so unrelated worker traffic is no longer swallowed just because another script or Twitch uses a generic `{ key: ... }` message shape.
+- **Early-Ad User Pause Override** - The player now tracks recent explicit playback interactions so a real user pause during Twitch's early ad-start and backup-player suppression windows is preserved instead of being treated as extension-owned and auto-resumed after the ad.
+- **Late Ad-Pause Recovery Suppression** - Pauses caused by Twitch during an active ad or pending post-ad recovery are now treated as ad-owned unless they were paired with an explicit user interaction, so long ad pods no longer disable the post-ad resume and reload path.
+- **Replay-On-Live Post-Ad Loading Stall** - When a live channel temporarily exposes replay/VOD-style player content, post-ad recovery no longer drops that player from the recovery path; the resume intent now stays armed and the watchdog can escalate into the guarded native-player reload instead of leaving the player stuck loading after `AdEnded`.
+- **Startup Ads Counter Restore Drift** - Page-side `Ads Blocked` restore now merges any blocked-ad deltas captured before the initial stored count sync, preventing startup prerolls from being undercounted if they land during extension initialization.
+- **Worker Bootstrap Main-Thread Stall** - Hooked worker startup no longer clones the original Twitch worker source through a synchronous page-thread `XMLHttpRequest`; it now boots the original script with `importScripts(...)` or `await import(...)` inside the worker itself, reducing jank during worker creation and crash recovery.
+- **Post-Ad Backup Recovery Loop Guard** - Backup-stream ad exits now avoid the immediate native-player reload and pause/play pulse that could trigger a fresh Twitch ad request right after `AdEnded`, preventing the blocker from restarting the ad cycle unnecessarily.
+- **Playlist Lifecycle Scoping** - Unknown backup playlists no longer inherit the active ad lifecycle, and stale cached ad segments are no longer treated as proof that an ad is still active, reducing stuck-loading and repeated backup-selection loops after ad recovery.
+- **Obfuscated React Tree Recovery** - Fallback structural discovery was added for the Twitch internal player state component after it was obscured from the standard DOM node lookup hook, ensuring that the post-ad recovery sequence is no longer permanently suppressed by a failed component validation during the pause/play routine.
+- **Post-Ad Recovery Bypass Loop Guard** - Post-ad recovery now dynamically memorizes the specific ad-free backup stream type that circumvented Twitch pre-rolls. This prevents the extension from blindly falling back to default ad-bearing proxy tokens which recently triggered post-ad stalling and artificial ad loop cycles.
+
 ## [5.1.4] - 2026-04-05
 
 ### Fixed

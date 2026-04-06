@@ -64,7 +64,11 @@ function _attachBridgePort(port, sessionToken = null) {
 		return false;
 	}
 	if (_bridgePort === port && _bridgeSessionToken === sessionToken) return true;
-	if (_bridgePort && _bridgeSessionToken && _bridgeSessionToken !== sessionToken) {
+	if (
+		_bridgePort &&
+		_bridgeSessionToken &&
+		_bridgeSessionToken !== sessionToken
+	) {
 		return false;
 	}
 	if (_bridgePort) {
@@ -125,6 +129,56 @@ function _sendBridgeMessage(type, detail = null) {
 	return false;
 }
 
+function _createWorkerBridgeMessage(message) {
+	if (!message || typeof message !== "object" || Array.isArray(message)) {
+		return null;
+	}
+	const key = (message as { key?: unknown }).key;
+	if (typeof key !== "string" || !key) {
+		return null;
+	}
+
+	return {
+		__ttvabWorkerBridge: true,
+		message,
+	};
+}
+
+function _getWorkerBridgeMessage(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return null;
+	}
+
+	const envelope = value as {
+		__ttvabWorkerBridge?: unknown;
+		message?: unknown;
+	};
+	if (envelope.__ttvabWorkerBridge !== true) {
+		return null;
+	}
+
+	const message = envelope.message as PlainObject | null;
+	if (!message || typeof message !== "object" || Array.isArray(message)) {
+		return null;
+	}
+	if (typeof message.key !== "string" || !message.key) {
+		return null;
+	}
+
+	return message;
+}
+
+function _postWorkerBridgeMessage(target, message) {
+	if (!target || typeof target.postMessage !== "function") {
+		return false;
+	}
+
+	const envelope = _createWorkerBridgeMessage(message);
+	if (!envelope) return false;
+	target.postMessage(envelope);
+	return true;
+}
+
 function _broadcastWorkers(messages) {
 	const queue = Array.isArray(messages) ? messages : [messages];
 	if (queue.length === 0 || _S.workers.length === 0) return;
@@ -134,7 +188,10 @@ function _broadcastWorkers(messages) {
 		let isAlive = true;
 		for (const message of queue) {
 			try {
-				worker.postMessage(message);
+				if (!_postWorkerBridgeMessage(worker, message)) {
+					isAlive = false;
+					break;
+				}
 			} catch {
 				isAlive = false;
 				break;
@@ -173,6 +230,9 @@ function _setPagePlaybackContext(
 
 	if (didMediaKeyChange) {
 		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
+		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
+		__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
 		__TTVAB_STATE__.LastPlayerReloadAt = 0;
 		__TTVAB_STATE__.ShouldResumeAfterAd = false;
 		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
@@ -251,6 +311,8 @@ function _declareState(scope) {
 		BackupPlayerTypes: [..._C.PLAYER_TYPES],
 		FallbackPlayerType: _C.FALLBACK_TYPE,
 		ForceAccessTokenPlayerType: _C.FORCE_TYPE,
+		RewriteNativePlaybackAccessToken:
+			_C.REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN ?? false,
 		SkipPlayerReloadOnHevc: false,
 		ReloadAfterAd: _C.RELOAD_AFTER_AD ?? false,
 		PlayerBufferingDoPlayerReload:
@@ -268,6 +330,9 @@ function _declareState(scope) {
 		AdEndMinCleanPlaylists: _C.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
 		HasTriggeredPlayerReload: false,
+		PendingTriggeredPlayerReloadChannel: null,
+		PendingTriggeredPlayerReloadMediaKey: null,
+		PendingTriggeredPlayerReloadAt: 0,
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
 		LastAdRecoveryReloadAt: 0,
@@ -275,6 +340,7 @@ function _declareState(scope) {
 		CurrentAdChannel: null,
 		CurrentAdMediaKey: null,
 		PinnedBackupPlayerType: null,
+		LastPinnedBackupPlayerType: null,
 		PinnedBackupPlayerChannel: null,
 		PinnedBackupPlayerMediaKey: null,
 		ShouldResumeAfterAd: false,
@@ -306,6 +372,10 @@ function _declareState(scope) {
 		PageChannel: null,
 		PageVodID: null,
 		PageMediaKey: null,
+		HasResolvedAdsCountState: false,
+		HasResolvedToggleState: false,
+		HasResolvedDomAdsCountState: false,
+		PendingInitialAdsBlockedDelta: 0,
 		PendingFetchRequests: new Map(),
 		FetchRequestSeq: 0,
 	};
@@ -338,6 +408,18 @@ function _incrementAdsBlocked(channel, mediaKey = null) {
 		? Math.max(0, Math.trunc(_S.adsBlocked))
 		: 0;
 	_S.adsBlocked = count;
+	if (
+		typeof window !== "undefined" &&
+		typeof __TTVAB_STATE__ !== "undefined" &&
+		__TTVAB_STATE__ &&
+		__TTVAB_STATE__.HasResolvedAdsCountState !== true
+	) {
+		__TTVAB_STATE__.PendingInitialAdsBlockedDelta = Math.max(
+			0,
+			Math.trunc(Number(__TTVAB_STATE__.PendingInitialAdsBlockedDelta) || 0) +
+				1,
+		);
+	}
 	const safeChannel = typeof channel === "string" ? channel : null;
 	const safeMediaKey =
 		_normalizeMediaKey(mediaKey) ||
@@ -356,7 +438,7 @@ function _incrementAdsBlocked(channel, mediaKey = null) {
 		_emitInternalMessage("ttvab-ad-blocked", detail);
 		_sendBridgeMessage("ttvab-ad-blocked", detail);
 	} else if (typeof self !== "undefined" && self.postMessage) {
-		self.postMessage({
+		_postWorkerBridgeMessage(self, {
 			key: "AdBlocked",
 			count: _S.adsBlocked,
 			delta: 1,
