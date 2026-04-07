@@ -19,6 +19,7 @@ function _resetStreamAdState(info) {
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
+	info.LastNativeRecoveryProbeAt = 0;
 
 	return {
 		wasUsingModifiedM3U8,
@@ -30,14 +31,17 @@ function _resetStreamAdState(info) {
 function _shouldReloadNativePlayerAfterAdReset({
 	wasUsingModifiedM3U8,
 	wasUsingFallbackStream,
+	wasUsingBackupStream,
 }: {
 	wasUsingModifiedM3U8?: boolean;
 	wasUsingFallbackStream?: boolean;
+	wasUsingBackupStream?: boolean;
 }) {
 	return Boolean(
 		__TTVAB_STATE__.ReloadAfterAd ||
 			wasUsingModifiedM3U8 ||
-			wasUsingFallbackStream,
+			wasUsingFallbackStream ||
+			wasUsingBackupStream,
 	);
 }
 
@@ -106,6 +110,104 @@ function _playlistHasMediaSegments(text) {
 	return typeof text === "string" && text.includes("#EXTINF");
 }
 
+async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null) {
+	if (!info?.IsUsingBackupStream) {
+		return true;
+	}
+
+	const now = Date.now();
+	if (
+		info.LastNativeRecoveryProbeAt &&
+		now - info.LastNativeRecoveryProbeAt < 1500
+	) {
+		return false;
+	}
+	info.LastNativeRecoveryProbeAt = now;
+
+	const nativePlayerType =
+		__TTVAB_STATE__.ForceAccessTokenPlayerType ||
+		__TTVAB_STATE__.FallbackPlayerType ||
+		"popout";
+
+	try {
+		const tokenRes = await _getToken(info, nativePlayerType, realFetch);
+		if (tokenRes.status !== 200) {
+			_log(
+				`[Trace] Native recovery probe failed for ${nativePlayerType}: ${tokenRes.status}`,
+				"warning",
+			);
+			return false;
+		}
+
+		const token = await tokenRes.json();
+		const extractedToken = _extractPlaybackAccessToken(token);
+		const sig = extractedToken?.signature;
+		const tokenValue = extractedToken?.value;
+		if (!sig || !tokenValue) {
+			_log(
+				`[Trace] Native recovery probe missing token parts for ${nativePlayerType}`,
+				"warning",
+			);
+			return false;
+		}
+
+		const usherUrl = _buildUsherPlaybackUrl(info, sig, tokenValue);
+		if (!usherUrl) {
+			return false;
+		}
+
+		const encRes = await realFetch(usherUrl.href);
+		if (encRes.status !== 200) {
+			_log(
+				`[Trace] Native recovery usher failed for ${nativePlayerType}: ${encRes.status}`,
+				"warning",
+			);
+			return false;
+		}
+
+		const encM3u8 = await encRes.text();
+		const targetResolution = resolution || _getFallbackResolution(info, "");
+		const streamUrl = _getStreamUrl(encM3u8, targetResolution, usherUrl.href);
+		if (!streamUrl) {
+			return false;
+		}
+
+		const streamRes = await realFetch(streamUrl);
+		if (streamRes.status !== 200) {
+			_log(
+				`[Trace] Native recovery stream failed for ${nativePlayerType}: ${streamRes.status}`,
+				"warning",
+			);
+			return false;
+		}
+
+		const nativeM3u8 = await streamRes.text();
+		const nativeHasAds =
+			_hasPlaylistAdMarkers(nativeM3u8) ||
+			_hasExplicitAdMetadata(nativeM3u8) ||
+			_playlistHasKnownAdSegments(nativeM3u8, {
+				includeCached: false,
+			});
+
+		if (nativeHasAds) {
+			_log(
+				`[Trace] Native recovery still ad-marked (${nativePlayerType})`,
+				"warning",
+			);
+			return false;
+		}
+
+		_log(`[Trace] Native recovery ready (${nativePlayerType})`, "success");
+		return true;
+	} catch (err) {
+		_log(
+			`[Trace] Native recovery probe error for ${nativePlayerType}: ${err.message}`,
+			"warning",
+		);
+		return false;
+	}
+}
+
 function _createSyntheticStreamInfo(playbackContext, url = "") {
 	const normalizedContext = _normalizePlaybackContext(playbackContext);
 	if (!normalizedContext.MediaKey) return null;
@@ -136,6 +238,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
+		LastNativeRecoveryProbeAt: 0,
 		LastActivityAt: Date.now(),
 	};
 
@@ -228,11 +331,13 @@ async function _processM3U8(url, text, realFetch) {
 				const shouldReloadPlayer = _shouldReloadNativePlayerAfterAdReset({
 					wasUsingModifiedM3U8,
 					wasUsingFallbackStream,
+					wasUsingBackupStream,
 				});
 				const shouldRefreshAccessToken =
 					__TTVAB_STATE__.ReloadAfterAd ||
 					wasUsingModifiedM3U8 ||
-					wasUsingFallbackStream;
+					wasUsingFallbackStream ||
+					wasUsingBackupStream;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
@@ -450,7 +555,23 @@ async function _processM3U8(url, text, realFetch) {
 				return text;
 			}
 
-			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
+			const targetRecoveryResolution =
+				info.Urls?.[_getPlaylistUrlAliases(url)[0]] ||
+				_getFallbackResolution(info, url);
+			const canReloadNativePlayer = await _canReloadNativePlayerAfterAd(
+				info,
+				realFetch,
+				targetRecoveryResolution,
+			);
+			if (!canReloadNativePlayer) {
+				return text;
+			}
+
+			const {
+				wasUsingModifiedM3U8,
+				wasUsingFallbackStream,
+				wasUsingBackupStream,
+			} =
 				_resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.CurrentAdMediaKey = null;
@@ -462,11 +583,13 @@ async function _processM3U8(url, text, realFetch) {
 				const shouldReloadPlayer = _shouldReloadNativePlayerAfterAdReset({
 					wasUsingModifiedM3U8,
 					wasUsingFallbackStream,
+					wasUsingBackupStream,
 				});
 				const shouldRefreshAccessToken =
 					__TTVAB_STATE__.ReloadAfterAd ||
 					wasUsingModifiedM3U8 ||
-					wasUsingFallbackStream;
+					wasUsingFallbackStream ||
+					wasUsingBackupStream;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({

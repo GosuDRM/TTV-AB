@@ -563,6 +563,7 @@ function _hookWorker() {
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
                 ${_playlistHasMediaSegments.toString()}
+                ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}
@@ -1295,8 +1296,8 @@ function _hookMainFetch() {
 					now - __TTVAB_STATE__.PendingTriggeredPlayerReloadAt < 15000);
 
 			const forceType = isRecoveryReload
-				? __TTVAB_STATE__.LastPinnedBackupPlayerType ||
-					__TTVAB_STATE__.ForceAccessTokenPlayerType ||
+				? __TTVAB_STATE__.ForceAccessTokenPlayerType ||
+					__TTVAB_STATE__.LastPinnedBackupPlayerType ||
 					"autoplay"
 				: __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
 

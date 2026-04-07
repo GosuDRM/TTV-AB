@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.5] - 2026-04-08
+
+### Fixed
+- **Post-Ad Native Quality Recovery** - Recovery reloads now prefer the forced native `PlaybackAccessToken` player type before any remembered backup type, preventing post-ad reloads from getting stuck on the reduced-quality `autoplay` ladder.
+- **Delayed Native Return After Backup Ads** - Backup-stream ad exits now trigger the native player reload and access-token refresh path immediately instead of waiting for the later stall watchdog, reducing prolonged fallback playback and helping the normal quality ladder return sooner.
+
 ## [6.0.0] - 2026-04-07
 
 ### Fixed
