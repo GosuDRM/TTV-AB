@@ -19,9 +19,6 @@ function _resetStreamAdState(info) {
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
-	info.LastNativeRecoveryProbeAt = 0;
-	info.NativeRecoveryCleanCount = 0;
-	info.LastBackupRecoveryRefreshAt = 0;
 
 	return {
 		wasUsingModifiedM3U8,
@@ -112,201 +109,6 @@ function _playlistHasMediaSegments(text) {
 	return typeof text === "string" && text.includes("#EXTINF");
 }
 
-async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null) {
-	if (!info?.IsUsingBackupStream) {
-		return true;
-	}
-
-	const now = Date.now();
-	if (
-		info.LastNativeRecoveryProbeAt &&
-		now - info.LastNativeRecoveryProbeAt < 1500
-	) {
-		return false;
-	}
-	info.LastNativeRecoveryProbeAt = now;
-
-	const nativePlayerType =
-		__TTVAB_STATE__.ForceAccessTokenPlayerType ||
-		__TTVAB_STATE__.FallbackPlayerType ||
-		"popout";
-	const requiredCleanProbes = Math.max(
-		1,
-		Number(__TTVAB_STATE__.AdEndMinNativeCleanProbes) || 1,
-	);
-
-	try {
-		const tokenRes = await _getToken(info, nativePlayerType, realFetch);
-		if (tokenRes.status !== 200) {
-			info.NativeRecoveryCleanCount = 0;
-			_log(
-				`[Trace] Native recovery probe failed for ${nativePlayerType}: ${tokenRes.status}`,
-				"warning",
-			);
-			return false;
-		}
-
-		const token = await tokenRes.json();
-		const extractedToken = _extractPlaybackAccessToken(token);
-		const sig = extractedToken?.signature;
-		const tokenValue = extractedToken?.value;
-		if (!sig || !tokenValue) {
-			info.NativeRecoveryCleanCount = 0;
-			_log(
-				`[Trace] Native recovery probe missing token parts for ${nativePlayerType}`,
-				"warning",
-			);
-			return false;
-		}
-
-		const usherUrl = _buildUsherPlaybackUrl(info, sig, tokenValue);
-		if (!usherUrl) {
-			info.NativeRecoveryCleanCount = 0;
-			return false;
-		}
-
-		const encRes = await realFetch(usherUrl.href);
-		if (encRes.status !== 200) {
-			info.NativeRecoveryCleanCount = 0;
-			_log(
-				`[Trace] Native recovery usher failed for ${nativePlayerType}: ${encRes.status}`,
-				"warning",
-			);
-			return false;
-		}
-
-		const encM3u8 = await encRes.text();
-		const targetResolution = resolution || _getFallbackResolution(info, "");
-		const streamUrl = _getStreamUrl(encM3u8, targetResolution, usherUrl.href);
-		if (!streamUrl) {
-			info.NativeRecoveryCleanCount = 0;
-			return false;
-		}
-
-		const streamRes = await realFetch(streamUrl);
-		if (streamRes.status !== 200) {
-			info.NativeRecoveryCleanCount = 0;
-			_log(
-				`[Trace] Native recovery stream failed for ${nativePlayerType}: ${streamRes.status}`,
-				"warning",
-			);
-			return false;
-		}
-
-		const nativeM3u8 = await streamRes.text();
-		const nativeHasAds =
-			_hasPlaylistAdMarkers(nativeM3u8) ||
-			_hasExplicitAdMetadata(nativeM3u8) ||
-			_playlistHasKnownAdSegments(nativeM3u8, {
-				includeCached: false,
-			});
-
-		if (nativeHasAds) {
-			info.NativeRecoveryCleanCount = 0;
-			_log(
-				`[Trace] Native recovery still ad-marked (${nativePlayerType})`,
-				"warning",
-			);
-			return false;
-		}
-
-		info.NativeRecoveryCleanCount =
-			Number(info.NativeRecoveryCleanCount || 0) + 1;
-		if (info.NativeRecoveryCleanCount < requiredCleanProbes) {
-			_log(
-				`[Trace] Native recovery warming up (${nativePlayerType}) ${info.NativeRecoveryCleanCount}/${requiredCleanProbes}`,
-				"info",
-			);
-			return false;
-		}
-
-		_log(`[Trace] Native recovery ready (${nativePlayerType})`, "success");
-		return true;
-	} catch (err) {
-		info.NativeRecoveryCleanCount = 0;
-		_log(
-			`[Trace] Native recovery probe error for ${nativePlayerType}: ${err.message}`,
-			"warning",
-		);
-		return false;
-	}
-}
-
-async function _refreshBackupStreamWhileWaitingForNativeRecovery(
-	info,
-	realFetch,
-	currentResolution = null,
-	currentText = null,
-) {
-	if (!info?.IsUsingBackupStream) {
-		return null;
-	}
-
-	const now = Date.now();
-	if (
-		info.LastBackupRecoveryRefreshAt &&
-		now - info.LastBackupRecoveryRefreshAt < 2500
-	) {
-		return null;
-	}
-	info.LastBackupRecoveryRefreshAt = now;
-
-	const {
-		type: nextBackupType,
-		m3u8: nextBackupM3u8,
-		isFallback,
-	} = await _findBackupStream(info, realFetch, 0, currentResolution);
-	if (!nextBackupM3u8 || !_playlistHasMediaSegments(nextBackupM3u8)) {
-		return null;
-	}
-
-	const backupTypeChanged = nextBackupType !== info.ActiveBackupPlayerType;
-	const backupTextChanged =
-		typeof currentText !== "string" || currentText !== nextBackupM3u8;
-	const fallbackChanged = Boolean(isFallback) !== Boolean(info.IsUsingFallbackStream);
-
-	if (!backupTypeChanged && !backupTextChanged && !fallbackChanged) {
-		return null;
-	}
-
-	info.IsUsingBackupStream = true;
-	info.IsUsingFallbackStream = Boolean(isFallback);
-	if (currentResolution?.Resolution) {
-		info.ActiveBackupResolution = currentResolution.Resolution;
-	}
-
-	if (backupTypeChanged) {
-		const previousBackupType = info.ActiveBackupPlayerType || "none";
-		info.ActiveBackupPlayerType = nextBackupType;
-		_log(
-			`[Trace] Switching backup during native recovery: ${previousBackupType} -> ${nextBackupType}`,
-			"warning",
-		);
-		if (nextBackupType && typeof self !== "undefined" && self.postMessage) {
-			_postWorkerBridgeMessage(
-				self,
-				_createPageScopedWorkerEvent({
-					key: "BackupPlayerTypeSelected",
-					value: nextBackupType,
-					channel: info.ChannelName,
-					mediaKey: info.MediaKey,
-				}),
-			);
-		}
-	} else if (backupTextChanged) {
-		_log(
-			`[Trace] Refreshed backup during native recovery (${nextBackupType || info.ActiveBackupPlayerType || "unknown"})`,
-			"info",
-		);
-	}
-
-	if (isFallback) {
-		_log("Entering fallback mode - stripping ads", "info");
-	}
-
-	return nextBackupM3u8;
-}
-
 function _createSyntheticStreamInfo(playbackContext, url = "") {
 	const normalizedContext = _normalizePlaybackContext(playbackContext);
 	if (!normalizedContext.MediaKey) return null;
@@ -337,9 +139,6 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
-		LastNativeRecoveryProbeAt: 0,
-		NativeRecoveryCleanCount: 0,
-		LastBackupRecoveryRefreshAt: 0,
 		LastActivityAt: Date.now(),
 	};
 
@@ -525,7 +324,6 @@ async function _processM3U8(url, text, realFetch) {
 	if (hasAds) {
 		info.PendingAdEndAt = 0;
 		info.CleanPlaylistCount = 0;
-		info.NativeRecoveryCleanCount = 0;
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
 
 		if (!info.IsShowingAd) {
@@ -654,28 +452,6 @@ async function _processM3U8(url, text, realFetch) {
 				now - info.PendingAdEndAt < __TTVAB_STATE__.AdEndGraceMs ||
 				info.CleanPlaylistCount < __TTVAB_STATE__.AdEndMinCleanPlaylists
 			) {
-				return text;
-			}
-
-			const targetRecoveryResolution =
-				info.Urls?.[_getPlaylistUrlAliases(url)[0]] ||
-				_getFallbackResolution(info, url);
-			const canReloadNativePlayer = await _canReloadNativePlayerAfterAd(
-				info,
-				realFetch,
-				targetRecoveryResolution,
-			);
-			if (!canReloadNativePlayer) {
-				const refreshedBackupM3u8 =
-					await _refreshBackupStreamWhileWaitingForNativeRecovery(
-						info,
-						realFetch,
-						targetRecoveryResolution,
-						text,
-					);
-				if (refreshedBackupM3u8) {
-					return refreshedBackupM3u8;
-				}
 				return text;
 			}
 
