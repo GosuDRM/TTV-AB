@@ -107,6 +107,7 @@ function _initToggleListener() {
 
 function _blockAntiAdblockPopup() {
 	const lastDomCleanupAtByKind = Object.create(null) as Record<string, number>;
+	const lastDomCleanupAtBySignature = Object.create(null) as Record<string, number>;
 	let isDisplayAdShellActive = false;
 	let isPromotedPageAdActive = false;
 	let didCountCurrentDisplayAdShellCleanup = false;
@@ -137,6 +138,8 @@ function _blockAntiAdblockPopup() {
 	const POPUP_SCAN_SIGNAL_WINDOW_MS = 5000;
 	const POPUP_RECENT_CLEANUP_WINDOW_MS = 8000;
 	const POPUP_BACKGROUND_SCAN_INTERVAL_MS = 30000;
+	const DOM_CLEANUP_KIND_DEBOUNCE_MS = 1000;
+	const DOM_CLEANUP_SAME_SIGNATURE_COOLDOWN_MS = 30000;
 	const STALE_DISPLAY_ARTIFACT_RECENT_SIGNAL_MS = 15000;
 	const STALE_DISPLAY_ARTIFACT_SAME_SIGNATURE_COOLDOWN_MS = 10000;
 	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
@@ -187,11 +190,11 @@ function _blockAntiAdblockPopup() {
 		'[class*="offline-page"]',
 	];
 	const PROMOTED_PAGE_CTA_PATTERN =
-		/^(learn more|shop(?: now| on amazon)?|watch now|play now|install|download|get offer|see more)$/i;
+		/^(learn more|shop(?: now| on amazon)?|watch now|play now|install|download|get offer|see more|try turbo|get turbo|click here for turbo)$/i;
 	const PLAYER_AD_CTA_PATTERN =
 		/^(learn more|shop(?: now| on amazon)?|watch now|play now|get offer|see more|see details|install|download)$/i;
 	const PLAYER_AD_OVERLAY_TEXT_PATTERN =
-		/\bright after this ad break\b|\bstick around to support the channel\b/i;
+		/\bright after this ad break\b|\bstick around to support the (?:channel|stream)\b|\btaking an ad break\b/i;
 	const DIRECT_PLAYER_AD_MEDIA_URL_PATTERN =
 		/^https:\/\/m\.media-amazon\.com\/.*\.mp4(?:$|\?)/i;
 	const DISPLAY_AD_FEEDBACK_BUTTON_PATTERN = /\bleave feedback\b.*\bad\b/i;
@@ -227,7 +230,7 @@ function _blockAntiAdblockPopup() {
 	const MUTATION_OVERLAY_CLASS_PATTERN =
 		/(?:Overlay|Balloon|Modal|Consent|consent|display-ad|stream-display-ad)/i;
 	const MUTATION_AD_SIGNAL_PATTERN =
-		/\bad\b|\bpromo\b|learn more|support the channel|right after this ad break/i;
+		/\bad\b|\bpromo\b|learn more|support the (?:channel|stream)|right after this ad break|taking an ad break|click here for turbo/i;
 
 	function _initPopupBlocker() {
 		if (!document.body) {
@@ -281,6 +284,9 @@ function _blockAntiAdblockPopup() {
 			for (const key of Object.keys(lastDomCleanupAtByKind)) {
 				delete lastDomCleanupAtByKind[key];
 			}
+			for (const key of Object.keys(lastDomCleanupAtBySignature)) {
+				delete lastDomCleanupAtBySignature[key];
+			}
 		}
 
 		function _getDomCleanupDebounceKey(kind) {
@@ -295,24 +301,88 @@ function _blockAntiAdblockPopup() {
 			return `${safeKind}:${scopeKey}`;
 		}
 
-		function _shouldDebounceDomCleanup(kind) {
+		function _normalizeDomCleanupSignatureText(value) {
+			return String(value || "")
+				.replace(/\u200B|\u200C|\u200D|\uFEFF|\u00AD/g, "")
+				.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, "")
+				.replace(/\b\d+\b/g, "#")
+				.replace(/\s+/g, " ")
+				.trim()
+				.toLowerCase();
+		}
+
+		function _getDomCleanupSignatureKey(kind, el) {
+			if (!(el instanceof HTMLElement)) return null;
+
+			const safeKind =
+				typeof kind === "string" && kind.trim() ? kind.trim() : "generic";
+			const context = _getPlaybackContextFromUrl(window.location.href);
+			const scopeKey =
+				context.MediaKey ||
+				context.ChannelName ||
+				window.location.pathname ||
+				window.location.href;
+
+			let sizeKey = "0x0";
+			try {
+				const rect = el.getBoundingClientRect();
+				sizeKey = `${Math.round(rect.width / 64)}x${Math.round(rect.height / 64)}`;
+			} catch {}
+
+			const dataSignal = String(
+				el.getAttribute("data-a-target") ||
+					el.getAttribute("data-test-selector") ||
+					el.getAttribute("role") ||
+					"",
+			)
+				.replace(/\s+/g, " ")
+				.trim()
+				.toLowerCase();
+			const textSample = _normalizeDomCleanupSignatureText(
+				el.textContent || el.getAttribute("aria-label") || "",
+			).slice(0, 160);
+
+			if (!dataSignal && !textSample && sizeKey === "0x0") {
+				return null;
+			}
+
+			return `${safeKind}:${scopeKey}:${el.tagName.toLowerCase()}:${dataSignal}:${sizeKey}:${textSample}`;
+		}
+
+		function _shouldDebounceDomCleanup(kind, el = null) {
 			const debounceKey = _getDomCleanupDebounceKey(kind);
 			const now = Date.now();
 			const lastCleanupAt = Number(lastDomCleanupAtByKind[debounceKey]) || 0;
-			if (now - lastCleanupAt < 1000) {
+			if (now - lastCleanupAt < DOM_CLEANUP_KIND_DEBOUNCE_MS) {
 				return true;
 			}
+
+			const signatureKey = _getDomCleanupSignatureKey(kind, el);
+			if (signatureKey) {
+				const lastSignatureCleanupAt =
+					Number(lastDomCleanupAtBySignature[signatureKey]) || 0;
+				if (
+					now - lastSignatureCleanupAt <
+					DOM_CLEANUP_SAME_SIGNATURE_COOLDOWN_MS
+				) {
+					lastDomCleanupAtByKind[debounceKey] = now;
+					return true;
+				}
+				lastDomCleanupAtBySignature[signatureKey] = now;
+			}
+
 			lastDomCleanupAtByKind[debounceKey] = now;
 			return false;
 		}
 
-		function _incrementDomCleanup(kind) {
+		function _incrementDomCleanup(kind, el = null) {
 			if (!_isDomCleanupEnabled()) return;
-			if (_shouldDebounceDomCleanup(kind)) return;
+			if (_shouldDebounceDomCleanup(kind, el)) return false;
 
 			const channel = _getCurrentChannelName();
 			_incrementDomAdsBlocked(kind, channel);
 			_log(`DOM ad cleanup (${kind}) total: ${_S.domAdsBlocked}`, "success");
+			return true;
 		}
 
 		function _getCurrentChannelName() {
@@ -1746,7 +1816,26 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _collapsePromotedPageAd() {
-			if (!_hasOfflinePageSignal()) {
+			const hasPromotedPageSignal =
+				_hasOfflinePageSignal() ||
+				Array.from(document.querySelectorAll("h1, h2, p, span, a, button"))
+					.slice(0, 180)
+					.some((node) => {
+						if (!(node instanceof HTMLElement)) return false;
+						if (!_isVisibleElement(node)) return false;
+						const text = _normalizeDomCleanupSignatureText(
+							node.textContent || "",
+						);
+						return (
+							text.includes("taking an ad break") ||
+							text.includes("stick around to support the stream") ||
+							text.includes("stick around to support the channel") ||
+							text.includes("click here for turbo") ||
+							(text.includes("all of the streams") && text.includes("turbo")) ||
+							(text.includes("turbo") && text.includes("ad-free viewing"))
+						);
+					});
+			if (!hasPromotedPageSignal) {
 				isPromotedPageAdActive = false;
 				return false;
 			}
@@ -1766,8 +1855,8 @@ function _blockAntiAdblockPopup() {
 					if (
 						rect.width < 180 ||
 						rect.height < 100 ||
-						rect.width > window.innerWidth * 0.75 ||
-						rect.height > window.innerHeight * 0.85
+						rect.width > window.innerWidth * 0.98 ||
+						rect.height > window.innerHeight * 0.98
 					) {
 						continue;
 					}
@@ -1779,7 +1868,20 @@ function _blockAntiAdblockPopup() {
 						return _looksLikeAdLabel(node.textContent || "");
 					});
 
-					if (!hasAdLabel) continue;
+					const normalizedCardText = _normalizeDomCleanupSignatureText(
+						card.textContent || "",
+					);
+					const hasTurboBreakText =
+						normalizedCardText.includes("taking an ad break") ||
+						normalizedCardText.includes("stick around to support the stream") ||
+						normalizedCardText.includes("stick around to support the channel") ||
+						normalizedCardText.includes("click here for turbo") ||
+						(normalizedCardText.includes("all of the streams") &&
+							normalizedCardText.includes("turbo")) ||
+						(normalizedCardText.includes("turbo") &&
+							normalizedCardText.includes("ad-free viewing"));
+
+					if (!hasAdLabel && !hasTurboBreakText) continue;
 
 					if (!isPromotedPageAdActive) {
 						isPromotedPageAdActive = true;
@@ -1799,7 +1901,7 @@ function _blockAntiAdblockPopup() {
 					}
 
 					_hideElement(card);
-					_incrementDomCleanup("promoted-card");
+					_incrementDomCleanup("promoted-card", card);
 					return true;
 				}
 			}
@@ -2049,9 +2151,13 @@ function _blockAntiAdblockPopup() {
 				text.includes("allow twitch ads") ||
 				text.includes("consider turbo") ||
 				text.includes("try turbo") ||
+				text.includes("click here for turbo") ||
+				text.includes("taking an ad break") ||
+				text.includes("stick around to support the stream") ||
 				text.includes("commercials") ||
 				text.includes("whitelist") ||
 				(text.includes("turbo") && text.includes("ad-free viewing")) ||
+				(text.includes("all of the streams") && text.includes("turbo")) ||
 				text.includes("ad blocker") ||
 				(text.includes("fully enjoy twitch") &&
 					(text.includes("ad block") || text.includes("ad blocker"))) ||
@@ -2251,12 +2357,33 @@ function _blockAntiAdblockPopup() {
 			return false;
 		}
 
+		function _resolvePopupHideRoot(root) {
+			if (!(root instanceof HTMLElement)) return null;
+			if (root.hasAttribute("data-ttvab-blocked")) return null;
+
+			let candidate = _isCandidatePopupRoot(root) ? root : null;
+			let current = root;
+			for (let depth = 0; depth < 8 && current; depth += 1) {
+				if (_isSafeElement(current)) break;
+				if (current.hasAttribute("data-ttvab-blocked")) return null;
+				if (_isCandidatePopupRoot(current)) {
+					candidate = current;
+				}
+				current = current.parentElement;
+			}
+
+			return candidate || root;
+		}
+
 		function _hidePopupRoot(root, logMessage = "Hiding popup overlay") {
-			if (!root || _isSafeElement(root)) return false;
-			_log(logMessage, "success");
-			_hideElement(root);
+			const hideRoot = _resolvePopupHideRoot(root);
+			if (!hideRoot || _isSafeElement(hideRoot)) return false;
+			const didCount = _incrementDomCleanup("overlay-ad", hideRoot);
+			if (didCount) {
+				_log(logMessage, "success");
+			}
+			_hideElement(hideRoot);
 			_recordPopupCleanup();
-			_incrementDomCleanup("overlay-ad");
 			return true;
 		}
 

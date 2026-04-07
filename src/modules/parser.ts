@@ -282,6 +282,7 @@ function _hasExplicitAdMetadata(text) {
 	return (
 		typeof text === "string" &&
 		(text.includes(__TTVAB_STATE__.AdSignifier) ||
+			text.includes("stitched") ||
 			text.includes("X-TV-TWITCH-AD") ||
 			text.includes("stitched-ad") ||
 			text.includes("/adsquared/") ||
@@ -296,6 +297,7 @@ function _isExplicitKnownAdSegmentUrl(segmentUrl) {
 	if (!url) return false;
 	return (
 		url.includes(__TTVAB_STATE__.AdSignifier) ||
+		url.includes("stitched") ||
 		url.includes("stitched-ad") ||
 		url.includes("/adsquared/") ||
 		url.includes("processing") ||

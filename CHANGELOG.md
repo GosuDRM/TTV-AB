@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.6] - 2026-04-08
+
+### Fixed
+- **Broader Stitched Ad Variant Coverage** - Worker-side ad detection now matches broader stitched Twitch playlist markers again, reducing cases where recent stitched ad-break variants could slip through to native playback.
+- **Turbo Break Overlay Cleanup Loop** - Full-page Twitch Turbo / ad-break promo surfaces now route through stronger popup and promoted-page detection, and repeated cleanup of the same surface is signature-deduped so `DOM ad cleanup (overlay-ad)` no longer counts the same break screen indefinitely.
+
 ## [6.0.5] - 2026-04-08
 
 ### Fixed
