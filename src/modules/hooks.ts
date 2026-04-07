@@ -559,6 +559,7 @@ function _hookWorker() {
                 ${_hasPlaylistAdMarkers.toString()}
                 ${_playlistHasMediaSegments.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
+                ${_refreshBackupStreamWhileWaitingForNativeRecovery.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}

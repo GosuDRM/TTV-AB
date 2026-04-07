@@ -20,6 +20,7 @@ function _resetStreamAdState(info) {
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
 	info.LastNativeRecoveryProbeAt = 0;
+	info.LastBackupRecoveryRefreshAt = 0;
 
 	return {
 		wasUsingModifiedM3U8,
@@ -208,6 +209,81 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 	}
 }
 
+async function _refreshBackupStreamWhileWaitingForNativeRecovery(
+	info,
+	realFetch,
+	currentResolution = null,
+	currentText = null,
+) {
+	if (!info?.IsUsingBackupStream) {
+		return null;
+	}
+
+	const now = Date.now();
+	if (
+		info.LastBackupRecoveryRefreshAt &&
+		now - info.LastBackupRecoveryRefreshAt < 2500
+	) {
+		return null;
+	}
+	info.LastBackupRecoveryRefreshAt = now;
+
+	const {
+		type: nextBackupType,
+		m3u8: nextBackupM3u8,
+		isFallback,
+	} = await _findBackupStream(info, realFetch, 0, currentResolution);
+	if (!nextBackupM3u8 || !_playlistHasMediaSegments(nextBackupM3u8)) {
+		return null;
+	}
+
+	const backupTypeChanged = nextBackupType !== info.ActiveBackupPlayerType;
+	const backupTextChanged =
+		typeof currentText !== "string" || currentText !== nextBackupM3u8;
+	const fallbackChanged = Boolean(isFallback) !== Boolean(info.IsUsingFallbackStream);
+
+	if (!backupTypeChanged && !backupTextChanged && !fallbackChanged) {
+		return null;
+	}
+
+	info.IsUsingBackupStream = true;
+	info.IsUsingFallbackStream = Boolean(isFallback);
+	if (currentResolution?.Resolution) {
+		info.ActiveBackupResolution = currentResolution.Resolution;
+	}
+
+	if (backupTypeChanged) {
+		const previousBackupType = info.ActiveBackupPlayerType || "none";
+		info.ActiveBackupPlayerType = nextBackupType;
+		_log(
+			`[Trace] Switching backup during native recovery: ${previousBackupType} -> ${nextBackupType}`,
+			"warning",
+		);
+		if (nextBackupType && typeof self !== "undefined" && self.postMessage) {
+			_postWorkerBridgeMessage(
+				self,
+				_createPageScopedWorkerEvent({
+					key: "BackupPlayerTypeSelected",
+					value: nextBackupType,
+					channel: info.ChannelName,
+					mediaKey: info.MediaKey,
+				}),
+			);
+		}
+	} else if (backupTextChanged) {
+		_log(
+			`[Trace] Refreshed backup during native recovery (${nextBackupType || info.ActiveBackupPlayerType || "unknown"})`,
+			"info",
+		);
+	}
+
+	if (isFallback) {
+		_log("Entering fallback mode - stripping ads", "info");
+	}
+
+	return nextBackupM3u8;
+}
+
 function _createSyntheticStreamInfo(playbackContext, url = "") {
 	const normalizedContext = _normalizePlaybackContext(playbackContext);
 	if (!normalizedContext.MediaKey) return null;
@@ -239,6 +315,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
 		LastNativeRecoveryProbeAt: 0,
+		LastBackupRecoveryRefreshAt: 0,
 		LastActivityAt: Date.now(),
 	};
 
@@ -564,6 +641,16 @@ async function _processM3U8(url, text, realFetch) {
 				targetRecoveryResolution,
 			);
 			if (!canReloadNativePlayer) {
+				const refreshedBackupM3u8 =
+					await _refreshBackupStreamWhileWaitingForNativeRecovery(
+						info,
+						realFetch,
+						targetRecoveryResolution,
+						text,
+					);
+				if (refreshedBackupM3u8) {
+					return refreshedBackupM3u8;
+				}
 				return text;
 			}
 

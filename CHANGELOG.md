@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.2] - 2026-04-07
+
+### Fixed
+- **Firefox Backup Recovery Stall** - When Firefox had already switched to a clean backup stream but the forced native `popout` recovery path was still ad-marked, the worker could sit indefinitely on a stale backup playlist and leave the player spinning. Backup playback is now refreshed and re-evaluated while native recovery is gated, so Firefox can keep advancing playback until native recovery is actually ready.
+- **Firefox Worker Recovery Helper Injection** - The guarded native-recovery helper chain is now fully injected into the hooked Firefox worker, preventing runtime gaps between the worker bootstrap and processor recovery flow.
+
 ## [6.0.1] - 2026-04-07
 
 ### Fixed
