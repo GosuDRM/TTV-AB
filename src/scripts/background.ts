@@ -142,8 +142,63 @@ const ACHIEVEMENT_IDS = new Set(
 
 const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
+const PROCESSED_FLUSH_STORAGE_KEY = "ttvProcessedCounterFlushes";
+const MAX_PROCESSED_FLUSHES = 256;
+const PROCESSED_FLUSH_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 let persistChain: Promise<unknown> = Promise.resolve();
+
+function normalizeFlushId(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	return /^[a-z0-9][a-z0-9:_-]{7,127}$/i.test(trimmed) ? trimmed : null;
+}
+
+function createProcessedFlushMap() {
+	return Object.create(null);
+}
+
+function normalizeProcessedFlushMap(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return createProcessedFlushMap();
+	}
+
+	const now = Date.now();
+	const minTimestamp = now - PROCESSED_FLUSH_TTL_MS;
+	const maxTimestamp = now + 5 * 60 * 1000;
+	const normalizedEntries = [];
+
+	for (const [flushId, processedAt] of Object.entries(value)) {
+		const safeFlushId = normalizeFlushId(flushId);
+		const safeProcessedAt = Number(processedAt);
+		if (!safeFlushId || !Number.isFinite(safeProcessedAt)) continue;
+		const timestamp = Math.trunc(safeProcessedAt);
+		if (timestamp < minTimestamp || timestamp > maxTimestamp) continue;
+		normalizedEntries.push([safeFlushId, timestamp] as [string, number]);
+	}
+
+	normalizedEntries.sort((a, b) => b[1] - a[1]);
+
+	const normalized = createProcessedFlushMap();
+	for (const [flushId, processedAt] of normalizedEntries.slice(
+		0,
+		MAX_PROCESSED_FLUSHES,
+	)) {
+		normalized[flushId] = processedAt;
+	}
+	return normalized;
+}
+
+function recordProcessedFlush(processedFlushes, flushId) {
+	const safeFlushId = normalizeFlushId(flushId);
+	if (!safeFlushId) {
+		return normalizeProcessedFlushMap(processedFlushes);
+	}
+
+	const nextProcessedFlushes = normalizeProcessedFlushMap(processedFlushes);
+	nextProcessedFlushes[safeFlushId] = Date.now();
+	return normalizeProcessedFlushMap(nextProcessedFlushes);
+}
 
 function storageLocalGet(keys): Promise<PlainObject> {
 	return new Promise((resolve, reject) => {
@@ -269,6 +324,7 @@ function applyAchievementUnlocks(stats, totalAdsBlocked, totalDomAdsBlocked) {
 
 async function persistCounterDelta(detail) {
 	const safeDetail = getMessageDetail(detail);
+	const flushId = normalizeFlushId(safeDetail?.flushId);
 	const adsDelta = normalizeCount(safeDetail?.adsDelta);
 	const domAdsDelta = normalizeCount(safeDetail?.domAdsDelta);
 	const channelDeltas =
@@ -284,9 +340,23 @@ async function persistCounterDelta(detail) {
 		"ttvAdsBlocked",
 		"ttvDomAdsBlocked",
 		"ttvStats",
+		PROCESSED_FLUSH_STORAGE_KEY,
 	]);
 	const baseAds = normalizeCount(stored.ttvAdsBlocked);
 	const baseDomAds = normalizeCount(stored.ttvDomAdsBlocked);
+	const processedFlushes = normalizeProcessedFlushMap(
+		stored[PROCESSED_FLUSH_STORAGE_KEY],
+	);
+	if (flushId && Object.hasOwn(processedFlushes, flushId)) {
+		return {
+			ok: true,
+			counts: {
+				ads: baseAds,
+				domAds: baseDomAds,
+			},
+			newUnlocks: [],
+		};
+	}
 	const nextAds = baseAds + adsDelta;
 	const nextDomAds = baseDomAds + domAdsDelta;
 	const stats = normalizeStatsState(stored.ttvStats);
@@ -308,11 +378,15 @@ async function persistCounterDelta(detail) {
 	stats.channels = normalizeChannelsMap(stats.channels);
 
 	const newUnlocks = applyAchievementUnlocks(stats, nextAds, nextDomAds);
+	const nextProcessedFlushes = flushId
+		? recordProcessedFlush(processedFlushes, flushId)
+		: processedFlushes;
 
 	await storageLocalSet({
 		ttvAdsBlocked: nextAds,
 		ttvDomAdsBlocked: nextDomAds,
 		ttvStats: stats,
+		[PROCESSED_FLUSH_STORAGE_KEY]: nextProcessedFlushes,
 	});
 
 	return {

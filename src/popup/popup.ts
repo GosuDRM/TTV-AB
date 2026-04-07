@@ -295,7 +295,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			String(t.statistics ?? "Statistics"),
 		);
 		toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
-		bufferFixToggle.setAttribute("aria-label", String(t.bufferFix ?? "Buffer Fix"));
+		bufferFixToggle.setAttribute(
+			"aria-label",
+			String(t.bufferFix ?? "Buffer Fix"),
+		);
 		achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
 		footerText.textContent = String(t.footerBy ?? " — by ");
 		const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
@@ -766,7 +769,12 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	chrome.storage.local.get(
-		["ttvAdblockEnabled", "ttvBufferFixEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+		[
+			"ttvAdblockEnabled",
+			"ttvBufferFixEnabled",
+			"ttvAdsBlocked",
+			"ttvDomAdsBlocked",
+		],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -1005,12 +1013,19 @@ document.addEventListener("DOMContentLoaded", () => {
 			infoText.style.color = "#666";
 			return;
 		}
-		const label = transientStatusType === "bufferFix" ? translations.bufferFix : translations.adBlocking;
+		const label =
+			transientStatusType === "bufferFix"
+				? translations.bufferFix
+				: translations.adBlocking;
 		infoText.textContent = `${label}: ${transientStatusState ? translations.active : translations.inactive}`;
 		infoText.style.color = transientStatusState ? "#4CAF50" : "#f44336";
 	}
 
-	function updateStatus(enabled, showTransientMessage = false, toggleType = "adblock") {
+	function updateStatus(
+		enabled,
+		showTransientMessage = false,
+		toggleType = "adblock",
+	) {
 		const t = getTranslations();
 		const prefersReducedMotion =
 			window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;

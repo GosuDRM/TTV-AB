@@ -133,7 +133,7 @@ function createKnownCleanupKinds() {
 	]);
 }
 
-function getCurrentPlaybackContext() {
+function _getCurrentPlaybackContext() {
 	const segments = window.location.pathname.split("/").filter(Boolean);
 	const firstSegment = segments[0] || null;
 	const lowerFirstSegment = String(firstSegment || "").toLowerCase();
@@ -165,6 +165,13 @@ function getCurrentPlaybackContext() {
 		};
 	}
 
+	if (segments.length !== 1) {
+		return {
+			channelName: null,
+			mediaKey: null,
+		};
+	}
+
 	const normalizedCandidate = normalizeChannelName(firstSegment);
 	const channelName =
 		normalizedCandidate && !RESERVED_ROUTE_SEGMENTS.has(normalizedCandidate)
@@ -189,7 +196,7 @@ function getMessagePlaybackContext(detail) {
 	};
 }
 
-function playbackContextsMatch(
+function _playbackContextsMatch(
 	expectedPlaybackContext,
 	currentPlaybackContext,
 ) {
@@ -219,15 +226,18 @@ function createBridgeSessionToken() {
 	const values = new Uint8Array(24);
 	if (globalThis.crypto?.getRandomValues) {
 		globalThis.crypto.getRandomValues(values);
-		return Array.from(values, (value) => value.toString(16).padStart(2, "0")).join(
-			"",
-		);
+		return Array.from(values, (value) =>
+			value.toString(16).padStart(2, "0"),
+		).join("");
 	}
 	return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
 }
 
 function getBridgeSessionToken() {
-	if (typeof bridgeSessionToken === "string" && bridgeSessionToken.length >= 16) {
+	if (
+		typeof bridgeSessionToken === "string" &&
+		bridgeSessionToken.length >= 16
+	) {
 		return bridgeSessionToken;
 	}
 	bridgeSessionToken = createBridgeSessionToken();
@@ -327,12 +337,359 @@ const bridgeState = {
 
 const KNOWN_DOM_CLEANUP_KINDS = createKnownCleanupKinds();
 const MAX_MESSAGE_DELTA = 50;
+const LEGACY_PERSISTED_COUNTER_FLUSHES_KEY = "ttvab_pending_counter_flushes";
+const PERSISTED_COUNTER_FLUSH_KEY_PREFIX = "ttvab_pending_counter_flush:";
+const MAX_PERSISTED_COUNTER_FLUSHES = 256;
+const PERSISTED_COUNTER_FLUSH_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 let pendingAdsDelta = 0;
 let pendingDomAdsDelta = 0;
 let pendingAdChannels = createChannelsMap();
 let flushTimeout = null;
-let flushRetryCount = 0;
+let didMigrateLegacyPersistedCounterFlushes = false;
+const retryFlushEntries = new Map();
+
+function normalizeFlushId(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	return /^[a-z0-9][a-z0-9:_-]{7,127}$/i.test(trimmed) ? trimmed : null;
+}
+
+function createCounterFlushId() {
+	const values = new Uint8Array(12);
+	if (globalThis.crypto?.getRandomValues) {
+		globalThis.crypto.getRandomValues(values);
+		const randomHex = Array.from(values, (value) =>
+			value.toString(16).padStart(2, "0"),
+		).join("");
+		return `flush:${Date.now().toString(16)}:${randomHex}`;
+	}
+	return `flush:${Date.now().toString(16)}:${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizePersistedCounterFlushEntry(value) {
+	const safeValue = getBridgeMessageDetail(value);
+	const flushId = normalizeFlushId(safeValue?.flushId);
+	const adsDelta = normalizeCount(safeValue?.adsDelta);
+	const domAdsDelta = normalizeCount(safeValue?.domAdsDelta);
+	const createdAtValue = Number(safeValue?.createdAt);
+	const createdAt = Number.isFinite(createdAtValue)
+		? Math.trunc(createdAtValue)
+		: Date.now();
+	const channelDeltas =
+		adsDelta > 0
+			? mergeChannelDeltaMaps(createChannelsMap(), safeValue?.channelDeltas)
+			: createChannelsMap();
+
+	if (!flushId || (adsDelta <= 0 && domAdsDelta <= 0)) {
+		return null;
+	}
+
+	return {
+		flushId,
+		adsDelta,
+		domAdsDelta,
+		channelDeltas,
+		createdAt,
+	};
+}
+
+function getPersistedCounterFlushStorageKey(flushId) {
+	const safeFlushId = normalizeFlushId(flushId);
+	return safeFlushId
+		? `${PERSISTED_COUNTER_FLUSH_KEY_PREFIX}${safeFlushId}`
+		: null;
+}
+
+function migrateLegacyPersistedCounterFlushes() {
+	if (
+		didMigrateLegacyPersistedCounterFlushes ||
+		typeof localStorage === "undefined"
+	) {
+		return;
+	}
+	didMigrateLegacyPersistedCounterFlushes = true;
+
+	let legacyEntries = [];
+	try {
+		const rawValue = localStorage.getItem(LEGACY_PERSISTED_COUNTER_FLUSHES_KEY);
+		if (!rawValue) {
+			return;
+		}
+		const parsed = JSON.parse(rawValue);
+		if (Array.isArray(parsed)) {
+			legacyEntries = parsed;
+		}
+	} catch {}
+
+	for (const entry of legacyEntries) {
+		const safeEntry = normalizePersistedCounterFlushEntry(entry);
+		const storageKey = getPersistedCounterFlushStorageKey(safeEntry?.flushId);
+		if (!safeEntry || !storageKey) continue;
+		try {
+			localStorage.setItem(storageKey, JSON.stringify(safeEntry));
+		} catch {}
+	}
+
+	try {
+		localStorage.removeItem(LEGACY_PERSISTED_COUNTER_FLUSHES_KEY);
+	} catch {}
+}
+
+function readPersistedCounterFlushes() {
+	if (typeof localStorage === "undefined") {
+		return [];
+	}
+
+	migrateLegacyPersistedCounterFlushes();
+
+	const now = Date.now();
+	const minCreatedAt = now - PERSISTED_COUNTER_FLUSH_TTL_MS;
+	const maxCreatedAt = now + 5 * 60 * 1000;
+	const seenFlushIds = new Set();
+	const storageKeys = [];
+
+	try {
+		for (let index = 0; index < localStorage.length; index++) {
+			const storageKey = localStorage.key(index);
+			if (
+				typeof storageKey === "string" &&
+				storageKey.startsWith(PERSISTED_COUNTER_FLUSH_KEY_PREFIX)
+			) {
+				storageKeys.push(storageKey);
+			}
+		}
+
+		const normalized = [];
+		for (const storageKey of storageKeys) {
+			const rawValue = localStorage.getItem(storageKey);
+			if (!rawValue) {
+				continue;
+			}
+
+			let parsed = null;
+			try {
+				parsed = JSON.parse(rawValue);
+			} catch {
+				localStorage.removeItem(storageKey);
+				continue;
+			}
+
+			const safeEntry = normalizePersistedCounterFlushEntry(parsed);
+			const expectedStorageKey = getPersistedCounterFlushStorageKey(
+				safeEntry?.flushId,
+			);
+			if (
+				!safeEntry ||
+				!expectedStorageKey ||
+				seenFlushIds.has(safeEntry.flushId)
+			) {
+				localStorage.removeItem(storageKey);
+				continue;
+			}
+			if (
+				safeEntry.createdAt < minCreatedAt ||
+				safeEntry.createdAt > maxCreatedAt
+			) {
+				localStorage.removeItem(storageKey);
+				continue;
+			}
+			if (storageKey !== expectedStorageKey) {
+				localStorage.removeItem(storageKey);
+				try {
+					localStorage.setItem(expectedStorageKey, JSON.stringify(safeEntry));
+				} catch {}
+			}
+			normalized.push(safeEntry);
+			seenFlushIds.add(safeEntry.flushId);
+		}
+
+		normalized.sort((a, b) => a.createdAt - b.createdAt);
+		const overflowCount = Math.max(
+			0,
+			normalized.length - MAX_PERSISTED_COUNTER_FLUSHES,
+		);
+		if (overflowCount > 0) {
+			for (const overflowEntry of normalized.slice(0, overflowCount)) {
+				localStorage.removeItem(
+					getPersistedCounterFlushStorageKey(overflowEntry.flushId),
+				);
+			}
+		}
+
+		return normalized.slice(-MAX_PERSISTED_COUNTER_FLUSHES);
+	} catch {
+		return [];
+	}
+}
+
+function persistCounterFlushForReplay(entry) {
+	const safeEntry = normalizePersistedCounterFlushEntry(entry);
+	if (!safeEntry) return false;
+	const storageKey = getPersistedCounterFlushStorageKey(safeEntry.flushId);
+	if (!storageKey || typeof localStorage === "undefined") {
+		return false;
+	}
+
+	try {
+		localStorage.setItem(storageKey, JSON.stringify(safeEntry));
+		readPersistedCounterFlushes();
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function clearPersistedCounterFlush(flushId) {
+	const safeFlushId = normalizeFlushId(flushId);
+	const storageKey = getPersistedCounterFlushStorageKey(safeFlushId);
+	if (!storageKey || typeof localStorage === "undefined") return false;
+	try {
+		localStorage.removeItem(storageKey);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function handlePersistSuccess(response, flushId = null) {
+	const safeFlushId = normalizeFlushId(flushId);
+	if (safeFlushId) {
+		clearPersistedCounterFlush(safeFlushId);
+	}
+
+	const newUnlocks = Array.isArray(response?.newUnlocks)
+		? response.newUnlocks
+		: [];
+	for (const id of newUnlocks) {
+		postAchievementUnlock(id);
+	}
+}
+
+function clearScheduledRetryFlush(flushId = null) {
+	const safeFlushId = normalizeFlushId(flushId);
+	if (safeFlushId) {
+		const retryEntry = retryFlushEntries.get(safeFlushId);
+		if (!retryEntry) {
+			return false;
+		}
+		if (retryEntry.timeoutId) {
+			clearTimeout(retryEntry.timeoutId);
+		}
+		retryFlushEntries.delete(safeFlushId);
+		return true;
+	}
+
+	if (retryFlushEntries.size === 0) {
+		return false;
+	}
+
+	for (const retryEntry of retryFlushEntries.values()) {
+		if (retryEntry.timeoutId) {
+			clearTimeout(retryEntry.timeoutId);
+		}
+	}
+	retryFlushEntries.clear();
+	return true;
+}
+
+function scheduleRetryFlush(payload, flushId) {
+	const safeFlushId = normalizeFlushId(flushId);
+	if (!safeFlushId) return false;
+
+	const previousEntry = retryFlushEntries.get(safeFlushId);
+	if (previousEntry?.timeoutId) {
+		clearTimeout(previousEntry.timeoutId);
+	}
+
+	const retryCount = Number(previousEntry?.retryCount || 0) + 1;
+	const nextDelay = Math.min(
+		MAX_FLUSH_RETRY_DELAY_MS,
+		FLUSH_DELAY_MS * 2 ** Math.min(retryCount, 4),
+	);
+	const nextEntry = {
+		payload,
+		retryCount,
+		timeoutId: null,
+	};
+	nextEntry.timeoutId = setTimeout(
+		() => {
+			const currentEntry = retryFlushEntries.get(safeFlushId);
+			if (!currentEntry) {
+				return;
+			}
+			retryFlushEntries.delete(safeFlushId);
+			dispatchPersistPayload(currentEntry.payload, { retryOnFailure: true });
+		},
+		Math.max(0, nextDelay),
+	);
+	retryFlushEntries.set(safeFlushId, nextEntry);
+	return true;
+}
+
+function sendPersistPayload(payload, onSuccess, onFailure) {
+	try {
+		chrome.runtime.sendMessage(payload, (response) => {
+			if (chrome.runtime.lastError) {
+				onFailure?.(chrome.runtime.lastError.message);
+				return;
+			}
+
+			const safeResponse = getBridgeMessageData(response);
+			if (!safeResponse?.ok) {
+				onFailure?.(safeResponse?.error || "unknown error");
+				return;
+			}
+
+			onSuccess?.(safeResponse);
+		});
+	} catch (error) {
+		onFailure?.(error instanceof Error ? error.message : String(error));
+	}
+}
+
+function dispatchPersistPayload(
+	payload,
+	options: { retryOnFailure?: boolean } = {},
+) {
+	const retryOnFailure = options.retryOnFailure === true;
+	const safeDetail = getBridgeMessageDetail(payload?.detail);
+	const flushId = normalizeFlushId(safeDetail?.flushId);
+	if (flushId) {
+		persistCounterFlushForReplay(safeDetail);
+	}
+
+	sendPersistPayload(
+		payload,
+		(response) => {
+			clearScheduledRetryFlush(flushId);
+			handlePersistSuccess(response, flushId);
+			if (pendingAdsDelta > 0 || pendingDomAdsDelta > 0) {
+				scheduleFlush();
+			}
+		},
+		(errorMessage) => {
+			if (!retryOnFailure) {
+				return;
+			}
+
+			console.error("[TTV AB] Counter persist error:", errorMessage);
+			scheduleRetryFlush(payload, flushId);
+		},
+	);
+}
+
+function replayPersistedCounterFlushes() {
+	for (const pendingFlush of readPersistedCounterFlushes()) {
+		dispatchPersistPayload(
+			{
+				type: "ttvab-persist-counters",
+				detail: pendingFlush,
+			},
+			{ retryOnFailure: false },
+		);
+	}
+}
 
 function clearScheduledFlush() {
 	if (!flushTimeout) return;
@@ -362,7 +719,6 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 		if (safeStoredCount < previousStoredCount) {
 			pendingAdsDelta = 0;
 			pendingAdChannels = createChannelsMap();
-			flushRetryCount = 0;
 		}
 		bridgeState.storedAdsCount = safeStoredCount;
 		return;
@@ -371,7 +727,6 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 		const previousStoredCount = normalizeCount(bridgeState.storedDomAdsCount);
 		if (safeStoredCount < previousStoredCount) {
 			pendingDomAdsDelta = 0;
-			flushRetryCount = 0;
 		}
 		bridgeState.storedDomAdsCount = safeStoredCount;
 	}
@@ -421,18 +776,6 @@ function queueExplicitDelta(kind, delta) {
 	return 0;
 }
 
-function requeueFlushWork(adsDelta, domAdsDelta, channelDeltas) {
-	pendingAdsDelta += normalizeCount(adsDelta);
-	pendingDomAdsDelta += normalizeCount(domAdsDelta);
-	pendingAdChannels = mergeChannelDeltaMaps(pendingAdChannels, channelDeltas);
-	flushRetryCount++;
-	const nextDelay = Math.min(
-		MAX_FLUSH_RETRY_DELAY_MS,
-		FLUSH_DELAY_MS * 2 ** Math.min(flushRetryCount, 4),
-	);
-	scheduleFlush(nextDelay);
-}
-
 function scheduleFlush(delay = FLUSH_DELAY_MS) {
 	if (flushTimeout) return;
 	flushTimeout = setTimeout(
@@ -463,50 +806,12 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 			adsDelta,
 			domAdsDelta,
 			channelDeltas,
+			flushId: createCounterFlushId(),
+			createdAt: Date.now(),
 		},
 	};
 
-	if (fireAndForget) {
-		try {
-			chrome.runtime.sendMessage(payload, () => {
-				void chrome.runtime.lastError;
-			});
-		} catch {}
-		return;
-	}
-
-	chrome.runtime.sendMessage(
-		payload,
-		(response) => {
-			if (chrome.runtime.lastError) {
-				console.error(
-					"[TTV AB] Counter persist error:",
-					chrome.runtime.lastError.message,
-				);
-				requeueFlushWork(adsDelta, domAdsDelta, channelDeltas);
-				return;
-			}
-
-			const safeResponse = getBridgeMessageData(response);
-			if (!safeResponse?.ok) {
-				console.error(
-					"[TTV AB] Counter persist rejected:",
-					safeResponse?.error || "unknown error",
-				);
-				requeueFlushWork(adsDelta, domAdsDelta, channelDeltas);
-				return;
-			}
-
-			flushRetryCount = 0;
-
-			const newUnlocks = Array.isArray(safeResponse.newUnlocks)
-				? safeResponse.newUnlocks
-				: [];
-			for (const id of newUnlocks) {
-				postAchievementUnlock(id);
-			}
-		},
-	);
+	dispatchPersistPayload(payload, { retryOnFailure: !fireAndForget });
 }
 
 function flushPendingCountersOnPageExit() {
@@ -514,7 +819,12 @@ function flushPendingCountersOnPageExit() {
 }
 
 chrome.storage.local.get(
-	["ttvAdblockEnabled", "ttvBufferFixEnabled", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+	[
+		"ttvAdblockEnabled",
+		"ttvBufferFixEnabled",
+		"ttvAdsBlocked",
+		"ttvDomAdsBlocked",
+	],
 	(result) => {
 		if (chrome.runtime.lastError) {
 			console.error(
@@ -543,7 +853,8 @@ chrome.storage.local.get(
 			}
 			if (changes.ttvBufferFixEnabled) {
 				const wasBufferFixEnabled = bridgeState.bufferFixEnabled;
-				bridgeState.bufferFixEnabled = changes.ttvBufferFixEnabled.newValue !== false;
+				bridgeState.bufferFixEnabled =
+					changes.ttvBufferFixEnabled.newValue !== false;
 				if (bridgeState.bufferFixEnabled !== wasBufferFixEnabled) {
 					sendToPage("ttvab-toggle-buffer-fix", {
 						enabled: bridgeState.bufferFixEnabled,
@@ -573,6 +884,8 @@ chrome.storage.local.get(
 				}
 			}
 		});
+
+		replayPersistedCounterFlushes();
 	},
 );
 

@@ -193,25 +193,6 @@ function prepareDistStaticFiles() {
 	}
 }
 
-function cleanDistRuntimeOutputs() {
-	const cleanupPaths = [
-		...STATIC_ROOT_FILES,
-		...STATIC_ROOT_DIRECTORIES,
-		"src",
-		"tsconfig.modules.tsbuildinfo",
-		"tsconfig.runtime.tsbuildinfo",
-		"firefox-package",
-		"firefox-source-package",
-	];
-
-	for (const relativePath of cleanupPaths) {
-		fs.rmSync(path.join(DIST_DIR, relativePath), {
-			recursive: true,
-			force: true,
-		});
-	}
-}
-
 function syncPopupHtmlFallbacks() {
 	const popupHtmlPath = path.join(SOURCE_ROOT, "src", "popup", "popup.html");
 	const translationsPath = path.join(
@@ -486,6 +467,7 @@ function validateSharedDefinitions() {
 	);
 	const initPath = path.join(DIST_DIR, "src", "modules", "init.js");
 	const hooksPath = path.join(DIST_DIR, "src", "modules", "hooks.js");
+	const statePath = path.join(DIST_DIR, "src", "modules", "state.js");
 	const workerPath = path.join(DIST_DIR, "src", "modules", "worker.js");
 	const processorPath = path.join(DIST_DIR, "src", "modules", "processor.js");
 	const apiPath = path.join(DIST_DIR, "src", "modules", "api.js");
@@ -723,6 +705,7 @@ function validateSharedDefinitions() {
 	}
 	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
+	const stateSource = fs.readFileSync(statePath, "utf8");
 	const workerSource = fs.readFileSync(workerPath, "utf8");
 	const parserSource = fs.readFileSync(
 		path.join(DIST_DIR, "src", "modules", "parser.js"),
@@ -1201,11 +1184,20 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	if ((hooksSource.match(/eval\(wasmSource\)/g) || []).length !== 1) {
-		throw new Error("Unexpected eval(wasmSource) usage in hooks.js");
+	if (!hooksSource.includes("eval(wasmSource);")) {
+		throw new Error(
+			"Firefox hooks.js must eval the synchronously fetched worker source",
+		);
 	}
-	if ((workerSource.match(/new XMLHttpRequest\(\)/g) || []).length !== 1) {
-		throw new Error("Unexpected XMLHttpRequest bootstrap usage in worker.js");
+	if (!hooksSource.includes("const wasmSource = _getWasmJs(")) {
+		throw new Error(
+			"Firefox hooks.js must hydrate worker source via _getWasmJs(...)",
+		);
+	}
+	if (!workerSource.includes("new XMLHttpRequest()")) {
+		throw new Error(
+			"Firefox worker bootstrap must retain synchronous XMLHttpRequest loading",
+		);
 	}
 	for (const forbidden of [
 		"ttvReloadAfterAdsEnabled",
@@ -1265,6 +1257,11 @@ function validateSharedDefinitions() {
 			source: apiSource,
 		},
 		{
+			consumer: "_fetchViaWorkerBridge",
+			helper: "_postWorkerBridgeMessage",
+			source: apiSource,
+		},
+		{
 			consumer: "_extractPlaybackAccessToken",
 			helper: "_collectPlaybackAccessTokenSources",
 			source: apiSource,
@@ -1278,6 +1275,16 @@ function validateSharedDefinitions() {
 			consumer: "_extractPlaybackAccessToken",
 			helper: "_getPlaybackAccessTokenErrors",
 			source: apiSource,
+		},
+		{
+			consumer: "_incrementAdsBlocked",
+			helper: "_postWorkerBridgeMessage",
+			source: stateSource,
+		},
+		{
+			consumer: "_postWorkerBridgeMessage",
+			helper: "_createWorkerBridgeMessage",
+			source: stateSource,
 		},
 	];
 	for (const { consumer, helper, source } of requiredInjectedPairs) {
@@ -1348,7 +1355,7 @@ function minifyCode(code) {
 function compileTypeScriptSources() {
 	console.log("Compiling TypeScript...\n");
 	const tscBinPath = require.resolve("typescript/bin/tsc");
-	cleanDistRuntimeOutputs();
+	fs.rmSync(DIST_DIR, { recursive: true, force: true });
 
 	for (const configPath of RUNTIME_TSCONFIGS) {
 		execFileSync(process.execPath, [tscBinPath, "-p", configPath], {
