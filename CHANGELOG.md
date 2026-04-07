@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.8] - 2026-04-08
+
+### Fixed
+- **Ad Detection Parity** - Improved detection for `stitched` ad label variants and added comprehensive Turbo ad-break promo surface recognition.
+- **Worker Bridge Stability** - Refined the passive ad-impression burning mechanism to eliminate potential race conditions during high-frequency ad-cycle transitions.
+- **DOM Cleanup** - Enhanced the reliability of the anti-adblock popup blocker to prevent repeated counter increments on the same surface.
+
+
 ## [6.0.7] - 2026-04-08
 
 ### Fixed
