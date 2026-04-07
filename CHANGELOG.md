@@ -2,25 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [6.0.4] - 2026-04-07
+## [6.0.5] - 2026-04-08
 
 ### Fixed
-- **Firefox Native Recovery Warmup** - Firefox now requires consecutive clean native `popout` probes before it ends ad recovery and reloads the player, preventing premature native exits that could immediately fall back into a fresh Twitch ad cycle.
-- **Firefox Native Recovery Probe Reset** - Guarded native-recovery probe tracking now resets on ad-marked, failed, and newly detected ad paths so stale clean-probe state cannot leak into the next recovery attempt.
-
-## [6.0.2] - 2026-04-07
-
-### Fixed
-- **Firefox Backup Recovery Stall** - When Firefox had already switched to a clean backup stream but the forced native `popout` recovery path was still ad-marked, the worker could sit indefinitely on a stale backup playlist and leave the player spinning. Backup playback is now refreshed and re-evaluated while native recovery is gated, so Firefox can keep advancing playback until native recovery is actually ready.
-- **Firefox Worker Recovery Helper Injection** - The guarded native-recovery helper chain is now fully injected into the hooked Firefox worker, preventing runtime gaps between the worker bootstrap and processor recovery flow.
-
-## [6.0.1] - 2026-04-07
-
-### Fixed
-- **Post-Ad Native Quality Recovery** - Recovery reloads now prefer the forced native `PlaybackAccessToken` type before any remembered backup type, preventing native post-ad reloads from inheriting temporary `autoplay`/mobile token paths that could strand the player on low-quality options such as `360p` until a manual refresh.
-- **Post-Ad Backup Exit Recovery** - Ad exits that were still running on a temporary backup stream now return to the native player immediately instead of waiting for the post-ad stall watchdog to detect the unhealthy backup state and reload later.
-- **Browser Store Locale Copy** - Extension store descriptions were rewritten across shipped locales to remove awkward literal phrasing and make the marketing copy read more naturally.
-- **Popup Translation Wording** - Several popup strings were polished for clarity, including translated `Buffer Fix` labels, a German `Next` / achievement wording cleanup, and the Spanish support CTA.
+- **Post-Ad Native Quality Recovery** - Recovery reloads now prefer the forced native `PlaybackAccessToken` player type before any remembered backup type, preventing post-ad reloads from getting stuck on the reduced-quality `autoplay` ladder.
+- **Delayed Native Return After Backup Ads** - Backup-stream ad exits now trigger the native player reload and access-token refresh path immediately instead of waiting for the later stall watchdog, reducing prolonged fallback playback and helping the normal quality ladder return sooner.
 
 ## [6.0.0] - 2026-04-07
 
