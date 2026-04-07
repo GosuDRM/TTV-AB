@@ -1,8 +1,8 @@
 // TTV AB - Constants
 
 const _C = {
-	VERSION: "6.0.2",
-	INTERNAL_VERSION: 74,
+	VERSION: "6.0.4",
+	INTERNAL_VERSION: 75,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -21,6 +21,7 @@ const _C = {
 	AD_CYCLE_STALE_MS: 30000,
 	AD_END_GRACE_MS: 2500,
 	AD_END_MIN_CLEAN_PLAYLISTS: 2,
+	AD_END_MIN_NATIVE_CLEAN_PROBES: 2,
 	AD_RECOVERY_RELOAD_COOLDOWN_MS: 10000,
 	BUFFERING_FIX: true,
 	RELOAD_AFTER_AD: false,

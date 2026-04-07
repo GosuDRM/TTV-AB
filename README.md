@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.0.2-purple)
+![Version](https://img.shields.io/badge/version-6.0.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.0.4
+- **Firefox Native Recovery Warmup** - Firefox now waits for consecutive clean native `popout` probes before ending ad recovery and reloading the player, preventing too-early exits that can drop playback straight back into another Twitch ad cycle.
+- **Firefox Native Recovery State Reset** - Native-recovery clean-probe tracking now resets on ad-marked, failed, and fresh-ad paths so guarded ad exit only fires from the current recovery window.
 
 ### v6.0.2
 - **Firefox Backup Recovery Refresh** - While Firefox is waiting for the native `popout` path to become clean after an ad, backup playback is now actively refreshed and re-evaluated instead of sitting indefinitely on a stale `autoplay` playlist that can stall on a loading spinner.

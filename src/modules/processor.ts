@@ -20,6 +20,7 @@ function _resetStreamAdState(info) {
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
 	info.LastNativeRecoveryProbeAt = 0;
+	info.NativeRecoveryCleanCount = 0;
 	info.LastBackupRecoveryRefreshAt = 0;
 
 	return {
@@ -129,10 +130,15 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 		__TTVAB_STATE__.ForceAccessTokenPlayerType ||
 		__TTVAB_STATE__.FallbackPlayerType ||
 		"popout";
+	const requiredCleanProbes = Math.max(
+		1,
+		Number(__TTVAB_STATE__.AdEndMinNativeCleanProbes) || 1,
+	);
 
 	try {
 		const tokenRes = await _getToken(info, nativePlayerType, realFetch);
 		if (tokenRes.status !== 200) {
+			info.NativeRecoveryCleanCount = 0;
 			_log(
 				`[Trace] Native recovery probe failed for ${nativePlayerType}: ${tokenRes.status}`,
 				"warning",
@@ -145,6 +151,7 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 		const sig = extractedToken?.signature;
 		const tokenValue = extractedToken?.value;
 		if (!sig || !tokenValue) {
+			info.NativeRecoveryCleanCount = 0;
 			_log(
 				`[Trace] Native recovery probe missing token parts for ${nativePlayerType}`,
 				"warning",
@@ -154,11 +161,13 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 
 		const usherUrl = _buildUsherPlaybackUrl(info, sig, tokenValue);
 		if (!usherUrl) {
+			info.NativeRecoveryCleanCount = 0;
 			return false;
 		}
 
 		const encRes = await realFetch(usherUrl.href);
 		if (encRes.status !== 200) {
+			info.NativeRecoveryCleanCount = 0;
 			_log(
 				`[Trace] Native recovery usher failed for ${nativePlayerType}: ${encRes.status}`,
 				"warning",
@@ -170,11 +179,13 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 		const targetResolution = resolution || _getFallbackResolution(info, "");
 		const streamUrl = _getStreamUrl(encM3u8, targetResolution, usherUrl.href);
 		if (!streamUrl) {
+			info.NativeRecoveryCleanCount = 0;
 			return false;
 		}
 
 		const streamRes = await realFetch(streamUrl);
 		if (streamRes.status !== 200) {
+			info.NativeRecoveryCleanCount = 0;
 			_log(
 				`[Trace] Native recovery stream failed for ${nativePlayerType}: ${streamRes.status}`,
 				"warning",
@@ -191,6 +202,7 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 			});
 
 		if (nativeHasAds) {
+			info.NativeRecoveryCleanCount = 0;
 			_log(
 				`[Trace] Native recovery still ad-marked (${nativePlayerType})`,
 				"warning",
@@ -198,9 +210,20 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 			return false;
 		}
 
+		info.NativeRecoveryCleanCount =
+			Number(info.NativeRecoveryCleanCount || 0) + 1;
+		if (info.NativeRecoveryCleanCount < requiredCleanProbes) {
+			_log(
+				`[Trace] Native recovery warming up (${nativePlayerType}) ${info.NativeRecoveryCleanCount}/${requiredCleanProbes}`,
+				"info",
+			);
+			return false;
+		}
+
 		_log(`[Trace] Native recovery ready (${nativePlayerType})`, "success");
 		return true;
 	} catch (err) {
+		info.NativeRecoveryCleanCount = 0;
 		_log(
 			`[Trace] Native recovery probe error for ${nativePlayerType}: ${err.message}`,
 			"warning",
@@ -315,6 +338,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
 		LastNativeRecoveryProbeAt: 0,
+		NativeRecoveryCleanCount: 0,
 		LastBackupRecoveryRefreshAt: 0,
 		LastActivityAt: Date.now(),
 	};
@@ -501,6 +525,7 @@ async function _processM3U8(url, text, realFetch) {
 	if (hasAds) {
 		info.PendingAdEndAt = 0;
 		info.CleanPlaylistCount = 0;
+		info.NativeRecoveryCleanCount = 0;
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
 
 		if (!info.IsShowingAd) {

@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.4] - 2026-04-07
+
+### Fixed
+- **Firefox Native Recovery Warmup** - Firefox now requires consecutive clean native `popout` probes before it ends ad recovery and reloads the player, preventing premature native exits that could immediately fall back into a fresh Twitch ad cycle.
+- **Firefox Native Recovery Probe Reset** - Guarded native-recovery probe tracking now resets on ad-marked, failed, and newly detected ad paths so stale clean-probe state cannot leak into the next recovery attempt.
+
 ## [6.0.2] - 2026-04-07
 
 ### Fixed
