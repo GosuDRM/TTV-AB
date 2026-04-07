@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.0] - 2026-04-08
+
+### Fixed
+- **React-Safe Display-Ad Cleanup** - Post-ad cleanup now hides and resets Twitch-managed display-ad nodes instead of removing them from the DOM, preventing Twitch's React teardown from collapsing the player into the big `?` placeholder during live and VOD navigation.
+- **SDA Teardown Compatibility** - Stale display-ad shell cleanup now keeps Twitch-owned nodes attached under `#root` until Twitch unmounts them itself, avoiding `SDAContextManager` `Node.removeChild` exceptions after ad recovery.
+
 ## [6.0.9] - 2026-04-08
 
 ### Fixed
@@ -1227,4 +1233,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Firefox support
 - Additional ad blocking methods
 - Statistics tracking
-

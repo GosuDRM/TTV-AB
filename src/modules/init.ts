@@ -396,6 +396,17 @@ function _blockAntiAdblockPopup() {
 			el.setAttribute("data-ttvab-blocked", "true");
 		}
 
+		function _safelyDetachCleanupElement(el) {
+			if (!(el instanceof HTMLElement)) return false;
+			const appRoot = document.getElementById("root");
+			if (appRoot && appRoot.contains(el)) {
+				_hideElement(el);
+				return false;
+			}
+			el.remove();
+			return true;
+		}
+
 		function _resetStreamDisplayLayout(el) {
 			if (!el) return;
 
@@ -675,14 +686,15 @@ function _blockAntiAdblockPopup() {
 					return;
 				}
 
-				el.style.removeProperty("display");
-				el.style.removeProperty("visibility");
 				if (
 					el.hasAttribute("data-ttvab-blocked") ||
 					el.hasAttribute("data-ttvab-display-shell-reset")
 				) {
-					el.remove();
+					_safelyDetachCleanupElement(el);
+					return;
 				}
+				el.style.removeProperty("display");
+				el.style.removeProperty("visibility");
 			});
 
 			stalePipContainers.forEach((el) => {
@@ -691,11 +703,12 @@ function _blockAntiAdblockPopup() {
 					return;
 				}
 
+				if (el.hasAttribute("data-ttvab-blocked")) {
+					_safelyDetachCleanupElement(el);
+					return;
+				}
 				el.style.removeProperty("display");
 				el.style.removeProperty("visibility");
-				if (el.hasAttribute("data-ttvab-blocked")) {
-					el.remove();
-				}
 			});
 
 			return true;
@@ -937,11 +950,12 @@ function _blockAntiAdblockPopup() {
 			);
 
 			explicitDisplayNodes.forEach((el) => {
+				if (el.hasAttribute("data-ttvab-blocked")) {
+					_safelyDetachCleanupElement(el);
+					return;
+				}
 				el.style.removeProperty("display");
 				el.style.removeProperty("visibility");
-				if (el.hasAttribute("data-ttvab-blocked")) {
-					el.remove();
-				}
 			});
 		}
 

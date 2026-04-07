@@ -27,6 +27,14 @@ const _POST_AD_REMOVABLE_SELECTOR_GROUP =
 const _POST_AD_RESET_SELECTOR_GROUP = _POST_AD_RESET_ONLY_SELECTORS.join(", ");
 let _pendingPostAdArtifactCleanup = null;
 
+function _hidePostAdArtifact(el) {
+	if (!(el instanceof Element)) return;
+	el.style.setProperty("display", "none", "important");
+	el.style.setProperty("visibility", "hidden", "important");
+	el.style.setProperty("pointer-events", "none", "important");
+	el.setAttribute("data-ttvab-post-ad-hidden", "true");
+}
+
 function _isPostAdPlayerLayoutWrapper(el) {
 	if (!(el instanceof Element)) return false;
 	return Boolean(
@@ -52,8 +60,10 @@ function _resetPostAdDisplayArtifact(el) {
 	}
 
 	if (_isPostAdPlayerLayoutWrapper(el)) {
+		el.removeAttribute("data-ttvab-post-ad-hidden");
 		el.style.removeProperty("display");
 		el.style.removeProperty("visibility");
+		el.style.removeProperty("pointer-events");
 		el.style.setProperty("padding", "0", "important");
 		el.style.setProperty("margin", "0", "important");
 		el.style.setProperty("background", "transparent", "important");
@@ -66,8 +76,7 @@ function _resetPostAdDisplayArtifact(el) {
 		return;
 	}
 
-	el.style.display = "none";
-	el.remove();
+	_hidePostAdArtifact(el);
 }
 
 function _runPostAdArtifactCleanup() {
@@ -75,8 +84,7 @@ function _runPostAdArtifactCleanup() {
 		for (const el of document.querySelectorAll(
 			_POST_AD_REMOVABLE_SELECTOR_GROUP,
 		)) {
-			el.style.display = "none";
-			el.remove();
+			_resetPostAdDisplayArtifact(el);
 		}
 
 		for (const el of document.querySelectorAll(_POST_AD_RESET_SELECTOR_GROUP)) {
