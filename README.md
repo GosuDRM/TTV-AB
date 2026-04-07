@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.0.8-purple)
+![Version](https://img.shields.io/badge/version-6.0.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.0.9
+- **Console Log Noise** - Silenced the repetitive `Fetch intercepted exception: NetworkError` logs that could flood the browser console during certain network conditions.
+- **Debug Logging** - Updated the global logger to suppress all `debug` level messages by default.
 
 ### v6.0.8
 - **Ad Detection Parity** - Faster detection for `stitched` ad variants and improved reconocimiento of Turbo ad-break promo surfaces.

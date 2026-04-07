@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.9] - 2026-04-08
+
+### Fixed
+- **Console Log Noise** - Silenced the repetitive `Fetch intercepted exception: NetworkError` logs that could flood the browser console during certain network conditions.
+- **Debug Logging** - Updated the global logger to suppress all `debug` level messages by default, ensuring a cleaner development console.
+
+
 ## [6.0.8] - 2026-04-08
 
 ### Fixed
