@@ -3,6 +3,6 @@
 		"message": "TTV AB - Bloqueur de publicités léger et puissant pour Twitch.tv"
 	},
 	"extDesc": {
-		"message": "Bloque les pubs sur les lives Twitch.tv. Sans écran violet, pré-rolls ni mid-rolls. Bloqueur léger."
+		"message": "Bloque les pubs sur les lives Twitch. Pas d’écran violet ni de pubs avant ou pendant le live."
 	}
 }

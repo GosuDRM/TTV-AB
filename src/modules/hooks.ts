@@ -1291,8 +1291,8 @@ function _hookMainFetch() {
 					now - __TTVAB_STATE__.PendingTriggeredPlayerReloadAt < 15000);
 
 			const forceType = isRecoveryReload
-				? __TTVAB_STATE__.LastPinnedBackupPlayerType ||
-					__TTVAB_STATE__.ForceAccessTokenPlayerType ||
+				? __TTVAB_STATE__.ForceAccessTokenPlayerType ||
+					__TTVAB_STATE__.LastPinnedBackupPlayerType ||
 					"autoplay"
 				: __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
 

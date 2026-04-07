@@ -30,14 +30,17 @@ function _resetStreamAdState(info) {
 function _shouldReloadNativePlayerAfterAdReset({
 	wasUsingModifiedM3U8,
 	wasUsingFallbackStream,
+	wasUsingBackupStream,
 }: {
 	wasUsingModifiedM3U8?: boolean;
 	wasUsingFallbackStream?: boolean;
+	wasUsingBackupStream?: boolean;
 }) {
 	return Boolean(
 		__TTVAB_STATE__.ReloadAfterAd ||
 			wasUsingModifiedM3U8 ||
-			wasUsingFallbackStream,
+			wasUsingFallbackStream ||
+			wasUsingBackupStream,
 	);
 }
 
@@ -228,11 +231,13 @@ async function _processM3U8(url, text, realFetch) {
 				const shouldReloadPlayer = _shouldReloadNativePlayerAfterAdReset({
 					wasUsingModifiedM3U8,
 					wasUsingFallbackStream,
+					wasUsingBackupStream,
 				});
 				const shouldRefreshAccessToken =
 					__TTVAB_STATE__.ReloadAfterAd ||
 					wasUsingModifiedM3U8 ||
-					wasUsingFallbackStream;
+					wasUsingFallbackStream ||
+					wasUsingBackupStream;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
@@ -450,7 +455,11 @@ async function _processM3U8(url, text, realFetch) {
 				return text;
 			}
 
-			const { wasUsingModifiedM3U8, wasUsingFallbackStream } =
+			const {
+				wasUsingModifiedM3U8,
+				wasUsingFallbackStream,
+				wasUsingBackupStream,
+			} =
 				_resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.CurrentAdMediaKey = null;
@@ -462,11 +471,13 @@ async function _processM3U8(url, text, realFetch) {
 				const shouldReloadPlayer = _shouldReloadNativePlayerAfterAdReset({
 					wasUsingModifiedM3U8,
 					wasUsingFallbackStream,
+					wasUsingBackupStream,
 				});
 				const shouldRefreshAccessToken =
 					__TTVAB_STATE__.ReloadAfterAd ||
 					wasUsingModifiedM3U8 ||
-					wasUsingFallbackStream;
+					wasUsingFallbackStream ||
+					wasUsingBackupStream;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({

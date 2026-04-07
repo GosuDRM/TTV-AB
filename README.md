@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.0.0-purple)
+![Version](https://img.shields.io/badge/version-6.0.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,12 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.0.1
+- **Post-Ad Native Quality Recovery** - Recovery reloads now prefer the forced native token path instead of inheriting the temporary `autoplay` backup token, preventing the player from getting stuck on low-quality ladders like `360p` until a manual refresh.
+- **Post-Ad Backup Exit Reload** - When Twitch had to fall back to a temporary backup stream during an ad, ad exit now returns to the native player immediately instead of trying to keep the backup stream alive long enough for the stall watchdog to intervene.
+- **Store Copy Cleanup** - Browser store descriptions were rewritten across locales to sound more natural and less like direct word-for-word translations.
+- **Popup Translation Polish** - Several translated popup labels were refined for clearer product wording, including buffer-fix labels, a German achievement/title cleanup, and the Spanish support CTA.
 
 ### v6.0.0
 - **Counter Flush Durability Hardening** - Exit-time blocked-ad and DOM-ad counter flushes now persist and replay safely, with per-flush storage plus independent retries so route changes, tab closes, and transient MV3/runtime failures do not strand valid totals.

@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.1] - 2026-04-07
+
+### Fixed
+- **Post-Ad Native Quality Recovery** - Recovery reloads now prefer the forced native `PlaybackAccessToken` type before any remembered backup type, preventing native post-ad reloads from inheriting temporary `autoplay`/mobile token paths that could strand the player on low-quality options such as `360p` until a manual refresh.
+- **Post-Ad Backup Exit Recovery** - Ad exits that were still running on a temporary backup stream now return to the native player immediately instead of waiting for the post-ad stall watchdog to detect the unhealthy backup state and reload later.
+- **Browser Store Locale Copy** - Extension store descriptions were rewritten across shipped locales to remove awkward literal phrasing and make the marketing copy read more naturally.
+- **Popup Translation Wording** - Several popup strings were polished for clarity, including translated `Buffer Fix` labels, a German `Next` / achievement wording cleanup, and the Spanish support CTA.
+
 ## [6.0.0] - 2026-04-07
 
 ### Fixed
