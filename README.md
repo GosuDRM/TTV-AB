@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.0.5-purple)
+![Version](https://img.shields.io/badge/version-6.0.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -10,6 +10,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 ## Install
 
+- Chrome Web Store: [TTV AB - Lightweight, powerful ad blocker](https://chromewebstore.google.com/detail/ttv-ab-lightweight-powerf/mlifbfmeoafhcccmppaolojdglcbkdkg) `(Waiting for approval)`
 - Firefox Add-ons: [TTV AB - Twitch Ad Blocker](https://addons.mozilla.org/en-GB/firefox/addon/ttv-ab-twitch-ad-blocker/) `(Latest)`
 
 <p align="center">
@@ -56,9 +57,13 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.0.5
-- **Post-Ad Native Quality Recovery** - Recovery reloads now keep native `PlaybackAccessToken` rewrites pinned to the forced native player type instead of inheriting the temporary backup type, preventing post-ad reloads from getting stranded on the reduced-quality `autoplay` ladder.
-- **Immediate Native Return After Backup Ads** - When an ad cycle exits from a temporary backup stream, the player now reloads and refreshes the native access token immediately instead of waiting for the later stall watchdog, reducing post-ad buffering loops and helping the full quality ladder come back sooner.
+### v6.0.7
+- **Post-Ad Native 360p Lock** - Ad recovery no longer explicitly rewrites the native `PlaybackAccessToken` to `autoplay` during the recovery window, fixing the bug where the player's resolution menu locked down to 360p indefinitely after an ad block.
+- **Pre-roll Recovery Loops** - Implemented background simulated ad-impression tracking by headless fetching of blocked ad segments. This actively clears Twitch's backend pre-roll state, putting an end to infinite looping reload cycles.
+
+### v6.0.6
+- **Broader Stitched Ad Detection** - The worker now catches more Twitch stitched ad variants before they fall through to native playback, improving ad-break interception on recent stream-side changes.
+- **Turbo Break Overlay Cleanup Hardening** - Full-page Twitch Turbo / ad-break promo surfaces are now recognized more reliably and repeated cleanup of the same overlay is deduped so DOM cleanup counters stop climbing on the same page.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

@@ -1,6 +1,6 @@
 {
 	"name": "ttv-ab",
-	"version": "6.0.5",
+	"version": "6.0.7",
 	"description": "Twitch Ad Blocker",
 	"license": "MIT",
 	"homepage": "https://github.com/GosuDRM/TTV-AB",
@@ -23,7 +23,7 @@
 		"lint": "biome check .",
 		"clean": "node -e \"const fs=require('node:fs'); fs.rmSync('dist',{recursive:true,force:true}); fs.rmSync('build',{recursive:true,force:true});\"",
 		"typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.runtime.json --noEmit && tsc -p tsconfig.build.json --noEmit",
-		"build": "tsc -p tsconfig.build.json && node build/build.js",
+		"build": "tsc -p tsconfig.build.json && node build/build.js --firefox-package --firefox-source-package",
 		"build:firefox": "tsc -p tsconfig.build.json && node build/build.js --firefox-package",
 		"build:firefox-source": "tsc -p tsconfig.build.json && node build/build.js --firefox-source-package",
 		"zip:chrome": "python tools/package_chrome.py",

@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.0.7] - 2026-04-08
+
+### Fixed
+- **Post-Ad Native 360p Lock** - Ad recovery no longer explicitly rewrites the native `PlaybackAccessToken` to `autoplay` during the recovery window, which previously locked the player's resolution menu down to 360p indefinitely after an ad block completed.
+- **Pre-roll Recovery Loops** - Implemented background simulated ad-impression tracking by headless fetching of blocked ad segments. This actively clears Twitch's backend pre-roll state, putting an end to infinite looping reload cycles caused by continuously receiving ad markers upon Native Player reload.
+
+## [6.0.6] - 2026-04-08
+
+### Fixed
+- **Broader Stitched Ad Variant Coverage** - Worker-side ad detection now matches broader stitched Twitch playlist markers again, reducing cases where recent stitched ad-break variants could slip through to native playback.
+- **Turbo Break Overlay Cleanup Loop** - Full-page Twitch Turbo / ad-break promo surfaces now route through stronger popup and promoted-page detection, and repeated cleanup of the same surface is signature-deduped so `DOM ad cleanup (overlay-ad)` no longer counts the same break screen indefinitely.
+
 ## [6.0.5] - 2026-04-08
 
 ### Fixed
