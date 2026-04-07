@@ -132,9 +132,8 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 	info.LastNativeRecoveryProbeAt = now;
 
 	const nativePlayerType =
-		__TTVAB_STATE__.ForceAccessTokenPlayerType ||
-		__TTVAB_STATE__.FallbackPlayerType ||
-		"popout";
+		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType ||
+		"site";
 
 	try {
 		const tokenRes = await _getToken(info, nativePlayerType, realFetch);
@@ -432,6 +431,28 @@ async function _processM3U8(url, text, realFetch) {
 		info.PendingAdEndAt = 0;
 		info.CleanPlaylistCount = 0;
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
+
+		if (!info.IsMidroll) {
+			const textStr = typeof text === "string" ? text : "";
+			const lines = textStr.replace(/\r/g, "").split("\n");
+			for (let j = 0; j < lines.length; j++) {
+				const line = lines[j];
+				if (line.startsWith("#EXTINF") && lines.length > j + 1) {
+					const tsUrl = lines[j + 1];
+					if (
+						!line.includes(",live") &&
+						tsUrl && !tsUrl.startsWith("#") &&
+						!info.RequestedAds.has(tsUrl)
+					) {
+						info.RequestedAds.add(tsUrl);
+						try {
+							realFetch(tsUrl).then((r) => r.blob()).catch(() => {});
+						} catch {}
+						break;
+					}
+				}
+			}
+		}
 
 		if (!info.IsShowingAd) {
 			info.IsShowingAd = true;

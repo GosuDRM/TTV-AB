@@ -354,6 +354,9 @@ function _hookWorkerFetch() {
 						NumStrippedAdSegments: 0,
 						PendingAdEndAt: 0,
 						CleanPlaylistCount: 0,
+						LastNativeRecoveryProbeAt: 0,
+						LastNativeRecoveryReadyPlayerType: null,
+						NativeRecoveryCleanCount: 0,
 						LastActivityAt: Date.now(),
 					};
 				} else {
@@ -1288,23 +1291,10 @@ function _hookMainFetch() {
 		}
 
 		try {
-			const now = Date.now();
-			const isRecoveryReload =
-				(__TTVAB_STATE__.LastAdRecoveryReloadAt &&
-					now - __TTVAB_STATE__.LastAdRecoveryReloadAt < 15000) ||
-				(__TTVAB_STATE__.PendingTriggeredPlayerReloadAt &&
-					now - __TTVAB_STATE__.PendingTriggeredPlayerReloadAt < 15000);
-
-			const forceType = isRecoveryReload
-				? __TTVAB_STATE__.ForceAccessTokenPlayerType ||
-					__TTVAB_STATE__.LastPinnedBackupPlayerType ||
-					"autoplay"
-				: __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
+			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
 
 			if (
-				!forceType ||
-				(__TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true &&
-					!isRecoveryReload)
+				!forceType || __TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true
 			) {
 				return { bodyText, changed: false };
 			}

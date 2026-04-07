@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.0.6-purple)
+![Version](https://img.shields.io/badge/version-6.0.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.0.7
+- **Post-Ad Native 360p Lock** - Ad recovery no longer explicitly rewrites the native `PlaybackAccessToken` to `autoplay` during the recovery window, fixing the bug where the player's resolution menu locked down to 360p indefinitely after an ad block.
+- **Pre-roll Recovery Loops** - Implemented background simulated ad-impression tracking by headless fetching of blocked ad segments. This actively clears Twitch's backend pre-roll state, putting an end to infinite looping reload cycles.
 
 ### v6.0.6
 - **Broader Stitched Ad Detection** - The worker now catches more Twitch stitched ad variants before they fall through to native playback, improving ad-break interception on recent stream-side changes.
