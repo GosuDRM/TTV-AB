@@ -374,6 +374,7 @@ function _declareState(scope) {
 		PageChannel: null,
 		PageVodID: null,
 		PageMediaKey: null,
+		PreferredQualityGroup: null,
 		HasResolvedAdsCountState: false,
 		HasResolvedToggleState: false,
 		HasResolvedDomAdsCountState: false,

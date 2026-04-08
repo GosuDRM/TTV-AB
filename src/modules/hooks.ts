@@ -27,6 +27,14 @@ const _POST_AD_REMOVABLE_SELECTOR_GROUP =
 const _POST_AD_RESET_SELECTOR_GROUP = _POST_AD_RESET_ONLY_SELECTORS.join(", ");
 let _pendingPostAdArtifactCleanup = null;
 
+function _hidePostAdArtifact(el) {
+	if (!(el instanceof Element)) return;
+	el.style.setProperty("display", "none", "important");
+	el.style.setProperty("visibility", "hidden", "important");
+	el.style.setProperty("pointer-events", "none", "important");
+	el.setAttribute("data-ttvab-post-ad-hidden", "true");
+}
+
 function _isPostAdPlayerLayoutWrapper(el) {
 	if (!(el instanceof Element)) return false;
 	return Boolean(
@@ -52,8 +60,10 @@ function _resetPostAdDisplayArtifact(el) {
 	}
 
 	if (_isPostAdPlayerLayoutWrapper(el)) {
+		el.removeAttribute("data-ttvab-post-ad-hidden");
 		el.style.removeProperty("display");
 		el.style.removeProperty("visibility");
+		el.style.removeProperty("pointer-events");
 		el.style.setProperty("padding", "0", "important");
 		el.style.setProperty("margin", "0", "important");
 		el.style.setProperty("background", "transparent", "important");
@@ -66,8 +76,7 @@ function _resetPostAdDisplayArtifact(el) {
 		return;
 	}
 
-	el.style.display = "none";
-	el.remove();
+	_hidePostAdArtifact(el);
 }
 
 function _runPostAdArtifactCleanup() {
@@ -75,8 +84,7 @@ function _runPostAdArtifactCleanup() {
 		for (const el of document.querySelectorAll(
 			_POST_AD_REMOVABLE_SELECTOR_GROUP,
 		)) {
-			el.style.display = "none";
-			el.remove();
+			_resetPostAdDisplayArtifact(el);
 		}
 
 		for (const el of document.querySelectorAll(_POST_AD_RESET_SELECTOR_GROUP)) {
@@ -243,9 +251,10 @@ function _hookWorkerFetch() {
 	}
 
 	globalThis.fetch = async function (...args) {
+		let requestUrl = null;
 		try {
 			const [resource, opts] = args;
-			const requestUrl =
+			requestUrl =
 				typeof resource === "string"
 					? resource
 					: resource instanceof URL
@@ -310,98 +319,130 @@ function _hookWorkerFetch() {
 
 				const encodings = await response.text();
 				const serverTime = _getServerTime(encodings);
-				let info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
+				try {
+					let info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
 
-				if (info?.EncodingsM3U8) {
-					const now = Date.now();
-					const lastStaleCheck = info._lastStaleCheckAt || 0;
-					if (now - lastStaleCheck > 10000) {
-						info._lastStaleCheckAt = now;
-						const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
-						if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
-							delete __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
-							info = null;
+					if (info?.EncodingsM3U8) {
+						const now = Date.now();
+						const lastStaleCheck = info._lastStaleCheckAt || 0;
+						if (now - lastStaleCheck > 10000) {
+							info._lastStaleCheckAt = now;
+							const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
+							if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
+								delete __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
+								info = null;
+							}
 						}
 					}
+
+					const isNewInfo = !info?.EncodingsM3U8;
+					if (isNewInfo) {
+						_pruneStreamInfos();
+						info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey] = {
+							MediaType: playbackContext.MediaType,
+							MediaKey: playbackContext.MediaKey,
+							ChannelName: playbackContext.ChannelName,
+							VodID: playbackContext.VodID,
+							IsShowingAd: false,
+							LastPlayerReload: 0,
+							EncodingsM3U8: encodings,
+							ModifiedM3U8: null,
+							IsUsingModifiedM3U8: false,
+							IsUsingFallbackStream: false,
+							IsUsingBackupStream: false,
+							UsherBaseUrl: url,
+							UsherParams: new URL(url).search,
+							RequestedAds: new Set(),
+							FailedBackupPlayerTypes: new Set(),
+							Urls: Object.create(null),
+							ResolutionList: [],
+							BackupEncodingsM3U8Cache: Object.create(null),
+							ActiveBackupPlayerType: null,
+							ActiveBackupResolution: null,
+							IsMidroll: false,
+							IsStrippingAdSegments: false,
+							NumStrippedAdSegments: 0,
+							PendingAdEndAt: 0,
+							CleanPlaylistCount: 0,
+							LastNativeRecoveryProbeAt: 0,
+							BackupVariantUrls: new Set(),
+							LastNativeRecoveryReadyPlayerType: null,
+							NativeRecoveryCleanCount: 0,
+							LastActivityAt: Date.now(),
+						};
+					} else {
+						info.MediaType = playbackContext.MediaType;
+						info.MediaKey = playbackContext.MediaKey;
+						info.ChannelName = playbackContext.ChannelName;
+						info.VodID = playbackContext.VodID;
+					}
+
+					_syncStreamInfo(info, encodings, url);
+					info.LastActivityAt = Date.now();
+
+					if (isNewInfo) {
+						_log(`Stream initialized: ${logTarget}`, "success");
+					}
+
+					const playlist = info.IsUsingModifiedM3U8
+						? info.ModifiedM3U8
+						: info.EncodingsM3U8;
+					return new Response(
+						_replaceServerTime(playlist, serverTime),
+						responseInit(response),
+					);
+				} catch (err) {
+					_log(
+						`Master playlist processing failed for ${logTarget}: ${
+							err?.message ?? String(err)
+						}`,
+						"error",
+					);
+					return new Response(encodings, responseInit(response));
 				}
-
-				const isNewInfo = !info?.EncodingsM3U8;
-				if (isNewInfo) {
-					_pruneStreamInfos();
-					info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey] = {
-						MediaType: playbackContext.MediaType,
-						MediaKey: playbackContext.MediaKey,
-						ChannelName: playbackContext.ChannelName,
-						VodID: playbackContext.VodID,
-						IsShowingAd: false,
-						LastPlayerReload: 0,
-						EncodingsM3U8: encodings,
-						ModifiedM3U8: null,
-						IsUsingModifiedM3U8: false,
-						IsUsingFallbackStream: false,
-						IsUsingBackupStream: false,
-						UsherBaseUrl: url,
-						UsherParams: new URL(url).search,
-						RequestedAds: new Set(),
-						FailedBackupPlayerTypes: new Set(),
-						Urls: Object.create(null),
-						ResolutionList: [],
-						BackupEncodingsM3U8Cache: Object.create(null),
-						ActiveBackupPlayerType: null,
-						ActiveBackupResolution: null,
-						IsMidroll: false,
-						IsStrippingAdSegments: false,
-						NumStrippedAdSegments: 0,
-						PendingAdEndAt: 0,
-						CleanPlaylistCount: 0,
-						LastNativeRecoveryProbeAt: 0,
-						LastNativeRecoveryReadyPlayerType: null,
-						NativeRecoveryCleanCount: 0,
-						LastActivityAt: Date.now(),
-					};
-				} else {
-					info.MediaType = playbackContext.MediaType;
-					info.MediaKey = playbackContext.MediaKey;
-					info.ChannelName = playbackContext.ChannelName;
-					info.VodID = playbackContext.VodID;
-				}
-
-				_syncStreamInfo(info, encodings, url);
-				info.LastActivityAt = Date.now();
-
-				if (isNewInfo) {
-					_log(`Stream initialized: ${logTarget}`, "success");
-				}
-
-				const playlist = info.IsUsingModifiedM3U8
-					? info.ModifiedM3U8
-					: info.EncodingsM3U8;
-				return new Response(
-					_replaceServerTime(playlist, serverTime),
-					responseInit(response),
-				);
 			}
 
 			if (/\.m3u8(?:$|\?)/.test(url)) {
 				const response = await realFetch.apply(this, getFetchArgs(url));
 				if (response.status === 200) {
 					const text = await response.text();
-					return new Response(
-						await _processM3U8(url, text, realFetch),
-						responseInit(response),
-					);
+					try {
+						return new Response(
+							await _processM3U8(url, text, realFetch),
+							responseInit(response),
+						);
+					} catch (err) {
+						if (err?.name !== "AbortError") {
+							_log(
+								`Media playlist processing failed for ${url}: ${
+									err?.message ?? String(err)
+								}`,
+								"error",
+							);
+						}
+						return new Response(text, responseInit(response));
+					}
 				}
 				return response;
 			}
 
 			return await realFetch.apply(this, args);
 		} catch (e) {
-			const errorMsg = e instanceof Error ? e.message : String(e);
-			_log(`Fetch intercepted exception: ${errorMsg}`, "debug");
-			return new Response("", {
-				status: 503,
-				statusText: "Service Unavailable",
-			});
+			const safeUrl =
+				typeof requestUrl === "string" ? requestUrl.trimEnd() : null;
+			const isPlaybackRequest = Boolean(
+				(safeUrl && _getPlaybackContextFromUsherUrl(safeUrl)?.MediaKey) ||
+					(safeUrl && /\.m3u8(?:$|\?)/.test(safeUrl)),
+			);
+			if (isPlaybackRequest && e?.name !== "AbortError") {
+				_log(
+					`Worker fetch wrapper failed for ${safeUrl}: ${
+						e?.message ?? String(e)
+					}`,
+					"error",
+				);
+			}
+			throw e;
 		}
 	};
 }
@@ -558,6 +599,8 @@ function _hookWorker() {
                 ${_createFetchRelayResponse.toString()}
                 ${_fetchViaWorkerBridge.toString()}
                 ${_getToken.toString()}
+                ${_resetNativeRecoveryReadyState.toString()}
+                ${_markNativeRecoveryReady.toString()}
                 ${_resetStreamAdState.toString()}
                 ${_shouldReloadNativePlayerAfterAdReset.toString()}
                 ${_getStreamInfoForPlaylist.toString()}
@@ -592,6 +635,7 @@ function _hookWorker() {
                 __TTVAB_STATE__.PageChannel = ${JSON.stringify(pagePlaybackContext.ChannelName)};
                 __TTVAB_STATE__.PageVodID = ${JSON.stringify(pagePlaybackContext.VodID)};
                 __TTVAB_STATE__.PageMediaKey = ${JSON.stringify(pagePlaybackContext.MediaKey)};
+                __TTVAB_STATE__.PreferredQualityGroup = ${JSON.stringify(__TTVAB_STATE__.PreferredQualityGroup)};
                 
                 self.addEventListener('message', function(e) {
                     const data = _getWorkerBridgeMessage(e.data);
@@ -633,6 +677,9 @@ function _hookWorker() {
                                     __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
                                 }
                             }
+                            break;
+                        case 'UpdatePreferredQualityGroup':
+                            __TTVAB_STATE__.PreferredQualityGroup = data.value || null;
                             break;
                         case 'UpdateCurrentAdContext':
                             {
@@ -872,50 +919,6 @@ function _hookWorker() {
 									}
 									__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 									__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
-									__TTVAB_STATE__.PinnedBackupPlayerType = null;
-									__TTVAB_STATE__.PinnedBackupPlayerChannel = channel;
-									__TTVAB_STATE__.PinnedBackupPlayerMediaKey = mediaKey;
-									if (typeof _suppressPauseIntent === "function") {
-										_suppressPauseIntent(channel, mediaKey, 4000);
-									}
-									if (typeof _suppressCompetingMediaDuringAd === "function") {
-										_suppressCompetingMediaDuringAd(channel, mediaKey);
-										_schedulePlaybackRecoveryTimeout(
-											() => _suppressCompetingMediaDuringAd(channel, mediaKey),
-											80,
-											channel,
-											mediaKey,
-										);
-										_schedulePlaybackRecoveryTimeout(
-											() => _suppressCompetingMediaDuringAd(channel, mediaKey),
-											350,
-											channel,
-											mediaKey,
-										);
-									}
-									if (typeof _rememberPlayerPlaybackForAd === "function") {
-										_rememberPlayerPlaybackForAd(channel, mediaKey);
-									}
-									if (typeof _resumeActivePlayerIfPaused === "function") {
-										_schedulePlaybackRecoveryTimeout(
-											() => _resumeActivePlayerIfPaused(channel, mediaKey),
-											180,
-											channel,
-											mediaKey,
-										);
-										_schedulePlaybackRecoveryTimeout(
-											() => _resumeActivePlayerIfPaused(channel, mediaKey),
-											650,
-											channel,
-											mediaKey,
-										);
-										_schedulePlaybackRecoveryTimeout(
-											() => _resumeActivePlayerIfPaused(channel, mediaKey),
-											1400,
-											channel,
-											mediaKey,
-										);
-									}
 								}
 								__TTVAB_STATE__.CurrentAdChannel = channel;
 								__TTVAB_STATE__.CurrentAdMediaKey = mediaKey;
@@ -1035,14 +1038,6 @@ function _hookWorker() {
 									data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
 								const mediaKey =
 									data.mediaKey || __TTVAB_STATE__.CurrentAdMediaKey || null;
-								const canAttemptPostAdResume =
-									typeof _canAttemptAdResume === "function"
-										? _canAttemptAdResume(channel, mediaKey)
-										: typeof _hasPendingAdResumeIntent === "function"
-											? _hasPendingAdResumeIntent(channel, mediaKey)
-											: false;
-								const shouldAttemptPostAdResume =
-									data.willReload === true ? false : canAttemptPostAdResume;
 								__TTVAB_STATE__.CurrentAdChannel = null;
 								__TTVAB_STATE__.CurrentAdMediaKey = null;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -1063,63 +1058,12 @@ function _hookWorker() {
 								if (typeof _resetPlayerBufferMonitorState === "function") {
 									_resetPlayerBufferMonitorState();
 								}
-								if (
-									!shouldAttemptPostAdResume &&
-									typeof _clearAdResumeIntent === "function"
-								) {
+								if (typeof _clearAdResumeIntent === "function") {
 									_clearAdResumeIntent();
-								}
-								if (typeof _suppressPauseIntent === "function") {
-									_suppressPauseIntent(channel, mediaKey, 3000);
 								}
 								_log("Ad ended", "success");
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
-								}
-								if (
-									shouldAttemptPostAdResume &&
-									typeof _resumePlayerAfterAdIfNeeded === "function"
-								) {
-									_schedulePlaybackRecoveryTimeout(
-										() => {
-											_resumePlayerAfterAdIfNeeded(channel, mediaKey);
-										},
-										150,
-										channel,
-										mediaKey,
-									);
-								}
-								if (
-									shouldAttemptPostAdResume &&
-									typeof _scheduleResumeRetries === "function"
-								) {
-									_scheduleResumeRetries(
-										channel,
-										mediaKey,
-										[250, 700, 1400, 2400],
-										{ requireAdResumeIntent: true },
-									);
-								}
-								if (
-									shouldAttemptPostAdResume &&
-									typeof _resumeActivePlayerAfterAd === "function"
-								) {
-									_schedulePlaybackRecoveryTimeout(
-										() => {
-											_resumeActivePlayerAfterAd(channel, mediaKey);
-										},
-										320,
-										channel,
-										mediaKey,
-									);
-									_schedulePlaybackRecoveryTimeout(
-										() => {
-											_resumeActivePlayerAfterAd(channel, mediaKey);
-										},
-										850,
-										channel,
-										mediaKey,
-									);
 								}
 								_schedulePostAdArtifactCleanup(channel, mediaKey);
 							}

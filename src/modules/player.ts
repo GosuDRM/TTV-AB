@@ -74,6 +74,41 @@ const _PLAYER_PREFERENCE_KEYS = [
 	"persistenceEnabled",
 ];
 
+function _readConfiguredQualityGroup() {
+	try {
+		const raw = localStorage.getItem("video-quality");
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (typeof parsed?.default === "string" && parsed.default.trim()) {
+			return parsed.default.trim();
+		}
+		if (typeof parsed === "string" && parsed.trim()) {
+			return parsed.trim();
+		}
+	} catch {}
+
+	return null;
+}
+
+function _syncPreferredQualityGroup(playerCore = null) {
+	const nextQualityGroup =
+		(typeof playerCore?.state?.quality?.group === "string" &&
+		playerCore.state.quality.group.trim()
+			? playerCore.state.quality.group.trim()
+			: null) || _readConfiguredQualityGroup();
+	if (!nextQualityGroup) return false;
+	if (__TTVAB_STATE__.PreferredQualityGroup === nextQualityGroup) {
+		return false;
+	}
+
+	__TTVAB_STATE__.PreferredQualityGroup = nextQualityGroup;
+	_broadcastWorkers({
+		key: "UpdatePreferredQualityGroup",
+		value: nextQualityGroup,
+	});
+	return true;
+}
+
 function _getPlayerCore(player) {
 	return player?.playerInstance?.core || player?.core || null;
 }
@@ -1492,25 +1527,8 @@ function _doPlayerTask(
 
 	if (isPausePlay) {
 		if (_isPlayerPaused(player, playerCore)) {
-			const didResume = _playPlaybackTarget(
-				player,
-				__TTVAB_STATE__.PageChannel,
-				__TTVAB_STATE__.PageMediaKey,
-			);
-			if (didResume) {
-				_scheduleResumeRetries(
-					__TTVAB_STATE__.PageChannel,
-					__TTVAB_STATE__.PageMediaKey,
-					[80, 220, 500],
-				);
-			}
-			return didResume;
+			return false;
 		}
-		_suppressPauseIntent(
-			__TTVAB_STATE__.PageChannel,
-			__TTVAB_STATE__.PageMediaKey,
-			3000,
-		);
 		_pausePlaybackTarget(player);
 		setTimeout(() => {
 			const { player: freshPlayer } = _getPlayerAndState();
@@ -1520,12 +1538,7 @@ function _doPlayerTask(
 				__TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.PageMediaKey,
 			);
-			_scheduleResumeRetries(
-				__TTVAB_STATE__.PageChannel,
-				__TTVAB_STATE__.PageMediaKey,
-				[150, 400, 800],
-			);
-		}, 60);
+		}, 50);
 		return true;
 	}
 
@@ -1658,23 +1671,8 @@ function _monitorPlayerBuffering() {
 		const hasActiveAdContext = Boolean(
 			__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel,
 		);
-		const hasPendingPostAdResume =
-			!hasActiveAdContext &&
-			(_hasPendingAdResumeIntent(
-				__TTVAB_STATE__.PageChannel,
-				currentMediaKey,
-			) ||
-				_hasPendingAdResumeIntent(
-					__TTVAB_STATE__.CurrentAdChannel,
-					__TTVAB_STATE__.CurrentAdMediaKey,
-				));
-		const hasAdRecoveryContext = Boolean(
-			hasActiveAdContext || hasPendingPostAdResume,
-		);
-		if (!hasPendingPostAdResume) {
-			_PlayerBufferState.postAdUnhealthyCount = 0;
-			_PlayerBufferState.postAdRecoveryStartedAt = 0;
-		}
+		_PlayerBufferState.postAdUnhealthyCount = 0;
+		_PlayerBufferState.postAdRecoveryStartedAt = 0;
 		const isHidden = _isNativeDocumentHidden();
 		const hiddenDelay = Math.max(
 			__TTVAB_STATE__.PlayerBufferingDelay * 8,
@@ -1686,7 +1684,7 @@ function _monitorPlayerBuffering() {
 		const idleDelay = isHidden
 			? hiddenDelay
 			: Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000);
-		if (!__TTVAB_STATE__.IsBufferFixEnabled && !hasAdRecoveryContext) {
+		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
 			setTimeout(check, idleDelay);
 			return;
 		}
@@ -1698,7 +1696,16 @@ function _monitorPlayerBuffering() {
 			return;
 		}
 
-		if (isHidden && !hasAdRecoveryContext) {
+		if (hasActiveAdContext) {
+			_PlayerBufferState.liveEdgeStarveCount = 0;
+			_PlayerBufferState.numSame = 0;
+			_PlayerBufferState.fixAttempts = 0;
+			_clearCachedPlayerRef();
+			setTimeout(check, nextDelay);
+			return;
+		}
+
+		if (isHidden) {
 			_clearCachedPlayerRef();
 			setTimeout(check, nextDelay);
 			return;
@@ -1713,6 +1720,7 @@ function _monitorPlayerBuffering() {
 				const player = _cachedPlayerRef.player;
 				const state = _cachedPlayerRef.state;
 				const playerCore = _getPlayerCore(player);
+				_syncPreferredQualityGroup(playerCore);
 				const playerContentType =
 					typeof state?.props?.content?.type === "string"
 						? state.props.content.type
@@ -1720,30 +1728,6 @@ function _monitorPlayerBuffering() {
 
 				if (!playerCore) {
 					_clearCachedPlayerRef();
-				} else if (hasPendingPostAdResume) {
-					const video = player.getHTMLVideoElement?.() || null;
-					_handlePendingPostAdRecovery(
-						player,
-						playerCore,
-						video,
-						__TTVAB_STATE__.PageChannel,
-						currentMediaKey,
-						playerContentType,
-					);
-					if (
-						playerContentType &&
-						playerContentType !== "live" &&
-						playerContentType !== "rerun"
-					) {
-						if (
-							!_hasPendingAdResumeIntent(
-								__TTVAB_STATE__.PageChannel,
-								currentMediaKey,
-							)
-						) {
-							_clearCachedPlayerRef(false);
-						}
-					}
 				} else if (
 					playerContentType &&
 					playerContentType !== "live" &&
@@ -1753,18 +1737,13 @@ function _monitorPlayerBuffering() {
 				} else if (
 					playerContentType === "live" &&
 					player.getHTMLVideoElement()?.ended &&
-					(__TTVAB_STATE__.IsBufferFixEnabled || hasAdRecoveryContext)
+					__TTVAB_STATE__.IsBufferFixEnabled
 				) {
-					const recoveryReason =
-						__TTVAB_STATE__.CurrentAdMediaKey ||
-						__TTVAB_STATE__.CurrentAdChannel
-							? "ad-recovery"
-							: "buffer-recovery";
 					_log(
 						"Player hit end of stream during live playback. Recovering...",
 						"warning",
 					);
-					_doPlayerTask(false, true, { reason: recoveryReason });
+					_doPlayerTask(false, true, { reason: "buffer-recovery" });
 					_PlayerBufferState.lastFixTime = Date.now();
 				} else if (
 					__TTVAB_STATE__.IsBufferFixEnabled &&
@@ -1774,11 +1753,6 @@ function _monitorPlayerBuffering() {
 					_PlayerBufferState.lastFixTime <=
 						Date.now() - __TTVAB_STATE__.PlayerBufferingMinRepeatDelay
 				) {
-					const recoveryReason =
-						__TTVAB_STATE__.CurrentAdMediaKey ||
-						__TTVAB_STATE__.CurrentAdChannel
-							? "ad-recovery"
-							: "buffer-recovery";
 					const {
 						video,
 						position,
@@ -1832,7 +1806,7 @@ function _monitorPlayerBuffering() {
 								"warning",
 							);
 							_doPlayerTask(false, true, {
-								reason: recoveryReason,
+								reason: "buffer-recovery",
 							});
 							_PlayerBufferState.lastFixTime = Date.now();
 							_PlayerBufferState.liveEdgeStarveCount = 0;
@@ -1862,7 +1836,7 @@ function _monitorPlayerBuffering() {
 								_PlayerBufferState.fixAttempts >= 3
 							) {
 								_doPlayerTask(false, true, {
-									reason: recoveryReason,
+									reason: "buffer-recovery",
 								});
 							} else {
 								_doPlayerTask(true, false);
@@ -1914,6 +1888,7 @@ function _monitorPlayerBuffering() {
 		if (!_cachedPlayerRef) {
 			const playerAndState = _getPlayerAndState();
 			if (playerAndState.player && playerAndState.state) {
+				_syncPreferredQualityGroup(_getPlayerCore(playerAndState.player));
 				_cachedPlayerRef = playerAndState;
 				_cachedPlayerRefMediaKey = currentMediaKey;
 			}

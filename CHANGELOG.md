@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.0] - 2026-04-08
+
+### Fixed
+- **React-Safe Display-Ad Cleanup** - Post-ad cleanup now hides and resets Twitch-managed display-ad nodes instead of removing them from the DOM, preventing Twitch's React teardown from collapsing the player into the big `?` placeholder during live and VOD navigation.
+- **SDA Teardown Compatibility** - Stale display-ad shell cleanup now keeps Twitch-owned nodes attached under `#root` until Twitch unmounts them itself, avoiding `SDAContextManager` `Node.removeChild` exceptions after ad recovery.
+
+## [6.0.9] - 2026-04-08
+
+### Fixed
+- **Console Log Noise** - Silenced the repetitive `Fetch intercepted exception: NetworkError` logs that could flood the browser console during certain network conditions.
+- **Debug Logging** - Updated the global logger to suppress all `debug` level messages by default, ensuring a cleaner development console.
+
 ## [6.0.7] - 2026-04-08
 
 ### Fixed

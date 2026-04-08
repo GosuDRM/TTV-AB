@@ -491,6 +491,10 @@ function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
 function _getStreamUrl(m3u8, res, baseUrl = null) {
 	const lines = m3u8.split("\n");
 	const len = lines.length;
+	const targetName =
+		typeof res?.Name === "string" && res.Name.trim()
+			? res.Name.trim().toLowerCase()
+			: null;
 	const [tw, th] = String(res?.Resolution || "0x0")
 		.split("x")
 		.map(Number);
@@ -501,6 +505,7 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 	let matchFps = false;
 	let closeUrl = null;
 	let closeDiff = Infinity;
+	let firstUrl = null;
 	const resolveUrl = (candidate) => {
 		if (!baseUrl) return candidate;
 		try {
@@ -519,14 +524,23 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 		)
 			continue;
 
+		if (!firstUrl) {
+			firstUrl = resolveUrl(lines[i + 1]);
+		}
+
 		const attrs = _parseAttrs(line);
 		const resolution = attrs.RESOLUTION;
 		const frameRate = attrs["FRAME-RATE"];
+		const variantName = String(attrs.VIDEO || "").trim().toLowerCase();
 		const parsedFrameRate = Number.parseFloat(String(frameRate ?? ""));
 		const matchesFrameRate =
 			Number.isFinite(targetFrameRate) && Number.isFinite(parsedFrameRate)
 				? Math.abs(parsedFrameRate - targetFrameRate) < 0.01
 				: String(frameRate || "") === String(res?.FrameRate || "");
+
+		if (targetName && variantName === targetName) {
+			return resolveUrl(lines[i + 1]);
+		}
 
 		if (!resolution) continue;
 
@@ -550,7 +564,76 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 		}
 	}
 
-	return matchUrl || closeUrl;
+	return matchUrl || closeUrl || firstUrl;
+}
+
+function _getSortedResolutionList(resolutionList) {
+	return [...resolutionList].sort((a, b) => {
+		const [aw, ah] = String(a?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		const [bw, bh] = String(b?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		const aArea =
+			(Number.isFinite(aw) ? aw : 0) * (Number.isFinite(ah) ? ah : 0);
+		const bArea =
+			(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
+		const aFps = Number.parseFloat(String(a?.FrameRate ?? "")) || 0;
+		const bFps = Number.parseFloat(String(b?.FrameRate ?? "")) || 0;
+		const aBandwidth = Number.parseInt(String(a?.Bandwidth ?? ""), 10) || 0;
+		const bBandwidth = Number.parseInt(String(b?.Bandwidth ?? ""), 10) || 0;
+		return bArea - aArea || bFps - aFps || bBandwidth - aBandwidth;
+	});
+}
+
+function _getResolutionByQualityGroup(resolutionList, qualityGroup) {
+	const normalizedQualityGroup =
+		typeof qualityGroup === "string" ? qualityGroup.trim().toLowerCase() : "";
+	if (!normalizedQualityGroup || normalizedQualityGroup === "auto") {
+		return null;
+	}
+
+	const exactName = resolutionList.find(
+		(entry) =>
+			typeof entry?.Name === "string" &&
+			entry.Name.trim().toLowerCase() === normalizedQualityGroup,
+	);
+	if (exactName) return exactName;
+
+	const sorted = _getSortedResolutionList(resolutionList);
+	if (normalizedQualityGroup === "chunked") {
+		return sorted[0] || null;
+	}
+	if (normalizedQualityGroup === "audio_only") {
+		return sorted[sorted.length - 1] || null;
+	}
+
+	const match = normalizedQualityGroup.match(/(\d{3,4})p(?:(\d{2,3}))?/);
+	if (!match) return null;
+
+	const targetHeight = Number.parseInt(match[1], 10);
+	const targetFps = match[2] ? Number.parseInt(match[2], 10) : null;
+
+	return [...resolutionList].sort((a, b) => {
+		const [, ahRaw] = String(a?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		const [, bhRaw] = String(b?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		const aHeight = Number.isFinite(ahRaw) ? ahRaw : 0;
+		const bHeight = Number.isFinite(bhRaw) ? bhRaw : 0;
+		const aFps = Number.parseFloat(String(a?.FrameRate ?? "")) || 0;
+		const bFps = Number.parseFloat(String(b?.FrameRate ?? "")) || 0;
+		const aScore =
+			Math.abs(aHeight - targetHeight) * 1000 +
+			(targetFps !== null ? Math.abs(aFps - targetFps) * 10 : 0);
+		const bScore =
+			Math.abs(bHeight - targetHeight) * 1000 +
+			(targetFps !== null ? Math.abs(bFps - targetFps) * 10 : 0);
+		return aScore - bScore;
+	})[0] || null;
 }
 
 function _getFallbackResolution(info, url) {
@@ -576,17 +659,15 @@ function _getFallbackResolution(info, url) {
 		if (active) return active;
 	}
 
-	return [...resolutionList].sort((a, b) => {
-		const [aw, ah] = String(a?.Resolution || "0x0")
-			.split("x")
-			.map(Number);
-		const [bw, bh] = String(b?.Resolution || "0x0")
-			.split("x")
-			.map(Number);
-		const aArea =
-			(Number.isFinite(aw) ? aw : 0) * (Number.isFinite(ah) ? ah : 0);
-		const bArea =
-			(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
-		return bArea - aArea;
-	})[0];
+	const preferredQualityGroup =
+		typeof __TTVAB_STATE__ !== "undefined"
+			? __TTVAB_STATE__?.PreferredQualityGroup
+			: null;
+	const preferredResolution = _getResolutionByQualityGroup(
+		resolutionList,
+		preferredQualityGroup,
+	);
+	if (preferredResolution) return preferredResolution;
+
+	return _getSortedResolutionList(resolutionList)[0];
 }
