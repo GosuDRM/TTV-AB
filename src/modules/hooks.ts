@@ -554,11 +554,6 @@ function _hookWorker() {
 					broadcast: false,
 				});
 
-				const originalWorkerLoadCode =
-					opts?.type === "module"
-						? `await import(${JSON.stringify(workerSourceUrl)});`
-						: `importScripts(${JSON.stringify(workerSourceUrl)});`;
-
 				const injectedCode = `
             (function() {
                 const _C = ${JSON.stringify(_C)};
@@ -596,6 +591,7 @@ function _hookWorker() {
                 ${_getPlaybackAccessTokenErrors.toString()}
                 ${_extractPlaybackAccessToken.toString()}
                 ${_isWorkerContext.toString()}
+                ${_isFirefoxBrowser.toString()}
                 ${_createFetchRelayResponse.toString()}
                 ${_fetchViaWorkerBridge.toString()}
                 ${_getToken.toString()}
@@ -613,9 +609,11 @@ function _hookWorker() {
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}
+                ${_getWasmJs.toString()}
                 ${_hookWorkerFetch.toString()}
                 
                 const _GQL_URL = '${_GQL_URL}';
+                const wasmSource = _getWasmJs('${workerSourceUrl.replaceAll("'", "%27")}');
                 _declareState(self);
                 __TTVAB_STATE__.GQLDeviceID = ${JSON.stringify(__TTVAB_STATE__.GQLDeviceID)};
                 __TTVAB_STATE__.AuthorizationHeader = ${JSON.stringify(__TTVAB_STATE__.AuthorizationHeader)};
@@ -765,9 +763,8 @@ function _hookWorker() {
                 });
                 
                 _hookWorkerFetch();
+                eval(wasmSource);
             })();
-
-            ${originalWorkerLoadCode}
             `;
 
 				const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
@@ -1080,6 +1077,13 @@ function _hookWorker() {
 									`Ignoring stale ReloadPlayer event for ${data.mediaKey || data.channel}`,
 									"info",
 								);
+								break;
+							}
+							if (_isFirefoxBrowser()) {
+								_log("Resuming player", "info");
+								if (typeof _doPlayerTask === "function") {
+									_doPlayerTask(true, false);
+								}
 								break;
 							}
 							_log("Reloading player", "info");

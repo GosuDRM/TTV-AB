@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.1.0-purple)
+![Version](https://img.shields.io/badge/version-6.1.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.1.1
+- **Firefox Runtime Parity** - Firefox now uses the current main-branch ad-blocking runtime instead of the stale forked Firefox logic, keeping only the browser-specific packaging and worker bootstrap differences.
+- **Picture-in-Picture Recovery** - Included the merged PR `#4` (`Support PiP mode`) fix so reload recovery downgrades to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks @ryanbr.
 
 ### v6.1.0
 - **React-Safe Display-Ad Cleanup** - Post-ad cleanup now hides and resets Twitch-managed display-ad nodes instead of removing them from the DOM, preventing Twitch's React teardown from crashing the player into the big `?` placeholder during live and VOD navigation.

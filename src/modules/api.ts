@@ -113,6 +113,13 @@ function _isWorkerContext() {
 	);
 }
 
+function _isFirefoxBrowser() {
+	return (
+		typeof navigator?.userAgent === "string" &&
+		/Firefox\//i.test(navigator.userAgent)
+	);
+}
+
 function _createFetchRelayResponse(payload) {
 	if (!payload || typeof payload !== "object") {
 		throw new Error("invalid fetch relay response");
@@ -222,6 +229,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		_log(`[Trace] Requesting token for ${playerType} (${logTarget})`, "info");
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
+		const bridgeTimeoutMs = _isFirefoxBrowser() ? 1200 : 5000;
 
 		const headers: Record<string, string> = {
 			"Client-ID": _C.CLIENT_ID,
@@ -248,7 +256,11 @@ async function _getToken(playbackContext, playerType, realFetch) {
 
 		if (typeof _fetchViaWorkerBridge === "function") {
 			try {
-				res = await _fetchViaWorkerBridge(_GQL_URL, requestOptions, 5000);
+				res = await _fetchViaWorkerBridge(
+					_GQL_URL,
+					requestOptions,
+					bridgeTimeoutMs,
+				);
 			} catch (bridgeError) {
 				_log(`Token relay error: ${bridgeError.message}`, "warning");
 			}

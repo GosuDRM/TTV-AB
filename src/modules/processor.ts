@@ -69,6 +69,14 @@ function _shouldReloadNativePlayerAfterAdReset(
 		wasUsingBackupStream?: boolean;
 	} = {},
 ) {
+	if (
+		(wasUsingModifiedM3U8 || wasUsingFallbackStream || wasUsingBackupStream) &&
+		typeof navigator?.userAgent === "string" &&
+		/Firefox\//i.test(navigator.userAgent)
+	) {
+		return false;
+	}
+
 	return true;
 }
 
