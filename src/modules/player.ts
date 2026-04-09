@@ -1543,6 +1543,20 @@ function _doPlayerTask(
 	}
 
 	if (isReload) {
+		// Downgrade to pause/play to preserve Picture-in-Picture
+		if (document.pictureInPictureElement) {
+			_pausePlaybackTarget(player);
+			setTimeout(() => {
+				const { player: freshPlayer } = _getPlayerAndState();
+				_playPlaybackTarget(
+					freshPlayer || player,
+					__TTVAB_STATE__.PageChannel,
+					__TTVAB_STATE__.PageMediaKey,
+				);
+			}, 50);
+			_log("Downgraded reload to pause/play to preserve PiP", "info");
+			return true;
+		}
 		const reason = options.reason || "manual";
 		const isAdRecoveryReload = reason === "ad-recovery";
 		const isPlaybackRecoveryReload =
