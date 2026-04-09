@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.1.1-purple)
+![Version](https://img.shields.io/badge/version-6.1.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -50,12 +50,15 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 - Strips ad-marked segments from M3U8 playlists when Twitch injects them
 - Fetches backup ad-free streams when Twitch forces playback onto an ad path
 - Collapses player-side display-ad shells and overlay banners
-- Suppresses injected direct video ads on VOD pages and returns playback to the real archive stream
+- Suppresses injected direct video ads on live and VOD pages and returns playback to the real stream
 - Caches known ad segments to reduce repeated playback disruption
 
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.1.2
+- **Live Direct Player Ad Cleanup** - Direct injected player video ads are now collapsed on live streams too, instead of only running the cleanup path on VOD pages.
 
 ### v6.1.1
 - **Firefox Runtime Parity** - Firefox now uses the current main-branch ad-blocking runtime instead of the stale forked Firefox logic, keeping only the browser-specific packaging and worker bootstrap differences.

@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.2] - 2026-04-10
+
+### Fixed
+- **Live Direct Player Ad Cleanup** - Direct injected player video ads are now collapsed on live streams too, instead of only running the cleanup path on VOD pages.
+
 ## [6.1.1] - 2026-04-09
 
 ### Fixed
