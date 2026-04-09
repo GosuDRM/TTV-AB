@@ -60,6 +60,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ### v6.1.4
 - **Midroll Empty-Playlist Leak Fix** - When every backup route is ad-marked, the worker no longer restores stripped ad segments back into an empty playlist, preventing ad-only midroll playlists from leaking back into playback.
 - **Clean Playlist Recovery Cache** - The runtime now remembers recent clean native and backup playlists and reuses those during empty-playlist recovery, keeping playback alive without replaying stripped ad segments.
+- **Native Token Rewrite Hardening** - Firefox now keeps native `PlaybackAccessToken` requests pinned to the forced recovery player type so later midroll cycles are less likely to drift back onto Twitch's ad-marked site path after a clean ad-end reload.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
