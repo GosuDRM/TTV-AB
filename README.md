@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.1.0-purple)
+![Version](https://img.shields.io/badge/version-6.1.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -50,12 +50,23 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 - Strips ad-marked segments from M3U8 playlists when Twitch injects them
 - Fetches backup ad-free streams when Twitch forces playback onto an ad path
 - Collapses player-side display-ad shells and overlay banners
-- Suppresses injected direct video ads on VOD pages and returns playback to the real archive stream
+- Suppresses injected direct video ads on live and VOD pages and returns playback to the real stream
 - Caches known ad segments to reduce repeated playback disruption
 
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.1.2
+- **Live Direct-Ad Video Cleanup** - Direct player ad videos served from Twitch's Amazon media path are now suppressed on live streams too instead of only VOD pages.
+- **Picture-in-Picture Token Isolation** - Picture-in-Picture and mini-player playback token requests no longer overwrite the stored native recovery player type used by normal stream recovery.
+- **Background Playback Hardening** - Visibility state is now hardened so ad recovery is less likely to pause or stall when Twitch is running in a background tab.
+- **Stable Ad-End Detection** - Ad recovery now waits for a stable clean native stream window before ending the block cycle, which prevents the blocker from immediately re-arming during shaky post-ad transitions.
+- **Pinned Backup Cooldown** - The worker now reuses the last good backup path first and cools down recently rejected backup player types, which cuts down repeated embed/popout/autoplay churn during long ad pods.
+- **Post-Ad Resume Intent Tracking** - The page now records whether the stream was actively playing when the ad cycle started, so ad-end recovery can correctly resume playback instead of dropping into a stalled paused state.
+- **Post-Ad Stall Watchdog** - The post-ad recovery watchdog is now fully wired into the live buffer monitor, allowing Twitch's native return path to escalate through pause/play and guarded reload recovery instead of hanging after `AdEnded`.
+- **Softer Native Return Reload** - The first native player return after an ad now reuses the existing player instance instead of forcing a brand-new one immediately, reducing black-screen and post-ad stall cases during the backup-to-native handoff.
+- **Picture-in-Picture Recovery** - Included the merged [PR #4](https://github.com/GosuDRM/TTV-AB/pull/4) (`Support PiP mode`) change so player recovery downgrades reloads to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks [@ryanbr](https://github.com/ryanbr).
 
 ### v6.1.0
 - **React-Safe Display-Ad Cleanup** - Post-ad cleanup now hides and resets Twitch-managed display-ad nodes instead of removing them from the DOM, preventing Twitch's React teardown from crashing the player into the big `?` placeholder during live and VOD navigation.

@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.2] - 2026-04-10
+
+### Fixed
+- **Live Direct-Ad Video Cleanup** - Direct player ad videos served from Twitch's Amazon media path are now suppressed on live streams too instead of only VOD pages.
+- **Picture-in-Picture Token Isolation** - Picture-in-Picture and mini-player playback token requests no longer overwrite the stored native recovery player type used by normal stream recovery.
+- **Background Playback Hardening** - Visibility state is now hardened so ad recovery is less likely to pause or stall when Twitch is running in a background tab.
+- **Stable Ad-End Detection** - Ad recovery now waits for a stable clean native stream window before ending the block cycle, preventing immediate re-entry during shaky post-ad handoff.
+- **Pinned Backup Cooldown** - The worker now retries the last good backup path first and temporarily cools down rejected backup player types, reducing repeated backup-path thrash during the same ad break.
+- **Post-Ad Resume Intent Tracking** - The page now snapshots whether playback should resume when the ad cycle starts, preventing post-ad native recovery from losing the stream's pre-ad play state.
+- **Post-Ad Recovery Watchdog Wiring** - The existing post-ad recovery handler is now actually driven by the live buffer monitor instead of having its counters reset every tick, allowing stalled native returns to recover through pause/play and guarded reload escalation.
+- **Less Disruptive Native Recovery Reload** - The first ad-end native return now reuses the existing player instance before escalating to heavier recovery, reducing black-screen and immediate post-ad stall cases during the backup-to-native transition.
+- **Picture-in-Picture Recovery** - Included the merged [PR #4](https://github.com/GosuDRM/TTV-AB/pull/4) (`Support PiP mode`) change so player recovery downgrades reloads to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks [@ryanbr](https://github.com/ryanbr).
+
 ## [6.1.0] - 2026-04-08
 
 ### Fixed

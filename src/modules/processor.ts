@@ -29,6 +29,169 @@ function _resetStreamAdState(info) {
 	};
 }
 
+function _getResolvedAdEndMinCleanPlaylists() {
+	return Math.max(1, Number(__TTVAB_STATE__?.AdEndMinCleanPlaylists) || 1);
+}
+
+function _getResolvedAdEndGraceMs() {
+	return Math.max(0, Number(__TTVAB_STATE__?.AdEndGraceMs) || 0);
+}
+
+function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
+	switch (reason) {
+		case "error":
+		case "stream-error":
+		case "token-error":
+			return 1500;
+		case "not-playable":
+		case "no-stream-url":
+			return 2000;
+		case "ad-marked":
+		default:
+			return 3000;
+	}
+}
+
+function _markBackupPlayerRetryCooldown(info, playerType, reason = "ad-marked") {
+	if (!info?.FailedBackupPlayerTypes?.set || typeof playerType !== "string") {
+		return 0;
+	}
+
+	const retryAt = Date.now() + _getBackupPlayerRetryCooldownMs(reason);
+	info.FailedBackupPlayerTypes.set(playerType, retryAt);
+	return retryAt;
+}
+
+function _clearBackupPlayerRetryCooldown(info, playerType) {
+	info?.FailedBackupPlayerTypes?.delete?.(playerType);
+}
+
+function _isBackupPlayerRetryCoolingDown(info, playerType) {
+	if (!info?.FailedBackupPlayerTypes?.get || typeof playerType !== "string") {
+		return false;
+	}
+
+	const retryAt = Number(info.FailedBackupPlayerTypes.get(playerType)) || 0;
+	if (retryAt <= 0) {
+		info.FailedBackupPlayerTypes.delete?.(playerType);
+		return false;
+	}
+	if (retryAt <= Date.now()) {
+		info.FailedBackupPlayerTypes.delete?.(playerType);
+		return false;
+	}
+	return true;
+}
+
+function _getPinnedBackupPlayerTypeForInfo(info) {
+	const pinnedType =
+		typeof __TTVAB_STATE__?.PinnedBackupPlayerType === "string" &&
+			__TTVAB_STATE__.PinnedBackupPlayerType
+			? __TTVAB_STATE__.PinnedBackupPlayerType
+			: null;
+	if (!pinnedType) return null;
+
+	const pinnedContext = _normalizePlaybackContext({
+		MediaType: __TTVAB_STATE__?.PageMediaType || info?.MediaType || null,
+		ChannelName:
+			__TTVAB_STATE__?.PinnedBackupPlayerChannel ||
+			__TTVAB_STATE__?.CurrentAdChannel ||
+			info?.ChannelName ||
+			null,
+		VodID: __TTVAB_STATE__?.PageVodID || info?.VodID || null,
+		MediaKey:
+			__TTVAB_STATE__?.PinnedBackupPlayerMediaKey ||
+			__TTVAB_STATE__?.CurrentAdMediaKey ||
+			info?.MediaKey ||
+			null,
+	});
+	const infoContext = _normalizePlaybackContext({
+		MediaType: info?.MediaType || null,
+		ChannelName: info?.ChannelName || null,
+		VodID: info?.VodID || null,
+		MediaKey: info?.MediaKey || null,
+	});
+
+	if (pinnedContext.MediaKey && infoContext.MediaKey) {
+		return pinnedContext.MediaKey === infoContext.MediaKey ? pinnedType : null;
+	}
+	if (pinnedContext.ChannelName && infoContext.ChannelName) {
+		return pinnedContext.ChannelName === infoContext.ChannelName
+			? pinnedType
+			: null;
+	}
+	return null;
+}
+
+function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
+	const configuredPlayerTypes = [...(__TTVAB_STATE__?.BackupPlayerTypes || [])];
+	const orderedPlayerTypes = [];
+	const pushUnique = (playerType) => {
+		if (
+			typeof playerType !== "string" ||
+			!playerType ||
+			orderedPlayerTypes.includes(playerType) ||
+			!configuredPlayerTypes.includes(playerType)
+		) {
+			return;
+		}
+		orderedPlayerTypes.push(playerType);
+	};
+	const preferredPlayerType = _getPinnedBackupPlayerTypeForInfo(info);
+	const activePlayerType =
+		typeof info?.ActiveBackupPlayerType === "string" &&
+			info.ActiveBackupPlayerType
+			? info.ActiveBackupPlayerType
+			: null;
+	const safeStartIdx = Math.max(
+		0,
+		Math.min(configuredPlayerTypes.length, Number(startIdx) || 0),
+	);
+
+	pushUnique(preferredPlayerType);
+	pushUnique(activePlayerType);
+	for (const playerType of configuredPlayerTypes.slice(safeStartIdx)) {
+		pushUnique(playerType);
+	}
+
+	return orderedPlayerTypes;
+}
+
+function _resolvePlaybackResolutionForUrl(info, url = "") {
+	let resolution = null;
+	for (const alias of _getPlaylistUrlAliases(url)) {
+		resolution = info?.Urls?.[alias] || null;
+		if (resolution) break;
+	}
+	if (!resolution) {
+		resolution = _getFallbackResolution(info, url);
+	}
+	return resolution;
+}
+
+async function _isAdEndStable(info, realFetch, resolution = null) {
+	if (!info?.IsShowingAd) return true;
+
+	const now = Date.now();
+	if (!info.PendingAdEndAt) {
+		info.PendingAdEndAt = now;
+		info.CleanPlaylistCount = 0;
+		_log("[Trace] Candidate ad end detected", "info");
+	}
+
+	info.CleanPlaylistCount =
+		Math.max(0, Math.trunc(Number(info.CleanPlaylistCount) || 0)) + 1;
+	if (info.CleanPlaylistCount < _getResolvedAdEndMinCleanPlaylists()) {
+		return false;
+	}
+
+	if (now - info.PendingAdEndAt < _getResolvedAdEndGraceMs()) {
+		return false;
+	}
+
+	return _canReloadNativePlayerAfterAd(info, realFetch, resolution);
+}
+
 function _resetNativeRecoveryReadyState(info, preserveProbeAt = false) {
 	if (!info) return;
 	if (!preserveProbeAt) {
@@ -69,7 +232,11 @@ function _shouldReloadNativePlayerAfterAdReset(
 		wasUsingBackupStream?: boolean;
 	} = {},
 ) {
-	return true;
+	return Boolean(
+		wasUsingModifiedM3U8 ||
+			wasUsingFallbackStream ||
+			wasUsingBackupStream,
+	);
 }
 
 function _getPlaylistUrlAliases(url, baseUrl = null) {
@@ -150,7 +317,10 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 		return true;
 	}
 
-	const requiredCleanProbes = 1;
+	const requiredCleanProbes = Math.max(
+		1,
+		Number(__TTVAB_STATE__?.AdEndMinNativeRecoveryProbes) || 1,
+	);
 	const now = Date.now();
 	if (
 		info.LastNativeRecoveryProbeAt &&
@@ -280,7 +450,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		UsherBaseUrl: "",
 		UsherParams: "",
 		RequestedAds: new Set(),
-		FailedBackupPlayerTypes: new Set(),
+		FailedBackupPlayerTypes: new Map(),
 		Urls: Object.create(null),
 		ResolutionList: [],
 		BackupEncodingsM3U8Cache: Object.create(null),
@@ -420,6 +590,7 @@ async function _processM3U8(url, text, realFetch) {
 							channel: info.ChannelName,
 							mediaKey: info.MediaKey,
 							refreshAccessToken: shouldRefreshAccessToken,
+							newMediaPlayerInstance: false,
 						}),
 					);
 				} else {
@@ -507,14 +678,7 @@ async function _processM3U8(url, text, realFetch) {
 			return text;
 		}
 
-		let res = null;
-		for (const alias of _getPlaylistUrlAliases(url)) {
-			res = info.Urls?.[alias] || null;
-			if (res) break;
-		}
-		if (!res) {
-			res = _getFallbackResolution(info, url);
-		}
+		const res = _resolvePlaybackResolutionForUrl(info, url);
 		if (!res) {
 			_log(
 				`Missing resolution info for ${url}; using generic fallback`,
@@ -573,9 +737,25 @@ async function _processM3U8(url, text, realFetch) {
 		}
 
 		info.ActiveBackupResolution = res?.Resolution || null;
+		if (backupType) {
+			__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
+		}
 		if (info.ActiveBackupPlayerType !== backupType) {
 			info.ActiveBackupPlayerType = backupType;
 			_log(`Using backup: ${backupType}`, "info");
+			if (backupType && typeof self !== "undefined" && self.postMessage) {
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "BackupPlayerTypeSelected",
+						value: backupType,
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+					}),
+				);
+			}
 		}
 
 		const stripHevc = isHevc && info.ModifiedM3U8;
@@ -584,6 +764,11 @@ async function _processM3U8(url, text, realFetch) {
 		}
 	} else {
 		if (info.IsShowingAd) {
+			const resolution = _resolvePlaybackResolutionForUrl(info, url);
+			const hasStableAdEnd = await _isAdEndStable(info, realFetch, resolution);
+			if (!hasStableAdEnd) {
+				return text;
+			}
 			const {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
@@ -595,7 +780,6 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			if (typeof self !== "undefined" && self.postMessage) {
 				const shouldReloadPlayer = _shouldReloadNativePlayerAfterAdReset({
 					wasUsingModifiedM3U8,
@@ -679,9 +863,13 @@ async function _findBackupStream(
 	let fallbackM3u8 = null;
 	let fallbackType = null;
 
-	const playerTypes = [...__TTVAB_STATE__.BackupPlayerTypes];
+	const playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
 	const playerTypesLen = playerTypes.length;
-	const isDoingMinimalRequests = startIdx > 0;
+	const isDoingMinimalRequests =
+		startIdx > 0 &&
+		playerTypes.every((playerType) =>
+			(__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(playerType) >= startIdx,
+		);
 	const targetRes =
 		currentResolution ||
 		_getFallbackResolution(info, "") ||
@@ -691,10 +879,18 @@ async function _findBackupStream(
 			? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
 			: null);
 
-	for (let pi = startIdx; !backupM3u8 && pi < playerTypesLen; pi++) {
+	for (let pi = 0; !backupM3u8 && pi < playerTypesLen; pi++) {
 		const pt = playerTypes[pi];
 		const realPt = pt.replace("-CACHED", "");
 		const isFullyCachedPlayerType = pt !== realPt;
+		const configuredPlayerTypeIndex = Math.max(
+			0,
+			(__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(realPt),
+		);
+		if (_isBackupPlayerRetryCoolingDown(info, pt)) {
+			_log(`[Trace] Cooling down: ${pt}`, "info");
+			continue;
+		}
 		_log(`[Trace] Checking: ${pt}`, "info");
 
 		for (let j = 0; j < 2; j++) {
@@ -722,6 +918,7 @@ async function _findBackupStream(
 							const usherUrl = _buildUsherPlaybackUrl(info, sig, tokenValue);
 							if (!usherUrl) {
 								_log(`Missing usher context for ${pt}`, "warning");
+								_markBackupPlayerRetryCooldown(info, pt, "token-error");
 								invalidateCache = true;
 								continue;
 							}
@@ -753,6 +950,7 @@ async function _findBackupStream(
 								);
 							} else {
 								_log(`Usher failed for ${pt}: ${encRes.status}`, "warning");
+								_markBackupPlayerRetryCooldown(info, pt, "token-error");
 							}
 						} else {
 							const missingParts = [
@@ -773,12 +971,15 @@ async function _findBackupStream(
 								`[Trace] Missing token ${missingParts || "parts"} for ${pt}${tokenContext}`,
 								"warning",
 							);
+							_markBackupPlayerRetryCooldown(info, pt, "token-error");
 						}
 					} else {
 						_log(`Token failed for ${pt}: ${tokenRes.status}`, "warning");
+						_markBackupPlayerRetryCooldown(info, pt, "token-error");
 					}
 				} catch (e) {
 					_log(`Backup error: ${e.message}`, "error");
+					_markBackupPlayerRetryCooldown(info, pt, "error");
 				}
 			}
 
@@ -799,7 +1000,8 @@ async function _findBackupStream(
 									});
 								const simulatedAdsDepthSatisfied =
 									__TTVAB_STATE__.SimulatedAdsDepth === 0 ||
-									pi >= __TTVAB_STATE__.SimulatedAdsDepth - 1;
+									configuredPlayerTypeIndex >=
+										__TTVAB_STATE__.SimulatedAdsDepth - 1;
 								const promotionPolicy =
 									typeof _getFallbackPromotionPolicy === "function"
 										? _getFallbackPromotionPolicy({
@@ -823,17 +1025,24 @@ async function _findBackupStream(
 								}
 
 								if (promotionPolicy.allowSelectedPromotion) {
+									_clearBackupPlayerRetryCooldown(info, pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
 									_log(`[Trace] Selected: ${pt}`, "success");
 									break;
 								}
 								if (isDoingMinimalRequests && candidateIsPlayable) {
+									_clearBackupPlayerRetryCooldown(info, pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
 									_log(`[Trace] Selected (minimal): ${pt}`, "success");
 									break;
 								}
+								_markBackupPlayerRetryCooldown(
+									info,
+									pt,
+									promotionPolicy.reason,
+								);
 								if (isFullyCachedPlayerType) {
 									_log(
 										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
@@ -849,14 +1058,17 @@ async function _findBackupStream(
 							}
 						} else {
 							_log(`Stream failed for ${pt}: ${streamRes.status}`, "warning");
+							_markBackupPlayerRetryCooldown(info, pt, "stream-error");
 							invalidateCache = true;
 						}
 					} else {
 						_log(`No stream URL for ${pt}`, "warning");
+						_markBackupPlayerRetryCooldown(info, pt, "no-stream-url");
 						invalidateCache = true;
 					}
 				} catch (e) {
 					_log(`Stream error: ${e.message}`, "warning");
+					_markBackupPlayerRetryCooldown(info, pt, "stream-error");
 					invalidateCache = true;
 				}
 			}

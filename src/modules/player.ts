@@ -1543,7 +1543,6 @@ function _doPlayerTask(
 	}
 
 	if (isReload) {
-		// Downgrade to pause/play to preserve Picture-in-Picture
 		if (document.pictureInPictureElement) {
 			_pausePlaybackTarget(player);
 			setTimeout(() => {
@@ -1685,8 +1684,14 @@ function _monitorPlayerBuffering() {
 		const hasActiveAdContext = Boolean(
 			__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel,
 		);
-		_PlayerBufferState.postAdUnhealthyCount = 0;
-		_PlayerBufferState.postAdRecoveryStartedAt = 0;
+		const hasPendingPostAdRecovery = _hasPendingAdResumeIntent(
+			__TTVAB_STATE__.PageChannel,
+			currentMediaKey,
+		);
+		if (!hasPendingPostAdRecovery) {
+			_PlayerBufferState.postAdUnhealthyCount = 0;
+			_PlayerBufferState.postAdRecoveryStartedAt = 0;
+		}
 		const isHidden = _isNativeDocumentHidden();
 		const hiddenDelay = Math.max(
 			__TTVAB_STATE__.PlayerBufferingDelay * 8,
@@ -1714,6 +1719,8 @@ function _monitorPlayerBuffering() {
 			_PlayerBufferState.liveEdgeStarveCount = 0;
 			_PlayerBufferState.numSame = 0;
 			_PlayerBufferState.fixAttempts = 0;
+			_PlayerBufferState.postAdUnhealthyCount = 0;
+			_PlayerBufferState.postAdRecoveryStartedAt = 0;
 			_clearCachedPlayerRef();
 			setTimeout(check, nextDelay);
 			return;
@@ -1759,6 +1766,15 @@ function _monitorPlayerBuffering() {
 					);
 					_doPlayerTask(false, true, { reason: "buffer-recovery" });
 					_PlayerBufferState.lastFixTime = Date.now();
+				} else if (hasPendingPostAdRecovery) {
+					_handlePendingPostAdRecovery(
+						player,
+						playerCore,
+						player.getHTMLVideoElement?.() || null,
+						__TTVAB_STATE__.PageChannel,
+						currentMediaKey,
+						playerContentType,
+					);
 				} else if (
 					__TTVAB_STATE__.IsBufferFixEnabled &&
 					(playerContentType === "live" || playerContentType === "rerun") &&
@@ -1923,6 +1939,59 @@ function _hookVisibilityState() {
 			mozHidden: document.__lookupGetter__?.("mozHidden") || null,
 			visibilityState: document.__lookupGetter__?.("visibilityState") || null,
 		};
+	}
+
+	if (!window.__TTVAB_VISIBILITY_HARDENED__) {
+		const setDocumentVisibility = (property, value) => {
+			try {
+				Object.defineProperty(document, property, {
+					configurable: true,
+					get: () => value,
+				});
+			} catch {}
+		};
+		const handleVisibilityChange = (event) => {
+			try {
+				event.preventDefault?.();
+				event.stopPropagation?.();
+				event.stopImmediatePropagation?.();
+			} catch {}
+
+			if (_isNativeDocumentHidden()) {
+				return;
+			}
+
+			const { player } = _getPlayerAndState();
+			const video = player?.getHTMLVideoElement?.() || null;
+			if (
+				player &&
+				video &&
+				!video.ended &&
+				video.paused &&
+				(video.muted || Number(video.volume ?? 1) === 0)
+			) {
+				_playPlaybackTarget(
+					player,
+					__TTVAB_STATE__.PageChannel,
+					__TTVAB_STATE__.PageMediaKey,
+				);
+			}
+		};
+
+		setDocumentVisibility("hidden", false);
+		setDocumentVisibility("webkitHidden", false);
+		setDocumentVisibility("mozHidden", false);
+		setDocumentVisibility("visibilityState", "visible");
+
+		for (const eventName of [
+			"visibilitychange",
+			"webkitvisibilitychange",
+			"mozvisibilitychange",
+		]) {
+			document.addEventListener(eventName, handleVisibilityChange, true);
+		}
+
+		window.__TTVAB_VISIBILITY_HARDENED__ = true;
 	}
 
 	_log("Visibility tracking active", "info");
