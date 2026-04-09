@@ -353,7 +353,7 @@ function _hookWorkerFetch() {
 							UsherBaseUrl: url,
 							UsherParams: new URL(url).search,
 							RequestedAds: new Set(),
-							FailedBackupPlayerTypes: new Set(),
+							FailedBackupPlayerTypes: new Map(),
 							Urls: Object.create(null),
 							ResolutionList: [],
 							BackupEncodingsM3U8Cache: Object.create(null),
@@ -434,11 +434,14 @@ function _hookWorkerFetch() {
 				(safeUrl && _getPlaybackContextFromUsherUrl(safeUrl)?.MediaKey) ||
 					(safeUrl && /\.m3u8(?:$|\?)/.test(safeUrl)),
 			);
-			if (isPlaybackRequest && e?.name !== "AbortError") {
+			const errorMessage =
+				typeof e?.message === "string" ? e.message : String(e);
+			const isExpectedCancellation =
+				e?.name === "AbortError" ||
+				/request cancel(?:ed|led)|cancel(?:ed|led)/i.test(errorMessage);
+			if (isPlaybackRequest && !isExpectedCancellation) {
 				_log(
-					`Worker fetch wrapper failed for ${safeUrl}: ${
-						e?.message ?? String(e)
-					}`,
+					`Worker fetch wrapper failed for ${safeUrl}: ${errorMessage}`,
 					"error",
 				);
 			}
@@ -595,6 +598,16 @@ function _hookWorker() {
                 ${_createFetchRelayResponse.toString()}
                 ${_fetchViaWorkerBridge.toString()}
                 ${_getToken.toString()}
+                ${_getResolvedAdEndMinCleanPlaylists.toString()}
+                ${_getResolvedAdEndGraceMs.toString()}
+                ${_getBackupPlayerRetryCooldownMs.toString()}
+                ${_markBackupPlayerRetryCooldown.toString()}
+                ${_clearBackupPlayerRetryCooldown.toString()}
+                ${_isBackupPlayerRetryCoolingDown.toString()}
+                ${_getPinnedBackupPlayerTypeForInfo.toString()}
+                ${_getOrderedBackupPlayerTypes.toString()}
+                ${_resolvePlaybackResolutionForUrl.toString()}
+                ${_isAdEndStable.toString()}
                 ${_resetNativeRecoveryReadyState.toString()}
                 ${_markNativeRecoveryReady.toString()}
                 ${_resetStreamAdState.toString()}
@@ -916,6 +929,9 @@ function _hookWorker() {
 									}
 									__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 									__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+									if (typeof _rememberPlayerPlaybackForAd === "function") {
+										_rememberPlayerPlaybackForAd(channel, mediaKey);
+									}
 								}
 								__TTVAB_STATE__.CurrentAdChannel = channel;
 								__TTVAB_STATE__.CurrentAdMediaKey = mediaKey;
@@ -1040,7 +1056,6 @@ function _hookWorker() {
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
 								__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 								__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-								__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 								if (typeof _clearPlaybackRecoveryTimeouts === "function") {
 									_clearPlaybackRecoveryTimeouts();
 								}
@@ -1077,13 +1092,6 @@ function _hookWorker() {
 									`Ignoring stale ReloadPlayer event for ${data.mediaKey || data.channel}`,
 									"info",
 								);
-								break;
-							}
-							if (_isFirefoxBrowser()) {
-								_log("Resuming player", "info");
-								if (typeof _doPlayerTask === "function") {
-									_doPlayerTask(true, false);
-								}
 								break;
 							}
 							_log("Reloading player", "info");
@@ -1282,6 +1290,30 @@ function _hookMainFetch() {
 
 		return { bodyText, changed: false };
 	};
+	const isPictureInPicturePlaybackAccessTokenBody = (bodyText) => {
+		if (
+			typeof bodyText !== "string" ||
+			!bodyText ||
+			!bodyText.includes("PlaybackAccessToken")
+		) {
+			return false;
+		}
+
+		try {
+			const parsed = JSON.parse(bodyText);
+			const operations = Array.isArray(parsed) ? parsed : [parsed];
+			return operations.some((op) => {
+				if (op?.operationName !== "PlaybackAccessToken") return false;
+				const playerType = op?.variables?.playerType;
+				return (
+					typeof playerType === "string" &&
+					playerType.toLowerCase().includes("picture-by-picture")
+				);
+			});
+		} catch {
+			return bodyText.toLowerCase().includes("picture-by-picture");
+		}
+	};
 	const updatePlaybackAccessTokenHash = (hash) => {
 		if (!hash || __TTVAB_STATE__.PlaybackAccessTokenHash === hash) return;
 		__TTVAB_STATE__.PlaybackAccessTokenHash = hash;
@@ -1348,6 +1380,7 @@ function _hookMainFetch() {
 				_syncStoredDeviceId();
 				let nextArgs = args;
 				let headers = opts?.headers;
+				let shouldSkipPlaybackAccessTokenState = false;
 
 				if (url instanceof Request) {
 					let effectiveRequest = url;
@@ -1357,23 +1390,33 @@ function _hookMainFetch() {
 						}
 						headers = effectiveRequest.headers;
 						const text = await effectiveRequest.clone().text();
-						const rewritten = rewritePlaybackAccessTokenBody(text);
-						processGqlBody(rewritten.bodyText);
-						if (rewritten.changed) {
-							nextArgs = [
-								new Request(effectiveRequest, {
-									body: rewritten.bodyText,
-								}),
-							];
+						shouldSkipPlaybackAccessTokenState =
+							isPictureInPicturePlaybackAccessTokenBody(text);
+						if (!shouldSkipPlaybackAccessTokenState) {
+							const rewritten = rewritePlaybackAccessTokenBody(text);
+							processGqlBody(rewritten.bodyText);
+							if (rewritten.changed) {
+								nextArgs = [
+									new Request(effectiveRequest, {
+										body: rewritten.bodyText,
+									}),
+								];
+							} else if (effectiveRequest !== url || args.length !== 1) {
+								nextArgs = [effectiveRequest];
+							}
 						} else if (effectiveRequest !== url || args.length !== 1) {
 							nextArgs = [effectiveRequest];
 						}
 					} catch (_e) {}
 				} else if (typeof opts?.body === "string") {
-					const rewritten = rewritePlaybackAccessTokenBody(opts.body);
-					processGqlBody(rewritten.bodyText);
-					if (rewritten.changed) {
-						nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
+					shouldSkipPlaybackAccessTokenState =
+						isPictureInPicturePlaybackAccessTokenBody(opts.body);
+					if (!shouldSkipPlaybackAccessTokenState) {
+						const rewritten = rewritePlaybackAccessTokenBody(opts.body);
+						processGqlBody(rewritten.bodyText);
+						if (rewritten.changed) {
+							nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
+						}
 					}
 				}
 
@@ -1443,7 +1486,9 @@ function _hookMainFetch() {
 					updateWorkers(updates);
 				}
 				const response = await realFetch.apply(this, nextArgs);
-				await processGqlResponse(response);
+				if (!shouldSkipPlaybackAccessTokenState) {
+					await processGqlResponse(response);
+				}
 				return response;
 			}
 		}
