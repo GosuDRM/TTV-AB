@@ -71,22 +71,6 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 - **Firefox Runtime Parity** - Firefox now uses the current main-branch ad-blocking runtime instead of the stale forked Firefox logic, keeping only the browser-specific packaging and worker bootstrap differences.
 - **Picture-in-Picture Recovery** - Included the merged [PR #4](https://github.com/GosuDRM/TTV-AB/pull/4) (`Support PiP mode`) fix so reload recovery downgrades to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks [@ryanbr](https://github.com/ryanbr).
 
-### v6.1.0
-- **React-Safe Display-Ad Cleanup** - Post-ad cleanup now hides and resets Twitch-managed display-ad nodes instead of removing them from the DOM, preventing Twitch's React teardown from crashing the player into the big `?` placeholder during live and VOD navigation.
-- **SDA Teardown Compatibility** - Stale display-ad shell cleanup now leaves Twitch-owned nodes attached under `#root` until Twitch unmounts them itself, avoiding `SDAContextManager` `Node.removeChild` exceptions after ad recovery.
-
-### v6.0.9
-- **Console Log Noise** - Silenced the repetitive `Fetch intercepted exception: NetworkError` logs that could flood the browser console during certain network conditions.
-- **Debug Logging** - Updated the global logger to suppress all `debug` level messages by default.
-
-### v6.0.7
-- **Post-Ad Native 360p Lock** - Ad recovery no longer explicitly rewrites the native `PlaybackAccessToken` to `autoplay` during the recovery window, fixing the bug where the player's resolution menu locked down to 360p indefinitely after an ad block.
-- **Pre-roll Recovery Loops** - Implemented background simulated ad-impression tracking by headless fetching of blocked ad segments. This actively clears Twitch's backend pre-roll state, putting an end to infinite looping reload cycles.
-
-### v6.0.6
-- **Broader Stitched Ad Detection** - The worker now catches more Twitch stitched ad variants before they fall through to native playback, improving ad-break interception on recent stream-side changes.
-- **Turbo Break Overlay Cleanup Hardening** - Full-page Twitch Turbo / ad-break promo surfaces are now recognized more reliably and repeated cleanup of the same overlay is deduped so DOM cleanup counters stop climbing on the same page.
-
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ## Development
