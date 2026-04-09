@@ -1733,7 +1733,10 @@ function _blockAntiAdblockPopup() {
 
 		function _collapseDirectPlayerAdMedia() {
 			const currentContext = _getPlaybackContextFromUrl(window.location.href);
-			if (currentContext.MediaType !== "vod") {
+			if (
+				currentContext.MediaType !== "vod" &&
+				currentContext.MediaType !== "live"
+			) {
 				_resetDirectPlayerAdMediaState();
 				return false;
 			}
