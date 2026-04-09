@@ -59,7 +59,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ### v6.1.1
 - **Firefox Runtime Parity** - Firefox now uses the current main-branch ad-blocking runtime instead of the stale forked Firefox logic, keeping only the browser-specific packaging and worker bootstrap differences.
-- **Picture-in-Picture Recovery** - Included the merged PR `#4` (`Support PiP mode`) fix so reload recovery downgrades to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks @ryanbr.
+- **Picture-in-Picture Recovery** - Included the merged [PR #4](https://github.com/GosuDRM/TTV-AB/pull/4) (`Support PiP mode`) fix so reload recovery downgrades to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks [@ryanbr](https://github.com/ryanbr).
 
 ### v6.1.0
 - **React-Safe Display-Ad Cleanup** - Post-ad cleanup now hides and resets Twitch-managed display-ad nodes instead of removing them from the DOM, preventing Twitch's React teardown from crashing the player into the big `?` placeholder during live and VOD navigation.

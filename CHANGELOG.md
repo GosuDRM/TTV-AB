@@ -6,7 +6,7 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Fixed
 - **Firefox Runtime Parity** - Rebased the Firefox build onto the current main-branch ad-blocking runtime so Firefox no longer ships the stale forked playback, parser, processor, and state logic that had fallen behind Chrome.
-- **Picture-in-Picture Recovery** - Included the merged PR `#4` (`Support PiP mode`) change so player recovery downgrades reloads to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks @ryanbr.
+- **Picture-in-Picture Recovery** - Included the merged [PR #4](https://github.com/GosuDRM/TTV-AB/pull/4) (`Support PiP mode`) change so player recovery downgrades reloads to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks [@ryanbr](https://github.com/ryanbr).
 
 ## [6.1.0] - 2026-04-08
 
