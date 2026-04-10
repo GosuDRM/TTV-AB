@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.5] - 2026-04-10
+
+### Fixed
+- **Turbo Direct-Ad Video Detection** - Direct Amazon MP4 ad suppression now recognizes Twitch Turbo-style player CTA and banner copy, closing a path where Turbo-branded ad video could remain visible near the main player.
+- **Direct-Media Ad Corroboration** - Direct player ad suppression can now rely on the active worker ad state as a second signal, so a detected ad cycle still collapses injected player media even when Twitch's visible overlay copy changes.
+- **CSAI Fast Path** - Merged [PR #5](https://github.com/GosuDRM/TTV-AB/pull/5) (`CSAI fast path: skip backup stream search when all segments are live`), reducing unnecessary backup-stream switching and rebuffering on metadata-only CSAI playlists. Thanks [@ryanbr](https://github.com/ryanbr).
+
 ## [6.1.2] - 2026-04-10
 
 ### Fixed

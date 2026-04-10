@@ -192,9 +192,9 @@ function _blockAntiAdblockPopup() {
 	const PROMOTED_PAGE_CTA_PATTERN =
 		/^(learn more|shop(?: now| on amazon)?|watch now|play now|install|download|get offer|see more|try turbo|get turbo|click here for turbo)$/i;
 	const PLAYER_AD_CTA_PATTERN =
-		/^(learn more|shop(?: now| on amazon)?|watch now|play now|get offer|see more|see details|install|download)$/i;
+		/^(learn more|shop(?: now| on amazon)?|watch now|play now|get offer|see more|see details|install|download|consider turbo|try turbo|get turbo|click here for turbo)$/i;
 	const PLAYER_AD_OVERLAY_TEXT_PATTERN =
-		/\bright after this ad break\b|\bstick around to support the (?:channel|stream)\b|\btaking an ad break\b/i;
+		/\bright after this ad break\b|\bstick around to support the (?:channel|stream)\b|\btaking an ad break\b|\bconsider turbo\b|\bad-free viewing\b|\bfully enjoy twitch\b|\bviewers watch ads\b/i;
 	const DIRECT_PLAYER_AD_MEDIA_URL_PATTERN =
 		/^https:\/\/m\.media-amazon\.com\/.*\.mp4(?:$|\?)/i;
 	const DISPLAY_AD_FEEDBACK_BUTTON_PATTERN = /\bleave feedback\b.*\bad\b/i;
@@ -230,7 +230,7 @@ function _blockAntiAdblockPopup() {
 	const MUTATION_OVERLAY_CLASS_PATTERN =
 		/(?:Overlay|Balloon|Modal|Consent|consent|display-ad|stream-display-ad)/i;
 	const MUTATION_AD_SIGNAL_PATTERN =
-		/\bad\b|\bpromo\b|learn more|support the (?:channel|stream)|right after this ad break|taking an ad break|click here for turbo/i;
+		/\bad\b|\bpromo\b|learn more|support the (?:channel|stream)|right after this ad break|taking an ad break|consider turbo|try turbo|click here for turbo|ad-free viewing|fully enjoy twitch|viewers watch ads/i;
 
 	function _initPopupBlocker() {
 		if (!document.body) {
@@ -1376,7 +1376,9 @@ function _blockAntiAdblockPopup() {
 					.join(" ")
 					.replace(/\s+/g, " ")
 					.trim();
-				if (!PLAYER_AD_CTA_PATTERN.test(text)) continue;
+				if (!PLAYER_AD_CTA_PATTERN.test(text) && !_hasAdblockText(cta)) {
+					continue;
+				}
 
 				const container = _markPlayerAdBannerContainer(cta);
 				if (container) {
@@ -1401,10 +1403,12 @@ function _blockAntiAdblockPopup() {
 					continue;
 				}
 				const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+				const hasKnownAdblockText = _hasAdblockText(node);
 				if (
-					text.length < 24 ||
 					text.length > 180 ||
-					!PLAYER_AD_OVERLAY_TEXT_PATTERN.test(text)
+					(!hasKnownAdblockText && text.length < 24) ||
+					(!hasKnownAdblockText &&
+						!PLAYER_AD_OVERLAY_TEXT_PATTERN.test(text))
 				) {
 					continue;
 				}
@@ -1741,12 +1745,12 @@ function _blockAntiAdblockPopup() {
 				return false;
 			}
 
-			if (!_hasDirectPlayerAdUiSignal()) {
+			const playerRect = _getMainPlayerRect();
+			if (!playerRect) {
 				_resetDirectPlayerAdMediaState();
 				return false;
 			}
 
-			const playerRect = _getMainPlayerRect();
 			const adMediaNodes = [];
 			for (const media of document.querySelectorAll("video, audio")) {
 				if (_isDirectPlayerAdMedia(media, playerRect)) {
@@ -1754,6 +1758,15 @@ function _blockAntiAdblockPopup() {
 				}
 			}
 			if (adMediaNodes.length === 0) {
+				_resetDirectPlayerAdMediaState();
+				return false;
+			}
+
+			const hasUiSignal = _hasDirectPlayerAdUiSignal();
+			const hasWorkerAdState = Boolean(
+				__TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.CurrentAdMediaKey,
+			);
+			if (!hasUiSignal && !hasWorkerAdState) {
 				_resetDirectPlayerAdMediaState();
 				return false;
 			}
@@ -1783,7 +1796,7 @@ function _blockAntiAdblockPopup() {
 				}
 				_incrementDomCleanup("direct-media-ad");
 				_log(
-					"Direct Amazon MP4 ad detected on VOD, suppressing injected media",
+					"Direct Amazon MP4 ad detected near the player, suppressing injected media",
 					"warning",
 				);
 			}
