@@ -59,6 +59,8 @@ const _POST_AD_UNHEALTHY_RELOAD_COUNT = 3;
 const _POST_AD_RECOVERY_RELOAD_COOLDOWN_MS = 1800;
 const _POST_AD_SOFT_RELOAD_DELAY_MS = 10000;
 const _POST_AD_PAUSE_RESUME_RETRY_MS = 2500;
+const _VISIBILITY_RESUME_RETRY_DELAYS_MS = [80, 250, 700, 1500];
+const _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS = [120, 500, 1500, 3000];
 const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
 	'[data-a-target="player-play-pause-button"]',
 	'[data-a-target="player-overlay-play-button"]',
@@ -868,6 +870,52 @@ function _resumeActivePlayerIfPaused(channel = null, mediaKey = null) {
 	if (!isPaused) return false;
 
 	return _playPlaybackTarget(player, safeChannel, safeMediaKey);
+}
+
+function _resumePrimaryPlaybackIfPaused(channel = null, mediaKey = null) {
+	const safeChannel = _normalizePlayerChannel(channel);
+	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	if (_hasUserPauseIntent(safeChannel, safeMediaKey)) {
+		return false;
+	}
+	if (_resumeActivePlayerIfPaused(safeChannel, safeMediaKey)) {
+		return true;
+	}
+
+	const media = _getPrimaryMediaElement();
+	if (
+		!(media instanceof HTMLMediaElement) ||
+		!media.isConnected ||
+		media.ended ||
+		!media.paused
+	) {
+		return false;
+	}
+
+	return _playPlaybackTarget(media, safeChannel, safeMediaKey);
+}
+
+function _guardPlaybackAcrossVisibilityTransition(
+	channel = null,
+	mediaKey = null,
+) {
+	const safeChannel = _normalizePlayerChannel(channel);
+	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	const retryDelays = _isNativeDocumentHidden()
+		? _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS
+		: _VISIBILITY_RESUME_RETRY_DELAYS_MS;
+
+	_resumePrimaryPlaybackIfPaused(safeChannel, safeMediaKey);
+	for (const delay of retryDelays) {
+		_schedulePlaybackRecoveryTimeout(
+			() => {
+				_resumePrimaryPlaybackIfPaused(safeChannel, safeMediaKey);
+			},
+			delay,
+			safeChannel,
+			safeMediaKey,
+		);
+	}
 }
 
 function _scheduleResumeRetries(
@@ -1950,38 +1998,41 @@ function _hookVisibilityState() {
 				});
 			} catch {}
 		};
+		const setDocumentMethod = (property, value) => {
+			try {
+				Object.defineProperty(document, property, {
+					configurable: true,
+					value,
+				});
+			} catch {}
+		};
+		const queueVisibilityPlaybackGuard = () => {
+			_guardPlaybackAcrossVisibilityTransition(
+				__TTVAB_STATE__.PageChannel,
+				__TTVAB_STATE__.PageMediaKey,
+			);
+		};
 		const handleVisibilityChange = (event) => {
 			try {
 				event.preventDefault?.();
 				event.stopPropagation?.();
 				event.stopImmediatePropagation?.();
 			} catch {}
-
-			if (_isNativeDocumentHidden()) {
-				return;
-			}
-
-			const { player } = _getPlayerAndState();
-			const video = player?.getHTMLVideoElement?.() || null;
-			if (
-				player &&
-				video &&
-				!video.ended &&
-				video.paused &&
-				(video.muted || Number(video.volume ?? 1) === 0)
-			) {
-				_playPlaybackTarget(
-					player,
-					__TTVAB_STATE__.PageChannel,
-					__TTVAB_STATE__.PageMediaKey,
-				);
-			}
+			queueVisibilityPlaybackGuard();
+		};
+		const handleWindowBlur = (event) => {
+			try {
+				event.stopPropagation?.();
+				event.stopImmediatePropagation?.();
+			} catch {}
+			queueVisibilityPlaybackGuard();
 		};
 
 		setDocumentVisibility("hidden", false);
 		setDocumentVisibility("webkitHidden", false);
 		setDocumentVisibility("mozHidden", false);
 		setDocumentVisibility("visibilityState", "visible");
+		setDocumentMethod("hasFocus", () => true);
 
 		for (const eventName of [
 			"visibilitychange",
@@ -1990,6 +2041,7 @@ function _hookVisibilityState() {
 		]) {
 			document.addEventListener(eventName, handleVisibilityChange, true);
 		}
+		window.addEventListener("blur", handleWindowBlur, true);
 
 		window.__TTVAB_VISIBILITY_HARDENED__ = true;
 	}

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.1.6-purple)
+![Version](https://img.shields.io/badge/version-6.1.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,10 +57,11 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.1.6
-- **UI-Driven Midroll Recovery** - When Twitch shows clear in-player ad UI but does not expose a suppressible Amazon MP4 node, the extension now forces ad-recovery player reloads instead of letting the main player sit on the ad path.
-- **Safer Live Ad Recovery** - The worker no longer short-circuits ad-marked live playlists through the CSAI fast path, so live midrolls still get full backup-stream recovery instead of being misclassified as metadata-only ads.
-- **Broader Player Ad Copy Detection** - Player overlay detection now recognizes additional Twitch copy such as `Subscribe for ad-free viewing`, improving live ad signal detection before and during recovery.
+### v6.1.7
+- **No Pause On Tab Switch** - Visibility and focus hardening now actively guards playback during tab changes, so Twitch is less likely to pause the player when you move to another tab.
+- **Faster Post-Ad Recovery** - Firefox now validates the same forced native recovery path it actually reloads into and uses a much tighter ad-end confirmation window, making post-ad returns much faster while still keeping a small safety check.
+- **Safer Background Recovery** - Hidden-tab resume retries now use the same guarded playback path as foreground recovery, reducing cases where a backgrounded tab stays paused until you return.
+- **Backup Black-Screen Fix** - Backup media playlists now normalize segment, key, map, and prefetch URLs before they are handed back to Twitch, preventing `Invalid URI` / endless-spinner cases where a clean backup playlist was selected but its media URLs were not directly playable.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

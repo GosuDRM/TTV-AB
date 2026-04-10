@@ -330,6 +330,8 @@ function _declareState(scope) {
 		AdEndMinCleanPlaylists: _C.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
 		AdEndMinNativeRecoveryProbes:
 			_C.AD_END_MIN_NATIVE_RECOVERY_PROBES ?? 3,
+		AdEndNativeRecoveryProbeCooldownMs:
+			_C.AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS ?? 750,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
 		HasTriggeredPlayerReload: false,
 		PendingTriggeredPlayerReloadChannel: null,

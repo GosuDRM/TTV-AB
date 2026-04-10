@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.7] - 2026-04-11
+
+### Fixed
+- **Tab-Switch Pause Regression** - Visibility and focus hardening now actively guards playback across tab changes, so Twitch is less likely to pause the player when the tab loses focus.
+- **Faster Post-Ad Native Reload** - Reduced the ad-end grace window and native recovery probe spacing so validated backup/fallback ad exits return to the native player about 50% faster without removing the existing clean-playlist and clean-probe safety gates.
+- **Hidden-Tab Resume Retry Parity** - Background-tab playback guards now retry through the same primary-media resume path used by the immediate visibility handler, reducing cases where a hidden tab stayed paused until it became visible again.
+- **Firefox Native Recovery Path Parity** - Firefox now validates the same forced native `PlaybackAccessToken` player type that it reloads into after an ad break, so ad-end recovery no longer wastes probe cycles checking Twitch's ad-marked `site` path before switching back to `popout`.
+- **Tighter Ad-End Timing** - Tightened Firefox's ad-end confirmation window to one clean playlist plus two quick native recovery probes, making post-ad returns noticeably faster while still keeping a minimal guard against false-positive reloads.
+- **Backup Playlist URI Normalization** - Firefox backup media playlists now absolutize segment, key, map, and prefetch URLs before returning them to Twitch, fixing black-screen / spinner cases where a clean backup playlist was selected but its media URIs were invalid in the active request context.
+
 ## [6.1.6] - 2026-04-10
 
 ### Fixed

@@ -314,6 +314,21 @@ function _playlistHasMediaSegments(text) {
 	return typeof text === "string" && text.includes("#EXTINF");
 }
 
+function _getNativeRecoveryProbePlayerType() {
+	const forcedPlayerType =
+		__TTVAB_STATE__?.RewriteNativePlaybackAccessToken === true &&
+		typeof __TTVAB_STATE__?.ForceAccessTokenPlayerType === "string" &&
+		__TTVAB_STATE__.ForceAccessTokenPlayerType.trim()
+			? __TTVAB_STATE__.ForceAccessTokenPlayerType.trim()
+			: null;
+
+	return (
+		forcedPlayerType ||
+		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType ||
+		"site"
+	);
+}
+
 async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null) {
 	if (!info?.IsUsingBackupStream && !info?.IsUsingFallbackStream) {
 		_resetNativeRecoveryReadyState(info);
@@ -324,18 +339,20 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 		1,
 		Number(__TTVAB_STATE__?.AdEndMinNativeRecoveryProbes) || 1,
 	);
+	const probeCooldownMs = Math.max(
+		250,
+		Number(__TTVAB_STATE__?.AdEndNativeRecoveryProbeCooldownMs) || 750,
+	);
 	const now = Date.now();
 	if (
 		info.LastNativeRecoveryProbeAt &&
-		now - info.LastNativeRecoveryProbeAt < 1500
+		now - info.LastNativeRecoveryProbeAt < probeCooldownMs
 	) {
 		return false;
 	}
 	info.LastNativeRecoveryProbeAt = now;
 
-	const nativePlayerType =
-		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType ||
-		"site";
+	const nativePlayerType = _getNativeRecoveryProbePlayerType();
 
 	try {
 		const tokenRes = await _getToken(info, nativePlayerType, realFetch);
@@ -519,6 +536,8 @@ function _buildUsherPlaybackUrl(info, sig, token) {
 }
 
 async function _processM3U8(url, text, realFetch) {
+	text = _absolutizeMediaPlaylistUrls(text, url);
+
 	let info = _getStreamInfoForPlaylist(url);
 	if (!info) {
 		if (
@@ -1002,7 +1021,10 @@ async function _findBackupStream(
 					if (streamUrl) {
 						const streamRes = await realFetch(streamUrl);
 						if (streamRes.status === 200) {
-							const m3u8 = await streamRes.text();
+							const m3u8 = _absolutizeMediaPlaylistUrls(
+								await streamRes.text(),
+								streamUrl,
+							);
 							if (m3u8) {
 								const candidateIsPlayable = _playlistHasMediaSegments(m3u8);
 								const candidateHasAds =

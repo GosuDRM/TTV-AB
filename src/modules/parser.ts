@@ -335,6 +335,56 @@ function _playlistHasKnownAdSegments(
 	return false;
 }
 
+function _absolutizePlaylistUrl(rawUrl, baseUrl = null) {
+	const candidate = typeof rawUrl === "string" ? rawUrl.trim() : "";
+	if (!candidate || !baseUrl || candidate.startsWith("#")) {
+		return candidate || rawUrl;
+	}
+	try {
+		return new URL(candidate, baseUrl).href;
+	} catch {
+		return rawUrl;
+	}
+}
+
+function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
+	if (
+		typeof text !== "string" ||
+		!text ||
+		!baseUrl ||
+		(!text.includes("#EXTINF") &&
+			!text.includes('#EXT-X-MAP:') &&
+			!text.includes('#EXT-X-KEY:') &&
+			!text.includes('URI="'))
+	) {
+		return text;
+	}
+
+	return text
+		.split("\n")
+		.map((line) => {
+			if (typeof line !== "string" || !line) return line;
+			if (!line.startsWith("#")) {
+				return _absolutizePlaylistUrl(line, baseUrl);
+			}
+			if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+				const prefetchUrl = line
+					.substring("#EXT-X-TWITCH-PREFETCH:".length)
+					.trim();
+				const normalizedPrefetch = _absolutizePlaylistUrl(prefetchUrl, baseUrl);
+				return `#EXT-X-TWITCH-PREFETCH:${normalizedPrefetch}`;
+			}
+			if (!line.includes('URI="')) {
+				return line;
+			}
+			return line.replace(/URI="([^"]+)"/g, (_match, value) => {
+				const normalizedValue = _absolutizePlaylistUrl(value, baseUrl);
+				return `URI="${normalizedValue}"`;
+			});
+		})
+		.join("\n");
+}
+
 function _stripAds(text, stripAll, info) {
 	const lines = text.split("\n");
 	const len = lines.length;
