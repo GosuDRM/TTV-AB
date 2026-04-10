@@ -359,6 +359,11 @@ function _hookWorkerFetch() {
 							BackupEncodingsM3U8Cache: Object.create(null),
 							ActiveBackupPlayerType: null,
 							ActiveBackupResolution: null,
+							LastCleanNativeM3U8: null,
+							LastCleanNativePlaylistAt: 0,
+							LastCleanBackupM3U8: null,
+							LastCleanBackupPlayerType: null,
+							LastCleanBackupAt: 0,
 							IsMidroll: false,
 							IsStrippingAdSegments: false,
 							NumStrippedAdSegments: 0,
@@ -589,6 +594,8 @@ function _hookWorker() {
                 ${_isExplicitKnownAdSegmentUrl.toString()}
                 ${_isKnownAdSegmentUrl.toString()}
                 ${_playlistHasKnownAdSegments.toString()}
+                ${_absolutizePlaylistUrl.toString()}
+                ${_absolutizeMediaPlaylistUrls.toString()}
                 ${_stripAds.toString()}
                 ${_getStreamVariantInfo.toString()}
                 ${_getStreamUrl.toString()}
@@ -622,6 +629,7 @@ function _hookWorker() {
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
                 ${_playlistHasMediaSegments.toString()}
+                ${_getNativeRecoveryProbePlayerType.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_processM3U8.toString()}

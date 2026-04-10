@@ -2,12 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.8] - 2026-04-11
+
+### Fixed
+- **Backup Playlist URI Normalization** - Backup media playlists now absolutize segment, key, map, and prefetch URLs before they are returned to Twitch, preventing invalid-URI black-screen / spinner cases after a clean backup stream is selected.
+- **Empty-Playlist Recovery Cache** - When ad stripping removes every media segment from a playlist, the worker now reuses a recent clean backup or native playlist instead of restoring stripped ad segments back into playback.
+
 ## [6.1.7] - 2026-04-11
 
 ### Fixed
 - **Tab-Switch Pause Regression** - Visibility and focus hardening now actively guards playback across tab changes, so Twitch is less likely to pause the player when the tab loses focus.
 - **Faster Post-Ad Native Reload** - Reduced the ad-end grace window and native recovery probe spacing so validated backup/fallback ad exits return to the native player about 50% faster without removing the existing clean-playlist and clean-probe safety gates.
 - **Hidden-Tab Resume Retry Parity** - Background-tab playback guards now retry through the same primary-media resume path used by the immediate visibility handler, reducing cases where a hidden tab stayed paused until it became visible again.
+- **Backup Playlist URI Normalization** - Backup media playlists now absolutize segment, key, map, and prefetch URLs before they are returned to Twitch, preventing invalid-URI black-screen / spinner cases after a clean backup stream is selected.
+- **Empty-Playlist Recovery Cache** - When ad stripping removes every media segment from a playlist, the worker now reuses a recent clean backup or native playlist instead of restoring stripped ad segments back into playback.
 
 ## [6.1.6] - 2026-04-10
 

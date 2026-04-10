@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.1.7-purple)
+![Version](https://img.shields.io/badge/version-6.1.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,10 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.1.7
-- **No Pause On Tab Switch** - Visibility and focus hardening now actively guards playback during tab changes, so Twitch is less likely to pause the player when you move to another tab.
-- **Faster Post-Ad Native Return** - The ad-end recovery path now reaches the native player roughly 50% faster by cutting the clean-end grace window and native recovery probe spacing without removing the existing safety checks.
-- **Safer Background Recovery** - Hidden-tab resume retries now use the same guarded playback path as foreground recovery, reducing cases where a backgrounded tab stays paused until you return.
+### v6.1.8
+- **Backup Black-Screen Fix** - Backup media playlists now normalize segment, key, map, and prefetch URLs before they are handed back to Twitch, preventing invalid-URI / endless-spinner cases where a clean backup playlist was selected but its media URLs were not directly playable.
+- **Safer Empty-Playlist Recovery** - When ad stripping removes every segment from a playlist, the worker now prefers a recent clean backup or native playlist instead of restoring stripped ad segments back into playback.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

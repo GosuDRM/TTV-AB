@@ -15,6 +15,9 @@ function _resetStreamAdState(info) {
 	info.BackupEncodingsM3U8Cache = Object.create(null);
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
+	info.LastCleanBackupM3U8 = null;
+	info.LastCleanBackupPlayerType = null;
+	info.LastCleanBackupAt = 0;
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
 	info.NumStrippedAdSegments = 0;
@@ -311,6 +314,21 @@ function _playlistHasMediaSegments(text) {
 	return typeof text === "string" && text.includes("#EXTINF");
 }
 
+function _getNativeRecoveryProbePlayerType() {
+	const forcedPlayerType =
+		__TTVAB_STATE__?.RewriteNativePlaybackAccessToken === true &&
+		typeof __TTVAB_STATE__?.ForceAccessTokenPlayerType === "string" &&
+		__TTVAB_STATE__.ForceAccessTokenPlayerType.trim()
+			? __TTVAB_STATE__.ForceAccessTokenPlayerType.trim()
+			: null;
+
+	return (
+		forcedPlayerType ||
+		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType ||
+		"site"
+	);
+}
+
 async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null) {
 	if (!info?.IsUsingBackupStream && !info?.IsUsingFallbackStream) {
 		_resetNativeRecoveryReadyState(info);
@@ -334,9 +352,7 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 	}
 	info.LastNativeRecoveryProbeAt = now;
 
-	const nativePlayerType =
-		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType ||
-		"site";
+	const nativePlayerType = _getNativeRecoveryProbePlayerType();
 
 	try {
 		const tokenRes = await _getToken(info, nativePlayerType, realFetch);
@@ -460,6 +476,11 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		BackupEncodingsM3U8Cache: Object.create(null),
 		ActiveBackupPlayerType: null,
 		ActiveBackupResolution: null,
+		LastCleanNativeM3U8: null,
+		LastCleanNativePlaylistAt: 0,
+		LastCleanBackupM3U8: null,
+		LastCleanBackupPlayerType: null,
+		LastCleanBackupAt: 0,
 		IsMidroll: false,
 		IsStrippingAdSegments: false,
 		NumStrippedAdSegments: 0,
@@ -515,6 +536,8 @@ function _buildUsherPlaybackUrl(info, sig, token) {
 }
 
 async function _processM3U8(url, text, realFetch) {
+	text = _absolutizeMediaPlaylistUrls(text, url);
+
 	let info = _getStreamInfoForPlaylist(url);
 	if (!info) {
 		if (
@@ -628,6 +651,11 @@ async function _processM3U8(url, text, realFetch) {
 		hasExplicitKnownAdSegments ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
 	const hasMediaSegments = _playlistHasMediaSegments(text);
+
+	if (!hasAds && hasMediaSegments && !info.IsShowingAd) {
+		info.LastCleanNativeM3U8 = text;
+		info.LastCleanNativePlaylistAt = Date.now();
+	}
 
 	if (hasAds) {
 		info.PendingAdEndAt = 0;
@@ -993,7 +1021,10 @@ async function _findBackupStream(
 					if (streamUrl) {
 						const streamRes = await realFetch(streamUrl);
 						if (streamRes.status === 200) {
-							const m3u8 = await streamRes.text();
+							const m3u8 = _absolutizeMediaPlaylistUrls(
+								await streamRes.text(),
+								streamUrl,
+							);
 							if (m3u8) {
 								const candidateIsPlayable = _playlistHasMediaSegments(m3u8);
 								const candidateHasAds =
@@ -1032,6 +1063,9 @@ async function _findBackupStream(
 									_clearBackupPlayerRetryCooldown(info, pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
+									info.LastCleanBackupM3U8 = m3u8;
+									info.LastCleanBackupPlayerType = pt;
+									info.LastCleanBackupAt = Date.now();
 									_log(`[Trace] Selected: ${pt}`, "success");
 									break;
 								}
@@ -1039,6 +1073,9 @@ async function _findBackupStream(
 									_clearBackupPlayerRetryCooldown(info, pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
+									info.LastCleanBackupM3U8 = m3u8;
+									info.LastCleanBackupPlayerType = pt;
+									info.LastCleanBackupAt = Date.now();
 									_log(`[Trace] Selected (minimal): ${pt}`, "success");
 									break;
 								}
@@ -1089,6 +1126,9 @@ async function _findBackupStream(
 		backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
 		backupM3u8 = fallbackM3u8;
 		isFallback = true;
+		info.LastCleanBackupM3U8 = backupM3u8;
+		info.LastCleanBackupPlayerType = backupType;
+		info.LastCleanBackupAt = Date.now();
 		_log(`[Trace] Using fallback: ${backupType}`, "warning");
 	}
 
