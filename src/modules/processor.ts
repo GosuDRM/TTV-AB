@@ -731,6 +731,19 @@ async function _processM3U8(url, text, realFetch) {
 			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
 		}
 
+		// CSAI fast path: if all segments in the main stream are live,
+		// the ad is CSAI-delivered - no backup stream needed.
+		// Skip backup search to avoid the 20-40s rebuffer gap from stream switching.
+		const mainLines = text.split(/\r?\n/);
+		const hasNonLiveSegment = mainLines.some(
+			(line) => line.startsWith("#EXTINF") && !line.includes(",live"),
+		);
+		if (!hasNonLiveSegment && !info.IsUsingModifiedM3U8) {
+			_log("CSAI fast path - all segments live, skipping backup search", "info");
+			text = _stripAds(text, false, info);
+			return text;
+		}
+
 		const {
 			type: backupType,
 			m3u8: backupM3u8,

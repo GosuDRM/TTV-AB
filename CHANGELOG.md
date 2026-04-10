@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.5] - 2026-04-10
+
+### Fixed
+- **Turbo Direct-Ad Video Detection** - The player-side ad detector now recognizes more Twitch Turbo promo copy, so Amazon-hosted direct ad videos are less likely to slip through when Twitch changes the CTA text around the player.
+- **Direct-Media Ad Corroboration** - Direct media suppression now accepts active worker ad state as a second signal instead of relying only on the older player CTA/banner checks, which makes live direct-ad cleanup more resilient.
+- **CSAI Fast Path** - Metadata-only CSAI playlists now skip unnecessary backup stream searches when all segments are still marked live, reducing pointless player switching and long rebuffer gaps.
+
 ## [6.1.4] - 2026-04-10
 
 ### Fixed
