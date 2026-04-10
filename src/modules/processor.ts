@@ -321,10 +321,14 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 		1,
 		Number(__TTVAB_STATE__?.AdEndMinNativeRecoveryProbes) || 1,
 	);
+	const probeCooldownMs = Math.max(
+		250,
+		Number(__TTVAB_STATE__?.AdEndNativeRecoveryProbeCooldownMs) || 750,
+	);
 	const now = Date.now();
 	if (
 		info.LastNativeRecoveryProbeAt &&
-		now - info.LastNativeRecoveryProbeAt < 1500
+		now - info.LastNativeRecoveryProbeAt < probeCooldownMs
 	) {
 		return false;
 	}
