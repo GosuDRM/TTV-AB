@@ -120,6 +120,7 @@ function _blockAntiAdblockPopup() {
 	let lastRouteUrl = window.location.href;
 	let activeDirectPlayerAdMediaSignature = null;
 	let didCountCurrentDirectPlayerAdMedia = false;
+	let lastUiOnlyPlayerAdRecoveryAt = 0;
 	let lastPlaybackContextChangeAt = 0;
 	let pendingRoutePlayerResyncTimer = null;
 	let pendingRouteScanTimers: ReturnType<typeof setTimeout>[] = [];
@@ -194,7 +195,7 @@ function _blockAntiAdblockPopup() {
 	const PLAYER_AD_CTA_PATTERN =
 		/^(learn more|shop(?: now| on amazon)?|watch now|play now|get offer|see more|see details|install|download|consider turbo|try turbo|get turbo|click here for turbo)$/i;
 	const PLAYER_AD_OVERLAY_TEXT_PATTERN =
-		/\bright after this ad break\b|\bstick around to support the (?:channel|stream)\b|\btaking an ad break\b|\bconsider turbo\b|\bad-free viewing\b|\bfully enjoy twitch\b|\bviewers watch ads\b/i;
+		/\bright after this ad break\b|\bstick around to support the (?:channel|stream)\b|\btaking an ad break\b|\bconsider turbo\b|\bsubscribe for ad-free viewing\b|\bad-free viewing\b|\bfully enjoy twitch\b|\bviewers watch ads\b/i;
 	const DIRECT_PLAYER_AD_MEDIA_URL_PATTERN =
 		/^https:\/\/m\.media-amazon\.com\/.*\.mp4(?:$|\?)/i;
 	const DISPLAY_AD_FEEDBACK_BUTTON_PATTERN = /\bleave feedback\b.*\bad\b/i;
@@ -230,7 +231,7 @@ function _blockAntiAdblockPopup() {
 	const MUTATION_OVERLAY_CLASS_PATTERN =
 		/(?:Overlay|Balloon|Modal|Consent|consent|display-ad|stream-display-ad)/i;
 	const MUTATION_AD_SIGNAL_PATTERN =
-		/\bad\b|\bpromo\b|learn more|support the (?:channel|stream)|right after this ad break|taking an ad break|consider turbo|try turbo|click here for turbo|ad-free viewing|fully enjoy twitch|viewers watch ads/i;
+		/\bad\b|\bpromo\b|learn more|support the (?:channel|stream)|right after this ad break|taking an ad break|consider turbo|try turbo|click here for turbo|subscribe for ad-free viewing|ad-free viewing|fully enjoy twitch|viewers watch ads/i;
 
 	function _initPopupBlocker() {
 		if (!document.body) {
@@ -726,6 +727,7 @@ function _blockAntiAdblockPopup() {
 		function _resetDirectPlayerAdMediaState() {
 			activeDirectPlayerAdMediaSignature = null;
 			didCountCurrentDirectPlayerAdMedia = false;
+			lastUiOnlyPlayerAdRecoveryAt = 0;
 		}
 
 		function _queryUniqueElements(selectors) {
@@ -1735,6 +1737,85 @@ function _blockAntiAdblockPopup() {
 			);
 		}
 
+		function _forcePlayerRecoveryFromAdUiSignal() {
+			const currentContext = _getPlaybackContextFromUrl(window.location.href);
+			if (
+				currentContext.MediaType !== "vod" &&
+				currentContext.MediaType !== "live"
+			) {
+				return false;
+			}
+
+			const playerRect = _getMainPlayerRect();
+			if (!playerRect || !_hasDirectPlayerAdUiSignal()) {
+				return false;
+			}
+
+			const primaryMedia =
+				typeof _getPrimaryMediaElement === "function"
+					? _getPrimaryMediaElement()
+					: null;
+			if (
+				!(primaryMedia instanceof HTMLMediaElement) ||
+				!_isVisibleNearPlayerElement(primaryMedia, playerRect)
+			) {
+				return false;
+			}
+
+			const now = Date.now();
+			if (
+				lastUiOnlyPlayerAdRecoveryAt > 0 &&
+				now - lastUiOnlyPlayerAdRecoveryAt <
+					Math.max(2500, __TTVAB_STATE__.PlayerReloadDebounceMs || 1500)
+			) {
+				return false;
+			}
+			lastUiOnlyPlayerAdRecoveryAt = now;
+
+			const needsAdContext =
+				!__TTVAB_STATE__.CurrentAdMediaKey ||
+				__TTVAB_STATE__.CurrentAdMediaKey !== currentContext.MediaKey;
+			if (needsAdContext) {
+				if (typeof _clearPlaybackRecoveryTimeouts === "function") {
+					_clearPlaybackRecoveryTimeouts();
+				}
+				__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+				__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+				if (typeof _rememberPlayerPlaybackForAd === "function") {
+					_rememberPlayerPlaybackForAd(
+						currentContext.ChannelName,
+						currentContext.MediaKey,
+					);
+				}
+			}
+
+			__TTVAB_STATE__.CurrentAdChannel = currentContext.ChannelName;
+			__TTVAB_STATE__.CurrentAdMediaKey = currentContext.MediaKey;
+			__TTVAB_STATE__.LastAdDetectedAt = now;
+			_broadcastWorkers({
+				key: "UpdateCurrentAdContext",
+				value: {
+					channelName: __TTVAB_STATE__.CurrentAdChannel,
+					mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
+				},
+			});
+
+			if (typeof _doPlayerTask !== "function") {
+				return false;
+			}
+
+			_incrementDomCleanup("player-ui-ad-recovery");
+			_log(
+				"Player ad UI detected without a suppressible media URL, forcing player recovery",
+				"warning",
+			);
+			return _doPlayerTask(false, true, {
+				reason: "ad-recovery",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: false,
+			});
+		}
+
 		function _collapseDirectPlayerAdMedia() {
 			const currentContext = _getPlaybackContextFromUrl(window.location.href);
 			if (
@@ -2182,10 +2263,12 @@ function _blockAntiAdblockPopup() {
 				text.includes("consider turbo") ||
 				text.includes("try turbo") ||
 				text.includes("click here for turbo") ||
+				text.includes("subscribe for ad-free viewing") ||
 				text.includes("taking an ad break") ||
 				text.includes("stick around to support the stream") ||
 				text.includes("commercials") ||
 				text.includes("whitelist") ||
+				(text.includes("subscribe") && text.includes("ad-free viewing")) ||
 				(text.includes("turbo") && text.includes("ad-free viewing")) ||
 				(text.includes("all of the streams") && text.includes("turbo")) ||
 				text.includes("ad blocker") ||
@@ -2455,6 +2538,10 @@ function _blockAntiAdblockPopup() {
 			let didCleanup = false;
 
 			if (_collapseDirectPlayerAdMedia()) {
+				didCleanup = true;
+			}
+
+			if (_forcePlayerRecoveryFromAdUiSignal()) {
 				didCleanup = true;
 			}
 

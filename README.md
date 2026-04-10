@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.1.5-purple)
+![Version](https://img.shields.io/badge/version-6.1.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,10 +57,10 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.1.5
-- **Turbo Direct-Ad Video Detection** - Direct Amazon MP4 ad suppression now recognizes Twitch Turbo-style player copy, closing a path where Turbo-branded ad video could remain visible near the main player.
-- **Direct-Media Ad Corroboration** - Direct player ad suppression can now rely on the active worker ad state as a second signal, so a detected ad cycle still collapses injected player media even when Twitch's visible overlay copy changes.
-- **CSAI Fast Path** - Merged [PR #5](https://github.com/GosuDRM/TTV-AB/pull/5) so metadata-only CSAI playlists skip unnecessary backup-stream switching when all segments are still live, reducing avoidable rebuffering. Thanks [@ryanbr](https://github.com/ryanbr).
+### v6.1.6
+- **UI-Driven Midroll Recovery** - When Twitch shows clear in-player ad UI but does not expose a suppressible Amazon MP4 node, the extension now forces ad-recovery player reloads instead of letting the main player sit on the ad path.
+- **Safer Live Ad Recovery** - The worker no longer short-circuits ad-marked live playlists through the CSAI fast path, so live midrolls still get full backup-stream recovery instead of being misclassified as metadata-only ads.
+- **Broader Player Ad Copy Detection** - Player overlay detection now recognizes additional Twitch copy such as `Subscribe for ad-free viewing`, improving live ad signal detection before and during recovery.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
