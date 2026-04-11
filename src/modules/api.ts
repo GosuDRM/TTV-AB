@@ -229,7 +229,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		_log(`[Trace] Requesting token for ${playerType} (${logTarget})`, "info");
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
-		const bridgeTimeoutMs = _isFirefoxBrowser() ? 1200 : 5000;
+		const requestTimeoutMs = _isFirefoxBrowser() ? 8000 : 5000;
 
 		const headers: Record<string, string> = {
 			"Client-ID": _C.CLIENT_ID,
@@ -259,7 +259,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 				res = await _fetchViaWorkerBridge(
 					_GQL_URL,
 					requestOptions,
-					bridgeTimeoutMs,
+					requestTimeoutMs,
 				);
 			} catch (bridgeError) {
 				_log(`Token relay error: ${bridgeError.message}`, "warning");
@@ -268,7 +268,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 
 		if (!res) {
 			const controller = new AbortController();
-			timeoutId = setTimeout(() => controller.abort(), 5000);
+			timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
 			res = await fetchFunc(_GQL_URL, {
 				...requestOptions,
 				signal: controller.signal,
