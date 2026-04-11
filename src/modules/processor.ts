@@ -25,6 +25,7 @@ function _resetStreamAdState(info) {
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
+	info.LastForcedAdEndReloadAt = 0;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -201,7 +202,7 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 }
 
 async function _isAdEndStable(info, realFetch, resolution = null) {
-	if (!info?.IsShowingAd) return true;
+	if (!info?.IsShowingAd) return "ended";
 
 	const now = Date.now();
 	if (!info.PendingAdEndAt) {
@@ -213,21 +214,34 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 	info.CleanPlaylistCount =
 		Math.max(0, Math.trunc(Number(info.CleanPlaylistCount) || 0)) + 1;
 	if (info.CleanPlaylistCount < _getResolvedAdEndMinCleanPlaylists()) {
-		return false;
+		return "wait";
 	}
 
 	if (now - info.PendingAdEndAt < _getResolvedAdEndGraceMs()) {
-		return false;
+		return "wait";
 	}
 
-	if (now - info.PendingAdEndAt >= _getResolvedAdEndMaxWaitMs()) {
+	const hasNativeRecoveryReady = await _canReloadNativePlayerAfterAd(
+		info,
+		realFetch,
+		resolution,
+	);
+	if (hasNativeRecoveryReady) {
+		return "ended";
+	}
+
+	const maxWaitMs = _getResolvedAdEndMaxWaitMs();
+	if (maxWaitMs > 0 && now - info.PendingAdEndAt >= maxWaitMs) {
+		if (_isForcedAdEndReloadContinuation(info)) {
+			return "wait";
+		}
 		_markForcedAdEndReload(info);
 		_resetNativeRecoveryReadyState(info);
 		_log("[Trace] Forcing native recovery reload after ad-end wait budget", "warning");
-		return true;
+		return "reload";
 	}
 
-	return _canReloadNativePlayerAfterAd(info, realFetch, resolution);
+	return "wait";
 }
 
 function _resetNativeRecoveryReadyState(info, preserveProbeAt = false) {
@@ -764,7 +778,6 @@ async function _processM3U8(url, text, realFetch) {
 				);
 			}
 			if (isForcedAdEndContinuation) {
-				info.LastForcedAdEndReloadAt = 0;
 				_log("[Trace] Continuing ad recovery after forced native reload", "warning");
 			}
 		}
@@ -861,8 +874,24 @@ async function _processM3U8(url, text, realFetch) {
 	} else {
 		if (info.IsShowingAd) {
 			const resolution = _resolvePlaybackResolutionForUrl(info, url);
-			const hasStableAdEnd = await _isAdEndStable(info, realFetch, resolution);
-			if (!hasStableAdEnd) {
+			const adEndAction = await _isAdEndStable(info, realFetch, resolution);
+			if (adEndAction === "reload") {
+				if (typeof self !== "undefined" && self.postMessage) {
+					info.LastPlayerReload = Date.now();
+					_postWorkerBridgeMessage(
+						self,
+						_createPageScopedWorkerEvent({
+							key: "ReloadPlayer",
+							channel: info.ChannelName,
+							mediaKey: info.MediaKey,
+							refreshAccessToken: true,
+							newMediaPlayerInstance: false,
+						}),
+					);
+				}
+				return text;
+			}
+			if (adEndAction !== "ended") {
 				return text;
 			}
 			const {

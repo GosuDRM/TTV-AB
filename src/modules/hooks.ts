@@ -922,6 +922,7 @@ function _hookWorker() {
 							}
 							{
 								const now = Date.now();
+								const isContinuation = data.continued === true;
 								const detectedContext = _normalizePlaybackContext({
 									MediaType: __TTVAB_STATE__.PageMediaType,
 									ChannelName:
@@ -934,11 +935,12 @@ function _hookWorker() {
 								});
 								const channel = detectedContext.ChannelName;
 								const mediaKey = detectedContext.MediaKey;
-								const shouldStartNewCycle =
-									!__TTVAB_STATE__.CurrentAdMediaKey ||
-									__TTVAB_STATE__.CurrentAdMediaKey !== mediaKey ||
-									now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
-										__TTVAB_STATE__.AdCycleStaleMs;
+								const shouldStartNewCycle = isContinuation
+									? false
+									: !__TTVAB_STATE__.CurrentAdMediaKey ||
+										__TTVAB_STATE__.CurrentAdMediaKey !== mediaKey ||
+										now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
+											__TTVAB_STATE__.AdCycleStaleMs;
 								if (shouldStartNewCycle) {
 									if (typeof _clearPlaybackRecoveryTimeouts === "function") {
 										_clearPlaybackRecoveryTimeouts();
@@ -948,6 +950,11 @@ function _hookWorker() {
 									if (typeof _rememberPlayerPlaybackForAd === "function") {
 										_rememberPlayerPlaybackForAd(channel, mediaKey);
 									}
+								} else if (
+									isContinuation &&
+									typeof _rememberPlayerPlaybackForAd === "function"
+								) {
+									_rememberPlayerPlaybackForAd(channel, mediaKey);
 								}
 								__TTVAB_STATE__.CurrentAdChannel = channel;
 								__TTVAB_STATE__.CurrentAdMediaKey = mediaKey;
@@ -963,7 +970,12 @@ function _hookWorker() {
 							if (typeof _ensurePlaybackMonitorsRunning === "function") {
 								_ensurePlaybackMonitorsRunning(true);
 							}
-							_log("Ad detected, blocking...", "warning");
+							_log(
+								data.continued === true
+									? "Ad recovery continuing after native reload"
+									: "Ad detected, blocking...",
+								"warning",
+							);
 							break;
 						case "BackupPlayerTypeSelected": {
 							if (isStalePlaybackEvent(data)) {
