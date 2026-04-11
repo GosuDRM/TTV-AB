@@ -593,6 +593,9 @@ function _hookWorker() {
                 ${_hasExplicitAdMetadata.toString()}
                 ${_isExplicitKnownAdSegmentUrl.toString()}
                 ${_isKnownAdSegmentUrl.toString()}
+                ${_getTaggedPlaylistUri.toString()}
+                ${_isMediaPartLine.toString()}
+                ${_isPartPreloadHintLine.toString()}
                 ${_playlistHasKnownAdSegments.toString()}
                 ${_absolutizePlaylistUrl.toString()}
                 ${_absolutizeMediaPlaylistUrls.toString()}

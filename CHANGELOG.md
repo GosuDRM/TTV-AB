@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.1] - 2026-04-11
+
+### Fixed
+- **Low-Latency Playlist Hardening** - Added low-latency playlist handling for ad-marked `#EXT-X-PART` and `#EXT-X-PRELOAD-HINT` entries, injected the new helpers into the worker runtime, added clean recovery for part-only stripped playlists, shortened stale reuse windows for part-only cached playlists, and extended the ad-entry warm-up path to cover low-latency media entries.
+
 ## [6.1.9] - 2026-04-11
 
 ### Fixed

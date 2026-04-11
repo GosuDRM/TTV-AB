@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.1.9-purple)
+![Version](https://img.shields.io/badge/version-6.2.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.1.9
-- **Prefetch Ad-Hint Hardening** - Once Twitch enters an ad-stripping path, the worker now removes Twitch low-latency prefetch hints too, reducing cases where ad media could still be prefetched and leak through intermittently.
+### v6.2.1
+- **Low-Latency Playlist Hardening** - The worker now handles ad-marked `#EXT-X-PART` and `#EXT-X-PRELOAD-HINT` entries, injects the new low-latency helpers into the worker runtime, recovers cleanly from part-only stripped playlists, and avoids stale reuse of part-only cached playlists.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
