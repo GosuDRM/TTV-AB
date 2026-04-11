@@ -956,7 +956,7 @@ function _hookWorker() {
 								},
 							});
 							if (typeof _ensurePlaybackMonitorsRunning === "function") {
-								_ensurePlaybackMonitorsRunning();
+								_ensurePlaybackMonitorsRunning(true);
 							}
 							_log("Ad detected, blocking...", "warning");
 							break;

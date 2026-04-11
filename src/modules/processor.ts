@@ -229,16 +229,19 @@ function _shouldReloadNativePlayerAfterAdReset(
 		wasUsingModifiedM3U8,
 		wasUsingFallbackStream,
 		wasUsingBackupStream,
+		hadStrippedAdSegments,
 	}: {
 		wasUsingModifiedM3U8?: boolean;
 		wasUsingFallbackStream?: boolean;
 		wasUsingBackupStream?: boolean;
+		hadStrippedAdSegments?: boolean;
 	} = {},
 ) {
 	return Boolean(
 		wasUsingModifiedM3U8 ||
 			wasUsingFallbackStream ||
-			wasUsingBackupStream,
+			wasUsingBackupStream ||
+			hadStrippedAdSegments,
 	);
 }
 
@@ -600,6 +603,8 @@ async function _processM3U8(url, text, realFetch) {
 					wasUsingModifiedM3U8,
 					wasUsingFallbackStream,
 					wasUsingBackupStream,
+					hadStrippedAdSegments:
+						Math.max(0, Number(info.NumStrippedAdSegments) || 0) > 0,
 				});
 				const shouldRefreshAccessToken = true;
 				_postWorkerBridgeMessage(
@@ -826,6 +831,8 @@ async function _processM3U8(url, text, realFetch) {
 					wasUsingModifiedM3U8,
 					wasUsingFallbackStream,
 					wasUsingBackupStream,
+					hadStrippedAdSegments:
+						Math.max(0, Number(info.NumStrippedAdSegments) || 0) > 0,
 				});
 				const shouldRefreshAccessToken = true;
 				_postWorkerBridgeMessage(
@@ -1078,7 +1085,11 @@ async function _findBackupStream(
 									_log(`[Trace] Selected: ${pt}`, "success");
 									break;
 								}
-								if (isDoingMinimalRequests && candidateIsPlayable) {
+								if (
+									isDoingMinimalRequests &&
+									candidateIsPlayable &&
+									!candidateHasAds
+								) {
 									_clearBackupPlayerRetryCooldown(info, pt);
 									backupType = pt;
 									backupM3u8 = m3u8;

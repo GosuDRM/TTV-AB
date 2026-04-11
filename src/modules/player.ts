@@ -1119,10 +1119,7 @@ function _monitorPlaybackIntent() {
 			const now = Date.now();
 			if (!hasRelevantContext) {
 				_syncPrimaryMediaPlaybackIntent();
-				if (!_PlaybackIntentState.observedMedia?.isConnected) {
-					_stopPlaybackIntentMonitor(true);
-					return;
-				}
+				nextDelay = syncDelay;
 			}
 			if (
 				currentMediaKey !== lastSyncedMediaKey ||
@@ -1249,12 +1246,12 @@ function _stopPlayerBufferMonitor(resetBufferState = true) {
 	}
 }
 
-function _ensurePlaybackMonitorsRunning() {
+function _ensurePlaybackMonitorsRunning(forceStart = false) {
 	let didStart = false;
 
 	if (
 		!_playbackIntentMonitorStarted &&
-		_hasPlaybackIntentMonitorRelevantContext()
+		(forceStart || _hasPlaybackIntentMonitorRelevantContext())
 	) {
 		_playbackIntentMonitorStarted = true;
 		_monitorPlaybackIntent();
@@ -1264,8 +1261,9 @@ function _ensurePlaybackMonitorsRunning() {
 	if (
 		!_playerBufferMonitorStarted &&
 		_C.BUFFERING_FIX &&
-		__TTVAB_STATE__.IsBufferFixEnabled === true &&
-		_hasPlayerBufferMonitorRelevantContext()
+		(forceStart ||
+			(__TTVAB_STATE__.IsBufferFixEnabled === true &&
+				_hasPlayerBufferMonitorRelevantContext()))
 	) {
 		_playerBufferMonitorStarted = true;
 		_monitorPlayerBuffering();
@@ -2306,10 +2304,6 @@ function _doPlayerTask(
 function _monitorPlayerBuffering() {
 	function check() {
 		_playerBufferMonitorTimer = null;
-		if (!_hasPlayerBufferMonitorRelevantContext()) {
-			_stopPlayerBufferMonitor();
-			return;
-		}
 		const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
 		const hasActiveAdContext = Boolean(
 			__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel,
@@ -2333,6 +2327,11 @@ function _monitorPlayerBuffering() {
 		const idleDelay = isHidden
 			? hiddenDelay
 			: Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000);
+		if (!_hasPlayerBufferMonitorRelevantContext()) {
+			_clearCachedPlayerRef();
+			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
+			return;
+		}
 		if (
 			_shouldSuppressAutomaticPlaybackResume(
 				__TTVAB_STATE__.PageChannel,
@@ -2349,13 +2348,15 @@ function _monitorPlayerBuffering() {
 			return;
 		}
 		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
-			_stopPlayerBufferMonitor();
+			_clearCachedPlayerRef();
+			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
 		const hasLivePlaybackContext =
 			__TTVAB_STATE__.PageMediaType === "live" && Boolean(currentMediaKey);
 		if (!hasLivePlaybackContext) {
-			_stopPlayerBufferMonitor();
+			_clearCachedPlayerRef();
+			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
 

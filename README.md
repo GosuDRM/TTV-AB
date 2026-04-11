@@ -58,7 +58,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v6.2.3
-- **Firefox Performance / Stability Hardening** - Playback monitors now shut down cleanly after navigation away from active playback, route-less player surfaces keep DOM cleanup active, and queued stats updates survive temporary bridge disconnects more reliably during long sessions and multi-tab use.
+- **Firefox Ad-Recovery & Stability Hardening** - Accelerated post-ad recovery to return you to high-quality playback much faster. This update also tightens fallback ad-blocking, increases player resilience against stalling, and ensures background statistics and DOM cleanup remain rock-solid during long, multi-tab viewing sessions.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

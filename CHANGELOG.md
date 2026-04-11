@@ -5,9 +5,13 @@ All notable changes to TTV AB will be documented in this file.
 ## [6.2.3] - 2026-04-11
 
 ### Fixed
-- **Playback Monitor Lifecycle Cleanup** - The playback-intent and live-buffer monitors now stop cleanly once a tab leaves active playback, reducing unnecessary background work after navigation, during multi-tab use, and across long watch sessions.
+- **Playback Monitor Resiliency** - Playback-intent and live-buffer monitors now idle instead of stopping on transient context loss, and automatically restart on ad-detection, toggling, and route resyncs to prevent the player from stalling.
 - **Route-Less Player Surface Recovery** - DOM cleanup now stays active whenever Twitch still exposes a real player surface, even if the URL no longer carries a normal playback route, so cleanup and recovery logic do not go cold on route-less player views.
 - **Bridge Counter Queue Hardening** - Pending ads-blocked and DOM-cleanup stat updates are now coalesced and retained more safely during temporary bridge outages, reducing dropped counter deltas without letting the queue grow unbounded.
+- **Post-Ad Recovery Speed** - Reduced the native-recovery confirmation window to a single clean probe with a shorter cooldown, removing a bottleneck that delayed the return to native playback.
+- **Continuous Post-Ad Reloads** - Treats in-place stripped-ad recovery the same as backup/fallback recovery so the player reliably reloads at the end of an ad cycle.
+- **Playlist Cache Tightening** - Shortened the reuse window for stale clean-playlists, drastically reducing the chance of the player getting stuck on a lower-quality backup state after an ad cycle.
+- **Minimal Requests Ad Leak** - Fixed an edge case where an ad-marked backup playlist could still be selected during minimal requests fallback.
 
 ## [6.2.2] - 2026-04-11
 

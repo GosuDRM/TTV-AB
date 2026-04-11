@@ -623,6 +623,7 @@ function _stripAds(text, stripAll, info) {
 						? info.LastCleanBackupM3U8
 						: null,
 				at: Number(info?.LastCleanBackupAt) || 0,
+				maxAgeMs: 8000,
 			},
 			{
 				label: "last clean native playlist",
@@ -631,6 +632,7 @@ function _stripAds(text, stripAll, info) {
 						? info.LastCleanNativeM3U8
 						: null,
 				at: Number(info?.LastCleanNativePlaylistAt) || 0,
+				maxAgeMs: 1500,
 			},
 		];
 		const now = Date.now();
@@ -645,7 +647,9 @@ function _stripAds(text, stripAll, info) {
 			) {
 				return false;
 			}
-			const maxRecoveryAgeMs = hasFullSegments ? 30000 : 3000;
+			const maxRecoveryAgeMs = hasFullSegments
+				? candidate.maxAgeMs
+				: Math.min(candidate.maxAgeMs, 1500);
 			return candidate.at > 0 && now - candidate.at <= maxRecoveryAgeMs;
 		});
 

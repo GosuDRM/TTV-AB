@@ -99,7 +99,7 @@ function _initToggleListener() {
 			_resetPlayerBufferMonitorState();
 		}
 		if (enabled && typeof _ensurePlaybackMonitorsRunning === "function") {
-			_ensurePlaybackMonitorsRunning();
+			_ensurePlaybackMonitorsRunning(true);
 		}
 		_log(
 			`Buffer fix ${enabled ? "enabled" : "disabled"}`,
@@ -1151,7 +1151,7 @@ function _blockAntiAdblockPopup() {
 			});
 			const currentContext = _syncPagePlaybackContext();
 			if (typeof _ensurePlaybackMonitorsRunning === "function") {
-				_ensurePlaybackMonitorsRunning();
+				_ensurePlaybackMonitorsRunning(true);
 			}
 			const didMediaKeyChange =
 				previousContext.MediaKey !== currentContext.MediaKey;
@@ -3015,7 +3015,7 @@ function _init() {
 		_hookSecondaryPlayerHandoffDetection();
 	}
 	if (typeof _ensurePlaybackMonitorsRunning === "function") {
-		_ensurePlaybackMonitorsRunning();
+		_ensurePlaybackMonitorsRunning(true);
 	}
 
 	_showWelcome();
