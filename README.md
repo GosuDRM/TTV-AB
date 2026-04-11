@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.1.8-purple)
+![Version](https://img.shields.io/badge/version-6.1.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.1.8
-- **Backup Black-Screen Fix** - Backup media playlists now normalize segment, key, map, and prefetch URLs before they are handed back to Twitch, preventing invalid-URI / endless-spinner cases where a clean backup playlist was selected but its media URLs were not directly playable.
-- **Safer Empty-Playlist Recovery** - When ad stripping removes every segment from a playlist, the worker now prefers a recent clean backup or native playlist instead of restoring stripped ad segments back into playback.
+### v6.1.9
+- **Prefetch Ad-Hint Hardening** - Once Twitch enters an ad-stripping path, the worker now removes Twitch low-latency prefetch hints too, reducing cases where ad media could still be prefetched and leak through intermittently.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

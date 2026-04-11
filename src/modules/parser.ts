@@ -491,6 +491,12 @@ function _stripAds(text, stripAll, info) {
 
 	if (!stripped) {
 		info.NumStrippedAdSegments = 0;
+	} else {
+		for (i = 0; i < len; i++) {
+			if (lines[i]?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+				lines[i] = "";
+			}
+		}
 	}
 
 	info.IsStrippingAdSegments = stripped;
