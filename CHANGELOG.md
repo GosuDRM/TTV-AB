@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.1.9] - 2026-04-11
+
+### Fixed
+- **Prefetch Ad-Hint Hardening** - Once the worker enters an ad-stripping path, it now removes Twitch low-latency prefetch hints as well, reducing intermittent cases where ad media could still be prefetched and leak into playback.
+
 ## [6.1.7] - 2026-04-11
 
 ### Fixed
