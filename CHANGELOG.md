@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.3] - 2026-04-11
+
+### Fixed
+- **Post-Ad Recovery Speed** - Reduced the native-recovery confirmation window to a single clean probe with a shorter cooldown, removing a bottleneck that delayed the return to native playback.
+- **Continuous Post-Ad Reloads** - Treats in-place stripped-ad recovery the same as backup/fallback recovery so the player reliably reloads at the end of an ad cycle.
+- **Native Token Rewrite Hardening** - Native `PlaybackAccessToken` requests now stay pinned to the forced recovery player type, reducing cases where Twitch drifts back onto an ad-marked native path during post-ad validation.
+- **Bridge Counter Queue Hardening** - Pending ads-blocked and DOM-cleanup stat updates are now coalesced and retained more safely during temporary bridge outages, reducing dropped counter deltas without letting the queue grow unbounded.
+- **Playlist Cache Tightening** - Shortened the reuse window for stale clean-playlists, reducing the chance of the player getting stuck on a lower-quality backup state after an ad cycle.
+- **Minimal Requests Ad Leak** - Fixed an edge case where an ad-marked backup playlist could still be selected during minimal requests fallback.
+- **Worker Lifecycle Cleanup** - Intentionally terminated workers are now pruned immediately so backup tracking does not linger longer than necessary during player churn.
+
 ## [6.2.2] - 2026-04-11
 
 ### Fixed

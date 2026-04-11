@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.2-purple)
+![Version](https://img.shields.io/badge/version-6.2.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,14 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.2
-- **Popout / PiP Playback Handoff** - Opening Twitch's popout player now pauses the original page player and blocks automatic recovery from reviving it, and Picture-in-Picture or failed popout launches no longer leave the source tab in a duplicated or stuck playback state.
+### v6.2.3
+- **Faster post-ad return** - Native playback recovery now validates much more aggressively after an ad break, with a shorter clean-playlist confirmation window, fewer native recovery probes, and a hard wait budget that prevents Twitch from keeping the player stuck on backup playback for too long.
+- **More reliable native reloads** - In-place stripped-ad recovery now follows the same post-ad reload path as backup and fallback playback, so the player returns to the native stream more consistently instead of lingering on a temporary recovery path.
+- **Stronger native token pinning** - Native `PlaybackAccessToken` requests are now kept on the forced recovery player type during validation, reducing cases where Twitch drifts back onto an ad-marked native path in the middle of post-ad recovery.
+- **Safer backup stream selection** - Minimal-request fallback no longer accepts ad-marked backup playlists just because they are technically playable, closing an edge case where an ad path could still be selected under degraded recovery conditions.
+- **Tighter clean-playlist reuse** - The recovery cache now expires stale clean playlists much sooner, which lowers the chance of getting stuck on an older low-quality backup state after the ad cycle ends.
+- **More durable bridge stats** - Pending `Ads Blocked` and `DOM Ads Blocked` updates are now coalesced and trimmed more safely during temporary bridge disconnects, so counter deltas are less likely to be dropped while still keeping the queue bounded.
+- **Cleaner worker shutdowns** - Intentionally terminated workers are now pruned immediately, which reduces stale backup tracking during heavy player churn, navigation, and repeated recovery cycles.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
