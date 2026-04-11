@@ -40,6 +40,10 @@ function _getResolvedAdEndGraceMs() {
 	return Math.max(0, Number(__TTVAB_STATE__?.AdEndGraceMs) || 0);
 }
 
+function _getResolvedAdEndMaxWaitMs() {
+	return Math.max(0, Number(__TTVAB_STATE__?.AdEndMaxWaitMs) || 0);
+}
+
 function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
 	switch (reason) {
 		case "error":
@@ -190,6 +194,12 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 
 	if (now - info.PendingAdEndAt < _getResolvedAdEndGraceMs()) {
 		return false;
+	}
+
+	if (now - info.PendingAdEndAt >= _getResolvedAdEndMaxWaitMs()) {
+		_resetNativeRecoveryReadyState(info);
+		_log("[Trace] Forcing native recovery reload after ad-end wait budget", "warning");
+		return true;
 	}
 
 	return _canReloadNativePlayerAfterAd(info, realFetch, resolution);

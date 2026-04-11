@@ -610,6 +610,7 @@ function _hookWorker() {
                 ${_getToken.toString()}
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
+                ${_getResolvedAdEndMaxWaitMs.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
