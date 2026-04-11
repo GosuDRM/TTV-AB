@@ -718,7 +718,7 @@ async function _processM3U8(url, text, realFetch) {
 
 	if (hasAds) {
 		const isForcedAdEndContinuation =
-			!info.IsShowingAd && _isForcedAdEndReloadContinuation(info);
+			_isForcedAdEndReloadContinuation(info);
 		if (!isForcedAdEndContinuation) {
 			info.LastForcedAdEndReloadAt = 0;
 		}
