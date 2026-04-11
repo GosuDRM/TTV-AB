@@ -311,7 +311,10 @@ function _hasPlaylistAdMarkers(text) {
 }
 
 function _playlistHasMediaSegments(text) {
-	return typeof text === "string" && text.includes("#EXTINF");
+	return (
+		typeof text === "string" &&
+		(text.includes("#EXTINF") || text.includes("#EXT-X-PART:"))
+	);
 }
 
 function _getNativeRecoveryProbePlayerType() {

@@ -318,18 +318,43 @@ function _isKnownAdSegmentUrl(
 	);
 }
 
+function _getTaggedPlaylistUri(line) {
+	if (typeof line !== "string" || !line.includes('URI="')) return "";
+	const match = line.match(/URI="([^"]+)"/);
+	return match?.[1] || "";
+}
+
+function _isMediaPartLine(line) {
+	return typeof line === "string" && line.startsWith("#EXT-X-PART:");
+}
+
+function _isPartPreloadHintLine(line) {
+	return (
+		typeof line === "string" &&
+		line.startsWith("#EXT-X-PRELOAD-HINT:") &&
+		(line.includes("TYPE=PART") || line.includes('TYPE="PART"'))
+	);
+}
+
 function _playlistHasKnownAdSegments(
 	text,
 	options: { includeCached?: boolean } = {},
 ) {
 	if (typeof text !== "string" || !text) return false;
 	const lines = text.split("\n");
-	for (let index = 0; index < lines.length - 1; index++) {
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index];
 		if (
-			lines[index]?.startsWith("#EXTINF") &&
+			line?.startsWith("#EXTINF") &&
 			_isKnownAdSegmentUrl(lines[index + 1], options)
 		) {
 			return true;
+		}
+		if (_isMediaPartLine(line) || _isPartPreloadHintLine(line)) {
+			const taggedUri = _getTaggedPlaylistUri(line);
+			if (_isKnownAdSegmentUrl(taggedUri, options)) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -423,12 +448,22 @@ function _stripAds(text, stripAll, info) {
 	let adSegmentCount = 0;
 	let _liveSegmentCount = 0;
 
-	for (i = 0; i < len - 1; i++) {
+	for (i = 0; i < len; i++) {
 		const line = lines[i];
 		if (line?.startsWith("#EXTINF")) {
 			const segmentUrl = lines[i + 1];
 			const isAdSegment =
 				forceStripAllSegments || _isKnownAdSegmentUrl(segmentUrl);
+			if (isAdSegment) {
+				adSegmentCount++;
+			} else {
+				_liveSegmentCount++;
+			}
+		}
+		if (_isMediaPartLine(line) || _isPartPreloadHintLine(line)) {
+			const partUrl = _getTaggedPlaylistUri(line);
+			const isAdSegment =
+				forceStripAllSegments || _isKnownAdSegmentUrl(partUrl);
 			if (isAdSegment) {
 				adSegmentCount++;
 			} else {
@@ -486,6 +521,30 @@ function _stripAds(text, stripAll, info) {
 			}
 		}
 
+		if (shouldStrip && (_isMediaPartLine(line) || _isPartPreloadHintLine(line))) {
+			const taggedUri = _getTaggedPlaylistUri(line);
+			const isAdSegment =
+				forceStripAllSegments || _isKnownAdSegmentUrl(taggedUri);
+			if (isAdSegment) {
+				if (
+					_isMediaPartLine(line) &&
+					taggedUri &&
+					!__TTVAB_STATE__.AdSegmentCache.has(taggedUri)
+				) {
+					info.NumStrippedAdSegments++;
+				}
+				if (
+					taggedUri &&
+					(!forceStripAllSegments || _isExplicitKnownAdSegmentUrl(taggedUri))
+				) {
+					__TTVAB_STATE__.AdSegmentCache.set(taggedUri, Date.now());
+				}
+				stripped = true;
+				lines[i] = "";
+				continue;
+			}
+		}
+
 		if (line.includes(__TTVAB_STATE__.AdSignifier)) stripped = true;
 	}
 
@@ -515,7 +574,9 @@ function _stripAds(text, stripAll, info) {
 
 	const result = lines.filter((l) => l !== "");
 
-	const hasRemainingSegments = result.some((l) => l?.startsWith("#EXTINF"));
+	const hasRemainingSegments = result.some(
+		(l) => l?.startsWith("#EXTINF") || l?.startsWith("#EXT-X-PART:"),
+	);
 	if (!hasRemainingSegments && strippedSegments.length > 0) {
 		const recoveryCandidates = [
 			{

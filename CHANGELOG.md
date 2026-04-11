@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.0] - 2026-04-11
+
+### Fixed
+- **Low-Latency Ad Entry Hardening** - The worker now detects and strips ad-marked `#EXT-X-PART` and `#EXT-X-PRELOAD-HINT` playlist entries, reducing brief ad flashes that could happen before the backup path fully took over.
+
 ## [6.1.9] - 2026-04-11
 
 ### Fixed
