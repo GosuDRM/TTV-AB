@@ -2577,11 +2577,11 @@ function _blockAntiAdblockPopup() {
 				didCleanup = true;
 			}
 
-			if (_forcePlayerRecoveryFromAdUiSignal()) {
+			if (_collapseDisplayAdShell()) {
 				didCleanup = true;
 			}
 
-			if (_collapseDisplayAdShell()) {
+			if (_forcePlayerRecoveryFromAdUiSignal()) {
 				didCleanup = true;
 			}
 
