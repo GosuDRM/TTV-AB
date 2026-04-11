@@ -146,15 +146,47 @@ function _normalizePlaybackContext(context) {
 }
 
 function _getPlaybackContextFromUrl(rawUrl) {
+	let parsedUrl = null;
 	let pathname = "";
 	try {
 		const baseUrl =
 			typeof globalThis?.location?.href === "string"
 				? globalThis.location.href
 				: "https://www.twitch.tv/";
-		pathname = new URL(String(rawUrl || ""), baseUrl).pathname;
+		parsedUrl = new URL(String(rawUrl || ""), baseUrl);
+		pathname = parsedUrl.pathname;
 	} catch {
 		pathname = typeof rawUrl === "string" ? rawUrl : "";
+	}
+
+	const hostname = String(parsedUrl?.hostname || "").toLowerCase();
+	if (hostname === "player.twitch.tv") {
+		const queryChannel = _normalizeChannelName(
+			parsedUrl?.searchParams?.get("channel") || null,
+		);
+		const rawVideoQuery =
+			parsedUrl?.searchParams?.get("video") ||
+			parsedUrl?.searchParams?.get("vod") ||
+			null;
+		const queryVodID = _normalizeVodID(
+			typeof rawVideoQuery === "string"
+				? rawVideoQuery.replace(/^v/i, "")
+				: rawVideoQuery,
+		);
+
+		if (queryChannel) {
+			return _normalizePlaybackContext({
+				MediaType: "live",
+				ChannelName: queryChannel,
+			});
+		}
+
+		if (queryVodID) {
+			return _normalizePlaybackContext({
+				MediaType: "vod",
+				VodID: queryVodID,
+			});
+		}
 	}
 
 	const segments = String(pathname || "")

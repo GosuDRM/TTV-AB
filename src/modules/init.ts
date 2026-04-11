@@ -1661,6 +1661,18 @@ function _blockAntiAdblockPopup() {
 
 		function _resumePlaybackAfterDirectPlayerAd() {
 			const currentContext = _getPlaybackContextFromUrl(window.location.href);
+			if (
+				typeof _shouldSuppressAutomaticPlaybackResume === "function" &&
+				_shouldSuppressAutomaticPlaybackResume(
+					currentContext.ChannelName,
+					currentContext.MediaKey,
+				)
+			) {
+				if (typeof _clearAdResumeIntent === "function") {
+					_clearAdResumeIntent();
+				}
+				return;
+			}
 			const primaryMedia =
 				typeof _getPrimaryMediaElement === "function"
 					? _getPrimaryMediaElement()
@@ -1696,6 +1708,18 @@ function _blockAntiAdblockPopup() {
 			}
 
 			const resume = () => {
+				if (
+					typeof _shouldSuppressAutomaticPlaybackResume === "function" &&
+					_shouldSuppressAutomaticPlaybackResume(
+						currentContext.ChannelName,
+						currentContext.MediaKey,
+					)
+				) {
+					if (typeof _clearAdResumeIntent === "function") {
+						_clearAdResumeIntent();
+					}
+					return;
+				}
 				if (typeof _playPlaybackTarget === "function") {
 					_playPlaybackTarget(
 						primaryMedia,
@@ -1743,6 +1767,18 @@ function _blockAntiAdblockPopup() {
 				currentContext.MediaType !== "vod" &&
 				currentContext.MediaType !== "live"
 			) {
+				return false;
+			}
+			if (
+				typeof _shouldSuppressAutomaticPlaybackResume === "function" &&
+				_shouldSuppressAutomaticPlaybackResume(
+					currentContext.ChannelName,
+					currentContext.MediaKey,
+				)
+			) {
+				if (typeof _clearAdResumeIntent === "function") {
+					_clearAdResumeIntent();
+				}
 				return false;
 			}
 
@@ -2870,6 +2906,9 @@ function _init() {
 	_initAchievementListener();
 
 	_hookVisibilityState();
+	if (typeof _hookSecondaryPlayerHandoffDetection === "function") {
+		_hookSecondaryPlayerHandoffDetection();
+	}
 	_monitorPlaybackIntent();
 	if (_C.BUFFERING_FIX) {
 		_monitorPlayerBuffering();

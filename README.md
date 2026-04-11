@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.1-purple)
+![Version](https://img.shields.io/badge/version-6.2.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.1
-- **Low-Latency Playlist Hardening** - The worker now handles ad-marked `#EXT-X-PART` and `#EXT-X-PRELOAD-HINT` entries, injects the new low-latency helpers into the worker runtime, recovers cleanly from part-only stripped playlists, and avoids stale reuse of part-only cached playlists.
+### v6.2.2
+- **Popout / PiP Playback Handoff** - Opening Twitch's popout player now pauses the original page player and blocks automatic recovery from reviving it, and Picture-in-Picture or failed popout launches no longer leave the source tab in a duplicated or stuck playback state.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

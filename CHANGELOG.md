@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.2] - 2026-04-11
+
+### Fixed
+- **Popout / PiP Playback Handoff** - Opening Twitch's popout player now pauses the original page player and suppresses automatic visibility, ad-recovery, direct-player recovery, and buffer-recovery restarts on the source tab, while Picture-in-Picture and failed popout launches no longer leave the main player in a broken or duplicated playback state.
+
 ## [6.2.1] - 2026-04-11
 
 ### Fixed
