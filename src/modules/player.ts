@@ -34,6 +34,12 @@ const _PlaybackIntentState = {
 	lastPlaybackControlInteractionAt: 0,
 	lastPlaybackControlInteractionMediaKey: null,
 	interactionMonitorInitialized: false,
+	secondaryPlayerLaunchMonitorInitialized: false,
+	secondaryPlayerHandoffKind: null,
+	secondaryPlayerHandoffChannel: null,
+	secondaryPlayerHandoffMediaKey: null,
+	secondaryPlayerHandoffUntil: 0,
+	secondaryPlayerHandoffSourceWasPlaying: false,
 };
 const _PlaybackRecoveryTimeoutState = {
 	timeouts: new Set<{
@@ -61,6 +67,8 @@ const _POST_AD_SOFT_RELOAD_DELAY_MS = 10000;
 const _POST_AD_PAUSE_RESUME_RETRY_MS = 2500;
 const _VISIBILITY_RESUME_RETRY_DELAYS_MS = [80, 250, 700, 1500];
 const _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS = [120, 500, 1500, 3000];
+const _SECONDARY_PLAYER_HANDOFF_WINDOW_MS = 2700000;
+const _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS = [0, 120, 450, 1000];
 const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
 	'[data-a-target="player-play-pause-button"]',
 	'[data-a-target="player-overlay-play-button"]',
@@ -399,6 +407,14 @@ function _clearRecordedUserPauseIntent() {
 	_PlaybackIntentState.userPausedDuringAd = false;
 }
 
+function _clearSecondaryPlayerHandoff() {
+	_PlaybackIntentState.secondaryPlayerHandoffKind = null;
+	_PlaybackIntentState.secondaryPlayerHandoffChannel = null;
+	_PlaybackIntentState.secondaryPlayerHandoffMediaKey = null;
+	_PlaybackIntentState.secondaryPlayerHandoffUntil = 0;
+	_PlaybackIntentState.secondaryPlayerHandoffSourceWasPlaying = false;
+}
+
 function _clearRecentPlaybackControlInteraction() {
 	_PlaybackIntentState.lastPlaybackControlInteractionAt = 0;
 	_PlaybackIntentState.lastPlaybackControlInteractionMediaKey = null;
@@ -467,6 +483,7 @@ function _resetPlaybackIntentForNavigation(
 ) {
 	_clearRecordedUserPauseIntent();
 	_clearRecentPlaybackControlInteraction();
+	_clearSecondaryPlayerHandoff();
 	_suppressPauseIntent(channel, mediaKey, durationMs);
 }
 
@@ -525,6 +542,274 @@ function _matchesPlaybackTargetContext(
 			!normalizedExpectedChannel ||
 			safeChannel === normalizedExpectedChannel)
 	);
+}
+
+function _hasActiveSecondaryPlayerHandoff(channel = null, mediaKey = null) {
+	const until = Number(_PlaybackIntentState.secondaryPlayerHandoffUntil) || 0;
+	if (until <= Date.now()) {
+		_clearSecondaryPlayerHandoff();
+		return false;
+	}
+
+	return _matchesPlaybackTargetContext(
+		_PlaybackIntentState.secondaryPlayerHandoffChannel,
+		_PlaybackIntentState.secondaryPlayerHandoffMediaKey,
+		channel,
+		mediaKey,
+	);
+}
+
+function _shouldSuppressAutomaticPlaybackResume(channel = null, mediaKey = null) {
+	return _hasActiveSecondaryPlayerHandoff(channel, mediaKey);
+}
+
+function _isPrimaryPlaybackCurrentlyActive() {
+	const { player } = _getPlayerAndState();
+	const playerCore = _getPlayerCore(player);
+	const playerVideo = player?.getHTMLVideoElement?.() || null;
+	if (
+		player &&
+		!_isPlayerPaused(player, playerCore, playerVideo) &&
+		!(playerVideo instanceof HTMLMediaElement && playerVideo.ended)
+	) {
+		return true;
+	}
+
+	const primaryMedia = _getPrimaryMediaElement();
+	return Boolean(
+		primaryMedia instanceof HTMLMediaElement &&
+			primaryMedia.isConnected &&
+			!primaryMedia.paused &&
+			!primaryMedia.ended,
+	);
+}
+
+function _markSecondaryPlayerHandoff(
+	kind = "popout",
+	channel = null,
+	mediaKey = null,
+	durationMs = _SECONDARY_PLAYER_HANDOFF_WINDOW_MS,
+	sourceWasPlaying = _isPrimaryPlaybackCurrentlyActive(),
+) {
+	if (!Number.isFinite(durationMs) || durationMs <= 0) {
+		return false;
+	}
+
+	const safeChannel =
+		_normalizePlayerChannel(channel) ||
+		_normalizePlayerChannel(__TTVAB_STATE__.PageChannel) ||
+		null;
+	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	_PlaybackIntentState.secondaryPlayerHandoffKind = kind;
+	_PlaybackIntentState.secondaryPlayerHandoffChannel = safeChannel;
+	_PlaybackIntentState.secondaryPlayerHandoffMediaKey = safeMediaKey;
+	_PlaybackIntentState.secondaryPlayerHandoffUntil = Date.now() + durationMs;
+	_PlaybackIntentState.secondaryPlayerHandoffSourceWasPlaying =
+		sourceWasPlaying === true;
+	return true;
+}
+
+function _pausePrimaryPlaybackForSecondaryPlayerHandoff(
+	channel = null,
+	mediaKey = null,
+) {
+	if (!_hasActiveSecondaryPlayerHandoff(channel, mediaKey)) {
+		return false;
+	}
+
+	let didPause = false;
+	const { player } = _getPlayerAndState();
+	const playerCore = _getPlayerCore(player);
+	const playerVideo = player?.getHTMLVideoElement?.() || null;
+	if (player && !_isPlayerPaused(player, playerCore, playerVideo)) {
+		didPause = _pausePlaybackTarget(player) || didPause;
+	}
+	if (
+		playerVideo instanceof HTMLMediaElement &&
+		!playerVideo.paused &&
+		!playerVideo.ended
+	) {
+		didPause = _pausePlaybackTarget(playerVideo) || didPause;
+	}
+
+	const primaryMedia = _getPrimaryMediaElement();
+	if (
+		primaryMedia instanceof HTMLMediaElement &&
+		primaryMedia !== playerVideo &&
+		!primaryMedia.paused &&
+		!primaryMedia.ended
+	) {
+		didPause = _pausePlaybackTarget(primaryMedia) || didPause;
+	}
+
+	return didPause;
+}
+
+function _scheduleSecondaryPlayerHandoffPause(channel = null, mediaKey = null) {
+	for (const delay of _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS) {
+		setTimeout(() => {
+			_pausePrimaryPlaybackForSecondaryPlayerHandoff(channel, mediaKey);
+		}, Math.max(0, Number(delay) || 0));
+	}
+}
+
+function _rollbackSecondaryPlayerHandoff(
+	channel = null,
+	mediaKey = null,
+	sourceWasPlaying = false,
+) {
+	_clearSecondaryPlayerHandoff();
+	if (sourceWasPlaying !== true) {
+		return false;
+	}
+
+	for (const delay of [0, 120, 350]) {
+		setTimeout(() => {
+			_resumePrimaryPlaybackIfPaused(channel, mediaKey);
+		}, delay);
+	}
+	return true;
+}
+
+function _getSecondaryPlayerLaunchDescriptorFromUrl(rawUrl) {
+	let parsedUrl = null;
+	try {
+		const baseUrl =
+			typeof globalThis?.location?.href === "string"
+				? globalThis.location.href
+				: "https://www.twitch.tv/";
+		parsedUrl = new URL(String(rawUrl || ""), baseUrl);
+	} catch {
+		return null;
+	}
+
+	const hostname = String(parsedUrl.hostname || "").toLowerCase();
+	const pathname = String(parsedUrl.pathname || "").toLowerCase();
+	let kind = null;
+	let context = _normalizePlaybackContext(_getPlaybackContextFromUrl(parsedUrl.href));
+
+	if (hostname === "player.twitch.tv") {
+		const playerParam = String(parsedUrl.searchParams.get("player") || "").toLowerCase();
+		const queryChannel = _normalizeChannelName(parsedUrl.searchParams.get("channel"));
+		const queryVideo = _normalizeVodID(
+			parsedUrl.searchParams.get("video") ||
+				parsedUrl.searchParams.get("vod"),
+		);
+		if (playerParam === "popout" || queryChannel || queryVideo) {
+			kind = "popout";
+			if (queryChannel) {
+				context = _normalizePlaybackContext({
+					MediaType: "live",
+					ChannelName: queryChannel,
+				});
+			} else if (queryVideo) {
+				context = _normalizePlaybackContext({
+					MediaType: "vod",
+					VodID: queryVideo,
+				});
+			}
+		}
+	} else if (pathname.includes("/popout/")) {
+		kind = "popout";
+	}
+
+	if (!kind) {
+		return null;
+	}
+
+	return {
+		kind,
+		channel:
+			_normalizePlayerChannel(context.ChannelName) ||
+			_normalizePlayerChannel(__TTVAB_STATE__.PageChannel) ||
+			null,
+		mediaKey:
+			_normalizeMediaKey(context.MediaKey) ||
+			_resolvePlayerMediaKey(context.ChannelName, context.MediaKey),
+	};
+}
+
+function _getSecondaryPlayerLaunchDescriptorFromTarget(target) {
+	if (!(target instanceof Element)) {
+		return null;
+	}
+
+	const anchor = target.closest?.("a[href]");
+	const fromAnchorUrl = _getSecondaryPlayerLaunchDescriptorFromUrl(
+		anchor?.getAttribute?.("href") || "",
+	);
+	if (fromAnchorUrl) {
+		return fromAnchorUrl;
+	}
+
+	const controlTarget =
+		target.closest?.(
+			'button, [role="button"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [aria-label], [data-a-target]',
+		) || target;
+	const label = [
+		controlTarget?.getAttribute?.("aria-label") || "",
+		controlTarget?.getAttribute?.("data-a-target") || "",
+		controlTarget?.textContent || "",
+	]
+		.join(" ")
+		.toLowerCase();
+	const isPipControl =
+		label.includes("picture-in-picture") ||
+		label.includes("picture in picture") ||
+		/\bpip\b/.test(label) ||
+		label.includes("mini player");
+	if (!isPipControl) {
+		return null;
+	}
+
+	return {
+		kind: "pip",
+		channel: _normalizePlayerChannel(__TTVAB_STATE__.PageChannel) || null,
+		mediaKey:
+			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
+			_resolvePlayerMediaKey(__TTVAB_STATE__.PageChannel, null),
+	};
+}
+
+function _beginSecondaryPlayerHandoff(
+	descriptor,
+	options: { pauseSource?: boolean; sourceWasPlaying?: boolean } = {},
+) {
+	if (!descriptor || typeof descriptor !== "object") {
+		return false;
+	}
+
+	const shouldPauseSource =
+		options.pauseSource !== false && String(descriptor.kind || "") !== "pip";
+	const sourceWasPlaying =
+		typeof options.sourceWasPlaying === "boolean"
+			? options.sourceWasPlaying
+			: _isPrimaryPlaybackCurrentlyActive();
+	const didMark = _markSecondaryPlayerHandoff(
+		String(descriptor.kind || "popout"),
+		descriptor.channel || null,
+		descriptor.mediaKey || null,
+		_SECONDARY_PLAYER_HANDOFF_WINDOW_MS,
+		sourceWasPlaying,
+	);
+	if (!didMark) {
+		return false;
+	}
+
+	_clearAdResumeIntent();
+	if (shouldPauseSource) {
+		_scheduleSecondaryPlayerHandoffPause(
+			descriptor.channel || null,
+			descriptor.mediaKey || null,
+		);
+	}
+	_log(
+		shouldPauseSource
+			? `Detected ${descriptor.kind || "secondary"} player handoff; pausing original player`
+			: `Detected ${descriptor.kind || "secondary"} player handoff`,
+		"info",
+	);
+	return true;
 }
 
 function _doesActiveAdTargetPlayback(channel = null, mediaKey = null) {
@@ -708,6 +993,7 @@ function _initPlaybackControlInteractionMonitor() {
 		if (!_isLikelyPlaybackControlInteraction(event)) {
 			return;
 		}
+		_clearSecondaryPlayerHandoff();
 		_rememberRecentPlaybackControlInteraction(
 			null,
 			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey),
@@ -779,6 +1065,7 @@ function _syncPrimaryMediaPlaybackIntent() {
 
 	const handlePlay = () => {
 		if (_wasRecentProgrammaticPlaybackAction("play")) return;
+		_clearSecondaryPlayerHandoff();
 		_clearUserPauseIntent(null, __TTVAB_STATE__.PageMediaKey);
 	};
 
@@ -850,10 +1137,127 @@ function _monitorPlaybackIntent() {
 	_log("Playback intent monitor active", "info");
 }
 
+function _hookSecondaryPlayerHandoffDetection() {
+	if (
+		_PlaybackIntentState.secondaryPlayerLaunchMonitorInitialized ||
+		typeof window === "undefined"
+	) {
+		return;
+	}
+
+	if (!window.__TTVAB_WINDOW_OPEN_PATCHED__) {
+		const nativeOpen = window.open;
+		try {
+			window.open = function patchedWindowOpen(...args) {
+				const descriptor = _getSecondaryPlayerLaunchDescriptorFromUrl(args[0]);
+				const sourceWasPlaying = descriptor
+					? _isPrimaryPlaybackCurrentlyActive()
+					: false;
+				const openedWindow = nativeOpen.apply(this, args);
+				if (descriptor) {
+					if (openedWindow) {
+						_beginSecondaryPlayerHandoff(descriptor, {
+							sourceWasPlaying,
+							pauseSource: descriptor.kind !== "pip",
+						});
+					} else {
+						_rollbackSecondaryPlayerHandoff(
+							descriptor.channel || null,
+							descriptor.mediaKey || null,
+							false,
+						);
+					}
+				}
+				return openedWindow;
+			};
+			window.__TTVAB_WINDOW_OPEN_PATCHED__ = true;
+		} catch {}
+	}
+
+	if (!window.__TTVAB_REQUEST_PIP_PATCHED__) {
+		const nativeRequestPictureInPicture =
+			HTMLVideoElement?.prototype?.requestPictureInPicture;
+		if (typeof nativeRequestPictureInPicture === "function") {
+			try {
+				HTMLVideoElement.prototype.requestPictureInPicture =
+					function patchedRequestPictureInPicture(...args) {
+						const result = nativeRequestPictureInPicture.apply(this, args);
+						if (typeof result?.then === "function") {
+							return result.then((value) => {
+								const descriptor = {
+									kind: "pip",
+									channel:
+										_normalizePlayerChannel(__TTVAB_STATE__.PageChannel) ||
+										null,
+									mediaKey:
+										_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
+										_resolvePlayerMediaKey(__TTVAB_STATE__.PageChannel, null),
+								};
+								_beginSecondaryPlayerHandoff(descriptor, {
+									pauseSource: false,
+									sourceWasPlaying: _isPrimaryPlaybackCurrentlyActive(),
+								});
+								this.addEventListener(
+									"leavepictureinpicture",
+									() => {
+										if (
+											_PlaybackIntentState.secondaryPlayerHandoffKind ===
+											"pip"
+										) {
+											_clearSecondaryPlayerHandoff();
+										}
+									},
+									{ once: true, capture: true },
+								);
+								return value;
+							});
+						}
+						return result;
+					};
+				window.__TTVAB_REQUEST_PIP_PATCHED__ = true;
+			} catch {}
+		}
+	}
+
+	document.addEventListener(
+		"enterpictureinpicture",
+		() => {
+			_beginSecondaryPlayerHandoff(
+				{
+					kind: "pip",
+					channel: _normalizePlayerChannel(__TTVAB_STATE__.PageChannel) || null,
+					mediaKey:
+						_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
+						_resolvePlayerMediaKey(__TTVAB_STATE__.PageChannel, null),
+				},
+				{
+					pauseSource: false,
+					sourceWasPlaying: _isPrimaryPlaybackCurrentlyActive(),
+				},
+			);
+		},
+		true,
+	);
+	document.addEventListener(
+		"leavepictureinpicture",
+		() => {
+			if (_PlaybackIntentState.secondaryPlayerHandoffKind === "pip") {
+				_clearSecondaryPlayerHandoff();
+			}
+		},
+		true,
+	);
+
+	_PlaybackIntentState.secondaryPlayerLaunchMonitorInitialized = true;
+}
+
 function _resumeActivePlayerIfPaused(channel = null, mediaKey = null) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
 	if (_hasUserPauseIntent(safeChannel, safeMediaKey)) {
+		return false;
+	}
+	if (_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey)) {
 		return false;
 	}
 
@@ -876,6 +1280,9 @@ function _resumePrimaryPlaybackIfPaused(channel = null, mediaKey = null) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
 	if (_hasUserPauseIntent(safeChannel, safeMediaKey)) {
+		return false;
+	}
+	if (_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey)) {
 		return false;
 	}
 	if (_resumeActivePlayerIfPaused(safeChannel, safeMediaKey)) {
@@ -901,6 +1308,9 @@ function _guardPlaybackAcrossVisibilityTransition(
 ) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	if (_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey)) {
+		return;
+	}
 	const retryDelays = _isNativeDocumentHidden()
 		? _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS
 		: _VISIBILITY_RESUME_RETRY_DELAYS_MS;
@@ -1201,6 +1611,10 @@ function _maybeClearTransientPauseIntentAfterAd(
 function _canAttemptAdResume(channel = null, mediaKey = null) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	if (_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey)) {
+		_clearAdResumeIntent();
+		return false;
+	}
 	if (!_hasPendingAdResumeIntent(safeChannel, safeMediaKey)) return false;
 	_maybeClearTransientPauseIntentAfterAd(safeChannel, safeMediaKey);
 	return !_hasUserPauseIntent(safeChannel, safeMediaKey);
@@ -1249,7 +1663,9 @@ function _rememberPlayerPlaybackForAd(channel = null, mediaKey = null) {
 		_clearUserPauseIntent(safeChannel, safeMediaKey);
 	}
 
-	let shouldResumeAfterAd = !_hasUserPauseIntent(safeChannel, safeMediaKey);
+	let shouldResumeAfterAd =
+		!_hasUserPauseIntent(safeChannel, safeMediaKey) &&
+		!_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey);
 	if (player && playerState?.props?.content) {
 		const video = player.getHTMLVideoElement?.() || null;
 		const contentType =
@@ -1282,6 +1698,10 @@ function _resumeActivePlayerAfterAd(channel = null, mediaKey = null) {
 function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	if (_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey)) {
+		_clearAdResumeIntent();
+		return false;
+	}
 	if (!_hasPendingAdResumeIntent(safeChannel, safeMediaKey)) return false;
 
 	const { player, state: playerState } = _getPlayerAndState();
@@ -1376,6 +1796,13 @@ function _handlePendingPostAdRecovery(
 	mediaKey = null,
 	contentType = null,
 ) {
+	if (_shouldSuppressAutomaticPlaybackResume(channel, mediaKey)) {
+		_clearAdResumeIntent();
+		_PlayerBufferState.postAdUnhealthyCount = 0;
+		_PlayerBufferState.postAdRecoveryStartedAt = 0;
+		return false;
+	}
+
 	const now = Date.now();
 	if (!_PlayerBufferState.postAdRecoveryStartedAt) {
 		_PlayerBufferState.postAdRecoveryStartedAt = now;
@@ -1572,6 +1999,19 @@ function _doPlayerTask(
 	}
 
 	const playerCore = _getPlayerCore(player);
+	const reason = options.reason || "manual";
+	const shouldSuppressAutomaticTask =
+		reason !== "manual" &&
+		_shouldSuppressAutomaticPlaybackResume(
+			__TTVAB_STATE__.PageChannel,
+			__TTVAB_STATE__.PageMediaKey,
+		);
+	if (shouldSuppressAutomaticTask) {
+		if (reason === "ad-recovery" || reason === "buffer-recovery") {
+			_clearAdResumeIntent();
+		}
+		return false;
+	}
 
 	if (isPausePlay) {
 		if (_isPlayerPaused(player, playerCore)) {
@@ -1604,7 +2044,6 @@ function _doPlayerTask(
 			_log("Downgraded reload to pause/play to preserve PiP", "info");
 			return true;
 		}
-		const reason = options.reason || "manual";
 		const isAdRecoveryReload = reason === "ad-recovery";
 		const isPlaybackRecoveryReload =
 			isAdRecoveryReload || reason === "buffer-recovery";
@@ -1751,6 +2190,21 @@ function _monitorPlayerBuffering() {
 		const idleDelay = isHidden
 			? hiddenDelay
 			: Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000);
+		if (
+			_shouldSuppressAutomaticPlaybackResume(
+				__TTVAB_STATE__.PageChannel,
+				currentMediaKey,
+			)
+		) {
+			_clearAdResumeIntent();
+			_PlayerBufferState.numSame = 0;
+			_PlayerBufferState.fixAttempts = 0;
+			_PlayerBufferState.liveEdgeStarveCount = 0;
+			_PlayerBufferState.postAdUnhealthyCount = 0;
+			_PlayerBufferState.postAdRecoveryStartedAt = 0;
+			setTimeout(check, idleDelay);
+			return;
+		}
 		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
 			setTimeout(check, idleDelay);
 			return;
