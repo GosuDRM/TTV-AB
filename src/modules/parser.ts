@@ -417,6 +417,7 @@ function _stripAds(text, stripAll, info) {
 	let stripped = false;
 	let i = 0;
 	const strippedSegments = [];
+	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
 	const hasKnownAdSegments = _playlistHasKnownAdSegments(text);
@@ -506,6 +507,7 @@ function _stripAds(text, stripAll, info) {
 
 				if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl))
 					info.NumStrippedAdSegments++;
+				strippedMediaEntryCount++;
 
 				if (
 					!forceStripAllSegments ||
@@ -533,6 +535,7 @@ function _stripAds(text, stripAll, info) {
 				) {
 					info.NumStrippedAdSegments++;
 				}
+				strippedMediaEntryCount++;
 				if (
 					taggedUri &&
 					(!forceStripAllSegments || _isExplicitKnownAdSegmentUrl(taggedUri))
@@ -577,7 +580,7 @@ function _stripAds(text, stripAll, info) {
 	const hasRemainingSegments = result.some(
 		(l) => l?.startsWith("#EXTINF") || l?.startsWith("#EXT-X-PART:"),
 	);
-	if (!hasRemainingSegments && strippedSegments.length > 0) {
+	if (!hasRemainingSegments && strippedMediaEntryCount > 0) {
 		const recoveryCandidates = [
 			{
 				label: info?.LastCleanBackupPlayerType
@@ -598,17 +601,19 @@ function _stripAds(text, stripAll, info) {
 				at: Number(info?.LastCleanNativePlaylistAt) || 0,
 			},
 		];
-		const maxRecoveryAgeMs = 30000;
 		const now = Date.now();
 		const recoverySource = recoveryCandidates.find((candidate) => {
 			if (typeof candidate.m3u8 !== "string" || !candidate.m3u8) return false;
+			const hasFullSegments = candidate.m3u8.includes("#EXTINF");
+			const hasPartSegments = candidate.m3u8.includes("#EXT-X-PART:");
 			if (
-				!_playlistHasMediaSegments(candidate.m3u8) ||
+				(!hasFullSegments && !hasPartSegments) ||
 				_hasExplicitAdMetadata(candidate.m3u8) ||
 				_playlistHasKnownAdSegments(candidate.m3u8)
 			) {
 				return false;
 			}
+			const maxRecoveryAgeMs = hasFullSegments ? 30000 : 3000;
 			return candidate.at > 0 && now - candidate.at <= maxRecoveryAgeMs;
 		});
 

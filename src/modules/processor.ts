@@ -672,19 +672,25 @@ async function _processM3U8(url, text, realFetch) {
 			const lines = textStr.replace(/\r/g, "").split("\n");
 			for (let j = 0; j < lines.length; j++) {
 				const line = lines[j];
+				let mediaUrl = "";
 				if (line.startsWith("#EXTINF") && lines.length > j + 1) {
-					const tsUrl = lines[j + 1];
-					if (
-						!line.includes(",live") &&
-						tsUrl && !tsUrl.startsWith("#") &&
-						!info.RequestedAds.has(tsUrl)
-					) {
-						info.RequestedAds.add(tsUrl);
-						try {
-							realFetch(tsUrl).then((r) => r.blob()).catch(() => { });
-						} catch { }
-						break;
+					if (line.includes(",live")) {
+						continue;
 					}
+					mediaUrl = lines[j + 1] || "";
+				} else if (_isMediaPartLine(line) || _isPartPreloadHintLine(line)) {
+					mediaUrl = _getTaggedPlaylistUri(line);
+				}
+				if (
+					mediaUrl &&
+					!mediaUrl.startsWith("#") &&
+					!info.RequestedAds.has(mediaUrl)
+				) {
+					info.RequestedAds.add(mediaUrl);
+					try {
+						realFetch(mediaUrl).then((r) => r.blob()).catch(() => { });
+					} catch { }
+					break;
 				}
 			}
 		}

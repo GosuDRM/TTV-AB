@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.1] - 2026-04-11
+
+### Fixed
+- **Low-Latency Playback Regression Fixes** - Fixed the worker bootstrap so the new low-latency playlist helpers are available at runtime, added clean recovery for part-only stripped playlists, shortened stale reuse windows for part-only cached playlists, and extended the ad-entry warm-up path to cover low-latency media entries.
+
 ## [6.2.0] - 2026-04-11
 
 ### Fixed

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.0-purple)
+![Version](https://img.shields.io/badge/version-6.2.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.0
-- **Low-Latency Ad Entry Hardening** - The worker now detects and strips ad-marked `#EXT-X-PART` and `#EXT-X-PRELOAD-HINT` playlist entries, reducing the brief ad flashes that could happen before the backup path fully took over.
+### v6.2.1
+- **Low-Latency Playback Regression Fixes** - Fixed the worker bootstrap so the new low-latency playlist helpers are available at runtime, and tightened part-only playlist recovery so stripped LL-HLS ad paths recover cleanly without stale playlist reuse.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
