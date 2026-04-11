@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.2-purple)
+![Version](https://img.shields.io/badge/version-6.2.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.2
-- **Popout / PiP Playback Handoff** - Opening Twitch's popout player now pauses the original page player, suppresses automatic recovery from reviving the source tab during secondary-player handoff, and lets `player.twitch.tv` popout windows finish ad recovery with the correct playback context.
+### v6.2.3
+- **Firefox Performance / Stability Hardening** - Playback monitors now shut down cleanly after navigation away from active playback, route-less player surfaces keep DOM cleanup active, and queued stats updates survive temporary bridge disconnects more reliably during long sessions and multi-tab use.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

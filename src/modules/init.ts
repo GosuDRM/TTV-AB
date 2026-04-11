@@ -98,6 +98,9 @@ function _initToggleListener() {
 		if (!enabled && typeof _resetPlayerBufferMonitorState === "function") {
 			_resetPlayerBufferMonitorState();
 		}
+		if (enabled && typeof _ensurePlaybackMonitorsRunning === "function") {
+			_ensurePlaybackMonitorsRunning();
+		}
 		_log(
 			`Buffer fix ${enabled ? "enabled" : "disabled"}`,
 			enabled ? "success" : "warning",
@@ -132,6 +135,8 @@ function _blockAntiAdblockPopup() {
 	let cachedMainPlayerElement: Element | null = null;
 	let cachedMainPlayerRect: DOMRect | null = null;
 	let cachedPlayerOverlayRoots: Element[] | null = null;
+	let lastPlaybackSurfacePresenceCheckAt = 0;
+	let lastHasPlaybackSurface = false;
 	let lastPopupSignalAt = 0;
 	let lastPopupCleanupAt = 0;
 	let lastPopupFallbackScanAt = 0;
@@ -139,10 +144,14 @@ function _blockAntiAdblockPopup() {
 	const POPUP_SCAN_SIGNAL_WINDOW_MS = 5000;
 	const POPUP_RECENT_CLEANUP_WINDOW_MS = 8000;
 	const POPUP_BACKGROUND_SCAN_INTERVAL_MS = 30000;
+	const NON_PLAYBACK_VISIBLE_IDLE_SCAN_DELAY_MS = 30000;
+	const NON_PLAYBACK_HIDDEN_IDLE_SCAN_DELAY_MS = 15000;
+	const DOM_CLEANUP_RECENT_ACTIVITY_WINDOW_MS = 4000;
 	const DOM_CLEANUP_KIND_DEBOUNCE_MS = 1000;
 	const DOM_CLEANUP_SAME_SIGNATURE_COOLDOWN_MS = 30000;
 	const STALE_DISPLAY_ARTIFACT_RECENT_SIGNAL_MS = 15000;
 	const STALE_DISPLAY_ARTIFACT_SAME_SIGNATURE_COOLDOWN_MS = 10000;
+	const PLAYBACK_SURFACE_CHECK_TTL_MS = 750;
 	const PLAYER_SURFACE_AD_MARKER_SELECTOR =
 		'[data-ttvab-player-ad-banner="true"]';
 	const DISPLAY_AD_LABEL_SELECTORS = [
@@ -763,6 +772,7 @@ function _blockAntiAdblockPopup() {
 			cachedMainPlayerElement = null;
 			cachedMainPlayerRect = null;
 			cachedPlayerOverlayRoots = null;
+			lastPlaybackSurfacePresenceCheckAt = 0;
 		}
 
 		function _markIdleScanInterest() {
@@ -778,6 +788,71 @@ function _blockAntiAdblockPopup() {
 			const now = Date.now();
 			lastPopupCleanupAt = now;
 			lastPopupSignalAt = now;
+		}
+
+		function _hasRoutePlaybackContext() {
+			return Boolean(_getPlaybackContextFromUrl(window.location.href).MediaKey);
+		}
+
+		function _hasPlaybackSurface() {
+			const now = Date.now();
+			if (
+				lastPlaybackSurfacePresenceCheckAt > 0 &&
+				now - lastPlaybackSurfacePresenceCheckAt <
+					PLAYBACK_SURFACE_CHECK_TTL_MS
+			) {
+				return lastHasPlaybackSurface;
+			}
+
+			let hasPlaybackSurface = false;
+			try {
+				if (typeof _getPrimaryMediaElement === "function") {
+					const primaryMedia = _getPrimaryMediaElement();
+					hasPlaybackSurface =
+						primaryMedia instanceof HTMLMediaElement &&
+						primaryMedia.isConnected;
+				}
+			} catch {}
+
+			if (!hasPlaybackSurface) {
+				hasPlaybackSurface = _getMainPlayerElement() instanceof Element;
+			}
+
+			lastHasPlaybackSurface = hasPlaybackSurface;
+			lastPlaybackSurfacePresenceCheckAt = now;
+			return hasPlaybackSurface;
+		}
+
+		function _hasRecentDomCleanupSignal() {
+			const now = Date.now();
+			return (
+				Boolean(
+					__TTVAB_STATE__.CurrentAdMediaKey ||
+						__TTVAB_STATE__.CurrentAdChannel ||
+						__TTVAB_STATE__.PinnedBackupPlayerMediaKey ||
+						__TTVAB_STATE__.PinnedBackupPlayerChannel,
+				) ||
+				isDisplayAdShellActive ||
+				isPromotedPageAdActive ||
+				(lastRelevantScanTriggerAt > 0 &&
+					now - lastRelevantScanTriggerAt <
+						DOM_CLEANUP_RECENT_ACTIVITY_WINDOW_MS) ||
+				(lastDisplayAdShellSignalAt > 0 &&
+					now - lastDisplayAdShellSignalAt <
+						STALE_DISPLAY_ARTIFACT_RECENT_SIGNAL_MS) ||
+				(lastPopupSignalAt > 0 &&
+					now - lastPopupSignalAt < POPUP_SCAN_SIGNAL_WINDOW_MS) ||
+				(lastPopupCleanupAt > 0 &&
+					now - lastPopupCleanupAt < POPUP_RECENT_CLEANUP_WINDOW_MS)
+			);
+		}
+
+		function _shouldKeepDomCleanupHot() {
+			return (
+				_hasRoutePlaybackContext() ||
+				_hasPlaybackSurface() ||
+				_hasRecentDomCleanupSignal()
+			);
 		}
 
 		function _shouldRunPopupFallback(force = false) {
@@ -804,7 +879,15 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _getIdleScanDelay() {
-			if (_isDocumentHidden()) return 5000;
+			const shouldKeepHot = _shouldKeepDomCleanupHot();
+			if (_isDocumentHidden()) {
+				return shouldKeepHot
+					? 5000
+					: NON_PLAYBACK_HIDDEN_IDLE_SCAN_DELAY_MS;
+			}
+			if (!shouldKeepHot) {
+				return NON_PLAYBACK_VISIBLE_IDLE_SCAN_DELAY_MS;
+			}
 			if (Date.now() - lastRelevantScanTriggerAt < 4000) {
 				return VISIBLE_IDLE_SCAN_DELAYS[0];
 			}
@@ -1067,6 +1150,9 @@ function _blockAntiAdblockPopup() {
 				MediaKey: __TTVAB_STATE__.PageMediaKey,
 			});
 			const currentContext = _syncPagePlaybackContext();
+			if (typeof _ensurePlaybackMonitorsRunning === "function") {
+				_ensurePlaybackMonitorsRunning();
+			}
 			const didMediaKeyChange =
 				previousContext.MediaKey !== currentContext.MediaKey;
 			if (didMediaKeyChange) {
@@ -2759,43 +2845,59 @@ function _blockAntiAdblockPopup() {
 
 		let debounceTimer = null;
 		let lastImmediateScan = 0;
-		const observer = new MutationObserver((mutations) => {
-			_resetPlayerDetectionCaches();
-			let shouldScan = false;
-			let shouldRunPopupScan = false;
-			const considerMutationNode = (node) => {
-				if (_hasPopupMutationSignal(node)) {
-					shouldRunPopupScan = true;
-				}
-				if (_shouldScanForMutationNode(node)) {
-					shouldScan = true;
-					return true;
-				}
-				return false;
-			};
+		const _mutationListHasSignal = (mutations, predicate) => {
 			for (const mutation of mutations) {
-				if (considerMutationNode(mutation.target)) {
-					break;
+				if (predicate(mutation.target)) {
+					return true;
 				}
 				for (const nodes of [mutation.addedNodes, mutation.removedNodes]) {
 					for (const node of nodes) {
-						if (considerMutationNode(node)) {
-							break;
+						if (predicate(node)) {
+							return true;
 						}
 					}
-					if (shouldScan) break;
 				}
-				if (shouldScan) break;
+			}
+			return false;
+		};
+		const observer = new MutationObserver((mutations) => {
+			if (window.location.href !== lastRouteUrl) {
+				_resetPlayerDetectionCaches();
+				if (_handleRouteChange()) {
+					if (debounceTimer) {
+						clearTimeout(debounceTimer);
+						debounceTimer = null;
+					}
+					lastImmediateScan = Date.now();
+					return;
+				}
 			}
 
+			const isHidden = _isDocumentHidden();
+			const shouldKeepHot = _shouldKeepDomCleanupHot();
+			if (!shouldKeepHot && isHidden) return;
+
+			const shouldRunPopupScan = _mutationListHasSignal(
+				mutations,
+				_hasPopupMutationSignal,
+			);
+			let shouldScan = shouldRunPopupScan;
+
+			if (!shouldScan && shouldKeepHot) {
+				shouldScan = _mutationListHasSignal(
+					mutations,
+					_shouldScanForMutationNode,
+				);
+			}
+
+			if (!shouldScan) return;
+			_resetPlayerDetectionCaches();
 			if (shouldRunPopupScan) {
 				_markPopupScanInterest();
-				shouldScan = true;
 			}
-			if (!shouldScan) return;
 			_markIdleScanInterest();
 
-			if (_isDocumentHidden()) {
+			if (isHidden) {
 				if (_handleRouteChange()) {
 					if (debounceTimer) {
 						clearTimeout(debounceTimer);
@@ -2847,7 +2949,10 @@ function _blockAntiAdblockPopup() {
 			setTimeout(() => {
 				const didRouteChange = _handleRouteChange();
 				if (!didRouteChange && !_isDocumentHidden() && !scheduledScanTimer) {
-					_recordIdleScanResult(_runScan(false));
+					const didWork = _shouldKeepDomCleanupHot()
+						? _runScan(false)
+						: _collapseAdblockPopup();
+					_recordIdleScanResult(didWork);
 				}
 				_scheduleIdleScan();
 			}, delay);
@@ -2909,9 +3014,8 @@ function _init() {
 	if (typeof _hookSecondaryPlayerHandoffDetection === "function") {
 		_hookSecondaryPlayerHandoffDetection();
 	}
-	_monitorPlaybackIntent();
-	if (_C.BUFFERING_FIX) {
-		_monitorPlayerBuffering();
+	if (typeof _ensurePlaybackMonitorsRunning === "function") {
+		_ensurePlaybackMonitorsRunning();
 	}
 
 	_showWelcome();

@@ -11,6 +11,8 @@ const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const _internalMessageTarget = new EventTarget();
 const _pendingBridgeMessages: PlainObject[] = [];
+const _MAX_PENDING_BRIDGE_MESSAGES = 64;
+const _MAX_PENDING_BRIDGE_COUNTER_MESSAGES = 256;
 let _bridgePort: MessagePort | null = null;
 let _bridgePortHandshakeBound = false;
 let _bridgeSessionToken: string | null = null;
@@ -39,6 +41,145 @@ function _onInternalMessage(type, handler) {
 				: (event as PlainObject).detail;
 		handler(detail);
 	});
+}
+
+function _normalizeBridgeCounterValue(value) {
+	const numericValue =
+		typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+	return Number.isFinite(numericValue)
+		? Math.max(0, Math.trunc(numericValue))
+		: 0;
+}
+
+function _getPendingBridgeCounterDetail(message) {
+	if (!message || typeof message !== "object" || Array.isArray(message)) {
+		return null;
+	}
+
+	const type = typeof message.type === "string" ? message.type : null;
+	if (type !== "ttvab-ad-blocked" && type !== "ttvab-dom-ad-cleanup") {
+		return null;
+	}
+
+	const detail = message.detail;
+	if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+		return null;
+	}
+
+	return detail;
+}
+
+function _getPendingBridgeCounterIdentity(message) {
+	const detail = _getPendingBridgeCounterDetail(message);
+	if (!detail) return null;
+
+	const type = String(message.type);
+	const safeChannel =
+		typeof detail.channel === "string" ? detail.channel : "";
+	const safeMediaKey =
+		typeof detail.mediaKey === "string" ? detail.mediaKey : "";
+	const safePageChannel =
+		typeof detail.pageChannel === "string" ? detail.pageChannel : "";
+	const safePageMediaKey =
+		typeof detail.pageMediaKey === "string" ? detail.pageMediaKey : "";
+
+	if (type === "ttvab-dom-ad-cleanup") {
+		const safeKind = typeof detail.kind === "string" ? detail.kind : "generic";
+		return [
+			type,
+			safeKind,
+			safeChannel,
+			safePageChannel,
+			safePageMediaKey,
+		].join("|");
+	}
+
+	return [
+		type,
+		safeChannel,
+		safeMediaKey,
+		safePageChannel,
+		safePageMediaKey,
+	].join("|");
+}
+
+function _mergePendingBridgeCounterMessages(target, incoming) {
+	const targetDetail = _getPendingBridgeCounterDetail(target);
+	const incomingDetail = _getPendingBridgeCounterDetail(incoming);
+	if (!targetDetail || !incomingDetail) return false;
+
+	target.detail = {
+		...targetDetail,
+		...incomingDetail,
+		count: Math.max(
+			_normalizeBridgeCounterValue(targetDetail.count),
+			_normalizeBridgeCounterValue(incomingDetail.count),
+		),
+		delta:
+			_normalizeBridgeCounterValue(targetDetail.delta) +
+			_normalizeBridgeCounterValue(incomingDetail.delta),
+	};
+	return true;
+}
+
+function _coalescePendingBridgeCounterMessage(message) {
+	const identity = _getPendingBridgeCounterIdentity(message);
+	if (!identity) return false;
+
+	for (let i = _pendingBridgeMessages.length - 1; i >= 0; i--) {
+		if (_getPendingBridgeCounterIdentity(_pendingBridgeMessages[i]) !== identity) {
+			continue;
+		}
+		return _mergePendingBridgeCounterMessages(_pendingBridgeMessages[i], message);
+	}
+
+	return false;
+}
+
+function _dropOldestNonCounterPendingBridgeMessage() {
+	for (let i = 0; i < _pendingBridgeMessages.length; i++) {
+		if (_getPendingBridgeCounterIdentity(_pendingBridgeMessages[i])) continue;
+		_pendingBridgeMessages.splice(i, 1);
+		return true;
+	}
+	return false;
+}
+
+function _collapseOldestPendingCounterMessage() {
+	for (let i = 0; i < _pendingBridgeMessages.length; i++) {
+		const identity = _getPendingBridgeCounterIdentity(_pendingBridgeMessages[i]);
+		if (!identity) continue;
+
+		for (let j = _pendingBridgeMessages.length - 1; j > i; j--) {
+			if (_getPendingBridgeCounterIdentity(_pendingBridgeMessages[j]) !== identity) {
+				continue;
+			}
+			if (
+				_mergePendingBridgeCounterMessages(
+					_pendingBridgeMessages[j],
+					_pendingBridgeMessages[i],
+				)
+			) {
+				_pendingBridgeMessages.splice(i, 1);
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+function _trimPendingBridgeMessages() {
+	while (_pendingBridgeMessages.length > _MAX_PENDING_BRIDGE_MESSAGES) {
+		if (_dropOldestNonCounterPendingBridgeMessage()) continue;
+		if (
+			_pendingBridgeMessages.length <= _MAX_PENDING_BRIDGE_COUNTER_MESSAGES
+		) {
+			break;
+		}
+		if (_collapseOldestPendingCounterMessage()) continue;
+		break;
+	}
 }
 
 function _flushBridgeMessageQueue() {
@@ -125,7 +266,11 @@ function _sendBridgeMessage(type, detail = null) {
 			return true;
 		} catch {}
 	}
+	if (_coalescePendingBridgeCounterMessage(message)) {
+		return false;
+	}
 	_pendingBridgeMessages.push(message);
+	_trimPendingBridgeMessages();
 	return false;
 }
 

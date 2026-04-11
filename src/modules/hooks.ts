@@ -955,6 +955,9 @@ function _hookWorker() {
 									mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
 								},
 							});
+							if (typeof _ensurePlaybackMonitorsRunning === "function") {
+								_ensurePlaybackMonitorsRunning();
+							}
 							_log("Ad detected, blocking...", "warning");
 							break;
 						case "BackupPlayerTypeSelected": {
@@ -1214,6 +1217,12 @@ function _hookWorker() {
 						},
 					});
 				} catch {}
+			}
+
+			terminate() {
+				this.__TTVABIntentionallyTerminated = true;
+				pruneTrackedWorkers();
+				return super.terminate();
 			}
 		};
 

@@ -217,10 +217,27 @@ const BRIDGE_HANDSHAKE_RETRY_MS = 75;
 const FLUSH_DELAY_MS = 200;
 const MAX_FLUSH_RETRY_DELAY_MS = 2000;
 const pendingPageMessages = [];
+const MAX_PENDING_PAGE_MESSAGES = 64;
 let pageBridgePort = null;
 let pageBridgeConnected = false;
 let handshakeRetryTimeout = null;
 let bridgeSessionToken = null;
+
+function queuePendingPageMessage(message, prioritize = false) {
+	if (!message || typeof message !== "object") return;
+	if (prioritize) {
+		pendingPageMessages.unshift(message);
+	} else {
+		pendingPageMessages.push(message);
+	}
+	while (pendingPageMessages.length > MAX_PENDING_PAGE_MESSAGES) {
+		if (prioritize) {
+			pendingPageMessages.pop();
+		} else {
+			pendingPageMessages.shift();
+		}
+	}
+}
 
 function createBridgeSessionToken() {
 	const values = new Uint8Array(24);
@@ -263,7 +280,7 @@ function sendToPage(type, detail = null) {
 	if (typeof type !== "string" || !type) return false;
 	const message = { type, detail };
 	if (!pageBridgeConnected || !pageBridgePort) {
-		pendingPageMessages.push(message);
+		queuePendingPageMessage(message);
 		return false;
 	}
 	try {
@@ -271,7 +288,7 @@ function sendToPage(type, detail = null) {
 		return true;
 	} catch {
 		pageBridgeConnected = false;
-		pendingPageMessages.unshift(message);
+		queuePendingPageMessage(message, true);
 		startBridgeHandshake();
 		return false;
 	}
