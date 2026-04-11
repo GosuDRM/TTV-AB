@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.4] - 2026-04-11
+
+### Fixed
+- **Post-Ad UI Recovery Loop** - Firefox now collapses stale in-player display ad shells before escalating into UI-driven player recovery, preventing the player from immediately re-entering ad recovery after an ad ends.
+- **Scoped Native Token Rewrite** - Native `PlaybackAccessToken` requests are now rewritten only while an ad is active or during the immediate post-ad recovery window, reducing brief ad flashes before blocking fully takes over and preventing the player from staying pinned to the forced recovery type.
+
 ## [6.2.3] - 2026-04-11
 
 ### Fixed

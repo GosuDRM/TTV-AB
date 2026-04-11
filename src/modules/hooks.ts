@@ -373,6 +373,7 @@ function _hookWorkerFetch() {
 							BackupVariantUrls: new Set(),
 							LastNativeRecoveryReadyPlayerType: null,
 							NativeRecoveryCleanCount: 0,
+							LastForcedAdEndReloadAt: 0,
 							LastActivityAt: Date.now(),
 						};
 					} else {
@@ -611,6 +612,9 @@ function _hookWorker() {
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getResolvedAdEndMaxWaitMs.toString()}
+                ${_getForcedAdEndReentryWindowMs.toString()}
+                ${_markForcedAdEndReload.toString()}
+                ${_isForcedAdEndReloadContinuation.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
@@ -1269,12 +1273,30 @@ function _hookMainFetch() {
 
 		try {
 			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
+			const hasActiveAdContext = Boolean(
+				__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel,
+			);
+			const lastAdRecoveryReloadAt = Math.max(
+				0,
+				Number(__TTVAB_STATE__.LastAdRecoveryReloadAt) || 0,
+			);
+			const adRecoveryWindowMs = Math.max(
+				1000,
+				Number(__TTVAB_STATE__.PlayerReloadDebounceMs) || 0,
+				Number(__TTVAB_STATE__.AdRecoveryReloadCooldownMs) || 0,
+			);
+			const isRecentAdRecoveryReload =
+				lastAdRecoveryReloadAt > 0 &&
+				Date.now() - lastAdRecoveryReloadAt <= adRecoveryWindowMs;
 
 			if (
-				!forceType || __TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true
+				!forceType ||
+				__TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true ||
+				(!hasActiveAdContext && !isRecentAdRecoveryReload)
 			) {
 				return { bodyText, changed: false };
 			}
+
 			const parsed = JSON.parse(bodyText);
 			const operations = Array.isArray(parsed) ? parsed : [parsed];
 			let changed = false;

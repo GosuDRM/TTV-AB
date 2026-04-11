@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.3-purple)
+![Version](https://img.shields.io/badge/version-6.2.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.3
-- **Firefox Ad-Recovery & Stability Hardening** - Accelerated post-ad recovery to return you to high-quality playback much faster. This update also tightens fallback ad-blocking, increases player resilience against stalling, and ensures background statistics and DOM cleanup remain rock-solid during long, multi-tab viewing sessions.
+### v6.2.4
+- **Firefox Post-Ad Recovery Fixes** - Prevents stale Twitch ad UI from kicking the player back into repeated recovery loops after an ad ends, and limits native token rewriting to active ad recovery so Firefox is less likely to flash an ad before blocking fully takes over.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

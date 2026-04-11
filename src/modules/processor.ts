@@ -4,6 +4,8 @@ function _resetStreamAdState(info) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
 	const wasUsingFallbackStream = Boolean(info?.IsUsingFallbackStream);
 	const wasUsingBackupStream = Boolean(info?.IsUsingBackupStream);
+	const hadStrippedAdSegments =
+		Math.max(0, Number(info?.NumStrippedAdSegments) || 0) > 0;
 
 	info.IsShowingAd = false;
 	info.IsUsingModifiedM3U8 = false;
@@ -29,6 +31,7 @@ function _resetStreamAdState(info) {
 		wasUsingModifiedM3U8,
 		wasUsingFallbackStream,
 		wasUsingBackupStream,
+		hadStrippedAdSegments,
 	};
 }
 
@@ -42,6 +45,27 @@ function _getResolvedAdEndGraceMs() {
 
 function _getResolvedAdEndMaxWaitMs() {
 	return Math.max(0, Number(__TTVAB_STATE__?.AdEndMaxWaitMs) || 0);
+}
+
+function _getForcedAdEndReentryWindowMs() {
+	return Math.max(
+		0,
+		Number(_C?.FORCED_AD_END_REENTRY_WINDOW_MS) || 0,
+	);
+}
+
+function _markForcedAdEndReload(info) {
+	if (!info) return 0;
+	const now = Date.now();
+	info.LastForcedAdEndReloadAt = now;
+	return now;
+}
+
+function _isForcedAdEndReloadContinuation(info) {
+	if (!info?.LastForcedAdEndReloadAt) return false;
+	const windowMs = _getForcedAdEndReentryWindowMs();
+	if (!windowMs) return false;
+	return Date.now() - info.LastForcedAdEndReloadAt <= windowMs;
 }
 
 function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
@@ -197,6 +221,7 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 	}
 
 	if (now - info.PendingAdEndAt >= _getResolvedAdEndMaxWaitMs()) {
+		_markForcedAdEndReload(info);
 		_resetNativeRecoveryReadyState(info);
 		_log("[Trace] Forcing native recovery reload after ad-end wait budget", "warning");
 		return true;
@@ -506,6 +531,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		BackupVariantUrls: new Set(),
 		LastNativeRecoveryReadyPlayerType: null,
 		NativeRecoveryCleanCount: 0,
+		LastForcedAdEndReloadAt: 0,
 		LastActivityAt: Date.now(),
 	};
 
@@ -594,6 +620,7 @@ async function _processM3U8(url, text, realFetch) {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
 				wasUsingBackupStream,
+				hadStrippedAdSegments,
 			} = _resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.CurrentAdMediaKey = null;
@@ -605,7 +632,8 @@ async function _processM3U8(url, text, realFetch) {
 			if (
 				(wasUsingModifiedM3U8 ||
 					wasUsingFallbackStream ||
-					wasUsingBackupStream) &&
+					wasUsingBackupStream ||
+					hadStrippedAdSegments) &&
 				typeof self !== "undefined" &&
 				self.postMessage
 			) {
@@ -613,8 +641,7 @@ async function _processM3U8(url, text, realFetch) {
 					wasUsingModifiedM3U8,
 					wasUsingFallbackStream,
 					wasUsingBackupStream,
-					hadStrippedAdSegments:
-						Math.max(0, Number(info.NumStrippedAdSegments) || 0) > 0,
+					hadStrippedAdSegments,
 				});
 				const shouldRefreshAccessToken = true;
 				_postWorkerBridgeMessage(
@@ -676,6 +703,12 @@ async function _processM3U8(url, text, realFetch) {
 	}
 
 	if (hasAds) {
+		const isForcedAdEndContinuation =
+			!info.IsShowingAd && _isForcedAdEndReloadContinuation(info);
+		if (!isForcedAdEndContinuation) {
+			info.LastForcedAdEndReloadAt = 0;
+		}
+
 		info.PendingAdEndAt = 0;
 		info.CleanPlaylistCount = 0;
 		info.LastNativeRecoveryReadyPlayerType = null;
@@ -716,7 +749,9 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
 			info.FailedBackupPlayerTypes?.clear?.();
-			_incrementAdsBlocked(info.ChannelName, info.MediaKey);
+			if (!isForcedAdEndContinuation) {
+				_incrementAdsBlocked(info.ChannelName, info.MediaKey);
+			}
 			if (typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
 					self,
@@ -724,8 +759,13 @@ async function _processM3U8(url, text, realFetch) {
 						key: "AdDetected",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
+						continued: isForcedAdEndContinuation,
 					}),
 				);
+			}
+			if (isForcedAdEndContinuation) {
+				info.LastForcedAdEndReloadAt = 0;
+				_log("[Trace] Continuing ad recovery after forced native reload", "warning");
 			}
 		}
 
@@ -829,6 +869,7 @@ async function _processM3U8(url, text, realFetch) {
 				wasUsingModifiedM3U8,
 				wasUsingFallbackStream,
 				wasUsingBackupStream,
+				hadStrippedAdSegments,
 			} =
 				_resetStreamAdState(info);
 			__TTVAB_STATE__.CurrentAdChannel = null;
@@ -841,8 +882,7 @@ async function _processM3U8(url, text, realFetch) {
 					wasUsingModifiedM3U8,
 					wasUsingFallbackStream,
 					wasUsingBackupStream,
-					hadStrippedAdSegments:
-						Math.max(0, Number(info.NumStrippedAdSegments) || 0) > 0,
+					hadStrippedAdSegments,
 				});
 				const shouldRefreshAccessToken = true;
 				_postWorkerBridgeMessage(
