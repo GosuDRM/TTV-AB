@@ -374,6 +374,7 @@ function _hookWorkerFetch() {
 							LastNativeRecoveryReadyPlayerType: null,
 							NativeRecoveryCleanCount: 0,
 							LastForcedAdEndReloadAt: 0,
+							LastAdEndReloadAt: 0,
 							LastActivityAt: Date.now(),
 						};
 					} else {
@@ -444,12 +445,17 @@ function _hookWorkerFetch() {
 				typeof e?.message === "string" ? e.message : String(e);
 			const isExpectedCancellation =
 				e?.name === "AbortError" ||
-				/request cancel(?:ed|led)|cancel(?:ed|led)/i.test(errorMessage);
+				e?.name === "TypeError" ||
+				/request cancel(?:ed|led)|cancel(?:ed|led)/i.test(errorMessage) ||
+				/network\s*error/i.test(errorMessage);
 			if (isPlaybackRequest && !isExpectedCancellation) {
 				_log(
 					`Worker fetch wrapper failed for ${safeUrl}: ${errorMessage}`,
 					"error",
 				);
+			}
+			if (isExpectedCancellation && isPlaybackRequest) {
+				return await realFetch(EMPTY_SEGMENT_URL);
 			}
 			throw e;
 		}
@@ -1115,6 +1121,13 @@ function _hookWorker() {
 							}
 							break;
 						case "PauseResumePlayer":
+							if (isStalePlaybackEvent(data)) {
+								_log(
+									`Ignoring stale PauseResumePlayer event for ${data.mediaKey || data.channel}`,
+									"info",
+								);
+								break;
+							}
 							_log("Resuming player", "info");
 							if (typeof _doPlayerTask === "function") {
 								_doPlayerTask(true, false);
