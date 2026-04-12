@@ -707,8 +707,13 @@ async function _processM3U8(url, text, realFetch) {
 	const hasExplicitKnownAdSegments = _playlistHasKnownAdSegments(text, {
 		includeCached: false,
 	});
+	const adSignifier =
+		typeof __TTVAB_STATE__?.AdSignifier === "string" &&
+			__TTVAB_STATE__.AdSignifier.trim()
+			? __TTVAB_STATE__.AdSignifier.trim()
+			: "stitched";
 	const hasAds =
-		_hasPlaylistAdMarkers(text) ||
+		text.includes(adSignifier) ||
 		hasExplicitKnownAdSegments ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
 	const hasMediaSegments = _playlistHasMediaSegments(text);
