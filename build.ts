@@ -608,7 +608,6 @@ function validateSharedDefinitions() {
 		"statusDot",
 		"statusText",
 		"adsBlockedCount",
-		"domAdsBlockedCount",
 		"timeSaved",
 		"statsToggle",
 		"statsPanel",
@@ -1062,7 +1061,6 @@ function validateSharedDefinitions() {
 		"statusDot",
 		"statusText",
 		"adsBlockedCount",
-		"domAdsBlockedCount",
 		"timeSaved",
 		"statsToggle",
 		"statsPanel",
@@ -1303,7 +1301,6 @@ function validateSharedDefinitions() {
 
 	const requiredTranslationKeys = [
 		"adBlocking",
-		"domAdsBlocked",
 		"descriptionText",
 		"changesInstantly",
 		"achievements",

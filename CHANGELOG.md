@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.7] - 2026-04-12
+
+### Fixed
+- **DOM Cleanup Gating Fix** - DOM ad cleanup (overlay ads, anti-adblock popups, display ad shells) no longer waits for the bridge counter handshake before activating, fixing a race condition where ads could slip through on initial page load.
+- **Streamlined Popup UI** - Removed the separate DOM Ads Blocked counter for a cleaner popup layout; all ad blocking activity is now reflected in the main Ads Blocked counter.
+- **Achievements Update** - Reduced achievement count from 12 to 10 for a tighter set of milestones.
+
 ## [6.2.6] - 2026-04-12
 
 ### Fixed

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.6-purple)
+![Version](https://img.shields.io/badge/version-6.2.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -28,9 +28,9 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Manifest V3 compatible
 - ✅ Simple enable/disable toggle
 - ✅ Accessible popup controls and live-updating stats
-- ✅ Persistent "Ads Blocked" & "DOM Ads Blocked" statistics
+- ✅ Persistent "Ads Blocked" statistics
 - ✅ **Statistics Dashboard** with time saved, weekly charts, and achievements
-- ✅ **12 Achievement Badges** to unlock as you block ads
+- ✅ **10 Achievement Badges** to unlock as you block ads
 - ✅ **Language Selector** - 11 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU)
 - ✅ Per-channel ad blocking breakdown
 - ✅ Modern, animated UI (Cyberpunk/Neon aesthetic)
@@ -57,16 +57,10 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.6
-- **Ad Recovery Loop Fix** - The DOM-driven player recovery no longer loops indefinitely when all backup player types return ad-marked streams. Recovery attempts are now capped per ad cycle, with exponential backoff preventing rapid-fire reloads.
-- **Fallback Stream Promotion** - Ad-marked but playable backup streams are now kept as fallback candidates for ad stripping, ensuring the worker always has a stream to clean instead of returning nothing when all player types serve ads.
-- **Emergency Playlist Fallback** - When no fresh backup stream is available, the processor now falls back to the last known clean backup or native playlist, keeping playback alive during difficult ad windows.
-- **Turbo lower-third cleanup** - Hidden Turbo and lower-third display-ad seeds are now still traced back to their player wrappers, so the extension can collapse the black half-screen shell even after Twitch hides the inner ad node.
-- **Faster visible Turbo suppression** - Strong visible in-player Turbo and display-ad signals now skip the old confirmation delay and trigger cleanup sooner, reducing brief flashes before the shell is collapsed.
-- **Shell-only recovery restored** - UI-only recovery once again handles real player-shell ad states, so Twitch cannot sit on a shell-only ad path just because no visible CTA or banner copy is present.
-- **DOM regression hardening** - The fast mutation path now ignores already-collapsed artifacts and hidden residue, which reduces repeated forced scans and keeps DOM cleanup counting more stable after route changes.
-- **DOM counter consistency** - `DOM Ads Blocked` now only counts persisted cleanup kinds, so recovery-only player reload signals no longer inflate page-side totals relative to popup and stored stats.
-- **SDA iframe cleanup** - Stream display ad iframes are now detected by their ad host URLs, so video-based SDA overlays collapse even when Twitch embeds them outside the lower-third shell.
+### v6.2.7
+- **DOM Cleanup Gating Fix** - DOM ad cleanup (overlay ads, anti-adblock popups, display ad shells) no longer waits for the bridge counter handshake before activating, fixing a race condition where ads could slip through on initial page load.
+- **Streamlined Popup UI** - Removed the separate DOM Ads Blocked counter for a cleaner popup layout; all ad blocking activity is now reflected in the main Ads Blocked counter.
+- **Achievements Update** - Reduced achievement count from 12 to 10 for a tighter set of milestones.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

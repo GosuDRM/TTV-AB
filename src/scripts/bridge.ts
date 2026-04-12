@@ -122,16 +122,6 @@ function mergeChannelDeltaMaps(target, source) {
 	return target;
 }
 
-function createKnownCleanupKinds() {
-	return new Set([
-		"direct-media-ad",
-		"display-shell",
-		"display-shell-inferred",
-		"generic",
-		"overlay-ad",
-		"promoted-card",
-	]);
-}
 
 function _getCurrentPlaybackContext() {
 	const segments = window.location.pathname.split("/").filter(Boolean);
@@ -349,10 +339,7 @@ const bridgeState = {
 	enabled: true,
 	bufferFixEnabled: true,
 	storedAdsCount: 0,
-	storedDomAdsCount: 0,
 };
-
-const KNOWN_DOM_CLEANUP_KINDS = createKnownCleanupKinds();
 const MAX_MESSAGE_DELTA = 50;
 const LEGACY_PERSISTED_COUNTER_FLUSHES_KEY = "ttvab_pending_counter_flushes";
 const PERSISTED_COUNTER_FLUSH_KEY_PREFIX = "ttvab_pending_counter_flush:";
@@ -360,7 +347,6 @@ const MAX_PERSISTED_COUNTER_FLUSHES = 256;
 const PERSISTED_COUNTER_FLUSH_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 let pendingAdsDelta = 0;
-let pendingDomAdsDelta = 0;
 let pendingAdChannels = createChannelsMap();
 let flushTimeout = null;
 let didMigrateLegacyPersistedCounterFlushes = false;
@@ -388,7 +374,6 @@ function normalizePersistedCounterFlushEntry(value) {
 	const safeValue = getBridgeMessageDetail(value);
 	const flushId = normalizeFlushId(safeValue?.flushId);
 	const adsDelta = normalizeCount(safeValue?.adsDelta);
-	const domAdsDelta = normalizeCount(safeValue?.domAdsDelta);
 	const createdAtValue = Number(safeValue?.createdAt);
 	const createdAt = Number.isFinite(createdAtValue)
 		? Math.trunc(createdAtValue)
@@ -398,14 +383,13 @@ function normalizePersistedCounterFlushEntry(value) {
 			? mergeChannelDeltaMaps(createChannelsMap(), safeValue?.channelDeltas)
 			: createChannelsMap();
 
-	if (!flushId || (adsDelta <= 0 && domAdsDelta <= 0)) {
+	if (!flushId || adsDelta <= 0) {
 		return null;
 	}
 
 	return {
 		flushId,
 		adsDelta,
-		domAdsDelta,
 		channelDeltas,
 		createdAt,
 	};
@@ -681,7 +665,7 @@ function dispatchPersistPayload(
 		(response) => {
 			clearScheduledRetryFlush(flushId);
 			handlePersistSuccess(response, flushId);
-			if (pendingAdsDelta > 0 || pendingDomAdsDelta > 0) {
+			if (pendingAdsDelta > 0) {
 				scheduleFlush();
 			}
 		},
@@ -724,9 +708,6 @@ function broadcastState() {
 	sendToPage("ttvab-init-count", {
 		count: normalizeCount(bridgeState.storedAdsCount),
 	});
-	sendToPage("ttvab-init-dom-ads-count", {
-		count: normalizeCount(bridgeState.storedDomAdsCount),
-	});
 }
 
 function reconcilePendingDelta(kind, nextStoredCount) {
@@ -738,14 +719,6 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 			pendingAdChannels = createChannelsMap();
 		}
 		bridgeState.storedAdsCount = safeStoredCount;
-		return;
-	}
-	if (kind === "domAds") {
-		const previousStoredCount = normalizeCount(bridgeState.storedDomAdsCount);
-		if (safeStoredCount < previousStoredCount) {
-			pendingDomAdsDelta = 0;
-		}
-		bridgeState.storedDomAdsCount = safeStoredCount;
 	}
 }
 
@@ -762,17 +735,6 @@ function queueTotalDelta(kind, nextTotal) {
 		}
 		return safeDelta;
 	}
-	if (kind === "domAds") {
-		const queuedTotal =
-			normalizeCount(bridgeState.storedDomAdsCount) +
-			normalizeCount(pendingDomAdsDelta);
-		const delta = safeNextTotal - queuedTotal;
-		const safeDelta = Math.min(Math.max(delta, 0), MAX_MESSAGE_DELTA);
-		if (safeDelta > 0) {
-			pendingDomAdsDelta += safeDelta;
-		}
-		return safeDelta;
-	}
 	return 0;
 }
 
@@ -784,10 +746,6 @@ function queueExplicitDelta(kind, delta) {
 	if (safeDelta <= 0) return 0;
 	if (kind === "ads") {
 		pendingAdsDelta += safeDelta;
-		return safeDelta;
-	}
-	if (kind === "domAds") {
-		pendingDomAdsDelta += safeDelta;
 		return safeDelta;
 	}
 	return 0;
@@ -808,20 +766,17 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	const fireAndForget = options.fireAndForget === true;
 	clearScheduledFlush();
 	const adsDelta = pendingAdsDelta;
-	const domAdsDelta = pendingDomAdsDelta;
 	const channelDeltas = pendingAdChannels;
 
 	pendingAdsDelta = 0;
-	pendingDomAdsDelta = 0;
 	pendingAdChannels = createChannelsMap();
 
-	if (adsDelta === 0 && domAdsDelta === 0) return;
+	if (adsDelta === 0) return;
 
 	const payload = {
 		type: "ttvab-persist-counters",
 		detail: {
 			adsDelta,
-			domAdsDelta,
 			channelDeltas,
 			flushId: createCounterFlushId(),
 			createdAt: Date.now(),
@@ -840,7 +795,6 @@ chrome.storage.local.get(
 		"ttvAdblockEnabled",
 		"ttvBufferFixEnabled",
 		"ttvAdsBlocked",
-		"ttvDomAdsBlocked",
 	],
 	(result) => {
 		if (chrome.runtime.lastError) {
@@ -853,7 +807,6 @@ chrome.storage.local.get(
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
 		bridgeState.bufferFixEnabled = safeResult.ttvBufferFixEnabled !== false;
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
-		bridgeState.storedDomAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 
 		broadcastState();
 
@@ -885,18 +838,6 @@ chrome.storage.local.get(
 				if (nextAdsCount !== previousAdsCount) {
 					sendToPage("ttvab-init-count", {
 						count: nextAdsCount,
-					});
-				}
-			}
-			if (changes.ttvDomAdsBlocked) {
-				const nextDomAdsCount = normalizeCount(
-					changes.ttvDomAdsBlocked.newValue,
-				);
-				const previousDomAdsCount = bridgeState.storedDomAdsCount;
-				reconcilePendingDelta("domAds", nextDomAdsCount);
-				if (nextDomAdsCount !== previousDomAdsCount) {
-					sendToPage("ttvab-init-dom-ads-count", {
-						count: nextDomAdsCount,
 					});
 				}
 			}
@@ -946,19 +887,6 @@ function handlePageBridgeMessage(rawMessage) {
 		return;
 	}
 
-	if (message.type === "ttvab-dom-ad-cleanup") {
-		if (!detail || !Number.isFinite(detail.count)) return;
-		const cleanupKind =
-			typeof detail.kind === "string" ? detail.kind.trim().toLowerCase() : "";
-		if (!KNOWN_DOM_CLEANUP_KINDS.has(cleanupKind)) return;
-		const delta =
-			Number.isFinite(detail.delta) && normalizeCount(detail.delta) > 0
-				? queueExplicitDelta("domAds", detail.delta)
-				: queueTotalDelta("domAds", detail.count);
-		if (delta > 0) {
-			scheduleFlush();
-		}
-	}
 }
 
 window.addEventListener("pagehide", flushPendingCountersOnPageExit, true);

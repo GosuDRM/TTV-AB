@@ -7,7 +7,6 @@ const TRANSLATIONS = {
 		active: "Active",
 		inactive: "Inactive",
 		adsBlocked: "Ads Blocked",
-		domAdsBlocked: "DOM Ads Blocked",
 		timeSaved: "Est. Time Saved",
 		statistics: "Statistics",
 		last7Days: "This Week",
@@ -37,8 +36,6 @@ const TRANSLATIONS = {
 			block_500: { name: "Sentinel", desc: "Blocked 500 ads!" },
 			block_1000: { name: "Legend", desc: "Blocked 1000 ads!" },
 			block_5000: { name: "Mythic", desc: "Blocked 5000 ads!" },
-			popup_10: { name: "DOM Cleaner", desc: "Blocked 10 DOM ads!" },
-			popup_50: { name: "DOM Sweeper", desc: "Blocked 50 DOM ads!" },
 			time_1h: { name: "Hour Saver", desc: "Saved 1 hour from ads!" },
 			time_10h: { name: "Time Master", desc: "Saved 10 hours from ads!" },
 			channels_5: { name: "Explorer", desc: "Blocked ads on 5 channels!" },
@@ -53,7 +50,6 @@ const TRANSLATIONS = {
 		active: "Activo",
 		inactive: "Inactivo",
 		adsBlocked: "Anuncios bloqueados",
-		domAdsBlocked: "Anuncios DOM bloqueados",
 		timeSaved: "Tiempo ahorrado",
 		statistics: "Estadísticas",
 		last7Days: "Esta semana",
@@ -86,14 +82,6 @@ const TRANSLATIONS = {
 			block_500: { name: "Centinela", desc: "¡Has bloqueado 500 anuncios!" },
 			block_1000: { name: "Leyenda", desc: "¡Has bloqueado 1000 anuncios!" },
 			block_5000: { name: "Mítico", desc: "¡Has bloqueado 5000 anuncios!" },
-			popup_10: {
-				name: "Limpiador DOM",
-				desc: "¡Has bloqueado 10 anuncios DOM!",
-			},
-			popup_50: {
-				name: "Barrendero DOM",
-				desc: "¡Has bloqueado 50 anuncios DOM!",
-			},
 			time_1h: {
 				name: "Ahorrador de tiempo",
 				desc: "¡Has ahorrado 1 hora de anuncios!",
@@ -117,7 +105,6 @@ const TRANSLATIONS = {
 		active: "Actif",
 		inactive: "Inactif",
 		adsBlocked: "Publicités bloquées",
-		domAdsBlocked: "Publicités DOM bloquées",
 		timeSaved: "Temps économisé",
 		statistics: "Statistiques",
 		last7Days: "Cette semaine",
@@ -156,14 +143,6 @@ const TRANSLATIONS = {
 				name: "Mythique",
 				desc: "Vous avez bloqué 5000 pubs !",
 			},
-			popup_10: {
-				name: "Nettoyeur DOM",
-				desc: "Vous avez bloqué 10 annonces DOM !",
-			},
-			popup_50: {
-				name: "Balayeur DOM",
-				desc: "Vous avez bloqué 50 annonces DOM !",
-			},
 			time_1h: {
 				name: "Gagne-temps",
 				desc: "Vous avez économisé 1 heure de pubs !",
@@ -187,7 +166,6 @@ const TRANSLATIONS = {
 		active: "Aktiv",
 		inactive: "Inaktiv",
 		adsBlocked: "Blockierte Anzeigen",
-		domAdsBlocked: "Blockierte DOM-Anzeigen",
 		timeSaved: "Geschätzte Zeitersparnis",
 		statistics: "Statistiken",
 		last7Days: "Diese Woche",
@@ -235,14 +213,6 @@ const TRANSLATIONS = {
 				name: "Mythisch",
 				desc: "Du hast 5000 Werbeanzeigen blockiert!",
 			},
-			popup_10: {
-				name: "DOM-Reiniger",
-				desc: "Du hast 10 DOM-Anzeigen blockiert!",
-			},
-			popup_50: {
-				name: "DOM-Feger",
-				desc: "Du hast 50 DOM-Anzeigen blockiert!",
-			},
 			time_1h: {
 				name: "Zeitsparer",
 				desc: "Du hast 1 Stunde Werbezeit gespart!",
@@ -266,7 +236,6 @@ const TRANSLATIONS = {
 		active: "Ativo",
 		inactive: "Inativo",
 		adsBlocked: "Anúncios bloqueados",
-		domAdsBlocked: "Anúncios DOM bloqueados",
 		timeSaved: "Tempo economizado",
 		statistics: "Estatísticas",
 		last7Days: "Esta semana",
@@ -299,14 +268,6 @@ const TRANSLATIONS = {
 			block_500: { name: "Sentinela", desc: "Você bloqueou 500 anúncios!" },
 			block_1000: { name: "Lenda", desc: "Você bloqueou 1000 anúncios!" },
 			block_5000: { name: "Mítico", desc: "Você bloqueou 5000 anúncios!" },
-			popup_10: {
-				name: "Limpador DOM",
-				desc: "Você bloqueou 10 anúncios DOM!",
-			},
-			popup_50: {
-				name: "Varredor DOM",
-				desc: "Você bloqueou 50 anúncios DOM!",
-			},
 			time_1h: {
 				name: "Poupador de tempo",
 				desc: "Você economizou 1 hora de anúncios!",
@@ -330,7 +291,6 @@ const TRANSLATIONS = {
 		active: "Attivo",
 		inactive: "Inattivo",
 		adsBlocked: "Annunci bloccati",
-		domAdsBlocked: "Annunci DOM bloccati",
 		timeSaved: "Tempo risparmiato",
 		statistics: "Statistiche",
 		last7Days: "Questa settimana",
@@ -363,14 +323,6 @@ const TRANSLATIONS = {
 			block_500: { name: "Sentinella", desc: "Hai bloccato 500 annunci!" },
 			block_1000: { name: "Leggenda", desc: "Hai bloccato 1000 annunci!" },
 			block_5000: { name: "Mitico", desc: "Hai bloccato 5000 annunci!" },
-			popup_10: {
-				name: "Pulitore DOM",
-				desc: "Hai bloccato 10 annunci DOM!",
-			},
-			popup_50: {
-				name: "Spazzino DOM",
-				desc: "Hai bloccato 50 annunci DOM!",
-			},
 			time_1h: {
 				name: "Salva-tempo",
 				desc: "Hai risparmiato 1 ora di annunci!",
@@ -394,7 +346,6 @@ const TRANSLATIONS = {
 		active: "有効",
 		inactive: "無効",
 		adsBlocked: "ブロックした広告",
-		domAdsBlocked: "ブロックしたDOM広告",
 		timeSaved: "節約できた時間",
 		statistics: "統計",
 		last7Days: "今週",
@@ -438,14 +389,6 @@ const TRANSLATIONS = {
 				name: "ミシック",
 				desc: "広告を5000件ブロックしました！",
 			},
-			popup_10: {
-				name: "DOMクリーナー",
-				desc: "DOM広告を10件ブロックしました！",
-			},
-			popup_50: {
-				name: "DOMスイーパー",
-				desc: "DOM広告を50件ブロックしました！",
-			},
 			time_1h: {
 				name: "タイムセーバー",
 				desc: "広告時間を1時間節約しました！",
@@ -469,7 +412,6 @@ const TRANSLATIONS = {
 		active: "활성",
 		inactive: "비활성",
 		adsBlocked: "차단한 광고",
-		domAdsBlocked: "차단한 DOM 광고",
 		timeSaved: "절약한 시간",
 		statistics: "통계",
 		last7Days: "이번 주",
@@ -498,8 +440,6 @@ const TRANSLATIONS = {
 			block_500: { name: "센티널", desc: "광고 500개를 차단했습니다!" },
 			block_1000: { name: "전설", desc: "광고 1000개를 차단했습니다!" },
 			block_5000: { name: "신화", desc: "광고 5000개를 차단했습니다!" },
-			popup_10: { name: "DOM 클리너", desc: "DOM 광고 10개를 차단했습니다!" },
-			popup_50: { name: "DOM 스위퍼", desc: "DOM 광고 50개를 차단했습니다!" },
 			time_1h: { name: "시간 절약가", desc: "광고 시간 1시간을 절약했습니다!" },
 			time_10h: {
 				name: "시간의 달인",
@@ -517,7 +457,6 @@ const TRANSLATIONS = {
 		active: "已启用",
 		inactive: "已停用",
 		adsBlocked: "已拦截广告",
-		domAdsBlocked: "已拦截 DOM 广告",
 		timeSaved: "预计节省时间",
 		statistics: "统计",
 		last7Days: "本周",
@@ -546,8 +485,6 @@ const TRANSLATIONS = {
 			block_500: { name: "哨兵", desc: "你已拦截 500 条广告！" },
 			block_1000: { name: "传奇", desc: "你已拦截 1000 条广告！" },
 			block_5000: { name: "神话", desc: "你已拦截 5000 条广告！" },
-			popup_10: { name: "DOM 清理者", desc: "你已拦截 10 个 DOM 广告！" },
-			popup_50: { name: "DOM 清扫者", desc: "你已拦截 50 个 DOM 广告！" },
 			time_1h: { name: "省时达人", desc: "你已节省 1 小时广告时间！" },
 			time_10h: { name: "时间大师", desc: "你已节省 10 小时广告时间！" },
 			channels_5: { name: "探索者", desc: "你已在 5 个频道中拦截广告！" },
@@ -559,7 +496,6 @@ const TRANSLATIONS = {
 		active: "已啟用",
 		inactive: "已停用",
 		adsBlocked: "已攔截廣告",
-		domAdsBlocked: "已攔截 DOM 廣告",
 		timeSaved: "預估節省時間",
 		statistics: "統計",
 		last7Days: "本週",
@@ -588,8 +524,6 @@ const TRANSLATIONS = {
 			block_500: { name: "哨兵", desc: "你已攔截 500 則廣告！" },
 			block_1000: { name: "傳奇", desc: "你已攔截 1000 則廣告！" },
 			block_5000: { name: "神話", desc: "你已攔截 5000 則廣告！" },
-			popup_10: { name: "DOM 清理者", desc: "你已攔截 10 個 DOM 廣告！" },
-			popup_50: { name: "DOM 清掃者", desc: "你已攔截 50 個 DOM 廣告！" },
 			time_1h: { name: "省時達人", desc: "你已節省 1 小時廣告時間！" },
 			time_10h: { name: "時間大師", desc: "你已節省 10 小時廣告時間！" },
 			channels_5: { name: "探索者", desc: "你已在 5 個頻道中攔截廣告！" },
@@ -601,7 +535,6 @@ const TRANSLATIONS = {
 		active: "Включено",
 		inactive: "Выключено",
 		adsBlocked: "Заблокировано объявлений",
-		domAdsBlocked: "Заблокировано DOM-объявлений",
 		timeSaved: "Примерно сэкономлено времени",
 		statistics: "Статистика",
 		last7Days: "За неделю",
@@ -648,14 +581,6 @@ const TRANSLATIONS = {
 			block_5000: {
 				name: "Мифический",
 				desc: "Вы заблокировали 5000 объявлений!",
-			},
-			popup_10: {
-				name: "DOM-очиститель",
-				desc: "Вы заблокировали 10 DOM-объявлений!",
-			},
-			popup_50: {
-				name: "DOM-уборщик",
-				desc: "Вы заблокировали 50 DOM-объявлений!",
 			},
 			time_1h: {
 				name: "Экономитель времени",

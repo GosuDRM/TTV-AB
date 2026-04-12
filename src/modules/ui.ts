@@ -183,8 +183,6 @@ const _ACHIEVEMENT_INFO = {
 	block_500: { name: "Sentinel", icon: "🏰", desc: "Blocked 500 ads!" },
 	block_1000: { name: "Legend", icon: "🏆", desc: "Blocked 1000 ads!" },
 	block_5000: { name: "Mythic", icon: "👑", desc: "Blocked 5000 ads!" },
-	popup_10: { name: "DOM Cleaner", icon: "💥", desc: "Blocked 10 DOM ads!" },
-	popup_50: { name: "DOM Sweeper", icon: "🔥", desc: "Blocked 50 DOM ads!" },
 	time_1h: { name: "Hour Saver", icon: "⏱️", desc: "Saved 1 hour from ads!" },
 	time_10h: {
 		name: "Time Master",

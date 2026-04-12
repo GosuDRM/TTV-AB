@@ -287,16 +287,9 @@ function _blockAntiAdblockPopup() {
 			styleMount.appendChild(style);
 		}
 
-		function _hasResolvedDomCleanupState() {
-			return (
-				__TTVAB_STATE__.HasResolvedToggleState === true &&
-				__TTVAB_STATE__.HasResolvedDomAdsCountState === true
-			);
-		}
-
 		function _isDomCleanupEnabled() {
 			return (
-				_hasResolvedDomCleanupState() &&
+				__TTVAB_STATE__.HasResolvedToggleState === true &&
 				__TTVAB_STATE__.IsAdStrippingEnabled === true
 			);
 		}
@@ -397,20 +390,14 @@ function _blockAntiAdblockPopup() {
 		}
 
 		function _incrementDomCleanup(kind, el = null) {
-			if (!_isDomCleanupEnabled()) return;
+			if (!_isDomCleanupEnabled()) return false;
 			const safeKind =
-				typeof _normalizeCountedDomCleanupKind === "function"
-					? _normalizeCountedDomCleanupKind(kind)
-					: typeof kind === "string" && kind.trim()
-						? kind.trim().toLowerCase()
-						: "generic";
+				typeof kind === "string" && kind.trim()
+					? kind.trim().toLowerCase()
+					: "generic";
 			if (!safeKind) return false;
 			if (_shouldDebounceDomCleanup(safeKind, el)) return false;
-
-			const channel = _getCurrentChannelName();
-			const didIncrement = _incrementDomAdsBlocked(safeKind, channel);
-			if (!didIncrement) return false;
-			_log(`DOM ad cleanup (${kind}) total: ${_S.domAdsBlocked}`, "success");
+			_log(`DOM ad cleanup (${safeKind})`, "success");
 			return true;
 		}
 
@@ -2984,12 +2971,6 @@ function _blockAntiAdblockPopup() {
 			}
 		});
 
-		_onInternalMessage("ttvab-init-dom-ads-count", () => {
-			if (_isDomCleanupEnabled()) {
-				_queueScan(0, true);
-			}
-		});
-
 		_onInternalMessage("ttvab-ad-blocked", (detail) => {
 			const safeDetail = _getTrustedBridgeMessageDetail(detail);
 			if (!Number.isFinite(safeDetail?.count)) return;
@@ -3155,16 +3136,6 @@ function _init() {
 		_S.adsBlocked = restoredCount;
 		_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
 		_log(`Restored ads count: ${_S.adsBlocked}`, "info");
-	});
-
-	_onInternalMessage("ttvab-init-dom-ads-count", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
-		if (!Number.isFinite(safeDetail?.count)) return;
-		__TTVAB_STATE__.HasResolvedDomAdsCountState = true;
-		const restoredCount = _normalizeCounterValue(safeDetail.count);
-		if (_S.domAdsBlocked === restoredCount) return;
-		_S.domAdsBlocked = restoredCount;
-		_log(`Restored DOM cleanup count: ${_S.domAdsBlocked}`, "info");
 	});
 
 	_syncStoredDeviceId();

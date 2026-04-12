@@ -5,16 +5,7 @@ const _S = {
 	conflicts: ["twitch", "isVariantA"],
 	reinsertPatterns: ["isVariantA", "besuper/", "${patch_url}"],
 	adsBlocked: 0,
-	domAdsBlocked: 0,
 };
-const _COUNTED_DOM_CLEANUP_KINDS = new Set([
-	"direct-media-ad",
-	"display-shell",
-	"display-shell-inferred",
-	"generic",
-	"overlay-ad",
-	"promoted-card",
-]);
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const _internalMessageTarget = new EventTarget();
@@ -65,7 +56,7 @@ function _getPendingBridgeCounterDetail(message) {
 	}
 
 	const type = typeof message.type === "string" ? message.type : null;
-	if (type !== "ttvab-ad-blocked" && type !== "ttvab-dom-ad-cleanup") {
+	if (type !== "ttvab-ad-blocked") {
 		return null;
 	}
 
@@ -90,17 +81,6 @@ function _getPendingBridgeCounterIdentity(message) {
 		typeof detail.pageChannel === "string" ? detail.pageChannel : "";
 	const safePageMediaKey =
 		typeof detail.pageMediaKey === "string" ? detail.pageMediaKey : "";
-
-	if (type === "ttvab-dom-ad-cleanup") {
-		const safeKind = typeof detail.kind === "string" ? detail.kind : "generic";
-		return [
-			type,
-			safeKind,
-			safeChannel,
-			safePageChannel,
-			safePageMediaKey,
-		].join("|");
-	}
 
 	return [
 		type,
@@ -533,7 +513,6 @@ function _declareState(scope) {
 		PreferredQualityGroup: null,
 		HasResolvedAdsCountState: false,
 		HasResolvedToggleState: false,
-		HasResolvedDomAdsCountState: false,
 		PendingInitialAdsBlockedDelta: 0,
 		PendingFetchRequests: new Map(),
 		FetchRequestSeq: 0,
@@ -618,33 +597,3 @@ function _createPageScopedWorkerEvent(value = null) {
 	};
 }
 
-function _normalizeCountedDomCleanupKind(kind = "generic") {
-	const safeKind =
-		typeof kind === "string" ? kind.trim().toLowerCase() : "generic";
-	return _COUNTED_DOM_CLEANUP_KINDS.has(safeKind) ? safeKind : null;
-}
-
-function _incrementDomAdsBlocked(kind = "generic", channel = null) {
-	const safeKind = _normalizeCountedDomCleanupKind(kind);
-	if (!safeKind) return false;
-	_S.domAdsBlocked++;
-	const count = Number.isFinite(_S.domAdsBlocked)
-		? Math.max(0, Math.trunc(_S.domAdsBlocked))
-		: 0;
-	const safeChannel = typeof channel === "string" ? channel : null;
-	_S.domAdsBlocked = count;
-	if (typeof window !== "undefined") {
-		const pageEventContext = _getPageScopedPlaybackEventContext();
-		const detail = {
-			count,
-			delta: 1,
-			kind: safeKind,
-			channel: safeChannel,
-			pageChannel: pageEventContext.pageChannel,
-			pageMediaKey: pageEventContext.pageMediaKey,
-		};
-		_emitInternalMessage("ttvab-dom-ad-cleanup", detail);
-		_sendBridgeMessage("ttvab-dom-ad-cleanup", detail);
-	}
-	return true;
-}

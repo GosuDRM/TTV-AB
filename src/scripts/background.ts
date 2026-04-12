@@ -116,7 +116,6 @@ function normalizeDailyStatsMap(value) {
 		const safeEntry: PlainObject = isPlainObject(entry) ? entry : {};
 		normalized[dateKey] = {
 			ads: normalizeCount(safeEntry.ads),
-			domAds: normalizeCount(safeEntry.domAds),
 		};
 	}
 	return normalized;
@@ -129,8 +128,6 @@ const ACHIEVEMENTS = [
 	{ id: "block_500", threshold: 500, type: "ads" },
 	{ id: "block_1000", threshold: 1000, type: "ads" },
 	{ id: "block_5000", threshold: 5000, type: "ads" },
-	{ id: "popup_10", threshold: 10, type: "domAds" },
-	{ id: "popup_50", threshold: 50, type: "domAds" },
 	{ id: "time_1h", threshold: 3600, type: "time" },
 	{ id: "time_10h", threshold: 36000, type: "time" },
 	{ id: "channels_5", threshold: 5, type: "channels" },
@@ -287,7 +284,7 @@ function pruneDailyStats(stats) {
 	}
 }
 
-function applyAchievementUnlocks(stats, totalAdsBlocked, totalDomAdsBlocked) {
+function applyAchievementUnlocks(stats, totalAdsBlocked) {
 	const unlocked = stats.achievements;
 	const timeSaved = totalAdsBlocked * AVG_AD_DURATION;
 	const channelCount = normalizeCount(Object.keys(stats.channels).length);
@@ -300,9 +297,6 @@ function applyAchievementUnlocks(stats, totalAdsBlocked, totalDomAdsBlocked) {
 		switch (ach.type) {
 			case "ads":
 				value = totalAdsBlocked;
-				break;
-			case "domAds":
-				value = totalDomAdsBlocked;
 				break;
 			case "time":
 				value = timeSaved;
@@ -326,24 +320,21 @@ async function persistCounterDelta(detail) {
 	const safeDetail = getMessageDetail(detail);
 	const flushId = normalizeFlushId(safeDetail?.flushId);
 	const adsDelta = normalizeCount(safeDetail?.adsDelta);
-	const domAdsDelta = normalizeCount(safeDetail?.domAdsDelta);
 	const channelDeltas =
 		adsDelta > 0
 			? normalizeChannelDeltaMap(safeDetail?.channelDeltas, adsDelta)
 			: createChannelsMap();
 
-	if (adsDelta <= 0 && domAdsDelta <= 0) {
+	if (adsDelta <= 0) {
 		return { ok: true, counts: null, newUnlocks: [] };
 	}
 
 	const stored = await storageLocalGet([
 		"ttvAdsBlocked",
-		"ttvDomAdsBlocked",
 		"ttvStats",
 		PROCESSED_FLUSH_STORAGE_KEY,
 	]);
 	const baseAds = normalizeCount(stored.ttvAdsBlocked);
-	const baseDomAds = normalizeCount(stored.ttvDomAdsBlocked);
 	const processedFlushes = normalizeProcessedFlushMap(
 		stored[PROCESSED_FLUSH_STORAGE_KEY],
 	);
@@ -352,22 +343,18 @@ async function persistCounterDelta(detail) {
 			ok: true,
 			counts: {
 				ads: baseAds,
-				domAds: baseDomAds,
 			},
 			newUnlocks: [],
 		};
 	}
 	const nextAds = baseAds + adsDelta;
-	const nextDomAds = baseDomAds + domAdsDelta;
 	const stats = normalizeStatsState(stored.ttvStats);
 	const today = getTodayKey();
 
 	if (!stats.daily[today]) {
-		stats.daily[today] = { ads: 0, domAds: 0 };
+		stats.daily[today] = { ads: 0 };
 	}
 	stats.daily[today].ads = normalizeCount(stats.daily[today].ads) + adsDelta;
-	stats.daily[today].domAds =
-		normalizeCount(stats.daily[today].domAds) + domAdsDelta;
 	pruneDailyStats(stats);
 
 	for (const [channelName, channelDelta] of Object.entries(channelDeltas)) {
@@ -377,14 +364,13 @@ async function persistCounterDelta(detail) {
 	}
 	stats.channels = normalizeChannelsMap(stats.channels);
 
-	const newUnlocks = applyAchievementUnlocks(stats, nextAds, nextDomAds);
+	const newUnlocks = applyAchievementUnlocks(stats, nextAds);
 	const nextProcessedFlushes = flushId
 		? recordProcessedFlush(processedFlushes, flushId)
 		: processedFlushes;
 
 	await storageLocalSet({
 		ttvAdsBlocked: nextAds,
-		ttvDomAdsBlocked: nextDomAds,
 		ttvStats: stats,
 		[PROCESSED_FLUSH_STORAGE_KEY]: nextProcessedFlushes,
 	});
@@ -393,7 +379,6 @@ async function persistCounterDelta(detail) {
 		ok: true,
 		counts: {
 			ads: nextAds,
-			domAds: nextDomAds,
 		},
 		newUnlocks,
 	};
