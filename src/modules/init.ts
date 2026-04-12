@@ -2240,6 +2240,10 @@ function _blockAntiAdblockPopup() {
 				EXPLICIT_DISPLAY_AD_SELECTORS,
 				playerRect,
 			);
+			const globalDisplayIframeNodes = _filterUniqueElements(
+				_queryUniqueElements(DISPLAY_AD_IFRAME_SELECTORS),
+				(el) => _isVisibleNearPlayerElement(el, playerRect),
+			);
 			const lowerThirdDisplayAdNodes = _queryVisibleNearPlayerWithinRoots(
 				searchRoots,
 				LOWER_THIRD_DISPLAY_AD_SELECTORS,
@@ -2274,6 +2278,7 @@ function _blockAntiAdblockPopup() {
 				const hasSelectorPreflightSignal =
 					adBanners.length > 0 ||
 					explicitDisplaySelectorNodes.length > 0 ||
+					globalDisplayIframeNodes.length > 0 ||
 					lowerThirdSeedNodes.length > 0 ||
 					displayShellNodes.length > 0 ||
 					pipContainers.length > 0 ||
@@ -2301,6 +2306,7 @@ function _blockAntiAdblockPopup() {
 			const explicitDisplayAdNodes = _filterUniqueElements(
 				[
 					...explicitDisplaySelectorNodes,
+					...globalDisplayIframeNodes,
 					...playerAdCallToActionNodes,
 					...playerAdBannerTextNodes,
 				],
