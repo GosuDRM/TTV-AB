@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.4-purple)
+![Version](https://img.shields.io/badge/version-6.2.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,13 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.4
-- **Firefox Post-Ad Recovery Fixes** - Prevents stale Twitch ad UI from kicking the player back into repeated recovery loops after an ad ends, and limits native token rewriting to active ad recovery so Firefox is less likely to flash an ad before blocking fully takes over.
+### v6.2.6
+- **Turbo lower-third cleanup** - Hidden Turbo and lower-third display-ad seeds are now still traced back to their player wrappers, so the extension can collapse the black half-screen shell even after Twitch hides the inner ad node.
+- **Faster visible Turbo suppression** - Strong visible in-player Turbo and display-ad signals now skip the old confirmation delay and trigger cleanup sooner, reducing brief flashes before the shell is collapsed.
+- **Shell-only recovery restored** - UI-only recovery once again handles real player-shell ad states, so Twitch cannot sit on a shell-only ad path just because no visible CTA or banner copy is present.
+- **DOM regression hardening** - The fast mutation path now ignores already-collapsed artifacts and hidden residue, which reduces repeated forced scans and keeps DOM cleanup counting more stable after route changes.
+- **DOM counter consistency** - `DOM Ads Blocked` now only counts persisted cleanup kinds, so recovery-only player reload signals no longer inflate page-side totals relative to popup and stored stats.
+- **SDA iframe cleanup** - Stream display ad iframes are now detected by their ad host URLs, so video-based SDA overlays collapse even when Twitch embeds them outside the lower-third shell.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

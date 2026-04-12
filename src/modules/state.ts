@@ -7,6 +7,14 @@ const _S = {
 	adsBlocked: 0,
 	domAdsBlocked: 0,
 };
+const _COUNTED_DOM_CLEANUP_KINDS = new Set([
+	"direct-media-ad",
+	"display-shell",
+	"display-shell-inferred",
+	"generic",
+	"overlay-ad",
+	"promoted-card",
+]);
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const _internalMessageTarget = new EventTarget();
@@ -610,12 +618,19 @@ function _createPageScopedWorkerEvent(value = null) {
 	};
 }
 
+function _normalizeCountedDomCleanupKind(kind = "generic") {
+	const safeKind =
+		typeof kind === "string" ? kind.trim().toLowerCase() : "generic";
+	return _COUNTED_DOM_CLEANUP_KINDS.has(safeKind) ? safeKind : null;
+}
+
 function _incrementDomAdsBlocked(kind = "generic", channel = null) {
+	const safeKind = _normalizeCountedDomCleanupKind(kind);
+	if (!safeKind) return false;
 	_S.domAdsBlocked++;
 	const count = Number.isFinite(_S.domAdsBlocked)
 		? Math.max(0, Math.trunc(_S.domAdsBlocked))
 		: 0;
-	const safeKind = typeof kind === "string" ? kind : "generic";
 	const safeChannel = typeof channel === "string" ? channel : null;
 	_S.domAdsBlocked = count;
 	if (typeof window !== "undefined") {
@@ -631,4 +646,5 @@ function _incrementDomAdsBlocked(kind = "generic", channel = null) {
 		_emitInternalMessage("ttvab-dom-ad-cleanup", detail);
 		_sendBridgeMessage("ttvab-dom-ad-cleanup", detail);
 	}
+	return true;
 }

@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.6] - 2026-04-12
+
+### Fixed
+- **Turbo Lower-Third Shell Cleanup** - Hidden Turbo and lower-third display-ad seeds are now still mapped back to their player wrappers, so stale shell layouts collapse even after Twitch hides the inner ad node.
+- **Faster Visible Turbo UI Suppression** - Strong visible in-player Turbo and display-ad signals now bypass the old shell-confirmation delay and force an earlier cleanup pass, reducing brief visible flashes before the shell is collapsed.
+- **Shell-Only UI Recovery** - UI-only recovery once again responds to real player-shell ad states even when Twitch does not expose visible CTA or banner copy, closing a path where the player could stay on the ad shell.
+- **DOM Fast-Path Hardening** - Forced mutation scans now ignore hidden residue and already-collapsed extension-owned artifacts, reducing repeated DOM churn after cleanup.
+- **DOM Cleanup Counter Stability** - The immediate-shell path is now limited to strong visible ad UI signals, reducing cases where stale layout residue after navigation could be counted as a fresh DOM cleanup.
+- **DOM Counter Consistency** - `DOM Ads Blocked` now only counts persisted cleanup kinds, so recovery-only player reload signals no longer drift away from popup and stored totals.
+- **SDA Iframe Cleanup** - Stream display ad iframes are now detected by their ad host URLs, so video-based SDA overlays collapse even when Twitch embeds them outside the lower-third shell.
+
 ## [6.2.4] - 2026-04-11
 
 ### Fixed

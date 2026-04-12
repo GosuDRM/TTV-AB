@@ -161,21 +161,29 @@ function _blockAntiAdblockPopup() {
 		'[aria-label="Ad"]',
 	];
 	const DISPLAY_AD_LABEL_SELECTOR_GROUP = DISPLAY_AD_LABEL_SELECTORS.join(", ");
-	const LOWER_THIRD_DISPLAY_AD_SELECTORS = [
-		'iframe[data-test-selector^="sda-iframe-"]',
-		'iframe[title="Stream Display Ad"]',
-		'iframe[class*="stream-display-ad__iframe_lower-third"]',
-		'[data-test-selector="sda-frame"]',
-		"#stream-lowerthird",
-		'[class*="stream-display-ad__frame_lower-third"]',
-	];
-	const EXPLICIT_DISPLAY_AD_SELECTORS = [
-		'[data-test-selector="ad-banner"]',
-		'[data-test-selector="display-ad"]',
-		'[data-a-target="ads-banner"]',
-		...LOWER_THIRD_DISPLAY_AD_SELECTORS,
-		PLAYER_SURFACE_AD_MARKER_SELECTOR,
-	];
+		const LOWER_THIRD_DISPLAY_AD_SELECTORS = [
+			'iframe[data-test-selector^="sda-iframe-"]',
+			'iframe[title="Stream Display Ad"]',
+			'iframe[class*="stream-display-ad__iframe_lower-third"]',
+			'iframe[class*="stream-display-ad__iframe"]',
+			'[data-test-selector="sda-frame"]',
+			"#stream-lowerthird",
+			'[class*="stream-display-ad__frame_lower-third"]',
+		];
+		const DISPLAY_AD_IFRAME_SELECTORS = [
+			'iframe[src*="ads.twitch.tv"]',
+			'iframe[src*="twitch.tv/ads"]',
+			'iframe[src*="amazon-adsystem.com"]',
+			'iframe[src*="doubleclick.net"]',
+		];
+		const EXPLICIT_DISPLAY_AD_SELECTORS = [
+			'[data-test-selector="ad-banner"]',
+			'[data-test-selector="display-ad"]',
+			'[data-a-target="ads-banner"]',
+			...LOWER_THIRD_DISPLAY_AD_SELECTORS,
+			...DISPLAY_AD_IFRAME_SELECTORS,
+			PLAYER_SURFACE_AD_MARKER_SELECTOR,
+		];
 	const DISPLAY_AD_SHELL_SELECTORS = [
 		".stream-display-ad",
 		'[class*="stream-display-ad"]',
@@ -387,10 +395,18 @@ function _blockAntiAdblockPopup() {
 
 		function _incrementDomCleanup(kind, el = null) {
 			if (!_isDomCleanupEnabled()) return;
-			if (_shouldDebounceDomCleanup(kind, el)) return false;
+			const safeKind =
+				typeof _normalizeCountedDomCleanupKind === "function"
+					? _normalizeCountedDomCleanupKind(kind)
+					: typeof kind === "string" && kind.trim()
+						? kind.trim().toLowerCase()
+						: "generic";
+			if (!safeKind) return false;
+			if (_shouldDebounceDomCleanup(safeKind, el)) return false;
 
 			const channel = _getCurrentChannelName();
-			_incrementDomAdsBlocked(kind, channel);
+			const didIncrement = _incrementDomAdsBlocked(safeKind, channel);
+			if (!didIncrement) return false;
 			_log(`DOM ad cleanup (${kind}) total: ${_S.domAdsBlocked}`, "success");
 			return true;
 		}
@@ -945,6 +961,54 @@ function _blockAntiAdblockPopup() {
 			return _filterUniqueElements(
 				_queryWithinRoots(roots, selectors.join(", ")),
 				(el) => _isVisibleNearPlayerElement(el, resolvedPlayerRect),
+			);
+		}
+
+		function _isHiddenNodeAnchoredNearPlayer(
+			el,
+			playerRect = null,
+			maxDepth = 4,
+		) {
+			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
+			if (!resolvedPlayerRect || !(el instanceof Element)) {
+				return false;
+			}
+
+			let current = el;
+			for (let depth = 0; depth <= maxDepth && current; depth += 1) {
+				if (_isVisibleNearPlayerElement(current, resolvedPlayerRect)) {
+					return true;
+				}
+				current = current.parentElement;
+			}
+
+			return false;
+		}
+
+		function _queryNearPlayerWithinRoots(
+			roots,
+			selectors,
+			playerRect = null,
+			options: { allowHidden?: boolean } = {},
+		) {
+			const resolvedPlayerRect = playerRect || _getMainPlayerRect();
+			const { allowHidden = false } = options;
+			if (
+				!resolvedPlayerRect ||
+				!Array.isArray(roots) ||
+				roots.length === 0 ||
+				!Array.isArray(selectors) ||
+				selectors.length === 0
+			) {
+				return [];
+			}
+
+			return _filterUniqueElements(
+				_queryWithinRoots(roots, selectors.join(", ")),
+				(el) =>
+					_isVisibleNearPlayerElement(el, resolvedPlayerRect) ||
+					(allowHidden &&
+						_isHiddenNodeAnchoredNearPlayer(el, resolvedPlayerRect)),
 			);
 		}
 
@@ -1692,20 +1756,38 @@ function _blockAntiAdblockPopup() {
 			return _isVisibleNearPlayerElement(el, playerRect);
 		}
 
-		function _hasDirectPlayerAdUiSignal() {
+		function _hasDirectPlayerAdUiSignal(
+			options: { includeShellArtifacts?: boolean } = {},
+		) {
 			const playerRect = _getMainPlayerRect();
 			if (!playerRect) return false;
+
+			const { includeShellArtifacts = true } = options;
+			const overlaySignals = _filterUniqueElements(
+				[
+					..._getDisplayAdLabels(),
+					..._getPlayerAdCallToActionNodes(),
+					..._getPlayerAdBannerTextNodes(),
+				],
+				(el) => _isVisibleNearPlayerElement(el, playerRect),
+			);
+			if (overlaySignals.length > 0) {
+				return true;
+			}
+			if (!includeShellArtifacts) {
+				return false;
+			}
 
 			return (
 				_filterUniqueElements(
 					[
-						..._getDisplayAdLabels(),
-						..._getPlayerAdCallToActionNodes(),
-						..._getPlayerAdBannerTextNodes(),
 						..._queryUniqueElements(DISPLAY_AD_SHELL_SELECTORS),
 						..._queryUniqueElements(LOWER_THIRD_DISPLAY_AD_SELECTORS),
 					],
-					(el) => _isVisibleNearPlayerElement(el, playerRect),
+					(el) =>
+						_isVisibleNearPlayerElement(el, playerRect) &&
+						!el.hasAttribute?.("data-ttvab-display-shell-reset") &&
+						!el.hasAttribute?.("data-ttvab-blocked"),
 				).length > 0
 			);
 		}
@@ -1926,7 +2008,6 @@ function _blockAntiAdblockPopup() {
 				return false;
 			}
 
-			_incrementDomCleanup("player-ui-ad-recovery");
 			_log(
 				"Player ad UI detected without a suppressible media URL, forcing player recovery",
 				"warning",
@@ -2164,6 +2245,12 @@ function _blockAntiAdblockPopup() {
 				LOWER_THIRD_DISPLAY_AD_SELECTORS,
 				playerRect,
 			);
+			const lowerThirdSeedNodes = _queryNearPlayerWithinRoots(
+				searchRoots,
+				LOWER_THIRD_DISPLAY_AD_SELECTORS,
+				playerRect,
+				{ allowHidden: true },
+			);
 			const displayShellNodes = _queryVisibleNearPlayerWithinRoots(
 				searchRoots,
 				DISPLAY_AD_SHELL_SELECTORS,
@@ -2187,7 +2274,7 @@ function _blockAntiAdblockPopup() {
 				const hasSelectorPreflightSignal =
 					adBanners.length > 0 ||
 					explicitDisplaySelectorNodes.length > 0 ||
-					lowerThirdDisplayAdNodes.length > 0 ||
+					lowerThirdSeedNodes.length > 0 ||
 					displayShellNodes.length > 0 ||
 					pipContainers.length > 0 ||
 					layoutRoots.length > 0;
@@ -2226,7 +2313,7 @@ function _blockAntiAdblockPopup() {
 			const hasDisplayAdCta = playerAdCallToActionNodes.length > 0;
 			const hasOverlayBanner = playerAdBannerTextNodes.length > 0;
 			const lowerThirdLayoutWrappers = _getLowerThirdDisplayAdLayoutWrappers(
-				lowerThirdDisplayAdNodes,
+				lowerThirdSeedNodes,
 				playerRect,
 			);
 			const shouldProbeInferredLayoutWrappers =
@@ -2236,7 +2323,7 @@ function _blockAntiAdblockPopup() {
 				adBanners.length > 0 ||
 				explicitDisplayAdNodes.length > 0 ||
 				displayShellNodes.length > 0 ||
-				lowerThirdDisplayAdNodes.length > 0;
+				lowerThirdSeedNodes.length > 0;
 			const inferredLayoutWrappers = shouldProbeInferredLayoutWrappers
 				? _getInferredDisplayAdLayoutWrappers()
 				: [];
@@ -2244,15 +2331,27 @@ function _blockAntiAdblockPopup() {
 				displayShellNodes.length > 0 ||
 				pipContainers.length > 0 ||
 				layoutRoots.length > 0;
+			const hasHiddenLowerThirdSignal =
+				lowerThirdSeedNodes.length > 0 &&
+				(lowerThirdDisplayAdNodes.length > 0 ||
+					lowerThirdLayoutWrappers.length > 0);
 			const hasInferredDisplayAdSignal =
-				hasAdLabel &&
-				(hasExplicitShellLayoutSignal || inferredLayoutWrappers.length > 0);
+				hasHiddenLowerThirdSignal ||
+				(hasAdLabel &&
+					(hasExplicitShellLayoutSignal || inferredLayoutWrappers.length > 0));
 			const hasExplicitDisplayAdSignal =
 				adBanners.length > 0 ||
 				explicitDisplayAdNodes.length > 0 ||
 				(hasDisplayAdCta && hasInferredDisplayAdSignal);
 			const hasDisplayAdSignal =
 				hasExplicitDisplayAdSignal || hasInferredDisplayAdSignal;
+			const hasImmediateDisplayAdSignal =
+				adBanners.length > 0 ||
+				explicitDisplaySelectorNodes.length > 0 ||
+				lowerThirdDisplayAdNodes.length > 0 ||
+				hasDisplayAdCta ||
+				hasOverlayBanner ||
+				hasAdLabel;
 
 			adLabels.forEach((el) => {
 				_hideElement(el);
@@ -2298,7 +2397,7 @@ function _blockAntiAdblockPopup() {
 				hasInferredDisplayAdSignal ? 1 : 0,
 				hasAdLabel ? 1 : 0,
 			].join(":");
-			if (!isDisplayAdShellActive) {
+			if (!isDisplayAdShellActive && !hasImmediateDisplayAdSignal) {
 				if (pendingDisplayAdShellSignature !== signalSignature) {
 					pendingDisplayAdShellSignature = signalSignature;
 					pendingDisplayAdShellSince = now;
@@ -2308,6 +2407,10 @@ function _blockAntiAdblockPopup() {
 				if (now - pendingDisplayAdShellSince < 350) {
 					return false;
 				}
+			}
+			if (hasImmediateDisplayAdSignal) {
+				pendingDisplayAdShellSince = 0;
+				pendingDisplayAdShellSignature = null;
 			}
 
 			if (!isDisplayAdShellActive) {
@@ -2545,6 +2648,53 @@ function _blockAntiAdblockPopup() {
 			} catch {}
 
 			return false;
+		}
+
+		function _hasImmediatePlayerAdMutationSignal(node) {
+			if (!(node instanceof Element) || _isSafeElement(node)) return false;
+			const playerRect = _getMainPlayerRect();
+			if (!playerRect) return false;
+
+			const isNearPlayerCandidate = (el) =>
+				_isVisibleNearPlayerElement(el, playerRect) &&
+				!el.hasAttribute?.("data-ttvab-display-shell-reset") &&
+				!el.hasAttribute?.("data-ttvab-blocked");
+			const candidateSelectors = [
+				...EXPLICIT_DISPLAY_AD_SELECTORS,
+				...DISPLAY_AD_SHELL_SELECTORS,
+				...LOWER_THIRD_DISPLAY_AD_SELECTORS,
+				...STREAM_DISPLAY_LAYOUT_SELECTORS,
+				...DISPLAY_AD_LABEL_SELECTORS,
+			].join(", ");
+
+			try {
+				if (node.matches?.(candidateSelectors) && isNearPlayerCandidate(node)) {
+					return true;
+				}
+			} catch {}
+
+			try {
+				const matchedCandidate = node.querySelector?.(candidateSelectors);
+				if (matchedCandidate && isNearPlayerCandidate(matchedCandidate)) {
+					return true;
+				}
+			} catch {}
+
+			const text = _normalizeDomCleanupSignatureText(
+				[
+					node.textContent || "",
+					node.getAttribute?.("aria-label") || "",
+					node.getAttribute?.("title") || "",
+				].join(" "),
+			);
+			const hasImmediateTextSignal =
+				text.includes("taking an ad break") ||
+				text.includes("click here for turbo") ||
+				text.includes("consider turbo") ||
+				text.includes("ad-free viewing") ||
+				(text.includes("turbo") && text.includes("streams")) ||
+				/^ad(?:\s|$)/.test(text);
+			return hasImmediateTextSignal && isNearPlayerCandidate(node);
 		}
 
 		function _getPopupRootCandidates() {
@@ -2845,59 +2995,49 @@ function _blockAntiAdblockPopup() {
 
 		let debounceTimer = null;
 		let lastImmediateScan = 0;
-		const _mutationListHasSignal = (mutations, predicate) => {
-			for (const mutation of mutations) {
-				if (predicate(mutation.target)) {
+		const observer = new MutationObserver((mutations) => {
+			_resetPlayerDetectionCaches();
+			let shouldScan = false;
+			let shouldRunPopupScan = false;
+			let shouldForceScan = false;
+			const considerMutationNode = (node) => {
+				if (_hasPopupMutationSignal(node)) {
+					shouldRunPopupScan = true;
+				}
+				if (_hasImmediatePlayerAdMutationSignal(node)) {
+					shouldForceScan = true;
+					shouldScan = true;
 					return true;
+				}
+				if (_shouldScanForMutationNode(node)) {
+					shouldScan = true;
+					return true;
+				}
+				return false;
+			};
+			for (const mutation of mutations) {
+				if (considerMutationNode(mutation.target)) {
+					break;
 				}
 				for (const nodes of [mutation.addedNodes, mutation.removedNodes]) {
 					for (const node of nodes) {
-						if (predicate(node)) {
-							return true;
+						if (considerMutationNode(node)) {
+							break;
 						}
 					}
+					if (shouldScan) break;
 				}
-			}
-			return false;
-		};
-		const observer = new MutationObserver((mutations) => {
-			if (window.location.href !== lastRouteUrl) {
-				_resetPlayerDetectionCaches();
-				if (_handleRouteChange()) {
-					if (debounceTimer) {
-						clearTimeout(debounceTimer);
-						debounceTimer = null;
-					}
-					lastImmediateScan = Date.now();
-					return;
-				}
+				if (shouldScan) break;
 			}
 
-			const isHidden = _isDocumentHidden();
-			const shouldKeepHot = _shouldKeepDomCleanupHot();
-			if (!shouldKeepHot && isHidden) return;
-
-			const shouldRunPopupScan = _mutationListHasSignal(
-				mutations,
-				_hasPopupMutationSignal,
-			);
-			let shouldScan = shouldRunPopupScan;
-
-			if (!shouldScan && shouldKeepHot) {
-				shouldScan = _mutationListHasSignal(
-					mutations,
-					_shouldScanForMutationNode,
-				);
-			}
-
-			if (!shouldScan) return;
-			_resetPlayerDetectionCaches();
 			if (shouldRunPopupScan) {
 				_markPopupScanInterest();
+				shouldScan = true;
 			}
+			if (!shouldScan) return;
 			_markIdleScanInterest();
 
-			if (isHidden) {
+			if (_isDocumentHidden()) {
 				if (_handleRouteChange()) {
 					if (debounceTimer) {
 						clearTimeout(debounceTimer);
@@ -2929,7 +3069,7 @@ function _blockAntiAdblockPopup() {
 			const now = Date.now();
 			if (now - lastImmediateScan > 250) {
 				lastImmediateScan = now;
-				_queueScan(0);
+				_queueScan(0, shouldForceScan);
 			}
 
 			if (debounceTimer) clearTimeout(debounceTimer);
