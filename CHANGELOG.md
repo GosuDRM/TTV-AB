@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.8] - 2026-04-12
+
+### Fixed
+- **Firefox Midroll Recovery Fix** - Native `PlaybackAccessToken` requests now stay pinned to the forced recovery player type whenever token rewriting is enabled, preventing midroll refreshes from slipping back onto Twitch's ad-marked path before ad recovery takes over.
+
 ## [6.2.7] - 2026-04-12
 
 ### Changed

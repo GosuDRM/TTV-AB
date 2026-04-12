@@ -504,17 +504,9 @@ function validateSharedDefinitions() {
 			`CHANGELOG top version markers are out of sync with ${constantsVersion}`,
 		);
 	}
-	if (
-		!readmeSource.includes("DOM Ads Blocked") ||
-		!privacySource.includes("DOM Ads Blocked")
-	) {
-		throw new Error(
-			"README or PRIVACY metric wording is out of sync with DOM Ads Blocked",
-		);
-	}
 	for (const requiredPrivacyPhrase of [
 		"enable/disable toggle",
-		'"Ads Blocked" and "DOM Ads Blocked" counters',
+		'"Ads Blocked" counter',
 		"selected language",
 		"welcome/donation reminder dismissal timing",
 		"stays on your device",

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.7-purple)
+![Version](https://img.shields.io/badge/version-6.2.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,10 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.7
-- **DOM Cleanup Scope Reduction** - Removed the broad anti-popup / overlay DOM cleanup runtime because it was interfering with Firefox ad blocking. The extension now focuses on playlist interception, playback recovery, and lightweight post-ad artifact cleanup.
-- **Streamlined Popup UI** - Removed the separate DOM Ads Blocked counter for a cleaner popup layout; all ad blocking activity is now reflected in the main Ads Blocked counter.
-- **Achievements Update** - Reduced achievement count from 12 to 10 for a tighter set of milestones.
+### v6.2.8
+- **Firefox Midroll Recovery Fix** - Native playback token requests now stay pinned to the recovery player type throughout Twitch refreshes, closing a path where midrolls could still slip through even when prerolls were already blocked.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
