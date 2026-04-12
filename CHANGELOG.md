@@ -4,8 +4,9 @@ All notable changes to TTV AB will be documented in this file.
 
 ## [6.2.7] - 2026-04-12
 
-### Fixed
-- **DOM Cleanup Gating Fix** - DOM ad cleanup (overlay ads, anti-adblock popups, display ad shells) no longer waits for the bridge counter handshake before activating, fixing a race condition where ads could slip through on initial page load.
+### Changed
+- **DOM Cleanup Scope Reduction** - Removed the broad anti-popup / overlay DOM cleanup runtime because it was interfering with Firefox ad blocking. The extension now relies on playlist interception, playback recovery, and the narrower post-ad display-artifact cleanup that remains in the hook layer.
+- **Build Validation Cleanup** - Removed obsolete minify aliases for the deleted DOM cleanup helpers and dropped the stale `init` route-context validation that only existed for that path.
 - **Streamlined Popup UI** - Removed the separate DOM Ads Blocked counter for a cleaner popup layout; all ad blocking activity is now reflected in the main Ads Blocked counter.
 - **Achievements Update** - Reduced achievement count from 12 to 10 for a tighter set of milestones.
 

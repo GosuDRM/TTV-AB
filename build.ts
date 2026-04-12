@@ -72,7 +72,6 @@ const MINIFY_MAP = {
 	_showWelcome: "_$wc",
 	_showAchievementUnlocked: "_$au",
 	_initAchievementListener: "_$al",
-	_blockAntiAdblockPopup: "_$bp",
 
 	_bootstrap: "_$bs",
 	_initToggleListener: "_$tl",
@@ -83,9 +82,6 @@ const MINIFY_MAP = {
 	_FIRST_RUN_KEY: "_$fr",
 	_ACHIEVEMENT_INFO: "_$ai",
 	_GQL_URL: "_$gu",
-	_scanAndRemove: "_$sr",
-	_scheduleIdleScan: "_$is",
-	_initPopupBlocker: "_$ipb",
 	_pruneStreamInfos: "_$ps",
 	_PlayerBufferState: "_$pbs",
 	_cachedPlayerRef: "_$cpr",
@@ -1155,12 +1151,9 @@ function validateSharedDefinitions() {
 			"Reserved route lists must be sourced from the shared parser helper",
 		);
 	}
-	if (
-		!initSource.includes("_getPlaybackContextFromUrl(window.location.href)") ||
-		!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")
-	) {
+	if (!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")) {
 		throw new Error(
-			"Init and hooks must resolve route context through _getPlaybackContextFromUrl",
+			"Hooks must resolve route context through _getPlaybackContextFromUrl",
 		);
 	}
 
@@ -1589,4 +1582,3 @@ _$in();
 }
 
 build();
-

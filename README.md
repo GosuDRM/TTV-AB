@@ -22,7 +22,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 - ✅ Blocks preroll and midroll ads on live streams and VODs
 - ✅ Supports both live playback and Twitch `/videos/<id>` archives
-- ✅ **Blocks anti-adblock popups** ("Support streamer by disabling ad block")
+- ✅ Cleans up stale Twitch ad UI after recovery
 - ✅ Avoids purple-screen playback interruptions
 - ✅ Restores your chosen quality after ad recovery
 - ✅ Manifest V3 compatible
@@ -49,8 +49,8 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 The extension intercepts Twitch's live and VOD HLS video playlists and:
 - Strips ad-marked segments from M3U8 playlists when Twitch injects them
 - Fetches backup ad-free streams when Twitch forces playback onto an ad path
-- Collapses player-side display-ad shells and overlay banners
-- Suppresses injected direct video ads on live and VOD pages and returns playback to the real stream
+- Cleans up stale Twitch ad UI after recovery
+- Suppresses competing media during ad recovery and returns playback to the real stream
 - Caches known ad segments to reduce repeated playback disruption
 
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
@@ -58,7 +58,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v6.2.7
-- **DOM Cleanup Gating Fix** - DOM ad cleanup (overlay ads, anti-adblock popups, display ad shells) no longer waits for the bridge counter handshake before activating, fixing a race condition where ads could slip through on initial page load.
+- **DOM Cleanup Scope Reduction** - Removed the broad anti-popup / overlay DOM cleanup runtime because it was interfering with Firefox ad blocking. The extension now focuses on playlist interception, playback recovery, and lightweight post-ad artifact cleanup.
 - **Streamlined Popup UI** - Removed the separate DOM Ads Blocked counter for a cleaner popup layout; all ad blocking activity is now reflected in the main Ads Blocked counter.
 - **Achievements Update** - Reduced achievement count from 12 to 10 for a tighter set of milestones.
 
