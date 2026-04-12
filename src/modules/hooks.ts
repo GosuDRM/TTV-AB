@@ -1429,7 +1429,7 @@ function _hookMainFetch() {
 					let effectiveRequest = url;
 					try {
 						if (opts && Object.keys(opts).length > 0) {
-							effectiveRequest = new Request(url, opts);
+							effectiveRequest = new Request(url.clone(), opts);
 						}
 						headers = effectiveRequest.headers;
 						const text = await effectiveRequest.clone().text();
