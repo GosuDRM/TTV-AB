@@ -72,7 +72,7 @@ const TRANSLATIONS = {
 		next: "Siguiente",
 		descriptionText:
 			"Bloqueador de anuncios ligero y potente diseñado específicamente para Twitch.tv",
-		supportDeveloper: "Apoyar al desarrollador",
+		supportDeveloper: "Apoyar a GosuDRM",
 		repoLinkLabel: "Abrir TTV AB en GitHub",
 		authorLinkLabel: "Abrir GosuDRM en GitHub",
 		versionLabel: "Versión {version}",
@@ -671,7 +671,7 @@ const TRANSLATIONS = {
 				desc: "Вы заблокировали 10 000 объявлений!",
 			},
 			channels_50: {
-				name: "Глобтроттер",
+				name: "Покоритель мира",
 				desc: "Вы заблокировали рекламу на 50 каналах!",
 			},
 		},
