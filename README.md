@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.3-purple)
+![Version](https://img.shields.io/badge/version-6.2.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,14 +57,12 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.3
-- **Faster post-ad return** - Native playback recovery now validates much more aggressively after an ad break, with a shorter clean-playlist confirmation window, fewer native recovery probes, and a hard wait budget that prevents Twitch from keeping the player stuck on backup playback for too long.
-- **More reliable native reloads** - In-place stripped-ad recovery now follows the same post-ad reload path as backup and fallback playback, so the player returns to the native stream more consistently instead of lingering on a temporary recovery path.
-- **Stronger native token pinning** - Native `PlaybackAccessToken` requests are now kept on the forced recovery player type during validation, reducing cases where Twitch drifts back onto an ad-marked native path in the middle of post-ad recovery.
-- **Safer backup stream selection** - Minimal-request fallback no longer accepts ad-marked backup playlists just because they are technically playable, closing an edge case where an ad path could still be selected under degraded recovery conditions.
-- **Tighter clean-playlist reuse** - The recovery cache now expires stale clean playlists much sooner, which lowers the chance of getting stuck on an older low-quality backup state after the ad cycle ends.
-- **More durable bridge stats** - Pending `Ads Blocked` and `DOM Ads Blocked` updates are now coalesced and trimmed more safely during temporary bridge disconnects, so counter deltas are less likely to be dropped while still keeping the queue bounded.
-- **Cleaner worker shutdowns** - Intentionally terminated workers are now pruned immediately, which reduces stale backup tracking during heavy player churn, navigation, and repeated recovery cycles.
+### v6.2.5
+- **Turbo lower-third cleanup** - Hidden Turbo and lower-third display-ad seeds are now still traced back to their player wrappers, so the extension can collapse the black half-screen shell even after Twitch hides the inner ad node.
+- **Faster visible Turbo suppression** - Strong visible in-player Turbo and display-ad signals now skip the old confirmation delay and trigger cleanup sooner, reducing brief flashes before the shell is collapsed.
+- **Shell-only recovery restored** - UI-only recovery once again handles real player-shell ad states, so Twitch cannot sit on a shell-only ad path just because no visible CTA or banner copy is present.
+- **DOM regression hardening** - The fast mutation path now ignores already-collapsed artifacts and hidden residue, which reduces repeated forced scans and keeps DOM cleanup counting more stable after route changes.
+- **DOM counter consistency** - `DOM Ads Blocked` now only counts persisted cleanup kinds, so recovery-only player reload signals no longer inflate page-side totals relative to popup and stored stats.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
