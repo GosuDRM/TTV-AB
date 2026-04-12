@@ -2,10 +2,23 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.2.9] - 2026-04-12
+
+### Added
+- **New Achievements** - Added "Diamond" (block 10,000 ads) and "Globetrotter" (block ads on 50 channels) achievement badges, bringing the total to 12. Fully translated across all 11 supported languages.
+
+### Fixed
+- **Post-Ad Re-Entry Loop** - The main ad detection in `_processM3U8` now uses only the primary ad signifier (`stitched`) and explicit known ad segment URLs instead of the broad `_hasPlaylistAdMarkers` check. Residual metadata tags (`X-TV-TWITCH-AD`, `SCTE35-OUT`, etc.) that Twitch's CDN can briefly serve after the actual ad ends no longer trigger a false new ad cycle. A 5-second grace window after ad-end reloads provides additional protection against re-entry from stale playlist data.
+- **Ad Recovery Backoff Stability** - The exponential backoff counter for ad recovery reloads (`_AdRecoveryConsecutiveFailures`) now resets on channel navigation, ad cycle completion, and when ad blocking is toggled off. Previously the counter could grow indefinitely across ad cycles, causing increasingly long delays before recovery attempts.
+- **Midroll Detection False Positives** - `_hasExplicitAdMetadata` now matches quoted `"MIDROLL"` and `"midroll"` JSON values instead of bare substrings, preventing false-positive ad detection on URLs or text that coincidentally contain "midroll" as a path component.
+- **Player Startup Crash Guard** - `_getPrimaryMediaElement` now guards against `__TTVAB_STATE__` being undefined during early page load, preventing a reference error before the extension state is initialized.
+- **Initial State Declaration** - `_AdRecoveryConsecutiveFailures` is now declared in the initial state object, ensuring the field exists from bootstrap rather than being implicitly created on first use.
+- **Route Segment Consistency** - Added the missing `"video"` entry to the parser's `_RESERVED_ROUTE_SEGMENTS` set, aligning it with the bridge module and preventing VOD routes from being misidentified.
+
 ## [6.2.8] - 2026-04-12
 
 ### Fixed
-- **Midroll Recovery Fix** - Native `PlaybackAccessToken` requests now stay pinned to the forced recovery player type whenever token rewriting is enabled, preventing midroll refreshes from slipping back onto Twitch's ad-marked path before ad recovery takes over.
+- **Firefox Midroll Recovery Fix** - Native `PlaybackAccessToken` requests now stay pinned to the forced recovery player type whenever token rewriting is enabled, preventing midroll refreshes from slipping back onto Twitch's ad-marked path before ad recovery takes over.
 
 ## [6.2.7] - 2026-04-12
 

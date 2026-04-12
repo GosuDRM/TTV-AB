@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.8-purple)
+![Version](https://img.shields.io/badge/version-6.2.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -30,7 +30,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Accessible popup controls and live-updating stats
 - ✅ Persistent "Ads Blocked" statistics
 - ✅ **Statistics Dashboard** with time saved, weekly charts, and achievements
-- ✅ **10 Achievement Badges** to unlock as you block ads
+- ✅ **12 Achievement Badges** to unlock as you block ads
 - ✅ **Language Selector** - 11 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU)
 - ✅ Per-channel ad blocking breakdown
 - ✅ Modern, animated UI (Cyberpunk/Neon aesthetic)
@@ -57,8 +57,13 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.8
-- **Midroll Recovery Fix** - Native playback token requests now stay pinned to the recovery player type throughout Twitch refreshes, closing a path where midrolls could still slip through even when prerolls were already blocked.
+### v6.2.9
+- **Post-Ad Re-Entry Fix** - Ads no longer falsely restart after being blocked. Narrowed the main ad detection to the primary ad signifier and added a grace window after ad-end reloads to suppress residual metadata tags that Twitch's CDN can briefly serve after the actual ad ends.
+- **New Achievements** - Added "Diamond" (10,000 ads blocked) and "Globetrotter" (50 channels) badges, bringing the total to 12.
+- **Ad Recovery Stability** - Exponential backoff for ad recovery reloads now resets reliably on channel changes, ad cycle completion, and toggle-off, preventing stale backoff from delaying recovery on subsequent ad encounters.
+- **Midroll Detection Accuracy** - Tightened midroll metadata matching to avoid false-positive ad detection on URLs that coincidentally contain midroll-related substrings.
+- **Player Robustness** - Guarded early player access against uninitialized extension state, eliminating a potential startup crash.
+- **Route Parsing Consistency** - Aligned reserved route segments between parser and bridge modules.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
