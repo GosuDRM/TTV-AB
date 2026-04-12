@@ -345,22 +345,7 @@ function _getSyntheticPlaybackContextForPlaylist(url) {
 }
 
 function _hasPlaylistAdMarkers(text) {
-	const adSignifier =
-		typeof __TTVAB_STATE__?.AdSignifier === "string" &&
-			__TTVAB_STATE__.AdSignifier.trim()
-			? __TTVAB_STATE__.AdSignifier.trim()
-			: "stitched";
-	return (
-		typeof text === "string" &&
-		(text.includes(adSignifier) ||
-			text.includes("X-TV-TWITCH-AD") ||
-			text.includes("stitched") ||
-			text.includes("stitched-ad") ||
-			text.includes("/adsquared/") ||
-			text.includes("SCTE35-OUT") ||
-			text.includes('"MIDROLL"') ||
-			text.includes('"midroll"'))
-	);
+	return _hasExplicitAdMetadata(text);
 }
 
 function _playlistHasMediaSegments(text) {
@@ -707,7 +692,15 @@ async function _processM3U8(url, text, realFetch) {
 	const hasExplicitKnownAdSegments = _playlistHasKnownAdSegments(text, {
 		includeCached: false,
 	});
+	const adSignifier =
+		typeof __TTVAB_STATE__?.AdSignifier === "string" &&
+			__TTVAB_STATE__.AdSignifier.trim()
+			? __TTVAB_STATE__.AdSignifier.trim()
+			: "stitched";
+	const shouldHonorPrimaryAdSignifier =
+		info.IsShowingAd || _isForcedAdEndReloadContinuation(info);
 	const hasAds =
+		(shouldHonorPrimaryAdSignifier && text.includes(adSignifier)) ||
 		_hasPlaylistAdMarkers(text) ||
 		hasExplicitKnownAdSegments ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;

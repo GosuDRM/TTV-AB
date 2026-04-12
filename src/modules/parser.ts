@@ -314,9 +314,7 @@ function _replaceServerTime(m3u8, time) {
 function _hasExplicitAdMetadata(text) {
 	return (
 		typeof text === "string" &&
-		(text.includes(__TTVAB_STATE__?.AdSignifier || "stitched") ||
-			text.includes("stitched") ||
-			text.includes("X-TV-TWITCH-AD") ||
+		(text.includes("X-TV-TWITCH-AD") ||
 			text.includes("stitched-ad") ||
 			text.includes("/adsquared/") ||
 			text.includes("SCTE35-OUT") ||
@@ -581,7 +579,7 @@ function _stripAds(text, stripAll, info) {
 			}
 		}
 
-		if (line.includes(__TTVAB_STATE__.AdSignifier)) stripped = true;
+		if (_hasExplicitAdMetadata(line)) stripped = true;
 	}
 
 	if (!stripped) {
