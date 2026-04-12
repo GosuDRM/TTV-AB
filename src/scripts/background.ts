@@ -132,6 +132,8 @@ const ACHIEVEMENTS = [
 	{ id: "time_10h", threshold: 36000, type: "time" },
 	{ id: "channels_5", threshold: 5, type: "channels" },
 	{ id: "channels_20", threshold: 20, type: "channels" },
+	{ id: "block_10000", threshold: 10000, type: "ads" },
+	{ id: "channels_50", threshold: 50, type: "channels" },
 ];
 const ACHIEVEMENT_IDS = new Set(
 	ACHIEVEMENTS.map((achievement) => achievement.id),

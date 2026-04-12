@@ -43,6 +43,14 @@ const TRANSLATIONS = {
 				name: "Adventurer",
 				desc: "Blocked ads on 20 channels!",
 			},
+			block_10000: {
+				name: "Diamond",
+				desc: "Blocked 10,000 ads!",
+			},
+			channels_50: {
+				name: "Globetrotter",
+				desc: "Blocked ads on 50 channels!",
+			},
 		},
 	},
 	es: {
@@ -97,6 +105,14 @@ const TRANSLATIONS = {
 			channels_20: {
 				name: "Aventurero",
 				desc: "¡Has bloqueado anuncios en 20 canales!",
+			},
+			block_10000: {
+				name: "Diamante",
+				desc: "¡Has bloqueado 10.000 anuncios!",
+			},
+			channels_50: {
+				name: "Trotamundos",
+				desc: "¡Has bloqueado anuncios en 50 canales!",
 			},
 		},
 	},
@@ -158,6 +174,14 @@ const TRANSLATIONS = {
 			channels_20: {
 				name: "Aventurier",
 				desc: "Vous avez bloqué des pubs sur 20 chaînes !",
+			},
+			block_10000: {
+				name: "Diamant",
+				desc: "Vous avez bloqué 10 000 pubs !",
+			},
+			channels_50: {
+				name: "Globe-trotteur",
+				desc: "Vous avez bloqué des pubs sur 50 chaînes !",
 			},
 		},
 	},
@@ -229,6 +253,14 @@ const TRANSLATIONS = {
 				name: "Abenteurer",
 				desc: "Du hast auf 20 Kanälen Werbung blockiert!",
 			},
+			block_10000: {
+				name: "Diamant",
+				desc: "Du hast 10.000 Werbeanzeigen blockiert!",
+			},
+			channels_50: {
+				name: "Weltenbummler",
+				desc: "Du hast auf 50 Kanälen Werbung blockiert!",
+			},
 		},
 	},
 	pt: {
@@ -284,6 +316,14 @@ const TRANSLATIONS = {
 				name: "Aventureiro",
 				desc: "Você bloqueou anúncios em 20 canais!",
 			},
+			block_10000: {
+				name: "Diamante",
+				desc: "Você bloqueou 10.000 anúncios!",
+			},
+			channels_50: {
+				name: "Globetrotter",
+				desc: "Você bloqueou anúncios em 50 canais!",
+			},
 		},
 	},
 	it: {
@@ -338,6 +378,14 @@ const TRANSLATIONS = {
 			channels_20: {
 				name: "Avventuriero",
 				desc: "Hai bloccato annunci su 20 canali!",
+			},
+			block_10000: {
+				name: "Diamante",
+				desc: "Hai bloccato 10.000 annunci!",
+			},
+			channels_50: {
+				name: "Giramondo",
+				desc: "Hai bloccato annunci su 50 canali!",
 			},
 		},
 	},
@@ -405,6 +453,14 @@ const TRANSLATIONS = {
 				name: "アドベンチャラー",
 				desc: "20チャンネルで広告をブロックしました！",
 			},
+			block_10000: {
+				name: "ダイヤモンド",
+				desc: "広告を10,000件ブロックしました！",
+			},
+			channels_50: {
+				name: "グローブトロッター",
+				desc: "50チャンネルで広告をブロックしました！",
+			},
 		},
 	},
 	ko: {
@@ -450,6 +506,14 @@ const TRANSLATIONS = {
 				name: "모험가",
 				desc: "20개 채널에서 광고를 차단했습니다!",
 			},
+			block_10000: {
+				name: "다이아몬드",
+				desc: "광고 10,000개를 차단했습니다!",
+			},
+			channels_50: {
+				name: "세계여행자",
+				desc: "50개 채널에서 광고를 차단했습니다!",
+			},
 		},
 	},
 	zh_CN: {
@@ -489,6 +553,8 @@ const TRANSLATIONS = {
 			time_10h: { name: "时间大师", desc: "你已节省 10 小时广告时间！" },
 			channels_5: { name: "探索者", desc: "你已在 5 个频道中拦截广告！" },
 			channels_20: { name: "冒险家", desc: "你已在 20 个频道中拦截广告！" },
+			block_10000: { name: "钻石", desc: "你已拦截 10,000 条广告！" },
+			channels_50: { name: "环球旅行家", desc: "你已在 50 个频道中拦截广告！" },
 		},
 	},
 	zh_TW: {
@@ -528,6 +594,8 @@ const TRANSLATIONS = {
 			time_10h: { name: "時間大師", desc: "你已節省 10 小時廣告時間！" },
 			channels_5: { name: "探索者", desc: "你已在 5 個頻道中攔截廣告！" },
 			channels_20: { name: "冒險家", desc: "你已在 20 個頻道中攔截廣告！" },
+			block_10000: { name: "鑽石", desc: "你已攔截 10,000 則廣告！" },
+			channels_50: { name: "環球旅行家", desc: "你已在 50 個頻道中攔截廣告！" },
 		},
 	},
 	ru: {
@@ -597,6 +665,14 @@ const TRANSLATIONS = {
 			channels_20: {
 				name: "Авантюрист",
 				desc: "Вы заблокировали рекламу на 20 каналах!",
+			},
+			block_10000: {
+				name: "Бриллиант",
+				desc: "Вы заблокировали 10 000 объявлений!",
+			},
+			channels_50: {
+				name: "Глобтроттер",
+				desc: "Вы заблокировали рекламу на 50 каналах!",
 			},
 		},
 	},
