@@ -543,6 +543,8 @@ function _hookWorker() {
 
 	const createHookedWorkerConstructor = (BaseWorker) => {
 		const reinsertNames = _getReinsert(BaseWorker);
+		const _workerRestartCounts = new Map();
+		const MAX_WORKER_RESTART_ATTEMPTS = 3;
 		const HookedWorker = class Worker extends _cleanWorker(BaseWorker) {
 			constructor(url, opts) {
 				let isTwitch = false;
@@ -1146,8 +1148,7 @@ function _hookWorker() {
 
 				const _workerUrl = url;
 				const workerOpts = opts;
-				let restartAttempts = 0;
-				const MAX_RESTART_ATTEMPTS = 3;
+				const _restartKey = workerSourceUrl || String(url);
 
 				this.addEventListener("error", (e) => {
 					if (this.__TTVABIntentionallyTerminated) {
@@ -1157,8 +1158,11 @@ function _hookWorker() {
 
 					pruneTrackedWorkers([this]);
 
-					if (restartAttempts < MAX_RESTART_ATTEMPTS) {
-						restartAttempts++;
+					const restartAttempts =
+						(_workerRestartCounts.get(_restartKey) || 0) + 1;
+					_workerRestartCounts.set(_restartKey, restartAttempts);
+
+					if (restartAttempts <= MAX_WORKER_RESTART_ATTEMPTS) {
 						const delay = 2 ** restartAttempts * 500;
 						_log(
 							"Restarting worker in " +
@@ -1166,7 +1170,7 @@ function _hookWorker() {
 								"s (attempt " +
 								restartAttempts +
 								"/" +
-								MAX_RESTART_ATTEMPTS +
+								MAX_WORKER_RESTART_ATTEMPTS +
 								")",
 							"warning",
 						);
@@ -1187,7 +1191,7 @@ function _hookWorker() {
 							try {
 								new window.Worker(_workerUrl, workerOpts);
 								_log("Worker restarted", "success");
-								restartAttempts = 0;
+								_workerRestartCounts.delete(_restartKey);
 							} catch (restartErr) {
 								_log(`Worker restart failed: ${restartErr.message}`, "error");
 							}
