@@ -26,6 +26,7 @@ function _resetStreamAdState(info) {
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
 	info.LastForcedAdEndReloadAt = 0;
+	info.LastAdEndReloadAt = 0;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -546,6 +547,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		LastNativeRecoveryReadyPlayerType: null,
 		NativeRecoveryCleanCount: 0,
 		LastForcedAdEndReloadAt: 0,
+		LastAdEndReloadAt: 0,
 		LastActivityAt: Date.now(),
 	};
 
@@ -722,6 +724,16 @@ async function _processM3U8(url, text, realFetch) {
 		if (!isForcedAdEndContinuation) {
 			info.LastForcedAdEndReloadAt = 0;
 		}
+
+		if (
+			!info.IsShowingAd &&
+			info.LastAdEndReloadAt &&
+			Date.now() - info.LastAdEndReloadAt <= _getForcedAdEndReentryWindowMs()
+		) {
+			_log("[Trace] Suppressing ad re-entry during post-ad-end reload grace window", "info");
+			return text;
+		}
+		info.LastAdEndReloadAt = 0;
 
 		info.PendingAdEndAt = 0;
 		info.CleanPlaylistCount = 0;
@@ -939,6 +951,7 @@ async function _processM3U8(url, text, realFetch) {
 				);
 				if (shouldReloadPlayer) {
 					info.LastPlayerReload = Date.now();
+					info.LastAdEndReloadAt = Date.now();
 					_postWorkerBridgeMessage(
 						self,
 						_createPageScopedWorkerEvent({
