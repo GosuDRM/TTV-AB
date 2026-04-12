@@ -1515,7 +1515,10 @@ let _cachedPrimaryMediaElementKey = null;
 let _cachedPrimaryMediaElementSearchedAt = 0;
 
 function _getPrimaryMediaElement() {
-	const currentMediaKey = __TTVAB_STATE__.PageMediaKey;
+	const currentMediaKey =
+		typeof __TTVAB_STATE__ !== "undefined" && __TTVAB_STATE__
+			? __TTVAB_STATE__.PageMediaKey
+			: null;
 	const now = Date.now();
 	if (_cachedPrimaryMediaElementKey === currentMediaKey) {
 		if (_cachedPrimaryMediaElement?.isConnected) {

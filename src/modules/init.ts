@@ -54,6 +54,7 @@ function _initToggleListener() {
 			__TTVAB_STATE__.LastPlayerReloadAt = 0;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+			__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 			if (typeof _clearAdResumeIntent === "function") {
 				_clearAdResumeIntent();
 			}

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.8-purple)
+![Version](https://img.shields.io/badge/version-6.2.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,11 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.8
-- **Firefox Midroll Recovery Fix** - Native playback token requests now stay pinned to the recovery player type throughout Twitch refreshes, closing a path where midrolls could still slip through even when prerolls were already blocked.
+### v6.2.9
+- **Ad Recovery Stability** - Exponential backoff for ad recovery reloads now resets reliably on channel changes, ad cycle completion, and toggle-off, preventing stale backoff from delaying recovery on subsequent ad encounters.
+- **Midroll Detection Accuracy** - Tightened midroll metadata matching to avoid false-positive ad detection on URLs that coincidentally contain midroll-related substrings.
+- **Player Robustness** - Guarded early player access against uninitialized extension state, eliminating a potential startup crash.
+- **Route Parsing Consistency** - Aligned reserved route segments between parser and bridge modules.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
