@@ -58,6 +58,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v6.2.6
+- **Ad Recovery Loop Fix** - The DOM-driven player recovery no longer loops indefinitely when all backup player types return ad-marked streams. Recovery attempts are now capped per ad cycle, with exponential backoff preventing rapid-fire reloads.
+- **Fallback Stream Promotion** - Ad-marked but playable backup streams are now kept as fallback candidates for ad stripping, ensuring the worker always has a stream to clean instead of returning nothing when all player types serve ads.
+- **Emergency Playlist Fallback** - When no fresh backup stream is available, the processor now falls back to the last known clean backup or native playlist, keeping playback alive during difficult ad windows.
 - **Turbo lower-third cleanup** - Hidden Turbo and lower-third display-ad seeds are now still traced back to their player wrappers, so the extension can collapse the black half-screen shell even after Twitch hides the inner ad node.
 - **Faster visible Turbo suppression** - Strong visible in-player Turbo and display-ad signals now skip the old confirmation delay and trigger cleanup sooner, reducing brief flashes before the shell is collapsed.
 - **Shell-only recovery restored** - UI-only recovery once again handles real player-shell ad states, so Twitch cannot sit on a shell-only ad path just because no visible CTA or banner copy is present.

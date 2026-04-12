@@ -2196,20 +2196,27 @@ function _doPlayerTask(
 		if (
 			isAdRecoveryReload &&
 			(__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel) &&
-			__TTVAB_STATE__.LastAdRecoveryReloadAt &&
-			now - __TTVAB_STATE__.LastAdRecoveryReloadAt <
-				__TTVAB_STATE__.AdRecoveryReloadCooldownMs
+			__TTVAB_STATE__.LastAdRecoveryReloadAt
 		) {
-			_log(
-				`Suppressing duplicate ad recovery reload for ${__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel}`,
-				"warning",
-			);
-			return false;
+			const consecutiveFailures = Math.max(0,
+				Number(__TTVAB_STATE__._AdRecoveryConsecutiveFailures) || 0);
+			const backoffCooldown = Math.min(60000,
+				(__TTVAB_STATE__.AdRecoveryReloadCooldownMs || 10000) *
+				Math.pow(2, Math.min(consecutiveFailures, 3)));
+			if (now - __TTVAB_STATE__.LastAdRecoveryReloadAt < backoffCooldown) {
+				_log(
+					`Suppressing duplicate ad recovery reload for ${__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel} (backoff ${Math.round(backoffCooldown / 1000)}s, attempt #${consecutiveFailures + 1})`,
+					"warning",
+				);
+				return false;
+			}
 		}
 
 		__TTVAB_STATE__.LastPlayerReloadAt = now;
 		if (isAdRecoveryReload) {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = now;
+			__TTVAB_STATE__._AdRecoveryConsecutiveFailures =
+				(Number(__TTVAB_STATE__._AdRecoveryConsecutiveFailures) || 0) + 1;
 		}
 		if (reason !== "manual") {
 			_suppressPauseIntent(

@@ -1105,6 +1105,7 @@ function _hookWorker() {
 									_clearAdResumeIntent();
 								}
 								_log("Ad ended", "success");
+							__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
 								}

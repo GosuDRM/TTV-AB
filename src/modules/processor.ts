@@ -827,13 +827,27 @@ async function _processM3U8(url, text, realFetch) {
 			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
 		}
 
-		const {
+		let {
 			type: backupType,
 			m3u8: backupM3u8,
 			isFallback,
 		} = await _findBackupStream(info, realFetch, startIdx, res);
 
-		if (!backupM3u8) _log("Failed to find backup stream", "warning");
+		if (!backupM3u8) {
+			if (info.LastCleanBackupM3U8) {
+				backupM3u8 = info.LastCleanBackupM3U8;
+				backupType = info.LastCleanBackupPlayerType || __TTVAB_STATE__.FallbackPlayerType;
+				isFallback = true;
+				_log("[Trace] Using cached clean backup as emergency fallback", "warning");
+			} else if (info.LastCleanNativeM3U8) {
+				backupM3u8 = info.LastCleanNativeM3U8;
+				backupType = __TTVAB_STATE__.FallbackPlayerType;
+				isFallback = true;
+				_log("[Trace] Using last clean native M3U8 as emergency fallback", "warning");
+			} else {
+				_log("Failed to find backup stream — no cached clean playlists available", "warning");
+			}
+		}
 
 		if (isFallback) {
 			info.IsUsingFallbackStream = true;
@@ -966,7 +980,11 @@ function _getFallbackPromotionPolicy({
 		return { ...base, reason: "not-playable" };
 	}
 	if (candidateHasAds) {
-		return { ...base, reason: "ad-marked" };
+		return {
+			allowSelectedPromotion: false,
+			allowFallbackPromotion: true,
+			reason: "ad-marked",
+		};
 	}
 	if (!simulatedAdsDepthSatisfied) {
 		return { ...base, reason: "simulated-ads-depth" };

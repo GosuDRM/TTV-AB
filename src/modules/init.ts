@@ -124,6 +124,9 @@ function _blockAntiAdblockPopup() {
 	let activeDirectPlayerAdMediaSignature = null;
 	let didCountCurrentDirectPlayerAdMedia = false;
 	let lastUiOnlyPlayerAdRecoveryAt = 0;
+	let uiOnlyAdRecoveryAttempts = 0;
+	let uiOnlyAdRecoveryCycleKey = null;
+	const _MAX_UI_AD_RECOVERY_ATTEMPTS = 2;
 	let lastPlaybackContextChangeAt = 0;
 	let pendingRoutePlayerResyncTimer = null;
 	let pendingRouteScanTimers: ReturnType<typeof setTimeout>[] = [];
@@ -161,29 +164,29 @@ function _blockAntiAdblockPopup() {
 		'[aria-label="Ad"]',
 	];
 	const DISPLAY_AD_LABEL_SELECTOR_GROUP = DISPLAY_AD_LABEL_SELECTORS.join(", ");
-		const LOWER_THIRD_DISPLAY_AD_SELECTORS = [
-			'iframe[data-test-selector^="sda-iframe-"]',
-			'iframe[title="Stream Display Ad"]',
-			'iframe[class*="stream-display-ad__iframe_lower-third"]',
-			'iframe[class*="stream-display-ad__iframe"]',
-			'[data-test-selector="sda-frame"]',
-			"#stream-lowerthird",
-			'[class*="stream-display-ad__frame_lower-third"]',
-		];
-		const DISPLAY_AD_IFRAME_SELECTORS = [
-			'iframe[src*="ads.twitch.tv"]',
-			'iframe[src*="twitch.tv/ads"]',
-			'iframe[src*="amazon-adsystem.com"]',
-			'iframe[src*="doubleclick.net"]',
-		];
-		const EXPLICIT_DISPLAY_AD_SELECTORS = [
-			'[data-test-selector="ad-banner"]',
-			'[data-test-selector="display-ad"]',
-			'[data-a-target="ads-banner"]',
-			...LOWER_THIRD_DISPLAY_AD_SELECTORS,
-			...DISPLAY_AD_IFRAME_SELECTORS,
-			PLAYER_SURFACE_AD_MARKER_SELECTOR,
-		];
+	const LOWER_THIRD_DISPLAY_AD_SELECTORS = [
+		'iframe[data-test-selector^="sda-iframe-"]',
+		'iframe[title="Stream Display Ad"]',
+		'iframe[class*="stream-display-ad__iframe_lower-third"]',
+		'iframe[class*="stream-display-ad__iframe"]',
+		'[data-test-selector="sda-frame"]',
+		"#stream-lowerthird",
+		'[class*="stream-display-ad__frame_lower-third"]',
+	];
+	const DISPLAY_AD_IFRAME_SELECTORS = [
+		'iframe[src*="ads.twitch.tv"]',
+		'iframe[src*="twitch.tv/ads"]',
+		'iframe[src*="amazon-adsystem.com"]',
+		'iframe[src*="doubleclick.net"]',
+	];
+	const EXPLICIT_DISPLAY_AD_SELECTORS = [
+		'[data-test-selector="ad-banner"]',
+		'[data-test-selector="display-ad"]',
+		'[data-a-target="ads-banner"]',
+		...LOWER_THIRD_DISPLAY_AD_SELECTORS,
+		...DISPLAY_AD_IFRAME_SELECTORS,
+		PLAYER_SURFACE_AD_MARKER_SELECTOR,
+	];
 	const DISPLAY_AD_SHELL_SELECTORS = [
 		".stream-display-ad",
 		'[class*="stream-display-ad"]',
@@ -753,6 +756,8 @@ function _blockAntiAdblockPopup() {
 			activeDirectPlayerAdMediaSignature = null;
 			didCountCurrentDirectPlayerAdMedia = false;
 			lastUiOnlyPlayerAdRecoveryAt = 0;
+			uiOnlyAdRecoveryAttempts = 0;
+			uiOnlyAdRecoveryCycleKey = null;
 		}
 
 		function _queryUniqueElements(selectors) {
@@ -1976,6 +1981,22 @@ function _blockAntiAdblockPopup() {
 			}
 			lastUiOnlyPlayerAdRecoveryAt = now;
 
+			const cycleKey = currentContext.MediaKey || currentContext.ChannelName || "unknown";
+			if (uiOnlyAdRecoveryCycleKey !== cycleKey) {
+				uiOnlyAdRecoveryCycleKey = cycleKey;
+				uiOnlyAdRecoveryAttempts = 0;
+			}
+
+			if (uiOnlyAdRecoveryAttempts >= _MAX_UI_AD_RECOVERY_ATTEMPTS) {
+				if (
+					__TTVAB_STATE__.CurrentAdMediaKey &&
+					__TTVAB_STATE__.CurrentAdMediaKey === currentContext.MediaKey
+				) {
+					return false;
+				}
+				uiOnlyAdRecoveryAttempts = 0;
+			}
+
 			const needsAdContext =
 				!__TTVAB_STATE__.CurrentAdMediaKey ||
 				__TTVAB_STATE__.CurrentAdMediaKey !== currentContext.MediaKey;
@@ -2008,8 +2029,9 @@ function _blockAntiAdblockPopup() {
 				return false;
 			}
 
+			uiOnlyAdRecoveryAttempts++;
 			_log(
-				"Player ad UI detected without a suppressible media URL, forcing player recovery",
+				`Player ad UI detected without a suppressible media URL, forcing player recovery (attempt ${uiOnlyAdRecoveryAttempts}/${_MAX_UI_AD_RECOVERY_ATTEMPTS})`,
 				"warning",
 			);
 			return _doPlayerTask(false, true, {
