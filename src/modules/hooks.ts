@@ -970,6 +970,9 @@ function _hookWorker() {
 									mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
 								},
 							});
+							if (typeof _ensurePlaybackMonitorsRunning === "function") {
+								_ensurePlaybackMonitorsRunning(true);
+							}
 							_log(
 								data.continued === true
 									? "Ad recovery continuing after native reload"
@@ -1104,6 +1107,7 @@ function _hookWorker() {
 								if (typeof _clearAdResumeIntent === "function") {
 									_clearAdResumeIntent();
 								}
+								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 								_log("Ad ended", "success");
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);

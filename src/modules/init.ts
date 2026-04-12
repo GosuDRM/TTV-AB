@@ -54,6 +54,7 @@ function _initToggleListener() {
 			__TTVAB_STATE__.LastPlayerReloadAt = 0;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+			__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 			if (typeof _clearAdResumeIntent === "function") {
 				_clearAdResumeIntent();
 			}
@@ -98,12 +99,16 @@ function _initToggleListener() {
 		if (!enabled && typeof _resetPlayerBufferMonitorState === "function") {
 			_resetPlayerBufferMonitorState();
 		}
+		if (enabled && typeof _ensurePlaybackMonitorsRunning === "function") {
+			_ensurePlaybackMonitorsRunning(true);
+		}
 		_log(
 			`Buffer fix ${enabled ? "enabled" : "disabled"}`,
 			enabled ? "success" : "warning",
 		);
 	});
 }
+
 
 function _init() {
 	if (!_bootstrap()) return;
@@ -140,9 +145,11 @@ function _init() {
 	_initAchievementListener();
 
 	_hookVisibilityState();
-	_monitorPlaybackIntent();
-	if (_C.BUFFERING_FIX) {
-		_monitorPlayerBuffering();
+	if (typeof _hookSecondaryPlayerHandoffDetection === "function") {
+		_hookSecondaryPlayerHandoffDetection();
+	}
+	if (typeof _ensurePlaybackMonitorsRunning === "function") {
+		_ensurePlaybackMonitorsRunning(true);
 	}
 
 	_showWelcome();

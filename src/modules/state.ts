@@ -373,6 +373,7 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
 		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 	}
 
 	if (
@@ -392,6 +393,7 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
 		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 		didResetAdScopedState = true;
 	}
 
@@ -516,6 +518,7 @@ function _declareState(scope) {
 		PendingInitialAdsBlockedDelta: 0,
 		PendingFetchRequests: new Map(),
 		FetchRequestSeq: 0,
+		_AdRecoveryConsecutiveFailures: 0,
 	};
 }
 
