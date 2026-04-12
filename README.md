@@ -58,6 +58,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v6.2.9
+- **Post-Ad Re-Entry Fix** - Ads no longer falsely restart after being blocked. Narrowed the main ad detection to the primary ad signifier and added a grace window after ad-end reloads to suppress residual metadata tags that Twitch's CDN can briefly serve after the actual ad ends.
 - **New Achievements** - Added "Diamond" (10,000 ads blocked) and "Globetrotter" (50 channels) badges, bringing the total to 12.
 - **Ad Recovery Stability** - Exponential backoff for ad recovery reloads now resets reliably on channel changes, ad cycle completion, and toggle-off, preventing stale backoff from delaying recovery on subsequent ad encounters.
 - **Midroll Detection Accuracy** - Tightened midroll metadata matching to avoid false-positive ad detection on URLs that coincidentally contain midroll-related substrings.
