@@ -25,6 +25,8 @@ function _resetStreamAdState(info) {
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
+	info.LastForcedAdEndReloadAt = 0;
+	info.LastAdEndReloadAt = 0;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -201,7 +203,7 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 }
 
 async function _isAdEndStable(info, realFetch, resolution = null) {
-	if (!info?.IsShowingAd) return true;
+	if (!info?.IsShowingAd) return "ended";
 
 	const now = Date.now();
 	if (!info.PendingAdEndAt) {
@@ -213,21 +215,34 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 	info.CleanPlaylistCount =
 		Math.max(0, Math.trunc(Number(info.CleanPlaylistCount) || 0)) + 1;
 	if (info.CleanPlaylistCount < _getResolvedAdEndMinCleanPlaylists()) {
-		return false;
+		return "wait";
 	}
 
 	if (now - info.PendingAdEndAt < _getResolvedAdEndGraceMs()) {
-		return false;
+		return "wait";
 	}
 
-	if (now - info.PendingAdEndAt >= _getResolvedAdEndMaxWaitMs()) {
+	const hasNativeRecoveryReady = await _canReloadNativePlayerAfterAd(
+		info,
+		realFetch,
+		resolution,
+	);
+	if (hasNativeRecoveryReady) {
+		return "ended";
+	}
+
+	const maxWaitMs = _getResolvedAdEndMaxWaitMs();
+	if (maxWaitMs > 0 && now - info.PendingAdEndAt >= maxWaitMs) {
+		if (_isForcedAdEndReloadContinuation(info)) {
+			return "wait";
+		}
 		_markForcedAdEndReload(info);
 		_resetNativeRecoveryReadyState(info);
 		_log("[Trace] Forcing native recovery reload after ad-end wait budget", "warning");
-		return true;
+		return "reload";
 	}
 
-	return _canReloadNativePlayerAfterAd(info, realFetch, resolution);
+	return "wait";
 }
 
 function _resetNativeRecoveryReadyState(info, preserveProbeAt = false) {
@@ -532,6 +547,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		LastNativeRecoveryReadyPlayerType: null,
 		NativeRecoveryCleanCount: 0,
 		LastForcedAdEndReloadAt: 0,
+		LastAdEndReloadAt: 0,
 		LastActivityAt: Date.now(),
 	};
 
@@ -704,10 +720,20 @@ async function _processM3U8(url, text, realFetch) {
 
 	if (hasAds) {
 		const isForcedAdEndContinuation =
-			!info.IsShowingAd && _isForcedAdEndReloadContinuation(info);
+			_isForcedAdEndReloadContinuation(info);
 		if (!isForcedAdEndContinuation) {
 			info.LastForcedAdEndReloadAt = 0;
 		}
+
+		if (
+			!info.IsShowingAd &&
+			info.LastAdEndReloadAt &&
+			Date.now() - info.LastAdEndReloadAt <= _getForcedAdEndReentryWindowMs()
+		) {
+			_log("[Trace] Suppressing ad re-entry during post-ad-end reload grace window", "info");
+			return text;
+		}
+		info.LastAdEndReloadAt = 0;
 
 		info.PendingAdEndAt = 0;
 		info.CleanPlaylistCount = 0;
@@ -764,7 +790,6 @@ async function _processM3U8(url, text, realFetch) {
 				);
 			}
 			if (isForcedAdEndContinuation) {
-				info.LastForcedAdEndReloadAt = 0;
 				_log("[Trace] Continuing ad recovery after forced native reload", "warning");
 			}
 		}
@@ -814,13 +839,27 @@ async function _processM3U8(url, text, realFetch) {
 			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
 		}
 
-		const {
+		let {
 			type: backupType,
 			m3u8: backupM3u8,
 			isFallback,
 		} = await _findBackupStream(info, realFetch, startIdx, res);
 
-		if (!backupM3u8) _log("Failed to find backup stream", "warning");
+		if (!backupM3u8) {
+			if (info.LastCleanBackupM3U8) {
+				backupM3u8 = info.LastCleanBackupM3U8;
+				backupType = info.LastCleanBackupPlayerType || __TTVAB_STATE__.FallbackPlayerType;
+				isFallback = true;
+				_log("[Trace] Using cached clean backup as emergency fallback", "warning");
+			} else if (info.LastCleanNativeM3U8) {
+				backupM3u8 = info.LastCleanNativeM3U8;
+				backupType = __TTVAB_STATE__.FallbackPlayerType;
+				isFallback = true;
+				_log("[Trace] Using last clean native M3U8 as emergency fallback", "warning");
+			} else {
+				_log("Failed to find backup stream — no cached clean playlists available", "warning");
+			}
+		}
 
 		if (isFallback) {
 			info.IsUsingFallbackStream = true;
@@ -861,8 +900,24 @@ async function _processM3U8(url, text, realFetch) {
 	} else {
 		if (info.IsShowingAd) {
 			const resolution = _resolvePlaybackResolutionForUrl(info, url);
-			const hasStableAdEnd = await _isAdEndStable(info, realFetch, resolution);
-			if (!hasStableAdEnd) {
+			const adEndAction = await _isAdEndStable(info, realFetch, resolution);
+			if (adEndAction === "reload") {
+				if (typeof self !== "undefined" && self.postMessage) {
+					info.LastPlayerReload = Date.now();
+					_postWorkerBridgeMessage(
+						self,
+						_createPageScopedWorkerEvent({
+							key: "ReloadPlayer",
+							channel: info.ChannelName,
+							mediaKey: info.MediaKey,
+							refreshAccessToken: true,
+							newMediaPlayerInstance: false,
+						}),
+					);
+				}
+				return text;
+			}
+			if (adEndAction !== "ended") {
 				return text;
 			}
 			const {
@@ -896,6 +951,7 @@ async function _processM3U8(url, text, realFetch) {
 				);
 				if (shouldReloadPlayer) {
 					info.LastPlayerReload = Date.now();
+					info.LastAdEndReloadAt = Date.now();
 					_postWorkerBridgeMessage(
 						self,
 						_createPageScopedWorkerEvent({
