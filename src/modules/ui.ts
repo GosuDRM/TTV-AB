@@ -199,6 +199,16 @@ const _ACHIEVEMENT_INFO = {
 		icon: "🌍",
 		desc: "Blocked ads on 20 channels!",
 	},
+	block_10000: {
+		name: "Diamond",
+		icon: "💎",
+		desc: "Blocked 10,000 ads!",
+	},
+	channels_50: {
+		name: "Globetrotter",
+		icon: "🗺️",
+		desc: "Blocked ads on 50 channels!",
+	},
 };
 
 function _ensureAchievementToastStyles() {

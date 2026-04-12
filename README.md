@@ -30,7 +30,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Accessible popup controls and live-updating stats
 - ✅ Persistent "Ads Blocked" statistics
 - ✅ **Statistics Dashboard** with time saved, weekly charts, and achievements
-- ✅ **10 Achievement Badges** to unlock as you block ads
+- ✅ **12 Achievement Badges** to unlock as you block ads
 - ✅ **Language Selector** - 11 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU)
 - ✅ Per-channel ad blocking breakdown
 - ✅ Modern, animated UI (Cyberpunk/Neon aesthetic)
@@ -58,6 +58,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v6.2.9
+- **New Achievements** - Added "Diamond" (10,000 ads blocked) and "Globetrotter" (50 channels) badges, bringing the total to 12.
 - **Ad Recovery Stability** - Exponential backoff for ad recovery reloads now resets reliably on channel changes, ad cycle completion, and toggle-off, preventing stale backoff from delaying recovery on subsequent ad encounters.
 - **Midroll Detection Accuracy** - Tightened midroll metadata matching to avoid false-positive ad detection on URLs that coincidentally contain midroll-related substrings.
 - **Player Robustness** - Guarded early player access against uninitialized extension state, eliminating a potential startup crash.

@@ -4,6 +4,9 @@ All notable changes to TTV AB will be documented in this file.
 
 ## [6.2.9] - 2026-04-12
 
+### Added
+- **New Achievements** - Added "Diamond" (block 10,000 ads) and "Globetrotter" (block ads on 50 channels) achievement badges, bringing the total to 12. Fully translated across all 11 supported languages.
+
 ### Fixed
 - **Ad Recovery Backoff Stability** - The exponential backoff counter for ad recovery reloads (`_AdRecoveryConsecutiveFailures`) now resets on channel navigation, ad cycle completion, and when ad blocking is toggled off. Previously the counter could grow indefinitely across ad cycles, causing increasingly long delays before recovery attempts.
 - **Midroll Detection False Positives** - `_hasExplicitAdMetadata` now matches quoted `"MIDROLL"` and `"midroll"` JSON values instead of bare substrings, preventing false-positive ad detection on URLs or text that coincidentally contain "midroll" as a path component.

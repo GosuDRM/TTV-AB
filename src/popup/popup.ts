@@ -420,6 +420,18 @@ document.addEventListener("DOMContentLoaded", () => {
 			threshold: 20,
 			type: "channels",
 		},
+		{
+			id: "block_10000",
+			icon: "💎",
+			threshold: 10000,
+			type: "ads",
+		},
+		{
+			id: "channels_50",
+			icon: "🗺️",
+			threshold: 50,
+			type: "channels",
+		},
 	];
 	const ACHIEVEMENT_IDS = new Set(
 		ACHIEVEMENTS.map((achievement) => achievement.id),
