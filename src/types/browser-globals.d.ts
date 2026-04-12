@@ -2,7 +2,6 @@ type PlainObject = Record<string, unknown>;
 type TTVABChannelMap = Record<string, number>;
 type TTVABDailyStatsEntry = {
 	ads: number;
-	domAds: number;
 };
 type TTVABDailyStatsMap = Record<string, TTVABDailyStatsEntry>;
 type TTVABStatsState = {

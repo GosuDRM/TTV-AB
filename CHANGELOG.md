@@ -2,47 +2,72 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [6.2.5] - 2026-04-12
+## [6.2.8] - 2026-04-12
 
 ### Fixed
+- **Midroll Recovery Fix** - Native `PlaybackAccessToken` requests now stay pinned to the forced recovery player type whenever token rewriting is enabled, preventing midroll refreshes from slipping back onto Twitch's ad-marked path before ad recovery takes over.
+
+## [6.2.7] - 2026-04-12
+
+### Changed
+- **DOM Cleanup Scope Reduction** - Removed the broad anti-popup / overlay DOM cleanup runtime because it was interfering with Firefox ad blocking. The extension now relies on playlist interception, playback recovery, and the narrower post-ad display-artifact cleanup that remains in the hook layer.
+- **Build Validation Cleanup** - Removed obsolete minify aliases for the deleted DOM cleanup helpers and dropped the stale `init` route-context validation that only existed for that path.
+- **Streamlined Popup UI** - Removed the separate DOM Ads Blocked counter for a cleaner popup layout; all ad blocking activity is now reflected in the main Ads Blocked counter.
+- **Achievements Update** - Reduced achievement count from 12 to 10 for a tighter set of milestones.
+
+## [6.2.6] - 2026-04-12
+
+### Fixed
+- **Ad Recovery Loop Fix** - The DOM-driven player recovery no longer loops indefinitely when all backup player types return ad-marked streams. Recovery attempts are now capped per ad cycle with exponential backoff (15s → 30s → 60s), preventing rapid-fire reloads that disrupted playback.
+- **Fallback Stream Promotion** - Ad-marked but playable backup streams are now kept as fallback candidates for ad stripping, ensuring the worker always has a stream to clean instead of returning nothing when every backup player type serves ads.
+- **Emergency Playlist Fallback** - When no fresh backup stream is available, the processor now falls back to the last known clean backup or native playlist, keeping playback alive during difficult ad windows.
+- **Ad Recovery Backoff Reset** - The exponential backoff counter now resets when an ad cycle ends, so the next ad cycle starts with a fresh recovery budget.
 - **Turbo Lower-Third Shell Cleanup** - Hidden Turbo and lower-third display-ad seeds are now still mapped back to their player wrappers, so stale shell layouts collapse even after Twitch hides the inner ad node.
 - **Faster Visible Turbo UI Suppression** - Strong visible in-player Turbo and display-ad signals now bypass the old shell-confirmation delay and force an earlier cleanup pass, reducing brief visible flashes before the shell is collapsed.
 - **Shell-Only UI Recovery** - UI-only recovery once again responds to real player-shell ad states even when Twitch does not expose visible CTA or banner copy, closing a path where the player could stay on the ad shell.
 - **DOM Fast-Path Hardening** - Forced mutation scans now ignore hidden residue and already-collapsed extension-owned artifacts, reducing repeated DOM churn after cleanup.
 - **DOM Cleanup Counter Stability** - The immediate-shell path is now limited to strong visible ad UI signals, reducing cases where stale layout residue after navigation could be counted as a fresh DOM cleanup.
 - **DOM Counter Consistency** - `DOM Ads Blocked` now only counts persisted cleanup kinds, so recovery-only player reload signals no longer drift away from popup and stored totals.
+- **SDA Iframe Cleanup** - Stream display ad iframes are now detected by their ad host URLs, so video-based SDA overlays collapse even when Twitch embeds them outside the lower-third shell.
+- **Selector Indentation Fix** - Fixed display ad selector constants that had incorrect scope indentation.
+
+## [6.2.4] - 2026-04-11
+
+### Fixed
+- **Post-Ad UI Recovery Loop** - Firefox now collapses stale in-player display ad shells before escalating into UI-driven player recovery, preventing the player from immediately re-entering ad recovery after an ad ends.
+- **Scoped Native Token Rewrite** - Native `PlaybackAccessToken` requests are now rewritten only while an ad is active or during the immediate post-ad recovery window, reducing brief ad flashes before blocking fully takes over and preventing the player from staying pinned to the forced recovery type.
 
 ## [6.2.3] - 2026-04-11
 
 ### Fixed
+- **Playback Monitor Resiliency** - Playback-intent and live-buffer monitors now idle instead of stopping on transient context loss, and automatically restart on ad-detection, toggling, and route resyncs to prevent the player from stalling.
+- **Route-Less Player Surface Recovery** - DOM cleanup now stays active whenever Twitch still exposes a real player surface, even if the URL no longer carries a normal playback route, so cleanup and recovery logic do not go cold on route-less player views.
+- **Bridge Counter Queue Hardening** - Pending ads-blocked and DOM-cleanup stat updates are now coalesced and retained more safely during temporary bridge outages, reducing dropped counter deltas without letting the queue grow unbounded.
 - **Post-Ad Recovery Speed** - Reduced the native-recovery confirmation window to a single clean probe with a shorter cooldown, removing a bottleneck that delayed the return to native playback.
 - **Continuous Post-Ad Reloads** - Treats in-place stripped-ad recovery the same as backup/fallback recovery so the player reliably reloads at the end of an ad cycle.
-- **Native Token Rewrite Hardening** - Native `PlaybackAccessToken` requests now stay pinned to the forced recovery player type, reducing cases where Twitch drifts back onto an ad-marked native path during post-ad validation.
-- **Bridge Counter Queue Hardening** - Pending ads-blocked and DOM-cleanup stat updates are now coalesced and retained more safely during temporary bridge outages, reducing dropped counter deltas without letting the queue grow unbounded.
-- **Playlist Cache Tightening** - Shortened the reuse window for stale clean-playlists, reducing the chance of the player getting stuck on a lower-quality backup state after an ad cycle.
+- **Playlist Cache Tightening** - Shortened the reuse window for stale clean-playlists, drastically reducing the chance of the player getting stuck on a lower-quality backup state after an ad cycle.
 - **Minimal Requests Ad Leak** - Fixed an edge case where an ad-marked backup playlist could still be selected during minimal requests fallback.
-- **Worker Lifecycle Cleanup** - Intentionally terminated workers are now pruned immediately so backup tracking does not linger longer than necessary during player churn.
 
 ## [6.2.2] - 2026-04-11
 
 ### Fixed
 - **Popout / PiP Playback Handoff** - Opening Twitch's popout player now pauses the original page player and suppresses automatic visibility, ad-recovery, direct-player recovery, and buffer-recovery restarts on the source tab, while Picture-in-Picture and failed popout launches no longer leave the main player in a broken or duplicated playback state.
+- **Popout Playback Context Recovery** - `player.twitch.tv` popout windows now resolve their playback context from query parameters, so popout playback opened during active ad blocking can finish recovery and return from the backup stream normally.
 
 ## [6.2.1] - 2026-04-11
 
 ### Fixed
-- **Low-Latency Playlist Hardening** - Added low-latency playlist handling for ad-marked `#EXT-X-PART` and `#EXT-X-PRELOAD-HINT` entries, injected the new helpers into the worker runtime, added clean recovery for part-only stripped playlists, shortened stale reuse windows for part-only cached playlists, and extended the ad-entry warm-up path to cover low-latency media entries.
+- **Low-Latency Playback Regression Fixes** - Fixed the worker bootstrap so the new low-latency playlist helpers are available at runtime, added clean recovery for part-only stripped playlists, shortened stale reuse windows for part-only cached playlists, and extended the ad-entry warm-up path to cover low-latency media entries.
+
+## [6.2.0] - 2026-04-11
+
+### Fixed
+- **Low-Latency Ad Entry Hardening** - The worker now detects and strips ad-marked `#EXT-X-PART` and `#EXT-X-PRELOAD-HINT` playlist entries, reducing brief ad flashes that could happen before the backup path fully took over.
 
 ## [6.1.9] - 2026-04-11
 
 ### Fixed
 - **Prefetch Ad-Hint Hardening** - Once the worker enters an ad-stripping path, it now removes Twitch low-latency prefetch hints as well, reducing intermittent cases where ad media could still be prefetched and leak into playback.
-
-## [6.1.8] - 2026-04-11
-
-### Fixed
-- **Backup Playlist URI Normalization** - Backup media playlists now absolutize segment, key, map, and prefetch URLs before they are returned to Twitch, preventing invalid-URI black-screen / spinner cases after a clean backup stream is selected.
-- **Empty-Playlist Recovery Cache** - When ad stripping removes every media segment from a playlist, the worker now reuses a recent clean backup or native playlist instead of restoring stripped ad segments back into playback.
 
 ## [6.1.7] - 2026-04-11
 
@@ -50,8 +75,9 @@ All notable changes to TTV AB will be documented in this file.
 - **Tab-Switch Pause Regression** - Visibility and focus hardening now actively guards playback across tab changes, so Twitch is less likely to pause the player when the tab loses focus.
 - **Faster Post-Ad Native Reload** - Reduced the ad-end grace window and native recovery probe spacing so validated backup/fallback ad exits return to the native player about 50% faster without removing the existing clean-playlist and clean-probe safety gates.
 - **Hidden-Tab Resume Retry Parity** - Background-tab playback guards now retry through the same primary-media resume path used by the immediate visibility handler, reducing cases where a hidden tab stayed paused until it became visible again.
-- **Backup Playlist URI Normalization** - Backup media playlists now absolutize segment, key, map, and prefetch URLs before they are returned to Twitch, preventing invalid-URI black-screen / spinner cases after a clean backup stream is selected.
-- **Empty-Playlist Recovery Cache** - When ad stripping removes every media segment from a playlist, the worker now reuses a recent clean backup or native playlist instead of restoring stripped ad segments back into playback.
+- **Firefox Native Recovery Path Parity** - Firefox now validates the same forced native `PlaybackAccessToken` player type that it reloads into after an ad break, so ad-end recovery no longer wastes probe cycles checking Twitch's ad-marked `site` path before switching back to `popout`.
+- **Tighter Ad-End Timing** - Tightened Firefox's ad-end confirmation window to one clean playlist plus two quick native recovery probes, making post-ad returns noticeably faster while still keeping a minimal guard against false-positive reloads.
+- **Backup Playlist URI Normalization** - Firefox backup media playlists now absolutize segment, key, map, and prefetch URLs before returning them to Twitch, fixing black-screen / spinner cases where a clean backup playlist was selected but its media URIs were invalid in the active request context.
 
 ## [6.1.6] - 2026-04-10
 
@@ -63,11 +89,18 @@ All notable changes to TTV AB will be documented in this file.
 ## [6.1.5] - 2026-04-10
 
 ### Fixed
-- **Turbo Direct-Ad Video Detection** - Direct Amazon MP4 ad suppression now recognizes Twitch Turbo-style player CTA and banner copy, closing a path where Turbo-branded ad video could remain visible near the main player.
-- **Direct-Media Ad Corroboration** - Direct player ad suppression can now rely on the active worker ad state as a second signal, so a detected ad cycle still collapses injected player media even when Twitch's visible overlay copy changes.
-- **CSAI Fast Path** - Merged [PR #5](https://github.com/GosuDRM/TTV-AB/pull/5) (`CSAI fast path: skip backup stream search when all segments are live`), reducing unnecessary backup-stream switching and rebuffering on metadata-only CSAI playlists. Thanks [@ryanbr](https://github.com/ryanbr).
+- **Turbo Direct-Ad Video Detection** - The player-side ad detector now recognizes more Twitch Turbo promo copy, so Amazon-hosted direct ad videos are less likely to slip through when Twitch changes the CTA text around the player.
+- **Direct-Media Ad Corroboration** - Direct media suppression now accepts active worker ad state as a second signal instead of relying only on the older player CTA/banner checks, which makes live direct-ad cleanup more resilient.
+- **CSAI Fast Path** - Metadata-only CSAI playlists now skip unnecessary backup stream searches when all segments are still marked live, reducing pointless player switching and long rebuffer gaps.
 
-## [6.1.2] - 2026-04-10
+## [6.1.4] - 2026-04-10
+
+### Fixed
+- **Midroll Empty-Playlist Leak Fix** - When every backup route is ad-marked, the worker no longer restores stripped ad segments back into an empty playlist, preventing ad-only midroll playlists from leaking back into playback.
+- **Clean Playlist Recovery Cache** - The runtime now remembers recent clean native and backup playlists and reuses those during empty-playlist recovery, keeping playback alive without replaying stripped ad segments.
+- **Native Token Rewrite Hardening** - Firefox now keeps native `PlaybackAccessToken` requests pinned to the forced recovery player type so later midroll cycles are less likely to drift back onto Twitch's ad-marked site path after a clean ad-end reload.
+
+## [6.1.3] - 2026-04-10
 
 ### Fixed
 - **Live Direct-Ad Video Cleanup** - Direct player ad videos served from Twitch's Amazon media path are now suppressed on live streams too instead of only VOD pages.
@@ -78,6 +111,11 @@ All notable changes to TTV AB will be documented in this file.
 - **Post-Ad Resume Intent Tracking** - The page now snapshots whether playback should resume when the ad cycle starts, preventing post-ad native recovery from losing the stream's pre-ad play state.
 - **Post-Ad Recovery Watchdog Wiring** - The existing post-ad recovery handler is now actually driven by the live buffer monitor instead of having its counters reset every tick, allowing stalled native returns to recover through pause/play and guarded reload escalation.
 - **Less Disruptive Native Recovery Reload** - The first ad-end native return now reuses the existing player instance before escalating to heavier recovery, reducing black-screen and immediate post-ad stall cases during the backup-to-native transition.
+
+## [6.1.1] - 2026-04-09
+
+### Fixed
+- **Firefox Runtime Parity** - Rebased the Firefox build onto the current main-branch ad-blocking runtime so Firefox no longer ships the stale forked playback, parser, processor, and state logic that had fallen behind Chrome.
 - **Picture-in-Picture Recovery** - Included the merged [PR #4](https://github.com/GosuDRM/TTV-AB/pull/4) (`Support PiP mode`) change so player recovery downgrades reloads to the existing pause/play path while Picture-in-Picture is active, instead of creating a new player instance and forcing PiP to close. Thanks [@ryanbr](https://github.com/ryanbr).
 
 ## [6.1.0] - 2026-04-08
@@ -1302,3 +1340,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Firefox support
 - Additional ad blocking methods
 - Statistics tracking
+

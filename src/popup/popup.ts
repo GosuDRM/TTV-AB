@@ -11,9 +11,6 @@ document.addEventListener("DOMContentLoaded", () => {
 	const adsBlockedCount = document.getElementById(
 		"adsBlockedCount",
 	) as HTMLElement | null;
-	const domAdsBlockedCount = document.getElementById(
-		"domAdsBlockedCount",
-	) as HTMLElement | null;
 	const timeSaved = document.getElementById("timeSaved") as HTMLElement | null;
 	const statsToggle = document.getElementById(
 		"statsToggle",
@@ -73,7 +70,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		statusDot,
 		statusText,
 		adsBlockedCount,
-		domAdsBlockedCount,
 		timeSaved,
 		statsToggle,
 		statsPanel,
@@ -401,18 +397,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			type: "ads",
 		},
 		{
-			id: "popup_10",
-			icon: "💥",
-			threshold: 10,
-			type: "domAds",
-		},
-		{
-			id: "popup_50",
-			icon: "🔥",
-			threshold: 50,
-			type: "domAds",
-		},
-		{
 			id: "time_1h",
 			icon: "⏱️",
 			threshold: 3600,
@@ -524,7 +508,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			const safeEntry = isPlainObject(entry) ? entry : {};
 			normalized[dateKey] = {
 				ads: normalizeCount(safeEntry.ads),
-				domAds: normalizeCount(safeEntry.domAds),
 			};
 		}
 		return normalized;
@@ -561,9 +544,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		const parsedDays = days.map((dayKey) => parseDateKey(dayKey));
 		const values = days.map((d) => {
 			if (d > todayKey) return 0;
-			const ads = normalizeCount(safeDailyData[d]?.ads);
-			const domAds = normalizeCount(safeDailyData[d]?.domAds);
-			return ads + domAds;
+			return normalizeCount(safeDailyData[d]?.ads);
 		});
 		const max = Math.max(...values, 1);
 		const completedDayCount = Math.max(
@@ -654,7 +635,6 @@ document.addEventListener("DOMContentLoaded", () => {
 	function renderAchievements(
 		unlocked,
 		adsBlocked,
-		domAdsBlocked,
 		channelCount,
 	) {
 		const safeUnlocked = Array.isArray(unlocked)
@@ -667,7 +647,6 @@ document.addEventListener("DOMContentLoaded", () => {
 				]
 			: [];
 		const safeAdsBlocked = normalizeCount(adsBlocked);
-		const safeDomAdsBlocked = normalizeCount(domAdsBlocked);
 		const safeChannelCount = normalizeCount(channelCount);
 		const badges =
 			achievementsGrid.querySelectorAll<HTMLButtonElement>(
@@ -697,9 +676,6 @@ document.addEventListener("DOMContentLoaded", () => {
 					switch (ach.type) {
 						case "ads":
 							value = safeAdsBlocked;
-							break;
-						case "domAds":
-							value = safeDomAdsBlocked;
 							break;
 						case "time":
 							value = timeSavedSecs;
@@ -733,7 +709,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function loadStatistics() {
 		chrome.storage.local.get(
-			["ttvStats", "ttvAdsBlocked", "ttvDomAdsBlocked"],
+			["ttvStats", "ttvAdsBlocked"],
 			(result) => {
 				if (chrome.runtime.lastError) {
 					console.error(
@@ -757,12 +733,11 @@ document.addEventListener("DOMContentLoaded", () => {
 						]
 					: [];
 				const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
-				const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 				const channelCount = Object.keys(channels).length;
 
 				renderChart(daily);
 				renderChannels(channels);
-				renderAchievements(achievements, adsCount, domAdsCount, channelCount);
+				renderAchievements(achievements, adsCount, channelCount);
 				syncExpandedStatsPanelHeight();
 			},
 		);
@@ -773,7 +748,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			"ttvAdblockEnabled",
 			"ttvBufferFixEnabled",
 			"ttvAdsBlocked",
-			"ttvDomAdsBlocked",
 		],
 		(result) => {
 			if (chrome.runtime.lastError) {
@@ -790,9 +764,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			updateStatus(enabled, false);
 
 			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
-			const domAdsCount = normalizeCount(safeResult.ttvDomAdsBlocked);
 			adsBlockedCount.textContent = formatNumber(adsCount);
-			domAdsBlockedCount.textContent = formatNumber(domAdsCount);
 			updateTimeSaved(adsCount);
 		},
 	);
@@ -814,10 +786,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
 			animateCounter(adsBlockedCount, newCount);
 			updateTimeSaved(newCount);
-		}
-		if (changes.ttvDomAdsBlocked) {
-			const newDomAdsCount = normalizeCount(changes.ttvDomAdsBlocked.newValue);
-			animateCounter(domAdsBlockedCount, newDomAdsCount);
 		}
 		if (changes.ttvStats) {
 			loadStatistics();

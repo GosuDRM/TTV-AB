@@ -1285,26 +1285,9 @@ function _hookMainFetch() {
 
 		try {
 			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
-			const hasActiveAdContext = Boolean(
-				__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel,
-			);
-			const lastAdRecoveryReloadAt = Math.max(
-				0,
-				Number(__TTVAB_STATE__.LastAdRecoveryReloadAt) || 0,
-			);
-			const adRecoveryWindowMs = Math.max(
-				1000,
-				Number(__TTVAB_STATE__.PlayerReloadDebounceMs) || 0,
-				Number(__TTVAB_STATE__.AdRecoveryReloadCooldownMs) || 0,
-			);
-			const isRecentAdRecoveryReload =
-				lastAdRecoveryReloadAt > 0 &&
-				Date.now() - lastAdRecoveryReloadAt <= adRecoveryWindowMs;
-
 			if (
 				!forceType ||
-				__TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true ||
-				(!hasActiveAdContext && !isRecentAdRecoveryReload)
+				__TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true
 			) {
 				return { bodyText, changed: false };
 			}

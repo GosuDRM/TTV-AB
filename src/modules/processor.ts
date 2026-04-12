@@ -937,7 +937,11 @@ function _getFallbackPromotionPolicy({
 		return { ...base, reason: "not-playable" };
 	}
 	if (candidateHasAds) {
-		return { ...base, reason: "ad-marked" };
+		return {
+			allowSelectedPromotion: false,
+			allowFallbackPromotion: true,
+			reason: "ad-marked",
+		};
 	}
 	if (!simulatedAdsDepthSatisfied) {
 		return { ...base, reason: "simulated-ads-depth" };

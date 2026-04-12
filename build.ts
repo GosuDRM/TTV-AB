@@ -72,7 +72,6 @@ const MINIFY_MAP = {
 	_showWelcome: "_$wc",
 	_showAchievementUnlocked: "_$au",
 	_initAchievementListener: "_$al",
-	_blockAntiAdblockPopup: "_$bp",
 
 	_bootstrap: "_$bs",
 	_initToggleListener: "_$tl",
@@ -83,9 +82,6 @@ const MINIFY_MAP = {
 	_FIRST_RUN_KEY: "_$fr",
 	_ACHIEVEMENT_INFO: "_$ai",
 	_GQL_URL: "_$gu",
-	_scanAndRemove: "_$sr",
-	_scheduleIdleScan: "_$is",
-	_initPopupBlocker: "_$ipb",
 	_pruneStreamInfos: "_$ps",
 	_PlayerBufferState: "_$pbs",
 	_cachedPlayerRef: "_$cpr",
@@ -471,17 +467,14 @@ function validateSharedDefinitions() {
 			`CHANGELOG top version markers are out of sync with ${constantsVersion}`,
 		);
 	}
-	if (
-		!readmeSource.includes("DOM Ads Blocked") ||
-		!privacySource.includes("DOM Ads Blocked")
-	) {
+	if (!readmeSource.includes("Ads Blocked") || !privacySource.includes("Ads Blocked")) {
 		throw new Error(
-			"README or PRIVACY metric wording is out of sync with DOM Ads Blocked",
+			"README or PRIVACY metric wording is out of sync with Ads Blocked",
 		);
 	}
 	for (const requiredPrivacyPhrase of [
 		"enable/disable toggle",
-		'"Ads Blocked" and "DOM Ads Blocked" counters',
+		'"Ads Blocked" counter',
 		"selected language",
 		"welcome/donation reminder dismissal timing",
 		"stays on your device",
@@ -566,15 +559,14 @@ function validateSharedDefinitions() {
 			`Popup version badge must ship with a static synced fallback label/value: ${expectedPopupVersionMarkup}`,
 		);
 	}
-	for (const requiredPopupId of [
-		"enableToggle",
-		"statusDot",
-		"statusText",
-		"adsBlockedCount",
-		"domAdsBlockedCount",
-		"timeSaved",
-		"statsToggle",
-		"statsPanel",
+		for (const requiredPopupId of [
+			"enableToggle",
+			"statusDot",
+			"statusText",
+			"adsBlockedCount",
+			"timeSaved",
+			"statsToggle",
+			"statsPanel",
 		"weeklyChart",
 		"chartAvg",
 		"channelList",
@@ -1020,15 +1012,14 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	for (const requiredPopupId of [
-		"enableToggle",
-		"statusDot",
-		"statusText",
-		"adsBlockedCount",
-		"domAdsBlockedCount",
-		"timeSaved",
-		"statsToggle",
-		"statsPanel",
+		for (const requiredPopupId of [
+			"enableToggle",
+			"statusDot",
+			"statusText",
+			"adsBlockedCount",
+			"timeSaved",
+			"statsToggle",
+			"statsPanel",
 		"weeklyChart",
 		"chartAvg",
 		"channelList",
@@ -1120,12 +1111,9 @@ function validateSharedDefinitions() {
 			"Reserved route lists must be sourced from the shared parser helper",
 		);
 	}
-	if (
-		!initSource.includes("_getPlaybackContextFromUrl(window.location.href)") ||
-		!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")
-	) {
+	if (!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")) {
 		throw new Error(
-			"Init and hooks must resolve route context through _getPlaybackContextFromUrl",
+			"Hooks must resolve route context through _getPlaybackContextFromUrl",
 		);
 	}
 
@@ -1269,7 +1257,6 @@ function validateSharedDefinitions() {
 
 	const requiredTranslationKeys = [
 		"adBlocking",
-		"domAdsBlocked",
 		"descriptionText",
 		"changesInstantly",
 		"achievements",
