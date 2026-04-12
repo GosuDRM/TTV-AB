@@ -279,7 +279,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		return res;
 	} catch (e) {
 		_log(`Token fetch error: ${e.message}`, "error");
-		return { status: 0, json: () => Promise.resolve({}) };
+		return new Response("{}", { status: 0, statusText: "Token fetch error" });
 	} finally {
 		clearTimeout(timeoutId);
 	}
