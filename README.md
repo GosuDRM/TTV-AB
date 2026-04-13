@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.1-purple)
+![Version](https://img.shields.io/badge/version-6.3.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.3.2
+- **Faster Ad Recovery on Channel Switch** - Backup player type probing is now parallelized and resolves on first clean result, reducing worst-case ad recovery latency from ~24s to ~8s.
+- **Cached Backup Reuse** - Subsequent playlist fetches during an ad window reuse the known-good backup with a single stream fetch instead of re-probing all player types every cycle.
 
 ### v6.3.1
 - **Critical Worker Fix** - Fixed a crash where missing resolution helper functions in the worker caused ad processing to fail silently, letting full ads play through.

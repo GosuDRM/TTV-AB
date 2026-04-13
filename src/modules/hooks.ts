@@ -662,6 +662,7 @@ function _hookWorker() {
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_processM3U8.toString()}
+                ${_probeBackupPlayerType.toString()}
                 ${_findBackupStream.toString()}
                 ${_getWasmJs.toString()}
                 ${_hookWorkerXHR.toString()}

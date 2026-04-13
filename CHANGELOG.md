@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.2] - 2026-04-14
+
+### Changed
+- **Faster Ad Recovery on Channel Switch** - Backup player type probing is now parallelized. Previously, each player type (embed, popout, autoplay) was probed sequentially — if the first timed out (up to 8s on Firefox), the player was blocked before trying the next. All eligible types are now probed simultaneously, and the function resolves as soon as the first clean result arrives instead of waiting for all probes to finish.
+- **Cached Backup Reuse** - When a clean backup stream has already been found during the current ad window, subsequent playlist fetches reuse the known-good player type with a single stream fetch instead of re-probing all player types every cycle. This eliminates repeated token and usher requests during active ad blocking.
+
 ## [6.3.1] - 2026-04-13
 
 ### Fixed
