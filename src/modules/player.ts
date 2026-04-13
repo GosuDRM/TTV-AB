@@ -564,6 +564,9 @@ function _hasActiveSecondaryPlayerHandoff(channel = null, mediaKey = null) {
 }
 
 function _shouldSuppressAutomaticPlaybackResume(channel = null, mediaKey = null) {
+	if (_PlaybackIntentState.secondaryPlayerHandoffKind === "pip") {
+		return false;
+	}
 	return _hasActiveSecondaryPlayerHandoff(channel, mediaKey);
 }
 
@@ -1300,7 +1303,7 @@ function _hookSecondaryPlayerHandoffDetection() {
 						_rollbackSecondaryPlayerHandoff(
 							descriptor.channel || null,
 							descriptor.mediaKey || null,
-							false,
+							sourceWasPlaying,
 						);
 					}
 				}

@@ -1125,7 +1125,9 @@ function _hookWorker() {
 							}
 							_log("Resuming player", "info");
 							if (typeof _doPlayerTask === "function") {
-								_doPlayerTask(true, false);
+								_doPlayerTask(true, false, {
+									reason: "ad-recovery",
+								});
 							}
 							break;
 						case "ReloadPlayer":
