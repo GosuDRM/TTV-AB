@@ -125,7 +125,7 @@ function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
 	const realFetch = fetch;
 	const EMPTY_SEGMENT_URL =
-		"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292";
+		"data:video/mp4;base64,AAAAGGZ0eXBpc29tAAAAAGlzb21hdmMxAAAACG1kYXQ=";
 
 	function _pruneStreamInfos() {
 		const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
@@ -441,10 +441,6 @@ function _hookWorkerFetch() {
 				(safeUrl && _getPlaybackContextFromUsherUrl(safeUrl)?.MediaKey) ||
 					(safeUrl && /\.m3u8(?:$|\?)/.test(safeUrl)),
 			);
-			const isSegmentRequest =
-				isPlaybackRequest &&
-				safeUrl &&
-				!/\.m3u8(?:$|\?)/.test(safeUrl);
 			const errorMessage =
 				typeof e?.message === "string" ? e.message : String(e);
 			const isExpectedCancellation =
@@ -455,13 +451,6 @@ function _hookWorkerFetch() {
 					`Worker fetch wrapper failed for ${safeUrl}: ${errorMessage}`,
 					"error",
 				);
-			}
-			if (isExpectedCancellation && isSegmentRequest) {
-				return new Response(new Uint8Array(0), {
-					status: 200,
-					statusText: "",
-					headers: { "Content-Type": "video/mp4" },
-				});
 			}
 			throw e;
 		}
