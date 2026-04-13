@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.2.9-purple)
+![Version](https://img.shields.io/badge/version-6.3.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,13 +57,13 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.2.9
-- **Post-Ad Re-Entry Fix** - Ads no longer falsely restart after being blocked. Narrowed the main ad detection to the primary ad signifier and added a grace window after ad-end reloads to suppress residual metadata tags that Twitch's CDN can briefly serve after the actual ad ends.
-- **New Achievements** - Added "Diamond" (10,000 ads blocked) and "Globetrotter" (50 channels) badges, bringing the total to 12.
-- **Ad Recovery Stability** - Exponential backoff for ad recovery reloads now resets reliably on channel changes, ad cycle completion, and toggle-off, preventing stale backoff from delaying recovery on subsequent ad encounters.
-- **Midroll Detection Accuracy** - Tightened midroll metadata matching to avoid false-positive ad detection on URLs that coincidentally contain midroll-related substrings.
-- **Player Robustness** - Guarded early player access against uninitialized extension state, eliminating a potential startup crash.
-- **Route Parsing Consistency** - Aligned reserved route segments between parser and bridge modules.
+### v6.3.0
+- **V2 API Ad Blocking Fix** - Fixed a critical issue where Twitch's v2 API variant URLs (raw CDN URLs without `.m3u8` extensions) were silently skipped during playlist parsing, causing mid-roll ads to pass through completely undetected.
+- **Stream Info Lookup Fallback** - Added fallback matching when variant URL lookups fail, so ad-marked playlists are always routed to the correct stream for processing.
+- **Ad Flash Prevention** - All prefetch hints are now stripped unconditionally during ads, and the empty segment MP4 was replaced with a complete valid fragmented MP4 to prevent decoder crashes.
+- **Faster Channel Switching** - Removed a blocking stale-check network request that added 1-3 seconds of latency on every channel switch.
+- **Worker Stability** - Fixed crashes from invalid WASM decoder data during channel navigation and prevented infinite worker restart chains.
+- **PIP/Popout Fixes** - Resolved three bugs that caused broken playback states in Picture-in-Picture and popout windows.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
