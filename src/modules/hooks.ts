@@ -121,8 +121,26 @@ function _schedulePostAdArtifactCleanup(channel = null, mediaKey = null) {
 	return entry.id;
 }
 
+function _hookWorkerXHR() {
+	if (typeof XMLHttpRequest === "undefined") return;
+	const XHROpen = XMLHttpRequest.prototype.open;
+	const XHRSend = XMLHttpRequest.prototype.send;
+	XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+		this._ttvabUrl = typeof url === "string" ? url : String(url || "");
+		return XHROpen.call(this, method, url, ...rest);
+	};
+	XMLHttpRequest.prototype.send = function (...args) {
+		const url = this._ttvabUrl || "";
+		if (/\.m3u8(?:$|\?)/.test(url)) {
+			_log(`[Diag] XHR m3u8 detected: ${url.slice(0, 120)}`, "warning");
+		}
+		return XHRSend.apply(this, args);
+	};
+}
+
 function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
+	_hookWorkerXHR();
 	const realFetch = fetch;
 	const EMPTY_SEGMENT_URL =
 		"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA";
@@ -165,9 +183,12 @@ function _hookWorkerFetch() {
 
 		const lines = encodings.split("\n");
 		for (let i = 0, len = lines.length; i < len - 1; i++) {
+			const nextLine = lines[i + 1]?.trim();
 			if (
 				lines[i]?.startsWith("#EXT-X-STREAM-INF") &&
-				lines[i + 1]?.includes(".m3u8")
+				nextLine &&
+				!nextLine.startsWith("#") &&
+				(nextLine.includes(".m3u8") || nextLine.includes("://"))
 			) {
 				const attrs = _parseAttrs(lines[i]);
 				const resolution = attrs.RESOLUTION;
@@ -400,6 +421,18 @@ function _hookWorkerFetch() {
 				const response = await realFetch.apply(this, getFetchArgs(url));
 				if (response.status === 200) {
 					const text = await response.text();
+					const hasAdHint =
+						text.includes("stitched") ||
+						text.includes("X-TV-TWITCH-AD") ||
+						text.includes("SCTE35") ||
+						text.includes("MIDROLL") ||
+						text.includes("midroll");
+					if (hasAdHint) {
+						_log(
+							`[Diag] M3U8 with ad markers: ${url.slice(0, 120)}`,
+							"warning",
+						);
+					}
 					try {
 						return new Response(
 							await _processM3U8(url, text, realFetch),
@@ -629,6 +662,7 @@ function _hookWorker() {
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}
                 ${_getWasmJs.toString()}
+                ${_hookWorkerXHR.toString()}
                 ${_hookWorkerFetch.toString()}
                 
                 const _GQL_URL = '${_GQL_URL}';

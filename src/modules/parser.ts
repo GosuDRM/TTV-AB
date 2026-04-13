@@ -708,10 +708,13 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 
 	for (let i = 0; i < len - 1; i++) {
 		const line = lines[i];
+		const nextLine = lines[i + 1]?.trim();
 		if (
 			!line?.startsWith("#EXT-X-STREAM-INF") ||
-			!lines[i + 1]?.includes(".m3u8") ||
-			lines[i + 1]?.includes("processing")
+			!nextLine ||
+			nextLine.startsWith("#") ||
+			(!nextLine.includes(".m3u8") && !nextLine.includes("://")) ||
+			nextLine.includes("processing")
 		)
 			continue;
 
