@@ -466,13 +466,7 @@ function _stripAds(text, stripAll, info) {
 	) {
 		for (i = 0; i < len; i++) {
 			if (lines[i]?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
-				const prefetchUrl = lines[i]
-					.substring("#EXT-X-TWITCH-PREFETCH:".length)
-					.trim();
-				const isAdPrefetch = _isKnownAdSegmentUrl(prefetchUrl);
-				if (isAdPrefetch) {
-					lines[i] = "";
-				}
+				lines[i] = "";
 			}
 		}
 	}
