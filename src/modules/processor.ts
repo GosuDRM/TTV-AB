@@ -1179,9 +1179,6 @@ async function _probeBackupPlayerType(
 
 							if (promotionPolicy.allowSelectedPromotion) {
 								_clearBackupPlayerRetryCooldown(info, pt);
-								info.LastCleanBackupM3U8 = m3u8;
-								info.LastCleanBackupPlayerType = pt;
-								info.LastCleanBackupAt = Date.now();
 								_log(`[Trace] Selected: ${pt}`, "success");
 								return { type: pt, m3u8, status: "selected" };
 							}
@@ -1191,9 +1188,6 @@ async function _probeBackupPlayerType(
 								!candidateHasAds
 							) {
 								_clearBackupPlayerRetryCooldown(info, pt);
-								info.LastCleanBackupM3U8 = m3u8;
-								info.LastCleanBackupPlayerType = pt;
-								info.LastCleanBackupAt = Date.now();
 								_log(`[Trace] Selected (minimal): ${pt}`, "success");
 								return { type: pt, m3u8, status: "selected" };
 							}
@@ -1391,6 +1385,9 @@ async function _findBackupStream(
 	if (selected) {
 		backupType = selected.type;
 		backupM3u8 = selected.m3u8;
+		info.LastCleanBackupM3U8 = backupM3u8;
+		info.LastCleanBackupPlayerType = backupType;
+		info.LastCleanBackupAt = Date.now();
 	}
 
 	let isFallback = false;
