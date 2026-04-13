@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.1] - 2026-04-13
+
+### Fixed
+- **Critical: Worker Resolution Crash** - `_getResolutionByQualityGroup` and `_getSortedResolutionList` were never injected into the worker, causing `_processM3U8` to crash with "is not defined" during ad processing. The catch block then returned the unmodified ad-containing playlist to the player, letting full ads play through. Previously masked because the v2 URL mismatch (fixed in 6.3.0) caused the code to exit early before reaching the resolution lookup.
+
 ## [6.3.0] - 2026-04-13
 
 ### Fixed
