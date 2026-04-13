@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.1] - 2026-04-13
+
+### Fixed
+- **V2 API Ad Blocking** - Twitch's v2 API returns variant URLs without `.m3u8` extensions (raw CDN URLs). The extension was silently skipping these during master playlist parsing, leaving the variant URL registry empty. All subsequent media playlist lookups failed, causing mid-roll ads to pass through completely undetected. Variant URL detection now accepts any absolute URL alongside `.m3u8` URLs across all three affected paths: `_syncStreamInfo`, `_getStreamUrl`, and backup variant whitelisting.
+- **Stream Info Lookup Fallback** - When the variant URL registry misses (e.g. due to CDN URL format changes), the extension now falls back to hostname matching and then to the most recently active stream, instead of silently passing through ad-marked playlists.
+- **Critical: Worker Resolution Crash** - `_getResolutionByQualityGroup` and `_getSortedResolutionList` were never injected into the worker, causing `_processM3U8` to crash with "is not defined" during ad processing. The catch block then returned the unmodified ad-containing playlist to the player, letting full ads play through.
+- **Ad Flash from Prefetch Hints** - All `#EXT-X-TWITCH-PREFETCH` hints are now stripped unconditionally during ads. Previously, only prefetch hints for cached ad segment URLs were stripped — on the first ad playlist, uncached ad segment prefetch hints survived and the player pre-fetched ad content before the extension could block it.
+- **Empty Segment MP4** - Replaced the minimal empty segment with a complete valid fragmented MP4 containing proper `ftyp`, `moov`, `trak`, and `mvex` boxes, preventing WASM decoder crashes.
+
+### Changed
+- **Channel Switch Speed** - Removed a blocking network request that validated cached M3U8 URLs on every channel switch, eliminating 1-3 seconds of unnecessary latency. The fresh usher response already provides authoritative stream data.
+
 ## [6.2.9] - 2026-04-12
 
 ### Added
