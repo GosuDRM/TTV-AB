@@ -621,6 +621,8 @@ function _hookWorker() {
                 ${_stripAds.toString()}
                 ${_getStreamVariantInfo.toString()}
                 ${_getStreamUrl.toString()}
+                ${_getSortedResolutionList.toString()}
+                ${_getResolutionByQualityGroup.toString()}
                 ${_getFallbackResolution.toString()}
                 ${_getPlaylistUrlAliases.toString()}
                 ${_collectPlaybackAccessTokenSources.toString()}
