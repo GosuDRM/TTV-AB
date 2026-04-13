@@ -441,20 +441,22 @@ function _hookWorkerFetch() {
 				(safeUrl && _getPlaybackContextFromUsherUrl(safeUrl)?.MediaKey) ||
 					(safeUrl && /\.m3u8(?:$|\?)/.test(safeUrl)),
 			);
+			const isSegmentRequest =
+				isPlaybackRequest &&
+				safeUrl &&
+				!/\.m3u8(?:$|\?)/.test(safeUrl);
 			const errorMessage =
 				typeof e?.message === "string" ? e.message : String(e);
 			const isExpectedCancellation =
 				e?.name === "AbortError" ||
-				e?.name === "TypeError" ||
-				/request cancel(?:ed|led)|cancel(?:ed|led)/i.test(errorMessage) ||
-				/network\s*error/i.test(errorMessage);
+				/request cancel(?:ed|led)|cancel(?:ed|led)/i.test(errorMessage);
 			if (isPlaybackRequest && !isExpectedCancellation) {
 				_log(
 					`Worker fetch wrapper failed for ${safeUrl}: ${errorMessage}`,
 					"error",
 				);
 			}
-			if (isExpectedCancellation && isPlaybackRequest) {
+			if (isExpectedCancellation && isSegmentRequest) {
 				return new Response(new Uint8Array(0), {
 					status: 200,
 					statusText: "",
