@@ -165,9 +165,12 @@ function _hookWorkerFetch() {
 
 		const lines = encodings.split("\n");
 		for (let i = 0, len = lines.length; i < len - 1; i++) {
+			const nextLine = lines[i + 1]?.trim();
 			if (
 				lines[i]?.startsWith("#EXT-X-STREAM-INF") &&
-				lines[i + 1]?.includes(".m3u8")
+				nextLine &&
+				!nextLine.startsWith("#") &&
+				(nextLine.includes(".m3u8") || nextLine.includes("://"))
 			) {
 				const attrs = _parseAttrs(lines[i]);
 				const resolution = attrs.RESOLUTION;

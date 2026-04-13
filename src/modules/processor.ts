@@ -1086,7 +1086,7 @@ async function _findBackupStream(
 								const lines = enc.split("\n");
 								for (let i = 0; i < lines.length; i++) {
 									const line = lines[i]?.trim();
-									if (line && line.endsWith(".m3u8") && !line.startsWith("#")) {
+									if (line && !line.startsWith("#") && (line.endsWith(".m3u8") || line.includes("://"))) {
 										try {
 											const variantUrl = new URL(line, encBaseUrl).href;
 											info.BackupVariantUrls?.add(variantUrl);
