@@ -582,16 +582,6 @@ async function _processM3U8(url, text, realFetch) {
 	text = _absolutizeMediaPlaylistUrls(text, url);
 
 	let info = _getStreamInfoForPlaylist(url);
-
-	if (
-		info &&
-		info.MediaKey &&
-		__TTVAB_STATE__.PageMediaKey &&
-		info.MediaKey !== __TTVAB_STATE__.PageMediaKey
-	) {
-		return text;
-	}
-
 	if (!info) {
 		if (
 			!_hasPlaylistAdMarkers(text) &&
