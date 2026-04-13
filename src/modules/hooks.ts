@@ -322,19 +322,6 @@ function _hookWorkerFetch() {
 				try {
 					let info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
 
-					if (info?.EncodingsM3U8) {
-						const now = Date.now();
-						const lastStaleCheck = info._lastStaleCheckAt || 0;
-						if (now - lastStaleCheck > 10000) {
-							info._lastStaleCheckAt = now;
-							const m3u8Match = info.EncodingsM3U8.match(/^https:.*\.m3u8$/m);
-							if (m3u8Match && (await realFetch(m3u8Match[0])).status !== 200) {
-								delete __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
-								info = null;
-							}
-						}
-					}
-
 					const isNewInfo = !info?.EncodingsM3U8;
 					if (isNewInfo) {
 						_pruneStreamInfos();
