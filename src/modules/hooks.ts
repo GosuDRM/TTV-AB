@@ -364,6 +364,7 @@ function _hookWorkerFetch() {
 							LastNativeRecoveryReadyPlayerType: null,
 							NativeRecoveryCleanCount: 0,
 							LastForcedAdEndReloadAt: 0,
+							LastAdEndReloadAt: 0,
 							LastActivityAt: Date.now(),
 						};
 					} else {
