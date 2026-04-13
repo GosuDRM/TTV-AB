@@ -455,7 +455,11 @@ function _hookWorkerFetch() {
 				);
 			}
 			if (isExpectedCancellation && isPlaybackRequest) {
-				return await realFetch(EMPTY_SEGMENT_URL);
+				return new Response(new Uint8Array(0), {
+					status: 200,
+					statusText: "",
+					headers: { "Content-Type": "video/mp4" },
+				});
 			}
 			throw e;
 		}
