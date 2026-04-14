@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.2-purple)
+![Version](https://img.shields.io/badge/version-6.3.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,20 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.3.2
-- **Faster Ad Recovery on Channel Switch** - Backup player type probing is now parallelized and resolves on first clean result, reducing worst-case ad recovery latency from ~24s to ~8s.
-- **Cached Backup Reuse** - Subsequent playlist fetches during an ad window reuse the known-good backup with a single stream fetch instead of re-probing all player types every cycle.
-
-### v6.3.1
-- **Critical Worker Fix** - Fixed a crash where missing resolution helper functions in the worker caused ad processing to fail silently, letting full ads play through.
-
-### v6.3.0
-- **V2 API Ad Blocking Fix** - Fixed a critical issue where Twitch's v2 API variant URLs (raw CDN URLs without `.m3u8` extensions) were silently skipped during playlist parsing, causing mid-roll ads to pass through completely undetected.
-- **Stream Info Lookup Fallback** - Added fallback matching when variant URL lookups fail, so ad-marked playlists are always routed to the correct stream for processing.
-- **Ad Flash Prevention** - All prefetch hints are now stripped unconditionally during ads, and the empty segment MP4 was replaced with a complete valid fragmented MP4 to prevent decoder crashes.
-- **Faster Channel Switching** - Removed a blocking stale-check network request that added 1-3 seconds of latency on every channel switch.
-- **Worker Stability** - Fixed crashes from invalid WASM decoder data during channel navigation and prevented infinite worker restart chains.
-- **PIP/Popout Fixes** - Resolved three bugs that caused broken playback states in Picture-in-Picture and popout windows.
+### v6.3.3
+- **Ad Flash Fix** - Fixed ad content briefly flashing on screen after an ad break ends. The ad-end recovery path was clearing cached backup stream data, forcing a full re-probe of all player types on re-entry. Backup encodings and clean stream caches are now preserved across ad-end resets, allowing instant reuse if the playlist still carries residual ad markers after reload.
+- **Simplified Ad-End Recovery** - Removed unnecessary native recovery probing that added latency before declaring an ad break over. Ad breaks now end immediately when the playlist is clean, matching upstream behavior.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

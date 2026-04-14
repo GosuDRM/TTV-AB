@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.3] - 2026-04-14
+
+### Fixed
+- **Ad Flash After Ad Break** - The ad-end recovery path was clearing `BackupEncodingsM3U8Cache`, `BackupVariantUrls`, and `LastCleanBackupM3U8` via `_resetStreamAdState`. When the playlist still carried residual ad markers after the post-ad reload, the extension re-entered ad mode with an empty cache and had to re-probe all player types from scratch — a multi-second window where raw ad content reached the player. These caches are now preserved across ad-end resets so re-entry uses the known-good backup instantly.
+- **Simplified Ad-End Recovery** - Removed the `_isAdEndStable` native recovery probing path that fetched a fresh token + usher + stream playlist to verify the native stream was ad-free before ending an ad break. This added 2-4 seconds of latency during which the backup stream continued playing unnecessarily. Ad breaks now end immediately on the first clean playlist, matching upstream behavior.
+
+### Removed
+- **Grace Window Suppression** - Removed the `FORCED_AD_END_REENTRY_WINDOW_MS` grace window and `_isForcedAdEndReloadContinuation` logic. These were bandaids for the native recovery probing latency — with instant ad-end and preserved backup caches, re-entry is handled seamlessly without suppression.
+
 ## [6.3.2] - 2026-04-14
 
 ### Changed
