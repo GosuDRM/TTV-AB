@@ -1149,6 +1149,11 @@ function _hookWorker() {
 					if (this.__TTVABIntentionallyTerminated) {
 						return;
 					}
+					// Ignore duplicate error events from the same dying worker
+					if (this.__TTVABCrashed) {
+						return;
+					}
+					this.__TTVABCrashed = true;
 					_log(`Worker crashed: ${e.message || "Unknown error"}`, "error");
 
 					pruneTrackedWorkers([this]);

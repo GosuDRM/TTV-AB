@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.4] - 2026-04-14
+
+### Fixed
+- **Worker Crash Recovery** - A dying IVS WASM worker fires multiple `RuntimeError: index out of bounds` error events from a single crash. Each error event was incrementing the restart counter, exhausting all 3 restart attempts before any scheduled restart could actually fire. The worker instance is now marked as crashed on the first error event, and subsequent error events from the same instance are ignored. This ensures each real crash consumes exactly one restart attempt, giving the restart mechanism a chance to recover playback.
+
 ## [6.3.3] - 2026-04-14
 
 ### Fixed

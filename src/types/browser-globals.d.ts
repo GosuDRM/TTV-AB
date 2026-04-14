@@ -61,6 +61,7 @@ interface Window {
 
 interface Worker {
 	__TTVABIntentionallyTerminated?: boolean;
+	__TTVABCrashed?: boolean;
 	__TTVABCreatedAt?: number;
 	__TTVABPageMediaKey?: string | null;
 }
