@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.1-purple)
+![Version](https://img.shields.io/badge/version-6.3.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,12 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.3.1
-- **V2 API Ad Blocking Fix** - Fixed a critical issue where Twitch's v2 API variant URLs (raw CDN URLs without `.m3u8` extensions) were silently skipped during playlist parsing, causing mid-roll ads to pass through completely undetected.
-- **Critical Worker Fix** - Fixed a crash where missing resolution helper functions in the worker caused ad processing to fail silently, letting full ads play through.
-- **Stream Info Lookup Fallback** - Added fallback matching when variant URL lookups fail, so ad-marked playlists are always routed to the correct stream for processing.
-- **Ad Flash Prevention** - All prefetch hints are now stripped unconditionally during ads, and the empty segment MP4 was replaced with a complete valid fragmented MP4 to prevent decoder crashes.
-- **Faster Channel Switching** - Removed a blocking stale-check network request that added 1-3 seconds of latency on every channel switch.
+### v6.3.3
+- **Ad Flash Fix** - Fixed ad content briefly flashing on screen after an ad break ends. The ad-end recovery path was clearing cached backup stream data, forcing a full re-probe of all player types on re-entry. Backup encodings and clean stream caches are now preserved across ad-end resets, allowing instant reuse if the playlist still carries residual ad markers after reload.
+- **Simplified Ad-End Recovery** - Removed unnecessary native recovery probing that added latency before declaring an ad break over. Ad breaks now end immediately when the playlist is clean, matching upstream behavior.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

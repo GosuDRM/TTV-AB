@@ -12,14 +12,9 @@ function _resetStreamAdState(info) {
 	info.IsUsingFallbackStream = false;
 	info.IsUsingBackupStream = false;
 	info.RequestedAds.clear();
-	info.BackupVariantUrls?.clear?.();
 	info.FailedBackupPlayerTypes?.clear?.();
-	info.BackupEncodingsM3U8Cache = Object.create(null);
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
-	info.LastCleanBackupM3U8 = null;
-	info.LastCleanBackupPlayerType = null;
-	info.LastCleanBackupAt = 0;
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
 	info.NumStrippedAdSegments = 0;
@@ -730,11 +725,8 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.AdSignifier.trim()
 			? __TTVAB_STATE__.AdSignifier.trim()
 			: "stitched";
-	const shouldHonorPrimaryAdSignifier =
-		info.IsShowingAd || _isForcedAdEndReloadContinuation(info);
 	const hasAds =
-		(shouldHonorPrimaryAdSignifier && text.includes(adSignifier)) ||
-		_hasPlaylistAdMarkers(text) ||
+		text.includes(adSignifier) ||
 		hasExplicitKnownAdSegments ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
 	const hasMediaSegments = _playlistHasMediaSegments(text);
@@ -745,26 +737,6 @@ async function _processM3U8(url, text, realFetch) {
 	}
 
 	if (hasAds) {
-		const isForcedAdEndContinuation =
-			_isForcedAdEndReloadContinuation(info);
-		if (!isForcedAdEndContinuation) {
-			info.LastForcedAdEndReloadAt = 0;
-		}
-
-		if (
-			!info.IsShowingAd &&
-			info.LastAdEndReloadAt &&
-			Date.now() - info.LastAdEndReloadAt <= _getForcedAdEndReentryWindowMs()
-		) {
-			_log("[Trace] Suppressing ad re-entry during post-ad-end reload grace window", "info");
-			return text;
-		}
-		info.LastAdEndReloadAt = 0;
-
-		info.PendingAdEndAt = 0;
-		info.CleanPlaylistCount = 0;
-		info.LastNativeRecoveryReadyPlayerType = null;
-		info.NativeRecoveryCleanCount = 0;
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
 
 		if (!info.IsMidroll) {
@@ -801,9 +773,7 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
 			info.FailedBackupPlayerTypes?.clear?.();
-			if (!isForcedAdEndContinuation) {
-				_incrementAdsBlocked(info.ChannelName, info.MediaKey);
-			}
+			_incrementAdsBlocked(info.ChannelName, info.MediaKey);
 			if (typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
 					self,
@@ -811,12 +781,8 @@ async function _processM3U8(url, text, realFetch) {
 						key: "AdDetected",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
-						continued: isForcedAdEndContinuation,
 					}),
 				);
-			}
-			if (isForcedAdEndContinuation) {
-				_log("[Trace] Continuing ad recovery after forced native reload", "warning");
 			}
 		}
 
@@ -923,80 +889,56 @@ async function _processM3U8(url, text, realFetch) {
 		if (__TTVAB_STATE__.IsAdStrippingEnabled || stripHevc) {
 			text = _stripAds(text, stripHevc, info);
 		}
-	} else {
-		if (info.IsShowingAd) {
-			const resolution = _resolvePlaybackResolutionForUrl(info, url);
-			const adEndAction = await _isAdEndStable(info, realFetch, resolution);
-			if (adEndAction === "reload") {
-				if (typeof self !== "undefined" && self.postMessage) {
-					info.LastPlayerReload = Date.now();
-					_postWorkerBridgeMessage(
-						self,
-						_createPageScopedWorkerEvent({
-							key: "ReloadPlayer",
-							channel: info.ChannelName,
-							mediaKey: info.MediaKey,
-							refreshAccessToken: true,
-							newMediaPlayerInstance: false,
-						}),
-					);
-				}
-				return text;
-			}
-			if (adEndAction !== "ended") {
-				return text;
-			}
-			const {
-				wasUsingModifiedM3U8,
-				wasUsingFallbackStream,
-				wasUsingBackupStream,
-				hadStrippedAdSegments,
-			} =
-				_resetStreamAdState(info);
-			__TTVAB_STATE__.CurrentAdChannel = null;
-			__TTVAB_STATE__.CurrentAdMediaKey = null;
-			__TTVAB_STATE__.PinnedBackupPlayerType = null;
-			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
-			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-			if (typeof self !== "undefined" && self.postMessage) {
-				const shouldReloadPlayer = _shouldReloadNativePlayerAfterAdReset({
-					wasUsingModifiedM3U8,
-					wasUsingFallbackStream,
-					wasUsingBackupStream,
-					hadStrippedAdSegments,
-				});
-				const shouldRefreshAccessToken = true;
+	} else if (info.IsShowingAd) {
+		const {
+			wasUsingModifiedM3U8,
+			wasUsingFallbackStream,
+			wasUsingBackupStream,
+			hadStrippedAdSegments,
+		} =
+			_resetStreamAdState(info);
+		__TTVAB_STATE__.CurrentAdChannel = null;
+		__TTVAB_STATE__.CurrentAdMediaKey = null;
+		__TTVAB_STATE__.PinnedBackupPlayerType = null;
+		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+		if (typeof self !== "undefined" && self.postMessage) {
+			const shouldReloadPlayer =
+				wasUsingModifiedM3U8 ||
+				wasUsingBackupStream ||
+				wasUsingFallbackStream ||
+				hadStrippedAdSegments ||
+				_C?.RELOAD_AFTER_AD !== false;
+			_postWorkerBridgeMessage(
+				self,
+				_createPageScopedWorkerEvent({
+					key: "AdEnded",
+					channel: info.ChannelName,
+					mediaKey: info.MediaKey,
+					willReload: shouldReloadPlayer,
+				}),
+			);
+			if (shouldReloadPlayer) {
+				info.LastPlayerReload = Date.now();
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
-						key: "AdEnded",
+						key: "ReloadPlayer",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
-						willReload: shouldReloadPlayer,
+						refreshAccessToken: true,
+						newMediaPlayerInstance: false,
 					}),
 				);
-				if (shouldReloadPlayer) {
-					info.LastPlayerReload = Date.now();
-					info.LastAdEndReloadAt = Date.now();
-					_postWorkerBridgeMessage(
-						self,
-						_createPageScopedWorkerEvent({
-							key: "ReloadPlayer",
-							channel: info.ChannelName,
-							mediaKey: info.MediaKey,
-							refreshAccessToken: shouldRefreshAccessToken,
-						}),
-					);
-				} else {
-					_postWorkerBridgeMessage(
-						self,
-						_createPageScopedWorkerEvent({
-							key: "PauseResumePlayer",
-							channel: info.ChannelName,
-							mediaKey: info.MediaKey,
-						}),
-					);
-				}
+			} else {
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "PauseResumePlayer",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+					}),
+				);
 			}
 		}
 	}
