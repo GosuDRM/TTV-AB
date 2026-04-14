@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.4-purple)
+![Version](https://img.shields.io/badge/version-6.3.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,12 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.3.4
-- **Worker Crash Recovery** - Fixed WASM worker crash (`RuntimeError: index out of bounds`) exhausting all restart attempts without actually restarting. A dying WASM worker fires multiple error events from a single crash; each event was consuming a restart attempt before any scheduled restart could fire. Duplicate error events from the same crashed worker are now ignored.
-
-### v6.3.3
-- **Ad Flash Fix** - Fixed ad content briefly flashing on screen after an ad break ends. The ad-end recovery path was clearing cached backup stream data, forcing a full re-probe of all player types on re-entry. Backup encodings and clean stream caches are now preserved across ad-end resets, allowing instant reuse if the playlist still carries residual ad markers after reload.
-- **Simplified Ad-End Recovery** - Removed unnecessary native recovery probing that added latency before declaring an ad break over. Ad breaks now end immediately when the playlist is clean, matching upstream behavior.
+### v6.3.5
+- **Ad-Recovery Infinite Preroll Loop** - Fixed a highly aggressive restart loop causing endless preroll ad cycles. The extension will no longer mistakenly interpret blank transition playlists sent during an active ad block as "stream clear" indicators, and player re-entry now securely re-uses the existing access token to prevent Twitch from re-triggering new preroll ads.
+- **Fetch Response Property Synchronization** - Resolved the root cause of excessive playback loading delays and infinite worker restart loops. Synthesized `Response` objects returned to the WASM payload layer now explicitly preserve initialized `url` contextual attributes. This prevents cross-origin `blob:` URI resolution failures that would otherwise trigger fatal WebAssembly runtime crashes during the ad-recovery phase.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

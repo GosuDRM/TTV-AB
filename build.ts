@@ -1143,7 +1143,9 @@ function validateSharedDefinitions() {
 			"Reserved route lists must be sourced from the shared parser helper",
 		);
 	}
-	if (!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")) {
+	if (
+		!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")
+	) {
 		throw new Error(
 			"Hooks must resolve route context through _getPlaybackContextFromUrl",
 		);

@@ -109,7 +109,6 @@ function _initToggleListener() {
 	});
 }
 
-
 function _init() {
 	if (!_bootstrap()) return;
 

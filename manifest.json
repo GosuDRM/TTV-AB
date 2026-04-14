@@ -1,40 +1,26 @@
 {
 	"manifest_version": 3,
-	"version": "6.3.4",
+	"version": "6.3.5",
 	"homepage_url": "https://github.com/GosuDRM/TTV-AB",
 	"short_name": "TTV AB",
 	"name": "__MSG_extName__",
 	"description": "__MSG_extDesc__",
 	"default_locale": "en",
 	"background": {
-		"scripts": [
-			"src/scripts/background.js"
-		]
+		"scripts": ["src/scripts/background.js"]
 	},
-	"permissions": [
-		"storage"
-	],
-	"host_permissions": [
-		"*://*.twitch.tv/*"
-	],
+	"permissions": ["storage"],
+	"host_permissions": ["*://*.twitch.tv/*"],
 	"content_scripts": [
 		{
-			"matches": [
-				"*://*.twitch.tv/*"
-			],
-			"js": [
-				"src/scripts/content.js"
-			],
+			"matches": ["*://*.twitch.tv/*"],
+			"js": ["src/scripts/content.js"],
 			"run_at": "document_start",
 			"world": "MAIN"
 		},
 		{
-			"matches": [
-				"*://*.twitch.tv/*"
-			],
-			"js": [
-				"src/scripts/bridge.js"
-			],
+			"matches": ["*://*.twitch.tv/*"],
+			"js": ["src/scripts/bridge.js"],
 			"run_at": "document_start",
 			"world": "ISOLATED"
 		}
@@ -58,9 +44,7 @@
 			"id": "{71e91189-9cd2-4e46-895d-bcc38f0053c4}",
 			"strict_min_version": "142.0",
 			"data_collection_permissions": {
-				"required": [
-					"none"
-				],
+				"required": ["none"],
 				"optional": []
 			}
 		}

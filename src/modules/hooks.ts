@@ -307,6 +307,16 @@ function _hookWorkerFetch() {
 				headers: response.headers,
 			});
 
+			const _createWorkerResponse = (body, response) => {
+				const res = new Response(body, responseInit(response));
+				if (response?.url) {
+					Object.defineProperty(res, "url", { value: response.url });
+				} else if (url) {
+					Object.defineProperty(res, "url", { value: url });
+				}
+				return res;
+			};
+
 			const shouldBlockCachedAdSegments = Boolean(
 				__TTVAB_STATE__.CurrentAdMediaKey ||
 					__TTVAB_STATE__.CurrentAdChannel ||
@@ -402,9 +412,9 @@ function _hookWorkerFetch() {
 					const playlist = info.IsUsingModifiedM3U8
 						? info.ModifiedM3U8
 						: info.EncodingsM3U8;
-					return new Response(
+					return _createWorkerResponse(
 						_replaceServerTime(playlist, serverTime),
-						responseInit(response),
+						response,
 					);
 				} catch (err) {
 					_log(
@@ -413,7 +423,7 @@ function _hookWorkerFetch() {
 						}`,
 						"error",
 					);
-					return new Response(encodings, responseInit(response));
+					return _createWorkerResponse(encodings, response);
 				}
 			}
 
@@ -434,9 +444,9 @@ function _hookWorkerFetch() {
 						);
 					}
 					try {
-						return new Response(
+						return _createWorkerResponse(
 							await _processM3U8(url, text, realFetch),
-							responseInit(response),
+							response,
 						);
 					} catch (err) {
 						if (err?.name !== "AbortError") {
@@ -447,7 +457,7 @@ function _hookWorkerFetch() {
 								"error",
 							);
 						}
-						return new Response(text, responseInit(response));
+						return _createWorkerResponse(text, response);
 					}
 				}
 				return response;
@@ -870,10 +880,14 @@ function _hookWorker() {
 						const body = await response.text();
 						return {
 							id: fetchRequest?.id || null,
+							url: response.url,
 							status: response.status,
 							statusText: response.statusText,
 							headers: Object.fromEntries(response.headers.entries()),
 							body,
+							ok: response.ok,
+							redirected: response.redirected,
+							type: response.type,
 						};
 					} catch (error) {
 						return {
@@ -1328,7 +1342,8 @@ function _hookMainFetch() {
 		}
 
 		try {
-			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
+			const forceType =
+				__TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
 			if (
 				!forceType ||
 				__TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true

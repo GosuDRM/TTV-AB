@@ -411,8 +411,8 @@ function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
 		!text ||
 		!baseUrl ||
 		(!text.includes("#EXTINF") &&
-			!text.includes('#EXT-X-MAP:') &&
-			!text.includes('#EXT-X-KEY:') &&
+			!text.includes("#EXT-X-MAP:") &&
+			!text.includes("#EXT-X-KEY:") &&
 			!text.includes('URI="'))
 	) {
 		return text;
@@ -550,7 +550,10 @@ function _stripAds(text, stripAll, info) {
 			}
 		}
 
-		if (shouldStrip && (_isMediaPartLine(line) || _isPartPreloadHintLine(line))) {
+		if (
+			shouldStrip &&
+			(_isMediaPartLine(line) || _isPartPreloadHintLine(line))
+		) {
 			const taggedUri = _getTaggedPlaylistUri(line);
 			const isAdSegment =
 				forceStripAllSegments || _isKnownAdSegmentUrl(taggedUri);
@@ -725,7 +728,9 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 		const attrs = _parseAttrs(line);
 		const resolution = attrs.RESOLUTION;
 		const frameRate = attrs["FRAME-RATE"];
-		const variantName = String(attrs.VIDEO || "").trim().toLowerCase();
+		const variantName = String(attrs.VIDEO || "")
+			.trim()
+			.toLowerCase();
 		const parsedFrameRate = Number.parseFloat(String(frameRate ?? ""));
 		const matchesFrameRate =
 			Number.isFinite(targetFrameRate) && Number.isFinite(parsedFrameRate)
@@ -809,25 +814,27 @@ function _getResolutionByQualityGroup(resolutionList, qualityGroup) {
 	const targetHeight = Number.parseInt(match[1], 10);
 	const targetFps = match[2] ? Number.parseInt(match[2], 10) : null;
 
-	return [...resolutionList].sort((a, b) => {
-		const [, ahRaw] = String(a?.Resolution || "0x0")
-			.split("x")
-			.map(Number);
-		const [, bhRaw] = String(b?.Resolution || "0x0")
-			.split("x")
-			.map(Number);
-		const aHeight = Number.isFinite(ahRaw) ? ahRaw : 0;
-		const bHeight = Number.isFinite(bhRaw) ? bhRaw : 0;
-		const aFps = Number.parseFloat(String(a?.FrameRate ?? "")) || 0;
-		const bFps = Number.parseFloat(String(b?.FrameRate ?? "")) || 0;
-		const aScore =
-			Math.abs(aHeight - targetHeight) * 1000 +
-			(targetFps !== null ? Math.abs(aFps - targetFps) * 10 : 0);
-		const bScore =
-			Math.abs(bHeight - targetHeight) * 1000 +
-			(targetFps !== null ? Math.abs(bFps - targetFps) * 10 : 0);
-		return aScore - bScore;
-	})[0] || null;
+	return (
+		[...resolutionList].sort((a, b) => {
+			const [, ahRaw] = String(a?.Resolution || "0x0")
+				.split("x")
+				.map(Number);
+			const [, bhRaw] = String(b?.Resolution || "0x0")
+				.split("x")
+				.map(Number);
+			const aHeight = Number.isFinite(ahRaw) ? ahRaw : 0;
+			const bHeight = Number.isFinite(bhRaw) ? bhRaw : 0;
+			const aFps = Number.parseFloat(String(a?.FrameRate ?? "")) || 0;
+			const bFps = Number.parseFloat(String(b?.FrameRate ?? "")) || 0;
+			const aScore =
+				Math.abs(aHeight - targetHeight) * 1000 +
+				(targetFps !== null ? Math.abs(aFps - targetFps) * 10 : 0);
+			const bScore =
+				Math.abs(bHeight - targetHeight) * 1000 +
+				(targetFps !== null ? Math.abs(bFps - targetFps) * 10 : 0);
+			return aScore - bScore;
+		})[0] || null
+	);
 }
 
 function _getFallbackResolution(info, url) {
