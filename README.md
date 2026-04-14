@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.3-purple)
+![Version](https://img.shields.io/badge/version-6.3.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,9 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.3.4
+- **Worker Crash Recovery** - Fixed WASM worker crash (`RuntimeError: index out of bounds`) exhausting all restart attempts without actually restarting. A dying WASM worker fires multiple error events from a single crash; each event was consuming a restart attempt before any scheduled restart could fire. Duplicate error events from the same crashed worker are now ignored.
 
 ### v6.3.3
 - **Ad Flash Fix** - Fixed ad content briefly flashing on screen after an ad break ends. The ad-end recovery path was clearing cached backup stream data, forcing a full re-probe of all player types on re-entry. Backup encodings and clean stream caches are now preserved across ad-end resets, allowing instant reuse if the playlist still carries residual ad markers after reload.
