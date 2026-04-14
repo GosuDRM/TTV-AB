@@ -113,7 +113,7 @@ function _isWorkerContext() {
 	);
 }
 
-function _createFetchRelayResponse(payload) {
+function _createFetchRelayResponse(payload, requestUrl = null) {
 	if (!payload || typeof payload !== "object") {
 		throw new Error("invalid fetch relay response");
 	}
@@ -122,11 +122,24 @@ function _createFetchRelayResponse(payload) {
 		throw new Error(payload.error);
 	}
 
-	return new Response(payload.body ?? "", {
+	const response = new Response(payload.body ?? "", {
 		status: payload.status,
 		statusText: payload.statusText,
 		headers: payload.headers,
 	});
+
+	const finalUrl = payload.url || requestUrl;
+	if (finalUrl) {
+		Object.defineProperty(response, "url", { value: finalUrl });
+	}
+	if (typeof payload.ok === "boolean") {
+		Object.defineProperty(response, "ok", { value: payload.ok });
+	}
+	if (typeof payload.redirected === "boolean") {
+		Object.defineProperty(response, "redirected", { value: payload.redirected });
+	}
+
+	return response;
 }
 
 async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
@@ -153,7 +166,7 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 			resolve: (payload) => {
 				clearTimeout(timeoutId);
 				try {
-					resolve(_createFetchRelayResponse(payload));
+					resolve(_createFetchRelayResponse(payload, url));
 				} catch (error) {
 					reject(error);
 				}

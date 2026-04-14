@@ -690,7 +690,7 @@ async function _processM3U8(url, text, realFetch) {
 							key: "ReloadPlayer",
 							channel: info.ChannelName,
 							mediaKey: info.MediaKey,
-							refreshAccessToken: shouldRefreshAccessToken,
+							refreshAccessToken: false,
 							newMediaPlayerInstance: false,
 						}),
 					);
@@ -926,7 +926,7 @@ async function _processM3U8(url, text, realFetch) {
 						key: "ReloadPlayer",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
-						refreshAccessToken: true,
+						refreshAccessToken: false,
 						newMediaPlayerInstance: false,
 					}),
 				);

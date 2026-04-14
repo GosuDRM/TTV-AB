@@ -841,6 +841,10 @@ function _hookWorker() {
 							id: fetchRequest?.id || null,
 							status: response.status,
 							statusText: response.statusText,
+							ok: response.ok,
+							redirected: response.redirected,
+							type: response.type,
+							url: response.url,
 							headers: Object.fromEntries(response.headers.entries()),
 							body,
 						};

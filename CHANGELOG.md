@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.5] - 2026-04-14
+
+### Fixed
+- **Ad-Recovery Infinite Preroll Loop** - Fixed an issue where the extension would become stuck in a never-ending ad-blocking loop, rapidly toggling between backup streams and reloading the player. Twich often serves momentary empty `.m3u8` payloads during ad transitions; the extension now requires multiple consecutive clean playlists to declare an ad "over." Additionally, the experimental `REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN` is now disabled by default, and ad-recovery reloads no longer forcefully refresh access tokens, preventing immediate pre-roll triggering on re-entry.
+- **Fetch Response Property Synchronization** - Fabricated `Response` objects generated within the worker bridge were missing native `url`, `ok`, `redirected`, and `type` attributes. This caused Amazon's WASM binary (`amazon-ivs-wasmworker`) to fail when validating tracking (Spade) and media requests, triggering internal `NetworkError` exceptions that halted playback. The extension now synchronizes the full response state across the worker bridge to ensure WASM compatibility.
+
 ## [6.3.4] - 2026-04-14
 
 ### Fixed
