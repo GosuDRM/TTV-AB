@@ -327,31 +327,40 @@ function _getStreamInfoForPlaylist(url) {
 		if (byUrl) return byUrl;
 	}
 
-	// Fallback: find most recently active stream info by hostname match
+	const currentPageMediaKey = __TTVAB_STATE__?.PageMediaKey || null;
+
 	try {
 		const parsed = new URL(url);
 		const hostname = parsed.hostname;
 		for (const key in __TTVAB_STATE__.StreamInfosByUrl) {
 			try {
+				const info = __TTVAB_STATE__.StreamInfosByUrl[key];
+				if (currentPageMediaKey && info?.MediaKey !== currentPageMediaKey) {
+					continue;
+				}
 				const storedUrl = new URL(key);
 				if (storedUrl.hostname === hostname) {
-					return __TTVAB_STATE__.StreamInfosByUrl[key];
+					return info;
 				}
 			} catch {}
 		}
 	} catch {}
 
-	// Last resort: if only one stream info exists, use it
 	const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
 	if (keys.length === 1) {
-		return __TTVAB_STATE__.StreamInfos[keys[0]];
+		const info = __TTVAB_STATE__.StreamInfos[keys[0]];
+		if (!currentPageMediaKey || info?.MediaKey === currentPageMediaKey) {
+			return info;
+		}
 	}
-	// Multiple streams: use the most recently active one
 	if (keys.length > 1) {
 		let best = null;
 		let bestTime = 0;
 		for (const key of keys) {
 			const info = __TTVAB_STATE__.StreamInfos[key];
+			if (currentPageMediaKey && info?.MediaKey !== currentPageMediaKey) {
+				continue;
+			}
 			if (info?.LastActivityAt > bestTime) {
 				bestTime = info.LastActivityAt;
 				best = info;

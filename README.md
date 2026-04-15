@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.5-purple)
+![Version](https://img.shields.io/badge/version-6.3.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.3.5
-- **Ad-Recovery Stability** - Fixed an issue where the extension would become stuck in a never-ending ad-blocking loop. Added a requirement for multiple consecutive clean playlists before ending an ad break, and disabled automatic token refreshing during recovery reloads.
-- **WASM Compatibility** - Improved the worker bridge to synchronize native response properties (`url`, `ok`, `redirected`, `type`), resolving `NetworkError` exceptions in the Amazon IVS WASM worker.
+### v6.3.6
+- **Twitch Channel Switching Bug** - Fixed a critical issue where navigating between channels in Twitch's SPA could cause the ad-blocker to serve a backup stream from the previous channel.
+- **Improved Context Integrity** - Implemented SPA navigation hooks and tightened stream selection fallback logic to ensure playback context synchronization.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

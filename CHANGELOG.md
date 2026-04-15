@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.6] - 2026-04-15
+
+### Fixed
+- **Twitch Channel Switching Bug** - Fixed a critical issue where navigating between channels in Twitch's SPA could cause the ad-blocker to serve a backup stream from the previous channel. Implemented robust SPA navigation hooks for `history.pushState`, `history.replaceState`, and `popstate` to ensure playback context synchronization. Improved state eviction logic to reliably clear stale stream information and ad contexts on channel change.
+- **Stream Selection Fallback Leaks** - Tightened the stream selection logic to prevent cross-channel fallback leaks when URL lookup fails, ensuring only streams belonging to the current channel are used for ad recovery.
+
 ## [6.3.5] - 2026-04-14
 
 ### Fixed

@@ -110,6 +110,24 @@ function _initToggleListener() {
 }
 
 
+function _hookSpaNavigation() {
+	const sync = () => _syncPagePlaybackContext({ broadcast: true });
+	const originalPushState = history.pushState;
+	history.pushState = function (...args) {
+		const result = originalPushState.apply(this, args);
+		sync();
+		return result;
+	};
+	const originalReplaceState = history.replaceState;
+	history.replaceState = function (...args) {
+		const result = originalReplaceState.apply(this, args);
+		sync();
+		return result;
+	};
+	window.addEventListener("popstate", sync);
+}
+
+
 function _init() {
 	if (!_bootstrap()) return;
 
@@ -143,6 +161,7 @@ function _init() {
 	_initToggleListener();
 	_sendBridgeMessage("ttvab-request-state");
 	_initAchievementListener();
+	_hookSpaNavigation();
 
 	_hookVisibilityState();
 	if (typeof _hookSecondaryPlayerHandoffDetection === "function") {

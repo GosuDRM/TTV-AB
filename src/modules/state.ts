@@ -376,12 +376,16 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 	}
 
-	if (
-		didMediaKeyChange &&
-		previousMediaKey &&
-		(__TTVAB_STATE__.CurrentAdMediaKey === previousMediaKey ||
-			__TTVAB_STATE__.PinnedBackupPlayerMediaKey === previousMediaKey)
-	) {
+	if (didMediaKeyChange) {
+		if (previousMediaKey) {
+			delete __TTVAB_STATE__.StreamInfos[previousMediaKey];
+			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
+				if (__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === previousMediaKey) {
+					delete __TTVAB_STATE__.StreamInfosByUrl[url];
+				}
+			}
+		}
+
 		__TTVAB_STATE__.CurrentAdChannel = null;
 		__TTVAB_STATE__.CurrentAdMediaKey = null;
 		__TTVAB_STATE__.PinnedBackupPlayerType = null;
