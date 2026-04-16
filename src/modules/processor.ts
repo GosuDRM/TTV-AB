@@ -1089,6 +1089,7 @@ async function _probeBackupPlayerType(
 	pt,
 	targetRes,
 	isDoingMinimalRequests,
+	cancellation = null,
 ) {
 	const realPt = pt.replace("-CACHED", "");
 	const isFullyCachedPlayerType = pt !== realPt;
@@ -1096,10 +1097,12 @@ async function _probeBackupPlayerType(
 		0,
 		(__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(realPt),
 	);
+	const isCancelled = () => Boolean(cancellation && cancellation.cancelled);
 
 	_log(`[Trace] Checking: ${pt}`, "info");
 
 	for (let j = 0; j < 2; j++) {
+		if (isCancelled()) return null;
 		let isFreshM3u8 = false;
 		let invalidateCache = false;
 		const encCache = info.BackupEncodingsM3U8Cache[pt];
@@ -1113,6 +1116,7 @@ async function _probeBackupPlayerType(
 			isFreshM3u8 = true;
 			try {
 				const tokenRes = await _getToken(info, realPt, realFetch);
+				if (isCancelled()) return null;
 				if (tokenRes.status === 200) {
 					const token = await tokenRes.json();
 					const extractedToken = _extractPlaybackAccessToken(token);
@@ -1128,6 +1132,7 @@ async function _probeBackupPlayerType(
 							continue;
 						}
 						const encRes = await realFetch(usherUrl.href);
+						if (isCancelled()) return null;
 						if (encRes.status === 200) {
 							enc = await encRes.text();
 							encBaseUrl = usherUrl.href;
@@ -1193,10 +1198,12 @@ async function _probeBackupPlayerType(
 		}
 
 		if (enc) {
+			if (isCancelled()) return null;
 			try {
 				const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
 				if (streamUrl) {
 					const streamRes = await realFetch(streamUrl);
+					if (isCancelled()) return null;
 					if (streamRes.status === 200) {
 						const m3u8 = _absolutizeMediaPlaylistUrls(
 							await streamRes.text(),
@@ -1386,6 +1393,9 @@ async function _findBackupStream(
 
 	// Probe all eligible player types in parallel; resolve as soon as first
 	// clean ("selected") result arrives instead of waiting for all probes.
+	// Losing probes observe `cancellation.cancelled` and bail before issuing
+	// further fetches so they don't waste worker-bridge slots/bandwidth.
+	const cancellation = { cancelled: false };
 	const probePromises = eligibleTypes.map((pt) =>
 		_probeBackupPlayerType(
 			info,
@@ -1393,6 +1403,7 @@ async function _findBackupStream(
 			pt,
 			targetRes,
 			isDoingMinimalRequests,
+			cancellation,
 		),
 	);
 
@@ -1410,6 +1421,7 @@ async function _findBackupStream(
 				.then((result) => {
 					if (result?.status === "selected" && !resolved) {
 						resolved = true;
+						cancellation.cancelled = true;
 						resolve({ selected: result, fallbacks: collectedFallbacks });
 						return;
 					}

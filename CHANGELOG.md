@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.4.0] - 2026-04-17
+
+### Fixed
+- **Faster Backup Recovery** - Parallel backup-stream probes now share a cancellation token so the moment one player type returns a clean playlist, the remaining probes bail out before issuing additional token, usher, or stream fetches. Previously losing probes kept running for the full 5–8s worker-bridge timeout, holding onto bridge slots and bandwidth that the active playback request needed.
+- **Tighter Ad Segment Matching** - `_isExplicitKnownAdSegmentUrl` now requires `/processing/` as a path segment instead of treating any substring `processing` as an ad marker, removing a class of false positives that could strip legitimate segments whose CDN path happened to contain the word.
+- **Cleaner Worker Snapshot** - The page-side `_S.workers` registry is now stripped before serializing the page state into freshly spawned workers. The injected worker has no concept of a worker registry, so omitting it keeps the snapshot honest and prevents future read-throughs from seeing an inert empty array.
+
 ## [6.3.9] - 2026-04-17
 
 ### Fixed

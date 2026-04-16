@@ -596,10 +596,11 @@ function _hookWorker() {
 					broadcast: false,
 				});
 
+				const _workerSnapshot = { ..._S, workers: undefined };
 				const injectedCode = `
             (function() {
                 const _C = ${JSON.stringify(_C)};
-                const _S = ${JSON.stringify(_S)};
+                const _S = ${JSON.stringify(_workerSnapshot)};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}

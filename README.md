@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.9-purple)
+![Version](https://img.shields.io/badge/version-6.4.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,10 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.3.9
-- **Post-Ad Player Reload** - Restored post-ad recovery so once ad blocking finishes, Firefox reloads the Twitch player with a fresh access token and a new media player instance.
-- **Removed Backup Hold Regression** - Reverted the backup-hold behavior from v6.3.8 so recovery reloads the native player instead of staying pinned to the backup stream.
+### v6.4.0
+- **Faster Backup Recovery** - Losing backup-stream probes now bail out as soon as a clean candidate wins, freeing the worker bridge for the playback request instead of holding onto stale token/usher fetches for several seconds.
+- **Tighter Ad Segment Matching** - The known-ad URL check now requires `/processing/` as a path segment instead of any substring `processing`, eliminating false positives that could strip benign segments containing the word.
+- **Cleaner Worker Snapshot** - The page-side worker registry is no longer copied into freshly spawned workers, removing an inert reference that could confuse future state mirroring.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

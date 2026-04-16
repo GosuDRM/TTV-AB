@@ -333,7 +333,7 @@ function _isExplicitKnownAdSegmentUrl(segmentUrl) {
 		url.includes("stitched") ||
 		url.includes("stitched-ad") ||
 		url.includes("/adsquared/") ||
-		url.includes("processing") ||
+		url.includes("/processing/") ||
 		url.includes("/_404/")
 	);
 }
