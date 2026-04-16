@@ -109,12 +109,32 @@ function _initToggleListener() {
 	});
 }
 
+function _hookSpaNavigation() {
+	if (typeof window === "undefined") return;
+	const pushState = history.pushState;
+	history.pushState = function () {
+		const res = pushState.apply(this, arguments as any);
+		_syncPagePlaybackContext();
+		return res;
+	};
+	const replaceState = history.replaceState;
+	history.replaceState = function () {
+		const res = replaceState.apply(this, arguments as any);
+		_syncPagePlaybackContext();
+		return res;
+	};
+	window.addEventListener("popstate", () => {
+		_syncPagePlaybackContext();
+	});
+}
+
 function _init() {
 	if (!_bootstrap()) return;
 
 	_bindBridgePort();
 	_declareState(window);
 	_syncPagePlaybackContext({ broadcast: false });
+	_hookSpaNavigation();
 
 	_onInternalMessage("ttvab-init-count", (detail) => {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);

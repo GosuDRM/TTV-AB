@@ -704,9 +704,9 @@ function validateSharedDefinitions() {
 	const reloadAfterAdMatch = constantsSource.match(
 		/RELOAD_AFTER_AD:\s*(true|false)/,
 	);
-	if (reloadAfterAdMatch?.[1] !== "true") {
+	if (reloadAfterAdMatch?.[1] !== "false") {
 		throw new Error(
-			"RELOAD_AFTER_AD must remain true to match vaft post-ad recovery",
+			"RELOAD_AFTER_AD must remain false to avoid post-ad reload loops",
 		);
 	}
 

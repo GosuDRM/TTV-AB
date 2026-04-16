@@ -368,6 +368,14 @@ function _setPagePlaybackContext(
 	__TTVAB_STATE__.PageMediaKey = normalizedContext.MediaKey;
 
 	if (didMediaKeyChange) {
+		if (previousMediaKey) {
+			delete __TTVAB_STATE__.StreamInfos[previousMediaKey];
+			for (const key in __TTVAB_STATE__.StreamInfosByUrl) {
+				if (__TTVAB_STATE__.StreamInfosByUrl[key]?.MediaKey === previousMediaKey) {
+					delete __TTVAB_STATE__.StreamInfosByUrl[key];
+				}
+			}
+		}
 		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;

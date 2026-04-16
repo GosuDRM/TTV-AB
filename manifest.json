@@ -1,6 +1,6 @@
 {
 	"manifest_version": 3,
-	"version": "6.3.5",
+	"version": "6.3.7",
 	"homepage_url": "https://github.com/GosuDRM/TTV-AB",
 	"short_name": "TTV AB",
 	"name": "__MSG_extName__",
