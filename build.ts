@@ -672,9 +672,9 @@ function validateSharedDefinitions() {
 	const reloadAfterAdMatch = constantsSource.match(
 		/RELOAD_AFTER_AD:\s*(true|false)/,
 	);
-	if (reloadAfterAdMatch?.[1] !== "false") {
+	if (reloadAfterAdMatch?.[1] !== "true") {
 		throw new Error(
-			"RELOAD_AFTER_AD must remain false to avoid post-ad reload loops",
+			"RELOAD_AFTER_AD must remain true to keep post-ad player recovery active",
 		);
 	}
 

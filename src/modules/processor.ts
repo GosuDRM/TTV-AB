@@ -941,8 +941,7 @@ async function _processM3U8(url, text, realFetch) {
 						key: "ReloadPlayer",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
-						refreshAccessToken: false,
-						newMediaPlayerInstance: false,
+						reason: "post-ad",
 					}),
 				);
 			}
@@ -991,8 +990,7 @@ async function _processM3U8(url, text, realFetch) {
 						key: "ReloadPlayer",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
-						refreshAccessToken: false,
-						newMediaPlayerInstance: false,
+						reason: "post-ad",
 					}),
 				);
 			} else if (shouldPauseResumePlayer) {

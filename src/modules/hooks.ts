@@ -1134,8 +1134,12 @@ function _hookWorker() {
 								_clearAdResumeIntent();
 							}
 							if (typeof _doPlayerTask === "function") {
+								const reloadReason =
+									typeof data.reason === "string" && data.reason
+										? data.reason
+										: "ad-recovery";
 								_doPlayerTask(false, true, {
-									reason: "ad-recovery",
+									reason: reloadReason,
 									refreshAccessToken: data.refreshAccessToken !== false,
 									newMediaPlayerInstance: data.newMediaPlayerInstance !== false,
 								});
