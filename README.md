@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.8-purple)
+![Version](https://img.shields.io/badge/version-6.3.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.3.8
-- **Firefox Backup Hold Fix** - When native recovery is still ad-marked after an ad break, Firefox now keeps serving and refreshing the backup stream instead of forcing a native reload back into Twitch's ad path.
-- **Ad-End Wait Stability** - The worker keeps the active ad cycle alive until native recovery is actually clean, reducing post-ad stalls and IVS worker crashes during long midroll windows.
+### v6.3.9
+- **Post-Ad Player Reload** - Restored post-ad recovery so once ad blocking finishes, Firefox reloads the Twitch player with a fresh access token and a new media player instance.
+- **Removed Backup Hold Regression** - Reverted the backup-hold behavior from v6.3.8 so recovery reloads the native player instead of staying pinned to the backup stream.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

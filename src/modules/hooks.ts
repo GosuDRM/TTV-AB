@@ -650,7 +650,6 @@ function _hookWorker() {
                 ${_getForcedAdEndReentryWindowMs.toString()}
                 ${_markForcedAdEndReload.toString()}
                 ${_isForcedAdEndReloadContinuation.toString()}
-                ${_getBackupStreamForAdEndWait.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
@@ -1185,8 +1184,12 @@ function _hookWorker() {
 								_clearAdResumeIntent();
 							}
 							if (typeof _doPlayerTask === "function") {
+								const reloadReason =
+									typeof data.reason === "string" && data.reason
+										? data.reason
+										: "ad-recovery";
 								_doPlayerTask(false, true, {
-									reason: "ad-recovery",
+									reason: reloadReason,
 									refreshAccessToken: data.refreshAccessToken !== false,
 									newMediaPlayerInstance: data.newMediaPlayerInstance !== false,
 								});

@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.9] - 2026-04-17
+
+### Fixed
+- **Post-Ad Player Reload** - Restored post-ad recovery so once ad blocking finishes, Firefox reloads the Twitch player with a fresh access token and a new media player instance.
+- **Removed Backup Hold Regression** - Reverted the backup-hold behavior from v6.3.8 so recovery reloads the native player instead of staying pinned to the backup stream.
+
 ## [6.3.8] - 2026-04-17
 
 ### Fixed
