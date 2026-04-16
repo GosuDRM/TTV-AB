@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.8] - 2026-04-17
+
+### Fixed
+- **Firefox Backup Hold Fix** - When native recovery is still ad-marked after an ad break, Firefox now keeps serving and refreshing the backup stream instead of forcing a native reload back into Twitch's ad path.
+- **Ad-End Wait Stability** - The worker keeps the active ad cycle alive until native recovery is actually clean, reducing post-ad stalls and IVS worker crashes during long midroll windows.
+
 ## [6.3.7] - 2026-04-17
 
 ### Fixed

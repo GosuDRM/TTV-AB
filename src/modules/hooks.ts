@@ -650,6 +650,7 @@ function _hookWorker() {
                 ${_getForcedAdEndReentryWindowMs.toString()}
                 ${_markForcedAdEndReload.toString()}
                 ${_isForcedAdEndReloadContinuation.toString()}
+                ${_getBackupStreamForAdEndWait.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
