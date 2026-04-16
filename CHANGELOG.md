@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.3.7] - 2026-04-17
+
+### Fixed
+- **Post-Ad Restart Loop** - Restored worker-side ad-end stabilization so an ad cycle only ends after multiple clean playlists and a native recovery check instead of ending on the first transient clean playlist Twitch serves during ad transitions.
+- **Backup Stream Exit Re-Entry** - Backup and fallback stream ad exits no longer force an immediate native player reload or pause/play pulse unless explicitly required, preventing the blocker from re-entering Twitch's ad-marked path right after `AdEnded`.
+- **Continuation Detection** - Same-context ad detections after a guarded recovery reload are now treated as continuations of the active ad cycle instead of a fresh blocked-ad event.
+
 ## [6.3.6] - 2026-04-15
 
 ### Fixed

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.3.6-purple)
+![Version](https://img.shields.io/badge/version-6.3.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.3.6
-- **Twitch Channel Switching Bug** - Fixed a critical issue where navigating between channels in Twitch's SPA could cause the ad-blocker to serve a backup stream from the previous channel.
-- **Improved Context Integrity** - Implemented SPA navigation hooks and tightened stream selection fallback logic to ensure playback context synchronization.
+### v6.3.7
+- **Post-Ad Restart Loop Fix** - Ad recovery now waits for stable clean playlists before ending an ad cycle, preventing Twitch's transient post-ad playlists from restarting the blocker.
+- **Safer Backup Stream Exit** - Backup-stream ad exits no longer force an immediate native reload or pause/play pulse unless explicitly required, reducing re-entry into Twitch's ad-marked path.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

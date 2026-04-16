@@ -746,6 +746,13 @@ async function _processM3U8(url, text, realFetch) {
 	}
 
 	if (hasAds) {
+		if (info.PendingAdEndAt || info.CleanPlaylistCount) {
+			info.PendingAdEndAt = 0;
+			info.CleanPlaylistCount = 0;
+			_resetNativeRecoveryReadyState(info);
+			_log("[Trace] Ad markers returned before ad-end stabilized", "info");
+		}
+
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
 
 		if (!info.IsMidroll) {
@@ -777,12 +784,29 @@ async function _processM3U8(url, text, realFetch) {
 		}
 
 		if (!info.IsShowingAd) {
+			const activeAdMediaKey =
+				typeof __TTVAB_STATE__.CurrentAdMediaKey === "string"
+					? __TTVAB_STATE__.CurrentAdMediaKey
+					: null;
+			const activeAdChannel =
+				typeof __TTVAB_STATE__.CurrentAdChannel === "string"
+					? __TTVAB_STATE__.CurrentAdChannel
+					: null;
+			const isContinuingAdCycle = Boolean(
+				(activeAdMediaKey && activeAdMediaKey === info.MediaKey) ||
+					(!activeAdMediaKey &&
+						activeAdChannel &&
+						activeAdChannel === info.ChannelName),
+			);
+
 			info.IsShowingAd = true;
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
 			info.FailedBackupPlayerTypes?.clear?.();
-			_incrementAdsBlocked(info.ChannelName, info.MediaKey);
+			if (!isContinuingAdCycle) {
+				_incrementAdsBlocked(info.ChannelName, info.MediaKey);
+			}
 			if (typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
 					self,
@@ -790,6 +814,7 @@ async function _processM3U8(url, text, realFetch) {
 						key: "AdDetected",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
+						continued: isContinuingAdCycle,
 					}),
 				);
 			}
@@ -899,6 +924,34 @@ async function _processM3U8(url, text, realFetch) {
 			text = _stripAds(text, stripHevc, info);
 		}
 	} else if (info.IsShowingAd) {
+		const res = _resolvePlaybackResolutionForUrl(info, url);
+		const adEndState = await _isAdEndStable(info, realFetch, res);
+		if (adEndState === "wait") {
+			if (!hasMediaSegments) {
+				return info.LastCleanBackupM3U8 || info.LastCleanNativeM3U8 || text;
+			}
+			return text;
+		}
+		if (adEndState === "reload") {
+			if (typeof self !== "undefined" && self.postMessage) {
+				info.LastPlayerReload = Date.now();
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "ReloadPlayer",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+						refreshAccessToken: false,
+						newMediaPlayerInstance: false,
+					}),
+				);
+			}
+			if (!hasMediaSegments) {
+				return info.LastCleanBackupM3U8 || info.LastCleanNativeM3U8 || text;
+			}
+			return text;
+		}
+
 		const {
 			wasUsingModifiedM3U8,
 			wasUsingFallbackStream,
@@ -912,12 +965,15 @@ async function _processM3U8(url, text, realFetch) {
 		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 		if (typeof self !== "undefined" && self.postMessage) {
-			const shouldReloadPlayer =
-				wasUsingModifiedM3U8 ||
-				wasUsingBackupStream ||
-				wasUsingFallbackStream ||
-				hadStrippedAdSegments ||
-				_C?.RELOAD_AFTER_AD !== false;
+			const shouldReloadPlayer = Boolean(
+				wasUsingModifiedM3U8 || _C?.RELOAD_AFTER_AD !== false,
+			);
+			const shouldPauseResumePlayer = Boolean(
+				!shouldReloadPlayer &&
+					!wasUsingBackupStream &&
+					!wasUsingFallbackStream &&
+					hadStrippedAdSegments,
+			);
 			_postWorkerBridgeMessage(
 				self,
 				_createPageScopedWorkerEvent({
@@ -939,7 +995,7 @@ async function _processM3U8(url, text, realFetch) {
 						newMediaPlayerInstance: false,
 					}),
 				);
-			} else {
+			} else if (shouldPauseResumePlayer) {
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
