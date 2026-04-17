@@ -644,7 +644,11 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	}
 
-	function renderAchievements(unlocked, adsBlocked, channelCount) {
+	function renderAchievements(
+		unlocked,
+		adsBlocked,
+		channelCount,
+	) {
 		const safeUnlocked = Array.isArray(unlocked)
 			? [
 					...new Set(
@@ -716,40 +720,47 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function loadStatistics() {
-		chrome.storage.local.get(["ttvStats", "ttvAdsBlocked"], (result) => {
-			if (chrome.runtime.lastError) {
-				console.error(
-					"[TTV AB] Popup stats read error:",
-					chrome.runtime.lastError.message,
-				);
-			}
-			const safeResult = (result || {}) as PlainObject;
-			const stats = isPlainObject(safeResult.ttvStats)
-				? safeResult.ttvStats
-				: ({} as PlainObject);
-			const daily = normalizeDailyStatsMap(stats.daily);
-			const channels = normalizeChannelsMap(stats.channels);
-			const achievements = Array.isArray(stats.achievements)
-				? [
-						...new Set(
-							stats.achievements.filter(
-								(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
+		chrome.storage.local.get(
+			["ttvStats", "ttvAdsBlocked"],
+			(result) => {
+				if (chrome.runtime.lastError) {
+					console.error(
+						"[TTV AB] Popup stats read error:",
+						chrome.runtime.lastError.message,
+					);
+				}
+				const safeResult = (result || {}) as PlainObject;
+				const stats = isPlainObject(safeResult.ttvStats)
+					? safeResult.ttvStats
+					: ({} as PlainObject);
+				const daily = normalizeDailyStatsMap(stats.daily);
+				const channels = normalizeChannelsMap(stats.channels);
+				const achievements = Array.isArray(stats.achievements)
+					? [
+							...new Set(
+								stats.achievements.filter(
+									(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
+								),
 							),
-						),
-					]
-				: [];
-			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
-			const channelCount = Object.keys(channels).length;
+						]
+					: [];
+				const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
+				const channelCount = Object.keys(channels).length;
 
-			renderChart(daily);
-			renderChannels(channels);
-			renderAchievements(achievements, adsCount, channelCount);
-			syncExpandedStatsPanelHeight();
-		});
+				renderChart(daily);
+				renderChannels(channels);
+				renderAchievements(achievements, adsCount, channelCount);
+				syncExpandedStatsPanelHeight();
+			},
+		);
 	}
 
 	chrome.storage.local.get(
-		["ttvAdblockEnabled", "ttvBufferFixEnabled", "ttvAdsBlocked"],
+		[
+			"ttvAdblockEnabled",
+			"ttvBufferFixEnabled",
+			"ttvAdsBlocked",
+		],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(

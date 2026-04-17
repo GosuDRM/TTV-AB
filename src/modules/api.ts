@@ -113,14 +113,7 @@ function _isWorkerContext() {
 	);
 }
 
-function _isFirefoxBrowser() {
-	return (
-		typeof navigator?.userAgent === "string" &&
-		/Firefox\//i.test(navigator.userAgent)
-	);
-}
-
-function _createFetchRelayResponse(payload, requestUrl) {
+function _createFetchRelayResponse(payload, requestUrl = null) {
 	if (!payload || typeof payload !== "object") {
 		throw new Error("invalid fetch relay response");
 	}
@@ -242,7 +235,6 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		_log(`[Trace] Requesting token for ${playerType} (${logTarget})`, "info");
 		const acceptLanguage =
 			navigator?.languages?.join(",") || navigator?.language || "en-US";
-		const requestTimeoutMs = _isFirefoxBrowser() ? 8000 : 5000;
 
 		const headers: Record<string, string> = {
 			"Client-ID": _C.CLIENT_ID,
@@ -269,11 +261,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 
 		if (typeof _fetchViaWorkerBridge === "function") {
 			try {
-				res = await _fetchViaWorkerBridge(
-					_GQL_URL,
-					requestOptions,
-					requestTimeoutMs,
-				);
+				res = await _fetchViaWorkerBridge(_GQL_URL, requestOptions, 5000);
 			} catch (bridgeError) {
 				_log(`Token relay error: ${bridgeError.message}`, "warning");
 			}
@@ -281,7 +269,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 
 		if (!res) {
 			const controller = new AbortController();
-			timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+			timeoutId = setTimeout(() => controller.abort(), 5000);
 			res = await fetchFunc(_GQL_URL, {
 				...requestOptions,
 				signal: controller.signal,
@@ -292,7 +280,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		return res;
 	} catch (e) {
 		_log(`Token fetch error: ${e.message}`, "error");
-		return new Response("{}", { status: 0, statusText: "Token fetch error" });
+		return { status: 0, json: () => Promise.resolve({}) };
 	} finally {
 		clearTimeout(timeoutId);
 	}

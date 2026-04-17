@@ -122,6 +122,7 @@ function mergeChannelDeltaMaps(target, source) {
 	return target;
 }
 
+
 function _getCurrentPlaybackContext() {
 	const segments = window.location.pathname.split("/").filter(Boolean);
 	const firstSegment = segments[0] || null;
@@ -790,7 +791,11 @@ function flushPendingCountersOnPageExit() {
 }
 
 chrome.storage.local.get(
-	["ttvAdblockEnabled", "ttvBufferFixEnabled", "ttvAdsBlocked"],
+	[
+		"ttvAdblockEnabled",
+		"ttvBufferFixEnabled",
+		"ttvAdsBlocked",
+	],
 	(result) => {
 		if (chrome.runtime.lastError) {
 			console.error(
@@ -881,6 +886,7 @@ function handlePageBridgeMessage(rawMessage) {
 		}
 		return;
 	}
+
 }
 
 window.addEventListener("pagehide", flushPendingCountersOnPageExit, true);

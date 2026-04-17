@@ -121,26 +121,8 @@ function _schedulePostAdArtifactCleanup(channel = null, mediaKey = null) {
 	return entry.id;
 }
 
-function _hookWorkerXHR() {
-	if (typeof XMLHttpRequest === "undefined") return;
-	const XHROpen = XMLHttpRequest.prototype.open;
-	const XHRSend = XMLHttpRequest.prototype.send;
-	XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-		this._ttvabUrl = typeof url === "string" ? url : String(url || "");
-		return XHROpen.call(this, method, url, ...rest);
-	};
-	XMLHttpRequest.prototype.send = function (...args) {
-		const url = this._ttvabUrl || "";
-		if (/\.m3u8(?:$|\?)/.test(url)) {
-			_log(`[Diag] XHR m3u8 detected: ${url.slice(0, 120)}`, "warning");
-		}
-		return XHRSend.apply(this, args);
-	};
-}
-
 function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
-	_hookWorkerXHR();
 	const realFetch = fetch;
 	const EMPTY_SEGMENT_URL =
 		"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA";
@@ -307,16 +289,6 @@ function _hookWorkerFetch() {
 				headers: response.headers,
 			});
 
-			const _createWorkerResponse = (body, response) => {
-				const res = new Response(body, responseInit(response));
-				if (response?.url) {
-					Object.defineProperty(res, "url", { value: response.url });
-				} else if (url) {
-					Object.defineProperty(res, "url", { value: url });
-				}
-				return res;
-			};
-
 			const shouldBlockCachedAdSegments = Boolean(
 				__TTVAB_STATE__.CurrentAdMediaKey ||
 					__TTVAB_STATE__.CurrentAdChannel ||
@@ -391,8 +363,8 @@ function _hookWorkerFetch() {
 							BackupVariantUrls: new Set(),
 							LastNativeRecoveryReadyPlayerType: null,
 							NativeRecoveryCleanCount: 0,
-							LastForcedAdEndReloadAt: 0,
 							LastAdEndReloadAt: 0,
+							LastNativeRecoveryHoldLogAt: 0,
 							LastActivityAt: Date.now(),
 						};
 					} else {
@@ -412,9 +384,9 @@ function _hookWorkerFetch() {
 					const playlist = info.IsUsingModifiedM3U8
 						? info.ModifiedM3U8
 						: info.EncodingsM3U8;
-					return _createWorkerResponse(
+					return new Response(
 						_replaceServerTime(playlist, serverTime),
-						response,
+						responseInit(response),
 					);
 				} catch (err) {
 					_log(
@@ -423,7 +395,7 @@ function _hookWorkerFetch() {
 						}`,
 						"error",
 					);
-					return _createWorkerResponse(encodings, response);
+					return new Response(encodings, responseInit(response));
 				}
 			}
 
@@ -431,22 +403,10 @@ function _hookWorkerFetch() {
 				const response = await realFetch.apply(this, getFetchArgs(url));
 				if (response.status === 200) {
 					const text = await response.text();
-					const hasAdHint =
-						text.includes("stitched") ||
-						text.includes("X-TV-TWITCH-AD") ||
-						text.includes("SCTE35") ||
-						text.includes("MIDROLL") ||
-						text.includes("midroll");
-					if (hasAdHint) {
-						_log(
-							`[Diag] M3U8 with ad markers: ${url.slice(0, 120)}`,
-							"warning",
-						);
-					}
 					try {
-						return _createWorkerResponse(
+						return new Response(
 							await _processM3U8(url, text, realFetch),
-							response,
+							responseInit(response),
 						);
 					} catch (err) {
 						if (err?.name !== "AbortError") {
@@ -457,7 +417,7 @@ function _hookWorkerFetch() {
 								"error",
 							);
 						}
-						return _createWorkerResponse(text, response);
+						return new Response(text, responseInit(response));
 					}
 				}
 				return response;
@@ -574,8 +534,6 @@ function _hookWorker() {
 
 	const createHookedWorkerConstructor = (BaseWorker) => {
 		const reinsertNames = _getReinsert(BaseWorker);
-		const _workerRestartCounts = new Map();
-		const MAX_WORKER_RESTART_ATTEMPTS = 3;
 		const HookedWorker = class Worker extends _cleanWorker(BaseWorker) {
 			constructor(url, opts) {
 				let isTwitch = false;
@@ -596,11 +554,12 @@ function _hookWorker() {
 					broadcast: false,
 				});
 
-				const _workerSnapshot = { ..._S, workers: undefined };
 				const injectedCode = `
             (function() {
+                ${_getWasmJs.toString()}
+                const wasmSource = _getWasmJs(${JSON.stringify(workerSourceUrl)});
                 const _C = ${JSON.stringify(_C)};
-                const _S = ${JSON.stringify(_workerSnapshot)};
+                const _S = ${JSON.stringify(_S)};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}
@@ -641,16 +600,12 @@ function _hookWorker() {
                 ${_getPlaybackAccessTokenErrors.toString()}
                 ${_extractPlaybackAccessToken.toString()}
                 ${_isWorkerContext.toString()}
-                ${_isFirefoxBrowser.toString()}
                 ${_createFetchRelayResponse.toString()}
                 ${_fetchViaWorkerBridge.toString()}
                 ${_getToken.toString()}
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getResolvedAdEndMaxWaitMs.toString()}
-                ${_getForcedAdEndReentryWindowMs.toString()}
-                ${_markForcedAdEndReload.toString()}
-                ${_isForcedAdEndReloadContinuation.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
@@ -673,14 +628,10 @@ function _hookWorker() {
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_processM3U8.toString()}
-                ${_probeBackupPlayerType.toString()}
                 ${_findBackupStream.toString()}
-                ${_getWasmJs.toString()}
-                ${_hookWorkerXHR.toString()}
                 ${_hookWorkerFetch.toString()}
                 
                 const _GQL_URL = '${_GQL_URL}';
-                const wasmSource = _getWasmJs('${workerSourceUrl.replaceAll("'", "%27")}');
                 _declareState(self);
                 __TTVAB_STATE__.GQLDeviceID = ${JSON.stringify(__TTVAB_STATE__.GQLDeviceID)};
                 __TTVAB_STATE__.AuthorizationHeader = ${JSON.stringify(__TTVAB_STATE__.AuthorizationHeader)};
@@ -881,14 +832,14 @@ function _hookWorker() {
 						const body = await response.text();
 						return {
 							id: fetchRequest?.id || null,
-							url: response.url,
 							status: response.status,
 							statusText: response.statusText,
-							headers: Object.fromEntries(response.headers.entries()),
-							body,
 							ok: response.ok,
 							redirected: response.redirected,
 							type: response.type,
+							url: response.url,
+							headers: Object.fromEntries(response.headers.entries()),
+							body,
 						};
 					} catch (error) {
 						return {
@@ -1146,8 +1097,8 @@ function _hookWorker() {
 								if (typeof _clearAdResumeIntent === "function") {
 									_clearAdResumeIntent();
 								}
-								_log("Ad ended", "success");
 								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
+								_log("Ad ended", "success");
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
 								}
@@ -1155,18 +1106,9 @@ function _hookWorker() {
 							}
 							break;
 						case "PauseResumePlayer":
-							if (isStalePlaybackEvent(data)) {
-								_log(
-									`Ignoring stale PauseResumePlayer event for ${data.mediaKey || data.channel}`,
-									"info",
-								);
-								break;
-							}
 							_log("Resuming player", "info");
 							if (typeof _doPlayerTask === "function") {
-								_doPlayerTask(true, false, {
-									reason: "ad-recovery",
-								});
+								_doPlayerTask(true, false);
 							}
 							break;
 						case "ReloadPlayer":
@@ -1201,7 +1143,8 @@ function _hookWorker() {
 
 				const _workerUrl = url;
 				const workerOpts = opts;
-				const _restartKey = workerSourceUrl || String(url);
+				let restartAttempts = 0;
+				const MAX_RESTART_ATTEMPTS = 3;
 
 				this.addEventListener("error", (e) => {
 					if (this.__TTVABIntentionallyTerminated) {
@@ -1216,11 +1159,8 @@ function _hookWorker() {
 
 					pruneTrackedWorkers([this]);
 
-					const restartAttempts =
-						(_workerRestartCounts.get(_restartKey) || 0) + 1;
-					_workerRestartCounts.set(_restartKey, restartAttempts);
-
-					if (restartAttempts <= MAX_WORKER_RESTART_ATTEMPTS) {
+					if (restartAttempts < MAX_RESTART_ATTEMPTS) {
+						restartAttempts++;
 						const delay = 2 ** restartAttempts * 500;
 						_log(
 							"Restarting worker in " +
@@ -1228,7 +1168,7 @@ function _hookWorker() {
 								"s (attempt " +
 								restartAttempts +
 								"/" +
-								MAX_WORKER_RESTART_ATTEMPTS +
+								MAX_RESTART_ATTEMPTS +
 								")",
 							"warning",
 						);
@@ -1249,7 +1189,7 @@ function _hookWorker() {
 							try {
 								new window.Worker(_workerUrl, workerOpts);
 								_log("Worker restarted", "success");
-								_workerRestartCounts.delete(_restartKey);
+								restartAttempts = 0;
 							} catch (restartErr) {
 								_log(`Worker restart failed: ${restartErr.message}`, "error");
 							}
@@ -1296,15 +1236,15 @@ function _hookWorker() {
 							mediaKey: __TTVAB_STATE__.PinnedBackupPlayerMediaKey,
 						},
 					});
-				} catch {}
-			}
+					} catch {}
+				}
 
-			terminate() {
-				this.__TTVABIntentionallyTerminated = true;
-				pruneTrackedWorkers();
-				return super.terminate();
-			}
-		};
+				terminate() {
+					this.__TTVABIntentionallyTerminated = true;
+					pruneTrackedWorkers();
+					return super.terminate();
+				}
+			};
 
 		return _reinsert(HookedWorker, reinsertNames);
 	};
@@ -1347,8 +1287,7 @@ function _hookMainFetch() {
 		}
 
 		try {
-			const forceType =
-				__TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
+			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
 			if (
 				!forceType ||
 				__TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true
@@ -1488,7 +1427,7 @@ function _hookMainFetch() {
 					let effectiveRequest = url;
 					try {
 						if (opts && Object.keys(opts).length > 0) {
-							effectiveRequest = new Request(url.clone(), opts);
+							effectiveRequest = new Request(url, opts);
 						}
 						headers = effectiveRequest.headers;
 						const text = await effectiveRequest.clone().text();

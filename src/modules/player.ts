@@ -563,13 +563,7 @@ function _hasActiveSecondaryPlayerHandoff(channel = null, mediaKey = null) {
 	);
 }
 
-function _shouldSuppressAutomaticPlaybackResume(
-	channel = null,
-	mediaKey = null,
-) {
-	if (_PlaybackIntentState.secondaryPlayerHandoffKind === "pip") {
-		return false;
-	}
+function _shouldSuppressAutomaticPlaybackResume(channel = null, mediaKey = null) {
 	return _hasActiveSecondaryPlayerHandoff(channel, mediaKey);
 }
 
@@ -657,12 +651,9 @@ function _pausePrimaryPlaybackForSecondaryPlayerHandoff(
 
 function _scheduleSecondaryPlayerHandoffPause(channel = null, mediaKey = null) {
 	for (const delay of _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS) {
-		setTimeout(
-			() => {
-				_pausePrimaryPlaybackForSecondaryPlayerHandoff(channel, mediaKey);
-			},
-			Math.max(0, Number(delay) || 0),
-		);
+		setTimeout(() => {
+			_pausePrimaryPlaybackForSecondaryPlayerHandoff(channel, mediaKey);
+		}, Math.max(0, Number(delay) || 0));
 	}
 }
 
@@ -699,19 +690,14 @@ function _getSecondaryPlayerLaunchDescriptorFromUrl(rawUrl) {
 	const hostname = String(parsedUrl.hostname || "").toLowerCase();
 	const pathname = String(parsedUrl.pathname || "").toLowerCase();
 	let kind = null;
-	let context = _normalizePlaybackContext(
-		_getPlaybackContextFromUrl(parsedUrl.href),
-	);
+	let context = _normalizePlaybackContext(_getPlaybackContextFromUrl(parsedUrl.href));
 
 	if (hostname === "player.twitch.tv") {
-		const playerParam = String(
-			parsedUrl.searchParams.get("player") || "",
-		).toLowerCase();
-		const queryChannel = _normalizeChannelName(
-			parsedUrl.searchParams.get("channel"),
-		);
+		const playerParam = String(parsedUrl.searchParams.get("player") || "").toLowerCase();
+		const queryChannel = _normalizeChannelName(parsedUrl.searchParams.get("channel"));
 		const queryVideo = _normalizeVodID(
-			parsedUrl.searchParams.get("video") || parsedUrl.searchParams.get("vod"),
+			parsedUrl.searchParams.get("video") ||
+				parsedUrl.searchParams.get("vod"),
 		);
 		if (playerParam === "popout" || queryChannel || queryVideo) {
 			kind = "popout";
@@ -1314,7 +1300,7 @@ function _hookSecondaryPlayerHandoffDetection() {
 						_rollbackSecondaryPlayerHandoff(
 							descriptor.channel || null,
 							descriptor.mediaKey || null,
-							sourceWasPlaying,
+							false,
 						);
 					}
 				}
@@ -1351,7 +1337,8 @@ function _hookSecondaryPlayerHandoffDetection() {
 									"leavepictureinpicture",
 									() => {
 										if (
-											_PlaybackIntentState.secondaryPlayerHandoffKind === "pip"
+											_PlaybackIntentState.secondaryPlayerHandoffKind ===
+											"pip"
 										) {
 											_clearSecondaryPlayerHandoff();
 										}
@@ -2214,15 +2201,11 @@ function _doPlayerTask(
 			(__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel) &&
 			__TTVAB_STATE__.LastAdRecoveryReloadAt
 		) {
-			const consecutiveFailures = Math.max(
-				0,
-				Number(__TTVAB_STATE__._AdRecoveryConsecutiveFailures) || 0,
-			);
-			const backoffCooldown = Math.min(
-				60000,
+			const consecutiveFailures = Math.max(0,
+				Number(__TTVAB_STATE__._AdRecoveryConsecutiveFailures) || 0);
+			const backoffCooldown = Math.min(60000,
 				(__TTVAB_STATE__.AdRecoveryReloadCooldownMs || 10000) *
-					2 ** Math.min(consecutiveFailures, 3),
-			);
+				Math.pow(2, Math.min(consecutiveFailures, 3)));
 			if (now - __TTVAB_STATE__.LastAdRecoveryReloadAt < backoffCooldown) {
 				_log(
 					`Suppressing duplicate ad recovery reload for ${__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel} (backoff ${Math.round(backoffCooldown / 1000)}s, attempt #${consecutiveFailures + 1})`,

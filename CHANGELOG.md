@@ -2,23 +2,36 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [6.4.0] - 2026-04-17
+## [6.4.4] - 2026-04-17
 
 ### Fixed
-- **Faster Backup Recovery** - Parallel backup-stream probes now share a cancellation token so the moment one player type returns a clean playlist, the remaining probes bail out before issuing additional token, usher, or stream fetches. Previously losing probes kept running for the full 5–8s worker-bridge timeout, holding onto bridge slots and bandwidth that the active playback request needed.
-- **Tighter Ad Segment Matching** - `_isExplicitKnownAdSegmentUrl` now requires `/processing/` as a path segment instead of treating any substring `processing` as an ad marker, removing a class of false positives that could strip legitimate segments whose CDN path happened to contain the word.
-- **Cleaner Worker Snapshot** - The page-side `_S.workers` registry is now stripped before serializing the page state into freshly spawned workers. The injected worker has no concept of a worker registry, so omitting it keeps the snapshot honest and prevents future read-throughs from seeing an inert empty array.
+- **Backup Hold Recovery** - Keep serving and refreshing the last clean backup playlist while native recovery still reports ad-marked playlists, preventing Twitch from looping directly back into ad blocking after an ad window.
+- **Forced Native Reload Removal** - Removed the timed ad-end reload fallback that could reload the player into Twitch's `edge.ads.twitch.tv` ad path before native recovery was actually clean.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.4 release.
+
+## [6.4.3] - 2026-04-17
+
+### Fixed
+- **Ad-Cycle Recovery Fix** - Reset pending ad-end detection when Twitch returns real ad markers during recovery, preventing premature ad completion and repeated re-entry into ad blocking.
+- **Soft Post-Ad Reloads** - Post-ad reloads now reuse the current playback token and media player instance where possible, reducing immediate ad re-entry after an ad break.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.3 release.
+
+## [6.4.2] - 2026-04-17
+
+### Fixed
+- **Midroll Ad-End Stabilization** - Preserves pending ad-end detection through brief Twitch ad-marker bounce during active ads, allowing midroll recovery to reach native reload instead of resetting forever.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.2 release.
 
 ## [6.3.9] - 2026-04-17
 
 ### Fixed
-- **Post-Ad Player Reload** - Restored post-ad recovery so once ad blocking finishes, Firefox reloads the Twitch player with a fresh access token and a new media player instance.
+- **Post-Ad Player Reload** - Restored post-ad recovery so once ad blocking finishes, the extension reloads the Twitch player with a fresh access token and a new media player instance.
 - **Removed Backup Hold Regression** - Reverted the backup-hold behavior from v6.3.8 so recovery reloads the native player instead of staying pinned to the backup stream.
 
 ## [6.3.8] - 2026-04-17
 
 ### Fixed
-- **Firefox Backup Hold Fix** - When native recovery is still ad-marked after an ad break, Firefox now keeps serving and refreshing the backup stream instead of forcing a native reload back into Twitch's ad path.
+- **Backup Hold Fix** - When native recovery is still ad-marked after an ad break, the extension now keeps serving and refreshing the backup stream instead of forcing a native reload back into Twitch's ad path.
 - **Ad-End Wait Stability** - The worker keeps the active ad cycle alive until native recovery is actually clean, reducing post-ad stalls and IVS worker crashes during long midroll windows.
 
 ## [6.3.7] - 2026-04-17
@@ -31,8 +44,8 @@ All notable changes to TTV AB will be documented in this file.
 ## [6.3.6] - 2026-04-15
 
 ### Fixed
-- **Twitch Channel Switching Bug** - Fixed a critical issue where navigating between channels in Twitch's SPA could cause the ad-blocker to incorrectly serve a backup stream from the previous channel. The extension now hooks into `history.pushState`, `history.replaceState`, and `popstate` to ensure synchronization, and proactively evicts stale stream metadata upon channel navigation.
-- **Tightened Stream Selection** - Improved the robustness of stream info selection by ensuring fallback candidates are filtered by the current `PageMediaKey`, preventing cross-channel fallback leaks.
+- **Twitch Channel Switching Bug** - Fixed a critical issue where navigating between channels in Twitch's SPA could cause the ad-blocker to serve a backup stream from the previous channel. Implemented robust SPA navigation hooks for `history.pushState`, `history.replaceState`, and `popstate` to ensure playback context synchronization. Improved state eviction logic to reliably clear stale stream information and ad contexts on channel change.
+- **Stream Selection Fallback Leaks** - Tightened the stream selection logic to prevent cross-channel fallback leaks when URL lookup fails, ensuring only streams belonging to the current channel are used for ad recovery.
 
 ## [6.3.5] - 2026-04-14
 
@@ -54,30 +67,14 @@ All notable changes to TTV AB will be documented in this file.
 ### Removed
 - **Grace Window Suppression** - Removed the `FORCED_AD_END_REENTRY_WINDOW_MS` grace window and `_isForcedAdEndReloadContinuation` logic. These were bandaids for the native recovery probing latency — with instant ad-end and preserved backup caches, re-entry is handled seamlessly without suppression.
 
-## [6.3.2] - 2026-04-14
-
-### Changed
-- **Faster Ad Recovery on Channel Switch** - Backup player type probing is now parallelized. Previously, each player type (embed, popout, autoplay) was probed sequentially — if the first timed out (up to 8s on Firefox), the player was blocked before trying the next. All eligible types are now probed simultaneously, and the function resolves as soon as the first clean result arrives instead of waiting for all probes to finish.
-- **Cached Backup Reuse** - When a clean backup stream has already been found during the current ad window, subsequent playlist fetches reuse the known-good player type with a single stream fetch instead of re-probing all player types every cycle. This eliminates repeated token and usher requests during active ad blocking.
-
 ## [6.3.1] - 2026-04-13
-
-### Fixed
-- **Critical: Worker Resolution Crash** - `_getResolutionByQualityGroup` and `_getSortedResolutionList` were never injected into the worker, causing `_processM3U8` to crash with "is not defined" during ad processing. The catch block then returned the unmodified ad-containing playlist to the player, letting full ads play through. Previously masked because the v2 URL mismatch (fixed in 6.3.0) caused the code to exit early before reaching the resolution lookup.
-
-## [6.3.0] - 2026-04-13
 
 ### Fixed
 - **V2 API Ad Blocking** - Twitch's v2 API returns variant URLs without `.m3u8` extensions (raw CDN URLs). The extension was silently skipping these during master playlist parsing, leaving the variant URL registry empty. All subsequent media playlist lookups failed, causing mid-roll ads to pass through completely undetected. Variant URL detection now accepts any absolute URL alongside `.m3u8` URLs across all three affected paths: `_syncStreamInfo`, `_getStreamUrl`, and backup variant whitelisting.
 - **Stream Info Lookup Fallback** - When the variant URL registry misses (e.g. due to CDN URL format changes), the extension now falls back to hostname matching and then to the most recently active stream, instead of silently passing through ad-marked playlists.
+- **Critical: Worker Resolution Crash** - `_getResolutionByQualityGroup` and `_getSortedResolutionList` were never injected into the worker, causing `_processM3U8` to crash with "is not defined" during ad processing. The catch block then returned the unmodified ad-containing playlist to the player, letting full ads play through.
 - **Ad Flash from Prefetch Hints** - All `#EXT-X-TWITCH-PREFETCH` hints are now stripped unconditionally during ads. Previously, only prefetch hints for cached ad segment URLs were stripped — on the first ad playlist, uncached ad segment prefetch hints survived and the player pre-fetched ad content before the extension could block it.
 - **Empty Segment MP4** - Replaced the minimal empty segment with a complete valid fragmented MP4 containing proper `ftyp`, `moov`, `trak`, and `mvex` boxes, preventing WASM decoder crashes.
-- **Worker Stability** - Fixed worker crashes from invalid data fed to the WASM decoder during channel navigation, and prevented infinite worker restart chains.
-- **GQL Fetch Hook** - The error path in the GQL fetch hook now preserves the original Request body instead of losing it, and `_getToken` now returns a real Response object on error.
-- **PIP/Popout Recovery** - Fixed three bugs in PIP and popout ad recovery that caused broken playback states.
-- **Stale Channel Guard** - Removed a stale channel guard that caused ad flashes when returning to a channel.
-- **M3U8 Error Handling** - Stopped swallowing M3U8 processing errors that silently caused ad flashes.
-- **Ad Marker Detection** - Unified ad marker detection into a single source of truth, eliminating inconsistencies between detection paths.
 
 ### Changed
 - **Channel Switch Speed** - Removed a blocking network request that validated cached M3U8 URLs on every channel switch, eliminating 1-3 seconds of unnecessary latency. The fresh usher response already provides authoritative stream data.
@@ -1433,4 +1430,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Firefox support
 - Additional ad blocking methods
 - Statistics tracking
-

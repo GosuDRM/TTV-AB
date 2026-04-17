@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.4.0-purple)
+![Version](https://img.shields.io/badge/version-6.4.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,10 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.4.0
-- **Faster Backup Recovery** - Losing backup-stream probes now bail out as soon as a clean candidate wins, freeing the worker bridge for the playback request instead of holding onto stale token/usher fetches for several seconds.
-- **Tighter Ad Segment Matching** - The known-ad URL check now requires `/processing/` as a path segment instead of any substring `processing`, eliminating false positives that could strip benign segments containing the word.
-- **Cleaner Worker Snapshot** - The page-side worker registry is no longer copied into freshly spawned workers, removing an inert reference that could confuse future state mirroring.
+### v6.4.4
+- **Backup Hold Recovery** - Keeps serving and refreshing the last clean backup playlist while Twitch's native playlist is still ad-marked, preventing recovery from re-entering the same ad cycle.
+- **Forced Reload Removal** - Removes the timed native reload fallback that could push the player straight back into `edge.ads.twitch.tv` after an ad window.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

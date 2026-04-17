@@ -73,7 +73,8 @@ function _getPendingBridgeCounterIdentity(message) {
 	if (!detail) return null;
 
 	const type = String(message.type);
-	const safeChannel = typeof detail.channel === "string" ? detail.channel : "";
+	const safeChannel =
+		typeof detail.channel === "string" ? detail.channel : "";
 	const safeMediaKey =
 		typeof detail.mediaKey === "string" ? detail.mediaKey : "";
 	const safePageChannel =
@@ -114,15 +115,10 @@ function _coalescePendingBridgeCounterMessage(message) {
 	if (!identity) return false;
 
 	for (let i = _pendingBridgeMessages.length - 1; i >= 0; i--) {
-		if (
-			_getPendingBridgeCounterIdentity(_pendingBridgeMessages[i]) !== identity
-		) {
+		if (_getPendingBridgeCounterIdentity(_pendingBridgeMessages[i]) !== identity) {
 			continue;
 		}
-		return _mergePendingBridgeCounterMessages(
-			_pendingBridgeMessages[i],
-			message,
-		);
+		return _mergePendingBridgeCounterMessages(_pendingBridgeMessages[i], message);
 	}
 
 	return false;
@@ -139,15 +135,11 @@ function _dropOldestNonCounterPendingBridgeMessage() {
 
 function _collapseOldestPendingCounterMessage() {
 	for (let i = 0; i < _pendingBridgeMessages.length; i++) {
-		const identity = _getPendingBridgeCounterIdentity(
-			_pendingBridgeMessages[i],
-		);
+		const identity = _getPendingBridgeCounterIdentity(_pendingBridgeMessages[i]);
 		if (!identity) continue;
 
 		for (let j = _pendingBridgeMessages.length - 1; j > i; j--) {
-			if (
-				_getPendingBridgeCounterIdentity(_pendingBridgeMessages[j]) !== identity
-			) {
+			if (_getPendingBridgeCounterIdentity(_pendingBridgeMessages[j]) !== identity) {
 				continue;
 			}
 			if (
@@ -168,7 +160,9 @@ function _collapseOldestPendingCounterMessage() {
 function _trimPendingBridgeMessages() {
 	while (_pendingBridgeMessages.length > _MAX_PENDING_BRIDGE_MESSAGES) {
 		if (_dropOldestNonCounterPendingBridgeMessage()) continue;
-		if (_pendingBridgeMessages.length <= _MAX_PENDING_BRIDGE_COUNTER_MESSAGES) {
+		if (
+			_pendingBridgeMessages.length <= _MAX_PENDING_BRIDGE_COUNTER_MESSAGES
+		) {
 			break;
 		}
 		if (_collapseOldestPendingCounterMessage()) continue;
@@ -368,14 +362,6 @@ function _setPagePlaybackContext(
 	__TTVAB_STATE__.PageMediaKey = normalizedContext.MediaKey;
 
 	if (didMediaKeyChange) {
-		if (previousMediaKey) {
-			delete __TTVAB_STATE__.StreamInfos[previousMediaKey];
-			for (const key in __TTVAB_STATE__.StreamInfosByUrl) {
-				if (__TTVAB_STATE__.StreamInfosByUrl[key]?.MediaKey === previousMediaKey) {
-					delete __TTVAB_STATE__.StreamInfosByUrl[key];
-				}
-			}
-		}
 		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
@@ -390,12 +376,16 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 	}
 
-	if (
-		didMediaKeyChange &&
-		previousMediaKey &&
-		(__TTVAB_STATE__.CurrentAdMediaKey === previousMediaKey ||
-			__TTVAB_STATE__.PinnedBackupPlayerMediaKey === previousMediaKey)
-	) {
+	if (didMediaKeyChange) {
+		if (previousMediaKey) {
+			delete __TTVAB_STATE__.StreamInfos[previousMediaKey];
+			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
+				if (__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === previousMediaKey) {
+					delete __TTVAB_STATE__.StreamInfosByUrl[url];
+				}
+			}
+		}
+
 		__TTVAB_STATE__.CurrentAdChannel = null;
 		__TTVAB_STATE__.CurrentAdMediaKey = null;
 		__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -478,7 +468,8 @@ function _declareState(scope) {
 		AdEndGraceMs: _C.AD_END_GRACE_MS ?? 2500,
 		AdEndMaxWaitMs: _C.AD_END_MAX_WAIT_MS ?? 2500,
 		AdEndMinCleanPlaylists: _C.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
-		AdEndMinNativeRecoveryProbes: _C.AD_END_MIN_NATIVE_RECOVERY_PROBES ?? 3,
+		AdEndMinNativeRecoveryProbes:
+			_C.AD_END_MIN_NATIVE_RECOVERY_PROBES ?? 3,
 		AdEndNativeRecoveryProbeCooldownMs:
 			_C.AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS ?? 750,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
@@ -612,3 +603,4 @@ function _createPageScopedWorkerEvent(value = null) {
 		pageMediaKey: pageEventContext.pageMediaKey,
 	};
 }
+

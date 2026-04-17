@@ -504,6 +504,11 @@ function validateSharedDefinitions() {
 			`CHANGELOG top version markers are out of sync with ${constantsVersion}`,
 		);
 	}
+	if (!readmeSource.includes("Ads Blocked") || !privacySource.includes("Ads Blocked")) {
+		throw new Error(
+			"README or PRIVACY metric wording is out of sync with Ads Blocked",
+		);
+	}
 	for (const requiredPrivacyPhrase of [
 		"enable/disable toggle",
 		'"Ads Blocked" counter',
@@ -591,14 +596,14 @@ function validateSharedDefinitions() {
 			`Popup version badge must ship with a static synced fallback label/value: ${expectedPopupVersionMarkup}`,
 		);
 	}
-	for (const requiredPopupId of [
-		"enableToggle",
-		"statusDot",
-		"statusText",
-		"adsBlockedCount",
-		"timeSaved",
-		"statsToggle",
-		"statsPanel",
+		for (const requiredPopupId of [
+			"enableToggle",
+			"statusDot",
+			"statusText",
+			"adsBlockedCount",
+			"timeSaved",
+			"statsToggle",
+			"statsPanel",
 		"weeklyChart",
 		"chartAvg",
 		"channelList",
@@ -706,7 +711,7 @@ function validateSharedDefinitions() {
 	);
 	if (reloadAfterAdMatch?.[1] !== "true") {
 		throw new Error(
-			"RELOAD_AFTER_AD must remain true to match VAFT post-ad recovery",
+			"RELOAD_AFTER_AD must remain true to keep post-ad player recovery active",
 		);
 	}
 
@@ -1044,14 +1049,14 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	for (const requiredPopupId of [
-		"enableToggle",
-		"statusDot",
-		"statusText",
-		"adsBlockedCount",
-		"timeSaved",
-		"statsToggle",
-		"statsPanel",
+		for (const requiredPopupId of [
+			"enableToggle",
+			"statusDot",
+			"statusText",
+			"adsBlockedCount",
+			"timeSaved",
+			"statsToggle",
+			"statsPanel",
 		"weeklyChart",
 		"chartAvg",
 		"channelList",
@@ -1143,9 +1148,7 @@ function validateSharedDefinitions() {
 			"Reserved route lists must be sourced from the shared parser helper",
 		);
 	}
-	if (
-		!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")
-	) {
+	if (!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")) {
 		throw new Error(
 			"Hooks must resolve route context through _getPlaybackContextFromUrl",
 		);
@@ -1505,15 +1508,16 @@ function packageFirefoxSource(version) {
 function build() {
 	console.log("Building TTV AB...\n");
 
+	const shouldPackageFirefox = process.argv.includes("--firefox-package");
+	const shouldPackageFirefoxSource = process.argv.includes(
+		"--firefox-source-package",
+	);
+
 	try {
 		compileTypeScriptSources();
 		prepareDistStaticFiles();
 		syncPopupHtmlFallbacks();
 		const version = getVersion();
-		const shouldPackageFirefox = process.argv.includes("--firefox-package");
-		const shouldPackageFirefoxSource = process.argv.includes(
-			"--firefox-source-package",
-		);
 
 		const HEADER = `// TTV AB v${version} - Twitch Ad Blocker
 // Built file: src/scripts/content.js
