@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.4.2] - 2026-04-17
+
+### Fixed
+- **Midroll Ad-End Stabilization** - Preserves pending ad-end detection through brief Twitch ad-marker bounce during active ads, allowing midroll recovery to reach native reload instead of resetting forever.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.2 release.
+
 ## [6.3.9] - 2026-04-17
 
 ### Fixed
@@ -1410,4 +1416,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 - Firefox support
 - Additional ad blocking methods
 - Statistics tracking
-

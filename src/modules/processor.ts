@@ -20,6 +20,7 @@ function _resetStreamAdState(info) {
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
+	info.AdEndMarkerBounceLogged = false;
 	info.LastForcedAdEndReloadAt = 0;
 	info.LastAdEndReloadAt = 0;
 	_resetNativeRecoveryReadyState(info);
@@ -63,6 +64,20 @@ function _isForcedAdEndReloadContinuation(info) {
 	const windowMs = _getForcedAdEndReentryWindowMs();
 	if (!windowMs) return false;
 	return Date.now() - info.LastForcedAdEndReloadAt <= windowMs;
+}
+
+function _shouldPreserveAdEndCandidateOnMarkerBounce(info) {
+	if (!info?.IsShowingAd || !info.PendingAdEndAt) return false;
+
+	const staleMs = Math.max(
+		0,
+		Number(__TTVAB_STATE__?.AdCycleStaleMs) ||
+			Number(_C?.AD_CYCLE_STALE_MS) ||
+			0,
+	);
+	if (!staleMs) return true;
+
+	return Date.now() - info.PendingAdEndAt <= staleMs;
 }
 
 function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
@@ -204,6 +219,7 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 	if (!info.PendingAdEndAt) {
 		info.PendingAdEndAt = now;
 		info.CleanPlaylistCount = 0;
+		info.AdEndMarkerBounceLogged = false;
 		_log("[Trace] Candidate ad end detected", "info");
 	}
 
@@ -564,6 +580,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
+		AdEndMarkerBounceLogged: false,
 		LastNativeRecoveryProbeAt: 0,
 		BackupVariantUrls: new Set(),
 		LastNativeRecoveryReadyPlayerType: null,
@@ -747,10 +764,22 @@ async function _processM3U8(url, text, realFetch) {
 
 	if (hasAds) {
 		if (info.PendingAdEndAt || info.CleanPlaylistCount) {
-			info.PendingAdEndAt = 0;
-			info.CleanPlaylistCount = 0;
-			_resetNativeRecoveryReadyState(info);
-			_log("[Trace] Ad markers returned before ad-end stabilized", "info");
+			if (_shouldPreserveAdEndCandidateOnMarkerBounce(info)) {
+				_resetNativeRecoveryReadyState(info);
+				if (!info.AdEndMarkerBounceLogged) {
+					info.AdEndMarkerBounceLogged = true;
+					_log(
+						"[Trace] Ad markers returned during ad-end stabilization; preserving candidate",
+						"info",
+					);
+				}
+			} else {
+				info.PendingAdEndAt = 0;
+				info.CleanPlaylistCount = 0;
+				info.AdEndMarkerBounceLogged = false;
+				_resetNativeRecoveryReadyState(info);
+				_log("[Trace] Ad markers returned before ad-end stabilized", "info");
+			}
 		}
 
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
