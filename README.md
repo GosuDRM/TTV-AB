@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.4.2-purple)
+![Version](https://img.shields.io/badge/version-6.4.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.4.2
-- **Midroll Ad-End Stabilization** - Keeps the pending ad-end candidate alive through brief Twitch ad-marker bounce so midroll recovery can finish instead of looping indefinitely.
-- **Post-Ad Player Reload** - Keeps post-ad recovery on the native player reload path with a fresh access token and a new media player instance.
+### v6.4.3
+- **Ad-Cycle Recovery Fix** - Resets pending ad-end detection when Twitch returns real ad markers, preventing recovery from declaring the ad finished too early and looping back into blocking.
+- **Soft Post-Ad Reloads** - Post-ad reloads now reuse the current playback token and media player instance where possible, reducing immediate ad re-entry after recovery.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

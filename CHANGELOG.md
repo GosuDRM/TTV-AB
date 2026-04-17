@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.4.3] - 2026-04-17
+
+### Fixed
+- **Ad-Cycle Recovery Fix** - Reset pending ad-end detection when Twitch returns real ad markers during recovery, preventing premature ad completion and repeated re-entry into ad blocking.
+- **Soft Post-Ad Reloads** - Post-ad reloads now reuse the current playback token and media player instance where possible, reducing immediate ad re-entry after an ad break.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.3 release.
+
 ## [6.4.2] - 2026-04-17
 
 ### Fixed

@@ -66,20 +66,6 @@ function _isForcedAdEndReloadContinuation(info) {
 	return Date.now() - info.LastForcedAdEndReloadAt <= windowMs;
 }
 
-function _shouldPreserveAdEndCandidateOnMarkerBounce(info) {
-	if (!info?.IsShowingAd || !info.PendingAdEndAt) return false;
-
-	const staleMs = Math.max(
-		0,
-		Number(__TTVAB_STATE__?.AdCycleStaleMs) ||
-			Number(_C?.AD_CYCLE_STALE_MS) ||
-			0,
-	);
-	if (!staleMs) return true;
-
-	return Date.now() - info.PendingAdEndAt <= staleMs;
-}
-
 function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
 	switch (reason) {
 		case "error":
@@ -764,22 +750,11 @@ async function _processM3U8(url, text, realFetch) {
 
 	if (hasAds) {
 		if (info.PendingAdEndAt || info.CleanPlaylistCount) {
-			if (_shouldPreserveAdEndCandidateOnMarkerBounce(info)) {
-				_resetNativeRecoveryReadyState(info);
-				if (!info.AdEndMarkerBounceLogged) {
-					info.AdEndMarkerBounceLogged = true;
-					_log(
-						"[Trace] Ad markers returned during ad-end stabilization; preserving candidate",
-						"info",
-					);
-				}
-			} else {
-				info.PendingAdEndAt = 0;
-				info.CleanPlaylistCount = 0;
-				info.AdEndMarkerBounceLogged = false;
-				_resetNativeRecoveryReadyState(info);
-				_log("[Trace] Ad markers returned before ad-end stabilized", "info");
-			}
+			info.PendingAdEndAt = 0;
+			info.CleanPlaylistCount = 0;
+			info.AdEndMarkerBounceLogged = false;
+			_resetNativeRecoveryReadyState(info);
+			_log("[Trace] Ad markers returned before ad-end stabilized", "info");
 		}
 
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
@@ -970,7 +945,8 @@ async function _processM3U8(url, text, realFetch) {
 						key: "ReloadPlayer",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
-						reason: "post-ad",
+						refreshAccessToken: false,
+						newMediaPlayerInstance: false,
 					}),
 				);
 			}
@@ -1020,6 +996,8 @@ async function _processM3U8(url, text, realFetch) {
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
 						reason: "post-ad",
+						refreshAccessToken: false,
+						newMediaPlayerInstance: false,
 					}),
 				);
 			} else if (shouldPauseResumePlayer) {
