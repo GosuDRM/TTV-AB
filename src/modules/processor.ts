@@ -21,8 +21,8 @@ function _resetStreamAdState(info) {
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
 	info.AdEndMarkerBounceLogged = false;
-	info.LastForcedAdEndReloadAt = 0;
 	info.LastAdEndReloadAt = 0;
+	info.LastNativeRecoveryHoldLogAt = 0;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -43,27 +43,6 @@ function _getResolvedAdEndGraceMs() {
 
 function _getResolvedAdEndMaxWaitMs() {
 	return Math.max(0, Number(__TTVAB_STATE__?.AdEndMaxWaitMs) || 0);
-}
-
-function _getForcedAdEndReentryWindowMs() {
-	return Math.max(
-		0,
-		Number(_C?.FORCED_AD_END_REENTRY_WINDOW_MS) || 0,
-	);
-}
-
-function _markForcedAdEndReload(info) {
-	if (!info) return 0;
-	const now = Date.now();
-	info.LastForcedAdEndReloadAt = now;
-	return now;
-}
-
-function _isForcedAdEndReloadContinuation(info) {
-	if (!info?.LastForcedAdEndReloadAt) return false;
-	const windowMs = _getForcedAdEndReentryWindowMs();
-	if (!windowMs) return false;
-	return Date.now() - info.LastForcedAdEndReloadAt <= windowMs;
 }
 
 function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
@@ -230,13 +209,17 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 
 	const maxWaitMs = _getResolvedAdEndMaxWaitMs();
 	if (maxWaitMs > 0 && now - info.PendingAdEndAt >= maxWaitMs) {
-		if (_isForcedAdEndReloadContinuation(info)) {
-			return "wait";
+		const lastHoldLogAt = Math.max(
+			0,
+			Number(info.LastNativeRecoveryHoldLogAt) || 0,
+		);
+		if (now - lastHoldLogAt >= 10000) {
+			info.LastNativeRecoveryHoldLogAt = now;
+			_log(
+				"[Trace] Native recovery still ad-marked; holding backup stream",
+				"warning",
+			);
 		}
-		_markForcedAdEndReload(info);
-		_resetNativeRecoveryReadyState(info);
-		_log("[Trace] Forcing native recovery reload after ad-end wait budget", "warning");
-		return "reload";
 	}
 
 	return "wait";
@@ -571,8 +554,8 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		BackupVariantUrls: new Set(),
 		LastNativeRecoveryReadyPlayerType: null,
 		NativeRecoveryCleanCount: 0,
-		LastForcedAdEndReloadAt: 0,
 		LastAdEndReloadAt: 0,
+		LastNativeRecoveryHoldLogAt: 0,
 		LastActivityAt: Date.now(),
 	};
 
@@ -753,6 +736,7 @@ async function _processM3U8(url, text, realFetch) {
 			info.PendingAdEndAt = 0;
 			info.CleanPlaylistCount = 0;
 			info.AdEndMarkerBounceLogged = false;
+			info.LastNativeRecoveryHoldLogAt = 0;
 			_resetNativeRecoveryReadyState(info);
 			_log("[Trace] Ad markers returned before ad-end stabilized", "info");
 		}
@@ -931,29 +915,22 @@ async function _processM3U8(url, text, realFetch) {
 		const res = _resolvePlaybackResolutionForUrl(info, url);
 		const adEndState = await _isAdEndStable(info, realFetch, res);
 		if (adEndState === "wait") {
-			if (!hasMediaSegments) {
-				return info.LastCleanBackupM3U8 || info.LastCleanNativeM3U8 || text;
+			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
+			if (info.LastCleanBackupM3U8 && backupAgeMs >= 1500) {
+				const refreshedBackup = await _findBackupStream(info, realFetch, 0, res);
+				if (refreshedBackup?.m3u8) {
+					info.IsUsingBackupStream = true;
+					if (refreshedBackup.type) {
+						info.ActiveBackupPlayerType = refreshedBackup.type;
+					}
+					return refreshedBackup.m3u8;
+				}
 			}
-			return text;
-		}
-		if (adEndState === "reload") {
-			if (typeof self !== "undefined" && self.postMessage) {
-				info.LastPlayerReload = Date.now();
-				_postWorkerBridgeMessage(
-					self,
-					_createPageScopedWorkerEvent({
-						key: "ReloadPlayer",
-						channel: info.ChannelName,
-						mediaKey: info.MediaKey,
-						refreshAccessToken: false,
-						newMediaPlayerInstance: false,
-					}),
-				);
+			if (info.LastCleanBackupM3U8) {
+				info.IsUsingBackupStream = true;
+				return info.LastCleanBackupM3U8;
 			}
-			if (!hasMediaSegments) {
-				return info.LastCleanBackupM3U8 || info.LastCleanNativeM3U8 || text;
-			}
-			return text;
+			return info.LastCleanNativeM3U8 || text;
 		}
 
 		const {

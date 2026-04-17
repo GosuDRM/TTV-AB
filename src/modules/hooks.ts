@@ -363,8 +363,8 @@ function _hookWorkerFetch() {
 							BackupVariantUrls: new Set(),
 							LastNativeRecoveryReadyPlayerType: null,
 							NativeRecoveryCleanCount: 0,
-							LastForcedAdEndReloadAt: 0,
 							LastAdEndReloadAt: 0,
+							LastNativeRecoveryHoldLogAt: 0,
 							LastActivityAt: Date.now(),
 						};
 					} else {
@@ -609,9 +609,6 @@ function _hookWorker() {
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getResolvedAdEndMaxWaitMs.toString()}
-                ${_getForcedAdEndReentryWindowMs.toString()}
-                ${_markForcedAdEndReload.toString()}
-                ${_isForcedAdEndReloadContinuation.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}

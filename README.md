@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.4.3-purple)
+![Version](https://img.shields.io/badge/version-6.4.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.4.3
-- **Ad-Cycle Recovery Fix** - Resets pending ad-end detection when Twitch returns real ad markers, preventing recovery from declaring the ad finished too early and looping back into blocking.
-- **Soft Post-Ad Reloads** - Post-ad reloads now reuse the current playback token and media player instance where possible, reducing immediate ad re-entry after recovery.
+### v6.4.4
+- **Backup Hold Recovery** - Keeps serving and refreshing the last clean backup playlist while Twitch's native playlist is still ad-marked, preventing recovery from re-entering the same ad cycle.
+- **Forced Reload Removal** - Removes the timed native reload fallback that could push the player straight back into `edge.ads.twitch.tv` after an ad window.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.4.4] - 2026-04-17
+
+### Fixed
+- **Backup Hold Recovery** - Keep serving and refreshing the last clean backup playlist while native recovery still reports ad-marked playlists, preventing Twitch from looping directly back into ad blocking after an ad window.
+- **Forced Native Reload Removal** - Removed the timed ad-end reload fallback that could reload the player into Twitch's `edge.ads.twitch.tv` ad path before native recovery was actually clean.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.4 release.
+
 ## [6.4.3] - 2026-04-17
 
 ### Fixed
