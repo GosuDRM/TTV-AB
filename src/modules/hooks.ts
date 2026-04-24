@@ -606,6 +606,10 @@ function _hookWorker() {
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getResolvedAdEndMaxWaitMs.toString()}
+                ${_getPostAdReentryContinuationMs.toString()}
+                ${_rememberLastAdEnd.toString()}
+                ${_doesPlaybackContextMatchInfo.toString()}
+                ${_isRecentPostAdReentry.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
@@ -642,6 +646,9 @@ function _hookWorker() {
                 __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = ${JSON.stringify(__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType)};
                 __TTVAB_STATE__.CurrentAdChannel = ${JSON.stringify(__TTVAB_STATE__.CurrentAdChannel)};
                 __TTVAB_STATE__.CurrentAdMediaKey = ${JSON.stringify(__TTVAB_STATE__.CurrentAdMediaKey)};
+                __TTVAB_STATE__.LastAdEndedAt = ${JSON.stringify(__TTVAB_STATE__.LastAdEndedAt)};
+                __TTVAB_STATE__.LastAdEndedChannel = ${JSON.stringify(__TTVAB_STATE__.LastAdEndedChannel)};
+                __TTVAB_STATE__.LastAdEndedMediaKey = ${JSON.stringify(__TTVAB_STATE__.LastAdEndedMediaKey)};
                 __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerType)};
                 __TTVAB_STATE__.LastPinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.LastPinnedBackupPlayerType)};
                 __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
@@ -704,6 +711,14 @@ function _hookWorker() {
                                 __TTVAB_STATE__.CurrentAdMediaKey = nextAdContext.MediaKey;
                             }
                             break;
+                        case 'UpdateLastAdEndContext':
+                            {
+                                const lastEndContext = _normalizePlaybackContext(data.value);
+                                __TTVAB_STATE__.LastAdEndedAt = Math.max(0, Number(data.value?.endedAt) || 0);
+                                __TTVAB_STATE__.LastAdEndedChannel = lastEndContext.ChannelName;
+                                __TTVAB_STATE__.LastAdEndedMediaKey = lastEndContext.MediaKey;
+                            }
+                            break;
                         case 'UpdateCurrentAdChannel':
                             __TTVAB_STATE__.CurrentAdChannel = data.value || null;
                             __TTVAB_STATE__.CurrentAdMediaKey =
@@ -742,6 +757,9 @@ function _hookWorker() {
                                 __TTVAB_STATE__.PinnedBackupPlayerType = null;
                                 __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
                                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+                                __TTVAB_STATE__.LastAdEndedAt = 0;
+                                __TTVAB_STATE__.LastAdEndedChannel = null;
+                                __TTVAB_STATE__.LastAdEndedMediaKey = null;
                             }
                             break;
                         case 'FetchResponse':
@@ -1075,6 +1093,16 @@ function _hookWorker() {
 									data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
 								const mediaKey =
 									data.mediaKey || __TTVAB_STATE__.CurrentAdMediaKey || null;
+								const endedAt = Math.max(0, Number(data.endedAt) || Date.now());
+								const endedContext = _normalizePlaybackContext({
+									MediaType: __TTVAB_STATE__.PageMediaType,
+									ChannelName: channel,
+									VodID: __TTVAB_STATE__.PageVodID,
+									MediaKey: mediaKey,
+								});
+								__TTVAB_STATE__.LastAdEndedAt = endedAt;
+								__TTVAB_STATE__.LastAdEndedChannel = endedContext.ChannelName;
+								__TTVAB_STATE__.LastAdEndedMediaKey = endedContext.MediaKey;
 								__TTVAB_STATE__.CurrentAdChannel = null;
 								__TTVAB_STATE__.CurrentAdMediaKey = null;
 								__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -1090,6 +1118,16 @@ function _hookWorker() {
 								_broadcastWorkers({
 									key: "UpdatePinnedBackupPlayerContext",
 									value: null,
+								});
+								_broadcastWorkers({
+									key: "UpdateLastAdEndContext",
+									value: {
+										mediaType: endedContext.MediaType,
+										channelName: endedContext.ChannelName,
+										vodID: endedContext.VodID,
+										mediaKey: endedContext.MediaKey,
+										endedAt,
+									},
 								});
 								if (typeof _resetPlayerBufferMonitorState === "function") {
 									_resetPlayerBufferMonitorState();

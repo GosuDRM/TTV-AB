@@ -373,6 +373,9 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
 		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+		__TTVAB_STATE__.LastAdEndedAt = 0;
+		__TTVAB_STATE__.LastAdEndedChannel = null;
+		__TTVAB_STATE__.LastAdEndedMediaKey = null;
 		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 	}
 
@@ -397,6 +400,9 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
 		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+		__TTVAB_STATE__.LastAdEndedAt = 0;
+		__TTVAB_STATE__.LastAdEndedChannel = null;
+		__TTVAB_STATE__.LastAdEndedMediaKey = null;
 		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 		didResetAdScopedState = true;
 	}
@@ -479,6 +485,9 @@ function _declareState(scope) {
 		PendingTriggeredPlayerReloadAt: 0,
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
+		LastAdEndedAt: 0,
+		LastAdEndedChannel: null,
+		LastAdEndedMediaKey: null,
 		LastAdRecoveryReloadAt: 0,
 		LastAdRecoveryResumeAt: 0,
 		CurrentAdChannel: null,

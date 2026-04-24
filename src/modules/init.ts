@@ -52,6 +52,9 @@ function _initToggleListener() {
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
 			__TTVAB_STATE__.LastPlayerReloadAt = 0;
+			__TTVAB_STATE__.LastAdEndedAt = 0;
+			__TTVAB_STATE__.LastAdEndedChannel = null;
+			__TTVAB_STATE__.LastAdEndedMediaKey = null;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
 			__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
