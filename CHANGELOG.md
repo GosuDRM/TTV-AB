@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.4.8] - 2026-04-24
+
+### Fixed
+- **Native Recovery Probe Stability** - Firefox now requires two clean native recovery probes before ending an ad cycle, reducing false post-ad reloads when Twitch briefly serves a clean playlist before returning ad markers.
+- **Pre-Roll Handoff Stability** - Pre-roll recovery keeps the same ad cycle alive longer during Twitch's native-player handoff, reducing duplicate `Ad ended`/reload phases.
+- **Documentation Sync** - Updated README and changelog metadata for the 6.4.8 Firefox branch release.
+
 ## [6.4.6] - 2026-04-24
 
 ### Fixed
