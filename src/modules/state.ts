@@ -367,6 +367,9 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
 		__TTVAB_STATE__.LastPlayerReloadAt = 0;
+		__TTVAB_STATE__.LastAdEndedAt = 0;
+		__TTVAB_STATE__.LastAdEndedChannel = null;
+		__TTVAB_STATE__.LastAdEndedMediaKey = null;
 		__TTVAB_STATE__.ShouldResumeAfterAd = false;
 		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
 		__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
@@ -391,6 +394,9 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.PinnedBackupPlayerType = null;
 		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+		__TTVAB_STATE__.LastAdEndedAt = 0;
+		__TTVAB_STATE__.LastAdEndedChannel = null;
+		__TTVAB_STATE__.LastAdEndedMediaKey = null;
 		__TTVAB_STATE__.ShouldResumeAfterAd = false;
 		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
 		__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
@@ -479,6 +485,9 @@ function _declareState(scope) {
 		PendingTriggeredPlayerReloadAt: 0,
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
+		LastAdEndedAt: 0,
+		LastAdEndedChannel: null,
+		LastAdEndedMediaKey: null,
 		LastAdRecoveryReloadAt: 0,
 		LastAdRecoveryResumeAt: 0,
 		CurrentAdChannel: null,
@@ -603,4 +612,3 @@ function _createPageScopedWorkerEvent(value = null) {
 		pageMediaKey: pageEventContext.pageMediaKey,
 	};
 }
-

@@ -45,6 +45,60 @@ function _getResolvedAdEndMaxWaitMs() {
 	return Math.max(0, Number(__TTVAB_STATE__?.AdEndMaxWaitMs) || 0);
 }
 
+function _getPostAdReentryContinuationMs() {
+	return 8000;
+}
+
+function _rememberLastAdEnd(info, endedAt = Date.now()) {
+	const safeEndedAt = Math.max(0, Number(endedAt) || 0);
+	const endedContext = _normalizePlaybackContext({
+		MediaType: info?.MediaType || __TTVAB_STATE__?.PageMediaType || null,
+		ChannelName: info?.ChannelName || null,
+		VodID: info?.VodID || null,
+		MediaKey: info?.MediaKey || null,
+	});
+
+	if (info) {
+		info.LastAdEndReloadAt = safeEndedAt;
+	}
+	__TTVAB_STATE__.LastAdEndedAt = safeEndedAt;
+	__TTVAB_STATE__.LastAdEndedChannel = endedContext.ChannelName;
+	__TTVAB_STATE__.LastAdEndedMediaKey = endedContext.MediaKey;
+}
+
+function _doesPlaybackContextMatchInfo(info, mediaKey = null, channel = null) {
+	const infoMediaKey = _normalizeMediaKey(info?.MediaKey);
+	const targetMediaKey = _normalizeMediaKey(mediaKey);
+	if (infoMediaKey && targetMediaKey) {
+		return infoMediaKey === targetMediaKey;
+	}
+
+	const infoChannel = _normalizeChannelName(info?.ChannelName);
+	const targetChannel = _normalizeChannelName(channel);
+	return Boolean(infoChannel && targetChannel && infoChannel === targetChannel);
+}
+
+function _isRecentPostAdReentry(info, now = Date.now()) {
+	const continuationMs = _getPostAdReentryContinuationMs();
+	if (continuationMs <= 0) return false;
+
+	const localEndedAt = Math.max(0, Number(info?.LastAdEndReloadAt) || 0);
+	if (localEndedAt > 0 && now - localEndedAt <= continuationMs) {
+		return true;
+	}
+
+	const sharedEndedAt = Math.max(0, Number(__TTVAB_STATE__?.LastAdEndedAt) || 0);
+	if (sharedEndedAt <= 0 || now - sharedEndedAt > continuationMs) {
+		return false;
+	}
+
+	return _doesPlaybackContextMatchInfo(
+		info,
+		__TTVAB_STATE__?.LastAdEndedMediaKey,
+		__TTVAB_STATE__?.LastAdEndedChannel,
+	);
+}
+
 function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
 	switch (reason) {
 		case "error":
@@ -54,7 +108,6 @@ function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
 		case "not-playable":
 		case "no-stream-url":
 			return 2000;
-		case "ad-marked":
 		default:
 			return 3000;
 	}
@@ -209,17 +262,27 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 
 	const maxWaitMs = _getResolvedAdEndMaxWaitMs();
 	if (maxWaitMs > 0 && now - info.PendingAdEndAt >= maxWaitMs) {
-		const lastHoldLogAt = Math.max(
-			0,
-			Number(info.LastNativeRecoveryHoldLogAt) || 0,
-		);
-		if (now - lastHoldLogAt >= 10000) {
-			info.LastNativeRecoveryHoldLogAt = now;
-			_log(
-				"[Trace] Native recovery still ad-marked; holding backup stream",
-				"warning",
+		const canHoldCleanPlaylist = Boolean(info?.LastCleanBackupM3U8);
+		if (canHoldCleanPlaylist) {
+			const lastHoldLogAt = Math.max(
+				0,
+				Number(info.LastNativeRecoveryHoldLogAt) || 0,
 			);
+			if (now - lastHoldLogAt >= 10000) {
+				info.LastNativeRecoveryHoldLogAt = now;
+				_log(
+					"[Trace] Native recovery still ad-marked after max wait; holding clean backup stream",
+					"warning",
+				);
+			}
+			return "wait";
 		}
+
+		_log(
+			"[Trace] Native recovery still ad-marked after max wait; forcing ad end to prevent offline state",
+			"warning",
+		);
+		return "ended";
 	}
 
 	return "wait";
@@ -667,7 +730,6 @@ async function _processM3U8(url, text, realFetch) {
 					wasUsingBackupStream,
 					hadStrippedAdSegments,
 				});
-				const shouldRefreshAccessToken = true;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
@@ -772,6 +834,7 @@ async function _processM3U8(url, text, realFetch) {
 		}
 
 		if (!info.IsShowingAd) {
+			const now = Date.now();
 			const activeAdMediaKey =
 				typeof __TTVAB_STATE__.CurrentAdMediaKey === "string"
 					? __TTVAB_STATE__.CurrentAdMediaKey
@@ -780,20 +843,28 @@ async function _processM3U8(url, text, realFetch) {
 				typeof __TTVAB_STATE__.CurrentAdChannel === "string"
 					? __TTVAB_STATE__.CurrentAdChannel
 					: null;
+			const isRecentAdEndReentry = _isRecentPostAdReentry(info, now);
 			const isContinuingAdCycle = Boolean(
 				(activeAdMediaKey && activeAdMediaKey === info.MediaKey) ||
 					(!activeAdMediaKey &&
 						activeAdChannel &&
-						activeAdChannel === info.ChannelName),
+						activeAdChannel === info.ChannelName) ||
+					isRecentAdEndReentry,
 			);
 
 			info.IsShowingAd = true;
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
-			__TTVAB_STATE__.LastAdDetectedAt = Date.now();
+			__TTVAB_STATE__.LastAdDetectedAt = now;
 			info.FailedBackupPlayerTypes?.clear?.();
 			if (!isContinuingAdCycle) {
 				_incrementAdsBlocked(info.ChannelName, info.MediaKey);
+			}
+			if (isRecentAdEndReentry) {
+				_log(
+					"[Trace] Treating post-ad ad markers as continuation",
+					"info",
+				);
 			}
 			if (typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
@@ -933,6 +1004,7 @@ async function _processM3U8(url, text, realFetch) {
 			return info.LastCleanNativeM3U8 || text;
 		}
 
+		const adEndedAt = Date.now();
 		const {
 			wasUsingModifiedM3U8,
 			wasUsingFallbackStream,
@@ -940,6 +1012,7 @@ async function _processM3U8(url, text, realFetch) {
 			hadStrippedAdSegments,
 		} =
 			_resetStreamAdState(info);
+		_rememberLastAdEnd(info, adEndedAt);
 		__TTVAB_STATE__.CurrentAdChannel = null;
 		__TTVAB_STATE__.CurrentAdMediaKey = null;
 		__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -957,12 +1030,13 @@ async function _processM3U8(url, text, realFetch) {
 			);
 			_postWorkerBridgeMessage(
 				self,
-				_createPageScopedWorkerEvent({
-					key: "AdEnded",
-					channel: info.ChannelName,
-					mediaKey: info.MediaKey,
-					willReload: shouldReloadPlayer,
-				}),
+					_createPageScopedWorkerEvent({
+						key: "AdEnded",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+						endedAt: adEndedAt,
+						willReload: shouldReloadPlayer,
+					}),
 			);
 			if (shouldReloadPlayer) {
 				info.LastPlayerReload = Date.now();

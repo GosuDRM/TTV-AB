@@ -2,6 +2,21 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.4.6] - 2026-04-24
+
+### Fixed
+- **Native Recovery End Stability** - Native recovery now keeps serving the clean backup stream after the max wait when Twitch's native playlist is still ad-marked, preventing a false `AdEnded`/reload loop during pre-roll handoff.
+- **Post-Ad Handoff Guard** - Same-stream ad markers that arrive immediately after an ad-end reload now stay tied to the previous ad cycle, preventing duplicate blocking progress before playback settles.
+- **Worker Reload Sync** - Fresh playback workers now inherit the last ad-end context so recovery state remains consistent across Twitch player reloads.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.6 release.
+
+## [6.4.5] - 2026-04-23
+
+### Fixed
+- **Ad-End Recovery Timeout** - Fixed a critical issue where the ad-end stabilization logic could hold indefinitely when native recovery kept reporting ad-marked playlists, causing streams to appear offline or stuck in a non-playable state. The stabilization now forces the ad cycle to end after the maximum wait period (`AD_END_MAX_WAIT_MS`) instead of holding forever.
+- **Post-Ad Re-Entry Continuation** - Immediate same-stream ad markers after `AdEnded` are now treated as continuation of the previous ad cycle, preventing the blocker from restarting ad-blocking progress/counts during Twitch's shaky post-ad handoff.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.5 release.
+
 ## [6.4.4] - 2026-04-17
 
 ### Fixed
