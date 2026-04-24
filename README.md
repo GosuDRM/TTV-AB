@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.4.6-purple)
+![Version](https://img.shields.io/badge/version-6.4.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.4.6
-- **Native Recovery End Stability** - Keeps serving the clean backup stream while Twitch's native playlist is still ad-marked, avoiding false post-ad reloads during pre-roll handoff.
-- **Post-Ad Handoff Guard** - Same-stream ad markers that arrive immediately after an ad-end reload now stay tied to the previous ad cycle, preventing duplicate blocking progress before playback settles.
+### v6.4.8
+- **Two-Probe Native Recovery** - The extension now waits for two clean native recovery probes before ending an ad cycle, reducing false post-ad reloads during Twitch's pre-roll handoff.
+- **Pre-Roll Handoff Stability** - Same-stream ad markers that arrive immediately after an ad-end reload stay tied to the active recovery cycle until playback settles.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
