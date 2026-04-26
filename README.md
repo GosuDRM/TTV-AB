@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.4.8-purple)
+![Version](https://img.shields.io/badge/version-6.4.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,11 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.4.9
+- **Clip Editor Compatibility** - The extension no longer activates on Twitch clip editor pages, so dragging the clip selection range plays back normally instead of freezing the preview.
+- **Post-Ad Black Screen Recovery** - Detects frozen frames (no advancing `currentTime`, zero `videoWidth`, or `readyState < 2`) right after ad recovery and rebuilds the player instance instead of waiting out the 10s soft-reload window, so streams no longer go black a couple of seconds after quality restoration.
+- **Reload Escalation** - If the first post-ad reload doesn't restore playback, the next reload swaps the media player instance instead of reusing the same stuck pipeline.
 
 ### v6.4.8
 - **Two-Probe Native Recovery** - Firefox now waits for two clean native recovery probes before ending an ad cycle, reducing false post-ad reloads during Twitch's pre-roll handoff.

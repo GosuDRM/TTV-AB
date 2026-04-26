@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.4.9] - 2026-04-26
+
+### Fixed
+- **Clip Editor Playback** - The extension now skips initialization on Twitch clip editor pages (`clips.twitch.tv` and `/<channel>/clip/<slug>` routes), so moving the clip selection range no longer freezes the preview video.
+- **Post-Ad Black Screen Recovery** - The post-ad health check now treats a player with `readyState < 2`, `videoWidth = 0`, or a non-advancing `currentTime` as unhealthy. When those dead-frame conditions are detected, the extension bypasses the 10s soft-reload gate and rebuilds the underlying media player instance instead of just refreshing the access token, so streams that previously went black ~2s after quality restoration recover automatically.
+- **Ad-Recovery Reload Escalation** - If a soft post-ad reload (token refresh on the existing media player) fails to restore playback, the next reload escalates to a fresh media player instance instead of reusing the stuck MSE/SourceBuffer state.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.9 Firefox branch release.
+
 ## [6.4.8] - 2026-04-24
 
 ### Fixed

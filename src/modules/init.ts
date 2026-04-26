@@ -1,6 +1,18 @@
 // TTV AB - Init
 
+function _isClipEditorContext() {
+	const host = String(window.location?.hostname || "").toLowerCase();
+	if (host === "clips.twitch.tv") return true;
+	const path = String(window.location?.pathname || "").toLowerCase();
+	return /^\/[^/]+\/clip\/[^/]+/.test(path);
+}
+
 function _bootstrap() {
+	if (_isClipEditorContext()) {
+		_log("Skipping - clip editor page", "warning");
+		return false;
+	}
+
 	if (
 		typeof window.ttvabVersion !== "undefined" &&
 		window.ttvabVersion >= _C.INTERNAL_VERSION
