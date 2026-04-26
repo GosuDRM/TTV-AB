@@ -10,6 +10,9 @@ const _PlayerBufferState = {
 	liveEdgeStarveCount: 0,
 	postAdUnhealthyCount: 0,
 	postAdRecoveryStartedAt: 0,
+	postAdLastCurrentTime: 0,
+	postAdStallTicks: 0,
+	postAdSoftReloadAttempted: false,
 };
 
 let _cachedPlayerRef = null;
@@ -212,6 +215,9 @@ function _resetPlayerBufferMonitorState(cooldownMs = 0) {
 	_PlayerBufferState.liveEdgeStarveCount = 0;
 	_PlayerBufferState.postAdUnhealthyCount = 0;
 	_PlayerBufferState.postAdRecoveryStartedAt = 0;
+	_PlayerBufferState.postAdLastCurrentTime = 0;
+	_PlayerBufferState.postAdStallTicks = 0;
+	_PlayerBufferState.postAdSoftReloadAttempted = false;
 	_PlayerBufferState.lastFixTime =
 		minRepeatDelay > 0
 			? Date.now() - Math.max(0, minRepeatDelay - appliedCooldownMs)
@@ -276,6 +282,15 @@ function _isPlaybackHealthyAfterAd(player, playerCore = null, video = null) {
 		return false;
 	}
 	if (_isPlayerPaused(player, playerCore, resolvedVideo)) {
+		return false;
+	}
+	if (Number(resolvedVideo.readyState) < 2) {
+		return false;
+	}
+	if (
+		resolvedVideo instanceof HTMLVideoElement &&
+		Number(resolvedVideo.videoWidth) <= 0
+	) {
 		return false;
 	}
 
@@ -1939,20 +1954,71 @@ function _handlePendingPostAdRecovery(
 		_clearAdResumeIntent();
 		_PlayerBufferState.postAdUnhealthyCount = 0;
 		_PlayerBufferState.postAdRecoveryStartedAt = 0;
+		_PlayerBufferState.postAdLastCurrentTime = 0;
+		_PlayerBufferState.postAdStallTicks = 0;
+		_PlayerBufferState.postAdSoftReloadAttempted = false;
 		return false;
 	}
 
 	const now = Date.now();
-	if (!_PlayerBufferState.postAdRecoveryStartedAt) {
+	const isCycleStart = !_PlayerBufferState.postAdRecoveryStartedAt;
+	if (isCycleStart) {
 		_PlayerBufferState.postAdRecoveryStartedAt = now;
+		_PlayerBufferState.postAdLastCurrentTime = 0;
+		_PlayerBufferState.postAdStallTicks = 0;
+		_PlayerBufferState.postAdSoftReloadAttempted = false;
 	}
 	const recoveryAge = now - _PlayerBufferState.postAdRecoveryStartedAt;
 	const canSoftReload = recoveryAge >= _POST_AD_SOFT_RELOAD_DELAY_MS;
+
+	const liveVideo = video || player?.getHTMLVideoElement?.() || null;
+	const liveCurrentTime = Number(liveVideo?.currentTime) || 0;
+	const liveVideoWidth = Number(liveVideo?.videoWidth) || 0;
+	const isLivePaused = _isPlayerPaused(player, playerCore, liveVideo);
+	const advanced =
+		!isCycleStart &&
+		liveCurrentTime > _PlayerBufferState.postAdLastCurrentTime + 0.05;
+	if (!isLivePaused && !isCycleStart && !advanced) {
+		_PlayerBufferState.postAdStallTicks++;
+	} else if (advanced) {
+		_PlayerBufferState.postAdStallTicks = 0;
+	}
+	_PlayerBufferState.postAdLastCurrentTime = liveCurrentTime;
+	const isDeadFrame =
+		!isLivePaused &&
+		!liveVideo?.ended &&
+		(liveVideoWidth <= 0 || _PlayerBufferState.postAdStallTicks >= 2);
 
 	if (_isPlaybackHealthyAfterAd(player, playerCore, video)) {
 		_clearAdResumeIntent();
 		_PlayerBufferState.postAdUnhealthyCount = 0;
 		_PlayerBufferState.postAdRecoveryStartedAt = 0;
+		_PlayerBufferState.postAdLastCurrentTime = 0;
+		_PlayerBufferState.postAdStallTicks = 0;
+		_PlayerBufferState.postAdSoftReloadAttempted = false;
+		return true;
+	}
+
+	if (
+		isDeadFrame &&
+		_PlayerBufferState.lastFixTime <= now - _POST_AD_RECOVERY_RELOAD_COOLDOWN_MS
+	) {
+		_log(
+			"Player frozen after ad (no advancing frames). Rebuilding native player...",
+			"warning",
+		);
+		_doPlayerTask(false, true, {
+			reason: "ad-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		_clearAdResumeIntent();
+		_PlayerBufferState.lastFixTime = Date.now();
+		_PlayerBufferState.postAdUnhealthyCount = 0;
+		_PlayerBufferState.postAdRecoveryStartedAt = 0;
+		_PlayerBufferState.postAdLastCurrentTime = 0;
+		_PlayerBufferState.postAdStallTicks = 0;
+		_PlayerBufferState.postAdSoftReloadAttempted = true;
 		return true;
 	}
 
@@ -2004,21 +2070,30 @@ function _handlePendingPostAdRecovery(
 			return true;
 		}
 
+		const escalateToNewInstance =
+			_PlayerBufferState.postAdSoftReloadAttempted;
 		_log(
 			contentType && contentType !== "live"
-				? "Replay/VOD player still stalling after ad. Reloading native player..."
-				: "Player still stalling after ad. Reloading native player...",
+				? escalateToNewInstance
+					? "Replay/VOD player still stalling after ad. Rebuilding native player..."
+					: "Replay/VOD player still stalling after ad. Reloading native player..."
+				: escalateToNewInstance
+					? "Player still stalling after ad. Rebuilding native player..."
+					: "Player still stalling after ad. Reloading native player...",
 			"warning",
 		);
 		_doPlayerTask(false, true, {
 			reason: "ad-recovery",
 			refreshAccessToken: true,
-			newMediaPlayerInstance: false,
+			newMediaPlayerInstance: escalateToNewInstance,
 		});
 		_clearAdResumeIntent();
 		_PlayerBufferState.lastFixTime = Date.now();
 		_PlayerBufferState.postAdUnhealthyCount = 0;
 		_PlayerBufferState.postAdRecoveryStartedAt = 0;
+		_PlayerBufferState.postAdLastCurrentTime = 0;
+		_PlayerBufferState.postAdStallTicks = 0;
+		_PlayerBufferState.postAdSoftReloadAttempted = true;
 		return true;
 	}
 
