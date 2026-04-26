@@ -58,9 +58,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v6.4.9
-- **Clip Editor Compatibility** - The extension no longer activates on Twitch clip editor pages, so dragging the clip selection range plays back normally instead of freezing the preview.
-- **Post-Ad Black Screen Recovery** - Detects frozen frames (no advancing `currentTime`, zero `videoWidth`, or `readyState < 2`) right after ad recovery and rebuilds the player instance instead of waiting out the 10s soft-reload window, so streams no longer go black a couple of seconds after quality restoration.
-- **Reload Escalation** - If the first post-ad reload doesn't restore playback, the next reload swaps the media player instance instead of reusing the same stuck pipeline.
+- **Clip Editor Compatibility** - The extension no longer activates on Twitch clip editor pages, so dragging the clip selection range plays back normally instead of freezing the preview. ([#8](https://github.com/GosuDRM/TTV-AB/issues/8))
+- **Post-Ad Black Screen Recovery** - Detects frozen frames (no advancing `currentTime`, zero `videoWidth`, or `readyState < 2`) right after ad recovery and rebuilds the player instance instead of waiting out the 10s soft-reload window, so streams no longer go black a couple of seconds after quality restoration. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Reload Escalation** - If the first post-ad reload doesn't restore playback, the next reload swaps the media player instance instead of reusing the same stuck pipeline. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
 
 ### v6.4.8
 - **Two-Probe Native Recovery** - Firefox now waits for two clean native recovery probes before ending an ad cycle, reducing false post-ad reloads during Twitch's pre-roll handoff.
