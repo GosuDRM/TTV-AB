@@ -35,3 +35,4 @@ temp/
 tools/*
 !tools/package_chrome.py
 .openclaw/
+.codex
