@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.3] - 2026-04-27
+
+### Changed
+- **Refreshed Extension Icon** - Replaced the 16/48/128 px PNG icons under `assets/icons/` with a new design used by the toolbar action and the Chrome/Firefox add-on listings. No code or behavior changes.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.3 release.
+
 ## [6.5.2] - 2026-04-27
 
 ### Added
