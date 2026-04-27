@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.0] - 2026-04-27
+
+### Fixed
+- **BetterTTV "Mute Invisible Player" Compatibility** - Removed the spoofed `document.hidden`/`visibilityState`/`hasFocus` getters and the capture-stage `visibilitychange`/`blur` event swallow so other extensions and page scripts now receive real visibility signals. The player still resumes if Twitch pauses on tab hide, but BetterTTV's "Mute Invisible Player" (and any visibility-driven page script) works again. ([#9](https://github.com/GosuDRM/TTV-AB/issues/9))
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.0 release.
+
 ## [6.4.9] - 2026-04-26
 
 ### Fixed

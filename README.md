@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.4.9-purple)
+![Version](https://img.shields.io/badge/version-6.5.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,9 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.5.0
+- **BetterTTV Compatibility** - Stopped spoofing `document.hidden`/`visibilityState` and swallowing `visibilitychange` events so BetterTTV's "Mute Invisible Player" (and other visibility-driven extensions) work again. The extension still resumes playback if Twitch pauses on tab hide. ([#9](https://github.com/GosuDRM/TTV-AB/issues/9))
 
 ### v6.4.9
 - **Clip Editor Compatibility** - The extension no longer activates on Twitch clip editor pages, so dragging the clip selection range plays back normally instead of freezing the preview. ([#8](https://github.com/GosuDRM/TTV-AB/issues/8))

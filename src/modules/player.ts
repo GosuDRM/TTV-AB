@@ -2672,58 +2672,21 @@ function _hookVisibilityState() {
 	}
 
 	if (!window.__TTVAB_VISIBILITY_HARDENED__) {
-		const setDocumentVisibility = (property, value) => {
-			try {
-				Object.defineProperty(document, property, {
-					configurable: true,
-					get: () => value,
-				});
-			} catch {}
-		};
-		const setDocumentMethod = (property, value) => {
-			try {
-				Object.defineProperty(document, property, {
-					configurable: true,
-					value,
-				});
-			} catch {}
-		};
 		const queueVisibilityPlaybackGuard = () => {
 			_guardPlaybackAcrossVisibilityTransition(
 				__TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.PageMediaKey,
 			);
 		};
-		const handleVisibilityChange = (event) => {
-			try {
-				event.preventDefault?.();
-				event.stopPropagation?.();
-				event.stopImmediatePropagation?.();
-			} catch {}
-			queueVisibilityPlaybackGuard();
-		};
-		const handleWindowBlur = (event) => {
-			try {
-				event.stopPropagation?.();
-				event.stopImmediatePropagation?.();
-			} catch {}
-			queueVisibilityPlaybackGuard();
-		};
-
-		setDocumentVisibility("hidden", false);
-		setDocumentVisibility("webkitHidden", false);
-		setDocumentVisibility("mozHidden", false);
-		setDocumentVisibility("visibilityState", "visible");
-		setDocumentMethod("hasFocus", () => true);
 
 		for (const eventName of [
 			"visibilitychange",
 			"webkitvisibilitychange",
 			"mozvisibilitychange",
 		]) {
-			document.addEventListener(eventName, handleVisibilityChange, true);
+			document.addEventListener(eventName, queueVisibilityPlaybackGuard);
 		}
-		window.addEventListener("blur", handleWindowBlur, true);
+		window.addEventListener("blur", queueVisibilityPlaybackGuard);
 
 		window.__TTVAB_VISIBILITY_HARDENED__ = true;
 	}
