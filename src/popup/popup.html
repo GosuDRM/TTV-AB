@@ -823,6 +823,34 @@
             text-decoration: underline;
         }
 
+        .report-bug {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 12px;
+            padding: 8px 12px;
+            background: rgba(244, 67, 54, 0.08);
+            border: 1px solid rgba(244, 67, 54, 0.25);
+            border-radius: 8px;
+            color: #f5a5a0;
+            font-size: 12px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .report-bug:hover {
+            background: rgba(244, 67, 54, 0.15);
+            border-color: rgba(244, 67, 54, 0.5);
+            color: #fff;
+        }
+
+        .report-bug:focus-visible {
+            outline: 2px solid rgba(244, 67, 54, 0.85);
+            outline-offset: 2px;
+        }
+
         @media (prefers-reduced-motion: reduce) {
 
             .description-text,
@@ -871,7 +899,7 @@
         <div class="logo" aria-hidden="true">TTV</div>
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
-	            <div class="version" id="versionText" aria-label="Version 6.5.1">v6.5.1</div>
+	            <div class="version" id="versionText" aria-label="Version 6.5.2">v6.5.2</div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
                 for Twitch.tv</div>
         </div>
@@ -1004,6 +1032,14 @@
     <div class="info" id="infoText">
         <span data-i18n="changesInstantly">Changes take effect instantly</span>
     </div>
+
+    <a class="report-bug" id="reportBugLink" href="https://github.com/GosuDRM/TTV-AB/issues" target="_blank"
+        rel="noopener noreferrer" title="Found a Bug? Report it" aria-label="Found a Bug? Report it">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+            <path d="M20 8h-2.81a5.985 5.985 0 0 0-1.82-1.96L17 4.41 15.59 3l-2.17 2.17a6.002 6.002 0 0 0-2.83 0L8.41 3 7 4.41l1.62 1.63A5.985 5.985 0 0 0 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81a5.99 5.99 0 0 0 10.38 0H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/>
+        </svg>
+        <span>Found a Bug? Report it</span>
+    </a>
 
     <div class="footer">
         <select id="langSelector" class="lang-selector" title="Language" aria-label="Language"

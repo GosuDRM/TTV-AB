@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.2] - 2026-04-27
+
+### Added
+- **Report a Bug Button** - Added a "Found a Bug? Report it" button in the extension popup that links directly to the GitHub Issues page (`https://github.com/GosuDRM/TTV-AB/issues`). The button sits between the info notice and the footer, uses a red-tinted icon-and-label style, and opens in a new tab.
+
+### Changed
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.2 Firefox branch release.
+
 ## [6.5.1] - 2026-04-27
 
 ### Fixed
