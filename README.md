@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.5.2-purple)
+![Version](https://img.shields.io/badge/version-6.5.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,9 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.5.3
+- **Refreshed Extension Icon** - New 16/48/128 px icon set across the toolbar action and add-on listing for a cleaner, more recognizable mark.
 
 ### v6.5.2
 - **Report a Bug Button** - Added a one-click "Found a Bug? Report it" button in the popup that opens the GitHub Issues page in a new tab, making it easier to send bug reports without hunting for the repo link.
