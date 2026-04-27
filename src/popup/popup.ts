@@ -65,6 +65,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	const authorLink = document.getElementById(
 		"authorLink",
 	) as HTMLAnchorElement | null;
+	const reportBugLink = document.getElementById(
+		"reportBugLink",
+	) as HTMLAnchorElement | null;
 	const requiredElements = {
 		toggle,
 		statusDot,
@@ -90,6 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		donateButton,
 		repoLink,
 		authorLink,
+		reportBugLink,
 	};
 	for (const [name, element] of Object.entries(requiredElements)) {
 		if (element) continue;
@@ -303,6 +307,11 @@ document.addEventListener("DOMContentLoaded", () => {
 		const authorLabel = String(t.authorLinkLabel ?? "Open GosuDRM on GitHub");
 		authorLink.title = authorLabel;
 		authorLink.setAttribute("aria-label", authorLabel);
+		const reportBugLabel = String(
+			t.reportBugLabel ?? "Found a Bug? Report it",
+		);
+		reportBugLink.title = reportBugLabel;
+		reportBugLink.setAttribute("aria-label", reportBugLabel);
 	}
 
 	const savedLang = getStoredLanguage();
