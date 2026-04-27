@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.5.0-purple)
+![Version](https://img.shields.io/badge/version-6.5.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,9 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.5.1
+- **Post-Ad Stall Grace Window** - Adds a 90-second post-ad grace watcher that nudges the player with a programmatic pause/play when `currentTime` stops advancing or `videoWidth` drops to 0 after the ad-resume intent has cleared, escalating to a soft reload and finally a fresh media player instance if the stall persists. Catches the residual black-screen stalls that hit 10-30 seconds after quality restoration on stream with frequent ads. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
 
 ### v6.5.0
 - **BetterTTV Compatibility** - Stopped spoofing `document.hidden`/`visibilityState` and swallowing `visibilitychange` events so BetterTTV's "Mute Invisible Player" (and other visibility-driven extensions) work again. The extension still resumes playback if Twitch pauses on tab hide. ([#9](https://github.com/GosuDRM/TTV-AB/issues/9))

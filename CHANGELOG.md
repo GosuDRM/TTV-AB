@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.1] - 2026-04-27
+
+### Fixed
+- **Post-Ad Stall Grace Window** - Added a 90-second post-ad grace watcher that arms once `_isPlaybackHealthyAfterAd` clears the ad-resume intent. While armed, it ticks alongside the existing buffer monitor and watches `currentTime` advancement plus `videoWidth`. On stall, it first nudges the player with a programmatic pause/play (matching the manual workaround users reported), escalates to a token-refresh soft reload, then to a fresh media player instance if the stall persists. This catches the residual black-screen stalls that arrive 10-30 seconds after quality restoration on streams with frequent ads, where the existing dead-frame detector had already disarmed. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.1 Firefox branch release.
+
 ## [6.5.0] - 2026-04-27
 
 ### Fixed
