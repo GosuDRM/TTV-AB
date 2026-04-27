@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.2] - 2026-04-27
+
+### Added
+- **Report a Bug Button** - Added a "Found a Bug? Report it" button in the extension popup that links directly to the GitHub Issues page (`https://github.com/GosuDRM/TTV-AB/issues`). The button sits between the info notice and the footer, uses a red-tinted icon-and-label style, and opens in a new tab.
+- **Report Bug Translations** - Added a `reportBugLabel` translation key for all 11 supported locales (en, es, fr, de, pt, it, ja, ko, zh_CN, zh_TW, ru), wired through `data-i18n` on the visible label and applied programmatically to the `title`/`aria-label` attributes in `popup.ts`.
+
+### Changed
+- **Translation Naturalness Pass** - Audited every locale and replaced strings that read as literal calques with native phrasing. Japanese `allUnlocked` now uses `達成済み` (achieved) instead of the incorrect `解除済み` (released). Russian `timeSaved` drops the clunky leading `Примерно` adverb, and `next` switches from `Следующее` to the standard UI-convention `Далее`. Simplified Chinese `reportBugLabel` changes from the literal `发现错误？报告它` to the more conversational `发现 Bug？告诉我们`. Korean `reportBugLabel` switches the trailing gerund `신고하기` to the politeness-consistent `신고해 주세요`. Portuguese `channels_50` localizes the borrowed `Globetrotter` to `Viajante mundial`. German `bufferFix` swaps the stiff `Puffer-Korrektur` for the more idiomatic `Puffer-Fix`.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.2 release.
+
 ## [6.5.1] - 2026-04-27
 
 ### Fixed

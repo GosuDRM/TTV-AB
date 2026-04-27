@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.5.1-purple)
+![Version](https://img.shields.io/badge/version-6.5.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,11 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.5.2
+- **Report a Bug Button** - Added a one-click "Found a Bug? Report it" button in the popup that opens the GitHub Issues page in a new tab, making it easier to send bug reports without hunting for the repo link.
+- **Localized Report Bug Label** - The new button text and tooltip are translated across all 11 supported locales (English, Spanish, French, German, Portuguese, Italian, Japanese, Korean, Simplified Chinese, Traditional Chinese, Russian).
+- **Translation Naturalness Pass** - Cleaned up several strings to read more natively: Japanese `allUnlocked` (`解除済み` → `達成済み`), Russian `timeSaved` (dropped awkward "Примерно" prefix), Russian `next` (`Следующее` → `Далее`), Simplified Chinese `reportBugLabel` (less literal phrasing), Korean `reportBugLabel` (consistent honorific tone), Portuguese `channels_50` (localized `Globetrotter` → `Viajante mundial`), and German `bufferFix` (`Puffer-Korrektur` → `Puffer-Fix`).
 
 ### v6.5.1
 - **Post-Ad Stall Grace Window** - Adds a 90-second post-ad grace watcher that nudges the player with a programmatic pause/play when `currentTime` stops advancing or `videoWidth` drops to 0 after the ad-resume intent has cleared, escalating to a soft reload and finally a fresh media player instance if the stall persists. Catches the residual black-screen stalls that hit 10-30 seconds after quality restoration on stream with frequent ads. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
