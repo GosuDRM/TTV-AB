@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.5.6-purple)
+![Version](https://img.shields.io/badge/version-6.5.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -22,7 +22,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 - ✅ Blocks preroll and midroll ads on live streams and VODs
 - ✅ Supports both live playback and Twitch `/videos/<id>` archives
-- ✅ Cleans up stale Twitch ad UI after recovery
+- ✅ Cleans up stale Twitch ad UI during and after recovery
 - ✅ Avoids purple-screen playback interruptions
 - ✅ Restores your chosen quality after ad recovery
 - ✅ Manifest V3 compatible
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.5.7
+- **Faster Backup Progress Recovery** - Clean backup playback now clears stale Twitch ad/progress UI as soon as the backup stream is active, while native recovery continues in the background until the real stream is safe to reload.
+- **Lower Backup Polling Churn** - Very fresh clean backup playlists are reused instead of being rechecked immediately, and the previous clean backup type is preferred for the same stream to reduce repeated token and playlist requests during long ad windows.
 
 ### v6.5.6
 - **Post-Ad Re-Entry Guard** - Same-stream ad markers that arrive shortly after a post-ad reload now stay attached to the previous recovery cycle for up to 15 seconds, preventing duplicate ad-blocking progress when Twitch's handoff is slow.

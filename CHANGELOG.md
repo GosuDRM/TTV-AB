@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.7] - 2026-04-28
+
+### Fixed
+- **Faster Backup Progress Recovery** - Clean backup playback now emits its own recovery event as soon as a backup stream is active, letting the page clear stale Twitch ad/progress UI while the worker keeps native recovery open until the real stream is clean.
+- **Lower Backup Polling Churn** - Fresh clean backup playlists are reused for a short window, the previous clean backup type is preferred for the same stream, and ad-marked media playlists no longer invalidate the reusable backup master playlist. This reduces repeated token and playlist requests during long ad windows without ending the ad cycle early.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.7 Firefox branch release.
+
 ## [6.5.6] - 2026-04-28
 
 ### Fixed
