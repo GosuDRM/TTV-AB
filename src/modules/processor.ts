@@ -21,6 +21,7 @@ function _resetStreamAdState(info) {
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
 	info.AdEndMarkerBounceLogged = false;
+	info.AdSessionStartedAt = 0;
 	info.LastAdEndReloadAt = 0;
 	info.LastNativeRecoveryHoldLogAt = 0;
 	_resetNativeRecoveryReadyState(info);
@@ -46,7 +47,11 @@ function _getResolvedAdEndMaxWaitMs() {
 }
 
 function _getPostAdReentryContinuationMs() {
-	return 8000;
+	const configuredMs = Math.max(
+		0,
+		Number(__TTVAB_STATE__?.PostAdReentryContinuationMs) || 0,
+	);
+	return configuredMs > 0 ? configuredMs : 15000;
 }
 
 function _rememberLastAdEnd(info, endedAt = Date.now()) {
@@ -626,6 +631,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
 		AdEndMarkerBounceLogged: false,
+		AdSessionStartedAt: 0,
 		LastNativeRecoveryProbeAt: 0,
 		BackupVariantUrls: new Set(),
 		LastNativeRecoveryReadyPlayerType: null,
@@ -866,6 +872,7 @@ async function _processM3U8(url, text, realFetch) {
 			);
 
 			info.IsShowingAd = true;
+			info.AdSessionStartedAt = now;
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			__TTVAB_STATE__.LastAdDetectedAt = now;
@@ -997,6 +1004,10 @@ async function _processM3U8(url, text, realFetch) {
 		}
 	} else if (info.IsShowingAd) {
 		const res = _resolvePlaybackResolutionForUrl(info, url);
+		const observedAdSessionStartedAt = Math.max(
+			0,
+			Number(info.AdSessionStartedAt) || 0,
+		);
 		const adEndState = await _isAdEndStable(info, realFetch, res);
 		if (adEndState === "wait") {
 			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
@@ -1015,6 +1026,13 @@ async function _processM3U8(url, text, realFetch) {
 				return info.LastCleanBackupM3U8;
 			}
 			return info.LastCleanNativeM3U8 || text;
+		}
+		if (
+			!info.IsShowingAd ||
+			Math.max(0, Number(info.AdSessionStartedAt) || 0) !==
+				observedAdSessionStartedAt
+		) {
+			return text;
 		}
 
 		const adEndedAt = Date.now();

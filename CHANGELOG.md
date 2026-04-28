@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.6] - 2026-04-28
+
+### Fixed
+- **Post-Ad Re-Entry Guard** - Same-stream ad markers that arrive shortly after a post-ad reload now stay attached to the previous recovery cycle for up to 15 seconds, preventing duplicate ad-blocking progress when Twitch's native-player handoff is slow.
+- **Duplicate Ad-End Suppression** - Ad-end completion now ignores stale async recovery probes from an already-reset ad session, preventing double `Ad ended` events and duplicate post-ad reload attempts.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.6 Firefox branch release.
+
 ## [6.5.5] - 2026-04-28
 
 ### Fixed

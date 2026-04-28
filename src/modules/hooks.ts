@@ -359,6 +359,7 @@ function _hookWorkerFetch() {
 							NumStrippedAdSegments: 0,
 							PendingAdEndAt: 0,
 							CleanPlaylistCount: 0,
+							AdSessionStartedAt: 0,
 							LastNativeRecoveryProbeAt: 0,
 							BackupVariantUrls: new Set(),
 							LastNativeRecoveryReadyPlayerType: null,
