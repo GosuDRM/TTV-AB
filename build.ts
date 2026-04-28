@@ -1215,26 +1215,6 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
-			consumer: "_getResolvedAdEndMinCleanPlaylists",
-			helper: "_isBackupAdRecoveryActive",
-			source: processorSource,
-		},
-		{
-			consumer: "_getResolvedAdEndGraceMs",
-			helper: "_isBackupAdRecoveryActive",
-			source: processorSource,
-		},
-		{
-			consumer: "_isAdEndStable",
-			helper: "_getResolvedAdEndMinCleanPlaylists",
-			source: processorSource,
-		},
-		{
-			consumer: "_isAdEndStable",
-			helper: "_getResolvedAdEndGraceMs",
-			source: processorSource,
-		},
-		{
 			consumer: "_processM3U8",
 			helper: "_playlistHasMediaSegments",
 			source: processorSource,

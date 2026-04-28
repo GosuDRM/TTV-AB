@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.6.2-purple)
+![Version](https://img.shields.io/badge/version-6.6.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -22,7 +22,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 - ✅ Blocks preroll and midroll ads on live streams and VODs
 - ✅ Supports both live playback and Twitch `/videos/<id>` archives
-- ✅ Cleans up stale Twitch ad UI during and after recovery
+- ✅ Cleans up stale Twitch ad UI after recovery
 - ✅ Avoids purple-screen playback interruptions
 - ✅ Restores your chosen quality after ad recovery
 - ✅ Manifest V3 compatible
@@ -57,11 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.6.2
-- **Restored Post-Ad Player Reload** - Backup and fallback ad exits trigger the player reload again when the ad window closes, fixing the regression where the player kept showing stale backup playback after Twitch returned to native streams.
-
-### v6.6.1
-- **Smoother Post-Ad Handoff** - Backup and fallback ad exits now return to native playback without forcing a full player reload, reducing post-ad spinner flashes while keeping reloads for modified playlist recovery.
+### v6.6.3
+- **Rollback to v6.5.3 Baseline** - Reverted the 6.5.4-6.6.2 post-ad recovery changes after regressions surfaced in the new ad-handoff flow. Codebase is back to the stable 6.5.3 baseline (refreshed icon set) with version metadata bumped to 6.6.3.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

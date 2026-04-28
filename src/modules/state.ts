@@ -471,13 +471,13 @@ function _declareState(scope) {
 		),
 		PlayerReloadDebounceMs: _C.PLAYER_RELOAD_DEBOUNCE_MS ?? 1500,
 		AdCycleStaleMs: _C.AD_CYCLE_STALE_MS ?? 30000,
-		PostAdReentryContinuationMs:
-			_C.POST_AD_REENTRY_CONTINUATION_MS ?? 15000,
 		AdEndGraceMs: _C.AD_END_GRACE_MS ?? 2500,
+		AdEndMaxWaitMs: _C.AD_END_MAX_WAIT_MS ?? 2500,
 		AdEndMinCleanPlaylists: _C.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
-		AdEndBackupGraceMs: _C.AD_END_BACKUP_GRACE_MS ?? 15000,
-		AdEndBackupMinCleanPlaylists:
-			_C.AD_END_BACKUP_MIN_CLEAN_PLAYLISTS ?? 5,
+		AdEndMinNativeRecoveryProbes:
+			_C.AD_END_MIN_NATIVE_RECOVERY_PROBES ?? 3,
+		AdEndNativeRecoveryProbeCooldownMs:
+			_C.AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS ?? 750,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
 		HasTriggeredPlayerReload: false,
 		PendingTriggeredPlayerReloadChannel: null,
@@ -612,3 +612,4 @@ function _createPageScopedWorkerEvent(value = null) {
 		pageMediaKey: pageEventContext.pageMediaKey,
 	};
 }
+
