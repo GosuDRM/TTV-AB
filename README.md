@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.6.0-purple)
+![Version](https://img.shields.io/badge/version-6.6.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.6.0
-- **Backup Handoff Stability** - Recovery now keeps serving the clean backup stream until native playback stays clean for a longer stability window, reducing false post-ad reloads when Twitch briefly clears ad markers and then returns them.
-- **Post-Ad Re-Entry Reduction** - Backup-based ad recovery now requires more clean playlist observations before declaring the ad finished, so the player is less likely to reload straight back into the same ad cycle.
+### v6.6.1
+- **Smoother Post-Ad Handoff** - Backup and fallback ad exits now return to native playback without forcing a full player reload, reducing post-ad spinner flashes while keeping reloads for modified playlist recovery.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
