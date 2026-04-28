@@ -475,6 +475,9 @@ function _declareState(scope) {
 			_C.POST_AD_REENTRY_CONTINUATION_MS ?? 15000,
 		AdEndGraceMs: _C.AD_END_GRACE_MS ?? 2500,
 		AdEndMinCleanPlaylists: _C.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
+		AdEndBackupGraceMs: _C.AD_END_BACKUP_GRACE_MS ?? 10000,
+		AdEndBackupMinCleanPlaylists:
+			_C.AD_END_BACKUP_MIN_CLEAN_PLAYLISTS ?? 5,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
 		HasTriggeredPlayerReload: false,
 		PendingTriggeredPlayerReloadChannel: null,

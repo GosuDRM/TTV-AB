@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.6.0] - 2026-04-28
+
+### Fixed
+- **Backup Handoff Stability** - Backup-based recovery now waits for a longer clean native-playlist stability window before sending `AdEnded` and reloading the player, reducing false post-ad reloads when Twitch briefly clears ad markers and then returns them.
+- **Post-Ad Re-Entry Reduction** - Ad-end stabilization now requires more clean playlist observations after backup playback, keeping the clean backup active through short native handoff gaps instead of restarting visible recovery.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.0 Firefox branch release.
+
 ## [6.5.9] - 2026-04-28
 
 ### Fixed
