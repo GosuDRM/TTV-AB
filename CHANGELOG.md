@@ -2,6 +2,48 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.9] - 2026-04-28
+
+### Fixed
+- **Post-Ad Handoff Stability** - Clean playlist candidates now stay in the stabilization window for longer before triggering a post-ad reload, reducing immediate recovery restarts when Twitch briefly returns clean playlists and then resumes ad-marked playlists.
+- **Backup Startup Delay** - Backup selection now tries the autoplay path first, avoiding the initial rejected embed/popout attempts before recovery starts.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.9 release.
+
+## [6.5.8] - 2026-04-28
+
+### Changed
+- **Simplified Ad-End Recovery** - Removed the background native-token probe loop, native recovery hold state, and separate backup-playback event path. Ad recovery now completes after the configured clean-playlist count and grace period, then reloads or resumes the player through the normal post-ad path.
+- **Simpler Backup Selection State** - Removed backup-player retry cooldown state so backup selection follows the direct configured-player fallback order again. Cached backup master playlists are still invalidated when their media playlist is unusable.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.8 release.
+
+## [6.5.7] - 2026-04-28
+
+### Fixed
+- **Faster Backup Progress Recovery** - Clean backup playback now emits its own recovery event as soon as a backup stream is active, letting the page clear stale Twitch ad/progress UI while the worker keeps native recovery open until the real stream is clean.
+- **Lower Backup Polling Churn** - Fresh clean backup playlists are reused for a short window, the previous clean backup type is preferred for the same stream, and ad-marked media playlists no longer invalidate the reusable backup master playlist. This reduces repeated token and playlist requests during long ad windows without ending the ad cycle early.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.7 release.
+
+## [6.5.6] - 2026-04-28
+
+### Fixed
+- **Post-Ad Re-Entry Guard** - Same-stream ad markers that arrive shortly after a post-ad reload now stay attached to the previous recovery cycle for up to 15 seconds, preventing duplicate ad-blocking progress when Twitch's native-player handoff is slow.
+- **Duplicate Ad-End Suppression** - Ad-end completion now ignores stale async recovery probes from an already-reset ad session, preventing double `Ad ended` events and duplicate post-ad reload attempts.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.6 release.
+
+## [6.5.5] - 2026-04-28
+
+### Fixed
+- **Faster Ad-End Exit On Slow Native Recovery** - `_canReloadNativePlayerAfterAd` now treats a single clean native probe as sufficient once `AdEndMaxWaitMs` has elapsed past `PendingAdEndAt` and the extension is already holding a clean backup playlist. The two-probe stability gate from v6.4.8 still applies for the normal pre-max-wait path; the relaxation only kicks in once we are guaranteed to already have multiple clean backup playlists plus the `Native recovery still ad-marked after max wait; holding clean backup stream` hold state. Eliminates the extra ~2-3 s backup-poll cycle that used to be required for the second native probe and shortens the post-content tail by one full polling round on every ad-end. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.5 release.
+
+## [6.5.4] - 2026-04-28
+
+### Fixed
+- **Post-Ad Recovery Runs With Buffer Fix Off** - The buffer monitor used to early-return whenever the Buffer Fix toggle was off, which silently disabled both the v6.4.9 dead-frame detector and the v6.5.1 post-ad grace watcher. The gate now only suppresses the buffer-fix-specific live-edge logic; `_handlePendingPostAdRecovery` and `_handlePostAdGraceWatch` keep running, so users who turn Buffer Fix off no longer see an immediate post-ad black screen with no recovery attempt. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Faster Recovery on Dead-Frame Stalls** - `_handlePostAdGraceWatch` no longer wastes its first reaction tick on a programmatic pause/play when `videoWidth` has dropped to 0 — pause/play cannot refetch the manifest of a black frame. Dead-frame stalls now skip straight to the soft reload (and, on persistence, to a fresh media player instance), shortening the user-visible black screen on streams with frequent ads such as bierundblitzer. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Cross-Tab Volume Jumpscare** - `_doPlayerTask` now restores the captured preference snapshot to `localStorage` synchronously before `playerState.setSrc`, instead of only scheduling a deferred restore 3 s later. Because `localStorage` is shared across all twitch.tv tabs, the new media player instance was previously initialising at whatever volume another tab had most recently written, ignoring this tab's actual volume until the deferred restore overwrote it. With the preference write moved before `setSrc`, the rebuilt player picks up this tab's volume from the start and the audio no longer "jumps" to another tab's level after an ad.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.4 release.
+
 ## [6.5.3] - 2026-04-27
 
 ### Changed
@@ -22,7 +64,7 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Fixed
 - **Post-Ad Stall Grace Window** - Added a 90-second post-ad grace watcher that arms once `_isPlaybackHealthyAfterAd` clears the ad-resume intent. While armed, it ticks alongside the existing buffer monitor and watches `currentTime` advancement plus `videoWidth`. On stall, it first nudges the player with a programmatic pause/play (matching the manual workaround users reported), escalates to a token-refresh soft reload, then to a fresh media player instance if the stall persists. This catches the residual black-screen stalls that arrive 10-30 seconds after quality restoration on streams with frequent ads, where the existing dead-frame detector had already disarmed. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.1 Firefox branch release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.1 release.
 
 ## [6.5.0] - 2026-04-27
 

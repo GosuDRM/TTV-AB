@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.5.3-purple)
+![Version](https://img.shields.io/badge/version-6.5.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -22,7 +22,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 - ✅ Blocks preroll and midroll ads on live streams and VODs
 - ✅ Supports both live playback and Twitch `/videos/<id>` archives
-- ✅ Cleans up stale Twitch ad UI after recovery
+- ✅ Cleans up stale Twitch ad UI during and after recovery
 - ✅ Avoids purple-screen playback interruptions
 - ✅ Restores your chosen quality after ad recovery
 - ✅ Manifest V3 compatible
@@ -56,6 +56,30 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.5.9
+- **More Stable Ad-End Handoff** - Clean playlist candidates now need to stay clean longer before the player reloads, reducing immediate post-ad recovery restarts when Twitch briefly serves clean playlists and then returns ad markers.
+- **Faster Backup Selection** - Backup selection now tries the autoplay path first before falling back to the other player paths, trimming the initial recovery startup delay.
+
+### v6.5.8
+- **Simplified Ad-End Recovery** - Removed the background native-token probe loop from ad-end detection. Recovery now ends after a short run of clean playlist observations, then reloads the player normally, reducing hidden state and long-running ad-blocking progress.
+- **Simpler Backup Selection State** - Removed backup retry cooldown state and the separate backup-playback event path so backup selection follows the direct configured-player fallback order again.
+
+### v6.5.7
+- **Faster Backup Progress Recovery** - Clean backup playback now clears stale Twitch ad/progress UI as soon as the backup stream is active, while native recovery continues in the background until the real stream is safe to reload.
+- **Lower Backup Polling Churn** - Very fresh clean backup playlists are reused instead of being rechecked immediately, and the previous clean backup type is preferred for the same stream to reduce repeated token and playlist requests during long ad windows.
+
+### v6.5.6
+- **Post-Ad Re-Entry Guard** - Same-stream ad markers that arrive shortly after a post-ad reload now stay attached to the previous recovery cycle for up to 15 seconds, preventing duplicate ad-blocking progress when Twitch's handoff is slow.
+- **Duplicate Ad-End Suppression** - Ad-end completion now ignores stale async recovery probes from an already-reset ad session, preventing double `Ad ended` events and duplicate post-ad reload attempts.
+
+### v6.5.5
+- **Faster Ad-End Exit** - Once the extension is past `AdEndMaxWaitMs` and already holding a clean backup stream, a single clean native probe is enough to declare the ad ended, skipping the extra backup-poll cycle that used to be needed for the second probe. Trims roughly 2-3 seconds off the post-content tail on streams where Twitch's native playlist clears the ad markers slowly. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+
+### v6.5.4
+- **Post-Ad Recovery With Buffer Fix Off** - The buffer monitor no longer skips post-ad recovery when the Buffer Fix toggle is off, so users who keep that toggle disabled get the same dead-frame and grace-window recovery as everyone else. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Faster Dead-Frame Recovery** - The grace watcher now skips its programmatic pause/play step on `videoWidth = 0` stalls (where pause/play can't help) and goes straight to the soft reload, cutting the visible black-screen duration on frequent-ad streams. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Cross-Tab Volume Fix** - Preference snapshot now restores to `localStorage` before the media player rebuilds, so the new player no longer initializes at another tab's volume and "jumpscares" you after an ad ends.
 
 ### v6.5.3
 - **Refreshed Extension Icon** - New 16/48/128 px icon set across the toolbar action and add-on listing for a cleaner, more recognizable mark.
