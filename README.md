@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.6.0-purple)
+![Version](https://img.shields.io/badge/version-6.6.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,56 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.6.0
-- **Backup Handoff Stability** - Recovery now keeps serving the clean backup stream until native playback stays clean for a longer stability window, reducing false post-ad reloads when Twitch briefly clears ad markers and then returns them.
-- **Post-Ad Re-Entry Reduction** - Backup-based ad recovery now requires more clean playlist observations before declaring the ad finished, so the player is less likely to reload straight back into the same ad cycle.
-
-### v6.5.9
-- **More Stable Ad-End Handoff** - Clean playlist candidates now need to stay clean longer before the player reloads, reducing immediate post-ad recovery restarts when Twitch briefly serves clean playlists and then returns ad markers.
-- **Faster Backup Selection** - Backup selection now tries the autoplay path first before falling back to the other player paths, trimming the initial recovery startup delay.
-
-### v6.5.8
-- **Simplified Ad-End Recovery** - Removed the background native-token probe loop from ad-end detection. Recovery now ends after a short run of clean playlist observations, then reloads the player normally, reducing hidden state and long-running ad-blocking progress.
-- **Simpler Backup Selection State** - Removed backup retry cooldown state and the separate backup-playback event path so backup selection follows the direct configured-player fallback order again.
-
-### v6.5.7
-- **Faster Backup Progress Recovery** - Clean backup playback now clears stale Twitch ad/progress UI as soon as the backup stream is active, while native recovery continues in the background until the real stream is safe to reload.
-- **Lower Backup Polling Churn** - Very fresh clean backup playlists are reused instead of being rechecked immediately, and the previous clean backup type is preferred for the same stream to reduce repeated token and playlist requests during long ad windows.
-
-### v6.5.6
-- **Post-Ad Re-Entry Guard** - Same-stream ad markers that arrive shortly after a post-ad reload now stay attached to the previous recovery cycle for up to 15 seconds, preventing duplicate ad-blocking progress when Twitch's handoff is slow.
-- **Duplicate Ad-End Suppression** - Ad-end completion now ignores stale async recovery probes from an already-reset ad session, preventing double `Ad ended` events and duplicate post-ad reload attempts.
-
-### v6.5.5
-- **Faster Ad-End Exit** - Once the extension is past `AdEndMaxWaitMs` and already holding a clean backup stream, a single clean native probe is enough to declare the ad ended, skipping the extra backup-poll cycle that used to be needed for the second probe. Trims roughly 2-3 seconds off the post-content tail on streams where Twitch's native playlist clears the ad markers slowly. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-
-### v6.5.4
-- **Post-Ad Recovery With Buffer Fix Off** - The buffer monitor no longer skips post-ad recovery when the Buffer Fix toggle is off, so users who keep that toggle disabled get the same dead-frame and grace-window recovery as everyone else. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Faster Dead-Frame Recovery** - The grace watcher now skips its programmatic pause/play step on `videoWidth = 0` stalls (where pause/play can't help) and goes straight to the soft reload, cutting the visible black-screen duration on frequent-ad streams. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Cross-Tab Volume Fix** - Preference snapshot now restores to `localStorage` before the media player rebuilds, so the new player no longer initializes at another tab's volume and "jumpscares" you after an ad ends.
-
-### v6.5.3
-- **Refreshed Extension Icon** - New 16/48/128 px icon set across the toolbar action and add-on listing for a cleaner, more recognizable mark.
-
-### v6.5.2
-- **Report a Bug Button** - Added a one-click "Found a Bug? Report it" button in the popup that opens the GitHub Issues page in a new tab, making it easier to send bug reports without hunting for the repo link.
-- **Localized Report Bug Label** - The new button text and tooltip are translated across all 11 supported locales (English, Spanish, French, German, Portuguese, Italian, Japanese, Korean, Simplified Chinese, Traditional Chinese, Russian).
-- **Translation Naturalness Pass** - Cleaned up several strings to read more natively: Japanese `allUnlocked` (`解除済み` → `達成済み`), Russian `timeSaved` (dropped awkward "Примерно" prefix), Russian `next` (`Следующее` → `Далее`), Simplified Chinese `reportBugLabel` (less literal phrasing), Korean `reportBugLabel` (consistent honorific tone), Portuguese `channels_50` (localized `Globetrotter` → `Viajante mundial`), and German `bufferFix` (`Puffer-Korrektur` → `Puffer-Fix`).
-
-### v6.5.1
-- **Post-Ad Stall Grace Window** - Adds a 90-second post-ad grace watcher that nudges the player with a programmatic pause/play when `currentTime` stops advancing or `videoWidth` drops to 0 after the ad-resume intent has cleared, escalating to a soft reload and finally a fresh media player instance if the stall persists. Catches the residual black-screen stalls that hit 10-30 seconds after quality restoration on stream with frequent ads. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-
-### v6.5.0
-- **BetterTTV Compatibility** - Stopped spoofing `document.hidden`/`visibilityState` and swallowing `visibilitychange` events so BetterTTV's "Mute Invisible Player" (and other visibility-driven extensions) work again. The extension still resumes playback if Twitch pauses on tab hide. ([#9](https://github.com/GosuDRM/TTV-AB/issues/9))
-
-### v6.4.9
-- **Clip Editor Compatibility** - The extension no longer activates on Twitch clip editor pages, so dragging the clip selection range plays back normally instead of freezing the preview. ([#8](https://github.com/GosuDRM/TTV-AB/issues/8))
-- **Post-Ad Black Screen Recovery** - Detects frozen frames (no advancing `currentTime`, zero `videoWidth`, or `readyState < 2`) right after ad recovery and rebuilds the player instance instead of waiting out the 10s soft-reload window, so streams no longer go black a couple of seconds after quality restoration. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Reload Escalation** - If the first post-ad reload doesn't restore playback, the next reload swaps the media player instance instead of reusing the same stuck pipeline. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-
-### v6.4.8
-- **Two-Probe Native Recovery** - Firefox now waits for two clean native recovery probes before ending an ad cycle, reducing false post-ad reloads during Twitch's pre-roll handoff.
-- **Pre-Roll Handoff Stability** - Same-stream ad markers that arrive immediately after an ad-end reload stay tied to the active recovery cycle until playback settles.
+### v6.6.1
+- **Smoother Post-Ad Handoff** - Backup and fallback ad exits now return to native playback without forcing a full player reload, reducing post-ad spinner flashes while keeping reloads for modified playlist recovery.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

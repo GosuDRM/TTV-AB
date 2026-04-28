@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.6.1] - 2026-04-28
+
+### Fixed
+- **Smoother Post-Ad Handoff** - Backup and fallback ad exits no longer force a full player reload once native playback is ready, reducing post-ad spinner flashes while retaining reloads for modified playlist recovery.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.1 release.
+
 ## [6.6.0] - 2026-04-28
 
 ### Fixed
