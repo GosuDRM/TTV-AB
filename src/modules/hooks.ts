@@ -343,7 +343,6 @@ function _hookWorkerFetch() {
 							UsherBaseUrl: url,
 							UsherParams: new URL(url).search,
 							RequestedAds: new Set(),
-							FailedBackupPlayerTypes: new Map(),
 							Urls: Object.create(null),
 							ResolutionList: [],
 							BackupEncodingsM3U8Cache: Object.create(null),
@@ -359,14 +358,8 @@ function _hookWorkerFetch() {
 							NumStrippedAdSegments: 0,
 							PendingAdEndAt: 0,
 							CleanPlaylistCount: 0,
-							AdSessionStartedAt: 0,
-							LastNativeRecoveryProbeAt: 0,
 							BackupVariantUrls: new Set(),
-							LastNativeRecoveryReadyPlayerType: null,
-							NativeRecoveryCleanCount: 0,
 							LastAdEndReloadAt: 0,
-							LastNativeRecoveryHoldLogAt: 0,
-							HasAnnouncedBackupPlayback: false,
 							LastActivityAt: Date.now(),
 						};
 					} else {
@@ -607,23 +600,14 @@ function _hookWorker() {
                 ${_getToken.toString()}
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
-                ${_getResolvedAdEndMaxWaitMs.toString()}
-                ${_getResolvedCleanBackupReuseMs.toString()}
-                ${_getFreshCleanBackup.toString()}
                 ${_getPostAdReentryContinuationMs.toString()}
                 ${_rememberLastAdEnd.toString()}
                 ${_doesPlaybackContextMatchInfo.toString()}
                 ${_isRecentPostAdReentry.toString()}
-                ${_getBackupPlayerRetryCooldownMs.toString()}
-                ${_markBackupPlayerRetryCooldown.toString()}
-                ${_clearBackupPlayerRetryCooldown.toString()}
-                ${_isBackupPlayerRetryCoolingDown.toString()}
                 ${_getPinnedBackupPlayerTypeForInfo.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_isAdEndStable.toString()}
-                ${_resetNativeRecoveryReadyState.toString()}
-                ${_markNativeRecoveryReady.toString()}
                 ${_resetStreamAdState.toString()}
                 ${_shouldReloadNativePlayerAfterAdReset.toString()}
                 ${_getStreamInfoForPlaylist.toString()}
@@ -632,8 +616,6 @@ function _hookWorker() {
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
                 ${_playlistHasMediaSegments.toString()}
-                ${_getNativeRecoveryProbePlayerType.toString()}
-                ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}
@@ -1082,52 +1064,6 @@ function _hookWorker() {
 								},
 							});
 							_log(`Pinned backup type: ${data.value}`, "info");
-							break;
-						}
-						case "BackupPlaybackStarted": {
-							if (isStalePlaybackEvent(data)) {
-								_log(
-									`Ignoring stale backup playback start for ${data.mediaKey || data.channel}`,
-									"info",
-								);
-								break;
-							}
-							const backupPlaybackContext = _normalizePlaybackContext({
-								MediaType: __TTVAB_STATE__.PageMediaType,
-								ChannelName:
-									data.channel || __TTVAB_STATE__.CurrentAdChannel || null,
-								VodID: __TTVAB_STATE__.PageVodID,
-								MediaKey:
-									data.mediaKey ||
-									__TTVAB_STATE__.CurrentAdMediaKey ||
-									__TTVAB_STATE__.PageMediaKey,
-							});
-							if (typeof _schedulePostAdArtifactCleanup === "function") {
-								_schedulePostAdArtifactCleanup(
-									backupPlaybackContext.ChannelName,
-									backupPlaybackContext.MediaKey,
-								);
-								if (typeof _schedulePlaybackRecoveryTimeout === "function") {
-									for (const delayMs of [300, 1000, 2500, 5000]) {
-										_schedulePlaybackRecoveryTimeout(
-											() =>
-												_schedulePostAdArtifactCleanup(
-													backupPlaybackContext.ChannelName,
-													backupPlaybackContext.MediaKey,
-												),
-											delayMs,
-											backupPlaybackContext.ChannelName,
-											backupPlaybackContext.MediaKey,
-										);
-									}
-								}
-							}
-							_log(
-								data.value
-									? `Clean backup playback active: ${data.value}`
-									: "Clean backup playback active",
-								"success",
-							);
 							break;
 						}
 						case "AdEnded":

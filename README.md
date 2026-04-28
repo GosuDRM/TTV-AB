@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.5.7-purple)
+![Version](https://img.shields.io/badge/version-6.5.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.5.8
+- **Simplified Ad-End Recovery** - Removed the background native-token probe loop from ad-end detection. Recovery now ends after a short run of clean playlist observations, then reloads the player normally, reducing hidden state and long-running ad-blocking progress.
+- **Simpler Backup Selection State** - Removed backup retry cooldown state and the separate backup-playback event path so backup selection follows the direct configured-player fallback order again.
 
 ### v6.5.7
 - **Faster Backup Progress Recovery** - Clean backup playback now clears stale Twitch ad/progress UI as soon as the backup stream is active, while native recovery continues in the background until the real stream is safe to reload.

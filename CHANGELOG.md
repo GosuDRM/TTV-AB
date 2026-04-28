@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.8] - 2026-04-28
+
+### Changed
+- **Simplified Ad-End Recovery** - Removed the background native-token probe loop, native recovery hold state, and separate backup-playback event path. Ad recovery now completes after the configured clean-playlist count and grace period, then reloads or resumes the player through the normal post-ad path.
+- **Simpler Backup Selection State** - Removed backup-player retry cooldown state so backup selection follows the direct configured-player fallback order again. Cached backup master playlists are still invalidated when their media playlist is unusable.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.8 Firefox branch release.
+
 ## [6.5.7] - 2026-04-28
 
 ### Fixed
