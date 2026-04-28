@@ -601,6 +601,7 @@ function _hookWorker() {
                 ${_createFetchRelayResponse.toString()}
                 ${_fetchViaWorkerBridge.toString()}
                 ${_getToken.toString()}
+                ${_isBackupAdRecoveryActive.toString()}
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getPostAdReentryContinuationMs.toString()}

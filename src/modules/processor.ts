@@ -30,12 +30,39 @@ function _resetStreamAdState(info) {
 	};
 }
 
-function _getResolvedAdEndMinCleanPlaylists() {
-	return Math.max(1, Number(__TTVAB_STATE__?.AdEndMinCleanPlaylists) || 1);
+function _isBackupAdRecoveryActive(info) {
+	const lastCleanBackupAt = Math.max(0, Number(info?.LastCleanBackupAt) || 0);
+	const lastAdDetectedAt = Math.max(
+		0,
+		Number(__TTVAB_STATE__?.LastAdDetectedAt) || 0,
+	);
+	return Boolean(
+		info?.IsUsingBackupStream ||
+			info?.IsUsingFallbackStream ||
+			info?.ActiveBackupPlayerType ||
+			(lastCleanBackupAt > 0 && lastCleanBackupAt >= lastAdDetectedAt),
+	);
 }
 
-function _getResolvedAdEndGraceMs() {
-	return Math.max(0, Number(__TTVAB_STATE__?.AdEndGraceMs) || 0);
+function _getResolvedAdEndMinCleanPlaylists(info = null) {
+	const baseCount = Math.max(
+		1,
+		Number(__TTVAB_STATE__?.AdEndMinCleanPlaylists) || 1,
+	);
+	if (!_isBackupAdRecoveryActive(info)) return baseCount;
+	return Math.max(
+		baseCount,
+		Number(__TTVAB_STATE__?.AdEndBackupMinCleanPlaylists) || baseCount,
+	);
+}
+
+function _getResolvedAdEndGraceMs(info = null) {
+	const baseGraceMs = Math.max(0, Number(__TTVAB_STATE__?.AdEndGraceMs) || 0);
+	if (!_isBackupAdRecoveryActive(info)) return baseGraceMs;
+	return Math.max(
+		baseGraceMs,
+		Number(__TTVAB_STATE__?.AdEndBackupGraceMs) || baseGraceMs,
+	);
 }
 
 function _getPostAdReentryContinuationMs() {
@@ -201,11 +228,11 @@ async function _isAdEndStable(info) {
 
 	info.CleanPlaylistCount =
 		Math.max(0, Math.trunc(Number(info.CleanPlaylistCount) || 0)) + 1;
-	if (info.CleanPlaylistCount < _getResolvedAdEndMinCleanPlaylists()) {
+	if (info.CleanPlaylistCount < _getResolvedAdEndMinCleanPlaylists(info)) {
 		return "wait";
 	}
 
-	if (now - info.PendingAdEndAt < _getResolvedAdEndGraceMs()) {
+	if (now - info.PendingAdEndAt < _getResolvedAdEndGraceMs(info)) {
 		return "wait";
 	}
 
