@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.6.2] - 2026-04-28
+
+### Fixed
+- **Restored Post-Ad Player Reload** - Reverted the backup/fallback exit reload skip introduced in 6.6.1 because it left the player stuck on the backup stream after the ad window closed. Post-ad exits now reload the player again whenever `RELOAD_AFTER_AD` is enabled, matching 6.5.x behavior.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.2 release.
+
 ## [6.6.1] - 2026-04-28
 
 ### Fixed
