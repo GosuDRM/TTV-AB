@@ -1,8 +1,8 @@
 // TTV AB - Constants
 
 const _C = {
-	VERSION: "6.5.8",
-	INTERNAL_VERSION: 101,
+	VERSION: "6.5.9",
+	INTERNAL_VERSION: 102,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -13,14 +13,14 @@ const _C = {
 	},
 	AD_SIGNIFIER: "stitched",
 	CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
-	PLAYER_TYPES: ["embed", "popout", "autoplay"],
+	PLAYER_TYPES: ["autoplay", "embed", "popout"],
 	FALLBACK_TYPE: "embed",
 	FORCE_TYPE: "popout",
 	RELOAD_TIME: 1500,
 	PLAYER_RELOAD_DEBOUNCE_MS: 1500,
 	AD_CYCLE_STALE_MS: 30000,
 	POST_AD_REENTRY_CONTINUATION_MS: 15000,
-	AD_END_GRACE_MS: 250,
+	AD_END_GRACE_MS: 4000,
 	AD_END_MIN_CLEAN_PLAYLISTS: 3,
 	AD_RECOVERY_RELOAD_COOLDOWN_MS: 15000,
 	BUFFERING_FIX: true,
