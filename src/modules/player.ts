@@ -2016,17 +2016,15 @@ function _handlePostAdGraceWatch(
 	}
 	_PlayerBufferState.postAdGraceLastCurrentTime = liveCurrentTime;
 
-	const isDeadFrame = liveVideoWidth <= 0;
 	const isStalled =
-		isDeadFrame ||
+		liveVideoWidth <= 0 ||
 		_PlayerBufferState.postAdGraceStallTicks >=
 			_POST_AD_GRACE_STALL_TICKS_REQUIRED;
 	if (!isStalled) return false;
 
 	if (
-		!isDeadFrame &&
 		now - _PlayerBufferState.postAdGracePauseResumeAt >=
-			_POST_AD_GRACE_PAUSE_RESUME_COOLDOWN_MS
+		_POST_AD_GRACE_PAUSE_RESUME_COOLDOWN_MS
 	) {
 		_PlayerBufferState.postAdGracePauseResumeAt = now;
 		_PlayerBufferState.postAdGraceStallTicks = 0;
@@ -2436,12 +2434,6 @@ function _doPlayerTask(
 		}
 		_clearCachedPlayerRef(true, __TTVAB_STATE__.PlayerReloadDebounceMs || 0);
 		const preferenceSnapshot = _capturePlayerPreferenceSnapshot(playerCore);
-		if (preferenceSnapshot) {
-			_restorePlayerPreferenceSnapshot(preferenceSnapshot, {
-				channel: __TTVAB_STATE__.PageChannel,
-				mediaKey: __TTVAB_STATE__.PageMediaKey,
-			});
-		}
 
 		if (reason === "manual") {
 			_log("Reloading player", "info");
@@ -2570,11 +2562,7 @@ function _monitorPlayerBuffering() {
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
-		if (
-			!__TTVAB_STATE__.IsBufferFixEnabled &&
-			!hasPendingPostAdRecovery &&
-			_PlayerBufferState.postAdGraceUntil <= 0
-		) {
+		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
 			_clearCachedPlayerRef();
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
