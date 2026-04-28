@@ -789,10 +789,7 @@ async function _processM3U8(url, text, realFetch) {
 		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 		if (typeof self !== "undefined" && self.postMessage) {
 			const shouldReloadPlayer = Boolean(
-				wasUsingModifiedM3U8 ||
-					(_C?.RELOAD_AFTER_AD !== false &&
-						!wasUsingBackupStream &&
-						!wasUsingFallbackStream),
+				wasUsingModifiedM3U8 || _C?.RELOAD_AFTER_AD !== false,
 			);
 			const shouldPauseResumePlayer = Boolean(
 				!shouldReloadPlayer &&
