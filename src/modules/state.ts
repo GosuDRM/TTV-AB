@@ -481,6 +481,7 @@ function _declareState(scope) {
 		AdEndNativeRecoveryProbeCooldownMs:
 			_C.AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS ?? 750,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
+		CleanBackupReuseMs: _C.CLEAN_BACKUP_REUSE_MS ?? 1500,
 		HasTriggeredPlayerReload: false,
 		PendingTriggeredPlayerReloadChannel: null,
 		PendingTriggeredPlayerReloadMediaKey: null,
