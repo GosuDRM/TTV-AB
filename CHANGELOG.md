@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.4] - 2026-04-28
+
+### Fixed
+- **Post-Ad Recovery Runs With Buffer Fix Off** - The buffer monitor used to early-return whenever the Buffer Fix toggle was off, which silently disabled both the v6.4.9 dead-frame detector and the v6.5.1 post-ad grace watcher. The gate now only suppresses the buffer-fix-specific live-edge logic; `_handlePendingPostAdRecovery` and `_handlePostAdGraceWatch` keep running, so users who turn Buffer Fix off no longer see an immediate post-ad black screen with no recovery attempt. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Faster Recovery on Dead-Frame Stalls** - `_handlePostAdGraceWatch` no longer wastes its first reaction tick on a programmatic pause/play when `videoWidth` has dropped to 0 — pause/play cannot refetch the manifest of a black frame. Dead-frame stalls now skip straight to the soft reload (and, on persistence, to a fresh media player instance), shortening the user-visible black screen on streams with frequent ads such as bierundblitzer. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Cross-Tab Volume Jumpscare** - `_doPlayerTask` now restores the captured preference snapshot to `localStorage` synchronously before `playerState.setSrc`, instead of only scheduling a deferred restore 3 s later. Because `localStorage` is shared across all twitch.tv tabs, the new media player instance was previously initialising at whatever volume another tab had most recently written, ignoring this tab's actual volume until the deferred restore overwrote it. With the preference write moved before `setSrc`, the rebuilt player picks up this tab's volume from the start and the audio no longer "jumps" to another tab's level after an ad.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.4 Firefox branch release.
+
 ## [6.5.3] - 2026-04-27
 
 ### Changed
