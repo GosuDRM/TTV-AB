@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.5.4-purple)
+![Version](https://img.shields.io/badge/version-6.5.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,9 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.5.5
+- **Faster Ad-End Exit** - Once the extension is past `AdEndMaxWaitMs` and already holding a clean backup stream, a single clean native probe is enough to declare the ad ended, skipping the extra backup-poll cycle that used to be needed for the second probe. Trims roughly 2-3 seconds off the post-content tail on streams where Twitch's native playlist clears the ad markers slowly. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
 
 ### v6.5.4
 - **Post-Ad Recovery With Buffer Fix Off** - The buffer monitor no longer skips post-ad recovery when the Buffer Fix toggle is off, so users who keep that toggle disabled get the same dead-frame and grace-window recovery as everyone else. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))

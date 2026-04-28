@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.5.5] - 2026-04-28
+
+### Fixed
+- **Faster Ad-End Exit On Slow Native Recovery** - `_canReloadNativePlayerAfterAd` now treats a single clean native probe as sufficient once `AdEndMaxWaitMs` has elapsed past `PendingAdEndAt` and the extension is already holding a clean backup playlist. The two-probe stability gate from v6.4.8 still applies for the normal pre-max-wait path; the relaxation only kicks in once we are guaranteed to already have multiple clean backup playlists plus the `Native recovery still ad-marked after max wait; holding clean backup stream` hold state. Eliminates the extra ~2-3 s backup-poll cycle that used to be required for the second native probe and shortens the post-content tail by one full polling round on every ad-end. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.5 Firefox branch release.
+
 ## [6.5.4] - 2026-04-28
 
 ### Fixed

@@ -461,15 +461,28 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
 		return true;
 	}
 
-	const requiredCleanProbes = Math.max(
+	const baseRequiredCleanProbes = Math.max(
 		1,
 		Number(__TTVAB_STATE__?.AdEndMinNativeRecoveryProbes) || 1,
+	);
+	const adEndMaxWaitMs = Math.max(
+		0,
+		Number(__TTVAB_STATE__?.AdEndMaxWaitMs) || 0,
 	);
 	const probeCooldownMs = Math.max(
 		250,
 		Number(__TTVAB_STATE__?.AdEndNativeRecoveryProbeCooldownMs) || 750,
 	);
 	const now = Date.now();
+	const pendingAdEndAt = Math.max(0, Number(info?.PendingAdEndAt) || 0);
+	const isPostMaxWaitWithBackupHeld =
+		pendingAdEndAt > 0 &&
+		adEndMaxWaitMs > 0 &&
+		now - pendingAdEndAt >= adEndMaxWaitMs &&
+		Boolean(info?.LastCleanBackupM3U8);
+	const requiredCleanProbes = isPostMaxWaitWithBackupHeld
+		? 1
+		: baseRequiredCleanProbes;
 	if (
 		info.LastNativeRecoveryProbeAt &&
 		now - info.LastNativeRecoveryProbeAt < probeCooldownMs
