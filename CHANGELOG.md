@@ -2,11 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.7.2] - 2026-04-29
+
+### Fixed
+- **Early Long-Ad Visible Cycle Cutoff** - Ends the visible ad-blocking state after the backup-hold limit while continuing to serve the clean backup stream until Twitch's native playlist is ready.
+- **Native Restore Timing Preserved** - Keeps media restore tied to the native playback restore signal, so the audio-loop recovery remains intact while the visible progress indicator clears earlier.
+
+### Changed
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.2 Firefox branch release.
+
 ## [6.7.1] - 2026-04-29
 
 ### Fixed
-- **Post-Ad Audio Loop Recovery** - In the latest 6.6.9 logs, the second ad-blocking cycle correctly emitted `Ad ended`, but the page restored a suppressed media element before the native playlist had actually recovered from silent backup hold. That could leave Twitch audio looping until the user manually paused and played the player. Silent backup-hold `AdEnded` events now keep suppressed media muted, and media restore waits for a new native-playback-restored worker event before running the automatic pause/play nudge. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Native Backup-Hold Handoff Timing** - The worker now sends `NativePlaybackRestored` only when the native playlist is clean after silent backup hold, so post-ad artifact cleanup, media restore, and the recovery nudge run at the actual native handoff instead of the earlier visible ad-cycle end. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Post-Ad Audio Loop Recovery** - Keeps suppressed media muted during silent backup hold and waits for the native playback restore signal before running media recovery.
+- **Native Backup-Hold Handoff Timing** - Sends `NativePlaybackRestored` only after the native playlist is clean, keeping cleanup and recovery aligned with the actual handoff.
 
 ### Changed
 - **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.1 Firefox branch release.
@@ -14,8 +23,8 @@ All notable changes to TTV AB will be documented in this file.
 ## [6.6.9] - 2026-04-29
 
 ### Fixed
-- **Long Ad-Blocking Progress Guard** - When Twitch kept the native `site` playlist ad-marked for several minutes while a clean backup stream was already playing, the worker stayed in `IsShowingAd` forever and never emitted `AdEnded`, leaving the popup/page ad-blocking progress stuck even though backup recovery was still serving video. After 90 seconds of visible recovery, the worker now ends the visible ad cycle without reloading the player, keeps refreshing the clean backup silently, and restores native playback once the native playlist is clean. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Silent Backup Hold Recovery** - Added an internal post-ad backup-hold state so long native ad markers no longer restart the same ad cycle, increment duplicate block counts, or expose the player to an ad-marked native reload while waiting for Twitch's native playlist to recover. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Long Ad-Blocking Progress Guard** - Ends the visible ad cycle after the backup recovery limit while keeping the clean backup stream active until native playback is safe.
+- **Silent Backup Hold Recovery** - Tracks silent backup hold internally so long native ad markers do not restart the same ad cycle or force an ad-marked native reload.
 
 ### Changed
 - **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.9 Firefox branch release.
@@ -23,10 +32,10 @@ All notable changes to TTV AB will be documented in this file.
 ## [6.6.7] - 2026-04-29
 
 ### Fixed
-- **Long Ad-Blocking on Bouncing Stitched Ads** - When Twitch's CDN bounced ad markers in/out during a stitched ad transition, every bounce was fully resetting `PendingAdEndAt` and `CleanPlaylistCount`, so the maxWait escalation never armed and the extension could remain pinned to the backup stream for several minutes. The bounce reset now preserves the candidate-end timestamp inside a `maxWait * 3` staleness window and only clears it once the playlist has been continuously ad-marked beyond that threshold, allowing the slow-path native recovery probe to fire on schedule. This targets the remaining high-resolution post-ad black-screen and backup-handoff reports. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Ad-End Immediately Triggers Another Ad-Blocking Cycle** - The native recovery probe required only 2 consecutive clean playlists before declaring ad ended, so the post-ad reload would frequently land on a still-ad-marked playlist and the worker would re-enter ad blocking 1-3 seconds later (logged as `Treating post-ad ad markers as continuation`). Required probes increased from 2 to 3, the grace window from 250 ms to 500 ms, and the per-probe cooldown from 250 ms to 500 ms so ad-end is declared only when the native player has stabilized. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **`Media playlist processing failed` Error Loop** - Added try/catch around the post-ad `_isAdEndStable` and backup-refresh awaits inside `_processM3U8`, and switched `info.RequestedAds.clear()` to optional chaining. A single transient error in the ad-end stabilization path no longer throws out of the worker fetch wrapper for every subsequent playlist refresh. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Decoupled Slow-Path Recovery from Clean-Count** - `_isAdEndStable` now treats the slow-path max-wait timer as an independent escalation gate. Even when bouncing keeps `CleanPlaylistCount` low, the native recovery probe runs once `maxWait` elapses since the first candidate-end and force-ends the cycle (or holds the clean backup) so the player can no longer be wedged on backup indefinitely. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Long Ad-Blocking on Bouncing Stitched Ads** - Preserves candidate ad-end timing through short ad-marker bounces so the slow-path native recovery probe can still fire.
+- **Ad-End Re-Entry Stability** - Requires three clean native probes with longer grace and cooldown windows before declaring an ad ended.
+- **`Media playlist processing failed` Error Loop** - Handles transient post-ad stabilization and backup-refresh errors inside playlist processing.
+- **Decoupled Slow-Path Recovery from Clean-Count** - Lets the max-wait recovery gate run even when marker bouncing keeps the clean playlist count low.
 
 ### Changed
 - **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.7 Firefox branch release.
@@ -34,17 +43,17 @@ All notable changes to TTV AB will be documented in this file.
 ## [6.6.6] - 2026-04-29
 
 ### Fixed
-- **Tab-Local Volume Recovery** - Automatic reload and buffer recovery now stop restoring Twitch's shared `volume` / `video-muted` localStorage keys. The extension snapshots the current tab's media element mute and volume state before reloads and reapplies it directly to that tab after recovery, reducing volume jumps when another Twitch tab is playing at a different level. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Tab-Local Volume Recovery** - Automatic reload and buffer recovery now stop restoring Twitch's shared `volume` / `video-muted` localStorage keys. The extension snapshots the current tab's media element mute and volume state before reloads and reapplies it directly to that tab after recovery, reducing volume jumps when another Twitch tab is playing at a different level.
 
 ### Changed
-- **Rollback to 6.6.3 Runtime Behavior** - Restored the runtime ad-recovery modules to the last working 6.6.3 path after newer post-ad recovery experiments could emit `Ad ended` while the worker was still serving backup recovery playlists, leaving the Twitch player stuck on a spinner. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Rollback to 6.6.3 Runtime Behavior** - Restored the runtime ad-recovery modules to the last working 6.6.3 path after newer post-ad recovery experiments could emit `Ad ended` while the worker was still serving backup recovery playlists, leaving the Twitch player stuck on a spinner.
 - **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.6 Firefox branch release.
 
 ## [6.6.4] - 2026-04-29
 
 ### Fixed
-- **Post-Ad Recovery Watchdog Carryover** - Post-ad `AdEnded` and `ReloadPlayer` handling now preserves the matching ad-resume intent instead of clearing it before the returned native player can be observed. The watchdog remains armed through the post-ad reload, treats `post-ad` reloads as guarded ad-recovery reloads, and can apply the pause/play nudge that users reported as the manual workaround for black/loading playback. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Two-Tab Volume Bleed** - Automatic post-ad and buffer recovery reloads no longer restore Twitch's shared `volume` / `video-muted` localStorage keys. The extension now snapshots the tab's own media element volume/mute state at ad start and reapplies it directly to that tab after recovery, avoiding volume jumps when another Twitch tab is playing at a different level. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Post-Ad Recovery Watchdog Carryover** - Post-ad `AdEnded` and `ReloadPlayer` handling now preserves the matching ad-resume intent instead of clearing it before the returned native player can be observed. The watchdog remains armed through the post-ad reload, treats `post-ad` reloads as guarded ad-recovery reloads, and can apply the pause/play nudge that users reported as the manual workaround for black/loading playback.
+- **Two-Tab Volume Bleed** - Automatic post-ad and buffer recovery reloads no longer restore Twitch's shared `volume` / `video-muted` localStorage keys. The extension now snapshots the tab's own media element volume/mute state at ad start and reapplies it directly to that tab after recovery, avoiding volume jumps when another Twitch tab is playing at a different level.
 - **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.4 Firefox branch release.
 
 ## [6.6.3] - 2026-04-28
@@ -72,7 +81,7 @@ All notable changes to TTV AB will be documented in this file.
 ## [6.5.1] - 2026-04-27
 
 ### Fixed
-- **Post-Ad Stall Grace Window** - Added a 90-second post-ad grace watcher that arms once `_isPlaybackHealthyAfterAd` clears the ad-resume intent. While armed, it ticks alongside the existing buffer monitor and watches `currentTime` advancement plus `videoWidth`. On stall, it first nudges the player with a programmatic pause/play (matching the manual workaround users reported), escalates to a token-refresh soft reload, then to a fresh media player instance if the stall persists. This catches the residual black-screen stalls that arrive 10-30 seconds after quality restoration on streams with frequent ads, where the existing dead-frame detector had already disarmed. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Post-Ad Stall Grace Window** - Added a 90-second post-ad grace watcher that arms once `_isPlaybackHealthyAfterAd` clears the ad-resume intent. While armed, it ticks alongside the existing buffer monitor and watches `currentTime` advancement plus `videoWidth`. On stall, it first nudges the player with a programmatic pause/play (matching the manual workaround users reported), escalates to a token-refresh soft reload, then to a fresh media player instance if the stall persists. This catches the residual black-screen stalls that arrive 10-30 seconds after quality restoration on streams with frequent ads, where the existing dead-frame detector had already disarmed.
 - **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.1 Firefox branch release.
 
 ## [6.5.0] - 2026-04-27
@@ -85,8 +94,8 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Fixed
 - **Clip Editor Playback** - The extension now skips initialization on Twitch clip editor pages (`clips.twitch.tv` and `/<channel>/clip/<slug>` routes), so moving the clip selection range no longer freezes the preview video. ([#8](https://github.com/GosuDRM/TTV-AB/issues/8))
-- **Post-Ad Black Screen Recovery** - The post-ad health check now treats a player with `readyState < 2`, `videoWidth = 0`, or a non-advancing `currentTime` as unhealthy. When those dead-frame conditions are detected, the extension bypasses the 10s soft-reload gate and rebuilds the underlying media player instance instead of just refreshing the access token, so streams that previously went black ~2s after quality restoration recover automatically. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Ad-Recovery Reload Escalation** - If a soft post-ad reload (token refresh on the existing media player) fails to restore playback, the next reload escalates to a fresh media player instance instead of reusing the stuck MSE/SourceBuffer state. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Post-Ad Black Screen Recovery** - The post-ad health check now treats a player with `readyState < 2`, `videoWidth = 0`, or a non-advancing `currentTime` as unhealthy. When those dead-frame conditions are detected, the extension bypasses the 10s soft-reload gate and rebuilds the underlying media player instance instead of just refreshing the access token, so streams that previously went black ~2s after quality restoration recover automatically.
+- **Ad-Recovery Reload Escalation** - If a soft post-ad reload (token refresh on the existing media player) fails to restore playback, the next reload escalates to a fresh media player instance instead of reusing the stuck MSE/SourceBuffer state.
 - **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.9 Firefox branch release.
 
 ## [6.4.8] - 2026-04-24
