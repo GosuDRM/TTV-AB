@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.7.1] - 2026-04-29
+
+### Fixed
+- **Post-Ad Audio Loop Recovery** - In the latest 6.6.9 logs, the second ad-blocking cycle correctly emitted `Ad ended`, but the page restored a suppressed media element before the native playlist had actually recovered from silent backup hold. That could leave Twitch audio looping until the user manually paused and played the player. Silent backup-hold `AdEnded` events now keep suppressed media muted, and media restore waits for a new native-playback-restored worker event before running the automatic pause/play nudge. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Native Backup-Hold Handoff Timing** - The worker now sends `NativePlaybackRestored` only when the native playlist is clean after silent backup hold, so post-ad artifact cleanup, media restore, and the recovery nudge run at the actual native handoff instead of the earlier visible ad-cycle end. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+
+### Changed
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.1 Firefox branch release.
+
 ## [6.6.9] - 2026-04-29
 
 ### Fixed

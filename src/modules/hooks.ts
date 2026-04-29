@@ -1144,8 +1144,37 @@ function _hookWorker() {
 								}
 								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 								_log("Ad ended", "success");
+								const isHoldingBackup = data.holdingBackup === true;
+								if (
+									!isHoldingBackup &&
+									typeof _restoreSuppressedMediaAfterAd === "function"
+								) {
+									_restoreSuppressedMediaAfterAd(channel, mediaKey);
+								}
+								_schedulePostAdArtifactCleanup(channel, mediaKey);
+							}
+							break;
+						case "NativePlaybackRestored":
+							if (isStalePlaybackEvent(data)) {
+								_log(
+									`Ignoring stale native restore event for ${data.mediaKey || data.channel}`,
+									"info",
+								);
+								break;
+							}
+							{
+								const channel =
+									data.channel || __TTVAB_STATE__.LastAdEndedChannel || null;
+								const mediaKey =
+									data.mediaKey || __TTVAB_STATE__.LastAdEndedMediaKey || null;
+								_log("Native playback restored after backup hold", "success");
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
+								}
+								if (typeof _doPlayerTask === "function") {
+									_doPlayerTask(true, false, {
+										reason: "post-ad-native-restore",
+									});
 								}
 								_schedulePostAdArtifactCleanup(channel, mediaKey);
 							}
