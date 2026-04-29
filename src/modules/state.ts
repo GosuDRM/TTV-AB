@@ -612,4 +612,3 @@ function _createPageScopedWorkerEvent(value = null) {
 		pageMediaKey: pageEventContext.pageMediaKey,
 	};
 }
-

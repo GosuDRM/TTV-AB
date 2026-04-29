@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.6.6] - 2026-04-29
+
+### Fixed
+- **Tab-Local Volume Recovery** - Automatic reload and buffer recovery now stop restoring Twitch's shared `volume` / `video-muted` localStorage keys. The extension snapshots the current tab's media element mute and volume state before reloads and reapplies it directly to that tab after recovery, reducing volume jumps when another Twitch tab is playing at a different level. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+
+### Changed
+- **Rollback to 6.6.3 Runtime Behavior** - Restored the runtime ad-recovery modules to the last working 6.6.3 path after newer post-ad recovery experiments could emit `Ad ended` while the worker was still serving backup recovery playlists, leaving the Twitch player stuck on a spinner. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.6 Firefox branch release.
+
+## [6.6.4] - 2026-04-29
+
+### Fixed
+- **Post-Ad Recovery Watchdog Carryover** - Post-ad `AdEnded` and `ReloadPlayer` handling now preserves the matching ad-resume intent instead of clearing it before the returned native player can be observed. The watchdog remains armed through the post-ad reload, treats `post-ad` reloads as guarded ad-recovery reloads, and can apply the pause/play nudge that users reported as the manual workaround for black/loading playback. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Two-Tab Volume Bleed** - Automatic post-ad and buffer recovery reloads no longer restore Twitch's shared `volume` / `video-muted` localStorage keys. The extension now snapshots the tab's own media element volume/mute state at ad start and reapplies it directly to that tab after recovery, avoiding volume jumps when another Twitch tab is playing at a different level. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.4 Firefox branch release.
+
 ## [6.6.3] - 2026-04-28
 
 ### Changed
