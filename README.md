@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.6.7-purple)
+![Version](https://img.shields.io/badge/version-6.6.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,10 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.6.7
-- **Bounce-Resilient Ad-End Detection** - The clean-playlist counter now resets on each Twitch ad-marker bounce while the candidate-end timestamp is preserved within a stale window, so the slow-path max-wait timer can still escalate to native recovery instead of looping indefinitely. This targets the remaining high-resolution post-ad black-screen and backup-handoff reports in [#7](https://github.com/GosuDRM/TTV-AB/issues/7).
-- **More Conservative Native Recovery** - Required clean native probes increased from 2 to 3, with longer grace and probe cooldown, to prevent declaring "ad ended" while Twitch is mid-transition and immediately re-entering the ad-blocking path after the player reload.
-- **Hardened Worker M3U8 Path** - Added try/catch around the post-ad stabilization path and made ad-state cleanup tolerant of missing request-tracking sets, so transient errors no longer spam `Media playlist processing failed` for the rest of the session.
+### v6.6.9
+- **Long Ad-Blocking Progress Guard** - If Twitch keeps the native playlist ad-marked for more than 90 seconds while a clean backup stream is already playing, TTV AB now ends the visible ad-blocking cycle, keeps refreshing the clean backup silently, and returns to native playback once the native playlist is clean. This prevents issue [#7](https://github.com/GosuDRM/TTV-AB/issues/7) from looking stuck for several minutes while backup recovery is still working.
+- **Silent Backup Hold Recovery** - Backup playback continues behind the scenes after the visible cycle is cleared, so the extension does not reload into an ad-marked native playlist or repeatedly count the same long ad break as new blocks.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

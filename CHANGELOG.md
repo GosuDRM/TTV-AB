@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.6.9] - 2026-04-29
+
+### Fixed
+- **Long Ad-Blocking Progress Guard** - When Twitch kept the native `site` playlist ad-marked for several minutes while a clean backup stream was already playing, the worker stayed in `IsShowingAd` forever and never emitted `AdEnded`, leaving the popup/page ad-blocking progress stuck even though backup recovery was still serving video. After 90 seconds of visible recovery, the worker now ends the visible ad cycle without reloading the player, keeps refreshing the clean backup silently, and restores native playback once the native playlist is clean. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+- **Silent Backup Hold Recovery** - Added an internal post-ad backup-hold state so long native ad markers no longer restart the same ad cycle, increment duplicate block counts, or expose the player to an ad-marked native reload while waiting for Twitch's native playlist to recover. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+
+### Changed
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.9 Firefox branch release.
+
 ## [6.6.7] - 2026-04-29
 
 ### Fixed
