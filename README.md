@@ -58,8 +58,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v6.7.1
-- **Post-Ad Audio Loop Recovery** - Silent backup-hold recovery now waits for the native playlist to become clean before restoring suppressed media, preventing the post-ad audio loop that required a manual pause/play after long ad breaks. Once native playback is restored, TTV AB applies the same pause/play nudge automatically. This targets issue [#7](https://github.com/GosuDRM/TTV-AB/issues/7).
-- **Native Restore Event** - The worker now sends a dedicated native-playback-restored signal after the backup hold ends, so page-side cleanup, audio restore, and playback nudging run at the real native handoff instead of at the earlier visible ad-end event.
+- **Post-Ad Audio Loop Recovery** - Waits for native playback restore before unmuting suppressed media and running recovery nudges.
+- **Long Backup-Hold Cutoff** - Clears the visible ad-blocking state after the backup-hold limit while keeping the clean backup stream active until Twitch's native playlist is ready.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

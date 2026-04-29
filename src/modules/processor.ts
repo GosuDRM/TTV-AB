@@ -928,6 +928,57 @@ async function _processM3U8(url, text, realFetch) {
 			);
 		}
 
+		const backupHoldMaxMs = _getResolvedAdEndBackupHoldMaxMs();
+		const visibleAdStartedAt = Math.max(
+			0,
+			Number(info.VisibleAdStartedAt) || 0,
+		);
+		const visibleAdElapsed =
+			visibleAdStartedAt > 0 ? Date.now() - visibleAdStartedAt : 0;
+		if (
+			info.IsShowingAd &&
+			info.LastCleanBackupM3U8 &&
+			backupHoldMaxMs > 0 &&
+			visibleAdElapsed >= backupHoldMaxMs
+		) {
+			const adEndedAt = Date.now();
+			const res = _resolvePlaybackResolutionForUrl(info, url);
+			const heldBackupM3U8 = info.LastCleanBackupM3U8;
+			const heldBackupPlayerType =
+				info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType || null;
+			_resetStreamAdState(info);
+			info.IsHoldingBackupAfterAd = true;
+			info.SilentBackupHoldStartedAt = adEndedAt;
+			info.LastSilentBackupHoldLogAt = adEndedAt;
+			info.IsUsingBackupStream = true;
+			info.ActiveBackupPlayerType = heldBackupPlayerType;
+			info.ActiveBackupResolution = res?.Resolution || null;
+			_rememberLastAdEnd(info, adEndedAt);
+			__TTVAB_STATE__.CurrentAdChannel = null;
+			__TTVAB_STATE__.CurrentAdMediaKey = null;
+			__TTVAB_STATE__.PinnedBackupPlayerType = null;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+			_log(
+				"[Trace] Native recovery still ad-marked after extended backup hold; ending visible ad cycle and keeping clean backup stream",
+				"warning",
+			);
+			if (typeof self !== "undefined" && self.postMessage) {
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "AdEnded",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+						endedAt: adEndedAt,
+						willReload: false,
+						holdingBackup: true,
+					}),
+				);
+			}
+			return heldBackupM3U8;
+		}
+
 		if (info.PendingAdEndAt || info.CleanPlaylistCount) {
 			const elapsedSinceCandidate =
 				Date.now() - (Number(info.PendingAdEndAt) || 0);
