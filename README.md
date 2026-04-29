@@ -58,9 +58,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 ## What's New
 
 ### v6.6.7
-- **Bounce-Resilient Ad-End Detection** - The clean-playlist counter now resets on each Twitch ad-marker bounce while the candidate-end timestamp is preserved within a stale window, so the slow-path max-wait timer can still escalate to native recovery instead of looping indefinitely.
+- **Bounce-Resilient Ad-End Detection** - The clean-playlist counter now resets on each Twitch ad-marker bounce while the candidate-end timestamp is preserved within a stale window, so the slow-path max-wait timer can still escalate to native recovery instead of looping indefinitely. This targets the remaining high-resolution post-ad black-screen and backup-handoff reports in [#7](https://github.com/GosuDRM/TTV-AB/issues/7).
 - **More Conservative Native Recovery** - Required clean native probes increased from 2 to 3, with longer grace and probe cooldown, to prevent declaring "ad ended" while Twitch is mid-transition and immediately re-entering the ad-blocking path after the player reload.
-- **Hardened Worker M3U8 Path** - Added try/catch around the post-ad stabilization path and used optional chaining on `RequestedAds`/`FailedBackupPlayerTypes` so transient errors no longer spam `Media playlist processing failed` for the rest of the session.
+- **Hardened Worker M3U8 Path** - Added try/catch around the post-ad stabilization path and made ad-state cleanup tolerant of missing request-tracking sets, so transient errors no longer spam `Media playlist processing failed` for the rest of the session.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
