@@ -93,8 +93,6 @@ const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
 ].join(", ");
 const _PLAYER_PREFERENCE_KEYS = [
 	"video-quality",
-	"video-muted",
-	"volume",
 	"lowLatencyModeEnabled",
 	"persistenceEnabled",
 ];
@@ -2229,7 +2227,11 @@ function _handlePendingPostAdRecovery(
 	return false;
 }
 
-function _capturePlayerPreferenceSnapshot(playerCore = null) {
+function _capturePlayerPreferenceSnapshot(
+	playerCore = null,
+	media = null,
+	context: { channel?: string | null; mediaKey?: string | null } = {},
+) {
 	const snapshot = Object.create(null);
 
 	try {
@@ -2237,24 +2239,65 @@ function _capturePlayerPreferenceSnapshot(playerCore = null) {
 			snapshot[key] = localStorage.getItem(key);
 		}
 
-		if (playerCore?.state) {
-			snapshot["video-muted"] = JSON.stringify({
-				default: Boolean(playerCore.state.muted),
-			});
-			snapshot.volume = String(playerCore.state.volume);
-		}
-
 		if (playerCore?.state?.quality?.group) {
 			snapshot["video-quality"] = JSON.stringify({
 				default: playerCore.state.quality.group,
 			});
 		}
+
+		const sourceMedia =
+			media instanceof HTMLMediaElement
+				? media
+				: _getPrimaryMediaElement();
+		const volume = Number(sourceMedia?.volume ?? playerCore?.state?.volume);
+		snapshot.__mediaState = {
+			defaultMuted: Boolean(sourceMedia?.defaultMuted),
+			muted: Boolean(sourceMedia?.muted ?? playerCore?.state?.muted),
+			volume: Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : null,
+		};
+		snapshot.__playbackContext = {
+			channel: _normalizePlayerChannel(context.channel),
+			mediaKey: _normalizeMediaKey(context.mediaKey),
+		};
 	} catch (err) {
 		_log(`Preference snapshot failed: ${err.message}`, "warning");
 		return null;
 	}
 
 	return snapshot;
+}
+
+function _restorePlayerMediaPreferenceSnapshot(
+	mediaState,
+	options: { channel?: string | null; mediaKey?: string | null } = {},
+) {
+	if (!mediaState || typeof mediaState !== "object") return false;
+
+	const safeChannel = _normalizePlayerChannel(options.channel);
+	const safeMediaKey = _normalizeMediaKey(options.mediaKey);
+	if (
+		(safeChannel || safeMediaKey) &&
+		!_isPlaybackRecoveryContextCurrent(safeChannel, safeMediaKey)
+	) {
+		return false;
+	}
+
+	const { player } = _getPlayerAndState();
+	const media = player?.getHTMLVideoElement?.() || _getPrimaryMediaElement();
+	if (!(media instanceof HTMLMediaElement) || !media.isConnected) {
+		return false;
+	}
+
+	try {
+		media.defaultMuted = Boolean(mediaState.defaultMuted);
+		media.muted = Boolean(mediaState.muted);
+		if (Number.isFinite(mediaState.volume)) {
+			media.volume = Math.min(1, Math.max(0, Number(mediaState.volume)));
+		}
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function _restorePlayerPreferenceSnapshot(
@@ -2282,11 +2325,36 @@ function _restorePlayerPreferenceSnapshot(
 			}
 			localStorage.setItem(key, String(value));
 		}
+		_restorePlayerMediaPreferenceSnapshot(snapshot.__mediaState, options);
 	} catch (err) {
 		_log(`Preference restore failed: ${err.message}`, "warning");
 		return false;
 	}
 
+	return true;
+}
+
+function _schedulePlayerMediaPreferenceRestores(
+	snapshot,
+	channel = null,
+	mediaKey = null,
+	delays = [120, 500, 1500, 3000],
+) {
+	if (!snapshot?.__mediaState) return false;
+
+	for (const delay of delays) {
+		_schedulePlaybackRecoveryTimeout(
+			() => {
+				_restorePlayerMediaPreferenceSnapshot(snapshot.__mediaState, {
+					channel,
+					mediaKey,
+				});
+			},
+			delay,
+			channel,
+			mediaKey,
+		);
+	}
 	return true;
 }
 
@@ -2433,7 +2501,14 @@ function _doPlayerTask(
 			);
 		}
 		_clearCachedPlayerRef(true, __TTVAB_STATE__.PlayerReloadDebounceMs || 0);
-		const preferenceSnapshot = _capturePlayerPreferenceSnapshot(playerCore);
+		const preferenceSnapshot = _capturePlayerPreferenceSnapshot(
+			playerCore,
+			player?.getHTMLVideoElement?.() || null,
+			{
+				channel: __TTVAB_STATE__.PageChannel,
+				mediaKey: __TTVAB_STATE__.PageMediaKey,
+			},
+		);
 
 		if (reason === "manual") {
 			_log("Reloading player", "info");
@@ -2501,6 +2576,11 @@ function _doPlayerTask(
 		}
 
 		if (preferenceSnapshot) {
+			_schedulePlayerMediaPreferenceRestores(
+				preferenceSnapshot,
+				__TTVAB_STATE__.PageChannel,
+				__TTVAB_STATE__.PageMediaKey,
+			);
 			_schedulePlayerPreferenceRestore(
 				preferenceSnapshot,
 				__TTVAB_STATE__.PageChannel,

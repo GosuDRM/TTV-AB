@@ -473,6 +473,7 @@ function _declareState(scope) {
 		AdCycleStaleMs: _C.AD_CYCLE_STALE_MS ?? 30000,
 		AdEndGraceMs: _C.AD_END_GRACE_MS ?? 2500,
 		AdEndMaxWaitMs: _C.AD_END_MAX_WAIT_MS ?? 2500,
+		AdEndBackupHoldMaxMs: _C.AD_END_BACKUP_HOLD_MAX_MS ?? 90000,
 		AdEndMinCleanPlaylists: _C.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
 		AdEndMinNativeRecoveryProbes:
 			_C.AD_END_MIN_NATIVE_RECOVERY_PROBES ?? 3,

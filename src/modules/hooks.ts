@@ -359,6 +359,12 @@ function _hookWorkerFetch() {
 							NumStrippedAdSegments: 0,
 							PendingAdEndAt: 0,
 							CleanPlaylistCount: 0,
+							AdEndMarkerBounceLogged: false,
+							AdEndBounceCount: 0,
+							VisibleAdStartedAt: 0,
+							IsHoldingBackupAfterAd: false,
+							SilentBackupHoldStartedAt: 0,
+							LastSilentBackupHoldLogAt: 0,
 							LastNativeRecoveryProbeAt: 0,
 							BackupVariantUrls: new Set(),
 							LastNativeRecoveryReadyPlayerType: null,
@@ -609,6 +615,7 @@ function _hookWorker() {
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getResolvedAdEndMaxWaitMs.toString()}
+                ${_getResolvedAdEndBackupHoldMaxMs.toString()}
                 ${_getPostAdReentryContinuationMs.toString()}
                 ${_rememberLastAdEnd.toString()}
                 ${_doesPlaybackContextMatchInfo.toString()}
@@ -1278,15 +1285,15 @@ function _hookWorker() {
 							mediaKey: __TTVAB_STATE__.PinnedBackupPlayerMediaKey,
 						},
 					});
-					} catch {}
-				}
+				} catch {}
+			}
 
-				terminate() {
-					this.__TTVABIntentionallyTerminated = true;
-					pruneTrackedWorkers();
-					return super.terminate();
-				}
-			};
+			terminate() {
+				this.__TTVABIntentionallyTerminated = true;
+				pruneTrackedWorkers();
+				return super.terminate();
+			}
+		};
 
 		return _reinsert(HookedWorker, reinsertNames);
 	};
@@ -1329,7 +1336,8 @@ function _hookMainFetch() {
 		}
 
 		try {
-			const forceType = __TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
+			const forceType =
+				__TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
 			if (
 				!forceType ||
 				__TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true

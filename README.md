@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.6.3-purple)
+![Version](https://img.shields.io/badge/version-6.6.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.6.3
-- **Rollback to v6.5.3 Baseline** - Reverted the 6.5.4-6.6.2 post-ad recovery changes after regressions surfaced in the new ad-handoff flow. Codebase is back to the stable 6.5.3 baseline (refreshed icon set) with version metadata bumped to 6.6.3.
+### v6.6.9
+- **Long Ad-Blocking Progress Guard** - If Twitch keeps the native playlist ad-marked for more than 90 seconds while a clean backup stream is already playing, TTV AB now ends the visible ad-blocking cycle, keeps refreshing the clean backup silently, and returns to native playback once the native playlist is clean. This prevents issue [#7](https://github.com/GosuDRM/TTV-AB/issues/7) from looking stuck for several minutes while backup recovery is still working.
+- **Silent Backup Hold Recovery** - Backup playback continues behind the scenes after the visible cycle is cleared, so the extension does not reload into an ad-marked native playlist or repeatedly count the same long ad break as new blocks.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
