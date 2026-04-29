@@ -847,6 +847,7 @@ async function _processM3U8(url, text, realFetch) {
 		info.LastCleanNativeM3U8 = text;
 		info.LastCleanNativePlaylistAt = Date.now();
 		if (info.IsHoldingBackupAfterAd) {
+			const restoredAt = Date.now();
 			info.IsHoldingBackupAfterAd = false;
 			info.SilentBackupHoldStartedAt = 0;
 			info.LastSilentBackupHoldLogAt = 0;
@@ -858,6 +859,18 @@ async function _processM3U8(url, text, realFetch) {
 				"[Trace] Native playlist clean after silent backup hold; restoring native stream",
 				"success",
 			);
+			if (typeof self !== "undefined" && self.postMessage) {
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "NativePlaybackRestored",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+						restoredAt,
+						fromSilentBackupHold: true,
+					}),
+				);
+			}
 		}
 	}
 
@@ -1216,6 +1229,7 @@ async function _processM3U8(url, text, realFetch) {
 						mediaKey: info.MediaKey,
 						endedAt: adEndedAt,
 						willReload: shouldReloadPlayer,
+					holdingBackup: isSilentBackupHoldEnd,
 					}),
 			);
 			if (shouldReloadPlayer) {
