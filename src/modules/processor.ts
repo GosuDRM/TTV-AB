@@ -11,7 +11,7 @@ function _resetStreamAdState(info) {
 	info.IsUsingModifiedM3U8 = false;
 	info.IsUsingFallbackStream = false;
 	info.IsUsingBackupStream = false;
-	info.RequestedAds.clear();
+	info.RequestedAds?.clear?.();
 	info.FailedBackupPlayerTypes?.clear?.();
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
@@ -21,6 +21,7 @@ function _resetStreamAdState(info) {
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
 	info.AdEndMarkerBounceLogged = false;
+	info.AdEndBounceCount = 0;
 	info.LastAdEndReloadAt = 0;
 	info.LastNativeRecoveryHoldLogAt = 0;
 	_resetNativeRecoveryReadyState(info);
@@ -238,16 +239,23 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 		info.PendingAdEndAt = now;
 		info.CleanPlaylistCount = 0;
 		info.AdEndMarkerBounceLogged = false;
+		info.AdEndBounceCount = 0;
 		_log("[Trace] Candidate ad end detected", "info");
 	}
 
 	info.CleanPlaylistCount =
 		Math.max(0, Math.trunc(Number(info.CleanPlaylistCount) || 0)) + 1;
-	if (info.CleanPlaylistCount < _getResolvedAdEndMinCleanPlaylists()) {
-		return "wait";
-	}
 
-	if (now - info.PendingAdEndAt < _getResolvedAdEndGraceMs()) {
+	const elapsed = now - info.PendingAdEndAt;
+	const graceMs = _getResolvedAdEndGraceMs();
+	const minCleanPlaylists = _getResolvedAdEndMinCleanPlaylists();
+	const maxWaitMs = _getResolvedAdEndMaxWaitMs();
+
+	const fastPathReady =
+		info.CleanPlaylistCount >= minCleanPlaylists && elapsed >= graceMs;
+	const slowPathReady = maxWaitMs > 0 && elapsed >= maxWaitMs;
+
+	if (!fastPathReady && !slowPathReady) {
 		return "wait";
 	}
 
@@ -260,8 +268,7 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 		return "ended";
 	}
 
-	const maxWaitMs = _getResolvedAdEndMaxWaitMs();
-	if (maxWaitMs > 0 && now - info.PendingAdEndAt >= maxWaitMs) {
+	if (slowPathReady) {
 		const canHoldCleanPlaylist = Boolean(info?.LastCleanBackupM3U8);
 		if (canHoldCleanPlaylist) {
 			const lastHoldLogAt = Math.max(
@@ -795,7 +802,20 @@ async function _processM3U8(url, text, realFetch) {
 
 	if (hasAds) {
 		if (info.PendingAdEndAt || info.CleanPlaylistCount) {
-			info.PendingAdEndAt = 0;
+			const elapsedSinceCandidate =
+				Date.now() - (Number(info.PendingAdEndAt) || 0);
+			const maxWaitMs = _getResolvedAdEndMaxWaitMs();
+			const stalenessThreshold = maxWaitMs > 0 ? maxWaitMs * 3 : 12000;
+			if (
+				!info.PendingAdEndAt ||
+				elapsedSinceCandidate > stalenessThreshold
+			) {
+				info.PendingAdEndAt = 0;
+				info.AdEndBounceCount = 0;
+			} else {
+				info.AdEndBounceCount =
+					(Number(info.AdEndBounceCount) || 0) + 1;
+			}
 			info.CleanPlaylistCount = 0;
 			info.AdEndMarkerBounceLogged = false;
 			info.LastNativeRecoveryHoldLogAt = 0;
@@ -984,17 +1004,38 @@ async function _processM3U8(url, text, realFetch) {
 		}
 	} else if (info.IsShowingAd) {
 		const res = _resolvePlaybackResolutionForUrl(info, url);
-		const adEndState = await _isAdEndStable(info, realFetch, res);
+		let adEndState = "wait";
+		try {
+			adEndState = await _isAdEndStable(info, realFetch, res);
+		} catch (err) {
+			_log(
+				`[Trace] Ad-end stability check failed: ${err?.message ?? String(err)}`,
+				"warning",
+			);
+			adEndState = "wait";
+		}
 		if (adEndState === "wait") {
 			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
 			if (info.LastCleanBackupM3U8 && backupAgeMs >= 1500) {
-				const refreshedBackup = await _findBackupStream(info, realFetch, 0, res);
-				if (refreshedBackup?.m3u8) {
-					info.IsUsingBackupStream = true;
-					if (refreshedBackup.type) {
-						info.ActiveBackupPlayerType = refreshedBackup.type;
+				try {
+					const refreshedBackup = await _findBackupStream(
+						info,
+						realFetch,
+						0,
+						res,
+					);
+					if (refreshedBackup?.m3u8) {
+						info.IsUsingBackupStream = true;
+						if (refreshedBackup.type) {
+							info.ActiveBackupPlayerType = refreshedBackup.type;
+						}
+						return refreshedBackup.m3u8;
 					}
-					return refreshedBackup.m3u8;
+				} catch (err) {
+					_log(
+						`[Trace] Backup refresh failed during ad-end wait: ${err?.message ?? String(err)}`,
+						"warning",
+					);
 				}
 			}
 			if (info.LastCleanBackupM3U8) {

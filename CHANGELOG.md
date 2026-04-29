@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.6.7] - 2026-04-29
+
+### Fixed
+- **Long Ad-Blocking on Bouncing Stitched Ads** - When Twitch's CDN bounced ad markers in/out during a stitched ad transition, every bounce was fully resetting `PendingAdEndAt` and `CleanPlaylistCount`, so the maxWait escalation never armed and the extension could remain pinned to the backup stream for several minutes. The bounce reset now preserves the candidate-end timestamp inside a `maxWait * 3` staleness window and only clears it once the playlist has been continuously ad-marked beyond that threshold, allowing the slow-path native recovery probe to fire on schedule.
+- **Ad-End Immediately Triggers Another Ad-Blocking Cycle** - The native recovery probe required only 2 consecutive clean playlists before declaring ad ended, so the post-ad reload would frequently land on a still-ad-marked playlist and the worker would re-enter ad blocking 1-3 seconds later (logged as `Treating post-ad ad markers as continuation`). Required probes increased from 2 to 3, the grace window from 250 ms to 500 ms, and the per-probe cooldown from 250 ms to 500 ms so ad-end is declared only when the native player has stabilized.
+- **`Media playlist processing failed` Error Loop** - Added try/catch around the post-ad `_isAdEndStable` and backup-refresh awaits inside `_processM3U8`, and switched `info.RequestedAds.clear()` to optional chaining. A single transient error in the ad-end stabilization path no longer throws out of the worker fetch wrapper for every subsequent playlist refresh.
+- **Decoupled Slow-Path Recovery from Clean-Count** - `_isAdEndStable` now treats the slow-path max-wait timer as an independent escalation gate. Even when bouncing keeps `CleanPlaylistCount` low, the native recovery probe runs once `maxWait` elapses since the first candidate-end and force-ends the cycle (or holds the clean backup) so the player can no longer be wedged on backup indefinitely.
+
+### Changed
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.7 Firefox branch release.
+
 ## [6.6.6] - 2026-04-29
 
 ### Fixed

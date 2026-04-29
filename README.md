@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.6.6-purple)
+![Version](https://img.shields.io/badge/version-6.6.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,10 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.6.6
-- **Post-Ad Recovery Rollback** - Restored the runtime ad-recovery path to the last working v6.6.3 behavior after newer post-ad experiments could mark an ad as ended while Twitch was still serving backup recovery playlists. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
-- **Tab-Local Volume Recovery** - Automatic recovery now restores mute and volume directly on the current tab's media element instead of writing Twitch's shared volume storage, reducing two-stream volume jumps after ads. ([#7](https://github.com/GosuDRM/TTV-AB/issues/7))
+### v6.6.7
+- **Bounce-Resilient Ad-End Detection** - The clean-playlist counter now resets on each Twitch ad-marker bounce while the candidate-end timestamp is preserved within a stale window, so the slow-path max-wait timer can still escalate to native recovery instead of looping indefinitely.
+- **More Conservative Native Recovery** - Required clean native probes increased from 2 to 3, with longer grace and probe cooldown, to prevent declaring "ad ended" while Twitch is mid-transition and immediately re-entering the ad-blocking path after the player reload.
+- **Hardened Worker M3U8 Path** - Added try/catch around the post-ad stabilization path and used optional chaining on `RequestedAds`/`FailedBackupPlayerTypes` so transient errors no longer spam `Media playlist processing failed` for the rest of the session.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
