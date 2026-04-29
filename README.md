@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.7.1-purple)
+![Version](https://img.shields.io/badge/version-6.7.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -10,7 +10,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 ## Install
 
-- Chrome Web Store: [TTV AB - Lightweight, powerful ad blocker](https://chromewebstore.google.com/detail/ttv-ab-lightweight-powerf/mlifbfmeoafhcccmppaolojdglcbkdkg) `(6.7.1 - awaiting approval)`
+- Chrome Web Store: [TTV AB - Lightweight, powerful ad blocker](https://chromewebstore.google.com/detail/ttv-ab-lightweight-powerf/mlifbfmeoafhcccmppaolojdglcbkdkg) `(Waiting for approval)`
 - Firefox Add-ons: [TTV AB - Twitch Ad Blocker](https://addons.mozilla.org/en-GB/firefox/addon/ttv-ab-twitch-ad-blocker/) `(Stable)`
 
 <p align="center">
@@ -57,9 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.7.1
-- **Post-Ad Audio Loop Recovery** - Waits for native playback restore before unmuting suppressed media and running recovery nudges.
-- **Long Backup-Hold Cutoff** - Clears the visible ad-blocking state after the backup-hold limit while keeping the clean backup stream active until Twitch's native playlist is ready.
+### v6.7.3
+- **Shared Stream-Info Factory** - Refactored the duplicated stream-info construction in the worker fetch hook and the playlist processor into a single shared factory. Behavior unchanged.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
