@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.7.4-purple)
+![Version](https://img.shields.io/badge/version-6.7.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,7 +57,7 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.7.4
+### v6.7.5
 - **HEVC Post-Ad Handoff** - 1440p/HEVC streams now reload with a fresh token and media player instance after modified-M3U8 ad recovery, including silent backup hold exits, fixing the black screen and audio desync that happened when the AVC-substituted backup buffer met the original HEVC native playlist.
 - **HEVC Ad-Start Guard** - 1440p/HEVC streams keep Twitch's native 1440p master during normal playback, then hold the last clean native media playlist while arming a quality-preserving non-HEVC fallback master during active HEVC ad recovery so Firefox avoids both a visible ad flash and a mismatched AVC handoff.
 
