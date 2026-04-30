@@ -610,6 +610,25 @@ function _isPrimaryPlaybackCurrentlyActive() {
 	);
 }
 
+function _setPlayerIsPlaying(isPlaying) {
+	const nextValue = isPlaying === true;
+	if (__TTVAB_STATE__.PlayerIsPlaying === nextValue) return;
+	__TTVAB_STATE__.PlayerIsPlaying = nextValue;
+	_broadcastWorkers({
+		key: "UpdatePlayerIsPlaying",
+		value: nextValue,
+	});
+}
+
+function _markPlayerHasPlayedOnce() {
+	if (__TTVAB_STATE__.PlayerHasPlayedOnce) return;
+	__TTVAB_STATE__.PlayerHasPlayedOnce = true;
+	_broadcastWorkers({
+		key: "UpdatePlayerHasPlayedOnce",
+		value: true,
+	});
+}
+
 function _markSecondaryPlayerHandoff(
 	kind = "popout",
 	channel = null,
@@ -1038,8 +1057,14 @@ function _syncPrimaryMediaPlaybackIntent() {
 	_clearObservedPlaybackIntentMedia();
 
 	if (!(media instanceof HTMLMediaElement)) return;
+	const isPlaying = !media.paused && !media.ended;
+	_setPlayerIsPlaying(isPlaying);
+	if (isPlaying) {
+		_markPlayerHasPlayedOnce();
+	}
 
 	const handlePause = () => {
+		_setPlayerIsPlaying(false);
 		if (_wasRecentProgrammaticPlaybackAction("pause")) return;
 		if (media.ended) return;
 		if (!media.isConnected) return;
@@ -1071,6 +1096,8 @@ function _syncPrimaryMediaPlaybackIntent() {
 	};
 
 	const handlePlay = () => {
+		_setPlayerIsPlaying(true);
+		_markPlayerHasPlayedOnce();
 		if (_wasRecentProgrammaticPlaybackAction("play")) return;
 		_clearSecondaryPlayerHandoff();
 		_clearUserPauseIntent(null, __TTVAB_STATE__.PageMediaKey);

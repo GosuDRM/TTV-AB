@@ -671,10 +671,33 @@ function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
 		FrameRate: Number.isFinite(frameRate) ? frameRate : 0,
 		Bandwidth: Number.isFinite(bandwidth) ? Math.max(0, bandwidth) : 0,
 		Codecs: String(attrs.CODECS || ""),
+		Audio: String(attrs.AUDIO || ""),
 		Name: String(attrs.VIDEO || ""),
+		Subtitles: String(attrs.SUBTITLES || ""),
+		Video: String(attrs.VIDEO || ""),
 		RawUrl: rawUrl,
 		Url: variantUrl,
 	};
+}
+
+function _replaceOrAppendStreamInfAttribute(line, key, value) {
+	if (typeof line !== "string" || typeof key !== "string") return line;
+	if (typeof value !== "string" || !value) return line;
+
+	const normalizedKey = key.trim().toUpperCase();
+	if (!/^[A-Z0-9-]+$/.test(normalizedKey)) return line;
+
+	const escapedValue = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+	const nextAttribute = `${normalizedKey}="${escapedValue}"`;
+	const attrPattern = new RegExp(
+		`(^|,)${normalizedKey}=("[^"]*"|[^,]*)`,
+		"i",
+	);
+	if (attrPattern.test(line)) {
+		return line.replace(attrPattern, `$1${nextAttribute}`);
+	}
+
+	return `${line},${nextAttribute}`;
 }
 
 function _getStreamUrl(m3u8, res, baseUrl = null) {

@@ -1013,6 +1013,30 @@ async function _processM3U8(url, text, realFetch) {
 
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
 
+		const res = _resolvePlaybackResolutionForUrl(info, url);
+		if (!res) {
+			_log(
+				`Missing resolution info for ${url}; using generic fallback`,
+				"warning",
+			);
+		}
+
+		const isHevc =
+			res?.Codecs?.[0] === "h" &&
+			(res?.Codecs?.[1] === "e" || res?.Codecs?.[1] === "v");
+		if (
+			isHevc &&
+			info.ModifiedM3U8 &&
+			(!__TTVAB_STATE__.PlayerHasPlayedOnce ||
+				__TTVAB_STATE__.PlayerIsPlaying !== true)
+		) {
+			_log(
+				"[Trace] Deferring HEVC ad-block until active playback resumes",
+				"info",
+			);
+			return text;
+		}
+
 		if (!info.IsMidroll) {
 			const textStr = typeof text === "string" ? text : "";
 			const lines = textStr.replace(/\r/g, "").split("\n");
@@ -1095,23 +1119,25 @@ async function _processM3U8(url, text, realFetch) {
 			return text;
 		}
 
-		const res = _resolvePlaybackResolutionForUrl(info, url);
-		if (!res) {
-			_log(
-				`Missing resolution info for ${url}; using generic fallback`,
-				"warning",
-			);
-		}
-
-		const isHevc =
-			res?.Codecs?.[0] === "h" &&
-			(res?.Codecs?.[1] === "e" || res?.Codecs?.[1] === "v");
 		if (
 			isHevc &&
 			!__TTVAB_STATE__.SkipPlayerReloadOnHevc &&
 			info.ModifiedM3U8 &&
 			!info.IsUsingModifiedM3U8
 		) {
+			const cleanNativeAgeMs =
+				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0);
+			const cleanNativeM3U8 =
+				typeof info.LastCleanNativeM3U8 === "string" &&
+				info.LastCleanNativeM3U8 &&
+				cleanNativeAgeMs >= 0 &&
+				cleanNativeAgeMs <= 10000 &&
+				!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8) &&
+				!_playlistHasKnownAdSegments(info.LastCleanNativeM3U8, {
+					includeCached: false,
+				})
+					? info.LastCleanNativeM3U8
+					: null;
 			info.IsUsingModifiedM3U8 = true;
 			info.LastPlayerReload = Date.now();
 			if (typeof self !== "undefined" && self.postMessage) {
@@ -1122,9 +1148,17 @@ async function _processM3U8(url, text, realFetch) {
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
 						refreshAccessToken: true,
+						newMediaPlayerInstance: true,
 					}),
 				);
 			}
+			_log(
+				cleanNativeM3U8
+					? "[Trace] Reloading before HEVC backup handoff; holding clean native playlist for current request"
+					: "[Trace] Reloading before HEVC backup handoff; no clean native hold available",
+				"info",
+			);
+			return cleanNativeM3U8 || text;
 		}
 
 		let startIdx = 0;
@@ -1276,9 +1310,10 @@ async function _processM3U8(url, text, realFetch) {
 		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 		if (typeof self !== "undefined" && self.postMessage) {
+			const shouldUseHevcReload = Boolean(wasUsingModifiedM3U8);
 			const shouldReloadPlayer = Boolean(
 				!isSilentBackupHoldEnd &&
-					(wasUsingModifiedM3U8 || _C?.RELOAD_AFTER_AD !== false),
+					(shouldUseHevcReload || _C?.RELOAD_AFTER_AD !== false),
 			);
 			const shouldPauseResumePlayer = Boolean(
 				!isSilentBackupHoldEnd &&
@@ -1307,8 +1342,8 @@ async function _processM3U8(url, text, realFetch) {
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
 						reason: "post-ad",
-						refreshAccessToken: false,
-						newMediaPlayerInstance: false,
+						refreshAccessToken: shouldUseHevcReload,
+						newMediaPlayerInstance: shouldUseHevcReload,
 					}),
 				);
 			} else if (shouldPauseResumePlayer) {
