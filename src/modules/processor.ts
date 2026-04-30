@@ -28,6 +28,7 @@ function _resetStreamAdState(info) {
 	info.LastSilentBackupHoldLogAt = 0;
 	info.LastAdEndReloadAt = 0;
 	info.LastNativeRecoveryHoldLogAt = 0;
+	info.HevcReloadPendingAfterHold = false;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -672,6 +673,7 @@ function _createStreamInfo(context) {
 		NativeRecoveryCleanCount: 0,
 		LastAdEndReloadAt: 0,
 		LastNativeRecoveryHoldLogAt: 0,
+		HevcReloadPendingAfterHold: false,
 		LastActivityAt: Date.now(),
 	};
 }
@@ -853,15 +855,19 @@ async function _processM3U8(url, text, realFetch) {
 		info.LastCleanNativePlaylistAt = Date.now();
 		if (info.IsHoldingBackupAfterAd) {
 			const restoredAt = Date.now();
+			const requiresReload = Boolean(info.HevcReloadPendingAfterHold);
 			info.IsHoldingBackupAfterAd = false;
 			info.SilentBackupHoldStartedAt = 0;
 			info.LastSilentBackupHoldLogAt = 0;
 			info.IsUsingBackupStream = false;
 			info.ActiveBackupPlayerType = null;
 			info.ActiveBackupResolution = null;
+			info.HevcReloadPendingAfterHold = false;
 			_resetNativeRecoveryReadyState(info);
 			_log(
-				"[Trace] Native playlist clean after silent backup hold; restoring native stream",
+				requiresReload
+					? "[Trace] Native playlist clean after silent backup hold; reloading player to restore HEVC stream"
+					: "[Trace] Native playlist clean after silent backup hold; restoring native stream",
 				"success",
 			);
 			if (typeof self !== "undefined" && self.postMessage) {
@@ -873,6 +879,7 @@ async function _processM3U8(url, text, realFetch) {
 						mediaKey: info.MediaKey,
 						restoredAt,
 						fromSilentBackupHold: true,
+						requiresReload,
 					}),
 				);
 			}
@@ -951,13 +958,15 @@ async function _processM3U8(url, text, realFetch) {
 			const heldBackupM3U8 = info.LastCleanBackupM3U8;
 			const heldBackupPlayerType =
 				info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType || null;
-			_resetStreamAdState(info);
+			const { wasUsingModifiedM3U8: heldWasModified } =
+				_resetStreamAdState(info);
 			info.IsHoldingBackupAfterAd = true;
 			info.SilentBackupHoldStartedAt = adEndedAt;
 			info.LastSilentBackupHoldLogAt = adEndedAt;
 			info.IsUsingBackupStream = true;
 			info.ActiveBackupPlayerType = heldBackupPlayerType;
 			info.ActiveBackupResolution = res?.Resolution || null;
+			info.HevcReloadPendingAfterHold = heldWasModified;
 			_rememberLastAdEnd(info, adEndedAt);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.CurrentAdMediaKey = null;
@@ -1258,6 +1267,7 @@ async function _processM3U8(url, text, realFetch) {
 			info.IsUsingBackupStream = true;
 			info.ActiveBackupPlayerType = heldBackupPlayerType;
 			info.ActiveBackupResolution = res?.Resolution || null;
+			info.HevcReloadPendingAfterHold = wasUsingModifiedM3U8;
 		}
 		_rememberLastAdEnd(info, adEndedAt);
 		__TTVAB_STATE__.CurrentAdChannel = null;

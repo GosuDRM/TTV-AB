@@ -1125,14 +1125,27 @@ function _hookWorker() {
 									data.channel || __TTVAB_STATE__.LastAdEndedChannel || null;
 								const mediaKey =
 									data.mediaKey || __TTVAB_STATE__.LastAdEndedMediaKey || null;
-								_log("Native playback restored after backup hold", "success");
+								const requiresReload = data.requiresReload === true;
+								_log(
+									requiresReload
+										? "Native playback restored after backup hold; reloading player for HEVC handoff"
+										: "Native playback restored after backup hold",
+									"success",
+								);
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
 								}
 								if (typeof _doPlayerTask === "function") {
-									_doPlayerTask(true, false, {
-										reason: "post-ad-native-restore",
-									});
+									if (requiresReload) {
+										_doPlayerTask(false, true, {
+											reason: "post-ad-native-restore",
+											refreshAccessToken: true,
+										});
+									} else {
+										_doPlayerTask(true, false, {
+											reason: "post-ad-native-restore",
+										});
+									}
 								}
 								_schedulePostAdArtifactCleanup(channel, mediaKey);
 							}

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.7.3-purple)
+![Version](https://img.shields.io/badge/version-6.7.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,9 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.7.4
+- **HEVC Post-Hold Handoff** - 1440p/HEVC streams now reload the player when silent backup hold ends, fixing the post-ad black screen and audio desync that happened when the AVC-substituted backup buffer met the original HEVC native playlist.
 
 ### v6.7.3
 - **Shared Stream-Info Factory** - Refactored the duplicated stream-info construction in the worker fetch hook and the playlist processor into a single shared factory. Behavior unchanged.
