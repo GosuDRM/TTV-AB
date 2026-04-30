@@ -328,51 +328,8 @@ function _hookWorkerFetch() {
 					const isNewInfo = !info?.EncodingsM3U8;
 					if (isNewInfo) {
 						_pruneStreamInfos();
-						info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey] = {
-							MediaType: playbackContext.MediaType,
-							MediaKey: playbackContext.MediaKey,
-							ChannelName: playbackContext.ChannelName,
-							VodID: playbackContext.VodID,
-							IsShowingAd: false,
-							LastPlayerReload: 0,
-							EncodingsM3U8: encodings,
-							ModifiedM3U8: null,
-							IsUsingModifiedM3U8: false,
-							IsUsingFallbackStream: false,
-							IsUsingBackupStream: false,
-							UsherBaseUrl: url,
-							UsherParams: new URL(url).search,
-							RequestedAds: new Set(),
-							FailedBackupPlayerTypes: new Map(),
-							Urls: Object.create(null),
-							ResolutionList: [],
-							BackupEncodingsM3U8Cache: Object.create(null),
-							ActiveBackupPlayerType: null,
-							ActiveBackupResolution: null,
-							LastCleanNativeM3U8: null,
-							LastCleanNativePlaylistAt: 0,
-							LastCleanBackupM3U8: null,
-							LastCleanBackupPlayerType: null,
-							LastCleanBackupAt: 0,
-							IsMidroll: false,
-							IsStrippingAdSegments: false,
-							NumStrippedAdSegments: 0,
-							PendingAdEndAt: 0,
-							CleanPlaylistCount: 0,
-							AdEndMarkerBounceLogged: false,
-							AdEndBounceCount: 0,
-							VisibleAdStartedAt: 0,
-							IsHoldingBackupAfterAd: false,
-							SilentBackupHoldStartedAt: 0,
-							LastSilentBackupHoldLogAt: 0,
-							LastNativeRecoveryProbeAt: 0,
-							BackupVariantUrls: new Set(),
-							LastNativeRecoveryReadyPlayerType: null,
-							NativeRecoveryCleanCount: 0,
-							LastAdEndReloadAt: 0,
-							LastNativeRecoveryHoldLogAt: 0,
-							LastActivityAt: Date.now(),
-						};
+						info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey] =
+							_createStreamInfo(playbackContext);
 					} else {
 						info.MediaType = playbackContext.MediaType;
 						info.MediaKey = playbackContext.MediaKey;
@@ -631,6 +588,7 @@ function _hookWorker() {
                 ${_shouldReloadNativePlayerAfterAdReset.toString()}
                 ${_getStreamInfoForPlaylist.toString()}
                 ${_getSyntheticPlaybackContextForPlaylist.toString()}
+                ${_createStreamInfo.toString()}
                 ${_createSyntheticStreamInfo.toString()}
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_hasPlaylistAdMarkers.toString()}

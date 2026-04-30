@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.7.3] - 2026-04-30
+
+### Changed
+- **Shared Stream-Info Factory** - Extracted the duplicated stream-info object literal in `hooks.ts` and `processor.ts` into a single `_createStreamInfo` factory. Behavior is unchanged.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.3 Firefox branch release.
+
 ## [6.7.2] - 2026-04-29
 
 ### Fixed

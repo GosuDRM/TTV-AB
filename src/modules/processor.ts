@@ -627,11 +627,9 @@ async function _canReloadNativePlayerAfterAd(
 	}
 }
 
-function _createSyntheticStreamInfo(playbackContext, url = "") {
-	const normalizedContext = _normalizePlaybackContext(playbackContext);
-	if (!normalizedContext.MediaKey) return null;
-
-	const info = {
+function _createStreamInfo(context) {
+	const normalizedContext = _normalizePlaybackContext(context);
+	return {
 		MediaType: normalizedContext.MediaType,
 		MediaKey: normalizedContext.MediaKey,
 		ChannelName: normalizedContext.ChannelName,
@@ -676,6 +674,13 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 		LastNativeRecoveryHoldLogAt: 0,
 		LastActivityAt: Date.now(),
 	};
+}
+
+function _createSyntheticStreamInfo(playbackContext, url = "") {
+	const normalizedContext = _normalizePlaybackContext(playbackContext);
+	if (!normalizedContext.MediaKey) return null;
+
+	const info = _createStreamInfo(normalizedContext);
 
 	__TTVAB_STATE__.StreamInfos[normalizedContext.MediaKey] = info;
 	if (url) {

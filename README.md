@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.7.2-purple)
+![Version](https://img.shields.io/badge/version-6.7.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,9 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.7.2
-- **Early Long-Ad Visible Cycle Cutoff** - If Twitch keeps the native playlist ad-marked while a clean backup stream is already playing, TTV AB now ends the visible ad-blocking cycle as soon as the backup-hold limit is reached instead of waiting for a later candidate ad-end marker.
-- **Silent Backup Handoff Preserved** - After the visible cycle ends, the clean backup stream stays active until the native playlist is clean, then the native-playback-restored handoff restores media and applies the post-ad playback nudge.
+### v6.7.3
+- **Shared Stream-Info Factory** - Refactored the duplicated stream-info construction in the worker fetch hook and the playlist processor into a single shared factory. Behavior unchanged.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
