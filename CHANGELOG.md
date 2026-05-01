@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.7.6] - 2026-05-01
+
+### Fixed
+- **Preroll HEVC Deferral Black Screen** - The HEVC ad-block deferral in `_processM3U8` could re-trigger after an HEVC player reload during preroll, returning raw ad-marked playlists to a newly-created paused player and producing a black screen. The deferral now gates on `!info.IsShowingAd` so it only activates when no ad cycle is already in progress, letting the backup stream path take over correctly after the reload.
+
 ## [6.7.5] - 2026-04-30
 
 ### Fixed

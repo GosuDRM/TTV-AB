@@ -262,8 +262,7 @@ function _hookWorkerFetch() {
 			}
 			info.ModifiedM3U8 = modLines.join("\n");
 			info.IsUsingModifiedM3U8 =
-				wasUsingModifiedM3U8 &&
-				__TTVAB_STATE__.IsAdStrippingEnabled === true;
+				wasUsingModifiedM3U8 && __TTVAB_STATE__.IsAdStrippingEnabled === true;
 			_log(
 				"HEVC stream detected, prepared quality-preserving non-HEVC fallback master",
 				"info",

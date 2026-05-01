@@ -1,54 +1,42 @@
 {
-    "manifest_version": 3,
-	"version": "6.7.5",
-    "homepage_url": "https://github.com/GosuDRM/TTV-AB",
-    "short_name": "TTV AB",
-    "name": "__MSG_extName__",
-    "description": "__MSG_extDesc__",
-    "default_locale": "en",
-    "background": {
-        "service_worker": "src/scripts/background.js"
-    },
-    "permissions": [
-        "storage"
-    ],
-    "host_permissions": [
-        "*://*.twitch.tv/*"
-    ],
-    "content_scripts": [
-        {
-            "matches": [
-                "*://*.twitch.tv/*"
-            ],
-            "js": [
-                "src/scripts/content.js"
-            ],
-            "run_at": "document_start",
-            "world": "MAIN"
-        },
-        {
-            "matches": [
-                "*://*.twitch.tv/*"
-            ],
-            "js": [
-                "src/scripts/bridge.js"
-            ],
-            "run_at": "document_start",
-            "world": "ISOLATED"
-        }
-    ],
-    "action": {
-        "default_popup": "src/popup/popup.html",
-        "default_title": "__MSG_extName__",
-        "default_icon": {
-            "16": "assets/icons/icon16.png",
-            "48": "assets/icons/icon48.png",
-            "128": "assets/icons/icon128.png"
-        }
-    },
-    "icons": {
-        "16": "assets/icons/icon16.png",
-        "48": "assets/icons/icon48.png",
-        "128": "assets/icons/icon128.png"
-    }
+	"manifest_version": 3,
+	"version": "6.7.6",
+	"homepage_url": "https://github.com/GosuDRM/TTV-AB",
+	"short_name": "TTV AB",
+	"name": "__MSG_extName__",
+	"description": "__MSG_extDesc__",
+	"default_locale": "en",
+	"background": {
+		"service_worker": "src/scripts/background.js"
+	},
+	"permissions": ["storage"],
+	"host_permissions": ["*://*.twitch.tv/*"],
+	"content_scripts": [
+		{
+			"matches": ["*://*.twitch.tv/*"],
+			"js": ["src/scripts/content.js"],
+			"run_at": "document_start",
+			"world": "MAIN"
+		},
+		{
+			"matches": ["*://*.twitch.tv/*"],
+			"js": ["src/scripts/bridge.js"],
+			"run_at": "document_start",
+			"world": "ISOLATED"
+		}
+	],
+	"action": {
+		"default_popup": "src/popup/popup.html",
+		"default_title": "__MSG_extName__",
+		"default_icon": {
+			"16": "assets/icons/icon16.png",
+			"48": "assets/icons/icon48.png",
+			"128": "assets/icons/icon128.png"
+		}
+	},
+	"icons": {
+		"16": "assets/icons/icon16.png",
+		"48": "assets/icons/icon48.png",
+		"128": "assets/icons/icon128.png"
+	}
 }
