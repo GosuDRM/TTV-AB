@@ -1432,7 +1432,7 @@ function _hookMainFetch() {
 				const playerType = op?.variables?.playerType;
 				return (
 					typeof playerType === "string" &&
-					playerType.toLowerCase().includes("picture-in-picture")
+					playerType.toLowerCase().includes("picture-by-picture")
 				);
 			});
 		} catch {

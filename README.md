@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.7.8-purple)
+![Version](https://img.shields.io/badge/version-6.7.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,23 +57,9 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.7.8
-- **PiP Token Isolation Fix** - Picture-in-Picture playback token requests were not being isolated due to a typo, overwriting the native recovery player type. PiP tokens are now correctly detected and skipped.
-- **Resolution Fallback Fix** - When ModifiedM3U8 is active during HEVC ad recovery, the fallback resolution picker now prefers non-HEVC variants to avoid misidentifying AVC backup streams as HEVC.
-- **Bridge Stability** - Added max retry limit to bridge handshake and warning logs when the bridge message queue overflows.
-
-### v6.7.7
-- **Post-Ad HEVC Reload Loop Fix** - Fixed a black-screen regression where post-ad continuation markers could trigger a redundant second HEVC player reload right after the first post-ad reload, causing an unnecessary teardown/rebuild cycle. The HEVC reload now skips when the ad markers are from a recent post-ad re-entry, falling through to backup stream search instead.
-
-### v6.7.6
-- **Preroll HEVC Deferral Guard** - Fixed a black-screen regression where the HEVC ad-block deferral could re-trigger after a player reload during preroll, serving raw ad-marked playlists to a paused player. The deferral now only activates when no ad cycle is already in progress, allowing the backup stream path to take over correctly.
-
-### v6.7.5
-- **HEVC Post-Ad Handoff** - 1440p/HEVC streams now reload with a fresh token and media player instance after modified-M3U8 ad recovery, including silent backup hold exits, fixing the black screen and audio desync that happened when the AVC-substituted backup buffer met the original HEVC native playlist.
-- **HEVC Ad-Start Guard** - 1440p/HEVC streams keep Twitch's native 1440p master during normal playback, then hold the last clean native media playlist while arming a quality-preserving non-HEVC fallback master during active HEVC ad recovery so Chrome avoids both a visible ad flash and a mismatched AVC handoff.
-
-### v6.7.3
-- **Shared Stream-Info Factory** - Refactored the duplicated stream-info construction in the worker fetch hook and the playlist processor into a single shared factory. Behavior unchanged.
+### v6.7.9
+- **PiP Isolation Restored** - Reverted an incorrect string change from v6.7.8 that broke PiP token detection. Twitch uses `picture-by-picture` as the playerType identifier, not `picture-in-picture`. PiP tokens are once again properly isolated from native recovery probes.
+- **Backup Variant URL Pruning** - `BackupVariantUrls` now clears when exceeding 200 entries to prevent unbounded memory growth during long sessions.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

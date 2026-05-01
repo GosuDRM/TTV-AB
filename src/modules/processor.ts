@@ -1501,6 +1501,9 @@ async function _findBackupStream(
 								_log(
 									`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`,
 								);
+								if (info.BackupVariantUrls.size > 200) {
+									info.BackupVariantUrls.clear();
+								}
 							} else {
 								_log(`Usher failed for ${pt}: ${encRes.status}`, "warning");
 								_markBackupPlayerRetryCooldown(info, pt, "token-error");
