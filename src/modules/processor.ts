@@ -1124,7 +1124,8 @@ async function _processM3U8(url, text, realFetch) {
 			isHevc &&
 			!__TTVAB_STATE__.SkipPlayerReloadOnHevc &&
 			info.ModifiedM3U8 &&
-			!info.IsUsingModifiedM3U8
+			!info.IsUsingModifiedM3U8 &&
+			!_isRecentPostAdReentry(info)
 		) {
 			const cleanNativeAgeMs =
 				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0);
