@@ -1026,6 +1026,7 @@ async function _processM3U8(url, text, realFetch) {
 			(res?.Codecs?.[1] === "e" || res?.Codecs?.[1] === "v");
 		if (
 			isHevc &&
+			!info.IsShowingAd &&
 			info.ModifiedM3U8 &&
 			(!__TTVAB_STATE__.PlayerHasPlayedOnce ||
 				__TTVAB_STATE__.PlayerIsPlaying !== true)

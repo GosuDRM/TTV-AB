@@ -136,7 +136,9 @@ function _createFetchRelayResponse(payload, requestUrl = null) {
 		Object.defineProperty(response, "ok", { value: payload.ok });
 	}
 	if (typeof payload.redirected === "boolean") {
-		Object.defineProperty(response, "redirected", { value: payload.redirected });
+		Object.defineProperty(response, "redirected", {
+			value: payload.redirected,
+		});
 	}
 
 	return response;

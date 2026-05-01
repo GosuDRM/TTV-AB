@@ -504,7 +504,10 @@ function validateSharedDefinitions() {
 			`CHANGELOG top version markers are out of sync with ${constantsVersion}`,
 		);
 	}
-	if (!readmeSource.includes("Ads Blocked") || !privacySource.includes("Ads Blocked")) {
+	if (
+		!readmeSource.includes("Ads Blocked") ||
+		!privacySource.includes("Ads Blocked")
+	) {
 		throw new Error(
 			"README or PRIVACY metric wording is out of sync with Ads Blocked",
 		);
@@ -596,14 +599,14 @@ function validateSharedDefinitions() {
 			`Popup version badge must ship with a static synced fallback label/value: ${expectedPopupVersionMarkup}`,
 		);
 	}
-		for (const requiredPopupId of [
-			"enableToggle",
-			"statusDot",
-			"statusText",
-			"adsBlockedCount",
-			"timeSaved",
-			"statsToggle",
-			"statsPanel",
+	for (const requiredPopupId of [
+		"enableToggle",
+		"statusDot",
+		"statusText",
+		"adsBlockedCount",
+		"timeSaved",
+		"statsToggle",
+		"statsPanel",
 		"weeklyChart",
 		"chartAvg",
 		"channelList",
@@ -1049,14 +1052,14 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-		for (const requiredPopupId of [
-			"enableToggle",
-			"statusDot",
-			"statusText",
-			"adsBlockedCount",
-			"timeSaved",
-			"statsToggle",
-			"statsPanel",
+	for (const requiredPopupId of [
+		"enableToggle",
+		"statusDot",
+		"statusText",
+		"adsBlockedCount",
+		"timeSaved",
+		"statsToggle",
+		"statsPanel",
 		"weeklyChart",
 		"chartAvg",
 		"channelList",
@@ -1148,7 +1151,9 @@ function validateSharedDefinitions() {
 			"Reserved route lists must be sourced from the shared parser helper",
 		);
 	}
-	if (!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")) {
+	if (
+		!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")
+	) {
 		throw new Error(
 			"Hooks must resolve route context through _getPlaybackContextFromUrl",
 		);

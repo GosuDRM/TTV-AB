@@ -124,7 +124,6 @@ function _initToggleListener() {
 	});
 }
 
-
 function _hookSpaNavigation() {
 	const sync = () => _syncPagePlaybackContext({ broadcast: true });
 	const originalPushState = history.pushState;
@@ -141,7 +140,6 @@ function _hookSpaNavigation() {
 	};
 	window.addEventListener("popstate", sync);
 }
-
 
 function _init() {
 	if (!_bootstrap()) return;
