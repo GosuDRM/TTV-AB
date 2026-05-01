@@ -1433,11 +1433,11 @@ function _hookMainFetch() {
 				const playerType = op?.variables?.playerType;
 				return (
 					typeof playerType === "string" &&
-					playerType.toLowerCase().includes("picture-by-picture")
+					playerType.toLowerCase().includes("picture-in-picture")
 				);
 			});
 		} catch {
-			return bodyText.toLowerCase().includes("picture-by-picture");
+			return bodyText.toLowerCase().includes("picture-in-picture");
 		}
 	};
 	const updatePlaybackAccessTokenHash = (hash) => {

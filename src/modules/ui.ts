@@ -29,12 +29,6 @@ function _setUiStorageItem(key, value) {
 	}
 }
 
-function _escapeUiText(value) {
-	const div = document.createElement("div");
-	div.textContent = String(value ?? "");
-	return div.innerHTML;
-}
-
 function _getUiFlags(): UiFlags {
 	const existing = window[_UI_FLAGS_KEY];
 	if (existing && typeof existing === "object") {

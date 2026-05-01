@@ -221,9 +221,21 @@ function queuePendingPageMessage(message, prioritize = false) {
 	}
 	while (pendingPageMessages.length > MAX_PENDING_PAGE_MESSAGES) {
 		if (prioritize) {
-			pendingPageMessages.pop();
+			const dropped = pendingPageMessages.pop();
+			if (dropped?.type) {
+				console.warn(
+					"[TTV AB] Bridge queue full, dropped message:",
+					dropped.type,
+				);
+			}
 		} else {
-			pendingPageMessages.shift();
+			const dropped = pendingPageMessages.shift();
+			if (dropped?.type) {
+				console.warn(
+					"[TTV AB] Bridge queue full, dropped message:",
+					dropped.type,
+				);
+			}
 		}
 	}
 }
@@ -306,10 +318,25 @@ function bindPageBridgePort(port) {
 	return true;
 }
 
+const MAX_HANDSHAKE_RETRIES = 20;
+let handshakeRetryCount = 0;
+
 function startBridgeHandshake() {
-	if (pageBridgeConnected && pageBridgePort) return;
+	if (pageBridgeConnected && pageBridgePort) {
+		handshakeRetryCount = 0;
+		return;
+	}
+	if (handshakeRetryCount >= MAX_HANDSHAKE_RETRIES) {
+		console.error(
+			"[TTV AB] Bridge handshake failed after",
+			MAX_HANDSHAKE_RETRIES,
+			"retries",
+		);
+		return;
+	}
 	clearHandshakeRetryTimeout();
 	pageBridgeConnected = false;
+	handshakeRetryCount++;
 	const channel = new MessageChannel();
 	bindPageBridgePort(channel.port1);
 	window.postMessage(
