@@ -463,6 +463,8 @@ function _hookRevokeObjectURL() {
 
 function _hookWorker() {
 	_syncStoredDeviceId();
+	let hwRestartAttempts = 0;
+	const HW_MAX_RESTART = 3;
 	if (typeof window?.Worker !== "function") {
 		return;
 	}
@@ -506,7 +508,7 @@ function _hookWorker() {
 			if (!worker || excluded.has(worker) || seenWorkers.has(worker)) {
 				continue;
 			}
-			if (worker.__TTVABIntentionallyTerminated) {
+			if (worker.__TTVABIntentionallyTerminated || worker.__TTVABCrashed) {
 				continue;
 			}
 			aliveWorkers.push(worker);
@@ -788,6 +790,8 @@ function _hookWorker() {
                                     reloadContext.MediaKey;
                                 __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = Date.now();
                             }
+                            break;
+                        default:
                             break;
                     }
                 });
@@ -1213,13 +1217,13 @@ function _hookWorker() {
 								});
 							}
 							break;
+						default:
+							break;
 					}
 				});
 
 				const _workerUrl = url;
 				const workerOpts = opts;
-				let restartAttempts = 0;
-				const MAX_RESTART_ATTEMPTS = 3;
 
 				this.addEventListener("error", (e) => {
 					if (this.__TTVABIntentionallyTerminated) {
@@ -1234,16 +1238,16 @@ function _hookWorker() {
 
 					pruneTrackedWorkers([this]);
 
-					if (restartAttempts < MAX_RESTART_ATTEMPTS) {
-						restartAttempts++;
-						const delay = 2 ** restartAttempts * 500;
+					if (hwRestartAttempts < HW_MAX_RESTART) {
+						hwRestartAttempts++;
+						const delay = 2 ** hwRestartAttempts * 500;
 						_log(
 							"Restarting worker in " +
 								delay / 1000 +
 								"s (attempt " +
-								restartAttempts +
+								hwRestartAttempts +
 								"/" +
-								MAX_RESTART_ATTEMPTS +
+								HW_MAX_RESTART +
 								")",
 							"warning",
 						);
@@ -1252,19 +1256,21 @@ function _hookWorker() {
 							if (this.__TTVABIntentionallyTerminated) {
 								return;
 							}
-							const currentContext = _getPlaybackContextFromUrl(
-								window.location.href,
-							);
-							if (
-								isPlaybackContextMismatch(pagePlaybackContext, currentContext)
-							) {
-								_log("Skipping stale worker restart after navigation", "info");
-								return;
-							}
 							try {
+								const currentContext = _getPlaybackContextFromUrl(
+									window.location.href,
+								);
+								if (
+									isPlaybackContextMismatch(pagePlaybackContext, currentContext)
+								) {
+									_log(
+										"Skipping stale worker restart after navigation",
+										"info",
+									);
+									return;
+								}
 								new window.Worker(_workerUrl, workerOpts);
 								_log("Worker restarted", "success");
-								restartAttempts = 0;
 							} catch (restartErr) {
 								_log(`Worker restart failed: ${restartErr.message}`, "error");
 							}

@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.8.0] - 2026-05-01
+
+### Fixed
+- **Worker Crash-Restart Loop** - Shared the restart attempt counter across worker instances so consecutive crashes properly exhaust retries instead of looping infinitely.
+- **Tracked Worker Pruning** - `pruneTrackedWorkers` now checks both `__TTVABIntentionallyTerminated` and `__TTVABCrashed` so zombie crashed workers are properly evicted.
+- **Crash-Restart Navigation Safety** - The page context check inside the worker restart timeout now runs within the try-catch block.
+- **Message Switch Defaults** - Both worker and page-side message switches include default cases.
+- **Fetch Relay Abort** - Page-side fetch relay uses a 10-second AbortController timeout for abandoned worker token requests.
+
 ## [6.7.9] - 2026-05-01
 
 ### Fixed
