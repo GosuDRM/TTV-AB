@@ -199,7 +199,7 @@ function _getPlaybackContextFromUrl(rawUrl) {
 	if (lowerFirstSegment === "videos" || lowerFirstSegment === "video") {
 		return _normalizePlaybackContext({
 			MediaType: "vod",
-			VodID: segments[1] || null,
+			VodID: (segments[1] || "").replace(/^v/i, "") || null,
 		});
 	}
 

@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.8.1] - 2026-05-01
+
+### Fixed
+- **VOD URL v-Prefix** - `_getPlaybackContextFromUrl` now strips the `v` prefix from VOD IDs in path-based URLs.
+- **Stream Info Pruning Safety** - `_pruneStreamInfos` now collects URL keys before deleting them.
+- **Bridge Handshake Recovery** - After exhausting 20 fast retries, the bridge resets and schedules a 30-second recovery attempt.
+- **Buffer State on Hidden** - Buffer monitor no longer resets counter state when the page is hidden.
+- **Token Fetch Error Response** - `_getToken` returns a proper `Response` object on errors.
+- **Welcome Toast Timing** - First-run key written immediately instead of inside `setTimeout`.
+- **Post-Ad State Cleanup** - Recovery state reset now clears all related fields.
+- **Deduplicated Reset Blocks** - Merged two redundant `didMediaKeyChange` blocks in `_setPagePlaybackContext`.
+
 ## [6.8.0] - 2026-05-01
 
 ### Fixed

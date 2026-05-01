@@ -137,10 +137,14 @@ function _hookWorkerFetch() {
 			)[0];
 			const oldInfo = __TTVAB_STATE__.StreamInfos[oldKey];
 			delete __TTVAB_STATE__.StreamInfos[oldKey];
+			const urlsToDelete = [];
 			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
 				if (__TTVAB_STATE__.StreamInfosByUrl[url] === oldInfo) {
-					delete __TTVAB_STATE__.StreamInfosByUrl[url];
+					urlsToDelete.push(url);
 				}
+			}
+			for (const url of urlsToDelete) {
+				delete __TTVAB_STATE__.StreamInfosByUrl[url];
 			}
 		}
 	}

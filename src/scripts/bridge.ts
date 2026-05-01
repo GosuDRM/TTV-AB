@@ -327,11 +327,10 @@ function startBridgeHandshake() {
 		return;
 	}
 	if (handshakeRetryCount >= MAX_HANDSHAKE_RETRIES) {
-		console.error(
-			"[TTV AB] Bridge handshake failed after",
-			MAX_HANDSHAKE_RETRIES,
-			"retries",
-		);
+		handshakeRetryCount = 0;
+		handshakeRetryTimeout = setTimeout(() => {
+			startBridgeHandshake();
+		}, 30000);
 		return;
 	}
 	clearHandshakeRetryTimeout();

@@ -2647,6 +2647,9 @@ function _monitorPlayerBuffering() {
 		if (!hasPendingPostAdRecovery) {
 			_PlayerBufferState.postAdUnhealthyCount = 0;
 			_PlayerBufferState.postAdRecoveryStartedAt = 0;
+			_PlayerBufferState.postAdLastCurrentTime = 0;
+			_PlayerBufferState.postAdStallTicks = 0;
+			_PlayerBufferState.postAdSoftReloadAttempted = false;
 		}
 		const isHidden = _isNativeDocumentHidden();
 		const hiddenDelay = Math.max(
@@ -2706,7 +2709,7 @@ function _monitorPlayerBuffering() {
 		}
 
 		if (isHidden) {
-			_clearCachedPlayerRef();
+			_clearCachedPlayerRef(false);
 			_playerBufferMonitorTimer = setTimeout(check, nextDelay);
 			return;
 		}

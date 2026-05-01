@@ -373,19 +373,17 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
 		__TTVAB_STATE__.LastPlayerReloadAt = 0;
-		__TTVAB_STATE__.LastAdEndedAt = 0;
-		__TTVAB_STATE__.LastAdEndedChannel = null;
-		__TTVAB_STATE__.LastAdEndedMediaKey = null;
 		__TTVAB_STATE__.ShouldResumeAfterAd = false;
 		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
 		__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
 		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
 		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+		__TTVAB_STATE__.LastAdEndedAt = 0;
+		__TTVAB_STATE__.LastAdEndedChannel = null;
+		__TTVAB_STATE__.LastAdEndedMediaKey = null;
 		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
-	}
 
-	if (didMediaKeyChange) {
 		if (previousMediaKey) {
 			delete __TTVAB_STATE__.StreamInfos[previousMediaKey];
 			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
@@ -402,16 +400,6 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.PinnedBackupPlayerType = null;
 		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-		__TTVAB_STATE__.LastAdEndedAt = 0;
-		__TTVAB_STATE__.LastAdEndedChannel = null;
-		__TTVAB_STATE__.LastAdEndedMediaKey = null;
-		__TTVAB_STATE__.ShouldResumeAfterAd = false;
-		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
-		__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
-		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
-		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
-		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
-		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 		didResetAdScopedState = true;
 	}
 

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.8.0-purple)
+![Version](https://img.shields.io/badge/version-6.8.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -57,8 +57,8 @@ During active ad recovery, Twitch may temporarily fall back to a lower-quality b
 
 ## What's New
 
-### v6.8.0
-- **Worker Reliability** - Hardened the worker lifecycle: shared crash-restart counter prevents infinite crash loops, crashed workers are properly pruned, crash-restart timeout guards against navigation-edge-case throws, worker message switches include default cases, and page-side fetch relay includes a 10-second abort timeout.
+### v6.8.1
+- **Bugs Squashed** - VOD URL v-prefix handling, for-in delete safety, bridge handshake recovery, buffer state preserved on tab hide, token error response hardening, welcome toast write timing, post-ad state cleanup, and merged duplicate reset blocks.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
