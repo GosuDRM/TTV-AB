@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.8.0] - 2026-05-01
+
+### Fixed
+- **Worker `eval` Crash Guard** - The injected `eval(wasmSource)` now runs inside try-catch so a failed synchronous XHR that returns non-JavaScript content does not silently crash the entire worker bootstrap, leaving it without message handlers or fetch hooks.
+- **Crash-Restart Navigation Safety** - The `_getPlaybackContextFromUrl(window.location.href)` call and context mismatch check inside the worker restart timeout are now inside the try-catch block, preventing an uncaught throw from a destroyed browsing context during navigation from aborting the restart permanently.
+- **Tracked Worker Pruning** - `pruneTrackedWorkers` now checks both `__TTVABIntentionallyTerminated` and `__TTVABCrashed` so zombie crashed workers are properly evicted from `_S.workers` instead of persisting as dead references.
+- **Worker State Injection** - The injected `_S` object now carries only `adsBlocked` instead of the full serialized page-level `_S` (which included non-serializable `Worker` instances as empty objects).
+- **Reinserted Function Binding** - `_reinsert` now binds reinserted window functions to `window` so any function that uses `this` keeps the correct context when called on the Worker prototype.
+- **Fetch Relay Abort** - The page-side fetch relay now wraps requests with a 10-second `AbortController` so abandoned worker token requests do not keep running indefinitely.
+- **Message Switch Defaults** - Both the worker-side and page-side worker message switches now include a `default` case instead of silently dropping unknown message types.
+
 ## [6.7.9] - 2026-05-01
 
 ### Fixed
