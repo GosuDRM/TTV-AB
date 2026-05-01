@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.8.1] - 2026-05-01
+
+### Fixed
+- **VOD URL v-Prefix** - `_getPlaybackContextFromUrl` now strips the `v` prefix from VOD IDs in path-based URLs (`/videos/v123456`), matching the existing query-param handling for `player.twitch.tv`.
+- **Worker Blob URL Revocation** - Increased blob URL revocation delay from 0ms to 500ms to prevent premature revocation before the Worker constructor finishes loading the injected source.
+- **Stream Info Pruning Safety** - `_pruneStreamInfos` now collects URL keys before deleting them, avoiding spec-undefined `for...in` with `delete` behavior.
+- **Bridge Handshake Recovery** - After exhausting 20 fast handshake retries, the bridge now resets its counter and schedules a 30-second recovery attempt instead of permanently disabling.
+- **Buffer State on Hidden** - The buffer monitor no longer resets counter state when the page is hidden, preserving stall detection progress when the tab regains focus.
+- **Token Fetch Error Response** - `_getToken` now returns a proper `Response` object on errors instead of a plain object that lacked `clone()` and other Response methods.
+- **Welcome Toast Timing** - The first-run welcome localStorage key is now written immediately instead of inside a `setTimeout`, preventing repeated toasts on rapid page reloads.
+- **Post-Ad State Cleanup** - The post-ad recovery state reset now also clears `postAdLastCurrentTime`, `postAdStallTicks`, and `postAdSoftReloadAttempted`.
+- **Deduplicated Reset Blocks** - Merged the two redundant `if (didMediaKeyChange)` blocks in `_setPagePlaybackContext` into one.
+
 ## [6.8.0] - 2026-05-01
 
 ### Fixed

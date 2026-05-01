@@ -123,6 +123,7 @@ function _showWelcome() {
 		if (uiFlags.welcomeScheduled || _getUiStorageItem(_FIRST_RUN_KEY)) return;
 
 		uiFlags.welcomeScheduled = true;
+		_setUiStorageItem(_FIRST_RUN_KEY, "true");
 		setTimeout(() => {
 			uiFlags.welcomeScheduled = false;
 			if (document.getElementById("ttvab-welcome") || !document.body) return;
@@ -149,7 +150,6 @@ function _showWelcome() {
             `;
 
 			document.body.appendChild(toast);
-			_setUiStorageItem(_FIRST_RUN_KEY, "true");
 
 			const closeHandler = () => {
 				toast.style.animation = "ttvab-welcome .3s ease reverse";
