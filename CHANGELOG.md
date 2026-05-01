@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.7.8] - 2026-05-01
+
+### Fixed
+- **PiP Token Isolation** - Fixed a typo (`picture-by-picture` → `picture-in-picture`) in `isPictureInPicturePlaybackAccessTokenBody` that prevented PiP playback token requests from being isolated. PiP tokens no longer overwrite `LastNativePlaybackAccessTokenPlayerType`, keeping native recovery probes on the correct player type.
+- **Resolution Fallback Codec Awareness** - `_getFallbackResolution` now prefers non-HEVC variants when `ModifiedM3U8` is active, preventing the fallback from returning HEVC resolution info for AVC backup variants during ad recovery.
+- **Bridge Handshake Retry Cap** - `startBridgeHandshake` now stops after 20 retries instead of retrying indefinitely every 75ms.
+- **Bridge Queue Overflow Logging** - Dropped bridge messages now emit a console warning with the message type instead of silently vanishing.
+
+### Changed
+- **Removed Dead Code** - Removed unused `_escapeUiText` helper from `ui.ts`.
+
 ## [6.7.7] - 2026-05-01
 
 ### Fixed

@@ -888,5 +888,12 @@ function _getFallbackResolution(info, url) {
 	);
 	if (preferredResolution) return preferredResolution;
 
-	return _getSortedResolutionList(resolutionList)[0];
+	const sorted = _getSortedResolutionList(resolutionList);
+	if (info?.ModifiedM3U8) {
+		const nonHevc = sorted.find(
+			(r) => r.Codecs?.startsWith("avc") || r.Codecs?.startsWith("av0"),
+		);
+		if (nonHevc) return nonHevc;
+	}
+	return sorted[0];
 }

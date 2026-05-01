@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.7.7-purple)
+![Version](https://img.shields.io/badge/version-6.7.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,11 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.7.8
+- **PiP Token Isolation Fix** - Picture-in-Picture playback token requests were not being isolated due to a typo, overwriting the native recovery player type. PiP tokens are now correctly detected and skipped.
+- **Resolution Fallback Fix** - When ModifiedM3U8 is active during HEVC ad recovery, the fallback resolution picker now prefers non-HEVC variants to avoid misidentifying AVC backup streams as HEVC.
+- **Bridge Stability** - Added max retry limit to bridge handshake and warning logs when the bridge message queue overflows.
 
 ### v6.7.7
 - **Post-Ad HEVC Reload Loop Fix** - Fixed a black-screen regression where post-ad continuation markers could trigger a redundant second HEVC player reload right after the first post-ad reload, causing an unnecessary teardown/rebuild cycle. The HEVC reload now skips when the ad markers are from a recent post-ad re-entry, falling through to backup stream search instead.
