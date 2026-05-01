@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.7.9] - 2026-05-01
+
+### Fixed
+- **PiP Token Isolation Reverted** - The v6.7.8 PiP isolation change incorrectly replaced the `picture-by-picture` string with `picture-in-picture`. Twitch's actual PiP playerType identifier is `picture-by-picture`, so the v6.7.8 change broke isolation completely. Reverted to the original correct string.
+- **BackupVariantUrls Unbounded Growth** - The backup variant URL whitelist Set now clears when exceeding 200 entries, preventing unbounded memory accumulation during long sessions with frequent backup token requests.
+
 ## [6.7.8] - 2026-05-01
 
 ### Fixed

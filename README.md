@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-6.7.8-purple)
+![Version](https://img.shields.io/badge/version-6.7.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Short Name](https://img.shields.io/badge/short_name-TTV%20AB-blueviolet)
@@ -56,6 +56,10 @@ The extension intercepts Twitch's live and VOD HLS video playlists and:
 During active ad recovery, Twitch may temporarily fall back to a lower-quality backup stream, such as `360p`, while the extension keeps playback alive. Once the ad window ends and the player returns to native playback, your chosen quality is restored.
 
 ## What's New
+
+### v6.7.9
+- **PiP Isolation Restored** - Reverted an incorrect string change from v6.7.8 that broke PiP token detection. Twitch uses `picture-by-picture` as the playerType identifier, not `picture-in-picture`. PiP tokens are once again properly isolated from native recovery probes.
+- **Backup Variant URL Pruning** - `BackupVariantUrls` now clears when exceeding 200 entries to prevent unbounded memory growth during long sessions.
 
 ### v6.7.8
 - **PiP Token Isolation Fix** - Picture-in-Picture playback token requests were not being isolated due to a typo, overwriting the native recovery player type. PiP tokens are now correctly detected and skipped.
