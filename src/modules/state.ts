@@ -529,6 +529,8 @@ function _declareState(scope) {
 		PreferredQualityGroup: null,
 		HasResolvedAdsCountState: false,
 		HasResolvedToggleState: false,
+		PlayerHasPlayedOnce: false,
+		PlayerIsPlaying: false,
 		PendingInitialAdsBlockedDelta: 0,
 		PendingFetchRequests: new Map(),
 		FetchRequestSeq: 0,

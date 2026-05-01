@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.7.5] - 2026-04-30
+
+### Fixed
+- **1440p/HEVC Post-Ad Black Screen and Audio Desync** - During an ad cycle on a 1440p (HEVC-only) stream, the worker swaps the master playlist's HEVC variants with the closest non-HEVC URLs (`info.ModifiedM3U8`) and serves an AVC backup. When 6.7.2's silent backup hold ends, native playback was restored with only a pause/play, leaving the MSE source buffer initialized for AVC while the player resumed an HEVC variant - producing either a black screen (codec switch refused) or audio out of sync (different `EXT-X-MEDIA AUDIO` group). The worker now tracks `HevcReloadPendingAfterHold` whenever the ad cycle used the modified M3U8, forwards `requiresReload` on the `NativePlaybackRestored` event, and the page handler reloads the player with a refreshed access token instead of pause/play. Regular HEVC post-ad exits now use the same fresh-token/new-media-player reload instead of the older soft reload. AVC streams keep the 6.7.2 no-flicker handoff unchanged.
+- **1440p/HEVC Ad-Start Black Screen on Cold or Paused Playback** - When a 1440p HEVC stream was opened in a fresh tab or Twitch requested pause ads while playback was paused, the HEVC ad-start path could tear down the player to switch the MSE codec from HEVC to AVC at the same moment an ad was detected. The worker now tracks page-side `PlayerHasPlayedOnce` and `PlayerIsPlaying` signals, seeds them into newly hooked workers, and keeps Twitch's native 1440p master during normal playback. During active HEVC ad recovery only, the worker holds the last clean native media playlist for the current HEVC request while arming a fallback master that keeps the original quality-facing resolution/frame-rate entry visible and borrows fallback `CODECS`, `AUDIO`, `VIDEO`, and `SUBTITLES` fields so the fallback video URL keeps matching media groups. AVC streams are unaffected.
+
+### Changed
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.5 Chrome release.
+
 ## [6.7.3] - 2026-04-30
 
 ### Changed

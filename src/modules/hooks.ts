@@ -236,16 +236,38 @@ function _hookWorkerFetch() {
 								Math.abs(aArea - targetArea) - Math.abs(bArea - targetArea)
 							);
 						})[0];
-						modLines[mi] = modLines[mi].replace(
+						let nextStreamInf = modLines[mi].replace(
 							/CODECS="[^"]+"/,
 							`CODECS="${closest.Codecs}"`,
 						);
+						nextStreamInf = _replaceOrAppendStreamInfAttribute(
+							nextStreamInf,
+							"AUDIO",
+							closest.Audio,
+						);
+						nextStreamInf = _replaceOrAppendStreamInfAttribute(
+							nextStreamInf,
+							"VIDEO",
+							closest.Video,
+						);
+						nextStreamInf = _replaceOrAppendStreamInfAttribute(
+							nextStreamInf,
+							"SUBTITLES",
+							closest.Subtitles,
+						);
+						modLines[mi] = nextStreamInf;
 						modLines[mi + 1] = closest.RawUrl || closest.Url;
 					}
 				}
 			}
 			info.ModifiedM3U8 = modLines.join("\n");
-			_log("HEVC stream detected, created fallback M3U8", "info");
+			info.IsUsingModifiedM3U8 =
+				wasUsingModifiedM3U8 &&
+				__TTVAB_STATE__.IsAdStrippingEnabled === true;
+			_log(
+				"HEVC stream detected, prepared quality-preserving non-HEVC fallback master",
+				"info",
+			);
 		}
 
 		if (wasUsingModifiedM3U8 && !info.ModifiedM3U8) {
@@ -556,6 +578,7 @@ function _hookWorker() {
                 ${_absolutizeMediaPlaylistUrls.toString()}
                 ${_stripAds.toString()}
                 ${_getStreamVariantInfo.toString()}
+                ${_replaceOrAppendStreamInfAttribute.toString()}
                 ${_getStreamUrl.toString()}
                 ${_getSortedResolutionList.toString()}
                 ${_getResolutionByQualityGroup.toString()}
@@ -627,7 +650,9 @@ function _hookWorker() {
                 __TTVAB_STATE__.PageVodID = ${JSON.stringify(pagePlaybackContext.VodID)};
                 __TTVAB_STATE__.PageMediaKey = ${JSON.stringify(pagePlaybackContext.MediaKey)};
                 __TTVAB_STATE__.PreferredQualityGroup = ${JSON.stringify(__TTVAB_STATE__.PreferredQualityGroup)};
-                
+                __TTVAB_STATE__.PlayerHasPlayedOnce = ${JSON.stringify(__TTVAB_STATE__.PlayerHasPlayedOnce)};
+                __TTVAB_STATE__.PlayerIsPlaying = ${JSON.stringify(__TTVAB_STATE__.PlayerIsPlaying)};
+
                 self.addEventListener('message', function(e) {
                     const data = _getWorkerBridgeMessage(e.data);
                     if (!data) return;
@@ -642,6 +667,8 @@ function _hookWorker() {
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                         case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;
+                        case 'UpdatePlayerHasPlayedOnce': __TTVAB_STATE__.PlayerHasPlayedOnce = data.value === true; break;
+                        case 'UpdatePlayerIsPlaying': __TTVAB_STATE__.PlayerIsPlaying = data.value === true; break;
                         case 'UpdatePageContext':
                             {
                                 const nextPageContext = _normalizePlaybackContext(data.value);
@@ -1129,14 +1156,27 @@ function _hookWorker() {
 									data.channel || __TTVAB_STATE__.LastAdEndedChannel || null;
 								const mediaKey =
 									data.mediaKey || __TTVAB_STATE__.LastAdEndedMediaKey || null;
-								_log("Native playback restored after backup hold", "success");
+								const requiresReload = data.requiresReload === true;
+								_log(
+									requiresReload
+										? "Native playback restored after backup hold; reloading player for HEVC handoff"
+										: "Native playback restored after backup hold",
+									"success",
+								);
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
 								}
 								if (typeof _doPlayerTask === "function") {
-									_doPlayerTask(true, false, {
-										reason: "post-ad-native-restore",
-									});
+									if (requiresReload) {
+										_doPlayerTask(false, true, {
+											reason: "post-ad-native-restore",
+											refreshAccessToken: true,
+										});
+									} else {
+										_doPlayerTask(true, false, {
+											reason: "post-ad-native-restore",
+										});
+									}
 								}
 								_schedulePostAdArtifactCleanup(channel, mediaKey);
 							}
@@ -1247,6 +1287,14 @@ function _hookWorker() {
 					_postWorkerBridgeMessage(this, {
 						key: "UpdateAdsBlocked",
 						value: _S.adsBlocked,
+					});
+					_postWorkerBridgeMessage(this, {
+						key: "UpdatePlayerHasPlayedOnce",
+						value: __TTVAB_STATE__.PlayerHasPlayedOnce,
+					});
+					_postWorkerBridgeMessage(this, {
+						key: "UpdatePlayerIsPlaying",
+						value: __TTVAB_STATE__.PlayerIsPlaying,
 					});
 					_postWorkerBridgeMessage(this, {
 						key: "UpdatePageContext",
