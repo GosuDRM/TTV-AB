@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [6.7.7] - 2026-05-01
+
+### Fixed
+- **Post-Ad HEVC Reload Loop** - When an ad cycle ended and `_resetStreamAdState` cleared `IsUsingModifiedM3U8`, post-ad continuation markers arriving within 8 seconds could trigger a redundant second HEVC player reload because the condition only checked `!info.IsUsingModifiedM3U8`. The reload now also gates on `!_isRecentPostAdReentry(info)`, so post-ad markers fall through to the backup stream path instead of causing an unnecessary player teardown/rebuild cycle.
+
 ## [6.7.6] - 2026-05-01
 
 ### Fixed
