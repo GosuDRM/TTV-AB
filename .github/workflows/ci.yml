@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, firefox, master]
+  pull_request:
+    branches: [main, firefox, master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx biome check src/ --max-diagnostics=50
+      - run: npm run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        suite:
+          - parser-identity
+          - parser-hls
+          - parser-variants
+          - constants
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx tsc -p tsconfig.modules.json
+      - run: npx vitest run --reporter verbose tests/${{ matrix.suite }}.test.ts
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+      - run: npm run knip

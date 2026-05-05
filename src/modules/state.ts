@@ -16,6 +16,12 @@ let _bridgePort: MessagePort | null = null;
 let _bridgePortHandshakeBound = false;
 let _bridgeSessionToken: string | null = null;
 
+function _bridgePortMessageHandler(event: MessageEvent) {
+	const message = _getStructuredMessageData(event.data);
+	if (typeof message?.type !== "string") return;
+	_emitInternalMessage(message.type, message.detail ?? null);
+}
+
 function _getStructuredMessageData(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return null;
@@ -172,7 +178,7 @@ function _trimPendingBridgeMessages() {
 			break;
 		}
 		if (_collapseOldestPendingCounterMessage()) continue;
-		break;
+		_pendingBridgeMessages.shift();
 	}
 }
 
@@ -184,7 +190,7 @@ function _flushBridgeMessageQueue() {
 			_bridgePort.postMessage(nextMessage);
 			_pendingBridgeMessages.shift();
 		} catch {
-			break;
+			_pendingBridgeMessages.shift();
 		}
 	}
 }
@@ -208,16 +214,13 @@ function _attachBridgePort(port, sessionToken = null) {
 	}
 	if (_bridgePort) {
 		try {
+			_bridgePort.removeEventListener("message", _bridgePortMessageHandler);
 			_bridgePort.close();
 		} catch {}
 	}
 	_bridgePort = port;
 	_bridgeSessionToken = sessionToken;
-	_bridgePort.addEventListener("message", (event) => {
-		const message = _getStructuredMessageData(event.data);
-		if (typeof message?.type !== "string") return;
-		_emitInternalMessage(message.type, message.detail ?? null);
-	});
+	_bridgePort.addEventListener("message", _bridgePortMessageHandler);
 	_bridgePort.start?.();
 	_flushBridgeMessageQueue();
 	return true;

@@ -2,26 +2,50 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.1] - 2026-05-05
+
+### Fixed
+- **HEVC Fallback State Accuracy** - The HEVC-to-AVC backup handoff path no longer sets `IsUsingModifiedM3U8` unless a clean native playlist is actually being returned. Previously this flag was set unconditionally, causing unnecessary player reloads at ad end even when the original unmodified stream was served.
+- **Unbounded Bridge Message Queue** - The bridge message queue now drops the oldest counter message when coalescing fails, preventing unbounded memory growth during long sessions with many distinct ad-block events.
+- **Bridge Flush Message Recovery** - When a single bridge message fails to serialize, the flush loop now removes the problematic message and continues processing the remaining queue instead of silently discarding everything.
+- **Worker Hook Crash Resilience** - Worker prototype cleanup (`_cleanWorker`) and function reinsertion (`_reinsert`) now wrap their operations in try-catch, preventing the entire Worker constructor hook from breaking if another extension or page script has set non-configurable properties on Worker.prototype.
+- **WASM Fetcher Crash Guard** - The synchronous XHR used to retrieve the WASM bootstrap script now runs inside try-catch, returning an empty string on failure instead of throwing and silently crashing the injected worker.
+- **Missing State Guards** - Added existence checks for `__TTVAB_STATE__` in `_syncPreferredQualityGroup`, `_resolvePlayerMediaKey`, `_pruneStreamInfos`, and `_getStreamInfoForPlaylist`, preventing crashes when these functions are called before state initialization.
+- **Optional Chaining on State Access** - `_resolvePlayerMediaKey`, `_doPlayerTask` (`LastPlayerReloadAt`), and `_broadcastWorkers` (`TriggeredPlayerReload` context) now use optional chaining on `__TTVAB_STATE__` fields, matching the guard pattern used elsewhere.
+- **BackupVariantUrls Eviction Strategy** - The backup variant URL whitelist now evicts the oldest single entry when exceeding 200 instead of clearing the entire set. This prevents a legitimate backup URL from being unrecognized mid-cycle and accidentally triggering ad processing on a backup stream.
+- **Bridge Port Listener Lifecycle** - The bridge port message event listener is now a named handler that gets removed before the old port is closed, preventing minor memory retention from orphaned listener references.
+- **Bridge Handshake Race** - The bridge handshake now starts inside the `chrome.storage.local` initialization callback instead of at top-level execution, ensuring the initial state broadcast carries real stored values rather than stale defaults.
+- **Page Exit Counter Delivery** - Counter flushes on page exit now attempt a `navigator.sendBeacon` fallback alongside the existing localStorage replay mechanism, adding a second delivery path for ad-block statistics during tab close.
+- **Persist Chain Error Recovery** - The background service worker persist chain now explicitly returns `undefined` from its error handler, ensuring that a permanent storage failure does not silently leave the chain in a resolved-then-failed state.
+- **Surgical Prefetch Handling** - Both blanket `#EXT-X-TWITCH-PREFETCH` clearing passes have been removed. Prefetch lines are now only blanked when their URL matches a known ad segment, preserving legitimate content prefetch hints at midroll transitions.
+- **Cancellable UI Timers** - All six auto-dismiss and animation timers in the donation, welcome, and achievement toasts now store their timer IDs and clear any previous timer before setting a new one, preventing timer accumulation.
+- **SPA Listener Cleanup** - The popstate listener and history method overrides from `_hookSpaNavigation` are now cleaned up on pagehide, restoring the original `history.pushState` and `history.replaceState`.
+- **Build Minification String Safety** - The minification step now checks whether a matched identifier falls inside a string literal before replacing it, preventing accidental mangling of underscore-prefixed identifiers that appear in message strings.
+- **Scoped Blob URL Revocation** - The extended blob URL revocation delay (3500ms) now only applies to extension-owned blob URLs tracked in a dedicated set. All other page scripts' blob URLs are revoked immediately as normal.
+
 ## [6.8.1] - 2026-05-01
 
 ### Fixed
-- **VOD URL v-Prefix** - `_getPlaybackContextFromUrl` now strips the `v` prefix from VOD IDs in path-based URLs.
-- **Stream Info Pruning Safety** - `_pruneStreamInfos` now collects URL keys before deleting them.
-- **Bridge Handshake Recovery** - After exhausting 20 fast retries, the bridge resets and schedules a 30-second recovery attempt.
-- **Buffer State on Hidden** - Buffer monitor no longer resets counter state when the page is hidden.
-- **Token Fetch Error Response** - `_getToken` returns a proper `Response` object on errors.
-- **Welcome Toast Timing** - First-run key written immediately instead of inside `setTimeout`.
-- **Post-Ad State Cleanup** - Recovery state reset now clears all related fields.
-- **Deduplicated Reset Blocks** - Merged two redundant `didMediaKeyChange` blocks in `_setPagePlaybackContext`.
+- **VOD URL v-Prefix** - `_getPlaybackContextFromUrl` now strips the `v` prefix from VOD IDs in path-based URLs (`/videos/v123456`), matching the existing query-param handling for `player.twitch.tv`.
+- **Worker Blob URL Revocation** - Increased blob URL revocation delay from 0ms to 500ms to prevent premature revocation before the Worker constructor finishes loading the injected source.
+- **Stream Info Pruning Safety** - `_pruneStreamInfos` now collects URL keys before deleting them, avoiding spec-undefined `for...in` with `delete` behavior.
+- **Bridge Handshake Recovery** - After exhausting 20 fast handshake retries, the bridge now resets its counter and schedules a 30-second recovery attempt instead of permanently disabling.
+- **Buffer State on Hidden** - The buffer monitor no longer resets counter state when the page is hidden, preserving stall detection progress when the tab regains focus.
+- **Token Fetch Error Response** - `_getToken` now returns a proper `Response` object on errors instead of a plain object that lacked `clone()` and other Response methods.
+- **Welcome Toast Timing** - The first-run welcome localStorage key is now written immediately instead of inside a `setTimeout`, preventing repeated toasts on rapid page reloads.
+- **Post-Ad State Cleanup** - The post-ad recovery state reset now also clears `postAdLastCurrentTime`, `postAdStallTicks`, and `postAdSoftReloadAttempted`.
+- **Deduplicated Reset Blocks** - Merged the two redundant `if (didMediaKeyChange)` blocks in `_setPagePlaybackContext` into one.
 
 ## [6.8.0] - 2026-05-01
 
 ### Fixed
-- **Worker Crash-Restart Loop** - Shared the restart attempt counter across worker instances so consecutive crashes properly exhaust retries instead of looping infinitely.
-- **Tracked Worker Pruning** - `pruneTrackedWorkers` now checks both `__TTVABIntentionallyTerminated` and `__TTVABCrashed` so zombie crashed workers are properly evicted.
-- **Crash-Restart Navigation Safety** - The page context check inside the worker restart timeout now runs within the try-catch block.
-- **Message Switch Defaults** - Both worker and page-side message switches include default cases.
-- **Fetch Relay Abort** - Page-side fetch relay uses a 10-second AbortController timeout for abandoned worker token requests.
+- **Worker `eval` Crash Guard** - The injected `eval(wasmSource)` now runs inside try-catch so a failed synchronous XHR that returns non-JavaScript content does not silently crash the entire worker bootstrap, leaving it without message handlers or fetch hooks.
+- **Crash-Restart Navigation Safety** - The `_getPlaybackContextFromUrl(window.location.href)` call and context mismatch check inside the worker restart timeout are now inside the try-catch block, preventing an uncaught throw from a destroyed browsing context during navigation from aborting the restart permanently.
+- **Tracked Worker Pruning** - `pruneTrackedWorkers` now checks both `__TTVABIntentionallyTerminated` and `__TTVABCrashed` so zombie crashed workers are properly evicted from `_S.workers` instead of persisting as dead references.
+- **Worker State Injection** - The injected `_S` object now carries only `adsBlocked` instead of the full serialized page-level `_S` (which included non-serializable `Worker` instances as empty objects).
+- **Reinserted Function Binding** - `_reinsert` now binds reinserted window functions to `window` so any function that uses `this` keeps the correct context when called on the Worker prototype.
+- **Fetch Relay Abort** - The page-side fetch relay now wraps requests with a 10-second `AbortController` so abandoned worker token requests do not keep running indefinitely.
+- **Message Switch Defaults** - Both the worker-side and page-side worker message switches now include a `default` case instead of silently dropping unknown message types.
 
 ## [6.7.9] - 2026-05-01
 
@@ -57,23 +81,31 @@ All notable changes to TTV AB will be documented in this file.
 - **1440p/HEVC Ad-Start Black Screen on Cold or Paused Playback** - When a 1440p HEVC stream was opened in a fresh tab or Twitch requested pause ads while playback was paused, the HEVC ad-start path could tear down the player to switch the MSE codec from HEVC to AVC at the same moment an ad was detected. The worker now tracks page-side `PlayerHasPlayedOnce` and `PlayerIsPlaying` signals, seeds them into newly hooked workers, and keeps Twitch's native 1440p master during normal playback. During active HEVC ad recovery only, the worker holds the last clean native media playlist for the current HEVC request while arming a fallback master that keeps the original quality-facing resolution/frame-rate entry visible and borrows fallback `CODECS`, `AUDIO`, `VIDEO`, and `SUBTITLES` fields so the fallback video URL keeps matching media groups. AVC streams are unaffected.
 
 ### Changed
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.5 Chrome release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.5 Firefox branch release.
 
 ## [6.7.3] - 2026-04-30
 
 ### Changed
 - **Shared Stream-Info Factory** - Extracted the duplicated stream-info object literal in `hooks.ts` and `processor.ts` into a single `_createStreamInfo` factory. Behavior is unchanged.
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.3 Chrome release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.3 Firefox branch release.
+
+## [6.7.2] - 2026-04-29
+
+### Fixed
+- **Early Long-Ad Visible Cycle Cutoff** - Ends the visible ad-blocking state after the backup-hold limit while continuing to serve the clean backup stream until Twitch's native playlist is ready.
+- **Native Restore Timing Preserved** - Keeps media restore tied to the native playback restore signal, so the audio-loop recovery remains intact while the visible progress indicator clears earlier.
+
+### Changed
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.2 Firefox branch release.
 
 ## [6.7.1] - 2026-04-29
 
 ### Fixed
 - **Post-Ad Audio Loop Recovery** - Keeps suppressed media muted during silent backup hold and waits for the native playback restore signal before running media recovery.
 - **Native Backup-Hold Handoff Timing** - Sends `NativePlaybackRestored` only after the native playlist is clean, keeping cleanup and recovery aligned with the actual handoff.
-- **Long Backup-Hold Visible Cutoff** - Ends the visible ad-blocking state after the backup-hold limit while continuing to serve the clean backup stream until Twitch's native playlist is ready.
 
 ### Changed
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.1 Chrome release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.7.1 Firefox branch release.
 
 ## [6.6.9] - 2026-04-29
 
@@ -82,7 +114,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Silent Backup Hold Recovery** - Tracks silent backup hold internally so long native ad markers do not restart the same ad cycle or force an ad-marked native reload.
 
 ### Changed
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.9 Chrome release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.9 Firefox branch release.
 
 ## [6.6.7] - 2026-04-29
 
@@ -93,7 +125,7 @@ All notable changes to TTV AB will be documented in this file.
 - **Decoupled Slow-Path Recovery from Clean-Count** - Lets the max-wait recovery gate run even when marker bouncing keeps the clean playlist count low.
 
 ### Changed
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.7 Chrome release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.7 Firefox branch release.
 
 ## [6.6.6] - 2026-04-29
 
@@ -102,26 +134,26 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Changed
 - **Rollback to 6.6.3 Runtime Behavior** - Restored the runtime ad-recovery modules to the last working 6.6.3 path after newer post-ad recovery experiments could emit `Ad ended` while the worker was still serving backup recovery playlists, leaving the Twitch player stuck on a spinner.
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.6 Chrome release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.6 Firefox branch release.
 
 ## [6.6.4] - 2026-04-29
 
 ### Fixed
 - **Post-Ad Recovery Watchdog Carryover** - Post-ad `AdEnded` and `ReloadPlayer` handling now preserves the matching ad-resume intent instead of clearing it before the returned native player can be observed. The watchdog remains armed through the post-ad reload, treats `post-ad` reloads as guarded ad-recovery reloads, and can apply the pause/play nudge that users reported as the manual workaround for black/loading playback.
 - **Two-Tab Volume Bleed** - Automatic post-ad and buffer recovery reloads no longer restore Twitch's shared `volume` / `video-muted` localStorage keys. The extension now snapshots the tab's own media element volume/mute state at ad start and reapplies it directly to that tab after recovery, avoiding volume jumps when another Twitch tab is playing at a different level.
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.4 Chrome release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.4 Firefox branch release.
 
 ## [6.6.3] - 2026-04-28
 
 ### Changed
-- **Rollback to 6.5.3 Baseline** - Reverted the source tree to commit `3a838c7` (v6.5.3) after regressions were identified in the 6.5.9 through 6.6.2 post-ad recovery and ad-handoff changes. All modules (`hooks.ts`, `player.ts`, `processor.ts`, `state.ts`, `build.ts`, popup, README, assets) are restored to their 6.5.3 state. Version metadata bumped to 6.6.3 so users on 6.6.x receive the rollback as a normal update.
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.3 Chrome release.
+- **Rollback to 6.5.3 Baseline** - Reverted the source tree to commit `b48e544` (v6.5.3) after regressions were identified in the 6.5.4 through 6.6.2 post-ad recovery and ad-handoff changes. All modules (`hooks.ts`, `player.ts`, `processor.ts`, `state.ts`, `build.ts`, popup, README, assets) are restored to their 6.5.3 state. Version metadata bumped to 6.6.3 so users on 6.6.x receive the rollback as a normal update.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.6.3 Firefox branch release.
 
 ## [6.5.3] - 2026-04-27
 
 ### Changed
-- **Refreshed Extension Icon** - Replaced the 16/48/128 px PNG icons under `assets/icons/` with a new design used by the toolbar action and the Chrome/Firefox add-on listings. No code or behavior changes.
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.3 release.
+- **Refreshed Extension Icon** - Replaced the 16/48/128 px PNG icons under `assets/icons/` with a new design used by the toolbar action and the Firefox/Chrome add-on listings. No code or behavior changes.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.3 Firefox branch release.
 
 ## [6.5.2] - 2026-04-27
 
@@ -131,7 +163,7 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Changed
 - **Translation Naturalness Pass** - Audited every locale and replaced strings that read as literal calques with native phrasing. Japanese `allUnlocked` now uses `達成済み` (achieved) instead of the incorrect `解除済み` (released). Russian `timeSaved` drops the clunky leading `Примерно` adverb, and `next` switches from `Следующее` to the standard UI-convention `Далее`. Simplified Chinese `reportBugLabel` changes from the literal `发现错误？报告它` to the more conversational `发现 Bug？告诉我们`. Korean `reportBugLabel` switches the trailing gerund `신고하기` to the politeness-consistent `신고해 주세요`. Portuguese `channels_50` localizes the borrowed `Globetrotter` to `Viajante mundial`. German `bufferFix` swaps the stiff `Puffer-Korrektur` for the more idiomatic `Puffer-Fix`.
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.2 release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.2 Firefox branch release.
 
 ## [6.5.1] - 2026-04-27
 
@@ -143,7 +175,7 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Fixed
 - **BetterTTV "Mute Invisible Player" Compatibility** - Removed the spoofed `document.hidden`/`visibilityState`/`hasFocus` getters and the capture-stage `visibilitychange`/`blur` event swallow so other extensions and page scripts now receive real visibility signals. The player still resumes if Twitch pauses on tab hide, but BetterTTV's "Mute Invisible Player" (and any visibility-driven page script) works again. ([#9](https://github.com/GosuDRM/TTV-AB/issues/9))
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.0 release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.5.0 Firefox branch release.
 
 ## [6.4.9] - 2026-04-26
 
@@ -151,14 +183,14 @@ All notable changes to TTV AB will be documented in this file.
 - **Clip Editor Playback** - The extension now skips initialization on Twitch clip editor pages (`clips.twitch.tv` and `/<channel>/clip/<slug>` routes), so moving the clip selection range no longer freezes the preview video. ([#8](https://github.com/GosuDRM/TTV-AB/issues/8))
 - **Post-Ad Black Screen Recovery** - The post-ad health check now treats a player with `readyState < 2`, `videoWidth = 0`, or a non-advancing `currentTime` as unhealthy. When those dead-frame conditions are detected, the extension bypasses the 10s soft-reload gate and rebuilds the underlying media player instance instead of just refreshing the access token, so streams that previously went black ~2s after quality restoration recover automatically.
 - **Ad-Recovery Reload Escalation** - If a soft post-ad reload (token refresh on the existing media player) fails to restore playback, the next reload escalates to a fresh media player instance instead of reusing the stuck MSE/SourceBuffer state.
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.9 release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.9 Firefox branch release.
 
 ## [6.4.8] - 2026-04-24
 
 ### Fixed
-- **Native Recovery Probe Stability** - The extension now requires two clean native recovery probes before ending an ad cycle, reducing false post-ad reloads when Twitch briefly serves a clean playlist before returning ad markers.
+- **Native Recovery Probe Stability** - Firefox now requires two clean native recovery probes before ending an ad cycle, reducing false post-ad reloads when Twitch briefly serves a clean playlist before returning ad markers.
 - **Pre-Roll Handoff Stability** - Pre-roll recovery keeps the same ad cycle alive longer during Twitch's native-player handoff, reducing duplicate `Ad ended`/reload phases.
-- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.8 release.
+- **Version Metadata Sync** - Updated package, manifest, runtime, popup, README, and changelog metadata for the 6.4.8 Firefox branch release.
 
 ## [6.4.6] - 2026-04-24
 

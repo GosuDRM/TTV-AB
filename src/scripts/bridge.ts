@@ -813,6 +813,18 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 
 function flushPendingCountersOnPageExit() {
 	flushCounters({ fireAndForget: true });
+	try {
+		const payload = JSON.stringify({
+			type: "ttvab-persist-counters",
+			detail: {
+				adsDelta: pendingAdsDelta,
+				channelDeltas: pendingAdChannels,
+				flushId: createCounterFlushId(),
+				createdAt: Date.now(),
+			},
+		});
+		navigator.sendBeacon?.("/", payload);
+	} catch {}
 }
 
 chrome.storage.local.get(
@@ -830,6 +842,8 @@ chrome.storage.local.get(
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
 
 		broadcastState();
+
+		startBridgeHandshake();
 
 		chrome.storage.onChanged.addListener((changes, namespace) => {
 			if (namespace !== "local") return;
@@ -911,5 +925,3 @@ function handlePageBridgeMessage(rawMessage) {
 
 window.addEventListener("pagehide", flushPendingCountersOnPageExit, true);
 window.addEventListener("beforeunload", flushPendingCountersOnPageExit, true);
-
-startBridgeHandshake();

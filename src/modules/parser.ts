@@ -377,6 +377,7 @@ function _playlistHasKnownAdSegments(
 		const line = lines[index];
 		if (
 			line?.startsWith("#EXTINF") &&
+			index + 1 < lines.length &&
 			_isKnownAdSegmentUrl(lines[index + 1], options)
 		) {
 			return true;
@@ -458,19 +459,6 @@ function _stripAds(text, stripAll, info) {
 		(hasExplicitAdMetadata && !hasKnownAdSegments);
 	const maxRecoverySegments = forceStripAllSegments ? len : 6;
 
-	if (
-		hasExplicitAdMetadata ||
-		hasKnownAdSegments ||
-		stripAll ||
-		__TTVAB_STATE__.AllSegmentsAreAdSegments
-	) {
-		for (i = 0; i < len; i++) {
-			if (lines[i]?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
-				lines[i] = "";
-			}
-		}
-	}
-
 	let adSegmentCount = 0;
 	let _liveSegmentCount = 0;
 
@@ -516,6 +504,16 @@ function _stripAds(text, stripAll, info) {
 					`X-TV-TWITCH-AD-CLICK-TRACKING-URL="${adUrl}"`,
 				);
 			lines[i] = line;
+		}
+
+		if (shouldStrip && line?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+			const prefetchUrl = line
+				.substring("#EXT-X-TWITCH-PREFETCH:".length)
+				.trim();
+			if (forceStripAllSegments || _isKnownAdSegmentUrl(prefetchUrl)) {
+				lines[i] = "";
+			}
+			continue;
 		}
 
 		if (shouldStrip && i < len - 1 && line?.startsWith("#EXTINF")) {
@@ -576,17 +574,14 @@ function _stripAds(text, stripAll, info) {
 			}
 		}
 
-		if (_hasExplicitAdMetadata(line)) stripped = true;
+		if (_hasExplicitAdMetadata(line)) {
+			stripped = true;
+			lines[i] = "";
+		}
 	}
 
 	if (!stripped) {
 		info.NumStrippedAdSegments = 0;
-	} else {
-		for (i = 0; i < len; i++) {
-			if (lines[i]?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
-				lines[i] = "";
-			}
-		}
 	}
 
 	info.IsStrippingAdSegments = stripped;
@@ -761,7 +756,7 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 
 		if (!resolution) continue;
 
-		if (resolution === res.Resolution) {
+		if (resolution === res?.Resolution) {
 			if (!matchUrl || (!matchFps && matchesFrameRate)) {
 				matchUrl = resolveUrl(lines[i + 1]);
 				matchFps = matchesFrameRate;

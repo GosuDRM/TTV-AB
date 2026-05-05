@@ -7,11 +7,13 @@ function _cleanWorker(W: WorkerConstructor): WorkerConstructor {
 	const proto = CleanWorker.prototype;
 	for (const key of _S.conflicts) {
 		if (key in proto) {
-			Object.defineProperty(proto, key, {
-				configurable: true,
-				writable: true,
-				value: undefined,
-			});
+			try {
+				Object.defineProperty(proto, key, {
+					configurable: true,
+					writable: true,
+					value: undefined,
+				});
+			} catch {}
 		}
 	}
 	return CleanWorker as WorkerConstructor;
@@ -29,7 +31,9 @@ function _getReinsert(W) {
 function _reinsert(W, names) {
 	for (const name of names) {
 		if (typeof window[name] === "function") {
-			W.prototype[name] = window[name];
+			try {
+				W.prototype[name] = window[name];
+			} catch {}
 		}
 	}
 	return W;

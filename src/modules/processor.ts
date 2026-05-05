@@ -414,6 +414,7 @@ function _getPlaylistUrlAliases(url, baseUrl = null) {
 }
 
 function _getStreamInfoForPlaylist(url) {
+	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return null;
 	for (const alias of _getPlaylistUrlAliases(url)) {
 		const byUrl = __TTVAB_STATE__.StreamInfosByUrl[alias];
 		if (byUrl) return byUrl;
@@ -494,7 +495,7 @@ function _getNativeRecoveryProbePlayerType() {
 
 	return (
 		forcedPlayerType ||
-		__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType ||
+		__TTVAB_STATE__?.LastNativePlaybackAccessTokenPlayerType ||
 		"site"
 	);
 }
@@ -1140,7 +1141,9 @@ async function _processM3U8(url, text, realFetch) {
 				})
 					? info.LastCleanNativeM3U8
 					: null;
-			info.IsUsingModifiedM3U8 = true;
+			if (cleanNativeM3U8) {
+				info.IsUsingModifiedM3U8 = true;
+			}
 			info.LastPlayerReload = Date.now();
 			if (typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
@@ -1501,8 +1504,10 @@ async function _findBackupStream(
 								_log(
 									`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`,
 								);
-								if (info.BackupVariantUrls.size > 200) {
-									info.BackupVariantUrls.clear();
+								while (info.BackupVariantUrls.size > 200) {
+									const first = info.BackupVariantUrls.values().next().value;
+									if (first !== undefined) info.BackupVariantUrls.delete(first);
+									else break;
 								}
 							} else {
 								_log(`Usher failed for ${pt}: ${encRes.status}`, "warning");

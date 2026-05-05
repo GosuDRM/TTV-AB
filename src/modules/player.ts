@@ -114,6 +114,7 @@ function _readConfiguredQualityGroup() {
 }
 
 function _syncPreferredQualityGroup(playerCore = null) {
+	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return false;
 	const nextQualityGroup =
 		(typeof playerCore?.state?.quality?.group === "string" &&
 		playerCore.state.quality.group.trim()
@@ -333,11 +334,11 @@ function _normalizePlayerChannel(channel = null) {
 function _resolvePlayerMediaKey(channel = null, mediaKey = null) {
 	return (
 		_normalizeMediaKey(mediaKey) ||
-		_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ||
-		_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
+		_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) ||
+		_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) ||
 		_buildMediaKey("live", channel, null) ||
-		_buildMediaKey("live", __TTVAB_STATE__.CurrentAdChannel, null) ||
-		_buildMediaKey("live", __TTVAB_STATE__.PageChannel, null) ||
+		_buildMediaKey("live", __TTVAB_STATE__?.CurrentAdChannel, null) ||
+		_buildMediaKey("live", __TTVAB_STATE__?.PageChannel, null) ||
 		null
 	);
 }
@@ -2493,7 +2494,7 @@ function _doPlayerTask(
 		const isPlaybackRecoveryReload =
 			isAdRecoveryReload || reason === "buffer-recovery";
 		const now = Date.now();
-		const lastPlayerReloadAt = __TTVAB_STATE__.LastPlayerReloadAt || 0;
+		const lastPlayerReloadAt = __TTVAB_STATE__?.LastPlayerReloadAt || 0;
 		if (
 			lastPlayerReloadAt &&
 			now - lastPlayerReloadAt < __TTVAB_STATE__.PlayerReloadDebounceMs
@@ -2559,10 +2560,10 @@ function _doPlayerTask(
 		_broadcastWorkers({
 			key: "TriggeredPlayerReload",
 			value: {
-				mediaType: __TTVAB_STATE__.PageMediaType,
-				channelName: __TTVAB_STATE__.PageChannel,
-				vodID: __TTVAB_STATE__.PageVodID,
-				mediaKey: __TTVAB_STATE__.PageMediaKey,
+				mediaType: __TTVAB_STATE__?.PageMediaType ?? null,
+				channelName: __TTVAB_STATE__?.PageChannel ?? null,
+				vodID: __TTVAB_STATE__?.PageVodID ?? null,
+				mediaKey: __TTVAB_STATE__?.PageMediaKey ?? null,
 			},
 		});
 
