@@ -32,6 +32,8 @@ tmp/
 temp/
 
 # Local tooling
+.claude/
+.planning/
 tools/*
 !tools/package_chrome.py
 .openclaw/

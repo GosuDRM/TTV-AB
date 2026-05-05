@@ -390,6 +390,7 @@ function enqueuePersist(task) {
 	const nextTask = persistChain.then(task, task);
 	persistChain = nextTask.catch((error) => {
 		console.error("[TTV AB] Background persist error:", error);
+		return undefined;
 	});
 	return nextTask;
 }

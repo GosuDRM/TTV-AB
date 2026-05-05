@@ -8,6 +8,12 @@ type UiFlags = {
 	achievementListenerInitialized: boolean;
 	welcomeScheduled: boolean;
 	donationScheduled: boolean;
+	donationDelayTimer: ReturnType<typeof setTimeout> | null;
+	donationDismissTimer: ReturnType<typeof setTimeout> | null;
+	welcomeDelayTimer: ReturnType<typeof setTimeout> | null;
+	welcomeDismissTimer: ReturnType<typeof setTimeout> | null;
+	achievementDismissTimer: ReturnType<typeof setTimeout> | null;
+	achievementRemoveTimer: ReturnType<typeof setTimeout> | null;
 };
 
 function _getUiStorageItem(key) {
@@ -38,6 +44,12 @@ function _getUiFlags(): UiFlags {
 		achievementListenerInitialized: false,
 		welcomeScheduled: false,
 		donationScheduled: false,
+		donationDelayTimer: null,
+		donationDismissTimer: null,
+		welcomeDelayTimer: null,
+		welcomeDismissTimer: null,
+		achievementDismissTimer: null,
+		achievementRemoveTimer: null,
 	};
 	window[_UI_FLAGS_KEY] = flags;
 	return flags;
@@ -64,7 +76,9 @@ function _showDonation() {
 		if (now - lastReminderMs < _REMINDER_INTERVAL) return;
 
 		uiFlags.donationScheduled = true;
-		setTimeout(() => {
+		if (uiFlags.donationDelayTimer) clearTimeout(uiFlags.donationDelayTimer);
+		uiFlags.donationDelayTimer = setTimeout(() => {
+			uiFlags.donationDelayTimer = null;
 			uiFlags.donationScheduled = false;
 			if (document.getElementById("ttvab-reminder") || !document.body) return;
 			const toast = document.createElement("div");
@@ -105,7 +119,10 @@ function _showDonation() {
 				};
 			}
 
-			setTimeout(() => {
+			if (uiFlags.donationDismissTimer)
+				clearTimeout(uiFlags.donationDismissTimer);
+			uiFlags.donationDismissTimer = setTimeout(() => {
+				uiFlags.donationDismissTimer = null;
 				if (toast.isConnected) {
 					toast.style.animation = "ttvab-slide .3s ease reverse";
 					setTimeout(() => toast.remove(), 300);
@@ -124,7 +141,9 @@ function _showWelcome() {
 
 		uiFlags.welcomeScheduled = true;
 		_setUiStorageItem(_FIRST_RUN_KEY, "true");
-		setTimeout(() => {
+		if (uiFlags.welcomeDelayTimer) clearTimeout(uiFlags.welcomeDelayTimer);
+		uiFlags.welcomeDelayTimer = setTimeout(() => {
+			uiFlags.welcomeDelayTimer = null;
 			uiFlags.welcomeScheduled = false;
 			if (document.getElementById("ttvab-welcome") || !document.body) return;
 			const toast = document.createElement("div");
@@ -161,7 +180,10 @@ function _showWelcome() {
 				welcomeClose.onclick = closeHandler;
 			}
 
-			setTimeout(() => {
+			if (uiFlags.welcomeDismissTimer)
+				clearTimeout(uiFlags.welcomeDismissTimer);
+			uiFlags.welcomeDismissTimer = setTimeout(() => {
+				uiFlags.welcomeDismissTimer = null;
 				if (toast.isConnected) closeHandler();
 			}, 10000);
 		}, 2000);
@@ -224,6 +246,7 @@ function _ensureAchievementToastStyles() {
 
 function _showAchievementUnlocked(achievementId) {
 	try {
+		const uiFlags = _getUiFlags();
 		const ach = _ACHIEVEMENT_INFO[achievementId];
 		if (!ach) return;
 
@@ -259,10 +282,18 @@ function _showAchievementUnlocked(achievementId) {
 		document.body.appendChild(toast);
 		_log(`Achievement unlocked: ${ach.name}`, "success");
 
-		setTimeout(() => {
+		if (uiFlags.achievementDismissTimer)
+			clearTimeout(uiFlags.achievementDismissTimer);
+		uiFlags.achievementDismissTimer = setTimeout(() => {
+			uiFlags.achievementDismissTimer = null;
 			if (toast.isConnected) {
 				toast.style.animation = "ttvab-ach-pop .5s ease reverse";
-				setTimeout(() => toast.remove(), 500);
+				if (uiFlags.achievementRemoveTimer)
+					clearTimeout(uiFlags.achievementRemoveTimer);
+				uiFlags.achievementRemoveTimer = setTimeout(() => {
+					uiFlags.achievementRemoveTimer = null;
+					toast.remove();
+				}, 500);
 			}
 		}, 5000);
 	} catch (e) {

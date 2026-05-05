@@ -2,6 +2,27 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.0] - 2026-05-05
+
+### Fixed
+- **HEVC Fallback State Accuracy** - The HEVC-to-AVC backup handoff path no longer sets `IsUsingModifiedM3U8` unless a clean native playlist is actually being returned. Previously this flag was set unconditionally, causing unnecessary player reloads at ad end even when the original unmodified stream was served.
+- **Unbounded Bridge Message Queue** - The bridge message queue now drops the oldest counter message when coalescing fails, preventing unbounded memory growth during long sessions with many distinct ad-block events.
+- **Bridge Flush Message Recovery** - When a single bridge message fails to serialize, the flush loop now removes the problematic message and continues processing the remaining queue instead of silently discarding everything.
+- **Worker Hook Crash Resilience** - Worker prototype cleanup (`_cleanWorker`) and function reinsertion (`_reinsert`) now wrap their operations in try-catch, preventing the entire Worker constructor hook from breaking if another extension or page script has set non-configurable properties on Worker.prototype.
+- **WASM Fetcher Crash Guard** - The synchronous XHR used to retrieve the WASM bootstrap script now runs inside try-catch, returning an empty string on failure instead of throwing and silently crashing the injected worker.
+- **Missing State Guards** - Added existence checks for `__TTVAB_STATE__` in `_syncPreferredQualityGroup`, `_resolvePlayerMediaKey`, `_pruneStreamInfos`, and `_getStreamInfoForPlaylist`, preventing crashes when these functions are called before state initialization.
+- **Optional Chaining on State Access** - `_resolvePlayerMediaKey`, `_doPlayerTask` (`LastPlayerReloadAt`), and `_broadcastWorkers` (`TriggeredPlayerReload` context) now use optional chaining on `__TTVAB_STATE__` fields, matching the guard pattern used elsewhere.
+- **BackupVariantUrls Eviction Strategy** - The backup variant URL whitelist now evicts the oldest single entry when exceeding 200 instead of clearing the entire set. This prevents a legitimate backup URL from being unrecognized mid-cycle and accidentally triggering ad processing on a backup stream.
+- **Bridge Port Listener Lifecycle** - The bridge port message event listener is now a named handler that gets removed before the old port is closed, preventing minor memory retention from orphaned listener references.
+- **Bridge Handshake Race** - The bridge handshake now starts inside the `chrome.storage.local` initialization callback instead of at top-level execution, ensuring the initial state broadcast carries real stored values rather than stale defaults.
+- **Page Exit Counter Delivery** - Counter flushes on page exit now attempt a `navigator.sendBeacon` fallback alongside the existing localStorage replay mechanism, adding a second delivery path for ad-block statistics during tab close.
+- **Persist Chain Error Recovery** - The background service worker persist chain now explicitly returns `undefined` from its error handler, ensuring that a permanent storage failure does not silently leave the chain in a resolved-then-failed state.
+- **Surgical Prefetch Handling** - Both blanket `#EXT-X-TWITCH-PREFETCH` clearing passes have been removed. Prefetch lines are now only blanked when their URL matches a known ad segment, preserving legitimate content prefetch hints at midroll transitions.
+- **Cancellable UI Timers** - All six auto-dismiss and animation timers in the donation, welcome, and achievement toasts now store their timer IDs and clear any previous timer before setting a new one, preventing timer accumulation.
+- **SPA Listener Cleanup** - The popstate listener and history method overrides from `_hookSpaNavigation` are now cleaned up on pagehide, restoring the original `history.pushState` and `history.replaceState`.
+- **Build Minification String Safety** - The minification step now checks whether a matched identifier falls inside a string literal before replacing it, preventing accidental mangling of underscore-prefixed identifiers that appear in message strings.
+- **Scoped Blob URL Revocation** - The extended blob URL revocation delay (3500ms) now only applies to extension-owned blob URLs tracked in a dedicated set. All other page scripts' blob URLs are revoked immediately as normal.
+
 ## [6.8.1] - 2026-05-01
 
 ### Fixed

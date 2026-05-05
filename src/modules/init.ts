@@ -139,6 +139,11 @@ function _hookSpaNavigation() {
 		return result;
 	};
 	window.addEventListener("popstate", sync);
+	window.addEventListener("pagehide", () => {
+		window.removeEventListener("popstate", sync);
+		history.pushState = originalPushState;
+		history.replaceState = originalReplaceState;
+	});
 }
 
 function _init() {
