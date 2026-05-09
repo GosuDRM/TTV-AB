@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.3] - 2026-05-10
+
+### Fixed
+- **Twitch DATERANGE Ad Marker** — Added `EXT-X-DATERANGE:CLASS="twitch-trigger"` to `_hasExplicitAdMetadata` for broader ad detection coverage. Thanks [@ryanbr](https://github.com/ryanbr) ([#11](https://github.com/GosuDRM/TTV-AB/pull/11)).
+
 ## [7.0.2] - 2026-05-10
 
 ### Fixed

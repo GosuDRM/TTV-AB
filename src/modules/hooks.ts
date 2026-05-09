@@ -1251,14 +1251,14 @@ function _hookWorker() {
 
 					pruneTrackedWorkers([this]);
 
-				if (this.__TTVABRestartAttempts < HW_MAX_RESTART) {
-					this.__TTVABRestartAttempts++;
-					const delay = 2 ** this.__TTVABRestartAttempts * 500;
-					_log(
-						"Restarting worker in " +
-							delay / 1000 +
-							"s (attempt " +
-							this.__TTVABRestartAttempts +
+					if (this.__TTVABRestartAttempts < HW_MAX_RESTART) {
+						this.__TTVABRestartAttempts++;
+						const delay = 2 ** this.__TTVABRestartAttempts * 500;
+						_log(
+							"Restarting worker in " +
+								delay / 1000 +
+								"s (attempt " +
+								this.__TTVABRestartAttempts +
 								"/" +
 								HW_MAX_RESTART +
 								")",
@@ -1293,9 +1293,9 @@ function _hookWorker() {
 					}
 				});
 
-			this.__TTVABCreatedAt = Date.now();
-			this.__TTVABRestartAttempts = 0;
-			this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
+				this.__TTVABCreatedAt = Date.now();
+				this.__TTVABRestartAttempts = 0;
+				this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
 				pruneTrackedWorkers();
 				_S.workers.push(this);
 				try {
