@@ -2446,6 +2446,30 @@ function _doPlayerTask(
 
 	const playerCore = _getPlayerCore(player);
 	const reason = options.reason || "manual";
+
+	if (isReload) {
+		const needsRealReload =
+			options.refreshAccessToken === true ||
+			options.newMediaPlayerInstance === true;
+		if (document.pictureInPictureElement) {
+			if (needsRealReload) {
+				_log("Forcing real reload despite PiP for HEVC handoff", "info");
+			} else {
+				_pausePlaybackTarget(player);
+				setTimeout(() => {
+					const { player: freshPlayer } = _getPlayerAndState();
+					_playPlaybackTarget(
+						freshPlayer || player,
+						__TTVAB_STATE__.PageChannel,
+						__TTVAB_STATE__.PageMediaKey,
+					);
+				}, 50);
+				_log("Downgraded reload to pause/play to preserve PiP", "info");
+				return true;
+			}
+		}
+	}
+
 	const shouldSuppressAutomaticTask =
 		reason !== "manual" &&
 		_shouldSuppressAutomaticPlaybackResume(
@@ -2477,19 +2501,6 @@ function _doPlayerTask(
 	}
 
 	if (isReload) {
-		if (document.pictureInPictureElement) {
-			_pausePlaybackTarget(player);
-			setTimeout(() => {
-				const { player: freshPlayer } = _getPlayerAndState();
-				_playPlaybackTarget(
-					freshPlayer || player,
-					__TTVAB_STATE__.PageChannel,
-					__TTVAB_STATE__.PageMediaKey,
-				);
-			}, 50);
-			_log("Downgraded reload to pause/play to preserve PiP", "info");
-			return true;
-		}
 		const isAdRecoveryReload = reason === "ad-recovery";
 		const isPlaybackRecoveryReload =
 			isAdRecoveryReload || reason === "buffer-recovery";
