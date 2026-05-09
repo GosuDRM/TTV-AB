@@ -280,7 +280,7 @@ function _parseAttrs(str) {
 	let match = _ATTR_REGEX.exec(str);
 	while (match !== null) {
 		let value = match[2];
-		if (value[0] === '"' && value[value.length - 1] === '"') {
+		if (value && value[0] === '"' && value[value.length - 1] === '"') {
 			value = value.slice(1, -1);
 		}
 		result[match[1].toUpperCase()] = value;
@@ -315,8 +315,8 @@ function _hasExplicitAdMetadata(text) {
 	return (
 		typeof text === "string" &&
 		(text.includes("X-TV-TWITCH-AD") ||
-			text.includes("stitched-ad") ||
-			text.includes("/adsquared/") ||
+		text.includes("stitched-ad") ||
+		text.includes("/adsquared/") ||
 			text.includes("SCTE35-OUT") ||
 			text.includes('"MIDROLL"') ||
 			text.includes('"midroll"'))
@@ -328,10 +328,7 @@ function _isExplicitKnownAdSegmentUrl(segmentUrl) {
 	if (!url) return false;
 	return (
 		url.includes(__TTVAB_STATE__.AdSignifier) ||
-		url.includes("stitched") ||
-		url.includes("stitched-ad") ||
 		url.includes("/adsquared/") ||
-		url.includes("processing") ||
 		url.includes("/_404/")
 	);
 }
@@ -728,9 +725,7 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 		if (
 			!line?.startsWith("#EXT-X-STREAM-INF") ||
 			!nextLine ||
-			nextLine.startsWith("#") ||
-			(!nextLine.includes(".m3u8") && !nextLine.includes("://")) ||
-			nextLine.includes("processing")
+			nextLine.startsWith("#")
 		)
 			continue;
 
