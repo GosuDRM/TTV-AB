@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.2] - 2026-05-10
+
+### Fixed
+- **Overly Broad Ad Detection** — Removed `processing` substring from `_isExplicitKnownAdSegmentUrl` which incorrectly matched any URL containing that substring. Removed redundant `stitched` and `stitched-ad` URL checks already covered by the configurable `AdSignifier`.
+- **Backup Cache Thrashing** — `_syncStreamInfo` no longer resets `BackupEncodingsM3U8Cache` on every master playlist refresh. Previously this forced all 3 backup player types to fetch fresh tokens and usher/playlist URLs on every ad start (~9 round trips of latency).
+- **Brittle Variant URL Filter** — `_getStreamUrl` no longer skips variant URLs lacking `.m3u8` or `://`, surviving Twitch CDN format changes that would otherwise break backup stream selection.
+- **Empty Attribute Crash Guard** — `_parseAttrs` now guards against empty string attribute values that could trigger undefined index access.
+- **Dead Code** — `AdEndBounceCount` removed from `_createStreamInfo`, `_resetStreamAdState`, `_isAdEndStable`, and the bounce-detection block in `_processM3U8`. The counter was incremented but never used for any decision path.
+- **Shared Worker Restart Counter** — `hwRestartAttempts` was a single closure variable shared across all hooked Worker instances. Once any worker crashed 3 times, every future worker restart was permanently blocked. Moved to per-instance `__TTVABRestartAttempts` so each worker gets its own 3-attempt budget.
+
 ## [7.0.0] - 2026-05-05
 
 ### Fixed

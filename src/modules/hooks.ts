@@ -1249,19 +1249,19 @@ function _hookWorker() {
 					if (this.__TTVABCrashed) {
 						return;
 					}
-			this.__TTVABCrashed = true;
-			_log(`Worker crashed: ${e.message || "Unknown error"}`, "error");
+					this.__TTVABCrashed = true;
+					_log(`Worker crashed: ${e.message || "Unknown error"}`, "error");
 
-			pruneTrackedWorkers([this]);
+					pruneTrackedWorkers([this]);
 
-			if (this.__TTVABRestartAttempts < HW_MAX_RESTART) {
-				this.__TTVABRestartAttempts++;
-				const delay = 2 ** this.__TTVABRestartAttempts * 500;
+					if (this.__TTVABRestartAttempts < HW_MAX_RESTART) {
+						this.__TTVABRestartAttempts++;
+						const delay = 2 ** this.__TTVABRestartAttempts * 500;
 						_log(
 							"Restarting worker in " +
 								delay / 1000 +
-				"s (attempt " +
-				this.__TTVABRestartAttempts +
+								"s (attempt " +
+								this.__TTVABRestartAttempts +
 								"/" +
 								HW_MAX_RESTART +
 								")",
@@ -1296,9 +1296,9 @@ function _hookWorker() {
 					}
 				});
 
-			this.__TTVABCreatedAt = Date.now();
-			this.__TTVABRestartAttempts = 0;
-			this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
+				this.__TTVABCreatedAt = Date.now();
+				this.__TTVABRestartAttempts = 0;
+				this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
 				pruneTrackedWorkers();
 				_S.workers.push(this);
 				try {

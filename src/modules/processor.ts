@@ -996,10 +996,10 @@ async function _processM3U8(url, text, realFetch) {
 				Date.now() - (Number(info.PendingAdEndAt) || 0);
 			const maxWaitMs = _getResolvedAdEndMaxWaitMs();
 			const stalenessThreshold = maxWaitMs > 0 ? maxWaitMs * 3 : 12000;
-		if (!info.PendingAdEndAt || elapsedSinceCandidate > stalenessThreshold) {
-			info.PendingAdEndAt = 0;
-		}
-		info.CleanPlaylistCount = 0;
+			if (!info.PendingAdEndAt || elapsedSinceCandidate > stalenessThreshold) {
+				info.PendingAdEndAt = 0;
+			}
+			info.CleanPlaylistCount = 0;
 			info.AdEndMarkerBounceLogged = false;
 			info.LastNativeRecoveryHoldLogAt = 0;
 			_resetNativeRecoveryReadyState(info);

@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.0.0-purple)
+![Version](https://img.shields.io/badge/version-7.0.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.0.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-7.0.2-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,6 +62,12 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## What's New
+
+### v7.0.2
+- **Ad Detection Fixes** — Removed overly broad `processing` substring match from ad-segment URL detection that could block legitimate segments. Removed redundant `stitched`/`stitched-ad` URL checks already covered by the configurable AdSignifier.
+- **Faster Backup Recovery** — Backup encodings cache no longer reset on every master playlist refresh, eliminating ~9 network round trips on ad start. Backup streams now serve immediately.
+- **Resilient URL Parsing** — Variant URL filter relaxed to survive Twitch CDN format changes. Empty-value guard added to attribute parser preventing edge-case crashes.
+- **Dead Code Removal** — `AdEndBounceCount` tracking removed; was incremented but never read for any decision path.
 
 ### v7.0.0
 - **Hardened Crash Resilience** — Worker hook setup, WASM fetching, and state access now guarded against unexpected failures from other extensions or early initialization.
