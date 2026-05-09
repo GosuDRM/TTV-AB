@@ -158,9 +158,6 @@ function _hookWorkerFetch() {
 		info.UsherParams = new URL(usherUrl).search;
 		info.Urls = Object.create(null);
 		info.ResolutionList = [];
-		if (!info.IsShowingAd) {
-			info.BackupEncodingsM3U8Cache = Object.create(null);
-		}
 		info.ModifiedM3U8 = null;
 
 		for (const variantUrl in __TTVAB_STATE__.StreamInfosByUrl) {
@@ -272,7 +269,7 @@ function _hookWorkerFetch() {
 				!!info.MediaKey &&
 				__TTVAB_STATE__.CurrentAdMediaKey === info.MediaKey;
 			info.IsUsingModifiedM3U8 =
-				(wasUsingModifiedM3U8 || matchesActiveAdMediaKey || hasHevc) &&
+				(wasUsingModifiedM3U8 || matchesActiveAdMediaKey) &&
 				__TTVAB_STATE__.IsAdStrippingEnabled === true;
 			_log(
 				"HEVC stream detected, prepared quality-preserving non-HEVC fallback master",
@@ -479,7 +476,6 @@ function _hookRevokeObjectURL() {
 
 function _hookWorker() {
 	_syncStoredDeviceId();
-	let hwRestartAttempts = 0;
 	const HW_MAX_RESTART = 3;
 	if (typeof window?.Worker !== "function") {
 		return;
@@ -1255,14 +1251,14 @@ function _hookWorker() {
 
 					pruneTrackedWorkers([this]);
 
-					if (hwRestartAttempts < HW_MAX_RESTART) {
-						hwRestartAttempts++;
-						const delay = 2 ** hwRestartAttempts * 500;
-						_log(
-							"Restarting worker in " +
-								delay / 1000 +
-								"s (attempt " +
-								hwRestartAttempts +
+				if (this.__TTVABRestartAttempts < HW_MAX_RESTART) {
+					this.__TTVABRestartAttempts++;
+					const delay = 2 ** this.__TTVABRestartAttempts * 500;
+					_log(
+						"Restarting worker in " +
+							delay / 1000 +
+							"s (attempt " +
+							this.__TTVABRestartAttempts +
 								"/" +
 								HW_MAX_RESTART +
 								")",
@@ -1297,8 +1293,9 @@ function _hookWorker() {
 					}
 				});
 
-				this.__TTVABCreatedAt = Date.now();
-				this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
+			this.__TTVABCreatedAt = Date.now();
+			this.__TTVABRestartAttempts = 0;
+			this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
 				pruneTrackedWorkers();
 				_S.workers.push(this);
 				try {
