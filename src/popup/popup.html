@@ -318,6 +318,19 @@
             }
         }
 
+        .stable-badge {
+            font-size: 9px;
+            font-weight: 600;
+            color: #4ade80;
+            letter-spacing: 0.5px;
+        }
+
+        .version-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
         .version {
             font-size: 11px;
             margin-top: 2px;
@@ -449,6 +462,95 @@
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
+        }
+
+        .toggle-label-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            position: relative;
+        }
+
+        .info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: rgba(145, 70, 255, 0.2);
+            color: #9146FF;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+
+        .info-icon:hover {
+            background: rgba(145, 70, 255, 0.35);
+        }
+
+        /* Modal overlay */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.55);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.visible {
+            display: flex;
+        }
+
+        .modal-box {
+            background: rgba(255, 255, 255, 0.93);
+            color: #000;
+            border-radius: 12px;
+            padding: 20px 22px;
+            width: 260px;
+            max-width: 90%;
+            font-size: 13px;
+            line-height: 1.5;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+            text-align: center;
+        }
+
+        .modal-box p {
+            margin: 0 0 10px;
+        }
+
+        .modal-box ul {
+            margin: 0 0 10px;
+            padding-left: 18px;
+            text-align: left;
+        }
+
+        .modal-box li {
+            margin-bottom: 3px;
+        }
+
+        .modal-close {
+            margin-top: 10px;
+            padding: 6px 18px;
+            background: #9146FF;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .modal-close:hover {
+            background: #772CE8;
         }
 
         .toggle {
@@ -895,7 +997,10 @@
         <img class="logo" src="../../assets/icons/icon128.png" alt="" aria-hidden="true" width="40" height="40">
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
-            <div class="version" id="versionText" aria-label="Version 7.0.3">v7.0.3</div>
+            <div class="version-row">
+                <div class="version" id="versionText" aria-label="Version 7.0.4">v7.0.4</div>
+                <span class="stable-badge" data-i18n="stable">Stable</span>
+            </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
                 for Twitch.tv</div>
         </div>
@@ -1017,7 +1122,18 @@
             </label>
         </div>
         <div class="toggle-row">
-            <label class="toggle-label" for="bufferFixToggle" data-i18n="bufferFix">Buffer Fix</label>
+            <div class="toggle-label-row">
+                <label class="toggle-label" for="bufferFixToggle" data-i18n="bufferFix">Buffer Fix</label>
+                <span class="info-icon" id="bufferFixInfoIcon" aria-label="What is Buffer Fix?">i</span>
+            </div>
+            <div class="modal-overlay" id="bufferFixTooltip" hidden>
+                <div class="modal-box">
+                    <p><strong data-i18n="bufferFix">Buffer Fix</strong></p>
+                    <p data-i18n="bufferFixDesc">Automatically detects and recovers from playback freezes, post-ad black screens, live-edge starvation, and audio/video desync.</p>
+                    <p data-i18n="bufferFixFootnote">Disable only if you experience issues.</p>
+                    <button type="button" class="modal-close" id="bufferFixModalClose" data-i18n="bufferFixGotIt">Got it</button>
+                </div>
+            </div>
             <label class="toggle">
                 <input type="checkbox" id="bufferFixToggle" checked aria-label="Buffer Fix">
                 <span class="slider"></span>
