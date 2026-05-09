@@ -315,9 +315,10 @@ function _hasExplicitAdMetadata(text) {
 	return (
 		typeof text === "string" &&
 		(text.includes("X-TV-TWITCH-AD") ||
-		text.includes("stitched-ad") ||
-		text.includes("/adsquared/") ||
+			text.includes("stitched-ad") ||
+			text.includes("/adsquared/") ||
 			text.includes("SCTE35-OUT") ||
+			text.includes('EXT-X-DATERANGE:CLASS="twitch-trigger"') ||
 			text.includes('"MIDROLL"') ||
 			text.includes('"midroll"'))
 	);
