@@ -38,7 +38,7 @@ describe("_isKnownAdSegmentUrl", () => {
 	const fn = () => T<(url: string, opts?: { includeCached?: boolean }) => boolean>("_isKnownAdSegmentUrl");
 	it("stitched URL", () => { expect(fn()("https://edge/stitched-ad.ts")).toBe(true); });
 	it("adsquared URL", () => { expect(fn()("https://adsquared/ad.ts")).toBe(true); });
-	it("processing URL", () => { expect(fn()("https://edge/processing/seg.ts")).toBe(true); });
+	it("processing URL (no longer treated as ad)", () => { expect(fn()("https://edge/processing/seg.ts")).toBe(false); });
 	it("normal segment", () => { expect(fn()("https://edge/normal.ts")).toBe(false); });
 	it("empty", () => { expect(fn()("")).toBe(false); });
 });
