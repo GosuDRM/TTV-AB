@@ -15,7 +15,8 @@ const TRANSLATIONS = {
 		achievements: "Achievements",
 		adBlocking: "Ad Blocking",
 		bufferFix: "Buffer Fix",
-		bufferFixDesc: "Detects and recovers from playback freezes, post-ad black screens, live-edge starvation, and audio/video desync.",
+		bufferFixDesc:
+			"Detects and recovers from playback freezes, post-ad black screens, live-edge starvation, and audio/video desync.",
 		bufferFixFootnote: "Disable only if you experience issues.",
 		bufferFixGotIt: "Got it",
 		stable: "Stable",
@@ -71,7 +72,8 @@ const TRANSLATIONS = {
 		achievements: "Logros",
 		adBlocking: "Bloqueo de anuncios",
 		bufferFix: "Corrección de búfer",
-		bufferFixDesc: "Detecta y recupera de congelamientos, pantallas negras tras anuncios, retraso en directo y desincronización de audio/vídeo.",
+		bufferFixDesc:
+			"Detecta y recupera de congelamientos, pantallas negras tras anuncios, retraso en directo y desincronización de audio/vídeo.",
 		bufferFixFootnote: "Desactívalo solo si tienes problemas.",
 		bufferFixGotIt: "Entendido",
 		stable: "Estable",
@@ -139,7 +141,8 @@ const TRANSLATIONS = {
 		achievements: "Succès",
 		adBlocking: "Blocage des pubs",
 		bufferFix: "Correction du buffer",
-		bufferFixDesc: "Détecte et corrige les gels, écrans noirs post-pub, décalage du direct et désynchronisation audio/vidéo.",
+		bufferFixDesc:
+			"Détecte et corrige les gels, écrans noirs post-pub, décalage du direct et désynchronisation audio/vidéo.",
 		bufferFixFootnote: "Désactivez uniquement en cas de problème.",
 		bufferFixGotIt: "Compris",
 		stable: "Stable",
@@ -213,7 +216,8 @@ const TRANSLATIONS = {
 		achievements: "Erfolge",
 		adBlocking: "Werbeblockierung",
 		bufferFix: "Puffer-Fix",
-		bufferFixDesc: "Erkennt und behebt Wiedergabefehler, schwarze Bildschirme nach Werbung, Live-Verzögerungen und Ton/Bild-Versatz.",
+		bufferFixDesc:
+			"Erkennt und behebt Wiedergabefehler, schwarze Bildschirme nach Werbung, Live-Verzögerungen und Ton/Bild-Versatz.",
 		bufferFixFootnote: "Nur deaktivieren, wenn es Probleme gibt.",
 		bufferFixGotIt: "Verstanden",
 		stable: "Stabil",
@@ -296,7 +300,8 @@ const TRANSLATIONS = {
 		achievements: "Conquistas",
 		adBlocking: "Bloqueio de anúncios",
 		bufferFix: "Correção de buffer",
-		bufferFixDesc: "Detecta e recupera de travamentos, telas pretas pós-anúncio, atraso no ao vivo e dessincronização de áudio/vídeo.",
+		bufferFixDesc:
+			"Detecta e recupera de travamentos, telas pretas pós-anúncio, atraso no ao vivo e dessincronização de áudio/vídeo.",
 		bufferFixFootnote: "Desative apenas se tiver problemas.",
 		bufferFixGotIt: "Entendi",
 		stable: "Estável",
@@ -364,7 +369,8 @@ const TRANSLATIONS = {
 		achievements: "Obiettivi",
 		adBlocking: "Blocco annunci",
 		bufferFix: "Correzione buffer",
-		bufferFixDesc: "Rileva e risolve blocchi, schermi neri dopo gli annunci, ritardi nella diretta e desincronizzazione audio/video.",
+		bufferFixDesc:
+			"Rileva e risolve blocchi, schermi neri dopo gli annunci, ritardi nella diretta e desincronizzazione audio/video.",
 		bufferFixFootnote: "Disattiva solo se riscontri problemi.",
 		bufferFixGotIt: "Capito",
 		stable: "Stabile",
@@ -432,7 +438,8 @@ const TRANSLATIONS = {
 		achievements: "実績",
 		adBlocking: "広告ブロック",
 		bufferFix: "バッファ修正",
-		bufferFixDesc: "再生の停止、広告後の黒画面、配信遅延、音声と映像のずれを検出して自動的に復旧します。",
+		bufferFixDesc:
+			"再生の停止、広告後の黒画面、配信遅延、音声と映像のずれを検出して自動的に復旧します。",
 		bufferFixFootnote: "問題が起きたときだけ無効にしてください。",
 		bufferFixGotIt: "了解",
 		stable: "安定版",
@@ -511,7 +518,8 @@ const TRANSLATIONS = {
 		achievements: "업적",
 		adBlocking: "광고 차단",
 		bufferFix: "버퍼 수정",
-		bufferFixDesc: "재생 멈춤, 광고 후 검은 화면, 생방송 지연, 음성/영상 불일치를 감지하고 자동으로 복구합니다.",
+		bufferFixDesc:
+			"재생 멈춤, 광고 후 검은 화면, 생방송 지연, 음성/영상 불일치를 감지하고 자동으로 복구합니다.",
 		bufferFixFootnote: "문제가 있을 때만 비활성화하세요.",
 		bufferFixGotIt: "확인",
 		stable: "안정판",
@@ -615,7 +623,8 @@ const TRANSLATIONS = {
 		achievements: "成就",
 		adBlocking: "廣告攔截",
 		bufferFix: "緩衝修復",
-		bufferFixDesc: "自動偵測並修復播放卡頓、廣告後黑畫面、直播延遲與影音不同步。",
+		bufferFixDesc:
+			"自動偵測並修復播放卡頓、廣告後黑畫面、直播延遲與影音不同步。",
 		bufferFixFootnote: "僅在遇到問題時關閉。",
 		bufferFixGotIt: "知道了",
 		stable: "穩定版",
@@ -661,7 +670,8 @@ const TRANSLATIONS = {
 		achievements: "Достижения",
 		adBlocking: "Блокировка рекламы",
 		bufferFix: "Исправление буфера",
-		bufferFixDesc: "Обнаруживает и устраняет зависания, чёрные экраны после рекламы, задержку трансляции и рассинхронизацию аудио/видео.",
+		bufferFixDesc:
+			"Обнаруживает и устраняет зависания, чёрные экраны после рекламы, задержку трансляции и рассинхронизацию аудио/видео.",
 		bufferFixFootnote: "Отключайте только при возникновении проблем.",
 		bufferFixGotIt: "Понятно",
 		stable: "Стабильная",

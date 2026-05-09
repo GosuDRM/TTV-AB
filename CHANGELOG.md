@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.4] - 2026-05-10
+
+### Fixed
+- **PiP HEVC Recovery** — `_doPlayerTask` now checks `needsRealReload` before the `shouldSuppressAutomaticTask` suppression gate. Real reloads with `refreshAccessToken` or `newMediaPlayerInstance` now bypass PiP protection entirely, fixing 1440p HEVC quality permanently lost after ads in Picture-in-Picture mode.
+- **SPA Navigation Cleanup** — `_setPagePlaybackContext` now calls `_resetPlaybackIntentForNavigation` on media key change, clearing user pause intent, playback control interaction state, and secondary player handoff state. Workers now receive `previousMediaKey` in `ResetPlaybackRecoveryState` and clean up stale `StreamInfos` entries.
+- **Slow VPN Resilience** — Bridge relay timeout in `_getToken` reduced from 5000ms to 1500ms, halving backup search latency on slow or VPN connections where the local MessageChannel bridge is sluggish.
+- **Buffer Fix Info** — Added an "i" icon next to Buffer Fix in the popup explaining what it detects and when to disable it. Translated to all 10 supported locales.
+- **Worker Watchdog** — Periodic health ping (every 5s) detects silently-dead workers and restarts them. Extracted shared restart logic for both error-event and watchdog-triggered recovery.
+
 ## [7.0.3] - 2026-05-10
 
 ### Fixed
