@@ -21,7 +21,6 @@ function _resetStreamAdState(info) {
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
 	info.AdEndMarkerBounceLogged = false;
-	info.AdEndBounceCount = 0;
 	info.VisibleAdStartedAt = 0;
 	info.IsHoldingBackupAfterAd = false;
 	info.SilentBackupHoldStartedAt = 0;
@@ -260,7 +259,6 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 		info.PendingAdEndAt = now;
 		info.CleanPlaylistCount = 0;
 		info.AdEndMarkerBounceLogged = false;
-		info.AdEndBounceCount = 0;
 		_log("[Trace] Candidate ad end detected", "info");
 	}
 
@@ -663,7 +661,6 @@ function _createStreamInfo(context) {
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
 		AdEndMarkerBounceLogged: false,
-		AdEndBounceCount: 0,
 		VisibleAdStartedAt: 0,
 		IsHoldingBackupAfterAd: false,
 		SilentBackupHoldStartedAt: 0,
@@ -999,13 +996,10 @@ async function _processM3U8(url, text, realFetch) {
 				Date.now() - (Number(info.PendingAdEndAt) || 0);
 			const maxWaitMs = _getResolvedAdEndMaxWaitMs();
 			const stalenessThreshold = maxWaitMs > 0 ? maxWaitMs * 3 : 12000;
-			if (!info.PendingAdEndAt || elapsedSinceCandidate > stalenessThreshold) {
-				info.PendingAdEndAt = 0;
-				info.AdEndBounceCount = 0;
-			} else {
-				info.AdEndBounceCount = (Number(info.AdEndBounceCount) || 0) + 1;
-			}
-			info.CleanPlaylistCount = 0;
+		if (!info.PendingAdEndAt || elapsedSinceCandidate > stalenessThreshold) {
+			info.PendingAdEndAt = 0;
+		}
+		info.CleanPlaylistCount = 0;
 			info.AdEndMarkerBounceLogged = false;
 			info.LastNativeRecoveryHoldLogAt = 0;
 			_resetNativeRecoveryReadyState(info);
