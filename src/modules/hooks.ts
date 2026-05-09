@@ -766,6 +766,15 @@ function _hookWorker() {
                                 __TTVAB_STATE__.LastAdEndedChannel = null;
                                 __TTVAB_STATE__.LastAdEndedMediaKey = null;
                             }
+                            if (data.value?.previousMediaKey) {
+                                const oldKey = data.value.previousMediaKey;
+                                delete __TTVAB_STATE__.StreamInfos[oldKey];
+                                for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
+                                    if (__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === oldKey) {
+                                        delete __TTVAB_STATE__.StreamInfosByUrl[url];
+                                    }
+                                }
+                            }
                             break;
                         case 'FetchResponse':
                             {
