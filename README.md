@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.0.3-purple)
+![Version](https://img.shields.io/badge/version-7.0.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.0.3-yellow)
+![Chrome](https://img.shields.io/badge/chrome-7.0.4-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,6 +63,12 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
+### v7.0.4
+- **PiP HEVC Recovery** — Player reloads for HEVC handoff now bypass PiP protection, fixing 1440p quality permanently lost after ads in Picture-in-Picture mode.
+- **SPA Navigation** — Channel switching now properly resets playback intent and cleans up stale worker state.
+- **Slow VPN Resilience** — Bridge relay timeout halved for faster backup recovery on sluggish connections.
+- **Buffer Fix Info** — An "i" icon next to Buffer Fix explains what it detects (playback freezes, black screens, desync) and when to disable it.
+
 ### v7.0.3
 - **Twitch DATERANGE Ad Marker** — Added `EXT-X-DATERANGE:CLASS="twitch-trigger"` detection for broader ad coverage. Thanks [@ryanbr](https://github.com/ryanbr) ([#11](https://github.com/GosuDRM/TTV-AB/pull/11)).
 
@@ -70,10 +76,9 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 - **Ad Detection Fixes** — Removed overly broad `processing` substring match from ad-segment URL detection that could block legitimate segments. Removed redundant `stitched`/`stitched-ad` URL checks already covered by the configurable AdSignifier.
 - **Faster Backup Recovery** — Backup encodings cache no longer reset on every master playlist refresh, eliminating ~9 network round trips on ad start. Backup streams now serve immediately.
 - **Resilient URL Parsing** — Variant URL filter relaxed to survive Twitch CDN format changes. Empty-value guard added to attribute parser preventing edge-case crashes.
-- **Worker Restart Fix** — Restart counter moved to per-worker instances. Previously one worker's crashes could permanently block restarts for all other workers.
 - **Dead Code Removal** — `AdEndBounceCount` tracking removed; was incremented but never read for any decision path.
 
-### v7.0.1
+### v7.0.0
 - **Hardened Crash Resilience** — Worker hook setup, WASM fetching, and state access now guarded against unexpected failures from other extensions or early initialization.
 - **Memory & Queue Stability** — Bridge message queue no longer grows unbounded; flush loop recovers from individual message errors; bridge port listeners properly cleaned up.
 - **Race Condition Fixes** — Bridge handshake defers until storage is ready; page-exit counter delivery uses sendBeacon fallback.
