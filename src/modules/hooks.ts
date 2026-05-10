@@ -159,6 +159,7 @@ function _hookWorkerFetch() {
 		info.Urls = Object.create(null);
 		info.ResolutionList = [];
 		info.ModifiedM3U8 = null;
+		info.IsUsingModifiedM3U8 = false;
 
 		for (const variantUrl in __TTVAB_STATE__.StreamInfosByUrl) {
 			if (__TTVAB_STATE__.StreamInfosByUrl[variantUrl] === info) {
