@@ -65,4 +65,6 @@ interface Worker {
 	__TTVABCreatedAt?: number;
 	__TTVABRestartAttempts?: number;
 	__TTVABPageMediaKey?: string | null;
+	__TTVABWorkerUrl?: string;
+	__TTVABWorkerOpts?: unknown;
 }
