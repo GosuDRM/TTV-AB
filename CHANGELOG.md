@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.6] - 2026-05-11
+
+### Fixed
+- **Ad-End Bounce Loop** — Rapid marker oscillation during ad-end detection no longer traps the blocker in a reset loop. A 3-second debounce on the bounce handler prevents quality-fluctuation ping-pong and excessive API calls while still allowing genuine new ads through immediately after a completed cycle.
+
 ## [7.0.5] - 2026-05-10
 
 ### Fixed
