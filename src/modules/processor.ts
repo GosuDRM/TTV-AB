@@ -28,6 +28,7 @@ function _resetStreamAdState(info) {
 	info.LastAdEndReloadAt = 0;
 	info.LastNativeRecoveryHoldLogAt = 0;
 	info.HevcReloadPendingAfterHold = false;
+	info.LastAdEndBounceAt = 0;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -672,6 +673,7 @@ function _createStreamInfo(context) {
 		LastAdEndReloadAt: 0,
 		LastNativeRecoveryHoldLogAt: 0,
 		HevcReloadPendingAfterHold: false,
+		LastAdEndBounceAt: 0,
 		LastActivityAt: Date.now(),
 	};
 }
@@ -999,10 +1001,26 @@ async function _processM3U8(url, text, realFetch) {
 			if (!info.PendingAdEndAt || elapsedSinceCandidate > stalenessThreshold) {
 				info.PendingAdEndAt = 0;
 			}
+
+			const now = Date.now();
+			const lastAdEndBounceAt = Math.max(
+				0,
+				Number(info.LastAdEndBounceAt) || 0,
+			);
+			const bounceDebounceMs = Math.max(
+				3000,
+				Number(__TTVAB_STATE__?.AdEndBounceDebounceMs) || 0,
+			);
+			if (lastAdEndBounceAt > 0 && now - lastAdEndBounceAt < bounceDebounceMs) {
+				info.LastAdEndBounceAt = now;
+				return text;
+			}
+
+			info.LastAdEndBounceAt = now;
 			info.CleanPlaylistCount = 0;
 			info.AdEndMarkerBounceLogged = false;
 			info.LastNativeRecoveryHoldLogAt = 0;
-			_resetNativeRecoveryReadyState(info);
+			_resetNativeRecoveryReadyState(info, true);
 			_log("[Trace] Ad markers returned before ad-end stabilized", "info");
 		}
 
