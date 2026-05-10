@@ -263,7 +263,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 
 		if (typeof _fetchViaWorkerBridge === "function") {
 			try {
-				res = await _fetchViaWorkerBridge(_GQL_URL, requestOptions, 5000);
+				res = await _fetchViaWorkerBridge(_GQL_URL, requestOptions, 1500);
 			} catch (bridgeError) {
 				_log(`Token relay error: ${bridgeError.message}`, "warning");
 			}
