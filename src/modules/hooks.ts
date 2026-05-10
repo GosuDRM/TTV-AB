@@ -474,9 +474,120 @@ function _hookRevokeObjectURL() {
 	}
 }
 
+const HW_MAX_RESTART = 3;
+
+const pruneTrackedWorkers = (excludedWorkers = []) => {
+	const excluded = new Set(excludedWorkers.filter(Boolean));
+	const aliveWorkers = [];
+	const seenWorkers = new Set();
+
+	for (const worker of _S.workers) {
+		if (!worker || excluded.has(worker) || seenWorkers.has(worker)) {
+			continue;
+		}
+		if (worker.__TTVABIntentionallyTerminated || worker.__TTVABCrashed) {
+			continue;
+		}
+		aliveWorkers.push(worker);
+		seenWorkers.add(worker);
+	}
+
+	_S.workers = aliveWorkers;
+};
+
+function _isPlaybackContextMismatch(expectedContext, currentContext) {
+	const normalizedExpectedContext = _normalizePlaybackContext(expectedContext);
+	const normalizedCurrentContext = _normalizePlaybackContext(currentContext);
+	if (normalizedExpectedContext.MediaKey) {
+		return (
+			normalizedCurrentContext.MediaKey !== normalizedExpectedContext.MediaKey
+		);
+	}
+	if (normalizedExpectedContext.ChannelName) {
+		return (
+			normalizedCurrentContext.ChannelName !==
+			normalizedExpectedContext.ChannelName
+		);
+	}
+	return false;
+}
+
+function _attemptWorkerRestart(worker, pagePlaybackContext) {
+	if (!worker || worker.__TTVABIntentionallyTerminated) return;
+	if (worker.__TTVABRestartAttempts >= HW_MAX_RESTART) {
+		_log("Worker restart limit reached", "error");
+		return;
+	}
+	worker.__TTVABRestartAttempts++;
+	const delay = 2 ** worker.__TTVABRestartAttempts * 500;
+	_log(
+		"Restarting worker in " +
+			delay / 1000 +
+			"s (attempt " +
+			worker.__TTVABRestartAttempts +
+			"/" +
+			HW_MAX_RESTART +
+			")",
+		"warning",
+	);
+
+	const workerUrl = worker.__TTVABWorkerUrl;
+	const workerOpts = worker.__TTVABWorkerOpts;
+
+	setTimeout(() => {
+		if (worker.__TTVABIntentionallyTerminated) return;
+		try {
+			const currentContext = _getPlaybackContextFromUrl(window.location.href);
+			if (_isPlaybackContextMismatch(pagePlaybackContext, currentContext)) {
+				_log("Skipping stale worker restart after navigation", "info");
+				return;
+			}
+			new window.Worker(workerUrl, workerOpts);
+			_log("Worker restarted", "success");
+		} catch (restartErr) {
+			_log(`Worker restart failed: ${restartErr.message}`, "error");
+		}
+	}, delay);
+}
+
+let _workerWatchdogID: ReturnType<typeof setInterval> | null = null;
+
+function _startWorkerWatchdog() {
+	if (_workerWatchdogID !== null) return;
+	_workerWatchdogID = setInterval(() => {
+		for (const worker of _S.workers) {
+			if (!worker || worker.__TTVABIntentionallyTerminated) continue;
+			if (worker.__TTVABCrashed) continue;
+			try {
+				if (!_postWorkerBridgeMessage(worker, { key: "Ping", value: null })) {
+					worker.__TTVABCrashed = true;
+					_log("Worker unresponsive (ping failed)", "warning");
+					pruneTrackedWorkers([worker]);
+					_attemptWorkerRestart(worker, {
+						MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
+						ChannelName: __TTVAB_STATE__?.PageChannel || "",
+						VodID: __TTVAB_STATE__?.PageVodID || "",
+						MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
+					});
+				}
+			} catch {
+				worker.__TTVABCrashed = true;
+				_log("Worker unresponsive (ping threw)", "warning");
+				pruneTrackedWorkers([worker]);
+				_attemptWorkerRestart(worker, {
+					MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
+					ChannelName: __TTVAB_STATE__?.PageChannel || "",
+					VodID: __TTVAB_STATE__?.PageVodID || "",
+					MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
+				});
+			}
+		}
+	}, 5000);
+	_log("Worker watchdog started", "info");
+}
+
 function _hookWorker() {
 	_syncStoredDeviceId();
-	const HW_MAX_RESTART = 3;
 	if (typeof window?.Worker !== "function") {
 		return;
 	}
@@ -511,25 +622,6 @@ function _hookWorker() {
 
 		return false;
 	};
-	const pruneTrackedWorkers = (excludedWorkers = []) => {
-		const excluded = new Set(excludedWorkers.filter(Boolean));
-		const aliveWorkers = [];
-		const seenWorkers = new Set();
-
-		for (const worker of _S.workers) {
-			if (!worker || excluded.has(worker) || seenWorkers.has(worker)) {
-				continue;
-			}
-			if (worker.__TTVABIntentionallyTerminated || worker.__TTVABCrashed) {
-				continue;
-			}
-			aliveWorkers.push(worker);
-			seenWorkers.add(worker);
-		}
-
-		_S.workers = aliveWorkers;
-	};
-
 	const createHookedWorkerConstructor = (BaseWorker) => {
 		const reinsertNames = _getReinsert(BaseWorker);
 		const HookedWorker = class Worker extends _cleanWorker(BaseWorker) {
@@ -1249,60 +1341,16 @@ function _hookWorker() {
 
 				const _workerUrl = url;
 				const workerOpts = opts;
+				this.__TTVABWorkerUrl = _workerUrl;
+				this.__TTVABWorkerOpts = workerOpts;
 
 				this.addEventListener("error", (e) => {
-					if (this.__TTVABIntentionallyTerminated) {
-						return;
-					}
-					// Ignore duplicate error events from the same dying worker
-					if (this.__TTVABCrashed) {
-						return;
-					}
+					if (this.__TTVABIntentionallyTerminated) return;
+					if (this.__TTVABCrashed) return;
 					this.__TTVABCrashed = true;
 					_log(`Worker crashed: ${e.message || "Unknown error"}`, "error");
-
 					pruneTrackedWorkers([this]);
-
-					if (this.__TTVABRestartAttempts < HW_MAX_RESTART) {
-						this.__TTVABRestartAttempts++;
-						const delay = 2 ** this.__TTVABRestartAttempts * 500;
-						_log(
-							"Restarting worker in " +
-								delay / 1000 +
-								"s (attempt " +
-								this.__TTVABRestartAttempts +
-								"/" +
-								HW_MAX_RESTART +
-								")",
-							"warning",
-						);
-
-						setTimeout(() => {
-							if (this.__TTVABIntentionallyTerminated) {
-								return;
-							}
-							try {
-								const currentContext = _getPlaybackContextFromUrl(
-									window.location.href,
-								);
-								if (
-									isPlaybackContextMismatch(pagePlaybackContext, currentContext)
-								) {
-									_log(
-										"Skipping stale worker restart after navigation",
-										"info",
-									);
-									return;
-								}
-								new window.Worker(_workerUrl, workerOpts);
-								_log("Worker restarted", "success");
-							} catch (restartErr) {
-								_log(`Worker restart failed: ${restartErr.message}`, "error");
-							}
-						}, delay);
-					} else {
-						_log("Worker restart limit reached", "error");
-					}
+					_attemptWorkerRestart(this, pagePlaybackContext);
 				});
 
 				this.__TTVABCreatedAt = Date.now();
@@ -1382,6 +1430,8 @@ function _hookWorker() {
 			workerInstance = createHookedWorkerConstructor(rawWorkerInstance);
 		},
 	});
+
+	_startWorkerWatchdog();
 }
 
 function _hookMainFetch() {
