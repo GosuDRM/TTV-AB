@@ -1,6 +1,6 @@
 {
 	"name": "ttv-ab",
-	"version": "7.0.3",
+	"version": "7.0.4",
 	"description": "Twitch Ad Blocker",
 	"license": "MIT",
 	"homepage": "https://github.com/GosuDRM/TTV-AB",
@@ -12,11 +12,11 @@
 		"url": "https://github.com/GosuDRM/TTV-AB/issues"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.13",
+		"@biomejs/biome": "^2.4.15",
 		"@types/chrome": "^0.1.38",
 		"@types/node": "^25.5.0",
 		"happy-dom": "^20.9.0",
-		"knip": "^6.9.0",
+		"knip": "^6.12.2",
 		"typescript": "^6.0.2",
 		"vitest": "^4.1.5"
 	},
