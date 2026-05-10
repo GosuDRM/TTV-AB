@@ -271,7 +271,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 
 		if (!res) {
 			const controller = new AbortController();
-			timeoutId = setTimeout(() => controller.abort(), 5000);
+			timeoutId = setTimeout(() => controller.abort(), 3000);
 			res = await fetchFunc(_GQL_URL, {
 				...requestOptions,
 				signal: controller.signal,
