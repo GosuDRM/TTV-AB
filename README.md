@@ -63,6 +63,10 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
+### v7.0.5
+- **Chrome "Video Not Available" Flash** — First-ad streaming no longer pauses during backup search, eliminating the brief error screen on Chrome.
+- **Faster Token Fallback** — Direct token fetch timeout reduced from 5s to 3s.
+
 ### v7.0.4
 - **PiP HEVC Recovery** — Player reloads for HEVC handoff now bypass PiP protection, fixing 1440p quality permanently lost after ads in Picture-in-Picture mode.
 - **SPA Navigation** — Channel switching now properly resets playback intent and cleans up stale worker state.
