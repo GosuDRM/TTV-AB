@@ -328,7 +328,8 @@ function _isExplicitKnownAdSegmentUrl(segmentUrl) {
 	const url = String(segmentUrl || "");
 	if (!url) return false;
 	return (
-		url.includes(__TTVAB_STATE__.AdSignifier) ||
+		(__TTVAB_STATE__.AdSignifier &&
+			url.includes(__TTVAB_STATE__.AdSignifier)) ||
 		url.includes("/adsquared/") ||
 		url.includes("/_404/")
 	);
