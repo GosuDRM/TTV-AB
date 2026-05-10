@@ -371,6 +371,12 @@ function _setPagePlaybackContext(
 	__TTVAB_STATE__.PageMediaKey = normalizedContext.MediaKey;
 
 	if (didMediaKeyChange) {
+		if (typeof _resetPlaybackIntentForNavigation === "function") {
+			_resetPlaybackIntentForNavigation(
+				normalizedContext.ChannelName,
+				normalizedContext.MediaKey,
+			);
+		}
 		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
@@ -423,6 +429,7 @@ function _setPagePlaybackContext(
 				key: "ResetPlaybackRecoveryState",
 				value: {
 					clearAdContext: didResetAdScopedState,
+					previousMediaKey: previousMediaKey || null,
 				},
 			});
 		}
