@@ -1160,6 +1160,42 @@ async function _processM3U8(url, text, realFetch) {
 			return cleanNativeM3U8 || text;
 		}
 
+		if (
+			!info.LastCleanBackupM3U8 &&
+			!info._BackupSearchStartedAt &&
+			typeof info.LastCleanNativeM3U8 === "string" &&
+			info.LastCleanNativeM3U8
+		) {
+			const nativeAgeMs =
+				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0);
+			if (
+				nativeAgeMs <= 2000 &&
+				!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8)
+			) {
+				info._BackupSearchStartedAt = Date.now();
+				const res = _resolvePlaybackResolutionForUrl(info, url);
+				let startIdx = 0;
+				if (
+					info.LastPlayerReload >
+					Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
+				) {
+					startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
+				}
+				_findBackupStream(info, realFetch, startIdx, res)
+					.then(() => {
+						info._BackupSearchStartedAt = 0;
+					})
+					.catch(() => {
+						info._BackupSearchStartedAt = 0;
+					});
+				_log(
+					"[Trace] Returning native playlist to prevent buffer drain during backup search",
+					"info",
+				);
+				return info.LastCleanNativeM3U8;
+			}
+		}
+
 		let startIdx = 0;
 		if (
 			info.LastPlayerReload >
