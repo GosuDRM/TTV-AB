@@ -826,6 +826,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	let bufferFixWriteInFlight = false;
 
+	const bufferFixInfoIcon = document.getElementById("bufferFixInfoIcon");
+	const bufferFixTooltip = document.getElementById("bufferFixTooltip");
+	if (bufferFixInfoIcon && bufferFixTooltip) {
+		bufferFixInfoIcon.addEventListener("click", (e) => {
+			e.stopPropagation();
+			const show = bufferFixTooltip.hasAttribute("hidden");
+			bufferFixTooltip.hidden = false;
+			bufferFixTooltip.classList.toggle("visible", show);
+		});
+		bufferFixTooltip.addEventListener("click", (e) => {
+			if (e.target === bufferFixTooltip) {
+				bufferFixTooltip.hidden = true;
+				bufferFixTooltip.classList.remove("visible");
+			}
+		});
+		const modalClose = document.getElementById("bufferFixModalClose");
+		if (modalClose) {
+			modalClose.addEventListener("click", () => {
+				bufferFixTooltip.hidden = true;
+				bufferFixTooltip.classList.remove("visible");
+			});
+		}
+	}
+
 	bufferFixToggle.addEventListener("change", () => {
 		if (bufferFixWriteInFlight) return;
 		bufferFixWriteInFlight = true;
