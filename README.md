@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.0.4-purple)
+![Version](https://img.shields.io/badge/version-7.0.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.0.4-yellow)
+![Chrome](https://img.shields.io/badge/chrome-7.0.5-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,6 +62,10 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## What's New
+
+### v7.0.5
+- **First-Ad Backup Search** — Streaming no longer pauses during initial backup search, eliminating buffer drain when ads first start.
+- **Faster Token Fallback** — Direct token fetch timeout reduced from 5s to 3s.
 
 ### v7.0.4
 - **PiP HEVC Recovery** — Player reloads for HEVC handoff now bypass PiP protection, fixing 1440p quality permanently lost after ads in Picture-in-Picture mode.

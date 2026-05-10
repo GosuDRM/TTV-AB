@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.5] - 2026-05-10
+
+### Fixed
+- **First-Ad Backup Search** — First-ad backup search no longer blocks the media playlist response. Clean native content continues streaming while backup tokens load in the background, eliminating buffer drain when ads first start.
+- **Faster Token Fallback** — Direct fetch timeout for GQL token requests reduced from 5 seconds to 3 seconds, speeding up backup recovery when the bridge relay is unavailable.
+- **Ad Signifier Guard** — Segment URL ad detection now safely handles empty AdSignifier values instead of silently failing.
+- **Stale State Cleanup** — Modified master playlist flag now properly resets on every master playlist refresh, preventing stale HEVC handoff state from carrying over between refreshes.
+
 ## [7.0.4] - 2026-05-10
 
 ### Fixed
