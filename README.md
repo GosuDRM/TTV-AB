@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.0.6-purple)
+![Version](https://img.shields.io/badge/version-7.0.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.0.6-yellow)
+![Chrome](https://img.shields.io/badge/chrome-7.0.7-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,8 +63,8 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
-### v7.0.6
-- **Ad-End Bounce Loop Fix** — Rapid marker oscillation during ad-end detection no longer traps the blocker in a reset loop. A 3-second debounce prevents quality-fluctuation ping-pong while letting genuine new ads bypass the gate immediately.
+### v7.0.7
+- **Post-Ad Recovery (Critical)** — Native stream restoration after ad breaks now properly resets the grace window, preventing brief re-detection during stream transitions. ([#10](https://github.com/GosuDRM/TTV-AB/issues/10))
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 

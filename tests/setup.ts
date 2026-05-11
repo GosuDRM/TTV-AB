@@ -6,7 +6,7 @@ const g = globalThis as Record<string, unknown>;
 
 beforeAll(() => {
 	g._C = {
-		VERSION: "7.0.6", INTERNAL_VERSION: 114, AD_SIGNIFIER: "stitched",
+		VERSION: "7.0.7", INTERNAL_VERSION: 115, AD_SIGNIFIER: "stitched",
 		CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
 		PLAYER_TYPES: ["embed", "popout", "autoplay"],
 		FALLBACK_TYPE: "embed", FORCE_TYPE: "popout", RELOAD_TIME: 1500,

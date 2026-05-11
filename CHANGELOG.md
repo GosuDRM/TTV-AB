@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.7] - 2026-05-12
+
+### Fixed (Critical)
+- **Post-Ad Recovery** — Native stream restoration after ad recovery now properly resets the grace window, preventing brief re-blocks when Twitch transitions back from backup streaming. ([#10](https://github.com/GosuDRM/TTV-AB/issues/10))
+
 ## [7.0.6] - 2026-05-11
 
 ### Fixed
