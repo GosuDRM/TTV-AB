@@ -1366,14 +1366,17 @@ async function _processM3U8(url, text, realFetch) {
 		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 		if (typeof self !== "undefined" && self.postMessage) {
 			const shouldUseHevcReload = Boolean(wasUsingModifiedM3U8);
+			const recentMidrollChain =
+				info.LastAdEndReloadAt > 0 &&
+				Date.now() - info.LastAdEndReloadAt < 15000;
 			const shouldReloadPlayer = Boolean(
 				!isSilentBackupHoldEnd &&
-					(shouldUseHevcReload || _C?.RELOAD_AFTER_AD !== false),
+					(shouldUseHevcReload ||
+						(_C?.RELOAD_AFTER_AD !== false && !recentMidrollChain)),
 			);
 			const shouldPauseResumePlayer = Boolean(
 				!isSilentBackupHoldEnd &&
 					!shouldReloadPlayer &&
-					!wasUsingBackupStream &&
 					!wasUsingFallbackStream &&
 					hadStrippedAdSegments,
 			);
