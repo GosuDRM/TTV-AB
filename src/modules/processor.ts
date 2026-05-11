@@ -25,7 +25,6 @@ function _resetStreamAdState(info) {
 	info.IsHoldingBackupAfterAd = false;
 	info.SilentBackupHoldStartedAt = 0;
 	info.LastSilentBackupHoldLogAt = 0;
-	info.LastAdEndReloadAt = 0;
 	info.LastNativeRecoveryHoldLogAt = 0;
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
@@ -1358,7 +1357,6 @@ async function _processM3U8(url, text, realFetch) {
 			info.ActiveBackupResolution = res?.Resolution || null;
 			info.HevcReloadPendingAfterHold = wasUsingModifiedM3U8;
 		}
-		_rememberLastAdEnd(info, adEndedAt);
 		__TTVAB_STATE__.CurrentAdChannel = null;
 		__TTVAB_STATE__.CurrentAdMediaKey = null;
 		__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -1368,7 +1366,7 @@ async function _processM3U8(url, text, realFetch) {
 			const shouldUseHevcReload = Boolean(wasUsingModifiedM3U8);
 			const recentMidrollChain =
 				info.LastAdEndReloadAt > 0 &&
-				Date.now() - info.LastAdEndReloadAt < 15000;
+				adEndedAt - info.LastAdEndReloadAt < 15000;
 			const shouldReloadPlayer = Boolean(
 				!isSilentBackupHoldEnd &&
 					(shouldUseHevcReload ||
@@ -1414,6 +1412,7 @@ async function _processM3U8(url, text, realFetch) {
 					}),
 				);
 			}
+			_rememberLastAdEnd(info, adEndedAt);
 		}
 		if (isSilentBackupHoldEnd && heldBackupM3U8) {
 			return heldBackupM3U8;
