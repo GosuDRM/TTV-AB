@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.0.8] - 2026-05-12
+
+### Fixed
+- **Consecutive Midroll Handling** — Player reload after ad end is now suppressed when consecutive midrolls are detected (previous ad within 15 seconds), preventing fresh token fetches from re-exposing the next ad break. HEVC quality recovery reloads are unaffected.
+
 ## [7.0.7] - 2026-05-12
 
 ### Fixed (Critical)
