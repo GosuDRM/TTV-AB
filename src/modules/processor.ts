@@ -864,6 +864,7 @@ async function _processM3U8(url, text, realFetch) {
 			info.ActiveBackupResolution = null;
 			info.HevcReloadPendingAfterHold = false;
 			_resetNativeRecoveryReadyState(info);
+			_rememberLastAdEnd(info, Date.now());
 			_log(
 				requiresReload
 					? "[Trace] Native playlist clean after silent backup hold; reloading player to restore HEVC stream"
@@ -934,6 +935,7 @@ async function _processM3U8(url, text, realFetch) {
 			info.IsHoldingBackupAfterAd = false;
 			info.SilentBackupHoldStartedAt = 0;
 			info.LastSilentBackupHoldLogAt = 0;
+			_rememberLastAdEnd(info, Date.now());
 			_log(
 				"[Trace] Silent backup hold lost cached backup; resuming visible ad recovery",
 				"warning",
