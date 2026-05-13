@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.2.1] - 2026-05-13
+
+### Fixed
+- Back-to-back midroll ads no longer leak through after recovery — the extension no longer reloads the player when no ad segments were stripped, avoiding the fresh token fetch that was re-exposing the next ad in the chain
+- When a backup stream was used during an ad break, playback now properly recovers instead of freezing after the break ends ([#12](https://github.com/GosuDRM/TTV-AB/issues/12))
+
+### Changed
+- Ad segment URL cache stays under 1000 entries, with oldest entries cleaned up automatically
+- Buffer gaps are now skipped smoothly before resorting to pause/play or reload
+
 ## [7.1.0] - 2026-05-12
 
 ### Fixed

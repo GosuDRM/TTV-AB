@@ -1367,17 +1367,31 @@ async function _processM3U8(url, text, realFetch) {
 			const recentMidrollChain =
 				info.LastAdEndReloadAt > 0 &&
 				adEndedAt - info.LastAdEndReloadAt < 15000;
-			const shouldReloadPlayer = Boolean(
-				!isSilentBackupHoldEnd &&
-					(shouldUseHevcReload ||
-						(_C?.RELOAD_AFTER_AD !== false && !recentMidrollChain)),
-			);
-			const shouldPauseResumePlayer = Boolean(
-				!isSilentBackupHoldEnd &&
-					!shouldReloadPlayer &&
-					!wasUsingFallbackStream &&
-					hadStrippedAdSegments,
-			);
+			const isCsaiBreak = !hadStrippedAdSegments && !wasUsingModifiedM3U8;
+			let shouldReloadPlayer = false;
+			let shouldPauseResumePlayer = false;
+			let reloadKind = "post-ad";
+			let needsHardReload = shouldUseHevcReload;
+
+			if (isCsaiBreak) {
+				if (wasUsingBackupStream && !recentMidrollChain) {
+					shouldReloadPlayer = true;
+					needsHardReload = true;
+					reloadKind = "post-escape";
+				} else if (wasUsingBackupStream) {
+					shouldPauseResumePlayer = true;
+				}
+			} else if (!isSilentBackupHoldEnd) {
+				shouldReloadPlayer = Boolean(
+					shouldUseHevcReload ||
+						(_C?.RELOAD_AFTER_AD !== false &&
+							hadStrippedAdSegments &&
+							!recentMidrollChain),
+				);
+				shouldPauseResumePlayer = Boolean(
+					!shouldReloadPlayer && !wasUsingFallbackStream,
+				);
+			}
 			_postWorkerBridgeMessage(
 				self,
 				_createPageScopedWorkerEvent({
@@ -1397,9 +1411,9 @@ async function _processM3U8(url, text, realFetch) {
 						key: "ReloadPlayer",
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
-						reason: "post-ad",
-						refreshAccessToken: shouldUseHevcReload,
-						newMediaPlayerInstance: shouldUseHevcReload,
+						reason: reloadKind,
+						refreshAccessToken: needsHardReload,
+						newMediaPlayerInstance: needsHardReload,
 					}),
 				);
 			} else if (shouldPauseResumePlayer) {

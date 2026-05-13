@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.1.0-purple)
+![Version](https://img.shields.io/badge/version-7.2.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.1.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-7.2.1-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,8 +63,11 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
-### v7.1.0
-- **Consecutive Midroll Handling** — Player reload after ad end is now suppressed when consecutive midrolls are detected, preventing fresh token fetches from re-exposing the next ad break. Pause/resume still fires to refresh playback when reload is skipped.
+### v7.2.1
+- Back-to-back midroll ads no longer leak through after recovery
+- Playback properly recovers when a backup stream was used during an ad break
+- Memory usage stays stable with automatic cache cleanup
+- Buffer gaps are now skipped smoothly
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
