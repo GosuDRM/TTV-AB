@@ -2,10 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [7.0.8] - 2026-05-12
+## [7.2.1] - 2026-05-13
 
 ### Fixed
-- **Consecutive Midroll Handling** — Player reload after ad end is now suppressed when consecutive midrolls are detected (previous ad within 15 seconds), preventing fresh token fetches from re-exposing the next ad break. HEVC quality recovery reloads are unaffected.
+- Back-to-back midroll ads no longer leak through after recovery — the extension no longer reloads the player when no ad segments were stripped, avoiding the fresh token fetch that was re-exposing the next ad in the chain
+- When a backup stream was used during an ad break, playback now properly recovers instead of freezing after the break ends ([#12](https://github.com/GosuDRM/TTV-AB/issues/12))
+
+### Changed
+- Ad segment URL cache stays under 1000 entries, with oldest entries cleaned up automatically
+- Buffer gaps are now skipped smoothly before resorting to pause/play or reload
+
+## [7.1.0] - 2026-05-12
+
+### Fixed
+- **Consecutive Midroll Handling** — Player reload after ad end is now suppressed when consecutive midrolls are detected (previous ad within 15 seconds), preventing fresh token fetches from re-exposing the next ad break. Pause/resume still nudges playback to refresh when reload is skipped, avoiding player hangs. HEVC quality recovery reloads are unaffected.
 
 ## [7.0.7] - 2026-05-12
 
@@ -20,7 +30,7 @@ All notable changes to TTV AB will be documented in this file.
 ## [7.0.5] - 2026-05-10
 
 ### Fixed
-- **First-Ad Backup Search** — First-ad backup search no longer blocks the media playlist response. Clean native content continues streaming while backup tokens load in the background, eliminating buffer drain when ads first start.
+- **Chrome "Video Not Available" Flash** — First-ad backup search no longer blocks the media playlist response. Clean native content continues streaming while backup tokens load in the background, eliminating the brief error screen that appeared on Chrome when ads first started.
 - **Faster Token Fallback** — Direct fetch timeout for GQL token requests reduced from 5 seconds to 3 seconds, speeding up backup recovery when the bridge relay is unavailable.
 - **Ad Signifier Guard** — Segment URL ad detection now safely handles empty AdSignifier values instead of silently failing.
 - **Stale State Cleanup** — Modified master playlist flag now properly resets on every master playlist refresh, preventing stale HEVC handoff state from carrying over between refreshes.

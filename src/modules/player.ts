@@ -2870,18 +2870,34 @@ function _monitorPlayerBuffering() {
 								"warning",
 							);
 							_PlayerBufferState.fixAttempts++;
-							if (
-								__TTVAB_STATE__.PlayerBufferingDoPlayerReload ||
-								_PlayerBufferState.fixAttempts >= 3
-							) {
-								_doPlayerTask(false, true, {
-									reason: "buffer-recovery",
-								});
-							} else {
-								_doPlayerTask(true, false);
+							if (video && video.buffered.length > 1) {
+								for (let bi = 0; bi < video.buffered.length; bi++) {
+									if (video.buffered.start(bi) > video.currentTime + 0.5) {
+										_log(
+											`Seeking past ${(video.buffered.start(bi) - video.currentTime).toFixed(1)}s buffer gap`,
+											"warning",
+										);
+										video.currentTime = video.buffered.start(bi);
+										_PlayerBufferState.lastFixTime = Date.now();
+										_PlayerBufferState.numSame = 0;
+										break;
+									}
+								}
 							}
-							_PlayerBufferState.lastFixTime = Date.now();
-							_PlayerBufferState.numSame = 0;
+							if (_PlayerBufferState.numSame !== 0) {
+								if (
+									__TTVAB_STATE__.PlayerBufferingDoPlayerReload ||
+									_PlayerBufferState.fixAttempts >= 3
+								) {
+									_doPlayerTask(false, true, {
+										reason: "buffer-recovery",
+									});
+								} else {
+									_doPlayerTask(true, false);
+								}
+								_PlayerBufferState.lastFixTime = Date.now();
+								_PlayerBufferState.numSame = 0;
+							}
 						}
 					} else {
 						_PlayerBufferState.liveEdgeStarveCount = 0;
