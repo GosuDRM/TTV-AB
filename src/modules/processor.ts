@@ -1269,8 +1269,6 @@ async function _processM3U8(url, text, realFetch) {
 
 		info.ActiveBackupResolution = res?.Resolution || null;
 		if (backupType) {
-			// Don't pin autoplay — it's low-quality (360p) and should stay
-			// as a last-resort fallback when all Source types are ad-laden.
 			if (backupType !== "autoplay") {
 				__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
 				__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
@@ -1486,7 +1484,6 @@ async function _findBackupStream(
 	let fallbackType = null;
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
-	// Per-break contamination reorder: types already found ad-laden
 	// this break get deprioritized so clean types get tried first.
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
 		const clean: string[] = [];
@@ -1499,7 +1496,6 @@ async function _findBackupStream(
 			playerTypes = [...clean, ...contam];
 		}
 	}
-	// Add autoplay as last-resort when all Source types are ad-laden.
 	const sourceTypes = ["embed", "popout", "site"];
 	const allSourceTypesContaminated =
 		info.LoggedBackupAdsByType &&

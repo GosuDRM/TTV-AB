@@ -2514,23 +2514,19 @@ function _doPlayerTask(
 			return false;
 		}
 
-		if (
-			isAdRecoveryReload &&
-			(__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel) &&
-			__TTVAB_STATE__.LastAdRecoveryReloadAt
-		) {
+		if (isAdRecoveryReload && __TTVAB_STATE__.LastAdRecoveryReloadAt) {
 			const consecutiveFailures = Math.max(
 				0,
 				Number(__TTVAB_STATE__._AdRecoveryConsecutiveFailures) || 0,
 			);
+			const baseCooldown = __TTVAB_STATE__.AdRecoveryReloadCooldownMs || 10000;
 			const backoffCooldown = Math.min(
 				60000,
-				(__TTVAB_STATE__.AdRecoveryReloadCooldownMs || 10000) *
-					2 ** Math.min(consecutiveFailures, 3),
+				baseCooldown * 2 ** Math.min(consecutiveFailures, 3),
 			);
 			if (now - __TTVAB_STATE__.LastAdRecoveryReloadAt < backoffCooldown) {
 				_log(
-					`Suppressing duplicate ad recovery reload for ${__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel} (backoff ${Math.round(backoffCooldown / 1000)}s, attempt #${consecutiveFailures + 1})`,
+					`Suppressing duplicate ad recovery reload (backoff ${Math.round(backoffCooldown / 1000)}s, attempt #${consecutiveFailures + 1})`,
 					"warning",
 				);
 				return false;

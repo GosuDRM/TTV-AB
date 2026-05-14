@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.3.1] - 2026-05-14
+
+### Fixed
+- Autoplay no longer gets pinned as the preferred backup type, keeping it available as a last-resort fallback when all Source-quality types come back contaminated
+- Ad recovery reloads are now properly suppressed on consecutive midroll channels, preventing the reload-expose-next-ad cascade
+
 ## [7.3.0] - 2026-05-14
 
 ### Fixed

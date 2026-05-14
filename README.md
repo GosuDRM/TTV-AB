@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.3.0-purple)
+![Version](https://img.shields.io/badge/version-7.3.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.3.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-7.3.1-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,6 +62,10 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## What's New
+
+### v7.3.1
+- Autoplay stays as fallback instead of getting locked in as the preferred backup type
+- Player reloads are suppressed during rapid consecutive midrolls, stopping ad leaks
 
 ### v7.3.0
 - Backup player cycling is smarter — when a backup type keeps returning ad-marked streams, it gets tried less often, reducing unnecessary token fetches. Autoplay (360p) stays as a reliable last resort when other options are exhausted

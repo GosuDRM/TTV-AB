@@ -1,22 +1,31 @@
-import { beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { beforeAll } from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
 beforeAll(() => {
 	g._C = {
-		VERSION: "7.2.1", INTERNAL_VERSION: 117, AD_SIGNIFIER: "stitched",
+		VERSION: "7.2.1",
+		INTERNAL_VERSION: 117,
+		AD_SIGNIFIER: "stitched",
 		CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
 		PLAYER_TYPES: ["embed", "popout", "autoplay"],
-		FALLBACK_TYPE: "embed", FORCE_TYPE: "popout", RELOAD_TIME: 1500,
-		PLAYER_RELOAD_DEBOUNCE_MS: 1500, AD_CYCLE_STALE_MS: 30000,
-		AD_END_GRACE_MS: 500, AD_END_MAX_WAIT_MS: 4000,
-		AD_END_BACKUP_HOLD_MAX_MS: 90000, AD_END_MIN_CLEAN_PLAYLISTS: 3,
+		FALLBACK_TYPE: "embed",
+		FORCE_TYPE: "popout",
+		RELOAD_TIME: 1500,
+		PLAYER_RELOAD_DEBOUNCE_MS: 1500,
+		AD_CYCLE_STALE_MS: 30000,
+		AD_END_GRACE_MS: 500,
+		AD_END_MAX_WAIT_MS: 4000,
+		AD_END_BACKUP_HOLD_MAX_MS: 90000,
+		AD_END_MIN_CLEAN_PLAYLISTS: 3,
 		AD_END_MIN_NATIVE_RECOVERY_PROBES: 3,
 		AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS: 500,
-		AD_RECOVERY_RELOAD_COOLDOWN_MS: 15000, BUFFERING_FIX: true,
-		RELOAD_AFTER_AD: true, REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN: false,
+		AD_RECOVERY_RELOAD_COOLDOWN_MS: 15000,
+		BUFFERING_FIX: true,
+		RELOAD_AFTER_AD: true,
+		REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN: false,
 		PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
 		ALWAYS_RELOAD_PLAYER_ON_AD: false,
 		LOG_STYLES: { prefix: "", info: "", success: "", warning: "", error: "" },
@@ -24,10 +33,15 @@ beforeAll(() => {
 	g._S = { workers: [], conflicts: [], reinsertPatterns: [], adsBlocked: 0 };
 	g._log = () => {};
 	g.__TTVAB_STATE__ = {
-		AdSignifier: "stitched", BackupPlayerTypes: ["embed", "popout", "autoplay"],
-		AdSegmentCache: new Set<string>(), AllSegmentsAreAdSegments: false,
-		IsAdStrippingEnabled: true, CurrentAdChannel: null, CurrentAdMediaKey: null,
-		StreamInfos: Object.create(null), StreamInfosByUrl: Object.create(null),
+		AdSignifier: "stitched",
+		BackupPlayerTypes: ["embed", "popout", "autoplay"],
+		AdSegmentCache: new Set<string>(),
+		AllSegmentsAreAdSegments: false,
+		IsAdStrippingEnabled: true,
+		CurrentAdChannel: null,
+		CurrentAdMediaKey: null,
+		StreamInfos: Object.create(null),
+		StreamInfosByUrl: Object.create(null),
 		V2API: false,
 	};
 	g.globalThis = g;
@@ -36,7 +50,8 @@ beforeAll(() => {
 	g.console = { log() {}, warn() {}, error() {}, info() {}, debug() {} };
 
 	const js = readFileSync(
-		resolve(__dirname, "../dist/src/modules/parser.js"), "utf8",
+		resolve(__dirname, "../dist/src/modules/parser.js"),
+		"utf8",
 	)
 		.replace(/^"use strict";\s*/m, "")
 		.replace(/^function (_\w+)/gm, "globalThis.$1 = function");
