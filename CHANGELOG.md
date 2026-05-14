@@ -2,10 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [7.3.4] - 2026-05-14
+## [7.4.0] - 2026-05-14
 
 ### Fixed
-- First ad detection no longer blocks the playlist response during backup search, eliminating the brief buffer gap on fresh streams
+- First ad detection no longer blocks the playlist response during backup search, eliminating the buffer gap on fresh streams
+- Duplicate backup searches prevented when background search is already running
+- When all media segments are live, tracking URLs are stripped inline without switching to a backup stream
 
 ## [7.3.3] - 2026-05-14
 

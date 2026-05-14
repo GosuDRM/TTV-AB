@@ -1182,40 +1182,71 @@ async function _processM3U8(url, text, realFetch) {
 			return cleanNativeM3U8 || text;
 		}
 
+		const isCsaiOnly =
+			hasAds &&
+			!hasExplicitKnownAdSegments &&
+			typeof text === "string" &&
+			(() => {
+				const lines = text.replace(/\r/g, "").split("\n");
+				for (let i = 0; i < lines.length; i++) {
+					if (
+						lines[i].startsWith("#EXTINF") &&
+						i + 1 < lines.length &&
+						!lines[i].includes(",live")
+					) {
+						return false;
+					}
+				}
+				return true;
+			})();
+		if (isCsaiOnly) {
+			_log(
+				"[Trace] All segments live — stripping tracking URLs inline",
+				"info",
+			);
+			return _stripAds(text, false, info);
+		}
+
 		if (
 			!info.LastCleanBackupM3U8 &&
 			!info._BackupSearchStartedAt &&
 			!info.IsUsingFallbackStream
 		) {
-			info._BackupSearchStartedAt = Date.now();
-			const res = _resolvePlaybackResolutionForUrl(info, url);
-			let startIdx = 0;
-			if (
-				info.LastPlayerReload >
-				Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
-			) {
-				startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
-			}
-			_findBackupStream(info, realFetch, startIdx, res)
-				.then(() => {
-					info._BackupSearchStartedAt = 0;
-				})
-				.catch(() => {
-					info._BackupSearchStartedAt = 0;
-				});
 			const hasCleanNative =
 				typeof info.LastCleanNativeM3U8 === "string" &&
 				info.LastCleanNativeM3U8 &&
-				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 8000 &&
+				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
 				!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8);
 			if (hasCleanNative) {
+				info._BackupSearchStartedAt = Date.now();
+				const res = _resolvePlaybackResolutionForUrl(info, url);
+				let startIdx = 0;
+				if (
+					info.LastPlayerReload >
+					Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
+				) {
+					startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
+				}
+				_findBackupStream(info, realFetch, startIdx, res)
+					.then(() => {
+						info._BackupSearchStartedAt = 0;
+					})
+					.catch(() => {
+						info._BackupSearchStartedAt = 0;
+					});
 				_log(
 					"[Trace] Returning native playlist to prevent buffer drain during backup search",
 					"info",
 				);
 				return info.LastCleanNativeM3U8;
 			}
-			_log("[Trace] Returning current playlist during backup search", "info");
+		}
+
+		if (info._BackupSearchStartedAt) {
+			_log(
+				"[Trace] Returning current playlist while waiting for background backup search",
+				"info",
+			);
 			return text;
 		}
 
