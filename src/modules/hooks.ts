@@ -1134,7 +1134,7 @@ function _hookWorker() {
 								break;
 							}
 							__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
-							if (nextPinnedType) {
+							if (nextPinnedType && nextPinnedType !== "autoplay") {
 								__TTVAB_STATE__.LastPinnedBackupPlayerType = nextPinnedType;
 							}
 							__TTVAB_STATE__.PinnedBackupPlayerChannel =
