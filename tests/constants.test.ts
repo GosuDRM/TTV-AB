@@ -20,7 +20,7 @@ describe("_C constants", () => {
 	const C = () => g._C as Record<string, unknown>;
 
 	it("has valid version", () => {
-		expect(C().VERSION).toBe("7.3.1");
+		expect(C().VERSION).toBe("7.3.3");
 	});
 
 	it("has positive INTERNAL_VERSION", () => {

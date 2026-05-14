@@ -29,6 +29,7 @@ function _resetStreamAdState(info) {
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
+	info.BackupVariantUrls = new Set();
 	_resetNativeRecoveryReadyState(info);
 
 	return {
