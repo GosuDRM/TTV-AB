@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -8,7 +8,8 @@ beforeAll(() => {
 	g.globalThis = g;
 
 	const js = readFileSync(
-		resolve(__dirname, "../dist/src/modules/constants.js"), "utf8",
+		resolve(__dirname, "../dist/src/modules/constants.js"),
+		"utf8",
 	)
 		.replace(/^"use strict";\s*/m, "")
 		.replace(/^const _C = /m, "globalThis._C = ");
@@ -19,7 +20,7 @@ describe("_C constants", () => {
 	const C = () => g._C as Record<string, unknown>;
 
 	it("has valid version", () => {
-		expect(C().VERSION).toBe("7.2.1");
+		expect(C().VERSION).toBe("7.3.1");
 	});
 
 	it("has positive INTERNAL_VERSION", () => {
