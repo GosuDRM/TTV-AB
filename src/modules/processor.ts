@@ -28,6 +28,7 @@ function _resetStreamAdState(info) {
 	info.LastNativeRecoveryHoldLogAt = 0;
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
+	info.LoggedBackupAdsByType = null;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -126,7 +127,7 @@ function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
 		case "no-stream-url":
 			return 2000;
 		default:
-			return 3000;
+			return 15000;
 	}
 }
 
@@ -674,6 +675,7 @@ function _createStreamInfo(context) {
 		HevcReloadPendingAfterHold: false,
 		LastAdEndBounceAt: 0,
 		LastActivityAt: Date.now(),
+		LoggedBackupAdsByType: null,
 	};
 }
 
@@ -1267,9 +1269,13 @@ async function _processM3U8(url, text, realFetch) {
 
 		info.ActiveBackupResolution = res?.Resolution || null;
 		if (backupType) {
-			__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
-			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
-			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
+			// Don't pin autoplay — it's low-quality (360p) and should stay
+			// as a last-resort fallback when all Source types are ad-laden.
+			if (backupType !== "autoplay") {
+				__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
+				__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
+				__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
+			}
 		}
 		if (info.ActiveBackupPlayerType !== backupType) {
 			info.ActiveBackupPlayerType = backupType;
@@ -1479,7 +1485,28 @@ async function _findBackupStream(
 	let fallbackM3u8 = null;
 	let fallbackType = null;
 
-	const playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
+	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
+	// Per-break contamination reorder: types already found ad-laden
+	// this break get deprioritized so clean types get tried first.
+	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
+		const clean: string[] = [];
+		const contam: string[] = [];
+		for (const t of playerTypes) {
+			if (info.LoggedBackupAdsByType.has(t)) contam.push(t);
+			else clean.push(t);
+		}
+		if (contam.length > 0 && clean.length > 0) {
+			playerTypes = [...clean, ...contam];
+		}
+	}
+	// Add autoplay as last-resort when all Source types are ad-laden.
+	const sourceTypes = ["embed", "popout", "site"];
+	const allSourceTypesContaminated =
+		info.LoggedBackupAdsByType &&
+		sourceTypes.every((t) => info.LoggedBackupAdsByType.has(t));
+	if (allSourceTypesContaminated && !playerTypes.includes("autoplay")) {
+		playerTypes.push("autoplay");
+	}
 	const playerTypesLen = playerTypes.length;
 	const isDoingMinimalRequests =
 		startIdx > 0 &&
@@ -1683,6 +1710,13 @@ async function _findBackupStream(
 									pt,
 									promotionPolicy.reason,
 								);
+								if (promotionPolicy.reason === "ad-marked") {
+									if (!info.LoggedBackupAdsByType) {
+										info.LoggedBackupAdsByType = new Set();
+									}
+									info.LoggedBackupAdsByType.add(pt);
+									info.LoggedBackupAdsByType.add(realPt);
+								}
 								if (isFullyCachedPlayerType) {
 									_log(
 										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
