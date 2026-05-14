@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.3.0] - 2026-05-14
+
+### Fixed
+- Backup player cycling no longer hammers the same failing type repeatedly on channels where all backup types are ad-marked. Rejected types are deprioritized during the break and retried less aggressively
+- Autoplay (360p) is now a reliable last-resort backup when all Source-quality types come back contaminated, preventing endless token refresh loops
+- Autoplay is excluded from backup type pinning so it stays in the fallback position
+
+### Changed
+- Ad-marked backup retry cooldown increased from 3 seconds to 15 seconds to reduce unnecessary GQL token requests
+
 ## [7.2.1] - 2026-05-13
 
 ### Fixed
