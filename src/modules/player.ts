@@ -2525,11 +2525,14 @@ function _doPlayerTask(
 				baseCooldown * 2 ** Math.min(consecutiveFailures, 3),
 			);
 			if (now - __TTVAB_STATE__.LastAdRecoveryReloadAt < backoffCooldown) {
-				_log(
-					`Suppressing duplicate ad recovery reload (backoff ${Math.round(backoffCooldown / 1000)}s, attempt #${consecutiveFailures + 1})`,
-					"warning",
-				);
-				return false;
+				if (consecutiveFailures > 0) {
+					_log(
+						`Suppressing ad recovery reload — downgrading to pause/resume (backoff ${Math.round(backoffCooldown / 1000)}s, attempt #${consecutiveFailures + 1})`,
+						"warning",
+					);
+				}
+				isPausePlay = true;
+				isReload = false;
 			}
 		}
 

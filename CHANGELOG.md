@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.3.3] - 2026-05-14
+
+### Fixed
+- Backup variant URL tracking now resets between ad breaks, preventing stale URLs from interfering with new break detection
+
+## [7.3.2] - 2026-05-14
+
+### Fixed
+- Autoplay no longer gets pinned as preferred backup type in the main thread, keeping it available as a last-resort fallback
+
 ## [7.3.1] - 2026-05-14
 
 ### Fixed

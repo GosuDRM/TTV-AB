@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { T } from "./setup";
 
 describe("_normalizeChannelName", () => {
@@ -50,15 +50,24 @@ describe("_normalizeVodID", () => {
 
 describe("_buildMediaKey", () => {
 	it("live key", () => {
-		const fn = T<(t: string, c?: string | null, v?: string | null) => string | null>("_buildMediaKey");
+		const fn =
+			T<(t: string, c?: string | null, v?: string | null) => string | null>(
+				"_buildMediaKey",
+			);
 		expect(fn("live", "testchannel")).toBe("live:testchannel");
 	});
 	it("vod key", () => {
-		const fn = T<(t: string, c?: string | null, v?: string | null) => string | null>("_buildMediaKey");
+		const fn =
+			T<(t: string, c?: string | null, v?: string | null) => string | null>(
+				"_buildMediaKey",
+			);
 		expect(fn("vod", null, "123456")).toBe("vod:123456");
 	});
 	it("null for invalid", () => {
-		const fn = T<(t: string, c?: string | null, v?: string | null) => string | null>("_buildMediaKey");
+		const fn =
+			T<(t: string, c?: string | null, v?: string | null) => string | null>(
+				"_buildMediaKey",
+			);
 		expect(fn("live", "", null)).toBeNull();
 	});
 });
@@ -83,7 +92,8 @@ describe("_normalizeMediaKey", () => {
 });
 
 describe("_getPlaybackContextFromUrl", () => {
-	const fn = () => T<(url: string) => Record<string, unknown>>("_getPlaybackContextFromUrl");
+	const fn = () =>
+		T<(url: string) => Record<string, unknown>>("_getPlaybackContextFromUrl");
 	it("live channel", () => {
 		const ctx = fn()("https://www.twitch.tv/testchannel");
 		expect(ctx.MediaType).toBe("live");
@@ -101,9 +111,13 @@ describe("_getPlaybackContextFromUrl", () => {
 		expect(fn()("https://www.twitch.tv/browse").ChannelName).toBeNull();
 	});
 	it("popout", () => {
-		expect(fn()("https://www.twitch.tv/popout/testchannel/player").MediaType).toBe("live");
+		expect(
+			fn()("https://www.twitch.tv/popout/testchannel/player").MediaType,
+		).toBe("live");
 	});
 	it("embed", () => {
-		expect(fn()("https://www.twitch.tv/embed/testchannel").MediaType).toBe("live");
+		expect(fn()("https://www.twitch.tv/embed/testchannel").MediaType).toBe(
+			"live",
+		);
 	});
 });
