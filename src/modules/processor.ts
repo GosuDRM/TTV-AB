@@ -889,6 +889,24 @@ async function _processM3U8(url, text, realFetch) {
 		}
 	}
 
+	const isOfflinePlaylist =
+		!hasMediaSegments &&
+		typeof text === "string" &&
+		text.includes("#EXT-X-ENDLIST");
+	if (isOfflinePlaylist) {
+		if (!info._LoggedOfflineTransition) {
+			info._LoggedOfflineTransition = true;
+			_log(
+				"[Trace] Offline playlist detected — using cached stream",
+				"warning",
+			);
+		}
+		if (info.LastCleanBackupM3U8) {
+			info.IsUsingBackupStream = true;
+		}
+		return info.LastCleanBackupM3U8 || info.LastCleanNativeM3U8 || text;
+	}
+
 	if (hasAds) {
 		if (info.IsHoldingBackupAfterAd) {
 			if (info.LastCleanBackupM3U8) {
@@ -1204,7 +1222,7 @@ async function _processM3U8(url, text, realFetch) {
 				"[Trace] All segments live — stripping tracking URLs inline",
 				"info",
 			);
-			return _stripAds(text, false, info);
+			return _stripAds(text, false, info, true);
 		}
 
 		if (
@@ -1329,6 +1347,23 @@ async function _processM3U8(url, text, realFetch) {
 			text = _stripAds(text, stripHevc, info);
 		}
 	} else if (info.IsShowingAd) {
+		const isOfflinePlaylist =
+			!hasMediaSegments &&
+			typeof text === "string" &&
+			text.includes("#EXT-X-ENDLIST");
+		if (isOfflinePlaylist) {
+			if (!info._LoggedOfflineTransition) {
+				info._LoggedOfflineTransition = true;
+				_log(
+					"[Trace] Offline playlist detected during ad break — using backup stream",
+					"warning",
+				);
+			}
+			if (info.LastCleanBackupM3U8) {
+				info.IsUsingBackupStream = true;
+			}
+			return info.LastCleanBackupM3U8 || info.LastCleanNativeM3U8 || text;
+		}
 		const res = _resolvePlaybackResolutionForUrl(info, url);
 		let adEndState = "wait";
 		try {

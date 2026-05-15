@@ -441,7 +441,7 @@ function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
 		.join("\n");
 }
 
-function _stripAds(text, stripAll, info) {
+function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	const lines = text.split("\n");
 	const len = lines.length;
 	const adUrl = "https://twitch.tv";
@@ -455,7 +455,7 @@ function _stripAds(text, stripAll, info) {
 	const forceStripAllSegments =
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
-		(hasExplicitAdMetadata && !hasKnownAdSegments);
+		(!skipAutoForceStrip && hasExplicitAdMetadata && !hasKnownAdSegments);
 	const maxRecoverySegments = forceStripAllSegments ? len : 6;
 
 	let adSegmentCount = 0;
@@ -659,9 +659,10 @@ function _stripAds(text, stripAll, info) {
 		}
 
 		_log(
-			"[Recovery] Empty playlist after stripping ads; refusing to restore ad segments",
+			"[Recovery] Empty playlist after stripping ads; falling back to original playlist to prevent stall",
 			"warning",
 		);
+		return text;
 	}
 
 	return result.join("\n");

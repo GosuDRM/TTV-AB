@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.4.0-purple)
+![Version](https://img.shields.io/badge/version-7.4.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.4.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-7.4.5-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,10 +63,17 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
+### v7.4.5
+- Stream no longer shows as offline after ads end
+- Playback no longer stalls after ad tracking strips all segments
+
+### v7.4.1
+- Channel no longer shows falsely offline when an ad break ends on an empty playlist
+
 ### v7.4.0
-- First ad detection no longer blocks the playlist response, eliminating the buffer gap on fresh streams
-- When all media segments are live, tracking URLs are stripped inline without switching to a backup stream
-- Duplicate backup searches prevented when background search is already running
+- First ad no longer causes a buffer gap — backup search runs without blocking playback
+- Duplicate backup searches prevented for the same break
+- Live-only ad segments now handled inline without switching streams
 
 ### v7.3.3
 - Backup variant URLs reset between breaks to prevent stale matches
