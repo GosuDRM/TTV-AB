@@ -583,6 +583,18 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		info.NumStrippedAdSegments = 0;
 	}
 
+	if (hasExplicitAdMetadata) {
+		for (i = 0; i < len; i++) {
+			const line = lines[i];
+			if (
+				line?.startsWith("#EXT-X-TWITCH-PREFETCH:") ||
+				line?.startsWith("#EXT-X-PRELOAD-HINT:")
+			) {
+				lines[i] = "";
+			}
+		}
+	}
+
 	info.IsStrippingAdSegments = stripped;
 
 	const now = Date.now();
