@@ -30,6 +30,7 @@ function _resetStreamAdState(info) {
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
 	info.BackupVariantUrls = new Set();
+	info._CsaiOnlyThisBreak = false;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -1129,6 +1130,7 @@ async function _processM3U8(url, text, realFetch) {
 			info.VisibleAdStartedAt = now;
 			info.IsHoldingBackupAfterAd = false;
 			info.SilentBackupHoldStartedAt = 0;
+			info._CsaiOnlyThisBreak = false;
 			info.LastSilentBackupHoldLogAt = 0;
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
@@ -1203,6 +1205,10 @@ async function _processM3U8(url, text, realFetch) {
 			return cleanNativeM3U8 || text;
 		}
 
+		if (info._CsaiOnlyThisBreak) {
+			return _stripAds(text, false, info, true);
+		}
+
 		const isCsaiOnly =
 			hasAds &&
 			!hasExplicitKnownAdSegments &&
@@ -1221,6 +1227,7 @@ async function _processM3U8(url, text, realFetch) {
 				return true;
 			})();
 		if (isCsaiOnly) {
+			info._CsaiOnlyThisBreak = true;
 			_log(
 				"[Trace] All segments live — stripping tracking URLs inline",
 				"info",
