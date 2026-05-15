@@ -30,7 +30,6 @@ function _resetStreamAdState(info) {
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
 	info.BackupVariantUrls = new Set();
-	info._CsaiOnlyThisBreak = false;
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -909,10 +908,6 @@ async function _processM3U8(url, text, realFetch) {
 	}
 
 	if (hasAds) {
-		if (info._CsaiOnlyThisBreak) {
-			return _stripAds(text, false, info, true);
-		}
-
 		if (info.IsHoldingBackupAfterAd) {
 			if (info.LastCleanBackupM3U8) {
 				const now = Date.now();
@@ -1134,7 +1129,6 @@ async function _processM3U8(url, text, realFetch) {
 			info.VisibleAdStartedAt = now;
 			info.IsHoldingBackupAfterAd = false;
 			info.SilentBackupHoldStartedAt = 0;
-			info._CsaiOnlyThisBreak = false;
 			info.LastSilentBackupHoldLogAt = 0;
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
@@ -1207,36 +1201,6 @@ async function _processM3U8(url, text, realFetch) {
 				"info",
 			);
 			return cleanNativeM3U8 || text;
-		}
-
-		if (info._CsaiOnlyThisBreak) {
-			return _stripAds(text, false, info, true);
-		}
-
-		const isCsaiOnly =
-			hasAds &&
-			!hasExplicitKnownAdSegments &&
-			typeof text === "string" &&
-			(() => {
-				const lines = text.replace(/\r/g, "").split("\n");
-				for (let i = 0; i < lines.length; i++) {
-					if (
-						lines[i].startsWith("#EXTINF") &&
-						i + 1 < lines.length &&
-						!lines[i].includes(",live")
-					) {
-						return false;
-					}
-				}
-				return true;
-			})();
-		if (isCsaiOnly) {
-			info._CsaiOnlyThisBreak = true;
-			_log(
-				"[Trace] All segments live — stripping tracking URLs inline",
-				"info",
-			);
-			return _stripAds(text, false, info, true);
 		}
 
 		if (
