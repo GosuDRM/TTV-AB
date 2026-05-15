@@ -1035,7 +1035,11 @@ async function _processM3U8(url, text, realFetch) {
 			);
 			if (lastAdEndBounceAt > 0 && now - lastAdEndBounceAt < bounceDebounceMs) {
 				info.LastAdEndBounceAt = now;
-				return text;
+				if (info.LastCleanBackupM3U8) {
+					info.IsUsingBackupStream = true;
+					return info.LastCleanBackupM3U8;
+				}
+				return _stripAds(text, false, info, true);
 			}
 
 			info.LastAdEndBounceAt = now;
