@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [7.5.4] - 2026-05-15
+## [7.5.6] - 2026-05-15
 
 ### Fixed
 - Stream no longer shows as offline after ads end when Twitch returns an empty playlist
@@ -10,9 +10,9 @@ All notable changes to TTV AB will be documented in this file.
 - Ads no longer leak through during marker bounce — backup returned silently without triggering reload
 - Backup stream no longer cycles rapidly during consecutive midrolls
 - Consecutive midroll reload suppression extended to 30 seconds
-- Ad blocking now stays inline for the full duration of live-segment ad breaks, preventing backup search during marker bounce
-- All prefetch and preload hints now stripped when ad metadata is present, preventing player from loading upcoming ad segments
-- Stale backup cache from previous ad cycles no longer leaks into new breaks
+- Backup refresh now only triggers for current ad cycle, preventing cross-cycle backup search
+- All prefetch hints now stripped when ad metadata is present
+- Inline ad stripping removed — every ad break now finds a clean backup stream to prevent metadata from reaching the player
 
 ## [7.4.1] - 2026-05-14
 
