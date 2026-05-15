@@ -1454,7 +1454,7 @@ async function _processM3U8(url, text, realFetch) {
 			const shouldUseHevcReload = Boolean(wasUsingModifiedM3U8);
 			const recentMidrollChain =
 				info.LastAdEndReloadAt > 0 &&
-				adEndedAt - info.LastAdEndReloadAt < 15000;
+				adEndedAt - info.LastAdEndReloadAt < 30000;
 			const isCsaiBreak = !hadStrippedAdSegments && !wasUsingModifiedM3U8;
 			let shouldReloadPlayer = false;
 			let shouldPauseResumePlayer = false;
