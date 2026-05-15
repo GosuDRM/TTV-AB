@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.5.9] - 2026-05-16
+
+### Fixed
+- Removed rapid pause and resume cycling during consecutive midroll breaks
+
 ## [7.5.8] - 2026-05-16
 
 ### Fixed
