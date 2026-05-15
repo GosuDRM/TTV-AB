@@ -318,7 +318,9 @@ function _hasExplicitAdMetadata(text) {
 			text.includes("stitched-ad") ||
 			text.includes("/adsquared/") ||
 			text.includes("SCTE35-OUT") ||
+			text.includes("EXT-X-CUE-OUT") ||
 			text.includes('EXT-X-DATERANGE:CLASS="twitch-trigger"') ||
+			text.includes('EXT-X-DATERANGE:CLASS="twitch-maf-ad"') ||
 			text.includes('"MIDROLL"') ||
 			text.includes('"midroll"'))
 	);
