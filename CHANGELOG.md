@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.5.8] - 2026-05-16
+
+### Fixed
+- Ad detection now covers more marker types for broader protection
+
 ## [7.5.7] - 2026-05-16
 
 ### Fixed
