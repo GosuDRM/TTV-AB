@@ -1451,8 +1451,6 @@ async function _processM3U8(url, text, realFetch) {
 					shouldReloadPlayer = true;
 					needsHardReload = true;
 					reloadKind = "post-escape";
-				} else if (wasUsingBackupStream) {
-					shouldPauseResumePlayer = true;
 				}
 			} else if (!isSilentBackupHoldEnd) {
 				shouldReloadPlayer = Boolean(
