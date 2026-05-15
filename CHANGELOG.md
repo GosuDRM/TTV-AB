@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.6.2] - 2026-05-16
+
+### Fixed
+- Ad recovery now properly refreshes the access token to escape the ad window without rebuilding the player
+
 ## [7.6.0] - 2026-05-16
 
 ### Fixed
