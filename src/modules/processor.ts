@@ -1482,7 +1482,7 @@ async function _processM3U8(url, text, realFetch) {
 						channel: info.ChannelName,
 						mediaKey: info.MediaKey,
 						reason: reloadKind,
-						refreshAccessToken: needsHardReload,
+						refreshAccessToken: true,
 						newMediaPlayerInstance: needsHardReload,
 					}),
 				);
