@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.5.7] - 2026-05-16
+
+### Fixed
+- Ad blocking stays active when ads are embedded directly in the stream — playback now switches to a clean backup immediately instead of waiting
+
 ## [7.5.6] - 2026-05-15
 
 ### Fixed

@@ -1,7 +1,7 @@
 // TTV AB - Constants
 
 const _C = {
-	VERSION: "7.5.6",
+	VERSION: "7.5.7",
 	INTERNAL_VERSION: 131,
 	LOG_STYLES: {
 		prefix:
