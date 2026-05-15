@@ -659,9 +659,15 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		}
 
 		_log(
-			"[Recovery] Empty playlist after stripping ads; falling back to original playlist to prevent stall",
+			"[Recovery] Empty playlist after stripping ads; falling back to cached stream",
 			"warning",
 		);
+		if (info?.LastCleanBackupM3U8) {
+			return info.LastCleanBackupM3U8;
+		}
+		if (info?.LastCleanNativeM3U8) {
+			return info.LastCleanNativeM3U8;
+		}
 		return text;
 	}
 
