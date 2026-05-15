@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.4.5] - 2026-05-15
+
+### Fixed
+- Stream no longer shows as offline after ads end when Twitch returns an empty playlist
+- Playback no longer stalls when ad tracking strips all segments — falls back to original playlist instead of returning empty
+
+## [7.4.1] - 2026-05-14
+
+### Fixed
+- Channel no longer shows offline when Twitch returns an empty playlist during an active ad break — the backup stream is now preserved
+
 ## [7.4.0] - 2026-05-14
 
 ### Fixed
