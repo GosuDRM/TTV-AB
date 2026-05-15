@@ -1280,6 +1280,17 @@ async function _processM3U8(url, text, realFetch) {
 			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
 		}
 
+		if (
+			info._LastBackupSearchCompletedAt &&
+			Date.now() - info._LastBackupSearchCompletedAt < 3000
+		) {
+			if (info.LastCleanBackupM3U8) {
+				info.IsUsingBackupStream = true;
+				return info.LastCleanBackupM3U8;
+			}
+			return text;
+		}
+
 		let {
 			type: backupType,
 			m3u8: backupM3u8,
@@ -1345,6 +1356,8 @@ async function _processM3U8(url, text, realFetch) {
 				);
 			}
 		}
+
+		info._LastBackupSearchCompletedAt = Date.now();
 
 		const stripHevc = isHevc && info.ModifiedM3U8;
 		if (__TTVAB_STATE__.IsAdStrippingEnabled || stripHevc) {
