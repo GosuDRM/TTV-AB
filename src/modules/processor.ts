@@ -30,6 +30,9 @@ function _resetStreamAdState(info) {
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
 	info.BackupVariantUrls = new Set();
+	info.LastCleanBackupM3U8 = null;
+	info.LastCleanBackupAt = 0;
+	info.LastCleanBackupPlayerType = null;
 	info._CsaiOnlyThisBreak = false;
 	_resetNativeRecoveryReadyState(info);
 
@@ -1404,7 +1407,13 @@ async function _processM3U8(url, text, realFetch) {
 		}
 		if (adEndState === "wait") {
 			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
-			if (info.LastCleanBackupM3U8 && backupAgeMs >= 1500) {
+			const backupIsFromCurrentCycle =
+				Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
+			if (
+				info.LastCleanBackupM3U8 &&
+				backupAgeMs >= 1500 &&
+				backupIsFromCurrentCycle
+			) {
 				try {
 					const refreshedBackup = await _findBackupStream(
 						info,
