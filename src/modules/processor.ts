@@ -909,6 +909,10 @@ async function _processM3U8(url, text, realFetch) {
 	}
 
 	if (hasAds) {
+		if (info._CsaiOnlyThisBreak) {
+			return _stripAds(text, false, info, true);
+		}
+
 		if (info.IsHoldingBackupAfterAd) {
 			if (info.LastCleanBackupM3U8) {
 				const now = Date.now();
