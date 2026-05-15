@@ -1404,7 +1404,13 @@ async function _processM3U8(url, text, realFetch) {
 		}
 		if (adEndState === "wait") {
 			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
-			if (info.LastCleanBackupM3U8 && backupAgeMs >= 1500) {
+			const backupIsFromCurrentCycle =
+				Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
+			if (
+				info.LastCleanBackupM3U8 &&
+				backupAgeMs >= 1500 &&
+				backupIsFromCurrentCycle
+			) {
 				try {
 					const refreshedBackup = await _findBackupStream(
 						info,
