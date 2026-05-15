@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.6.0] - 2026-05-16
+
+### Fixed
+- Audio no longer desyncs after ad recovery — player rebuild replaced with soft reload
+
 ## [7.5.9] - 2026-05-16
 
 ### Fixed

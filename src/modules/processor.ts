@@ -1449,7 +1449,6 @@ async function _processM3U8(url, text, realFetch) {
 			if (isCsaiBreak) {
 				if (wasUsingBackupStream && !recentMidrollChain) {
 					shouldReloadPlayer = true;
-					needsHardReload = true;
 					reloadKind = "post-escape";
 				}
 			} else if (!isSilentBackupHoldEnd) {
