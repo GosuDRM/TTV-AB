@@ -1217,49 +1217,47 @@ async function _processM3U8(url, text, realFetch) {
 
 		const isCsaiOnly = hasAds && !hasExplicitKnownAdSegments;
 
-		if (!isCsaiOnly) {
-			if (
-				!info.LastCleanBackupM3U8 &&
-				!info._BackupSearchStartedAt &&
-				!info.IsUsingFallbackStream
-			) {
-				const hasCleanNative =
-					typeof info.LastCleanNativeM3U8 === "string" &&
-					info.LastCleanNativeM3U8 &&
-					Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
-					!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8);
-				if (hasCleanNative) {
-					info._BackupSearchStartedAt = Date.now();
-					const res = _resolvePlaybackResolutionForUrl(info, url);
-					let startIdx = 0;
-					if (
-						info.LastPlayerReload >
-						Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
-					) {
-						startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
-					}
-					_findBackupStream(info, realFetch, startIdx, res)
-						.then(() => {
-							info._BackupSearchStartedAt = 0;
-						})
-						.catch(() => {
-							info._BackupSearchStartedAt = 0;
-						});
-					_log(
-						"[Trace] Returning native playlist to prevent buffer drain during backup search",
-						"info",
-					);
-					return info.LastCleanNativeM3U8;
+		if (
+			!info.LastCleanBackupM3U8 &&
+			!info._BackupSearchStartedAt &&
+			!info.IsUsingFallbackStream
+		) {
+			const hasCleanNative =
+				typeof info.LastCleanNativeM3U8 === "string" &&
+				info.LastCleanNativeM3U8 &&
+				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
+				!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8);
+			if (hasCleanNative) {
+				info._BackupSearchStartedAt = Date.now();
+				const res = _resolvePlaybackResolutionForUrl(info, url);
+				let startIdx = 0;
+				if (
+					info.LastPlayerReload >
+					Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
+				) {
+					startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
 				}
+				_findBackupStream(info, realFetch, startIdx, res)
+					.then(() => {
+						info._BackupSearchStartedAt = 0;
+					})
+					.catch(() => {
+						info._BackupSearchStartedAt = 0;
+					});
+				_log(
+					"[Trace] Returning native playlist to prevent buffer drain during backup search",
+					"info",
+				);
+				return info.LastCleanNativeM3U8;
 			}
+		}
 
-			if (info._BackupSearchStartedAt) {
-				if (isCsaiOnly) {
-					const stripped = _stripAds(text, false, info, true);
-					if (stripped && stripped !== text) return stripped;
-				}
-				return text;
+		if (info._BackupSearchStartedAt) {
+			if (isCsaiOnly) {
+				const stripped = _stripAds(text, false, info, true);
+				if (stripped && stripped !== text) return stripped;
 			}
+			return text;
 		}
 
 		let startIdx = 0;
