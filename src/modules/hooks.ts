@@ -551,7 +551,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	}, delay);
 }
 
-let _workerWatchdogID: ReturnType<typeof setInterval> | null = null;
+let _workerWatchdogID = null;
 
 function _startWorkerWatchdog() {
 	if (_workerWatchdogID !== null) return;
@@ -623,6 +623,7 @@ function _hookWorker() {
 
 		return false;
 	};
+
 	const createHookedWorkerConstructor = (BaseWorker) => {
 		const reinsertNames = _getReinsert(BaseWorker);
 		const HookedWorker = class Worker extends _cleanWorker(BaseWorker) {
@@ -645,10 +646,13 @@ function _hookWorker() {
 					broadcast: false,
 				});
 
+				const originalWorkerLoadCode =
+					opts?.type === "module"
+						? `await import(${JSON.stringify(workerSourceUrl)});`
+						: `importScripts(${JSON.stringify(workerSourceUrl)});`;
+
 				const injectedCode = `
             (function() {
-                ${_getWasmJs.toString()}
-                const wasmSource = _getWasmJs(${JSON.stringify(workerSourceUrl)});
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify(_S)};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
@@ -849,25 +853,16 @@ function _hookWorker() {
                             __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
                             __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
                             __TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
-                            if (data.value?.clearAdContext) {
-                                __TTVAB_STATE__.CurrentAdChannel = null;
-                                __TTVAB_STATE__.CurrentAdMediaKey = null;
-                                __TTVAB_STATE__.PinnedBackupPlayerType = null;
-                                __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
-                                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-                                __TTVAB_STATE__.LastAdEndedAt = 0;
-                                __TTVAB_STATE__.LastAdEndedChannel = null;
-                                __TTVAB_STATE__.LastAdEndedMediaKey = null;
-                            }
-                            if (data.value?.previousMediaKey) {
-                                const oldKey = data.value.previousMediaKey;
-                                delete __TTVAB_STATE__.StreamInfos[oldKey];
-                                for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
-                                    if (__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === oldKey) {
-                                        delete __TTVAB_STATE__.StreamInfosByUrl[url];
-                                    }
-                                }
-                            }
+	                            if (data.value?.clearAdContext) {
+	                                __TTVAB_STATE__.CurrentAdChannel = null;
+	                                __TTVAB_STATE__.CurrentAdMediaKey = null;
+	                                __TTVAB_STATE__.PinnedBackupPlayerType = null;
+	                                __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+	                                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+	                                __TTVAB_STATE__.LastAdEndedAt = 0;
+	                                __TTVAB_STATE__.LastAdEndedChannel = null;
+	                                __TTVAB_STATE__.LastAdEndedMediaKey = null;
+	                            }
                             break;
                         case 'FetchResponse':
                             {
@@ -908,14 +903,15 @@ function _hookWorker() {
                 });
                 
                 _hookWorkerFetch();
-                eval(wasmSource);
             })();
+
+            ${originalWorkerLoadCode}
             `;
 
 				const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
 				_trackedExtensionBlobUrls.add(blobUrl);
 				super(blobUrl, opts);
-				setTimeout(() => URL.revokeObjectURL(blobUrl), 500);
+				setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
 
 				const getCurrentPageContext = () =>
 					_getPlaybackContextFromUrl(window.location.href);
@@ -952,14 +948,11 @@ function _hookWorker() {
 				};
 				const handleWorkerFetchRequest = async (fetchRequest) => {
 					const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
-					const controller = new AbortController();
-					const timeoutId = setTimeout(() => controller.abort(), 10000);
 					try {
-						const response = await rawFetch(fetchRequest?.url, {
-							...(fetchRequest?.options || {}),
-							signal: controller.signal,
-						});
-						clearTimeout(timeoutId);
+						const response = await rawFetch(
+							fetchRequest?.url,
+							fetchRequest?.options || {},
+						);
 						const body = await response.text();
 						return {
 							id: fetchRequest?.id || null,
@@ -973,13 +966,9 @@ function _hookWorker() {
 							body,
 						};
 					} catch (error) {
-						clearTimeout(timeoutId);
 						return {
 							id: fetchRequest?.id || null,
-							error:
-								error?.name === "AbortError"
-									? "fetch relay timeout"
-									: error?.message || String(error),
+							error: error?.message || String(error),
 						};
 					}
 				};

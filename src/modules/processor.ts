@@ -30,6 +30,13 @@ function _resetStreamAdState(info) {
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
 	info.BackupVariantUrls = new Set();
+	info._BackupSearchStartedAt = 0;
+	info._LastBackupSearchCompletedAt = 0;
+	info._LoggedOfflineTransition = false;
+	if (info._AdRequestController) {
+		info._AdRequestController.abort();
+		info._AdRequestController = null;
+	}
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -1096,8 +1103,13 @@ async function _processM3U8(url, text, realFetch) {
 					!info.RequestedAds.has(mediaUrl)
 				) {
 					info.RequestedAds.add(mediaUrl);
+					if (info._AdRequestController) {
+						info._AdRequestController.abort();
+					}
+					const controller = new AbortController();
+					info._AdRequestController = controller;
 					try {
-						realFetch(mediaUrl)
+						realFetch(mediaUrl, { signal: controller.signal })
 							.then((r) => r.blob())
 							.catch(() => {});
 					} catch {}
@@ -1242,10 +1254,10 @@ async function _processM3U8(url, text, realFetch) {
 			}
 
 			if (info._BackupSearchStartedAt) {
-				_log(
-					"[Trace] Returning current playlist while waiting for background backup search",
-					"info",
-				);
+				if (isCsaiOnly) {
+					const stripped = _stripAds(text, false, info, true);
+					if (stripped && stripped !== text) return stripped;
+				}
 				return text;
 			}
 		}
@@ -1444,7 +1456,7 @@ async function _processM3U8(url, text, realFetch) {
 			let shouldReloadPlayer = false;
 			let shouldPauseResumePlayer = false;
 			let reloadKind = "post-ad";
-			let needsHardReload = shouldUseHevcReload;
+			const needsHardReload = shouldUseHevcReload;
 
 			if (isCsaiBreak) {
 				if (wasUsingBackupStream && !recentMidrollChain) {

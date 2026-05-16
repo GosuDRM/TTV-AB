@@ -2,6 +2,23 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.6.5] - 2026-05-17
+
+### Fixed
+- Fire-and-forget ad segment fetches now use AbortController to prevent background resource waste
+- Transient backup search flags properly reset on ad-end state cleanup
+
+## [7.6.4] - 2026-05-17
+
+### Fixed
+- Cache prune uses spec-safe collect-then-delete pattern instead of forEach+delete during iteration
+- Token fetch now retries up to 3 times with incremental backoff on timeout/network errors
+
+## [7.6.3] - 2026-05-17
+
+### Fixed
+- CSAI playlists now strip ad segments during the poll-wait window while background backup search runs, closing a brief ad-leak gap on metadata-marked streams
+
 ## [7.6.2] - 2026-05-16
 
 ### Fixed

@@ -6,8 +6,8 @@ const g = globalThis as Record<string, unknown>;
 
 beforeAll(() => {
 	g._C = {
-		VERSION: "7.0.8",
-		INTERNAL_VERSION: 131,
+		VERSION: "7.6.5",
+		INTERNAL_VERSION: 117,
 		AD_SIGNIFIER: "stitched",
 		CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
 		PLAYER_TYPES: ["embed", "popout", "autoplay"],

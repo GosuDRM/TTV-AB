@@ -606,14 +606,18 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	) {
 		globalThis._lastAdCachePrune = now;
 		const cutoff = now - 120000;
+		const staleKeys = [];
 		__TTVAB_STATE__.AdSegmentCache.forEach((v, k) => {
-			if (v < cutoff) __TTVAB_STATE__.AdSegmentCache.delete(k);
+			if (v < cutoff) staleKeys.push(k);
 		});
+		for (const k of staleKeys) {
+			__TTVAB_STATE__.AdSegmentCache.delete(k);
+		}
 		if (__TTVAB_STATE__.AdSegmentCache.size > 1000) {
 			let evicted = 0;
 			for (const url of __TTVAB_STATE__.AdSegmentCache.keys()) {
+				if (++evicted > 200) break;
 				__TTVAB_STATE__.AdSegmentCache.delete(url);
-				if (++evicted >= 200) break;
 			}
 		}
 	}
