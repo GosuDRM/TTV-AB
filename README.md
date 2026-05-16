@@ -63,6 +63,9 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
+### v7.6.8
+- Reverted csai cold start fallback that made ad flash worse
+
 ### v7.6.7
 - CSAI cold-start ad flash fixed
 

@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.6.8] - 2026-05-17
+
+### Reverted
+- csai cold start fallback removed
+
 ## [7.6.7] - 2026-05-17
 
 ### Fixed
