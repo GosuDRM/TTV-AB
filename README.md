@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.6.5-purple)
+![Version](https://img.shields.io/badge/version-7.6.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.6.5-yellow)
+![Chrome](https://img.shields.io/badge/chrome-7.6.6-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,6 +63,9 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
+### v7.6.6
+- CSAI background backup search and poll-wait strip now run for all ad-marked playlists
+
 ### v7.6.5
 - Ad-blocking pipeline fixes (csai poll-wait, cache safety, token retry, abort controller)
 
@@ -74,46 +77,6 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ### v7.5.9
 - Removed rapid pause and resume cycling during consecutive midroll breaks
-
-### v7.5.8
-- Broader ad marker detection added
-
-### v7.5.7
-- Ad blocking stays active when ads are embedded in the stream — switches to a clean backup immediately
-
-### v7.5.6
-- Stream no longer shows as offline after ads end
-- Playback no longer stalls after ad tracking strips all segments
-- Ads no longer leak through during marker bounce
-- Backup stream no longer cycles rapidly during consecutive midrolls
-- Inline ad stripping removed — every break uses a clean backup stream
-
-### v7.4.1
-- Channel no longer shows falsely offline when an ad break ends on an empty playlist
-
-### v7.4.0
-- First ad no longer causes a buffer gap — backup search runs without blocking playback
-- Duplicate backup searches prevented for the same break
-- Live-only ad segments now handled inline without switching streams
-
-### v7.3.3
-- Backup variant URLs reset between breaks to prevent stale matches
-
-### v7.3.2
-- Autoplay stays as fallback instead of getting locked in as the preferred backup type
-
-### v7.3.1
-- Player reloads are suppressed during rapid consecutive midrolls, stopping ad leaks
-
-### v7.3.0
-- Backup player cycling is smarter — when a backup type keeps returning ad-marked streams, it gets tried less often, reducing unnecessary token fetches. Autoplay (360p) stays as a reliable last resort when other options are exhausted
-- Ad break recovery is more stable on channels where every backup type comes back contaminated
-
-### v7.2.1
-- Back-to-back midroll ads no longer leak through after recovery
-- Playback properly recovers when a backup stream was used during an ad break
-- Memory usage stays stable with automatic cache cleanup
-- Buffer gaps are now skipped smoothly
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
