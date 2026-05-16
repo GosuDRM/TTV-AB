@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.6.7] - 2026-05-17
+
+### Fixed
+- CSAI cold-start ad flash: background backup search launched immediately on first CSAI detection
+
 ## [7.6.6] - 2026-05-17
 
 ### Fixed
