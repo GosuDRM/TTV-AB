@@ -1134,6 +1134,11 @@ async function _processM3U8(url, text, realFetch) {
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			__TTVAB_STATE__.LastAdDetectedAt = now;
 			info.FailedBackupPlayerTypes?.clear?.();
+			// Fire-and-forget GQL ad-tracking spoof. Tells Twitch the user
+			// "watched" the ad, mimicking the impression/quartile/pod-complete
+			// beacons a real player would send. May reduce anti-adblock
+			// detection scoring. See _notifyAdComplete in api.ts.
+			_notifyAdComplete(text).catch(() => {});
 			if (!isContinuingAdCycle) {
 				_incrementAdsBlocked(info.ChannelName, info.MediaKey);
 			}
@@ -1444,7 +1449,7 @@ async function _processM3U8(url, text, realFetch) {
 			let shouldReloadPlayer = false;
 			let shouldPauseResumePlayer = false;
 			let reloadKind = "post-ad";
-			let needsHardReload = shouldUseHevcReload;
+			const needsHardReload = shouldUseHevcReload;
 
 			if (isCsaiBreak) {
 				if (wasUsingBackupStream && !recentMidrollChain) {

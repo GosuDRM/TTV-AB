@@ -287,3 +287,171 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		clearTimeout(timeoutId);
 	}
 }
+
+// Spoof ad completion to Twitch's GQL endpoint when an ad break is detected.
+// Twitch's player would normally fire video_ad_impression + 4 quartile_complete
+// + pod_complete beacons as the ad plays. With ad-blocking, those beacons never
+// fire — a fingerprintable signal that may feed Twitch's anti-adblock detection.
+// Spoofing them mimics the "watched the ad" telemetry that a normal viewer
+// produces. Per-ad iteration: each ad in a pod has its own DATERANGE entry
+// with its own RADS-token + creative/order/line-item-id + position. All 6
+// events for an ad are sent in one batched POST (Twitch supports JSON-array
+// batched operations natively). Failures swallowed — never blocks ad-block flow.
+async function _notifyAdComplete(textStr: string): Promise<void> {
+	try {
+		if (__TTVAB_STATE__.DisableAdSpoofing) return;
+		if (!textStr || typeof textStr !== "string") return;
+
+		const matches = [
+			...textStr.matchAll(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/g),
+		];
+		if (matches.length === 0) {
+			if (!__TTVAB_STATE__.LoggedAdSpoofNoMatch) {
+				__TTVAB_STATE__.LoggedAdSpoofNoMatch = true;
+				const dateRangeLine = textStr.match(/#EXT-X-DATERANGE:[^\n]{0,200}/);
+				_log(
+					`notifyAdComplete: no stitched-ad DATERANGE match. Sample DATERANGE: ${dateRangeLine ? dateRangeLine[0] : "none found"}`,
+					"warning",
+				);
+			}
+			return;
+		}
+
+		const podLength = matches.length;
+		let spoofedCount = 0;
+		let firstRollType = "";
+
+		for (let i = 0; i < podLength; i++) {
+			const attr = _parseAttrs(matches[i][1]);
+			const radToken = attr["X-TV-TWITCH-AD-RADS-TOKEN"];
+			if (!radToken) {
+				if (i === 0 && !__TTVAB_STATE__.LoggedAdSpoofNoToken) {
+					__TTVAB_STATE__.LoggedAdSpoofNoToken = true;
+					_log(
+						`notifyAdComplete: matched DATERANGE but no RADS token. Attributes: ${Object.keys(attr).join(", ")}`,
+						"warning",
+					);
+				}
+				continue;
+			}
+			const rollType = (attr["X-TV-TWITCH-AD-ROLL-TYPE"] || "").toLowerCase();
+			if (i === 0) firstRollType = rollType;
+			const stitchedAdId = attr.ID || "";
+			// Prefer m3u8's explicit pod-position when present; fall back to index.
+			const adPosition = parseInt(
+				attr["X-TV-TWITCH-AD-POD-POSITION"] || String(i),
+				10,
+			);
+			// Ad's defined duration (X-TV-TWITCH-AD-DURATION is typically a quoted
+			// string in seconds, e.g. "15.000"). parseInt coerces both quoted and
+			// unquoted forms.
+			const adDuration =
+				parseInt(attr["X-TV-TWITCH-AD-DURATION"] || "0", 10) || 0;
+			// Internally-consistent payload: claim "watched the ad normally" which
+			// matches the quartile_complete{4} + pod_complete events we send.
+			// Mismatched fields (mute=true / volume=0 / visible=false / duration=0)
+			// paired with completion events would be an obvious cross-validation
+			// flag if Twitch ever audits.
+			const payload = {
+				stitched: true,
+				ad_id: stitchedAdId,
+				roll_type: rollType,
+				creative_id: attr["X-TV-TWITCH-AD-CREATIVE-ID"] || "",
+				order_id: attr["X-TV-TWITCH-AD-ORDER-ID"] || "",
+				line_item_id: attr["X-TV-TWITCH-AD-LINE-ITEM-ID"] || "",
+				player_mute: false,
+				player_volume: 1.0,
+				visible: true,
+				duration: adDuration,
+				ad_position: adPosition,
+				total_ads: podLength,
+			};
+
+			const makePacket = (event: string, extra?: Record<string, unknown>) => ({
+				operationName: "ClientSideAdEventHandling_RecordAdEvent",
+				variables: {
+					input: {
+						eventName: event,
+						eventPayload: JSON.stringify({ ...payload, ...extra }),
+						radToken,
+					},
+				},
+				extensions: {
+					persistedQuery: {
+						version: 1,
+						sha256Hash:
+							"7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b",
+					},
+				},
+			});
+
+			// Batch all 6 events for this ad into one GQL POST.
+			const batch = [
+				makePacket("video_ad_impression"),
+				makePacket("video_ad_quartile_complete", { quartile: 1 }),
+				makePacket("video_ad_quartile_complete", { quartile: 2 }),
+				makePacket("video_ad_quartile_complete", { quartile: 3 }),
+				makePacket("video_ad_quartile_complete", { quartile: 4 }),
+				makePacket("video_ad_pod_complete"),
+			];
+
+			const headers: Record<string, string> = {
+				"Client-ID": _C.CLIENT_ID,
+				"X-Device-Id": __TTVAB_STATE__.GQLDeviceID || "oauth",
+			};
+			if (__TTVAB_STATE__.AuthorizationHeader) {
+				headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
+			}
+			if (__TTVAB_STATE__.ClientIntegrityHeader) {
+				headers["Client-Integrity"] = __TTVAB_STATE__.ClientIntegrityHeader;
+			}
+			if (__TTVAB_STATE__.ClientVersion) {
+				headers["Client-Version"] = __TTVAB_STATE__.ClientVersion;
+			}
+			if (__TTVAB_STATE__.ClientSession) {
+				headers["Client-Session-Id"] = __TTVAB_STATE__.ClientSession;
+			}
+
+			// Fire-and-forget via the worker bridge. Surveil response status to
+			// detect spoof rejection (400/403/429/5xx) — distinguishes "spoof
+			// accepted" from "spoof rejected/rate-limited." Without this, a Twitch
+			// detection-escalation that starts rejecting our spoofs would be a
+			// silent failure. Once-per-session guard prevents log spam.
+			_fetchViaWorkerBridge(
+				_GQL_URL,
+				{
+					method: "POST",
+					headers,
+					body: JSON.stringify(batch),
+				},
+				5000,
+			)
+				.then((response: Response | null) => {
+					if (
+						response &&
+						response.status !== 200 &&
+						!__TTVAB_STATE__.LoggedAdSpoofBadStatus
+					) {
+						__TTVAB_STATE__.LoggedAdSpoofBadStatus = true;
+						_log(
+							`notifyAdComplete: GQL response status ${response.status} — spoof may be rejected/rate-limited`,
+							"warning",
+						);
+					}
+				})
+				.catch(() => {});
+
+			spoofedCount++;
+		}
+
+		if (spoofedCount > 0) {
+			_log(
+				`[Trace] Spoofed ad completion for ${spoofedCount}/${podLength} ad(s) — roll: ${firstRollType}`,
+				"info",
+			);
+		}
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		_log(`notifyAdComplete failed: ${message}`, "warning");
+	}
+}
