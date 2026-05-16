@@ -10,7 +10,7 @@ All notable changes to TTV AB will be documented in this file.
 ## [7.6.6] - 2026-05-17
 
 ### Fixed
-- CSAI background backup search now applies to metadata-only playlists
+- CSAI background backup search now applies to metadata-only playlists; poll-wait strip logic moved out of dead-code block
 
 ## [7.6.5] - 2026-05-17
 
