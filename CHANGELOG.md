@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.6.9] - 2026-05-17
+
+### Fixed
+- CSAI poll wait returns cached clean backup or native playlist instead of ad-marked content
+
 ## [7.6.8] - 2026-05-17
 
 ### Reverted

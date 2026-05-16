@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.6.8-purple)
+![Version](https://img.shields.io/badge/version-7.6.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -62,6 +62,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## What's New
+
+### v7.6.9
+- CSAI poll wait now returns cached clean playlist instead of ad-marked content
 
 ### v7.6.8
 - Reverted csai cold-start fallback that made ad flash worse — background search only fires with valid clean native

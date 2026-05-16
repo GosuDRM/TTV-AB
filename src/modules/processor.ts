@@ -1256,6 +1256,8 @@ async function _processM3U8(url, text, realFetch) {
 			if (isCsaiOnly) {
 				const stripped = _stripAds(text, false, info, true);
 				if (stripped && stripped !== text) return stripped;
+				if (info.LastCleanBackupM3U8) return info.LastCleanBackupM3U8;
+				if (info.LastCleanNativeM3U8) return info.LastCleanNativeM3U8;
 			}
 			return text;
 		}
