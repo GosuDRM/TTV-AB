@@ -233,57 +233,87 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		},
 	};
 
-	try {
-		_log(`[Trace] Requesting token for ${playerType} (${logTarget})`, "info");
-		const acceptLanguage =
-			navigator?.languages?.join(",") || navigator?.language || "en-US";
+	const maxRetries = 2;
+	let lastError = null;
 
-		const headers: Record<string, string> = {
-			"Client-ID": _C.CLIENT_ID,
-			"X-Device-Id": __TTVAB_STATE__.GQLDeviceID || "oauth",
-			"Client-Version": __TTVAB_STATE__.ClientVersion || "k8s-v1",
-			"Client-Session-Id": __TTVAB_STATE__.ClientSession || "",
-			"Accept-Language": acceptLanguage,
-		};
-
-		if (__TTVAB_STATE__.ClientIntegrityHeader) {
-			headers["Client-Integrity"] = __TTVAB_STATE__.ClientIntegrityHeader;
+	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		if (attempt > 0) {
+			await new Promise((r) => setTimeout(r, attempt * 500));
 		}
 
-		if (__TTVAB_STATE__.AuthorizationHeader) {
-			headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
-		}
+		try {
+			_log(
+				`[Trace] Requesting token for ${playerType} (${logTarget})${attempt > 0 ? ` retry ${attempt}` : ""}`,
+				"info",
+			);
+			const acceptLanguage =
+				navigator?.languages?.join(",") || navigator?.language || "en-US";
 
-		const requestOptions = {
-			method: "POST",
-			headers,
-			body: JSON.stringify(body),
-		};
-		let res = null;
+			const headers: Record<string, string> = {
+				"Client-ID": _C.CLIENT_ID,
+				"X-Device-Id": __TTVAB_STATE__.GQLDeviceID || "oauth",
+				"Client-Version": __TTVAB_STATE__.ClientVersion || "k8s-v1",
+				"Client-Session-Id": __TTVAB_STATE__.ClientSession || "",
+				"Accept-Language": acceptLanguage,
+			};
 
-		if (typeof _fetchViaWorkerBridge === "function") {
-			try {
-				res = await _fetchViaWorkerBridge(_GQL_URL, requestOptions, 1500);
-			} catch (bridgeError) {
-				_log(`Token relay error: ${bridgeError.message}`, "warning");
+			if (__TTVAB_STATE__.ClientIntegrityHeader) {
+				headers["Client-Integrity"] = __TTVAB_STATE__.ClientIntegrityHeader;
 			}
-		}
 
-		if (!res) {
-			const controller = new AbortController();
-			timeoutId = setTimeout(() => controller.abort(), 3000);
-			res = await fetchFunc(_GQL_URL, {
-				...requestOptions,
-				signal: controller.signal,
-			});
-		}
+			if (__TTVAB_STATE__.AuthorizationHeader) {
+				headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
+			}
 
-		_log(`[Trace] Token response: ${res.status}`, "info");
-		return res;
-	} catch (e) {
-		_log(`Token fetch error: ${e.message}`, "error");
-		return new Response(null, { status: 0 });
-	} finally {
-		clearTimeout(timeoutId);
+			const requestOptions = {
+				method: "POST",
+				headers,
+				body: JSON.stringify(body),
+			};
+			let res = null;
+
+			if (typeof _fetchViaWorkerBridge === "function") {
+				try {
+					res = await _fetchViaWorkerBridge(_GQL_URL, requestOptions, 1500);
+				} catch (bridgeError) {
+					_log(`Token relay error: ${bridgeError.message}`, "warning");
+				}
+			}
+
+			if (!res) {
+				const controller = new AbortController();
+				timeoutId = setTimeout(() => controller.abort(), 3000);
+				res = await fetchFunc(_GQL_URL, {
+					...requestOptions,
+					signal: controller.signal,
+				});
+			}
+
+			_log(`[Trace] Token response: ${res.status}`, "info");
+			return res;
+		} catch (e) {
+			lastError = e;
+			if (
+				attempt < maxRetries &&
+				(e.name === "AbortError" ||
+					e.name === "TimeoutError" ||
+					e.message?.includes("timeout"))
+			) {
+				_log(
+					`Token fetch retry ${attempt + 1}/${maxRetries}: ${e.message}`,
+					"warning",
+				);
+				continue;
+			}
+			break;
+		} finally {
+			clearTimeout(timeoutId);
+		}
 	}
+
+	_log(
+		`Token fetch failed after ${maxRetries + 1} attempts: ${lastError?.message}`,
+		"error",
+	);
+	return new Response(null, { status: 0 });
 }

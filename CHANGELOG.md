@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.6.5] - 2026-05-17
+
+### Fixed
+- Ad-blocking pipeline: csai poll-wait leak, cache iteration safety, token fetch retry, abort controller for ad fetches
+
 ## [7.6.2] - 2026-05-16
 
 ### Fixed
