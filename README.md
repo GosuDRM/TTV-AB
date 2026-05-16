@@ -78,16 +78,6 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 ### v7.6.5
 - Ad-blocking pipeline fixes (csai poll-wait, cache safety, token retry, abort controller)
 
-### v7.6.2
-- Ad recovery properly refreshes access token to escape ad window
-
-### v7.6.0
-- Audio no longer desyncs after ad recovery
-
-### v7.5.9
-- Removed rapid pause and resume cycling during consecutive midroll breaks
-
-See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ## Development
 
