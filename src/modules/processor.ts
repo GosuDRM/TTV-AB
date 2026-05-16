@@ -1250,30 +1250,6 @@ async function _processM3U8(url, text, realFetch) {
 				);
 				return info.LastCleanNativeM3U8;
 			}
-			if (isCsaiOnly && hasMediaSegments) {
-				info._BackupSearchStartedAt = Date.now();
-				const res = _resolvePlaybackResolutionForUrl(info, url);
-				let startIdx = 0;
-				if (
-					info.LastPlayerReload >
-					Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
-				) {
-					startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
-				}
-				_findBackupStream(info, realFetch, startIdx, res)
-					.then(() => {
-						info._BackupSearchStartedAt = 0;
-					})
-					.catch(() => {
-						info._BackupSearchStartedAt = 0;
-					});
-				const stripped = _stripAds(text, false, info, true);
-				_log(
-					"[Trace] CSAI cold-start — returning stripped playlist during backup search",
-					"info",
-				);
-				return stripped && stripped !== text ? stripped : text;
-			}
 		}
 
 		if (info._BackupSearchStartedAt) {
