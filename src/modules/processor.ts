@@ -951,7 +951,7 @@ async function _processM3U8(url, text, realFetch) {
 		// beacons a real player would send). Twitch surfaces one ad's DATERANGE
 		// per poll in multi-ad pods, so this must run every poll — info.SpoofedAdIds
 		// dedups so each ad is spoofed once (full N/N coverage). See api.ts.
-		_notifyAdComplete(text, info).catch(() => {});
+		setTimeout(() => _notifyAdComplete(text, info).catch(() => {}), 0);
 		if (info.IsHoldingBackupAfterAd) {
 			const holdElapsed =
 				Date.now() - Math.max(0, Number(info.SilentBackupHoldStartedAt) || 0);
