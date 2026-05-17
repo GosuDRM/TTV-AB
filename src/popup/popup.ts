@@ -53,8 +53,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		"footerText",
 	) as HTMLElement | null;
 	const infoText = document.getElementById("infoText") as HTMLElement | null;
-	const bufferFixToggle = document.getElementById(
-		"bufferFixToggle",
+	const adSpoofingToggle = document.getElementById(
+		"adSpoofingToggle",
 	) as HTMLInputElement | null;
 	const donateButton = document.getElementById(
 		"donateBtn",
@@ -89,7 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		achievementsTitle,
 		footerText,
 		infoText,
-		bufferFixToggle,
+		adSpoofingToggle,
 		donateButton,
 		repoLink,
 		authorLink,
@@ -295,9 +295,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			String(t.statistics ?? "Statistics"),
 		);
 		toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
-		bufferFixToggle.setAttribute(
+		adSpoofingToggle.setAttribute(
 			"aria-label",
-			String(t.bufferFix ?? "Buffer Fix"),
+			String(t.adSpoofing ?? "Ad Spoofing"),
 		);
 		achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
 		footerText.textContent = String(t.footerBy ?? " — by ");
@@ -756,7 +756,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	chrome.storage.local.get(
-		["ttvAdblockEnabled", "ttvBufferFixEnabled", "ttvAdsBlocked"],
+		["ttvAdblockEnabled", "ttvAdSpoofingEnabled", "ttvAdsBlocked"],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -766,9 +766,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 			const safeResult = (result || {}) as PlainObject;
 			const enabled = safeResult.ttvAdblockEnabled !== false;
-			const bufferFixEnabled = safeResult.ttvBufferFixEnabled !== false;
+			const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled === true;
 			toggle.checked = enabled;
-			bufferFixToggle.checked = bufferFixEnabled;
+			adSpoofingToggle.checked = adSpoofingEnabled;
 			updateStatus(enabled, false);
 
 			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
@@ -786,9 +786,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			toggle.checked = enabled;
 			updateStatus(enabled, false);
 		}
-		if (changes.ttvBufferFixEnabled) {
-			const bufferFixEnabled = changes.ttvBufferFixEnabled.newValue !== false;
-			bufferFixToggle.checked = bufferFixEnabled;
+		if (changes.ttvAdSpoofingEnabled) {
+			const adSpoofingEnabled = changes.ttvAdSpoofingEnabled.newValue === true;
+			adSpoofingToggle.checked = adSpoofingEnabled;
 		}
 		if (changes.ttvAdsBlocked) {
 			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
@@ -824,51 +824,51 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	});
 
-	let bufferFixWriteInFlight = false;
+	let adSpoofingWriteInFlight = false;
 
-	const bufferFixInfoIcon = document.getElementById("bufferFixInfoIcon");
-	const bufferFixTooltip = document.getElementById("bufferFixTooltip");
-	if (bufferFixInfoIcon && bufferFixTooltip) {
-		bufferFixInfoIcon.addEventListener("click", (e) => {
+	const adSpoofingInfoIcon = document.getElementById("adSpoofingInfoIcon");
+	const adSpoofingTooltip = document.getElementById("adSpoofingTooltip");
+	if (adSpoofingInfoIcon && adSpoofingTooltip) {
+		adSpoofingInfoIcon.addEventListener("click", (e) => {
 			e.stopPropagation();
-			const show = bufferFixTooltip.hasAttribute("hidden");
-			bufferFixTooltip.hidden = false;
-			bufferFixTooltip.classList.toggle("visible", show);
+			const show = adSpoofingTooltip.hasAttribute("hidden");
+			adSpoofingTooltip.hidden = false;
+			adSpoofingTooltip.classList.toggle("visible", show);
 		});
-		bufferFixTooltip.addEventListener("click", (e) => {
-			if (e.target === bufferFixTooltip) {
-				bufferFixTooltip.hidden = true;
-				bufferFixTooltip.classList.remove("visible");
+		adSpoofingTooltip.addEventListener("click", (e) => {
+			if (e.target === adSpoofingTooltip) {
+				adSpoofingTooltip.hidden = true;
+				adSpoofingTooltip.classList.remove("visible");
 			}
 		});
-		const modalClose = document.getElementById("bufferFixModalClose");
+		const modalClose = document.getElementById("adSpoofingModalClose");
 		if (modalClose) {
 			modalClose.addEventListener("click", () => {
-				bufferFixTooltip.hidden = true;
-				bufferFixTooltip.classList.remove("visible");
+				adSpoofingTooltip.hidden = true;
+				adSpoofingTooltip.classList.remove("visible");
 			});
 		}
 	}
 
-	bufferFixToggle.addEventListener("change", () => {
-		if (bufferFixWriteInFlight) return;
-		bufferFixWriteInFlight = true;
-		bufferFixToggle.disabled = true;
-		const enabled = bufferFixToggle.checked;
+	adSpoofingToggle.addEventListener("change", () => {
+		if (adSpoofingWriteInFlight) return;
+		adSpoofingWriteInFlight = true;
+		adSpoofingToggle.disabled = true;
+		const enabled = adSpoofingToggle.checked;
 		const previousEnabled = !enabled;
-		chrome.storage.local.set({ ttvBufferFixEnabled: enabled }, () => {
-			bufferFixWriteInFlight = false;
-			bufferFixToggle.disabled = false;
+		chrome.storage.local.set({ ttvAdSpoofingEnabled: enabled }, () => {
+			adSpoofingWriteInFlight = false;
+			adSpoofingToggle.disabled = false;
 			if (chrome.runtime.lastError) {
 				console.error(
-					"[TTV AB] Popup buffer fix toggle write error:",
+					"[TTV AB] Popup ad spoofing toggle write error:",
 					chrome.runtime.lastError.message,
 				);
-				bufferFixToggle.checked = previousEnabled;
-				updateStatus(previousEnabled, false, "bufferFix");
+				adSpoofingToggle.checked = previousEnabled;
+				updateStatus(previousEnabled, false, "adSpoofing");
 				return;
 			}
-			updateStatus(enabled, true, "bufferFix");
+			updateStatus(enabled, true, "adSpoofing");
 		});
 	});
 
@@ -1014,8 +1014,8 @@ document.addEventListener("DOMContentLoaded", () => {
 			return;
 		}
 		const label =
-			transientStatusType === "bufferFix"
-				? translations.bufferFix
+			transientStatusType === "adSpoofing"
+				? translations.adSpoofing
 				: translations.adBlocking;
 		infoText.textContent = `${label}: ${transientStatusState ? translations.active : translations.inactive}`;
 		infoText.style.color = transientStatusState ? "#4CAF50" : "#f44336";

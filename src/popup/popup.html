@@ -998,7 +998,7 @@
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version-row">
-                <div class="version" id="versionText" aria-label="Version 7.7.5">v7.7.5</div>
+                <div class="version" id="versionText" aria-label="Version 8.0.0">v8.0.0</div>
                 <span class="stable-badge" data-i18n="stable">Stable</span>
             </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
@@ -1123,19 +1123,19 @@
         </div>
         <div class="toggle-row">
             <div class="toggle-label-row">
-                <label class="toggle-label" for="bufferFixToggle" data-i18n="bufferFix">Buffer Fix</label>
-                <span class="info-icon" id="bufferFixInfoIcon" aria-label="What is Buffer Fix?">i</span>
+                <label class="toggle-label" for="adSpoofingToggle" data-i18n="adSpoofing">Ad Spoofing</label>
+                <span class="info-icon" id="adSpoofingInfoIcon" aria-label="What is Ad Spoofing?">i</span>
             </div>
-            <div class="modal-overlay" id="bufferFixTooltip" hidden>
+            <div class="modal-overlay" id="adSpoofingTooltip" hidden>
                 <div class="modal-box">
-                    <p><strong data-i18n="bufferFix">Buffer Fix</strong></p>
-                    <p data-i18n="bufferFixDesc">Automatically detects and recovers from playback freezes, post-ad black screens, live-edge starvation, and audio/video desync.</p>
-                    <p data-i18n="bufferFixFootnote">Disable only if you experience issues.</p>
-                    <button type="button" class="modal-close" id="bufferFixModalClose" data-i18n="bufferFixGotIt">Got it</button>
+                    <p><strong data-i18n="adSpoofing">Ad Spoofing</strong></p>
+                    <p data-i18n="adSpoofingDesc">Sends fake ad-watch beacons to Twitch to reduce anti-adblock fingerprinting. May interfere with channel points collection on some accounts.</p>
+                    <p data-i18n="adSpoofingFootnote">Disable if you experience issues claiming channel points.</p>
+                    <button type="button" class="modal-close" id="adSpoofingModalClose" data-i18n="adSpoofingGotIt">Got it</button>
                 </div>
             </div>
             <label class="toggle">
-                <input type="checkbox" id="bufferFixToggle" checked aria-label="Buffer Fix">
+                <input type="checkbox" id="adSpoofingToggle" aria-label="Ad Spoofing">
                 <span class="slider"></span>
             </label>
         </div>

@@ -362,7 +362,7 @@ function postAchievementUnlock(id) {
 
 const bridgeState = {
 	enabled: true,
-	bufferFixEnabled: true,
+	adSpoofingEnabled: false,
 	storedAdsCount: 0,
 };
 const MAX_MESSAGE_DELTA = 50;
@@ -728,7 +728,10 @@ function broadcastState() {
 		enabled: Boolean(bridgeState.enabled),
 	});
 	sendToPage("ttvab-toggle-buffer-fix", {
-		enabled: Boolean(bridgeState.bufferFixEnabled),
+		enabled: true,
+	});
+	sendToPage("ttvab-toggle-ad-spoofing", {
+		enabled: Boolean(bridgeState.adSpoofingEnabled),
 	});
 	sendToPage("ttvab-init-count", {
 		count: normalizeCount(bridgeState.storedAdsCount),
@@ -828,7 +831,7 @@ function flushPendingCountersOnPageExit() {
 }
 
 chrome.storage.local.get(
-	["ttvAdblockEnabled", "ttvBufferFixEnabled", "ttvAdsBlocked"],
+	["ttvAdblockEnabled", "ttvAdSpoofingEnabled", "ttvAdsBlocked"],
 	(result) => {
 		if (chrome.runtime.lastError) {
 			console.error(
@@ -838,7 +841,7 @@ chrome.storage.local.get(
 		}
 		const safeResult = result || {};
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
-		bridgeState.bufferFixEnabled = safeResult.ttvBufferFixEnabled !== false;
+		bridgeState.adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled === true;
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
 
 		broadcastState();
@@ -856,13 +859,13 @@ chrome.storage.local.get(
 					});
 				}
 			}
-			if (changes.ttvBufferFixEnabled) {
-				const wasBufferFixEnabled = bridgeState.bufferFixEnabled;
-				bridgeState.bufferFixEnabled =
-					changes.ttvBufferFixEnabled.newValue !== false;
-				if (bridgeState.bufferFixEnabled !== wasBufferFixEnabled) {
-					sendToPage("ttvab-toggle-buffer-fix", {
-						enabled: bridgeState.bufferFixEnabled,
+			if (changes.ttvAdSpoofingEnabled) {
+				const wasAdSpoofingEnabled = bridgeState.adSpoofingEnabled;
+				bridgeState.adSpoofingEnabled =
+					changes.ttvAdSpoofingEnabled.newValue === true;
+				if (bridgeState.adSpoofingEnabled !== wasAdSpoofingEnabled) {
+					sendToPage("ttvab-toggle-ad-spoofing", {
+						enabled: bridgeState.adSpoofingEnabled,
 					});
 				}
 			}

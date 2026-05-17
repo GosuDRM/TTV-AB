@@ -140,8 +140,29 @@ function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
 		case "no-stream-url":
 			return 2000;
 		default:
-			return 15000;
+			return 5000;
 	}
+}
+
+function _forceClearBackupCooldownsIfStale(info, now = Date.now()) {
+	const _BACKUP_MAX_STALENESS_MS = 8000;
+	if (!info?.FailedBackupPlayerTypes?.clear) return false;
+	const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
+	if (backupAgeMs < _BACKUP_MAX_STALENESS_MS) return false;
+	if (info.FailedBackupPlayerTypes.size === 0) return false;
+
+	const allCoolingDown = [...info.FailedBackupPlayerTypes.values()].every(
+		(retryAt) => Number(retryAt) > now,
+	);
+	if (!allCoolingDown) return false;
+
+	info.FailedBackupPlayerTypes.clear();
+	info.LoggedBackupAdsByType?.clear?.();
+	_log(
+		`[Trace] Backup is ${(backupAgeMs / 1000).toFixed(1)}s stale with all types cooling down — forcing cooldown reset`,
+		"warning",
+	);
+	return true;
 }
 
 function _markBackupPlayerRetryCooldown(
@@ -965,6 +986,7 @@ async function _processM3U8(url, text, realFetch) {
 					);
 				}
 				const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
+				_forceClearBackupCooldownsIfStale(info, now);
 				if (backupAgeMs >= 4000) {
 					try {
 						const refreshedBackup = await _findBackupStream(
@@ -1261,8 +1283,18 @@ async function _processM3U8(url, text, realFetch) {
 				info.LastCleanNativeM3U8 &&
 				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
 				!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8);
-			if (hasCleanNative) {
-				info._BackupSearchStartedAt = Date.now();
+			const hasCachedNative =
+				typeof info.LastCleanNativeM3U8 === "string" &&
+				info.LastCleanNativeM3U8;
+
+			const hasCachedBackup =
+				typeof info.LastCleanBackupM3U8 === "string" &&
+				info.LastCleanBackupM3U8;
+
+			const canServeStopgap =
+				hasCleanNative || hasCachedNative || hasCachedBackup;
+
+			if (canServeStopgap) {
 				const res = _resolvePlaybackResolutionForUrl(info, url);
 				let startIdx = 0;
 				if (
@@ -1271,6 +1303,8 @@ async function _processM3U8(url, text, realFetch) {
 				) {
 					startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
 				}
+
+				info._BackupSearchStartedAt = Date.now();
 				_findBackupStream(info, realFetch, startIdx, res)
 					.then(() => {
 						info._BackupSearchStartedAt = 0;
@@ -1278,11 +1312,33 @@ async function _processM3U8(url, text, realFetch) {
 					.catch(() => {
 						info._BackupSearchStartedAt = 0;
 					});
-				_log(
-					"[Trace] Returning native playlist to prevent buffer drain during backup search",
-					"info",
-				);
-				return info.LastCleanNativeM3U8;
+
+				if (hasCleanNative) {
+					_log(
+						"[Trace] Returning native playlist to prevent buffer drain during backup search",
+						"info",
+					);
+					return info.LastCleanNativeM3U8;
+				}
+
+				const strippedFallback = _stripAds(text, false, info, true);
+				if (strippedFallback && strippedFallback !== text) {
+					_log(
+						"[Trace] Returning ad-stripped playlist as stopgap during backup search",
+						"info",
+					);
+					return strippedFallback;
+				}
+
+				if (info.LastCleanNativeM3U8) {
+					_log(
+						"[Trace] No strippable content — returning cached native playlist as stopgap",
+						"warning",
+					);
+					return info.LastCleanNativeM3U8;
+				}
+
+				return text;
 			}
 		}
 
@@ -1417,9 +1473,11 @@ async function _processM3U8(url, text, realFetch) {
 			adEndState = "wait";
 		}
 		if (adEndState === "wait") {
-			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
+			const now = Date.now();
+			const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
 			const backupIsFromCurrentCycle =
 				Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
+			_forceClearBackupCooldownsIfStale(info, now);
 			if (
 				info.LastCleanBackupM3U8 &&
 				backupAgeMs >= 1500 &&
