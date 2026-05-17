@@ -713,6 +713,7 @@ function _hookWorker() {
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getResolvedAdEndMaxWaitMs.toString()}
                 ${_getResolvedAdEndBackupHoldMaxMs.toString()}
+                ${_getResolvedSilentBackupHoldMaxMs.toString()}
                 ${_getPostAdReentryContinuationMs.toString()}
                 ${_rememberLastAdEnd.toString()}
                 ${_doesPlaybackContextMatchInfo.toString()}

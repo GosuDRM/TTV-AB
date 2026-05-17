@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.7.4] - 2026-05-17
+
+### Fixed
+- Critical: `_getResolvedSilentBackupHoldMaxMs` not injected into worker context, causing all playlist processing to fail and ads to leak through
+
 ## [7.7.3] - 2026-05-17
 
 ### Added
