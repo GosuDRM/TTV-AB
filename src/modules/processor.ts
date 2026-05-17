@@ -12,6 +12,7 @@ function _resetStreamAdState(info) {
 	info.IsUsingFallbackStream = false;
 	info.IsUsingBackupStream = false;
 	info.RequestedAds?.clear?.();
+	info.SpoofedAdIds?.clear?.();
 	info.FailedBackupPlayerTypes?.clear?.();
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
@@ -657,6 +658,7 @@ function _createStreamInfo(context) {
 		UsherBaseUrl: "",
 		UsherParams: "",
 		RequestedAds: new Set(),
+		SpoofedAdIds: new Set(),
 		FailedBackupPlayerTypes: new Map(),
 		Urls: Object.create(null),
 		ResolutionList: [],
@@ -923,6 +925,12 @@ async function _processM3U8(url, text, realFetch) {
 	}
 
 	if (hasAds) {
+		// Fire-and-forget GQL ad-tracking spoof on every ad-laden poll. Tells
+		// Twitch the user "watched" the ad (impression/quartile/pod-complete
+		// beacons a real player would send). Twitch surfaces one ad's DATERANGE
+		// per poll in multi-ad pods, so this must run every poll — info.SpoofedAdIds
+		// dedups so each ad is spoofed once (full N/N coverage). See api.ts.
+		_notifyAdComplete(text, info).catch(() => {});
 		if (info.IsHoldingBackupAfterAd) {
 			const holdElapsed =
 				Date.now() - Math.max(0, Number(info.SilentBackupHoldStartedAt) || 0);
