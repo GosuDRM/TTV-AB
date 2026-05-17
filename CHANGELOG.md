@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.7.2] - 2026-05-17
+
+### Fixed
+- Silent backup hold now capped at 2 minutes to prevent indefinite low-res playback
+- Ad recovery cascade after player reload: suppressed rapid backup type bouncing
+
+### Improved
+- Backup refresh during silent hold slowed from 1.5s to 10s to reduce network pressure
+
 ## [7.7.1] - 2026-05-17
 
 ### Fixed

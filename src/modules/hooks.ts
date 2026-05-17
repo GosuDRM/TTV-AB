@@ -1091,7 +1091,15 @@ function _hookWorker() {
 									isContinuation &&
 									typeof _rememberPlayerPlaybackForAd === "function"
 								) {
-									_rememberPlayerPlaybackForAd(channel, mediaKey);
+									const cooldownMs =
+										__TTVAB_STATE__?.AdRecoveryReloadCooldownMs || 10000;
+									const lastReload = Math.max(
+										0,
+										Number(__TTVAB_STATE__?.LastAdRecoveryReloadAt) || 0,
+									);
+									if (lastReload <= 0 || now - lastReload >= cooldownMs) {
+										_rememberPlayerPlaybackForAd(channel, mediaKey);
+									}
 								}
 								__TTVAB_STATE__.CurrentAdChannel = channel;
 								__TTVAB_STATE__.CurrentAdMediaKey = mediaKey;
