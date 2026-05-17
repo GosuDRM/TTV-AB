@@ -6,7 +6,7 @@ const g = globalThis as Record<string, unknown>;
 
 beforeAll(() => {
 	g._C = {
-		VERSION: "7.7.4",
+		VERSION: "7.7.5",
 		INTERNAL_VERSION: 131,
 		AD_SIGNIFIER: "stitched",
 		CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",

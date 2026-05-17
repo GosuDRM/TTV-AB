@@ -965,7 +965,7 @@ async function _processM3U8(url, text, realFetch) {
 					);
 				}
 				const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
-				if (backupAgeMs >= 10000) {
+				if (backupAgeMs >= 4000) {
 					try {
 						const refreshedBackup = await _findBackupStream(
 							info,
