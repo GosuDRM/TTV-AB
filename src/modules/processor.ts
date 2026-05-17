@@ -678,6 +678,10 @@ function _createStreamInfo(context) {
 		BackupVariantUrls: new Set(),
 		LastNativeRecoveryReadyPlayerType: null,
 		NativeRecoveryCleanCount: 0,
+		_BackupSearchCount: 0,
+		_BackupSearchErrorCount: 0,
+		_BackupSearchFailCount: 0,
+		_FallbackEntryCount: 0,
 		LastAdEndReloadAt: 0,
 		LastNativeRecoveryHoldLogAt: 0,
 		HevcReloadPendingAfterHold: false,
@@ -1708,6 +1712,8 @@ async function _findBackupStream(
 				} catch (e) {
 					_log(`Backup error: ${e.message}`, "error");
 					_markBackupPlayerRetryCooldown(info, pt, "error");
+					info._BackupSearchErrorCount =
+						(info._BackupSearchErrorCount || 0) + 1;
 				}
 			}
 
@@ -1817,6 +1823,8 @@ async function _findBackupStream(
 				} catch (e) {
 					_log(`Stream error: ${e.message}`, "warning");
 					_markBackupPlayerRetryCooldown(info, pt, "stream-error");
+					info._BackupSearchErrorCount =
+						(info._BackupSearchErrorCount || 0) + 1;
 					invalidateCache = true;
 				}
 			}
@@ -1837,6 +1845,15 @@ async function _findBackupStream(
 		info.LastCleanBackupPlayerType = backupType;
 		info.LastCleanBackupAt = Date.now();
 		_log(`[Trace] Using fallback: ${backupType}`, "warning");
+	}
+
+	if (backupM3u8) {
+		info._BackupSearchCount = (info._BackupSearchCount || 0) + 1;
+		if (isFallback) {
+			info._FallbackEntryCount = (info._FallbackEntryCount || 0) + 1;
+		}
+	} else {
+		info._BackupSearchFailCount = (info._BackupSearchFailCount || 0) + 1;
 	}
 
 	return { type: backupType, m3u8: backupM3u8, isFallback };

@@ -1,6 +1,7 @@
 {
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
+		"noUnusedLocals": false,
 		"module": "preserve",
 		"moduleDetection": "force",
 		"composite": true,

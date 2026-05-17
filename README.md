@@ -84,6 +84,8 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 - Ad segment fetches use AbortController for clean resource management
 - Transient state flags properly reset across ad cycles
 
+_See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
+
 
 ## Development
 

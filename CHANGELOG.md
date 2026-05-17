@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [v7.7.0] - 2026-05-17
+## [7.7.0] - 2026-05-17
 
 ### Fixed
 - Memory leak: stream URL cache now prunes old entries during long sessions
