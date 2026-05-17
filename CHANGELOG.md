@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.7.3] - 2026-05-17
+
+### Added
+- Ad-completion spoofing: mimics Twitch telemetry (impression, quartile, pod-complete beacons) to reduce anti-adblock fingerprinting (thanks [@ryanbr](https://github.com/ryanbr))
+
 ## [7.7.2] - 2026-05-17
 
 ### Fixed
