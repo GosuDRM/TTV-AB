@@ -708,6 +708,7 @@ function _hookWorker() {
                 ${_createFetchRelayResponse.toString()}
                 ${_fetchViaWorkerBridge.toString()}
                 ${_getToken.toString()}
+                ${_notifyAdComplete.toString()}
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getResolvedAdEndMaxWaitMs.toString()}
