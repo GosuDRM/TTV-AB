@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.7.5] - 2026-05-17
+
+### Fixed
+- Brief loading circle during silent backup hold caused by 10s backup refresh letting HLS segments expire
+
 ## [7.7.4] - 2026-05-17
 
 ### Fixed
