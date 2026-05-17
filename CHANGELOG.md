@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.7.1] - 2026-05-17
+
+### Fixed
+- Loading circle freeze during ad recovery: stale clean backup now served during search instead of falling through to ad-marked content
+
+### Improved
+- Faster stall detection and recovery: post-ad grace stall threshold reduced from 3 to 2 ticks, retry cooldown from 4s to 1.5s
+
 ## [7.7.0] - 2026-05-17
 
 ### Fixed
