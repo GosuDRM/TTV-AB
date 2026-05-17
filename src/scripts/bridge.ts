@@ -362,7 +362,7 @@ function postAchievementUnlock(id) {
 
 const bridgeState = {
 	enabled: true,
-	adSpoofingEnabled: false,
+	adSpoofingEnabled: true,
 	storedAdsCount: 0,
 };
 const MAX_MESSAGE_DELTA = 50;
@@ -841,7 +841,7 @@ chrome.storage.local.get(
 		}
 		const safeResult = result || {};
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
-		bridgeState.adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled === true;
+		bridgeState.adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
 
 		broadcastState();
@@ -862,7 +862,7 @@ chrome.storage.local.get(
 			if (changes.ttvAdSpoofingEnabled) {
 				const wasAdSpoofingEnabled = bridgeState.adSpoofingEnabled;
 				bridgeState.adSpoofingEnabled =
-					changes.ttvAdSpoofingEnabled.newValue === true;
+					changes.ttvAdSpoofingEnabled.newValue !== false;
 				if (bridgeState.adSpoofingEnabled !== wasAdSpoofingEnabled) {
 					sendToPage("ttvab-toggle-ad-spoofing", {
 						enabled: bridgeState.adSpoofingEnabled,
