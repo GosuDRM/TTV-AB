@@ -122,6 +122,20 @@ function _initToggleListener() {
 			enabled ? "success" : "warning",
 		);
 	});
+
+	_onInternalMessage("ttvab-toggle-ad-spoofing", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (typeof safeDetail?.enabled !== "boolean") return;
+		const enabled = safeDetail.enabled;
+		const shouldDisable = !enabled;
+		if (__TTVAB_STATE__.DisableAdSpoofing === shouldDisable) return;
+		__TTVAB_STATE__.DisableAdSpoofing = shouldDisable;
+		_broadcastWorkers({ key: "UpdateAdSpoofingState", value: shouldDisable });
+		_log(
+			`Ad spoofing ${enabled ? "enabled" : "disabled"}`,
+			enabled ? "success" : "warning",
+		);
+	});
 }
 
 function _hookSpaNavigation() {

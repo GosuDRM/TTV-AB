@@ -715,6 +715,7 @@ function _hookWorker() {
                 ${_doesPlaybackContextMatchInfo.toString()}
                 ${_isRecentPostAdReentry.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
+                ${_forceClearBackupCooldownsIfStale.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
                 ${_isBackupPlayerRetryCoolingDown.toString()}
@@ -759,6 +760,7 @@ function _hookWorker() {
                 __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerMediaKey)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
+                __TTVAB_STATE__.DisableAdSpoofing = ${JSON.stringify(__TTVAB_STATE__.DisableAdSpoofing)};
                 __TTVAB_STATE__.PageMediaType = ${JSON.stringify(pagePlaybackContext.MediaType)};
                 __TTVAB_STATE__.PageChannel = ${JSON.stringify(pagePlaybackContext.ChannelName)};
                 __TTVAB_STATE__.PageVodID = ${JSON.stringify(pagePlaybackContext.VodID)};
@@ -778,6 +780,7 @@ function _hookWorker() {
                         case 'UpdateClientIntegrityHeader': __TTVAB_STATE__.ClientIntegrityHeader = data.value; break;
                         case 'UpdateAuthorizationHeader': __TTVAB_STATE__.AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
+                        case 'UpdateAdSpoofingState': __TTVAB_STATE__.DisableAdSpoofing = data.value === true; break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                         case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;

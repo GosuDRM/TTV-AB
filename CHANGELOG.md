@@ -2,6 +2,24 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.0.0] - 2026-05-18
+
+### Added
+- Ad Spoofing toggle in popup UI — control anti-adblock fingerprinting beacons independently
+- Ad Spoofing info modal explaining the feature
+- Translations for Ad Spoofing in all 11 supported locales
+
+### Changed
+- Backup ad-marked retry cooldown reduced from 15s to 5s — prevents stale playlist serving during contaminated backup cascades
+- Initial backup search runs as background fire-and-forget when cached content is available, eliminating buffer drain during mid-roll ad detection
+- Buffer Fix toggle hidden from popup UI (always-on internally)
+- Ad Spoofing defaults to off — users who want anti-fingerprinting coverage can enable it from the popup
+
+### Fixed
+- Backup playlist staleness: force-clears all backup cooldowns when cached playlist exceeds 8s, preventing expired-segment looping
+- Stream freezing/audio lag during ad transitions caused by blocked synchronous backup search and cooldown deadlock
+- Ad-completion spoofing beacons made user-controllable via popup toggle
+
 ## [7.7.5] - 2026-05-17
 
 ### Fixed
