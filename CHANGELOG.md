@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [v7.7.0] - 2026-05-17
+
+### Fixed
+- Memory leak: stream URL cache now prunes old entries during long sessions
+- Removed dead `ALWAYS_RELOAD_PLAYER_ON_AD` constant
+
+### Improved
+- Backup search now tracks success/failure/fallback counters for easier debugging
+- TypeScript: stricter unused-variable and catch-variable checks enabled
+
 ## [7.6.9] - 2026-05-17
 
 ### Fixed
