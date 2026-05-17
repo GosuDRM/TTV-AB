@@ -68,6 +68,10 @@ function _getResolvedAdEndBackupHoldMaxMs() {
 	);
 }
 
+function _getResolvedSilentBackupHoldMaxMs() {
+	return Math.max(0, Number(__TTVAB_STATE__?.SilentBackupHoldMaxMs) || 120000);
+}
+
 function _getPostAdReentryContinuationMs() {
 	return 8000;
 }
@@ -920,6 +924,24 @@ async function _processM3U8(url, text, realFetch) {
 
 	if (hasAds) {
 		if (info.IsHoldingBackupAfterAd) {
+			const holdElapsed =
+				Date.now() - Math.max(0, Number(info.SilentBackupHoldStartedAt) || 0);
+			if (holdElapsed >= _getResolvedSilentBackupHoldMaxMs()) {
+				_log(
+					"[Trace] Silent backup hold max duration reached; exiting hold to restore native stream",
+					"warning",
+				);
+				info.IsHoldingBackupAfterAd = false;
+				info.SilentBackupHoldStartedAt = 0;
+				info.LastSilentBackupHoldLogAt = 0;
+				info.IsUsingBackupStream = false;
+				info.ActiveBackupPlayerType = null;
+				info.ActiveBackupResolution = null;
+				info.HevcReloadPendingAfterHold = false;
+			}
+		}
+
+		if (info.IsHoldingBackupAfterAd) {
 			if (info.LastCleanBackupM3U8) {
 				const now = Date.now();
 				const res = _resolvePlaybackResolutionForUrl(info, url);
@@ -935,7 +957,7 @@ async function _processM3U8(url, text, realFetch) {
 					);
 				}
 				const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
-				if (backupAgeMs >= 1500) {
+				if (backupAgeMs >= 10000) {
 					try {
 						const refreshedBackup = await _findBackupStream(
 							info,

@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [7.7.2] - 2026-05-17
+
+### Fixed
+- Silent backup hold now capped at 2 minutes to prevent indefinite low-res playback
+- Ad recovery cascade after player reload: suppressed rapid backup type bouncing
+
+### Improved
+- Backup refresh during silent hold slowed from 1.5s to 10s to reduce network pressure
+
 ## [7.7.1] - 2026-05-17
 
 ### Fixed
@@ -28,7 +37,7 @@ All notable changes to TTV AB will be documented in this file.
 ## [7.6.8] - 2026-05-17
 
 ### Reverted
-- csai cold start fallback removed
+- csai cold-start fallback removed — returning ad-marked playlist caused longer ad flash instead of preventing it
 
 ## [7.6.7] - 2026-05-17
 
@@ -43,19 +52,7 @@ All notable changes to TTV AB will be documented in this file.
 ## [7.6.5] - 2026-05-17
 
 ### Fixed
-- Fire-and-forget ad segment fetches now use AbortController to prevent background resource waste
-- Transient backup search flags properly reset on ad-end state cleanup
-
-## [7.6.4] - 2026-05-17
-
-### Fixed
-- Cache prune uses spec-safe collect-then-delete pattern instead of forEach+delete during iteration
-- Token fetch now retries up to 3 times with incremental backoff on timeout/network errors
-
-## [7.6.3] - 2026-05-17
-
-### Fixed
-- CSAI playlists now strip ad segments during the poll-wait window while background backup search runs, closing a brief ad-leak gap on metadata-marked streams
+- Ad-blocking pipeline: csai poll-wait leak, cache iteration safety, token fetch retry, abort controller for ad fetches
 
 ## [7.6.2] - 2026-05-16
 

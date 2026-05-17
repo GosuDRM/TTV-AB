@@ -39,3 +39,4 @@ tools/*
 .openclaw/
 .codex
 AGENTS.md
+.clawpatch/

@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-7.7.1-purple)
+![Version](https://img.shields.io/badge/version-7.7.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -63,6 +63,10 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
+### v7.7.2
+- Capped silent backup hold at 2 minutes to prevent indefinite low-res playback
+- Suppressed rapid backup type bouncing after player reload
+
 ### v7.7.1
 - Fixes loading circle freeze during ad recovery by serving stale clean backup instead of ad-marked content
 - Faster stall detection and recovery
@@ -73,20 +77,19 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 - Cleaned up dead code and tightened TypeScript checks
 
 ### v7.6.9
-- CSAI poll wait returns cached clean playlist instead of ad-marked content
+- CSAI poll wait now returns cached clean playlist instead of ad-marked content
 
 ### v7.6.8
-- Reverted csai cold start fallback that made ad flash worse
+- Reverted csai cold-start fallback that made ad flash worse — background search only fires with valid clean native
 
 ### v7.6.7
-- CSAI cold-start ad flash fixed
+- CSAI cold-start: background search now fires even without pre-existing clean native, preventing initial ad flash
 
 ### v7.6.6
 - CSAI background backup search and poll-wait strip now run for all ad-marked playlists
 
 ### v7.6.5
-- Ad segment fetches use AbortController for clean resource management
-- Transient state flags properly reset across ad cycles
+- Ad-blocking pipeline fixes (csai poll-wait, cache safety, token retry, abort controller)
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
