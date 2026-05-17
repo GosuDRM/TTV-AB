@@ -1,6 +1,7 @@
 {
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
+		"useUnknownInCatchVariables": false,
 		"module": "CommonJS",
 		"rootDir": ".",
 		"outDir": "build",

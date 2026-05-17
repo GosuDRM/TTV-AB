@@ -83,6 +83,8 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 ### v7.6.5
 - Ad-blocking pipeline fixes (csai poll-wait, cache safety, token retry, abort controller)
 
+_See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
+
 
 ## Development
 
