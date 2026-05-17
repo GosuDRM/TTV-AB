@@ -1,7 +1,7 @@
 // TTV AB - Constants
 
 const _C = {
-	VERSION: "7.6.9",
+	VERSION: "7.7.0",
 	INTERNAL_VERSION: 131,
 	LOG_STYLES: {
 		prefix:
@@ -30,5 +30,4 @@ const _C = {
 	RELOAD_AFTER_AD: true,
 	REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN: false,
 	PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
-	ALWAYS_RELOAD_PLAYER_ON_AD: false,
 };

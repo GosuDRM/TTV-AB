@@ -6,7 +6,7 @@ const g = globalThis as Record<string, unknown>;
 
 beforeAll(() => {
 	g._C = {
-		VERSION: "7.6.9",
+		VERSION: "7.7.0",
 		INTERNAL_VERSION: 131,
 		AD_SIGNIFIER: "stitched",
 		CLIENT_ID: "kimne78kx3ncx6brgo4mv6wki5h1ko",
@@ -27,7 +27,6 @@ beforeAll(() => {
 		RELOAD_AFTER_AD: true,
 		REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN: false,
 		PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
-		ALWAYS_RELOAD_PLAYER_ON_AD: false,
 		LOG_STYLES: { prefix: "", info: "", success: "", warning: "", error: "" },
 	};
 	g._S = { workers: [], conflicts: [], reinsertPatterns: [], adsBlocked: 0 };
