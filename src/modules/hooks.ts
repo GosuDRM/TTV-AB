@@ -149,6 +149,15 @@ function _hookWorkerFetch() {
 				delete __TTVAB_STATE__.StreamInfosByUrl[url];
 			}
 		}
+		const MAX_STREAM_INFO_BY_URL = 200;
+		const byUrlKeys = Object.keys(__TTVAB_STATE__.StreamInfosByUrl);
+		if (byUrlKeys.length > MAX_STREAM_INFO_BY_URL) {
+			let evicted = 0;
+			for (const url of byUrlKeys) {
+				if (++evicted > 50) break;
+				delete __TTVAB_STATE__.StreamInfosByUrl[url];
+			}
+		}
 	}
 
 	function _syncStreamInfo(info, encodings, usherUrl) {
