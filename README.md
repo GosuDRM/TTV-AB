@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.1.0-purple)
+![Version](https://img.shields.io/badge/version-8.3.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -63,8 +63,8 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
-### v8.1.0
-- **Persistent segment recovery** — live segments cached across stripping calls survive SSAI contamination, injecting pre-ad segments when backup playlists are 100% ad-marked
+### v8.3.7
+- **Rollback to stable** — reverted v8.2.x–v8.3.x changes, keeping parallel token pre-fetch
 
 ### v8.2.6
 - **Ad-stripped backup promotion** — Source-tier candidates with ads are stripped and promoted at full quality instead of being rejected, eliminating 360p quality drops on contaminated channels
@@ -78,7 +78,7 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 ### v8.2.0
 - **Native-quality backup** — `site` player type now leads backup selection, keeping full stream quality during ad blocking
 
-### v8.1.0
+### v8.3.7
 - **Parallel backup pre-fetch** — token + master playlist requests for all player types fire simultaneously, eliminating the sequential per-type delay that caused buffer drain during ad-blocking transitions
 
 ### v8.0.0
