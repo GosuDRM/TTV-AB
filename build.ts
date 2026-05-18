@@ -72,6 +72,8 @@ const MINIFY_MAP = {
 	_showWelcome: "_$wc",
 	_showAchievementUnlocked: "_$au",
 	_initAchievementListener: "_$al",
+	_enableDebugLogging: "_$edl",
+	_debugLogging: "_$dl",
 
 	_bootstrap: "_$bs",
 	_initToggleListener: "_$tl",
@@ -263,55 +265,18 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	const expectedBackgroundScripts = ["src/scripts/background.js"];
-	const comparableBackgroundScripts = Array.isArray(
-		manifest.background?.scripts,
-	)
-		? manifest.background.scripts.map((file) =>
-				String(file).replaceAll("\\", "/"),
-			)
-		: [];
-	if (
-		JSON.stringify(comparableBackgroundScripts) !==
-		JSON.stringify(expectedBackgroundScripts)
-	) {
+	const backgroundScript =
+		manifest.background?.service_worker ||
+		manifest.background?.scripts?.[0] ||
+		null;
+	if (backgroundScript !== "src/scripts/background.js") {
 		throw new Error(
-			`Manifest background.scripts drift detected: ${JSON.stringify(comparableBackgroundScripts)}`,
+			`Manifest background script must remain src/scripts/background.js: ${backgroundScript || "missing"}`,
 		);
 	}
-	for (const backgroundScript of comparableBackgroundScripts) {
-		if (!fs.existsSync(path.join(DIST_DIR, backgroundScript))) {
-			throw new Error(
-				`Manifest background script is missing: ${backgroundScript}`,
-			);
-		}
-	}
-	const geckoSettings = manifest.browser_specific_settings?.gecko;
-	if (!geckoSettings || typeof geckoSettings !== "object") {
+	if (!fs.existsSync(path.join(DIST_DIR, backgroundScript))) {
 		throw new Error(
-			"Manifest browser_specific_settings.gecko must remain defined for Firefox packaging",
-		);
-	}
-	if (geckoSettings.id !== "{71e91189-9cd2-4e46-895d-bcc38f0053c4}") {
-		throw new Error(
-			`Manifest gecko id drift detected: ${geckoSettings.id || "missing"}`,
-		);
-	}
-	if (geckoSettings.strict_min_version !== "142.0") {
-		throw new Error(
-			`Manifest gecko strict_min_version drift detected: ${geckoSettings.strict_min_version || "missing"}`,
-		);
-	}
-	const dataCollectionPermissions = geckoSettings.data_collection_permissions;
-	if (
-		!dataCollectionPermissions ||
-		JSON.stringify(dataCollectionPermissions.required || []) !==
-			JSON.stringify(["none"]) ||
-		JSON.stringify(dataCollectionPermissions.optional || []) !==
-			JSON.stringify([])
-	) {
-		throw new Error(
-			"Manifest gecko data_collection_permissions must remain { required: ['none'], optional: [] }",
+			`Manifest background script is missing: ${backgroundScript}`,
 		);
 	}
 	if (manifest.action?.default_title !== "__MSG_extName__") {
@@ -464,7 +429,6 @@ function validateSharedDefinitions() {
 	const initPath = path.join(DIST_DIR, "src", "modules", "init.js");
 	const hooksPath = path.join(DIST_DIR, "src", "modules", "hooks.js");
 	const statePath = path.join(DIST_DIR, "src", "modules", "state.js");
-	const workerPath = path.join(DIST_DIR, "src", "modules", "worker.js");
 	const processorPath = path.join(DIST_DIR, "src", "modules", "processor.js");
 	const apiPath = path.join(DIST_DIR, "src", "modules", "api.js");
 	const constantsPath = path.join(DIST_DIR, "src", "modules", "constants.js");
@@ -701,7 +665,6 @@ function validateSharedDefinitions() {
 	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
 	const stateSource = fs.readFileSync(statePath, "utf8");
-	const workerSource = fs.readFileSync(workerPath, "utf8");
 	const parserSource = fs.readFileSync(
 		path.join(DIST_DIR, "src", "modules", "parser.js"),
 		"utf8",
@@ -923,9 +886,9 @@ function validateSharedDefinitions() {
 		"{",
 		"}",
 	);
-	const initNormalizeCount = extractLiteral(
-		initSource,
-		"function _normalizeCounterValue(",
+	const stateNormalizeCount = extractLiteral(
+		stateSource,
+		"function _normalizeCount(",
 		"{",
 		"}",
 	);
@@ -934,18 +897,18 @@ function validateSharedDefinitions() {
 		!popupFormatNumber ||
 		!popupUpdateTimeSaved ||
 		!backgroundNormalizeCount ||
-		!initNormalizeCount ||
+		!stateNormalizeCount ||
 		normalizeCodeSnippet(popupNormalizeCount) !==
 			normalizeCodeSnippet(backgroundNormalizeCount) ||
 		normalizeCodeSnippet(popupNormalizeCount).replace(
 			"function normalizeCount(value)",
-			"function _normalizeCounterValue(value)",
-		) !== normalizeCodeSnippet(initNormalizeCount) ||
+			"function _normalizeCount(value)",
+		) !== normalizeCodeSnippet(stateNormalizeCount) ||
 		!popupFormatNumber.includes("normalizeCount(num)") ||
 		!popupUpdateTimeSaved.includes("normalizeCount(adsCount)")
 	) {
 		throw new Error(
-			"Popup, background, and init counter normalizers are out of sync",
+			"Popup, background, and state counter normalizers are out of sync",
 		);
 	}
 
@@ -1177,21 +1140,7 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	if (!hooksSource.includes("eval(wasmSource);")) {
-		throw new Error(
-			"Firefox hooks.js must eval the synchronously fetched worker source",
-		);
-	}
-	if (!hooksSource.includes("const wasmSource = _getWasmJs(")) {
-		throw new Error(
-			"Firefox hooks.js must hydrate worker source via _getWasmJs(...)",
-		);
-	}
-	if (!workerSource.includes("new XMLHttpRequest()")) {
-		throw new Error(
-			"Firefox worker bootstrap must retain synchronous XMLHttpRequest loading",
-		);
-	}
+
 	for (const forbidden of [
 		"ttvReloadAfterAdsEnabled",
 		"ReloadPlayerAfterAd",
@@ -1360,163 +1309,8 @@ function compileTypeScriptSources() {
 	console.log("");
 }
 
-function createZipArchive(sourceDir, outputFile) {
-	const entries = fs.readdirSync(sourceDir);
-	if (entries.length === 0) {
-		throw new Error(`Cannot package empty directory: ${sourceDir}`);
-	}
-
-	try {
-		execFileSync("zip", ["-qr", outputFile, ...entries], {
-			cwd: sourceDir,
-			stdio: "inherit",
-		});
-		return;
-	} catch (error) {
-		if (error?.code !== "ENOENT") {
-			throw error;
-		}
-	}
-
-	const pythonScript = `
-import os
-import sys
-import zipfile
-
-source_dir = sys.argv[1]
-output_file = sys.argv[2]
-
-with zipfile.ZipFile(output_file, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-    for root, dirnames, filenames in os.walk(source_dir):
-        dirnames.sort()
-        filenames.sort()
-        for filename in filenames:
-            file_path = os.path.join(root, filename)
-            arcname = os.path.relpath(file_path, source_dir).replace(os.sep, "/")
-            archive.write(file_path, arcname)
-`.trim();
-
-	let lastError = null;
-	for (const [pythonCommand, prefixArgs] of [
-		["python", []],
-		["python3", []],
-		["py", ["-3"]],
-	]) {
-		try {
-			execFileSync(
-				pythonCommand,
-				[...prefixArgs, "-c", pythonScript, sourceDir, outputFile],
-				{ stdio: "inherit" },
-			);
-			return;
-		} catch (error) {
-			if (error?.code === "ENOENT") {
-				lastError = error;
-				continue;
-			}
-			throw error;
-		}
-	}
-
-	throw new Error(
-		`Could not find a ZIP writer. Install 'zip' or a Python runtime. Last error: ${lastError?.message || "none"}`,
-	);
-}
-
-function packageFirefox(version) {
-	const stageDir = path.join(DIST_DIR, "firefox-package");
-	const outputFile = path.join(DIST_DIR, `TTV-AB-v${version}-firefox.xpi`);
-	const zipOutputFile = path.join(DIST_DIR, `TTV-AB-v${version}-firefox.zip`);
-	const includedPaths = [
-		...STATIC_ROOT_FILES,
-		...STATIC_ROOT_DIRECTORIES,
-		"src",
-	];
-
-	fs.rmSync(stageDir, { recursive: true, force: true });
-	fs.rmSync(outputFile, { force: true });
-	fs.rmSync(zipOutputFile, { force: true });
-	fs.mkdirSync(stageDir, { recursive: true });
-
-	for (const relativePath of includedPaths) {
-		const sourcePath = path.join(DIST_DIR, relativePath);
-		const targetPath = path.join(stageDir, relativePath);
-		const stat = fs.statSync(sourcePath);
-		if (stat.isDirectory()) {
-			fs.cpSync(sourcePath, targetPath, { recursive: true });
-		} else {
-			fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-			fs.copyFileSync(sourcePath, targetPath);
-		}
-	}
-
-	createZipArchive(stageDir, zipOutputFile);
-	fs.copyFileSync(zipOutputFile, outputFile);
-
-	console.log(`  ZIP: ${path.relative(SOURCE_ROOT, zipOutputFile)}`);
-	console.log(`  XPI: ${path.relative(SOURCE_ROOT, outputFile)}`);
-}
-
-function packageFirefoxSource(version) {
-	const stageDir = path.join(DIST_DIR, "firefox-source-package");
-	const outputFile = path.join(
-		DIST_DIR,
-		`TTV-AB-v${version}-firefox-source.zip`,
-	);
-	const includedPaths = [
-		".gitignore",
-		"biome.json",
-		"build.ts",
-		"CHANGELOG.md",
-		"knip.json",
-		"LICENSE",
-		"manifest.json",
-		"package-lock.json",
-		"package.json",
-		"PRIVACY.md",
-		"README.md",
-		"_locales",
-		"assets",
-		path.join("src", "modules"),
-		path.join("src", "popup"),
-		path.join("src", "scripts", "background.ts"),
-		path.join("src", "scripts", "bridge.ts"),
-		path.join("src", "types"),
-		"tsconfig.base.json",
-		"tsconfig.build.json",
-		"tsconfig.json",
-		"tsconfig.modules.json",
-		"tsconfig.runtime.json",
-	];
-
-	fs.rmSync(stageDir, { recursive: true, force: true });
-	fs.rmSync(outputFile, { force: true });
-	fs.mkdirSync(stageDir, { recursive: true });
-
-	for (const relativePath of includedPaths) {
-		const sourcePath = path.join(SOURCE_ROOT, relativePath);
-		const targetPath = path.join(stageDir, relativePath);
-		const stat = fs.statSync(sourcePath);
-		if (stat.isDirectory()) {
-			fs.cpSync(sourcePath, targetPath, { recursive: true });
-		} else {
-			fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-			fs.copyFileSync(sourcePath, targetPath);
-		}
-	}
-
-	createZipArchive(stageDir, outputFile);
-
-	console.log(`  Source ZIP: ${path.relative(SOURCE_ROOT, outputFile)}`);
-}
-
 function build() {
 	console.log("Building TTV AB...\n");
-
-	const shouldPackageFirefox = process.argv.includes("--firefox-package");
-	const shouldPackageFirefoxSource = process.argv.includes(
-		"--firefox-source-package",
-	);
 
 	try {
 		compileTypeScriptSources();
@@ -1570,13 +1364,6 @@ _$in();
 		console.log(`  Version: ${version}`);
 		console.log(`  Modules: ${moduleCount}`);
 		console.log(`  Size: ${(stats.size / 1024).toFixed(2)} KB`);
-
-		if (shouldPackageFirefox) {
-			packageFirefox(version);
-		}
-		if (shouldPackageFirefoxSource) {
-			packageFirefoxSource(version);
-		}
 	} catch (err) {
 		console.error("\nBuild failed:");
 		console.error(`  ${err.message}`);
