@@ -1111,6 +1111,32 @@ function validateSharedDefinitions() {
 			"Reserved route lists must be sourced from the shared parser helper",
 		);
 	}
+	if (
+		!hooksSource.includes("_getPlaybackContextFromUrl(window.location.href)")
+	) {
+		throw new Error(
+			"Hooks must resolve route context through _getPlaybackContextFromUrl",
+		);
+	}
+
+	const injectedHelpers = new Set(
+		[...hooksSource.matchAll(/\$\{(_[A-Za-z0-9]+)\.toString\(\)\}/g)].map(
+			(match) => match[1],
+		),
+	);
+	for (const requiredParserSnippet of [
+		'Resolution: String(attrs.RESOLUTION || "0x0")',
+		"FrameRate: Number.isFinite(frameRate) ? frameRate : 0",
+		"Bandwidth: Number.isFinite(bandwidth) ? Math.max(0, bandwidth) : 0",
+		'Codecs: String(attrs.CODECS || "")',
+		'Name: String(attrs.VIDEO || "")',
+	]) {
+		if (!parserSource.includes(requiredParserSnippet)) {
+			throw new Error(
+				`Missing normalized parser metadata snippet: ${requiredParserSnippet}`,
+			);
+		}
+	}
 	for (const forbidden of [
 		"ttvReloadAfterAdsEnabled",
 		"ReloadPlayerAfterAd",
@@ -1206,11 +1232,6 @@ function validateSharedDefinitions() {
 			"{",
 			"}",
 		);
-	const injectedHelpers = new Set(
-		[...hooksSource.matchAll(/\$\{(_[A-Za-z0-9]+)\.toString\(\)\}/g)].map(
-			(match) => match[1],
-		),
-	);
 		if (consumerBody?.includes(helper) && !injectedHelpers.has(helper)) {
 			throw new Error(
 				`${consumer} depends on ${helper}, but ${helper} is not injected into the worker bundle`,
