@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.5.4-purple)
+![Version](https://img.shields.io/badge/version-8.5.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-8.5.4-yellow)
+![Chrome](https://img.shields.io/badge/chrome-8.5.5-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,7 +63,7 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v8.5.4 — 2026-05-19
+### v8.5.5 — 2026-05-19
 - **Midroll reload loop broken** — 30s cooldown, autoplay removed, backoff persists across continuation cycles
 
 ### v8.5.3 — 2026-05-19
