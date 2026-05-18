@@ -889,6 +889,17 @@ function _hookWorker() {
 	                                __TTVAB_STATE__.LastAdEndedChannel = null;
 	                                __TTVAB_STATE__.LastAdEndedMediaKey = null;
 	                            }
+	                            const prevMediaKey = data.value?.previousMediaKey || null;
+	                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
+	                                delete __TTVAB_STATE__.StreamInfos[prevMediaKey];
+	                            }
+	                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfosByUrl === "object") {
+	                                for (const u in __TTVAB_STATE__.StreamInfosByUrl) {
+	                                    if (__TTVAB_STATE__.StreamInfosByUrl[u]?.MediaKey === prevMediaKey) {
+	                                        delete __TTVAB_STATE__.StreamInfosByUrl[u];
+	                                    }
+	                                }
+	                            }
                             break;
                         case 'FetchResponse':
                             {

@@ -787,6 +787,10 @@ async function _processM3U8(url, text, realFetch) {
 			url,
 		);
 		if (!info) return text;
+		const pageChannel = __TTVAB_STATE__?.PageChannel || null;
+		if (info.ChannelName && pageChannel && info.ChannelName !== pageChannel) {
+			return text;
+		}
 	}
 	info.LastActivityAt = Date.now();
 
