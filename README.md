@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.2.5-purple)
+![Version](https://img.shields.io/badge/version-8.2.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -62,6 +62,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## What's New
+
+### v8.2.6
+- **Ad-stripped backup promotion** — Source-tier candidates with ads are stripped and promoted at full quality instead of being rejected, eliminating 360p quality drops on contaminated channels
 
 ### v8.2.5
 - **Recovery segment injection** — when ad stripping removes all segments, cached live segments are injected to prevent black-screens and ad leakage on heavily-contaminated streams

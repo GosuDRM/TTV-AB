@@ -1969,6 +1969,36 @@ async function _findBackupStream(
 									_log(`[Trace] Selected (minimal): ${pt}`, "success");
 									break;
 								}
+
+								// Source-tier ad-stripped promotion: strip ads from
+								// playable candidates instead of rejecting them,
+								// keeping full quality. autoplay skips this.
+								if (
+									!backupM3u8 &&
+									pt !== "autoplay" &&
+									candidateIsPlayable &&
+									candidateHasAds
+								) {
+									const stripped = _stripAds(m3u8, false, info);
+									if (
+										stripped &&
+										_playlistHasMediaSegments(stripped) &&
+										!_hasExplicitAdMetadata(stripped)
+									) {
+										_clearBackupPlayerRetryCooldown(info, pt);
+										backupType = pt;
+										backupM3u8 = stripped;
+										info.LastCleanBackupM3U8 = stripped;
+										info.LastCleanBackupPlayerType = pt;
+										info.LastCleanBackupAt = Date.now();
+										info.IsStrippingAdSegments = true;
+										info.NumStrippedAdSegments =
+											(info.NumStrippedAdSegments || 0) + 1;
+										_log(`[Trace] Selected (ad-stripped): ${pt}`, "success");
+										break;
+									}
+								}
+
 								_markBackupPlayerRetryCooldown(
 									info,
 									pt,

@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.6] - 2026-05-18
+
+### Changed
+- Source-tier backup candidates with ad markers are now ad-stripped and
+  promoted at full quality instead of being rejected, preventing quality
+  degradation to 360p when only `autoplay` is ad-free
+
 ## [8.2.5] - 2026-05-18
 
 ### Fixed
