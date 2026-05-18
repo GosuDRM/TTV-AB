@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.5.2] - 2026-05-19
+
+### Fixed
+- Ad-end false positive during midroll pods — enforces 8s minimum ad duration before candidate ad end, preventing premature reload loop when backup playlists are briefly clean at break start
+
 ## [8.5.1] - 2026-05-19
 
 ### Fixed
