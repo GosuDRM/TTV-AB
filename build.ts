@@ -265,10 +265,7 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	const backgroundScript =
-		manifest.background?.service_worker ||
-		manifest.background?.scripts?.[0] ||
-		null;
+	const backgroundScript = manifest.background?.service_worker || manifest.background?.scripts?.[0] || null;
 	if (backgroundScript !== "src/scripts/background.js") {
 		throw new Error(
 			`Manifest background script must remain src/scripts/background.js: ${backgroundScript || "missing"}`,
@@ -1140,7 +1137,6 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-
 	for (const forbidden of [
 		"ttvReloadAfterAdsEnabled",
 		"ReloadPlayerAfterAd",

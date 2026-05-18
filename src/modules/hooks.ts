@@ -323,11 +323,14 @@ function _hookWorkerFetch() {
 			};
 
 			let url = requestUrl.trimEnd();
-			const responseInit = (response) => ({
-				status: response.status,
-				statusText: response.statusText,
-				headers: response.headers,
-			});
+			const responseInit = (response) => {
+				const init = {
+					status: response.status,
+					statusText: response.statusText,
+					headers: response.headers,
+				};
+				return init;
+			};
 
 			const shouldBlockCachedAdSegments = Boolean(
 				__TTVAB_STATE__.CurrentAdMediaKey ||
@@ -665,6 +668,7 @@ function _hookWorker() {
 				const pagePlaybackContext = _syncPagePlaybackContext({
 					broadcast: false,
 				});
+
 
 				const injectedCode = `
             (function() {

@@ -687,6 +687,9 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		});
 
 		if (recoverySource?.m3u8) {
+			if (info) {
+				info._UsedRecoveryFallback = recoverySource.label;
+			}
 			_log(
 				`[Recovery] Empty playlist - reusing ${recoverySource.label}`,
 				"warning",
