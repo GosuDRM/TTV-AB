@@ -64,22 +64,7 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 ## What's New
 
 ### v8.3.7
-- **Rollback to stable** — reverted v8.2.x–v8.3.x changes, keeping parallel token pre-fetch
-
-### v8.2.6
-- **Ad-stripped backup promotion** — Source-tier candidates with ads are stripped and promoted at full quality instead of being rejected, eliminating 360p quality drops on contaminated channels
-
-### v8.2.5
-- **Recovery segment injection** — when ad stripping removes all segments, cached live segments are injected to prevent black-screens and ad leakage on heavily-contaminated streams
-
-### v8.2.4
-- **No more 360p degradation** — `autoplay` restricted to absolute last resort; Source-tier types always tried first with parallel pre-fetch
-
-### v8.2.0
-- **Native-quality backup** — `site` player type now leads backup selection, keeping full stream quality during ad blocking
-
-### v8.3.7
-- **Parallel backup pre-fetch** — token + master playlist requests for all player types fire simultaneously, eliminating the sequential per-type delay that caused buffer drain during ad-blocking transitions
+- **Rollback to stable** — reverted v8.2.x–v8.3.x changes, keeping parallel token pre-fetch that fires backup tokens simultaneously across all player types
 
 ### v8.0.0
 - **Ad Spoofing toggle** — opt-in anti-adblock fingerprinting from the popup
