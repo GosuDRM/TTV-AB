@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.2.3] - 2026-05-18
+## [8.2.4] - 2026-05-18
 
 ### Fixed
 - Re-added `autoplay` (360p) as absolute last-resort backup when all
