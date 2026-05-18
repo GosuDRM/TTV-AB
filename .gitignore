@@ -40,3 +40,4 @@ tools/*
 .codex
 AGENTS.md
 .clawpatch/
+*.xpi
