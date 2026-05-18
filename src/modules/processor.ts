@@ -19,6 +19,7 @@ function _resetStreamAdState(info) {
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
 	info.CsaiOnlyThisBreak = false;
+	info._CsaiStripEmptyCount = 0;
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
@@ -699,6 +700,7 @@ function _createStreamInfo(context) {
 		IsMidroll: false,
 		IsStrippingAdSegments: false,
 		CsaiOnlyThisBreak: false,
+		_CsaiStripEmptyCount: 0,
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
@@ -1291,8 +1293,28 @@ async function _processM3U8(url, text, realFetch) {
 
 		if (info.CsaiOnlyThisBreak) {
 			const stripped = _stripAds(text, false, info);
-			if (stripped) return stripped;
-			return text;
+			const isRecovery =
+				stripped === info.LastCleanNativeM3U8 ||
+				stripped === info.LastCleanBackupM3U8;
+			// Escape hatch: when stripping keeps producing empty
+			// and recovery can't sustain, fall through to backup
+			// search to prevent ad leakage
+			if (isRecovery) {
+				info._CsaiStripEmptyCount = (info._CsaiStripEmptyCount || 0) + 1;
+			} else {
+				info._CsaiStripEmptyCount = 0;
+			}
+			if ((info._CsaiStripEmptyCount || 0) >= 4) {
+				info.CsaiOnlyThisBreak = false;
+				info._CsaiStripEmptyCount = 0;
+				_log(
+					"[Trace] CSAI recovery exhausted — falling through to backup search",
+					"warning",
+				);
+			} else {
+				if (stripped) return stripped;
+				return text;
+			}
 		}
 
 		if (
