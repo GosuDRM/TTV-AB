@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.4.4] - 2026-05-18
+
+### Fixed
+- Processed playlist Response objects now preserve original URL for compatibility with callers that inspect `response.url`
+- `_stripAds` recovery path now records fallback source on `info._UsedRecoveryFallback` for diagnostics
+
+## [8.4.3] - 2026-05-18
+
+### Fixed
+- Page-exit counter flush no longer creates empty localStorage entries when `pendingAdsDelta` is zero
+- Removed dead `navigator.sendBeacon` fallback on page exit — primary persistence handled by `chrome.runtime.sendMessage`
+
 ## [8.4.2] - 2026-05-18
 
 ### Fixed
