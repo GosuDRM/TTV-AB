@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.4.7] - 2026-05-18
+
+### Fixed
+- Worker `ResetPlaybackRecoveryState` handler now cleans up `StreamInfos` and `StreamInfosByUrl` for the previous channel on navigation — prevents stale cached backup playlists from surviving across channel visits
+- `_processM3U8` skips stale in-flight playlist fetches when synthetic info channel doesn't match current page context
+
 ## [8.4.6] - 2026-05-18
 
 ### Fixed
