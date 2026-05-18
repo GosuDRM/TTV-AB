@@ -2,6 +2,24 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.5.1] - 2026-05-19
+
+### Fixed
+- CSAI fast path now preloads backup in parallel — prevents 25s loading-circle stall when stripped playlist runs out of segments
+
+## [8.5.0] - 2026-05-19
+
+### Added
+- Low latency mode compatibility — buffer monitor, ad-end detection, and fix attempts now latency-aware
+
+### Changed
+- Buffer starvation thresholds relaxed in low latency: epsilon 0.35→0.08s, danger zone 1.0→0.3s
+- Ad-end minimum clean playlists scaled 4× in low latency (3→12) to compensate for faster polling
+- Seek-based buffer fixes suppressed in low latency (disrupts LL-HLS playback path)
+- Recovery segment injection now collects and replays partial segments
+- Fix repeat delay reduced from 8s to 2s in low latency mode
+- Recovery segment buffer expanded from 6 to 12 for shorter LL-HLS segments
+
 ## [8.4.8] - 2026-05-19
 
 ### Fixed
