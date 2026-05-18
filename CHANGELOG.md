@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.10] - 2026-05-18
+
+### Fixed
+- Ad-stripped promotion no longer serves a different type's recovery playlist
+  under the wrong label (e.g. autoplay's 360p content as "site"), preventing
+  player hangs when recovery mixes content from different player types
+
 ## [8.2.9] - 2026-05-18
 
 ### Fixed

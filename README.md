@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.2.9-purple)
+![Version](https://img.shields.io/badge/version-8.2.10-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -63,7 +63,7 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
-### v8.2.9
+### v8.2.10
 - **Persistent segment recovery** — live segments cached across stripping calls survive SSAI contamination, injecting pre-ad segments when backup playlists are 100% ad-marked
 
 ### v8.2.6
