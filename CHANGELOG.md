@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.5.4] - 2026-05-19
+
+### Changed
+- Reload cooldown increased from 15s to 30s to reduce reload frequency during multi-ad midroll pods
+- Removed autoplay (360p) from backup player types — prevented loading circles and failed transitions
+- Ad-recovery backoff counter now persists across continuation cycles instead of resetting on every ad-end
+
 ## [8.5.3] - 2026-05-19
 
 ### Changed
