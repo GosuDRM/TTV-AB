@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.5] - 2026-05-18
+
+### Fixed
+- Ad stripping recovery now injects cached live segments when all segments
+  are removed, preventing black-screen and fallback to original ad-ridden
+  playlist on fully-contaminated SSAI streams
+
 ## [8.2.4] - 2026-05-18
 
 ### Fixed

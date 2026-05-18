@@ -450,6 +450,8 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	let stripped = false;
 	let i = 0;
 	const strippedSegments = [];
+	const liveSegments: { extinf: string; url: string }[] = [];
+	const MAX_LIVE_RECOVERY = 6;
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
@@ -544,6 +546,13 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				lines[i] = "";
 				lines[i + 1] = "";
 				i++;
+			} else {
+				// Cache live segments for recovery injection when
+				// all other segments are ad-stripped
+				liveSegments.push({ extinf: line, url: lines[i + 1] });
+				if (liveSegments.length > MAX_LIVE_RECOVERY) {
+					liveSegments.shift();
+				}
 			}
 		}
 
@@ -674,6 +683,19 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				"warning",
 			);
 			return recoverySource.m3u8;
+		}
+
+		// Inject cached live segments to prevent black-screen / ad leakage
+		if (liveSegments.length > 0) {
+			_log(
+				`[Recovery] Empty playlist - injecting ${liveSegments.length} cached live segments`,
+				"warning",
+			);
+			for (let j = 0; j < liveSegments.length; j++) {
+				result.push(liveSegments[j].extinf);
+				result.push(liveSegments[j].url);
+			}
+			return result.join("\n");
 		}
 
 		_log(
