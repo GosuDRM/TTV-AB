@@ -70,12 +70,13 @@ All notable changes to TTV AB will be documented in this file.
   stream quality during ad blocking instead of falling through to lower-quality
   backups
 
-## [8.1.0] - 2026-05-18
+## [8.3.7] - 2026-05-18
 
 ### Changed
-- Backup stream token + master playlist fetches now run in parallel across all
-  player types, eliminating the sequential ~500ms-per-type token round-trip
-  that caused buffer drain during ad-blocking transitions
+- Rolled back CSAI sticky path, ad-stripped promotion, and recovery segment
+  injection changes from v8.2.x–v8.3.x
+- Kept parallel backup token+master pre-fetch from v8.1.0 — tokens fire
+  simultaneously across all player types eliminating sequential RTT delays
 
 ## [8.0.0] - 2026-05-18
 
