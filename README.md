@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.4.0-purple)
+![Version](https://img.shields.io/badge/version-8.4.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-7.6.7-yellow)
+![Chrome](https://img.shields.io/badge/chrome-8.4.2-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,6 +63,13 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
+### v8.4.2
+- **Worker fetch relay fix** — worker-to-main fetch relay now uses `self.fetch` instead of broken `window` reference
+- **GQL endpoint hardening** — URL hostname checked explicitly instead of substring match
+- **Concurrency guard** — concurrent playlist processing on same stream serialized to prevent backup state interleaving
+- **Visibility listener cleanup** — stale event listeners removed on page navigation
+- **Processor test suite** — 15 new tests covering ad state reset, backup cooldowns, and fallback promotion policy
+
 ### v8.4.0
 - **CSAI fast path** — skips backup search when all segments are live, stripping ads inline at full quality
 - **Recovery segment injection** — cached live segments with MEDIA-SEQUENCE prevent black-screens when all segments are stripped
@@ -76,16 +83,6 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ### v7.7.5
 - Fixed brief loading circle during silent backup hold from stale HLS segments
-
-### v7.7.4
-- Critical fix: worker context missing silent hold function causing ads to leak through
-
-### v7.7.3
-- Ad-completion spoofing to reduce anti-adblock fingerprinting (thanks [@ryanbr](https://github.com/ryanbr))
-
-### v7.7.2
-- Capped silent backup hold at 2 minutes to prevent indefinite low-res playback
-- Suppressed rapid backup type bouncing after player reload
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
