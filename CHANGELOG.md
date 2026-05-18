@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.5.3] - 2026-05-19
+
+### Changed
+- Ad spoofing now defaults to off — GQL ad-completion beacons no longer fire by default (user must opt in via popup toggle)
+
 ## [8.5.2] - 2026-05-19
 
 ### Fixed
