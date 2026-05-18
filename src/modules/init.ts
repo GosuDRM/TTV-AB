@@ -26,14 +26,6 @@ function _bootstrap() {
 	return true;
 }
 
-function _normalizeCounterValue(value) {
-	const numericValue =
-		typeof value === "string" && value.trim() !== "" ? Number(value) : value;
-	return Number.isFinite(numericValue)
-		? Math.max(0, Math.trunc(numericValue))
-		: 0;
-}
-
 function _getTrustedBridgeMessageDetail(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return null;
@@ -136,6 +128,14 @@ function _initToggleListener() {
 			enabled ? "success" : "warning",
 		);
 	});
+
+	_onInternalMessage("ttvab-toggle-debug", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (typeof safeDetail?.enabled !== "boolean") return;
+		if (safeDetail.enabled && typeof _enableDebugLogging === "function") {
+			_enableDebugLogging();
+		}
+	});
 }
 
 function _hookSpaNavigation() {
@@ -173,11 +173,11 @@ function _init() {
 		const pendingInitialAdsBlockedDelta =
 			__TTVAB_STATE__.HasResolvedAdsCountState === true
 				? 0
-				: _normalizeCounterValue(__TTVAB_STATE__.PendingInitialAdsBlockedDelta);
+				: _normalizeCount(__TTVAB_STATE__.PendingInitialAdsBlockedDelta);
 		__TTVAB_STATE__.HasResolvedAdsCountState = true;
 		__TTVAB_STATE__.PendingInitialAdsBlockedDelta = 0;
 		const restoredCount =
-			_normalizeCounterValue(safeDetail.count) + pendingInitialAdsBlockedDelta;
+			_normalizeCount(safeDetail.count) + pendingInitialAdsBlockedDelta;
 		if (_S.adsBlocked === restoredCount) return;
 		_S.adsBlocked = restoredCount;
 		_broadcastWorkers({ key: "UpdateAdsBlocked", value: _S.adsBlocked });
