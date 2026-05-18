@@ -1654,16 +1654,26 @@ async function _findBackupStream(
 	let fallbackType = null;
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
-	// this break get deprioritized so clean types get tried first.
+	// Deprioritize contaminated types so clean ones get tried first,
+	// but always keep autoplay (360p) as absolute last resort.
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
 		const clean: string[] = [];
 		const contam: string[] = [];
+		let autoplayType: string | null = null;
 		for (const t of playerTypes) {
-			if (info.LoggedBackupAdsByType.has(t)) contam.push(t);
-			else clean.push(t);
+			if (t === "autoplay") {
+				autoplayType = t;
+			} else if (info.LoggedBackupAdsByType.has(t)) {
+				contam.push(t);
+			} else {
+				clean.push(t);
+			}
 		}
 		if (contam.length > 0 && clean.length > 0) {
 			playerTypes = [...clean, ...contam];
+		}
+		if (autoplayType && !playerTypes.includes(autoplayType)) {
+			playerTypes.push(autoplayType);
 		}
 	}
 	const playerTypesLen = playerTypes.length;

@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.3] - 2026-05-18
+
+### Fixed
+- Re-added `autoplay` (360p) as absolute last-resort backup when all
+  Source-tier types are contaminated and stripping produces empty playlists,
+  preventing ad leakage on fully-contaminated channels
+- `autoplay` is now pinned to end of search order regardless of contamination
+  status, ensuring Source-tier types are always tried first
+
 ## [8.2.2] - 2026-05-18
 
 ### Changed
