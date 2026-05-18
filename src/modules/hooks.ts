@@ -669,7 +669,6 @@ function _hookWorker() {
 					broadcast: false,
 				});
 
-
 				const injectedCode = `
             (function() {
                 ${_getWasmJs.toString()}

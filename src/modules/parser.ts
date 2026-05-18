@@ -702,6 +702,9 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				? info._RecoverySegments
 				: null;
 		if (recoverySegs) {
+			if (info) {
+				info._UsedRecoveryFallback = "recovery-segments";
+			}
 			_log(
 				`[Recovery] Empty playlist - injecting ${recoverySegs.length} recovery segments`,
 				"warning",

@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.4.8] - 2026-05-19
+
+### Fixed
+- CSAI sticky path recovery loop: `_UsedRecoveryFallback` flag now set on recovery segment injection, CSAI path falls through to backup search when recovery was needed
+- Backup search now skips re-fetching tokens for ad-marked types (parallel pre-fetched results already cache the outcome)
+- Firefox: restored `_getWasmJs`+`eval(wasmSource)` worker loading (only approach compatible with Firefox blob workers)
+
 ## [8.4.7] - 2026-05-18
 
 ### Fixed
