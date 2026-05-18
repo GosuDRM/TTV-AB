@@ -62,7 +62,6 @@ const MINIFY_MAP = {
 	_hookWorkerFetch: "_$wf",
 	_syncStoredDeviceId: "_$sd",
 	_hookWorker: "_$hw",
-	_hookStorage: "_$hs",
 	_hookMainFetch: "_$mf",
 	_cleanWorker: "_$cw",
 	_getReinsert: "_$gr",
@@ -99,7 +98,6 @@ const MINIFY_MAP = {
 	_doPlayerTask: "_$dpt",
 	_monitorPlayerBuffering: "_$mpb",
 	_hookVisibilityState: "_$hvs",
-	_hookLocalStoragePreservation: "_$hlp",
 	_PLAYER_PREFERENCE_KEYS: "_$ppk",
 	_hasPlaylistAdMarkers: "_$hpa",
 	_syncStreamInfo: "_$si",
@@ -265,7 +263,10 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	const backgroundScript = manifest.background?.service_worker || manifest.background?.scripts?.[0] || null;
+	const backgroundScript =
+		manifest.background?.service_worker ||
+		manifest.background?.scripts?.[0] ||
+		null;
 	if (backgroundScript !== "src/scripts/background.js") {
 		throw new Error(
 			`Manifest background script must remain src/scripts/background.js: ${backgroundScript || "missing"}`,
