@@ -18,6 +18,7 @@ function _resetStreamAdState(info) {
 	info.ActiveBackupResolution = null;
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
+	info.CsaiOnlyThisBreak = false;
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
@@ -688,6 +689,9 @@ function _createStreamInfo(context) {
 		ActiveBackupResolution: null,
 		LastCleanNativeM3U8: null,
 		LastCleanNativePlaylistAt: 0,
+		_RecoverySegments: null,
+		_RecoveryStartSeq: undefined,
+		CsaiOnlyThisBreak: false,
 		LastCleanBackupM3U8: null,
 		LastCleanBackupPlayerType: null,
 		LastCleanBackupAt: 0,
@@ -1273,6 +1277,41 @@ async function _processM3U8(url, text, realFetch) {
 
 		const isCsaiOnly = hasAds && !hasExplicitKnownAdSegments;
 
+		// Check if all segments are live (CSAI) — if so, skip
+		// backup search and just strip ads from native playlist.
+		let hasNonLiveSegment = false;
+		if (isCsaiOnly && !info.CsaiOnlyThisBreak) {
+			const segLines = text.split("\n");
+			for (let si = 0; si < segLines.length; si++) {
+				if (
+					segLines[si]?.startsWith("#EXTINF") &&
+					!segLines[si].includes(",live")
+				) {
+					hasNonLiveSegment = true;
+					break;
+				}
+			}
+		}
+
+		if (
+			isCsaiOnly &&
+			!hasNonLiveSegment &&
+			!info.CsaiOnlyThisBreak &&
+			!info.IsUsingModifiedM3U8 &&
+			!info.LastCleanBackupM3U8
+		) {
+			info.CsaiOnlyThisBreak = true;
+			_log(
+				"[Trace] CSAI fast path — all segments live, skipping backup search",
+				"info",
+			);
+		}
+
+		if (info.CsaiOnlyThisBreak) {
+			const stripped = _stripAds(text, false, info);
+			return stripped || text;
+		}
+
 		if (
 			!info.LastCleanBackupM3U8 &&
 			!info._BackupSearchStartedAt &&
@@ -1654,23 +1693,25 @@ async function _findBackupStream(
 	let fallbackType = null;
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
-	// this break get deprioritized so clean types get tried first.
+	// Deprioritize contaminated types so clean ones get tried first.
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
 		const clean: string[] = [];
 		const contam: string[] = [];
 		for (const t of playerTypes) {
 			if (info.LoggedBackupAdsByType.has(t)) contam.push(t);
-			else clean.push(t);
+			else if (t !== "autoplay") clean.push(t);
 		}
 		if (contam.length > 0 && clean.length > 0) {
 			playerTypes = [...clean, ...contam];
 		}
+		// Always keep autoplay at the very end
+		if (!playerTypes.includes("autoplay")) {
+			playerTypes.push("autoplay");
+		}
 	}
-	const sourceTypes = ["embed", "popout", "site"];
-	const allSourceTypesContaminated =
-		info.LoggedBackupAdsByType &&
-		sourceTypes.every((t) => info.LoggedBackupAdsByType.has(t));
-	if (allSourceTypesContaminated && !playerTypes.includes("autoplay")) {
+	// Always append autoplay (360p) as last resort — Source-tier
+	// types tried first, autoplay only when all are contaminated.
+	if (!playerTypes.includes("autoplay")) {
 		playerTypes.push("autoplay");
 	}
 	const playerTypesLen = playerTypes.length;
