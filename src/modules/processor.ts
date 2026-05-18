@@ -1285,6 +1285,7 @@ async function _processM3U8(url, text, realFetch) {
 
 		if (
 			isCsaiOnly &&
+			info.IsMidroll &&
 			!info.IsUsingModifiedM3U8 &&
 			!info.CsaiOnlyThisBreak &&
 			!info._CsaiExhausted &&
@@ -1308,7 +1309,7 @@ async function _processM3U8(url, text, realFetch) {
 			} else {
 				info._CsaiStripEmptyCount = 0;
 			}
-			if ((info._CsaiStripEmptyCount || 0) >= 4) {
+			if ((info._CsaiStripEmptyCount || 0) >= 2) {
 				info.CsaiOnlyThisBreak = false;
 				info._CsaiExhausted = true;
 				info._CsaiStripEmptyCount = 0;
