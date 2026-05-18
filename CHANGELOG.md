@@ -2,12 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.2.1] - 2026-05-18
+## [8.2.2] - 2026-05-18
+
+### Changed
+- Removed `autoplay` (360p) from backup player types; when all Source-tier
+  types are contaminated the fallback path strips ads at full quality instead
+  of degrading to low-resolution autoplay
 
 ### Fixed
-- Backup stream selection now strips ads from playable candidates instead of
-  rejecting them, preventing quality degradation to 360p when Source-tier types
-  have ad markers but strippable segments
+- Reverted ad-stripped backup promotion (v8.2.1) which caused ad leakage due
+  to weaker stripping in the backup selection path
 
 ## [8.2.0] - 2026-05-18
 

@@ -1666,13 +1666,6 @@ async function _findBackupStream(
 			playerTypes = [...clean, ...contam];
 		}
 	}
-	const sourceTypes = ["embed", "popout", "site"];
-	const allSourceTypesContaminated =
-		info.LoggedBackupAdsByType &&
-		sourceTypes.every((t) => info.LoggedBackupAdsByType.has(t));
-	if (allSourceTypesContaminated && !playerTypes.includes("autoplay")) {
-		playerTypes.push("autoplay");
-	}
 	const playerTypesLen = playerTypes.length;
 	const isDoingMinimalRequests =
 		startIdx > 0 &&
@@ -1965,30 +1958,6 @@ async function _findBackupStream(
 									info.LastCleanBackupAt = Date.now();
 									_log(`[Trace] Selected (minimal): ${pt}`, "success");
 									break;
-								}
-
-								// Ad-stripped promotion: if the candidate is playable
-								// but has ads, strip them and use it at full quality
-								// instead of falling through to lower-quality backups.
-								if (!backupM3u8 && candidateIsPlayable && candidateHasAds) {
-									const stripped = _stripAds(m3u8, false, info, true);
-									if (
-										stripped &&
-										stripped !== m3u8 &&
-										_playlistHasMediaSegments(stripped)
-									) {
-										_clearBackupPlayerRetryCooldown(info, pt);
-										backupType = pt;
-										backupM3u8 = stripped;
-										info.LastCleanBackupM3U8 = stripped;
-										info.LastCleanBackupPlayerType = pt;
-										info.LastCleanBackupAt = Date.now();
-										info.IsStrippingAdSegments = true;
-										info.NumStrippedAdSegments =
-											(info.NumStrippedAdSegments || 0) + 1;
-										_log(`[Trace] Selected (ad-stripped): ${pt}`, "success");
-										break;
-									}
 								}
 								_markBackupPlayerRetryCooldown(
 									info,
