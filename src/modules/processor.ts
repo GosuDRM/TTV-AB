@@ -1343,7 +1343,7 @@ async function _processM3U8(url, text, realFetch) {
 
 			if (info.CsaiOnlyThisBreak) {
 				const stripped = _stripAds(text, false, info);
-				if (stripped && stripped !== text) {
+				if (stripped && stripped !== text && !info._UsedRecoveryFallback) {
 					return stripped;
 				}
 				info.CsaiOnlyThisBreak = false;
@@ -2057,6 +2057,8 @@ async function _findBackupStream(
 									}
 									info.LoggedBackupAdsByType.add(pt);
 									info.LoggedBackupAdsByType.add(realPt);
+									_log(`[Trace] Rejected ${pt} (ad-marked)`, "warning");
+									break;
 								}
 								if (isFullyCachedPlayerType) {
 									_log(
