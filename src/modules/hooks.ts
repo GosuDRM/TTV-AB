@@ -929,9 +929,9 @@ function _hookWorker() {
                 });
                 
                 _hookWorkerFetch();
+                eval(wasmSource);
             })();
 
-                eval(wasmSource);
             `;
 
 				const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
