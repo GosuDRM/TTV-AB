@@ -303,7 +303,12 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 
 	const elapsed = now - info.PendingAdEndAt;
 	const graceMs = _getResolvedAdEndGraceMs();
-	const minCleanPlaylists = _getResolvedAdEndMinCleanPlaylists();
+	const baseMinCleanPlaylists = _getResolvedAdEndMinCleanPlaylists();
+	const isLowLatency =
+		typeof _isLowLatencyEnabled === "function" && _isLowLatencyEnabled();
+	const minCleanPlaylists = isLowLatency
+		? Math.max(12, baseMinCleanPlaylists * 4)
+		: baseMinCleanPlaylists;
 	const maxWaitMs = _getResolvedAdEndMaxWaitMs();
 
 	const fastPathReady =
@@ -469,9 +474,21 @@ function _getStreamInfoForPlaylist(url) {
 				if (storedUrl.hostname === hostname) {
 					return info;
 				}
-			} catch {}
+			} catch {
+				if (_debugLogging)
+					_log(
+						"_getStreamInfoForPlaylist: error comparing stream info URL",
+						"debug",
+					);
+			}
 		}
-	} catch {}
+	} catch {
+		if (_debugLogging)
+			_log(
+				"_getStreamInfoForPlaylist: error looking up stream info by URL",
+				"debug",
+			);
+	}
 
 	const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
 	if (keys.length === 1) {
@@ -1190,7 +1207,13 @@ async function _processM3U8(url, text, realFetch) {
 							realFetch(mediaUrl, { signal: controller.signal })
 								.then((r) => r.blob())
 								.catch(() => {});
-						} catch {}
+						} catch {
+							if (_debugLogging)
+								_log(
+									"_findBackupStream: error in fire-and-forget backup stream request",
+									"debug",
+								);
+						}
 						break;
 					}
 				}
@@ -1336,9 +1359,20 @@ async function _processM3U8(url, text, realFetch) {
 					}
 				}
 				_log(
-					"[Trace] CSAI fast path — all segments live, skipping backup search",
+					"[Trace] CSAI fast path — returning stripped native, preloading backup in parallel",
 					"info",
 				);
+				if (!info._BackupSearchStartedAt && !info.IsUsingFallbackStream) {
+					const res = _resolvePlaybackResolutionForUrl(info, url);
+					info._BackupSearchStartedAt = Date.now();
+					_findBackupStream(info, realFetch, 0, res)
+						.then(() => {
+							info._BackupSearchStartedAt = 0;
+						})
+						.catch(() => {
+							info._BackupSearchStartedAt = 0;
+						});
+				}
 			}
 
 			if (info.CsaiOnlyThisBreak) {

@@ -108,7 +108,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		LastCleanNativePlaylistAt: 0,
 		BackupEncodingsM3U8Cache: Object.create(null),
 		BackupVariantUrls: new Set<string>(),
-		LogedBackupAdsByType: null,
+		LoggedBackupAdsByType: null,
 		Urls: Object.create(null),
 		ResolutionList: [],
 		ModifiedM3U8: null,
