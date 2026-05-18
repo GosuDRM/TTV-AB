@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.2.0-purple)
+![Version](https://img.shields.io/badge/version-8.2.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -62,6 +62,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## What's New
+
+### v8.2.1
+- **Ad-stripped backup promotion** — playable backup candidates with ads are now stripped and used at full quality instead of being rejected, eliminating 360p quality drops
 
 ### v8.2.0
 - **Native-quality backup** — `site` player type now leads backup selection, keeping full stream quality during ad blocking

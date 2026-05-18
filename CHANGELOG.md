@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.1] - 2026-05-18
+
+### Fixed
+- Backup stream selection now strips ads from playable candidates instead of
+  rejecting them, preventing quality degradation to 360p when Source-tier types
+  have ad markers but strippable segments
+
 ## [8.2.0] - 2026-05-18
 
 ### Changed
