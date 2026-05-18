@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.4.2-purple)
+![Version](https://img.shields.io/badge/version-8.4.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-8.4.2-yellow)
+![Chrome](https://img.shields.io/badge/chrome-8.4.4-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,6 +62,13 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## What's New
+
+### v8.4.4
+- **Recovery tracking** — `_stripAds` now records which recovery source was used for diagnostics
+- **Response URL preservation** — processed playlist responses retain original URL for compatibility
+
+### v8.4.3
+- **Page-exit counter flush** — no longer creates empty flush entries on navigation; removed dead `sendBeacon` fallback
 
 ### v8.4.2
 - **Worker fetch relay fix** — worker-to-main fetch relay now uses `self.fetch` instead of broken `window` reference
