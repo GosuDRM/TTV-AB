@@ -2,6 +2,25 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.4.2] - 2026-05-18
+
+### Fixed
+- Worker fetch relay now uses `self.fetch` instead of `window` — `window` is undefined in web workers, so the bridge relay was silently broken
+- GQL endpoint check uses exact hostname match instead of substring, preventing spoofed URL matching
+- Concurrent `_processM3U8` invocations on same stream are serialized to prevent backup state corruption during initial variant loading
+- Visibility event listeners cleaned up on `pagehide` to prevent stale listener accumulation
+- `_cleanWorker` logs a debug warning when Worker prototype properties are non-configurable instead of failing silently
+- Empty `updateWorkers` broadcasts skipped to avoid unnecessary worker message overhead
+
+### Added
+- Processor helper test suite — 15 tests for `_resetStreamAdState`, `_rememberLastAdEnd`, `_doesPlaybackContextMatchInfo`, `_getBackupPlayerRetryCooldownMs`, `_getFallbackPromotionPolicy`
+- Debug logging infrastructure — `_enableDebugLogging()` toggle via bridge message, gated debug log level
+
+### Changed
+- `_normalizeCounterValue` / `_normalizeBridgeCounterValue` consolidated into single `_normalizeCount` in state module
+- `unique_id` localStorage read now validates format (`/^[a-f0-9]{8,64}$/i`) before accepting as GQL device ID
+- Test setup loads `_C` constants from built `constants.js` instead of hardcoding — eliminates version drift
+
 ## [8.4.0] - 2026-05-18
 
 ### Added
