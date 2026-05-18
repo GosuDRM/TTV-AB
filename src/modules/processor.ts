@@ -18,6 +18,7 @@ function _resetStreamAdState(info) {
 	info.ActiveBackupResolution = null;
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
+	info.CsaiOnlyThisBreak = false;
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
@@ -697,6 +698,7 @@ function _createStreamInfo(context) {
 		LastCleanBackupAt: 0,
 		IsMidroll: false,
 		IsStrippingAdSegments: false,
+		CsaiOnlyThisBreak: false,
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
@@ -1276,6 +1278,22 @@ async function _processM3U8(url, text, realFetch) {
 		}
 
 		const isCsaiOnly = hasAds && !hasExplicitKnownAdSegments;
+
+		if (
+			isCsaiOnly &&
+			!info.IsUsingModifiedM3U8 &&
+			!info.CsaiOnlyThisBreak &&
+			!info.LastCleanBackupM3U8
+		) {
+			info.CsaiOnlyThisBreak = true;
+			_log("[Trace] CSAI-only — skipping backup search", "info");
+		}
+
+		if (info.CsaiOnlyThisBreak) {
+			const stripped = _stripAds(text, false, info);
+			if (stripped) return stripped;
+			return text;
+		}
 
 		if (
 			!info.LastCleanBackupM3U8 &&
