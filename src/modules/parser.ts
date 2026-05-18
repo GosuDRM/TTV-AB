@@ -661,7 +661,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 						? info.LastCleanNativeM3U8
 						: null,
 				at: Number(info?.LastCleanNativePlaylistAt) || 0,
-				maxAgeMs: 1500,
+				maxAgeMs: 8000,
 			},
 		];
 		const now = Date.now();
