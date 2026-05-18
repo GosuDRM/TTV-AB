@@ -450,8 +450,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	let stripped = false;
 	let i = 0;
 	const strippedSegments = [];
-	const liveSegments: { extinf: string; url: string }[] = [];
-	const MAX_LIVE_RECOVERY = 6;
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
@@ -546,13 +544,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				lines[i] = "";
 				lines[i + 1] = "";
 				i++;
-			} else {
-				// Cache live segments for recovery injection when
-				// all other segments are ad-stripped
-				liveSegments.push({ extinf: line, url: lines[i + 1] });
-				if (liveSegments.length > MAX_LIVE_RECOVERY) {
-					liveSegments.shift();
-				}
 			}
 		}
 
@@ -606,11 +597,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		}
 	}
 
-	// Persist live segments for cross-call recovery
-	if (liveSegments.length > 0 && info) {
-		info._LastLiveSegments = [...liveSegments];
-	}
-
 	info.IsStrippingAdSegments = stripped;
 
 	const now = Date.now();
@@ -661,7 +647,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 						? info.LastCleanNativeM3U8
 						: null,
 				at: Number(info?.LastCleanNativePlaylistAt) || 0,
-				maxAgeMs: 8000,
+				maxAgeMs: 1500,
 			},
 		];
 		const now = Date.now();
@@ -688,28 +674,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				"warning",
 			);
 			return recoverySource.m3u8;
-		}
-
-		// Inject cached live segments to prevent black-screen / ad leakage
-		const recoverySegs =
-			liveSegments.length > 0
-				? liveSegments
-				: Array.isArray(info?._LastLiveSegments) &&
-						info._LastLiveSegments.length > 0
-					? info._LastLiveSegments
-					: null;
-		if (recoverySegs) {
-			const source =
-				recoverySegs === liveSegments ? "current poll" : "previous poll";
-			_log(
-				`[Recovery] Empty playlist - injecting ${recoverySegs.length} live segments from ${source}`,
-				"warning",
-			);
-			for (let j = 0; j < recoverySegs.length; j++) {
-				result.push(recoverySegs[j].extinf);
-				result.push(recoverySegs[j].url);
-			}
-			return result.join("\n");
 		}
 
 		_log(

@@ -18,9 +18,6 @@ function _resetStreamAdState(info) {
 	info.ActiveBackupResolution = null;
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
-	info.CsaiOnlyThisBreak = false;
-	info._CsaiExhausted = false;
-	info._CsaiStripEmptyCount = 0;
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
@@ -269,10 +266,7 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 	);
 
 	pushUnique(preferredPlayerType);
-	// Don't prioritise autoplay — let Source-tier types re-probe
-	if (activePlayerType !== "autoplay") {
-		pushUnique(activePlayerType);
-	}
+	pushUnique(activePlayerType);
 	for (const playerType of configuredPlayerTypes.slice(safeStartIdx)) {
 		pushUnique(playerType);
 	}
@@ -694,15 +688,11 @@ function _createStreamInfo(context) {
 		ActiveBackupResolution: null,
 		LastCleanNativeM3U8: null,
 		LastCleanNativePlaylistAt: 0,
-		_LastLiveSegments: null,
 		LastCleanBackupM3U8: null,
 		LastCleanBackupPlayerType: null,
 		LastCleanBackupAt: 0,
 		IsMidroll: false,
 		IsStrippingAdSegments: false,
-		CsaiOnlyThisBreak: false,
-		_CsaiExhausted: false,
-		_CsaiStripEmptyCount: 0,
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
@@ -1284,46 +1274,6 @@ async function _processM3U8(url, text, realFetch) {
 		const isCsaiOnly = hasAds && !hasExplicitKnownAdSegments;
 
 		if (
-			isCsaiOnly &&
-			info.IsMidroll &&
-			!info.IsUsingModifiedM3U8 &&
-			!info.CsaiOnlyThisBreak &&
-			!info._CsaiExhausted &&
-			!info.LastCleanBackupM3U8
-		) {
-			info.CsaiOnlyThisBreak = true;
-			_log("[Trace] CSAI-only — skipping backup search", "info");
-		}
-
-		if (info.CsaiOnlyThisBreak) {
-			const stripped = _stripAds(text, false, info);
-			const isRecovery =
-				stripped === info.LastCleanNativeM3U8 ||
-				stripped === info.LastCleanBackupM3U8;
-			// Escape hatch: when stripping keeps producing empty
-			const isOriginalFallback = stripped === text;
-			// and recovery can't sustain, fall through to backup
-			// search to prevent ad leakage
-			if (isRecovery || isOriginalFallback) {
-				info._CsaiStripEmptyCount = (info._CsaiStripEmptyCount || 0) + 1;
-			} else {
-				info._CsaiStripEmptyCount = 0;
-			}
-			if ((info._CsaiStripEmptyCount || 0) >= 2) {
-				info.CsaiOnlyThisBreak = false;
-				info._CsaiExhausted = true;
-				info._CsaiStripEmptyCount = 0;
-				_log(
-					"[Trace] CSAI recovery exhausted — falling through to backup search",
-					"warning",
-				);
-			} else {
-				if (stripped) return stripped;
-				return text;
-			}
-		}
-
-		if (
 			!info.LastCleanBackupM3U8 &&
 			!info._BackupSearchStartedAt &&
 			!info.IsUsingFallbackStream
@@ -1704,27 +1654,24 @@ async function _findBackupStream(
 	let fallbackType = null;
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
-	// Deprioritize contaminated types so clean ones get tried first,
-	// but always keep autoplay (360p) as absolute last resort.
+	// this break get deprioritized so clean types get tried first.
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
 		const clean: string[] = [];
 		const contam: string[] = [];
-		let autoplayType: string | null = null;
 		for (const t of playerTypes) {
-			if (t === "autoplay") {
-				autoplayType = t;
-			} else if (info.LoggedBackupAdsByType.has(t)) {
-				contam.push(t);
-			} else {
-				clean.push(t);
-			}
+			if (info.LoggedBackupAdsByType.has(t)) contam.push(t);
+			else clean.push(t);
 		}
 		if (contam.length > 0 && clean.length > 0) {
 			playerTypes = [...clean, ...contam];
 		}
-		if (autoplayType && !playerTypes.includes(autoplayType)) {
-			playerTypes.push(autoplayType);
-		}
+	}
+	const sourceTypes = ["embed", "popout", "site"];
+	const allSourceTypesContaminated =
+		info.LoggedBackupAdsByType &&
+		sourceTypes.every((t) => info.LoggedBackupAdsByType.has(t));
+	if (allSourceTypesContaminated && !playerTypes.includes("autoplay")) {
+		playerTypes.push("autoplay");
 	}
 	const playerTypesLen = playerTypes.length;
 	const isDoingMinimalRequests =
@@ -2019,50 +1966,6 @@ async function _findBackupStream(
 									_log(`[Trace] Selected (minimal): ${pt}`, "success");
 									break;
 								}
-
-								// Source-tier ad-stripped promotion: strip ads from
-								// playable candidates instead of rejecting them,
-								// keeping full quality. autoplay skips this.
-								if (
-									!backupM3u8 &&
-									pt !== "autoplay" &&
-									candidateIsPlayable &&
-									candidateHasAds
-								) {
-									const stripped = _stripAds(m3u8, false, info);
-
-									// Don't promote if recovery reused a different
-									// type's backup (e.g. autoplay segments as site)
-									const recoveryFromDifferentType =
-										stripped &&
-										stripped === info.LastCleanBackupM3U8 &&
-										typeof info.LastCleanBackupPlayerType === "string" &&
-										info.LastCleanBackupPlayerType &&
-										info.LastCleanBackupPlayerType !== pt;
-									if (
-										stripped &&
-										!recoveryFromDifferentType &&
-										!(
-											stripped === info.LastCleanBackupM3U8 &&
-											Date.now() - (info.LastCleanBackupAt || 0) > 3000
-										) &&
-										_playlistHasMediaSegments(stripped) &&
-										!_hasExplicitAdMetadata(stripped)
-									) {
-										_clearBackupPlayerRetryCooldown(info, pt);
-										backupType = pt;
-										backupM3u8 = stripped;
-										info.LastCleanBackupM3U8 = stripped;
-										info.LastCleanBackupPlayerType = pt;
-										info.LastCleanBackupAt = Date.now();
-										info.IsStrippingAdSegments = true;
-										info.NumStrippedAdSegments =
-											(info.NumStrippedAdSegments || 0) + 1;
-										_log(`[Trace] Selected (ad-stripped): ${pt}`, "success");
-										break;
-									}
-								}
-
 								_markBackupPlayerRetryCooldown(
 									info,
 									pt,
