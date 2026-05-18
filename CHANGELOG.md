@@ -2,74 +2,6 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.3.6] - 2026-05-18
-
-### Fixed
-- Ad-stripped promotion no longer serves a different type's recovery playlist
-  under the wrong label (e.g. autoplay's 360p content as "site"), preventing
-  player hangs when recovery mixes content from different player types
-
-## [8.2.9] - 2026-05-18
-
-### Fixed
-- `autoplay` no longer locked as active backup priority after first selection;
-  Source-tier types now re-probed on every backup refresh during ad breaks
-
-## [8.2.8] - 2026-05-18
-
-### Fixed
-- Native playlist recovery age limit raised from 1.5s to 8s, allowing pre-ad
-  clean playlists to be reused during preroll backup stripping on fully
-  SSAI-contaminated channels
-
-## [8.2.7] - 2026-05-18
-
-### Fixed
-- Live segment recovery cache now persists across `_stripAds` calls, allowing
-  ad-stripped backup promotion to inject segments from before the ad break
-  when the current variant playlist is 100% SSAI-contaminated
-
-## [8.2.6] - 2026-05-18
-
-### Changed
-- Source-tier backup candidates with ad markers are now ad-stripped and
-  promoted at full quality instead of being rejected, preventing quality
-  degradation to 360p when only `autoplay` is ad-free
-
-## [8.2.5] - 2026-05-18
-
-### Fixed
-- Ad stripping recovery now injects cached live segments when all segments
-  are removed, preventing black-screen and fallback to original ad-ridden
-  playlist on fully-contaminated SSAI streams
-
-## [8.2.4] - 2026-05-18
-
-### Fixed
-- Re-added `autoplay` (360p) as absolute last-resort backup when all
-  Source-tier types are contaminated and stripping produces empty playlists,
-  preventing ad leakage on fully-contaminated channels
-- `autoplay` is now pinned to end of search order regardless of contamination
-  status, ensuring Source-tier types are always tried first
-
-## [8.2.2] - 2026-05-18
-
-### Changed
-- Removed `autoplay` (360p) from backup player types; when all Source-tier
-  types are contaminated the fallback path strips ads at full quality instead
-  of degrading to low-resolution autoplay
-
-### Fixed
-- Reverted ad-stripped backup promotion (v8.2.1) which caused ad leakage due
-  to weaker stripping in the backup selection path
-
-## [8.2.0] - 2026-05-18
-
-### Changed
-- `site` (native) added as first-choice backup player type, maintaining full
-  stream quality during ad blocking instead of falling through to lower-quality
-  backups
-
 ## [8.3.7] - 2026-05-18
 
 ### Changed
@@ -95,7 +27,6 @@ All notable changes to TTV AB will be documented in this file.
 - Backup playlist staleness: force-clears all backup cooldowns when cached playlist exceeds 8s, preventing expired-segment looping
 - Stream freezing/audio lag during ad transitions caused by blocked synchronous backup search and cooldown deadlock
 - Ad-completion spoofing beacons made user-controllable via popup toggle
-
 ## [7.7.5] - 2026-05-17
 
 ### Fixed
