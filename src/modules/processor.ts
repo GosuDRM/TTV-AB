@@ -291,6 +291,16 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 	if (!info?.IsShowingAd) return "ended";
 
 	const now = Date.now();
+	const adStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
+	const adElapsed = adStartedAt > 0 ? now - adStartedAt : 0;
+	const minAdDurationMs = Math.max(
+		4000,
+		Number(__TTVAB_STATE__?.AdEndMinAdDurationMs) || 8000,
+	);
+	if (adElapsed < minAdDurationMs) {
+		return "wait";
+	}
+
 	if (!info.PendingAdEndAt) {
 		info.PendingAdEndAt = now;
 		info.CleanPlaylistCount = 0;
