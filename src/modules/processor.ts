@@ -1984,8 +1984,18 @@ async function _findBackupStream(
 									candidateHasAds
 								) {
 									const stripped = _stripAds(m3u8, false, info);
+
+									// Don't promote if recovery reused a different
+									// type's backup (e.g. autoplay segments as site)
+									const recoveryFromDifferentType =
+										stripped &&
+										stripped === info.LastCleanBackupM3U8 &&
+										typeof info.LastCleanBackupPlayerType === "string" &&
+										info.LastCleanBackupPlayerType &&
+										info.LastCleanBackupPlayerType !== pt;
 									if (
 										stripped &&
+										!recoveryFromDifferentType &&
 										_playlistHasMediaSegments(stripped) &&
 										!_hasExplicitAdMetadata(stripped)
 									) {
