@@ -13,7 +13,12 @@ function _cleanWorker(W: WorkerConstructor): WorkerConstructor {
 					writable: true,
 					value: undefined,
 				});
-			} catch {}
+			} catch {
+				_log(
+					`Worker property "${key}" is non-configurable, cleanup skipped`,
+					"debug",
+				);
+			}
 		}
 	}
 	return CleanWorker as WorkerConstructor;
@@ -23,7 +28,11 @@ function _getReinsert(W) {
 	const src = W.toString();
 	const result = [];
 	for (const pattern of _S.reinsertPatterns) {
-		if (src.includes(pattern)) result.push(pattern);
+		const isIdentifier = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(pattern);
+		const matched = isIdentifier
+			? new RegExp(`\\b${pattern}\\b`).test(src)
+			: src.includes(pattern);
+		if (matched) result.push(pattern);
 	}
 	return result;
 }

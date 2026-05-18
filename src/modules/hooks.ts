@@ -127,6 +127,7 @@ function _hookWorkerFetch() {
 	const realFetch = fetch;
 	const EMPTY_SEGMENT_URL =
 		"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA";
+	let _cachedEmptySegmentResponse = null;
 
 	function _pruneStreamInfos() {
 		if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return;
@@ -339,7 +340,10 @@ function _hookWorkerFetch() {
 					includeCached: shouldBlockCachedAdSegments,
 				})
 			) {
-				return await realFetch(EMPTY_SEGMENT_URL);
+				if (!_cachedEmptySegmentResponse) {
+					_cachedEmptySegmentResponse = await realFetch(EMPTY_SEGMENT_URL);
+				}
+				return _cachedEmptySegmentResponse.clone();
 			}
 
 			const playbackContext = _getPlaybackContextFromUsherUrl(url);
@@ -452,9 +456,16 @@ function _hookWorkerFetch() {
 function _syncStoredDeviceId() {
 	try {
 		const deviceId = localStorage.getItem("unique_id");
-		if (typeof deviceId === "string" && deviceId) {
+		if (
+			typeof deviceId === "string" &&
+			deviceId &&
+			/^[a-f0-9]{8,64}$/i.test(deviceId)
+		) {
 			__TTVAB_STATE__.GQLDeviceID = deviceId;
 			return deviceId;
+		}
+		if (typeof deviceId === "string" && deviceId) {
+			_log("Rejected invalid unique_id format", "debug");
 		}
 	} catch (e) {
 		_log(`Device ID sync error: ${e.message}`, "warning");
@@ -961,7 +972,7 @@ function _hookWorker() {
 					);
 				};
 				const handleWorkerFetchRequest = async (fetchRequest) => {
-					const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
+					const rawFetch = self.fetch;
 					try {
 						const response = await rawFetch(
 							fetchRequest?.url,
@@ -1448,7 +1459,13 @@ function _hookWorker() {
 
 function _hookMainFetch() {
 	const realFetch = window.fetch;
-	window.__TTVAB_REAL_FETCH__ = realFetch;
+	const isGqlEndpointUrl = (urlStr) => {
+		try {
+			return new URL(urlStr).hostname === "gql.twitch.tv";
+		} catch {
+			return false;
+		}
+	};
 	const updateWorkers = (updates) => {
 		if (Array.isArray(updates)) {
 			for (const msg of updates) {
@@ -1595,7 +1612,7 @@ function _hookMainFetch() {
 		const [url, opts] = args;
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
-			if (urlStr.includes("gql.twitch.tv/gql")) {
+			if (isGqlEndpointUrl(urlStr)) {
 				_syncStoredDeviceId();
 				let nextArgs = args;
 				let headers = opts?.headers;
@@ -1702,7 +1719,9 @@ function _hookMainFetch() {
 						});
 					}
 
-					updateWorkers(updates);
+					if (updates.length > 0) {
+						updateWorkers(updates);
+					}
 				}
 				const response = await realFetch.apply(this, nextArgs);
 				if (!shouldSkipPlaybackAccessTokenState) {

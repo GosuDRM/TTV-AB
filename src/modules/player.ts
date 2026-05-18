@@ -2982,6 +2982,17 @@ function _hookVisibilityState() {
 		}
 		window.addEventListener("blur", queueVisibilityPlaybackGuard);
 
+		window.addEventListener("pagehide", () => {
+			for (const eventName of [
+				"visibilitychange",
+				"webkitvisibilitychange",
+				"mozvisibilitychange",
+			]) {
+				document.removeEventListener(eventName, queueVisibilityPlaybackGuard);
+			}
+			window.removeEventListener("blur", queueVisibilityPlaybackGuard);
+		});
+
 		window.__TTVAB_VISIBILITY_HARDENED__ = true;
 	}
 
