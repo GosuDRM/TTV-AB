@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.5.5] - 2026-05-19
+
+### Fixed
+- Autoplay was still being force-added to backup player types despite being removed from PLAYER_TYPES — caused loading circle hangs when Source types were exhausted
+
 ## [8.5.4] - 2026-05-19
 
 ### Changed
