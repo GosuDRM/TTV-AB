@@ -1300,9 +1300,10 @@ async function _processM3U8(url, text, realFetch) {
 				stripped === info.LastCleanNativeM3U8 ||
 				stripped === info.LastCleanBackupM3U8;
 			// Escape hatch: when stripping keeps producing empty
+			const isOriginalFallback = stripped === text;
 			// and recovery can't sustain, fall through to backup
 			// search to prevent ad leakage
-			if (isRecovery) {
+			if (isRecovery || isOriginalFallback) {
 				info._CsaiStripEmptyCount = (info._CsaiStripEmptyCount || 0) + 1;
 			} else {
 				info._CsaiStripEmptyCount = 0;
