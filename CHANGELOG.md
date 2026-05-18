@@ -2,6 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.0] - 2026-05-18
+
+### Changed
+- `site` (native) added as first-choice backup player type, maintaining full
+  stream quality during ad blocking instead of falling through to lower-quality
+  backups
+
+## [8.1.0] - 2026-05-18
+
+### Changed
+- Backup stream token + master playlist fetches now run in parallel across all
+  player types, eliminating the sequential ~500ms-per-type token round-trip
+  that caused buffer drain during ad-blocking transitions
+
 ## [8.0.0] - 2026-05-18
 
 ### Added
