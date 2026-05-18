@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.5.7] - 2026-05-19
+
+### Changed
+- Rolled back to v8.4.7 codebase due to regressions in 8.5.x series
+
 ## [8.5.6] - 2026-05-19
 
 ### Fixed
