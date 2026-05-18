@@ -1790,12 +1790,6 @@ async function _findBackupStream(
 		if (contam.length > 0 && clean.length > 0) {
 			playerTypes = [...clean, ...contam];
 		}
-		if (!playerTypes.includes("autoplay")) {
-			playerTypes.push("autoplay");
-		}
-	}
-	if (!playerTypes.includes("autoplay")) {
-		playerTypes.push("autoplay");
 	}
 	const playerTypesLen = playerTypes.length;
 	const isDoingMinimalRequests =
