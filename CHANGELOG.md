@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.9] - 2026-05-18
+
+### Fixed
+- `autoplay` no longer locked as active backup priority after first selection;
+  Source-tier types now re-probed on every backup refresh during ad breaks
+
 ## [8.2.8] - 2026-05-18
 
 ### Fixed

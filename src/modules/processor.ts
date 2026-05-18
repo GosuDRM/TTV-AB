@@ -266,7 +266,10 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 	);
 
 	pushUnique(preferredPlayerType);
-	pushUnique(activePlayerType);
+	// Don't prioritise autoplay — let Source-tier types re-probe
+	if (activePlayerType !== "autoplay") {
+		pushUnique(activePlayerType);
+	}
 	for (const playerType of configuredPlayerTypes.slice(safeStartIdx)) {
 		pushUnique(playerType);
 	}
