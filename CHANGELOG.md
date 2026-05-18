@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.5.6] - 2026-05-19
+
+### Fixed
+- Restored autoplay as last-resort backup — removing it caused fallback-to-original when all 4 Source types were ad-marked, playing real ads
+
 ## [8.5.5] - 2026-05-19
 
 ### Fixed
