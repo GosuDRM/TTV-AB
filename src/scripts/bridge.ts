@@ -815,19 +815,8 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 }
 
 function flushPendingCountersOnPageExit() {
+	if (pendingAdsDelta <= 0) return;
 	flushCounters({ fireAndForget: true });
-	try {
-		const payload = JSON.stringify({
-			type: "ttvab-persist-counters",
-			detail: {
-				adsDelta: pendingAdsDelta,
-				channelDeltas: pendingAdChannels,
-				flushId: createCounterFlushId(),
-				createdAt: Date.now(),
-			},
-		});
-		navigator.sendBeacon?.("/", payload);
-	} catch {}
 }
 
 chrome.storage.local.get(
