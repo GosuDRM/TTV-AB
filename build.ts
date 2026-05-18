@@ -72,6 +72,8 @@ const MINIFY_MAP = {
 	_showWelcome: "_$wc",
 	_showAchievementUnlocked: "_$au",
 	_initAchievementListener: "_$al",
+	_enableDebugLogging: "_$edl",
+	_debugLogging: "_$dl",
 
 	_bootstrap: "_$bs",
 	_initToggleListener: "_$tl",
@@ -886,9 +888,9 @@ function validateSharedDefinitions() {
 		"{",
 		"}",
 	);
-	const initNormalizeCount = extractLiteral(
-		initSource,
-		"function _normalizeCounterValue(",
+	const stateNormalizeCount = extractLiteral(
+		stateSource,
+		"function _normalizeCount(",
 		"{",
 		"}",
 	);
@@ -897,18 +899,18 @@ function validateSharedDefinitions() {
 		!popupFormatNumber ||
 		!popupUpdateTimeSaved ||
 		!backgroundNormalizeCount ||
-		!initNormalizeCount ||
+		!stateNormalizeCount ||
 		normalizeCodeSnippet(popupNormalizeCount) !==
 			normalizeCodeSnippet(backgroundNormalizeCount) ||
 		normalizeCodeSnippet(popupNormalizeCount).replace(
 			"function normalizeCount(value)",
-			"function _normalizeCounterValue(value)",
-		) !== normalizeCodeSnippet(initNormalizeCount) ||
+			"function _normalizeCount(value)",
+		) !== normalizeCodeSnippet(stateNormalizeCount) ||
 		!popupFormatNumber.includes("normalizeCount(num)") ||
 		!popupUpdateTimeSaved.includes("normalizeCount(adsCount)")
 	) {
 		throw new Error(
-			"Popup, background, and init counter normalizers are out of sync",
+			"Popup, background, and state counter normalizers are out of sync",
 		);
 	}
 
