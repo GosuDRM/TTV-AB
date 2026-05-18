@@ -766,7 +766,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 			const safeResult = (result || {}) as PlainObject;
 			const enabled = safeResult.ttvAdblockEnabled !== false;
-			const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
+			const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled === true;
 			toggle.checked = enabled;
 			adSpoofingToggle.checked = adSpoofingEnabled;
 			updateStatus(enabled, false);
@@ -787,7 +787,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			updateStatus(enabled, false);
 		}
 		if (changes.ttvAdSpoofingEnabled) {
-			const adSpoofingEnabled = changes.ttvAdSpoofingEnabled.newValue !== false;
+			const adSpoofingEnabled = changes.ttvAdSpoofingEnabled.newValue === true;
 			adSpoofingToggle.checked = adSpoofingEnabled;
 		}
 		if (changes.ttvAdsBlocked) {
