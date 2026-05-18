@@ -1277,8 +1277,6 @@ async function _processM3U8(url, text, realFetch) {
 
 		const isCsaiOnly = hasAds && !hasExplicitKnownAdSegments;
 
-		// Check if all segments are live (CSAI) — if so, skip
-		// backup search and just strip ads from native playlist.
 		let hasNonLiveSegment = false;
 		if (isCsaiOnly && !info.CsaiOnlyThisBreak) {
 			const segLines = text.split("\n");
@@ -1693,7 +1691,6 @@ async function _findBackupStream(
 	let fallbackType = null;
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
-	// Deprioritize contaminated types so clean ones get tried first.
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
 		const clean: string[] = [];
 		const contam: string[] = [];
@@ -1704,13 +1701,10 @@ async function _findBackupStream(
 		if (contam.length > 0 && clean.length > 0) {
 			playerTypes = [...clean, ...contam];
 		}
-		// Always keep autoplay at the very end
 		if (!playerTypes.includes("autoplay")) {
 			playerTypes.push("autoplay");
 		}
 	}
-	// Always append autoplay (360p) as last resort — Source-tier
-	// types tried first, autoplay only when all are contaminated.
 	if (!playerTypes.includes("autoplay")) {
 		playerTypes.push("autoplay");
 	}

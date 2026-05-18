@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.3.7-purple)
+![Version](https://img.shields.io/badge/version-8.4.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -63,8 +63,11 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
-### v8.3.7
-- **Rollback to stable** — reverted v8.2.x–v8.3.x changes, keeping parallel token pre-fetch that fires backup tokens simultaneously across all player types
+### v8.4.0
+- **CSAI fast path** — skips backup search when all segments are live, stripping ads inline at full quality
+- **Recovery segment injection** — cached live segments with MEDIA-SEQUENCE prevent black-screens when all segments are stripped
+- **Non-live SSAI stripping** — unrecognized ad segments caught and stripped when ad metadata present
+- **Source-tier priority** — `site`, `embed`, `popout`, `mobile_web` tried first with parallel pre-fetch; `autoplay` (360p) only as absolute last resort
 
 ### v8.0.0
 - **Ad Spoofing toggle** — opt-in anti-adblock fingerprinting from the popup
