@@ -19,6 +19,7 @@ function _resetStreamAdState(info) {
 	info.IsMidroll = false;
 	info.IsStrippingAdSegments = false;
 	info.CsaiOnlyThisBreak = false;
+	info._CsaiExhausted = false;
 	info._CsaiStripEmptyCount = 0;
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
@@ -700,6 +701,7 @@ function _createStreamInfo(context) {
 		IsMidroll: false,
 		IsStrippingAdSegments: false,
 		CsaiOnlyThisBreak: false,
+		_CsaiExhausted: false,
 		_CsaiStripEmptyCount: 0,
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
@@ -1285,6 +1287,7 @@ async function _processM3U8(url, text, realFetch) {
 			isCsaiOnly &&
 			!info.IsUsingModifiedM3U8 &&
 			!info.CsaiOnlyThisBreak &&
+			!info._CsaiExhausted &&
 			!info.LastCleanBackupM3U8
 		) {
 			info.CsaiOnlyThisBreak = true;
@@ -1306,6 +1309,7 @@ async function _processM3U8(url, text, realFetch) {
 			}
 			if ((info._CsaiStripEmptyCount || 0) >= 4) {
 				info.CsaiOnlyThisBreak = false;
+				info._CsaiExhausted = true;
 				info._CsaiStripEmptyCount = 0;
 				_log(
 					"[Trace] CSAI recovery exhausted — falling through to backup search",

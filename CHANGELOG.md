@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.3.3] - 2026-05-18
+## [8.3.4] - 2026-05-18
 
 ### Fixed
 - Ad-stripped promotion no longer serves a different type's recovery playlist
