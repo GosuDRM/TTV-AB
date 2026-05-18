@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.4.5] - 2026-05-18
+
+### Fixed
+- CSAI sticky flag now cleared when playlist has no ads, preventing subsequent non-CSAI breaks from bypassing backup search
+- CSAI fast path now increments ad-blocked counter and fires AdDetected on activation
+- Empty CSAI strip result falls through to backup search instead of returning original ad-laden playlist
+
 ## [8.4.4] - 2026-05-18
 
 ### Fixed
