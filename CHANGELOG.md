@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.8] - 2026-05-18
+
+### Fixed
+- Native playlist recovery age limit raised from 1.5s to 8s, allowing pre-ad
+  clean playlists to be reused during preroll backup stripping on fully
+  SSAI-contaminated channels
+
 ## [8.2.7] - 2026-05-18
 
 ### Fixed
