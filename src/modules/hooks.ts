@@ -893,6 +893,7 @@ function _hookWorker() {
                             __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
                             __TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
                             __TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
                             __TTVAB_STATE__.ShouldResumeAfterAd = false;
                             __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
                             __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
@@ -1119,6 +1120,7 @@ function _hookWorker() {
 									}
 									__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 									__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+									__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 									if (typeof _rememberPlayerPlaybackForAd === "function") {
 										_rememberPlayerPlaybackForAd(channel, mediaKey);
 									}
@@ -1304,7 +1306,6 @@ function _hookWorker() {
 								if (typeof _clearAdResumeIntent === "function") {
 									_clearAdResumeIntent();
 								}
-								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 								_log("Ad ended", "success");
 								const isHoldingBackup = data.holdingBackup === true;
 								if (
