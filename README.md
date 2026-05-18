@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.2.1-purple)
+![Version](https://img.shields.io/badge/version-8.2.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -63,8 +63,8 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## What's New
 
-### v8.2.1
-- **Ad-stripped backup promotion** — playable backup candidates with ads are now stripped and used at full quality instead of being rejected, eliminating 360p quality drops
+### v8.2.2
+- **No more 360p degradation** — `autoplay` removed from backup rotation; contaminated Source-tier streams are ad-stripped at full quality via the fallback path
 
 ### v8.2.0
 - **Native-quality backup** — `site` player type now leads backup selection, keeping full stream quality during ad blocking
