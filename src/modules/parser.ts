@@ -450,6 +450,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	let stripped = false;
 	let i = 0;
 	const strippedSegments = [];
+	const liveSegments: { extinf: string; url: string }[] = [];
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
@@ -519,7 +520,9 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 
 		if (shouldStrip && i < len - 1 && line?.startsWith("#EXTINF")) {
 			const isAdSegment =
-				forceStripAllSegments || _isKnownAdSegmentUrl(lines[i + 1]);
+				_isKnownAdSegmentUrl(lines[i + 1]) ||
+				(hasExplicitAdMetadata && !line.includes(",live")) ||
+				(forceStripAllSegments && !line.includes(",live"));
 
 			if (isAdSegment) {
 				const segmentUrl = lines[i + 1];
@@ -544,6 +547,9 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				lines[i] = "";
 				lines[i + 1] = "";
 				i++;
+			} else if (shouldStrip) {
+				liveSegments.push({ extinf: line, url: lines[i + 1] });
+				if (liveSegments.length > 6) liveSegments.shift();
 			}
 		}
 
@@ -594,6 +600,19 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 			) {
 				lines[i] = "";
 			}
+		}
+	}
+
+	// Persist live segments with MEDIA-SEQUENCE for recovery
+	if (liveSegments.length > 0 && info) {
+		info._RecoverySegments = liveSegments.slice(-6);
+		const seq = parseInt(
+			(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/) || [])[1],
+			10,
+		);
+		if (!Number.isNaN(seq)) {
+			info._RecoveryStartSeq =
+				seq + Math.max(0, liveSegments.length - info._RecoverySegments.length);
 		}
 	}
 
@@ -674,6 +693,32 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				"warning",
 			);
 			return recoverySource.m3u8;
+		}
+
+		// Inject cached recovery segments with correct MEDIA-SEQUENCE
+		const recoverySegs =
+			Array.isArray(info?._RecoverySegments) &&
+			info._RecoverySegments.length > 0
+				? info._RecoverySegments
+				: null;
+		if (recoverySegs) {
+			_log(
+				`[Recovery] Empty playlist - injecting ${recoverySegs.length} recovery segments`,
+				"warning",
+			);
+			if (info._RecoveryStartSeq !== undefined) {
+				for (let j = 0; j < result.length; j++) {
+					if (result[j]?.startsWith("#EXT-X-MEDIA-SEQUENCE:")) {
+						result[j] = `#EXT-X-MEDIA-SEQUENCE:${info._RecoveryStartSeq}`;
+						break;
+					}
+				}
+			}
+			for (let j = 0; j < recoverySegs.length; j++) {
+				result.push(recoverySegs[j].extinf);
+				result.push(recoverySegs[j].url);
+			}
+			return result.join("\n");
 		}
 
 		_log(
