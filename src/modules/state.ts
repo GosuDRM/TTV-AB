@@ -48,7 +48,7 @@ function _onInternalMessage(type, handler) {
 	});
 }
 
-function _normalizeBridgeCounterValue(value) {
+function _normalizeCount(value) {
 	const numericValue =
 		typeof value === "string" && value.trim() !== "" ? Number(value) : value;
 	return Number.isFinite(numericValue)
@@ -105,12 +105,12 @@ function _mergePendingBridgeCounterMessages(target, incoming) {
 		...targetDetail,
 		...incomingDetail,
 		count: Math.max(
-			_normalizeBridgeCounterValue(targetDetail.count),
-			_normalizeBridgeCounterValue(incomingDetail.count),
+			_normalizeCount(targetDetail.count),
+			_normalizeCount(incomingDetail.count),
 		),
 		delta:
-			_normalizeBridgeCounterValue(targetDetail.delta) +
-			_normalizeBridgeCounterValue(incomingDetail.delta),
+			_normalizeCount(targetDetail.delta) +
+			_normalizeCount(incomingDetail.delta),
 	};
 	return true;
 }
