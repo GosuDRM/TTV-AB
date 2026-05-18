@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.4.0] - 2026-05-18
+
+### Added
+- CSAI fast path — skips backup search when all segments are live, strips ads
+  inline from native playlist at full quality
+- Recovery segment injection with MEDIA-SEQUENCE — cached live segments
+  injected when stripping produces empty playlists
+- `site` and `mobile_web` backup player types
+
+### Changed
+- Non-live segments now stripped when ad metadata is present in playlist,
+  preventing unrecognized SSAI ad segments from slipping through
+- `autoplay` (360p) moved to end of backup rotation — Source-tier types
+  tried first, autoplay only when all are contaminated
+
+
 ## [8.3.7] - 2026-05-18
 
 ### Changed

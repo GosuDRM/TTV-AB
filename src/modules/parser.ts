@@ -603,7 +603,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		}
 	}
 
-	// Persist live segments with MEDIA-SEQUENCE for recovery
 	if (liveSegments.length > 0 && info) {
 		info._RecoverySegments = liveSegments.slice(-6);
 		const seq = parseInt(
@@ -695,7 +694,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 			return recoverySource.m3u8;
 		}
 
-		// Inject cached recovery segments with correct MEDIA-SEQUENCE
 		const recoverySegs =
 			Array.isArray(info?._RecoverySegments) &&
 			info._RecoverySegments.length > 0
