@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.5.6-purple)
+![Version](https://img.shields.io/badge/version-8.5.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-8.5.6-yellow)
+![Chrome](https://img.shields.io/badge/chrome-8.5.7-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,23 +63,8 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v8.5.6 — 2026-05-19
-- **Autoplay restored as last resort** — prevents fallback-to-original when all Source types are ad-marked
-
-### v8.5.5 — 2026-05-19
-- **Midroll reload loop broken** — 30s cooldown, autoplay removed, backoff persists across continuation cycles
-
-### v8.5.3 — 2026-05-19
-- **Ad spoofing off by default** — GQL ad-completion beacons no longer fire unless user enables
-
-### v8.5.2 — 2026-05-19
-- **Ad-end false positive fix** — 8s minimum ad duration prevents premature reload loop during midroll pods
-
-### v8.5.1 — 2026-05-19
-- **CSAI fast path fix** — backup now preloads in parallel to prevent loading-circle stall
-
-### v8.5.0 — 2026-05-19
-- **Low latency compatibility** — buffer monitor, ad-end detection, and fix attempts now latency-aware
+### v8.5.7 — 2026-05-19
+- **Rollback to v8.4.7** — stable codebase restored due to regressions in 8.5.x series
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
