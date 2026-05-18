@@ -688,6 +688,7 @@ function _createStreamInfo(context) {
 		ActiveBackupResolution: null,
 		LastCleanNativeM3U8: null,
 		LastCleanNativePlaylistAt: 0,
+		_LastLiveSegments: null,
 		LastCleanBackupM3U8: null,
 		LastCleanBackupPlayerType: null,
 		LastCleanBackupAt: 0,

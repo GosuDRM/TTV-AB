@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.2.7] - 2026-05-18
+
+### Fixed
+- Live segment recovery cache now persists across `_stripAds` calls, allowing
+  ad-stripped backup promotion to inject segments from before the ad break
+  when the current variant playlist is 100% SSAI-contaminated
+
 ## [8.2.6] - 2026-05-18
 
 ### Changed

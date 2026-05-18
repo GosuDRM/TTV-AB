@@ -606,6 +606,11 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		}
 	}
 
+	// Persist live segments for cross-call recovery
+	if (liveSegments.length > 0 && info) {
+		info._LastLiveSegments = [...liveSegments];
+	}
+
 	info.IsStrippingAdSegments = stripped;
 
 	const now = Date.now();
@@ -686,14 +691,23 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		}
 
 		// Inject cached live segments to prevent black-screen / ad leakage
-		if (liveSegments.length > 0) {
+		const recoverySegs =
+			liveSegments.length > 0
+				? liveSegments
+				: Array.isArray(info?._LastLiveSegments) &&
+						info._LastLiveSegments.length > 0
+					? info._LastLiveSegments
+					: null;
+		if (recoverySegs) {
+			const source =
+				recoverySegs === liveSegments ? "current poll" : "previous poll";
 			_log(
-				`[Recovery] Empty playlist - injecting ${liveSegments.length} cached live segments`,
+				`[Recovery] Empty playlist - injecting ${recoverySegs.length} live segments from ${source}`,
 				"warning",
 			);
-			for (let j = 0; j < liveSegments.length; j++) {
-				result.push(liveSegments[j].extinf);
-				result.push(liveSegments[j].url);
+			for (let j = 0; j < recoverySegs.length; j++) {
+				result.push(recoverySegs[j].extinf);
+				result.push(recoverySegs[j].url);
 			}
 			return result.join("\n");
 		}
