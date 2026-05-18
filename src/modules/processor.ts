@@ -900,6 +900,7 @@ async function _processM3U8(url, text, realFetch) {
 		const hasMediaSegments = _playlistHasMediaSegments(text);
 
 		if (!hasAds && hasMediaSegments && !info.IsShowingAd) {
+			info.CsaiOnlyThisBreak = false;
 			info.LastCleanNativeM3U8 = text;
 			info.LastCleanNativePlaylistAt = Date.now();
 			if (info.IsHoldingBackupAfterAd) {
@@ -1312,6 +1313,24 @@ async function _processM3U8(url, text, realFetch) {
 				!info.LastCleanBackupM3U8
 			) {
 				info.CsaiOnlyThisBreak = true;
+				if (!info.IsShowingAd) {
+					info.IsShowingAd = true;
+					info.VisibleAdStartedAt = Date.now();
+					__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
+					__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
+					_incrementAdsBlocked(info.ChannelName, info.MediaKey);
+					if (typeof self !== "undefined" && self.postMessage) {
+						_postWorkerBridgeMessage(
+							self,
+							_createPageScopedWorkerEvent({
+								key: "AdDetected",
+								channel: info.ChannelName,
+								mediaKey: info.MediaKey,
+								continued: false,
+							}),
+						);
+					}
+				}
 				_log(
 					"[Trace] CSAI fast path — all segments live, skipping backup search",
 					"info",
@@ -1320,7 +1339,12 @@ async function _processM3U8(url, text, realFetch) {
 
 			if (info.CsaiOnlyThisBreak) {
 				const stripped = _stripAds(text, false, info);
-				return stripped || text;
+				if (stripped && stripped !== text) {
+					return stripped;
+				}
+				info.CsaiOnlyThisBreak = false;
+				info.LastCleanNativeM3U8 = text;
+				info.LastCleanNativePlaylistAt = Date.now();
 			}
 
 			if (
