@@ -1996,6 +1996,10 @@ async function _findBackupStream(
 									if (
 										stripped &&
 										!recoveryFromDifferentType &&
+										!(
+											stripped === info.LastCleanBackupM3U8 &&
+											Date.now() - (info.LastCleanBackupAt || 0) > 3000
+										) &&
 										_playlistHasMediaSegments(stripped) &&
 										!_hasExplicitAdMetadata(stripped)
 									) {
