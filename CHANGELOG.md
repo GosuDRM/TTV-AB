@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.4.6] - 2026-05-18
+
+### Fixed
+- `_hasExplicitAdMetadata` now uses catch-all `EXT-X-DATERANGE:CLASS="twitch-` prefix instead of explicit `twitch-trigger`/`twitch-maf-ad` checks — covers any future Twitch DATERANGE ad marker formats
+
 ## [8.4.5] - 2026-05-18
 
 ### Fixed
