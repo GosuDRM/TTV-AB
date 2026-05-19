@@ -1277,16 +1277,20 @@ async function _processM3U8(url, text, realFetch) {
 			}
 
 			if (info.IsUsingFallbackStream) {
-				// Force-strip everything — we're already in "nothing works" mode.
-				// skipAutoForceStrip must be false so CSAI ad-marked segments get
-				// stripped even when they don't match known ad-URL patterns.
 				const stripped = _stripAds(text, false, info, false, true);
 				if (stripped !== text) {
 					return stripped;
 				}
-				// Nothing strippable — serve a filler instead of the raw ad-marked text.
-				// Build a minimal HLS playlist with silent segments to keep the
-				// player decoder running while we wait for the ad break to end.
+				info._FallbackFillerCount = (info._FallbackFillerCount || 0) + 1;
+				if (info._FallbackFillerCount > 5) {
+					_log(
+						`[Recovery] Exceeded ${info._FallbackFillerCount} filler cycles — triggering player reload`,
+						"warning",
+					);
+					info._FallbackFillerCount = 0;
+					info.LastPlayerReload = Date.now();
+					return null;
+				}
 				const emptyUrl =
 					(typeof __TTVAB_STATE__ !== "undefined" &&
 						__TTVAB_STATE__?.EmptySegmentUrl) ||
