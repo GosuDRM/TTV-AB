@@ -741,9 +741,27 @@ function _stripAds(
 		}
 
 		_log(
-			"[Recovery] Empty playlist after stripping ads; falling back to original playlist to prevent stall",
+			"[Recovery] Empty playlist after stripping ads; serving empty filler to prevent stall",
 			"warning",
 		);
+		// Build a minimal HLS playlist with just headers — no ad segments.
+		// The player will buffer and retry, buying time for backup search.
+		const headerLines: string[] = [];
+		for (const line of lines) {
+			if (
+				line.startsWith("#EXTM3U") ||
+				line.startsWith("#EXT-X-VERSION") ||
+				line.startsWith("#EXT-X-TARGETDURATION") ||
+				line.startsWith("#EXT-X-MEDIA-SEQUENCE") ||
+				line.startsWith("#EXT-X-PLAYLIST-TYPE") ||
+				line.startsWith("#EXT-X-ALLOW-CACHE")
+			) {
+				headerLines.push(line);
+			}
+		}
+		if (headerLines.length > 0) {
+			return headerLines.join("\n") + "\n";
+		}
 		return text;
 	}
 
