@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.6.3-purple)
+![Version](https://img.shields.io/badge/version-8.6.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -63,7 +63,7 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v8.6.3 — 2026-05-19
+### v8.6.8 — 2026-05-19
 - **Fallback segment preservation** — ad metadata stripped, segments kept intact when all backups exhausted
 - **Autoplay removed** — no more hangs from force-add conflicts
 
