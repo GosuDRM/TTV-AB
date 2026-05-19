@@ -133,6 +133,9 @@ function _hookWorkerFetch() {
 	if (typeof __TTVAB_STATE__ !== "undefined" && __TTVAB_STATE__) {
 		__TTVAB_STATE__.EmptySegmentUrl = EMPTY_SEGMENT_URL;
 	}
+	if (typeof __TTVAB_STATE__ !== "undefined" && __TTVAB_STATE__) {
+		__TTVAB_STATE__.EmptySegmentUrl = EMPTY_SEGMENT_URL;
+	}
 	let _cachedEmptySegmentResponse = null;
 
 	function _pruneStreamInfos() {

@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.6.8] - 2026-05-19
+## [8.6.9] - 2026-05-19
 
 ### Fixed
 - CSAI ad leaks: force-strip in fallback path, silent filler when all types ad-marked

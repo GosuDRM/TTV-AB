@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.6.8-purple)
+![Version](https://img.shields.io/badge/version-8.6.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-8.6.1-yellow)
+![Chrome](https://img.shields.io/badge/chrome-8.6.9-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,9 +63,14 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v8.6.8 — 2026-05-19
-- **Fallback segment preservation** — ad metadata stripped, segments kept intact when all backups exhausted
-- **Autoplay removed** — no more hangs from force-add conflicts
+### v8.6.9 — 2026-05-19
+- **Autoplay (360p) backup** — added as last-resort player type when all Source-tier types are ad-marked
+- **Fallback filler cycle cap** — prevents Error #2000 crash from indefinite silent filler loops
+- **Force-strip CSAI segments** — fallback path no longer leaks ad-marked content
+- **Silent video filler** — empty playlists serve valid MP4 segments instead of bare headers
+- **Stripped playlist padding** — prevents buffer underrun while backup loads
+
+### v8.6.1 — 2026-05-19
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
