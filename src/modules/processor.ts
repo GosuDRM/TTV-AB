@@ -1277,7 +1277,7 @@ async function _processM3U8(url, text, realFetch) {
 			}
 
 			if (info.IsUsingFallbackStream) {
-				const stripped = _stripAds(text, false, info, true);
+				const stripped = _stripAds(text, false, info, true, true);
 				if (stripped !== text && !info._UsedRecoveryFallback) {
 					return stripped;
 				}
@@ -1391,7 +1391,15 @@ async function _processM3U8(url, text, realFetch) {
 			if (info.CsaiOnlyThisBreak) {
 				const stripped = _stripAds(text, false, info);
 				if (stripped && stripped !== text) {
-					return stripped;
+					const segs = stripped
+						.split("\n")
+						.filter(
+							(l) =>
+								l && (l.startsWith("#EXTINF") || l.startsWith("#EXT-X-PART:")),
+						);
+					if (segs.length >= 3) {
+						return stripped;
+					}
 				}
 				info.CsaiOnlyThisBreak = false;
 				info.LastCleanNativeM3U8 = text;
@@ -1469,7 +1477,7 @@ async function _processM3U8(url, text, realFetch) {
 
 			if (info._BackupSearchStartedAt) {
 				if (isCsaiOnly) {
-					const stripped = _stripAds(text, false, info, true);
+					const stripped = _stripAds(text, false, info, true, true);
 					if (stripped && stripped !== text) return stripped;
 				}
 				if (info.LastCleanBackupM3U8) return info.LastCleanBackupM3U8;
