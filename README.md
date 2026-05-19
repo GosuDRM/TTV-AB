@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.7.1-purple)
+![Version](https://img.shields.io/badge/version-8.8.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -63,14 +63,14 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v8.7.1 — 2026-05-19
-- **Autoplay (360p) backup** — added as last-resort player type when all Source-tier types are ad-marked
-- **Fallback filler cycle cap** — prevents Error #2000 crash from indefinite silent filler loops
-- **Force-strip CSAI segments** — fallback path no longer leaks ad-marked content
-- **Silent video filler** — empty playlists serve valid MP4 segments instead of bare headers
-- **Stripped playlist padding** — prevents buffer underrun while backup loads
-
-### v8.6.1 — 2026-05-19
+### v8.8.0 — 2026-05-19
+- Ad spoofing now enabled by default — reduces anti-adblock fingerprinting
+- Worker fetch timeouts prevent hangs on slow Twitch endpoints
+- Cached clean playlists served during backup search — no more ad leaks
+- In-memory empty segments eliminate network round-trip during ad replacement
+- DISCONTINUITY markers and 6× short silent segments for smoother decoder recovery
+- Build auto-generates .xpi and source .zip
+- Faster low-latency post-ad recovery, reduced recovery probe overhead
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
