@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.8.2-purple)
+![Version](https://img.shields.io/badge/version-8.8.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-8.8.2-yellow)
+![Chrome](https://img.shields.io/badge/chrome-8.8.3-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,11 +63,11 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v8.8.2 — 2026-05-20
-- Stripped playlists now pass through even when identical to source — prevents false rejections
-- Live-segment lockout cleared after empty playlist to allow recovery on next poll
-- Fallback backup streams no longer mark the stream as using backup
-- Fixed debug logging reference error where worker blob referenced an uninitialized variable — caused media playlist processing to fail
+### v8.8.3 — 2026-05-20
+- Fixed CSAI Fast Path stuck state when exiting early due to segment counts
+- Fixed fallback backup stream searching loop on active playlist updates
+- Fixed ad leakage by enforcing refreshed backup verification during midrolls
+- Optimized HLS playlist parsing performance by passing pre-split arrays directly
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

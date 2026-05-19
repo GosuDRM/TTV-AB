@@ -2,13 +2,23 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.8.2] - 2026-05-20
+## [8.8.3] - 2026-05-20
+
+### Fixed
+- CSAI Fast Path sticky loop: properly reset the CSAI flag when exiting early due to empty or too short playlists, preventing player buffer freezes.
+- Fallback backup stream searching: reset the fallback filler count whenever a stripped playlist contains valid segments, preventing infinite token re-fetch loop locks.
+- Midroll ad leakage: require refreshed backup stream playlists to be clean and verified, successfully blocking late-entering midrolls on stream switches.
+- Vitest configuration type safety: standardized the mock AdSegmentCache in setup files to Map matching the production environment.
+
+### Changed
+- Playlist parsing performance: optimized HLS segment cache validation by passing pre-split arrays directly to avoid redundant split overhead on large VOD files.
+
+## [8.8.1] - 2026-05-20
 
 ### Fixed
 - Stripped playlists now pass through even when identical to source — removes an unnecessary identity guard that rejected valid stripped results
 - Live-segment lockout cleared when stripping produces empty playlist — allows next poll to retry instead of getting stuck
 - Fallback backup streams no longer mark the stream as using backup — prevents recovery confusion
-- Fixed debug logging reference error where worker blob referenced an uninitialized variable — caused media playlist processing to fail
 
 ## [8.8.0] - 2026-05-19
 
@@ -29,7 +39,7 @@ All notable changes to TTV AB will be documented in this file.
 - Low-latency recovery min clean playlists reduced (12→6) for faster post-ad resume
 - Verbose token error payloads removed from backup search logs
 
-## [8.7.1] - 2026-05-19
+## [8.7.1]
 
 ### Added
 - "autoplay" (360p) player type as last-resort backup when all Source types are ad-marked
@@ -45,7 +55,7 @@ All notable changes to TTV AB will be documented in this file.
 ### Changed
 - Removed parallel backup preload, reverted to serial search
 
-## [8.6.1]## [8.6.1] - 2026-05-19
+## [8.6.1] - 2026-05-19
 
 ### Fixed
 - Fallback stripping now preserves segments — only ad metadata removed when all Source types exhausted
