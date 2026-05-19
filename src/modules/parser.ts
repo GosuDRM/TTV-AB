@@ -458,7 +458,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
 		(!skipAutoForceStrip && hasExplicitAdMetadata && !hasKnownAdSegments);
-	const maxRecoverySegments = forceStripAllSegments ? len : 6;
+	const maxRecoverySegments = forceStripAllSegments ? len : 12;
 
 	let adSegmentCount = 0;
 	let _liveSegmentCount = 0;
@@ -548,7 +548,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				i++;
 			} else if (shouldStrip) {
 				liveSegments.push({ extinf: line, url: lines[i + 1] });
-				if (liveSegments.length > 6) liveSegments.shift();
+				if (liveSegments.length > 12) liveSegments.shift();
 			}
 		}
 
@@ -577,6 +577,10 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				stripped = true;
 				lines[i] = "";
 				continue;
+			}
+			if (shouldStrip && _isMediaPartLine(line)) {
+				liveSegments.push({ extinf: line, url: taggedUri || line });
+				if (liveSegments.length > 12) liveSegments.shift();
 			}
 		}
 
@@ -715,8 +719,13 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 				}
 			}
 			for (let j = 0; j < recoverySegs.length; j++) {
-				result.push(recoverySegs[j].extinf);
-				result.push(recoverySegs[j].url);
+				const seg = recoverySegs[j];
+				if (seg.extinf?.startsWith("#EXT-X-PART:")) {
+					result.push(seg.extinf);
+				} else {
+					result.push(seg.extinf);
+					result.push(seg.url);
+				}
 			}
 			return result.join("\n");
 		}
