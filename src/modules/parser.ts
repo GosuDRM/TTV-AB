@@ -442,7 +442,13 @@ function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
 		.join("\n");
 }
 
-function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
+function _stripAds(
+	text,
+	stripAll,
+	info,
+	skipAutoForceStrip = false,
+	skipSegmentCache = false,
+) {
 	const lines = text.split("\n");
 	const len = lines.length;
 	const adUrl = "https://twitch.tv";
@@ -453,7 +459,9 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
-	const hasKnownAdSegments = _playlistHasKnownAdSegments(text);
+	const hasKnownAdSegments = _playlistHasKnownAdSegments(text, {
+		includeCached: !skipSegmentCache,
+	});
 	const forceStripAllSegments =
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
@@ -519,7 +527,9 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 
 		if (shouldStrip && i < len - 1 && line?.startsWith("#EXTINF")) {
 			const isAdSegment =
-				_isKnownAdSegmentUrl(lines[i + 1]) ||
+				_isKnownAdSegmentUrl(lines[i + 1], {
+					includeCached: !skipSegmentCache,
+				}) ||
 				(hasExplicitAdMetadata && !line.includes(",live")) ||
 				(forceStripAllSegments && !line.includes(",live"));
 

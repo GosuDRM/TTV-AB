@@ -2,6 +2,39 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.6.1] - 2026-05-19
+
+### Fixed
+- Fallback stripping now preserves segments — only ad metadata removed when all Source types exhausted
+- Force-add autoplay removed from backup rotation
+
+### Changed
+- Autoplay removed from main rotation and pre-fetch
+
+## [8.5.9] - 2026-05-19
+
+### Fixed
+- Fallback mode now returns unstripped backup stream when stripping produces empty — prevents ad leak from original playlist
+- Removed autoplay escape hatch — caused 44s hangs
+
+## [8.5.8] - 2026-05-19
+
+### Fixed
+- Worker crash: debug-logging variable now declared in worker scope
+- Worker fetch error handler hardened: falls back to ad-strip on processing failure
+- CSAI fast path now preloads backup in parallel to prevent loading-circle stall
+- Ad-end false positive during midroll pods — enforces 8s minimum ad duration
+
+### Changed
+- Autoplay removed from main backup rotation, added as conditional escape hatch
+- Ad spoofing now defaults to off
+- Reload cooldown increased from 15s to 30s
+- Ad-recovery backoff counter persists across continuation cycles
+- Worker injection code memoized — function bodies built once per session
+- Debug logging added to critical silent catch blocks and React fiber diagnostics
+- StreamInfo stale TTL eviction (30-minute inactivity)
+- Worker watchdog interval cleared on pagehide
+
 ## [8.5.7] - 2026-05-19
 
 ### Changed
