@@ -133,15 +133,59 @@ function _syncPreferredQualityGroup(playerCore = null) {
 	return true;
 }
 
+function _isLowLatencyEnabled(playerCore = null) {
+	try {
+		if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__)
+			return false;
+		const playerState =
+			typeof playerCore?.state?.lowLatencyModeEnabled === "boolean"
+				? playerCore.state.lowLatencyModeEnabled
+				: null;
+		if (typeof playerState === "boolean") return playerState;
+		const stored = localStorage.getItem("lowLatencyModeEnabled");
+		if (stored === "true") return true;
+		if (stored === "false") return false;
+	} catch {}
+	return false;
+}
+
+function _getLowLatencySafeEpsilon() {
+	return _isLowLatencyEnabled() ? 0.08 : _PLAYER_BUFFER_LIVE_EDGE_EPSILON;
+}
+
+function _getLowLatencyDangerZone() {
+	return _isLowLatencyEnabled()
+		? 0.3
+		: Number(__TTVAB_STATE__?.PlayerBufferingDangerZone) || 1;
+}
+
+function _getLowLatencyMinRepeatDelay() {
+	return _isLowLatencyEnabled()
+		? 2000
+		: Number(__TTVAB_STATE__?.PlayerBufferingMinRepeatDelay) || 8000;
+}
+
 function _getPlayerCore(player) {
 	return player?.playerInstance?.core || player?.core || null;
 }
 
+let _loggedReactRootSearchFailure = false;
+
 function _findReactRoot() {
 	const rootNode = document.querySelector("#root");
-	if (!rootNode) return null;
+	if (!rootNode) {
+		if (_debugLogging && !_loggedReactRootSearchFailure) {
+			_loggedReactRootSearchFailure = true;
+			_log(
+				"React root node #root not found in DOM — player features unavailable",
+				"debug",
+			);
+		}
+		return null;
+	}
 
 	if (rootNode._reactRootContainer?._internalRoot?.current) {
+		_loggedReactRootSearchFailure = false;
 		return rootNode._reactRootContainer._internalRoot.current;
 	}
 
@@ -149,9 +193,17 @@ function _findReactRoot() {
 		x.startsWith("__reactContainer"),
 	);
 	if (containerName) {
+		_loggedReactRootSearchFailure = false;
 		return rootNode[containerName];
 	}
 
+	if (_debugLogging && !_loggedReactRootSearchFailure) {
+		_loggedReactRootSearchFailure = true;
+		_log(
+			"React fiber root not found on #root — possible React upgrade",
+			"debug",
+		);
+	}
 	return null;
 }
 
@@ -204,7 +256,7 @@ function _getPlayerAndState() {
 function _resetPlayerBufferMonitorState(cooldownMs = 0) {
 	const minRepeatDelay =
 		typeof __TTVAB_STATE__ !== "undefined" && __TTVAB_STATE__
-			? Number(__TTVAB_STATE__.PlayerBufferingMinRepeatDelay) || 0
+			? Number(_getLowLatencyMinRepeatDelay()) || 0
 			: 0;
 	const requestedCooldownMs = Number.isFinite(cooldownMs)
 		? Math.max(0, cooldownMs)
@@ -260,8 +312,8 @@ function _readPlayerBufferTelemetry(player, playerCore = null) {
 	const liveEdgeDistance = Math.max(0, liveEdge - currentTime);
 	const readyState = Number(video?.readyState) || 0;
 	const hasFutureData =
-		bufferDuration > _PLAYER_BUFFER_LIVE_EDGE_EPSILON ||
-		liveEdgeDistance > _PLAYER_BUFFER_LIVE_EDGE_EPSILON ||
+		bufferDuration > _getLowLatencySafeEpsilon() ||
+		liveEdgeDistance > _getLowLatencySafeEpsilon() ||
 		readyState >= 3;
 
 	return {
@@ -2789,7 +2841,7 @@ function _monitorPlayerBuffering() {
 					!_isPlayerPaused(player, playerCore) &&
 					!player.getHTMLVideoElement()?.ended &&
 					_PlayerBufferState.lastFixTime <=
-						Date.now() - __TTVAB_STATE__.PlayerBufferingMinRepeatDelay
+						Date.now() - _getLowLatencyMinRepeatDelay()
 				) {
 					const {
 						video,
@@ -2810,7 +2862,7 @@ function _monitorPlayerBuffering() {
 						position !== 0 || bufferedPosition !== 0 || bufferDuration !== 0;
 					const isLikelyLiveEdgeStarvation =
 						hasPlaybackState &&
-						bufferDuration < __TTVAB_STATE__.PlayerBufferingDangerZone &&
+						bufferDuration < _getLowLatencyDangerZone() &&
 						isStablePosition &&
 						isStableBufferedPosition &&
 						isBufferRegressing &&
@@ -2869,7 +2921,11 @@ function _monitorPlayerBuffering() {
 								"warning",
 							);
 							_PlayerBufferState.fixAttempts++;
-							if (video && video.buffered.length > 1) {
+							if (
+								!_isLowLatencyEnabled() &&
+								video &&
+								video.buffered.length > 1
+							) {
 								for (let bi = 0; bi < video.buffered.length; bi++) {
 									if (video.buffered.start(bi) > video.currentTime + 0.5) {
 										_log(
