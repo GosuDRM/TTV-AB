@@ -1425,25 +1425,15 @@ async function _processM3U8(url, text, realFetch) {
 								l && (l.startsWith("#EXTINF") || l.startsWith("#EXT-X-PART:")),
 						);
 					if (segs.length >= 3) {
-						// Pad short stripped playlists with duplicate segments to extend
-						// the buffer window.  Without padding, segments from the native
-						// stream may expire before the backup search completes, causing
-						// a loading stall.
 						let padded = stripped;
 						if (segs.length < 8) {
-							const lines = stripped.split("\n");
-							const padLines: string[] = [];
-							for (
-								let k = lines.length - 1;
-								k >= 0 && padLines.length < 2;
-								k--
-							) {
-								if (lines[k] && !lines[k].startsWith("#")) {
-									padLines.unshift(lines[k]);
-								}
-							}
-							if (padLines.length > 0) {
-								padded += `\n#EXTINF:2.000,pad\n${padLines.join("\n")}`;
+							const emptyUrl =
+								(typeof __TTVAB_STATE__ !== "undefined" &&
+									__TTVAB_STATE__?.EmptySegmentUrl) ||
+								"";
+							if (emptyUrl) {
+								padded += `\n#EXTINF:2.000,pad\n${emptyUrl}`;
+								padded += `\n#EXTINF:2.000,pad\n${emptyUrl}`;
 							}
 						}
 						return padded;

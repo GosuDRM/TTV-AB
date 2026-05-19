@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.7.0] - 2026-05-19
+## [8.7.1] - 2026-05-19
 
 ### Added
 - "autoplay" (360p) player type as last-resort backup when all Source types are ad-marked
