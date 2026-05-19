@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.6.3] - 2026-05-19
+
+### Fixed
+- Misleading "Token relay error" log renamed to "Spoof relay error"
+- GQL ad spoofing timeout increased from 1500ms to 5000ms
+
 ## [8.6.2] - 2026-05-19
 
 ### Fixed
