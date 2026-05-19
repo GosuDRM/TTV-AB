@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.6.1] - 2026-05-19
+## [8.6.2] - 2026-05-19
 
 ### Fixed
 - Fallback stripping now preserves segments — only ad metadata removed when all Source types exhausted
