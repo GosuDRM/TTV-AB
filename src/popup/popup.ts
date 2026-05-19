@@ -766,7 +766,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 			const safeResult = (result || {}) as PlainObject;
 			const enabled = safeResult.ttvAdblockEnabled !== false;
-			const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled === true;
+			const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
 			toggle.checked = enabled;
 			adSpoofingToggle.checked = adSpoofingEnabled;
 			updateStatus(enabled, false);
