@@ -770,6 +770,7 @@ function _hookWorker() {
                 ${_findBackupStream.toString()}
                 ${_hookWorkerFetch.toString()}
                 
+                let _debugLogging = false;
                 const _GQL_URL = '${_GQL_URL}';
                 _declareState(self);
                 __TTVAB_STATE__.GQLDeviceID = ${JSON.stringify(__TTVAB_STATE__.GQLDeviceID)};

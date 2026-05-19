@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.8.2] - 2026-05-20
+
+### Fixed
+- Stripped playlists now pass through even when identical to source — removes an unnecessary identity guard that rejected valid stripped results
+- Live-segment lockout cleared when stripping produces empty playlist — allows next poll to retry instead of getting stuck
+- Fallback backup streams no longer mark the stream as using backup — prevents recovery confusion
+- Fixed debug logging reference error where worker blob referenced an uninitialized variable — caused media playlist processing to fail
+
 ## [8.8.0] - 2026-05-19
 
 ### Fixed
