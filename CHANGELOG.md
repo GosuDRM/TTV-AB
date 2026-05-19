@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.8.3] - 2026-05-20
+
+### Fixed
+- CSAI Fast Path sticky loop: properly reset the CSAI flag when exiting early due to empty or too short playlists, preventing player buffer freezes.
+- Fallback backup stream searching: reset the fallback filler count whenever a stripped playlist contains valid segments, preventing infinite token re-fetch loop locks.
+- Midroll ad leakage: require refreshed backup stream playlists to be clean and verified, successfully blocking late-entering midrolls on stream switches.
+- Vitest configuration type safety: standardized the mock AdSegmentCache in setup files to Map matching the production environment.
+
+### Changed
+- Playlist parsing performance: optimized HLS segment cache validation by passing pre-split arrays directly to avoid redundant split overhead on large VOD files.
+
 ## [8.8.1] - 2026-05-20
 
 ### Fixed
