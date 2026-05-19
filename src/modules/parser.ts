@@ -470,6 +470,7 @@ function _stripAds(
 
 	let adSegmentCount = 0;
 	let _liveSegmentCount = 0;
+	let wasLastSegmentStripped = false;
 
 	for (i = 0; i < len; i++) {
 		const line = lines[i];
@@ -553,10 +554,16 @@ function _stripAds(
 				}
 
 				stripped = true;
-				lines[i] = "";
+				if (!wasLastSegmentStripped) {
+					lines[i] = "#EXT-X-DISCONTINUITY";
+					wasLastSegmentStripped = true;
+				} else {
+					lines[i] = "";
+				}
 				lines[i + 1] = "";
 				i++;
 			} else if (shouldStrip) {
+				wasLastSegmentStripped = false;
 				liveSegments.push({ extinf: line, url: lines[i + 1] });
 				if (liveSegments.length > 12) liveSegments.shift();
 			}
@@ -745,20 +752,22 @@ function _stripAds(
 			"warning",
 		);
 		const headerLines: string[] = [];
-		const emptyUrl =
-			(typeof __TTVAB_STATE__ !== "undefined" &&
-				__TTVAB_STATE__?.EmptySegmentUrl) ||
-			"";
-		let targetDuration = "6";
+		const emptyUrl = "https://twitch.tv/ttv-ab-empty-segment.mp4";
 		for (const line of lines) {
-			if (line.startsWith("#EXT-X-TARGETDURATION:")) {
-				targetDuration = line.split(":")[1] || "6";
-			}
-			if (
+			if (line.startsWith("#EXT-X-MEDIA-SEQUENCE:")) {
+				if (info) {
+					info._EmptyPlaylistFillerCount =
+						(info._EmptyPlaylistFillerCount || 0) + 1;
+					const baseSeq = parseInt(line.split(":")[1], 10) || 0;
+					const seq = baseSeq + info._EmptyPlaylistFillerCount * 6;
+					headerLines.push(`#EXT-X-MEDIA-SEQUENCE:${seq}`);
+				} else {
+					headerLines.push(line);
+				}
+			} else if (
 				line.startsWith("#EXTM3U") ||
 				line.startsWith("#EXT-X-VERSION") ||
 				line.startsWith("#EXT-X-TARGETDURATION") ||
-				line.startsWith("#EXT-X-MEDIA-SEQUENCE") ||
 				line.startsWith("#EXT-X-PLAYLIST-TYPE") ||
 				line.startsWith("#EXT-X-ALLOW-CACHE")
 			) {
@@ -768,9 +777,18 @@ function _stripAds(
 		if (headerLines.length > 0 && emptyUrl) {
 			// Serve silent video segments to keep the decoder alive
 			headerLines.push(
-				`#EXTINF:${targetDuration},`,
+				`#EXT-X-DISCONTINUITY`,
+				`#EXTINF:1.000,pad`,
 				emptyUrl,
-				`#EXTINF:${targetDuration},`,
+				`#EXTINF:1.000,pad`,
+				emptyUrl,
+				`#EXTINF:1.000,pad`,
+				emptyUrl,
+				`#EXTINF:1.000,pad`,
+				emptyUrl,
+				`#EXTINF:1.000,pad`,
+				emptyUrl,
+				`#EXTINF:1.000,pad`,
 				emptyUrl,
 			);
 			return `${headerLines.join("\n")}\n`;
