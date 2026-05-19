@@ -540,7 +540,7 @@ function _declareState(scope) {
 		PendingFetchRequests: new Map(),
 		FetchRequestSeq: 0,
 		_AdRecoveryConsecutiveFailures: 0,
-		DisableAdSpoofing: true,
+		DisableAdSpoofing: false,
 		LoggedAdSpoofNoMatch: false,
 		LoggedAdSpoofNoToken: false,
 		LoggedAdSpoofBadStatus: false,
