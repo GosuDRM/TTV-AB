@@ -2,12 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.6.3] - 2026-05-19
+## [8.6.8] - 2026-05-19
 
 ### Fixed
-- Empty playlist after ad stripping now serves minimal HLS headers instead of ad-marked content
-- Misleading "Token relay error" log renamed to "Spoof relay error"
-- GQL ad spoofing timeout: 1500ms → 5000ms
+- CSAI ad leaks: force-strip in fallback path, silent filler when all types ad-marked
+- Stripped playlists padded with duplicate segments to prevent buffer underrun during backup search
+- Empty playlist after stripping serves silent video segments instead of ad-marked content
+- GQL relay timeout increased 1500ms→5000ms, log renamed to Spoof relay
 
 ## [8.6.1] - 2026-05-19
 

@@ -744,10 +744,16 @@ function _stripAds(
 			"[Recovery] Empty playlist after stripping ads; serving empty filler to prevent stall",
 			"warning",
 		);
-		// Build a minimal HLS playlist with just headers — no ad segments.
-		// The player will buffer and retry, buying time for backup search.
 		const headerLines: string[] = [];
+		const emptyUrl =
+			(typeof __TTVAB_STATE__ !== "undefined" &&
+				__TTVAB_STATE__?.EmptySegmentUrl) ||
+			"";
+		let targetDuration = "6";
 		for (const line of lines) {
+			if (line.startsWith("#EXT-X-TARGETDURATION:")) {
+				targetDuration = line.split(":")[1] || "6";
+			}
 			if (
 				line.startsWith("#EXTM3U") ||
 				line.startsWith("#EXT-X-VERSION") ||
@@ -759,8 +765,18 @@ function _stripAds(
 				headerLines.push(line);
 			}
 		}
+		if (headerLines.length > 0 && emptyUrl) {
+			// Serve silent video segments to keep the decoder alive
+			headerLines.push(
+				`#EXTINF:${targetDuration},`,
+				emptyUrl,
+				`#EXTINF:${targetDuration},`,
+				emptyUrl,
+			);
+			return `${headerLines.join("\n")}\n`;
+		}
 		if (headerLines.length > 0) {
-			return headerLines.join("\n") + "\n";
+			return `${headerLines.join("\n")}\n`;
 		}
 		return text;
 	}

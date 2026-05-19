@@ -1277,9 +1277,32 @@ async function _processM3U8(url, text, realFetch) {
 			}
 
 			if (info.IsUsingFallbackStream) {
-				const stripped = _stripAds(text, false, info, true, true);
-				if (stripped !== text && !info._UsedRecoveryFallback) {
+				// Force-strip everything — we're already in "nothing works" mode.
+				// skipAutoForceStrip must be false so CSAI ad-marked segments get
+				// stripped even when they don't match known ad-URL patterns.
+				const stripped = _stripAds(text, false, info, false, true);
+				if (stripped !== text) {
 					return stripped;
+				}
+				// Nothing strippable — serve a filler instead of the raw ad-marked text.
+				// Build a minimal HLS playlist with silent segments to keep the
+				// player decoder running while we wait for the ad break to end.
+				const emptyUrl =
+					(typeof __TTVAB_STATE__ !== "undefined" &&
+						__TTVAB_STATE__?.EmptySegmentUrl) ||
+					"";
+				if (emptyUrl) {
+					const fillerLines = [
+						"#EXTM3U",
+						"#EXT-X-VERSION:3",
+						"#EXT-X-TARGETDURATION:6",
+						"#EXT-X-MEDIA-SEQUENCE:0",
+						"#EXTINF:6,",
+						emptyUrl,
+						"#EXTINF:6,",
+						emptyUrl,
+					];
+					return `${fillerLines.join("\n")}\n`;
 				}
 				return text;
 			}
@@ -1398,7 +1421,28 @@ async function _processM3U8(url, text, realFetch) {
 								l && (l.startsWith("#EXTINF") || l.startsWith("#EXT-X-PART:")),
 						);
 					if (segs.length >= 3) {
-						return stripped;
+						// Pad short stripped playlists with duplicate segments to extend
+						// the buffer window.  Without padding, segments from the native
+						// stream may expire before the backup search completes, causing
+						// a loading stall.
+						let padded = stripped;
+						if (segs.length < 8) {
+							const lines = stripped.split("\n");
+							const padLines: string[] = [];
+							for (
+								let k = lines.length - 1;
+								k >= 0 && padLines.length < 2;
+								k--
+							) {
+								if (lines[k] && !lines[k].startsWith("#")) {
+									padLines.unshift(lines[k]);
+								}
+							}
+							if (padLines.length > 0) {
+								padded += `\n#EXTINF:2.000,pad\n${padLines.join("\n")}`;
+							}
+						}
+						return padded;
 					}
 				}
 				info.CsaiOnlyThisBreak = false;
@@ -1818,99 +1862,6 @@ async function _findBackupStream(
 		__TTVAB_STATE__.PreferredQualityGroup.trim()
 			? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
 			: null);
-
-	// ── Parallel token+master pre-fetch ──────────────────────────
-	// Fire token + usher fetches for all uncached types simultaneously
-	// so the sequential variant-ad check can short-circuit on the
-	// first clean result without waiting for each type's token RTT.
-	const typesNeedingFetch: { pt: string; realPt: string }[] = [];
-	for (let pi = 0; pi < playerTypesLen; pi++) {
-		const pt = playerTypes[pi];
-		if (_isBackupPlayerRetryCoolingDown(info, pt)) continue;
-		const encCache = info.BackupEncodingsM3U8Cache[pt];
-		const cachedEnc =
-			typeof encCache === "string" ? encCache : encCache?.m3u8 || null;
-		if (!cachedEnc) {
-			typesNeedingFetch.push({ pt, realPt: pt.replace("-CACHED", "") });
-		}
-	}
-
-	if (typesNeedingFetch.length > 1) {
-		const fetchOneTokenChain = async ({
-			pt,
-			realPt,
-		}: {
-			pt: string;
-			realPt: string;
-		}) => {
-			try {
-				const tokenRes = await _getToken(info, realPt, realFetch);
-				if (tokenRes.status !== 200) {
-					_markBackupPlayerRetryCooldown(info, pt, "token-error");
-					return;
-				}
-				const token = await tokenRes.json();
-				const extractedToken = _extractPlaybackAccessToken(token);
-				const sig = extractedToken?.signature;
-				const tokenValue = extractedToken?.value;
-				if (!sig || !tokenValue) {
-					_markBackupPlayerRetryCooldown(info, pt, "token-error");
-					return;
-				}
-				const usherUrl = _buildUsherPlaybackUrl(info, sig, tokenValue);
-				if (!usherUrl) {
-					_markBackupPlayerRetryCooldown(info, pt, "token-error");
-					return;
-				}
-				const encRes = await realFetch(usherUrl.href);
-				if (encRes.status === 200) {
-					const enc = await encRes.text();
-					info.BackupEncodingsM3U8Cache[pt] = {
-						m3u8: enc,
-						baseUrl: usherUrl.href,
-					};
-					// Pre-whitelist variants from the master playlist
-					const lines = enc.split("\n");
-					for (let i = 0; i < lines.length; i++) {
-						const line = lines[i]?.trim();
-						if (
-							line &&
-							!line.startsWith("#") &&
-							(line.endsWith(".m3u8") || line.includes("://"))
-						) {
-							try {
-								const variantUrl = new URL(line, usherUrl.href).href;
-								info.BackupVariantUrls?.add(variantUrl);
-								for (const alias of _getPlaylistUrlAliases(variantUrl)) {
-									info.BackupVariantUrls?.add(alias);
-								}
-							} catch {}
-						}
-					}
-					while (info.BackupVariantUrls.size > 200) {
-						const first = info.BackupVariantUrls.values().next().value;
-						if (first !== undefined) info.BackupVariantUrls.delete(first);
-						else break;
-					}
-					_log(
-						`[Trace] Parallel-preload cache: ${pt} (variants: ${info.BackupVariantUrls.size})`,
-					);
-				} else {
-					_markBackupPlayerRetryCooldown(info, pt, "token-error");
-				}
-			} catch (_e) {
-				_markBackupPlayerRetryCooldown(info, pt, "error");
-				info._BackupSearchErrorCount = (info._BackupSearchErrorCount || 0) + 1;
-			}
-		};
-
-		await Promise.all(typesNeedingFetch.map(fetchOneTokenChain));
-		_log(
-			`[Trace] Parallel pre-fetch complete (${typesNeedingFetch.length} types)`,
-			"info",
-		);
-	}
-	// ── End parallel pre-fetch ───────────────────────────────────
 
 	for (let pi = 0; !backupM3u8 && pi < playerTypesLen; pi++) {
 		const pt = playerTypes[pi];
