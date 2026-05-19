@@ -1365,7 +1365,7 @@ async function _processM3U8(url, text, realFetch) {
 					typeof stripped === "string" &&
 					(stripped.includes("#EXTINF") || stripped.includes("#EXT-X-PART:")) &&
 					!stripped.includes("ttv-ab-empty-segment.mp4");
-				if (stripped !== text && strippedHasSegments) {
+				if (strippedHasSegments) {
 					info._FallbackFillerCount = 0;
 					return stripped;
 				}
@@ -1531,6 +1531,7 @@ async function _processM3U8(url, text, realFetch) {
 							"[Recovery] CSAI fast path produced empty playlist; serving empty filler",
 							"warning",
 						);
+						info.CsaiOnlyThisBreak = false;
 						return stripped;
 					}
 				}
@@ -1779,7 +1780,7 @@ async function _processM3U8(url, text, realFetch) {
 							0,
 							res,
 						);
-						if (refreshedBackup?.m3u8) {
+						if (refreshedBackup?.m3u8 && !refreshedBackup.isFallback) {
 							info.IsUsingBackupStream = true;
 							if (refreshedBackup.type) {
 								info.ActiveBackupPlayerType = refreshedBackup.type;
