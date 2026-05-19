@@ -27,6 +27,100 @@ const _POST_AD_REMOVABLE_SELECTOR_GROUP =
 const _POST_AD_RESET_SELECTOR_GROUP = _POST_AD_RESET_ONLY_SELECTORS.join(", ");
 let _pendingPostAdArtifactCleanup = null;
 const _trackedExtensionBlobUrls = new Set<string>();
+let _cachedWorkerCodeBase = null;
+
+function _getCachedWorkerCodeBase() {
+	if (_cachedWorkerCodeBase) return _cachedWorkerCodeBase;
+	_cachedWorkerCodeBase = _buildCachedWorkerCodeBase();
+	return _cachedWorkerCodeBase;
+}
+function _buildCachedWorkerCodeBase() {
+	return `
+		const _C = ${JSON.stringify(_C)};
+		const _S = ${JSON.stringify(_S)};
+		const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
+		${_getWasmJs.toString()}
+		${_log.toString()}
+		${_createWorkerBridgeMessage.toString()}
+		${_getWorkerBridgeMessage.toString()}
+		${_postWorkerBridgeMessage.toString()}
+		${_declareState.toString()}
+		${_getPageScopedPlaybackEventContext.toString()}
+		${_createPageScopedWorkerEvent.toString()}
+		${_incrementAdsBlocked.toString()}
+		${_normalizeChannelName.toString()}
+		${_normalizeVodID.toString()}
+		${_buildMediaKey.toString()}
+		${_normalizeMediaKey.toString()}
+		${_normalizePlaybackContext.toString()}
+		${_getPlaybackContextFromUrl.toString()}
+		${_getPlaybackContextFromUsherUrl.toString()}
+		${_parseAttrs.toString()}
+		${_getServerTime.toString()}
+		${_replaceServerTime.toString()}
+		${_hasExplicitAdMetadata.toString()}
+		${_isExplicitKnownAdSegmentUrl.toString()}
+		${_isKnownAdSegmentUrl.toString()}
+		${_getTaggedPlaylistUri.toString()}
+		${_isMediaPartLine.toString()}
+		${_isPartPreloadHintLine.toString()}
+		${_playlistHasKnownAdSegments.toString()}
+		${_absolutizePlaylistUrl.toString()}
+		${_absolutizeMediaPlaylistUrls.toString()}
+		${_stripAds.toString()}
+		${_getStreamVariantInfo.toString()}
+		${_replaceOrAppendStreamInfAttribute.toString()}
+		${_getStreamUrl.toString()}
+		${_getSortedResolutionList.toString()}
+		${_getResolutionByQualityGroup.toString()}
+		${_getFallbackResolution.toString()}
+		${_getPlaylistUrlAliases.toString()}
+		${_collectPlaybackAccessTokenSources.toString()}
+		${_summarizePlaybackAccessTokenPayload.toString()}
+		${_getPlaybackAccessTokenErrors.toString()}
+		${_extractPlaybackAccessToken.toString()}
+		${_isWorkerContext.toString()}
+		${_createFetchRelayResponse.toString()}
+		${_fetchViaWorkerBridge.toString()}
+		${_getToken.toString()}
+		${_notifyAdComplete.toString()}
+		${_getResolvedAdEndMinCleanPlaylists.toString()}
+		${_getResolvedAdEndGraceMs.toString()}
+		${_getResolvedAdEndMaxWaitMs.toString()}
+		${_getResolvedAdEndBackupHoldMaxMs.toString()}
+		${_getResolvedSilentBackupHoldMaxMs.toString()}
+		${_getPostAdReentryContinuationMs.toString()}
+		${_rememberLastAdEnd.toString()}
+		${_doesPlaybackContextMatchInfo.toString()}
+		${_isRecentPostAdReentry.toString()}
+		${_getBackupPlayerRetryCooldownMs.toString()}
+		${_forceClearBackupCooldownsIfStale.toString()}
+		${_markBackupPlayerRetryCooldown.toString()}
+		${_clearBackupPlayerRetryCooldown.toString()}
+		${_isBackupPlayerRetryCoolingDown.toString()}
+		${_getPinnedBackupPlayerTypeForInfo.toString()}
+		${_getOrderedBackupPlayerTypes.toString()}
+		${_resolvePlaybackResolutionForUrl.toString()}
+		${_isAdEndStable.toString()}
+		${_resetNativeRecoveryReadyState.toString()}
+		${_markNativeRecoveryReady.toString()}
+		${_resetStreamAdState.toString()}
+		${_shouldReloadNativePlayerAfterAdReset.toString()}
+		${_getStreamInfoForPlaylist.toString()}
+		${_getSyntheticPlaybackContextForPlaylist.toString()}
+		${_createStreamInfo.toString()}
+		${_createSyntheticStreamInfo.toString()}
+		${_buildUsherPlaybackUrl.toString()}
+		${_hasPlaylistAdMarkers.toString()}
+		${_playlistHasMediaSegments.toString()}
+		${_getNativeRecoveryProbePlayerType.toString()}
+		${_canReloadNativePlayerAfterAd.toString()}
+		${_getFallbackPromotionPolicy.toString()}
+		${_processM3U8.toString()}
+		${_findBackupStream.toString()}
+		${_hookWorkerFetch.toString()}
+	`;
+}
 
 function _hidePostAdArtifact(el) {
 	if (!(el instanceof Element)) return;
@@ -426,7 +520,14 @@ function _hookWorkerFetch() {
 								"error",
 							);
 						}
-						return new Response(text, responseInit(response));
+						try {
+							return new Response(
+								_stripAds(text, true, null),
+								responseInit(response),
+							);
+						} catch {
+							return new Response(text, responseInit(response));
+						}
 					}
 				}
 				return response;
@@ -671,91 +772,9 @@ function _hookWorker() {
 
 				const injectedCode = `
             (function() {
-                ${_getWasmJs.toString()}
+                ${_getCachedWorkerCodeBase()}
+                _$dl = false;
                 const wasmSource = _getWasmJs(${JSON.stringify(workerSourceUrl)});
-                const _C = ${JSON.stringify(_C)};
-                const _S = ${JSON.stringify(_S)};
-                const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
-                ${_log.toString()}
-                ${_createWorkerBridgeMessage.toString()}
-                ${_getWorkerBridgeMessage.toString()}
-                ${_postWorkerBridgeMessage.toString()}
-                ${_declareState.toString()}
-                ${_getPageScopedPlaybackEventContext.toString()}
-                ${_createPageScopedWorkerEvent.toString()}
-                ${_incrementAdsBlocked.toString()}
-                ${_normalizeChannelName.toString()}
-                ${_normalizeVodID.toString()}
-                ${_buildMediaKey.toString()}
-                ${_normalizeMediaKey.toString()}
-                ${_normalizePlaybackContext.toString()}
-                ${_getPlaybackContextFromUrl.toString()}
-                ${_getPlaybackContextFromUsherUrl.toString()}
-                ${_parseAttrs.toString()}
-                ${_getServerTime.toString()}
-                ${_replaceServerTime.toString()}
-                ${_hasExplicitAdMetadata.toString()}
-                ${_isExplicitKnownAdSegmentUrl.toString()}
-                ${_isKnownAdSegmentUrl.toString()}
-                ${_getTaggedPlaylistUri.toString()}
-                ${_isMediaPartLine.toString()}
-                ${_isPartPreloadHintLine.toString()}
-                ${_playlistHasKnownAdSegments.toString()}
-                ${_absolutizePlaylistUrl.toString()}
-                ${_absolutizeMediaPlaylistUrls.toString()}
-                ${_stripAds.toString()}
-                ${_getStreamVariantInfo.toString()}
-                ${_replaceOrAppendStreamInfAttribute.toString()}
-                ${_getStreamUrl.toString()}
-                ${_getSortedResolutionList.toString()}
-                ${_getResolutionByQualityGroup.toString()}
-                ${_getFallbackResolution.toString()}
-                ${_getPlaylistUrlAliases.toString()}
-                ${_collectPlaybackAccessTokenSources.toString()}
-                ${_summarizePlaybackAccessTokenPayload.toString()}
-                ${_getPlaybackAccessTokenErrors.toString()}
-                ${_extractPlaybackAccessToken.toString()}
-                ${_isWorkerContext.toString()}
-                ${_createFetchRelayResponse.toString()}
-                ${_fetchViaWorkerBridge.toString()}
-                ${_getToken.toString()}
-                ${_notifyAdComplete.toString()}
-                ${_getResolvedAdEndMinCleanPlaylists.toString()}
-                ${_getResolvedAdEndGraceMs.toString()}
-                ${_getResolvedAdEndMaxWaitMs.toString()}
-                ${_getResolvedAdEndBackupHoldMaxMs.toString()}
-                ${_getResolvedSilentBackupHoldMaxMs.toString()}
-                ${_getPostAdReentryContinuationMs.toString()}
-                ${_rememberLastAdEnd.toString()}
-                ${_doesPlaybackContextMatchInfo.toString()}
-                ${_isRecentPostAdReentry.toString()}
-                ${_getBackupPlayerRetryCooldownMs.toString()}
-                ${_forceClearBackupCooldownsIfStale.toString()}
-                ${_markBackupPlayerRetryCooldown.toString()}
-                ${_clearBackupPlayerRetryCooldown.toString()}
-                ${_isBackupPlayerRetryCoolingDown.toString()}
-                ${_getPinnedBackupPlayerTypeForInfo.toString()}
-                ${_getOrderedBackupPlayerTypes.toString()}
-                ${_resolvePlaybackResolutionForUrl.toString()}
-                ${_isAdEndStable.toString()}
-                ${_resetNativeRecoveryReadyState.toString()}
-                ${_markNativeRecoveryReady.toString()}
-                ${_resetStreamAdState.toString()}
-                ${_shouldReloadNativePlayerAfterAdReset.toString()}
-                ${_getStreamInfoForPlaylist.toString()}
-                ${_getSyntheticPlaybackContextForPlaylist.toString()}
-                ${_createStreamInfo.toString()}
-                ${_createSyntheticStreamInfo.toString()}
-                ${_buildUsherPlaybackUrl.toString()}
-                ${_hasPlaylistAdMarkers.toString()}
-                ${_playlistHasMediaSegments.toString()}
-                ${_getNativeRecoveryProbePlayerType.toString()}
-                ${_canReloadNativePlayerAfterAd.toString()}
-                ${_getFallbackPromotionPolicy.toString()}
-                ${_processM3U8.toString()}
-                ${_findBackupStream.toString()}
-                ${_hookWorkerFetch.toString()}
-                
                 const _GQL_URL = '${_GQL_URL}';
                 _declareState(self);
                 __TTVAB_STATE__.GQLDeviceID = ${JSON.stringify(__TTVAB_STATE__.GQLDeviceID)};
@@ -874,6 +893,7 @@ function _hookWorker() {
                             __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
                             __TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
                             __TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+					__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
                             __TTVAB_STATE__.ShouldResumeAfterAd = false;
                             __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
                             __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
@@ -1100,6 +1120,7 @@ function _hookWorker() {
 									}
 									__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 									__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+									__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 									if (typeof _rememberPlayerPlaybackForAd === "function") {
 										_rememberPlayerPlaybackForAd(channel, mediaKey);
 									}
@@ -1285,7 +1306,6 @@ function _hookWorker() {
 								if (typeof _clearAdResumeIntent === "function") {
 									_clearAdResumeIntent();
 								}
-								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 								_log("Ad ended", "success");
 								const isHoldingBackup = data.holdingBackup === true;
 								if (
@@ -1465,7 +1485,19 @@ function _hookWorker() {
 		},
 	});
 
+	let _workerWatchdogBound = false;
+	function _stopWorkerWatchdog() {
+		if (_workerWatchdogID !== null) {
+			clearInterval(_workerWatchdogID);
+			_workerWatchdogID = null;
+		}
+	}
+
 	_startWorkerWatchdog();
+	if (!_workerWatchdogBound) {
+		_workerWatchdogBound = true;
+		window.addEventListener("pagehide", _stopWorkerWatchdog);
+	}
 }
 
 function _hookMainFetch() {
@@ -1533,7 +1565,13 @@ function _hookMainFetch() {
 					changed: true,
 				};
 			}
-		} catch {}
+		} catch {
+			if (_debugLogging)
+				_log(
+					"rewritePlaybackAccessTokenBody: parse error in GQL body rewriting",
+					"debug",
+				);
+		}
 
 		return { bodyText, changed: false };
 	};
@@ -1596,7 +1634,10 @@ function _hookMainFetch() {
 					);
 				}
 			}
-		} catch {}
+		} catch {
+			if (_debugLogging)
+				_log("processGqlBody: error in GQL body parsing", "debug");
+		}
 	};
 	const processGqlResponse = async (response) => {
 		if (!response || response.status !== 200) return;
@@ -1614,9 +1655,18 @@ function _hookMainFetch() {
 					if (typeof effectivePlayerType === "string") {
 						updateNativePlaybackAccessTokenPlayerType(effectivePlayerType);
 					}
-				} catch {}
+				} catch {
+					if (_debugLogging)
+						_log(
+							"processGqlResponse: error extracting token from payload",
+							"debug",
+						);
+				}
 			}
-		} catch {}
+		} catch {
+			if (_debugLogging)
+				_log("window.fetch hook: error in GQL interception", "debug");
+		}
 	};
 
 	window.fetch = async function (...args) {
