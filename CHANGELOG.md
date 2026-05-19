@@ -2,6 +2,25 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [8.8.0] - 2026-05-19
+
+### Fixed
+- Ad leak during backup search — cached clean playlists served with incremented media sequences while worker searches for backup
+- Worker hangs — 3500ms fetch timeouts on all Twitch Usher, GQL, and stream requests
+- Duplicate backup searches — guard prevents redundant searches when multiple m3u8 requests arrive simultaneously
+- Empty segments now created in-memory (Blob URL) instead of network fetch, eliminating round-trip delay during ad replacement
+- Stripped ad segments insert alternating DISCONTINUITY markers to help the video decoder handle segment gaps
+- Silent filler format changed from 2 long segments to 6 short 1-second segments with DISCONTINUITY for smoother recovery
+- Backup search retry loop removed, fresh-token fetch cap added to prevent excessive API calls
+
+### Changed
+- Ad spoofing now enabled by default — sends fake ad-watch beacons to reduce anti-adblock fingerprinting
+- Build process auto-generates .xpi and source .zip during packaging
+- Native recovery probe cooldown increased (250→500ms min, 750→1500ms default)
+- Fast-fallback promotion policy default fixed, autoplay player type properly flagged for downstream recovery
+- Low-latency recovery min clean playlists reduced (12→6) for faster post-ad resume
+- Verbose token error payloads removed from backup search logs
+
 ## [8.7.1] - 2026-05-19
 
 ### Added
