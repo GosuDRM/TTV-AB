@@ -368,11 +368,13 @@ function _isPartPreloadHintLine(line) {
 }
 
 function _playlistHasKnownAdSegments(
-	text,
+	textOrLines,
 	options: { includeCached?: boolean } = {},
 ) {
-	if (typeof text !== "string" || !text) return false;
-	const lines = text.split("\n");
+	if (!textOrLines) return false;
+	const isArray = Array.isArray(textOrLines);
+	if (!isArray && typeof textOrLines !== "string") return false;
+	const lines = isArray ? textOrLines : textOrLines.split("\n");
 	for (let index = 0; index < lines.length; index++) {
 		const line = lines[index];
 		if (
@@ -459,7 +461,7 @@ function _stripAds(
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
-	const hasKnownAdSegments = _playlistHasKnownAdSegments(text, {
+	const hasKnownAdSegments = _playlistHasKnownAdSegments(lines, {
 		includeCached: !skipSegmentCache,
 	});
 	const forceStripAllSegments =
