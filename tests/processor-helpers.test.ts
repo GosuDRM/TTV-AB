@@ -23,7 +23,7 @@ beforeAll(() => {
 	g.__TTVAB_STATE__ = {
 		AdSignifier: "stitched",
 		BackupPlayerTypes: ["embed", "popout", "autoplay"],
-		AdSegmentCache: new Set<string>(),
+		AdSegmentCache: new Map<string, number>(),
 		AllSegmentsAreAdSegments: false,
 		IsAdStrippingEnabled: true,
 		CurrentAdChannel: null,
