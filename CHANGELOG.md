@@ -2,15 +2,23 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [8.6.9] - 2026-05-19
+## [8.7.0] - 2026-05-19
+
+### Added
+- "autoplay" (360p) player type as last-resort backup when all Source types are ad-marked
+- Fallback filler cycle cap (5 cycles) — triggers player reload instead of Error #2000 crash
 
 ### Fixed
-- CSAI ad leaks: force-strip in fallback path, silent filler when all types ad-marked
-- Stripped playlists padded with duplicate segments to prevent buffer underrun during backup search
-- Empty playlist after stripping serves silent video segments instead of ad-marked content
-- GQL relay timeout increased 1500ms→5000ms, log renamed to Spoof relay
+- CSAI ad leaks: fallback path force-strips segments, serves silent filler on empty result
+- Empty playlists after stripping serve silent video segments instead of bare HLS headers
+- Stripped playlists padded with duplicate segments to prevent buffer underrun
+- Misleading "Token relay error" log renamed to "Spoof relay error"
+- GQL ad spoofing timeout increased 1500ms→5000ms
 
-## [8.6.1] - 2026-05-19
+### Changed
+- Removed parallel backup preload, reverted to serial search
+
+## [8.6.1]## [8.6.1] - 2026-05-19
 
 ### Fixed
 - Fallback stripping now preserves segments — only ad metadata removed when all Source types exhausted
