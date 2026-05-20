@@ -245,9 +245,9 @@ describe("_getBackupPlayerRetryCooldownMs", () => {
 		expect(fn()("no-stream-url")).toBe(2000);
 	});
 
-	it("returns 5000 for ad-marked / unknown", () => {
-		expect(fn()("ad-marked")).toBe(5000);
-		expect(fn()("unknown")).toBe(5000);
+	it("returns 15000 for ad-marked / unknown", () => {
+		expect(fn()("ad-marked")).toBe(15000);
+		expect(fn()("unknown")).toBe(15000);
 	});
 });
 
