@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-8.8.3-purple)
+![Version](https://img.shields.io/badge/version-9.0.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-8.8.3-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.0.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,11 +63,14 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v8.8.3 — 2026-05-20
-- Fixed CSAI Fast Path stuck state when exiting early due to segment counts
-- Fixed fallback backup stream searching loop on active playlist updates
-- Fixed ad leakage by enforcing refreshed backup verification during midrolls
-- Optimized HLS playlist parsing performance by passing pre-split arrays directly
+### v9.0.0 — 2026-05-21
+- Restored stable ad-blocking pipeline with zero decoder corruption
+- Fixed persistent buffering and slideshow playback during ad breaks ([#18](https://github.com/GosuDRM/TTV-AB/issues/18))
+- Added CSAI fast path for all-live ad breaks — strips tracking URLs, no stream switch
+- Backup search now covers all 5 player types including 360p autoplay
+- Eliminated brief black screen when first loading a channel during ad blocking
+- Fixed empty playlist fallback to prevent player stalls
+- Improved ad segment handling for Firefox compatibility
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

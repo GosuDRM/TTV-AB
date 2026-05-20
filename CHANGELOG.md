@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.0.0] - 2026-05-21
+
+### Fixed
+- Ad-blocking pipeline restored to stable working version — zero decoder corruption
+- Fixed persistent buffering and slideshow playback during ad breaks on certain streams ([#18](https://github.com/GosuDRM/TTV-AB/issues/18))
+- Empty playlist fallback returns original content instead of header-only to prevent player stalls
+- Backup search now checks all 5 player types (including autoplay 360p) for clean streams
+- Eliminated brief black screen when first loading a channel — backup search now starts immediately with stripped native as stopgap (~100% faster channel load)
+
+### Added
+- CSAI fast path for all-live ad breaks — strips tracking URLs from native and returns directly with no stream switch
+- Ad segment caching preserves playlist structure for stable playback
+
 ## [8.8.3] - 2026-05-20
 
 ### Fixed
