@@ -319,7 +319,8 @@ function _hasExplicitAdMetadata(text) {
 			text.includes("/adsquared/") ||
 			text.includes("SCTE35-OUT") ||
 			text.includes("EXT-X-CUE-OUT") ||
-			text.includes('EXT-X-DATERANGE:CLASS="twitch-') ||
+			text.includes('EXT-X-DATERANGE:CLASS="twitch-trigger"') ||
+			text.includes('EXT-X-DATERANGE:CLASS="twitch-maf-ad"') ||
 			text.includes('"MIDROLL"') ||
 			text.includes('"midroll"'))
 	);
@@ -368,13 +369,11 @@ function _isPartPreloadHintLine(line) {
 }
 
 function _playlistHasKnownAdSegments(
-	textOrLines,
+	text,
 	options: { includeCached?: boolean } = {},
 ) {
-	if (!textOrLines) return false;
-	const isArray = Array.isArray(textOrLines);
-	if (!isArray && typeof textOrLines !== "string") return false;
-	const lines = isArray ? textOrLines : textOrLines.split("\n");
+	if (typeof text !== "string" || !text) return false;
+	const lines = text.split("\n");
 	for (let index = 0; index < lines.length; index++) {
 		const line = lines[index];
 		if (
@@ -444,35 +443,25 @@ function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
 		.join("\n");
 }
 
-function _stripAds(
-	text,
-	stripAll,
-	info,
-	skipAutoForceStrip = false,
-	skipSegmentCache = false,
-) {
+function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	const lines = text.split("\n");
 	const len = lines.length;
 	const adUrl = "https://twitch.tv";
 	let stripped = false;
 	let i = 0;
 	const strippedSegments = [];
-	const liveSegments: { extinf: string; url: string }[] = [];
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
-	const hasKnownAdSegments = _playlistHasKnownAdSegments(lines, {
-		includeCached: !skipSegmentCache,
-	});
+	const hasKnownAdSegments = _playlistHasKnownAdSegments(text);
 	const forceStripAllSegments =
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
 		(!skipAutoForceStrip && hasExplicitAdMetadata && !hasKnownAdSegments);
-	const maxRecoverySegments = forceStripAllSegments ? len : 12;
+	const maxRecoverySegments = forceStripAllSegments ? len : 6;
 
 	let adSegmentCount = 0;
 	let _liveSegmentCount = 0;
-	let wasLastSegmentStripped = false;
 
 	for (i = 0; i < len; i++) {
 		const line = lines[i];
@@ -530,11 +519,7 @@ function _stripAds(
 
 		if (shouldStrip && i < len - 1 && line?.startsWith("#EXTINF")) {
 			const isAdSegment =
-				_isKnownAdSegmentUrl(lines[i + 1], {
-					includeCached: !skipSegmentCache,
-				}) ||
-				(hasExplicitAdMetadata && !line.includes(",live")) ||
-				(forceStripAllSegments && !line.includes(",live"));
+				forceStripAllSegments || _isKnownAdSegmentUrl(lines[i + 1]);
 
 			if (isAdSegment) {
 				const segmentUrl = lines[i + 1];
@@ -555,19 +540,16 @@ function _stripAds(
 					__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
 				}
 
-				stripped = true;
-				if (!wasLastSegmentStripped) {
-					lines[i] = "#EXT-X-DISCONTINUITY";
-					wasLastSegmentStripped = true;
-				} else {
-					lines[i] = "";
+				if (skipAutoForceStrip && !forceStripAllSegments) {
+					stripped = true;
+					i++;
+					continue;
 				}
+
+				stripped = true;
+				lines[i] = "";
 				lines[i + 1] = "";
 				i++;
-			} else if (shouldStrip) {
-				wasLastSegmentStripped = false;
-				liveSegments.push({ extinf: line, url: lines[i + 1] });
-				if (liveSegments.length > 12) liveSegments.shift();
 			}
 		}
 
@@ -597,10 +579,6 @@ function _stripAds(
 				lines[i] = "";
 				continue;
 			}
-			if (shouldStrip && _isMediaPartLine(line)) {
-				liveSegments.push({ extinf: line, url: taggedUri || line });
-				if (liveSegments.length > 12) liveSegments.shift();
-			}
 		}
 
 		if (_hasExplicitAdMetadata(line)) {
@@ -622,18 +600,6 @@ function _stripAds(
 			) {
 				lines[i] = "";
 			}
-		}
-	}
-
-	if (liveSegments.length > 0 && info) {
-		info._RecoverySegments = liveSegments.slice(-6);
-		const seq = parseInt(
-			(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/) || [])[1],
-			10,
-		);
-		if (!Number.isNaN(seq)) {
-			info._RecoveryStartSeq =
-				seq + Math.max(0, liveSegments.length - info._RecoverySegments.length);
 		}
 	}
 
@@ -709,9 +675,6 @@ function _stripAds(
 		});
 
 		if (recoverySource?.m3u8) {
-			if (info) {
-				info._UsedRecoveryFallback = recoverySource.label;
-			}
 			_log(
 				`[Recovery] Empty playlist - reusing ${recoverySource.label}`,
 				"warning",
@@ -719,85 +682,10 @@ function _stripAds(
 			return recoverySource.m3u8;
 		}
 
-		const recoverySegs =
-			Array.isArray(info?._RecoverySegments) &&
-			info._RecoverySegments.length > 0
-				? info._RecoverySegments
-				: null;
-		if (recoverySegs) {
-			_log(
-				`[Recovery] Empty playlist - injecting ${recoverySegs.length} recovery segments`,
-				"warning",
-			);
-			if (info._RecoveryStartSeq !== undefined) {
-				for (let j = 0; j < result.length; j++) {
-					if (result[j]?.startsWith("#EXT-X-MEDIA-SEQUENCE:")) {
-						result[j] = `#EXT-X-MEDIA-SEQUENCE:${info._RecoveryStartSeq}`;
-						break;
-					}
-				}
-			}
-			for (let j = 0; j < recoverySegs.length; j++) {
-				const seg = recoverySegs[j];
-				if (seg.extinf?.startsWith("#EXT-X-PART:")) {
-					result.push(seg.extinf);
-				} else {
-					result.push(seg.extinf);
-					result.push(seg.url);
-				}
-			}
-			return result.join("\n");
-		}
-
 		_log(
-			"[Recovery] Empty playlist after stripping ads; serving empty filler to prevent stall",
+			"[Recovery] Empty playlist after stripping ads; falling back to original playlist to prevent stall",
 			"warning",
 		);
-		const headerLines: string[] = [];
-		const emptyUrl = "https://twitch.tv/ttv-ab-empty-segment.mp4";
-		for (const line of lines) {
-			if (line.startsWith("#EXT-X-MEDIA-SEQUENCE:")) {
-				if (info) {
-					info._EmptyPlaylistFillerCount =
-						(info._EmptyPlaylistFillerCount || 0) + 1;
-					const baseSeq = parseInt(line.split(":")[1], 10) || 0;
-					const seq = baseSeq + info._EmptyPlaylistFillerCount * 6;
-					headerLines.push(`#EXT-X-MEDIA-SEQUENCE:${seq}`);
-				} else {
-					headerLines.push(line);
-				}
-			} else if (
-				line.startsWith("#EXTM3U") ||
-				line.startsWith("#EXT-X-VERSION") ||
-				line.startsWith("#EXT-X-TARGETDURATION") ||
-				line.startsWith("#EXT-X-PLAYLIST-TYPE") ||
-				line.startsWith("#EXT-X-ALLOW-CACHE")
-			) {
-				headerLines.push(line);
-			}
-		}
-		if (headerLines.length > 0 && emptyUrl) {
-			// Serve silent video segments to keep the decoder alive
-			headerLines.push(
-				`#EXT-X-DISCONTINUITY`,
-				`#EXTINF:1.000,pad`,
-				emptyUrl,
-				`#EXTINF:1.000,pad`,
-				emptyUrl,
-				`#EXTINF:1.000,pad`,
-				emptyUrl,
-				`#EXTINF:1.000,pad`,
-				emptyUrl,
-				`#EXTINF:1.000,pad`,
-				emptyUrl,
-				`#EXTINF:1.000,pad`,
-				emptyUrl,
-			);
-			return `${headerLines.join("\n")}\n`;
-		}
-		if (headerLines.length > 0) {
-			return `${headerLines.join("\n")}\n`;
-		}
 		return text;
 	}
 
