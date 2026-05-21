@@ -1345,72 +1345,17 @@ async function _processM3U8(url, text, realFetch) {
 			}
 		}
 
-		const isCsaiOnly = hasAds && !hasExplicitKnownAdSegments;
-
-		if (
-			!info.LastCleanBackupM3U8 &&
-			!info._BackupSearchStartedAt &&
-			!info.IsUsingFallbackStream
-		) {
-			const hasCleanNative =
-				typeof info.LastCleanNativeM3U8 === "string" &&
-				info.LastCleanNativeM3U8 &&
-				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
-				!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8);
-			const res = _resolvePlaybackResolutionForUrl(info, url);
-			let startIdx = 0;
-			if (
-				info.LastPlayerReload >
-				Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
-			) {
-				startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
-			}
-			info._BackupSearchStartedAt = Date.now();
-			_findBackupStream(info, realFetch, startIdx, res)
-				.then(() => {
-					info._BackupSearchStartedAt = 0;
-				})
-				.catch(() => {
-					info._BackupSearchStartedAt = 0;
-				});
-			if (hasCleanNative) {
-				_log(
-					"[Trace] Returning native playlist to prevent buffer drain during backup search",
-					"info",
-				);
-				return info.LastCleanNativeM3U8;
-			}
-			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
-			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
-			const headersOnly = _extractPlaylistHeaders(text);
-			if (headersOnly) {
-				_log(
-					"[Trace] Returning headers-only playlist as stopgap during backup search",
-					"info",
-				);
-				return headersOnly;
-			}
-			const stripped = _stripAds(text, false, info, true);
-			if (stripped && stripped !== text) {
-				_log(
-					"[Trace] Returning ad-stripped playlist as stopgap during backup search",
-					"info",
-				);
-				return stripped;
-			}
-			return text;
-		}
-
-		if (info._BackupSearchStartedAt) {
-			if (isCsaiOnly) {
-				const stripped = _stripAds(text, false, info, true);
-				if (stripped && stripped !== text) return stripped;
-			}
-			if (info.LastCleanBackupM3U8) return info.LastCleanBackupM3U8;
-			if (info.LastCleanNativeM3U8) return info.LastCleanNativeM3U8;
-			const headersOnly = _extractPlaylistHeaders(text);
-			if (headersOnly) return headersOnly;
-			return text;
+		const hasCleanNative =
+			typeof info.LastCleanNativeM3U8 === "string" &&
+			info.LastCleanNativeM3U8 &&
+			Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
+			!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8);
+		if (hasCleanNative) {
+			_log(
+				"[Trace] Returning native playlist to prevent buffer drain during backup search",
+				"info",
+			);
+			return info.LastCleanNativeM3U8;
 		}
 
 		let startIdx = 0;
