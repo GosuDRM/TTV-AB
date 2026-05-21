@@ -14,7 +14,13 @@ function loadModule(modulePath: string) {
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
-	g._S = { workers: [], conflicts: [], reinsertPatterns: [], adsBlocked: 0 };
+	g._S = {
+		workers: [],
+		conflicts: [],
+		reinsertPatterns: [],
+		toleratedWorkerWrappers: [],
+		adsBlocked: 0,
+	};
 	g._log = () => {};
 	g.__TTVAB_STATE__ = {
 		AdSignifier: "stitched",

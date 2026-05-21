@@ -51,6 +51,13 @@ function _reinsert(W, names) {
 function _isValid(v) {
 	if (typeof v !== "function") return false;
 	const src = v.toString();
+	if (
+		_S.toleratedWorkerWrappers.some((ext) =>
+			ext.signatures.every((sig) => src.includes(sig)),
+		)
+	) {
+		return true;
+	}
 	return (
 		!_S.conflicts.some((c) => src.includes(c)) &&
 		!_S.reinsertPatterns.some((p) => src.includes(p))
