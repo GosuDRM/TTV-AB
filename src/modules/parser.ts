@@ -629,11 +629,20 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		}
 	}
 
-	const result = lines.filter((l) => l !== "");
+	const result = [];
+	let hasRemainingSegments = false;
+	for (let ri = 0; ri < len; ri++) {
+		const l = lines[ri];
+		if (l === "") continue;
+		result.push(l);
+		if (
+			!hasRemainingSegments &&
+			(l?.startsWith("#EXTINF") || l?.startsWith("#EXT-X-PART:"))
+		) {
+			hasRemainingSegments = true;
+		}
+	}
 
-	const hasRemainingSegments = result.some(
-		(l) => l?.startsWith("#EXTINF") || l?.startsWith("#EXT-X-PART:"),
-	);
 	if (!hasRemainingSegments && strippedMediaEntryCount > 0) {
 		const recoveryCandidates = [
 			{
