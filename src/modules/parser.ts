@@ -572,7 +572,11 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 			}
 		}
 
-		if (_hasExplicitAdMetadata(line)) {
+		if (
+			hasExplicitAdMetadata &&
+			line?.charCodeAt(0) === 35 &&
+			_AD_METADATA_RE.test(line)
+		) {
 			stripped = true;
 			lines[i] = "";
 		}
