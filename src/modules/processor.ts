@@ -1380,6 +1380,8 @@ async function _processM3U8(url, text, realFetch) {
 				);
 				return info.LastCleanNativeM3U8;
 			}
+			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
+			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			const stripped = _stripAds(text, false, info, true);
 			if (stripped && stripped !== text) {
 				_log(
