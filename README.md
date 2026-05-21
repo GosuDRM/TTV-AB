@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.0.1-purple)
+![Version](https://img.shields.io/badge/version-9.0.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.0.1-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.0.2-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -63,8 +63,11 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
+### v9.0.2 — 2026-05-21
+- Fixed ad flash on first load — empty segment substitution now works immediately during backup search stopgap ([#20](https://github.com/GosuDRM/TTV-AB/issues/20))
+
 ### v9.0.1 — 2026-05-21
-- Ad-blocking now runs inside embedded Twitch player iframes — adds support for multistream viewers like [twitchtheater.tv](https://twitchtheater.tv/)
+- Ad-blocking now runs inside embedded Twitch player iframes — adds support for multistream viewers like [twitchtheater.tv](https://twitchtheater.tv/) ([#16](https://github.com/GosuDRM/TTV-AB/issues/16))
 - Content scripts inject into all frames matching `*.twitch.tv` (no new host permissions)
 
 ### v9.0.0 — 2026-05-21

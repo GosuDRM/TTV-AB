@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.0.2] - 2026-05-21
+
+### Fixed
+- Stopgap ad-stripped playlist now correctly substitutes empty segments via fetch guard on first ad-marked playlist of a fresh channel load — `CurrentAdChannel` and `CurrentAdMediaKey` are pre-warmed before the stopgap strip so the ad segment cache is immediately usable ([#20](https://github.com/GosuDRM/TTV-AB/issues/20))
+
 ## [9.0.1] - 2026-05-21
 
 ### Added
