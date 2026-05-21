@@ -19,7 +19,13 @@ beforeAll(() => {
 	loadModule("../dist/src/modules/processor.js");
 
 	g._log = () => {};
-	g._S = { workers: [], conflicts: [], reinsertPatterns: [], adsBlocked: 0 };
+	g._S = {
+		workers: [],
+		conflicts: [],
+		reinsertPatterns: [],
+		toleratedWorkerWrappers: [],
+		adsBlocked: 0,
+	};
 	g.__TTVAB_STATE__ = {
 		AdSignifier: "stitched",
 		BackupPlayerTypes: ["embed", "popout", "autoplay"],

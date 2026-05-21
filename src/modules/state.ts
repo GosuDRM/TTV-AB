@@ -3,7 +3,13 @@
 const _S = {
 	workers: [],
 	conflicts: ["twitch", "isVariantA"],
-	reinsertPatterns: ["isVariantA", "besuper/", "${patch_url}"],
+	reinsertPatterns: ["isVariantA"],
+	toleratedWorkerWrappers: [
+		{
+			name: "TwitchNoSub",
+			signatures: ["${patch_url}", "twitchBlobUrl", "getWasmWorkerJs"],
+		},
+	],
 	adsBlocked: 0,
 };
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
