@@ -359,12 +359,10 @@ function _isPartPreloadHintLine(line) {
 	);
 }
 
-function _playlistHasKnownAdSegments(
-	text,
+function _playlistLinesHaveKnownAdSegments(
+	lines,
 	options: { includeCached?: boolean } = {},
 ) {
-	if (typeof text !== "string" || !text) return false;
-	const lines = text.split("\n");
 	for (let index = 0; index < lines.length; index++) {
 		const line = lines[index];
 		if (
@@ -382,6 +380,14 @@ function _playlistHasKnownAdSegments(
 		}
 	}
 	return false;
+}
+
+function _playlistHasKnownAdSegments(
+	text,
+	options: { includeCached?: boolean } = {},
+) {
+	if (typeof text !== "string" || !text) return false;
+	return _playlistLinesHaveKnownAdSegments(text.split("\n"), options);
 }
 
 function _absolutizePlaylistUrl(rawUrl, baseUrl = null) {
@@ -444,7 +450,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
-	const hasKnownAdSegments = _playlistHasKnownAdSegments(text);
+	const hasKnownAdSegments = _playlistLinesHaveKnownAdSegments(lines);
 	const forceStripAllSegments =
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||

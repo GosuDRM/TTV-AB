@@ -112,6 +112,7 @@ const MINIFY_MAP = {
 	_hasExplicitAdMetadata: "_$hem",
 	_isKnownAdSegmentUrl: "_$kas",
 	_playlistHasKnownAdSegments: "_$pka",
+	_playlistLinesHaveKnownAdSegments: "_$plka",
 };
 
 function readVersionSources() {
