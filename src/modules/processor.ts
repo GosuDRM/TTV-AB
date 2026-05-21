@@ -416,12 +416,12 @@ function _shouldReloadNativePlayerAfterAdReset({
 }
 
 function _getPlaylistUrlAliases(url, baseUrl = null) {
-	const aliases = new Set<string>();
+	const aliases: string[] = [];
 	const pushAlias = (value) => {
 		if (typeof value !== "string") return;
 		const trimmed = value.trimEnd();
-		if (!trimmed) return;
-		aliases.add(trimmed);
+		if (!trimmed || aliases.indexOf(trimmed) !== -1) return;
+		aliases.push(trimmed);
 	};
 
 	pushAlias(url);
@@ -443,7 +443,7 @@ function _getPlaylistUrlAliases(url, baseUrl = null) {
 		pushAlias(parsed.pathname);
 	} catch {}
 
-	return [...aliases];
+	return aliases;
 }
 
 function _getStreamInfoForPlaylist(url) {

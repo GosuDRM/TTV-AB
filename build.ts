@@ -81,6 +81,7 @@ const MINIFY_MAP = {
 	_initToggleListener: "_$tl",
 	_init: "_$in",
 	_ATTR_REGEX: "_$ar",
+	_AD_METADATA_RE: "_$amr",
 	_REMINDER_KEY: "_$rk",
 	_REMINDER_INTERVAL: "_$ri2",
 	_FIRST_RUN_KEY: "_$fr",
@@ -91,7 +92,7 @@ const MINIFY_MAP = {
 	_cachedPlayerRef: "_$cpr",
 	_getPlayerCore: "_$gpc",
 	_findReactRoot: "_$rr",
-	_findReactNode: "_$rn",
+	_findReactNodesByConstraints: "_$rnbc",
 	_getPlayerAndState: "_$gps",
 	_clearAdResumeIntent: "_$cari",
 	_rememberPlayerPlaybackForAd: "_$rpfa",
@@ -111,6 +112,7 @@ const MINIFY_MAP = {
 	_hasExplicitAdMetadata: "_$hem",
 	_isKnownAdSegmentUrl: "_$kas",
 	_playlistHasKnownAdSegments: "_$pka",
+	_playlistLinesHaveKnownAdSegments: "_$plka",
 };
 
 function readVersionSources() {
