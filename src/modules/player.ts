@@ -2743,7 +2743,7 @@ function _monitorPlayerBuffering() {
 			? hiddenDelay
 			: Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000);
 		if (!_hasPlayerBufferMonitorRelevantContext()) {
-			_clearCachedPlayerRef();
+			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
@@ -2764,26 +2764,20 @@ function _monitorPlayerBuffering() {
 			return;
 		}
 		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
-			_clearCachedPlayerRef();
+			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
 		const hasLivePlaybackContext =
 			__TTVAB_STATE__.PageMediaType === "live" && Boolean(currentMediaKey);
 		if (!hasLivePlaybackContext) {
-			_clearCachedPlayerRef();
+			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
 
 		if (hasActiveAdContext) {
-			_PlayerBufferState.liveEdgeStarveCount = 0;
-			_PlayerBufferState.numSame = 0;
-			_PlayerBufferState.fixAttempts = 0;
-			_PlayerBufferState.postAdUnhealthyCount = 0;
-			_PlayerBufferState.postAdRecoveryStartedAt = 0;
-			_resetPostAdGrace();
-			_clearCachedPlayerRef();
+			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, nextDelay);
 			return;
 		}
