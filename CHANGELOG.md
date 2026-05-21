@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.0.1] - 2026-05-21
+
+### Added
+- Embedded-player support: content scripts now inject into all frames matching `*.twitch.tv`, enabling ad-blocking on multistream viewers (e.g. [twitchtheater.tv](https://twitchtheater.tv/)) that embed the official `player.twitch.tv` iframe ([#16](https://github.com/GosuDRM/TTV-AB/issues/16))
+- `all_frames: true` declared on both MAIN and ISOLATED content scripts; build-time manifest validator updated to match
+
 ## [9.0.0] - 2026-05-21
 
 ### Fixed
