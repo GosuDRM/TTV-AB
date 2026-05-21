@@ -715,7 +715,7 @@ function _extractPlaylistHeaders(text) {
 		}
 		headers.push(line);
 	}
-	return headers.length > 0 ? headers.join("\n") : null;
+	return headers.length > 0 ? headers.join("\n") : "#EXTM3U\n";
 }
 
 function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
