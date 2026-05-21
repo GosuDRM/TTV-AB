@@ -689,6 +689,7 @@ function _hookWorker() {
                 ${_absolutizePlaylistUrl.toString()}
                 ${_absolutizeMediaPlaylistUrls.toString()}
                 ${_stripAds.toString()}
+                ${_extractPlaylistHeaders.toString()}
                 ${_getStreamVariantInfo.toString()}
                 ${_replaceOrAppendStreamInfAttribute.toString()}
                 ${_getStreamUrl.toString()}

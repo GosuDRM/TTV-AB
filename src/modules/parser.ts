@@ -692,6 +692,32 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	return result.join("\n");
 }
 
+function _extractPlaylistHeaders(text) {
+	if (typeof text !== "string" || !text) return null;
+	const lines = text.split("\n");
+	const headers = [];
+	for (const line of lines) {
+		if (
+			line?.startsWith("#EXTINF") ||
+			line?.startsWith("#EXT-X-PART:") ||
+			line?.startsWith("#EXT-X-PRELOAD-HINT:") ||
+			line?.startsWith("#EXT-X-TWITCH-PREFETCH:")
+		) {
+			break;
+		}
+		if (_hasExplicitAdMetadata(line)) continue;
+		if (
+			line?.includes("X-TV-TWITCH-AD") ||
+			line?.includes("EXT-X-CUE-OUT") ||
+			line?.includes("SCTE35-OUT")
+		) {
+			continue;
+		}
+		headers.push(line);
+	}
+	return headers.length > 0 ? headers.join("\n") : null;
+}
+
 function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
 	const frameRate = Number.parseFloat(attrs?.["FRAME-RATE"]);
 	const bandwidth = Number.parseInt(attrs?.BANDWIDTH, 10);

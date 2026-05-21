@@ -1335,6 +1335,14 @@ async function _processM3U8(url, text, realFetch) {
 			}
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
+			const headersOnly = _extractPlaylistHeaders(text);
+			if (headersOnly) {
+				_log(
+					"[Trace] Returning headers-only playlist as stopgap during backup search",
+					"info",
+				);
+				return headersOnly;
+			}
 			const stripped = _stripAds(text, false, info, true);
 			if (stripped && stripped !== text) {
 				_log(
