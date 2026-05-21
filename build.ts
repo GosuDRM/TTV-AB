@@ -1384,53 +1384,66 @@ _$in();
 		console.log(`  Size: ${(stats.size / 1024).toFixed(2)} KB`);
 
 		console.log("\nPackaging...");
-		const xpiFile = path.join(SOURCE_ROOT, `ttv-ab-${version}.xpi`);
-		const sourceZip = path.join(SOURCE_ROOT, `ttv-ab-${version}-source.zip`);
+		const isFirefox = SOURCE_ROOT.includes("firefox");
+		if (isFirefox) {
+			const xpiFile = path.join(SOURCE_ROOT, `ttv-ab-${version}.xpi`);
+			const sourceZip = path.join(SOURCE_ROOT, `ttv-ab-${version}-source.zip`);
 
-		// Package XPI
-		try {
-			const chromeZipName = `ttv-ab-${version}-chrome-store.zip`;
-			execFileSync("python3", ["tools/package_chrome.py"], {
-				cwd: SOURCE_ROOT,
-				stdio: "inherit",
-			});
-			const chromeZip = path.join(SOURCE_ROOT, chromeZipName);
-			if (fs.existsSync(chromeZip)) {
-				fs.renameSync(chromeZip, xpiFile);
-				console.log(`  Created ${path.basename(xpiFile)}`);
+			// Package XPI
+			try {
+				const chromeZipName = `ttv-ab-${version}-chrome-store.zip`;
+				execFileSync("python3", ["tools/package_chrome.py"], {
+					cwd: SOURCE_ROOT,
+					stdio: "inherit",
+				});
+				const chromeZip = path.join(SOURCE_ROOT, chromeZipName);
+				if (fs.existsSync(chromeZip)) {
+					fs.renameSync(chromeZip, xpiFile);
+					console.log(`  Created ${path.basename(xpiFile)}`);
+				}
+			} catch (err) {
+				console.error(`  XPI packaging failed: ${err.message}`);
 			}
-		} catch (err) {
-			console.error(`  XPI packaging failed: ${err.message}`);
-		}
 
-		// Package Source ZIP
-		try {
-			const sourceFiles = [
-				...STATIC_ROOT_FILES,
-				...STATIC_ROOT_DIRECTORIES,
-				"src",
-				"tests",
-				"tools",
-				"package.json",
-				"package-lock.json",
-				"tsconfig.json",
-				"tsconfig.base.json",
-				"tsconfig.build.json",
-				"tsconfig.modules.json",
-				"tsconfig.runtime.json",
-				"build.ts",
-				"biome.json",
-				"vitest.config.ts",
-				"knip.json",
-				".gitignore",
-				".editorconfig",
-			];
-			const zipCmd = `zip -r "${sourceZip}" ${sourceFiles.map((f) => `"${f}"`).join(" ")} -x "node_modules/*" "dist/*" ".git/*" "*.xpi" "*.zip"`;
-			const { execSync } = require("node:child_process");
-			execSync(zipCmd, { cwd: SOURCE_ROOT });
-			console.log(`  Created ${path.basename(sourceZip)}`);
-		} catch (err) {
-			console.error(`  Source packaging failed: ${err.message}`);
+			// Package Source ZIP
+			try {
+				const sourceFiles = [
+					...STATIC_ROOT_FILES,
+					...STATIC_ROOT_DIRECTORIES,
+					"src",
+					"tests",
+					"tools",
+					"package.json",
+					"package-lock.json",
+					"tsconfig.json",
+					"tsconfig.base.json",
+					"tsconfig.build.json",
+					"tsconfig.modules.json",
+					"tsconfig.runtime.json",
+					"build.ts",
+					"biome.json",
+					"vitest.config.ts",
+					"knip.json",
+					".gitignore",
+					".editorconfig",
+				];
+				const zipCmd = `zip -r "${sourceZip}" ${sourceFiles.map((f) => `"${f}"`).join(" ")} -x "node_modules/*" "dist/*" ".git/*" "*.xpi" "*.zip"`;
+				const { execSync } = require("node:child_process");
+				execSync(zipCmd, { cwd: SOURCE_ROOT });
+				console.log(`  Created ${path.basename(sourceZip)}`);
+			} catch (err) {
+				console.error(`  Source packaging failed: ${err.message}`);
+			}
+		} else {
+			// Package Chrome Store ZIP
+			try {
+				execFileSync("python3", ["tools/package_chrome.py"], {
+					cwd: SOURCE_ROOT,
+					stdio: "inherit",
+				});
+			} catch (err) {
+				console.error(`  Chrome packaging failed: ${err.message}`);
+			}
 		}
 	} catch (err) {
 		console.error("\nBuild failed:");
