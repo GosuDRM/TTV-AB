@@ -2,7 +2,10 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [9.0.4] - 2026-05-21
+## [9.0.5] - 2026-05-21
+
+### Fixed
+- First poll now awaits backup search synchronously instead of fire-and-forget + stopgap — eliminates all ad-flash leakage paths on prerolls. Player sees loading spinner until clean backup arrives, then plays clean stream directly.
 
 ### Fixed
 - `_extractPlaylistHeaders` now returns minimal `#EXTM3U\n` fallback instead of null when no headers found — prevents original ad-marked playlist from leaking through when LL-HLS PART-only or malformed playlists have no headers before segments ([#20](https://github.com/GosuDRM/TTV-AB/issues/20))
