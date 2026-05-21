@@ -2,10 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.0.4] - 2026-05-21
+
+### Fixed
+- `_extractPlaylistHeaders` now returns minimal `#EXTM3U\n` fallback instead of null when no headers found — prevents original ad-marked playlist from leaking through when LL-HLS PART-only or malformed playlists have no headers before segments ([#20](https://github.com/GosuDRM/TTV-AB/issues/20))
+
 ## [9.0.3] - 2026-05-21
 
 ### Fixed
-- Stopgap during backup search now returns headers-only playlist instead of ad-marked text on both first request and all subsequent refresh requests — eliminates ad flash during prerolls ([#20](https://github.com/GosuDRM/TTV-AB/issues/20))
+- Stopgap during backup search now returns headers-only playlist instead of ad-marked text on both first request and all subsequent refresh requests
 
 ## [9.0.1] - 2026-05-21
 
