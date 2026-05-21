@@ -337,20 +337,29 @@ function validateSharedDefinitions() {
 			js: ["src/scripts/content.js"],
 			run_at: "document_start",
 			world: "MAIN",
+			all_frames: true,
 		},
 		{
 			matches: ["*://*.twitch.tv/*"],
 			js: ["src/scripts/bridge.js"],
 			run_at: "document_start",
 			world: "ISOLATED",
+			all_frames: true,
 		},
 	];
 	const comparableContentScripts = (manifest.content_scripts || []).map(
-		({ matches = [], js = [], run_at = null, world = null }) => ({
+		({
+			matches = [],
+			js = [],
+			run_at = null,
+			world = null,
+			all_frames = false,
+		}) => ({
 			matches: [...matches],
 			js: [...js],
 			run_at,
 			world,
+			all_frames,
 		}),
 	);
 	if (
