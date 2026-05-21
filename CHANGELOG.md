@@ -2,6 +2,21 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.0.7] - 2026-05-21
+
+### Changed
+- Buffer monitor now throttles to 900ms during steady-state playback (zero stall signals, valid cached player, no post-ad recovery). Drops back to the configured 600ms cadence on the first stall signal. ~33% fewer monitor ticks on healthy streams; worst-case stall detection moves from 3.0s to 3.3s.
+- Preserve the cached React player reference across transient buffer-monitor skip ticks (idle context, buffer fix disabled, non-live, ad-active). Counters still reset; only the cache lifetime changed. Eliminates fiber-tree re-walks after every ad break and idle interval.
+
+### Fixed
+- `_findReactRoot` caches the `#root` DOM node and React fiber container key at module scope, re-validating via `isConnected`. Removes a `document.querySelector('#root')` and an `Object.keys()` scan on every `_getPlayerAndState` call.
+- `_getPlayerAndState` collapses three independent React fiber DFS walks (player wrapper, direct state, fallback state) into a single multi-constraint walk with short-circuit termination when all predicates are satisfied.
+- `_hasExplicitAdMetadata` now uses a single compiled regex alternation in place of eight sequential `String.prototype.includes` calls. Hot path: runs on every M3U8 response and was previously also invoked per line inside `_stripAds`.
+- `_stripAds` skips the per-line ad-metadata scan entirely when the whole-text check found nothing, and only tests tag lines (charCode 35 = `#`) when it does run. Drops up to N regex tests per playlist refresh to zero on clean streams.
+- `_stripAds` no longer splits the playlist text twice — the redundant `text.split('\n')` inside `_playlistHasKnownAdSegments(text)` was reusing the same input the strip loop had already split. New `_playlistLinesHaveKnownAdSegments(lines, options)` accepts pre-split lines.
+- `_stripAds` builds its output via a single forward pass instead of `lines.filter(...).some(...).join(...)`. One fewer intermediate array allocation per playlist; same return shape.
+- `_getPlaylistUrlAliases` returns at most 4 strings — dropped the `Set` plus spread copy in favour of an array with `indexOf` dedupe.
+
 ## [9.0.6] - 2026-05-21
 
 ### Added

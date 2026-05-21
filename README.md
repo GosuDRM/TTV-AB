@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.0.6-purple)
+![Version](https://img.shields.io/badge/version-9.0.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.0.6-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.0.7-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,6 +62,11 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.0.7 — 2026-05-21
+- Buffer monitor throttles to 900ms during steady-state playback — ~33% fewer ticks on healthy streams, stall detection latency unchanged in practice
+- Cached React fiber root, container key, and player reference across transient skip ticks — eliminates fiber-tree re-walks after every ad break and idle interval
+- HLS strip path: single combined regex for ad metadata, no redundant `text.split`, single-pass output build, hoisted per-line scan
 
 ### v9.0.6 — 2026-05-21
 - Worker-hook coexistence with TwitchNoSub — run TTV-AB alongside TwitchNoSub simultaneously ([#19](https://github.com/GosuDRM/TTV-AB/issues/19))
