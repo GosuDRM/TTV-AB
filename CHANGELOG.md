@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Worker-hook coexistence with [TwitchNoSub](https://github.com/besuper/TwitchNoSub) — `_isValid` now accepts wrappers matching an AND-combined signature whitelist, allowing TwitchNoSub to chain on top of TTV-AB's `window.Worker` hook so users can run both extensions simultaneously ([#19](https://github.com/GosuDRM/TTV-AB/issues/19))
+
 ## [9.0.5] - 2026-05-21
 
 ### Fixed
