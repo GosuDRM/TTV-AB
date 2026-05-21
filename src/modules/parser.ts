@@ -1,6 +1,8 @@
 // TTV AB - Parser
 
 const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+const _AD_METADATA_RE =
+	/stitched-ad|X-TV-TWITCH-AD|\/adsquared\/|SCTE35-OUT|EXT-X-CUE-OUT|EXT-X-DATERANGE:CLASS="twitch-|"(?:MIDROLL|midroll)"/;
 const _RESERVED_ROUTE_SEGMENTS = new Set([
 	"browse",
 	"clip",
@@ -312,17 +314,7 @@ function _replaceServerTime(m3u8, time) {
 }
 
 function _hasExplicitAdMetadata(text) {
-	return (
-		typeof text === "string" &&
-		(text.includes("X-TV-TWITCH-AD") ||
-			text.includes("stitched-ad") ||
-			text.includes("/adsquared/") ||
-			text.includes("SCTE35-OUT") ||
-			text.includes("EXT-X-CUE-OUT") ||
-			text.includes('EXT-X-DATERANGE:CLASS="twitch-') ||
-			text.includes('"MIDROLL"') ||
-			text.includes('"midroll"'))
-	);
+	return typeof text === "string" && _AD_METADATA_RE.test(text);
 }
 
 function _isExplicitKnownAdSegmentUrl(segmentUrl) {
