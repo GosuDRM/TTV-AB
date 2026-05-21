@@ -22,6 +22,8 @@ const _PlayerBufferState = {
 
 let _cachedPlayerRef = null;
 let _cachedPlayerRefMediaKey = null;
+let _cachedReactRootNode = null;
+let _cachedReactContainerKey = null;
 const _AdAudioSuppressionState = {
 	suppressedMedia: new Map(),
 	activeMediaKey: null,
@@ -172,16 +174,23 @@ function _getPlayerCore(player) {
 let _loggedReactRootSearchFailure = false;
 
 function _findReactRoot() {
-	const rootNode = document.querySelector("#root");
-	if (!rootNode) {
-		if (_debugLogging && !_loggedReactRootSearchFailure) {
-			_loggedReactRootSearchFailure = true;
-			_log(
-				"React root node #root not found in DOM — player features unavailable",
-				"debug",
-			);
+	let rootNode = _cachedReactRootNode;
+	if (!rootNode || !rootNode.isConnected) {
+		rootNode = document.querySelector("#root");
+		if (!rootNode) {
+			_cachedReactRootNode = null;
+			_cachedReactContainerKey = null;
+			if (_debugLogging && !_loggedReactRootSearchFailure) {
+				_loggedReactRootSearchFailure = true;
+				_log(
+					"React root node #root not found in DOM — player features unavailable",
+					"debug",
+				);
+			}
+			return null;
 		}
-		return null;
+		_cachedReactRootNode = rootNode;
+		_cachedReactContainerKey = null;
 	}
 
 	if (rootNode._reactRootContainer?._internalRoot?.current) {
@@ -189,9 +198,13 @@ function _findReactRoot() {
 		return rootNode._reactRootContainer._internalRoot.current;
 	}
 
-	const containerName = Object.keys(rootNode).find((x) =>
-		x.startsWith("__reactContainer"),
-	);
+	let containerName = _cachedReactContainerKey;
+	if (!containerName || !(containerName in rootNode)) {
+		containerName =
+			Object.keys(rootNode).find((x) => x.startsWith("__reactContainer")) ||
+			null;
+		_cachedReactContainerKey = containerName;
+	}
 	if (containerName) {
 		_loggedReactRootSearchFailure = false;
 		return rootNode[containerName];
