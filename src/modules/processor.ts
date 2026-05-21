@@ -1361,6 +1361,8 @@ async function _processM3U8(url, text, realFetch) {
 			}
 			if (info.LastCleanBackupM3U8) return info.LastCleanBackupM3U8;
 			if (info.LastCleanNativeM3U8) return info.LastCleanNativeM3U8;
+			const headersOnly = _extractPlaylistHeaders(text);
+			if (headersOnly) return headersOnly;
 			return text;
 		}
 
