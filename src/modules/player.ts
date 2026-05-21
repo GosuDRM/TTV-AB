@@ -220,47 +220,51 @@ function _findReactRoot() {
 	return null;
 }
 
-function _findReactNode(root, constraint) {
-	if (!root) return null;
+function _findReactNodesByConstraints(root, constraints) {
+	const found = new Array(constraints.length).fill(null);
+	if (!root) return found;
+	let remaining = constraints.length;
 
-	if (root.stateNode && constraint(root.stateNode)) {
-		return root.stateNode;
+	function visit(node) {
+		const stateNode = node.stateNode;
+		if (stateNode) {
+			for (let i = 0; i < constraints.length; i++) {
+				if (found[i] === null && constraints[i](stateNode)) {
+					found[i] = stateNode;
+					remaining--;
+					if (remaining === 0) return true;
+				}
+			}
+		}
+		let child = node.child;
+		while (child) {
+			if (visit(child)) return true;
+			child = child.sibling;
+		}
+		return false;
 	}
 
-	let node = root.child;
-	while (node) {
-		const result = _findReactNode(node, constraint);
-		if (result) return result;
-		node = node.sibling;
-	}
-
-	return null;
+	visit(root);
+	return found;
 }
 
 function _getPlayerAndState() {
 	const reactRoot = _findReactRoot();
 	if (!reactRoot) return { player: null, state: null };
 
-	let player = _findReactNode(
-		reactRoot,
-		(node) => node.setPlayerActive && node.props?.mediaPlayerInstance,
-	);
-	player = player?.props?.mediaPlayerInstance || null;
-
-	let playerState = _findReactNode(
-		reactRoot,
-		(node) => node.setSrc && node.setInitialPlaybackSettings,
-	);
-
-	if (!playerState) {
-		const fallbackState = _findReactNode(
-			reactRoot,
+	const [playerWrapper, directState, fallbackStateWrapper] =
+		_findReactNodesByConstraints(reactRoot, [
+			(node) => node.setPlayerActive && node.props?.mediaPlayerInstance,
+			(node) => node.setSrc && node.setInitialPlaybackSettings,
 			(node) =>
-				node.state &&
-				node.state.videoPlayerInstance &&
+				node.state?.videoPlayerInstance &&
 				node.state.videoPlayerInstance.playerMode !== undefined,
-		);
-		playerState = fallbackState?.state?.videoPlayerInstance || null;
+		]);
+
+	const player = playerWrapper?.props?.mediaPlayerInstance || null;
+	let playerState = directState;
+	if (!playerState) {
+		playerState = fallbackStateWrapper?.state?.videoPlayerInstance || null;
 	}
 
 	return { player, state: playerState };

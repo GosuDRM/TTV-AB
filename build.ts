@@ -92,7 +92,7 @@ const MINIFY_MAP = {
 	_cachedPlayerRef: "_$cpr",
 	_getPlayerCore: "_$gpc",
 	_findReactRoot: "_$rr",
-	_findReactNode: "_$rn",
+	_findReactNodesByConstraints: "_$rnbc",
 	_getPlayerAndState: "_$gps",
 	_clearAdResumeIntent: "_$cari",
 	_rememberPlayerPlaybackForAd: "_$rpfa",
