@@ -688,6 +688,7 @@ function _hookWorker() {
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify(_S)};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
+                const _AD_METADATA_RE = ${_AD_METADATA_RE.toString()};
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}
                 ${_getWorkerBridgeMessage.toString()}

@@ -81,6 +81,7 @@ const MINIFY_MAP = {
 	_initToggleListener: "_$tl",
 	_init: "_$in",
 	_ATTR_REGEX: "_$ar",
+	_AD_METADATA_RE: "_$amr",
 	_REMINDER_KEY: "_$rk",
 	_REMINDER_INTERVAL: "_$ri2",
 	_FIRST_RUN_KEY: "_$fr",
