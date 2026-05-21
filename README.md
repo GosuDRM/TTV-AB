@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.0.5-purple)
+![Version](https://img.shields.io/badge/version-9.0.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.0.5-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.0.6-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,6 +62,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.0.6 — 2026-05-21
+- Worker-hook coexistence with TwitchNoSub — run TTV-AB alongside TwitchNoSub simultaneously ([#19](https://github.com/GosuDRM/TTV-AB/issues/19))
 
 ### v9.0.5 — 2026-05-21
 - Eliminated preroll ad flash — first poll now waits for clean backup before returning, no stopgap leakage ([#20](https://github.com/GosuDRM/TTV-AB/issues/20))
