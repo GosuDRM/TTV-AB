@@ -75,6 +75,7 @@ const _AD_RESUME_INTENT_WINDOW_MS = 15000;
 const _AD_TRANSIENT_PAUSE_CLEAR_WINDOW_MS = 1750;
 const _PLAYER_BUFFER_LIVE_EDGE_EPSILON = 0.35;
 const _PLAYER_BUFFER_LIVE_EDGE_RELOAD_COUNT = 12;
+const _PLAYER_BUFFER_STEADY_DELAY_MS = 900;
 const _POST_AD_UNHEALTHY_RELOAD_COUNT = 3;
 const _POST_AD_RECOVERY_RELOAD_COOLDOWN_MS = 1800;
 const _POST_AD_SOFT_RELOAD_DELAY_MS = 10000;
@@ -3015,7 +3016,19 @@ function _monitorPlayerBuffering() {
 			}
 		}
 
-		_playerBufferMonitorTimer = setTimeout(check, nextDelay);
+		const inSteadyState =
+			!hasPendingPostAdRecovery &&
+			_PlayerBufferState.numSame === 0 &&
+			_PlayerBufferState.liveEdgeStarveCount === 0 &&
+			_PlayerBufferState.fixAttempts === 0 &&
+			_PlayerBufferState.postAdGraceUntil === 0 &&
+			_cachedPlayerRef !== null;
+		const scheduledDelay =
+			inSteadyState && nextDelay < _PLAYER_BUFFER_STEADY_DELAY_MS
+				? _PLAYER_BUFFER_STEADY_DELAY_MS
+				: nextDelay;
+
+		_playerBufferMonitorTimer = setTimeout(check, scheduledDelay);
 	}
 
 	check();
