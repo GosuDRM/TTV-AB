@@ -30,7 +30,6 @@ function _resetStreamAdState(info) {
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
-	info.BackupVariantUrls = new Set();
 	info._BackupSearchStartedAt = 0;
 	info._LastBackupSearchCompletedAt = 0;
 	info._LoggedOfflineTransition = false;
@@ -1810,6 +1809,30 @@ async function _findBackupStream(
 			}
 
 			if (enc) {
+				if (!isFreshM3u8) {
+					const lines = enc.split("\n");
+					for (let i = 0; i < lines.length; i++) {
+						const line = lines[i]?.trim();
+						if (
+							line &&
+							!line.startsWith("#") &&
+							(line.endsWith(".m3u8") || line.includes("://"))
+						) {
+							try {
+								const variantUrl = new URL(line, encBaseUrl).href;
+								info.BackupVariantUrls?.add(variantUrl);
+								for (const alias of _getPlaylistUrlAliases(variantUrl)) {
+									info.BackupVariantUrls?.add(alias);
+								}
+							} catch {}
+						}
+					}
+					while (info.BackupVariantUrls.size > 200) {
+						const first = info.BackupVariantUrls.values().next().value;
+						if (first !== undefined) info.BackupVariantUrls.delete(first);
+						else break;
+					}
+				}
 				try {
 					const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
 					if (streamUrl) {
