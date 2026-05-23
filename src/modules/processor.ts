@@ -30,7 +30,6 @@ function _resetStreamAdState(info) {
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
-	info.BackupVariantUrls = new Set();
 	info._BackupSearchStartedAt = 0;
 	info._LastBackupSearchCompletedAt = 0;
 	info._LoggedOfflineTransition = false;
@@ -176,6 +175,27 @@ function _isBackupPlayerRetryCoolingDown(info, playerType) {
 		info.FailedBackupPlayerTypes.delete?.(playerType);
 		return false;
 	}
+	return true;
+}
+
+function _forceClearBackupCooldownsIfStale(info, now = Date.now()) {
+	const _BACKUP_MAX_STALENESS_MS = 8000;
+	if (!info?.FailedBackupPlayerTypes?.clear) return false;
+	const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
+	if (backupAgeMs < _BACKUP_MAX_STALENESS_MS) return false;
+	if (info.FailedBackupPlayerTypes.size === 0) return false;
+
+	const allCoolingDown = [...info.FailedBackupPlayerTypes.values()].every(
+		(retryAt) => Number(retryAt) > now,
+	);
+	if (!allCoolingDown) return false;
+
+	info.FailedBackupPlayerTypes.clear();
+	info.LoggedBackupAdsByType?.clear?.();
+	_log(
+		`[Trace] Backup is ${(backupAgeMs / 1000).toFixed(1)}s stale with all types cooling down — forcing cooldown reset`,
+		"warning",
+	);
 	return true;
 }
 
@@ -395,12 +415,12 @@ function _shouldReloadNativePlayerAfterAdReset({
 }
 
 function _getPlaylistUrlAliases(url, baseUrl = null) {
-	const aliases = new Set<string>();
+	const aliases: string[] = [];
 	const pushAlias = (value) => {
 		if (typeof value !== "string") return;
 		const trimmed = value.trimEnd();
-		if (!trimmed) return;
-		aliases.add(trimmed);
+		if (!trimmed || aliases.indexOf(trimmed) !== -1) return;
+		aliases.push(trimmed);
 	};
 
 	pushAlias(url);
@@ -422,7 +442,7 @@ function _getPlaylistUrlAliases(url, baseUrl = null) {
 		pushAlias(parsed.pathname);
 	} catch {}
 
-	return [...aliases];
+	return aliases;
 }
 
 function _getStreamInfoForPlaylist(url) {
@@ -497,6 +517,17 @@ function _playlistHasMediaSegments(text) {
 	);
 }
 
+function _incrementPlaylistMediaSequence(text, incrementBy) {
+	if (!text || typeof text !== "string" || !incrementBy) return text;
+	return text.replace(/#EXT-X-MEDIA-SEQUENCE:(\d+)/, (match, seqStr) => {
+		const seq = parseInt(seqStr, 10);
+		if (!Number.isNaN(seq)) {
+			return `#EXT-X-MEDIA-SEQUENCE:${seq + incrementBy}`;
+		}
+		return match;
+	});
+}
+
 function _getNativeRecoveryProbePlayerType() {
 	const forcedPlayerType =
 		__TTVAB_STATE__?.RewriteNativePlaybackAccessToken === true &&
@@ -510,6 +541,21 @@ function _getNativeRecoveryProbePlayerType() {
 		__TTVAB_STATE__?.LastNativePlaybackAccessTokenPlayerType ||
 		"site"
 	);
+}
+
+async function _fetchWithTimeout(
+	realFetch,
+	url,
+	options = {},
+	timeoutMs = 3500,
+) {
+	const controller = new AbortController();
+	const id = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		return await realFetch(url, { ...options, signal: controller.signal });
+	} finally {
+		clearTimeout(id);
+	}
 }
 
 async function _canReloadNativePlayerAfterAd(
@@ -1763,6 +1809,30 @@ async function _findBackupStream(
 			}
 
 			if (enc) {
+				if (!isFreshM3u8) {
+					const lines = enc.split("\n");
+					for (let i = 0; i < lines.length; i++) {
+						const line = lines[i]?.trim();
+						if (
+							line &&
+							!line.startsWith("#") &&
+							(line.endsWith(".m3u8") || line.includes("://"))
+						) {
+							try {
+								const variantUrl = new URL(line, encBaseUrl).href;
+								info.BackupVariantUrls?.add(variantUrl);
+								for (const alias of _getPlaylistUrlAliases(variantUrl)) {
+									info.BackupVariantUrls?.add(alias);
+								}
+							} catch {}
+						}
+					}
+					while (info.BackupVariantUrls.size > 200) {
+						const first = info.BackupVariantUrls.values().next().value;
+						if (first !== undefined) info.BackupVariantUrls.delete(first);
+						else break;
+					}
+				}
 				try {
 					const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
 					if (streamUrl) {
