@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.0.8] - 2026-05-23
+
+### Fixed
+- `_resetStreamAdState` no longer clears `BackupVariantUrls` whitelist on ad-end reset — prevents cached encodings from leaking backup variant URLs and causing backup media playlists to be misidentified as native
+- `_findBackupStream` re-populates `BackupVariantUrls` from cached encodings when reusing a previously fetched master playlist — ensures backup media playlists pass through the `isBackupUrl` gate on consecutive ad breaks
+- Consecutive midroll backup search no longer contaminates `LastCleanNativeM3U8` with backup stream content, fixing stream position corruption on post-reload ad detections
+
 ## [9.0.7] - 2026-05-21
 
 ### Changed
