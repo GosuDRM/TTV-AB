@@ -1,6 +1,6 @@
 {
 	"manifest_version": 3,
-	"version": "9.0.6",
+	"version": "9.0.8",
 	"homepage_url": "https://github.com/GosuDRM/TTV-AB",
 	"short_name": "TTV AB",
 	"name": "__MSG_extName__",
@@ -44,7 +44,7 @@
 	"browser_specific_settings": {
 		"gecko": {
 			"id": "{71e91189-9cd2-4e46-895d-bcc38f0053c4}",
-			"strict_min_version": "142.0",
+			"strict_min_version": "128.0",
 			"data_collection_permissions": {
 				"required": ["none"],
 				"optional": []
