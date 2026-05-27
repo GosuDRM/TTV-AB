@@ -69,8 +69,14 @@ function _isValid(v) {
 	) {
 		return true;
 	}
-	return (
-		!_S.conflicts.some((c) => src.includes(c)) &&
-		!_S.reinsertPatterns.some((p) => src.includes(p))
-	);
+	const hasConflict = _S.conflicts.some((c) => src.includes(c));
+	const hasReinsert = _S.reinsertPatterns.some((p) => src.includes(p));
+	if (hasConflict) {
+		const matched = _S.conflicts.filter((c) => src.includes(c));
+		_log(
+			`Worker wrapper rejected (conflict: ${matched.join(", ")}, hasReinsert: ${hasReinsert})`,
+			"debug",
+		);
+	}
+	return !hasConflict && !hasReinsert;
 }

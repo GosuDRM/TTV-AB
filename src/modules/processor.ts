@@ -932,7 +932,7 @@ async function _processM3U8(url, text, realFetch) {
 			_rememberLastAdEnd(info, Date.now());
 			_log(
 				requiresReload
-					? "[Trace] Native playlist clean after silent backup hold; reloading player to restore HEVC stream"
+					? "[Trace] Native playlist clean after silent backup hold; reloading player after backup hold"
 					: "[Trace] Native playlist clean after silent backup hold; restoring native stream",
 				"success",
 			);

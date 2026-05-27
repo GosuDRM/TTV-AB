@@ -1302,8 +1302,8 @@ function _hookWorker() {
 								const requiresReload = data.requiresReload === true;
 								_log(
 									requiresReload
-										? "Native playback restored after backup hold; reloading player for HEVC handoff"
-										: "Native playback restored after backup hold",
+											? "Native playback restored after backup hold; reloading player"
+											: "Native playback restored after backup hold",
 									"success",
 								);
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
