@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.0.8-purple)
+![Version](https://img.shields.io/badge/version-9.1.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.0.8-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.1.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,6 +62,14 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.1.0 — 2026-05-27
+- New toggle for low quality fallback backup stream with per-locale translations
+- Sub-toggle sync disables spoofer and fallback when master toggle is off
+- Automatic player reload when fallback is disabled while active
+
+### v9.0.9 — 2026-05-27
+- Force player reload with fresh MediaSource when restoring native from autoplay (360p) backup — prevents AVC decoder corruption and audio desync after ad breaks on channels where all source-tier backups are ad-marked
 
 ### v9.0.8 — 2026-05-23
 - Fix consecutive midroll backup contamination: BackupVariantUrls whitelist no longer cleared on ad-end reset, and cached encodings re-populate variant URLs — prevents backup media playlists contaminating native snapshot across ad breaks
