@@ -1,12 +1,19 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.13/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!!**/dist", "!!**/build"]
+		"includes": [
+			"**",
+			"!!**/dist",
+			"!!**/build",
+			"!src/scripts/content.js",
+			"!src/popup/popup.js",
+			"!src/popup/translations.js"
+		]
 	},
 	"formatter": {
 		"enabled": true,

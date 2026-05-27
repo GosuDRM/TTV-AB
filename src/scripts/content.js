@@ -1,12 +1,12 @@
-// TTV AB v9.0.9 - Twitch Ad Blocker
+// TTV AB v9.1.0 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.0.9",
-    INTERNAL_VERSION: 191,
+    VERSION: "9.1.0",
+    INTERNAL_VERSION: 192,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -7656,6 +7656,13 @@ function _$tl() {
             value: shouldDisable,
         });
         _$l(`Low quality fallback ${enabled ? "enabled" : "disabled"}`, enabled ? "success" : "warning");
+        if (shouldDisable &&
+            __TTVAB_STATE__.PinnedBackupPlayerType === "autoplay") {
+            _$l("Disabling low quality fallback while backup is active; reloading player to restore native high quality stream.", "info");
+            if (typeof _$dpt === "function") {
+                _$dpt(false, true, { reason: "manual" });
+            }
+        }
     });
     _onInternalMessage("ttvab-toggle-debug", (detail) => {
         const safeDetail = _getTrustedBridgeMessageDetail(detail);

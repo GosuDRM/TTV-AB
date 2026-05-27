@@ -145,7 +145,10 @@ function _initToggleListener() {
 			enabled ? "success" : "warning",
 		);
 
-		if (shouldDisable && __TTVAB_STATE__.PinnedBackupPlayerType === "autoplay") {
+		if (
+			shouldDisable &&
+			__TTVAB_STATE__.PinnedBackupPlayerType === "autoplay"
+		) {
 			_log(
 				"Disabling low quality fallback while backup is active; reloading player to restore native high quality stream.",
 				"info",

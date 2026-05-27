@@ -1,6 +1,5 @@
 // TTV AB - Popup Script
 document.addEventListener("DOMContentLoaded", () => {
-    console.log("[TTV AB] Popup DOM ready — autoplay toggle elements:", "toggle:", !!document.getElementById("autoplayBackupToggle"), "infoIcon:", !!document.getElementById("autoplayBackupInfoIcon"), "tooltip:", !!document.getElementById("autoplayBackupTooltip"), "modalClose:", !!document.getElementById("autoplayBackupModalClose"));
     const toggle = document.getElementById("enableToggle");
     const statusDot = document.getElementById("statusDot");
     const statusText = document.getElementById("statusText");
@@ -672,8 +671,12 @@ document.addEventListener("DOMContentLoaded", () => {
     function syncSubTogglesState(adblockEnabled) {
         if (adSpoofingToggle) {
             adSpoofingToggle.disabled = !adblockEnabled;
-            const label = adSpoofingToggle.closest(".toggle-row")?.querySelector(".toggle-label");
-            const slider = adSpoofingToggle.closest(".toggle-row")?.querySelector(".slider");
+            const label = adSpoofingToggle
+                .closest(".toggle-row")
+                ?.querySelector(".toggle-label");
+            const slider = adSpoofingToggle
+                .closest(".toggle-row")
+                ?.querySelector(".slider");
             if (label)
                 label.style.opacity = adblockEnabled ? "1" : "0.4";
             if (slider)
@@ -681,8 +684,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (autoplayBackupToggle) {
             autoplayBackupToggle.disabled = !adblockEnabled;
-            const label = autoplayBackupToggle.closest(".toggle-row")?.querySelector(".toggle-label");
-            const slider = autoplayBackupToggle.closest(".toggle-row")?.querySelector(".slider");
+            const label = autoplayBackupToggle
+                .closest(".toggle-row")
+                ?.querySelector(".toggle-label");
+            const slider = autoplayBackupToggle
+                .closest(".toggle-row")
+                ?.querySelector(".slider");
             if (label)
                 label.style.opacity = adblockEnabled ? "1" : "0.4";
             if (slider)

@@ -64,7 +64,7 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 ## 🔔 What's New
 
 ### v9.1.0 — 2026-05-27
-- **Premium Real-Time UI controls:** Settings toggles automatically grey out and disable when Ad Blocking is OFF, while preserving descriptive help popup interactions — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
+- **Real-Time UI controls:** Settings toggles automatically grey out and disable when Ad Blocking is OFF, while preserving descriptive help popup interactions — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
 - **Auto Player Soft-Reload:** Toggling Low Quality Fallback OFF during active backup playback now programmatically triggers a non-disruptive, soft reload of the Twitch player, instantly returning you to native source-tier quality — ([#26](https://github.com/GosuDRM/TTV-AB/issues/26)).
 - **Audited 11-Locale Translations:** Perfected translation phrasing line-by-line in German (`de`), Spanish (`es`), Portuguese (`pt`), Italian (`it`), Japanese (`ja`), Korean (`ko`), and Russian (`ru`).
 - **Critical Fixes:** Fixed the info modal Got It button click toggling settings off, and resolved the popup TDZ crash on declaration — ([#25](https://github.com/GosuDRM/TTV-AB/issues/25)).
