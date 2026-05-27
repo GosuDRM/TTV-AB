@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.0.9] - 2026-05-27
+
+### Fixed
+- Backup hold recovery no longer causes A/V desync when autoplay (360p) was the active backup — `HevcReloadPendingAfterHold` now set when backup player type is autoplay, triggering a hard reload with fresh MediaSource on native restoration instead of an in-place stream swap that corrupts the WASM AVC decoder
+- `NativePlaybackRestored` handler passes `newMediaPlayerInstance: true` during autoplay recovery reload, ensuring the WASM worker is torn down and re-initialized on the native source-quality stream
+
 ## [9.0.8] - 2026-05-23
 
 ### Fixed
