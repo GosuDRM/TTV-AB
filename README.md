@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.1.0-purple)
+![Version](https://img.shields.io/badge/version-9.1.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -19,7 +19,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 
 <p align="center">
-  <img src="assets/popup-screenshot.png" alt="Popup Screenshot" width="300">
+  <img src="assets/popup1.png" alt="Popup Screenshot" width="300">
   <img src="assets/popup-screenshot2.png" alt="Stats Screenshot" width="300">
 </p>
 
@@ -62,6 +62,10 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.1.2 — 2026-05-27
+- Fix low quality fallback toggle not filtering autoplay from backup search when disabled
+- Fix unreachable reload condition when disabling fallback toggle
 
 ### v9.1.0 — 2026-05-27
 - **Real-Time UI controls:** Settings toggles automatically grey out and disable when Ad Blocking is OFF, while preserving descriptive help popup interactions — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).

@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.1.2] - 2026-05-27
+
+### Fixed
+- Low quality fallback toggle now correctly filters autoplay from backup search when disabled
+- Reload trigger on fallback disable no longer blocked by unreachable pinned-type guard
+
 ## [9.1.0] - 2026-05-27
 
 ### Added
