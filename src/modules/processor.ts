@@ -1538,7 +1538,7 @@ async function _processM3U8(url, text, realFetch) {
 			info.ActiveBackupResolution = res?.Resolution || null;
 			info.HevcReloadPendingAfterHold =
 				wasUsingModifiedM3U8 || heldBackupPlayerType === "autoplay";
-			}
+		}
 		__TTVAB_STATE__.CurrentAdChannel = null;
 		__TTVAB_STATE__.CurrentAdMediaKey = null;
 		__TTVAB_STATE__.PinnedBackupPlayerType = null;

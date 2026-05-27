@@ -22,6 +22,8 @@ const _PlayerBufferState = {
 
 let _cachedPlayerRef = null;
 let _cachedPlayerRefMediaKey = null;
+let _cachedReactRootNode = null;
+let _cachedReactContainerKey = null;
 const _AdAudioSuppressionState = {
 	suppressedMedia: new Map(),
 	activeMediaKey: null,
@@ -73,6 +75,7 @@ const _AD_RESUME_INTENT_WINDOW_MS = 15000;
 const _AD_TRANSIENT_PAUSE_CLEAR_WINDOW_MS = 1750;
 const _PLAYER_BUFFER_LIVE_EDGE_EPSILON = 0.35;
 const _PLAYER_BUFFER_LIVE_EDGE_RELOAD_COUNT = 12;
+const _PLAYER_BUFFER_STEADY_DELAY_MS = 900;
 const _POST_AD_UNHEALTHY_RELOAD_COUNT = 3;
 const _POST_AD_RECOVERY_RELOAD_COOLDOWN_MS = 1800;
 const _POST_AD_SOFT_RELOAD_DELAY_MS = 10000;
@@ -172,16 +175,23 @@ function _getPlayerCore(player) {
 let _loggedReactRootSearchFailure = false;
 
 function _findReactRoot() {
-	const rootNode = document.querySelector("#root");
-	if (!rootNode) {
-		if (_debugLogging && !_loggedReactRootSearchFailure) {
-			_loggedReactRootSearchFailure = true;
-			_log(
-				"React root node #root not found in DOM — player features unavailable",
-				"debug",
-			);
+	let rootNode = _cachedReactRootNode;
+	if (!rootNode?.isConnected) {
+		rootNode = document.querySelector("#root");
+		if (!rootNode) {
+			_cachedReactRootNode = null;
+			_cachedReactContainerKey = null;
+			if (_debugLogging && !_loggedReactRootSearchFailure) {
+				_loggedReactRootSearchFailure = true;
+				_log(
+					"React root node #root not found in DOM — player features unavailable",
+					"debug",
+				);
+			}
+			return null;
 		}
-		return null;
+		_cachedReactRootNode = rootNode;
+		_cachedReactContainerKey = null;
 	}
 
 	if (rootNode._reactRootContainer?._internalRoot?.current) {
@@ -189,9 +199,13 @@ function _findReactRoot() {
 		return rootNode._reactRootContainer._internalRoot.current;
 	}
 
-	const containerName = Object.keys(rootNode).find((x) =>
-		x.startsWith("__reactContainer"),
-	);
+	let containerName = _cachedReactContainerKey;
+	if (!containerName || !(containerName in rootNode)) {
+		containerName =
+			Object.keys(rootNode).find((x) => x.startsWith("__reactContainer")) ||
+			null;
+		_cachedReactContainerKey = containerName;
+	}
 	if (containerName) {
 		_loggedReactRootSearchFailure = false;
 		return rootNode[containerName];
@@ -207,47 +221,51 @@ function _findReactRoot() {
 	return null;
 }
 
-function _findReactNode(root, constraint) {
-	if (!root) return null;
+function _findReactNodesByConstraints(root, constraints) {
+	const found = new Array(constraints.length).fill(null);
+	if (!root) return found;
+	let remaining = constraints.length;
 
-	if (root.stateNode && constraint(root.stateNode)) {
-		return root.stateNode;
+	function visit(node) {
+		const stateNode = node.stateNode;
+		if (stateNode) {
+			for (let i = 0; i < constraints.length; i++) {
+				if (found[i] === null && constraints[i](stateNode)) {
+					found[i] = stateNode;
+					remaining--;
+					if (remaining === 0) return true;
+				}
+			}
+		}
+		let child = node.child;
+		while (child) {
+			if (visit(child)) return true;
+			child = child.sibling;
+		}
+		return false;
 	}
 
-	let node = root.child;
-	while (node) {
-		const result = _findReactNode(node, constraint);
-		if (result) return result;
-		node = node.sibling;
-	}
-
-	return null;
+	visit(root);
+	return found;
 }
 
 function _getPlayerAndState() {
 	const reactRoot = _findReactRoot();
 	if (!reactRoot) return { player: null, state: null };
 
-	let player = _findReactNode(
-		reactRoot,
-		(node) => node.setPlayerActive && node.props?.mediaPlayerInstance,
-	);
-	player = player?.props?.mediaPlayerInstance || null;
-
-	let playerState = _findReactNode(
-		reactRoot,
-		(node) => node.setSrc && node.setInitialPlaybackSettings,
-	);
-
-	if (!playerState) {
-		const fallbackState = _findReactNode(
-			reactRoot,
+	const [playerWrapper, directState, fallbackStateWrapper] =
+		_findReactNodesByConstraints(reactRoot, [
+			(node) => node.setPlayerActive && node.props?.mediaPlayerInstance,
+			(node) => node.setSrc && node.setInitialPlaybackSettings,
 			(node) =>
-				node.state &&
-				node.state.videoPlayerInstance &&
+				node.state?.videoPlayerInstance &&
 				node.state.videoPlayerInstance.playerMode !== undefined,
-		);
-		playerState = fallbackState?.state?.videoPlayerInstance || null;
+		]);
+
+	const player = playerWrapper?.props?.mediaPlayerInstance || null;
+	let playerState = directState;
+	if (!playerState) {
+		playerState = fallbackStateWrapper?.state?.videoPlayerInstance || null;
 	}
 
 	return { player, state: playerState };
@@ -2726,7 +2744,7 @@ function _monitorPlayerBuffering() {
 			? hiddenDelay
 			: Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000);
 		if (!_hasPlayerBufferMonitorRelevantContext()) {
-			_clearCachedPlayerRef();
+			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
@@ -2747,26 +2765,20 @@ function _monitorPlayerBuffering() {
 			return;
 		}
 		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
-			_clearCachedPlayerRef();
+			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
 		const hasLivePlaybackContext =
 			__TTVAB_STATE__.PageMediaType === "live" && Boolean(currentMediaKey);
 		if (!hasLivePlaybackContext) {
-			_clearCachedPlayerRef();
+			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
 		}
 
 		if (hasActiveAdContext) {
-			_PlayerBufferState.liveEdgeStarveCount = 0;
-			_PlayerBufferState.numSame = 0;
-			_PlayerBufferState.fixAttempts = 0;
-			_PlayerBufferState.postAdUnhealthyCount = 0;
-			_PlayerBufferState.postAdRecoveryStartedAt = 0;
-			_resetPostAdGrace();
-			_clearCachedPlayerRef();
+			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, nextDelay);
 			return;
 		}
@@ -3004,7 +3016,19 @@ function _monitorPlayerBuffering() {
 			}
 		}
 
-		_playerBufferMonitorTimer = setTimeout(check, nextDelay);
+		const inSteadyState =
+			!hasPendingPostAdRecovery &&
+			_PlayerBufferState.numSame === 0 &&
+			_PlayerBufferState.liveEdgeStarveCount === 0 &&
+			_PlayerBufferState.fixAttempts === 0 &&
+			_PlayerBufferState.postAdGraceUntil === 0 &&
+			_cachedPlayerRef !== null;
+		const scheduledDelay =
+			inSteadyState && nextDelay < _PLAYER_BUFFER_STEADY_DELAY_MS
+				? _PLAYER_BUFFER_STEADY_DELAY_MS
+				: nextDelay;
+
+		_playerBufferMonitorTimer = setTimeout(check, scheduledDelay);
 	}
 
 	check();

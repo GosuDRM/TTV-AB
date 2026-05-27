@@ -1,6 +1,8 @@
 // TTV AB - Parser
 
 const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+const _AD_METADATA_RE =
+	/stitched-ad|X-TV-TWITCH-AD|\/adsquared\/|SCTE35-OUT|EXT-X-CUE-OUT|EXT-X-DATERANGE:CLASS="twitch-|"(?:MIDROLL|midroll)"/;
 const _RESERVED_ROUTE_SEGMENTS = new Set([
 	"browse",
 	"clip",
@@ -312,18 +314,7 @@ function _replaceServerTime(m3u8, time) {
 }
 
 function _hasExplicitAdMetadata(text) {
-	return (
-		typeof text === "string" &&
-		(text.includes("X-TV-TWITCH-AD") ||
-			text.includes("stitched-ad") ||
-			text.includes("/adsquared/") ||
-			text.includes("SCTE35-OUT") ||
-			text.includes("EXT-X-CUE-OUT") ||
-			text.includes('EXT-X-DATERANGE:CLASS="twitch-trigger"') ||
-			text.includes('EXT-X-DATERANGE:CLASS="twitch-maf-ad"') ||
-			text.includes('"MIDROLL"') ||
-			text.includes('"midroll"'))
-	);
+	return typeof text === "string" && _AD_METADATA_RE.test(text);
 }
 
 function _isExplicitKnownAdSegmentUrl(segmentUrl) {
@@ -368,12 +359,10 @@ function _isPartPreloadHintLine(line) {
 	);
 }
 
-function _playlistHasKnownAdSegments(
-	text,
+function _playlistLinesHaveKnownAdSegments(
+	lines,
 	options: { includeCached?: boolean } = {},
 ) {
-	if (typeof text !== "string" || !text) return false;
-	const lines = text.split("\n");
 	for (let index = 0; index < lines.length; index++) {
 		const line = lines[index];
 		if (
@@ -391,6 +380,14 @@ function _playlistHasKnownAdSegments(
 		}
 	}
 	return false;
+}
+
+function _playlistHasKnownAdSegments(
+	text,
+	options: { includeCached?: boolean } = {},
+) {
+	if (typeof text !== "string" || !text) return false;
+	return _playlistLinesHaveKnownAdSegments(text.split("\n"), options);
 }
 
 function _absolutizePlaylistUrl(rawUrl, baseUrl = null) {
@@ -453,7 +450,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
-	const hasKnownAdSegments = _playlistHasKnownAdSegments(text);
+	const hasKnownAdSegments = _playlistLinesHaveKnownAdSegments(lines);
 	const forceStripAllSegments =
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
@@ -581,7 +578,11 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 			}
 		}
 
-		if (_hasExplicitAdMetadata(line)) {
+		if (
+			hasExplicitAdMetadata &&
+			line?.charCodeAt(0) === 35 &&
+			_AD_METADATA_RE.test(line)
+		) {
 			stripped = true;
 			lines[i] = "";
 		}
@@ -628,11 +629,20 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		}
 	}
 
-	const result = lines.filter((l) => l !== "");
+	const result = [];
+	let hasRemainingSegments = false;
+	for (let ri = 0; ri < len; ri++) {
+		const l = lines[ri];
+		if (l === "") continue;
+		result.push(l);
+		if (
+			!hasRemainingSegments &&
+			(l?.startsWith("#EXTINF") || l?.startsWith("#EXT-X-PART:"))
+		) {
+			hasRemainingSegments = true;
+		}
+	}
 
-	const hasRemainingSegments = result.some(
-		(l) => l?.startsWith("#EXTINF") || l?.startsWith("#EXT-X-PART:"),
-	);
 	if (!hasRemainingSegments && strippedMediaEntryCount > 0) {
 		const recoveryCandidates = [
 			{
