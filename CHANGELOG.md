@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.1.2] - 2026-05-27
+
+### Fixed
+- Low quality fallback toggle now correctly filters autoplay from backup search when disabled
+- Reload trigger on fallback disable no longer blocked by unreachable pinned-type guard
+
+## [9.1.0] - 2026-05-27
+
+### Added
+- Low quality fallback toggle in popup with styled warning modal and info tooltip (11 locales)
+- Sub-toggle state sync — ad spoofing and fallback toggles disable when master toggle is off
+- Automatic player reload when fallback is disabled while active
+
 ## [9.0.9] - 2026-05-27
 
 ### Fixed
