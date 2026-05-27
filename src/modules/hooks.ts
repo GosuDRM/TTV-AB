@@ -781,6 +781,8 @@ function _hookWorker() {
                         case 'UpdateClientIntegrityHeader': __TTVAB_STATE__.ClientIntegrityHeader = data.value; break;
                         case 'UpdateAuthorizationHeader': __TTVAB_STATE__.AuthorizationHeader = data.value; break;
                         case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
+                        case 'UpdateAdSpoofingState': __TTVAB_STATE__.DisableAdSpoofing = data.value === true; break;
+                        case 'UpdateAutoplayBackupState': __TTVAB_STATE__.DisableAutoplayBackup = data.value === true; break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                         case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;
@@ -1302,8 +1304,8 @@ function _hookWorker() {
 								const requiresReload = data.requiresReload === true;
 								_log(
 									requiresReload
-											? "Native playback restored after backup hold; reloading player"
-											: "Native playback restored after backup hold",
+										? "Native playback restored after backup hold; reloading player"
+										: "Native playback restored after backup hold",
 									"success",
 								);
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {

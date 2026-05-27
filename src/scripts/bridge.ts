@@ -363,6 +363,7 @@ function postAchievementUnlock(id) {
 const bridgeState = {
 	enabled: true,
 	adSpoofingEnabled: true,
+	autoplayBackupEnabled: true,
 	storedAdsCount: 0,
 };
 const MAX_MESSAGE_DELTA = 50;
@@ -733,6 +734,9 @@ function broadcastState() {
 	sendToPage("ttvab-toggle-ad-spoofing", {
 		enabled: Boolean(bridgeState.adSpoofingEnabled),
 	});
+	sendToPage("ttvab-toggle-autoplay-backup", {
+		enabled: Boolean(bridgeState.autoplayBackupEnabled),
+	});
 	sendToPage("ttvab-init-count", {
 		count: normalizeCount(bridgeState.storedAdsCount),
 	});
@@ -820,7 +824,12 @@ function flushPendingCountersOnPageExit() {
 }
 
 chrome.storage.local.get(
-	["ttvAdblockEnabled", "ttvAdSpoofingEnabled", "ttvAdsBlocked"],
+	[
+		"ttvAdblockEnabled",
+		"ttvAdSpoofingEnabled",
+		"ttvAutoplayBackupEnabled",
+		"ttvAdsBlocked",
+	],
 	(result) => {
 		if (chrome.runtime.lastError) {
 			console.error(
@@ -831,6 +840,8 @@ chrome.storage.local.get(
 		const safeResult = result || {};
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
 		bridgeState.adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
+		bridgeState.autoplayBackupEnabled =
+			safeResult.ttvAutoplayBackupEnabled !== false;
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
 
 		broadcastState();
@@ -851,10 +862,20 @@ chrome.storage.local.get(
 			if (changes.ttvAdSpoofingEnabled) {
 				const wasAdSpoofingEnabled = bridgeState.adSpoofingEnabled;
 				bridgeState.adSpoofingEnabled =
-					changes.ttvAdSpoofingEnabled.newValue === true;
+					changes.ttvAdSpoofingEnabled.newValue !== false;
 				if (bridgeState.adSpoofingEnabled !== wasAdSpoofingEnabled) {
 					sendToPage("ttvab-toggle-ad-spoofing", {
 						enabled: bridgeState.adSpoofingEnabled,
+					});
+				}
+			}
+			if (changes.ttvAutoplayBackupEnabled) {
+				const wasAutoplayBackupEnabled = bridgeState.autoplayBackupEnabled;
+				bridgeState.autoplayBackupEnabled =
+					changes.ttvAutoplayBackupEnabled.newValue !== false;
+				if (bridgeState.autoplayBackupEnabled !== wasAutoplayBackupEnabled) {
+					sendToPage("ttvab-toggle-autoplay-backup", {
+						enabled: bridgeState.autoplayBackupEnabled,
 					});
 				}
 			}

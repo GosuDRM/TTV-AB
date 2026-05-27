@@ -1675,7 +1675,11 @@ async function _findBackupStream(
 	const allSourceTypesContaminated =
 		info.LoggedBackupAdsByType &&
 		sourceTypes.every((t) => info.LoggedBackupAdsByType.has(t));
-	if (allSourceTypesContaminated && !playerTypes.includes("autoplay")) {
+	if (
+		allSourceTypesContaminated &&
+		!playerTypes.includes("autoplay") &&
+		!__TTVAB_STATE__.DisableAutoplayBackup
+	) {
 		playerTypes.push("autoplay");
 	}
 	const playerTypesLen = playerTypes.length;
