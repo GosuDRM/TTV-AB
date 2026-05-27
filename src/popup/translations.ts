@@ -24,6 +24,12 @@ const TRANSLATIONS = {
 			"Sends ad-watch signals to Twitch to reduce anti-adblock detection.",
 		adSpoofingFootnote: "Disable if you experience issues.",
 		adSpoofingGotIt: "Got it",
+		autoplayBackup: "Low Quality Fallback",
+		autoplayBackupDesc:
+			"Switches to a lower resolution backup when no ad-free high quality stream is available. Keeps playback smooth at 360p during ads.",
+		autoplayBackupWarning:
+			"Disabling may cause a black screen or frozen video during ads on channels where all high quality sources carry ads.",
+		autoplayBackupGotIt: "Got it",
 		stable: "Stable",
 		changesInstantly: "Changes take effect instantly",
 		noDataYet: "No data yet",
@@ -78,7 +84,7 @@ const TRANSLATIONS = {
 		adBlocking: "Bloqueo de anuncios",
 		bufferFix: "Corrección de búfer",
 		bufferFixDesc:
-			"Detecta y recupera de congelamientos, pantallas negras tras anuncios, retraso en directo y desincronización de audio/vídeo.",
+			"Detecta y soluciona congelaciones, pantallas negras tras anuncios, retrasos en la transmisión y desincronización de audio/video.",
 		bufferFixFootnote: "Desactívalo solo si tienes problemas.",
 		bufferFixGotIt: "Entendido",
 		adSpoofing: "Suplantación de anuncios",
@@ -86,6 +92,12 @@ const TRANSLATIONS = {
 			"Envía señales de visualización de anuncios a Twitch para reducir la detección del bloqueo de anuncios.",
 		adSpoofingFootnote: "Desactívalo si tienes problemas.",
 		adSpoofingGotIt: "Entendido",
+		autoplayBackup: "Respaldo de baja calidad",
+		autoplayBackupDesc:
+			"Cambia a un flujo de respaldo de menor resolución cuando no hay una fuente de alta calidad sin anuncios. Mantiene la reproducción fluida a 360p durante los anuncios.",
+		autoplayBackupWarning:
+			"Desactivarlo puede causar pantalla negra o video congelado durante los anuncios en canales donde todas las fuentes de alta calidad tienen anuncios.",
+		autoplayBackupGotIt: "Entendido",
 		stable: "Estable",
 		changesInstantly: "Los cambios se aplican al instante",
 		noDataYet: "Aún no hay datos",
@@ -114,11 +126,11 @@ const TRANSLATIONS = {
 			block_5000: { name: "Mítico", desc: "¡Has bloqueado 5000 anuncios!" },
 			time_1h: {
 				name: "Ahorrador de tiempo",
-				desc: "¡Has ahorrado 1 hora de anuncios!",
+				desc: "¡Has evitado 1 hora de anuncios!",
 			},
 			time_10h: {
 				name: "Maestro del tiempo",
-				desc: "¡Has ahorrado 10 horas de anuncios!",
+				desc: "¡Has evitado 10 horas de anuncios!",
 			},
 			channels_5: {
 				name: "Explorador",
@@ -160,6 +172,12 @@ const TRANSLATIONS = {
 			"Envoie des signaux de visionnage de pubs à Twitch pour réduire la détection du bloqueur de pubs.",
 		adSpoofingFootnote: "Désactivez en cas de problème.",
 		adSpoofingGotIt: "Compris",
+		autoplayBackup: "Secours basse qualité",
+		autoplayBackupDesc:
+			"Passe à un flux de secours de résolution inférieure lorsqu'aucune source haute qualité sans publicité n'est disponible. Maintient une lecture fluide à 360p pendant les publicités.",
+		autoplayBackupWarning:
+			"La désactivation peut entraîner un écran noir ou une vidéo figée pendant les publicités sur les chaînes où toutes les sources haute qualité diffusent des publicités.",
+		autoplayBackupGotIt: "Compris",
 		stable: "Stable",
 		changesInstantly: "Les changements s'appliquent instantanément",
 		noDataYet: "Pas encore de données",
@@ -232,14 +250,20 @@ const TRANSLATIONS = {
 		adBlocking: "Werbeblockierung",
 		bufferFix: "Puffer-Fix",
 		bufferFixDesc:
-			"Erkennt und behebt Wiedergabefehler, schwarze Bildschirme nach Werbung, Live-Verzögerungen und Ton/Bild-Versatz.",
+			"Erkennt und behebt Wiedergabe-Aussetzer, schwarze Bildschirme nach Werbung, Live-Verzögerungen und Ton/Bild-Versatz.",
 		bufferFixFootnote: "Nur deaktivieren, wenn es Probleme gibt.",
 		bufferFixGotIt: "Verstanden",
-		adSpoofing: "Werbe-Täuschung",
+		adSpoofing: "Werbe-Spoofing",
 		adSpoofingDesc:
 			"Sendet Werbe-Signale an Twitch, um die Erkennung des Werbeblockers zu erschweren.",
 		adSpoofingFootnote: "Deaktiviere es bei Problemen.",
 		adSpoofingGotIt: "Verstanden",
+		autoplayBackup: "Qualitäts-Fallback",
+		autoplayBackupDesc:
+			"Wechselt zu einem Backup-Stream mit niedrigerer Auflösung, wenn keine werbefreie hochauflösende Quelle verfügbar ist. Hält die Wiedergabe bei 360p während der Werbung flüssig.",
+		autoplayBackupWarning:
+			"Deaktivierung kann zu schwarzem Bildschirm oder eingefrorenem Video während der Werbung auf Kanälen führen, bei denen alle hochauflösenden Quellen Werbung enthalten.",
+		autoplayBackupGotIt: "Verstanden",
 		stable: "Stabil",
 		changesInstantly: "Änderungen werden sofort übernommen",
 		noDataYet: "Noch keine Daten",
@@ -321,7 +345,7 @@ const TRANSLATIONS = {
 		adBlocking: "Bloqueio de anúncios",
 		bufferFix: "Correção de buffer",
 		bufferFixDesc:
-			"Detecta e recupera de travamentos, telas pretas pós-anúncio, atraso no ao vivo e dessincronização de áudio/vídeo.",
+			"Detecta e recupera de travamentos, telas pretas pós-anúncio, atraso na transmissão e dessincronização de áudio/vídeo.",
 		bufferFixFootnote: "Desative apenas se tiver problemas.",
 		bufferFixGotIt: "Entendi",
 		adSpoofing: "Simulação de anúncios",
@@ -329,8 +353,14 @@ const TRANSLATIONS = {
 			"Envia sinais de visualização de anúncios ao Twitch para reduzir a detecção do bloqueador.",
 		adSpoofingFootnote: "Desative se tiver problemas.",
 		adSpoofingGotIt: "Entendi",
+		autoplayBackup: "Reserva de baixa qualidade",
+		autoplayBackupDesc:
+			"Alterna para um fluxo de reserva de resolução mais baixa quando nenhuma fonte de alta qualidade sem anúncios está disponível. Mantém a reprodução suave a 360p durante os anúncios.",
+		autoplayBackupWarning:
+			"Desativar pode causar tela preta ou vídeo congelado durante os anúncios em canais onde todas as fontes de alta qualidade têm anúncios.",
+		autoplayBackupGotIt: "Entendi",
 		stable: "Estável",
-		changesInstantly: "As alterações entram em vigor na hora",
+		changesInstantly: "As alterações entram em vigor imediatamente",
 		noDataYet: "Ainda não há dados",
 		allUnlocked: "Tudo desbloqueado!",
 		next: "Próximo",
@@ -357,11 +387,11 @@ const TRANSLATIONS = {
 			block_5000: { name: "Mítico", desc: "Você bloqueou 5000 anúncios!" },
 			time_1h: {
 				name: "Poupador de tempo",
-				desc: "Você economizou 1 hora de anúncios!",
+				desc: "Você evitou 1 hora de anúncios!",
 			},
 			time_10h: {
 				name: "Mestre do tempo",
-				desc: "Você economizou 10 horas de anúncios!",
+				desc: "Você evitou 10 horas de anúncios!",
 			},
 			channels_5: {
 				name: "Explorador",
@@ -403,6 +433,12 @@ const TRANSLATIONS = {
 			"Invia segnali di visualizzazione annunci a Twitch per ridurre il rilevamento dell'ad blocker.",
 		adSpoofingFootnote: "Disattiva in caso di problemi.",
 		adSpoofingGotIt: "Capito",
+		autoplayBackup: "Riserva a bassa qualità",
+		autoplayBackupDesc:
+			"Passa a un flusso di riserva a risoluzione inferiore quando nessuna fonte di alta qualità senza pubblicità è disponibile. Mantiene la riproduzione fluida a 360p durante gli annunci.",
+		autoplayBackupWarning:
+			"La disattivazione potrebbe causare schermo nero o video bloccato durante gli annunci sui canali in cui tutte le fonti di alta qualità contengono pubblicità.",
+		autoplayBackupGotIt: "Capito",
 		stable: "Stabile",
 		changesInstantly: "Le modifiche hanno effetto immediato",
 		noDataYet: "Ancora nessun dato",
@@ -431,11 +467,11 @@ const TRANSLATIONS = {
 			block_5000: { name: "Mitico", desc: "Hai bloccato 5000 annunci!" },
 			time_1h: {
 				name: "Salva-tempo",
-				desc: "Hai risparmiato 1 ora di annunci!",
+				desc: "Hai evitato 1 ora di annunci!",
 			},
 			time_10h: {
 				name: "Maestro del tempo",
-				desc: "Hai risparmiato 10 ore di annunci!",
+				desc: "Hai evitato 10 ore di annunci!",
 			},
 			channels_5: {
 				name: "Esploratore",
@@ -460,7 +496,7 @@ const TRANSLATIONS = {
 		active: "有効",
 		inactive: "無効",
 		adsBlocked: "ブロックした広告",
-		timeSaved: "節約できた時間",
+		timeSaved: "節約した時間",
 		statistics: "統計",
 		last7Days: "今週",
 		topChannels: "上位チャンネル",
@@ -477,6 +513,12 @@ const TRANSLATIONS = {
 			"広告ブロックの検出を回避するため、広告を視聴したという信号をTwitchに送信します。",
 		adSpoofingFootnote: "問題がある場合は無効にしてください。",
 		adSpoofingGotIt: "了解",
+		autoplayBackup: "低画質フォールバック",
+		autoplayBackupDesc:
+			"広告なしの高画質ソースが利用できない場合、低解像度のバックアップストリームに切り替えます。広告中も360pでスムーズな再生を維持します。",
+		autoplayBackupWarning:
+			"無効にすると、すべての高画質ソースに広告が含まれるチャンネルで、広告中に黒画面や映像のフリーズが発生する可能性があります。",
+		autoplayBackupGotIt: "了解",
 		stable: "安定版",
 		changesInstantly: "変更はすぐに反映されます",
 		noDataYet: "まだデータがありません",
@@ -561,7 +603,13 @@ const TRANSLATIONS = {
 		adSpoofingDesc:
 			"광고 차단 탐지를 줄이기 위해 광고 시청 신호를 Twitch에 보냅니다.",
 		adSpoofingFootnote: "문제가 있으면 비활성화하세요.",
-		adSpoofingGotIt: "알겠습니다",
+		adSpoofingGotIt: "확인",
+		autoplayBackup: "저화질 폴백",
+		autoplayBackupDesc:
+			"광고 없는 고화질 소스를 사용할 수 없을 때 저해상도 백업 스트림으로 전환합니다. 광고 중에도 360p로 부드러운 재생을 유지합니다.",
+		autoplayBackupWarning:
+			"비활성화하면 모든 고화질 소스에 광고가 포함된 채널에서 광고 중에 검은 화면이나 동영상 정지가 발생할 수 있습니다.",
+		autoplayBackupGotIt: "확인",
 		stable: "안정판",
 		changesInstantly: "변경 사항이 즉시 적용됩니다",
 		noDataYet: "아직 데이터가 없습니다",
@@ -624,6 +672,12 @@ const TRANSLATIONS = {
 		adSpoofingDesc: "向 Twitch 发送广告观看信标，以减少广告拦截器的检测。",
 		adSpoofingFootnote: "如遇到问题，请禁用此功能。",
 		adSpoofingGotIt: "知道了",
+		autoplayBackup: "低画质备选流",
+		autoplayBackupDesc:
+			"当没有无广告的高画质源时，切换到低分辨率备选流。在广告期间保持360p流畅播放。",
+		autoplayBackupWarning:
+			"关闭后，在所有高画质源都带有广告的频道上，广告期间可能出现黑屏或画面冻结。",
+		autoplayBackupGotIt: "知道了",
 		stable: "稳定版",
 		changesInstantly: "更改会立即生效",
 		noDataYet: "暂无数据",
@@ -675,6 +729,12 @@ const TRANSLATIONS = {
 		adSpoofingDesc: "向 Twitch 傳送廣告觀看訊號，以減少廣告攔截器的偵測。",
 		adSpoofingFootnote: "如遇到問題，請停用此功能。",
 		adSpoofingGotIt: "知道了",
+		autoplayBackup: "低畫質備選串流",
+		autoplayBackupDesc:
+			"當沒有無廣告的高畫質來源時，切換到低解析度備選串流。在廣告期間保持360p流暢播放。",
+		autoplayBackupWarning:
+			"關閉後，在所有高畫質來源都帶有廣告的頻道上，廣告期間可能出現黑畫面或畫面凍結。",
+		autoplayBackupGotIt: "知道了",
 		stable: "穩定版",
 		changesInstantly: "變更會立即生效",
 		noDataYet: "尚無資料",
@@ -709,7 +769,7 @@ const TRANSLATIONS = {
 		status: "Статус",
 		active: "Включено",
 		inactive: "Выключено",
-		adsBlocked: "Заблокировано объявлений",
+		adsBlocked: "Заблокировано рекламы",
 		timeSaved: "Сэкономлено времени",
 		statistics: "Статистика",
 		last7Days: "За неделю",
@@ -727,6 +787,12 @@ const TRANSLATIONS = {
 			"Отправляет сигналы просмотра рекламы в Twitch, чтобы снизить вероятность обнаружения блокировщика.",
 		adSpoofingFootnote: "Отключите при возникновении проблем.",
 		adSpoofingGotIt: "Понятно",
+		autoplayBackup: "Резерв низкого качества",
+		autoplayBackupDesc:
+			"Переключается на резервный поток с более низким разрешением, когда нет источника высокого качества без рекламы. Обеспечивает плавное воспроизведение в 360p во время рекламы.",
+		autoplayBackupWarning:
+			"Отключение может вызвать чёрный экран или зависание видео во время рекламы на каналах, где все источники высокого качества содержат рекламу.",
+		autoplayBackupGotIt: "Понятно",
 		stable: "Стабильная",
 		changesInstantly: "Изменения применяются мгновенно",
 		noDataYet: "Пока нет данных",
