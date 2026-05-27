@@ -932,7 +932,7 @@ async function _processM3U8(url, text, realFetch) {
 			_rememberLastAdEnd(info, Date.now());
 			_log(
 				requiresReload
-					? "[Trace] Native playlist clean after silent backup hold; reloading player to restore HEVC stream"
+					? "[Trace] Native playlist clean after silent backup hold; reloading player after backup hold"
 					: "[Trace] Native playlist clean after silent backup hold; restoring native stream",
 				"success",
 			);
@@ -1075,7 +1075,8 @@ async function _processM3U8(url, text, realFetch) {
 			info.IsUsingBackupStream = true;
 			info.ActiveBackupPlayerType = heldBackupPlayerType;
 			info.ActiveBackupResolution = res?.Resolution || null;
-			info.HevcReloadPendingAfterHold = heldWasModified;
+			info.HevcReloadPendingAfterHold =
+				heldWasModified || heldBackupPlayerType === "autoplay";
 			_rememberLastAdEnd(info, adEndedAt);
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.CurrentAdMediaKey = null;
@@ -1535,7 +1536,8 @@ async function _processM3U8(url, text, realFetch) {
 			info.IsUsingBackupStream = true;
 			info.ActiveBackupPlayerType = heldBackupPlayerType;
 			info.ActiveBackupResolution = res?.Resolution || null;
-			info.HevcReloadPendingAfterHold = wasUsingModifiedM3U8;
+			info.HevcReloadPendingAfterHold =
+				wasUsingModifiedM3U8 || heldBackupPlayerType === "autoplay";
 		}
 		__TTVAB_STATE__.CurrentAdChannel = null;
 		__TTVAB_STATE__.CurrentAdMediaKey = null;

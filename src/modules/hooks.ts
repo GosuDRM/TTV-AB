@@ -1332,7 +1332,7 @@ function _hookWorker() {
 								const requiresReload = data.requiresReload === true;
 								_log(
 									requiresReload
-										? "Native playback restored after backup hold; reloading player for HEVC handoff"
+										? "Native playback restored after backup hold; reloading player"
 										: "Native playback restored after backup hold",
 									"success",
 								);
@@ -1344,6 +1344,7 @@ function _hookWorker() {
 										_doPlayerTask(false, true, {
 											reason: "post-ad-native-restore",
 											refreshAccessToken: true,
+											newMediaPlayerInstance: true,
 										});
 									} else {
 										_doPlayerTask(true, false, {
