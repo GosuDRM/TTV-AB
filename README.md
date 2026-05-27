@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.0.9-purple)
+![Version](https://img.shields.io/badge/version-9.1.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -62,6 +62,13 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.1.0 — 2026-05-27
+- **Premium Real-Time UI controls:** Settings toggles automatically grey out and disable when Ad Blocking is OFF, while preserving descriptive help popup interactions — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
+- **Auto Player Soft-Reload:** Toggling Low Quality Fallback OFF during active backup playback now programmatically triggers a non-disruptive, soft reload of the Twitch player, instantly returning you to native source-tier quality — ([#26](https://github.com/GosuDRM/TTV-AB/issues/26)).
+- **Audited 11-Locale Translations:** Perfected translation phrasing line-by-line in German (`de`), Spanish (`es`), Portuguese (`pt`), Italian (`it`), Japanese (`ja`), Korean (`ko`), and Russian (`ru`).
+- **Critical Fixes:** Fixed the info modal Got It button click toggling settings off, and resolved the popup TDZ crash on declaration — ([#25](https://github.com/GosuDRM/TTV-AB/issues/25)).
+- **UI & Modal Layout Fixes:** Relocated modals to prevent border-radius layout clipping, and fixed a load crash due to missing elements — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
 
 ### v9.0.9 — 2026-05-27
 - Force player reload with fresh MediaSource when restoring native from autoplay (360p) backup — prevents AVC decoder corruption and audio desync after ad breaks on channels where all source-tier backups are ad-marked

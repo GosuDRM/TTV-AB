@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.1.0] - 2026-05-27
+
+### Added
+- Real-time sub-toggle locking: Ad Spoofing and Low Quality Fallback settings now automatically grey out and disable when the master Ad Blocking switch is turned OFF, ensuring clean UI state tracking. Help/information `i` icons remain fully active and clickable under all states — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
+- Automatic player soft-reload: Disabling the Low Quality Fallback toggle while the stream is actively playing on a 360p backup now immediately triggers a non-disruptive, soft reload of the Twitch player under the hood to return you to your native high-quality stream instantly — ([#26](https://github.com/GosuDRM/TTV-AB/issues/26)).
+
+### Fixed
+- Fixed a bug where clicking "Got it" in the Low Quality Fallback information tooltip would inadvertently turn the feature toggle OFF. The modal context is now fully distinguished between informational reading and disabling warnings — ([#25](https://github.com/GosuDRM/TTV-AB/issues/25)).
+- Fixed a crash during popup initialization caused by a Temporal Dead Zone (TDZ) reference order mismatch on the backup toggle variable declaration — ([#25](https://github.com/GosuDRM/TTV-AB/issues/25)).
+- Fixed a crash during popup load caused by a missing translation container element by restoring `<div id="infoText">` back to the DOM and hiding it cleanly via CSS — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
+- Relocated popup modals to the root of `<body>` to stop rounded-corner container border clipping under modern browser layouts — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
+
+### Changed
+- Comprehensive line-by-line translation audit of all 11 supported locales.
+- Polished and refined translation flows in German (`de`), Spanish (`es`), Portuguese (`pt`), Italian (`it`), Japanese (`ja`), Korean (`ko`), and Russian (`ru`) to use precise, highly natural tech and adblocking phrases (e.g. `"Qualitäts-Fallback"`, `"Werbe-Spoofing"`, and unified modal confirmations).
+
 ## [9.0.9] - 2026-05-27
 
 ### Fixed
