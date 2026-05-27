@@ -1,6 +1,11 @@
 // TTV AB - Popup Script
 
 document.addEventListener("DOMContentLoaded", () => {
+	console.log("[TTV AB] Popup DOM ready — autoplay toggle elements:",
+		"toggle:", !!document.getElementById("autoplayBackupToggle"),
+		"infoIcon:", !!document.getElementById("autoplayBackupInfoIcon"),
+		"tooltip:", !!document.getElementById("autoplayBackupTooltip"),
+		"modalClose:", !!document.getElementById("autoplayBackupModalClose"));
 	const toggle = document.getElementById(
 		"enableToggle",
 	) as HTMLInputElement | null;
@@ -56,6 +61,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	const adSpoofingToggle = document.getElementById(
 		"adSpoofingToggle",
 	) as HTMLInputElement | null;
+	const autoplayBackupToggle = document.getElementById(
+		"autoplayBackupToggle",
+	) as HTMLInputElement | null;
 	const donateButton = document.getElementById(
 		"donateBtn",
 	) as HTMLAnchorElement | null;
@@ -90,6 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		footerText,
 		infoText,
 		adSpoofingToggle,
+		autoplayBackupToggle,
 		donateButton,
 		repoLink,
 		authorLink,
@@ -756,7 +765,12 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	chrome.storage.local.get(
-		["ttvAdblockEnabled", "ttvAdSpoofingEnabled", "ttvAdsBlocked"],
+		[
+			"ttvAdblockEnabled",
+			"ttvAdSpoofingEnabled",
+			"ttvAutoplayBackupEnabled",
+			"ttvAdsBlocked",
+		],
 		(result) => {
 			if (chrome.runtime.lastError) {
 				console.error(
@@ -767,9 +781,13 @@ document.addEventListener("DOMContentLoaded", () => {
 			const safeResult = (result || {}) as PlainObject;
 			const enabled = safeResult.ttvAdblockEnabled !== false;
 			const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
+			const autoplayBackupEnabled =
+				safeResult.ttvAutoplayBackupEnabled !== false;
 			toggle.checked = enabled;
 			adSpoofingToggle.checked = adSpoofingEnabled;
+			autoplayBackupToggle.checked = autoplayBackupEnabled;
 			updateStatus(enabled, false);
+			syncSubTogglesState(enabled);
 
 			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
 			adsBlockedCount.textContent = formatNumber(adsCount);
@@ -785,10 +803,16 @@ document.addEventListener("DOMContentLoaded", () => {
 			const enabled = changes.ttvAdblockEnabled.newValue !== false;
 			toggle.checked = enabled;
 			updateStatus(enabled, false);
+			syncSubTogglesState(enabled);
 		}
 		if (changes.ttvAdSpoofingEnabled) {
-			const adSpoofingEnabled = changes.ttvAdSpoofingEnabled.newValue === true;
+			const adSpoofingEnabled = changes.ttvAdSpoofingEnabled.newValue !== false;
 			adSpoofingToggle.checked = adSpoofingEnabled;
+		}
+		if (changes.ttvAutoplayBackupEnabled) {
+			const autoplayBackupEnabled =
+				changes.ttvAutoplayBackupEnabled.newValue !== false;
+			autoplayBackupToggle.checked = autoplayBackupEnabled;
 		}
 		if (changes.ttvAdsBlocked) {
 			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
@@ -799,6 +823,23 @@ document.addEventListener("DOMContentLoaded", () => {
 			loadStatistics();
 		}
 	});
+
+	function syncSubTogglesState(adblockEnabled: boolean) {
+		if (adSpoofingToggle) {
+			adSpoofingToggle.disabled = !adblockEnabled;
+			const label = adSpoofingToggle.closest(".toggle-row")?.querySelector(".toggle-label");
+			const slider = adSpoofingToggle.closest(".toggle-row")?.querySelector(".slider");
+			if (label) (label as HTMLElement).style.opacity = adblockEnabled ? "1" : "0.4";
+			if (slider) (slider as HTMLElement).style.opacity = adblockEnabled ? "1" : "0.4";
+		}
+		if (autoplayBackupToggle) {
+			autoplayBackupToggle.disabled = !adblockEnabled;
+			const label = autoplayBackupToggle.closest(".toggle-row")?.querySelector(".toggle-label");
+			const slider = autoplayBackupToggle.closest(".toggle-row")?.querySelector(".slider");
+			if (label) (label as HTMLElement).style.opacity = adblockEnabled ? "1" : "0.4";
+			if (slider) (slider as HTMLElement).style.opacity = adblockEnabled ? "1" : "0.4";
+		}
+	}
 
 	let toggleWriteInFlight = false;
 
@@ -818,9 +859,11 @@ document.addEventListener("DOMContentLoaded", () => {
 				);
 				toggle.checked = previousEnabled;
 				updateStatus(previousEnabled);
+				syncSubTogglesState(previousEnabled);
 				return;
 			}
 			updateStatus(enabled, true);
+			syncSubTogglesState(enabled);
 		});
 	});
 
@@ -831,9 +874,14 @@ document.addEventListener("DOMContentLoaded", () => {
 	if (adSpoofingInfoIcon && adSpoofingTooltip) {
 		adSpoofingInfoIcon.addEventListener("click", (e) => {
 			e.stopPropagation();
-			const show = adSpoofingTooltip.hasAttribute("hidden");
-			adSpoofingTooltip.hidden = false;
-			adSpoofingTooltip.classList.toggle("visible", show);
+			const isVisible = adSpoofingTooltip.classList.contains("visible");
+			if (isVisible) {
+				adSpoofingTooltip.hidden = true;
+				adSpoofingTooltip.classList.remove("visible");
+			} else {
+				adSpoofingTooltip.hidden = false;
+				adSpoofingTooltip.classList.add("visible");
+			}
 		});
 		adSpoofingTooltip.addEventListener("click", (e) => {
 			if (e.target === adSpoofingTooltip) {
@@ -871,6 +919,98 @@ document.addEventListener("DOMContentLoaded", () => {
 			updateStatus(enabled, true, "adSpoofing");
 		});
 	});
+
+	let autoplayBackupWriteInFlight = false;
+	let bypassAutoplayBackupWarning = false;
+	let isAutoplayBackupWarningContext = false;
+
+	const autoplayBackupInfoIcon = document.getElementById(
+		"autoplayBackupInfoIcon",
+	);
+	const autoplayBackupTooltip = document.getElementById(
+		"autoplayBackupTooltip",
+	);
+	if (autoplayBackupInfoIcon && autoplayBackupTooltip) {
+		autoplayBackupInfoIcon.addEventListener("click", (e) => {
+			e.stopPropagation();
+			const isVisible = autoplayBackupTooltip.classList.contains("visible");
+			console.log("[TTV AB] Autoplay backup info icon clicked. Current visible state:", isVisible);
+			if (isVisible) {
+				autoplayBackupTooltip.hidden = true;
+				autoplayBackupTooltip.classList.remove("visible");
+			} else {
+				isAutoplayBackupWarningContext = false;
+				autoplayBackupTooltip.hidden = false;
+				autoplayBackupTooltip.classList.add("visible");
+			}
+		});
+		autoplayBackupTooltip.addEventListener("click", (e) => {
+			if (e.target === autoplayBackupTooltip) {
+				console.log("[TTV AB] Autoplay backup tooltip overlay clicked (outside modal box)");
+				autoplayBackupTooltip.hidden = true;
+				autoplayBackupTooltip.classList.remove("visible");
+			}
+		});
+	}
+
+	if (autoplayBackupToggle) {
+		autoplayBackupToggle.addEventListener("change", () => {
+			console.log("[TTV AB] Autoplay backup toggle change event. checked:", autoplayBackupToggle.checked, "bypass flag:", bypassAutoplayBackupWarning);
+			if (autoplayBackupWriteInFlight) return;
+			const disabling = !autoplayBackupToggle.checked;
+			if (disabling && !bypassAutoplayBackupWarning) {
+				console.log("[TTV AB] Disabling detected, prompting warning modal");
+				autoplayBackupToggle.checked = true;
+				if (autoplayBackupTooltip) {
+					isAutoplayBackupWarningContext = true;
+					autoplayBackupTooltip.hidden = false;
+					autoplayBackupTooltip.classList.add("visible");
+					console.log("[TTV AB] Modal overlay shown successfully. visible class present:", autoplayBackupTooltip.classList.contains("visible"));
+				} else {
+					console.error("[TTV AB] Autoplay backup tooltip modal element not found in DOM");
+				}
+				return;
+			}
+			bypassAutoplayBackupWarning = false;
+			autoplayBackupWriteInFlight = true;
+			autoplayBackupToggle.disabled = true;
+			const enabled = autoplayBackupToggle.checked;
+			const previousEnabled = !enabled;
+			console.log("[TTV AB] Saving autoplay backup status to local storage:", enabled);
+			chrome.storage.local.set({ ttvAutoplayBackupEnabled: enabled }, () => {
+				autoplayBackupWriteInFlight = false;
+				autoplayBackupToggle.disabled = false;
+				if (chrome.runtime.lastError) {
+					console.error(
+						"[TTV AB] Popup autoplay backup toggle write error:",
+						chrome.runtime.lastError.message,
+					);
+					autoplayBackupToggle.checked = previousEnabled;
+					updateStatus(previousEnabled, false, "autoplayBackup");
+					return;
+				}
+				console.log("[TTV AB] Storage write success. New state:", enabled);
+				updateStatus(enabled, true, "autoplayBackup");
+			});
+		});
+
+		const autoplayBackupModalClose = document.getElementById(
+			"autoplayBackupModalClose",
+		);
+		if (autoplayBackupModalClose && autoplayBackupTooltip) {
+			autoplayBackupModalClose.addEventListener("click", () => {
+				console.log("[TTV AB] Got It modal button clicked. Warning context:", isAutoplayBackupWarningContext);
+				autoplayBackupTooltip.hidden = true;
+				autoplayBackupTooltip.classList.remove("visible");
+				if (isAutoplayBackupWarningContext && autoplayBackupToggle.checked) {
+					bypassAutoplayBackupWarning = true;
+					autoplayBackupToggle.checked = false;
+					autoplayBackupToggle.dispatchEvent(new Event("change"));
+				}
+				isAutoplayBackupWarningContext = false;
+			});
+		}
+	}
 
 	function parseTransitionTimeToMs(value) {
 		const trimmedValue = String(value || "").trim();
@@ -1013,10 +1153,14 @@ document.addEventListener("DOMContentLoaded", () => {
 			infoText.style.color = "#666";
 			return;
 		}
-		const label =
-			transientStatusType === "adSpoofing"
-				? translations.adSpoofing
-				: translations.adBlocking;
+		let label = "";
+		if (transientStatusType === "adSpoofing") {
+			label = translations.adSpoofing;
+		} else if (transientStatusType === "autoplayBackup") {
+			label = translations.autoplayBackup;
+		} else {
+			label = translations.adBlocking;
+		}
 		infoText.textContent = `${label}: ${transientStatusState ? translations.active : translations.inactive}`;
 		infoText.style.color = transientStatusState ? "#4CAF50" : "#f44336";
 	}

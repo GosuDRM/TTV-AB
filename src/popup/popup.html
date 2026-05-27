@@ -624,6 +624,7 @@
         }
 
         .info {
+            display: none;
             margin-top: 16px;
             text-align: center;
             font-size: 11px;
@@ -998,7 +999,7 @@
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version-row">
-                <div class="version" id="versionText" aria-label="Version 9.0.9">v9.0.9</div>
+                <div class="version" id="versionText" aria-label="Version 9.1.0">v9.1.0</div>
                 <span class="stable-badge" data-i18n="stable">Stable</span>
             </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
@@ -1126,16 +1127,18 @@
                 <label class="toggle-label" for="adSpoofingToggle" data-i18n="adSpoofing">Ad Spoofing</label>
                 <span class="info-icon" id="adSpoofingInfoIcon" aria-label="What is Ad Spoofing?">i</span>
             </div>
-            <div class="modal-overlay" id="adSpoofingTooltip" hidden>
-                <div class="modal-box">
-                    <p><strong data-i18n="adSpoofing">Ad Spoofing</strong></p>
-                    <p data-i18n="adSpoofingDesc">Sends fake ad-watch beacons to Twitch to reduce anti-adblock fingerprinting. May interfere with channel points collection on some accounts.</p>
-                    <p data-i18n="adSpoofingFootnote">Disable if you experience issues claiming channel points.</p>
-                    <button type="button" class="modal-close" id="adSpoofingModalClose" data-i18n="adSpoofingGotIt">Got it</button>
-                </div>
-            </div>
             <label class="toggle">
                 <input type="checkbox" id="adSpoofingToggle" checked aria-label="Ad Spoofing">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-row">
+            <div class="toggle-label-row">
+                <label class="toggle-label" for="autoplayBackupToggle" data-i18n="autoplayBackup">Low Quality Fallback</label>
+                <span class="info-icon" id="autoplayBackupInfoIcon" aria-label="About Low Quality Fallback">i</span>
+            </div>
+            <label class="toggle">
+                <input type="checkbox" id="autoplayBackupToggle" checked aria-label="Low Quality Fallback">
                 <span class="slider"></span>
             </label>
         </div>
@@ -1174,6 +1177,25 @@
                 AB</a><span id="footerText"> — by </span><a href="https://github.com/GosuDRM" target="_blank"
                 rel="noopener noreferrer" id="authorLink" class="author-link" title="Open GosuDRM on GitHub"
                 aria-label="Open GosuDRM on GitHub">GosuDRM</a></span>
+    </div>
+
+    <!-- Modals at root level to prevent overflow clipping by container and flexbox positioning bugs -->
+    <div class="modal-overlay" id="adSpoofingTooltip" hidden>
+        <div class="modal-box">
+            <p><strong data-i18n="adSpoofing">Ad Spoofing</strong></p>
+            <p data-i18n="adSpoofingDesc">Sends fake ad-watch beacons to Twitch to reduce anti-adblock fingerprinting. May interfere with channel points collection on some accounts.</p>
+            <p data-i18n="adSpoofingFootnote">Disable if you experience issues claiming channel points.</p>
+            <button type="button" class="modal-close" id="adSpoofingModalClose" data-i18n="adSpoofingGotIt">Got it</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="autoplayBackupTooltip" hidden>
+        <div class="modal-box">
+            <p><strong data-i18n="autoplayBackup">Low Quality Fallback</strong></p>
+            <p data-i18n="autoplayBackupDesc">Uses a lower resolution backup stream when no high quality source is ad-free. Keeps playback smooth at reduced quality during ads.</p>
+            <p data-i18n="autoplayBackupWarning">Disabling may cause a black screen or frozen video during ads on some channels.</p>
+            <button type="button" class="modal-close" id="autoplayBackupModalClose" data-i18n="autoplayBackupGotIt">Got it</button>
+        </div>
     </div>
 
     <script src="translations.js"></script>
