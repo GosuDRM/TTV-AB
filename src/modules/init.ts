@@ -129,6 +129,36 @@ function _initToggleListener() {
 		);
 	});
 
+	_onInternalMessage("ttvab-toggle-autoplay-backup", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (typeof safeDetail?.enabled !== "boolean") return;
+		const enabled = safeDetail.enabled;
+		const shouldDisable = !enabled;
+		if (__TTVAB_STATE__.DisableAutoplayBackup === shouldDisable) return;
+		__TTVAB_STATE__.DisableAutoplayBackup = shouldDisable;
+		_broadcastWorkers({
+			key: "UpdateAutoplayBackupState",
+			value: shouldDisable,
+		});
+		_log(
+			`Low quality fallback ${enabled ? "enabled" : "disabled"}`,
+			enabled ? "success" : "warning",
+		);
+
+		if (
+			shouldDisable &&
+			__TTVAB_STATE__.PinnedBackupPlayerType === "autoplay"
+		) {
+			_log(
+				"Disabling low quality fallback while backup is active; reloading player to restore native high quality stream.",
+				"info",
+			);
+			if (typeof _doPlayerTask === "function") {
+				_doPlayerTask(false, true, { reason: "manual" });
+			}
+		}
+	});
+
 	_onInternalMessage("ttvab-toggle-debug", (detail) => {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
