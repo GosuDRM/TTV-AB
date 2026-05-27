@@ -176,7 +176,7 @@ let _loggedReactRootSearchFailure = false;
 
 function _findReactRoot() {
 	let rootNode = _cachedReactRootNode;
-	if (!rootNode || !rootNode.isConnected) {
+	if (!rootNode?.isConnected) {
 		rootNode = document.querySelector("#root");
 		if (!rootNode) {
 			_cachedReactRootNode = null;
