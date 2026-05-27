@@ -240,7 +240,9 @@ function _getPinnedBackupPlayerTypeForInfo(info) {
 }
 
 function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
-	const configuredPlayerTypes = [...(__TTVAB_STATE__?.BackupPlayerTypes || [])];
+	const configuredPlayerTypes = [
+		...(__TTVAB_STATE__?.BackupPlayerTypes || []),
+	].filter((pt) => pt !== "autoplay" || !__TTVAB_STATE__.DisableAutoplayBackup);
 	const orderedPlayerTypes = [];
 	const pushUnique = (playerType) => {
 		if (

@@ -145,17 +145,12 @@ function _initToggleListener() {
 			enabled ? "success" : "warning",
 		);
 
-		if (
-			shouldDisable &&
-			__TTVAB_STATE__.PinnedBackupPlayerType === "autoplay"
-		) {
+		if (shouldDisable && typeof _doPlayerTask === "function") {
 			_log(
-				"Disabling low quality fallback while backup is active; reloading player to restore native high quality stream.",
+				"Disabling low quality fallback; reloading player to restore native high quality stream.",
 				"info",
 			);
-			if (typeof _doPlayerTask === "function") {
-				_doPlayerTask(false, true, { reason: "manual" });
-			}
+			_doPlayerTask(false, true, { reason: "manual" });
 		}
 	});
 
