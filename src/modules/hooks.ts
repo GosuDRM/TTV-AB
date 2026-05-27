@@ -661,6 +661,7 @@ function _hookWorker() {
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify(_S)};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
+                const _AD_METADATA_RE = ${_AD_METADATA_RE.toString()};
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}
                 ${_getWorkerBridgeMessage.toString()}
@@ -685,6 +686,7 @@ function _hookWorker() {
                 ${_getTaggedPlaylistUri.toString()}
                 ${_isMediaPartLine.toString()}
                 ${_isPartPreloadHintLine.toString()}
+                ${_playlistLinesHaveKnownAdSegments.toString()}
                 ${_playlistHasKnownAdSegments.toString()}
                 ${_absolutizePlaylistUrl.toString()}
                 ${_absolutizeMediaPlaylistUrls.toString()}
@@ -1312,6 +1314,7 @@ function _hookWorker() {
 										_doPlayerTask(false, true, {
 											reason: "post-ad-native-restore",
 											refreshAccessToken: true,
+											newMediaPlayerInstance: true,
 										});
 									} else {
 										_doPlayerTask(true, false, {
