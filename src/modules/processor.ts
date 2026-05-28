@@ -1352,7 +1352,7 @@ async function _processM3U8(url, text, realFetch) {
 			info.LastCleanNativeM3U8 &&
 			Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
 			!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8);
-		if (hasCleanNative) {
+		if (hasCleanNative && !_isRecentPostAdReentry(info)) {
 			_log(
 				"[Trace] Returning native playlist to prevent buffer drain during backup search",
 				"info",
@@ -1370,7 +1370,8 @@ async function _processM3U8(url, text, realFetch) {
 
 		if (
 			info._LastBackupSearchCompletedAt &&
-			Date.now() - info._LastBackupSearchCompletedAt < 3000
+			Date.now() - info._LastBackupSearchCompletedAt < 3000 &&
+			!_isRecentPostAdReentry(info)
 		) {
 			if (info.LastCleanBackupM3U8) {
 				info.IsUsingBackupStream = true;
