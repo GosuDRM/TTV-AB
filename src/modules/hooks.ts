@@ -452,9 +452,16 @@ function _hookWorkerFetch() {
 function _syncStoredDeviceId() {
 	try {
 		const deviceId = localStorage.getItem("unique_id");
-		if (typeof deviceId === "string" && deviceId) {
+		if (
+			typeof deviceId === "string" &&
+			deviceId &&
+			/^[a-f0-9]{8,64}$/i.test(deviceId)
+		) {
 			__TTVAB_STATE__.GQLDeviceID = deviceId;
 			return deviceId;
+		}
+		if (typeof deviceId === "string" && deviceId) {
+			_log("Rejected invalid unique_id format", "debug");
 		}
 	} catch (e) {
 		_log(`Device ID sync error: ${e.message}`, "warning");
@@ -718,6 +725,7 @@ function _hookWorker() {
                 ${_doesPlaybackContextMatchInfo.toString()}
                 ${_isRecentPostAdReentry.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
+                ${_forceClearBackupCooldownsIfStale.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
                 ${_isBackupPlayerRetryCoolingDown.toString()}
@@ -736,9 +744,11 @@ function _hookWorker() {
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
                 ${_playlistHasMediaSegments.toString()}
+                ${_incrementPlaylistMediaSequence.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
+                ${_fetchWithTimeout.toString()}
                 ${_processM3U8.toString()}
                 ${_findBackupStream.toString()}
                 ${_hookWorkerFetch.toString()}
@@ -875,12 +885,14 @@ function _hookWorker() {
                                 __TTVAB_STATE__.LastAdEndedChannel = null;
                                 __TTVAB_STATE__.LastAdEndedMediaKey = null;
                             }
-                            if (data.value?.previousMediaKey) {
-                                const oldKey = data.value.previousMediaKey;
-                                delete __TTVAB_STATE__.StreamInfos[oldKey];
-                                for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
-                                    if (__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === oldKey) {
-                                        delete __TTVAB_STATE__.StreamInfosByUrl[url];
+                            const prevMediaKey = data.value?.previousMediaKey || null;
+                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
+                                delete __TTVAB_STATE__.StreamInfos[prevMediaKey];
+                            }
+                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfosByUrl === "object") {
+                                for (const u in __TTVAB_STATE__.StreamInfosByUrl) {
+                                    if (__TTVAB_STATE__.StreamInfosByUrl[u]?.MediaKey === prevMediaKey) {
+                                        delete __TTVAB_STATE__.StreamInfosByUrl[u];
                                     }
                                 }
                             }
@@ -1463,6 +1475,13 @@ function _hookWorker() {
 function _hookMainFetch() {
 	const realFetch = window.fetch;
 	window.__TTVAB_REAL_FETCH__ = realFetch;
+	const isGqlEndpointUrl = (urlStr) => {
+		try {
+			return new URL(urlStr).hostname === "gql.twitch.tv";
+		} catch {
+			return false;
+		}
+	};
 	const updateWorkers = (updates) => {
 		if (Array.isArray(updates)) {
 			for (const msg of updates) {
@@ -1609,7 +1628,7 @@ function _hookMainFetch() {
 		const [url, opts] = args;
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
-			if (urlStr.includes("gql.twitch.tv/gql")) {
+			if (isGqlEndpointUrl(urlStr)) {
 				_syncStoredDeviceId();
 				let nextArgs = args;
 				let headers = opts?.headers;
