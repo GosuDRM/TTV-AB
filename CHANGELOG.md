@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.1.3] - 2026-05-28
+
+### Fixed
+- Consecutive ad stale stream: when a second ad arrives within the 8-second post-ad continuation window, the "buffer drain prevention" path and the 3-second backup search cooldown both served stale cached playlists from the previous ad cycle, causing the user to watch past stream content. Both paths now skip cached returns during post-ad re-entry so a fresh backup search runs immediately.
+
 ## [9.1.2] - 2026-05-27
 
 ### Fixed
