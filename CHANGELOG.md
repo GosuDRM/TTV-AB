@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.1.4] - 2026-05-28
+
+### Fixed
+- Synced 6 accidental hooks.ts divergences from main: deviceId hex validation, proper gql.twitch.tv URL parser, missing worker function injections (_forceClearBackupCooldownsIfStale, _incrementPlaylistMediaSequence, _fetchWithTimeout), previousMediaKey cleanup with object-type guards
+- Removed stale zip:chrome and package:chrome scripts from Firefox package.json
+
+### Changed
+- Removed debug console.log statements from autoplay backup toggle flow in popup.ts
+
 ## [9.1.3] - 2026-05-28
 
 ### Fixed
