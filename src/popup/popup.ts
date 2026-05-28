@@ -941,10 +941,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		autoplayBackupInfoIcon.addEventListener("click", (e) => {
 			e.stopPropagation();
 			const isVisible = autoplayBackupTooltip.classList.contains("visible");
-			console.log(
-				"[TTV AB] Autoplay backup info icon clicked. Current visible state:",
-				isVisible,
-			);
 			if (isVisible) {
 				autoplayBackupTooltip.hidden = true;
 				autoplayBackupTooltip.classList.remove("visible");
@@ -956,9 +952,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 		autoplayBackupTooltip.addEventListener("click", (e) => {
 			if (e.target === autoplayBackupTooltip) {
-				console.log(
-					"[TTV AB] Autoplay backup tooltip overlay clicked (outside modal box)",
-				);
 				autoplayBackupTooltip.hidden = true;
 				autoplayBackupTooltip.classList.remove("visible");
 			}
@@ -967,25 +960,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	if (autoplayBackupToggle) {
 		autoplayBackupToggle.addEventListener("change", () => {
-			console.log(
-				"[TTV AB] Autoplay backup toggle change event. checked:",
-				autoplayBackupToggle.checked,
-				"bypass flag:",
-				bypassAutoplayBackupWarning,
-			);
 			if (autoplayBackupWriteInFlight) return;
 			const disabling = !autoplayBackupToggle.checked;
 			if (disabling && !bypassAutoplayBackupWarning) {
-				console.log("[TTV AB] Disabling detected, prompting warning modal");
 				autoplayBackupToggle.checked = true;
 				if (autoplayBackupTooltip) {
 					isAutoplayBackupWarningContext = true;
 					autoplayBackupTooltip.hidden = false;
 					autoplayBackupTooltip.classList.add("visible");
-					console.log(
-						"[TTV AB] Modal overlay shown successfully. visible class present:",
-						autoplayBackupTooltip.classList.contains("visible"),
-					);
 				} else {
 					console.error(
 						"[TTV AB] Autoplay backup tooltip modal element not found in DOM",
@@ -998,10 +980,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			autoplayBackupToggle.disabled = true;
 			const enabled = autoplayBackupToggle.checked;
 			const previousEnabled = !enabled;
-			console.log(
-				"[TTV AB] Saving autoplay backup status to local storage:",
-				enabled,
-			);
 			chrome.storage.local.set({ ttvAutoplayBackupEnabled: enabled }, () => {
 				autoplayBackupWriteInFlight = false;
 				autoplayBackupToggle.disabled = false;
@@ -1014,7 +992,6 @@ document.addEventListener("DOMContentLoaded", () => {
 					updateStatus(previousEnabled, false, "autoplayBackup");
 					return;
 				}
-				console.log("[TTV AB] Storage write success. New state:", enabled);
 				updateStatus(enabled, true, "autoplayBackup");
 			});
 		});
@@ -1024,10 +1001,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		);
 		if (autoplayBackupModalClose && autoplayBackupTooltip) {
 			autoplayBackupModalClose.addEventListener("click", () => {
-				console.log(
-					"[TTV AB] Got It modal button clicked. Warning context:",
-					isAutoplayBackupWarningContext,
-				);
 				autoplayBackupTooltip.hidden = true;
 				autoplayBackupTooltip.classList.remove("visible");
 				if (isAutoplayBackupWarningContext && autoplayBackupToggle.checked) {
