@@ -2,6 +2,35 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.2.1] - 2026-06-02
+
+### Changed
+- "Low quality fallback" toggle now defaults to **disabled**. The previous default (enabled) caused a proactive 360p switch for every ad, which most users found jarring on channels where high quality was available. With the last-resort autoplay injection (below), the system already falls back to 360p automatically when every primary source is ad-marked, so disabling the toggle by default gives a cleaner native-first experience while still preventing black screens. Enable the toggle to opt back into proactive 360p switching during ads.
+
+### Fixed
+- Info modal text for "Low quality fallback" was stale: the warning claimed disabling "may cause a black screen or frozen video during ads", but the last-resort autoplay injection (below) already prevents that. The description and warning are rewritten across all 11 locales to reflect the new default and the actual behavior in both states.
+- Ads leaking through during preroll when "Low quality fallback" is disabled: the 9.2.0 emergency autoplay injection relied on `LoggedBackupAdsByType` being populated (all primary types ad-marked), but the check ran before the main loop, so on the first call it never fired. The injection is now unconditional when the toggle is off — autoplay is appended to the backup-search order as a last-resort type, after the configured types. When all configured types are contaminated, the loop reaches autoplay, finds a clean LQ stream, and the existing seamless-hold path (`IsHoldingBackupAfterAd` → `NativePlaybackRestored`) transitions cleanly back to HQ native playback when the ad cycle ends — same UX as when the toggle is enabled, with no ad flash and no black screen.
+
+## [9.2.0] - 2026-06-02
+
+### Fixed
+- Ads leaking through when "Low quality fallback" is disabled: the emergency autoplay injection (gated on `!DisableAutoplayBackup`) never fired with the toggle off, so when all primary types (embed/popout/site) were ad-marked the system promoted an ad-marked `embed` fallback. The injection now triggers whenever all primary types are contaminated, regardless of the toggle, and logs the override. The injected LQ stream serves as the seamless-hold source until the ad ends.
+- Seamless LQ→HQ hold corrupted by ad-marked fallback cache: `_findBackupStream` stored any candidate promoted to the fallback slot in `LastCleanBackupM3U8` regardless of whether the type was in `LoggedBackupAdsByType`. This poisoned the parser's empty-playlist recovery (which falls back to the original playlist to "prevent stall"), causing the exact ad-flash loop visible in the log spam `[Recovery] Empty playlist after stripping ads; falling back to original playlist to prevent stall`. Fallbacks are now only cached as "clean" when their player type is not known to be ad-marked, so the seamless-hold → `NativePlaybackRestored` path engages only with truly clean sources.
+
+## [9.1.5] - 2026-06-02
+
+### Fixed
+- Low Quality Fallback and Ad Spoofing toggles no longer silently re-enable in freshly-spawned Twitch workers: the worker state seed in `_hookWorker` set `IsAdStrippingEnabled` but omitted `DisableAutoplayBackup` and `DisableAdSpoofing`, so any worker created after the toggle was set (player reload, SPA navigation, or initial page load with the toggle already off) reverted to the default and re-enabled the feature. Both flags are now seeded at worker creation alongside `IsAdStrippingEnabled`; the `UpdateAutoplayBackupState`/`UpdateAdSpoofingState` messages continue to patch already-running workers.
+
+## [9.1.4] - 2026-05-28
+
+### Fixed
+- Synced 6 accidental hooks.ts divergences from main: deviceId hex validation, proper gql.twitch.tv URL parser, missing worker function injections (_forceClearBackupCooldownsIfStale, _incrementPlaylistMediaSequence, _fetchWithTimeout), previousMediaKey cleanup with object-type guards
+- Removed stale zip:chrome and package:chrome scripts from Firefox package.json
+
+### Changed
+- Removed debug console.log statements from autoplay backup toggle flow in popup.ts
+
 ## [9.1.3] - 2026-05-28
 
 ### Fixed
@@ -16,9 +45,18 @@ All notable changes to TTV AB will be documented in this file.
 ## [9.1.0] - 2026-05-27
 
 ### Added
-- Low quality fallback toggle in popup with styled warning modal and info tooltip (11 locales)
-- Sub-toggle state sync — ad spoofing and fallback toggles disable when master toggle is off
-- Automatic player reload when fallback is disabled while active
+- Real-time sub-toggle locking: Ad Spoofing and Low Quality Fallback settings now automatically grey out and disable when the master Ad Blocking switch is turned OFF, ensuring clean UI state tracking. Help/information `i` icons remain fully active and clickable under all states — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
+- Automatic player soft-reload: Disabling the Low Quality Fallback toggle while the stream is actively playing on a 360p backup now immediately triggers a non-disruptive, soft reload of the Twitch player under the hood to return you to your native high-quality stream instantly — ([#26](https://github.com/GosuDRM/TTV-AB/issues/26)).
+
+### Fixed
+- Fixed a bug where clicking "Got it" in the Low Quality Fallback information tooltip would inadvertently turn the feature toggle OFF. The modal context is now fully distinguished between informational reading and disabling warnings — ([#25](https://github.com/GosuDRM/TTV-AB/issues/25)).
+- Fixed a crash during popup initialization caused by a Temporal Dead Zone (TDZ) reference order mismatch on the backup toggle variable declaration — ([#25](https://github.com/GosuDRM/TTV-AB/issues/25)).
+- Fixed a crash during popup load caused by a missing translation container element by restoring `<div id="infoText">` back to the DOM and hiding it cleanly via CSS — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
+- Relocated popup modals to the root of `<body>` to stop rounded-corner container border clipping under modern browser layouts — ([#27](https://github.com/GosuDRM/TTV-AB/issues/27)).
+
+### Changed
+- Comprehensive line-by-line translation audit of all 11 supported locales.
+- Polished and refined translation flows in German (`de`), Spanish (`es`), Portuguese (`pt`), Italian (`it`), Japanese (`ja`), Korean (`ko`), and Russian (`ru`) to use precise, highly natural tech and adblocking phrases (e.g. `"Qualitäts-Fallback"`, `"Werbe-Spoofing"`, and unified modal confirmations).
 
 ## [9.0.9] - 2026-05-27
 

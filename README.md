@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.1.3-purple)
+![Version](https://img.shields.io/badge/version-9.2.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.1.3-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.2.1-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -20,6 +20,8 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 <p align="center">
   <img src="assets/popup1.png" alt="Popup Screenshot" width="300">
+  <img src="assets/popup-screenshot2.png" alt="Stats Screenshot" width="300">
+</p>
 
 ## ✨ Features
 
@@ -61,46 +63,15 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v9.1.3 — 2026-05-28
-- Fix consecutive ad stale stream: backup search cooldown and native playlist cache no longer return stale content when a second ad arrives within the post-ad continuation window
+### v9.2.1 — 2026-06-02
+- **Seamless LQ→HQ hold works even with "Low quality fallback" disabled:** The 9.2.0 emergency autoplay injection relied on a check that ran before the main loop, so it never fired on the first call. The injection is now unconditional when the toggle is off — autoplay is appended to the backup-search order as a last-resort type. When all configured types are contaminated, the loop reaches autoplay, finds a clean 360p stream, and the existing seamless-hold path transitions cleanly back to HQ native playback when the ad cycle ends. Same UX as when the toggle is enabled, with no ad flash and no black screen.
 
-### v9.1.2 — 2026-05-27
-- Fix low quality fallback toggle not filtering autoplay from backup search when disabled
-- Fix unreachable reload condition when disabling fallback toggle
+### v9.2.0 — 2026-06-02
+- **Emergency LQ autoplay fallback when toggle is off:** With "Low quality fallback" disabled, the extension now still tries the 360p autoplay stream as a last-resort fallback when all primary types (embed/popout/site) are ad-marked. During ads, the LQ stream plays; when the ad ends, the existing seamless-hold mechanism switches you back to HQ native. Logs an explicit override message so the behavior is visible.
+- **No more ad-flash loop when all backups are contaminated:** Ad-marked fallbacks are no longer cached as "clean", so the seamless-hold → native-restoration path engages only with truly clean sources. Previously, a poisoned cache caused the empty-playlist recovery to return the original ad-filled playlist, looping until the ad ended naturally.
 
-### v9.1.0 — 2026-05-27
-- New toggle for low quality fallback backup stream with per-locale translations
-- Sub-toggle sync disables spoofer and fallback when master toggle is off
-- Automatic player reload when fallback is disabled while active
-
-### v9.0.9 — 2026-05-27
-- Force player reload with fresh MediaSource when restoring native from autoplay (360p) backup — prevents AVC decoder corruption and audio desync after ad breaks on channels where all source-tier backups are ad-marked
-
-### v9.0.8 — 2026-05-23
-- Fix consecutive midroll backup contamination: BackupVariantUrls whitelist no longer cleared on ad-end reset, and cached encodings re-populate variant URLs — prevents backup media playlists contaminating native snapshot across ad breaks
-
-### v9.0.7 — 2026-05-21
-- Buffer monitor throttles to 900ms during steady-state playback — ~33% fewer ticks on healthy streams, stall detection latency unchanged in practice
-- Cached React fiber root, container key, and player reference across transient skip ticks — eliminates fiber-tree re-walks after every ad break and idle interval
-- HLS strip path: single combined regex for ad metadata, no redundant `text.split`, single-pass output build, hoisted per-line scan
-
-### v9.0.6 — 2026-05-21
-- Worker-hook coexistence with TwitchNoSub — run TTV-AB alongside TwitchNoSub simultaneously ([#19](https://github.com/GosuDRM/TTV-AB/issues/19))
-
-### v9.0.5 — 2026-05-21
-- Eliminated preroll ad flash — first poll now waits for clean backup before returning, no stopgap leakage ([#20](https://github.com/GosuDRM/TTV-AB/issues/20))
-
-### v9.0.1 — 2026-05-21
-- Ad-blocking now runs inside embedded Twitch player iframes — adds support for multistream viewers like [twitchtheater.tv](https://twitchtheater.tv/) ([#16](https://github.com/GosuDRM/TTV-AB/issues/16))
-
-### v9.0.0 — 2026-05-21
-- Restored stable ad-blocking pipeline with zero decoder corruption
-- Fixed persistent buffering and slideshow playback during ad breaks ([#18](https://github.com/GosuDRM/TTV-AB/issues/18))
-- Added CSAI fast path for all-live ad breaks — strips tracking URLs, no stream switch
-- Backup search now covers all 5 player types including 360p autoplay
-- Eliminated brief black screen when first loading a channel during ad blocking
-- Fixed empty playlist fallback to prevent player stalls
-- Improved ad segment handling for Firefox compatibility
+### v9.1.5 — 2026-06-02
+- Fix Low Quality Fallback and Ad Spoofing toggles silently re-enabling after a player reload or page navigation — feature-disable flags are now seeded into freshly-created Twitch workers, not just patched on already-running ones, so the setting persists
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
