@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.2.1] - 2026-06-02
+
+### Fixed
+- Ads leaking through during preroll when "Low quality fallback" is disabled: the 9.2.0 emergency autoplay injection relied on `LoggedBackupAdsByType` being populated (all primary types ad-marked), but the check ran before the main loop, so on the first call it never fired. The injection is now unconditional when the toggle is off — autoplay is appended to the backup-search order as a last-resort type, after the configured types. When all configured types are contaminated, the loop reaches autoplay, finds a clean LQ stream, and the existing seamless-hold path (`IsHoldingBackupAfterAd` → `NativePlaybackRestored`) transitions cleanly back to HQ native playback when the ad cycle ends — same UX as when the toggle is enabled, with no ad flash and no black screen.
+
+## [9.2.0] - 2026-06-02
+
+### Fixed
+- Ads leaking through when "Low quality fallback" is disabled: the emergency autoplay injection (gated on `!DisableAutoplayBackup`) never fired with the toggle off, so when all primary types (embed/popout/site) were ad-marked the system promoted an ad-marked `embed` fallback. The injection now triggers whenever all primary types are contaminated, regardless of the toggle, and logs the override. The injected LQ stream serves as the seamless-hold source until the ad ends.
+- Seamless LQ→HQ hold corrupted by ad-marked fallback cache: `_findBackupStream` stored any candidate promoted to the fallback slot in `LastCleanBackupM3U8` regardless of whether the type was in `LoggedBackupAdsByType`. This poisoned the parser's empty-playlist recovery (which falls back to the original playlist to "prevent stall"), causing the exact ad-flash loop visible in the log spam `[Recovery] Empty playlist after stripping ads; falling back to original playlist to prevent stall`. Fallbacks are now only cached as "clean" when their player type is not known to be ad-marked, so the seamless-hold → `NativePlaybackRestored` path engages only with truly clean sources.
+
+## [9.1.5] - 2026-06-02
+
+### Fixed
+- Low Quality Fallback and Ad Spoofing toggles no longer silently re-enable in freshly-spawned Twitch workers: the worker state seed in `_hookWorker` set `IsAdStrippingEnabled` but omitted `DisableAutoplayBackup` and `DisableAdSpoofing`, so any worker created after the toggle was set (player reload, SPA navigation, or initial page load with the toggle already off) reverted to the default and re-enabled the feature. Both flags are now seeded at worker creation alongside `IsAdStrippingEnabled`; the `UpdateAutoplayBackupState`/`UpdateAdSpoofingState` messages continue to patch already-running workers.
+
 ## [9.1.4] - 2026-05-28
 
 ### Fixed
