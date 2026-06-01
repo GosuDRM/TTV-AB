@@ -1674,16 +1674,15 @@ async function _findBackupStream(
 			playerTypes = [...clean, ...contam];
 		}
 	}
-	const sourceTypes = ["embed", "popout", "site"];
-	const allSourceTypesContaminated =
-		info.LoggedBackupAdsByType &&
-		sourceTypes.every((t) => info.LoggedBackupAdsByType.has(t));
 	if (
-		allSourceTypesContaminated &&
-		!playerTypes.includes("autoplay") &&
-		!__TTVAB_STATE__.DisableAutoplayBackup
+		__TTVAB_STATE__.DisableAutoplayBackup &&
+		!playerTypes.includes("autoplay")
 	) {
 		playerTypes.push("autoplay");
+		_log(
+			"[Trace] LQ autoplay appended as last-resort fallback (toggle disabled, ensures seamless LQ→HQ hold)",
+			"info",
+		);
 	}
 	const playerTypesLen = playerTypes.length;
 	const isDoingMinimalRequests =
