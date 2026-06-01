@@ -1,12 +1,12 @@
-// TTV AB v9.1.0 - Twitch Ad Blocker
+// TTV AB v9.1.5 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.1.0",
-    INTERNAL_VERSION: 192,
+    VERSION: "9.1.5",
+    INTERNAL_VERSION: 202,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -1997,7 +1997,9 @@ function _getPinnedBackupPlayerTypeForInfo(info) {
     return null;
 }
 function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
-    const configuredPlayerTypes = [...(__TTVAB_STATE__?.BackupPlayerTypes || [])];
+    const configuredPlayerTypes = [
+        ...(__TTVAB_STATE__?.BackupPlayerTypes || []),
+    ].filter((pt) => pt !== "autoplay" || !__TTVAB_STATE__.DisableAutoplayBackup);
     const orderedPlayerTypes = [];
     const pushUnique = (playerType) => {
         if (typeof playerType !== "string" ||
@@ -2833,7 +2835,7 @@ async function _$pm(url, text, realFetch) {
             info.LastCleanNativeM3U8 &&
             Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
             !_$hpa(info.LastCleanNativeM3U8);
-        if (hasCleanNative) {
+        if (hasCleanNative && !_isRecentPostAdReentry(info)) {
             _$l("[Trace] Returning native playlist to prevent buffer drain during backup search", "info");
             return info.LastCleanNativeM3U8;
         }
@@ -2843,7 +2845,8 @@ async function _$pm(url, text, realFetch) {
             startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
         }
         if (info._LastBackupSearchCompletedAt &&
-            Date.now() - info._LastBackupSearchCompletedAt < 3000) {
+            Date.now() - info._LastBackupSearchCompletedAt < 3000 &&
+            !_isRecentPostAdReentry(info)) {
             if (info.LastCleanBackupM3U8) {
                 info.IsUsingBackupStream = true;
                 return info.LastCleanBackupM3U8;
@@ -3773,9 +3776,14 @@ function _$wf() {
 function _$sd() {
     try {
         const deviceId = localStorage.getItem("unique_id");
-        if (typeof deviceId === "string" && deviceId) {
+        if (typeof deviceId === "string" &&
+            deviceId &&
+            /^[a-f0-9]{8,64}$/i.test(deviceId)) {
             __TTVAB_STATE__.GQLDeviceID = deviceId;
             return deviceId;
+        }
+        if (typeof deviceId === "string" && deviceId) {
+            _$l("Rejected invalid unique_id format", "debug");
         }
     }
     catch (e) {
@@ -4021,6 +4029,7 @@ function _$hw() {
                 ${_doesPlaybackContextMatchInfo.toString()}
                 ${_isRecentPostAdReentry.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
+                ${_forceClearBackupCooldownsIfStale.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
                 ${_isBackupPlayerRetryCoolingDown.toString()}
@@ -4039,9 +4048,11 @@ function _$hw() {
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_$hpa.toString()}
                 ${_playlistHasMediaSegments.toString()}
+                ${_$im.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
+                ${_fetchWithTimeout.toString()}
                 ${_$pm.toString()}
                 ${_$fb.toString()}
                 ${_$wf.toString()}
@@ -4065,6 +4076,8 @@ function _$hw() {
                 __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerMediaKey)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
+                __TTVAB_STATE__.DisableAdSpoofing = ${JSON.stringify(__TTVAB_STATE__.DisableAdSpoofing)};
+                __TTVAB_STATE__.DisableAutoplayBackup = ${JSON.stringify(__TTVAB_STATE__.DisableAutoplayBackup)};
                 __TTVAB_STATE__.PageMediaType = ${JSON.stringify(pagePlaybackContext.MediaType)};
                 __TTVAB_STATE__.PageChannel = ${JSON.stringify(pagePlaybackContext.ChannelName)};
                 __TTVAB_STATE__.PageVodID = ${JSON.stringify(pagePlaybackContext.VodID)};
@@ -4178,12 +4191,14 @@ function _$hw() {
                                 __TTVAB_STATE__.LastAdEndedChannel = null;
                                 __TTVAB_STATE__.LastAdEndedMediaKey = null;
                             }
-                            if (data.value?.previousMediaKey) {
-                                const oldKey = data.value.previousMediaKey;
-                                delete __TTVAB_STATE__.StreamInfos[oldKey];
-                                for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
-                                    if (__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === oldKey) {
-                                        delete __TTVAB_STATE__.StreamInfosByUrl[url];
+                            const prevMediaKey = data.value?.previousMediaKey || null;
+                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
+                                delete __TTVAB_STATE__.StreamInfos[prevMediaKey];
+                            }
+                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfosByUrl === "object") {
+                                for (const u in __TTVAB_STATE__.StreamInfosByUrl) {
+                                    if (__TTVAB_STATE__.StreamInfosByUrl[u]?.MediaKey === prevMediaKey) {
+                                        delete __TTVAB_STATE__.StreamInfosByUrl[u];
                                     }
                                 }
                             }
@@ -4669,6 +4684,14 @@ function _$hw() {
 function _$mf() {
     const realFetch = window.fetch;
     window.__TTVAB_REAL_FETCH__ = realFetch;
+    const isGqlEndpointUrl = (urlStr) => {
+        try {
+            return new URL(urlStr).hostname === "gql.twitch.tv";
+        }
+        catch {
+            return false;
+        }
+    };
     const updateWorkers = (updates) => {
         if (Array.isArray(updates)) {
             for (const msg of updates) {
@@ -4804,7 +4827,7 @@ function _$mf() {
         const [url, opts] = args;
         if (url) {
             const urlStr = url instanceof Request ? url.url : url.toString();
-            if (urlStr.includes("gql.twitch.tv/gql")) {
+            if (isGqlEndpointUrl(urlStr)) {
                 _$sd();
                 let nextArgs = args;
                 let headers = opts?.headers;
@@ -7657,11 +7680,10 @@ function _$tl() {
         });
         _$l(`Low quality fallback ${enabled ? "enabled" : "disabled"}`, enabled ? "success" : "warning");
         if (shouldDisable &&
-            __TTVAB_STATE__.PinnedBackupPlayerType === "autoplay") {
-            _$l("Disabling low quality fallback while backup is active; reloading player to restore native high quality stream.", "info");
-            if (typeof _$dpt === "function") {
-                _$dpt(false, true, { reason: "manual" });
-            }
+            __TTVAB_STATE__.PlayerHasPlayedOnce &&
+            typeof _$dpt === "function") {
+            _$l("Disabling low quality fallback; reloading player to restore native high quality stream.", "info");
+            _$dpt(false, true, { reason: "manual" });
         }
     });
     _onInternalMessage("ttvab-toggle-debug", (detail) => {
