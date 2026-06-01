@@ -145,7 +145,11 @@ function _initToggleListener() {
 			enabled ? "success" : "warning",
 		);
 
-		if (shouldDisable && typeof _doPlayerTask === "function") {
+		if (
+			shouldDisable &&
+			__TTVAB_STATE__.PlayerHasPlayedOnce &&
+			typeof _doPlayerTask === "function"
+		) {
 			_log(
 				"Disabling low quality fallback; reloading player to restore native high quality stream.",
 				"info",

@@ -125,20 +125,8 @@ function _schedulePostAdArtifactCleanup(channel = null, mediaKey = null) {
 function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
 	const realFetch = fetch;
-	const EMPTY_SEGMENT_B64 =
-		"AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA";
-	const _emptySegmentBinary = atob(EMPTY_SEGMENT_B64);
-	const _emptySegmentBytes = new Uint8Array(_emptySegmentBinary.length);
-	for (let i = 0; i < _emptySegmentBinary.length; i++) {
-		_emptySegmentBytes[i] = _emptySegmentBinary.charCodeAt(i);
-	}
-	const EMPTY_SEGMENT_BLOB = new Blob([_emptySegmentBytes], {
-		type: "video/mp4",
-	});
-	const EMPTY_SEGMENT_URL = URL.createObjectURL(EMPTY_SEGMENT_BLOB);
-	if (typeof __TTVAB_STATE__ !== "undefined" && __TTVAB_STATE__) {
-		__TTVAB_STATE__.EmptySegmentUrl = EMPTY_SEGMENT_URL;
-	}
+	const EMPTY_SEGMENT_URL =
+		"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA";
 
 	function _pruneStreamInfos() {
 		if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return;
@@ -334,14 +322,11 @@ function _hookWorkerFetch() {
 			};
 
 			let url = requestUrl.trimEnd();
-			const responseInit = (response) => {
-				const init = {
-					status: response.status,
-					statusText: response.statusText,
-					headers: response.headers,
-				};
-				return init;
-			};
+			const responseInit = (response) => ({
+				status: response.status,
+				statusText: response.statusText,
+				headers: response.headers,
+			});
 
 			const shouldBlockCachedAdSegments = Boolean(
 				__TTVAB_STATE__.CurrentAdMediaKey ||
@@ -349,13 +334,12 @@ function _hookWorkerFetch() {
 					__TTVAB_STATE__.SimulatedAdsDepth > 0,
 			);
 			if (
-				url === "https://twitch.tv/ttv-ab-empty-segment.mp4" ||
-				(typeof _isKnownAdSegmentUrl === "function" &&
-					_isKnownAdSegmentUrl(url, {
-						includeCached: shouldBlockCachedAdSegments,
-					}))
+				typeof _isKnownAdSegmentUrl === "function" &&
+				_isKnownAdSegmentUrl(url, {
+					includeCached: shouldBlockCachedAdSegments,
+				})
 			) {
-				return new Response(EMPTY_SEGMENT_BLOB);
+				return await realFetch(EMPTY_SEGMENT_URL);
 			}
 
 			const playbackContext = _getPlaybackContextFromUsherUrl(url);
@@ -583,7 +567,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	}, delay);
 }
 
-let _workerWatchdogID = null;
+let _workerWatchdogID: ReturnType<typeof setInterval> | null = null;
 
 function _startWorkerWatchdog() {
 	if (_workerWatchdogID !== null) return;
@@ -655,7 +639,6 @@ function _hookWorker() {
 
 		return false;
 	};
-
 	const createHookedWorkerConstructor = (BaseWorker) => {
 		const reinsertNames = _getReinsert(BaseWorker);
 		const HookedWorker = class Worker extends _cleanWorker(BaseWorker) {
@@ -678,13 +661,10 @@ function _hookWorker() {
 					broadcast: false,
 				});
 
-				const originalWorkerLoadCode =
-					opts?.type === "module"
-						? `await import(${JSON.stringify(workerSourceUrl)});`
-						: `importScripts(${JSON.stringify(workerSourceUrl)});`;
-
 				const injectedCode = `
             (function() {
+                ${_getWasmJs.toString()}
+                const wasmSource = _getWasmJs(${JSON.stringify(workerSourceUrl)});
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify(_S)};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
@@ -773,7 +753,6 @@ function _hookWorker() {
                 ${_findBackupStream.toString()}
                 ${_hookWorkerFetch.toString()}
                 
-                let _debugLogging = false;
                 const _GQL_URL = '${_GQL_URL}';
                 _declareState(self);
                 __TTVAB_STATE__.GQLDeviceID = ${JSON.stringify(__TTVAB_STATE__.GQLDeviceID)};
@@ -794,6 +773,7 @@ function _hookWorker() {
                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerMediaKey)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
                 __TTVAB_STATE__.DisableAdSpoofing = ${JSON.stringify(__TTVAB_STATE__.DisableAdSpoofing)};
+                __TTVAB_STATE__.DisableAutoplayBackup = ${JSON.stringify(__TTVAB_STATE__.DisableAutoplayBackup)};
                 __TTVAB_STATE__.PageMediaType = ${JSON.stringify(pagePlaybackContext.MediaType)};
                 __TTVAB_STATE__.PageChannel = ${JSON.stringify(pagePlaybackContext.ChannelName)};
                 __TTVAB_STATE__.PageVodID = ${JSON.stringify(pagePlaybackContext.VodID)};
@@ -893,32 +873,31 @@ function _hookWorker() {
                             __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
                             __TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
                             __TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
-					__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
                             __TTVAB_STATE__.ShouldResumeAfterAd = false;
                             __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
                             __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
                             __TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
-	                            if (data.value?.clearAdContext) {
-	                                __TTVAB_STATE__.CurrentAdChannel = null;
-	                                __TTVAB_STATE__.CurrentAdMediaKey = null;
-	                                __TTVAB_STATE__.PinnedBackupPlayerType = null;
-	                                __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
-	                                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-	                                __TTVAB_STATE__.LastAdEndedAt = 0;
-	                                __TTVAB_STATE__.LastAdEndedChannel = null;
-	                                __TTVAB_STATE__.LastAdEndedMediaKey = null;
-	                            }
-	                            const prevMediaKey = data.value?.previousMediaKey || null;
-	                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
-	                                delete __TTVAB_STATE__.StreamInfos[prevMediaKey];
-	                            }
-	                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfosByUrl === "object") {
-	                                for (const u in __TTVAB_STATE__.StreamInfosByUrl) {
-	                                    if (__TTVAB_STATE__.StreamInfosByUrl[u]?.MediaKey === prevMediaKey) {
-	                                        delete __TTVAB_STATE__.StreamInfosByUrl[u];
-	                                    }
-	                                }
-	                            }
+                            if (data.value?.clearAdContext) {
+                                __TTVAB_STATE__.CurrentAdChannel = null;
+                                __TTVAB_STATE__.CurrentAdMediaKey = null;
+                                __TTVAB_STATE__.PinnedBackupPlayerType = null;
+                                __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+                                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+                                __TTVAB_STATE__.LastAdEndedAt = 0;
+                                __TTVAB_STATE__.LastAdEndedChannel = null;
+                                __TTVAB_STATE__.LastAdEndedMediaKey = null;
+                            }
+                            const prevMediaKey = data.value?.previousMediaKey || null;
+                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
+                                delete __TTVAB_STATE__.StreamInfos[prevMediaKey];
+                            }
+                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfosByUrl === "object") {
+                                for (const u in __TTVAB_STATE__.StreamInfosByUrl) {
+                                    if (__TTVAB_STATE__.StreamInfosByUrl[u]?.MediaKey === prevMediaKey) {
+                                        delete __TTVAB_STATE__.StreamInfosByUrl[u];
+                                    }
+                                }
+                            }
                             break;
                         case 'FetchResponse':
                             {
@@ -959,15 +938,14 @@ function _hookWorker() {
                 });
                 
                 _hookWorkerFetch();
+                eval(wasmSource);
             })();
-
-            ${originalWorkerLoadCode}
             `;
 
 				const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
 				_trackedExtensionBlobUrls.add(blobUrl);
 				super(blobUrl, opts);
-				setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+				setTimeout(() => URL.revokeObjectURL(blobUrl), 500);
 
 				const getCurrentPageContext = () =>
 					_getPlaybackContextFromUrl(window.location.href);
@@ -1003,12 +981,15 @@ function _hookWorker() {
 					);
 				};
 				const handleWorkerFetchRequest = async (fetchRequest) => {
-					const rawFetch = self.fetch;
+					const rawFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
+					const controller = new AbortController();
+					const timeoutId = setTimeout(() => controller.abort(), 10000);
 					try {
-						const response = await rawFetch(
-							fetchRequest?.url,
-							fetchRequest?.options || {},
-						);
+						const response = await rawFetch(fetchRequest?.url, {
+							...(fetchRequest?.options || {}),
+							signal: controller.signal,
+						});
+						clearTimeout(timeoutId);
 						const body = await response.text();
 						return {
 							id: fetchRequest?.id || null,
@@ -1022,9 +1003,13 @@ function _hookWorker() {
 							body,
 						};
 					} catch (error) {
+						clearTimeout(timeoutId);
 						return {
 							id: fetchRequest?.id || null,
-							error: error?.message || String(error),
+							error:
+								error?.name === "AbortError"
+									? "fetch relay timeout"
+									: error?.message || String(error),
 						};
 					}
 				};
@@ -1120,7 +1105,6 @@ function _hookWorker() {
 									}
 									__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 									__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
-									__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 									if (typeof _rememberPlayerPlaybackForAd === "function") {
 										_rememberPlayerPlaybackForAd(channel, mediaKey);
 									}
@@ -1306,6 +1290,7 @@ function _hookWorker() {
 								if (typeof _clearAdResumeIntent === "function") {
 									_clearAdResumeIntent();
 								}
+								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 								_log("Ad ended", "success");
 								const isHoldingBackup = data.holdingBackup === true;
 								if (
@@ -1491,6 +1476,7 @@ function _hookWorker() {
 
 function _hookMainFetch() {
 	const realFetch = window.fetch;
+	window.__TTVAB_REAL_FETCH__ = realFetch;
 	const isGqlEndpointUrl = (urlStr) => {
 		try {
 			return new URL(urlStr).hostname === "gql.twitch.tv";
@@ -1751,9 +1737,7 @@ function _hookMainFetch() {
 						});
 					}
 
-					if (updates.length > 0) {
-						updateWorkers(updates);
-					}
+					updateWorkers(updates);
 				}
 				const response = await realFetch.apply(this, nextArgs);
 				if (!shouldSkipPlaybackAccessTokenState) {
