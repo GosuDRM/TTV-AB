@@ -7,7 +7,7 @@
 	"description": "__MSG_extDesc__",
 	"default_locale": "en",
 	"background": {
-		"scripts": ["src/scripts/background.js"]
+		"service_worker": "src/scripts/background.js"
 	},
 	"permissions": ["storage"],
 	"host_permissions": ["*://*.twitch.tv/*"],
