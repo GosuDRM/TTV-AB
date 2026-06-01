@@ -33,6 +33,7 @@ beforeAll(() => {
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
 		V2API: false,
+		SimulatedAdsDepth: 0,
 	};
 	g.globalThis = g;
 	g.self = g;

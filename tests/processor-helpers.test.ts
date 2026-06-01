@@ -63,6 +63,7 @@ beforeAll(() => {
 		AuthorizationHeader: null,
 		GQLDeviceID: null,
 		PreferredQualityGroup: null,
+		DisableAutoplayBackup: true,
 	};
 	g.globalThis = g;
 	g.self = g;
@@ -307,5 +308,29 @@ describe("_getFallbackPromotionPolicy", () => {
 		expect(r.allowSelectedPromotion).toBe(true);
 		expect(r.allowFallbackPromotion).toBe(true);
 		expect(r.reason).toBe("clean-playable");
+	});
+});
+
+describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
+	const fn = () =>
+		T<(info: Record<string, unknown>, startIdx?: number) => string[]>(
+			"_getOrderedBackupPlayerTypes",
+		);
+	const getState = () => g.__TTVAB_STATE__ as Record<string, unknown>;
+
+	it("excludes autoplay when LQ fallback is disabled (default)", () => {
+		getState().DisableAutoplayBackup = true;
+		const result = fn()(makeInfo());
+		expect(result).not.toContain("autoplay");
+	});
+
+	it("includes autoplay when LQ fallback is enabled", () => {
+		getState().DisableAutoplayBackup = false;
+		const result = fn()(makeInfo());
+		expect(result).toContain("autoplay");
+	});
+
+	afterAll(() => {
+		getState().DisableAutoplayBackup = true;
 	});
 });

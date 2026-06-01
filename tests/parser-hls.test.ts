@@ -133,3 +133,59 @@ describe("_replaceServerTime", () => {
 		expect(fn("original", "")).toBe("original");
 	});
 });
+
+describe("_stripAds (empty-playlist recovery)", () => {
+	const fn = () =>
+		T<
+			(
+				text: string,
+				stripAll: boolean,
+				info: Record<string, unknown>,
+				skipAutoForceStrip?: boolean,
+			) => string
+		>("_stripAds");
+	const getState = () => g.__TTVAB_STATE__ as Record<string, unknown>;
+
+	it("returns original text when stripping leaves nothing and no clean backup is cached", () => {
+		const st = getState();
+		const originalSimulated = st.SimulatedAdsDepth;
+		const originalAllSegments = st.AllSegmentsAreAdSegments;
+		st.SimulatedAdsDepth = 0;
+		st.AllSegmentsAreAdSegments = false;
+
+		const adPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-VERSION:3",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:0",
+			"#EXT-X-DATERANGE:",
+			'#EXT-X-DATERANGE-ID="stitched-ad-1"',
+			'#EXT-X-DATERANGE-START-DATE="2026-06-02T00:00:00Z"',
+			'#EXT-X-DATERANGE-ATTR:X-TV-TWITCH-AD-URL="https://ad.example"',
+			'#EXT-X-DATERANGE-ATTR:X-TV-TWITCH-AD-CLICK-TRACKING-URL="https://ad.example"',
+			"#EXT-X-CUE-OUT:DURATION=15",
+			"#EXTINF:2.0,",
+			"https://edge/stitched-ad-1.ts",
+			"#EXTINF:2.0,",
+			"https://edge/stitched-ad-2.ts",
+			"#EXTINF:2.0,",
+			"https://edge/stitched-ad-3.ts",
+			"",
+		].join("\n");
+
+		const result = fn()(adPlaylist, true, makeInfo(), false);
+		expect(result).toBe(adPlaylist);
+
+		st.SimulatedAdsDepth = originalSimulated;
+		st.AllSegmentsAreAdSegments = originalAllSegments;
+	});
+
+	function makeInfo(overrides: Record<string, unknown> = {}) {
+		return {
+			LastCleanBackupM3U8: null,
+			LastCleanNativeM3U8: null,
+			LastCleanNativePlaylistAt: 0,
+			...overrides,
+		};
+	}
+});
