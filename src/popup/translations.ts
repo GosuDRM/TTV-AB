@@ -26,9 +26,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "Got it",
 		autoplayBackup: "Low Quality Fallback",
 		autoplayBackupDesc:
-			"Switches to a lower resolution backup when no ad-free high quality stream is available. Keeps playback smooth at 360p during ads.",
+			"Disabled by default. When enabled, automatically switches to a 360p backup stream during ads for smoother playback. When off, a 360p fallback is still used as a last resort if every primary source is ad-marked, so playback never freezes.",
 		autoplayBackupWarning:
-			"Disabling may cause a black screen or frozen video during ads on channels where all high quality sources carry ads.",
+			"Disabled by default. Enable for proactive 360p switching during ads.",
 		autoplayBackupGotIt: "Got it",
 		stable: "Stable",
 		changesInstantly: "Changes take effect instantly",
@@ -94,9 +94,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "Entendido",
 		autoplayBackup: "Respaldo de baja calidad",
 		autoplayBackupDesc:
-			"Cambia a un flujo de respaldo de menor resolución cuando no hay una fuente de alta calidad sin anuncios. Mantiene la reproducción fluida a 360p durante los anuncios.",
+			"Desactivado por defecto. Cuando está activado, cambia automáticamente a un flujo de respaldo de 360p durante los anuncios para una reproducción más fluida. Cuando está desactivado, aún se usa un respaldo de 360p como último recurso si todas las fuentes principales tienen anuncios, por lo que la reproducción nunca se congela.",
 		autoplayBackupWarning:
-			"Desactivarlo puede causar pantalla negra o video congelado durante los anuncios en canales donde todas las fuentes de alta calidad tienen anuncios.",
+			"Desactivado por defecto. Actívalo para cambiar proactivamente a 360p durante los anuncios.",
 		autoplayBackupGotIt: "Entendido",
 		stable: "Estable",
 		changesInstantly: "Los cambios se aplican al instante",
@@ -174,9 +174,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "Compris",
 		autoplayBackup: "Secours basse qualité",
 		autoplayBackupDesc:
-			"Passe à un flux de secours de résolution inférieure lorsqu'aucune source haute qualité sans publicité n'est disponible. Maintient une lecture fluide à 360p pendant les publicités.",
+			"Désactivé par défaut. Lorsqu'il est activé, bascule automatiquement vers un flux de secours 360p pendant les publicités pour une lecture plus fluide. Lorsqu'il est désactivé, un secours 360p est toujours utilisé en dernier recours si toutes les sources principales contiennent des publicités, la lecture ne se fige donc jamais.",
 		autoplayBackupWarning:
-			"La désactivation peut entraîner un écran noir ou une vidéo figée pendant les publicités sur les chaînes où toutes les sources haute qualité diffusent des publicités.",
+			"Désactivé par défaut. Activez pour un basculement proactif vers 360p pendant les publicités.",
 		autoplayBackupGotIt: "Compris",
 		stable: "Stable",
 		changesInstantly: "Les changements s'appliquent instantanément",
@@ -260,9 +260,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "Verstanden",
 		autoplayBackup: "Qualitäts-Fallback",
 		autoplayBackupDesc:
-			"Wechselt zu einem Backup-Stream mit niedrigerer Auflösung, wenn keine werbefreie hochauflösende Quelle verfügbar ist. Hält die Wiedergabe bei 360p während der Werbung flüssig.",
+			"Standardmäßig deaktiviert. Wenn aktiviert, wechselt automatisch zu einem 360p-Backup-Stream während der Werbung für flüssigere Wiedergabe. Wenn deaktiviert, wird ein 360p-Fallback als letzter Ausweg verwendet, wenn alle Hauptquellen Werbung enthalten — die Wiedergabe friert nie ein.",
 		autoplayBackupWarning:
-			"Deaktivierung kann zu schwarzem Bildschirm oder eingefrorenem Video während der Werbung auf Kanälen führen, bei denen alle hochauflösenden Quellen Werbung enthalten.",
+			"Standardmäßig deaktiviert. Aktiviere es für proaktives 360p-Wechseln während der Werbung.",
 		autoplayBackupGotIt: "Verstanden",
 		stable: "Stabil",
 		changesInstantly: "Änderungen werden sofort übernommen",
@@ -355,9 +355,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "Entendi",
 		autoplayBackup: "Reserva de baixa qualidade",
 		autoplayBackupDesc:
-			"Alterna para um fluxo de reserva de resolução mais baixa quando nenhuma fonte de alta qualidade sem anúncios está disponível. Mantém a reprodução suave a 360p durante os anúncios.",
+			"Desativado por padrão. Quando ativado, alterna automaticamente para um fluxo de reserva de 360p durante os anúncios para uma reprodução mais suave. Quando desativado, uma reserva de 360p ainda é usada como último recurso se todas as fontes principais tiverem anúncios, então a reprodução nunca trava.",
 		autoplayBackupWarning:
-			"Desativar pode causar tela preta ou vídeo congelado durante os anúncios em canais onde todas as fontes de alta qualidade têm anúncios.",
+			"Desativado por padrão. Ative para alternar proativamente para 360p durante os anúncios.",
 		autoplayBackupGotIt: "Entendi",
 		stable: "Estável",
 		changesInstantly: "As alterações entram em vigor imediatamente",
@@ -435,9 +435,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "Capito",
 		autoplayBackup: "Riserva a bassa qualità",
 		autoplayBackupDesc:
-			"Passa a un flusso di riserva a risoluzione inferiore quando nessuna fonte di alta qualità senza pubblicità è disponibile. Mantiene la riproduzione fluida a 360p durante gli annunci.",
+			"Disattivato per impostazione predefinita. Quando attivo, passa automaticamente a un flusso di riserva 360p durante gli annunci per una riproduzione più fluida. Quando disattivato, un fallback 360p viene comunque usato come ultima risorsa se tutte le fonti principali contengono pubblicità, quindi la riproduzione non si blocca mai.",
 		autoplayBackupWarning:
-			"La disattivazione potrebbe causare schermo nero o video bloccato durante gli annunci sui canali in cui tutte le fonti di alta qualità contengono pubblicità.",
+			"Disattivato per impostazione predefinita. Attivalo per il passaggio proattivo a 360p durante gli annunci.",
 		autoplayBackupGotIt: "Capito",
 		stable: "Stabile",
 		changesInstantly: "Le modifiche hanno effetto immediato",
@@ -515,9 +515,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "了解",
 		autoplayBackup: "低画質フォールバック",
 		autoplayBackupDesc:
-			"広告なしの高画質ソースが利用できない場合、低解像度のバックアップストリームに切り替えます。広告中も360pでスムーズな再生を維持します。",
+			"デフォルトでは無効。有効にすると、広告中に360pのバックアップストリームへ自動切替し再生をスムーズにします。無効の場合も、すべての主要ソースに広告が含まれるときは360pの最終手段として使用されるため、再生がフリーズすることはありません。",
 		autoplayBackupWarning:
-			"無効にすると、すべての高画質ソースに広告が含まれるチャンネルで、広告中に黒画面や映像のフリーズが発生する可能性があります。",
+			"デフォルトでは無効。広告中に360pへ事前に切り替えたい場合は有効にしてください。",
 		autoplayBackupGotIt: "了解",
 		stable: "安定版",
 		changesInstantly: "変更はすぐに反映されます",
@@ -606,9 +606,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "확인",
 		autoplayBackup: "저화질 폴백",
 		autoplayBackupDesc:
-			"광고 없는 고화질 소스를 사용할 수 없을 때 저해상도 백업 스트림으로 전환합니다. 광고 중에도 360p로 부드러운 재생을 유지합니다.",
+			"기본적으로 비활성화. 활성화하면 광고 중 360p 백업 스트림으로 자동 전환되어 더 부드러운 재생이 가능합니다. 비활성화 상태에서도 모든 주요 소스에 광고가 포함된 경우 360p 폴백이 최후의 수단으로 사용되므로 재생이 멈추지 않습니다.",
 		autoplayBackupWarning:
-			"비활성화하면 모든 고화질 소스에 광고가 포함된 채널에서 광고 중에 검은 화면이나 동영상 정지가 발생할 수 있습니다.",
+			"기본적으로 비활성화. 광고 중 360p로 사전 전환하려면 활성화하세요.",
 		autoplayBackupGotIt: "확인",
 		stable: "안정판",
 		changesInstantly: "변경 사항이 즉시 적용됩니다",
@@ -674,9 +674,8 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "知道了",
 		autoplayBackup: "低画质备选流",
 		autoplayBackupDesc:
-			"当没有无广告的高画质源时，切换到低分辨率备选流。在广告期间保持360p流畅播放。",
-		autoplayBackupWarning:
-			"关闭后，在所有高画质源都带有广告的频道上，广告期间可能出现黑屏或画面冻结。",
+			"默认关闭。开启后，在广告期间自动切换到 360p 备选流以保持流畅播放。关闭时，如果所有主要源都带有广告，仍会使用 360p 备选流作为最后手段，因此播放不会卡住。",
+		autoplayBackupWarning: "默认关闭。开启后可在广告期间主动切换到 360p。",
 		autoplayBackupGotIt: "知道了",
 		stable: "稳定版",
 		changesInstantly: "更改会立即生效",
@@ -731,9 +730,8 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "知道了",
 		autoplayBackup: "低畫質備選串流",
 		autoplayBackupDesc:
-			"當沒有無廣告的高畫質來源時，切換到低解析度備選串流。在廣告期間保持360p流暢播放。",
-		autoplayBackupWarning:
-			"關閉後，在所有高畫質來源都帶有廣告的頻道上，廣告期間可能出現黑畫面或畫面凍結。",
+			"預設關閉。開啟後，會在廣告期間自動切換至 360p 備選串流以保持流暢播放。關閉時，若所有主要來源皆帶有廣告，仍會以 360p 作為最後手段，因此播放不會卡住。",
+		autoplayBackupWarning: "預設關閉。開啟後可在廣告期間主動切換至 360p。",
 		autoplayBackupGotIt: "知道了",
 		stable: "穩定版",
 		changesInstantly: "變更會立即生效",
@@ -789,9 +787,9 @@ const TRANSLATIONS = {
 		adSpoofingGotIt: "Понятно",
 		autoplayBackup: "Резерв низкого качества",
 		autoplayBackupDesc:
-			"Переключается на резервный поток с более низким разрешением, когда нет источника высокого качества без рекламы. Обеспечивает плавное воспроизведение в 360p во время рекламы.",
+			"По умолчанию отключено. При включении автоматически переключается на резервный поток 360p во время рекламы для более плавного воспроизведения. При отключении 360p всё равно используется как последнее средство, если все основные источники содержат рекламу, поэтому воспроизведение не зависает.",
 		autoplayBackupWarning:
-			"Отключение может вызвать чёрный экран или зависание видео во время рекламы на каналах, где все источники высокого качества содержат рекламу.",
+			"По умолчанию отключено. Включите для упреждающего переключения на 360p во время рекламы.",
 		autoplayBackupGotIt: "Понятно",
 		stable: "Стабильная",
 		changesInstantly: "Изменения применяются мгновенно",
