@@ -1,12 +1,12 @@
-// TTV AB v9.1.5 - Twitch Ad Blocker
+// TTV AB v9.2.1 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.1.5",
-    INTERNAL_VERSION: 202,
+    VERSION: "9.2.1",
+    INTERNAL_VERSION: 206,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -505,7 +505,7 @@ function _$ds(scope) {
         FetchRequestSeq: 0,
         _AdRecoveryConsecutiveFailures: 0,
         DisableAdSpoofing: false,
-        DisableAutoplayBackup: false,
+        DisableAutoplayBackup: true,
         LoggedAdSpoofNoMatch: false,
         LoggedAdSpoofNoToken: false,
         LoggedAdSpoofBadStatus: false,
@@ -1176,7 +1176,7 @@ function _$sa(text, stripAll, info, skipAutoForceStrip = false) {
             _$l(`[Recovery] Empty playlist - reusing ${recoverySource.label}`, "warning");
             return recoverySource.m3u8;
         }
-        _$l("[Recovery] Empty playlist after stripping ads; falling back to original playlist to prevent stall", "warning");
+        _$l("Failed to find backup stream — no cached clean playlists available", "warning");
         return text;
     }
     return result.join("\n");
@@ -3080,13 +3080,10 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
             playerTypes = [...clean, ...contam];
         }
     }
-    const sourceTypes = ["embed", "popout", "site"];
-    const allSourceTypesContaminated = info.LoggedBackupAdsByType &&
-        sourceTypes.every((t) => info.LoggedBackupAdsByType.has(t));
-    if (allSourceTypesContaminated &&
-        !playerTypes.includes("autoplay") &&
-        !__TTVAB_STATE__.DisableAutoplayBackup) {
+    if (__TTVAB_STATE__.DisableAutoplayBackup &&
+        !playerTypes.includes("autoplay")) {
         playerTypes.push("autoplay");
+        _$l("[Trace] LQ autoplay appended as last-resort fallback (toggle disabled, ensures seamless LQ→HQ hold)", "info");
     }
     const playerTypesLen = playerTypes.length;
     const isDoingMinimalRequests = startIdx > 0 &&
@@ -3335,9 +3332,11 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
         backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
         backupM3u8 = fallbackM3u8;
         isFallback = true;
-        info.LastCleanBackupM3U8 = backupM3u8;
-        info.LastCleanBackupPlayerType = backupType;
-        info.LastCleanBackupAt = Date.now();
+        if (!info.LoggedBackupAdsByType?.has(backupType)) {
+            info.LastCleanBackupM3U8 = backupM3u8;
+            info.LastCleanBackupPlayerType = backupType;
+            info.LastCleanBackupAt = Date.now();
+        }
         _$l(`[Trace] Using fallback: ${backupType}`, "warning");
     }
     if (backupM3u8) {
