@@ -63,7 +63,7 @@ beforeAll(() => {
 		AuthorizationHeader: null,
 		GQLDeviceID: null,
 		PreferredQualityGroup: null,
-		DisableAutoplayBackup: false,
+		DisableAutoplayBackup: true,
 	};
 	g.globalThis = g;
 	g.self = g;
@@ -318,7 +318,7 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 		);
 	const getState = () => g.__TTVAB_STATE__ as Record<string, unknown>;
 
-	it("excludes autoplay when LQ fallback is disabled", () => {
+	it("excludes autoplay when LQ fallback is disabled (default)", () => {
 		getState().DisableAutoplayBackup = true;
 		const result = fn()(makeInfo());
 		expect(result).not.toContain("autoplay");
@@ -331,6 +331,6 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 	});
 
 	afterAll(() => {
-		getState().DisableAutoplayBackup = false;
+		getState().DisableAutoplayBackup = true;
 	});
 });
