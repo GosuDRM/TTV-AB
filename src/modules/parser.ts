@@ -693,7 +693,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		}
 
 		_log(
-			"[Recovery] Empty playlist after stripping ads; falling back to original playlist to prevent stall",
+			"Failed to find backup stream — no cached clean playlists available",
 			"warning",
 		);
 		return text;
