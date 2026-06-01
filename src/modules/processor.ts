@@ -1965,9 +1965,11 @@ async function _findBackupStream(
 		backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
 		backupM3u8 = fallbackM3u8;
 		isFallback = true;
-		info.LastCleanBackupM3U8 = backupM3u8;
-		info.LastCleanBackupPlayerType = backupType;
-		info.LastCleanBackupAt = Date.now();
+		if (!info.LoggedBackupAdsByType?.has(backupType)) {
+			info.LastCleanBackupM3U8 = backupM3u8;
+			info.LastCleanBackupPlayerType = backupType;
+			info.LastCleanBackupAt = Date.now();
+		}
 		_log(`[Trace] Using fallback: ${backupType}`, "warning");
 	}
 
