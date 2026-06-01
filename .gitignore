@@ -27,6 +27,11 @@ dist/
 build/
 *.zip
 
+# Built artifacts (committed in firefox branch, ignored in main)
+src/popup/popup.js
+src/popup/translations.js
+src/scripts/content.js
+
 # Temporary files
 tmp/
 temp/
