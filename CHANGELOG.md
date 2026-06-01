@@ -4,7 +4,11 @@ All notable changes to TTV AB will be documented in this file.
 
 ## [9.2.1] - 2026-06-02
 
+### Changed
+- "Low quality fallback" toggle now defaults to **disabled**. The previous default (enabled) caused a proactive 360p switch for every ad, which most users found jarring on channels where high quality was available. With the last-resort autoplay injection (below), the system already falls back to 360p automatically when every primary source is ad-marked, so disabling the toggle by default gives a cleaner native-first experience while still preventing black screens. Enable the toggle to opt back into proactive 360p switching during ads.
+
 ### Fixed
+- Info modal text for "Low quality fallback" was stale: the warning claimed disabling "may cause a black screen or frozen video during ads", but the last-resort autoplay injection (below) already prevents that. The description and warning are rewritten across all 11 locales to reflect the new default and the actual behavior in both states.
 - Ads leaking through during preroll when "Low quality fallback" is disabled: the 9.2.0 emergency autoplay injection relied on `LoggedBackupAdsByType` being populated (all primary types ad-marked), but the check ran before the main loop, so on the first call it never fired. The injection is now unconditional when the toggle is off — autoplay is appended to the backup-search order as a last-resort type, after the configured types. When all configured types are contaminated, the loop reaches autoplay, finds a clean LQ stream, and the existing seamless-hold path (`IsHoldingBackupAfterAd` → `NativePlaybackRestored`) transitions cleanly back to HQ native playback when the ad cycle ends — same UX as when the toggle is enabled, with no ad flash and no black screen.
 
 ## [9.2.0] - 2026-06-02
