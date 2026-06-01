@@ -777,7 +777,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			const enabled = safeResult.ttvAdblockEnabled !== false;
 			const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
 			const autoplayBackupEnabled =
-				safeResult.ttvAutoplayBackupEnabled !== false;
+				safeResult.ttvAutoplayBackupEnabled === true;
 			toggle.checked = enabled;
 			adSpoofingToggle.checked = adSpoofingEnabled;
 			autoplayBackupToggle.checked = autoplayBackupEnabled;
@@ -806,7 +806,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 		if (changes.ttvAutoplayBackupEnabled) {
 			const autoplayBackupEnabled =
-				changes.ttvAutoplayBackupEnabled.newValue !== false;
+				changes.ttvAutoplayBackupEnabled.newValue === true;
 			autoplayBackupToggle.checked = autoplayBackupEnabled;
 		}
 		if (changes.ttvAdsBlocked) {
