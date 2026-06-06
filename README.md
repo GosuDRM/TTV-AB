@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.2.1-purple)
+![Version](https://img.shields.io/badge/version-9.2.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.2.1-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.2.2-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,6 +62,14 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.2.2 — 2026-06-06
+- **Crashed playback workers now actually recover:** the watchdog could never detect a hung worker (posting to a dead worker never fails), and "restarts" spawned an orphan worker Twitch never used — so a dead worker stayed dead. Workers now reply to a liveness ping, the watchdog acts only when a pong is missed for 15s, and recovery reloads the player so Twitch creates a fresh, fully-wired worker (with a 30s cooldown to avoid reload loops).
+- **"Ads Blocked" no longer overshoots after a connection blip:** queued counter updates were summed without a cap while the messaging bridge was down; the merged increment is now clamped to the real total.
+- **The active stream is no longer evicted from the worker cache:** the URL→stream table now drops least-recently-used entries instead of oldest-inserted, preventing brief moments where ads slipped through on the stream you're watching.
+- **Hardened against stat tampering:** the background worker now only accepts counter messages from the extension itself.
+- **Popout / Picture-in-Picture hooks fail safe:** they can no longer throw into Twitch's own code and break login popups, clip sharing, or PiP.
+- **Recovery timers respect channel switches:** post-ad and handoff timers no longer pause or seek the wrong stream after a fast channel change.
 
 ### v9.2.1 — 2026-06-02
 - **Seamless LQ→HQ hold works even with "Low quality fallback" disabled:** The 9.2.0 emergency autoplay injection relied on a check that ran before the main loop, so it never fired on the first call. The injection is now unconditional when the toggle is off — autoplay is appended to the backup-search order as a last-resort type. When all configured types are contaminated, the loop reaches autoplay, finds a clean 360p stream, and the existing seamless-hold path transitions cleanly back to HQ native playback when the ad cycle ends. Same UX as when the toggle is enabled, with no ad flash and no black screen.

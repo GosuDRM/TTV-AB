@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.2.2] - 2026-06-06
+
+This is a reliability and correctness release focused on the worker layer and player recovery. No changes to how ads are detected or stripped.
+
+### Fixed
+- **Crashed playback workers now actually recover.** Twitch runs ad-blocking inside a Web Worker, and the extension watches that worker for crashes — but the watchdog was effectively broken in two ways. It "pinged" the worker by posting a message, but posting to a dead or frozen worker never fails, so the check always passed and a hung worker was never noticed. And when a worker did crash, recovery spawned a brand-new worker that Twitch had no idea about — Twitch kept talking to the dead one — so playback stayed broken while the logs claimed success. Now: workers reply to a liveness ping with a pong, the watchdog only flags a worker once no pong has come back for 15 seconds, and recovery reloads the player (the one action that makes Twitch spin up a fresh, fully-connected worker). A 30-second cooldown keeps a persistently broken stream from looping reloads.
+- **The "Ads Blocked" total no longer overshoots after a brief disconnect.** When the in-page messaging bridge dropped for a moment, queued counter updates were merged by adding their increments together with no ceiling, so when the bridge reconnected the displayed total could jump well past the real number. The merged increment is now capped to the true running total.
+- **The stream you're watching is no longer evicted from the worker's cache.** The worker keeps a URL→stream lookup table; when it filled up it discarded the oldest *inserted* entries, which could include the currently-playing stream and cause brief moments where ads slipped through. It now discards the least-recently-used entries instead, so the active stream always stays cached.
+- **Hardened the statistics counter against tampering.** The background service worker accepted "add to my blocked-ad count" messages without checking who sent them, so in principle any script running on a Twitch page could inflate your counter or unlock achievements. It now only accepts those messages from the extension itself.
+- **The popout and Picture-in-Picture hooks can no longer break Twitch's own interface.** The extension wraps `window.open` and Picture-in-Picture to track when playback hands off to a second window. If one of its internal checks ever threw, the error could bubble up into Twitch's code and break things like login popups, clip sharing, or entering PiP. Both hooks now fail safe and always fall back to the browser's native behavior.
+- **Recovery timers now respect channel switches.** A few post-ad and player-handoff timers acted on whatever stream happened to be loaded when they fired, so switching channels quickly could pause or seek the *new* stream by mistake. These timers now cancel themselves the moment you navigate away.
+- **Closed a rare popup race** where the "are you sure you want to disable Low Quality Fallback?" confirmation could be skipped on a later toggle.
+
+### Changed
+- Removed unused "Buffer Fix" interface text (4 strings across all 11 languages) that no longer corresponds to anything in the UI.
+
 ## [9.2.1] - 2026-06-02
 
 ### Changed
