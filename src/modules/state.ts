@@ -107,16 +107,19 @@ function _mergePendingBridgeCounterMessages(target, incoming) {
 	const incomingDetail = _getPendingBridgeCounterDetail(incoming);
 	if (!targetDetail || !incomingDetail) return false;
 
+	const mergedCount = Math.max(
+		_normalizeCount(targetDetail.count),
+		_normalizeCount(incomingDetail.count),
+	);
 	target.detail = {
 		...targetDetail,
 		...incomingDetail,
-		count: Math.max(
-			_normalizeCount(targetDetail.count),
-			_normalizeCount(incomingDetail.count),
-		),
-		delta:
+		count: mergedCount,
+		delta: Math.min(
 			_normalizeCount(targetDetail.delta) +
-			_normalizeCount(incomingDetail.delta),
+				_normalizeCount(incomingDetail.delta),
+			mergedCount,
+		),
 	};
 	return true;
 }
