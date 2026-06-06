@@ -14,11 +14,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "Channels where you've blocked the most ads",
 		achievements: "Achievements",
 		adBlocking: "Ad Blocking",
-		bufferFix: "Buffer Fix",
-		bufferFixDesc:
-			"Detects and recovers from playback freezes, post-ad black screens, live-edge starvation, and audio/video desync.",
-		bufferFixFootnote: "Disable only if you experience issues.",
-		bufferFixGotIt: "Got it",
 		adSpoofing: "Ad Spoofing",
 		adSpoofingDesc:
 			"Sends ad-watch signals to Twitch to reduce anti-adblock detection.",
@@ -82,11 +77,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "Canales donde más anuncios has bloqueado",
 		achievements: "Logros",
 		adBlocking: "Bloqueo de anuncios",
-		bufferFix: "Corrección de búfer",
-		bufferFixDesc:
-			"Detecta y soluciona congelaciones, pantallas negras tras anuncios, retrasos en la transmisión y desincronización de audio/video.",
-		bufferFixFootnote: "Desactívalo solo si tienes problemas.",
-		bufferFixGotIt: "Entendido",
 		adSpoofing: "Suplantación de anuncios",
 		adSpoofingDesc:
 			"Envía señales de visualización de anuncios a Twitch para reducir la detección del bloqueo de anuncios.",
@@ -162,11 +152,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "Chaînes où vous avez bloqué le plus de pubs",
 		achievements: "Succès",
 		adBlocking: "Blocage des pubs",
-		bufferFix: "Correction du buffer",
-		bufferFixDesc:
-			"Détecte et corrige les gels, écrans noirs post-pub, décalage du direct et désynchronisation audio/vidéo.",
-		bufferFixFootnote: "Désactivez uniquement en cas de problème.",
-		bufferFixGotIt: "Compris",
 		adSpoofing: "Usurpation de pubs",
 		adSpoofingDesc:
 			"Envoie des signaux de visionnage de pubs à Twitch pour réduire la détection du bloqueur de pubs.",
@@ -248,11 +233,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "Kanäle, auf denen du die meiste Werbung blockiert hast",
 		achievements: "Erfolge",
 		adBlocking: "Werbeblockierung",
-		bufferFix: "Puffer-Fix",
-		bufferFixDesc:
-			"Erkennt und behebt Wiedergabe-Aussetzer, schwarze Bildschirme nach Werbung, Live-Verzögerungen und Ton/Bild-Versatz.",
-		bufferFixFootnote: "Nur deaktivieren, wenn es Probleme gibt.",
-		bufferFixGotIt: "Verstanden",
 		adSpoofing: "Werbe-Spoofing",
 		adSpoofingDesc:
 			"Sendet Werbe-Signale an Twitch, um die Erkennung des Werbeblockers zu erschweren.",
@@ -343,11 +323,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "Canais em que você mais bloqueou anúncios",
 		achievements: "Conquistas",
 		adBlocking: "Bloqueio de anúncios",
-		bufferFix: "Correção de buffer",
-		bufferFixDesc:
-			"Detecta e recupera de travamentos, telas pretas pós-anúncio, atraso na transmissão e dessincronização de áudio/vídeo.",
-		bufferFixFootnote: "Desative apenas se tiver problemas.",
-		bufferFixGotIt: "Entendi",
 		adSpoofing: "Simulação de anúncios",
 		adSpoofingDesc:
 			"Envia sinais de visualização de anúncios ao Twitch para reduzir a detecção do bloqueador.",
@@ -423,11 +398,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "Canali in cui hai bloccato più annunci",
 		achievements: "Obiettivi",
 		adBlocking: "Blocco annunci",
-		bufferFix: "Correzione buffer",
-		bufferFixDesc:
-			"Rileva e risolve blocchi, schermi neri dopo gli annunci, ritardi nella diretta e desincronizzazione audio/video.",
-		bufferFixFootnote: "Disattiva solo se riscontri problemi.",
-		bufferFixGotIt: "Capito",
 		adSpoofing: "Spoofing annunci",
 		adSpoofingDesc:
 			"Invia segnali di visualizzazione annunci a Twitch per ridurre il rilevamento dell'ad blocker.",
@@ -503,11 +473,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "最も多く広告をブロックしたチャンネル",
 		achievements: "実績",
 		adBlocking: "広告ブロック",
-		bufferFix: "バッファ修正",
-		bufferFixDesc:
-			"再生の停止、広告後の黒画面、配信遅延、音声と映像のずれを検出して自動的に復旧します。",
-		bufferFixFootnote: "問題が起きたときだけ無効にしてください。",
-		bufferFixGotIt: "了解",
 		adSpoofing: "広告スプーフィング",
 		adSpoofingDesc:
 			"広告ブロックの検出を回避するため、広告を視聴したという信号をTwitchに送信します。",
@@ -594,11 +559,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "광고를 가장 많이 차단한 채널",
 		achievements: "업적",
 		adBlocking: "광고 차단",
-		bufferFix: "버퍼 수정",
-		bufferFixDesc:
-			"재생 멈춤, 광고 후 검은 화면, 생방송 지연, 음성/영상 불일치를 감지하고 자동으로 복구합니다.",
-		bufferFixFootnote: "문제가 있을 때만 비활성화하세요.",
-		bufferFixGotIt: "확인",
 		adSpoofing: "광고 스푸핑",
 		adSpoofingDesc:
 			"광고 차단 탐지를 줄이기 위해 광고 시청 신호를 Twitch에 보냅니다.",
@@ -664,10 +624,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "你拦截广告最多的频道",
 		achievements: "成就",
 		adBlocking: "广告拦截",
-		bufferFix: "缓冲修复",
-		bufferFixDesc: "自动检测并修复播放卡顿、广告后黑屏、直播延迟及音画不同步。",
-		bufferFixFootnote: "仅在遇到问题时关闭。",
-		bufferFixGotIt: "知道了",
 		adSpoofing: "广告伪装",
 		adSpoofingDesc: "向 Twitch 发送广告观看信标，以减少广告拦截器的检测。",
 		adSpoofingFootnote: "如遇到问题，请禁用此功能。",
@@ -719,11 +675,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "你攔截廣告最多的頻道",
 		achievements: "成就",
 		adBlocking: "廣告攔截",
-		bufferFix: "緩衝修復",
-		bufferFixDesc:
-			"自動偵測並修復播放卡頓、廣告後黑畫面、直播延遲與影音不同步。",
-		bufferFixFootnote: "僅在遇到問題時關閉。",
-		bufferFixGotIt: "知道了",
 		adSpoofing: "廣告偽裝",
 		adSpoofingDesc: "向 Twitch 傳送廣告觀看訊號，以減少廣告攔截器的偵測。",
 		adSpoofingFootnote: "如遇到問題，請停用此功能。",
@@ -775,11 +726,6 @@ const TRANSLATIONS = {
 		topChannelsDesc: "Каналы, где вы заблокировали больше всего рекламы",
 		achievements: "Достижения",
 		adBlocking: "Блокировка рекламы",
-		bufferFix: "Исправление буфера",
-		bufferFixDesc:
-			"Обнаруживает и устраняет зависания, чёрные экраны после рекламы, задержку трансляции и рассинхронизацию аудио/видео.",
-		bufferFixFootnote: "Отключайте только при возникновении проблем.",
-		bufferFixGotIt: "Понятно",
 		adSpoofing: "Подмена рекламы",
 		adSpoofingDesc:
 			"Отправляет сигналы просмотра рекламы в Twitch, чтобы снизить вероятность обнаружения блокировщика.",
