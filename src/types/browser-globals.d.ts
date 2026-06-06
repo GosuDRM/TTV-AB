@@ -63,6 +63,7 @@ interface Worker {
 	__TTVABIntentionallyTerminated?: boolean;
 	__TTVABCrashed?: boolean;
 	__TTVABCreatedAt?: number;
+	__TTVABLastPongAt?: number;
 	__TTVABRestartAttempts?: number;
 	__TTVABPageMediaKey?: string | null;
 	__TTVABWorkerUrl?: string;
