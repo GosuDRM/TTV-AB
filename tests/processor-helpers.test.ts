@@ -334,3 +334,30 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 		getState().DisableAutoplayBackup = true;
 	});
 });
+
+describe("_shouldTryAutoplayFirst (fast clean-first contract)", () => {
+	const fn = () =>
+		T<(info: Record<string, unknown>) => boolean>("_shouldTryAutoplayFirst");
+
+	it("prioritizes autoplay on cold start (no clean backup yet)", () => {
+		expect(fn()(makeInfo())).toBe(true);
+	});
+
+	it("prioritizes autoplay on a new ad cycle (backup stale from a prior cycle)", () => {
+		const info = makeInfo({
+			LastCleanBackupM3U8: "#EXTM3U8",
+			LastCleanBackupAt: 1000,
+			VisibleAdStartedAt: 5000,
+		});
+		expect(fn()(info)).toBe(true);
+	});
+
+	it("keeps normal order once a fresh clean backup exists this cycle", () => {
+		const info = makeInfo({
+			LastCleanBackupM3U8: "#EXTM3U8",
+			LastCleanBackupAt: 5000,
+			VisibleAdStartedAt: 1000,
+		});
+		expect(fn()(info)).toBe(false);
+	});
+});
