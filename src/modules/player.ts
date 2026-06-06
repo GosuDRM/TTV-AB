@@ -766,11 +766,13 @@ function _pausePrimaryPlaybackForSecondaryPlayerHandoff(
 
 function _scheduleSecondaryPlayerHandoffPause(channel = null, mediaKey = null) {
 	for (const delay of _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS) {
-		setTimeout(
+		_schedulePlaybackRecoveryTimeout(
 			() => {
 				_pausePrimaryPlaybackForSecondaryPlayerHandoff(channel, mediaKey);
 			},
 			Math.max(0, Number(delay) || 0),
+			channel,
+			mediaKey,
 		);
 	}
 }
@@ -1416,25 +1418,31 @@ function _hookSecondaryPlayerHandoffDetection() {
 		const nativeOpen = window.open;
 		try {
 			window.open = function patchedWindowOpen(...args) {
-				const descriptor = _getSecondaryPlayerLaunchDescriptorFromUrl(args[0]);
-				const sourceWasPlaying = descriptor
-					? _isPrimaryPlaybackCurrentlyActive()
-					: false;
+				let descriptor = null;
+				let sourceWasPlaying = false;
+				try {
+					descriptor = _getSecondaryPlayerLaunchDescriptorFromUrl(args[0]);
+					sourceWasPlaying = descriptor
+						? _isPrimaryPlaybackCurrentlyActive()
+						: false;
+				} catch {}
 				const openedWindow = nativeOpen.apply(this, args);
-				if (descriptor) {
-					if (openedWindow) {
-						_beginSecondaryPlayerHandoff(descriptor, {
-							sourceWasPlaying,
-							pauseSource: descriptor.kind !== "pip",
-						});
-					} else {
-						_rollbackSecondaryPlayerHandoff(
-							descriptor.channel || null,
-							descriptor.mediaKey || null,
-							false,
-						);
+				try {
+					if (descriptor) {
+						if (openedWindow) {
+							_beginSecondaryPlayerHandoff(descriptor, {
+								sourceWasPlaying,
+								pauseSource: descriptor.kind !== "pip",
+							});
+						} else {
+							_rollbackSecondaryPlayerHandoff(
+								descriptor.channel || null,
+								descriptor.mediaKey || null,
+								false,
+							);
+						}
 					}
-				}
+				} catch {}
 				return openedWindow;
 			};
 			window.__TTVAB_WINDOW_OPEN_PATCHED__ = true;
@@ -1451,30 +1459,33 @@ function _hookSecondaryPlayerHandoffDetection() {
 						const result = nativeRequestPictureInPicture.apply(this, args);
 						if (typeof result?.then === "function") {
 							return result.then((value) => {
-								const descriptor = {
-									kind: "pip",
-									channel:
-										_normalizePlayerChannel(__TTVAB_STATE__.PageChannel) ||
-										null,
-									mediaKey:
-										_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
-										_resolvePlayerMediaKey(__TTVAB_STATE__.PageChannel, null),
-								};
-								_beginSecondaryPlayerHandoff(descriptor, {
-									pauseSource: false,
-									sourceWasPlaying: _isPrimaryPlaybackCurrentlyActive(),
-								});
-								this.addEventListener(
-									"leavepictureinpicture",
-									() => {
-										if (
-											_PlaybackIntentState.secondaryPlayerHandoffKind === "pip"
-										) {
-											_clearSecondaryPlayerHandoff();
-										}
-									},
-									{ once: true, capture: true },
-								);
+								try {
+									const descriptor = {
+										kind: "pip",
+										channel:
+											_normalizePlayerChannel(__TTVAB_STATE__.PageChannel) ||
+											null,
+										mediaKey:
+											_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
+											_resolvePlayerMediaKey(__TTVAB_STATE__.PageChannel, null),
+									};
+									_beginSecondaryPlayerHandoff(descriptor, {
+										pauseSource: false,
+										sourceWasPlaying: _isPrimaryPlaybackCurrentlyActive(),
+									});
+									this.addEventListener(
+										"leavepictureinpicture",
+										() => {
+											if (
+												_PlaybackIntentState.secondaryPlayerHandoffKind ===
+												"pip"
+											) {
+												_clearSecondaryPlayerHandoff();
+											}
+										},
+										{ once: true, capture: true },
+									);
+								} catch {}
 								return value;
 							});
 						}
@@ -2659,39 +2670,45 @@ function _doPlayerTask(
 		);
 
 		if (isPlaybackRecoveryReload) {
-			setTimeout(() => {
-				try {
-					const { player: livePlayer, state: liveState } = _getPlayerAndState();
-					const confirmType = liveState?.props?.content?.type;
-					if (
-						(confirmType === "live" || confirmType === "rerun") &&
-						livePlayer
-					) {
-						const liveCore = _getPlayerCore(livePlayer);
-						const liveVideo = livePlayer.getHTMLVideoElement?.();
+			_schedulePlaybackRecoveryTimeout(
+				() => {
+					try {
+						const { player: livePlayer, state: liveState } =
+							_getPlayerAndState();
+						const confirmType = liveState?.props?.content?.type;
 						if (
-							liveVideo &&
-							!liveVideo.ended &&
-							liveVideo.buffered?.length > 0
+							(confirmType === "live" || confirmType === "rerun") &&
+							livePlayer
 						) {
-							const liveEdge = liveVideo.buffered.end(
-								liveVideo.buffered.length - 1,
-							);
-							const videoCurrentPos = Number(liveVideo.currentTime);
-							const currentPos = Number.isFinite(videoCurrentPos)
-								? videoCurrentPos
-								: Number(liveCore?.state?.position) || 0;
-							if (liveEdge - currentPos > 2) {
-								liveVideo.currentTime = Math.max(0, liveEdge - 0.5);
-								_log(
-									`Post-ad live edge seek (drift=${(liveEdge - currentPos).toFixed(1)}s)`,
-									"info",
+							const liveCore = _getPlayerCore(livePlayer);
+							const liveVideo = livePlayer.getHTMLVideoElement?.();
+							if (
+								liveVideo &&
+								!liveVideo.ended &&
+								liveVideo.buffered?.length > 0
+							) {
+								const liveEdge = liveVideo.buffered.end(
+									liveVideo.buffered.length - 1,
 								);
+								const videoCurrentPos = Number(liveVideo.currentTime);
+								const currentPos = Number.isFinite(videoCurrentPos)
+									? videoCurrentPos
+									: Number(liveCore?.state?.position) || 0;
+								if (liveEdge - currentPos > 2) {
+									liveVideo.currentTime = Math.max(0, liveEdge - 0.5);
+									_log(
+										`Post-ad live edge seek (drift=${(liveEdge - currentPos).toFixed(1)}s)`,
+										"info",
+									);
+								}
 							}
 						}
-					}
-				} catch {}
-			}, 1500);
+					} catch {}
+				},
+				1500,
+				__TTVAB_STATE__.PageChannel,
+				__TTVAB_STATE__.PageMediaKey,
+			);
 		}
 
 		if (preferenceSnapshot) {
