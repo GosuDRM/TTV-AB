@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.2.3] - 2026-06-06
+
+### Fixed
+- **Firefox ad breakthrough during full-pod ad breaks ([#32](https://github.com/GosuDRM/TTV-AB/issues/32)).** When Twitch serves ads on every player variant simultaneously (site, embed, popout, mobile_web), the extension switches to a clean backup stream — but on Firefox, the injected Worker occasionally failed to load because the blob: URL was created without an explicit MIME type (defaulting to `text/plain`), causing Firefox to attempt XML parsing and throw a SecurityError. Additionally, the blob URL was revoked after only 500ms — sometimes before the Worker finished loading its ~100KB of injected code. Now: the blob is created with `type: "text/javascript"`, revocation is delayed to 30 seconds, and a 3-second heartbeat check detects if the Worker never initialized. If the heartbeat is missed, the Worker is terminated and a page-side M3U8 fetch override is installed as degraded ad-blocking — it strips `stitched-ad` segments directly from playlist responses without needing the Worker at all.
+
 ## [9.2.2] - 2026-06-06
 
 This is a reliability and correctness release focused on the worker layer and player recovery. No changes to how ads are detected or stripped.
