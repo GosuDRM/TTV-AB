@@ -395,7 +395,10 @@ function enqueuePersist(task) {
 	return nextTask;
 }
 
-chrome.runtime.onMessage.addListener((rawMessage, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
+	if (sender?.id !== chrome.runtime.id) {
+		return undefined;
+	}
 	const message = getMessageData(rawMessage);
 	if (!message || message.type !== "ttvab-persist-counters") {
 		return undefined;
