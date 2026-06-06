@@ -631,7 +631,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const safeResult = (result || {});
         const enabled = safeResult.ttvAdblockEnabled !== false;
         const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
-        const autoplayBackupEnabled = safeResult.ttvAutoplayBackupEnabled !== false;
+        const autoplayBackupEnabled = safeResult.ttvAutoplayBackupEnabled === true;
         toggle.checked = enabled;
         adSpoofingToggle.checked = adSpoofingEnabled;
         autoplayBackupToggle.checked = autoplayBackupEnabled;
@@ -656,7 +656,7 @@ document.addEventListener("DOMContentLoaded", () => {
             adSpoofingToggle.checked = adSpoofingEnabled;
         }
         if (changes.ttvAutoplayBackupEnabled) {
-            const autoplayBackupEnabled = changes.ttvAutoplayBackupEnabled.newValue !== false;
+            const autoplayBackupEnabled = changes.ttvAutoplayBackupEnabled.newValue === true;
             autoplayBackupToggle.checked = autoplayBackupEnabled;
         }
         if (changes.ttvAdsBlocked) {
@@ -795,8 +795,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (autoplayBackupToggle) {
         autoplayBackupToggle.addEventListener("change", () => {
-            if (autoplayBackupWriteInFlight)
+            if (autoplayBackupWriteInFlight) {
+                bypassAutoplayBackupWarning = false;
                 return;
+            }
             const disabling = !autoplayBackupToggle.checked;
             if (disabling && !bypassAutoplayBackupWarning) {
                 autoplayBackupToggle.checked = true;
