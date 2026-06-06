@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.2.3] - 2026-06-06
+
+### Fixed
+- **Worker injection hardened against blob: failures ([#32](https://github.com/GosuDRM/TTV-AB/issues/32)).** The injected Worker (which runs all ad-blocking inside Twitch's HLS player) was created from a blob: URL with no explicit MIME type and a 0ms revocation timeout — meaning the blob was destroyed before the Worker could finish loading on slower machines. The blob now has an explicit `text/javascript` type, revocation is delayed to 30s, and an 8s heartbeat detects if the Worker never initialized. If the heartbeat is missed, a page-side M3U8 fetch override kicks in as degraded ad-blocking.
+
 ## [9.2.2] - 2026-06-06
 
 This is a reliability and correctness release focused on the worker layer and player recovery. No changes to how ads are detected or stripped.
