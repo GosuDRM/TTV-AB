@@ -1,12 +1,12 @@
-// TTV AB v9.2.2 - Twitch Ad Blocker
+// TTV AB v9.2.3 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.2.2",
-    INTERNAL_VERSION: 206,
+    VERSION: "9.2.3",
+    INTERNAL_VERSION: 207,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -3923,6 +3923,82 @@ function _startWorkerWatchdog() {
     }, HW_WATCHDOG_INTERVAL_MS);
     _$l("Worker watchdog started", "info");
 }
+function _installPageSideM3U8Override() {
+    if (window.__TTVAB_M3U8_FALLBACK_ACTIVE)
+        return;
+    window.__TTVAB_M3U8_FALLBACK_ACTIVE = true;
+    _$l("Installing page-side M3U8 fetch override (degraded mode)", "warning");
+    const realFetch = window.fetch;
+    if (!window.__TTVAB_REAL_FETCH__) {
+        window.__TTVAB_REAL_FETCH__ = realFetch;
+    }
+    window.fetch = async function (...args) {
+        const [urlOrRequest] = args;
+        const urlStr = urlOrRequest instanceof Request
+            ? urlOrRequest.url
+            : String(urlOrRequest || "");
+        const isM3U8 = /\.m3u8(?:$|\?)/.test(urlStr) &&
+            (urlStr.includes("twitch") ||
+                urlStr.includes("ttvnw.net") ||
+                urlStr.includes("twitchcdn.net"));
+        if (!isM3U8) {
+            return realFetch.apply(this, args);
+        }
+        try {
+            const response = await realFetch.apply(this, args);
+            if (response.status !== 200)
+                return response;
+            const cloned = response.clone();
+            const text = await cloned.text();
+            if (!_hasTwitchAdMetadata(text))
+                return response;
+            const stripped = _stripM3U8Ads(text);
+            if (stripped === text)
+                return response;
+            _$l("Page-side fallback: stripped ads from M3U8", "info");
+            return new Response(stripped, {
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+            });
+        }
+        catch {
+            return realFetch.apply(this, args);
+        }
+    };
+}
+function _hasTwitchAdMetadata(text) {
+    return text.includes("stitched-ad");
+}
+function _stripM3U8Ads(text) {
+    const lines = text.split("\n");
+    const out = [];
+    let inAd = false;
+    let discontinuityCount = 0;
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("#EXT-X-DATERANGE") &&
+            trimmed.includes("stitched-ad")) {
+            inAd = true;
+            discontinuityCount = 0;
+            continue;
+        }
+        if (trimmed.startsWith("#EXT-X-DISCONTINUITY")) {
+            if (inAd) {
+                discontinuityCount++;
+                if (discontinuityCount >= 2) {
+                    inAd = false;
+                }
+                continue;
+            }
+        }
+        if (inAd) {
+            continue;
+        }
+        out.push(line);
+    }
+    return out.join("\n");
+}
 function _$hw() {
     _$sd();
     if (typeof window?.Worker !== "function") {
@@ -4255,10 +4331,32 @@ function _$hw() {
                 eval(wasmSource);
             })();
             `;
-                const blobUrl = URL.createObjectURL(new Blob([injectedCode]));
+                const blobUrl = URL.createObjectURL(new Blob([injectedCode], { type: "text/javascript" }));
                 _trackedExtensionBlobUrls.add(blobUrl);
                 super(blobUrl, opts);
-                setTimeout(() => URL.revokeObjectURL(blobUrl), 500);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+                const _hbTimeout = setTimeout(() => {
+                    if (this.__TTVABCrashed || this.__TTVABIntentionallyTerminated)
+                        return;
+                    _$l("Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback", "warning");
+                    try {
+                        this.terminate();
+                        this.__TTVABIntentionallyTerminated = true;
+                    }
+                    catch { }
+                    pruneTrackedWorkers();
+                    _installPageSideM3U8Override();
+                }, 8000);
+                this.addEventListener("message", (e) => {
+                    const data = _getWorkerBridgeMessage(e.data);
+                    if (data?.key === "Pong") {
+                        clearTimeout(_hbTimeout);
+                    }
+                });
+                try {
+                    _postWorkerBridgeMessage(this, { key: "Ping", value: null });
+                }
+                catch { }
                 const getCurrentPageContext = () => _getPlaybackContextFromUrl(window.location.href);
                 const normalizeMessagePlaybackContext = (message) => _normalizePlaybackContext({
                     MediaKey: message?.mediaKey || message?.pageMediaKey || null,
