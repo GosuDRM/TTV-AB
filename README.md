@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.2.3-purple)
+![Version](https://img.shields.io/badge/version-9.3.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.2.3-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.3.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -58,9 +58,12 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 - Monitors playback health and automatically recovers from stalls after ad breaks
 - Restores your original quality and volume settings once native playback resumes
 
-During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
+When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean lower-quality backup (e.g. 360p) within a couple of seconds so video starts right away, then upgrades to your chosen quality automatically and seamlessly once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.3.0 — 2026-06-07
+- **Near-instant video when you open a channel that's on an ad:** a preroll used to leave the player black for ten seconds or more while the extension worked through every player type looking for a clean stream. It now goes straight to the most reliable ad-free source first, so video starts in about two seconds instead — beginning at 360p and upgrading to your normal quality automatically and seamlessly once the ad ends. The same quick path now also applies to mid-stream ads.
 
 ### v9.2.3 — 2026-06-06
 - **Fixes Firefox ad breakthrough during full-pod ad breaks ([#32](https://github.com/GosuDRM/TTV-AB/issues/32)):** The injected Worker (which does all the ad blocking) was intermittently failing to load on Firefox because the blob: URL was created without a MIME type and revoked too quickly. The blob now has an explicit `text/javascript` type, revocation is delayed to 30s, and a heartbeat check detects if the Worker never started. If it didn't, a page-side M3U8 fetch override kicks in as degraded-mode ad blocking.
