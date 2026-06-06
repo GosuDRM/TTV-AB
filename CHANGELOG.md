@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.3.0] - 2026-06-07
+
+### Changed
+- **Near-instant clean video when you open a channel that's showing an ad.** Opening a channel mid-preroll could leave you staring at a black screen for ten seconds or more before any video appeared. Here's why: to get an ad-free stream, the extension requests the broadcast as one of several different Twitch "player types," and during a preroll every one of the standard types is ad-marked — so it tried them one at a time (each needing its own token and playlist fetch) and only reached the single reliably-clean source last. It now goes to that reliable clean source **first** whenever it doesn't already have a fresh ad-free stream to show, which brings the first frame down from roughly ten seconds to about two. Playback starts at a lower quality (360p) and then upgrades to your normal quality automatically and seamlessly the instant the ad window clears — no player reload and no flash of an ad. The same fast path now kicks in for mid-stream ads too, so recovery between ad breaks is quicker.
+
 ## [9.2.3] - 2026-06-06
 
 ### Fixed

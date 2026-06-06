@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.2.3-purple)
+![Version](https://img.shields.io/badge/version-9.3.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.2.3-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.3.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -61,6 +61,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.3.0 — 2026-06-07
+- **Near-instant video when you open a channel that's on an ad:** a preroll used to leave the player black for ten seconds or more while the extension worked through every player type looking for a clean stream. It now goes straight to the most reliable ad-free source first, so video starts in about two seconds instead — beginning at 360p and upgrading to your normal quality automatically and seamlessly once the ad ends. The same quick path now also applies to mid-stream ads.
 
 ### v9.2.3 — 2026-06-06
 - **Worker injection hardened against blob: failures ([#32](https://github.com/GosuDRM/TTV-AB/issues/32)):** The blob: Worker had no MIME type and a 0ms revocation timeout — the blob was destroyed before the Worker loaded. Now has explicit `text/javascript` type, 30s revocation, and an 8s heartbeat with page-side M3U8 fallback if the Worker fails.
