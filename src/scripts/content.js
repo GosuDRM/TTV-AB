@@ -1,12 +1,12 @@
-// TTV AB v9.2.3 - Twitch Ad Blocker
+// TTV AB v9.3.0 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.2.3",
-    INTERNAL_VERSION: 207,
+    VERSION: "9.3.0",
+    INTERNAL_VERSION: 208,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -3061,6 +3061,10 @@ function _getFallbackPromotionPolicy({ candidateHasAds, candidateIsPlayable, sim
         reason: "clean-playable",
     };
 }
+function _shouldTryAutoplayFirst(info) {
+    return !(Boolean(info.LastCleanBackupM3U8) &&
+        Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt));
+}
 async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
     let backupType = null;
     let backupM3u8 = null;
@@ -3081,7 +3085,14 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
             playerTypes = [...clean, ...contam];
         }
     }
-    if (__TTVAB_STATE__.DisableAutoplayBackup &&
+    if (_shouldTryAutoplayFirst(info)) {
+        playerTypes = [
+            "autoplay",
+            ...playerTypes.filter((pt) => pt !== "autoplay"),
+        ];
+        _$l("[Trace] LQ autoplay prioritized first for fast clean first-frame (seamless LQ→HQ hold)", "info");
+    }
+    else if (__TTVAB_STATE__.DisableAutoplayBackup &&
         !playerTypes.includes("autoplay")) {
         playerTypes.push("autoplay");
         _$l("[Trace] LQ autoplay appended as last-resort fallback (toggle disabled, ensures seamless LQ→HQ hold)", "info");
