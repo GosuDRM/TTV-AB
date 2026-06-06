@@ -4150,6 +4150,7 @@ function _$hw() {
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_fetchWithTimeout.toString()}
                 ${_$pm.toString()}
+                ${_shouldTryAutoplayFirst.toString()}
                 ${_$fb.toString()}
                 ${_$wf.toString()}
                 
