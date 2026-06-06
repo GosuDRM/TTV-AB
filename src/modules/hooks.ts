@@ -164,10 +164,13 @@ function _hookWorkerFetch() {
 		const MAX_STREAM_INFO_BY_URL = 200;
 		const byUrlKeys = Object.keys(__TTVAB_STATE__.StreamInfosByUrl);
 		if (byUrlKeys.length > MAX_STREAM_INFO_BY_URL) {
-			let evicted = 0;
-			for (const url of byUrlKeys) {
-				if (++evicted > 50) break;
-				delete __TTVAB_STATE__.StreamInfosByUrl[url];
+			byUrlKeys.sort(
+				(a, b) =>
+					(__TTVAB_STATE__.StreamInfosByUrl[a]?.LastActivityAt || 0) -
+					(__TTVAB_STATE__.StreamInfosByUrl[b]?.LastActivityAt || 0),
+			);
+			for (let i = 0; i < 50 && i < byUrlKeys.length; i++) {
+				delete __TTVAB_STATE__.StreamInfosByUrl[byUrlKeys[i]];
 			}
 		}
 	}
@@ -508,6 +511,10 @@ function _hookRevokeObjectURL() {
 }
 
 const HW_MAX_RESTART = 3;
+const HW_WATCHDOG_INTERVAL_MS = 5000;
+const HW_PONG_TIMEOUT_MS = 15000;
+const HW_RECOVERY_COOLDOWN_MS = 30000;
+let _lastWorkerRecoveryReloadAt = 0;
 
 const pruneTrackedWorkers = (excludedWorkers = []) => {
 	const excluded = new Set(excludedWorkers.filter(Boolean));
@@ -554,7 +561,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	worker.__TTVABRestartAttempts++;
 	const delay = 2 ** worker.__TTVABRestartAttempts * 500;
 	_log(
-		"Restarting worker in " +
+		"Recovering worker in " +
 			delay / 1000 +
 			"s (attempt " +
 			worker.__TTVABRestartAttempts +
@@ -564,21 +571,32 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		"warning",
 	);
 
-	const workerUrl = worker.__TTVABWorkerUrl;
-	const workerOpts = worker.__TTVABWorkerOpts;
-
 	setTimeout(() => {
 		if (worker.__TTVABIntentionallyTerminated) return;
+		const currentContext = _getPlaybackContextFromUrl(window.location.href);
+		if (_isPlaybackContextMismatch(pagePlaybackContext, currentContext)) {
+			_log("Skipping stale worker recovery after navigation", "info");
+			return;
+		}
+		if (typeof _doPlayerTask !== "function") {
+			_log("Worker recovery unavailable (no player task)", "error");
+			return;
+		}
+		const now = Date.now();
+		if (now - _lastWorkerRecoveryReloadAt < HW_RECOVERY_COOLDOWN_MS) {
+			_log("Skipping worker recovery reload (cooldown)", "info");
+			return;
+		}
+		_lastWorkerRecoveryReloadAt = now;
 		try {
-			const currentContext = _getPlaybackContextFromUrl(window.location.href);
-			if (_isPlaybackContextMismatch(pagePlaybackContext, currentContext)) {
-				_log("Skipping stale worker restart after navigation", "info");
-				return;
-			}
-			new window.Worker(workerUrl, workerOpts);
-			_log("Worker restarted", "success");
-		} catch (restartErr) {
-			_log(`Worker restart failed: ${restartErr.message}`, "error");
+			_doPlayerTask(false, true, {
+				reason: "worker-recovery",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			});
+			_log("Player reloaded to recover crashed worker", "success");
+		} catch (recoveryErr) {
+			_log(`Worker recovery failed: ${recoveryErr.message}`, "error");
 		}
 	}, delay);
 }
@@ -588,24 +606,15 @@ let _workerWatchdogID = null;
 function _startWorkerWatchdog() {
 	if (_workerWatchdogID !== null) return;
 	_workerWatchdogID = setInterval(() => {
+		const now = Date.now();
 		for (const worker of _S.workers) {
 			if (!worker || worker.__TTVABIntentionallyTerminated) continue;
 			if (worker.__TTVABCrashed) continue;
-			try {
-				if (!_postWorkerBridgeMessage(worker, { key: "Ping", value: null })) {
-					worker.__TTVABCrashed = true;
-					_log("Worker unresponsive (ping failed)", "warning");
-					pruneTrackedWorkers([worker]);
-					_attemptWorkerRestart(worker, {
-						MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
-						ChannelName: __TTVAB_STATE__?.PageChannel || "",
-						VodID: __TTVAB_STATE__?.PageVodID || "",
-						MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
-					});
-				}
-			} catch {
+			const lastSeen =
+				worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
+			if (now - lastSeen > HW_PONG_TIMEOUT_MS) {
 				worker.__TTVABCrashed = true;
-				_log("Worker unresponsive (ping threw)", "warning");
+				_log("Worker unresponsive (no pong)", "warning");
 				pruneTrackedWorkers([worker]);
 				_attemptWorkerRestart(worker, {
 					MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
@@ -613,9 +622,13 @@ function _startWorkerWatchdog() {
 					VodID: __TTVAB_STATE__?.PageVodID || "",
 					MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
 				});
+				continue;
 			}
+			try {
+				_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+			} catch {}
 		}
-	}, 5000);
+	}, HW_WATCHDOG_INTERVAL_MS);
 	_log("Worker watchdog started", "info");
 }
 
@@ -821,6 +834,7 @@ function _hookWorker() {
                         case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;
                         case 'UpdatePlayerHasPlayedOnce': __TTVAB_STATE__.PlayerHasPlayedOnce = data.value === true; break;
                         case 'UpdatePlayerIsPlaying': __TTVAB_STATE__.PlayerIsPlaying = data.value === true; break;
+                        case 'Ping': _postWorkerBridgeMessage(self, { key: 'Pong', value: null }); break;
                         case 'UpdatePageContext':
                             {
                                 const nextPageContext = _normalizePlaybackContext(data.value);
@@ -1045,6 +1059,9 @@ function _hookWorker() {
 									});
 								} catch {}
 							});
+							break;
+						case "Pong":
+							this.__TTVABLastPongAt = Date.now();
 							break;
 						case "AdBlocked":
 							if (isStalePlaybackEvent(data)) {
@@ -1410,6 +1427,7 @@ function _hookWorker() {
 				});
 
 				this.__TTVABCreatedAt = Date.now();
+				this.__TTVABLastPongAt = Date.now();
 				this.__TTVABRestartAttempts = 0;
 				this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
 				pruneTrackedWorkers();
