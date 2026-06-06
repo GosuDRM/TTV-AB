@@ -1650,6 +1650,13 @@ function _getFallbackPromotionPolicy({
 	};
 }
 
+function _shouldTryAutoplayFirst(info) {
+	return !(
+		Boolean(info.LastCleanBackupM3U8) &&
+		Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt)
+	);
+}
+
 async function _findBackupStream(
 	info,
 	realFetch,
@@ -1674,7 +1681,16 @@ async function _findBackupStream(
 			playerTypes = [...clean, ...contam];
 		}
 	}
-	if (
+	if (_shouldTryAutoplayFirst(info)) {
+		playerTypes = [
+			"autoplay",
+			...playerTypes.filter((pt) => pt !== "autoplay"),
+		];
+		_log(
+			"[Trace] LQ autoplay prioritized first for fast clean first-frame (seamless LQ→HQ hold)",
+			"info",
+		);
+	} else if (
 		__TTVAB_STATE__.DisableAutoplayBackup &&
 		!playerTypes.includes("autoplay")
 	) {
