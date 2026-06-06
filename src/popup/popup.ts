@@ -960,7 +960,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	if (autoplayBackupToggle) {
 		autoplayBackupToggle.addEventListener("change", () => {
-			if (autoplayBackupWriteInFlight) return;
+			if (autoplayBackupWriteInFlight) {
+				bypassAutoplayBackupWarning = false;
+				return;
+			}
 			const disabling = !autoplayBackupToggle.checked;
 			if (disabling && !bypassAutoplayBackupWarning) {
 				autoplayBackupToggle.checked = true;
