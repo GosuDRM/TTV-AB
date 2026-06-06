@@ -874,6 +874,7 @@ function _hookWorker() {
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_fetchWithTimeout.toString()}
                 ${_processM3U8.toString()}
+                ${_shouldTryAutoplayFirst.toString()}
                 ${_findBackupStream.toString()}
                 ${_hookWorkerFetch.toString()}
                 
