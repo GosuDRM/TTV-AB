@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.3.7] - 2026-06-07
+
+### Fixed
+- **Low-quality fallback no longer stalls while high-quality backups are probed.** After the clean `autoplay` fallback won during an ad, the next playlist polls could still spend several seconds checking source-tier backups before returning a fresh playlist. On a thin live buffer, that delay let the playhead catch the buffer end and Twitch logged `Playhead stalling`. The active ad-cycle now holds `autoplay` as the only backup candidate and refreshes it directly until the ad ends.
+- **Low quality → high quality recovery avoids mid-ad source hitches.** The extension now defers high-quality restoration to the existing ad-end recovery path instead of swapping from the low-quality fallback to a source-tier backup while the ad cycle is still active.
+
+### Changed
+- Build validation now tracks the new autoplay-hold helper so worker injection fails loudly if the helper is omitted from `hooks.ts`.
+
 ## [9.3.6] - 2026-06-07
 
 ### Fixed
