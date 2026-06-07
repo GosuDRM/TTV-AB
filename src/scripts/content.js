@@ -3226,8 +3226,7 @@ function _shouldTryAutoplayFirst(info) {
         info?.ActiveBackupPlayerType === "autoplay") {
         return true;
     }
-    return !(Boolean(info.LastCleanBackupM3U8) &&
-        Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt));
+    return false;
 }
 async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
     let backupType = null;
