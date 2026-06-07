@@ -33,6 +33,7 @@ function _resetStreamAdState(info) {
 	info._BackupSearchStartedAt = 0;
 	info._LastBackupSearchCompletedAt = 0;
 	info._LoggedOfflineTransition = false;
+	info._LqHoldStartAt = 0;
 	if (info._AdRequestController) {
 		info._AdRequestController.abort();
 		info._AdRequestController = null;
@@ -1432,6 +1433,13 @@ async function _processM3U8(url, text, realFetch) {
 		}
 		if (info.ActiveBackupPlayerType !== backupType) {
 			info.ActiveBackupPlayerType = backupType;
+			if (backupType === "autoplay") {
+				if (!info._LqHoldStartAt) {
+					info._LqHoldStartAt = Date.now();
+				}
+			} else if (info._LqHoldStartAt) {
+				info._LqHoldStartAt = 0;
+			}
 			_log(`Using backup: ${backupType}`, "info");
 			if (backupType && typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
@@ -1650,7 +1658,26 @@ function _getFallbackPromotionPolicy({
 	};
 }
 
+function _getResolvedLqHqHoldMinMs() {
+	return Math.max(
+		0,
+		Number(__TTVAB_STATE__?.LqHqHoldMinMs) ||
+			Number(_C?.LQ_HQ_HOLD_MIN_MS) ||
+			0,
+	);
+}
+
 function _shouldTryAutoplayFirst(info) {
+	const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
+	const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
+	if (
+		lqHoldStartAt > 0 &&
+		lqHoldMinMs > 0 &&
+		Date.now() - lqHoldStartAt < lqHoldMinMs &&
+		info?.ActiveBackupPlayerType === "autoplay"
+	) {
+		return true;
+	}
 	return !(
 		Boolean(info.LastCleanBackupM3U8) &&
 		Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt)
