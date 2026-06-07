@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.3.1] - 2026-06-07
+
+### Fixed
+- **Brief "Playhead stalling" freeze during the LQ→HQ quality upgrade.** During an ad, the extension first plays a low-quality 360p backup stream (so you get a clean picture instantly) and then upgrades to high quality once a clean HQ source is available. The upgrade was happening the moment any HQ candidate was found — but at that point the LQ stream had only been buffering for a few seconds, so the player's buffer was thin. Switching sources emptied the buffer, the player started rebuilding the new HQ source from the live edge, and for a moment there was nothing to play: Twitch's own player reported `Playhead stalling at X, buffer end X+0.04s` and the screen froze for a fraction of a second. The extension now holds the LQ stream for at least 8 seconds before allowing the upgrade. By that time the buffer is comfortably full (5–10 seconds of pre-rolled video), so the source swap no longer drains it. The upgrade itself still happens the moment a clean HQ stream is found — you just don't see the freeze.
+
 ## [9.3.0] - 2026-06-07
 
 ### Changed
