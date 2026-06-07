@@ -7350,7 +7350,6 @@ function _checkPinnedBackupStall(player) {
     const video = player?.getHTMLVideoElement?.() || null;
     if (!(video instanceof HTMLMediaElement) ||
         video.ended ||
-        video.paused ||
         Number(video.readyState) < 1) {
         _PinnedBackupStallState.firstObservedAt = 0;
         _PinnedBackupStallState.lastCurrentTime = 0;
@@ -7364,18 +7363,35 @@ function _checkPinnedBackupStall(player) {
     const now = Date.now();
     const stallThresholdMs = Math.max(500, Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000);
     const rearmCooldownMs = Math.max(stallThresholdMs * 2, Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000 * 2);
-    const timeAdvanced = _PinnedBackupStallState.lastCurrentTime > 0 &&
-        currentTime > _PinnedBackupStallState.lastCurrentTime + 0.05;
+    if (video.paused) {
+        _PinnedBackupStallState.firstObservedAt = 0;
+        _PinnedBackupStallState.lastCurrentTime = 0;
+        _PinnedBackupStallState.lastBufferedEnd = 0;
+        return;
+    }
     const bufferAdvanced = _PinnedBackupStallState.lastBufferedEnd > 0 &&
         bufferedEnd > _PinnedBackupStallState.lastBufferedEnd + 0.1;
-    if (timeAdvanced || bufferAdvanced) {
+    const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
+    if (bufferAdvanced) {
         _PinnedBackupStallState.firstObservedAt = 0;
         _PinnedBackupStallState.lastCurrentTime = currentTime;
         _PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
         return;
     }
+    if (!playbackHasStarted) {
+        _PinnedBackupStallState.firstObservedAt = 0;
+        _PinnedBackupStallState.lastCurrentTime = 0;
+        _PinnedBackupStallState.lastBufferedEnd = 0;
+        return;
+    }
     if (_PinnedBackupStallState.firstObservedAt === 0) {
         _PinnedBackupStallState.firstObservedAt = now;
+        _PinnedBackupStallState.lastCurrentTime = currentTime;
+        _PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
+        return;
+    }
+    if (now - _PinnedBackupStallState.firstObservedAt > rearmCooldownMs * 4) {
+        _PinnedBackupStallState.firstObservedAt = 0;
         _PinnedBackupStallState.lastCurrentTime = currentTime;
         _PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
         return;
@@ -7391,7 +7407,7 @@ function _checkPinnedBackupStall(player) {
     __TTVAB_STATE__.BackupSearchForceRefreshAt = now;
     __TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
     _$bw({ key: "UpdateBackupSearchForceRefresh", value: now });
-    _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, frozen for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`, "warning");
+    _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`, "warning");
 }
 function _$mpb() {
     function check() {
