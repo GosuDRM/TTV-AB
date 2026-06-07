@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.3.2] - 2026-06-07
+
+### Fixed
+- **Brief "Playhead stalling" freeze when the stream switches to the ad-free backup.** To block an ad, the extension swaps the player's playlist over to a clean backup stream without reloading the player. That backup comes from a different Twitch encoder, so its video segments carry their own internal timestamps that don't line up with the stream you were just watching — and the playlist never told the player that the timeline jumps at the swap point. Without that signal, the player couldn't place the incoming segments next to what it had already buffered, so it drained the buffer and rebuilt from scratch; for a fraction of a second there was nothing to play and Twitch's own player logged `Playhead stalling at X, buffer end X+0.04s`. The swapped-in playlist now carries the standard HLS discontinuity marker (`#EXT-X-DISCONTINUITY`) at the exact splice point, and that marker is kept consistent as the playlist refreshes during the ad. The player now resets its timing at the boundary and appends the backup stream right after the current buffer, so the source swap no longer empties it — the switch is seamless. This is the underlying swap-time stall that the 9.3.1 buffer-dwell change reduced but did not fully eliminate.
+
 ## [9.3.1] - 2026-06-07
 
 ### Fixed

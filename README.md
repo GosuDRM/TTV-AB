@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.3.1-purple)
+![Version](https://img.shields.io/badge/version-9.3.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.3.1-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.3.2-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -61,6 +61,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean lower-quality backup (e.g. 360p) within a couple of seconds so video starts right away, then upgrades to your chosen quality automatically and seamlessly once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.3.2 — 2026-06-07
+- **No more brief freeze when the stream switches to the ad-free backup.** Blocking an ad means swapping the player over to a clean backup stream, but that stream comes from a different encoder with its own timestamps — and the playlist never told the player the timeline jumps at the swap point. The player couldn't line the new segments up against what it had already buffered, so it drained the buffer and rebuilt from scratch, freezing for a fraction of a second (`Playhead stalling…`). The swapped-in playlist now includes the standard HLS discontinuity marker at the splice, so the player resets its timing there and appends the backup right after the current buffer — making the switch seamless. This is the swap-time stall that the 9.3.1 buffer-dwell change reduced but didn't fully remove.
 
 ### v9.3.1 — 2026-06-07
 - **No more flash-freeze during the LQ→HQ quality upgrade.** During an ad, you briefly get a 360p (LQ) backup stream so playback starts almost instantly; the moment a clean HQ source is found, the extension switches you over. Previously the upgrade could fire after only a few seconds, before the LQ stream's buffer was full — so the source swap emptied the buffer and the player stalled for a fraction of a second while it rebuilt from the live edge. The LQ stream is now held for at least 8 seconds before the upgrade is allowed, which is plenty of time for the buffer to fill. The upgrade still happens the instant a clean HQ stream is available, you just no longer see the freeze.
