@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.3.6-purple)
+![Version](https://img.shields.io/badge/version-9.3.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.3.6-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.3.7-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,10 +62,10 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v9.3.6 — 2026-06-07
-- **No more occasional loading circle during ad breaks.** The clean backup stream was served as a frozen playlist snapshot and replayed for up to 15s, so its buffer capped at ~4s and the playhead froze; the backup playlist is now re-fetched every ~2s so it keeps advancing like a live stream should.
-- **A stalled backup switches to a working one within seconds.** When the playhead-stall watcher fires, the stuck backup type is put on a short cooldown so the re-search rotates to the next type (e.g. site → embed) instead of re-selecting the broken one and giving up.
-- **Playback recovery now runs during ads too.** A new in-ad watchdog issues a pause/play nudge and then reloads the player if the playhead stays frozen on a drained buffer, even while an ad is active — previously that recovery only ran between ad breaks.
+### v9.3.7 — 2026-06-07
+- **Low-quality fallback no longer drains while searching for high quality.** Once the clean 360p fallback wins during an ad, the extension keeps refreshing that same live fallback for the rest of the ad cycle instead of blocking the playlist response while probing source-tier backups.
+- **Low quality → high quality recovery is smoother.** High-quality restoration now waits for the normal ad-end recovery path, avoiding the mid-ad source splice that could cause a short stall or decoder hitch.
+- **Build validation now covers the new worker helper.** The package build fails loudly if the autoplay-hold helper is referenced by backup search but not injected into Twitch's worker hook.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
