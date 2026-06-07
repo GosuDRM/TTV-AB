@@ -143,6 +143,8 @@ function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
 		case "not-playable":
 		case "no-stream-url":
 			return 2000;
+		case "stalled":
+			return 10000;
 		default:
 			return 15000;
 	}
@@ -1524,6 +1526,19 @@ async function _processM3U8Core(url, text, realFetch) {
 			if (forceRefreshAt > 0 && forceRefreshAt >= cacheStamp - 1) {
 				__TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
 				info._LastBackupSearchCompletedAt = 0;
+				const stalledType =
+					(typeof info.ActiveBackupPlayerType === "string" &&
+						info.ActiveBackupPlayerType) ||
+					(typeof __TTVAB_STATE__.PinnedBackupPlayerType === "string" &&
+						__TTVAB_STATE__.PinnedBackupPlayerType) ||
+					null;
+				if (stalledType && stalledType !== "autoplay") {
+					_markBackupPlayerRetryCooldown(info, stalledType, "stalled");
+					_log(
+						`[Trace] Pinned backup ${stalledType} stalled — cooling down and rotating to next type`,
+						"warning",
+					);
+				}
 				_log(
 					`[Trace] Bypassing backup cache: pinned backup stalled (${Math.round((Date.now() - forceRefreshAt) / 100) / 10}s ago)`,
 					"warning",

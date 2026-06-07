@@ -265,6 +265,10 @@ describe("_getBackupPlayerRetryCooldownMs", () => {
 		expect(fn()("no-stream-url")).toBe(2000);
 	});
 
+	it("returns 10000 for stalled", () => {
+		expect(fn()("stalled")).toBe(10000);
+	});
+
 	it("returns 15000 for ad-marked / unknown", () => {
 		expect(fn()("ad-marked")).toBe(15000);
 		expect(fn()("unknown")).toBe(15000);
