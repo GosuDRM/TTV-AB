@@ -22,6 +22,7 @@ function _resetStreamAdState(info) {
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
 	info.AdEndMarkerBounceLogged = false;
+	info.ConsecutiveFailedNativeProbes = 0;
 	info.VisibleAdStartedAt = 0;
 	info.IsHoldingBackupAfterAd = false;
 	info.SilentBackupHoldStartedAt = 0;
@@ -326,6 +327,14 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 		return "ended";
 	}
 
+	const maxFailedProbes = Math.max(
+		1,
+		Number(__TTVAB_STATE__?.AdEndMaxFailedNativeProbes) || 6,
+	);
+	const failedProbeCapHit =
+		Math.max(0, Number(info.ConsecutiveFailedNativeProbes) || 0) >=
+		maxFailedProbes;
+
 	if (slowPathReady) {
 		const canHoldCleanPlaylist = Boolean(info?.LastCleanBackupM3U8);
 		if (canHoldCleanPlaylist) {
@@ -336,12 +345,17 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 			);
 			const visibleAdElapsed =
 				visibleAdStartedAt > 0 ? now - visibleAdStartedAt : elapsed;
-			if (backupHoldMaxMs > 0 && visibleAdElapsed >= backupHoldMaxMs) {
+			if (
+				(backupHoldMaxMs > 0 && visibleAdElapsed >= backupHoldMaxMs) ||
+				failedProbeCapHit
+			) {
 				info.IsHoldingBackupAfterAd = true;
 				info.SilentBackupHoldStartedAt = now;
 				info.LastSilentBackupHoldLogAt = now;
 				_log(
-					"[Trace] Native recovery still ad-marked after extended backup hold; ending visible ad cycle and keeping clean backup stream",
+					failedProbeCapHit && visibleAdElapsed < backupHoldMaxMs
+						? "[Trace] Native recovery still ad-marked after failed-probe cap; ending visible ad cycle and keeping clean backup stream"
+						: "[Trace] Native recovery still ad-marked after extended backup hold; ending visible ad cycle and keeping clean backup stream",
 					"warning",
 				);
 				return "ended-with-backup-hold";
@@ -362,7 +376,9 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 		}
 
 		_log(
-			"[Trace] Native recovery still ad-marked after max wait; forcing ad end to prevent offline state",
+			failedProbeCapHit
+				? "[Trace] Native recovery still ad-marked after failed-probe cap; forcing ad end to prevent offline state"
+				: "[Trace] Native recovery still ad-marked after max wait; forcing ad end to prevent offline state",
 			"warning",
 		);
 		return "ended";
@@ -378,6 +394,11 @@ function _resetNativeRecoveryReadyState(info, preserveProbeAt = false) {
 	}
 	info.LastNativeRecoveryReadyPlayerType = null;
 	info.NativeRecoveryCleanCount = 0;
+}
+
+function _markNativeRecoveryProbeFailed(info) {
+	info.ConsecutiveFailedNativeProbes =
+		Math.max(0, Number(info?.ConsecutiveFailedNativeProbes) || 0) + 1;
 }
 
 function _markNativeRecoveryReady(info, playerType) {
@@ -659,6 +680,7 @@ async function _canReloadNativePlayerAfterAd(
 ) {
 	if (!info?.IsUsingBackupStream && !info?.IsUsingFallbackStream) {
 		_resetNativeRecoveryReadyState(info);
+		info.ConsecutiveFailedNativeProbes = 0;
 		return true;
 	}
 
@@ -685,6 +707,7 @@ async function _canReloadNativePlayerAfterAd(
 		const tokenRes = await _getToken(info, nativePlayerType, realFetch);
 		if (tokenRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
+			_markNativeRecoveryProbeFailed(info);
 			_log(
 				`[Trace] Native recovery probe failed for ${nativePlayerType}: ${tokenRes.status}`,
 				"warning",
@@ -698,6 +721,7 @@ async function _canReloadNativePlayerAfterAd(
 		const tokenValue = extractedToken?.value;
 		if (!sig || !tokenValue) {
 			_resetNativeRecoveryReadyState(info, true);
+			_markNativeRecoveryProbeFailed(info);
 			_log(
 				`[Trace] Native recovery probe missing token parts for ${nativePlayerType}`,
 				"warning",
@@ -708,12 +732,14 @@ async function _canReloadNativePlayerAfterAd(
 		const usherUrl = _buildUsherPlaybackUrl(info, sig, tokenValue);
 		if (!usherUrl) {
 			_resetNativeRecoveryReadyState(info, true);
+			_markNativeRecoveryProbeFailed(info);
 			return false;
 		}
 
 		const encRes = await realFetch(usherUrl.href);
 		if (encRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
+			_markNativeRecoveryProbeFailed(info);
 			_log(
 				`[Trace] Native recovery usher failed for ${nativePlayerType}: ${encRes.status}`,
 				"warning",
@@ -730,12 +756,14 @@ async function _canReloadNativePlayerAfterAd(
 		const streamUrl = _getStreamUrl(encM3u8, targetResolution, usherUrl.href);
 		if (!streamUrl) {
 			_resetNativeRecoveryReadyState(info, true);
+			_markNativeRecoveryProbeFailed(info);
 			return false;
 		}
 
 		const streamRes = await realFetch(streamUrl);
 		if (streamRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
+			_markNativeRecoveryProbeFailed(info);
 			_log(
 				`[Trace] Native recovery stream failed for ${nativePlayerType}: ${streamRes.status}`,
 				"warning",
@@ -753,6 +781,7 @@ async function _canReloadNativePlayerAfterAd(
 
 		if (nativeHasAds) {
 			_resetNativeRecoveryReadyState(info, true);
+			_markNativeRecoveryProbeFailed(info);
 			_log(
 				`[Trace] Native recovery still ad-marked (${nativePlayerType})`,
 				"warning",
@@ -762,6 +791,7 @@ async function _canReloadNativePlayerAfterAd(
 
 		const readyCount = _markNativeRecoveryReady(info, nativePlayerType);
 		if (readyCount < requiredCleanProbes) {
+			_markNativeRecoveryProbeFailed(info);
 			_log(
 				`[Trace] Native recovery ready (${nativePlayerType}) ${readyCount}/${requiredCleanProbes}`,
 				"info",
@@ -769,10 +799,12 @@ async function _canReloadNativePlayerAfterAd(
 			return false;
 		}
 
+		info.ConsecutiveFailedNativeProbes = 0;
 		_log(`[Trace] Native recovery ready (${nativePlayerType})`, "success");
 		return true;
 	} catch (err) {
 		_resetNativeRecoveryReadyState(info, true);
+		_markNativeRecoveryProbeFailed(info);
 		_log(
 			`[Trace] Native recovery probe error for ${nativePlayerType}: ${err.message}`,
 			"warning",
@@ -824,6 +856,7 @@ function _createStreamInfo(context) {
 		BackupVariantUrls: new Set(),
 		LastNativeRecoveryReadyPlayerType: null,
 		NativeRecoveryCleanCount: 0,
+		ConsecutiveFailedNativeProbes: 0,
 		_BackupSearchCount: 0,
 		_BackupSearchErrorCount: 0,
 		_BackupSearchFailCount: 0,
@@ -1325,6 +1358,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			info.IsHoldingBackupAfterAd = false;
 			info.SilentBackupHoldStartedAt = 0;
 			info.LastSilentBackupHoldLogAt = 0;
+			info.ConsecutiveFailedNativeProbes = 0;
 			__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 			__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 			__TTVAB_STATE__.LastAdDetectedAt = now;
@@ -1415,6 +1449,7 @@ async function _processM3U8Core(url, text, realFetch) {
 				if (!info.IsShowingAd) {
 					info.IsShowingAd = true;
 					info.VisibleAdStartedAt = Date.now();
+					info.ConsecutiveFailedNativeProbes = 0;
 					__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 					__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 					_incrementAdsBlocked(info.ChannelName, info.MediaKey);

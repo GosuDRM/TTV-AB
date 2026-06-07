@@ -55,6 +55,7 @@ beforeAll(() => {
 		AdEndGraceMs: 500,
 		AdEndMaxWaitMs: 4000,
 		AdEndBackupHoldMaxMs: 90000,
+		AdEndMaxFailedNativeProbes: 6,
 		SilentBackupHoldMaxMs: 120000,
 		SimulatedAdsDepth: 0,
 		LqHqHoldMinMs: 8000,
@@ -144,6 +145,7 @@ describe("_resetStreamAdState", () => {
 			IsMidroll: true,
 			IsHoldingBackupAfterAd: true,
 			HevcReloadPendingAfterHold: true,
+			ConsecutiveFailedNativeProbes: 4,
 		});
 		fn(info);
 		expect(info.IsShowingAd).toBe(false);
@@ -154,6 +156,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.IsMidroll).toBe(false);
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
+		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
 	});
 
 	it("reports wasUsingModifiedM3U8 when active", () => {
