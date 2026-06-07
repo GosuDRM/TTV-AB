@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.3.2-purple)
+![Version](https://img.shields.io/badge/version-9.3.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.3.2-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.3.3-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,8 +62,10 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
-### v9.3.2 — 2026-06-07
-- **No more brief freeze when the stream switches to the ad-free backup.** The swapped-in playlist now includes the standard HLS discontinuity marker at the splice, so the player resets its timing and appends the backup seamlessly — eliminating the swap-time stall that the 9.3.1 buffer-dwell change reduced but didn't fully remove.
+### v9.3.3 — 2026-06-07
+- **Long ad sessions end faster.** The native-recovery loop now caps the wait at ~24s (6 failed probes) when Twitch keeps ad-marking every probe, instead of running for the full 90s.
+- **Less probing during a clean-pinned hold.** Backup cache windows raised to 15s/20s so the ~4s playlist poll no longer triggers a fresh backup search on every tick.
+- **Quieter trace logs.** Per-cycle `Cooling down` and `Whitelisted variants` lines deduped.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

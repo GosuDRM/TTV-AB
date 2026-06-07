@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.3.3] - 2026-06-07
+
+### Fixed
+- **Long ad sessions ended faster.** The native-playlist recovery loop used to wait up to 90s for Twitch to serve a clean playlist, even when every probe came back ad-marked. A new per-cycle counter caps the wait at 6 failed probes (~24s on the typical 4s poll cadence); the cycle then ends the same way it would have at 90s.
+- **Less probing during a clean-pinned hold.** The clean-backup cache windows (3s post-ad-start, 1.5s in the ad-end wait loop) were shorter than Twitch's playlist poll cadence, so every poll triggered a fresh backup search. Raised to 15s and 20s — non-pinned types no longer burn token/usher requests on each poll while a pinned backup is still serving.
+
+### Changed
+- Trace log noise reduced. `Cooling down: <type>` and `Whitelisted variants for <type>` now log at most once per (type, ad-cycle) pair instead of on every poll.
+
 ## [9.3.2] - 2026-06-07
 
 ### Fixed
