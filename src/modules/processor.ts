@@ -34,6 +34,8 @@ function _resetStreamAdState(info) {
 	info._LastBackupSearchCompletedAt = 0;
 	info._LoggedOfflineTransition = false;
 	info._LqHoldStartAt = 0;
+	info._SpliceStreamId = null;
+	info._SpliceBoundarySeq = null;
 	if (info._AdRequestController) {
 		info._AdRequestController.abort();
 		info._AdRequestController = null;
@@ -531,6 +533,95 @@ function _incrementPlaylistMediaSequence(text, incrementBy) {
 	});
 }
 
+function _parsePlaylistFirstMediaSequence(text) {
+	if (typeof text !== "string") return null;
+	const m = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
+	if (!m) return null;
+	const seq = parseInt(m[1], 10);
+	return Number.isNaN(seq) ? null : seq;
+}
+
+function _parsePlaylistDiscontinuitySequence(text) {
+	if (typeof text !== "string") return 0;
+	const m = text.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/);
+	if (!m) return 0;
+	const seq = parseInt(m[1], 10);
+	return Number.isNaN(seq) ? 0 : seq;
+}
+
+function _setPlaylistDiscontinuitySequence(lines, value) {
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith("#EXT-X-DISCONTINUITY-SEQUENCE:")) {
+			lines[i] = `#EXT-X-DISCONTINUITY-SEQUENCE:${value}`;
+			return;
+		}
+	}
+	let at = 0;
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith("#EXT-X-MEDIA-SEQUENCE:")) {
+			at = i + 1;
+			break;
+		}
+		if (lines[i].startsWith("#EXTM3U")) at = i + 1;
+	}
+	lines.splice(at, 0, `#EXT-X-DISCONTINUITY-SEQUENCE:${value}`);
+}
+
+function _insertBoundaryDiscontinuity(text, boundarySeq, firstSeq) {
+	if (typeof text !== "string" || boundarySeq == null || firstSeq == null) {
+		return text;
+	}
+	const pos = boundarySeq - firstSeq;
+	const lines = text.split("\n");
+
+	if (pos < 0) {
+		_setPlaylistDiscontinuitySequence(
+			lines,
+			_parsePlaylistDiscontinuitySequence(text) + 1,
+		);
+		return lines.join("\n");
+	}
+
+	let seen = 0;
+	let insertAt = -1;
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].startsWith("#EXTINF")) {
+			if (seen === pos) {
+				insertAt = i;
+				break;
+			}
+			seen++;
+		}
+	}
+	if (insertAt < 0) return text;
+	if (insertAt > 0 && lines[insertAt - 1].startsWith("#EXT-X-DISCONTINUITY")) {
+		return text;
+	}
+	lines.splice(insertAt, 0, "#EXT-X-DISCONTINUITY");
+	return lines.join("\n");
+}
+
+function _applyBackupSpliceBridge(info, text) {
+	if (!info || typeof text !== "string" || !text) return text;
+	if (!info.IsUsingBackupStream) {
+		info._SpliceStreamId = null;
+		info._SpliceBoundarySeq = null;
+		return text;
+	}
+	if (!_playlistHasMediaSegments(text)) return text;
+
+	const identity = `${info.ActiveBackupPlayerType || "?"}|${info.ActiveBackupResolution || "?"}`;
+	const firstSeq = _parsePlaylistFirstMediaSequence(text);
+	if (firstSeq == null) return text;
+
+	if (info._SpliceStreamId !== identity) {
+		info._SpliceStreamId = identity;
+		info._SpliceBoundarySeq = firstSeq;
+	}
+
+	return _insertBoundaryDiscontinuity(text, info._SpliceBoundarySeq, firstSeq);
+}
+
 function _getNativeRecoveryProbePlayerType() {
 	const forcedPlayerType =
 		__TTVAB_STATE__?.RewriteNativePlaybackAccessToken === true &&
@@ -743,6 +834,8 @@ function _createStreamInfo(context) {
 		LastAdEndBounceAt: 0,
 		LastActivityAt: Date.now(),
 		LoggedBackupAdsByType: null,
+		_SpliceStreamId: null,
+		_SpliceBoundarySeq: null,
 	};
 }
 
@@ -795,6 +888,12 @@ function _buildUsherPlaybackUrl(info, sig, token) {
 }
 
 async function _processM3U8(url, text, realFetch) {
+	const result = await _processM3U8Core(url, text, realFetch);
+	const info = _getStreamInfoForPlaylist(url);
+	return info ? _applyBackupSpliceBridge(info, result) : result;
+}
+
+async function _processM3U8Core(url, text, realFetch) {
 	text = _absolutizeMediaPlaylistUrls(text, url);
 
 	let info = _getStreamInfoForPlaylist(url);

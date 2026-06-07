@@ -849,10 +849,16 @@ function _hookWorker() {
                 ${_hasPlaylistAdMarkers.toString()}
                 ${_playlistHasMediaSegments.toString()}
                 ${_incrementPlaylistMediaSequence.toString()}
+                ${_parsePlaylistFirstMediaSequence.toString()}
+                ${_parsePlaylistDiscontinuitySequence.toString()}
+                ${_setPlaylistDiscontinuitySequence.toString()}
+                ${_insertBoundaryDiscontinuity.toString()}
+                ${_applyBackupSpliceBridge.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_fetchWithTimeout.toString()}
+                ${_processM3U8Core.toString()}
                 ${_processM3U8.toString()}
                 ${_getResolvedLqHqHoldMinMs.toString()}
                 ${_shouldTryAutoplayFirst.toString()}
