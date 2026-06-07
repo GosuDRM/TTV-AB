@@ -863,6 +863,7 @@ function _hookWorker() {
                 ${_processM3U8.toString()}
                 ${_getResolvedLqHqHoldMinMs.toString()}
                 ${_shouldTryAutoplayFirst.toString()}
+                ${_shouldHoldAutoplayBackupDuringAd.toString()}
                 ${_refreshActiveBackupMediaPlaylist.toString()}
                 ${_findBackupStream.toString()}
                 ${_hookWorkerFetch.toString()}

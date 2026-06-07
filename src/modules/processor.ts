@@ -1870,6 +1870,18 @@ function _shouldTryAutoplayFirst(info) {
 	return false;
 }
 
+function _shouldHoldAutoplayBackupDuringAd(info) {
+	return Boolean(
+		info?.IsShowingAd &&
+			info?.ActiveBackupPlayerType === "autoplay" &&
+			info?.LastCleanBackupPlayerType === "autoplay" &&
+			typeof info?.LastCleanBackupM3U8 === "string" &&
+			info.LastCleanBackupM3U8 &&
+			(Number(info.LastCleanBackupAt) || 0) >=
+				Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+	);
+}
+
 async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
 	const pt =
 		(typeof info?.ActiveBackupPlayerType === "string" &&
@@ -1944,7 +1956,13 @@ async function _findBackupStream(
 			playerTypes = [...clean, ...contam];
 		}
 	}
-	if (_shouldTryAutoplayFirst(info)) {
+	if (_shouldHoldAutoplayBackupDuringAd(info)) {
+		playerTypes = ["autoplay"];
+		_log(
+			"[Trace] Holding autoplay backup during current ad cycle; deferring HQ probe until ad-end",
+			"info",
+		);
+	} else if (_shouldTryAutoplayFirst(info)) {
 		playerTypes = [
 			"autoplay",
 			...playerTypes.filter((pt) => pt !== "autoplay"),

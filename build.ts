@@ -1203,6 +1203,11 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_findBackupStream",
+			helper: "_shouldHoldAutoplayBackupDuringAd",
+			source: processorSource,
+		},
+		{
 			consumer: "_getToken",
 			helper: "_extractPlaybackAccessToken",
 			source: apiSource,
