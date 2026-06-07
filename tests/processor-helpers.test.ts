@@ -57,6 +57,7 @@ beforeAll(() => {
 		AdEndBackupHoldMaxMs: 90000,
 		SilentBackupHoldMaxMs: 120000,
 		SimulatedAdsDepth: 0,
+		LqHqHoldMinMs: 8000,
 		ClientVersion: null,
 		ClientSession: null,
 		ClientIntegrityHeader: null,
@@ -357,6 +358,28 @@ describe("_shouldTryAutoplayFirst (fast clean-first contract)", () => {
 			LastCleanBackupM3U8: "#EXTM3U8",
 			LastCleanBackupAt: 5000,
 			VisibleAdStartedAt: 1000,
+		});
+		expect(fn()(info)).toBe(false);
+	});
+
+	it("holds LQ (autoplay) first while within the LQ→HQ dwell window", () => {
+		const info = makeInfo({
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U8",
+			LastCleanBackupAt: 1000,
+			VisibleAdStartedAt: 500,
+			_LqHoldStartAt: Date.now() - 2000,
+		});
+		expect(fn()(info)).toBe(true);
+	});
+
+	it("allows the LQ→HQ swap after the dwell window elapses", () => {
+		const info = makeInfo({
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U8",
+			LastCleanBackupAt: 1000,
+			VisibleAdStartedAt: 500,
+			_LqHoldStartAt: Date.now() - 30000,
 		});
 		expect(fn()(info)).toBe(false);
 	});
