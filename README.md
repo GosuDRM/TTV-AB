@@ -66,15 +66,6 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 - **No more occasional loading circle during ad breaks.** The clean backup stream was served as a frozen playlist snapshot and replayed for up to 15s, so its buffer capped at ~4s and the playhead froze; the backup playlist is now re-fetched every ~2s so it keeps advancing like a live stream should.
 - **A stalled backup switches to a working one within seconds.** When the playhead-stall watcher fires, the stuck backup type is put on a short cooldown so the re-search rotates to the next type (e.g. site → embed) instead of re-selecting the broken one and giving up.
 - **Playback recovery now runs during ads too.** A new in-ad watchdog issues a pause/play nudge and then reloads the player if the playhead stays frozen on a drained buffer, even while an ad is active — previously that recovery only ran between ad breaks.
-
-### v9.3.4 — 2026-06-07
-- **No more 5-12s loading circle on preroll.** The cold-start autoplay-first strategy (pin autoplay as the first backup on a fresh ad cycle) was causing silent autoplay-gate stalls — Twitch's player would accept the playlist but refuse to play it without a user gesture, leaving the playhead frozen at ~3.97s while the user stares at a loading spinner. Autoplay is now appended as last-resort on a fresh ad cycle; Source-tier backups (site, embed, popout, mobile_web) are tried first. The LQ→HQ dwell window still uses autoplay-first for the existing-pinned continuation case, but that path doesn't re-hit the autoplay-gate.
-
-### v9.3.3 — 2026-06-07
-- **Long ad sessions end faster.** The native-recovery loop now caps the wait at ~24s (6 failed probes) when Twitch keeps ad-marking every probe, instead of running for the full 90s.
-- **Less probing during a clean-pinned hold.** Backup cache windows raised to 15s/20s so the ~4s playlist poll no longer triggers a fresh backup search on every tick.
-- **Quieter trace logs.** Per-cycle `Cooling down` and `Whitelisted variants` lines deduped.
-- **Stuck pinned backup detected and switched within ~3s.** A new playhead-watcher samples the video element every 1.5s; if the pinned backup's buffer stops growing for 3s (Twitch's "Playhead stalling" condition), the watcher forces a fresh backup search via a new bridge message. The previous 15s cache window hid this stall for its full duration.
 - **No more runaway re-search loops on broken streams.** Force-refresh is capped at 3 attempts per pinned type. When exhausted, a one-time warning is logged and the watcher goes silent — no worker load, no log spam when Twitch has no clean fallback to offer.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
