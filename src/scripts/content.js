@@ -5342,6 +5342,7 @@ const _PinnedBackupStallState = {
     lastForceRefreshAt: 0,
     lastPinnedType: null,
     forceRefreshCount: 0,
+    exhaustedLogged: false,
 };
 const _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS = [0, 120, 450, 1000];
 const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
@@ -7335,6 +7336,7 @@ function _checkPinnedBackupStall(player) {
         _PinnedBackupStallState.lastBufferedEnd = 0;
         _PinnedBackupStallState.lastPinnedType = null;
         _PinnedBackupStallState.forceRefreshCount = 0;
+        _PinnedBackupStallState.exhaustedLogged = false;
     };
     if (!__TTVAB_STATE__?.IsBufferFixEnabled) {
         _resetStallState();
@@ -7403,7 +7405,10 @@ function _checkPinnedBackupStall(player) {
     _PinnedBackupStallState.forceRefreshCount =
         (_PinnedBackupStallState.forceRefreshCount || 0) + 1;
     if (_PinnedBackupStallState.forceRefreshCount >= 3) {
-        _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — re-searches exhausted (${_PinnedBackupStallState.forceRefreshCount} attempts), leaving stream as-is`, "warning");
+        if (!_PinnedBackupStallState.exhaustedLogged) {
+            _PinnedBackupStallState.exhaustedLogged = true;
+            _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — re-searches exhausted (3 attempts), leaving stream as-is`, "warning");
+        }
         return;
     }
     __TTVAB_STATE__.BackupSearchForceRefreshAt = now;
