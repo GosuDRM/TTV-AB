@@ -2762,7 +2762,6 @@ function _checkPinnedBackupStall(player) {
 	if (
 		!(video instanceof HTMLMediaElement) ||
 		video.ended ||
-		video.paused ||
 		Number(video.readyState) < 1
 	) {
 		_PinnedBackupStallState.firstObservedAt = 0;
@@ -2785,22 +2784,41 @@ function _checkPinnedBackupStall(player) {
 		Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000 * 2,
 	);
 
-	const timeAdvanced =
-		_PinnedBackupStallState.lastCurrentTime > 0 &&
-		currentTime > _PinnedBackupStallState.lastCurrentTime + 0.05;
+	if (video.paused) {
+		_PinnedBackupStallState.firstObservedAt = 0;
+		_PinnedBackupStallState.lastCurrentTime = 0;
+		_PinnedBackupStallState.lastBufferedEnd = 0;
+		return;
+	}
+
 	const bufferAdvanced =
 		_PinnedBackupStallState.lastBufferedEnd > 0 &&
 		bufferedEnd > _PinnedBackupStallState.lastBufferedEnd + 0.1;
+	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
 
-	if (timeAdvanced || bufferAdvanced) {
+	if (bufferAdvanced) {
 		_PinnedBackupStallState.firstObservedAt = 0;
 		_PinnedBackupStallState.lastCurrentTime = currentTime;
 		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
 		return;
 	}
 
+	if (!playbackHasStarted) {
+		_PinnedBackupStallState.firstObservedAt = 0;
+		_PinnedBackupStallState.lastCurrentTime = 0;
+		_PinnedBackupStallState.lastBufferedEnd = 0;
+		return;
+	}
+
 	if (_PinnedBackupStallState.firstObservedAt === 0) {
 		_PinnedBackupStallState.firstObservedAt = now;
+		_PinnedBackupStallState.lastCurrentTime = currentTime;
+		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
+		return;
+	}
+
+	if (now - _PinnedBackupStallState.firstObservedAt > rearmCooldownMs * 4) {
+		_PinnedBackupStallState.firstObservedAt = 0;
 		_PinnedBackupStallState.lastCurrentTime = currentTime;
 		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
 		return;
@@ -2822,7 +2840,7 @@ function _checkPinnedBackupStall(player) {
 	__TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
 	_broadcastWorkers({ key: "UpdateBackupSearchForceRefresh", value: now });
 	_log(
-		`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, frozen for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`,
+		`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`,
 		"warning",
 	);
 }
