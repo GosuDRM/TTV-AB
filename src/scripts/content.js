@@ -1,12 +1,12 @@
-// TTV AB v9.3.2 - Twitch Ad Blocker
+// TTV AB v9.3.3 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.3.2",
-    INTERNAL_VERSION: 210,
+    VERSION: "9.3.3",
+    INTERNAL_VERSION: 211,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -28,7 +28,10 @@ const _$c = {
     AD_END_MIN_CLEAN_PLAYLISTS: 3,
     AD_END_MIN_NATIVE_RECOVERY_PROBES: 3,
     AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS: 500,
+    AD_END_MAX_FAILED_NATIVE_PROBES: 6,
     AD_RECOVERY_RELOAD_COOLDOWN_MS: 30000,
+    PINNED_BACKUP_STALL_DETECTION_MS: 3000,
+    PINNED_BACKUP_STALL_POLL_MS: 1500,
     BUFFERING_FIX: true,
     RELOAD_AFTER_AD: true,
     REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN: false,
@@ -450,7 +453,12 @@ function _$ds(scope) {
         AdEndMinCleanPlaylists: _$c.AD_END_MIN_CLEAN_PLAYLISTS ?? 2,
         AdEndMinNativeRecoveryProbes: _$c.AD_END_MIN_NATIVE_RECOVERY_PROBES ?? 3,
         AdEndNativeRecoveryProbeCooldownMs: _$c.AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS ?? 750,
+        AdEndMaxFailedNativeProbes: _$c.AD_END_MAX_FAILED_NATIVE_PROBES ?? 6,
         AdRecoveryReloadCooldownMs: _$c.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
+        PinnedBackupStallDetectionMs: _$c.PINNED_BACKUP_STALL_DETECTION_MS ?? 3000,
+        PinnedBackupStallPollMs: _$c.PINNED_BACKUP_STALL_POLL_MS ?? 1500,
+        BackupSearchForceRefreshAt: 0,
+        LastPinnedBackupStallDetectedAt: 0,
         LqHqHoldMinMs: _$c.LQ_HQ_HOLD_MIN_MS ?? 8000,
         HasTriggeredPlayerReload: false,
         PendingTriggeredPlayerReloadChannel: null,
@@ -1826,6 +1834,7 @@ function _$rsa(info) {
     info.PendingAdEndAt = 0;
     info.CleanPlaylistCount = 0;
     info.AdEndMarkerBounceLogged = false;
+    info.ConsecutiveFailedNativeProbes = 0;
     info.VisibleAdStartedAt = 0;
     info.IsHoldingBackupAfterAd = false;
     info.SilentBackupHoldStartedAt = 0;
@@ -1834,6 +1843,7 @@ function _$rsa(info) {
     info.HevcReloadPendingAfterHold = false;
     info.LastAdEndBounceAt = 0;
     info.LoggedBackupAdsByType = null;
+    info._LoggedWhitelistByType = null;
     info._BackupSearchStartedAt = 0;
     info._LastBackupSearchCompletedAt = 0;
     info._LoggedOfflineTransition = false;
@@ -2066,17 +2076,23 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
     if (hasNativeRecoveryReady) {
         return "ended";
     }
+    const maxFailedProbes = Math.max(1, Number(__TTVAB_STATE__?.AdEndMaxFailedNativeProbes) || 6);
+    const failedProbeCapHit = Math.max(0, Number(info.ConsecutiveFailedNativeProbes) || 0) >=
+        maxFailedProbes;
     if (slowPathReady) {
         const canHoldCleanPlaylist = Boolean(info?.LastCleanBackupM3U8);
         if (canHoldCleanPlaylist) {
             const backupHoldMaxMs = _getResolvedAdEndBackupHoldMaxMs();
             const visibleAdStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || Number(info.PendingAdEndAt) || 0);
             const visibleAdElapsed = visibleAdStartedAt > 0 ? now - visibleAdStartedAt : elapsed;
-            if (backupHoldMaxMs > 0 && visibleAdElapsed >= backupHoldMaxMs) {
+            if ((backupHoldMaxMs > 0 && visibleAdElapsed >= backupHoldMaxMs) ||
+                failedProbeCapHit) {
                 info.IsHoldingBackupAfterAd = true;
                 info.SilentBackupHoldStartedAt = now;
                 info.LastSilentBackupHoldLogAt = now;
-                _$l("[Trace] Native recovery still ad-marked after extended backup hold; ending visible ad cycle and keeping clean backup stream", "warning");
+                _$l(failedProbeCapHit && visibleAdElapsed < backupHoldMaxMs
+                    ? "[Trace] Native recovery still ad-marked after failed-probe cap; ending visible ad cycle and keeping clean backup stream"
+                    : "[Trace] Native recovery still ad-marked after extended backup hold; ending visible ad cycle and keeping clean backup stream", "warning");
                 return "ended-with-backup-hold";
             }
             const lastHoldLogAt = Math.max(0, Number(info.LastNativeRecoveryHoldLogAt) || 0);
@@ -2086,7 +2102,9 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
             }
             return "wait";
         }
-        _$l("[Trace] Native recovery still ad-marked after max wait; forcing ad end to prevent offline state", "warning");
+        _$l(failedProbeCapHit
+            ? "[Trace] Native recovery still ad-marked after failed-probe cap; forcing ad end to prevent offline state"
+            : "[Trace] Native recovery still ad-marked after max wait; forcing ad end to prevent offline state", "warning");
         return "ended";
     }
     return "wait";
@@ -2099,6 +2117,10 @@ function _resetNativeRecoveryReadyState(info, preserveProbeAt = false) {
     }
     info.LastNativeRecoveryReadyPlayerType = null;
     info.NativeRecoveryCleanCount = 0;
+}
+function _markNativeRecoveryProbeFailed(info) {
+    info.ConsecutiveFailedNativeProbes =
+        Math.max(0, Number(info?.ConsecutiveFailedNativeProbes) || 0) + 1;
 }
 function _markNativeRecoveryReady(info, playerType) {
     const nextPlayerType = typeof playerType === "string" && playerType ? playerType : null;
@@ -2331,6 +2353,7 @@ async function _fetchWithTimeout(realFetch, url, options = {}, timeoutMs = 3500)
 async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null) {
     if (!info?.IsUsingBackupStream && !info?.IsUsingFallbackStream) {
         _resetNativeRecoveryReadyState(info);
+        info.ConsecutiveFailedNativeProbes = 0;
         return true;
     }
     const requiredCleanProbes = Math.max(1, Number(__TTVAB_STATE__?.AdEndMinNativeRecoveryProbes) || 1);
@@ -2346,6 +2369,7 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
         const tokenRes = await _$tk(info, nativePlayerType, realFetch);
         if (tokenRes.status !== 200) {
             _resetNativeRecoveryReadyState(info, true);
+            _markNativeRecoveryProbeFailed(info);
             _$l(`[Trace] Native recovery probe failed for ${nativePlayerType}: ${tokenRes.status}`, "warning");
             return false;
         }
@@ -2355,17 +2379,20 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
         const tokenValue = extractedToken?.value;
         if (!sig || !tokenValue) {
             _resetNativeRecoveryReadyState(info, true);
+            _markNativeRecoveryProbeFailed(info);
             _$l(`[Trace] Native recovery probe missing token parts for ${nativePlayerType}`, "warning");
             return false;
         }
         const usherUrl = _buildUsherPlaybackUrl(info, sig, tokenValue);
         if (!usherUrl) {
             _resetNativeRecoveryReadyState(info, true);
+            _markNativeRecoveryProbeFailed(info);
             return false;
         }
         const encRes = await realFetch(usherUrl.href);
         if (encRes.status !== 200) {
             _resetNativeRecoveryReadyState(info, true);
+            _markNativeRecoveryProbeFailed(info);
             _$l(`[Trace] Native recovery usher failed for ${nativePlayerType}: ${encRes.status}`, "warning");
             return false;
         }
@@ -2377,11 +2404,13 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
         const streamUrl = _$su(encM3u8, targetResolution, usherUrl.href);
         if (!streamUrl) {
             _resetNativeRecoveryReadyState(info, true);
+            _markNativeRecoveryProbeFailed(info);
             return false;
         }
         const streamRes = await realFetch(streamUrl);
         if (streamRes.status !== 200) {
             _resetNativeRecoveryReadyState(info, true);
+            _markNativeRecoveryProbeFailed(info);
             _$l(`[Trace] Native recovery stream failed for ${nativePlayerType}: ${streamRes.status}`, "warning");
             return false;
         }
@@ -2393,19 +2422,23 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
             });
         if (nativeHasAds) {
             _resetNativeRecoveryReadyState(info, true);
+            _markNativeRecoveryProbeFailed(info);
             _$l(`[Trace] Native recovery still ad-marked (${nativePlayerType})`, "warning");
             return false;
         }
         const readyCount = _markNativeRecoveryReady(info, nativePlayerType);
         if (readyCount < requiredCleanProbes) {
+            _markNativeRecoveryProbeFailed(info);
             _$l(`[Trace] Native recovery ready (${nativePlayerType}) ${readyCount}/${requiredCleanProbes}`, "info");
             return false;
         }
+        info.ConsecutiveFailedNativeProbes = 0;
         _$l(`[Trace] Native recovery ready (${nativePlayerType})`, "success");
         return true;
     }
     catch (err) {
         _resetNativeRecoveryReadyState(info, true);
+        _markNativeRecoveryProbeFailed(info);
         _$l(`[Trace] Native recovery probe error for ${nativePlayerType}: ${err.message}`, "warning");
         return false;
     }
@@ -2453,6 +2486,8 @@ function _createStreamInfo(context) {
         BackupVariantUrls: new Set(),
         LastNativeRecoveryReadyPlayerType: null,
         NativeRecoveryCleanCount: 0,
+        ConsecutiveFailedNativeProbes: 0,
+        _LoggedWhitelistByType: null,
         _BackupSearchCount: 0,
         _BackupSearchErrorCount: 0,
         _BackupSearchFailCount: 0,
@@ -2829,6 +2864,7 @@ async function _processM3U8Core(url, text, realFetch) {
             info.IsHoldingBackupAfterAd = false;
             info.SilentBackupHoldStartedAt = 0;
             info.LastSilentBackupHoldLogAt = 0;
+            info.ConsecutiveFailedNativeProbes = 0;
             __TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
             __TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
             __TTVAB_STATE__.LastAdDetectedAt = now;
@@ -2901,6 +2937,7 @@ async function _processM3U8Core(url, text, realFetch) {
                 if (!info.IsShowingAd) {
                     info.IsShowingAd = true;
                     info.VisibleAdStartedAt = Date.now();
+                    info.ConsecutiveFailedNativeProbes = 0;
                     __TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
                     __TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
                     _$ab(info.ChannelName, info.MediaKey);
@@ -2943,13 +2980,22 @@ async function _processM3U8Core(url, text, realFetch) {
             startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
         }
         if (info._LastBackupSearchCompletedAt &&
-            Date.now() - info._LastBackupSearchCompletedAt < 3000 &&
+            Date.now() - info._LastBackupSearchCompletedAt < 15000 &&
             !_isRecentPostAdReentry(info)) {
-            if (info.LastCleanBackupM3U8) {
+            const forceRefreshAt = Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
+            const cacheStamp = info._LastBackupSearchCompletedAt || 0;
+            if (forceRefreshAt > 0 && forceRefreshAt >= cacheStamp - 1) {
+                __TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
+                info._LastBackupSearchCompletedAt = 0;
+                _$l(`[Trace] Bypassing backup cache: pinned backup stalled (${Math.round((Date.now() - forceRefreshAt) / 100) / 10}s ago)`, "warning");
+            }
+            else if (info.LastCleanBackupM3U8) {
                 info.IsUsingBackupStream = true;
                 return info.LastCleanBackupM3U8;
             }
-            return text;
+            else {
+                return text;
+            }
         }
         let { type: backupType, m3u8: backupM3u8, isFallback, } = await _$fb(info, realFetch, startIdx, res);
         if (!backupM3u8) {
@@ -3039,7 +3085,7 @@ async function _processM3U8Core(url, text, realFetch) {
             const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
             const backupIsFromCurrentCycle = Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
             if (info.LastCleanBackupM3U8 &&
-                backupAgeMs >= 1500 &&
+                backupAgeMs >= 20000 &&
                 backupIsFromCurrentCycle) {
                 try {
                     const refreshedBackup = await _$fb(info, realFetch, 0, res);
@@ -3232,7 +3278,13 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
         const isFullyCachedPlayerType = pt !== realPt;
         const configuredPlayerTypeIndex = Math.max(0, (__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(realPt));
         if (_isBackupPlayerRetryCoolingDown(info, pt)) {
-            _$l(`[Trace] Cooling down: ${pt}`, "info");
+            if (!info._LoggedWhitelistByType) {
+                info._LoggedWhitelistByType = new Set();
+            }
+            if (!info._LoggedWhitelistByType.has(`cooldown:${pt}`)) {
+                info._LoggedWhitelistByType.add(`cooldown:${pt}`);
+                _$l(`[Trace] Cooling down: ${pt}`, "info");
+            }
             continue;
         }
         _$l(`[Trace] Checking: ${pt}`, "info");
@@ -3286,7 +3338,13 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
                                         catch { }
                                     }
                                 }
-                                _$l(`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`);
+                                if (!info._LoggedWhitelistByType) {
+                                    info._LoggedWhitelistByType = new Set();
+                                }
+                                if (!info._LoggedWhitelistByType.has(`whitelist:${pt}`)) {
+                                    info._LoggedWhitelistByType.add(`whitelist:${pt}`);
+                                    _$l(`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`);
+                                }
                                 while (info.BackupVariantUrls.size > 200) {
                                     const first = info.BackupVariantUrls.values().next().value;
                                     if (first !== undefined)
@@ -5274,6 +5332,13 @@ const _POST_AD_GRACE_PAUSE_RESUME_COOLDOWN_MS = 1500;
 const _VISIBILITY_RESUME_RETRY_DELAYS_MS = [80, 250, 700, 1500];
 const _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS = [120, 500, 1500, 3000];
 const _SECONDARY_PLAYER_HANDOFF_WINDOW_MS = 2700000;
+const _PinnedBackupStallState = {
+    firstObservedAt: 0,
+    lastCurrentTime: 0,
+    lastBufferedEnd: 0,
+    lastForceRefreshAt: 0,
+    lastPinnedType: null,
+};
 const _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS = [0, 120, 450, 1000];
 const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
     '[data-a-target="player-play-pause-button"]',
@@ -7259,6 +7324,71 @@ function _$dpt(isPausePlay, isReload, options = {}) {
     }
     return false;
 }
+function _checkPinnedBackupStall(player) {
+    const _resetStallState = () => {
+        _PinnedBackupStallState.firstObservedAt = 0;
+        _PinnedBackupStallState.lastCurrentTime = 0;
+        _PinnedBackupStallState.lastBufferedEnd = 0;
+        _PinnedBackupStallState.lastPinnedType = null;
+    };
+    if (!__TTVAB_STATE__?.IsBufferFixEnabled) {
+        _resetStallState();
+        return;
+    }
+    const pinnedType = __TTVAB_STATE__.PinnedBackupPlayerType;
+    if (!pinnedType) {
+        _resetStallState();
+        return;
+    }
+    if (_PinnedBackupStallState.lastPinnedType !== pinnedType) {
+        _resetStallState();
+        _PinnedBackupStallState.lastPinnedType = pinnedType;
+    }
+    const video = player?.getHTMLVideoElement?.() || null;
+    if (!(video instanceof HTMLMediaElement) ||
+        video.ended ||
+        video.paused ||
+        Number(video.readyState) < 1) {
+        _PinnedBackupStallState.firstObservedAt = 0;
+        _PinnedBackupStallState.lastCurrentTime = 0;
+        _PinnedBackupStallState.lastBufferedEnd = 0;
+        return;
+    }
+    const currentTime = Number(video.currentTime) || 0;
+    const bufferedEnd = video.buffered && video.buffered.length > 0
+        ? video.buffered.end(video.buffered.length - 1)
+        : 0;
+    const now = Date.now();
+    const stallThresholdMs = Math.max(500, Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000);
+    const rearmCooldownMs = Math.max(stallThresholdMs * 2, Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000 * 2);
+    const timeAdvanced = _PinnedBackupStallState.lastCurrentTime > 0 &&
+        currentTime > _PinnedBackupStallState.lastCurrentTime + 0.05;
+    const bufferAdvanced = _PinnedBackupStallState.lastBufferedEnd > 0 &&
+        bufferedEnd > _PinnedBackupStallState.lastBufferedEnd + 0.1;
+    if (timeAdvanced || bufferAdvanced) {
+        _PinnedBackupStallState.firstObservedAt = 0;
+        _PinnedBackupStallState.lastCurrentTime = currentTime;
+        _PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
+        return;
+    }
+    if (_PinnedBackupStallState.firstObservedAt === 0) {
+        _PinnedBackupStallState.firstObservedAt = now;
+        _PinnedBackupStallState.lastCurrentTime = currentTime;
+        _PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
+        return;
+    }
+    if (now - _PinnedBackupStallState.lastForceRefreshAt < rearmCooldownMs ||
+        __TTVAB_STATE__.BackupSearchForceRefreshAt > now - rearmCooldownMs) {
+        return;
+    }
+    if (now - _PinnedBackupStallState.firstObservedAt < stallThresholdMs) {
+        return;
+    }
+    _PinnedBackupStallState.lastForceRefreshAt = now;
+    __TTVAB_STATE__.BackupSearchForceRefreshAt = now;
+    __TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
+    _$l(`Pinned backup stalled (${__TTVAB_STATE__.PinnedBackupPlayerType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, frozen for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`, "warning");
+}
 function _$mpb() {
     function check() {
         _playerBufferMonitorTimer = null;
@@ -7308,6 +7438,24 @@ function _$mpb() {
             return;
         }
         if (hasActiveAdContext) {
+            if (__TTVAB_STATE__.PinnedBackupPlayerType &&
+                Number(__TTVAB_STATE__.PinnedBackupStallPollMs) > 0) {
+                let pinPlayer = _$cpr?.player || null;
+                if (!pinPlayer) {
+                    const fresh = _$gps();
+                    if (fresh.player && fresh.state) {
+                        pinPlayer = fresh.player;
+                    }
+                }
+                if (pinPlayer) {
+                    _checkPinnedBackupStall(pinPlayer);
+                }
+            }
+            else {
+                _PinnedBackupStallState.firstObservedAt = 0;
+                _PinnedBackupStallState.lastCurrentTime = 0;
+                _PinnedBackupStallState.lastBufferedEnd = 0;
+            }
             _resetPlayerBufferMonitorState();
             _playerBufferMonitorTimer = setTimeout(check, nextDelay);
             return;
