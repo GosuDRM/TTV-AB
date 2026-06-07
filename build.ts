@@ -1218,6 +1218,11 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_isAdEndStable",
+			helper: "_markNativeRecoveryProbeFailed",
+			source: processorSource,
+		},
+		{
 			consumer: "_fetchViaWorkerBridge",
 			helper: "_isWorkerContext",
 			source: apiSource,

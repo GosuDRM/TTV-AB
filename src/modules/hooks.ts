@@ -838,6 +838,7 @@ function _hookWorker() {
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_isAdEndStable.toString()}
                 ${_resetNativeRecoveryReadyState.toString()}
+                ${_markNativeRecoveryProbeFailed.toString()}
                 ${_markNativeRecoveryReady.toString()}
                 ${_resetStreamAdState.toString()}
                 ${_shouldReloadNativePlayerAfterAdReset.toString()}
