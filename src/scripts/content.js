@@ -4252,6 +4252,7 @@ function _$hw() {
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_isAdEndStable.toString()}
                 ${_resetNativeRecoveryReadyState.toString()}
+                ${_markNativeRecoveryProbeFailed.toString()}
                 ${_markNativeRecoveryReady.toString()}
                 ${_$rsa.toString()}
                 ${_shouldReloadNativePlayerAfterAdReset.toString()}
