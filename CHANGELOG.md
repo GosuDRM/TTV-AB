@@ -10,6 +10,8 @@ All notable changes to TTV AB will be documented in this file.
 
 ### Changed
 - Trace log noise reduced. `Cooling down: <type>` and `Whitelisted variants for <type>` now log at most once per (type, ad-cycle) pair instead of on every poll.
+- **Pinned backup stalls switch backups within ~3s.** A new playhead-watcher in the buffer monitor samples the video element every 1.5s during active ad cycles. If the pinned backup's buffer stops growing for 3s (the symptom Twitch reports as "Playhead stalling"), the watcher forces a fresh backup search via a new `UpdateBackupSearchForceRefresh` bridge message. Previously the 15s post-ad-start cache window hid this stall for the full window.
+- **No more runaway re-searches on a broken stream.** When the watcher fires and a re-search picks the same broken backup, it caps at 3 attempts per pinned type. The 3rd attempt logs a one-time "re-searches exhausted, leaving stream as-is" warning and goes silent, avoiding worker load and log spam when no clean fallback is available.
 
 ## [9.3.2] - 2026-06-07
 

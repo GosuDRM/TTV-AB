@@ -66,6 +66,8 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 - **Long ad sessions end faster.** The native-recovery loop now caps the wait at ~24s (6 failed probes) when Twitch keeps ad-marking every probe, instead of running for the full 90s.
 - **Less probing during a clean-pinned hold.** Backup cache windows raised to 15s/20s so the ~4s playlist poll no longer triggers a fresh backup search on every tick.
 - **Quieter trace logs.** Per-cycle `Cooling down` and `Whitelisted variants` lines deduped.
+- **Stuck pinned backup detected and switched within ~3s.** A new playhead-watcher samples the video element every 1.5s; if the pinned backup's buffer stops growing for 3s (Twitch's "Playhead stalling" condition), the watcher forces a fresh backup search via a new bridge message. The previous 15s cache window hid this stall for its full duration.
+- **No more runaway re-search loops on broken streams.** Force-refresh is capped at 3 attempts per pinned type. When exhausted, a one-time warning is logged and the watcher goes silent — no worker load, no log spam when Twitch has no clean fallback to offer.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
