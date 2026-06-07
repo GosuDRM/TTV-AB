@@ -107,4 +107,19 @@ describe("worker recovery lifecycle", () => {
 		expect(worker.__TTVABPageMediaKey).toBe("live:newchannel");
 		expect(getContext(worker).MediaKey).toBe("live:newchannel");
 	});
+
+	it("clears missed heartbeat count when a worker replies", () => {
+		const markPong =
+			T<(worker: Record<string, unknown>, now?: number) => void>(
+				"_markWorkerPong",
+			);
+		const worker: Record<string, unknown> = {
+			__TTVABMissedPongs: 1,
+		};
+
+		markPong(worker, 1000);
+
+		expect(worker.__TTVABMissedPongs).toBe(0);
+		expect(worker.__TTVABLastPongAt).toBe(1000);
+	});
 });

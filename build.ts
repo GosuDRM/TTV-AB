@@ -1201,6 +1201,21 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_stripAds",
+			helper: "_createEmptyAdHoldPlaylist",
+			source: parserSource,
+		},
+		{
+			consumer: "_createEmptyAdHoldPlaylist",
+			helper: "_extractPlaylistHeaders",
+			source: parserSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_isEmptyAdHoldSegmentUrl",
+			source: hooksSource,
+		},
+		{
 			consumer: "_processM3U8",
 			helper: "_playlistHasMediaSegments",
 			source: processorSource,
@@ -1223,6 +1238,26 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_findBackupStream",
 			helper: "_shouldHoldAutoplayBackupDuringAd",
+			source: processorSource,
+		},
+		{
+			consumer: "_getOrderedBackupPlayerTypes",
+			helper: "_shouldTryAutoplayFirst",
+			source: processorSource,
+		},
+		{
+			consumer: "_getOrderedBackupPlayerTypes",
+			helper: "_shouldHoldAutoplayBackupDuringAd",
+			source: processorSource,
+		},
+		{
+			consumer: "_shouldTryAutoplayFirst",
+			helper: "_getResolvedLqHqHoldMinMs",
+			source: processorSource,
+		},
+		{
+			consumer: "_shouldHoldAutoplayBackupDuringAd",
+			helper: "_getResolvedLqHqHoldMinMs",
 			source: processorSource,
 		},
 		{
