@@ -67,44 +67,6 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 - **A stalled backup switches to a working one within seconds.** When the playhead-stall watcher fires, the stuck backup type is put on a short cooldown so the re-search rotates to the next type (e.g. site → embed) instead of re-selecting the broken one and giving up.
 - **Playback recovery now runs during ads too.** A new in-ad watchdog issues a pause/play nudge and then reloads the player if the playhead stays frozen on a drained buffer, even while an ad is active — previously that recovery only ran between ad breaks.
 
-### v9.3.4 — 2026-06-07
-- **No more 5-12s loading circle on preroll.** The cold-start autoplay-first strategy (pin autoplay as the first backup on a fresh ad cycle) was causing silent autoplay-gate stalls — Twitch's player would accept the playlist but refuse to play it without a user gesture, leaving the playhead frozen at ~3.97s while the user stares at a loading spinner. Autoplay is now appended as last-resort on a fresh ad cycle; Source-tier backups (site, embed, popout, mobile_web) are tried first. The LQ→HQ dwell window still uses autoplay-first for the existing-pinned continuation case, but that path doesn't re-hit the autoplay-gate.
-
-### v9.3.3 — 2026-06-07
-- **Long ad sessions end faster.** The native-recovery loop now caps the wait at ~24s (6 failed probes) when Twitch keeps ad-marking every probe, instead of running for the full 90s.
-- **Less probing during a clean-pinned hold.** Backup cache windows raised to 15s/20s so the ~4s playlist poll no longer triggers a fresh backup search on every tick.
-- **Pinned backup stalls get fixed within ~3s.** A new playhead-watcher detects the "Playhead stalling" symptom and forces a fresh backup search; re-searches are capped at 3 attempts per type to avoid log spam and worker load when no clean fallback is available.
-
-### v9.3.2 — 2026-06-07
-- **No more brief freeze on backup-stream swap.** The swap-time "Playhead stalling" freeze (which the 9.3.1 LQ-hold change reduced but didn't fully eliminate) is fixed at the root: the swapped-in playlist now carries the standard HLS `#EXT-X-DISCONTINUITY` marker at the splice point, so the player resets its timing and appends the backup stream after the existing buffer instead of draining it.
-
-### v9.3.1 — 2026-06-07
-- **No more flash-freeze during the LQ→HQ quality upgrade.** During an ad, you briefly get a 360p (LQ) backup stream so playback starts almost instantly; the moment a clean HQ source is found, the extension switches you over. Previously the upgrade could fire after only a few seconds, before the LQ stream's buffer was full — so the source swap emptied the buffer and the player stalled for a fraction of a second while it rebuilt from the live edge. The LQ stream is now held for at least 8 seconds before the upgrade is allowed, which is plenty of time for the buffer to fill. The upgrade still happens the instant a clean HQ stream is available, you just no longer see the freeze.
-
-### v9.3.0 — 2026-06-07
-- **Near-instant video when you open a channel that's on an ad:** a preroll used to leave the player black for ten seconds or more while the extension worked through every player type looking for a clean stream. It now goes straight to the most reliable ad-free source first, so video starts in about two seconds instead — beginning at 360p and upgrading to your normal quality automatically and seamlessly once the ad ends. The same quick path now also applies to mid-stream ads.
-
-### v9.2.3 — 2026-06-06
-- **Worker injection hardened against blob: failures ([#32](https://github.com/GosuDRM/TTV-AB/issues/32)):** The blob: Worker had no MIME type and a 0ms revocation timeout — the blob was destroyed before the Worker loaded. Now has explicit `text/javascript` type, 30s revocation, and an 8s heartbeat with page-side M3U8 fallback if the Worker fails.
-
-### v9.2.2 — 2026-06-06
-- **Crashed playback workers now actually recover:** the watchdog could never detect a hung worker (posting to a dead worker never fails), and "restarts" spawned an orphan worker Twitch never used — so a dead worker stayed dead. Workers now reply to a liveness ping, the watchdog acts only when a pong is missed for 15s, and recovery reloads the player so Twitch creates a fresh, fully-wired worker (with a 30s cooldown to avoid reload loops).
-- **"Ads Blocked" no longer overshoots after a connection blip:** queued counter updates were summed without a cap while the messaging bridge was down; the merged increment is now clamped to the real total.
-- **The active stream is no longer evicted from the worker cache:** the URL→stream table now drops least-recently-used entries instead of oldest-inserted, preventing brief moments where ads slipped through on the stream you're watching.
-- **Hardened against stat tampering:** the background worker now only accepts counter messages from the extension itself.
-- **Popout / Picture-in-Picture hooks fail safe:** they can no longer throw into Twitch's own code and break login popups, clip sharing, or PiP.
-- **Recovery timers respect channel switches:** post-ad and handoff timers no longer pause or seek the wrong stream after a fast channel change.
-
-### v9.2.1 — 2026-06-02
-- **Seamless LQ→HQ hold works even with "Low quality fallback" disabled:** The 9.2.0 emergency autoplay injection relied on a check that ran before the main loop, so it never fired on the first call. The injection is now unconditional when the toggle is off — autoplay is appended to the backup-search order as a last-resort type. When all configured types are contaminated, the loop reaches autoplay, finds a clean 360p stream, and the existing seamless-hold path transitions cleanly back to HQ native playback when the ad cycle ends. Same UX as when the toggle is enabled, with no ad flash and no black screen.
-
-### v9.2.0 — 2026-06-02
-- **Emergency LQ autoplay fallback when toggle is off:** With "Low quality fallback" disabled, the extension now still tries the 360p autoplay stream as a last-resort fallback when all primary types (embed/popout/site) are ad-marked. During ads, the LQ stream plays; when the ad ends, the existing seamless-hold mechanism switches you back to HQ native. Logs an explicit override message so the behavior is visible.
-- **No more ad-flash loop when all backups are contaminated:** Ad-marked fallbacks are no longer cached as "clean", so the seamless-hold → native-restoration path engages only with truly clean sources. Previously, a poisoned cache caused the empty-playlist recovery to return the original ad-filled playlist, looping until the ad ended naturally.
-
-### v9.1.5 — 2026-06-02
-- Fix Low Quality Fallback and Ad Spoofing toggles silently re-enabling after a player reload or page navigation — feature-disable flags are now seeded into freshly-created Twitch workers, not just patched on already-running ones, so the setting persists
-
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
 ## 🛠️ Development
