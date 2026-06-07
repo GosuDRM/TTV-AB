@@ -1,12 +1,12 @@
-// TTV AB v9.3.4 - Twitch Ad Blocker
+// TTV AB v9.3.6 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.3.4",
-    INTERNAL_VERSION: 212,
+    VERSION: "9.3.6",
+    INTERNAL_VERSION: 214,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -1930,6 +1930,8 @@ function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
         case "not-playable":
         case "no-stream-url":
             return 2000;
+        case "stalled":
+            return 10000;
         default:
             return 15000;
     }
@@ -2707,7 +2709,12 @@ async function _processM3U8Core(url, text, realFetch) {
                     _$l("[Trace] Native playlist still ad-marked during silent backup hold; continuing clean backup stream", "warning");
                 }
                 const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
-                if (backupAgeMs >= 4000) {
+                if (backupAgeMs >= 2000) {
+                    const refreshed = await _refreshActiveBackupMediaPlaylist(info, realFetch);
+                    if (refreshed) {
+                        info.IsUsingBackupStream = true;
+                        return refreshed;
+                    }
                     try {
                         const refreshedBackup = await _$fb(info, realFetch, 0, res);
                         if (refreshedBackup?.m3u8) {
@@ -2987,11 +2994,31 @@ async function _processM3U8Core(url, text, realFetch) {
             if (forceRefreshAt > 0 && forceRefreshAt >= cacheStamp - 1) {
                 __TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
                 info._LastBackupSearchCompletedAt = 0;
+                const stalledType = (typeof info.ActiveBackupPlayerType === "string" &&
+                    info.ActiveBackupPlayerType) ||
+                    (typeof __TTVAB_STATE__.PinnedBackupPlayerType === "string" &&
+                        __TTVAB_STATE__.PinnedBackupPlayerType) ||
+                    null;
+                if (stalledType && stalledType !== "autoplay") {
+                    _markBackupPlayerRetryCooldown(info, stalledType, "stalled");
+                    _$l(`[Trace] Pinned backup ${stalledType} stalled — cooling down and rotating to next type`, "warning");
+                }
                 _$l(`[Trace] Bypassing backup cache: pinned backup stalled (${Math.round((Date.now() - forceRefreshAt) / 100) / 10}s ago)`, "warning");
             }
             else if (info.LastCleanBackupM3U8) {
-                info.IsUsingBackupStream = true;
-                return info.LastCleanBackupM3U8;
+                const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
+                if (backupAgeMs >= 2000) {
+                    const refreshed = await _refreshActiveBackupMediaPlaylist(info, realFetch);
+                    if (refreshed) {
+                        info.IsUsingBackupStream = true;
+                        return refreshed;
+                    }
+                    info._LastBackupSearchCompletedAt = 0;
+                }
+                else {
+                    info.IsUsingBackupStream = true;
+                    return info.LastCleanBackupM3U8;
+                }
             }
             else {
                 return text;
@@ -3084,21 +3111,26 @@ async function _processM3U8Core(url, text, realFetch) {
         if (adEndState === "wait") {
             const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
             const backupIsFromCurrentCycle = Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
-            if (info.LastCleanBackupM3U8 &&
-                backupAgeMs >= 20000 &&
-                backupIsFromCurrentCycle) {
-                try {
-                    const refreshedBackup = await _$fb(info, realFetch, 0, res);
-                    if (refreshedBackup?.m3u8) {
-                        info.IsUsingBackupStream = true;
-                        if (refreshedBackup.type) {
-                            info.ActiveBackupPlayerType = refreshedBackup.type;
-                        }
-                        return refreshedBackup.m3u8;
-                    }
+            if (info.LastCleanBackupM3U8 && backupAgeMs >= 2000) {
+                const refreshed = await _refreshActiveBackupMediaPlaylist(info, realFetch);
+                if (refreshed) {
+                    info.IsUsingBackupStream = true;
+                    return refreshed;
                 }
-                catch (err) {
-                    _$l(`[Trace] Backup refresh failed during ad-end wait: ${err?.message ?? String(err)}`, "warning");
+                if (backupIsFromCurrentCycle) {
+                    try {
+                        const refreshedBackup = await _$fb(info, realFetch, 0, res);
+                        if (refreshedBackup?.m3u8) {
+                            info.IsUsingBackupStream = true;
+                            if (refreshedBackup.type) {
+                                info.ActiveBackupPlayerType = refreshedBackup.type;
+                            }
+                            return refreshedBackup.m3u8;
+                        }
+                    }
+                    catch (err) {
+                        _$l(`[Trace] Backup refresh failed during ad-end wait: ${err?.message ?? String(err)}`, "warning");
+                    }
                 }
             }
             if (info.LastCleanBackupM3U8) {
@@ -3227,6 +3259,53 @@ function _shouldTryAutoplayFirst(info) {
         return true;
     }
     return false;
+}
+async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
+    const pt = (typeof info?.ActiveBackupPlayerType === "string" &&
+        info.ActiveBackupPlayerType) ||
+        (typeof info?.LastCleanBackupPlayerType === "string" &&
+            info.LastCleanBackupPlayerType) ||
+        null;
+    if (!pt || pt === "autoplay")
+        return null;
+    if (_isBackupPlayerRetryCoolingDown(info, pt))
+        return null;
+    const encCache = info.BackupEncodingsM3U8Cache?.[pt];
+    const enc = typeof encCache === "string" ? encCache : encCache?.m3u8 || null;
+    const encBaseUrl = typeof encCache === "object" && encCache?.baseUrl
+        ? encCache.baseUrl
+        : info.UsherBaseUrl;
+    if (!enc)
+        return null;
+    const targetRes = _$gfr(info, "") ||
+        info?.ResolutionList?.[0] ||
+        (typeof __TTVAB_STATE__?.PreferredQualityGroup === "string" &&
+            __TTVAB_STATE__.PreferredQualityGroup.trim()
+            ? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
+            : null);
+    const streamUrl = _$su(enc, targetRes, encBaseUrl);
+    if (!streamUrl)
+        return null;
+    try {
+        const streamRes = await realFetch(streamUrl);
+        if (streamRes.status !== 200)
+            return null;
+        const m3u8 = _absolutizeMediaPlaylistUrls(await streamRes.text(), streamUrl);
+        if (!m3u8 || !_playlistHasMediaSegments(m3u8))
+            return null;
+        const hasAds = _$hpa(m3u8) ||
+            _$hem(m3u8) ||
+            _$pka(m3u8, { includeCached: false });
+        if (hasAds)
+            return null;
+        info.LastCleanBackupM3U8 = m3u8;
+        info.LastCleanBackupPlayerType = pt;
+        info.LastCleanBackupAt = Date.now();
+        return m3u8;
+    }
+    catch {
+        return null;
+    }
 }
 async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
     let backupType = null;
@@ -4334,6 +4413,7 @@ function _$hw() {
                 ${_$pm.toString()}
                 ${_getResolvedLqHqHoldMinMs.toString()}
                 ${_shouldTryAutoplayFirst.toString()}
+                ${_refreshActiveBackupMediaPlaylist.toString()}
                 ${_$fb.toString()}
                 ${_$wf.toString()}
                 
@@ -5331,6 +5411,9 @@ const _POST_AD_PAUSE_RESUME_RETRY_MS = 2500;
 const _POST_AD_GRACE_WINDOW_MS = 90000;
 const _POST_AD_GRACE_STALL_TICKS_REQUIRED = 2;
 const _POST_AD_GRACE_PAUSE_RESUME_COOLDOWN_MS = 1500;
+const _IN_AD_FREEZE_DETECT_MS = 5000;
+const _IN_AD_FREEZE_ACTION_REPEAT_MS = 5000;
+const _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS = 2;
 const _VISIBILITY_RESUME_RETRY_DELAYS_MS = [80, 250, 700, 1500];
 const _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS = [120, 500, 1500, 3000];
 const _SECONDARY_PLAYER_HANDOFF_WINDOW_MS = 2700000;
@@ -5343,6 +5426,18 @@ const _PinnedBackupStallState = {
     forceRefreshCount: 0,
     exhaustedLogged: false,
 };
+const _InAdFreezeState = {
+    firstFrozenAt: 0,
+    lastCurrentTime: -1,
+    lastActionAt: 0,
+    actionCount: 0,
+};
+function _resetInAdFreezeState() {
+    _InAdFreezeState.firstFrozenAt = 0;
+    _InAdFreezeState.lastCurrentTime = -1;
+    _InAdFreezeState.lastActionAt = 0;
+    _InAdFreezeState.actionCount = 0;
+}
 const _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS = [0, 120, 450, 1000];
 const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
     '[data-a-target="player-play-pause-button"]',
@@ -7415,6 +7510,49 @@ function _checkPinnedBackupStall(player) {
     _$bw({ key: "UpdateBackupSearchForceRefresh", value: now });
     _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`, "warning");
 }
+function _checkInAdPlayheadFreeze(player) {
+    const video = player?.getHTMLVideoElement?.() || null;
+    if (!(video instanceof HTMLMediaElement) ||
+        video.ended ||
+        Number(video.readyState) < 1) {
+        _resetInAdFreezeState();
+        return;
+    }
+    const currentTime = Number(video.currentTime) || 0;
+    const bufferedEnd = video.buffered && video.buffered.length > 0
+        ? video.buffered.end(video.buffered.length - 1)
+        : 0;
+    const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
+    const advanced = _InAdFreezeState.lastCurrentTime >= 0 &&
+        currentTime > _InAdFreezeState.lastCurrentTime + 0.05;
+    const bufferDrained = bufferedEnd - currentTime < _getLowLatencyDangerZone();
+    if (!playbackHasStarted || video.paused || advanced || !bufferDrained) {
+        _resetInAdFreezeState();
+        _InAdFreezeState.lastCurrentTime = currentTime;
+        return;
+    }
+    const now = Date.now();
+    if (_InAdFreezeState.firstFrozenAt === 0) {
+        _InAdFreezeState.firstFrozenAt = now;
+        _InAdFreezeState.lastCurrentTime = currentTime;
+        return;
+    }
+    if (now - _InAdFreezeState.firstFrozenAt < _IN_AD_FREEZE_DETECT_MS ||
+        now - _InAdFreezeState.lastActionAt < _IN_AD_FREEZE_ACTION_REPEAT_MS) {
+        return;
+    }
+    _InAdFreezeState.lastActionAt = now;
+    _InAdFreezeState.actionCount++;
+    const frozenSeconds = Math.round((now - _InAdFreezeState.firstFrozenAt) / 100) / 10;
+    if (_InAdFreezeState.actionCount > _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS) {
+        _$l(`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s (bufferEnd=${bufferedEnd.toFixed(2)}s); reloading player`, "warning");
+        _$dpt(false, true, { reason: "buffer-recovery" });
+        _InAdFreezeState.actionCount = 0;
+        return;
+    }
+    _$l(`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s (bufferEnd=${bufferedEnd.toFixed(2)}s); pause/play nudge`, "warning");
+    _$dpt(true, false, { reason: "buffer-recovery" });
+}
 function _$mpb() {
     function check() {
         _playerBufferMonitorTimer = null;
@@ -7464,23 +7602,28 @@ function _$mpb() {
             return;
         }
         if (hasActiveAdContext) {
+            let pinPlayer = _$cpr?.player || null;
+            if (!pinPlayer) {
+                const fresh = _$gps();
+                if (fresh.player && fresh.state) {
+                    pinPlayer = fresh.player;
+                }
+            }
             if (__TTVAB_STATE__.PinnedBackupPlayerType &&
-                Number(__TTVAB_STATE__.PinnedBackupStallPollMs) > 0) {
-                let pinPlayer = _$cpr?.player || null;
-                if (!pinPlayer) {
-                    const fresh = _$gps();
-                    if (fresh.player && fresh.state) {
-                        pinPlayer = fresh.player;
-                    }
-                }
-                if (pinPlayer) {
-                    _checkPinnedBackupStall(pinPlayer);
-                }
+                Number(__TTVAB_STATE__.PinnedBackupStallPollMs) > 0 &&
+                pinPlayer) {
+                _checkPinnedBackupStall(pinPlayer);
             }
             else {
                 _PinnedBackupStallState.firstObservedAt = 0;
                 _PinnedBackupStallState.lastCurrentTime = 0;
                 _PinnedBackupStallState.lastBufferedEnd = 0;
+            }
+            if (pinPlayer) {
+                _checkInAdPlayheadFreeze(pinPlayer);
+            }
+            else {
+                _resetInAdFreezeState();
             }
             _resetPlayerBufferMonitorState();
             _playerBufferMonitorTimer = setTimeout(check, nextDelay);
