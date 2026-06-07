@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.3.8-purple)
+![Version](https://img.shields.io/badge/version-9.4.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.3.8-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.4.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,10 +62,11 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v9.3.8 — 2026-06-07
-- **Worker crash recovery is capped across replacement workers.** Recovery attempts are tracked per stream context, so repeated worker recreation cannot reset the limit and loop player reloads indefinitely.
-- **Missed worker heartbeats now use the full recovery path.** A worker that never replies is quarantined, degraded M3U8 fallback is installed, and the player is reloaded only after a current-page context check.
-- **Channel switches are safer during worker recovery.** Tracked workers now receive updated page context, and crashed workers cannot process late recovery messages after being removed.
+### v9.4.0 — 2026-06-08
+- **Disabled low-quality fallback no longer leaks ads.** Source-quality backups are tried first, then `autoplay` is used only as an emergency last resort when every source backup is ad-marked.
+- **Ad-marked backup playlists are rejected.** The worker no longer promotes contaminated fallback playlists, and empty stripped playlists use a hold segment instead of returning the original ad playlist.
+- **Midroll autoplay holds no longer trap playback.** If `autoplay` is enabled and wins, it is held only for the short LQ dwell window, then normal source recovery can resume.
+- **Worker recovery is less eager to reload.** Late heartbeats get a retry before a worker is treated as crashed, reducing avoidable player reloads during Twitch worker stalls.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

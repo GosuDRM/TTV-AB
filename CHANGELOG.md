@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.4.0] - 2026-06-08
+
+### Fixed
+- **Disabled low-quality fallback no longer leaks ads when every source backup is ad-marked.** Source-tier backups are still tried first, but `autoplay` is restored as an emergency last-resort candidate so the popup contract remains true without bringing back autoplay-first stalls.
+- **Ad-marked backup playlists are no longer promoted as fallback.** If a backup playlist still contains Twitch ad markers, it is cooled down instead of being treated as a usable fallback that can leak when stripping has no clean cache.
+- **Empty stripped playlists now serve an empty hold segment instead of the original ad playlist.** When no clean backup or native playlist is cached, the worker keeps ads out of playback while the next backup search/recovery poll runs.
+- **Autoplay backup holds now release after the LQ dwell window.** When autoplay is explicitly enabled and wins a clean backup, it is no longer held until native ad-end detection succeeds. After the short dwell window, source-tier backups can be tried again so playback does not sit on a stalled autoplay playlist.
+- **Autoplay backups participate in pinned-stall recovery.** Autoplay is now pinned like other backup types, and a stalled autoplay selection can be cooled down and rotated away from instead of being invisible to the monitor.
+- **Worker heartbeat recovery is less trigger-happy.** Startup heartbeat timeout now matches the watchdog timeout, and a late worker gets one retry before being marked crashed and reloading the player.
+
+### Changed
+- Build validation now guards the newly direct worker-injected autoplay/hold dependencies, and tests cover emergency autoplay, ad-marked fallback rejection, empty-playlist hold recovery, dwell-window release, and heartbeat miss reset.
+
 ## [9.3.8] - 2026-06-07
 
 ### Fixed
