@@ -1,11 +1,11 @@
-// TTV AB v9.3.8 - Twitch Ad Blocker
+// TTV AB v9.4.0 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.3.8",
+    VERSION: "9.4.0",
     INTERNAL_VERSION: 216,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
@@ -622,6 +622,7 @@ function _$l(msg, type = "info") {
 
 const _$ar = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 const _$amr = /stitched-ad|X-TV-TWITCH-AD|\/adsquared\/|SCTE35-OUT|EXT-X-CUE-OUT|EXT-X-DATERANGE:CLASS="twitch-|"(?:MIDROLL|midroll)"/;
+const _EMPTY_SEGMENT_URL = "data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA";
 const _RESERVED_ROUTE_SEGMENTS = new Set([
     "browse",
     "clip",
@@ -989,6 +990,69 @@ function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
     })
         .join("\n");
 }
+function _createEmptyAdHoldPlaylist(text, info) {
+    const headerLines = _extractPlaylistHeaders(text)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    if (!headerLines.includes("#EXTM3U")) {
+        headerLines.unshift("#EXTM3U");
+    }
+    if (!headerLines.some((line) => line.startsWith("#EXT-X-VERSION:"))) {
+        headerLines.splice(1, 0, "#EXT-X-VERSION:7");
+    }
+    if (!headerLines.some((line) => line.startsWith("#EXT-X-TARGETDURATION:"))) {
+        headerLines.push("#EXT-X-TARGETDURATION:1");
+    }
+    let mediaSequenceIndex = -1;
+    let sourceMediaSequence = 0;
+    for (let i = 0; i < headerLines.length; i++) {
+        const match = headerLines[i]?.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/);
+        if (!match)
+            continue;
+        mediaSequenceIndex = i;
+        sourceMediaSequence = Number(match[1]) || 0;
+        break;
+    }
+    const previousHoldSequence = Math.max(0, Number(info?._EmptyAdHoldMediaSequence) || 0);
+    const nextHoldSequence = previousHoldSequence > sourceMediaSequence
+        ? previousHoldSequence + 1
+        : sourceMediaSequence + 1;
+    if (info) {
+        info._EmptyAdHoldMediaSequence = nextHoldSequence;
+    }
+    const mediaSequenceLine = `#EXT-X-MEDIA-SEQUENCE:${nextHoldSequence}`;
+    if (mediaSequenceIndex >= 0) {
+        headerLines[mediaSequenceIndex] = mediaSequenceLine;
+    }
+    else {
+        headerLines.push(mediaSequenceLine);
+    }
+    const emptySegmentUrl = new URL("/__ttvab_empty_hold_segment.mp4", "https://www.twitch.tv");
+    emptySegmentUrl.searchParams.set("seq", String(nextHoldSequence));
+    const mediaKey = typeof info?.MediaKey === "string" && info.MediaKey
+        ? info.MediaKey
+        : "unknown";
+    emptySegmentUrl.searchParams.set("media", mediaKey);
+    return [
+        ...headerLines,
+        "#EXT-X-DISCONTINUITY",
+        "#EXTINF:1.000,live",
+        emptySegmentUrl.href,
+    ].join("\n");
+}
+function _isEmptyAdHoldSegmentUrl(url) {
+    if (typeof url !== "string" || !url)
+        return false;
+    try {
+        const parsed = new URL(url, "https://www.twitch.tv");
+        return (parsed.hostname === "www.twitch.tv" &&
+            parsed.pathname === "/__ttvab_empty_hold_segment.mp4");
+    }
+    catch {
+        return false;
+    }
+}
 function _$sa(text, stripAll, info, skipAutoForceStrip = false) {
     const lines = text.split("\n");
     const len = lines.length;
@@ -1192,7 +1256,8 @@ function _$sa(text, stripAll, info, skipAutoForceStrip = false) {
             return recoverySource.m3u8;
         }
         _$l("Failed to find backup stream — no cached clean playlists available", "warning");
-        return text;
+        _$l("[Recovery] Empty playlist after stripping ads; serving empty hold segment", "warning");
+        return _createEmptyAdHoldPlaylist(text, info);
     }
     return result.join("\n");
 }
@@ -1852,6 +1917,7 @@ function _$rsa(info) {
     info._LastBackupSearchCompletedAt = 0;
     info._LoggedOfflineTransition = false;
     info._LqHoldStartAt = 0;
+    info._EmptyAdHoldMediaSequence = 0;
     info._SpliceStreamId = null;
     info._SpliceBoundarySeq = null;
     if (info._AdRequestController) {
@@ -2039,7 +2105,11 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
         : null;
     const safeStartIdx = Math.max(0, Math.min(configuredPlayerTypes.length, Number(startIdx) || 0));
     pushUnique(preferredPlayerType);
-    pushUnique(activePlayerType);
+    if (activePlayerType !== "autoplay" ||
+        _shouldTryAutoplayFirst(info) ||
+        _shouldHoldAutoplayBackupDuringAd(info)) {
+        pushUnique(activePlayerType);
+    }
     for (const playerType of configuredPlayerTypes.slice(safeStartIdx)) {
         pushUnique(playerType);
     }
@@ -2504,6 +2574,7 @@ function _createStreamInfo(context) {
         LastAdEndBounceAt: 0,
         LastActivityAt: Date.now(),
         LoggedBackupAdsByType: null,
+        _EmptyAdHoldMediaSequence: 0,
         _SpliceStreamId: null,
         _SpliceBoundarySeq: null,
     };
@@ -3003,7 +3074,7 @@ async function _processM3U8Core(url, text, realFetch) {
                     (typeof __TTVAB_STATE__.PinnedBackupPlayerType === "string" &&
                         __TTVAB_STATE__.PinnedBackupPlayerType) ||
                     null;
-                if (stalledType && stalledType !== "autoplay") {
+                if (stalledType) {
                     _markBackupPlayerRetryCooldown(info, stalledType, "stalled");
                     _$l(`[Trace] Pinned backup ${stalledType} stalled — cooling down and rotating to next type`, "warning");
                 }
@@ -3057,11 +3128,9 @@ async function _processM3U8Core(url, text, realFetch) {
         }
         info.ActiveBackupResolution = res?.Resolution || null;
         if (backupType) {
-            if (backupType !== "autoplay") {
-                __TTVAB_STATE__.PinnedBackupPlayerType = backupType;
-                __TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
-                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
-            }
+            __TTVAB_STATE__.PinnedBackupPlayerType = backupType;
+            __TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
+            __TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
         }
         if (info.ActiveBackupPlayerType !== backupType) {
             info.ActiveBackupPlayerType = backupType;
@@ -3235,7 +3304,7 @@ function _getFallbackPromotionPolicy({ candidateHasAds, candidateIsPlayable, sim
     if (candidateHasAds) {
         return {
             allowSelectedPromotion: false,
-            allowFallbackPromotion: true,
+            allowFallbackPromotion: false,
             reason: "ad-marked",
         };
     }
@@ -3254,6 +3323,8 @@ function _getResolvedLqHqHoldMinMs() {
         0);
 }
 function _shouldTryAutoplayFirst(info) {
+    if (__TTVAB_STATE__?.DisableAutoplayBackup)
+        return false;
     const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
     const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
     if (lqHoldStartAt > 0 &&
@@ -3265,11 +3336,20 @@ function _shouldTryAutoplayFirst(info) {
     return false;
 }
 function _shouldHoldAutoplayBackupDuringAd(info) {
+    if (__TTVAB_STATE__?.DisableAutoplayBackup)
+        return false;
+    const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
+    const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
+    const holdStartedAt = lqHoldStartAt || Number(info?.LastCleanBackupAt) || 0;
+    const withinLqHoldWindow = lqHoldMinMs > 0 &&
+        holdStartedAt > 0 &&
+        Date.now() - holdStartedAt < lqHoldMinMs;
     return Boolean(info?.IsShowingAd &&
         info?.ActiveBackupPlayerType === "autoplay" &&
         info?.LastCleanBackupPlayerType === "autoplay" &&
         typeof info?.LastCleanBackupM3U8 === "string" &&
         info.LastCleanBackupM3U8 &&
+        withinLqHoldWindow &&
         (Number(info.LastCleanBackupAt) || 0) >=
             Math.max(0, Number(info.VisibleAdStartedAt) || 0));
 }
@@ -3342,7 +3422,7 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
     }
     if (_shouldHoldAutoplayBackupDuringAd(info)) {
         playerTypes = ["autoplay"];
-        _$l("[Trace] Holding autoplay backup during current ad cycle; deferring HQ probe until ad-end", "info");
+        _$l("[Trace] Holding autoplay backup during LQ dwell; deferring HQ probe briefly", "info");
     }
     else if (_shouldTryAutoplayFirst(info)) {
         playerTypes = [
@@ -3352,9 +3432,10 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
         _$l("[Trace] LQ autoplay prioritized first for fast clean first-frame (seamless LQ→HQ hold)", "info");
     }
     else if (__TTVAB_STATE__.DisableAutoplayBackup &&
+        (__TTVAB_STATE__?.BackupPlayerTypes || []).includes("autoplay") &&
         !playerTypes.includes("autoplay")) {
         playerTypes.push("autoplay");
-        _$l("[Trace] LQ autoplay appended as last-resort fallback (toggle disabled, ensures seamless LQ→HQ hold)", "info");
+        _$l("[Trace] LQ autoplay appended as emergency last-resort after source backups", "info");
     }
     const playerTypesLen = playerTypes.length;
     const isDoingMinimalRequests = startIdx > 0 &&
@@ -3971,6 +4052,10 @@ function _$wf() {
             const shouldBlockCachedAdSegments = Boolean(__TTVAB_STATE__.CurrentAdMediaKey ||
                 __TTVAB_STATE__.CurrentAdChannel ||
                 __TTVAB_STATE__.SimulatedAdsDepth > 0);
+            if (typeof _isEmptyAdHoldSegmentUrl === "function" &&
+                _isEmptyAdHoldSegmentUrl(url)) {
+                return await realFetch(EMPTY_SEGMENT_URL);
+            }
             if (typeof _$kas === "function" &&
                 _$kas(url, {
                     includeCached: shouldBlockCachedAdSegments,
@@ -4096,6 +4181,8 @@ function _hookRevokeObjectURL() {
 const HW_MAX_RESTART = 3;
 const HW_WATCHDOG_INTERVAL_MS = 5000;
 const HW_PONG_TIMEOUT_MS = 15000;
+const HW_INITIAL_PONG_TIMEOUT_MS = 15000;
+const HW_MAX_MISSED_PONGS = 2;
 const HW_RECOVERY_COOLDOWN_MS = 30000;
 const HW_RECOVERY_STABLE_MS = 60000;
 let _lastWorkerRecoveryReloadAt = 0;
@@ -4185,6 +4272,7 @@ function _markWorkerPong(worker, now = Date.now()) {
     worker.__TTVABLastPongAt = now;
     if (!worker.__TTVABFirstPongAt)
         worker.__TTVABFirstPongAt = now;
+    worker.__TTVABMissedPongs = 0;
     _resetWorkerRecoveryStateIfStable(_getWorkerPlaybackContext(worker), now);
 }
 const pruneTrackedWorkers = (excludedWorkers = []) => {
@@ -4280,6 +4368,16 @@ function _startWorkerWatchdog() {
                 continue;
             const lastSeen = worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
             if (now - lastSeen > HW_PONG_TIMEOUT_MS) {
+                const missedPongs = Math.max(0, Number(worker.__TTVABMissedPongs) || 0) + 1;
+                worker.__TTVABMissedPongs = missedPongs;
+                if (missedPongs < HW_MAX_MISSED_PONGS) {
+                    _$l(`Worker heartbeat late (${missedPongs}/${HW_MAX_MISSED_PONGS}); pinging again`, "info");
+                    try {
+                        _postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+                    }
+                    catch { }
+                    continue;
+                }
                 worker.__TTVABCrashed = true;
                 _$l("Worker unresponsive (no pong)", "warning");
                 pruneTrackedWorkers([worker]);
@@ -4434,6 +4532,7 @@ function _$hw() {
                 const _$s = ${JSON.stringify(_$s)};
                 const _$ar = ${_$ar.toString()};
                 const _$amr = ${_$amr.toString()};
+                const _EMPTY_SEGMENT_URL = ${JSON.stringify(_EMPTY_SEGMENT_URL)};
                 ${_$l.toString()}
                 ${_createWorkerBridgeMessage.toString()}
                 ${_getWorkerBridgeMessage.toString()}
@@ -4462,6 +4561,8 @@ function _$hw() {
                 ${_$pka.toString()}
                 ${_absolutizePlaylistUrl.toString()}
                 ${_absolutizeMediaPlaylistUrls.toString()}
+                ${_createEmptyAdHoldPlaylist.toString()}
+                ${_isEmptyAdHoldSegmentUrl.toString()}
                 ${_$sa.toString()}
                 ${_extractPlaylistHeaders.toString()}
                 ${_$sv.toString()}
@@ -4733,7 +4834,7 @@ function _$hw() {
                     pruneTrackedWorkers([this]);
                     _installPageSideM3U8Override();
                     _attemptWorkerRestart(this, pagePlaybackContext);
-                }, 8000);
+                }, HW_INITIAL_PONG_TIMEOUT_MS);
                 this.addEventListener("message", (e) => {
                     const data = _getWorkerBridgeMessage(e.data);
                     if (data?.key === "Pong") {
@@ -4940,7 +5041,7 @@ function _$hw() {
                                     nextPinnedContext.MediaKey) {
                                 break;
                             }
-                            if (nextPinnedType && nextPinnedType !== "autoplay") {
+                            if (nextPinnedType) {
                                 __TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
                                 __TTVAB_STATE__.LastPinnedBackupPlayerType = nextPinnedType;
                             }
@@ -5113,6 +5214,7 @@ function _$hw() {
                 this.__TTVABLastPongAt = Date.now();
                 this.__TTVABFirstPongAt = 0;
                 this.__TTVABRestartAttempts = 0;
+                this.__TTVABMissedPongs = 0;
                 _rememberWorkerPageContext(this, pagePlaybackContext);
                 pruneTrackedWorkers();
                 _$s.workers.push(this);
