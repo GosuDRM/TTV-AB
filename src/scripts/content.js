@@ -7363,12 +7363,6 @@ function _checkPinnedBackupStall(player) {
     const now = Date.now();
     const stallThresholdMs = Math.max(500, Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000);
     const rearmCooldownMs = Math.max(stallThresholdMs * 2, Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000 * 2);
-    if (video.paused) {
-        _PinnedBackupStallState.firstObservedAt = 0;
-        _PinnedBackupStallState.lastCurrentTime = 0;
-        _PinnedBackupStallState.lastBufferedEnd = 0;
-        return;
-    }
     const bufferAdvanced = _PinnedBackupStallState.lastBufferedEnd > 0 &&
         bufferedEnd > _PinnedBackupStallState.lastBufferedEnd + 0.1;
     const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
