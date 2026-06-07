@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.3.8] - 2026-06-07
+
+### Fixed
+- **Worker crash recovery now has a real lifecycle.** Recovery attempts are counted per playback context instead of per Worker object, so repeated replacement workers cannot reset the cap and loop player reloads indefinitely.
+- **Missed worker heartbeats recover through the same player-reload path.** A worker that never replies is quarantined, the page-side M3U8 fallback is installed, and a context-checked recovery reload is scheduled so Twitch can create a fresh connected worker.
+- **SPA navigation no longer leaves crash recovery tied to an old channel.** Page context updates are mirrored onto tracked worker objects, and late messages from crashed workers are ignored.
+
+### Changed
+- The worker recovery cap now resets only after the replacement worker stays healthy for 60s, and tests cover the cap, stable reset, and page-context tracking behavior.
+
 ## [9.3.7] - 2026-06-07
 
 ### Fixed

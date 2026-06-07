@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.3.7-purple)
+![Version](https://img.shields.io/badge/version-9.3.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.3.7-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.3.8-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,10 +62,10 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
-### v9.3.7 — 2026-06-07
-- **Low-quality fallback no longer drains while searching for high quality.** Once the clean 360p fallback wins during an ad, the extension keeps refreshing that same live fallback for the rest of the ad cycle instead of blocking the playlist response while probing source-tier backups.
-- **Low quality → high quality recovery is smoother.** High-quality restoration now waits for the normal ad-end recovery path, avoiding the mid-ad source splice that could cause a short stall or decoder hitch.
-- **Build validation now covers the new worker helper.** The package build fails loudly if the autoplay-hold helper is referenced by backup search but not injected into Twitch's worker hook.
+### v9.3.8 — 2026-06-07
+- **Worker crash recovery is capped across replacement workers.** Recovery attempts are tracked per stream context, so repeated worker recreation cannot reset the limit and loop player reloads indefinitely.
+- **Missed worker heartbeats now use the full recovery path.** A worker that never replies is quarantined, degraded M3U8 fallback is installed, and the player is reloaded only after a current-page context check.
+- **Channel switches are safer during worker recovery.** Tracked workers now receive updated page context, and crashed workers cannot process late recovery messages after being removed.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
