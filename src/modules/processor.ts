@@ -31,6 +31,7 @@ function _resetStreamAdState(info) {
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
+	info._LoggedWhitelistByType = null;
 	info._BackupSearchStartedAt = 0;
 	info._LastBackupSearchCompletedAt = 0;
 	info._LoggedOfflineTransition = false;
@@ -857,6 +858,7 @@ function _createStreamInfo(context) {
 		LastNativeRecoveryReadyPlayerType: null,
 		NativeRecoveryCleanCount: 0,
 		ConsecutiveFailedNativeProbes: 0,
+		_LoggedWhitelistByType: null,
 		_BackupSearchCount: 0,
 		_BackupSearchErrorCount: 0,
 		_BackupSearchFailCount: 0,
@@ -1887,7 +1889,13 @@ async function _findBackupStream(
 			(__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(realPt),
 		);
 		if (_isBackupPlayerRetryCoolingDown(info, pt)) {
-			_log(`[Trace] Cooling down: ${pt}`, "info");
+			if (!info._LoggedWhitelistByType) {
+				info._LoggedWhitelistByType = new Set();
+			}
+			if (!info._LoggedWhitelistByType.has(`cooldown:${pt}`)) {
+				info._LoggedWhitelistByType.add(`cooldown:${pt}`);
+				_log(`[Trace] Cooling down: ${pt}`, "info");
+			}
 			continue;
 		}
 		_log(`[Trace] Checking: ${pt}`, "info");
@@ -1948,9 +1956,17 @@ async function _findBackupStream(
 										} catch {}
 									}
 								}
-								_log(
-									`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`,
-								);
+								{
+									if (!info._LoggedWhitelistByType) {
+										info._LoggedWhitelistByType = new Set();
+									}
+									if (!info._LoggedWhitelistByType.has(`whitelist:${pt}`)) {
+										info._LoggedWhitelistByType.add(`whitelist:${pt}`);
+										_log(
+											`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`,
+										);
+									}
+								}
 								while (info.BackupVariantUrls.size > 200) {
 									const first = info.BackupVariantUrls.values().next().value;
 									if (first !== undefined) info.BackupVariantUrls.delete(first);

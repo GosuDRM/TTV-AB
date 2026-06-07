@@ -118,6 +118,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		BackupEncodingsM3U8Cache: Object.create(null),
 		BackupVariantUrls: new Set<string>(),
 		LoggedBackupAdsByType: null,
+		_LoggedWhitelistByType: null,
 		Urls: Object.create(null),
 		ResolutionList: [],
 		ModifiedM3U8: null,
@@ -146,6 +147,7 @@ describe("_resetStreamAdState", () => {
 			IsHoldingBackupAfterAd: true,
 			HevcReloadPendingAfterHold: true,
 			ConsecutiveFailedNativeProbes: 4,
+			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 		});
 		fn(info);
 		expect(info.IsShowingAd).toBe(false);
@@ -157,6 +159,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
+		expect(info._LoggedWhitelistByType).toBe(null);
 	});
 
 	it("reports wasUsingModifiedM3U8 when active", () => {
