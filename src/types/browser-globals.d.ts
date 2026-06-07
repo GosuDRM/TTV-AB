@@ -66,6 +66,7 @@ interface Worker {
 	__TTVABLastPongAt?: number;
 	__TTVABFirstPongAt?: number;
 	__TTVABRestartAttempts?: number;
+	__TTVABMissedPongs?: number;
 	__TTVABPageMediaType?: string | null;
 	__TTVABPageChannel?: string | null;
 	__TTVABPageVodID?: string | null;

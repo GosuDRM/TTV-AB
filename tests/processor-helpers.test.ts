@@ -83,6 +83,10 @@ function T<T>(name: string): T {
 	return fn as T;
 }
 
+function getState() {
+	return g.__TTVAB_STATE__ as Record<string, unknown>;
+}
+
 function makeInfo(overrides: Record<string, unknown> = {}) {
 	return {
 		MediaType: "live",
@@ -130,6 +134,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_LastBackupSearchCompletedAt: 0,
 		_LoggedOfflineTransition: false,
 		_AdRequestController: null,
+		_EmptyAdHoldMediaSequence: 0,
 		_SpliceStreamId: null,
 		_SpliceBoundarySeq: null,
 		...overrides,
@@ -152,6 +157,7 @@ describe("_resetStreamAdState", () => {
 			HevcReloadPendingAfterHold: true,
 			ConsecutiveFailedNativeProbes: 4,
 			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
+			_EmptyAdHoldMediaSequence: 12,
 		});
 		fn(info);
 		expect(info.IsShowingAd).toBe(false);
@@ -164,6 +170,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
 		expect(info._LoggedWhitelistByType).toBe(null);
+		expect(info._EmptyAdHoldMediaSequence).toBe(0);
 	});
 
 	it("reports wasUsingModifiedM3U8 when active", () => {
@@ -295,14 +302,14 @@ describe("_getFallbackPromotionPolicy", () => {
 		expect(r.reason).toBe("not-playable");
 	});
 
-	it("allows fallback promotion for ad-marked candidates", () => {
+	it("denies fallback promotion for ad-marked candidates", () => {
 		const r = fn()({
 			candidateHasAds: true,
 			candidateIsPlayable: true,
 			simulatedAdsDepthSatisfied: true,
 		});
 		expect(r.allowSelectedPromotion).toBe(false);
-		expect(r.allowFallbackPromotion).toBe(true);
+		expect(r.allowFallbackPromotion).toBe(false);
 		expect(r.reason).toBe("ad-marked");
 	});
 
@@ -333,7 +340,6 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 		T<(info: Record<string, unknown>, startIdx?: number) => string[]>(
 			"_getOrderedBackupPlayerTypes",
 		);
-	const getState = () => g.__TTVAB_STATE__ as Record<string, unknown>;
 
 	it("excludes autoplay when LQ fallback is disabled (default)", () => {
 		getState().DisableAutoplayBackup = true;
@@ -344,6 +350,23 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 	it("includes autoplay when LQ fallback is enabled", () => {
 		getState().DisableAutoplayBackup = false;
 		const result = fn()(makeInfo());
+		expect(result).toContain("autoplay");
+	});
+
+	it("does not keep autoplay first after the LQ dwell window expires", () => {
+		getState().DisableAutoplayBackup = false;
+		const result = fn()(
+			makeInfo({
+				IsShowingAd: true,
+				ActiveBackupPlayerType: "autoplay",
+				LastCleanBackupPlayerType: "autoplay",
+				LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+				LastCleanBackupAt: Date.now() - 30000,
+				VisibleAdStartedAt: Date.now() - 31000,
+				_LqHoldStartAt: Date.now() - 30000,
+			}),
+		);
+		expect(result[0]).not.toBe("autoplay");
 		expect(result).toContain("autoplay");
 	});
 
@@ -370,6 +393,7 @@ describe("_shouldTryAutoplayFirst (LQ-hold-only)", () => {
 	});
 
 	it("holds LQ (autoplay) first while within the LQ→HQ dwell window", () => {
+		getState().DisableAutoplayBackup = false;
 		const info = makeInfo({
 			ActiveBackupPlayerType: "autoplay",
 			LastCleanBackupM3U8: "#EXTM3U8",
@@ -378,9 +402,11 @@ describe("_shouldTryAutoplayFirst (LQ-hold-only)", () => {
 			_LqHoldStartAt: Date.now() - 2000,
 		});
 		expect(fn()(info)).toBe(true);
+		getState().DisableAutoplayBackup = true;
 	});
 
 	it("allows the LQ→HQ swap after the dwell window elapses", () => {
+		getState().DisableAutoplayBackup = false;
 		const info = makeInfo({
 			ActiveBackupPlayerType: "autoplay",
 			LastCleanBackupM3U8: "#EXTM3U8",
@@ -389,6 +415,7 @@ describe("_shouldTryAutoplayFirst (LQ-hold-only)", () => {
 			_LqHoldStartAt: Date.now() - 30000,
 		});
 		expect(fn()(info)).toBe(false);
+		getState().DisableAutoplayBackup = true;
 	});
 });
 
@@ -398,8 +425,9 @@ describe("_shouldHoldAutoplayBackupDuringAd", () => {
 			"_shouldHoldAutoplayBackupDuringAd",
 		);
 
-	it("keeps autoplay as the only in-ad candidate after it wins the current ad cycle", () => {
-		const startedAt = Date.now() - 10000;
+	it("keeps autoplay as the only in-ad candidate during the LQ dwell window", () => {
+		getState().DisableAutoplayBackup = false;
+		const startedAt = Date.now() - 2000;
 		const info = makeInfo({
 			IsShowingAd: true,
 			ActiveBackupPlayerType: "autoplay",
@@ -407,11 +435,14 @@ describe("_shouldHoldAutoplayBackupDuringAd", () => {
 			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
 			LastCleanBackupAt: startedAt + 1000,
 			VisibleAdStartedAt: startedAt,
+			_LqHoldStartAt: startedAt,
 		});
 		expect(fn()(info)).toBe(true);
+		getState().DisableAutoplayBackup = true;
 	});
 
 	it("does not hold stale autoplay from a prior ad cycle", () => {
+		getState().DisableAutoplayBackup = false;
 		const info = makeInfo({
 			IsShowingAd: true,
 			ActiveBackupPlayerType: "autoplay",
@@ -421,6 +452,199 @@ describe("_shouldHoldAutoplayBackupDuringAd", () => {
 			VisibleAdStartedAt: 5000,
 		});
 		expect(fn()(info)).toBe(false);
+		getState().DisableAutoplayBackup = true;
+	});
+
+	it("does not hold autoplay when LQ fallback is disabled", () => {
+		getState().DisableAutoplayBackup = true;
+		const startedAt = Date.now() - 2000;
+		const info = makeInfo({
+			IsShowingAd: true,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+			LastCleanBackupAt: startedAt + 1000,
+			VisibleAdStartedAt: startedAt,
+			_LqHoldStartAt: startedAt,
+		});
+		expect(fn()(info)).toBe(false);
+	});
+
+	it("releases autoplay after the LQ dwell window elapses", () => {
+		getState().DisableAutoplayBackup = false;
+		const startedAt = Date.now() - 30000;
+		const info = makeInfo({
+			IsShowingAd: true,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+			LastCleanBackupAt: startedAt + 1000,
+			VisibleAdStartedAt: startedAt,
+			_LqHoldStartAt: startedAt,
+		});
+		expect(fn()(info)).toBe(false);
+		getState().DisableAutoplayBackup = true;
+	});
+});
+
+describe("_findBackupStream fallback policy", () => {
+	const findBackupStream = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: (url: string, options?: unknown) => Promise<Response>,
+				startIdx?: number,
+				currentResolution?: Record<string, unknown>,
+			) => Promise<{
+				type: string | null;
+				m3u8: string | null;
+				isFallback: boolean;
+			}>
+		>("_findBackupStream");
+	const currentResolution = {
+		Name: "720p",
+		Resolution: "1280x720",
+		FrameRate: 60,
+	};
+	const masterPlaylist = (playerType: string) =>
+		[
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p"',
+			`https://cdn.example/${playerType}/index.m3u8`,
+		].join("\n");
+	const adPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad"',
+		"#EXTINF:2.000,",
+		"https://edge.example/stitched-ad-1.ts",
+	].join("\n");
+	const cleanPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXTINF:2.000,live",
+		"https://edge.example/live-1.ts",
+	].join("\n");
+
+	it("tries autoplay only as an emergency candidate when source backups are ad-marked", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["embed", "autoplay"];
+		state.DisableAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo(),
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					if (href.includes("/embed/")) {
+						return new Response(adPlaylist, { status: 200 });
+					}
+					if (href.includes("/autoplay/")) {
+						return new Response(cleanPlaylist, { status: 200 });
+					}
+					return new Response(null, { status: 404 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["embed", "autoplay"]);
+			expect(result.type).toBe("autoplay");
+			expect(result.m3u8).toBe(cleanPlaylist);
+			expect(result.isFallback).toBe(false);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previousGetToken;
+			}
+			if (previousExtract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previousExtract;
+			}
+		}
+	});
+
+	it("does not promote an ad-marked source playlist when no clean fallback exists", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["embed"];
+		state.DisableAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo(),
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					if (href.includes("/embed/")) {
+						return new Response(adPlaylist, { status: 200 });
+					}
+					return new Response(null, { status: 404 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["embed"]);
+			expect(result).toEqual({ type: null, m3u8: null, isFallback: false });
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previousGetToken;
+			}
+			if (previousExtract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previousExtract;
+			}
+		}
 	});
 });
 

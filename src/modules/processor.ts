@@ -36,6 +36,7 @@ function _resetStreamAdState(info) {
 	info._LastBackupSearchCompletedAt = 0;
 	info._LoggedOfflineTransition = false;
 	info._LqHoldStartAt = 0;
+	info._EmptyAdHoldMediaSequence = 0;
 	info._SpliceStreamId = null;
 	info._SpliceBoundarySeq = null;
 	if (info._AdRequestController) {
@@ -274,7 +275,13 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 	);
 
 	pushUnique(preferredPlayerType);
-	pushUnique(activePlayerType);
+	if (
+		activePlayerType !== "autoplay" ||
+		_shouldTryAutoplayFirst(info) ||
+		_shouldHoldAutoplayBackupDuringAd(info)
+	) {
+		pushUnique(activePlayerType);
+	}
 	for (const playerType of configuredPlayerTypes.slice(safeStartIdx)) {
 		pushUnique(playerType);
 	}
@@ -871,6 +878,7 @@ function _createStreamInfo(context) {
 		LastAdEndBounceAt: 0,
 		LastActivityAt: Date.now(),
 		LoggedBackupAdsByType: null,
+		_EmptyAdHoldMediaSequence: 0,
 		_SpliceStreamId: null,
 		_SpliceBoundarySeq: null,
 	};
@@ -1532,7 +1540,7 @@ async function _processM3U8Core(url, text, realFetch) {
 					(typeof __TTVAB_STATE__.PinnedBackupPlayerType === "string" &&
 						__TTVAB_STATE__.PinnedBackupPlayerType) ||
 					null;
-				if (stalledType && stalledType !== "autoplay") {
+				if (stalledType) {
 					_markBackupPlayerRetryCooldown(info, stalledType, "stalled");
 					_log(
 						`[Trace] Pinned backup ${stalledType} stalled — cooling down and rotating to next type`,
@@ -1608,11 +1616,9 @@ async function _processM3U8Core(url, text, realFetch) {
 
 		info.ActiveBackupResolution = res?.Resolution || null;
 		if (backupType) {
-			if (backupType !== "autoplay") {
-				__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
-				__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
-				__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
-			}
+			__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
 		}
 		if (info.ActiveBackupPlayerType !== backupType) {
 			info.ActiveBackupPlayerType = backupType;
@@ -1832,7 +1838,7 @@ function _getFallbackPromotionPolicy({
 	if (candidateHasAds) {
 		return {
 			allowSelectedPromotion: false,
-			allowFallbackPromotion: true,
+			allowFallbackPromotion: false,
 			reason: "ad-marked",
 		};
 	}
@@ -1857,6 +1863,7 @@ function _getResolvedLqHqHoldMinMs() {
 }
 
 function _shouldTryAutoplayFirst(info) {
+	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
 	const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
 	const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
 	if (
@@ -1871,12 +1878,22 @@ function _shouldTryAutoplayFirst(info) {
 }
 
 function _shouldHoldAutoplayBackupDuringAd(info) {
+	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
+	const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
+	const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
+	const holdStartedAt = lqHoldStartAt || Number(info?.LastCleanBackupAt) || 0;
+	const withinLqHoldWindow =
+		lqHoldMinMs > 0 &&
+		holdStartedAt > 0 &&
+		Date.now() - holdStartedAt < lqHoldMinMs;
+
 	return Boolean(
 		info?.IsShowingAd &&
 			info?.ActiveBackupPlayerType === "autoplay" &&
 			info?.LastCleanBackupPlayerType === "autoplay" &&
 			typeof info?.LastCleanBackupM3U8 === "string" &&
 			info.LastCleanBackupM3U8 &&
+			withinLqHoldWindow &&
 			(Number(info.LastCleanBackupAt) || 0) >=
 				Math.max(0, Number(info.VisibleAdStartedAt) || 0),
 	);
@@ -1959,7 +1976,7 @@ async function _findBackupStream(
 	if (_shouldHoldAutoplayBackupDuringAd(info)) {
 		playerTypes = ["autoplay"];
 		_log(
-			"[Trace] Holding autoplay backup during current ad cycle; deferring HQ probe until ad-end",
+			"[Trace] Holding autoplay backup during LQ dwell; deferring HQ probe briefly",
 			"info",
 		);
 	} else if (_shouldTryAutoplayFirst(info)) {
@@ -1973,11 +1990,12 @@ async function _findBackupStream(
 		);
 	} else if (
 		__TTVAB_STATE__.DisableAutoplayBackup &&
+		(__TTVAB_STATE__?.BackupPlayerTypes || []).includes("autoplay") &&
 		!playerTypes.includes("autoplay")
 	) {
 		playerTypes.push("autoplay");
 		_log(
-			"[Trace] LQ autoplay appended as last-resort fallback (toggle disabled, ensures seamless LQ→HQ hold)",
+			"[Trace] LQ autoplay appended as emergency last-resort after source backups",
 			"info",
 		);
 	}

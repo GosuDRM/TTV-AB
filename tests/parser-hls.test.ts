@@ -146,7 +146,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		>("_stripAds");
 	const getState = () => g.__TTVAB_STATE__ as Record<string, unknown>;
 
-	it("returns original text when stripping leaves nothing and no clean backup is cached", () => {
+	it("serves an empty hold segment when stripping leaves nothing and no clean backup is cached", () => {
 		const st = getState();
 		const originalSimulated = st.SimulatedAdsDepth;
 		const originalAllSegments = st.AllSegmentsAreAdSegments;
@@ -173,11 +173,35 @@ describe("_stripAds (empty-playlist recovery)", () => {
 			"",
 		].join("\n");
 
-		const result = fn()(adPlaylist, true, makeInfo(), false);
-		expect(result).toBe(adPlaylist);
+		const info = makeInfo();
+		const result = fn()(adPlaylist, true, info, false);
+		expect(result).not.toBe(adPlaylist);
+		expect(result).not.toContain("stitched-ad");
+		expect(result).not.toContain("https://edge/stitched-ad");
+		expect(result).toContain("#EXT-X-DISCONTINUITY");
+		expect(result).toContain("#EXTINF:1.000,live");
+		expect(result).toContain(
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+		);
+		expect(result).not.toContain("data:video/mp4;base64,");
+		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:1");
+
+		const nextResult = fn()(adPlaylist, true, info, false);
+		expect(nextResult).toContain("#EXT-X-MEDIA-SEQUENCE:2");
 
 		st.SimulatedAdsDepth = originalSimulated;
 		st.AllSegmentsAreAdSegments = originalAllSegments;
+	});
+
+	it("recognizes only synthetic empty hold segment URLs", () => {
+		const fn = T<(url: string) => boolean>("_isEmptyAdHoldSegmentUrl");
+		expect(
+			fn("https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1"),
+		).toBe(true);
+		expect(
+			fn("https://static-cdn.jtvnw.net/__ttvab_empty_hold_segment.mp4"),
+		).toBe(false);
+		expect(fn("https://www.twitch.tv/normal-segment.mp4")).toBe(false);
 	});
 
 	function makeInfo(overrides: Record<string, unknown> = {}) {

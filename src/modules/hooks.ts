@@ -337,6 +337,12 @@ function _hookWorkerFetch() {
 					__TTVAB_STATE__.SimulatedAdsDepth > 0,
 			);
 			if (
+				typeof _isEmptyAdHoldSegmentUrl === "function" &&
+				_isEmptyAdHoldSegmentUrl(url)
+			) {
+				return await realFetch(EMPTY_SEGMENT_URL);
+			}
+			if (
 				typeof _isKnownAdSegmentUrl === "function" &&
 				_isKnownAdSegmentUrl(url, {
 					includeCached: shouldBlockCachedAdSegments,
@@ -497,6 +503,8 @@ function _hookRevokeObjectURL() {
 const HW_MAX_RESTART = 3;
 const HW_WATCHDOG_INTERVAL_MS = 5000;
 const HW_PONG_TIMEOUT_MS = 15000;
+const HW_INITIAL_PONG_TIMEOUT_MS = 15000;
+const HW_MAX_MISSED_PONGS = 2;
 const HW_RECOVERY_COOLDOWN_MS = 30000;
 const HW_RECOVERY_STABLE_MS = 60000;
 let _lastWorkerRecoveryReloadAt = 0;
@@ -596,6 +604,7 @@ function _markWorkerPong(worker, now = Date.now()) {
 	}
 	worker.__TTVABLastPongAt = now;
 	if (!worker.__TTVABFirstPongAt) worker.__TTVABFirstPongAt = now;
+	worker.__TTVABMissedPongs = 0;
 	_resetWorkerRecoveryStateIfStable(_getWorkerPlaybackContext(worker), now);
 }
 
@@ -707,6 +716,19 @@ function _startWorkerWatchdog() {
 			const lastSeen =
 				worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
 			if (now - lastSeen > HW_PONG_TIMEOUT_MS) {
+				const missedPongs =
+					Math.max(0, Number(worker.__TTVABMissedPongs) || 0) + 1;
+				worker.__TTVABMissedPongs = missedPongs;
+				if (missedPongs < HW_MAX_MISSED_PONGS) {
+					_log(
+						`Worker heartbeat late (${missedPongs}/${HW_MAX_MISSED_PONGS}); pinging again`,
+						"info",
+					);
+					try {
+						_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+					} catch {}
+					continue;
+				}
 				worker.__TTVABCrashed = true;
 				_log("Worker unresponsive (no pong)", "warning");
 				pruneTrackedWorkers([worker]);
@@ -886,6 +908,7 @@ function _hookWorker() {
                 const _S = ${JSON.stringify(_S)};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
                 const _AD_METADATA_RE = ${_AD_METADATA_RE.toString()};
+                const _EMPTY_SEGMENT_URL = ${JSON.stringify(_EMPTY_SEGMENT_URL)};
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}
                 ${_getWorkerBridgeMessage.toString()}
@@ -914,6 +937,8 @@ function _hookWorker() {
                 ${_playlistHasKnownAdSegments.toString()}
                 ${_absolutizePlaylistUrl.toString()}
                 ${_absolutizeMediaPlaylistUrls.toString()}
+                ${_createEmptyAdHoldPlaylist.toString()}
+                ${_isEmptyAdHoldSegmentUrl.toString()}
                 ${_stripAds.toString()}
                 ${_extractPlaylistHeaders.toString()}
                 ${_getStreamVariantInfo.toString()}
@@ -1192,7 +1217,7 @@ function _hookWorker() {
 					pruneTrackedWorkers([this]);
 					_installPageSideM3U8Override();
 					_attemptWorkerRestart(this, pagePlaybackContext);
-				}, 8000);
+				}, HW_INITIAL_PONG_TIMEOUT_MS);
 				this.addEventListener("message", (e) => {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (data?.key === "Pong") {
@@ -1434,7 +1459,7 @@ function _hookWorker() {
 							) {
 								break;
 							}
-							if (nextPinnedType && nextPinnedType !== "autoplay") {
+							if (nextPinnedType) {
 								__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
 								__TTVAB_STATE__.LastPinnedBackupPlayerType = nextPinnedType;
 							}
@@ -1660,6 +1685,7 @@ function _hookWorker() {
 				this.__TTVABLastPongAt = Date.now();
 				this.__TTVABFirstPongAt = 0;
 				this.__TTVABRestartAttempts = 0;
+				this.__TTVABMissedPongs = 0;
 				_rememberWorkerPageContext(this, pagePlaybackContext);
 				pruneTrackedWorkers();
 				_S.workers.push(this);

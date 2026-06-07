@@ -3,6 +3,8 @@
 const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 const _AD_METADATA_RE =
 	/stitched-ad|X-TV-TWITCH-AD|\/adsquared\/|SCTE35-OUT|EXT-X-CUE-OUT|EXT-X-DATERANGE:CLASS="twitch-|"(?:MIDROLL|midroll)"/;
+const _EMPTY_SEGMENT_URL =
+	"data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA";
 const _RESERVED_ROUTE_SEGMENTS = new Set([
 	"browse",
 	"clip",
@@ -440,6 +442,82 @@ function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
 		.join("\n");
 }
 
+function _createEmptyAdHoldPlaylist(text, info) {
+	const headerLines = _extractPlaylistHeaders(text)
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	if (!headerLines.includes("#EXTM3U")) {
+		headerLines.unshift("#EXTM3U");
+	}
+	if (!headerLines.some((line) => line.startsWith("#EXT-X-VERSION:"))) {
+		headerLines.splice(1, 0, "#EXT-X-VERSION:7");
+	}
+	if (!headerLines.some((line) => line.startsWith("#EXT-X-TARGETDURATION:"))) {
+		headerLines.push("#EXT-X-TARGETDURATION:1");
+	}
+
+	let mediaSequenceIndex = -1;
+	let sourceMediaSequence = 0;
+	for (let i = 0; i < headerLines.length; i++) {
+		const match = headerLines[i]?.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/);
+		if (!match) continue;
+		mediaSequenceIndex = i;
+		sourceMediaSequence = Number(match[1]) || 0;
+		break;
+	}
+
+	const previousHoldSequence = Math.max(
+		0,
+		Number(info?._EmptyAdHoldMediaSequence) || 0,
+	);
+	const nextHoldSequence =
+		previousHoldSequence > sourceMediaSequence
+			? previousHoldSequence + 1
+			: sourceMediaSequence + 1;
+	if (info) {
+		info._EmptyAdHoldMediaSequence = nextHoldSequence;
+	}
+
+	const mediaSequenceLine = `#EXT-X-MEDIA-SEQUENCE:${nextHoldSequence}`;
+	if (mediaSequenceIndex >= 0) {
+		headerLines[mediaSequenceIndex] = mediaSequenceLine;
+	} else {
+		headerLines.push(mediaSequenceLine);
+	}
+
+	const emptySegmentUrl = new URL(
+		"/__ttvab_empty_hold_segment.mp4",
+		"https://www.twitch.tv",
+	);
+	emptySegmentUrl.searchParams.set("seq", String(nextHoldSequence));
+	const mediaKey =
+		typeof info?.MediaKey === "string" && info.MediaKey
+			? info.MediaKey
+			: "unknown";
+	emptySegmentUrl.searchParams.set("media", mediaKey);
+
+	return [
+		...headerLines,
+		"#EXT-X-DISCONTINUITY",
+		"#EXTINF:1.000,live",
+		emptySegmentUrl.href,
+	].join("\n");
+}
+
+function _isEmptyAdHoldSegmentUrl(url) {
+	if (typeof url !== "string" || !url) return false;
+	try {
+		const parsed = new URL(url, "https://www.twitch.tv");
+		return (
+			parsed.hostname === "www.twitch.tv" &&
+			parsed.pathname === "/__ttvab_empty_hold_segment.mp4"
+		);
+	} catch {
+		return false;
+	}
+}
+
 function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	const lines = text.split("\n");
 	const len = lines.length;
@@ -696,7 +774,11 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 			"Failed to find backup stream — no cached clean playlists available",
 			"warning",
 		);
-		return text;
+		_log(
+			"[Recovery] Empty playlist after stripping ads; serving empty hold segment",
+			"warning",
+		);
+		return _createEmptyAdHoldPlaylist(text, info);
 	}
 
 	return result.join("\n");
