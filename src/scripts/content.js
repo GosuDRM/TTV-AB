@@ -4452,6 +4452,9 @@ function _$hw() {
                                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = nextPinnedContext.MediaKey;
                             }
                             break;
+                        case 'UpdateBackupSearchForceRefresh':
+                            __TTVAB_STATE__.BackupSearchForceRefreshAt = Number(data.value) || 0;
+                            break;
                         case 'ResetPlaybackRecoveryState':
                             __TTVAB_STATE__.HasTriggeredPlayerReload = false;
                             __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
@@ -7387,7 +7390,8 @@ function _checkPinnedBackupStall(player) {
     _PinnedBackupStallState.lastForceRefreshAt = now;
     __TTVAB_STATE__.BackupSearchForceRefreshAt = now;
     __TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
-    _$l(`Pinned backup stalled (${__TTVAB_STATE__.PinnedBackupPlayerType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, frozen for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`, "warning");
+    _$bw({ key: "UpdateBackupSearchForceRefresh", value: now });
+    _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, frozen for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`, "warning");
 }
 function _$mpb() {
     function check() {
