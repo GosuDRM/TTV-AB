@@ -86,6 +86,13 @@ const _POST_AD_GRACE_PAUSE_RESUME_COOLDOWN_MS = 1500;
 const _VISIBILITY_RESUME_RETRY_DELAYS_MS = [80, 250, 700, 1500];
 const _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS = [120, 500, 1500, 3000];
 const _SECONDARY_PLAYER_HANDOFF_WINDOW_MS = 2700000;
+const _PinnedBackupStallState = {
+	firstObservedAt: 0,
+	lastCurrentTime: 0,
+	lastBufferedEnd: 0,
+	lastForceRefreshAt: 0,
+	lastPinnedType: null,
+};
 const _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS = [0, 120, 450, 1000];
 const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
 	'[data-a-target="player-play-pause-button"]',
@@ -2731,6 +2738,94 @@ function _doPlayerTask(
 	return false;
 }
 
+function _checkPinnedBackupStall(player) {
+	const _resetStallState = () => {
+		_PinnedBackupStallState.firstObservedAt = 0;
+		_PinnedBackupStallState.lastCurrentTime = 0;
+		_PinnedBackupStallState.lastBufferedEnd = 0;
+		_PinnedBackupStallState.lastPinnedType = null;
+	};
+	if (!__TTVAB_STATE__?.IsBufferFixEnabled) {
+		_resetStallState();
+		return;
+	}
+	const pinnedType = __TTVAB_STATE__.PinnedBackupPlayerType;
+	if (!pinnedType) {
+		_resetStallState();
+		return;
+	}
+	if (_PinnedBackupStallState.lastPinnedType !== pinnedType) {
+		_resetStallState();
+		_PinnedBackupStallState.lastPinnedType = pinnedType;
+	}
+	const video = player?.getHTMLVideoElement?.() || null;
+	if (
+		!(video instanceof HTMLMediaElement) ||
+		video.ended ||
+		video.paused ||
+		Number(video.readyState) < 1
+	) {
+		_PinnedBackupStallState.firstObservedAt = 0;
+		_PinnedBackupStallState.lastCurrentTime = 0;
+		_PinnedBackupStallState.lastBufferedEnd = 0;
+		return;
+	}
+	const currentTime = Number(video.currentTime) || 0;
+	const bufferedEnd =
+		video.buffered && video.buffered.length > 0
+			? video.buffered.end(video.buffered.length - 1)
+			: 0;
+	const now = Date.now();
+	const stallThresholdMs = Math.max(
+		500,
+		Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000,
+	);
+	const rearmCooldownMs = Math.max(
+		stallThresholdMs * 2,
+		Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000 * 2,
+	);
+
+	const timeAdvanced =
+		_PinnedBackupStallState.lastCurrentTime > 0 &&
+		currentTime > _PinnedBackupStallState.lastCurrentTime + 0.05;
+	const bufferAdvanced =
+		_PinnedBackupStallState.lastBufferedEnd > 0 &&
+		bufferedEnd > _PinnedBackupStallState.lastBufferedEnd + 0.1;
+
+	if (timeAdvanced || bufferAdvanced) {
+		_PinnedBackupStallState.firstObservedAt = 0;
+		_PinnedBackupStallState.lastCurrentTime = currentTime;
+		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
+		return;
+	}
+
+	if (_PinnedBackupStallState.firstObservedAt === 0) {
+		_PinnedBackupStallState.firstObservedAt = now;
+		_PinnedBackupStallState.lastCurrentTime = currentTime;
+		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
+		return;
+	}
+
+	if (
+		now - _PinnedBackupStallState.lastForceRefreshAt < rearmCooldownMs ||
+		__TTVAB_STATE__.BackupSearchForceRefreshAt > now - rearmCooldownMs
+	) {
+		return;
+	}
+
+	if (now - _PinnedBackupStallState.firstObservedAt < stallThresholdMs) {
+		return;
+	}
+
+	_PinnedBackupStallState.lastForceRefreshAt = now;
+	__TTVAB_STATE__.BackupSearchForceRefreshAt = now;
+	__TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
+	_log(
+		`Pinned backup stalled (${__TTVAB_STATE__.PinnedBackupPlayerType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, frozen for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`,
+		"warning",
+	);
+}
+
 function _monitorPlayerBuffering() {
 	function check() {
 		_playerBufferMonitorTimer = null;
@@ -2795,6 +2890,25 @@ function _monitorPlayerBuffering() {
 		}
 
 		if (hasActiveAdContext) {
+			if (
+				__TTVAB_STATE__.PinnedBackupPlayerType &&
+				Number(__TTVAB_STATE__.PinnedBackupStallPollMs) > 0
+			) {
+				let pinPlayer = _cachedPlayerRef?.player || null;
+				if (!pinPlayer) {
+					const fresh = _getPlayerAndState();
+					if (fresh.player && fresh.state) {
+						pinPlayer = fresh.player;
+					}
+				}
+				if (pinPlayer) {
+					_checkPinnedBackupStall(pinPlayer);
+				}
+			} else {
+				_PinnedBackupStallState.firstObservedAt = 0;
+				_PinnedBackupStallState.lastCurrentTime = 0;
+				_PinnedBackupStallState.lastBufferedEnd = 0;
+			}
 			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, nextDelay);
 			return;

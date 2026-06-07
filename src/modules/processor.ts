@@ -1510,11 +1510,22 @@ async function _processM3U8Core(url, text, realFetch) {
 			Date.now() - info._LastBackupSearchCompletedAt < 15000 &&
 			!_isRecentPostAdReentry(info)
 		) {
-			if (info.LastCleanBackupM3U8) {
+			const forceRefreshAt =
+				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
+			const cacheStamp = info._LastBackupSearchCompletedAt || 0;
+			if (forceRefreshAt > 0 && forceRefreshAt >= cacheStamp - 1) {
+				__TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
+				info._LastBackupSearchCompletedAt = 0;
+				_log(
+					`[Trace] Bypassing backup cache: pinned backup stalled (${Math.round((Date.now() - forceRefreshAt) / 100) / 10}s ago)`,
+					"warning",
+				);
+			} else if (info.LastCleanBackupM3U8) {
 				info.IsUsingBackupStream = true;
 				return info.LastCleanBackupM3U8;
+			} else {
+				return text;
 			}
-			return text;
 		}
 
 		let {
@@ -1956,16 +1967,14 @@ async function _findBackupStream(
 										} catch {}
 									}
 								}
-								{
-									if (!info._LoggedWhitelistByType) {
-										info._LoggedWhitelistByType = new Set();
-									}
-									if (!info._LoggedWhitelistByType.has(`whitelist:${pt}`)) {
-										info._LoggedWhitelistByType.add(`whitelist:${pt}`);
-										_log(
-											`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`,
-										);
-									}
+								if (!info._LoggedWhitelistByType) {
+									info._LoggedWhitelistByType = new Set();
+								}
+								if (!info._LoggedWhitelistByType.has(`whitelist:${pt}`)) {
+									info._LoggedWhitelistByType.add(`whitelist:${pt}`);
+									_log(
+										`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`,
+									);
 								}
 								while (info.BackupVariantUrls.size > 200) {
 									const first = info.BackupVariantUrls.values().next().value;
