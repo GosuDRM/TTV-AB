@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.3.6] - 2026-06-07
+
+### Fixed
+- **Occasional loading circle during ad breaks is gone.** When the extension swapped to a clean backup stream, it captured that backup's media playlist once and replayed the exact same bytes on every subsequent playlist poll for up to 15s (and 4s/20s in the silent-hold and ad-end-wait paths). A live HLS media playlist has to keep advancing — new segments, a higher `#EXT-X-MEDIA-SEQUENCE` — roughly every target-duration (~2s); a frozen snapshot let the player buffer only the ~4s of segments it contained and then starve, leaving the playhead stuck (Twitch's own player logged `Playhead stalling at 3.95, buffer end 3.97` for tens of seconds). The active backup variant's media playlist is now re-fetched on the live cadence (`_BACKUP_MEDIA_REFRESH_MS`, 2s) in all three substitution paths, so the buffer keeps growing the way it would on a real live stream.
+- **A stalled backup now rotates to a working type instead of looping on the broken one.** When the playhead-stall watcher fired, the forced re-search re-ordered the stalled type to the front and re-selected it; after 3 attempts it logged "re-searches exhausted, leaving stream as-is" and stopped, so the stream only recovered ~40s later when an unrelated ad-marked cooldown happened to free the type. The stall force-refresh now puts the stalled type on a short cooldown (`"stalled"`, 10s) so the very next search skips it and advances to the next type (e.g. `site` → `embed`).
+
+### Changed
+- **Playback recovery now runs during ad breaks, not only between them ([#33](https://github.com/GosuDRM/TTV-AB/issues/33)).** All of the video-element recovery (pause/play nudge, live-edge reload) lived behind a guard that returned early whenever an ad was active, so a frozen backup mid-ad had no element-level recovery at all — the only in-ad action was a source re-search. A new in-ad watchdog samples the video element during ad cycles; if the playhead stays frozen on a drained buffer (buffer end within the live-edge danger zone) for ~5s it issues a pause/play nudge, repeats once, then reloads the player at ~15s — regardless of ad state. Worst-case recovery drops from ~40s to ~15s, and most stalls are now avoided entirely by the live playlist refresh above.
+
 ## [9.3.4] - 2026-06-07
 
 ### Fixed
