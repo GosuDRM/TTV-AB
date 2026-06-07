@@ -1,12 +1,12 @@
-// TTV AB v9.3.0 - Twitch Ad Blocker
+// TTV AB v9.3.2 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.3.0",
-    INTERNAL_VERSION: 208,
+    VERSION: "9.3.2",
+    INTERNAL_VERSION: 210,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -33,6 +33,7 @@ const _$c = {
     RELOAD_AFTER_AD: true,
     REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN: false,
     PLAYER_BUFFERING_DO_PLAYER_RELOAD: false,
+    LQ_HQ_HOLD_MIN_MS: 8000,
 };
 
 "use strict";
@@ -450,6 +451,7 @@ function _$ds(scope) {
         AdEndMinNativeRecoveryProbes: _$c.AD_END_MIN_NATIVE_RECOVERY_PROBES ?? 3,
         AdEndNativeRecoveryProbeCooldownMs: _$c.AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS ?? 750,
         AdRecoveryReloadCooldownMs: _$c.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
+        LqHqHoldMinMs: _$c.LQ_HQ_HOLD_MIN_MS ?? 8000,
         HasTriggeredPlayerReload: false,
         PendingTriggeredPlayerReloadChannel: null,
         PendingTriggeredPlayerReloadMediaKey: null,
@@ -1835,6 +1837,9 @@ function _$rsa(info) {
     info._BackupSearchStartedAt = 0;
     info._LastBackupSearchCompletedAt = 0;
     info._LoggedOfflineTransition = false;
+    info._LqHoldStartAt = 0;
+    info._SpliceStreamId = null;
+    info._SpliceBoundarySeq = null;
     if (info._AdRequestController) {
         info._AdRequestController.abort();
         info._AdRequestController = null;
@@ -2218,6 +2223,91 @@ function _$im(text, incrementBy) {
         return match;
     });
 }
+function _parsePlaylistFirstMediaSequence(text) {
+    if (typeof text !== "string")
+        return null;
+    const m = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
+    if (!m)
+        return null;
+    const seq = parseInt(m[1], 10);
+    return Number.isNaN(seq) ? null : seq;
+}
+function _parsePlaylistDiscontinuitySequence(text) {
+    if (typeof text !== "string")
+        return 0;
+    const m = text.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/);
+    if (!m)
+        return 0;
+    const seq = parseInt(m[1], 10);
+    return Number.isNaN(seq) ? 0 : seq;
+}
+function _setPlaylistDiscontinuitySequence(lines, value) {
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith("#EXT-X-DISCONTINUITY-SEQUENCE:")) {
+            lines[i] = `#EXT-X-DISCONTINUITY-SEQUENCE:${value}`;
+            return;
+        }
+    }
+    let at = 0;
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith("#EXT-X-MEDIA-SEQUENCE:")) {
+            at = i + 1;
+            break;
+        }
+        if (lines[i].startsWith("#EXTM3U"))
+            at = i + 1;
+    }
+    lines.splice(at, 0, `#EXT-X-DISCONTINUITY-SEQUENCE:${value}`);
+}
+function _insertBoundaryDiscontinuity(text, boundarySeq, firstSeq) {
+    if (typeof text !== "string" || boundarySeq == null || firstSeq == null) {
+        return text;
+    }
+    const pos = boundarySeq - firstSeq;
+    const lines = text.split("\n");
+    if (pos < 0) {
+        _setPlaylistDiscontinuitySequence(lines, _parsePlaylistDiscontinuitySequence(text) + 1);
+        return lines.join("\n");
+    }
+    let seen = 0;
+    let insertAt = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith("#EXTINF")) {
+            if (seen === pos) {
+                insertAt = i;
+                break;
+            }
+            seen++;
+        }
+    }
+    if (insertAt < 0)
+        return text;
+    if (insertAt > 0 && lines[insertAt - 1].startsWith("#EXT-X-DISCONTINUITY")) {
+        return text;
+    }
+    lines.splice(insertAt, 0, "#EXT-X-DISCONTINUITY");
+    return lines.join("\n");
+}
+function _applyBackupSpliceBridge(info, text) {
+    if (!info || typeof text !== "string" || !text)
+        return text;
+    if (!info.IsUsingBackupStream) {
+        info._SpliceStreamId = null;
+        info._SpliceBoundarySeq = null;
+        return text;
+    }
+    if (!_playlistHasMediaSegments(text))
+        return text;
+    const identity = `${info.ActiveBackupPlayerType || "?"}|${info.ActiveBackupResolution || "?"}`;
+    const firstSeq = _parsePlaylistFirstMediaSequence(text);
+    if (firstSeq == null)
+        return text;
+    if (info._SpliceStreamId !== identity) {
+        info._SpliceStreamId = identity;
+        info._SpliceBoundarySeq = firstSeq;
+    }
+    return _insertBoundaryDiscontinuity(text, info._SpliceBoundarySeq, firstSeq);
+}
 function _getNativeRecoveryProbePlayerType() {
     const forcedPlayerType = __TTVAB_STATE__?.RewriteNativePlaybackAccessToken === true &&
         typeof __TTVAB_STATE__?.ForceAccessTokenPlayerType === "string" &&
@@ -2373,6 +2463,8 @@ function _createStreamInfo(context) {
         LastAdEndBounceAt: 0,
         LastActivityAt: Date.now(),
         LoggedBackupAdsByType: null,
+        _SpliceStreamId: null,
+        _SpliceBoundarySeq: null,
     };
 }
 function _createSyntheticStreamInfo(playbackContext, url = "") {
@@ -2415,6 +2507,11 @@ function _buildUsherPlaybackUrl(info, sig, token) {
     return usherUrl;
 }
 async function _$pm(url, text, realFetch) {
+    const result = await _processM3U8Core(url, text, realFetch);
+    const info = _$gsi(url);
+    return info ? _applyBackupSpliceBridge(info, result) : result;
+}
+async function _processM3U8Core(url, text, realFetch) {
     text = _absolutizeMediaPlaylistUrls(text, url);
     let info = _$gsi(url);
     if (!info) {
@@ -2891,6 +2988,14 @@ async function _$pm(url, text, realFetch) {
         }
         if (info.ActiveBackupPlayerType !== backupType) {
             info.ActiveBackupPlayerType = backupType;
+            if (backupType === "autoplay") {
+                if (!info._LqHoldStartAt) {
+                    info._LqHoldStartAt = Date.now();
+                }
+            }
+            else if (info._LqHoldStartAt) {
+                info._LqHoldStartAt = 0;
+            }
             _$l(`Using backup: ${backupType}`, "info");
             if (backupType && typeof self !== "undefined" && self.postMessage) {
                 _postWorkerBridgeMessage(self, _createPageScopedWorkerEvent({
@@ -3061,7 +3166,20 @@ function _getFallbackPromotionPolicy({ candidateHasAds, candidateIsPlayable, sim
         reason: "clean-playable",
     };
 }
+function _getResolvedLqHqHoldMinMs() {
+    return Math.max(0, Number(__TTVAB_STATE__?.LqHqHoldMinMs) ||
+        Number(_$c?.LQ_HQ_HOLD_MIN_MS) ||
+        0);
+}
 function _shouldTryAutoplayFirst(info) {
+    const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
+    const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
+    if (lqHoldStartAt > 0 &&
+        lqHoldMinMs > 0 &&
+        Date.now() - lqHoldStartAt < lqHoldMinMs &&
+        info?.ActiveBackupPlayerType === "autoplay") {
+        return true;
+    }
     return !(Boolean(info.LastCleanBackupM3U8) &&
         Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt));
 }
@@ -4145,11 +4263,18 @@ function _$hw() {
                 ${_$hpa.toString()}
                 ${_playlistHasMediaSegments.toString()}
                 ${_$im.toString()}
+                ${_parsePlaylistFirstMediaSequence.toString()}
+                ${_parsePlaylistDiscontinuitySequence.toString()}
+                ${_setPlaylistDiscontinuitySequence.toString()}
+                ${_insertBoundaryDiscontinuity.toString()}
+                ${_applyBackupSpliceBridge.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
                 ${_fetchWithTimeout.toString()}
+                ${_processM3U8Core.toString()}
                 ${_$pm.toString()}
+                ${_getResolvedLqHqHoldMinMs.toString()}
                 ${_shouldTryAutoplayFirst.toString()}
                 ${_$fb.toString()}
                 ${_$wf.toString()}
