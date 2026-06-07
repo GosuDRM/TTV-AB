@@ -63,24 +63,7 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 ## 🔔 What's New
 
 ### v9.3.2 — 2026-06-07
-- **No more brief freeze when the stream switches to the ad-free backup.** Blocking an ad means swapping the player over to a clean backup stream, but that stream comes from a different encoder with its own timestamps — and the playlist never told the player the timeline jumps at the swap point. The player couldn't line the new segments up against what it had already buffered, so it drained the buffer and rebuilt from scratch, freezing for a fraction of a second (`Playhead stalling…`). The swapped-in playlist now includes the standard HLS discontinuity marker at the splice, so the player resets its timing there and appends the backup right after the current buffer — making the switch seamless. This is the swap-time stall that the 9.3.1 buffer-dwell change reduced but didn't fully remove.
-
-### v9.3.1 — 2026-06-07
-- **No more flash-freeze during the LQ→HQ quality upgrade.** During an ad, you briefly get a 360p (LQ) backup stream so playback starts almost instantly; the moment a clean HQ source is found, the extension switches you over. Previously the upgrade could fire after only a few seconds, before the LQ stream's buffer was full — so the source swap emptied the buffer and the player stalled for a fraction of a second while it rebuilt from the live edge. The LQ stream is now held for at least 8 seconds before the upgrade is allowed, which is plenty of time for the buffer to fill. The upgrade still happens the instant a clean HQ stream is available, you just no longer see the freeze.
-
-### v9.3.0 — 2026-06-07
-- **Near-instant video when you open a channel that's on an ad:** a preroll used to leave the player black for ten seconds or more while the extension worked through every player type looking for a clean stream. It now goes straight to the most reliable ad-free source first, so video starts in about two seconds instead — beginning at 360p and upgrading to your normal quality automatically and seamlessly once the ad ends. The same quick path now also applies to mid-stream ads.
-
-### v9.2.3 — 2026-06-06
-- **Fixes Firefox ad breakthrough during full-pod ad breaks ([#32](https://github.com/GosuDRM/TTV-AB/issues/32)):** The injected Worker (which does all the ad blocking) was intermittently failing to load on Firefox because the blob: URL was created without a MIME type and revoked too quickly. The blob now has an explicit `text/javascript` type, revocation is delayed to 30s, and a heartbeat check detects if the Worker never started. If it didn't, a page-side M3U8 fetch override kicks in as degraded-mode ad blocking.
-
-### v9.2.2 — 2026-06-06
-- **Crashed playback workers now actually recover:** the watchdog could never detect a hung worker (posting to a dead worker never fails), and "restarts" spawned an orphan worker Twitch never used — so a dead worker stayed dead. Workers now reply to a liveness ping, the watchdog acts only when a pong is missed for 15s, and recovery reloads the player so Twitch creates a fresh, fully-wired worker (with a 30s cooldown to avoid reload loops).
-- **"Ads Blocked" no longer overshoots after a connection blip:** queued counter updates were summed without a cap while the messaging bridge was down; the merged increment is now clamped to the real total.
-- **The active stream is no longer evicted from the worker cache:** the URL→stream table now drops least-recently-used entries instead of oldest-inserted, preventing brief moments where ads slipped through on the stream you're watching.
-- **Hardened against stat tampering:** the background worker now only accepts counter messages from the extension itself.
-- **Popout / Picture-in-Picture hooks fail safe:** they can no longer throw into Twitch's own code and break login popups, clip sharing, or PiP.
-- **Recovery timers respect channel switches:** post-ad and handoff timers no longer pause or seek the wrong stream after a fast channel change.
+- **No more brief freeze when the stream switches to the ad-free backup.** The swapped-in playlist now includes the standard HLS discontinuity marker at the splice, so the player resets its timing and appends the backup seamlessly — eliminating the swap-time stall that the 9.3.1 buffer-dwell change reduced but didn't fully remove.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
