@@ -498,7 +498,106 @@ const HW_MAX_RESTART = 3;
 const HW_WATCHDOG_INTERVAL_MS = 5000;
 const HW_PONG_TIMEOUT_MS = 15000;
 const HW_RECOVERY_COOLDOWN_MS = 30000;
+const HW_RECOVERY_STABLE_MS = 60000;
 let _lastWorkerRecoveryReloadAt = 0;
+const _WorkerRecoveryState = {
+	contextKey: null,
+	attempts: 0,
+	lastAttemptAt: 0,
+	limitLogged: false,
+};
+
+function _getWorkerRecoveryContextKey(context) {
+	const normalizedContext = _normalizePlaybackContext(context);
+	if (normalizedContext.MediaKey) return normalizedContext.MediaKey;
+	if (normalizedContext.ChannelName) {
+		return `channel:${normalizedContext.ChannelName}`;
+	}
+	return "unknown";
+}
+
+function _rememberWorkerPageContext(worker, context) {
+	if (!worker) return _normalizePlaybackContext(context);
+	const normalizedContext = _normalizePlaybackContext(context);
+	worker.__TTVABPageMediaType = normalizedContext.MediaType || null;
+	worker.__TTVABPageChannel = normalizedContext.ChannelName || null;
+	worker.__TTVABPageVodID = normalizedContext.VodID || null;
+	worker.__TTVABPageMediaKey = normalizedContext.MediaKey || null;
+	return normalizedContext;
+}
+
+function _getWorkerPlaybackContext(worker, fallbackContext = null) {
+	return _normalizePlaybackContext({
+		MediaType:
+			worker?.__TTVABPageMediaType ||
+			fallbackContext?.MediaType ||
+			__TTVAB_STATE__?.PageMediaType ||
+			null,
+		ChannelName:
+			worker?.__TTVABPageChannel ||
+			fallbackContext?.ChannelName ||
+			__TTVAB_STATE__?.PageChannel ||
+			null,
+		VodID:
+			worker?.__TTVABPageVodID ||
+			fallbackContext?.VodID ||
+			__TTVAB_STATE__?.PageVodID ||
+			null,
+		MediaKey:
+			worker?.__TTVABPageMediaKey ||
+			fallbackContext?.MediaKey ||
+			__TTVAB_STATE__?.PageMediaKey ||
+			null,
+	});
+}
+
+function _syncWorkerRecoveryContext(context) {
+	const contextKey = _getWorkerRecoveryContextKey(context);
+	if (_WorkerRecoveryState.contextKey !== contextKey) {
+		_WorkerRecoveryState.contextKey = contextKey;
+		_WorkerRecoveryState.attempts = 0;
+		_WorkerRecoveryState.lastAttemptAt = 0;
+		_WorkerRecoveryState.limitLogged = false;
+	}
+	return contextKey;
+}
+
+function _recordWorkerRecoveryAttempt(context, now = Date.now()) {
+	_syncWorkerRecoveryContext(context);
+	if (_WorkerRecoveryState.attempts >= HW_MAX_RESTART) return false;
+	_WorkerRecoveryState.attempts++;
+	_WorkerRecoveryState.lastAttemptAt = now;
+	_WorkerRecoveryState.limitLogged = false;
+	return true;
+}
+
+function _resetWorkerRecoveryStateIfStable(context, now = Date.now()) {
+	const contextKey = _getWorkerRecoveryContextKey(context);
+	if (_WorkerRecoveryState.contextKey !== contextKey) return;
+	if (
+		_WorkerRecoveryState.attempts <= 0 ||
+		_WorkerRecoveryState.lastAttemptAt <= 0 ||
+		now - _WorkerRecoveryState.lastAttemptAt < HW_RECOVERY_STABLE_MS
+	) {
+		return;
+	}
+	_WorkerRecoveryState.attempts = 0;
+	_WorkerRecoveryState.lastAttemptAt = 0;
+	_WorkerRecoveryState.limitLogged = false;
+}
+
+function _markWorkerPong(worker, now = Date.now()) {
+	if (
+		!worker ||
+		worker.__TTVABIntentionallyTerminated ||
+		worker.__TTVABCrashed
+	) {
+		return;
+	}
+	worker.__TTVABLastPongAt = now;
+	if (!worker.__TTVABFirstPongAt) worker.__TTVABFirstPongAt = now;
+	_resetWorkerRecoveryStateIfStable(_getWorkerPlaybackContext(worker), now);
+}
 
 const pruneTrackedWorkers = (excludedWorkers = []) => {
 	const excluded = new Set(excludedWorkers.filter(Boolean));
@@ -538,17 +637,28 @@ function _isPlaybackContextMismatch(expectedContext, currentContext) {
 
 function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	if (!worker || worker.__TTVABIntentionallyTerminated) return;
-	if (worker.__TTVABRestartAttempts >= HW_MAX_RESTART) {
-		_log("Worker restart limit reached", "error");
+	const recoveryContext = _getWorkerPlaybackContext(
+		worker,
+		pagePlaybackContext,
+	);
+	if (!_recordWorkerRecoveryAttempt(recoveryContext)) {
+		if (!_WorkerRecoveryState.limitLogged) {
+			_WorkerRecoveryState.limitLogged = true;
+			_log(
+				"Worker restart limit reached; using degraded page-side M3U8 fallback",
+				"error",
+			);
+		}
+		_installPageSideM3U8Override();
 		return;
 	}
-	worker.__TTVABRestartAttempts++;
-	const delay = 2 ** worker.__TTVABRestartAttempts * 500;
+	worker.__TTVABRestartAttempts = _WorkerRecoveryState.attempts;
+	const delay = 2 ** _WorkerRecoveryState.attempts * 500;
 	_log(
 		"Recovering worker in " +
 			delay / 1000 +
 			"s (attempt " +
-			worker.__TTVABRestartAttempts +
+			_WorkerRecoveryState.attempts +
 			"/" +
 			HW_MAX_RESTART +
 			")",
@@ -558,7 +668,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	setTimeout(() => {
 		if (worker.__TTVABIntentionallyTerminated) return;
 		const currentContext = _getPlaybackContextFromUrl(window.location.href);
-		if (_isPlaybackContextMismatch(pagePlaybackContext, currentContext)) {
+		if (_isPlaybackContextMismatch(recoveryContext, currentContext)) {
 			_log("Skipping stale worker recovery after navigation", "info");
 			return;
 		}
@@ -600,12 +710,15 @@ function _startWorkerWatchdog() {
 				worker.__TTVABCrashed = true;
 				_log("Worker unresponsive (no pong)", "warning");
 				pruneTrackedWorkers([worker]);
-				_attemptWorkerRestart(worker, {
-					MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
-					ChannelName: __TTVAB_STATE__?.PageChannel || "",
-					VodID: __TTVAB_STATE__?.PageVodID || "",
-					MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
-				});
+				_attemptWorkerRestart(
+					worker,
+					_getWorkerPlaybackContext(worker, {
+						MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
+						ChannelName: __TTVAB_STATE__?.PageChannel || "",
+						VodID: __TTVAB_STATE__?.PageVodID || "",
+						MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
+					}),
+				);
 				continue;
 			}
 			try {
@@ -1071,21 +1184,20 @@ function _hookWorker() {
 				const _hbTimeout = setTimeout(() => {
 					if (this.__TTVABCrashed || this.__TTVABIntentionallyTerminated)
 						return;
+					this.__TTVABCrashed = true;
 					_log(
 						"Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback",
 						"warning",
 					);
-					try {
-						this.terminate();
-						this.__TTVABIntentionallyTerminated = true;
-					} catch {}
-					pruneTrackedWorkers();
+					pruneTrackedWorkers([this]);
 					_installPageSideM3U8Override();
+					_attemptWorkerRestart(this, pagePlaybackContext);
 				}, 8000);
 				this.addEventListener("message", (e) => {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (data?.key === "Pong") {
 						clearTimeout(_hbTimeout);
+						_markWorkerPong(this);
 					}
 				});
 				try {
@@ -1163,6 +1275,9 @@ function _hookWorker() {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (!data) return;
 					e.stopImmediatePropagation?.();
+					if (this.__TTVABIntentionallyTerminated || this.__TTVABCrashed) {
+						return;
+					}
 
 					switch (data.key) {
 						case "FetchRequest":
@@ -1176,7 +1291,7 @@ function _hookWorker() {
 							});
 							break;
 						case "Pong":
-							this.__TTVABLastPongAt = Date.now();
+							_markWorkerPong(this);
 							break;
 						case "AdBlocked":
 							if (isStalePlaybackEvent(data)) {
@@ -1543,8 +1658,9 @@ function _hookWorker() {
 
 				this.__TTVABCreatedAt = Date.now();
 				this.__TTVABLastPongAt = Date.now();
+				this.__TTVABFirstPongAt = 0;
 				this.__TTVABRestartAttempts = 0;
-				this.__TTVABPageMediaKey = pagePlaybackContext.MediaKey || null;
+				_rememberWorkerPageContext(this, pagePlaybackContext);
 				pruneTrackedWorkers();
 				_S.workers.push(this);
 				try {

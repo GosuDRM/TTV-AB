@@ -339,6 +339,12 @@ function _broadcastWorkers(messages) {
 		let isAlive = true;
 		for (const message of queue) {
 			try {
+				if (
+					message?.key === "UpdatePageContext" &&
+					typeof _rememberWorkerPageContext === "function"
+				) {
+					_rememberWorkerPageContext(worker, message.value);
+				}
 				if (!_postWorkerBridgeMessage(worker, message)) {
 					isAlive = false;
 					break;

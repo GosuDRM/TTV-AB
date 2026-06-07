@@ -64,7 +64,11 @@ interface Worker {
 	__TTVABCrashed?: boolean;
 	__TTVABCreatedAt?: number;
 	__TTVABLastPongAt?: number;
+	__TTVABFirstPongAt?: number;
 	__TTVABRestartAttempts?: number;
+	__TTVABPageMediaType?: string | null;
+	__TTVABPageChannel?: string | null;
+	__TTVABPageVodID?: string | null;
 	__TTVABPageMediaKey?: string | null;
 	__TTVABWorkerUrl?: string;
 	__TTVABWorkerOpts?: unknown;
