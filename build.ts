@@ -1188,6 +1188,11 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_processM3U8Core",
+			helper: "_refreshActiveBackupMediaPlaylist",
+			source: processorSource,
+		},
+		{
 			consumer: "_findBackupStream",
 			helper: "_getFallbackPromotionPolicy",
 			source: processorSource,
