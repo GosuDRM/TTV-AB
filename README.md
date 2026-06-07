@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.3.3-purple)
+![Version](https://img.shields.io/badge/version-9.3.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.3.3-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.3.4-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -61,6 +61,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean lower-quality backup (e.g. 360p) within a couple of seconds so video starts right away, then upgrades to your chosen quality automatically and seamlessly once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.3.4 — 2026-06-07
+- **No more 5-12s loading circle on preroll.** The cold-start autoplay-first strategy (pin autoplay as the first backup on a fresh ad cycle) was causing silent autoplay-gate stalls — Twitch's player would accept the playlist but refuse to play it without a user gesture, leaving the playhead frozen at ~3.97s while the user stares at a loading spinner. Autoplay is now appended as last-resort on a fresh ad cycle; Source-tier backups (site, embed, popout, mobile_web) are tried first. The LQ→HQ dwell window still uses autoplay-first for the existing-pinned continuation case, but that path doesn't re-hit the autoplay-gate.
 
 ### v9.3.3 — 2026-06-07
 - **Long ad sessions end faster.** The native-recovery loop now caps the wait at ~24s (6 failed probes) when Twitch keeps ad-marking every probe, instead of running for the full 90s.

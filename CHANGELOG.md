@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.3.4] - 2026-06-07
+
+### Fixed
+- **No more 5-12s loading circle on preroll.** The cold-start autoplay-first strategy (pin autoplay as the first backup on a fresh ad cycle for a fast first-frame) was the source of the silent autoplay-gate stalls that froze the playhead at ~3.97s while Twitch's "Autoplay is only allowed when approved by the user…" UI sat in the background. Autoplay is now appended as last-resort on a fresh ad cycle, so Source-tier backups (site, embed, popout, mobile_web) are tried first. The LQ→HQ dwell window still uses autoplay-first (continuation case where autoplay is already pinned and we don't want to flicker back to HQ), but that path doesn't re-hit the autoplay-gate. Trade-off: ~500ms slower first clean frame in the rare case autoplay would have been the cleanest backup; gain: 5-12s loading circle eliminated on every preroll that hits the gate.
+
 ## [9.3.3] - 2026-06-07
 
 ### Fixed
