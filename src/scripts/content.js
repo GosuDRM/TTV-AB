@@ -1,12 +1,12 @@
-// TTV AB v9.3.6 - Twitch Ad Blocker
+// TTV AB v9.3.7 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.3.6",
-    INTERNAL_VERSION: 214,
+    VERSION: "9.3.7",
+    INTERNAL_VERSION: 215,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -3260,6 +3260,15 @@ function _shouldTryAutoplayFirst(info) {
     }
     return false;
 }
+function _shouldHoldAutoplayBackupDuringAd(info) {
+    return Boolean(info?.IsShowingAd &&
+        info?.ActiveBackupPlayerType === "autoplay" &&
+        info?.LastCleanBackupPlayerType === "autoplay" &&
+        typeof info?.LastCleanBackupM3U8 === "string" &&
+        info.LastCleanBackupM3U8 &&
+        (Number(info.LastCleanBackupAt) || 0) >=
+            Math.max(0, Number(info.VisibleAdStartedAt) || 0));
+}
 async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
     const pt = (typeof info?.ActiveBackupPlayerType === "string" &&
         info.ActiveBackupPlayerType) ||
@@ -3327,7 +3336,11 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
             playerTypes = [...clean, ...contam];
         }
     }
-    if (_shouldTryAutoplayFirst(info)) {
+    if (_shouldHoldAutoplayBackupDuringAd(info)) {
+        playerTypes = ["autoplay"];
+        _$l("[Trace] Holding autoplay backup during current ad cycle; deferring HQ probe until ad-end", "info");
+    }
+    else if (_shouldTryAutoplayFirst(info)) {
         playerTypes = [
             "autoplay",
             ...playerTypes.filter((pt) => pt !== "autoplay"),
@@ -4413,6 +4426,7 @@ function _$hw() {
                 ${_$pm.toString()}
                 ${_getResolvedLqHqHoldMinMs.toString()}
                 ${_shouldTryAutoplayFirst.toString()}
+                ${_shouldHoldAutoplayBackupDuringAd.toString()}
                 ${_refreshActiveBackupMediaPlaylist.toString()}
                 ${_$fb.toString()}
                 ${_$wf.toString()}
