@@ -980,6 +980,9 @@ function _hookWorker() {
                                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = nextPinnedContext.MediaKey;
                             }
                             break;
+                        case 'UpdateBackupSearchForceRefresh':
+                            __TTVAB_STATE__.BackupSearchForceRefreshAt = Number(data.value) || 0;
+                            break;
                         case 'ResetPlaybackRecoveryState':
                             __TTVAB_STATE__.HasTriggeredPlayerReload = false;
                             __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;

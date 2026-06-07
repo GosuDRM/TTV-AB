@@ -2820,8 +2820,9 @@ function _checkPinnedBackupStall(player) {
 	_PinnedBackupStallState.lastForceRefreshAt = now;
 	__TTVAB_STATE__.BackupSearchForceRefreshAt = now;
 	__TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
+	_broadcastWorkers({ key: "UpdateBackupSearchForceRefresh", value: now });
 	_log(
-		`Pinned backup stalled (${__TTVAB_STATE__.PinnedBackupPlayerType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, frozen for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`,
+		`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, frozen for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`,
 		"warning",
 	);
 }
