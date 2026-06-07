@@ -1825,10 +1825,7 @@ function _shouldTryAutoplayFirst(info) {
 	) {
 		return true;
 	}
-	return !(
-		Boolean(info.LastCleanBackupM3U8) &&
-		Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt)
-	);
+	return false;
 }
 
 async function _findBackupStream(
