@@ -1505,7 +1505,7 @@ async function _processM3U8Core(url, text, realFetch) {
 
 		if (
 			info._LastBackupSearchCompletedAt &&
-			Date.now() - info._LastBackupSearchCompletedAt < 3000 &&
+			Date.now() - info._LastBackupSearchCompletedAt < 15000 &&
 			!_isRecentPostAdReentry(info)
 		) {
 			if (info.LastCleanBackupM3U8) {
@@ -1629,7 +1629,7 @@ async function _processM3U8Core(url, text, realFetch) {
 				Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
 			if (
 				info.LastCleanBackupM3U8 &&
-				backupAgeMs >= 1500 &&
+				backupAgeMs >= 20000 &&
 				backupIsFromCurrentCycle
 			) {
 				try {
