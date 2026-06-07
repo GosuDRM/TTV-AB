@@ -392,6 +392,38 @@ describe("_shouldTryAutoplayFirst (LQ-hold-only)", () => {
 	});
 });
 
+describe("_shouldHoldAutoplayBackupDuringAd", () => {
+	const fn = () =>
+		T<(info: Record<string, unknown>) => boolean>(
+			"_shouldHoldAutoplayBackupDuringAd",
+		);
+
+	it("keeps autoplay as the only in-ad candidate after it wins the current ad cycle", () => {
+		const startedAt = Date.now() - 10000;
+		const info = makeInfo({
+			IsShowingAd: true,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+			LastCleanBackupAt: startedAt + 1000,
+			VisibleAdStartedAt: startedAt,
+		});
+		expect(fn()(info)).toBe(true);
+	});
+
+	it("does not hold stale autoplay from a prior ad cycle", () => {
+		const info = makeInfo({
+			IsShowingAd: true,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+			LastCleanBackupAt: 1000,
+			VisibleAdStartedAt: 5000,
+		});
+		expect(fn()(info)).toBe(false);
+	});
+});
+
 const countDiscontinuity = (s: string) =>
 	s.split("\n").filter((l) => l.trim() === "#EXT-X-DISCONTINUITY").length;
 
