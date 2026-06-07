@@ -55,6 +55,11 @@ beforeAll(() => {
 		AdEndGraceMs: 500,
 		AdEndMaxWaitMs: 4000,
 		AdEndBackupHoldMaxMs: 90000,
+		AdEndMaxFailedNativeProbes: 6,
+		PinnedBackupStallDetectionMs: 3000,
+		PinnedBackupStallPollMs: 1500,
+		BackupSearchForceRefreshAt: 0,
+		LastPinnedBackupStallDetectedAt: 0,
 		SilentBackupHoldMaxMs: 120000,
 		SimulatedAdsDepth: 0,
 		LqHqHoldMinMs: 8000,
@@ -117,6 +122,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		BackupEncodingsM3U8Cache: Object.create(null),
 		BackupVariantUrls: new Set<string>(),
 		LoggedBackupAdsByType: null,
+		_LoggedWhitelistByType: null,
 		Urls: Object.create(null),
 		ResolutionList: [],
 		ModifiedM3U8: null,
@@ -124,6 +130,8 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_LastBackupSearchCompletedAt: 0,
 		_LoggedOfflineTransition: false,
 		_AdRequestController: null,
+		_SpliceStreamId: null,
+		_SpliceBoundarySeq: null,
 		...overrides,
 	};
 }
@@ -142,6 +150,8 @@ describe("_resetStreamAdState", () => {
 			IsMidroll: true,
 			IsHoldingBackupAfterAd: true,
 			HevcReloadPendingAfterHold: true,
+			ConsecutiveFailedNativeProbes: 4,
+			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 		});
 		fn(info);
 		expect(info.IsShowingAd).toBe(false);
@@ -152,6 +162,8 @@ describe("_resetStreamAdState", () => {
 		expect(info.IsMidroll).toBe(false);
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
+		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
+		expect(info._LoggedWhitelistByType).toBe(null);
 	});
 
 	it("reports wasUsingModifiedM3U8 when active", () => {
@@ -253,6 +265,10 @@ describe("_getBackupPlayerRetryCooldownMs", () => {
 		expect(fn()("no-stream-url")).toBe(2000);
 	});
 
+	it("returns 10000 for stalled", () => {
+		expect(fn()("stalled")).toBe(10000);
+	});
+
 	it("returns 15000 for ad-marked / unknown", () => {
 		expect(fn()("ad-marked")).toBe(15000);
 		expect(fn()("unknown")).toBe(15000);
@@ -336,28 +352,19 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 	});
 });
 
-describe("_shouldTryAutoplayFirst (fast clean-first contract)", () => {
+describe("_shouldTryAutoplayFirst (LQ-hold-only)", () => {
 	const fn = () =>
 		T<(info: Record<string, unknown>) => boolean>("_shouldTryAutoplayFirst");
 
-	it("prioritizes autoplay on cold start (no clean backup yet)", () => {
-		expect(fn()(makeInfo())).toBe(true);
+	it("does not prioritize autoplay on cold start (no clean backup yet)", () => {
+		expect(fn()(makeInfo())).toBe(false);
 	});
 
-	it("prioritizes autoplay on a new ad cycle (backup stale from a prior cycle)", () => {
+	it("does not prioritize autoplay on a new ad cycle (backup stale from a prior cycle)", () => {
 		const info = makeInfo({
 			LastCleanBackupM3U8: "#EXTM3U8",
 			LastCleanBackupAt: 1000,
 			VisibleAdStartedAt: 5000,
-		});
-		expect(fn()(info)).toBe(true);
-	});
-
-	it("keeps normal order once a fresh clean backup exists this cycle", () => {
-		const info = makeInfo({
-			LastCleanBackupM3U8: "#EXTM3U8",
-			LastCleanBackupAt: 5000,
-			VisibleAdStartedAt: 1000,
 		});
 		expect(fn()(info)).toBe(false);
 	});
@@ -382,5 +389,130 @@ describe("_shouldTryAutoplayFirst (fast clean-first contract)", () => {
 			_LqHoldStartAt: Date.now() - 30000,
 		});
 		expect(fn()(info)).toBe(false);
+	});
+});
+
+const countDiscontinuity = (s: string) =>
+	s.split("\n").filter((l) => l.trim() === "#EXT-X-DISCONTINUITY").length;
+
+const makePlaylist = (mediaSeq: number, segs: number, discSeq?: number) => {
+	const lines = [
+		"#EXTM3U",
+		"#EXT-X-VERSION:7",
+		"#EXT-X-TARGETDURATION:2",
+		`#EXT-X-MEDIA-SEQUENCE:${mediaSeq}`,
+	];
+	if (discSeq != null) lines.push(`#EXT-X-DISCONTINUITY-SEQUENCE:${discSeq}`);
+	for (let i = 0; i < segs; i++) {
+		lines.push("#EXTINF:2.000,live");
+		lines.push(`seg${mediaSeq + i}.ts`);
+	}
+	return lines.join("\n");
+};
+
+describe("_insertBoundaryDiscontinuity (seamless splice bridge)", () => {
+	const fn = () =>
+		T<
+			(
+				text: string,
+				boundarySeq: number | null,
+				firstSeq: number | null,
+			) => string
+		>("_insertBoundaryDiscontinuity");
+
+	it("inserts exactly one #EXT-X-DISCONTINUITY before the boundary segment", () => {
+		const out = fn()(makePlaylist(100, 3), 100, 100);
+		expect(countDiscontinuity(out)).toBe(1);
+		const lines = out.split("\n");
+		const discAt = lines.indexOf("#EXT-X-DISCONTINUITY");
+		const firstSegAt = lines.findIndex((l) => l.startsWith("#EXTINF"));
+		expect(discAt).toBe(firstSegAt - 1);
+		expect(out).not.toContain("#EXT-X-DISCONTINUITY-SEQUENCE");
+	});
+
+	it("drops the marker but bumps disc-seq once the boundary scrolls off (keeps cc stable)", () => {
+		const out = fn()(makePlaylist(103, 3), 100, 103);
+		expect(countDiscontinuity(out)).toBe(0);
+		expect(out).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:1");
+	});
+
+	it("returns text unchanged when boundary or first sequence is unknown", () => {
+		const pl = makePlaylist(100, 3);
+		expect(fn()(pl, null, 100)).toBe(pl);
+		expect(fn()(pl, 100, null)).toBe(pl);
+	});
+
+	it("does not double-insert when a discontinuity already precedes the boundary", () => {
+		const once = fn()(makePlaylist(100, 3), 100, 100);
+		const twice = fn()(once, 100, 100);
+		expect(countDiscontinuity(twice)).toBe(1);
+	});
+});
+
+describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
+	const fn = () =>
+		T<(info: Record<string, unknown>, text: string) => string>(
+			"_applyBackupSpliceBridge",
+		);
+
+	it("no-ops and clears splice state when not serving a backup", () => {
+		const info = makeInfo({
+			IsUsingBackupStream: false,
+			_SpliceStreamId: "site|1080p60",
+			_SpliceBoundarySeq: 500,
+		});
+		const pl = makePlaylist(100, 3);
+		expect(fn()(info, pl)).toBe(pl);
+		expect(info._SpliceStreamId).toBe(null);
+		expect(info._SpliceBoundarySeq).toBe(null);
+	});
+
+	it("bridges the first backup playlist exactly once and records the boundary", () => {
+		const info = makeInfo({
+			IsUsingBackupStream: true,
+			ActiveBackupPlayerType: "site",
+			ActiveBackupResolution: "1080p60",
+		});
+		const out = fn()(info, makePlaylist(500, 4));
+		expect(countDiscontinuity(out)).toBe(1);
+		expect(info._SpliceStreamId).toBe("site|1080p60");
+		expect(info._SpliceBoundarySeq).toBe(500);
+	});
+
+	it("stops inserting the marker after the boundary scrolls off but keeps disc-seq", () => {
+		const info = makeInfo({
+			IsUsingBackupStream: true,
+			ActiveBackupPlayerType: "site",
+			ActiveBackupResolution: "1080p60",
+		});
+		fn()(info, makePlaylist(500, 4));
+		const refreshed = fn()(info, makePlaylist(504, 4));
+		expect(countDiscontinuity(refreshed)).toBe(0);
+		expect(refreshed).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:1");
+		expect(info._SpliceBoundarySeq).toBe(500);
+	});
+
+	it("re-bridges with a fresh boundary on an LQ→HQ identity change", () => {
+		const info = makeInfo({
+			IsUsingBackupStream: true,
+			ActiveBackupPlayerType: "autoplay",
+			ActiveBackupResolution: "360p30",
+		});
+		fn()(info, makePlaylist(20, 4));
+		info.ActiveBackupPlayerType = "site";
+		info.ActiveBackupResolution = "1080p60";
+		const upgraded = fn()(info, makePlaylist(900, 4));
+		expect(countDiscontinuity(upgraded)).toBe(1);
+		expect(info._SpliceStreamId).toBe("site|1080p60");
+		expect(info._SpliceBoundarySeq).toBe(900);
+	});
+
+	it("leaves segmentless (master) playlists untouched", () => {
+		const info = makeInfo({
+			IsUsingBackupStream: true,
+			ActiveBackupPlayerType: "site",
+		});
+		const master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchunked/index.m3u8";
+		expect(fn()(info, master)).toBe(master);
 	});
 });

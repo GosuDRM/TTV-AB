@@ -493,7 +493,12 @@ function _declareState(scope) {
 		AdEndMinNativeRecoveryProbes: _C.AD_END_MIN_NATIVE_RECOVERY_PROBES ?? 3,
 		AdEndNativeRecoveryProbeCooldownMs:
 			_C.AD_END_NATIVE_RECOVERY_PROBE_COOLDOWN_MS ?? 750,
+		AdEndMaxFailedNativeProbes: _C.AD_END_MAX_FAILED_NATIVE_PROBES ?? 6,
 		AdRecoveryReloadCooldownMs: _C.AD_RECOVERY_RELOAD_COOLDOWN_MS ?? 10000,
+		PinnedBackupStallDetectionMs: _C.PINNED_BACKUP_STALL_DETECTION_MS ?? 3000,
+		PinnedBackupStallPollMs: _C.PINNED_BACKUP_STALL_POLL_MS ?? 1500,
+		BackupSearchForceRefreshAt: 0,
+		LastPinnedBackupStallDetectedAt: 0,
 		LqHqHoldMinMs: _C.LQ_HQ_HOLD_MIN_MS ?? 8000,
 		HasTriggeredPlayerReload: false,
 		PendingTriggeredPlayerReloadChannel: null,

@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.3.1-purple)
+![Version](https://img.shields.io/badge/version-9.3.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.3.1-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.3.6-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -61,6 +61,22 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
 
 ## 🔔 What's New
+
+### v9.3.6 — 2026-06-07
+- **No more occasional loading circle during ad breaks.** The clean backup stream was served as a frozen playlist snapshot and replayed for up to 15s, so its buffer capped at ~4s and the playhead froze; the backup playlist is now re-fetched every ~2s so it keeps advancing like a live stream should.
+- **A stalled backup switches to a working one within seconds.** When the playhead-stall watcher fires, the stuck backup type is put on a short cooldown so the re-search rotates to the next type (e.g. site → embed) instead of re-selecting the broken one and giving up.
+- **Playback recovery now runs during ads too.** A new in-ad watchdog issues a pause/play nudge and then reloads the player if the playhead stays frozen on a drained buffer, even while an ad is active — previously that recovery only ran between ad breaks.
+
+### v9.3.4 — 2026-06-07
+- **No more 5-12s loading circle on preroll.** The cold-start autoplay-first strategy (pin autoplay as the first backup on a fresh ad cycle) was causing silent autoplay-gate stalls — Twitch's player would accept the playlist but refuse to play it without a user gesture, leaving the playhead frozen at ~3.97s while the user stares at a loading spinner. Autoplay is now appended as last-resort on a fresh ad cycle; Source-tier backups (site, embed, popout, mobile_web) are tried first. The LQ→HQ dwell window still uses autoplay-first for the existing-pinned continuation case, but that path doesn't re-hit the autoplay-gate.
+
+### v9.3.3 — 2026-06-07
+- **Long ad sessions end faster.** The native-recovery loop now caps the wait at ~24s (6 failed probes) when Twitch keeps ad-marking every probe, instead of running for the full 90s.
+- **Less probing during a clean-pinned hold.** Backup cache windows raised to 15s/20s so the ~4s playlist poll no longer triggers a fresh backup search on every tick.
+- **Pinned backup stalls get fixed within ~3s.** A new playhead-watcher detects the "Playhead stalling" symptom and forces a fresh backup search; re-searches are capped at 3 attempts per type to avoid log spam and worker load when no clean fallback is available.
+
+### v9.3.2 — 2026-06-07
+- **No more brief freeze on backup-stream swap.** The swap-time "Playhead stalling" freeze (which the 9.3.1 LQ-hold change reduced but didn't fully eliminate) is fixed at the root: the swapped-in playlist now carries the standard HLS `#EXT-X-DISCONTINUITY` marker at the splice point, so the player resets its timing and appends the backup stream after the existing buffer instead of draining it.
 
 ### v9.3.1 — 2026-06-07
 - **No more flash-freeze during the LQ→HQ quality upgrade.** During an ad, you briefly get a 360p (LQ) backup stream so playback starts almost instantly; the moment a clean HQ source is found, the extension switches you over. Previously the upgrade could fire after only a few seconds, before the LQ stream's buffer was full — so the source swap emptied the buffer and the player stalled for a fraction of a second while it rebuilt from the live edge. The LQ stream is now held for at least 8 seconds before the upgrade is allowed, which is plenty of time for the buffer to fill. The upgrade still happens the instant a clean HQ stream is available, you just no longer see the freeze.
