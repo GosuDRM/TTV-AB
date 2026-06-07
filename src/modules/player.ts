@@ -83,6 +83,9 @@ const _POST_AD_PAUSE_RESUME_RETRY_MS = 2500;
 const _POST_AD_GRACE_WINDOW_MS = 90000;
 const _POST_AD_GRACE_STALL_TICKS_REQUIRED = 2;
 const _POST_AD_GRACE_PAUSE_RESUME_COOLDOWN_MS = 1500;
+const _IN_AD_FREEZE_DETECT_MS = 5000;
+const _IN_AD_FREEZE_ACTION_REPEAT_MS = 5000;
+const _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS = 2;
 const _VISIBILITY_RESUME_RETRY_DELAYS_MS = [80, 250, 700, 1500];
 const _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS = [120, 500, 1500, 3000];
 const _SECONDARY_PLAYER_HANDOFF_WINDOW_MS = 2700000;
@@ -95,6 +98,18 @@ const _PinnedBackupStallState = {
 	forceRefreshCount: 0,
 	exhaustedLogged: false,
 };
+const _InAdFreezeState = {
+	firstFrozenAt: 0,
+	lastCurrentTime: -1,
+	lastActionAt: 0,
+	actionCount: 0,
+};
+function _resetInAdFreezeState() {
+	_InAdFreezeState.firstFrozenAt = 0;
+	_InAdFreezeState.lastCurrentTime = -1;
+	_InAdFreezeState.lastActionAt = 0;
+	_InAdFreezeState.actionCount = 0;
+}
 const _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS = [0, 120, 450, 1000];
 const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
 	'[data-a-target="player-play-pause-button"]',
@@ -2854,6 +2869,63 @@ function _checkPinnedBackupStall(player) {
 	);
 }
 
+function _checkInAdPlayheadFreeze(player) {
+	const video = player?.getHTMLVideoElement?.() || null;
+	if (
+		!(video instanceof HTMLMediaElement) ||
+		video.ended ||
+		Number(video.readyState) < 1
+	) {
+		_resetInAdFreezeState();
+		return;
+	}
+	const currentTime = Number(video.currentTime) || 0;
+	const bufferedEnd =
+		video.buffered && video.buffered.length > 0
+			? video.buffered.end(video.buffered.length - 1)
+			: 0;
+	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
+	const advanced =
+		_InAdFreezeState.lastCurrentTime >= 0 &&
+		currentTime > _InAdFreezeState.lastCurrentTime + 0.05;
+	const bufferDrained = bufferedEnd - currentTime < _getLowLatencyDangerZone();
+	if (!playbackHasStarted || video.paused || advanced || !bufferDrained) {
+		_resetInAdFreezeState();
+		_InAdFreezeState.lastCurrentTime = currentTime;
+		return;
+	}
+	const now = Date.now();
+	if (_InAdFreezeState.firstFrozenAt === 0) {
+		_InAdFreezeState.firstFrozenAt = now;
+		_InAdFreezeState.lastCurrentTime = currentTime;
+		return;
+	}
+	if (
+		now - _InAdFreezeState.firstFrozenAt < _IN_AD_FREEZE_DETECT_MS ||
+		now - _InAdFreezeState.lastActionAt < _IN_AD_FREEZE_ACTION_REPEAT_MS
+	) {
+		return;
+	}
+	_InAdFreezeState.lastActionAt = now;
+	_InAdFreezeState.actionCount++;
+	const frozenSeconds =
+		Math.round((now - _InAdFreezeState.firstFrozenAt) / 100) / 10;
+	if (_InAdFreezeState.actionCount > _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS) {
+		_log(
+			`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s (bufferEnd=${bufferedEnd.toFixed(2)}s); reloading player`,
+			"warning",
+		);
+		_doPlayerTask(false, true, { reason: "buffer-recovery" });
+		_InAdFreezeState.actionCount = 0;
+		return;
+	}
+	_log(
+		`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s (bufferEnd=${bufferedEnd.toFixed(2)}s); pause/play nudge`,
+		"warning",
+	);
+	_doPlayerTask(true, false, { reason: "buffer-recovery" });
+}
+
 function _monitorPlayerBuffering() {
 	function check() {
 		_playerBufferMonitorTimer = null;
@@ -2918,24 +2990,28 @@ function _monitorPlayerBuffering() {
 		}
 
 		if (hasActiveAdContext) {
+			let pinPlayer = _cachedPlayerRef?.player || null;
+			if (!pinPlayer) {
+				const fresh = _getPlayerAndState();
+				if (fresh.player && fresh.state) {
+					pinPlayer = fresh.player;
+				}
+			}
 			if (
 				__TTVAB_STATE__.PinnedBackupPlayerType &&
-				Number(__TTVAB_STATE__.PinnedBackupStallPollMs) > 0
+				Number(__TTVAB_STATE__.PinnedBackupStallPollMs) > 0 &&
+				pinPlayer
 			) {
-				let pinPlayer = _cachedPlayerRef?.player || null;
-				if (!pinPlayer) {
-					const fresh = _getPlayerAndState();
-					if (fresh.player && fresh.state) {
-						pinPlayer = fresh.player;
-					}
-				}
-				if (pinPlayer) {
-					_checkPinnedBackupStall(pinPlayer);
-				}
+				_checkPinnedBackupStall(pinPlayer);
 			} else {
 				_PinnedBackupStallState.firstObservedAt = 0;
 				_PinnedBackupStallState.lastCurrentTime = 0;
 				_PinnedBackupStallState.lastBufferedEnd = 0;
+			}
+			if (pinPlayer) {
+				_checkInAdPlayheadFreeze(pinPlayer);
+			} else {
+				_resetInAdFreezeState();
 			}
 			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, nextDelay);
