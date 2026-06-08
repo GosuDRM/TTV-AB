@@ -1,12 +1,12 @@
-// TTV AB v9.4.2 - Twitch Ad Blocker
+// TTV AB v9.4.3 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.4.2",
-    INTERNAL_VERSION: 218,
+    VERSION: "9.4.3",
+    INTERNAL_VERSION: 219,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -7685,9 +7685,10 @@ function _checkPinnedBackupStall(player) {
         bufferedEnd > _PinnedBackupStallState.lastBufferedEnd + 0.1;
     const currentTimeAdvanced = _PinnedBackupStallState.lastCurrentTime > 0 &&
         currentTime > _PinnedBackupStallState.lastCurrentTime + 0.25;
-    const bufferSafe = bufferedEnd - currentTime > _getLowLatencyDangerZone();
+    const bufferHeadroom = bufferedEnd - currentTime;
+    const bufferSafe = bufferHeadroom > _getLowLatencyDangerZone();
     const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
-    if (bufferAdvanced || (currentTimeAdvanced && bufferSafe)) {
+    if (bufferSafe && (bufferAdvanced || currentTimeAdvanced)) {
         _PinnedBackupStallState.firstObservedAt = 0;
         _PinnedBackupStallState.lastCurrentTime = currentTime;
         _PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
@@ -7724,14 +7725,14 @@ function _checkPinnedBackupStall(player) {
     if (_PinnedBackupStallState.forceRefreshCount >= 3) {
         if (!_PinnedBackupStallState.exhaustedLogged) {
             _PinnedBackupStallState.exhaustedLogged = true;
-            _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — re-searches exhausted (3 attempts), leaving stream as-is`, "warning");
+            _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, bufferHeadroom=${bufferHeadroom.toFixed(2)}s, unsafe buffer for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — re-searches exhausted (3 attempts), leaving stream as-is`, "warning");
         }
         return;
     }
     __TTVAB_STATE__.BackupSearchForceRefreshAt = now;
     __TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
     _$bw({ key: "UpdateBackupSearchForceRefresh", value: now });
-    _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`, "warning");
+    _$l(`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, bufferHeadroom=${bufferHeadroom.toFixed(2)}s, unsafe buffer for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`, "warning");
 }
 function _checkInAdPlayheadFreeze(player) {
     const video = player?.getHTMLVideoElement?.() || null;
