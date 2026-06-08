@@ -1,12 +1,12 @@
-// TTV AB v9.4.1 - Twitch Ad Blocker
+// TTV AB v9.4.2 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.4.1",
-    INTERNAL_VERSION: 217,
+    VERSION: "9.4.2",
+    INTERNAL_VERSION: 218,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -2467,7 +2467,7 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
             _markNativeRecoveryProbeFailed(info);
             return false;
         }
-        const encRes = await realFetch(usherUrl.href);
+        const encRes = await _fetchWithTimeout(realFetch, usherUrl.href);
         if (encRes.status !== 200) {
             _resetNativeRecoveryReadyState(info, true);
             _markNativeRecoveryProbeFailed(info);
@@ -2485,7 +2485,7 @@ async function _canReloadNativePlayerAfterAd(info, realFetch, resolution = null)
             _markNativeRecoveryProbeFailed(info);
             return false;
         }
-        const streamRes = await realFetch(streamUrl);
+        const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
         if (streamRes.status !== 200) {
             _resetNativeRecoveryReadyState(info, true);
             _markNativeRecoveryProbeFailed(info);
@@ -4305,6 +4305,19 @@ function _isPlaybackContextMismatch(expectedContext, currentContext) {
     }
     return false;
 }
+function _recoverCrashedWorker(worker, pagePlaybackContext, message, level = "warning") {
+    if (!worker ||
+        worker.__TTVABIntentionallyTerminated ||
+        worker.__TTVABCrashed) {
+        return false;
+    }
+    worker.__TTVABCrashed = true;
+    _$l(message, level);
+    pruneTrackedWorkers([worker]);
+    _installPageSideM3U8Override();
+    _attemptWorkerRestart(worker, pagePlaybackContext);
+    return true;
+}
 function _attemptWorkerRestart(worker, pagePlaybackContext) {
     if (!worker || worker.__TTVABIntentionallyTerminated)
         return;
@@ -4326,7 +4339,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
         "/" +
         HW_MAX_RESTART +
         ")", "warning");
-    setTimeout(() => {
+    const runRecovery = () => {
         if (worker.__TTVABIntentionallyTerminated)
             return;
         const currentContext = _getPlaybackContextFromUrl(window.location.href);
@@ -4340,7 +4353,9 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
         }
         const now = Date.now();
         if (now - _lastWorkerRecoveryReloadAt < HW_RECOVERY_COOLDOWN_MS) {
-            _$l("Skipping worker recovery reload (cooldown)", "info");
+            const remainingCooldown = Math.max(0, HW_RECOVERY_COOLDOWN_MS - (now - _lastWorkerRecoveryReloadAt));
+            _$l("Deferring worker recovery reload (cooldown)", "info");
+            setTimeout(runRecovery, remainingCooldown);
             return;
         }
         _lastWorkerRecoveryReloadAt = now;
@@ -4355,7 +4370,8 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
         catch (recoveryErr) {
             _$l(`Worker recovery failed: ${recoveryErr.message}`, "error");
         }
-    }, delay);
+    };
+    setTimeout(runRecovery, delay);
 }
 let _workerWatchdogID = null;
 function _startWorkerWatchdog() {
@@ -4380,15 +4396,12 @@ function _startWorkerWatchdog() {
                     catch { }
                     continue;
                 }
-                worker.__TTVABCrashed = true;
-                _$l("Worker unresponsive (no pong)", "warning");
-                pruneTrackedWorkers([worker]);
-                _attemptWorkerRestart(worker, _getWorkerPlaybackContext(worker, {
+                _recoverCrashedWorker(worker, _getWorkerPlaybackContext(worker, {
                     MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
                     ChannelName: __TTVAB_STATE__?.PageChannel || "",
                     VodID: __TTVAB_STATE__?.PageVodID || "",
                     MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
-                }));
+                }), "Worker unresponsive (no pong)", "warning");
                 continue;
             }
             try {
@@ -4831,11 +4844,7 @@ function _$hw() {
                 const _hbTimeout = setTimeout(() => {
                     if (this.__TTVABCrashed || this.__TTVABIntentionallyTerminated)
                         return;
-                    this.__TTVABCrashed = true;
-                    _$l("Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback", "warning");
-                    pruneTrackedWorkers([this]);
-                    _installPageSideM3U8Override();
-                    _attemptWorkerRestart(this, pagePlaybackContext);
+                    _recoverCrashedWorker(this, pagePlaybackContext, "Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback", "warning");
                 }, HW_INITIAL_PONG_TIMEOUT_MS);
                 this.addEventListener("message", (e) => {
                     const data = _getWorkerBridgeMessage(e.data);
@@ -5203,14 +5212,7 @@ function _$hw() {
                 this.__TTVABWorkerUrl = _workerUrl;
                 this.__TTVABWorkerOpts = workerOpts;
                 this.addEventListener("error", (e) => {
-                    if (this.__TTVABIntentionallyTerminated)
-                        return;
-                    if (this.__TTVABCrashed)
-                        return;
-                    this.__TTVABCrashed = true;
-                    _$l(`Worker crashed: ${e.message || "Unknown error"}`, "error");
-                    pruneTrackedWorkers([this]);
-                    _attemptWorkerRestart(this, pagePlaybackContext);
+                    _recoverCrashedWorker(this, pagePlaybackContext, `Worker crashed: ${e.message || "Unknown error"}`, "error");
                 });
                 this.__TTVABCreatedAt = Date.now();
                 this.__TTVABLastPongAt = Date.now();
@@ -8498,22 +8500,39 @@ function _$tl() {
 function _hookSpaNavigation() {
     const sync = () => _syncPagePlaybackContext({ broadcast: true });
     const originalPushState = history.pushState;
-    history.pushState = function (...args) {
+    const hookedPushState = function (...args) {
         const result = originalPushState.apply(this, args);
         sync();
         return result;
     };
     const originalReplaceState = history.replaceState;
-    history.replaceState = function (...args) {
+    const hookedReplaceState = function (...args) {
         const result = originalReplaceState.apply(this, args);
         sync();
         return result;
     };
-    window.addEventListener("popstate", sync);
-    window.addEventListener("pagehide", () => {
+    let isHooked = false;
+    const install = () => {
+        if (isHooked)
+            return;
+        history.pushState = hookedPushState;
+        history.replaceState = hookedReplaceState;
+        window.addEventListener("popstate", sync);
+        isHooked = true;
+    };
+    const uninstall = () => {
+        if (!isHooked)
+            return;
         window.removeEventListener("popstate", sync);
         history.pushState = originalPushState;
         history.replaceState = originalReplaceState;
+        isHooked = false;
+    };
+    install();
+    window.addEventListener("pagehide", uninstall);
+    window.addEventListener("pageshow", () => {
+        install();
+        sync();
     });
 }
 function _$in() {
