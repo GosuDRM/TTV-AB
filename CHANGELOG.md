@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.4.3] - 2026-06-08
+
+### Fixed
+- **Pinned autoplay fallback recovers from thin-buffer starvation.** The pinned-backup stall monitor now requires safe buffer headroom before treating buffer or playhead progress as healthy, so a clean `autoplay` backup that advances at the live edge still triggers backup rotation instead of repeatedly stalling.
+
+### Changed
+- Added a regression test for the Twitch `Playhead stalling` shape where the playhead and buffer edge both advance but the buffer remains drained.
+
 ## [9.4.2] - 2026-06-08
 
 ### Fixed
