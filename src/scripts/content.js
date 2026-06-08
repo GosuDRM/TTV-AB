@@ -1,12 +1,12 @@
-// TTV AB v9.4.0 - Twitch Ad Blocker
+// TTV AB v9.4.1 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.4.0",
-    INTERNAL_VERSION: 216,
+    VERSION: "9.4.1",
+    INTERNAL_VERSION: 217,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -1765,6 +1765,8 @@ async function _notifyAdComplete(textStr, info) {
         let firstRollType = "";
         let podCompleteSent = false;
         for (let i = 0; i < matches.length; i++) {
+            if (spoofedSet && spoofedSet.size >= podLength)
+                break;
 
             const idMatch = matches[i][1].match(/^ID="([^"]+)"/);
             const stitchedAdId = idMatch ? idMatch[1] : "";
@@ -7679,8 +7681,11 @@ function _checkPinnedBackupStall(player) {
     const rearmCooldownMs = Math.max(stallThresholdMs * 2, Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000 * 2);
     const bufferAdvanced = _PinnedBackupStallState.lastBufferedEnd > 0 &&
         bufferedEnd > _PinnedBackupStallState.lastBufferedEnd + 0.1;
+    const currentTimeAdvanced = _PinnedBackupStallState.lastCurrentTime > 0 &&
+        currentTime > _PinnedBackupStallState.lastCurrentTime + 0.25;
+    const bufferSafe = bufferedEnd - currentTime > _getLowLatencyDangerZone();
     const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
-    if (bufferAdvanced) {
+    if (bufferAdvanced || (currentTimeAdvanced && bufferSafe)) {
         _PinnedBackupStallState.firstObservedAt = 0;
         _PinnedBackupStallState.lastCurrentTime = currentTime;
         _PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
