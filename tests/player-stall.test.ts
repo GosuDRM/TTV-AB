@@ -145,4 +145,37 @@ describe("_checkPinnedBackupStall", () => {
 			(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt,
 		).toBe(104000);
 	});
+
+	it("forces backup re-search when playback advances at a drained buffer edge", () => {
+		const check = T<
+			(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void
+		>("_checkPinnedBackupStall");
+		const messages: unknown[] = [];
+		let currentTime = 10;
+		let bufferedEnd = 10.04;
+		g._broadcastWorkers = (message: unknown) => {
+			messages.push(message);
+		};
+		const player = makePlayer(
+			() => currentTime,
+			() => bufferedEnd,
+		);
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(100000);
+		check(player);
+		currentTime = 13;
+		bufferedEnd = 13.04;
+		nowSpy.mockReturnValue(104000);
+		check(player);
+
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toEqual({
+			key: "UpdateBackupSearchForceRefresh",
+			value: 104000,
+		});
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt,
+		).toBe(104000);
+	});
 });

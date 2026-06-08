@@ -2809,10 +2809,11 @@ function _checkPinnedBackupStall(player) {
 	const currentTimeAdvanced =
 		_PinnedBackupStallState.lastCurrentTime > 0 &&
 		currentTime > _PinnedBackupStallState.lastCurrentTime + 0.25;
-	const bufferSafe = bufferedEnd - currentTime > _getLowLatencyDangerZone();
+	const bufferHeadroom = bufferedEnd - currentTime;
+	const bufferSafe = bufferHeadroom > _getLowLatencyDangerZone();
 	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
 
-	if (bufferAdvanced || (currentTimeAdvanced && bufferSafe)) {
+	if (bufferSafe && (bufferAdvanced || currentTimeAdvanced)) {
 		_PinnedBackupStallState.firstObservedAt = 0;
 		_PinnedBackupStallState.lastCurrentTime = currentTime;
 		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
@@ -2858,7 +2859,7 @@ function _checkPinnedBackupStall(player) {
 		if (!_PinnedBackupStallState.exhaustedLogged) {
 			_PinnedBackupStallState.exhaustedLogged = true;
 			_log(
-				`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — re-searches exhausted (3 attempts), leaving stream as-is`,
+				`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, bufferHeadroom=${bufferHeadroom.toFixed(2)}s, unsafe buffer for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — re-searches exhausted (3 attempts), leaving stream as-is`,
 				"warning",
 			);
 		}
@@ -2868,7 +2869,7 @@ function _checkPinnedBackupStall(player) {
 	__TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
 	_broadcastWorkers({ key: "UpdateBackupSearchForceRefresh", value: now });
 	_log(
-		`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, buffer not growing for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`,
+		`Pinned backup stalled (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, bufferEnd=${bufferedEnd.toFixed(2)}s, bufferHeadroom=${bufferHeadroom.toFixed(2)}s, unsafe buffer for ${Math.round((now - _PinnedBackupStallState.firstObservedAt) / 100) / 10}s — forcing backup re-search`,
 		"warning",
 	);
 }
