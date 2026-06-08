@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.4.4] - 2026-06-09
+
+### Fixed
+- **Pinned autoplay recovery now rotates during the LQ dwell window.** When pinned-stall recovery cools down `autoplay`, the worker releases the autoplay-only hold so the next backup search can move to another clean source instead of reusing the same starving fallback.
+- **Degraded page-side fallback catches more Twitch ad markers.** The worker-crash fallback now uses the broader parser ad-marker detection and can exit cue-out ad blocks on `#EXT-X-CUE-IN`, covering more ad playlists when the worker is unavailable.
+
+### Changed
+- Added regression tests for stalled autoplay dwell release and degraded fallback marker stripping.
+
 ## [9.4.3] - 2026-06-08
 
 ### Fixed
