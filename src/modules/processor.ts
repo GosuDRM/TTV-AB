@@ -247,6 +247,29 @@ function _getPinnedBackupPlayerTypeForInfo(info) {
 	return null;
 }
 
+function _getRecentCleanBackupPlayerTypeForInfo(info, now = Date.now()) {
+	const playerType =
+		typeof info?.LastCleanBackupPlayerType === "string" &&
+		info.LastCleanBackupPlayerType
+			? info.LastCleanBackupPlayerType
+			: null;
+	if (!playerType || playerType === "autoplay") return null;
+	if (_isBackupPlayerRetryCoolingDown(info, playerType)) return null;
+	if (info?.LoggedBackupAdsByType?.has?.(playerType)) return null;
+	if (
+		typeof info?.LastCleanBackupM3U8 !== "string" ||
+		!info.LastCleanBackupM3U8
+	) {
+		return null;
+	}
+
+	const lastCleanAt = Number(info.LastCleanBackupAt) || 0;
+	const ageMs = now - lastCleanAt;
+	if (lastCleanAt <= 0 || ageMs < 0 || ageMs > 120000) return null;
+
+	return playerType;
+}
+
 function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 	const configuredPlayerTypes = [
 		...(__TTVAB_STATE__?.BackupPlayerTypes || []),
@@ -275,6 +298,7 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 	);
 
 	pushUnique(preferredPlayerType);
+	pushUnique(_getRecentCleanBackupPlayerTypeForInfo(info));
 	if (
 		activePlayerType !== "autoplay" ||
 		_shouldTryAutoplayFirst(info) ||

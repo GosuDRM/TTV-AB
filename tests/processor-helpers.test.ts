@@ -353,6 +353,75 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 		expect(result).toContain("autoplay");
 	});
 
+	it("tries a recent clean non-autoplay backup before cold source candidates", () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		state.BackupPlayerTypes = ["embed", "popout", "autoplay"];
+		state.DisableAutoplayBackup = true;
+
+		try {
+			const result = fn()(
+				makeInfo({
+					LastCleanBackupPlayerType: "popout",
+					LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+					LastCleanBackupAt: Date.now() - 30000,
+				}),
+			);
+
+			expect(result.slice(0, 2)).toEqual(["popout", "embed"]);
+			expect(result).not.toContain("autoplay");
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+		}
+	});
+
+	it("does not fast-retry stale, cooled-down, ad-marked, or autoplay backups", () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		state.BackupPlayerTypes = ["embed", "popout", "autoplay"];
+		state.DisableAutoplayBackup = false;
+
+		try {
+			const now = Date.now();
+			const blockedPopout = new Set<string>(["popout"]);
+			const coolingDown = new Map<string, number>([["popout", now + 15000]]);
+			const cases = [
+				makeInfo({
+					LastCleanBackupPlayerType: "popout",
+					LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+					LastCleanBackupAt: now - 180000,
+				}),
+				makeInfo({
+					LastCleanBackupPlayerType: "popout",
+					LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+					LastCleanBackupAt: now - 30000,
+					FailedBackupPlayerTypes: coolingDown,
+				}),
+				makeInfo({
+					LastCleanBackupPlayerType: "popout",
+					LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+					LastCleanBackupAt: now - 30000,
+					LoggedBackupAdsByType: blockedPopout,
+				}),
+				makeInfo({
+					LastCleanBackupPlayerType: "autoplay",
+					LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+					LastCleanBackupAt: now - 30000,
+				}),
+			];
+
+			for (const info of cases) {
+				expect(fn()(info)[0]).toBe("embed");
+			}
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+		}
+	});
+
 	it("does not keep autoplay first after the LQ dwell window expires", () => {
 		getState().DisableAutoplayBackup = false;
 		const result = fn()(
@@ -591,6 +660,73 @@ describe("_findBackupStream fallback policy", () => {
 
 			expect(tokenCalls).toEqual(["embed", "autoplay"]);
 			expect(result.type).toBe("autoplay");
+			expect(result.m3u8).toBe(cleanPlaylist);
+			expect(result.isFallback).toBe(false);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previousGetToken;
+			}
+			if (previousExtract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previousExtract;
+			}
+		}
+	});
+
+	it("validates a recent clean preferred type again before selecting it", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["embed", "popout"];
+		state.DisableAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo({
+					LastCleanBackupPlayerType: "popout",
+					LastCleanBackupM3U8: cleanPlaylist,
+					LastCleanBackupAt: Date.now() - 30000,
+				}),
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					if (href.includes("/popout/")) {
+						return new Response(adPlaylist, { status: 200 });
+					}
+					if (href.includes("/embed/")) {
+						return new Response(cleanPlaylist, { status: 200 });
+					}
+					return new Response(null, { status: 404 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["popout", "embed"]);
+			expect(result.type).toBe("embed");
 			expect(result.m3u8).toBe(cleanPlaylist);
 			expect(result.isFallback).toBe(false);
 		} finally {
