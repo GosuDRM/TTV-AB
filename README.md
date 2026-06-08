@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.4.0-purple)
+![Version](https://img.shields.io/badge/version-9.4.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.4.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.4.1-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,11 +62,10 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
-### v9.4.0 — 2026-06-08
-- **Disabled low-quality fallback no longer leaks ads.** Source-quality backups are tried first, then `autoplay` is used only as an emergency last resort when every source backup is ad-marked.
-- **Ad-marked backup playlists are rejected.** The worker no longer promotes contaminated fallback playlists, and empty stripped playlists use a hold segment instead of returning the original ad playlist.
-- **Midroll autoplay holds no longer trap playback.** If `autoplay` is enabled and wins, it is held only for the short LQ dwell window, then normal source recovery can resume.
-- **Worker recovery is less eager to reload.** Late heartbeats get a retry before a worker is treated as crashed, reducing avoidable player reloads during Twitch worker stalls.
+### v9.4.1 — 2026-06-08
+- **Ad spoof accounting now respects Twitch's declared pod size.** A playlist with extra stitched-ad DATERANGEs no longer sends or logs impossible totals such as `5/2 pod`.
+- **Pinned backup stall detection is less trigger-happy.** Advancing playback with a safe buffer is treated as progress, so clean backup streams are not re-searched just because the buffer edge is flat.
+- **Regression coverage was added for both fixes.** Tests now lock the ad-spoof pod cap and the pinned-backup progress guard.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
