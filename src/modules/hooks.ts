@@ -644,6 +644,27 @@ function _isPlaybackContextMismatch(expectedContext, currentContext) {
 	return false;
 }
 
+function _recoverCrashedWorker(
+	worker,
+	pagePlaybackContext,
+	message,
+	level = "warning",
+) {
+	if (
+		!worker ||
+		worker.__TTVABIntentionallyTerminated ||
+		worker.__TTVABCrashed
+	) {
+		return false;
+	}
+	worker.__TTVABCrashed = true;
+	_log(message, level);
+	pruneTrackedWorkers([worker]);
+	_installPageSideM3U8Override();
+	_attemptWorkerRestart(worker, pagePlaybackContext);
+	return true;
+}
+
 function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	if (!worker || worker.__TTVABIntentionallyTerminated) return;
 	const recoveryContext = _getWorkerPlaybackContext(
@@ -674,7 +695,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		"warning",
 	);
 
-	setTimeout(() => {
+	const runRecovery = () => {
 		if (worker.__TTVABIntentionallyTerminated) return;
 		const currentContext = _getPlaybackContextFromUrl(window.location.href);
 		if (_isPlaybackContextMismatch(recoveryContext, currentContext)) {
@@ -687,7 +708,12 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		}
 		const now = Date.now();
 		if (now - _lastWorkerRecoveryReloadAt < HW_RECOVERY_COOLDOWN_MS) {
-			_log("Skipping worker recovery reload (cooldown)", "info");
+			const remainingCooldown = Math.max(
+				0,
+				HW_RECOVERY_COOLDOWN_MS - (now - _lastWorkerRecoveryReloadAt),
+			);
+			_log("Deferring worker recovery reload (cooldown)", "info");
+			setTimeout(runRecovery, remainingCooldown);
 			return;
 		}
 		_lastWorkerRecoveryReloadAt = now;
@@ -701,7 +727,9 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		} catch (recoveryErr) {
 			_log(`Worker recovery failed: ${recoveryErr.message}`, "error");
 		}
-	}, delay);
+	};
+
+	setTimeout(runRecovery, delay);
 }
 
 let _workerWatchdogID: ReturnType<typeof setInterval> | null = null;
@@ -729,10 +757,7 @@ function _startWorkerWatchdog() {
 					} catch {}
 					continue;
 				}
-				worker.__TTVABCrashed = true;
-				_log("Worker unresponsive (no pong)", "warning");
-				pruneTrackedWorkers([worker]);
-				_attemptWorkerRestart(
+				_recoverCrashedWorker(
 					worker,
 					_getWorkerPlaybackContext(worker, {
 						MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
@@ -740,6 +765,8 @@ function _startWorkerWatchdog() {
 						VodID: __TTVAB_STATE__?.PageVodID || "",
 						MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
 					}),
+					"Worker unresponsive (no pong)",
+					"warning",
 				);
 				continue;
 			}
@@ -1209,14 +1236,12 @@ function _hookWorker() {
 				const _hbTimeout = setTimeout(() => {
 					if (this.__TTVABCrashed || this.__TTVABIntentionallyTerminated)
 						return;
-					this.__TTVABCrashed = true;
-					_log(
+					_recoverCrashedWorker(
+						this,
+						pagePlaybackContext,
 						"Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback",
 						"warning",
 					);
-					pruneTrackedWorkers([this]);
-					_installPageSideM3U8Override();
-					_attemptWorkerRestart(this, pagePlaybackContext);
 				}, HW_INITIAL_PONG_TIMEOUT_MS);
 				this.addEventListener("message", (e) => {
 					const data = _getWorkerBridgeMessage(e.data);
@@ -1673,12 +1698,12 @@ function _hookWorker() {
 				this.__TTVABWorkerOpts = workerOpts;
 
 				this.addEventListener("error", (e) => {
-					if (this.__TTVABIntentionallyTerminated) return;
-					if (this.__TTVABCrashed) return;
-					this.__TTVABCrashed = true;
-					_log(`Worker crashed: ${e.message || "Unknown error"}`, "error");
-					pruneTrackedWorkers([this]);
-					_attemptWorkerRestart(this, pagePlaybackContext);
+					_recoverCrashedWorker(
+						this,
+						pagePlaybackContext,
+						`Worker crashed: ${e.message || "Unknown error"}`,
+						"error",
+					);
 				});
 
 				this.__TTVABCreatedAt = Date.now();

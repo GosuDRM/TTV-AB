@@ -648,6 +648,75 @@ describe("_findBackupStream fallback policy", () => {
 	});
 });
 
+describe("_canReloadNativePlayerAfterAd", () => {
+	const fn = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: (url: string, options?: unknown) => Promise<Response>,
+				resolution?: Record<string, unknown> | string | null,
+			) => Promise<boolean>
+		>("_canReloadNativePlayerAfterAd");
+
+	it("uses bounded fetches for native recovery usher and stream probes", async () => {
+		const state = getState();
+		const previousMinProbes = state.AdEndMinNativeRecoveryProbes;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const previousBuildUsher = g._buildUsherPlaybackUrl;
+		const previousGetStreamUrl = g._getStreamUrl;
+		const previousFetchWithTimeout = g._fetchWithTimeout;
+		const probeUrls: string[] = [];
+
+		state.AdEndMinNativeRecoveryProbes = 1;
+		g._getToken = async () => new Response("{}", { status: 200 });
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._buildUsherPlaybackUrl = () =>
+			new URL("https://usher.example/channel/hls/testchannel.m3u8");
+		g._getStreamUrl = () => "https://edge.example/live/index.m3u8";
+		g._fetchWithTimeout = async (_realFetch, url) => {
+			probeUrls.push(String(url));
+			return new Response(
+				probeUrls.length === 1
+					? "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlive/index.m3u8"
+					: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+				{ status: 200 },
+			);
+		};
+
+		try {
+			const result = await fn()(
+				makeInfo({ IsUsingBackupStream: true }),
+				async () => {
+					throw new Error("native recovery probe used raw fetch");
+				},
+				"720p",
+			);
+
+			expect(result).toBe(true);
+			expect(probeUrls).toEqual([
+				"https://usher.example/channel/hls/testchannel.m3u8",
+				"https://edge.example/live/index.m3u8",
+			]);
+		} finally {
+			state.AdEndMinNativeRecoveryProbes = previousMinProbes;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+			if (previousBuildUsher === undefined) delete g._buildUsherPlaybackUrl;
+			else g._buildUsherPlaybackUrl = previousBuildUsher;
+			if (previousGetStreamUrl === undefined) delete g._getStreamUrl;
+			else g._getStreamUrl = previousGetStreamUrl;
+			if (previousFetchWithTimeout === undefined) delete g._fetchWithTimeout;
+			else g._fetchWithTimeout = previousFetchWithTimeout;
+		}
+	});
+});
+
 const countDiscontinuity = (s: string) =>
 	s.split("\n").filter((l) => l.trim() === "#EXT-X-DISCONTINUITY").length;
 
