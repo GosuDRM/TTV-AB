@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.4.2-purple)
+![Version](https://img.shields.io/badge/version-9.4.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.4.2-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.4.3-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,11 +62,8 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
-### v9.4.2 — 2026-06-08
-- **Native recovery probes are bounded.** Stalled native usher or stream probes now time out instead of holding the worker's intercepted playlist response.
-- **SPA navigation stays current after BFCache restores.** Firefox `pageshow` now reinstalls the history hooks and resyncs page context for tracked workers.
-- **Worker crashes recover automatically.** Instant crashes now install the page-side M3U8 fallback and retry player recovery after any active reload cooldown instead of silently dropping the retry.
-- **Worker injection guards cover native recovery.** The build now fails if the injected worker bundle is missing a direct native-recovery helper.
+### v9.4.3 — 2026-06-08
+- **Pinned autoplay fallback recovers from thin-buffer starvation.** Backup stall detection now treats a moving buffer as healthy only when it also has safe headroom, so a clean `autoplay` fallback riding the live edge triggers a backup re-search instead of repeatedly stalling.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
