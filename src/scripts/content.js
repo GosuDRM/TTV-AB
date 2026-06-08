@@ -1,12 +1,12 @@
-// TTV AB v9.4.3 - Twitch Ad Blocker
+// TTV AB v9.4.4 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.4.3",
-    INTERNAL_VERSION: 219,
+    VERSION: "9.4.4",
+    INTERNAL_VERSION: 220,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -3340,6 +3340,8 @@ function _shouldTryAutoplayFirst(info) {
 function _shouldHoldAutoplayBackupDuringAd(info) {
     if (__TTVAB_STATE__?.DisableAutoplayBackup)
         return false;
+    if (_isBackupPlayerRetryCoolingDown(info, "autoplay"))
+        return false;
     const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
     const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
     const holdStartedAt = lqHoldStartAt || Number(info?.LastCleanBackupAt) || 0;
@@ -4457,7 +4459,9 @@ function _installPageSideM3U8Override() {
     };
 }
 function _hasTwitchAdMetadata(text) {
-    return text.includes("stitched-ad");
+    return typeof _$hem === "function"
+        ? _$hem(text)
+        : typeof text === "string" && text.includes("stitched-ad");
 }
 function _stripM3U8Ads(text) {
     const lines = text.split("\n");
@@ -4466,9 +4470,13 @@ function _stripM3U8Ads(text) {
     let discontinuityCount = 0;
     for (const line of lines) {
         const trimmed = line.trim();
-        if (trimmed.startsWith("#EXT-X-DATERANGE") &&
-            trimmed.includes("stitched-ad")) {
+        if (_hasTwitchAdMetadata(trimmed)) {
             inAd = true;
+            discontinuityCount = 0;
+            continue;
+        }
+        if (inAd && trimmed.startsWith("#EXT-X-CUE-IN")) {
+            inAd = false;
             discontinuityCount = 0;
             continue;
         }
