@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.4.1] - 2026-06-08
+
+### Fixed
+- **Ad spoof accounting now caps at the declared pod length.** If Twitch exposes more unique stitched-ad DATERANGEs than the playlist's `X-TV-TWITCH-AD-POD-LENGTH`, the worker stops spoofing once the pod is complete instead of sending or logging impossible totals such as `5/2 pod`.
+- **Pinned backup stall detection now treats safe playback progress as healthy.** A backup stream with an advancing playhead and safe buffer headroom no longer forces a backup re-search only because the buffer edge has not moved.
+
+### Changed
+- Added focused regression tests for ad-spoof pod capping and pinned-backup stall progress detection.
+
 ## [9.4.0] - 2026-06-08
 
 ### Fixed

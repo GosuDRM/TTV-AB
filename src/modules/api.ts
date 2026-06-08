@@ -371,6 +371,7 @@ async function _notifyAdComplete(
 		let podCompleteSent = false;
 
 		for (let i = 0; i < matches.length; i++) {
+			if (spoofedSet && spoofedSet.size >= podLength) break;
 			// Cheap ID pre-extract for the dedup check — the DATERANGE capture
 			// always starts with ID="stitched-ad-<UUID>". Checking the dedup set
 			// before the full _parseAttrs() avoids re-parsing every already-
