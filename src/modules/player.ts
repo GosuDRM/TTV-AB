@@ -2806,9 +2806,13 @@ function _checkPinnedBackupStall(player) {
 	const bufferAdvanced =
 		_PinnedBackupStallState.lastBufferedEnd > 0 &&
 		bufferedEnd > _PinnedBackupStallState.lastBufferedEnd + 0.1;
+	const currentTimeAdvanced =
+		_PinnedBackupStallState.lastCurrentTime > 0 &&
+		currentTime > _PinnedBackupStallState.lastCurrentTime + 0.25;
+	const bufferSafe = bufferedEnd - currentTime > _getLowLatencyDangerZone();
 	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
 
-	if (bufferAdvanced) {
+	if (bufferAdvanced || (currentTimeAdvanced && bufferSafe)) {
 		_PinnedBackupStallState.firstObservedAt = 0;
 		_PinnedBackupStallState.lastCurrentTime = currentTime;
 		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
