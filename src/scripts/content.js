@@ -1,12 +1,12 @@
-// TTV AB v9.4.4 - Twitch Ad Blocker
+// TTV AB v9.5.0 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.4.4",
-    INTERNAL_VERSION: 220,
+    VERSION: "9.5.0",
+    INTERNAL_VERSION: 221,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -2086,6 +2086,27 @@ function _getPinnedBackupPlayerTypeForInfo(info) {
     }
     return null;
 }
+function _getRecentCleanBackupPlayerTypeForInfo(info, now = Date.now()) {
+    const playerType = typeof info?.LastCleanBackupPlayerType === "string" &&
+        info.LastCleanBackupPlayerType
+        ? info.LastCleanBackupPlayerType
+        : null;
+    if (!playerType || playerType === "autoplay")
+        return null;
+    if (_isBackupPlayerRetryCoolingDown(info, playerType))
+        return null;
+    if (info?.LoggedBackupAdsByType?.has?.(playerType))
+        return null;
+    if (typeof info?.LastCleanBackupM3U8 !== "string" ||
+        !info.LastCleanBackupM3U8) {
+        return null;
+    }
+    const lastCleanAt = Number(info.LastCleanBackupAt) || 0;
+    const ageMs = now - lastCleanAt;
+    if (lastCleanAt <= 0 || ageMs < 0 || ageMs > 120000)
+        return null;
+    return playerType;
+}
 function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
     const configuredPlayerTypes = [
         ...(__TTVAB_STATE__?.BackupPlayerTypes || []),
@@ -2107,6 +2128,7 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
         : null;
     const safeStartIdx = Math.max(0, Math.min(configuredPlayerTypes.length, Number(startIdx) || 0));
     pushUnique(preferredPlayerType);
+    pushUnique(_getRecentCleanBackupPlayerTypeForInfo(info));
     if (activePlayerType !== "autoplay" ||
         _shouldTryAutoplayFirst(info) ||
         _shouldHoldAutoplayBackupDuringAd(info)) {
@@ -4619,6 +4641,7 @@ function _$hw() {
                 ${_clearBackupPlayerRetryCooldown.toString()}
                 ${_isBackupPlayerRetryCoolingDown.toString()}
                 ${_getPinnedBackupPlayerTypeForInfo.toString()}
+                ${_getRecentCleanBackupPlayerTypeForInfo.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_isAdEndStable.toString()}
