@@ -746,7 +746,7 @@ async function _canReloadNativePlayerAfterAd(
 			return false;
 		}
 
-		const encRes = await realFetch(usherUrl.href);
+		const encRes = await _fetchWithTimeout(realFetch, usherUrl.href);
 		if (encRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
 			_markNativeRecoveryProbeFailed(info);
@@ -770,7 +770,7 @@ async function _canReloadNativePlayerAfterAd(
 			return false;
 		}
 
-		const streamRes = await realFetch(streamUrl);
+		const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
 		if (streamRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
 			_markNativeRecoveryProbeFailed(info);

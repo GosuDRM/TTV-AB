@@ -1226,6 +1226,21 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_processM3U8Core",
+			helper: "_refreshActiveBackupMediaPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_isAdEndStable",
+			source: processorSource,
+		},
+		{
+			consumer: "_resetStreamAdState",
+			helper: "_resetNativeRecoveryReadyState",
+			source: processorSource,
+		},
+		{
 			consumer: "_findBackupStream",
 			helper: "_getFallbackPromotionPolicy",
 			source: processorSource,
@@ -1278,6 +1293,66 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_canReloadNativePlayerAfterAd",
 			helper: "_fetchWithTimeout",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAdEndStable",
+			helper: "_canReloadNativePlayerAfterAd",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_resetNativeRecoveryReadyState",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_getToken",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_extractPlaybackAccessToken",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_buildUsherPlaybackUrl",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_getStreamUrl",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_hasPlaylistAdMarkers",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_hasExplicitAdMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_playlistHasKnownAdSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_markNativeRecoveryProbeFailed",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_markNativeRecoveryReady",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_getNativeRecoveryProbePlayerType",
 			source: processorSource,
 		},
 		{

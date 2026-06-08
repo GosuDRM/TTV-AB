@@ -170,22 +170,37 @@ function _initToggleListener() {
 function _hookSpaNavigation() {
 	const sync = () => _syncPagePlaybackContext({ broadcast: true });
 	const originalPushState = history.pushState;
-	history.pushState = function (...args) {
+	const hookedPushState = function (...args) {
 		const result = originalPushState.apply(this, args);
 		sync();
 		return result;
 	};
 	const originalReplaceState = history.replaceState;
-	history.replaceState = function (...args) {
+	const hookedReplaceState = function (...args) {
 		const result = originalReplaceState.apply(this, args);
 		sync();
 		return result;
 	};
-	window.addEventListener("popstate", sync);
-	window.addEventListener("pagehide", () => {
+	let isHooked = false;
+	const install = () => {
+		if (isHooked) return;
+		history.pushState = hookedPushState;
+		history.replaceState = hookedReplaceState;
+		window.addEventListener("popstate", sync);
+		isHooked = true;
+	};
+	const uninstall = () => {
+		if (!isHooked) return;
 		window.removeEventListener("popstate", sync);
 		history.pushState = originalPushState;
 		history.replaceState = originalReplaceState;
+		isHooked = false;
+	};
+	install();
+	window.addEventListener("pagehide", uninstall);
+	window.addEventListener("pageshow", () => {
+		install();
+		sync();
 	});
 }
 

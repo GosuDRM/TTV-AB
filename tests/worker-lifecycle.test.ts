@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -40,6 +48,14 @@ beforeEach(() => {
 	recoveryState.attempts = 0;
 	recoveryState.lastAttemptAt = 0;
 	recoveryState.limitLogged = false;
+	g._lastWorkerRecoveryReloadAt = 0;
+	window.history.replaceState(null, "", "/testchannel");
+});
+
+afterEach(() => {
+	vi.useRealTimers();
+	vi.restoreAllMocks();
+	delete g._doPlayerTask;
 });
 
 function T<T>(name: string): T {
@@ -121,5 +137,109 @@ describe("worker recovery lifecycle", () => {
 
 		expect(worker.__TTVABMissedPongs).toBe(0);
 		expect(worker.__TTVABLastPongAt).toBe(1000);
+	});
+
+	it("installs fallback and schedules recovery for an instant crash", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const recover = T<
+			(
+				worker: Record<string, unknown>,
+				context: Record<string, unknown>,
+				message: string,
+				level?: string,
+			) => boolean
+		>("_recoverCrashedWorker");
+		const previousInstallFallback = g._installPageSideM3U8Override;
+		const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
+		let installedFallback = 0;
+		let reloads = 0;
+		g._installPageSideM3U8Override = () => {
+			installedFallback++;
+		};
+		g._getPlaybackContextFromUrl = () => ({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		g._doPlayerTask = () => {
+			reloads++;
+			return true;
+		};
+
+		try {
+			const worker: Record<string, unknown> = {};
+			const didRecover = recover(
+				worker,
+				{ MediaType: "live", ChannelName: "testchannel" },
+				"Worker crashed: boom",
+				"error",
+			);
+
+			expect(didRecover).toBe(true);
+			expect(worker.__TTVABCrashed).toBe(true);
+			expect(installedFallback).toBe(1);
+			expect(reloads).toBe(0);
+
+			vi.advanceTimersByTime(1000);
+			expect(reloads).toBe(1);
+		} finally {
+			if (previousInstallFallback === undefined) {
+				delete g._installPageSideM3U8Override;
+			} else {
+				g._installPageSideM3U8Override = previousInstallFallback;
+			}
+			if (previousGetPlaybackContext === undefined) {
+				delete g._getPlaybackContextFromUrl;
+			} else {
+				g._getPlaybackContextFromUrl = previousGetPlaybackContext;
+			}
+		}
+	});
+
+	it("retries replacement worker recovery after reload cooldown instead of dropping it", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const attempt = T<
+			(
+				worker: Record<string, unknown>,
+				context: Record<string, unknown>,
+			) => void
+		>("_attemptWorkerRestart");
+		const reloads: unknown[][] = [];
+		const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
+		g._lastWorkerRecoveryReloadAt = 100000;
+		g._getPlaybackContextFromUrl = () => ({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		g._doPlayerTask = (...args: unknown[]) => {
+			reloads.push(args);
+			return true;
+		};
+
+		try {
+			attempt({}, { MediaType: "live", ChannelName: "testchannel" });
+			vi.advanceTimersByTime(1000);
+			expect(reloads).toHaveLength(0);
+
+			vi.advanceTimersByTime(28999);
+			expect(reloads).toHaveLength(0);
+
+			vi.advanceTimersByTime(1);
+			expect(reloads).toHaveLength(1);
+			expect(reloads[0][2]).toEqual({
+				reason: "worker-recovery",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			});
+		} finally {
+			if (previousGetPlaybackContext === undefined) {
+				delete g._getPlaybackContextFromUrl;
+			} else {
+				g._getPlaybackContextFromUrl = previousGetPlaybackContext;
+			}
+		}
 	});
 });
