@@ -1257,6 +1257,16 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_getOrderedBackupPlayerTypes",
+			helper: "_getRecentCleanBackupPlayerTypeForInfo",
+			source: processorSource,
+		},
+		{
+			consumer: "_getRecentCleanBackupPlayerTypeForInfo",
+			helper: "_isBackupPlayerRetryCoolingDown",
+			source: processorSource,
+		},
+		{
+			consumer: "_getOrderedBackupPlayerTypes",
 			helper: "_shouldTryAutoplayFirst",
 			source: processorSource,
 		},

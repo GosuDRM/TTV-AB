@@ -1007,6 +1007,7 @@ function _hookWorker() {
                 ${_clearBackupPlayerRetryCooldown.toString()}
                 ${_isBackupPlayerRetryCoolingDown.toString()}
                 ${_getPinnedBackupPlayerTypeForInfo.toString()}
+                ${_getRecentCleanBackupPlayerTypeForInfo.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_isAdEndStable.toString()}
