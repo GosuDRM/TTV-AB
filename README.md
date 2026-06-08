@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.4.1-purple)
+![Version](https://img.shields.io/badge/version-9.4.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.4.1-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.4.2-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,10 +62,11 @@ During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g.
 
 ## 🔔 What's New
 
-### v9.4.1 — 2026-06-08
-- **Ad spoof accounting now respects Twitch's declared pod size.** A playlist with extra stitched-ad DATERANGEs no longer sends or logs impossible totals such as `5/2 pod`.
-- **Pinned backup stall detection is less trigger-happy.** Advancing playback with a safe buffer is treated as progress, so clean backup streams are not re-searched just because the buffer edge is flat.
-- **Regression coverage was added for both fixes.** Tests now lock the ad-spoof pod cap and the pinned-backup progress guard.
+### v9.4.2 — 2026-06-08
+- **Native recovery probes are bounded.** Stalled native usher or stream probes now time out instead of holding the worker's intercepted playlist response.
+- **SPA navigation stays current after BFCache restores.** `pageshow` now reinstalls the history hooks and resyncs page context for tracked workers.
+- **Worker crashes recover automatically.** Instant crashes now install the page-side M3U8 fallback and retry player recovery after any active reload cooldown instead of silently dropping the retry.
+- **Worker injection guards cover native recovery.** The build now fails if the injected worker bundle is missing a direct native-recovery helper.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

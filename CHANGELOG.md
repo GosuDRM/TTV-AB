@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.4.2] - 2026-06-08
+
+### Fixed
+- **Native recovery probes can no longer hang playlist delivery.** The worker now bounds the native usher and stream probes with the existing timeout wrapper, so a stalled Twitch recovery request fails fast instead of holding the intercepted M3U8 response.
+- **SPA navigation hooks survive BFCache restores.** After `pagehide` unhooks history methods, `pageshow` now reinstalls the SPA navigation bridge and resyncs page context so workers keep receiving current channel/VOD state.
+- **Instant worker crashes now recover automatically.** Explicit worker errors, missed startup heartbeats, and watchdog failures now share the same crash recovery path, install the page-side M3U8 fallback immediately, and defer reload recovery until the cooldown expires instead of dropping replacement-worker crashes.
+- **Worker injection validation now covers the native recovery helper chain.** Build guards now fail loudly if a direct helper used by native recovery is removed from the injected worker bundle.
+
+### Changed
+- Added regression tests for bounded native recovery probes, BFCache SPA navigation rehooking, instant worker crash fallback, and cooldown-delayed worker recovery.
+
 ## [9.4.1] - 2026-06-08
 
 ### Fixed
