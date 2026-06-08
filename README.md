@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.4.4-purple)
+![Version](https://img.shields.io/badge/version-9.5.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.4.4-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.5.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -62,9 +62,9 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
-### v9.4.4 — 2026-06-09
-- **Pinned autoplay recovery now rotates during the LQ dwell window.** When pinned-stall recovery cools down `autoplay`, the worker releases the autoplay-only hold instead of reusing the same starving fallback.
-- **Degraded page-side fallback catches more Twitch ad markers.** Worker-crash fallback now uses the broader parser ad-marker detection and can exit cue-out ad blocks cleanly.
+### v9.5.0 — 2026-06-09
+- **Consecutive ad breaks reuse the safest recent backup first.** If a non-autoplay backup was recently verified clean for the same stream, the next backup search tries that type before cold source candidates, reducing first-frame black screen without bringing back autoplay-first stalls.
+- **No relaxed ad safety gate.** The remembered backup type is still re-fetched and re-validated before selection, and it is skipped if stale, cooling down, ad-marked, or `autoplay`.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

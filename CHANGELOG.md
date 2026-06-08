@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.5.0] - 2026-06-09
+
+### Fixed
+- **Brief first-frame black screen on consecutive ad breaks.** Backup search now prefers a recently verified clean non-autoplay backup type for the same stream before cold source candidates, so repeated breaks can avoid wasting seconds on source types that just returned ad-marked playlists.
+
+### Safety
+- The remembered backup type is still re-fetched and checked for playable, ad-free media before it can be selected.
+- `autoplay` is never preferred by this fast path, preventing the previous autoplay-first stall tradeoff from returning.
+- Stale, cooling-down, or currently ad-marked backup types are skipped.
+
 ## [9.4.4] - 2026-06-09
 
 ### Fixed
