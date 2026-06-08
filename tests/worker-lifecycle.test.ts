@@ -243,3 +243,40 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 });
+
+describe("page-side M3U8 fallback", () => {
+	it("detects Twitch ad metadata beyond literal stitched-ad markers", () => {
+		const hasMetadata = T<(text: string) => boolean>("_hasTwitchAdMetadata");
+
+		expect(hasMetadata("#EXTM3U\n#EXT-X-CUE-OUT:30")).toBe(true);
+		expect(hasMetadata('#EXTM3U\n#EXT-X-DATERANGE:CLASS="twitch-ad"')).toBe(
+			true,
+		);
+		expect(hasMetadata("#EXTM3U\n#EXTINF:2.000,\nclean.ts")).toBe(false);
+	});
+
+	it("strips degraded fallback ad blocks marked by cue-out tags", () => {
+		const strip = T<(text: string) => string>("_stripM3U8Ads");
+		const playlist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:1",
+			"#EXT-X-CUE-OUT:30",
+			"#EXTINF:2.000,",
+			"ad-1.ts",
+			"#EXT-X-DISCONTINUITY",
+			"#EXTINF:2.000,",
+			"ad-2.ts",
+			"#EXT-X-DISCONTINUITY",
+			"#EXTINF:2.000,",
+			"clean.ts",
+		].join("\n");
+
+		const stripped = strip(playlist);
+
+		expect(stripped).not.toContain("#EXT-X-CUE-OUT");
+		expect(stripped).not.toContain("ad-1.ts");
+		expect(stripped).not.toContain("ad-2.ts");
+		expect(stripped).toContain("clean.ts");
+	});
+});

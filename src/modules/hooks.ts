@@ -828,7 +828,9 @@ function _installPageSideM3U8Override() {
 }
 
 function _hasTwitchAdMetadata(text) {
-	return text.includes("stitched-ad");
+	return typeof _hasExplicitAdMetadata === "function"
+		? _hasExplicitAdMetadata(text)
+		: typeof text === "string" && text.includes("stitched-ad");
 }
 
 function _stripM3U8Ads(text) {
@@ -840,11 +842,14 @@ function _stripM3U8Ads(text) {
 	for (const line of lines) {
 		const trimmed = line.trim();
 
-		if (
-			trimmed.startsWith("#EXT-X-DATERANGE") &&
-			trimmed.includes("stitched-ad")
-		) {
+		if (_hasTwitchAdMetadata(trimmed)) {
 			inAd = true;
+			discontinuityCount = 0;
+			continue;
+		}
+
+		if (inAd && trimmed.startsWith("#EXT-X-CUE-IN")) {
+			inAd = false;
 			discontinuityCount = 0;
 			continue;
 		}

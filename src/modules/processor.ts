@@ -1879,6 +1879,7 @@ function _shouldTryAutoplayFirst(info) {
 
 function _shouldHoldAutoplayBackupDuringAd(info) {
 	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
+	if (_isBackupPlayerRetryCoolingDown(info, "autoplay")) return false;
 	const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
 	const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
 	const holdStartedAt = lqHoldStartAt || Number(info?.LastCleanBackupAt) || 0;

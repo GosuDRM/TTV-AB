@@ -441,6 +441,26 @@ describe("_shouldHoldAutoplayBackupDuringAd", () => {
 		getState().DisableAutoplayBackup = true;
 	});
 
+	it("releases autoplay hold when pinned-stall recovery is cooling it down", () => {
+		getState().DisableAutoplayBackup = false;
+		const startedAt = Date.now() - 2000;
+		const info = makeInfo({
+			IsShowingAd: true,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+			LastCleanBackupAt: startedAt + 1000,
+			VisibleAdStartedAt: startedAt,
+			_LqHoldStartAt: startedAt,
+		});
+		(info.FailedBackupPlayerTypes as Map<string, number>).set(
+			"autoplay",
+			Date.now() + 10000,
+		);
+		expect(fn()(info)).toBe(false);
+		getState().DisableAutoplayBackup = true;
+	});
+
 	it("does not hold stale autoplay from a prior ad cycle", () => {
 		getState().DisableAutoplayBackup = false;
 		const info = makeInfo({
