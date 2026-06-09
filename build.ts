@@ -25,7 +25,6 @@ const STATIC_ROOT_FILES = [
 	"LICENSE",
 	"PRIVACY.md",
 	"README.md",
-	"src/popup/translations.js",
 ];
 const STATIC_ROOT_DIRECTORIES = ["assets", "_locales"];
 
