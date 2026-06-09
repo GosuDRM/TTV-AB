@@ -19,8 +19,12 @@ beforeAll(() => {
 describe("_C constants", () => {
 	const C = () => g._C as Record<string, unknown>;
 
-	it("has valid version", () => {
-		expect(C().VERSION).toBe("9.5.0");
+	it("matches the package version", () => {
+		const pkg = JSON.parse(
+			readFileSync(resolve(__dirname, "../package.json"), "utf8"),
+		) as { version: string };
+		expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+		expect(C().VERSION).toBe(pkg.version);
 	});
 
 	it("has positive INTERNAL_VERSION", () => {

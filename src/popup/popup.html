@@ -12,11 +12,28 @@
             box-sizing: border-box;
         }
 
+        @font-face {
+            font-family: 'Press Start 2P';
+            font-style: normal;
+            font-weight: 400;
+            font-display: swap;
+            src: url('../../assets/fonts/PressStart2P.woff2') format('woff2');
+        }
+
+        @font-face {
+            font-family: 'VT323';
+            font-style: normal;
+            font-weight: 400;
+            font-display: swap;
+            src: url('../../assets/fonts/VT323.woff2') format('woff2');
+        }
+
         html {
             width: 300px;
             max-width: 300px;
             overflow-x: hidden;
             background: #1a1a2e;
+            transition: background 0.4s ease;
         }
 
         body {
@@ -103,6 +120,71 @@
             width: 18px;
             height: 18px;
             fill: white;
+        }
+
+        .header-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+        }
+
+        .theme-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            opacity: 0.5;
+            transform: scale(0.9);
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, opacity 0.25s ease;
+            outline-offset: 3px;
+        }
+
+        .theme-dot-default {
+            background: linear-gradient(135deg, #9146FF 0%, #772CE8 100%);
+        }
+
+        .theme-dot-retro {
+            background: linear-gradient(135deg, #ff3db4 0%, #2ff0e6 100%);
+        }
+
+        .theme-dot:hover {
+            opacity: 1;
+            transform: scale(1.15);
+        }
+
+        .theme-dot:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+        }
+
+        .theme-dot.active {
+            --dot-ring: rgba(255, 255, 255, 0.9);
+            --dot-glow: rgba(255, 255, 255, 0.45);
+            opacity: 1;
+            transform: scale(1.12);
+            box-shadow: 0 0 0 2px var(--dot-ring), 0 0 8px var(--dot-glow);
+            animation: theme-dot-pulse 2.4s ease-in-out infinite;
+        }
+
+        @keyframes theme-dot-pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 2px var(--dot-ring), 0 0 6px var(--dot-glow);
+            }
+
+            50% {
+                box-shadow: 0 0 0 2px var(--dot-ring), 0 0 14px var(--dot-glow);
+            }
         }
 
         .logo {
@@ -950,6 +1032,483 @@
             outline-offset: 2px;
         }
 
+        /* ===================== Retro Synthwave Theme ===================== */
+        html[data-theme="retro"] {
+            --r-bg: #0d0220;
+            --r-bg2: #1c0d3a;
+            --r-magenta: #ff3db4;
+            --r-cyan: #2ff0e6;
+            --r-text: #f1e9ff;
+            --r-muted: #b7a6e6;
+            --r-panel: rgba(46, 18, 84, 0.5);
+            --r-line: rgba(255, 61, 180, 0.5);
+            background: var(--r-bg);
+        }
+
+        html[data-theme="retro"] body {
+            font-family: 'VT323', 'Courier New', monospace;
+            color: var(--r-text);
+            background-color: #0d0220;
+            background-image:
+                radial-gradient(125% 90% at 50% -15%, rgba(255, 61, 180, 0.22), transparent 55%),
+                radial-gradient(120% 95% at 50% 115%, rgba(47, 240, 230, 0.14), transparent 55%),
+                linear-gradient(rgba(255, 61, 180, 0.045) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(47, 240, 230, 0.045) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 26px 26px, 26px 26px;
+        }
+
+        html[data-theme="retro"] body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 100;
+            background: repeating-linear-gradient(0deg,
+                    rgba(0, 0, 0, 0.1) 0px,
+                    rgba(0, 0, 0, 0.1) 1px,
+                    transparent 1px,
+                    transparent 3px);
+            animation: retro-flicker 5s ease-in-out infinite;
+            will-change: opacity;
+        }
+
+        html[data-theme="retro"] .title::before,
+        html[data-theme="retro"] .title::after {
+            display: none;
+        }
+
+        html[data-theme="retro"] .title {
+            font-family: 'Press Start 2P', 'Courier New', monospace;
+            font-size: 18px;
+            letter-spacing: 0;
+            word-spacing: -6px;
+            line-height: 1.15;
+            color: #fff;
+            text-shadow: 0 0 2px #fff, 0 0 9px var(--r-magenta), 0 0 16px var(--r-magenta), 2px 2px 0 rgba(47, 240, 230, 0.45);
+            animation: retro-glow-pulse 2.8s ease-in-out infinite, retro-chromatic 1.7s infinite;
+            will-change: opacity, text-shadow;
+        }
+
+        html[data-theme="retro"] .version {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: 400;
+            letter-spacing: 1px;
+            background: none;
+            -webkit-text-fill-color: currentColor;
+            color: var(--r-cyan);
+            text-shadow: 0 0 6px rgba(47, 240, 230, 0.5);
+            opacity: 1;
+        }
+
+        html[data-theme="retro"] .stable-badge {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 9px;
+            line-height: 1;
+            color: #0d0220;
+            background: var(--r-magenta);
+            padding: 1px 4px;
+            letter-spacing: 0.5px;
+            box-shadow: 0 0 8px rgba(255, 61, 180, 0.55);
+        }
+
+        html[data-theme="retro"] .description-text {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 9px;
+            line-height: 1.15;
+            background: none;
+            -webkit-text-fill-color: currentColor;
+            color: var(--r-muted);
+            opacity: 1;
+        }
+
+        html[data-theme="retro"] .donate-btn {
+            border-radius: 0;
+            background: var(--r-magenta);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 0 12px rgba(255, 61, 180, 0.55);
+            animation: retro-donate-pulse 2.6s ease-in-out infinite;
+            will-change: opacity;
+        }
+
+        html[data-theme="retro"] .donate-btn:hover,
+        html[data-theme="retro"] .donate-btn:focus-visible {
+            animation: none;
+            transform: scale(1.08);
+            box-shadow: 0 0 18px rgba(255, 61, 180, 0.9);
+        }
+
+        html[data-theme="retro"] .status-card {
+            background: var(--r-panel);
+            border: 2px solid var(--r-line);
+            border-radius: 0;
+            box-shadow: 0 0 14px rgba(255, 61, 180, 0.2), inset 0 0 22px rgba(255, 61, 180, 0.05);
+        }
+
+        html[data-theme="retro"] .counter-row {
+            border-top: 1px solid rgba(255, 61, 180, 0.2);
+        }
+
+        html[data-theme="retro"] .status-label,
+        html[data-theme="retro"] .counter-label {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.2;
+            color: var(--r-muted);
+        }
+
+        html[data-theme="retro"] .status-text {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 14px;
+            color: var(--r-cyan);
+            text-shadow: 0 0 6px rgba(47, 240, 230, 0.55);
+        }
+
+        html[data-theme="retro"] .counter-value {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 15px;
+            color: var(--r-cyan);
+            text-shadow: 0 0 8px rgba(47, 240, 230, 0.55);
+        }
+
+        html[data-theme="retro"] .time-saved-value {
+            color: var(--r-magenta);
+            text-shadow: 0 0 8px rgba(255, 61, 180, 0.55);
+        }
+
+        html[data-theme="retro"] .status-dot {
+            border-radius: 0;
+            background: #ffd700;
+            box-shadow: 0 0 8px #ffd700;
+            animation: retro-dot-pulse 1.8s ease-in-out infinite;
+            will-change: opacity;
+        }
+
+        html[data-theme="retro"] .status-dot.disabled {
+            background: #ff5c7a;
+            box-shadow: 0 0 8px #ff5c7a;
+            animation: none;
+        }
+
+        html[data-theme="retro"] .toggle-container {
+            background: var(--r-panel);
+            border: 2px solid var(--r-line);
+            border-radius: 0;
+            box-shadow: 0 0 14px rgba(255, 61, 180, 0.2);
+        }
+
+        html[data-theme="retro"] .toggle-row+.toggle-row {
+            border-top: 1px solid rgba(255, 61, 180, 0.18);
+        }
+
+        html[data-theme="retro"] .toggle-label-row {
+            display: block;
+            line-height: 1.2;
+        }
+
+        html[data-theme="retro"] .toggle-label {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.2;
+            color: var(--r-text);
+        }
+
+        html[data-theme="retro"] .info-icon {
+            border-radius: 0;
+            background: var(--r-magenta);
+            color: #0d0220;
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 12px;
+            font-weight: 700;
+            vertical-align: middle;
+            margin-left: 5px;
+            box-shadow: 0 0 6px rgba(255, 61, 180, 0.5);
+        }
+
+        html[data-theme="retro"] .info-icon:hover {
+            background: var(--r-cyan);
+            color: #0d0220;
+        }
+
+        html[data-theme="retro"] .slider {
+            border-radius: 0;
+            background: #1b0b32;
+            box-shadow: inset 0 0 0 2px rgba(255, 61, 180, 0.5);
+            transition: background 0.15s ease-out, box-shadow 0.15s ease-out;
+        }
+
+        html[data-theme="retro"] .slider:before {
+            border-radius: 0;
+            background: var(--r-muted);
+            box-shadow: none;
+            transition: transform 0.15s ease-out;
+            will-change: transform;
+        }
+
+        html[data-theme="retro"] input:checked+.slider {
+            background: rgba(47, 240, 230, 0.16);
+            box-shadow: inset 0 0 0 2px var(--r-cyan), 0 0 10px rgba(47, 240, 230, 0.5);
+        }
+
+        html[data-theme="retro"] input:checked+.slider:before {
+            background: var(--r-cyan);
+            box-shadow: 0 0 8px rgba(47, 240, 230, 0.7);
+        }
+
+        html[data-theme="retro"] .stats-toggle {
+            background: var(--r-panel);
+            border: 2px solid var(--r-line);
+            border-radius: 0;
+            box-shadow: 0 0 14px rgba(255, 61, 180, 0.2);
+        }
+
+        html[data-theme="retro"] .stats-toggle:hover {
+            background: rgba(47, 240, 230, 0.1);
+            border-color: var(--r-cyan);
+        }
+
+        html[data-theme="retro"] .stats-toggle-text {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 14px;
+            color: var(--r-cyan);
+        }
+
+        html[data-theme="retro"] .stats-toggle-arrow {
+            color: var(--r-cyan);
+        }
+
+        html[data-theme="retro"] .stats-content {
+            background: rgba(13, 2, 32, 0.4);
+            border: 2px solid rgba(255, 61, 180, 0.3);
+            border-radius: 0;
+        }
+
+        html[data-theme="retro"] .stats-section-title {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 12px;
+            letter-spacing: 1px;
+            line-height: 1.2;
+            color: var(--r-cyan);
+        }
+
+        html[data-theme="retro"] .stats-desc,
+        html[data-theme="retro"] .chart-avg,
+        html[data-theme="retro"] .channel-name,
+        html[data-theme="retro"] .channel-item,
+        html[data-theme="retro"] .channel-count,
+        html[data-theme="retro"] .channel-rank,
+        html[data-theme="retro"] .achievements-progress,
+        html[data-theme="retro"] .next-achievement {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        html[data-theme="retro"] .chart-bar {
+            border-radius: 0;
+            background: linear-gradient(to top, var(--r-magenta), var(--r-cyan));
+        }
+
+        html[data-theme="retro"] .chart-bar:hover {
+            background: linear-gradient(to top, var(--r-cyan), #fff);
+        }
+
+        html[data-theme="retro"] .channel-count,
+        html[data-theme="retro"] .channel-rank {
+            color: var(--r-cyan);
+        }
+
+        html[data-theme="retro"] .achievement-badge {
+            border-radius: 0;
+            border: 2px solid rgba(183, 166, 230, 0.2);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        html[data-theme="retro"] .achievement-badge.unlocked {
+            border-color: var(--r-cyan);
+            background: rgba(47, 240, 230, 0.1);
+            box-shadow: 0 0 8px rgba(47, 240, 230, 0.4);
+        }
+
+        html[data-theme="retro"] .achievements-progress {
+            color: var(--r-magenta);
+        }
+
+        html[data-theme="retro"] .next-achievement-name {
+            color: var(--r-cyan);
+        }
+
+        html[data-theme="retro"] .report-bug {
+            border-radius: 0;
+            border: 2px solid #00e676;
+            background: var(--r-panel);
+            box-shadow: 0 0 12px rgba(0, 230, 118, 0.2);
+            color: #00e676;
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 1.1;
+        }
+
+        html[data-theme="retro"] .report-bug:hover {
+            background: rgba(0, 230, 118, 0.16);
+            border-color: #00e676;
+            color: #fff;
+        }
+
+        html[data-theme="retro"] .footer {
+            border-top: 1px solid rgba(255, 61, 180, 0.2);
+        }
+
+        html[data-theme="retro"] .footer-text {
+            background: linear-gradient(90deg, var(--r-muted) 0%, var(--r-cyan) 50%, var(--r-muted) 100%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        html[data-theme="retro"] .author-link {
+            color: var(--r-cyan);
+        }
+
+        html[data-theme="retro"] .lang-selector {
+            border-radius: 0;
+            background: #1b0b32;
+            border: 2px solid var(--r-line);
+            color: var(--r-text);
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        html[data-theme="retro"] .lang-selector:hover {
+            border-color: var(--r-cyan);
+            color: #fff;
+        }
+
+        html[data-theme="retro"] .lang-selector:focus {
+            border-color: var(--r-cyan);
+            box-shadow: 0 0 8px rgba(47, 240, 230, 0.4);
+        }
+
+        html[data-theme="retro"] .theme-dot.active {
+            --dot-ring: var(--r-cyan);
+            --dot-glow: rgba(47, 240, 230, 0.55);
+        }
+
+        html[data-theme="retro"] .modal-box {
+            background: var(--r-bg2);
+            color: var(--r-text);
+            border: 2px solid var(--r-cyan);
+            border-radius: 0;
+            box-shadow: 0 0 24px rgba(47, 240, 230, 0.3);
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.25;
+        }
+
+        html[data-theme="retro"] .modal-box strong {
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 16px;
+            line-height: 1.3;
+            color: var(--r-cyan);
+            display: inline-block;
+        }
+
+        html[data-theme="retro"] .modal-close {
+            border-radius: 0;
+            background: var(--r-magenta);
+            color: #0d0220;
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 13px;
+            box-shadow: 0 0 10px rgba(255, 61, 180, 0.5);
+        }
+
+        html[data-theme="retro"] .modal-close:hover {
+            background: var(--r-cyan);
+            color: #0d0220;
+        }
+
+        @keyframes retro-chromatic {
+
+            0%,
+            90%,
+            100% {
+                text-shadow: 0 0 2px #fff, 0 0 9px var(--r-magenta), 0 0 16px var(--r-magenta), 2px 2px 0 rgba(47, 240, 230, 0.45);
+            }
+
+            92% {
+                text-shadow: -3px 0 var(--r-magenta), 3px 0 var(--r-cyan), 0 0 9px var(--r-magenta);
+            }
+
+            94% {
+                text-shadow: -4px 1px var(--r-magenta), 4px -1px var(--r-cyan), 0 0 9px var(--r-magenta);
+            }
+
+            96% {
+                text-shadow: -2px -1px var(--r-magenta), 2px 1px var(--r-cyan), 0 0 9px var(--r-magenta);
+            }
+
+            98% {
+                text-shadow: -3px 0 var(--r-magenta), 3px 0 var(--r-cyan), 0 0 9px var(--r-magenta);
+            }
+        }
+
+        @keyframes retro-flicker {
+
+            0%,
+            96%,
+            100% {
+                opacity: 0.85;
+            }
+
+            97% {
+                opacity: 0.55;
+            }
+
+            98% {
+                opacity: 0.95;
+            }
+
+            99% {
+                opacity: 0.7;
+            }
+        }
+
+        @keyframes retro-glow-pulse {
+
+            0%,
+            100% {
+                opacity: 0.82;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        @keyframes retro-dot-pulse {
+
+            0%,
+            100% {
+                opacity: 0.7;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        @keyframes retro-donate-pulse {
+
+            0%,
+            100% {
+                opacity: 0.78;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
         @media (prefers-reduced-motion: reduce) {
 
             .description-text,
@@ -989,6 +1548,27 @@
             .counter-value.pulse {
                 transform: none;
             }
+
+            html,
+            .theme-dot,
+            html[data-theme="retro"] .slider:before {
+                transition: none;
+            }
+
+            html[data-theme="retro"] body::after,
+            html[data-theme="retro"] .title,
+            html[data-theme="retro"] .status-dot,
+            html[data-theme="retro"] .donate-btn,
+            .theme-dot.active {
+                animation: none;
+            }
+
+            .theme-dot:hover,
+            .theme-dot.active,
+            html[data-theme="retro"] .donate-btn:hover,
+            html[data-theme="retro"] .donate-btn:focus-visible {
+                transform: none;
+            }
         }
     </style>
 </head>
@@ -999,19 +1579,27 @@
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version-row">
-                <div class="version" id="versionText" aria-label="Version 9.5.0">v9.5.0</div>
+                <div class="version" id="versionText" aria-label="Version 9.6.0">v9.6.0</div>
                 <span class="stable-badge" data-i18n="stable">Stable</span>
             </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
                 for Twitch.tv</div>
         </div>
-        <a class="donate-btn" id="donateBtn" href="https://ko-fi.com/gosudrm" target="_blank" rel="noopener noreferrer"
-            title="Support GosuDRM" aria-label="Support GosuDRM">
-            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path
-                    d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-            </svg>
-        </a>
+        <div class="header-actions">
+            <a class="donate-btn" id="donateBtn" href="https://ko-fi.com/gosudrm" target="_blank" rel="noopener noreferrer"
+                title="Support GosuDRM" aria-label="Support GosuDRM">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                </svg>
+            </a>
+            <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme">
+                <button type="button" class="theme-dot theme-dot-default active" data-theme-value="default"
+                    aria-pressed="true" title="Default theme" aria-label="Default theme"></button>
+                <button type="button" class="theme-dot theme-dot-retro" data-theme-value="retro" aria-pressed="false"
+                    title="Retro theme" aria-label="Retro theme"></button>
+            </div>
+        </div>
     </div>
 
     <div class="status-card">
@@ -1149,11 +1737,11 @@
     </div>
 
     <a class="report-bug" id="reportBugLink" href="https://github.com/GosuDRM/TTV-AB/issues" target="_blank"
-        rel="noopener noreferrer" title="Found a Bug? Report it" aria-label="Found a Bug? Report it">
+        rel="noopener noreferrer" title="Report a bug." aria-label="Report a bug.">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
             <path d="M20 8h-2.81a5.985 5.985 0 0 0-1.82-1.96L17.5.61 15.59 3l-2.17 2.17a6.002 6.002 0 0 0-2.83 0L8.41 3 7.5.61l1.62 1.63A5.985 5.985 0 0 0 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81a5.99 5.99 0 0 0 10.38 0H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/>
         </svg>
-        <span data-i18n="reportBugLabel">Found a Bug? Report it</span>
+        <span data-i18n="reportBugLabel">Report a bug.</span>
     </a>
 
     <div class="footer">

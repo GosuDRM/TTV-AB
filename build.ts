@@ -1067,8 +1067,14 @@ function validateSharedDefinitions() {
 			'Popup language selector must include a dedicated auto option with id="langAutoOption"',
 		);
 	}
+	const langSelectorMatch = popupHtmlSource.match(
+		/<select[^>]*id="langSelector"[\s\S]*?<\/select>/,
+	);
+	if (!langSelectorMatch) {
+		throw new Error("Popup is missing the language selector element");
+	}
 	const popupLanguageOptions = [
-		...popupHtmlSource.matchAll(/<option value="([^"]+)"/g),
+		...langSelectorMatch[0].matchAll(/<option value="([^"]+)"/g),
 	]
 		.map((match) => match[1])
 		.filter((value) => value !== "auto")
