@@ -1302,8 +1302,8 @@ function _hookWorker() {
 							...(fetchRequest?.options || {}),
 							signal: controller.signal,
 						});
-						clearTimeout(timeoutId);
 						const body = await response.text();
+						clearTimeout(timeoutId);
 						return {
 							id: fetchRequest?.id || null,
 							status: response.status,

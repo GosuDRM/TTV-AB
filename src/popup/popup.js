@@ -260,7 +260,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const authorLabel = String(t.authorLinkLabel ?? "Open GosuDRM on GitHub");
         authorLink.title = authorLabel;
         authorLink.setAttribute("aria-label", authorLabel);
-        const reportBugLabel = String(t.reportBugLabel ?? "Report a bug.");
+        const reportBugLabel = String(t.reportBugLabel ?? "Found a Bug? Report it");
         reportBugLink.title = reportBugLabel;
         reportBugLink.setAttribute("aria-label", reportBugLabel);
     }

@@ -701,7 +701,21 @@ async function _fetchWithTimeout(
 	const controller = new AbortController();
 	const id = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		return await realFetch(url, { ...options, signal: controller.signal });
+		const response = await realFetch(url, {
+			...options,
+			signal: controller.signal,
+		});
+		const body = await response.arrayBuffer();
+		const nullBodyStatus =
+			response.status === 101 ||
+			response.status === 204 ||
+			response.status === 205 ||
+			response.status === 304;
+		return new Response(nullBodyStatus ? null : body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: response.headers,
+		});
 	} finally {
 		clearTimeout(id);
 	}
@@ -1953,7 +1967,7 @@ async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
 	if (!streamUrl) return null;
 
 	try {
-		const streamRes = await realFetch(streamUrl);
+		const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
 		if (streamRes.status !== 200) return null;
 		const m3u8 = _absolutizeMediaPlaylistUrls(
 			await streamRes.text(),
@@ -2090,7 +2104,7 @@ async function _findBackupStream(
 								invalidateCache = true;
 								continue;
 							}
-							const encRes = await realFetch(usherUrl.href);
+							const encRes = await _fetchWithTimeout(realFetch, usherUrl.href);
 							if (encRes.status === 200) {
 								enc = await encRes.text();
 								encBaseUrl = usherUrl.href;
@@ -2196,7 +2210,7 @@ async function _findBackupStream(
 				try {
 					const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
 					if (streamUrl) {
-						const streamRes = await realFetch(streamUrl);
+						const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
 						if (streamRes.status === 200) {
 							const m3u8 = _absolutizeMediaPlaylistUrls(
 								await streamRes.text(),

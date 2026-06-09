@@ -43,6 +43,14 @@ beforeEach(() => {
 		PageMediaKey: "live:testchannel",
 	};
 	g._log = () => {};
+	if (g._bridgeTokenRequestTimer) {
+		clearTimeout(g._bridgeTokenRequestTimer as ReturnType<typeof setTimeout>);
+	}
+	g._bridgePort = null;
+	g._bridgePortHandshakeBound = false;
+	g._bridgeSessionToken = null;
+	g._bridgeTokenRequestTimer = null;
+	g._bridgeTokenRequestCount = 0;
 	const recoveryState = g._WorkerRecoveryState as Record<string, unknown>;
 	recoveryState.contextKey = null;
 	recoveryState.attempts = 0;
@@ -63,6 +71,61 @@ function T<T>(name: string): T {
 	if (typeof fn !== "function") throw new Error(`${name} not loaded`);
 	return fn as T;
 }
+
+function makeBridgePort() {
+	return {
+		messages: [] as unknown[],
+		started: false,
+		closed: false,
+		postMessage(message: unknown) {
+			this.messages.push(message);
+		},
+		addEventListener() {},
+		removeEventListener() {},
+		start() {
+			this.started = true;
+		},
+		close() {
+			this.closed = true;
+		},
+	};
+}
+
+describe("MAIN bridge token handshake", () => {
+	it("rejects arbitrary page bridge tokens before MAIN creates one", () => {
+		const attachBridgePort =
+			T<(port: MessagePort, sessionToken?: string | null) => boolean>(
+				"_attachBridgePort",
+			);
+		const port = makeBridgePort();
+
+		expect(
+			attachBridgePort(port as unknown as MessagePort, "x".repeat(48)),
+		).toBe(false);
+		expect(port.started).toBe(false);
+	});
+
+	it("accepts only the current MAIN-created bridge token", () => {
+		const getBridgeSessionToken = T<() => string>("_getBridgeSessionToken");
+		const attachBridgePort =
+			T<(port: MessagePort, sessionToken?: string | null) => boolean>(
+				"_attachBridgePort",
+			);
+		const sessionToken = getBridgeSessionToken();
+		const wrongPort = makeBridgePort();
+
+		expect(
+			attachBridgePort(wrongPort as unknown as MessagePort, "y".repeat(48)),
+		).toBe(false);
+		expect(wrongPort.started).toBe(false);
+
+		const acceptedPort = makeBridgePort();
+		expect(
+			attachBridgePort(acceptedPort as unknown as MessagePort, sessionToken),
+		).toBe(true);
+		expect(acceptedPort.started).toBe(true);
+	});
+});
 
 describe("worker recovery lifecycle", () => {
 	it("caps recovery attempts across replacement workers for the same playback context", () => {

@@ -428,6 +428,7 @@ function validateSharedDefinitions() {
 	const changelogPath = path.join(SOURCE_ROOT, "CHANGELOG.md");
 	const localesPath = path.join(SOURCE_ROOT, "_locales");
 	const popupPath = path.join(DIST_DIR, "src", "popup", "popup.js");
+	const trackedPopupPath = path.join(SOURCE_ROOT, "src", "popup", "popup.js");
 	const bridgePath = path.join(DIST_DIR, "src", "scripts", "bridge.js");
 	const backgroundPath = path.join(DIST_DIR, "src", "scripts", "background.js");
 	const uiPath = path.join(DIST_DIR, "src", "modules", "ui.js");
@@ -436,6 +437,12 @@ function validateSharedDefinitions() {
 		"src",
 		"popup",
 		"translations.js",
+	);
+	const translationsTsPath = path.join(
+		SOURCE_ROOT,
+		"src",
+		"popup",
+		"translations.ts",
 	);
 	const initPath = path.join(DIST_DIR, "src", "modules", "init.js");
 	const hooksPath = path.join(DIST_DIR, "src", "modules", "hooks.js");
@@ -501,6 +508,15 @@ function validateSharedDefinitions() {
 		}
 	}
 	const popupSource = fs.readFileSync(popupPath, "utf8");
+	const trackedPopupSource = fs.readFileSync(trackedPopupPath, "utf8");
+	if (
+		normalizeCodeSnippet(trackedPopupSource) !==
+		normalizeCodeSnippet(popupSource)
+	) {
+		throw new Error(
+			"Tracked src/popup/popup.js is out of sync with compiled popup.ts output",
+		);
+	}
 	const popupHtmlSource = fs.readFileSync(
 		path.join(DIST_DIR, "src", "popup", "popup.html"),
 		"utf8",
@@ -607,6 +623,7 @@ function validateSharedDefinitions() {
 	const backgroundSource = fs.readFileSync(backgroundPath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
+	const translationsTsSource = fs.readFileSync(translationsTsPath, "utf8");
 	const translationsContext: {
 		TRANSLATIONS?: Record<string, TranslationLocale>;
 	} = {};
@@ -648,6 +665,17 @@ function validateSharedDefinitions() {
 			.reduce((currentValue, key) => currentValue?.[key], value);
 	};
 	for (const [localeName, localeTranslations] of translationEntries) {
+		const reportBugLabel = localeTranslations.reportBugLabel;
+		if (
+			typeof reportBugLabel === "string" &&
+			!translationsTsSource.includes(
+				`reportBugLabel: ${JSON.stringify(reportBugLabel)}`,
+			)
+		) {
+			throw new Error(
+				`Popup translations.ts reportBugLabel is out of sync for ${localeName}`,
+			);
+		}
 		const localeKeys = new Set(flattenTranslationKeys(localeTranslations));
 		const missingKeys = [...baseTranslationKeys].filter(
 			(key) => !localeKeys.has(key),
@@ -1282,6 +1310,11 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_getToken",
 			helper: "_fetchViaWorkerBridge",
+			source: apiSource,
+		},
+		{
+			consumer: "_getToken",
+			helper: "_fetchWithTimeout",
 			source: apiSource,
 		},
 		{

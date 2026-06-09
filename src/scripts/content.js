@@ -1,12 +1,12 @@
-// TTV AB v9.6.0 - Twitch Ad Blocker
+// TTV AB v9.6.1 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.6.0",
-    INTERNAL_VERSION: 222,
+    VERSION: "9.6.1",
+    INTERNAL_VERSION: 223,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -55,6 +55,7 @@ const _$s = {
 };
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
+const _BRIDGE_TOKEN_REQUEST_MESSAGE = "ttvab-bridge-token-request";
 const _internalMessageTarget = new EventTarget();
 const _pendingBridgeMessages = [];
 const _MAX_PENDING_BRIDGE_MESSAGES = 64;
@@ -62,6 +63,46 @@ const _MAX_PENDING_BRIDGE_COUNTER_MESSAGES = 256;
 let _bridgePort = null;
 let _bridgePortHandshakeBound = false;
 let _bridgeSessionToken = null;
+let _bridgeTokenRequestTimer = null;
+let _bridgeTokenRequestCount = 0;
+function _createBridgeSessionToken() {
+    const values = new Uint8Array(24);
+    if (globalThis.crypto?.getRandomValues) {
+        globalThis.crypto.getRandomValues(values);
+        return Array.from(values, (value) => value.toString(16).padStart(2, "0")).join("");
+    }
+    return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+}
+function _getBridgeSessionToken() {
+    if (typeof _bridgeSessionToken === "string" &&
+        _bridgeSessionToken.length >= 16) {
+        return _bridgeSessionToken;
+    }
+    _bridgeSessionToken = _createBridgeSessionToken();
+    return _bridgeSessionToken;
+}
+function _clearBridgeTokenRequestTimer() {
+    if (_bridgeTokenRequestTimer === null)
+        return;
+    clearTimeout(_bridgeTokenRequestTimer);
+    _bridgeTokenRequestTimer = null;
+}
+function _postBridgeTokenRequest() {
+    if (_bridgePort || typeof window === "undefined")
+        return;
+    _clearBridgeTokenRequestTimer();
+    const token = _getBridgeSessionToken();
+    try {
+        window.postMessage({
+            type: _BRIDGE_TOKEN_REQUEST_MESSAGE,
+            detail: { token },
+        }, window.location.origin);
+    }
+    catch { }
+    _bridgeTokenRequestCount++;
+    const retryDelay = _bridgeTokenRequestCount <= 20 ? 75 : 30000;
+    _bridgeTokenRequestTimer = setTimeout(_postBridgeTokenRequest, retryDelay);
+}
 function _bridgePortMessageHandler(event) {
     const message = _getStructuredMessageData(event.data);
     if (typeof message?.type !== "string")
@@ -212,13 +253,11 @@ function _attachBridgePort(port, sessionToken = null) {
         sessionToken.length < 16) {
         return false;
     }
-    if (_bridgePort === port && _bridgeSessionToken === sessionToken)
-        return true;
-    if (_bridgePort &&
-        _bridgeSessionToken &&
-        _bridgeSessionToken !== sessionToken) {
+    if (!_bridgeSessionToken || sessionToken !== _bridgeSessionToken) {
         return false;
     }
+    if (_bridgePort === port && _bridgeSessionToken === sessionToken)
+        return true;
     if (_bridgePort) {
         try {
             _bridgePort.removeEventListener("message", _bridgePortMessageHandler);
@@ -230,6 +269,7 @@ function _attachBridgePort(port, sessionToken = null) {
     _bridgeSessionToken = sessionToken;
     _bridgePort.addEventListener("message", _bridgePortMessageHandler);
     _bridgePort.start?.();
+    _clearBridgeTokenRequestTimer();
     _flushBridgeMessageQueue();
     return true;
 }
@@ -247,6 +287,7 @@ function _bindBridgePortHandshake() {
         if (message?.type !== _BRIDGE_PORT_INIT_MESSAGE ||
             typeof sessionToken !== "string" ||
             sessionToken.length < 16 ||
+            sessionToken !== _bridgeSessionToken ||
             !Array.isArray(event.ports) ||
             event.ports.length !== 1) {
             return;
@@ -259,6 +300,7 @@ function _bindBridgePortHandshake() {
         });
     };
     window.addEventListener("message", handleBridgePortInit, true);
+    _postBridgeTokenRequest();
 }
 function _sendBridgeMessage(type, detail = null) {
     if (typeof type !== "string" || !type)
@@ -1129,11 +1171,6 @@ function _$sa(text, stripAll, info, skipAutoForceStrip = false) {
                     _isExplicitKnownAdSegmentUrl(segmentUrl)) {
                     __TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
                 }
-                if (skipAutoForceStrip && !forceStripAllSegments) {
-                    stripped = true;
-                    i++;
-                    continue;
-                }
                 stripped = true;
                 lines[i] = "";
                 lines[i + 1] = "";
@@ -1640,7 +1677,6 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 async function _$tk(playbackContext, playerType, realFetch) {
     const fetchFunc = realFetch || fetch;
     const reqPlayerType = playerType;
-    let timeoutId = null;
     const normalizedContext = typeof playbackContext === "string"
         ? _normalizePlaybackContext({
             MediaType: "live",
@@ -1706,12 +1742,7 @@ async function _$tk(playbackContext, playerType, realFetch) {
                 }
             }
             if (!res) {
-                const controller = new AbortController();
-                timeoutId = setTimeout(() => controller.abort(), 3000);
-                res = await fetchFunc(_$gu, {
-                    ...requestOptions,
-                    signal: controller.signal,
-                });
+                res = await _fetchWithTimeout(fetchFunc, _$gu, requestOptions, 3000);
             }
             _$l(`[Trace] Token response: ${res.status}`, "info");
             return res;
@@ -1726,9 +1757,6 @@ async function _$tk(playbackContext, playerType, realFetch) {
                 continue;
             }
             break;
-        }
-        finally {
-            clearTimeout(timeoutId);
         }
     }
     _$l(`Token fetch failed after ${maxRetries + 1} attempts: ${lastError?.message}`, "error");
@@ -2444,7 +2472,20 @@ async function _fetchWithTimeout(realFetch, url, options = {}, timeoutMs = 3500)
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await realFetch(url, { ...options, signal: controller.signal });
+        const response = await realFetch(url, {
+            ...options,
+            signal: controller.signal,
+        });
+        const body = await response.arrayBuffer();
+        const nullBodyStatus = response.status === 101 ||
+            response.status === 204 ||
+            response.status === 205 ||
+            response.status === 304;
+        return new Response(nullBodyStatus ? null : body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+        });
     }
     finally {
         clearTimeout(id);
@@ -3406,7 +3447,7 @@ async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
     if (!streamUrl)
         return null;
     try {
-        const streamRes = await realFetch(streamUrl);
+        const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
         if (streamRes.status !== 200)
             return null;
         const m3u8 = _absolutizeMediaPlaylistUrls(await streamRes.text(), streamUrl);
@@ -3515,7 +3556,7 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
                                 invalidateCache = true;
                                 continue;
                             }
-                            const encRes = await realFetch(usherUrl.href);
+                            const encRes = await _fetchWithTimeout(realFetch, usherUrl.href);
                             if (encRes.status === 200) {
                                 enc = await encRes.text();
                                 encBaseUrl = usherUrl.href;
@@ -3620,7 +3661,7 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
                 try {
                     const streamUrl = _$su(enc, targetRes, encBaseUrl);
                     if (streamUrl) {
-                        const streamRes = await realFetch(streamUrl);
+                        const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
                         if (streamRes.status === 200) {
                             const m3u8 = _absolutizeMediaPlaylistUrls(await streamRes.text(), streamUrl);
                             if (m3u8) {
@@ -4919,8 +4960,8 @@ function _$hw() {
                             ...(fetchRequest?.options || {}),
                             signal: controller.signal,
                         });
-                        clearTimeout(timeoutId);
                         const body = await response.text();
+                        clearTimeout(timeoutId);
                         return {
                             id: fetchRequest?.id || null,
                             status: response.status,
