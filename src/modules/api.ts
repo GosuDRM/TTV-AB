@@ -199,7 +199,6 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 async function _getToken(playbackContext, playerType, realFetch) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
-	let timeoutId = null;
 	const normalizedContext =
 		typeof playbackContext === "string"
 			? _normalizePlaybackContext({
@@ -281,12 +280,12 @@ async function _getToken(playbackContext, playerType, realFetch) {
 			}
 
 			if (!res) {
-				const controller = new AbortController();
-				timeoutId = setTimeout(() => controller.abort(), 3000);
-				res = await fetchFunc(_GQL_URL, {
-					...requestOptions,
-					signal: controller.signal,
-				});
+				res = await _fetchWithTimeout(
+					fetchFunc,
+					_GQL_URL,
+					requestOptions,
+					3000,
+				);
 			}
 
 			_log(`[Trace] Token response: ${res.status}`, "info");
@@ -306,8 +305,6 @@ async function _getToken(playbackContext, playerType, realFetch) {
 				continue;
 			}
 			break;
-		} finally {
-			clearTimeout(timeoutId);
 		}
 	}
 

@@ -615,12 +615,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 					__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
 				}
 
-				if (skipAutoForceStrip && !forceStripAllSegments) {
-					stripped = true;
-					i++;
-					continue;
-				}
-
 				stripped = true;
 				lines[i] = "";
 				lines[i + 1] = "";

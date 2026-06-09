@@ -1400,6 +1400,8 @@
         html[data-theme="retro"] .theme-dot.active {
             --dot-ring: var(--r-cyan);
             --dot-glow: rgba(47, 240, 230, 0.55);
+            animation: retro-dot-pulse 2.4s ease-in-out infinite;
+            will-change: opacity, transform;
         }
 
         html[data-theme="retro"] .modal-box {
@@ -1587,7 +1589,7 @@
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version-row">
-                <div class="version" id="versionText" aria-label="Version 9.6.0">v9.6.0</div>
+                <div class="version" id="versionText" aria-label="Version 9.6.1">v9.6.1</div>
                 <span class="stable-badge" data-i18n="stable">Stable</span>
             </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically

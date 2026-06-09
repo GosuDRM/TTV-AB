@@ -14,6 +14,7 @@ const _S = {
 };
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
+const _BRIDGE_TOKEN_REQUEST_MESSAGE = "ttvab-bridge-token-request";
 const _internalMessageTarget = new EventTarget();
 const _pendingBridgeMessages: PlainObject[] = [];
 const _MAX_PENDING_BRIDGE_MESSAGES = 64;
@@ -21,6 +22,54 @@ const _MAX_PENDING_BRIDGE_COUNTER_MESSAGES = 256;
 let _bridgePort: MessagePort | null = null;
 let _bridgePortHandshakeBound = false;
 let _bridgeSessionToken: string | null = null;
+let _bridgeTokenRequestTimer: ReturnType<typeof setTimeout> | null = null;
+let _bridgeTokenRequestCount = 0;
+
+function _createBridgeSessionToken() {
+	const values = new Uint8Array(24);
+	if (globalThis.crypto?.getRandomValues) {
+		globalThis.crypto.getRandomValues(values);
+		return Array.from(values, (value) =>
+			value.toString(16).padStart(2, "0"),
+		).join("");
+	}
+	return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+}
+
+function _getBridgeSessionToken() {
+	if (
+		typeof _bridgeSessionToken === "string" &&
+		_bridgeSessionToken.length >= 16
+	) {
+		return _bridgeSessionToken;
+	}
+	_bridgeSessionToken = _createBridgeSessionToken();
+	return _bridgeSessionToken;
+}
+
+function _clearBridgeTokenRequestTimer() {
+	if (_bridgeTokenRequestTimer === null) return;
+	clearTimeout(_bridgeTokenRequestTimer);
+	_bridgeTokenRequestTimer = null;
+}
+
+function _postBridgeTokenRequest() {
+	if (_bridgePort || typeof window === "undefined") return;
+	_clearBridgeTokenRequestTimer();
+	const token = _getBridgeSessionToken();
+	try {
+		window.postMessage(
+			{
+				type: _BRIDGE_TOKEN_REQUEST_MESSAGE,
+				detail: { token },
+			},
+			window.location.origin,
+		);
+	} catch {}
+	_bridgeTokenRequestCount++;
+	const retryDelay = _bridgeTokenRequestCount <= 20 ? 75 : 30000;
+	_bridgeTokenRequestTimer = setTimeout(_postBridgeTokenRequest, retryDelay);
+}
 
 function _bridgePortMessageHandler(event: MessageEvent) {
 	const message = _getStructuredMessageData(event.data);
@@ -213,14 +262,10 @@ function _attachBridgePort(port, sessionToken = null) {
 	) {
 		return false;
 	}
-	if (_bridgePort === port && _bridgeSessionToken === sessionToken) return true;
-	if (
-		_bridgePort &&
-		_bridgeSessionToken &&
-		_bridgeSessionToken !== sessionToken
-	) {
+	if (!_bridgeSessionToken || sessionToken !== _bridgeSessionToken) {
 		return false;
 	}
+	if (_bridgePort === port && _bridgeSessionToken === sessionToken) return true;
 	if (_bridgePort) {
 		try {
 			_bridgePort.removeEventListener("message", _bridgePortMessageHandler);
@@ -231,6 +276,7 @@ function _attachBridgePort(port, sessionToken = null) {
 	_bridgeSessionToken = sessionToken;
 	_bridgePort.addEventListener("message", _bridgePortMessageHandler);
 	_bridgePort.start?.();
+	_clearBridgeTokenRequestTimer();
 	_flushBridgeMessageQueue();
 	return true;
 }
@@ -249,6 +295,7 @@ function _bindBridgePortHandshake() {
 			message?.type !== _BRIDGE_PORT_INIT_MESSAGE ||
 			typeof sessionToken !== "string" ||
 			sessionToken.length < 16 ||
+			sessionToken !== _bridgeSessionToken ||
 			!Array.isArray(event.ports) ||
 			event.ports.length !== 1
 		) {
@@ -261,6 +308,7 @@ function _bindBridgePortHandshake() {
 		});
 	};
 	window.addEventListener("message", handleBridgePortInit, true);
+	_postBridgeTokenRequest();
 }
 
 function _sendBridgeMessage(type, detail = null) {

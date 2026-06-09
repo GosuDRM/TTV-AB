@@ -202,6 +202,7 @@ function _playbackContextsMatch(
 
 const BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
+const BRIDGE_TOKEN_REQUEST_MESSAGE = "ttvab-bridge-token-request";
 const BRIDGE_HANDSHAKE_RETRY_MS = 75;
 const FLUSH_DELAY_MS = 200;
 const MAX_FLUSH_RETRY_DELAY_MS = 2000;
@@ -211,6 +212,7 @@ let pageBridgePort = null;
 let pageBridgeConnected = false;
 let handshakeRetryTimeout = null;
 let bridgeSessionToken = null;
+let bridgeStateReady = false;
 
 function queuePendingPageMessage(message, prioritize = false) {
 	if (!message || typeof message !== "object") return;
@@ -240,17 +242,6 @@ function queuePendingPageMessage(message, prioritize = false) {
 	}
 }
 
-function createBridgeSessionToken() {
-	const values = new Uint8Array(24);
-	if (globalThis.crypto?.getRandomValues) {
-		globalThis.crypto.getRandomValues(values);
-		return Array.from(values, (value) =>
-			value.toString(16).padStart(2, "0"),
-		).join("");
-	}
-	return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
-}
-
 function getBridgeSessionToken() {
 	if (
 		typeof bridgeSessionToken === "string" &&
@@ -258,8 +249,14 @@ function getBridgeSessionToken() {
 	) {
 		return bridgeSessionToken;
 	}
-	bridgeSessionToken = createBridgeSessionToken();
-	return bridgeSessionToken;
+	return null;
+}
+
+function setBridgeSessionToken(value) {
+	if (typeof value !== "string" || value.length < 16) return false;
+	if (bridgeSessionToken && bridgeSessionToken !== value) return false;
+	bridgeSessionToken = value;
+	return true;
 }
 
 function flushPageMessages() {
@@ -322,6 +319,8 @@ const MAX_HANDSHAKE_RETRIES = 20;
 let handshakeRetryCount = 0;
 
 function startBridgeHandshake() {
+	const sessionToken = getBridgeSessionToken();
+	if (!sessionToken || !bridgeStateReady) return;
 	if (pageBridgeConnected && pageBridgePort) {
 		handshakeRetryCount = 0;
 		return;
@@ -342,7 +341,7 @@ function startBridgeHandshake() {
 		{
 			type: BRIDGE_PORT_INIT_MESSAGE,
 			detail: {
-				token: getBridgeSessionToken(),
+				token: sessionToken,
 			},
 		},
 		window.location.origin,
@@ -354,6 +353,18 @@ function startBridgeHandshake() {
 		}
 	}, BRIDGE_HANDSHAKE_RETRY_MS);
 }
+
+function handleBridgeTokenRequest(event) {
+	if (event.source !== window) return;
+	const message = getBridgeMessageData(event.data);
+	if (message?.type !== BRIDGE_TOKEN_REQUEST_MESSAGE) return;
+	const detail = getBridgeMessageDetail(message.detail);
+	if (!setBridgeSessionToken(detail?.token)) return;
+	event.stopImmediatePropagation?.();
+	startBridgeHandshake();
+}
+
+window.addEventListener("message", handleBridgeTokenRequest, true);
 
 function postAchievementUnlock(id) {
 	if (typeof id !== "string" || !id) return;
@@ -843,6 +854,7 @@ chrome.storage.local.get(
 		bridgeState.autoplayBackupEnabled =
 			safeResult.ttvAutoplayBackupEnabled === true;
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
+		bridgeStateReady = true;
 
 		broadcastState();
 

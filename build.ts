@@ -1307,6 +1307,11 @@ function validateSharedDefinitions() {
 			source: apiSource,
 		},
 		{
+			consumer: "_getToken",
+			helper: "_fetchWithTimeout",
+			source: apiSource,
+		},
+		{
 			consumer: "_findBackupStream",
 			helper: "_fetchWithTimeout",
 			source: processorSource,

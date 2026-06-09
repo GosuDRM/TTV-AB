@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -140,6 +140,74 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		...overrides,
 	};
 }
+
+describe("_fetchWithTimeout", () => {
+	const fn = () =>
+		T<
+			(
+				realFetch: (url: string, options?: RequestInit) => Promise<Response>,
+				url: string,
+				options?: RequestInit,
+				timeoutMs?: number,
+			) => Promise<Response>
+		>("_fetchWithTimeout");
+
+	it("keeps the timeout active while reading the response body", async () => {
+		vi.useFakeTimers();
+		const fetchWithTimeout = fn();
+		let abortSignal: AbortSignal | null = null;
+
+		const request = fetchWithTimeout(
+			async (_url, options) => {
+				abortSignal = options?.signal || null;
+				return {
+					status: 200,
+					statusText: "OK",
+					headers: new Headers(),
+					arrayBuffer: () =>
+						new Promise<ArrayBuffer>((_resolve, reject) => {
+							abortSignal?.addEventListener("abort", () => {
+								reject(new DOMException("Aborted", "AbortError"));
+							});
+						}),
+				} as Response;
+			},
+			"https://edge.example/hls/live.m3u8",
+			{},
+			25,
+		);
+		const assertion = expect(request).rejects.toMatchObject({
+			name: "AbortError",
+		});
+
+		try {
+			await vi.advanceTimersByTimeAsync(0);
+			await vi.advanceTimersByTimeAsync(25);
+			await assertion;
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("returns a readable cloned response after the body is fetched", async () => {
+		const response = await fn()(
+			async () =>
+				new Response("clean", {
+					status: 201,
+					statusText: "Created",
+					headers: { "x-ttvab-test": "yes" },
+				}),
+			"https://edge.example/hls/live.m3u8",
+			{},
+			1000,
+		);
+
+		expect(response.status).toBe(201);
+		expect(response.statusText).toBe("Created");
+		expect(response.headers.get("x-ttvab-test")).toBe("yes");
+		expect(await response.text()).toBe("clean");
+	});
+});
 
 describe("_resetStreamAdState", () => {
 	it("resets all ad-related state to defaults", () => {

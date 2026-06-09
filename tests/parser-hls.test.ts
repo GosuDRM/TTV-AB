@@ -204,6 +204,35 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(fn("https://www.twitch.tv/normal-segment.mp4")).toBe(false);
 	});
 
+	it("still removes explicit known ad segments when auto-force stripping is skipped", () => {
+		const st = getState();
+		const originalCache = st.AdSegmentCache;
+		st.AdSegmentCache = new Map<string, number>();
+
+		try {
+			const playlist = [
+				"#EXTM3U",
+				"#EXT-X-VERSION:3",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:0",
+				'#EXT-X-DATERANGE:ID="ad-1",X-TV-TWITCH-AD-POD-LENGTH="1"',
+				"#EXTINF:2.0,",
+				"https://edge.example/stitched-ad-1.ts",
+				"#EXTINF:2.0,",
+				"https://edge.example/live-1.ts",
+				"",
+			].join("\n");
+			const info = makeInfo({ NumStrippedAdSegments: 0 });
+			const result = fn()(playlist, false, info, true);
+
+			expect(result).not.toContain("https://edge.example/stitched-ad-1.ts");
+			expect(result).toContain("https://edge.example/live-1.ts");
+			expect(info.NumStrippedAdSegments).toBe(1);
+		} finally {
+			st.AdSegmentCache = originalCache;
+		}
+	});
+
 	function makeInfo(overrides: Record<string, unknown> = {}) {
 		return {
 			LastCleanBackupM3U8: null,

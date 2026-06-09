@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.6.0-purple)
+![Version](https://img.shields.io/badge/version-9.6.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.6.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.6.1-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -38,8 +38,8 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ **12 Achievement Badges** to unlock as you block ads
 - ✅ **Language Selector** - 11 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU)
 - ✅ Per-channel ad blocking breakdown
-- ✅ Modern, animated UI (Cyberpunk/Neon aesthetic)
-- ✅ **Theme Picker** - switch between the default Neon theme and a Retro synthwave theme via two color circles in the popup
+- ✅ Modern, animated UI (Retro/Neon aesthetic)
+- ✅ **Theme Picker** - switch between the default Retro synthwave theme and the original Neon theme via two color circles in the popup
 - ✅ Lightweight and fast
 
 ## 🚀 Usage
@@ -60,13 +60,17 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 - Monitors playback health and automatically recovers from stalls after ad breaks
 - Restores your original quality and volume settings once native playback resumes
 
-During ad recovery, Twitch may briefly serve a lower-quality backup stream (e.g. 360p) while the extension keeps playback alive. Your chosen quality is restored automatically once the ad window ends.
+When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean lower-quality backup (e.g. 360p) within a couple of seconds so video starts right away, then upgrades to your chosen quality automatically and seamlessly once the ad window ends.
 
 ## 🔔 What's New
 
+### v9.6.1 — 2026-06-09
+- **Stronger ad-segment stripping.** Known ad segment URLs are removed even during safer fallback scans that skip automatic full-playlist stripping.
+- **More bounded recovery fetches.** Token, backup and native-recovery probes now keep their timeout active through response-body reads, so hung Twitch responses cannot stall recovery indefinitely.
+
 ### v9.6.0 — 2026-06-09
-- **Retro synthwave theme.** Tap either of the two color circles in the popup header to switch between the default Neon look and a new Retro theme — a magenta/cyan palette on deep indigo with neon glows, a subtle grid, CRT scanlines and animated blocky controls. Your choice is remembered between sessions.
-- **Smooth 60/120/144Hz animations.** All Retro animations now use compositor-only properties (opacity/transform) with GPU acceleration, so they run at your display's native refresh rate without stutter. The title has a chromatic aberration glitch effect.
+- **Retro synthwave theme.** Tap either of the two color circles in the popup header to switch between the new default Retro theme and the original Neon look. Retro uses a magenta/cyan palette on deep indigo with neon glows, a subtle grid, CRT scanlines and animated blocky controls. Your choice is remembered between sessions.
+- **Smoother 60/120/144Hz motion.** Retro ambient effects such as scanlines, status pulses and donate-button pulses now favor compositor-friendly opacity/transform animation. The title keeps its chromatic aberration glitch effect.
 
 ### v9.5.0 — 2026-06-09
 - **Consecutive ad breaks reuse the safest recent backup first.** If a non-autoplay backup was recently verified clean for the same stream, the next backup search tries that type before cold source candidates, reducing first-frame black screen without bringing back autoplay-first stalls.
