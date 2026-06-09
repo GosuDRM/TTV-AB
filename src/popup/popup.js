@@ -1,5 +1,29 @@
 // TTV AB - Popup Script
 document.addEventListener("DOMContentLoaded", () => {
+    const THEME_KEY = "ttvab_theme";
+    const VALID_THEMES = ["default", "retro"];
+    function getStoredTheme() {
+        try {
+            const value = localStorage.getItem(THEME_KEY);
+            return value && VALID_THEMES.includes(value) ? value : null;
+        }
+        catch (error) {
+            console.error("[TTV AB] Popup theme read error:", error);
+            return null;
+        }
+    }
+    function setStoredTheme(theme) {
+        try {
+            localStorage.setItem(THEME_KEY, theme);
+            return true;
+        }
+        catch (error) {
+            console.error("[TTV AB] Popup theme write error:", error);
+            return false;
+        }
+    }
+    const initialTheme = getStoredTheme() || "default";
+    document.documentElement.setAttribute("data-theme", initialTheme);
     const toggle = document.getElementById("enableToggle");
     const statusDot = document.getElementById("statusDot");
     const statusText = document.getElementById("statusText");
@@ -236,7 +260,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const authorLabel = String(t.authorLinkLabel ?? "Open GosuDRM on GitHub");
         authorLink.title = authorLabel;
         authorLink.setAttribute("aria-label", authorLabel);
-        const reportBugLabel = String(t.reportBugLabel ?? "Found a Bug? Report it");
+        const reportBugLabel = String(t.reportBugLabel ?? "Report a bug.");
         reportBugLink.title = reportBugLabel;
         reportBugLink.setAttribute("aria-label", reportBugLabel);
     }
@@ -284,6 +308,32 @@ document.addEventListener("DOMContentLoaded", () => {
         loadStatistics();
         updateStatus(toggle.checked);
     });
+    const themeToggle = document.getElementById("themeToggle");
+    function applyTheme(theme) {
+        const safeTheme = VALID_THEMES.includes(theme) ? theme : "default";
+        document.documentElement.setAttribute("data-theme", safeTheme);
+        if (!themeToggle)
+            return;
+        themeToggle
+            .querySelectorAll(".theme-dot")
+            .forEach((dot) => {
+            const isActive = dot.dataset.themeValue === safeTheme;
+            dot.classList.toggle("active", isActive);
+            dot.setAttribute("aria-pressed", String(isActive));
+        });
+    }
+    applyTheme(initialTheme);
+    if (themeToggle) {
+        themeToggle
+            .querySelectorAll(".theme-dot")
+            .forEach((dot) => {
+            dot.addEventListener("click", () => {
+                const theme = dot.dataset.themeValue || "default";
+                setStoredTheme(theme);
+                applyTheme(theme);
+            });
+        });
+    }
     const AVG_AD_DURATION = 22;
     const MAX_CHANNELS = 100;
     const ACHIEVEMENTS = [

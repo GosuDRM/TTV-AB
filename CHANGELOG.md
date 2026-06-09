@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.0] - 2026-06-09
+
+### Added
+- **Retro synthwave theme with a popup theme picker.** Two clickable color circles in the popup header switch between the default Neon theme and a new Retro theme. Retro uses a cohesive magenta/cyan palette on deep indigo with soft neon glows, a subtle grid, and CRT scanlines and blocky animated controls. The selected theme is persisted in local storage.
+- **Chromatic aberration glitch animation on the Retro title.** The "TTV AB" title in Retro theme now has a subtle color-separation glitch effect — magenta shifts left, cyan shifts right — using compositor-only `text-shadow` animation that fires every 1.7s.
+
+### Changed
+- **All Retro animations now run at native refresh rate.** Scanline flicker, title glow, status-dot pulse, and donate-button pulse animations were rewritten to use only compositor-friendly properties (`opacity`/`transform`) instead of paint-heavy `text-shadow`/`box-shadow` interpolation. Added `will-change` hints for GPU promotion. Animations now sync to 60/120/144/240Hz displays without stutter.
+- **"Report a bug." translations shortened across all 11 locales.** Natural, concise equivalents replace the longer "Found a Bug? Report it" phrasing so the button fits on one line in all languages (es: "Reportar un error", fr: "Signaler un bug", de: "Fehler melden", pt: "Relatar um bug", it: "Segnala un bug", ja: "バグを報告する", ko: "버그 신고하기", zh-CN: "报告 Bug", zh-TW: "回報錯誤", ru: "Сообщить об ошибке").
+- All Retro animations honor `prefers-reduced-motion`, and the picker dots scale/glow on hover and selection. The default theme is unchanged.
+
 ## [9.5.0] - 2026-06-09
 
 ### Fixed
