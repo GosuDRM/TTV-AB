@@ -22,7 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return false;
         }
     }
-    const initialTheme = getStoredTheme() || "default";
+    const initialTheme = getStoredTheme() || "retro";
     document.documentElement.setAttribute("data-theme", initialTheme);
     const toggle = document.getElementById("enableToggle");
     const statusDot = document.getElementById("statusDot");
@@ -310,7 +310,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     const themeToggle = document.getElementById("themeToggle");
     function applyTheme(theme) {
-        const safeTheme = VALID_THEMES.includes(theme) ? theme : "default";
+        const safeTheme = VALID_THEMES.includes(theme) ? theme : "retro";
         document.documentElement.setAttribute("data-theme", safeTheme);
         if (!themeToggle)
             return;
@@ -328,7 +328,7 @@ document.addEventListener("DOMContentLoaded", () => {
             .querySelectorAll(".theme-dot")
             .forEach((dot) => {
             dot.addEventListener("click", () => {
-                const theme = dot.dataset.themeValue || "default";
+                const theme = dot.dataset.themeValue || "retro";
                 setStoredTheme(theme);
                 applyTheme(theme);
             });

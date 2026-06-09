@@ -24,7 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	}
 
-	const initialTheme = getStoredTheme() || "default";
+	const initialTheme = getStoredTheme() || "retro";
 	document.documentElement.setAttribute("data-theme", initialTheme);
 
 	const toggle = document.getElementById(
@@ -401,7 +401,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	const themeToggle = document.getElementById("themeToggle");
 
 	function applyTheme(theme) {
-		const safeTheme = VALID_THEMES.includes(theme) ? theme : "default";
+		const safeTheme = VALID_THEMES.includes(theme) ? theme : "retro";
 		document.documentElement.setAttribute("data-theme", safeTheme);
 		if (!themeToggle) return;
 		themeToggle
@@ -420,7 +420,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			.querySelectorAll<HTMLButtonElement>(".theme-dot")
 			.forEach((dot) => {
 				dot.addEventListener("click", () => {
-					const theme = dot.dataset.themeValue || "default";
+					const theme = dot.dataset.themeValue || "retro";
 					setStoredTheme(theme);
 					applyTheme(theme);
 				});
