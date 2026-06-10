@@ -851,10 +851,14 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 	const targetPixels =
 		(Number.isFinite(tw) ? tw : 0) * (Number.isFinite(th) ? th : 0);
 	const targetFrameRate = Number.parseFloat(String(res?.FrameRate ?? ""));
+	const hasValidTargetPixels =
+		Number.isFinite(targetPixels) && targetPixels > 0;
 	let matchUrl = null;
 	let matchFps = false;
 	let closeUrl = null;
 	let closeDiff = Infinity;
+	let highestUrl = null;
+	let highestArea = -1;
 	let firstUrl = null;
 	const resolveUrl = (candidate) => {
 		if (!baseUrl) return candidate;
@@ -909,15 +913,20 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 			.split("x")
 			.map(Number);
 		const area = (Number.isFinite(w) ? w : 0) * (Number.isFinite(h) ? h : 0);
-		const safeTargetPixels = Number.isFinite(targetPixels) ? targetPixels : 0;
-		const diff = Math.abs(area - safeTargetPixels);
-		if (diff < closeDiff) {
-			closeUrl = resolveUrl(lines[i + 1]);
-			closeDiff = diff;
+		if (area > highestArea) {
+			highestArea = area;
+			highestUrl = resolveUrl(lines[i + 1]);
+		}
+		if (hasValidTargetPixels) {
+			const diff = Math.abs(area - targetPixels);
+			if (diff < closeDiff) {
+				closeUrl = resolveUrl(lines[i + 1]);
+				closeDiff = diff;
+			}
 		}
 	}
 
-	return matchUrl || closeUrl || firstUrl;
+	return matchUrl || closeUrl || highestUrl || firstUrl;
 }
 
 function _getSortedResolutionList(resolutionList) {

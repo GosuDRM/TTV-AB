@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.7] - 2026-06-10
+
+### Fixed
+- **Backup streams no longer drop below 360p when the target quality can't be matched.** The variant picker chose the stream closest to the player's target resolution, but when the target had no usable numeric resolution — only a quality name (e.g. your selected `1080p60`) that didn't exist in that backup playlist's ladder, or no target yet on a channel-open preroll — the "closest pixel area" math collapsed to zero and selected the *smallest* variant (160p) instead of the largest. It now serves the highest-quality variant whenever the target is unknown or unmatched, instead of the lowest.
+
+### Safety
+- Selection with a valid target resolution is unchanged (exact match, else nearest by area); only the no-usable-target path changed, and it now favors the best available quality. No effect on ad detection, stripping, or the deliberate low-quality first-frame hold during recovery.
+
 ## [9.6.6] - 2026-06-10
 
 ### Fixed

@@ -1,12 +1,12 @@
-// TTV AB v9.6.6 - Twitch Ad Blocker
+// TTV AB v9.6.7 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.6.6",
-    INTERNAL_VERSION: 225,
+    VERSION: "9.6.7",
+    INTERNAL_VERSION: 226,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -1364,10 +1364,13 @@ function _$su(m3u8, res, baseUrl = null) {
         .map(Number);
     const targetPixels = (Number.isFinite(tw) ? tw : 0) * (Number.isFinite(th) ? th : 0);
     const targetFrameRate = Number.parseFloat(String(res?.FrameRate ?? ""));
+    const hasValidTargetPixels = Number.isFinite(targetPixels) && targetPixels > 0;
     let matchUrl = null;
     let matchFps = false;
     let closeUrl = null;
     let closeDiff = Infinity;
+    let highestUrl = null;
+    let highestArea = -1;
     let firstUrl = null;
     const resolveUrl = (candidate) => {
         if (!baseUrl)
@@ -1416,14 +1419,19 @@ function _$su(m3u8, res, baseUrl = null) {
             .split("x")
             .map(Number);
         const area = (Number.isFinite(w) ? w : 0) * (Number.isFinite(h) ? h : 0);
-        const safeTargetPixels = Number.isFinite(targetPixels) ? targetPixels : 0;
-        const diff = Math.abs(area - safeTargetPixels);
-        if (diff < closeDiff) {
-            closeUrl = resolveUrl(lines[i + 1]);
-            closeDiff = diff;
+        if (area > highestArea) {
+            highestArea = area;
+            highestUrl = resolveUrl(lines[i + 1]);
+        }
+        if (hasValidTargetPixels) {
+            const diff = Math.abs(area - targetPixels);
+            if (diff < closeDiff) {
+                closeUrl = resolveUrl(lines[i + 1]);
+                closeDiff = diff;
+            }
         }
     }
-    return matchUrl || closeUrl || firstUrl;
+    return matchUrl || closeUrl || highestUrl || firstUrl;
 }
 function _getSortedResolutionList(resolutionList) {
     return [...resolutionList].sort((a, b) => {
