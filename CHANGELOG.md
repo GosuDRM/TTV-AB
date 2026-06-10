@@ -2,6 +2,35 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.7.3] - 2026-06-11
+
+### Fixed
+- **Post-ad reloads re-evaluate once a midroll chain settles.** When a quick midroll chain taught the extension that reloading the player after a backup escape was counterproductive, it stayed in pause/resume mode for the rest of the session and never tried a reload again. It now clears that state once the chain has ended, so a later isolated ad break can reload normally again while still avoiding reloads during an active chain.
+- **Ad-completion spoofing no longer sends pod-complete more than once per pod.** When Twitch omitted the pod-length attribute, the once-per-pod completion signal could be sent on several polls. It is now sent once when the pod size is known and skipped entirely when it is not.
+
+## [9.7.2] - 2026-06-11
+
+### Fixed
+- **Backup stalls during quick consecutive midrolls now rotate to another player type.** When a stall was flagged mid-burst, the continuation path stepped aside but nothing consumed the flag or cooled down the stalled type, so the follow-up search re-picked the same type and the stuck flag kept the fast path disabled afterwards. The flag is now consumed and the stalled type cools down, so the search genuinely rotates.
+
+### Performance
+- **Fewer network round trips during ad bursts.** The continuation path now serves the cached clean backup directly when it is under 2 seconds old, matching the other backup paths, instead of refetching on every playlist poll. This mainly helps low-latency streams, where polls arrive faster than once per second.
+
+## [9.7.1] - 2026-06-10
+
+### Fixed
+- **Ad-recovery reload backoff now actually downgrades to pause/resume.** It logged the downgrade but still hard-reloaded the player, so repeated recovery failures could reload every couple of seconds. The downgrade now performs the pause/resume and skips the reload.
+- **The CSAI fast path now fires on every ad break.** Its per-break marker was never cleared, so only the first CSAI-only break per stream got the instant response; later breaks waited on a full backup search.
+- **The backup search recovers when every backup type is cooling down at once.** The stale-cooldown reset existed but was never called; it now runs at the start of every backup search.
+- **The worker fetch relay no longer throws on bodyless HTTP statuses.** Responses with status 101, 204, 205, or 304 are now rebuilt without a body.
+
+### Changed
+- `parent_domains` is only stripped from playlist requests when the access-token player-type rewrite is enabled.
+- Twitch GQL responses are returned to the page immediately; token-state inspection runs in the background.
+
+### Internal
+- Removed the unused `_incrementPlaylistMediaSequence` helper.
+
 ## [9.7.0] - 2026-06-10
 
 ### Performance

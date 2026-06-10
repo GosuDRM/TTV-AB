@@ -437,6 +437,7 @@ describe("_resetStreamAdState", () => {
 			IsUsingBackupStream: true,
 			NumStrippedAdSegments: 5,
 			IsMidroll: true,
+			CsaiOnlyThisBreak: true,
 			IsHoldingBackupAfterAd: true,
 			HevcReloadPendingAfterHold: true,
 			ConsecutiveFailedNativeProbes: 4,
@@ -450,11 +451,21 @@ describe("_resetStreamAdState", () => {
 		expect(info.IsUsingBackupStream).toBe(false);
 		expect(info.NumStrippedAdSegments).toBe(0);
 		expect(info.IsMidroll).toBe(false);
+		expect(info.CsaiOnlyThisBreak).toBe(false);
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
+	});
+
+	it("initializes CsaiOnlyThisBreak on new stream infos", () => {
+		const create =
+			T<(ctx: Record<string, unknown>) => Record<string, unknown>>(
+				"_createStreamInfo",
+			);
+		const info = create({ ChannelName: "testchannel" });
+		expect(info.CsaiOnlyThisBreak).toBe(false);
 	});
 
 	it("reports wasUsingModifiedM3U8 when active", () => {
@@ -1086,6 +1097,74 @@ describe("_findBackupStream fallback policy", () => {
 			}
 		}
 	});
+
+	it("force-clears cooldowns when the cached backup is stale and every type is cooling down", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["embed", "popout"];
+		state.DisableAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		const now = Date.now();
+		const info = makeInfo({
+			LastCleanBackupM3U8: cleanPlaylist,
+			LastCleanBackupPlayerType: "embed",
+			LastCleanBackupAt: now - 10000,
+			FailedBackupPlayerTypes: new Map([
+				["embed", now + 15000],
+				["popout", now + 15000],
+			]),
+		});
+
+		try {
+			const result = await findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					return new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["embed"]);
+			expect(result.type).toBe("embed");
+			expect(result.m3u8).toBe(cleanPlaylist);
+			expect(result.isFallback).toBe(false);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previousGetToken;
+			}
+			if (previousExtract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previousExtract;
+			}
+		}
+	});
 });
 
 describe("_canReloadNativePlayerAfterAd", () => {
@@ -1373,7 +1452,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(sentMessages().some((m) => m.key === "ReloadPlayer")).toBe(false);
 	});
 
-	it("downgrades a post-escape reload to pause/resume once it has proven counterproductive", async () => {
+	it("downgrades a post-escape reload to pause/resume once it has proven counterproductive, then clears the lesson on the settled break", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			PostEscapeReloadCounterproductive: true,
 		});
@@ -1389,8 +1468,23 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		});
 		expect(messages.some((m) => m.key === "ReloadPlayer")).toBe(false);
 		expect(messages.some((m) => m.key === "PauseResumePlayer")).toBe(true);
-		expect(info.PostEscapeReloadCounterproductive).toBe(true);
+		expect(info.PostEscapeReloadCounterproductive).toBe(false);
 		expect(out).toContain("seg100.ts");
+	});
+
+	it("keeps the lesson latched while the midroll chain is still active", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			PostEscapeReloadCounterproductive: true,
+			LastAdEndReloadAt: Date.now() - 5000,
+			LastAdEndReloadKind: "post-escape",
+		});
+		g._canReloadNativePlayerAfterAd = async () => true;
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(info.PostEscapeReloadCounterproductive).toBe(true);
 	});
 });
 
@@ -1665,8 +1759,29 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 		return info;
 	}
 
-	it("serves the active backup via the cheap refresh (no full re-search) during a burst", async () => {
+	it("serves the cached backup without any fetch when it is under 2s old", async () => {
 		const info = setupReentry();
+		const refreshSpy = vi.fn(async () => makePlaylist(60, 3));
+		g._refreshActiveBackupMediaPlaylist = refreshSpy;
+		const searchSpy = vi.fn(async () => ({
+			type: "embed",
+			m3u8: makePlaylist(80, 3),
+		}));
+		g._findBackupStream = searchSpy;
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(refreshSpy).not.toHaveBeenCalled();
+		expect(searchSpy).not.toHaveBeenCalled();
+		expect(out).toContain("seg50.ts");
+		expect(info.IsUsingBackupStream).toBe(true);
+	});
+
+	it("serves the active backup via the cheap refresh (no full re-search) once the cache is stale", async () => {
+		const info = setupReentry();
+		info.LastCleanBackupAt = Date.now() - 3000;
 		const refreshSpy = vi.fn(async () => makePlaylist(60, 3));
 		g._refreshActiveBackupMediaPlaylist = refreshSpy;
 		const searchSpy = vi.fn(async () => ({
@@ -1685,8 +1800,8 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 		expect(info.IsUsingBackupStream).toBe(true);
 	});
 
-	it("falls through to the full search when a backup stall is flagged (no ad-leak shortcut)", async () => {
-		setupReentry();
+	it("consumes the stall flag, cools the stalled type, and rotates via the full search", async () => {
+		const info = setupReentry();
 		getState().BackupSearchForceRefreshAt = Date.now();
 		const refreshSpy = vi.fn(async () => makePlaylist(60, 3));
 		g._refreshActiveBackupMediaPlaylist = refreshSpy;
@@ -1700,7 +1815,12 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 			Promise.reject(new Error("no fetch expected")),
 		);
 
+		expect(refreshSpy).not.toHaveBeenCalled();
 		expect(searchSpy).toHaveBeenCalled();
 		expect(out).toContain("seg80.ts");
+		expect(getState().BackupSearchForceRefreshAt).toBe(0);
+		expect(Number(info.FailedBackupPlayerTypes.get("site"))).toBeGreaterThan(
+			Date.now(),
+		);
 	});
 });

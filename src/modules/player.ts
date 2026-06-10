@@ -2650,8 +2650,7 @@ function _doPlayerTask(
 						"warning",
 					);
 				}
-				isPausePlay = true;
-				isReload = false;
+				return _doPlayerTask(true, false, options);
 			}
 		}
 

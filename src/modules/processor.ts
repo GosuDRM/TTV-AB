@@ -17,6 +17,7 @@ function _resetStreamAdState(info) {
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
 	info.IsMidroll = false;
+	info.CsaiOnlyThisBreak = false;
 	info.IsStrippingAdSegments = false;
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
@@ -627,17 +628,6 @@ function _playlistHasMediaSegments(text) {
 	);
 }
 
-function _incrementPlaylistMediaSequence(text, incrementBy) {
-	if (!text || typeof text !== "string" || !incrementBy) return text;
-	return text.replace(/#EXT-X-MEDIA-SEQUENCE:(\d+)/, (match, seqStr) => {
-		const seq = parseInt(seqStr, 10);
-		if (!Number.isNaN(seq)) {
-			return `#EXT-X-MEDIA-SEQUENCE:${seq + incrementBy}`;
-		}
-		return match;
-	});
-}
-
 function _parsePlaylistFirstMediaSequence(text) {
 	if (typeof text !== "string") return null;
 	const m = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
@@ -943,6 +933,7 @@ function _createStreamInfo(context) {
 		LastCleanBackupPlayerType: null,
 		LastCleanBackupAt: 0,
 		IsMidroll: false,
+		CsaiOnlyThisBreak: false,
 		IsStrippingAdSegments: false,
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
@@ -1702,21 +1693,41 @@ async function _processM3U8Core(url, text, realFetch) {
 			_isRecentPostAdReentry(info) &&
 			info.LastCleanBackupM3U8 &&
 			info.ActiveBackupPlayerType &&
-			info.ActiveBackupPlayerType !== "autoplay" &&
-			!(Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0)
+			info.ActiveBackupPlayerType !== "autoplay"
 		) {
-			const reentryRefreshStartedAt = Date.now();
-			const reentryRefreshed = await _refreshActiveBackupMediaPlaylist(
-				info,
-				realFetch,
-			);
-			if (reentryRefreshed) {
-				info.IsUsingBackupStream = true;
-				_log(
-					`[Trace] Continuation fast-refresh: ${info.ActiveBackupPlayerType} (${Date.now() - reentryRefreshStartedAt}ms)`,
-					"info",
+			const reentryForceRefreshAt =
+				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
+			if (reentryForceRefreshAt > 0) {
+				__TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
+				_markBackupPlayerRetryCooldown(
+					info,
+					info.ActiveBackupPlayerType,
+					"stalled",
 				);
-				return reentryRefreshed;
+				_log(
+					`[Trace] Continuation backup ${info.ActiveBackupPlayerType} stalled — cooling down and rotating to next type`,
+					"warning",
+				);
+			} else {
+				const reentryBackupAgeMs =
+					Date.now() - (Number(info.LastCleanBackupAt) || 0);
+				if (reentryBackupAgeMs < 2000) {
+					info.IsUsingBackupStream = true;
+					return info.LastCleanBackupM3U8;
+				}
+				const reentryRefreshStartedAt = Date.now();
+				const reentryRefreshed = await _refreshActiveBackupMediaPlaylist(
+					info,
+					realFetch,
+				);
+				if (reentryRefreshed) {
+					info.IsUsingBackupStream = true;
+					_log(
+						`[Trace] Continuation fast-refresh: ${info.ActiveBackupPlayerType} (${Date.now() - reentryRefreshStartedAt}ms)`,
+						"info",
+					);
+					return reentryRefreshed;
+				}
 			}
 		}
 
@@ -1937,6 +1948,9 @@ async function _processM3U8Core(url, text, realFetch) {
 					!shouldReloadPlayer && !wasUsingFallbackStream,
 				);
 			}
+			if (!recentMidrollChain) {
+				info.PostEscapeReloadCounterproductive = false;
+			}
 			_postWorkerBridgeMessage(
 				self,
 				_createPageScopedWorkerEvent({
@@ -2122,6 +2136,7 @@ async function _findBackupStream(
 	startIdx = 0,
 	currentResolution = null,
 ) {
+	_forceClearBackupCooldownsIfStale(info);
 	let backupType = null;
 	let backupM3u8 = null;
 	let fallbackM3u8 = null;
