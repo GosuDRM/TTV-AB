@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.7.0-purple)
+![Version](https://img.shields.io/badge/version-9.7.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.7.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.7.1-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -64,14 +64,14 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
+### v9.7.1 — 2026-06-10
+- **Playback recovery fixes.** The ad-recovery reload backoff now downgrades to a gentle pause/resume instead of hard-reloading the player, the instant CSAI fast path works on every ad break instead of only the first one per stream, and the backup search recovers when every backup type is cooling down at once.
+
 ### v9.7.0 — 2026-06-10
 - **Smoother back-to-back midrolls.** During a burst of quick consecutive ads, the extension now refreshes the held clean backup directly instead of re-running the full backup search every time, reducing brief buffer-edge stutters between ads. It still re-verifies every playlist is ad-free before serving, so nothing leaks through.
 
 ### v9.6.9 — 2026-06-10
 - **Right quality on long ad breaks — including on slower connections.** During long midrolls the backup stream could get stuck at the wrong quality for the whole break, collapsing to 360p as the player adapted down to it. The backup now holds at the quality your connection has actually been sustaining: a 1080p viewer stays at 1080p, and a lower-bandwidth viewer stays at the quality they can actually stream instead of being forced higher.
-
-### v9.6.8 — 2026-06-10
-- **Backups no longer cold-start below 360p on prerolls.** When you open a channel during an ad, the player is still ramping up from its lowest quality, and the backup stream was matching that — leaving you on blurry sub-360p video for the whole break. A 360p floor now applies to backups, so they start at a watchable quality. (This is the second half of the 9.6.7 quality fix.) Backup selection logs now also show the resolution being served, for easier troubleshooting.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.7.1] - 2026-06-10
+
+### Fixed
+- **Ad-recovery reload backoff now actually downgrades to pause/resume.** It logged the downgrade but still hard-reloaded the player, so repeated recovery failures could reload every couple of seconds. The downgrade now performs the pause/resume and skips the reload.
+- **The CSAI fast path now fires on every ad break.** Its per-break marker was never cleared, so only the first CSAI-only break per stream got the instant response; later breaks waited on a full backup search.
+- **The backup search recovers when every backup type is cooling down at once.** The stale-cooldown reset existed but was never called; it now runs at the start of every backup search.
+- **The worker fetch relay no longer throws on bodyless HTTP statuses.** Responses with status 101, 204, 205, or 304 are now rebuilt without a body.
+
+### Changed
+- `parent_domains` is only stripped from playlist requests when the access-token player-type rewrite is enabled.
+- Twitch GQL responses are returned to the page immediately; token-state inspection runs in the background.
+
+### Internal
+- Removed the unused `_incrementPlaylistMediaSequence` helper.
+- Added regression tests for the fixes above.
+
 ## [9.7.0] - 2026-06-10
 
 ### Performance
