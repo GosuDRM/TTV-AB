@@ -1060,7 +1060,6 @@ function _hookWorker() {
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
                 ${_playlistHasMediaSegments.toString()}
-                ${_incrementPlaylistMediaSequence.toString()}
                 ${_parsePlaylistFirstMediaSequence.toString()}
                 ${_parsePlaylistDiscontinuitySequence.toString()}
                 ${_setPlaylistDiscontinuitySequence.toString()}

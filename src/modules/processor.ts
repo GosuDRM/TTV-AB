@@ -628,17 +628,6 @@ function _playlistHasMediaSegments(text) {
 	);
 }
 
-function _incrementPlaylistMediaSequence(text, incrementBy) {
-	if (!text || typeof text !== "string" || !incrementBy) return text;
-	return text.replace(/#EXT-X-MEDIA-SEQUENCE:(\d+)/, (match, seqStr) => {
-		const seq = parseInt(seqStr, 10);
-		if (!Number.isNaN(seq)) {
-			return `#EXT-X-MEDIA-SEQUENCE:${seq + incrementBy}`;
-		}
-		return match;
-	});
-}
-
 function _parsePlaylistFirstMediaSequence(text) {
 	if (typeof text !== "string") return null;
 	const m = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
