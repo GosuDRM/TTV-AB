@@ -355,20 +355,25 @@ async function _notifyAdComplete(
 		// back to visible-match count if absent. Keeps total_ads consistent across
 		// all ads in the pod even though they surface one poll at a time.
 		const podLenMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
-		const podLength = podLenMatch
+		const hasExplicitPodLength = Boolean(podLenMatch);
+		const podLength = hasExplicitPodLength
 			? parseInt(podLenMatch[1], 10)
 			: matches.length;
 		// Hot-path early-out: this runs every ad-laden poll, and a long multi-ad
 		// break has many polls AFTER the whole pod is already spoofed. Once the
 		// dedup set covers the pod, every remaining poll is pure waste — bail
 		// before the per-match parse loop.
-		if (spoofedSet && spoofedSet.size >= podLength) return;
+		if (hasExplicitPodLength && spoofedSet && spoofedSet.size >= podLength) {
+			return;
+		}
 		let newSpoofed = 0;
 		let firstRollType = "";
 		let podCompleteSent = false;
 
 		for (let i = 0; i < matches.length; i++) {
-			if (spoofedSet && spoofedSet.size >= podLength) break;
+			if (hasExplicitPodLength && spoofedSet && spoofedSet.size >= podLength) {
+				break;
+			}
 			// Cheap ID pre-extract for the dedup check — the DATERANGE capture
 			// always starts with ID="stitched-ad-<UUID>". Checking the dedup set
 			// before the full _parseAttrs() avoids re-parsing every already-

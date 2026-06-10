@@ -1079,11 +1079,26 @@ async function _processM3U8Core(url, text, realFetch) {
 	}
 
 	if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
-		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
-		info.LastPlayerReload = Date.now();
+		const pendingReloadMediaKey = _normalizeMediaKey(
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
+		);
+		const pendingReloadChannel = _normalizeChannelName(
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel,
+		);
+		const reloadMatchesThisStream =
+			(!pendingReloadMediaKey && !pendingReloadChannel) ||
+			(pendingReloadMediaKey &&
+				pendingReloadMediaKey === _normalizeMediaKey(info.MediaKey)) ||
+			(!pendingReloadMediaKey &&
+				pendingReloadChannel &&
+				pendingReloadChannel === _normalizeChannelName(info.ChannelName));
+		if (reloadMatchesThisStream) {
+			__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+			info.LastPlayerReload = Date.now();
+		}
 	}
 
 	const hasExplicitKnownAdSegments = _playlistHasKnownAdSegments(text, {
@@ -1316,7 +1331,9 @@ async function _processM3U8Core(url, text, realFetch) {
 			);
 			if (lastAdEndBounceAt > 0 && now - lastAdEndBounceAt < bounceDebounceMs) {
 				info.LastAdEndBounceAt = now;
-				if (info.LastCleanBackupM3U8) {
+				const bounceBackupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
+				if (info.LastCleanBackupM3U8 && bounceBackupAgeMs <= 8000) {
+					info.IsUsingBackupStream = true;
 					return info.LastCleanBackupM3U8;
 				}
 				return _stripAds(text, false, info, true);

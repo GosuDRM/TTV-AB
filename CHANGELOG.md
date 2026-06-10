@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.4] - 2026-06-10
+
+### Fixed
+- **Background-tab ad breaks no longer trigger player reloads.** The in-ad stall and frozen-playhead checks ran before the buffer monitor's hidden-tab guard, so a throttled background tab could misread a suspended decoder as a stall and reload the player — the same destructive hidden-tab restart the watchdog fix already removed elsewhere. These checks are now skipped while hidden, and their detection state is reset so a tab returning to the foreground cannot fire a false recovery on the first visible tick.
+- **Pinned-backup stall recovery no longer exhausts itself for the rest of the session.** The 3-attempt re-search budget only reset when the backup type changed, so after three lifetime stalls on the same type the recovery silently stopped helping on every later ad break. The budget now resets once playback recovers and whenever the ad context clears, making the cap per stall episode instead of per session.
+- **Ad-end marker bounce kept backup playback intact.** When ad markers briefly flickered back during recovery, the debounced backup-serving path returned a cached backup playlist without marking backup state, which dropped the seamless splice bridge and could serve a stale prior-break playlist. It now flags backup playback and only reuses the cached backup when it is fresh.
+- **Multi-ad pods without a declared pod length now spoof every ad.** When Twitch omits `X-TV-TWITCH-AD-POD-LENGTH`, the per-poll ad count was mistaken for the whole pod size, so the completion-spoof early-out bailed after the first ad and left later ads in the pod unspoofed. The early-out is now gated on an explicit pod length.
+- **Triggered player reloads are consumed by the correct stream.** A pending post-reload hint is now applied only to the stream it was issued for, preventing a second concurrent playlist (multi-stream pages) from absorbing it.
+
+### Safety
+- All changes remove false-positive recovery actions and tighten backup bookkeeping; ad detection, stripping, and the spoof payloads themselves are unchanged, so no ad content can leak through.
+- Genuine stalls in a visible tab are still detected and recovered, and a real multi-ad pod is still fully spoofed when its pod length is present.
+
 ## [9.6.3] - 2026-06-10
 
 ### Fixed

@@ -1142,3 +1142,142 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(out).toContain("seg100.ts");
 	});
 });
+
+describe("_processM3U8 triggered-reload consumption (context-scoped)", () => {
+	const URL_A = "https://video-weaver.example.ttvnw.net/v1/playlist/chanA.m3u8";
+
+	const processM3U8 = () =>
+		T<
+			(
+				url: string,
+				text: string,
+				realFetch: (...args: unknown[]) => Promise<unknown>,
+			) => Promise<string>
+		>("_processM3U8");
+
+	function cleanPlaylist(mediaSeq: number) {
+		const lines = [
+			"#EXTM3U",
+			"#EXT-X-VERSION:7",
+			"#EXT-X-TARGETDURATION:2",
+			`#EXT-X-MEDIA-SEQUENCE:${mediaSeq}`,
+		];
+		for (let i = 0; i < 3; i++) {
+			lines.push("#EXTINF:2.000,live");
+			lines.push(`live-seg${mediaSeq + i}.ts`);
+		}
+		return lines.join("\n");
+	}
+
+	function setup() {
+		g.postMessage = () => {};
+		g._postWorkerBridgeMessage = () => {};
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
+		const info = makeInfo({
+			MediaKey: "live:chana",
+			ChannelName: "chana",
+			LastPlayerReload: 0,
+		});
+		getState().StreamInfosByUrl = { [URL_A]: info };
+		getState().HasTriggeredPlayerReload = true;
+		getState().PendingTriggeredPlayerReloadAt = 1000;
+		return info;
+	}
+
+	it("does not consume a pending reload flagged for a different stream", async () => {
+		const info = setup();
+		getState().PendingTriggeredPlayerReloadMediaKey = "live:chanb";
+		getState().PendingTriggeredPlayerReloadChannel = "chanb";
+
+		await processM3U8()(URL_A, cleanPlaylist(100), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(getState().HasTriggeredPlayerReload).toBe(true);
+		expect(getState().PendingTriggeredPlayerReloadMediaKey).toBe("live:chanb");
+		expect(info.LastPlayerReload).toBe(0);
+	});
+
+	it("consumes the pending reload for the matching stream", async () => {
+		const info = setup();
+		getState().PendingTriggeredPlayerReloadMediaKey = "live:chana";
+		getState().PendingTriggeredPlayerReloadChannel = "chana";
+
+		await processM3U8()(URL_A, cleanPlaylist(100), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(getState().HasTriggeredPlayerReload).toBe(false);
+		expect(getState().PendingTriggeredPlayerReloadMediaKey).toBe(null);
+		expect(info.LastPlayerReload).toBeGreaterThan(0);
+	});
+});
+
+describe("_processM3U8 ad-end bounce backup serving", () => {
+	const NATIVE_URL =
+		"https://video-weaver.example.ttvnw.net/v1/playlist/bounce.m3u8";
+
+	const processM3U8 = () =>
+		T<
+			(
+				url: string,
+				text: string,
+				realFetch: (...args: unknown[]) => Promise<unknown>,
+			) => Promise<string>
+		>("_processM3U8");
+
+	function adMarkedNative() {
+		return [
+			"#EXTM3U",
+			"#EXT-X-VERSION:7",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:200",
+			'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad"',
+			"#EXTINF:2.000,live",
+			"native-live-200.ts",
+		].join("\n");
+	}
+
+	function setupBounce(backupAtOffsetMs: number) {
+		g.postMessage = () => {};
+		g._postWorkerBridgeMessage = () => {};
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
+		g._notifyAdComplete = () => Promise.resolve();
+		const now = Date.now();
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: now - 1000,
+			PendingAdEndAt: now - 1000,
+			CleanPlaylistCount: 1,
+			LastAdEndBounceAt: now - 1000,
+			LastCleanBackupM3U8: makePlaylist(50, 3),
+			LastCleanBackupPlayerType: "site",
+			ActiveBackupPlayerType: "site",
+			LastCleanBackupAt: now - backupAtOffsetMs,
+		});
+		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
+		return info;
+	}
+
+	it("marks IsUsingBackupStream and serves a fresh cached backup on an ad-end bounce", async () => {
+		const info = setupBounce(0);
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(info.IsUsingBackupStream).toBe(true);
+		expect(out).toContain("seg50.ts");
+	});
+
+	it("does not serve a stale cached backup on an ad-end bounce", async () => {
+		const info = setupBounce(20000);
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(info.IsUsingBackupStream).toBe(false);
+		expect(out).not.toContain("seg50.ts");
+	});
+});

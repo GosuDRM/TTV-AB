@@ -55,6 +55,10 @@ function adRange(id: number) {
 	return `#EXT-X-DATERANGE:ID="stitched-ad-${id}",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-RADS-TOKEN="rad-${id}",X-TV-TWITCH-AD-POD-LENGTH="2",X-TV-TWITCH-AD-POD-POSITION="${id}",X-TV-TWITCH-AD-DURATION="15.000",X-TV-TWITCH-AD-ROLL-TYPE="PREROLL"`;
 }
 
+function adRangeNoPodLength(id: number) {
+	return `#EXT-X-DATERANGE:ID="stitched-ad-${id}",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-RADS-TOKEN="rad-${id}",X-TV-TWITCH-AD-POD-POSITION="${id}",X-TV-TWITCH-AD-DURATION="15.000",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"`;
+}
+
 describe("_notifyAdComplete", () => {
 	it("does not spoof more ads than the declared pod length", async () => {
 		const notify =
@@ -101,5 +105,55 @@ describe("_notifyAdComplete", () => {
 			"stitched-ad-2",
 		]);
 		expect(payloads.every((payload) => payload.total_ads === 2)).toBe(true);
+	});
+
+	it("keeps spoofing later ads across polls when no pod length is declared", async () => {
+		const notify =
+			T<
+				(
+					text: string,
+					info: { SpoofedAdIds: Set<string>; ActiveBackupPlayerType: string },
+				) => Promise<void>
+			>("_notifyAdComplete");
+		const batches: GqlPacket[][] = [];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: Record<string, unknown>,
+		) => {
+			batches.push(JSON.parse(String(options.body || "[]")) as GqlPacket[]);
+			return new Response(null, { status: 200 });
+		};
+
+		const sharedSpoofedIds = new Set<string>();
+		const info = {
+			SpoofedAdIds: sharedSpoofedIds,
+			ActiveBackupPlayerType: "site",
+		};
+
+		await notify(
+			["#EXTM3U", adRangeNoPodLength(1)].join("\n").concat("\n"),
+			info,
+		);
+		await notify(
+			["#EXTM3U", adRangeNoPodLength(2)].join("\n").concat("\n"),
+			info,
+		);
+
+		const impressionIds = batches
+			.flat()
+			.filter(
+				(packet) =>
+					packet.variables?.input?.eventName === "video_ad_impression",
+			)
+			.map(
+				(packet) =>
+					(
+						JSON.parse(
+							String(packet.variables?.input?.eventPayload || "{}"),
+						) as { ad_id?: string }
+					).ad_id,
+			);
+
+		expect(impressionIds).toEqual(["stitched-ad-1", "stitched-ad-2"]);
 	});
 });
