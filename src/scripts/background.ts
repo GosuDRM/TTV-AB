@@ -400,7 +400,7 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 		return undefined;
 	}
 	const message = getMessageData(rawMessage);
-	if (!message || message.type !== "ttvab-persist-counters") {
+	if (message?.type !== "ttvab-persist-counters") {
 		return undefined;
 	}
 

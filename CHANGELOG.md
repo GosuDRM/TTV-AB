@@ -2,6 +2,50 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.5] - 2026-06-10
+
+### Fixed
+- **Single-ad midroll breaks no longer get doubled by the post-escape reload.** After a CSAI backup escape, the extension soft-reloads the player to correct audio desync — but on some channels Twitch treats that reload as a new session and immediately serves another ad, so every midroll cost a player restart plus a second backup cycle. The extension now detects this: when a post-escape reload is followed within 30s by another ad break, it marks post-escape reloads counterproductive for that stream and downgrades them to a lightweight pause/resume resync (no new player instance, so Twitch does not serve a fresh ad). The full reload is still used until the pattern is observed, and verified-clean escapes that do not bounce keep the desync-correcting reload.
+- **Duplicate "Suppressed N competing media element" log entries removed.** Re-running ad-recovery suppression re-counted and re-logged elements it was already muting, because the skip guard only matched paused elements. Already-suppressed elements are now re-muted defensively but counted and logged only once; the saved volume/mute state and single restore are unchanged.
+- **Contradictory native-recovery trace clarified.** A clean recovery probe that had not yet reached the required consecutive-clean count was reported as "still ad-marked after max wait," contradicting the "Native recovery ready N/3" line logged the same instant. The hold log now reads "verifying clean; holding clean backup stream" when probes are coming back clean, and only says "still ad-marked" when they actually are.
+
+### Safety
+- All changes are recovery-bookkeeping and log-clarity refinements; ad detection, stripping, backup selection, and the spoof payloads are untouched, so no ad content can leak through.
+- The post-escape reload downgrade only takes effect after observing a reload-triggered ad on that stream, and pause/resume still resyncs audio — the audio-desync protection the reload was added for is preserved.
+
+## [9.6.4] - 2026-06-10
+
+### Fixed
+- **Background-tab ad breaks no longer trigger player reloads.** The in-ad stall and frozen-playhead checks ran before the buffer monitor's hidden-tab guard, so a throttled background tab could misread a suspended decoder as a stall and reload the player — the same destructive hidden-tab restart the watchdog fix already removed elsewhere. These checks are now skipped while hidden, and their detection state is reset so a tab returning to the foreground cannot fire a false recovery on the first visible tick.
+- **Pinned-backup stall recovery no longer exhausts itself for the rest of the session.** The 3-attempt re-search budget only reset when the backup type changed, so after three lifetime stalls on the same type the recovery silently stopped helping on every later ad break. The budget now resets once playback recovers and whenever the ad context clears, making the cap per stall episode instead of per session.
+- **Ad-end marker bounce kept backup playback intact.** When ad markers briefly flickered back during recovery, the debounced backup-serving path returned a cached backup playlist without marking backup state, which dropped the seamless splice bridge and could serve a stale prior-break playlist. It now flags backup playback and only reuses the cached backup when it is fresh.
+- **Multi-ad pods without a declared pod length now spoof every ad.** When Twitch omits `X-TV-TWITCH-AD-POD-LENGTH`, the per-poll ad count was mistaken for the whole pod size, so the completion-spoof early-out bailed after the first ad and left later ads in the pod unspoofed. The early-out is now gated on an explicit pod length.
+- **Triggered player reloads are consumed by the correct stream.** A pending post-reload hint is now applied only to the stream it was issued for, preventing a second concurrent playlist (multi-stream pages) from absorbing it.
+
+### Safety
+- All changes remove false-positive recovery actions and tighten backup bookkeeping; ad detection, stripping, and the spoof payloads themselves are unchanged, so no ad content can leak through.
+- Genuine stalls in a visible tab are still detected and recovered, and a real multi-ad pod is still fully spoofed when its pod length is present.
+
+## [9.6.3] - 2026-06-10
+
+### Fixed
+- **Background tabs no longer falsely declare the player worker crashed.** The worker heartbeat watchdog measured staleness from the last pong while browser timer throttling froze the page's ping schedule, so a backgrounded or just-refocused tab could hit the two-strike limit within seconds and hard-restart a healthy player. The watchdog now skips strike accrual entirely while the tab is hidden (it keeps pinging so a pong is ready on refocus) and only counts a strike when a concrete ping has gone unanswered for the full timeout while visible.
+- **Worker-recovery player reloads now wait for the tab to become visible.** Reloading a player in a hidden tab left it half-initialized because throttled resume retries and autoplay restrictions prevented playback from sticking — the visible "player crash" after tab switches. Recovery still installs the degraded page-side fallback immediately; only the player restart is deferred.
+- **Blob-injection failure detection no longer fires while hidden.** The initial heartbeat timeout reschedules itself until the tab is visible instead of declaring a throttled worker dead before it had a chance to answer.
+
+### Safety
+- Ad blocking is unaffected: playlist processing, fallback installation, and recovery attempt caps are unchanged — only the false-positive crash verdicts and hidden-tab player restarts are removed.
+- A genuinely dead worker in a visible tab is still detected and recovered within roughly 30 seconds via the same two-strike escalation.
+
+## [9.6.2] - 2026-06-10
+
+### Fixed
+- **Removed a pointless player restart when an ad cycle ends into a silent backup hold.** When native recovery probes stayed ad-marked and the worker ended the visible ad cycle while keeping the clean backup stream playing, the CSAI post-escape path still reloaded the player. The reload dumped a cleanly playing buffer and showed a loading spinner only to resume on the exact same held backup playlist. Silent-hold ends now skip that reload, matching the extended-hold path that already kept playback untouched.
+
+### Safety
+- Playlist content served during and after holds is unchanged — the held backup keeps playing until the native playlist is verified clean, so no ad content can leak through this change.
+- Verified-clean CSAI escapes still perform the post-escape soft reload that prevents audio desync after backup playback, and autoplay/HEVC holds still reload at restore time via the existing `NativePlaybackRestored` path.
+
 ## [9.6.1] - 2026-06-09
 
 ### Fixed

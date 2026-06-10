@@ -401,8 +401,12 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 			);
 			if (now - lastHoldLogAt >= 10000) {
 				info.LastNativeRecoveryHoldLogAt = now;
+				const recoveryProgressing =
+					Math.max(0, Number(info.NativeRecoveryCleanCount) || 0) > 0;
 				_log(
-					"[Trace] Native recovery still ad-marked after max wait; holding clean backup stream",
+					recoveryProgressing
+						? "[Trace] Native recovery verifying clean; holding clean backup stream"
+						: "[Trace] Native recovery still ad-marked after max wait; holding clean backup stream",
 					"warning",
 				);
 			}
@@ -911,6 +915,8 @@ function _createStreamInfo(context) {
 		_BackupSearchFailCount: 0,
 		_FallbackEntryCount: 0,
 		LastAdEndReloadAt: 0,
+		LastAdEndReloadKind: null,
+		PostEscapeReloadCounterproductive: false,
 		LastNativeRecoveryHoldLogAt: 0,
 		HevcReloadPendingAfterHold: false,
 		LastAdEndBounceAt: 0,
@@ -1079,11 +1085,26 @@ async function _processM3U8Core(url, text, realFetch) {
 	}
 
 	if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
-		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
-		info.LastPlayerReload = Date.now();
+		const pendingReloadMediaKey = _normalizeMediaKey(
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
+		);
+		const pendingReloadChannel = _normalizeChannelName(
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel,
+		);
+		const reloadMatchesThisStream =
+			(!pendingReloadMediaKey && !pendingReloadChannel) ||
+			(pendingReloadMediaKey &&
+				pendingReloadMediaKey === _normalizeMediaKey(info.MediaKey)) ||
+			(!pendingReloadMediaKey &&
+				pendingReloadChannel &&
+				pendingReloadChannel === _normalizeChannelName(info.ChannelName));
+		if (reloadMatchesThisStream) {
+			__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+			info.LastPlayerReload = Date.now();
+		}
 	}
 
 	const hasExplicitKnownAdSegments = _playlistHasKnownAdSegments(text, {
@@ -1156,11 +1177,6 @@ async function _processM3U8Core(url, text, realFetch) {
 	}
 
 	if (hasAds) {
-		// Fire-and-forget GQL ad-tracking spoof on every ad-laden poll. Tells
-		// Twitch the user "watched" the ad (impression/quartile/pod-complete
-		// beacons a real player would send). Twitch surfaces one ad's DATERANGE
-		// per poll in multi-ad pods, so this must run every poll — info.SpoofedAdIds
-		// dedups so each ad is spoofed once (full N/N coverage). See api.ts.
 		_notifyAdComplete(text, info).catch(() => {});
 		if (info.IsHoldingBackupAfterAd) {
 			const holdElapsed =
@@ -1316,7 +1332,9 @@ async function _processM3U8Core(url, text, realFetch) {
 			);
 			if (lastAdEndBounceAt > 0 && now - lastAdEndBounceAt < bounceDebounceMs) {
 				info.LastAdEndBounceAt = now;
-				if (info.LastCleanBackupM3U8) {
+				const bounceBackupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
+				if (info.LastCleanBackupM3U8 && bounceBackupAgeMs <= 8000) {
+					info.IsUsingBackupStream = true;
 					return info.LastCleanBackupM3U8;
 				}
 				return _stripAds(text, false, info, true);
@@ -1793,6 +1811,9 @@ async function _processM3U8Core(url, text, realFetch) {
 			const recentMidrollChain =
 				info.LastAdEndReloadAt > 0 &&
 				adEndedAt - info.LastAdEndReloadAt < 30000;
+			if (recentMidrollChain && info.LastAdEndReloadKind === "post-escape") {
+				info.PostEscapeReloadCounterproductive = true;
+			}
 			const isCsaiBreak = !hadStrippedAdSegments && !wasUsingModifiedM3U8;
 			let shouldReloadPlayer = false;
 			let shouldPauseResumePlayer = false;
@@ -1800,9 +1821,17 @@ async function _processM3U8Core(url, text, realFetch) {
 			const needsHardReload = shouldUseHevcReload;
 
 			if (isCsaiBreak) {
-				if (wasUsingBackupStream && !recentMidrollChain) {
-					shouldReloadPlayer = true;
-					reloadKind = "post-escape";
+				if (
+					wasUsingBackupStream &&
+					!recentMidrollChain &&
+					!isSilentBackupHoldEnd
+				) {
+					if (info.PostEscapeReloadCounterproductive) {
+						shouldPauseResumePlayer = true;
+					} else {
+						shouldReloadPlayer = true;
+						reloadKind = "post-escape";
+					}
 				}
 			} else if (!isSilentBackupHoldEnd) {
 				shouldReloadPlayer = Boolean(
@@ -1828,6 +1857,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			);
 			if (shouldReloadPlayer) {
 				info.LastPlayerReload = Date.now();
+				info.LastAdEndReloadKind = reloadKind;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
@@ -1840,6 +1870,7 @@ async function _processM3U8Core(url, text, realFetch) {
 					}),
 				);
 			} else if (shouldPauseResumePlayer) {
+				info.LastAdEndReloadKind = null;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
@@ -1848,6 +1879,8 @@ async function _processM3U8Core(url, text, realFetch) {
 						mediaKey: info.MediaKey,
 					}),
 				);
+			} else {
+				info.LastAdEndReloadKind = null;
 			}
 			_rememberLastAdEnd(info, adEndedAt);
 		}
@@ -2000,7 +2033,6 @@ async function _findBackupStream(
 	let fallbackType = null;
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
-	// this break get deprioritized so clean types get tried first.
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
 		const clean: string[] = [];
 		const contam: string[] = [];
@@ -2113,7 +2145,6 @@ async function _findBackupStream(
 									baseUrl: encBaseUrl,
 								};
 
-								// Whitelist all variants in the backup master playlist
 								const lines = enc.split("\n");
 								for (let i = 0; i < lines.length; i++) {
 									const line = lines[i]?.trim();

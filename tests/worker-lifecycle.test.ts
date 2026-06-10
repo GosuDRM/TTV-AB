@@ -343,3 +343,160 @@ describe("page-side M3U8 fallback", () => {
 		expect(stripped).toContain("clean.ts");
 	});
 });
+
+describe("worker watchdog visibility awareness", () => {
+	function makeTrackedWorker(overrides: Record<string, unknown> = {}) {
+		const worker: Record<string, unknown> = {
+			pings: 0,
+			postMessage() {
+				(worker.pings as number)++;
+			},
+			__TTVABCreatedAt: Date.now(),
+			__TTVABLastPongAt: Date.now(),
+			__TTVABFirstPongAt: Date.now(),
+			__TTVABMissedPongs: 0,
+			__TTVABLastPingSentAt: 0,
+			...overrides,
+		};
+		(g._S as { workers: unknown[] }).workers.push(worker);
+		return worker;
+	}
+
+	function startWatchdog() {
+		T<() => void>("_startWorkerWatchdog")();
+	}
+
+	function stopWatchdog() {
+		const id = g._workerWatchdogID as ReturnType<typeof setInterval> | null;
+		if (id !== null) clearInterval(id);
+		g._workerWatchdogID = null;
+	}
+
+	afterEach(() => {
+		stopWatchdog();
+		delete g._isNativeDocumentHidden;
+		delete g._installPageSideM3U8Override;
+	});
+
+	it("does not accrue missed pongs or declare crashes while the tab is hidden", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		g._isNativeDocumentHidden = () => true;
+		const worker = makeTrackedWorker({
+			__TTVABLastPongAt: 100000 - 60000,
+			__TTVABLastPingSentAt: 100000 - 59000,
+			__TTVABMissedPongs: 1,
+		});
+
+		startWatchdog();
+		vi.advanceTimersByTime(5000);
+
+		expect(worker.__TTVABMissedPongs).toBe(0);
+		expect(worker.__TTVABLastPingSentAt).toBe(0);
+		expect(worker.pings).toBe(1);
+		expect(worker.__TTVABCrashed).toBeUndefined();
+
+		vi.advanceTimersByTime(60000);
+		expect(worker.__TTVABCrashed).toBeUndefined();
+		expect(worker.__TTVABMissedPongs).toBe(0);
+	});
+
+	it("restarts the ping window after a long gap instead of striking a resumed worker", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(700000);
+		g._isNativeDocumentHidden = () => false;
+		const markPong =
+			T<(worker: Record<string, unknown>, now?: number) => void>(
+				"_markWorkerPong",
+			);
+		const worker = makeTrackedWorker({
+			__TTVABLastPongAt: 700000 - 600000,
+			__TTVABLastPingSentAt: 700000 - 600005,
+		});
+
+		startWatchdog();
+		vi.advanceTimersByTime(5000);
+		expect(worker.__TTVABMissedPongs).toBe(0);
+		expect(worker.__TTVABLastPingSentAt).toBe(705000);
+		expect(worker.__TTVABCrashed).toBeUndefined();
+
+		worker.postMessage = () => {
+			(worker.pings as number)++;
+			markPong(worker);
+		};
+		vi.advanceTimersByTime(30000);
+		expect(worker.__TTVABMissedPongs).toBe(0);
+		expect(worker.__TTVABCrashed).toBeUndefined();
+	});
+
+	it("still declares a visible worker crashed after sustained unanswered pings", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		g._isNativeDocumentHidden = () => false;
+		g._installPageSideM3U8Override = () => {};
+		g._doPlayerTask = () => true;
+		const worker = makeTrackedWorker();
+
+		startWatchdog();
+		vi.advanceTimersByTime(25000);
+		expect(worker.__TTVABCrashed).toBeUndefined();
+		expect(worker.__TTVABMissedPongs).toBe(1);
+
+		vi.advanceTimersByTime(5000);
+		expect(worker.__TTVABCrashed).toBe(true);
+	});
+
+	it("defers the recovery reload until the tab is visible again", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		let hidden = true;
+		g._isNativeDocumentHidden = () => hidden;
+		const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
+		g._getPlaybackContextFromUrl = () => ({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		const reloads: unknown[][] = [];
+		g._doPlayerTask = (...args: unknown[]) => {
+			reloads.push(args);
+			return true;
+		};
+
+		try {
+			T<
+				(
+					worker: Record<string, unknown>,
+					context: Record<string, unknown>,
+				) => void
+			>("_attemptWorkerRestart")(
+				{},
+				{
+					MediaType: "live",
+					ChannelName: "testchannel",
+				},
+			);
+
+			vi.advanceTimersByTime(1000);
+			expect(reloads).toHaveLength(0);
+
+			vi.advanceTimersByTime(20000);
+			expect(reloads).toHaveLength(0);
+
+			hidden = false;
+			vi.advanceTimersByTime(5000);
+			expect(reloads).toHaveLength(1);
+			expect(reloads[0][2]).toEqual({
+				reason: "worker-recovery",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			});
+		} finally {
+			if (previousGetPlaybackContext === undefined) {
+				delete g._getPlaybackContextFromUrl;
+			} else {
+				g._getPlaybackContextFromUrl = previousGetPlaybackContext;
+			}
+		}
+	});
+});

@@ -110,6 +110,15 @@ function _resetInAdFreezeState() {
 	_InAdFreezeState.lastActionAt = 0;
 	_InAdFreezeState.actionCount = 0;
 }
+function _resetPinnedBackupStallState() {
+	_PinnedBackupStallState.firstObservedAt = 0;
+	_PinnedBackupStallState.lastCurrentTime = 0;
+	_PinnedBackupStallState.lastBufferedEnd = 0;
+	_PinnedBackupStallState.lastForceRefreshAt = 0;
+	_PinnedBackupStallState.lastPinnedType = null;
+	_PinnedBackupStallState.forceRefreshCount = 0;
+	_PinnedBackupStallState.exhaustedLogged = false;
+}
 const _SECONDARY_PLAYER_HANDOFF_PAUSE_DELAYS_MS = [0, 120, 450, 1000];
 const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
 	'[data-a-target="player-play-pause-button"]',
@@ -1789,7 +1798,9 @@ function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
 			continue;
 		}
 
-		if (!_AdAudioSuppressionState.suppressedMedia.has(media)) {
+		const alreadySuppressed =
+			_AdAudioSuppressionState.suppressedMedia.has(media);
+		if (!alreadySuppressed) {
 			_AdAudioSuppressionState.suppressedMedia.set(media, {
 				muted: media.muted,
 				defaultMuted: media.defaultMuted,
@@ -1802,12 +1813,15 @@ function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
 			media.muted = true;
 			media.volume = 0;
 			media.setAttribute("data-ttvab-audio-suppressed", "true");
-			suppressedCount += 1;
+			if (!alreadySuppressed) {
+				suppressedCount += 1;
+			}
 		} catch {}
 	}
 
 	_AdAudioSuppressionState.activeMediaKey = safeMediaKey;
-	_AdAudioSuppressionState.lastSuppressedCount = suppressedCount;
+	_AdAudioSuppressionState.lastSuppressedCount =
+		_AdAudioSuppressionState.suppressedMedia.size;
 	if (suppressedCount > 0) {
 		_log(
 			`Suppressed ${suppressedCount} competing media element${suppressedCount === 1 ? "" : "s"} during ad recovery`,
@@ -2756,25 +2770,17 @@ function _doPlayerTask(
 }
 
 function _checkPinnedBackupStall(player) {
-	const _resetStallState = () => {
-		_PinnedBackupStallState.firstObservedAt = 0;
-		_PinnedBackupStallState.lastCurrentTime = 0;
-		_PinnedBackupStallState.lastBufferedEnd = 0;
-		_PinnedBackupStallState.lastPinnedType = null;
-		_PinnedBackupStallState.forceRefreshCount = 0;
-		_PinnedBackupStallState.exhaustedLogged = false;
-	};
 	if (!__TTVAB_STATE__?.IsBufferFixEnabled) {
-		_resetStallState();
+		_resetPinnedBackupStallState();
 		return;
 	}
 	const pinnedType = __TTVAB_STATE__.PinnedBackupPlayerType;
 	if (!pinnedType) {
-		_resetStallState();
+		_resetPinnedBackupStallState();
 		return;
 	}
 	if (_PinnedBackupStallState.lastPinnedType !== pinnedType) {
-		_resetStallState();
+		_resetPinnedBackupStallState();
 		_PinnedBackupStallState.lastPinnedType = pinnedType;
 	}
 	const video = player?.getHTMLVideoElement?.() || null;
@@ -2800,7 +2806,7 @@ function _checkPinnedBackupStall(player) {
 	);
 	const rearmCooldownMs = Math.max(
 		stallThresholdMs * 2,
-		Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000 * 2,
+		(Number(__TTVAB_STATE__.PinnedBackupStallDetectionMs) || 3000) * 2,
 	);
 
 	const bufferAdvanced =
@@ -2815,6 +2821,9 @@ function _checkPinnedBackupStall(player) {
 
 	if (bufferSafe && (bufferAdvanced || currentTimeAdvanced)) {
 		_PinnedBackupStallState.firstObservedAt = 0;
+		_PinnedBackupStallState.forceRefreshCount = 0;
+		_PinnedBackupStallState.lastForceRefreshAt = 0;
+		_PinnedBackupStallState.exhaustedLogged = false;
 		_PinnedBackupStallState.lastCurrentTime = currentTime;
 		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
 		return;
@@ -2995,23 +3004,24 @@ function _monitorPlayerBuffering() {
 		}
 
 		if (hasActiveAdContext) {
-			let pinPlayer = _cachedPlayerRef?.player || null;
-			if (!pinPlayer) {
-				const fresh = _getPlayerAndState();
-				if (fresh.player && fresh.state) {
-					pinPlayer = fresh.player;
+			let pinPlayer = null;
+			if (!isHidden) {
+				pinPlayer = _cachedPlayerRef?.player || null;
+				if (!pinPlayer) {
+					const fresh = _getPlayerAndState();
+					if (fresh.player && fresh.state) {
+						pinPlayer = fresh.player;
+					}
 				}
 			}
 			if (
+				pinPlayer &&
 				__TTVAB_STATE__.PinnedBackupPlayerType &&
-				Number(__TTVAB_STATE__.PinnedBackupStallPollMs) > 0 &&
-				pinPlayer
+				Number(__TTVAB_STATE__.PinnedBackupStallPollMs) > 0
 			) {
 				_checkPinnedBackupStall(pinPlayer);
 			} else {
-				_PinnedBackupStallState.firstObservedAt = 0;
-				_PinnedBackupStallState.lastCurrentTime = 0;
-				_PinnedBackupStallState.lastBufferedEnd = 0;
+				_resetPinnedBackupStallState();
 			}
 			if (pinPlayer) {
 				_checkInAdPlayheadFreeze(pinPlayer);
@@ -3022,6 +3032,9 @@ function _monitorPlayerBuffering() {
 			_playerBufferMonitorTimer = setTimeout(check, nextDelay);
 			return;
 		}
+
+		_resetPinnedBackupStallState();
+		_resetInAdFreezeState();
 
 		if (isHidden) {
 			_clearCachedPlayerRef(false);

@@ -178,4 +178,92 @@ describe("_checkPinnedBackupStall", () => {
 			(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt,
 		).toBe(104000);
 	});
+
+	it("restores the re-search budget after playback recovers (per-episode cap, not per-session)", () => {
+		const check = T<
+			(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void
+		>("_checkPinnedBackupStall");
+		const state = g._PinnedBackupStallState as Record<string, unknown>;
+		state.lastPinnedType = "autoplay";
+		state.forceRefreshCount = 3;
+		state.exhaustedLogged = true;
+		state.lastForceRefreshAt = 90000;
+
+		let currentTime = 10;
+		let bufferedEnd = 20;
+		const player = makePlayer(
+			() => currentTime,
+			() => bufferedEnd,
+		);
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(100000);
+		check(player);
+		expect(state.forceRefreshCount).toBe(3);
+
+		currentTime = 13;
+		bufferedEnd = 20;
+		nowSpy.mockReturnValue(104000);
+		check(player);
+
+		expect(state.forceRefreshCount).toBe(0);
+		expect(state.exhaustedLogged).toBe(false);
+		expect(state.lastForceRefreshAt).toBe(0);
+	});
+});
+
+describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
+	function makeCompetingVideo() {
+		const video = document.createElement("video");
+		Object.defineProperty(video, "paused", {
+			get: () => false,
+			configurable: true,
+		});
+		Object.defineProperty(video, "ended", {
+			get: () => false,
+			configurable: true,
+		});
+		video.muted = false;
+		video.volume = 1;
+		document.body.appendChild(video);
+		return video;
+	}
+
+	afterEach(() => {
+		document.body.innerHTML = "";
+		const state = g._AdAudioSuppressionState as {
+			suppressedMedia: Map<unknown, unknown>;
+			activeMediaKey: unknown;
+			lastSuppressedCount: number;
+		};
+		state.suppressedMedia.clear();
+		state.activeMediaKey = null;
+		state.lastSuppressedCount = 0;
+	});
+
+	it("counts and logs each competing element only once across repeated calls", () => {
+		const suppress = T<(channel?: string, mediaKey?: string) => number>(
+			"_suppressCompetingMediaDuringAd",
+		);
+		g._getPrimaryMediaElement = () => null;
+		g._resolvePlayerMediaKey = () => "live:test";
+		const logs: string[] = [];
+		g._log = (msg: string) => {
+			logs.push(msg);
+		};
+		makeCompetingVideo();
+
+		const first = suppress("test", "live:test");
+		const second = suppress("test", "live:test");
+
+		expect(first).toBe(1);
+		expect(second).toBe(0);
+		expect(
+			logs.filter((m) => m.includes("competing media element")),
+		).toHaveLength(1);
+		const state = g._AdAudioSuppressionState as {
+			suppressedMedia: Map<unknown, unknown>;
+		};
+		expect(state.suppressedMedia.size).toBe(1);
+	});
 });

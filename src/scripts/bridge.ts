@@ -90,8 +90,6 @@ function isPlainObject(value) {
 	if (prototype === null) {
 		return true;
 	}
-	// Bridge messages cross execution realms, so prototype identity checks
-	// against the local Object.prototype are too strict here.
 	return (
 		Object.prototype.toString.call(value) === "[object Object]" &&
 		Object.getPrototypeOf(prototype) === null

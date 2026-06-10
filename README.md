@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.6.1-purple)
+![Version](https://img.shields.io/badge/version-9.6.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.6.1-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.6.5-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -14,8 +14,8 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 | Store | Link | Status |
 |-------|------|--------|
-| Firefox Add-ons | [TTV AB - Twitch Ad Blocker](https://addons.mozilla.org/en-GB/firefox/addon/ttv-ab-twitch-ad-blocker/) | Active |
-| Chrome Web Store | [TTV AB - Lightweight, powerful ad blocker](https://chromewebstore.google.com/detail/ttv-ab-lightweight-powerf/mlifbfmeoafhcccmppaolojdglcbkdkg) | Pending approval |
+| Firefox Add-ons | [TTV AB - Twitch Ad Blocker](https://addons.mozilla.org/en-GB/firefox/addon/ttv-ab-twitch-ad-blocker/) | Stable |
+| Chrome Web Store | [TTV AB - Lightweight, powerful ad blocker](https://chromewebstore.google.com/detail/ttv-ab-lightweight-powerf/mlifbfmeoafhcccmppaolojdglcbkdkg) | Stable |
 
 
 <p align="center">
@@ -47,7 +47,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 1. Install the extension from your browser's add-on store
 2. Navigate to [twitch.tv](https://twitch.tv) and open any live stream or VOD
 3. Ads are blocked automatically — no configuration needed
-4. Click the extension icon to view stats, toggle ad blocking on/off, or toggle the Buffer Fix
+4. Click the extension icon to view stats or toggle Ad Blocking, Ad Spoofing, and Low Quality Fallback
 5. Change language via the dropdown in the popup footer
 
 ## ⚙️ How It Works
@@ -64,17 +64,16 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
-### v9.6.1 — 2026-06-09
-- **Stronger ad-segment stripping.** Known ad segment URLs are removed even during safer fallback scans that skip automatic full-playlist stripping.
-- **More bounded recovery fetches.** Token, backup and native-recovery probes now keep their timeout active through response-body reads, so hung Twitch responses cannot stall recovery indefinitely.
+### v9.6.5 — 2026-06-10
+- **No more doubled midroll breaks.** On channels where Twitch responded to the post-ad soft reload by serving a fresh ad, every midroll cost a player restart and a second backup cycle. The extension now learns that pattern per stream and downgrades the reload to a lightweight pause/resume resync — so the break ends once, with no extra restart, while keeping the audio-desync protection the reload existed for.
+- **Cleaner recovery logs.** Removed duplicate "Suppressed competing media element" entries and fixed a contradictory trace that labeled a clean recovery probe "still ad-marked." No behavior change — just clearer logs.
 
-### v9.6.0 — 2026-06-09
-- **Retro synthwave theme.** Tap either of the two color circles in the popup header to switch between the new default Retro theme and the original Neon look. Retro uses a magenta/cyan palette on deep indigo with neon glows, a subtle grid, CRT scanlines and animated blocky controls. Your choice is remembered between sessions.
-- **Smoother 60/120/144Hz motion.** Retro ambient effects such as scanlines, status pulses and donate-button pulses now favor compositor-friendly opacity/transform animation. The title keeps its chromatic aberration glitch effect.
+### v9.6.4 — 2026-06-10
+- **Fewer needless player reloads during ad breaks.** Background-tab ad breaks no longer misfire stall recovery, the pinned-backup re-search budget resets per stall instead of dying off for the session, and a brief ad-marker flicker keeps the backup playing seamlessly.
+- **More complete ad-completion spoofing.** Multi-ad pods that arrive without a declared pod length now have every ad spoofed, not just the first — closing a gap that could leave later ads in a pod unaccounted for.
 
-### v9.5.0 — 2026-06-09
-- **Consecutive ad breaks reuse the safest recent backup first.** If a non-autoplay backup was recently verified clean for the same stream, the next backup search tries that type before cold source candidates, reducing first-frame black screen without bringing back autoplay-first stalls.
-- **No relaxed ad safety gate.** The remembered backup type is still re-fetched and re-validated before selection, and it is skipped if stale, cooling down, ad-marked, or `autoplay`.
+### v9.6.3 — 2026-06-10
+- **No more player crashes after leaving the stream in a background tab.** Browser timer throttling made the worker heartbeat watchdog misread healthy workers as crashed in hidden or just-refocused tabs, triggering destructive player restarts. The watchdog is now visibility-aware: no crash verdicts while hidden, a full ping/pong round trip before any verdict when visible, and recovery reloads wait until you're actually looking at the tab. Real worker crashes are still detected and recovered.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

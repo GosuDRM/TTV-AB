@@ -487,6 +487,7 @@ function _hookRevokeObjectURL() {
 				url.startsWith("blob:") &&
 				_trackedExtensionBlobUrls.has(url)
 			) {
+				_log(`Delaying blob URL revocation: ${url.slice(0, 40)}...`, "debug");
 				_trackedExtensionBlobUrls.delete(url);
 				setTimeout(() => {
 					try {
@@ -497,6 +498,7 @@ function _hookRevokeObjectURL() {
 				originalRevoke.call(this, url);
 			}
 		};
+		_log("Blob URL revocation hook installed", "info");
 	}
 }
 
@@ -706,6 +708,14 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			_log("Worker recovery unavailable (no player task)", "error");
 			return;
 		}
+		if (
+			typeof _isNativeDocumentHidden === "function" &&
+			_isNativeDocumentHidden() === true
+		) {
+			_log("Deferring worker recovery reload until tab is visible", "info");
+			setTimeout(runRecovery, HW_WATCHDOG_INTERVAL_MS);
+			return;
+		}
 		const now = Date.now();
 		if (now - _lastWorkerRecoveryReloadAt < HW_RECOVERY_COOLDOWN_MS) {
 			const remainingCooldown = Math.max(
@@ -738,12 +748,35 @@ function _startWorkerWatchdog() {
 	if (_workerWatchdogID !== null) return;
 	_workerWatchdogID = setInterval(() => {
 		const now = Date.now();
+		const isHidden =
+			typeof _isNativeDocumentHidden === "function" &&
+			_isNativeDocumentHidden() === true;
 		for (const worker of _S.workers) {
 			if (!worker || worker.__TTVABIntentionallyTerminated) continue;
 			if (worker.__TTVABCrashed) continue;
+			if (isHidden) {
+				worker.__TTVABMissedPongs = 0;
+				worker.__TTVABLastPingSentAt = 0;
+				try {
+					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+				} catch {}
+				continue;
+			}
 			const lastSeen =
 				worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
-			if (now - lastSeen > HW_PONG_TIMEOUT_MS) {
+			const lastPingSentAt = Math.max(
+				0,
+				Number(worker.__TTVABLastPingSentAt) || 0,
+			);
+			const hasUnansweredPing = lastPingSentAt > lastSeen;
+			if (!hasUnansweredPing) {
+				worker.__TTVABLastPingSentAt = now;
+			}
+			if (
+				now - lastSeen > HW_PONG_TIMEOUT_MS &&
+				hasUnansweredPing &&
+				now - lastPingSentAt > HW_PONG_TIMEOUT_MS
+			) {
 				const missedPongs =
 					Math.max(0, Number(worker.__TTVABMissedPongs) || 0) + 1;
 				worker.__TTVABMissedPongs = missedPongs;
@@ -1236,23 +1269,48 @@ function _hookWorker() {
 					new Blob([injectedCode], { type: "text/javascript" }),
 				);
 				_trackedExtensionBlobUrls.add(blobUrl);
+				if (
+					workerSourceUrl &&
+					typeof workerSourceUrl === "string" &&
+					workerSourceUrl.startsWith("blob:")
+				) {
+					_trackedExtensionBlobUrls.add(workerSourceUrl);
+					_log(
+						`Tracking original blob URL for worker: ${workerSourceUrl.slice(0, 40)}...`,
+						"info",
+					);
+				}
 				super(blobUrl, opts);
 				setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
 
-				const _hbTimeout = setTimeout(() => {
+				let _hbTimeout: ReturnType<typeof setTimeout> | null = null;
+				const _hbCheck = () => {
+					_hbTimeout = null;
 					if (this.__TTVABCrashed || this.__TTVABIntentionallyTerminated)
 						return;
+					if (this.__TTVABFirstPongAt) return;
+					if (
+						typeof _isNativeDocumentHidden === "function" &&
+						_isNativeDocumentHidden() === true
+					) {
+						_hbTimeout = setTimeout(_hbCheck, HW_INITIAL_PONG_TIMEOUT_MS);
+						return;
+					}
 					_recoverCrashedWorker(
 						this,
 						pagePlaybackContext,
 						"Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback",
 						"warning",
 					);
-				}, HW_INITIAL_PONG_TIMEOUT_MS);
+				};
+				_hbTimeout = setTimeout(_hbCheck, HW_INITIAL_PONG_TIMEOUT_MS);
 				this.addEventListener("message", (e) => {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (data?.key === "Pong") {
-						clearTimeout(_hbTimeout);
+						if (_hbTimeout !== null) {
+							clearTimeout(_hbTimeout);
+							_hbTimeout = null;
+						}
 						_markWorkerPong(this);
 					}
 				});
@@ -1717,6 +1775,7 @@ function _hookWorker() {
 				this.__TTVABFirstPongAt = 0;
 				this.__TTVABRestartAttempts = 0;
 				this.__TTVABMissedPongs = 0;
+				this.__TTVABLastPingSentAt = 0;
 				_rememberWorkerPageContext(this, pagePlaybackContext);
 				pruneTrackedWorkers();
 				_S.workers.push(this);
@@ -1928,7 +1987,7 @@ function _hookMainFetch() {
 		} catch {}
 	};
 	const processGqlResponse = async (response) => {
-		if (!response || response.status !== 200) return;
+		if (response?.status !== 200) return;
 		try {
 			const payload = await response.clone().json();
 			const operations = Array.isArray(payload) ? payload : [payload];
