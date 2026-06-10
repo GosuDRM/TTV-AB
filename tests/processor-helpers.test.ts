@@ -141,6 +141,47 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+describe("_getStreamUrl (resolution selection)", () => {
+	const fn = () =>
+		T<
+			(
+				m3u8: string,
+				res: Record<string, unknown> | null,
+				baseUrl?: string | null,
+			) => string | null
+		>("_getStreamUrl");
+
+	const ladder = [
+		'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,VIDEO="chunked"',
+		"https://edge.example/1080.m3u8",
+		'#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p60"',
+		"https://edge.example/720.m3u8",
+		'#EXT-X-STREAM-INF:BANDWIDTH=1300000,RESOLUTION=640x360,FRAME-RATE=30.000,VIDEO="360p30"',
+		"https://edge.example/360.m3u8",
+		'#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=284x160,FRAME-RATE=30.000,VIDEO="160p30"',
+		"https://edge.example/160.m3u8",
+	].join("\n");
+
+	it("serves the highest variant when the target has no usable resolution (not the lowest)", () => {
+		const out = fn()(["#EXTM3U", ladder].join("\n"), { Name: "1080p60" }, null);
+		expect(out).toBe("https://edge.example/1080.m3u8");
+	});
+
+	it("serves the highest variant when no target resolution is given at all", () => {
+		const out = fn()(["#EXTM3U", ladder].join("\n"), null, null);
+		expect(out).toBe("https://edge.example/1080.m3u8");
+	});
+
+	it("still picks the closest variant when a valid target resolution is provided", () => {
+		const out = fn()(
+			["#EXTM3U", ladder].join("\n"),
+			{ Resolution: "640x360" },
+			null,
+		);
+		expect(out).toBe("https://edge.example/360.m3u8");
+	});
+});
+
 describe("_fetchWithTimeout", () => {
 	const fn = () =>
 		T<
