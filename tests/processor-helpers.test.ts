@@ -182,6 +182,45 @@ describe("_getStreamUrl (resolution selection)", () => {
 	});
 });
 
+describe("_applyBackupResolutionFloor", () => {
+	const fn = () =>
+		T<
+			(
+				res: Record<string, unknown> | null,
+				resolutionList: Array<Record<string, unknown>>,
+				floorHeight?: number,
+			) => Record<string, unknown> | null
+		>("_applyBackupResolutionFloor");
+
+	const ladder = [
+		{ Resolution: "1920x1080" },
+		{ Resolution: "1280x720" },
+		{ Resolution: "640x360" },
+		{ Resolution: "284x160" },
+	];
+
+	it("raises a sub-360p target to the lowest available variant at or above 360p", () => {
+		const out = fn()({ Resolution: "284x160" }, ladder);
+		expect(out).toEqual({ Resolution: "640x360" });
+	});
+
+	it("leaves a target already at or above 360p untouched", () => {
+		const out = fn()({ Resolution: "1280x720" }, ladder);
+		expect(out).toEqual({ Resolution: "1280x720" });
+	});
+
+	it("leaves a target with no usable resolution untouched (so highest-variant fallback still applies)", () => {
+		const nameOnly = { Name: "1080p60" };
+		expect(fn()(nameOnly, ladder)).toBe(nameOnly);
+	});
+
+	it("does not raise when no variant at or above the floor exists", () => {
+		const lowOnly = [{ Resolution: "284x160" }, { Resolution: "256x144" }];
+		const target = { Resolution: "284x160" };
+		expect(fn()(target, lowOnly)).toBe(target);
+	});
+});
+
 describe("_fetchWithTimeout", () => {
 	const fn = () =>
 		T<

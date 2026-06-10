@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.8] - 2026-06-10
+
+### Fixed
+- **Backup streams no longer cold-start below 360p on prerolls.** The backup is fetched at the resolution of whatever native variant the player was requesting when the ad hit. On a channel-open preroll the player is still ramping up from its lowest adaptive rung (160p), so the backup faithfully matched 160p — visibly sub-360p video during the break. This was a second, distinct cause from the 9.6.7 fix (which only covered an unparseable target resolution); here the target was a valid-but-too-low resolution. A 360p quality floor now applies to backup selection: a sub-360p target is raised to the lowest available variant at or above 360p. Targets already at or above 360p, deliberate fixed-quality selections, and the unparseable-target path (which still serves the highest variant) are all unchanged.
+
+### Safety
+- The floor only raises the temporary ad-replacement backup and never lowers a target, so it cannot reduce quality; it has no effect on ad detection or stripping. When no variant at or above 360p is offered, the original target is kept. For a viewer on genuinely low bandwidth the brief backup may attempt 360p during the ad, with the existing stall-rotation recovery as a safety net.
+
+### Diagnostics
+- Backup selection traces now report the resolution the backup is served at (e.g. `Selected: site @ 640x360`), and a separate trace fires when the 360p floor raises a sub-360p target, making the served quality visible in the console for troubleshooting.
+
 ## [9.6.7] - 2026-06-10
 
 ### Fixed

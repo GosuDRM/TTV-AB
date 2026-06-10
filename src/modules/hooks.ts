@@ -1012,6 +1012,7 @@ function _hookWorker() {
                 ${_getSortedResolutionList.toString()}
                 ${_getResolutionByQualityGroup.toString()}
                 ${_getFallbackResolution.toString()}
+                ${_applyBackupResolutionFloor.toString()}
                 ${_getPlaylistUrlAliases.toString()}
                 ${_collectPlaybackAccessTokenSources.toString()}
                 ${_summarizePlaybackAccessTokenPayload.toString()}

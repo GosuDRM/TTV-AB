@@ -2094,7 +2094,7 @@ async function _findBackupStream(
 				(__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(playerType) >=
 				startIdx,
 		);
-	const targetRes =
+	const resolvedTargetRes =
 		currentResolution ||
 		_getFallbackResolution(info, "") ||
 		info?.ResolutionList?.[0] ||
@@ -2102,6 +2102,16 @@ async function _findBackupStream(
 		__TTVAB_STATE__.PreferredQualityGroup.trim()
 			? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
 			: null);
+	const targetRes = _applyBackupResolutionFloor(
+		resolvedTargetRes,
+		info?.ResolutionList,
+	);
+	if (targetRes !== resolvedTargetRes) {
+		_log(
+			`[Trace] Backup target raised from ${resolvedTargetRes?.Resolution || "?"} to ${targetRes?.Resolution || "?"} (sub-360p floor)`,
+			"info",
+		);
+	}
 
 	for (let pi = 0; !backupM3u8 && pi < playerTypesLen; pi++) {
 		const pt = playerTypes[pi];
@@ -2304,7 +2314,10 @@ async function _findBackupStream(
 									info.LastCleanBackupM3U8 = m3u8;
 									info.LastCleanBackupPlayerType = pt;
 									info.LastCleanBackupAt = Date.now();
-									_log(`[Trace] Selected: ${pt}`, "success");
+									_log(
+										`[Trace] Selected: ${pt} @ ${targetRes?.Resolution || targetRes?.Name || "auto"}`,
+										"success",
+									);
 									break;
 								}
 								if (
@@ -2318,7 +2331,10 @@ async function _findBackupStream(
 									info.LastCleanBackupM3U8 = m3u8;
 									info.LastCleanBackupPlayerType = pt;
 									info.LastCleanBackupAt = Date.now();
-									_log(`[Trace] Selected (minimal): ${pt}`, "success");
+									_log(
+										`[Trace] Selected (minimal): ${pt} @ ${targetRes?.Resolution || targetRes?.Name || "auto"}`,
+										"success",
+									);
 									break;
 								}
 								_markBackupPlayerRetryCooldown(

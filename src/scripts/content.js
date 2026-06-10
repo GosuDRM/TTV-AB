@@ -1,12 +1,12 @@
-// TTV AB v9.6.7 - Twitch Ad Blocker
+// TTV AB v9.6.8 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.6.7",
-    INTERNAL_VERSION: 226,
+    VERSION: "9.6.8",
+    INTERNAL_VERSION: 227,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -1520,6 +1520,31 @@ function _$gfr(info, url) {
             return nonHevc;
     }
     return sorted[0];
+}
+function _applyBackupResolutionFloor(res, resolutionList, floorHeight = 360) {
+    const heightOf = (entry) => {
+        const [, h] = String(entry?.Resolution || "0x0")
+            .split("x")
+            .map(Number);
+        return Number.isFinite(h) ? h : 0;
+    };
+    const targetHeight = heightOf(res);
+    if (targetHeight <= 0 || targetHeight >= floorHeight) {
+        return res;
+    }
+    const list = Array.isArray(resolutionList)
+        ? resolutionList.filter(Boolean)
+        : [];
+    let floored = null;
+    let flooredHeight = Number.POSITIVE_INFINITY;
+    for (const entry of list) {
+        const h = heightOf(entry);
+        if (h >= floorHeight && h < flooredHeight) {
+            floored = entry;
+            flooredHeight = h;
+        }
+    }
+    return floored || res;
 }
 
 "use strict";
@@ -3550,13 +3575,17 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
     const isDoingMinimalRequests = startIdx > 0 &&
         playerTypes.every((playerType) => (__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(playerType) >=
             startIdx);
-    const targetRes = currentResolution ||
+    const resolvedTargetRes = currentResolution ||
         _$gfr(info, "") ||
         info?.ResolutionList?.[0] ||
         (typeof __TTVAB_STATE__?.PreferredQualityGroup === "string" &&
             __TTVAB_STATE__.PreferredQualityGroup.trim()
             ? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
             : null);
+    const targetRes = _applyBackupResolutionFloor(resolvedTargetRes, info?.ResolutionList);
+    if (targetRes !== resolvedTargetRes) {
+        _$l(`[Trace] Backup target raised from ${resolvedTargetRes?.Resolution || "?"} to ${targetRes?.Resolution || "?"} (sub-360p floor)`, "info");
+    }
     for (let pi = 0; !backupM3u8 && pi < playerTypesLen; pi++) {
         const pt = playerTypes[pi];
         const realPt = pt.replace("-CACHED", "");
@@ -3741,7 +3770,7 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
                                     info.LastCleanBackupM3U8 = m3u8;
                                     info.LastCleanBackupPlayerType = pt;
                                     info.LastCleanBackupAt = Date.now();
-                                    _$l(`[Trace] Selected: ${pt}`, "success");
+                                    _$l(`[Trace] Selected: ${pt} @ ${targetRes?.Resolution || targetRes?.Name || "auto"}`, "success");
                                     break;
                                 }
                                 if (isDoingMinimalRequests &&
@@ -3753,7 +3782,7 @@ async function _$fb(info, realFetch, startIdx = 0, currentResolution = null) {
                                     info.LastCleanBackupM3U8 = m3u8;
                                     info.LastCleanBackupPlayerType = pt;
                                     info.LastCleanBackupAt = Date.now();
-                                    _$l(`[Trace] Selected (minimal): ${pt}`, "success");
+                                    _$l(`[Trace] Selected (minimal): ${pt} @ ${targetRes?.Resolution || targetRes?.Name || "auto"}`, "success");
                                     break;
                                 }
                                 _markBackupPlayerRetryCooldown(info, pt, promotionPolicy.reason);
@@ -4724,6 +4753,7 @@ function _$hw() {
                 ${_getSortedResolutionList.toString()}
                 ${_getResolutionByQualityGroup.toString()}
                 ${_$gfr.toString()}
+                ${_applyBackupResolutionFloor.toString()}
                 ${_getPlaylistUrlAliases.toString()}
                 ${_collectPlaybackAccessTokenSources.toString()}
                 ${_summarizePlaybackAccessTokenPayload.toString()}
