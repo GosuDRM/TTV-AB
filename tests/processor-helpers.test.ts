@@ -437,6 +437,7 @@ describe("_resetStreamAdState", () => {
 			IsUsingBackupStream: true,
 			NumStrippedAdSegments: 5,
 			IsMidroll: true,
+			CsaiOnlyThisBreak: true,
 			IsHoldingBackupAfterAd: true,
 			HevcReloadPendingAfterHold: true,
 			ConsecutiveFailedNativeProbes: 4,
@@ -450,11 +451,21 @@ describe("_resetStreamAdState", () => {
 		expect(info.IsUsingBackupStream).toBe(false);
 		expect(info.NumStrippedAdSegments).toBe(0);
 		expect(info.IsMidroll).toBe(false);
+		expect(info.CsaiOnlyThisBreak).toBe(false);
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
+	});
+
+	it("initializes CsaiOnlyThisBreak on new stream infos", () => {
+		const create =
+			T<(ctx: Record<string, unknown>) => Record<string, unknown>>(
+				"_createStreamInfo",
+			);
+		const info = create({ ChannelName: "testchannel" });
+		expect(info.CsaiOnlyThisBreak).toBe(false);
 	});
 
 	it("reports wasUsingModifiedM3U8 when active", () => {

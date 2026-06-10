@@ -17,6 +17,7 @@ function _resetStreamAdState(info) {
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
 	info.IsMidroll = false;
+	info.CsaiOnlyThisBreak = false;
 	info.IsStrippingAdSegments = false;
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
@@ -943,6 +944,7 @@ function _createStreamInfo(context) {
 		LastCleanBackupPlayerType: null,
 		LastCleanBackupAt: 0,
 		IsMidroll: false,
+		CsaiOnlyThisBreak: false,
 		IsStrippingAdSegments: false,
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
