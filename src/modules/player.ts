@@ -1798,7 +1798,9 @@ function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
 			continue;
 		}
 
-		if (!_AdAudioSuppressionState.suppressedMedia.has(media)) {
+		const alreadySuppressed =
+			_AdAudioSuppressionState.suppressedMedia.has(media);
+		if (!alreadySuppressed) {
 			_AdAudioSuppressionState.suppressedMedia.set(media, {
 				muted: media.muted,
 				defaultMuted: media.defaultMuted,
@@ -1811,12 +1813,15 @@ function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
 			media.muted = true;
 			media.volume = 0;
 			media.setAttribute("data-ttvab-audio-suppressed", "true");
-			suppressedCount += 1;
+			if (!alreadySuppressed) {
+				suppressedCount += 1;
+			}
 		} catch {}
 	}
 
 	_AdAudioSuppressionState.activeMediaKey = safeMediaKey;
-	_AdAudioSuppressionState.lastSuppressedCount = suppressedCount;
+	_AdAudioSuppressionState.lastSuppressedCount =
+		_AdAudioSuppressionState.suppressedMedia.size;
 	if (suppressedCount > 0) {
 		_log(
 			`Suppressed ${suppressedCount} competing media element${suppressedCount === 1 ? "" : "s"} during ad recovery`,

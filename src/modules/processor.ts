@@ -401,8 +401,12 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 			);
 			if (now - lastHoldLogAt >= 10000) {
 				info.LastNativeRecoveryHoldLogAt = now;
+				const recoveryProgressing =
+					Math.max(0, Number(info.NativeRecoveryCleanCount) || 0) > 0;
 				_log(
-					"[Trace] Native recovery still ad-marked after max wait; holding clean backup stream",
+					recoveryProgressing
+						? "[Trace] Native recovery verifying clean; holding clean backup stream"
+						: "[Trace] Native recovery still ad-marked after max wait; holding clean backup stream",
 					"warning",
 				);
 			}
@@ -911,6 +915,8 @@ function _createStreamInfo(context) {
 		_BackupSearchFailCount: 0,
 		_FallbackEntryCount: 0,
 		LastAdEndReloadAt: 0,
+		LastAdEndReloadKind: null,
+		PostEscapeReloadCounterproductive: false,
 		LastNativeRecoveryHoldLogAt: 0,
 		HevcReloadPendingAfterHold: false,
 		LastAdEndBounceAt: 0,
@@ -1810,6 +1816,9 @@ async function _processM3U8Core(url, text, realFetch) {
 			const recentMidrollChain =
 				info.LastAdEndReloadAt > 0 &&
 				adEndedAt - info.LastAdEndReloadAt < 30000;
+			if (recentMidrollChain && info.LastAdEndReloadKind === "post-escape") {
+				info.PostEscapeReloadCounterproductive = true;
+			}
 			const isCsaiBreak = !hadStrippedAdSegments && !wasUsingModifiedM3U8;
 			let shouldReloadPlayer = false;
 			let shouldPauseResumePlayer = false;
@@ -1822,8 +1831,12 @@ async function _processM3U8Core(url, text, realFetch) {
 					!recentMidrollChain &&
 					!isSilentBackupHoldEnd
 				) {
-					shouldReloadPlayer = true;
-					reloadKind = "post-escape";
+					if (info.PostEscapeReloadCounterproductive) {
+						shouldPauseResumePlayer = true;
+					} else {
+						shouldReloadPlayer = true;
+						reloadKind = "post-escape";
+					}
 				}
 			} else if (!isSilentBackupHoldEnd) {
 				shouldReloadPlayer = Boolean(
@@ -1849,6 +1862,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			);
 			if (shouldReloadPlayer) {
 				info.LastPlayerReload = Date.now();
+				info.LastAdEndReloadKind = reloadKind;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
@@ -1861,6 +1875,7 @@ async function _processM3U8Core(url, text, realFetch) {
 					}),
 				);
 			} else if (shouldPauseResumePlayer) {
+				info.LastAdEndReloadKind = null;
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
@@ -1869,6 +1884,8 @@ async function _processM3U8Core(url, text, realFetch) {
 						mediaKey: info.MediaKey,
 					}),
 				);
+			} else {
+				info.LastAdEndReloadKind = null;
 			}
 			_rememberLastAdEnd(info, adEndedAt);
 		}

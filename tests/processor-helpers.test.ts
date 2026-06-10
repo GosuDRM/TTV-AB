@@ -1141,6 +1141,41 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(out).toContain("seg100.ts");
 	});
+
+	it("learns a post-escape reload is counterproductive when another ad break ends right after it", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			LastAdEndReloadAt: Date.now() - 5000,
+			LastAdEndReloadKind: "post-escape",
+		});
+		g._canReloadNativePlayerAfterAd = async () => true;
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(info.PostEscapeReloadCounterproductive).toBe(true);
+		expect(sentMessages().some((m) => m.key === "ReloadPlayer")).toBe(false);
+	});
+
+	it("downgrades a post-escape reload to pause/resume once it has proven counterproductive", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			PostEscapeReloadCounterproductive: true,
+		});
+		g._canReloadNativePlayerAfterAd = async () => true;
+
+		const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		const messages = sentMessages();
+		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({
+			willReload: false,
+		});
+		expect(messages.some((m) => m.key === "ReloadPlayer")).toBe(false);
+		expect(messages.some((m) => m.key === "PauseResumePlayer")).toBe(true);
+		expect(info.PostEscapeReloadCounterproductive).toBe(true);
+		expect(out).toContain("seg100.ts");
+	});
 });
 
 describe("_processM3U8 triggered-reload consumption (context-scoped)", () => {

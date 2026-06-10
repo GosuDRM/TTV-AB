@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.5] - 2026-06-10
+
+### Fixed
+- **Single-ad midroll breaks no longer get doubled by the post-escape reload.** After a CSAI backup escape, the extension soft-reloads the player to correct audio desync — but on some channels Twitch treats that reload as a new session and immediately serves another ad, so every midroll cost a player restart plus a second backup cycle. The extension now detects this: when a post-escape reload is followed within 30s by another ad break, it marks post-escape reloads counterproductive for that stream and downgrades them to a lightweight pause/resume resync (no new player instance, so Twitch does not serve a fresh ad). The full reload is still used until the pattern is observed, and verified-clean escapes that do not bounce keep the desync-correcting reload.
+- **Duplicate "Suppressed N competing media element" log entries removed.** Re-running ad-recovery suppression re-counted and re-logged elements it was already muting, because the skip guard only matched paused elements. Already-suppressed elements are now re-muted defensively but counted and logged only once; the saved volume/mute state and single restore are unchanged.
+- **Contradictory native-recovery trace clarified.** A clean recovery probe that had not yet reached the required consecutive-clean count was reported as "still ad-marked after max wait," contradicting the "Native recovery ready N/3" line logged the same instant. The hold log now reads "verifying clean; holding clean backup stream" when probes are coming back clean, and only says "still ad-marked" when they actually are.
+
+### Safety
+- All changes are recovery-bookkeeping and log-clarity refinements; ad detection, stripping, backup selection, and the spoof payloads are untouched, so no ad content can leak through.
+- The post-escape reload downgrade only takes effect after observing a reload-triggered ad on that stream, and pause/resume still resyncs audio — the audio-desync protection the reload was added for is preserved.
+
 ## [9.6.4] - 2026-06-10
 
 ### Fixed

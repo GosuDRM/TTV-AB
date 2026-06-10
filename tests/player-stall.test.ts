@@ -211,3 +211,59 @@ describe("_checkPinnedBackupStall", () => {
 		expect(state.lastForceRefreshAt).toBe(0);
 	});
 });
+
+describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
+	function makeCompetingVideo() {
+		const video = document.createElement("video");
+		Object.defineProperty(video, "paused", {
+			get: () => false,
+			configurable: true,
+		});
+		Object.defineProperty(video, "ended", {
+			get: () => false,
+			configurable: true,
+		});
+		video.muted = false;
+		video.volume = 1;
+		document.body.appendChild(video);
+		return video;
+	}
+
+	afterEach(() => {
+		document.body.innerHTML = "";
+		const state = g._AdAudioSuppressionState as {
+			suppressedMedia: Map<unknown, unknown>;
+			activeMediaKey: unknown;
+			lastSuppressedCount: number;
+		};
+		state.suppressedMedia.clear();
+		state.activeMediaKey = null;
+		state.lastSuppressedCount = 0;
+	});
+
+	it("counts and logs each competing element only once across repeated calls", () => {
+		const suppress = T<(channel?: string, mediaKey?: string) => number>(
+			"_suppressCompetingMediaDuringAd",
+		);
+		g._getPrimaryMediaElement = () => null;
+		g._resolvePlayerMediaKey = () => "live:test";
+		const logs: string[] = [];
+		g._log = (msg: string) => {
+			logs.push(msg);
+		};
+		makeCompetingVideo();
+
+		const first = suppress("test", "live:test");
+		const second = suppress("test", "live:test");
+
+		expect(first).toBe(1);
+		expect(second).toBe(0);
+		expect(
+			logs.filter((m) => m.includes("competing media element")),
+		).toHaveLength(1);
+		const state = g._AdAudioSuppressionState as {
+			suppressedMedia: Map<unknown, unknown>;
+		};
+		expect(state.suppressedMedia.size).toBe(1);
+	});
+});
