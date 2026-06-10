@@ -238,7 +238,7 @@ const TRANSLATIONS = {
 			"Sendet Werbe-Signale an Twitch, um die Erkennung des Werbeblockers zu erschweren.",
 		adSpoofingFootnote: "Deaktiviere es bei Problemen.",
 		adSpoofingGotIt: "Verstanden",
-		autoplayBackup: "Qualitäts-Fallback",
+		autoplayBackup: "Fallback geringer Qualität",
 		autoplayBackupDesc:
 			"Standardmäßig deaktiviert. Wenn aktiviert, wechselt automatisch zu einem 360p-Backup-Stream während der Werbung für flüssigere Wiedergabe. Wenn deaktiviert, wird ein 360p-Fallback als letzter Ausweg verwendet, wenn alle Hauptquellen Werbung enthalten — die Wiedergabe friert nie ein.",
 		autoplayBackupWarning:
