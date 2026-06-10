@@ -1744,8 +1744,29 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 		return info;
 	}
 
-	it("serves the active backup via the cheap refresh (no full re-search) during a burst", async () => {
+	it("serves the cached backup without any fetch when it is under 2s old", async () => {
 		const info = setupReentry();
+		const refreshSpy = vi.fn(async () => makePlaylist(60, 3));
+		g._refreshActiveBackupMediaPlaylist = refreshSpy;
+		const searchSpy = vi.fn(async () => ({
+			type: "embed",
+			m3u8: makePlaylist(80, 3),
+		}));
+		g._findBackupStream = searchSpy;
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(refreshSpy).not.toHaveBeenCalled();
+		expect(searchSpy).not.toHaveBeenCalled();
+		expect(out).toContain("seg50.ts");
+		expect(info.IsUsingBackupStream).toBe(true);
+	});
+
+	it("serves the active backup via the cheap refresh (no full re-search) once the cache is stale", async () => {
+		const info = setupReentry();
+		info.LastCleanBackupAt = Date.now() - 3000;
 		const refreshSpy = vi.fn(async () => makePlaylist(60, 3));
 		g._refreshActiveBackupMediaPlaylist = refreshSpy;
 		const searchSpy = vi.fn(async () => ({

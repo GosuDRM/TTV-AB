@@ -1714,6 +1714,12 @@ async function _processM3U8Core(url, text, realFetch) {
 					"warning",
 				);
 			} else {
+				const reentryBackupAgeMs =
+					Date.now() - (Number(info.LastCleanBackupAt) || 0);
+				if (reentryBackupAgeMs < 2000) {
+					info.IsUsingBackupStream = true;
+					return info.LastCleanBackupM3U8;
+				}
 				const reentryRefreshStartedAt = Date.now();
 				const reentryRefreshed = await _refreshActiveBackupMediaPlaylist(
 					info,
