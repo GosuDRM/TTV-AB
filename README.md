@@ -60,7 +60,7 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 - Monitors playback health and automatically recovers from stalls after ad breaks
 - Restores your original quality and volume settings once native playback resumes
 
-When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean lower-quality backup (e.g. 360p) within a couple of seconds so video starts right away, then upgrades to your chosen quality automatically and seamlessly once the ad window ends.
+When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean backup stream within a couple of seconds so video starts playing right away. The backup tracks your current quality where the alternate stream offers it, with a 360p floor so a channel-open preroll (the player is still ramping up from its lowest quality at that point) never starts blurrier than 360p. Your full native quality and audio are restored automatically and seamlessly once the ad window ends. The optional **Low Quality Fallback** toggle trades some quality for an even faster first frame, starting on a quick low-resolution stream and climbing back up as the break ends.
 
 ## 🔔 What's New
 
