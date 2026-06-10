@@ -156,6 +156,45 @@ describe("_notifyAdComplete", () => {
 
 		expect(impressionIds).toEqual(["stitched-ad-1", "stitched-ad-2"]);
 	});
+
+	it("never sends pod_complete when no pod length is declared", async () => {
+		const notify =
+			T<
+				(
+					text: string,
+					info: { SpoofedAdIds: Set<string>; ActiveBackupPlayerType: string },
+				) => Promise<void>
+			>("_notifyAdComplete");
+		const batches: GqlPacket[][] = [];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: Record<string, unknown>,
+		) => {
+			batches.push(JSON.parse(String(options.body || "[]")) as GqlPacket[]);
+			return new Response(null, { status: 200 });
+		};
+
+		const info = {
+			SpoofedAdIds: new Set<string>(),
+			ActiveBackupPlayerType: "site",
+		};
+		await notify(
+			["#EXTM3U", adRangeNoPodLength(1)].join("\n").concat("\n"),
+			info,
+		);
+		await notify(
+			["#EXTM3U", adRangeNoPodLength(2)].join("\n").concat("\n"),
+			info,
+		);
+
+		const podCompleteCount = batches
+			.flat()
+			.filter(
+				(packet) =>
+					packet.variables?.input?.eventName === "video_ad_pod_complete",
+			).length;
+		expect(podCompleteCount).toBe(0);
+	});
 });
 
 describe("_createFetchRelayResponse", () => {

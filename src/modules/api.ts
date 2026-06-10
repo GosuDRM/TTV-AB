@@ -463,13 +463,10 @@ async function _notifyAdComplete(
 				makePacket("video_ad_quartile_complete", { quartile: 3 }),
 				makePacket("video_ad_quartile_complete", { quartile: 4 }),
 			];
-			// pod_complete fires ONCE per pod — not per ad. A real player sends a
-			// single pod_complete after the whole pod finishes; emitting it on
-			// every ad (6× for a 6-ad pod) is itself a fingerprint. Attach it to
-			// the ad that brings the dedup set up to the true pod size. If the pod
-			// never fully surfaces it is correctly never sent. Defensive fallback
-			// (no dedup set): keep per-ad pod_complete so the signal isn't lost.
-			if (!spoofedSet || spoofedSet.size === podLength) {
+			if (
+				!spoofedSet ||
+				(hasExplicitPodLength && spoofedSet.size === podLength)
+			) {
 				batch.push(makePacket("video_ad_pod_complete"));
 				podCompleteSent = true;
 			}
