@@ -2129,6 +2129,7 @@ async function _findBackupStream(
 	startIdx = 0,
 	currentResolution = null,
 ) {
+	_forceClearBackupCooldownsIfStale(info);
 	let backupType = null;
 	let backupM3u8 = null;
 	let fallbackM3u8 = null;

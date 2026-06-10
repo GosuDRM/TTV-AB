@@ -1097,6 +1097,74 @@ describe("_findBackupStream fallback policy", () => {
 			}
 		}
 	});
+
+	it("force-clears cooldowns when the cached backup is stale and every type is cooling down", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["embed", "popout"];
+		state.DisableAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		const now = Date.now();
+		const info = makeInfo({
+			LastCleanBackupM3U8: cleanPlaylist,
+			LastCleanBackupPlayerType: "embed",
+			LastCleanBackupAt: now - 10000,
+			FailedBackupPlayerTypes: new Map([
+				["embed", now + 15000],
+				["popout", now + 15000],
+			]),
+		});
+
+		try {
+			const result = await findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					return new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["embed"]);
+			expect(result.type).toBe("embed");
+			expect(result.m3u8).toBe(cleanPlaylist);
+			expect(result.isFallback).toBe(false);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previousGetToken;
+			}
+			if (previousExtract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previousExtract;
+			}
+		}
+	});
 });
 
 describe("_canReloadNativePlayerAfterAd", () => {
