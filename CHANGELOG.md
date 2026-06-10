@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.7.3] - 2026-06-11
+
+### Fixed
+- **Post-ad reloads re-evaluate once a midroll chain settles.** When a quick midroll chain taught the extension that reloading the player after a backup escape was counterproductive, it stayed in pause/resume mode for the rest of the session and never tried a reload again. It now clears that state once the chain has ended, so a later isolated ad break can reload normally again while still avoiding reloads during an active chain.
+- **Ad-completion spoofing no longer sends pod-complete more than once per pod.** When Twitch omitted the pod-length attribute, the once-per-pod completion signal could be sent on several polls. It is now sent once when the pod size is known and skipped entirely when it is not.
+
 ## [9.7.2] - 2026-06-11
 
 ### Fixed
