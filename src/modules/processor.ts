@@ -1211,12 +1211,28 @@ async function _processM3U8Core(url, text, realFetch) {
 						"warning",
 					);
 				}
+				const forceRefreshAt =
+					Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
+				const stalledDuringHold = forceRefreshAt > 0;
+				if (stalledDuringHold) {
+					__TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
+					const stalledType =
+						info.ActiveBackupPlayerType ||
+						info.LastCleanBackupPlayerType ||
+						null;
+					if (stalledType) {
+						_markBackupPlayerRetryCooldown(info, stalledType, "stalled");
+						_log(
+							`[Trace] Silent-hold backup ${stalledType} stalled — cooling down and rotating to next type`,
+							"warning",
+						);
+					}
+				}
 				const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
-				if (backupAgeMs >= 2000) {
-					const refreshed = await _refreshActiveBackupMediaPlaylist(
-						info,
-						realFetch,
-					);
+				if (stalledDuringHold || backupAgeMs >= 2000) {
+					const refreshed = stalledDuringHold
+						? null
+						: await _refreshActiveBackupMediaPlaylist(info, realFetch);
 					if (refreshed) {
 						info.IsUsingBackupStream = true;
 						return refreshed;

@@ -1,12 +1,12 @@
-// TTV AB v9.6.5 - Twitch Ad Blocker
+// TTV AB v9.6.6 - Twitch Ad Blocker
 // Built file: src/scripts/content.js
 (function(){
 'use strict';
 "use strict";
 
 const _$c = {
-    VERSION: "9.6.5",
-    INTERNAL_VERSION: 224,
+    VERSION: "9.6.6",
+    INTERNAL_VERSION: 225,
     LOG_STYLES: {
         prefix: "background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",
         info: "color: #9146FF; font-weight: 500;",
@@ -2852,9 +2852,23 @@ async function _processM3U8Core(url, text, realFetch) {
                     info.LastSilentBackupHoldLogAt = now;
                     _$l("[Trace] Native playlist still ad-marked during silent backup hold; continuing clean backup stream", "warning");
                 }
+                const forceRefreshAt = Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
+                const stalledDuringHold = forceRefreshAt > 0;
+                if (stalledDuringHold) {
+                    __TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
+                    const stalledType = info.ActiveBackupPlayerType ||
+                        info.LastCleanBackupPlayerType ||
+                        null;
+                    if (stalledType) {
+                        _markBackupPlayerRetryCooldown(info, stalledType, "stalled");
+                        _$l(`[Trace] Silent-hold backup ${stalledType} stalled — cooling down and rotating to next type`, "warning");
+                    }
+                }
                 const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
-                if (backupAgeMs >= 2000) {
-                    const refreshed = await _refreshActiveBackupMediaPlaylist(info, realFetch);
+                if (stalledDuringHold || backupAgeMs >= 2000) {
+                    const refreshed = stalledDuringHold
+                        ? null
+                        : await _refreshActiveBackupMediaPlaylist(info, realFetch);
                     if (refreshed) {
                         info.IsUsingBackupStream = true;
                         return refreshed;

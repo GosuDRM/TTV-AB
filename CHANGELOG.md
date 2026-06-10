@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.6] - 2026-06-10
+
+### Fixed
+- **Stalled backup during a silent hold now rotates to another stream type.** When the native stream stayed ad-marked long enough to enter a silent backup hold and the pinned backup (e.g. `site`) then dried up — buffer drained to the edge with a frozen playhead — the page's stall detector set a force-refresh flag, but the silent-hold serving path ignored it and kept retrying the same ad-locked type every 2s, falling back to the stale cached window until it froze. The hold path now honors that signal: it cools down the stalled backup type and rotates `_findBackupStream` to a different one (`embed`/`popout`), giving playback a clean, advancing stream to land on instead of freezing on a drained cache.
+
+### Safety
+- Rotation only ever serves a backup that passes the existing clean-playlist checks, so no ad content can leak; if every type is ad-locked it still falls back to the cached backup exactly as before. The change is scoped to the silent-hold path and mirrors the force-refresh handling the active backup-search path already used.
+
 ## [9.6.5] - 2026-06-10
 
 ### Fixed

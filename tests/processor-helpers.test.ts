@@ -1316,3 +1316,87 @@ describe("_processM3U8 ad-end bounce backup serving", () => {
 		expect(out).not.toContain("seg50.ts");
 	});
 });
+
+describe("_processM3U8 silent-hold stall rotation", () => {
+	const NATIVE_URL =
+		"https://video-weaver.example.ttvnw.net/v1/playlist/hold.m3u8";
+
+	const processM3U8 = () =>
+		T<
+			(
+				url: string,
+				text: string,
+				realFetch: (...args: unknown[]) => Promise<unknown>,
+			) => Promise<string>
+		>("_processM3U8");
+
+	function adMarkedNative() {
+		return [
+			"#EXTM3U",
+			"#EXT-X-VERSION:7",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:300",
+			'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad"',
+			"#EXTINF:2.000,live",
+			"native-live-300.ts",
+		].join("\n");
+	}
+
+	function setupHold() {
+		g.postMessage = () => {};
+		g._postWorkerBridgeMessage = () => {};
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
+		g._notifyAdComplete = () => Promise.resolve();
+		const now = Date.now();
+		const info = makeInfo({
+			IsHoldingBackupAfterAd: true,
+			SilentBackupHoldStartedAt: now,
+			LastSilentBackupHoldLogAt: now,
+			LastCleanBackupM3U8: makePlaylist(50, 3),
+			LastCleanBackupPlayerType: "site",
+			ActiveBackupPlayerType: "site",
+			LastCleanBackupAt: now,
+		});
+		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
+		return info;
+	}
+
+	it("rotates to a different backup type when the page reports the pinned backup stalled", async () => {
+		const info = setupHold();
+		getState().BackupSearchForceRefreshAt = Date.now();
+		const refreshSpy = vi.fn(async () => makePlaylist(50, 3));
+		g._refreshActiveBackupMediaPlaylist = refreshSpy;
+		g._findBackupStream = vi.fn(async () => ({
+			type: "embed",
+			m3u8: makePlaylist(80, 3),
+		}));
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(out).toContain("seg80.ts");
+		expect(out).not.toContain("seg50.ts");
+		expect(info.FailedBackupPlayerTypes.has("site")).toBe(true);
+		expect(info.ActiveBackupPlayerType).toBe("embed");
+		expect(getState().BackupSearchForceRefreshAt).toBe(0);
+		expect(refreshSpy).not.toHaveBeenCalled();
+	});
+
+	it("keeps serving the cached backup when no stall is reported and it is fresh", async () => {
+		const info = setupHold();
+		getState().BackupSearchForceRefreshAt = 0;
+		g._findBackupStream = vi.fn(async () => ({
+			type: "embed",
+			m3u8: makePlaylist(80, 3),
+		}));
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(out).toContain("seg50.ts");
+		expect(info.FailedBackupPlayerTypes.has("site")).toBe(false);
+		expect(info.ActiveBackupPlayerType).toBe("site");
+	});
+});
