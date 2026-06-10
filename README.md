@@ -14,8 +14,8 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 | Store | Link | Status |
 |-------|------|--------|
-| Firefox Add-ons | [TTV AB - Twitch Ad Blocker](https://addons.mozilla.org/en-GB/firefox/addon/ttv-ab-twitch-ad-blocker/) | Active |
-| Chrome Web Store | [TTV AB - Lightweight, powerful ad blocker](https://chromewebstore.google.com/detail/ttv-ab-lightweight-powerf/mlifbfmeoafhcccmppaolojdglcbkdkg) | Pending approval |
+| Firefox Add-ons | [TTV AB - Twitch Ad Blocker](https://addons.mozilla.org/en-GB/firefox/addon/ttv-ab-twitch-ad-blocker/) | Stable |
+| Chrome Web Store | [TTV AB - Lightweight, powerful ad blocker](https://chromewebstore.google.com/detail/ttv-ab-lightweight-powerf/mlifbfmeoafhcccmppaolojdglcbkdkg) | Stable |
 
 
 <p align="center">
@@ -47,7 +47,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 1. Install the extension from your browser's add-on store
 2. Navigate to [twitch.tv](https://twitch.tv) and open any live stream or VOD
 3. Ads are blocked automatically — no configuration needed
-4. Click the extension icon to view stats, toggle ad blocking on/off, or toggle the Buffer Fix
+4. Click the extension icon to view stats or toggle Ad Blocking, Ad Spoofing, and Low Quality Fallback
 5. Change language via the dropdown in the popup footer
 
 ## ⚙️ How It Works
