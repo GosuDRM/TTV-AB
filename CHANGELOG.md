@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.7.2] - 2026-06-11
+
+### Fixed
+- **Backup stalls during quick consecutive midrolls now rotate to another player type.** When a stall was flagged mid-burst, the continuation path stepped aside but nothing consumed the flag or cooled down the stalled type, so the follow-up search re-picked the same type and the stuck flag kept the fast path disabled afterwards. The flag is now consumed and the stalled type cools down, so the search genuinely rotates.
+
+### Performance
+- **Fewer network round trips during ad bursts.** The continuation path now serves the cached clean backup directly when it is under 2 seconds old, matching the other backup paths, instead of refetching on every playlist poll. This mainly helps low-latency streams, where polls arrive faster than once per second.
+
 ## [9.7.1] - 2026-06-10
 
 ### Fixed
