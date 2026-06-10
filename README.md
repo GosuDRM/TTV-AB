@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.6.5-purple)
+![Version](https://img.shields.io/badge/version-9.6.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.6.5-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.6.6-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -64,6 +64,9 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
+### v9.6.6 — 2026-06-10
+- **No more freezing on a dried-up backup during long ad breaks.** When the native stream stayed ad-locked long enough to fall back to a silently-held backup and that backup then ran out of segments, playback could freeze on a drained buffer until the break ended. The extension now detects the stall and rotates to a different backup stream type, so playback keeps moving instead of locking up — and still never falls back to showing ads.
+
 ### v9.6.5 — 2026-06-10
 - **No more doubled midroll breaks.** On channels where Twitch responded to the post-ad soft reload by serving a fresh ad, every midroll cost a player restart and a second backup cycle. The extension now learns that pattern per stream and downgrades the reload to a lightweight pause/resume resync — so the break ends once, with no extra restart, while keeping the audio-desync protection the reload existed for.
 - **Cleaner recovery logs.** Removed duplicate "Suppressed competing media element" entries and fixed a contradictory trace that labeled a clean recovery probe "still ad-marked." No behavior change — just clearer logs.
@@ -71,9 +74,6 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 ### v9.6.4 — 2026-06-10
 - **Fewer needless player reloads during ad breaks.** Background-tab ad breaks no longer misfire stall recovery, the pinned-backup re-search budget resets per stall instead of dying off for the session, and a brief ad-marker flicker keeps the backup playing seamlessly.
 - **More complete ad-completion spoofing.** Multi-ad pods that arrive without a declared pod length now have every ad spoofed, not just the first — closing a gap that could leave later ads in a pod unaccounted for.
-
-### v9.6.3 — 2026-06-10
-- **No more player crashes after leaving the stream in a background tab.** Browser timer throttling made the worker heartbeat watchdog misread healthy workers as crashed in hidden or just-refocused tabs, triggering destructive player restarts. The watchdog is now visibility-aware: no crash verdicts while hidden, a full ping/pong round trip before any verdict when visible, and recovery reloads wait until you're actually looking at the tab. Real worker crashes are still detected and recovered.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
