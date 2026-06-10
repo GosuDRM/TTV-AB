@@ -359,7 +359,10 @@ function _hookWorkerFetch() {
 						? `vod ${playbackContext.VodID}`
 						: playbackContext.ChannelName;
 
-				if (__TTVAB_STATE__.ForceAccessTokenPlayerType) {
+				if (
+					__TTVAB_STATE__.RewriteNativePlaybackAccessToken === true &&
+					__TTVAB_STATE__.ForceAccessTokenPlayerType
+				) {
 					const urlObj = new URL(url);
 					urlObj.searchParams.delete("parent_domains");
 					url = urlObj.toString();
