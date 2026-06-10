@@ -267,3 +267,80 @@ describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
 		expect(state.suppressedMedia.size).toBe(1);
 	});
 });
+
+describe("_doPlayerTask ad-recovery reload backoff", () => {
+	function setupReloadContext(lastAdRecoveryReloadAgoMs: number) {
+		const setSrcCalls: unknown[] = [];
+		const pauseCalls: unknown[] = [];
+		const player = { isPaused: () => false, getHTMLVideoElement: () => null };
+		const state = {
+			props: { content: { type: "live" } },
+			setSrc: (arg: unknown) => {
+				setSrcCalls.push(arg);
+			},
+		};
+		const now = Date.now();
+		g._getPlayerAndState = () => ({ player, state });
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._capturePlayerPreferenceSnapshot = () => null;
+		g._suppressPauseIntent = () => true;
+		g._clearCachedPlayerRef = () => {};
+		g._schedulePlaybackRecoveryTimeout = () => null;
+		g._scheduleResumeRetries = () => {};
+		g._pausePlaybackTarget = (target: unknown) => {
+			pauseCalls.push(target);
+			return true;
+		};
+		g._playPlaybackTarget = () => true;
+		g.__TTVAB_STATE__ = {
+			LastPlayerReloadAt: now - 10000,
+			PlayerReloadDebounceMs: 1500,
+			LastAdRecoveryReloadAt: now - lastAdRecoveryReloadAgoMs,
+			AdRecoveryReloadCooldownMs: 10000,
+			_AdRecoveryConsecutiveFailures: 2,
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+		};
+		return { setSrcCalls, pauseCalls };
+	}
+
+	it("downgrades to pause/resume without reloading inside the backoff window", () => {
+		const doPlayerTask =
+			T<
+				(
+					isPausePlay: boolean,
+					isReload: boolean,
+					options?: Record<string, unknown>,
+				) => unknown
+			>("_doPlayerTask");
+		const { setSrcCalls, pauseCalls } = setupReloadContext(2000);
+
+		const result = doPlayerTask(false, true, { reason: "ad-recovery" });
+
+		expect(setSrcCalls).toHaveLength(0);
+		expect(pauseCalls).toHaveLength(1);
+		expect(result).toBe(true);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		expect(state._AdRecoveryConsecutiveFailures).toBe(2);
+	});
+
+	it("reloads once the backoff window has elapsed", () => {
+		const doPlayerTask =
+			T<
+				(
+					isPausePlay: boolean,
+					isReload: boolean,
+					options?: Record<string, unknown>,
+				) => unknown
+			>("_doPlayerTask");
+		const { setSrcCalls, pauseCalls } = setupReloadContext(50000);
+
+		const result = doPlayerTask(false, true, { reason: "ad-recovery" });
+
+		expect(setSrcCalls).toHaveLength(1);
+		expect(pauseCalls).toHaveLength(0);
+		expect(result).toBe(true);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		expect(state._AdRecoveryConsecutiveFailures).toBe(3);
+	});
+});
