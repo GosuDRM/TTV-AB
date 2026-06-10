@@ -1452,7 +1452,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(sentMessages().some((m) => m.key === "ReloadPlayer")).toBe(false);
 	});
 
-	it("downgrades a post-escape reload to pause/resume once it has proven counterproductive", async () => {
+	it("downgrades a post-escape reload to pause/resume once it has proven counterproductive, then clears the lesson on the settled break", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			PostEscapeReloadCounterproductive: true,
 		});
@@ -1468,8 +1468,23 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		});
 		expect(messages.some((m) => m.key === "ReloadPlayer")).toBe(false);
 		expect(messages.some((m) => m.key === "PauseResumePlayer")).toBe(true);
-		expect(info.PostEscapeReloadCounterproductive).toBe(true);
+		expect(info.PostEscapeReloadCounterproductive).toBe(false);
 		expect(out).toContain("seg100.ts");
+	});
+
+	it("keeps the lesson latched while the midroll chain is still active", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			PostEscapeReloadCounterproductive: true,
+			LastAdEndReloadAt: Date.now() - 5000,
+			LastAdEndReloadKind: "post-escape",
+		});
+		g._canReloadNativePlayerAfterAd = async () => true;
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(info.PostEscapeReloadCounterproductive).toBe(true);
 	});
 });
 

@@ -1953,6 +1953,9 @@ async function _processM3U8Core(url, text, realFetch) {
 					!shouldReloadPlayer && !wasUsingFallbackStream,
 				);
 			}
+			if (!recentMidrollChain) {
+				info.PostEscapeReloadCounterproductive = false;
+			}
 			_postWorkerBridgeMessage(
 				self,
 				_createPageScopedWorkerEvent({
