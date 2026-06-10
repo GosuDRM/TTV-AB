@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.9] - 2026-06-10
+
+### Fixed
+- **Long ad-break backups no longer get stuck at the wrong quality.** During an extended ad — a long midroll pod, or any break that outlasts the visible ad cycle and enters a silent backup hold — the backup stream's quality was pinned to whatever resolution the player happened to be requesting when the hold began, then re-read repeatedly as the player adapted *down* to the low backup it was being fed. With no upward pressure while held, that target decayed and stuck low (e.g. 360p) for the entire break even though higher variants were available. (A channel-open preroll escaped this only incidentally: its cold-start player ramps *upward*, pulling the backup up with it.) The silent backup hold now targets the quality your connection has actually been sustaining on native playback — tracked as a recent high-water mark — or your explicitly chosen quality when one is set, so a held backup matches what you were really watching instead of collapsing to a low rung.
+
+### Bandwidth-aware
+- The hold targets *sustained* quality, never the top variant by default — so a viewer who was watching at 360p holds at 360p instead of being forced up to a 1080p stream their connection can't carry, while a viewer sustaining 1080p holds at 1080p. The tracked quality follows real adaptive bitrate up and down (with a short recency window, so a degraded connection is reflected within about a minute), is floored at 360p, and honors a manual quality selection. Scoped to the silent backup hold; the visible ad-recovery path and the Low Quality Fallback first-frame hold still track the live player. The existing stall-rotation recovery remains the safety net, and there's no effect on ad detection or stripping.
+
+### Diagnostics
+- A trace fires whenever the tracked sustained native quality changes (e.g. `Sustained native quality: 640x360 -> 1920x1080`), so the quality a hold will target is visible in the console. Backup selection traces continue to report the resolution served (e.g. `Selected: site @ 640x360`).
+
 ## [9.6.8] - 2026-06-10
 
 ### Fixed

@@ -221,6 +221,142 @@ describe("_applyBackupResolutionFloor", () => {
 	});
 });
 
+describe("_resolvePreferredBackupResolution (silent-hold quality target)", () => {
+	const fn = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				floorHeight?: number,
+			) => Record<string, unknown> | null
+		>("_resolvePreferredBackupResolution");
+
+	const ladder = [
+		{ Resolution: "1920x1080", Name: "1080p60" },
+		{ Resolution: "1280x720", Name: "720p60" },
+		{ Resolution: "640x360", Name: "360p" },
+		{ Resolution: "284x160", Name: "160p" },
+	];
+
+	it("targets the quality the connection has actually sustained, not the top variant", () => {
+		getState().PreferredQualityGroup = null;
+		const info = makeInfo({
+			ResolutionList: ladder,
+			SustainedNativeResolution: { Resolution: "640x360", Name: "360p" },
+		});
+		expect(fn()(info)).toEqual({ Resolution: "640x360", Name: "360p" });
+	});
+
+	it("climbs to a high sustained quality on a capable connection", () => {
+		getState().PreferredQualityGroup = null;
+		const info = makeInfo({
+			ResolutionList: ladder,
+			SustainedNativeResolution: { Resolution: "1920x1080", Name: "1080p60" },
+		});
+		expect(fn()(info)).toEqual({ Resolution: "1920x1080", Name: "1080p60" });
+	});
+
+	it("returns null with no preference and no sustained reading, so the caller falls to the live request", () => {
+		getState().PreferredQualityGroup = null;
+		const info = makeInfo({
+			ResolutionList: ladder,
+			SustainedNativeResolution: null,
+		});
+		expect(fn()(info)).toBeNull();
+	});
+
+	it("honors an explicit preferred quality group over the sustained reading", () => {
+		getState().PreferredQualityGroup = "720p60";
+		const info = makeInfo({
+			ResolutionList: ladder,
+			SustainedNativeResolution: { Resolution: "640x360", Name: "360p" },
+		});
+		expect(fn()(info)).toEqual({ Resolution: "1280x720", Name: "720p60" });
+		getState().PreferredQualityGroup = null;
+	});
+
+	it("floors a sub-360p sustained reading up to the lowest variant at or above 360p", () => {
+		getState().PreferredQualityGroup = null;
+		const info = makeInfo({
+			ResolutionList: ladder,
+			SustainedNativeResolution: { Resolution: "284x160", Name: "160p" },
+		});
+		expect(fn()(info)).toEqual({ Resolution: "640x360", Name: "360p" });
+	});
+
+	it("returns null when no resolutions are known so the URL resolver can take over", () => {
+		expect(fn()(makeInfo({ ResolutionList: [] }))).toBeNull();
+	});
+});
+
+describe("_recordSustainedNativeResolution (bandwidth high-water mark)", () => {
+	const record = () =>
+		T<(info: Record<string, unknown>, url: string) => void>(
+			"_recordSustainedNativeResolution",
+		);
+	const aliasesFor = (url: string) =>
+		T<(url: string, base?: string | null) => string[]>(
+			"_getPlaylistUrlAliases",
+		)(url);
+
+	function urlsFor(url: string, resEntry: Record<string, unknown>) {
+		const urls = Object.create(null);
+		for (const alias of aliasesFor(url)) urls[alias] = resEntry;
+		return urls;
+	}
+
+	const url1080 = "https://video.example.com/1080.m3u8";
+	const url360 = "https://video.example.com/360.m3u8";
+	const r1080 = { Resolution: "1920x1080", Name: "1080p60" };
+	const r360 = { Resolution: "640x360", Name: "360p" };
+
+	it("records the resolution of the native variant the player is requesting", () => {
+		const info = makeInfo({ Urls: urlsFor(url360, r360) });
+		record()(info, url360);
+		expect(info.SustainedNativeResolution).toEqual(r360);
+	});
+
+	it("climbs immediately when the player moves to a higher variant", () => {
+		const info = makeInfo({
+			Urls: { ...urlsFor(url360, r360), ...urlsFor(url1080, r1080) },
+			SustainedNativeResolution: r360,
+			SustainedNativeResolutionAt: Date.now(),
+		});
+		record()(info, url1080);
+		expect(info.SustainedNativeResolution).toEqual(r1080);
+	});
+
+	it("keeps the high-water mark when a lower reading arrives within the window", () => {
+		const info = makeInfo({
+			Urls: urlsFor(url360, r360),
+			SustainedNativeResolution: r1080,
+			SustainedNativeResolutionAt: Date.now(),
+		});
+		record()(info, url360);
+		expect(info.SustainedNativeResolution).toEqual(r1080);
+	});
+
+	it("decays to a lower reading after the window elapses (tracks degradation)", () => {
+		const info = makeInfo({
+			Urls: urlsFor(url360, r360),
+			SustainedNativeResolution: r1080,
+			SustainedNativeResolutionAt: Date.now() - 61000,
+		});
+		record()(info, url360);
+		expect(info.SustainedNativeResolution).toEqual(r360);
+	});
+
+	it("does not record while a backup stream is being served", () => {
+		const info = makeInfo({
+			Urls: urlsFor(url1080, r1080),
+			IsUsingBackupStream: true,
+			SustainedNativeResolution: r360,
+			SustainedNativeResolutionAt: Date.now(),
+		});
+		record()(info, url1080);
+		expect(info.SustainedNativeResolution).toEqual(r360);
+	});
+});
+
 describe("_fetchWithTimeout", () => {
 	const fn = () =>
 		T<
