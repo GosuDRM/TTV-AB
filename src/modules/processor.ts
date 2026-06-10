@@ -1698,21 +1698,35 @@ async function _processM3U8Core(url, text, realFetch) {
 			_isRecentPostAdReentry(info) &&
 			info.LastCleanBackupM3U8 &&
 			info.ActiveBackupPlayerType &&
-			info.ActiveBackupPlayerType !== "autoplay" &&
-			!(Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0)
+			info.ActiveBackupPlayerType !== "autoplay"
 		) {
-			const reentryRefreshStartedAt = Date.now();
-			const reentryRefreshed = await _refreshActiveBackupMediaPlaylist(
-				info,
-				realFetch,
-			);
-			if (reentryRefreshed) {
-				info.IsUsingBackupStream = true;
-				_log(
-					`[Trace] Continuation fast-refresh: ${info.ActiveBackupPlayerType} (${Date.now() - reentryRefreshStartedAt}ms)`,
-					"info",
+			const reentryForceRefreshAt =
+				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
+			if (reentryForceRefreshAt > 0) {
+				__TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
+				_markBackupPlayerRetryCooldown(
+					info,
+					info.ActiveBackupPlayerType,
+					"stalled",
 				);
-				return reentryRefreshed;
+				_log(
+					`[Trace] Continuation backup ${info.ActiveBackupPlayerType} stalled — cooling down and rotating to next type`,
+					"warning",
+				);
+			} else {
+				const reentryRefreshStartedAt = Date.now();
+				const reentryRefreshed = await _refreshActiveBackupMediaPlaylist(
+					info,
+					realFetch,
+				);
+				if (reentryRefreshed) {
+					info.IsUsingBackupStream = true;
+					_log(
+						`[Trace] Continuation fast-refresh: ${info.ActiveBackupPlayerType} (${Date.now() - reentryRefreshStartedAt}ms)`,
+						"info",
+					);
+					return reentryRefreshed;
+				}
 			}
 		}
 

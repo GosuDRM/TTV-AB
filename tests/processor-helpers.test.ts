@@ -1764,8 +1764,8 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 		expect(info.IsUsingBackupStream).toBe(true);
 	});
 
-	it("falls through to the full search when a backup stall is flagged (no ad-leak shortcut)", async () => {
-		setupReentry();
+	it("consumes the stall flag, cools the stalled type, and rotates via the full search", async () => {
+		const info = setupReentry();
 		getState().BackupSearchForceRefreshAt = Date.now();
 		const refreshSpy = vi.fn(async () => makePlaylist(60, 3));
 		g._refreshActiveBackupMediaPlaylist = refreshSpy;
@@ -1779,7 +1779,12 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 			Promise.reject(new Error("no fetch expected")),
 		);
 
+		expect(refreshSpy).not.toHaveBeenCalled();
 		expect(searchSpy).toHaveBeenCalled();
 		expect(out).toContain("seg80.ts");
+		expect(getState().BackupSearchForceRefreshAt).toBe(0);
+		expect(Number(info.FailedBackupPlayerTypes.get("site"))).toBeGreaterThan(
+			Date.now(),
+		);
 	});
 });
