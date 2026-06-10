@@ -1703,6 +1703,28 @@ async function _processM3U8Core(url, text, realFetch) {
 			}
 		}
 
+		if (
+			_isRecentPostAdReentry(info) &&
+			info.LastCleanBackupM3U8 &&
+			info.ActiveBackupPlayerType &&
+			info.ActiveBackupPlayerType !== "autoplay" &&
+			!(Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0)
+		) {
+			const reentryRefreshStartedAt = Date.now();
+			const reentryRefreshed = await _refreshActiveBackupMediaPlaylist(
+				info,
+				realFetch,
+			);
+			if (reentryRefreshed) {
+				info.IsUsingBackupStream = true;
+				_log(
+					`[Trace] Continuation fast-refresh: ${info.ActiveBackupPlayerType} (${Date.now() - reentryRefreshStartedAt}ms)`,
+					"info",
+				);
+				return reentryRefreshed;
+			}
+		}
+
 		let {
 			type: backupType,
 			m3u8: backupM3u8,

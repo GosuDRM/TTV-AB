@@ -1616,3 +1616,91 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 		expect(info.ActiveBackupPlayerType).toBe("site");
 	});
 });
+
+describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
+	const NATIVE_URL =
+		"https://video-weaver.example.ttvnw.net/v1/playlist/burst.m3u8";
+
+	const processM3U8 = () =>
+		T<
+			(
+				url: string,
+				text: string,
+				realFetch: (...args: unknown[]) => Promise<unknown>,
+			) => Promise<string>
+		>("_processM3U8");
+
+	function adMarkedNative() {
+		return [
+			"#EXTM3U",
+			"#EXT-X-VERSION:7",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:400",
+			'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad"',
+			"#EXT-X-DISCONTINUITY",
+			"#EXTINF:2.000,Amazon",
+			"ad-400.ts",
+		].join("\n");
+	}
+
+	function setupReentry() {
+		g.postMessage = () => {};
+		g._postWorkerBridgeMessage = () => {};
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
+		g._notifyAdComplete = () => Promise.resolve();
+		const now = Date.now();
+		const info = makeInfo({
+			IsShowingAd: true,
+			IsHoldingBackupAfterAd: false,
+			VisibleAdStartedAt: now - 500,
+			LastAdEndReloadAt: now,
+			LastCleanBackupM3U8: makePlaylist(50, 3),
+			LastCleanBackupPlayerType: "site",
+			ActiveBackupPlayerType: "site",
+			LastCleanBackupAt: now,
+		});
+		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
+		getState().LastAdEndedAt = now;
+		getState().BackupSearchForceRefreshAt = 0;
+		return info;
+	}
+
+	it("serves the active backup via the cheap refresh (no full re-search) during a burst", async () => {
+		const info = setupReentry();
+		const refreshSpy = vi.fn(async () => makePlaylist(60, 3));
+		g._refreshActiveBackupMediaPlaylist = refreshSpy;
+		const searchSpy = vi.fn(async () => ({
+			type: "embed",
+			m3u8: makePlaylist(80, 3),
+		}));
+		g._findBackupStream = searchSpy;
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(refreshSpy).toHaveBeenCalled();
+		expect(searchSpy).not.toHaveBeenCalled();
+		expect(out).toContain("seg60.ts");
+		expect(info.IsUsingBackupStream).toBe(true);
+	});
+
+	it("falls through to the full search when a backup stall is flagged (no ad-leak shortcut)", async () => {
+		setupReentry();
+		getState().BackupSearchForceRefreshAt = Date.now();
+		const refreshSpy = vi.fn(async () => makePlaylist(60, 3));
+		g._refreshActiveBackupMediaPlaylist = refreshSpy;
+		const searchSpy = vi.fn(async () => ({
+			type: "embed",
+			m3u8: makePlaylist(80, 3),
+		}));
+		g._findBackupStream = searchSpy;
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(searchSpy).toHaveBeenCalled();
+		expect(out).toContain("seg80.ts");
+	});
+});
