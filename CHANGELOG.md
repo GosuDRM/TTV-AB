@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.3] - 2026-06-10
+
+### Fixed
+- **Background tabs no longer falsely declare the player worker crashed.** The worker heartbeat watchdog measured staleness from the last pong while browser timer throttling froze the page's ping schedule, so a backgrounded or just-refocused tab could hit the two-strike limit within seconds and hard-restart a healthy player. The watchdog now skips strike accrual entirely while the tab is hidden (it keeps pinging so a pong is ready on refocus) and only counts a strike when a concrete ping has gone unanswered for the full timeout while visible.
+- **Worker-recovery player reloads now wait for the tab to become visible.** Reloading a player in a hidden tab left it half-initialized because throttled resume retries and autoplay restrictions prevented playback from sticking — the visible "player crash" after tab switches. Recovery still installs the degraded page-side fallback immediately; only the player restart is deferred.
+- **Blob-injection failure detection no longer fires while hidden.** The initial heartbeat timeout reschedules itself until the tab is visible instead of declaring a throttled worker dead before it had a chance to answer.
+
+### Safety
+- Ad blocking is unaffected: playlist processing, fallback installation, and recovery attempt caps are unchanged — only the false-positive crash verdicts and hidden-tab player restarts are removed.
+- A genuinely dead worker in a visible tab is still detected and recovered within roughly 30 seconds via the same two-strike escalation.
+
 ## [9.6.2] - 2026-06-10
 
 ### Fixed
