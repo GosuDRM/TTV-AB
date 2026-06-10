@@ -1800,7 +1800,11 @@ async function _processM3U8Core(url, text, realFetch) {
 			const needsHardReload = shouldUseHevcReload;
 
 			if (isCsaiBreak) {
-				if (wasUsingBackupStream && !recentMidrollChain) {
+				if (
+					wasUsingBackupStream &&
+					!recentMidrollChain &&
+					!isSilentBackupHoldEnd
+				) {
 					shouldReloadPlayer = true;
 					reloadKind = "post-escape";
 				}

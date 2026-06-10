@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.6.1-purple)
+![Version](https://img.shields.io/badge/version-9.6.2-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.6.1-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.6.2-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -64,6 +64,9 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
+### v9.6.2 — 2026-06-10
+- **Smoother ad-break exits while holding a clean backup stream.** When an ad cycle ends but the native stream is still ad-marked, the extension keeps the clean backup playing silently — and no longer restarts the player at that moment, removing a needless buffer dump and loading spinner. Native playback is still restored seamlessly once the playlist is verified clean, and the audio-desync soft reload after verified-clean breaks is unchanged.
+
 ### v9.6.1 — 2026-06-09
 - **Stronger ad-segment stripping.** Known ad segment URLs are removed even during safer fallback scans that skip automatic full-playlist stripping.
 - **More bounded recovery fetches.** Token, backup and native-recovery probes now keep their timeout active through response-body reads, so hung Twitch responses cannot stall recovery indefinitely.
@@ -71,10 +74,6 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 ### v9.6.0 — 2026-06-09
 - **Retro synthwave theme.** Tap either of the two color circles in the popup header to switch between the new default Retro theme and the original Neon look. Retro uses a magenta/cyan palette on deep indigo with neon glows, a subtle grid, CRT scanlines and animated blocky controls. Your choice is remembered between sessions.
 - **Smoother 60/120/144Hz motion.** Retro ambient effects such as scanlines, status pulses and donate-button pulses now favor compositor-friendly opacity/transform animation. The title keeps its chromatic aberration glitch effect.
-
-### v9.5.0 — 2026-06-09
-- **Consecutive ad breaks reuse the safest recent backup first.** If a non-autoplay backup was recently verified clean for the same stream, the next backup search tries that type before cold source candidates, reducing first-frame black screen without bringing back autoplay-first stalls.
-- **No relaxed ad safety gate.** The remembered backup type is still re-fetched and re-validated before selection, and it is skipped if stale, cooling down, ad-marked, or `autoplay`.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

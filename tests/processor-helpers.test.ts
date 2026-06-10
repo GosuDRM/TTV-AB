@@ -1065,3 +1065,80 @@ describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
 		expect(fn()(info, master)).toBe(master);
 	});
 });
+
+describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
+	const NATIVE_URL =
+		"https://video-weaver.example.ttvnw.net/v1/playlist/native.m3u8";
+	const processM3U8 = () =>
+		T<
+			(
+				url: string,
+				text: string,
+				realFetch: (...args: unknown[]) => Promise<unknown>,
+			) => Promise<string>
+		>("_processM3U8");
+
+	const sentMessages = () =>
+		(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+			(call) => call[1] as Record<string, unknown>,
+		);
+
+	function setupCsaiEscapeAdEnd(overrides: Record<string, unknown> = {}) {
+		g.postMessage = () => {};
+		g._postWorkerBridgeMessage = vi.fn();
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
+		const info = makeInfo({
+			IsShowingAd: true,
+			IsUsingBackupStream: true,
+			CsaiOnlyThisBreak: true,
+			ActiveBackupPlayerType: "embed",
+			LastCleanBackupM3U8: makePlaylist(50, 3),
+			LastCleanBackupPlayerType: "embed",
+			LastCleanBackupAt: Date.now(),
+			PendingAdEndAt: Date.now() - 5000,
+			CleanPlaylistCount: 2,
+			VisibleAdStartedAt: Date.now() - 10000,
+			...overrides,
+		});
+		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
+		return info;
+	}
+
+	it("keeps the held backup playing without a reload when ending into a silent backup hold", async () => {
+		const info = setupCsaiEscapeAdEnd({ ConsecutiveFailedNativeProbes: 6 });
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		const messages = sentMessages();
+		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({
+			holdingBackup: true,
+			willReload: false,
+		});
+		expect(messages.some((m) => m.key === "ReloadPlayer")).toBe(false);
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(out).toContain("seg50.ts");
+	});
+
+	it("still soft-reloads (post-escape) after a verified-clean CSAI escape", async () => {
+		const info = setupCsaiEscapeAdEnd();
+		g._canReloadNativePlayerAfterAd = async () => true;
+
+		const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		const messages = sentMessages();
+		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({
+			holdingBackup: false,
+			willReload: true,
+		});
+		expect(messages.find((m) => m.key === "ReloadPlayer")).toMatchObject({
+			reason: "post-escape",
+		});
+		expect(info.IsHoldingBackupAfterAd).toBe(false);
+		expect(out).toContain("seg100.ts");
+	});
+});

@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.6.2] - 2026-06-10
+
+### Fixed
+- **Removed a pointless player restart when an ad cycle ends into a silent backup hold.** When native recovery probes stayed ad-marked and the worker ended the visible ad cycle while keeping the clean backup stream playing, the CSAI post-escape path still reloaded the player. The reload dumped a cleanly playing buffer and showed a loading spinner only to resume on the exact same held backup playlist. Silent-hold ends now skip that reload, matching the extended-hold path that already kept playback untouched.
+
+### Safety
+- Playlist content served during and after holds is unchanged — the held backup keeps playing until the native playlist is verified clean, so no ad content can leak through this change.
+- Verified-clean CSAI escapes still perform the post-escape soft reload that prevents audio desync after backup playback, and autoplay/HEVC holds still reload at restore time via the existing `NativePlaybackRestored` path.
+
 ## [9.6.1] - 2026-06-09
 
 ### Fixed
