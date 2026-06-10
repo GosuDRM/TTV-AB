@@ -2119,7 +2119,7 @@ function _hookMainFetch() {
 				}
 				const response = await realFetch.apply(this, nextArgs);
 				if (!shouldSkipPlaybackAccessTokenState) {
-					await processGqlResponse(response);
+					void processGqlResponse(response);
 				}
 				return response;
 			}
