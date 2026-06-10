@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.7.0] - 2026-06-10
+
+### Performance
+- **Smoother playback during back-to-back midrolls.** When ads arrive in quick succession (a burst of short midrolls), the extension holds one continuous clean backup across them — but every poll during that window re-ran the *full* backup search (iterate player types → fetch → clean-verify) instead of the lightweight refresh, and that per-poll latency could let the player drain to the buffer edge and stutter briefly. During post-ad continuation it now refreshes the already-active backup directly first, falling back to the full search only if that backup goes stale or a stall is flagged. Result: fewer buffer-edge stalls across consecutive midrolls.
+
+### Safety
+- The fast refresh re-runs the exact same clean-playlist verification as the full search (rejecting any ad-marked / ad-metadata / known-ad-segment playlist) before serving, so it cannot serve an ad — it changes only how quickly the already-verified-clean stream reaches the player, not what is served. If a backup stall is flagged (the 9.6.6 force-refresh signal) it skips the shortcut and lets the full search rotate to another type. No change to ad detection or stripping.
+
+### Diagnostics
+- A trace reports each continuation fast-refresh and its latency (e.g. `Continuation fast-refresh: site (14ms)`), so the effect on consecutive-midroll smoothness is visible in the console.
+
 ## [9.6.9] - 2026-06-10
 
 ### Fixed
