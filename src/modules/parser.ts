@@ -1042,3 +1042,29 @@ function _getFallbackResolution(info, url) {
 	}
 	return sorted[0];
 }
+
+function _applyBackupResolutionFloor(res, resolutionList, floorHeight = 360) {
+	const heightOf = (entry) => {
+		const [, h] = String(entry?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		return Number.isFinite(h) ? h : 0;
+	};
+	const targetHeight = heightOf(res);
+	if (targetHeight <= 0 || targetHeight >= floorHeight) {
+		return res;
+	}
+	const list = Array.isArray(resolutionList)
+		? resolutionList.filter(Boolean)
+		: [];
+	let floored = null;
+	let flooredHeight = Number.POSITIVE_INFINITY;
+	for (const entry of list) {
+		const h = heightOf(entry);
+		if (h >= floorHeight && h < flooredHeight) {
+			floored = entry;
+			flooredHeight = h;
+		}
+	}
+	return floored || res;
+}
