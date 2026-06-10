@@ -1068,3 +1068,33 @@ function _applyBackupResolutionFloor(res, resolutionList, floorHeight = 360) {
 	}
 	return floored || res;
 }
+
+function _resolvePreferredBackupResolution(info, floorHeight = 360) {
+	const resolutionList = Array.isArray(info?.ResolutionList)
+		? info.ResolutionList.filter(Boolean)
+		: [];
+	if (resolutionList.length === 0) {
+		return null;
+	}
+	const preferredQualityGroup =
+		typeof __TTVAB_STATE__ !== "undefined"
+			? __TTVAB_STATE__?.PreferredQualityGroup
+			: null;
+	let target = _getResolutionByQualityGroup(
+		resolutionList,
+		preferredQualityGroup,
+	);
+	if (!target) {
+		const sustained = info?.SustainedNativeResolution;
+		const [, sh] = String(sustained?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		if (Number.isFinite(sh) && sh > 0) {
+			target = sustained;
+		}
+	}
+	if (!target) {
+		return null;
+	}
+	return _applyBackupResolutionFloor(target, resolutionList, floorHeight);
+}

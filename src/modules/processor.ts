@@ -325,6 +325,52 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 	return resolution;
 }
 
+function _recordSustainedNativeResolution(info, url) {
+	if (
+		!info ||
+		info.IsUsingBackupStream ||
+		info.IsUsingFallbackStream ||
+		info.IsHoldingBackupAfterAd
+	) {
+		return;
+	}
+	let resolution = null;
+	for (const alias of _getPlaylistUrlAliases(url)) {
+		resolution = info?.Urls?.[alias] || null;
+		if (resolution) break;
+	}
+	if (!resolution) {
+		return;
+	}
+	const [, h] = String(resolution.Resolution || "0x0")
+		.split("x")
+		.map(Number);
+	const height = Number.isFinite(h) ? h : 0;
+	if (height <= 0) {
+		return;
+	}
+	const [, ph] = String(info.SustainedNativeResolution?.Resolution || "0x0")
+		.split("x")
+		.map(Number);
+	const prevHeight = Number.isFinite(ph) ? ph : 0;
+	const now = Date.now();
+	const windowMs = 60000;
+	if (
+		height >= prevHeight ||
+		now - (Number(info.SustainedNativeResolutionAt) || 0) > windowMs
+	) {
+		const prevResolution = info.SustainedNativeResolution?.Resolution || null;
+		info.SustainedNativeResolution = resolution;
+		info.SustainedNativeResolutionAt = now;
+		if (resolution.Resolution && resolution.Resolution !== prevResolution) {
+			_log(
+				`[Trace] Sustained native quality: ${prevResolution || "none"} -> ${resolution.Resolution}`,
+				"info",
+			);
+		}
+	}
+}
+
 async function _isAdEndStable(info, realFetch, resolution = null) {
 	if (!info?.IsShowingAd) return "ended";
 
@@ -889,6 +935,8 @@ function _createStreamInfo(context) {
 		BackupEncodingsM3U8Cache: Object.create(null),
 		ActiveBackupPlayerType: null,
 		ActiveBackupResolution: null,
+		SustainedNativeResolution: null,
+		SustainedNativeResolutionAt: 0,
 		LastCleanNativeM3U8: null,
 		LastCleanNativePlaylistAt: 0,
 		LastCleanBackupM3U8: null,
@@ -1013,6 +1061,8 @@ async function _processM3U8Core(url, text, realFetch) {
 	if (isBackupUrl) {
 		return text;
 	}
+
+	_recordSustainedNativeResolution(info, url);
 
 	if (!__TTVAB_STATE__.IsAdStrippingEnabled) {
 		if (
@@ -1204,7 +1254,9 @@ async function _processM3U8Core(url, text, realFetch) {
 		if (info.IsHoldingBackupAfterAd) {
 			if (info.LastCleanBackupM3U8) {
 				const now = Date.now();
-				const res = _resolvePlaybackResolutionForUrl(info, url);
+				const res =
+					_resolvePreferredBackupResolution(info) ||
+					_resolvePlaybackResolutionForUrl(info, url);
 				const lastLogAt = Math.max(
 					0,
 					Number(info.LastSilentBackupHoldLogAt) || 0,
@@ -1293,7 +1345,9 @@ async function _processM3U8Core(url, text, realFetch) {
 			visibleAdElapsed >= backupHoldMaxMs
 		) {
 			const adEndedAt = Date.now();
-			const res = _resolvePlaybackResolutionForUrl(info, url);
+			const res =
+				_resolvePreferredBackupResolution(info) ||
+				_resolvePlaybackResolutionForUrl(info, url);
 			const heldBackupM3U8 = info.LastCleanBackupM3U8;
 			const heldBackupPlayerType =
 				info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType || null;
@@ -1818,7 +1872,8 @@ async function _processM3U8Core(url, text, realFetch) {
 			info.LastSilentBackupHoldLogAt = adEndedAt;
 			info.IsUsingBackupStream = true;
 			info.ActiveBackupPlayerType = heldBackupPlayerType;
-			info.ActiveBackupResolution = res?.Resolution || null;
+			info.ActiveBackupResolution =
+				(_resolvePreferredBackupResolution(info) || res)?.Resolution || null;
 			info.HevcReloadPendingAfterHold =
 				wasUsingModifiedM3U8 || heldBackupPlayerType === "autoplay";
 		}
@@ -2010,13 +2065,15 @@ async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
 			: info.UsherBaseUrl;
 	if (!enc) return null;
 
-	const targetRes =
+	const targetRes = _applyBackupResolutionFloor(
 		_getFallbackResolution(info, "") ||
-		info?.ResolutionList?.[0] ||
-		(typeof __TTVAB_STATE__?.PreferredQualityGroup === "string" &&
-		__TTVAB_STATE__.PreferredQualityGroup.trim()
-			? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
-			: null);
+			info?.ResolutionList?.[0] ||
+			(typeof __TTVAB_STATE__?.PreferredQualityGroup === "string" &&
+			__TTVAB_STATE__.PreferredQualityGroup.trim()
+				? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
+				: null),
+		info?.ResolutionList,
+	);
 	const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
 	if (!streamUrl) return null;
 

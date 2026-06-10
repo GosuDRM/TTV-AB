@@ -1014,6 +1014,7 @@ function _hookWorker() {
                 ${_getResolutionByQualityGroup.toString()}
                 ${_getFallbackResolution.toString()}
                 ${_applyBackupResolutionFloor.toString()}
+                ${_resolvePreferredBackupResolution.toString()}
                 ${_getPlaylistUrlAliases.toString()}
                 ${_collectPlaybackAccessTokenSources.toString()}
                 ${_summarizePlaybackAccessTokenPayload.toString()}
@@ -1042,6 +1043,7 @@ function _hookWorker() {
                 ${_getRecentCleanBackupPlayerTypeForInfo.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
+                ${_recordSustainedNativeResolution.toString()}
                 ${_isAdEndStable.toString()}
                 ${_resetNativeRecoveryReadyState.toString()}
                 ${_markNativeRecoveryProbeFailed.toString()}
