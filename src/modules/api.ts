@@ -122,7 +122,13 @@ function _createFetchRelayResponse(payload, requestUrl = null) {
 		throw new Error(payload.error);
 	}
 
-	const response = new Response(payload.body ?? "", {
+	const body = payload.body ?? "";
+	const nullBodyStatus =
+		payload.status === 101 ||
+		payload.status === 204 ||
+		payload.status === 205 ||
+		payload.status === 304;
+	const response = new Response(nullBodyStatus ? null : body, {
 		status: payload.status,
 		statusText: payload.statusText,
 		headers: payload.headers,

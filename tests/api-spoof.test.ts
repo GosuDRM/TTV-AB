@@ -157,3 +157,32 @@ describe("_notifyAdComplete", () => {
 		expect(impressionIds).toEqual(["stitched-ad-1", "stitched-ad-2"]);
 	});
 });
+
+describe("_createFetchRelayResponse", () => {
+	const create = () =>
+		T<(payload: Record<string, unknown>, url?: string | null) => Response>(
+			"_createFetchRelayResponse",
+		);
+
+	it("builds a body-less response for null-body statuses", () => {
+		const response = create()({
+			status: 204,
+			statusText: "No Content",
+			headers: {},
+			body: "",
+		});
+		expect(response.status).toBe(204);
+		expect(response.body).toBe(null);
+	});
+
+	it("keeps the body for normal statuses", async () => {
+		const response = create()({
+			status: 200,
+			statusText: "OK",
+			headers: {},
+			body: "hello",
+		});
+		expect(response.status).toBe(200);
+		await expect(response.text()).resolves.toBe("hello");
+	});
+});
