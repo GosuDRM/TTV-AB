@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.8.2] - 2026-06-11
+
+### Fixed
+- The internal script-takeover version is now derived from the release version and enforced by the build and tests. Versions 9.7.4 through 9.8.1 shipped with the 9.7.3 takeover version, so a content script injected into an already-open Twitch tab after an extension update refused to take over from the previous version until the tab was manually reloaded.
+
+### Changed
+- Removed the unread ReloadAfterAd state field (the RELOAD_AFTER_AD constant itself remains the live kill switch for post-ad reloads) and aligned the state seeding fallback defaults with the tuned constants.
+
 ## [9.8.1] - 2026-06-11
 
 ### Fixed
