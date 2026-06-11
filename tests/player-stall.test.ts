@@ -23,6 +23,8 @@ function loadModule(modulePath: string) {
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
+	loadModule("../dist/src/modules/state.js");
+	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/player.js");
 });
 
@@ -269,6 +271,32 @@ describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
 });
 
 describe("_doPlayerTask ad-recovery reload backoff", () => {
+	const stubbedGlobals = [
+		"_getPlayerAndState",
+		"_shouldSuppressAutomaticPlaybackResume",
+		"_capturePlayerPreferenceSnapshot",
+		"_suppressPauseIntent",
+		"_clearCachedPlayerRef",
+		"_schedulePlaybackRecoveryTimeout",
+		"_scheduleResumeRetries",
+		"_pausePlaybackTarget",
+		"_playPlaybackTarget",
+	];
+	let savedGlobals: Record<string, unknown> = {};
+
+	beforeEach(() => {
+		savedGlobals = {};
+		for (const name of stubbedGlobals) {
+			savedGlobals[name] = g[name];
+		}
+	});
+
+	afterEach(() => {
+		for (const name of stubbedGlobals) {
+			g[name] = savedGlobals[name];
+		}
+	});
+
 	function setupReloadContext(lastAdRecoveryReloadAgoMs: number) {
 		const setSrcCalls: unknown[] = [];
 		const pauseCalls: unknown[] = [];
@@ -570,10 +598,11 @@ describe("_checkInAdPlayheadFreeze", () => {
 			"_checkInAdPlayheadFreeze",
 		);
 
-	const realDoPlayerTask = g._doPlayerTask;
+	let realDoPlayerTask: unknown;
 	let playerTaskCalls: Array<[unknown, unknown]> = [];
 
 	beforeEach(() => {
+		realDoPlayerTask = g._doPlayerTask;
 		playerTaskCalls = [];
 		g._doPlayerTask = (a: unknown, b: unknown) => {
 			playerTaskCalls.push([a, b]);
@@ -710,5 +739,142 @@ describe("_syncPreferredQualityGroup", () => {
 		expect(sync()()).toBe(true);
 		expect(sync()()).toBe(false);
 		expect(messages).toHaveLength(1);
+	});
+});
+
+describe("_doPlayerTask (vod position restore after reload)", () => {
+	const task = () =>
+		T<
+			(
+				isPausePlay: boolean,
+				isReload: boolean,
+				options?: Record<string, unknown>,
+			) => unknown
+		>("_doPlayerTask");
+
+	const stubbed = [
+		"_getPlayerAndState",
+		"_getPlayerCore",
+		"_capturePlayerPreferenceSnapshot",
+		"_clearCachedPlayerRef",
+		"_playPlaybackTarget",
+		"_pausePlaybackTarget",
+		"_scheduleResumeRetries",
+		"_schedulePlaybackRecoveryTimeout",
+		"_broadcastWorkers",
+		"__TTVAB_STATE__",
+	];
+	let saved: Record<string, unknown> = {};
+	let scheduled: Array<{ delay: number; run: () => void }>;
+
+	beforeEach(() => {
+		saved = {};
+		for (const name of stubbed) saved[name] = g[name];
+		scheduled = [];
+		g._getPlayerCore = () => ({ state: {} });
+		g._capturePlayerPreferenceSnapshot = () => null;
+		g._clearCachedPlayerRef = () => {};
+		g._playPlaybackTarget = () => true;
+		g._pausePlaybackTarget = () => true;
+		g._scheduleResumeRetries = () => {};
+		g._broadcastWorkers = () => {};
+		g._schedulePlaybackRecoveryTimeout = (cb: () => void, delay: number) => {
+			scheduled.push({ delay, run: cb });
+			return 1;
+		};
+	});
+
+	afterEach(() => {
+		for (const name of stubbed) g[name] = saved[name];
+	});
+
+	function makeReloadHarness(contentType: string, startPosition: number) {
+		let currentTime = startPosition;
+		const video = {
+			ended: false,
+			paused: false,
+			muted: false,
+			defaultMuted: false,
+			volume: 1,
+			buffered: { length: 0 },
+			get currentTime() {
+				return currentTime;
+			},
+			set currentTime(v: number) {
+				currentTime = v;
+			},
+		};
+		const player = {
+			getHTMLVideoElement: () => video,
+			play: () => undefined,
+			seekTo: undefined as ((pos: number) => void) | undefined,
+		};
+		const playerState = {
+			props: { content: { type: contentType } },
+			setSrc: (..._args: unknown[]) => {
+				currentTime = 0;
+			},
+		};
+		g._getPlayerAndState = () => ({ player, state: playerState });
+		g.__TTVAB_STATE__ = {
+			PageMediaType: contentType === "vod" ? "vod" : "live",
+			PageChannel: contentType === "vod" ? null : "testchannel",
+			PageMediaKey: contentType === "vod" ? "vod:12345" : "live:testchannel",
+			PageVodID: contentType === "vod" ? "12345" : null,
+			LastPlayerReloadAt: 0,
+			PlayerReloadDebounceMs: 1500,
+		};
+		return { video, player, playerState };
+	}
+
+	function runScheduled(maxDelay: number) {
+		for (const entry of scheduled) {
+			if (entry.delay <= maxDelay) entry.run();
+		}
+	}
+
+	it("schedules a restore to the captured vod position and seeks back", () => {
+		const { video } = makeReloadHarness("vod", 1234.5);
+
+		task()(false, true, { reason: "manual" });
+		expect(video.currentTime).toBe(0);
+		expect(scheduled.some((e) => e.delay >= 1000)).toBe(true);
+
+		runScheduled(1500);
+		expect(video.currentTime).toBeCloseTo(1234.5, 3);
+	});
+
+	it("prefers the player seek API when available", () => {
+		const { video, player } = makeReloadHarness("vod", 987);
+		const seeks: number[] = [];
+		player.seekTo = (pos: number) => {
+			seeks.push(pos);
+		};
+
+		task()(false, true, { reason: "manual" });
+		runScheduled(1500);
+
+		expect(seeks).toEqual([987]);
+		expect(video.currentTime).toBe(0);
+	});
+
+	it("skips the seek when playback already resumed near the captured spot", () => {
+		const { video } = makeReloadHarness("vod", 500);
+
+		task()(false, true, { reason: "manual" });
+		video.currentTime = 499.2;
+
+		runScheduled(3000);
+		expect(video.currentTime).toBe(499.2);
+	});
+
+	it("does not schedule a position restore for live content", () => {
+		const { video } = makeReloadHarness("live", 4321);
+
+		task()(false, true, { reason: "manual" });
+		expect(video.currentTime).toBe(0);
+
+		runScheduled(3000);
+		expect(video.currentTime).toBe(0);
 	});
 });

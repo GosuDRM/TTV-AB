@@ -152,7 +152,7 @@ describe("_suppressCompetingMediaDuringAd (periodic resweep)", () => {
 			"_suppressCompetingMediaDuringAd",
 		);
 
-	const realGetPrimary = g._getPrimaryMediaElement;
+	let realGetPrimary: unknown;
 	let primary: HTMLVideoElement;
 
 	function makeMedia(playing: boolean) {
@@ -176,6 +176,7 @@ describe("_suppressCompetingMediaDuringAd (periodic resweep)", () => {
 	}
 
 	beforeEach(() => {
+		realGetPrimary = g._getPrimaryMediaElement;
 		primary = makeMedia(true).el;
 		g._getPrimaryMediaElement = () => primary;
 	});
