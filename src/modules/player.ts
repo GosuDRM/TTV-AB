@@ -3110,6 +3110,10 @@ function _monitorPlayerBuffering() {
 						pinPlayer = fresh.player;
 					}
 				}
+				_suppressCompetingMediaDuringAd(
+					__TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel,
+					__TTVAB_STATE__.CurrentAdMediaKey || currentMediaKey,
+				);
 			}
 			if (
 				pinPlayer &&
