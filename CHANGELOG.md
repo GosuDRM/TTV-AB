@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.8.4] - 2026-06-11
+
+### Fixed
+- Picture-in-picture on Chromium now really keeps the in-ad protections running: entering PiP marks a secondary-player handoff, and the automatic-playback suppression idled the buffer monitor for the whole PiP session, so pinned-backup stall rotation, in-ad freeze recovery, the competing-media re-sweep, and post-ad recovery never ran. PiP is now exempt from that suppression; popout handoffs still suppress, and PiP-preserving reload downgrades and user pause intent still apply.
+- Recovery reloads no longer convert an auto-quality player into a pinned quality. The preference snapshot overwrote the stored setting with the live quality group — the adaptive rung on auto players — and the post-reload restore persisted it as an explicit choice. The override now only applies when an explicit non-auto quality is already stored.
+- The in-ad competing-media mute sweep now skips entirely when no primary player can be identified; previously a lookup race at channel-open prerolls could mute the main player itself for the rest of the break.
+- The buffer monitor tick now always reschedules itself through an error-handling wrapper, so one unexpected exception can no longer silently kill every stall, freeze, and mute protection for the rest of the session.
+- A fresh post-ad recovery cycle now gives the player time to decode its first frame before the no-frame dead-player rebuild can fire, removing a spurious rebuild attempt right after post-ad reloads.
+
+### Changed
+- The in-ad monitor branch validates and reuses the cached player reference instead of walking the React tree every tick during a cache-less ad break, superseded deferred-PiP-reload listeners are removed instead of left neutralized, and secondary-handoff rollback resumes go through the context-guarded recovery scheduler.
+
 ## [9.8.3] - 2026-06-11
 
 ### Fixed
