@@ -3145,20 +3145,17 @@ function _monitorPlayerBuffering() {
 		}
 
 		if (hasActiveAdContext) {
-			let pinPlayer = null;
-			if (!isHidden) {
-				pinPlayer = _cachedPlayerRef?.player || null;
-				if (!pinPlayer) {
-					const fresh = _getPlayerAndState();
-					if (fresh.player && fresh.state) {
-						pinPlayer = fresh.player;
-					}
+			let pinPlayer = _cachedPlayerRef?.player || null;
+			if (!pinPlayer) {
+				const fresh = _getPlayerAndState();
+				if (fresh.player && fresh.state) {
+					pinPlayer = fresh.player;
 				}
-				_suppressCompetingMediaDuringAd(
-					__TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel,
-					__TTVAB_STATE__.CurrentAdMediaKey || currentMediaKey,
-				);
 			}
+			_suppressCompetingMediaDuringAd(
+				__TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel,
+				__TTVAB_STATE__.CurrentAdMediaKey || currentMediaKey,
+			);
 			if (
 				pinPlayer &&
 				__TTVAB_STATE__.PinnedBackupPlayerType &&
