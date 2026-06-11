@@ -8,6 +8,8 @@ const _PlayerBufferState = {
 	lastFixTime: 0,
 	fixAttempts: 0,
 	liveEdgeStarveCount: 0,
+	gapJumpLastPosition: -1,
+	gapJumpStuckTicks: 0,
 	postAdUnhealthyCount: 0,
 	postAdRecoveryStartedAt: 0,
 	postAdLastCurrentTime: 0,
@@ -323,6 +325,8 @@ function _resetPlayerBufferMonitorState(cooldownMs = 0) {
 	_PlayerBufferState.numSame = 0;
 	_PlayerBufferState.fixAttempts = 0;
 	_PlayerBufferState.liveEdgeStarveCount = 0;
+	_PlayerBufferState.gapJumpLastPosition = -1;
+	_PlayerBufferState.gapJumpStuckTicks = 0;
 	_PlayerBufferState.postAdUnhealthyCount = 0;
 	_PlayerBufferState.postAdRecoveryStartedAt = 0;
 	_PlayerBufferState.postAdLastCurrentTime = 0;
@@ -2116,6 +2120,53 @@ function _retryPostAdPauseResume(channel = null, mediaKey = null) {
 	return Boolean(didRetry);
 }
 
+function _trySeekPastFrozenBufferGap(video, currentTime, readyState) {
+	const lastPosition = _PlayerBufferState.gapJumpLastPosition;
+	const advanced = lastPosition >= 0 && currentTime > lastPosition + 0.2;
+	if (advanced || lastPosition < 0 || currentTime < lastPosition) {
+		_PlayerBufferState.gapJumpStuckTicks = 0;
+	} else {
+		_PlayerBufferState.gapJumpStuckTicks++;
+	}
+	_PlayerBufferState.gapJumpLastPosition = currentTime;
+
+	if (
+		_PlayerBufferState.gapJumpStuckTicks < 3 ||
+		readyState >= 3 ||
+		!video ||
+		!(video.buffered?.length > 1)
+	) {
+		return false;
+	}
+
+	for (let bi = 0; bi < video.buffered.length; bi++) {
+		let gapStart = 0;
+		try {
+			gapStart = video.buffered.start(bi);
+		} catch {
+			continue;
+		}
+		if (gapStart > currentTime + 0.25) {
+			_log(
+				`Frozen playhead at ${currentTime.toFixed(3)}s with buffered gap; seeking ${(gapStart - currentTime).toFixed(2)}s past it`,
+				"warning",
+			);
+			try {
+				video.currentTime = gapStart + 0.05;
+			} catch {
+				return false;
+			}
+			_PlayerBufferState.gapJumpStuckTicks = 0;
+			_PlayerBufferState.gapJumpLastPosition = -1;
+			_PlayerBufferState.lastFixTime = Date.now();
+			_PlayerBufferState.numSame = 0;
+			return true;
+		}
+	}
+	_PlayerBufferState.gapJumpStuckTicks = 0;
+	return false;
+}
+
 function _resetPostAdGrace() {
 	_PlayerBufferState.postAdGraceUntil = 0;
 	_PlayerBufferState.postAdGraceLastCurrentTime = 0;
@@ -3125,6 +3176,13 @@ function _monitorPlayerBuffering() {
 						readyState,
 						hasFutureData,
 					} = _readPlayerBufferTelemetry(player, playerCore);
+					if (_trySeekPastFrozenBufferGap(video, currentTime, readyState)) {
+						_PlayerBufferState.position = position;
+						_PlayerBufferState.bufferedPosition = bufferedPosition;
+						_PlayerBufferState.bufferDuration = bufferDuration;
+						_playerBufferMonitorTimer = setTimeout(check, nextDelay);
+						return;
+					}
 					const isStablePosition = _PlayerBufferState.position === position;
 					const isStableBufferedPosition =
 						_PlayerBufferState.bufferedPosition === bufferedPosition;
@@ -3193,11 +3251,7 @@ function _monitorPlayerBuffering() {
 								"warning",
 							);
 							_PlayerBufferState.fixAttempts++;
-							if (
-								!_isLowLatencyEnabled() &&
-								video &&
-								video.buffered.length > 1
-							) {
+							if (video && video.buffered.length > 1) {
 								for (let bi = 0; bi < video.buffered.length; bi++) {
 									if (video.buffered.start(bi) > video.currentTime + 0.5) {
 										_log(
