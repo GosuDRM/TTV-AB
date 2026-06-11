@@ -322,6 +322,7 @@ function _hasExplicitAdMetadata(text) {
 function _isExplicitKnownAdSegmentUrl(segmentUrl) {
 	const url = String(segmentUrl || "");
 	if (!url) return false;
+	if (/\.m3u8(?:$|\?)/.test(url)) return false;
 	return (
 		(__TTVAB_STATE__.AdSignifier &&
 			url.includes(__TTVAB_STATE__.AdSignifier)) ||
