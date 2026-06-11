@@ -73,21 +73,6 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 ### v9.8.2 — 2026-06-11
 - **Updates take effect in open tabs again.** Installing an extension update with Twitch tabs open now hands those pages over to the new version correctly; since 9.7.4 an internal version marker had stopped being bumped, leaving already-open tabs running the old script until a manual reload. The marker is now derived from the release version and enforced by the build so it can never drift again.
 
-### v9.8.1 — 2026-06-11
-- **Picture-in-picture and background tabs are first-class now.** Watching in PiP counts as actively watching, so playback monitors run at full speed; ad-break stall and freeze recovery keeps working in background tabs and PiP; a post-ad reload no longer closes your PiP window (it waits until you exit PiP); and a dead stream in a hidden tab recovers on its own instead of waiting for focus.
-
-### v9.8.0 — 2026-06-11
-- **Smoother channel switching and first-class VOD ad handling.** Switching channels mid-ad-break no longer leaves muted players behind, backup searches share one in-flight run instead of racing each other, VODs return to the right playhead position after a post-ad reload, and VOD ad breaks now get the same stall, freeze, and mute protections as live streams.
-
-### v9.7.6 — 2026-06-11
-- **Backups keep your real quality after a player hiccup.** When the player restarted itself on auto quality moments before an ad, the backup could pin to the temporary 360p ramp-up rung for the whole break; backups now follow your actual sustained quality, and only an explicitly chosen quality overrides it. Extra-long ad pods also no longer bump the "Ads Blocked" counter a second time mid-break.
-
-### v9.7.5 — 2026-06-11
-- **No more purple-screen freezes on client-side ad breaks.** A midroll whose ad markers lingered could freeze the backup stream for up to 90 seconds behind Twitch's purple "commercial break" slate. The backup now keeps refreshing live through the entire break, a playhead stuck at a buffer gap seeks past it within seconds even mid-ad, and Twitch's separate ad player element is muted the moment it appears.
-
-### v9.7.4 — 2026-06-11
-- **Stable, full-quality ad breaks.** A midroll now resolves in one clean cycle instead of repeatedly flickering between backup and native, the backup plays at the quality you were actually watching instead of dropping to 360p, and a post-ad freeze that could stall playback for ~30 seconds is now skipped past within a few seconds. Also smooths out micro-stutters on the backup stream and quiets duplicate ad spoofing.
-
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
 ## 🛠️ Development
