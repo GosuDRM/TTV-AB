@@ -151,13 +151,9 @@ function _readConfiguredQualityGroup() {
 	return null;
 }
 
-function _syncPreferredQualityGroup(playerCore = null) {
+function _syncPreferredQualityGroup() {
 	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return false;
-	const nextQualityGroup =
-		(typeof playerCore?.state?.quality?.group === "string" &&
-		playerCore.state.quality.group.trim()
-			? playerCore.state.quality.group.trim()
-			: null) || _readConfiguredQualityGroup();
+	const nextQualityGroup = _readConfiguredQualityGroup();
 	if (!nextQualityGroup) return false;
 	if (__TTVAB_STATE__.PreferredQualityGroup === nextQualityGroup) {
 		return false;
@@ -3152,7 +3148,7 @@ function _monitorPlayerBuffering() {
 				const player = _cachedPlayerRef.player;
 				const state = _cachedPlayerRef.state;
 				const playerCore = _getPlayerCore(player);
-				_syncPreferredQualityGroup(playerCore);
+				_syncPreferredQualityGroup();
 				const playerContentType =
 					typeof state?.props?.content?.type === "string"
 						? state.props.content.type
@@ -3367,7 +3363,7 @@ function _monitorPlayerBuffering() {
 		if (!_cachedPlayerRef) {
 			const playerAndState = _getPlayerAndState();
 			if (playerAndState.player && playerAndState.state) {
-				_syncPreferredQualityGroup(_getPlayerCore(playerAndState.player));
+				_syncPreferredQualityGroup();
 				_cachedPlayerRef = playerAndState;
 				_cachedPlayerRefMediaKey = currentMediaKey;
 			}
