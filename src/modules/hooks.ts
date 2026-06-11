@@ -1725,6 +1725,13 @@ function _hookWorker() {
 							}
 							break;
 						case "PauseResumePlayer":
+							if (isStalePlaybackEvent(data)) {
+								_log(
+									`Ignoring stale PauseResumePlayer event for ${data.mediaKey || data.channel}`,
+									"info",
+								);
+								break;
+							}
 							_log("Resuming player", "info");
 							if (typeof _doPlayerTask === "function") {
 								_doPlayerTask(true, false);
