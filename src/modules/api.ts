@@ -318,7 +318,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 		`Token fetch failed after ${maxRetries + 1} attempts: ${lastError?.message}`,
 		"error",
 	);
-	return new Response(null, { status: 0 });
+	return Response.error();
 }
 
 async function _notifyAdComplete(
