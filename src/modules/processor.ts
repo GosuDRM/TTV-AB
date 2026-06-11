@@ -413,9 +413,15 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 		Math.max(0, Math.trunc(Number(info.CleanPlaylistCount) || 0)) + 1;
 
 	const elapsed = now - info.PendingAdEndAt;
-	const graceMs = _getResolvedAdEndGraceMs();
-	const minCleanPlaylists = _getResolvedAdEndMinCleanPlaylists();
-	const maxWaitMs = _getResolvedAdEndMaxWaitMs();
+	const escalation = Math.min(
+		4,
+		Math.max(0, Math.trunc(Number(info.AdEndConfirmEscalation) || 0)),
+	);
+	const graceMs = _getResolvedAdEndGraceMs() + escalation * 2500;
+	const minCleanPlaylists = _getResolvedAdEndMinCleanPlaylists() + escalation;
+	const baseMaxWaitMs = _getResolvedAdEndMaxWaitMs();
+	const maxWaitMs =
+		baseMaxWaitMs > 0 ? baseMaxWaitMs + escalation * 2500 : baseMaxWaitMs;
 
 	const fastPathReady =
 		info.CleanPlaylistCount >= minCleanPlaylists && elapsed >= graceMs;
@@ -965,6 +971,7 @@ function _createStreamInfo(context) {
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
 		AdEndMarkerBounceLogged: false,
+		AdEndConfirmEscalation: 0,
 		VisibleAdStartedAt: 0,
 		IsHoldingBackupAfterAd: false,
 		SilentBackupHoldStartedAt: 0,
@@ -1432,6 +1439,8 @@ async function _processM3U8Core(url, text, realFetch) {
 			info.CleanPlaylistCount = 0;
 			info.AdEndMarkerBounceLogged = false;
 			info.LastNativeRecoveryHoldLogAt = 0;
+			info.AdEndConfirmEscalation =
+				(Number(info.AdEndConfirmEscalation) || 0) + 1;
 			_resetNativeRecoveryReadyState(info, true);
 			_log("[Trace] Ad markers returned before ad-end stabilized", "info");
 		}
@@ -1528,9 +1537,12 @@ async function _processM3U8Core(url, text, realFetch) {
 			__TTVAB_STATE__.LastAdDetectedAt = now;
 			info.FailedBackupPlayerTypes?.clear?.();
 			if (!isContinuingAdCycle) {
+				info.AdEndConfirmEscalation = 0;
 				_incrementAdsBlocked(info.ChannelName, info.MediaKey);
 			}
 			if (isRecentAdEndReentry) {
+				info.AdEndConfirmEscalation =
+					(Number(info.AdEndConfirmEscalation) || 0) + 1;
 				_log("[Trace] Treating post-ad ad markers as continuation", "info");
 			}
 			if (typeof self !== "undefined" && self.postMessage) {
