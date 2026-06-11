@@ -1802,6 +1802,10 @@ function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
 
 	_pruneDisconnectedSuppressedMedia();
 
+	if (!(primaryMedia instanceof HTMLMediaElement)) {
+		return 0;
+	}
+
 	for (const media of document.querySelectorAll("video, audio")) {
 		if (!(media instanceof HTMLMediaElement)) continue;
 		if (!media.isConnected || media.ended) continue;
