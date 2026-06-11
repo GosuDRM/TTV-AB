@@ -413,6 +413,11 @@ function _isPlaybackHealthyAfterAd(player, playerCore = null, video = null) {
 }
 
 function _isNativeDocumentHidden() {
+	try {
+		if (document.pictureInPictureElement) {
+			return false;
+		}
+	} catch {}
 	const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
 	try {
 		if (typeof nativeVisibility?.hidden === "function") {
