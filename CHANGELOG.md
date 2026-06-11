@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.7.5] - 2026-06-11
+
+### Fixed
+- A client-side ad break whose markers lingered could trap the extension into serving a frozen backup snapshot for up to 90 seconds with the purple "commercial break" slate on top; the held backup now keeps refreshing live through the whole bounce window, and a failed refresh rotates to a fresh backup search instead of starving the buffer.
+- A playhead frozen at a buffer gap during an ad break is detected even when data sits buffered past the gap, and is seeked across within seconds instead of waiting out the break.
+- Twitch's separate client-side ad player element is muted as soon as it appears, not only at the moment a backup is first selected, so a late-attaching ad element no longer plays unsuppressed through the break.
+
 ## [9.7.4] - 2026-06-11
 
 ### Fixed
