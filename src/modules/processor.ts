@@ -2276,10 +2276,16 @@ async function _searchBackupStream(
 		!playerTypes.includes("autoplay")
 	) {
 		playerTypes.push("autoplay");
-		_log(
-			"[Trace] LQ autoplay appended as emergency last-resort after source backups",
-			"info",
-		);
+		if (!info._LoggedWhitelistByType) {
+			info._LoggedWhitelistByType = new Set();
+		}
+		if (!info._LoggedWhitelistByType.has("lq-emergency")) {
+			info._LoggedWhitelistByType.add("lq-emergency");
+			_log(
+				"[Trace] LQ autoplay appended as emergency last-resort after source backups",
+				"info",
+			);
+		}
 	}
 	const playerTypesLen = playerTypes.length;
 	const isDoingMinimalRequests =
