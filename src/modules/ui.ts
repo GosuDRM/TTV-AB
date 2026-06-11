@@ -150,28 +150,43 @@ function _showWelcome() {
 			toast.id = "ttvab-welcome";
 			toast.innerHTML = `
                 <style>
-                    #ttvab-welcome{position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:20px 24px;border-radius:16px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:999999;animation:ttvab-welcome .4s ease}
-                    @keyframes ttvab-welcome{from{opacity:0;transform:translateY(-20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
-                    #ttvab-welcome-close{position:absolute;top:10px;right:12px;background:none;border:none;color:rgba(255,255,255,.7);font-size:20px;cursor:pointer;padding:0;line-height:1}
+                    #ttvab-welcome{position:fixed;top:20px;right:20px;z-index:999999;width:340px;max-width:calc(100vw - 40px);padding:16px 18px 18px;border-radius:14px;border:1px solid transparent;background:linear-gradient(165deg,#170734 0%,#0d0220 55%,#130534 100%) padding-box,linear-gradient(120deg,#ff3db4 0%,#9146FF 45%,#2ff0e6 100%) border-box;color:#f1e9ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.5;box-shadow:0 14px 44px rgba(13,2,32,.65),0 0 26px rgba(145,70,255,.28);overflow:hidden;animation:ttvab-welcome-in .45s cubic-bezier(.21,1.02,.55,1)}
+                    @keyframes ttvab-welcome-in{from{opacity:0;transform:translateY(-14px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+                    @keyframes ttvab-welcome-out{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(-10px) scale(.97)}}
+                    #ttvab-welcome .brand{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-right:24px}
+                    #ttvab-welcome .mark{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#9146FF,#772CE8);display:grid;place-items:center;font-size:10px;font-weight:800;color:#fff;letter-spacing:.04em;box-shadow:0 0 12px rgba(145,70,255,.55)}
+                    #ttvab-welcome .name{font-size:12px;font-weight:800;letter-spacing:.14em;background:linear-gradient(90deg,#ff3db4,#2ff0e6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+                    #ttvab-welcome .pill{margin-left:auto;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#2ff0e6;border:1px solid rgba(47,240,230,.45);border-radius:999px;padding:2px 8px;background:rgba(47,240,230,.08)}
+                    #ttvab-welcome-close{position:absolute;top:10px;right:12px;background:none;border:none;color:#b7a6e6;font-size:18px;cursor:pointer;padding:2px;line-height:1;transition:color .15s ease}
                     #ttvab-welcome-close:hover{color:#fff}
-                    #ttvab-welcome h3{margin:0 0 8px;font-size:18px}
-                    #ttvab-welcome p{margin:0 0 12px;opacity:.9;line-height:1.4}
-                    #ttvab-welcome .pin-tip{background:rgba(255,255,255,.15);padding:10px 12px;border-radius:8px;font-size:13px}
-                    #ttvab-welcome .pin-tip strong{color:#fff}
+                    #ttvab-welcome .title{margin:0 0 4px;font-size:17px;font-weight:700;color:#fff}
+                    #ttvab-welcome .sub{margin:0 0 12px;color:#b7a6e6}
+                    #ttvab-welcome .pin-tip{display:flex;align-items:flex-start;gap:10px;background:rgba(46,18,84,.5);border:1px solid rgba(145,70,255,.35);border-radius:10px;padding:10px 12px;font-size:12.5px;color:#d9ccff}
+                    #ttvab-welcome .pin-tip .tip-icon{font-size:15px;line-height:1.3}
+                    #ttvab-welcome .pin-tip strong{display:block;color:#fff;margin-bottom:1px}
+                    #ttvab-welcome .progress{position:absolute;left:0;right:0;bottom:0;height:2px;transform-origin:left;background:linear-gradient(90deg,#ff3db4,#9146FF,#2ff0e6);animation:ttvab-welcome-bar 10s linear forwards}
+                    @keyframes ttvab-welcome-bar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+                    @media (prefers-reduced-motion:reduce){#ttvab-welcome{animation:none}#ttvab-welcome .progress{animation:none;transform:scaleX(1)}}
                 </style>
-                <button id="ttvab-welcome-close">×</button>
-                <h3>🎉 TTV AB Installed!</h3>
-                <p>Ads will now be blocked automatically on Twitch streams.</p>
-                <div class="pin-tip">
-                    <strong>💡 Tip:</strong> Pin this extension for easy access!<br>
-                    Click 🧩 → Find TTV AB → Click 📌
+                <button id="ttvab-welcome-close" aria-label="Dismiss">×</button>
+                <div class="brand">
+                    <div class="mark">AB</div>
+                    <div class="name">TTV&nbsp;AB</div>
+                    <div class="pill">Active</div>
                 </div>
+                <div class="title">You're all set</div>
+                <p class="sub">Ads on Twitch streams and VODs are now blocked automatically — nothing to configure.</p>
+                <div class="pin-tip">
+                    <span class="tip-icon">📌</span>
+                    <span><strong>Pin for quick access</strong>Click the 🧩 toolbar menu, find TTV&nbsp;AB, then hit the pin.</span>
+                </div>
+                <div class="progress"></div>
             `;
 
 			document.body.appendChild(toast);
 
 			const closeHandler = () => {
-				toast.style.animation = "ttvab-welcome .3s ease reverse";
+				toast.style.animation = "ttvab-welcome-out .3s ease forwards";
 				setTimeout(() => toast.remove(), 300);
 			};
 
