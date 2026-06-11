@@ -2486,7 +2486,12 @@ function _capturePlayerPreferenceSnapshot(
 			snapshot[key] = localStorage.getItem(key);
 		}
 
-		if (playerCore?.state?.quality?.group) {
+		const configuredQualityGroup = _readConfiguredQualityGroup();
+		if (
+			playerCore?.state?.quality?.group &&
+			configuredQualityGroup &&
+			configuredQualityGroup.toLowerCase() !== "auto"
+		) {
 			snapshot["video-quality"] = JSON.stringify({
 				default: playerCore.state.quality.group,
 			});
