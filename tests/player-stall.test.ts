@@ -1114,3 +1114,165 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(setSrcCalls).toEqual([]);
 	});
 });
+
+describe("_shouldSuppressAutomaticPlaybackResume (pip exemption)", () => {
+	const suppress = () =>
+		T<(channel?: string | null, mediaKey?: string | null) => boolean>(
+			"_shouldSuppressAutomaticPlaybackResume",
+		);
+	const mark = () =>
+		T<
+			(
+				kind: string,
+				channel: string | null,
+				mediaKey: string | null,
+				durationMs: number,
+				sourceWasPlaying: boolean,
+			) => boolean
+		>("_markSecondaryPlayerHandoff");
+	const clear = () => T<() => void>("_clearSecondaryPlayerHandoff");
+	let savedResolveMediaKey: unknown;
+
+	beforeEach(() => {
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "chan";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey = "live:chan";
+		savedResolveMediaKey = g._resolvePlayerMediaKey;
+		g._resolvePlayerMediaKey = (
+			channel: string | null,
+			mediaKey: string | null,
+		) => mediaKey || (channel ? `live:${channel}` : null);
+		clear()();
+	});
+
+	afterEach(() => {
+		clear()();
+		g._resolvePlayerMediaKey = savedResolveMediaKey;
+	});
+
+	it("does not suppress automatic playback work during a pip handoff", () => {
+		expect(mark()("pip", "chan", "live:chan", 60000, false)).toBe(true);
+		expect(suppress()("chan", "live:chan")).toBe(false);
+	});
+
+	it("still suppresses during a popout handoff", () => {
+		expect(mark()("popout", "chan", "live:chan", 60000, false)).toBe(true);
+		expect(suppress()("chan", "live:chan")).toBe(true);
+	});
+
+	it("does not suppress when no handoff is active", () => {
+		expect(suppress()("chan", "live:chan")).toBe(false);
+	});
+});
+
+describe("_capturePlayerPreferenceSnapshot (auto quality preservation)", () => {
+	const capture = () =>
+		T<
+			(
+				playerCore?: unknown,
+				media?: unknown,
+				context?: unknown,
+			) => Record<string, unknown> | null
+		>("_capturePlayerPreferenceSnapshot");
+
+	beforeEach(() => {
+		localStorage.removeItem("video-quality");
+	});
+
+	it("refreshes an explicit stored quality from the live group", () => {
+		localStorage.setItem(
+			"video-quality",
+			JSON.stringify({ default: "1080p60" }),
+		);
+		const snapshot = capture()({ state: { quality: { group: "720p60" } } });
+		expect(snapshot?.["video-quality"]).toBe(
+			JSON.stringify({ default: "720p60" }),
+		);
+	});
+
+	it("does not convert a stored auto preference into the live rung", () => {
+		localStorage.setItem("video-quality", JSON.stringify({ default: "auto" }));
+		const snapshot = capture()({ state: { quality: { group: "720p60" } } });
+		expect(snapshot?.["video-quality"]).toBe(
+			JSON.stringify({ default: "auto" }),
+		);
+	});
+
+	it("does not invent a stored preference when none exists", () => {
+		const snapshot = capture()({ state: { quality: { group: "720p60" } } });
+		expect(snapshot?.["video-quality"]).toBe(null);
+	});
+});
+
+describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
+	const recover = () =>
+		T<
+			(
+				player: unknown,
+				playerCore: unknown,
+				video: unknown,
+				channel: string,
+				mediaKey: string,
+				contentType: string,
+			) => boolean
+		>("_handlePendingPostAdRecovery");
+	let savedDoPlayerTask: unknown;
+	let savedSuppress: unknown;
+	let reloads: Array<Record<string, unknown>>;
+
+	beforeEach(() => {
+		savedDoPlayerTask = g._doPlayerTask;
+		savedSuppress = g._shouldSuppressAutomaticPlaybackResume;
+		reloads = [];
+		g._doPlayerTask = (
+			isPausePlay: boolean,
+			isReload: boolean,
+			options: Record<string, unknown>,
+		) => {
+			reloads.push({ isPausePlay, isReload, ...options });
+			return true;
+		};
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		const state = g._PlayerBufferState as Record<string, unknown>;
+		state.lastFixTime = 0;
+		state.postAdUnhealthyCount = 0;
+		state.postAdRecoveryStartedAt = 0;
+		state.postAdLastCurrentTime = 0;
+		state.postAdStallTicks = 0;
+		state.postAdSoftReloadAttempted = false;
+	});
+
+	afterEach(() => {
+		g._doPlayerTask = savedDoPlayerTask;
+		g._shouldSuppressAutomaticPlaybackResume = savedSuppress;
+	});
+
+	function makeNoFramePlayback() {
+		const video = {
+			paused: false,
+			ended: false,
+			currentTime: 0,
+			videoWidth: 0,
+		};
+		const player = {
+			getHTMLVideoElement: () => video,
+			isPaused: () => false,
+		};
+		return { player, video };
+	}
+
+	it("gives a fresh recovery cycle time to render before the no-frame rebuild", () => {
+		const { player, video } = makeNoFramePlayback();
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(500000);
+		recover()(player, null, video, "chan", "live:chan", "live");
+		expect(reloads).toHaveLength(0);
+
+		nowSpy.mockReturnValue(502000);
+		const handled = recover()(player, null, video, "chan", "live:chan", "live");
+		expect(handled).toBe(true);
+		expect(reloads).toHaveLength(1);
+		expect(reloads[0].isReload).toBe(true);
+		expect(reloads[0].newMediaPlayerInstance).toBe(true);
+	});
+});
