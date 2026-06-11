@@ -978,6 +978,7 @@ function _hookWorker() {
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
                 const _AD_METADATA_RE = ${_AD_METADATA_RE.toString()};
                 const _EMPTY_SEGMENT_URL = ${JSON.stringify(_EMPTY_SEGMENT_URL)};
+                const _RESERVED_ROUTE_SEGMENTS = new Set(${JSON.stringify(Array.from(_RESERVED_ROUTE_SEGMENTS))});
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}
                 ${_getWorkerBridgeMessage.toString()}
