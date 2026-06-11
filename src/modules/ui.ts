@@ -1,7 +1,10 @@
 // TTV AB - UI
 
 const _REMINDER_KEY = "ttvab_last_reminder";
-const _REMINDER_INTERVAL = 1209600000;
+const _REMINDER_NEXT_KEY = "ttvab_next_reminder";
+const _REMINDER_CADENCE_KEY = "ttvab_reminder_cadence";
+const _REMINDER_MIN_INTERVAL = 604800000;
+const _REMINDER_MAX_INTERVAL = 1209600000;
 const _FIRST_RUN_KEY = "ttvab_first_run_shown";
 const _UI_FLAGS_KEY = "__TTVAB_UI_FLAGS__";
 type UiFlags = {
@@ -55,25 +58,49 @@ function _getUiFlags(): UiFlags {
 	return flags;
 }
 
+function _getNextReminderDelayMs() {
+	if (_getUiStorageItem(_REMINDER_CADENCE_KEY) === "steady") {
+		return _REMINDER_MAX_INTERVAL;
+	}
+	return Math.round(
+		_REMINDER_MIN_INTERVAL +
+			Math.random() * (_REMINDER_MAX_INTERVAL - _REMINDER_MIN_INTERVAL),
+	);
+}
+
 function _showDonation() {
 	try {
 		const uiFlags = _getUiFlags();
 		if (uiFlags.donationScheduled) return;
-		const lastReminder = _getUiStorageItem(_REMINDER_KEY);
 		const now = Date.now();
 
-		if (!lastReminder) {
-			_setUiStorageItem(_REMINDER_KEY, now.toString());
+		const storedNextAt = Number.parseInt(
+			_getUiStorageItem(_REMINDER_NEXT_KEY) || "",
+			10,
+		);
+		let nextAt = Number.isFinite(storedNextAt) ? storedNextAt : null;
+
+		if (nextAt === null) {
+			const legacyLastReminder = Number.parseInt(
+				_getUiStorageItem(_REMINDER_KEY) || "",
+				10,
+			);
+			nextAt =
+				Number.isFinite(legacyLastReminder) && legacyLastReminder <= now
+					? legacyLastReminder + _getNextReminderDelayMs()
+					: now + _getNextReminderDelayMs();
+			_setUiStorageItem(_REMINDER_NEXT_KEY, String(nextAt));
+		}
+
+		if (nextAt > now + _REMINDER_MAX_INTERVAL) {
+			_setUiStorageItem(
+				_REMINDER_NEXT_KEY,
+				String(now + _getNextReminderDelayMs()),
+			);
 			return;
 		}
 
-		const lastReminderMs = Number.parseInt(lastReminder, 10);
-		if (!Number.isFinite(lastReminderMs) || lastReminderMs > now) {
-			_setUiStorageItem(_REMINDER_KEY, now.toString());
-			return;
-		}
-
-		if (now - lastReminderMs < _REMINDER_INTERVAL) return;
+		if (now < nextAt) return;
 
 		uiFlags.donationScheduled = true;
 		if (uiFlags.donationDelayTimer) clearTimeout(uiFlags.donationDelayTimer);
@@ -116,6 +143,10 @@ function _showDonation() {
 
 			document.body.appendChild(toast);
 			_setUiStorageItem(_REMINDER_KEY, now.toString());
+			_setUiStorageItem(
+				_REMINDER_NEXT_KEY,
+				String(Date.now() + _getNextReminderDelayMs()),
+			);
 
 			const reminderClose = toast.querySelector("#ttvab-reminder-close");
 			if (reminderClose) {
@@ -124,6 +155,11 @@ function _showDonation() {
 			const reminderButton = toast.querySelector("#ttvab-reminder-btn");
 			if (reminderButton) {
 				reminderButton.onclick = () => {
+					_setUiStorageItem(_REMINDER_CADENCE_KEY, "steady");
+					_setUiStorageItem(
+						_REMINDER_NEXT_KEY,
+						String(Date.now() + _REMINDER_MAX_INTERVAL),
+					);
 					window.open(
 						"https://ko-fi.com/gosudrm",
 						"_blank",
