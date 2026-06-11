@@ -440,6 +440,12 @@ function _setPagePlaybackContext(
 				normalizedContext.MediaKey,
 			);
 		}
+		if (typeof _clearSuppressedMediaTracking === "function") {
+			_clearSuppressedMediaTracking({ restoreConnected: true });
+		}
+		if (typeof _clearPlaybackRecoveryTimeouts === "function") {
+			_clearPlaybackRecoveryTimeouts();
+		}
 		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
