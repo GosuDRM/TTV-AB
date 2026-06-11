@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.8.1] - 2026-06-11
+
+### Fixed
+- An active picture-in-picture session now counts as a visible tab, so playback monitors run at full cadence, watchdog heartbeats stay enforced, and worker recovery is not deferred while watching in PiP.
+- In-ad protections (pinned-backup stall rotation, frozen-playhead recovery, competing-media muting) now also run while the tab is hidden, covering ad breaks in background tabs and Firefox PiP at the slower hidden polling rate.
+- Automatic post-ad and recovery reloads no longer close the picture-in-picture window; the reload downgrades to pause/play and the real reload runs once PiP exits, guarded against navigation, staleness, and active ad cycles. Manual reloads and worker-crash recovery still reload immediately.
+- A crashed worker with dead playback now recovers while the tab is hidden instead of deferring until focus; healthy background playback is still left uninterrupted.
+
 ## [9.8.0] - 2026-06-11
 
 ### Fixed
