@@ -1114,7 +1114,6 @@ function _hookWorker() {
                 __TTVAB_STATE__.LastAdEndedChannel = ${JSON.stringify(__TTVAB_STATE__.LastAdEndedChannel)};
                 __TTVAB_STATE__.LastAdEndedMediaKey = ${JSON.stringify(__TTVAB_STATE__.LastAdEndedMediaKey)};
                 __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerType)};
-                __TTVAB_STATE__.LastPinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.LastPinnedBackupPlayerType)};
                 __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerMediaKey)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
@@ -1196,7 +1195,6 @@ function _hookWorker() {
                             {
                                 const nextPinnedContext = _normalizePlaybackContext(data.value);
                                 __TTVAB_STATE__.PinnedBackupPlayerType = data.value?.type || null;
-                                if (data.value?.type) __TTVAB_STATE__.LastPinnedBackupPlayerType = data.value.type;
                                 __TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedContext.ChannelName;
                                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = nextPinnedContext.MediaKey;
                             }
@@ -1562,7 +1560,6 @@ function _hookWorker() {
 							}
 							if (nextPinnedType) {
 								__TTVAB_STATE__.PinnedBackupPlayerType = nextPinnedType;
-								__TTVAB_STATE__.LastPinnedBackupPlayerType = nextPinnedType;
 							}
 							__TTVAB_STATE__.PinnedBackupPlayerChannel =
 								nextPinnedContext.ChannelName;

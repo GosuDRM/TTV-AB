@@ -42,7 +42,6 @@ function _initToggleListener() {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
 		const enabled = safeDetail.enabled;
-		__TTVAB_STATE__.HasResolvedToggleState = true;
 		if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
 		__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
 		if (!enabled) {
