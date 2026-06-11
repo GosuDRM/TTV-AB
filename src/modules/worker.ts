@@ -62,7 +62,13 @@ function _reinsert(W, names) {
 
 function _isValid(v) {
 	if (typeof v !== "function") return false;
-	const src = v.toString();
+	let src = null;
+	try {
+		src = String(v.toString());
+	} catch {
+		_log("Worker wrapper rejected (source unavailable)", "debug");
+		return false;
+	}
 	if (
 		_S.toleratedWorkerWrappers.some((ext) =>
 			ext.signatures.every((sig) => src.includes(sig)),
