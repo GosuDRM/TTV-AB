@@ -58,7 +58,6 @@ const MINIFY_MAP = {
 	_getToken: "_$tk",
 	_processM3U8: "_$pm",
 	_findBackupStream: "_$fb",
-	_incrementPlaylistMediaSequence: "_$im",
 	_fetchWithTimeout: "_$ft",
 	_getWasmJs: "_$wj",
 	_hookWorkerFetch: "_$wf",
@@ -83,7 +82,6 @@ const MINIFY_MAP = {
 	_ATTR_REGEX: "_$ar",
 	_AD_METADATA_RE: "_$amr",
 	_REMINDER_KEY: "_$rk",
-	_REMINDER_INTERVAL: "_$ri2",
 	_FIRST_RUN_KEY: "_$fr",
 	_ACHIEVEMENT_INFO: "_$ai",
 	_GQL_URL: "_$gu",
@@ -1241,11 +1239,6 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
-			consumer: "_processM3U8",
-			helper: "_incrementPlaylistMediaSequence",
-			source: processorSource,
-		},
-		{
 			consumer: "_processM3U8Core",
 			helper: "_refreshActiveBackupMediaPlaylist",
 			source: processorSource,
@@ -1261,17 +1254,17 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
-			consumer: "_findBackupStream",
+			consumer: "_searchBackupStream",
 			helper: "_getFallbackPromotionPolicy",
 			source: processorSource,
 		},
 		{
-			consumer: "_findBackupStream",
+			consumer: "_searchBackupStream",
 			helper: "_shouldTryAutoplayFirst",
 			source: processorSource,
 		},
 		{
-			consumer: "_findBackupStream",
+			consumer: "_searchBackupStream",
 			helper: "_shouldHoldAutoplayBackupDuringAd",
 			source: processorSource,
 		},
@@ -1326,7 +1319,7 @@ function validateSharedDefinitions() {
 			source: apiSource,
 		},
 		{
-			consumer: "_findBackupStream",
+			consumer: "_searchBackupStream",
 			helper: "_fetchWithTimeout",
 			source: processorSource,
 		},
@@ -1531,8 +1524,9 @@ function build() {
 'use strict';
 `;
 
+		const bootstrapCall = MINIFY_MAP._init || "_init";
 		const FOOTER = `
-_$in();
+${bootstrapCall}();
 })();`;
 
 		let content = HEADER;

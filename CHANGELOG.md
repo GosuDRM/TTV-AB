@@ -2,6 +2,21 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.0] - 2026-06-12
+
+### Fixed
+- Channels whose login contains the ad signifier (for example "stitched") no longer have their master playlist swallowed by the ad-segment interception; playlist URLs are now excluded from the explicit ad-segment predicate while segment blocking is unchanged.
+- Disabling and re-enabling the extension with a Twitch tab open now reconnects that tab automatically: the content script announces itself once its state is ready and the page re-broadcasts its session token for a stale port, so counters and popup toggles no longer go silently dead until a reload.
+- Landing directly on a clip link no longer leaves the extension inert for the whole tab session; a lightweight route watcher initializes the extension as soon as the SPA leaves the clip page, reloading the player once if Twitch already mounted it.
+- Exhausted playback-token fetches now return a real network-error response instead of throwing from the Response constructor in real browsers, so callers log them as token failures instead of misattributed backup or probe errors.
+- Firefox: a failed fetch of Twitch's original worker source now fails loudly during bootstrap and routes into crash recovery, instead of leaving a zombie worker that answers heartbeats with no video pipeline inside.
+- Worker wrapper validation no longer throws on constructors whose source cannot be read (revoked proxies); they are rejected gracefully.
+- Removed a latent double-count trap in the CSAI fast path: its unreachable inner ad-cycle start carried an unguarded ads-blocked increment, and a source-level test now pins the counter to a single guarded call site.
+
+### Changed
+- Redesigned the first-run welcome and donation reminder toasts in the popup's retro synthwave style, with proper exit animations, reduced-motion support, and an auto-dismiss progress bar; the reminder now appears on a randomized 7-14 day cadence persisted across restarts.
+- Internal cleanup: removed the unreachable in-search fallback promotion, the vestigial -CACHED player-type handling, dead strip bookkeeping, and write-only state keys; seeded two previously undeclared tunables; the LQ emergency-append trace now logs once per ad break instead of every poll.
+
 ## [9.8.4] - 2026-06-11
 
 ### Fixed
