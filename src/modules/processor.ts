@@ -12,6 +12,16 @@ function _resetStreamAdState(info) {
 	info.IsUsingFallbackStream = false;
 	info.IsUsingBackupStream = false;
 	info.RequestedAds?.clear?.();
+	if (info.SpoofedAdIds?.size && info.RecentSpoofedAdIds?.set) {
+		for (const adId of info.SpoofedAdIds) {
+			info.RecentSpoofedAdIds.set(adId, Date.now());
+		}
+		while (info.RecentSpoofedAdIds.size > 50) {
+			const oldest = info.RecentSpoofedAdIds.keys().next().value;
+			if (oldest === undefined) break;
+			info.RecentSpoofedAdIds.delete(oldest);
+		}
+	}
 	info.SpoofedAdIds?.clear?.();
 	info.FailedBackupPlayerTypes?.clear?.();
 	info.ActiveBackupPlayerType = null;
@@ -981,6 +991,7 @@ function _createStreamInfo(context) {
 		UsherParams: "",
 		RequestedAds: new Set(),
 		SpoofedAdIds: new Set(),
+		RecentSpoofedAdIds: new Map(),
 		FailedBackupPlayerTypes: new Map(),
 		Urls: Object.create(null),
 		ResolutionList: [],

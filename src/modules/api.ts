@@ -323,7 +323,11 @@ async function _getToken(playbackContext, playerType, realFetch) {
 
 async function _notifyAdComplete(
 	textStr: string,
-	info?: { SpoofedAdIds?: Set<string>; ActiveBackupPlayerType?: string | null },
+	info?: {
+		SpoofedAdIds?: Set<string>;
+		RecentSpoofedAdIds?: Map<string, number>;
+		ActiveBackupPlayerType?: string | null;
+	},
 ): Promise<void> {
 	try {
 		if (__TTVAB_STATE__.DisableAdSpoofing) return;
@@ -345,6 +349,7 @@ async function _notifyAdComplete(
 		}
 
 		const spoofedSet = info?.SpoofedAdIds || null;
+		const recentSpoofedSet = info?.RecentSpoofedAdIds || null;
 		const podLenMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
 		const hasExplicitPodLength = Boolean(podLenMatch);
 		const podLength = hasExplicitPodLength
@@ -363,6 +368,10 @@ async function _notifyAdComplete(
 			}
 			const idMatch = matches[i][1].match(/^ID="([^"]+)"/);
 			const stitchedAdId = idMatch ? idMatch[1] : "";
+			if (stitchedAdId && recentSpoofedSet?.has?.(stitchedAdId)) {
+				spoofedSet?.add?.(stitchedAdId);
+				continue;
+			}
 			if (spoofedSet && stitchedAdId && spoofedSet.has(stitchedAdId)) {
 				continue;
 			}
