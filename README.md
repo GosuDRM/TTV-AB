@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.8.0-purple)
+![Version](https://img.shields.io/badge/version-9.8.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -63,6 +63,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean backup stream within a couple of seconds so video starts playing right away. The backup targets the quality your connection has been sustaining — even if the player had just restarted on a low rung when the ad hit — with a 360p floor so a channel-open preroll (the player is still ramping up from its lowest quality at that point) never starts blurrier than 360p. Your full native quality and audio are restored automatically and seamlessly once the ad window ends. The optional **Low Quality Fallback** toggle trades some quality for an even faster first frame, starting on a quick low-resolution stream and climbing back up as the break ends.
 
 ## 🔔 What's New
+
+### v9.8.1 — 2026-06-11
+- **Picture-in-picture and background tabs are first-class now.** Watching in PiP counts as actively watching, so playback monitors run at full speed; ad-break stall and freeze recovery keeps working in background tabs and PiP; a post-ad reload no longer closes your PiP window (it waits until you exit PiP); and a dead stream in a hidden tab recovers on its own instead of waiting for focus.
 
 ### v9.8.0 — 2026-06-11
 - **Smoother channel switching and first-class VOD ad handling.** Switching channels mid-ad-break no longer leaves muted players behind, backup searches share one in-flight run instead of racing each other, VODs return to the right playhead position after a post-ad reload, and VOD ad breaks now get the same stall, freeze, and mute protections as live streams.
