@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.7.6] - 2026-06-11
+
+### Fixed
+- The quality-group sync no longer treats the live adaptive rung as the user's preference, so an auto-quality player that restarted on its lowest rung moments before an ad break no longer pins the backup to 360p; the sustained-quality tracker drives backup quality unless an explicit player quality is set, and switching back to auto clears a stale explicit choice.
+- An ad pod that outlasts the silent backup hold no longer counts a second "ad blocked" on re-entry; the hold exit is recorded as an ad-end moment so the immediate re-detection is treated as a continuation of the same break.
+
 ## [9.7.5] - 2026-06-11
 
 ### Fixed
