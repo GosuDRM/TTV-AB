@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -53,5 +61,42 @@ describe("_hookSpaNavigation", () => {
 			{ broadcast: true },
 			{ broadcast: true },
 		]);
+	});
+});
+
+describe("deferred init after landing on a clip page", () => {
+	let savedInit: unknown;
+	let savedLog: unknown;
+
+	beforeEach(() => {
+		savedInit = g._init;
+		savedLog = g._log;
+		g._log = () => {};
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		g._init = savedInit;
+		g._log = savedLog;
+		history.replaceState(null, "", "/");
+	});
+
+	it("initializes once the SPA leaves the clip route, exactly once", () => {
+		const initCalls: number[] = [];
+		g._init = () => initCalls.push(1);
+		history.replaceState(null, "", "/somechannel/clip/FunnyMoment");
+		expect(T<() => boolean>("_isClipEditorContext")()).toBe(true);
+
+		T<() => void>("_deferInitUntilClipContextLeft")();
+		vi.advanceTimersByTime(3000);
+		expect(initCalls).toHaveLength(0);
+
+		history.replaceState(null, "", "/somechannel");
+		vi.advanceTimersByTime(300);
+		expect(initCalls).toHaveLength(1);
+
+		vi.advanceTimersByTime(5000);
+		expect(initCalls).toHaveLength(1);
 	});
 });

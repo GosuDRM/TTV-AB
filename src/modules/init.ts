@@ -7,9 +7,42 @@ function _isClipEditorContext() {
 	return /^\/[^/]+\/clip\/[^/]+/.test(path);
 }
 
+function _deferInitUntilClipContextLeft() {
+	const host = String(window.location?.hostname || "").toLowerCase();
+	if (host === "clips.twitch.tv") return;
+	const intervalId = setInterval(() => {
+		if (_isClipEditorContext()) return;
+		clearInterval(intervalId);
+		_log("Left clip context; initializing", "info");
+		_init();
+		setTimeout(() => {
+			try {
+				if (
+					typeof _getPlayerAndState !== "function" ||
+					typeof _doPlayerTask !== "function"
+				) {
+					return;
+				}
+				const { player } = _getPlayerAndState();
+				if (!player) return;
+				_log(
+					"Reloading player to attach worker hooks after deferred init",
+					"info",
+				);
+				_doPlayerTask(false, true, {
+					reason: "worker-recovery",
+					refreshAccessToken: true,
+					newMediaPlayerInstance: true,
+				});
+			} catch {}
+		}, 500);
+	}, 250);
+}
+
 function _bootstrap() {
 	if (_isClipEditorContext()) {
 		_log("Skipping - clip editor page", "warning");
+		_deferInitUntilClipContextLeft();
 		return false;
 	}
 
