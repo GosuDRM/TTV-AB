@@ -203,6 +203,7 @@ function _playbackContextsMatch(
 const BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const BRIDGE_TOKEN_REQUEST_MESSAGE = "ttvab-bridge-token-request";
+const BRIDGE_ANNOUNCE_MESSAGE = "ttvab-bridge-announce";
 const BRIDGE_HANDSHAKE_RETRY_MS = 75;
 const FLUSH_DELAY_MS = 200;
 const MAX_FLUSH_RETRY_DELAY_MS = 2000;
@@ -859,6 +860,13 @@ chrome.storage.local.get(
 		broadcastState();
 
 		startBridgeHandshake();
+
+		try {
+			window.postMessage(
+				{ type: BRIDGE_ANNOUNCE_MESSAGE },
+				window.location.origin,
+			);
+		} catch {}
 
 		chrome.storage.onChanged.addListener((changes, namespace) => {
 			if (namespace !== "local") return;

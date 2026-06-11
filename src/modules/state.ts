@@ -15,6 +15,7 @@ const _S = {
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const _BRIDGE_TOKEN_REQUEST_MESSAGE = "ttvab-bridge-token-request";
+const _BRIDGE_ANNOUNCE_MESSAGE = "ttvab-bridge-announce";
 const _internalMessageTarget = new EventTarget();
 const _pendingBridgeMessages: PlainObject[] = [];
 const _MAX_PENDING_BRIDGE_MESSAGES = 64;
@@ -24,6 +25,7 @@ let _bridgePortHandshakeBound = false;
 let _bridgeSessionToken: string | null = null;
 let _bridgeTokenRequestTimer: ReturnType<typeof setTimeout> | null = null;
 let _bridgeTokenRequestCount = 0;
+let _bridgePortAttachedAt = 0;
 
 function _createBridgeSessionToken() {
 	const values = new Uint8Array(24);
@@ -274,6 +276,7 @@ function _attachBridgePort(port, sessionToken = null) {
 	}
 	_bridgePort = port;
 	_bridgeSessionToken = sessionToken;
+	_bridgePortAttachedAt = Date.now();
 	_bridgePort.addEventListener("message", _bridgePortMessageHandler);
 	_bridgePort.start?.();
 	_clearBridgeTokenRequestTimer();
@@ -307,7 +310,30 @@ function _bindBridgePortHandshake() {
 			token: sessionToken,
 		});
 	};
+	const handleBridgeAnnounce = (event) => {
+		if (event.source !== window) return;
+		const message = _getStructuredMessageData(event.data);
+		if (message?.type !== _BRIDGE_ANNOUNCE_MESSAGE) return;
+		if (!_bridgePort) return;
+		if (Date.now() - _bridgePortAttachedAt < 2000) return;
+		const token = _getBridgeSessionToken();
+		for (const delay of [0, 500, 1000]) {
+			setTimeout(() => {
+				if (Date.now() - _bridgePortAttachedAt < 2000) return;
+				try {
+					window.postMessage(
+						{
+							type: _BRIDGE_TOKEN_REQUEST_MESSAGE,
+							detail: { token },
+						},
+						window.location.origin,
+					);
+				} catch {}
+			}, delay);
+		}
+	};
 	window.addEventListener("message", handleBridgePortInit, true);
+	window.addEventListener("message", handleBridgeAnnounce, true);
 	_postBridgeTokenRequest();
 }
 
