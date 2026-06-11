@@ -1175,18 +1175,6 @@ function _hookWorker() {
                                 __TTVAB_STATE__.LastAdEndedMediaKey = lastEndContext.MediaKey;
                             }
                             break;
-                        case 'UpdateCurrentAdChannel':
-                            __TTVAB_STATE__.CurrentAdChannel = data.value || null;
-                            __TTVAB_STATE__.CurrentAdMediaKey =
-                                _buildMediaKey('live', data.value || null, null);
-                            break;
-                        case 'UpdatePinnedBackupPlayerType':
-                            __TTVAB_STATE__.PinnedBackupPlayerType = data.value || null;
-                            if (data.value) __TTVAB_STATE__.LastPinnedBackupPlayerType = data.value;
-                            __TTVAB_STATE__.PinnedBackupPlayerChannel = data.channel || null;
-                            __TTVAB_STATE__.PinnedBackupPlayerMediaKey =
-                                _buildMediaKey('live', data.channel || null, null);
-                            break;
                         case 'UpdatePinnedBackupPlayerContext':
                             {
                                 const nextPinnedContext = _normalizePlaybackContext(data.value);
