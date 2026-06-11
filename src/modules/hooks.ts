@@ -1048,6 +1048,7 @@ function _hookWorker() {
                 ${_resolveAdBackupTargetResolution.toString()}
                 ${_recordSustainedNativeResolution.toString()}
                 ${_isAdEndStable.toString()}
+                ${_serveBounceDebouncedPlaylist.toString()}
                 ${_resetNativeRecoveryReadyState.toString()}
                 ${_markNativeRecoveryProbeFailed.toString()}
                 ${_markNativeRecoveryReady.toString()}
