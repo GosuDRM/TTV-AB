@@ -553,6 +553,34 @@ function _markNativeRecoveryReady(info, playerType) {
 	return nextCount;
 }
 
+async function _serveBounceDebouncedPlaylist(info, realFetch, text, now) {
+	const lastAdEndBounceAt = Math.max(0, Number(info?.LastAdEndBounceAt) || 0);
+	const bounceDebounceMs = Math.max(
+		3000,
+		Number(__TTVAB_STATE__?.AdEndBounceDebounceMs) || 0,
+	);
+	if (lastAdEndBounceAt <= 0 || now - lastAdEndBounceAt >= bounceDebounceMs) {
+		return null;
+	}
+	if ((Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0) > 0) {
+		return null;
+	}
+	if (!info.LastCleanBackupM3U8) {
+		return _stripAds(text, false, info, true);
+	}
+	const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
+	if (backupAgeMs < 900) {
+		info.IsUsingBackupStream = true;
+		return info.LastCleanBackupM3U8;
+	}
+	const refreshed = await _refreshActiveBackupMediaPlaylist(info, realFetch);
+	if (refreshed) {
+		info.IsUsingBackupStream = true;
+		return refreshed;
+	}
+	return null;
+}
+
 function _shouldReloadNativePlayerAfterAdReset({
 	wasUsingModifiedM3U8,
 	wasUsingFallbackStream,
@@ -1460,22 +1488,14 @@ async function _processM3U8Core(url, text, realFetch) {
 			}
 
 			const now = Date.now();
-			const lastAdEndBounceAt = Math.max(
-				0,
-				Number(info.LastAdEndBounceAt) || 0,
+			const debounced = await _serveBounceDebouncedPlaylist(
+				info,
+				realFetch,
+				text,
+				now,
 			);
-			const bounceDebounceMs = Math.max(
-				3000,
-				Number(__TTVAB_STATE__?.AdEndBounceDebounceMs) || 0,
-			);
-			if (lastAdEndBounceAt > 0 && now - lastAdEndBounceAt < bounceDebounceMs) {
-				info.LastAdEndBounceAt = now;
-				const bounceBackupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
-				if (info.LastCleanBackupM3U8 && bounceBackupAgeMs <= 8000) {
-					info.IsUsingBackupStream = true;
-					return info.LastCleanBackupM3U8;
-				}
-				return _stripAds(text, false, info, true);
+			if (debounced !== null) {
+				return debounced;
 			}
 
 			info.LastAdEndBounceAt = now;
