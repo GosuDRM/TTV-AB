@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -142,5 +142,76 @@ describe("_restoreSuppressedMediaAfterAd", () => {
 		expect(a.muted).toBe(false);
 		expect(b.muted).toBe(false);
 		expect(suppressionState().suppressedMedia.size).toBe(0);
+	});
+});
+
+describe("_suppressCompetingMediaDuringAd (periodic resweep)", () => {
+	const sweep = () =>
+		T<(channel?: string | null, mediaKey?: string | null) => number>(
+			"_suppressCompetingMediaDuringAd",
+		);
+
+	const realGetPrimary = g._getPrimaryMediaElement;
+	let primary: HTMLVideoElement;
+
+	function makeMedia(playing: boolean) {
+		const el = document.createElement("video");
+		let isPlaying = playing;
+		Object.defineProperty(el, "paused", {
+			get: () => !isPlaying,
+			configurable: true,
+		});
+		Object.defineProperty(el, "ended", {
+			get: () => false,
+			configurable: true,
+		});
+		document.body.appendChild(el);
+		return {
+			el: el as HTMLVideoElement,
+			setPlaying: (v: boolean) => {
+				isPlaying = v;
+			},
+		};
+	}
+
+	beforeEach(() => {
+		primary = makeMedia(true).el;
+		g._getPrimaryMediaElement = () => primary;
+	});
+
+	afterEach(() => {
+		g._getPrimaryMediaElement = realGetPrimary;
+	});
+
+	it("catches a competing element that attaches after the first sweep", () => {
+		expect(sweep()("testchannel", "live:testchannel")).toBe(0);
+
+		const late = makeMedia(true);
+		expect(sweep()("testchannel", "live:testchannel")).toBe(1);
+		expect(late.el.muted).toBe(true);
+		expect(late.el.volume).toBe(0);
+		expect(late.el.hasAttribute("data-ttvab-audio-suppressed")).toBe(true);
+		expect(primary.muted).toBe(false);
+	});
+
+	it("catches a parked element once it starts playing", () => {
+		const parked = makeMedia(false);
+		parked.el.muted = true;
+		parked.el.volume = 0;
+		expect(sweep()("testchannel", "live:testchannel")).toBe(0);
+
+		parked.el.muted = false;
+		parked.el.volume = 0.8;
+		parked.setPlaying(true);
+		expect(sweep()("testchannel", "live:testchannel")).toBe(1);
+		expect(parked.el.muted).toBe(true);
+	});
+
+	it("does not double-count an element that stays suppressed across sweeps", () => {
+		const competing = makeMedia(true);
+		expect(sweep()("testchannel", "live:testchannel")).toBe(1);
+		expect(sweep()("testchannel", "live:testchannel")).toBe(0);
+		expect(competing.el.muted).toBe(true);
+		expect(suppressionState().suppressedMedia.size).toBe(1);
 	});
 });

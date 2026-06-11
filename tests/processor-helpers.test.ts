@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -2094,7 +2102,10 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			tokenCalls.count += 1;
 			return tokenImpl();
 		};
-		g._extractPlaybackAccessToken = () => ({ signature: "sig", value: "token" });
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
 		g._buildUsherPlaybackUrl = () =>
 			new URL("https://usher.example/channel/hls/testchannel.m3u8");
 		g._getStreamUrl = () => "https://edge.example/live/index.m3u8";
@@ -2222,5 +2233,107 @@ describe("_resetStreamAdState (spoofed ad id migration)", () => {
 		for (const id of ["n1", "n2", "n3", "n4", "n5"]) {
 			expect(recent.has(id)).toBe(true);
 		}
+	});
+});
+
+describe("_serveBounceDebouncedPlaylist (bounce window serving)", () => {
+	const fn = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: unknown,
+				text: string,
+				now: number,
+			) => Promise<string | null>
+		>("_serveBounceDebouncedPlaylist");
+
+	const realRefresh = g._refreshActiveBackupMediaPlaylist;
+	const realStrip = g._stripAds;
+	let refreshCalls = 0;
+	let refreshResult: string | null = null;
+
+	beforeEach(() => {
+		refreshCalls = 0;
+		refreshResult = null;
+		g._refreshActiveBackupMediaPlaylist = async () => {
+			refreshCalls++;
+			return refreshResult;
+		};
+		g._stripAds = () => "STRIPPED";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt =
+			0;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).AdEndBounceDebounceMs = 0;
+	});
+
+	afterEach(() => {
+		g._refreshActiveBackupMediaPlaylist = realRefresh;
+		g._stripAds = realStrip;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt =
+			0;
+	});
+
+	function bounceInfo(overrides: Record<string, unknown> = {}) {
+		return makeInfo({
+			LastAdEndBounceAt: 100000,
+			LastCleanBackupM3U8: "#SNAPSHOT",
+			LastCleanBackupAt: 100000,
+			...overrides,
+		});
+	}
+
+	it("returns null outside the debounce window", async () => {
+		const info = bounceInfo();
+		expect(await fn()(info, null, "#NATIVE", 103000)).toBe(null);
+		expect(refreshCalls).toBe(0);
+	});
+
+	it("returns null when no bounce has been recorded", async () => {
+		const info = bounceInfo({ LastAdEndBounceAt: 0 });
+		expect(await fn()(info, null, "#NATIVE", 100500)).toBe(null);
+	});
+
+	it("returns null when a stall force-refresh is pending so the search path can consume it", async () => {
+		(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt =
+			99000;
+		const info = bounceInfo();
+		expect(await fn()(info, null, "#NATIVE", 101000)).toBe(null);
+		expect(refreshCalls).toBe(0);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt,
+		).toBe(99000);
+	});
+
+	it("serves the cached backup without refetching while it is fresh", async () => {
+		const info = bounceInfo({ LastCleanBackupAt: 100400 });
+		expect(await fn()(info, null, "#NATIVE", 101000)).toBe("#SNAPSHOT");
+		expect(info.IsUsingBackupStream).toBe(true);
+		expect(refreshCalls).toBe(0);
+	});
+
+	it("refreshes a stale backup instead of serving the snapshot", async () => {
+		refreshResult = "#REFRESHED";
+		const info = bounceInfo({ LastCleanBackupAt: 99000 });
+		expect(await fn()(info, null, "#NATIVE", 101000)).toBe("#REFRESHED");
+		expect(info.IsUsingBackupStream).toBe(true);
+		expect(refreshCalls).toBe(1);
+	});
+
+	it("returns null when the stale backup fails to refresh so a new search can run", async () => {
+		refreshResult = null;
+		const info = bounceInfo({ LastCleanBackupAt: 99000 });
+		expect(await fn()(info, null, "#NATIVE", 101000)).toBe(null);
+		expect(refreshCalls).toBe(1);
+	});
+
+	it("strips the native playlist only when no clean backup exists", async () => {
+		const info = bounceInfo({ LastCleanBackupM3U8: null });
+		expect(await fn()(info, null, "#NATIVE", 101000)).toBe("STRIPPED");
+	});
+
+	it("never slides the bounce window forward", async () => {
+		const info = bounceInfo({ LastCleanBackupAt: 100900 });
+		await fn()(info, null, "#NATIVE", 101000);
+		await fn()(info, null, "#NATIVE", 102500);
+		expect(info.LastAdEndBounceAt).toBe(100000);
 	});
 });

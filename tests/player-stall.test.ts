@@ -455,3 +455,206 @@ describe("_trySeekPastFrozenBufferGap", () => {
 		expect(seeks).toEqual([]);
 	});
 });
+
+function makeRangesVideo(ranges: Array<[number, number]>, currentTime: number) {
+	const seeks: number[] = [];
+	const video = document.createElement("video");
+	let ct = currentTime;
+	Object.defineProperty(video, "buffered", {
+		get: () => ({
+			length: ranges.length,
+			start: (i: number) => ranges[i][0],
+			end: (i: number) => ranges[i][1],
+		}),
+		configurable: true,
+	});
+	Object.defineProperty(video, "currentTime", {
+		get: () => ct,
+		set: (v: number) => {
+			ct = v;
+			seeks.push(v);
+		},
+		configurable: true,
+	});
+	Object.defineProperty(video, "readyState", {
+		get: () => 2,
+		configurable: true,
+	});
+	Object.defineProperty(video, "ended", {
+		get: () => false,
+		configurable: true,
+	});
+	Object.defineProperty(video, "paused", {
+		get: () => false,
+		configurable: true,
+	});
+	return { video: video as HTMLVideoElement, seeks };
+}
+
+describe("_getContiguousBufferedEnd", () => {
+	const fn = () =>
+		T<(video: HTMLVideoElement, currentTime: number) => number>(
+			"_getContiguousBufferedEnd",
+		);
+
+	it("returns the end of the range containing the playhead, not the last range", () => {
+		const { video } = makeRangesVideo(
+			[
+				[1400, 1463.966],
+				[1464.4, 1466.01],
+			],
+			1463.93,
+		);
+		expect(fn()(video, 1463.93)).toBeCloseTo(1463.966, 3);
+	});
+
+	it("returns zero when the playhead sits inside a buffered hole", () => {
+		const { video } = makeRangesVideo(
+			[
+				[1400, 1463.966],
+				[1464.4, 1466.01],
+			],
+			1464.1,
+		);
+		expect(fn()(video, 1464.1)).toBe(0);
+	});
+
+	it("returns the single range end for contiguous buffers", () => {
+		const { video } = makeRangesVideo([[0, 50]], 34);
+		expect(fn()(video, 34)).toBe(50);
+	});
+});
+
+describe("_seekPastBufferedGap", () => {
+	const fn = () =>
+		T<(video: HTMLVideoElement, currentTime: number) => number>(
+			"_seekPastBufferedGap",
+		);
+
+	it("seeks just past the next buffered range start and returns the distance", () => {
+		const { video, seeks } = makeRangesVideo(
+			[
+				[1400, 1463.966],
+				[1464.4, 1466.01],
+			],
+			1463.93,
+		);
+		const jumped = fn()(video, 1463.93);
+		expect(jumped).toBeCloseTo(0.47, 2);
+		expect(seeks).toHaveLength(1);
+		expect(seeks[0]).toBeCloseTo(1464.45, 2);
+	});
+
+	it("does nothing with a single contiguous range", () => {
+		const { video, seeks } = makeRangesVideo([[0, 50]], 34);
+		expect(fn()(video, 34)).toBe(0);
+		expect(seeks).toEqual([]);
+	});
+
+	it("does nothing when no range starts past the playhead", () => {
+		const { video, seeks } = makeRangesVideo(
+			[
+				[0, 20],
+				[22, 50],
+			],
+			49.9,
+		);
+		expect(fn()(video, 49.9)).toBe(0);
+		expect(seeks).toEqual([]);
+	});
+});
+
+describe("_checkInAdPlayheadFreeze", () => {
+	const check = () =>
+		T<(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void>(
+			"_checkInAdPlayheadFreeze",
+		);
+
+	const realDoPlayerTask = g._doPlayerTask;
+	let playerTaskCalls: Array<[unknown, unknown]> = [];
+
+	beforeEach(() => {
+		playerTaskCalls = [];
+		g._doPlayerTask = (a: unknown, b: unknown) => {
+			playerTaskCalls.push([a, b]);
+			return true;
+		};
+		(g._resetInAdFreezeState as () => void)();
+	});
+
+	afterEach(() => {
+		g._doPlayerTask = realDoPlayerTask;
+		(g._resetInAdFreezeState as () => void)();
+	});
+
+	it("detects a freeze at a buffered gap despite headroom past the gap and seeks across it", () => {
+		const { video, seeks } = makeRangesVideo(
+			[
+				[1400, 1463.966],
+				[1464.4, 1466.01],
+			],
+			1463.93,
+		);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(100000);
+		check()(player);
+		nowSpy.mockReturnValue(103000);
+		check()(player);
+		expect(seeks).toEqual([]);
+
+		nowSpy.mockReturnValue(105500);
+		check()(player);
+		expect(seeks).toHaveLength(1);
+		expect(seeks[0]).toBeCloseTo(1464.45, 2);
+		expect(playerTaskCalls).toEqual([]);
+	});
+
+	it("nudges then reloads when frozen with no gap to seek past", () => {
+		const { video, seeks } = makeRangesVideo([[1400, 1463.966]], 1463.93);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(100000);
+		check()(player);
+		nowSpy.mockReturnValue(105500);
+		check()(player);
+		expect(playerTaskCalls).toEqual([[true, false]]);
+
+		nowSpy.mockReturnValue(111000);
+		check()(player);
+		expect(playerTaskCalls).toEqual([
+			[true, false],
+			[true, false],
+		]);
+
+		nowSpy.mockReturnValue(116500);
+		check()(player);
+		expect(playerTaskCalls).toEqual([
+			[true, false],
+			[true, false],
+			[false, true],
+		]);
+		expect(seeks).toEqual([]);
+	});
+
+	it("stays idle while the contiguous range still has safe headroom", () => {
+		const { video, seeks } = makeRangesVideo(
+			[
+				[1400, 1463.966],
+				[1464.4, 1466.01],
+			],
+			1450,
+		);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+
+		for (const t of [100000, 103000, 106000, 109000]) {
+			nowSpy.mockReturnValue(t);
+			check()(player);
+		}
+		expect(seeks).toEqual([]);
+		expect(playerTaskCalls).toEqual([]);
+	});
+});
