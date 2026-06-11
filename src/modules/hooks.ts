@@ -990,6 +990,9 @@ function _hookWorker() {
             (function() {
                 ${_getWasmJs.toString()}
                 const wasmSource = _getWasmJs(${JSON.stringify(workerSourceUrl)});
+                if (!wasmSource) {
+                    throw new Error("TTV AB: original worker source fetch returned empty");
+                }
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify({ ..._S, workers: [] })};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
