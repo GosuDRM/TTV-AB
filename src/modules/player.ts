@@ -2751,9 +2751,20 @@ function _doPlayerTask(
 			);
 		}
 		_clearCachedPlayerRef(true, __TTVAB_STATE__.PlayerReloadDebounceMs || 0);
+		const reloadContentType =
+			typeof playerState?.props?.content?.type === "string"
+				? playerState.props.content.type
+				: null;
+		const reloadVideo = player?.getHTMLVideoElement?.() || null;
+		const vodResumePosition =
+			reloadContentType === "vod" &&
+			Number.isFinite(Number(reloadVideo?.currentTime)) &&
+			Number(reloadVideo.currentTime) > 1
+				? Number(reloadVideo.currentTime)
+				: null;
 		const preferenceSnapshot = _capturePlayerPreferenceSnapshot(
 			playerCore,
-			player?.getHTMLVideoElement?.() || null,
+			reloadVideo,
 			{
 				channel: __TTVAB_STATE__.PageChannel,
 				mediaKey: __TTVAB_STATE__.PageMediaKey,
@@ -2788,6 +2799,34 @@ function _doPlayerTask(
 			__TTVAB_STATE__.PageMediaKey,
 			[180, 500, 1100],
 		);
+
+		if (vodResumePosition !== null) {
+			for (const restoreDelay of [1200, 3000]) {
+				_schedulePlaybackRecoveryTimeout(
+					() => {
+						try {
+							const { player: vodPlayer } = _getPlayerAndState();
+							const vodVideo = vodPlayer?.getHTMLVideoElement?.() || null;
+							if (!vodVideo || vodVideo.ended) return;
+							const currentPos = Number(vodVideo.currentTime) || 0;
+							if (Math.abs(currentPos - vodResumePosition) <= 2) return;
+							if (typeof vodPlayer?.seekTo === "function") {
+								vodPlayer.seekTo(vodResumePosition);
+							} else {
+								vodVideo.currentTime = vodResumePosition;
+							}
+							_log(
+								`Restored VOD position to ${Math.round(vodResumePosition)}s after reload`,
+								"info",
+							);
+						} catch {}
+					},
+					restoreDelay,
+					__TTVAB_STATE__.PageChannel,
+					__TTVAB_STATE__.PageMediaKey,
+				);
+			}
+		}
 
 		if (isPlaybackRecoveryReload) {
 			_schedulePlaybackRecoveryTimeout(
