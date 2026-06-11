@@ -1335,7 +1335,7 @@ async function _processM3U8Core(url, text, realFetch) {
 					}
 				}
 				const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
-				if (stalledDuringHold || backupAgeMs >= 2000) {
+				if (stalledDuringHold || backupAgeMs >= 900) {
 					const refreshed = stalledDuringHold
 						? null
 						: await _refreshActiveBackupMediaPlaylist(info, realFetch);
@@ -1736,7 +1736,7 @@ async function _processM3U8Core(url, text, realFetch) {
 				);
 			} else if (info.LastCleanBackupM3U8) {
 				const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
-				if (backupAgeMs >= 2000) {
+				if (backupAgeMs >= 900) {
 					const refreshed = await _refreshActiveBackupMediaPlaylist(
 						info,
 						realFetch,
@@ -1777,7 +1777,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			} else {
 				const reentryBackupAgeMs =
 					Date.now() - (Number(info.LastCleanBackupAt) || 0);
-				if (reentryBackupAgeMs < 2000) {
+				if (reentryBackupAgeMs < 900) {
 					info.IsUsingBackupStream = true;
 					return info.LastCleanBackupM3U8;
 				}
@@ -1908,7 +1908,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
 			const backupIsFromCurrentCycle =
 				Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
-			if (info.LastCleanBackupM3U8 && backupAgeMs >= 2000) {
+			if (info.LastCleanBackupM3U8 && backupAgeMs >= 900) {
 				const refreshed = await _refreshActiveBackupMediaPlaylist(
 					info,
 					realFetch,
