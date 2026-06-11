@@ -1687,25 +1687,6 @@ async function _processM3U8Core(url, text, realFetch) {
 			}
 			if (!hasNonLiveSegment) {
 				info.CsaiOnlyThisBreak = true;
-				if (!info.IsShowingAd) {
-					info.IsShowingAd = true;
-					info.VisibleAdStartedAt = Date.now();
-					info.ConsecutiveFailedNativeProbes = 0;
-					__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
-					__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
-					_incrementAdsBlocked(info.ChannelName, info.MediaKey);
-					if (typeof self !== "undefined" && self.postMessage) {
-						_postWorkerBridgeMessage(
-							self,
-							_createPageScopedWorkerEvent({
-								key: "AdDetected",
-								channel: info.ChannelName,
-								mediaKey: info.MediaKey,
-								continued: false,
-							}),
-						);
-					}
-				}
 				_log("[Trace] CSAI fast path — returning stripped native", "info");
 				if (!info._BackupSearchStartedAt && !info.IsUsingFallbackStream) {
 					const res = _resolveAdBackupTargetResolution(info, url);
