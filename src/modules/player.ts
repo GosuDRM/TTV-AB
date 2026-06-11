@@ -1738,8 +1738,12 @@ function _restoreSuppressedMediaElement(media, state) {
 
 function _pruneDisconnectedSuppressedMedia() {
 	let prunedCount = 0;
-	for (const [media] of _AdAudioSuppressionState.suppressedMedia.entries()) {
+	for (const [
+		media,
+		state,
+	] of _AdAudioSuppressionState.suppressedMedia.entries()) {
 		if (media instanceof HTMLMediaElement && media.isConnected) continue;
+		_restoreSuppressedMediaElement(media, state);
 		_AdAudioSuppressionState.suppressedMedia.delete(media);
 		prunedCount += 1;
 	}
@@ -1836,7 +1840,11 @@ function _restoreSuppressedMediaAfterAd(channel = null, mediaKey = null) {
 	const activeMediaKey = _AdAudioSuppressionState.activeMediaKey;
 	_pruneDisconnectedSuppressedMedia();
 	if (safeMediaKey && activeMediaKey && safeMediaKey !== activeMediaKey) {
-		return 0;
+		const suppressedAdStillActive =
+			_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) === activeMediaKey;
+		if (suppressedAdStillActive) {
+			return 0;
+		}
 	}
 
 	let restoredCount = 0;
