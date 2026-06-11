@@ -26,6 +26,7 @@ beforeAll(() => {
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/state.js");
 	loadModule("../dist/src/modules/hooks.js");
+	loadModule("../dist/src/modules/worker.js");
 });
 
 beforeEach(() => {
@@ -554,5 +555,54 @@ describe("bridge re-handshake on content-script announce", () => {
 		window.removeEventListener("message", recordRequests);
 		nowSpy.mockRestore();
 		await flushAsync(1100);
+	});
+});
+
+describe("_isValid worker wrapper vetting", () => {
+	beforeEach(() => {
+		const s = g._S as Record<string, unknown>;
+		s.conflicts = ["twitch", "isVariantA"];
+		s.reinsertPatterns = ["isVariantA"];
+		s.toleratedWorkerWrappers = [
+			{
+				name: "TwitchNoSub",
+				signatures: ["${patch_url}", "twitchBlobUrl", "getWasmWorkerJs"],
+			},
+		];
+	});
+
+	it("accepts a plain unmarked constructor", () => {
+		const isValid = T<(v: unknown) => boolean>("_isValid");
+		expect(isValid(function PlainWorker() {})).toBe(true);
+	});
+
+	it("rejects revoked-proxy constructors without throwing", () => {
+		const isValid = T<(v: unknown) => boolean>("_isValid");
+		const { proxy, revoke } = Proxy.revocable(function ProxiedWorker() {}, {});
+		revoke();
+		expect(typeof proxy).toBe("function");
+		expect(() => isValid(proxy)).not.toThrow();
+		expect(isValid(proxy)).toBe(false);
+	});
+
+	it("rejects wrappers carrying conflict markers", () => {
+		const isValid = T<(v: unknown) => boolean>("_isValid");
+		const marked = () => {};
+		marked.toString = () => "function () { window.twitch.hook(); }";
+		expect(isValid(marked)).toBe(false);
+	});
+});
+
+describe("worker bootstrap source-loading self-heal invariant", () => {
+	it("either importScripts (throws on dead URL) or the empty-source guard is present", () => {
+		const hooksJs = readFileSync(
+			resolve(__dirname, "../dist/src/modules/hooks.js"),
+			"utf8",
+		);
+		const usesImportScripts = hooksJs.includes("importScripts(");
+		const usesEvalWithGuard =
+			hooksJs.includes("_getWasmJs(") &&
+			hooksJs.includes("original worker source fetch returned empty");
+		expect(usesImportScripts || usesEvalWithGuard).toBe(true);
 	});
 });
