@@ -57,7 +57,6 @@ beforeAll(() => {
 		LastAdEndedMediaKey: null,
 		V2API: false,
 		HasTriggeredPlayerReload: false,
-		HasResolvedToggleState: true,
 		IsBufferFixEnabled: true,
 		DisableAdSpoofing: false,
 		AdEndMinCleanPlaylists: 3,
