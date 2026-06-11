@@ -829,9 +829,14 @@ function _rollbackSecondaryPlayerHandoff(
 	}
 
 	for (const delay of [0, 120, 350]) {
-		setTimeout(() => {
-			_resumePrimaryPlaybackIfPaused(channel, mediaKey);
-		}, delay);
+		_schedulePlaybackRecoveryTimeout(
+			() => {
+				_resumePrimaryPlaybackIfPaused(channel, mediaKey);
+			},
+			delay,
+			channel,
+			mediaKey,
+		);
 	}
 	return true;
 }
@@ -2649,33 +2654,40 @@ let _PipDeferredReloadEntry = null;
 function _registerPipDeferredReload(options = {}) {
 	const pipElement = document.pictureInPictureElement;
 	if (!(pipElement instanceof HTMLMediaElement)) return false;
+	const previousEntry = _PipDeferredReloadEntry;
+	if (previousEntry?.element && previousEntry.listener) {
+		try {
+			previousEntry.element.removeEventListener(
+				"leavepictureinpicture",
+				previousEntry.listener,
+			);
+		} catch {}
+	}
 	const entry = {
 		options: { ...options },
 		channel: __TTVAB_STATE__.PageChannel,
 		mediaKey: __TTVAB_STATE__.PageMediaKey,
 		deferredAt: Date.now(),
+		element: pipElement,
+		listener: null,
+	};
+	entry.listener = () => {
+		if (_PipDeferredReloadEntry !== entry) return;
+		_PipDeferredReloadEntry = null;
+		if (Date.now() - entry.deferredAt > 120000) return;
+		if (!_isPlaybackRecoveryContextCurrent(entry.channel, entry.mediaKey)) {
+			return;
+		}
+		if (__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel) {
+			return;
+		}
+		_log("Running player reload deferred during PiP", "info");
+		_doPlayerTask(false, true, entry.options);
 	};
 	_PipDeferredReloadEntry = entry;
-	pipElement.addEventListener(
-		"leavepictureinpicture",
-		() => {
-			if (_PipDeferredReloadEntry !== entry) return;
-			_PipDeferredReloadEntry = null;
-			if (Date.now() - entry.deferredAt > 120000) return;
-			if (!_isPlaybackRecoveryContextCurrent(entry.channel, entry.mediaKey)) {
-				return;
-			}
-			if (
-				__TTVAB_STATE__.CurrentAdMediaKey ||
-				__TTVAB_STATE__.CurrentAdChannel
-			) {
-				return;
-			}
-			_log("Running player reload deferred during PiP", "info");
-			_doPlayerTask(false, true, entry.options);
-		},
-		{ once: true },
-	);
+	pipElement.addEventListener("leavepictureinpicture", entry.listener, {
+		once: true,
+	});
 	return true;
 }
 
@@ -3212,11 +3224,16 @@ function _monitorPlayerBuffering() {
 		}
 
 		if (hasActiveAdContext) {
+			if (_cachedPlayerRef && _cachedPlayerRefMediaKey !== currentMediaKey) {
+				_clearCachedPlayerRef();
+			}
 			let pinPlayer = _cachedPlayerRef?.player || null;
 			if (!pinPlayer) {
 				const fresh = _getPlayerAndState();
 				if (fresh.player && fresh.state) {
 					pinPlayer = fresh.player;
+					_cachedPlayerRef = fresh;
+					_cachedPlayerRefMediaKey = currentMediaKey;
 				}
 			}
 			_suppressCompetingMediaDuringAd(
