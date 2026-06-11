@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.7.3-purple)
+![Version](https://img.shields.io/badge/version-9.7.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.7.3-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.7.4-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -60,18 +60,18 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 - Monitors playback health and automatically recovers from stalls after ad breaks
 - Restores your original quality and volume settings once native playback resumes
 
-When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean backup stream within a couple of seconds so video starts playing right away. The backup tracks your current quality where the alternate stream offers it, with a 360p floor so a channel-open preroll (the player is still ramping up from its lowest quality at that point) never starts blurrier than 360p. Your full native quality and audio are restored automatically and seamlessly once the ad window ends. The optional **Low Quality Fallback** toggle trades some quality for an even faster first frame, starting on a quick low-resolution stream and climbing back up as the break ends.
+When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean backup stream within a couple of seconds so video starts playing right away. The backup targets the quality your connection has been sustaining — even if the player had just restarted on a low rung when the ad hit — with a 360p floor so a channel-open preroll (the player is still ramping up from its lowest quality at that point) never starts blurrier than 360p. Your full native quality and audio are restored automatically and seamlessly once the ad window ends. The optional **Low Quality Fallback** toggle trades some quality for an even faster first frame, starting on a quick low-resolution stream and climbing back up as the break ends.
 
 ## 🔔 What's New
+
+### v9.7.4 — 2026-06-11
+- **Stable, full-quality ad breaks.** A midroll now resolves in one clean cycle instead of repeatedly flickering between backup and native, the backup plays at the quality you were actually watching instead of dropping to 360p, and a post-ad freeze that could stall playback for ~30 seconds is now skipped past within a few seconds. Also smooths out micro-stutters on the backup stream and quiets duplicate ad spoofing.
 
 ### v9.7.3 — 2026-06-11
 - **Smarter post-ad recovery and cleaner ad spoofing.** After a quick midroll chain settles, the extension re-evaluates whether reloading the player helps instead of staying cautious for the whole session, and the ad-completion spoofing no longer repeats the once-per-pod signal when Twitch omits the pod length.
 
 ### v9.7.2 — 2026-06-11
 - **Sturdier back-to-back midrolls.** If the backup stream stalls during a burst of quick consecutive ads, the extension now rotates to another backup type instead of retrying the same one. It also serves the cached clean backup directly when it is fresh instead of refetching on every poll, which especially helps low-latency streams.
-
-### v9.7.0 — 2026-06-10
-- **Smoother back-to-back midrolls.** During a burst of quick consecutive ads, the extension now refreshes the held clean backup directly instead of re-running the full backup search every time, reducing brief buffer-edge stutters between ads. It still re-verifies every playlist is ad-free before serving, so nothing leaks through.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

@@ -2,6 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.7.4] - 2026-06-11
+
+### Fixed
+- Midroll breaks no longer thrash through repeated false "ad ended" cycles; the end of a break is confirmed against the player's own playlist with a window that widens after each marker bounce.
+- Ad-break backups play at your sustained quality instead of dropping to 360p for the whole break when the player had just rebooted onto a low rung.
+- The sustained-quality tracker ignores ad-break playback, so a long break can no longer drag the tracked quality down to 360p for later breaks.
+- A frozen playhead with a buffered gap ahead (the post-ad audio-hole freeze) is skipped past within a few seconds instead of stalling for ~30 seconds.
+- Media elements muted during ad recovery are always unmuted afterwards, even when Twitch detached them mid-break.
+- Native-recovery probes no longer overlap or count stale results after a break ends.
+- The same stitched ad is no longer spoofed twice when markers bounce, and pod-complete accounting heals across the bounce.
+
+### Performance
+- Held backup playlists refresh just under the segment cadence, removing the per-segment micro-stalls at the backup live edge.
+
 ## [9.7.3] - 2026-06-11
 
 ### Fixed
