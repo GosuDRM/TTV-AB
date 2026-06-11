@@ -320,3 +320,63 @@ describe("_notifyAdComplete (recent spoof dedup across bounces)", () => {
 		expect(impressionIds(batches)).toEqual(["stitched-ad-1"]);
 	});
 });
+
+describe("_getToken (exhausted-failure sentinel)", () => {
+	let savedFetchWithTimeout: unknown;
+
+	beforeEach(() => {
+		savedFetchWithTimeout = g._fetchWithTimeout;
+		g._fetchWithTimeout = async (
+			fetchFunc: (url: string, options: unknown) => Promise<Response>,
+			url: string,
+			options: unknown,
+		) => fetchFunc(url, options);
+	});
+
+	afterEach(() => {
+		g._fetchWithTimeout = savedFetchWithTimeout;
+	});
+
+	it("returns a non-throwing network-error response when every fetch path fails", async () => {
+		const getToken =
+			T<
+				(
+					ctx: unknown,
+					playerType: string,
+					realFetch: unknown,
+				) => Promise<Response>
+			>("_getToken");
+		g._fetchViaWorkerBridge = async () => null;
+		const failingFetch = async () => {
+			throw new Error("connection refused");
+		};
+
+		const res = await getToken("somechannel", "site", failingFetch);
+		expect(res).toBeInstanceOf(Response);
+		expect(res.status).toBe(0);
+		expect(res.ok).toBe(false);
+	});
+
+	it("retries timeout-class errors before giving up", async () => {
+		const getToken =
+			T<
+				(
+					ctx: unknown,
+					playerType: string,
+					realFetch: unknown,
+				) => Promise<Response>
+			>("_getToken");
+		g._fetchViaWorkerBridge = async () => null;
+		let attempts = 0;
+		const timeoutFetch = async () => {
+			attempts++;
+			const err = new Error("fetch relay timeout");
+			err.name = "AbortError";
+			throw err;
+		};
+
+		const res = await getToken("somechannel", "site", timeoutFetch);
+		expect(attempts).toBe(3);
+		expect(res.status).toBe(0);
+	});
+});
