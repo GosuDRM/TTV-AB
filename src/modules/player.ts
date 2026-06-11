@@ -3129,7 +3129,11 @@ function _monitorPlayerBuffering() {
 		}
 		const hasLivePlaybackContext =
 			__TTVAB_STATE__.PageMediaType === "live" && Boolean(currentMediaKey);
-		if (!hasLivePlaybackContext) {
+		const hasAdCapablePlaybackContext =
+			Boolean(currentMediaKey) &&
+			(__TTVAB_STATE__.PageMediaType === "live" ||
+				__TTVAB_STATE__.PageMediaType === "vod");
+		if (!hasAdCapablePlaybackContext) {
 			_resetPlayerBufferMonitorState();
 			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
 			return;
@@ -3171,6 +3175,12 @@ function _monitorPlayerBuffering() {
 
 		_resetPinnedBackupStallState();
 		_resetInAdFreezeState();
+
+		if (!hasLivePlaybackContext) {
+			_resetPlayerBufferMonitorState();
+			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
+			return;
+		}
 
 		if (isHidden) {
 			_clearCachedPlayerRef(false);
