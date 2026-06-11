@@ -534,7 +534,6 @@ function _declareState(scope) {
 		RewriteNativePlaybackAccessToken:
 			_C.REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN ?? false,
 		SkipPlayerReloadOnHevc: false,
-		ReloadAfterAd: _C.RELOAD_AFTER_AD ?? false,
 		PlayerBufferingDoPlayerReload:
 			_C.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
 		PlayerReloadMinimalRequestsTime: _C.RELOAD_TIME,
