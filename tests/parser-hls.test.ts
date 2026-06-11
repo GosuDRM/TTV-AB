@@ -70,6 +70,25 @@ describe("_isKnownAdSegmentUrl", () => {
 	it("empty", () => {
 		expect(fn()("")).toBe(false);
 	});
+	it("usher master playlist for a channel login containing the signifier", () => {
+		expect(
+			fn()(
+				"https://usher.ttvnw.net/api/channel/hls/stitchedup.m3u8?allow_source=true",
+			),
+		).toBe(false);
+	});
+	it("media playlist with the signifier in an opaque token", () => {
+		expect(
+			fn()(
+				"https://video-weaver.sea01.hls.ttvnw.net/v1/playlist/Cstitched.m3u8",
+			),
+		).toBe(false);
+	});
+	it("stitched segment is still blocked", () => {
+		expect(
+			fn()("https://video-edge.ttvnw.net/v1/segment/stitched-ad-123.ts"),
+		).toBe(true);
+	});
 });
 
 describe("_isMediaPartLine", () => {
