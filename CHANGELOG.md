@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.8.0] - 2026-06-11
+
+### Fixed
+- Switching to another stream during an ad break now restores any media elements that were muted for ad recovery; previously they could stay silenced and tracked until a full page reload.
+- Backup stream searches for the same stream now share a single in-flight run instead of racing each other, removing duplicate token requests and a backup-type flap when playlist polls overlapped a slow search.
+- Reloading the player after a stitched VOD ad break returns to the saved playhead position instead of relying on Twitch's periodic resume point, which could jump the VOD back or restart it.
+- VOD ad breaks now run the same pinned-backup stall detection, frozen-playhead recovery, and competing-media muting that live breaks get; previously every in-ad safety net was skipped on VOD pages.
+
+### Changed
+- Worker-injected helpers are hardened against page-only globals (reserved route segments are now serialized into the worker, and the debug-log flag check tolerates worker contexts), and two unused legacy ad-context worker messages were removed.
+
 ## [9.7.6] - 2026-06-11
 
 ### Fixed
