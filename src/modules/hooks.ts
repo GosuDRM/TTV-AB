@@ -1045,6 +1045,7 @@ function _hookWorker() {
                 ${_getRecentCleanBackupPlayerTypeForInfo.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
+                ${_resolveAdBackupTargetResolution.toString()}
                 ${_recordSustainedNativeResolution.toString()}
                 ${_isAdEndStable.toString()}
                 ${_resetNativeRecoveryReadyState.toString()}

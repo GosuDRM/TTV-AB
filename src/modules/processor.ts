@@ -326,6 +326,22 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 	return resolution;
 }
 
+function _resolveAdBackupTargetResolution(info, url = "") {
+	const urlResolution = _resolvePlaybackResolutionForUrl(info, url);
+	const preferredResolution = _resolvePreferredBackupResolution(info);
+	if (!preferredResolution) return urlResolution;
+	if (!urlResolution) return preferredResolution;
+	const heightOf = (entry) => {
+		const [, h] = String(entry?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		return Number.isFinite(h) ? h : 0;
+	};
+	return heightOf(preferredResolution) > heightOf(urlResolution)
+		? preferredResolution
+		: urlResolution;
+}
+
 function _recordSustainedNativeResolution(info, url) {
 	if (
 		!info ||
@@ -1250,9 +1266,7 @@ async function _processM3U8Core(url, text, realFetch) {
 		if (info.IsHoldingBackupAfterAd) {
 			if (info.LastCleanBackupM3U8) {
 				const now = Date.now();
-				const res =
-					_resolvePreferredBackupResolution(info) ||
-					_resolvePlaybackResolutionForUrl(info, url);
+				const res = _resolveAdBackupTargetResolution(info, url);
 				const lastLogAt = Math.max(
 					0,
 					Number(info.LastSilentBackupHoldLogAt) || 0,
@@ -1341,9 +1355,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			visibleAdElapsed >= backupHoldMaxMs
 		) {
 			const adEndedAt = Date.now();
-			const res =
-				_resolvePreferredBackupResolution(info) ||
-				_resolvePlaybackResolutionForUrl(info, url);
+			const res = _resolveAdBackupTargetResolution(info, url);
 			const heldBackupM3U8 = info.LastCleanBackupM3U8;
 			const heldBackupPlayerType =
 				info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType || null;
@@ -1614,7 +1626,7 @@ async function _processM3U8Core(url, text, realFetch) {
 				}
 				_log("[Trace] CSAI fast path — returning stripped native", "info");
 				if (!info._BackupSearchStartedAt && !info.IsUsingFallbackStream) {
-					const res = _resolvePlaybackResolutionForUrl(info, url);
+					const res = _resolveAdBackupTargetResolution(info, url);
 					info._BackupSearchStartedAt = Date.now();
 					_findBackupStream(info, realFetch, 0, res)
 						.then(() => {
@@ -1741,11 +1753,12 @@ async function _processM3U8Core(url, text, realFetch) {
 			}
 		}
 
+		const backupTargetRes = _resolveAdBackupTargetResolution(info, url) || res;
 		let {
 			type: backupType,
 			m3u8: backupM3u8,
 			isFallback,
-		} = await _findBackupStream(info, realFetch, startIdx, res);
+		} = await _findBackupStream(info, realFetch, startIdx, backupTargetRes);
 
 		if (!backupM3u8) {
 			if (info.LastCleanBackupM3U8) {
@@ -1783,7 +1796,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			text = backupM3u8;
 		}
 
-		info.ActiveBackupResolution = res?.Resolution || null;
+		info.ActiveBackupResolution = backupTargetRes?.Resolution || null;
 		if (backupType) {
 			__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
@@ -1836,7 +1849,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			}
 			return info.LastCleanBackupM3U8 || info.LastCleanNativeM3U8 || text;
 		}
-		const res = _resolvePlaybackResolutionForUrl(info, url);
+		const res = _resolveAdBackupTargetResolution(info, url);
 		let adEndState = "wait";
 		try {
 			adEndState = await _isAdEndStable(info, realFetch, res);
