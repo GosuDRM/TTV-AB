@@ -2120,6 +2120,46 @@ function _retryPostAdPauseResume(channel = null, mediaKey = null) {
 	return Boolean(didRetry);
 }
 
+function _getContiguousBufferedEnd(video, currentTime) {
+	const buffered = video?.buffered;
+	if (!buffered || !(buffered.length > 0)) return 0;
+	for (let bi = 0; bi < buffered.length; bi++) {
+		let start = 0;
+		let end = 0;
+		try {
+			start = buffered.start(bi);
+			end = buffered.end(bi);
+		} catch {
+			continue;
+		}
+		if (currentTime >= start - 0.1 && currentTime <= end + 0.1) {
+			return end;
+		}
+	}
+	return 0;
+}
+
+function _seekPastBufferedGap(video, currentTime) {
+	if (!video || !(video.buffered?.length > 1)) return 0;
+	for (let bi = 0; bi < video.buffered.length; bi++) {
+		let gapStart = 0;
+		try {
+			gapStart = video.buffered.start(bi);
+		} catch {
+			continue;
+		}
+		if (gapStart > currentTime + 0.25) {
+			try {
+				video.currentTime = gapStart + 0.05;
+			} catch {
+				return 0;
+			}
+			return gapStart - currentTime;
+		}
+	}
+	return 0;
+}
+
 function _trySeekPastFrozenBufferGap(video, currentTime, readyState) {
 	const lastPosition = _PlayerBufferState.gapJumpLastPosition;
 	const advanced = lastPosition >= 0 && currentTime > lastPosition + 0.2;
@@ -2139,29 +2179,17 @@ function _trySeekPastFrozenBufferGap(video, currentTime, readyState) {
 		return false;
 	}
 
-	for (let bi = 0; bi < video.buffered.length; bi++) {
-		let gapStart = 0;
-		try {
-			gapStart = video.buffered.start(bi);
-		} catch {
-			continue;
-		}
-		if (gapStart > currentTime + 0.25) {
-			_log(
-				`Frozen playhead at ${currentTime.toFixed(3)}s with buffered gap; seeking ${(gapStart - currentTime).toFixed(2)}s past it`,
-				"warning",
-			);
-			try {
-				video.currentTime = gapStart + 0.05;
-			} catch {
-				return false;
-			}
-			_PlayerBufferState.gapJumpStuckTicks = 0;
-			_PlayerBufferState.gapJumpLastPosition = -1;
-			_PlayerBufferState.lastFixTime = Date.now();
-			_PlayerBufferState.numSame = 0;
-			return true;
-		}
+	const jumped = _seekPastBufferedGap(video, currentTime);
+	if (jumped > 0) {
+		_log(
+			`Frozen playhead at ${currentTime.toFixed(3)}s with buffered gap; seeking ${jumped.toFixed(2)}s past it`,
+			"warning",
+		);
+		_PlayerBufferState.gapJumpStuckTicks = 0;
+		_PlayerBufferState.gapJumpLastPosition = -1;
+		_PlayerBufferState.lastFixTime = Date.now();
+		_PlayerBufferState.numSame = 0;
+		return true;
 	}
 	_PlayerBufferState.gapJumpStuckTicks = 0;
 	return false;
@@ -2956,11 +2984,13 @@ function _checkInAdPlayheadFreeze(player) {
 		video.buffered && video.buffered.length > 0
 			? video.buffered.end(video.buffered.length - 1)
 			: 0;
+	const contiguousEnd = _getContiguousBufferedEnd(video, currentTime);
 	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
 	const advanced =
 		_InAdFreezeState.lastCurrentTime >= 0 &&
 		currentTime > _InAdFreezeState.lastCurrentTime + 0.05;
-	const bufferDrained = bufferedEnd - currentTime < _getLowLatencyDangerZone();
+	const bufferDrained =
+		contiguousEnd - currentTime < _getLowLatencyDangerZone();
 	if (!playbackHasStarted || video.paused || advanced || !bufferDrained) {
 		_resetInAdFreezeState();
 		_InAdFreezeState.lastCurrentTime = currentTime;
@@ -2982,6 +3012,15 @@ function _checkInAdPlayheadFreeze(player) {
 	_InAdFreezeState.actionCount++;
 	const frozenSeconds =
 		Math.round((now - _InAdFreezeState.firstFrozenAt) / 100) / 10;
+	const gapJumped = _seekPastBufferedGap(video, currentTime);
+	if (gapJumped > 0) {
+		_log(
+			`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s; seeking ${gapJumped.toFixed(2)}s past buffered gap`,
+			"warning",
+		);
+		_resetInAdFreezeState();
+		return;
+	}
 	if (_InAdFreezeState.actionCount > _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS) {
 		_log(
 			`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s (bufferEnd=${bufferedEnd.toFixed(2)}s); reloading player`,
