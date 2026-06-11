@@ -2,7 +2,7 @@
 
 const _C = {
 	VERSION: "9.8.1",
-	INTERNAL_VERSION: 232,
+	INTERNAL_VERSION: 90801,
 	LOG_STYLES: {
 		prefix:
 			"background: linear-gradient(135deg, #9146FF, #772CE8); color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;",

@@ -119,6 +119,7 @@ function readVersionSources() {
 	const constantsPath = path.join(MODULES_DIR, "constants.js");
 	const constantsContent = fs.readFileSync(constantsPath, "utf8");
 	const constantsMatch = constantsContent.match(/VERSION:\s*['"]([^'"]+)['"]/);
+	const internalMatch = constantsContent.match(/INTERNAL_VERSION:\s*(\d+)/);
 	let packageVersion = "0.0.0";
 	let manifestVersion = "0.0.0";
 
@@ -138,9 +139,16 @@ function readVersionSources() {
 
 	return {
 		constantsVersion: constantsMatch?.[1] || null,
+		internalVersion: internalMatch ? Number(internalMatch[1]) : null,
 		packageVersion,
 		manifestVersion,
 	};
+}
+
+function deriveInternalVersion(version) {
+	const parts = String(version || "").match(/^(\d+)\.(\d+)\.(\d+)$/);
+	if (!parts) return null;
+	return Number(parts[1]) * 10000 + Number(parts[2]) * 100 + Number(parts[3]);
 }
 
 function getVersion() {
@@ -235,7 +243,7 @@ function syncPopupHtmlFallbacks() {
 }
 
 function validateSharedDefinitions() {
-	const { constantsVersion, packageVersion, manifestVersion } =
+	const { constantsVersion, internalVersion, packageVersion, manifestVersion } =
 		readVersionSources();
 	const manifest = JSON.parse(
 		fs.readFileSync(path.join(DIST_DIR, "manifest.json"), "utf8"),
@@ -382,6 +390,12 @@ function validateSharedDefinitions() {
 	) {
 		throw new Error(
 			`Version mismatch: constants=${constantsVersion || "missing"}, package=${packageVersion}, manifest=${manifestVersion}`,
+		);
+	}
+	const expectedInternalVersion = deriveInternalVersion(constantsVersion);
+	if (!expectedInternalVersion || internalVersion !== expectedInternalVersion) {
+		throw new Error(
+			`INTERNAL_VERSION must be derived from VERSION (${constantsVersion} -> ${expectedInternalVersion || "underivable"}); constants has ${internalVersion ?? "missing"}`,
 		);
 	}
 	if (packageJson.homepage !== canonicalRepoUrl) {
