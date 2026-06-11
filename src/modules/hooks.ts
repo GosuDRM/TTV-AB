@@ -1076,6 +1076,7 @@ function _hookWorker() {
                 ${_shouldTryAutoplayFirst.toString()}
                 ${_shouldHoldAutoplayBackupDuringAd.toString()}
                 ${_refreshActiveBackupMediaPlaylist.toString()}
+                ${_searchBackupStream.toString()}
                 ${_findBackupStream.toString()}
                 ${_hookWorkerFetch.toString()}
                 
