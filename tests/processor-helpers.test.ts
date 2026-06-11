@@ -23,6 +23,7 @@ function loadModule(modulePath: string) {
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
+	loadModule("../dist/src/modules/state.js");
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/processor.js");
 
@@ -2423,5 +2424,26 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 		const recovered = await fn()(info, null);
 		expect(recovered.m3u8).toBe("#B");
 		expect(searchCalls).toBe(2);
+	});
+});
+
+describe("ad counter call sites (continuation-guard invariant)", () => {
+	it("processor increments the ads-blocked counter from exactly one guarded site", () => {
+		const processorJs = readFileSync(
+			resolve(__dirname, "../dist/src/modules/processor.js"),
+			"utf8",
+		);
+		const callSites = processorJs.match(/_incrementAdsBlocked\(/g) || [];
+		expect(callSites).toHaveLength(1);
+	});
+});
+
+describe("processor tunables are seeded in state", () => {
+	it("declares the silent-hold and bounce-debounce defaults", () => {
+		const scope: Record<string, unknown> = {};
+		T<(s: Record<string, unknown>) => void>("_declareState")(scope);
+		const declared = scope.__TTVAB_STATE__ as Record<string, unknown>;
+		expect(declared.SilentBackupHoldMaxMs).toBe(120000);
+		expect(declared.AdEndBounceDebounceMs).toBe(3000);
 	});
 });
