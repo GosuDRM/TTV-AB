@@ -436,6 +436,9 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 		realFetch,
 		resolution,
 	);
+	if (!info.IsShowingAd) {
+		return "wait";
+	}
 	if (hasNativeRecoveryReady) {
 		return "ended";
 	}
@@ -506,6 +509,8 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 
 function _resetNativeRecoveryReadyState(info, preserveProbeAt = false) {
 	if (!info) return;
+	info.NativeRecoveryProbeEpoch =
+		(Number(info.NativeRecoveryProbeEpoch) || 0) + 1;
 	if (!preserveProbeAt) {
 		info.LastNativeRecoveryProbeAt = 0;
 	}
@@ -804,6 +809,10 @@ async function _canReloadNativePlayerAfterAd(
 		return true;
 	}
 
+	if (info._NativeRecoveryProbeInFlight) {
+		return false;
+	}
+
 	const requiredCleanProbes = Math.max(
 		1,
 		Number(__TTVAB_STATE__?.AdEndMinNativeRecoveryProbes) || 1,
@@ -822,9 +831,16 @@ async function _canReloadNativePlayerAfterAd(
 	info.LastNativeRecoveryProbeAt = now;
 
 	const nativePlayerType = _getNativeRecoveryProbePlayerType();
+	const probeEpoch = Number(info.NativeRecoveryProbeEpoch) || 0;
+	const probeInvalidated = () =>
+		(Number(info.NativeRecoveryProbeEpoch) || 0) !== probeEpoch;
+	info._NativeRecoveryProbeInFlight = true;
 
 	try {
 		const tokenRes = await _getToken(info, nativePlayerType, realFetch);
+		if (probeInvalidated()) {
+			return false;
+		}
 		if (tokenRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
 			_markNativeRecoveryProbeFailed(info);
@@ -857,6 +873,9 @@ async function _canReloadNativePlayerAfterAd(
 		}
 
 		const encRes = await _fetchWithTimeout(realFetch, usherUrl.href);
+		if (probeInvalidated()) {
+			return false;
+		}
 		if (encRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
 			_markNativeRecoveryProbeFailed(info);
@@ -881,6 +900,9 @@ async function _canReloadNativePlayerAfterAd(
 		}
 
 		const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
+		if (probeInvalidated()) {
+			return false;
+		}
 		if (streamRes.status !== 200) {
 			_resetNativeRecoveryReadyState(info, true);
 			_markNativeRecoveryProbeFailed(info);
@@ -892,6 +914,9 @@ async function _canReloadNativePlayerAfterAd(
 		}
 
 		const nativeM3u8 = await streamRes.text();
+		if (probeInvalidated()) {
+			return false;
+		}
 		const nativeHasAds =
 			_hasPlaylistAdMarkers(nativeM3u8) ||
 			_hasExplicitAdMetadata(nativeM3u8) ||
@@ -923,6 +948,9 @@ async function _canReloadNativePlayerAfterAd(
 		_log(`[Trace] Native recovery ready (${nativePlayerType})`, "success");
 		return true;
 	} catch (err) {
+		if (probeInvalidated()) {
+			return false;
+		}
 		_resetNativeRecoveryReadyState(info, true);
 		_markNativeRecoveryProbeFailed(info);
 		_log(
@@ -930,6 +958,8 @@ async function _canReloadNativePlayerAfterAd(
 			"warning",
 		);
 		return false;
+	} finally {
+		info._NativeRecoveryProbeInFlight = false;
 	}
 }
 
@@ -980,6 +1010,8 @@ function _createStreamInfo(context) {
 		BackupVariantUrls: new Set(),
 		LastNativeRecoveryReadyPlayerType: null,
 		NativeRecoveryCleanCount: 0,
+		NativeRecoveryProbeEpoch: 0,
+		_NativeRecoveryProbeInFlight: false,
 		ConsecutiveFailedNativeProbes: 0,
 		_LoggedWhitelistByType: null,
 		_BackupSearchCount: 0,
