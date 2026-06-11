@@ -1343,6 +1343,7 @@ async function _processM3U8Core(url, text, realFetch) {
 				info.ActiveBackupPlayerType = null;
 				info.ActiveBackupResolution = null;
 				info.HevcReloadPendingAfterHold = false;
+				_rememberLastAdEnd(info, Date.now());
 			}
 		}
 
