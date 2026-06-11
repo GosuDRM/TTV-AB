@@ -31,6 +31,33 @@ describe("_C constants", () => {
 		expect(Number(C().INTERNAL_VERSION)).toBeGreaterThan(0);
 	});
 
+	it("derives INTERNAL_VERSION from VERSION", () => {
+		const parts = String(C().VERSION).match(/^(\d+)\.(\d+)\.(\d+)$/);
+		expect(parts).not.toBeNull();
+		const expected =
+			Number(parts?.[1]) * 10000 +
+			Number(parts?.[2]) * 100 +
+			Number(parts?.[3]);
+		expect(C().INTERNAL_VERSION).toBe(expected);
+	});
+
+	it("state seeding fallbacks match the tuned constants", () => {
+		const stateJs = readFileSync(
+			resolve(__dirname, "../dist/src/modules/state.js"),
+			"utf8",
+		);
+		const pairs = [
+			...stateJs.matchAll(/_C\.([A-Z0-9_]+)\s*\?\?\s*(\d+(?:\.\d+)?)/g),
+		];
+		expect(pairs.length).toBeGreaterThan(0);
+		for (const [, key, fallback] of pairs) {
+			expect({ key, fallback: Number(fallback) }).toEqual({
+				key,
+				fallback: Number(C()[key]),
+			});
+		}
+	});
+
 	it("has AD_SIGNIFIER", () => {
 		expect(C().AD_SIGNIFIER).toBe("stitched");
 	});
