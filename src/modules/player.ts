@@ -2365,7 +2365,9 @@ function _handlePendingPostAdRecovery(
 	const isDeadFrame =
 		!isLivePaused &&
 		!liveVideo?.ended &&
-		(liveVideoWidth <= 0 || _PlayerBufferState.postAdStallTicks >= 2);
+		((liveVideoWidth <= 0 &&
+			recoveryAge >= _POST_AD_RECOVERY_RELOAD_COOLDOWN_MS) ||
+			_PlayerBufferState.postAdStallTicks >= 2);
 
 	if (_isPlaybackHealthyAfterAd(player, playerCore, video)) {
 		_armPostAdGraceWindow(liveCurrentTime);
