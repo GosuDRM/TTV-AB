@@ -698,7 +698,10 @@ function _shouldSuppressAutomaticPlaybackResume(
 	channel = null,
 	mediaKey = null,
 ) {
-	return _hasActiveSecondaryPlayerHandoff(channel, mediaKey);
+	if (!_hasActiveSecondaryPlayerHandoff(channel, mediaKey)) {
+		return false;
+	}
+	return _PlaybackIntentState.secondaryPlayerHandoffKind !== "pip";
 }
 
 function _isPrimaryPlaybackCurrentlyActive() {
