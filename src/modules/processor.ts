@@ -2310,11 +2310,9 @@ async function _searchBackupStream(
 
 	for (let pi = 0; !backupM3u8 && pi < playerTypesLen; pi++) {
 		const pt = playerTypes[pi];
-		const realPt = pt.replace("-CACHED", "");
-		const isFullyCachedPlayerType = pt !== realPt;
 		const configuredPlayerTypeIndex = Math.max(
 			0,
-			(__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(realPt),
+			(__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(pt),
 		);
 		if (_isBackupPlayerRetryCoolingDown(info, pt)) {
 			if (!info._LoggedWhitelistByType) {
@@ -2342,7 +2340,7 @@ async function _searchBackupStream(
 			if (!enc) {
 				isFreshM3u8 = true;
 				try {
-					const tokenRes = await _getToken(info, realPt, realFetch);
+					const tokenRes = await _getToken(info, pt, realFetch);
 					if (tokenRes.status === 200) {
 						const token = await tokenRes.json();
 						const extractedToken = _extractPlaybackAccessToken(token);
@@ -2533,14 +2531,6 @@ async function _searchBackupStream(
 										info.LoggedBackupAdsByType = new Set();
 									}
 									info.LoggedBackupAdsByType.add(pt);
-									info.LoggedBackupAdsByType.add(realPt);
-								}
-								if (isFullyCachedPlayerType) {
-									_log(
-										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
-										"warning",
-									);
-									break;
 								}
 								_log(
 									`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
