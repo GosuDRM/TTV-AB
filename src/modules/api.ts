@@ -335,7 +335,11 @@ async function _getToken(playbackContext, playerType, realFetch) {
 // natively). Failures swallowed — never blocks ad-block flow.
 async function _notifyAdComplete(
 	textStr: string,
-	info?: { SpoofedAdIds?: Set<string>; ActiveBackupPlayerType?: string | null },
+	info?: {
+		SpoofedAdIds?: Set<string>;
+		RecentSpoofedAdIds?: Map<string, number>;
+		ActiveBackupPlayerType?: string | null;
+	},
 ): Promise<void> {
 	try {
 		if (__TTVAB_STATE__.DisableAdSpoofing) return;
@@ -357,6 +361,7 @@ async function _notifyAdComplete(
 		}
 
 		const spoofedSet = info?.SpoofedAdIds || null;
+		const recentSpoofedSet = info?.RecentSpoofedAdIds || null;
 		// True pod size from the m3u8 attribute (present on each DATERANGE); fall
 		// back to visible-match count if absent. Keeps total_ads consistent across
 		// all ads in the pod even though they surface one poll at a time.
@@ -386,6 +391,10 @@ async function _notifyAdComplete(
 			// spoofed ad's attribute string on each poll during the spoof phase.
 			const idMatch = matches[i][1].match(/^ID="([^"]+)"/);
 			const stitchedAdId = idMatch ? idMatch[1] : "";
+			if (stitchedAdId && recentSpoofedSet?.has?.(stitchedAdId)) {
+				spoofedSet?.add?.(stitchedAdId);
+				continue;
+			}
 			// Multi-poll dedup: skip ads already spoofed earlier this break.
 			if (spoofedSet && stitchedAdId && spoofedSet.has(stitchedAdId)) {
 				continue;
