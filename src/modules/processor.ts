@@ -1051,6 +1051,7 @@ function _createStreamInfo(context) {
 		NativeRecoveryCleanCount: 0,
 		NativeRecoveryProbeEpoch: 0,
 		_NativeRecoveryProbeInFlight: false,
+		_BackupSearchPromise: null,
 		ConsecutiveFailedNativeProbes: 0,
 		_LoggedWhitelistByType: null,
 		_BackupSearchCount: 0,
@@ -2235,6 +2236,35 @@ async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
 }
 
 async function _findBackupStream(
+	info,
+	realFetch,
+	startIdx = 0,
+	currentResolution = null,
+) {
+	if (info?._BackupSearchPromise) {
+		return info._BackupSearchPromise;
+	}
+	const searchPromise = (async () => {
+		try {
+			return await _searchBackupStream(
+				info,
+				realFetch,
+				startIdx,
+				currentResolution,
+			);
+		} finally {
+			if (info && info._BackupSearchPromise === searchPromise) {
+				info._BackupSearchPromise = null;
+			}
+		}
+	})();
+	if (info) {
+		info._BackupSearchPromise = searchPromise;
+	}
+	return searchPromise;
+}
+
+async function _searchBackupStream(
 	info,
 	realFetch,
 	startIdx = 0,
