@@ -3137,6 +3137,18 @@ function _checkInAdPlayheadFreeze(player) {
 function _monitorPlayerBuffering() {
 	function check() {
 		_playerBufferMonitorTimer = null;
+		let scheduledDelay = Number(__TTVAB_STATE__?.PlayerBufferingDelay) || 600;
+		try {
+			scheduledDelay = runCheck();
+		} catch (err) {
+			_log(`Buffer monitor tick failed: ${err.message}`, "error");
+			_clearCachedPlayerRef();
+			scheduledDelay = Math.max(scheduledDelay * 5, 3000);
+		}
+		_playerBufferMonitorTimer = setTimeout(check, scheduledDelay);
+	}
+
+	function runCheck() {
 		const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
 		const hasActiveAdContext = Boolean(
 			__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel,
@@ -3165,8 +3177,7 @@ function _monitorPlayerBuffering() {
 			: Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000);
 		if (!_hasPlayerBufferMonitorRelevantContext()) {
 			_resetPlayerBufferMonitorState();
-			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
-			return;
+			return idleDelay;
 		}
 		if (
 			_shouldSuppressAutomaticPlaybackResume(
@@ -3181,13 +3192,11 @@ function _monitorPlayerBuffering() {
 			_PlayerBufferState.postAdUnhealthyCount = 0;
 			_PlayerBufferState.postAdRecoveryStartedAt = 0;
 			_resetPostAdGrace();
-			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
-			return;
+			return idleDelay;
 		}
 		if (!__TTVAB_STATE__.IsBufferFixEnabled) {
 			_resetPlayerBufferMonitorState();
-			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
-			return;
+			return idleDelay;
 		}
 		const hasLivePlaybackContext =
 			__TTVAB_STATE__.PageMediaType === "live" && Boolean(currentMediaKey);
@@ -3197,8 +3206,7 @@ function _monitorPlayerBuffering() {
 				__TTVAB_STATE__.PageMediaType === "vod");
 		if (!hasAdCapablePlaybackContext) {
 			_resetPlayerBufferMonitorState();
-			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
-			return;
+			return idleDelay;
 		}
 
 		if (hasActiveAdContext) {
@@ -3228,8 +3236,7 @@ function _monitorPlayerBuffering() {
 				_resetInAdFreezeState();
 			}
 			_resetPlayerBufferMonitorState();
-			_playerBufferMonitorTimer = setTimeout(check, nextDelay);
-			return;
+			return nextDelay;
 		}
 
 		_resetPinnedBackupStallState();
@@ -3237,14 +3244,12 @@ function _monitorPlayerBuffering() {
 
 		if (!hasLivePlaybackContext) {
 			_resetPlayerBufferMonitorState();
-			_playerBufferMonitorTimer = setTimeout(check, idleDelay);
-			return;
+			return idleDelay;
 		}
 
 		if (isHidden) {
 			_clearCachedPlayerRef(false);
-			_playerBufferMonitorTimer = setTimeout(check, nextDelay);
-			return;
+			return nextDelay;
 		}
 
 		if (_cachedPlayerRefMediaKey !== currentMediaKey) {
@@ -3327,8 +3332,7 @@ function _monitorPlayerBuffering() {
 						_PlayerBufferState.position = position;
 						_PlayerBufferState.bufferedPosition = bufferedPosition;
 						_PlayerBufferState.bufferDuration = bufferDuration;
-						_playerBufferMonitorTimer = setTimeout(check, nextDelay);
-						return;
+						return nextDelay;
 					}
 					const isStablePosition = _PlayerBufferState.position === position;
 					const isStableBufferedPosition =
@@ -3484,12 +3488,9 @@ function _monitorPlayerBuffering() {
 			_PlayerBufferState.fixAttempts === 0 &&
 			_PlayerBufferState.postAdGraceUntil === 0 &&
 			_cachedPlayerRef !== null;
-		const scheduledDelay =
-			inSteadyState && nextDelay < _PLAYER_BUFFER_STEADY_DELAY_MS
-				? _PLAYER_BUFFER_STEADY_DELAY_MS
-				: nextDelay;
-
-		_playerBufferMonitorTimer = setTimeout(check, scheduledDelay);
+		return inSteadyState && nextDelay < _PLAYER_BUFFER_STEADY_DELAY_MS
+			? _PLAYER_BUFFER_STEADY_DELAY_MS
+			: nextDelay;
 	}
 
 	check();

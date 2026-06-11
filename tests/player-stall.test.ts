@@ -247,7 +247,8 @@ describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
 		const suppress = T<(channel?: string, mediaKey?: string) => number>(
 			"_suppressCompetingMediaDuringAd",
 		);
-		g._getPrimaryMediaElement = () => null;
+		const primary = makeCompetingVideo();
+		g._getPrimaryMediaElement = () => primary;
 		g._resolvePlayerMediaKey = () => "live:test";
 		const logs: string[] = [];
 		g._log = (msg: string) => {
@@ -267,6 +268,26 @@ describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
 			suppressedMedia: Map<unknown, unknown>;
 		};
 		expect(state.suppressedMedia.size).toBe(1);
+		expect(state.suppressedMedia.has(primary)).toBe(false);
+		expect(primary.muted).toBe(false);
+		g._getPrimaryMediaElement = () => null;
+	});
+
+	it("suppresses nothing when no primary player can be identified", () => {
+		const suppress = T<(channel?: string, mediaKey?: string) => number>(
+			"_suppressCompetingMediaDuringAd",
+		);
+		g._getPrimaryMediaElement = () => null;
+		g._resolvePlayerMediaKey = () => "live:test";
+		g._log = () => {};
+		const playingVideo = makeCompetingVideo();
+
+		expect(suppress("test", "live:test")).toBe(0);
+		expect(playingVideo.muted).toBe(false);
+		const state = g._AdAudioSuppressionState as {
+			suppressedMedia: Map<unknown, unknown>;
+		};
+		expect(state.suppressedMedia.size).toBe(0);
 	});
 });
 
