@@ -84,11 +84,15 @@ beforeAll(() => {
 	g.window = g;
 	g.console = { log() {}, warn() {}, error() {}, info() {}, debug() {} };
 	g.__realCanReloadNativePlayerAfterAd = g._canReloadNativePlayerAfterAd;
+	g.__realFindBackupStream = g._findBackupStream;
 });
 
 afterEach(() => {
 	if (g.__realCanReloadNativePlayerAfterAd) {
 		g._canReloadNativePlayerAfterAd = g.__realCanReloadNativePlayerAfterAd;
+	}
+	if (g.__realFindBackupStream) {
+		g._findBackupStream = g.__realFindBackupStream;
 	}
 });
 
@@ -2345,5 +2349,86 @@ describe("_serveBounceDebouncedPlaylist (bounce window serving)", () => {
 		await fn()(info, null, "#NATIVE", 101000);
 		await fn()(info, null, "#NATIVE", 102500);
 		expect(info.LastAdEndBounceAt).toBe(100000);
+	});
+});
+
+describe("_findBackupStream (in-flight coalescing)", () => {
+	type SearchResult = {
+		type: string | null;
+		m3u8: string | null;
+		isFallback: boolean;
+	};
+	const fn = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: unknown,
+				startIdx?: number,
+				currentResolution?: unknown,
+			) => Promise<SearchResult>
+		>("_findBackupStream");
+
+	let realSearch: unknown;
+	let searchCalls = 0;
+
+	beforeEach(() => {
+		realSearch = g._searchBackupStream;
+		searchCalls = 0;
+	});
+
+	afterEach(() => {
+		g._searchBackupStream = realSearch;
+	});
+
+	it("shares one in-flight search across concurrent callers", async () => {
+		let resolveSearch: (value: SearchResult) => void = () => {};
+		g._searchBackupStream = () => {
+			searchCalls++;
+			return new Promise<SearchResult>((r) => {
+				resolveSearch = r;
+			});
+		};
+		const info = makeInfo();
+
+		const p1 = fn()(info, null);
+		const p2 = fn()(info, null, 2);
+		expect(searchCalls).toBe(1);
+
+		resolveSearch({ type: "embed", m3u8: "#BACKUP", isFallback: false });
+		const [r1, r2] = await Promise.all([p1, p2]);
+		expect(r1).toBe(r2);
+		expect(r1.m3u8).toBe("#BACKUP");
+		expect(info._BackupSearchPromise).toBe(null);
+	});
+
+	it("starts a fresh search after the previous one settles", async () => {
+		g._searchBackupStream = async () => {
+			searchCalls++;
+			return { type: "site", m3u8: "#A", isFallback: false };
+		};
+		const info = makeInfo();
+
+		await fn()(info, null);
+		await fn()(info, null);
+		expect(searchCalls).toBe(2);
+	});
+
+	it("clears the in-flight slot when the search rejects", async () => {
+		g._searchBackupStream = async () => {
+			searchCalls++;
+			throw new Error("token fetch failed");
+		};
+		const info = makeInfo();
+
+		await expect(fn()(info, null)).rejects.toThrow("token fetch failed");
+		expect(info._BackupSearchPromise).toBe(null);
+
+		g._searchBackupStream = async () => {
+			searchCalls++;
+			return { type: "popout", m3u8: "#B", isFallback: false };
+		};
+		const recovered = await fn()(info, null);
+		expect(recovered.m3u8).toBe("#B");
+		expect(searchCalls).toBe(2);
 	});
 });

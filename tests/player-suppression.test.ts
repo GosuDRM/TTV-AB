@@ -15,6 +15,7 @@ function loadModule(modulePath: string) {
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
+	loadModule("../dist/src/modules/state.js");
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/player.js");
 	g._log = () => {};
@@ -213,5 +214,78 @@ describe("_suppressCompetingMediaDuringAd (periodic resweep)", () => {
 		expect(sweep()("testchannel", "live:testchannel")).toBe(0);
 		expect(competing.el.muted).toBe(true);
 		expect(suppressionState().suppressedMedia.size).toBe(1);
+	});
+});
+
+describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
+	const setContext = () =>
+		T<
+			(
+				context: Record<string, unknown>,
+				options?: { broadcast?: boolean },
+			) => Record<string, unknown>
+		>("_setPagePlaybackContext");
+
+	function navState(mediaKey: string | null) {
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: mediaKey,
+			CurrentAdMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			PinnedBackupPlayerType: "embed",
+			PinnedBackupPlayerChannel: "testchannel",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+		};
+		(g._S as Record<string, unknown>).workers = [];
+	}
+
+	it("restores connected suppressed media when the media key changes", () => {
+		navState("live:testchannel");
+		const media = addSuppressed(true);
+		suppressionState().activeMediaKey = "live:testchannel";
+
+		setContext()(
+			{ MediaType: "live", ChannelName: "otherchannel" },
+			{ broadcast: false },
+		);
+
+		expect(media.muted).toBe(false);
+		expect(media.volume).toBe(1);
+		expect(media.hasAttribute("data-ttvab-audio-suppressed")).toBe(false);
+		expect(suppressionState().suppressedMedia.size).toBe(0);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey,
+		).toBe(null);
+	});
+
+	it("keeps suppression intact when the context is unchanged", () => {
+		navState("live:testchannel");
+		const media = addSuppressed(true);
+		suppressionState().activeMediaKey = "live:testchannel";
+
+		setContext()(
+			{ MediaType: "live", ChannelName: "testchannel" },
+			{ broadcast: false },
+		);
+
+		expect(media.muted).toBe(true);
+		expect(suppressionState().suppressedMedia.size).toBe(1);
+	});
+
+	it("drops detached suppressed elements from tracking on navigation", () => {
+		navState("live:testchannel");
+		addSuppressed(false);
+		suppressionState().activeMediaKey = "live:testchannel";
+
+		setContext()(
+			{ MediaType: "live", ChannelName: "otherchannel" },
+			{ broadcast: false },
+		);
+
+		expect(suppressionState().suppressedMedia.size).toBe(0);
 	});
 });
