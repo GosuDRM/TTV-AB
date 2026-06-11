@@ -85,17 +85,33 @@ function _showDonation() {
 			toast.id = "ttvab-reminder";
 			toast.innerHTML = `
                 <style>
-                    #ttvab-reminder{position:fixed;bottom:20px;right:20px;background:linear-gradient(135deg,#9146FF 0%,#772CE8 100%);color:#fff;padding:16px 20px;border-radius:12px;font-family:'Segoe UI',sans-serif;font-size:14px;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:999999;animation:ttvab-slide .3s ease}
-                    @keyframes ttvab-slide{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-                    #ttvab-reminder-close{position:absolute;top:8px;right:10px;background:none;border:none;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;padding:0;line-height:1}
+                    #ttvab-reminder{position:fixed;bottom:20px;right:20px;z-index:999999;width:320px;max-width:calc(100vw - 40px);padding:16px 18px 18px;border-radius:14px;border:1px solid transparent;background:linear-gradient(165deg,#170734 0%,#0d0220 55%,#130534 100%) padding-box,linear-gradient(120deg,#ff3db4 0%,#9146FF 45%,#2ff0e6 100%) border-box;color:#f1e9ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.5;box-shadow:0 14px 44px rgba(13,2,32,.65),0 0 26px rgba(145,70,255,.28);overflow:hidden;animation:ttvab-reminder-in .45s cubic-bezier(.21,1.02,.55,1)}
+                    @keyframes ttvab-reminder-in{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+                    @keyframes ttvab-reminder-out{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(12px) scale(.97)}}
+                    #ttvab-reminder .brand{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-right:24px}
+                    #ttvab-reminder .mark{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#9146FF,#772CE8);display:grid;place-items:center;font-size:10px;font-weight:800;color:#fff;letter-spacing:.04em;box-shadow:0 0 12px rgba(145,70,255,.55)}
+                    #ttvab-reminder .name{font-size:12px;font-weight:800;letter-spacing:.14em;background:linear-gradient(90deg,#ff3db4,#2ff0e6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+                    #ttvab-reminder .pill{margin-left:auto;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#ff3db4;border:1px solid rgba(255,61,180,.45);border-radius:999px;padding:2px 8px;background:rgba(255,61,180,.08)}
+                    #ttvab-reminder-close{position:absolute;top:10px;right:12px;background:none;border:none;color:#b7a6e6;font-size:18px;cursor:pointer;padding:2px;line-height:1;transition:color .15s ease}
                     #ttvab-reminder-close:hover{color:#fff}
-                    #ttvab-reminder-btn{display:inline-block;margin-top:10px;padding:8px 16px;background:#fff;color:#772CE8;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px}
-                    #ttvab-reminder-btn:hover{background:#f0f0f0}
+                    #ttvab-reminder .title{margin:0 0 4px;font-size:16px;font-weight:700;color:#fff}
+                    #ttvab-reminder .sub{margin:0 0 14px;color:#b7a6e6;font-size:13px}
+                    #ttvab-reminder-btn{display:block;width:100%;padding:10px 16px;background:linear-gradient(120deg,#ff3db4 0%,#9146FF 60%,#772CE8 100%);color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:.02em;box-shadow:0 4px 16px rgba(145,70,255,.4);transition:transform .15s ease,box-shadow .15s ease}
+                    #ttvab-reminder-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(255,61,180,.45)}
+                    #ttvab-reminder .progress{position:absolute;left:0;right:0;bottom:0;height:2px;transform-origin:left;background:linear-gradient(90deg,#ff3db4,#9146FF,#2ff0e6);animation:ttvab-reminder-bar 15s linear forwards}
+                    @keyframes ttvab-reminder-bar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+                    @media (prefers-reduced-motion:reduce){#ttvab-reminder{animation:none}#ttvab-reminder .progress{animation:none;transform:scaleX(1)}#ttvab-reminder-btn{transition:none}}
                 </style>
-                <button id="ttvab-reminder-close">×</button>
-                <div style="margin-bottom:4px;font-weight:600">💜 Enjoying TTV AB?</div>
-                <div style="opacity:.9">If this extension saves you from ads, consider buying me a coffee!</div>
-                <button id="ttvab-reminder-btn">Support the Developer</button>
+                <button id="ttvab-reminder-close" aria-label="Dismiss">×</button>
+                <div class="brand">
+                    <div class="mark">AB</div>
+                    <div class="name">TTV&nbsp;AB</div>
+                    <div class="pill">💜 Free</div>
+                </div>
+                <div class="title">Enjoying ad-free Twitch?</div>
+                <p class="sub">TTV AB is free and built by one person. If it keeps the ads away, consider fueling development with a coffee.</p>
+                <button id="ttvab-reminder-btn">☕ Support the Developer</button>
+                <div class="progress"></div>
             `;
 
 			document.body.appendChild(toast);
@@ -124,7 +140,7 @@ function _showDonation() {
 			uiFlags.donationDismissTimer = setTimeout(() => {
 				uiFlags.donationDismissTimer = null;
 				if (toast.isConnected) {
-					toast.style.animation = "ttvab-slide .3s ease reverse";
+					toast.style.animation = "ttvab-reminder-out .3s ease forwards";
 					setTimeout(() => toast.remove(), 300);
 				}
 			}, 15000);
