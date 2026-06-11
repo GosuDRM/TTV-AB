@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.8.3] - 2026-06-11
+
+### Fixed
+- The blocked-ad replacement segment now has a single validated source. The worker fetch hook carried its own copy of the empty MP4 segment while a structurally corrupt copy sat unused at module level; the corrupt copy was repaired to the valid bytes, the hook now reads it via the worker bootstrap, and a test validates the MP4 box structure so it cannot drift or truncate again.
+- A pause/resume request from a previous stream's worker arriving just after channel navigation is now ignored like every other stale worker event, instead of briefly pause/playing the new channel's player.
+
+### Changed
+- New ad-blocking workers no longer embed the page's tracked-worker list in their bootstrap source, the backup-selection handler's function guards now cover every function they call, and a duplicate pong handler was removed.
+
 ## [9.8.2] - 2026-06-11
 
 ### Fixed
