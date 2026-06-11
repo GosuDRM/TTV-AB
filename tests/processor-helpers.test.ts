@@ -289,6 +289,16 @@ describe("_resolvePreferredBackupResolution (silent-hold quality target)", () =>
 		getState().PreferredQualityGroup = null;
 	});
 
+	it("treats an auto preference as no preference so the sustained reading drives", () => {
+		getState().PreferredQualityGroup = "auto";
+		const info = makeInfo({
+			ResolutionList: ladder,
+			SustainedNativeResolution: { Resolution: "1920x1080", Name: "1080p60" },
+		});
+		expect(fn()(info)).toEqual({ Resolution: "1920x1080", Name: "1080p60" });
+		getState().PreferredQualityGroup = null;
+	});
+
 	it("floors a sub-360p sustained reading up to the lowest variant at or above 360p", () => {
 		getState().PreferredQualityGroup = null;
 		const info = makeInfo({

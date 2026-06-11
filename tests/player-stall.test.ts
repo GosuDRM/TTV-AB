@@ -658,3 +658,57 @@ describe("_checkInAdPlayheadFreeze", () => {
 		expect(playerTaskCalls).toEqual([]);
 	});
 });
+
+describe("_syncPreferredQualityGroup", () => {
+	const sync = () => T<() => boolean>("_syncPreferredQualityGroup");
+
+	beforeEach(() => {
+		localStorage.removeItem("video-quality");
+	});
+
+	it("syncs the persisted explicit quality choice", () => {
+		const messages: unknown[] = [];
+		g._broadcastWorkers = (m: unknown) => messages.push(m);
+		localStorage.setItem(
+			"video-quality",
+			JSON.stringify({ default: "720p60" }),
+		);
+		expect(sync()()).toBe(true);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).PreferredQualityGroup,
+		).toBe("720p60");
+		expect(messages).toEqual([
+			{ key: "UpdatePreferredQualityGroup", value: "720p60" },
+		]);
+	});
+
+	it("does not invent a preference when nothing is persisted", () => {
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PreferredQualityGroup = null;
+		expect(sync()()).toBe(false);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).PreferredQualityGroup,
+		).toBe(null);
+	});
+
+	it("propagates a return to auto so a stale explicit choice clears", () => {
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PreferredQualityGroup =
+			"360p30";
+		localStorage.setItem("video-quality", JSON.stringify({ default: "auto" }));
+		expect(sync()()).toBe(true);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).PreferredQualityGroup,
+		).toBe("auto");
+	});
+
+	it("does not re-broadcast an unchanged group", () => {
+		const messages: unknown[] = [];
+		g._broadcastWorkers = (m: unknown) => messages.push(m);
+		localStorage.setItem(
+			"video-quality",
+			JSON.stringify({ default: "720p60" }),
+		);
+		expect(sync()()).toBe(true);
+		expect(sync()()).toBe(false);
+		expect(messages).toHaveLength(1);
+	});
+});
