@@ -500,3 +500,59 @@ describe("worker watchdog visibility awareness", () => {
 		}
 	});
 });
+
+describe("bridge re-handshake on content-script announce", () => {
+	function announceEvent() {
+		const event = new MessageEvent("message", {
+			data: { type: "ttvab-bridge-announce" },
+		});
+		Object.defineProperty(event, "source", { value: window });
+		return event;
+	}
+
+	async function flushAsync(ms = 60) {
+		await new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	it("re-broadcasts the session token for a stale port, but not for a fresh one", async () => {
+		const bindHandshake = T<() => void>("_bindBridgePortHandshake");
+		const attachBridgePort =
+			T<(port: unknown, sessionToken?: string | null) => boolean>(
+				"_attachBridgePort",
+			);
+		const getToken = T<() => string>("_getBridgeSessionToken");
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(1000000);
+		bindHandshake();
+		const token = getToken();
+		expect(attachBridgePort(makeBridgePort(), token)).toBe(true);
+		await flushAsync();
+
+		const requests: Array<{ detail?: { token?: string } }> = [];
+		const recordRequests = (event: MessageEvent) => {
+			const data = event.data as {
+				type?: string;
+				detail?: { token?: string };
+			};
+			if (data?.type === "ttvab-bridge-token-request") {
+				requests.push(data);
+			}
+		};
+		window.addEventListener("message", recordRequests);
+
+		window.dispatchEvent(announceEvent());
+		await flushAsync();
+		expect(requests).toHaveLength(0);
+
+		nowSpy.mockReturnValue(1005000);
+		window.dispatchEvent(announceEvent());
+		await flushAsync();
+		expect(requests.length).toBeGreaterThanOrEqual(1);
+		expect(requests[0]?.detail?.token).toBe(token);
+
+		window.removeEventListener("message", recordRequests);
+		nowSpy.mockRestore();
+		await flushAsync(1100);
+	});
+});
