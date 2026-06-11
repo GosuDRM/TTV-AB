@@ -1057,7 +1057,6 @@ function _createStreamInfo(context) {
 		_BackupSearchCount: 0,
 		_BackupSearchErrorCount: 0,
 		_BackupSearchFailCount: 0,
-		_FallbackEntryCount: 0,
 		LastAdEndReloadAt: 0,
 		LastAdEndReloadKind: null,
 		PostEscapeReloadCounterproductive: false,
@@ -1812,11 +1811,13 @@ async function _processM3U8Core(url, text, realFetch) {
 		}
 
 		const backupTargetRes = _resolveAdBackupTargetResolution(info, url) || res;
-		let {
-			type: backupType,
-			m3u8: backupM3u8,
-			isFallback,
-		} = await _findBackupStream(info, realFetch, startIdx, backupTargetRes);
+		let { type: backupType, m3u8: backupM3u8 } = await _findBackupStream(
+			info,
+			realFetch,
+			startIdx,
+			backupTargetRes,
+		);
+		let isFallback = false;
 
 		if (!backupM3u8) {
 			if (info.LastCleanBackupM3U8) {
@@ -2085,31 +2086,17 @@ function _getFallbackPromotionPolicy({
 	candidateIsPlayable,
 	simulatedAdsDepthSatisfied,
 }) {
-	const base = {
-		allowSelectedPromotion: false,
-		allowFallbackPromotion: false,
-		reason: "deny-by-default",
-	};
-
 	if (!candidateIsPlayable) {
-		return { ...base, reason: "not-playable" };
+		return { allowSelectedPromotion: false, reason: "not-playable" };
 	}
 	if (candidateHasAds) {
-		return {
-			allowSelectedPromotion: false,
-			allowFallbackPromotion: false,
-			reason: "ad-marked",
-		};
+		return { allowSelectedPromotion: false, reason: "ad-marked" };
 	}
 	if (!simulatedAdsDepthSatisfied) {
-		return { ...base, reason: "simulated-ads-depth" };
+		return { allowSelectedPromotion: false, reason: "simulated-ads-depth" };
 	}
 
-	return {
-		allowSelectedPromotion: true,
-		allowFallbackPromotion: true,
-		reason: "clean-playable",
-	};
+	return { allowSelectedPromotion: true, reason: "clean-playable" };
 }
 
 function _getResolvedLqHqHoldMinMs() {
@@ -2249,8 +2236,6 @@ async function _searchBackupStream(
 	_forceClearBackupCooldownsIfStale(info);
 	let backupType = null;
 	let backupM3u8 = null;
-	let fallbackM3u8 = null;
-	let fallbackType = null;
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
@@ -2498,18 +2483,8 @@ async function _searchBackupStream(
 											})
 										: {
 												allowSelectedPromotion: false,
-												allowFallbackPromotion: false,
 												reason: "policy-unavailable",
 											};
-								const canPromoteFallback =
-									promotionPolicy.allowFallbackPromotion &&
-									(!fallbackM3u8 ||
-										pt === __TTVAB_STATE__.FallbackPlayerType ||
-										fallbackType !== __TTVAB_STATE__.FallbackPlayerType);
-								if (canPromoteFallback) {
-									fallbackM3u8 = m3u8;
-									fallbackType = pt;
-								}
 
 								if (promotionPolicy.allowSelectedPromotion) {
 									_clearBackupPlayerRetryCooldown(info, pt);
@@ -2592,27 +2567,11 @@ async function _searchBackupStream(
 		}
 	}
 
-	let isFallback = false;
-	if (!backupM3u8 && fallbackM3u8) {
-		backupType = fallbackType || __TTVAB_STATE__.FallbackPlayerType;
-		backupM3u8 = fallbackM3u8;
-		isFallback = true;
-		if (!info.LoggedBackupAdsByType?.has(backupType)) {
-			info.LastCleanBackupM3U8 = backupM3u8;
-			info.LastCleanBackupPlayerType = backupType;
-			info.LastCleanBackupAt = Date.now();
-		}
-		_log(`[Trace] Using fallback: ${backupType}`, "warning");
-	}
-
 	if (backupM3u8) {
 		info._BackupSearchCount = (info._BackupSearchCount || 0) + 1;
-		if (isFallback) {
-			info._FallbackEntryCount = (info._FallbackEntryCount || 0) + 1;
-		}
 	} else {
 		info._BackupSearchFailCount = (info._BackupSearchFailCount || 0) + 1;
 	}
 
-	return { type: backupType, m3u8: backupM3u8, isFallback };
+	return { type: backupType, m3u8: backupM3u8 };
 }

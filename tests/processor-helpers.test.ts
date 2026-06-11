@@ -633,7 +633,6 @@ describe("_getFallbackPromotionPolicy", () => {
 			simulatedAdsDepthSatisfied: true,
 		});
 		expect(r.allowSelectedPromotion).toBe(false);
-		expect(r.allowFallbackPromotion).toBe(false);
 		expect(r.reason).toBe("ad-marked");
 	});
 
@@ -644,17 +643,16 @@ describe("_getFallbackPromotionPolicy", () => {
 			simulatedAdsDepthSatisfied: false,
 		});
 		expect(r.allowSelectedPromotion).toBe(false);
-		expect(r.allowFallbackPromotion).toBe(false);
+		expect(r.reason).toBe("simulated-ads-depth");
 	});
 
-	it("allows both for clean playable candidates", () => {
+	it("allows promotion for clean playable candidates", () => {
 		const r = fn()({
 			candidateHasAds: false,
 			candidateIsPlayable: true,
 			simulatedAdsDepthSatisfied: true,
 		});
 		expect(r.allowSelectedPromotion).toBe(true);
-		expect(r.allowFallbackPromotion).toBe(true);
 		expect(r.reason).toBe("clean-playable");
 	});
 });
@@ -911,7 +909,6 @@ describe("_findBackupStream fallback policy", () => {
 			) => Promise<{
 				type: string | null;
 				m3u8: string | null;
-				isFallback: boolean;
 			}>
 		>("_findBackupStream");
 	const currentResolution = {
@@ -985,7 +982,6 @@ describe("_findBackupStream fallback policy", () => {
 			expect(tokenCalls).toEqual(["embed", "autoplay"]);
 			expect(result.type).toBe("autoplay");
 			expect(result.m3u8).toBe(cleanPlaylist);
-			expect(result.isFallback).toBe(false);
 		} finally {
 			state.BackupPlayerTypes = previousTypes;
 			state.DisableAutoplayBackup = previousDisable;
@@ -1052,7 +1048,6 @@ describe("_findBackupStream fallback policy", () => {
 			expect(tokenCalls).toEqual(["popout", "embed"]);
 			expect(result.type).toBe("embed");
 			expect(result.m3u8).toBe(cleanPlaylist);
-			expect(result.isFallback).toBe(false);
 		} finally {
 			state.BackupPlayerTypes = previousTypes;
 			state.DisableAutoplayBackup = previousDisable;
@@ -1110,7 +1105,7 @@ describe("_findBackupStream fallback policy", () => {
 			);
 
 			expect(tokenCalls).toEqual(["embed"]);
-			expect(result).toEqual({ type: null, m3u8: null, isFallback: false });
+			expect(result).toEqual({ type: null, m3u8: null });
 		} finally {
 			state.BackupPlayerTypes = previousTypes;
 			state.DisableAutoplayBackup = previousDisable;
@@ -1178,7 +1173,6 @@ describe("_findBackupStream fallback policy", () => {
 			expect(tokenCalls).toEqual(["embed"]);
 			expect(result.type).toBe("embed");
 			expect(result.m3u8).toBe(cleanPlaylist);
-			expect(result.isFallback).toBe(false);
 		} finally {
 			state.BackupPlayerTypes = previousTypes;
 			state.DisableAutoplayBackup = previousDisable;
@@ -2356,7 +2350,6 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 	type SearchResult = {
 		type: string | null;
 		m3u8: string | null;
-		isFallback: boolean;
 	};
 	const fn = () =>
 		T<
@@ -2394,7 +2387,7 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 		const p2 = fn()(info, null, 2);
 		expect(searchCalls).toBe(1);
 
-		resolveSearch({ type: "embed", m3u8: "#BACKUP", isFallback: false });
+		resolveSearch({ type: "embed", m3u8: "#BACKUP" });
 		const [r1, r2] = await Promise.all([p1, p2]);
 		expect(r1).toBe(r2);
 		expect(r1.m3u8).toBe("#BACKUP");
@@ -2404,7 +2397,7 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 	it("starts a fresh search after the previous one settles", async () => {
 		g._searchBackupStream = async () => {
 			searchCalls++;
-			return { type: "site", m3u8: "#A", isFallback: false };
+			return { type: "site", m3u8: "#A" };
 		};
 		const info = makeInfo();
 
@@ -2425,7 +2418,7 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 
 		g._searchBackupStream = async () => {
 			searchCalls++;
-			return { type: "popout", m3u8: "#B", isFallback: false };
+			return { type: "popout", m3u8: "#B" };
 		};
 		const recovered = await fn()(info, null);
 		expect(recovered.m3u8).toBe("#B");
