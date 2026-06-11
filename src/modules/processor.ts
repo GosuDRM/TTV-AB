@@ -329,6 +329,7 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 function _recordSustainedNativeResolution(info, url) {
 	if (
 		!info ||
+		info.IsShowingAd ||
 		info.IsUsingBackupStream ||
 		info.IsUsingFallbackStream ||
 		info.IsHoldingBackupAfterAd
@@ -356,19 +357,28 @@ function _recordSustainedNativeResolution(info, url) {
 	const prevHeight = Number.isFinite(ph) ? ph : 0;
 	const now = Date.now();
 	const windowMs = 60000;
-	if (
-		height >= prevHeight ||
-		now - (Number(info.SustainedNativeResolutionAt) || 0) > windowMs
-	) {
-		const prevResolution = info.SustainedNativeResolution?.Resolution || null;
-		info.SustainedNativeResolution = resolution;
-		info.SustainedNativeResolutionAt = now;
-		if (resolution.Resolution && resolution.Resolution !== prevResolution) {
-			_log(
-				`[Trace] Sustained native quality: ${prevResolution || "none"} -> ${resolution.Resolution}`,
-				"info",
-			);
+	if (height < prevHeight) {
+		const isStaleWindow =
+			now - (Number(info.SustainedNativeResolutionAt) || 0) > windowMs;
+		if (!isStaleWindow) {
+			return;
 		}
+		const lastAdEndedAt = Math.max(
+			Number(info.LastAdEndReloadAt) || 0,
+			Number(__TTVAB_STATE__?.LastAdEndedAt) || 0,
+		);
+		if (lastAdEndedAt > 0 && now - lastAdEndedAt <= windowMs) {
+			return;
+		}
+	}
+	const prevResolution = info.SustainedNativeResolution?.Resolution || null;
+	info.SustainedNativeResolution = resolution;
+	info.SustainedNativeResolutionAt = now;
+	if (resolution.Resolution && resolution.Resolution !== prevResolution) {
+		_log(
+			`[Trace] Sustained native quality: ${prevResolution || "none"} -> ${resolution.Resolution}`,
+			"info",
+		);
 	}
 }
 
