@@ -700,6 +700,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		"warning",
 	);
 
+	let hiddenDeferLastMediaTime = -1;
 	const runRecovery = () => {
 		if (worker.__TTVABIntentionallyTerminated) return;
 		const currentContext = _getPlaybackContextFromUrl(window.location.href);
@@ -715,9 +716,28 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			typeof _isNativeDocumentHidden === "function" &&
 			_isNativeDocumentHidden() === true
 		) {
-			_log("Deferring worker recovery reload until tab is visible", "info");
-			setTimeout(runRecovery, HW_WATCHDOG_INTERVAL_MS);
-			return;
+			const hiddenMedia =
+				typeof _getPrimaryMediaElement === "function"
+					? _getPrimaryMediaElement()
+					: null;
+			const hiddenMediaTime =
+				hiddenMedia instanceof HTMLMediaElement
+					? Number(hiddenMedia.currentTime) || 0
+					: -1;
+			const playbackDead =
+				hiddenMediaTime >= 0 &&
+				hiddenDeferLastMediaTime >= 0 &&
+				hiddenMediaTime <= hiddenDeferLastMediaTime + 0.2;
+			hiddenDeferLastMediaTime = hiddenMediaTime;
+			if (!playbackDead) {
+				_log("Deferring worker recovery reload until tab is visible", "info");
+				setTimeout(runRecovery, HW_WATCHDOG_INTERVAL_MS);
+				return;
+			}
+			_log(
+				"Proceeding with worker recovery while hidden — playback is not advancing",
+				"warning",
+			);
 		}
 		const now = Date.now();
 		if (now - _lastWorkerRecoveryReloadAt < HW_RECOVERY_COOLDOWN_MS) {
