@@ -444,7 +444,7 @@ function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
 }
 
 function _createEmptyAdHoldPlaylist(text, info) {
-	const headerLines = _extractPlaylistHeaders(text)
+	const headerLines = (_extractPlaylistHeaders(text) || "#EXTM3U")
 		.split("\n")
 		.map((line) => line.trim())
 		.filter(Boolean);
@@ -522,10 +522,8 @@ function _isEmptyAdHoldSegmentUrl(url) {
 function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 	const lines = text.split("\n");
 	const len = lines.length;
-	const adUrl = "https://twitch.tv";
 	let stripped = false;
 	let i = 0;
-	const strippedSegments = [];
 	let strippedMediaEntryCount = 0;
 
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
@@ -534,7 +532,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
 		(!skipAutoForceStrip && hasExplicitAdMetadata && !hasKnownAdSegments);
-	const maxRecoverySegments = forceStripAllSegments ? len : 6;
 
 	let adSegmentCount = 0;
 	let _liveSegmentCount = 0;
@@ -571,17 +568,7 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 		(adSegmentCount > 0 || forceStripAllSegments);
 
 	for (i = 0; i < len; i++) {
-		let line = lines[i];
-
-		if (line?.includes("X-TV-TWITCH-AD")) {
-			line = line
-				.replace(/X-TV-TWITCH-AD-URL="[^"]*"/, `X-TV-TWITCH-AD-URL="${adUrl}"`)
-				.replace(
-					/X-TV-TWITCH-AD-CLICK-TRACKING-URL="[^"]*"/,
-					`X-TV-TWITCH-AD-CLICK-TRACKING-URL="${adUrl}"`,
-				);
-			lines[i] = line;
-		}
+		const line = lines[i];
 
 		if (shouldStrip && line?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
 			const prefetchUrl = line
@@ -599,11 +586,6 @@ function _stripAds(text, stripAll, info, skipAutoForceStrip = false) {
 
 			if (isAdSegment) {
 				const segmentUrl = lines[i + 1];
-
-				strippedSegments.push({ extinf: lines[i], url: segmentUrl });
-				if (strippedSegments.length > maxRecoverySegments) {
-					strippedSegments.shift();
-				}
 
 				if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl))
 					info.NumStrippedAdSegments++;
