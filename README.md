@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.7.5-purple)
+![Version](https://img.shields.io/badge/version-9.7.6-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.7.5-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.7.6-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -64,14 +64,14 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
+### v9.7.6 — 2026-06-11
+- **Backups keep your real quality after a player hiccup.** When the player restarted itself on auto quality moments before an ad, the backup could pin to the temporary 360p ramp-up rung for the whole break; backups now follow your actual sustained quality, and only an explicitly chosen quality overrides it. Extra-long ad pods also no longer bump the "Ads Blocked" counter a second time mid-break.
+
 ### v9.7.5 — 2026-06-11
 - **No more purple-screen freezes on client-side ad breaks.** A midroll whose ad markers lingered could freeze the backup stream for up to 90 seconds behind Twitch's purple "commercial break" slate. The backup now keeps refreshing live through the entire break, a playhead stuck at a buffer gap seeks past it within seconds even mid-ad, and Twitch's separate ad player element is muted the moment it appears.
 
 ### v9.7.4 — 2026-06-11
 - **Stable, full-quality ad breaks.** A midroll now resolves in one clean cycle instead of repeatedly flickering between backup and native, the backup plays at the quality you were actually watching instead of dropping to 360p, and a post-ad freeze that could stall playback for ~30 seconds is now skipped past within a few seconds. Also smooths out micro-stutters on the backup stream and quiets duplicate ad spoofing.
-
-### v9.7.3 — 2026-06-11
-- **Smarter post-ad recovery and cleaner ad spoofing.** After a quick midroll chain settles, the extension re-evaluates whether reloading the player helps instead of staying cautious for the whole session, and the ad-completion spoofing no longer repeats the once-per-pod signal when Twitch omits the pod length.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
