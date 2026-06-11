@@ -344,3 +344,114 @@ describe("_doPlayerTask ad-recovery reload backoff", () => {
 		expect(state._AdRecoveryConsecutiveFailures).toBe(3);
 	});
 });
+
+describe("_trySeekPastFrozenBufferGap", () => {
+	const fn = () =>
+		T<
+			(
+				video: HTMLVideoElement | null,
+				currentTime: number,
+				readyState: number,
+			) => boolean
+		>("_trySeekPastFrozenBufferGap");
+
+	function bufferState() {
+		return g._PlayerBufferState as Record<string, number>;
+	}
+
+	function resetGapState() {
+		const s = bufferState();
+		s.gapJumpLastPosition = -1;
+		s.gapJumpStuckTicks = 0;
+		s.lastFixTime = 0;
+		s.numSame = 5;
+	}
+
+	function makeGapVideo(ranges: Array<[number, number]>) {
+		const seeks: number[] = [];
+		const video = document.createElement("video");
+		Object.defineProperty(video, "buffered", {
+			get: () => ({
+				length: ranges.length,
+				start: (i: number) => ranges[i][0],
+				end: (i: number) => ranges[i][1],
+			}),
+			configurable: true,
+		});
+		let ct = 0;
+		Object.defineProperty(video, "currentTime", {
+			get: () => ct,
+			set: (v: number) => {
+				ct = v;
+				seeks.push(v);
+			},
+			configurable: true,
+		});
+		return { video: video as HTMLVideoElement, seeks };
+	}
+
+	it("does not act until the playhead has been stuck for three ticks", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([
+			[0, 34],
+			[36, 50],
+		]);
+		expect(fn()(video, 34, 1)).toBe(false);
+		expect(fn()(video, 34, 1)).toBe(false);
+		expect(fn()(video, 34, 1)).toBe(false);
+		expect(seeks).toEqual([]);
+	});
+
+	it("seeks past the buffered gap once frozen with low readyState", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([
+			[0, 34],
+			[36, 50],
+		]);
+		fn()(video, 34, 1);
+		fn()(video, 34, 1);
+		fn()(video, 34, 1);
+		const acted = fn()(video, 34, 1);
+		expect(acted).toBe(true);
+		expect(seeks).toHaveLength(1);
+		expect(seeks[0]).toBeGreaterThan(36);
+		expect(seeks[0]).toBeLessThan(36.2);
+		expect(bufferState().gapJumpStuckTicks).toBe(0);
+		expect(bufferState().numSame).toBe(0);
+	});
+
+	it("resets the stuck counter when the playhead advances", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([
+			[0, 34],
+			[36, 50],
+		]);
+		fn()(video, 34, 1);
+		fn()(video, 34, 1);
+		fn()(video, 35, 1);
+		expect(bufferState().gapJumpStuckTicks).toBe(0);
+		fn()(video, 35, 1);
+		expect(seeks).toEqual([]);
+	});
+
+	it("does not seek when readyState shows data is flowing", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([
+			[0, 34],
+			[36, 50],
+		]);
+		for (let i = 0; i < 5; i++) {
+			expect(fn()(video, 34, 4)).toBe(false);
+		}
+		expect(seeks).toEqual([]);
+	});
+
+	it("does not seek with a single contiguous buffer range", () => {
+		resetGapState();
+		const { video, seeks } = makeGapVideo([[0, 50]]);
+		for (let i = 0; i < 5; i++) {
+			expect(fn()(video, 34, 1)).toBe(false);
+		}
+		expect(seeks).toEqual([]);
+	});
+});
