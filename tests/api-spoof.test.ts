@@ -225,3 +225,98 @@ describe("_createFetchRelayResponse", () => {
 		await expect(response.text()).resolves.toBe("hello");
 	});
 });
+
+describe("_notifyAdComplete (recent spoof dedup across bounces)", () => {
+	const notify = () =>
+		T<
+			(
+				text: string,
+				info: {
+					SpoofedAdIds: Set<string>;
+					RecentSpoofedAdIds?: Map<string, number>;
+					ActiveBackupPlayerType: string;
+				},
+			) => Promise<void>
+		>("_notifyAdComplete");
+
+	function captureBatches() {
+		const batches: GqlPacket[][] = [];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: Record<string, unknown>,
+		) => {
+			batches.push(JSON.parse(String(options.body || "[]")) as GqlPacket[]);
+			return new Response(null, { status: 200 });
+		};
+		return batches;
+	}
+
+	function impressionIds(batches: GqlPacket[][]) {
+		return batches
+			.flat()
+			.filter((p) => p.variables?.input?.eventName === "video_ad_impression")
+			.map(
+				(p) =>
+					(
+						JSON.parse(String(p.variables?.input?.eventPayload || "{}")) as {
+							ad_id?: string;
+						}
+					).ad_id,
+			);
+	}
+
+	it("does not re-spoof an ad already spoofed in a prior cycle", async () => {
+		const batches = captureBatches();
+		const info = {
+			SpoofedAdIds: new Set<string>(),
+			RecentSpoofedAdIds: new Map<string, number>([
+				["stitched-ad-1", Date.now()],
+			]),
+			ActiveBackupPlayerType: "site",
+		};
+
+		await notify()(
+			["#EXTM3U", adRangeNoPodLength(1)].join("\n").concat("\n"),
+			info,
+		);
+
+		expect(impressionIds(batches)).toEqual([]);
+		expect(info.SpoofedAdIds.has("stitched-ad-1")).toBe(true);
+	});
+
+	it("spoofs a genuinely new ad while skipping the recently spoofed one", async () => {
+		const batches = captureBatches();
+		const info = {
+			SpoofedAdIds: new Set<string>(),
+			RecentSpoofedAdIds: new Map<string, number>([
+				["stitched-ad-1", Date.now()],
+			]),
+			ActiveBackupPlayerType: "site",
+		};
+
+		await notify()(
+			["#EXTM3U", adRangeNoPodLength(1), adRangeNoPodLength(2)]
+				.join("\n")
+				.concat("\n"),
+			info,
+		);
+
+		expect(impressionIds(batches)).toEqual(["stitched-ad-2"]);
+		expect(info.SpoofedAdIds.has("stitched-ad-2")).toBe(true);
+	});
+
+	it("works without a recent map (backward compatible)", async () => {
+		const batches = captureBatches();
+		const info = {
+			SpoofedAdIds: new Set<string>(),
+			ActiveBackupPlayerType: "site",
+		};
+
+		await notify()(
+			["#EXTM3U", adRangeNoPodLength(1)].join("\n").concat("\n"),
+			info,
+		);
+
+		expect(impressionIds(batches)).toEqual(["stitched-ad-1"]);
+	});
+});

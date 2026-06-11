@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -75,6 +75,13 @@ beforeAll(() => {
 	g.self = g;
 	g.window = g;
 	g.console = { log() {}, warn() {}, error() {}, info() {}, debug() {} };
+	g.__realCanReloadNativePlayerAfterAd = g._canReloadNativePlayerAfterAd;
+});
+
+afterEach(() => {
+	if (g.__realCanReloadNativePlayerAfterAd) {
+		g._canReloadNativePlayerAfterAd = g.__realCanReloadNativePlayerAfterAd;
+	}
 });
 
 function T<T>(name: string): T {
@@ -1822,5 +1829,398 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 		expect(Number(info.FailedBackupPlayerTypes.get("site"))).toBeGreaterThan(
 			Date.now(),
 		);
+	});
+});
+
+describe("_recordSustainedNativeResolution (ad-break poisoning guard)", () => {
+	const fn = () =>
+		T<(info: Record<string, unknown>, url: string) => void>(
+			"_recordSustainedNativeResolution",
+		);
+	const URL_360 = "https://edge.example/sustained/360.m3u8";
+	const URL_1080 = "https://edge.example/sustained/1080.m3u8";
+
+	function makeQualityInfo(overrides: Record<string, unknown> = {}) {
+		return makeInfo({
+			Urls: {
+				[URL_360]: { Resolution: "640x360" },
+				[URL_1080]: { Resolution: "1920x1080" },
+			},
+			SustainedNativeResolution: null,
+			SustainedNativeResolutionAt: 0,
+			...overrides,
+		});
+	}
+
+	it("ignores playback while an ad is showing", () => {
+		getState().LastAdEndedAt = 0;
+		const info = makeQualityInfo({ IsShowingAd: true });
+		fn()(info, URL_1080);
+		expect(info.SustainedNativeResolution).toBeNull();
+	});
+
+	it("records upgrades immediately during clean playback", () => {
+		getState().LastAdEndedAt = 0;
+		const info = makeQualityInfo({
+			SustainedNativeResolution: { Resolution: "640x360" },
+			SustainedNativeResolutionAt: Date.now(),
+		});
+		fn()(info, URL_1080);
+		expect(info.SustainedNativeResolution).toEqual({ Resolution: "1920x1080" });
+	});
+
+	it("blocks a stale-window demotion right after an ad break", () => {
+		const now = Date.now();
+		getState().LastAdEndedAt = now - 5000;
+		const info = makeQualityInfo({
+			SustainedNativeResolution: { Resolution: "1920x1080" },
+			SustainedNativeResolutionAt: now - 120000,
+			LastAdEndReloadAt: 0,
+		});
+		fn()(info, URL_360);
+		expect(info.SustainedNativeResolution).toEqual({ Resolution: "1920x1080" });
+	});
+
+	it("accepts a genuine sustained demotion once the break is far behind", () => {
+		const now = Date.now();
+		getState().LastAdEndedAt = now - 120000;
+		const info = makeQualityInfo({
+			SustainedNativeResolution: { Resolution: "1920x1080" },
+			SustainedNativeResolutionAt: now - 120000,
+			LastAdEndReloadAt: 0,
+		});
+		fn()(info, URL_360);
+		expect(info.SustainedNativeResolution).toEqual({ Resolution: "640x360" });
+	});
+
+	it("keeps blocking demotions inside the fresh sustain window", () => {
+		getState().LastAdEndedAt = 0;
+		const info = makeQualityInfo({
+			SustainedNativeResolution: { Resolution: "1920x1080" },
+			SustainedNativeResolutionAt: Date.now(),
+		});
+		fn()(info, URL_360);
+		expect(info.SustainedNativeResolution).toEqual({ Resolution: "1920x1080" });
+	});
+});
+
+describe("_resolveAdBackupTargetResolution", () => {
+	const fn = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				url: string,
+			) => Record<string, unknown> | null
+		>("_resolveAdBackupTargetResolution");
+	const URL_160 = "https://edge.example/target/160.m3u8";
+	const URL_1080 = "https://edge.example/target/1080.m3u8";
+	const ladder = [
+		{ Resolution: "1920x1080", Name: "1080p60" },
+		{ Resolution: "1280x720", Name: "720p60" },
+		{ Resolution: "640x360", Name: "360p" },
+		{ Resolution: "284x160", Name: "160p" },
+	];
+
+	function makeTargetInfo(overrides: Record<string, unknown> = {}) {
+		return makeInfo({
+			ResolutionList: ladder,
+			Urls: {
+				[URL_160]: { Resolution: "284x160" },
+				[URL_1080]: { Resolution: "1920x1080" },
+			},
+			SustainedNativeResolution: null,
+			...overrides,
+		});
+	}
+
+	it("targets the sustained quality when the player rebooted onto a low rung", () => {
+		getState().PreferredQualityGroup = null;
+		const info = makeTargetInfo({
+			SustainedNativeResolution: { Resolution: "1920x1080", Name: "1080p60" },
+		});
+		expect(fn()(info, URL_160)).toEqual({
+			Resolution: "1920x1080",
+			Name: "1080p60",
+		});
+	});
+
+	it("keeps the live request when it is already the higher target", () => {
+		getState().PreferredQualityGroup = null;
+		const info = makeTargetInfo({
+			SustainedNativeResolution: { Resolution: "640x360", Name: "360p" },
+		});
+		expect(fn()(info, URL_1080)).toEqual({ Resolution: "1920x1080" });
+	});
+
+	it("falls back to the url resolution when nothing is sustained or preferred", () => {
+		getState().PreferredQualityGroup = null;
+		const info = makeTargetInfo();
+		expect(fn()(info, URL_160)).toEqual({ Resolution: "284x160" });
+	});
+
+	it("honors an explicit quality selection over a low live request", () => {
+		const state = getState();
+		const previousGroup = state.PreferredQualityGroup;
+		state.PreferredQualityGroup = "720p60";
+		try {
+			const info = makeTargetInfo();
+			expect(fn()(info, URL_160)).toEqual({
+				Resolution: "1280x720",
+				Name: "720p60",
+			});
+		} finally {
+			state.PreferredQualityGroup = previousGroup;
+		}
+	});
+});
+
+describe("_isAdEndStable (escalating confirmation)", () => {
+	const fn = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: unknown,
+				resolution?: Record<string, unknown> | null,
+			) => Promise<string>
+		>("_isAdEndStable");
+
+	function makePendingInfo(overrides: Record<string, unknown> = {}) {
+		return makeInfo({
+			IsShowingAd: true,
+			IsUsingBackupStream: true,
+			PendingAdEndAt: Date.now() - 1000,
+			CleanPlaylistCount: 2,
+			AdEndConfirmEscalation: 0,
+			...overrides,
+		});
+	}
+
+	function stubProbe(impl: (info: Record<string, unknown>) => boolean) {
+		const previous = g._canReloadNativePlayerAfterAd;
+		const calls = { count: 0 };
+		g._canReloadNativePlayerAfterAd = async (info: Record<string, unknown>) => {
+			calls.count += 1;
+			return impl(info);
+		};
+		const restore = () => {
+			g._canReloadNativePlayerAfterAd = previous;
+		};
+		return { calls, restore };
+	}
+
+	it("confirms once the base window is satisfied", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const result = await fn()(makePendingInfo(), null);
+			expect(result).toBe("ended");
+			expect(probe.calls.count).toBe(1);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("widens the window after marker bounces instead of probing again", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const result = await fn()(
+				makePendingInfo({ AdEndConfirmEscalation: 2 }),
+				null,
+			);
+			expect(result).toBe("wait");
+			expect(probe.calls.count).toBe(0);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("caps escalation so a long break can still end", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					AdEndConfirmEscalation: 99,
+					PendingAdEndAt: Date.now() - 12000,
+					CleanPlaylistCount: 6,
+				}),
+				null,
+			);
+			expect(result).toBe("ended");
+			expect(probe.calls.count).toBe(1);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("does not declare ended when the break resolved during the probe", async () => {
+		const probe = stubProbe((info) => {
+			info.IsShowingAd = false;
+			return true;
+		});
+		try {
+			const result = await fn()(makePendingInfo(), null);
+			expect(result).toBe("wait");
+			expect(probe.calls.count).toBe(1);
+		} finally {
+			probe.restore();
+		}
+	});
+});
+
+describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () => {
+	const fn = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: unknown,
+				resolution?: unknown,
+			) => Promise<boolean>
+		>("_canReloadNativePlayerAfterAd");
+
+	function stubProbeChain(tokenImpl: () => Promise<Response>) {
+		const state = getState();
+		const previous = {
+			minProbes: state.AdEndMinNativeRecoveryProbes,
+			lastType: state.LastNativePlaybackAccessTokenPlayerType,
+			getToken: g._getToken,
+			extract: g._extractPlaybackAccessToken,
+			buildUsher: g._buildUsherPlaybackUrl,
+			getStreamUrl: g._getStreamUrl,
+			fetchWithTimeout: g._fetchWithTimeout,
+		};
+		const tokenCalls = { count: 0 };
+		state.AdEndMinNativeRecoveryProbes = 3;
+		state.LastNativePlaybackAccessTokenPlayerType = "site";
+		g._getToken = () => {
+			tokenCalls.count += 1;
+			return tokenImpl();
+		};
+		g._extractPlaybackAccessToken = () => ({ signature: "sig", value: "token" });
+		g._buildUsherPlaybackUrl = () =>
+			new URL("https://usher.example/channel/hls/testchannel.m3u8");
+		g._getStreamUrl = () => "https://edge.example/live/index.m3u8";
+		g._fetchWithTimeout = async (_realFetch: unknown, url: unknown) =>
+			new Response(
+				String(url).includes("usher.example")
+					? "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlive/index.m3u8"
+					: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+				{ status: 200 },
+			);
+		const restore = () => {
+			state.AdEndMinNativeRecoveryProbes = previous.minProbes;
+			state.LastNativePlaybackAccessTokenPlayerType = previous.lastType;
+			if (previous.getToken === undefined) delete g._getToken;
+			else g._getToken = previous.getToken;
+			if (previous.extract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previous.extract;
+			if (previous.buildUsher === undefined) delete g._buildUsherPlaybackUrl;
+			else g._buildUsherPlaybackUrl = previous.buildUsher;
+			if (previous.getStreamUrl === undefined) delete g._getStreamUrl;
+			else g._getStreamUrl = previous.getStreamUrl;
+			if (previous.fetchWithTimeout === undefined) delete g._fetchWithTimeout;
+			else g._fetchWithTimeout = previous.fetchWithTimeout;
+		};
+		return { tokenCalls, restore };
+	}
+
+	it("counts clean probes across calls and reports ready at the threshold", async () => {
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			const results: boolean[] = [];
+			for (let i = 0; i < 3; i++) {
+				info.LastNativeRecoveryProbeAt = 0;
+				results.push(await fn()(info, null));
+			}
+			expect(results).toEqual([false, false, true]);
+			expect(chain.tokenCalls.count).toBe(3);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("refuses to start a probe while another is in flight", async () => {
+		let releaseToken: (response: Response) => void = () => {};
+		const chain = stubProbeChain(
+			() =>
+				new Promise<Response>((resolveToken) => {
+					releaseToken = resolveToken;
+				}),
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			const first = fn()(info, null);
+			info.LastNativeRecoveryProbeAt = 0;
+			const second = await fn()(info, null);
+			expect(second).toBe(false);
+			expect(chain.tokenCalls.count).toBe(1);
+			releaseToken(new Response("{}", { status: 200 }));
+			expect(await first).toBe(false);
+			expect(info.NativeRecoveryCleanCount).toBe(1);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("discards a probe that resolves after the ready state was reset", async () => {
+		let releaseToken: (response: Response) => void = () => {};
+		const chain = stubProbeChain(
+			() =>
+				new Promise<Response>((resolveToken) => {
+					releaseToken = resolveToken;
+				}),
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			const pending = fn()(info, null);
+			T<(info: Record<string, unknown>) => void>(
+				"_resetNativeRecoveryReadyState",
+			)(info);
+			releaseToken(new Response("{}", { status: 200 }));
+			expect(await pending).toBe(false);
+			expect(info.NativeRecoveryCleanCount).toBe(0);
+			expect(Number(info.ConsecutiveFailedNativeProbes) || 0).toBe(0);
+			expect(info._NativeRecoveryProbeInFlight).toBe(false);
+		} finally {
+			chain.restore();
+		}
+	});
+});
+
+describe("_resetStreamAdState (spoofed ad id migration)", () => {
+	const fn = () =>
+		T<(info: Record<string, unknown>) => Record<string, unknown>>(
+			"_resetStreamAdState",
+		);
+
+	it("migrates spoofed ad ids into the recent map on reset", () => {
+		const info = makeInfo({
+			SpoofedAdIds: new Set(["stitched-ad-1", "stitched-ad-2"]),
+			RecentSpoofedAdIds: new Map<string, number>(),
+		});
+		fn()(info);
+		expect((info.SpoofedAdIds as Set<string>).size).toBe(0);
+		const recent = info.RecentSpoofedAdIds as Map<string, number>;
+		expect(recent.has("stitched-ad-1")).toBe(true);
+		expect(recent.has("stitched-ad-2")).toBe(true);
+	});
+
+	it("caps the recent spoofed map and evicts the oldest entries", () => {
+		const recent = new Map<string, number>();
+		for (let i = 0; i < 49; i++) {
+			recent.set(`old-${i}`, i);
+		}
+		const info = makeInfo({
+			SpoofedAdIds: new Set(["n1", "n2", "n3", "n4", "n5"]),
+			RecentSpoofedAdIds: recent,
+		});
+		fn()(info);
+		expect(recent.size).toBe(50);
+		expect(recent.has("old-0")).toBe(false);
+		expect(recent.has("old-4")).toBe(true);
+		for (const id of ["n1", "n2", "n3", "n4", "n5"]) {
+			expect(recent.has(id)).toBe(true);
+		}
 	});
 });
