@@ -991,7 +991,7 @@ function _hookWorker() {
                 ${_getWasmJs.toString()}
                 const wasmSource = _getWasmJs(${JSON.stringify(workerSourceUrl)});
                 const _C = ${JSON.stringify(_C)};
-                const _S = ${JSON.stringify(_S)};
+                const _S = ${JSON.stringify({ ..._S, workers: [] })};
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
                 const _AD_METADATA_RE = ${_AD_METADATA_RE.toString()};
                 const _EMPTY_SEGMENT_URL = ${JSON.stringify(_EMPTY_SEGMENT_URL)};
@@ -1419,9 +1419,6 @@ function _hookWorker() {
 								} catch {}
 							});
 							break;
-						case "Pong":
-							_markWorkerPong(this);
-							break;
 						case "AdBlocked":
 							if (isStalePlaybackEvent(data)) {
 								_log(
@@ -1578,7 +1575,10 @@ function _hookWorker() {
 									3000,
 								);
 							}
-							if (typeof _suppressCompetingMediaDuringAd === "function") {
+							if (
+								typeof _suppressCompetingMediaDuringAd === "function" &&
+								typeof _schedulePlaybackRecoveryTimeout === "function"
+							) {
 								_suppressCompetingMediaDuringAd(
 									nextPinnedContext.ChannelName,
 									nextPinnedContext.MediaKey,
@@ -1594,7 +1594,10 @@ function _hookWorker() {
 									nextPinnedContext.MediaKey,
 								);
 							}
-							if (typeof _resumeActivePlayerIfPaused === "function") {
+							if (
+								typeof _resumeActivePlayerIfPaused === "function" &&
+								typeof _schedulePlaybackRecoveryTimeout === "function"
+							) {
 								_schedulePlaybackRecoveryTimeout(
 									() =>
 										_resumeActivePlayerIfPaused(
