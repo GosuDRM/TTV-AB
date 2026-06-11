@@ -878,3 +878,218 @@ describe("_doPlayerTask (vod position restore after reload)", () => {
 		expect(video.currentTime).toBe(0);
 	});
 });
+
+describe("_isNativeDocumentHidden (pip awareness)", () => {
+	const hidden = () => T<() => boolean>("_isNativeDocumentHidden");
+	let pipElement: HTMLVideoElement | null = null;
+
+	beforeEach(() => {
+		pipElement = null;
+		Object.defineProperty(document, "pictureInPictureElement", {
+			get: () => pipElement,
+			configurable: true,
+		});
+		(globalThis as { window?: Record<string, unknown> }).window =
+			globalThis as unknown as Record<string, unknown>;
+	});
+
+	afterEach(() => {
+		Object.defineProperty(document, "pictureInPictureElement", {
+			value: null,
+			configurable: true,
+		});
+		(globalThis as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ =
+			undefined;
+	});
+
+	it("reports hidden from the native visibility getter without pip", () => {
+		(globalThis as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ = {
+			hidden: () => true,
+		};
+		expect(hidden()()).toBe(true);
+	});
+
+	it("treats an active pip session as visible even when the document is hidden", () => {
+		(globalThis as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ = {
+			hidden: () => true,
+		};
+		pipElement = document.createElement("video");
+		expect(hidden()()).toBe(false);
+	});
+
+	it("stays visible when neither pip nor the visibility getters report hidden", () => {
+		(globalThis as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ = {
+			hidden: () => false,
+		};
+		expect(hidden()()).toBe(false);
+	});
+});
+
+describe("_doPlayerTask (pip reload policy)", () => {
+	const task = () =>
+		T<
+			(
+				isPausePlay: boolean,
+				isReload: boolean,
+				options?: Record<string, unknown>,
+			) => unknown
+		>("_doPlayerTask");
+
+	const stubbed = [
+		"_getPlayerAndState",
+		"_getPlayerCore",
+		"_capturePlayerPreferenceSnapshot",
+		"_clearCachedPlayerRef",
+		"_playPlaybackTarget",
+		"_pausePlaybackTarget",
+		"_scheduleResumeRetries",
+		"_schedulePlaybackRecoveryTimeout",
+		"_broadcastWorkers",
+		"_isPlaybackRecoveryContextCurrent",
+		"__TTVAB_STATE__",
+	];
+	let saved: Record<string, unknown> = {};
+	let pipElement: HTMLVideoElement | null = null;
+	let setSrcCalls: unknown[] = [];
+	let pauseCalls: number;
+
+	beforeEach(() => {
+		saved = {};
+		for (const name of stubbed) saved[name] = g[name];
+		pipElement = document.createElement("video");
+		Object.defineProperty(document, "pictureInPictureElement", {
+			get: () => pipElement,
+			configurable: true,
+		});
+		setSrcCalls = [];
+		pauseCalls = 0;
+		const player = {
+			getHTMLVideoElement: () => null,
+			play: () => undefined,
+		};
+		const playerState = {
+			props: { content: { type: "live" } },
+			setSrc: (arg: unknown) => {
+				setSrcCalls.push(arg);
+			},
+		};
+		g._getPlayerAndState = () => ({ player, state: playerState });
+		g._getPlayerCore = () => ({ state: {} });
+		g._capturePlayerPreferenceSnapshot = () => null;
+		g._clearCachedPlayerRef = () => {};
+		g._playPlaybackTarget = () => true;
+		g._pausePlaybackTarget = () => {
+			pauseCalls++;
+			return true;
+		};
+		g._scheduleResumeRetries = () => {};
+		g._schedulePlaybackRecoveryTimeout = () => null;
+		g._broadcastWorkers = () => {};
+		g._isPlaybackRecoveryContextCurrent = () => true;
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			PageVodID: null,
+			LastPlayerReloadAt: 0,
+			PlayerReloadDebounceMs: 1500,
+			CurrentAdMediaKey: null,
+			CurrentAdChannel: null,
+		};
+	});
+
+	afterEach(() => {
+		Object.defineProperty(document, "pictureInPictureElement", {
+			value: null,
+			configurable: true,
+		});
+		for (const name of stubbed) g[name] = saved[name];
+	});
+
+	it("downgrades an automatic hard reload to pause/play under pip", () => {
+		const result = task()(false, true, {
+			reason: "ad-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+
+		expect(result).toBe(true);
+		expect(setSrcCalls).toEqual([]);
+		expect(pauseCalls).toBe(1);
+	});
+
+	it("still reloads immediately under pip for manual and worker recovery", () => {
+		task()(false, true, {
+			reason: "manual",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		expect(setSrcCalls).toHaveLength(1);
+
+		(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt = 0;
+		task()(false, true, {
+			reason: "worker-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		expect(setSrcCalls).toHaveLength(2);
+	});
+
+	it("runs the deferred hard reload once pip exits", () => {
+		const pip = pipElement as HTMLVideoElement;
+		task()(false, true, {
+			reason: "ad-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		expect(setSrcCalls).toEqual([]);
+
+		pipElement = null;
+		pip.dispatchEvent(new Event("leavepictureinpicture"));
+
+		expect(setSrcCalls).toHaveLength(1);
+	});
+
+	it("skips the deferred reload when an ad cycle is active at pip exit", () => {
+		const pip = pipElement as HTMLVideoElement;
+		task()(false, true, {
+			reason: "ad-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+
+		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey =
+			"live:testchannel";
+		pipElement = null;
+		pip.dispatchEvent(new Event("leavepictureinpicture"));
+
+		expect(setSrcCalls).toEqual([]);
+	});
+
+	it("skips the deferred reload when it has gone stale", () => {
+		const pip = pipElement as HTMLVideoElement;
+		const realNow = Date.now;
+		task()(false, true, {
+			reason: "ad-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+
+		const baseNow = realNow();
+		vi.spyOn(Date, "now").mockReturnValue(baseNow + 121000);
+		pipElement = null;
+		pip.dispatchEvent(new Event("leavepictureinpicture"));
+
+		expect(setSrcCalls).toEqual([]);
+	});
+
+	it("does not defer a soft pause/play downgrade", () => {
+		const pip = pipElement as HTMLVideoElement;
+		task()(false, true, { reason: "buffer-recovery" });
+		expect(pauseCalls).toBe(1);
+
+		pipElement = null;
+		pip.dispatchEvent(new Event("leavepictureinpicture"));
+		expect(setSrcCalls).toEqual([]);
+	});
+});
