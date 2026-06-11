@@ -2630,6 +2630,41 @@ function _schedulePlayerPreferenceRestore(
 	return true;
 }
 
+let _PipDeferredReloadEntry = null;
+
+function _registerPipDeferredReload(options = {}) {
+	const pipElement = document.pictureInPictureElement;
+	if (!(pipElement instanceof HTMLMediaElement)) return false;
+	const entry = {
+		options: { ...options },
+		channel: __TTVAB_STATE__.PageChannel,
+		mediaKey: __TTVAB_STATE__.PageMediaKey,
+		deferredAt: Date.now(),
+	};
+	_PipDeferredReloadEntry = entry;
+	pipElement.addEventListener(
+		"leavepictureinpicture",
+		() => {
+			if (_PipDeferredReloadEntry !== entry) return;
+			_PipDeferredReloadEntry = null;
+			if (Date.now() - entry.deferredAt > 120000) return;
+			if (!_isPlaybackRecoveryContextCurrent(entry.channel, entry.mediaKey)) {
+				return;
+			}
+			if (
+				__TTVAB_STATE__.CurrentAdMediaKey ||
+				__TTVAB_STATE__.CurrentAdChannel
+			) {
+				return;
+			}
+			_log("Running player reload deferred during PiP", "info");
+			_doPlayerTask(false, true, entry.options);
+		},
+		{ once: true },
+	);
+	return true;
+}
+
 function _doPlayerTask(
 	isPausePlay,
 	isReload,
@@ -2659,9 +2694,14 @@ function _doPlayerTask(
 			options.refreshAccessToken === true ||
 			options.newMediaPlayerInstance === true;
 		if (document.pictureInPictureElement) {
-			if (needsRealReload) {
-				_log("Forcing real reload despite PiP for HEVC handoff", "info");
+			const allowPipBreakingReload =
+				reason === "manual" || reason === "worker-recovery";
+			if (allowPipBreakingReload) {
+				_log(`Forcing real reload despite PiP (${reason})`, "info");
 			} else {
+				if (needsRealReload) {
+					_registerPipDeferredReload(options);
+				}
 				_pausePlaybackTarget(player);
 				setTimeout(() => {
 					const { player: freshPlayer } = _getPlayerAndState();
@@ -2671,7 +2711,12 @@ function _doPlayerTask(
 						__TTVAB_STATE__.PageMediaKey,
 					);
 				}, 50);
-				_log("Downgraded reload to pause/play to preserve PiP", "info");
+				_log(
+					needsRealReload
+						? "Downgraded reload to pause/play to preserve PiP; real reload deferred to PiP exit"
+						: "Downgraded reload to pause/play to preserve PiP",
+					"info",
+				);
 				return true;
 			}
 		}
