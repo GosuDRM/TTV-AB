@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.9.6-purple)
+![Version](https://img.shields.io/badge/version-9.9.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -64,14 +64,14 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
+### v9.9.7 — 2026-06-12
+- **Time Saved gets real.** Blocked ads now record their actual durations straight from Twitch's playlist metadata — a 15s preroll counts 15s, a 90s pod counts 90s — blended with your existing history so the total only gets more accurate. Plus: watch-only channels no longer sneak into Top Channels.
+
 ### v9.9.6 — 2026-06-12
 - **Real channel avatars.** Channel cards now display the actual profile photo — fetched directly from Twitch, cached locally, never from third parties — plus a glowing hint so you know channel rows are clickable.
 
 ### v9.9.5 — 2026-06-12
 - **Channel cards with real watch time.** Tap any channel in Top Channels for an animated card showing ads blocked, tracked watch time, time saved, ad breaks survived, your block share, first/last block dates, and a one-click Visit Channel button — all stored locally, nothing uploaded.
-
-### v9.9.4 — 2026-06-12
-- **One-click debug logs for bug reports.** "Report a bug." now asks if you want a TTV AB log file first — it captures the extension's own console lines from your open Twitch tabs into a downloadable text file (all local, nothing uploaded), then takes you to GitHub Issues.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
