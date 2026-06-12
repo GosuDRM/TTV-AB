@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.3] - 2026-06-12
+
+### Added
+- The toolbar icon now shows a red badge with your total ads-blocked count, compacted to fit (1,500 shows as 1.5K, 1,000,000 as 1M, and so on) and updating live as ads are blocked.
+
 ## [9.9.2] - 2026-06-12
 
 ### Changed
