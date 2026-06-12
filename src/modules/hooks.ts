@@ -2020,7 +2020,7 @@ function _hookMainFetch() {
 		} catch {}
 	};
 	const processGqlResponse = async (response) => {
-		if (!response || response.status !== 200) return;
+		if (response?.status !== 200) return;
 		try {
 			const payload = await response.clone().json();
 			const operations = Array.isArray(payload) ? payload : [payload];
