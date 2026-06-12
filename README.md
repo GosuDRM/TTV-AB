@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.9.4-purple)
+![Version](https://img.shields.io/badge/version-9.9.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -64,14 +64,14 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
+### v9.9.5 — 2026-06-12
+- **Channel cards with real watch time.** Tap any channel in Top Channels for an animated card showing ads blocked, tracked watch time, time saved, ad breaks survived, your block share, first/last block dates, and a one-click Visit Channel button — all stored locally, nothing uploaded.
+
 ### v9.9.4 — 2026-06-12
 - **One-click debug logs for bug reports.** "Report a bug." now asks if you want a TTV AB log file first — it captures the extension's own console lines from your open Twitch tabs into a downloadable text file (all local, nothing uploaded), then takes you to GitHub Issues.
 
 ### v9.9.3 — 2026-06-12
 - **Live ads-blocked badge.** The toolbar icon now wears a red counter showing how many ads you've blocked, compacted to stay readable (1.5K, 1M, 1B) and ticking up in real time.
-
-### v9.9.2 — 2026-06-12
-- **Leaner under the hood.** Per-poll and per-tick housekeeping costs less: playlist URL parsing is memoized, quality-preference reads are throttled, disabled debug logging is free, and the bundle slimmed down by deduplicating the toast icon.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

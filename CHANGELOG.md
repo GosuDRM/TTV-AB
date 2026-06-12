@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.5] - 2026-06-12
+
+### Added
+- Channels in the Top Channels list are now clickable and open an animated channel card with per-channel stats: ads blocked, real watch time, estimated time saved, ad breaks survived, share of all blocks, blocking-since and last-ad dates, plus a Visit Channel button.
+- Per-channel watch-time tracking: time only counts while the tab is visible (or the video is in picture-in-picture) and the player is actually playing, accumulates locally, and persists through the same crash-safe pipeline as the ads counter. Existing stats migrate automatically.
+
 ## [9.9.4] - 2026-06-12
 
 ### Added
