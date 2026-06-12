@@ -1704,11 +1704,32 @@ async function _processM3U8Core(url, text, realFetch) {
 			Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0) <= 2000 &&
 			!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8);
 		if (hasCleanNative && !_isRecentPostAdReentry(info)) {
+			if (!info._BackupSearchStartedAt && !info.IsUsingFallbackStream) {
+				const prewarmTargetRes = _resolveAdBackupTargetResolution(info, url);
+				info._BackupSearchStartedAt = Date.now();
+				_findBackupStream(info, realFetch, 0, prewarmTargetRes)
+					.then(() => {
+						info._BackupSearchStartedAt = 0;
+					})
+					.catch(() => {
+						info._BackupSearchStartedAt = 0;
+					});
+			}
+			const prewarmedBackupReady =
+				typeof info.LastCleanBackupM3U8 === "string" &&
+				info.LastCleanBackupM3U8 &&
+				Date.now() - (Number(info.LastCleanBackupAt) || 0) < 5000;
+			if (!prewarmedBackupReady) {
+				_log(
+					"[Trace] Returning native playlist to prevent buffer drain during backup search",
+					"info",
+				);
+				return info.LastCleanNativeM3U8;
+			}
 			_log(
-				"[Trace] Returning native playlist to prevent buffer drain during backup search",
+				"[Trace] Pre-warmed backup ready during native bridge; serving backup early",
 				"info",
 			);
-			return info.LastCleanNativeM3U8;
 		}
 
 		let startIdx = 0;
