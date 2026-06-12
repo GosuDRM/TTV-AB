@@ -1107,6 +1107,8 @@
         }
 
         .channel-modal-monogram {
+            position: relative;
+            overflow: hidden;
             flex-shrink: 0;
             width: 34px;
             height: 34px;
@@ -1119,6 +1121,19 @@
             font-size: 16px;
             font-weight: 800;
             box-shadow: 0 0 14px rgba(145, 70, 255, 0.5);
+        }
+
+        .channel-modal-avatar {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 9px;
+        }
+
+        .channel-modal-avatar[hidden] {
+            display: none;
         }
 
         .channel-modal-titles {
@@ -2201,7 +2216,10 @@
         <div class="channel-modal" role="dialog" aria-modal="true" aria-labelledby="channelModalName">
             <button type="button" class="log-dialog-close" id="channelModalClose" aria-label="Close">×</button>
             <div class="channel-modal-header">
-                <div class="channel-modal-monogram" id="channelModalMonogram" aria-hidden="true">?</div>
+                <div class="channel-modal-monogram" aria-hidden="true">
+                    <span id="channelModalMonogram">?</span>
+                    <img class="channel-modal-avatar" id="channelModalAvatar" alt="" hidden />
+                </div>
                 <div class="channel-modal-titles">
                     <div class="channel-modal-name" id="channelModalName">channel</div>
                     <span class="channel-modal-rank" id="channelModalRank">#1</span>
