@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.2] - 2026-06-12
+
+### Changed
+- Hot-path housekeeping got cheaper: disabled debug log calls no longer pay message formatting, repeated playlist-URL alias parsing is memoized per poll, the player's quality preference is re-read from storage at most every five seconds instead of every monitor tick, and the toast icon ships once instead of twice for a slightly smaller bundle.
+
 ## [9.9.1] - 2026-06-12
 
 ### Changed
