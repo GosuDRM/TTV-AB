@@ -654,7 +654,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     function fillChannelModal(channelName) {
         const entry = normalizeChannelEntry(latestChannelStats[channelName]);
-        const rankedEntries = Object.entries(latestChannelStats).sort((a, b) => {
+        const rankedEntries = Object.entries(latestChannelStats)
+            .filter(([, candidate]) => normalizeCount(normalizeChannelEntry(candidate).ads) > 0)
+            .sort((a, b) => {
             const countDiff = normalizeCount(normalizeChannelEntry(b[1]).ads) -
                 normalizeCount(normalizeChannelEntry(a[1]).ads);
             return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
@@ -1078,7 +1080,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return item;
     }
     function renderChannels(channelsData) {
-        const entries = Object.entries(channelsData || {});
+        const entries = Object.entries(channelsData || {}).filter(([, entry]) => normalizeCount(entry?.ads) > 0);
         channelList.replaceChildren();
         if (entries.length === 0) {
             const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
