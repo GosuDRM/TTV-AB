@@ -2255,12 +2255,14 @@ describe("_serveBounceDebouncedPlaylist (bounce window serving)", () => {
 			) => Promise<string | null>
 		>("_serveBounceDebouncedPlaylist");
 
-	const realRefresh = g._refreshActiveBackupMediaPlaylist;
-	const realStrip = g._stripAds;
+	let realRefresh: unknown;
+	let realStrip: unknown;
 	let refreshCalls = 0;
 	let refreshResult: string | null = null;
 
 	beforeEach(() => {
+		realRefresh = g._refreshActiveBackupMediaPlaylist;
+		realStrip = g._stripAds;
 		refreshCalls = 0;
 		refreshResult = null;
 		g._refreshActiveBackupMediaPlaylist = async () => {
@@ -2444,5 +2446,122 @@ describe("processor tunables are seeded in state", () => {
 		const declared = scope.__TTVAB_STATE__ as Record<string, unknown>;
 		expect(declared.SilentBackupHoldMaxMs).toBe(120000);
 		expect(declared.AdEndBounceDebounceMs).toBe(3000);
+	});
+});
+
+describe("backup search pre-warm during the clean-native bridge", () => {
+	const bridgeUrl = "https://video-weaver.example/v1/playlist/native-live.m3u8";
+	const cleanNative = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXTINF:2.000,live",
+		"https://edge.example/native-live-1.ts",
+	].join("\n");
+	const cleanBackup = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXTINF:2.000,live",
+		"https://edge.example/backup-live-1.ts",
+	].join("\n");
+	const adLadenNative = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		'#EXT-X-DATERANGE:ID="stitched-ad-99",CLASS="twitch-stitched-ad",START-DATE="2026-06-12T00:00:00Z"',
+		"#EXTINF:2.000,",
+		"https://edge.example/stitched-ad-99.ts",
+		"#EXTINF:2.000,live",
+		"https://edge.example/native-live-2.ts",
+	].join("\n");
+	const fetchStub = async () => new Response(null, { status: 404 });
+
+	let previousGetInfo: unknown;
+	let previousNotify: unknown;
+
+	beforeEach(() => {
+		previousGetInfo = g._getStreamInfoForPlaylist;
+		previousNotify = g._notifyAdComplete;
+		g._notifyAdComplete = async () => {};
+		getState().CurrentAdChannel = null;
+		getState().CurrentAdMediaKey = null;
+	});
+
+	afterEach(() => {
+		if (previousGetInfo === undefined) {
+			delete g._getStreamInfoForPlaylist;
+		} else {
+			g._getStreamInfoForPlaylist = previousGetInfo;
+		}
+		if (previousNotify === undefined) {
+			delete g._notifyAdComplete;
+		} else {
+			g._notifyAdComplete = previousNotify;
+		}
+	});
+
+	it("starts the backup search once while bridging on the clean native playlist", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativePlaylistAt: Date.now(),
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		const findCalls: unknown[][] = [];
+		g._findBackupStream = (...args: unknown[]) => {
+			findCalls.push(args);
+			return new Promise(() => {});
+		};
+
+		const core = T<
+			(url: string, text: string, realFetch: unknown) => Promise<string>
+		>("_processM3U8Core");
+		const first = await core(bridgeUrl, adLadenNative, fetchStub);
+		expect(first).toBe(cleanNative);
+		expect(findCalls.length).toBe(1);
+		expect(findCalls[0]?.[2]).toBe(0);
+		expect(Number(info._BackupSearchStartedAt)).toBeGreaterThan(0);
+
+		const second = await core(bridgeUrl, adLadenNative, fetchStub);
+		expect(second).toBe(cleanNative);
+		expect(findCalls.length).toBe(1);
+	});
+
+	it("serves the pre-warmed backup as soon as it is ready instead of waiting out the bridge", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativePlaylistAt: Date.now(),
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupPlayerType: "embed",
+			LastCleanBackupAt: Date.now() - 100,
+			_BackupSearchStartedAt: Date.now() - 500,
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = async () => ({ type: "embed", m3u8: cleanBackup });
+
+		const core = T<
+			(url: string, text: string, realFetch: unknown) => Promise<string>
+		>("_processM3U8Core");
+		const out = await core(bridgeUrl, adLadenNative, fetchStub);
+		expect(out).not.toBe(cleanNative);
+		expect(String(out)).toContain("https://edge.example/backup-live-1.ts");
+	});
+
+	it("keeps bridging on clean native while the pre-warmed search is still in flight", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativePlaylistAt: Date.now(),
+			_BackupSearchStartedAt: Date.now() - 500,
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		const findCalls: unknown[][] = [];
+		g._findBackupStream = (...args: unknown[]) => {
+			findCalls.push(args);
+			return new Promise(() => {});
+		};
+
+		const core = T<
+			(url: string, text: string, realFetch: unknown) => Promise<string>
+		>("_processM3U8Core");
+		const out = await core(bridgeUrl, adLadenNative, fetchStub);
+		expect(out).toBe(cleanNative);
+		expect(findCalls.length).toBe(0);
 	});
 });
