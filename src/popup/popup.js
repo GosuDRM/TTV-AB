@@ -467,6 +467,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     let latestChannelStats = Object.create(null);
     let latestAdsTotal = 0;
+    let latestMeasuredSeconds = 0;
+    let latestMeasuredBreaks = 0;
     let openChannelModalName = null;
     function prefersReducedMotion() {
         try {
@@ -652,6 +654,10 @@ document.addEventListener("DOMContentLoaded", () => {
         })
             .catch(() => { });
     }
+    function computeBlendedSeconds(measuredSeconds, measuredBreaks, totalBreaks) {
+        const unmeasured = Math.max(0, normalizeCount(totalBreaks) - normalizeCount(measuredBreaks));
+        return normalizeCount(measuredSeconds) + unmeasured * AVG_AD_DURATION;
+    }
     function fillChannelModal(channelName) {
         const entry = normalizeChannelEntry(latestChannelStats[channelName]);
         const rankedEntries = Object.entries(latestChannelStats)
@@ -672,7 +678,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         animateStatValue(channelModalAds, entry.ads, (value) => formatNumber(value));
         animateStatValue(channelModalWatch, entry.watchSeconds, (value) => formatWatchTime(value));
-        animateStatValue(channelModalSaved, entry.ads * AVG_AD_DURATION, (value) => formatTimeSaved(value));
+        animateStatValue(channelModalSaved, computeBlendedSeconds(entry.adSeconds, entry.measuredAds, entry.ads), (value) => formatTimeSaved(value));
         animateStatValue(channelModalBreaks, Math.ceil(entry.ads / 3), (value) => formatNumber(value));
         const sharePercent = latestAdsTotal > 0
             ? Math.min(100, Math.round((entry.ads / latestAdsTotal) * 100))
@@ -922,6 +928,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 firstSeen: 0,
                 lastSeen: 0,
                 watchSeconds: 0,
+                adSeconds: 0,
+                measuredAds: 0,
             };
         }
         const safeValue = isPlainObject(value) ? value : {};
@@ -930,6 +938,8 @@ document.addEventListener("DOMContentLoaded", () => {
             firstSeen: normalizeTimestamp(safeValue.firstSeen),
             lastSeen: normalizeTimestamp(safeValue.lastSeen),
             watchSeconds: normalizeCount(safeValue.watchSeconds),
+            adSeconds: normalizeCount(safeValue.adSeconds),
+            measuredAds: normalizeCount(safeValue.measuredAds),
         };
     }
     function mergeChannelEntries(target, incoming) {
@@ -939,6 +949,8 @@ document.addEventListener("DOMContentLoaded", () => {
             firstSeen: firstSeenCandidates.length > 0 ? Math.min(...firstSeenCandidates) : 0,
             lastSeen: Math.max(target.lastSeen, incoming.lastSeen),
             watchSeconds: target.watchSeconds + incoming.watchSeconds,
+            adSeconds: target.adSeconds + incoming.adSeconds,
+            measuredAds: target.measuredAds + incoming.measuredAds,
         };
     }
     function normalizeChannelsMap(value) {
@@ -989,8 +1001,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return normalized;
     }
     function updateTimeSaved(adsCount) {
-        const seconds = normalizeCount(adsCount) * AVG_AD_DURATION;
-        timeSaved.textContent = formatTimeSaved(seconds);
+        timeSaved.textContent = formatTimeSaved(computeBlendedSeconds(latestMeasuredSeconds, latestMeasuredBreaks, normalizeCount(adsCount)));
     }
     function getLast7Days() {
         const startOfWeek = new Date();
@@ -1105,7 +1116,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const safeAdsBlocked = normalizeCount(adsBlocked);
         const safeChannelCount = normalizeCount(channelCount);
         const badges = achievementsGrid.querySelectorAll(".achievement-badge");
-        const timeSavedSecs = safeAdsBlocked * AVG_AD_DURATION;
+        const timeSavedSecs = computeBlendedSeconds(latestMeasuredSeconds, latestMeasuredBreaks, safeAdsBlocked);
         const t = getTranslations();
         let unlockedCount = 0;
         let nextAch = null;
@@ -1183,6 +1194,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             latestChannelStats = channels;
             latestAdsTotal = adsCount;
+            latestMeasuredSeconds = normalizeCount(stats.adSecondsSaved);
+            latestMeasuredBreaks = normalizeCount(stats.adBreaksMeasured);
+            updateTimeSaved(adsCount);
             refreshOpenChannelModal();
             renderChart(daily);
             renderChannels(channels);

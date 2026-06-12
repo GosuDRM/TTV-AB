@@ -193,6 +193,8 @@ describe("channel stats schema and watch-time persistence", () => {
 			firstSeen: 0,
 			lastSeen: 0,
 			watchSeconds: 0,
+			adSeconds: 0,
+			measuredAds: 0,
 		});
 	});
 
@@ -273,5 +275,81 @@ describe("channel stats schema and watch-time persistence", () => {
 		const stats = getStoredStats();
 		expect(Object.keys(stats.channels).length).toBe(6);
 		expect(stats.achievements).not.toContain("channels_5");
+	});
+});
+
+describe("measured ad seconds persistence", () => {
+	beforeEach(() => {
+		storageData = {};
+	});
+	const persist = () =>
+		g.persistCounterDelta as (detail: unknown) => Promise<{ ok: boolean }>;
+	function stats() {
+		return storageData.ttvStats as Record<string, unknown> & {
+			channels: Record<string, Record<string, number>>;
+		};
+	}
+
+	it("accumulates measured seconds, break counts, and per-channel attribution", async () => {
+		await persist()({
+			flushId: "flush:test:secs-0001",
+			adsDelta: 1,
+			channelDeltas: { somestreamer: 1 },
+			adSecondsDelta: 75,
+			measuredBreaksDelta: 1,
+			channelAdSecondsDeltas: { somestreamer: 75 },
+			channelMeasuredBreaksDeltas: { somestreamer: 1 },
+		});
+		await persist()({
+			flushId: "flush:test:secs-0002",
+			adsDelta: 1,
+			channelDeltas: { somestreamer: 1 },
+			adSecondsDelta: 45,
+			measuredBreaksDelta: 1,
+			channelAdSecondsDeltas: { somestreamer: 45 },
+			channelMeasuredBreaksDeltas: { somestreamer: 1 },
+		});
+		expect(stats().adSecondsSaved).toBe(120);
+		expect(stats().adBreaksMeasured).toBe(2);
+		expect(stats().channels.somestreamer.adSeconds).toBe(120);
+		expect(stats().channels.somestreamer.measuredAds).toBe(2);
+	});
+
+	it("caps a single flush at the per-flush ceiling", async () => {
+		await persist()({
+			flushId: "flush:test:secs-0003",
+			adsDelta: 1,
+			channelDeltas: { somestreamer: 1 },
+			adSecondsDelta: 999999,
+			measuredBreaksDelta: 1,
+		});
+		expect(stats().adSecondsSaved).toBe(14400);
+	});
+
+	it("blends measured and estimated time for achievements", () => {
+		const blend = g.computeBlendedTimeSaved as (
+			statsState: unknown,
+			totalAds: number,
+		) => number;
+		expect(
+			blend({ adSecondsSaved: 600, adBreaksMeasured: 10 }, 15),
+		).toBe(600 + 5 * 22);
+		expect(blend({ adSecondsSaved: 0, adBreaksMeasured: 0 }, 4)).toBe(88);
+		expect(blend({ adSecondsSaved: 900, adBreaksMeasured: 20 }, 10)).toBe(900);
+	});
+
+	it("persists seconds-only flushes without touching the ads total", async () => {
+		storageData = { ttvAdsBlocked: 7 };
+		await persist()({
+			flushId: "flush:test:secs-0004",
+			adsDelta: 0,
+			adSecondsDelta: 30,
+			measuredBreaksDelta: 1,
+			channelAdSecondsDeltas: { somestreamer: 30 },
+			channelMeasuredBreaksDeltas: { somestreamer: 1 },
+		});
+		expect(storageData.ttvAdsBlocked).toBe(7);
+		expect(stats().adSecondsSaved).toBe(30);
+		expect(stats().channels.somestreamer.ads).toBe(0);
 	});
 });

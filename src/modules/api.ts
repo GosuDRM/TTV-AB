@@ -321,6 +321,53 @@ async function _getToken(playbackContext, playerType, realFetch) {
 	return Response.error();
 }
 
+function _recordAdDurations(textStr, info) {
+	try {
+		if (!textStr || typeof textStr !== "string" || !info) return;
+		const matches = [
+			...textStr.matchAll(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/g),
+		];
+		if (matches.length === 0) return;
+		if (!(info.MeasuredAdIds instanceof Set)) {
+			info.MeasuredAdIds = new Set();
+		}
+		let seconds = 0;
+		for (let i = 0; i < matches.length; i++) {
+			const idMatch = matches[i][1].match(/^ID="([^"]+)"/);
+			const stitchedAdId = idMatch ? idMatch[1] : "";
+			if (!stitchedAdId || info.MeasuredAdIds.has(stitchedAdId)) continue;
+			const attr = _parseAttrs(matches[i][1]);
+			const adDuration =
+				parseInt(attr["X-TV-TWITCH-AD-DURATION"] || "0", 10) || 0;
+			if (adDuration <= 0 || adDuration > 600) continue;
+			info.MeasuredAdIds.add(stitchedAdId);
+			seconds += adDuration;
+		}
+		while (info.MeasuredAdIds.size > 500) {
+			const first = info.MeasuredAdIds.values().next().value;
+			if (first === undefined) break;
+			info.MeasuredAdIds.delete(first);
+		}
+		if (seconds <= 0) return;
+		const cycleStamp = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
+		const measuredBreakDelta =
+			cycleStamp > 0 && info._SecondsReportedForCycle === cycleStamp ? 0 : 1;
+		info._SecondsReportedForCycle = cycleStamp;
+		if (typeof self !== "undefined" && self.postMessage) {
+			_postWorkerBridgeMessage(
+				self,
+				_createPageScopedWorkerEvent({
+					key: "AdSecondsBlocked",
+					seconds,
+					measuredBreakDelta,
+					channel: info.ChannelName || null,
+					mediaKey: info.MediaKey || null,
+				}),
+			);
+		}
+	} catch {}
+}
+
 async function _notifyAdComplete(
 	textStr: string,
 	info?: {

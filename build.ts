@@ -1230,6 +1230,26 @@ function validateSharedDefinitions() {
 			source: parserSource,
 		},
 		{
+			consumer: "_processM3U8Core",
+			helper: "_recordAdDurations",
+			source: processorSource,
+		},
+		{
+			consumer: "_recordAdDurations",
+			helper: "_parseAttrs",
+			source: apiSource,
+		},
+		{
+			consumer: "_recordAdDurations",
+			helper: "_postWorkerBridgeMessage",
+			source: apiSource,
+		},
+		{
+			consumer: "_recordAdDurations",
+			helper: "_createPageScopedWorkerEvent",
+			source: apiSource,
+		},
+		{
 			consumer: "_createEmptyAdHoldPlaylist",
 			helper: "_extractPlaylistHeaders",
 			source: parserSource,

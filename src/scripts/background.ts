@@ -116,6 +116,8 @@ function createDailyStatsMap(): TTVABDailyStatsMap {
 }
 
 const MAX_WATCH_DELTA_SECONDS = 7200;
+const MAX_AD_SECONDS_PER_FLUSH = 14400;
+const MAX_MEASURED_BREAKS_PER_FLUSH = 500;
 
 function normalizeTimestamp(value) {
 	const numericValue = Number(value);
@@ -131,6 +133,8 @@ function normalizeChannelEntry(value): TTVABChannelEntry {
 			firstSeen: 0,
 			lastSeen: 0,
 			watchSeconds: 0,
+			adSeconds: 0,
+			measuredAds: 0,
 		};
 	}
 	const safeValue: PlainObject = isPlainObject(value) ? value : {};
@@ -139,6 +143,8 @@ function normalizeChannelEntry(value): TTVABChannelEntry {
 		firstSeen: normalizeTimestamp(safeValue.firstSeen),
 		lastSeen: normalizeTimestamp(safeValue.lastSeen),
 		watchSeconds: normalizeCount(safeValue.watchSeconds),
+		adSeconds: normalizeCount(safeValue.adSeconds),
+		measuredAds: normalizeCount(safeValue.measuredAds),
 	};
 }
 
@@ -155,6 +161,8 @@ function mergeChannelEntries(
 			firstSeenCandidates.length > 0 ? Math.min(...firstSeenCandidates) : 0,
 		lastSeen: Math.max(target.lastSeen, incoming.lastSeen),
 		watchSeconds: target.watchSeconds + incoming.watchSeconds,
+		adSeconds: target.adSeconds + incoming.adSeconds,
+		measuredAds: target.measuredAds + incoming.measuredAds,
 	};
 }
 
@@ -377,6 +385,8 @@ function normalizeStatsState(value): TTVABStatsState {
 		daily: normalizeDailyStatsMap(safeStats.daily),
 		channels: normalizeChannelsMap(safeStats.channels),
 		achievements: normalizeAchievementList(safeStats.achievements),
+		adSecondsSaved: normalizeCount(safeStats.adSecondsSaved),
+		adBreaksMeasured: normalizeCount(safeStats.adBreaksMeasured),
 	};
 }
 
@@ -422,9 +432,19 @@ function pruneDailyStats(stats) {
 	}
 }
 
+function computeBlendedTimeSaved(stats, totalAdsBlocked) {
+	const measuredSeconds = normalizeCount(stats?.adSecondsSaved);
+	const measuredBreaks = normalizeCount(stats?.adBreaksMeasured);
+	const unmeasuredBreaks = Math.max(
+		0,
+		normalizeCount(totalAdsBlocked) - measuredBreaks,
+	);
+	return measuredSeconds + unmeasuredBreaks * AVG_AD_DURATION;
+}
+
 function applyAchievementUnlocks(stats, totalAdsBlocked) {
 	const unlocked = stats.achievements;
-	const timeSaved = totalAdsBlocked * AVG_AD_DURATION;
+	const timeSaved = computeBlendedTimeSaved(stats, totalAdsBlocked);
 	const channelCount = countAdBlockedChannels(stats.channels);
 	const newUnlocks = [];
 
@@ -464,8 +484,24 @@ async function persistCounterDelta(detail) {
 			: createChannelDeltaMap();
 	const watchDeltas = normalizeWatchDeltaMap(safeDetail?.watchDeltas);
 	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
+	const adSecondsDelta = Math.min(
+		normalizeCount(safeDetail?.adSecondsDelta),
+		MAX_AD_SECONDS_PER_FLUSH,
+	);
+	const measuredBreaksDelta = Math.min(
+		normalizeCount(safeDetail?.measuredBreaksDelta),
+		MAX_MEASURED_BREAKS_PER_FLUSH,
+	);
+	const channelAdSecondsDeltas =
+		adSecondsDelta > 0
+			? normalizeWatchDeltaMap(safeDetail?.channelAdSecondsDeltas)
+			: createChannelDeltaMap();
+	const channelMeasuredBreaksDeltas =
+		adSecondsDelta > 0
+			? normalizeWatchDeltaMap(safeDetail?.channelMeasuredBreaksDeltas)
+			: createChannelDeltaMap();
 
-	if (adsDelta <= 0 && !hasWatchDeltas) {
+	if (adsDelta <= 0 && !hasWatchDeltas && adSecondsDelta <= 0) {
 		return { ok: true, counts: null, newUnlocks: [] };
 	}
 
@@ -513,6 +549,22 @@ async function persistCounterDelta(detail) {
 		const entry = normalizeChannelEntry(stats.channels[channelName]);
 		entry.watchSeconds += normalizeCount(watchDelta);
 		stats.channels[channelName] = entry;
+	}
+	if (adSecondsDelta > 0) {
+		stats.adSecondsSaved =
+			normalizeCount(stats.adSecondsSaved) + adSecondsDelta;
+		stats.adBreaksMeasured =
+			normalizeCount(stats.adBreaksMeasured) + measuredBreaksDelta;
+		for (const [channelName, secondsDelta] of Object.entries(
+			channelAdSecondsDeltas,
+		)) {
+			const entry = normalizeChannelEntry(stats.channels[channelName]);
+			entry.adSeconds += normalizeCount(secondsDelta);
+			entry.measuredAds += normalizeCount(
+				channelMeasuredBreaksDeltas[channelName],
+			);
+			stats.channels[channelName] = entry;
+		}
 	}
 	stats.channels = normalizeChannelsMap(stats.channels);
 
