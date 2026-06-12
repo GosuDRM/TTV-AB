@@ -19,7 +19,6 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 
 <p align="center">
-  <img src="assets/popup1.png" alt="Default Theme" width="300">
   <img src="assets/popup2.png" alt="Retro Theme" width="300">
   <img src="assets/popup3.png" alt="Channel Stats Card" width="300">
 </p>
