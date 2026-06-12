@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.1] - 2026-06-12
+
+### Changed
+- The backup stream search now starts the instant an ad break is detected, overlapping the brief clean-native bridge window instead of waiting for it to expire, and the bridge hands off as soon as a clean backup is ready. This trims roughly a second off the switch to the backup stream on typical breaks — and more on breaks where every source variant is ad-marked — with no extra requests and no change to live-edge latency.
+
 ## [9.9.0] - 2026-06-12
 
 ### Fixed
