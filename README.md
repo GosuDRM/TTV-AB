@@ -54,6 +54,10 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch injects ad-marked segments or forces the player onto an ad-only path, the extension:
 
+<p align="center">
+  <img src="assets/pipeline.svg" alt="Animated ad-blocking pipeline: the worker fetch hook inspects every Twitch playlist; clean playlists pass straight through to native playback, while ad breaks are stripped and bridged with a clean backup stream until native quality is restored." width="860">
+</p>
+
 - Strips ad segments from M3U8 media playlists in real time
 - Fetches clean backup streams using alternative player types when the native stream is ad-locked
 - Serves a valid empty video segment in place of blocked ad content to keep the decoder stable

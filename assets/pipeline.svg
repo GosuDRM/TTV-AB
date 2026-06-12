@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 470" role="img" aria-label="TTV AB ad-blocking pipeline: the worker fetch hook inspects every Twitch playlist; clean playlists pass through, ad breaks are stripped and bridged with a clean backup stream until native playback is restored.">
+  <style>
+    .flow { fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 7 7; animation: ttvflow .7s linear infinite; }
+    @keyframes ttvflow { to { stroke-dashoffset: -14; } }
+    @media (prefers-reduced-motion: reduce) { .flow { animation: none; } }
+    .node { fill: #160838; stroke-width: 1.6; }
+    .main { font: 600 14px ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #f1e9ff; text-anchor: middle; }
+    .sub { font: 400 11px ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #b7a6e6; text-anchor: middle; }
+    .edgelabel { font: italic 600 11.5px ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    .tag { font: 700 11px ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: 2.5px; fill: #7df3ec; }
+    .caption { font: 400 11.5px ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #9d8cc9; text-anchor: middle; }
+  </style>
+  <defs>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff3db4"/>
+      <stop offset=".5" stop-color="#9146FF"/>
+      <stop offset="1" stop-color="#2ff0e6"/>
+    </linearGradient>
+    <marker id="headCyan" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2ff0e6"/>
+    </marker>
+    <marker id="headMagenta" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ff3db4"/>
+    </marker>
+    <marker id="headPurple" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b88cff"/>
+    </marker>
+  </defs>
+
+  <rect x="4" y="4" width="872" height="462" rx="16" fill="#0d0220" stroke="url(#edge)" stroke-width="1.6"/>
+  <text class="tag" x="36" y="46">AD-BLOCKING PIPELINE</text>
+
+  <!-- row 1: clean path -->
+  <rect class="node" x="36" y="84" width="176" height="58" rx="11" stroke="#9146FF"/>
+  <text class="main" x="124" y="108">&#128225; Twitch playlist</text>
+  <text class="sub" x="124" y="126">ad-laden HLS, polled ~2s</text>
+
+  <rect class="node" x="256" y="84" width="176" height="58" rx="11" stroke="#9146FF"/>
+  <text class="main" x="344" y="108">&#129693; Fetch hook</text>
+  <text class="sub" x="344" y="126">inside the video worker</text>
+
+  <rect class="node" x="476" y="84" width="176" height="58" rx="11" stroke="#ff3db4" stroke-dasharray="5 4"/>
+  <text class="main" x="564" y="108">&#128269; Ad markers?</text>
+  <text class="sub" x="564" y="126">stitched-ad &#183; DATERANGE</text>
+
+  <rect class="node" x="696" y="84" width="148" height="58" rx="11" stroke="#2ff0e6"/>
+  <text class="main" x="770" y="108">&#9654;&#65039; Native play</text>
+  <text class="sub" x="770" y="126">untouched stream</text>
+
+  <path class="flow" d="M212,113 L248,113" stroke="#2ff0e6" marker-end="url(#headCyan)"/>
+  <path class="flow" d="M432,113 L468,113" stroke="#2ff0e6" marker-end="url(#headCyan)"/>
+  <path class="flow" d="M652,113 L688,113" stroke="#2ff0e6" marker-end="url(#headCyan)"/>
+  <text class="edgelabel" x="670" y="100" fill="#7df3ec" text-anchor="middle">clean</text>
+
+  <!-- branch: ad break -->
+  <path class="flow" d="M540,142 C520,225 300,225 254,294" stroke="#ff3db4" marker-end="url(#headMagenta)"/>
+  <text class="edgelabel" x="430" y="206" fill="#ff7ed2" text-anchor="middle">ad break</text>
+
+  <!-- row 2: ad path -->
+  <rect class="node" x="156" y="300" width="176" height="58" rx="11" stroke="#ff3db4"/>
+  <text class="main" x="244" y="324">&#9986;&#65039; Strip ad segments</text>
+  <text class="sub" x="244" y="342">decoder-safe empty fill</text>
+
+  <rect class="node" x="376" y="300" width="196" height="58" rx="11" stroke="#9146FF"/>
+  <text class="main" x="474" y="324">&#128735; Clean backup</text>
+  <text class="sub" x="474" y="342">site &#183; embed &#183; 360p fallback</text>
+
+  <rect class="node" x="616" y="300" width="228" height="58" rx="11" stroke="#9146FF"/>
+  <text class="main" x="730" y="324">&#128250; Seamless playback</text>
+  <text class="sub" x="730" y="342">+ spoof 'ad watched' beacons</text>
+
+  <path class="flow" d="M332,329 L368,329" stroke="#ff3db4" marker-end="url(#headMagenta)"/>
+  <path class="flow" d="M572,329 L608,329" stroke="#ff3db4" marker-end="url(#headMagenta)"/>
+
+  <!-- return: break ends -->
+  <path class="flow" d="M756,300 C760,230 768,210 770,148" stroke="#b88cff" marker-end="url(#headPurple)"/>
+  <text class="edgelabel" x="744" y="222" fill="#b88cff" text-anchor="end">break ends &#183;</text>
+  <text class="edgelabel" x="744" y="238" fill="#b88cff" text-anchor="end">quality restored</text>
+
+  <text class="caption" x="440" y="432">Clean backup pinned in ~1&#8211;2s &#183; ad views spoofed so Twitch sees nothing missing &#183; native quality and audio restored the moment the break ends</text>
+</svg>
