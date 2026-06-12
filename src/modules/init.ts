@@ -197,6 +197,20 @@ function _initToggleListener() {
 			_enableDebugLogging();
 		}
 	});
+
+	_onInternalMessage("ttvab-collect-logs", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		const requestId =
+			typeof safeDetail?.requestId === "string" ? safeDetail.requestId : null;
+		if (!requestId) return;
+		const buffer = Array.isArray(globalThis.__TTVAB_LOGS__)
+			? (globalThis.__TTVAB_LOGS__ as PlainObject[])
+			: [];
+		_sendBridgeMessage("ttvab-logs", {
+			requestId,
+			entries: buffer.slice(-1000),
+		});
+	});
 }
 
 function _hookSpaNavigation() {

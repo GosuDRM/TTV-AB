@@ -954,7 +954,73 @@ function handlePageBridgeMessage(rawMessage) {
 		}
 		return;
 	}
+	if (message.type === "ttvab-logs") {
+		const requestId =
+			typeof detail?.requestId === "string" ? detail.requestId : null;
+		const pending = requestId
+			? pendingLogCollections.get(requestId)
+			: undefined;
+		if (!pending) return;
+		pendingLogCollections.delete(requestId as string);
+		clearTimeout(pending.timer);
+		pending.respond({ ok: true, entries: sanitizeLogEntries(detail?.entries) });
+		return;
+	}
 }
+
+type PendingLogCollection = {
+	respond: (response: unknown) => void;
+	timer: ReturnType<typeof setTimeout>;
+};
+const pendingLogCollections = new Map<string, PendingLogCollection>();
+const LOG_COLLECT_TIMEOUT_MS = 1500;
+const MAX_LOG_EXPORT_ENTRIES = 1000;
+
+function sanitizeLogEntries(value) {
+	if (!Array.isArray(value)) return [];
+	const entries = [];
+	for (const item of value.slice(-MAX_LOG_EXPORT_ENTRIES)) {
+		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+		entries.push({
+			t: Number.isFinite(Number(item.t)) ? Math.trunc(Number(item.t)) : 0,
+			l: typeof item.l === "string" ? item.l.slice(0, 16) : "info",
+			m: typeof item.m === "string" ? item.m.slice(0, 4000) : "",
+			w: item.w === true,
+		});
+	}
+	return entries;
+}
+
+chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
+	if (sender?.id !== chrome.runtime.id) {
+		return undefined;
+	}
+	const message = getBridgeMessageData(rawMessage);
+	if (message?.type !== "ttvab-collect-logs") {
+		return undefined;
+	}
+	if (!pageBridgeConnected || !pageBridgePort) {
+		sendResponse({ ok: true, entries: [] });
+		return undefined;
+	}
+	const requestId = `logs-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+	const timer = setTimeout(() => {
+		pendingLogCollections.delete(requestId);
+		sendResponse({ ok: true, entries: [] });
+	}, LOG_COLLECT_TIMEOUT_MS);
+	pendingLogCollections.set(requestId, { respond: sendResponse, timer });
+	try {
+		pageBridgePort.postMessage({
+			type: "ttvab-collect-logs",
+			detail: { requestId },
+		});
+	} catch {
+		clearTimeout(timer);
+		pendingLogCollections.delete(requestId);
+		sendResponse({ ok: true, entries: [] });
+	}
+	return true;
+});
 
 window.addEventListener("pagehide", flushPendingCountersOnPageExit, true);
 window.addEventListener("beforeunload", flushPendingCountersOnPageExit, true);

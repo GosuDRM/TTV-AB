@@ -97,6 +97,15 @@ document.addEventListener("DOMContentLoaded", () => {
 	const reportBugLink = document.getElementById(
 		"reportBugLink",
 	) as HTMLAnchorElement | null;
+	const logDialogOverlay = document.getElementById(
+		"logDialogOverlay",
+	) as HTMLDivElement | null;
+	const logDialogGenerate = document.getElementById(
+		"logDialogGenerate",
+	) as HTMLButtonElement | null;
+	const logDialogSkip = document.getElementById(
+		"logDialogSkip",
+	) as HTMLButtonElement | null;
 	const requiredElements = {
 		toggle,
 		statusDot,
@@ -124,6 +133,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		repoLink,
 		authorLink,
 		reportBugLink,
+		logDialogOverlay,
+		logDialogGenerate,
+		logDialogSkip,
 	};
 	for (const [name, element] of Object.entries(requiredElements)) {
 		if (element) continue;
@@ -341,6 +353,169 @@ document.addEventListener("DOMContentLoaded", () => {
 		reportBugLink.title = reportBugLabel;
 		reportBugLink.setAttribute("aria-label", reportBugLabel);
 	}
+
+	const LOG_COLLECT_TAB_TIMEOUT_MS = 2500;
+
+	function openIssuesPage() {
+		window.open(
+			reportBugLink.href || "https://github.com/GosuDRM/TTV-AB/issues",
+			"_blank",
+			"noopener,noreferrer",
+		);
+	}
+
+	function hideLogDialog() {
+		logDialogOverlay.hidden = true;
+		logDialogGenerate.disabled = false;
+		logDialogSkip.disabled = false;
+	}
+
+	function queryTwitchTabs(): Promise<chrome.tabs.Tab[]> {
+		return new Promise((resolve) => {
+			try {
+				chrome.tabs.query({ url: "*://*.twitch.tv/*" }, (tabs) => {
+					if (chrome.runtime.lastError || !Array.isArray(tabs)) {
+						resolve([]);
+						return;
+					}
+					resolve(tabs);
+				});
+			} catch {
+				resolve([]);
+			}
+		});
+	}
+
+	function collectTabLogEntries(tabId: number): Promise<PlainObject[]> {
+		return new Promise((resolve) => {
+			let settled = false;
+			const finish = (entries: PlainObject[]) => {
+				if (settled) return;
+				settled = true;
+				resolve(entries);
+			};
+			const timer = setTimeout(() => finish([]), LOG_COLLECT_TAB_TIMEOUT_MS);
+			try {
+				chrome.tabs.sendMessage(
+					tabId,
+					{ type: "ttvab-collect-logs" },
+					{ frameId: 0 },
+					(response) => {
+						clearTimeout(timer);
+						if (chrome.runtime.lastError) {
+							finish([]);
+							return;
+						}
+						const data = response as PlainObject | undefined;
+						finish(Array.isArray(data?.entries) ? data.entries : []);
+					},
+				);
+			} catch {
+				clearTimeout(timer);
+				finish([]);
+			}
+		});
+	}
+
+	function formatLogEntryLine(entry: PlainObject): string {
+		const timestamp = Number.isFinite(Number(entry.t))
+			? new Date(Number(entry.t)).toISOString()
+			: "????-??-??T??:??:??.???Z";
+		const context = entry.w === true ? "worker" : "page";
+		const level = typeof entry.l === "string" && entry.l ? entry.l : "info";
+		const message = typeof entry.m === "string" ? entry.m : "";
+		return `${timestamp} [${context}:${level}] ${message}`;
+	}
+
+	async function buildLogExport(): Promise<string> {
+		const manifestVersion = chrome.runtime.getManifest?.()?.version || "?";
+		const lines = [
+			"TTV AB debug log",
+			`Version: ${manifestVersion}`,
+			`Exported: ${new Date().toISOString()}`,
+			`Browser: ${navigator.userAgent}`,
+			"",
+		];
+		const tabs = await queryTwitchTabs();
+		const tabsWithIds = tabs.filter((tab) => typeof tab.id === "number");
+		if (tabsWithIds.length === 0) {
+			lines.push(
+				"No open Twitch tabs were found, so no runtime log entries were captured.",
+				"Open a twitch.tv stream, let the issue happen, then export again.",
+			);
+			return lines.join("\n");
+		}
+		let sectionIndex = 0;
+		for (const tab of tabsWithIds) {
+			sectionIndex++;
+			const entries = await collectTabLogEntries(tab.id as number);
+			lines.push(`==== Tab ${sectionIndex}: ${tab.url || "twitch.tv"} ====`);
+			if (entries.length === 0) {
+				lines.push("(no TTV AB log entries captured in this tab)");
+			} else {
+				for (const entry of entries) {
+					lines.push(formatLogEntryLine(entry));
+				}
+			}
+			lines.push("");
+		}
+		return lines.join("\n");
+	}
+
+	function downloadLogExport(text: string) {
+		const stamp = new Date()
+			.toISOString()
+			.replace(/[:.]/g, "-")
+			.replace("T", "_")
+			.slice(0, 19);
+		const blob = new Blob([text], { type: "text/plain" });
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = `ttv-ab-logs-${stamp}.txt`;
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		setTimeout(() => URL.revokeObjectURL(url), 30000);
+	}
+
+	reportBugLink.addEventListener("click", (event) => {
+		event.preventDefault();
+		logDialogOverlay.hidden = false;
+		logDialogGenerate.focus();
+	});
+
+	logDialogSkip.addEventListener("click", () => {
+		hideLogDialog();
+		openIssuesPage();
+	});
+
+	logDialogOverlay.addEventListener("click", (event) => {
+		if (event.target === logDialogOverlay) {
+			hideLogDialog();
+		}
+	});
+
+	window.addEventListener("keydown", (event) => {
+		if (event.key === "Escape" && !logDialogOverlay.hidden) {
+			hideLogDialog();
+		}
+	});
+
+	logDialogGenerate.addEventListener("click", () => {
+		if (logDialogGenerate.disabled) return;
+		logDialogGenerate.disabled = true;
+		logDialogSkip.disabled = true;
+		buildLogExport()
+			.then((text) => {
+				downloadLogExport(text);
+			})
+			.catch(() => {})
+			.then(() => {
+				hideLogDialog();
+				openIssuesPage();
+			});
+	});
 
 	const savedLang = getStoredLanguage();
 	const normalizedSavedLang =

@@ -1408,6 +1408,26 @@ function _hookWorker() {
 								} catch {}
 							});
 							break;
+						case "LogEntry": {
+							const entry = data.value as PlainObject | null;
+							if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+								if (!Array.isArray(globalThis.__TTVAB_LOGS__)) {
+									globalThis.__TTVAB_LOGS__ = [];
+								}
+								const buffer = globalThis.__TTVAB_LOGS__ as PlainObject[];
+								buffer.push({
+									t: Number(entry.t) || Date.now(),
+									l:
+										typeof entry.l === "string" ? entry.l.slice(0, 16) : "info",
+									m: typeof entry.m === "string" ? entry.m.slice(0, 4000) : "",
+									w: true,
+								});
+								if (buffer.length > 1200) {
+									buffer.splice(0, buffer.length - 1000);
+								}
+							}
+							break;
+						}
 						case "AdBlocked":
 							if (isStalePlaybackEvent(data)) {
 								_log(
