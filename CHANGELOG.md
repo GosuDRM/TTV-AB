@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.7] - 2026-06-12
+
+### Changed
+- Time Saved is now measured instead of estimated: each blocked ad's real duration (declared by Twitch in the playlist) is recorded through the same crash-safe pipeline as the ads counter, with per-channel attribution. Existing totals keep the historical 22-second estimate per break and blend with measured values from now on, so the stat only gets more accurate; the time-based achievements use the same blended total.
+
+### Fixed
+- Channels you only watched (no ads blocked yet) no longer appear in Top Channels or inflate the channel-rank totals; their watch time still counts and surfaces once their first ad is blocked.
+
 ## [9.9.6] - 2026-06-12
 
 ### Added
