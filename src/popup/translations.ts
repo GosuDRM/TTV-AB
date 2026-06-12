@@ -200,7 +200,8 @@ const TRANSLATIONS = {
 		repoLinkLabel: "Ouvrir TTV AB sur GitHub",
 		authorLinkLabel: "Ouvrir GosuDRM sur GitHub",
 		reportBugLabel: "Signaler un bug",
-		topChannelsTapHint: "Cliquez sur une chaîne pour voir ses statistiques détaillées",
+		topChannelsTapHint:
+			"Cliquez sur une chaîne pour voir ses statistiques détaillées",
 		channelModalWatch: "Temps de visionnage",
 		channelModalBreaks: "Coupures pub évitées",
 		channelModalShare: "Part de tous les blocages",
