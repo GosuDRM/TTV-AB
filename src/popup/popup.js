@@ -58,6 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const channelModalClose = document.getElementById("channelModalClose");
     const channelModalVisit = document.getElementById("channelModalVisit");
     const channelModalMonogram = document.getElementById("channelModalMonogram");
+    const channelModalAvatar = document.getElementById("channelModalAvatar");
     const channelModalName = document.getElementById("channelModalName");
     const channelModalRank = document.getElementById("channelModalRank");
     const channelModalAds = document.getElementById("channelModalAds");
@@ -103,6 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
         channelModalClose,
         channelModalVisit,
         channelModalMonogram,
+        channelModalAvatar,
         channelModalName,
         channelModalRank,
         channelModalAds,
@@ -542,6 +544,114 @@ document.addEventListener("DOMContentLoaded", () => {
             return `${hours}h ${minutes}m`;
         return `${minutes}m`;
     }
+    const AVATAR_CACHE_KEY = "ttvChannelAvatars";
+    const AVATAR_TTL_MS = 24 * 60 * 60 * 1000;
+    const AVATAR_CACHE_MAX_ENTRIES = 100;
+    const AVATAR_FETCH_TIMEOUT_MS = 4000;
+    const TWITCH_GQL_URL = "https://gql.twitch.tv/gql";
+    const TWITCH_PUBLIC_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+    const AVATAR_CDN_PREFIX = "https://static-cdn.jtvnw.net/";
+    const avatarMemoryCache = new Map();
+    function sanitizeAvatarUrl(value) {
+        return typeof value === "string" && value.startsWith(AVATAR_CDN_PREFIX)
+            ? value
+            : null;
+    }
+    function readAvatarCache() {
+        return new Promise((resolve) => {
+            try {
+                chrome.storage.local.get([AVATAR_CACHE_KEY], (result) => {
+                    if (chrome.runtime.lastError) {
+                        resolve({});
+                        return;
+                    }
+                    const cache = result?.[AVATAR_CACHE_KEY];
+                    resolve(isPlainObject(cache) ? cache : {});
+                });
+            }
+            catch {
+                resolve({});
+            }
+        });
+    }
+    function writeAvatarCache(cache) {
+        const entries = Object.entries(cache)
+            .filter(([, entry]) => isPlainObject(entry))
+            .sort((a, b) => normalizeCount(b[1].fetchedAt) -
+            normalizeCount(a[1].fetchedAt))
+            .slice(0, AVATAR_CACHE_MAX_ENTRIES);
+        try {
+            chrome.storage.local.set({ [AVATAR_CACHE_KEY]: Object.fromEntries(entries) }, () => {
+                void chrome.runtime.lastError;
+            });
+        }
+        catch { }
+    }
+    function fetchAvatarFromTwitch(channelName) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), AVATAR_FETCH_TIMEOUT_MS);
+        return fetch(TWITCH_GQL_URL, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+                "Client-ID": TWITCH_PUBLIC_CLIENT_ID,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                query: "query($login: String!) { user(login: $login) { profileImageURL(width: 150) } }",
+                variables: { login: channelName },
+            }),
+        })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((payload) => {
+            const data = payload;
+            const user = data?.data?.user;
+            return sanitizeAvatarUrl(user?.profileImageURL);
+        })
+            .catch(() => null)
+            .finally(() => clearTimeout(timeoutId));
+    }
+    async function getChannelAvatarUrl(channelName) {
+        if (avatarMemoryCache.has(channelName)) {
+            return avatarMemoryCache.get(channelName) ?? null;
+        }
+        const cache = await readAvatarCache();
+        const cached = isPlainObject(cache[channelName])
+            ? cache[channelName]
+            : null;
+        const cachedUrl = sanitizeAvatarUrl(cached?.url);
+        const cachedAt = normalizeCount(cached?.fetchedAt);
+        if (cachedUrl && Date.now() - cachedAt < AVATAR_TTL_MS) {
+            avatarMemoryCache.set(channelName, cachedUrl);
+            return cachedUrl;
+        }
+        const fetchedUrl = await fetchAvatarFromTwitch(channelName);
+        avatarMemoryCache.set(channelName, fetchedUrl);
+        if (fetchedUrl) {
+            cache[channelName] = { url: fetchedUrl, fetchedAt: Date.now() };
+            writeAvatarCache(cache);
+        }
+        return fetchedUrl;
+    }
+    function applyChannelAvatar(channelName) {
+        channelModalAvatar.hidden = true;
+        channelModalAvatar.removeAttribute("src");
+        getChannelAvatarUrl(channelName)
+            .then((url) => {
+            if (!url || openChannelModalName !== channelName)
+                return;
+            channelModalAvatar.onload = () => {
+                if (openChannelModalName === channelName) {
+                    channelModalAvatar.hidden = false;
+                }
+            };
+            channelModalAvatar.onerror = () => {
+                channelModalAvatar.hidden = true;
+            };
+            channelModalAvatar.src = url;
+        })
+            .catch(() => { });
+    }
     function fillChannelModal(channelName) {
         const entry = normalizeChannelEntry(latestChannelStats[channelName]);
         const rankedEntries = Object.entries(latestChannelStats).sort((a, b) => {
@@ -579,6 +689,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         openChannelModalName = safeChannel;
         fillChannelModal(safeChannel);
+        applyChannelAvatar(safeChannel);
         channelModalOverlay.hidden = false;
         channelModalClose.focus();
     }
