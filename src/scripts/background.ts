@@ -20,6 +20,61 @@ function normalizeCount(value) {
 		: 0;
 }
 
+const BADGE_BACKGROUND_COLOR = "#E0245E";
+const BADGE_TEXT_COLOR = "#FFFFFF";
+const BADGE_UNITS = [
+	{ value: 1e12, suffix: "T" },
+	{ value: 1e9, suffix: "B" },
+	{ value: 1e6, suffix: "M" },
+	{ value: 1e3, suffix: "K" },
+];
+
+function formatBadgeCount(value) {
+	const count = normalizeCount(value);
+	if (count < 1000) return String(count);
+	for (const unit of BADGE_UNITS) {
+		if (count < unit.value) continue;
+		const scaled = count / unit.value;
+		if (scaled < 10) {
+			const floored = Math.floor(scaled * 10) / 10;
+			const text = Number.isInteger(floored)
+				? String(floored)
+				: floored.toFixed(1);
+			return `${text}${unit.suffix}`;
+		}
+		return `${Math.floor(scaled)}${unit.suffix}`;
+	}
+	return String(count);
+}
+
+function dispatchBadgeCall(method, arg) {
+	try {
+		const result = method(arg);
+		if (result && typeof result.then === "function") {
+			result.then(undefined, () => {});
+		}
+	} catch {}
+}
+
+function applyBadgeCount(value) {
+	if (typeof chrome === "undefined" || !chrome.action) return;
+	const count = normalizeCount(value);
+	const text = count > 0 ? formatBadgeCount(count) : "";
+	if (typeof chrome.action.setBadgeText === "function") {
+		dispatchBadgeCall((arg) => chrome.action.setBadgeText(arg), { text });
+	}
+	if (typeof chrome.action.setBadgeBackgroundColor === "function") {
+		dispatchBadgeCall((arg) => chrome.action.setBadgeBackgroundColor(arg), {
+			color: BADGE_BACKGROUND_COLOR,
+		});
+	}
+	if (typeof chrome.action.setBadgeTextColor === "function") {
+		dispatchBadgeCall((arg) => chrome.action.setBadgeTextColor(arg), {
+			color: BADGE_TEXT_COLOR,
+		});
+	}
+}
+
 function normalizeChannelName(value) {
 	if (typeof value !== "string") return null;
 	const trimmed = value.trim().toLowerCase();
@@ -426,3 +481,21 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 
 	return true;
 });
+
+function refreshBadgeFromStorage() {
+	storageLocalGet(["ttvAdsBlocked"])
+		.then((stored) => {
+			applyBadgeCount(stored.ttvAdsBlocked);
+		})
+		.catch(() => {});
+}
+
+if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
+	chrome.storage.onChanged.addListener((changes, namespace) => {
+		if (namespace !== "local") return;
+		if (!changes.ttvAdsBlocked) return;
+		applyBadgeCount(changes.ttvAdsBlocked.newValue);
+	});
+}
+
+refreshBadgeFromStorage();
