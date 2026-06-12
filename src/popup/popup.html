@@ -1004,6 +1004,10 @@
             text-decoration: underline;
         }
 
+        .log-dialog-overlay[hidden] {
+            display: none;
+        }
+
         .log-dialog-overlay {
             position: fixed;
             inset: 0;
@@ -1017,6 +1021,7 @@
         }
 
         .log-dialog {
+            position: relative;
             width: 100%;
             max-width: 250px;
             padding: 16px;
@@ -1025,6 +1030,37 @@
             background: linear-gradient(165deg, #1d0d3d 0%, #140530 60%, #1a0a38 100%);
             box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 22px rgba(145, 70, 255, 0.25);
             text-align: center;
+        }
+
+        .log-dialog-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border-radius: 6px;
+            border: 1px solid rgba(244, 67, 54, 0.35);
+            background: rgba(244, 67, 54, 0.12);
+            color: #f5a5a0;
+            font-size: 14px;
+            line-height: 1;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .log-dialog-close:hover {
+            background: rgba(244, 67, 54, 0.28);
+            color: #fff;
+        }
+
+        .log-dialog-close:focus-visible {
+            outline: 2px solid rgba(244, 67, 54, 0.85);
+            outline-offset: 2px;
         }
 
         .log-dialog-title {
@@ -1666,7 +1702,7 @@
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version-row">
-                <div class="version" id="versionText" aria-label="Version 9.9.3">v9.9.3</div>
+                <div class="version" id="versionText" aria-label="Version 9.9.4">v9.9.4</div>
                 <span class="stable-badge" data-i18n="stable">Stable</span>
             </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
@@ -1833,6 +1869,7 @@
 
     <div class="log-dialog-overlay" id="logDialogOverlay" hidden>
         <div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="logDialogTitle">
+            <button type="button" class="log-dialog-close" id="logDialogClose" aria-label="Close">×</button>
             <div class="log-dialog-title" id="logDialogTitle" data-i18n="logDialogTitle">Attach debug logs?</div>
             <p class="log-dialog-text" data-i18n="logDialogText">Save a TTV AB log file from your open Twitch tabs to attach to the issue. Nothing is uploaded.</p>
             <div class="log-dialog-actions">

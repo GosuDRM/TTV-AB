@@ -53,6 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const logDialogOverlay = document.getElementById("logDialogOverlay");
     const logDialogGenerate = document.getElementById("logDialogGenerate");
     const logDialogSkip = document.getElementById("logDialogSkip");
+    const logDialogClose = document.getElementById("logDialogClose");
     const requiredElements = {
         toggle,
         statusDot,
@@ -83,6 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
         logDialogOverlay,
         logDialogGenerate,
         logDialogSkip,
+        logDialogClose,
     };
     for (const [name, element] of Object.entries(requiredElements)) {
         if (element)
@@ -272,7 +274,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const LOG_COLLECT_TAB_TIMEOUT_MS = 2500;
     function openIssuesPage() {
-        window.open(reportBugLink.href || "https://github.com/GosuDRM/TTV-AB/issues", "_blank", "noopener,noreferrer");
+        const issuesUrl = reportBugLink.href || "https://github.com/GosuDRM/TTV-AB/issues";
+        try {
+            if (chrome?.tabs?.create) {
+                chrome.tabs.create({ url: issuesUrl });
+                return;
+            }
+        }
+        catch { }
+        window.open(issuesUrl, "_blank", "noopener,noreferrer");
     }
     function hideLogDialog() {
         logDialogOverlay.hidden = true;
@@ -346,20 +356,24 @@ document.addEventListener("DOMContentLoaded", () => {
             lines.push("No open Twitch tabs were found, so no runtime log entries were captured.", "Open a twitch.tv stream, let the issue happen, then export again.");
             return lines.join("\n");
         }
-        let sectionIndex = 0;
-        for (const tab of tabsWithIds) {
-            sectionIndex++;
+        const sections = await Promise.all(tabsWithIds.map(async (tab, index) => {
             const entries = await collectTabLogEntries(tab.id);
-            lines.push(`==== Tab ${sectionIndex}: ${tab.url || "twitch.tv"} ====`);
+            const sectionLines = [
+                `==== Tab ${index + 1}: ${tab.url || "twitch.tv"} ====`,
+            ];
             if (entries.length === 0) {
-                lines.push("(no TTV AB log entries captured in this tab)");
+                sectionLines.push("(no TTV AB log entries captured in this tab)");
             }
             else {
                 for (const entry of entries) {
-                    lines.push(formatLogEntryLine(entry));
+                    sectionLines.push(formatLogEntryLine(entry));
                 }
             }
-            lines.push("");
+            sectionLines.push("");
+            return sectionLines;
+        }));
+        for (const sectionLines of sections) {
+            lines.push(...sectionLines);
         }
         return lines.join("\n");
     }
@@ -387,6 +401,9 @@ document.addEventListener("DOMContentLoaded", () => {
     logDialogSkip.addEventListener("click", () => {
         hideLogDialog();
         openIssuesPage();
+    });
+    logDialogClose.addEventListener("click", () => {
+        hideLogDialog();
     });
     logDialogOverlay.addEventListener("click", (event) => {
         if (event.target === logDialogOverlay) {

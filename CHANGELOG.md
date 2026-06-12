@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.4] - 2026-06-12
+
+### Added
+- The "Report a bug" button now offers to save a TTV AB log file before opening GitHub: it gathers the extension's own console lines (page and worker) from your open Twitch tabs into a timestamped text file via the browser's standard download. Everything stays local — nothing is uploaded — and the dialog is translated in all 11 supported languages.
+
 ## [9.9.3] - 2026-06-12
 
 ### Added
