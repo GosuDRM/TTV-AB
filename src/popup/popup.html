@@ -1004,6 +1004,83 @@
             text-decoration: underline;
         }
 
+        .log-dialog-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(10, 2, 26, 0.78);
+            backdrop-filter: blur(2px);
+        }
+
+        .log-dialog {
+            width: 100%;
+            max-width: 250px;
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(145, 70, 255, 0.45);
+            background: linear-gradient(165deg, #1d0d3d 0%, #140530 60%, #1a0a38 100%);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 22px rgba(145, 70, 255, 0.25);
+            text-align: center;
+        }
+
+        .log-dialog-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+
+        .log-dialog-text {
+            font-size: 11px;
+            line-height: 1.45;
+            color: #b7a6e6;
+            margin-bottom: 12px;
+        }
+
+        .log-dialog-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .log-dialog-btn {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(145, 70, 255, 0.35);
+            background: rgba(145, 70, 255, 0.12);
+            color: #d9ccff;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .log-dialog-btn.primary {
+            background: linear-gradient(120deg, #9146FF 0%, #772CE8 100%);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(145, 70, 255, 0.35);
+        }
+
+        .log-dialog-btn:hover {
+            filter: brightness(1.15);
+        }
+
+        .log-dialog-btn:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
+
+        .log-dialog-btn:focus-visible {
+            outline: 2px solid rgba(255, 255, 255, 0.85);
+            outline-offset: 2px;
+        }
+
         .report-bug {
             display: flex;
             align-items: center;
@@ -1753,6 +1830,19 @@
         </svg>
         <span data-i18n="reportBugLabel">Report a bug.</span>
     </a>
+
+    <div class="log-dialog-overlay" id="logDialogOverlay" hidden>
+        <div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="logDialogTitle">
+            <div class="log-dialog-title" id="logDialogTitle" data-i18n="logDialogTitle">Attach debug logs?</div>
+            <p class="log-dialog-text" data-i18n="logDialogText">Save a TTV AB log file from your open Twitch tabs to attach to the issue. Nothing is uploaded.</p>
+            <div class="log-dialog-actions">
+                <button type="button" class="log-dialog-btn primary" id="logDialogGenerate"
+                    data-i18n="logDialogGenerate">Generate log file</button>
+                <button type="button" class="log-dialog-btn" id="logDialogSkip" data-i18n="logDialogSkip">No thanks,
+                    open GitHub</button>
+            </div>
+        </div>
+    </div>
 
     <div class="footer">
         <select id="langSelector" class="lang-selector" title="Language" aria-label="Language"
