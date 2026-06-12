@@ -158,3 +158,120 @@ describe("storage-driven badge refresh", () => {
 		expect(badgeCalls.length).toBe(0);
 	});
 });
+
+describe("channel stats schema and watch-time persistence", () => {
+	function setStorage(data: Record<string, unknown>) {
+		storageData = data;
+	}
+	function getStoredStats() {
+		return storageData.ttvStats as {
+			channels: Record<
+				string,
+				{ ads: number; firstSeen: number; lastSeen: number; watchSeconds: number }
+			>;
+			daily: Record<string, { ads: number }>;
+			achievements: string[];
+		};
+	}
+	const persist = () =>
+		g.persistCounterDelta as (detail: unknown) => Promise<{
+			ok: boolean;
+			counts: { ads: number } | null;
+		}>;
+
+	beforeEach(() => {
+		setStorage({});
+	});
+
+	it("migrates legacy numeric channel entries into the object shape", () => {
+		const normalize = g.normalizeChannelsMap as (
+			value: unknown,
+		) => Record<string, { ads: number; watchSeconds: number }>;
+		const result = normalize({ somestreamer: 7 });
+		expect(result.somestreamer).toEqual({
+			ads: 7,
+			firstSeen: 0,
+			lastSeen: 0,
+			watchSeconds: 0,
+		});
+	});
+
+	it("stamps firstSeen and lastSeen when ads are persisted for a channel", async () => {
+		const before = Date.now();
+		const response = await persist()({
+			flushId: "flush:test:ads-0001",
+			adsDelta: 3,
+			channelDeltas: { somestreamer: 3 },
+		});
+		expect(response.ok).toBe(true);
+		expect(response.counts?.ads).toBe(3);
+		const entry = getStoredStats().channels.somestreamer;
+		expect(entry.ads).toBe(3);
+		expect(entry.watchSeconds).toBe(0);
+		expect(entry.firstSeen).toBeGreaterThanOrEqual(before);
+		expect(entry.lastSeen).toBeGreaterThanOrEqual(entry.firstSeen);
+	});
+
+	it("persists watch-only deltas without touching the ads total or daily series", async () => {
+		setStorage({ ttvAdsBlocked: 10 });
+		const response = await persist()({
+			flushId: "flush:test:watch-0001",
+			adsDelta: 0,
+			watchDeltas: { somestreamer: 120 },
+		});
+		expect(response.ok).toBe(true);
+		expect(storageData.ttvAdsBlocked).toBe(10);
+		const stats = getStoredStats();
+		expect(stats.channels.somestreamer.watchSeconds).toBe(120);
+		expect(stats.channels.somestreamer.ads).toBe(0);
+		expect(stats.channels.somestreamer.firstSeen).toBe(0);
+		expect(Object.keys(stats.daily).length).toBe(0);
+	});
+
+	it("accumulates watch time on top of an existing migrated count", async () => {
+		setStorage({
+			ttvAdsBlocked: 5,
+			ttvStats: { channels: { somestreamer: 5 }, daily: {}, achievements: [] },
+		});
+		await persist()({
+			flushId: "flush:test:watch-0002",
+			adsDelta: 0,
+			watchDeltas: { somestreamer: 60 },
+		});
+		await persist()({
+			flushId: "flush:test:watch-0003",
+			adsDelta: 0,
+			watchDeltas: { somestreamer: 45 },
+		});
+		const entry = getStoredStats().channels.somestreamer;
+		expect(entry.ads).toBe(5);
+		expect(entry.watchSeconds).toBe(105);
+	});
+
+	it("caps a single watch delta at two hours", async () => {
+		await persist()({
+			flushId: "flush:test:watch-0004",
+			adsDelta: 0,
+			watchDeltas: { somestreamer: 999999 },
+		});
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(7200);
+	});
+
+	it("does not unlock channel achievements from watch-only channels", async () => {
+		await persist()({
+			flushId: "flush:test:watch-0005",
+			adsDelta: 1,
+			channelDeltas: { adstreamer: 1 },
+			watchDeltas: {
+				watchera: 60,
+				watcherb: 60,
+				watcherc: 60,
+				watcherd: 60,
+				watchere: 60,
+			},
+		});
+		const stats = getStoredStats();
+		expect(Object.keys(stats.channels).length).toBe(6);
+		expect(stats.achievements).not.toContain("channels_5");
+	});
+});

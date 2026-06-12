@@ -1,5 +1,12 @@
 type PlainObject = Record<string, unknown>;
-type TTVABChannelMap = Record<string, number>;
+type TTVABChannelEntry = {
+	ads: number;
+	firstSeen: number;
+	lastSeen: number;
+	watchSeconds: number;
+};
+type TTVABChannelMap = Record<string, TTVABChannelEntry>;
+type TTVABChannelDeltaMap = Record<string, number>;
 type TTVABDailyStatsEntry = {
 	ads: number;
 };

@@ -3157,6 +3157,94 @@ function _checkInAdPlayheadFreeze(player) {
 	_doPlayerTask(true, false, { reason: "buffer-recovery" });
 }
 
+const _WatchTimeState = {
+	channel: null as string | null,
+	pendingMs: 0,
+	lastTickAt: 0,
+};
+const _WATCH_TICK_MAX_GAP_MS = 5000;
+const _WATCH_FLUSH_THRESHOLD_MS = 15000;
+
+function _flushWatchTime(force = false) {
+	if (!force && _WatchTimeState.pendingMs < _WATCH_FLUSH_THRESHOLD_MS) {
+		return;
+	}
+	const seconds = Math.floor(_WatchTimeState.pendingMs / 1000);
+	if (seconds <= 0 || !_WatchTimeState.channel) {
+		if (force) _WatchTimeState.pendingMs = 0;
+		return;
+	}
+	_WatchTimeState.pendingMs -= seconds * 1000;
+	if (typeof _sendBridgeMessage === "function") {
+		_sendBridgeMessage("ttvab-watch-time", {
+			channel: _WatchTimeState.channel,
+			seconds,
+		});
+	}
+}
+
+function _getPictureInPictureVideo(): HTMLVideoElement | null {
+	try {
+		const pipElement = document.pictureInPictureElement;
+		if (pipElement instanceof HTMLVideoElement && pipElement.isConnected) {
+			return pipElement;
+		}
+	} catch {}
+	return null;
+}
+
+function _trackChannelWatchTime(isHidden) {
+	const now = Date.now();
+	const mediaType = __TTVAB_STATE__?.PageMediaType;
+	const channel =
+		typeof __TTVAB_STATE__?.PageChannel === "string" &&
+		__TTVAB_STATE__.PageChannel &&
+		(mediaType === "live" || mediaType === "vod")
+			? __TTVAB_STATE__.PageChannel
+			: null;
+
+	if (channel !== _WatchTimeState.channel) {
+		_flushWatchTime(true);
+		_WatchTimeState.channel = channel;
+		_WatchTimeState.pendingMs = 0;
+		_WatchTimeState.lastTickAt = 0;
+	}
+	if (!channel) return;
+
+	const pipVideo = _getPictureInPictureVideo();
+	let video: HTMLVideoElement | null = pipVideo;
+	if (!video) {
+		try {
+			const primaryMedia = _getPrimaryMediaElement();
+			if (primaryMedia instanceof HTMLVideoElement) {
+				video = primaryMedia;
+			}
+		} catch {}
+	}
+
+	const isWatchable =
+		video !== null &&
+		!video.paused &&
+		!video.ended &&
+		video.readyState >= 2 &&
+		(!isHidden || video === pipVideo);
+
+	if (!isWatchable) {
+		_WatchTimeState.lastTickAt = 0;
+		_flushWatchTime();
+		return;
+	}
+
+	if (_WatchTimeState.lastTickAt > 0) {
+		_WatchTimeState.pendingMs += Math.min(
+			Math.max(0, now - _WatchTimeState.lastTickAt),
+			_WATCH_TICK_MAX_GAP_MS,
+		);
+	}
+	_WatchTimeState.lastTickAt = now;
+	_flushWatchTime();
+}
+
 function _monitorPlayerBuffering() {
 	function check() {
 		_playerBufferMonitorTimer = null;
@@ -3198,6 +3286,9 @@ function _monitorPlayerBuffering() {
 		const idleDelay = isHidden
 			? hiddenDelay
 			: Math.max(__TTVAB_STATE__.PlayerBufferingDelay * 5, 3000);
+		try {
+			_trackChannelWatchTime(isHidden);
+		} catch {}
 		if (!_hasPlayerBufferMonitorRelevantContext()) {
 			_resetPlayerBufferMonitorState();
 			return idleDelay;
@@ -3520,6 +3611,10 @@ function _monitorPlayerBuffering() {
 			? _PLAYER_BUFFER_STEADY_DELAY_MS
 			: nextDelay;
 	}
+
+	window.addEventListener("pagehide", () => {
+		_flushWatchTime(true);
+	});
 
 	check();
 	_log("Buffer monitor active", "info");

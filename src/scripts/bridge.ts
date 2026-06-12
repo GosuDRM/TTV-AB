@@ -384,8 +384,13 @@ const PERSISTED_COUNTER_FLUSH_KEY_PREFIX = "ttvab_pending_counter_flush:";
 const MAX_PERSISTED_COUNTER_FLUSHES = 256;
 const PERSISTED_COUNTER_FLUSH_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
+const MAX_WATCH_MESSAGE_SECONDS = 600;
+const MAX_PENDING_WATCH_SECONDS = 7200;
+const WATCH_FLUSH_DELAY_MS = 5000;
+
 let pendingAdsDelta = 0;
 let pendingAdChannels = createChannelsMap();
+let pendingWatchSeconds = createChannelsMap();
 let flushTimeout = null;
 let didMigrateLegacyPersistedCounterFlushes = false;
 const retryFlushEntries = new Map();
@@ -420,8 +425,13 @@ function normalizePersistedCounterFlushEntry(value) {
 		adsDelta > 0
 			? mergeChannelDeltaMaps(createChannelsMap(), safeValue?.channelDeltas)
 			: createChannelsMap();
+	const watchDeltas = mergeChannelDeltaMaps(
+		createChannelsMap(),
+		safeValue?.watchDeltas,
+	);
+	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
 
-	if (!flushId || adsDelta <= 0) {
+	if (!flushId || (adsDelta <= 0 && !hasWatchDeltas)) {
 		return null;
 	}
 
@@ -429,6 +439,7 @@ function normalizePersistedCounterFlushEntry(value) {
 		flushId,
 		adsDelta,
 		channelDeltas,
+		watchDeltas,
 		createdAt,
 	};
 }
@@ -703,7 +714,7 @@ function dispatchPersistPayload(
 		(response) => {
 			clearScheduledRetryFlush(flushId);
 			handlePersistSuccess(response, flushId);
-			if (pendingAdsDelta > 0) {
+			if (hasPendingCounters()) {
 				scheduleFlush();
 			}
 		},
@@ -811,27 +822,38 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	clearScheduledFlush();
 	const adsDelta = pendingAdsDelta;
 	const channelDeltas = pendingAdChannels;
+	const watchDeltas = pendingWatchSeconds;
 
 	pendingAdsDelta = 0;
 	pendingAdChannels = createChannelsMap();
+	pendingWatchSeconds = createChannelsMap();
 
-	if (adsDelta === 0) return;
+	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
+	if (adsDelta === 0 && !hasWatchDeltas) return;
 
+	const detail: PlainObject = {
+		adsDelta,
+		channelDeltas,
+		flushId: createCounterFlushId(),
+		createdAt: Date.now(),
+	};
+	if (hasWatchDeltas) {
+		detail.watchDeltas = watchDeltas;
+	}
 	const payload = {
 		type: "ttvab-persist-counters",
-		detail: {
-			adsDelta,
-			channelDeltas,
-			flushId: createCounterFlushId(),
-			createdAt: Date.now(),
-		},
+		detail,
 	};
 
 	dispatchPersistPayload(payload, { retryOnFailure: !fireAndForget });
 }
 
+function hasPendingCounters() {
+	return pendingAdsDelta > 0 || Object.keys(pendingWatchSeconds).length > 0;
+}
+
 function flushPendingCountersOnPageExit() {
-	if (pendingAdsDelta <= 0) return;
+	if (!hasPendingCounters()) return;
 	flushCounters({ fireAndForget: true });
 }
 
@@ -952,6 +974,20 @@ function handlePageBridgeMessage(rawMessage) {
 		if (delta > 0) {
 			scheduleFlush();
 		}
+		return;
+	}
+	if (message.type === "ttvab-watch-time") {
+		const watchChannel = normalizeChannelName(detail?.channel);
+		const watchSeconds = Math.min(
+			normalizeCount(detail?.seconds),
+			MAX_WATCH_MESSAGE_SECONDS,
+		);
+		if (!watchChannel || watchSeconds <= 0) return;
+		pendingWatchSeconds[watchChannel] = Math.min(
+			normalizeCount(pendingWatchSeconds[watchChannel]) + watchSeconds,
+			MAX_PENDING_WATCH_SECONDS,
+		);
+		scheduleFlush(WATCH_FLUSH_DELAY_MS);
 		return;
 	}
 	if (message.type === "ttvab-logs") {
