@@ -1047,6 +1047,7 @@ function _hookWorker() {
                 ${_fetchViaWorkerBridge.toString()}
                 ${_getToken.toString()}
                 ${_notifyAdComplete.toString()}
+                ${_recordAdDurations.toString()}
                 ${_getResolvedAdEndMinCleanPlaylists.toString()}
                 ${_getResolvedAdEndGraceMs.toString()}
                 ${_getResolvedAdEndMaxWaitMs.toString()}
@@ -1468,6 +1469,27 @@ function _hookWorker() {
 							}
 							_log(`Ad blocked! Total: ${_S.adsBlocked}`, "success");
 							break;
+						case "AdSecondsBlocked": {
+							if (isStalePlaybackEvent(data)) {
+								break;
+							}
+							const measuredSeconds = Number.isFinite(data.seconds as number)
+								? Math.max(0, Math.trunc(data.seconds as number))
+								: 0;
+							if (measuredSeconds <= 0) break;
+							_sendBridgeMessage("ttvab-ad-seconds", {
+								seconds: measuredSeconds,
+								measuredBreakDelta:
+									data.measuredBreakDelta === 1 || data.measuredBreakDelta === 0
+										? data.measuredBreakDelta
+										: 1,
+								channel: data.channel || null,
+								mediaKey: data.mediaKey || null,
+								pageChannel: data.pageChannel || null,
+								pageMediaKey: data.pageMediaKey || null,
+							});
+							break;
+						}
 						case "AdDetected":
 							if (isStalePlaybackEvent(data)) {
 								_log(

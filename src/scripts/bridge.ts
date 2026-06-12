@@ -388,9 +388,16 @@ const MAX_WATCH_MESSAGE_SECONDS = 600;
 const MAX_PENDING_WATCH_SECONDS = 7200;
 const WATCH_FLUSH_DELAY_MS = 5000;
 
+const MAX_AD_SECONDS_MESSAGE = 3600;
+const MAX_PENDING_AD_SECONDS = 14400;
+
 let pendingAdsDelta = 0;
 let pendingAdChannels = createChannelsMap();
 let pendingWatchSeconds = createChannelsMap();
+let pendingAdSeconds = 0;
+let pendingMeasuredBreaks = 0;
+let pendingChannelAdSeconds = createChannelsMap();
+let pendingChannelMeasuredBreaks = createChannelsMap();
 let flushTimeout = null;
 let didMigrateLegacyPersistedCounterFlushes = false;
 const retryFlushEntries = new Map();
@@ -430,18 +437,37 @@ function normalizePersistedCounterFlushEntry(value) {
 		safeValue?.watchDeltas,
 	);
 	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
+	const adSecondsDelta = Math.min(
+		normalizeCount(safeValue?.adSecondsDelta),
+		MAX_PENDING_AD_SECONDS,
+	);
+	const measuredBreaksDelta = normalizeCount(safeValue?.measuredBreaksDelta);
+	const channelAdSecondsDeltas = mergeChannelDeltaMaps(
+		createChannelsMap(),
+		safeValue?.channelAdSecondsDeltas,
+	);
 
-	if (!flushId || (adsDelta <= 0 && !hasWatchDeltas)) {
+	if (!flushId || (adsDelta <= 0 && !hasWatchDeltas && adSecondsDelta <= 0)) {
 		return null;
 	}
 
-	return {
+	const entry: PlainObject & { flushId: string; createdAt: number } = {
 		flushId,
 		adsDelta,
 		channelDeltas,
 		watchDeltas,
 		createdAt,
 	};
+	if (adSecondsDelta > 0) {
+		entry.adSecondsDelta = adSecondsDelta;
+		entry.measuredBreaksDelta = measuredBreaksDelta;
+		entry.channelAdSecondsDeltas = channelAdSecondsDeltas;
+		entry.channelMeasuredBreaksDeltas = mergeChannelDeltaMaps(
+			createChannelsMap(),
+			safeValue?.channelMeasuredBreaksDeltas,
+		);
+	}
+	return entry;
 }
 
 function getPersistedCounterFlushStorageKey(flushId) {
@@ -772,6 +798,10 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 		if (safeStoredCount < previousStoredCount) {
 			pendingAdsDelta = 0;
 			pendingAdChannels = createChannelsMap();
+			pendingAdSeconds = 0;
+			pendingMeasuredBreaks = 0;
+			pendingChannelAdSeconds = createChannelsMap();
+			pendingChannelMeasuredBreaks = createChannelsMap();
 		}
 		bridgeState.storedAdsCount = safeStoredCount;
 	}
@@ -823,13 +853,21 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	const adsDelta = pendingAdsDelta;
 	const channelDeltas = pendingAdChannels;
 	const watchDeltas = pendingWatchSeconds;
+	const adSecondsDelta = pendingAdSeconds;
+	const measuredBreaksDelta = pendingMeasuredBreaks;
+	const channelAdSecondsDeltas = pendingChannelAdSeconds;
+	const channelMeasuredBreaksDeltas = pendingChannelMeasuredBreaks;
 
 	pendingAdsDelta = 0;
 	pendingAdChannels = createChannelsMap();
 	pendingWatchSeconds = createChannelsMap();
+	pendingAdSeconds = 0;
+	pendingMeasuredBreaks = 0;
+	pendingChannelAdSeconds = createChannelsMap();
+	pendingChannelMeasuredBreaks = createChannelsMap();
 
 	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
-	if (adsDelta === 0 && !hasWatchDeltas) return;
+	if (adsDelta === 0 && !hasWatchDeltas && adSecondsDelta === 0) return;
 
 	const detail: PlainObject = {
 		adsDelta,
@@ -840,6 +878,12 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	if (hasWatchDeltas) {
 		detail.watchDeltas = watchDeltas;
 	}
+	if (adSecondsDelta > 0) {
+		detail.adSecondsDelta = adSecondsDelta;
+		detail.measuredBreaksDelta = measuredBreaksDelta;
+		detail.channelAdSecondsDeltas = channelAdSecondsDeltas;
+		detail.channelMeasuredBreaksDeltas = channelMeasuredBreaksDeltas;
+	}
 	const payload = {
 		type: "ttvab-persist-counters",
 		detail,
@@ -849,7 +893,11 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 }
 
 function hasPendingCounters() {
-	return pendingAdsDelta > 0 || Object.keys(pendingWatchSeconds).length > 0;
+	return (
+		pendingAdsDelta > 0 ||
+		pendingAdSeconds > 0 ||
+		Object.keys(pendingWatchSeconds).length > 0
+	);
 }
 
 function flushPendingCountersOnPageExit() {
@@ -974,6 +1022,32 @@ function handlePageBridgeMessage(rawMessage) {
 		if (delta > 0) {
 			scheduleFlush();
 		}
+		return;
+	}
+	if (message.type === "ttvab-ad-seconds") {
+		const measuredSeconds = Math.min(
+			normalizeCount(detail?.seconds),
+			MAX_AD_SECONDS_MESSAGE,
+		);
+		if (measuredSeconds <= 0) return;
+		pendingAdSeconds = Math.min(
+			pendingAdSeconds + measuredSeconds,
+			MAX_PENDING_AD_SECONDS,
+		);
+		pendingMeasuredBreaks += detail?.measuredBreakDelta === 1 ? 1 : 0;
+		const measuredChannel = normalizeChannelName(detail?.channel);
+		if (measuredChannel) {
+			pendingChannelAdSeconds[measuredChannel] = Math.min(
+				normalizeCount(pendingChannelAdSeconds[measuredChannel]) +
+					measuredSeconds,
+				MAX_PENDING_AD_SECONDS,
+			);
+			if (detail?.measuredBreakDelta === 1) {
+				pendingChannelMeasuredBreaks[measuredChannel] =
+					normalizeCount(pendingChannelMeasuredBreaks[measuredChannel]) + 1;
+			}
+		}
+		scheduleFlush();
 		return;
 	}
 	if (message.type === "ttvab-watch-time") {

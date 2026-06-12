@@ -1030,6 +1030,8 @@ function _createStreamInfo(context) {
 		RequestedAds: new Set(),
 		SpoofedAdIds: new Set(),
 		RecentSpoofedAdIds: new Map(),
+		MeasuredAdIds: new Set(),
+		_SecondsReportedForCycle: 0,
 		FailedBackupPlayerTypes: new Map(),
 		Urls: Object.create(null),
 		ResolutionList: [],
@@ -1338,6 +1340,9 @@ async function _processM3U8Core(url, text, realFetch) {
 		// per poll in multi-ad pods, so this must run every poll — info.SpoofedAdIds
 		// dedups so each ad is spoofed once (full N/N coverage). See api.ts.
 		_notifyAdComplete(text, info).catch(() => {});
+		if (typeof _recordAdDurations === "function") {
+			_recordAdDurations(text, info);
+		}
 		if (info.IsHoldingBackupAfterAd) {
 			const holdElapsed =
 				Date.now() - Math.max(0, Number(info.SilentBackupHoldStartedAt) || 0);
