@@ -103,6 +103,12 @@ describe("donation reminder randomized scheduling", () => {
 		vi.advanceTimersByTime(5100);
 
 		expect(document.getElementById("ttvab-reminder")).not.toBeNull();
+		const markImage = document.querySelector("#ttvab-reminder img.mark");
+		expect(
+			String((markImage as HTMLImageElement | null)?.src || "").startsWith(
+				"data:image/png;base64,",
+			),
+		).toBe(true);
 		const nextAt = Number.parseInt(localStorage.getItem(NEXT_KEY) || "", 10);
 		expect(nextAt).toBeGreaterThanOrEqual(now + 7 * DAY);
 		expect(nextAt).toBeLessThanOrEqual(now + 14 * DAY);

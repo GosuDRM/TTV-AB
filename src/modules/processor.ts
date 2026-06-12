@@ -601,6 +601,13 @@ function _shouldReloadNativePlayerAfterAdReset({
 }
 
 function _getPlaylistUrlAliases(url, baseUrl = null) {
+	const isAbsoluteUrl = typeof url === "string" && url.startsWith("http");
+	if (isAbsoluteUrl) {
+		const memo = globalThis._playlistAliasMemo;
+		if (memo && memo.url === url) {
+			return memo.aliases;
+		}
+	}
 	const aliases: string[] = [];
 	const pushAlias = (value) => {
 		if (typeof value !== "string") return;
@@ -628,6 +635,9 @@ function _getPlaylistUrlAliases(url, baseUrl = null) {
 		pushAlias(parsed.pathname);
 	} catch {}
 
+	if (isAbsoluteUrl) {
+		globalThis._playlistAliasMemo = { url, aliases };
+	}
 	return aliases;
 }
 
