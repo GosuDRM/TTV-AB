@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.6] - 2026-06-12
+
+### Added
+- The channel card now shows the channel's real profile photo, fetched anonymously from Twitch's own API and cached locally for a day; only Twitch CDN images are ever displayed, and the gradient monogram remains as the instant fallback when offline or while loading.
+- An animated hint above the Top Channels list points out that channel rows are clickable.
+
 ## [9.9.5] - 2026-06-12
 
 ### Added
