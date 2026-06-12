@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.9.2-purple)
+![Version](https://img.shields.io/badge/version-9.9.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -64,14 +64,14 @@ When a channel opens during an ad — or an ad starts mid-stream — the extensi
 
 ## 🔔 What's New
 
+### v9.9.3 — 2026-06-12
+- **Live ads-blocked badge.** The toolbar icon now wears a red counter showing how many ads you've blocked, compacted to stay readable (1.5K, 1M, 1B) and ticking up in real time.
+
 ### v9.9.2 — 2026-06-12
 - **Leaner under the hood.** Per-poll and per-tick housekeeping costs less: playlist URL parsing is memoized, quality-preference reads are throttled, disabled debug logging is free, and the bundle slimmed down by deduplicating the toast icon.
 
 ### v9.9.1 — 2026-06-12
 - **Faster handoff at ad start.** The backup stream search now kicks off the instant an ad break is detected and the player switches over as soon as a clean backup is ready, trimming the brief freeze at the start of ad breaks — with no extra requests and no added live-edge latency.
-
-### v9.9.0 — 2026-06-12
-- **Tab resilience, edge-case fixes, and a fresh look.** Channels with "stitched" in their name now play correctly, re-enabling the extension reconnects open Twitch tabs instantly instead of leaving them dead until reload, landing on a shared clip link no longer disables ad blocking for the whole tab, Firefox now recovers automatically when worker injection fails, and the welcome and support messages got a retro synthwave redesign with a gentler reminder cadence.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
