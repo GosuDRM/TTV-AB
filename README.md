@@ -46,7 +46,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 1. Install the extension from your browser's add-on store
 2. Navigate to [twitch.tv](https://twitch.tv) and open any live stream or VOD
-3. Ads are blocked automatically — no configuration needed
+3. Ads are blocked automatically, no configuration needed
 4. Click the extension icon to view stats or toggle Ad Blocking, Ad Spoofing, and Low Quality Fallback
 5. Change language via the dropdown in the popup footer
 
@@ -60,18 +60,18 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 - Monitors playback health and automatically recovers from stalls after ad breaks
 - Restores your original quality and volume settings once native playback resumes
 
-When a channel opens during an ad — or an ad starts mid-stream — the extension switches to a clean backup stream within a couple of seconds so video starts playing right away. The backup targets the quality your connection has been sustaining — even if the player had just restarted on a low rung when the ad hit — with a 360p floor so a channel-open preroll (the player is still ramping up from its lowest quality at that point) never starts blurrier than 360p. Your full native quality and audio are restored automatically and seamlessly once the ad window ends. The optional **Low Quality Fallback** toggle trades some quality for an even faster first frame, starting on a quick low-resolution stream and climbing back up as the break ends.
+When a channel opens during an ad, or an ad starts mid-stream, the extension switches to a clean backup stream within a couple of seconds so video starts playing right away. The backup targets the quality your connection has been sustaining (even if the player had just restarted on a low rung when the ad hit), with a 360p floor so a channel-open preroll never starts blurrier than 360p while the player is still ramping up from its lowest quality. Your full native quality and audio are restored automatically and seamlessly once the ad window ends. The optional **Low Quality Fallback** toggle trades some quality for an even faster first frame, starting on a quick low-resolution stream and climbing back up as the break ends.
 
 ## 🔔 What's New
 
-### v9.9.7 — 2026-06-12
-- **Time Saved gets real.** Blocked ads now record their actual durations straight from Twitch's playlist metadata — a 15s preroll counts 15s, a 90s pod counts 90s — blended with your existing history so the total only gets more accurate. Plus: watch-only channels no longer sneak into Top Channels.
+### v9.9.7 - 2026-06-12
+- **Time Saved gets real.** Blocked ads now record their actual durations straight from Twitch's playlist metadata, so a 15s preroll counts 15s and a 90s pod counts 90s. New measurements blend with your existing history, meaning the total only gets more accurate. Plus: watch-only channels no longer sneak into Top Channels.
 
-### v9.9.6 — 2026-06-12
-- **Real channel avatars.** Channel cards now display the actual profile photo — fetched directly from Twitch, cached locally, never from third parties — plus a glowing hint so you know channel rows are clickable.
+### v9.9.6 - 2026-06-12
+- **Real channel avatars.** Channel cards now display the actual profile photo, fetched directly from Twitch and cached locally (never from third parties), plus a glowing hint so you know channel rows are clickable.
 
-### v9.9.5 — 2026-06-12
-- **Channel cards with real watch time.** Tap any channel in Top Channels for an animated card showing ads blocked, tracked watch time, time saved, ad breaks survived, your block share, first/last block dates, and a one-click Visit Channel button — all stored locally, nothing uploaded.
+### v9.9.5 - 2026-06-12
+- **Channel cards with real watch time.** Tap any channel in Top Channels for an animated card showing ads blocked, tracked watch time, time saved, ad breaks survived, your block share, first/last block dates, and a one-click Visit Channel button. All stored locally, nothing uploaded.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
@@ -89,7 +89,7 @@ npm run knip           # checks for unused exports
 
 The build outputs to `dist/`. Load the unpacked extension from `dist/manifest.json` in your browser's developer mode after building.
 
-The source tree under `src/` is organized by concern — `modules/` for core ad-blocking logic (processor, parser, player, hooks, worker, state, API), `scripts/` for the bridge and background service worker, and `popup/` for the extension UI.
+The source tree under `src/` is organized by concern: `modules/` for core ad-blocking logic (processor, parser, player, hooks, worker, state, API), `scripts/` for the bridge and background service worker, and `popup/` for the extension UI.
 
 ## 💬 Support
 
@@ -101,8 +101,8 @@ The source tree under `src/` is organized by concern — `modules/` for core ad-
 
 ## 🔒 Privacy
 
-TTV AB operates entirely on your device. No data is ever sent to external servers — not your browsing history, not your Twitch activity, not your ad-block statistics. All counters and settings are stored in your browser's local storage. See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
+TTV AB operates entirely on your device. No data is ever sent to external servers: not your browsing history, not your Twitch activity, not your ad-block statistics. All counters and settings are stored in your browser's local storage. See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
 
 ## 📄 License
 
-MIT License with Attribution — See [LICENSE](LICENSE) for details.
+MIT License with Attribution. See [LICENSE](LICENSE) for details.
