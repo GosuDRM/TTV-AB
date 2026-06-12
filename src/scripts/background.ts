@@ -107,8 +107,63 @@ function createChannelsMap(): TTVABChannelMap {
 	return Object.create(null);
 }
 
+function createChannelDeltaMap(): TTVABChannelDeltaMap {
+	return Object.create(null);
+}
+
 function createDailyStatsMap(): TTVABDailyStatsMap {
 	return Object.create(null);
+}
+
+const MAX_WATCH_DELTA_SECONDS = 7200;
+
+function normalizeTimestamp(value) {
+	const numericValue = Number(value);
+	if (!Number.isFinite(numericValue) || numericValue <= 0) return 0;
+	const timestamp = Math.trunc(numericValue);
+	return timestamp > Date.now() + 5 * 60 * 1000 ? 0 : timestamp;
+}
+
+function normalizeChannelEntry(value): TTVABChannelEntry {
+	if (typeof value === "number" || typeof value === "string") {
+		return {
+			ads: normalizeCount(value),
+			firstSeen: 0,
+			lastSeen: 0,
+			watchSeconds: 0,
+		};
+	}
+	const safeValue: PlainObject = isPlainObject(value) ? value : {};
+	return {
+		ads: normalizeCount(safeValue.ads),
+		firstSeen: normalizeTimestamp(safeValue.firstSeen),
+		lastSeen: normalizeTimestamp(safeValue.lastSeen),
+		watchSeconds: normalizeCount(safeValue.watchSeconds),
+	};
+}
+
+function mergeChannelEntries(
+	target: TTVABChannelEntry,
+	incoming: TTVABChannelEntry,
+): TTVABChannelEntry {
+	const firstSeenCandidates = [target.firstSeen, incoming.firstSeen].filter(
+		(timestamp) => timestamp > 0,
+	);
+	return {
+		ads: target.ads + incoming.ads,
+		firstSeen:
+			firstSeenCandidates.length > 0 ? Math.min(...firstSeenCandidates) : 0,
+		lastSeen: Math.max(target.lastSeen, incoming.lastSeen),
+		watchSeconds: target.watchSeconds + incoming.watchSeconds,
+	};
+}
+
+function countAdBlockedChannels(channels: TTVABChannelMap) {
+	let count = 0;
+	for (const entry of Object.values(channels)) {
+		if (normalizeCount(entry?.ads) > 0) count++;
+	}
+	return count;
 }
 
 function isValidDateKey(value) {
@@ -139,25 +194,51 @@ function normalizeChannelsMap(value) {
 		return createChannelsMap();
 	}
 	const normalized = createChannelsMap();
-	for (const [channelName, count] of Object.entries(value)) {
+	for (const [channelName, entry] of Object.entries(value)) {
 		const safeChannel = normalizeChannelName(channelName);
 		if (!safeChannel) continue;
-		normalized[safeChannel] =
-			normalizeCount(normalized[safeChannel]) + normalizeCount(count);
+		const safeEntry = normalizeChannelEntry(entry);
+		normalized[safeChannel] = normalized[safeChannel]
+			? mergeChannelEntries(normalized[safeChannel], safeEntry)
+			: safeEntry;
 	}
 	const channelEntries = Object.entries(normalized);
 	if (channelEntries.length <= MAX_CHANNELS) {
 		return normalized;
 	}
 	channelEntries.sort((a, b) => {
-		const countDiff = normalizeCount(b[1]) - normalizeCount(a[1]);
-		return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
+		const countDiff = normalizeCount(b[1].ads) - normalizeCount(a[1].ads);
+		if (countDiff !== 0) return countDiff;
+		const watchDiff =
+			normalizeCount(b[1].watchSeconds) - normalizeCount(a[1].watchSeconds);
+		return watchDiff !== 0 ? watchDiff : a[0].localeCompare(b[0]);
 	});
 	const trimmed = createChannelsMap();
-	for (const [channelName, count] of channelEntries.slice(0, MAX_CHANNELS)) {
-		trimmed[channelName] = normalizeCount(count);
+	for (const [channelName, entry] of channelEntries.slice(0, MAX_CHANNELS)) {
+		trimmed[channelName] = entry;
 	}
 	return trimmed;
+}
+
+function normalizeWatchDeltaMap(value): TTVABChannelDeltaMap {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return createChannelDeltaMap();
+	}
+	const normalized = createChannelDeltaMap();
+	for (const [channelName, seconds] of Object.entries(value)) {
+		const safeChannel = normalizeChannelName(channelName);
+		if (!safeChannel) continue;
+		const safeSeconds = Math.min(
+			normalizeCount(seconds),
+			MAX_WATCH_DELTA_SECONDS,
+		);
+		if (safeSeconds <= 0) continue;
+		normalized[safeChannel] = Math.min(
+			normalizeCount(normalized[safeChannel]) + safeSeconds,
+			MAX_WATCH_DELTA_SECONDS,
+		);
+	}
+	return normalized;
 }
 
 function normalizeDailyStatsMap(value) {
@@ -299,9 +380,9 @@ function normalizeStatsState(value): TTVABStatsState {
 	};
 }
 
-function normalizeChannelDeltaMap(value, maxTotal): TTVABChannelMap {
+function normalizeChannelDeltaMap(value, maxTotal): TTVABChannelDeltaMap {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return createChannelsMap();
+		return createChannelDeltaMap();
 	}
 	let remaining = normalizeCount(maxTotal);
 	const sortedEntries = (Object.entries(value) as Array<[string, unknown]>)
@@ -319,7 +400,7 @@ function normalizeChannelDeltaMap(value, maxTotal): TTVABChannelMap {
 			const countDiff = normalizeCount(b[1]) - normalizeCount(a[1]);
 			return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
 		});
-	const normalized = createChannelsMap();
+	const normalized = createChannelDeltaMap();
 	for (const [channelName, count] of sortedEntries) {
 		if (remaining <= 0) break;
 		const acceptedCount = Math.min(remaining, normalizeCount(count));
@@ -344,7 +425,7 @@ function pruneDailyStats(stats) {
 function applyAchievementUnlocks(stats, totalAdsBlocked) {
 	const unlocked = stats.achievements;
 	const timeSaved = totalAdsBlocked * AVG_AD_DURATION;
-	const channelCount = normalizeCount(Object.keys(stats.channels).length);
+	const channelCount = countAdBlockedChannels(stats.channels);
 	const newUnlocks = [];
 
 	for (const ach of ACHIEVEMENTS) {
@@ -380,9 +461,11 @@ async function persistCounterDelta(detail) {
 	const channelDeltas =
 		adsDelta > 0
 			? normalizeChannelDeltaMap(safeDetail?.channelDeltas, adsDelta)
-			: createChannelsMap();
+			: createChannelDeltaMap();
+	const watchDeltas = normalizeWatchDeltaMap(safeDetail?.watchDeltas);
+	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
 
-	if (adsDelta <= 0) {
+	if (adsDelta <= 0 && !hasWatchDeltas) {
 		return { ok: true, counts: null, newUnlocks: [] };
 	}
 
@@ -406,18 +489,30 @@ async function persistCounterDelta(detail) {
 	}
 	const nextAds = baseAds + adsDelta;
 	const stats = normalizeStatsState(stored.ttvStats);
+	const now = Date.now();
 	const today = getTodayKey();
 
-	if (!stats.daily[today]) {
-		stats.daily[today] = { ads: 0 };
+	if (adsDelta > 0) {
+		if (!stats.daily[today]) {
+			stats.daily[today] = { ads: 0 };
+		}
+		stats.daily[today].ads = normalizeCount(stats.daily[today].ads) + adsDelta;
 	}
-	stats.daily[today].ads = normalizeCount(stats.daily[today].ads) + adsDelta;
 	pruneDailyStats(stats);
 
 	for (const [channelName, channelDelta] of Object.entries(channelDeltas)) {
-		stats.channels[channelName] =
-			normalizeCount(stats.channels[channelName]) +
-			normalizeCount(channelDelta);
+		const entry = normalizeChannelEntry(stats.channels[channelName]);
+		entry.ads += normalizeCount(channelDelta);
+		if (entry.firstSeen <= 0) {
+			entry.firstSeen = now;
+		}
+		entry.lastSeen = now;
+		stats.channels[channelName] = entry;
+	}
+	for (const [channelName, watchDelta] of Object.entries(watchDeltas)) {
+		const entry = normalizeChannelEntry(stats.channels[channelName]);
+		entry.watchSeconds += normalizeCount(watchDelta);
+		stats.channels[channelName] = entry;
 	}
 	stats.channels = normalizeChannelsMap(stats.channels);
 

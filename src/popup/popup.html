@@ -1004,6 +1004,281 @@
             text-decoration: underline;
         }
 
+        .channel-modal-overlay[hidden] {
+            display: none;
+        }
+
+        .channel-modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(10, 2, 26, 0.78);
+            backdrop-filter: blur(2px);
+        }
+
+        .channel-modal {
+            position: relative;
+            width: 100%;
+            max-width: 252px;
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(145, 70, 255, 0.45);
+            background: linear-gradient(165deg, #1d0d3d 0%, #140530 60%, #1a0a38 100%);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 22px rgba(145, 70, 255, 0.25);
+            animation: channel-modal-in 0.3s cubic-bezier(0.21, 1.02, 0.55, 1);
+        }
+
+        @keyframes channel-modal-in {
+            from {
+                opacity: 0;
+                transform: translateY(10px) scale(0.96);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .channel-modal-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            padding-right: 26px;
+        }
+
+        .channel-modal-monogram {
+            flex-shrink: 0;
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9px;
+            background: linear-gradient(135deg, #ff3db4 0%, #9146FF 60%, #2ff0e6 130%);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 800;
+            box-shadow: 0 0 14px rgba(145, 70, 255, 0.5);
+        }
+
+        .channel-modal-titles {
+            min-width: 0;
+        }
+
+        .channel-modal-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .channel-modal-rank {
+            margin-top: 2px;
+            display: inline-block;
+            padding: 1px 7px;
+            border-radius: 999px;
+            border: 1px solid rgba(47, 240, 230, 0.35);
+            background: rgba(47, 240, 230, 0.08);
+            color: #7df3ec;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .channel-modal-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .channel-modal-tile {
+            padding: 8px 9px;
+            border-radius: 9px;
+            border: 1px solid rgba(145, 70, 255, 0.22);
+            background: rgba(145, 70, 255, 0.08);
+            opacity: 0;
+            animation: channel-tile-in 0.35s ease forwards;
+        }
+
+        .channel-modal-tile:nth-child(1) {
+            animation-delay: 0.05s;
+        }
+
+        .channel-modal-tile:nth-child(2) {
+            animation-delay: 0.12s;
+        }
+
+        .channel-modal-tile:nth-child(3) {
+            animation-delay: 0.19s;
+        }
+
+        .channel-modal-tile:nth-child(4) {
+            animation-delay: 0.26s;
+        }
+
+        @keyframes channel-tile-in {
+            from {
+                opacity: 0;
+                transform: translateY(6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .channel-modal-tile-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #9d8cc9;
+            margin-bottom: 3px;
+        }
+
+        .channel-modal-tile-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .channel-modal-share {
+            margin-bottom: 10px;
+        }
+
+        .channel-modal-share-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 4px;
+        }
+
+        .channel-modal-share-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #9d8cc9;
+        }
+
+        .channel-modal-share-pct {
+            font-size: 11px;
+            font-weight: 700;
+            color: #7df3ec;
+        }
+
+        .channel-modal-share-track {
+            height: 5px;
+            border-radius: 999px;
+            background: rgba(145, 70, 255, 0.15);
+            overflow: hidden;
+        }
+
+        .channel-modal-share-bar {
+            height: 100%;
+            width: 0%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #ff3db4, #9146FF, #2ff0e6);
+            transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .channel-modal-dates {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .channel-modal-date {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .channel-modal-date-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #9d8cc9;
+            margin-bottom: 2px;
+        }
+
+        .channel-modal-date-value {
+            font-size: 11px;
+            font-weight: 600;
+            color: #d9ccff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .channel-modal-visit {
+            display: block;
+            width: 100%;
+            padding: 9px 12px;
+            border-radius: 9px;
+            border: none;
+            background: linear-gradient(120deg, #ff3db4 0%, #9146FF 60%, #772CE8 100%);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(145, 70, 255, 0.4);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .channel-modal-visit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(255, 61, 180, 0.45);
+        }
+
+        .channel-modal-visit:focus-visible {
+            outline: 2px solid rgba(255, 255, 255, 0.85);
+            outline-offset: 2px;
+        }
+
+        .channel-item-clickable {
+            cursor: pointer;
+            border-radius: 7px;
+            transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+        }
+
+        .channel-item-clickable:hover {
+            background: rgba(145, 70, 255, 0.12);
+            box-shadow: 0 0 10px rgba(145, 70, 255, 0.25);
+            transform: translateX(2px);
+        }
+
+        .channel-item-clickable:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 1px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            .channel-modal,
+            .channel-modal-tile {
+                animation: none;
+                opacity: 1;
+            }
+
+            .channel-modal-share-bar {
+                transition: none;
+            }
+
+            .channel-item-clickable,
+            .channel-modal-visit {
+                transition: none;
+            }
+        }
+
         .log-dialog-overlay[hidden] {
             display: none;
         }
@@ -1866,6 +2141,61 @@
         </svg>
         <span data-i18n="reportBugLabel">Report a bug.</span>
     </a>
+
+    <div class="channel-modal-overlay" id="channelModalOverlay" hidden>
+        <div class="channel-modal" role="dialog" aria-modal="true" aria-labelledby="channelModalName">
+            <button type="button" class="log-dialog-close" id="channelModalClose" aria-label="Close">×</button>
+            <div class="channel-modal-header">
+                <div class="channel-modal-monogram" id="channelModalMonogram" aria-hidden="true">?</div>
+                <div class="channel-modal-titles">
+                    <div class="channel-modal-name" id="channelModalName">channel</div>
+                    <span class="channel-modal-rank" id="channelModalRank">#1</span>
+                </div>
+            </div>
+            <div class="channel-modal-grid">
+                <div class="channel-modal-tile">
+                    <div class="channel-modal-tile-label">🛡️ <span data-i18n="adsBlocked">Ads Blocked</span></div>
+                    <div class="channel-modal-tile-value" id="channelModalAds">0</div>
+                </div>
+                <div class="channel-modal-tile">
+                    <div class="channel-modal-tile-label">📺 <span data-i18n="channelModalWatch">Watch
+                            time</span></div>
+                    <div class="channel-modal-tile-value" id="channelModalWatch">0s</div>
+                </div>
+                <div class="channel-modal-tile">
+                    <div class="channel-modal-tile-label">⏱️ <span data-i18n="timeSaved">Time Saved</span></div>
+                    <div class="channel-modal-tile-value" id="channelModalSaved">~0s</div>
+                </div>
+                <div class="channel-modal-tile">
+                    <div class="channel-modal-tile-label">📦 <span data-i18n="channelModalBreaks">Ad breaks
+                            survived</span></div>
+                    <div class="channel-modal-tile-value" id="channelModalBreaks">0</div>
+                </div>
+            </div>
+            <div class="channel-modal-share">
+                <div class="channel-modal-share-row">
+                    <span class="channel-modal-share-label" data-i18n="channelModalShare">Share of all
+                        blocks</span>
+                    <span class="channel-modal-share-pct" id="channelModalSharePct">0%</span>
+                </div>
+                <div class="channel-modal-share-track">
+                    <div class="channel-modal-share-bar" id="channelModalShareBar"></div>
+                </div>
+            </div>
+            <div class="channel-modal-dates">
+                <div class="channel-modal-date">
+                    <div class="channel-modal-date-label" data-i18n="channelModalSince">Blocking since</div>
+                    <div class="channel-modal-date-value" id="channelModalSince">—</div>
+                </div>
+                <div class="channel-modal-date">
+                    <div class="channel-modal-date-label" data-i18n="channelModalLast">Last ad blocked</div>
+                    <div class="channel-modal-date-value" id="channelModalLast">—</div>
+                </div>
+            </div>
+            <button type="button" class="channel-modal-visit" id="channelModalVisit"
+                data-i18n="channelModalVisit">Visit channel</button>
+        </div>
+    </div>
 
     <div class="log-dialog-overlay" id="logDialogOverlay" hidden>
         <div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="logDialogTitle">

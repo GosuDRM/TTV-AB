@@ -1276,3 +1276,127 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(reloads[0].newMediaPlayerInstance).toBe(true);
 	});
 });
+
+describe("channel watch-time tracking", () => {
+	type WatchState = {
+		channel: string | null;
+		pendingMs: number;
+		lastTickAt: number;
+	};
+	const watchState = () => g._WatchTimeState as WatchState;
+	const track = () => T<(isHidden: boolean) => void>("_trackChannelWatchTime");
+	let bridgeMessages: Array<{ type: string; detail: unknown }> = [];
+	let realGetPrimary: unknown;
+	let realSendBridge: unknown;
+	let nowValue = 1_000_000_000_000;
+
+	function makeWatchVideo(overrides: Record<string, unknown> = {}) {
+		const video = document.createElement("video");
+		for (const [key, value] of Object.entries({
+			paused: false,
+			ended: false,
+			readyState: 4,
+			...overrides,
+		})) {
+			Object.defineProperty(video, key, {
+				get: () => value,
+				configurable: true,
+			});
+		}
+		return video;
+	}
+
+	beforeEach(() => {
+		bridgeMessages = [];
+		realGetPrimary = g._getPrimaryMediaElement;
+		realSendBridge = g._sendBridgeMessage;
+		g._sendBridgeMessage = (type: string, detail: unknown) => {
+			bridgeMessages.push({ type, detail });
+			return true;
+		};
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "streamerone",
+		};
+		const state = watchState();
+		state.channel = null;
+		state.pendingMs = 0;
+		state.lastTickAt = 0;
+		nowValue = 1_000_000_000_000;
+		vi.spyOn(Date, "now").mockImplementation(() => nowValue);
+	});
+
+	afterEach(() => {
+		g._getPrimaryMediaElement = realGetPrimary;
+		g._sendBridgeMessage = realSendBridge;
+		vi.restoreAllMocks();
+	});
+
+	it("accumulates time across visible playing ticks", () => {
+		g._getPrimaryMediaElement = () => makeWatchVideo();
+		track()(false);
+		nowValue += 1000;
+		track()(false);
+		nowValue += 1000;
+		track()(false);
+		expect(watchState().pendingMs).toBe(2000);
+		expect(bridgeMessages.length).toBe(0);
+	});
+
+	it("caps a single tick gap so sleep cannot inflate the count", () => {
+		g._getPrimaryMediaElement = () => makeWatchVideo();
+		track()(false);
+		nowValue += 60_000;
+		track()(false);
+		expect(watchState().pendingMs).toBe(5000);
+	});
+
+	it("does not count while the player is paused or the tab is hidden", () => {
+		g._getPrimaryMediaElement = () => makeWatchVideo({ paused: true });
+		track()(false);
+		nowValue += 1000;
+		track()(false);
+		expect(watchState().pendingMs).toBe(0);
+
+		g._getPrimaryMediaElement = () => makeWatchVideo();
+		track()(true);
+		nowValue += 1000;
+		track()(true);
+		expect(watchState().pendingMs).toBe(0);
+	});
+
+	it("sends a watch-time delta once the flush threshold accrues", () => {
+		g._getPrimaryMediaElement = () => makeWatchVideo();
+		track()(false);
+		for (let i = 0; i < 16; i++) {
+			nowValue += 1000;
+			track()(false);
+		}
+		expect(bridgeMessages.length).toBe(1);
+		expect(bridgeMessages[0].type).toBe("ttvab-watch-time");
+		expect(bridgeMessages[0].detail).toEqual({
+			channel: "streamerone",
+			seconds: 15,
+		});
+		expect(watchState().pendingMs).toBe(1000);
+	});
+
+	it("force-flushes the old channel when the page switches channels", () => {
+		g._getPrimaryMediaElement = () => makeWatchVideo();
+		track()(false);
+		for (let i = 0; i < 5; i++) {
+			nowValue += 1000;
+			track()(false);
+		}
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "streamertwo";
+		nowValue += 1000;
+		track()(false);
+		expect(bridgeMessages.length).toBe(1);
+		expect(bridgeMessages[0].detail).toEqual({
+			channel: "streamerone",
+			seconds: 5,
+		});
+		expect(watchState().channel).toBe("streamertwo");
+		expect(watchState().pendingMs).toBe(0);
+	});
+});

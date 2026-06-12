@@ -54,6 +54,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const logDialogGenerate = document.getElementById("logDialogGenerate");
     const logDialogSkip = document.getElementById("logDialogSkip");
     const logDialogClose = document.getElementById("logDialogClose");
+    const channelModalOverlay = document.getElementById("channelModalOverlay");
+    const channelModalClose = document.getElementById("channelModalClose");
+    const channelModalVisit = document.getElementById("channelModalVisit");
+    const channelModalMonogram = document.getElementById("channelModalMonogram");
+    const channelModalName = document.getElementById("channelModalName");
+    const channelModalRank = document.getElementById("channelModalRank");
+    const channelModalAds = document.getElementById("channelModalAds");
+    const channelModalWatch = document.getElementById("channelModalWatch");
+    const channelModalSaved = document.getElementById("channelModalSaved");
+    const channelModalBreaks = document.getElementById("channelModalBreaks");
+    const channelModalShareBar = document.getElementById("channelModalShareBar");
+    const channelModalSharePct = document.getElementById("channelModalSharePct");
+    const channelModalSince = document.getElementById("channelModalSince");
+    const channelModalLast = document.getElementById("channelModalLast");
     const requiredElements = {
         toggle,
         statusDot,
@@ -85,6 +99,20 @@ document.addEventListener("DOMContentLoaded", () => {
         logDialogGenerate,
         logDialogSkip,
         logDialogClose,
+        channelModalOverlay,
+        channelModalClose,
+        channelModalVisit,
+        channelModalMonogram,
+        channelModalName,
+        channelModalRank,
+        channelModalAds,
+        channelModalWatch,
+        channelModalSaved,
+        channelModalBreaks,
+        channelModalShareBar,
+        channelModalSharePct,
+        channelModalSince,
+        channelModalLast,
     };
     for (const [name, element] of Object.entries(requiredElements)) {
         if (element)
@@ -411,8 +439,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
     window.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !logDialogOverlay.hidden) {
+        if (event.key !== "Escape")
+            return;
+        if (!logDialogOverlay.hidden) {
             hideLogDialog();
+        }
+        if (!channelModalOverlay.hidden) {
+            hideChannelModal();
         }
     });
     logDialogGenerate.addEventListener("click", () => {
@@ -429,6 +462,156 @@ document.addEventListener("DOMContentLoaded", () => {
             hideLogDialog();
             openIssuesPage();
         });
+    });
+    let latestChannelStats = Object.create(null);
+    let latestAdsTotal = 0;
+    let openChannelModalName = null;
+    function prefersReducedMotion() {
+        try {
+            return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        }
+        catch {
+            return false;
+        }
+    }
+    function animateStatValue(element, targetValue, formatter) {
+        const target = normalizeCount(targetValue);
+        const format = typeof formatter === "function" ? formatter : (value) => String(value);
+        if (prefersReducedMotion() || target <= 0) {
+            element.textContent = format(target);
+            return;
+        }
+        const durationMs = 550;
+        const startedAt = performance.now();
+        const step = (now) => {
+            const progress = Math.min(1, (now - startedAt) / durationMs);
+            const eased = 1 - (1 - progress) ** 3;
+            element.textContent = format(Math.round(target * eased));
+            if (progress < 1)
+                requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+    }
+    function formatChannelDate(timestamp) {
+        const safeTimestamp = normalizeTimestamp(timestamp);
+        if (safeTimestamp <= 0)
+            return "—";
+        try {
+            return new Intl.DateTimeFormat(getLocaleTag(), {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+            }).format(new Date(safeTimestamp));
+        }
+        catch {
+            return new Date(safeTimestamp).toLocaleDateString();
+        }
+    }
+    function formatRelativeTime(timestamp) {
+        const safeTimestamp = normalizeTimestamp(timestamp);
+        if (safeTimestamp <= 0)
+            return "—";
+        const elapsedMs = Math.max(0, Date.now() - safeTimestamp);
+        const units = [
+            [86400000, "day"],
+            [3600000, "hour"],
+            [60000, "minute"],
+        ];
+        try {
+            const formatter = new Intl.RelativeTimeFormat(getLocaleTag(), {
+                numeric: "auto",
+            });
+            for (const [unitMs, unit] of units) {
+                if (elapsedMs >= unitMs) {
+                    return formatter.format(-Math.floor(elapsedMs / unitMs), unit);
+                }
+            }
+            return formatter.format(0, "minute");
+        }
+        catch {
+            return formatChannelDate(safeTimestamp);
+        }
+    }
+    function formatWatchTime(seconds) {
+        const safeSeconds = normalizeCount(seconds);
+        if (safeSeconds < 60)
+            return `${safeSeconds}s`;
+        const hours = Math.floor(safeSeconds / 3600);
+        const minutes = Math.floor((safeSeconds % 3600) / 60);
+        if (hours > 0)
+            return `${hours}h ${minutes}m`;
+        return `${minutes}m`;
+    }
+    function fillChannelModal(channelName) {
+        const entry = normalizeChannelEntry(latestChannelStats[channelName]);
+        const rankedEntries = Object.entries(latestChannelStats).sort((a, b) => {
+            const countDiff = normalizeCount(normalizeChannelEntry(b[1]).ads) -
+                normalizeCount(normalizeChannelEntry(a[1]).ads);
+            return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
+        });
+        const rank = rankedEntries.findIndex(([name]) => name === channelName) + 1;
+        const t = getTranslations();
+        channelModalMonogram.textContent = channelName.charAt(0).toUpperCase();
+        channelModalName.textContent = channelName;
+        channelModalName.title = channelName;
+        channelModalRank.textContent = formatTemplate(String(t.channelModalRank ?? "#{rank} of {total}"), {
+            rank: formatNumber(Math.max(1, rank)),
+            total: formatNumber(Math.max(1, rankedEntries.length)),
+        });
+        animateStatValue(channelModalAds, entry.ads, (value) => formatNumber(value));
+        animateStatValue(channelModalWatch, entry.watchSeconds, (value) => formatWatchTime(value));
+        animateStatValue(channelModalSaved, entry.ads * AVG_AD_DURATION, (value) => formatTimeSaved(value));
+        animateStatValue(channelModalBreaks, Math.ceil(entry.ads / 3), (value) => formatNumber(value));
+        const sharePercent = latestAdsTotal > 0
+            ? Math.min(100, Math.round((entry.ads / latestAdsTotal) * 100))
+            : 0;
+        channelModalSharePct.textContent = `${sharePercent}%`;
+        channelModalShareBar.style.width = "0%";
+        requestAnimationFrame(() => {
+            channelModalShareBar.style.width = `${Math.max(sharePercent, entry.ads > 0 ? 2 : 0)}%`;
+        });
+        channelModalSince.textContent = formatChannelDate(entry.firstSeen);
+        channelModalLast.textContent = formatRelativeTime(entry.lastSeen);
+    }
+    function openChannelModal(channelName) {
+        const safeChannel = normalizeChannelName(channelName);
+        if (!safeChannel)
+            return;
+        openChannelModalName = safeChannel;
+        fillChannelModal(safeChannel);
+        channelModalOverlay.hidden = false;
+        channelModalClose.focus();
+    }
+    function hideChannelModal() {
+        openChannelModalName = null;
+        channelModalOverlay.hidden = true;
+    }
+    function refreshOpenChannelModal() {
+        if (!openChannelModalName || channelModalOverlay.hidden)
+            return;
+        fillChannelModal(openChannelModalName);
+    }
+    channelModalClose.addEventListener("click", () => {
+        hideChannelModal();
+    });
+    channelModalOverlay.addEventListener("click", (event) => {
+        if (event.target === channelModalOverlay) {
+            hideChannelModal();
+        }
+    });
+    channelModalVisit.addEventListener("click", () => {
+        const channelName = openChannelModalName;
+        if (!channelName)
+            return;
+        const channelUrl = `https://www.twitch.tv/${channelName}`;
+        try {
+            if (chrome?.tabs?.create) {
+                chrome.tabs.create({ url: channelUrl });
+                return;
+            }
+        }
+        catch { }
+        window.open(channelUrl, "_blank", "noopener,noreferrer");
     });
     const savedLang = getStoredLanguage();
     const normalizedSavedLang = savedLang && savedLang !== "auto"
@@ -612,29 +795,67 @@ document.addEventListener("DOMContentLoaded", () => {
     function createDailyStatsMap() {
         return Object.create(null);
     }
+    function normalizeTimestamp(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || numericValue <= 0)
+            return 0;
+        const timestamp = Math.trunc(numericValue);
+        return timestamp > Date.now() + 5 * 60 * 1000 ? 0 : timestamp;
+    }
+    function normalizeChannelEntry(value) {
+        if (typeof value === "number" || typeof value === "string") {
+            return {
+                ads: normalizeCount(value),
+                firstSeen: 0,
+                lastSeen: 0,
+                watchSeconds: 0,
+            };
+        }
+        const safeValue = isPlainObject(value) ? value : {};
+        return {
+            ads: normalizeCount(safeValue.ads),
+            firstSeen: normalizeTimestamp(safeValue.firstSeen),
+            lastSeen: normalizeTimestamp(safeValue.lastSeen),
+            watchSeconds: normalizeCount(safeValue.watchSeconds),
+        };
+    }
+    function mergeChannelEntries(target, incoming) {
+        const firstSeenCandidates = [target.firstSeen, incoming.firstSeen].filter((timestamp) => timestamp > 0);
+        return {
+            ads: target.ads + incoming.ads,
+            firstSeen: firstSeenCandidates.length > 0 ? Math.min(...firstSeenCandidates) : 0,
+            lastSeen: Math.max(target.lastSeen, incoming.lastSeen),
+            watchSeconds: target.watchSeconds + incoming.watchSeconds,
+        };
+    }
     function normalizeChannelsMap(value) {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
             return createChannelsMap();
         }
         const normalized = createChannelsMap();
-        for (const [channelName, count] of Object.entries(value)) {
+        for (const [channelName, entry] of Object.entries(value)) {
             const safeChannel = normalizeChannelName(channelName);
             if (!safeChannel)
                 continue;
-            normalized[safeChannel] =
-                normalizeCount(normalized[safeChannel]) + normalizeCount(count);
+            const safeEntry = normalizeChannelEntry(entry);
+            normalized[safeChannel] = normalized[safeChannel]
+                ? mergeChannelEntries(normalized[safeChannel], safeEntry)
+                : safeEntry;
         }
         const channelEntries = Object.entries(normalized);
         if (channelEntries.length <= MAX_CHANNELS) {
             return normalized;
         }
         channelEntries.sort((a, b) => {
-            const countDiff = normalizeCount(b[1]) - normalizeCount(a[1]);
-            return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
+            const countDiff = normalizeCount(b[1].ads) - normalizeCount(a[1].ads);
+            if (countDiff !== 0)
+                return countDiff;
+            const watchDiff = normalizeCount(b[1].watchSeconds) - normalizeCount(a[1].watchSeconds);
+            return watchDiff !== 0 ? watchDiff : a[0].localeCompare(b[0]);
         });
         const trimmed = createChannelsMap();
-        for (const [channelName, count] of channelEntries.slice(0, MAX_CHANNELS)) {
-            trimmed[channelName] = normalizeCount(count);
+        for (const [channelName, entry] of channelEntries.slice(0, MAX_CHANNELS)) {
+            trimmed[channelName] = entry;
         }
         return trimmed;
     }
@@ -710,7 +931,7 @@ document.addEventListener("DOMContentLoaded", () => {
             avg: formatNumber(avg),
         });
     }
-    function createChannelItem(rank, name, countText) {
+    function createChannelItem(rank, name, countText, channelKey = null) {
         const item = document.createElement("div");
         item.className = "channel-item";
         item.setAttribute("role", "listitem");
@@ -729,10 +950,24 @@ document.addEventListener("DOMContentLoaded", () => {
         count.className = "channel-count";
         count.textContent = countText;
         item.append(left, count);
+        if (channelKey) {
+            item.classList.add("channel-item-clickable");
+            item.setAttribute("role", "button");
+            item.setAttribute("tabindex", "0");
+            item.addEventListener("click", () => {
+                openChannelModal(channelKey);
+            });
+            item.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openChannelModal(channelKey);
+                }
+            });
+        }
         return item;
     }
     function renderChannels(channelsData) {
-        const entries = Object.entries(channelsData || {}).map(([channel, count]) => [channel, normalizeCount(count)]);
+        const entries = Object.entries(channelsData || {});
         channelList.replaceChildren();
         if (entries.length === 0) {
             const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
@@ -740,12 +975,12 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         entries.sort((a, b) => {
-            const countDiff = b[1] - a[1];
+            const countDiff = normalizeCount(b[1].ads) - normalizeCount(a[1].ads);
             return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
         });
         const top5 = entries.slice(0, 5);
         for (const [index, entry] of top5.entries()) {
-            channelList.append(createChannelItem(`${index + 1}.`, entry[0], formatNumber(entry[1])));
+            channelList.append(createChannelItem(`${index + 1}.`, entry[0], formatNumber(normalizeCount(entry[1].ads)), entry[0]));
         }
     }
     function renderAchievements(unlocked, adsBlocked, channelCount) {
@@ -828,7 +1063,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 ]
                 : [];
             const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
-            const channelCount = Object.keys(channels).length;
+            let channelCount = 0;
+            for (const entry of Object.values(channels)) {
+                if (normalizeCount(entry?.ads) > 0)
+                    channelCount++;
+            }
+            latestChannelStats = channels;
+            latestAdsTotal = adsCount;
+            refreshOpenChannelModal();
             renderChart(daily);
             renderChannels(channels);
             renderAchievements(achievements, adsCount, channelCount);
