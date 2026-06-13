@@ -1099,6 +1099,7 @@
         }
 
         .channel-modal-header {
+            position: relative;
             display: flex;
             align-items: center;
             gap: 10px;
@@ -1144,9 +1145,7 @@
             font-size: 14px;
             font-weight: 700;
             color: #fff;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            overflow-wrap: anywhere;
         }
 
         .channel-modal-rank {
@@ -1159,6 +1158,62 @@
             color: #7df3ec;
             font-size: 10px;
             font-weight: 600;
+        }
+
+        .channel-modal-pulse {
+            position: absolute;
+            top: 50%;
+            right: 24px;
+            transform: translateY(-50%);
+            width: 84px;
+            height: 30px;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 2;
+            color: #6b7280;
+            -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+            mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+            transition: color 0.45s ease;
+        }
+
+        .channel-modal-pulse.is-live {
+            color: #35f06a;
+        }
+
+        .channel-modal-pulse.is-offline {
+            color: #ff4d57;
+        }
+
+        .channel-modal-pulse svg {
+            display: block;
+            width: 200%;
+            height: 100%;
+            animation: channel-pulse-scroll 1.5s linear infinite;
+        }
+
+        .channel-modal-pulse .pulse-trace {
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 3px currentColor);
+        }
+
+        @keyframes channel-pulse-scroll {
+            from {
+                transform: translateX(0);
+            }
+
+            to {
+                transform: translateX(-50%);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .channel-modal-pulse svg {
+                animation: none;
+            }
         }
 
         .channel-modal-grid {
@@ -1378,6 +1433,7 @@
 
         .log-dialog-close {
             position: absolute;
+            z-index: 3;
             top: 8px;
             right: 8px;
             width: 22px;
@@ -2046,7 +2102,7 @@
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version-row">
-                <div class="version" id="versionText" aria-label="Version 9.9.7">v9.9.7</div>
+                <div class="version" id="versionText" aria-label="Version 9.9.8">v9.9.8</div>
                 <span class="stable-badge" data-i18n="stable">Stable</span>
             </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
@@ -2223,6 +2279,12 @@
                 <div class="channel-modal-titles">
                     <div class="channel-modal-name" id="channelModalName">channel</div>
                     <span class="channel-modal-rank" id="channelModalRank">#1</span>
+                </div>
+                <div class="channel-modal-pulse" id="channelModalPulse" aria-hidden="true">
+                    <svg viewBox="0 0 168 30" preserveAspectRatio="none">
+                        <polyline class="pulse-trace"
+                            points="0,15 12,15 16,12 20,15 28,15 30,18 33,3 36,24 39,15 45,10 51,15 84,15 96,15 100,12 104,15 112,15 114,18 117,3 120,24 123,15 129,10 135,15 168,15" />
+                    </svg>
                 </div>
             </div>
             <div class="channel-modal-grid">
