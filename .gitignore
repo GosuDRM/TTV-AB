@@ -40,5 +40,6 @@ tools/*
 .codex
 AGENTS.md
 CLAUDE.md
+SDL.md
 .clawpatch/
 *.xpi
