@@ -69,6 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const channelModalSharePct = document.getElementById("channelModalSharePct");
     const channelModalSince = document.getElementById("channelModalSince");
     const channelModalLast = document.getElementById("channelModalLast");
+    const channelModalPulse = document.getElementById("channelModalPulse");
     const requiredElements = {
         toggle,
         statusDot,
@@ -115,6 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
         channelModalSharePct,
         channelModalSince,
         channelModalLast,
+        channelModalPulse,
     };
     for (const [name, element] of Object.entries(requiredElements)) {
         if (element)
@@ -654,6 +656,52 @@ document.addEventListener("DOMContentLoaded", () => {
         })
             .catch(() => { });
     }
+    function fetchChannelLiveStatus(channelName) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), AVATAR_FETCH_TIMEOUT_MS);
+        return fetch(TWITCH_GQL_URL, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+                "Client-ID": TWITCH_PUBLIC_CLIENT_ID,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                query: "query($login: String!) { user(login: $login) { stream { id } } }",
+                variables: { login: channelName },
+            }),
+        })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((payload) => {
+            const data = payload;
+            const user = data?.data?.user;
+            if (!user)
+                return null;
+            const stream = user.stream;
+            return stream != null && typeof stream === "object";
+        })
+            .catch(() => null)
+            .finally(() => clearTimeout(timeoutId));
+    }
+    function setChannelPulseState(state) {
+        channelModalPulse.classList.remove("is-live", "is-offline");
+        if (state === "live") {
+            channelModalPulse.classList.add("is-live");
+        }
+        else if (state === "offline") {
+            channelModalPulse.classList.add("is-offline");
+        }
+    }
+    function applyChannelLiveStatus(channelName) {
+        setChannelPulseState("loading");
+        fetchChannelLiveStatus(channelName)
+            .then((isLive) => {
+            if (openChannelModalName !== channelName || isLive === null)
+                return;
+            setChannelPulseState(isLive ? "live" : "offline");
+        })
+            .catch(() => { });
+    }
     function computeBlendedSeconds(measuredSeconds, measuredBreaks, totalBreaks) {
         const unmeasured = Math.max(0, normalizeCount(totalBreaks) - normalizeCount(measuredBreaks));
         return normalizeCount(measuredSeconds) + unmeasured * AVG_AD_DURATION;
@@ -698,12 +746,14 @@ document.addEventListener("DOMContentLoaded", () => {
         openChannelModalName = safeChannel;
         fillChannelModal(safeChannel);
         applyChannelAvatar(safeChannel);
+        applyChannelLiveStatus(safeChannel);
         channelModalOverlay.hidden = false;
         channelModalClose.focus();
     }
     function hideChannelModal() {
         openChannelModalName = null;
         channelModalOverlay.hidden = true;
+        setChannelPulseState("loading");
     }
     function refreshOpenChannelModal() {
         if (!openChannelModalName || channelModalOverlay.hidden)

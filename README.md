@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.9.7-purple)
+![Version](https://img.shields.io/badge/version-9.9.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -68,14 +68,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v9.9.8 - 2026-06-13
+- **Live status at a glance.** Channel cards now show an animated heartbeat monitor next to the name — green when the channel is live, red when it's offline, checked anonymously from Twitch. Plus more natural French/Spanish/Portuguese wording, and fixes so long channel names aren't cut off and the close button stays reliably clickable.
+
 ### v9.9.7 - 2026-06-12
 - **Time Saved gets real.** Blocked ads now record their actual durations straight from Twitch's playlist metadata, so a 15s preroll counts 15s and a 90s pod counts 90s. New measurements blend with your existing history, meaning the total only gets more accurate. Plus: watch-only channels no longer sneak into Top Channels.
 
 ### v9.9.6 - 2026-06-12
 - **Real channel avatars.** Channel cards now display the actual profile photo, fetched directly from Twitch and cached locally (never from third parties), plus a glowing hint so you know channel rows are clickable.
-
-### v9.9.5 - 2026-06-12
-- **Channel cards with real watch time.** Tap any channel in Top Channels for an animated card showing ads blocked, tracked watch time, time saved, ad breaks survived, your block share, first/last block dates, and a one-click Visit Channel button. All stored locally, nothing uploaded.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.8] - 2026-06-13
+
+### Added
+- The channel card now shows a live-status monitor beside the channel name — an animated green heartbeat when the channel is live and a red one when it's offline, checked anonymously from Twitch each time you open the card.
+
+### Changed
+- Polished the French, Spanish, and Portuguese popup wording so it reads more naturally.
+
+### Fixed
+- Long channel names are no longer cut off in the channel card.
+- The channel card's close button stays reliably clickable when moving the cursor over it.
+
 ## [9.9.7] - 2026-06-12
 
 ### Changed
