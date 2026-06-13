@@ -39,5 +39,6 @@ tools/*
 .openclaw/
 .codex
 AGENTS.md
+CLAUDE.md
 .clawpatch/
 *.xpi
