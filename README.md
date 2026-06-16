@@ -12,6 +12,8 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 ## 📥 Install
 
+> **⚠️ Supported browsers — Firefox and Chrome only.** TTV AB can't run on WebKit-based browsers like Orion, or on anything on iOS/iPadOS (every iOS browser is WebKit under the hood). The ad-blocker can't load there and the player goes to a black screen — please use Firefox or Chrome on a computer.
+
 | Store | Link | Status |
 |-------|------|--------|
 | Firefox Add-ons | [TTV AB - Twitch Ad Blocker](https://addons.mozilla.org/en-GB/firefox/addon/ttv-ab-twitch-ad-blocker/) | Stable |
