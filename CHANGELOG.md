@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [9.9.9] - 2026-06-20
+
+### Changed
+- "Low Quality Fallback" toggle now defaults to **enabled**. Previously off by default, it now ships enabled so every user gets faster ad recovery out of the box — the extension starts on a quick 360p stream during ads and climbs back to native quality automatically. Existing users who never touched the toggle will see it enabled on update; anyone who explicitly disabled it keeps their preference.
+- Info modal text for "Low Quality Fallback" updated across all 11 locales to reflect the new default and describe actual behavior in both states.
+
 ## [9.9.8] - 2026-06-13
 
 ### Added

@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-9.9.8-purple)
+![Version](https://img.shields.io/badge/version-9.9.9-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-9.9.8-yellow)
+![Chrome](https://img.shields.io/badge/chrome-9.9.9-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -69,6 +69,9 @@ TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch
 When a channel opens during an ad, or an ad starts mid-stream, the extension switches to a clean backup stream within a couple of seconds so video starts playing right away. The backup targets the quality your connection has been sustaining (even if the player had just restarted on a low rung when the ad hit), with a 360p floor so a channel-open preroll never starts blurrier than 360p while the player is still ramping up from its lowest quality. Your full native quality and audio are restored automatically and seamlessly once the ad window ends. The optional **Low Quality Fallback** toggle trades some quality for an even faster first frame, starting on a quick low-resolution stream and climbing back up as the break ends.
 
 ## 🔔 What's New
+
+### v9.9.9 - 2026-06-20
+- **Low Quality Fallback now defaults to enabled.** The toggle was previously off by default, requiring users to opt in. It now ships enabled so every user gets faster ad recovery out of the box — the extension starts on a quick 360p stream during ads and climbs back to native quality automatically. You can still disable it in the popup if you prefer native quality only.
 
 ### v9.9.8 - 2026-06-13
 - **Live status at a glance.** Channel cards now show an animated heartbeat monitor next to the name — green when the channel is live, red when it's offline, checked anonymously from Twitch. Plus more natural French/Spanish/Portuguese wording, and fixes so long channel names aren't cut off and the close button stays reliably clickable.
