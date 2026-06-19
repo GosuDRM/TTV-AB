@@ -1266,7 +1266,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const safeResult = (result || {});
         const enabled = safeResult.ttvAdblockEnabled !== false;
         const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
-        const autoplayBackupEnabled = safeResult.ttvAutoplayBackupEnabled === true;
+        const autoplayBackupEnabled = safeResult.ttvAutoplayBackupEnabled !== false;
         toggle.checked = enabled;
         adSpoofingToggle.checked = adSpoofingEnabled;
         autoplayBackupToggle.checked = autoplayBackupEnabled;

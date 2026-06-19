@@ -373,7 +373,7 @@ function postAchievementUnlock(id) {
 const bridgeState = {
 	enabled: true,
 	adSpoofingEnabled: true,
-	autoplayBackupEnabled: false,
+	autoplayBackupEnabled: true,
 	storedAdsCount: 0,
 };
 const MAX_MESSAGE_DELTA = 50;
@@ -921,7 +921,7 @@ chrome.storage.local.get(
 		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
 		bridgeState.adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
 		bridgeState.autoplayBackupEnabled =
-			safeResult.ttvAutoplayBackupEnabled === true;
+			safeResult.ttvAutoplayBackupEnabled !== false;
 		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
 		bridgeStateReady = true;
 

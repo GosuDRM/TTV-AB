@@ -641,7 +641,7 @@ function _declareState(scope) {
 		FetchRequestSeq: 0,
 		_AdRecoveryConsecutiveFailures: 0,
 		DisableAdSpoofing: false,
-		DisableAutoplayBackup: true,
+		DisableAutoplayBackup: false,
 		LoggedAdSpoofNoMatch: false,
 		LoggedAdSpoofNoToken: false,
 		LoggedAdSpoofBadStatus: false,

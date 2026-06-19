@@ -77,7 +77,7 @@ beforeAll(() => {
 		AuthorizationHeader: null,
 		GQLDeviceID: null,
 		PreferredQualityGroup: null,
-		DisableAutoplayBackup: true,
+		DisableAutoplayBackup: false,
 	};
 	g.globalThis = g;
 	g.self = g;
@@ -663,7 +663,7 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 			"_getOrderedBackupPlayerTypes",
 		);
 
-	it("excludes autoplay when LQ fallback is disabled (default)", () => {
+	it("excludes autoplay when LQ fallback is disabled", () => {
 		getState().DisableAutoplayBackup = true;
 		const result = fn()(makeInfo());
 		expect(result).not.toContain("autoplay");
