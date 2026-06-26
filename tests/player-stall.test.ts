@@ -23,6 +23,7 @@ function loadModule(modulePath: string) {
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
+	loadModule("../dist/src/modules/logger.js");
 	loadModule("../dist/src/modules/state.js");
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/player.js");
