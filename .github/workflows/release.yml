@@ -146,7 +146,7 @@ jobs:
           const refsText = refs.length ? `\n\nRefs ${refs.join(", ")}.` : "";
           const installText = [
             "## Install",
-            "### Chrome (unpacked)",
+            "### 📦 Chrome (unpacked)",
             `1. Download \`ttv-ab-${version}-chrome.zip\` from Assets.`,
             "2. Unzip it somewhere you can keep, such as your Downloads folder.",
             "3. Open `chrome://extensions`.",
@@ -154,9 +154,14 @@ jobs:
             "5. Click `Load unpacked` and select the unzipped folder, not the zip file.",
             "6. Keep that folder in place. Chrome loads the extension from that folder.",
             "",
-            "### Firefox",
-            `- Download \`ttv-ab-${version}.xpi\` from Assets.`,
-            "- Open the `.xpi` file in Firefox and confirm the install prompt.",
+            "### 🦊 Firefox (`.xpi`)",
+            `1. Download \`ttv-ab-${version}.xpi\` from Assets.`,
+            "2. Open `about:addons` in Firefox.",
+            "3. Click the gear icon near the top of the Add-ons Manager.",
+            "4. Choose `Install Add-on From File...`.",
+            "5. Select the downloaded `.xpi` file and confirm the install prompt.",
+            "",
+            "Do not use `about:debugging` or `Load Temporary Add-on` for this release file. That page is only for temporary developer builds.",
           ].join("\n");
           fs.writeFileSync("release-notes.md", `${section}${refsText}\n\n${installText}\n`);
           NODE
