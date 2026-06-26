@@ -22,6 +22,7 @@ jobs:
         with:
           ref: ${{ github.ref }}
           path: chrome
+          fetch-depth: 0
 
       - name: Checkout Firefox
         uses: actions/checkout@v4
@@ -97,6 +98,60 @@ jobs:
           }
           NODE
 
+      - name: Write release notes
+        working-directory: chrome
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const { execFileSync } = require("node:child_process");
+
+          const tag = process.env.TAG;
+          const version = process.env.VERSION;
+          const changelog = fs.readFileSync("CHANGELOG.md", "utf8");
+          const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const header = new RegExp(`^## \\[${escapedVersion}\\][^\\n]*$`, "m").exec(changelog);
+          if (!header) {
+            throw new Error(`CHANGELOG.md is missing ${version}`);
+          }
+
+          const start = header.index + header[0].length;
+          const rest = changelog.slice(start);
+          const nextHeader = /^## \[/m.exec(rest);
+          const section = rest.slice(0, nextHeader ? nextHeader.index : undefined).trim();
+          if (!section) {
+            throw new Error(`CHANGELOG.md entry for ${version} is empty`);
+          }
+
+          let log;
+          try {
+            const previousTag = execFileSync("git", ["describe", "--tags", "--abbrev=0", `${tag}^`], {
+              encoding: "utf8",
+              stdio: ["ignore", "pipe", "ignore"],
+            }).trim();
+            log = execFileSync("git", ["log", "--format=%B", `${previousTag}..${tag}`], {
+              encoding: "utf8",
+            });
+          } catch {
+            log = execFileSync("git", ["log", "--format=%B", "--grep", `v${version}`, "-n", "20", tag], {
+              encoding: "utf8",
+            });
+          }
+
+          const refs = Array.from(
+            new Set(Array.from(log.matchAll(/\bRefs?\s+#(\d+)\b/gi), (match) => `#${match[1]}`)),
+          );
+          const refsText = refs.length ? `\n\nRefs ${refs.join(", ")}.` : "";
+          const installText = [
+            "## Install",
+            `Chrome unpacked: download \`ttv-ab-${version}-chrome.zip\`, unzip it, open \`chrome://extensions\`, enable Developer mode, click \`Load unpacked\`, and select the unzipped folder.`,
+            `Firefox: download \`ttv-ab-${version}.xpi\` and open it in Firefox.`,
+          ].join("\n");
+          fs.writeFileSync("release-notes.md", `${section}${refsText}\n\n${installText}\n`);
+          NODE
+
       - name: Build Chrome
         working-directory: chrome
         run: |
@@ -104,6 +159,8 @@ jobs:
           npm run build
           npm test
           test -f "ttv-ab-${{ steps.version.outputs.version }}-chrome-store.zip"
+          cp "ttv-ab-${{ steps.version.outputs.version }}-chrome-store.zip" "ttv-ab-${{ steps.version.outputs.version }}-chrome.zip"
+          test -f "ttv-ab-${{ steps.version.outputs.version }}-chrome.zip"
 
       - name: Build Firefox
         working-directory: firefox
@@ -118,8 +175,8 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: TTV AB ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: chrome/release-notes.md
           fail_on_unmatched_files: true
           files: |
-            chrome/ttv-ab-${{ steps.version.outputs.version }}-chrome-store.zip
+            chrome/ttv-ab-${{ steps.version.outputs.version }}-chrome.zip
             firefox/ttv-ab-${{ steps.version.outputs.version }}.xpi
