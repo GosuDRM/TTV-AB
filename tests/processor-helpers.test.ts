@@ -675,6 +675,17 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 		expect(result).toContain("autoplay");
 	});
 
+	it("tries autoplay first on a cold active ad cycle when LQ fallback is enabled", () => {
+		getState().DisableAutoplayBackup = false;
+		const result = fn()(
+			makeInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: Date.now() - 500,
+			}),
+		);
+		expect(result[0]).toBe("autoplay");
+	});
+
 	it("tries a recent clean non-autoplay backup before cold source candidates", () => {
 		const state = getState();
 		const previousTypes = state.BackupPlayerTypes;
@@ -766,21 +777,46 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 	});
 });
 
-describe("_shouldTryAutoplayFirst (LQ-hold-only)", () => {
+describe("_shouldTryAutoplayFirst (LQ fallback)", () => {
 	const fn = () =>
 		T<(info: Record<string, unknown>) => boolean>("_shouldTryAutoplayFirst");
 
-	it("does not prioritize autoplay on cold start (no clean backup yet)", () => {
+	it("does not prioritize autoplay outside an active ad cycle", () => {
+		getState().DisableAutoplayBackup = false;
 		expect(fn()(makeInfo())).toBe(false);
+		getState().DisableAutoplayBackup = true;
+	});
+
+	it("prioritizes autoplay on a cold active ad cycle", () => {
+		getState().DisableAutoplayBackup = false;
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 500,
+		});
+		expect(fn()(info)).toBe(true);
+		getState().DisableAutoplayBackup = true;
+	});
+
+	it("does not prioritize autoplay when it is cooling down", () => {
+		getState().DisableAutoplayBackup = false;
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 500,
+			FailedBackupPlayerTypes: new Map([["autoplay", Date.now() + 30000]]),
+		});
+		expect(fn()(info)).toBe(false);
+		getState().DisableAutoplayBackup = true;
 	});
 
 	it("does not prioritize autoplay on a new ad cycle (backup stale from a prior cycle)", () => {
+		getState().DisableAutoplayBackup = false;
 		const info = makeInfo({
 			LastCleanBackupM3U8: "#EXTM3U8",
 			LastCleanBackupAt: 1000,
 			VisibleAdStartedAt: 5000,
 		});
 		expect(fn()(info)).toBe(false);
+		getState().DisableAutoplayBackup = true;
 	});
 
 	it("holds LQ (autoplay) first while within the LQ→HQ dwell window", () => {
@@ -980,6 +1016,68 @@ describe("_findBackupStream fallback policy", () => {
 			);
 
 			expect(tokenCalls).toEqual(["embed", "autoplay"]);
+			expect(result.type).toBe("autoplay");
+			expect(result.m3u8).toBe(cleanPlaylist);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previousGetToken;
+			}
+			if (previousExtract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previousExtract;
+			}
+		}
+	});
+
+	it("tries autoplay first when LQ fallback is enabled for an active ad cycle", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["embed", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo({
+					IsShowingAd: true,
+					VisibleAdStartedAt: Date.now() - 500,
+				}),
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					if (href.includes("/autoplay/")) {
+						return new Response(cleanPlaylist, { status: 200 });
+					}
+					return new Response(null, { status: 404 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["autoplay"]);
 			expect(result.type).toBe("autoplay");
 			expect(result.m3u8).toBe(cleanPlaylist);
 		} finally {
@@ -2510,9 +2608,10 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 			return new Promise(() => {});
 		};
 
-		const core = T<
-			(url: string, text: string, realFetch: unknown) => Promise<string>
-		>("_processM3U8Core");
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
 		const first = await core(bridgeUrl, adLadenNative, fetchStub);
 		expect(first).toBe(cleanNative);
 		expect(findCalls.length).toBe(1);
@@ -2536,9 +2635,10 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		g._getStreamInfoForPlaylist = () => info;
 		g._findBackupStream = async () => ({ type: "embed", m3u8: cleanBackup });
 
-		const core = T<
-			(url: string, text: string, realFetch: unknown) => Promise<string>
-		>("_processM3U8Core");
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
 		const out = await core(bridgeUrl, adLadenNative, fetchStub);
 		expect(out).not.toBe(cleanNative);
 		expect(String(out)).toContain("https://edge.example/backup-live-1.ts");
@@ -2557,9 +2657,10 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 			return new Promise(() => {});
 		};
 
-		const core = T<
-			(url: string, text: string, realFetch: unknown) => Promise<string>
-		>("_processM3U8Core");
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
 		const out = await core(bridgeUrl, adLadenNative, fetchStub);
 		expect(out).toBe(cleanNative);
 		expect(findCalls.length).toBe(0);

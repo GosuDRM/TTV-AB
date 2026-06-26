@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.1] - 2026-06-26
+
+### Fixed
+- Low Quality Fallback now starts from the quick clean backup as soon as an ad break begins, reducing black/loading stalls on stubborn ad pods.
+
 ## [10.0.0] - 2026-06-26
 
 ### Fixed
