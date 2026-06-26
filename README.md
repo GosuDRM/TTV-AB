@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-10.0.0-purple)
+![Version](https://img.shields.io/badge/version-10.0.1-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-10.0.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-10.0.1-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v10.0.1 - 2026-06-26
+- **Faster first frame during stubborn ad breaks.** Low Quality Fallback now takes the quick 360p path immediately when an ad starts, reducing black/loading stalls before climbing back to normal quality.
+
 ### v10.0.0 - 2026-06-26
 - **Post-ad audio stays on the live player.** After an ad break, stale Twitch media elements are kept silent so old audio cannot mix back in with the restored stream.
 
 ### v9.9.9 - 2026-06-20
 - **Low Quality Fallback now defaults to enabled.** The toggle was previously off by default, requiring users to opt in. It now ships enabled so every user gets faster ad recovery out of the box — the extension starts on a quick 360p stream during ads and climbs back to native quality automatically. You can still disable it in the popup if you prefer native quality only.
-
-### v9.9.8 - 2026-06-13
-- **Live status at a glance.** Channel cards now show an animated heartbeat monitor next to the name — green when the channel is live, red when it's offline, checked anonymously from Twitch. Plus more natural French/Spanish/Portuguese wording, and fixes so long channel names aren't cut off and the close button stays reliably clickable.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

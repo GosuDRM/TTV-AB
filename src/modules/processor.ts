@@ -309,6 +309,9 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 	);
 
 	pushUnique(preferredPlayerType);
+	if (_shouldTryAutoplayFirst(info)) {
+		pushUnique("autoplay");
+	}
 	pushUnique(_getRecentCleanBackupPlayerTypeForInfo(info));
 	if (
 		activePlayerType !== "autoplay" ||
@@ -2146,6 +2149,12 @@ function _getResolvedLqHqHoldMinMs() {
 
 function _shouldTryAutoplayFirst(info) {
 	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
+	if (
+		!(__TTVAB_STATE__?.BackupPlayerTypes || []).includes("autoplay") ||
+		_isBackupPlayerRetryCoolingDown(info, "autoplay")
+	) {
+		return false;
+	}
 	const lqHoldStartAt = Number(info?._LqHoldStartAt) || 0;
 	const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
 	if (
@@ -2156,7 +2165,10 @@ function _shouldTryAutoplayFirst(info) {
 	) {
 		return true;
 	}
-	return false;
+	if (info?.ActiveBackupPlayerType) return false;
+	return Boolean(
+		info?.IsShowingAd && (Number(info?.VisibleAdStartedAt) || 0) > 0,
+	);
 }
 
 function _shouldHoldAutoplayBackupDuringAd(info) {
