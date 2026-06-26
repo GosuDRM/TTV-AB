@@ -146,8 +146,17 @@ jobs:
           const refsText = refs.length ? `\n\nRefs ${refs.join(", ")}.` : "";
           const installText = [
             "## Install",
-            `Chrome unpacked: download \`ttv-ab-${version}-chrome.zip\`, unzip it, open \`chrome://extensions\`, enable Developer mode, click \`Load unpacked\`, and select the unzipped folder.`,
-            `Firefox: download \`ttv-ab-${version}.xpi\` and open it in Firefox.`,
+            "### Chrome (unpacked)",
+            `1. Download \`ttv-ab-${version}-chrome.zip\` from Assets.`,
+            "2. Unzip it somewhere you can keep, such as your Downloads folder.",
+            "3. Open `chrome://extensions`.",
+            "4. Enable `Developer mode`.",
+            "5. Click `Load unpacked` and select the unzipped folder, not the zip file.",
+            "6. Keep that folder in place. Chrome loads the extension from that folder.",
+            "",
+            "### Firefox",
+            `- Download \`ttv-ab-${version}.xpi\` from Assets.`,
+            "- Open the `.xpi` file in Firefox and confirm the install prompt.",
           ].join("\n");
           fs.writeFileSync("release-notes.md", `${section}${refsText}\n\n${installText}\n`);
           NODE
