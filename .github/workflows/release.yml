@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Chrome
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          path: chrome
+
+      - name: Checkout Firefox
+        uses: actions/checkout@v4
+        with:
+          ref: firefox
+          path: firefox
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            chrome/package-lock.json
+            firefox/package-lock.json
+
+      - name: Read tag version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must look like vX.Y.Z"
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Chrome version
+        working-directory: chrome
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const version = process.env.VERSION;
+          const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+          const constants = fs.readFileSync("src/modules/constants.ts", "utf8");
+          const constantsVersion = constants.match(/VERSION:\s*"([^"]+)"/)?.[1];
+          const versions = {
+            package: packageJson.version,
+            manifest: manifest.version,
+            constants: constantsVersion,
+          };
+          for (const [name, value] of Object.entries(versions)) {
+            if (value !== version) {
+              throw new Error(`${name} version ${value} does not match tag ${version}`);
+            }
+          }
+          NODE
+
+      - name: Validate Firefox version
+        working-directory: firefox
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const version = process.env.VERSION;
+          const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+          const constants = fs.readFileSync("src/modules/constants.ts", "utf8");
+          const constantsVersion = constants.match(/VERSION:\s*"([^"]+)"/)?.[1];
+          const versions = {
+            package: packageJson.version,
+            manifest: manifest.version,
+            constants: constantsVersion,
+          };
+          for (const [name, value] of Object.entries(versions)) {
+            if (value !== version) {
+              throw new Error(`${name} version ${value} does not match tag ${version}`);
+            }
+          }
+          NODE
+
+      - name: Build Chrome
+        working-directory: chrome
+        run: |
+          npm ci
+          npm run build
+          npm test
+          test -f "ttv-ab-${{ steps.version.outputs.version }}-chrome-store.zip"
+
+      - name: Build Firefox
+        working-directory: firefox
+        run: |
+          npm ci
+          npm run build
+          npm test
+          test -f "ttv-ab-${{ steps.version.outputs.version }}.xpi"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: TTV AB ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            chrome/ttv-ab-${{ steps.version.outputs.version }}-chrome-store.zip
+            firefox/ttv-ab-${{ steps.version.outputs.version }}.xpi
