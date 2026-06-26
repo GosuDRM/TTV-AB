@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.0] - 2026-06-26
+
+### Fixed
+- Stale Twitch media elements stay muted after ad recovery, preventing old audio from mixing with the restored live stream.
+
 ## [9.9.9] - 2026-06-20
 
 ### Changed
