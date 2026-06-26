@@ -107,10 +107,21 @@ describe("_restoreSuppressedMediaAfterAd", () => {
 			"_restoreSuppressedMediaAfterAd",
 		);
 
+	let realGetPrimary: unknown;
+
+	beforeEach(() => {
+		realGetPrimary = g._getPrimaryMediaElement;
+	});
+
+	afterEach(() => {
+		g._getPrimaryMediaElement = realGetPrimary;
+	});
+
 	it("restores even when the ending key differs but that ad cycle is over", () => {
 		const media = addSuppressed(true);
 		suppressionState().activeMediaKey = "live:otherchannel";
 		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey = null;
+		g._getPrimaryMediaElement = () => media;
 
 		const restored = restore()("testchannel", "live:testchannel");
 
@@ -132,16 +143,21 @@ describe("_restoreSuppressedMediaAfterAd", () => {
 		expect(suppressionState().suppressedMedia.size).toBe(1);
 	});
 
-	it("restores all suppressed elements for a matching cycle", () => {
-		const a = addSuppressed(true);
-		const b = addSuppressed(true);
+	it("restores only the current primary element for a matching cycle", () => {
+		const primary = addSuppressed(true);
+		const staleSecondary = addSuppressed(true);
 		suppressionState().activeMediaKey = "live:testchannel";
+		g._getPrimaryMediaElement = () => primary;
 
 		const restored = restore()("testchannel", "live:testchannel");
 
-		expect(restored).toBe(2);
-		expect(a.muted).toBe(false);
-		expect(b.muted).toBe(false);
+		expect(restored).toBe(1);
+		expect(primary.muted).toBe(false);
+		expect(staleSecondary.muted).toBe(true);
+		expect(staleSecondary.volume).toBe(0);
+		expect(staleSecondary.hasAttribute("data-ttvab-audio-suppressed")).toBe(
+			false,
+		);
 		expect(suppressionState().suppressedMedia.size).toBe(0);
 	});
 });
