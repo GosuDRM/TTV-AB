@@ -32,8 +32,7 @@ beforeAll(() => {
 		},
 		storage: {
 			local: {
-				get: (_keys: unknown, cb: (result: unknown) => void) =>
-					cb(storageData),
+				get: (_keys: unknown, cb: (result: unknown) => void) => cb(storageData),
 				set: (value: Record<string, unknown>, cb: () => void) => {
 					storageData = { ...storageData, ...value };
 					cb();
@@ -167,7 +166,12 @@ describe("channel stats schema and watch-time persistence", () => {
 		return storageData.ttvStats as {
 			channels: Record<
 				string,
-				{ ads: number; firstSeen: number; lastSeen: number; watchSeconds: number }
+				{
+					ads: number;
+					firstSeen: number;
+					lastSeen: number;
+					watchSeconds: number;
+				}
 			>;
 			daily: Record<string, { ads: number }>;
 			achievements: string[];
@@ -331,9 +335,9 @@ describe("measured ad seconds persistence", () => {
 			statsState: unknown,
 			totalAds: number,
 		) => number;
-		expect(
-			blend({ adSecondsSaved: 600, adBreaksMeasured: 10 }, 15),
-		).toBe(600 + 5 * 22);
+		expect(blend({ adSecondsSaved: 600, adBreaksMeasured: 10 }, 15)).toBe(
+			600 + 5 * 22,
+		);
 		expect(blend({ adSecondsSaved: 0, adBreaksMeasured: 0 }, 4)).toBe(88);
 		expect(blend({ adSecondsSaved: 900, adBreaksMeasured: 20 }, 10)).toBe(900);
 	});

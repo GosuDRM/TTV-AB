@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.2] - 2026-06-26
+
+### Fixed
+- Long ad recoveries now force the player back onto native playback after the backup hold finishes, preventing frozen video with live audio.
+
 ## [10.0.1] - 2026-06-26
 
 ### Fixed

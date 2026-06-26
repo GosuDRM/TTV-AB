@@ -1573,6 +1573,29 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(sentMessages().some((m) => m.key === "ReloadPlayer")).toBe(false);
 	});
 
+	it("still reloads after a recent silent-hold continuation marker", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			LastAdEndReloadAt: Date.now() - 19000,
+			LastAdEndReloadKind: null,
+		});
+		g._canReloadNativePlayerAfterAd = async () => true;
+
+		const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		const messages = sentMessages();
+		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({
+			holdingBackup: false,
+			willReload: true,
+		});
+		expect(messages.find((m) => m.key === "ReloadPlayer")).toMatchObject({
+			reason: "post-escape",
+		});
+		expect(info.PostEscapeReloadCounterproductive).toBe(false);
+		expect(out).toContain("seg100.ts");
+	});
+
 	it("downgrades a post-escape reload to pause/resume once it has proven counterproductive, then clears the lesson on the settled break", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			PostEscapeReloadCounterproductive: true,

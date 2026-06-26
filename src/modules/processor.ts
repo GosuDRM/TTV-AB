@@ -2038,10 +2038,11 @@ async function _processM3U8Core(url, text, realFetch) {
 		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 		if (typeof self !== "undefined" && self.postMessage) {
 			const shouldUseHevcReload = Boolean(wasUsingModifiedM3U8);
-			const recentMidrollChain =
+			const recentPostEscapeReload =
+				info.LastAdEndReloadKind === "post-escape" &&
 				info.LastAdEndReloadAt > 0 &&
 				adEndedAt - info.LastAdEndReloadAt < 30000;
-			if (recentMidrollChain && info.LastAdEndReloadKind === "post-escape") {
+			if (recentPostEscapeReload) {
 				info.PostEscapeReloadCounterproductive = true;
 			}
 			const isCsaiBreak = !hadStrippedAdSegments && !wasUsingModifiedM3U8;
@@ -2053,7 +2054,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			if (isCsaiBreak) {
 				if (
 					wasUsingBackupStream &&
-					!recentMidrollChain &&
+					!recentPostEscapeReload &&
 					!isSilentBackupHoldEnd
 				) {
 					if (info.PostEscapeReloadCounterproductive) {
@@ -2068,13 +2069,13 @@ async function _processM3U8Core(url, text, realFetch) {
 					shouldUseHevcReload ||
 						(_C?.RELOAD_AFTER_AD !== false &&
 							hadStrippedAdSegments &&
-							!recentMidrollChain),
+							!recentPostEscapeReload),
 				);
 				shouldPauseResumePlayer = Boolean(
 					!shouldReloadPlayer && !wasUsingFallbackStream,
 				);
 			}
-			if (!recentMidrollChain) {
+			if (!recentPostEscapeReload) {
 				info.PostEscapeReloadCounterproductive = false;
 			}
 			_postWorkerBridgeMessage(
