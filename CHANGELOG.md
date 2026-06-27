@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.3] - 2026-06-28
+
+### Fixed
+- During long ad breaks the video could stutter, get stuck at 360p, or freeze because the extension kept switching backup streams even when playback was healthy but running at a low live-edge buffer. The backup now holds steady while playback keeps advancing and only switches when it actually stalls.
+
 ## [10.0.2] - 2026-06-26
 
 ### Fixed

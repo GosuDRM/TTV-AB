@@ -149,7 +149,7 @@ describe("_checkPinnedBackupStall", () => {
 		).toBe(104000);
 	});
 
-	it("forces backup re-search when playback advances at a drained buffer edge", () => {
+	it("holds the pinned backup while the playhead advances at a drained edge (rotating mid-advance only forces a needless rebuffer)", () => {
 		const check = T<
 			(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void
 		>("_checkPinnedBackupStall");
@@ -172,14 +172,39 @@ describe("_checkPinnedBackupStall", () => {
 		nowSpy.mockReturnValue(104000);
 		check(player);
 
-		expect(messages).toHaveLength(1);
-		expect(messages[0]).toEqual({
-			key: "UpdateBackupSearchForceRefresh",
-			value: 104000,
-		});
+		expect(messages).toEqual([]);
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt,
-		).toBe(104000);
+		).toBe(0);
+	});
+
+	it("does not rotate a 360p backup that advances steadily at a sub-danger-zone live-edge buffer (issue #36 rotation storm)", () => {
+		const check = T<
+			(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void
+		>("_checkPinnedBackupStall");
+		const messages: unknown[] = [];
+		g._broadcastWorkers = (message: unknown) => {
+			messages.push(message);
+		};
+		let currentTime = 100;
+		let bufferedEnd = 100.8;
+		const player = makePlayer(
+			() => currentTime,
+			() => bufferedEnd,
+		);
+		const nowSpy = vi.spyOn(Date, "now");
+
+		for (let tick = 0; tick < 8; tick++) {
+			nowSpy.mockReturnValue(100000 + tick * 2000);
+			check(player);
+			currentTime += 2;
+			bufferedEnd += 2;
+		}
+
+		expect(messages).toEqual([]);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt,
+		).toBe(0);
 	});
 
 	it("restores the re-search budget after playback recovers (per-episode cap, not per-session)", () => {

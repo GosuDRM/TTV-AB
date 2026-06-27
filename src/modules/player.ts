@@ -3054,7 +3054,7 @@ function _checkPinnedBackupStall(player) {
 	const bufferSafe = bufferHeadroom > _getLowLatencyDangerZone();
 	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
 
-	if (bufferSafe && (bufferAdvanced || currentTimeAdvanced)) {
+	if (currentTimeAdvanced || (bufferSafe && bufferAdvanced)) {
 		_PinnedBackupStallState.firstObservedAt = 0;
 		_PinnedBackupStallState.forceRefreshCount = 0;
 		_PinnedBackupStallState.lastForceRefreshAt = 0;
