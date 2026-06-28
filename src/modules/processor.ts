@@ -297,7 +297,6 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 		}
 		orderedPlayerTypes.push(playerType);
 	};
-	const preferredPlayerType = _getPinnedBackupPlayerTypeForInfo(info);
 	const activePlayerType =
 		typeof info?.ActiveBackupPlayerType === "string" &&
 		info.ActiveBackupPlayerType
@@ -307,20 +306,35 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 		0,
 		Math.min(configuredPlayerTypes.length, Number(startIdx) || 0),
 	);
+	const shouldTryAutoplayFirst = _shouldTryAutoplayFirst(info);
+	const shouldHoldAutoplayBackup = _shouldHoldAutoplayBackupDuringAd(info);
+	const effectiveStartIdx =
+		activePlayerType === "autoplay" &&
+		!shouldTryAutoplayFirst &&
+		!shouldHoldAutoplayBackup
+			? 0
+			: safeStartIdx;
+	const preferredPlayerType = _getPinnedBackupPlayerTypeForInfo(info);
+	const effectivePreferredPlayerType =
+		preferredPlayerType === "autoplay" &&
+		!shouldTryAutoplayFirst &&
+		!shouldHoldAutoplayBackup
+			? null
+			: preferredPlayerType;
 
-	pushUnique(preferredPlayerType);
-	if (_shouldTryAutoplayFirst(info)) {
+	pushUnique(effectivePreferredPlayerType);
+	if (shouldTryAutoplayFirst) {
 		pushUnique("autoplay");
 	}
 	pushUnique(_getRecentCleanBackupPlayerTypeForInfo(info));
 	if (
 		activePlayerType !== "autoplay" ||
-		_shouldTryAutoplayFirst(info) ||
-		_shouldHoldAutoplayBackupDuringAd(info)
+		shouldTryAutoplayFirst ||
+		shouldHoldAutoplayBackup
 	) {
 		pushUnique(activePlayerType);
 	}
-	for (const playerType of configuredPlayerTypes.slice(safeStartIdx)) {
+	for (const playerType of configuredPlayerTypes.slice(effectiveStartIdx)) {
 		pushUnique(playerType);
 	}
 
@@ -2218,8 +2232,10 @@ async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
 			: info.UsherBaseUrl;
 	if (!enc) return null;
 
+	const preferredRefreshResolution = _resolvePreferredBackupResolution(info);
 	const targetRes = _applyBackupResolutionFloor(
-		_getFallbackResolution(info, "") ||
+		preferredRefreshResolution ||
+			_getFallbackResolution(info, "") ||
 			info?.ResolutionList?.[0] ||
 			(typeof __TTVAB_STATE__?.PreferredQualityGroup === "string" &&
 			__TTVAB_STATE__.PreferredQualityGroup.trim()
@@ -2246,6 +2262,9 @@ async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
 		info.LastCleanBackupM3U8 = m3u8;
 		info.LastCleanBackupPlayerType = pt;
 		info.LastCleanBackupAt = Date.now();
+		if (targetRes?.Resolution) {
+			info.ActiveBackupResolution = targetRes.Resolution;
+		}
 		return m3u8;
 	} catch {
 		return null;
