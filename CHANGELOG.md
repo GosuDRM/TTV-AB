@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.5] - 2026-06-29
+
+### Fixed
+- Long sessions recover cleanly when Twitch's video worker crashes, preventing the player from getting stuck on the loading spinner after an ad hold.
+
 ## [10.0.4] - 2026-06-28
 
 ### Fixed

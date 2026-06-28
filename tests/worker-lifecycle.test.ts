@@ -203,6 +203,50 @@ describe("worker recovery lifecycle", () => {
 		expect(worker.__TTVABLastPongAt).toBe(1000);
 	});
 
+	it("keeps recovery-critical messages from a crashed current worker alive", () => {
+		const canHandle = T<
+			(
+				data: Record<string, unknown>,
+				worker: Record<string, unknown>,
+				pageContext: Record<string, unknown>,
+				currentContext: Record<string, unknown>,
+			) => boolean
+		>("_canHandleCrashedWorkerMessage");
+		const worker: Record<string, unknown> = {
+			__TTVABPageMediaType: "live",
+			__TTVABPageChannel: "testchannel",
+			__TTVABPageMediaKey: "live:testchannel",
+		};
+		const pageContext = { MediaType: "live", ChannelName: "testchannel" };
+		const currentContext = {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		};
+
+		expect(
+			canHandle({ key: "FetchRequest" }, worker, pageContext, currentContext),
+		).toBe(true);
+		expect(
+			canHandle(
+				{ key: "NativePlaybackRestored" },
+				worker,
+				pageContext,
+				currentContext,
+			),
+		).toBe(true);
+		expect(
+			canHandle({ key: "Pong" }, worker, pageContext, currentContext),
+		).toBe(false);
+		expect(
+			canHandle({ key: "FetchRequest" }, worker, pageContext, {
+				MediaType: "live",
+				ChannelName: "otherchannel",
+				MediaKey: "live:otherchannel",
+			}),
+		).toBe(false);
+	});
+
 	it("installs fallback and schedules recovery for an instant crash", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
