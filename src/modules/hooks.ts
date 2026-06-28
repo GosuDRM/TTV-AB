@@ -27,6 +27,18 @@ const _POST_AD_REMOVABLE_SELECTOR_GROUP =
 const _POST_AD_RESET_SELECTOR_GROUP = _POST_AD_RESET_ONLY_SELECTORS.join(", ");
 let _pendingPostAdArtifactCleanup = null;
 const _trackedExtensionBlobUrls = new Set<string>();
+const _CRASHED_WORKER_RECOVERY_MESSAGE_KEYS = new Set([
+	"FetchRequest",
+	"LogEntry",
+	"AdBlocked",
+	"AdSecondsBlocked",
+	"AdDetected",
+	"BackupPlayerTypeSelected",
+	"AdEnded",
+	"NativePlaybackRestored",
+	"PauseResumePlayer",
+	"ReloadPlayer",
+]);
 
 function _hidePostAdArtifact(el) {
 	if (!(el instanceof Element)) return;
@@ -643,6 +655,20 @@ function _isPlaybackContextMismatch(expectedContext, currentContext) {
 		);
 	}
 	return false;
+}
+
+function _canHandleCrashedWorkerMessage(
+	data,
+	worker,
+	pagePlaybackContext,
+	currentPageContext,
+) {
+	const key = typeof data?.key === "string" ? data.key : null;
+	if (!key || !_CRASHED_WORKER_RECOVERY_MESSAGE_KEYS.has(key)) return false;
+	return !_isPlaybackContextMismatch(
+		_getWorkerPlaybackContext(worker, pagePlaybackContext),
+		currentPageContext,
+	);
 }
 
 function _recoverCrashedWorker(
@@ -1394,7 +1420,18 @@ function _hookWorker() {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (!data) return;
 					e.stopImmediatePropagation?.();
-					if (this.__TTVABIntentionallyTerminated || this.__TTVABCrashed) {
+					if (this.__TTVABIntentionallyTerminated) {
+						return;
+					}
+					if (
+						this.__TTVABCrashed &&
+						!_canHandleCrashedWorkerMessage(
+							data,
+							this,
+							pagePlaybackContext,
+							getCurrentPageContext(),
+						)
+					) {
 						return;
 					}
 
