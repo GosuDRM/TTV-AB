@@ -772,6 +772,43 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 		expect(result).toContain("autoplay");
 	});
 
+	it("releases autoplay to source probes after the LQ dwell even inside the post-reload minimal request window", () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousPinnedType = state.PinnedBackupPlayerType;
+		const previousPinnedChannel = state.PinnedBackupPlayerChannel;
+		const previousPinnedMediaKey = state.PinnedBackupPlayerMediaKey;
+		state.BackupPlayerTypes = ["site", "embed", "popout", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		state.PinnedBackupPlayerType = "autoplay";
+		state.PinnedBackupPlayerChannel = "testchannel";
+		state.PinnedBackupPlayerMediaKey = "live:testchannel";
+
+		try {
+			const result = fn()(
+				makeInfo({
+					IsShowingAd: true,
+					ActiveBackupPlayerType: "autoplay",
+					LastCleanBackupPlayerType: "autoplay",
+					LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+					LastCleanBackupAt: Date.now() - 30000,
+					VisibleAdStartedAt: Date.now() - 31000,
+					_LqHoldStartAt: Date.now() - 30000,
+				}),
+				state.BackupPlayerTypes.indexOf("autoplay"),
+			);
+			expect(result.slice(0, 3)).toEqual(["site", "embed", "popout"]);
+			expect(result).toContain("autoplay");
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			state.PinnedBackupPlayerType = previousPinnedType;
+			state.PinnedBackupPlayerChannel = previousPinnedChannel;
+			state.PinnedBackupPlayerMediaKey = previousPinnedMediaKey;
+		}
+	});
+
 	afterAll(() => {
 		getState().DisableAutoplayBackup = true;
 	});
@@ -931,6 +968,80 @@ describe("_shouldHoldAutoplayBackupDuringAd", () => {
 		});
 		expect(fn()(info)).toBe(false);
 		getState().DisableAutoplayBackup = true;
+	});
+});
+
+describe("_refreshActiveBackupMediaPlaylist (quality target)", () => {
+	const refresh = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: (url: string, options?: unknown) => Promise<Response>,
+			) => Promise<string | null>
+		>("_refreshActiveBackupMediaPlaylist");
+
+	const low = { Resolution: "640x360", Name: "360p" };
+	const high = { Resolution: "1920x1080", Name: "1080p60" };
+	const encodings = {
+		embed: {
+			m3u8: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080\nhigh.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1300000,RESOLUTION=640x360\nlow.m3u8",
+			baseUrl: "https://usher.example/master.m3u8",
+		},
+	};
+
+	async function withGetStreamUrlStub(
+		info: Record<string, unknown>,
+		fn: () => Promise<void>,
+	) {
+		const previousGetStreamUrl = g._getStreamUrl;
+		g._getStreamUrl = (_enc: unknown, targetRes: Record<string, unknown>) => {
+			info.SelectedRefreshResolution = targetRes?.Resolution || null;
+			return "https://edge.example/live/index.m3u8";
+		};
+		try {
+			await fn();
+		} finally {
+			if (previousGetStreamUrl === undefined) delete g._getStreamUrl;
+			else g._getStreamUrl = previousGetStreamUrl;
+		}
+	}
+
+	function backupInfo(overrides: Record<string, unknown> = {}) {
+		return makeInfo({
+			ActiveBackupPlayerType: "embed",
+			LastCleanBackupPlayerType: "embed",
+			ActiveBackupResolution: low.Resolution,
+			ResolutionList: [high, low],
+			BackupEncodingsM3U8Cache: encodings,
+			...overrides,
+		});
+	}
+
+	const fetchClean = async () =>
+		new Response("#EXTM3U\n#EXTINF:2.000,live\nseg.ts", { status: 200 });
+
+	it("climbs from a low active backup to sustained native quality when refreshing a long break", async () => {
+		const info = backupInfo({ SustainedNativeResolution: high });
+
+		await withGetStreamUrlStub(info, async () => {
+			const out = await refresh()(info, fetchClean);
+
+			expect(out).toContain("seg.ts");
+			expect(info.SelectedRefreshResolution).toBe(high.Resolution);
+			expect(info.ActiveBackupResolution).toBe(high.Resolution);
+		});
+	});
+
+	it("keeps the active low backup when no sustained or preferred quality is known", async () => {
+		const info = backupInfo();
+
+		await withGetStreamUrlStub(info, async () => {
+			const out = await refresh()(info, fetchClean);
+
+			expect(out).toContain("seg.ts");
+			expect(info.SelectedRefreshResolution).toBe(low.Resolution);
+			expect(info.ActiveBackupResolution).toBe(low.Resolution);
+		});
 	});
 });
 
