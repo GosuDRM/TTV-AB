@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.4] - 2026-06-28
+
+### Fixed
+- Long ad breaks can now climb from a healthy low-res backup toward the user's sustained native quality sooner, while still keeping ad-marked native playlists blocked.
+
 ## [10.0.3] - 2026-06-28
 
 ### Fixed

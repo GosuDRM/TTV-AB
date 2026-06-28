@@ -1,18 +1,18 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-10.0.3-purple)
+![Version](https://img.shields.io/badge/version-10.0.4-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-10.0.3-yellow)
+![Chrome](https://img.shields.io/badge/chrome-10.0.4-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
 
 ## 📥 Install
 
-> **⚠️ Supported browsers — Firefox and Chrome only.** TTV AB can't run on WebKit-based browsers like Orion, or on anything on iOS/iPadOS (every iOS browser is WebKit under the hood). The ad-blocker can't load there and the player goes to a black screen — please use Firefox or Chrome on a computer.
+> **⚠️ Supported browsers: Firefox and Chromium-based desktop browsers only.** TTV AB can't run on WebKit-based browsers like Orion, or on anything on iOS/iPadOS (every iOS browser is WebKit under the hood). The ad-blocker can't load there and the player goes to a black screen, so please use Firefox or a Chromium-based browser on a computer.
 
 | Store | Link | Status |
 |-------|------|--------|
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v10.0.4 - 2026-06-28
+- **Low-res backup streams climb sooner.** Long ad breaks can move from a healthy 360p backup back toward your sustained native quality without waiting for the break to fully end.
+
 ### v10.0.3 - 2026-06-28
 - **Smoother long ad breaks.** Stops needless backup-stream switching that could cause stuttering, keep the video stuck at 360p, or freeze it entirely even when playback was healthy at a low live-edge buffer.
 
 ### v10.0.2 - 2026-06-26
 - **Frozen video after long ad holds is fixed.** When a stubborn ad pod finally clears, the player is forced back onto native playback so video does not stay stuck while audio continues.
-
-### v10.0.1 - 2026-06-26
-- **Faster first frame during stubborn ad breaks.** Low Quality Fallback now takes the quick 360p path immediately when an ad starts, reducing black/loading stalls before climbing back to normal quality.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
