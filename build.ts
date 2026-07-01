@@ -1280,6 +1280,26 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_searchBackupStream",
+			helper: "_stripHevcBackupVariants",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_stripHevcBackupVariants",
+			source: processorSource,
+		},
+		{
+			consumer: "_stripHevcBackupVariants",
+			helper: "_shouldAvoidHevcBackupVariants",
+			source: parserSource,
+		},
+		{
+			consumer: "_stripHevcBackupVariants",
+			helper: "_isHevcCodecString",
+			source: parserSource,
+		},
+		{
 			consumer: "_findBackupStream",
 			helper: "_shouldBridgeHeldAutoplayDuringSearch",
 			source: processorSource,

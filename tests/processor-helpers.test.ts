@@ -1578,6 +1578,73 @@ describe("_findBackupStream held-autoplay bridging during HQ probe", () => {
 	});
 });
 
+describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
+	const stripHevc = () =>
+		T<(info: Record<string, unknown>, m3u8: string) => string>(
+			"_stripHevcBackupVariants",
+		);
+	const getStreamUrl = () =>
+		T<
+			(
+				m3u8: string,
+				res: Record<string, unknown>,
+				baseUrl?: string,
+			) => string | null
+		>("_getStreamUrl");
+	const streamInf = (video: string, res: string, codecs: string, url: string) =>
+		[
+			`#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=${res},CODECS="${codecs},mp4a.40.2",VIDEO="${video}",FRAME-RATE=60.000`,
+			`https://cdn.example/${url}/index.m3u8`,
+		].join("\n");
+	const multiCodecMaster = [
+		"#EXTM3U",
+		streamInf("chunked", "2560x1440", "hev1.1.6.L153.B0", "src-hevc"),
+		streamInf("1440p60", "2560x1440", "hev1.1.6.L120.B0", "1440-hevc"),
+		streamInf("1080p60", "1920x1080", "avc1.4D402A", "1080-avc"),
+		streamInf("720p60", "1280x720", "avc1.4D401F", "720-avc"),
+	].join("\n");
+	const hevcOnlyMaster = [
+		"#EXTM3U",
+		streamInf("chunked", "2560x1440", "hev1.1.6.L153.B0", "src-hevc"),
+		streamInf("1080p60", "1920x1080", "hev1.1.6.L120.B0", "1080-hevc"),
+	].join("\n");
+	const target1440 = {
+		Name: "1440p60",
+		Resolution: "2560x1440",
+		FrameRate: 60,
+	};
+
+	it("keeps HEVC backup variants away from a non-HEVC session so 1440p targets degrade to AVC", () => {
+		const info = makeInfo({ ModifiedM3U8: "modified" });
+		const stripped = stripHevc()(info, multiCodecMaster);
+		expect(stripped).not.toContain("src-hevc");
+		expect(stripped).not.toContain("1440-hevc");
+		expect(stripped).toContain("1080-avc");
+		expect(getStreamUrl()(stripped, target1440)).toBe(
+			"https://cdn.example/1080-avc/index.m3u8",
+		);
+	});
+
+	it("leaves the backup master untouched when the native session itself is HEVC", () => {
+		const info = makeInfo({
+			ResolutionList: [
+				{
+					Name: "chunked",
+					Resolution: "2560x1440",
+					FrameRate: 60,
+					Codecs: "hev1.1.6.L153.B0",
+				},
+			],
+		});
+		expect(stripHevc()(info, multiCodecMaster)).toBe(multiCodecMaster);
+	});
+
+	it("never strips a backup master down to zero variants", () => {
+		const info = makeInfo({ ModifiedM3U8: "modified" });
+		expect(stripHevc()(info, hevcOnlyMaster)).toBe(hevcOnlyMaster);
+	});
+});
+
 describe("_canReloadNativePlayerAfterAd", () => {
 	const fn = () =>
 		T<

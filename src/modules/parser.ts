@@ -1052,6 +1052,67 @@ function _applyBackupResolutionFloor(res, resolutionList, floorHeight = 360) {
 	return floored || res;
 }
 
+function _isHevcCodecString(codecs) {
+	const c = typeof codecs === "string" ? codecs : "";
+	return c.startsWith("hev") || c.startsWith("hvc");
+}
+
+function _shouldAvoidHevcBackupVariants(info) {
+	if (info?.ModifiedM3U8) return true;
+	if (_isHevcCodecString(info?.SustainedNativeResolution?.Codecs)) {
+		return false;
+	}
+	const list = Array.isArray(info?.ResolutionList)
+		? info.ResolutionList.filter(Boolean)
+		: [];
+	if (list.length > 0 && list.every((r) => _isHevcCodecString(r?.Codecs))) {
+		return false;
+	}
+	return true;
+}
+
+function _stripHevcBackupVariants(info, m3u8) {
+	if (typeof m3u8 !== "string" || !m3u8.includes("#EXT-X-STREAM-INF")) {
+		return m3u8;
+	}
+	if (!_shouldAvoidHevcBackupVariants(info)) return m3u8;
+	const lines = m3u8.split("\n");
+	const kept = [];
+	let removed = 0;
+	let remaining = 0;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		if (line?.startsWith("#EXT-X-STREAM-INF")) {
+			const uri = i + 1 < lines.length ? String(lines[i + 1] || "") : "";
+			const hasUri = uri.trim() && !uri.trim().startsWith("#");
+			if (
+				hasUri &&
+				_isHevcCodecString(String(_parseAttrs(line).CODECS || ""))
+			) {
+				removed++;
+				i++;
+				continue;
+			}
+			if (hasUri) remaining++;
+		}
+		kept.push(line);
+	}
+	if (removed === 0 || remaining === 0) return m3u8;
+	if (info) {
+		if (!info._LoggedWhitelistByType) {
+			info._LoggedWhitelistByType = new Set();
+		}
+		if (!info._LoggedWhitelistByType.has("hevc-skip")) {
+			info._LoggedWhitelistByType.add("hevc-skip");
+			_log(
+				`[Trace] Skipped ${removed} HEVC backup variant(s) for codec compatibility`,
+				"info",
+			);
+		}
+	}
+	return kept.join("\n");
+}
+
 function _resolvePreferredBackupResolution(info, floorHeight = 360) {
 	const resolutionList = Array.isArray(info?.ResolutionList)
 		? info.ResolutionList.filter(Boolean)
