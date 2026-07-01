@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.7] - 2026-07-02
+
+### Fixed
+- Fixed frozen video with running audio during ad breaks on 1440p streams. The ad-free backup stream could be served in a video format (HEVC) the player was not set up to decode; backup selection now sticks to formats the player can actually play, stepping down to 1080p when needed.
+
 ## [10.0.6] - 2026-07-02
 
 ### Fixed
