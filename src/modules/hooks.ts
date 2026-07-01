@@ -520,6 +520,8 @@ const HW_WATCHDOG_INTERVAL_MS = 5000;
 const HW_PONG_TIMEOUT_MS = 15000;
 const HW_INITIAL_PONG_TIMEOUT_MS = 15000;
 const HW_MAX_MISSED_PONGS = 2;
+const HW_MAX_MISSED_PONGS_HIDDEN = 6;
+const HW_HIDDEN_STALE_MIN_MS = 90000;
 const HW_RECOVERY_COOLDOWN_MS = 30000;
 const HW_RECOVERY_STABLE_MS = 60000;
 let _lastWorkerRecoveryReloadAt = 0;
@@ -801,14 +803,6 @@ function _startWorkerWatchdog() {
 		for (const worker of _S.workers) {
 			if (!worker || worker.__TTVABIntentionallyTerminated) continue;
 			if (worker.__TTVABCrashed) continue;
-			if (isHidden) {
-				worker.__TTVABMissedPongs = 0;
-				worker.__TTVABLastPingSentAt = 0;
-				try {
-					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
-				} catch {}
-				continue;
-			}
 			const lastSeen =
 				worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
 			const lastPingSentAt = Math.max(
@@ -827,9 +821,14 @@ function _startWorkerWatchdog() {
 				const missedPongs =
 					Math.max(0, Number(worker.__TTVABMissedPongs) || 0) + 1;
 				worker.__TTVABMissedPongs = missedPongs;
-				if (missedPongs < HW_MAX_MISSED_PONGS) {
+				const missedPongLimit = isHidden
+					? HW_MAX_MISSED_PONGS_HIDDEN
+					: HW_MAX_MISSED_PONGS;
+				const hiddenStaleSatisfied =
+					!isHidden || now - lastSeen > HW_HIDDEN_STALE_MIN_MS;
+				if (missedPongs < missedPongLimit || !hiddenStaleSatisfied) {
 					_log(
-						`Worker heartbeat late (${missedPongs}/${HW_MAX_MISSED_PONGS}); pinging again`,
+						`Worker heartbeat late (${missedPongs}/${missedPongLimit}); pinging again`,
 						"info",
 					);
 					try {

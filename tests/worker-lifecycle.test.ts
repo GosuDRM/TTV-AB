@@ -423,27 +423,89 @@ describe("worker watchdog visibility awareness", () => {
 		delete g._installPageSideM3U8Override;
 	});
 
-	it("does not accrue missed pongs or declare crashes while the tab is hidden", () => {
+	it("never strikes a live ponging worker while the tab is hidden", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
 		g._isNativeDocumentHidden = () => true;
-		const worker = makeTrackedWorker({
-			__TTVABLastPongAt: 100000 - 60000,
-			__TTVABLastPingSentAt: 100000 - 59000,
-			__TTVABMissedPongs: 1,
-		});
+		const markPong =
+			T<(worker: Record<string, unknown>, now?: number) => void>(
+				"_markWorkerPong",
+			);
+		const worker = makeTrackedWorker();
+		worker.postMessage = () => {
+			(worker.pings as number)++;
+			markPong(worker);
+		};
 
 		startWatchdog();
-		vi.advanceTimersByTime(5000);
+		vi.advanceTimersByTime(300000);
 
 		expect(worker.__TTVABMissedPongs).toBe(0);
-		expect(worker.__TTVABLastPingSentAt).toBe(0);
-		expect(worker.pings).toBe(1);
 		expect(worker.__TTVABCrashed).toBeUndefined();
+		expect(worker.pings).toBeGreaterThan(0);
+	});
 
-		vi.advanceTimersByTime(60000);
-		expect(worker.__TTVABCrashed).toBeUndefined();
-		expect(worker.__TTVABMissedPongs).toBe(0);
+	it("declares a silent worker crashed while hidden only after sustained stale evidence", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		g._isNativeDocumentHidden = () => true;
+		g._installPageSideM3U8Override = () => {};
+		g._doPlayerTask = () => true;
+		const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
+		g._getPlaybackContextFromUrl = () => ({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		const worker = makeTrackedWorker();
+
+		try {
+			startWatchdog();
+			vi.advanceTimersByTime(60000);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+
+			vi.advanceTimersByTime(60000);
+			expect(worker.__TTVABCrashed).toBe(true);
+		} finally {
+			if (previousGetPlaybackContext === undefined) {
+				delete g._getPlaybackContextFromUrl;
+			} else {
+				g._getPlaybackContextFromUrl = previousGetPlaybackContext;
+			}
+		}
+	});
+
+	it("declares quickly after refocus using evidence accrued while hidden", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		let hidden = true;
+		g._isNativeDocumentHidden = () => hidden;
+		g._installPageSideM3U8Override = () => {};
+		g._doPlayerTask = () => true;
+		const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
+		g._getPlaybackContextFromUrl = () => ({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		const worker = makeTrackedWorker();
+
+		try {
+			startWatchdog();
+			vi.advanceTimersByTime(40000);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+			expect(Number(worker.__TTVABMissedPongs)).toBeGreaterThanOrEqual(2);
+
+			hidden = false;
+			vi.advanceTimersByTime(5000);
+			expect(worker.__TTVABCrashed).toBe(true);
+		} finally {
+			if (previousGetPlaybackContext === undefined) {
+				delete g._getPlaybackContextFromUrl;
+			} else {
+				g._getPlaybackContextFromUrl = previousGetPlaybackContext;
+			}
+		}
 	});
 
 	it("restarts the ping window after a long gap instead of striking a resumed worker", () => {
