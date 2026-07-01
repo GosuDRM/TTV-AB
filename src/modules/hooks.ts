@@ -1124,6 +1124,8 @@ function _hookWorker() {
                 ${_getResolvedLqHqHoldMinMs.toString()}
                 ${_shouldTryAutoplayFirst.toString()}
                 ${_shouldHoldAutoplayBackupDuringAd.toString()}
+                ${_shouldBridgeHeldAutoplayDuringSearch.toString()}
+                ${_refreshHeldAutoplayBackupPlaylist.toString()}
                 ${_refreshActiveBackupMediaPlaylist.toString()}
                 ${_searchBackupStream.toString()}
                 ${_findBackupStream.toString()}

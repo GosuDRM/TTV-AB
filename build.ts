@@ -1280,6 +1280,16 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_findBackupStream",
+			helper: "_shouldBridgeHeldAutoplayDuringSearch",
+			source: processorSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_refreshHeldAutoplayBackupPlaylist",
+			source: processorSource,
+		},
+		{
 			consumer: "_searchBackupStream",
 			helper: "_getFallbackPromotionPolicy",
 			source: processorSource,
