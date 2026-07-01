@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.8] - 2026-07-02
+
+### Fixed
+- Background tabs now detect and recover from Twitch video worker crashes. Crash checks were previously paused while a tab was hidden, so a stream that died in the background stayed frozen, and switching back still took about half a minute to recover. Hidden tabs now keep collecting evidence with stricter thresholds, recover on their own when playback is truly dead, and recover within seconds after you switch back.
+
 ## [10.0.7] - 2026-07-02
 
 ### Fixed
