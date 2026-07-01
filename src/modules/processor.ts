@@ -2257,7 +2257,11 @@ async function _refreshHeldAutoplayBackupPlaylist(
 		resolvedTargetRes,
 		info?.ResolutionList,
 	);
-	const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
+	const streamUrl = _getStreamUrl(
+		_stripHevcBackupVariants(info, enc),
+		targetRes,
+		encBaseUrl,
+	);
 	if (!streamUrl) return null;
 	try {
 		const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
@@ -2313,7 +2317,11 @@ async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
 				: null),
 		info?.ResolutionList,
 	);
-	const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
+	const streamUrl = _getStreamUrl(
+		_stripHevcBackupVariants(info, enc),
+		targetRes,
+		encBaseUrl,
+	);
 	if (!streamUrl) return null;
 
 	try {
@@ -2637,7 +2645,11 @@ async function _searchBackupStream(
 					}
 				}
 				try {
-					const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
+					const streamUrl = _getStreamUrl(
+						_stripHevcBackupVariants(info, enc),
+						targetRes,
+						encBaseUrl,
+					);
 					if (streamUrl) {
 						const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
 						if (streamRes.status === 200) {

@@ -1062,6 +1062,9 @@ function _hookWorker() {
                 ${_getResolutionByQualityGroup.toString()}
                 ${_getFallbackResolution.toString()}
                 ${_applyBackupResolutionFloor.toString()}
+                ${_isHevcCodecString.toString()}
+                ${_shouldAvoidHevcBackupVariants.toString()}
+                ${_stripHevcBackupVariants.toString()}
                 ${_resolvePreferredBackupResolution.toString()}
                 ${_getPlaylistUrlAliases.toString()}
                 ${_collectPlaybackAccessTokenSources.toString()}
