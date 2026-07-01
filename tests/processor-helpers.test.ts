@@ -1399,6 +1399,185 @@ describe("_findBackupStream fallback policy", () => {
 	});
 });
 
+describe("_findBackupStream held-autoplay bridging during HQ probe", () => {
+	const findBackupStream = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: (url: string, options?: unknown) => Promise<Response>,
+				startIdx?: number,
+				currentResolution?: Record<string, unknown>,
+			) => Promise<{
+				type: string | null;
+				m3u8: string | null;
+			}>
+		>("_findBackupStream");
+	const currentResolution = {
+		Name: "720p",
+		Resolution: "1280x720",
+		FrameRate: 60,
+	};
+	const autoplayMaster = [
+		"#EXTM3U",
+		'#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p"',
+		"https://cdn.example/autoplay/index.m3u8",
+	].join("\n");
+	const staleHeldPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXTINF:2.000,live",
+		"https://edge.example/held-old-1.ts",
+	].join("\n");
+	const freshAutoplayPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXTINF:2.000,live",
+		"https://edge.example/held-fresh-2.ts",
+	].join("\n");
+	const adMarkedPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad"',
+		"#EXTINF:2.000,",
+		"https://edge.example/stitched-ad-1.ts",
+	].join("\n");
+
+	const makeHeldAutoplayInfo = (now: number) =>
+		makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: now - 20000,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: staleHeldPlaylist,
+			LastCleanBackupAt: now - 5000,
+			_LqHoldStartAt: now - 20000,
+			BackupEncodingsM3U8Cache: {
+				autoplay: {
+					m3u8: autoplayMaster,
+					baseUrl: "https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+				},
+			},
+		});
+
+	it("serves a live-refreshed autoplay playlist instead of waiting on an in-flight probe sweep", async () => {
+		const state = getState();
+		const previousDisable = state.DisableAutoplayBackup;
+		state.DisableAutoplayBackup = false;
+		const info = makeHeldAutoplayInfo(Date.now());
+		let releaseSearch: (value: {
+			type: string | null;
+			m3u8: string | null;
+		}) => void = () => {};
+		info._BackupSearchPromise = new Promise((resolve) => {
+			releaseSearch = resolve;
+		});
+
+		try {
+			const result = await findBackupStream()(
+				info,
+				async () => new Response(freshAutoplayPlaylist, { status: 200 }),
+				0,
+				currentResolution,
+			);
+
+			expect(result.type).toBe("autoplay");
+			expect(result.m3u8).toBe(freshAutoplayPlaylist);
+			expect(info.LastCleanBackupM3U8).toBe(freshAutoplayPlaylist);
+		} finally {
+			releaseSearch({ type: null, m3u8: null });
+			state.DisableAutoplayBackup = previousDisable;
+		}
+	});
+
+	it("never serves an ad-marked bridge refresh and falls back to the probe result", async () => {
+		const state = getState();
+		const previousDisable = state.DisableAutoplayBackup;
+		state.DisableAutoplayBackup = false;
+		const info = makeHeldAutoplayInfo(Date.now());
+		info._BackupSearchPromise = new Promise((resolve) => {
+			setTimeout(() => resolve({ type: "embed", m3u8: staleHeldPlaylist }), 50);
+		});
+
+		try {
+			const result = await findBackupStream()(
+				info,
+				async () => new Response(adMarkedPlaylist, { status: 200 }),
+				0,
+				currentResolution,
+			);
+
+			expect(result.type).toBe("embed");
+			expect(result.m3u8).toBe(staleHeldPlaylist);
+			expect(info.LastCleanBackupM3U8).not.toBe(adMarkedPlaylist);
+		} finally {
+			state.DisableAutoplayBackup = previousDisable;
+		}
+	});
+
+	it("keeps a slow probe sweep running in the background after bridging", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+
+		state.BackupPlayerTypes = ["embed", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info: unknown, playerType: unknown) => {
+			tokenCalls.push(String(playerType));
+			await new Promise((resolve) => setTimeout(resolve, 1600));
+			return new Response("{}", { status: 200 });
+		};
+
+		const info = makeHeldAutoplayInfo(Date.now());
+
+		try {
+			const startedAt = Date.now();
+			const result = await findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(autoplayMaster, { status: 200 });
+					}
+					if (href.includes("/autoplay/")) {
+						return new Response(freshAutoplayPlaylist, { status: 200 });
+					}
+					return new Response(adMarkedPlaylist, { status: 200 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(result.type).toBe("autoplay");
+			expect(result.m3u8).toBe(freshAutoplayPlaylist);
+			expect(Date.now() - startedAt).toBeLessThan(1600);
+			expect(info._BackupSearchPromise).not.toBeNull();
+			await info._BackupSearchPromise;
+			expect(info._BackupSearchPromise).toBeNull();
+			expect(tokenCalls).toEqual(["embed"]);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previousGetToken;
+			}
+			if (previousExtract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previousExtract;
+			}
+		}
+	});
+});
+
 describe("_canReloadNativePlayerAfterAd", () => {
 	const fn = () =>
 		T<

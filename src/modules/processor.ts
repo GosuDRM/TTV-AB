@@ -2214,6 +2214,76 @@ function _shouldHoldAutoplayBackupDuringAd(info) {
 	);
 }
 
+function _shouldBridgeHeldAutoplayDuringSearch(info) {
+	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
+	if (_isBackupPlayerRetryCoolingDown(info, "autoplay")) return false;
+	if (info?.ActiveBackupPlayerType !== "autoplay") return false;
+	if (info?.LastCleanBackupPlayerType !== "autoplay") return false;
+	if (
+		typeof info?.LastCleanBackupM3U8 !== "string" ||
+		!info.LastCleanBackupM3U8
+	) {
+		return false;
+	}
+	if (info?.IsHoldingBackupAfterAd) return true;
+	return Boolean(
+		info?.IsShowingAd &&
+			(Number(info.LastCleanBackupAt) || 0) >=
+				Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+	);
+}
+
+async function _refreshHeldAutoplayBackupPlaylist(
+	info,
+	realFetch,
+	currentResolution = null,
+) {
+	const encCache = info?.BackupEncodingsM3U8Cache?.autoplay;
+	const enc = typeof encCache === "string" ? encCache : encCache?.m3u8 || null;
+	if (!enc) return null;
+	const encBaseUrl =
+		typeof encCache === "object" && encCache?.baseUrl
+			? encCache.baseUrl
+			: info.UsherBaseUrl;
+	const resolvedTargetRes =
+		currentResolution ||
+		_getFallbackResolution(info, "") ||
+		info?.ResolutionList?.[0] ||
+		(typeof __TTVAB_STATE__?.PreferredQualityGroup === "string" &&
+		__TTVAB_STATE__.PreferredQualityGroup.trim()
+			? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
+			: null);
+	const targetRes = _applyBackupResolutionFloor(
+		resolvedTargetRes,
+		info?.ResolutionList,
+	);
+	const streamUrl = _getStreamUrl(enc, targetRes, encBaseUrl);
+	if (!streamUrl) return null;
+	try {
+		const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
+		if (streamRes.status !== 200) return null;
+		const m3u8 = _absolutizeMediaPlaylistUrls(
+			await streamRes.text(),
+			streamUrl,
+		);
+		if (!m3u8 || !_playlistHasMediaSegments(m3u8)) return null;
+		const hasAds =
+			_hasPlaylistAdMarkers(m3u8) ||
+			_hasExplicitAdMetadata(m3u8) ||
+			_playlistHasKnownAdSegments(m3u8, { includeCached: false });
+		if (hasAds) return null;
+		info.LastCleanBackupM3U8 = m3u8;
+		info.LastCleanBackupPlayerType = "autoplay";
+		info.LastCleanBackupAt = Date.now();
+		if (targetRes?.Resolution) {
+			info.ActiveBackupResolution = targetRes.Resolution;
+		}
+		return m3u8;
+	} catch {
+		return null;
+	}
+}
+
 async function _refreshActiveBackupMediaPlaylist(info, realFetch) {
 	const pt =
 		(typeof info?.ActiveBackupPlayerType === "string" &&
@@ -2278,6 +2348,17 @@ async function _findBackupStream(
 	currentResolution = null,
 ) {
 	if (info?._BackupSearchPromise) {
+		if (
+			_shouldBridgeHeldAutoplayDuringSearch(info) &&
+			!_shouldHoldAutoplayBackupDuringAd(info)
+		) {
+			const bridged = await _refreshHeldAutoplayBackupPlaylist(
+				info,
+				realFetch,
+				currentResolution,
+			);
+			if (bridged) return { type: "autoplay", m3u8: bridged };
+		}
 		return info._BackupSearchPromise;
 	}
 	const searchPromise = (async () => {
@@ -2296,6 +2377,29 @@ async function _findBackupStream(
 	})();
 	if (info) {
 		info._BackupSearchPromise = searchPromise;
+		if (
+			_shouldBridgeHeldAutoplayDuringSearch(info) &&
+			!_shouldHoldAutoplayBackupDuringAd(info)
+		) {
+			searchPromise.catch(() => {});
+			const raced = await Promise.race([
+				searchPromise,
+				new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+			]);
+			if (raced?.m3u8) return raced;
+			const bridged = await _refreshHeldAutoplayBackupPlaylist(
+				info,
+				realFetch,
+				currentResolution,
+			);
+			if (bridged) {
+				_log(
+					"[Trace] Serving live-refreshed autoplay while HQ probe continues in background",
+					"info",
+				);
+				return { type: "autoplay", m3u8: bridged };
+			}
+		}
 	}
 	return searchPromise;
 }
