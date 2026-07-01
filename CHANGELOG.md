@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.6] - 2026-07-02
+
+### Fixed
+- Fixed a short playback freeze a few seconds into ad breaks. While TTV AB quietly checked other Twitch player types for a higher-quality ad-free stream, the active backup stream stopped receiving updates and the player could run out of buffer. That check now runs in the background and the backup stream keeps refreshing the whole time.
+- The same freeze could also appear shortly after an ad ended while the extension was still holding the backup stream; background checking fixes that case too.
+
 ## [10.0.5] - 2026-06-29
 
 ### Fixed
