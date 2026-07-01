@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-10.0.6-purple)
+![Version](https://img.shields.io/badge/version-10.0.7-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-10.0.5-yellow)
+![Chrome](https://img.shields.io/badge/chrome-10.0.7-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v10.0.7 - 2026-07-02
+- **1440p ad-break freezes are fixed.** During ads on 1440p streams, the backup stream now uses a video format the player can actually decode, stepping down to 1080p when needed.
+
 ### v10.0.6 - 2026-07-02
 - **Mid-break freezes are fixed.** The short playback freeze that could hit a few seconds into an ad break is gone; the backup stream now keeps refreshing while the extension checks for a higher-quality ad-free stream in the background.
 
 ### v10.0.5 - 2026-06-29
 - **Long-session loading stalls are fixed.** If Twitch's video worker crashes during a long session, the extension keeps recovery messages flowing so playback can resume after ad holds.
-
-### v10.0.4 - 2026-06-28
-- **Low-res backup streams climb sooner.** Long ad breaks can move from a healthy 360p backup back toward your sustained native quality without waiting for the break to fully end.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
