@@ -436,6 +436,18 @@ document.addEventListener("DOMContentLoaded", () => {
 		window.open(issuesUrl, "_blank", "noopener,noreferrer");
 	}
 
+	function openChangelogPage() {
+		const changelogUrl =
+			"https://github.com/GosuDRM/TTV-AB/blob/main/CHANGELOG.md";
+		try {
+			if (chrome?.tabs?.create) {
+				chrome.tabs.create({ url: changelogUrl });
+				return;
+			}
+		} catch {}
+		window.open(changelogUrl, "_blank", "noopener,noreferrer");
+	}
+
 	function hideLogDialog() {
 		logDialogOverlay.hidden = true;
 		logDialogGenerate.disabled = false;
@@ -561,6 +573,16 @@ document.addEventListener("DOMContentLoaded", () => {
 		event.preventDefault();
 		logDialogOverlay.hidden = false;
 		logDialogGenerate.focus();
+	});
+
+	versionText.addEventListener("click", () => {
+		openChangelogPage();
+	});
+
+	versionText.addEventListener("keydown", (event) => {
+		if (event.key !== "Enter" && event.key !== " ") return;
+		event.preventDefault();
+		openChangelogPage();
 	});
 
 	logDialogSkip.addEventListener("click", () => {

@@ -426,6 +426,7 @@
             animation: shimmer 3s linear infinite;
             display: inline-block;
             opacity: 0.8;
+            cursor: pointer;
         }
 
         @keyframes shimmer {
@@ -2102,7 +2103,7 @@
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version-row">
-                <div class="version" id="versionText" aria-label="Version 10.0.8">v10.0.8</div>
+                <div class="version" role="link" tabindex="0" id="versionText" aria-label="Version 10.0.8">v10.0.8</div>
                 <span class="stable-badge" data-i18n="stable">Stable</span>
             </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
