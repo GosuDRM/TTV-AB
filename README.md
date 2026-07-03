@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-10.0.9-purple)
+![Version](https://img.shields.io/badge/version-11.0.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-10.0.9-yellow)
+![Chrome](https://img.shields.io/badge/chrome-11.0.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v11.0.0 - 2026-07-03
+- **Steadier video during long ad breaks.** New higher-quality ad-free streams are now double-checked for injected ads (about 2 seconds) before the player switches to them, ending the rapid stream-hopping that could leave the video stuck mid-break.
+
 ### v10.0.9 - 2026-07-03
 - **Frozen video during ads now self-heals.** When the video froze with audio still running (a stuck decoder, previously fixed only by a manual pause/play), the extension now detects it within seconds and applies that fix for you, instead of pointlessly switching backup streams.
 
 ### v10.0.8 - 2026-07-02
 - **Background-tab crashes now recover.** If Twitch's video worker dies while the tab is in the background, the extension now detects it and restores playback, instead of leaving the stream frozen until long after you switch back.
-
-### v10.0.7 - 2026-07-02
-- **1440p ad-break freezes are fixed.** During ads on 1440p streams, the backup stream now uses a video format the player can actually decode, stepping down to 1080p when needed.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

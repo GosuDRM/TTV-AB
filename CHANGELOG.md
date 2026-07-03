@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [11.0.0] - 2026-07-03
+
+### Changed
+- During ad breaks, a freshly found higher-quality ad-free stream must now stay clean through a second check (about 2 seconds) before the player switches to it. Twitch often injects ads into brand-new streams a few seconds after they start, which made the extension hop between several different streams during long ad breaks; each hop was a cut in the video that could leave it stuck. You keep watching the current clean stream during the check, and any new stream that turns out to carry ads is discarded before it ever reaches the screen.
+
 ## [10.0.9] - 2026-07-03
 
 ### Fixed
