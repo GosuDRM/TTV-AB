@@ -4,66 +4,54 @@ All notable changes to TTV AB will be documented in this file.
 
 ## [11.0.3] - 2026-07-04
 
-### Fixed
-- Backup streams no longer jump to the maximum resolution in the rare moment the extension has no quality information yet, such as an ad on the very first playlist. Slamming straight to the highest quality could stall playback on slower connections; the backup now starts at a safe resolution (at least 360p) and climbs to your usual quality, which is also gentler on limited bandwidth.
-- During fast channel switches, a stream could briefly be matched to the wrong channel while the page was still updating. The extension now favors the most recently active stream in that moment, reducing the chance of a mismatch.
+- On slower connections, the ad-break backup video no longer starts at the highest resolution, which could stall playback. It now begins at a safe quality and climbs back to your usual quality.
+- Fixed a rare case where a stream could briefly be matched to the wrong channel while quickly switching channels.
 
 ## [11.0.0] - 2026-07-03
 
-### Changed
-- During ad breaks, a freshly found higher-quality ad-free stream must now stay clean through a second check (about 2 seconds) before the player switches to it. Twitch often injects ads into brand-new streams a few seconds after they start, which made the extension hop between several different streams during long ad breaks; each hop was a cut in the video that could leave it stuck. You keep watching the current clean stream during the check, and any new stream that turns out to carry ads is discarded before it ever reaches the screen.
+- Smoother video during long ad breaks. A newly found ad-free stream is now double-checked for hidden ads (about 2 seconds) before the player switches to it, so the video no longer hops between streams and gets stuck.
 
 ## [10.0.9] - 2026-07-03
 
-### Fixed
-- Frozen video with running audio during ad breaks now recovers automatically. When the video decoder got stuck at a stream splice while plenty of data was already buffered, the built-in freeze recovery never engaged: it required the buffer to be empty, and the stuck decoder still crept the clock forward just enough to reset detection every few seconds. Recovery now engages within about 5 seconds whenever playback stops moving, applies the same pause/play fix that worked manually, and reloads the player if nudging does not help.
-- Stopped switching backup streams when stream data is healthy and only the player is stuck. Those switches could not fix a stuck decoder, wasted re-search attempts, and each one added another splice that made recovery harder. Backup switching still happens normally when the stream itself stops delivering data.
+- Frozen video with running audio during ads now recovers on its own within a few seconds, instead of needing a manual pause and play.
+- The extension no longer switches backup streams when the video data is fine and only the player is stuck, which used to make recovery slower.
 
 ## [10.0.8] - 2026-07-02
 
-### Fixed
-- Background tabs now detect and recover from Twitch video worker crashes. Crash checks were previously paused while a tab was hidden, so a stream that died in the background stayed frozen, and switching back still took about half a minute to recover. Hidden tabs now keep collecting evidence with stricter thresholds, recover on their own when playback is truly dead, and recover within seconds after you switch back.
+- Ads in background tabs no longer leave the video frozen. The extension now detects and recovers from Twitch video crashes even while the tab is hidden, and recovers within seconds when you switch back.
 
 ## [10.0.7] - 2026-07-02
 
-### Fixed
-- Fixed frozen video with running audio during ad breaks on 1440p streams. The ad-free backup stream could be served in a video format (HEVC) the player was not set up to decode; backup selection now sticks to formats the player can actually play, stepping down to 1080p when needed.
+- Fixed frozen video with running audio during ads on 1440p streams. The backup stream now always uses a video format your player can play, stepping down to 1080p when needed.
 
 ## [10.0.6] - 2026-07-02
 
-### Fixed
-- Fixed a short playback freeze a few seconds into ad breaks. While TTV AB quietly checked other Twitch player types for a higher-quality ad-free stream, the active backup stream stopped receiving updates and the player could run out of buffer. That check now runs in the background and the backup stream keeps refreshing the whole time.
-- The same freeze could also appear shortly after an ad ended while the extension was still holding the backup stream; background checking fixes that case too.
+- Fixed a short freeze a few seconds into ad breaks. The backup stream now keeps refreshing while the extension looks for a higher-quality ad-free stream in the background.
+- Fixed the same freeze when it appeared just after an ad ended.
 
 ## [10.0.5] - 2026-06-29
 
-### Fixed
-- Long sessions recover cleanly when Twitch's video worker crashes, preventing the player from getting stuck on the loading spinner after an ad hold.
+- Long sessions now recover cleanly if Twitch's video engine crashes, so the player no longer gets stuck on the loading spinner after an ad.
 
 ## [10.0.4] - 2026-06-28
 
-### Fixed
-- Long ad breaks can now climb from a healthy low-res backup toward the user's sustained native quality sooner, while still keeping ad-marked native playlists blocked.
+- During long ads, the backup video can now climb from a low resolution back toward your normal quality sooner.
 
 ## [10.0.3] - 2026-06-28
 
-### Fixed
-- During long ad breaks the video could stutter, get stuck at 360p, or freeze because the extension kept switching backup streams even when playback was healthy but running at a low live-edge buffer. The backup now holds steady while playback keeps advancing and only switches when it actually stalls.
+- Fixed stutter, getting stuck at 360p, or freezing during long ad breaks. The backup stream now stays steady while the video keeps playing and only switches when it actually stalls.
 
 ## [10.0.2] - 2026-06-26
 
-### Fixed
-- Long ad recoveries now force the player back onto native playback after the backup hold finishes, preventing frozen video with live audio.
+- After a long ad break, the player now returns to the live stream properly, preventing frozen video with live audio.
 
 ## [10.0.1] - 2026-06-26
 
-### Fixed
-- Low Quality Fallback now starts from the quick clean backup as soon as an ad break begins, reducing black/loading stalls on stubborn ad pods.
+- Low Quality Fallback now starts from a quick ad-free stream the moment an ad begins, reducing black and loading screens on stubborn ads.
 
 ## [10.0.0] - 2026-06-26
 
-### Fixed
-- Stale Twitch media elements stay muted after ad recovery, preventing old audio from mixing with the restored live stream.
+- Old Twitch audio no longer mixes with the live stream after an ad; it stays muted until the real stream is restored.
 
 ## [9.9.9] - 2026-06-20
 
