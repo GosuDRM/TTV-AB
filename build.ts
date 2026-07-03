@@ -1305,6 +1305,11 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_searchBackupStream",
+			helper: "_refreshHeldAutoplayBackupPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
 			helper: "_getFallbackPromotionPolicy",
 			source: processorSource,
 		},

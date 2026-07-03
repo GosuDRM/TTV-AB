@@ -47,6 +47,7 @@ function _resetStreamAdState(info) {
 	info._LastBackupSearchCompletedAt = 0;
 	info._LoggedOfflineTransition = false;
 	info._LqHoldStartAt = 0;
+	info._BackupProbation = null;
 	info._EmptyAdHoldMediaSequence = 0;
 	info._SpliceStreamId = null;
 	info._SpliceBoundarySeq = null;
@@ -2682,6 +2683,32 @@ async function _searchBackupStream(
 											};
 
 								if (promotionPolicy.allowSelectedPromotion) {
+									const probation = info._BackupProbation;
+									const needsSecondLook =
+										pt !== "autoplay" &&
+										(isFreshM3u8 ||
+											(probation?.type === pt &&
+												Date.now() - probation.at < 1500));
+									if (needsSecondLook) {
+										const bridged = await _refreshHeldAutoplayBackupPlaylist(
+											info,
+											realFetch,
+											currentResolution,
+										);
+										if (bridged) {
+											if (isFreshM3u8 || probation?.type !== pt) {
+												info._BackupProbation = { type: pt, at: Date.now() };
+											}
+											_log(
+												`[Trace] Fresh ${pt} session held for a second clean check; continuing clean autoplay bridge`,
+												"info",
+											);
+											backupType = "autoplay";
+											backupM3u8 = bridged;
+											break;
+										}
+									}
+									info._BackupProbation = null;
 									_clearBackupPlayerRetryCooldown(info, pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
@@ -2716,6 +2743,9 @@ async function _searchBackupStream(
 									pt,
 									promotionPolicy.reason,
 								);
+								if (info._BackupProbation?.type === pt) {
+									info._BackupProbation = null;
+								}
 								if (promotionPolicy.reason === "ad-marked") {
 									if (!info.LoggedBackupAdsByType) {
 										info.LoggedBackupAdsByType = new Set();

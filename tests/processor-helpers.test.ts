@@ -151,6 +151,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		ModifiedM3U8: null,
 		_BackupSearchStartedAt: 0,
 		_LastBackupSearchCompletedAt: 0,
+		_BackupProbation: null,
 		_LoggedOfflineTransition: false,
 		_AdRequestController: null,
 		_EmptyAdHoldMediaSequence: 0,
@@ -472,6 +473,7 @@ describe("_resetStreamAdState", () => {
 			ConsecutiveFailedNativeProbes: 4,
 			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 			_EmptyAdHoldMediaSequence: 12,
+			_BackupProbation: { type: "site", at: 123 },
 		});
 		fn(info);
 		expect(info.IsShowingAd).toBe(false);
@@ -486,6 +488,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
+		expect(info._BackupProbation).toBe(null);
 	});
 
 	it("initializes CsaiOnlyThisBreak on new stream infos", () => {
@@ -513,6 +516,202 @@ describe("_resetStreamAdState", () => {
 		const info = makeInfo({ NumStrippedAdSegments: 10 });
 		const result = fn(info);
 		expect(result.hadStrippedAdSegments).toBe(true);
+	});
+});
+
+describe("_findBackupStream fresh-session probation", () => {
+	const findBackupStream = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: (url: string, options?: unknown) => Promise<Response>,
+				startIdx?: number,
+				currentResolution?: Record<string, unknown>,
+			) => Promise<{ type: string | null; m3u8: string | null }>
+		>("_findBackupStream");
+	const currentResolution = {
+		Name: "720p",
+		Resolution: "1280x720",
+		FrameRate: 60,
+	};
+	const masterPlaylist = (playerType: string) =>
+		[
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p"',
+			`https://cdn.example/${playerType}/index.m3u8`,
+		].join("\n");
+	const adPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",START-DATE="2024-01-01T00:00:00Z"',
+		"#EXTINF:2.000,",
+		"https://edge.example/stitched-ad-1.ts",
+	].join("\n");
+	const sitePlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXTINF:2.000,live",
+		"https://edge.example/site-live-1.ts",
+	].join("\n");
+	const bridgePlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXTINF:2.000,live",
+		"https://edge.example/autoplay-live-1.ts",
+	].join("\n");
+
+	function makeHoldInfo() {
+		return makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 991_000,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: bridgePlaylist,
+			LastCleanBackupAt: 999_000,
+			_LqHoldStartAt: 940_000,
+			BackupEncodingsM3U8Cache: { autoplay: masterPlaylist("autoplay") },
+		});
+	}
+
+	function setupSweep(siteMedia: () => string) {
+		const state = getState();
+		const previous = {
+			types: state.BackupPlayerTypes,
+			disable: state.DisableAutoplayBackup,
+			getToken: g._getToken,
+			extract: g._extractPlaybackAccessToken,
+		};
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+		state.BackupPlayerTypes = ["site", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info: unknown, playerType: unknown) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+		const realFetch = async (url: string) => {
+			const href = String(url);
+			if (href.includes("usher.ttvnw.net")) {
+				return new Response(masterPlaylist(activePlayerType), {
+					status: 200,
+				});
+			}
+			if (href.includes("/site/")) {
+				return new Response(siteMedia(), { status: 200 });
+			}
+			if (href.includes("/autoplay/")) {
+				return new Response(bridgePlaylist, { status: 200 });
+			}
+			return new Response(null, { status: 404 });
+		};
+		const restore = () => {
+			state.BackupPlayerTypes = previous.types;
+			state.DisableAutoplayBackup = previous.disable;
+			if (previous.getToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previous.getToken;
+			}
+			if (previous.extract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previous.extract;
+			}
+		};
+		return { tokenCalls, realFetch, restore };
+	}
+
+	it("defers a fresh HQ session to a second clean look and serves the autoplay bridge", async () => {
+		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			const first = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(first.type).toBe("autoplay");
+			expect(first.m3u8).toBe(bridgePlaylist);
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info._BackupProbation).toEqual({ type: "site", at: 1_000_000 });
+
+			nowSpy.mockReturnValue(1_001_600);
+			const second = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(second.type).toBe("site");
+			expect(second.m3u8).toBe(sitePlaylist);
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info._BackupProbation).toBe(null);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("never serves a probationed session that turns ad-marked on the second look", async () => {
+		let siteMedia = sitePlaylist;
+		const { tokenCalls, realFetch, restore } = setupSweep(() => siteMedia);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			const first = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(first.type).toBe("autoplay");
+
+			siteMedia = adPlaylist;
+			nowSpy.mockReturnValue(1_001_600);
+			const second = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(second.type).toBe("autoplay");
+			expect(second.m3u8).toBe(bridgePlaylist);
+			expect(String(second.m3u8)).not.toContain("stitched-ad");
+			expect(tokenCalls).toEqual(["site", "site"]);
+			expect(info._BackupProbation).toBe(null);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("pins a fresh HQ session immediately when no clean autoplay bridge exists", async () => {
+		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			info.BackupEncodingsM3U8Cache = Object.create(null);
+			const result = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(result.type).toBe("site");
+			expect(result.m3u8).toBe(sitePlaylist);
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info._BackupProbation).toBe(null);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
 	});
 });
 
