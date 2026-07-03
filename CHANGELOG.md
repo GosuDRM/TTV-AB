@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [10.0.9] - 2026-07-03
+
+### Fixed
+- Frozen video with running audio during ad breaks now recovers automatically. When the video decoder got stuck at a stream splice while plenty of data was already buffered, the built-in freeze recovery never engaged: it required the buffer to be empty, and the stuck decoder still crept the clock forward just enough to reset detection every few seconds. Recovery now engages within about 5 seconds whenever playback stops moving, applies the same pause/play fix that worked manually, and reloads the player if nudging does not help.
+- Stopped switching backup streams when stream data is healthy and only the player is stuck. Those switches could not fix a stuck decoder, wasted re-search attempts, and each one added another splice that made recovery harder. Backup switching still happens normally when the stream itself stops delivering data.
+
 ## [10.0.8] - 2026-07-02
 
 ### Fixed
