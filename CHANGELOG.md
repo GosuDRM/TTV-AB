@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [11.0.3] - 2026-07-04
+
+### Fixed
+- Backup streams no longer jump to the maximum resolution in the rare moment the extension has no quality information yet, such as an ad on the very first playlist. Slamming straight to the highest quality could stall playback on slower connections; the backup now starts at a safe resolution (at least 360p) and climbs to your usual quality, which is also gentler on limited bandwidth.
+- During fast channel switches, a stream could briefly be matched to the wrong channel while the page was still updating. The extension now favors the most recently active stream in that moment, reducing the chance of a mismatch.
+
 ## [11.0.0] - 2026-07-03
 
 ### Changed

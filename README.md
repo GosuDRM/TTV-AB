@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-11.0.0-purple)
+![Version](https://img.shields.io/badge/version-11.0.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v11.0.3 - 2026-07-04
+- **Safer backup quality on weak connections.** In the rare moment the extension has no quality reading yet, the ad-break backup no longer jumps straight to the maximum resolution (which could stall slower connections); it starts at a safe resolution and climbs to your usual quality.
+
 ### v11.0.0 - 2026-07-03
 - **Steadier video during long ad breaks.** New higher-quality ad-free streams are now double-checked for injected ads (about 2 seconds) before the player switches to them, ending the rapid stream-hopping that could leave the video stuck mid-break.
 
 ### v10.0.9 - 2026-07-03
 - **Frozen video during ads now self-heals.** When the video froze with audio still running (a stuck decoder, previously fixed only by a manual pause/play), the extension now detects it within seconds and applies that fix for you, instead of pointlessly switching backup streams.
-
-### v10.0.8 - 2026-07-02
-- **Background-tab crashes now recover.** If Twitch's video worker dies while the tab is in the background, the extension now detects it and restores playback, instead of leaving the stream frozen until long after you switch back.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
