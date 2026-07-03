@@ -3096,6 +3096,15 @@ function _checkPinnedBackupStall(player) {
 		return;
 	}
 
+	if (bufferSafe) {
+		_PinnedBackupStallState.lastForceRefreshAt = now;
+		_log(
+			`Pinned backup playhead frozen with ${bufferHeadroom.toFixed(2)}s buffered (${pinnedType}); deferring to in-ad freeze recovery instead of re-search`,
+			"warning",
+		);
+		return;
+	}
+
 	_PinnedBackupStallState.lastForceRefreshAt = now;
 	_PinnedBackupStallState.forceRefreshCount =
 		(_PinnedBackupStallState.forceRefreshCount || 0) + 1;
@@ -3133,14 +3142,11 @@ function _checkInAdPlayheadFreeze(player) {
 		video.buffered && video.buffered.length > 0
 			? video.buffered.end(video.buffered.length - 1)
 			: 0;
-	const contiguousEnd = _getContiguousBufferedEnd(video, currentTime);
 	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
 	const advanced =
 		_InAdFreezeState.lastCurrentTime >= 0 &&
-		currentTime > _InAdFreezeState.lastCurrentTime + 0.05;
-	const bufferDrained =
-		contiguousEnd - currentTime < _getLowLatencyDangerZone();
-	if (!playbackHasStarted || video.paused || advanced || !bufferDrained) {
+		currentTime > _InAdFreezeState.lastCurrentTime + 0.25;
+	if (!playbackHasStarted || video.paused || advanced) {
 		_resetInAdFreezeState();
 		_InAdFreezeState.lastCurrentTime = currentTime;
 		return;
@@ -3161,7 +3167,12 @@ function _checkInAdPlayheadFreeze(player) {
 	_InAdFreezeState.actionCount++;
 	const frozenSeconds =
 		Math.round((now - _InAdFreezeState.firstFrozenAt) / 100) / 10;
-	const gapJumped = _seekPastBufferedGap(video, currentTime);
+	const contiguousEnd = _getContiguousBufferedEnd(video, currentTime);
+	const bufferDrained =
+		contiguousEnd - currentTime < _getLowLatencyDangerZone();
+	const gapJumped = bufferDrained
+		? _seekPastBufferedGap(video, currentTime)
+		: 0;
 	if (gapJumped > 0) {
 		_log(
 			`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s; seeking ${gapJumped.toFixed(2)}s past buffered gap`,
