@@ -156,12 +156,11 @@ jobs:
             "",
             "### 🦊 Firefox (`.xpi`)",
             `1. Download \`ttv-ab-${version}.xpi\` from Assets.`,
-            "2. Open `about:addons` in Firefox.",
-            "3. Click the gear icon near the top of the Add-ons Manager.",
-            "4. Choose `Install Add-on From File...`.",
-            "5. Select the downloaded `.xpi` file and confirm the install prompt.",
+            "2. Open `about:debugging#/runtime/this-firefox` in Firefox.",
+            "3. Click `Load Temporary Add-on...`.",
+            "4. Select the downloaded `.xpi` file.",
             "",
-            "Do not use `about:debugging` or `Load Temporary Add-on` for this release file. That page is only for temporary developer builds.",
+            "Note: Firefox removes temporary add-ons when it restarts, so repeat these steps after each restart to keep TTV AB active. For a permanent install, use the signed version on [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/ttv-ab-twitch-ad-blocker/).",
           ].join("\n");
           fs.writeFileSync("release-notes.md", `${section}${refsText}\n\n${installText}\n`);
           NODE
