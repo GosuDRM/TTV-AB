@@ -1017,13 +1017,23 @@ function _getFallbackResolution(info, url) {
 	if (preferredResolution) return preferredResolution;
 
 	const sorted = _getSortedResolutionList(resolutionList);
-	if (info?.ModifiedM3U8) {
-		const nonHevc = sorted.find(
-			(r) => r.Codecs?.startsWith("avc") || r.Codecs?.startsWith("av0"),
-		);
-		if (nonHevc) return nonHevc;
+	const preferNonHevc = Boolean(info?.ModifiedM3U8);
+	const isDecodable = (entry) =>
+		!preferNonHevc ||
+		entry?.Codecs?.startsWith("avc") ||
+		entry?.Codecs?.startsWith("av0");
+	const heightOf = (entry) => {
+		const [, h] = String(entry?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		return Number.isFinite(h) ? h : 0;
+	};
+	let fallback = null;
+	for (const entry of sorted) {
+		if (!isDecodable(entry) || heightOf(entry) <= 0) continue;
+		if (!fallback || heightOf(entry) >= 360) fallback = entry;
 	}
-	return sorted[0];
+	return fallback || sorted[0];
 }
 
 function _applyBackupResolutionFloor(res, resolutionList, floorHeight = 360) {
