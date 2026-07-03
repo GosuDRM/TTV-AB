@@ -671,6 +671,8 @@ function _getStreamInfoForPlaylist(url) {
 	try {
 		const parsed = new URL(url);
 		const hostname = parsed.hostname;
+		let hostnameMatch = null;
+		let hostnameMatchTime = -1;
 		for (const key in __TTVAB_STATE__.StreamInfosByUrl) {
 			try {
 				const info = __TTVAB_STATE__.StreamInfosByUrl[key];
@@ -678,11 +680,16 @@ function _getStreamInfoForPlaylist(url) {
 					continue;
 				}
 				const storedUrl = new URL(key);
-				if (storedUrl.hostname === hostname) {
-					return info;
+				if (storedUrl.hostname !== hostname) continue;
+				if (currentPageMediaKey) return info;
+				const activityAt = Number(info?.LastActivityAt) || 0;
+				if (activityAt > hostnameMatchTime) {
+					hostnameMatchTime = activityAt;
+					hostnameMatch = info;
 				}
 			} catch {}
 		}
+		if (hostnameMatch) return hostnameMatch;
 	} catch {}
 
 	const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
