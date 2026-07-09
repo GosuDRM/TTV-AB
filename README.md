@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-11.0.4-purple)
+![Version](https://img.shields.io/badge/version-12.0.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v12.0.0 - 2026-07-09
+- **Frozen video after ad breaks now recovers itself.** Hostile ad breaks no longer hop rapidly between backup streams (the churn that could freeze the video while audio keeps running), and a new post-break watchdog detects a frozen video and recovers it with a quick pause and play, or a player reload if needed.
+
 ### v11.0.4 - 2026-07-09
 - **FrankerFaceZ front-page conflict fixed.** Featured broadcasters on the Twitch front page no longer start playing on their own after you switch tabs or windows; playback protection now runs only on pages where you opened a stream, so FFZ's front-page autoplay setting and manual pauses hold.
 
 ### v11.0.3 - 2026-07-04
 - **Safer backup quality on weak connections.** In the rare moment the extension has no quality reading yet, the ad-break backup no longer jumps straight to the maximum resolution (which could stall slower connections); it starts at a safe resolution and climbs to your usual quality.
-
-### v11.0.0 - 2026-07-03
-- **Steadier video during long ad breaks.** New higher-quality ad-free streams are now double-checked for injected ads (about 2 seconds) before the player switches to them, ending the rapid stream-hopping that could leave the video stuck mid-break.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
