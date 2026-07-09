@@ -1125,6 +1125,8 @@ function _hookWorker() {
                 ${_shouldTryAutoplayFirst.toString()}
                 ${_shouldHoldAutoplayBackupDuringAd.toString()}
                 ${_shouldBridgeHeldAutoplayDuringSearch.toString()}
+                ${_getBackupBridgeMaxVariantHeight.toString()}
+                ${_shouldHoldBridgeInsteadOfRotating.toString()}
                 ${_refreshHeldAutoplayBackupPlaylist.toString()}
                 ${_refreshActiveBackupMediaPlaylist.toString()}
                 ${_searchBackupStream.toString()}

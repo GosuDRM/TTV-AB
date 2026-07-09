@@ -112,6 +112,33 @@ function _resetInAdFreezeState() {
 	_InAdFreezeState.lastActionAt = 0;
 	_InAdFreezeState.actionCount = 0;
 }
+const _POST_BREAK_WEDGE_EVAL_BUDGET = 40;
+const _POST_BREAK_WEDGE_MIN_TICK_ADVANCE_S = 0.3;
+const _POST_BREAK_WEDGE_FRAME_EPS = 1;
+const _POST_BREAK_WEDGE_EVIDENCE_TO_ACT = 6;
+const _POST_BREAK_WEDGE_HEALTHY_FRAMES = 5;
+const _POST_BREAK_WEDGE_HEALTHY_TO_DISARM = 3;
+const _POST_BREAK_WEDGE_MAX_ACTIONS = 2;
+const _PostBreakWedgeState = {
+	remainingEvals: 0,
+	lastCurrentTime: -1,
+	lastTotalFrames: -1,
+	evidenceCount: 0,
+	healthyCount: 0,
+	actionCount: 0,
+	prevAdContext: false,
+};
+function _armPostBreakWedgeWatch() {
+	_PostBreakWedgeState.remainingEvals = _POST_BREAK_WEDGE_EVAL_BUDGET;
+	_PostBreakWedgeState.lastCurrentTime = -1;
+	_PostBreakWedgeState.lastTotalFrames = -1;
+	_PostBreakWedgeState.evidenceCount = 0;
+	_PostBreakWedgeState.healthyCount = 0;
+	_PostBreakWedgeState.actionCount = 0;
+}
+function _disarmPostBreakWedgeWatch() {
+	_PostBreakWedgeState.remainingEvals = 0;
+}
 function _resetPinnedBackupStallState() {
 	_PinnedBackupStallState.firstObservedAt = 0;
 	_PinnedBackupStallState.lastCurrentTime = 0;
@@ -3200,6 +3227,75 @@ function _checkInAdPlayheadFreeze(player) {
 	_doPlayerTask(true, false, { reason: "buffer-recovery" });
 }
 
+function _checkPostBreakWedge(video, currentTime) {
+	if (_PostBreakWedgeState.remainingEvals <= 0) return false;
+	if (
+		!(video instanceof HTMLVideoElement) ||
+		video.ended ||
+		video.paused ||
+		!(Number(video.videoWidth) > 0) ||
+		Number(video.readyState) < 2
+	) {
+		return false;
+	}
+	if (typeof video.getVideoPlaybackQuality !== "function") {
+		_disarmPostBreakWedgeWatch();
+		return false;
+	}
+	let totalFrames = -1;
+	try {
+		totalFrames = Number(video.getVideoPlaybackQuality()?.totalVideoFrames);
+	} catch {
+		_disarmPostBreakWedgeWatch();
+		return false;
+	}
+	if (!Number.isFinite(totalFrames) || totalFrames < 0) {
+		_disarmPostBreakWedgeWatch();
+		return false;
+	}
+	const time = Number(currentTime) || 0;
+	const prevTime = _PostBreakWedgeState.lastCurrentTime;
+	const prevFrames = _PostBreakWedgeState.lastTotalFrames;
+	_PostBreakWedgeState.lastCurrentTime = time;
+	_PostBreakWedgeState.lastTotalFrames = totalFrames;
+	if (prevTime < 0 || prevFrames < 0) return false;
+	if (time <= prevTime + _POST_BREAK_WEDGE_MIN_TICK_ADVANCE_S) return false;
+	_PostBreakWedgeState.remainingEvals--;
+	const framesDelta = totalFrames - prevFrames;
+	if (framesDelta >= _POST_BREAK_WEDGE_HEALTHY_FRAMES) {
+		_PostBreakWedgeState.evidenceCount = 0;
+		_PostBreakWedgeState.healthyCount++;
+		if (
+			_PostBreakWedgeState.healthyCount >= _POST_BREAK_WEDGE_HEALTHY_TO_DISARM
+		) {
+			_disarmPostBreakWedgeWatch();
+		}
+		return false;
+	}
+	_PostBreakWedgeState.healthyCount = 0;
+	if (framesDelta > _POST_BREAK_WEDGE_FRAME_EPS) return false;
+	_PostBreakWedgeState.evidenceCount++;
+	if (_PostBreakWedgeState.evidenceCount < _POST_BREAK_WEDGE_EVIDENCE_TO_ACT) {
+		return false;
+	}
+	_PostBreakWedgeState.evidenceCount = 0;
+	_PostBreakWedgeState.actionCount++;
+	const useReload =
+		_PostBreakWedgeState.actionCount >= _POST_BREAK_WEDGE_MAX_ACTIONS;
+	_log(
+		`Post-break video wedge detected (playhead advancing with ${Math.max(0, framesDelta)} decoded frames); ${useReload ? "reloading player" : "pause/play nudge"}`,
+		"warning",
+	);
+	if (useReload) {
+		_disarmPostBreakWedgeWatch();
+		_doPlayerTask(false, true, { reason: "buffer-recovery" });
+	} else {
+		_doPlayerTask(true, false, { reason: "buffer-recovery" });
+	}
+	_PlayerBufferState.lastFixTime = Date.now();
+	return true;
+}
+
 const _WatchTimeState = {
 	channel: null as string | null,
 	pendingMs: 0,
@@ -3307,6 +3403,10 @@ function _monitorPlayerBuffering() {
 		const hasActiveAdContext = Boolean(
 			__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel,
 		);
+		if (_PostBreakWedgeState.prevAdContext && !hasActiveAdContext) {
+			_armPostBreakWedgeWatch();
+		}
+		_PostBreakWedgeState.prevAdContext = hasActiveAdContext;
 		const hasPendingPostAdRecovery = _hasPendingAdResumeIntent(
 			__TTVAB_STATE__.PageChannel,
 			currentMediaKey,
@@ -3490,6 +3590,12 @@ function _monitorPlayerBuffering() {
 						readyState,
 						hasFutureData,
 					} = _readPlayerBufferTelemetry(player, playerCore);
+					if (_checkPostBreakWedge(video, currentTime)) {
+						_PlayerBufferState.position = position;
+						_PlayerBufferState.bufferedPosition = bufferedPosition;
+						_PlayerBufferState.bufferDuration = bufferDuration;
+						return nextDelay;
+					}
 					if (_trySeekPastFrozenBufferGap(video, currentTime, readyState)) {
 						_PlayerBufferState.position = position;
 						_PlayerBufferState.bufferedPosition = bufferedPosition;

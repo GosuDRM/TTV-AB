@@ -152,6 +152,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_BackupSearchStartedAt: 0,
 		_LastBackupSearchCompletedAt: 0,
 		_BackupProbation: null,
+		_BackupPinFlipCount: 0,
 		_LoggedOfflineTransition: false,
 		_AdRequestController: null,
 		_EmptyAdHoldMediaSequence: 0,
@@ -537,7 +538,9 @@ describe("_findBackupStream fresh-session probation", () => {
 	const masterPlaylist = (playerType: string) =>
 		[
 			"#EXTM3U",
-			'#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p"',
+			playerType === "autoplay"
+				? '#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=640x360,FRAME-RATE=30.000,VIDEO="360p"'
+				: '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p"',
 			`https://cdn.example/${playerType}/index.m3u8`,
 		].join("\n");
 	const adPlaylist = [
@@ -640,7 +643,11 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(first.type).toBe("autoplay");
 			expect(first.m3u8).toBe(bridgePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
-			expect(info._BackupProbation).toEqual({ type: "site", at: 1_000_000 });
+			expect(info._BackupProbation).toEqual({
+				type: "site",
+				at: 1_000_000,
+				cleanChecks: 1,
+			});
 
 			nowSpy.mockReturnValue(1_001_600);
 			const second = await findBackupStream()(
@@ -711,6 +718,234 @@ describe("_findBackupStream fresh-session probation", () => {
 		} finally {
 			nowSpy.mockRestore();
 			restore();
+		}
+	});
+
+	it("skips the HQ probe entirely when the bridge already serves the target quality", async () => {
+		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			const result = await findBackupStream()(info, realFetch, 0, {
+				Name: "360p",
+				Resolution: "640x360",
+				FrameRate: 30,
+			});
+			expect(result.type).toBe("autoplay");
+			expect(result.m3u8).toBe(bridgePlaylist);
+			expect(tokenCalls).toEqual([]);
+			expect(info._BackupProbation).toBe(null);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("caps backup rotation on the stable bridge after repeated ad-marked flips", async () => {
+		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			info._BackupPinFlipCount = 2;
+			const result = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(result.type).toBe("autoplay");
+			expect(result.m3u8).toBe(bridgePlaylist);
+			expect(tokenCalls).toEqual([]);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("resumes rotation past the flip cap when the bridge itself is cooling down", async () => {
+		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			info._BackupPinFlipCount = 2;
+			T<(info: Record<string, unknown>, pt: string, reason: string) => void>(
+				"_markBackupPlayerRetryCooldown",
+			)(info, "autoplay", "stalled");
+			await findBackupStream()(info, realFetch, 0, currentResolution);
+			expect(tokenCalls).toContain("site");
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("requires an extra clean look before pinning once a backup has flipped this break", async () => {
+		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			info._BackupPinFlipCount = 1;
+			const first = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(first.type).toBe("autoplay");
+			expect(info._BackupProbation).toEqual({
+				type: "site",
+				at: 1_000_000,
+				cleanChecks: 1,
+			});
+
+			nowSpy.mockReturnValue(1_001_600);
+			const second = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(second.type).toBe("autoplay");
+			expect(second.m3u8).toBe(bridgePlaylist);
+			expect(info._BackupProbation).toEqual({
+				type: "site",
+				at: 1_000_000,
+				cleanChecks: 2,
+			});
+
+			nowSpy.mockReturnValue(1_003_200);
+			const third = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(third.type).toBe("site");
+			expect(third.m3u8).toBe(sitePlaylist);
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info._BackupProbation).toBe(null);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("counts a pinned backup turning ad-marked as one flip", async () => {
+		const { realFetch, restore } = setupSweep(() => adPlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			info.ActiveBackupPlayerType = "site";
+			info.LastCleanBackupPlayerType = "site";
+			info.BackupEncodingsM3U8Cache = {
+				site: masterPlaylist("site"),
+				autoplay: masterPlaylist("autoplay"),
+			};
+			const result = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(result.type).toBe("autoplay");
+			expect(String(result.m3u8)).not.toContain("stitched-ad");
+			expect(info._BackupPinFlipCount).toBe(1);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+});
+
+describe("_shouldHoldBridgeInsteadOfRotating", () => {
+	const guard = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				targetRes: Record<string, unknown> | null,
+			) => boolean
+		>("_shouldHoldBridgeInsteadOfRotating");
+	const autoplayMaster360 = [
+		"#EXTM3U",
+		'#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=284x160,VIDEO="160p"',
+		"https://cdn.example/autoplay/160.m3u8",
+		'#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=640x360,VIDEO="360p"',
+		"https://cdn.example/autoplay/360.m3u8",
+	].join("\n");
+
+	function makeBridgeInfo(overrides: Record<string, unknown> = {}) {
+		return makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 991_000,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U",
+			LastCleanBackupAt: 999_000,
+			BackupEncodingsM3U8Cache: { autoplay: autoplayMaster360 },
+			...overrides,
+		});
+	}
+
+	it("holds when the target height does not beat the bridge ceiling", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeBridgeInfo();
+			expect(guard()(info, { Resolution: "640x360" })).toBe(true);
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("rotates when the target height beats the bridge ceiling", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeBridgeInfo();
+			expect(guard()(info, { Resolution: "1280x720" })).toBe(false);
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("rotates when the target resolution is unknown", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeBridgeInfo();
+			expect(guard()(info, { Name: "720p60" })).toBe(false);
+			expect(guard()(info, null)).toBe(false);
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("rotates when the bridge master has no parseable variants", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeBridgeInfo({
+				BackupEncodingsM3U8Cache: { autoplay: "#EXTM3U" },
+			});
+			expect(guard()(info, { Resolution: "640x360" })).toBe(false);
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("holds regardless of target quality once the flip cap is reached", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeBridgeInfo({ _BackupPinFlipCount: 2 });
+			expect(guard()(info, { Resolution: "1920x1080" })).toBe(true);
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("stays inert when the bridge is not actively serving", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeBridgeInfo({ ActiveBackupPlayerType: "site" });
+			expect(guard()(info, { Resolution: "640x360" })).toBe(false);
+		} finally {
+			nowSpy.mockRestore();
 		}
 	});
 });
@@ -1265,7 +1500,9 @@ describe("_findBackupStream fallback policy", () => {
 	const masterPlaylist = (playerType: string) =>
 		[
 			"#EXTM3U",
-			'#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p"',
+			playerType === "autoplay"
+				? '#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=640x360,FRAME-RATE=30.000,VIDEO="360p"'
+				: '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p"',
 			`https://cdn.example/${playerType}/index.m3u8`,
 		].join("\n");
 	const adPlaylist = [
@@ -1618,7 +1855,7 @@ describe("_findBackupStream held-autoplay bridging during HQ probe", () => {
 	};
 	const autoplayMaster = [
 		"#EXTM3U",
-		'#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60.000,VIDEO="720p"',
+		'#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=640x360,FRAME-RATE=30.000,VIDEO="360p"',
 		"https://cdn.example/autoplay/index.m3u8",
 	].join("\n");
 	const staleHeldPlaylist = [

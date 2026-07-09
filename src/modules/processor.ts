@@ -1642,6 +1642,7 @@ async function _processM3U8Core(url, text, realFetch) {
 			info.FailedBackupPlayerTypes?.clear?.();
 			if (!isContinuingAdCycle) {
 				info.AdEndConfirmEscalation = 0;
+				info._BackupPinFlipCount = 0;
 				_incrementAdsBlocked(info.ChannelName, info.MediaKey);
 			}
 			if (isRecentAdEndReentry) {
@@ -2241,6 +2242,33 @@ function _shouldBridgeHeldAutoplayDuringSearch(info) {
 	);
 }
 
+function _getBackupBridgeMaxVariantHeight(info) {
+	const encCache = info?.BackupEncodingsM3U8Cache?.autoplay;
+	const enc = typeof encCache === "string" ? encCache : encCache?.m3u8 || null;
+	if (typeof enc !== "string" || !enc) return 0;
+	let maxHeight = 0;
+	const re = /RESOLUTION=\d+x(\d+)/g;
+	let match = re.exec(enc);
+	while (match !== null) {
+		const h = Number(match[1]);
+		if (Number.isFinite(h) && h > maxHeight) maxHeight = h;
+		match = re.exec(enc);
+	}
+	return maxHeight;
+}
+
+function _shouldHoldBridgeInsteadOfRotating(info, targetRes) {
+	if (!_shouldBridgeHeldAutoplayDuringSearch(info)) return false;
+	if ((Number(info?._BackupPinFlipCount) || 0) >= 2) return true;
+	const [, targetHeight] = String(targetRes?.Resolution || "0x0")
+		.split("x")
+		.map(Number);
+	if (!Number.isFinite(targetHeight) || targetHeight <= 0) return false;
+	const bridgeCeiling = _getBackupBridgeMaxVariantHeight(info);
+	if (bridgeCeiling <= 0) return false;
+	return targetHeight <= bridgeCeiling;
+}
+
 async function _refreshHeldAutoplayBackupPlaylist(
 	info,
 	realFetch,
@@ -2443,12 +2471,48 @@ async function _searchBackupStream(
 			playerTypes = [...clean, ...contam];
 		}
 	}
+	const resolvedTargetRes =
+		currentResolution ||
+		_getFallbackResolution(info, "") ||
+		info?.ResolutionList?.[0] ||
+		(typeof __TTVAB_STATE__?.PreferredQualityGroup === "string" &&
+		__TTVAB_STATE__.PreferredQualityGroup.trim()
+			? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
+			: null);
+	const targetRes = _applyBackupResolutionFloor(
+		resolvedTargetRes,
+		info?.ResolutionList,
+	);
+	if (targetRes !== resolvedTargetRes) {
+		_log(
+			`[Trace] Backup target raised from ${resolvedTargetRes?.Resolution || "?"} to ${targetRes?.Resolution || "?"} (sub-360p floor)`,
+			"info",
+		);
+	}
 	if (_shouldHoldAutoplayBackupDuringAd(info)) {
 		playerTypes = ["autoplay"];
 		_log(
 			"[Trace] Holding autoplay backup during LQ dwell; deferring HQ probe briefly",
 			"info",
 		);
+	} else if (_shouldHoldBridgeInsteadOfRotating(info, targetRes)) {
+		playerTypes = ["autoplay"];
+		if (!info._LoggedWhitelistByType) {
+			info._LoggedWhitelistByType = new Set();
+		}
+		const holdReason =
+			(Number(info._BackupPinFlipCount) || 0) >= 2
+				? "bridge-hold:flip-cap"
+				: "bridge-hold:same-res";
+		if (!info._LoggedWhitelistByType.has(holdReason)) {
+			info._LoggedWhitelistByType.add(holdReason);
+			_log(
+				holdReason === "bridge-hold:flip-cap"
+					? "[Trace] Backup rotation capped after repeated ad-marked flips; holding stable bridge for this break"
+					: "[Trace] HQ probe skipped; bridge already serves the target quality",
+				"info",
+			);
+		}
 	} else if (_shouldTryAutoplayFirst(info)) {
 		playerTypes = [
 			"autoplay",
@@ -2483,24 +2547,6 @@ async function _searchBackupStream(
 				(__TTVAB_STATE__?.BackupPlayerTypes || []).indexOf(playerType) >=
 				startIdx,
 		);
-	const resolvedTargetRes =
-		currentResolution ||
-		_getFallbackResolution(info, "") ||
-		info?.ResolutionList?.[0] ||
-		(typeof __TTVAB_STATE__?.PreferredQualityGroup === "string" &&
-		__TTVAB_STATE__.PreferredQualityGroup.trim()
-			? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
-			: null);
-	const targetRes = _applyBackupResolutionFloor(
-		resolvedTargetRes,
-		info?.ResolutionList,
-	);
-	if (targetRes !== resolvedTargetRes) {
-		_log(
-			`[Trace] Backup target raised from ${resolvedTargetRes?.Resolution || "?"} to ${targetRes?.Resolution || "?"} (sub-360p floor)`,
-			"info",
-		);
-	}
 
 	for (let pi = 0; !backupM3u8 && pi < playerTypesLen; pi++) {
 		const pt = playerTypes[pi];
@@ -2691,11 +2737,18 @@ async function _searchBackupStream(
 
 								if (promotionPolicy.allowSelectedPromotion) {
 									const probation = info._BackupProbation;
+									const requiredCleanHolds =
+										(Number(info._BackupPinFlipCount) || 0) > 0 ? 2 : 1;
+									const priorCleanHolds =
+										probation?.type === pt
+											? Number(probation.cleanChecks) || 1
+											: 0;
 									const needsSecondLook =
 										pt !== "autoplay" &&
 										(isFreshM3u8 ||
 											(probation?.type === pt &&
-												Date.now() - probation.at < 1500));
+												Date.now() - probation.at < 1500) ||
+											priorCleanHolds < requiredCleanHolds);
 									if (needsSecondLook) {
 										const bridged = await _refreshHeldAutoplayBackupPlaylist(
 											info,
@@ -2703,9 +2756,14 @@ async function _searchBackupStream(
 											currentResolution,
 										);
 										if (bridged) {
-											if (isFreshM3u8 || probation?.type !== pt) {
-												info._BackupProbation = { type: pt, at: Date.now() };
-											}
+											info._BackupProbation = {
+												type: pt,
+												at:
+													isFreshM3u8 || probation?.type !== pt
+														? Date.now()
+														: probation.at,
+												cleanChecks: isFreshM3u8 ? 1 : priorCleanHolds + 1,
+											};
 											_log(
 												`[Trace] Fresh ${pt} session held for a second clean check; continuing clean autoplay bridge`,
 												"info",
@@ -2750,10 +2808,19 @@ async function _searchBackupStream(
 									pt,
 									promotionPolicy.reason,
 								);
+								const wasCleanCandidate =
+									pt !== "autoplay" &&
+									!isFreshM3u8 &&
+									(pt === info.ActiveBackupPlayerType ||
+										info._BackupProbation?.type === pt);
 								if (info._BackupProbation?.type === pt) {
 									info._BackupProbation = null;
 								}
 								if (promotionPolicy.reason === "ad-marked") {
+									if (wasCleanCandidate) {
+										info._BackupPinFlipCount =
+											(Number(info._BackupPinFlipCount) || 0) + 1;
+									}
 									if (!info.LoggedBackupAdsByType) {
 										info.LoggedBackupAdsByType = new Set();
 									}
