@@ -1330,6 +1330,21 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_searchBackupStream",
+			helper: "_shouldHoldBridgeInsteadOfRotating",
+			source: processorSource,
+		},
+		{
+			consumer: "_shouldHoldBridgeInsteadOfRotating",
+			helper: "_getBackupBridgeMaxVariantHeight",
+			source: processorSource,
+		},
+		{
+			consumer: "_shouldHoldBridgeInsteadOfRotating",
+			helper: "_shouldBridgeHeldAutoplayDuringSearch",
+			source: processorSource,
+		},
+		{
 			consumer: "_getOrderedBackupPlayerTypes",
 			helper: "_getRecentCleanBackupPlayerTypeForInfo",
 			source: processorSource,

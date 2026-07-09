@@ -1501,3 +1501,180 @@ describe("channel watch-time tracking", () => {
 		expect(watchState().pendingMs).toBe(0);
 	});
 });
+
+describe("_checkPostBreakWedge (post-break decoder wedge watchdog)", () => {
+	let taskCalls: Array<{ nudge: boolean; reload: boolean }>;
+	let originalDoPlayerTask: unknown;
+
+	function wedgeState() {
+		return g._PostBreakWedgeState as {
+			remainingEvals: number;
+			lastCurrentTime: number;
+			lastTotalFrames: number;
+			evidenceCount: number;
+			healthyCount: number;
+			actionCount: number;
+			prevAdContext: boolean;
+		};
+	}
+
+	function checkWedge() {
+		return T<(video: unknown, currentTime: number) => boolean>(
+			"_checkPostBreakWedge",
+		);
+	}
+
+	function makeWedgeVideo(opts: {
+		currentTime: () => number;
+		totalFrames?: () => number;
+		videoWidth?: number;
+		paused?: boolean;
+		readyState?: number;
+		withQualityApi?: boolean;
+	}) {
+		const video = document.createElement("video");
+		Object.defineProperty(video, "currentTime", {
+			get: opts.currentTime,
+			configurable: true,
+		});
+		Object.defineProperty(video, "readyState", {
+			get: () => opts.readyState ?? 4,
+			configurable: true,
+		});
+		Object.defineProperty(video, "videoWidth", {
+			get: () => opts.videoWidth ?? 1920,
+			configurable: true,
+		});
+		Object.defineProperty(video, "paused", {
+			get: () => opts.paused ?? false,
+			configurable: true,
+		});
+		Object.defineProperty(video, "ended", {
+			get: () => false,
+			configurable: true,
+		});
+		if (opts.withQualityApi !== false) {
+			Object.defineProperty(video, "getVideoPlaybackQuality", {
+				value: () => ({ totalVideoFrames: (opts.totalFrames ?? (() => 0))() }),
+				configurable: true,
+			});
+		}
+		return video;
+	}
+
+	beforeEach(() => {
+		taskCalls = [];
+		originalDoPlayerTask = g._doPlayerTask;
+		g._doPlayerTask = (nudge: boolean, reload: boolean) => {
+			taskCalls.push({ nudge, reload });
+		};
+		(g._PlayerBufferState as Record<string, unknown>).lastFixTime = 0;
+		T<() => void>("_armPostBreakWedgeWatch")();
+	});
+
+	afterEach(() => {
+		g._doPlayerTask = originalDoPlayerTask;
+		T<() => void>("_disarmPostBreakWedgeWatch")();
+	});
+
+	it("nudges then reloads when the playhead advances without decoded frames", () => {
+		let time = 100;
+		const video = makeWedgeVideo({
+			currentTime: () => time,
+			totalFrames: () => 5000,
+		});
+		expect(checkWedge()(video, time)).toBe(false);
+		for (let i = 0; i < 5; i++) {
+			time += 0.6;
+			expect(checkWedge()(video, time)).toBe(false);
+		}
+		time += 0.6;
+		expect(checkWedge()(video, time)).toBe(true);
+		expect(taskCalls).toEqual([{ nudge: true, reload: false }]);
+
+		for (let i = 0; i < 5; i++) {
+			time += 0.6;
+			expect(checkWedge()(video, time)).toBe(false);
+		}
+		time += 0.6;
+		expect(checkWedge()(video, time)).toBe(true);
+		expect(taskCalls).toEqual([
+			{ nudge: true, reload: false },
+			{ nudge: false, reload: true },
+		]);
+		expect(wedgeState().remainingEvals).toBe(0);
+	});
+
+	it("disarms quietly after sustained healthy frame decoding", () => {
+		let time = 100;
+		let frames = 5000;
+		const video = makeWedgeVideo({
+			currentTime: () => time,
+			totalFrames: () => frames,
+		});
+		checkWedge()(video, time);
+		for (let i = 0; i < 3; i++) {
+			time += 0.6;
+			frames += 36;
+			expect(checkWedge()(video, time)).toBe(false);
+		}
+		expect(wedgeState().remainingEvals).toBe(0);
+		expect(taskCalls).toEqual([]);
+	});
+
+	it("ignores paused, audio-only, and stalled-playhead samples", () => {
+		const time = 100;
+		const pausedVideo = makeWedgeVideo({
+			currentTime: () => time,
+			paused: true,
+		});
+		expect(checkWedge()(pausedVideo, time)).toBe(false);
+		const audioOnly = makeWedgeVideo({
+			currentTime: () => time,
+			videoWidth: 0,
+		});
+		expect(checkWedge()(audioOnly, time)).toBe(false);
+		const frozenPlayhead = makeWedgeVideo({ currentTime: () => time });
+		checkWedge()(frozenPlayhead, time);
+		for (let i = 0; i < 10; i++) {
+			expect(checkWedge()(frozenPlayhead, time)).toBe(false);
+		}
+		expect(wedgeState().remainingEvals).toBe(
+			g._POST_BREAK_WEDGE_EVAL_BUDGET as number,
+		);
+		expect(taskCalls).toEqual([]);
+	});
+
+	it("disarms silently when the playback quality API is unavailable", () => {
+		let time = 100;
+		const video = makeWedgeVideo({
+			currentTime: () => time,
+			withQualityApi: false,
+		});
+		Object.defineProperty(video, "getVideoPlaybackQuality", {
+			value: undefined,
+			configurable: true,
+		});
+		expect(checkWedge()(video, time)).toBe(false);
+		expect(wedgeState().remainingEvals).toBe(0);
+		time += 0.6;
+		expect(checkWedge()(video, time)).toBe(false);
+		expect(taskCalls).toEqual([]);
+	});
+
+	it("stops evaluating once the visible-evaluation budget is spent", () => {
+		wedgeState().remainingEvals = 2;
+		let time = 100;
+		const video = makeWedgeVideo({
+			currentTime: () => time,
+			totalFrames: () => 5000,
+		});
+		checkWedge()(video, time);
+		for (let i = 0; i < 6; i++) {
+			time += 0.6;
+			expect(checkWedge()(video, time)).toBe(false);
+		}
+		expect(wedgeState().remainingEvals).toBe(0);
+		expect(taskCalls).toEqual([]);
+	});
+});
