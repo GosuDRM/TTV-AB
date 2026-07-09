@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.0] - 2026-07-09
+
+- Fixed streams freezing with audio still running after long ad breaks, most often noticed after switching tabs and coming back. The extension now detects when the video stops producing frames after a break and recovers it automatically with a quick pause and play, or a player reload if that is not enough.
+- During hostile ad breaks where every ad-free stream keeps turning ad-marked, the extension no longer hops rapidly between backup streams. It holds one stable backup until the break ends, which removes the stream-switch churn that could damage the player and cause those freezes.
+- Backup quality upgrades during a break are now only attempted when they would genuinely improve on the current backup stream, cutting unnecessary stream switches and network requests.
+
 ## [11.0.4] - 2026-07-09
 
 - Fixed a conflict with FrankerFaceZ where featured broadcasters on the Twitch front page could start playing on their own after switching tabs or windows, overriding FFZ's front page autoplay setting. Playback protection now runs only on pages where you opened a stream, so front page pauses always hold.
