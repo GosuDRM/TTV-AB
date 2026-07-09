@@ -306,3 +306,58 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 		expect(suppressionState().suppressedMedia.size).toBe(0);
 	});
 });
+
+describe("_guardPlaybackAcrossVisibilityTransition (watch-context gate)", () => {
+	let resumeCalls: unknown[][];
+	let scheduleCalls: unknown[][];
+	let originalResume: unknown;
+	let originalSchedule: unknown;
+
+	beforeEach(() => {
+		resumeCalls = [];
+		scheduleCalls = [];
+		originalResume = g._resumePrimaryPlaybackIfPaused;
+		originalSchedule = g._schedulePlaybackRecoveryTimeout;
+		g._resumePrimaryPlaybackIfPaused = (...args: unknown[]) => {
+			resumeCalls.push(args);
+			return true;
+		};
+		g._schedulePlaybackRecoveryTimeout = (...args: unknown[]) => {
+			scheduleCalls.push(args);
+			return 0;
+		};
+	});
+
+	afterEach(() => {
+		g._resumePrimaryPlaybackIfPaused = originalResume;
+		g._schedulePlaybackRecoveryTimeout = originalSchedule;
+	});
+
+	function guard() {
+		return T<(channel: unknown, mediaKey: unknown) => void>(
+			"_guardPlaybackAcrossVisibilityTransition",
+		);
+	}
+
+	it("stays inert without a watch context so front-page pauses set by the user or other extensions hold", () => {
+		g.__TTVAB_STATE__ = {
+			CurrentAdMediaKey: null,
+			CurrentAdChannel: null,
+			PageMediaKey: null,
+			PageChannel: null,
+		};
+
+		guard()(null, null);
+
+		expect(resumeCalls).toHaveLength(0);
+		expect(scheduleCalls).toHaveLength(0);
+	});
+
+	it("still resumes paused playback on an active watch context", () => {
+		guard()("testchannel", "live:testchannel");
+
+		expect(resumeCalls).toHaveLength(1);
+		expect(resumeCalls[0]).toEqual(["testchannel", "live:testchannel"]);
+		expect(scheduleCalls.length).toBeGreaterThan(0);
+	});
+});

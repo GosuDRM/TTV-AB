@@ -1640,6 +1640,9 @@ function _guardPlaybackAcrossVisibilityTransition(
 ) {
 	const safeChannel = _normalizePlayerChannel(channel);
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
+	if (!safeMediaKey) {
+		return;
+	}
 	if (_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey)) {
 		return;
 	}
