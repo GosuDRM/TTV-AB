@@ -2,6 +2,10 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [11.0.4] - 2026-07-09
+
+- Fixed a conflict with FrankerFaceZ where featured broadcasters on the Twitch front page could start playing on their own after switching tabs or windows, overriding FFZ's front page autoplay setting. Playback protection now runs only on pages where you opened a stream, so front page pauses always hold.
+
 ## [11.0.3] - 2026-07-04
 
 - On slower connections, the ad-break backup video no longer starts at the highest resolution, which could stall playback. It now begins at a safe quality and climbs back to your usual quality.
