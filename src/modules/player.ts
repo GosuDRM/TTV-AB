@@ -1491,6 +1491,25 @@ function _ensurePlaybackMonitorsRunning(forceStart = false) {
 const _INDEPENDENT_VIDEO_AD_SELECTOR =
 	'video[aria-label="Video Advertisement"]';
 const _INDEPENDENT_VIDEO_AD_STYLE_ID = "ttvab-independent-video-ad-style";
+const _INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE =
+	"data-ttvab-independent-ad-suppressed";
+const _IndependentVideoAdSuppressionState = {
+	suppressedMedia: new Map<
+		HTMLVideoElement,
+		{
+			display: { value: string; priority: string };
+			visibility: { value: string; priority: string };
+			pointerEvents: { value: string; priority: string };
+			defaultMuted: boolean;
+			muted: boolean;
+			volume: number;
+		}
+	>(),
+};
+
+function _isIndependentVideoAdGuardEnabled() {
+	return __TTVAB_STATE__?.IsAdStrippingEnabled === true;
+}
 
 function _ensureIndependentVideoAdStyle() {
 	if (typeof document === "undefined") return false;
@@ -1499,31 +1518,101 @@ function _ensureIndependentVideoAdStyle() {
 	const style = document.createElement("style");
 	style.id = _INDEPENDENT_VIDEO_AD_STYLE_ID;
 	style.textContent =
-		'video[aria-label="Video Advertisement"]{display:none!important;visibility:hidden!important;pointer-events:none!important}';
+		'video[data-ttvab-independent-ad-suppressed="true"]{display:none!important;visibility:hidden!important;pointer-events:none!important}';
 	document.head.appendChild(style);
 	return true;
 }
 
+function _isPrimaryPlayerVideo(media) {
+	if (
+		!(media instanceof HTMLVideoElement) ||
+		typeof _getPlayerAndState !== "function"
+	) {
+		return false;
+	}
+	try {
+		const { player } = _getPlayerAndState();
+		return player?.getHTMLVideoElement?.() === media;
+	} catch {
+		return false;
+	}
+}
+
 function _isIndependentVideoAd(media) {
 	return (
+		_isIndependentVideoAdGuardEnabled() &&
 		media instanceof HTMLVideoElement &&
-		media.matches(_INDEPENDENT_VIDEO_AD_SELECTOR)
+		media.matches(_INDEPENDENT_VIDEO_AD_SELECTOR) &&
+		!_isPrimaryPlayerVideo(media)
 	);
 }
 
-function _suppressIndependentVideoAd(media) {
-	if (!_isIndependentVideoAd(media)) return false;
+function _restoreIndependentVideoAdStyle(media, property, state) {
+	if (state.value) {
+		media.style.setProperty(property, state.value, state.priority);
+	} else {
+		media.style.removeProperty(property);
+	}
+}
+
+function _restoreIndependentVideoAd(media) {
+	if (!(media instanceof HTMLVideoElement)) return false;
+	const state = _IndependentVideoAdSuppressionState.suppressedMedia.get(media);
+	if (!state) return false;
 	try {
+		_restoreIndependentVideoAdStyle(media, "display", state.display);
+		_restoreIndependentVideoAdStyle(media, "visibility", state.visibility);
+		_restoreIndependentVideoAdStyle(
+			media,
+			"pointer-events",
+			state.pointerEvents,
+		);
+		media.defaultMuted = state.defaultMuted;
+		media.muted = state.muted;
+		media.volume = state.volume;
+		media.removeAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE);
+		_IndependentVideoAdSuppressionState.suppressedMedia.delete(media);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function _suppressIndependentVideoAd(media) {
+	if (!_isIndependentVideoAd(media)) {
+		_restoreIndependentVideoAd(media);
+		return false;
+	}
+	try {
+		if (!_IndependentVideoAdSuppressionState.suppressedMedia.has(media)) {
+			_IndependentVideoAdSuppressionState.suppressedMedia.set(media, {
+				display: {
+					value: media.style.getPropertyValue("display"),
+					priority: media.style.getPropertyPriority("display"),
+				},
+				visibility: {
+					value: media.style.getPropertyValue("visibility"),
+					priority: media.style.getPropertyPriority("visibility"),
+				},
+				pointerEvents: {
+					value: media.style.getPropertyValue("pointer-events"),
+					priority: media.style.getPropertyPriority("pointer-events"),
+				},
+				defaultMuted: media.defaultMuted,
+				muted: media.muted,
+				volume: media.volume,
+			});
+		}
 		media.style.setProperty("display", "none", "important");
 		media.style.setProperty("visibility", "hidden", "important");
 		media.style.setProperty("pointer-events", "none", "important");
 		media.defaultMuted = true;
 		media.muted = true;
 		media.volume = 0;
-		media.pause();
-		media.setAttribute("data-ttvab-independent-ad-suppressed", "true");
+		media.setAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE, "true");
 		return true;
 	} catch {
+		_restoreIndependentVideoAd(media);
 		return false;
 	}
 }
@@ -1539,6 +1628,40 @@ function _suppressIndependentVideoAdsInDocument(root: ParentNode = document) {
 	return suppressedCount;
 }
 
+function _restoreIndependentVideoAds() {
+	let restoredCount = 0;
+	for (const media of [
+		..._IndependentVideoAdSuppressionState.suppressedMedia.keys(),
+	]) {
+		if (_restoreIndependentVideoAd(media)) restoredCount += 1;
+	}
+	return restoredCount;
+}
+
+function _pruneIndependentVideoAdSuppressions() {
+	let restoredCount = 0;
+	for (const media of [
+		..._IndependentVideoAdSuppressionState.suppressedMedia.keys(),
+	]) {
+		if (!media.isConnected && _restoreIndependentVideoAd(media)) {
+			restoredCount += 1;
+		}
+	}
+	return restoredCount;
+}
+
+function _setIndependentVideoAdGuardEnabled(enabled) {
+	if (typeof document === "undefined") return false;
+	if (!enabled) {
+		document.getElementById(_INDEPENDENT_VIDEO_AD_STYLE_ID)?.remove();
+		_restoreIndependentVideoAds();
+		return true;
+	}
+	const didInstallStyle = _ensureIndependentVideoAdStyle();
+	_suppressIndependentVideoAdsInDocument();
+	return didInstallStyle;
+}
+
 function _hookIndependentVideoAdGuard() {
 	if (
 		typeof document === "undefined" ||
@@ -1548,11 +1671,14 @@ function _hookIndependentVideoAdGuard() {
 		return;
 	}
 
-	if (!_ensureIndependentVideoAdStyle() && document.readyState === "loading") {
+	if (
+		!_setIndependentVideoAdGuardEnabled(_isIndependentVideoAdGuardEnabled()) &&
+		document.readyState === "loading"
+	) {
 		document.addEventListener(
 			"DOMContentLoaded",
 			() => {
-				_ensureIndependentVideoAdStyle();
+				_setIndependentVideoAdGuardEnabled(_isIndependentVideoAdGuardEnabled());
 			},
 			{ once: true },
 		);
@@ -1581,6 +1707,7 @@ function _hookIndependentVideoAdGuard() {
 					}
 				}
 			}
+			_pruneIndependentVideoAdSuppressions();
 		});
 		observer.observe(document.documentElement, {
 			childList: true,
@@ -1590,7 +1717,6 @@ function _hookIndependentVideoAdGuard() {
 		});
 	}
 
-	_suppressIndependentVideoAdsInDocument();
 	window.__TTVAB_INDEPENDENT_VIDEO_AD_GUARD__ = true;
 }
 
