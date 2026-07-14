@@ -2,6 +2,10 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.3] - 2026-07-14
+
+- Hardened separate video-ad blocking against late unmute attempts and player startup races, keeping side and chat ads silent without touching the primary stream ([#45](https://github.com/GosuDRM/TTV-AB/issues/45)).
+
 ## [12.0.2] - 2026-07-14
 
 - Separate video-ad blocking now follows the Ad Blocking toggle and restores any hidden or muted video immediately when blocking is disabled ([#45](https://github.com/GosuDRM/TTV-AB/issues/45)).

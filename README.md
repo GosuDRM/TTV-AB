@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-12.0.2-purple)
+![Version](https://img.shields.io/badge/version-12.0.3-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-12.0.2-yellow)
+![Chrome](https://img.shields.io/badge/chrome-12.0.3-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v12.0.3 - 2026-07-14
+- **Safer separate video-ad blocking.** Side and chat ads stay silent if Twitch tries to unmute them late, while startup races can no longer mistake an unresolved primary player for a separate ad.
+
 ### v12.0.2 - 2026-07-14
 - **Safer separate video-ad blocking.** The experimental guard now follows the Ad Blocking toggle, restores reused video elements, and cannot hide or mute the primary stream.
 
 ### v12.0.1 - 2026-07-14
 - **Experimental separate Twitch video ad blocking.** Player and chat ads that load as their own video no longer appear or play audio, while stream playback stays untouched.
-
-### v12.0.0 - 2026-07-09
-- **Frozen video after ad breaks now recovers itself.** Hostile ad breaks no longer hop rapidly between backup streams (the churn that could freeze the video while audio keeps running), and a new post-break watchdog detects a frozen video and recovers it with a quick pause and play, or a player reload if needed.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
