@@ -1523,28 +1523,51 @@ function _ensureIndependentVideoAdStyle() {
 	return true;
 }
 
-function _isPrimaryPlayerVideo(media) {
+function _getPrimaryPlayerVideoMatch(media) {
 	if (
 		!(media instanceof HTMLVideoElement) ||
 		typeof _getPlayerAndState !== "function"
 	) {
-		return false;
+		return null;
 	}
 	try {
 		const { player } = _getPlayerAndState();
-		return player?.getHTMLVideoElement?.() === media;
+		const primaryMedia = player?.getHTMLVideoElement?.();
+		if (!(primaryMedia instanceof HTMLVideoElement)) return null;
+		return primaryMedia === media;
+	} catch {
+		return null;
+	}
+}
+
+function _hasKnownIndependentVideoAdSource(media) {
+	if (!(media instanceof HTMLVideoElement)) return false;
+	const source = media.currentSrc || media.src;
+	if (!source) return false;
+	try {
+		const hostname = new URL(
+			source,
+			globalThis.location?.href || "https://www.twitch.tv/",
+		).hostname.toLowerCase();
+		return (
+			hostname === "media-amazon.com" || hostname.endsWith(".media-amazon.com")
+		);
 	} catch {
 		return false;
 	}
 }
 
 function _isIndependentVideoAd(media) {
-	return (
-		_isIndependentVideoAdGuardEnabled() &&
-		media instanceof HTMLVideoElement &&
-		media.matches(_INDEPENDENT_VIDEO_AD_SELECTOR) &&
-		!_isPrimaryPlayerVideo(media)
-	);
+	if (
+		!_isIndependentVideoAdGuardEnabled() ||
+		!(media instanceof HTMLVideoElement) ||
+		!media.matches(_INDEPENDENT_VIDEO_AD_SELECTOR)
+	) {
+		return false;
+	}
+	const primaryMatch = _getPrimaryPlayerVideoMatch(media);
+	if (primaryMatch !== null) return !primaryMatch;
+	return _hasKnownIndependentVideoAdSource(media);
 }
 
 function _restoreIndependentVideoAdStyle(media, property, state) {
@@ -1606,9 +1629,9 @@ function _suppressIndependentVideoAd(media) {
 		media.style.setProperty("display", "none", "important");
 		media.style.setProperty("visibility", "hidden", "important");
 		media.style.setProperty("pointer-events", "none", "important");
-		media.defaultMuted = true;
-		media.muted = true;
-		media.volume = 0;
+		if (!media.defaultMuted) media.defaultMuted = true;
+		if (!media.muted) media.muted = true;
+		if (media.volume !== 0) media.volume = 0;
 		media.setAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE, "true");
 		return true;
 	} catch {
@@ -1662,6 +1685,10 @@ function _setIndependentVideoAdGuardEnabled(enabled) {
 	return didInstallStyle;
 }
 
+function _handleIndependentVideoAdMediaEvent(event) {
+	_suppressIndependentVideoAd(event.target);
+}
+
 function _hookIndependentVideoAdGuard() {
 	if (
 		typeof document === "undefined" ||
@@ -1684,13 +1711,13 @@ function _hookIndependentVideoAdGuard() {
 		);
 	}
 
-	document.addEventListener(
-		"play",
-		(event) => {
-			_suppressIndependentVideoAd(event.target);
-		},
-		true,
-	);
+	for (const eventName of ["play", "playing", "volumechange"]) {
+		document.addEventListener(
+			eventName,
+			_handleIndependentVideoAdMediaEvent,
+			true,
+		);
+	}
 
 	if (typeof MutationObserver === "function" && document.documentElement) {
 		const observer = new MutationObserver((records) => {
@@ -1713,7 +1740,7 @@ function _hookIndependentVideoAdGuard() {
 			childList: true,
 			subtree: true,
 			attributes: true,
-			attributeFilter: ["aria-label"],
+			attributeFilter: ["aria-label", "src"],
 		});
 	}
 
