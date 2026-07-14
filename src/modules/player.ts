@@ -1488,6 +1488,112 @@ function _ensurePlaybackMonitorsRunning(forceStart = false) {
 	return didStart;
 }
 
+const _INDEPENDENT_VIDEO_AD_SELECTOR =
+	'video[aria-label="Video Advertisement"]';
+const _INDEPENDENT_VIDEO_AD_STYLE_ID = "ttvab-independent-video-ad-style";
+
+function _ensureIndependentVideoAdStyle() {
+	if (typeof document === "undefined") return false;
+	if (document.getElementById(_INDEPENDENT_VIDEO_AD_STYLE_ID)) return true;
+	if (!document.head) return false;
+	const style = document.createElement("style");
+	style.id = _INDEPENDENT_VIDEO_AD_STYLE_ID;
+	style.textContent =
+		'video[aria-label="Video Advertisement"]{display:none!important;visibility:hidden!important;pointer-events:none!important}';
+	document.head.appendChild(style);
+	return true;
+}
+
+function _isIndependentVideoAd(media) {
+	return (
+		media instanceof HTMLVideoElement &&
+		media.matches(_INDEPENDENT_VIDEO_AD_SELECTOR)
+	);
+}
+
+function _suppressIndependentVideoAd(media) {
+	if (!_isIndependentVideoAd(media)) return false;
+	try {
+		media.style.setProperty("display", "none", "important");
+		media.style.setProperty("visibility", "hidden", "important");
+		media.style.setProperty("pointer-events", "none", "important");
+		media.defaultMuted = true;
+		media.muted = true;
+		media.volume = 0;
+		media.pause();
+		media.setAttribute("data-ttvab-independent-ad-suppressed", "true");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function _suppressIndependentVideoAdsInDocument(root: ParentNode = document) {
+	if (!root?.querySelectorAll) return 0;
+	let suppressedCount = 0;
+	for (const media of root.querySelectorAll(_INDEPENDENT_VIDEO_AD_SELECTOR)) {
+		if (_suppressIndependentVideoAd(media)) {
+			suppressedCount += 1;
+		}
+	}
+	return suppressedCount;
+}
+
+function _hookIndependentVideoAdGuard() {
+	if (
+		typeof document === "undefined" ||
+		typeof window === "undefined" ||
+		window.__TTVAB_INDEPENDENT_VIDEO_AD_GUARD__
+	) {
+		return;
+	}
+
+	if (!_ensureIndependentVideoAdStyle() && document.readyState === "loading") {
+		document.addEventListener(
+			"DOMContentLoaded",
+			() => {
+				_ensureIndependentVideoAdStyle();
+			},
+			{ once: true },
+		);
+	}
+
+	document.addEventListener(
+		"play",
+		(event) => {
+			_suppressIndependentVideoAd(event.target);
+		},
+		true,
+	);
+
+	if (typeof MutationObserver === "function" && document.documentElement) {
+		const observer = new MutationObserver((records) => {
+			for (const record of records) {
+				if (record.type === "attributes") {
+					_suppressIndependentVideoAd(record.target);
+					continue;
+				}
+				for (const node of record.addedNodes) {
+					if (node instanceof HTMLVideoElement) {
+						_suppressIndependentVideoAd(node);
+					} else if (node instanceof Element) {
+						_suppressIndependentVideoAdsInDocument(node);
+					}
+				}
+			}
+		});
+		observer.observe(document.documentElement, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeFilter: ["aria-label"],
+		});
+	}
+
+	_suppressIndependentVideoAdsInDocument();
+	window.__TTVAB_INDEPENDENT_VIDEO_AD_GUARD__ = true;
+}
+
 function _hookSecondaryPlayerHandoffDetection() {
 	if (
 		_PlaybackIntentState.secondaryPlayerLaunchMonitorInitialized ||
