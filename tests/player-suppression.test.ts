@@ -103,7 +103,10 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 
 	function makeVideo(ariaLabel: string | null) {
 		const video = document.createElement("video");
-		if (ariaLabel) video.setAttribute("aria-label", ariaLabel);
+		if (ariaLabel) {
+			video.setAttribute("aria-label", ariaLabel);
+			video.src = "https://m.media-amazon.com/independent-ad.mp4";
+		}
 		video.muted = false;
 		video.defaultMuted = false;
 		video.volume = 1;
@@ -169,6 +172,35 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(primary.video.muted).toBe(false);
 		expect(primary.video.volume).toBe(1);
 		expect(primary.pause).not.toHaveBeenCalled();
+	});
+
+	it("requires a known independent source while primary lookup is unresolved", () => {
+		const knownAd = makeVideo("Video Advertisement");
+		const unknownVideo = makeVideo(null);
+		unknownVideo.video.setAttribute("aria-label", "Video Advertisement");
+		unknownVideo.video.src = "blob:https://www.twitch.tv/primary-player";
+		g._getPlayerAndState = () => ({ player: null });
+
+		expect(suppress()()).toBe(1);
+		expect(knownAd.video.muted).toBe(true);
+		expect(unknownVideo.video.muted).toBe(false);
+		expect(unknownVideo.video.style.getPropertyValue("display")).toBe("");
+	});
+
+	it("re-silences a confirmed independent ad after a late unmute", () => {
+		const ad = makeVideo("Video Advertisement");
+		const handleMediaEvent = T<(event: { target: EventTarget | null }) => void>(
+			"_handleIndependentVideoAdMediaEvent",
+		);
+
+		expect(suppress()()).toBe(1);
+		ad.video.defaultMuted = false;
+		ad.video.muted = false;
+		ad.video.volume = 1;
+		handleMediaEvent({ target: ad.video });
+		expect(ad.video.defaultMuted).toBe(true);
+		expect(ad.video.muted).toBe(true);
+		expect(ad.video.volume).toBe(0);
 	});
 
 	it("restores suppressed ads when ad blocking is disabled", () => {
