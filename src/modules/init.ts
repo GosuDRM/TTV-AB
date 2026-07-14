@@ -75,8 +75,16 @@ function _initToggleListener() {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
 		const enabled = safeDetail.enabled;
-		if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) return;
+		if (__TTVAB_STATE__.IsAdStrippingEnabled === enabled) {
+			if (typeof _setIndependentVideoAdGuardEnabled === "function") {
+				_setIndependentVideoAdGuardEnabled(enabled);
+			}
+			return;
+		}
 		__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
+		if (typeof _setIndependentVideoAdGuardEnabled === "function") {
+			_setIndependentVideoAdGuardEnabled(enabled);
+		}
 		if (!enabled) {
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.CurrentAdMediaKey = null;

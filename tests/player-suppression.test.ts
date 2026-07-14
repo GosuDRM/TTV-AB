@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const g = globalThis as Record<string, unknown>;
+let originalGetPlayerAndState: unknown;
 
 function loadModule(modulePath: string) {
 	const js = readFileSync(resolve(__dirname, modulePath), "utf8")
@@ -19,15 +20,23 @@ beforeAll(() => {
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/player.js");
 	g._log = () => {};
+	originalGetPlayerAndState = g._getPlayerAndState;
 });
 
 beforeEach(() => {
+	const setIndependentVideoAdGuardEnabled =
+		g._setIndependentVideoAdGuardEnabled;
+	if (typeof setIndependentVideoAdGuardEnabled === "function") {
+		setIndependentVideoAdGuardEnabled(false);
+	}
 	g.__TTVAB_STATE__ = {
 		CurrentAdMediaKey: null,
 		CurrentAdChannel: null,
+		IsAdStrippingEnabled: true,
 		PageMediaKey: "live:testchannel",
 		PageChannel: "testchannel",
 	};
+	g._getPlayerAndState = originalGetPlayerAndState;
 	const state = g._AdAudioSuppressionState as {
 		suppressedMedia: Map<HTMLMediaElement, unknown>;
 		activeMediaKey: string | null;
@@ -83,7 +92,7 @@ describe("_ensureIndependentVideoAdStyle", () => {
 		expect(ensure()()).toBe(true);
 		const style = document.getElementById("ttvab-independent-video-ad-style");
 		expect(style?.textContent).toContain(
-			'video[aria-label="Video Advertisement"]',
+			'video[data-ttvab-independent-ad-suppressed="true"]',
 		);
 	});
 });
@@ -117,13 +126,70 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(ad.video.volume).toBe(0);
 		expect(ad.video.style.getPropertyValue("display")).toBe("none");
 		expect(ad.video.style.getPropertyValue("visibility")).toBe("hidden");
-		expect(ad.pause).toHaveBeenCalledOnce();
 		expect(ad.video.hasAttribute("data-ttvab-independent-ad-suppressed")).toBe(
 			true,
 		);
+		expect(ad.pause).not.toHaveBeenCalled();
 		expect(primary.video.muted).toBe(false);
 		expect(primary.video.volume).toBe(1);
 		expect(primary.pause).not.toHaveBeenCalled();
+	});
+
+	it("restores the original element state when Twitch reuses the video", () => {
+		const ad = makeVideo("Video Advertisement");
+		ad.video.style.setProperty("display", "inline-block");
+		ad.video.style.setProperty("visibility", "visible");
+		ad.video.style.setProperty("pointer-events", "auto");
+		ad.video.volume = 0.6;
+
+		expect(suppress()()).toBe(1);
+		ad.video.removeAttribute("aria-label");
+		expect(
+			T<(media: unknown) => boolean>("_suppressIndependentVideoAd")(ad.video),
+		).toBe(false);
+		expect(ad.video.style.getPropertyValue("display")).toBe("inline-block");
+		expect(ad.video.style.getPropertyValue("visibility")).toBe("visible");
+		expect(ad.video.style.getPropertyValue("pointer-events")).toBe("auto");
+		expect(ad.video.muted).toBe(false);
+		expect(ad.video.defaultMuted).toBe(false);
+		expect(ad.video.volume).toBe(0.6);
+		expect(ad.video.hasAttribute("data-ttvab-independent-ad-suppressed")).toBe(
+			false,
+		);
+	});
+
+	it("never suppresses the primary Twitch player", () => {
+		const primary = makeVideo("Video Advertisement");
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => primary.video },
+		});
+
+		expect(suppress()()).toBe(0);
+		expect(primary.video.style.getPropertyValue("display")).toBe("");
+		expect(primary.video.muted).toBe(false);
+		expect(primary.video.volume).toBe(1);
+		expect(primary.pause).not.toHaveBeenCalled();
+	});
+
+	it("restores suppressed ads when ad blocking is disabled", () => {
+		const ad = makeVideo("Video Advertisement");
+		const setEnabled = T<(enabled: boolean) => boolean>(
+			"_setIndependentVideoAdGuardEnabled",
+		);
+
+		expect(setEnabled(true)).toBe(true);
+		expect(ad.video.muted).toBe(true);
+		(
+			g.__TTVAB_STATE__ as { IsAdStrippingEnabled: boolean }
+		).IsAdStrippingEnabled = false;
+		expect(setEnabled(false)).toBe(true);
+		expect(
+			document.getElementById("ttvab-independent-video-ad-style"),
+		).toBeNull();
+		expect(ad.video.style.getPropertyValue("display")).toBe("");
+		expect(ad.video.muted).toBe(false);
+		expect(ad.video.defaultMuted).toBe(false);
+		expect(ad.video.volume).toBe(1);
 	});
 });
 
