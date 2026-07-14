@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.2] - 2026-07-14
+
+- Separate video-ad blocking now follows the Ad Blocking toggle and restores any hidden or muted video immediately when blocking is disabled ([#45](https://github.com/GosuDRM/TTV-AB/issues/45)).
+- The experimental guard now leaves the primary Twitch player untouched and safely restores videos that Twitch reuses after an ad.
+
 ## [12.0.1] - 2026-07-14
 
 - Experimental: blocks separate Twitch video ads shown beside the stream or in chat without interrupting the stream.
