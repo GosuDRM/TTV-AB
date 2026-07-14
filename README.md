@@ -71,7 +71,7 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 ## 🔔 What's New
 
 ### v12.0.3 - 2026-07-14
-- **Safer separate video-ad blocking.** Side and chat ads stay silent if Twitch tries to unmute them late, while startup races can no longer mistake an unresolved primary player for a separate ad.
+- **Side and chat ads stay silent without risking the stream.** Late Twitch volume changes are blocked, and player startup races can no longer cause the primary video to be mistaken for a separate ad.
 
 ### v12.0.2 - 2026-07-14
 - **Safer separate video-ad blocking.** The experimental guard now follows the Ad Blocking toggle, restores reused video elements, and cannot hide or mute the primary stream.
