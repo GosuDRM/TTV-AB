@@ -2,6 +2,10 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.1] - 2026-07-14
+
+- Experimental: blocks separate Twitch video ads shown beside the stream or in chat without interrupting the stream.
+
 ## [12.0.0] - 2026-07-09
 
 - Fixed streams freezing with audio still running after long ad breaks, most often noticed after switching tabs and coming back. The extension now detects when the video stops producing frames after a break and recovers it automatically with a quick pause and play, or a player reload if that is not enough.
