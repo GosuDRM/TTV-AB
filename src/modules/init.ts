@@ -286,6 +286,9 @@ function _init() {
 	_hookSpaNavigation();
 
 	_hookVisibilityState();
+	if (typeof _hookIndependentVideoAdGuard === "function") {
+		_hookIndependentVideoAdGuard();
+	}
 	if (typeof _hookSecondaryPlayerHandoffDetection === "function") {
 		_hookSecondaryPlayerHandoffDetection();
 	}

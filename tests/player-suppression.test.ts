@@ -72,6 +72,61 @@ function addSuppressed(connected: boolean) {
 	return media;
 }
 
+describe("_ensureIndependentVideoAdStyle", () => {
+	const ensure = () => T<() => boolean>("_ensureIndependentVideoAdStyle");
+
+	afterEach(() => {
+		document.getElementById("ttvab-independent-video-ad-style")?.remove();
+	});
+
+	it("installs the document-level visual block for independent video ads", () => {
+		expect(ensure()()).toBe(true);
+		const style = document.getElementById("ttvab-independent-video-ad-style");
+		expect(style?.textContent).toContain(
+			'video[aria-label="Video Advertisement"]',
+		);
+	});
+});
+
+describe("_suppressIndependentVideoAdsInDocument", () => {
+	const suppress = () =>
+		T<(root?: ParentNode) => number>("_suppressIndependentVideoAdsInDocument");
+
+	function makeVideo(ariaLabel: string | null) {
+		const video = document.createElement("video");
+		if (ariaLabel) video.setAttribute("aria-label", ariaLabel);
+		video.muted = false;
+		video.defaultMuted = false;
+		video.volume = 1;
+		const pause = vi.fn();
+		Object.defineProperty(video, "pause", {
+			value: pause,
+			configurable: true,
+		});
+		document.body.appendChild(video);
+		return { video, pause };
+	}
+
+	it("silences only independently injected videos Twitch labels as advertisements", () => {
+		const primary = makeVideo(null);
+		const ad = makeVideo("Video Advertisement");
+
+		expect(suppress()()).toBe(1);
+		expect(ad.video.muted).toBe(true);
+		expect(ad.video.defaultMuted).toBe(true);
+		expect(ad.video.volume).toBe(0);
+		expect(ad.video.style.getPropertyValue("display")).toBe("none");
+		expect(ad.video.style.getPropertyValue("visibility")).toBe("hidden");
+		expect(ad.pause).toHaveBeenCalledOnce();
+		expect(ad.video.hasAttribute("data-ttvab-independent-ad-suppressed")).toBe(
+			true,
+		);
+		expect(primary.video.muted).toBe(false);
+		expect(primary.video.volume).toBe(1);
+		expect(primary.pause).not.toHaveBeenCalled();
+	});
+});
+
 describe("_pruneDisconnectedSuppressedMedia", () => {
 	const prune = () => T<() => number>("_pruneDisconnectedSuppressedMedia");
 
