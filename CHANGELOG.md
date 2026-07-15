@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.5] - 2026-07-15
+
+- Generated debug logs now include the full markup for separate Amazon-hosted video ads, captured when the ad is blocked and again when the log file is created.
+- Log exports now say when no matching ad video remains on the page, making intermittent reports easier to diagnose.
+
 ## [12.0.4] - 2026-07-15
 
 - Separate video ads beside the player or chat now stay hidden and silent when Twitch changes their label or source after playback starts ([#45](https://github.com/GosuDRM/TTV-AB/issues/45)).
