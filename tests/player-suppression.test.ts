@@ -37,6 +37,13 @@ beforeEach(() => {
 		PageChannel: "testchannel",
 	};
 	g._getPlayerAndState = originalGetPlayerAndState;
+	const independentState = g._IndependentVideoAdSuppressionState as {
+		observer: MutationObserver | null;
+		suppressedMedia: Map<HTMLVideoElement, unknown>;
+	};
+	independentState.observer?.disconnect();
+	independentState.observer = null;
+	independentState.suppressedMedia.clear();
 	const state = g._AdAudioSuppressionState as {
 		suppressedMedia: Map<HTMLMediaElement, unknown>;
 		activeMediaKey: string | null;
@@ -138,7 +145,7 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(primary.pause).not.toHaveBeenCalled();
 	});
 
-	it("restores the original element state when Twitch reuses the video", () => {
+	it("keeps a known ad suppressed until Twitch replaces its source", () => {
 		const ad = makeVideo("Video Advertisement");
 		ad.video.style.setProperty("display", "inline-block");
 		ad.video.style.setProperty("visibility", "visible");
@@ -147,6 +154,14 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 
 		expect(suppress()()).toBe(1);
 		ad.video.removeAttribute("aria-label");
+		expect(
+			T<(media: unknown) => boolean>("_suppressIndependentVideoAd")(ad.video),
+		).toBe(true);
+		expect(ad.video.style.getPropertyValue("display")).toBe("none");
+		expect(ad.video.muted).toBe(true);
+		expect(ad.video.volume).toBe(0);
+
+		ad.video.src = "blob:https://www.twitch.tv/reused-player";
 		expect(
 			T<(media: unknown) => boolean>("_suppressIndependentVideoAd")(ad.video),
 		).toBe(false);
@@ -159,6 +174,27 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(ad.video.hasAttribute("data-ttvab-independent-ad-suppressed")).toBe(
 			false,
 		);
+	});
+
+	it("suppresses a known ad source without relying on an English label", () => {
+		const ad = makeVideo(null);
+		ad.video.setAttribute("aria-label", "Publicidad en video");
+		ad.video.src = "https://m.media-amazon.com/localized-ad.mp4";
+
+		expect(suppress()()).toBe(1);
+		expect(ad.video.style.getPropertyValue("display")).toBe("none");
+		expect(ad.video.muted).toBe(true);
+	});
+
+	it("detects a known ad source supplied through a child source element", () => {
+		const ad = makeVideo(null);
+		const source = document.createElement("source");
+		source.src = "https://m.media-amazon.com/source-ad.mp4";
+		ad.video.appendChild(source);
+
+		expect(suppress()()).toBe(1);
+		expect(ad.video.style.getPropertyValue("display")).toBe("none");
+		expect(ad.video.muted).toBe(true);
 	});
 
 	it("never suppresses the primary Twitch player", () => {
@@ -222,6 +258,50 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(ad.video.muted).toBe(false);
 		expect(ad.video.defaultMuted).toBe(false);
 		expect(ad.video.volume).toBe(1);
+	});
+});
+
+describe("_installIndependentVideoAdObserver", () => {
+	it("observes the document without requiring a document root", () => {
+		const nativeMutationObserver = g.MutationObserver;
+		const observe = vi.fn();
+		class TestMutationObserver {
+			observe = observe;
+			disconnect = vi.fn();
+		}
+		g.MutationObserver = TestMutationObserver;
+		try {
+			expect(T<() => boolean>("_installIndependentVideoAdObserver")()).toBe(
+				true,
+			);
+			expect(observe).toHaveBeenCalledWith(document, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeFilter: ["aria-label", "src"],
+			});
+		} finally {
+			g.MutationObserver = nativeMutationObserver;
+			(
+				g._IndependentVideoAdSuppressionState as {
+					observer: MutationObserver | null;
+				}
+			).observer = null;
+		}
+	});
+
+	it("checks a parent video when Twitch adds or changes a source element", () => {
+		const video = document.createElement("video");
+		const source = document.createElement("source");
+		source.src = "https://m.media-amazon.com/mutated-source-ad.mp4";
+		video.appendChild(source);
+		document.body.appendChild(video);
+
+		expect(
+			T<(node: Node) => number>("_suppressIndependentVideoAdsForNode")(source),
+		).toBe(1);
+		expect(video.style.getPropertyValue("display")).toBe("none");
+		expect(video.muted).toBe(true);
 	});
 });
 
