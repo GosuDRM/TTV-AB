@@ -2,6 +2,10 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.6] - 2026-07-16
+
+- Amazon-hosted side and chat ads now remain hidden and silent when Twitch temporarily reports their video element as the primary player ([#46](https://github.com/GosuDRM/TTV-AB/issues/46)).
+
 ## [12.0.5] - 2026-07-15
 
 - Generated debug logs now include the full markup for separate Amazon-hosted video ads, captured when the ad is blocked and again when the log file is created.
