@@ -37,6 +37,7 @@ beforeEach(() => {
 		PageChannel: "testchannel",
 	};
 	g._getPlayerAndState = originalGetPlayerAndState;
+	g._log = () => {};
 	const independentState = g._IndependentVideoAdSuppressionState as {
 		observer: MutationObserver | null;
 		suppressedMedia: Map<HTMLVideoElement, unknown>;
@@ -237,6 +238,43 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(ad.video.defaultMuted).toBe(true);
 		expect(ad.video.muted).toBe(true);
 		expect(ad.video.volume).toBe(0);
+	});
+
+	it("records the original ad element markup when suppression begins", () => {
+		const log = vi.fn();
+		g._log = log;
+		makeVideo("Video Advertisement");
+
+		expect(suppress()()).toBe(1);
+		expect(log).toHaveBeenCalledWith(
+			expect.stringContaining(
+				'<video aria-label="Video Advertisement" src="https://m.media-amazon.com/independent-ad.mp4"',
+			),
+			"info",
+		);
+		expect(
+			String(
+				log.mock.calls.find(([message]) =>
+					String(message).startsWith("Suppressed independent"),
+				)?.[0],
+			),
+		).not.toContain("data-ttvab-independent-ad-suppressed");
+	});
+
+	it("captures current ad markup for an on-demand log export", () => {
+		const log = vi.fn();
+		g._log = log;
+		const ad = makeVideo(null);
+		ad.video.setAttribute("aria-label", "Publicidad en video");
+		ad.video.src = "https://m.media-amazon.com/export-snapshot.mp4";
+
+		expect(T<() => number>("_captureIndependentVideoAdDiagnostics")()).toBe(1);
+		expect(log).toHaveBeenCalledWith(
+			expect.stringContaining(
+				'<video aria-label="Publicidad en video" src="https://m.media-amazon.com/export-snapshot.mp4"',
+			),
+			"info",
+		);
 	});
 
 	it("restores suppressed ads when ad blocking is disabled", () => {

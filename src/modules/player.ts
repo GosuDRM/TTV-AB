@@ -1493,6 +1493,7 @@ const _INDEPENDENT_VIDEO_AD_LABEL = "video advertisement";
 const _INDEPENDENT_VIDEO_AD_STYLE_ID = "ttvab-independent-video-ad-style";
 const _INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE =
 	"data-ttvab-independent-ad-suppressed";
+const _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT = 3500;
 const _IndependentVideoAdSuppressionState = {
 	observer: null as MutationObserver | null,
 	suppressedMedia: new Map<
@@ -1576,6 +1577,39 @@ function _hasIndependentVideoAdLabel(media) {
 	);
 }
 
+function _serializeIndependentVideoAdElement(media) {
+	if (!(media instanceof HTMLVideoElement)) return "";
+	const html = media.outerHTML;
+	if (html.length <= _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT) return html;
+	return `${html.slice(0, _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT)}...`;
+}
+
+function _isIndependentVideoAdDiagnosticCandidate(media) {
+	return (
+		media instanceof HTMLVideoElement &&
+		(_hasKnownIndependentVideoAdSource(media) ||
+			_hasIndependentVideoAdLabel(media) ||
+			media.hasAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE))
+	);
+}
+
+function _captureIndependentVideoAdDiagnostics() {
+	if (typeof document === "undefined") return 0;
+	let capturedCount = 0;
+	for (const media of document.querySelectorAll("video")) {
+		if (!_isIndependentVideoAdDiagnosticCandidate(media)) continue;
+		_log(
+			`Independent video advertisement log snapshot: ${_serializeIndependentVideoAdElement(media)}`,
+			"info",
+		);
+		capturedCount += 1;
+	}
+	if (capturedCount === 0) {
+		_log("Independent video advertisement log snapshot: none present", "info");
+	}
+	return capturedCount;
+}
+
 function _isIndependentVideoAd(media) {
 	if (
 		!_isIndependentVideoAdGuardEnabled() ||
@@ -1629,6 +1663,9 @@ function _suppressIndependentVideoAd(media) {
 	try {
 		const alreadySuppressed =
 			_IndependentVideoAdSuppressionState.suppressedMedia.has(media);
+		const elementDiagnostic = alreadySuppressed
+			? ""
+			: _serializeIndependentVideoAdElement(media);
 		if (!alreadySuppressed) {
 			_IndependentVideoAdSuppressionState.suppressedMedia.set(media, {
 				display: {
@@ -1656,7 +1693,10 @@ function _suppressIndependentVideoAd(media) {
 		if (media.volume !== 0) media.volume = 0;
 		media.setAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE, "true");
 		if (!alreadySuppressed) {
-			_log("Suppressed independent video advertisement", "info");
+			_log(
+				`Suppressed independent video advertisement: ${elementDiagnostic}`,
+				"info",
+			);
 		}
 		return true;
 	} catch {

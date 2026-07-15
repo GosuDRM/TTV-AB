@@ -64,6 +64,37 @@ describe("_hookSpaNavigation", () => {
 	});
 });
 
+describe("_collectPageLogEntries", () => {
+	let savedCapture: unknown;
+
+	beforeEach(() => {
+		savedCapture = g._captureIndependentVideoAdDiagnostics;
+		g.__TTVAB_LOGS__ = [{ t: 1, l: "info", m: "existing" }];
+	});
+
+	afterEach(() => {
+		g._captureIndependentVideoAdDiagnostics = savedCapture;
+		delete g.__TTVAB_LOGS__;
+	});
+
+	it("takes a live independent-video snapshot before exporting the buffer", () => {
+		g._captureIndependentVideoAdDiagnostics = () => {
+			(g.__TTVAB_LOGS__ as unknown[]).push({
+				t: 2,
+				l: "info",
+				m: "Independent video advertisement log snapshot: <video>",
+			});
+		};
+
+		const entries = T<() => Array<{ m: string }>>("_collectPageLogEntries")();
+
+		expect(entries.map((entry) => entry.m)).toEqual([
+			"existing",
+			"Independent video advertisement log snapshot: <video>",
+		]);
+	});
+});
+
 describe("deferred init after landing on a clip page", () => {
 	let savedInit: unknown;
 	let savedLog: unknown;
