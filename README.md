@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v12.0.6 - 2026-07-16
+- **Side and chat ads stay blocked after Twitch reclassifies them.** Confirmed Amazon-hosted ad videos remain hidden and silent without affecting the live stream.
+
 ### v12.0.5 - 2026-07-15
 - **Debug logs now capture separate video ads.** The exported file records the full ad video element when it is blocked and takes another live snapshot when you press Generate log file.
 
 ### v12.0.4 - 2026-07-15
 - **Separate video ads no longer slip back into view.** The guard now starts reliably at page load and keeps Amazon-hosted side and chat ads hidden through Twitch label and source changes.
-
-### v12.0.3 - 2026-07-14
-- **Side and chat ads stay silent without risking the stream.** Late Twitch volume changes are blocked, and player startup races can no longer cause the primary video to be mistaken for a separate ad.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
