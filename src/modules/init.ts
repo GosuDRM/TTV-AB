@@ -66,6 +66,16 @@ function _getTrustedBridgeMessageDetail(value) {
 	return value;
 }
 
+function _collectPageLogEntries() {
+	if (typeof _captureIndependentVideoAdDiagnostics === "function") {
+		_captureIndependentVideoAdDiagnostics();
+	}
+	const buffer = Array.isArray(globalThis.__TTVAB_LOGS__)
+		? (globalThis.__TTVAB_LOGS__ as PlainObject[])
+		: [];
+	return buffer.slice(-1000);
+}
+
 function _bindBridgePort() {
 	_bindBridgePortHandshake();
 }
@@ -211,12 +221,9 @@ function _initToggleListener() {
 		const requestId =
 			typeof safeDetail?.requestId === "string" ? safeDetail.requestId : null;
 		if (!requestId) return;
-		const buffer = Array.isArray(globalThis.__TTVAB_LOGS__)
-			? (globalThis.__TTVAB_LOGS__ as PlainObject[])
-			: [];
 		_sendBridgeMessage("ttvab-logs", {
 			requestId,
-			entries: buffer.slice(-1000),
+			entries: _collectPageLogEntries(),
 		});
 	});
 }
