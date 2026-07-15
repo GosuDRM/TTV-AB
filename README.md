@@ -5,7 +5,7 @@
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-12.0.4-yellow)
+![Chrome](https://img.shields.io/badge/chrome-12.0.5-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v12.0.5 - 2026-07-15
+- **Debug logs now capture separate video ads.** The exported file records the full ad video element when it is blocked and takes another live snapshot when you press Generate log file.
+
 ### v12.0.4 - 2026-07-15
 - **Separate video ads no longer slip back into view.** The guard now starts reliably at page load and keeps Amazon-hosted side and chat ads hidden through Twitch label and source changes.
 
 ### v12.0.3 - 2026-07-14
 - **Side and chat ads stay silent without risking the stream.** Late Twitch volume changes are blocked, and player startup races can no longer cause the primary video to be mistaken for a separate ad.
-
-### v12.0.2 - 2026-07-14
-- **Safer separate video-ad blocking.** The experimental guard now follows the Ad Blocking toggle, restores reused video elements, and cannot hide or mute the primary stream.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
