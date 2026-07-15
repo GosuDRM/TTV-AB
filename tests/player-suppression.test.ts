@@ -198,8 +198,37 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(ad.video.muted).toBe(true);
 	});
 
-	it("never suppresses the primary Twitch player", () => {
+	it("keeps a known Amazon ad suppressed when player lookup later claims it", () => {
+		const ad = makeVideo(null);
+		ad.video.setAttribute(
+			"aria-label",
+			"This advertisement promotes a streaming service",
+		);
+		ad.video.src = "https://m.media-amazon.com/player-side-ad.mp4";
+		g._getPlayerAndState = () => ({ player: null });
+
+		expect(suppress()()).toBe(1);
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => ad.video },
+		});
+		ad.video.defaultMuted = false;
+		ad.video.muted = false;
+		ad.video.volume = 1;
+		T<(event: { target: EventTarget | null }) => void>(
+			"_handleIndependentVideoAdMediaEvent",
+		)({ target: ad.video });
+
+		expect(ad.video.style.getPropertyValue("display")).toBe("none");
+		expect(ad.video.muted).toBe(true);
+		expect(ad.video.volume).toBe(0);
+		expect(ad.video.hasAttribute("data-ttvab-independent-ad-suppressed")).toBe(
+			true,
+		);
+	});
+
+	it("never suppresses a label-only primary Twitch player", () => {
 		const primary = makeVideo("Video Advertisement");
+		primary.video.src = "blob:https://www.twitch.tv/primary-player";
 		g._getPlayerAndState = () => ({
 			player: { getHTMLVideoElement: () => primary.video },
 		});

@@ -1617,9 +1617,9 @@ function _isIndependentVideoAd(media) {
 	) {
 		return false;
 	}
+	if (_hasKnownIndependentVideoAdSource(media)) return true;
 	const primaryMatch = _getPrimaryPlayerVideoMatch(media);
 	if (primaryMatch === true) return false;
-	if (_hasKnownIndependentVideoAdSource(media)) return true;
 	return primaryMatch === false && _hasIndependentVideoAdLabel(media);
 }
 
