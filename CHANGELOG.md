@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.4] - 2026-07-15
+
+- Separate video ads beside the player or chat now stay hidden and silent when Twitch changes their label or source after playback starts ([#45](https://github.com/GosuDRM/TTV-AB/issues/45)).
+- The separate video-ad guard now starts reliably at page load, closing an intermittent timing gap that could let those ads appear.
+
 ## [12.0.3] - 2026-07-14
 
 - Hardened separate video-ad blocking against late unmute attempts and player startup races, keeping side and chat ads silent without touching the primary stream ([#45](https://github.com/GosuDRM/TTV-AB/issues/45)).
