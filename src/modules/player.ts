@@ -1488,12 +1488,13 @@ function _ensurePlaybackMonitorsRunning(forceStart = false) {
 	return didStart;
 }
 
-const _INDEPENDENT_VIDEO_AD_SELECTOR =
-	'video[aria-label="Video Advertisement"]';
+const _INDEPENDENT_VIDEO_AD_SELECTOR = "video";
+const _INDEPENDENT_VIDEO_AD_LABEL = "video advertisement";
 const _INDEPENDENT_VIDEO_AD_STYLE_ID = "ttvab-independent-video-ad-style";
 const _INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE =
 	"data-ttvab-independent-ad-suppressed";
 const _IndependentVideoAdSuppressionState = {
+	observer: null as MutationObserver | null,
 	suppressedMedia: new Map<
 		HTMLVideoElement,
 		{
@@ -1542,32 +1543,50 @@ function _getPrimaryPlayerVideoMatch(media) {
 
 function _hasKnownIndependentVideoAdSource(media) {
 	if (!(media instanceof HTMLVideoElement)) return false;
-	const source = media.currentSrc || media.src;
-	if (!source) return false;
-	try {
-		const hostname = new URL(
-			source,
-			globalThis.location?.href || "https://www.twitch.tv/",
-		).hostname.toLowerCase();
-		return (
-			hostname === "media-amazon.com" || hostname.endsWith(".media-amazon.com")
-		);
-	} catch {
-		return false;
+	const sources = [
+		media.currentSrc,
+		media.getAttribute("src"),
+		...Array.from(media.querySelectorAll("source[src]"), (source) =>
+			source.getAttribute("src"),
+		),
+	];
+	for (const source of sources) {
+		if (!source) continue;
+		try {
+			const hostname = new URL(
+				source,
+				globalThis.location?.href || "https://www.twitch.tv/",
+			).hostname.toLowerCase();
+			if (
+				hostname === "media-amazon.com" ||
+				hostname.endsWith(".media-amazon.com")
+			) {
+				return true;
+			}
+		} catch {}
 	}
+	return false;
+}
+
+function _hasIndependentVideoAdLabel(media) {
+	if (!(media instanceof HTMLVideoElement)) return false;
+	return (
+		media.getAttribute("aria-label")?.trim().toLowerCase() ===
+		_INDEPENDENT_VIDEO_AD_LABEL
+	);
 }
 
 function _isIndependentVideoAd(media) {
 	if (
 		!_isIndependentVideoAdGuardEnabled() ||
-		!(media instanceof HTMLVideoElement) ||
-		!media.matches(_INDEPENDENT_VIDEO_AD_SELECTOR)
+		!(media instanceof HTMLVideoElement)
 	) {
 		return false;
 	}
 	const primaryMatch = _getPrimaryPlayerVideoMatch(media);
-	if (primaryMatch !== null) return !primaryMatch;
-	return _hasKnownIndependentVideoAdSource(media);
+	if (primaryMatch === true) return false;
+	if (_hasKnownIndependentVideoAdSource(media)) return true;
+	return primaryMatch === false && _hasIndependentVideoAdLabel(media);
 }
 
 function _restoreIndependentVideoAdStyle(media, property, state) {
@@ -1595,6 +1614,7 @@ function _restoreIndependentVideoAd(media) {
 		media.volume = state.volume;
 		media.removeAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE);
 		_IndependentVideoAdSuppressionState.suppressedMedia.delete(media);
+		_log("Restored independent video element after advertisement", "info");
 		return true;
 	} catch {
 		return false;
@@ -1607,7 +1627,9 @@ function _suppressIndependentVideoAd(media) {
 		return false;
 	}
 	try {
-		if (!_IndependentVideoAdSuppressionState.suppressedMedia.has(media)) {
+		const alreadySuppressed =
+			_IndependentVideoAdSuppressionState.suppressedMedia.has(media);
+		if (!alreadySuppressed) {
 			_IndependentVideoAdSuppressionState.suppressedMedia.set(media, {
 				display: {
 					value: media.style.getPropertyValue("display"),
@@ -1633,6 +1655,9 @@ function _suppressIndependentVideoAd(media) {
 		if (!media.muted) media.muted = true;
 		if (media.volume !== 0) media.volume = 0;
 		media.setAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE, "true");
+		if (!alreadySuppressed) {
+			_log("Suppressed independent video advertisement", "info");
+		}
 		return true;
 	} catch {
 		_restoreIndependentVideoAd(media);
@@ -1689,6 +1714,50 @@ function _handleIndependentVideoAdMediaEvent(event) {
 	_suppressIndependentVideoAd(event.target);
 }
 
+function _suppressIndependentVideoAdsForNode(node) {
+	if (node instanceof HTMLVideoElement) {
+		return _suppressIndependentVideoAd(node) ? 1 : 0;
+	}
+	if (!(node instanceof Element)) return 0;
+	let suppressedCount = 0;
+	const parentMedia = node.closest("video");
+	if (
+		parentMedia instanceof HTMLVideoElement &&
+		_suppressIndependentVideoAd(parentMedia)
+	) {
+		suppressedCount += 1;
+	}
+	return suppressedCount + _suppressIndependentVideoAdsInDocument(node);
+}
+
+function _handleIndependentVideoAdMutations(records) {
+	for (const record of records) {
+		if (record.type === "attributes") {
+			_suppressIndependentVideoAdsForNode(record.target);
+			continue;
+		}
+		for (const node of record.addedNodes) {
+			_suppressIndependentVideoAdsForNode(node);
+		}
+	}
+	_pruneIndependentVideoAdSuppressions();
+}
+
+function _installIndependentVideoAdObserver() {
+	if (_IndependentVideoAdSuppressionState.observer) return true;
+	if (typeof MutationObserver !== "function") return false;
+	const observer = new MutationObserver(_handleIndependentVideoAdMutations);
+	observer.observe(document, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeFilter: ["aria-label", "src"],
+	});
+	_IndependentVideoAdSuppressionState.observer = observer;
+	_log("Independent video advertisement observer installed", "debug");
+	return true;
+}
+
 function _hookIndependentVideoAdGuard() {
 	if (
 		typeof document === "undefined" ||
@@ -1718,31 +1787,7 @@ function _hookIndependentVideoAdGuard() {
 			true,
 		);
 	}
-
-	if (typeof MutationObserver === "function" && document.documentElement) {
-		const observer = new MutationObserver((records) => {
-			for (const record of records) {
-				if (record.type === "attributes") {
-					_suppressIndependentVideoAd(record.target);
-					continue;
-				}
-				for (const node of record.addedNodes) {
-					if (node instanceof HTMLVideoElement) {
-						_suppressIndependentVideoAd(node);
-					} else if (node instanceof Element) {
-						_suppressIndependentVideoAdsInDocument(node);
-					}
-				}
-			}
-			_pruneIndependentVideoAdSuppressions();
-		});
-		observer.observe(document.documentElement, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeFilter: ["aria-label", "src"],
-		});
-	}
+	_installIndependentVideoAdObserver();
 
 	window.__TTVAB_INDEPENDENT_VIDEO_AD_GUARD__ = true;
 }
