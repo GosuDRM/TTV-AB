@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.7] - 2026-07-16
+
+- Separate video ads removed by Twitch mid-ad can no longer keep playing sound invisibly in the background.
+- Abandoned ad video elements are now released after removal so long viewing sessions do not slowly use more memory.
+- Separate video ads that describe themselves as advertisements are now hidden even when they are not hosted on Amazon's ad servers, while normal Twitch stream playback can never be hidden by mistake.
+- Blocked separate video ads now count toward the blocked ads statistics shown in the popup.
+
 ## [12.0.6] - 2026-07-16
 
 - Amazon-hosted side and chat ads now remain hidden and silent when Twitch temporarily reports their video element as the primary player ([#46](https://github.com/GosuDRM/TTV-AB/issues/46)).
