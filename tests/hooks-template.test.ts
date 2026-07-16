@@ -43,6 +43,14 @@ describe("worker message handler hardening", () => {
 		);
 	});
 
+	it("keeps active pip worker events current across SPA navigation", () => {
+		expect(hooksJs()).toContain(
+			"_isActivePictureInPicturePlaybackContext(messageContext)",
+		);
+		expect(hooksJs()).toContain("preservedMediaKey");
+		expect(hooksJs()).toContain("case 'ReleasePlaybackContext'");
+	});
+
 	it("bootstrap does not serialize tracked workers", () => {
 		expect(hooksJs()).toMatch(
 			/JSON\.stringify\(\{\s*\.\.\._S,\s*workers:\s*\[\]\s*\}\)/,

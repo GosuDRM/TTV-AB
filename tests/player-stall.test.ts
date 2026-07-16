@@ -1047,6 +1047,93 @@ describe("_isNativeDocumentHidden (pip awareness)", () => {
 	});
 });
 
+describe("_isPlaybackRecoveryContextCurrent (pip navigation)", () => {
+	it("keeps scheduled recovery current for the active pip stream after navigation", () => {
+		const pip = document.createElement("video");
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+		};
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(pip, {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		window.history.replaceState(null, "", "/otherchannel");
+		try {
+			expect(
+				T<(channel: string, mediaKey: string) => boolean>(
+					"_isPlaybackRecoveryContextCurrent",
+				)("testchannel", "live:testchannel"),
+			).toBe(true);
+		} finally {
+			T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+			window.history.replaceState(null, "", "/testchannel");
+		}
+	});
+
+	it("keeps a manual pip pause authoritative after the page monitor moves on", () => {
+		const pip = document.createElement("video");
+		const previousResolveMediaKey = g._resolvePlayerMediaKey;
+		g._resolvePlayerMediaKey = (
+			channel: string | null,
+			mediaKey: string | null,
+		) =>
+			T<(value: unknown) => string | null>("_normalizeMediaKey")(mediaKey) ||
+			T<(type: string, channel: string | null) => string | null>(
+				"_buildMediaKey",
+			)("live", channel);
+		Object.defineProperty(pip, "ended", {
+			value: false,
+			configurable: true,
+		});
+		const intentState = g._PlaybackIntentState as Record<string, unknown>;
+		intentState.lastProgrammaticPauseAt = Date.now() - 10000;
+		intentState.lastProgrammaticPlayAt = Date.now() - 10000;
+		intentState.userPausedMediaKey = null;
+		intentState.suppressedPauseMediaKey = null;
+		intentState.suppressedPauseUntil = 0;
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "otherstreamer",
+			PageMediaKey: "live:otherstreamer",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			ShouldResumeAfterAd: false,
+			ShouldResumeAfterAdChannel: null,
+			ShouldResumeAfterAdMediaKey: null,
+		};
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(pip, {
+			MediaType: "live",
+			ChannelName: "pipstreamer",
+			MediaKey: "live:pipstreamer",
+		});
+		try {
+			(intentState.pictureInPicturePauseListener as () => void)();
+			expect(intentState.userPausedMediaKey).toBe("live:pipstreamer");
+			expect(
+				T<(channel: string, mediaKey: string) => boolean>(
+					"_hasUserPauseIntent",
+				)("pipstreamer", "live:pipstreamer"),
+			).toBe(true);
+			(intentState.pictureInPicturePlayListener as () => void)();
+			expect(
+				T<(channel: string, mediaKey: string) => boolean>(
+					"_hasUserPauseIntent",
+				)("pipstreamer", "live:pipstreamer"),
+			).toBe(false);
+		} finally {
+			T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+			g._resolvePlayerMediaKey = previousResolveMediaKey;
+		}
+	});
+});
+
 describe("_doPlayerTask (pip reload policy)", () => {
 	const task = () =>
 		T<
@@ -1074,6 +1161,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 	let pipElement: HTMLVideoElement | null = null;
 	let setSrcCalls: unknown[] = [];
 	let pauseCalls: number;
+	let resumeRetryCalls: unknown[][];
 
 	beforeEach(() => {
 		saved = {};
@@ -1085,6 +1173,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		});
 		setSrcCalls = [];
 		pauseCalls = 0;
+		resumeRetryCalls = [];
 		const player = {
 			getHTMLVideoElement: () => null,
 			play: () => undefined,
@@ -1104,7 +1193,9 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			pauseCalls++;
 			return true;
 		};
-		g._scheduleResumeRetries = () => {};
+		g._scheduleResumeRetries = (...args: unknown[]) => {
+			resumeRetryCalls.push(args);
+		};
 		g._schedulePlaybackRecoveryTimeout = () => null;
 		g._broadcastWorkers = () => {};
 		g._isPlaybackRecoveryContextCurrent = () => true;
@@ -1118,6 +1209,13 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			CurrentAdMediaKey: null,
 			CurrentAdChannel: null,
 		};
+		T<
+			(element: HTMLVideoElement, context?: Record<string, unknown>) => unknown
+		>("_setActivePictureInPicturePlaybackContext")(pipElement, {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
 	});
 
 	afterEach(() => {
@@ -1125,6 +1223,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			value: null,
 			configurable: true,
 		});
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		for (const name of stubbed) g[name] = saved[name];
 	});
 
@@ -1138,6 +1237,11 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(result).toBe(true);
 		expect(setSrcCalls).toEqual([]);
 		expect(pauseCalls).toBe(1);
+		expect(resumeRetryCalls).toContainEqual([
+			"testchannel",
+			"live:testchannel",
+			[50, 180, 500, 1100],
+		]);
 	});
 
 	it("still reloads immediately under pip for manual and worker recovery", () => {
@@ -1419,6 +1523,11 @@ describe("channel watch-time tracking", () => {
 			PageMediaType: "live",
 			PageChannel: "streamerone",
 		};
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		Object.defineProperty(document, "pictureInPictureElement", {
+			value: null,
+			configurable: true,
+		});
 		const state = watchState();
 		state.channel = null;
 		state.pendingMs = 0;
@@ -1430,6 +1539,11 @@ describe("channel watch-time tracking", () => {
 	afterEach(() => {
 		g._getPrimaryMediaElement = realGetPrimary;
 		g._sendBridgeMessage = realSendBridge;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		Object.defineProperty(document, "pictureInPictureElement", {
+			value: null,
+			configurable: true,
+		});
 		vi.restoreAllMocks();
 	});
 
@@ -1499,6 +1613,32 @@ describe("channel watch-time tracking", () => {
 		});
 		expect(watchState().channel).toBe("streamertwo");
 		expect(watchState().pendingMs).toBe(0);
+	});
+
+	it("credits hidden pip watch time to the pip channel after page navigation", () => {
+		const pipVideo = makeWatchVideo();
+		Object.defineProperty(document, "pictureInPictureElement", {
+			value: pipVideo,
+			configurable: true,
+		});
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(pipVideo, {
+			MediaType: "live",
+			ChannelName: "streamerone",
+			MediaKey: "live:streamerone",
+		});
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "streamertwo";
+		track()(true);
+		for (let i = 0; i < 16; i++) {
+			nowValue += 1000;
+			track()(true);
+		}
+
+		expect(bridgeMessages[0]).toEqual({
+			type: "ttvab-watch-time",
+			detail: { channel: "streamerone", seconds: 15 },
+		});
 	});
 });
 

@@ -188,6 +188,78 @@ describe("worker recovery lifecycle", () => {
 		expect(getContext(worker).MediaKey).toBe("live:newchannel");
 	});
 
+	it("keeps the pip worker on its original context when the page navigates", () => {
+		const rememberContext = T<
+			(
+				worker: Record<string, unknown>,
+				context: Record<string, unknown>,
+			) => Record<string, unknown>
+		>("_rememberWorkerPageContext");
+		const getContext = T<
+			(worker: Record<string, unknown>) => Record<string, unknown>
+		>("_getWorkerPlaybackContext");
+		const broadcast =
+			T<(message: Record<string, unknown>) => void>("_broadcastWorkers");
+		const pipWorker = { postMessage: vi.fn() };
+		const pageWorker = { postMessage: vi.fn() };
+		rememberContext(pipWorker, {
+			MediaType: "live",
+			ChannelName: "pipchannel",
+		});
+		rememberContext(pageWorker, {
+			MediaType: "live",
+			ChannelName: "oldpage",
+		});
+		(g._S as { workers: unknown[] }).workers = [pipWorker, pageWorker];
+
+		broadcast({
+			key: "UpdatePageContext",
+			value: {
+				mediaType: "live",
+				channelName: "newpage",
+				mediaKey: "live:newpage",
+				preservedMediaKey: "live:pipchannel",
+			},
+		});
+
+		expect(getContext(pipWorker).MediaKey).toBe("live:pipchannel");
+		expect(getContext(pageWorker).MediaKey).toBe("live:newpage");
+	});
+
+	it("sends ad-context updates only to workers for the matching stream", () => {
+		const rememberContext = T<
+			(
+				worker: Record<string, unknown>,
+				context: Record<string, unknown>,
+			) => Record<string, unknown>
+		>("_rememberWorkerPageContext");
+		const broadcast =
+			T<(message: Record<string, unknown>) => void>("_broadcastWorkers");
+		const pipWorker = { postMessage: vi.fn() };
+		const pageWorker = { postMessage: vi.fn() };
+		rememberContext(pipWorker, {
+			MediaType: "live",
+			ChannelName: "pipchannel",
+		});
+		rememberContext(pageWorker, {
+			MediaType: "live",
+			ChannelName: "pagechannel",
+		});
+		(g._S as { workers: unknown[] }).workers = [pipWorker, pageWorker];
+
+		broadcast({
+			key: "UpdateCurrentAdContext",
+			targetMediaKey: "live:pipchannel",
+			value: {
+				channelName: "pipchannel",
+				mediaKey: "live:pipchannel",
+			},
+		});
+
+		expect(pipWorker.postMessage).toHaveBeenCalledOnce();
+		expect(pageWorker.postMessage).not.toHaveBeenCalled();
+	});
+
 	it("clears missed heartbeat count when a worker replies", () => {
 		const markPong =
 			T<(worker: Record<string, unknown>, now?: number) => void>(
@@ -245,6 +317,41 @@ describe("worker recovery lifecycle", () => {
 				MediaKey: "live:otherchannel",
 			}),
 		).toBe(false);
+	});
+
+	it("keeps recovery-critical messages from a crashed pip worker after navigation", () => {
+		const canHandle = T<
+			(
+				data: Record<string, unknown>,
+				worker: Record<string, unknown>,
+				pageContext: Record<string, unknown>,
+				currentContext: Record<string, unknown>,
+			) => boolean
+		>("_canHandleCrashedWorkerMessage");
+		const previousPipMatch = g._isActivePictureInPicturePlaybackContext;
+		g._isActivePictureInPicturePlaybackContext = (
+			context: Record<string, unknown>,
+		) => context.MediaKey === "live:testchannel";
+		try {
+			expect(
+				canHandle(
+					{ key: "NativePlaybackRestored" },
+					{
+						__TTVABPageMediaType: "live",
+						__TTVABPageChannel: "testchannel",
+						__TTVABPageMediaKey: "live:testchannel",
+					},
+					{ MediaType: "live", ChannelName: "testchannel" },
+					{
+						MediaType: "live",
+						ChannelName: "otherchannel",
+						MediaKey: "live:otherchannel",
+					},
+				),
+			).toBe(true);
+		} finally {
+			g._isActivePictureInPicturePlaybackContext = previousPipMatch;
+		}
 	});
 
 	it("installs fallback and schedules recovery for an instant crash", () => {
@@ -341,6 +448,8 @@ describe("worker recovery lifecycle", () => {
 				reason: "worker-recovery",
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
 			});
 		} finally {
 			if (previousGetPlaybackContext === undefined) {
@@ -597,6 +706,8 @@ describe("worker watchdog visibility awareness", () => {
 				reason: "worker-recovery",
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
 			});
 		} finally {
 			if (previousGetPlaybackContext === undefined) {

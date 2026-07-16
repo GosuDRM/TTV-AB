@@ -24,6 +24,11 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+	const clearPictureInPictureContext =
+		g._clearActivePictureInPicturePlaybackContext;
+	if (typeof clearPictureInPictureContext === "function") {
+		clearPictureInPictureContext();
+	}
 	const setIndependentVideoAdGuardEnabled =
 		g._setIndependentVideoAdGuardEnabled;
 	if (typeof setIndependentVideoAdGuardEnabled === "function") {
@@ -40,10 +45,15 @@ beforeEach(() => {
 	g._log = () => {};
 	const independentState = g._IndependentVideoAdSuppressionState as {
 		observer: MutationObserver | null;
+		pruneTimeoutId: ReturnType<typeof setTimeout> | null;
 		suppressedMedia: Map<HTMLVideoElement, unknown>;
 	};
 	independentState.observer?.disconnect();
 	independentState.observer = null;
+	if (independentState.pruneTimeoutId) {
+		clearTimeout(independentState.pruneTimeoutId);
+	}
+	independentState.pruneTimeoutId = null;
 	independentState.suppressedMedia.clear();
 	const state = g._AdAudioSuppressionState as {
 		suppressedMedia: Map<HTMLMediaElement, unknown>;
@@ -466,6 +476,24 @@ describe("_pruneIndependentVideoAdSuppressions", () => {
 		expect(independentState().suppressedMedia.size).toBe(0);
 	});
 
+	it("pauses and releases the last detached ad when no later DOM mutation occurs", async () => {
+		vi.useFakeTimers();
+		try {
+			const ad = makeAd();
+			const graceMs = g._INDEPENDENT_VIDEO_AD_DETACHED_GRACE_MS as number;
+
+			expect(suppress()()).toBe(1);
+			ad.video.remove();
+			expect(prune()()).toBe(0);
+			await vi.advanceTimersByTimeAsync(graceMs);
+
+			expect(ad.pause).toHaveBeenCalledOnce();
+			expect(independentState().suppressedMedia.size).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("still restores an ad element Twitch reattaches and reuses within the grace window", () => {
 		const ad = makeAd();
 
@@ -765,6 +793,69 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 		);
 
 		expect(suppressionState().suppressedMedia.size).toBe(0);
+	});
+
+	it("preserves the active pip stream and scopes worker cleanup when the page navigates", () => {
+		navState("live:testchannel");
+		const streamInfo = { MediaKey: "live:testchannel" };
+		(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).StreamInfos as Record<
+				string,
+				unknown
+			>
+		)["live:testchannel"] = streamInfo;
+		const media = addSuppressed(true);
+		suppressionState().activeMediaKey = "live:testchannel";
+		const pip = document.createElement("video");
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(pip, {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		const postMessage = vi.fn();
+		(g._S as { workers: unknown[] }).workers = [
+			{
+				__TTVABPageMediaKey: "live:testchannel",
+				postMessage,
+			},
+		];
+
+		setContext()({ MediaType: "live", ChannelName: "otherchannel" });
+
+		expect(
+			(
+				(g.__TTVAB_STATE__ as Record<string, unknown>).StreamInfos as Record<
+					string,
+					unknown
+				>
+			)["live:testchannel"],
+		).toBe(streamInfo);
+		expect(media.muted).toBe(true);
+		expect(suppressionState().suppressedMedia.size).toBe(1);
+		const messages = postMessage.mock.calls.map(
+			([envelope]) =>
+				(envelope as { message: Record<string, unknown> }).message,
+		);
+		expect(messages).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					key: "UpdatePageContext",
+					value: expect.objectContaining({
+						mediaKey: "live:otherchannel",
+						preservedMediaKey: "live:testchannel",
+					}),
+				}),
+				expect.objectContaining({
+					key: "ResetPlaybackRecoveryState",
+					value: expect.objectContaining({
+						previousMediaKey: "live:testchannel",
+						preservedMediaKey: "live:testchannel",
+					}),
+				}),
+			]),
+		);
 	});
 });
 

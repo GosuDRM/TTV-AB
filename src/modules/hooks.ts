@@ -667,9 +667,11 @@ function _canHandleCrashedWorkerMessage(
 ) {
 	const key = typeof data?.key === "string" ? data.key : null;
 	if (!key || !_CRASHED_WORKER_RECOVERY_MESSAGE_KEYS.has(key)) return false;
-	return !_isPlaybackContextMismatch(
-		_getWorkerPlaybackContext(worker, pagePlaybackContext),
-		currentPageContext,
+	const workerContext = _getWorkerPlaybackContext(worker, pagePlaybackContext);
+	return (
+		!_isPlaybackContextMismatch(workerContext, currentPageContext) ||
+		(typeof _isActivePictureInPicturePlaybackContext === "function" &&
+			_isActivePictureInPicturePlaybackContext(workerContext))
 	);
 }
 
@@ -728,7 +730,11 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	const runRecovery = () => {
 		if (worker.__TTVABIntentionallyTerminated) return;
 		const currentContext = _getPlaybackContextFromUrl(window.location.href);
-		if (_isPlaybackContextMismatch(recoveryContext, currentContext)) {
+		if (
+			_isPlaybackContextMismatch(recoveryContext, currentContext) &&
+			(typeof _isActivePictureInPicturePlaybackContext !== "function" ||
+				!_isActivePictureInPicturePlaybackContext(recoveryContext))
+		) {
 			_log("Skipping stale worker recovery after navigation", "info");
 			return;
 		}
@@ -779,6 +785,8 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				reason: "worker-recovery",
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
+				channel: recoveryContext.ChannelName,
+				mediaKey: recoveryContext.MediaKey,
 			});
 			_log("Player reloaded to recover crashed worker", "success");
 		} catch (recoveryErr) {
@@ -1008,6 +1016,18 @@ function _hookWorker() {
 				const pagePlaybackContext = _syncPagePlaybackContext({
 					broadcast: false,
 				});
+				const seedCurrentAdContext =
+					pagePlaybackContext.MediaKey &&
+					_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+						pagePlaybackContext.MediaKey;
+				const seedLastAdEndContext =
+					pagePlaybackContext.MediaKey &&
+					_normalizeMediaKey(__TTVAB_STATE__.LastAdEndedMediaKey) ===
+						pagePlaybackContext.MediaKey;
+				const seedPinnedBackupContext =
+					pagePlaybackContext.MediaKey &&
+					_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey) ===
+						pagePlaybackContext.MediaKey;
 
 				const originalWorkerLoadCode =
 					opts?.type === "module"
@@ -1142,14 +1162,14 @@ function _hookWorker() {
                 __TTVAB_STATE__.ClientSession = ${JSON.stringify(__TTVAB_STATE__.ClientSession)};
                 __TTVAB_STATE__.PlaybackAccessTokenHash = ${JSON.stringify(__TTVAB_STATE__.PlaybackAccessTokenHash)};
                 __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = ${JSON.stringify(__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType)};
-                __TTVAB_STATE__.CurrentAdChannel = ${JSON.stringify(__TTVAB_STATE__.CurrentAdChannel)};
-                __TTVAB_STATE__.CurrentAdMediaKey = ${JSON.stringify(__TTVAB_STATE__.CurrentAdMediaKey)};
-                __TTVAB_STATE__.LastAdEndedAt = ${JSON.stringify(__TTVAB_STATE__.LastAdEndedAt)};
-                __TTVAB_STATE__.LastAdEndedChannel = ${JSON.stringify(__TTVAB_STATE__.LastAdEndedChannel)};
-                __TTVAB_STATE__.LastAdEndedMediaKey = ${JSON.stringify(__TTVAB_STATE__.LastAdEndedMediaKey)};
-                __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerType)};
-                __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerChannel)};
-                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = ${JSON.stringify(__TTVAB_STATE__.PinnedBackupPlayerMediaKey)};
+                __TTVAB_STATE__.CurrentAdChannel = ${JSON.stringify(seedCurrentAdContext ? __TTVAB_STATE__.CurrentAdChannel : null)};
+                __TTVAB_STATE__.CurrentAdMediaKey = ${JSON.stringify(seedCurrentAdContext ? __TTVAB_STATE__.CurrentAdMediaKey : null)};
+                __TTVAB_STATE__.LastAdEndedAt = ${JSON.stringify(seedLastAdEndContext ? __TTVAB_STATE__.LastAdEndedAt : 0)};
+                __TTVAB_STATE__.LastAdEndedChannel = ${JSON.stringify(seedLastAdEndContext ? __TTVAB_STATE__.LastAdEndedChannel : null)};
+                __TTVAB_STATE__.LastAdEndedMediaKey = ${JSON.stringify(seedLastAdEndContext ? __TTVAB_STATE__.LastAdEndedMediaKey : null)};
+                __TTVAB_STATE__.PinnedBackupPlayerType = ${JSON.stringify(seedPinnedBackupContext ? __TTVAB_STATE__.PinnedBackupPlayerType : null)};
+                __TTVAB_STATE__.PinnedBackupPlayerChannel = ${JSON.stringify(seedPinnedBackupContext ? __TTVAB_STATE__.PinnedBackupPlayerChannel : null)};
+                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = ${JSON.stringify(seedPinnedBackupContext ? __TTVAB_STATE__.PinnedBackupPlayerMediaKey : null)};
                 __TTVAB_STATE__.IsAdStrippingEnabled = ${JSON.stringify(__TTVAB_STATE__.IsAdStrippingEnabled)};
                 __TTVAB_STATE__.DisableAdSpoofing = ${JSON.stringify(__TTVAB_STATE__.DisableAdSpoofing)};
                 __TTVAB_STATE__.DisableAutoplayBackup = ${JSON.stringify(__TTVAB_STATE__.DisableAutoplayBackup)};
@@ -1183,27 +1203,30 @@ function _hookWorker() {
                         case 'UpdatePageContext':
                             {
                                 const nextPageContext = _normalizePlaybackContext(data.value);
-                                __TTVAB_STATE__.PageMediaType = nextPageContext.MediaType;
-                                __TTVAB_STATE__.PageChannel = nextPageContext.ChannelName;
-                                __TTVAB_STATE__.PageVodID = nextPageContext.VodID;
-                                __TTVAB_STATE__.PageMediaKey = nextPageContext.MediaKey;
-                                const pendingReloadMediaKey = _normalizeMediaKey(
-                                    __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
-                                );
-                                const pendingReloadChannel = _normalizeChannelName(
-                                    __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel,
-                                );
-                                if (
-                                    (pendingReloadMediaKey &&
-                                        pendingReloadMediaKey !== nextPageContext.MediaKey) ||
-                                    (!pendingReloadMediaKey &&
-                                        pendingReloadChannel &&
-                                        pendingReloadChannel !== nextPageContext.ChannelName)
-                                ) {
-                                    __TTVAB_STATE__.HasTriggeredPlayerReload = false;
-                                    __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
-                                    __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
-                                    __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+                                const preservedMediaKey = _normalizeMediaKey(data.value?.preservedMediaKey);
+                                if (!preservedMediaKey || __TTVAB_STATE__.PageMediaKey !== preservedMediaKey) {
+                                    __TTVAB_STATE__.PageMediaType = nextPageContext.MediaType;
+                                    __TTVAB_STATE__.PageChannel = nextPageContext.ChannelName;
+                                    __TTVAB_STATE__.PageVodID = nextPageContext.VodID;
+                                    __TTVAB_STATE__.PageMediaKey = nextPageContext.MediaKey;
+                                    const pendingReloadMediaKey = _normalizeMediaKey(
+                                        __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
+                                    );
+                                    const pendingReloadChannel = _normalizeChannelName(
+                                        __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel,
+                                    );
+                                    if (
+                                        (pendingReloadMediaKey &&
+                                            pendingReloadMediaKey !== nextPageContext.MediaKey) ||
+                                        (!pendingReloadMediaKey &&
+                                            pendingReloadChannel &&
+                                            pendingReloadChannel !== nextPageContext.ChannelName)
+                                    ) {
+                                        __TTVAB_STATE__.HasTriggeredPlayerReload = false;
+                                        __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
+                                        __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
+                                        __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+                                    }
                                 }
                             }
                             break;
@@ -1237,35 +1260,72 @@ function _hookWorker() {
                             __TTVAB_STATE__.BackupSearchForceRefreshAt = Number(data.value) || 0;
                             break;
                         case 'ResetPlaybackRecoveryState':
-                            __TTVAB_STATE__.HasTriggeredPlayerReload = false;
-                            __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
-                            __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
-                            __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
-                            __TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
-                            __TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
-                            __TTVAB_STATE__.ShouldResumeAfterAd = false;
-                            __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
-                            __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
-                            __TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
-                            if (data.value?.clearAdContext) {
-                                __TTVAB_STATE__.CurrentAdChannel = null;
-                                __TTVAB_STATE__.CurrentAdMediaKey = null;
-                                __TTVAB_STATE__.PinnedBackupPlayerType = null;
-                                __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
-                                __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-                                __TTVAB_STATE__.LastAdEndedAt = 0;
-                                __TTVAB_STATE__.LastAdEndedChannel = null;
-                                __TTVAB_STATE__.LastAdEndedMediaKey = null;
-                            }
-                            const prevMediaKey = data.value?.previousMediaKey || null;
-                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
-                                delete __TTVAB_STATE__.StreamInfos[prevMediaKey];
-                            }
-                            if (prevMediaKey && typeof __TTVAB_STATE__.StreamInfosByUrl === "object") {
-                                for (const u in __TTVAB_STATE__.StreamInfosByUrl) {
-                                    if (__TTVAB_STATE__.StreamInfosByUrl[u]?.MediaKey === prevMediaKey) {
-                                        delete __TTVAB_STATE__.StreamInfosByUrl[u];
+                            {
+                                const preservedMediaKey = _normalizeMediaKey(data.value?.preservedMediaKey);
+                                const isPreservedContext = preservedMediaKey && __TTVAB_STATE__.PageMediaKey === preservedMediaKey;
+                                if (!isPreservedContext) {
+                                    __TTVAB_STATE__.HasTriggeredPlayerReload = false;
+                                    __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
+                                    __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
+                                    __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+                                    __TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+                                    __TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+                                    __TTVAB_STATE__.ShouldResumeAfterAd = false;
+                                    __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
+                                    __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+                                    __TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
+                                    if (data.value?.clearAdContext) {
+                                        __TTVAB_STATE__.CurrentAdChannel = null;
+                                        __TTVAB_STATE__.CurrentAdMediaKey = null;
+                                        __TTVAB_STATE__.PinnedBackupPlayerType = null;
+                                        __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+                                        __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+                                        __TTVAB_STATE__.LastAdEndedAt = 0;
+                                        __TTVAB_STATE__.LastAdEndedChannel = null;
+                                        __TTVAB_STATE__.LastAdEndedMediaKey = null;
                                     }
+                                }
+                                const prevMediaKey = data.value?.previousMediaKey || null;
+                                if (prevMediaKey && prevMediaKey !== preservedMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
+                                    delete __TTVAB_STATE__.StreamInfos[prevMediaKey];
+                                }
+                                if (prevMediaKey && prevMediaKey !== preservedMediaKey && typeof __TTVAB_STATE__.StreamInfosByUrl === "object") {
+                                    for (const u in __TTVAB_STATE__.StreamInfosByUrl) {
+                                        if (__TTVAB_STATE__.StreamInfosByUrl[u]?.MediaKey === prevMediaKey) {
+                                            delete __TTVAB_STATE__.StreamInfosByUrl[u];
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        case 'ReleasePlaybackContext':
+                            {
+                                const releasedContext = _normalizePlaybackContext(data.value);
+                                const releasedMediaKey = releasedContext.MediaKey;
+                                if (releasedMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
+                                    delete __TTVAB_STATE__.StreamInfos[releasedMediaKey];
+                                }
+                                if (releasedMediaKey && typeof __TTVAB_STATE__.StreamInfosByUrl === "object") {
+                                    for (const u in __TTVAB_STATE__.StreamInfosByUrl) {
+                                        if (__TTVAB_STATE__.StreamInfosByUrl[u]?.MediaKey === releasedMediaKey) {
+                                            delete __TTVAB_STATE__.StreamInfosByUrl[u];
+                                        }
+                                    }
+                                }
+                                if (__TTVAB_STATE__.PageMediaKey === releasedMediaKey) {
+                                    __TTVAB_STATE__.PageMediaType = null;
+                                    __TTVAB_STATE__.PageChannel = null;
+                                    __TTVAB_STATE__.PageVodID = null;
+                                    __TTVAB_STATE__.PageMediaKey = null;
+                                    __TTVAB_STATE__.CurrentAdChannel = null;
+                                    __TTVAB_STATE__.CurrentAdMediaKey = null;
+                                    __TTVAB_STATE__.PinnedBackupPlayerType = null;
+                                    __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+                                    __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+                                    __TTVAB_STATE__.ShouldResumeAfterAd = false;
+                                    __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
+                                    __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+                                    __TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
                                 }
                             }
                             break;
@@ -1383,8 +1443,15 @@ function _hookWorker() {
 					return false;
 				};
 				const isStalePlaybackEvent = (message) => {
+					const messageContext = normalizeMessagePlaybackContext(message);
+					if (
+						typeof _isActivePictureInPicturePlaybackContext === "function" &&
+						_isActivePictureInPicturePlaybackContext(messageContext)
+					) {
+						return false;
+					}
 					return isPlaybackContextMismatch(
-						normalizeMessagePlaybackContext(message),
+						messageContext,
 						getCurrentPageContext(),
 					);
 				};
@@ -1502,8 +1569,10 @@ function _hookWorker() {
 									delta: Number.isFinite(data.delta as number)
 										? Math.max(1, Math.trunc(data.delta as number))
 										: 1,
-									channel: data.channel || null,
-									mediaKey: data.mediaKey || null,
+									channel:
+										typeof data.channel === "string" ? data.channel : null,
+									mediaKey:
+										typeof data.mediaKey === "string" ? data.mediaKey : null,
 									pageChannel: data.pageChannel || null,
 									pageMediaKey: data.pageMediaKey || null,
 								};
@@ -1563,8 +1632,11 @@ function _hookWorker() {
 										now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
 											__TTVAB_STATE__.AdCycleStaleMs;
 								if (shouldStartNewCycle) {
-									if (typeof _clearPlaybackRecoveryTimeouts === "function") {
-										_clearPlaybackRecoveryTimeouts();
+									if (
+										typeof _clearPlaybackRecoveryTimeoutsForContext ===
+										"function"
+									) {
+										_clearPlaybackRecoveryTimeoutsForContext(mediaKey);
 									}
 									__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 									__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
@@ -1591,6 +1663,7 @@ function _hookWorker() {
 							}
 							_broadcastWorkers({
 								key: "UpdateCurrentAdContext",
+								targetMediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
 								value: {
 									channelName: __TTVAB_STATE__.CurrentAdChannel,
 									mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
@@ -1694,6 +1767,7 @@ function _hookWorker() {
 							}
 							_broadcastWorkers({
 								key: "UpdatePinnedBackupPlayerContext",
+								targetMediaKey: nextPinnedContext.MediaKey,
 								value: {
 									type: __TTVAB_STATE__.PinnedBackupPlayerType,
 									channelName: __TTVAB_STATE__.PinnedBackupPlayerChannel,
@@ -1726,24 +1800,40 @@ function _hookWorker() {
 								__TTVAB_STATE__.LastAdEndedAt = endedAt;
 								__TTVAB_STATE__.LastAdEndedChannel = endedContext.ChannelName;
 								__TTVAB_STATE__.LastAdEndedMediaKey = endedContext.MediaKey;
-								__TTVAB_STATE__.CurrentAdChannel = null;
-								__TTVAB_STATE__.CurrentAdMediaKey = null;
-								__TTVAB_STATE__.PinnedBackupPlayerType = null;
-								__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
-								__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-								if (typeof _clearPlaybackRecoveryTimeouts === "function") {
-									_clearPlaybackRecoveryTimeouts();
+								if (
+									_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+									mediaKey
+								) {
+									__TTVAB_STATE__.CurrentAdChannel = null;
+									__TTVAB_STATE__.CurrentAdMediaKey = null;
+								}
+								if (
+									_normalizeMediaKey(
+										__TTVAB_STATE__.PinnedBackupPlayerMediaKey,
+									) === mediaKey
+								) {
+									__TTVAB_STATE__.PinnedBackupPlayerType = null;
+									__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+									__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+								}
+								if (
+									typeof _clearPlaybackRecoveryTimeoutsForContext === "function"
+								) {
+									_clearPlaybackRecoveryTimeoutsForContext(mediaKey);
 								}
 								_broadcastWorkers({
 									key: "UpdateCurrentAdContext",
+									targetMediaKey: mediaKey,
 									value: null,
 								});
 								_broadcastWorkers({
 									key: "UpdatePinnedBackupPlayerContext",
+									targetMediaKey: mediaKey,
 									value: null,
 								});
 								_broadcastWorkers({
 									key: "UpdateLastAdEndContext",
+									targetMediaKey: mediaKey,
 									value: {
 										mediaType: endedContext.MediaType,
 										channelName: endedContext.ChannelName,
@@ -1799,10 +1889,14 @@ function _hookWorker() {
 											reason: "post-ad-native-restore",
 											refreshAccessToken: true,
 											newMediaPlayerInstance: true,
+											channel,
+											mediaKey,
 										});
 									} else {
 										_doPlayerTask(true, false, {
 											reason: "post-ad-native-restore",
+											channel,
+											mediaKey,
 										});
 									}
 								}
@@ -1819,7 +1913,13 @@ function _hookWorker() {
 							}
 							_log("Resuming player", "info");
 							if (typeof _doPlayerTask === "function") {
-								_doPlayerTask(true, false);
+								_doPlayerTask(true, false, {
+									reason: "ad-recovery",
+									channel:
+										typeof data.channel === "string" ? data.channel : null,
+									mediaKey:
+										typeof data.mediaKey === "string" ? data.mediaKey : null,
+								});
 							}
 							break;
 						case "ReloadPlayer":
@@ -1831,8 +1931,10 @@ function _hookWorker() {
 								break;
 							}
 							_log("Reloading player", "info");
-							if (typeof _clearPlaybackRecoveryTimeouts === "function") {
-								_clearPlaybackRecoveryTimeouts();
+							if (
+								typeof _clearPlaybackRecoveryTimeoutsForContext === "function"
+							) {
+								_clearPlaybackRecoveryTimeoutsForContext(data.mediaKey || null);
 							}
 							if (typeof _clearAdResumeIntent === "function") {
 								_clearAdResumeIntent();
@@ -1846,6 +1948,10 @@ function _hookWorker() {
 									reason: reloadReason,
 									refreshAccessToken: data.refreshAccessToken !== false,
 									newMediaPlayerInstance: data.newMediaPlayerInstance !== false,
+									channel:
+										typeof data.channel === "string" ? data.channel : null,
+									mediaKey:
+										typeof data.mediaKey === "string" ? data.mediaKey : null,
 								});
 							}
 							break;
@@ -1906,16 +2012,26 @@ function _hookWorker() {
 					_postWorkerBridgeMessage(this, {
 						key: "UpdateCurrentAdContext",
 						value: {
-							channelName: __TTVAB_STATE__.CurrentAdChannel,
-							mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
+							channelName: seedCurrentAdContext
+								? __TTVAB_STATE__.CurrentAdChannel
+								: null,
+							mediaKey: seedCurrentAdContext
+								? __TTVAB_STATE__.CurrentAdMediaKey
+								: null,
 						},
 					});
 					_postWorkerBridgeMessage(this, {
 						key: "UpdatePinnedBackupPlayerContext",
 						value: {
-							type: __TTVAB_STATE__.PinnedBackupPlayerType,
-							channelName: __TTVAB_STATE__.PinnedBackupPlayerChannel,
-							mediaKey: __TTVAB_STATE__.PinnedBackupPlayerMediaKey,
+							type: seedPinnedBackupContext
+								? __TTVAB_STATE__.PinnedBackupPlayerType
+								: null,
+							channelName: seedPinnedBackupContext
+								? __TTVAB_STATE__.PinnedBackupPlayerChannel
+								: null,
+							mediaKey: seedPinnedBackupContext
+								? __TTVAB_STATE__.PinnedBackupPlayerMediaKey
+								: null,
 						},
 					});
 				} catch {}
