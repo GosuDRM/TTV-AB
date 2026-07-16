@@ -1490,10 +1490,12 @@ function _ensurePlaybackMonitorsRunning(forceStart = false) {
 
 const _INDEPENDENT_VIDEO_AD_SELECTOR = "video";
 const _INDEPENDENT_VIDEO_AD_LABEL = "video advertisement";
+const _INDEPENDENT_VIDEO_AD_LABEL_PREFIX = "this advertisement";
 const _INDEPENDENT_VIDEO_AD_STYLE_ID = "ttvab-independent-video-ad-style";
 const _INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE =
 	"data-ttvab-independent-ad-suppressed";
 const _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT = 3500;
+const _INDEPENDENT_VIDEO_AD_DETACHED_GRACE_MS = 10000;
 const _IndependentVideoAdSuppressionState = {
 	observer: null as MutationObserver | null,
 	suppressedMedia: new Map<
@@ -1505,6 +1507,7 @@ const _IndependentVideoAdSuppressionState = {
 			defaultMuted: boolean;
 			muted: boolean;
 			volume: number;
+			detachedAt: number | null;
 		}
 	>(),
 };
@@ -1571,10 +1574,18 @@ function _hasKnownIndependentVideoAdSource(media) {
 
 function _hasIndependentVideoAdLabel(media) {
 	if (!(media instanceof HTMLVideoElement)) return false;
+	const label = media.getAttribute("aria-label")?.trim().toLowerCase();
+	if (!label) return false;
 	return (
-		media.getAttribute("aria-label")?.trim().toLowerCase() ===
-		_INDEPENDENT_VIDEO_AD_LABEL
+		label === _INDEPENDENT_VIDEO_AD_LABEL ||
+		label.startsWith(_INDEPENDENT_VIDEO_AD_LABEL_PREFIX)
 	);
+}
+
+function _hasBlobMediaSource(media) {
+	if (!(media instanceof HTMLVideoElement)) return false;
+	const source = media.currentSrc || media.getAttribute("src") || "";
+	return source.startsWith("blob:");
 }
 
 function _serializeIndependentVideoAdElement(media) {
@@ -1620,7 +1631,11 @@ function _isIndependentVideoAd(media) {
 	if (_hasKnownIndependentVideoAdSource(media)) return true;
 	const primaryMatch = _getPrimaryPlayerVideoMatch(media);
 	if (primaryMatch === true) return false;
-	return primaryMatch === false && _hasIndependentVideoAdLabel(media);
+	return (
+		primaryMatch === false &&
+		!_hasBlobMediaSource(media) &&
+		_hasIndependentVideoAdLabel(media)
+	);
 }
 
 function _restoreIndependentVideoAdStyle(media, property, state) {
@@ -1683,8 +1698,12 @@ function _suppressIndependentVideoAd(media) {
 				defaultMuted: media.defaultMuted,
 				muted: media.muted,
 				volume: media.volume,
+				detachedAt: null,
 			});
 		}
+		const isNewSuppression =
+			!alreadySuppressed &&
+			!media.hasAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE);
 		media.style.setProperty("display", "none", "important");
 		media.style.setProperty("visibility", "hidden", "important");
 		media.style.setProperty("pointer-events", "none", "important");
@@ -1692,6 +1711,9 @@ function _suppressIndependentVideoAd(media) {
 		if (!media.muted) media.muted = true;
 		if (media.volume !== 0) media.volume = 0;
 		media.setAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE, "true");
+		if (isNewSuppression && typeof _incrementAdsBlocked === "function") {
+			_incrementAdsBlocked(__TTVAB_STATE__?.PageChannel || null);
+		}
 		if (!alreadySuppressed) {
 			_log(
 				`Suppressed independent video advertisement: ${elementDiagnostic}`,
@@ -1721,21 +1743,40 @@ function _restoreIndependentVideoAds() {
 	for (const media of [
 		..._IndependentVideoAdSuppressionState.suppressedMedia.keys(),
 	]) {
+		if (!media.isConnected) {
+			try {
+				media.pause();
+			} catch {}
+		}
 		if (_restoreIndependentVideoAd(media)) restoredCount += 1;
 	}
 	return restoredCount;
 }
 
 function _pruneIndependentVideoAdSuppressions() {
-	let restoredCount = 0;
-	for (const media of [
-		..._IndependentVideoAdSuppressionState.suppressedMedia.keys(),
+	let prunedCount = 0;
+	const now = Date.now();
+	for (const [media, state] of [
+		..._IndependentVideoAdSuppressionState.suppressedMedia.entries(),
 	]) {
-		if (!media.isConnected && _restoreIndependentVideoAd(media)) {
-			restoredCount += 1;
+		if (media.isConnected) {
+			state.detachedAt = null;
+			continue;
 		}
+		if (typeof state.detachedAt !== "number") {
+			state.detachedAt = now;
+			continue;
+		}
+		if (now - state.detachedAt < _INDEPENDENT_VIDEO_AD_DETACHED_GRACE_MS) {
+			continue;
+		}
+		try {
+			media.pause();
+		} catch {}
+		_IndependentVideoAdSuppressionState.suppressedMedia.delete(media);
+		prunedCount += 1;
 	}
-	return restoredCount;
+	return prunedCount;
 }
 
 function _setIndependentVideoAdGuardEnabled(enabled) {

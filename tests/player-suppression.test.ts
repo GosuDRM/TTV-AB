@@ -326,6 +326,167 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(ad.video.defaultMuted).toBe(false);
 		expect(ad.video.volume).toBe(1);
 	});
+
+	it("pauses a detached ad before restoring audio when blocking is disabled", () => {
+		const ad = makeVideo("Video Advertisement");
+
+		expect(suppress()()).toBe(1);
+		ad.video.remove();
+		(
+			g.__TTVAB_STATE__ as { IsAdStrippingEnabled: boolean }
+		).IsAdStrippingEnabled = false;
+		T<(enabled: boolean) => boolean>("_setIndependentVideoAdGuardEnabled")(
+			false,
+		);
+
+		expect(ad.pause).toHaveBeenCalled();
+		expect(ad.video.muted).toBe(false);
+	});
+
+	it("hides a descriptive-label ad even when it is not Amazon-hosted", () => {
+		const primary = makeVideo(null);
+		primary.video.src = "blob:https://www.twitch.tv/primary-player";
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => primary.video },
+		});
+		const ad = makeVideo(null);
+		ad.video.setAttribute(
+			"aria-label",
+			"This advertisement promotes a new streaming service",
+		);
+		ad.video.src = "https://cdn.example.com/rotated-ad.mp4";
+
+		expect(suppress()()).toBe(1);
+		expect(ad.video.style.getPropertyValue("display")).toBe("none");
+		expect(ad.video.muted).toBe(true);
+		expect(primary.video.muted).toBe(false);
+	});
+
+	it("never hides labeled blob-backed media so a misdirected player lookup cannot black out the stream", () => {
+		const other = makeVideo(null);
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => other.video },
+		});
+		const labeledStream = makeVideo(null);
+		labeledStream.video.setAttribute("aria-label", "Video Advertisement");
+		labeledStream.video.src = "blob:https://www.twitch.tv/backup-stream";
+
+		expect(suppress()()).toBe(0);
+		expect(labeledStream.video.style.getPropertyValue("display")).toBe("");
+		expect(labeledStream.video.muted).toBe(false);
+	});
+
+	it("counts each independent ad exactly once toward blocked stats", () => {
+		const originalIncrement = g._incrementAdsBlocked;
+		const increment = vi.fn();
+		g._incrementAdsBlocked = increment;
+		try {
+			const ad = makeVideo("Video Advertisement");
+
+			expect(suppress()()).toBe(1);
+			expect(increment).toHaveBeenCalledTimes(1);
+			expect(increment).toHaveBeenCalledWith("testchannel");
+
+			ad.video.muted = false;
+			T<(event: { target: EventTarget | null }) => void>(
+				"_handleIndependentVideoAdMediaEvent",
+			)({ target: ad.video });
+			expect(increment).toHaveBeenCalledTimes(1);
+
+			ad.video.src = "blob:https://www.twitch.tv/reused-player";
+			ad.video.removeAttribute("aria-label");
+			expect(
+				T<(media: unknown) => boolean>("_suppressIndependentVideoAd")(ad.video),
+			).toBe(false);
+			ad.video.src = "https://m.media-amazon.com/next-creative.mp4";
+			expect(suppress()()).toBe(1);
+			expect(increment).toHaveBeenCalledTimes(2);
+		} finally {
+			g._incrementAdsBlocked = originalIncrement;
+		}
+	});
+});
+
+describe("_pruneIndependentVideoAdSuppressions", () => {
+	const suppress = () =>
+		T<(root?: ParentNode) => number>("_suppressIndependentVideoAdsInDocument");
+	const prune = () => T<() => number>("_pruneIndependentVideoAdSuppressions");
+
+	function independentState() {
+		return g._IndependentVideoAdSuppressionState as {
+			suppressedMedia: Map<HTMLVideoElement, { detachedAt: number | null }>;
+		};
+	}
+
+	function makeAd() {
+		const video = document.createElement("video");
+		video.setAttribute("aria-label", "Video Advertisement");
+		video.src = "https://m.media-amazon.com/pruned-ad.mp4";
+		video.muted = false;
+		video.defaultMuted = false;
+		video.volume = 1;
+		const pause = vi.fn();
+		Object.defineProperty(video, "pause", {
+			value: pause,
+			configurable: true,
+		});
+		document.body.appendChild(video);
+		return { video, pause };
+	}
+
+	it("keeps a removed ad muted through the grace window so its audio can never resume unseen", () => {
+		const ad = makeAd();
+
+		expect(suppress()()).toBe(1);
+		ad.video.remove();
+		expect(prune()()).toBe(0);
+
+		expect(ad.video.muted).toBe(true);
+		expect(ad.pause).not.toHaveBeenCalled();
+		expect(independentState().suppressedMedia.size).toBe(1);
+	});
+
+	it("pauses and releases an abandoned ad after the grace window without unmuting it", () => {
+		const ad = makeAd();
+		const graceMs = g._INDEPENDENT_VIDEO_AD_DETACHED_GRACE_MS as number;
+
+		expect(suppress()()).toBe(1);
+		ad.video.remove();
+		expect(prune()()).toBe(0);
+		const entry = independentState().suppressedMedia.get(ad.video);
+		expect(entry).toBeDefined();
+		if (entry) entry.detachedAt = Date.now() - graceMs - 1;
+		expect(prune()()).toBe(1);
+
+		expect(ad.pause).toHaveBeenCalledOnce();
+		expect(ad.video.muted).toBe(true);
+		expect(ad.video.hasAttribute("data-ttvab-independent-ad-suppressed")).toBe(
+			true,
+		);
+		expect(independentState().suppressedMedia.size).toBe(0);
+	});
+
+	it("still restores an ad element Twitch reattaches and reuses within the grace window", () => {
+		const ad = makeAd();
+
+		expect(suppress()()).toBe(1);
+		ad.video.remove();
+		expect(prune()()).toBe(0);
+		document.body.appendChild(ad.video);
+		prune()();
+		expect(independentState().suppressedMedia.get(ad.video)?.detachedAt).toBe(
+			null,
+		);
+
+		ad.video.src = "blob:https://www.twitch.tv/reused-player";
+		ad.video.removeAttribute("aria-label");
+		expect(
+			T<(media: unknown) => boolean>("_suppressIndependentVideoAd")(ad.video),
+		).toBe(false);
+		expect(ad.video.muted).toBe(false);
+		expect(ad.video.style.getPropertyValue("display")).toBe("");
+		expect(ad.pause).not.toHaveBeenCalled();
+	});
 });
 
 describe("_installIndependentVideoAdObserver", () => {
