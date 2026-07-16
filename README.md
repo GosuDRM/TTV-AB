@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-12.0.7-purple)
+![Version](https://img.shields.io/badge/version-12.0.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-12.0.7-yellow)
+![Chrome](https://img.shields.io/badge/chrome-12.0.8-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v12.0.8 - 2026-07-16
+- **PiP ad blocking now survives page navigation.** The PiP stream stays protected and responsive when you browse elsewhere on Twitch, blocked ads still count toward statistics, and watch time stays with the channel actually playing in PiP.
+
 ### v12.0.7 - 2026-07-16
 - **Blocked ads stay silent and stop wasting memory.** Removed ad videos can no longer keep playing sound in the background, descriptive ad labels are recognized beyond Amazon's servers, and blocked side and chat ads now count in the popup statistics.
 
 ### v12.0.6 - 2026-07-16
 - **Side and chat ads stay blocked after Twitch reclassifies them.** Confirmed Amazon-hosted ad videos remain hidden and silent without affecting the live stream.
-
-### v12.0.5 - 2026-07-15
-- **Debug logs now capture separate video ads.** The exported file records the full ad video element when it is blocked and takes another live snapshot when you press Generate log file.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

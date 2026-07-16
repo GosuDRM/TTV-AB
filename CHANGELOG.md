@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.8] - 2026-07-16
+
+- Picture-in-Picture streams now keep blocking and counting ads when you browse to another Twitch page.
+- Automatic Picture-in-Picture recovery now retries playback safely instead of leaving the video randomly paused when the first resume attempt fails.
+- Watch time is now credited to the channel actually playing in Picture-in-Picture after page navigation.
+- Removed separate ad videos are now paused and released on time even when no later page update occurs.
+
 ## [12.0.7] - 2026-07-16
 
 - Separate video ads removed by Twitch mid-ad can no longer keep playing sound invisibly in the background.
