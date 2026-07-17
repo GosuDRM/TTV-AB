@@ -1,6 +1,6 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-12.0.9-purple)
+![Version](https://img.shields.io/badge/version-12.1.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
@@ -38,7 +38,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Persistent "Ads Blocked" statistics
 - ✅ **Statistics Dashboard** with time saved, weekly charts, and achievements
 - ✅ **12 Achievement Badges** to unlock as you block ads
-- ✅ **Language Selector** - 11 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU)
+- ✅ **Language Selector** - 12 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU, UK)
 - ✅ Per-channel ad blocking breakdown
 - ✅ Modern, animated UI (Retro/Neon aesthetic)
 - ✅ **Theme Picker** - switch between the default Retro synthwave theme and the original Neon theme via two color circles in the popup
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v12.1.0 - 2026-07-18
+- **Ukrainian language support.** The popup is now available in Ukrainian (Українська) and is selected automatically when your browser language is set to Ukrainian. Thanks to [@lowl1f3](https://github.com/lowl1f3) for the translation.
+
 ### v12.0.9 - 2026-07-17
 - **1440p AV1 streams no longer black out during ad blocking.** Enhanced-quality streams (HEVC and AV1) now switch to a compatible quality for the length of the ad break and return to full quality right after.
 
 ### v12.0.8 - 2026-07-16
 - **PiP ad blocking now survives page navigation.** The PiP stream stays protected and responsive when you browse elsewhere on Twitch, blocked ads still count toward statistics, and watch time stays with the channel actually playing in PiP.
-
-### v12.0.7 - 2026-07-16
-- **Blocked ads stay silent and stop wasting memory.** Removed ad videos can no longer keep playing sound in the background, descriptive ad labels are recognized beyond Amazon's servers, and blocked side and chat ads now count in the popup statistics.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
