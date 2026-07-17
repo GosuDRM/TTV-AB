@@ -2036,6 +2036,7 @@ describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 		"#EXTM3U",
 		streamInf("chunked", "2560x1440", "hev1.1.6.L153.B0", "src-hevc"),
 		streamInf("1440p60", "2560x1440", "hev1.1.6.L120.B0", "1440-hevc"),
+		streamInf("1440p60", "2560x1440", "av01.0.13M.08", "1440-av1"),
 		streamInf("1080p60", "1920x1080", "avc1.4D402A", "1080-avc"),
 		streamInf("720p60", "1280x720", "avc1.4D401F", "720-avc"),
 	].join("\n");
@@ -2050,11 +2051,12 @@ describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 		FrameRate: 60,
 	};
 
-	it("keeps HEVC backup variants away from a non-HEVC session so 1440p targets degrade to AVC", () => {
+	it("keeps HEVC and AV1 backup variants away from an AVC session so 1440p targets degrade to AVC", () => {
 		const info = makeInfo({ ModifiedM3U8: "modified" });
 		const stripped = stripHevc()(info, multiCodecMaster);
 		expect(stripped).not.toContain("src-hevc");
 		expect(stripped).not.toContain("1440-hevc");
+		expect(stripped).not.toContain("1440-av1");
 		expect(stripped).toContain("1080-avc");
 		expect(getStreamUrl()(stripped, target1440)).toBe(
 			"https://cdn.example/1080-avc/index.m3u8",
@@ -2075,9 +2077,41 @@ describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 		expect(stripHevc()(info, multiCodecMaster)).toBe(multiCodecMaster);
 	});
 
+	it("leaves the backup master untouched when the sustained native codec is AV1", () => {
+		const info = makeInfo({
+			SustainedNativeResolution: {
+				Name: "1440p60",
+				Resolution: "2560x1440",
+				FrameRate: 60,
+				Codecs: "av01.0.13M.08",
+			},
+		});
+		expect(stripHevc()(info, multiCodecMaster)).toBe(multiCodecMaster);
+	});
+
 	it("never strips a backup master down to zero variants", () => {
 		const info = makeInfo({ ModifiedM3U8: "modified" });
 		expect(stripHevc()(info, hevcOnlyMaster)).toBe(hevcOnlyMaster);
+	});
+});
+
+describe("_isEnhancedCodecString (codecs that cannot splice into an AVC pipeline)", () => {
+	const isEnhanced = () =>
+		T<(codecs?: string) => boolean>("_isEnhancedCodecString");
+	const isHevcCodec = () =>
+		T<(codecs?: string) => boolean>("_isHevcCodecString");
+
+	it("classifies HEVC and AV1 as enhanced but never AVC despite the shared av prefix", () => {
+		expect(isEnhanced()("hev1.1.6.L153.B0,mp4a.40.2")).toBe(true);
+		expect(isEnhanced()("hvc1.1.6.L153.B0")).toBe(true);
+		expect(isEnhanced()("av01.0.13M.08,mp4a.40.2")).toBe(true);
+		expect(isEnhanced()("avc1.4D402A,mp4a.40.2")).toBe(false);
+		expect(isEnhanced()(undefined)).toBe(false);
+	});
+
+	it("keeps _isHevcCodecString strictly HEVC so AV1 is never mistaken for it", () => {
+		expect(isHevcCodec()("av01.0.13M.08")).toBe(false);
+		expect(isHevcCodec()("hev1.1.6.L153.B0")).toBe(true);
 	});
 });
 

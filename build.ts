@@ -1290,8 +1290,28 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_stripHevcBackupVariants",
+			helper: "_isEnhancedCodecString",
+			source: parserSource,
+		},
+		{
+			consumer: "_shouldAvoidHevcBackupVariants",
+			helper: "_isEnhancedCodecString",
+			source: parserSource,
+		},
+		{
+			consumer: "_isEnhancedCodecString",
 			helper: "_isHevcCodecString",
 			source: parserSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_isEnhancedCodecString",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_isEnhancedCodecString",
+			source: hooksSource,
 		},
 		{
 			consumer: "_findBackupStream",
