@@ -1554,18 +1554,16 @@ async function _processM3U8Core(url, text, realFetch) {
 			);
 		}
 
-		const isHevc =
-			res?.Codecs?.[0] === "h" &&
-			(res?.Codecs?.[1] === "e" || res?.Codecs?.[1] === "v");
+		const isEnhancedCodec = _isEnhancedCodecString(res?.Codecs);
 		if (
-			isHevc &&
+			isEnhancedCodec &&
 			!info.IsShowingAd &&
 			info.ModifiedM3U8 &&
 			(!__TTVAB_STATE__.PlayerHasPlayedOnce ||
 				__TTVAB_STATE__.PlayerIsPlaying !== true)
 		) {
 			_log(
-				"[Trace] Deferring HEVC ad-block until active playback resumes",
+				"[Trace] Deferring HEVC/AV1 ad-block until active playback resumes",
 				"info",
 			);
 			return text;
@@ -1664,7 +1662,7 @@ async function _processM3U8Core(url, text, realFetch) {
 		}
 
 		if (
-			isHevc &&
+			isEnhancedCodec &&
 			!__TTVAB_STATE__.SkipPlayerReloadOnHevc &&
 			info.ModifiedM3U8 &&
 			!info.IsUsingModifiedM3U8 &&
@@ -1701,8 +1699,8 @@ async function _processM3U8Core(url, text, realFetch) {
 			}
 			_log(
 				cleanNativeM3U8
-					? "[Trace] Reloading before HEVC backup handoff; holding clean native playlist for current request"
-					: "[Trace] Reloading before HEVC backup handoff; no clean native hold available",
+					? "[Trace] Reloading before HEVC/AV1 backup handoff; holding clean native playlist for current request"
+					: "[Trace] Reloading before HEVC/AV1 backup handoff; no clean native hold available",
 				"info",
 			);
 			return cleanNativeM3U8 || text;
@@ -1948,9 +1946,9 @@ async function _processM3U8Core(url, text, realFetch) {
 
 		info._LastBackupSearchCompletedAt = Date.now();
 
-		const stripHevc = isHevc && info.ModifiedM3U8;
-		if (__TTVAB_STATE__.IsAdStrippingEnabled || stripHevc) {
-			text = _stripAds(text, stripHevc, info);
+		const stripEnhanced = isEnhancedCodec && info.ModifiedM3U8;
+		if (__TTVAB_STATE__.IsAdStrippingEnabled || stripEnhanced) {
+			text = _stripAds(text, stripEnhanced, info);
 		}
 	} else if (info.IsShowingAd) {
 		const isOfflinePlaylist =

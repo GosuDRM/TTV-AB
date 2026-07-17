@@ -1067,15 +1067,20 @@ function _isHevcCodecString(codecs) {
 	return c.startsWith("hev") || c.startsWith("hvc");
 }
 
+function _isEnhancedCodecString(codecs) {
+	const c = typeof codecs === "string" ? codecs : "";
+	return _isHevcCodecString(c) || c.startsWith("av0");
+}
+
 function _shouldAvoidHevcBackupVariants(info) {
 	if (info?.ModifiedM3U8) return true;
-	if (_isHevcCodecString(info?.SustainedNativeResolution?.Codecs)) {
+	if (_isEnhancedCodecString(info?.SustainedNativeResolution?.Codecs)) {
 		return false;
 	}
 	const list = Array.isArray(info?.ResolutionList)
 		? info.ResolutionList.filter(Boolean)
 		: [];
-	if (list.length > 0 && list.every((r) => _isHevcCodecString(r?.Codecs))) {
+	if (list.length > 0 && list.every((r) => _isEnhancedCodecString(r?.Codecs))) {
 		return false;
 	}
 	return true;
@@ -1097,7 +1102,7 @@ function _stripHevcBackupVariants(info, m3u8) {
 			const hasUri = uri.trim() && !uri.trim().startsWith("#");
 			if (
 				hasUri &&
-				_isHevcCodecString(String(_parseAttrs(line).CODECS || ""))
+				_isEnhancedCodecString(String(_parseAttrs(line).CODECS || ""))
 			) {
 				removed++;
 				i++;
@@ -1115,7 +1120,7 @@ function _stripHevcBackupVariants(info, m3u8) {
 		if (!info._LoggedWhitelistByType.has("hevc-skip")) {
 			info._LoggedWhitelistByType.add("hevc-skip");
 			_log(
-				`[Trace] Skipped ${removed} HEVC backup variant(s) for codec compatibility`,
+				`[Trace] Skipped ${removed} HEVC/AV1 backup variant(s) for codec compatibility`,
 				"info",
 			);
 		}

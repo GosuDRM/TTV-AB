@@ -227,27 +227,27 @@ function _hookWorkerFetch() {
 			}
 		}
 
-		const nonHevcList = info.ResolutionList.filter(
-			(r) => r.Codecs?.startsWith("avc") || r.Codecs?.startsWith("av0"),
+		const avcList = info.ResolutionList.filter((r) =>
+			r.Codecs?.startsWith("avc"),
 		);
-		const hasHevc = info.ResolutionList.some(
-			(r) => r.Codecs?.startsWith("hev") || r.Codecs?.startsWith("hvc"),
+		const hasEnhanced = info.ResolutionList.some((r) =>
+			_isEnhancedCodecString(r.Codecs),
 		);
 
-		if (hasHevc && nonHevcList.length > 0) {
+		if (hasEnhanced && avcList.length > 0) {
 			const modLines = [...lines];
 			for (let mi = 0; mi < modLines.length - 1; mi++) {
 				if (modLines[mi]?.startsWith("#EXT-X-STREAM-INF")) {
 					const attrs = _parseAttrs(modLines[mi]);
 					const codecs = attrs.CODECS || "";
-					if (codecs.startsWith("hev") || codecs.startsWith("hvc")) {
+					if (_isEnhancedCodecString(codecs)) {
 						const [tw, th] = (attrs.RESOLUTION || "1920x1080")
 							.split("x")
 							.map(Number);
 						const targetArea =
 							(Number.isFinite(tw) ? tw : 1920) *
 							(Number.isFinite(th) ? th : 1080);
-						const closest = [...nonHevcList].sort((a, b) => {
+						const closest = [...avcList].sort((a, b) => {
 							const [aw, ah] = String(a?.Resolution || "0x0")
 								.split("x")
 								.map(Number);
@@ -295,7 +295,7 @@ function _hookWorkerFetch() {
 				(wasUsingModifiedM3U8 || matchesActiveAdMediaKey) &&
 				__TTVAB_STATE__.IsAdStrippingEnabled === true;
 			_log(
-				"HEVC stream detected, prepared quality-preserving non-HEVC fallback master",
+				"HEVC/AV1 stream detected, prepared quality-preserving AVC fallback master",
 				"info",
 			);
 		}
@@ -1084,6 +1084,7 @@ function _hookWorker() {
                 ${_getFallbackResolution.toString()}
                 ${_applyBackupResolutionFloor.toString()}
                 ${_isHevcCodecString.toString()}
+                ${_isEnhancedCodecString.toString()}
                 ${_shouldAvoidHevcBackupVariants.toString()}
                 ${_stripHevcBackupVariants.toString()}
                 ${_resolvePreferredBackupResolution.toString()}
