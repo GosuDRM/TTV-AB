@@ -900,7 +900,7 @@ const TRANSLATIONS = {
             },
         },
 	},
-	uk_UA: {
+	uk: {
 		status: "Статус",
 		active: "Увімкнено",
 		inactive: "Вимкнено",
