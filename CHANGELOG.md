@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.0.9] - 2026-07-17
+
+- Fixed 1440p enhanced-quality streams going black for the entire ad break when the browser plays the AV1 version of the stream; the player now switches to a compatible quality for the break and returns to full quality afterwards, matching the existing HEVC behavior ([#47](https://github.com/GosuDRM/TTV-AB/issues/47)).
+- Backup streams served during ad breaks now always use a codec the player can decode, so enhanced-quality streams (HEVC and AV1) no longer risk a frozen or black player mid-break.
+
 ## [12.0.8] - 2026-07-16
 
 - Picture-in-Picture streams now keep blocking and counting ads when you browse to another Twitch page.
