@@ -2,6 +2,10 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [12.1.0] - 2026-07-18
+
+- Added Ukrainian language support, so the popup can now be viewed in Ukrainian and is selected automatically when the browser language is Ukrainian. Thanks to [@lowl1f3](https://github.com/lowl1f3) for contributing the translation ([#48](https://github.com/GosuDRM/TTV-AB/pull/48)).
+
 ## [12.0.9] - 2026-07-17
 
 - Fixed 1440p enhanced-quality streams going black for the entire ad break when the browser plays the AV1 version of the stream; the player now switches to a compatible quality for the break and returns to full quality afterwards, matching the existing HEVC behavior ([#47](https://github.com/GosuDRM/TTV-AB/issues/47)).
