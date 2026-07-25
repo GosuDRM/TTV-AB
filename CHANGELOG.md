@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [13.2.1] - 2026-07-25
+
+- Fixed an ad break sometimes being followed straight away by a second one. The player no longer restarts once the break ends if the backup stream was already running at your normal quality, so Twitch stops treating it as a brand new session and serving another ad, which used to add around a minute on the backup stream.
+- Fixed the picture briefly glitching a few times during longer ad breaks. The extension was switching back and forth between backup streams instead of staying on the one it had already checked, and now it keeps the stream it picked.
+
 ## [13.2.0] - 2026-07-25
 
 - Experimental release. This build changes how enhanced-quality (1440p and 2K) streams are handled during ad breaks and is going out for wider testing, so please report anything that looks wrong.
