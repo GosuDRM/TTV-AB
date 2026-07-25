@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [13.0.0] - 2026-07-25
+
+- Separate video ads shown beside the player or above chat are now removed together with the empty panel they sit in, so the stream and chat reclaim the space instead of sitting next to a blank box.
+- The two placements Twitch uses most for these ads are now hidden the moment the page paints, so the ad no longer flashes into view before it is removed.
+- Chat, the live player, and the rest of the page are never affected by the new removal, which only ever collapses the ad's own slot.
+- Generated debug logs now include the surrounding page structure of any separate video ad, so new ad placements can be identified much faster from a single report.
+
 ## [12.1.0] - 2026-07-18
 
 - Added Ukrainian language support, so the popup can now be viewed in Ukrainian and is selected automatically when the browser language is Ukrainian. Thanks to [@lowl1f3](https://github.com/lowl1f3) for contributing the translation ([#48](https://github.com/GosuDRM/TTV-AB/pull/48)).
