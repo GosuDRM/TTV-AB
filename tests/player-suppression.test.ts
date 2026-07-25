@@ -47,6 +47,7 @@ beforeEach(() => {
 		observer: MutationObserver | null;
 		pruneTimeoutId: ReturnType<typeof setTimeout> | null;
 		suppressedMedia: Map<HTMLVideoElement, unknown>;
+		suppressedContainers: Map<HTMLElement, unknown>;
 	};
 	independentState.observer?.disconnect();
 	independentState.observer = null;
@@ -55,6 +56,7 @@ beforeEach(() => {
 	}
 	independentState.pruneTimeoutId = null;
 	independentState.suppressedMedia.clear();
+	independentState.suppressedContainers.clear();
 	const state = g._AdAudioSuppressionState as {
 		suppressedMedia: Map<HTMLMediaElement, unknown>;
 		activeMediaKey: string | null;
@@ -111,6 +113,20 @@ describe("_ensureIndependentVideoAdStyle", () => {
 		const style = document.getElementById("ttvab-independent-video-ad-style");
 		expect(style?.textContent).toContain(
 			'video[data-ttvab-independent-ad-suppressed="true"]',
+		);
+		expect(style?.textContent).toContain(
+			'[data-ttvab-independent-ad-container="true"]{display:none!important}',
+		);
+	});
+
+	it("collapses the known player-adjacent and chat ad slots without script", () => {
+		expect(ensure()()).toBe(true);
+		const style = document.getElementById("ttvab-independent-video-ad-style");
+		expect(style?.textContent).toContain(
+			'.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"])',
+		);
+		expect(style?.textContent).toContain(
+			'.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"])',
 		);
 	});
 });
@@ -417,6 +433,217 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 	});
 });
 
+describe("independent video ad container collapse", () => {
+	const suppress = () =>
+		T<(root?: ParentNode) => number>("_suppressIndependentVideoAdsInDocument");
+	const setGuardEnabled = () =>
+		T<(enabled: boolean) => boolean>("_setIndependentVideoAdGuardEnabled");
+	const roots: HTMLElement[] = [];
+
+	function mount(markup: string) {
+		const root = document.createElement("div");
+		root.innerHTML = markup;
+		document.body.appendChild(root);
+		roots.push(root);
+		return root;
+	}
+
+	afterEach(() => {
+		while (roots.length) roots.pop()?.remove();
+	});
+
+	it("collapses the ad slot beside the player instead of only the video", () => {
+		const root = mount(`
+			<main>
+				<div class="stream-display-ad__wrapper"></div>
+				<div id="slot">
+					<div style="position: absolute;">
+						<div class="Layout-sc-1xcs6mc-0">
+							<video src="https://m.media-amazon.com/creative.mp4" aria-label="Video Advertisement"></video>
+						</div>
+					</div>
+				</div>
+			</main>
+		`);
+		const slot = root.querySelector("#slot") as HTMLElement;
+		const wrapper = root.querySelector(
+			".stream-display-ad__wrapper",
+		) as HTMLElement;
+
+		expect(suppress()()).toBe(1);
+
+		expect(slot.getAttribute("data-ttvab-independent-ad-container")).toBe(
+			"true",
+		);
+		expect(slot.style.getPropertyValue("display")).toBe("none");
+		expect(wrapper.hasAttribute("data-ttvab-independent-ad-container")).toBe(
+			false,
+		);
+		expect(
+			root
+				.querySelector("main")
+				?.hasAttribute("data-ttvab-independent-ad-container"),
+		).toBe(false);
+	});
+
+	it("stops at the chat shell so chat stays visible", () => {
+		const root = mount(`
+			<div class="chat-shell">
+				<div class="Layout-sc-abc123">
+					<div style="transition: opacity 200ms;">
+						<video src="https://m.media-amazon.com/creative.mp4" aria-label="Video Advertisement"></video>
+					</div>
+				</div>
+				<div data-a-target="chat-scroller"></div>
+			</div>
+		`);
+		const shell = root.querySelector(".chat-shell") as HTMLElement;
+		const slot = root.querySelector(".Layout-sc-abc123") as HTMLElement;
+		const scroller = root.querySelector(
+			"[data-a-target='chat-scroller']",
+		) as HTMLElement;
+
+		expect(suppress()()).toBe(1);
+
+		expect(slot.getAttribute("data-ttvab-independent-ad-container")).toBe(
+			"true",
+		);
+		expect(shell.hasAttribute("data-ttvab-independent-ad-container")).toBe(
+			false,
+		);
+		expect(shell.style.getPropertyValue("display")).toBe("");
+		expect(scroller.style.getPropertyValue("display")).toBe("");
+	});
+
+	it("never collapses a container that still holds the live player video", () => {
+		const root = mount(`
+			<div id="column">
+				<video id="live" src="blob:https://www.twitch.tv/live"></video>
+				<div id="adbox">
+					<video src="https://m.media-amazon.com/creative.mp4" aria-label="Video Advertisement"></video>
+				</div>
+			</div>
+		`);
+		const column = root.querySelector("#column") as HTMLElement;
+		const adbox = root.querySelector("#adbox") as HTMLElement;
+		const live = root.querySelector("#live") as HTMLElement;
+
+		expect(suppress()()).toBe(1);
+
+		expect(adbox.getAttribute("data-ttvab-independent-ad-container")).toBe(
+			"true",
+		);
+		expect(column.hasAttribute("data-ttvab-independent-ad-container")).toBe(
+			false,
+		);
+		expect(column.style.getPropertyValue("display")).toBe("");
+		expect(live.style.getPropertyValue("display")).toBe("");
+		expect(live.hasAttribute("data-ttvab-independent-ad-suppressed")).toBe(
+			false,
+		);
+	});
+
+	it("stops at the first wrapper that also holds unrelated page content", () => {
+		const root = mount(`
+			<div id="sidebar">
+				<div id="slot">
+					<video src="https://m.media-amazon.com/creative.mp4" aria-label="Video Advertisement"></video>
+				</div>
+				<section id="recommended">Recommended channels</section>
+			</div>
+		`);
+		const sidebar = root.querySelector("#sidebar") as HTMLElement;
+		const slot = root.querySelector("#slot") as HTMLElement;
+		const recommended = root.querySelector("#recommended") as HTMLElement;
+
+		expect(suppress()()).toBe(1);
+
+		expect(slot.getAttribute("data-ttvab-independent-ad-container")).toBe(
+			"true",
+		);
+		expect(sidebar.hasAttribute("data-ttvab-independent-ad-container")).toBe(
+			false,
+		);
+		expect(sidebar.style.getPropertyValue("display")).toBe("");
+		expect(recommended.style.getPropertyValue("display")).toBe("");
+	});
+
+	it("restores the collapsed container once the slot stops serving an ad", () => {
+		const root = mount(`
+			<main>
+				<div class="stream-display-ad__wrapper"></div>
+				<div id="slot" style="display: flex;">
+					<video src="https://m.media-amazon.com/creative.mp4" aria-label="Video Advertisement"></video>
+				</div>
+			</main>
+		`);
+		const slot = root.querySelector("#slot") as HTMLElement;
+		const video = root.querySelector("video") as HTMLVideoElement;
+
+		expect(suppress()()).toBe(1);
+		expect(slot.style.getPropertyValue("display")).toBe("none");
+
+		video.src = "blob:https://www.twitch.tv/reused-player";
+		video.removeAttribute("aria-label");
+		expect(
+			T<(media: unknown) => boolean>("_suppressIndependentVideoAd")(video),
+		).toBe(false);
+
+		expect(slot.hasAttribute("data-ttvab-independent-ad-container")).toBe(
+			false,
+		);
+		expect(slot.style.getPropertyValue("display")).toBe("flex");
+	});
+
+	it("restores collapsed containers when ad blocking is turned off", () => {
+		const root = mount(`
+			<main>
+				<div class="stream-display-ad__wrapper"></div>
+				<div id="slot">
+					<video src="https://m.media-amazon.com/creative.mp4" aria-label="Video Advertisement"></video>
+				</div>
+			</main>
+		`);
+		const slot = root.querySelector("#slot") as HTMLElement;
+
+		expect(suppress()()).toBe(1);
+		expect(slot.getAttribute("data-ttvab-independent-ad-container")).toBe(
+			"true",
+		);
+
+		setGuardEnabled()(false);
+
+		expect(slot.hasAttribute("data-ttvab-independent-ad-container")).toBe(
+			false,
+		);
+		expect(slot.style.getPropertyValue("display")).toBe("");
+	});
+
+	it("recollapses the container when the page strips the marker attribute", () => {
+		const root = mount(`
+			<main>
+				<div class="stream-display-ad__wrapper"></div>
+				<div id="slot">
+					<video src="https://m.media-amazon.com/creative.mp4" aria-label="Video Advertisement"></video>
+				</div>
+			</main>
+		`);
+		const slot = root.querySelector("#slot") as HTMLElement;
+
+		expect(suppress()()).toBe(1);
+
+		slot.removeAttribute("data-ttvab-independent-ad-container");
+		slot.style.removeProperty("display");
+
+		T<(node: Node) => number>("_suppressIndependentVideoAdsForNode")(slot);
+
+		expect(slot.getAttribute("data-ttvab-independent-ad-container")).toBe(
+			"true",
+		);
+		expect(slot.style.getPropertyValue("display")).toBe("none");
+	});
+});
+
 describe("_pruneIndependentVideoAdSuppressions", () => {
 	const suppress = () =>
 		T<(root?: ParentNode) => number>("_suppressIndependentVideoAdsInDocument");
@@ -534,7 +761,11 @@ describe("_installIndependentVideoAdObserver", () => {
 				childList: true,
 				subtree: true,
 				attributes: true,
-				attributeFilter: ["aria-label", "src"],
+				attributeFilter: [
+					"aria-label",
+					"src",
+					"data-ttvab-independent-ad-container",
+				],
 			});
 		} finally {
 			g.MutationObserver = nativeMutationObserver;
