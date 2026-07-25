@@ -629,7 +629,7 @@ describe("_findBackupStream fresh-session probation", () => {
 		return { tokenCalls, realFetch, restore };
 	}
 
-	it("defers a fresh HQ session to a second clean look and serves the autoplay bridge", async () => {
+	it("defers a fresh HQ session to a second clean look, then keeps the pin instead of flapping back to the bridge", async () => {
 		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
 		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
 		try {
@@ -659,7 +659,22 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(second.type).toBe("site");
 			expect(second.m3u8).toBe(sitePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
-			expect(info._BackupProbation).toBe(null);
+			expect(info._BackupProbation).toEqual({
+				type: "site",
+				at: 0,
+				cleanChecks: 1,
+			});
+
+			nowSpy.mockReturnValue(1_018_000);
+			const later = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(later.type).toBe("site");
+			expect(later.m3u8).toBe(sitePlaylist);
+			expect(tokenCalls).toEqual(["site"]);
 		} finally {
 			nowSpy.mockRestore();
 			restore();
@@ -714,7 +729,11 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(result.type).toBe("site");
 			expect(result.m3u8).toBe(sitePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
-			expect(info._BackupProbation).toBe(null);
+			expect(info._BackupProbation).toEqual({
+				type: "site",
+				at: 0,
+				cleanChecks: 1,
+			});
 		} finally {
 			nowSpy.mockRestore();
 			restore();
@@ -823,7 +842,11 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(third.type).toBe("site");
 			expect(third.m3u8).toBe(sitePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
-			expect(info._BackupProbation).toBe(null);
+			expect(info._BackupProbation).toEqual({
+				type: "site",
+				at: 0,
+				cleanChecks: 2,
+			});
 		} finally {
 			nowSpy.mockRestore();
 			restore();
@@ -2363,6 +2386,60 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(messages.some((m) => m.key === "ReloadPlayer")).toBe(false);
 		expect(info.IsHoldingBackupAfterAd).toBe(true);
 		expect(out).toContain("seg50.ts");
+	});
+
+	it("skips the post-hold reload when the autoplay backup already held native quality", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			ActiveBackupResolution: "1920x1080",
+			SustainedNativeResolution: { Resolution: "1920x1080", Name: "1080p60" },
+		});
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(info.HevcReloadPendingAfterHold).toBe(false);
+	});
+
+	it("still reloads after the hold when the autoplay backup was below native quality", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			ActiveBackupResolution: "640x360",
+			SustainedNativeResolution: { Resolution: "1920x1080", Name: "1080p60" },
+		});
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
+	});
+
+	it("reloads after the hold when the held autoplay resolution is unknown", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			ActiveBackupResolution: null,
+			SustainedNativeResolution: { Resolution: "1920x1080", Name: "1080p60" },
+		});
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
 	});
 
 	it("still soft-reloads (post-escape) after a verified-clean CSAI escape", async () => {
