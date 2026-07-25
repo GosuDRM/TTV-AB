@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-13.0.0-purple)
+![Version](https://img.shields.io/badge/version-13.2.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-13.0.0-yellow)
+![Chrome](https://img.shields.io/badge/chrome-13.2.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v13.2.0 - 2026-07-25 (experimental)
+- **1440p and 2K channels no longer black out or throw an error when an ad starts.** Enhanced-quality channels switch to a stream the player can actually decode, and ads are always removed while that switch happens.
+
 ### v13.0.0 - 2026-07-25
 - **Side-by-side video ads are now fully removed.** The ad panel beside the player and above chat collapses instead of leaving a blank box, the two known placements are hidden the moment the page paints, and chat and the live player are never touched.
 
 ### v12.1.0 - 2026-07-18
 - **Ukrainian language support.** The popup is now available in Ukrainian (Українська) and is selected automatically when your browser language is set to Ukrainian. Thanks to [@lowl1f3](https://github.com/lowl1f3) for the translation.
-
-### v12.0.9 - 2026-07-17
-- **1440p AV1 streams no longer black out during ad blocking.** Enhanced-quality streams (HEVC and AV1) now switch to a compatible quality for the length of the ad break and return to full quality right after.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
