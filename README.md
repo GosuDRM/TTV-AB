@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v13.2.1 - 2026-07-25
+- **Ad breaks no longer trigger a second ad right after they end.** The player stops restarting when the backup stream was already at your normal quality, and the video no longer glitches from the extension switching between backup streams mid-break.
+
 ### v13.2.0 - 2026-07-25 (experimental)
 - **1440p and 2K channels no longer black out or throw an error when an ad starts.** Enhanced-quality channels switch to a stream the player can actually decode, and ads are always removed while that switch happens.
 
 ### v13.0.0 - 2026-07-25
 - **Side-by-side video ads are now fully removed.** The ad panel beside the player and above chat collapses instead of leaving a blank box, the two known placements are hidden the moment the page paints, and chat and the live player are never touched.
-
-### v12.1.0 - 2026-07-18
-- **Ukrainian language support.** The popup is now available in Ukrainian (Українська) and is selected automatically when your browser language is set to Ukrainian. Thanks to [@lowl1f3](https://github.com/lowl1f3) for the translation.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
