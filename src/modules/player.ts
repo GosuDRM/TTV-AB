@@ -1668,6 +1668,24 @@ const _INDEPENDENT_VIDEO_AD_LABEL_PREFIX = "this advertisement";
 const _INDEPENDENT_VIDEO_AD_STYLE_ID = "ttvab-independent-video-ad-style";
 const _INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE =
 	"data-ttvab-independent-ad-suppressed";
+const _INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE =
+	"data-ttvab-independent-ad-container";
+const _INDEPENDENT_VIDEO_AD_CONTAINER_MAX_DEPTH = 4;
+const _INDEPENDENT_VIDEO_AD_CONTAINER_BOUNDARY_SELECTOR = [
+	"main",
+	"#root",
+	".chat-shell",
+	".stream-chat",
+	".channel-root",
+	".persistent-player",
+	".video-player",
+	".stream-display-ad__wrapper",
+	'[data-a-target="video-player"]',
+	'[data-a-target="chat-scroller"]',
+	'[data-a-target="chat-input"]',
+	'[data-a-target="side-nav-bar"]',
+	'[data-test-selector="chat-scrollable-area__message-container"]',
+].join(",");
 const _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT = 3500;
 const _INDEPENDENT_VIDEO_AD_DETACHED_GRACE_MS = 10000;
 const _IndependentVideoAdSuppressionState = {
@@ -1683,7 +1701,12 @@ const _IndependentVideoAdSuppressionState = {
 			muted: boolean;
 			volume: number;
 			detachedAt: number | null;
+			container: HTMLElement | null;
 		}
+	>(),
+	suppressedContainers: new Map<
+		HTMLElement,
+		{ display: { value: string; priority: string } }
 	>(),
 };
 
@@ -1697,8 +1720,12 @@ function _ensureIndependentVideoAdStyle() {
 	if (!document.head) return false;
 	const style = document.createElement("style");
 	style.id = _INDEPENDENT_VIDEO_AD_STYLE_ID;
-	style.textContent =
-		'video[data-ttvab-independent-ad-suppressed="true"]{display:none!important;visibility:hidden!important;pointer-events:none!important}';
+	style.textContent = [
+		'video[data-ttvab-independent-ad-suppressed="true"]{display:none!important;visibility:hidden!important;pointer-events:none!important}',
+		'[data-ttvab-independent-ad-container="true"]{display:none!important}',
+		'.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"]){display:none!important}',
+		'.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"]){display:none!important}',
+	].join("");
 	document.head.appendChild(style);
 	return true;
 }
@@ -1770,6 +1797,34 @@ function _serializeIndependentVideoAdElement(media) {
 	return `${html.slice(0, _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT)}...`;
 }
 
+function _describeIndependentVideoAdElement(element) {
+	if (!(element instanceof Element)) return "";
+	const attributes = Array.from(
+		element.attributes,
+		(attribute) => ` ${attribute.name}="${attribute.value}"`,
+	).join("");
+	const description = `<${element.tagName.toLowerCase()}${attributes}>`;
+	if (description.length <= _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT) {
+		return description;
+	}
+	return `${description.slice(0, _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT)}...`;
+}
+
+function _serializeIndependentVideoAdAncestry(media) {
+	if (!(media instanceof HTMLVideoElement)) return "";
+	const chain = [];
+	let element = media.parentElement;
+	for (
+		let depth = 0;
+		element && depth <= _INDEPENDENT_VIDEO_AD_CONTAINER_MAX_DEPTH;
+		depth += 1
+	) {
+		chain.push(_describeIndependentVideoAdElement(element));
+		element = element.parentElement;
+	}
+	return chain.join(" < ");
+}
+
 function _isIndependentVideoAdDiagnosticCandidate(media) {
 	return (
 		media instanceof HTMLVideoElement &&
@@ -1786,6 +1841,10 @@ function _captureIndependentVideoAdDiagnostics() {
 		if (!_isIndependentVideoAdDiagnosticCandidate(media)) continue;
 		_log(
 			`Independent video advertisement log snapshot: ${_serializeIndependentVideoAdElement(media)}`,
+			"info",
+		);
+		_log(
+			`Independent video advertisement ancestry: ${_serializeIndependentVideoAdAncestry(media)}`,
 			"info",
 		);
 		capturedCount += 1;
@@ -1813,6 +1872,121 @@ function _isIndependentVideoAd(media) {
 	);
 }
 
+function _isIndependentVideoAdContainerBoundary(element, media) {
+	if (!(element instanceof HTMLElement)) return true;
+	if (
+		element === document.body ||
+		element === document.documentElement ||
+		!element.parentElement
+	) {
+		return true;
+	}
+	try {
+		if (
+			element.matches(_INDEPENDENT_VIDEO_AD_CONTAINER_BOUNDARY_SELECTOR) ||
+			element.querySelector(_INDEPENDENT_VIDEO_AD_CONTAINER_BOUNDARY_SELECTOR)
+		) {
+			return true;
+		}
+		for (const candidate of element.querySelectorAll("video")) {
+			if (
+				candidate !== media &&
+				!candidate.hasAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE)
+			) {
+				return true;
+			}
+		}
+	} catch {
+		return true;
+	}
+	return false;
+}
+
+function _findIndependentVideoAdContainer(media) {
+	if (!(media instanceof HTMLVideoElement)) return null;
+	let container = media.parentElement;
+	if (_isIndependentVideoAdContainerBoundary(container, media)) return null;
+	for (
+		let depth = 1;
+		depth < _INDEPENDENT_VIDEO_AD_CONTAINER_MAX_DEPTH;
+		depth += 1
+	) {
+		const parent = container.parentElement;
+		if (
+			parent?.childElementCount !== 1 ||
+			_isIndependentVideoAdContainerBoundary(parent, media)
+		) {
+			break;
+		}
+		container = parent;
+	}
+	return container;
+}
+
+function _isIndependentVideoAdContainerReferenced(container, ignoredMedia) {
+	for (const [
+		media,
+		state,
+	] of _IndependentVideoAdSuppressionState.suppressedMedia) {
+		if (media !== ignoredMedia && state.container === container) return true;
+	}
+	return false;
+}
+
+function _suppressIndependentVideoAdContainer(container) {
+	if (!(container instanceof HTMLElement)) return false;
+	if (_IndependentVideoAdSuppressionState.suppressedContainers.has(container)) {
+		if (
+			container.getAttribute(_INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE) !==
+			"true"
+		) {
+			container.setAttribute(_INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE, "true");
+		}
+		container.style.setProperty("display", "none", "important");
+		return true;
+	}
+	_IndependentVideoAdSuppressionState.suppressedContainers.set(container, {
+		display: {
+			value: container.style.getPropertyValue("display"),
+			priority: container.style.getPropertyPriority("display"),
+		},
+	});
+	container.style.setProperty("display", "none", "important");
+	container.setAttribute(_INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE, "true");
+	_log(
+		`Collapsed independent video advertisement container: ${_describeIndependentVideoAdElement(container)}`,
+		"info",
+	);
+	return true;
+}
+
+function _releaseIndependentVideoAdContainer(container, ignoredMedia) {
+	if (!(container instanceof HTMLElement)) return false;
+	const state =
+		_IndependentVideoAdSuppressionState.suppressedContainers.get(container);
+	if (!state) return false;
+	if (_isIndependentVideoAdContainerReferenced(container, ignoredMedia)) {
+		return false;
+	}
+	_restoreIndependentVideoAdStyle(container, "display", state.display);
+	container.removeAttribute(_INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE);
+	_IndependentVideoAdSuppressionState.suppressedContainers.delete(container);
+	return true;
+}
+
+function _syncIndependentVideoAdContainer(media, state) {
+	let container = state.container;
+	if (!container?.isConnected || !container.contains(media)) {
+		container = _findIndependentVideoAdContainer(media);
+		if (state.container && state.container !== container) {
+			_releaseIndependentVideoAdContainer(state.container, media);
+		}
+		state.container = container;
+	}
+	if (container) _suppressIndependentVideoAdContainer(container);
+	return container;
+}
+
 function _restoreIndependentVideoAdStyle(media, property, state) {
 	if (state.value) {
 		media.style.setProperty(property, state.value, state.priority);
@@ -1838,6 +2012,9 @@ function _restoreIndependentVideoAd(media) {
 		media.volume = state.volume;
 		media.removeAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE);
 		_IndependentVideoAdSuppressionState.suppressedMedia.delete(media);
+		if (state.container) {
+			_releaseIndependentVideoAdContainer(state.container, media);
+		}
 		_log("Restored independent video element after advertisement", "info");
 		return true;
 	} catch {
@@ -1874,6 +2051,7 @@ function _suppressIndependentVideoAd(media) {
 				muted: media.muted,
 				volume: media.volume,
 				detachedAt: null,
+				container: null,
 			});
 		}
 		const isNewSuppression =
@@ -1886,6 +2064,10 @@ function _suppressIndependentVideoAd(media) {
 		if (!media.muted) media.muted = true;
 		if (media.volume !== 0) media.volume = 0;
 		media.setAttribute(_INDEPENDENT_VIDEO_AD_SUPPRESSED_ATTRIBUTE, "true");
+		_syncIndependentVideoAdContainer(
+			media,
+			_IndependentVideoAdSuppressionState.suppressedMedia.get(media),
+		);
 		if (isNewSuppression && typeof _incrementAdsBlocked === "function") {
 			_incrementAdsBlocked(__TTVAB_STATE__?.PageChannel || null);
 		}
@@ -1925,6 +2107,11 @@ function _restoreIndependentVideoAds() {
 			} catch {}
 		}
 		if (_restoreIndependentVideoAd(media)) restoredCount += 1;
+	}
+	for (const container of [
+		..._IndependentVideoAdSuppressionState.suppressedContainers.keys(),
+	]) {
+		_releaseIndependentVideoAdContainer(container, null);
 	}
 	return restoredCount;
 }
@@ -1974,6 +2161,9 @@ function _pruneIndependentVideoAdSuppressions() {
 			media.pause();
 		} catch {}
 		_IndependentVideoAdSuppressionState.suppressedMedia.delete(media);
+		if (state.container) {
+			_releaseIndependentVideoAdContainer(state.container, media);
+		}
 		prunedCount += 1;
 	}
 	_clearIndependentVideoAdPruneTimer();
@@ -2036,7 +2226,11 @@ function _installIndependentVideoAdObserver() {
 		childList: true,
 		subtree: true,
 		attributes: true,
-		attributeFilter: ["aria-label", "src"],
+		attributeFilter: [
+			"aria-label",
+			"src",
+			_INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE,
+		],
 	});
 	_IndependentVideoAdSuppressionState.observer = observer;
 	_log("Independent video advertisement observer installed", "debug");
