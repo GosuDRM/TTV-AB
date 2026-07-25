@@ -1359,6 +1359,11 @@ async function _processM3U8Core(url, text, realFetch) {
 	}
 
 	if (hasAds) {
+		// Fire-and-forget GQL ad-tracking spoof on every ad-laden poll. Tells
+		// Twitch the user "watched" the ad (impression/quartile/pod-complete
+		// beacons a real player would send). Twitch surfaces one ad's DATERANGE
+		// per poll in multi-ad pods, so this must run every poll — info.SpoofedAdIds
+		// dedups so each ad is spoofed once (full N/N coverage). See api.ts.
 		_notifyAdComplete(text, info).catch(() => {});
 		if (typeof _recordAdDurations === "function") {
 			_recordAdDurations(text, info);
@@ -1563,10 +1568,10 @@ async function _processM3U8Core(url, text, realFetch) {
 				__TTVAB_STATE__.PlayerIsPlaying !== true)
 		) {
 			_log(
-				"[Trace] Deferring HEVC/AV1 ad-block until active playback resumes",
+				"[Trace] Deferring HEVC/AV1 backup handoff until active playback resumes",
 				"info",
 			);
-			return text;
+			return _stripAds(text, false, info);
 		}
 
 		if (!info.IsMidroll) {
@@ -1663,7 +1668,6 @@ async function _processM3U8Core(url, text, realFetch) {
 
 		if (
 			isEnhancedCodec &&
-			!__TTVAB_STATE__.SkipPlayerReloadOnHevc &&
 			info.ModifiedM3U8 &&
 			!info.IsUsingModifiedM3U8 &&
 			!_isRecentPostAdReentry(info)
@@ -1681,9 +1685,7 @@ async function _processM3U8Core(url, text, realFetch) {
 				})
 					? info.LastCleanNativeM3U8
 					: null;
-			if (cleanNativeM3U8) {
-				info.IsUsingModifiedM3U8 = true;
-			}
+			info.IsUsingModifiedM3U8 = true;
 			info.LastPlayerReload = Date.now();
 			if (typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
@@ -1700,10 +1702,10 @@ async function _processM3U8Core(url, text, realFetch) {
 			_log(
 				cleanNativeM3U8
 					? "[Trace] Reloading before HEVC/AV1 backup handoff; holding clean native playlist for current request"
-					: "[Trace] Reloading before HEVC/AV1 backup handoff; no clean native hold available",
+					: "[Trace] Reloading before HEVC/AV1 backup handoff; serving stripped playlist until the AVC master loads",
 				"info",
 			);
-			return cleanNativeM3U8 || text;
+			return cleanNativeM3U8 || _stripAds(text, false, info);
 		}
 
 		if (!info.CsaiOnlyThisBreak && !info.IsUsingModifiedM3U8) {
@@ -2452,6 +2454,7 @@ async function _searchBackupStream(
 	let backupM3u8 = null;
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
+	// this break get deprioritized so clean types get tried first.
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
 		const clean: string[] = [];
 		const contam: string[] = [];
@@ -2596,6 +2599,7 @@ async function _searchBackupStream(
 									baseUrl: encBaseUrl,
 								};
 
+								// Whitelist all variants in the backup master playlist
 								const lines = enc.split("\n");
 								for (let i = 0; i < lines.length; i++) {
 									const line = lines[i]?.trim();
