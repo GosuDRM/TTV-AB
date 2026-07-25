@@ -235,58 +235,7 @@ function _hookWorkerFetch() {
 		);
 
 		if (hasEnhanced && avcList.length > 0) {
-			const modLines = [...lines];
-			for (let mi = 0; mi < modLines.length - 1; mi++) {
-				if (modLines[mi]?.startsWith("#EXT-X-STREAM-INF")) {
-					const attrs = _parseAttrs(modLines[mi]);
-					const codecs = attrs.CODECS || "";
-					if (_isEnhancedCodecString(codecs)) {
-						const [tw, th] = (attrs.RESOLUTION || "1920x1080")
-							.split("x")
-							.map(Number);
-						const targetArea =
-							(Number.isFinite(tw) ? tw : 1920) *
-							(Number.isFinite(th) ? th : 1080);
-						const closest = [...avcList].sort((a, b) => {
-							const [aw, ah] = String(a?.Resolution || "0x0")
-								.split("x")
-								.map(Number);
-							const [bw, bh] = String(b?.Resolution || "0x0")
-								.split("x")
-								.map(Number);
-							const aArea =
-								(Number.isFinite(aw) ? aw : 0) * (Number.isFinite(ah) ? ah : 0);
-							const bArea =
-								(Number.isFinite(bw) ? bw : 0) * (Number.isFinite(bh) ? bh : 0);
-							return (
-								Math.abs(aArea - targetArea) - Math.abs(bArea - targetArea)
-							);
-						})[0];
-						let nextStreamInf = modLines[mi].replace(
-							/CODECS="[^"]+"/,
-							`CODECS="${closest.Codecs}"`,
-						);
-						nextStreamInf = _replaceOrAppendStreamInfAttribute(
-							nextStreamInf,
-							"AUDIO",
-							closest.Audio,
-						);
-						nextStreamInf = _replaceOrAppendStreamInfAttribute(
-							nextStreamInf,
-							"VIDEO",
-							closest.Video,
-						);
-						nextStreamInf = _replaceOrAppendStreamInfAttribute(
-							nextStreamInf,
-							"SUBTITLES",
-							closest.Subtitles,
-						);
-						modLines[mi] = nextStreamInf;
-						modLines[mi + 1] = closest.RawUrl || closest.Url;
-					}
-				}
-			}
-			info.ModifiedM3U8 = modLines.join("\n");
+			info.ModifiedM3U8 = _dropEnhancedVariantLines(lines).kept.join("\n");
 			const matchesActiveAdMediaKey =
 				typeof __TTVAB_STATE__.CurrentAdMediaKey === "string" &&
 				!!info.MediaKey &&
@@ -489,6 +438,21 @@ function _syncStoredDeviceId() {
 		_log(`Device ID sync error: ${e.message}`, "warning");
 	}
 	return null;
+}
+
+function _readBlobUrlSync(blobUrl) {
+	try {
+		if (typeof XMLHttpRequest !== "function") return null;
+		const xhr = new XMLHttpRequest();
+		xhr.open("GET", blobUrl, false);
+		xhr.send(null);
+		return typeof xhr.responseText === "string" && xhr.responseText
+			? xhr.responseText
+			: null;
+	} catch (e) {
+		_log(`Could not inline worker source: ${e.message || e}`, "warning");
+		return null;
+	}
 }
 
 function _hookRevokeObjectURL() {
@@ -1029,10 +993,16 @@ function _hookWorker() {
 					_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey) ===
 						pagePlaybackContext.MediaKey;
 
+				const inlinedWorkerSource =
+					opts?.type !== "module" && workerSourceUrl.startsWith("blob:")
+						? _readBlobUrlSync(workerSourceUrl)
+						: null;
+
 				const originalWorkerLoadCode =
-					opts?.type === "module"
+					inlinedWorkerSource ||
+					(opts?.type === "module"
 						? `await import(${JSON.stringify(workerSourceUrl)});`
-						: `importScripts(${JSON.stringify(workerSourceUrl)});`;
+						: `importScripts(${JSON.stringify(workerSourceUrl)});`);
 
 				const injectedCode = `
             (function() {
@@ -1075,7 +1045,6 @@ function _hookWorker() {
                 ${_stripAds.toString()}
                 ${_extractPlaylistHeaders.toString()}
                 ${_getStreamVariantInfo.toString()}
-                ${_replaceOrAppendStreamInfAttribute.toString()}
                 ${_getStreamUrl.toString()}
                 ${_getSortedResolutionList.toString()}
                 ${_getResolutionByQualityGroup.toString()}
@@ -1083,7 +1052,9 @@ function _hookWorker() {
                 ${_applyBackupResolutionFloor.toString()}
                 ${_isHevcCodecString.toString()}
                 ${_isEnhancedCodecString.toString()}
+                ${_degradeToDecodableResolution.toString()}
                 ${_shouldAvoidHevcBackupVariants.toString()}
+                ${_dropEnhancedVariantLines.toString()}
                 ${_stripHevcBackupVariants.toString()}
                 ${_resolvePreferredBackupResolution.toString()}
                 ${_getPlaylistUrlAliases.toString()}
@@ -1970,7 +1941,7 @@ function _hookWorker() {
 					_recoverCrashedWorker(
 						this,
 						pagePlaybackContext,
-						`Worker crashed: ${e.message || "Unknown error"}`,
+						`Worker crashed loading ${workerSourceUrl}: ${e.message || "Unknown error"}`,
 						"error",
 					);
 				});

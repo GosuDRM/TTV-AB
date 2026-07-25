@@ -1224,6 +1224,36 @@ function validateSharedDefinitions() {
 			source: parserSource,
 		},
 		{
+			consumer: "_getFallbackResolution",
+			helper: "_degradeToDecodableResolution",
+			source: parserSource,
+		},
+		{
+			consumer: "_resolvePreferredBackupResolution",
+			helper: "_degradeToDecodableResolution",
+			source: parserSource,
+		},
+		{
+			consumer: "_degradeToDecodableResolution",
+			helper: "_isEnhancedCodecString",
+			source: parserSource,
+		},
+		{
+			consumer: "_stripHevcBackupVariants",
+			helper: "_dropEnhancedVariantLines",
+			source: parserSource,
+		},
+		{
+			consumer: "_dropEnhancedVariantLines",
+			helper: "_isEnhancedCodecString",
+			source: parserSource,
+		},
+		{
+			consumer: "_dropEnhancedVariantLines",
+			helper: "_parseAttrs",
+			source: parserSource,
+		},
+		{
 			consumer: "_processM3U8Core",
 			helper: "_recordAdDurations",
 			source: processorSource,

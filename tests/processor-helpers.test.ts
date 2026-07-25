@@ -3516,3 +3516,304 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		expect(findCalls.length).toBe(0);
 	});
 });
+
+describe("_degradeToDecodableResolution (enhanced-codec backup targeting)", () => {
+	const fn = () =>
+		T<
+			(
+				info: unknown,
+				entry: unknown,
+				resolutionList: unknown,
+			) => Record<string, unknown> | null
+		>("_degradeToDecodableResolution");
+
+	const hevc1440 = {
+		Name: "chunked",
+		Resolution: "2560x1440",
+		FrameRate: 60,
+		Codecs: "hev1.1.6.L153.B0",
+	};
+	const av11440 = {
+		Name: "1440p60",
+		Resolution: "2560x1440",
+		FrameRate: 60,
+		Codecs: "av01.0.13M.08",
+	};
+	const avc1080 = {
+		Name: "1080p60",
+		Resolution: "1920x1080",
+		FrameRate: 60,
+		Codecs: "avc1.4D402A",
+	};
+	const avc720 = {
+		Name: "720p60",
+		Resolution: "1280x720",
+		FrameRate: 60,
+		Codecs: "avc1.4D401F",
+	};
+	const avc360 = {
+		Name: "360p30",
+		Resolution: "640x360",
+		FrameRate: 30,
+		Codecs: "avc1.4D401E",
+	};
+	const ladder = [hevc1440, av11440, avc1080, avc720, avc360];
+
+	it("degrades an HEVC target to the highest AVC rung under it so the AVC-reloaded player can decode the backup", () => {
+		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		expect(fn()(info, hevc1440, ladder)).toBe(avc1080);
+	});
+
+	it("degrades AV1 identically because neither AV1 nor HEVC splices into an AVC pipeline", () => {
+		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		expect(fn()(info, av11440, ladder)).toBe(avc1080);
+	});
+
+	it("leaves an enhanced target alone when no AVC fallback master exists to reload onto", () => {
+		expect(fn()(makeInfo(), hevc1440, ladder)).toBe(hevc1440);
+	});
+
+	it("keeps the enhanced target when the ladder offers no AVC rung at all", () => {
+		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		expect(fn()(info, hevc1440, [hevc1440, av11440])).toBe(hevc1440);
+	});
+
+	it("never promotes an already-decodable target to a higher rung", () => {
+		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		expect(fn()(info, avc720, ladder)).toBe(avc720);
+	});
+
+	it("degrades below the ceiling only, so a 1080p enhanced target cannot become 1440p", () => {
+		const enhanced1080 = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			FrameRate: 60,
+			Codecs: "hvc1.2.4.L120.B0",
+		};
+		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		expect(fn()(info, enhanced1080, [hevc1440, enhanced1080, avc720])).toBe(
+			avc720,
+		);
+	});
+
+	describe("Source quality on an enhanced stream", () => {
+		const fallback = () =>
+			T<(info: unknown, url: string) => Record<string, unknown> | null>(
+				"_getFallbackResolution",
+			);
+		const preferred = () =>
+			T<(info: unknown, floor?: number) => Record<string, unknown> | null>(
+				"_resolvePreferredBackupResolution",
+			);
+
+		let previousQualityGroup: unknown;
+
+		beforeEach(() => {
+			previousQualityGroup = getState().PreferredQualityGroup;
+		});
+
+		afterEach(() => {
+			getState().PreferredQualityGroup = previousQualityGroup;
+		});
+
+		it("resolves Source to the AVC rung once an AVC fallback master is prepared", () => {
+			getState().PreferredQualityGroup = "chunked";
+			const info = makeInfo({
+				ResolutionList: ladder,
+				ModifiedM3U8: "#EXTM3U",
+			});
+			expect(fallback()(info, "")).toBe(avc1080);
+			expect(preferred()(info)).toBe(avc1080);
+		});
+
+		it("still honours Source verbatim on an AVC-only stream that never built a fallback master", () => {
+			getState().PreferredQualityGroup = "chunked";
+			const info = makeInfo({ ResolutionList: ladder });
+			expect(fallback()(info, "")).toBe(hevc1440);
+		});
+
+		it("degrades a sustained enhanced native rung when no quality group is pinned", () => {
+			getState().PreferredQualityGroup = null;
+			const info = makeInfo({
+				ResolutionList: ladder,
+				ModifiedM3U8: "#EXTM3U",
+				SustainedNativeResolution: hevc1440,
+			});
+			expect(preferred()(info)).toBe(avc1080);
+		});
+	});
+});
+
+describe("enhanced-codec handoff in _processM3U8Core", () => {
+	const core = () =>
+		T<
+			(
+				url: string,
+				text: string,
+				fetchFn: (input: string) => Promise<Response>,
+			) => Promise<string>
+		>("_processM3U8Core");
+
+	const bridgeUrl = "https://video-weaver.example/v1/playlist/hevc-live.m3u8";
+	const adLadenNative = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		'#EXT-X-DATERANGE:ID="stitched-ad-99",CLASS="twitch-stitched-ad",START-DATE="2026-06-12T00:00:00Z"',
+		"#EXTINF:2.000,",
+		"https://edge.example/stitched-ad-99.ts",
+		"#EXTINF:2.000,live",
+		"https://edge.example/native-live-2.ts",
+	].join("\n");
+	const fetchStub = async () => new Response(null, { status: 404 });
+	const hevcSource = {
+		Name: "chunked",
+		Resolution: "2560x1440",
+		FrameRate: 60,
+		Codecs: "hev1.1.6.L153.B0",
+	};
+
+	let previousGetInfo: unknown;
+	let previousNotify: unknown;
+	let previousFind: unknown;
+	let previousPlayed: unknown;
+	let previousPlaying: unknown;
+
+	beforeEach(() => {
+		previousGetInfo = g._getStreamInfoForPlaylist;
+		previousNotify = g._notifyAdComplete;
+		previousFind = g._findBackupStream;
+		previousPlayed = getState().PlayerHasPlayedOnce;
+		previousPlaying = getState().PlayerIsPlaying;
+		g._notifyAdComplete = async () => {};
+		g._findBackupStream = async () => ({ type: null, m3u8: null });
+		getState().CurrentAdChannel = null;
+		getState().CurrentAdMediaKey = null;
+		getState().DisableAutoplayBackup = false;
+	});
+
+	afterEach(() => {
+		if (previousGetInfo === undefined) {
+			delete g._getStreamInfoForPlaylist;
+		} else {
+			g._getStreamInfoForPlaylist = previousGetInfo;
+		}
+		if (previousNotify === undefined) {
+			delete g._notifyAdComplete;
+		} else {
+			g._notifyAdComplete = previousNotify;
+		}
+		if (previousFind === undefined) {
+			delete g._findBackupStream;
+		} else {
+			g._findBackupStream = previousFind;
+		}
+		getState().PlayerHasPlayedOnce = previousPlayed;
+		getState().PlayerIsPlaying = previousPlaying;
+	});
+
+	it("strips the break while deferring the handoff, so a not-yet-playing enhanced player never receives raw ad segments", async () => {
+		const info = makeInfo({
+			ResolutionList: [hevcSource],
+			ModifiedM3U8: "#EXTM3U",
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		getState().PlayerHasPlayedOnce = false;
+		getState().PlayerIsPlaying = false;
+
+		const out = await core()(bridgeUrl, adLadenNative, fetchStub);
+
+		expect(out).not.toContain("stitched-ad-99.ts");
+		expect(out).toContain("native-live-2.ts");
+	});
+
+	it("commits to the AVC fallback master even without a clean native hold, so the reloaded player cannot land back on the enhanced master", async () => {
+		const info = makeInfo({
+			ResolutionList: [hevcSource],
+			ModifiedM3U8: "#EXTM3U",
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		getState().PlayerHasPlayedOnce = true;
+		getState().PlayerIsPlaying = true;
+
+		const out = await core()(bridgeUrl, adLadenNative, fetchStub);
+
+		expect(info.IsUsingModifiedM3U8).toBe(true);
+		expect(Number(info.LastPlayerReload)).toBeGreaterThan(0);
+		expect(out).not.toContain("stitched-ad-99.ts");
+	});
+
+	it("does not reload again once the AVC master is committed, so the enhanced path cannot loop the player", async () => {
+		const info = makeInfo({
+			ResolutionList: [hevcSource],
+			ModifiedM3U8: "#EXTM3U",
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		getState().PlayerHasPlayedOnce = true;
+		getState().PlayerIsPlaying = true;
+
+		await core()(bridgeUrl, adLadenNative, fetchStub);
+		const firstReload = Number(info.LastPlayerReload);
+		await core()(bridgeUrl, adLadenNative, fetchStub);
+
+		expect(Number(info.LastPlayerReload)).toBe(firstReload);
+	});
+});
+
+describe("_dropEnhancedVariantLines (AVC fallback master shape)", () => {
+	const fn = () =>
+		T<
+			(lines: string[]) => {
+				kept: string[];
+				removed: number;
+				remaining: number;
+			}
+		>("_dropEnhancedVariantLines");
+
+	const enhancedMaster = [
+		"#EXTM3U",
+		'#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked",NAME="1440p60"',
+		'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="chunked"',
+		"https://edge.example/1440-hevc/index.m3u8",
+		'#EXT-X-STREAM-INF:BANDWIDTH=12000000,RESOLUTION=2560x1440,CODECS="av01.0.13M.08,mp4a.40.2",VIDEO="1440p60-av1"',
+		"https://edge.example/1440-av1/index.m3u8",
+		'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+		"https://edge.example/1080-avc/index.m3u8",
+		'#EXT-X-STREAM-INF:BANDWIDTH=1300000,RESOLUTION=640x360,CODECS="avc1.4D401E,mp4a.40.2",VIDEO="360p30"',
+		"https://edge.example/360-avc/index.m3u8",
+	];
+
+	it("drops enhanced variants outright instead of aliasing them onto an AVC URI", () => {
+		const { kept, removed, remaining } = fn()(enhancedMaster);
+		const master = kept.join("\n");
+		expect(removed).toBe(2);
+		expect(remaining).toBe(2);
+		expect(master).not.toContain("hev1.");
+		expect(master).not.toContain("av01.");
+		expect(master).not.toContain("2560x1440");
+		expect(master).toContain("https://edge.example/1080-avc/index.m3u8");
+		expect(master).toContain("https://edge.example/360-avc/index.m3u8");
+	});
+
+	it("emits each variant URI exactly once so the player cannot pick a mislabelled duplicate", () => {
+		const uris = fn()(enhancedMaster).kept.filter((line) =>
+			line.startsWith("https://"),
+		);
+		expect(uris).toEqual([
+			"https://edge.example/1080-avc/index.m3u8",
+			"https://edge.example/360-avc/index.m3u8",
+		]);
+	});
+
+	it("leaves an AVC-only master untouched", () => {
+		const avcOnly = enhancedMaster.slice(6);
+		const { kept, removed } = fn()(avcOnly);
+		expect(removed).toBe(0);
+		expect(kept).toEqual(avcOnly);
+	});
+
+	it("reports no AVC rung left when every variant is enhanced, so callers can decline the swap", () => {
+		const { removed, remaining } = fn()(enhancedMaster.slice(0, 6));
+		expect(removed).toBe(2);
+		expect(remaining).toBe(0);
+	});
+});

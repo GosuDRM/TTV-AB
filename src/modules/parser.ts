@@ -804,23 +804,6 @@ function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
 	};
 }
 
-function _replaceOrAppendStreamInfAttribute(line, key, value) {
-	if (typeof line !== "string" || typeof key !== "string") return line;
-	if (typeof value !== "string" || !value) return line;
-
-	const normalizedKey = key.trim().toUpperCase();
-	if (!/^[A-Z0-9-]+$/.test(normalizedKey)) return line;
-
-	const escapedValue = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-	const nextAttribute = `${normalizedKey}="${escapedValue}"`;
-	const attrPattern = new RegExp(`(^|,)${normalizedKey}=("[^"]*"|[^,]*)`, "i");
-	if (attrPattern.test(line)) {
-		return line.replace(attrPattern, `$1${nextAttribute}`);
-	}
-
-	return `${line},${nextAttribute}`;
-}
-
 function _getStreamUrl(m3u8, res, baseUrl = null) {
 	const lines = m3u8.split("\n");
 	const len = lines.length;
@@ -983,6 +966,33 @@ function _getResolutionByQualityGroup(resolutionList, qualityGroup) {
 	);
 }
 
+function _degradeToDecodableResolution(info, entry, resolutionList) {
+	if (!entry || !info?.ModifiedM3U8) return entry;
+	if (!_isEnhancedCodecString(entry?.Codecs)) return entry;
+	const heightOf = (candidate) => {
+		const [, h] = String(candidate?.Resolution || "0x0")
+			.split("x")
+			.map(Number);
+		return Number.isFinite(h) ? h : 0;
+	};
+	const ceiling = heightOf(entry);
+	const list = Array.isArray(resolutionList)
+		? resolutionList.filter(Boolean)
+		: [];
+	let best = null;
+	let bestHeight = 0;
+	for (const candidate of list) {
+		if (_isEnhancedCodecString(candidate?.Codecs)) continue;
+		const height = heightOf(candidate);
+		if (height <= 0 || (ceiling > 0 && height > ceiling)) continue;
+		if (height > bestHeight) {
+			best = candidate;
+			bestHeight = height;
+		}
+	}
+	return best || entry;
+}
+
 function _getFallbackResolution(info, url) {
 	const resolutionList = Array.isArray(info?.ResolutionList)
 		? info.ResolutionList.filter(Boolean)
@@ -1010,18 +1020,16 @@ function _getFallbackResolution(info, url) {
 		typeof __TTVAB_STATE__ !== "undefined"
 			? __TTVAB_STATE__?.PreferredQualityGroup
 			: null;
-	const preferredResolution = _getResolutionByQualityGroup(
+	const preferredResolution = _degradeToDecodableResolution(
+		info,
+		_getResolutionByQualityGroup(resolutionList, preferredQualityGroup),
 		resolutionList,
-		preferredQualityGroup,
 	);
 	if (preferredResolution) return preferredResolution;
 
 	const sorted = _getSortedResolutionList(resolutionList);
-	const preferNonHevc = Boolean(info?.ModifiedM3U8);
 	const isDecodable = (entry) =>
-		!preferNonHevc ||
-		entry?.Codecs?.startsWith("avc") ||
-		entry?.Codecs?.startsWith("av0");
+		!info?.ModifiedM3U8 || !_isEnhancedCodecString(entry?.Codecs);
 	const heightOf = (entry) => {
 		const [, h] = String(entry?.Resolution || "0x0")
 			.split("x")
@@ -1086,12 +1094,7 @@ function _shouldAvoidHevcBackupVariants(info) {
 	return true;
 }
 
-function _stripHevcBackupVariants(info, m3u8) {
-	if (typeof m3u8 !== "string" || !m3u8.includes("#EXT-X-STREAM-INF")) {
-		return m3u8;
-	}
-	if (!_shouldAvoidHevcBackupVariants(info)) return m3u8;
-	const lines = m3u8.split("\n");
+function _dropEnhancedVariantLines(lines) {
 	const kept = [];
 	let removed = 0;
 	let remaining = 0;
@@ -1112,6 +1115,17 @@ function _stripHevcBackupVariants(info, m3u8) {
 		}
 		kept.push(line);
 	}
+	return { kept, removed, remaining };
+}
+
+function _stripHevcBackupVariants(info, m3u8) {
+	if (typeof m3u8 !== "string" || !m3u8.includes("#EXT-X-STREAM-INF")) {
+		return m3u8;
+	}
+	if (!_shouldAvoidHevcBackupVariants(info)) return m3u8;
+	const { kept, removed, remaining } = _dropEnhancedVariantLines(
+		m3u8.split("\n"),
+	);
 	if (removed === 0 || remaining === 0) return m3u8;
 	if (info) {
 		if (!info._LoggedWhitelistByType) {
@@ -1139,12 +1153,17 @@ function _resolvePreferredBackupResolution(info, floorHeight = 360) {
 		typeof __TTVAB_STATE__ !== "undefined"
 			? __TTVAB_STATE__?.PreferredQualityGroup
 			: null;
-	let target = _getResolutionByQualityGroup(
+	let target = _degradeToDecodableResolution(
+		info,
+		_getResolutionByQualityGroup(resolutionList, preferredQualityGroup),
 		resolutionList,
-		preferredQualityGroup,
 	);
 	if (!target) {
-		const sustained = info?.SustainedNativeResolution;
+		const sustained = _degradeToDecodableResolution(
+			info,
+			info?.SustainedNativeResolution,
+			resolutionList,
+		);
 		const [, sh] = String(sustained?.Resolution || "0x0")
 			.split("x")
 			.map(Number);

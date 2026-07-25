@@ -1568,10 +1568,10 @@ async function _processM3U8Core(url, text, realFetch) {
 				__TTVAB_STATE__.PlayerIsPlaying !== true)
 		) {
 			_log(
-				"[Trace] Deferring HEVC/AV1 ad-block until active playback resumes",
+				"[Trace] Deferring HEVC/AV1 backup handoff until active playback resumes",
 				"info",
 			);
-			return text;
+			return _stripAds(text, false, info);
 		}
 
 		if (!info.IsMidroll) {
@@ -1668,7 +1668,6 @@ async function _processM3U8Core(url, text, realFetch) {
 
 		if (
 			isEnhancedCodec &&
-			!__TTVAB_STATE__.SkipPlayerReloadOnHevc &&
 			info.ModifiedM3U8 &&
 			!info.IsUsingModifiedM3U8 &&
 			!_isRecentPostAdReentry(info)
@@ -1686,9 +1685,7 @@ async function _processM3U8Core(url, text, realFetch) {
 				})
 					? info.LastCleanNativeM3U8
 					: null;
-			if (cleanNativeM3U8) {
-				info.IsUsingModifiedM3U8 = true;
-			}
+			info.IsUsingModifiedM3U8 = true;
 			info.LastPlayerReload = Date.now();
 			if (typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
@@ -1705,10 +1702,10 @@ async function _processM3U8Core(url, text, realFetch) {
 			_log(
 				cleanNativeM3U8
 					? "[Trace] Reloading before HEVC/AV1 backup handoff; holding clean native playlist for current request"
-					: "[Trace] Reloading before HEVC/AV1 backup handoff; no clean native hold available",
+					: "[Trace] Reloading before HEVC/AV1 backup handoff; serving stripped playlist until the AVC master loads",
 				"info",
 			);
-			return cleanNativeM3U8 || text;
+			return cleanNativeM3U8 || _stripAds(text, false, info);
 		}
 
 		if (!info.CsaiOnlyThisBreak && !info.IsUsingModifiedM3U8) {
