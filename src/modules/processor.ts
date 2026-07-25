@@ -2032,6 +2032,9 @@ async function _processM3U8Core(url, text, realFetch) {
 		const heldBackupPlayerType = isSilentBackupHoldEnd
 			? info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType || null
 			: null;
+		const heldBackupResolution = isSilentBackupHoldEnd
+			? info.ActiveBackupResolution || null
+			: null;
 		const {
 			wasUsingModifiedM3U8,
 			wasUsingFallbackStream,
@@ -2046,8 +2049,21 @@ async function _processM3U8Core(url, text, realFetch) {
 			info.ActiveBackupPlayerType = heldBackupPlayerType;
 			info.ActiveBackupResolution =
 				(_resolvePreferredBackupResolution(info) || res)?.Resolution || null;
+			const [, heldH] = String(heldBackupResolution || "0x0")
+				.split("x")
+				.map(Number);
+			const [, nativeH] = String(
+				info.SustainedNativeResolution?.Resolution || "0x0",
+			)
+				.split("x")
+				.map(Number);
+			const heldHeight = Number.isFinite(heldH) ? heldH : 0;
+			const nativeHeight = Number.isFinite(nativeH) ? nativeH : 0;
+			const heldAutoplayMatchedNative =
+				heldHeight > 0 && nativeHeight > 0 && heldHeight >= nativeHeight;
 			info.HevcReloadPendingAfterHold =
-				wasUsingModifiedM3U8 || heldBackupPlayerType === "autoplay";
+				wasUsingModifiedM3U8 ||
+				(heldBackupPlayerType === "autoplay" && !heldAutoplayMatchedNative);
 		}
 		__TTVAB_STATE__.CurrentAdChannel = null;
 		__TTVAB_STATE__.CurrentAdMediaKey = null;
@@ -2768,7 +2784,10 @@ async function _searchBackupStream(
 											break;
 										}
 									}
-									info._BackupProbation = null;
+									info._BackupProbation =
+										pt === "autoplay"
+											? null
+											: { type: pt, at: 0, cleanChecks: requiredCleanHolds };
 									_clearBackupPlayerRetryCooldown(info, pt);
 									backupType = pt;
 									backupM3u8 = m3u8;
