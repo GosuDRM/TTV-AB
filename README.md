@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v13.2.3 - 2026-07-26
+- **The remaining error 4000 race on 1440p and 2K channels is fixed.** Late requests from the retiring enhanced-quality player are isolated until the compatible replacement stream takes over, keeping the codec handoff clean.
+
 ### v13.2.2 - 2026-07-26
 - **1440p and 2K ad breaks now wait for a ready, compatible backup.** Enhanced-quality channels keep clean playback during the codec handoff and stay on that backup until the full ad pod has finished, preventing early restores and repeated reloads.
 
 ### v13.2.1 - 2026-07-25
 - **Ad breaks no longer trigger a second ad right after they end.** The player stops restarting when the backup stream was already at your normal quality, and the video no longer glitches from the extension switching between backup streams mid-break.
-
-### v13.2.0 - 2026-07-25 (experimental)
-- **1440p and 2K channels no longer black out or throw an error when an ad starts.** Enhanced-quality channels switch to a stream the player can actually decode, and ads are always removed while that switch happens.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
