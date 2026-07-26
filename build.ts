@@ -1234,6 +1234,11 @@ function validateSharedDefinitions() {
 			source: parserSource,
 		},
 		{
+			consumer: "_resolveAdBackupTargetResolution",
+			helper: "_degradeToDecodableResolution",
+			source: processorSource,
+		},
+		{
 			consumer: "_degradeToDecodableResolution",
 			helper: "_isEnhancedCodecString",
 			source: parserSource,
