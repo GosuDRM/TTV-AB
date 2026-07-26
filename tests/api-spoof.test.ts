@@ -60,6 +60,32 @@ function adRangeNoPodLength(id: number) {
 }
 
 describe("_notifyAdComplete", () => {
+	it("records declared pod progress even when spoofing is disabled", async () => {
+		const notify =
+			T<
+				(
+					text: string,
+					info: {
+						SpoofedAdIds: Set<string>;
+						ObservedAdPodIds: Set<string>;
+						ExpectedAdPodLength: number;
+					},
+				) => Promise<void>
+			>("_notifyAdComplete");
+		const info = {
+			SpoofedAdIds: new Set<string>(),
+			ObservedAdPodIds: new Set<string>(),
+			ExpectedAdPodLength: 0,
+		};
+		(g.__TTVAB_STATE__ as Record<string, unknown>).DisableAdSpoofing = true;
+
+		await notify(["#EXTM3U", adRange(1)].join("\n").concat("\n"), info);
+
+		expect(info.ExpectedAdPodLength).toBe(2);
+		expect([...info.ObservedAdPodIds]).toEqual(["stitched-ad-1"]);
+		expect(info.SpoofedAdIds.size).toBe(0);
+	});
+
 	it("does not spoof more ads than the declared pod length", async () => {
 		const notify =
 			T<

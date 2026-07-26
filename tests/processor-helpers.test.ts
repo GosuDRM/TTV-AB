@@ -118,6 +118,8 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		IsUsingBackupStream: false,
 		RequestedAds: new Set<string>(),
 		SpoofedAdIds: new Set<string>(),
+		ObservedAdPodIds: new Set<string>(),
+		ExpectedAdPodLength: 0,
 		FailedBackupPlayerTypes: new Map<string, number>(),
 		ActiveBackupPlayerType: null,
 		ActiveBackupResolution: null,
@@ -472,6 +474,8 @@ describe("_resetStreamAdState", () => {
 			IsHoldingBackupAfterAd: true,
 			HevcReloadPendingAfterHold: true,
 			ConsecutiveFailedNativeProbes: 4,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			ExpectedAdPodLength: 4,
 			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 			_EmptyAdHoldMediaSequence: 12,
 			_BackupProbation: { type: "site", at: 123 },
@@ -487,6 +491,8 @@ describe("_resetStreamAdState", () => {
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
+		expect((info.ObservedAdPodIds as Set<string>).size).toBe(0);
+		expect(info.ExpectedAdPodLength).toBe(0);
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
 		expect(info._BackupProbation).toBe(null);
@@ -2406,6 +2412,28 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 	});
 
+	it("still reloads a same-resolution autoplay hold when native uses an enhanced codec", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			ActiveBackupResolution: "2560x1440",
+			SustainedNativeResolution: {
+				Resolution: "2560x1440",
+				Name: "chunked",
+				Codecs: "hev1.1.6.L153.B0",
+			},
+		});
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
+	});
+
 	it("still reloads after the hold when the autoplay backup was below native quality", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			ConsecutiveFailedNativeProbes: 6,
@@ -3013,6 +3041,28 @@ describe("_resolveAdBackupTargetResolution", () => {
 			state.PreferredQualityGroup = previousGroup;
 		}
 	});
+
+	it("never lets an enhanced live URL override the decodable AVC target", () => {
+		getState().PreferredQualityGroup = null;
+		const hevc1440 = {
+			Resolution: "2560x1440",
+			Name: "chunked",
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const avc1080 = {
+			Resolution: "1920x1080",
+			Name: "1080p60",
+			Codecs: "avc1.4D402A",
+		};
+		const info = makeTargetInfo({
+			ModifiedM3U8: "#EXTM3U",
+			ResolutionList: [hevc1440, avc1080],
+			Urls: { [URL_1080]: hevc1440 },
+			SustainedNativeResolution: hevc1440,
+		});
+
+		expect(fn()(info, URL_1080)).toBe(avc1080);
+	});
 });
 
 describe("_isAdEndStable (escalating confirmation)", () => {
@@ -3100,6 +3150,44 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 		try {
 			const result = await fn()(makePendingInfo(), null);
 			expect(result).toBe("wait");
+			expect(probe.calls.count).toBe(1);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("does not trust fresh clean probes while a declared pod is incomplete", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					PendingAdEndAt: Date.now() - 5000,
+					CleanPlaylistCount: 4,
+					ExpectedAdPodLength: 4,
+					ObservedAdPodIds: new Set(["stitched-ad-1"]),
+					LastCleanBackupM3U8: makePlaylist(10, 3),
+					VisibleAdStartedAt: Date.now() - 5000,
+				}),
+				null,
+			);
+			expect(result).toBe("wait");
+			expect(probe.calls.count).toBe(0);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("allows normal confirmation once every declared pod ad was observed", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					ExpectedAdPodLength: 2,
+					ObservedAdPodIds: new Set(["stitched-ad-1", "stitched-ad-2"]),
+				}),
+				null,
+			);
+			expect(result).toBe("ended");
 			expect(probe.calls.count).toBe(1);
 		} finally {
 			probe.restore();
@@ -3754,6 +3842,9 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 	let previousFind: unknown;
 	let previousPlayed: unknown;
 	let previousPlaying: unknown;
+	let previousPostMessage: unknown;
+	let previousBridgeMessage: unknown;
+	let previousPageEvent: unknown;
 
 	beforeEach(() => {
 		previousGetInfo = g._getStreamInfoForPlaylist;
@@ -3761,8 +3852,14 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 		previousFind = g._findBackupStream;
 		previousPlayed = getState().PlayerHasPlayedOnce;
 		previousPlaying = getState().PlayerIsPlaying;
+		previousPostMessage = g.postMessage;
+		previousBridgeMessage = g._postWorkerBridgeMessage;
+		previousPageEvent = g._createPageScopedWorkerEvent;
 		g._notifyAdComplete = async () => {};
 		g._findBackupStream = async () => ({ type: null, m3u8: null });
+		g.postMessage = () => {};
+		g._postWorkerBridgeMessage = vi.fn();
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
 		getState().CurrentAdChannel = null;
 		getState().CurrentAdMediaKey = null;
 		getState().DisableAutoplayBackup = false;
@@ -3786,7 +3883,15 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 		}
 		getState().PlayerHasPlayedOnce = previousPlayed;
 		getState().PlayerIsPlaying = previousPlaying;
+		g.postMessage = previousPostMessage;
+		g._postWorkerBridgeMessage = previousBridgeMessage;
+		g._createPageScopedWorkerEvent = previousPageEvent;
 	});
+
+	const reloadMessages = () =>
+		(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls.filter(
+			(call) => (call[1] as Record<string, unknown>)?.key === "ReloadPlayer",
+		);
 
 	it("strips the break while deferring the handoff, so a not-yet-playing enhanced player never receives raw ad segments", async () => {
 		const info = makeInfo({
@@ -3803,7 +3908,7 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 		expect(out).toContain("native-live-2.ts");
 	});
 
-	it("commits to the AVC fallback master even without a clean native hold, so the reloaded player cannot land back on the enhanced master", async () => {
+	it("does not reload the enhanced player before a clean AVC backup is ready", async () => {
 		const info = makeInfo({
 			ResolutionList: [hevcSource],
 			ModifiedM3U8: "#EXTM3U",
@@ -3814,25 +3919,75 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 
 		const out = await core()(bridgeUrl, adLadenNative, fetchStub);
 
-		expect(info.IsUsingModifiedM3U8).toBe(true);
-		expect(Number(info.LastPlayerReload)).toBeGreaterThan(0);
+		expect(info.IsUsingModifiedM3U8).toBe(false);
+		expect(Number(info.LastPlayerReload)).toBe(0);
+		expect(reloadMessages()).toHaveLength(0);
 		expect(out).not.toContain("stitched-ad-99.ts");
 	});
 
+	it("commits and reloads only after the clean AVC backup is ready", async () => {
+		const cleanBackup = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXTINF:2.000,live",
+			"https://edge.example/backup-live-1.ts",
+		].join("\n");
+		const cleanNative = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXTINF:2.000,live",
+			"https://edge.example/native-live-1.ts",
+		].join("\n");
+		const info = makeInfo({
+			ResolutionList: [hevcSource],
+			ModifiedM3U8: "#EXTM3U",
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativePlaylistAt: Date.now(),
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = async () => {
+			info.LastCleanBackupM3U8 = cleanBackup;
+			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupAt = Date.now();
+			return { type: "autoplay", m3u8: cleanBackup };
+		};
+		getState().PlayerHasPlayedOnce = true;
+		getState().PlayerIsPlaying = true;
+
+		const out = await core()(bridgeUrl, adLadenNative, fetchStub);
+
+		expect(info.IsUsingModifiedM3U8).toBe(true);
+		expect(Number(info.LastPlayerReload)).toBeGreaterThan(0);
+		expect(reloadMessages()).toHaveLength(1);
+		expect(out).toBe(cleanNative);
+		expect(out).not.toContain("backup-live-1.ts");
+	});
+
 	it("does not reload again once the AVC master is committed, so the enhanced path cannot loop the player", async () => {
+		const cleanBackup = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXTINF:2.000,live",
+			"https://edge.example/backup-live-1.ts",
+		].join("\n");
 		const info = makeInfo({
 			ResolutionList: [hevcSource],
 			ModifiedM3U8: "#EXTM3U",
 		});
 		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = async () => {
+			info.LastCleanBackupM3U8 = cleanBackup;
+			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupAt = Date.now();
+			return { type: "autoplay", m3u8: cleanBackup };
+		};
 		getState().PlayerHasPlayedOnce = true;
 		getState().PlayerIsPlaying = true;
 
 		await core()(bridgeUrl, adLadenNative, fetchStub);
-		const firstReload = Number(info.LastPlayerReload);
 		await core()(bridgeUrl, adLadenNative, fetchStub);
 
-		expect(Number(info.LastPlayerReload)).toBe(firstReload);
+		expect(reloadMessages()).toHaveLength(1);
 	});
 });
 

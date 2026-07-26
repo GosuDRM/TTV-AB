@@ -23,6 +23,8 @@ function _resetStreamAdState(info) {
 		}
 	}
 	info.SpoofedAdIds?.clear?.();
+	info.ObservedAdPodIds?.clear?.();
+	info.ExpectedAdPodLength = 0;
 	info.FailedBackupPlayerTypes?.clear?.();
 	info.ActiveBackupPlayerType = null;
 	info.ActiveBackupResolution = null;
@@ -355,7 +357,14 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 }
 
 function _resolveAdBackupTargetResolution(info, url = "") {
-	const urlResolution = _resolvePlaybackResolutionForUrl(info, url);
+	const resolutionList = Array.isArray(info?.ResolutionList)
+		? info.ResolutionList.filter(Boolean)
+		: [];
+	const urlResolution = _degradeToDecodableResolution(
+		info,
+		_resolvePlaybackResolutionForUrl(info, url),
+		resolutionList,
+	);
 	const preferredResolution = _resolvePreferredBackupResolution(info);
 	if (!preferredResolution) return urlResolution;
 	if (!urlResolution) return preferredResolution;
@@ -459,11 +468,34 @@ async function _isAdEndStable(info, realFetch, resolution = null) {
 		return "wait";
 	}
 
-	const hasNativeRecoveryReady = await _canReloadNativePlayerAfterAd(
-		info,
-		realFetch,
-		resolution,
+	const expectedPodLength = Math.max(
+		0,
+		Math.trunc(Number(info.ExpectedAdPodLength) || 0),
 	);
+	const observedPodAds =
+		info.ObservedAdPodIds instanceof Set ? info.ObservedAdPodIds.size : 0;
+	const declaredPodIncomplete =
+		expectedPodLength > 0 && observedPodAds < expectedPodLength;
+	let hasNativeRecoveryReady = false;
+	if (declaredPodIncomplete) {
+		if (!info._LoggedWhitelistByType) {
+			info._LoggedWhitelistByType = new Set();
+		}
+		const progressKey = `pod-incomplete:${observedPodAds}/${expectedPodLength}`;
+		if (!info._LoggedWhitelistByType.has(progressKey)) {
+			info._LoggedWhitelistByType.add(progressKey);
+			_log(
+				`[Trace] Declared ad pod still active (${observedPodAds}/${expectedPodLength}); holding clean backup stream`,
+				"info",
+			);
+		}
+	} else {
+		hasNativeRecoveryReady = await _canReloadNativePlayerAfterAd(
+			info,
+			realFetch,
+			resolution,
+		);
+	}
 	if (!info.IsShowingAd) {
 		return "wait";
 	}
@@ -1055,6 +1087,8 @@ function _createStreamInfo(context) {
 		RequestedAds: new Set(),
 		SpoofedAdIds: new Set(),
 		RecentSpoofedAdIds: new Map(),
+		ObservedAdPodIds: new Set(),
+		ExpectedAdPodLength: 0,
 		MeasuredAdIds: new Set(),
 		_SecondsReportedForCycle: 0,
 		FailedBackupPlayerTypes: new Map(),
@@ -1666,48 +1700,6 @@ async function _processM3U8Core(url, text, realFetch) {
 			return text;
 		}
 
-		if (
-			isEnhancedCodec &&
-			info.ModifiedM3U8 &&
-			!info.IsUsingModifiedM3U8 &&
-			!_isRecentPostAdReentry(info)
-		) {
-			const cleanNativeAgeMs =
-				Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0);
-			const cleanNativeM3U8 =
-				typeof info.LastCleanNativeM3U8 === "string" &&
-				info.LastCleanNativeM3U8 &&
-				cleanNativeAgeMs >= 0 &&
-				cleanNativeAgeMs <= 10000 &&
-				!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8) &&
-				!_playlistHasKnownAdSegments(info.LastCleanNativeM3U8, {
-					includeCached: false,
-				})
-					? info.LastCleanNativeM3U8
-					: null;
-			info.IsUsingModifiedM3U8 = true;
-			info.LastPlayerReload = Date.now();
-			if (typeof self !== "undefined" && self.postMessage) {
-				_postWorkerBridgeMessage(
-					self,
-					_createPageScopedWorkerEvent({
-						key: "ReloadPlayer",
-						channel: info.ChannelName,
-						mediaKey: info.MediaKey,
-						refreshAccessToken: true,
-						newMediaPlayerInstance: true,
-					}),
-				);
-			}
-			_log(
-				cleanNativeM3U8
-					? "[Trace] Reloading before HEVC/AV1 backup handoff; holding clean native playlist for current request"
-					: "[Trace] Reloading before HEVC/AV1 backup handoff; serving stripped playlist until the AVC master loads",
-				"info",
-			);
-			return cleanNativeM3U8 || _stripAds(text, false, info);
-		}
-
 		if (!info.CsaiOnlyThisBreak && !info.IsUsingModifiedM3U8) {
 			let hasNonLiveSegment = false;
 			const segLines = text.split("\n");
@@ -1768,7 +1760,9 @@ async function _processM3U8Core(url, text, realFetch) {
 				return info.LastCleanNativeM3U8;
 			}
 			_log(
-				"[Trace] Pre-warmed backup ready during native bridge; serving backup early",
+				isEnhancedCodec && info.ModifiedM3U8 && !info.IsUsingModifiedM3U8
+					? "[Trace] Pre-warmed AVC backup ready during native bridge; preparing codec-safe reload"
+					: "[Trace] Pre-warmed backup ready during native bridge; serving backup early",
 				"info",
 			);
 		}
@@ -1905,6 +1899,62 @@ async function _processM3U8Core(url, text, realFetch) {
 					"warning",
 				);
 			}
+		}
+
+		if (
+			isEnhancedCodec &&
+			info.ModifiedM3U8 &&
+			!info.IsUsingModifiedM3U8 &&
+			!_isRecentPostAdReentry(info)
+		) {
+			const now = Date.now();
+			const cleanNativeAgeMs =
+				now - (Number(info.LastCleanNativePlaylistAt) || 0);
+			const cleanNativeM3U8 =
+				typeof info.LastCleanNativeM3U8 === "string" &&
+				info.LastCleanNativeM3U8 &&
+				cleanNativeAgeMs >= 0 &&
+				cleanNativeAgeMs <= 10000 &&
+				!_hasPlaylistAdMarkers(info.LastCleanNativeM3U8) &&
+				!_playlistHasKnownAdSegments(info.LastCleanNativeM3U8, {
+					includeCached: false,
+				})
+					? info.LastCleanNativeM3U8
+					: null;
+			const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
+			const codecCompatibleBackupReady = Boolean(
+				typeof info.LastCleanBackupM3U8 === "string" &&
+					info.LastCleanBackupM3U8 &&
+					backupM3u8 === info.LastCleanBackupM3U8 &&
+					backupAgeMs >= 0 &&
+					backupAgeMs <= 8000 &&
+					(Number(info.LastCleanBackupAt) || 0) >=
+						Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+			);
+			if (!codecCompatibleBackupReady) {
+				return cleanNativeM3U8 || _createEmptyAdHoldPlaylist(text, info);
+			}
+			info.IsUsingModifiedM3U8 = true;
+			info.LastPlayerReload = now;
+			if (typeof self !== "undefined" && self.postMessage) {
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "ReloadPlayer",
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+						refreshAccessToken: true,
+						newMediaPlayerInstance: true,
+					}),
+				);
+			}
+			_log(
+				cleanNativeM3U8
+					? "[Trace] Reloading after HEVC/AV1 backup became ready; holding clean native playlist for current request"
+					: "[Trace] Reloading after HEVC/AV1 backup became ready; serving empty hold until the AVC master loads",
+				"info",
+			);
+			return cleanNativeM3U8 || _createEmptyAdHoldPlaylist(text, info);
 		}
 
 		if (isFallback) {
@@ -2059,8 +2109,14 @@ async function _processM3U8Core(url, text, realFetch) {
 				.map(Number);
 			const heldHeight = Number.isFinite(heldH) ? heldH : 0;
 			const nativeHeight = Number.isFinite(nativeH) ? nativeH : 0;
+			const nativeUsesEnhancedCodec = _isEnhancedCodecString(
+				info.SustainedNativeResolution?.Codecs,
+			);
 			const heldAutoplayMatchedNative =
-				heldHeight > 0 && nativeHeight > 0 && heldHeight >= nativeHeight;
+				!nativeUsesEnhancedCodec &&
+				heldHeight > 0 &&
+				nativeHeight > 0 &&
+				heldHeight >= nativeHeight;
 			info.HevcReloadPendingAfterHold =
 				wasUsingModifiedM3U8 ||
 				(heldBackupPlayerType === "autoplay" && !heldAutoplayMatchedNative);

@@ -373,16 +373,39 @@ async function _notifyAdComplete(
 	info?: {
 		SpoofedAdIds?: Set<string>;
 		RecentSpoofedAdIds?: Map<string, number>;
+		ObservedAdPodIds?: Set<string>;
+		ExpectedAdPodLength?: number;
 		ActiveBackupPlayerType?: string | null;
 	},
 ): Promise<void> {
 	try {
-		if (__TTVAB_STATE__.DisableAdSpoofing) return;
 		if (!textStr || typeof textStr !== "string") return;
 
 		const matches = [
 			...textStr.matchAll(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/g),
 		];
+		const podLenMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
+		const parsedPodLength = podLenMatch
+			? Number.parseInt(podLenMatch[1], 10)
+			: 0;
+		const hasExplicitPodLength =
+			Number.isFinite(parsedPodLength) && parsedPodLength > 0;
+		if (info && matches.length > 0) {
+			if (!(info.ObservedAdPodIds instanceof Set)) {
+				info.ObservedAdPodIds = new Set();
+			}
+			for (const match of matches) {
+				const idMatch = match[1].match(/^ID="([^"]+)"/);
+				if (idMatch?.[1]) info.ObservedAdPodIds.add(idMatch[1]);
+			}
+			if (hasExplicitPodLength) {
+				info.ExpectedAdPodLength = Math.max(
+					Math.max(0, Number(info.ExpectedAdPodLength) || 0),
+					parsedPodLength,
+				);
+			}
+		}
+		if (__TTVAB_STATE__.DisableAdSpoofing) return;
 		if (matches.length === 0) {
 			if (!__TTVAB_STATE__.LoggedAdSpoofNoMatch) {
 				__TTVAB_STATE__.LoggedAdSpoofNoMatch = true;
@@ -397,11 +420,7 @@ async function _notifyAdComplete(
 
 		const spoofedSet = info?.SpoofedAdIds || null;
 		const recentSpoofedSet = info?.RecentSpoofedAdIds || null;
-		const podLenMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
-		const hasExplicitPodLength = Boolean(podLenMatch);
-		const podLength = hasExplicitPodLength
-			? parseInt(podLenMatch[1], 10)
-			: matches.length;
+		const podLength = hasExplicitPodLength ? parsedPodLength : matches.length;
 		if (hasExplicitPodLength && spoofedSet && spoofedSet.size >= podLength) {
 			return;
 		}
