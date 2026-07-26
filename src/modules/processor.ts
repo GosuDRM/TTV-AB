@@ -840,6 +840,12 @@ function _insertBoundaryDiscontinuity(text, boundarySeq, firstSeq) {
 
 function _applyBackupSpliceBridge(info, text) {
 	if (!info || typeof text !== "string" || !text) return text;
+	if (
+		text.includes("#EXT-X-GAP") &&
+		text.includes("data:application/octet-stream;base64,")
+	) {
+		return text;
+	}
 	if (!info.IsUsingBackupStream) {
 		info._SpliceStreamId = null;
 		info._SpliceBoundarySeq = null;
@@ -1191,9 +1197,28 @@ function _buildUsherPlaybackUrl(info, sig, token) {
 }
 
 async function _processM3U8(url, text, realFetch) {
-	const result = await _processM3U8Core(url, text, realFetch);
+	let result = await _processM3U8Core(url, text, realFetch);
 	const info = _getStreamInfoForPlaylist(url);
-	return info ? _applyBackupSpliceBridge(info, result) : result;
+	if (!info) return result;
+
+	const requestResolution = _resolvePlaybackResolutionForUrl(info, url);
+	const returnedCachedBackup = Boolean(
+		typeof info.LastCleanBackupM3U8 === "string" &&
+			info.LastCleanBackupM3U8 &&
+			result === info.LastCleanBackupM3U8,
+	);
+	const returnedAvcEmptyHold = result.includes(
+		"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+	);
+	if (
+		info.ModifiedM3U8 &&
+		_isEnhancedCodecString(requestResolution?.Codecs) &&
+		(returnedCachedBackup || returnedAvcEmptyHold)
+	) {
+		result = _createCodecHandoffGapPlaylist(text);
+	}
+
+	return _applyBackupSpliceBridge(info, result);
 }
 
 async function _processM3U8Core(url, text, realFetch) {
@@ -1321,6 +1346,22 @@ async function _processM3U8Core(url, text, realFetch) {
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
 			info.LastPlayerReload = Date.now();
 		}
+	}
+
+	const res = _resolvePlaybackResolutionForUrl(info, url);
+	const isEnhancedCodec = _isEnhancedCodecString(res?.Codecs);
+	if (isEnhancedCodec && info.IsUsingModifiedM3U8) {
+		if (!info._LoggedWhitelistByType) {
+			info._LoggedWhitelistByType = new Set();
+		}
+		if (!info._LoggedWhitelistByType.has("enhanced-handoff-quarantine")) {
+			info._LoggedWhitelistByType.add("enhanced-handoff-quarantine");
+			_log(
+				"[Trace] Quarantining stale HEVC/AV1 playlist request during AVC handoff",
+				"info",
+			);
+		}
+		return _createCodecHandoffGapPlaylist(text);
 	}
 
 	const hasExplicitKnownAdSegments = _playlistHasKnownAdSegments(text, {
@@ -1585,7 +1626,6 @@ async function _processM3U8Core(url, text, realFetch) {
 
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
 
-		const res = _resolvePlaybackResolutionForUrl(info, url);
 		if (!res) {
 			_log(
 				`Missing resolution info for ${url}; using generic fallback`,
@@ -1593,7 +1633,6 @@ async function _processM3U8Core(url, text, realFetch) {
 			);
 		}
 
-		const isEnhancedCodec = _isEnhancedCodecString(res?.Codecs);
 		if (
 			isEnhancedCodec &&
 			!info.IsShowingAd &&
@@ -1605,7 +1644,7 @@ async function _processM3U8Core(url, text, realFetch) {
 				"[Trace] Deferring HEVC/AV1 backup handoff until active playback resumes",
 				"info",
 			);
-			return _stripAds(text, false, info);
+			return _stripAds(text, false, info, false, true);
 		}
 
 		if (!info.IsMidroll) {
@@ -1726,7 +1765,13 @@ async function _processM3U8Core(url, text, realFetch) {
 							info._BackupSearchStartedAt = 0;
 						});
 				}
-				const stripped = _stripAds(text, false, info, true);
+				const stripped = _stripAds(
+					text,
+					false,
+					info,
+					true,
+					isEnhancedCodec && Boolean(info.ModifiedM3U8),
+				);
 				return stripped || text;
 			}
 		}
@@ -1932,7 +1977,7 @@ async function _processM3U8Core(url, text, realFetch) {
 						Math.max(0, Number(info.VisibleAdStartedAt) || 0),
 			);
 			if (!codecCompatibleBackupReady) {
-				return cleanNativeM3U8 || _createEmptyAdHoldPlaylist(text, info);
+				return cleanNativeM3U8 || _createCodecHandoffGapPlaylist(text);
 			}
 			info.IsUsingModifiedM3U8 = true;
 			info.LastPlayerReload = now;
@@ -1951,10 +1996,10 @@ async function _processM3U8Core(url, text, realFetch) {
 			_log(
 				cleanNativeM3U8
 					? "[Trace] Reloading after HEVC/AV1 backup became ready; holding clean native playlist for current request"
-					: "[Trace] Reloading after HEVC/AV1 backup became ready; serving empty hold until the AVC master loads",
+					: "[Trace] Reloading after HEVC/AV1 backup became ready; serving codec-isolated gap until the AVC master loads",
 				"info",
 			);
-			return cleanNativeM3U8 || _createEmptyAdHoldPlaylist(text, info);
+			return cleanNativeM3U8 || _createCodecHandoffGapPlaylist(text);
 		}
 
 		if (isFallback) {
@@ -2000,7 +2045,13 @@ async function _processM3U8Core(url, text, realFetch) {
 
 		const stripEnhanced = isEnhancedCodec && info.ModifiedM3U8;
 		if (__TTVAB_STATE__.IsAdStrippingEnabled || stripEnhanced) {
-			text = _stripAds(text, stripEnhanced, info);
+			text = _stripAds(
+				text,
+				stripEnhanced,
+				info,
+				false,
+				Boolean(stripEnhanced && !info.IsUsingModifiedM3U8),
+			);
 		}
 	} else if (info.IsShowingAd) {
 		const isOfflinePlaylist =

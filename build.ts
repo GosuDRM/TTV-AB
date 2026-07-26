@@ -1230,6 +1230,11 @@ function validateSharedDefinitions() {
 			source: parserSource,
 		},
 		{
+			consumer: "_stripAds",
+			helper: "_createCodecHandoffGapPlaylist",
+			source: parserSource,
+		},
+		{
 			consumer: "_getFallbackResolution",
 			helper: "_degradeToDecodableResolution",
 			source: parserSource,
@@ -1288,6 +1293,26 @@ function validateSharedDefinitions() {
 			consumer: "_createEmptyAdHoldPlaylist",
 			helper: "_extractPlaylistHeaders",
 			source: parserSource,
+		},
+		{
+			consumer: "_createCodecHandoffGapPlaylist",
+			helper: "_extractPlaylistHeaders",
+			source: parserSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_createCodecHandoffGapPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_createCodecHandoffGapPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_isEnhancedCodecString",
+			source: processorSource,
 		},
 		{
 			consumer: "_hookWorkerFetch",

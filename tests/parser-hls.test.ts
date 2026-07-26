@@ -161,6 +161,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 				stripAll: boolean,
 				info: Record<string, unknown>,
 				skipAutoForceStrip?: boolean,
+				useCodecHandoffGap?: boolean,
 			) => string
 		>("_stripAds");
 	const getState = () => g.__TTVAB_STATE__ as Record<string, unknown>;
@@ -221,6 +222,72 @@ describe("_stripAds (empty-playlist recovery)", () => {
 			fn("https://static-cdn.jtvnw.net/__ttvab_empty_hold_segment.mp4"),
 		).toBe(false);
 		expect(fn("https://www.twitch.tv/normal-segment.mp4")).toBe(false);
+	});
+
+	it("uses a media-free gap while the player changes codec generations", () => {
+		const fn = T<(text: string) => string>("_createCodecHandoffGapPlaylist");
+		const result = fn(
+			[
+				"#EXTM3U",
+				"#EXT-X-VERSION:9",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:41",
+				"#EXT-X-DISCONTINUITY-SEQUENCE:7",
+				'#EXT-X-MAP:URI="https://edge.example/ad-init.mp4"',
+				'#EXT-X-KEY:METHOD=AES-128,URI="https://edge.example/ad.key"',
+				"#EXTINF:2.000,",
+				"https://edge.example/stitched-ad-41.mp4",
+			].join("\n"),
+		);
+
+		expect(result).toContain("#EXT-X-GAP");
+		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:41");
+		expect(result).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:7");
+		expect(result).toContain("data:application/octet-stream;base64,");
+		expect(result).not.toContain("ad-init.mp4");
+		expect(result).not.toContain("ad.key");
+		expect(result).not.toContain("stitched-ad-41.mp4");
+		expect(result).not.toContain("__ttvab_empty_hold_segment.mp4");
+		expect(result).not.toContain("data:video/mp4;base64,");
+	});
+
+	it("never reuses an AVC backup while an enhanced decoder is still active", () => {
+		const st = getState();
+		const originalSimulated = st.SimulatedAdsDepth;
+		const originalAllSegments = st.AllSegmentsAreAdSegments;
+		st.SimulatedAdsDepth = 0;
+		st.AllSegmentsAreAdSegments = false;
+
+		try {
+			const adPlaylist = [
+				"#EXTM3U",
+				"#EXT-X-VERSION:7",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:20",
+				'#EXT-X-DATERANGE:ID="stitched-ad-20"',
+				"#EXTINF:2.000,",
+				"https://edge.example/stitched-ad-20.mp4",
+			].join("\n");
+			const avcBackup = [
+				"#EXTM3U",
+				"#EXTINF:2.000,live",
+				"https://edge.example/avc-backup-20.mp4",
+			].join("\n");
+			const info = makeInfo({
+				LastCleanBackupM3U8: avcBackup,
+				LastCleanBackupPlayerType: "autoplay",
+				LastCleanBackupAt: Date.now(),
+			});
+
+			const result = fn()(adPlaylist, true, info, false, true);
+
+			expect(result).toContain("#EXT-X-GAP");
+			expect(result).not.toContain("avc-backup-20.mp4");
+			expect(result).not.toContain("__ttvab_empty_hold_segment.mp4");
+		} finally {
+			st.SimulatedAdsDepth = originalSimulated;
+			st.AllSegmentsAreAdSegments = originalAllSegments;
+		}
 	});
 
 	it("still removes explicit known ad segments when auto-force stripping is skipped", () => {

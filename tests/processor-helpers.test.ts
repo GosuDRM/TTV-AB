@@ -2336,6 +2336,29 @@ describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
 		const master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchunked/index.m3u8";
 		expect(fn()(info, master)).toBe(master);
 	});
+
+	it("does not let a retired codec GAP disturb the active backup boundary", () => {
+		const info = makeInfo({
+			IsUsingBackupStream: true,
+			ActiveBackupPlayerType: "autoplay",
+			ActiveBackupResolution: "1920x1080",
+			_SpliceStreamId: "autoplay|1920x1080",
+			_SpliceBoundarySeq: 500,
+		});
+		const gap = [
+			"#EXTM3U",
+			"#EXT-X-VERSION:7",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:900",
+			"#EXT-X-GAP",
+			"#EXTINF:1.000,live",
+			"data:application/octet-stream;base64,",
+		].join("\n");
+
+		expect(fn()(info, gap)).toBe(gap);
+		expect(info._SpliceStreamId).toBe("autoplay|1920x1080");
+		expect(info._SpliceBoundarySeq).toBe(500);
+	});
 });
 
 describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
@@ -3818,6 +3841,14 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 				fetchFn: (input: string) => Promise<Response>,
 			) => Promise<string>
 		>("_processM3U8Core");
+	const process = () =>
+		T<
+			(
+				url: string,
+				text: string,
+				fetchFn: (input: string) => Promise<Response>,
+			) => Promise<string>
+		>("_processM3U8");
 
 	const bridgeUrl = "https://video-weaver.example/v1/playlist/hevc-live.m3u8";
 	const adLadenNative = [
@@ -3922,7 +3953,9 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 		expect(info.IsUsingModifiedM3U8).toBe(false);
 		expect(Number(info.LastPlayerReload)).toBe(0);
 		expect(reloadMessages()).toHaveLength(0);
+		expect(out).toContain("#EXT-X-GAP");
 		expect(out).not.toContain("stitched-ad-99.ts");
+		expect(out).not.toContain("__ttvab_empty_hold_segment.mp4");
 	});
 
 	it("commits and reloads only after the clean AVC backup is ready", async () => {
@@ -3963,7 +3996,7 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 		expect(out).not.toContain("backup-live-1.ts");
 	});
 
-	it("does not reload again once the AVC master is committed, so the enhanced path cannot loop the player", async () => {
+	it("quarantines the retiring enhanced rendition after committing the AVC master", async () => {
 		const cleanBackup = [
 			"#EXTM3U",
 			"#EXT-X-TARGETDURATION:2",
@@ -3975,6 +4008,60 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 			ModifiedM3U8: "#EXTM3U",
 		});
 		g._getStreamInfoForPlaylist = () => info;
+		const findBackup = vi.fn(async () => {
+			info.LastCleanBackupM3U8 = cleanBackup;
+			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupAt = Date.now();
+			return { type: "autoplay", m3u8: cleanBackup };
+		});
+		g._findBackupStream = findBackup;
+		getState().PlayerHasPlayedOnce = true;
+		getState().PlayerIsPlaying = true;
+
+		const handoff = await core()(bridgeUrl, adLadenNative, fetchStub);
+		const staleEnhancedPoll = await core()(bridgeUrl, adLadenNative, fetchStub);
+
+		expect(reloadMessages()).toHaveLength(1);
+		expect(findBackup).toHaveBeenCalledTimes(1);
+		for (const result of [handoff, staleEnhancedPoll]) {
+			expect(result).toContain("#EXT-X-GAP");
+			expect(result).toContain("data:application/octet-stream;base64,");
+			expect(result).not.toContain("backup-live-1.ts");
+			expect(result).not.toContain("stitched-ad-99.ts");
+			expect(result).not.toContain("__ttvab_empty_hold_segment.mp4");
+		}
+	});
+
+	it("serves the clean backup only to the replacement AVC rendition", async () => {
+		const avcUrl = "https://video-weaver.example/v1/playlist/avc-live.m3u8";
+		const cleanBackup = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXTINF:2.000,live",
+			"https://edge.example/backup-live-1.ts",
+		].join("\n");
+		const cleanEnhancedNative = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:100",
+			"#EXTINF:2.000,live",
+			"https://edge.example/native-hevc-live-100.ts",
+		].join("\n");
+		const avc1080 = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			FrameRate: 60,
+			Codecs: "avc1.4D402A",
+		};
+		const info = makeInfo({
+			ResolutionList: [hevcSource, avc1080],
+			ModifiedM3U8: "#EXTM3U",
+			Urls: {
+				[bridgeUrl]: hevcSource,
+				[avcUrl]: avc1080,
+			},
+		});
+		g._getStreamInfoForPlaylist = () => info;
 		g._findBackupStream = async () => {
 			info.LastCleanBackupM3U8 = cleanBackup;
 			info.LastCleanBackupPlayerType = "autoplay";
@@ -3984,10 +4071,56 @@ describe("enhanced-codec handoff in _processM3U8Core", () => {
 		getState().PlayerHasPlayedOnce = true;
 		getState().PlayerIsPlaying = true;
 
-		await core()(bridgeUrl, adLadenNative, fetchStub);
-		await core()(bridgeUrl, adLadenNative, fetchStub);
+		const handoff = await core()(bridgeUrl, adLadenNative, fetchStub);
+		const staleCleanEnhancedPoll = await core()(
+			bridgeUrl,
+			cleanEnhancedNative,
+			fetchStub,
+		);
+		expect(info.IsShowingAd).toBe(true);
+		expect(info.LastCleanNativeM3U8).toBe(null);
+		const replacementAvcPoll = await core()(avcUrl, adLadenNative, fetchStub);
 
+		expect(handoff).toContain("#EXT-X-GAP");
+		expect(staleCleanEnhancedPoll).toContain("#EXT-X-GAP");
+		expect(staleCleanEnhancedPoll).not.toContain("native-hevc-live-100.ts");
+		expect(replacementAvcPoll).toContain("backup-live-1.ts");
+		expect(replacementAvcPoll).not.toContain("#EXT-X-GAP");
 		expect(reloadMessages()).toHaveLength(1);
+	});
+
+	it("keeps every cached-backup return path away from an enhanced rendition", async () => {
+		const cleanBackup = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:500",
+			"#EXTINF:2.000,live",
+			"https://edge.example/avc-backup-500.ts",
+		].join("\n");
+		const info = makeInfo({
+			IsShowingAd: true,
+			IsHoldingBackupAfterAd: true,
+			SilentBackupHoldStartedAt: Date.now(),
+			IsUsingBackupStream: true,
+			ActiveBackupPlayerType: "autoplay",
+			ActiveBackupResolution: "1920x1080",
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupAt: Date.now(),
+			ResolutionList: [hevcSource],
+			ModifiedM3U8: "#EXTM3U",
+			Urls: { [bridgeUrl]: hevcSource },
+			_SpliceStreamId: "autoplay|1920x1080",
+			_SpliceBoundarySeq: 500,
+		});
+		g._getStreamInfoForPlaylist = () => info;
+
+		const result = await process()(bridgeUrl, adLadenNative, fetchStub);
+
+		expect(result).toContain("#EXT-X-GAP");
+		expect(result).not.toContain("avc-backup-500.ts");
+		expect(info._SpliceStreamId).toBe("autoplay|1920x1080");
+		expect(info._SpliceBoundarySeq).toBe(500);
 	});
 });
 
