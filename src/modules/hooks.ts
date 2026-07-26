@@ -1041,6 +1041,7 @@ function _hookWorker() {
                 ${_absolutizePlaylistUrl.toString()}
                 ${_absolutizeMediaPlaylistUrls.toString()}
                 ${_createEmptyAdHoldPlaylist.toString()}
+                ${_createCodecHandoffGapPlaylist.toString()}
                 ${_isEmptyAdHoldSegmentUrl.toString()}
                 ${_stripAds.toString()}
                 ${_extractPlaylistHeaders.toString()}
