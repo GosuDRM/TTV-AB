@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [13.2.2] - 2026-07-26
+
+- Fixed 1440p and 2K streams reloading before a compatible backup was ready, which could leave playback black, show error 4000, or expose the ad during the handoff ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
+- Multi-ad breaks now stay on the clean backup until every ad declared by Twitch has been observed, so a temporary clean probe cannot restore native playback partway through the break.
+- Backup selection and post-ad recovery now account for codec compatibility as well as resolution, keeping HEVC and AV1 channels on a decodable AVC handoff without unnecessary reload loops.
+
 ## [13.2.1] - 2026-07-25
 
 - Fixed an ad break sometimes being followed straight away by a second one. The player no longer restarts once the break ends if the backup stream was already running at your normal quality, so Twitch stops treating it as a brand new session and serving another ad, which used to add around a minute on the backup stream.
@@ -12,7 +18,7 @@ All notable changes to TTV AB will be documented in this file.
 - Experimental release. This build changes how enhanced-quality (1440p and 2K) streams are handled during ad breaks and is going out for wider testing, so please report anything that looks wrong.
 - Fixed 1440p and 2K streams going black or showing error 4000 when an ad started, which could leave the player reloading over and over until the page was refreshed ([#49](https://github.com/GosuDRM/TTV-AB/issues/49), [#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
 - Ads are now always removed from the stream while the player switches to a compatible quality, so an ad can no longer slip through on an enhanced-quality channel during that switch.
-- Backup streams on enhanced-quality channels now aim for the highest quality the player can actually decode, instead of one it has to reject, so the picture comes back sooner after a break.
+- Backup streams on enhanced-quality channels now aim for the highest quality the player can actually decode, instead of one it has to reject, so the video returns sooner after a break.
 - The compatible quality list built for enhanced-quality channels no longer contains duplicate or mislabelled entries that some browsers refused to play.
 
 ## [13.0.0] - 2026-07-25
