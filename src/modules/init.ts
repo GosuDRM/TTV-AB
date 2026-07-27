@@ -101,6 +101,9 @@ function _initToggleListener() {
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+			__TTVAB_STATE__.ActiveCodecHandoffId = null;
+			__TTVAB_STATE__.ActiveCodecHandoffChannel = null;
+			__TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
 			__TTVAB_STATE__.HasTriggeredPlayerReload = false;
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;

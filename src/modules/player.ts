@@ -3544,6 +3544,7 @@ let _PipDeferredReloadEntry = null;
 function _registerPipDeferredReload(
 	options: {
 		reason?: string;
+		handoffId?: string | null;
 		refreshAccessToken?: boolean;
 		newMediaPlayerInstance?: boolean;
 		channel?: string | null;
@@ -3599,6 +3600,7 @@ function _doPlayerTask(
 	isReload,
 	options: {
 		reason?: string;
+		handoffId?: string | null;
 		refreshAccessToken?: boolean;
 		newMediaPlayerInstance?: boolean;
 		channel?: string | null;
@@ -3647,11 +3649,14 @@ function _doPlayerTask(
 			);
 			const allowPipBreakingReload =
 				reason === "manual" ||
+				(reason === "codec-handoff" &&
+					isTaskRouteCurrent &&
+					Boolean(playerState)) ||
 				(reason === "worker-recovery" && isTaskRouteCurrent);
 			if (allowPipBreakingReload) {
 				_log(`Forcing real reload despite PiP (${reason})`, "info");
 			} else {
-				if (needsRealReload) {
+				if (needsRealReload && reason !== "codec-handoff") {
 					_registerPipDeferredReload(options);
 				}
 				if (_hasUserPauseIntent(taskChannel, taskMediaKey)) return false;
@@ -3663,13 +3668,14 @@ function _doPlayerTask(
 						: "Downgraded reload to pause/play to preserve PiP",
 					"info",
 				);
-				return true;
+				return reason !== "codec-handoff";
 			}
 		}
 	}
 
 	const shouldSuppressAutomaticTask =
 		reason !== "manual" &&
+		reason !== "codec-handoff" &&
 		_shouldSuppressAutomaticPlaybackResume(taskChannel, taskMediaKey);
 	if (shouldSuppressAutomaticTask) {
 		if (reason === "ad-recovery" || reason === "buffer-recovery") {
@@ -3704,6 +3710,7 @@ function _doPlayerTask(
 		const now = Date.now();
 		const lastPlayerReloadAt = __TTVAB_STATE__?.LastPlayerReloadAt || 0;
 		if (
+			reason !== "codec-handoff" &&
 			lastPlayerReloadAt &&
 			now - lastPlayerReloadAt < __TTVAB_STATE__.PlayerReloadDebounceMs
 		) {
@@ -3769,18 +3776,48 @@ function _doPlayerTask(
 		if (reason === "manual") {
 			_log("Reloading player", "info");
 		}
-		playerState.setSrc({
-			isNewMediaPlayerInstance: options.newMediaPlayerInstance !== false,
-			refreshAccessToken: options.refreshAccessToken !== false,
-		});
+		const handoffId =
+			reason === "codec-handoff" &&
+			typeof options.handoffId === "string" &&
+			options.handoffId
+				? options.handoffId
+				: null;
+		if (reason === "codec-handoff" && !handoffId) return false;
+		const previousCodecHandoff = {
+			id: __TTVAB_STATE__.ActiveCodecHandoffId,
+			channel: __TTVAB_STATE__.ActiveCodecHandoffChannel,
+			mediaKey: __TTVAB_STATE__.ActiveCodecHandoffMediaKey,
+		};
+		if (handoffId) {
+			__TTVAB_STATE__.ActiveCodecHandoffId = handoffId;
+			__TTVAB_STATE__.ActiveCodecHandoffChannel = taskChannel;
+			__TTVAB_STATE__.ActiveCodecHandoffMediaKey = taskMediaKey;
+		}
+		try {
+			playerState.setSrc({
+				isNewMediaPlayerInstance: options.newMediaPlayerInstance !== false,
+				refreshAccessToken: options.refreshAccessToken !== false,
+			});
+		} catch (error) {
+			if (handoffId) {
+				__TTVAB_STATE__.ActiveCodecHandoffId = previousCodecHandoff.id;
+				__TTVAB_STATE__.ActiveCodecHandoffChannel =
+					previousCodecHandoff.channel;
+				__TTVAB_STATE__.ActiveCodecHandoffMediaKey =
+					previousCodecHandoff.mediaKey;
+			}
+			throw error;
+		}
 
 		_broadcastWorkers({
 			key: "TriggeredPlayerReload",
 			value: {
 				mediaType: __TTVAB_STATE__?.PageMediaType ?? null,
-				channelName: __TTVAB_STATE__?.PageChannel ?? null,
+				channelName: taskChannel,
 				vodID: __TTVAB_STATE__?.PageVodID ?? null,
-				mediaKey: __TTVAB_STATE__?.PageMediaKey ?? null,
+				mediaKey: taskMediaKey,
+				reason,
+				handoffId,
 			},
 		});
 
