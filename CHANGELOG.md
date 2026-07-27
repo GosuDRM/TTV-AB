@@ -2,6 +2,10 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [13.2.4] - 2026-07-27
+
+- Fixed error 4000 that could still appear when 1440p and 2K channels changed to a clean backup during an ad. The switch now begins only after a clean compatible backup exists, and retiring enhanced-quality requests no longer receive fabricated or incompatible media ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
+
 ## [13.2.3] - 2026-07-26
 
 - Fixed the remaining 1440p and 2K handoff race that could still show error 4000 after a clean backup was ready. Late requests from the retiring enhanced-quality player are now isolated until the compatible replacement stream takes over, without exposing the ad or interrupting backup playback ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
