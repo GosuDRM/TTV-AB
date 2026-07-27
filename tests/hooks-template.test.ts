@@ -6,6 +6,8 @@ const hooksJs = () =>
 	readFileSync(resolve(__dirname, "../dist/src/modules/hooks.js"), "utf8");
 const parserJs = () =>
 	readFileSync(resolve(__dirname, "../dist/src/modules/parser.js"), "utf8");
+const processorJs = () =>
+	readFileSync(resolve(__dirname, "../dist/src/modules/processor.js"), "utf8");
 
 describe("empty ad segment single source", () => {
 	it("hooks does not embed its own segment blob", () => {
@@ -55,5 +57,35 @@ describe("worker message handler hardening", () => {
 		expect(hooksJs()).toMatch(
 			/JSON\.stringify\(\{\s*\.\.\._S,\s*workers:\s*\[\]\s*\}\)/,
 		);
+	});
+});
+
+describe("enhanced-codec handoff retirement", () => {
+	it("does not fabricate a media segment while changing decoder generations", () => {
+		for (const source of [hooksJs(), parserJs(), processorJs()]) {
+			expect(source).not.toContain("data:application/octet-stream;base64,");
+			expect(source).not.toContain("_createCodecHandoffGapPlaylist");
+		}
+	});
+
+	it("propagates the retiring request cancellation instead of returning its ad-marked response", () => {
+		expect(hooksJs()).toMatch(
+			/if \(err\?\.name === "AbortError"\) \{\s*throw err;\s*\}/,
+		);
+	});
+
+	it("carries an exact handoff identity into the replacement worker", () => {
+		expect(hooksJs()).toContain("_CodecHandoffAcknowledgedId");
+		expect(hooksJs()).toContain("ActiveCodecHandoffId");
+		expect(hooksJs()).toContain("seedCodecHandoffContext");
+		expect(hooksJs()).toContain("CodecHandoffReloadFailed");
+		expect(hooksJs()).toContain(
+			"_markCodecHandoffReloadFailed(failedInfo, failedHandoffId)",
+		);
+		expect(hooksJs()).toContain("clearHandoffId");
+		expect(hooksJs()).toContain(
+			"_clearCodecHandoffState(streamInfo, clearHandoffId)",
+		);
+		expect(hooksJs()).not.toContain("matchesActiveAdMediaKey");
 	});
 });

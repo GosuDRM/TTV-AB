@@ -1162,6 +1162,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 	let setSrcCalls: unknown[] = [];
 	let pauseCalls: number;
 	let resumeRetryCalls: unknown[][];
+	let workerMessages: unknown[];
 
 	beforeEach(() => {
 		saved = {};
@@ -1174,6 +1175,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		setSrcCalls = [];
 		pauseCalls = 0;
 		resumeRetryCalls = [];
+		workerMessages = [];
 		const player = {
 			getHTMLVideoElement: () => null,
 			play: () => undefined,
@@ -1197,7 +1199,9 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			resumeRetryCalls.push(args);
 		};
 		g._schedulePlaybackRecoveryTimeout = () => null;
-		g._broadcastWorkers = () => {};
+		g._broadcastWorkers = (message: unknown) => {
+			workerMessages.push(message);
+		};
 		g._isPlaybackRecoveryContextCurrent = () => true;
 		g.__TTVAB_STATE__ = {
 			PageMediaType: "live",
@@ -1244,7 +1248,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		]);
 	});
 
-	it("still reloads immediately under pip for manual and worker recovery", () => {
+	it("still reloads immediately under pip for manual, codec handoff, and worker recovery", () => {
 		task()(false, true, {
 			reason: "manual",
 			refreshAccessToken: true,
@@ -1254,11 +1258,110 @@ describe("_doPlayerTask (pip reload policy)", () => {
 
 		(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt = 0;
 		task()(false, true, {
-			reason: "worker-recovery",
+			reason: "codec-handoff",
+			handoffId: "live:testchannel:100:1",
 			refreshAccessToken: true,
 			newMediaPlayerInstance: true,
 		});
 		expect(setSrcCalls).toHaveLength(2);
+		expect(workerMessages.at(-1)).toMatchObject({
+			key: "TriggeredPlayerReload",
+			value: {
+				reason: "codec-handoff",
+				handoffId: "live:testchannel:100:1",
+				mediaKey: "live:testchannel",
+			},
+		});
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
+		).toBe("live:testchannel:100:1");
+
+		(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt = 0;
+		task()(false, true, {
+			reason: "worker-recovery",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		expect(setSrcCalls).toHaveLength(3);
+	});
+
+	it("bypasses the generic reload debounce for an exact codec handoff", () => {
+		pipElement = null;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt =
+			Date.now();
+
+		const result = task()(false, true, {
+			reason: "codec-handoff",
+			handoffId: "live:testchannel:200:1",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+
+		expect(result).toBe(true);
+		expect(setSrcCalls).toHaveLength(1);
+	});
+
+	it("rolls back main-thread codec ownership when setSrc throws", () => {
+		pipElement = null;
+		g._getPlayerAndState = () => ({
+			player: {
+				getHTMLVideoElement: () => null,
+				play: () => undefined,
+			},
+			state: {
+				props: { content: { type: "live" } },
+				setSrc: () => {
+					throw new Error("setSrc failed");
+				},
+			},
+		});
+
+		expect(() =>
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: "live:testchannel:225:1",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toThrow("setSrc failed");
+		expect(workerMessages).toEqual([]);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
+		).toBeUndefined();
+	});
+
+	it("does not acknowledge a codec reload without its exact handoff id", () => {
+		pipElement = null;
+
+		const result = task()(false, true, {
+			reason: "codec-handoff",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+
+		expect(result).toBe(false);
+		expect(setSrcCalls).toEqual([]);
+		expect(workerMessages).toEqual([]);
+	});
+
+	it("does not reload the page player for a pip codec handoff after navigation", () => {
+		window.history.replaceState(null, "", "/otherchannel");
+		try {
+			const result = task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: "live:testchannel:300:1",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			});
+
+			expect(result).toBe(false);
+			expect(setSrcCalls).toEqual([]);
+			expect(workerMessages).toEqual([]);
+		} finally {
+			window.history.replaceState(null, "", "/testchannel");
+		}
 	});
 
 	it("runs the deferred hard reload once pip exits", () => {

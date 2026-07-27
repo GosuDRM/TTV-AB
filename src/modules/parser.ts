@@ -506,33 +506,6 @@ function _createEmptyAdHoldPlaylist(text, info) {
 	].join("\n");
 }
 
-function _createCodecHandoffGapPlaylist(text) {
-	const headerLines = (_extractPlaylistHeaders(text) || "#EXTM3U")
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean);
-	const targetDuration =
-		headerLines.find((line) => line.startsWith("#EXT-X-TARGETDURATION:")) ||
-		"#EXT-X-TARGETDURATION:1";
-	const mediaSequence =
-		headerLines.find((line) => line.startsWith("#EXT-X-MEDIA-SEQUENCE:")) ||
-		"#EXT-X-MEDIA-SEQUENCE:0";
-	const discontinuitySequence = headerLines.find((line) =>
-		line.startsWith("#EXT-X-DISCONTINUITY-SEQUENCE:"),
-	);
-
-	return [
-		"#EXTM3U",
-		"#EXT-X-VERSION:7",
-		targetDuration,
-		mediaSequence,
-		...(discontinuitySequence ? [discontinuitySequence] : []),
-		"#EXT-X-GAP",
-		"#EXTINF:1.000,live",
-		"data:application/octet-stream;base64,",
-	].join("\n");
-}
-
 function _isEmptyAdHoldSegmentUrl(url) {
 	if (typeof url !== "string" || !url) return false;
 	try {
@@ -551,7 +524,7 @@ function _stripAds(
 	stripAll,
 	info,
 	skipAutoForceStrip = false,
-	useCodecHandoffGap = false,
+	preserveLiveSegments = false,
 ) {
 	const lines = text.split("\n");
 	const len = lines.length;
@@ -573,8 +546,11 @@ function _stripAds(
 		const line = lines[i];
 		if (line?.startsWith("#EXTINF")) {
 			const segmentUrl = lines[i + 1];
+			const isKnownAdSegment = _isKnownAdSegmentUrl(segmentUrl);
 			const isAdSegment =
-				forceStripAllSegments || _isKnownAdSegmentUrl(segmentUrl);
+				isKnownAdSegment ||
+				(forceStripAllSegments &&
+					(!preserveLiveSegments || !line.includes(",live")));
 			if (isAdSegment) {
 				adSegmentCount++;
 			} else {
@@ -614,8 +590,11 @@ function _stripAds(
 		}
 
 		if (shouldStrip && i < len - 1 && line?.startsWith("#EXTINF")) {
+			const isKnownAdSegment = _isKnownAdSegmentUrl(lines[i + 1]);
 			const isAdSegment =
-				forceStripAllSegments || _isKnownAdSegmentUrl(lines[i + 1]);
+				isKnownAdSegment ||
+				(forceStripAllSegments &&
+					(!preserveLiveSegments || !line.includes(",live")));
 
 			if (isAdSegment) {
 				const segmentUrl = lines[i + 1];
@@ -733,21 +712,17 @@ function _stripAds(
 
 	if (!hasRemainingSegments && strippedMediaEntryCount > 0) {
 		const recoveryCandidates = [
-			...(useCodecHandoffGap
-				? []
-				: [
-						{
-							label: info?.LastCleanBackupPlayerType
-								? `last clean backup (${info.LastCleanBackupPlayerType})`
-								: "last clean backup",
-							m3u8:
-								typeof info?.LastCleanBackupM3U8 === "string"
-									? info.LastCleanBackupM3U8
-									: null,
-							at: Number(info?.LastCleanBackupAt) || 0,
-							maxAgeMs: 8000,
-						},
-					]),
+			{
+				label: info?.LastCleanBackupPlayerType
+					? `last clean backup (${info.LastCleanBackupPlayerType})`
+					: "last clean backup",
+				m3u8:
+					typeof info?.LastCleanBackupM3U8 === "string"
+						? info.LastCleanBackupM3U8
+						: null,
+				at: Number(info?.LastCleanBackupAt) || 0,
+				maxAgeMs: 8000,
+			},
 			{
 				label: "last clean native playlist",
 				m3u8:
@@ -782,14 +757,6 @@ function _stripAds(
 				"warning",
 			);
 			return recoverySource.m3u8;
-		}
-
-		if (useCodecHandoffGap) {
-			_log(
-				"[Recovery] Empty enhanced-codec playlist after stripping; serving codec-isolated gap",
-				"warning",
-			);
-			return _createCodecHandoffGapPlaylist(text);
 		}
 
 		_log(

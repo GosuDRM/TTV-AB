@@ -1230,11 +1230,6 @@ function validateSharedDefinitions() {
 			source: parserSource,
 		},
 		{
-			consumer: "_stripAds",
-			helper: "_createCodecHandoffGapPlaylist",
-			source: parserSource,
-		},
-		{
 			consumer: "_getFallbackResolution",
 			helper: "_degradeToDecodableResolution",
 			source: parserSource,
@@ -1295,28 +1290,123 @@ function validateSharedDefinitions() {
 			source: parserSource,
 		},
 		{
-			consumer: "_createCodecHandoffGapPlaylist",
-			helper: "_extractPlaylistHeaders",
-			source: parserSource,
+			consumer: "_processM3U8",
+			helper: "_createCodecHandoffAbortError",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_getDirectPlaybackResolutionForUrl",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_getSameRequestCleanNative",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_holdRetiringCodecRequest",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_requestCodecHandoffReload",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_isMediaPartLine",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_isPartPreloadHintLine",
+			source: processorSource,
 		},
 		{
 			consumer: "_processM3U8Core",
-			helper: "_createCodecHandoffGapPlaylist",
+			helper: "_getDirectPlaybackResolutionForUrl",
 			source: processorSource,
 		},
 		{
-			consumer: "_processM3U8",
-			helper: "_createCodecHandoffGapPlaylist",
+			consumer: "_processM3U8Core",
+			helper: "_getSameRequestCleanNative",
 			source: processorSource,
 		},
 		{
-			consumer: "_processM3U8",
-			helper: "_isEnhancedCodecString",
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_createCodecHandoffAbortError",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_getSameRequestCleanNative",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_requestCodecHandoffReload",
+			source: processorSource,
+		},
+		{
+			consumer: "_requestCodecHandoffReload",
+			helper: "_createCodecHandoffId",
+			source: processorSource,
+		},
+		{
+			consumer: "_resetStreamAdState",
+			helper: "_clearCodecHandoffState",
+			source: processorSource,
+		},
+		{
+			consumer: "_resetStreamAdState",
+			helper: "_getActiveCodecHandoffIdForInfo",
+			source: processorSource,
+		},
+		{
+			consumer: "_getSameRequestCleanNative",
+			helper: "_isLastCleanNativeForRequest",
+			source: processorSource,
+		},
+		{
+			consumer: "_isLastCleanNativeForRequest",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isLastCleanNativeForRequest",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_getDirectPlaybackResolutionForUrl",
+			helper: "_getPlaylistUrlAliases",
 			source: processorSource,
 		},
 		{
 			consumer: "_hookWorkerFetch",
 			helper: "_isEmptyAdHoldSegmentUrl",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getExactPlaylistUrlKey",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorker",
+			helper: "_clearCodecHandoffState",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorker",
+			helper: "_markCodecHandoffReloadFailed",
 			source: hooksSource,
 		},
 		{
