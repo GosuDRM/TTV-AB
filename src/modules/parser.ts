@@ -1138,16 +1138,19 @@ function _stripHevcBackupVariants(info, m3u8) {
 	const { kept, removed, remaining } = _dropEnhancedVariantLines(
 		m3u8.split("\n"),
 	);
-	if (removed === 0 || remaining === 0) return m3u8;
+	if (removed === 0) return m3u8;
 	if (info) {
 		if (!info._LoggedWhitelistByType) {
 			info._LoggedWhitelistByType = new Set();
 		}
-		if (!info._LoggedWhitelistByType.has("hevc-skip")) {
-			info._LoggedWhitelistByType.add("hevc-skip");
+		const logKey = remaining > 0 ? "hevc-skip" : "hevc-only-skip";
+		if (!info._LoggedWhitelistByType.has(logKey)) {
+			info._LoggedWhitelistByType.add(logKey);
 			_log(
-				`[Trace] Skipped ${removed} HEVC/AV1 backup variant(s) for codec compatibility`,
-				"info",
+				remaining > 0
+					? `[Trace] Skipped ${removed} HEVC/AV1 backup variant(s) for codec compatibility`
+					: "[Trace] Rejected enhanced-only backup master during AVC recovery",
+				remaining > 0 ? "info" : "warning",
 			);
 		}
 	}

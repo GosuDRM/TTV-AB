@@ -810,6 +810,175 @@ describe("_checkInAdPlayheadFreeze", () => {
 	});
 });
 
+describe("fatal enhanced-media recovery during ads", () => {
+	const check = () =>
+		T<(player: { getHTMLVideoElement: () => HTMLVideoElement }) => boolean>(
+			"_checkFatalAdMediaRecovery",
+		);
+	const accept = () =>
+		T<(data: Record<string, unknown>) => boolean>(
+			"_acceptFatalAdMediaRecoveryReady",
+		);
+	let saved: Record<string, unknown>;
+	let messages: Array<Record<string, unknown>>;
+	let reloads: Array<Record<string, unknown>>;
+	let video: HTMLVideoElement;
+	let player: { getHTMLVideoElement: () => HTMLVideoElement };
+	let errorCode: number;
+
+	beforeEach(() => {
+		saved = {
+			state: g.__TTVAB_STATE__,
+			broadcast: g._broadcastWorkers,
+			getPlayerAndState: g._getPlayerAndState,
+			doPlayerTask: g._doPlayerTask,
+		};
+		messages = [];
+		reloads = [];
+		errorCode = 3;
+		video = document.createElement("video");
+		Object.defineProperty(video, "error", {
+			get: () => (errorCode ? { code: errorCode } : null),
+			configurable: true,
+		});
+		Object.defineProperty(video, "readyState", {
+			get: () => 0,
+			configurable: true,
+		});
+		Object.defineProperty(video, "ended", {
+			get: () => false,
+			configurable: true,
+		});
+		player = { getHTMLVideoElement: () => video };
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			PageVodID: null,
+			CurrentAdChannel: "testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			LastPlayerReloadAt: 0,
+			PlayerReloadDebounceMs: 1500,
+		};
+		g._broadcastWorkers = (message: Record<string, unknown>) => {
+			messages.push(message);
+		};
+		g._getPlayerAndState = () => ({
+			player,
+			state: { props: { content: { type: "live" } } },
+		});
+		g._doPlayerTask = (
+			_pausePlay: boolean,
+			_reload: boolean,
+			options: Record<string, unknown>,
+		) => {
+			reloads.push(options);
+			return true;
+		};
+		T<() => boolean>("_resetFatalAdMediaRecoveryState")();
+	});
+
+	afterEach(() => {
+		T<() => boolean>("_resetFatalAdMediaRecoveryState")();
+		g.__TTVAB_STATE__ = saved.state;
+		g._broadcastWorkers = saved.broadcast;
+		g._getPlayerAndState = saved.getPlayerAndState;
+		g._doPlayerTask = saved.doPlayerTask;
+	});
+
+	it("requests one worker-verified recovery for a fatal error at readyState zero", () => {
+		expect(check()(player)).toBe(true);
+		expect(check()(player)).toBe(false);
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toMatchObject({
+			key: "PrepareFatalMediaRecovery",
+			targetMediaKey: "live:testchannel",
+			value: {
+				channelName: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		});
+		expect((messages[0].value as Record<string, unknown>).recoveryId).toEqual(
+			expect.any(String),
+		);
+		expect(reloads).toEqual([]);
+	});
+
+	it.each([0, 1])("does not recover non-fatal media error code %s", (code) => {
+		errorCode = code;
+		expect(check()(player)).toBe(false);
+		expect(messages).toEqual([]);
+	});
+
+	it("rejects a fatal response after the active playback context changes", () => {
+		expect(check()(player)).toBe(true);
+		const request = messages[0].value as Record<string, unknown>;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey =
+			"live:otherchannel";
+
+		expect(
+			accept()({
+				recoveryId: request.recoveryId,
+				verifiedAt: Number(request.requestedAt) + 1,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+			}),
+		).toBe(false);
+		expect(reloads).toEqual([]);
+	});
+
+	it("accepts one fresh matching proof and commits one exact codec handoff", () => {
+		expect(check()(player)).toBe(true);
+		const request = messages[0].value as Record<string, unknown>;
+		const ready = {
+			recoveryId: request.recoveryId,
+			verifiedAt: Number(request.requestedAt) + 1,
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+		};
+
+		expect(accept()(ready)).toBe(true);
+		expect(accept()(ready)).toBe(false);
+		expect(reloads).toEqual([
+			expect.objectContaining({
+				reason: "codec-handoff",
+				handoffId: request.recoveryId,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+				replaceCodecHandoff: true,
+				mediaKey: "live:testchannel",
+			}),
+		]);
+	});
+
+	it("exact-clears and rearms when the verified reload cannot start", () => {
+		expect(check()(player)).toBe(true);
+		const request = messages[0].value as Record<string, unknown>;
+		g._doPlayerTask = () => false;
+
+		expect(
+			accept()({
+				recoveryId: request.recoveryId,
+				verifiedAt: Number(request.requestedAt) + 1,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+			}),
+		).toBe(false);
+		expect(messages.at(-1)).toMatchObject({
+			key: "UpdateCodecHandoffContext",
+			targetMediaKey: "live:testchannel",
+			value: {
+				clearHandoffId: request.recoveryId,
+				mediaKey: "live:testchannel",
+			},
+		});
+		expect(check()(player)).toBe(true);
+	});
+});
+
 describe("_syncPreferredQualityGroup", () => {
 	const sync = () => T<() => boolean>("_syncPreferredQualityGroup");
 
@@ -1301,6 +1470,125 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(setSrcCalls).toHaveLength(1);
 	});
 
+	it("pre-arms workers with the exact codec handoff before setSrc", () => {
+		pipElement = null;
+		const sequence: string[] = [];
+		g._broadcastWorkers = (message: unknown) => {
+			workerMessages.push(message);
+			sequence.push(String((message as Record<string, unknown>).key));
+		};
+		g._getPlayerAndState = () => ({
+			player: {
+				getHTMLVideoElement: () => null,
+				play: () => undefined,
+			},
+			state: {
+				props: { content: { type: "live" } },
+				setSrc: () => {
+					sequence.push("setSrc");
+				},
+			},
+		});
+
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: "live:testchannel:210:1",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
+		expect(sequence).toEqual([
+			"UpdateCodecHandoffContext",
+			"setSrc",
+			"TriggeredPlayerReload",
+		]);
+		expect(workerMessages[0]).toMatchObject({
+			key: "UpdateCodecHandoffContext",
+			targetMediaKey: "live:testchannel",
+			value: {
+				handoffId: "live:testchannel:210:1",
+				mediaKey: "live:testchannel",
+			},
+		});
+	});
+
+	it("coalesces a second same-media codec candidate onto the active handoff", () => {
+		pipElement = null;
+
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: "live:testchannel:215:1:first",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: "live:testchannel:215:1:second",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
+
+		expect(setSrcCalls).toHaveLength(1);
+		expect(workerMessages.at(-1)).toEqual([
+			expect.objectContaining({
+				key: "UpdateCodecHandoffContext",
+				targetMediaKey: "live:testchannel",
+				value: expect.objectContaining({
+					handoffId: "live:testchannel:215:1:first",
+				}),
+			}),
+			expect.objectContaining({
+				key: "TriggeredPlayerReload",
+				targetMediaKey: "live:testchannel",
+				value: expect.objectContaining({
+					handoffId: "live:testchannel:215:1:first",
+				}),
+			}),
+		]);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
+		).toBe("live:testchannel:215:1:first");
+	});
+
+	it("supersedes an active handoff when fatal media recovery requires a real retry", () => {
+		pipElement = null;
+
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: "live:testchannel:220:1:first",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: "live:testchannel:220:2:fatal",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+				replaceCodecHandoff: true,
+			}),
+		).toBe(true);
+
+		expect(setSrcCalls).toHaveLength(2);
+		expect(workerMessages.at(-1)).toMatchObject({
+			key: "TriggeredPlayerReload",
+			value: {
+				handoffId: "live:testchannel:220:2:fatal",
+				mediaKey: "live:testchannel",
+			},
+		});
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
+		).toBe("live:testchannel:220:2:fatal");
+	});
+
 	it("rolls back main-thread codec ownership when setSrc throws", () => {
 		pipElement = null;
 		g._getPlayerAndState = () => ({
@@ -1324,7 +1612,20 @@ describe("_doPlayerTask (pip reload policy)", () => {
 				newMediaPlayerInstance: true,
 			}),
 		).toThrow("setSrc failed");
-		expect(workerMessages).toEqual([]);
+		expect(workerMessages).toEqual([
+			expect.objectContaining({
+				key: "UpdateCodecHandoffContext",
+				value: expect.objectContaining({
+					handoffId: "live:testchannel:225:1",
+				}),
+			}),
+			expect.objectContaining({
+				key: "UpdateCodecHandoffContext",
+				value: expect.objectContaining({
+					clearHandoffId: "live:testchannel:225:1",
+				}),
+			}),
+		]);
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
 		).toBeUndefined();

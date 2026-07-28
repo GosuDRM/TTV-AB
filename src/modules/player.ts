@@ -113,11 +113,193 @@ const _InAdFreezeState = {
 	lastActionAt: 0,
 	actionCount: 0,
 };
+const _FatalAdMediaRecoveryState = {
+	video: null as HTMLMediaElement | null,
+	mediaKey: null as string | null,
+	recoveryId: null as string | null,
+	requestedAt: 0,
+	committed: false,
+};
 function _resetInAdFreezeState() {
 	_InAdFreezeState.firstFrozenAt = 0;
 	_InAdFreezeState.lastCurrentTime = -1;
 	_InAdFreezeState.lastActionAt = 0;
 	_InAdFreezeState.actionCount = 0;
+}
+function _resetFatalAdMediaRecoveryState(recoveryId = null) {
+	if (recoveryId && _FatalAdMediaRecoveryState.recoveryId !== recoveryId) {
+		return false;
+	}
+	_FatalAdMediaRecoveryState.video = null;
+	_FatalAdMediaRecoveryState.mediaKey = null;
+	_FatalAdMediaRecoveryState.recoveryId = null;
+	_FatalAdMediaRecoveryState.requestedAt = 0;
+	_FatalAdMediaRecoveryState.committed = false;
+	return true;
+}
+function _getFatalAdMediaErrorCode(video) {
+	const code = Number(video?.error?.code) || 0;
+	return code >= 2 && code <= 4 ? code : 0;
+}
+function _createFatalAdMediaRecoveryId(mediaKey) {
+	let nonce = "";
+	try {
+		nonce = globalThis.crypto?.randomUUID?.() || "";
+	} catch {}
+	if (!nonce) {
+		nonce = `${Math.random().toString(36).slice(2)}${Math.random()
+			.toString(36)
+			.slice(2)}`;
+	}
+	return `${mediaKey}:${Date.now()}:fatal-media:${nonce}`;
+}
+function _checkFatalAdMediaRecovery(player) {
+	const video = player?.getHTMLVideoElement?.() || null;
+	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+	const adMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey);
+	const errorCode = _getFatalAdMediaErrorCode(video);
+	if (
+		!(video instanceof HTMLMediaElement) ||
+		video.ended ||
+		!pageMediaKey ||
+		adMediaKey !== pageMediaKey ||
+		!errorCode
+	) {
+		if (
+			_FatalAdMediaRecoveryState.video !== video ||
+			_FatalAdMediaRecoveryState.mediaKey !== pageMediaKey ||
+			!errorCode
+		) {
+			_resetFatalAdMediaRecoveryState();
+		}
+		return false;
+	}
+
+	const now = Date.now();
+	if (
+		_FatalAdMediaRecoveryState.video === video &&
+		_FatalAdMediaRecoveryState.mediaKey === pageMediaKey &&
+		_FatalAdMediaRecoveryState.recoveryId &&
+		(now - _FatalAdMediaRecoveryState.requestedAt < 30000 ||
+			_FatalAdMediaRecoveryState.committed)
+	) {
+		return false;
+	}
+
+	const recoveryId = _createFatalAdMediaRecoveryId(pageMediaKey);
+	_FatalAdMediaRecoveryState.video = video;
+	_FatalAdMediaRecoveryState.mediaKey = pageMediaKey;
+	_FatalAdMediaRecoveryState.recoveryId = recoveryId;
+	_FatalAdMediaRecoveryState.requestedAt = now;
+	_FatalAdMediaRecoveryState.committed = false;
+	_broadcastWorkers({
+		key: "PrepareFatalMediaRecovery",
+		targetMediaKey: pageMediaKey,
+		value: {
+			recoveryId,
+			requestedAt: now,
+			channelName: __TTVAB_STATE__?.PageChannel || null,
+			mediaKey: pageMediaKey,
+		},
+	});
+	_log(
+		`Fatal media error ${errorCode} during ad recovery; verifying a fresh clean AVC backup`,
+		"warning",
+	);
+	return true;
+}
+function _acceptFatalAdMediaRecoveryReady(data) {
+	const recoveryId =
+		typeof data?.recoveryId === "string" && data.recoveryId
+			? data.recoveryId
+			: null;
+	const mediaKey = _normalizeMediaKey(data?.mediaKey);
+	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+	const adMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey);
+	if (!recoveryId) return false;
+	if (_FatalAdMediaRecoveryState.recoveryId !== recoveryId) {
+		if (mediaKey && mediaKey === pageMediaKey && mediaKey === adMediaKey) {
+			_broadcastWorkers({
+				key: "UpdateCodecHandoffContext",
+				targetMediaKey: mediaKey,
+				value: {
+					clearHandoffId: recoveryId,
+					channelName: __TTVAB_STATE__?.PageChannel || null,
+					mediaKey,
+				},
+			});
+		}
+		return false;
+	}
+	if (_FatalAdMediaRecoveryState.committed) return false;
+	const verifiedAt = Math.max(0, Number(data?.verifiedAt) || 0);
+	const { player } = _getPlayerAndState();
+	const video = player?.getHTMLVideoElement?.() || null;
+	if (
+		!mediaKey ||
+		mediaKey !== _FatalAdMediaRecoveryState.mediaKey ||
+		mediaKey !== pageMediaKey ||
+		mediaKey !== adMediaKey ||
+		video !== _FatalAdMediaRecoveryState.video ||
+		!_getFatalAdMediaErrorCode(video)
+	) {
+		if (mediaKey === _FatalAdMediaRecoveryState.mediaKey) {
+			_broadcastWorkers({
+				key: "UpdateCodecHandoffContext",
+				targetMediaKey: mediaKey,
+				value: {
+					clearHandoffId: recoveryId,
+					channelName: __TTVAB_STATE__?.PageChannel || null,
+					mediaKey,
+				},
+			});
+			_resetFatalAdMediaRecoveryState(recoveryId);
+		}
+		return false;
+	}
+	if (verifiedAt < _FatalAdMediaRecoveryState.requestedAt) {
+		return false;
+	}
+
+	_FatalAdMediaRecoveryState.committed = true;
+	try {
+		const didReload = _doPlayerTask(false, true, {
+			reason: "codec-handoff",
+			handoffId: recoveryId,
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+			replaceCodecHandoff: true,
+			channel:
+				typeof data?.channel === "string"
+					? data.channel
+					: __TTVAB_STATE__?.PageChannel || null,
+			mediaKey,
+		});
+		if (didReload !== true) {
+			throw new Error("player reload was not accepted");
+		}
+		_log(
+			"Fresh clean AVC backup verified; reloading the failed enhanced decoder",
+			"info",
+		);
+		return true;
+	} catch (error) {
+		_broadcastWorkers({
+			key: "UpdateCodecHandoffContext",
+			targetMediaKey: mediaKey,
+			value: {
+				clearHandoffId: recoveryId,
+				channelName: __TTVAB_STATE__?.PageChannel || null,
+				mediaKey,
+			},
+		});
+		_resetFatalAdMediaRecoveryState(recoveryId);
+		_log(
+			`Fatal media recovery reload failed: ${error?.message ?? String(error)}`,
+			"warning",
+		);
+		return false;
+	}
 }
 const _POST_BREAK_WEDGE_EVAL_BUDGET = 40;
 const _POST_BREAK_WEDGE_MIN_TICK_ADVANCE_S = 0.3;
@@ -3547,6 +3729,7 @@ function _registerPipDeferredReload(
 		handoffId?: string | null;
 		refreshAccessToken?: boolean;
 		newMediaPlayerInstance?: boolean;
+		replaceCodecHandoff?: boolean;
 		channel?: string | null;
 		mediaKey?: string | null;
 	} = {},
@@ -3603,6 +3786,7 @@ function _doPlayerTask(
 		handoffId?: string | null;
 		refreshAccessToken?: boolean;
 		newMediaPlayerInstance?: boolean;
+		replaceCodecHandoff?: boolean;
 		channel?: string | null;
 		mediaKey?: string | null;
 	} = {},
@@ -3634,6 +3818,51 @@ function _doPlayerTask(
 
 	const playerCore = _getPlayerCore(player);
 	const reason = options.reason || "manual";
+	const handoffId =
+		reason === "codec-handoff" &&
+		typeof options.handoffId === "string" &&
+		options.handoffId
+			? options.handoffId
+			: null;
+	if (reason === "codec-handoff" && !handoffId) return false;
+	const activeCodecHandoffId =
+		typeof __TTVAB_STATE__.ActiveCodecHandoffId === "string" &&
+		__TTVAB_STATE__.ActiveCodecHandoffId
+			? __TTVAB_STATE__.ActiveCodecHandoffId
+			: null;
+	const activeCodecHandoffMatches = Boolean(
+		handoffId &&
+			activeCodecHandoffId &&
+			_matchesPlaybackTargetContext(
+				__TTVAB_STATE__.ActiveCodecHandoffChannel,
+				__TTVAB_STATE__.ActiveCodecHandoffMediaKey,
+				taskChannel,
+				taskMediaKey,
+			),
+	);
+	if (activeCodecHandoffMatches && options.replaceCodecHandoff !== true) {
+		const codecHandoffContext = {
+			mediaType: __TTVAB_STATE__?.PageMediaType ?? null,
+			channelName: taskChannel,
+			vodID: __TTVAB_STATE__?.PageVodID ?? null,
+			mediaKey: taskMediaKey,
+			reason,
+			handoffId: activeCodecHandoffId,
+		};
+		_broadcastWorkers([
+			{
+				key: "UpdateCodecHandoffContext",
+				targetMediaKey: taskMediaKey,
+				value: codecHandoffContext,
+			},
+			{
+				key: "TriggeredPlayerReload",
+				targetMediaKey: taskMediaKey,
+				value: codecHandoffContext,
+			},
+		]);
+		return true;
+	}
 
 	if (isReload) {
 		const needsRealReload =
@@ -3776,13 +4005,6 @@ function _doPlayerTask(
 		if (reason === "manual") {
 			_log("Reloading player", "info");
 		}
-		const handoffId =
-			reason === "codec-handoff" &&
-			typeof options.handoffId === "string" &&
-			options.handoffId
-				? options.handoffId
-				: null;
-		if (reason === "codec-handoff" && !handoffId) return false;
 		const previousCodecHandoff = {
 			id: __TTVAB_STATE__.ActiveCodecHandoffId,
 			channel: __TTVAB_STATE__.ActiveCodecHandoffChannel,
@@ -3792,6 +4014,15 @@ function _doPlayerTask(
 			__TTVAB_STATE__.ActiveCodecHandoffId = handoffId;
 			__TTVAB_STATE__.ActiveCodecHandoffChannel = taskChannel;
 			__TTVAB_STATE__.ActiveCodecHandoffMediaKey = taskMediaKey;
+			_broadcastWorkers({
+				key: "UpdateCodecHandoffContext",
+				targetMediaKey: taskMediaKey,
+				value: {
+					handoffId,
+					channelName: taskChannel,
+					mediaKey: taskMediaKey,
+				},
+			});
 		}
 		try {
 			playerState.setSrc({
@@ -3800,11 +4031,50 @@ function _doPlayerTask(
 			});
 		} catch (error) {
 			if (handoffId) {
-				__TTVAB_STATE__.ActiveCodecHandoffId = previousCodecHandoff.id;
-				__TTVAB_STATE__.ActiveCodecHandoffChannel =
-					previousCodecHandoff.channel;
-				__TTVAB_STATE__.ActiveCodecHandoffMediaKey =
-					previousCodecHandoff.mediaKey;
+				if (
+					__TTVAB_STATE__.ActiveCodecHandoffId === handoffId &&
+					_matchesPlaybackTargetContext(
+						__TTVAB_STATE__.ActiveCodecHandoffChannel,
+						__TTVAB_STATE__.ActiveCodecHandoffMediaKey,
+						taskChannel,
+						taskMediaKey,
+					)
+				) {
+					__TTVAB_STATE__.ActiveCodecHandoffId = previousCodecHandoff.id;
+					__TTVAB_STATE__.ActiveCodecHandoffChannel =
+						previousCodecHandoff.channel;
+					__TTVAB_STATE__.ActiveCodecHandoffMediaKey =
+						previousCodecHandoff.mediaKey;
+				}
+				_broadcastWorkers({
+					key: "UpdateCodecHandoffContext",
+					targetMediaKey: taskMediaKey,
+					value: {
+						clearHandoffId: handoffId,
+						channelName: taskChannel,
+						mediaKey: taskMediaKey,
+					},
+				});
+				if (
+					options.replaceCodecHandoff === true &&
+					previousCodecHandoff.id &&
+					_matchesPlaybackTargetContext(
+						previousCodecHandoff.channel,
+						previousCodecHandoff.mediaKey,
+						taskChannel,
+						taskMediaKey,
+					)
+				) {
+					_broadcastWorkers({
+						key: "UpdateCodecHandoffContext",
+						targetMediaKey: taskMediaKey,
+						value: {
+							handoffId: previousCodecHandoff.id,
+							channelName: previousCodecHandoff.channel,
+							mediaKey: previousCodecHandoff.mediaKey,
+						},
+					});
+				}
 			}
 			throw error;
 		}
@@ -4373,6 +4643,9 @@ function _monitorPlayerBuffering() {
 				__TTVAB_STATE__.CurrentAdChannel || __TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.CurrentAdMediaKey || currentMediaKey,
 			);
+			if (pinPlayer) {
+				_checkFatalAdMediaRecovery(pinPlayer);
+			}
 			if (
 				pinPlayer &&
 				__TTVAB_STATE__.PinnedBackupPlayerType &&
@@ -4385,6 +4658,7 @@ function _monitorPlayerBuffering() {
 			if (pinPlayer) {
 				_checkInAdPlayheadFreeze(pinPlayer);
 			} else {
+				_resetFatalAdMediaRecoveryState();
 				_resetInAdFreezeState();
 			}
 			_resetPlayerBufferMonitorState();
@@ -4392,6 +4666,7 @@ function _monitorPlayerBuffering() {
 		}
 
 		_resetPinnedBackupStallState();
+		_resetFatalAdMediaRecoveryState();
 		_resetInAdFreezeState();
 
 		if (!hasLivePlaybackContext) {

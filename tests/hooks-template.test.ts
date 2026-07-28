@@ -74,6 +74,14 @@ describe("enhanced-codec handoff retirement", () => {
 		);
 	});
 
+	it("fails closed when ad-marked playlist processing throws", () => {
+		expect(hooksJs()).toContain("const requestWasAdMarked =");
+		expect(hooksJs()).toContain(
+			"_stripAds(text, true, failedInfo, false, true)",
+		);
+		expect(hooksJs()).toContain("_createEmptyAdHoldPlaylist(text, null)");
+	});
+
 	it("carries an exact handoff identity into the replacement worker", () => {
 		expect(hooksJs()).toContain("_CodecHandoffAcknowledgedId");
 		expect(hooksJs()).toContain("ActiveCodecHandoffId");
@@ -86,6 +94,33 @@ describe("enhanced-codec handoff retirement", () => {
 		expect(hooksJs()).toContain(
 			"_clearCodecHandoffState(streamInfo, clearHandoffId)",
 		);
+		expect(hooksJs()).toContain(
+			"streamInfo._CodecHandoffPendingId = nextHandoffId",
+		);
+		expect(hooksJs()).toContain("streamInfo.IsUsingModifiedM3U8 = true");
 		expect(hooksJs()).not.toContain("matchesActiveAdMediaKey");
+	});
+
+	it("verifies fatal media recovery in the worker before reloading", () => {
+		expect(hooksJs()).toContain("PrepareFatalMediaRecovery");
+		expect(hooksJs()).toContain("FatalMediaRecoveryReady");
+		expect(hooksJs()).toContain(
+			"__TTVAB_STATE__.PrepareFatalMediaRecovery = (request)",
+		);
+		expect(hooksJs()).toContain(
+			"_prepareFatalMediaRecovery(info, realFetch, request)",
+		);
+		expect(hooksJs()).toContain("_acceptFatalAdMediaRecoveryReady(data)");
+	});
+
+	it("seeds active pod progress before the original worker can fetch", () => {
+		const source = hooksJs();
+		const seedAt = source.indexOf(
+			"__TTVAB_STATE__.AdPodProgressByMediaKey = ${JSON.stringify(",
+		);
+		const hookAt = source.lastIndexOf("_hookWorkerFetch();");
+		expect(source).toContain("const seedAdPodProgress =");
+		expect(seedAt).toBeGreaterThan(-1);
+		expect(hookAt).toBeGreaterThan(seedAt);
 	});
 });

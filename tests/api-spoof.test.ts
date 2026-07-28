@@ -39,10 +39,15 @@ beforeEach(() => {
 		ClientSession: null,
 		LoggedAdSpoofBadStatus: false,
 	};
+	g._postWorkerBridgeMessage = () => true;
+	g._createPageScopedWorkerEvent = (message: Record<string, unknown>) =>
+		message;
 });
 
 afterEach(() => {
 	delete g._fetchViaWorkerBridge;
+	delete g._postWorkerBridgeMessage;
+	delete g._createPageScopedWorkerEvent;
 });
 
 function T<T>(name: string): T {
@@ -60,6 +65,28 @@ function adRangeNoPodLength(id: number) {
 }
 
 describe("_notifyAdComplete", () => {
+	function captureWorkerMessages() {
+		const messages: Array<Record<string, unknown>> = [];
+		const previousPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		const previousCreatePageScopedWorkerEvent = g._createPageScopedWorkerEvent;
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return true;
+		};
+		g._createPageScopedWorkerEvent = (message: Record<string, unknown>) =>
+			message;
+		return {
+			messages,
+			restore: () => {
+				g._postWorkerBridgeMessage = previousPostWorkerBridgeMessage;
+				g._createPageScopedWorkerEvent = previousCreatePageScopedWorkerEvent;
+			},
+		};
+	}
+
 	it("records declared pod progress even when spoofing is disabled", async () => {
 		const notify =
 			T<
@@ -69,6 +96,9 @@ describe("_notifyAdComplete", () => {
 						SpoofedAdIds: Set<string>;
 						ObservedAdPodIds: Set<string>;
 						ExpectedAdPodLength: number;
+						VisibleAdStartedAt: number;
+						ChannelName: string;
+						MediaKey: string;
 					},
 				) => Promise<void>
 			>("_notifyAdComplete");
@@ -76,13 +106,91 @@ describe("_notifyAdComplete", () => {
 			SpoofedAdIds: new Set<string>(),
 			ObservedAdPodIds: new Set<string>(),
 			ExpectedAdPodLength: 0,
+			VisibleAdStartedAt: 123456,
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
 		};
+		const capture = captureWorkerMessages();
 		(g.__TTVAB_STATE__ as Record<string, unknown>).DisableAdSpoofing = true;
 
-		await notify(["#EXTM3U", adRange(1)].join("\n").concat("\n"), info);
+		try {
+			await notify(["#EXTM3U", adRange(1)].join("\n").concat("\n"), info);
+		} finally {
+			capture.restore();
+		}
 
 		expect(info.ExpectedAdPodLength).toBe(2);
 		expect([...info.ObservedAdPodIds]).toEqual(["stitched-ad-1"]);
+		expect(info.SpoofedAdIds.size).toBe(0);
+		expect(capture.messages).toEqual([
+			{
+				key: "AdPodProgress",
+				adIds: ["stitched-ad-1"],
+				expectedPodLength: 2,
+				cycleStartedAt: 123456,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		]);
+	});
+
+	it("emits deduplicated cumulative pod IDs across playlist polls", async () => {
+		const notify =
+			T<
+				(
+					text: string,
+					info: {
+						SpoofedAdIds: Set<string>;
+						ObservedAdPodIds: Set<string>;
+						ExpectedAdPodLength: number;
+						VisibleAdStartedAt: number;
+						ChannelName: string;
+						MediaKey: string;
+					},
+				) => Promise<void>
+			>("_notifyAdComplete");
+		const info = {
+			SpoofedAdIds: new Set<string>(),
+			ObservedAdPodIds: new Set<string>(),
+			ExpectedAdPodLength: 0,
+			VisibleAdStartedAt: 654321,
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		};
+		const capture = captureWorkerMessages();
+		(g.__TTVAB_STATE__ as Record<string, unknown>).DisableAdSpoofing = true;
+
+		try {
+			await notify(
+				["#EXTM3U", adRange(1), adRange(1)].join("\n").concat("\n"),
+				info,
+			);
+			await notify(
+				["#EXTM3U", adRange(1), adRange(2), adRange(2)].join("\n").concat("\n"),
+				info,
+			);
+		} finally {
+			capture.restore();
+		}
+
+		expect(capture.messages).toHaveLength(2);
+		expect(capture.messages.map((message) => message.adIds)).toEqual([
+			["stitched-ad-1"],
+			["stitched-ad-1", "stitched-ad-2"],
+		]);
+		expect(
+			capture.messages.every(
+				(message) =>
+					message.expectedPodLength === 2 &&
+					message.cycleStartedAt === 654321 &&
+					message.channel === "testchannel" &&
+					message.mediaKey === "live:testchannel",
+			),
+		).toBe(true);
+		expect([...info.ObservedAdPodIds]).toEqual([
+			"stitched-ad-1",
+			"stitched-ad-2",
+		]);
 		expect(info.SpoofedAdIds.size).toBe(0);
 	});
 

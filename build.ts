@@ -1285,6 +1285,16 @@ function validateSharedDefinitions() {
 			source: apiSource,
 		},
 		{
+			consumer: "_notifyAdComplete",
+			helper: "_postWorkerBridgeMessage",
+			source: apiSource,
+		},
+		{
+			consumer: "_notifyAdComplete",
+			helper: "_createPageScopedWorkerEvent",
+			source: apiSource,
+		},
+		{
 			consumer: "_createEmptyAdHoldPlaylist",
 			helper: "_extractPlaylistHeaders",
 			source: parserSource,
@@ -1302,6 +1312,11 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_processM3U8",
 			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_getVideoCodecFamily",
 			source: processorSource,
 		},
 		{
@@ -1336,6 +1351,16 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_processM3U8Core",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_createEmptyAdHoldPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
 			helper: "_getSameRequestCleanNative",
 			source: processorSource,
 		},
@@ -1347,6 +1372,11 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_holdRetiringCodecRequest",
 			helper: "_getSameRequestCleanNative",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_getVideoCodecFamily",
 			source: processorSource,
 		},
 		{
@@ -1437,6 +1467,121 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_refreshActiveBackupMediaPlaylist",
 			helper: "_stripHevcBackupVariants",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_prepareFatalMediaRecovery",
+			source: hooksSource,
+		},
+		{
+			consumer: "_mergeAdPodProgress",
+			helper: "_normalizePlaybackContext",
+			source: stateSource,
+		},
+		{
+			consumer: "_applyAdPodProgressToInfo",
+			helper: "_mergeAdPodProgress",
+			source: stateSource,
+		},
+		{
+			consumer: "_clearAdPodProgress",
+			helper: "_normalizeMediaKey",
+			source: stateSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_normalizePlaybackContext",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_resolveAdBackupTargetResolution",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_refreshHeldAutoplayBackupPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_refreshActiveBackupMediaPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_findBackupStream",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_playlistHasMediaSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_hasPlaylistAdMarkers",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_hasExplicitAdMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_playlistHasKnownAdSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_postWorkerBridgeMessage",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_createPageScopedWorkerEvent",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_getBackupVariantCodecFamily",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getBackupVariantCodecFamily",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_getBackupVariantCodecFamily",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_getBackupVariantCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_getBackupVariantCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_getBackupVariantCodecFamily",
 			source: processorSource,
 		},
 		{
