@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [13.2.5] - 2026-07-28
+
+- Fixed the remaining error 4000 recovery failure on 1440p and 2K HEVC or AV1 streams. The player now waits for a freshly verified clean compatible backup before switching, so recovery cannot expose an ad or leave playback frozen ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
+- Multi-ad breaks now remain on the clean backup when Twitch replaces its playback session, preventing a partly finished break from being mistaken for a completed one.
+- Fatal playback errors during an ad now trigger one controlled recovery only after the replacement stream is ready, avoiding duplicate reloads and stalled playback.
+
 ## [13.2.4] - 2026-07-27
 
 - Fixed error 4000 that could still appear when 1440p and 2K channels changed to a clean backup during an ad. The switch now begins only after a clean compatible backup exists, and retiring enhanced-quality requests no longer receive fabricated or incompatible media ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
