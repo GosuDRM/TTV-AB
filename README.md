@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v13.2.5 - 2026-07-28
+- **1440p and 2K ad recovery now survives player errors and playback-session replacements.** HEVC and AV1 streams wait for a fresh clean compatible backup, and multi-ad breaks stay blocked until the whole break finishes, preventing error 4000 recovery from exposing an ad or freezing playback.
+
 ### v13.2.4 - 2026-07-27
 - **1440p and 2K ad breaks no longer feed fabricated media to the retiring player.** The switch starts only after a clean compatible backup exists, preventing the error 4000 seen in v13.2.3 while the ad remains blocked.
 
 ### v13.2.3 - 2026-07-26
 - **The remaining error 4000 race on 1440p and 2K channels is fixed.** Late requests from the retiring enhanced-quality player are isolated until the compatible replacement stream takes over, keeping the codec handoff clean.
-
-### v13.2.2 - 2026-07-26
-- **1440p and 2K ad breaks now wait for a ready, compatible backup.** Enhanced-quality channels keep clean playback during the codec handoff and stay on that backup until the full ad pod has finished, preventing early restores and repeated reloads.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
