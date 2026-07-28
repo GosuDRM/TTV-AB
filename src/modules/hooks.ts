@@ -33,7 +33,9 @@ const _CRASHED_WORKER_RECOVERY_MESSAGE_KEYS = new Set([
 	"AdBlocked",
 	"AdSecondsBlocked",
 	"AdDetected",
+	"AdPodProgress",
 	"BackupPlayerTypeSelected",
+	"FatalMediaRecoveryReady",
 	"AdEnded",
 	"NativePlaybackRestored",
 	"PauseResumePlayer",
@@ -137,6 +139,13 @@ function _schedulePostAdArtifactCleanup(channel = null, mediaKey = null) {
 function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
 	const realFetch = fetch;
+	__TTVAB_STATE__.PrepareFatalMediaRecovery = (request) => {
+		const recoveryContext = _normalizePlaybackContext(request);
+		const info = recoveryContext.MediaKey
+			? __TTVAB_STATE__.StreamInfos[recoveryContext.MediaKey] || null
+			: null;
+		return _prepareFatalMediaRecovery(info, realFetch, request);
+	};
 
 	function _pruneStreamInfos() {
 		if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return;
@@ -268,6 +277,7 @@ function _hookWorkerFetch() {
 			);
 			if (activeCodecHandoffMatches) {
 				info._CodecHandoffPendingId = activeCodecHandoffId;
+				info.EnhancedDecoderCodecFamily = null;
 			}
 			const hasAcknowledgedCodecHandoff = Boolean(
 				info._CodecHandoffPendingId &&
@@ -434,7 +444,18 @@ function _hookWorkerFetch() {
 							}`,
 							"error",
 						);
-						return new Response(text, responseInit(response));
+						const requestWasAdMarked =
+							_hasPlaylistAdMarkers(text) ||
+							_hasExplicitAdMetadata(text) ||
+							_playlistHasKnownAdSegments(text, { includeCached: false });
+						if (!requestWasAdMarked) {
+							return new Response(text, responseInit(response));
+						}
+						const failedInfo = _getStreamInfoForPlaylist(url);
+						const failClosedPlaylist = failedInfo
+							? _stripAds(text, true, failedInfo, false, true)
+							: _createEmptyAdHoldPlaylist(text, null);
+						return new Response(failClosedPlaylist, responseInit(response));
 					}
 				}
 				return response;
@@ -1040,6 +1061,16 @@ function _hookWorker() {
 					pagePlaybackContext.MediaKey &&
 					_normalizeMediaKey(__TTVAB_STATE__.ActiveCodecHandoffMediaKey) ===
 						pagePlaybackContext.MediaKey;
+				const seedAdPodProgress =
+					seedCurrentAdContext &&
+					pagePlaybackContext.MediaKey &&
+					__TTVAB_STATE__.AdPodProgressByMediaKey?.[
+						pagePlaybackContext.MediaKey
+					]
+						? __TTVAB_STATE__.AdPodProgressByMediaKey[
+								pagePlaybackContext.MediaKey
+							]
+						: null;
 
 				const inlinedWorkerSource =
 					opts?.type !== "module" && workerSourceUrl.startsWith("blob:")
@@ -1065,6 +1096,9 @@ function _hookWorker() {
                 ${_getWorkerBridgeMessage.toString()}
                 ${_postWorkerBridgeMessage.toString()}
                 ${_declareState.toString()}
+                ${_mergeAdPodProgress.toString()}
+                ${_applyAdPodProgressToInfo.toString()}
+                ${_clearAdPodProgress.toString()}
                 ${_getPageScopedPlaybackEventContext.toString()}
                 ${_createPageScopedWorkerEvent.toString()}
                 ${_incrementAdsBlocked.toString()}
@@ -1109,6 +1143,7 @@ function _hookWorker() {
                 ${_getExactPlaylistUrlKey.toString()}
                 ${_getDirectPlaybackResolutionForUrl.toString()}
                 ${_getVideoCodecFamily.toString()}
+                ${_getBackupVariantCodecFamily.toString()}
                 ${_isLastCleanNativeForRequest.toString()}
                 ${_getSameRequestCleanNative.toString()}
                 ${_collectPlaybackAccessTokenSources.toString()}
@@ -1158,6 +1193,7 @@ function _hookWorker() {
                 ${_buildUsherPlaybackUrl.toString()}
                 ${_createCodecHandoffId.toString()}
                 ${_requestCodecHandoffReload.toString()}
+                ${_prepareFatalMediaRecovery.toString()}
                 ${_createCodecHandoffAbortError.toString()}
                 ${_holdRetiringCodecRequest.toString()}
                 ${_hasPlaylistAdMarkers.toString()}
@@ -1196,6 +1232,7 @@ function _hookWorker() {
                 __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = ${JSON.stringify(__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType)};
                 __TTVAB_STATE__.CurrentAdChannel = ${JSON.stringify(seedCurrentAdContext ? __TTVAB_STATE__.CurrentAdChannel : null)};
                 __TTVAB_STATE__.CurrentAdMediaKey = ${JSON.stringify(seedCurrentAdContext ? __TTVAB_STATE__.CurrentAdMediaKey : null)};
+                __TTVAB_STATE__.AdPodProgressByMediaKey = ${JSON.stringify(seedAdPodProgress && pagePlaybackContext.MediaKey ? { [pagePlaybackContext.MediaKey]: seedAdPodProgress } : {})};
                 __TTVAB_STATE__.LastAdEndedAt = ${JSON.stringify(seedLastAdEndContext ? __TTVAB_STATE__.LastAdEndedAt : 0)};
                 __TTVAB_STATE__.LastAdEndedChannel = ${JSON.stringify(seedLastAdEndContext ? __TTVAB_STATE__.LastAdEndedChannel : null)};
                 __TTVAB_STATE__.LastAdEndedMediaKey = ${JSON.stringify(seedLastAdEndContext ? __TTVAB_STATE__.LastAdEndedMediaKey : null)};
@@ -1283,12 +1320,36 @@ function _hookWorker() {
                                 __TTVAB_STATE__.LastAdEndedMediaKey = lastEndContext.MediaKey;
                             }
                             break;
+                        case 'UpdateAdPodProgress':
+                            {
+                                const progressContext = _normalizePlaybackContext(data.value);
+                                const progressInfo =
+                                    (progressContext.MediaKey &&
+                                        __TTVAB_STATE__.StreamInfos[progressContext.MediaKey]) ||
+                                    null;
+                                if (progressInfo) {
+                                    _applyAdPodProgressToInfo(progressInfo, data.value);
+                                } else {
+                                    _mergeAdPodProgress(data.value);
+                                }
+                            }
+                            break;
+                        case 'ClearAdPodProgress':
+                            _clearAdPodProgress(data.value?.mediaKey);
+                            break;
                         case 'UpdatePinnedBackupPlayerContext':
                             {
                                 const nextPinnedContext = _normalizePlaybackContext(data.value);
                                 __TTVAB_STATE__.PinnedBackupPlayerType = data.value?.type || null;
                                 __TTVAB_STATE__.PinnedBackupPlayerChannel = nextPinnedContext.ChannelName;
                                 __TTVAB_STATE__.PinnedBackupPlayerMediaKey = nextPinnedContext.MediaKey;
+                            }
+                            break;
+                        case 'PrepareFatalMediaRecovery':
+                            if (
+                                typeof __TTVAB_STATE__.PrepareFatalMediaRecovery === "function"
+                            ) {
+                                void __TTVAB_STATE__.PrepareFatalMediaRecovery(data.value);
                             }
                             break;
                         case 'UpdateCodecHandoffContext':
@@ -1324,6 +1385,34 @@ function _hookWorker() {
                                 }
                                 if (!nextHandoffId) {
                                     break;
+                                }
+                                for (const streamInfo of Object.values(__TTVAB_STATE__.StreamInfos)) {
+                                    if (
+                                        nextCodecHandoffContext.MediaKey &&
+                                        _normalizeMediaKey(streamInfo?.MediaKey) !==
+                                            nextCodecHandoffContext.MediaKey
+                                    ) {
+                                        continue;
+                                    }
+                                    if (
+                                        !nextCodecHandoffContext.MediaKey &&
+                                        nextCodecHandoffContext.ChannelName &&
+                                        _normalizeChannelName(streamInfo?.ChannelName) !==
+                                            nextCodecHandoffContext.ChannelName
+                                    ) {
+                                        continue;
+                                    }
+                                    if (streamInfo._CodecHandoffPendingId !== nextHandoffId) {
+                                        streamInfo._CodecHandoffPendingId = nextHandoffId;
+                                        streamInfo._CodecHandoffAcknowledgedId = null;
+                                        streamInfo._CodecHandoffFailedId = null;
+                                    }
+                                    if (
+                                        streamInfo.ModifiedM3U8 &&
+                                        __TTVAB_STATE__.IsAdStrippingEnabled === true
+                                    ) {
+                                        streamInfo.IsUsingModifiedM3U8 = true;
+                                    }
                                 }
                                 __TTVAB_STATE__.ActiveCodecHandoffId = nextHandoffId;
                                 __TTVAB_STATE__.ActiveCodecHandoffChannel =
@@ -1388,6 +1477,9 @@ function _hookWorker() {
                                     }
                                 }
                                 const prevMediaKey = data.value?.previousMediaKey || null;
+                                if (prevMediaKey && prevMediaKey !== preservedMediaKey) {
+                                    _clearAdPodProgress(prevMediaKey);
+                                }
                                 if (prevMediaKey && prevMediaKey !== preservedMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
                                     delete __TTVAB_STATE__.StreamInfos[prevMediaKey];
                                 }
@@ -1404,6 +1496,7 @@ function _hookWorker() {
                             {
                                 const releasedContext = _normalizePlaybackContext(data.value);
                                 const releasedMediaKey = releasedContext.MediaKey;
+                                _clearAdPodProgress(releasedMediaKey);
                                 if (releasedMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
                                     delete __TTVAB_STATE__.StreamInfos[releasedMediaKey];
                                 }
@@ -1758,6 +1851,10 @@ function _hookWorker() {
 								});
 								const channel = detectedContext.ChannelName;
 								const mediaKey = detectedContext.MediaKey;
+								const detectedCycleStartedAt = Math.max(
+									0,
+									Number(data.cycleStartedAt) || 0,
+								);
 								const shouldStartNewCycle = isContinuation
 									? false
 									: !__TTVAB_STATE__.CurrentAdMediaKey ||
@@ -1765,6 +1862,21 @@ function _hookWorker() {
 										now - (__TTVAB_STATE__.LastAdDetectedAt || 0) >
 											__TTVAB_STATE__.AdCycleStaleMs;
 								if (shouldStartNewCycle) {
+									_clearAdPodProgress(mediaKey);
+									_mergeAdPodProgress({
+										mediaType: detectedContext.MediaType,
+										channelName: channel,
+										vodID: detectedContext.VodID,
+										mediaKey,
+										adIds: [],
+										expectedPodLength: 0,
+										cycleStartedAt: detectedCycleStartedAt || now,
+									});
+									_broadcastWorkers({
+										key: "ClearAdPodProgress",
+										targetMediaKey: mediaKey,
+										value: { mediaKey },
+									});
 									if (
 										typeof _clearPlaybackRecoveryTimeoutsForContext ===
 										"function"
@@ -1790,18 +1902,48 @@ function _hookWorker() {
 										_rememberPlayerPlaybackForAd(channel, mediaKey);
 									}
 								}
+								if (
+									mediaKey &&
+									!__TTVAB_STATE__.AdPodProgressByMediaKey?.[mediaKey]
+								) {
+									_mergeAdPodProgress({
+										mediaType: detectedContext.MediaType,
+										channelName: channel,
+										vodID: detectedContext.VodID,
+										mediaKey,
+										adIds: [],
+										expectedPodLength: 0,
+										cycleStartedAt: detectedCycleStartedAt || now,
+									});
+								}
 								__TTVAB_STATE__.CurrentAdChannel = channel;
 								__TTVAB_STATE__.CurrentAdMediaKey = mediaKey;
 								__TTVAB_STATE__.LastAdDetectedAt = now;
+								_broadcastWorkers({
+									key: "UpdateCurrentAdContext",
+									targetMediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
+									value: {
+										channelName: __TTVAB_STATE__.CurrentAdChannel,
+										mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
+									},
+								});
+								const canonicalPodProgress =
+									mediaKey &&
+									__TTVAB_STATE__.AdPodProgressByMediaKey?.[mediaKey];
+								if (canonicalPodProgress) {
+									_broadcastWorkers({
+										key: "UpdateAdPodProgress",
+										targetMediaKey: mediaKey,
+										value: {
+											mediaType: detectedContext.MediaType,
+											channelName: channel,
+											vodID: detectedContext.VodID,
+											mediaKey,
+											...canonicalPodProgress,
+										},
+									});
+								}
 							}
-							_broadcastWorkers({
-								key: "UpdateCurrentAdContext",
-								targetMediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
-								value: {
-									channelName: __TTVAB_STATE__.CurrentAdChannel,
-									mediaKey: __TTVAB_STATE__.CurrentAdMediaKey,
-								},
-							});
 							if (typeof _ensurePlaybackMonitorsRunning === "function") {
 								_ensurePlaybackMonitorsRunning(true);
 							}
@@ -1812,6 +1954,35 @@ function _hookWorker() {
 								"warning",
 							);
 							break;
+						case "AdPodProgress": {
+							if (isStalePlaybackEvent(data)) {
+								break;
+							}
+							const progress = _mergeAdPodProgress({
+								mediaType: __TTVAB_STATE__.PageMediaType,
+								channelName: data.channel || null,
+								vodID: __TTVAB_STATE__.PageVodID,
+								mediaKey: data.mediaKey || null,
+								adIds: data.adIds,
+								expectedPodLength: data.expectedPodLength,
+								cycleStartedAt: data.cycleStartedAt,
+							});
+							if (!progress || !data.mediaKey) {
+								break;
+							}
+							_broadcastWorkers({
+								key: "UpdateAdPodProgress",
+								targetMediaKey: data.mediaKey,
+								value: {
+									mediaType: __TTVAB_STATE__.PageMediaType,
+									channelName: data.channel || null,
+									vodID: __TTVAB_STATE__.PageVodID,
+									mediaKey: data.mediaKey,
+									...progress,
+								},
+							});
+							break;
+						}
 						case "BackupPlayerTypeSelected": {
 							if (isStalePlaybackEvent(data)) {
 								_log(
@@ -1910,6 +2081,18 @@ function _hookWorker() {
 							_log(`Pinned backup type: ${data.value}`, "info");
 							break;
 						}
+						case "FatalMediaRecoveryReady":
+							if (isStalePlaybackEvent(data)) {
+								_log(
+									`Ignoring stale fatal media recovery for ${data.mediaKey || data.channel}`,
+									"info",
+								);
+								break;
+							}
+							if (typeof _acceptFatalAdMediaRecoveryReady === "function") {
+								_acceptFatalAdMediaRecoveryReady(data);
+							}
+							break;
 						case "AdEnded":
 							if (isStalePlaybackEvent(data)) {
 								_log(
@@ -1934,6 +2117,7 @@ function _hookWorker() {
 									typeof data.handoffId === "string" && data.handoffId
 										? data.handoffId
 										: null;
+								const isHoldingBackup = data.holdingBackup === true;
 								if (
 									endedCodecHandoffId &&
 									__TTVAB_STATE__.ActiveCodecHandoffId &&
@@ -1958,13 +2142,15 @@ function _hookWorker() {
 								__TTVAB_STATE__.LastAdEndedChannel = endedContext.ChannelName;
 								__TTVAB_STATE__.LastAdEndedMediaKey = endedContext.MediaKey;
 								if (
+									!isHoldingBackup &&
 									_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
-									mediaKey
+										mediaKey
 								) {
 									__TTVAB_STATE__.CurrentAdChannel = null;
 									__TTVAB_STATE__.CurrentAdMediaKey = null;
 								}
 								if (
+									!isHoldingBackup &&
 									_normalizeMediaKey(
 										__TTVAB_STATE__.PinnedBackupPlayerMediaKey,
 									) === mediaKey
@@ -1974,6 +2160,7 @@ function _hookWorker() {
 									__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 								}
 								if (
+									!isHoldingBackup &&
 									endedCodecHandoffId &&
 									__TTVAB_STATE__.ActiveCodecHandoffId === endedCodecHandoffId
 								) {
@@ -1982,30 +2169,33 @@ function _hookWorker() {
 									__TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
 								}
 								if (
+									!isHoldingBackup &&
 									typeof _clearPlaybackRecoveryTimeoutsForContext === "function"
 								) {
 									_clearPlaybackRecoveryTimeoutsForContext(mediaKey);
 								}
-								_broadcastWorkers({
-									key: "UpdateCurrentAdContext",
-									targetMediaKey: mediaKey,
-									value: null,
-								});
-								_broadcastWorkers({
-									key: "UpdatePinnedBackupPlayerContext",
-									targetMediaKey: mediaKey,
-									value: null,
-								});
-								if (endedCodecHandoffId) {
+								if (!isHoldingBackup) {
 									_broadcastWorkers({
-										key: "UpdateCodecHandoffContext",
+										key: "UpdateCurrentAdContext",
 										targetMediaKey: mediaKey,
-										value: {
-											clearHandoffId: endedCodecHandoffId,
-											channelName: endedContext.ChannelName,
-											mediaKey: endedContext.MediaKey,
-										},
+										value: null,
 									});
+									_broadcastWorkers({
+										key: "UpdatePinnedBackupPlayerContext",
+										targetMediaKey: mediaKey,
+										value: null,
+									});
+									if (endedCodecHandoffId) {
+										_broadcastWorkers({
+											key: "UpdateCodecHandoffContext",
+											targetMediaKey: mediaKey,
+											value: {
+												clearHandoffId: endedCodecHandoffId,
+												channelName: endedContext.ChannelName,
+												mediaKey: endedContext.MediaKey,
+											},
+										});
+									}
 								}
 								_broadcastWorkers({
 									key: "UpdateLastAdEndContext",
@@ -2018,15 +2208,33 @@ function _hookWorker() {
 										endedAt,
 									},
 								});
-								if (typeof _resetPlayerBufferMonitorState === "function") {
+								if (
+									!isHoldingBackup &&
+									typeof _resetPlayerBufferMonitorState === "function"
+								) {
 									_resetPlayerBufferMonitorState();
 								}
-								if (typeof _clearAdResumeIntent === "function") {
+								if (
+									!isHoldingBackup &&
+									typeof _clearAdResumeIntent === "function"
+								) {
 									_clearAdResumeIntent();
 								}
 								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
-								_log("Ad ended", "success");
-								const isHoldingBackup = data.holdingBackup === true;
+								if (!isHoldingBackup) {
+									_clearAdPodProgress(mediaKey);
+									_broadcastWorkers({
+										key: "ClearAdPodProgress",
+										targetMediaKey: mediaKey,
+										value: { mediaKey },
+									});
+								}
+								_log(
+									isHoldingBackup
+										? "Visible ad cycle ended; holding clean backup"
+										: "Ad ended",
+									"success",
+								);
 								if (
 									!isHoldingBackup &&
 									typeof _restoreSuppressedMediaAfterAd === "function"
@@ -2050,6 +2258,67 @@ function _hookWorker() {
 								const mediaKey =
 									data.mediaKey || __TTVAB_STATE__.LastAdEndedMediaKey || null;
 								const requiresReload = data.requiresReload === true;
+								const restoredHandoffId =
+									_normalizeMediaKey(
+										__TTVAB_STATE__.ActiveCodecHandoffMediaKey,
+									) === mediaKey
+										? __TTVAB_STATE__.ActiveCodecHandoffId
+										: null;
+								if (
+									_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+									mediaKey
+								) {
+									__TTVAB_STATE__.CurrentAdChannel = null;
+									__TTVAB_STATE__.CurrentAdMediaKey = null;
+								}
+								if (
+									_normalizeMediaKey(
+										__TTVAB_STATE__.PinnedBackupPlayerMediaKey,
+									) === mediaKey
+								) {
+									__TTVAB_STATE__.PinnedBackupPlayerType = null;
+									__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+									__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+								}
+								if (restoredHandoffId) {
+									__TTVAB_STATE__.ActiveCodecHandoffId = null;
+									__TTVAB_STATE__.ActiveCodecHandoffChannel = null;
+									__TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
+								}
+								_broadcastWorkers([
+									{
+										key: "UpdateCurrentAdContext",
+										targetMediaKey: mediaKey,
+										value: null,
+									},
+									{
+										key: "UpdatePinnedBackupPlayerContext",
+										targetMediaKey: mediaKey,
+										value: null,
+									},
+									...(restoredHandoffId
+										? [
+												{
+													key: "UpdateCodecHandoffContext",
+													targetMediaKey: mediaKey,
+													value: {
+														clearHandoffId: restoredHandoffId,
+														channelName: channel,
+														mediaKey,
+													},
+												},
+											]
+										: []),
+									{
+										key: "ClearAdPodProgress",
+										targetMediaKey: mediaKey,
+										value: { mediaKey },
+									},
+								]);
+								_clearAdPodProgress(mediaKey);
+								if (typeof _resetFatalAdMediaRecoveryState === "function") {
+									_resetFatalAdMediaRecoveryState();
+								}
 								_log(
 									requiresReload
 										? "Native playback restored after backup hold; reloading player"
@@ -2281,6 +2550,18 @@ function _hookWorker() {
 								handoffId: __TTVAB_STATE__.ActiveCodecHandoffId,
 								channelName: __TTVAB_STATE__.ActiveCodecHandoffChannel,
 								mediaKey: __TTVAB_STATE__.ActiveCodecHandoffMediaKey,
+							},
+						});
+					}
+					if (seedAdPodProgress) {
+						_postWorkerBridgeMessage(this, {
+							key: "UpdateAdPodProgress",
+							value: {
+								mediaType: pagePlaybackContext.MediaType,
+								channelName: pagePlaybackContext.ChannelName,
+								vodID: pagePlaybackContext.VodID,
+								mediaKey: pagePlaybackContext.MediaKey,
+								...seedAdPodProgress,
 							},
 						});
 					}

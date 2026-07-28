@@ -43,6 +43,7 @@ beforeAll(() => {
 		IsAdStrippingEnabled: true,
 		CurrentAdChannel: null,
 		CurrentAdMediaKey: null,
+		AdPodProgressByMediaKey: Object.create(null),
 		StreamInfos: Object.create(null),
 		StreamInfosByUrl: Object.create(null),
 		PinnedBackupPlayerType: null,
@@ -144,6 +145,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		LastPlayerReload: 0,
 		LastCleanBackupM3U8: null,
 		LastCleanBackupPlayerType: null,
+		LastCleanBackupCodecFamily: null,
 		LastCleanBackupAt: 0,
 		LastCleanNativeM3U8: null,
 		LastCleanNativeUrl: null,
@@ -152,6 +154,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		BackupEncodingsM3U8Cache: Object.create(null),
 		BackupVariantUrls: new Set<string>(),
 		EnhancedVariantUrls: new Set<string>(),
+		EnhancedDecoderCodecFamily: null,
 		LoggedBackupAdsByType: null,
 		_LoggedWhitelistByType: null,
 		Urls: Object.create(null),
@@ -164,6 +167,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_LoggedOfflineTransition: false,
 		_AdRequestController: null,
 		_EmptyAdHoldMediaSequence: 0,
+		_FatalMediaRecoveryRequestId: null,
 		_CodecHandoffSequence: 0,
 		_CodecHandoffPendingId: null,
 		_CodecHandoffAcknowledgedId: null,
@@ -490,8 +494,10 @@ describe("_resetStreamAdState", () => {
 			LastCleanNativeM3U8: "#EXTM3U\n#EXTINF:2.000,live\nnative.ts",
 			LastCleanNativeUrl: "https://edge.example/native.m3u8",
 			LastCleanNativeCodec: "hev1.1.6.L153.B0",
+			EnhancedDecoderCodecFamily: "hevc",
 			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 			_EmptyAdHoldMediaSequence: 12,
+			_FatalMediaRecoveryRequestId: "fatal-recovery-old",
 			_CodecHandoffSequence: 4,
 			_CodecHandoffPendingId: "handoff-4",
 			_CodecHandoffAcknowledgedId: "handoff-4",
@@ -513,8 +519,10 @@ describe("_resetStreamAdState", () => {
 		expect((info.ObservedAdPodIds as Set<string>).size).toBe(0);
 		expect(info.ExpectedAdPodLength).toBe(0);
 		expect(info.LastCleanNativeUrl).toBe("https://edge.example/native.m3u8");
+		expect(info.EnhancedDecoderCodecFamily).toBe(null);
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
+		expect(info._FatalMediaRecoveryRequestId).toBe(null);
 		expect(info._CodecHandoffSequence).toBe(5);
 		expect(info._CodecHandoffPendingId).toBe(null);
 		expect(info._CodecHandoffAcknowledgedId).toBe(null);
@@ -533,11 +541,37 @@ describe("_resetStreamAdState", () => {
 		expect(info.LastCleanNativeUrl).toBe(null);
 		expect(info.LastCleanNativeCodec).toBe(null);
 		expect(info.EnhancedVariantUrls).toBeInstanceOf(Set);
+		expect(info.EnhancedDecoderCodecFamily).toBe(null);
 		expect(info._CodecHandoffSequence).toBe(0);
 		expect(info._CodecHandoffPendingId).toBe(null);
 		expect(info._CodecHandoffAcknowledgedId).toBe(null);
 		expect(info._CodecHandoffFailedId).toBe(null);
 		expect(info._CodecHandoffReloadRetryCount).toBe(0);
+	});
+
+	it("seeds a replacement worker stream from main-owned ad pod progress", () => {
+		const create =
+			T<(ctx: Record<string, unknown>) => Record<string, unknown>>(
+				"_createStreamInfo",
+			);
+		getState().AdPodProgressByMediaKey = {
+			"live:testchannel": {
+				adIds: ["stitched-ad-1"],
+				expectedPodLength: 2,
+				cycleStartedAt: 1234,
+			},
+		};
+
+		const info = create({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+
+		expect([...info.ObservedAdPodIds]).toEqual(["stitched-ad-1"]);
+		expect(info.ExpectedAdPodLength).toBe(2);
+		expect(info.VisibleAdStartedAt).toBe(1234);
+		delete getState().AdPodProgressByMediaKey;
 	});
 
 	it("reports wasUsingModifiedM3U8 when active", () => {
@@ -2182,9 +2216,12 @@ describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 		expect(stripHevc()(info, multiCodecMaster)).toBe(multiCodecMaster);
 	});
 
-	it("never strips a backup master down to zero variants", () => {
+	it("rejects an enhanced-only backup master during an AVC handoff", () => {
 		const info = makeInfo({ ModifiedM3U8: "modified" });
-		expect(stripHevc()(info, hevcOnlyMaster)).toBe(hevcOnlyMaster);
+		const stripped = stripHevc()(info, hevcOnlyMaster);
+		expect(stripped).not.toContain("src-hevc");
+		expect(stripped).not.toContain("1080-hevc");
+		expect(getStreamUrl()(stripped, target1440)).toBe(null);
 	});
 });
 
@@ -2441,7 +2478,14 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 	}
 
 	it("keeps the held backup playing without a reload when ending into a silent backup hold", async () => {
-		const info = setupCsaiEscapeAdEnd({ ConsecutiveFailedNativeProbes: 6 });
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			ExpectedAdPodLength: 2,
+			EnhancedDecoderCodecFamily: "hevc",
+			_CodecHandoffPendingId: "handoff-hold",
+			_CodecHandoffAcknowledgedId: "handoff-hold",
+		});
 		g._canReloadNativePlayerAfterAd = async () => false;
 
 		const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
@@ -2455,7 +2499,16 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		});
 		expect(messages.some((m) => m.key === "ReloadPlayer")).toBe(false);
 		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect((info.ObservedAdPodIds as Set<string>).size).toBe(1);
+		expect(info.ExpectedAdPodLength).toBe(2);
+		expect(info.ActiveBackupPlayerType).toBe("embed");
+		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+		expect(info._CodecHandoffPendingId).toBe("handoff-hold");
+		expect(getState().PinnedBackupPlayerType).toBe("embed");
 		expect(out).toContain("seg50.ts");
+		getState().PinnedBackupPlayerType = null;
+		getState().PinnedBackupPlayerChannel = null;
+		getState().PinnedBackupPlayerMediaKey = null;
 	});
 
 	it("skips the post-hold reload when the autoplay backup already held native quality", async () => {
@@ -2792,7 +2845,7 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 		].join("\n");
 	}
 
-	function setupHold() {
+	function setupHold(overrides: Record<string, unknown> = {}) {
 		g.postMessage = () => {};
 		g._postWorkerBridgeMessage = () => {};
 		g._createPageScopedWorkerEvent = (value: unknown) => value;
@@ -2806,10 +2859,116 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 			LastCleanBackupPlayerType: "site",
 			ActiveBackupPlayerType: "site",
 			LastCleanBackupAt: now,
+			...overrides,
 		});
 		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
 		return info;
 	}
+
+	it("keeps the backup through an incomplete declared pod and restores only after stable confirmation", async () => {
+		const info = setupHold({
+			PendingAdEndAt: Date.now() - 5000,
+			CleanPlaylistCount: 2,
+			ExpectedAdPodLength: 2,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+		});
+		g._postWorkerBridgeMessage = vi.fn();
+		g._canReloadNativePlayerAfterAd = async () => true;
+		const cleanNative = makePlaylist(300, 3);
+
+		const held = await processM3U8()(NATIVE_URL, cleanNative, () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(held).toContain("seg50.ts");
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(info.ExpectedAdPodLength).toBe(2);
+		expect(
+			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls.some(
+				(call) =>
+					(call[1] as Record<string, unknown>)?.key ===
+					"NativePlaybackRestored",
+			),
+		).toBe(false);
+
+		(info.ObservedAdPodIds as Set<string>).add("stitched-ad-2");
+		const restored = await processM3U8()(NATIVE_URL, cleanNative, () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(restored).toContain("seg300.ts");
+		expect(info.IsHoldingBackupAfterAd).toBe(false);
+		expect(
+			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls.some(
+				(call) =>
+					(call[1] as Record<string, unknown>)?.key ===
+					"NativePlaybackRestored",
+			),
+		).toBe(true);
+	});
+
+	it("refreshes a stale backup while a clean native poll is still awaiting pod completion", async () => {
+		const refreshedBackup = makePlaylist(90, 3);
+		const info = setupHold({
+			PendingAdEndAt: Date.now() - 5000,
+			CleanPlaylistCount: 2,
+			ExpectedAdPodLength: 2,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			LastCleanBackupAt: Date.now() - 1000,
+		});
+		const refreshSpy = vi.fn(async () => refreshedBackup);
+		g._refreshActiveBackupMediaPlaylist = refreshSpy;
+		g._canReloadNativePlayerAfterAd = async () => true;
+
+		const out = await processM3U8()(NATIVE_URL, makePlaylist(300, 3), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(refreshSpy).toHaveBeenCalledTimes(1);
+		expect(out).toContain("seg90.ts");
+		expect(out).not.toContain("seg300.ts");
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+	});
+
+	it("never exits a silent hold into an ad-marked native playlist at the hold limit", async () => {
+		const previousMax = getState().SilentBackupHoldMaxMs;
+		getState().SilentBackupHoldMaxMs = 1000;
+		const info = setupHold({
+			SilentBackupHoldStartedAt: Date.now() - 5000,
+			LastSilentBackupHoldLogAt: 0,
+		});
+		try {
+			const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+				Promise.reject(new Error("no fetch expected")),
+			);
+
+			expect(out).toContain("seg50.ts");
+			expect(out).not.toContain("native-live-300.ts");
+			expect(info.IsHoldingBackupAfterAd).toBe(true);
+		} finally {
+			getState().SilentBackupHoldMaxMs = previousMax;
+		}
+	});
+
+	it("invalidates clean recovery evidence when ad markers return during the hold", async () => {
+		const info = setupHold({
+			PendingAdEndAt: Date.now() - 5000,
+			CleanPlaylistCount: 4,
+			NativeRecoveryCleanCount: 2,
+			AdEndConfirmEscalation: 1,
+		});
+
+		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(out).toContain("seg50.ts");
+		expect(info.PendingAdEndAt).toBe(0);
+		expect(info.CleanPlaylistCount).toBe(0);
+		expect(info.NativeRecoveryCleanCount).toBe(0);
+		expect(info.AdEndConfirmEscalation).toBe(2);
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+	});
 
 	it("rotates to a different backup type when the page reports the pinned backup stalled", async () => {
 		const info = setupHold();
@@ -3252,6 +3411,27 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 				null,
 			);
 			expect(result).toBe("ended");
+			expect(probe.calls.count).toBe(1);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("never restores from a silent hold on timeout without native-ready proof", async () => {
+		const probe = stubProbe(() => false);
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					IsShowingAd: false,
+					IsHoldingBackupAfterAd: true,
+					IsUsingBackupStream: false,
+					PendingAdEndAt: Date.now() - 10000,
+					CleanPlaylistCount: 10,
+					LastCleanBackupM3U8: null,
+				}),
+				null,
+			);
+			expect(result).toBe("wait");
 			expect(probe.calls.count).toBe(1);
 		} finally {
 			probe.restore();
@@ -4031,6 +4211,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		makeInfo({
 			ResolutionList: [hevcSource, avcSource],
 			ModifiedM3U8: "#EXTM3U",
+			LastCleanBackupCodecFamily: "avc",
 			Urls: {
 				[bridgeUrl]: hevcSource,
 				[avcUrl]: avcSource,
@@ -4078,6 +4259,19 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		expect(Number(info.NumStrippedAdSegments)).toBeGreaterThan(0);
 	});
 
+	it("fails closed when an ad-marked playlist has no playback context", async () => {
+		g._getStreamInfoForPlaylist = () => null;
+
+		const out = await core()(
+			"https://edge.example/opaque/media.m3u8",
+			allAdNative,
+			fetchStub,
+		);
+
+		expect(out).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(out).not.toContain("stitched-ad-100.ts");
+	});
+
 	it("enforces the enhanced ad-strip invariant after every core return path", async () => {
 		const realCore = g._processM3U8Core;
 		const info = makeEnhancedInfo();
@@ -4093,6 +4287,43 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		} finally {
 			g._processM3U8Core = realCore;
 		}
+	});
+
+	it("keeps enhanced decoder ownership sticky across later AVC rendition polls", async () => {
+		const info = makeEnhancedInfo();
+		g._getStreamInfoForPlaylist = () => info;
+		const cleanNative = makePlaylist(700, 3);
+
+		await core()(bridgeUrl, cleanNative, fetchStub);
+		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+
+		await core()(avcUrl, cleanNative, fetchStub);
+		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+	});
+
+	it("retires a 360p AVC poll owned by the prior enhanced decoder generation", async () => {
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 1000,
+			EnhancedDecoderCodecFamily: "hevc",
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupAt: Date.now(),
+		});
+		const controller = new AbortController();
+		g._getStreamInfoForPlaylist = () => info;
+		abortRetiringRequestOnReload(info, controller);
+
+		await expect(
+			process()(avcUrl, adLadenNative, fetchStub, controller.signal),
+		).rejects.toMatchObject({ name: "AbortError" });
+
+		expect(reloadMessages()).toHaveLength(1);
+		expect(reloadMessages()[0][1]).toMatchObject({
+			reason: "codec-handoff",
+			newMediaPlayerInstance: true,
+		});
+		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
 	});
 
 	it.each([
@@ -4219,18 +4450,33 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 	it("clears only the exact handoff generation and releases its modified-master latch", () => {
 		const info = makeEnhancedInfo({
 			IsUsingModifiedM3U8: true,
+			EnhancedDecoderCodecFamily: "hevc",
 			_CodecHandoffPendingId: "handoff-b",
 			_CodecHandoffAcknowledgedId: "handoff-b",
 		});
 
 		expect(clearHandoff()(info, "handoff-a")).toBe(false);
 		expect(info.IsUsingModifiedM3U8).toBe(true);
+		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
 		expect(info._CodecHandoffPendingId).toBe("handoff-b");
 
 		expect(clearHandoff()(info, "handoff-b")).toBe(true);
 		expect(info.IsUsingModifiedM3U8).toBe(false);
+		expect(info.EnhancedDecoderCodecFamily).toBe(null);
 		expect(info._CodecHandoffPendingId).toBe(null);
 		expect(info._CodecHandoffAcknowledgedId).toBe(null);
+	});
+
+	it("preserves enhanced decoder ownership when an exact handoff is rolled back before acknowledgement", () => {
+		const info = makeEnhancedInfo({
+			IsUsingModifiedM3U8: true,
+			EnhancedDecoderCodecFamily: "av1",
+			_CodecHandoffPendingId: "handoff-failed",
+		});
+
+		expect(clearHandoff()(info, "handoff-failed")).toBe(true);
+		expect(info.EnhancedDecoderCodecFamily).toBe("av1");
+		expect(info._CodecHandoffPendingId).toBe(null);
 	});
 
 	it("does not let one aborted poll cancel the shared handoff transaction", async () => {
@@ -4423,6 +4669,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 				url: string,
 				codecs: string,
 				enhanced: boolean,
+				retiringCodecFamily?: string | null,
 			) => boolean
 		>("_isLastCleanNativeForRequest");
 		const cachedUrl =
@@ -4442,6 +4689,13 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		).toBe(false);
 		expect(isSameRequest(info, cachedUrl, hevcSource.Codecs, true)).toBe(false);
 		expect(isSameRequest(info, cachedUrl, avcSource.Codecs, false)).toBe(true);
+		expect(
+			isSameRequest(info, cachedUrl, avcSource.Codecs, false, "hevc"),
+		).toBe(false);
+		info.LastCleanNativeCodec = hevcSource.Codecs;
+		expect(
+			isSameRequest(info, cachedUrl, avcSource.Codecs, false, "hevc"),
+		).toBe(true);
 	});
 
 	it("retains old enhanced URL identity after the replacement master removes its alias", async () => {
@@ -4510,6 +4764,35 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		controller.abort();
 		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 	});
+
+	it("never starts an AVC handoff from a clean enhanced-only backup", async () => {
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 1000,
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupAt: Date.now(),
+		});
+		const controller = new AbortController();
+		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = vi.fn(async () => ({
+			type: "autoplay",
+			m3u8: cleanBackup,
+		}));
+
+		const pending = process()(
+			bridgeUrl,
+			allAdNative,
+			fetchStub,
+			controller.signal,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 25));
+		expect(reloadMessages()).toHaveLength(0);
+
+		controller.abort();
+		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+	});
 });
 describe("_dropEnhancedVariantLines (AVC fallback master shape)", () => {
 	const fn = () =>
@@ -4567,5 +4850,256 @@ describe("_dropEnhancedVariantLines (AVC fallback master shape)", () => {
 		const { removed, remaining } = fn()(enhancedMaster.slice(0, 6));
 		expect(removed).toBe(2);
 		expect(remaining).toBe(0);
+	});
+});
+
+describe("_prepareFatalMediaRecovery", () => {
+	const cleanBackup = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXT-X-MEDIA-SEQUENCE:700",
+		"#EXTINF:2.000,live",
+		"https://edge.example/avc-live-700.ts",
+	].join("\n");
+	const adMarkedBackup = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXT-X-MEDIA-SEQUENCE:700",
+		'#EXT-X-DATERANGE:ID="stitched-ad-700",CLASS="twitch-stitched-ad"',
+		"#EXTINF:2.000,Amazon",
+		"https://edge.example/ad-700.ts",
+	].join("\n");
+	let realRefreshHeld: unknown;
+	let realRefreshActive: unknown;
+	let realPostWorkerBridgeMessage: unknown;
+	let realCreatePageScopedWorkerEvent: unknown;
+
+	const prepare = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: (...args: unknown[]) => Promise<unknown>,
+				request: Record<string, unknown>,
+			) => Promise<boolean>
+		>("_prepareFatalMediaRecovery");
+
+	beforeEach(() => {
+		realRefreshHeld = g._refreshHeldAutoplayBackupPlaylist;
+		realRefreshActive = g._refreshActiveBackupMediaPlaylist;
+		realPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		realCreatePageScopedWorkerEvent = g._createPageScopedWorkerEvent;
+		g._postWorkerBridgeMessage = vi.fn();
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
+		getState().CurrentAdMediaKey = "live:testchannel";
+		getState().StreamInfos = Object.create(null);
+	});
+
+	afterEach(() => {
+		g._refreshHeldAutoplayBackupPlaylist = realRefreshHeld;
+		g._refreshActiveBackupMediaPlaylist = realRefreshActive;
+		g._postWorkerBridgeMessage = realPostWorkerBridgeMessage;
+		g._createPageScopedWorkerEvent = realCreatePageScopedWorkerEvent;
+		getState().CurrentAdMediaKey = null;
+	});
+
+	it("arms one exact reload only after a newly fetched clean backup", async () => {
+		const requestedAt = Date.now();
+		const info = makeInfo({
+			IsShowingAd: true,
+			ModifiedM3U8: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000",
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupAt: requestedAt - 1000,
+		});
+		g._refreshHeldAutoplayBackupPlaylist = vi.fn(async () => {
+			info.LastCleanBackupAt = Date.now();
+			info.LastCleanBackupM3U8 = cleanBackup;
+			info.LastCleanBackupCodecFamily = "avc";
+			return cleanBackup;
+		});
+		g._findBackupStream = vi.fn();
+
+		const ready = await prepare()(
+			info,
+			async () => new Response("", { status: 500 }),
+			{
+				recoveryId: "fatal-recovery-1",
+				requestedAt,
+				channelName: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		);
+
+		expect(ready).toBe(true);
+		expect(g._refreshHeldAutoplayBackupPlaylist).toHaveBeenCalledTimes(1);
+		expect(g._findBackupStream).not.toHaveBeenCalled();
+		expect(info._CodecHandoffPendingId).toBe("fatal-recovery-1");
+		expect(info.IsUsingModifiedM3U8).toBe(true);
+		expect(g._postWorkerBridgeMessage).toHaveBeenCalledTimes(1);
+		expect(
+			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls[0][1],
+		).toMatchObject({
+			key: "FatalMediaRecoveryReady",
+			recoveryId: "fatal-recovery-1",
+			mediaKey: "live:testchannel",
+		});
+	});
+
+	it("rejects an old cached backup when no fresh verification succeeds", async () => {
+		const requestedAt = Date.now();
+		const info = makeInfo({
+			IsShowingAd: true,
+			ModifiedM3U8: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000",
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupAt: requestedAt - 1000,
+		});
+		g._refreshHeldAutoplayBackupPlaylist = vi.fn(async () => null);
+		g._findBackupStream = vi.fn(async () => ({
+			type: "autoplay",
+			m3u8: cleanBackup,
+		}));
+
+		const ready = await prepare()(
+			info,
+			async () => new Response("", { status: 500 }),
+			{
+				recoveryId: "fatal-recovery-stale",
+				requestedAt,
+				channelName: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		);
+
+		expect(ready).toBe(false);
+		expect(info._CodecHandoffPendingId).toBe(null);
+		expect(g._postWorkerBridgeMessage).not.toHaveBeenCalled();
+	});
+
+	it("never authorizes recovery from an ad-marked refresh", async () => {
+		const requestedAt = Date.now();
+		const info = makeInfo({
+			IsShowingAd: true,
+			ModifiedM3U8: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000",
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+		});
+		g._refreshHeldAutoplayBackupPlaylist = vi.fn(async () => {
+			info.LastCleanBackupAt = Date.now();
+			info.LastCleanBackupCodecFamily = "avc";
+			return adMarkedBackup;
+		});
+		g._findBackupStream = vi.fn(async () => ({
+			type: null,
+			m3u8: null,
+		}));
+
+		const ready = await prepare()(
+			info,
+			async () => new Response("", { status: 500 }),
+			{
+				recoveryId: "fatal-recovery-ad",
+				requestedAt,
+				channelName: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		);
+
+		expect(ready).toBe(false);
+		expect(info._CodecHandoffPendingId).toBe(null);
+		expect(g._postWorkerBridgeMessage).not.toHaveBeenCalled();
+	});
+
+	it("never authorizes recovery from a clean enhanced-only backup", async () => {
+		const requestedAt = Date.now();
+		const info = makeInfo({
+			IsShowingAd: true,
+			ModifiedM3U8: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000",
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+		});
+		g._refreshHeldAutoplayBackupPlaylist = vi.fn(async () => {
+			info.LastCleanBackupAt = Date.now();
+			info.LastCleanBackupCodecFamily = "hevc";
+			return cleanBackup;
+		});
+		g._findBackupStream = vi.fn();
+
+		const ready = await prepare()(
+			info,
+			async () => new Response("", { status: 500 }),
+			{
+				recoveryId: "fatal-recovery-hevc",
+				requestedAt,
+				channelName: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		);
+
+		expect(ready).toBe(false);
+		expect(info._CodecHandoffPendingId).toBe(null);
+		expect(g._postWorkerBridgeMessage).not.toHaveBeenCalled();
+	});
+
+	it("lets the newest request own recovery when an older verification finishes late", async () => {
+		const requestedAt = Date.now();
+		const info = makeInfo({
+			IsShowingAd: true,
+			ModifiedM3U8: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000",
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+		});
+		let resolveFirst!: (value: string) => void;
+		let resolveSecond!: (value: string) => void;
+		g._refreshHeldAutoplayBackupPlaylist = vi
+			.fn()
+			.mockImplementationOnce(
+				() =>
+					new Promise<string>((resolve) => {
+						resolveFirst = resolve;
+					}),
+			)
+			.mockImplementationOnce(
+				() =>
+					new Promise<string>((resolve) => {
+						resolveSecond = resolve;
+					}),
+			);
+		g._findBackupStream = vi.fn();
+
+		const first = prepare()(
+			info,
+			async () => new Response("", { status: 500 }),
+			{
+				recoveryId: "fatal-recovery-first",
+				requestedAt,
+				channelName: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		);
+		const second = prepare()(
+			info,
+			async () => new Response("", { status: 500 }),
+			{
+				recoveryId: "fatal-recovery-second",
+				requestedAt,
+				channelName: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		);
+		info.LastCleanBackupAt = Date.now();
+		info.LastCleanBackupCodecFamily = "avc";
+		resolveSecond(cleanBackup);
+		await expect(second).resolves.toBe(true);
+		resolveFirst(cleanBackup);
+		await expect(first).resolves.toBe(false);
+
+		expect(info._CodecHandoffPendingId).toBe("fatal-recovery-second");
+		expect(g._postWorkerBridgeMessage).toHaveBeenCalledTimes(1);
+		expect(
+			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls[0][1],
+		).toMatchObject({ recoveryId: "fatal-recovery-second" });
 	});
 });

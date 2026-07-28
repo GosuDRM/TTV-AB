@@ -376,6 +376,9 @@ async function _notifyAdComplete(
 		ObservedAdPodIds?: Set<string>;
 		ExpectedAdPodLength?: number;
 		ActiveBackupPlayerType?: string | null;
+		VisibleAdStartedAt?: number;
+		ChannelName?: string | null;
+		MediaKey?: string | null;
 	},
 ): Promise<void> {
 	try {
@@ -402,6 +405,22 @@ async function _notifyAdComplete(
 				info.ExpectedAdPodLength = Math.max(
 					Math.max(0, Number(info.ExpectedAdPodLength) || 0),
 					parsedPodLength,
+				);
+			}
+			if (typeof self !== "undefined" && self.postMessage) {
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "AdPodProgress",
+						adIds: Array.from(info.ObservedAdPodIds),
+						expectedPodLength: Math.max(
+							0,
+							Number(info.ExpectedAdPodLength) || 0,
+						),
+						cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+						channel: info.ChannelName || null,
+						mediaKey: info.MediaKey || null,
+					}),
 				);
 			}
 		}

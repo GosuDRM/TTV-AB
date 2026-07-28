@@ -520,6 +520,7 @@ function _setPagePlaybackContext(
 
 		if (previousMediaKey && previousMediaKey !== preservedMediaKey) {
 			delete __TTVAB_STATE__.StreamInfos[previousMediaKey];
+			delete __TTVAB_STATE__.AdPodProgressByMediaKey?.[previousMediaKey];
 			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
 				if (
 					__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === previousMediaKey
@@ -586,6 +587,7 @@ function _releasePlaybackContext(context) {
 	if (!releasedMediaKey) return false;
 
 	delete __TTVAB_STATE__.StreamInfos[releasedMediaKey];
+	delete __TTVAB_STATE__.AdPodProgressByMediaKey?.[releasedMediaKey];
 	for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
 		if (__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === releasedMediaKey) {
 			delete __TTVAB_STATE__.StreamInfosByUrl[url];
@@ -667,6 +669,117 @@ function _syncPagePlaybackContext(options = {}) {
 	);
 }
 
+function _mergeAdPodProgress(value) {
+	const context = _normalizePlaybackContext(value);
+	const mediaKey = context.MediaKey;
+	if (!mediaKey) return null;
+	if (
+		!__TTVAB_STATE__.AdPodProgressByMediaKey ||
+		typeof __TTVAB_STATE__.AdPodProgressByMediaKey !== "object"
+	) {
+		__TTVAB_STATE__.AdPodProgressByMediaKey = Object.create(null);
+	}
+	const incomingCycleStartedAt = Math.max(
+		0,
+		Number(value?.cycleStartedAt) || 0,
+	);
+	const current = __TTVAB_STATE__.AdPodProgressByMediaKey[mediaKey] || null;
+	const currentCycleStartedAt = Math.max(
+		0,
+		Number(current?.cycleStartedAt) || 0,
+	);
+	const isActiveMediaContext =
+		_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) === mediaKey;
+	if (
+		current &&
+		incomingCycleStartedAt > 0 &&
+		currentCycleStartedAt > incomingCycleStartedAt
+	) {
+		return current;
+	}
+	if (current && currentCycleStartedAt > 0 && incomingCycleStartedAt <= 0) {
+		return current;
+	}
+	const shouldReplace =
+		!current ||
+		(!isActiveMediaContext &&
+			incomingCycleStartedAt > 0 &&
+			incomingCycleStartedAt > currentCycleStartedAt);
+	const adIds = new Set(
+		shouldReplace ? [] : Array.isArray(current?.adIds) ? current.adIds : [],
+	);
+	if (Array.isArray(value?.adIds)) {
+		for (const adId of value.adIds) {
+			if (typeof adId === "string" && adId) adIds.add(adId);
+		}
+	}
+	const entry = {
+		adIds: Array.from(adIds).slice(-50),
+		expectedPodLength: Math.max(
+			shouldReplace ? 0 : Math.max(0, Number(current?.expectedPodLength) || 0),
+			Math.max(0, Number(value?.expectedPodLength) || 0),
+		),
+		cycleStartedAt: shouldReplace
+			? incomingCycleStartedAt || currentCycleStartedAt || Date.now()
+			: currentCycleStartedAt || incomingCycleStartedAt || Date.now(),
+		updatedAt: Date.now(),
+	};
+	__TTVAB_STATE__.AdPodProgressByMediaKey[mediaKey] = entry;
+	return entry;
+}
+
+function _applyAdPodProgressToInfo(info, value) {
+	if (!info) return null;
+	const entry = _mergeAdPodProgress({
+		...value,
+		mediaType: info.MediaType,
+		channelName: info.ChannelName,
+		vodID: info.VodID,
+		mediaKey: info.MediaKey,
+	});
+	if (!entry) return null;
+	if (!(info.ObservedAdPodIds instanceof Set)) {
+		info.ObservedAdPodIds = new Set();
+	}
+	for (const adId of entry.adIds) {
+		info.ObservedAdPodIds.add(adId);
+	}
+	info.ExpectedAdPodLength = Math.max(
+		Math.max(0, Number(info.ExpectedAdPodLength) || 0),
+		Math.max(0, Number(entry.expectedPodLength) || 0),
+	);
+	if (Math.max(0, Number(entry.cycleStartedAt) || 0) > 0) {
+		info.VisibleAdStartedAt = entry.cycleStartedAt;
+	}
+	return entry;
+}
+
+function _clearAdPodProgress(mediaKey) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	if (!normalizedMediaKey) return false;
+	let didClear = false;
+	if (__TTVAB_STATE__.AdPodProgressByMediaKey?.[normalizedMediaKey]) {
+		delete __TTVAB_STATE__.AdPodProgressByMediaKey[normalizedMediaKey];
+		didClear = true;
+	}
+	const streamInfos = Object.values(
+		__TTVAB_STATE__.StreamInfos || {},
+	) as Array<{
+		MediaKey?: string | null;
+		ObservedAdPodIds?: Set<string>;
+		ExpectedAdPodLength?: number;
+		VisibleAdStartedAt?: number;
+	}>;
+	for (const info of streamInfos) {
+		if (_normalizeMediaKey(info?.MediaKey) !== normalizedMediaKey) continue;
+		info.ObservedAdPodIds?.clear?.();
+		info.ExpectedAdPodLength = 0;
+		info.VisibleAdStartedAt = 0;
+		didClear = true;
+	}
+	return didClear;
+}
+
 function _declareState(scope) {
 	scope.__TTVAB_STATE__ = {
 		AdSignifier: _C.AD_SIGNIFIER,
@@ -721,6 +834,7 @@ function _declareState(scope) {
 		ActiveCodecHandoffId: null,
 		ActiveCodecHandoffChannel: null,
 		ActiveCodecHandoffMediaKey: null,
+		AdPodProgressByMediaKey: Object.create(null),
 		ShouldResumeAfterAd: false,
 		ShouldResumeAfterAdChannel: null,
 		ShouldResumeAfterAdMediaKey: null,
