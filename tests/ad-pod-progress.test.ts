@@ -96,7 +96,7 @@ describe("main-owned declared ad pod progress", () => {
 		});
 	});
 
-	it("does not split an active pod when a replacement worker reports a later local start", () => {
+	it("replaces an active pod when a replacement worker reports a newer exact cycle", () => {
 		const merge = T<
 			(value: Record<string, unknown>) => Record<string, unknown> | null
 		>("_mergeAdPodProgress");
@@ -119,8 +119,8 @@ describe("main-owned declared ad pod progress", () => {
 		});
 
 		expect(result).toMatchObject({
-			adIds: ["stitched-ad-1", "stitched-ad-2"],
-			cycleStartedAt: 1000,
+			adIds: ["stitched-ad-2"],
+			cycleStartedAt: 2000,
 		});
 	});
 
@@ -202,5 +202,94 @@ describe("main-owned declared ad pod progress", () => {
 		expect([...info.ObservedAdPodIds]).toEqual(["new-ad-1"]);
 		expect(info.ExpectedAdPodLength).toBe(3);
 		expect(info.VisibleAdStartedAt).toBe(2000);
+	});
+
+	it("invalidates backup and native async owners when a pod advances or clears", () => {
+		const merge = T<
+			(value: Record<string, unknown>) => Record<string, unknown> | null
+		>("_mergeAdPodProgress");
+		const apply = T<
+			(
+				info: Record<string, unknown>,
+				value: Record<string, unknown>,
+			) => Record<string, unknown> | null
+		>("_applyAdPodProgressToInfo");
+		const clear = T<(mediaKey: string) => boolean>("_clearAdPodProgress");
+		const state = g.__TTVAB_STATE__ as {
+			StreamInfos: Record<string, Record<string, unknown>>;
+		};
+		const firstController = new AbortController();
+		const info = {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+			ObservedAdPodIds: new Set(["old-ad"]),
+			ExpectedAdPodLength: 1,
+			VisibleAdStartedAt: 1000,
+			BackupSearchEpoch: 4,
+			_BackupSearchPromises: new Map([["old-search", Promise.resolve(null)]]),
+			_BackupSearchPromise: Promise.resolve(null),
+			_BackupSearchKey: "old-search",
+			_BackupSearchStartedAt: 900,
+			_BackupSearchStartToken: {},
+			_LastBackupSearchCompletedAt: 950,
+			_BackupProbation: { type: "site" },
+			BackupPlaylistMetadata: new Map([["old", { codec: "hevc" }]]),
+			NativeRecoveryProbeEpoch: 7,
+			_NativeRecoveryProbeInFlight: true,
+			_NativeRecoveryProbeToken: {},
+			LastNativeRecoveryProbeAt: 975,
+			LastNativeRecoveryReadyPlayerType: "site",
+			NativeRecoveryCleanCount: 2,
+			ConsecutiveFailedNativeProbes: 3,
+			_FatalMediaRecoveryRequestId: "old-fatal",
+			RequestedAds: new Set(["old-ad"]),
+			_AdRequestController: firstController,
+		};
+		state.StreamInfos["live:testchannel"] = info;
+		merge({
+			mediaType: "live",
+			channelName: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 1000,
+			adIds: ["old-ad"],
+		});
+
+		apply(info, {
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 2000,
+			adIds: ["new-ad"],
+		});
+
+		expect(info.VisibleAdStartedAt).toBe(2000);
+		expect(info.BackupSearchEpoch).toBe(5);
+		expect(info._BackupSearchPromises.size).toBe(0);
+		expect(info._BackupSearchPromise).toBe(null);
+		expect(info._BackupSearchKey).toBe(null);
+		expect(info._BackupSearchStartedAt).toBe(0);
+		expect(info._BackupSearchStartToken).toBe(null);
+		expect(info._LastBackupSearchCompletedAt).toBe(0);
+		expect(info._BackupProbation).toBe(null);
+		expect(info.BackupPlaylistMetadata.size).toBe(0);
+		expect(info.NativeRecoveryProbeEpoch).toBe(8);
+		expect(info._NativeRecoveryProbeInFlight).toBe(false);
+		expect(info._NativeRecoveryProbeToken).toBe(null);
+		expect(info.NativeRecoveryCleanCount).toBe(0);
+		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
+		expect(firstController.signal.aborted).toBe(true);
+
+		const secondController = new AbortController();
+		info._BackupSearchStartToken = {};
+		info._NativeRecoveryProbeInFlight = true;
+		info._NativeRecoveryProbeToken = {};
+		info._AdRequestController = secondController;
+		expect(clear("live:testchannel")).toBe(true);
+		expect(info.VisibleAdStartedAt).toBe(0);
+		expect(info.BackupSearchEpoch).toBe(6);
+		expect(info._BackupSearchStartToken).toBe(null);
+		expect(info.NativeRecoveryProbeEpoch).toBe(9);
+		expect(info._NativeRecoveryProbeInFlight).toBe(false);
+		expect(info._NativeRecoveryProbeToken).toBe(null);
+		expect(secondController.signal.aborted).toBe(true);
 	});
 });

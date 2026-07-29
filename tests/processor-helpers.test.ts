@@ -39,6 +39,7 @@ beforeAll(() => {
 		AdSignifier: "stitched",
 		BackupPlayerTypes: ["embed", "popout", "autoplay"],
 		AdSegmentCache: new Map<string, number>(),
+		SegmentCodecOwners: new Map<string, Record<string, unknown>>(),
 		AllSegmentsAreAdSegments: false,
 		IsAdStrippingEnabled: true,
 		CurrentAdChannel: null,
@@ -146,6 +147,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		LastCleanBackupM3U8: null,
 		LastCleanBackupPlayerType: null,
 		LastCleanBackupCodecFamily: null,
+		LastCleanBackupCodec: null,
 		LastCleanBackupAt: 0,
 		LastCleanNativeM3U8: null,
 		LastCleanNativeUrl: null,
@@ -155,6 +157,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		BackupVariantUrls: new Set<string>(),
 		EnhancedVariantUrls: new Set<string>(),
 		EnhancedDecoderCodecFamily: null,
+		EnhancedDecoderCodec: null,
 		LoggedBackupAdsByType: null,
 		_LoggedWhitelistByType: null,
 		Urls: Object.create(null),
@@ -162,6 +165,9 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		ModifiedM3U8: null,
 		_BackupSearchStartedAt: 0,
 		_LastBackupSearchCompletedAt: 0,
+		_BackupSearchKey: null,
+		_BackupSearchPromises: new Map<string, Promise<unknown>>(),
+		BackupSearchEpoch: 0,
 		_BackupProbation: null,
 		_BackupPinFlipCount: 0,
 		_LoggedOfflineTransition: false,
@@ -177,6 +183,101 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_SpliceBoundarySeq: null,
 		...overrides,
 	};
+}
+
+const TEST_AVC_RESOLUTION = {
+	Name: "1080p60",
+	Resolution: "1920x1080",
+	FrameRate: 60,
+	Codecs: "avc1.64002A,mp4a.40.2",
+};
+const TEST_HEVC_RESOLUTION = {
+	Name: "chunked",
+	Resolution: "2560x1440",
+	FrameRate: 60,
+	Codecs: "hev1.1.6.L153.B0,mp4a.40.2",
+};
+
+function declareAvcPlaybackUrl(info: Record<string, unknown>, url: string) {
+	const currentUrls =
+		info.Urls && typeof info.Urls === "object"
+			? (info.Urls as Record<string, unknown>)
+			: Object.create(null);
+	info.Urls = { ...currentUrls, [url]: TEST_AVC_RESOLUTION };
+	const currentResolutions = Array.isArray(info.ResolutionList)
+		? info.ResolutionList
+		: [];
+	if (!currentResolutions.includes(TEST_AVC_RESOLUTION)) {
+		info.ResolutionList = [...currentResolutions, TEST_AVC_RESOLUTION];
+	}
+	return info;
+}
+
+function declareHevcPlaybackUrl(info: Record<string, unknown>, url: string) {
+	const currentUrls =
+		info.Urls && typeof info.Urls === "object"
+			? (info.Urls as Record<string, unknown>)
+			: Object.create(null);
+	info.Urls = { ...currentUrls, [url]: TEST_HEVC_RESOLUTION };
+	const currentResolutions = Array.isArray(info.ResolutionList)
+		? info.ResolutionList
+		: [];
+	if (!currentResolutions.includes(TEST_HEVC_RESOLUTION)) {
+		info.ResolutionList = [...currentResolutions, TEST_HEVC_RESOLUTION];
+	}
+	return info;
+}
+
+function rememberBackupPlaylistMetadata(
+	info: Record<string, unknown>,
+	m3u8: string,
+	codecFamily: string,
+	codec: string,
+) {
+	return T<
+		(
+			info: Record<string, unknown>,
+			m3u8: string,
+			codecFamily: string,
+			codec: string,
+		) => string
+	>("_rememberBackupPlaylistMetadata")(info, m3u8, codecFamily, codec);
+}
+
+function activateExactAdCycle(
+	info: Record<string, unknown>,
+	cycleStartedAt = Math.max(1, Number(info.VisibleAdStartedAt) || Date.now()),
+) {
+	const state = getState();
+	const mediaKey = String(info.MediaKey);
+	const channelName = String(info.ChannelName);
+	info.VisibleAdStartedAt = cycleStartedAt;
+	state.CurrentAdChannel = channelName;
+	state.CurrentAdMediaKey = mediaKey;
+	if (
+		!state.AdPodProgressByMediaKey ||
+		typeof state.AdPodProgressByMediaKey !== "object"
+	) {
+		state.AdPodProgressByMediaKey = Object.create(null);
+	}
+	if (!state.StreamInfos || typeof state.StreamInfos !== "object") {
+		state.StreamInfos = Object.create(null);
+	}
+	(state.AdPodProgressByMediaKey as Record<string, unknown>)[mediaKey] = {
+		cycleStartedAt,
+	};
+	(state.StreamInfos as Record<string, unknown>)[mediaKey] = info;
+	return cycleStartedAt;
+}
+
+function cycleHandoffId(
+	info: Record<string, unknown>,
+	cycleStartedAt: number,
+	label: string,
+	sequence = 1,
+	createdAt = Date.now(),
+) {
+	return `${String(info.MediaKey)}:${cycleStartedAt}:${createdAt}:${sequence}:${label}`;
 }
 
 describe("_getStreamUrl (resolution selection)", () => {
@@ -478,6 +579,8 @@ describe("_resetStreamAdState", () => {
 		const fn = T<(info: Record<string, unknown>) => Record<string, unknown>>(
 			"_resetStreamAdState",
 		);
+		const pendingHandoffId = "live:testchannel:100:200:4:pending-reset";
+		const failedHandoffId = "live:testchannel:100:190:3:failed-reset";
 		const info = makeInfo({
 			IsShowingAd: true,
 			IsUsingModifiedM3U8: true,
@@ -495,13 +598,14 @@ describe("_resetStreamAdState", () => {
 			LastCleanNativeUrl: "https://edge.example/native.m3u8",
 			LastCleanNativeCodec: "hev1.1.6.L153.B0",
 			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: "hev1.1.6.L153.B0",
 			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 			_EmptyAdHoldMediaSequence: 12,
 			_FatalMediaRecoveryRequestId: "fatal-recovery-old",
 			_CodecHandoffSequence: 4,
-			_CodecHandoffPendingId: "handoff-4",
-			_CodecHandoffAcknowledgedId: "handoff-4",
-			_CodecHandoffFailedId: "handoff-3",
+			_CodecHandoffPendingId: pendingHandoffId,
+			_CodecHandoffAcknowledgedId: pendingHandoffId,
+			_CodecHandoffFailedId: failedHandoffId,
 			_CodecHandoffReloadRetryCount: 2,
 			_BackupProbation: { type: "site", at: 123 },
 		});
@@ -520,6 +624,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.ExpectedAdPodLength).toBe(0);
 		expect(info.LastCleanNativeUrl).toBe("https://edge.example/native.m3u8");
 		expect(info.EnhancedDecoderCodecFamily).toBe(null);
+		expect(info.EnhancedDecoderCodec).toBe(null);
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
 		expect(info._FatalMediaRecoveryRequestId).toBe(null);
@@ -542,6 +647,9 @@ describe("_resetStreamAdState", () => {
 		expect(info.LastCleanNativeCodec).toBe(null);
 		expect(info.EnhancedVariantUrls).toBeInstanceOf(Set);
 		expect(info.EnhancedDecoderCodecFamily).toBe(null);
+		expect(info.EnhancedDecoderCodec).toBe(null);
+		expect(info.LastCleanBackupCodec).toBe(null);
+		expect(info._BackupSearchPromises).toBeInstanceOf(Map);
 		expect(info._CodecHandoffSequence).toBe(0);
 		expect(info._CodecHandoffPendingId).toBe(null);
 		expect(info._CodecHandoffAcknowledgedId).toBe(null);
@@ -592,25 +700,36 @@ describe("_resetStreamAdState", () => {
 			id: state.ActiveCodecHandoffId,
 			channel: state.ActiveCodecHandoffChannel,
 			mediaKey: state.ActiveCodecHandoffMediaKey,
+			currentAdMediaKey: state.CurrentAdMediaKey,
+			adPodProgress: state.AdPodProgressByMediaKey,
 		};
-		state.ActiveCodecHandoffId = "handoff-b";
+		const staleHandoffId = "live:testchannel:100:150:1:stale-reset";
+		const currentHandoffId = "live:testchannel:200:250:1:current-reset";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 200 },
+		};
+		state.ActiveCodecHandoffId = currentHandoffId;
 		state.ActiveCodecHandoffChannel = "testchannel";
 		state.ActiveCodecHandoffMediaKey = "live:testchannel";
 		try {
 			fn(
 				makeInfo({
 					MediaKey: "live:testchannel",
-					_CodecHandoffPendingId: "handoff-a",
-					_CodecHandoffAcknowledgedId: "handoff-a",
+					VisibleAdStartedAt: 100,
+					_CodecHandoffPendingId: staleHandoffId,
+					_CodecHandoffAcknowledgedId: staleHandoffId,
 				}),
 			);
 
-			expect(state.ActiveCodecHandoffId).toBe("handoff-b");
+			expect(state.ActiveCodecHandoffId).toBe(currentHandoffId);
 			expect(state.ActiveCodecHandoffMediaKey).toBe("live:testchannel");
 		} finally {
 			state.ActiveCodecHandoffId = previous.id;
 			state.ActiveCodecHandoffChannel = previous.channel;
 			state.ActiveCodecHandoffMediaKey = previous.mediaKey;
+			state.CurrentAdMediaKey = previous.currentAdMediaKey;
+			state.AdPodProgressByMediaKey = previous.adPodProgress;
 		}
 	});
 
@@ -668,7 +787,7 @@ describe("_findBackupStream fresh-session probation", () => {
 	].join("\n");
 
 	function makeHoldInfo() {
-		return makeInfo({
+		const info = makeInfo({
 			IsShowingAd: true,
 			VisibleAdStartedAt: 991_000,
 			ActiveBackupPlayerType: "autoplay",
@@ -678,6 +797,8 @@ describe("_findBackupStream fresh-session probation", () => {
 			_LqHoldStartAt: 940_000,
 			BackupEncodingsM3U8Cache: { autoplay: masterPlaylist("autoplay") },
 		});
+		activateExactAdCycle(info, 991_000);
+		return info;
 	}
 
 	function setupSweep(siteMedia: () => string) {
@@ -1604,6 +1725,115 @@ describe("_refreshActiveBackupMediaPlaylist (quality target)", () => {
 			expect(info.ActiveBackupResolution).toBe(low.Resolution);
 		});
 	});
+
+	it("live-refreshes the exact enhanced codec family instead of serving a stale snapshot", async () => {
+		const state = getState();
+		const previousQualityGroup = state.PreferredQualityGroup;
+		const hevcTarget = {
+			Name: "chunked",
+			Resolution: "2560x1440",
+			FrameRate: 60,
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="chunked"',
+			"https://cdn.example/site/hevc/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+			"https://cdn.example/site/avc/index.m3u8",
+		].join("\n");
+		const info = makeInfo({
+			ActiveBackupPlayerType: "site",
+			LastCleanBackupPlayerType: "site",
+			ModifiedM3U8: "#EXTM3U",
+			EnhancedDecoderCodecFamily: "hevc",
+			SustainedNativeResolution: hevcTarget,
+			ResolutionList: [hevcTarget],
+			BackupEncodingsM3U8Cache: {
+				site: {
+					m3u8: master,
+					baseUrl: "https://usher.ttvnw.net/api/channel/hls/test.m3u8",
+				},
+			},
+		});
+		const requestedUrls: string[] = [];
+		let sequence = 100;
+		state.PreferredQualityGroup = "chunked";
+
+		try {
+			const fetchNext = async (url: unknown) => {
+				requestedUrls.push(String(url));
+				const playlist = makePlaylist(sequence, 3);
+				sequence += 100;
+				return new Response(playlist, { status: 200 });
+			};
+			const first = await refresh()(info, fetchNext);
+			const second = await refresh()(info, fetchNext);
+
+			expect(requestedUrls).toEqual([
+				"https://cdn.example/site/hevc/index.m3u8",
+				"https://cdn.example/site/hevc/index.m3u8",
+			]);
+			expect(first).toContain("seg100.ts");
+			expect(second).toContain("seg200.ts");
+			expect(second).not.toBe(first);
+			expect(info.LastCleanBackupCodecFamily).toBe("hevc");
+		} finally {
+			state.PreferredQualityGroup = previousQualityGroup;
+		}
+	});
+
+	it("rejects an ad-marked enhanced refresh and preserves the prior clean backup", async () => {
+		const hevcTarget = {
+			Name: "chunked",
+			Resolution: "2560x1440",
+			FrameRate: 60,
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const priorClean = makePlaylist(50, 3);
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="chunked"',
+			"https://cdn.example/site/hevc/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+			"https://cdn.example/site/avc/index.m3u8",
+		].join("\n");
+		const info = makeInfo({
+			ActiveBackupPlayerType: "site",
+			LastCleanBackupPlayerType: "site",
+			LastCleanBackupM3U8: priorClean,
+			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupAt: Date.now() - 1000,
+			ModifiedM3U8: "#EXTM3U",
+			EnhancedDecoderCodecFamily: "hevc",
+			SustainedNativeResolution: hevcTarget,
+			ResolutionList: [hevcTarget],
+			BackupEncodingsM3U8Cache: {
+				site: {
+					m3u8: master,
+					baseUrl: "https://usher.ttvnw.net/api/channel/hls/test.m3u8",
+				},
+			},
+		});
+		const adMarkedRefresh = [
+			"#EXTM3U",
+			'#EXT-X-DATERANGE:ID="stitched-ad-refresh",CLASS="twitch-stitched-ad"',
+			"#EXTINF:2.000,",
+			"https://edge.example/stitched-ad-refresh.ts",
+		].join("\n");
+
+		const out = await refresh()(
+			info,
+			async () => new Response(adMarkedRefresh, { status: 200 }),
+		);
+
+		expect(out).toBe(null);
+		expect(info.LastCleanBackupM3U8).toBe(priorClean);
+		expect(String(info.LastCleanBackupM3U8)).not.toContain(
+			"stitched-ad-refresh",
+		);
+		expect(info.LastCleanBackupCodecFamily).toBe("hevc");
+	});
 });
 
 describe("_findBackupStream fallback policy", () => {
@@ -1645,6 +1875,472 @@ describe("_findBackupStream fallback policy", () => {
 		"#EXTINF:2.000,live",
 		"https://edge.example/live-1.ts",
 	].join("\n");
+
+	beforeEach(() => {
+		getState().CurrentAdChannel = "testchannel";
+		getState().CurrentAdMediaKey = "live:testchannel";
+	});
+
+	afterEach(() => {
+		getState().CurrentAdChannel = null;
+		getState().CurrentAdMediaKey = null;
+	});
+
+	it.each([
+		["HEVC", "hevc", "hev1.1.6.L153.B0", "hevc"],
+		["AV1", "av1", "av01.0.13M.08", "av1"],
+	])("selects a clean %s backup from the exact active codec family", async (_label, codecFamily, codecs, expectedPath) => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const requestedVariants: string[] = [];
+		const enhancedMaster = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60"',
+			"https://cdn.example/site/hevc/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=14000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="av01.0.13M.08,mp4a.40.2",VIDEO="1440p60"',
+			"https://cdn.example/site/av1/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+			"https://cdn.example/site/avc/index.m3u8",
+		].join("\n");
+		const target = {
+			Name: "1440p60",
+			Resolution: "2560x1440",
+			FrameRate: 60,
+			Codecs: codecs,
+		};
+
+		state.BackupPlayerTypes = ["site"];
+		state.DisableAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async () => new Response("{}", { status: 200 });
+
+		try {
+			const info = makeInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: Date.now() - 500,
+				ModifiedM3U8: "#EXTM3U",
+				EnhancedDecoderCodecFamily: codecFamily,
+				EnhancedDecoderCodec: codecs,
+				SustainedNativeResolution: target,
+				ResolutionList: [target],
+			});
+			const result = await findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(enhancedMaster, { status: 200 });
+					}
+					requestedVariants.push(href);
+					return new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				target,
+			);
+
+			expect(requestedVariants).toEqual([
+				`https://cdn.example/site/${expectedPath}/index.m3u8`,
+			]);
+			expect(result.type).toBe("site");
+			expect(result.m3u8).toBe(cleanPlaylist);
+			expect(info.LastCleanBackupCodecFamily).toBe(codecFamily);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+		}
+	});
+
+	it("rejects a mismatched HEVC descriptor and falls through to a clean AVC backup", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousAdMediaKey = state.CurrentAdMediaKey;
+		const requestedVariants: string[] = [];
+		const target = {
+			Name: "chunked",
+			Resolution: "2560x1440",
+			FrameRate: 60,
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const mixedMaster = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hvc1.2.4.L120.B0,mp4a.40.2",VIDEO="chunked"',
+			"https://cdn.example/site/incompatible-hevc/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+			"https://cdn.example/site/avc/index.m3u8",
+		].join("\n");
+
+		state.BackupPlayerTypes = ["site"];
+		state.DisableAutoplayBackup = true;
+		try {
+			const info = makeInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: 1000,
+				EnhancedDecoderCodecFamily: "hevc",
+				EnhancedDecoderCodec: target.Codecs,
+				SustainedNativeResolution: target,
+				ResolutionList: [target],
+				BackupEncodingsM3U8Cache: {
+					site: {
+						m3u8: mixedMaster,
+						baseUrl: "https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+					},
+				},
+			});
+			state.CurrentAdMediaKey = info.MediaKey;
+
+			const result = await findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					requestedVariants.push(href);
+					return new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				target,
+			);
+
+			expect(requestedVariants).toEqual([
+				"https://cdn.example/site/avc/index.m3u8",
+			]);
+			expect(result).toEqual({ type: "site", m3u8: cleanPlaylist });
+			expect(info.LastCleanBackupCodecFamily).toBe("avc");
+			expect(info.LastCleanBackupCodec).toBe("avc1.4d402a");
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			state.CurrentAdMediaKey = previousAdMediaKey;
+		}
+	});
+
+	it.each([
+		["HEVC", "hevc", "hev1.1.6.L153.B0"],
+		["AV1", "av1", "av01.0.13M.08"],
+	])("checks every source for an exact %s backup before autoplay AVC", async (_label, codecFamily, codecs) => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		const requestedVariants: string[] = [];
+		let activePlayerType = "";
+		const target = {
+			Name: "1440p60",
+			Resolution: "2560x1440",
+			FrameRate: 60,
+			Codecs: codecs,
+		};
+		const exactMaster = [
+			"#EXTM3U",
+			`#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="${codecs},mp4a.40.2",VIDEO="1440p60"`,
+			`https://cdn.example/site/${codecFamily}/index.m3u8`,
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+			"https://cdn.example/site/avc/index.m3u8",
+		].join("\n");
+		const autoplayMaster = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=640x360,FRAME-RATE=30.000,CODECS="avc1.4D401E,mp4a.40.2",VIDEO="360p"',
+			"https://cdn.example/autoplay/avc/index.m3u8",
+		].join("\n");
+
+		state.BackupPlayerTypes = ["site", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const info = makeInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: Date.now() - 500,
+				ModifiedM3U8: "#EXTM3U",
+				EnhancedDecoderCodecFamily: codecFamily,
+				EnhancedDecoderCodec: codecs,
+				SustainedNativeResolution: target,
+				ResolutionList: [target],
+			});
+			const result = await findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(
+							activePlayerType === "autoplay" ? autoplayMaster : exactMaster,
+							{ status: 200 },
+						);
+					}
+					requestedVariants.push(href);
+					return new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				target,
+			);
+
+			expect(tokenCalls).toEqual(["site"]);
+			expect(requestedVariants).toEqual([
+				`https://cdn.example/site/${codecFamily}/index.m3u8`,
+			]);
+			expect(result.type).toBe("site");
+			expect(info.LastCleanBackupCodecFamily).toBe(codecFamily);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+		}
+	});
+
+	it("starts explicit AVC emergency selection only after every source lacks the active enhanced family", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		const requestedVariants: string[] = [];
+		let activePlayerType = "";
+		const target = {
+			Name: "1440p60",
+			Resolution: "2560x1440",
+			FrameRate: 60,
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const avcMaster = (playerType: string) =>
+			[
+				"#EXTM3U",
+				`#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"`,
+				`https://cdn.example/${playerType}/avc/index.m3u8`,
+			].join("\n");
+
+		state.BackupPlayerTypes = ["site", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const info = makeInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: Date.now() - 500,
+				ModifiedM3U8: "#EXTM3U",
+				EnhancedDecoderCodecFamily: "hevc",
+				EnhancedDecoderCodec: target.Codecs,
+				SustainedNativeResolution: target,
+				ResolutionList: [target],
+			});
+			const result = await findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(avcMaster(activePlayerType), {
+							status: 200,
+						});
+					}
+					requestedVariants.push(href);
+					return new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				target,
+			);
+
+			expect(tokenCalls).toEqual(["site", "autoplay"]);
+			expect(requestedVariants).toEqual([
+				"https://cdn.example/autoplay/avc/index.m3u8",
+			]);
+			expect(result.type).toBe("autoplay");
+			expect(info.LastCleanBackupCodecFamily).toBe("avc");
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+		}
+	});
+
+	it("falls through to explicit AVC when an exact-codec token body stalls at the probe deadline", async () => {
+		vi.useFakeTimers();
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const target = {
+			Name: "1440p60",
+			Resolution: "2560x1440",
+			FrameRate: 60,
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const avcMaster = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+			"https://cdn.example/site/avc/index.m3u8",
+		].join("\n");
+		let tokenCalls = 0;
+
+		state.BackupPlayerTypes = ["site"];
+		state.DisableAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async () => {
+			tokenCalls++;
+			if (tokenCalls === 1) {
+				return {
+					status: 200,
+					json: () => new Promise(() => {}),
+				};
+			}
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const info = makeInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: 1000,
+				EnhancedDecoderCodecFamily: "hevc",
+				EnhancedDecoderCodec: target.Codecs,
+				SustainedNativeResolution: target,
+				ResolutionList: [target],
+			});
+			activateExactAdCycle(info, 1000);
+			const pending = findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					return href.includes("usher.ttvnw.net")
+						? new Response(avcMaster, { status: 200 })
+						: new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				target,
+			);
+
+			await vi.advanceTimersByTimeAsync(1501);
+			await expect(pending).resolves.toEqual({
+				type: "site",
+				m3u8: cleanPlaylist,
+			});
+			expect(tokenCalls).toBe(2);
+			expect(info.LastCleanBackupCodecFamily).toBe("avc");
+			expect(info.LastCleanBackupCodec).toBe("avc1.4d402a");
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		["ad-marked", 200],
+		["unavailable", 404],
+	])("tries clean AVC only after the exact same-family backup is %s", async (_label, exactStatus) => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const requestedVariants: string[] = [];
+		const target = {
+			Name: "1440p60",
+			Resolution: "2560x1440",
+			FrameRate: 60,
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const enhancedMaster = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60"',
+			"https://cdn.example/site/hevc/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+			"https://cdn.example/site/avc/index.m3u8",
+		].join("\n");
+
+		state.BackupPlayerTypes = ["site"];
+		state.DisableAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async () => new Response("{}", { status: 200 });
+
+		try {
+			const info = makeInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: Date.now() - 500,
+				ModifiedM3U8: "#EXTM3U",
+				EnhancedDecoderCodecFamily: "hevc",
+				EnhancedDecoderCodec: target.Codecs,
+				SustainedNativeResolution: target,
+				ResolutionList: [target],
+			});
+			const result = await findBackupStream()(
+				info,
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(enhancedMaster, { status: 200 });
+					}
+					requestedVariants.push(href);
+					if (href.includes("/hevc/")) {
+						return exactStatus === 200
+							? new Response(adPlaylist, { status: 200 })
+							: new Response(null, { status: exactStatus });
+					}
+					return new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				target,
+			);
+
+			expect(requestedVariants).toEqual([
+				"https://cdn.example/site/hevc/index.m3u8",
+				"https://cdn.example/site/avc/index.m3u8",
+			]);
+			expect(result).toEqual({ type: "site", m3u8: cleanPlaylist });
+			expect(info.LastCleanBackupM3U8).toBe(cleanPlaylist);
+			expect(info.LastCleanBackupCodecFamily).toBe("avc");
+			expect(result.m3u8).not.toContain("stitched-ad");
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+		}
+	});
 
 	it("tries autoplay only as an emergency candidate when source backups are ad-marked", async () => {
 		const state = getState();
@@ -2005,8 +2701,8 @@ describe("_findBackupStream held-autoplay bridging during HQ probe", () => {
 		"https://edge.example/stitched-ad-1.ts",
 	].join("\n");
 
-	const makeHeldAutoplayInfo = (now: number) =>
-		makeInfo({
+	const makeHeldAutoplayInfo = (now: number) => {
+		const info = makeInfo({
 			IsShowingAd: true,
 			VisibleAdStartedAt: now - 20000,
 			ActiveBackupPlayerType: "autoplay",
@@ -2021,6 +2717,9 @@ describe("_findBackupStream held-autoplay bridging during HQ probe", () => {
 				},
 			},
 		});
+		activateExactAdCycle(info, now - 20000);
+		return info;
+	};
 
 	it("serves a live-refreshed autoplay playlist instead of waiting on an in-flight probe sweep", async () => {
 		const state = getState();
@@ -2143,9 +2842,14 @@ describe("_findBackupStream held-autoplay bridging during HQ probe", () => {
 
 describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 	const stripHevc = () =>
-		T<(info: Record<string, unknown>, m3u8: string) => string>(
-			"_stripHevcBackupVariants",
-		);
+		T<
+			(
+				info: Record<string, unknown>,
+				m3u8: string,
+				targetResolution?: Record<string, unknown> | null,
+				codecFamilyOverride?: string | null,
+			) => string | null
+		>("_stripHevcBackupVariants");
 	const getStreamUrl = () =>
 		T<
 			(
@@ -2176,11 +2880,21 @@ describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 		Name: "1440p60",
 		Resolution: "2560x1440",
 		FrameRate: 60,
+		Codecs: "hev1.1.6.L120.B0",
+	};
+	const targetAv11440 = {
+		Name: "1440p60",
+		Resolution: "2560x1440",
+		FrameRate: 60,
+		Codecs: "av01.0.13M.08",
 	};
 
 	it("keeps HEVC and AV1 backup variants away from an AVC session so 1440p targets degrade to AVC", () => {
-		const info = makeInfo({ ModifiedM3U8: "modified" });
-		const stripped = stripHevc()(info, multiCodecMaster);
+		const info = makeInfo({
+			ModifiedM3U8: "modified",
+			IsUsingModifiedM3U8: true,
+		});
+		const stripped = stripHevc()(info, multiCodecMaster, target1440);
 		expect(stripped).not.toContain("src-hevc");
 		expect(stripped).not.toContain("1440-hevc");
 		expect(stripped).not.toContain("1440-av1");
@@ -2190,8 +2904,11 @@ describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 		);
 	});
 
-	it("leaves the backup master untouched when the native session itself is HEVC", () => {
+	it("keeps only the exact HEVC descriptor when a prepared fallback is inactive under a HEVC decoder", () => {
 		const info = makeInfo({
+			ModifiedM3U8: "modified",
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: target1440.Codecs,
 			ResolutionList: [
 				{
 					Name: "chunked",
@@ -2201,11 +2918,19 @@ describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 				},
 			],
 		});
-		expect(stripHevc()(info, multiCodecMaster)).toBe(multiCodecMaster);
+		const filtered = stripHevc()(info, multiCodecMaster, target1440);
+		expect(filtered).not.toContain("src-hevc");
+		expect(filtered).toContain("1440-hevc");
+		expect(filtered).not.toContain("1440-av1");
+		expect(filtered).not.toContain("1080-avc");
+		expect(getStreamUrl()(filtered, target1440)).toBe(
+			"https://cdn.example/1440-hevc/index.m3u8",
+		);
 	});
 
-	it("leaves the backup master untouched when the sustained native codec is AV1", () => {
+	it("keeps only AV1 variants when the sustained native decoder is AV1", () => {
 		const info = makeInfo({
+			ModifiedM3U8: "modified",
 			SustainedNativeResolution: {
 				Name: "1440p60",
 				Resolution: "2560x1440",
@@ -2213,15 +2938,37 @@ describe("_stripHevcBackupVariants (codec-compatible backup selection)", () => {
 				Codecs: "av01.0.13M.08",
 			},
 		});
-		expect(stripHevc()(info, multiCodecMaster)).toBe(multiCodecMaster);
+		const filtered = stripHevc()(info, multiCodecMaster, targetAv11440);
+		expect(filtered).toContain("1440-av1");
+		expect(filtered).not.toContain("src-hevc");
+		expect(filtered).not.toContain("1440-hevc");
+		expect(filtered).not.toContain("1080-avc");
 	});
 
 	it("rejects an enhanced-only backup master during an AVC handoff", () => {
-		const info = makeInfo({ ModifiedM3U8: "modified" });
-		const stripped = stripHevc()(info, hevcOnlyMaster);
-		expect(stripped).not.toContain("src-hevc");
-		expect(stripped).not.toContain("1080-hevc");
-		expect(getStreamUrl()(stripped, target1440)).toBe(null);
+		const info = makeInfo({
+			ModifiedM3U8: "modified",
+			IsUsingModifiedM3U8: true,
+		});
+		const stripped = stripHevc()(info, hevcOnlyMaster, target1440);
+		expect(stripped).toBe(null);
+	});
+
+	it("requires the caller to begin an explicit AVC emergency pass after the enhanced family is absent", () => {
+		const av1AndAvcMaster = [
+			"#EXTM3U",
+			streamInf("1440p60", "2560x1440", "av01.0.13M.08", "1440-av1"),
+			streamInf("1080p60", "1920x1080", "avc1.4D402A", "1080-avc"),
+		].join("\n");
+		const info = makeInfo({
+			ModifiedM3U8: "modified",
+			EnhancedDecoderCodecFamily: "hevc",
+		});
+		expect(stripHevc()(info, av1AndAvcMaster, target1440)).toBe(null);
+
+		const emergencyAvc = stripHevc()(info, av1AndAvcMaster, target1440, "avc");
+		expect(emergencyAvc).not.toContain("1440-av1");
+		expect(emergencyAvc).toContain("1080-avc");
 	});
 });
 
@@ -2285,8 +3032,10 @@ describe("_canReloadNativePlayerAfterAd", () => {
 		};
 
 		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info);
 			const result = await fn()(
-				makeInfo({ IsUsingBackupStream: true }),
+				info,
 				async () => {
 					throw new Error("native recovery probe used raw fetch");
 				},
@@ -2474,6 +3223,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			...overrides,
 		});
 		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
+		activateExactAdCycle(info, Number(info.VisibleAdStartedAt));
 		return info;
 	}
 
@@ -2483,9 +3233,15 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			ObservedAdPodIds: new Set(["stitched-ad-1"]),
 			ExpectedAdPodLength: 2,
 			EnhancedDecoderCodecFamily: "hevc",
-			_CodecHandoffPendingId: "handoff-hold",
-			_CodecHandoffAcknowledgedId: "handoff-hold",
+			EnhancedDecoderCodec: "hev1.1.6.L153.B0",
 		});
+		const handoffId = cycleHandoffId(
+			info,
+			Number(info.VisibleAdStartedAt),
+			"silent-hold",
+		);
+		info._CodecHandoffPendingId = handoffId;
+		info._CodecHandoffAcknowledgedId = handoffId;
 		g._canReloadNativePlayerAfterAd = async () => false;
 
 		const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
@@ -2503,12 +3259,106 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(info.ExpectedAdPodLength).toBe(2);
 		expect(info.ActiveBackupPlayerType).toBe("embed");
 		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
-		expect(info._CodecHandoffPendingId).toBe("handoff-hold");
+		expect(info._CodecHandoffPendingId).toBe(handoffId);
 		expect(getState().PinnedBackupPlayerType).toBe("embed");
 		expect(out).toContain("seg50.ts");
 		getState().PinnedBackupPlayerType = null;
 		getState().PinnedBackupPlayerChannel = null;
 		getState().PinnedBackupPlayerMediaKey = null;
+	});
+
+	it("refreshes a stale source backup before entering an ended silent hold", async () => {
+		const previousActiveRefresh = g._refreshActiveBackupMediaPlaylist;
+		const previousAutoplayRefresh = g._refreshHeldAutoplayBackupPlaylist;
+		const refreshedBackup = makePlaylist(80, 3);
+		const activeRefresh = vi.fn(async () => refreshedBackup);
+		const autoplayRefresh = vi.fn(async () => null);
+		g._refreshActiveBackupMediaPlaylist = activeRefresh;
+		g._refreshHeldAutoplayBackupPlaylist = autoplayRefresh;
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			LastCleanBackupAt: Date.now() - 2000,
+		});
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		try {
+			const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+				Promise.reject(new Error("unexpected fetch")),
+			);
+
+			expect(activeRefresh).toHaveBeenCalledTimes(1);
+			expect(autoplayRefresh).not.toHaveBeenCalled();
+			expect(out).toContain("seg80.ts");
+			expect(out).not.toContain("seg50.ts");
+			expect(info.IsHoldingBackupAfterAd).toBe(true);
+		} finally {
+			g._refreshActiveBackupMediaPlaylist = previousActiveRefresh;
+			g._refreshHeldAutoplayBackupPlaylist = previousAutoplayRefresh;
+		}
+	});
+
+	it("refreshes a stale autoplay backup before entering an ended silent hold", async () => {
+		const previousActiveRefresh = g._refreshActiveBackupMediaPlaylist;
+		const previousAutoplayRefresh = g._refreshHeldAutoplayBackupPlaylist;
+		const refreshedBackup = makePlaylist(90, 3);
+		const activeRefresh = vi.fn(async () => null);
+		const autoplayRefresh = vi.fn(async () => refreshedBackup);
+		g._refreshActiveBackupMediaPlaylist = activeRefresh;
+		g._refreshHeldAutoplayBackupPlaylist = autoplayRefresh;
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupAt: Date.now() - 2000,
+		});
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		try {
+			const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+				Promise.reject(new Error("unexpected fetch")),
+			);
+
+			expect(autoplayRefresh).toHaveBeenCalledTimes(1);
+			expect(activeRefresh).not.toHaveBeenCalled();
+			expect(out).toContain("seg90.ts");
+			expect(out).not.toContain("seg50.ts");
+			expect(info.IsHoldingBackupAfterAd).toBe(true);
+		} finally {
+			g._refreshActiveBackupMediaPlaylist = previousActiveRefresh;
+			g._refreshHeldAutoplayBackupPlaylist = previousAutoplayRefresh;
+		}
+	});
+
+	it("serves an advancing empty hold when a stale ended backup cannot refresh", async () => {
+		const previousActiveRefresh = g._refreshActiveBackupMediaPlaylist;
+		const activeRefresh = vi.fn(async () => null);
+		const findBackup = vi.fn(async () => ({ type: null, m3u8: null }));
+		g._refreshActiveBackupMediaPlaylist = activeRefresh;
+		g._findBackupStream = findBackup;
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			LastCleanBackupAt: Date.now() - 2000,
+		});
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		try {
+			const first = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+				Promise.reject(new Error("unexpected fetch")),
+			);
+			const second = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+				Promise.reject(new Error("unexpected fetch")),
+			);
+
+			expect(first).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:101");
+			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:102");
+			expect(first).not.toContain("seg50.ts");
+			expect(info.IsUsingBackupStream).toBe(false);
+			expect(activeRefresh).toHaveBeenCalledTimes(2);
+			expect(findBackup).toHaveBeenCalledTimes(2);
+		} finally {
+			g._refreshActiveBackupMediaPlaylist = previousActiveRefresh;
+		}
 	});
 
 	it("skips the post-hold reload when the autoplay backup already held native quality", async () => {
@@ -2529,7 +3379,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 	});
 
-	it("still reloads a same-resolution autoplay hold when native uses an enhanced codec", async () => {
+	it("still reloads a same-resolution autoplay hold when the backup codec is unknown", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			ConsecutiveFailedNativeProbes: 6,
 			ActiveBackupPlayerType: "autoplay",
@@ -2549,6 +3399,32 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 
 		expect(info.IsHoldingBackupAfterAd).toBe(true);
 		expect(info.HevcReloadPendingAfterHold).toBe(true);
+	});
+
+	it("keeps a same-family enhanced backup reload-free at native quality", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupCodec: "hev1.1.6.l153.b0",
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: "hev1.1.6.L153.B0",
+			ActiveBackupResolution: "2560x1440",
+			SustainedNativeResolution: {
+				Resolution: "2560x1440",
+				Name: "chunked",
+				Codecs: "hev1.1.6.L153.B0",
+			},
+		});
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(info.HevcReloadPendingAfterHold).toBe(false);
 	});
 
 	it("still reloads after the hold when the autoplay backup was below native quality", async () => {
@@ -2790,10 +3666,20 @@ describe("_processM3U8 ad-end bounce backup serving", () => {
 			LastAdEndBounceAt: now - 1000,
 			LastCleanBackupM3U8: makePlaylist(50, 3),
 			LastCleanBackupPlayerType: "site",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: TEST_AVC_RESOLUTION.Codecs.toLowerCase(),
 			ActiveBackupPlayerType: "site",
 			LastCleanBackupAt: now - backupAtOffsetMs,
 		});
+		declareAvcPlaybackUrl(info, NATIVE_URL);
+		rememberBackupPlaylistMetadata(
+			info,
+			String(info.LastCleanBackupM3U8),
+			"avc",
+			TEST_AVC_RESOLUTION.Codecs,
+		);
 		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
+		activateExactAdCycle(info, Number(info.VisibleAdStartedAt));
 		return info;
 	}
 
@@ -2857,10 +3743,27 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 			LastSilentBackupHoldLogAt: now,
 			LastCleanBackupM3U8: makePlaylist(50, 3),
 			LastCleanBackupPlayerType: "site",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: TEST_AVC_RESOLUTION.Codecs.toLowerCase(),
 			ActiveBackupPlayerType: "site",
 			LastCleanBackupAt: now,
 			...overrides,
 		});
+		const backupCodecFamily = String(info.LastCleanBackupCodecFamily || "avc");
+		const backupCodec = String(
+			info.LastCleanBackupCodec || TEST_AVC_RESOLUTION.Codecs,
+		);
+		if (backupCodecFamily === "hevc") {
+			declareHevcPlaybackUrl(info, NATIVE_URL);
+		} else {
+			declareAvcPlaybackUrl(info, NATIVE_URL);
+		}
+		rememberBackupPlaylistMetadata(
+			info,
+			String(info.LastCleanBackupM3U8),
+			backupCodecFamily,
+			backupCodec,
+		);
 		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
 		return info;
 	}
@@ -2871,6 +3774,11 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 			CleanPlaylistCount: 2,
 			ExpectedAdPodLength: 2,
 			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: "hev1.1.6.L153.B0",
+			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupCodec: "hev1.1.6.l153.b0",
+			ActiveBackupResolution: "2560x1440",
 		});
 		g._postWorkerBridgeMessage = vi.fn();
 		g._canReloadNativePlayerAfterAd = async () => true;
@@ -2905,6 +3813,13 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 					"NativePlaybackRestored",
 			),
 		).toBe(true);
+		expect(
+			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls.find(
+				(call) =>
+					(call[1] as Record<string, unknown>)?.key ===
+					"NativePlaybackRestored",
+			)?.[1],
+		).toMatchObject({ requiresReload: false });
 	});
 
 	it("refreshes a stale backup while a clean native poll is still awaiting pod completion", async () => {
@@ -3049,12 +3964,22 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 			LastAdEndReloadAt: now,
 			LastCleanBackupM3U8: makePlaylist(50, 3),
 			LastCleanBackupPlayerType: "site",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: TEST_AVC_RESOLUTION.Codecs.toLowerCase(),
 			ActiveBackupPlayerType: "site",
 			LastCleanBackupAt: now,
 		});
+		declareAvcPlaybackUrl(info, NATIVE_URL);
+		rememberBackupPlaylistMetadata(
+			info,
+			String(info.LastCleanBackupM3U8),
+			"avc",
+			TEST_AVC_RESOLUTION.Codecs,
+		);
 		getState().StreamInfosByUrl = { [NATIVE_URL]: info };
 		getState().LastAdEndedAt = now;
 		getState().BackupSearchForceRefreshAt = 0;
+		activateExactAdCycle(info, Number(info.VisibleAdStartedAt));
 		return info;
 	}
 
@@ -3120,6 +4045,174 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 		expect(getState().BackupSearchForceRefreshAt).toBe(0);
 		expect(Number(info.FailedBackupPlayerTypes.get("site"))).toBeGreaterThan(
 			Date.now(),
+		);
+	});
+});
+
+describe("_processM3U8 rapid reentry cycle ownership", () => {
+	const mediaUrl =
+		"https://video-weaver.example.ttvnw.net/v1/playlist/rapid-reentry.m3u8";
+	const avcResolution = {
+		Name: "1080p60",
+		Resolution: "1920x1080",
+		FrameRate: 60,
+		Codecs: "avc1.64002A,mp4a.40.2",
+	};
+	const adPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXT-X-MEDIA-SEQUENCE:600",
+		'#EXT-X-DATERANGE:ID="stitched-ad-rapid",CLASS="twitch-stitched-ad"',
+		"#EXTINF:2.000,Amazon",
+		"https://edge.example/stitched-ad-rapid-600.ts",
+	].join("\n");
+	const fetchStub = async () => new Response(null, { status: 404 });
+
+	function setupEndedCycle(options: {
+		podCycleStartedAt?: number | null;
+		recentEndedCycle?: number | null;
+		channelOnlyActive?: boolean;
+	}) {
+		const now = Date.now();
+		const cycleOneStartedAt = 100;
+		const sameCycleBackup = makePlaylist(610, 3);
+		const pendingSearch = Promise.resolve({ type: null, m3u8: null });
+		const info = makeInfo({
+			IsShowingAd: false,
+			VisibleAdStartedAt: cycleOneStartedAt,
+			LastAdEndReloadAt: options.recentEndedCycle === null ? 0 : now - 100,
+			LastCleanBackupM3U8: sameCycleBackup,
+			LastCleanBackupPlayerType: "site",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: avcResolution.Codecs.toLowerCase(),
+			LastCleanBackupAt: now - 50,
+			ActiveBackupPlayerType: "site",
+			BackupSearchEpoch: 5,
+			_BackupSearchPromise: pendingSearch,
+			_BackupSearchKey: "cycle-one",
+			_BackupSearchPromises: new Map([["cycle-one", pendingSearch]]),
+			ResolutionList: [avcResolution],
+			Urls: { [mediaUrl]: avcResolution },
+		});
+		const state = getState();
+		state.StreamInfos = { "live:testchannel": info };
+		state.StreamInfosByUrl = { [mediaUrl]: info };
+		state.CurrentAdChannel = options.channelOnlyActive ? "testchannel" : null;
+		state.CurrentAdMediaKey = null;
+		state.LastAdEndedAt = options.recentEndedCycle === null ? 0 : now - 100;
+		state.LastAdEndedChannel =
+			options.recentEndedCycle === null ? null : "testchannel";
+		state.LastAdEndedMediaKey =
+			options.recentEndedCycle === null ? null : "live:testchannel";
+		state.LastAdEndedCycleStartedAt = options.recentEndedCycle || 0;
+		state.AdPodProgressByMediaKey =
+			options.podCycleStartedAt == null
+				? Object.create(null)
+				: {
+						"live:testchannel": {
+							cycleStartedAt: options.podCycleStartedAt,
+						},
+					};
+		g._getStreamInfoForPlaylist = () => info;
+		g._notifyAdComplete = async () => {};
+		g.postMessage = () => {};
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => messages.push(message);
+		const findBackup = vi.fn(async () => ({ type: null, m3u8: null }));
+		g._findBackupStream = findBackup;
+		return {
+			info,
+			messages,
+			findBackup,
+			sameCycleBackup,
+			cycleOneStartedAt,
+		};
+	}
+
+	function adDetectedMessage(messages: Array<Record<string, unknown>>) {
+		return messages.find((message) => message.key === "AdDetected");
+	}
+
+	it("keeps the exact ended cycle and its snapshots for a true rapid continuation", async () => {
+		const setup = setupEndedCycle({
+			podCycleStartedAt: 100,
+			recentEndedCycle: 100,
+		});
+
+		const out = await T<
+			(url: string, text: string, realFetch: unknown) => Promise<string>
+		>("_processM3U8Core")(mediaUrl, adPlaylist, fetchStub);
+
+		expect(setup.info.VisibleAdStartedAt).toBe(setup.cycleOneStartedAt);
+		expect(setup.info.BackupSearchEpoch).toBe(5);
+		expect(
+			(setup.info._BackupSearchPromises as Map<string, unknown>).has(
+				"cycle-one",
+			),
+		).toBe(true);
+		expect(setup.info.LastCleanBackupM3U8).toBe(setup.sameCycleBackup);
+		expect(out).toBe(setup.sameCycleBackup);
+		expect(setup.findBackup).not.toHaveBeenCalled();
+		expect(adDetectedMessage(setup.messages)).toMatchObject({
+			continued: true,
+			cycleStartedAt: 100,
+		});
+	});
+
+	it("retains the previous cycle for a matching channel-only active context without shared pod state", async () => {
+		const setup = setupEndedCycle({
+			podCycleStartedAt: null,
+			recentEndedCycle: null,
+			channelOnlyActive: true,
+		});
+
+		const out = await T<
+			(url: string, text: string, realFetch: unknown) => Promise<string>
+		>("_processM3U8Core")(mediaUrl, adPlaylist, fetchStub);
+
+		expect(setup.info.VisibleAdStartedAt).toBe(setup.cycleOneStartedAt);
+		expect(setup.info.BackupSearchEpoch).toBe(5);
+		expect(out).toBe(setup.sameCycleBackup);
+		expect(adDetectedMessage(setup.messages)).toMatchObject({
+			continued: true,
+			cycleStartedAt: 100,
+		});
+	});
+
+	it("invalidates cycle-one media and searches when a newer cycle is genuine", async () => {
+		const setup = setupEndedCycle({
+			podCycleStartedAt: 200,
+			recentEndedCycle: 100,
+		});
+		const adsBlockedBefore = Number(
+			(g._S as Record<string, unknown>).adsBlocked,
+		);
+
+		const out = await T<
+			(url: string, text: string, realFetch: unknown) => Promise<string>
+		>("_processM3U8Core")(mediaUrl, adPlaylist, fetchStub);
+
+		expect(setup.info.VisibleAdStartedAt).toBe(200);
+		expect(setup.info.BackupSearchEpoch).toBe(6);
+		expect(
+			(setup.info._BackupSearchPromises as Map<string, unknown>).size,
+		).toBe(0);
+		expect(setup.info._BackupSearchPromise).toBe(null);
+		expect(setup.info._BackupSearchKey).toBe(null);
+		expect(setup.info.LastCleanBackupM3U8).toBe(null);
+		expect(out).not.toContain("seg610.ts");
+		expect(out).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(setup.findBackup).toHaveBeenCalled();
+		expect(adDetectedMessage(setup.messages)).toMatchObject({
+			continued: true,
+			cycleStartedAt: 200,
+		});
+		expect(Number((g._S as Record<string, unknown>).adsBlocked)).toBe(
+			adsBlockedBefore,
 		);
 	});
 });
@@ -3279,12 +4372,37 @@ describe("_resolveAdBackupTargetResolution", () => {
 		};
 		const info = makeTargetInfo({
 			ModifiedM3U8: "#EXTM3U",
+			IsUsingModifiedM3U8: true,
 			ResolutionList: [hevc1440, avc1080],
 			Urls: { [URL_1080]: hevc1440 },
 			SustainedNativeResolution: hevc1440,
 		});
 
 		expect(fn()(info, URL_1080)).toBe(avc1080);
+	});
+
+	it("keeps an enhanced target while the AVC fallback master is only prepared", () => {
+		getState().PreferredQualityGroup = null;
+		const hevc1440 = {
+			Resolution: "2560x1440",
+			Name: "chunked",
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const avc1080 = {
+			Resolution: "1920x1080",
+			Name: "1080p60",
+			Codecs: "avc1.4D402A",
+		};
+		const info = makeTargetInfo({
+			ModifiedM3U8: "#EXTM3U",
+			IsUsingModifiedM3U8: false,
+			EnhancedDecoderCodecFamily: "hevc",
+			ResolutionList: [hevc1440, avc1080],
+			Urls: { [URL_1080]: hevc1440 },
+			SustainedNativeResolution: hevc1440,
+		});
+
+		expect(fn()(info, URL_1080)).toBe(hevc1440);
 	});
 });
 
@@ -3504,6 +4622,7 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 		);
 		try {
 			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info);
 			const results: boolean[] = [];
 			for (let i = 0; i < 3; i++) {
 				info.LastNativeRecoveryProbeAt = 0;
@@ -3526,6 +4645,7 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 		);
 		try {
 			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info);
 			const first = fn()(info, null);
 			info.LastNativeRecoveryProbeAt = 0;
 			const second = await fn()(info, null);
@@ -3549,6 +4669,7 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 		);
 		try {
 			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info);
 			const pending = fn()(info, null);
 			T<(info: Record<string, unknown>) => void>(
 				"_resetNativeRecoveryReadyState",
@@ -3558,6 +4679,42 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			expect(info.NativeRecoveryCleanCount).toBe(0);
 			expect(Number(info.ConsecutiveFailedNativeProbes) || 0).toBe(0);
 			expect(info._NativeRecoveryProbeInFlight).toBe(false);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("keeps cycle-two probe ownership and counters when cycle one resolves late", async () => {
+		let releaseToken: (response: Response) => void = () => {};
+		const chain = stubProbeChain(
+			() =>
+				new Promise<Response>((resolveToken) => {
+					releaseToken = resolveToken;
+				}),
+		);
+		try {
+			const info = makeInfo({
+				IsUsingBackupStream: true,
+				NativeRecoveryProbeEpoch: 4,
+			});
+			activateExactAdCycle(info, 100);
+			const cycleOne = fn()(info, null);
+			const cycleTwoToken = {};
+			info.VisibleAdStartedAt = 200;
+			info.NativeRecoveryProbeEpoch = 5;
+			info._NativeRecoveryProbeInFlight = true;
+			info._NativeRecoveryProbeToken = cycleTwoToken;
+			info.NativeRecoveryCleanCount = 2;
+			info.ConsecutiveFailedNativeProbes = 3;
+			activateExactAdCycle(info, 200);
+
+			releaseToken(new Response("{}", { status: 200 }));
+			expect(await cycleOne).toBe(false);
+			expect(info.NativeRecoveryCleanCount).toBe(2);
+			expect(info.ConsecutiveFailedNativeProbes).toBe(3);
+			expect(info._NativeRecoveryProbeInFlight).toBe(true);
+			expect(info._NativeRecoveryProbeToken).toBe(cycleTwoToken);
+			expect(info.NativeRecoveryProbeEpoch).toBe(5);
 		} finally {
 			chain.restore();
 		}
@@ -3717,6 +4874,7 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 				realFetch: unknown,
 				startIdx?: number,
 				currentResolution?: unknown,
+				codecOverride?: string | null,
 			) => Promise<SearchResult>
 		>("_findBackupStream");
 
@@ -3732,7 +4890,7 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 		g._searchBackupStream = realSearch;
 	});
 
-	it("shares one in-flight search across concurrent callers", async () => {
+	it("shares one in-flight search only when the full search key is identical", async () => {
 		let resolveSearch: (value: SearchResult) => void = () => {};
 		g._searchBackupStream = () => {
 			searchCalls++;
@@ -3741,9 +4899,14 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 			});
 		};
 		const info = makeInfo();
+		const target = {
+			Name: "chunked",
+			Resolution: "2560x1440",
+			Codecs: "hev1.1.6.L153.B0",
+		};
 
-		const p1 = fn()(info, null);
-		const p2 = fn()(info, null, 2);
+		const p1 = fn()(info, null, 0, target, target.Codecs);
+		const p2 = fn()(info, null, 0, { ...target }, target.Codecs);
 		expect(searchCalls).toBe(1);
 
 		resolveSearch({ type: "embed", m3u8: "#BACKUP" });
@@ -3751,6 +4914,92 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 		expect(r1).toBe(r2);
 		expect(r1.m3u8).toBe("#BACKUP");
 		expect(info._BackupSearchPromise).toBe(null);
+		expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(0);
+	});
+
+	it("does not coalesce searches with different start, codec, or target keys", async () => {
+		const resolvers: Array<(value: SearchResult) => void> = [];
+		g._searchBackupStream = () => {
+			searchCalls++;
+			return new Promise<SearchResult>((resolve) => {
+				resolvers.push(resolve);
+			});
+		};
+		const info = makeInfo();
+		const target1440 = {
+			Name: "chunked",
+			Resolution: "2560x1440",
+			Codecs: "hev1.1.6.L153.B0",
+		};
+		const target1080 = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			Codecs: "hev1.1.6.L153.B0",
+		};
+
+		const pending = [
+			fn()(info, null, 0, target1440, "hev1.1.6.L153.B0"),
+			fn()(info, null, 2, target1440, "hev1.1.6.L153.B0"),
+			fn()(info, null, 0, target1440, "av01.0.13M.08"),
+			fn()(info, null, 0, target1080, "hev1.1.6.L153.B0"),
+		];
+
+		expect(searchCalls).toBe(4);
+		expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(4);
+		for (const [index, resolve] of resolvers.entries()) {
+			resolve({ type: `type-${index}`, m3u8: `#BACKUP-${index}` });
+		}
+		const results = await Promise.all(pending);
+		expect(results.map((result) => result.m3u8)).toEqual([
+			"#BACKUP-0",
+			"#BACKUP-1",
+			"#BACKUP-2",
+			"#BACKUP-3",
+		]);
+		expect(info._BackupSearchPromise).toBe(null);
+		expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(0);
+	});
+
+	it("keeps a new ad cycle search owned when the prior epoch settles late", async () => {
+		const resolvers: Array<(value: SearchResult) => void> = [];
+		g._searchBackupStream = () => {
+			searchCalls++;
+			return new Promise<SearchResult>((resolve) => {
+				resolvers.push(resolve);
+			});
+		};
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 100,
+			BackupSearchEpoch: 3,
+		});
+		activateExactAdCycle(info, 100);
+
+		const staleCycleSearch = fn()(info, null);
+		info.BackupSearchEpoch = 4;
+		activateExactAdCycle(info, 200);
+		const currentCycleSearch = fn()(info, null);
+
+		expect(searchCalls).toBe(2);
+		expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(2);
+
+		resolvers[0]({ type: "stale", m3u8: "#STALE" });
+		await expect(staleCycleSearch).resolves.toEqual({
+			type: "stale",
+			m3u8: "#STALE",
+		});
+		expect(info._BackupSearchPromise).not.toBeNull();
+		expect(String(info._BackupSearchKey)).toContain("|4|200|");
+		expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(1);
+
+		resolvers[1]({ type: "current", m3u8: "#CURRENT" });
+		await expect(currentCycleSearch).resolves.toEqual({
+			type: "current",
+			m3u8: "#CURRENT",
+		});
+		expect(info._BackupSearchPromise).toBeNull();
+		expect(info._BackupSearchKey).toBeNull();
+		expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(0);
 	});
 
 	it("starts a fresh search after the previous one settles", async () => {
@@ -3864,6 +5113,7 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 			LastCleanNativeUrl: bridgeUrl,
 			LastCleanNativePlaylistAt: Date.now(),
 		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
 		g._getStreamInfoForPlaylist = () => info;
 		const findCalls: unknown[][] = [];
 		g._findBackupStream = (...args: unknown[]) => {
@@ -3887,7 +5137,10 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 	});
 
 	it("serves the pre-warmed backup as soon as it is ready instead of waiting out the bridge", async () => {
+		const cycleStartedAt = Date.now() - 1000;
 		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
 			LastCleanNativeM3U8: cleanNative,
 			LastCleanNativeUrl: bridgeUrl,
 			LastCleanNativePlaylistAt: Date.now(),
@@ -3896,6 +5149,8 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 			LastCleanBackupAt: Date.now() - 100,
 			_BackupSearchStartedAt: Date.now() - 500,
 		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		activateExactAdCycle(info, cycleStartedAt);
 		g._getStreamInfoForPlaylist = () => info;
 		g._findBackupStream = async () => ({ type: "embed", m3u8: cleanBackup });
 
@@ -3915,6 +5170,7 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 			LastCleanNativePlaylistAt: Date.now(),
 			_BackupSearchStartedAt: Date.now() - 500,
 		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
 		g._getStreamInfoForPlaylist = () => info;
 		const findCalls: unknown[][] = [];
 		g._findBackupStream = (...args: unknown[]) => {
@@ -3975,12 +5231,18 @@ describe("_degradeToDecodableResolution (enhanced-codec backup targeting)", () =
 	const ladder = [hevc1440, av11440, avc1080, avc720, avc360];
 
 	it("degrades an HEVC target to the highest AVC rung under it so the AVC-reloaded player can decode the backup", () => {
-		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		const info = makeInfo({
+			ModifiedM3U8: "#EXTM3U",
+			IsUsingModifiedM3U8: true,
+		});
 		expect(fn()(info, hevc1440, ladder)).toBe(avc1080);
 	});
 
 	it("degrades AV1 identically because neither AV1 nor HEVC splices into an AVC pipeline", () => {
-		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		const info = makeInfo({
+			ModifiedM3U8: "#EXTM3U",
+			IsUsingModifiedM3U8: true,
+		});
 		expect(fn()(info, av11440, ladder)).toBe(avc1080);
 	});
 
@@ -3989,12 +5251,18 @@ describe("_degradeToDecodableResolution (enhanced-codec backup targeting)", () =
 	});
 
 	it("keeps the enhanced target when the ladder offers no AVC rung at all", () => {
-		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		const info = makeInfo({
+			ModifiedM3U8: "#EXTM3U",
+			IsUsingModifiedM3U8: true,
+		});
 		expect(fn()(info, hevc1440, [hevc1440, av11440])).toBe(hevc1440);
 	});
 
 	it("never promotes an already-decodable target to a higher rung", () => {
-		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		const info = makeInfo({
+			ModifiedM3U8: "#EXTM3U",
+			IsUsingModifiedM3U8: true,
+		});
 		expect(fn()(info, avc720, ladder)).toBe(avc720);
 	});
 
@@ -4005,10 +5273,22 @@ describe("_degradeToDecodableResolution (enhanced-codec backup targeting)", () =
 			FrameRate: 60,
 			Codecs: "hvc1.2.4.L120.B0",
 		};
-		const info = makeInfo({ ModifiedM3U8: "#EXTM3U" });
+		const info = makeInfo({
+			ModifiedM3U8: "#EXTM3U",
+			IsUsingModifiedM3U8: true,
+		});
 		expect(fn()(info, enhanced1080, [hevc1440, enhanced1080, avc720])).toBe(
 			avc720,
 		);
+	});
+
+	it("does not degrade an enhanced target just because an AVC fallback was prepared", () => {
+		const info = makeInfo({
+			ModifiedM3U8: "#EXTM3U",
+			IsUsingModifiedM3U8: false,
+			EnhancedDecoderCodecFamily: "hevc",
+		});
+		expect(fn()(info, hevc1440, ladder)).toBe(hevc1440);
 	});
 
 	describe("Source quality on an enhanced stream", () => {
@@ -4031,11 +5311,24 @@ describe("_degradeToDecodableResolution (enhanced-codec backup targeting)", () =
 			getState().PreferredQualityGroup = previousQualityGroup;
 		});
 
-		it("resolves Source to the AVC rung once an AVC fallback master is prepared", () => {
+		it("keeps Source enhanced while an AVC fallback master is only prepared", () => {
 			getState().PreferredQualityGroup = "chunked";
 			const info = makeInfo({
 				ResolutionList: ladder,
 				ModifiedM3U8: "#EXTM3U",
+				IsUsingModifiedM3U8: false,
+				EnhancedDecoderCodecFamily: "hevc",
+			});
+			expect(fallback()(info, "")).toBe(hevc1440);
+			expect(preferred()(info)).toBe(hevc1440);
+		});
+
+		it("resolves Source to AVC only while the fallback master is active", () => {
+			getState().PreferredQualityGroup = "chunked";
+			const info = makeInfo({
+				ResolutionList: ladder,
+				ModifiedM3U8: "#EXTM3U",
+				IsUsingModifiedM3U8: true,
 			});
 			expect(fallback()(info, "")).toBe(avc1080);
 			expect(preferred()(info)).toBe(avc1080);
@@ -4047,15 +5340,86 @@ describe("_degradeToDecodableResolution (enhanced-codec backup targeting)", () =
 			expect(fallback()(info, "")).toBe(hevc1440);
 		});
 
-		it("degrades a sustained enhanced native rung when no quality group is pinned", () => {
+		it("degrades a sustained enhanced native rung only after the AVC master is active", () => {
 			getState().PreferredQualityGroup = null;
 			const info = makeInfo({
 				ResolutionList: ladder,
 				ModifiedM3U8: "#EXTM3U",
+				IsUsingModifiedM3U8: true,
 				SustainedNativeResolution: hevc1440,
 			});
 			expect(preferred()(info)).toBe(avc1080);
 		});
+	});
+});
+
+describe("_processM3U8Core explicit ad metadata", () => {
+	const explicitAdPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXT-X-MEDIA-SEQUENCE:900",
+		"#EXT-X-CUE-OUT:DURATION=4",
+		"#EXTINF:2.000,live",
+		"https://cdn.example/media/segment-900.ts",
+		"#EXTINF:2.000,live",
+		"https://cdn.example/media/segment-901.ts",
+		"#EXT-X-CUE-IN",
+	].join("\n");
+
+	it("never promotes or directly serves neutral media URLs inside a CUE-marked ad window", async () => {
+		const url =
+			"https://video-weaver.example/v1/playlist/neutral-cue-window.m3u8";
+		const info = makeInfo();
+		declareAvcPlaybackUrl(info, url);
+		const previousGetInfo = g._getStreamInfoForPlaylist;
+		const previousFind = g._findBackupStream;
+		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = vi.fn(async () => ({
+			type: null,
+			m3u8: null,
+		}));
+		const core =
+			T<
+				(
+					url: string,
+					text: string,
+					realFetch: (input: string) => Promise<Response>,
+				) => Promise<string>
+			>("_processM3U8Core");
+
+		try {
+			const out = await core(
+				url,
+				explicitAdPlaylist,
+				async () => new Response(null, { status: 404 }),
+			);
+
+			expect(out).not.toContain("segment-900.ts");
+			expect(out).not.toContain("segment-901.ts");
+			expect(info.LastCleanNativeM3U8).toBe(null);
+			expect(info.LastCleanNativeUrl).toBe(null);
+			expect(info.IsShowingAd).toBe(true);
+		} finally {
+			g._getStreamInfoForPlaylist = previousGetInfo;
+			g._findBackupStream = previousFind;
+		}
+	});
+
+	it("does not preserve neutral explicit-ad media in enhanced fail-closed mode", () => {
+		const stripAds =
+			T<
+				(
+					text: string,
+					stripAll: boolean,
+					info: Record<string, unknown>,
+					skipAutoForceStrip: boolean,
+					preserveLiveSegments: boolean,
+				) => string
+			>("_stripAds");
+		const out = stripAds(explicitAdPlaylist, true, makeInfo(), false, true);
+
+		expect(out).not.toContain("segment-900.ts");
+		expect(out).not.toContain("segment-901.ts");
 	});
 });
 
@@ -4085,7 +5449,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 				text: string,
 				codecs: string,
 				isEnhanced: boolean,
-				signal: AbortSignal,
+				signal: AbortSignal | null,
 				handoffId: string,
 			) => Promise<string>
 		>("_holdRetiringCodecRequest");
@@ -4098,6 +5462,14 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 	const markHandoffFailed = () =>
 		T<(info: Record<string, unknown>, handoffId: string) => boolean>(
 			"_markCodecHandoffReloadFailed",
+		);
+	const isHandoffAdRecoveryActive = () =>
+		T<(info: Record<string, unknown>, requestWasAdMarked?: boolean) => boolean>(
+			"_isCodecHandoffAdRecoveryActive",
+		);
+	const requestHandoffReload = () =>
+		T<(info: Record<string, unknown>) => string | null>(
+			"_requestCodecHandoffReload",
 		);
 
 	const bridgeUrl = "https://video-weaver.example/v1/playlist/hevc-live.m3u8";
@@ -4178,6 +5550,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		getState().ActiveCodecHandoffId = null;
 		getState().ActiveCodecHandoffChannel = null;
 		getState().ActiveCodecHandoffMediaKey = null;
+		getState().SegmentCodecOwners = new Map();
 		getState().DisableAutoplayBackup = false;
 	});
 
@@ -4211,7 +5584,10 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		makeInfo({
 			ResolutionList: [hevcSource, avcSource],
 			ModifiedM3U8: "#EXTM3U",
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: hevcSource.Codecs,
 			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: avcSource.Codecs.toLowerCase(),
 			Urls: {
 				[bridgeUrl]: hevcSource,
 				[avcUrl]: avcSource,
@@ -4227,11 +5603,39 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		const findBackup = vi.fn(async () => {
 			info.LastCleanBackupM3U8 = cleanBackup;
 			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupCodecFamily = "avc";
+			info.LastCleanBackupCodec = avcSource.Codecs.toLowerCase();
 			info.LastCleanBackupAt = Date.now();
+			T<
+				(
+					info: Record<string, unknown>,
+					m3u8: string,
+					codecFamily: string,
+					codec: string,
+				) => string
+			>("_rememberBackupPlaylistMetadata")(
+				info,
+				cleanBackup,
+				"avc",
+				avcSource.Codecs,
+			);
 			return { type: "autoplay", m3u8: cleanBackup };
 		});
 		g._findBackupStream = findBackup;
 		return findBackup;
+	};
+	const activateAdContext = (
+		info: Record<string, unknown>,
+		cycleStartedAt = Math.max(1, Number(info.VisibleAdStartedAt) || Date.now()),
+	) => activateExactAdCycle(info, cycleStartedAt);
+	const activateHandoffContext = (
+		info: Record<string, unknown>,
+		handoffId: string,
+	) => {
+		activateAdContext(info);
+		getState().ActiveCodecHandoffId = handoffId;
+		getState().ActiveCodecHandoffChannel = String(info.ChannelName);
+		getState().ActiveCodecHandoffMediaKey = String(info.MediaKey);
 	};
 	const abortRetiringRequestOnReload = (
 		info: Record<string, unknown>,
@@ -4259,17 +5663,331 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		expect(Number(info.NumStrippedAdSegments)).toBeGreaterThan(0);
 	});
 
+	it.each([
+		["hevc", bridgeUrl, hevcSource],
+		[
+			"av1",
+			"https://video-weaver.example/v1/playlist/av1-live.m3u8",
+			{
+				Name: "chunked",
+				Resolution: "2560x1440",
+				FrameRate: 60,
+				Codecs: "av01.0.13M.08",
+			},
+		],
+	])("records explicit ad segment ownership for a processed %s rendition", async (codecFamily, renditionUrl, rendition) => {
+		const info = makeEnhancedInfo({
+			ResolutionList: [rendition, avcSource],
+			Urls: {
+				[renditionUrl]: rendition,
+				[avcUrl]: avcSource,
+			},
+			EnhancedVariantUrls: new Set([renditionUrl]),
+		});
+		g._getStreamInfoForPlaylist = () => info;
+
+		await core()(renditionUrl, allAdNative, fetchStub);
+
+		const exactKey = T<(url: string) => string>("_getExactPlaylistUrlKey")(
+			"https://edge.example/stitched-ad-100.ts",
+		);
+		const owners = getState().SegmentCodecOwners as Map<
+			string,
+			Record<string, unknown>
+		>;
+		expect(owners.get(exactKey)).toMatchObject({
+			codecFamily,
+			mediaKey: "live:testchannel",
+			ambiguous: false,
+		});
+		expect(Number(owners.get(exactKey)?.recordedAt)).toBeGreaterThan(0);
+	});
+
+	it("aborts ad media with an unresolved rendition codec instead of returning an AVC hold", async () => {
+		const unknownUrl =
+			"https://video-weaver.example/v1/playlist/unresolved-live.m3u8";
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 1000,
+			ResolutionList: [],
+			Urls: Object.create(null),
+			EnhancedVariantUrls: new Set(),
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info);
+
+		await expect(
+			process()(unknownUrl, allAdNative, fetchStub),
+		).rejects.toMatchObject({ name: "AbortError" });
+	});
+
+	it("uses an opaque cached ad segment only for its exact active media cycle", async () => {
+		const opaqueAdUrl = "https://edge.example/opaque/cycle-ad-100.ts";
+		const opaqueAdPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:100",
+			"#EXTINF:2.000,",
+			opaqueAdUrl,
+		].join("\n");
+		const mismatchedHevcBackup = cleanBackup.replaceAll(
+			"avc-backup",
+			"hevc-backup",
+		);
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 100,
+			LastCleanBackupM3U8: mismatchedHevcBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupCodec: hevcSource.Codecs.toLowerCase(),
+			LastCleanBackupAt: Date.now(),
+		});
+		T<
+			(
+				info: Record<string, unknown>,
+				m3u8: string,
+				codecFamily: string,
+				codec: string,
+			) => string
+		>("_rememberBackupPlaylistMetadata")(
+			info,
+			mismatchedHevcBackup,
+			"hevc",
+			hevcSource.Codecs,
+		);
+		activateAdContext(info, 100);
+		getState().AdSegmentCache = new Map([[opaqueAdUrl, Date.now()]]);
+		g._getStreamInfoForPlaylist = () => info;
+		const realCore = g._processM3U8Core;
+		g._processM3U8Core = async () => mismatchedHevcBackup;
+
+		try {
+			const activeResult = await process()(avcUrl, opaqueAdPlaylist, fetchStub);
+			expect(activeResult).not.toContain(opaqueAdUrl);
+			expect(activeResult).toContain("__ttvab_empty_hold_segment.mp4");
+
+			info.IsShowingAd = false;
+			info.IsHoldingBackupAfterAd = false;
+			info.VisibleAdStartedAt = 0;
+			getState().CurrentAdChannel = null;
+			getState().CurrentAdMediaKey = null;
+			delete (getState().AdPodProgressByMediaKey as Record<string, unknown>)[
+				"live:testchannel"
+			];
+
+			const staleResult = await process()(avcUrl, opaqueAdPlaylist, fetchStub);
+			expect(staleResult).toBe(opaqueAdPlaylist);
+		} finally {
+			g._processM3U8Core = realCore;
+			getState().AdSegmentCache = new Map();
+		}
+	});
+
+	it("requires exact ad media ownership before codec recovery is active", () => {
+		const info = makeEnhancedInfo({
+			IsShowingAd: false,
+			IsHoldingBackupAfterAd: false,
+		});
+		const isActive = isHandoffAdRecoveryActive();
+		const cycleStartedAt = activateAdContext(info, 100);
+
+		getState().CurrentAdMediaKey = null;
+		expect(isActive(info, true)).toBe(false);
+
+		getState().CurrentAdMediaKey = "live:other";
+		expect(isActive(info, true)).toBe(false);
+		expect(isActive({ ...info, IsShowingAd: true })).toBe(false);
+
+		getState().CurrentAdMediaKey = String(info.MediaKey);
+		expect(isActive(info)).toBe(false);
+		expect(isActive(info, true)).toBe(true);
+		expect(isActive({ ...info, IsShowingAd: true })).toBe(true);
+		expect(isActive({ ...info, IsHoldingBackupAfterAd: true })).toBe(true);
+
+		const pendingHandoffId = cycleHandoffId(
+			info,
+			cycleStartedAt,
+			"pending",
+			1,
+			200,
+		);
+		const otherHandoffId = cycleHandoffId(
+			info,
+			cycleStartedAt,
+			"other",
+			2,
+			200,
+		);
+		info._CodecHandoffPendingId = pendingHandoffId;
+		getState().ActiveCodecHandoffId = otherHandoffId;
+		getState().ActiveCodecHandoffMediaKey = String(info.MediaKey);
+		expect(isActive(info)).toBe(false);
+
+		getState().ActiveCodecHandoffId = pendingHandoffId;
+		expect(isActive(info)).toBe(true);
+	});
+
+	it("emits one codec reload only for an exact ad-owned media key", () => {
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			ModifiedM3U8: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000",
+		});
+		getState().CurrentAdMediaKey = "live:other";
+
+		expect(requestHandoffReload()(info)).toBe(null);
+		expect(info._CodecHandoffPendingId).toBe(null);
+		expect(reloadMessages()).toHaveLength(0);
+
+		activateAdContext(info);
+		const handoffId = requestHandoffReload()(info);
+		expect(typeof handoffId).toBe("string");
+		expect(info._CodecHandoffPendingId).toBe(handoffId);
+		expect(reloadMessages()).toHaveLength(1);
+		expect(requestHandoffReload()(info)).toBe(handoffId);
+		expect(reloadMessages()).toHaveLength(1);
+	});
+
 	it("fails closed when an ad-marked playlist has no playback context", async () => {
 		g._getStreamInfoForPlaylist = () => null;
 
-		const out = await core()(
-			"https://edge.example/opaque/media.m3u8",
-			allAdNative,
-			fetchStub,
-		);
+		await expect(
+			core()("https://edge.example/opaque/media.m3u8", allAdNative, fetchStub),
+		).rejects.toMatchObject({ name: "AbortError" });
+	});
+
+	it("never serves media from an ad-marked whitelisted backup rendition", async () => {
+		const info = makeEnhancedInfo({
+			ActiveBackupPlayerType: "site",
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupPlayerType: "site",
+			LastCleanBackupAt: Date.now(),
+			BackupVariantUrls: new Set([avcUrl]),
+			EnhancedBackupVariantUrls: new Set(),
+		});
+		const findBackup = vi.fn(async () => ({ type: null, m3u8: null }));
+		g._findBackupStream = findBackup;
+		g._getStreamInfoForPlaylist = () => info;
+
+		const out = await core()(avcUrl, allAdNative, fetchStub);
 
 		expect(out).toContain("__ttvab_empty_hold_segment.mp4");
 		expect(out).not.toContain("stitched-ad-100.ts");
+		expect(out).not.toContain("avc-backup-500.ts");
+		expect(info.LastCleanBackupM3U8).toBe(null);
+		expect(findBackup).toHaveBeenCalledTimes(1);
+	});
+
+	it("recovers an ad-marked enhanced backup poll into a clean exact-codec backup", async () => {
+		const cleanEnhancedBackup = cleanBackup.replaceAll(
+			"avc-backup",
+			"hevc-backup",
+		);
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 1000,
+			ActiveBackupPlayerType: "site",
+			BackupVariantUrls: new Set([bridgeUrl]),
+			EnhancedBackupVariantUrls: new Set([bridgeUrl]),
+			LastCleanBackupM3U8: null,
+			LastCleanBackupPlayerType: null,
+			LastCleanBackupCodecFamily: null,
+			LastCleanBackupCodec: null,
+			LastCleanBackupAt: 0,
+		});
+		const findBackup = vi.fn(async () => {
+			info.LastCleanBackupM3U8 = cleanEnhancedBackup;
+			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupCodecFamily = "hevc";
+			info.LastCleanBackupCodec = hevcSource.Codecs.toLowerCase();
+			info.LastCleanBackupAt = Date.now();
+			rememberBackupPlaylistMetadata(
+				info,
+				cleanEnhancedBackup,
+				"hevc",
+				hevcSource.Codecs,
+			);
+			return { type: "autoplay", m3u8: cleanEnhancedBackup };
+		});
+		g._findBackupStream = findBackup;
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info, Number(info.VisibleAdStartedAt));
+
+		const out = await process()(bridgeUrl, allAdNative, fetchStub);
+
+		expect(out).toContain("hevc-backup-500.ts");
+		expect(out).not.toContain("stitched-ad-100.ts");
+		expect(out).not.toContain("__ttvab_empty_hold_segment.mp4");
+		expect(findBackup).toHaveBeenCalledTimes(1);
+		expect(reloadMessages()).toHaveLength(0);
+	});
+
+	it("progresses an ad-marked enhanced backup poll into a bounded clean AVC handoff", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const cycleStartedAt = 299000;
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
+			ActiveBackupPlayerType: "site",
+			BackupVariantUrls: new Set([bridgeUrl]),
+			EnhancedBackupVariantUrls: new Set([bridgeUrl]),
+			LastCleanBackupM3U8: null,
+			LastCleanBackupPlayerType: null,
+			LastCleanBackupCodecFamily: null,
+			LastCleanBackupCodec: null,
+			LastCleanBackupAt: 0,
+		});
+		const findBackup = vi.fn(async () => {
+			info.LastCleanBackupM3U8 = cleanBackup;
+			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupCodecFamily = "avc";
+			info.LastCleanBackupCodec = avcSource.Codecs.toLowerCase();
+			info.LastCleanBackupAt = Date.now();
+			T<
+				(
+					target: Record<string, unknown>,
+					m3u8: string,
+					codecFamily: string,
+					codec: string,
+				) => string
+			>("_rememberBackupPlaylistMetadata")(
+				info,
+				cleanBackup,
+				"avc",
+				avcSource.Codecs,
+			);
+			return { type: "autoplay", m3u8: cleanBackup };
+		});
+		g._findBackupStream = findBackup;
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info, cycleStartedAt);
+		g._postWorkerBridgeMessage = vi.fn(
+			(_target: unknown, message: Record<string, unknown>) => {
+				if (message.key === "ReloadPlayer") {
+					info._CodecHandoffAcknowledgedId = message.handoffId;
+				}
+			},
+		);
+		const pending = process()(bridgeUrl, allAdNative, fetchStub);
+		const rejection = expect(pending).rejects.toMatchObject({
+			name: "AbortError",
+		});
+
+		try {
+			await vi.advanceTimersByTimeAsync(10000);
+			await rejection;
+			expect(findBackup).toHaveBeenCalledTimes(1);
+			expect(info.LastCleanBackupM3U8).toBe(cleanBackup);
+			expect(reloadMessages()).toHaveLength(1);
+			expect(reloadMessages()[0][1]).toMatchObject({
+				reason: "codec-handoff",
+				cycleStartedAt,
+			});
+			expect(info._CodecHandoffFailedId).toBe(null);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("enforces the enhanced ad-strip invariant after every core return path", async () => {
@@ -4301,29 +6019,225 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
 	});
 
-	it("retires a 360p AVC poll owned by the prior enhanced decoder generation", async () => {
+	it("never starts a codec handoff from a clean AVC poll outside an ad", async () => {
+		const info = makeEnhancedInfo({
+			EnhancedDecoderCodecFamily: "hevc",
+		});
+		const findBackup = vi.fn(async () => ({ type: null, m3u8: null }));
+		g._findBackupStream = findBackup;
+		g._getStreamInfoForPlaylist = () => info;
+		const cleanNative = makePlaylist(700, 3);
+
+		const out = await process()(avcUrl, cleanNative, fetchStub);
+
+		expect(out).toContain("seg700.ts");
+		expect(out).toContain("seg702.ts");
+		expect(findBackup).not.toHaveBeenCalled();
+		expect(reloadMessages()).toHaveLength(0);
+		expect(info.IsUsingModifiedM3U8).toBe(false);
+		expect(info._CodecHandoffPendingId).toBe(null);
+	});
+
+	it("ignores a foreign ad context during a clean AVC poll", async () => {
+		const info = makeEnhancedInfo({
+			EnhancedDecoderCodecFamily: "hevc",
+		});
+		const findBackup = vi.fn(async () => ({ type: null, m3u8: null }));
+		g._findBackupStream = findBackup;
+		g._getStreamInfoForPlaylist = () => info;
+		getState().CurrentAdChannel = "other";
+		getState().CurrentAdMediaKey = "live:other";
+		const cleanNative = makePlaylist(710, 3);
+
+		const out = await process()(avcUrl, cleanNative, fetchStub);
+
+		expect(out).toContain("seg710.ts");
+		expect(out).toContain("seg712.ts");
+		expect(findBackup).not.toHaveBeenCalled();
+		expect(reloadMessages()).toHaveLength(0);
+		expect(info.IsUsingModifiedM3U8).toBe(false);
+	});
+
+	it("keeps AVC request ownership local when the retained HEVC ad context clears during processing", async () => {
+		const realCore = g._processM3U8Core;
 		const info = makeEnhancedInfo({
 			IsShowingAd: true,
 			VisibleAdStartedAt: Date.now() - 1000,
 			EnhancedDecoderCodecFamily: "hevc",
 			LastCleanBackupM3U8: cleanBackup,
 			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "avc",
 			LastCleanBackupAt: Date.now(),
 		});
-		const controller = new AbortController();
 		g._getStreamInfoForPlaylist = () => info;
-		abortRetiringRequestOnReload(info, controller);
+		activateAdContext(info);
+		g._processM3U8Core = async () => {
+			getState().CurrentAdChannel = null;
+			getState().CurrentAdMediaKey = null;
+			info.IsShowingAd = false;
+			return cleanBackup;
+		};
 
-		await expect(
-			process()(avcUrl, adLadenNative, fetchStub, controller.signal),
-		).rejects.toMatchObject({ name: "AbortError" });
+		try {
+			await expect(process()(avcUrl, allAdNative, fetchStub)).resolves.toBe(
+				cleanBackup,
+			);
+			expect(reloadMessages()).toHaveLength(0);
+		} finally {
+			g._processM3U8Core = realCore;
+		}
+	});
 
-		expect(reloadMessages()).toHaveLength(1);
-		expect(reloadMessages()[0][1]).toMatchObject({
-			reason: "codec-handoff",
-			newMediaPlayerInstance: true,
+	it("does not inherit retained HEVC ownership for an AVC request without a prepared fallback master", async () => {
+		const realCore = g._processM3U8Core;
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 1000,
+			ModifiedM3U8: null,
+			EnhancedDecoderCodecFamily: "hevc",
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupAt: Date.now(),
 		});
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info);
+		g._processM3U8Core = async () => cleanBackup;
+
+		try {
+			await expect(process()(avcUrl, allAdNative, fetchStub)).resolves.toBe(
+				cleanBackup,
+			);
+			expect(reloadMessages()).toHaveLength(0);
+			expect(info._CodecHandoffPendingId).toBe(null);
+		} finally {
+			g._processM3U8Core = realCore;
+		}
+	});
+
+	it("does not let a stale cycle-one handoff hold a cycle-two loader on the same media", async () => {
+		const realCore = g._processM3U8Core;
+		const realHold = g._holdRetiringCodecRequest;
+		const staleInfo = makeEnhancedInfo({
+			IsShowingAd: true,
+			IsUsingModifiedM3U8: true,
+			VisibleAdStartedAt: 100,
+		});
+		const staleHandoffId = cycleHandoffId(staleInfo, 100, "cycle-one", 1, 110);
+		staleInfo._CodecHandoffPendingId = staleHandoffId;
+		staleInfo._CodecHandoffAcknowledgedId = staleHandoffId;
+		getState().CurrentAdChannel = "testchannel";
+		getState().CurrentAdMediaKey = "live:testchannel";
+		getState().AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 200 },
+		};
+		getState().StreamInfos = {
+			"live:testchannel": makeEnhancedInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: 200,
+			}),
+		};
+		getState().ActiveCodecHandoffId = staleHandoffId;
+		getState().ActiveCodecHandoffChannel = "testchannel";
+		getState().ActiveCodecHandoffMediaKey = "live:testchannel";
+		g._getStreamInfoForPlaylist = () => staleInfo;
+		const cleanEnhancedNative = makePlaylist(800, 3);
+		g._processM3U8Core = vi.fn(async () => cleanEnhancedNative);
+		g._holdRetiringCodecRequest = vi.fn(async () => {
+			throw new Error("stale cycle entered retiring hold");
+		});
+
+		try {
+			await expect(
+				process()(bridgeUrl, cleanEnhancedNative, fetchStub),
+			).resolves.toContain("seg800.ts");
+			expect(g._processM3U8Core).toHaveBeenCalledTimes(1);
+			expect(g._holdRetiringCodecRequest).not.toHaveBeenCalled();
+		} finally {
+			g._processM3U8Core = realCore;
+			g._holdRetiringCodecRequest = realHold;
+		}
+	});
+
+	it("lets the genuine AVC replacement request proceed after enhanced decoder retirement", async () => {
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 1000,
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: hevcSource.Codecs,
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: avcSource.Codecs.toLowerCase(),
+			LastCleanBackupAt: Date.now(),
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info);
+
+		const out = await process()(avcUrl, adLadenNative, fetchStub);
+
+		expect(out).toContain("avc-backup-500.ts");
+		expect(out).not.toContain("stitched-ad-99.ts");
+		expect(reloadMessages()).toHaveLength(0);
 		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+	});
+
+	it("rejects a stale request context after a newer same-media ad cycle starts", () => {
+		const assertCurrent = T<
+			(
+				info: Record<string, unknown>,
+				requestAdContext: Record<string, unknown>,
+			) => boolean
+		>("_assertM3U8RequestContextCurrent");
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 600,
+			BackupSearchEpoch: 4,
+		});
+		activateAdContext(info, 600);
+		const staleContext = {
+			backupSearchEpoch: 4,
+			cycleStartedAt: 600,
+		};
+
+		info.BackupSearchEpoch = 5;
+		activateAdContext(info, 700);
+
+		expect(() => assertCurrent(info, staleContext)).toThrowError(
+			expect.objectContaining({ name: "AbortError" }),
+		);
+	});
+
+	it("never reuses a fresh cycle-one backup snapshot after cycle two starts", async () => {
+		const now = Date.now();
+		const cycleTwoStartedAt = now - 50;
+		const cycleOneBackup = makePlaylist(820, 3);
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleTwoStartedAt,
+			LastCleanBackupM3U8: cycleOneBackup,
+			LastCleanBackupPlayerType: "site",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: avcSource.Codecs.toLowerCase(),
+			LastCleanBackupAt: now - 100,
+			_LastBackupSearchCompletedAt: 0,
+			LastAdEndReloadAt: 0,
+			LastCleanNativeM3U8: null,
+			LastCleanNativePlaylistAt: 0,
+		});
+		const findBackup = vi.fn(async () => ({ type: null, m3u8: null }));
+		g._findBackupStream = findBackup;
+		g._getStreamInfoForPlaylist = () => info;
+		getState().LastAdEndedAt = 0;
+		activateAdContext(info, cycleTwoStartedAt);
+
+		const out = await process()(avcUrl, allAdNative, fetchStub);
+
+		expect(findBackup).toHaveBeenCalled();
+		expect(out).not.toContain("seg820.ts");
+		expect(out).not.toContain("stitched-ad-100.ts");
+		expect(out).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(info.IsUsingBackupStream).toBe(false);
 	});
 
 	it.each([
@@ -4381,7 +6295,15 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 			}
 			info.LastCleanBackupM3U8 = cleanBackup;
 			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupCodecFamily = "avc";
+			info.LastCleanBackupCodec = avcSource.Codecs.toLowerCase();
 			info.LastCleanBackupAt = Date.now();
+			rememberBackupPlaylistMetadata(
+				info,
+				cleanBackup,
+				"avc",
+				avcSource.Codecs,
+			);
 			return { type: "autoplay", m3u8: cleanBackup };
 		});
 		g._findBackupStream = findBackup;
@@ -4406,7 +6328,15 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 			}
 			info.LastCleanBackupM3U8 = cleanBackup;
 			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupCodecFamily = "avc";
+			info.LastCleanBackupCodec = avcSource.Codecs.toLowerCase();
 			info.LastCleanBackupAt = Date.now();
+			rememberBackupPlaylistMetadata(
+				info,
+				cleanBackup,
+				"avc",
+				avcSource.Codecs,
+			);
 			return { type: "autoplay", m3u8: cleanBackup };
 		});
 		g._findBackupStream = findBackup;
@@ -4436,31 +6366,39 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 	it("uses collision-resistant identities across independent worker transactions", () => {
 		const now = vi.spyOn(Date, "now").mockReturnValue(123456);
 		try {
-			const first = createHandoffId()(makeEnhancedInfo());
-			const second = createHandoffId()(makeEnhancedInfo());
+			const firstInfo = makeEnhancedInfo({ VisibleAdStartedAt: 100 });
+			const secondInfo = makeEnhancedInfo({ VisibleAdStartedAt: 100 });
+			activateAdContext(firstInfo, 100);
+			const first = createHandoffId()(firstInfo);
+			activateAdContext(secondInfo, 100);
+			const second = createHandoffId()(secondInfo);
 
 			expect(first).not.toBe(second);
-			expect(first).toContain("live:testchannel:123456:1:");
-			expect(second).toContain("live:testchannel:123456:1:");
+			expect(first).toContain("live:testchannel:100:123456:1:");
+			expect(second).toContain("live:testchannel:100:123456:1:");
 		} finally {
 			now.mockRestore();
 		}
 	});
 
 	it("clears only the exact handoff generation and releases its modified-master latch", () => {
+		const cycleStartedAt = 80;
 		const info = makeEnhancedInfo({
+			VisibleAdStartedAt: cycleStartedAt,
 			IsUsingModifiedM3U8: true,
 			EnhancedDecoderCodecFamily: "hevc",
-			_CodecHandoffPendingId: "handoff-b",
-			_CodecHandoffAcknowledgedId: "handoff-b",
 		});
+		const handoffA = cycleHandoffId(info, cycleStartedAt, "a", 1, 90);
+		const handoffB = cycleHandoffId(info, cycleStartedAt, "b", 2, 90);
+		info._CodecHandoffPendingId = handoffB;
+		info._CodecHandoffAcknowledgedId = handoffB;
 
-		expect(clearHandoff()(info, "handoff-a")).toBe(false);
+		expect(clearHandoff()(info, handoffA)).toBe(false);
 		expect(info.IsUsingModifiedM3U8).toBe(true);
 		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
-		expect(info._CodecHandoffPendingId).toBe("handoff-b");
+		expect(info._CodecHandoffPendingId).toBe(handoffB);
 
-		expect(clearHandoff()(info, "handoff-b")).toBe(true);
+		expect(clearHandoff()(info, handoffB)).toBe(true);
 		expect(info.IsUsingModifiedM3U8).toBe(false);
 		expect(info.EnhancedDecoderCodecFamily).toBe(null);
 		expect(info._CodecHandoffPendingId).toBe(null);
@@ -4468,23 +6406,36 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 	});
 
 	it("preserves enhanced decoder ownership when an exact handoff is rolled back before acknowledgement", () => {
+		const cycleStartedAt = 90;
 		const info = makeEnhancedInfo({
+			VisibleAdStartedAt: cycleStartedAt,
 			IsUsingModifiedM3U8: true,
 			EnhancedDecoderCodecFamily: "av1",
-			_CodecHandoffPendingId: "handoff-failed",
 		});
+		const failedHandoffId = cycleHandoffId(
+			info,
+			cycleStartedAt,
+			"failed",
+			1,
+			100,
+		);
+		info._CodecHandoffPendingId = failedHandoffId;
 
-		expect(clearHandoff()(info, "handoff-failed")).toBe(true);
+		expect(clearHandoff()(info, failedHandoffId)).toBe(true);
 		expect(info.EnhancedDecoderCodecFamily).toBe("av1");
 		expect(info._CodecHandoffPendingId).toBe(null);
 	});
 
 	it("does not let one aborted poll cancel the shared handoff transaction", async () => {
-		const handoffId = "live:testchannel:100:1";
+		const cycleStartedAt = 100;
 		const info = makeEnhancedInfo({
-			_CodecHandoffPendingId: handoffId,
-			_CodecHandoffAcknowledgedId: handoffId,
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
 		});
+		const handoffId = cycleHandoffId(info, cycleStartedAt, "shared", 1, 110);
+		info._CodecHandoffPendingId = handoffId;
+		info._CodecHandoffAcknowledgedId = handoffId;
+		activateHandoffContext(info, handoffId);
 		const firstController = new AbortController();
 		const secondController = new AbortController();
 		const first = hold()(
@@ -4528,12 +6479,16 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 	});
 
 	it("keeps an unsafe enhanced response pending until its own loader signal aborts", async () => {
-		const handoffId = "live:testchannel:200:1";
+		const cycleStartedAt = 200;
 		const info = makeEnhancedInfo({
-			_CodecHandoffPendingId: handoffId,
-			_CodecHandoffAcknowledgedId: handoffId,
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
 		});
+		const handoffId = cycleHandoffId(info, cycleStartedAt, "pending", 1, 210);
+		info._CodecHandoffPendingId = handoffId;
+		info._CodecHandoffAcknowledgedId = handoffId;
 		const controller = new AbortController();
+		activateHandoffContext(info, handoffId);
 		const pending = hold()(
 			info,
 			bridgeUrl,
@@ -4560,15 +6515,156 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 	});
 
-	it("re-arms a failed exact reload without releasing the quarantined ad response", async () => {
-		const handoffId = "live:testchannel:250:1:first";
+	it("aborts an acknowledged retiring loader at ten seconds without marking the handoff failed", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const cycleStartedAt = 90000;
 		const info = makeEnhancedInfo({
 			IsShowingAd: true,
-			IsUsingModifiedM3U8: true,
-			_CodecHandoffPendingId: handoffId,
-			_CodecHandoffAcknowledgedId: handoffId,
+			VisibleAdStartedAt: cycleStartedAt,
 		});
+		const handoffId = cycleHandoffId(
+			info,
+			cycleStartedAt,
+			"ack-timeout",
+			1,
+			90010,
+		);
+		info._CodecHandoffPendingId = handoffId;
+		info._CodecHandoffAcknowledgedId = handoffId;
+		activateHandoffContext(info, handoffId);
+		const pending = hold()(
+			info,
+			bridgeUrl,
+			allAdNative,
+			hevcSource.Codecs,
+			true,
+			null,
+			handoffId,
+		);
+		const rejection = expect(pending).rejects.toMatchObject({
+			name: "AbortError",
+		});
+
+		try {
+			await vi.advanceTimersByTimeAsync(10000);
+			await rejection;
+			expect(info._CodecHandoffAcknowledgedId).toBe(handoffId);
+			expect(info._CodecHandoffFailedId).toBe(null);
+			expect(reloadMessages()).toHaveLength(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("aborts unsafe enhanced recovery at ten seconds when no loader signal arrives", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		const realCore = g._processM3U8Core;
+		const cycleStartedAt = 190000;
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
+		});
+		const findBackup = vi.fn(async () => ({ type: null, m3u8: null }));
+		g._findBackupStream = findBackup;
+		activateAdContext(info, cycleStartedAt);
+		g._getStreamInfoForPlaylist = () => info;
+		g._processM3U8Core = async () =>
+			T<(text: string, target: Record<string, unknown>) => string>(
+				"_createEmptyAdHoldPlaylist",
+			)(allAdNative, info);
+		const pending = process()(bridgeUrl, allAdNative, fetchStub);
+		const rejection = expect(pending).rejects.toMatchObject({
+			name: "AbortError",
+		});
+
+		try {
+			await vi.advanceTimersByTimeAsync(10000);
+			await rejection;
+			expect(findBackup).toHaveBeenCalled();
+			expect(reloadMessages()).toHaveLength(0);
+		} finally {
+			g._processM3U8Core = realCore;
+			vi.useRealTimers();
+		}
+	});
+
+	it("bounds a hanging enhanced backup pass by one absolute deadline and never reuses cycle-two media", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const cycleOneStartedAt = 299000;
+		const cycleTwoStartedAt = 305000;
+		const cycleTwoBackup = makePlaylist(950, 3);
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleOneStartedAt,
+			BackupSearchEpoch: 4,
+			LastCleanBackupM3U8: null,
+			LastCleanBackupAt: 0,
+		});
+		const findBackup = vi.fn(() => new Promise(() => {}));
+		g._findBackupStream = findBackup;
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info, cycleOneStartedAt);
+		const pending = process()(bridgeUrl, allAdNative, fetchStub);
+		let resolvedValue: string | null = null;
+		void pending.then(
+			(value) => {
+				resolvedValue = value;
+			},
+			() => {},
+		);
+		const rejection = expect(pending).rejects.toMatchObject({
+			name: "AbortError",
+		});
+
+		try {
+			await vi.advanceTimersByTimeAsync(5000);
+			T<
+				(
+					target: Record<string, unknown>,
+					progress: Record<string, unknown>,
+				) => Record<string, unknown> | null
+			>("_applyAdPodProgressToInfo")(info, {
+				mediaType: "live",
+				channelName: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: cycleTwoStartedAt,
+				adIds: ["cycle-two-ad"],
+			});
+			info.IsShowingAd = true;
+			info.LastCleanBackupM3U8 = cycleTwoBackup;
+			info.LastCleanBackupPlayerType = "site";
+			info.LastCleanBackupCodecFamily = "hevc";
+			info.LastCleanBackupCodec = hevcSource.Codecs.toLowerCase();
+			info.LastCleanBackupAt = Date.now();
+
+			await vi.advanceTimersByTimeAsync(4999);
+			expect(resolvedValue).toBe(null);
+			await vi.advanceTimersByTimeAsync(1);
+			await rejection;
+			expect(findBackup).toHaveBeenCalledTimes(1);
+			expect(resolvedValue).toBe(null);
+			expect(info.VisibleAdStartedAt).toBe(cycleTwoStartedAt);
+			expect(info.LastCleanBackupM3U8).toBe(cycleTwoBackup);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("re-arms a failed exact reload without releasing the quarantined ad response", async () => {
+		const cycleStartedAt = 250;
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
+			IsUsingModifiedM3U8: true,
+		});
+		const handoffId = cycleHandoffId(info, cycleStartedAt, "first", 1, 260);
+		info._CodecHandoffPendingId = handoffId;
+		info._CodecHandoffAcknowledgedId = handoffId;
 		const controller = new AbortController();
+		activateAdContext(info);
 		const pending = hold()(
 			info,
 			bridgeUrl,
@@ -4593,15 +6689,18 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 
 	it("keeps exact reload recovery active beyond the initial rearm attempts", async () => {
 		vi.useFakeTimers();
-		const handoffId = "live:testchannel:275:1:first";
+		const cycleStartedAt = 275;
 		const info = makeEnhancedInfo({
 			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
 			IsUsingModifiedM3U8: true,
-			_CodecHandoffPendingId: handoffId,
-			_CodecHandoffAcknowledgedId: handoffId,
 			_CodecHandoffReloadRetryCount: 2,
 		});
+		const handoffId = cycleHandoffId(info, cycleStartedAt, "first", 1, 285);
+		info._CodecHandoffPendingId = handoffId;
+		info._CodecHandoffAcknowledgedId = handoffId;
 		const controller = new AbortController();
+		activateAdContext(info);
 		expect(markHandoffFailed()(info, handoffId)).toBe(true);
 		const pending = hold()(
 			info,
@@ -4631,7 +6730,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 	});
 
 	it("serves a same-rendition clean bridge after the exact handoff is acknowledged", async () => {
-		const handoffId = "live:testchannel:300:1";
+		const cycleStartedAt = 300;
 		const cleanEnhancedNative = [
 			"#EXTM3U",
 			"#EXT-X-TARGETDURATION:2",
@@ -4640,13 +6739,23 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 			"https://edge.example/native-hevc-live-98.ts",
 		].join("\n");
 		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
 			LastCleanNativeM3U8: cleanEnhancedNative,
 			LastCleanNativeUrl: bridgeUrl,
 			LastCleanNativeCodec: hevcSource.Codecs,
 			LastCleanNativePlaylistAt: Date.now(),
-			_CodecHandoffPendingId: handoffId,
-			_CodecHandoffAcknowledgedId: handoffId,
 		});
+		const handoffId = cycleHandoffId(
+			info,
+			cycleStartedAt,
+			"acknowledged",
+			1,
+			310,
+		);
+		info._CodecHandoffPendingId = handoffId;
+		info._CodecHandoffAcknowledgedId = handoffId;
+		activateHandoffContext(info, handoffId);
 		const controller = new AbortController();
 
 		await expect(
@@ -4699,22 +6808,30 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 	});
 
 	it("retains old enhanced URL identity after the replacement master removes its alias", async () => {
-		const handoffId = "live:testchannel:400:1";
+		const cycleStartedAt = 400;
 		const info = makeEnhancedInfo({
 			IsShowingAd: true,
 			IsUsingModifiedM3U8: true,
 			LastCleanBackupM3U8: cleanBackup,
 			LastCleanBackupPlayerType: "autoplay",
 			LastCleanBackupAt: Date.now(),
-			VisibleAdStartedAt: Date.now() - 1000,
+			VisibleAdStartedAt: cycleStartedAt,
 			Urls: { [avcUrl]: avcSource },
 			EnhancedVariantUrls: new Set([bridgeUrl]),
-			_CodecHandoffPendingId: handoffId,
-			_CodecHandoffAcknowledgedId: handoffId,
 		});
+		const handoffId = cycleHandoffId(
+			info,
+			cycleStartedAt,
+			"replacement",
+			1,
+			410,
+		);
+		info._CodecHandoffPendingId = handoffId;
+		info._CodecHandoffAcknowledgedId = handoffId;
 		getState().ActiveCodecHandoffId = handoffId;
 		getState().ActiveCodecHandoffChannel = "testchannel";
 		getState().ActiveCodecHandoffMediaKey = "live:testchannel";
+		activateAdContext(info);
 		g._getStreamInfoForPlaylist = () => info;
 		const controller = new AbortController();
 		const staleEnhancedPoll = process()(
@@ -4765,33 +6882,158 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 	});
 
-	it("never starts an AVC handoff from a clean enhanced-only backup", async () => {
+	it("returns a cached exact-codec backup without starting a decoder handoff", async () => {
+		const cleanEnhancedBackup = cleanBackup.replaceAll(
+			"avc-backup",
+			"hevc-backup",
+		);
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 1000,
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: hevcSource.Codecs,
+			LastCleanBackupM3U8: cleanEnhancedBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupCodec: hevcSource.Codecs.toLowerCase(),
+			LastCleanBackupAt: Date.now(),
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info);
+		g._findBackupStream = vi.fn(async () => ({
+			type: "autoplay",
+			m3u8: cleanEnhancedBackup,
+		}));
+		const realCore = g._processM3U8Core;
+		g._processM3U8Core = async () => cleanEnhancedBackup;
+
+		try {
+			const out = await process()(bridgeUrl, adLadenNative, fetchStub);
+
+			expect(out).toContain("hevc-backup-500.ts");
+			expect(out).not.toContain("stitched-ad-99.ts");
+			expect(reloadMessages()).toHaveLength(0);
+			expect(info._CodecHandoffPendingId).toBe(null);
+			expect(g._findBackupStream).not.toHaveBeenCalled();
+		} finally {
+			g._processM3U8Core = realCore;
+		}
+	});
+
+	it("fails closed when byte-identical backup bodies have conflicting HEVC and AVC provenance", async () => {
+		const rememberMetadata = T<
+			(
+				info: Record<string, unknown>,
+				m3u8: string,
+				codecFamily: string,
+				codec: string,
+			) => string
+		>("_rememberBackupPlaylistMetadata");
+		const realCore = g._processM3U8Core;
 		const info = makeEnhancedInfo({
 			IsShowingAd: true,
 			VisibleAdStartedAt: Date.now() - 1000,
 			LastCleanBackupM3U8: cleanBackup,
 			LastCleanBackupPlayerType: "autoplay",
-			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: avcSource.Codecs.toLowerCase(),
 			LastCleanBackupAt: Date.now(),
 		});
-		const controller = new AbortController();
+		activateAdContext(info);
+		rememberMetadata(info, cleanBackup, "hevc", hevcSource.Codecs);
+		rememberMetadata(info, cleanBackup, "avc", avcSource.Codecs);
+		// Scalar convenience fields must not erase the body-level provenance
+		// conflict recorded above.
+		info.LastCleanBackupM3U8 = cleanBackup;
+		info.LastCleanBackupCodecFamily = "avc";
+		info.LastCleanBackupCodec = avcSource.Codecs.toLowerCase();
+		info.LastCleanBackupAt = Date.now();
+		const metadata = (
+			info.BackupPlaylistMetadata as Map<string, Record<string, unknown>>
+		).get(cleanBackup);
+		expect(metadata).toEqual({
+			codecFamily: null,
+			codec: null,
+			ambiguous: true,
+		});
 		g._getStreamInfoForPlaylist = () => info;
-		g._findBackupStream = vi.fn(async () => ({
-			type: "autoplay",
-			m3u8: cleanBackup,
-		}));
-
+		g._processM3U8Core = async () => cleanBackup;
+		const controller = new AbortController();
 		const pending = process()(
 			bridgeUrl,
-			allAdNative,
+			adLadenNative,
 			fetchStub,
 			controller.signal,
 		);
-		await new Promise((resolve) => setTimeout(resolve, 25));
-		expect(reloadMessages()).toHaveLength(0);
+		let settled = false;
+		void pending.then(
+			() => {
+				settled = true;
+			},
+			() => {
+				settled = true;
+			},
+		);
 
-		controller.abort();
-		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+		try {
+			await new Promise((resolve) => setTimeout(resolve, 25));
+			expect(settled).toBe(false);
+			expect(reloadMessages()).toHaveLength(0);
+			controller.abort();
+			await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+		} finally {
+			controller.abort();
+			g._processM3U8Core = realCore;
+		}
+	});
+
+	it("never misclassifies a cached mismatched HEVC descriptor as decoder-compatible", async () => {
+		vi.useFakeTimers();
+		const mismatchedBackup = cleanBackup.replaceAll(
+			"avc-backup",
+			"incompatible-hevc-backup",
+		);
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 1000,
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: hevcSource.Codecs,
+			LastCleanBackupM3U8: mismatchedBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupCodec: "hvc1.2.4.L120.B0",
+			LastCleanBackupAt: Date.now(),
+		});
+		const controller = new AbortController();
+		const findBackup = installCleanBackup(info);
+		const realCore = g._processM3U8Core;
+		g._getStreamInfoForPlaylist = () => info;
+		g._processM3U8Core = async () => mismatchedBackup;
+		activateAdContext(info);
+		abortRetiringRequestOnReload(info, controller);
+
+		const pending = process()(
+			bridgeUrl,
+			adLadenNative,
+			fetchStub,
+			controller.signal,
+		);
+		const rejection = expect(pending).rejects.toMatchObject({
+			name: "AbortError",
+		});
+		try {
+			await vi.advanceTimersByTimeAsync(1000);
+			await rejection;
+
+			expect(findBackup).toHaveBeenCalled();
+			expect(reloadMessages()).toHaveLength(1);
+			expect(info.LastCleanBackupCodecFamily).toBe("avc");
+			expect(info.LastCleanBackupCodec).toBe("avc1.4d402a");
+		} finally {
+			controller.abort();
+			g._processM3U8Core = realCore;
+			vi.useRealTimers();
+		}
 	});
 });
 describe("_dropEnhancedVariantLines (AVC fallback master shape)", () => {
@@ -4883,6 +7125,31 @@ describe("_prepareFatalMediaRecovery", () => {
 			) => Promise<boolean>
 		>("_prepareFatalMediaRecovery");
 
+	const fatalRequest = (
+		info: Record<string, unknown>,
+		label: string,
+		requestedAt: number,
+		sequence = 1,
+	) => {
+		const cycleStartedAt = activateExactAdCycle(
+			info,
+			Math.max(1, Number(info.VisibleAdStartedAt) || requestedAt - 1),
+		);
+		return {
+			recoveryId: cycleHandoffId(
+				info,
+				cycleStartedAt,
+				label,
+				sequence,
+				requestedAt,
+			),
+			requestedAt,
+			cycleStartedAt,
+			channelName: "testchannel",
+			mediaKey: "live:testchannel",
+		};
+	};
+
 	beforeEach(() => {
 		realRefreshHeld = g._refreshHeldAutoplayBackupPlaylist;
 		realRefreshActive = g._refreshActiveBackupMediaPlaylist;
@@ -4918,29 +7185,25 @@ describe("_prepareFatalMediaRecovery", () => {
 			return cleanBackup;
 		});
 		g._findBackupStream = vi.fn();
+		const request = fatalRequest(info, "clean", requestedAt);
 
 		const ready = await prepare()(
 			info,
 			async () => new Response("", { status: 500 }),
-			{
-				recoveryId: "fatal-recovery-1",
-				requestedAt,
-				channelName: "testchannel",
-				mediaKey: "live:testchannel",
-			},
+			request,
 		);
 
 		expect(ready).toBe(true);
 		expect(g._refreshHeldAutoplayBackupPlaylist).toHaveBeenCalledTimes(1);
 		expect(g._findBackupStream).not.toHaveBeenCalled();
-		expect(info._CodecHandoffPendingId).toBe("fatal-recovery-1");
+		expect(info._CodecHandoffPendingId).toBe(request.recoveryId);
 		expect(info.IsUsingModifiedM3U8).toBe(true);
 		expect(g._postWorkerBridgeMessage).toHaveBeenCalledTimes(1);
 		expect(
 			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls[0][1],
 		).toMatchObject({
 			key: "FatalMediaRecoveryReady",
-			recoveryId: "fatal-recovery-1",
+			recoveryId: request.recoveryId,
 			mediaKey: "live:testchannel",
 		});
 	});
@@ -4961,16 +7224,12 @@ describe("_prepareFatalMediaRecovery", () => {
 			type: "autoplay",
 			m3u8: cleanBackup,
 		}));
+		const request = fatalRequest(info, "stale", requestedAt);
 
 		const ready = await prepare()(
 			info,
 			async () => new Response("", { status: 500 }),
-			{
-				recoveryId: "fatal-recovery-stale",
-				requestedAt,
-				channelName: "testchannel",
-				mediaKey: "live:testchannel",
-			},
+			request,
 		);
 
 		expect(ready).toBe(false);
@@ -4995,16 +7254,12 @@ describe("_prepareFatalMediaRecovery", () => {
 			type: null,
 			m3u8: null,
 		}));
+		const request = fatalRequest(info, "ad", requestedAt);
 
 		const ready = await prepare()(
 			info,
 			async () => new Response("", { status: 500 }),
-			{
-				recoveryId: "fatal-recovery-ad",
-				requestedAt,
-				channelName: "testchannel",
-				mediaKey: "live:testchannel",
-			},
+			request,
 		);
 
 		expect(ready).toBe(false);
@@ -5026,16 +7281,12 @@ describe("_prepareFatalMediaRecovery", () => {
 			return cleanBackup;
 		});
 		g._findBackupStream = vi.fn();
+		const request = fatalRequest(info, "hevc", requestedAt);
 
 		const ready = await prepare()(
 			info,
 			async () => new Response("", { status: 500 }),
-			{
-				recoveryId: "fatal-recovery-hevc",
-				requestedAt,
-				channelName: "testchannel",
-				mediaKey: "live:testchannel",
-			},
+			request,
 		);
 
 		expect(ready).toBe(false);
@@ -5068,26 +7319,18 @@ describe("_prepareFatalMediaRecovery", () => {
 					}),
 			);
 		g._findBackupStream = vi.fn();
+		const firstRequest = fatalRequest(info, "first", requestedAt, 1);
+		const secondRequest = fatalRequest(info, "second", requestedAt, 2);
 
 		const first = prepare()(
 			info,
 			async () => new Response("", { status: 500 }),
-			{
-				recoveryId: "fatal-recovery-first",
-				requestedAt,
-				channelName: "testchannel",
-				mediaKey: "live:testchannel",
-			},
+			firstRequest,
 		);
 		const second = prepare()(
 			info,
 			async () => new Response("", { status: 500 }),
-			{
-				recoveryId: "fatal-recovery-second",
-				requestedAt,
-				channelName: "testchannel",
-				mediaKey: "live:testchannel",
-			},
+			secondRequest,
 		);
 		info.LastCleanBackupAt = Date.now();
 		info.LastCleanBackupCodecFamily = "avc";
@@ -5096,10 +7339,10 @@ describe("_prepareFatalMediaRecovery", () => {
 		resolveFirst(cleanBackup);
 		await expect(first).resolves.toBe(false);
 
-		expect(info._CodecHandoffPendingId).toBe("fatal-recovery-second");
+		expect(info._CodecHandoffPendingId).toBe(secondRequest.recoveryId);
 		expect(g._postWorkerBridgeMessage).toHaveBeenCalledTimes(1);
 		expect(
 			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls[0][1],
-		).toMatchObject({ recoveryId: "fatal-recovery-second" });
+		).toMatchObject({ recoveryId: secondRequest.recoveryId });
 	});
 });

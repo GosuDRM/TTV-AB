@@ -53,6 +53,97 @@ describe("worker message handler hardening", () => {
 		expect(hooksJs()).toContain("case 'ReleasePlaybackContext'");
 	});
 
+	it("cycle-fences every same-media post-ad lifecycle action", () => {
+		const source = hooksJs();
+		expect(source).toMatch(
+			/case "AdEnded":[\s\S]*?_isCodecHandoffCycleCurrent\(mediaKey, endedCycleStartedAt\)/,
+		);
+		expect(source).toMatch(
+			/case "NativePlaybackRestored":[\s\S]*?_isCodecHandoffCycleCurrent\(mediaKey, restoredCycleStartedAt\)/,
+		);
+		expect(source).toMatch(
+			/case "PauseResumePlayer":[\s\S]*?_isPageLifecycleCycleCurrent\(\s*data\.mediaKey,\s*data\.cycleStartedAt\s*,?\s*\)/,
+		);
+		expect(source).toMatch(
+			/!eventIsCodecHandoff &&\s*!_isPageLifecycleCycleCurrent\(\s*eventMediaKey,\s*eventCycleStartedAt\s*,?\s*\)/,
+		);
+		expect(source).toMatch(
+			/reloadReason === "codec-handoff"[\s\S]*?: !_isPageLifecycleCycleCurrent\(\s*reloadOptions\.mediaKey,\s*reloadOptions\.cycleStartedAt\s*,?\s*\)/,
+		);
+	});
+
+	it("never accepts a last-ended cycle while any newer ad context is active", () => {
+		expect(hooksJs()).toMatch(
+			/if \(_normalizeMediaKey\(__TTVAB_STATE__\?\.CurrentAdMediaKey\)\) \{\s*return false;\s*\}/,
+		);
+	});
+
+	it("preserves canonical cycle-two pod progress when it arrives before the page ad context", () => {
+		const source = hooksJs();
+		const blockStart = source.indexOf('case "AdDetected":');
+		const blockEnd = source.indexOf('case "AdPodProgress":', blockStart);
+		const block = source.slice(blockStart, blockEnd);
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		expect(block).toMatch(
+			/activeCycleStartedAt\s*=\s*Math\.max\([\s\S]*?AdPodProgressByMediaKey\?\.\[mediaKey\][\s\S]*?\.cycleStartedAt/,
+		);
+		expect(block).toMatch(
+			/detectedCycleStartedAt\s*<\s*Math\.max\(activeCycleStartedAt,\s*lastEndedCycleStartedAt\)/,
+		);
+		expect(block).toMatch(
+			/shouldReuseCanonicalCycle\s*=\s*Boolean\([\s\S]*?activeCycleStartedAt\s*===\s*detectedCycleStartedAt/,
+		);
+		expect(block).toMatch(
+			/if \(shouldStartNewCycle\) \{\s*if \(!shouldReuseCanonicalCycle\) \{[\s\S]*?_clearAdPodProgress\(mediaKey\)/,
+		);
+		const reuseGuardAt = block.indexOf("if (!shouldReuseCanonicalCycle)");
+		const lifecycleCleanupAt = block.indexOf(
+			"_clearPlaybackRecoveryTimeoutsForContext(mediaKey)",
+		);
+		expect(reuseGuardAt).toBeGreaterThan(-1);
+		expect(lifecycleCleanupAt).toBeGreaterThan(reuseGuardAt);
+		expect(block).toMatch(
+			/canonicalPodProgress[\s\S]*?key:\s*"UpdateAdPodProgress"[\s\S]*?\.\.\.canonicalPodProgress/,
+		);
+	});
+
+	it("gates worker reload acknowledgements before mutating reload state", () => {
+		const source = hooksJs();
+		const blockStart = source.indexOf("case 'TriggeredPlayerReload':");
+		const blockEnd = source.indexOf("default:", blockStart);
+		const block = source.slice(blockStart, blockEnd);
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		expect(source).toContain("${_isPageLifecycleCycleCurrent.toString()}");
+		const gateAt = block.indexOf("_isPageLifecycleCycleCurrent(");
+		const mutateAt = block.indexOf(
+			"__TTVAB_STATE__.HasTriggeredPlayerReload = true",
+		);
+		expect(gateAt).toBeGreaterThan(-1);
+		expect(mutateAt).toBeGreaterThan(gateAt);
+	});
+
+	it("gates native-restored acknowledgements before state and scheduled effects", () => {
+		const source = hooksJs();
+		const blockStart = source.indexOf('case "NativePlaybackRestored":');
+		const blockEnd = source.indexOf('case "PauseResumePlayer":', blockStart);
+		const block = source.slice(blockStart, blockEnd);
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		const gateAt = block.indexOf("_isCodecHandoffCycleCurrent(");
+		const stateMutationAt = block.indexOf("__TTVAB_STATE__.LastAdEndedAt =");
+		const playerTaskAt = block.indexOf("_doPlayerTask(");
+		const cleanupAt = block.indexOf("_schedulePostAdArtifactCleanup(");
+		expect(gateAt).toBeGreaterThan(-1);
+		expect(stateMutationAt).toBeGreaterThan(gateAt);
+		expect(playerTaskAt).toBeGreaterThan(gateAt);
+		expect(cleanupAt).toBeGreaterThan(gateAt);
+		expect(block).toMatch(
+			/_doPlayerTask\([\s\S]*?cycleStartedAt:\s*restoredCycleStartedAt/,
+		);
+	});
+
 	it("bootstrap does not serialize tracked workers", () => {
 		expect(hooksJs()).toMatch(
 			/JSON\.stringify\(\{\s*\.\.\._S,\s*workers:\s*\[\]\s*\}\)/,
@@ -76,10 +167,12 @@ describe("enhanced-codec handoff retirement", () => {
 
 	it("fails closed when ad-marked playlist processing throws", () => {
 		expect(hooksJs()).toContain("const requestWasAdMarked =");
+		expect(hooksJs()).toContain("_stripAds(text, true, failedInfo)");
+		expect(hooksJs()).toContain("const failedRequestIsEnhanced =");
 		expect(hooksJs()).toContain(
-			"_stripAds(text, true, failedInfo, false, true)",
+			"throw _createCodecHandoffAbortError(failedRequestSignal)",
 		);
-		expect(hooksJs()).toContain("_createEmptyAdHoldPlaylist(text, null)");
+		expect(hooksJs()).not.toContain("_createEmptyAdHoldPlaylist(text, null)");
 	});
 
 	it("carries an exact handoff identity into the replacement worker", () => {
@@ -98,7 +191,28 @@ describe("enhanced-codec handoff retirement", () => {
 			"streamInfo._CodecHandoffPendingId = nextHandoffId",
 		);
 		expect(hooksJs()).toContain("streamInfo.IsUsingModifiedM3U8 = true");
+		expect(hooksJs()).toContain(
+			"currentAdMediaKey !== nextCodecHandoffContext.MediaKey",
+		);
+		expect(hooksJs()).toContain("const handoffOwnsCurrentAd = Boolean(");
+		expect(hooksJs()).toMatch(
+			/if \(\s*handoffOwnsCurrentAd\s*&&\s*handoffInfo\?\._CodecHandoffPendingId === handoffId/,
+		);
 		expect(hooksJs()).not.toContain("matchesActiveAdMediaKey");
+	});
+
+	it("keeps the original mixed master until an exact codec handoff is active", () => {
+		expect(hooksJs()).toMatch(
+			/const playlist = info\.IsUsingModifiedM3U8\s*\?\s*info\.ModifiedM3U8\s*:\s*info\.EncodingsM3U8/,
+		);
+		expect(hooksJs()).not.toMatch(/const playlist = info\.ModifiedM3U8\s*\?/);
+		expect(hooksJs()).toContain("const activeAdMediaMatches = Boolean(");
+		expect(hooksJs()).toMatch(
+			/info\.IsUsingModifiedM3U8 =\s*activeAdMediaMatches\s*&&\s*\(activeCodecHandoffMatches \|\| hasAcknowledgedCodecHandoff\)/,
+		);
+		expect(hooksJs()).not.toMatch(
+			/info\.IsUsingModifiedM3U8 =\s*\(wasUsingModifiedM3U8/,
+		);
 	});
 
 	it("verifies fatal media recovery in the worker before reloading", () => {

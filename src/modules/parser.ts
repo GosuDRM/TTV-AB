@@ -523,7 +523,7 @@ function _stripAds(
 	text,
 	stripAll,
 	info,
-	skipAutoForceStrip = false,
+	_skipAutoForceStrip = false,
 	preserveLiveSegments = false,
 ) {
 	const lines = text.split("\n");
@@ -537,7 +537,9 @@ function _stripAds(
 	const forceStripAllSegments =
 		stripAll ||
 		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
-		(!skipAutoForceStrip && hasExplicitAdMetadata && !hasKnownAdSegments);
+		(hasExplicitAdMetadata && !hasKnownAdSegments);
+	const canPreserveLiveSegments =
+		preserveLiveSegments && !(hasExplicitAdMetadata && !hasKnownAdSegments);
 
 	let adSegmentCount = 0;
 	let _liveSegmentCount = 0;
@@ -550,7 +552,7 @@ function _stripAds(
 			const isAdSegment =
 				isKnownAdSegment ||
 				(forceStripAllSegments &&
-					(!preserveLiveSegments || !line.includes(",live")));
+					(!canPreserveLiveSegments || !line.includes(",live")));
 			if (isAdSegment) {
 				adSegmentCount++;
 			} else {
@@ -594,7 +596,7 @@ function _stripAds(
 			const isAdSegment =
 				isKnownAdSegment ||
 				(forceStripAllSegments &&
-					(!preserveLiveSegments || !line.includes(",live")));
+					(!canPreserveLiveSegments || !line.includes(",live")));
 
 			if (isAdSegment) {
 				const segmentUrl = lines[i + 1];
@@ -711,60 +713,8 @@ function _stripAds(
 	}
 
 	if (!hasRemainingSegments && strippedMediaEntryCount > 0) {
-		const recoveryCandidates = [
-			{
-				label: info?.LastCleanBackupPlayerType
-					? `last clean backup (${info.LastCleanBackupPlayerType})`
-					: "last clean backup",
-				m3u8:
-					typeof info?.LastCleanBackupM3U8 === "string"
-						? info.LastCleanBackupM3U8
-						: null,
-				at: Number(info?.LastCleanBackupAt) || 0,
-				maxAgeMs: 8000,
-			},
-			{
-				label: "last clean native playlist",
-				m3u8:
-					typeof info?.LastCleanNativeM3U8 === "string"
-						? info.LastCleanNativeM3U8
-						: null,
-				at: Number(info?.LastCleanNativePlaylistAt) || 0,
-				maxAgeMs: 1500,
-			},
-		];
-		const now = Date.now();
-		const recoverySource = recoveryCandidates.find((candidate) => {
-			if (typeof candidate.m3u8 !== "string" || !candidate.m3u8) return false;
-			const hasFullSegments = candidate.m3u8.includes("#EXTINF");
-			const hasPartSegments = candidate.m3u8.includes("#EXT-X-PART:");
-			if (
-				(!hasFullSegments && !hasPartSegments) ||
-				_hasExplicitAdMetadata(candidate.m3u8) ||
-				_playlistHasKnownAdSegments(candidate.m3u8)
-			) {
-				return false;
-			}
-			const maxRecoveryAgeMs = hasFullSegments
-				? candidate.maxAgeMs
-				: Math.min(candidate.maxAgeMs, 1500);
-			return candidate.at > 0 && now - candidate.at <= maxRecoveryAgeMs;
-		});
-
-		if (recoverySource?.m3u8) {
-			_log(
-				`[Recovery] Empty playlist - reusing ${recoverySource.label}`,
-				"warning",
-			);
-			return recoverySource.m3u8;
-		}
-
 		_log(
-			"Failed to find backup stream — no cached clean playlists available",
-			"warning",
-		);
-		_log(
-			"[Recovery] Empty playlist after stripping ads; serving empty hold segment",
+			"[Recovery] Empty playlist after stripping ads; serving advancing empty hold segment",
 			"warning",
 		);
 		return _createEmptyAdHoldPlaylist(text, info);
@@ -979,7 +929,7 @@ function _getResolutionByQualityGroup(resolutionList, qualityGroup) {
 }
 
 function _degradeToDecodableResolution(info, entry, resolutionList) {
-	if (!entry || !info?.ModifiedM3U8) return entry;
+	if (!entry || !info?.IsUsingModifiedM3U8) return entry;
 	if (!_isEnhancedCodecString(entry?.Codecs)) return entry;
 	const heightOf = (candidate) => {
 		const [, h] = String(candidate?.Resolution || "0x0")
@@ -1041,7 +991,7 @@ function _getFallbackResolution(info, url) {
 
 	const sorted = _getSortedResolutionList(resolutionList);
 	const isDecodable = (entry) =>
-		!info?.ModifiedM3U8 || !_isEnhancedCodecString(entry?.Codecs);
+		!info?.IsUsingModifiedM3U8 || !_isEnhancedCodecString(entry?.Codecs);
 	const heightOf = (entry) => {
 		const [, h] = String(entry?.Resolution || "0x0")
 			.split("x")
@@ -1093,7 +1043,16 @@ function _isEnhancedCodecString(codecs) {
 }
 
 function _shouldAvoidHevcBackupVariants(info) {
-	if (info?.ModifiedM3U8) return true;
+	if (info?.IsUsingModifiedM3U8) return true;
+	const enhancedDecoderCodecFamily = _getVideoCodecFamily(
+		info?.EnhancedDecoderCodecFamily,
+	);
+	if (
+		enhancedDecoderCodecFamily === "hevc" ||
+		enhancedDecoderCodecFamily === "av1"
+	) {
+		return false;
+	}
 	if (_isEnhancedCodecString(info?.SustainedNativeResolution?.Codecs)) {
 		return false;
 	}
@@ -1130,29 +1089,117 @@ function _dropEnhancedVariantLines(lines) {
 	return { kept, removed, remaining };
 }
 
-function _stripHevcBackupVariants(info, m3u8) {
+function _stripHevcBackupVariants(
+	info,
+	m3u8,
+	targetResolution = null,
+	codecFamilyOverride = null,
+) {
 	if (typeof m3u8 !== "string" || !m3u8.includes("#EXT-X-STREAM-INF")) {
 		return m3u8;
 	}
-	if (!_shouldAvoidHevcBackupVariants(info)) return m3u8;
-	const { kept, removed, remaining } = _dropEnhancedVariantLines(
-		m3u8.split("\n"),
+	const explicitCodecFamily = _getVideoCodecFamily(codecFamilyOverride);
+	const explicitCodecIdentity = _getVideoCodecIdentity(codecFamilyOverride);
+	let requestedCodecFamily = info?.IsUsingModifiedM3U8
+		? "avc"
+		: explicitCodecFamily ||
+			_getVideoCodecFamily(info?.EnhancedDecoderCodecFamily) ||
+			_getVideoCodecFamily(targetResolution?.Codecs) ||
+			_getVideoCodecFamily(info?.SustainedNativeResolution?.Codecs);
+	if (!requestedCodecFamily) {
+		if (!_shouldAvoidHevcBackupVariants(info)) return m3u8;
+		requestedCodecFamily = "avc";
+	}
+	const requiresExactCodecIdentity =
+		requestedCodecFamily === "hevc" || requestedCodecFamily === "av1";
+	const requestedCodecIdentity =
+		!info?.IsUsingModifiedM3U8 && requiresExactCodecIdentity
+			? explicitCodecIdentity ||
+				_getVideoCodecIdentity(info?.EnhancedDecoderCodec) ||
+				_getVideoCodecIdentity(targetResolution?.Codecs) ||
+				_getVideoCodecIdentity(info?.SustainedNativeResolution?.Codecs)
+			: null;
+	const requireExplicitCodecFamily = Boolean(
+		explicitCodecFamily ||
+			info?.IsUsingModifiedM3U8 ||
+			requiresExactCodecIdentity,
 	);
+
+	const lines = m3u8.split("\n");
+	let matchingVariants = 0;
+	for (let i = 0; i < lines.length - 1; i++) {
+		const line = lines[i];
+		const uri = lines[i + 1]?.trim();
+		if (!line?.startsWith("#EXT-X-STREAM-INF") || !uri || uri.startsWith("#")) {
+			continue;
+		}
+		const variantCodecs = _parseAttrs(line).CODECS;
+		const variantCodecFamily = _getVideoCodecFamily(variantCodecs);
+		const variantCodecIdentity = _getVideoCodecIdentity(variantCodecs);
+		if (
+			variantCodecFamily === requestedCodecFamily &&
+			(!requiresExactCodecIdentity ||
+				(requestedCodecIdentity &&
+					variantCodecIdentity === requestedCodecIdentity))
+		) {
+			matchingVariants++;
+		}
+	}
+
+	const kept = [];
+	let removed = 0;
+	let remaining = 0;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		if (line?.startsWith("#EXT-X-STREAM-INF")) {
+			const uri = i + 1 < lines.length ? String(lines[i + 1] || "") : "";
+			const hasUri = uri.trim() && !uri.trim().startsWith("#");
+			const variantCodecs = _parseAttrs(line).CODECS;
+			const variantCodecFamily = _getVideoCodecFamily(variantCodecs);
+			const variantCodecIdentity = _getVideoCodecIdentity(variantCodecs);
+			const variantMatches = Boolean(
+				variantCodecFamily === requestedCodecFamily &&
+					(!requiresExactCodecIdentity ||
+						(requestedCodecIdentity &&
+							variantCodecIdentity === requestedCodecIdentity)),
+			);
+			if (
+				hasUri &&
+				(variantCodecFamily ? !variantMatches : requireExplicitCodecFamily)
+			) {
+				removed++;
+				i++;
+				continue;
+			}
+			if (hasUri) remaining++;
+		}
+		kept.push(line);
+	}
 	if (removed === 0) return m3u8;
 	if (info) {
 		if (!info._LoggedWhitelistByType) {
 			info._LoggedWhitelistByType = new Set();
 		}
-		const logKey = remaining > 0 ? "hevc-skip" : "hevc-only-skip";
+		const codecKey = requestedCodecIdentity || requestedCodecFamily;
+		const logKey = `codec-filter:${codecKey}:${remaining > 0 ? "ready" : "empty"}`;
 		if (!info._LoggedWhitelistByType.has(logKey)) {
 			info._LoggedWhitelistByType.add(logKey);
+			const requestedLabel = (
+				requestedCodecIdentity || requestedCodecFamily
+			).toUpperCase();
 			_log(
-				remaining > 0
-					? `[Trace] Skipped ${removed} HEVC/AV1 backup variant(s) for codec compatibility`
-					: "[Trace] Rejected enhanced-only backup master during AVC recovery",
+				remaining === 0
+					? `[Trace] Rejected backup master without an explicit ${requestedLabel} variant`
+					: `[Trace] Restricted backup master to the active ${requestedLabel} video codec`,
 				remaining > 0 ? "info" : "warning",
 			);
 		}
+	}
+	if (
+		(requireExplicitCodecFamily && matchingVariants === 0) ||
+		remaining === 0
+	) {
+		return null;
 	}
 	return kept.join("\n");
 }

@@ -1250,11 +1250,6 @@ function validateSharedDefinitions() {
 			source: parserSource,
 		},
 		{
-			consumer: "_stripHevcBackupVariants",
-			helper: "_dropEnhancedVariantLines",
-			source: parserSource,
-		},
-		{
 			consumer: "_dropEnhancedVariantLines",
 			helper: "_isEnhancedCodecString",
 			source: parserSource,
@@ -1316,6 +1311,11 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_processM3U8",
+			helper: "_getActiveCodecHandoffIdForInfo",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
 			helper: "_getVideoCodecFamily",
 			source: processorSource,
 		},
@@ -1332,6 +1332,11 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_processM3U8",
 			helper: "_requestCodecHandoffReload",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_isCodecHandoffAdRecoveryActive",
 			source: processorSource,
 		},
 		{
@@ -1385,8 +1390,23 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_isCodecHandoffAdRecoveryActive",
+			source: processorSource,
+		},
+		{
 			consumer: "_requestCodecHandoffReload",
 			helper: "_createCodecHandoffId",
+			source: processorSource,
+		},
+		{
+			consumer: "_requestCodecHandoffReload",
+			helper: "_isCodecHandoffAdRecoveryActive",
+			source: processorSource,
+		},
+		{
+			consumer: "_isCodecHandoffAdRecoveryActive",
+			helper: "_normalizeMediaKey",
 			source: processorSource,
 		},
 		{
@@ -1591,12 +1611,22 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_stripHevcBackupVariants",
-			helper: "_isEnhancedCodecString",
+			helper: "_getVideoCodecFamily",
+			source: parserSource,
+		},
+		{
+			consumer: "_stripHevcBackupVariants",
+			helper: "_parseAttrs",
 			source: parserSource,
 		},
 		{
 			consumer: "_shouldAvoidHevcBackupVariants",
 			helper: "_isEnhancedCodecString",
+			source: parserSource,
+		},
+		{
+			consumer: "_shouldAvoidHevcBackupVariants",
+			helper: "_getVideoCodecFamily",
 			source: parserSource,
 		},
 		{
@@ -1818,6 +1848,491 @@ function validateSharedDefinitions() {
 			consumer: "_postWorkerBridgeMessage",
 			helper: "_createWorkerBridgeMessage",
 			source: stateSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_awaitWithRequestSignal",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_waitForAbortableDelay",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_waitForAbortableDelay",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_getCodecHandoffCycleStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_requestCodecHandoffReload",
+			helper: "_getCodecHandoffCycleStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_isCodecHandoffAdRecoveryActive",
+			helper: "_getCurrentAdBreakStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_isCodecHandoffAdRecoveryActive",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_isCodecHandoffCycleCurrent",
+			helper: "_getCurrentAdBreakStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_awaitBackupProbeBeforeDeadline",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_getBackupVariantCodecIdentity",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getBackupVariantCodecIdentity",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_getBackupVariantCodecIdentity",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_getBackupVariantCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_getBackupVariantCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_getBackupVariantCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_stripHevcBackupVariants",
+			helper: "_getVideoCodecIdentity",
+			source: parserSource,
+		},
+		{
+			consumer: "_rememberBackupPlaylistMetadata",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberBackupPlaylistMetadata",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_rememberBackupPlaylistMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_rememberBackupPlaylistMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_rememberBackupPlaylistMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_assertM3U8RequestContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_awaitM3U8RequestContext",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAdEndStable",
+			helper: "_awaitM3U8RequestContext",
+			source: processorSource,
+		},
+		{
+			consumer: "_awaitM3U8RequestContext",
+			helper: "_assertM3U8RequestContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_assertM3U8RequestContextCurrent",
+			helper: "_createCodecHandoffAbortError",
+			source: processorSource,
+		},
+		{
+			consumer: "_assertM3U8RequestContextCurrent",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_getActiveCodecHandoffIdForInfo",
+			helper: "_getCodecHandoffCycleStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_getActiveCodecHandoffIdForInfo",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_serveBounceDebouncedPlaylist",
+			helper: "_refreshActiveBackupMediaPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_serveBounceDebouncedPlaylist",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_findBackupStream",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_resolveAdBackupTargetResolution",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_findBackupStream",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_resolveAdBackupTargetResolution",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_serveBounceDebouncedPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_getCodecHandoffCycleStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_hasExplicitAdMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_searchBackupStream",
+			source: processorSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_waitForAbortableDelay",
+			helper: "_createCodecHandoffAbortError",
+			source: processorSource,
+		},
+		{
+			consumer: "_awaitWithRequestSignal",
+			helper: "_createCodecHandoffAbortError",
+			source: processorSource,
+		},
+		{
+			consumer: "_isCodecHandoffAdRecoveryActive",
+			helper: "_getCodecHandoffCycleStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_requestCodecHandoffReload",
+			helper: "_getCurrentAdBreakStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_isLastCleanNativeForRequest",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_getCodecHandoffCycleStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_prepareFatalMediaRecovery",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_isBackupSearchContextCurrent",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getCurrentAdBreakStartedAt",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isCodecHandoffCycleCurrent",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isCodecHandoffCycleCurrent",
+			helper: "_getCurrentAdBreakStartedAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getCodecHandoffCycleStartedAt",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: hooksSource,
+		},
+		{
+			consumer: "_applyAdPodProgressToInfo",
+			helper: "_invalidateAdCycleAsyncWork",
+			source: stateSource,
+		},
+		{
+			consumer: "_clearAdPodProgress",
+			helper: "_invalidateAdCycleAsyncWork",
+			source: stateSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_postWorkerBridgeMessage",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_createPageScopedWorkerEvent",
+			source: processorSource,
+		},
+		{
+			consumer: "_holdRetiringCodecRequest",
+			helper: "_log",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_createCodecHandoffAbortError",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_refreshHeldAutoplayBackupPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_isEnhancedCodecString",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getActiveCodecHandoffIdForInfo",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_createCodecHandoffAbortError",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getDirectPlaybackResolutionForUrl",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getPlaylistUrlAliases",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorker",
+			helper: "_getCodecHandoffCycleStartedAt",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorker",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorker",
+			helper: "_isPageLifecycleCycleCurrent",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getExactPlaylistUrlKey",
+			source: hooksSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_rememberSegmentCodecOwnership",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_isPageLifecycleCycleCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_isPageLifecycleCycleCurrent",
+			helper: "_normalizeMediaKey",
+			source: hooksSource,
+		},
+		{
+			consumer: "_isPageLifecycleCycleCurrent",
+			helper: "_isCodecHandoffCycleCurrent",
+			source: hooksSource,
+		},
+		{
+			consumer: "_rememberSegmentCodecOwnership",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberSegmentCodecOwnership",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberSegmentCodecOwnership",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberSegmentCodecOwnership",
+			helper: "_isMediaPartLine",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberSegmentCodecOwnership",
+			helper: "_isPartPreloadHintLine",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberSegmentCodecOwnership",
+			helper: "_getTaggedPlaylistUri",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberLastAdEnd",
+			helper: "_normalizePlaybackContext",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_rememberLastAdEnd",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_awaitBackupProbeBeforeDeadline",
+			source: processorSource,
 		},
 	];
 	for (const { consumer, helper, source } of requiredInjectedPairs) {

@@ -269,6 +269,16 @@ describe("_checkPinnedBackupStall", () => {
 });
 
 describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
+	let previousGetPrimaryMediaElement: unknown;
+	let previousResolvePlayerMediaKey: unknown;
+	let previousLog: unknown;
+
+	beforeEach(() => {
+		previousGetPrimaryMediaElement = g._getPrimaryMediaElement;
+		previousResolvePlayerMediaKey = g._resolvePlayerMediaKey;
+		previousLog = g._log;
+	});
+
 	function makeCompetingVideo() {
 		const video = document.createElement("video");
 		Object.defineProperty(video, "paused", {
@@ -295,6 +305,9 @@ describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
 		state.suppressedMedia.clear();
 		state.activeMediaKey = null;
 		state.lastSuppressedCount = 0;
+		g._getPrimaryMediaElement = previousGetPrimaryMediaElement;
+		g._resolvePlayerMediaKey = previousResolvePlayerMediaKey;
+		g._log = previousLog;
 	});
 
 	it("counts and logs each competing element only once across repeated calls", () => {
@@ -832,6 +845,9 @@ describe("fatal enhanced-media recovery during ads", () => {
 			broadcast: g._broadcastWorkers,
 			getPlayerAndState: g._getPlayerAndState,
 			doPlayerTask: g._doPlayerTask,
+			getCodecHandoffCycleStartedAt: g._getCodecHandoffCycleStartedAt,
+			getCurrentAdBreakStartedAt: g._getCurrentAdBreakStartedAt,
+			isCodecHandoffCycleCurrent: g._isCodecHandoffCycleCurrent,
 		};
 		messages = [];
 		reloads = [];
@@ -862,7 +878,37 @@ describe("fatal enhanced-media recovery during ads", () => {
 			ActiveCodecHandoffMediaKey: null,
 			LastPlayerReloadAt: 0,
 			PlayerReloadDebounceMs: 1500,
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 100 },
+			},
 		};
+		g._getCodecHandoffCycleStartedAt = (handoffId: unknown) => {
+			if (typeof handoffId !== "string" || !handoffId) return 0;
+			const parts = handoffId.split(":");
+			return Math.max(0, Number(parts[parts.length - 4]) || 0);
+		};
+		g._getCurrentAdBreakStartedAt = (mediaKey: unknown) =>
+			Math.max(
+				0,
+				Number(
+					(
+						(g.__TTVAB_STATE__ as Record<string, unknown>)
+							.AdPodProgressByMediaKey as Record<
+							string,
+							{ cycleStartedAt?: number }
+						>
+					)?.[String(mediaKey)]?.cycleStartedAt,
+				) || 0,
+			);
+		g._isCodecHandoffCycleCurrent = (
+			mediaKey: unknown,
+			cycleStartedAt: unknown,
+		) =>
+			String(
+				(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey,
+			) === String(mediaKey) &&
+			(g._getCurrentAdBreakStartedAt as (key: unknown) => number)(mediaKey) ===
+				Math.max(0, Number(cycleStartedAt) || 0);
 		g._broadcastWorkers = (message: Record<string, unknown>) => {
 			messages.push(message);
 		};
@@ -887,6 +933,9 @@ describe("fatal enhanced-media recovery during ads", () => {
 		g._broadcastWorkers = saved.broadcast;
 		g._getPlayerAndState = saved.getPlayerAndState;
 		g._doPlayerTask = saved.doPlayerTask;
+		g._getCodecHandoffCycleStartedAt = saved.getCodecHandoffCycleStartedAt;
+		g._getCurrentAdBreakStartedAt = saved.getCurrentAdBreakStartedAt;
+		g._isCodecHandoffCycleCurrent = saved.isCodecHandoffCycleCurrent;
 	});
 
 	it("requests one worker-verified recovery for a fatal error at readyState zero", () => {
@@ -923,6 +972,7 @@ describe("fatal enhanced-media recovery during ads", () => {
 			accept()({
 				recoveryId: request.recoveryId,
 				verifiedAt: Number(request.requestedAt) + 1,
+				cycleStartedAt: request.cycleStartedAt,
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
 			}),
@@ -936,6 +986,7 @@ describe("fatal enhanced-media recovery during ads", () => {
 		const ready = {
 			recoveryId: request.recoveryId,
 			verifiedAt: Number(request.requestedAt) + 1,
+			cycleStartedAt: request.cycleStartedAt,
 			channel: "testchannel",
 			mediaKey: "live:testchannel",
 		};
@@ -963,6 +1014,7 @@ describe("fatal enhanced-media recovery during ads", () => {
 			accept()({
 				recoveryId: request.recoveryId,
 				verifiedAt: Number(request.requestedAt) + 1,
+				cycleStartedAt: request.cycleStartedAt,
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
 			}),
@@ -1304,6 +1356,9 @@ describe("_isPlaybackRecoveryContextCurrent (pip navigation)", () => {
 });
 
 describe("_doPlayerTask (pip reload policy)", () => {
+	const cycleStartedAt = 100;
+	const handoffId = (label: string) =>
+		`live:testchannel:${cycleStartedAt}:1000:1:${label}`;
 	const task = () =>
 		T<
 			(
@@ -1324,6 +1379,9 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		"_schedulePlaybackRecoveryTimeout",
 		"_broadcastWorkers",
 		"_isPlaybackRecoveryContextCurrent",
+		"_getCodecHandoffCycleStartedAt",
+		"_getCurrentAdBreakStartedAt",
+		"_isCodecHandoffCycleCurrent",
 		"__TTVAB_STATE__",
 	];
 	let saved: Record<string, unknown> = {};
@@ -1372,6 +1430,32 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			workerMessages.push(message);
 		};
 		g._isPlaybackRecoveryContextCurrent = () => true;
+		g._getCodecHandoffCycleStartedAt = (handoffId: unknown) => {
+			if (typeof handoffId !== "string" || !handoffId) return 0;
+			const parts = handoffId.split(":");
+			return Math.max(0, Number(parts[parts.length - 4]) || 0);
+		};
+		g._getCurrentAdBreakStartedAt = (mediaKey: unknown) =>
+			Math.max(
+				0,
+				Number(
+					(
+						(g.__TTVAB_STATE__ as Record<string, unknown>)
+							?.AdPodProgressByMediaKey as
+							| Record<string, { cycleStartedAt?: number }>
+							| undefined
+					)?.[String(mediaKey)]?.cycleStartedAt,
+				) || 0,
+			);
+		g._isCodecHandoffCycleCurrent = (
+			mediaKey: unknown,
+			cycleStartedAt: unknown,
+		) =>
+			String(
+				(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey,
+			) === String(mediaKey) &&
+			(g._getCurrentAdBreakStartedAt as (key: unknown) => number)(mediaKey) ===
+				Math.max(0, Number(cycleStartedAt) || 0);
 		g.__TTVAB_STATE__ = {
 			PageMediaType: "live",
 			PageChannel: "testchannel",
@@ -1379,8 +1463,11 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			PageVodID: null,
 			LastPlayerReloadAt: 0,
 			PlayerReloadDebounceMs: 1500,
-			CurrentAdMediaKey: null,
-			CurrentAdChannel: null,
+			CurrentAdMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 100 },
+			},
 		};
 		T<
 			(element: HTMLVideoElement, context?: Record<string, unknown>) => unknown
@@ -1414,10 +1501,12 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			"testchannel",
 			"live:testchannel",
 			[50, 180, 500, 1100],
+			{ cycleStartedAt: 100 },
 		]);
 	});
 
 	it("still reloads immediately under pip for manual, codec handoff, and worker recovery", () => {
+		const codecHandoffId = handoffId("pip");
 		task()(false, true, {
 			reason: "manual",
 			refreshAccessToken: true,
@@ -1428,7 +1517,10 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt = 0;
 		task()(false, true, {
 			reason: "codec-handoff",
-			handoffId: "live:testchannel:100:1",
+			handoffId: codecHandoffId,
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt,
 			refreshAccessToken: true,
 			newMediaPlayerInstance: true,
 		});
@@ -1437,13 +1529,13 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			key: "TriggeredPlayerReload",
 			value: {
 				reason: "codec-handoff",
-				handoffId: "live:testchannel:100:1",
+				handoffId: codecHandoffId,
 				mediaKey: "live:testchannel",
 			},
 		});
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
-		).toBe("live:testchannel:100:1");
+		).toBe(codecHandoffId);
 
 		(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt = 0;
 		task()(false, true, {
@@ -1461,7 +1553,10 @@ describe("_doPlayerTask (pip reload policy)", () => {
 
 		const result = task()(false, true, {
 			reason: "codec-handoff",
-			handoffId: "live:testchannel:200:1",
+			handoffId: handoffId("debounce"),
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt,
 			refreshAccessToken: true,
 			newMediaPlayerInstance: true,
 		});
@@ -1470,8 +1565,50 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(setSrcCalls).toHaveLength(1);
 	});
 
+	it.each([
+		["no active context", null, null, "live:testchannel"],
+		["channel-only context", null, "testchannel", "live:testchannel"],
+		[
+			"foreign media context",
+			"live:otherchannel",
+			"testchannel",
+			"live:testchannel",
+		],
+		["missing explicit media key", "live:testchannel", "testchannel", null],
+		[
+			"conflicting channel",
+			"live:testchannel",
+			"otherchannel",
+			"live:testchannel",
+		],
+	])("rejects a codec handoff with %s", (_label, currentAdMediaKey, currentAdChannel, mediaKey) => {
+		pipElement = null;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey =
+			currentAdMediaKey;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdChannel =
+			currentAdChannel;
+
+		const result = task()(false, true, {
+			reason: "codec-handoff",
+			handoffId: handoffId("invalid-context"),
+			channel: "testchannel",
+			mediaKey,
+			cycleStartedAt,
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+
+		expect(result).toBe(false);
+		expect(setSrcCalls).toEqual([]);
+		expect(workerMessages).toEqual([]);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
+		).toBeUndefined();
+	});
+
 	it("pre-arms workers with the exact codec handoff before setSrc", () => {
 		pipElement = null;
+		const codecHandoffId = handoffId("pre-arm");
 		const sequence: string[] = [];
 		g._broadcastWorkers = (message: unknown) => {
 			workerMessages.push(message);
@@ -1493,7 +1630,10 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(
 			task()(false, true, {
 				reason: "codec-handoff",
-				handoffId: "live:testchannel:210:1",
+				handoffId: codecHandoffId,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
 			}),
@@ -1507,19 +1647,24 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			key: "UpdateCodecHandoffContext",
 			targetMediaKey: "live:testchannel",
 			value: {
-				handoffId: "live:testchannel:210:1",
+				handoffId: codecHandoffId,
 				mediaKey: "live:testchannel",
 			},
 		});
 	});
 
-	it("coalesces a second same-media codec candidate onto the active handoff", () => {
+	it("coalesces distinct same-cycle worker handoff ids onto one player transaction", () => {
 		pipElement = null;
+		const firstHandoffId = handoffId("worker-a");
+		const secondHandoffId = handoffId("worker-b");
 
 		expect(
 			task()(false, true, {
 				reason: "codec-handoff",
-				handoffId: "live:testchannel:215:1:first",
+				handoffId: firstHandoffId,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
 			}),
@@ -1527,7 +1672,10 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(
 			task()(false, true, {
 				reason: "codec-handoff",
-				handoffId: "live:testchannel:215:1:second",
+				handoffId: secondHandoffId,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
 			}),
@@ -1539,29 +1687,109 @@ describe("_doPlayerTask (pip reload policy)", () => {
 				key: "UpdateCodecHandoffContext",
 				targetMediaKey: "live:testchannel",
 				value: expect.objectContaining({
-					handoffId: "live:testchannel:215:1:first",
+					handoffId: firstHandoffId,
 				}),
 			}),
 			expect.objectContaining({
 				key: "TriggeredPlayerReload",
 				targetMediaKey: "live:testchannel",
 				value: expect.objectContaining({
-					handoffId: "live:testchannel:215:1:first",
+					handoffId: firstHandoffId,
 				}),
 			}),
 		]);
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
-		).toBe("live:testchannel:215:1:first");
+		).toBe(firstHandoffId);
 	});
 
-	it("supersedes an active handoff when fatal media recovery requires a real retry", () => {
+	it("rejects cycle A after same-media cycle B starts and gives cycle B fresh ownership", () => {
 		pipElement = null;
+		const cycleA = 100;
+		const cycleB = 200;
+		const handoffA = `live:testchannel:${cycleA}:1000:1:cycle-a`;
+		const staleDistinctHandoffA = `live:testchannel:${cycleA}:1500:2:cycle-a-delayed`;
+		const handoffB = `live:testchannel:${cycleB}:2000:1:cycle-b`;
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const podProgress = state.AdPodProgressByMediaKey as Record<
+			string,
+			{ cycleStartedAt: number }
+		>;
 
 		expect(
 			task()(false, true, {
 				reason: "codec-handoff",
-				handoffId: "live:testchannel:220:1:first",
+				handoffId: handoffA,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: cycleA,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
+		expect(setSrcCalls).toHaveLength(1);
+		expect(state.ActiveCodecHandoffId).toBe(handoffA);
+
+		const messagesAfterCycleA = workerMessages.length;
+		podProgress["live:testchannel"].cycleStartedAt = cycleB;
+
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: staleDistinctHandoffA,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: cycleA,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(false);
+		expect(setSrcCalls).toHaveLength(1);
+		expect(workerMessages).toHaveLength(messagesAfterCycleA);
+
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: handoffB,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: cycleB,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
+		expect(setSrcCalls).toHaveLength(2);
+		expect(state.ActiveCodecHandoffId).toBe(handoffB);
+		expect(workerMessages.at(-2)).toMatchObject({
+			key: "UpdateCodecHandoffContext",
+			value: {
+				handoffId: handoffB,
+				mediaKey: "live:testchannel",
+				cycleStartedAt: cycleB,
+			},
+		});
+		expect(workerMessages.at(-1)).toMatchObject({
+			key: "TriggeredPlayerReload",
+			value: {
+				handoffId: handoffB,
+				mediaKey: "live:testchannel",
+				cycleStartedAt: cycleB,
+			},
+		});
+	});
+
+	it("supersedes an active handoff when fatal media recovery requires a real retry", () => {
+		pipElement = null;
+		const firstHandoffId = handoffId("first");
+		const fatalHandoffId = handoffId("fatal");
+
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: firstHandoffId,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
 			}),
@@ -1569,7 +1797,10 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(
 			task()(false, true, {
 				reason: "codec-handoff",
-				handoffId: "live:testchannel:220:2:fatal",
+				handoffId: fatalHandoffId,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
 				replaceCodecHandoff: true,
@@ -1580,17 +1811,18 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(workerMessages.at(-1)).toMatchObject({
 			key: "TriggeredPlayerReload",
 			value: {
-				handoffId: "live:testchannel:220:2:fatal",
+				handoffId: fatalHandoffId,
 				mediaKey: "live:testchannel",
 			},
 		});
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
-		).toBe("live:testchannel:220:2:fatal");
+		).toBe(fatalHandoffId);
 	});
 
 	it("rolls back main-thread codec ownership when setSrc throws", () => {
 		pipElement = null;
+		const codecHandoffId = handoffId("set-src-failure");
 		g._getPlayerAndState = () => ({
 			player: {
 				getHTMLVideoElement: () => null,
@@ -1607,7 +1839,10 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(() =>
 			task()(false, true, {
 				reason: "codec-handoff",
-				handoffId: "live:testchannel:225:1",
+				handoffId: codecHandoffId,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
 			}),
@@ -1616,19 +1851,19 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			expect.objectContaining({
 				key: "UpdateCodecHandoffContext",
 				value: expect.objectContaining({
-					handoffId: "live:testchannel:225:1",
+					handoffId: codecHandoffId,
 				}),
 			}),
 			expect.objectContaining({
 				key: "UpdateCodecHandoffContext",
 				value: expect.objectContaining({
-					clearHandoffId: "live:testchannel:225:1",
+					clearHandoffId: codecHandoffId,
 				}),
 			}),
 		]);
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
-		).toBeUndefined();
+		).toBe(null);
 	});
 
 	it("does not acknowledge a codec reload without its exact handoff id", () => {
@@ -1650,9 +1885,10 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		try {
 			const result = task()(false, true, {
 				reason: "codec-handoff",
-				handoffId: "live:testchannel:300:1",
+				handoffId: handoffId("stale-pip"),
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
+				cycleStartedAt,
 				refreshAccessToken: true,
 				newMediaPlayerInstance: true,
 			});
@@ -1675,9 +1911,158 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(setSrcCalls).toEqual([]);
 
 		pipElement = null;
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		state.LastAdEndedAt = Date.now();
+		state.LastAdEndedMediaKey = "live:testchannel";
+		state.LastAdEndedCycleStartedAt = 100;
 		pip.dispatchEvent(new Event("leavepictureinpicture"));
 
 		expect(setSrcCalls).toHaveLength(1);
+	});
+
+	it("drops a same-media cycle-one deferred pip reload and accepts cycle two", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		state.LastAdEndedAt = Date.now();
+		state.LastAdEndedMediaKey = "live:testchannel";
+		state.LastAdEndedCycleStartedAt = 100;
+		const cycleOnePip = pipElement as HTMLVideoElement;
+		task()(false, true, {
+			reason: "post-ad-native-restore",
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 100,
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		state.LastAdEndedAt = Date.now();
+		state.LastAdEndedMediaKey = "live:testchannel";
+		state.LastAdEndedCycleStartedAt = 200;
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 200 },
+		};
+		pipElement = null;
+		cycleOnePip.dispatchEvent(new Event("leavepictureinpicture"));
+		expect(setSrcCalls).toEqual([]);
+
+		const cycleTwoPip = document.createElement("video");
+		pipElement = cycleTwoPip;
+		T<
+			(element: HTMLVideoElement, context?: Record<string, unknown>) => unknown
+		>("_setActivePictureInPicturePlaybackContext")(cycleTwoPip, {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		task()(false, true, {
+			reason: "post-ad-native-restore",
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 200,
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		pipElement = null;
+		cycleTwoPip.dispatchEvent(new Event("leavepictureinpicture"));
+
+		expect(setSrcCalls).toHaveLength(1);
+		expect(workerMessages.at(-1)).toMatchObject({
+			key: "TriggeredPlayerReload",
+			value: {
+				reason: "post-ad-native-restore",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 200,
+			},
+		});
+	});
+
+	it("cycle-fences the delayed pause-play callback", async () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const play = vi.fn(() => true);
+		g._playPlaybackTarget = play;
+		g._schedulePlaybackRecoveryTimeout = saved._schedulePlaybackRecoveryTimeout;
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		state.LastAdEndedAt = Date.now();
+		state.LastAdEndedMediaKey = "live:testchannel";
+		state.LastAdEndedCycleStartedAt = 100;
+
+		try {
+			expect(
+				task()(true, false, {
+					reason: "post-ad-native-restore",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 100,
+				}),
+			).toBe(true);
+			state.LastAdEndedAt = Date.now();
+			state.LastAdEndedCycleStartedAt = 200;
+			await new Promise((resolve) => setTimeout(resolve, 70));
+			expect(play).not.toHaveBeenCalled();
+
+			expect(
+				task()(true, false, {
+					reason: "post-ad-native-restore",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 200,
+				}),
+			).toBe(true);
+			const pendingEntries = [
+				...(
+					g._PlaybackRecoveryTimeoutState as {
+						timeouts: Set<Record<string, unknown>>;
+					}
+				).timeouts,
+			];
+			expect(pendingEntries).toHaveLength(1);
+			expect(pendingEntries[0]).toMatchObject({
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 200,
+			});
+			await new Promise((resolve) => setTimeout(resolve, 70));
+			expect(play).toHaveBeenCalledTimes(1);
+		} finally {
+			T<() => void>("_clearPlaybackRecoveryTimeouts")();
+		}
+	});
+
+	it("always includes lifecycle ownership in non-codec reload acknowledgements", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		state.LastAdEndedAt = Date.now();
+		state.LastAdEndedMediaKey = "live:testchannel";
+		state.LastAdEndedCycleStartedAt = 200;
+
+		expect(
+			task()(false, true, {
+				reason: "post-ad-native-restore",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 200,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
+		expect(workerMessages.at(-1)).toMatchObject({
+			key: "TriggeredPlayerReload",
+			value: {
+				reason: "post-ad-native-restore",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 200,
+			},
+		});
 	});
 
 	it("skips the deferred reload when an ad cycle is active at pip exit", () => {
@@ -1721,6 +2106,79 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		pipElement = null;
 		pip.dispatchEvent(new Event("leavepictureinpicture"));
 		expect(setSrcCalls).toEqual([]);
+	});
+});
+
+describe("_scheduleResumeRetries lifecycle ownership", () => {
+	it("drops cycle-one retries after cycle two starts and runs matching cycle-two retries", async () => {
+		const schedule = T<
+			(
+				channel: string,
+				mediaKey: string,
+				delays: number[],
+				options: Record<string, unknown>,
+			) => void
+		>("_scheduleResumeRetries");
+		const previousResume = g._resumeActivePlayerIfPaused;
+		const previousRecoveryContext = g._isPlaybackRecoveryContextCurrent;
+		const previousState = g.__TTVAB_STATE__;
+		const resume = vi.fn(() => true);
+		g._resumeActivePlayerIfPaused = resume;
+		g._isPlaybackRecoveryContextCurrent = () => true;
+		g.__TTVAB_STATE__ = {
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 100 },
+			},
+		};
+
+		try {
+			schedule("testchannel", "live:testchannel", [5, 10], {
+				cycleStartedAt: 100,
+			});
+			(
+				(g.__TTVAB_STATE__ as Record<string, unknown>)
+					.AdPodProgressByMediaKey as Record<string, { cycleStartedAt: number }>
+			)["live:testchannel"].cycleStartedAt = 200;
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(resume).not.toHaveBeenCalled();
+
+			schedule("testchannel", "live:testchannel", [5, 10], {
+				cycleStartedAt: 200,
+			});
+			const pendingEntries = [
+				...(
+					g._PlaybackRecoveryTimeoutState as {
+						timeouts: Set<Record<string, unknown>>;
+					}
+				).timeouts,
+			];
+			expect(pendingEntries).toHaveLength(2);
+			expect(pendingEntries).toEqual([
+				expect.objectContaining({ cycleStartedAt: 200 }),
+				expect.objectContaining({ cycleStartedAt: 200 }),
+			]);
+			expect(
+				T<(mediaKey: string, cycleStartedAt: number) => boolean>(
+					"_isPlayerLifecycleCycleCurrent",
+				)("live:testchannel", 200),
+			).toBe(true);
+			expect(
+				T<(channel: string, mediaKey: string) => boolean>(
+					"_isPlaybackRecoveryContextCurrent",
+				)("testchannel", "live:testchannel"),
+			).toBe(true);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(resume).toHaveBeenCalledTimes(2);
+		} finally {
+			T<() => void>("_clearPlaybackRecoveryTimeouts")();
+			g._resumeActivePlayerIfPaused = previousResume;
+			g._isPlaybackRecoveryContextCurrent = previousRecoveryContext;
+			g.__TTVAB_STATE__ = previousState;
+		}
 	});
 });
 
