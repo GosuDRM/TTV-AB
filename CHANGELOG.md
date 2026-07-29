@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [13.2.6] - 2026-07-29
+
+- Restored normal 1440p and 2K selection outside ad breaks. Enhanced-quality HEVC and AV1 choices now remain in Twitch's original quality list until an actual ad cycle needs recovery, fixing the v13.2.5 regression that hid 1440p during normal playback ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
+- During an ad, the player now tries a freshly verified backup with the exact same codec first and uses a compatible AVC handoff only when that bounded search cannot recover, preventing incompatible media from reaching the retiring enhanced-quality player.
+- Stale, ad-marked, or codec-ambiguous backup media is no longer reused across ad cycles, and retiring requests have a hard recovery deadline so a late response cannot expose an ad or leave playback waiting indefinitely.
+
 ## [13.2.5] - 2026-07-28
 
 - Fixed the remaining error 4000 recovery failure on 1440p and 2K HEVC or AV1 streams. The player now waits for a freshly verified clean compatible backup before switching, so recovery cannot expose an ad or leave playback frozen ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
