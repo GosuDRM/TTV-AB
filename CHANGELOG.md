@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [13.2.7] - 2026-07-29
+
+- Fixed the error 4000 regression on enhanced-quality HEVC and AV1 streams that could occur when an AVC or rotated playlist arrived during an ad break. The retiring player now stays isolated until a codec-compatible replacement is ready ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
+- Kept clean backup playback advancing while the replacement search runs, including low-quality autoplay holds, so the stricter codec handoff cannot drain the buffer or freeze the stream.
+- Closed cross-worker timing windows at ad start and during ad-segment replacement so an incompatible empty segment or late response cannot reach the enhanced decoder. Existing ad detection and ad-end confirmation behavior is unchanged.
+- A real clean switch down to AVC is now confirmed by consecutive matching native playlists, so brief AVC probes cannot take ownership away from active enhanced-quality playback.
+
 ## [13.2.6] - 2026-07-29
 
 - Restored normal 1440p and 2K selection outside ad breaks. Enhanced-quality HEVC and AV1 choices now remain in Twitch's original quality list until an actual ad cycle needs recovery, fixing the v13.2.5 regression that hid 1440p during normal playback ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
