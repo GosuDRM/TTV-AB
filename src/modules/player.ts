@@ -69,12 +69,14 @@ const _PlaybackRecoveryTimeoutState = {
 		id: ReturnType<typeof setTimeout>;
 		channel: string | null;
 		mediaKey: string | null;
+		cycleStartedAt: number;
 	}>(),
 };
 const _PlayerPreferenceRestoreState = {
 	timeoutId: null as ReturnType<typeof setTimeout> | null,
 	channel: null as string | null,
 	mediaKey: null as string | null,
+	cycleStartedAt: 0,
 };
 const _PLAYBACK_INTENT_MONITOR_DELAY_MS = 500;
 const _PLAYBACK_INTENT_IDLE_SYNC_DELAY_MS = 1500;
@@ -117,6 +119,7 @@ const _FatalAdMediaRecoveryState = {
 	video: null as HTMLMediaElement | null,
 	mediaKey: null as string | null,
 	recoveryId: null as string | null,
+	cycleStartedAt: 0,
 	requestedAt: 0,
 	committed: false,
 };
@@ -133,6 +136,7 @@ function _resetFatalAdMediaRecoveryState(recoveryId = null) {
 	_FatalAdMediaRecoveryState.video = null;
 	_FatalAdMediaRecoveryState.mediaKey = null;
 	_FatalAdMediaRecoveryState.recoveryId = null;
+	_FatalAdMediaRecoveryState.cycleStartedAt = 0;
 	_FatalAdMediaRecoveryState.requestedAt = 0;
 	_FatalAdMediaRecoveryState.committed = false;
 	return true;
@@ -142,6 +146,7 @@ function _getFatalAdMediaErrorCode(video) {
 	return code >= 2 && code <= 4 ? code : 0;
 }
 function _createFatalAdMediaRecoveryId(mediaKey) {
+	const cycleStartedAt = _getCurrentAdBreakStartedAt(mediaKey);
 	let nonce = "";
 	try {
 		nonce = globalThis.crypto?.randomUUID?.() || "";
@@ -151,18 +156,20 @@ function _createFatalAdMediaRecoveryId(mediaKey) {
 			.toString(36)
 			.slice(2)}`;
 	}
-	return `${mediaKey}:${Date.now()}:fatal-media:${nonce}`;
+	return `${mediaKey}:${cycleStartedAt}:${Date.now()}:fatal-media:${nonce}`;
 }
 function _checkFatalAdMediaRecovery(player) {
 	const video = player?.getHTMLVideoElement?.() || null;
 	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
 	const adMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey);
 	const errorCode = _getFatalAdMediaErrorCode(video);
+	const cycleStartedAt = _getCurrentAdBreakStartedAt(pageMediaKey);
 	if (
 		!(video instanceof HTMLMediaElement) ||
 		video.ended ||
 		!pageMediaKey ||
 		adMediaKey !== pageMediaKey ||
+		cycleStartedAt <= 0 ||
 		!errorCode
 	) {
 		if (
@@ -179,6 +186,7 @@ function _checkFatalAdMediaRecovery(player) {
 	if (
 		_FatalAdMediaRecoveryState.video === video &&
 		_FatalAdMediaRecoveryState.mediaKey === pageMediaKey &&
+		_FatalAdMediaRecoveryState.cycleStartedAt === cycleStartedAt &&
 		_FatalAdMediaRecoveryState.recoveryId &&
 		(now - _FatalAdMediaRecoveryState.requestedAt < 30000 ||
 			_FatalAdMediaRecoveryState.committed)
@@ -187,9 +195,13 @@ function _checkFatalAdMediaRecovery(player) {
 	}
 
 	const recoveryId = _createFatalAdMediaRecoveryId(pageMediaKey);
+	if (_getCodecHandoffCycleStartedAt(recoveryId) !== cycleStartedAt) {
+		return false;
+	}
 	_FatalAdMediaRecoveryState.video = video;
 	_FatalAdMediaRecoveryState.mediaKey = pageMediaKey;
 	_FatalAdMediaRecoveryState.recoveryId = recoveryId;
+	_FatalAdMediaRecoveryState.cycleStartedAt = cycleStartedAt;
 	_FatalAdMediaRecoveryState.requestedAt = now;
 	_FatalAdMediaRecoveryState.committed = false;
 	_broadcastWorkers({
@@ -198,6 +210,7 @@ function _checkFatalAdMediaRecovery(player) {
 		value: {
 			recoveryId,
 			requestedAt: now,
+			cycleStartedAt,
 			channelName: __TTVAB_STATE__?.PageChannel || null,
 			mediaKey: pageMediaKey,
 		},
@@ -216,6 +229,7 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 	const mediaKey = _normalizeMediaKey(data?.mediaKey);
 	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
 	const adMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey);
+	const eventCycleStartedAt = Math.max(0, Number(data?.cycleStartedAt) || 0);
 	if (!recoveryId) return false;
 	if (_FatalAdMediaRecoveryState.recoveryId !== recoveryId) {
 		if (mediaKey && mediaKey === pageMediaKey && mediaKey === adMediaKey) {
@@ -240,6 +254,10 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 		mediaKey !== _FatalAdMediaRecoveryState.mediaKey ||
 		mediaKey !== pageMediaKey ||
 		mediaKey !== adMediaKey ||
+		eventCycleStartedAt <= 0 ||
+		eventCycleStartedAt !== _FatalAdMediaRecoveryState.cycleStartedAt ||
+		_getCodecHandoffCycleStartedAt(recoveryId) !== eventCycleStartedAt ||
+		!_isCodecHandoffCycleCurrent(mediaKey, eventCycleStartedAt) ||
 		video !== _FatalAdMediaRecoveryState.video ||
 		!_getFatalAdMediaErrorCode(video)
 	) {
@@ -266,6 +284,7 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 		const didReload = _doPlayerTask(false, true, {
 			reason: "codec-handoff",
 			handoffId: recoveryId,
+			cycleStartedAt: eventCycleStartedAt,
 			refreshAccessToken: true,
 			newMediaPlayerInstance: true,
 			replaceCodecHandoff: true,
@@ -834,6 +853,47 @@ function _isPlaybackRecoveryContextCurrent(channel = null, mediaKey = null) {
 	return true;
 }
 
+function _getPlayerLifecycleCycleStartedAt(mediaKey) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	if (!normalizedMediaKey) return 0;
+	const currentAdMediaKey = _normalizeMediaKey(
+		__TTVAB_STATE__?.CurrentAdMediaKey,
+	);
+	if (currentAdMediaKey) {
+		if (currentAdMediaKey !== normalizedMediaKey) return 0;
+		const info = __TTVAB_STATE__?.StreamInfos?.[normalizedMediaKey] || null;
+		const podCycleStartedAt = Math.max(
+			0,
+			Number(
+				__TTVAB_STATE__?.AdPodProgressByMediaKey?.[normalizedMediaKey]
+					?.cycleStartedAt,
+			) || 0,
+		);
+		const infoCycleStartedAt = Math.max(
+			0,
+			Number(info?.VisibleAdStartedAt) || 0,
+		);
+		return Math.max(podCycleStartedAt, infoCycleStartedAt);
+	}
+	if (
+		_normalizeMediaKey(__TTVAB_STATE__?.LastAdEndedMediaKey) ===
+			normalizedMediaKey &&
+		Date.now() - Math.max(0, Number(__TTVAB_STATE__?.LastAdEndedAt) || 0) <
+			30000
+	) {
+		return Math.max(0, Number(__TTVAB_STATE__?.LastAdEndedCycleStartedAt) || 0);
+	}
+	return 0;
+}
+
+function _isPlayerLifecycleCycleCurrent(mediaKey, cycleStartedAt) {
+	const expectedCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+	return Boolean(
+		expectedCycleStartedAt > 0 &&
+			_getPlayerLifecycleCycleStartedAt(mediaKey) === expectedCycleStartedAt,
+	);
+}
+
 function _clearPlaybackRecoveryTimeouts(preservedMediaKey = null) {
 	const safePreservedMediaKey = _normalizeMediaKey(preservedMediaKey);
 	for (const entry of _PlaybackRecoveryTimeoutState.timeouts) {
@@ -865,6 +925,7 @@ function _clearPendingPlayerPreferenceRestore() {
 	_PlayerPreferenceRestoreState.timeoutId = null;
 	_PlayerPreferenceRestoreState.channel = null;
 	_PlayerPreferenceRestoreState.mediaKey = null;
+	_PlayerPreferenceRestoreState.cycleStartedAt = 0;
 }
 
 function _schedulePlaybackRecoveryTimeout(
@@ -872,6 +933,7 @@ function _schedulePlaybackRecoveryTimeout(
 	delay = 0,
 	channel = null,
 	mediaKey = null,
+	cycleStartedAt = 0,
 ) {
 	if (typeof callback !== "function") return null;
 
@@ -879,12 +941,19 @@ function _schedulePlaybackRecoveryTimeout(
 		id: 0 as ReturnType<typeof setTimeout>,
 		channel: _normalizePlayerChannel(channel),
 		mediaKey: _resolvePlayerMediaKey(channel, mediaKey),
+		cycleStartedAt: Math.max(0, Number(cycleStartedAt) || 0),
 	};
 
 	entry.id = setTimeout(
 		() => {
 			_PlaybackRecoveryTimeoutState.timeouts.delete(entry);
 			if (!_isPlaybackRecoveryContextCurrent(entry.channel, entry.mediaKey)) {
+				return;
+			}
+			if (
+				entry.cycleStartedAt > 0 &&
+				!_isPlayerLifecycleCycleCurrent(entry.mediaKey, entry.cycleStartedAt)
+			) {
 				return;
 			}
 			try {
@@ -2676,7 +2745,10 @@ function _scheduleResumeRetries(
 	channel = null,
 	mediaKey = null,
 	delays = [120, 350, 900],
-	options: { requireAdResumeIntent?: boolean } = {},
+	options: {
+		requireAdResumeIntent?: boolean;
+		cycleStartedAt?: number | null;
+	} = {},
 ) {
 	if (!Array.isArray(delays) || delays.length === 0) return;
 
@@ -2695,6 +2767,7 @@ function _scheduleResumeRetries(
 			delay,
 			channel,
 			mediaKey,
+			Math.max(0, Number(options.cycleStartedAt) || 0),
 		);
 	}
 }
@@ -3181,6 +3254,7 @@ function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 		900,
 		safeChannel,
 		safeMediaKey,
+		_getPlayerLifecycleCycleStartedAt(safeMediaKey),
 	);
 
 	_log("Resuming player after ad", "info");
@@ -3198,9 +3272,17 @@ function _retryPostAdPauseResume(channel = null, mediaKey = null) {
 	}
 
 	__TTVAB_STATE__.LastAdRecoveryResumeAt = now;
-	const didRetry = _doPlayerTask(true, false, { reason: "ad-recovery" });
+	const cycleStartedAt = _getPlayerLifecycleCycleStartedAt(mediaKey);
+	const didRetry = _doPlayerTask(true, false, {
+		reason: "ad-recovery",
+		channel,
+		mediaKey,
+		cycleStartedAt,
+	});
 	if (didRetry) {
-		_scheduleResumeRetries(channel, mediaKey, [250, 700, 1400]);
+		_scheduleResumeRetries(channel, mediaKey, [250, 700, 1400], {
+			cycleStartedAt,
+		});
 	}
 	return Boolean(didRetry);
 }
@@ -3359,8 +3441,16 @@ function _handlePostAdGraceWatch(
 			"Post-ad stall detected. Nudging player with pause/play...",
 			"warning",
 		);
-		_doPlayerTask(true, false, { reason: "ad-recovery" });
-		_scheduleResumeRetries(channel, mediaKey, [250, 700, 1400]);
+		const cycleStartedAt = _getPlayerLifecycleCycleStartedAt(mediaKey);
+		_doPlayerTask(true, false, {
+			reason: "ad-recovery",
+			channel,
+			mediaKey,
+			cycleStartedAt,
+		});
+		_scheduleResumeRetries(channel, mediaKey, [250, 700, 1400], {
+			cycleStartedAt,
+		});
 		return true;
 	}
 
@@ -3672,6 +3762,7 @@ function _schedulePlayerMediaPreferenceRestores(
 	channel = null,
 	mediaKey = null,
 	delays = [120, 500, 1500, 3000],
+	cycleStartedAt = 0,
 ) {
 	if (!snapshot?.__mediaState) return false;
 
@@ -3686,6 +3777,7 @@ function _schedulePlayerMediaPreferenceRestores(
 			delay,
 			channel,
 			mediaKey,
+			cycleStartedAt,
 		);
 	}
 	return true;
@@ -3696,6 +3788,7 @@ function _schedulePlayerPreferenceRestore(
 	channel = null,
 	mediaKey = null,
 	delay = 3000,
+	cycleStartedAt = 0,
 ) {
 	if (!snapshot || typeof snapshot !== "object") {
 		return false;
@@ -3706,11 +3799,23 @@ function _schedulePlayerPreferenceRestore(
 	_clearPendingPlayerPreferenceRestore();
 	_PlayerPreferenceRestoreState.channel = safeChannel;
 	_PlayerPreferenceRestoreState.mediaKey = safeMediaKey;
+	_PlayerPreferenceRestoreState.cycleStartedAt = Math.max(
+		0,
+		Number(cycleStartedAt) || 0,
+	);
 	_PlayerPreferenceRestoreState.timeoutId = setTimeout(
 		() => {
 			const restoreChannel = _PlayerPreferenceRestoreState.channel;
 			const restoreMediaKey = _PlayerPreferenceRestoreState.mediaKey;
+			const restoreCycleStartedAt =
+				_PlayerPreferenceRestoreState.cycleStartedAt;
 			_clearPendingPlayerPreferenceRestore();
+			if (
+				restoreCycleStartedAt > 0 &&
+				!_isPlayerLifecycleCycleCurrent(restoreMediaKey, restoreCycleStartedAt)
+			) {
+				return;
+			}
 			_restorePlayerPreferenceSnapshot(snapshot, {
 				channel: restoreChannel,
 				mediaKey: restoreMediaKey,
@@ -3732,6 +3837,7 @@ function _registerPipDeferredReload(
 		replaceCodecHandoff?: boolean;
 		channel?: string | null;
 		mediaKey?: string | null;
+		cycleStartedAt?: number | null;
 	} = {},
 ) {
 	const pipElement = document.pictureInPictureElement;
@@ -3768,6 +3874,16 @@ function _registerPipDeferredReload(
 		if (__TTVAB_STATE__.CurrentAdMediaKey || __TTVAB_STATE__.CurrentAdChannel) {
 			return;
 		}
+		const deferredCycleStartedAt = Math.max(
+			0,
+			Number(entry.options.cycleStartedAt) || 0,
+		);
+		if (
+			deferredCycleStartedAt > 0 &&
+			!_isPlayerLifecycleCycleCurrent(entry.mediaKey, deferredCycleStartedAt)
+		) {
+			return;
+		}
 		_log("Running player reload deferred during PiP", "info");
 		_doPlayerTask(false, true, entry.options);
 	};
@@ -3789,14 +3905,15 @@ function _doPlayerTask(
 		replaceCodecHandoff?: boolean;
 		channel?: string | null;
 		mediaKey?: string | null;
+		cycleStartedAt?: number | null;
 	} = {},
 ) {
+	const requestedChannel = _normalizePlayerChannel(options.channel);
+	const requestedMediaKey = _normalizeMediaKey(options.mediaKey);
 	const taskChannel =
-		_normalizePlayerChannel(options.channel) ||
-		_normalizePlayerChannel(__TTVAB_STATE__.PageChannel);
+		requestedChannel || _normalizePlayerChannel(__TTVAB_STATE__.PageChannel);
 	const taskMediaKey =
-		_normalizeMediaKey(options.mediaKey) ||
-		_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
+		requestedMediaKey || _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
 	const pipContext = _getActivePictureInPicturePlaybackContext();
 	const isPipTask =
 		pipContext !== null &&
@@ -3825,6 +3942,41 @@ function _doPlayerTask(
 			? options.handoffId
 			: null;
 	if (reason === "codec-handoff" && !handoffId) return false;
+	const handoffIdCycleStartedAt = handoffId
+		? _getCodecHandoffCycleStartedAt(handoffId)
+		: 0;
+	const requestedCycleStartedAt = Math.max(
+		0,
+		Number(options.cycleStartedAt) ||
+			(reason === "ad-recovery" || reason === "post-ad-native-restore"
+				? _getPlayerLifecycleCycleStartedAt(taskMediaKey)
+				: 0),
+	);
+	if (reason === "codec-handoff") {
+		const currentAdChannel = _normalizePlayerChannel(
+			__TTVAB_STATE__?.CurrentAdChannel,
+		);
+		const currentAdMediaKey = _normalizeMediaKey(
+			__TTVAB_STATE__?.CurrentAdMediaKey,
+		);
+		const hasExactAdContext = Boolean(
+			requestedMediaKey &&
+				currentAdMediaKey === requestedMediaKey &&
+				requestedCycleStartedAt > 0 &&
+				handoffIdCycleStartedAt === requestedCycleStartedAt &&
+				_isCodecHandoffCycleCurrent(
+					requestedMediaKey,
+					requestedCycleStartedAt,
+				) &&
+				(!requestedChannel ||
+					!currentAdChannel ||
+					requestedChannel === currentAdChannel),
+		);
+		if (!hasExactAdContext) {
+			_log("Suppressing codec handoff without an active ad context", "warning");
+			return false;
+		}
+	}
 	const activeCodecHandoffId =
 		typeof __TTVAB_STATE__.ActiveCodecHandoffId === "string" &&
 		__TTVAB_STATE__.ActiveCodecHandoffId
@@ -3833,6 +3985,8 @@ function _doPlayerTask(
 	const activeCodecHandoffMatches = Boolean(
 		handoffId &&
 			activeCodecHandoffId &&
+			_getCodecHandoffCycleStartedAt(activeCodecHandoffId) ===
+				requestedCycleStartedAt &&
 			_matchesPlaybackTargetContext(
 				__TTVAB_STATE__.ActiveCodecHandoffChannel,
 				__TTVAB_STATE__.ActiveCodecHandoffMediaKey,
@@ -3848,6 +4002,7 @@ function _doPlayerTask(
 			mediaKey: taskMediaKey,
 			reason,
 			handoffId: activeCodecHandoffId,
+			cycleStartedAt: requestedCycleStartedAt,
 		};
 		_broadcastWorkers([
 			{
@@ -3886,11 +4041,21 @@ function _doPlayerTask(
 				_log(`Forcing real reload despite PiP (${reason})`, "info");
 			} else {
 				if (needsRealReload && reason !== "codec-handoff") {
-					_registerPipDeferredReload(options);
+					_registerPipDeferredReload({
+						...options,
+						channel: taskChannel,
+						mediaKey: taskMediaKey,
+						cycleStartedAt: requestedCycleStartedAt,
+					});
 				}
 				if (_hasUserPauseIntent(taskChannel, taskMediaKey)) return false;
 				_pausePlaybackTarget(pipContext.element);
-				_scheduleResumeRetries(taskChannel, taskMediaKey, [50, 180, 500, 1100]);
+				_scheduleResumeRetries(
+					taskChannel,
+					taskMediaKey,
+					[50, 180, 500, 1100],
+					{ cycleStartedAt: requestedCycleStartedAt },
+				);
 				_log(
 					needsRealReload
 						? "Downgraded reload to pause/play to preserve PiP; real reload deferred to PiP exit"
@@ -3917,18 +4082,26 @@ function _doPlayerTask(
 		if (isPipTask && pipContext) {
 			if (pipContext.element.paused || pipContext.element.ended) return false;
 			_pausePlaybackTarget(pipContext.element);
-			_scheduleResumeRetries(taskChannel, taskMediaKey, [50, 180, 500]);
+			_scheduleResumeRetries(taskChannel, taskMediaKey, [50, 180, 500], {
+				cycleStartedAt: requestedCycleStartedAt,
+			});
 			return true;
 		}
 		if (_isPlayerPaused(player, playerCore)) {
 			return false;
 		}
 		_pausePlaybackTarget(player);
-		setTimeout(() => {
-			const { player: freshPlayer } = _getPlayerAndState();
-			const resumeTarget = freshPlayer || player;
-			_playPlaybackTarget(resumeTarget, taskChannel, taskMediaKey);
-		}, 50);
+		_schedulePlaybackRecoveryTimeout(
+			() => {
+				const { player: freshPlayer } = _getPlayerAndState();
+				const resumeTarget = freshPlayer || player;
+				_playPlaybackTarget(resumeTarget, taskChannel, taskMediaKey);
+			},
+			50,
+			taskChannel,
+			taskMediaKey,
+			requestedCycleStartedAt,
+		);
 		return true;
 	}
 
@@ -4021,6 +4194,7 @@ function _doPlayerTask(
 					handoffId,
 					channelName: taskChannel,
 					mediaKey: taskMediaKey,
+					cycleStartedAt: requestedCycleStartedAt,
 				},
 			});
 		}
@@ -4040,11 +4214,26 @@ function _doPlayerTask(
 						taskMediaKey,
 					)
 				) {
-					__TTVAB_STATE__.ActiveCodecHandoffId = previousCodecHandoff.id;
-					__TTVAB_STATE__.ActiveCodecHandoffChannel =
-						previousCodecHandoff.channel;
-					__TTVAB_STATE__.ActiveCodecHandoffMediaKey =
-						previousCodecHandoff.mediaKey;
+					const previousCycleStartedAt = _getCodecHandoffCycleStartedAt(
+						previousCodecHandoff.id,
+					);
+					const previousHandoffIsCurrent = Boolean(
+						previousCodecHandoff.id &&
+							previousCodecHandoff.mediaKey &&
+							_isCodecHandoffCycleCurrent(
+								previousCodecHandoff.mediaKey,
+								previousCycleStartedAt,
+							),
+					);
+					__TTVAB_STATE__.ActiveCodecHandoffId = previousHandoffIsCurrent
+						? previousCodecHandoff.id
+						: null;
+					__TTVAB_STATE__.ActiveCodecHandoffChannel = previousHandoffIsCurrent
+						? previousCodecHandoff.channel
+						: null;
+					__TTVAB_STATE__.ActiveCodecHandoffMediaKey = previousHandoffIsCurrent
+						? previousCodecHandoff.mediaKey
+						: null;
 				}
 				_broadcastWorkers({
 					key: "UpdateCodecHandoffContext",
@@ -4053,11 +4242,20 @@ function _doPlayerTask(
 						clearHandoffId: handoffId,
 						channelName: taskChannel,
 						mediaKey: taskMediaKey,
+						cycleStartedAt: requestedCycleStartedAt,
 					},
 				});
+				const previousCycleStartedAt = _getCodecHandoffCycleStartedAt(
+					previousCodecHandoff.id,
+				);
 				if (
 					options.replaceCodecHandoff === true &&
 					previousCodecHandoff.id &&
+					previousCodecHandoff.mediaKey &&
+					_isCodecHandoffCycleCurrent(
+						previousCodecHandoff.mediaKey,
+						previousCycleStartedAt,
+					) &&
 					_matchesPlaybackTargetContext(
 						previousCodecHandoff.channel,
 						previousCodecHandoff.mediaKey,
@@ -4072,6 +4270,7 @@ function _doPlayerTask(
 							handoffId: previousCodecHandoff.id,
 							channelName: previousCodecHandoff.channel,
 							mediaKey: previousCodecHandoff.mediaKey,
+							cycleStartedAt: previousCycleStartedAt,
 						},
 					});
 				}
@@ -4088,6 +4287,7 @@ function _doPlayerTask(
 				mediaKey: taskMediaKey,
 				reason,
 				handoffId,
+				cycleStartedAt: requestedCycleStartedAt,
 			},
 		});
 
@@ -4100,6 +4300,7 @@ function _doPlayerTask(
 			__TTVAB_STATE__.PageChannel,
 			__TTVAB_STATE__.PageMediaKey,
 			[180, 500, 1100],
+			{ cycleStartedAt: requestedCycleStartedAt },
 		);
 
 		if (vodResumePosition !== null) {
@@ -4126,6 +4327,7 @@ function _doPlayerTask(
 					restoreDelay,
 					__TTVAB_STATE__.PageChannel,
 					__TTVAB_STATE__.PageMediaKey,
+					requestedCycleStartedAt,
 				);
 			}
 		}
@@ -4169,6 +4371,7 @@ function _doPlayerTask(
 				1500,
 				__TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.PageMediaKey,
+				requestedCycleStartedAt,
 			);
 		}
 
@@ -4177,12 +4380,15 @@ function _doPlayerTask(
 				preferenceSnapshot,
 				__TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.PageMediaKey,
+				undefined,
+				requestedCycleStartedAt,
 			);
 			_schedulePlayerPreferenceRestore(
 				preferenceSnapshot,
 				__TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.PageMediaKey,
 				3000,
+				requestedCycleStartedAt,
 			);
 		}
 

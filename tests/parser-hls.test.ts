@@ -224,6 +224,69 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(fn("https://www.twitch.tv/normal-segment.mp4")).toBe(false);
 	});
 
+	it("never replays a cached media snapshot after stripping every ad segment", () => {
+		const adPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-MEDIA-SEQUENCE:40",
+			"#EXT-X-DATERANGE:",
+			'#EXT-X-DATERANGE-ID="stitched-ad-1"',
+			"#EXTINF:2.0,",
+			"https://edge.example/stitched-ad-1.ts",
+			"",
+		].join("\n");
+		const cachedBackup = [
+			"#EXTM3U",
+			"#EXT-X-MEDIA-SEQUENCE:10",
+			"#EXTINF:2.0,live",
+			"https://edge.example/old-clean-backup.ts",
+			"",
+		].join("\n");
+		const cachedNative = [
+			"#EXTM3U",
+			"#EXT-X-MEDIA-SEQUENCE:20",
+			"#EXTINF:2.0,live",
+			"https://edge.example/old-clean-native.ts",
+			"",
+		].join("\n");
+		const info = makeInfo({
+			LastCleanBackupM3U8: cachedBackup,
+			LastCleanBackupAt: Date.now(),
+			LastCleanNativeM3U8: cachedNative,
+			LastCleanNativePlaylistAt: Date.now(),
+		});
+
+		const result = fn()(adPlaylist, true, info, false);
+
+		expect(result).not.toContain("old-clean-backup.ts");
+		expect(result).not.toContain("old-clean-native.ts");
+		expect(result).toContain(
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+		);
+		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:41");
+	});
+
+	it("fails closed on explicit ad metadata even when neutral live URLs were requested to be preserved", () => {
+		const playlist = [
+			"#EXTM3U",
+			"#EXT-X-MEDIA-SEQUENCE:70",
+			"#EXT-X-CUE-OUT:DURATION=30",
+			"#EXTINF:2.0,live",
+			"https://edge.example/segment-70.ts",
+			"#EXTINF:2.0,live",
+			"https://edge.example/segment-71.ts",
+			"",
+		].join("\n");
+
+		const result = fn()(playlist, false, makeInfo(), true, true);
+
+		expect(result).not.toContain("segment-70.ts");
+		expect(result).not.toContain("segment-71.ts");
+		expect(result).toContain(
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+		);
+		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:71");
+	});
+
 	it("still removes explicit known ad segments when auto-force stripping is skipped", () => {
 		const st = getState();
 		const originalCache = st.AdSegmentCache;

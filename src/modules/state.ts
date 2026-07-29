@@ -506,6 +506,7 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+		__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
 		__TTVAB_STATE__.LastPlayerReloadAt = 0;
 		__TTVAB_STATE__.ShouldResumeAfterAd = false;
 		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
@@ -516,6 +517,7 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.LastAdEndedAt = 0;
 		__TTVAB_STATE__.LastAdEndedChannel = null;
 		__TTVAB_STATE__.LastAdEndedMediaKey = null;
+		__TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
 		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 
 		if (previousMediaKey && previousMediaKey !== preservedMediaKey) {
@@ -621,6 +623,7 @@ function _releasePlaybackContext(context) {
 		__TTVAB_STATE__.LastAdEndedAt = 0;
 		__TTVAB_STATE__.LastAdEndedChannel = null;
 		__TTVAB_STATE__.LastAdEndedMediaKey = null;
+		__TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
 	}
 	if (
 		_normalizeMediaKey(__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey) ===
@@ -630,6 +633,7 @@ function _releasePlaybackContext(context) {
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
 		__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+		__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
 	}
 	if (
 		_normalizeMediaKey(__TTVAB_STATE__.ShouldResumeAfterAdMediaKey) ===
@@ -669,6 +673,36 @@ function _syncPagePlaybackContext(options = {}) {
 	);
 }
 
+function _invalidateAdCycleAsyncWork(info) {
+	if (!info) return false;
+	info.BackupSearchEpoch = Math.max(0, Number(info.BackupSearchEpoch) || 0) + 1;
+	info._BackupSearchPromises?.clear?.();
+	info._BackupSearchPromise = null;
+	info._BackupSearchKey = null;
+	info._BackupSearchStartedAt = 0;
+	info._BackupSearchStartToken = null;
+	info._LastBackupSearchCompletedAt = 0;
+	info._BackupProbation = null;
+	info.BackupPlaylistMetadata?.clear?.();
+	info.LastCleanBackupM3U8 = null;
+	info.LastCleanBackupAt = 0;
+	info.NativeRecoveryProbeEpoch =
+		Math.max(0, Number(info.NativeRecoveryProbeEpoch) || 0) + 1;
+	info._NativeRecoveryProbeInFlight = false;
+	info._NativeRecoveryProbeToken = null;
+	info.LastNativeRecoveryProbeAt = 0;
+	info.LastNativeRecoveryReadyPlayerType = null;
+	info.NativeRecoveryCleanCount = 0;
+	info.ConsecutiveFailedNativeProbes = 0;
+	info._FatalMediaRecoveryRequestId = null;
+	info.RequestedAds?.clear?.();
+	if (info._AdRequestController) {
+		info._AdRequestController.abort?.();
+		info._AdRequestController = null;
+	}
+	return true;
+}
+
 function _mergeAdPodProgress(value) {
 	const context = _normalizePlaybackContext(value);
 	const mediaKey = context.MediaKey;
@@ -688,8 +722,6 @@ function _mergeAdPodProgress(value) {
 		0,
 		Number(current?.cycleStartedAt) || 0,
 	);
-	const isActiveMediaContext =
-		_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) === mediaKey;
 	if (
 		current &&
 		incomingCycleStartedAt > 0 &&
@@ -702,8 +734,7 @@ function _mergeAdPodProgress(value) {
 	}
 	const shouldReplace =
 		!current ||
-		(!isActiveMediaContext &&
-			incomingCycleStartedAt > 0 &&
+		(incomingCycleStartedAt > 0 &&
 			incomingCycleStartedAt > currentCycleStartedAt);
 	const adIds = new Set(
 		shouldReplace ? [] : Array.isArray(current?.adIds) ? current.adIds : [],
@@ -738,6 +769,14 @@ function _applyAdPodProgressToInfo(info, value) {
 		mediaKey: info.MediaKey,
 	});
 	if (!entry) return null;
+	const previousCycleStartedAt = Math.max(
+		0,
+		Number(info.VisibleAdStartedAt) || 0,
+	);
+	const nextCycleStartedAt = Math.max(0, Number(entry.cycleStartedAt) || 0);
+	if (nextCycleStartedAt > 0 && nextCycleStartedAt !== previousCycleStartedAt) {
+		_invalidateAdCycleAsyncWork(info);
+	}
 	if (!(info.ObservedAdPodIds instanceof Set)) {
 		info.ObservedAdPodIds = new Set();
 	}
@@ -748,8 +787,8 @@ function _applyAdPodProgressToInfo(info, value) {
 		Math.max(0, Number(info.ExpectedAdPodLength) || 0),
 		Math.max(0, Number(entry.expectedPodLength) || 0),
 	);
-	if (Math.max(0, Number(entry.cycleStartedAt) || 0) > 0) {
-		info.VisibleAdStartedAt = entry.cycleStartedAt;
+	if (nextCycleStartedAt > 0) {
+		info.VisibleAdStartedAt = nextCycleStartedAt;
 	}
 	return entry;
 }
@@ -772,6 +811,9 @@ function _clearAdPodProgress(mediaKey) {
 	}>;
 	for (const info of streamInfos) {
 		if (_normalizeMediaKey(info?.MediaKey) !== normalizedMediaKey) continue;
+		if (Math.max(0, Number(info.VisibleAdStartedAt) || 0) > 0) {
+			_invalidateAdCycleAsyncWork(info);
+		}
 		info.ObservedAdPodIds?.clear?.();
 		info.ExpectedAdPodLength = 0;
 		info.VisibleAdStartedAt = 0;
@@ -819,11 +861,13 @@ function _declareState(scope) {
 		PendingTriggeredPlayerReloadChannel: null,
 		PendingTriggeredPlayerReloadMediaKey: null,
 		PendingTriggeredPlayerReloadAt: 0,
+		PendingTriggeredPlayerReloadCycleStartedAt: 0,
 		LastPlayerReloadAt: 0,
 		LastAdDetectedAt: 0,
 		LastAdEndedAt: 0,
 		LastAdEndedChannel: null,
 		LastAdEndedMediaKey: null,
+		LastAdEndedCycleStartedAt: 0,
 		LastAdRecoveryReloadAt: 0,
 		LastAdRecoveryResumeAt: 0,
 		CurrentAdChannel: null,
@@ -851,6 +895,7 @@ function _declareState(scope) {
 		IsAdStrippingEnabled: true,
 		IsBufferFixEnabled: _C.BUFFERING_FIX,
 		AdSegmentCache: new Map(),
+		SegmentCodecOwners: new Map(),
 		PlayerBufferingDelay: 600,
 		PlayerBufferingSameStateCount: 5,
 		PlayerBufferingDangerZone: 1,
