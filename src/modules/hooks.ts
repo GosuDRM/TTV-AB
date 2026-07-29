@@ -391,6 +391,31 @@ function _hookWorkerFetch() {
 				typeof _isEmptyAdHoldSegmentUrl === "function" &&
 				_isEmptyAdHoldSegmentUrl(url)
 			) {
+				let emptyHoldMediaKey = null;
+				try {
+					emptyHoldMediaKey = _normalizeMediaKey(
+						new URL(url).searchParams.get("media"),
+					);
+				} catch {}
+				const emptyHoldInfo =
+					(emptyHoldMediaKey &&
+						__TTVAB_STATE__.StreamInfos?.[emptyHoldMediaKey]) ||
+					null;
+				const emptyHoldDecoderFamily = _getVideoCodecFamily(
+					emptyHoldInfo?.EnhancedDecoderCodec ||
+						emptyHoldInfo?.EnhancedDecoderCodecFamily,
+				);
+				if (
+					emptyHoldDecoderFamily === "hevc" ||
+					emptyHoldDecoderFamily === "av1"
+				) {
+					const emptyHoldRequestSignal =
+						opts?.signal ||
+						(typeof Request !== "undefined" && resource instanceof Request
+							? resource.signal
+							: null);
+					throw _createCodecHandoffAbortError(emptyHoldRequestSignal);
+				}
 				return await realFetch(_EMPTY_SEGMENT_URL);
 			}
 			if (
@@ -402,7 +427,19 @@ function _hookWorkerFetch() {
 				const segmentOwner = __TTVAB_STATE__.SegmentCodecOwners?.get?.(
 					_getExactPlaylistUrlKey(url),
 				);
-				if (segmentOwner?.codecFamily === "avc") {
+				const segmentMediaKey = _normalizeMediaKey(segmentOwner?.mediaKey);
+				const segmentInfo =
+					(segmentMediaKey && __TTVAB_STATE__.StreamInfos?.[segmentMediaKey]) ||
+					null;
+				const segmentDecoderFamily = _getVideoCodecFamily(
+					segmentInfo?.EnhancedDecoderCodec ||
+						segmentInfo?.EnhancedDecoderCodecFamily,
+				);
+				if (
+					segmentOwner?.codecFamily === "avc" &&
+					segmentDecoderFamily !== "hevc" &&
+					segmentDecoderFamily !== "av1"
+				) {
 					return await realFetch(_EMPTY_SEGMENT_URL);
 				}
 				const segmentRequestSignal =
@@ -506,10 +543,114 @@ function _hookWorkerFetch() {
 			}
 
 			if (/\.m3u8(?:$|\?)/.test(url)) {
+				const requestStartInfo = _getStreamInfoForPlaylist(url);
+				const requestStartMediaKey = _normalizeMediaKey(
+					requestStartInfo?.MediaKey,
+				);
+				const requestStartDecoderCodec =
+					requestStartInfo?.EnhancedDecoderCodec ||
+					requestStartInfo?.EnhancedDecoderCodecFamily;
+				const requestStartDecoderCodecFamily = _getVideoCodecFamily(
+					requestStartDecoderCodec,
+				);
+				const requestStartDecoderCodecIdentity = _getVideoCodecIdentity(
+					requestStartDecoderCodec,
+				);
+				const requestStartCodecs = _getDirectPlaybackResolutionForUrl(
+					requestStartInfo,
+					url,
+				)?.Codecs;
+				const requestStartCodecFamily =
+					_getVideoCodecFamily(requestStartCodecs);
+				const requestStartCodecIdentity =
+					_getVideoCodecIdentity(requestStartCodecs);
+				const requestStartCodecMatchesDecoder = requestStartDecoderCodecIdentity
+					? requestStartCodecIdentity === requestStartDecoderCodecIdentity
+					: Boolean(
+							requestStartDecoderCodecFamily &&
+								requestStartCodecFamily === requestStartDecoderCodecFamily,
+						);
+				const requestStartMayUseCachedAdSegments = Boolean(
+					requestStartInfo &&
+						requestStartMediaKey &&
+						_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+							requestStartMediaKey,
+				);
+				const requestStartCycleStartedAt = requestStartMayUseCachedAdSegments
+					? Math.max(
+							0,
+							Number(requestStartInfo?.VisibleAdStartedAt) || 0,
+							Number(
+								__TTVAB_STATE__.AdPodProgressByMediaKey?.[requestStartMediaKey]
+									?.cycleStartedAt,
+							) || 0,
+						)
+					: 0;
+				const requestStartContext = {
+					mediaKey: requestStartMediaKey,
+					backupSearchEpoch: Math.max(
+						0,
+						Number(requestStartInfo?.BackupSearchEpoch) || 0,
+					),
+					cycleStartedAt: requestStartCycleStartedAt,
+					enhancedDecoderCodec: requestStartDecoderCodec || null,
+					includeCachedAdSegments: requestStartMayUseCachedAdSegments,
+				};
+				const requestStartHasEnhancedDecoderOwner = Boolean(
+					requestStartDecoderCodecFamily === "hevc" ||
+						requestStartDecoderCodecFamily === "av1",
+				);
 				const response = await realFetch.apply(this, getFetchArgs(url));
 				if (response.status === 200) {
 					const text = await response.text();
+					const responseInfo =
+						requestStartInfo || _getStreamInfoForPlaylist(url);
+					const responseMediaKey = _normalizeMediaKey(responseInfo?.MediaKey);
+					const responseHasExactActiveAdContext = Boolean(
+						responseInfo &&
+							responseMediaKey &&
+							_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+								responseMediaKey,
+					);
+					const responseDecoderCodec =
+						responseInfo?.EnhancedDecoderCodec ||
+						responseInfo?.EnhancedDecoderCodecFamily;
+					const responseDecoderCodecFamily =
+						_getVideoCodecFamily(responseDecoderCodec);
+					const responseDecoderCodecIdentity =
+						_getVideoCodecIdentity(responseDecoderCodec);
+					const responseHasEnhancedDecoderOwner = Boolean(
+						responseDecoderCodecFamily === "hevc" ||
+							responseDecoderCodecFamily === "av1",
+					);
+					const responseCodecMatchesDecoder = responseDecoderCodecIdentity
+						? requestStartCodecIdentity === responseDecoderCodecIdentity
+						: Boolean(
+								responseDecoderCodecFamily &&
+									requestStartCodecFamily === responseDecoderCodecFamily,
+							);
+					const responseOwnerActivatedDuringRequest = Boolean(
+						!requestStartHasEnhancedDecoderOwner &&
+							responseHasEnhancedDecoderOwner,
+					);
+					const responseActivatedCodecIsolation = Boolean(
+						responseHasExactActiveAdContext &&
+							(!requestStartMayUseCachedAdSegments ||
+								responseOwnerActivatedDuringRequest) &&
+							((requestStartHasEnhancedDecoderOwner &&
+								!requestStartCodecMatchesDecoder) ||
+								(responseHasEnhancedDecoderOwner &&
+									!responseCodecMatchesDecoder)),
+					);
 					try {
+						if (responseActivatedCodecIsolation) {
+							const activatedRequestSignal =
+								opts?.signal ||
+								(typeof Request !== "undefined" && resource instanceof Request
+									? resource.signal
+									: null);
+							throw _createCodecHandoffAbortError(activatedRequestSignal);
+						}
 						return new Response(
 							await _processM3U8(
 								url,
@@ -519,6 +660,7 @@ function _hookWorkerFetch() {
 									(typeof Request !== "undefined" && resource instanceof Request
 										? resource.signal
 										: null),
+								requestStartContext,
 							),
 							responseInit(response),
 						);
@@ -532,13 +674,15 @@ function _hookWorkerFetch() {
 							}`,
 							"error",
 						);
-						const failedInfo = _getStreamInfoForPlaylist(url);
+						const failedInfo =
+							requestStartInfo || _getStreamInfoForPlaylist(url);
+						const failedMediaKey = _normalizeMediaKey(failedInfo?.MediaKey);
 						const mayUseCachedAdSegments = Boolean(
-							failedInfo &&
-								_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
-									_normalizeMediaKey(failedInfo.MediaKey) &&
-								(failedInfo.IsShowingAd === true ||
-									failedInfo.IsHoldingBackupAfterAd === true),
+							requestStartMayUseCachedAdSegments ||
+								(failedInfo &&
+									failedMediaKey &&
+									_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+										failedMediaKey),
 						);
 						const requestWasAdMarked =
 							_hasPlaylistAdMarkers(text) ||
@@ -546,13 +690,49 @@ function _hookWorkerFetch() {
 							_playlistHasKnownAdSegments(text, {
 								includeCached: mayUseCachedAdSegments,
 							});
+						const failedDecoderCodec =
+							failedInfo?.EnhancedDecoderCodec ||
+							failedInfo?.EnhancedDecoderCodecFamily;
+						const failedDecoderCodecFamily =
+							_getVideoCodecFamily(failedDecoderCodec);
+						const failedDecoderCodecIdentity =
+							_getVideoCodecIdentity(failedDecoderCodec);
+						const failedHasEnhancedDecoderOwner = Boolean(
+							failedDecoderCodecFamily === "hevc" ||
+								failedDecoderCodecFamily === "av1",
+						);
+						const failedCodecMatchesDecoder = failedDecoderCodecIdentity
+							? requestStartCodecIdentity === failedDecoderCodecIdentity
+							: Boolean(
+									failedDecoderCodecFamily &&
+										requestStartCodecFamily === failedDecoderCodecFamily,
+								);
+						const failedNeedsCodecIsolation = Boolean(
+							mayUseCachedAdSegments &&
+								((requestStartHasEnhancedDecoderOwner &&
+									!requestStartCodecMatchesDecoder) ||
+									(failedHasEnhancedDecoderOwner &&
+										!failedCodecMatchesDecoder)),
+						);
 						if (!requestWasAdMarked) {
+							if (failedNeedsCodecIsolation) {
+								const failedRequestSignal =
+									opts?.signal ||
+									(typeof Request !== "undefined" && resource instanceof Request
+										? resource.signal
+										: null);
+								throw _createCodecHandoffAbortError(failedRequestSignal);
+							}
 							return new Response(text, responseInit(response));
 						}
 						const failedRequestIsEnhanced = Boolean(
 							_isEnhancedCodecString(
 								_getDirectPlaybackResolutionForUrl(failedInfo, url)?.Codecs,
 							) ||
+								requestStartDecoderCodecFamily === "hevc" ||
+								requestStartDecoderCodecFamily === "av1" ||
+								failedDecoderCodecFamily === "hevc" ||
+								failedDecoderCodecFamily === "av1" ||
 								_getPlaylistUrlAliases(url).some(
 									(alias) =>
 										failedInfo?.EnhancedVariantUrls?.has(alias) ||
@@ -568,6 +748,19 @@ function _hookWorkerFetch() {
 							throw _createCodecHandoffAbortError(failedRequestSignal);
 						}
 						if (!failedInfo) {
+							const failedRequestSignal =
+								opts?.signal ||
+								(typeof Request !== "undefined" && resource instanceof Request
+									? resource.signal
+									: null);
+							throw _createCodecHandoffAbortError(failedRequestSignal);
+						}
+						const failedRequestCodecFamily =
+							requestStartCodecFamily ||
+							_getVideoCodecFamily(
+								_getDirectPlaybackResolutionForUrl(failedInfo, url)?.Codecs,
+							);
+						if (failedRequestCodecFamily !== "avc") {
 							const failedRequestSignal =
 								opts?.signal ||
 								(typeof Request !== "undefined" && resource instanceof Request

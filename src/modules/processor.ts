@@ -1912,9 +1912,16 @@ async function _holdRetiringCodecRequest(
 		Math.max(0, Number(retirementDeadlineAt) || 0) || Date.now() + 10000;
 	let activeHandoffId = handoffId;
 	const retiringCodecIdentity = _getVideoCodecIdentity(retiringCodec);
+	const retiringCodecFamily = _getVideoCodecFamily(retiringCodec);
+	const requestCodecIdentity = _getVideoCodecIdentity(requestCodecs);
+	const requestCodecFamily = _getVideoCodecFamily(requestCodecs);
+	const sourceMatchesRetiringCodec = retiringCodecIdentity
+		? requestCodecIdentity === retiringCodecIdentity
+		: Boolean(
+				retiringCodecFamily && requestCodecFamily === retiringCodecFamily,
+			);
 	const sourceIsClean =
-		(!retiringCodecIdentity ||
-			_getVideoCodecIdentity(requestCodecs) === retiringCodecIdentity) &&
+		sourceMatchesRetiringCodec &&
 		_playlistHasMediaSegments(text) &&
 		!_hasPlaylistAdMarkers(text) &&
 		!_hasExplicitAdMetadata(text) &&
@@ -2086,8 +2093,29 @@ async function _awaitM3U8RequestContext(
 	return value;
 }
 
-async function _processM3U8(url, text, realFetch, requestSignal = null) {
+async function _processM3U8(
+	url,
+	text,
+	realFetch,
+	requestSignal = null,
+	requestStartContext = null,
+) {
 	const initialInfo = _getStreamInfoForPlaylist(url);
+	const requestStartMediaKey = _normalizeMediaKey(
+		requestStartContext?.mediaKey,
+	);
+	const initialMediaKey = _normalizeMediaKey(initialInfo?.MediaKey);
+	const requestStartContextMatchesInfo = Boolean(
+		requestStartMediaKey &&
+			initialMediaKey &&
+			requestStartMediaKey === initialMediaKey,
+	);
+	if (
+		requestStartMediaKey &&
+		(!initialMediaKey || !requestStartContextMatchesInfo)
+	) {
+		throw _createCodecHandoffAbortError(requestSignal);
+	}
 	const initialResolution = _getDirectPlaybackResolutionForUrl(
 		initialInfo,
 		url,
@@ -2098,17 +2126,35 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 			initialInfo?.EnhancedVariantUrls?.has(exactRequestUrl) ||
 			initialInfo?.EnhancedBackupVariantUrls?.has(exactRequestUrl),
 	);
-	const initialRetiringCodec = requestIsEnhanced
-		? _getVideoCodecIdentity(initialResolution?.Codecs) ||
-			_getVideoCodecIdentity(initialInfo?.EnhancedDecoderCodec) ||
-			initialInfo?.EnhancedDecoderCodecFamily ||
-			null
+	const requestStartEnhancedCodec = requestStartContextMatchesInfo
+		? _getVideoCodecIdentity(requestStartContext?.enhancedDecoderCodec) ||
+			_getVideoCodecFamily(requestStartContext?.enhancedDecoderCodec)
 		: null;
+	const stickyEnhancedCodec =
+		requestStartEnhancedCodec ||
+		_getVideoCodecIdentity(initialInfo?.EnhancedDecoderCodec) ||
+		_getVideoCodecFamily(initialInfo?.EnhancedDecoderCodecFamily) ||
+		null;
+	const initialRetiringCodec =
+		stickyEnhancedCodec ||
+		(requestIsEnhanced
+			? _getVideoCodecIdentity(initialResolution?.Codecs) ||
+				_getVideoCodecFamily(initialResolution?.Codecs)
+			: null);
+	const initialRetiringCodecFamily = _getVideoCodecFamily(initialRetiringCodec);
+	const initialHasEnhancedDecoderOwner = Boolean(
+		initialRetiringCodecFamily === "hevc" ||
+			initialRetiringCodecFamily === "av1",
+	);
 	const requestCodecs = initialResolution?.Codecs || null;
 	const activeHandoffId = initialInfo
 		? _getActiveCodecHandoffIdForInfo(initialInfo)
 		: null;
-	if (initialInfo && requestIsEnhanced && initialInfo.IsUsingModifiedM3U8) {
+	if (
+		initialInfo &&
+		initialHasEnhancedDecoderOwner &&
+		initialInfo.IsUsingModifiedM3U8
+	) {
 		if (activeHandoffId) {
 			initialInfo._CodecHandoffPendingId = activeHandoffId;
 			return _holdRetiringCodecRequest(
@@ -2125,9 +2171,17 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 	}
 
 	const requestAdContext = {
-		backupSearchEpoch: Math.max(0, Number(initialInfo?.BackupSearchEpoch) || 0),
-		cycleStartedAt: Math.max(0, Number(initialInfo?.VisibleAdStartedAt) || 0),
-		responseDeadlineAt: requestIsEnhanced ? Date.now() + 10000 : 0,
+		backupSearchEpoch: requestStartContextMatchesInfo
+			? Math.max(0, Number(requestStartContext?.backupSearchEpoch) || 0)
+			: Math.max(0, Number(initialInfo?.BackupSearchEpoch) || 0),
+		cycleStartedAt: requestStartContextMatchesInfo
+			? Math.max(0, Number(requestStartContext?.cycleStartedAt) || 0)
+			: Math.max(0, Number(initialInfo?.VisibleAdStartedAt) || 0),
+		includeCachedAdSegments: Boolean(
+			requestStartContextMatchesInfo &&
+				requestStartContext?.includeCachedAdSegments,
+		),
+		responseDeadlineAt: initialHasEnhancedDecoderOwner ? Date.now() + 10000 : 0,
 	};
 	const coreResultProbe = await _awaitBackupProbeBeforeDeadline(
 		_awaitWithRequestSignal(
@@ -2146,16 +2200,18 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 	let result = coreResultProbe.value;
 	const info = _getStreamInfoForPlaylist(url) || initialInfo;
 	if (!info) return result;
-	const retiringCodec = requestIsEnhanced
-		? initialRetiringCodec ||
-			_getVideoCodecIdentity(initialResolution?.Codecs) ||
-			_getVideoCodecIdentity(info.EnhancedDecoderCodec)
-		: null;
+	const retiringCodec =
+		initialRetiringCodec ||
+		_getVideoCodecIdentity(info.EnhancedDecoderCodec) ||
+		_getVideoCodecFamily(info.EnhancedDecoderCodecFamily) ||
+		(requestIsEnhanced
+			? _getVideoCodecIdentity(initialResolution?.Codecs) ||
+				_getVideoCodecFamily(initialResolution?.Codecs)
+			: null);
 	const retiringCodecFamily = _getVideoCodecFamily(retiringCodec);
 	const retiringCodecIdentity = _getVideoCodecIdentity(retiringCodec);
 	const responseHasEnhancedDecoderOwner = Boolean(
-		requestIsEnhanced &&
-			(retiringCodecFamily === "hevc" || retiringCodecFamily === "av1"),
+		retiringCodecFamily === "hevc" || retiringCodecFamily === "av1",
 	);
 
 	const resultBackupMetadata =
@@ -2177,9 +2233,10 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 		"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
 	);
 	const requestMayUseCachedAdSegments = Boolean(
-		_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) ===
-			_normalizeMediaKey(info.MediaKey) &&
-			(info.IsShowingAd === true || info.IsHoldingBackupAfterAd === true),
+		requestAdContext.includeCachedAdSegments ||
+			(_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) ===
+				_normalizeMediaKey(info.MediaKey) &&
+				(info.IsShowingAd === true || info.IsHoldingBackupAfterAd === true)),
 	);
 	const requestWasAdMarked =
 		_hasPlaylistAdMarkers(text) ||
@@ -2241,6 +2298,15 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 			? resultBackupMetadata.codec
 			: info.LastCleanBackupCodec,
 	);
+	const requestCodecMatchesRetiringOwner = Boolean(
+		requestCodecFamily &&
+			requestCodecFamily === retiringCodecFamily &&
+			(!retiringCodecIdentity ||
+				requestCodecIdentity === retiringCodecIdentity),
+	);
+	const requestCanUseRetiringOwnerBackup = Boolean(
+		!requestCodecFamily || requestCodecMatchesRetiringOwner,
+	);
 	const returnedBackupMatchesRetiringOwner = Boolean(
 		returnedCachedBackup &&
 			retiringCodecFamily &&
@@ -2261,10 +2327,7 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 	);
 	const responseCodecConflictsWithRetiringOwner = Boolean(
 		retiringCodecFamily &&
-			requestCodecFamily &&
-			(retiringCodecIdentity
-				? requestCodecIdentity !== retiringCodecIdentity
-				: requestCodecFamily !== retiringCodecFamily) &&
+			!requestCodecMatchesRetiringOwner &&
 			!returnedBackupMatchesRetiringOwner &&
 			_playlistHasMediaSegments(result),
 	);
@@ -2273,6 +2336,12 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 		requestWasAdMarked,
 		requestAdContext.cycleStartedAt,
 	);
+	const handoffCodecOverride =
+		responseHasEnhancedDecoderOwner &&
+		requestCodecFamily === "avc" &&
+		!requestCodecMatchesRetiringOwner
+			? requestCodecs || "avc"
+			: null;
 	if (
 		returnedCachedBackup &&
 		requestCodecFamily &&
@@ -2309,7 +2378,9 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 	const unsafeEnhancedResponse = Boolean(
 		responseHasEnhancedDecoderOwner &&
 			(requestWasAdMarked || codecHandoffAdRecoveryActive) &&
-			((returnedCachedBackup && !returnedBackupMatchesRetiringOwner) ||
+			((returnedCachedBackup &&
+				(!returnedBackupMatchesRetiringOwner ||
+					!requestCanUseRetiringOwnerBackup)) ||
 				returnedAvcEmptyHold ||
 				(returnedCachedNative && !lastCleanNativeMatchesRequest) ||
 				responseCodecConflictsWithRetiringOwner),
@@ -2378,6 +2449,7 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 		const sameCodecBackupReady = Boolean(
 			cleanBackupIsFreshAndSafe &&
 				cleanBackupHasTrustedCodec &&
+				requestCanUseRetiringOwnerBackup &&
 				retiringCodecIdentity &&
 				_getVideoCodecIdentity(info.LastCleanBackupCodec) ===
 					retiringCodecIdentity &&
@@ -2395,7 +2467,15 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 		);
 		if (!cleanBackupReady) {
 			if (sameRequestCleanNative) return sameRequestCleanNative;
-			if (now >= nextBackupSearchRetryAt) {
+			const backupSearchIsInFlight = Boolean(
+				info._BackupSearchPromise ||
+					(info._BackupSearchPromises instanceof Map &&
+						info._BackupSearchPromises.size > 0),
+			);
+			if (
+				now >= nextBackupSearchRetryAt &&
+				(!handoffCodecOverride || !backupSearchIsInFlight)
+			) {
 				backupSearchRetryCount++;
 				nextBackupSearchRetryAt =
 					now +
@@ -2404,7 +2484,13 @@ async function _processM3U8(url, text, realFetch, requestSignal = null) {
 					];
 				info._LastBackupSearchCompletedAt = 0;
 				const retryTarget = _resolveAdBackupTargetResolution(info, url);
-				_findBackupStream(info, realFetch, 0, retryTarget).catch((err) => {
+				_findBackupStream(
+					info,
+					realFetch,
+					0,
+					retryTarget,
+					handoffCodecOverride,
+				).catch((err) => {
 					_log(
 						`[Trace] Enhanced-codec backup retry failed: ${err?.message ?? String(err)}`,
 						"warning",
@@ -2496,6 +2582,7 @@ async function _processM3U8Core(
 		return text;
 	}
 
+	const previousSustainedNativeResolution = info.SustainedNativeResolution;
 	if (!isBackupUrl) {
 		_recordSustainedNativeResolution(info, url);
 	}
@@ -2645,9 +2732,10 @@ async function _processM3U8Core(
 	}
 
 	const shouldIncludeCachedAdSegments = Boolean(
-		_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) ===
-			_normalizeMediaKey(info.MediaKey) &&
-			(info.IsShowingAd === true || info.IsHoldingBackupAfterAd === true),
+		requestAdContext?.includeCachedAdSegments ||
+			(_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) ===
+				_normalizeMediaKey(info.MediaKey) &&
+				(info.IsShowingAd === true || info.IsHoldingBackupAfterAd === true)),
 	);
 	const hasExplicitKnownAdSegments = _playlistHasKnownAdSegments(text, {
 		includeCached: shouldIncludeCachedAdSegments,
@@ -2662,6 +2750,36 @@ async function _processM3U8Core(
 		_hasExplicitAdMetadata(text) ||
 		hasExplicitKnownAdSegments ||
 		__TTVAB_STATE__.SimulatedAdsDepth > 0;
+	const sustainedNativeCodec = info.SustainedNativeResolution?.Codecs;
+	const previousSustainedNativeCodec =
+		previousSustainedNativeResolution?.Codecs;
+	if (
+		!isBackupUrl &&
+		!hasAds &&
+		directResolution &&
+		requestCodecFamily === "avc" &&
+		_getVideoCodecIdentity(sustainedNativeCodec) === requestCodecIdentity &&
+		info.SustainedNativeResolution?.Resolution ===
+			directResolution.Resolution &&
+		_getVideoCodecIdentity(previousSustainedNativeCodec) ===
+			requestCodecIdentity &&
+		previousSustainedNativeResolution?.Resolution ===
+			directResolution.Resolution &&
+		_getExactPlaylistUrlKey(info.LastCleanNativeUrl) ===
+			_getExactPlaylistUrlKey(url) &&
+		_getVideoCodecIdentity(info.LastCleanNativeCodec) ===
+			requestCodecIdentity &&
+		(Number(info.LastCleanNativePlaylistAt) || 0) > 0 &&
+		_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) !==
+			_normalizeMediaKey(info.MediaKey) &&
+		!info.IsShowingAd &&
+		!info.IsHoldingBackupAfterAd &&
+		!info.IsUsingModifiedM3U8 &&
+		!info._CodecHandoffPendingId
+	) {
+		info.EnhancedDecoderCodecFamily = null;
+		info.EnhancedDecoderCodec = null;
+	}
 	if (
 		hasAds &&
 		segmentCodecFamily !== "avc" &&
@@ -4362,7 +4480,35 @@ async function _findBackupStream(
 	if (!(info?._BackupSearchPromises instanceof Map)) {
 		info._BackupSearchPromises = new Map();
 	}
+	const activeSearchKey =
+		typeof info?._BackupSearchKey === "string" && info._BackupSearchKey
+			? info._BackupSearchKey
+			: null;
+	const activeSearchKeyParts = activeSearchKey
+		? activeSearchKey.split("|")
+		: [];
+	const activeSearchMatchesContext = Boolean(
+		activeSearchKeyParts.length >= 6 &&
+			activeSearchKeyParts[0] ===
+				(_normalizeMediaKey(info?.MediaKey) || "unknown") &&
+			Number(activeSearchKeyParts[1]) === backupSearchEpoch &&
+			Number(activeSearchKeyParts[2]) === cycleStartedAt,
+	);
+	const activeSearchCodec = activeSearchMatchesContext
+		? activeSearchKeyParts[activeSearchKeyParts.length - 2]
+		: null;
+	const enhancedDecoderFamily = _getVideoCodecFamily(
+		info?.EnhancedDecoderCodec || info?.EnhancedDecoderCodecFamily,
+	);
+	const activeAvcHandoffSearch = Boolean(
+		info?._BackupSearchPromise &&
+			activeSearchMatchesContext &&
+			_getVideoCodecFamily(activeSearchCodec) === "avc" &&
+			(enhancedDecoderFamily === "hevc" || enhancedDecoderFamily === "av1") &&
+			_isCodecHandoffAdRecoveryActive(info, false, cycleStartedAt),
+	);
 	const existingSearch =
+		(activeAvcHandoffSearch ? info._BackupSearchPromise : null) ||
 		info._BackupSearchPromises.get(searchKey) ||
 		(!info._BackupSearchKey && info._BackupSearchPromise
 			? info._BackupSearchPromise

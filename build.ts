@@ -1450,6 +1450,26 @@ function validateSharedDefinitions() {
 			source: hooksSource,
 		},
 		{
+			consumer: "_hookWorkerFetch",
+			helper: "_normalizeMediaKey",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getVideoCodecFamily",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getStreamInfoForPlaylist",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getVideoCodecIdentity",
+			source: hooksSource,
+		},
+		{
 			consumer: "_hookWorker",
 			helper: "_clearCodecHandoffState",
 			source: hooksSource,
@@ -1482,6 +1502,11 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_searchBackupStream",
 			helper: "_stripHevcBackupVariants",
+			source: processorSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_isCodecHandoffAdRecoveryActive",
 			source: processorSource,
 		},
 		{

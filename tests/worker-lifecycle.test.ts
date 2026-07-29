@@ -814,6 +814,8 @@ describe("worker mixed-codec master selection", () => {
 			expect(normalMaster).toContain("1440-av1/index.m3u8");
 			expect(info.ModifiedM3U8).not.toContain("2560x1440");
 			expect(info.IsUsingModifiedM3U8).toBe(false);
+			info.EnhancedDecoderCodecFamily = "hevc";
+			info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
 
 			const cycleStartedAt = 100;
 			const handoffId = "live:testchannel:100:1000:1:exact-current-handoff";
@@ -837,6 +839,8 @@ describe("worker mixed-codec master selection", () => {
 			expect(handoffMaster).not.toContain("1440-av1/index.m3u8");
 			expect(handoffMaster).toContain("1080-avc/index.m3u8");
 			expect(info.IsUsingModifiedM3U8).toBe(true);
+			expect(info.EnhancedDecoderCodecFamily).toBe(null);
+			expect(info.EnhancedDecoderCodec).toBe(null);
 		} finally {
 			g.fetch = originalFetch;
 		}
@@ -844,6 +848,421 @@ describe("worker mixed-codec master selection", () => {
 });
 
 describe("worker media-playlist exception fail-closed path", () => {
+	it.each([
+		{
+			label: "HEVC",
+			family: "hevc",
+			codec: "hev1.1.6.L153.B0",
+		},
+		{
+			label: "AV1",
+			family: "av1",
+			codec: "av01.0.13M.08",
+		},
+	])("aborts an AVC empty hold while the $label decoder owns playback", async ({
+		family,
+		codec,
+	}) => {
+		const originalFetch = g.fetch;
+		const rawFetch = vi.fn(async () => new Response(null, { status: 200 }));
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		info.EnhancedDecoderCodecFamily = family;
+		info.EnhancedDecoderCodec = codec;
+		state.StreamInfos = { "live:testchannel": info };
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		g.fetch = rawFetch;
+		const emptyHoldUrl =
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect(
+				(g.fetch as typeof fetch)(emptyHoldUrl),
+			).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(rawFetch).not.toHaveBeenCalled();
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
+	it("keeps the AVC empty hold available after enhanced ownership clears", async () => {
+		const originalFetch = g.fetch;
+		const rawFetch = vi.fn(async () => new Response(null, { status: 200 }));
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		state.StreamInfos = { "live:testchannel": info };
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		g.fetch = rawFetch;
+		const emptyHoldUrl =
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect(
+				(g.fetch as typeof fetch)(emptyHoldUrl),
+			).resolves.toBeInstanceOf(Response);
+			expect(rawFetch).toHaveBeenCalledOnce();
+			expect(rawFetch).toHaveBeenCalledWith(g._EMPTY_SEGMENT_URL);
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
+	it.each([
+		{
+			label: "ad-marked",
+			playlist: [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:500",
+				"#EXT-X-CUE-OUT:30",
+				"#EXTINF:2.000,",
+				"ad-500.ts",
+			].join("\n"),
+		},
+		{
+			label: "clean",
+			playlist: [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:500",
+				"#EXTINF:2.000,live",
+				"clean-500.ts",
+			].join("\n"),
+		},
+	])("does not expose an AVC $label response after enhanced-owner processing fails", async ({
+		playlist,
+	}) => {
+		const originalFetch = g.fetch;
+		const originalProcess = g._processM3U8;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-active.m3u8";
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const resolution = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			FrameRate: 60,
+			Codecs: "avc1.64002A,mp4a.40.2",
+		};
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		info.IsShowingAd = true;
+		info.VisibleAdStartedAt = 100;
+		info.EnhancedDecoderCodecFamily = "hevc";
+		info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
+		info.ResolutionList = [resolution];
+		info.Urls = Object.create(null);
+		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			mediaUrl,
+		)) {
+			(info.Urls as Record<string, unknown>)[alias] = resolution;
+			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+		}
+		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 100 },
+		};
+		const rawFetch = vi.fn(async () => {
+			info.EnhancedDecoderCodecFamily = null;
+			info.EnhancedDecoderCodec = null;
+			return new Response(playlist, { status: 200 });
+		});
+		g.fetch = rawFetch;
+		g._processM3U8 = async () => {
+			throw new Error("forced processing failure");
+		};
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect((g.fetch as typeof fetch)(mediaUrl)).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(rawFetch).toHaveBeenCalledOnce();
+		} finally {
+			g.fetch = originalFetch;
+			g._processM3U8 = originalProcess;
+		}
+	});
+
+	it("aborts an ad-marked unresolved rendition after processing fails", async () => {
+		const originalFetch = g.fetch;
+		const originalProcess = g._processM3U8;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/rotated-unresolved.m3u8";
+		const adPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:500",
+			"#EXT-X-CUE-OUT:30",
+			"#EXTINF:2.000,",
+			"ad-500.ts",
+		].join("\n");
+		const rawFetch = vi.fn(
+			async () => new Response(adPlaylist, { status: 200 }),
+		);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		info.IsShowingAd = true;
+		info.VisibleAdStartedAt = 100;
+		info.Urls = Object.create(null);
+		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			mediaUrl,
+		)) {
+			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+		}
+		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 100 },
+		};
+		g.fetch = rawFetch;
+		g._processM3U8 = async () => {
+			throw new Error("forced processing failure");
+		};
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect((g.fetch as typeof fetch)(mediaUrl)).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(rawFetch).toHaveBeenCalledOnce();
+		} finally {
+			g.fetch = originalFetch;
+			g._processM3U8 = originalProcess;
+		}
+	});
+
+	it.each([
+		{ label: "the 1440p ad context", ownerAtStart: true },
+		{ label: "the 1440p owner and ad context", ownerAtStart: false },
+	])("aborts an AVC response when $label activates during fetch", async ({
+		ownerAtStart,
+	}) => {
+		const originalFetch = g.fetch;
+		const cleanPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:500",
+			"#EXTINF:2.000,live",
+			"clean-500.ts",
+		].join("\n");
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-activating.m3u8";
+		const resolution = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			FrameRate: 60,
+			Codecs: "avc1.64002A,mp4a.40.2",
+		};
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		info.EnhancedDecoderCodecFamily = ownerAtStart ? "hevc" : null;
+		info.EnhancedDecoderCodec = ownerAtStart ? "hev1.1.6.L153.B0" : null;
+		info.ResolutionList = [resolution];
+		info.Urls = Object.create(null);
+		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			mediaUrl,
+		)) {
+			(info.Urls as Record<string, unknown>)[alias] = resolution;
+			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+		}
+		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+		state.CurrentAdChannel = null;
+		state.CurrentAdMediaKey = null;
+		const rawFetch = vi.fn(async () => {
+			if (!ownerAtStart) {
+				info.EnhancedDecoderCodecFamily = "hevc";
+				info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
+			}
+			state.CurrentAdChannel = "testchannel";
+			state.CurrentAdMediaKey = "live:testchannel";
+			state.AdPodProgressByMediaKey = {
+				"live:testchannel": { cycleStartedAt: 100 },
+			};
+			return new Response(cleanPlaylist, { status: 200 });
+		});
+		g.fetch = rawFetch;
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect((g.fetch as typeof fetch)(mediaUrl)).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(rawFetch).toHaveBeenCalledOnce();
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
+	it("aborts a stale in-flight AVC response from the retiring 1440p ad cycle", async () => {
+		const originalFetch = g.fetch;
+		const opaqueAdUrl = "https://edge.example/opaque/stale-worker-ad-500.ts";
+		const opaqueAdPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:500",
+			"#EXTINF:2.000,",
+			opaqueAdUrl,
+		].join("\n");
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-stale.m3u8";
+		const resolution = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			FrameRate: 60,
+			Codecs: "avc1.64002A,mp4a.40.2",
+		};
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		info.IsShowingAd = true;
+		info.VisibleAdStartedAt = 100;
+		info.EnhancedDecoderCodecFamily = "hevc";
+		info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
+		info.ResolutionList = [resolution];
+		info.Urls = Object.create(null);
+		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			mediaUrl,
+		)) {
+			(info.Urls as Record<string, unknown>)[alias] = resolution;
+			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+		}
+		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 100 },
+		};
+		state.AdSegmentCache = new Map([[opaqueAdUrl, Date.now()]]);
+		const rawFetch = vi.fn(async () => {
+			info.IsShowingAd = false;
+			info.IsHoldingBackupAfterAd = false;
+			info.EnhancedDecoderCodecFamily = null;
+			info.EnhancedDecoderCodec = null;
+			state.CurrentAdChannel = null;
+			state.CurrentAdMediaKey = null;
+			state.AdPodProgressByMediaKey = Object.create(null);
+			return new Response(opaqueAdPlaylist, { status: 200 });
+		});
+		g.fetch = rawFetch;
+		const controller = new AbortController();
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect(
+				(g.fetch as typeof fetch)(
+					new Request(mediaUrl, { signal: controller.signal }),
+				),
+			).rejects.toMatchObject({ name: "AbortError" });
+			expect(rawFetch).toHaveBeenCalledOnce();
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
+	it("does not let stale pod progress abort the first clean post-ad playlist", async () => {
+		const originalFetch = g.fetch;
+		const cleanPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:600",
+			"#EXTINF:2.000,live",
+			"clean-600.ts",
+		].join("\n");
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/post-ad-avc.m3u8";
+		const resolution = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			FrameRate: 60,
+			Codecs: "avc1.64002A,mp4a.40.2",
+		};
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		info.ResolutionList = [resolution];
+		info.Urls = Object.create(null);
+		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			mediaUrl,
+		)) {
+			(info.Urls as Record<string, unknown>)[alias] = resolution;
+			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+		}
+		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+		state.CurrentAdChannel = null;
+		state.CurrentAdMediaKey = null;
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 100 },
+		};
+		const rawFetch = vi.fn(
+			async () => new Response(cleanPlaylist, { status: 200 }),
+		);
+		g.fetch = rawFetch;
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const result = await (await (g.fetch as typeof fetch)(mediaUrl)).text();
+			expect(result).toContain("clean-600.ts");
+			expect(rawFetch).toHaveBeenCalledOnce();
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
 	it("strips an opaque cached ad only for its exact active media cycle", async () => {
 		const originalFetch = g.fetch;
 		const originalProcess = g._processM3U8;
@@ -897,7 +1316,15 @@ describe("worker media-playlist exception fail-closed path", () => {
 		};
 		state.AdSegmentCache = new Map([[opaqueAdUrl, Date.now()]]);
 		g.fetch = rawFetch;
+		let processCalls = 0;
 		g._processM3U8 = async () => {
+			processCalls++;
+			if (processCalls === 1) {
+				info.IsShowingAd = false;
+				info.IsHoldingBackupAfterAd = false;
+				state.CurrentAdChannel = null;
+				state.CurrentAdMediaKey = null;
+			}
 			throw new Error("forced processing failure");
 		};
 
@@ -909,10 +1336,6 @@ describe("worker media-playlist exception fail-closed path", () => {
 			expect(activeResult).not.toContain(opaqueAdUrl);
 			expect(activeResult).toContain("__ttvab_empty_hold_segment.mp4");
 
-			info.IsShowingAd = false;
-			info.IsHoldingBackupAfterAd = false;
-			state.CurrentAdChannel = null;
-			state.CurrentAdMediaKey = null;
 			const staleResult = await (
 				await (g.fetch as typeof fetch)(mediaUrl)
 			).text();
@@ -1011,7 +1434,7 @@ describe("worker ad-segment codec ownership", () => {
 		}
 	});
 
-	it("uses the AVC empty segment only for an explicitly AVC-owned ad segment", async () => {
+	it("uses the AVC empty segment after enhanced decoder ownership clears", async () => {
 		const originalFetch = g.fetch;
 		const originalExactKey = g._getExactPlaylistUrlKey;
 		const originalAbortError = g._createCodecHandoffAbortError;
@@ -1034,6 +1457,12 @@ describe("worker ad-segment codec ownership", () => {
 				},
 			],
 		]);
+		state.StreamInfos = {
+			"live:testchannel": {
+				EnhancedDecoderCodecFamily: null,
+				EnhancedDecoderCodec: null,
+			},
+		};
 		g.fetch = rawFetch;
 		g._getExactPlaylistUrlKey = (value: unknown) => String(value || "");
 		g._createCodecHandoffAbortError = () =>
@@ -1048,6 +1477,64 @@ describe("worker ad-segment codec ownership", () => {
 			expect(rawFetch).toHaveBeenCalledOnce();
 			expect(rawFetch).toHaveBeenCalledWith(g._EMPTY_SEGMENT_URL);
 			expect(rawFetch).not.toHaveBeenCalledWith(url);
+		} finally {
+			g.fetch = originalFetch;
+			if (originalExactKey === undefined) delete g._getExactPlaylistUrlKey;
+			else g._getExactPlaylistUrlKey = originalExactKey;
+			if (originalAbortError === undefined) {
+				delete g._createCodecHandoffAbortError;
+			} else {
+				g._createCodecHandoffAbortError = originalAbortError;
+			}
+		}
+	});
+
+	it.each([
+		{ family: "hevc", codec: "hev1.1.6.L153.B0" },
+		{ family: "av1", codec: "av01.0.13M.08" },
+	])("aborts an AVC-owned ad segment while the $family decoder still owns playback", async ({
+		family,
+		codec,
+	}) => {
+		const originalFetch = g.fetch;
+		const originalExactKey = g._getExactPlaylistUrlKey;
+		const originalAbortError = g._createCodecHandoffAbortError;
+		const rawFetch = vi.fn(async () => new Response("unexpected"));
+		const url = "https://edge.example/ad-cycle/avc-owned-enhanced.ts";
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.SimulatedAdsDepth = 0;
+		state.AdSignifier = "stitched";
+		state.AdSegmentCache = new Map([[url, Date.now()]]);
+		state.SegmentCodecOwners = new Map([
+			[
+				url,
+				{
+					codecFamily: "avc",
+					mediaKey: "live:testchannel",
+					recordedAt: 100,
+					ambiguous: false,
+				},
+			],
+		]);
+		state.StreamInfos = {
+			"live:testchannel": {
+				EnhancedDecoderCodecFamily: family,
+				EnhancedDecoderCodec: codec,
+			},
+		};
+		g.fetch = rawFetch;
+		g._getExactPlaylistUrlKey = (value: unknown) => String(value || "");
+		g._createCodecHandoffAbortError = () =>
+			new DOMException("Unsafe ad segment codec", "AbortError");
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect((g.fetch as typeof fetch)(url)).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(rawFetch).not.toHaveBeenCalled();
 		} finally {
 			g.fetch = originalFetch;
 			if (originalExactKey === undefined) delete g._getExactPlaylistUrlKey;
