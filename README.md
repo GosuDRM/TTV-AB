@@ -71,13 +71,13 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 ## 🔔 What's New
 
 ### v13.2.6 - 2026-07-29
-- **1440p and 2K are selectable again outside ads, with codec-safe blocking during ads.** The normal HEVC and AV1 quality list stays untouched, while a real ad cycle tries an exact-codec clean backup first and uses a bounded AVC handoff only when required.
+- **High-resolution HEVC and AV1 qualities are selectable again outside ads, with codec-safe blocking during ads.** The normal quality list stays untouched, while a real ad cycle tries an exact-codec clean backup first and uses a bounded AVC handoff only when required.
 
 ### v13.2.5 - 2026-07-28
-- **1440p and 2K ad recovery now survives player errors and playback-session replacements.** HEVC and AV1 streams wait for a fresh clean compatible backup, and multi-ad breaks stay blocked until the whole break finishes, preventing error 4000 recovery from exposing an ad or freezing playback.
+- **Enhanced-codec ad recovery now survives player errors and playback-session replacements.** HEVC and AV1 streams wait for a fresh clean compatible backup, and multi-ad breaks stay blocked until the whole break finishes, preventing error 4000 recovery from exposing an ad or freezing playback.
 
 ### v13.2.4 - 2026-07-27
-- **1440p and 2K ad breaks no longer feed fabricated media to the retiring player.** The switch starts only after a clean compatible backup exists, preventing the error 4000 seen in v13.2.3 while the ad remains blocked.
+- **The codec handoff no longer feeds fabricated media to the retiring player.** The switch starts only after a clean compatible backup exists, preventing the error 4000 seen in v13.2.3 while the ad remains blocked.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
