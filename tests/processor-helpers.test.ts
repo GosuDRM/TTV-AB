@@ -5273,6 +5273,52 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		expect(findCalls.length).toBe(1);
 	});
 
+	it("keeps a VOD advancing on clean native media while its backup search starts", async () => {
+		const state = getState();
+		const previousPageContext = {
+			PageMediaType: state.PageMediaType,
+			PageChannel: state.PageChannel,
+			PageVodID: state.PageVodID,
+			PageMediaKey: state.PageMediaKey,
+		};
+		const info = makeInfo({
+			MediaType: "vod",
+			ChannelName: null,
+			VodID: "2827992810",
+			MediaKey: "vod:2827992810",
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativeUrl: bridgeUrl,
+			LastCleanNativePlaylistAt: Date.now(),
+		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		g._getStreamInfoForPlaylist = () => info;
+		const findCalls: unknown[][] = [];
+		g._findBackupStream = (...args: unknown[]) => {
+			findCalls.push(args);
+			return new Promise(() => {});
+		};
+		state.PageMediaType = "vod";
+		state.PageChannel = null;
+		state.PageVodID = "2827992810";
+		state.PageMediaKey = "vod:2827992810";
+
+		try {
+			const core =
+				T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+					"_processM3U8Core",
+				);
+			const output = await core(bridgeUrl, adLadenNative, fetchStub);
+
+			expect(output).toBe(cleanNative);
+			expect(output).toContain("native-live-1.ts");
+			expect(output).not.toContain("stitched-ad-99.ts");
+			expect(findCalls).toHaveLength(1);
+			expect(state.CurrentAdMediaKey).toBe("vod:2827992810");
+		} finally {
+			Object.assign(state, previousPageContext);
+		}
+	});
+
 	it("serves the pre-warmed backup as soon as it is ready instead of waiting out the bridge", async () => {
 		const cycleStartedAt = Date.now() - 1000;
 		const info = makeInfo({

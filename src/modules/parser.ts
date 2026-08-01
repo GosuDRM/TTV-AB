@@ -267,7 +267,9 @@ function _getPlaybackContextFromUsherUrl(rawUrl) {
 		});
 	}
 
-	const vodMatch = pathname.match(/\/(?:api\/v2\/)?vod\/(\d+)\.m3u8$/i);
+	const vodMatch = pathname.match(
+		/\/(?:api\/v2\/vod|vod(?:\/v2)?)\/(\d+)\.m3u8$/i,
+	);
 	if (vodMatch?.[1]) {
 		return _normalizePlaybackContext({
 			MediaType: "vod",

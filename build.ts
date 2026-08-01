@@ -1466,6 +1466,11 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_hookWorkerFetch",
+			helper: "_getPlaybackContextFromUsherUrl",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
 			helper: "_getVideoCodecIdentity",
 			source: hooksSource,
 		},
