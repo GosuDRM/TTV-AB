@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v14.0.0 - 2026-08-01
+- **VOD ad blocking now covers Twitch's current archive and client-side video-ad paths.** The extension recognizes the new VOD playlist route and rejects separate VOD video ads before they start, while clean archive playback keeps advancing normally ([#53](https://github.com/GosuDRM/TTV-AB/issues/53)).
+
 ### v13.2.7 - 2026-07-29
 - **Enhanced-quality ad handoffs now keep decoder ownership exact from request start through player replacement.** Late AVC responses, empty segments, and competing backup searches are fenced without slowing live backup refresh, preventing error 4000 and stalls while existing ad blocking stays intact.
 
 ### v13.2.6 - 2026-07-29
 - **High-resolution HEVC and AV1 qualities are selectable again outside ads, with codec-safe blocking during ads.** The normal quality list stays untouched, while a real ad cycle tries an exact-codec clean backup first and uses a bounded AVC handoff only when required.
-
-### v13.2.5 - 2026-07-28
-- **Enhanced-codec ad recovery now survives player errors and playback-session replacements.** HEVC and AV1 streams wait for a fresh clean compatible backup, and multi-ad breaks stay blocked until the whole break finishes, preventing error 4000 recovery from exposing an ad or freezing playback.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
