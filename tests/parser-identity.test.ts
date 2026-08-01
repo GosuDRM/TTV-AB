@@ -121,3 +121,32 @@ describe("_getPlaybackContextFromUrl", () => {
 		);
 	});
 });
+
+describe("_getPlaybackContextFromUsherUrl", () => {
+	const fn = () =>
+		T<(url: string) => Record<string, unknown> | null>(
+			"_getPlaybackContextFromUsherUrl",
+		);
+
+	it.each([
+		"https://usher.ttvnw.net/vod/v2/2827992810.m3u8?allow_source=true",
+		"https://usher.ttvnw.net/vod/2827992810.m3u8?allow_source=true",
+		"https://usher.ttvnw.net/api/v2/vod/2827992810.m3u8?allow_source=true",
+	])("owns supported VOD master route %s", (url) => {
+		const ctx = fn()(url);
+
+		expect(ctx).toEqual({
+			MediaType: "vod",
+			ChannelName: null,
+			VodID: "2827992810",
+			MediaKey: "vod:2827992810",
+		});
+	});
+
+	it("rejects near-matches that cannot identify a VOD", () => {
+		expect(fn()("https://usher.ttvnw.net/vod/v2/not-a-vod.m3u8")).toBeNull();
+		expect(
+			fn()("https://usher.ttvnw.net/vod/v2/2827992810.m3u8/extra"),
+		).toBeNull();
+	});
+});

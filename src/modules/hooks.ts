@@ -452,7 +452,8 @@ function _hookWorkerFetch() {
 
 			const playbackContext = _getPlaybackContextFromUsherUrl(url);
 			if (playbackContext?.MediaKey) {
-				__TTVAB_STATE__.V2API = url.includes("/api/v2/");
+				__TTVAB_STATE__.V2API =
+					url.includes("/api/v2/") || url.includes("/vod/v2/");
 				const logTarget =
 					playbackContext.MediaType === "vod"
 						? `vod ${playbackContext.VodID}`
@@ -3318,6 +3319,77 @@ function _hookMainFetch() {
 			return false;
 		}
 	};
+	const getBlockedVodAdRequest = (urlStr) => {
+		if (
+			__TTVAB_STATE__.IsAdStrippingEnabled !== true ||
+			__TTVAB_STATE__.PageMediaType !== "vod"
+		) {
+			return null;
+		}
+		const mediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
+		if (!mediaKey?.startsWith("vod:")) return null;
+		try {
+			const parsedUrl = new URL(urlStr);
+			const isKnownAdOrigin =
+				parsedUrl.origin === "https://edge.ads.twitch.tv" ||
+				parsedUrl.origin === "https://vaes.amazon-adsystem.com";
+			const isKnownAdPath =
+				parsedUrl.pathname === "/2018-01-01/3p/ads" ||
+				parsedUrl.pathname === "/ads" ||
+				parsedUrl.pathname === "/ads/format";
+			if (!isKnownAdOrigin || !isKnownAdPath) {
+				return null;
+			}
+			const sessionID = parsedUrl.searchParams.get("sid") || null;
+			return {
+				mediaKey,
+				countKey: `${mediaKey}\n${sessionID || "no-session"}`,
+				countTtlMs: sessionID ? 1800000 : 120000,
+			};
+		} catch {
+			return null;
+		}
+	};
+	const blockedVodAdCountExpirations = new Map();
+	const recordBlockedVodAdRequest = (request) => {
+		const now = Date.now();
+		for (const [key, expiresAt] of blockedVodAdCountExpirations) {
+			if (expiresAt <= now) blockedVodAdCountExpirations.delete(key);
+		}
+		const shouldIncrement = !blockedVodAdCountExpirations.has(request.countKey);
+		blockedVodAdCountExpirations.delete(request.countKey);
+		blockedVodAdCountExpirations.set(
+			request.countKey,
+			now + request.countTtlMs,
+		);
+		while (blockedVodAdCountExpirations.size > 100) {
+			const oldestKey = blockedVodAdCountExpirations.keys().next().value;
+			if (oldestKey === undefined) break;
+			blockedVodAdCountExpirations.delete(oldestKey);
+		}
+		if (shouldIncrement && typeof _incrementAdsBlocked === "function") {
+			_incrementAdsBlocked(null, request.mediaKey);
+		}
+		_log("Blocked client-side VOD ad request", "success");
+	};
+	if (typeof window.XMLHttpRequest === "function") {
+		const realXhrOpen = window.XMLHttpRequest.prototype.open;
+		const emptyVastResponseUrl =
+			"data:application/xml,%3CVAST%20version%3D%223.0%22%3E%3C%2FVAST%3E";
+		window.XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+			const blockedRequest =
+				String(method || "")
+					.trim()
+					.toUpperCase() === "GET"
+					? getBlockedVodAdRequest(url)
+					: null;
+			if (blockedRequest) {
+				recordBlockedVodAdRequest(blockedRequest);
+				return realXhrOpen.call(this, method, emptyVastResponseUrl, ...rest);
+			}
+			return realXhrOpen.call(this, method, url, ...rest);
+		};
+	}
 	const updateWorkers = (updates) => {
 		if (Array.isArray(updates)) {
 			for (const msg of updates) {
@@ -3464,6 +3536,23 @@ function _hookMainFetch() {
 		const [url, opts] = args;
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
+			const requestMethod =
+				typeof opts?.method === "string" && opts.method
+					? opts.method
+					: url instanceof Request
+						? url.method
+						: "GET";
+			const blockedVodAdRequest =
+				requestMethod.trim().toUpperCase() === "GET"
+					? getBlockedVodAdRequest(urlStr)
+					: null;
+			if (blockedVodAdRequest) {
+				recordBlockedVodAdRequest(blockedVodAdRequest);
+				return new Response(null, {
+					status: 204,
+					statusText: "No Content",
+				});
+			}
 			if (isGqlEndpointUrl(urlStr)) {
 				_syncStoredDeviceId();
 				let nextArgs = args;

@@ -462,6 +462,218 @@ describe("worker recovery lifecycle", () => {
 	});
 });
 
+describe("MAIN VOD ad request guard", () => {
+	it("rewrites standard-video VOD XHR to a local empty VAST", async () => {
+		const originalFetch = window.fetch;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const originalIncrementAdsBlocked = g._incrementAdsBlocked;
+		const xhrPrototype = window.XMLHttpRequest.prototype;
+		const originalOpen = xhrPrototype.open;
+		const nativeOpen = vi.fn();
+		const nativeFetch = vi.fn(
+			async () => new Response("native", { status: 200 }),
+		);
+		const emptyVastUrl =
+			"data:application/xml,%3CVAST%20version%3D%223.0%22%3E%3C%2FVAST%3E";
+		const incrementAdsBlocked = vi.fn();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
+		state.PageMediaType = "vod";
+		state.PageVodID = "2827992810";
+		state.PageMediaKey = "vod:2827992810";
+		window.fetch = nativeFetch as typeof fetch;
+		xhrPrototype.open = nativeOpen as typeof xhrPrototype.open;
+		g._incrementAdsBlocked = incrementAdsBlocked;
+
+		try {
+			T<() => void>("_hookMainFetch")();
+			const adUrl =
+				"https://edge.ads.twitch.tv/2018-01-01/3p/ads?rt=vast3&dur=30&sid=shared-break";
+			new window.XMLHttpRequest().open("GET", adUrl);
+
+			expect(nativeOpen).toHaveBeenLastCalledWith("GET", emptyVastUrl);
+			for (const path of ["/ads", "/ads/format"]) {
+				new window.XMLHttpRequest().open(
+					"GET",
+					`https://edge.ads.twitch.tv${path}?afmt=1&sid=shared-break`,
+				);
+				expect(nativeOpen).toHaveBeenLastCalledWith("GET", emptyVastUrl);
+			}
+			expect(incrementAdsBlocked).toHaveBeenCalledOnce();
+			expect(incrementAdsBlocked).toHaveBeenLastCalledWith(
+				null,
+				"vod:2827992810",
+			);
+			const fetchResponse = await window.fetch(
+				"https://edge.ads.twitch.tv/ads?afmt=1&sid=shared-break",
+			);
+			expect(fetchResponse.status).toBe(204);
+			new window.XMLHttpRequest().open("GET", adUrl);
+			expect(incrementAdsBlocked).toHaveBeenCalledTimes(1);
+			expect(nativeFetch).not.toHaveBeenCalled();
+
+			state.PageMediaType = "live";
+			state.PageVodID = null;
+			state.PageMediaKey = "live:testchannel";
+			new window.XMLHttpRequest().open("GET", adUrl);
+			expect(nativeOpen).toHaveBeenLastCalledWith("GET", adUrl);
+
+			state.IsAdStrippingEnabled = false;
+			state.PageMediaType = "vod";
+			state.PageVodID = "2827992810";
+			state.PageMediaKey = "vod:2827992810";
+			new window.XMLHttpRequest().open("GET", adUrl);
+			expect(nativeOpen).toHaveBeenLastCalledWith("GET", adUrl);
+
+			state.IsAdStrippingEnabled = true;
+			new window.XMLHttpRequest().open("POST", adUrl);
+			expect(nativeOpen).toHaveBeenLastCalledWith("POST", adUrl);
+			const nonAdUrl = "https://edge.ads.twitch.tv/2018-01-01/3p/ads/extra";
+			new window.XMLHttpRequest().open("GET", nonAdUrl);
+			expect(nativeOpen).toHaveBeenLastCalledWith("GET", nonAdUrl);
+			const nextBreakUrl =
+				"https://edge.ads.twitch.tv/2018-01-01/3p/ads?rt=vast3&dur=30&sid=next-break";
+			new window.XMLHttpRequest().open("GET", nextBreakUrl);
+			expect(nativeOpen).toHaveBeenLastCalledWith("GET", emptyVastUrl);
+			expect(nativeOpen).toHaveBeenCalledTimes(9);
+			expect(incrementAdsBlocked).toHaveBeenCalledTimes(2);
+		} finally {
+			window.fetch = originalFetch;
+			xhrPrototype.open = originalOpen;
+			g._incrementAdsBlocked = originalIncrementAdsBlocked;
+			if (originalRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			}
+		}
+	});
+
+	it("returns Twitch's no-fill response before a VOD ad can pause playback", async () => {
+		const originalFetch = window.fetch;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const originalIncrementAdsBlocked = g._incrementAdsBlocked;
+		const xhrPrototype = window.XMLHttpRequest.prototype;
+		const originalOpen = xhrPrototype.open;
+		const nativeFetch = vi.fn(
+			async () => new Response("native", { status: 200 }),
+		);
+		const incrementAdsBlocked = vi.fn();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
+		state.PageMediaType = "vod";
+		state.PageVodID = "2827992810";
+		state.PageMediaKey = "vod:2827992810";
+		window.fetch = nativeFetch as typeof fetch;
+		g._incrementAdsBlocked = incrementAdsBlocked;
+
+		try {
+			T<() => void>("_hookMainFetch")();
+			const inputs: Array<string | URL | Request> = [
+				"https://edge.ads.twitch.tv/2018-01-01/3p/ads?rt=vast3&dur=30&sid=shared-break",
+				new URL("https://edge.ads.twitch.tv/ads?afmt=1&sid=shared-break"),
+				new Request(
+					"https://edge.ads.twitch.tv/ads/format?afmt=1&sid=shared-break",
+				),
+				"https://vaes.amazon-adsystem.com/2018-01-01/3p/ads?rt=vast3&dur=30&sid=shared-break",
+			];
+
+			for (const input of inputs) {
+				const response = await window.fetch(input);
+				expect(response.status).toBe(204);
+				expect(response.statusText).toBe("No Content");
+				expect(await response.text()).toBe("");
+			}
+			expect(nativeFetch).not.toHaveBeenCalled();
+			expect(incrementAdsBlocked).toHaveBeenCalledTimes(1);
+			const nextBreakResponse = await window.fetch(
+				"https://edge.ads.twitch.tv/2018-01-01/3p/ads?rt=vast3&sid=next-break",
+			);
+			expect(nextBreakResponse.status).toBe(204);
+			expect(incrementAdsBlocked).toHaveBeenCalledTimes(2);
+			expect(incrementAdsBlocked).toHaveBeenLastCalledWith(
+				null,
+				"vod:2827992810",
+			);
+			expect(scopedWindow.__TTVAB_REAL_FETCH__).toBe(nativeFetch);
+		} finally {
+			window.fetch = originalFetch;
+			xhrPrototype.open = originalOpen;
+			g._incrementAdsBlocked = originalIncrementAdsBlocked;
+			if (originalRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			}
+		}
+	});
+
+	it("passes through live, disabled, and non-ad requests unchanged", async () => {
+		const originalFetch = window.fetch;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const xhrPrototype = window.XMLHttpRequest.prototype;
+		const originalOpen = xhrPrototype.open;
+		const nativeFetch = vi.fn(
+			async () => new Response("native", { status: 200 }),
+		);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const adUrl =
+			"https://edge.ads.twitch.tv/2018-01-01/3p/ads?rt=vast3&dur=30";
+		window.fetch = nativeFetch as typeof fetch;
+
+		try {
+			T<() => void>("_hookMainFetch")();
+			state.IsAdStrippingEnabled = true;
+			state.PageMediaType = "live";
+			state.PageVodID = null;
+			state.PageMediaKey = "live:testchannel";
+			expect(await (await window.fetch(adUrl)).text()).toBe("native");
+
+			state.IsAdStrippingEnabled = false;
+			state.PageMediaType = "vod";
+			state.PageVodID = "2827992810";
+			state.PageMediaKey = "vod:2827992810";
+			expect(await (await window.fetch(adUrl)).text()).toBe("native");
+
+			state.IsAdStrippingEnabled = true;
+			for (const url of [
+				"https://edge.ads.twitch.tv.example/2018-01-01/3p/ads",
+				"https://edge.ads.twitch.tv:8443/2018-01-01/3p/ads",
+				"http://edge.ads.twitch.tv/2018-01-01/3p/ads",
+				"https://edge.ads.twitch.tv/2018-01-01/3p/ads/extra",
+			]) {
+				expect(await (await window.fetch(url)).text()).toBe("native");
+			}
+			expect(
+				await (
+					await window.fetch(adUrl, {
+						method: "POST",
+						body: "not-a-vod-ad-fetch",
+					})
+				).text(),
+			).toBe("native");
+			expect(
+				await (
+					await window.fetch(new Request(adUrl), { method: "POST" })
+				).text(),
+			).toBe("native");
+
+			expect(nativeFetch).toHaveBeenCalledTimes(8);
+		} finally {
+			window.fetch = originalFetch;
+			xhrPrototype.open = originalOpen;
+			if (originalRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			}
+		}
+	});
+});
+
 describe("page-side M3U8 fallback", () => {
 	it("detects Twitch ad metadata beyond literal stitched-ad markers", () => {
 		const hasMetadata = T<(text: string) => boolean>("_hasTwitchAdMetadata");
@@ -779,6 +991,73 @@ describe("page-side M3U8 fallback", () => {
 });
 
 describe("worker mixed-codec master selection", () => {
+	it("owns Twitch's current VOD master and passes clean archive media through", async () => {
+		const originalFetch = g.fetch;
+		const variantUrl =
+			"https://vod-secure.twitch.tv/archive/2827992810/1080p/index-dvr.m3u8";
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="1785600000.000"',
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+			variantUrl,
+		].join("\n");
+		const media = [
+			"#EXTM3U",
+			"#EXT-X-PLAYLIST-TYPE:EVENT",
+			"#EXT-X-TARGETDURATION:10",
+			"#EXT-X-MEDIA-SEQUENCE:0",
+			"#EXTINF:10.000,",
+			"https://vod-secure.twitch.tv/archive/2827992810/1080p/0.ts",
+			"#EXT-X-ENDLIST",
+		].join("\n");
+		const rawFetch = vi.fn(
+			async (input: RequestInfo | URL) =>
+				new Response(String(input).includes("/vod/v2/") ? master : media, {
+					status: 200,
+				}),
+		);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageMediaType = "vod";
+		state.PageChannel = null;
+		state.PageVodID = "2827992810";
+		state.PageMediaKey = "vod:2827992810";
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/vod/v2/2827992810.m3u8?sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const masterOutput = await (
+				await (g.fetch as typeof fetch)(usherUrl)
+			).text();
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["vod:2827992810"];
+
+			expect(masterOutput).toBe(master);
+			expect(state.V2API).toBe(true);
+			expect(T<(text: string) => string | null>("_getServerTime")(master)).toBe(
+				"1785600000.000",
+			);
+			expect(info.MediaType).toBe("vod");
+			expect(info.ChannelName).toBe(null);
+			expect(info.VodID).toBe("2827992810");
+			expect(
+				(state.StreamInfosByUrl as Record<string, unknown>)[variantUrl],
+			).toBe(info);
+
+			const mediaOutput = await (
+				await (g.fetch as typeof fetch)(variantUrl)
+			).text();
+			expect(mediaOutput).toContain("/1080p/0.ts");
+			expect(mediaOutput).not.toContain("__ttvab_empty_hold_segment.mp4");
+			expect(rawFetch).toHaveBeenCalledTimes(2);
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
 	it("keeps 1440p HEVC/AV1 selectable normally and filters only for an exact current handoff", async () => {
 		const originalFetch = g.fetch;
 		const master = [
