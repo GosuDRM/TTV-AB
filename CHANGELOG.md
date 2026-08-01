@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [14.0.0] - 2026-08-01
+
+- Restored VOD ad blocking after Twitch moved archive masters to a new URL format, so current VOD playlists stay inside the normal detection, clean-backup, and recovery path ([#53](https://github.com/GosuDRM/TTV-AB/issues/53)).
+- Blocked Twitch's separate client-side VOD video-ad requests before an ad player can start, while leaving live streams, disabled blocking, and unrelated requests untouched.
+- Kept VOD playback advancing on clean native media while backup search runs, with the existing live-refresh and conservative restoration gates unchanged to prevent ad leaks and buffer-drain stalls.
+
 ## [13.2.7] - 2026-07-29
 
 - Fixed the error 4000 regression on enhanced-quality HEVC and AV1 streams that could occur when an AVC or rotated playlist arrived during an ad break. The retiring player now stays isolated until a codec-compatible replacement is ready ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
