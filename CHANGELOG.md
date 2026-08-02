@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [14.0.1] - 2026-08-02
+
+- Fixed live streams sometimes stopping after their tab or browser window lost focus. Automatic background pauses are now distinguished from manual controls and resumed for the active stream.
+- Kept pauses made with Twitch's player controls and Picture-in-Picture controls authoritative, including after switching between Twitch pages.
+- Kept hidden ad-break recovery active without relying on throttled resume timers or reloading a background player, while clean backup refresh and stall rotation continue.
+- Restored focus and back-forward cache monitoring so playback recovery remains active after returning to a cached Twitch page.
+
 ## [14.0.0] - 2026-08-01
 
 - Restored VOD ad blocking after Twitch moved archive masters to a new URL format, so current VOD playlists stay inside the normal detection, clean-backup, and recovery path ([#53](https://github.com/GosuDRM/TTV-AB/issues/53)).
