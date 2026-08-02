@@ -1095,12 +1095,15 @@ describe("_guardPlaybackAcrossVisibilityTransition (watch-context gate)", () => 
 	let scheduleCalls: unknown[][];
 	let originalResume: unknown;
 	let originalSchedule: unknown;
+	let originalHidden: unknown;
 
 	beforeEach(() => {
 		resumeCalls = [];
 		scheduleCalls = [];
 		originalResume = g._resumePrimaryPlaybackIfPaused;
 		originalSchedule = g._schedulePlaybackRecoveryTimeout;
+		originalHidden = g._isNativeDocumentHidden;
+		g._isNativeDocumentHidden = () => false;
 		g._resumePrimaryPlaybackIfPaused = (...args: unknown[]) => {
 			resumeCalls.push(args);
 			return true;
@@ -1114,6 +1117,7 @@ describe("_guardPlaybackAcrossVisibilityTransition (watch-context gate)", () => 
 	afterEach(() => {
 		g._resumePrimaryPlaybackIfPaused = originalResume;
 		g._schedulePlaybackRecoveryTimeout = originalSchedule;
+		g._isNativeDocumentHidden = originalHidden;
 	});
 
 	function guard() {
@@ -1136,11 +1140,225 @@ describe("_guardPlaybackAcrossVisibilityTransition (watch-context gate)", () => 
 		expect(scheduleCalls).toHaveLength(0);
 	});
 
-	it("still resumes paused playback on an active watch context", () => {
+	it("retries paused playback on an active watch context", () => {
 		guard()("testchannel", "live:testchannel");
 
 		expect(resumeCalls).toHaveLength(1);
 		expect(resumeCalls[0]).toEqual(["testchannel", "live:testchannel"]);
 		expect(scheduleCalls.length).toBeGreaterThan(0);
+	});
+
+	it("uses the longer bounded retry horizon while the tab is hidden", () => {
+		g._isNativeDocumentHidden = () => true;
+
+		guard()("testchannel", "live:testchannel");
+
+		expect(Math.max(...scheduleCalls.map((call) => Number(call[1]) || 0))).toBe(
+			3000,
+		);
+	});
+});
+
+describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
+	let video: HTMLVideoElement;
+	let isPaused: boolean;
+	let guardCalls: unknown[][];
+	let resumeCalls: unknown[][];
+	let adResumeCalls: unknown[][];
+	let originalGetPrimary: unknown;
+	let originalGuard: unknown;
+	let originalResume: unknown;
+	let originalUnfocused: unknown;
+	let originalAdResume: unknown;
+	let originalVisibilityTransitionAt: unknown;
+
+	beforeEach(() => {
+		T<() => void>("_clearObservedPlaybackIntentMedia")();
+		video = document.createElement("video");
+		isPaused = false;
+		Object.defineProperty(video, "paused", {
+			get: () => isPaused,
+			configurable: true,
+		});
+		Object.defineProperty(video, "ended", {
+			get: () => false,
+			configurable: true,
+		});
+		document.body.appendChild(video);
+
+		guardCalls = [];
+		resumeCalls = [];
+		adResumeCalls = [];
+		originalGetPrimary = g._getPrimaryMediaElement;
+		originalGuard = g._guardPlaybackAcrossVisibilityTransition;
+		originalResume = g._resumePrimaryPlaybackIfPaused;
+		originalUnfocused = g._isPlaybackPageUnfocused;
+		originalAdResume = g._resumeActivePlayerAfterAd;
+		originalVisibilityTransitionAt = g._lastPlaybackVisibilityTransitionAt;
+		g._getPrimaryMediaElement = () => video;
+		g._guardPlaybackAcrossVisibilityTransition = (...args: unknown[]) => {
+			guardCalls.push(args);
+		};
+		g._resumePrimaryPlaybackIfPaused = (...args: unknown[]) => {
+			resumeCalls.push(args);
+			return true;
+		};
+		g._isPlaybackPageUnfocused = () => true;
+		g._lastPlaybackVisibilityTransitionAt = Date.now();
+		g._resumeActivePlayerAfterAd = (...args: unknown[]) => {
+			adResumeCalls.push(args);
+			return true;
+		};
+
+		g.__TTVAB_STATE__ = {
+			CurrentAdMediaKey: null,
+			CurrentAdChannel: null,
+			PageMediaType: "live",
+			PageMediaKey: "live:testchannel",
+			PageChannel: "testchannel",
+			ShouldResumeAfterAd: false,
+			ShouldResumeAfterAdChannel: null,
+			ShouldResumeAfterAdMediaKey: null,
+			ShouldResumeAfterAdUntil: 0,
+		};
+		const intentState = g._PlaybackIntentState as Record<string, unknown>;
+		intentState.userPausedMediaKey = null;
+		intentState.userPausedAt = 0;
+		intentState.userPausedHadExplicitInteraction = false;
+		intentState.userPausedDuringAd = false;
+		intentState.lastProgrammaticPauseAt = 0;
+		intentState.lastPlaybackControlInteractionAt = 0;
+		intentState.lastPlaybackControlInteractionMediaKey = null;
+		intentState.suppressedPauseMediaKey = null;
+		intentState.suppressedPauseUntil = 0;
+
+		T<() => void>("_syncPrimaryMediaPlaybackIntent")();
+	});
+
+	afterEach(() => {
+		T<() => void>("_clearObservedPlaybackIntentMedia")();
+		video.remove();
+		g._getPrimaryMediaElement = originalGetPrimary;
+		g._guardPlaybackAcrossVisibilityTransition = originalGuard;
+		g._resumePrimaryPlaybackIfPaused = originalResume;
+		g._isPlaybackPageUnfocused = originalUnfocused;
+		g._resumeActivePlayerAfterAd = originalAdResume;
+		g._lastPlaybackVisibilityTransitionAt = originalVisibilityTransitionAt;
+	});
+
+	function pause() {
+		isPaused = true;
+		video.dispatchEvent(new Event("pause"));
+	}
+
+	it("recovers a late environmental pause without recording user intent", () => {
+		pause();
+
+		expect(guardCalls).toHaveLength(0);
+		expect(resumeCalls).toEqual([["testchannel", "live:testchannel"]]);
+		expect(adResumeCalls).toHaveLength(0);
+		expect(
+			(g._PlaybackIntentState as Record<string, unknown>).userPausedMediaKey,
+		).toBeNull();
+	});
+
+	it("keeps an explicit pause authoritative while the page is unfocused", () => {
+		const intentState = g._PlaybackIntentState as Record<string, unknown>;
+		intentState.lastPlaybackControlInteractionAt = Date.now();
+		intentState.lastPlaybackControlInteractionMediaKey = "live:testchannel";
+
+		pause();
+
+		expect(guardCalls).toHaveLength(0);
+		expect(resumeCalls).toHaveLength(0);
+		expect(adResumeCalls).toHaveLength(0);
+		expect(intentState.userPausedMediaKey).toBe("live:testchannel");
+		expect(intentState.userPausedHadExplicitInteraction).toBe(true);
+	});
+
+	it("uses the existing ad resume intent gate for an unfocused ad-time pause", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.CurrentAdChannel = "testchannel";
+		state.ShouldResumeAfterAd = true;
+		state.ShouldResumeAfterAdChannel = "testchannel";
+		state.ShouldResumeAfterAdMediaKey = "live:testchannel";
+		state.ShouldResumeAfterAdUntil = Date.now() + 10000;
+
+		pause();
+
+		expect(guardCalls).toHaveLength(0);
+		expect(resumeCalls).toHaveLength(0);
+		expect(adResumeCalls).toEqual([["testchannel", "live:testchannel"]]);
+		expect(
+			(g._PlaybackIntentState as Record<string, unknown>).userPausedMediaKey,
+		).toBeNull();
+	});
+
+	it("does not spawn retry batches when environmental pauses repeat", () => {
+		pause();
+		pause();
+
+		expect(guardCalls).toHaveLength(0);
+		expect(resumeCalls).toEqual([
+			["testchannel", "live:testchannel"],
+			["testchannel", "live:testchannel"],
+		]);
+	});
+
+	it("records a control-free pause after the focus-loss recovery window", () => {
+		g._lastPlaybackVisibilityTransitionAt =
+			Date.now() - Number(g._UNFOCUSED_AUTO_PAUSE_WINDOW_MS) - 1;
+
+		pause();
+
+		expect(resumeCalls).toHaveLength(0);
+		expect(
+			(g._PlaybackIntentState as Record<string, unknown>).userPausedMediaKey,
+		).toBe("live:testchannel");
+	});
+});
+
+describe("_hookVisibilityState (focus and page lifecycle)", () => {
+	let guardCalls: unknown[][];
+	let originalGuard: unknown;
+
+	beforeEach(() => {
+		guardCalls = [];
+		originalGuard = g._guardPlaybackAcrossVisibilityTransition;
+		g._guardPlaybackAcrossVisibilityTransition = (...args: unknown[]) => {
+			guardCalls.push(args);
+		};
+		g.__TTVAB_STATE__ = {
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+		};
+		(
+			window as unknown as Record<string, unknown>
+		).__TTVAB_VISIBILITY_HARDENED__ = false;
+	});
+
+	afterEach(() => {
+		window.dispatchEvent(new Event("pagehide"));
+		g._guardPlaybackAcrossVisibilityTransition = originalGuard;
+	});
+
+	it("recovers on focus and reinstalls its listeners after a page restore", () => {
+		T<() => void>("_hookVisibilityState")();
+
+		window.dispatchEvent(new Event("focus"));
+		expect(guardCalls).toEqual([["testchannel", "live:testchannel"]]);
+
+		window.dispatchEvent(new Event("pagehide"));
+		document.dispatchEvent(new Event("visibilitychange"));
+		expect(guardCalls).toHaveLength(1);
+
+		window.dispatchEvent(new Event("pageshow"));
+		document.dispatchEvent(new Event("visibilitychange"));
+		expect(guardCalls).toEqual([
+			["testchannel", "live:testchannel"],
+			["testchannel", "live:testchannel"],
+			["testchannel", "live:testchannel"],
+		]);
 	});
 });
