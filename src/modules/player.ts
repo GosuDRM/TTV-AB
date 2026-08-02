@@ -64,6 +64,7 @@ let _playbackIntentMonitorStarted = false;
 let _playerBufferMonitorStarted = false;
 let _playbackIntentMonitorTimer: ReturnType<typeof setTimeout> | null = null;
 let _playerBufferMonitorTimer: ReturnType<typeof setTimeout> | null = null;
+let _lastPlaybackVisibilityTransitionAt = 0;
 const _PlaybackRecoveryTimeoutState = {
 	timeouts: new Set<{
 		id: ReturnType<typeof setTimeout>;
@@ -99,6 +100,7 @@ const _IN_AD_FREEZE_ACTION_REPEAT_MS = 5000;
 const _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS = 2;
 const _VISIBILITY_RESUME_RETRY_DELAYS_MS = [80, 250, 700, 1500];
 const _HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS = [120, 500, 1500, 3000];
+const _UNFOCUSED_AUTO_PAUSE_WINDOW_MS = 10000;
 const _SECONDARY_PLAYER_HANDOFF_WINDOW_MS = 2700000;
 const _PinnedBackupStallState = {
 	firstObservedAt: 0,
@@ -675,6 +677,26 @@ function _isNativeDocumentHidden() {
 		}
 	} catch {}
 	return document.hidden === true;
+}
+
+function _isPlaybackPageUnfocused() {
+	if (_getActivePictureInPicturePlaybackContext()) return false;
+	if (_isNativeDocumentHidden()) return true;
+	try {
+		return typeof document.hasFocus === "function" && !document.hasFocus();
+	} catch {}
+	return false;
+}
+
+function _isRecentUnfocusedPlaybackTransition() {
+	const transitionAt = Number(_lastPlaybackVisibilityTransitionAt) || 0;
+	const age = Date.now() - transitionAt;
+	return (
+		transitionAt > 0 &&
+		age >= 0 &&
+		age <= _UNFOCUSED_AUTO_PAUSE_WINDOW_MS &&
+		_isPlaybackPageUnfocused()
+	);
 }
 
 function _normalizePlayerChannel(channel = null) {
@@ -1676,6 +1698,13 @@ function _syncPrimaryMediaPlaybackIntent() {
 		);
 		const wasDuringAd = _isAdOwnedPauseContext(null, mediaKey);
 		if (wasDuringAd && !hadExplicitInteraction) {
+			if (_isRecentUnfocusedPlaybackTransition()) {
+				_resumeActivePlayerAfterAd(__TTVAB_STATE__.PageChannel, mediaKey);
+			}
+			return;
+		}
+		if (!hadExplicitInteraction && _isRecentUnfocusedPlaybackTransition()) {
+			_resumePrimaryPlaybackIfPaused(__TTVAB_STATE__.PageChannel, mediaKey);
 			return;
 		}
 
@@ -4091,17 +4120,31 @@ function _doPlayerTask(
 			return false;
 		}
 		_pausePlaybackTarget(player);
-		_schedulePlaybackRecoveryTimeout(
-			() => {
-				const { player: freshPlayer } = _getPlayerAndState();
-				const resumeTarget = freshPlayer || player;
-				_playPlaybackTarget(resumeTarget, taskChannel, taskMediaKey);
-			},
-			50,
-			taskChannel,
-			taskMediaKey,
-			requestedCycleStartedAt,
-		);
+		const resumePausedPlayer = () => {
+			if (!_isPlaybackRecoveryContextCurrent(taskChannel, taskMediaKey)) {
+				return;
+			}
+			if (
+				requestedCycleStartedAt > 0 &&
+				!_isPlayerLifecycleCycleCurrent(taskMediaKey, requestedCycleStartedAt)
+			) {
+				return;
+			}
+			const { player: freshPlayer } = _getPlayerAndState();
+			const resumeTarget = freshPlayer || player;
+			_playPlaybackTarget(resumeTarget, taskChannel, taskMediaKey);
+		};
+		if (_isNativeDocumentHidden()) {
+			queueMicrotask(resumePausedPlayer);
+		} else {
+			_schedulePlaybackRecoveryTimeout(
+				resumePausedPlayer,
+				50,
+				taskChannel,
+				taskMediaKey,
+				requestedCycleStartedAt,
+			);
+		}
 		return true;
 	}
 
@@ -4575,7 +4618,10 @@ function _checkInAdPlayheadFreeze(player) {
 		_resetInAdFreezeState();
 		return;
 	}
-	if (_InAdFreezeState.actionCount > _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS) {
+	const shouldReload =
+		_InAdFreezeState.actionCount > _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS &&
+		!_isNativeDocumentHidden();
+	if (shouldReload) {
 		_log(
 			`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s (bufferEnd=${bufferedEnd.toFixed(2)}s); reloading player`,
 			"warning",
@@ -4583,6 +4629,9 @@ function _checkInAdPlayheadFreeze(player) {
 		_doPlayerTask(false, true, { reason: "buffer-recovery" });
 		_InAdFreezeState.actionCount = 0;
 		return;
+	}
+	if (_InAdFreezeState.actionCount > _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS) {
+		_InAdFreezeState.actionCount = 0;
 	}
 	_log(
 		`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s (bufferEnd=${bufferedEnd.toFixed(2)}s); pause/play nudge`,
@@ -5152,22 +5201,28 @@ function _hookVisibilityState() {
 
 	if (!window.__TTVAB_VISIBILITY_HARDENED__) {
 		const queueVisibilityPlaybackGuard = () => {
+			_lastPlaybackVisibilityTransitionAt = Date.now();
 			_guardPlaybackAcrossVisibilityTransition(
 				__TTVAB_STATE__.PageChannel,
 				__TTVAB_STATE__.PageMediaKey,
 			);
 		};
-
-		for (const eventName of [
-			"visibilitychange",
-			"webkitvisibilitychange",
-			"mozvisibilitychange",
-		]) {
-			document.addEventListener(eventName, queueVisibilityPlaybackGuard);
-		}
-		window.addEventListener("blur", queueVisibilityPlaybackGuard);
-
-		window.addEventListener("pagehide", () => {
+		let isInstalled = false;
+		const install = () => {
+			if (isInstalled) return;
+			for (const eventName of [
+				"visibilitychange",
+				"webkitvisibilitychange",
+				"mozvisibilitychange",
+			]) {
+				document.addEventListener(eventName, queueVisibilityPlaybackGuard);
+			}
+			window.addEventListener("blur", queueVisibilityPlaybackGuard);
+			window.addEventListener("focus", queueVisibilityPlaybackGuard);
+			isInstalled = true;
+		};
+		const uninstall = () => {
+			if (!isInstalled) return;
 			for (const eventName of [
 				"visibilitychange",
 				"webkitvisibilitychange",
@@ -5176,6 +5231,15 @@ function _hookVisibilityState() {
 				document.removeEventListener(eventName, queueVisibilityPlaybackGuard);
 			}
 			window.removeEventListener("blur", queueVisibilityPlaybackGuard);
+			window.removeEventListener("focus", queueVisibilityPlaybackGuard);
+			isInstalled = false;
+		};
+
+		install();
+		window.addEventListener("pagehide", uninstall);
+		window.addEventListener("pageshow", () => {
+			install();
+			queueVisibilityPlaybackGuard();
 		});
 
 		window.__TTVAB_VISIBILITY_HARDENED__ = true;

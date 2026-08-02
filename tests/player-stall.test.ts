@@ -369,6 +369,10 @@ describe("_doPlayerTask ad-recovery reload backoff", () => {
 		"_scheduleResumeRetries",
 		"_pausePlaybackTarget",
 		"_playPlaybackTarget",
+		"_getPlayerCore",
+		"_getActivePictureInPicturePlaybackContext",
+		"_isNativeDocumentHidden",
+		"_isPlaybackRecoveryContextCurrent",
 	];
 	let savedGlobals: Record<string, unknown> = {};
 
@@ -397,6 +401,8 @@ describe("_doPlayerTask ad-recovery reload backoff", () => {
 		};
 		const now = Date.now();
 		g._getPlayerAndState = () => ({ player, state });
+		g._getActivePictureInPicturePlaybackContext = () => null;
+		g._isNativeDocumentHidden = () => false;
 		g._shouldSuppressAutomaticPlaybackResume = () => false;
 		g._capturePlayerPreferenceSnapshot = () => null;
 		g._suppressPauseIntent = () => true;
@@ -458,6 +464,53 @@ describe("_doPlayerTask ad-recovery reload backoff", () => {
 		expect(result).toBe(true);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
 		expect(state._AdRecoveryConsecutiveFailures).toBe(3);
+	});
+
+	it("resumes a hidden pause nudge in a microtask instead of a throttled timer", async () => {
+		const player = { isPaused: () => false, getHTMLVideoElement: () => null };
+		const playerState = { props: { content: { type: "live" } } };
+		const pauseCalls: unknown[] = [];
+		const playCalls: unknown[] = [];
+		const scheduledCalls: unknown[] = [];
+		g._getPlayerAndState = () => ({ player, state: playerState });
+		g._getPlayerCore = () => ({ paused: false });
+		g._getActivePictureInPicturePlaybackContext = () => null;
+		g._isNativeDocumentHidden = () => true;
+		g._isPlaybackRecoveryContextCurrent = () => true;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._pausePlaybackTarget = (target: unknown) => {
+			pauseCalls.push(target);
+			return true;
+		};
+		g._playPlaybackTarget = (target: unknown) => {
+			playCalls.push(target);
+			return true;
+		};
+		g._schedulePlaybackRecoveryTimeout = (...args: unknown[]) => {
+			scheduledCalls.push(args);
+			return 1;
+		};
+		g.__TTVAB_STATE__ = {
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+		};
+
+		const result = T<
+			(
+				isPausePlay: boolean,
+				isReload: boolean,
+				options?: Record<string, unknown>,
+			) => unknown
+		>("_doPlayerTask")(true, false, { reason: "buffer-recovery" });
+
+		expect(result).toBe(true);
+		expect(pauseCalls).toEqual([player]);
+		expect(playCalls).toHaveLength(0);
+		expect(scheduledCalls).toHaveLength(0);
+
+		await Promise.resolve();
+
+		expect(playCalls).toEqual([player]);
 	});
 });
 
@@ -687,20 +740,24 @@ describe("_checkInAdPlayheadFreeze", () => {
 		);
 
 	let realDoPlayerTask: unknown;
+	let realIsNativeDocumentHidden: unknown;
 	let playerTaskCalls: Array<[unknown, unknown]> = [];
 
 	beforeEach(() => {
 		realDoPlayerTask = g._doPlayerTask;
+		realIsNativeDocumentHidden = g._isNativeDocumentHidden;
 		playerTaskCalls = [];
 		g._doPlayerTask = (a: unknown, b: unknown) => {
 			playerTaskCalls.push([a, b]);
 			return true;
 		};
+		g._isNativeDocumentHidden = () => false;
 		(g._resetInAdFreezeState as () => void)();
 	});
 
 	afterEach(() => {
 		g._doPlayerTask = realDoPlayerTask;
+		g._isNativeDocumentHidden = realIsNativeDocumentHidden;
 		(g._resetInAdFreezeState as () => void)();
 	});
 
@@ -802,6 +859,25 @@ describe("_checkInAdPlayheadFreeze", () => {
 		}
 		expect(seeks).toEqual([]);
 		expect(playerTaskCalls).toEqual([]);
+	});
+
+	it("keeps hidden decoder recovery active without issuing a reload", () => {
+		const { video } = makeRangesVideo([[1400, 1463.966]], 1463.93);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+		g._isNativeDocumentHidden = () => true;
+
+		for (let tick = 0; tick < 6; tick++) {
+			nowSpy.mockReturnValue(100000 + tick * 5500);
+			check()(player);
+		}
+
+		expect(playerTaskCalls.length).toBeGreaterThan(0);
+		expect(
+			playerTaskCalls.every(([pausePlay, reload]) => pausePlay && !reload),
+		).toBe(true);
+		const state = g._InAdFreezeState as Record<string, number>;
+		expect(state.actionCount).toBeLessThanOrEqual(2);
 	});
 
 	it("acts despite a slow currentTime trickle from a wedged decoder (issue #39 photo-finish reset)", () => {
@@ -1265,6 +1341,64 @@ describe("_isNativeDocumentHidden (pip awareness)", () => {
 			hidden: () => false,
 		};
 		expect(hidden()()).toBe(false);
+	});
+});
+
+describe("_isPlaybackPageUnfocused", () => {
+	const unfocused = () => T<() => boolean>("_isPlaybackPageUnfocused");
+	const recentTransition = () =>
+		T<() => boolean>("_isRecentUnfocusedPlaybackTransition");
+	let savedHidden: unknown;
+	let savedPipContext: unknown;
+	let savedHasFocus: PropertyDescriptor | undefined;
+	let savedTransitionAt: unknown;
+	let hasFocus = false;
+
+	beforeEach(() => {
+		savedHidden = g._isNativeDocumentHidden;
+		savedPipContext = g._getActivePictureInPicturePlaybackContext;
+		savedHasFocus = Object.getOwnPropertyDescriptor(document, "hasFocus");
+		savedTransitionAt = g._lastPlaybackVisibilityTransitionAt;
+		g._isNativeDocumentHidden = () => false;
+		g._getActivePictureInPicturePlaybackContext = () => null;
+		hasFocus = false;
+		Object.defineProperty(document, "hasFocus", {
+			value: () => hasFocus,
+			configurable: true,
+		});
+	});
+
+	afterEach(() => {
+		g._isNativeDocumentHidden = savedHidden;
+		g._getActivePictureInPicturePlaybackContext = savedPipContext;
+		g._lastPlaybackVisibilityTransitionAt = savedTransitionAt;
+		if (savedHasFocus) {
+			Object.defineProperty(document, "hasFocus", savedHasFocus);
+		} else {
+			delete (document as unknown as Record<string, unknown>).hasFocus;
+		}
+	});
+
+	it("recognizes a blurred watch page", () => {
+		expect(unfocused()()).toBe(true);
+		hasFocus = true;
+		expect(unfocused()()).toBe(false);
+	});
+
+	it("does not reinterpret Picture-in-Picture controls as page blur", () => {
+		g._getActivePictureInPicturePlaybackContext = () => ({
+			MediaKey: "live:testchannel",
+		});
+		expect(unfocused()()).toBe(false);
+	});
+
+	it("limits automatic recovery to the focus-loss transition window", () => {
+		const nowSpy = vi.spyOn(Date, "now");
+		g._lastPlaybackVisibilityTransitionAt = 100000;
+		nowSpy.mockReturnValue(109999);
+		expect(recentTransition()()).toBe(true);
+		nowSpy.mockReturnValue(110001);
+		expect(recentTransition()()).toBe(false);
 	});
 });
 
