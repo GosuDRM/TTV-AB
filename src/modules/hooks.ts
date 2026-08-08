@@ -29,6 +29,7 @@ let _pendingPostAdArtifactCleanup = null;
 const _pageSideEmptyHoldInfoByUrl = new Map();
 const _pageSideVariantCodecByUrl = new Map();
 const _pageSidePlaybackOwnerByUrl = new Map();
+const _pageAdCycleControlByMediaKey = new Map();
 const _trackedExtensionBlobUrls = new Set<string>();
 const _CRASHED_WORKER_RECOVERY_MESSAGE_KEYS = new Set([
 	"FetchRequest",
@@ -44,6 +45,162 @@ const _CRASHED_WORKER_RECOVERY_MESSAGE_KEYS = new Set([
 	"PauseResumePlayer",
 	"ReloadPlayer",
 ]);
+
+function _claimPageAdCycleControl(
+	mediaKey,
+	cycleStartedAt,
+	workerGeneration,
+	eventAt,
+) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const normalizedCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+	const normalizedWorkerGeneration = Math.max(0, Number(workerGeneration) || 0);
+	const normalizedEventAt = Math.max(0, Number(eventAt) || 0);
+	if (
+		!normalizedMediaKey ||
+		normalizedCycleStartedAt <= 0 ||
+		normalizedWorkerGeneration <= 0 ||
+		normalizedEventAt <= 0 ||
+		!Number.isFinite(normalizedCycleStartedAt) ||
+		!Number.isFinite(normalizedWorkerGeneration) ||
+		!Number.isFinite(normalizedEventAt)
+	) {
+		return false;
+	}
+	const previous =
+		_pageAdCycleControlByMediaKey.get(normalizedMediaKey) || null;
+	const previousCycleStartedAt = Math.max(
+		0,
+		Number(previous?.cycleStartedAt) || 0,
+	);
+	if (
+		previous &&
+		(previousCycleStartedAt > normalizedCycleStartedAt ||
+			(previousCycleStartedAt === normalizedCycleStartedAt &&
+				(Math.max(0, Number(previous.workerGeneration) || 0) >
+					normalizedWorkerGeneration ||
+					Math.max(0, Number(previous.latestEventAt) || 0) >
+						normalizedEventAt)))
+	) {
+		return false;
+	}
+	_pageAdCycleControlByMediaKey.delete(normalizedMediaKey);
+	_pageAdCycleControlByMediaKey.set(normalizedMediaKey, {
+		cycleStartedAt: normalizedCycleStartedAt,
+		workerGeneration: normalizedWorkerGeneration,
+		latestEventAt: normalizedEventAt,
+	});
+	while (_pageAdCycleControlByMediaKey.size > 32) {
+		const oldestMediaKey = _pageAdCycleControlByMediaKey.keys().next().value;
+		if (oldestMediaKey === undefined) break;
+		_pageAdCycleControlByMediaKey.delete(oldestMediaKey);
+	}
+	return true;
+}
+
+function _isPageAdCycleControlEventCurrent(
+	mediaKey,
+	cycleStartedAt,
+	workerGeneration,
+	eventAt,
+) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	if (!normalizedMediaKey) return false;
+	const normalizedCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+	const normalizedWorkerGeneration = Math.max(0, Number(workerGeneration) || 0);
+	const normalizedEventAt = Math.max(0, Number(eventAt) || 0);
+	if (
+		normalizedCycleStartedAt <= 0 ||
+		normalizedWorkerGeneration <= 0 ||
+		normalizedEventAt <= 0 ||
+		!Number.isFinite(normalizedCycleStartedAt) ||
+		!Number.isFinite(normalizedWorkerGeneration) ||
+		!Number.isFinite(normalizedEventAt)
+	) {
+		return false;
+	}
+	const control = _pageAdCycleControlByMediaKey.get(normalizedMediaKey) || null;
+	if (!control) return true;
+	const controlCycleStartedAt = Math.max(
+		0,
+		Number(control.cycleStartedAt) || 0,
+	);
+	if (normalizedCycleStartedAt > controlCycleStartedAt) return true;
+	if (
+		normalizedCycleStartedAt !== controlCycleStartedAt ||
+		normalizedEventAt < Math.max(0, Number(control.latestEventAt) || 0)
+	) {
+		return false;
+	}
+	const controlWorkerGeneration = Math.max(
+		0,
+		Number(control.workerGeneration) || 0,
+	);
+	if (normalizedWorkerGeneration === controlWorkerGeneration) return true;
+	const playbackOwnerGeneration =
+		_getConfirmedWorkerPlaybackOwnerGeneration(normalizedMediaKey);
+	return Boolean(
+		normalizedWorkerGeneration > controlWorkerGeneration &&
+			playbackOwnerGeneration >= normalizedWorkerGeneration,
+	);
+}
+
+function _getConfirmedWorkerPlaybackOwnerGeneration(mediaKey) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	if (!normalizedMediaKey) return 0;
+	return Math.max(
+		0,
+		Number(
+			_WorkerPlaybackOwnerGenerationByContext.get(
+				_getWorkerRecoveryContextKey({ MediaKey: normalizedMediaKey }),
+			),
+		) || 0,
+	);
+}
+
+function _reassignPageAdCycleControlAfterWorkerRetirement(
+	mediaKey,
+	retiredWorkerGeneration,
+	retiredWorker,
+	now = Date.now(),
+) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const normalizedFailedGeneration = Math.max(
+		0,
+		Number(retiredWorkerGeneration) || 0,
+	);
+	const control = normalizedMediaKey
+		? _pageAdCycleControlByMediaKey.get(normalizedMediaKey) || null
+		: null;
+	const playbackOwnerGeneration =
+		_getConfirmedWorkerPlaybackOwnerGeneration(normalizedMediaKey);
+	const healthyPlaybackOwner = normalizedMediaKey
+		? _getHealthyObservedPlaybackWorker(
+				{ MediaKey: normalizedMediaKey },
+				retiredWorker,
+				now,
+				0,
+				true,
+			)
+		: null;
+	const healthyOwnerGeneration = Math.max(
+		0,
+		Number(healthyPlaybackOwner?.__TTVABGeneration) || 0,
+	);
+	if (
+		!control ||
+		normalizedFailedGeneration <= 0 ||
+		playbackOwnerGeneration <= 0 ||
+		playbackOwnerGeneration >= normalizedFailedGeneration ||
+		healthyOwnerGeneration !== playbackOwnerGeneration ||
+		Math.max(0, Number(control.workerGeneration) || 0) !==
+			normalizedFailedGeneration
+	) {
+		return false;
+	}
+	control.workerGeneration = playbackOwnerGeneration;
+	return true;
+}
 
 function _rememberPageSidePlaybackOwner(
 	mediaKey,
@@ -2174,6 +2331,12 @@ function _recoverCrashedWorker(
 	const crashedAt = Date.now();
 	worker.__TTVABCrashed = true;
 	worker.__TTVABCrashedAt = crashedAt;
+	_reassignPageAdCycleControlAfterWorkerRetirement(
+		recoveryContext.MediaKey,
+		crashedWorkerGeneration,
+		worker,
+		crashedAt,
+	);
 	_log(message, level);
 	pruneTrackedWorkers([worker]);
 	if (!recoveryContext.MediaKey) {
@@ -4625,6 +4788,10 @@ function _hookWorker() {
 							}
 							{
 								const now = Date.now();
+								const sourceWorkerGeneration = Math.max(
+									0,
+									Number(this.__TTVABGeneration) || 0,
+								);
 								const isContinuation = data.continued === true;
 								const detectedContext = _normalizePlaybackContext({
 									MediaType: __TTVAB_STATE__.PageMediaType,
@@ -4657,13 +4824,64 @@ function _hookWorker() {
 												Number(__TTVAB_STATE__.LastAdEndedCycleStartedAt) || 0,
 											)
 										: 0;
+								const lastEndedAt = Math.max(
+									0,
+									Number(__TTVAB_STATE__.LastAdEndedAt) || 0,
+								);
+								const continuationDetectedAt = Math.max(
+									0,
+									Number(data.detectedAt) || 0,
+								);
+								const confirmedPlaybackOwnerGeneration =
+									_getConfirmedWorkerPlaybackOwnerGeneration(mediaKey);
+								const healthyPlaybackOwner = this.__TTVABCrashed
+									? _getHealthyObservedPlaybackWorker(
+											detectedContext,
+											this,
+											now,
+											0,
+											true,
+										)
+									: null;
+								const healthyOwnerGeneration = Math.max(
+									0,
+									Number(healthyPlaybackOwner?.__TTVABGeneration) || 0,
+								);
+								const controlWorkerGeneration =
+									this.__TTVABCrashed &&
+									confirmedPlaybackOwnerGeneration > 0 &&
+									confirmedPlaybackOwnerGeneration < sourceWorkerGeneration &&
+									healthyOwnerGeneration === confirmedPlaybackOwnerGeneration
+										? confirmedPlaybackOwnerGeneration
+										: sourceWorkerGeneration;
+								const endedCycleAge = continuationDetectedAt - lastEndedAt;
+								const isRapidSameEndedCycleContinuation = Boolean(
+									isContinuation &&
+										!_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) &&
+										mediaKey &&
+										detectedCycleStartedAt > 0 &&
+										lastEndedCycleStartedAt === detectedCycleStartedAt &&
+										(activeCycleStartedAt === 0 ||
+											activeCycleStartedAt === detectedCycleStartedAt) &&
+										lastEndedAt > 0 &&
+										continuationDetectedAt <= now &&
+										endedCycleAge >= 0 &&
+										endedCycleAge <= _getPostAdReentryContinuationMs(),
+								);
 								if (
 									!mediaKey ||
 									detectedCycleStartedAt <= 0 ||
 									detectedCycleStartedAt <
 										Math.max(activeCycleStartedAt, lastEndedCycleStartedAt) ||
 									(!__TTVAB_STATE__.CurrentAdMediaKey &&
-										lastEndedCycleStartedAt >= detectedCycleStartedAt)
+										lastEndedCycleStartedAt >= detectedCycleStartedAt &&
+										!isRapidSameEndedCycleContinuation) ||
+									!_claimPageAdCycleControl(
+										mediaKey,
+										detectedCycleStartedAt,
+										controlWorkerGeneration,
+										continuationDetectedAt,
+									)
 								) {
 									_log(
 										`Ignoring stale ad cycle for ${mediaKey || channel}`,
@@ -4690,7 +4908,8 @@ function _hookWorker() {
 											__TTVAB_STATE__.AdCycleStaleMs);
 								const shouldReuseCanonicalCycle = Boolean(
 									detectedCycleStartedAt > 0 &&
-										activeCycleStartedAt === detectedCycleStartedAt,
+										(activeCycleStartedAt === detectedCycleStartedAt ||
+											isRapidSameEndedCycleContinuation),
 								);
 								if (shouldStartNewCycle) {
 									if (!shouldReuseCanonicalCycle) {
@@ -4954,7 +5173,12 @@ function _hookWorker() {
 									data.channel || __TTVAB_STATE__.CurrentAdChannel || null;
 								const mediaKey =
 									data.mediaKey || __TTVAB_STATE__.CurrentAdMediaKey || null;
-								const endedAt = Math.max(0, Number(data.endedAt) || Date.now());
+								const sourceWorkerGeneration = Math.max(
+									0,
+									Number(this.__TTVABGeneration) || 0,
+								);
+								const reportedEndedAt = Math.max(0, Number(data.endedAt) || 0);
+								const endedAt = reportedEndedAt || Date.now();
 								const endedContext = _normalizePlaybackContext({
 									MediaType: __TTVAB_STATE__.PageMediaType,
 									ChannelName: channel,
@@ -4972,7 +5196,13 @@ function _hookWorker() {
 								const isHoldingBackup = data.holdingBackup === true;
 								if (
 									!mediaKey ||
-									!_isCodecHandoffCycleCurrent(mediaKey, endedCycleStartedAt)
+									!_isCodecHandoffCycleCurrent(mediaKey, endedCycleStartedAt) ||
+									!_isPageAdCycleControlEventCurrent(
+										mediaKey,
+										endedCycleStartedAt,
+										sourceWorkerGeneration,
+										reportedEndedAt,
+									)
 								) {
 									_log(
 										`Ignoring stale AdEnded cycle for ${mediaKey || channel}`,
@@ -5000,6 +5230,12 @@ function _hookWorker() {
 									);
 									break;
 								}
+								_claimPageAdCycleControl(
+									mediaKey,
+									endedCycleStartedAt,
+									sourceWorkerGeneration,
+									endedAt,
+								);
 								__TTVAB_STATE__.LastAdEndedAt = endedAt;
 								__TTVAB_STATE__.LastAdEndedChannel = endedContext.ChannelName;
 								__TTVAB_STATE__.LastAdEndedMediaKey = endedContext.MediaKey;
@@ -5125,19 +5361,44 @@ function _hookWorker() {
 									data.channel || __TTVAB_STATE__.LastAdEndedChannel || null;
 								const mediaKey =
 									data.mediaKey || __TTVAB_STATE__.LastAdEndedMediaKey || null;
+								const sourceWorkerGeneration = Math.max(
+									0,
+									Number(this.__TTVABGeneration) || 0,
+								);
 								const restoredCycleStartedAt = Math.max(
 									0,
 									Number(data.cycleStartedAt) || 0,
 								);
+								const reportedRestoredAt = Math.max(
+									0,
+									Number(data.restoredAt) || 0,
+								);
 								if (
 									!mediaKey ||
-									!_isCodecHandoffCycleCurrent(mediaKey, restoredCycleStartedAt)
+									!_isCodecHandoffCycleCurrent(
+										mediaKey,
+										restoredCycleStartedAt,
+									) ||
+									!_isPageAdCycleControlEventCurrent(
+										mediaKey,
+										restoredCycleStartedAt,
+										sourceWorkerGeneration,
+										reportedRestoredAt,
+									)
 								) {
 									_log(
 										`Ignoring stale native restore cycle for ${mediaKey || channel}`,
 										"info",
 									);
 									break;
+								}
+								if (reportedRestoredAt > 0) {
+									_claimPageAdCycleControl(
+										mediaKey,
+										restoredCycleStartedAt,
+										sourceWorkerGeneration,
+										reportedRestoredAt,
+									);
 								}
 								const requiresReload = data.requiresReload === true;
 								const restoredHandoffId =
@@ -5169,7 +5430,7 @@ function _hookWorker() {
 								}
 								__TTVAB_STATE__.LastAdEndedAt = Math.max(
 									0,
-									Number(data.restoredAt) || Date.now(),
+									reportedRestoredAt || Date.now(),
 								);
 								__TTVAB_STATE__.LastAdEndedChannel = channel;
 								__TTVAB_STATE__.LastAdEndedMediaKey = mediaKey;
@@ -5562,6 +5823,11 @@ function _hookWorker() {
 				this.__TTVABIntentionallyTerminated = true;
 				try {
 					const terminationContext = _getWorkerPlaybackContext(this);
+					_reassignPageAdCycleControlAfterWorkerRetirement(
+						terminationContext.MediaKey,
+						this.__TTVABGeneration,
+						this,
+					);
 					pruneTrackedWorkers();
 					_scheduleTerminatedPlaybackWorkerRecovery(this, terminationContext);
 				} catch {}
