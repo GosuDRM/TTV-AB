@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [15.0.1] - 2026-08-09
+
+- Fixed a stream sometimes remaining frozen after an ad break until playback was paused and resumed, especially when Twitch continued the same break shortly after native playback returned ([#56](https://github.com/GosuDRM/TTV-AB/issues/56)).
+- Kept the clean backup and active ad-break state synchronized through a rapid continuation, so the final verified native restore can complete instead of being discarded as stale.
+- Kept delayed, crashed, and replacement worker events fail-closed, preventing an old event from restoring native playback into an ad or leaving a valid worker unable to finish recovery.
+
 ## [15.0.0] - 2026-08-08
 
 - Recovered playback workers that crash before or during stream startup, including in hidden tabs, without treating a newly constructed worker as a successful replacement.
