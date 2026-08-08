@@ -4474,6 +4474,7 @@ describe("_processM3U8 rapid reentry cycle ownership", () => {
 		expect(adDetectedMessage(setup.messages)).toMatchObject({
 			continued: true,
 			cycleStartedAt: 100,
+			detectedAt: expect.any(Number),
 		});
 	});
 

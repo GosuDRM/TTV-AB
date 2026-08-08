@@ -2903,6 +2903,7 @@ async function _processM3U8Core(
 						mediaKey: info.MediaKey,
 						handoffId: endedCodecHandoffId,
 						cycleStartedAt: endedCycleStartedAt,
+						endedAt: Date.now(),
 						willReload: shouldReloadPlayer,
 					}),
 				);
@@ -3150,6 +3151,7 @@ async function _processM3U8Core(
 					mediaKey: info.MediaKey,
 					continued: isContinuingAdCycle,
 					cycleStartedAt: info.VisibleAdStartedAt,
+					detectedAt: now,
 					playlistUrl: url,
 					codec: directResolution?.Codecs || res?.Codecs || segmentCodecFamily,
 				}),

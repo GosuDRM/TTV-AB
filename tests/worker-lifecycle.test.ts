@@ -25,6 +25,7 @@ beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/state.js");
+	loadModule("../dist/src/modules/api.js");
 	loadModule("../dist/src/modules/processor.js");
 	loadModule("../dist/src/modules/hooks.js");
 	loadModule("../dist/src/modules/worker.js");
@@ -60,6 +61,7 @@ beforeEach(() => {
 	(g._pageSideEmptyHoldInfoByUrl as Map<string, unknown>).clear();
 	(g._pageSideVariantCodecByUrl as Map<string, unknown>).clear();
 	(g._pageSidePlaybackOwnerByUrl as Map<string, unknown>).clear();
+	(g._pageAdCycleControlByMediaKey as Map<string, unknown>).clear();
 	g._workerGeneration = 0;
 	g._workerRecoveryEpoch = 0;
 	window.history.replaceState(null, "", "/testchannel");
@@ -152,6 +154,98 @@ function makeBridgePort() {
 			this.closed = true;
 		},
 	};
+}
+
+function installWorkerMessageHarness() {
+	const originalWorkerDescriptor = Object.getOwnPropertyDescriptor(
+		window,
+		"Worker",
+	);
+	const originalCreateObjectURLDescriptor = Object.getOwnPropertyDescriptor(
+		URL,
+		"createObjectURL",
+	);
+	const originalRevokeObjectURLDescriptor = Object.getOwnPropertyDescriptor(
+		URL,
+		"revokeObjectURL",
+	);
+	class TestWorker extends EventTarget {
+		messages: unknown[] = [];
+
+		constructor(..._args: unknown[]) {
+			super();
+		}
+
+		postMessage(message: unknown) {
+			this.messages.push(message);
+		}
+
+		terminate() {}
+
+		emitMessage(message: Record<string, unknown>) {
+			const envelope = T<(value: Record<string, unknown>) => unknown>(
+				"_createWorkerBridgeMessage",
+			)(message);
+			this.dispatchEvent(new MessageEvent("message", { data: envelope }));
+		}
+	}
+	const restore = () => {
+		if (g._workerWatchdogID !== null) {
+			clearInterval(g._workerWatchdogID as ReturnType<typeof setInterval>);
+			g._workerWatchdogID = null;
+		}
+		(g._S as { workers: unknown[] }).workers = [];
+		(g._pageAdCycleControlByMediaKey as Map<string, unknown>).clear();
+		if (originalWorkerDescriptor) {
+			Object.defineProperty(window, "Worker", originalWorkerDescriptor);
+		} else {
+			delete (window as unknown as Record<string, unknown>).Worker;
+		}
+		if (originalCreateObjectURLDescriptor) {
+			Object.defineProperty(
+				URL,
+				"createObjectURL",
+				originalCreateObjectURLDescriptor,
+			);
+		} else {
+			delete (URL as unknown as Record<string, unknown>).createObjectURL;
+		}
+		if (originalRevokeObjectURLDescriptor) {
+			Object.defineProperty(
+				URL,
+				"revokeObjectURL",
+				originalRevokeObjectURLDescriptor,
+			);
+		} else {
+			delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
+		}
+	};
+
+	try {
+		Object.defineProperty(URL, "createObjectURL", {
+			configurable: true,
+			value: vi.fn(() => "blob:https://www.twitch.tv/ttvab-test-worker"),
+		});
+		Object.defineProperty(URL, "revokeObjectURL", {
+			configurable: true,
+			value: vi.fn(),
+		});
+		Object.defineProperty(window, "Worker", {
+			configurable: true,
+			writable: true,
+			value: TestWorker,
+		});
+		T<() => void>("_hookWorker")();
+		const createWorker = () =>
+			new window.Worker(
+				"https://static.twitchcdn.net/assets/player-worker.js",
+			) as unknown as TestWorker;
+		const worker = createWorker();
+		return { worker, createWorker, restore };
+	} catch (error) {
+		restore();
+		throw error;
+	}
 }
 
 describe("MAIN bridge token handshake", () => {
@@ -981,6 +1075,553 @@ describe("worker recovery lifecycle", () => {
 			expect(canHandle({ key }, worker, pageContext, currentContext)).toBe(
 				false,
 			);
+		}
+	});
+
+	it("lets a predecessor generation claim a genuinely newer ad cycle", () => {
+		const claimControl = T<
+			(
+				mediaKey: string,
+				cycleStartedAt: number,
+				workerGeneration: number,
+				eventAt: number,
+			) => boolean
+		>("_claimPageAdCycleControl");
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{ cycleStartedAt: number; workerGeneration: number }
+		>;
+
+		expect(claimControl("live:testchannel", 100, 2, 1000)).toBe(true);
+		expect(claimControl("live:testchannel", 200, 1, 2000)).toBe(true);
+		expect(controls.get("live:testchannel")).toMatchObject({
+			cycleStartedAt: 200,
+			workerGeneration: 1,
+		});
+		expect(claimControl("live:testchannel", 200, 0, 2001)).toBe(false);
+		expect(claimControl("live:testchannel", 200, 1, 1999)).toBe(false);
+	});
+
+	it("keeps provisional terminal authority fail closed without a healthy owner", () => {
+		const claimControl = T<
+			(
+				mediaKey: string,
+				cycleStartedAt: number,
+				workerGeneration: number,
+				eventAt: number,
+			) => boolean
+		>("_claimPageAdCycleControl");
+		const reassignControl = T<
+			(
+				mediaKey: string,
+				workerGeneration: number,
+				worker: Record<string, unknown>,
+				now: number,
+			) => boolean
+		>("_reassignPageAdCycleControlAfterWorkerRetirement");
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{ workerGeneration: number; latestEventAt: number }
+		>;
+		(g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>).set(
+			"live:testchannel",
+			1,
+		);
+
+		expect(claimControl("live:testchannel", 100, 2, 1000)).toBe(true);
+		expect(
+			reassignControl("live:testchannel", 2, { __TTVABGeneration: 2 }, 1001),
+		).toBe(false);
+		expect(controls.get("live:testchannel")).toMatchObject({
+			workerGeneration: 2,
+			latestEventAt: 1000,
+		});
+	});
+
+	it("returns provisional terminal authority when an auxiliary worker terminates", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1000);
+		const harness = installWorkerMessageHarness();
+		const playbackOwner = harness.worker;
+		const provisionalClaimant = harness.createWorker();
+		Object.assign(playbackOwner as unknown as Record<string, unknown>, {
+			__TTVABFirstPongAt: 1000,
+			__TTVABLastPongAt: 1000,
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				["live:testchannel", 1000],
+			]),
+		});
+		(g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>).set(
+			"live:testchannel",
+			1,
+		);
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{ workerGeneration: number; latestEventAt: number }
+		>;
+
+		try {
+			expect(
+				T<
+					(
+						mediaKey: string,
+						cycleStartedAt: number,
+						workerGeneration: number,
+						eventAt: number,
+					) => boolean
+				>("_claimPageAdCycleControl")("live:testchannel", 100, 2, 1000),
+			).toBe(true);
+			provisionalClaimant.terminate();
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 1,
+				latestEventAt: 1000,
+			});
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("re-arms a rapid same-cycle continuation and accepts its final restore", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			PinnedBackupPlayerType: null,
+			PinnedBackupPlayerChannel: null,
+			PinnedBackupPlayerMediaKey: null,
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			AdPodProgressByMediaKey: Object.create(null),
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			LastAdEndedAt: 100000,
+			LastAdEndedChannel: "testchannel",
+			LastAdEndedMediaKey: "live:testchannel",
+			LastAdEndedCycleStartedAt: 90000,
+			LastAdDetectedAt: 90000,
+			LastAdRecoveryReloadAt: 100000,
+			LastAdRecoveryResumeAt: 100000,
+			AdCycleStaleMs: 120000,
+		});
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		const continuationWorker = harness.createWorker();
+		const initialMessageCount = continuationWorker.messages.length;
+
+		try {
+			vi.setSystemTime(120000);
+			continuationWorker.emitMessage({
+				key: "AdDetected",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				continued: true,
+				cycleStartedAt: 90000,
+				detectedAt: 104843,
+				playlistUrl:
+					"https://video-weaver.example.ttvnw.net/v1/playlist/continued.m3u8",
+			});
+
+			expect(state.CurrentAdChannel).toBe("testchannel");
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect(state.LastAdDetectedAt).toBe(120000);
+			expect(state.LastAdRecoveryReloadAt).toBe(0);
+			expect(state.LastAdRecoveryResumeAt).toBe(0);
+			expect(
+				(
+					state.AdPodProgressByMediaKey as Record<
+						string,
+						{ cycleStartedAt: number }
+					>
+				)["live:testchannel"].cycleStartedAt,
+			).toBe(90000);
+			const continuationMessages = continuationWorker.messages
+				.slice(initialMessageCount)
+				.map((message) =>
+					T<(value: unknown) => Record<string, unknown> | null>(
+						"_getWorkerBridgeMessage",
+					)(message),
+				);
+			expect(continuationMessages).toContainEqual(
+				expect.objectContaining({ key: "UpdateCurrentAdContext" }),
+			);
+			expect(continuationMessages).toContainEqual(
+				expect.objectContaining({ key: "UpdateAdPodProgress" }),
+			);
+			expect(continuationMessages).not.toContainEqual(
+				expect.objectContaining({ key: "ClearAdPodProgress" }),
+			);
+
+			continuationWorker.emitMessage({
+				key: "BackupPlayerTypeSelected",
+				value: "autoplay",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+			});
+			expect(state.PinnedBackupPlayerType).toBe("autoplay");
+
+			vi.setSystemTime(120001);
+			continuationWorker.emitMessage({
+				key: "AdEnded",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				endedAt: 120001,
+				holdingBackup: true,
+			});
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect(state.PinnedBackupPlayerType).toBe("autoplay");
+
+			vi.setSystemTime(120002);
+			harness.worker.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 120002,
+				requiresReload: true,
+			});
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+
+			continuationWorker.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 120000,
+				requiresReload: true,
+			});
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+
+			vi.setSystemTime(270000);
+			continuationWorker.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 89999,
+				restoredAt: 270000,
+				requiresReload: true,
+			});
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+
+			continuationWorker.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 270000,
+				requiresReload: true,
+			});
+			expect(playerTask).toHaveBeenCalledOnce();
+			expect(playerTask).toHaveBeenCalledWith(false, true, {
+				reason: "post-ad-native-restore",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+			});
+			expect(state.CurrentAdMediaKey).toBeNull();
+			expect(state.PinnedBackupPlayerType).toBeNull();
+			expect(
+				(state.AdPodProgressByMediaKey as Record<string, unknown>)[
+					"live:testchannel"
+				],
+			).toBeUndefined();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("returns terminal authority to a healthy owner after a provisional claimant crashes", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			PinnedBackupPlayerType: null,
+			PinnedBackupPlayerChannel: null,
+			PinnedBackupPlayerMediaKey: null,
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			AdPodProgressByMediaKey: Object.create(null),
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			LastAdEndedAt: 100000,
+			LastAdEndedChannel: "testchannel",
+			LastAdEndedMediaKey: "live:testchannel",
+			LastAdEndedCycleStartedAt: 90000,
+			AdCycleStaleMs: 120000,
+		});
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		const playbackOwner = harness.worker;
+		const provisionalClaimant = harness.createWorker();
+		Object.assign(playbackOwner as unknown as Record<string, unknown>, {
+			__TTVABFirstPongAt: 100000,
+			__TTVABLastPongAt: 100000,
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				["live:testchannel", 100000],
+			]),
+		});
+		(g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>).set(
+			"live:testchannel",
+			1,
+		);
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{
+				cycleStartedAt: number;
+				workerGeneration: number;
+				latestEventAt: number;
+			}
+		>;
+
+		try {
+			vi.setSystemTime(104843);
+			provisionalClaimant.emitMessage({
+				key: "AdDetected",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				continued: true,
+				cycleStartedAt: 90000,
+				detectedAt: 104843,
+				playlistUrl:
+					"https://video-weaver.example.ttvnw.net/v1/playlist/provisional.m3u8",
+			});
+			expect(controls.get("live:testchannel")).toMatchObject({
+				cycleStartedAt: 90000,
+				workerGeneration: 2,
+				latestEventAt: 104843,
+			});
+
+			vi.setSystemTime(104844);
+			playbackOwner.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 104844,
+				requiresReload: true,
+			});
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+
+			expect(
+				T<
+					(
+						worker: unknown,
+						context: Record<string, unknown>,
+						message: string,
+						level: string,
+					) => boolean
+				>("_recoverCrashedWorker")(
+					provisionalClaimant,
+					{ MediaType: "live", ChannelName: "testchannel" },
+					"provisional worker crashed",
+					"error",
+				),
+			).toBe(true);
+			expect(controls.get("live:testchannel")).toMatchObject({
+				cycleStartedAt: 90000,
+				workerGeneration: 1,
+				latestEventAt: 104843,
+			});
+
+			const recoveryState = T<
+				(context: Record<string, unknown>) => Record<string, unknown>
+			>("_getWorkerRecoveryState")({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
+			});
+			Object.assign(recoveryState, {
+				activeEpoch: 1,
+				failedGeneration: 2,
+				retiredThroughGeneration: 0,
+			});
+			vi.setSystemTime(104846);
+			provisionalClaimant.emitMessage({
+				key: "AdDetected",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				continued: true,
+				cycleStartedAt: 90000,
+				detectedAt: 104846,
+				playlistUrl:
+					"https://video-weaver.example.ttvnw.net/v1/playlist/queued.m3u8",
+			});
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 1,
+				latestEventAt: 104846,
+			});
+
+			playbackOwner.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 104845,
+				requiresReload: true,
+			});
+			provisionalClaimant.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 104847,
+				requiresReload: true,
+			});
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+
+			vi.setSystemTime(104848);
+			playbackOwner.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 104848,
+				requiresReload: true,
+			});
+			expect(playerTask).toHaveBeenCalledOnce();
+			expect(state.CurrentAdMediaKey).toBeNull();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("rejects stale or conflicting rapid continuation claims", () => {
+		vi.useFakeTimers();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			AdCycleStaleMs: 120000,
+		});
+		const harness = installWorkerMessageHarness();
+		const cases = [
+			{ continued: false, now: 104843 },
+			{ continued: true, now: 108001 },
+			{ continued: true, now: 104843, lastEndedAt: 104844 },
+			{ continued: true, now: 104843, detectedAt: 104844 },
+			{ continued: true, now: 104843, detectedAt: 0 },
+			{ continued: true, now: 104843, cycleStartedAt: 89999 },
+			{ continued: true, now: 104843, activeCycleStartedAt: 80000 },
+			{ continued: true, now: 104843, activeCycleStartedAt: 91000 },
+		];
+
+		try {
+			for (const testCase of cases) {
+				vi.setSystemTime(testCase.now);
+				Object.assign(state, {
+					CurrentAdChannel: null,
+					CurrentAdMediaKey: null,
+					AdPodProgressByMediaKey:
+						testCase.activeCycleStartedAt === undefined
+							? Object.create(null)
+							: {
+									"live:testchannel": {
+										cycleStartedAt: testCase.activeCycleStartedAt,
+									},
+								},
+					LastAdEndedAt: testCase.lastEndedAt ?? 100000,
+					LastAdEndedChannel: "testchannel",
+					LastAdEndedMediaKey: "live:testchannel",
+					LastAdEndedCycleStartedAt: 90000,
+				});
+				harness.worker.emitMessage({
+					key: "AdDetected",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					pageChannel: "testchannel",
+					pageMediaKey: "live:testchannel",
+					continued: testCase.continued,
+					cycleStartedAt: testCase.cycleStartedAt ?? 90000,
+					detectedAt: testCase.detectedAt ?? testCase.now,
+					playlistUrl:
+						"https://video-weaver.example.ttvnw.net/v1/playlist/stale.m3u8",
+				});
+				expect(state.CurrentAdMediaKey).toBeNull();
+			}
+
+			Object.assign(state, {
+				CurrentAdChannel: null,
+				CurrentAdMediaKey: null,
+				AdPodProgressByMediaKey: Object.create(null),
+				LastAdEndedAt: 100000,
+				LastAdEndedChannel: "testchannel",
+				LastAdEndedMediaKey: "live:testchannel",
+				LastAdEndedCycleStartedAt: 90000,
+			});
+			vi.setSystemTime(104843);
+			(g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>).set(
+				"live:testchannel",
+				2,
+			);
+			harness.worker.emitMessage({
+				key: "AdDetected",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				continued: true,
+				cycleStartedAt: 90000,
+				detectedAt: 104843,
+				playlistUrl:
+					"https://video-weaver.example.ttvnw.net/v1/playlist/retired.m3u8",
+			});
+			expect(state.CurrentAdMediaKey).toBeNull();
+		} finally {
+			harness.restore();
 		}
 	});
 

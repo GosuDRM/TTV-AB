@@ -61,7 +61,13 @@ describe("worker message handler hardening", () => {
 			/case "AdEnded":[\s\S]*?_isCodecHandoffCycleCurrent\(mediaKey, endedCycleStartedAt\)/,
 		);
 		expect(source).toMatch(
+			/case "AdEnded":[\s\S]*?_isPageAdCycleControlEventCurrent\([\s\S]*?reportedEndedAt/,
+		);
+		expect(source).toMatch(
 			/case "NativePlaybackRestored":[\s\S]*?_isCodecHandoffCycleCurrent\(mediaKey, restoredCycleStartedAt\)/,
+		);
+		expect(source).toMatch(
+			/case "NativePlaybackRestored":[\s\S]*?_isPageAdCycleControlEventCurrent\([\s\S]*?reportedRestoredAt/,
 		);
 		expect(source).toMatch(
 			/case "PauseResumePlayer":[\s\S]*?_isPageLifecycleCycleCurrent\(\s*data\.mediaKey,\s*data\.cycleStartedAt\s*,?\s*\)/,
@@ -71,6 +77,22 @@ describe("worker message handler hardening", () => {
 		);
 		expect(source).toMatch(
 			/reloadReason === "codec-handoff"[\s\S]*?: !_isPageLifecycleCycleCurrent\(\s*reloadOptions\.mediaKey,\s*reloadOptions\.cycleStartedAt\s*,?\s*\)/,
+		);
+	});
+
+	it("timestamps the toggle-off terminal event before page lifecycle fencing", () => {
+		expect(processorJs()).toMatch(
+			/Ad blocking disabled - restoring native stream state[\s\S]*?key:\s*"AdEnded"[\s\S]*?endedAt:\s*Date\.now\(\)/,
+		);
+	});
+
+	it("releases provisional ad-cycle authority when an unpromoted worker retires", () => {
+		const source = hooksJs();
+		expect(source).toMatch(
+			/__TTVABCrashed\s*=\s*true;[\s\S]*?_reassignPageAdCycleControlAfterWorkerRetirement\(/,
+		);
+		expect(source).toMatch(
+			/terminate\(\)\s*\{[\s\S]*?__TTVABIntentionallyTerminated\s*=\s*true;[\s\S]*?_reassignPageAdCycleControlAfterWorkerRetirement\(/,
 		);
 	});
 
@@ -94,7 +116,13 @@ describe("worker message handler hardening", () => {
 			/detectedCycleStartedAt\s*<\s*Math\.max\(activeCycleStartedAt,\s*lastEndedCycleStartedAt\)/,
 		);
 		expect(block).toMatch(
-			/shouldReuseCanonicalCycle\s*=\s*Boolean\([\s\S]*?activeCycleStartedAt\s*===\s*detectedCycleStartedAt/,
+			/isRapidSameEndedCycleContinuation[\s\S]*?isContinuation[\s\S]*?lastEndedCycleStartedAt\s*===\s*detectedCycleStartedAt[\s\S]*?continuationDetectedAt\s*<=\s*now[\s\S]*?endedCycleAge\s*<=\s*_getPostAdReentryContinuationMs\(\)/,
+		);
+		expect(block).toMatch(
+			/_claimPageAdCycleControl\([\s\S]*?controlWorkerGeneration[\s\S]*?continuationDetectedAt/,
+		);
+		expect(block).toMatch(
+			/shouldReuseCanonicalCycle\s*=\s*Boolean\([\s\S]*?activeCycleStartedAt\s*===\s*detectedCycleStartedAt[\s\S]*?isRapidSameEndedCycleContinuation/,
 		);
 		expect(block).toMatch(
 			/if \(shouldStartNewCycle\) \{\s*if \(!shouldReuseCanonicalCycle\) \{[\s\S]*?_clearAdPodProgress\(mediaKey\)/,
