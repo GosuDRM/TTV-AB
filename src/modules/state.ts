@@ -666,6 +666,33 @@ function _releasePlaybackContext(context) {
 	return true;
 }
 
+function _getPlayerReloadAtForMediaKey(mediaKey) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	if (!normalizedMediaKey) return 0;
+	return Math.max(
+		0,
+		Number(
+			__TTVAB_STATE__?.LastPlayerReloadAtByMediaKey?.[normalizedMediaKey],
+		) || 0,
+	);
+}
+
+function _recordPlayerReloadAt(mediaKey, at = Date.now()) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const normalizedAt = Math.max(0, Number(at) || 0);
+	if (!normalizedMediaKey || normalizedAt <= 0) return 0;
+	if (
+		!__TTVAB_STATE__.LastPlayerReloadAtByMediaKey ||
+		typeof __TTVAB_STATE__.LastPlayerReloadAtByMediaKey !== "object"
+	) {
+		__TTVAB_STATE__.LastPlayerReloadAtByMediaKey = Object.create(null);
+	}
+	delete __TTVAB_STATE__.LastPlayerReloadAtByMediaKey[normalizedMediaKey];
+	__TTVAB_STATE__.LastPlayerReloadAtByMediaKey[normalizedMediaKey] =
+		normalizedAt;
+	return normalizedAt;
+}
+
 function _syncPagePlaybackContext(options = {}) {
 	return _setPagePlaybackContext(
 		_getPlaybackContextFromUrl(globalThis?.location?.href || ""),
@@ -686,6 +713,10 @@ function _invalidateAdCycleAsyncWork(info) {
 	info.BackupPlaylistMetadata?.clear?.();
 	info.LastCleanBackupM3U8 = null;
 	info.LastCleanBackupAt = 0;
+	info._IncompletePodCleanStartedAt = 0;
+	info._IncompletePodCleanPlaylistCount = 0;
+	info._IncompletePodLastMediaSequence = null;
+	info._IncompletePodCandidateUrl = null;
 	info.NativeRecoveryProbeEpoch =
 		Math.max(0, Number(info.NativeRecoveryProbeEpoch) || 0) + 1;
 	info._NativeRecoveryProbeInFlight = false;
@@ -750,6 +781,14 @@ function _mergeAdPodProgress(value) {
 			shouldReplace ? 0 : Math.max(0, Number(current?.expectedPodLength) || 0),
 			Math.max(0, Number(value?.expectedPodLength) || 0),
 		),
+		maxAdPodPosition: Math.max(
+			shouldReplace ? 0 : Math.max(0, Number(current?.maxAdPodPosition) || 0),
+			Math.max(0, Number(value?.maxAdPodPosition) || 0),
+		),
+		observedZeroAdPodPosition: Boolean(
+			(!shouldReplace && current?.observedZeroAdPodPosition === true) ||
+				value?.observedZeroAdPodPosition === true,
+		),
 		cycleStartedAt: shouldReplace
 			? incomingCycleStartedAt || currentCycleStartedAt || Date.now()
 			: currentCycleStartedAt || incomingCycleStartedAt || Date.now(),
@@ -787,6 +826,19 @@ function _applyAdPodProgressToInfo(info, value) {
 		Math.max(0, Number(info.ExpectedAdPodLength) || 0),
 		Math.max(0, Number(entry.expectedPodLength) || 0),
 	);
+	info.MaxObservedAdPodPosition = Math.max(
+		Math.max(0, Number(info.MaxObservedAdPodPosition) || 0),
+		Math.max(0, Number(entry.maxAdPodPosition) || 0),
+	);
+	info.ObservedZeroAdPodPosition = Boolean(
+		info.ObservedZeroAdPodPosition === true ||
+			entry.observedZeroAdPodPosition === true,
+	);
+	info.LastAdPodProgressAt = Math.max(0, Number(entry.updatedAt) || 0);
+	info._IncompletePodCleanStartedAt = 0;
+	info._IncompletePodCleanPlaylistCount = 0;
+	info._IncompletePodLastMediaSequence = null;
+	info._IncompletePodCandidateUrl = null;
 	if (nextCycleStartedAt > 0) {
 		info.VisibleAdStartedAt = nextCycleStartedAt;
 	}
@@ -807,6 +859,13 @@ function _clearAdPodProgress(mediaKey) {
 		MediaKey?: string | null;
 		ObservedAdPodIds?: Set<string>;
 		ExpectedAdPodLength?: number;
+		MaxObservedAdPodPosition?: number;
+		ObservedZeroAdPodPosition?: boolean;
+		LastAdPodProgressAt?: number;
+		_IncompletePodCleanStartedAt?: number;
+		_IncompletePodCleanPlaylistCount?: number;
+		_IncompletePodLastMediaSequence?: number | null;
+		_IncompletePodCandidateUrl?: string | null;
 		VisibleAdStartedAt?: number;
 	}>;
 	for (const info of streamInfos) {
@@ -816,6 +875,13 @@ function _clearAdPodProgress(mediaKey) {
 		}
 		info.ObservedAdPodIds?.clear?.();
 		info.ExpectedAdPodLength = 0;
+		info.MaxObservedAdPodPosition = 0;
+		info.ObservedZeroAdPodPosition = false;
+		info.LastAdPodProgressAt = 0;
+		info._IncompletePodCleanStartedAt = 0;
+		info._IncompletePodCleanPlaylistCount = 0;
+		info._IncompletePodLastMediaSequence = null;
+		info._IncompletePodCandidateUrl = null;
 		info.VisibleAdStartedAt = 0;
 		didClear = true;
 	}
@@ -863,6 +929,7 @@ function _declareState(scope) {
 		PendingTriggeredPlayerReloadAt: 0,
 		PendingTriggeredPlayerReloadCycleStartedAt: 0,
 		LastPlayerReloadAt: 0,
+		LastPlayerReloadAtByMediaKey: Object.create(null),
 		LastAdDetectedAt: 0,
 		LastAdEndedAt: 0,
 		LastAdEndedChannel: null,

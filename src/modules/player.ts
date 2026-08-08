@@ -4185,6 +4185,7 @@ function _doPlayerTask(
 		}
 
 		__TTVAB_STATE__.LastPlayerReloadAt = now;
+		_recordPlayerReloadAt(taskMediaKey, now);
 		if (isAdRecoveryReload) {
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = now;
 			__TTVAB_STATE__._AdRecoveryConsecutiveFailures =

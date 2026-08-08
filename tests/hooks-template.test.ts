@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const hooksJs = () =>
 	readFileSync(resolve(__dirname, "../dist/src/modules/hooks.js"), "utf8");
+const hooksTs = () =>
+	readFileSync(resolve(__dirname, "../src/modules/hooks.ts"), "utf8");
 const parserJs = () =>
 	readFileSync(resolve(__dirname, "../dist/src/modules/parser.js"), "utf8");
 const processorJs = () =>
@@ -148,6 +150,56 @@ describe("worker message handler hardening", () => {
 		expect(hooksJs()).toMatch(
 			/JSON\.stringify\(\{\s*\.\.\._S,\s*workers:\s*\[\]\s*\}\)/,
 		);
+	});
+
+	it("installs the fetch hook before inlined blob worker source runs", () => {
+		const source = hooksTs();
+		expect(source).toContain(
+			'opts?.type !== "module" && workerSourceUrl.startsWith("blob:")',
+		);
+		expect(source).toContain("? _readBlobUrlSync(workerSourceUrl)");
+		expect(source).toContain("inlinedWorkerSource ||");
+		const hookAt = source.indexOf("_hookWorkerFetch();");
+		const originalSourceAt = source.indexOf(
+			"${originalWorkerLoadCode}",
+			hookAt,
+		);
+		expect(hookAt).toBeGreaterThan(-1);
+		expect(originalSourceAt).toBeGreaterThan(hookAt);
+	});
+
+	it("seeds variant codec metadata before replacement media fetches", () => {
+		const source = hooksJs();
+		expect(source).toContain("const seedPlaybackCodecEntries =");
+		expect(source).toContain(
+			"const _pageSideVariantCodecByUrl = new Map(${JSON.stringify(seedPlaybackCodecEntries)});",
+		);
+		expect(source).toContain("requestCodec: requestStartCodecs");
+		expect(source).toContain("decoderCodec: observedDecoderCodec");
+		expect(source).toContain("handoffId: observedHandoffId");
+		expect(source).toContain("${_resetWorkerAdCycleState.toString()}");
+		expect(source).toContain("case 'ResetAdCycleState':");
+		expect(source).toContain("playlistUrl: observedPlaylistUrl");
+		expect(source).toContain("codec: observedCodec");
+	});
+
+	it("installs degraded ad blocking on the first heartbeat miss while reload stays throttled", () => {
+		const source = hooksJs();
+		const checkStart = source.indexOf("const _hbCheck = () => {");
+		const checkEnd = source.indexOf(
+			'this.addEventListener("message", (e) => {',
+			checkStart,
+		);
+		const block = source.slice(checkStart, checkEnd);
+		const fallbackAt = block.indexOf("_installPageSideM3U8Override();");
+		const throttleAt = block.indexOf("if (_isWorkerLifecycleThrottled())");
+		const recoveryAt = block.indexOf("_recoverCrashedWorker(");
+
+		expect(checkStart).toBeGreaterThan(-1);
+		expect(checkEnd).toBeGreaterThan(checkStart);
+		expect(fallbackAt).toBeGreaterThan(-1);
+		expect(throttleAt).toBeGreaterThan(fallbackAt);
+		expect(recoveryAt).toBeGreaterThan(throttleAt);
 	});
 });
 

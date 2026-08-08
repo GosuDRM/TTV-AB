@@ -106,6 +106,8 @@ describe("_notifyAdComplete", () => {
 			SpoofedAdIds: new Set<string>(),
 			ObservedAdPodIds: new Set<string>(),
 			ExpectedAdPodLength: 0,
+			MaxObservedAdPodPosition: 0,
+			ObservedZeroAdPodPosition: false,
 			VisibleAdStartedAt: 123456,
 			ChannelName: "testchannel",
 			MediaKey: "live:testchannel",
@@ -120,6 +122,8 @@ describe("_notifyAdComplete", () => {
 		}
 
 		expect(info.ExpectedAdPodLength).toBe(2);
+		expect(info.MaxObservedAdPodPosition).toBe(1);
+		expect(info.ObservedZeroAdPodPosition).toBe(false);
 		expect([...info.ObservedAdPodIds]).toEqual(["stitched-ad-1"]);
 		expect(info.SpoofedAdIds.size).toBe(0);
 		expect(capture.messages).toEqual([
@@ -127,6 +131,8 @@ describe("_notifyAdComplete", () => {
 				key: "AdPodProgress",
 				adIds: ["stitched-ad-1"],
 				expectedPodLength: 2,
+				maxAdPodPosition: 1,
+				observedZeroAdPodPosition: false,
 				cycleStartedAt: 123456,
 				channel: "testchannel",
 				mediaKey: "live:testchannel",

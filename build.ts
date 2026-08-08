@@ -1160,6 +1160,24 @@ function validateSharedDefinitions() {
 			(match) => match[1],
 		),
 	);
+	if (
+		hooksSource.includes("_pageSideVariantCodecByUrl.get(alias)") &&
+		!hooksSource.includes(
+			"const _pageSideVariantCodecByUrl = new Map(${JSON.stringify(seedPlaybackCodecEntries)});",
+		)
+	) {
+		throw new Error(
+			"Worker variant codec metadata must be seeded into the injected scope",
+		);
+	}
+	if (
+		!hooksSource.includes("case 'ResetAdCycleState':") ||
+		!injectedHelpers.has("_resetWorkerAdCycleState")
+	) {
+		throw new Error(
+			"Worker ad-cycle reset must stay wired into the injected message handler",
+		);
+	}
 	for (const requiredParserSnippet of [
 		'Resolution: String(attrs.RESOLUTION || "0x0")',
 		"FrameRate: Number.isFinite(frameRate) ? frameRate : 0",
@@ -1364,6 +1382,21 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_isAdEndStable",
+			helper: "_parsePlaylistFirstMediaSequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAdEndStable",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAdEndStable",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
 			consumer: "_holdRetiringCodecRequest",
 			helper: "_createCodecHandoffAbortError",
 			source: processorSource,
@@ -1414,6 +1447,21 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_resetWorkerAdCycleState",
+			helper: "_resetStreamAdState",
+			source: hooksSource,
+		},
+		{
+			consumer: "_resetWorkerAdCycleState",
+			helper: "_clearAdPodProgress",
+			source: hooksSource,
+		},
+		{
+			consumer: "_resetWorkerAdCycleState",
+			helper: "_normalizePlaybackContext",
+			source: hooksSource,
+		},
+		{
 			consumer: "_getSameRequestCleanNative",
 			helper: "_isLastCleanNativeForRequest",
 			source: processorSource,
@@ -1446,6 +1494,21 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_hookWorkerFetch",
 			helper: "_normalizeMediaKey",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_normalizePlaybackContext",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_postWorkerBridgeMessage",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_createPageScopedWorkerEvent",
 			source: hooksSource,
 		},
 		{
@@ -2165,6 +2228,16 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_getCurrentAdBreakStartedAt",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_createStreamInfo",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getSyntheticPlaybackContextForPlaylist",
 			helper: "_normalizeMediaKey",
 			source: processorSource,
 		},

@@ -125,6 +125,13 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		SpoofedAdIds: new Set<string>(),
 		ObservedAdPodIds: new Set<string>(),
 		ExpectedAdPodLength: 0,
+		MaxObservedAdPodPosition: 0,
+		ObservedZeroAdPodPosition: false,
+		LastAdPodProgressAt: 0,
+		_IncompletePodCleanStartedAt: 0,
+		_IncompletePodCleanPlaylistCount: 0,
+		_IncompletePodLastMediaSequence: null,
+		_IncompletePodCandidateUrl: null,
 		FailedBackupPlayerTypes: new Map<string, number>(),
 		ActiveBackupPlayerType: null,
 		ActiveBackupResolution: null,
@@ -594,6 +601,13 @@ describe("_resetStreamAdState", () => {
 			ConsecutiveFailedNativeProbes: 4,
 			ObservedAdPodIds: new Set(["stitched-ad-1"]),
 			ExpectedAdPodLength: 4,
+			MaxObservedAdPodPosition: 3,
+			ObservedZeroAdPodPosition: true,
+			LastAdPodProgressAt: 5000,
+			_IncompletePodCleanStartedAt: 4000,
+			_IncompletePodCleanPlaylistCount: 7,
+			_IncompletePodLastMediaSequence: 100,
+			_IncompletePodCandidateUrl: "https://edge.example/native.m3u8",
 			LastCleanNativeM3U8: "#EXTM3U\n#EXTINF:2.000,live\nnative.ts",
 			LastCleanNativeUrl: "https://edge.example/native.m3u8",
 			LastCleanNativeCodec: "hev1.1.6.L153.B0",
@@ -622,6 +636,13 @@ describe("_resetStreamAdState", () => {
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
 		expect((info.ObservedAdPodIds as Set<string>).size).toBe(0);
 		expect(info.ExpectedAdPodLength).toBe(0);
+		expect(info.MaxObservedAdPodPosition).toBe(0);
+		expect(info.ObservedZeroAdPodPosition).toBe(false);
+		expect(info.LastAdPodProgressAt).toBe(0);
+		expect(info._IncompletePodCleanStartedAt).toBe(0);
+		expect(info._IncompletePodCleanPlaylistCount).toBe(0);
+		expect(info._IncompletePodLastMediaSequence).toBe(null);
+		expect(info._IncompletePodCandidateUrl).toBe(null);
 		expect(info.LastCleanNativeUrl).toBe("https://edge.example/native.m3u8");
 		expect(info.EnhancedDecoderCodecFamily).toBe(null);
 		expect(info.EnhancedDecoderCodec).toBe(null);
@@ -662,24 +683,302 @@ describe("_resetStreamAdState", () => {
 			T<(ctx: Record<string, unknown>) => Record<string, unknown>>(
 				"_createStreamInfo",
 			);
-		getState().AdPodProgressByMediaKey = {
+		const state = getState();
+		const previousCurrentAdMediaKey = state.CurrentAdMediaKey;
+		const previousPodProgress = state.AdPodProgressByMediaKey;
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
 			"live:testchannel": {
 				adIds: ["stitched-ad-1"],
 				expectedPodLength: 2,
+				maxAdPodPosition: 1,
+				observedZeroAdPodPosition: true,
+				cycleStartedAt: 1234,
+				updatedAt: 1500,
+			},
+		};
+
+		try {
+			const info = create({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
+			});
+
+			expect([...info.ObservedAdPodIds]).toEqual(["stitched-ad-1"]);
+			expect(info.ExpectedAdPodLength).toBe(2);
+			expect(info.MaxObservedAdPodPosition).toBe(1);
+			expect(info.ObservedZeroAdPodPosition).toBe(true);
+			expect(info.VisibleAdStartedAt).toBe(1234);
+			expect(info.LastAdPodProgressAt).toBe(1500);
+			expect(info.IsShowingAd).toBe(true);
+			expect(info.AdEndConfirmEscalation).toBe(4);
+		} finally {
+			state.CurrentAdMediaKey = previousCurrentAdMediaKey;
+			state.AdPodProgressByMediaKey = previousPodProgress;
+		}
+	});
+
+	it("does not attach stale ad progress to a different active stream", () => {
+		const create =
+			T<(ctx: Record<string, unknown>) => Record<string, unknown>>(
+				"_createStreamInfo",
+			);
+		const state = getState();
+		const previousCurrentAdMediaKey = state.CurrentAdMediaKey;
+		const previousPodProgress = state.AdPodProgressByMediaKey;
+		state.CurrentAdMediaKey = "live:otherchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": {
+				adIds: ["stitched-ad-1"],
+				expectedPodLength: 2,
+				maxAdPodPosition: 1,
+				observedZeroAdPodPosition: true,
 				cycleStartedAt: 1234,
 			},
 		};
 
-		const info = create({
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		});
+		try {
+			const info = create({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
+			});
 
-		expect([...info.ObservedAdPodIds]).toEqual(["stitched-ad-1"]);
-		expect(info.ExpectedAdPodLength).toBe(2);
-		expect(info.VisibleAdStartedAt).toBe(1234);
-		delete getState().AdPodProgressByMediaKey;
+			expect(info.VisibleAdStartedAt).toBe(0);
+			expect(info.IsShowingAd).toBe(false);
+			expect([...info.ObservedAdPodIds]).toEqual([]);
+			expect(info.ExpectedAdPodLength).toBe(0);
+			expect(info.MaxObservedAdPodPosition).toBe(0);
+			expect(info.ObservedZeroAdPodPosition).toBe(false);
+			expect(info.AdEndConfirmEscalation).toBe(0);
+		} finally {
+			state.CurrentAdMediaKey = previousCurrentAdMediaKey;
+			state.AdPodProgressByMediaKey = previousPodProgress;
+		}
+	});
+
+	it("fails closed before synthetic media can inherit an active ad cycle", async () => {
+		const state = getState();
+		const previousState = {
+			currentAdChannel: state.CurrentAdChannel,
+			currentAdMediaKey: state.CurrentAdMediaKey,
+			podProgress: state.AdPodProgressByMediaKey,
+			streamInfos: state.StreamInfos,
+			streamInfosByUrl: state.StreamInfosByUrl,
+			isAdStrippingEnabled: state.IsAdStrippingEnabled,
+			pageMediaType: state.PageMediaType,
+			pageChannel: state.PageChannel,
+			pageVodID: state.PageVodID,
+			pageMediaKey: state.PageMediaKey,
+			requestMediaBootstrapRecovery: state.RequestMediaBootstrapRecovery,
+		};
+		const previousFindBackup = g._findBackupStream;
+		const firstMediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/replacement-1080p.m3u8";
+		const nativePlaylist = makePlaylist(700, 3);
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 1234 },
+		};
+		state.IsAdStrippingEnabled = true;
+		state.PageMediaType = "live";
+		state.PageChannel = "testchannel";
+		state.PageVodID = null;
+		state.PageMediaKey = "live:testchannel";
+		state.StreamInfos = Object.create(null);
+		state.StreamInfosByUrl = Object.create(null);
+		const findBackup = vi.fn();
+		const requestMediaBootstrapRecovery = vi.fn();
+		g._findBackupStream = findBackup;
+		state.RequestMediaBootstrapRecovery = requestMediaBootstrapRecovery;
+
+		try {
+			await expect(
+				T<
+					(
+						url: string,
+						text: string,
+						realFetch: (input: string) => Promise<Response>,
+					) => Promise<string>
+				>("_processM3U8Core")(firstMediaUrl, nativePlaylist, async () => {
+					throw new Error("no fetch expected");
+				}),
+			).rejects.toMatchObject({ name: "AbortError" });
+			expect(
+				(state.StreamInfos as Record<string, unknown>)["live:testchannel"],
+			).toBeUndefined();
+			expect(findBackup).not.toHaveBeenCalled();
+			expect(requestMediaBootstrapRecovery).toHaveBeenCalledOnce();
+			expect(requestMediaBootstrapRecovery).toHaveBeenCalledWith(
+				expect.objectContaining({ MediaKey: "live:testchannel" }),
+				1234,
+			);
+		} finally {
+			state.CurrentAdChannel = previousState.currentAdChannel;
+			state.CurrentAdMediaKey = previousState.currentAdMediaKey;
+			state.AdPodProgressByMediaKey = previousState.podProgress;
+			state.StreamInfos = previousState.streamInfos;
+			state.StreamInfosByUrl = previousState.streamInfosByUrl;
+			state.IsAdStrippingEnabled = previousState.isAdStrippingEnabled;
+			state.PageMediaType = previousState.pageMediaType;
+			state.PageChannel = previousState.pageChannel;
+			state.PageVodID = previousState.pageVodID;
+			state.PageMediaKey = previousState.pageMediaKey;
+			state.RequestMediaBootstrapRecovery =
+				previousState.requestMediaBootstrapRecovery;
+			g._findBackupStream = previousFindBackup;
+		}
+	});
+
+	it("aborts a media-first inherited hold until decoder ownership is known", async () => {
+		const state = getState();
+		const previousState = {
+			currentAdChannel: state.CurrentAdChannel,
+			currentAdMediaKey: state.CurrentAdMediaKey,
+			podProgress: state.AdPodProgressByMediaKey,
+			streamInfos: state.StreamInfos,
+			streamInfosByUrl: state.StreamInfosByUrl,
+			pageMediaType: state.PageMediaType,
+			pageChannel: state.PageChannel,
+			pageVodID: state.PageVodID,
+			pageMediaKey: state.PageMediaKey,
+			requestMediaBootstrapRecovery: state.RequestMediaBootstrapRecovery,
+		};
+		const previousFindBackup = g._findBackupStream;
+		let resolveBackupSearch:
+			| ((value: { type: null; m3u8: null }) => void)
+			| null = null;
+		const pendingBackupSearch = new Promise<{ type: null; m3u8: null }>(
+			(resolve) => {
+				resolveBackupSearch = resolve;
+			},
+		);
+		const findBackup = vi.fn((info: Record<string, unknown>) => {
+			info._BackupSearchPromise = pendingBackupSearch;
+			info._BackupSearchKey = "live:testchannel|0|1234|0|unknown|unknown";
+			(info._BackupSearchPromises as Map<string, Promise<unknown>>).set(
+				"unknown",
+				pendingBackupSearch,
+			);
+			return pendingBackupSearch;
+		});
+		g._findBackupStream = findBackup;
+		const requestMediaBootstrapRecovery = vi.fn();
+		state.RequestMediaBootstrapRecovery = requestMediaBootstrapRecovery;
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 1234 },
+		};
+		state.PageMediaType = "live";
+		state.PageChannel = "testchannel";
+		state.PageVodID = null;
+		state.PageMediaKey = "live:testchannel";
+		state.StreamInfos = Object.create(null);
+		state.StreamInfosByUrl = Object.create(null);
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/media-first.m3u8";
+
+		try {
+			const processMedia = () =>
+				T<
+					(
+						url: string,
+						text: string,
+						realFetch: (input: string) => Promise<Response>,
+					) => Promise<string>
+				>("_processM3U8")(mediaUrl, makePlaylist(800, 3), async () => {
+					throw new Error("no fetch expected");
+				});
+			await expect(processMedia()).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			await expect(processMedia()).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(
+				(state.StreamInfos as Record<string, unknown>)["live:testchannel"],
+			).toBeUndefined();
+			expect(findBackup).not.toHaveBeenCalled();
+			expect(requestMediaBootstrapRecovery).toHaveBeenCalledTimes(2);
+			expect(requestMediaBootstrapRecovery).toHaveBeenLastCalledWith(
+				expect.objectContaining({ MediaKey: "live:testchannel" }),
+				1234,
+			);
+		} finally {
+			resolveBackupSearch?.({ type: null, m3u8: null });
+			await Promise.resolve();
+			state.CurrentAdChannel = previousState.currentAdChannel;
+			state.CurrentAdMediaKey = previousState.currentAdMediaKey;
+			state.AdPodProgressByMediaKey = previousState.podProgress;
+			state.StreamInfos = previousState.streamInfos;
+			state.StreamInfosByUrl = previousState.streamInfosByUrl;
+			state.PageMediaType = previousState.pageMediaType;
+			state.PageChannel = previousState.pageChannel;
+			state.PageVodID = previousState.pageVodID;
+			state.PageMediaKey = previousState.pageMediaKey;
+			state.RequestMediaBootstrapRecovery =
+				previousState.requestMediaBootstrapRecovery;
+			g._findBackupStream = previousFindBackup;
+		}
+	});
+
+	it("does not attach an unrelated clean playlist to the active ad context", async () => {
+		const state = getState();
+		const previous = {
+			currentAdChannel: state.CurrentAdChannel,
+			currentAdMediaKey: state.CurrentAdMediaKey,
+			podProgress: state.AdPodProgressByMediaKey,
+			pageMediaType: state.PageMediaType,
+			pageChannel: state.PageChannel,
+			pageMediaKey: state.PageMediaKey,
+			streamInfos: state.StreamInfos,
+			streamInfosByUrl: state.StreamInfosByUrl,
+		};
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 1234 },
+		};
+		state.PageMediaType = "live";
+		state.PageChannel = "otherchannel";
+		state.PageMediaKey = "live:otherchannel";
+		state.StreamInfos = Object.create(null);
+		state.StreamInfosByUrl = Object.create(null);
+		const cleanPlaylist = makePlaylist(900, 3);
+
+		try {
+			const out = await T<
+				(
+					url: string,
+					text: string,
+					realFetch: (input: string) => Promise<Response>,
+				) => Promise<string>
+			>("_processM3U8Core")(
+				"https://video-weaver.example.ttvnw.net/v1/playlist/unrelated.m3u8",
+				cleanPlaylist,
+				async () => {
+					throw new Error("no fetch expected");
+				},
+			);
+
+			expect(out).toContain("seg900.ts");
+			expect(out).not.toContain("__ttvab_empty_hold_segment.mp4");
+			expect(Object.keys(state.StreamInfos as Record<string, unknown>)).toEqual(
+				[],
+			);
+		} finally {
+			state.CurrentAdChannel = previous.currentAdChannel;
+			state.CurrentAdMediaKey = previous.currentAdMediaKey;
+			state.AdPodProgressByMediaKey = previous.podProgress;
+			state.PageMediaType = previous.pageMediaType;
+			state.PageChannel = previous.pageChannel;
+			state.PageMediaKey = previous.pageMediaKey;
+			state.StreamInfos = previous.streamInfos;
+			state.StreamInfosByUrl = previous.streamInfosByUrl;
+		}
 	});
 
 	it("reports wasUsingModifiedM3U8 when active", () => {
@@ -4428,6 +4727,10 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 				info: Record<string, unknown>,
 				realFetch: unknown,
 				resolution?: Record<string, unknown> | null,
+				requestAdContext?: Record<string, unknown> | null,
+				requestSignal?: AbortSignal | null,
+				candidateText?: string | null,
+				candidateUrl?: string | null,
 			) => Promise<string>
 		>("_isAdEndStable");
 
@@ -4444,9 +4747,15 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 
 	function stubProbe(impl: (info: Record<string, unknown>) => boolean) {
 		const previous = g._canReloadNativePlayerAfterAd;
-		const calls = { count: 0 };
-		g._canReloadNativePlayerAfterAd = async (info: Record<string, unknown>) => {
+		const calls = { count: 0, requireProbe: [] as boolean[] };
+		g._canReloadNativePlayerAfterAd = async (
+			info: Record<string, unknown>,
+			_realFetch: unknown,
+			_resolution: unknown,
+			requireProbe = false,
+		) => {
 			calls.count += 1;
+			calls.requireProbe.push(requireProbe);
 			return impl(info);
 		};
 		const restore = () => {
@@ -4471,6 +4780,24 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 		try {
 			const result = await fn()(
 				makePendingInfo({ AdEndConfirmEscalation: 2 }),
+				null,
+			);
+			expect(result).toBe("wait");
+			expect(probe.calls.count).toBe(0);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("keeps an inherited recovery cycle behind the maximum clean window", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					AdEndConfirmEscalation: 4,
+					PendingAdEndAt: Date.now() - 9000,
+					CleanPlaylistCount: 6,
+				}),
 				null,
 			);
 			expect(result).toBe("wait");
@@ -4533,6 +4860,195 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 		}
 	});
 
+	it("keeps incomplete pods closed before the bounded clean escape", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(189999);
+		const probe = stubProbe(() => true);
+		const url =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/incomplete-live.m3u8";
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					AdEndConfirmEscalation: 4,
+					PendingAdEndAt: 170000,
+					CleanPlaylistCount: 20,
+					ExpectedAdPodLength: 4,
+					ObservedAdPodIds: new Set(["stitched-ad-1"]),
+					VisibleAdStartedAt: 90000,
+					LastAdPodProgressAt: 100000,
+					_IncompletePodCleanStartedAt: 170000,
+					_IncompletePodCleanPlaylistCount: 7,
+					_IncompletePodLastMediaSequence: 100,
+					_IncompletePodCandidateUrl: url,
+				}),
+				null,
+				null,
+				null,
+				null,
+				makePlaylist(101, 3),
+				url,
+			);
+			expect(result).toBe("wait");
+			expect(probe.calls.count).toBe(0);
+		} finally {
+			probe.restore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("probes incomplete live pods only after sustained same-url advancement", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		let nativeReady = false;
+		const probe = stubProbe(() => nativeReady);
+		const url =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/incomplete-escape.m3u8";
+		const info = makePendingInfo({
+			AdEndConfirmEscalation: 4,
+			PendingAdEndAt: 180000,
+			CleanPlaylistCount: 20,
+			ExpectedAdPodLength: 4,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			VisibleAdStartedAt: 90000,
+			LastAdPodProgressAt: 100000,
+			LastCleanBackupM3U8: null,
+		});
+		try {
+			for (let index = 0; index < 7; index++) {
+				vi.setSystemTime(200000 + index * 2000);
+				expect(
+					await fn()(
+						info,
+						null,
+						null,
+						null,
+						null,
+						makePlaylist(300 + index, 3),
+						url,
+					),
+				).toBe("wait");
+			}
+			expect(probe.calls.count).toBe(0);
+
+			vi.setSystemTime(214000);
+			expect(
+				await fn()(info, null, null, null, null, makePlaylist(307, 3), url),
+			).toBe("wait");
+			expect(probe.calls.count).toBe(1);
+
+			nativeReady = true;
+			vi.setSystemTime(216000);
+			expect(
+				await fn()(info, null, null, null, null, makePlaylist(308, 3), url),
+			).toBe("ended");
+			expect(probe.calls.count).toBe(2);
+			expect(probe.calls.requireProbe).toEqual([true, true]);
+		} finally {
+			probe.restore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("requires VOD endlist proof before probing an incomplete pod", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		const probe = stubProbe(() => true);
+		const url = "https://vod-secure.twitch.tv/archive/2827992810/index.m3u8";
+		const info = makePendingInfo({
+			MediaType: "vod",
+			ChannelName: null,
+			VodID: "2827992810",
+			MediaKey: "vod:2827992810",
+			AdEndConfirmEscalation: 4,
+			PendingAdEndAt: 180000,
+			CleanPlaylistCount: 20,
+			ExpectedAdPodLength: 4,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			VisibleAdStartedAt: 90000,
+			LastAdPodProgressAt: 100000,
+		});
+		try {
+			expect(
+				await fn()(info, null, null, null, null, makePlaylist(0, 3), url),
+			).toBe("wait");
+			expect(probe.calls.count).toBe(0);
+			for (let index = 0; index < 7; index++) {
+				vi.setSystemTime(200000 + index * 2000);
+				const result = await fn()(
+					info,
+					null,
+					null,
+					null,
+					null,
+					`${makePlaylist(0, 3)}\n#EXT-X-ENDLIST`,
+					url,
+				);
+				expect(result).toBe(index === 6 ? "ended" : "wait");
+			}
+			expect(probe.calls.count).toBe(1);
+		} finally {
+			probe.restore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("accepts a one-based terminal pod position when intermediate ad IDs were missed", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					ExpectedAdPodLength: 4,
+					ObservedAdPodIds: new Set(["stitched-ad-1"]),
+					MaxObservedAdPodPosition: 4,
+					ObservedZeroAdPodPosition: false,
+				}),
+				null,
+			);
+			expect(result).toBe("ended");
+			expect(probe.calls.count).toBe(1);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("accepts a zero-based terminal pod position only after position zero was observed", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const terminal = await fn()(
+				makePendingInfo({
+					ExpectedAdPodLength: 4,
+					ObservedAdPodIds: new Set(["stitched-ad-1"]),
+					MaxObservedAdPodPosition: 3,
+					ObservedZeroAdPodPosition: true,
+				}),
+				null,
+			);
+			expect(terminal).toBe("ended");
+			expect(probe.calls.count).toBe(1);
+		} finally {
+			probe.restore();
+		}
+	});
+
+	it("keeps waiting on a nonterminal pod position", async () => {
+		const probe = stubProbe(() => true);
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					ExpectedAdPodLength: 4,
+					ObservedAdPodIds: new Set(["stitched-ad-1"]),
+					MaxObservedAdPodPosition: 3,
+					ObservedZeroAdPodPosition: false,
+				}),
+				null,
+			);
+			expect(result).toBe("wait");
+			expect(probe.calls.count).toBe(0);
+		} finally {
+			probe.restore();
+		}
+	});
+
 	it("allows normal confirmation once every declared pod ad was observed", async () => {
 		const probe = stubProbe(() => true);
 		try {
@@ -4579,6 +5095,7 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 				info: Record<string, unknown>,
 				realFetch: unknown,
 				resolution?: unknown,
+				requireProbe?: boolean,
 			) => Promise<boolean>
 		>("_canReloadNativePlayerAfterAd");
 
@@ -4642,6 +5159,28 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			for (let i = 0; i < 3; i++) {
 				info.LastNativeRecoveryProbeAt = 0;
 				results.push(await fn()(info, null));
+			}
+			expect(results).toEqual([false, false, true]);
+			expect(chain.tokenCalls.count).toBe(3);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("requires the real clean-probe chain for an incomplete pod without an active backup", async () => {
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+		);
+		try {
+			const info = makeInfo({
+				IsUsingBackupStream: false,
+				IsUsingFallbackStream: false,
+			});
+			activateExactAdCycle(info);
+			const results: boolean[] = [];
+			for (let index = 0; index < 3; index++) {
+				info.LastNativeRecoveryProbeAt = 0;
+				results.push(await fn()(info, null, null, true));
 			}
 			expect(results).toEqual([false, false, true]);
 			expect(chain.tokenCalls.count).toBe(3);

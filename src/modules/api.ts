@@ -375,6 +375,8 @@ async function _notifyAdComplete(
 		RecentSpoofedAdIds?: Map<string, number>;
 		ObservedAdPodIds?: Set<string>;
 		ExpectedAdPodLength?: number;
+		MaxObservedAdPodPosition?: number;
+		ObservedZeroAdPodPosition?: boolean;
 		ActiveBackupPlayerType?: string | null;
 		VisibleAdStartedAt?: number;
 		ChannelName?: string | null;
@@ -393,6 +395,12 @@ async function _notifyAdComplete(
 			: 0;
 		const hasExplicitPodLength =
 			Number.isFinite(parsedPodLength) && parsedPodLength > 0;
+		const parsedPodPositions = Array.from(
+			textStr.matchAll(/X-TV-TWITCH-AD-POD-POSITION="(\d+)"/g),
+			(match) => Number.parseInt(match[1], 10),
+		);
+		const maxParsedPodPosition = Math.max(0, ...parsedPodPositions);
+		const observedZeroAdPodPosition = parsedPodPositions.includes(0);
 		if (info && matches.length > 0) {
 			if (!(info.ObservedAdPodIds instanceof Set)) {
 				info.ObservedAdPodIds = new Set();
@@ -407,6 +415,13 @@ async function _notifyAdComplete(
 					parsedPodLength,
 				);
 			}
+			info.MaxObservedAdPodPosition = Math.max(
+				Math.max(0, Number(info.MaxObservedAdPodPosition) || 0),
+				maxParsedPodPosition,
+			);
+			info.ObservedZeroAdPodPosition = Boolean(
+				info.ObservedZeroAdPodPosition === true || observedZeroAdPodPosition,
+			);
 			if (typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
 					self,
@@ -417,6 +432,11 @@ async function _notifyAdComplete(
 							0,
 							Number(info.ExpectedAdPodLength) || 0,
 						),
+						maxAdPodPosition: Math.max(
+							0,
+							Number(info.MaxObservedAdPodPosition) || 0,
+						),
+						observedZeroAdPodPosition: info.ObservedZeroAdPodPosition === true,
 						cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
 						channel: info.ChannelName || null,
 						mediaKey: info.MediaKey || null,

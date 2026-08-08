@@ -73,12 +73,21 @@ interface Window {
 interface Worker {
 	__TTVABIntentionallyTerminated?: boolean;
 	__TTVABCrashed?: boolean;
+	__TTVABCrashedAt?: number;
 	__TTVABCreatedAt?: number;
 	__TTVABLastPongAt?: number;
 	__TTVABFirstPongAt?: number;
+	__TTVABGeneration?: number;
+	__TTVABPlaybackBootstrapObservedAtByMediaKey?: Map<string, number>;
+	__TTVABPlaybackObservedAtByMediaKey?: Map<string, number>;
+	__TTVABRecoveryEpoch?: number;
+	__TTVABTerminatedAt?: number;
+	__TTVABTerminationRecoveryTimer?: ReturnType<typeof setTimeout> | null;
 	__TTVABRestartAttempts?: number;
 	__TTVABMissedPongs?: number;
 	__TTVABLastPingSentAt?: number;
+	__TTVABHiddenHeartbeatMediaTime?: number;
+	__TTVABHiddenHeartbeatMissingSamples?: number;
 	__TTVABPageMediaType?: string | null;
 	__TTVABPageChannel?: string | null;
 	__TTVABPageVodID?: string | null;
