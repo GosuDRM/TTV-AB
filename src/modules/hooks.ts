@@ -28,6 +28,7 @@ const _POST_AD_RESET_SELECTOR_GROUP = _POST_AD_RESET_ONLY_SELECTORS.join(", ");
 let _pendingPostAdArtifactCleanup = null;
 const _pageSideEmptyHoldInfoByUrl = new Map();
 const _pageSideVariantCodecByUrl = new Map();
+const _pageSidePlaybackOwnerByUrl = new Map();
 const _trackedExtensionBlobUrls = new Set<string>();
 const _CRASHED_WORKER_RECOVERY_MESSAGE_KEYS = new Set([
 	"FetchRequest",
@@ -43,6 +44,228 @@ const _CRASHED_WORKER_RECOVERY_MESSAGE_KEYS = new Set([
 	"PauseResumePlayer",
 	"ReloadPlayer",
 ]);
+
+function _rememberPageSidePlaybackOwner(
+	mediaKey,
+	playlistUrl,
+	codec = null,
+	adCycleStartedAt = 0,
+	ownership = null,
+) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const codecFamily = _getVideoCodecFamily(codec);
+	if (!normalizedMediaKey || typeof playlistUrl !== "string" || !playlistUrl) {
+		return false;
+	}
+	const observedAt = Date.now();
+	const normalizedCycleStartedAt = Math.max(0, Number(adCycleStartedAt) || 0);
+	const exactPlaylistUrl = _getExactPlaylistUrlKey(playlistUrl);
+	if (!exactPlaylistUrl) return false;
+	const previous = _pageSidePlaybackOwnerByUrl.get(exactPlaylistUrl) || null;
+	const hasSamePreviousOwner =
+		_normalizeMediaKey(previous?.mediaKey) === normalizedMediaKey;
+	const isConfirmedPlayback = ownership?.confirmedPlayback === true;
+	const isAdMarked = ownership?.adMarked === true;
+	const previousCycleStartedAt = hasSamePreviousOwner
+		? Math.max(0, Number(previous?.adCycleStartedAt) || 0)
+		: 0;
+	const confirmedPlaybackAt = isConfirmedPlayback
+		? observedAt
+		: hasSamePreviousOwner
+			? Math.max(0, Number(previous?.confirmedPlaybackAt) || 0)
+			: 0;
+	_pageSidePlaybackOwnerByUrl.delete(exactPlaylistUrl);
+	_pageSidePlaybackOwnerByUrl.set(exactPlaylistUrl, {
+		mediaKey: normalizedMediaKey,
+		codecFamily: isConfirmedPlayback
+			? codecFamily || null
+			: (hasSamePreviousOwner ? previous?.codecFamily : null) || null,
+		observedAt,
+		confirmedPlaybackAt,
+		workerGeneration: isConfirmedPlayback
+			? Math.max(0, Number(ownership?.workerGeneration) || 0)
+			: hasSamePreviousOwner
+				? Math.max(0, Number(previous?.workerGeneration) || 0)
+				: 0,
+		handoffId: isConfirmedPlayback
+			? typeof ownership?.handoffId === "string" && ownership.handoffId
+				? ownership.handoffId
+				: null
+			: hasSamePreviousOwner
+				? previous?.handoffId || null
+				: null,
+		decoderCodecFamily: isConfirmedPlayback
+			? _getVideoCodecFamily(ownership?.decoderCodec)
+			: hasSamePreviousOwner
+				? previous?.decoderCodecFamily || null
+				: null,
+		lastAdMarkedAt: isAdMarked
+			? observedAt
+			: hasSamePreviousOwner
+				? Math.max(0, Number(previous?.lastAdMarkedAt) || 0)
+				: 0,
+		adCycleStartedAt: Math.max(
+			previousCycleStartedAt,
+			normalizedCycleStartedAt,
+		),
+	});
+	let remembered = true;
+	for (const alias of _getPlaylistUrlAliases(playlistUrl)) {
+		if (!alias) continue;
+		if (isConfirmedPlayback && codecFamily) {
+			_pageSideVariantCodecByUrl.delete(alias);
+			_pageSideVariantCodecByUrl.set(alias, codecFamily);
+		} else if (isConfirmedPlayback || !hasSamePreviousOwner) {
+			_pageSideVariantCodecByUrl.delete(alias);
+		}
+		remembered = true;
+	}
+	while (_pageSidePlaybackOwnerByUrl.size > 40) {
+		const oldest = _pageSidePlaybackOwnerByUrl.keys().next().value;
+		if (oldest === undefined) break;
+		_pageSidePlaybackOwnerByUrl.delete(oldest);
+	}
+	while (_pageSideVariantCodecByUrl.size > 40) {
+		const oldest = _pageSideVariantCodecByUrl.keys().next().value;
+		if (oldest === undefined) break;
+		_pageSideVariantCodecByUrl.delete(oldest);
+	}
+	return remembered;
+}
+
+function _getTrustedPageSidePlaybackOwner(url, mediaKey, cycleStartedAt = 0) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const normalizedCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+	if (!normalizedMediaKey) return null;
+	const exactOwner = _pageSidePlaybackOwnerByUrl.get(
+		_getExactPlaylistUrlKey(url),
+	);
+	if (
+		_normalizeMediaKey(exactOwner?.mediaKey) !== normalizedMediaKey ||
+		Math.max(0, Number(exactOwner?.confirmedPlaybackAt) || 0) <= 0 ||
+		(normalizedCycleStartedAt > 0 &&
+			Math.max(0, Number(exactOwner?.adCycleStartedAt) || 0) !==
+				normalizedCycleStartedAt)
+	) {
+		return null;
+	}
+	const recoveryState = _getWorkerRecoveryState(
+		{ MediaKey: normalizedMediaKey },
+		false,
+	);
+	const playbackOwnerGeneration = Math.max(
+		0,
+		Number(
+			_WorkerPlaybackOwnerGenerationByContext.get(
+				_getWorkerRecoveryContextKey({ MediaKey: normalizedMediaKey }),
+			),
+		) || 0,
+	);
+	const exactOwnerGeneration = Math.max(
+		0,
+		Number(exactOwner.workerGeneration) || 0,
+	);
+	const relevantReloadAt = _getPlayerReloadAtForMediaKey(normalizedMediaKey);
+	if (
+		exactOwnerGeneration <= 0 ||
+		playbackOwnerGeneration <= 0 ||
+		exactOwnerGeneration !== playbackOwnerGeneration ||
+		(Math.max(0, Number(recoveryState?.retiredThroughGeneration) || 0) > 0 &&
+			exactOwnerGeneration <=
+				Math.max(0, Number(recoveryState.retiredThroughGeneration) || 0)) ||
+		Math.max(0, Number(exactOwner.confirmedPlaybackAt) || 0) <= relevantReloadAt
+	) {
+		return null;
+	}
+	if (
+		_normalizeMediaKey(__TTVAB_STATE__?.ActiveCodecHandoffMediaKey) ===
+			normalizedMediaKey &&
+		__TTVAB_STATE__?.ActiveCodecHandoffId
+	) {
+		return null;
+	}
+	if (exactOwner.handoffId) return null;
+	const codecFamily = _getVideoCodecFamily(exactOwner.codecFamily);
+	const decoderCodecFamily = _getVideoCodecFamily(
+		exactOwner.decoderCodecFamily,
+	);
+	if (
+		!codecFamily ||
+		(decoderCodecFamily && decoderCodecFamily !== codecFamily)
+	) {
+		return null;
+	}
+	return exactOwner;
+}
+
+function _canServePageSideAvcHold(url, mediaKey, cycleStartedAt) {
+	return Boolean(
+		_getVideoCodecFamily(
+			_getTrustedPageSidePlaybackOwner(url, mediaKey, cycleStartedAt)
+				?.codecFamily,
+		) === "avc",
+	);
+}
+
+function _resetWorkerAdCycleState(value) {
+	const resetContext = _normalizePlaybackContext(value);
+	const mediaKey = resetContext.MediaKey;
+	const cycleStartedAt = Math.max(0, Number(value?.cycleStartedAt) || 0);
+	if (!mediaKey || cycleStartedAt <= 0) return false;
+	const progress = __TTVAB_STATE__?.AdPodProgressByMediaKey?.[mediaKey] || null;
+	const progressCycleStartedAt = Math.max(
+		0,
+		Number(progress?.cycleStartedAt) || 0,
+	);
+	const streamInfos = Object.values(
+		__TTVAB_STATE__?.StreamInfos || {},
+	) as Array<{ MediaKey?: string | null; VisibleAdStartedAt?: number }>;
+	const matchingInfos = streamInfos.filter(
+		(info) => _normalizeMediaKey(info?.MediaKey) === mediaKey,
+	);
+	const newestInfoCycleStartedAt = matchingInfos.reduce(
+		(newest, info) =>
+			Math.max(newest, Math.max(0, Number(info?.VisibleAdStartedAt) || 0)),
+		0,
+	);
+	if (
+		progressCycleStartedAt > cycleStartedAt ||
+		newestInfoCycleStartedAt > cycleStartedAt
+	) {
+		return false;
+	}
+	const ownsCurrentAd =
+		_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) === mediaKey;
+	let didReset = false;
+	for (const info of matchingInfos) {
+		const infoCycleStartedAt = Math.max(
+			0,
+			Number(info?.VisibleAdStartedAt) || 0,
+		);
+		if (infoCycleStartedAt > cycleStartedAt) {
+			continue;
+		}
+		_resetStreamAdState(info);
+		didReset = true;
+	}
+	if (progressCycleStartedAt === cycleStartedAt) {
+		_clearAdPodProgress(mediaKey);
+		didReset = true;
+	}
+	if (!didReset && !ownsCurrentAd) return false;
+	if (ownsCurrentAd) {
+		__TTVAB_STATE__.CurrentAdChannel = null;
+		__TTVAB_STATE__.CurrentAdMediaKey = null;
+	}
+	if (
+		_normalizeMediaKey(__TTVAB_STATE__?.PinnedBackupPlayerMediaKey) === mediaKey
+	) {
+		__TTVAB_STATE__.PinnedBackupPlayerType = null;
+		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+	}
+	return true;
+}
 
 function _hidePostAdArtifact(el) {
 	if (!(el instanceof Element)) return;
@@ -169,6 +392,129 @@ function _isPageLifecycleCycleCurrent(mediaKey, cycleStartedAt) {
 function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
 	const realFetch = fetch;
+	const observedPlaybackMediaKeys = new Map();
+	const requestedMediaBootstrapRecoveryCycles = new Set();
+	const reportPlaybackWorkerObserved = (
+		context,
+		playlistUrl = null,
+		codec = null,
+	) => {
+		const observedContext = _normalizePlaybackContext(context);
+		if (!observedContext.MediaKey) return false;
+		const observedPlaylistUrl =
+			typeof playlistUrl === "string" && playlistUrl
+				? _getExactPlaylistUrlKey(playlistUrl)
+				: null;
+		const observedCodec =
+			_getVideoCodecIdentity(codec) || _getVideoCodecFamily(codec) || null;
+		const observedDecoderCodec =
+			_getVideoCodecIdentity(context?.EnhancedDecoderCodec) ||
+			_getVideoCodecFamily(context?.EnhancedDecoderCodecFamily) ||
+			null;
+		const observedHandoffId = _getActiveCodecHandoffIdForInfo(context);
+		const observationKey = `${observedContext.MediaKey}|${observedPlaylistUrl || "context"}|${observedCodec || "unknown"}|${observedDecoderCodec || "native"}|${observedHandoffId || "settled"}`;
+		const now = Date.now();
+		const lastObservedAt = Math.max(
+			0,
+			Number(observedPlaybackMediaKeys.get(observationKey)) || 0,
+		);
+		if (
+			observedPlaybackMediaKeys.has(observationKey) &&
+			now - lastObservedAt < 5000
+		) {
+			return false;
+		}
+		if (typeof self !== "undefined" && self.postMessage) {
+			try {
+				_postWorkerBridgeMessage(self, {
+					key: "PlaybackWorkerObserved",
+					mediaType: observedContext.MediaType,
+					channel: observedContext.ChannelName,
+					vodID: observedContext.VodID,
+					mediaKey: observedContext.MediaKey,
+					playlistUrl: observedPlaylistUrl,
+					codec: observedCodec,
+					decoderCodec: observedDecoderCodec,
+					handoffId: observedHandoffId,
+				});
+				observedPlaybackMediaKeys.delete(observationKey);
+				observedPlaybackMediaKeys.set(observationKey, now);
+				while (observedPlaybackMediaKeys.size > 16) {
+					const oldestObservation = observedPlaybackMediaKeys
+						.keys()
+						.next().value;
+					if (oldestObservation === undefined) break;
+					observedPlaybackMediaKeys.delete(oldestObservation);
+				}
+			} catch {
+				return false;
+			}
+		}
+		return true;
+	};
+	const reportPlaybackWorkerBootstrapObserved = (context) => {
+		const observedContext = _normalizePlaybackContext(context);
+		if (!observedContext.MediaKey) return false;
+		if (typeof self !== "undefined" && self.postMessage) {
+			try {
+				_postWorkerBridgeMessage(self, {
+					key: "PlaybackWorkerBootstrapObserved",
+					mediaType: observedContext.MediaType,
+					channel: observedContext.ChannelName,
+					vodID: observedContext.VodID,
+					mediaKey: observedContext.MediaKey,
+				});
+				return true;
+			} catch {}
+		}
+		return false;
+	};
+	__TTVAB_STATE__.RequestMediaBootstrapRecovery = (context, cycleStartedAt) => {
+		const recoveryContext = _normalizePlaybackContext(context);
+		const normalizedCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+		if (
+			!recoveryContext.MediaKey ||
+			normalizedCycleStartedAt <= 0 ||
+			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) !==
+				recoveryContext.MediaKey ||
+			Math.max(
+				0,
+				Number(
+					__TTVAB_STATE__.AdPodProgressByMediaKey?.[recoveryContext.MediaKey]
+						?.cycleStartedAt,
+				) || 0,
+			) !== normalizedCycleStartedAt
+		) {
+			return false;
+		}
+		const recoveryKey = `${recoveryContext.MediaKey}|${normalizedCycleStartedAt}`;
+		if (requestedMediaBootstrapRecoveryCycles.has(recoveryKey)) return false;
+		if (typeof self === "undefined" || !self.postMessage) return false;
+		try {
+			_postWorkerBridgeMessage(
+				self,
+				_createPageScopedWorkerEvent({
+					key: "MediaBootstrapRecoveryNeeded",
+					mediaType: recoveryContext.MediaType,
+					channel: recoveryContext.ChannelName,
+					vodID: recoveryContext.VodID,
+					mediaKey: recoveryContext.MediaKey,
+					cycleStartedAt: normalizedCycleStartedAt,
+				}),
+			);
+			requestedMediaBootstrapRecoveryCycles.add(recoveryKey);
+			while (requestedMediaBootstrapRecoveryCycles.size > 8) {
+				const oldestRecoveryKey = requestedMediaBootstrapRecoveryCycles
+					.values()
+					.next().value;
+				if (oldestRecoveryKey === undefined) break;
+				requestedMediaBootstrapRecoveryCycles.delete(oldestRecoveryKey);
+			}
+			return true;
+		} catch {
+			return false;
+		}
+	};
 	__TTVAB_STATE__.PrepareFatalMediaRecovery = (request) => {
 		const recoveryContext = _normalizePlaybackContext(request);
 		const info = recoveryContext.MediaKey
@@ -418,19 +764,19 @@ function _hookWorkerFetch() {
 				}
 				return await realFetch(_EMPTY_SEGMENT_URL);
 			}
+			const segmentOwner = __TTVAB_STATE__.SegmentCodecOwners?.get?.(
+				_getExactPlaylistUrlKey(url),
+			);
+			const segmentMediaKey = _normalizeMediaKey(segmentOwner?.mediaKey);
+			const segmentInfo =
+				(segmentMediaKey && __TTVAB_STATE__.StreamInfos?.[segmentMediaKey]) ||
+				null;
 			if (
 				typeof _isKnownAdSegmentUrl === "function" &&
 				_isKnownAdSegmentUrl(url, {
 					includeCached: shouldBlockCachedAdSegments,
 				})
 			) {
-				const segmentOwner = __TTVAB_STATE__.SegmentCodecOwners?.get?.(
-					_getExactPlaylistUrlKey(url),
-				);
-				const segmentMediaKey = _normalizeMediaKey(segmentOwner?.mediaKey);
-				const segmentInfo =
-					(segmentMediaKey && __TTVAB_STATE__.StreamInfos?.[segmentMediaKey]) ||
-					null;
 				const segmentDecoderFamily = _getVideoCodecFamily(
 					segmentInfo?.EnhancedDecoderCodec ||
 						segmentInfo?.EnhancedDecoderCodecFamily,
@@ -440,7 +786,11 @@ function _hookWorkerFetch() {
 					segmentDecoderFamily !== "hevc" &&
 					segmentDecoderFamily !== "av1"
 				) {
-					return await realFetch(_EMPTY_SEGMENT_URL);
+					const response = await realFetch(_EMPTY_SEGMENT_URL);
+					if (response?.ok && segmentInfo?.MediaKey) {
+						reportPlaybackWorkerObserved(segmentInfo);
+					}
+					return response;
 				}
 				const segmentRequestSignal =
 					opts?.signal ||
@@ -501,6 +851,7 @@ function _hookWorkerFetch() {
 					const playlist = info.IsUsingModifiedM3U8
 						? info.ModifiedM3U8
 						: info.EncodingsM3U8;
+					reportPlaybackWorkerBootstrapObserved(playbackContext);
 					return new Response(
 						_replaceServerTime(playlist, serverTime),
 						responseInit(response),
@@ -527,6 +878,7 @@ function _hookWorkerFetch() {
 							filteredMaster !== encodings &&
 							filteredMaster.includes("#EXT-X-STREAM-INF")
 						) {
+							reportPlaybackWorkerBootstrapObserved(playbackContext);
 							return new Response(
 								_replaceServerTime(filteredMaster, serverTime),
 								responseInit(response),
@@ -539,6 +891,7 @@ function _hookWorkerFetch() {
 								: null);
 						throw _createCodecHandoffAbortError(masterRequestSignal);
 					}
+					reportPlaybackWorkerBootstrapObserved(playbackContext);
 					return new Response(encodings, responseInit(response));
 				}
 			}
@@ -557,10 +910,12 @@ function _hookWorkerFetch() {
 				const requestStartDecoderCodecIdentity = _getVideoCodecIdentity(
 					requestStartDecoderCodec,
 				);
-				const requestStartCodecs = _getDirectPlaybackResolutionForUrl(
-					requestStartInfo,
-					url,
-				)?.Codecs;
+				const requestStartCodecs =
+					_getDirectPlaybackResolutionForUrl(requestStartInfo, url)?.Codecs ||
+					_getPlaylistUrlAliases(url)
+						.map((alias) => _pageSideVariantCodecByUrl.get(alias))
+						.find(Boolean) ||
+					null;
 				const requestStartCodecFamily =
 					_getVideoCodecFamily(requestStartCodecs);
 				const requestStartCodecIdentity =
@@ -595,6 +950,7 @@ function _hookWorkerFetch() {
 					),
 					cycleStartedAt: requestStartCycleStartedAt,
 					enhancedDecoderCodec: requestStartDecoderCodec || null,
+					requestCodec: requestStartCodecs,
 					includeCachedAdSegments: requestStartMayUseCachedAdSegments,
 				};
 				const requestStartHasEnhancedDecoderOwner = Boolean(
@@ -606,6 +962,20 @@ function _hookWorkerFetch() {
 					const text = await response.text();
 					const responseInfo =
 						requestStartInfo || _getStreamInfoForPlaylist(url);
+					const reportSuccessfulMediaResponse = () => {
+						const successfulInfo =
+							responseInfo || _getStreamInfoForPlaylist(url);
+						if (successfulInfo?.MediaKey) {
+							const successfulCodecs =
+								_getDirectPlaybackResolutionForUrl(successfulInfo, url)
+									?.Codecs || requestStartCodecs;
+							reportPlaybackWorkerObserved(
+								successfulInfo,
+								url,
+								successfulCodecs,
+							);
+						}
+					};
 					const responseMediaKey = _normalizeMediaKey(responseInfo?.MediaKey);
 					const responseHasExactActiveAdContext = Boolean(
 						responseInfo &&
@@ -652,19 +1022,18 @@ function _hookWorkerFetch() {
 									: null);
 							throw _createCodecHandoffAbortError(activatedRequestSignal);
 						}
-						return new Response(
-							await _processM3U8(
-								url,
-								text,
-								realFetch,
-								opts?.signal ||
-									(typeof Request !== "undefined" && resource instanceof Request
-										? resource.signal
-										: null),
-								requestStartContext,
-							),
-							responseInit(response),
+						const processedText = await _processM3U8(
+							url,
+							text,
+							realFetch,
+							opts?.signal ||
+								(typeof Request !== "undefined" && resource instanceof Request
+									? resource.signal
+									: null),
+							requestStartContext,
 						);
+						reportSuccessfulMediaResponse();
+						return new Response(processedText, responseInit(response));
 					} catch (err) {
 						if (err?.name === "AbortError") {
 							throw err;
@@ -724,6 +1093,7 @@ function _hookWorkerFetch() {
 										: null);
 								throw _createCodecHandoffAbortError(failedRequestSignal);
 							}
+							reportSuccessfulMediaResponse();
 							return new Response(text, responseInit(response));
 						}
 						const failedRequestIsEnhanced = Boolean(
@@ -770,13 +1140,18 @@ function _hookWorkerFetch() {
 							throw _createCodecHandoffAbortError(failedRequestSignal);
 						}
 						const failClosedPlaylist = _stripAds(text, true, failedInfo);
+						reportSuccessfulMediaResponse();
 						return new Response(failClosedPlaylist, responseInit(response));
 					}
 				}
 				return response;
 			}
 
-			return await realFetch.apply(this, args);
+			const response = await realFetch.apply(this, args);
+			if (response?.ok && segmentInfo?.MediaKey) {
+				reportPlaybackWorkerObserved(segmentInfo);
+			}
+			return response;
 		} catch (e) {
 			const safeUrl =
 				typeof requestUrl === "string" ? requestUrl.trimEnd() : null;
@@ -866,13 +1241,20 @@ const HW_MAX_MISSED_PONGS_HIDDEN = 6;
 const HW_HIDDEN_STALE_MIN_MS = 90000;
 const HW_RECOVERY_COOLDOWN_MS = 30000;
 const HW_RECOVERY_STABLE_MS = 60000;
-let _lastWorkerRecoveryReloadAt = 0;
-const _WorkerRecoveryState = {
-	contextKey: null,
-	attempts: 0,
-	lastAttemptAt: 0,
-	limitLogged: false,
-};
+let _workerGeneration = 0;
+let _workerRecoveryEpoch = 0;
+const _WorkerRecoveryStates = new Map();
+const _WorkerPlaybackOwnerGenerationByContext = new Map();
+
+function _isWorkerLifecycleThrottled() {
+	if (typeof _isPlaybackPageUnfocused === "function") {
+		return _isPlaybackPageUnfocused() === true;
+	}
+	return Boolean(
+		typeof _isNativeDocumentHidden === "function" &&
+			_isNativeDocumentHidden() === true,
+	);
+}
 
 function _getWorkerRecoveryContextKey(context) {
 	const normalizedContext = _normalizePlaybackContext(context);
@@ -886,6 +1268,16 @@ function _getWorkerRecoveryContextKey(context) {
 function _rememberWorkerPageContext(worker, context) {
 	if (!worker) return _normalizePlaybackContext(context);
 	const normalizedContext = _normalizePlaybackContext(context);
+	const previousMediaKey = _normalizeMediaKey(worker.__TTVABPageMediaKey);
+	if (
+		previousMediaKey &&
+		previousMediaKey !== _normalizeMediaKey(normalizedContext.MediaKey)
+	) {
+		worker.__TTVABPlaybackObservedAtByMediaKey?.delete?.(previousMediaKey);
+		worker.__TTVABPlaybackBootstrapObservedAtByMediaKey?.delete?.(
+			previousMediaKey,
+		);
+	}
 	worker.__TTVABPageMediaType = normalizedContext.MediaType || null;
 	worker.__TTVABPageChannel = normalizedContext.ChannelName || null;
 	worker.__TTVABPageVodID = normalizedContext.VodID || null;
@@ -918,39 +1310,203 @@ function _getWorkerPlaybackContext(worker, fallbackContext = null) {
 	});
 }
 
-function _syncWorkerRecoveryContext(context) {
+function _getWorkerRecoveryState(context, create = true) {
 	const contextKey = _getWorkerRecoveryContextKey(context);
-	if (_WorkerRecoveryState.contextKey !== contextKey) {
-		_WorkerRecoveryState.contextKey = contextKey;
-		_WorkerRecoveryState.attempts = 0;
-		_WorkerRecoveryState.lastAttemptAt = 0;
-		_WorkerRecoveryState.limitLogged = false;
+	let state = _WorkerRecoveryStates.get(contextKey) || null;
+	if (!state && create) {
+		state = {
+			contextKey,
+			context: _normalizePlaybackContext(context),
+			attempts: 0,
+			lastAttemptAt: 0,
+			limitLogged: false,
+			activeEpoch: 0,
+			failedGeneration: 0,
+			crashedAt: 0,
+			bootstrapDeadlineAt: 0,
+			pipWaitDeadlineAt: 0,
+			retiredThroughGeneration: 0,
+			expectedAfterGeneration: 0,
+			reloadDispatchedAt: 0,
+			lastReloadAt: 0,
+			successorDeadlineAt: 0,
+			stableGeneration: 0,
+			stableSince: 0,
+			terminalRearmCycleStartedAt: 0,
+			terminalRearmAttemptedAt: 0,
+			hiddenLastMediaTime: -1,
+			timerID: null,
+			phase: "idle",
+		};
+		_WorkerRecoveryStates.set(contextKey, state);
+		while (_WorkerRecoveryStates.size > 32) {
+			const removable = Array.from(_WorkerRecoveryStates.entries()).find(
+				([key, entry]) => key !== contextKey && !entry?.activeEpoch,
+			);
+			if (!removable) break;
+			_WorkerRecoveryStates.delete(removable[0]);
+		}
 	}
-	return contextKey;
+	return state;
 }
 
 function _recordWorkerRecoveryAttempt(context, now = Date.now()) {
-	_syncWorkerRecoveryContext(context);
-	if (_WorkerRecoveryState.attempts >= HW_MAX_RESTART) return false;
-	_WorkerRecoveryState.attempts++;
-	_WorkerRecoveryState.lastAttemptAt = now;
-	_WorkerRecoveryState.limitLogged = false;
+	const state = _getWorkerRecoveryState(context);
+	if (!state || state.attempts >= HW_MAX_RESTART) return false;
+	state.attempts++;
+	state.lastAttemptAt = now;
+	state.limitLogged = false;
 	return true;
 }
 
-function _resetWorkerRecoveryStateIfStable(context, now = Date.now()) {
-	const contextKey = _getWorkerRecoveryContextKey(context);
-	if (_WorkerRecoveryState.contextKey !== contextKey) return;
+function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
+	const state = _getWorkerRecoveryState(context, false);
+	if (!state) return;
+	const workerGeneration = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
+	const observationAt = _getWorkerPlaybackObservationAt(worker, context);
+	const observationFreshnessMs = _isWorkerLifecycleThrottled()
+		? HW_HIDDEN_STALE_MIN_MS
+		: HW_PONG_TIMEOUT_MS;
 	if (
-		_WorkerRecoveryState.attempts <= 0 ||
-		_WorkerRecoveryState.lastAttemptAt <= 0 ||
-		now - _WorkerRecoveryState.lastAttemptAt < HW_RECOVERY_STABLE_MS
+		state.attempts <= 0 ||
+		state.phase !== "stabilizing" ||
+		state.stableGeneration !== workerGeneration ||
+		state.stableSince <= 0 ||
+		now - state.stableSince < HW_RECOVERY_STABLE_MS ||
+		!_isWorkerHeartbeatHealthy(worker, now) ||
+		observationAt < state.stableSince ||
+		now - observationAt > observationFreshnessMs
 	) {
 		return;
 	}
-	_WorkerRecoveryState.attempts = 0;
-	_WorkerRecoveryState.lastAttemptAt = 0;
-	_WorkerRecoveryState.limitLogged = false;
+	state.attempts = 0;
+	state.lastAttemptAt = 0;
+	state.lastReloadAt = 0;
+	state.limitLogged = false;
+	state.stableGeneration = 0;
+	state.stableSince = 0;
+	state.terminalRearmCycleStartedAt = 0;
+	state.terminalRearmAttemptedAt = 0;
+	state.phase = "idle";
+}
+
+function _getWorkerPlaybackObservationAt(worker, context) {
+	const mediaKey = _normalizeMediaKey(
+		_normalizePlaybackContext(context).MediaKey,
+	);
+	if (!mediaKey) return 0;
+	return Math.max(
+		0,
+		Number(worker?.__TTVABPlaybackObservedAtByMediaKey?.get?.(mediaKey)) || 0,
+	);
+}
+
+function _isWorkerHeartbeatHealthy(worker, now = Date.now()) {
+	if (
+		!worker ||
+		worker.__TTVABCrashed ||
+		worker.__TTVABIntentionallyTerminated
+	) {
+		return false;
+	}
+	const firstPongAt = Math.max(0, Number(worker.__TTVABFirstPongAt) || 0);
+	const lastPongAt = Math.max(0, Number(worker.__TTVABLastPongAt) || 0);
+	const heartbeatTimeoutMs = _isWorkerLifecycleThrottled()
+		? HW_HIDDEN_STALE_MIN_MS
+		: HW_PONG_TIMEOUT_MS;
+	return (
+		firstPongAt > 0 && lastPongAt > 0 && now - lastPongAt <= heartbeatTimeoutMs
+	);
+}
+
+function _promoteWorkerPlaybackOwner(
+	worker,
+	now = Date.now(),
+	playbackContext = null,
+) {
+	if (!_isWorkerHeartbeatHealthy(worker, now)) return false;
+	const generation = Math.max(0, Number(worker.__TTVABGeneration) || 0);
+	if (generation <= 0) return false;
+	const context = _normalizePlaybackContext(
+		playbackContext || _getWorkerPlaybackContext(worker),
+	);
+	const mediaKey = _normalizeMediaKey(context.MediaKey);
+	if (!mediaKey || _getWorkerPlaybackObservationAt(worker, context) <= 0) {
+		return false;
+	}
+	const contextKey = _getWorkerRecoveryContextKey(context);
+	const currentGeneration = Math.max(
+		0,
+		Number(_WorkerPlaybackOwnerGenerationByContext.get(contextKey)) || 0,
+	);
+	const didPromote = generation >= currentGeneration;
+	if (didPromote) {
+		_WorkerPlaybackOwnerGenerationByContext.delete(contextKey);
+		_WorkerPlaybackOwnerGenerationByContext.set(contextKey, generation);
+	}
+	while (_WorkerPlaybackOwnerGenerationByContext.size > 32) {
+		const oldestContextKey = _WorkerPlaybackOwnerGenerationByContext
+			.keys()
+			.next().value;
+		if (oldestContextKey === undefined || oldestContextKey === contextKey)
+			break;
+		_WorkerPlaybackOwnerGenerationByContext.delete(oldestContextKey);
+	}
+	return didPromote;
+}
+
+function _beginExhaustedWorkerRecoveryStabilization(
+	worker,
+	context,
+	now = Date.now(),
+) {
+	const recoveryState = _getWorkerRecoveryState(context, false);
+	const priorPhase = recoveryState?.phase || null;
+	if (
+		priorPhase !== "exhausted" &&
+		priorPhase !== "cancelled" &&
+		priorPhase !== "degraded-pip"
+	) {
+		return false;
+	}
+	const workerContext = _getWorkerPlaybackContext(worker);
+	if (_isPlaybackContextMismatch(workerContext, context)) return false;
+	const workerGeneration = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
+	const observationAt = _getWorkerPlaybackObservationAt(worker, context);
+	const playbackOwnerGeneration = Math.max(
+		0,
+		Number(
+			_WorkerPlaybackOwnerGenerationByContext.get(
+				_getWorkerRecoveryContextKey(context),
+			),
+		) || 0,
+	);
+	if (
+		workerGeneration <=
+			Math.max(0, Number(recoveryState.failedGeneration) || 0) ||
+		observationAt <= Math.max(0, Number(recoveryState.crashedAt) || 0) ||
+		workerGeneration < playbackOwnerGeneration ||
+		!_isWorkerHeartbeatHealthy(worker, now)
+	) {
+		return false;
+	}
+	recoveryState.retiredThroughGeneration = Math.max(
+		0,
+		Number(recoveryState.retiredThroughGeneration) || 0,
+		Number(recoveryState.failedGeneration) || 0,
+	);
+	recoveryState.stableGeneration = workerGeneration;
+	recoveryState.stableSince = now;
+	recoveryState.activeEpoch = 0;
+	recoveryState.phase = "stabilizing";
+	_promoteWorkerPlaybackOwner(worker, now, context);
+	_log(
+		priorPhase === "exhausted"
+			? "Healthy playback worker appeared after recovery retries were exhausted"
+			: "Healthy playback worker appeared after deferred recovery ended",
+		"success",
+	);
+	return true;
 }
 
 function _markWorkerPong(worker, now = Date.now()) {
@@ -964,7 +1520,14 @@ function _markWorkerPong(worker, now = Date.now()) {
 	worker.__TTVABLastPongAt = now;
 	if (!worker.__TTVABFirstPongAt) worker.__TTVABFirstPongAt = now;
 	worker.__TTVABMissedPongs = 0;
-	_resetWorkerRecoveryStateIfStable(_getWorkerPlaybackContext(worker), now);
+	const workerContext = _getWorkerPlaybackContext(worker);
+	if (
+		_promoteWorkerPlaybackOwner(worker, now) &&
+		_getWorkerPlaybackObservationAt(worker, workerContext) > 0
+	) {
+		_beginExhaustedWorkerRecoveryStabilization(worker, workerContext, now);
+		_resetWorkerRecoveryStateIfStable(worker, workerContext, now);
+	}
 }
 
 const pruneTrackedWorkers = (excludedWorkers = []) => {
@@ -1003,6 +1566,215 @@ function _isPlaybackContextMismatch(expectedContext, currentContext) {
 	return false;
 }
 
+function _getHighestWorkerGenerationForPlaybackContext(playbackContext) {
+	const contextKey = _getWorkerRecoveryContextKey(playbackContext);
+	let highestGeneration = 0;
+	for (const candidate of _S.workers) {
+		if (
+			!candidate ||
+			_getWorkerRecoveryContextKey(_getWorkerPlaybackContext(candidate)) !==
+				contextKey
+		) {
+			continue;
+		}
+		highestGeneration = Math.max(
+			highestGeneration,
+			0,
+			Number(candidate.__TTVABGeneration) || 0,
+		);
+	}
+	return highestGeneration;
+}
+
+function _getQualifiedReplacementWorker(
+	worker,
+	playbackContext,
+	boundaryAt,
+	minimumGeneration,
+	now = Date.now(),
+	requireCreatedAfterBoundary = true,
+) {
+	const contextKey = _getWorkerRecoveryContextKey(playbackContext);
+	const normalizedBoundaryAt = Math.max(0, Number(boundaryAt) || 0);
+	const normalizedMinimumGeneration = Math.max(
+		0,
+		Number(minimumGeneration) || 0,
+	);
+	let replacement = null;
+	let replacementGeneration = 0;
+	for (const candidate of _S.workers) {
+		if (
+			!candidate ||
+			candidate === worker ||
+			_getWorkerRecoveryContextKey(_getWorkerPlaybackContext(candidate)) !==
+				contextKey ||
+			!_isWorkerHeartbeatHealthy(candidate, now)
+		) {
+			continue;
+		}
+		const candidateGeneration = Math.max(
+			0,
+			Number(candidate.__TTVABGeneration) || 0,
+		);
+		const candidateCreatedAt = Math.max(
+			0,
+			Number(candidate.__TTVABCreatedAt) || 0,
+		);
+		const observedAt = _getWorkerPlaybackObservationAt(
+			candidate,
+			playbackContext,
+		);
+		if (
+			candidateGeneration <= normalizedMinimumGeneration ||
+			candidateCreatedAt <= 0 ||
+			(requireCreatedAfterBoundary &&
+				candidateCreatedAt < normalizedBoundaryAt) ||
+			observedAt <= 0 ||
+			observedAt < normalizedBoundaryAt ||
+			candidateGeneration <= replacementGeneration
+		) {
+			continue;
+		}
+		replacement = candidate;
+		replacementGeneration = candidateGeneration;
+	}
+	return replacement;
+}
+
+function _hasStartingReplacementWorker(
+	worker,
+	playbackContext,
+	minimumGeneration,
+	bootstrapDeadlineAt,
+	now = Date.now(),
+) {
+	const contextKey = _getWorkerRecoveryContextKey(playbackContext);
+	const normalizedMinimumGeneration = Math.max(
+		0,
+		Number(minimumGeneration) || 0,
+	);
+	const normalizedBootstrapDeadlineAt = Math.max(
+		0,
+		Number(bootstrapDeadlineAt) || 0,
+	);
+	if (
+		normalizedBootstrapDeadlineAt <= 0 ||
+		now >= normalizedBootstrapDeadlineAt
+	) {
+		return false;
+	}
+	return _S.workers.some((candidate) => {
+		if (
+			!candidate ||
+			candidate === worker ||
+			candidate.__TTVABCrashed ||
+			candidate.__TTVABIntentionallyTerminated ||
+			_getWorkerRecoveryContextKey(_getWorkerPlaybackContext(candidate)) !==
+				contextKey
+		) {
+			return false;
+		}
+		const candidateGeneration = Math.max(
+			0,
+			Number(candidate.__TTVABGeneration) || 0,
+		);
+		return candidateGeneration > normalizedMinimumGeneration;
+	});
+}
+
+function _getHealthyObservedPlaybackWorker(
+	playbackContext,
+	excludedWorker = null,
+	now = Date.now(),
+	observedAfter = 0,
+	requireFreshObservation = true,
+) {
+	const contextKey = _getWorkerRecoveryContextKey(playbackContext);
+	const minimumObservedAt = Math.max(0, Number(observedAfter) || 0);
+	const observationFreshnessMs = _isWorkerLifecycleThrottled()
+		? HW_HIDDEN_STALE_MIN_MS
+		: HW_PONG_TIMEOUT_MS;
+	let playbackOwner = null;
+	let playbackOwnerGeneration = 0;
+	for (const candidate of _S.workers) {
+		if (
+			!candidate ||
+			candidate === excludedWorker ||
+			_getWorkerRecoveryContextKey(_getWorkerPlaybackContext(candidate)) !==
+				contextKey ||
+			!_isWorkerHeartbeatHealthy(candidate, now)
+		) {
+			continue;
+		}
+		const observedAt = _getWorkerPlaybackObservationAt(
+			candidate,
+			playbackContext,
+		);
+		const candidateGeneration = Math.max(
+			0,
+			Number(candidate.__TTVABGeneration) || 0,
+		);
+		if (
+			observedAt <= 0 ||
+			observedAt < minimumObservedAt ||
+			(requireFreshObservation && now - observedAt > observationFreshnessMs) ||
+			candidateGeneration <= playbackOwnerGeneration
+		) {
+			continue;
+		}
+		playbackOwner = candidate;
+		playbackOwnerGeneration = candidateGeneration;
+	}
+	return playbackOwner;
+}
+
+function _handleMediaBootstrapRecoveryRequest(
+	worker,
+	data,
+	pagePlaybackContext,
+	currentPageContext,
+) {
+	const recoveryContext = _normalizePlaybackContext({
+		MediaType: data?.mediaType,
+		ChannelName: data?.channel,
+		VodID: data?.vodID,
+		MediaKey: data?.mediaKey,
+	});
+	const cycleStartedAt = Math.max(0, Number(data?.cycleStartedAt) || 0);
+	const workerContext = _getWorkerPlaybackContext(worker, pagePlaybackContext);
+	const contextIsCurrent = !_isPlaybackContextMismatch(
+		recoveryContext,
+		currentPageContext,
+	);
+	const contextIsPip = Boolean(
+		typeof _isActivePictureInPicturePlaybackContext === "function" &&
+			_isActivePictureInPicturePlaybackContext(recoveryContext),
+	);
+	if (
+		!recoveryContext.MediaKey ||
+		cycleStartedAt <= 0 ||
+		_isPlaybackContextMismatch(workerContext, recoveryContext) ||
+		(!contextIsCurrent && !contextIsPip) ||
+		_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) !==
+			recoveryContext.MediaKey ||
+		Math.max(
+			0,
+			Number(
+				__TTVAB_STATE__?.AdPodProgressByMediaKey?.[recoveryContext.MediaKey]
+					?.cycleStartedAt,
+			) || 0,
+		) !== cycleStartedAt
+	) {
+		return false;
+	}
+	return _recoverCrashedWorker(
+		worker,
+		recoveryContext,
+		"Playback worker received media before stream bootstrap",
+		"warning",
+	);
+}
+
 function _canHandleCrashedWorkerMessage(
 	data,
 	worker,
@@ -1012,11 +1784,337 @@ function _canHandleCrashedWorkerMessage(
 	const key = typeof data?.key === "string" ? data.key : null;
 	if (!key || !_CRASHED_WORKER_RECOVERY_MESSAGE_KEYS.has(key)) return false;
 	const workerContext = _getWorkerPlaybackContext(worker, pagePlaybackContext);
-	return (
+	const contextIsCurrent =
 		!_isPlaybackContextMismatch(workerContext, currentPageContext) ||
 		(typeof _isActivePictureInPicturePlaybackContext === "function" &&
-			_isActivePictureInPicturePlaybackContext(workerContext))
+			_isActivePictureInPicturePlaybackContext(workerContext));
+	if (!contextIsCurrent) return false;
+	const contextKey = _getWorkerRecoveryContextKey(workerContext);
+	const recoveryState = _getWorkerRecoveryState(workerContext, false);
+	const explicitlyRetiredThroughGeneration = Math.max(
+		0,
+		Number(recoveryState?.retiredThroughGeneration) || 0,
 	);
+	const playbackOwnerGeneration = Math.max(
+		0,
+		Number(_WorkerPlaybackOwnerGenerationByContext.get(contextKey)) || 0,
+	);
+	const workerGeneration = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
+	if (key === "AdDetected" || key === "AdPodProgress") {
+		return Boolean(
+			recoveryState?.activeEpoch > 0 &&
+				workerGeneration > explicitlyRetiredThroughGeneration &&
+				workerGeneration === recoveryState.failedGeneration,
+		);
+	}
+	return Boolean(
+		(explicitlyRetiredThroughGeneration <= 0 ||
+			workerGeneration > explicitlyRetiredThroughGeneration) &&
+			(playbackOwnerGeneration <= 0 ||
+				workerGeneration >= playbackOwnerGeneration),
+	);
+}
+
+function _isWorkerGenerationRetired(worker, pagePlaybackContext = null) {
+	const workerGeneration = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
+	if (workerGeneration <= 0) return false;
+	const workerContext = _getWorkerPlaybackContext(worker, pagePlaybackContext);
+	const playbackOwnerGeneration = Math.max(
+		0,
+		Number(
+			_WorkerPlaybackOwnerGenerationByContext.get(
+				_getWorkerRecoveryContextKey(workerContext),
+			),
+		) || 0,
+	);
+	return playbackOwnerGeneration > workerGeneration;
+}
+
+function _scheduleTerminatedPlaybackWorkerRecovery(
+	worker,
+	pagePlaybackContext,
+) {
+	if (
+		!worker ||
+		worker.__TTVABCrashed ||
+		Math.max(0, Number(worker.__TTVABTerminatedAt) || 0) > 0 ||
+		worker.__TTVABTerminationRecoveryTimer != null
+	) {
+		return false;
+	}
+	const recoveryContext = _getWorkerPlaybackContext(
+		worker,
+		pagePlaybackContext,
+	);
+	const terminatedWorkerObservedPlayback =
+		_getWorkerPlaybackObservationAt(worker, recoveryContext) > 0;
+	const terminatedWorkerObservedBootstrap =
+		Math.max(
+			0,
+			Number(
+				worker?.__TTVABPlaybackBootstrapObservedAtByMediaKey?.get?.(
+					recoveryContext.MediaKey,
+				),
+			) || 0,
+		) > 0;
+	if (!recoveryContext.MediaKey) return false;
+	const currentContext = _getPlaybackContextFromUrl(window.location.href);
+	const contextIsCurrent = !_isPlaybackContextMismatch(
+		recoveryContext,
+		currentContext,
+	);
+	const contextIsPip = Boolean(
+		typeof _isActivePictureInPicturePlaybackContext === "function" &&
+			_isActivePictureInPicturePlaybackContext(recoveryContext),
+	);
+	if (!contextIsCurrent && !contextIsPip) return false;
+	const now = Date.now();
+	const terminatedGeneration = Math.max(
+		0,
+		Number(worker.__TTVABGeneration) || 0,
+	);
+	const healthyPlaybackOwner = _getHealthyObservedPlaybackWorker(
+		recoveryContext,
+		worker,
+		now,
+		terminatedWorkerObservedPlayback
+			? Math.max(0, Number(worker.__TTVABCreatedAt) || 0)
+			: 0,
+		terminatedWorkerObservedPlayback,
+	);
+	if (healthyPlaybackOwner) {
+		const healthyOwnerGeneration = Math.max(
+			0,
+			Number(healthyPlaybackOwner.__TTVABGeneration) || 0,
+		);
+		if (
+			(!terminatedWorkerObservedPlayback ||
+				healthyOwnerGeneration > terminatedGeneration) &&
+			_promoteWorkerPlaybackOwner(healthyPlaybackOwner, now, recoveryContext)
+		) {
+			return false;
+		}
+	}
+	if (!terminatedWorkerObservedPlayback && !terminatedWorkerObservedBootstrap) {
+		let pageFallbackInstalled = false;
+		if (contextIsCurrent) {
+			_installPageSideM3U8Override();
+			pageFallbackInstalled = true;
+		}
+		const terminatedAt = now;
+		let startupDeadlineAt = terminatedAt + HW_HIDDEN_STALE_MIN_MS * 2;
+		let hasPlaybackSample = false;
+		let lastMedia = null;
+		let lastMediaTime = -1;
+		let stalledSince = 0;
+		let mediaTimeByElement = new WeakMap();
+		worker.__TTVABTerminatedAt = terminatedAt;
+		const scheduleMonitor = (callback, delayMs) => {
+			const timerID = setTimeout(() => {
+				if (worker.__TTVABTerminationRecoveryTimer !== timerID) return;
+				worker.__TTVABTerminationRecoveryTimer = null;
+				callback();
+			}, delayMs);
+			worker.__TTVABTerminationRecoveryTimer = timerID;
+		};
+		const monitorUnobservedTermination = () => {
+			const checkedAt = Date.now();
+			const latestContext = _getPlaybackContextFromUrl(window.location.href);
+			const contextStillCurrent = !_isPlaybackContextMismatch(
+				recoveryContext,
+				latestContext,
+			);
+			const contextStillPip = Boolean(
+				typeof _isActivePictureInPicturePlaybackContext === "function" &&
+					_isActivePictureInPicturePlaybackContext(recoveryContext),
+			);
+			if (!contextStillCurrent && !contextStillPip) return;
+			if (contextStillCurrent && !pageFallbackInstalled) {
+				_installPageSideM3U8Override();
+				pageFallbackInstalled = true;
+			}
+			const replacement = _getHealthyObservedPlaybackWorker(
+				recoveryContext,
+				worker,
+				checkedAt,
+				terminatedAt,
+				true,
+			);
+			if (
+				Math.max(0, Number(replacement?.__TTVABGeneration) || 0) >
+					terminatedGeneration &&
+				_promoteWorkerPlaybackOwner(replacement, checkedAt, recoveryContext)
+			) {
+				_log(
+					"Playback worker replacement confirmed after early termination",
+					"info",
+				);
+				return;
+			}
+			const hasUserPauseIntent = Boolean(
+				typeof _hasUserPauseIntent === "function" &&
+					_hasUserPauseIntent(
+						recoveryContext.ChannelName,
+						recoveryContext.MediaKey,
+					),
+			);
+			if (hasUserPauseIntent) {
+				startupDeadlineAt = Math.max(
+					startupDeadlineAt,
+					checkedAt + HW_HIDDEN_STALE_MIN_MS,
+				);
+				hasPlaybackSample = false;
+				lastMedia = null;
+				lastMediaTime = -1;
+				stalledSince = 0;
+				mediaTimeByElement = new WeakMap();
+				scheduleMonitor(monitorUnobservedTermination, HW_WATCHDOG_INTERVAL_MS);
+				return;
+			}
+			const activePipContext = contextStillPip
+				? typeof _getActivePictureInPicturePlaybackContext === "function"
+					? _getActivePictureInPicturePlaybackContext()
+					: null
+				: null;
+			const media =
+				activePipContext?.element instanceof HTMLMediaElement
+					? activePipContext.element
+					: typeof _getPrimaryMediaElement === "function"
+						? _getPrimaryMediaElement()
+						: null;
+			const mediaTime =
+				media instanceof HTMLMediaElement ? Number(media.currentTime) || 0 : -1;
+			if (
+				media instanceof HTMLMediaElement &&
+				media.ended &&
+				recoveryContext.MediaType === "vod"
+			) {
+				return;
+			}
+			const playbackExpected = Boolean(
+				(contextStillCurrent &&
+					(__TTVAB_STATE__?.PlayerIsPlaying === true ||
+						__TTVAB_STATE__?.PlayerHasPlayedOnce === true)) ||
+					(media instanceof HTMLMediaElement &&
+						(media.paused === false ||
+							mediaTime > 0 ||
+							(media.ended && recoveryContext.MediaType !== "vod"))),
+			);
+			if (!playbackExpected) {
+				hasPlaybackSample = false;
+				lastMedia = null;
+				lastMediaTime = -1;
+				stalledSince = 0;
+				mediaTimeByElement = new WeakMap();
+				if (checkedAt >= startupDeadlineAt) {
+					_recoverCrashedWorker(
+						worker,
+						recoveryContext,
+						"Playback worker terminated before playback initialized",
+						"warning",
+						true,
+					);
+					return;
+				}
+				scheduleMonitor(monitorUnobservedTermination, HW_WATCHDOG_INTERVAL_MS);
+				return;
+			}
+			const previousMediaTime =
+				media instanceof HTMLMediaElement
+					? mediaTimeByElement.get(media)
+					: media === lastMedia
+						? lastMediaTime
+						: null;
+			if (media instanceof HTMLMediaElement) {
+				mediaTimeByElement.set(media, mediaTime);
+			}
+			if (!hasPlaybackSample) {
+				hasPlaybackSample = true;
+				lastMedia = media;
+				lastMediaTime = mediaTime;
+				stalledSince = checkedAt;
+				scheduleMonitor(monitorUnobservedTermination, HW_WATCHDOG_INTERVAL_MS);
+				return;
+			}
+			lastMedia = media;
+			lastMediaTime = mediaTime;
+			if (
+				typeof previousMediaTime === "number" &&
+				mediaTime > previousMediaTime + 0.2
+			) {
+				stalledSince = checkedAt;
+				if (checkedAt >= startupDeadlineAt) {
+					_log(
+						"Playback remained healthy after an auxiliary worker terminated",
+						"info",
+					);
+					return;
+				}
+				scheduleMonitor(monitorUnobservedTermination, HW_WATCHDOG_INTERVAL_MS);
+				return;
+			}
+			const requiredStallMs = _isWorkerLifecycleThrottled()
+				? HW_HIDDEN_STALE_MIN_MS
+				: HW_INITIAL_PONG_TIMEOUT_MS;
+			if (stalledSince <= 0 || checkedAt - stalledSince < requiredStallMs) {
+				scheduleMonitor(monitorUnobservedTermination, HW_WATCHDOG_INTERVAL_MS);
+				return;
+			}
+			_recoverCrashedWorker(
+				worker,
+				recoveryContext,
+				"Playback stopped after its worker terminated before initialization",
+				"warning",
+				true,
+			);
+		};
+		scheduleMonitor(monitorUnobservedTermination, HW_WATCHDOG_INTERVAL_MS);
+		return true;
+	}
+	const terminatedAt = now;
+	worker.__TTVABTerminatedAt = terminatedAt;
+	if (contextIsCurrent) {
+		_installPageSideM3U8Override();
+	}
+	const timerID = setTimeout(() => {
+		if (worker.__TTVABTerminationRecoveryTimer === timerID) {
+			worker.__TTVABTerminationRecoveryTimer = null;
+		}
+		const latestContext = _getPlaybackContextFromUrl(window.location.href);
+		const contextStillCurrent = !_isPlaybackContextMismatch(
+			recoveryContext,
+			latestContext,
+		);
+		const contextStillPip = Boolean(
+			typeof _isActivePictureInPicturePlaybackContext === "function" &&
+				_isActivePictureInPicturePlaybackContext(recoveryContext),
+		);
+		if (!contextStillCurrent && !contextStillPip) return;
+		const replacement = _getQualifiedReplacementWorker(
+			worker,
+			recoveryContext,
+			terminatedAt,
+			terminatedGeneration,
+			Date.now(),
+			false,
+		);
+		if (
+			replacement &&
+			_promoteWorkerPlaybackOwner(replacement, Date.now(), recoveryContext)
+		) {
+			_log("Playback worker replacement confirmed after termination", "info");
+			return;
+		}
+		_recoverCrashedWorker(
+			worker,
+			recoveryContext,
+			"Playback worker terminated without a healthy replacement",
+			"warning",
+			true,
+		);
+	}, HW_INITIAL_PONG_TIMEOUT_MS);
+	worker.__TTVABTerminationRecoveryTimer = timerID;
+	return true;
 }
 
 function _recoverCrashedWorker(
@@ -1024,31 +2122,156 @@ function _recoverCrashedWorker(
 	pagePlaybackContext,
 	message,
 	level = "warning",
+	allowIntentionalTermination = false,
 ) {
 	if (
 		!worker ||
-		worker.__TTVABIntentionallyTerminated ||
+		(worker.__TTVABIntentionallyTerminated && !allowIntentionalTermination) ||
 		worker.__TTVABCrashed
 	) {
 		return false;
 	}
-	worker.__TTVABCrashed = true;
-	_log(message, level);
-	pruneTrackedWorkers([worker]);
-	_installPageSideM3U8Override();
-	_attemptWorkerRestart(worker, pagePlaybackContext);
-	return true;
-}
-
-function _attemptWorkerRestart(worker, pagePlaybackContext) {
-	if (!worker || worker.__TTVABIntentionallyTerminated) return;
 	const recoveryContext = _getWorkerPlaybackContext(
 		worker,
 		pagePlaybackContext,
 	);
-	if (!_recordWorkerRecoveryAttempt(recoveryContext)) {
-		if (!_WorkerRecoveryState.limitLogged) {
-			_WorkerRecoveryState.limitLogged = true;
+	const currentContext = _getPlaybackContextFromUrl(window.location.href);
+	const recoveryContextIsCurrent = !_isPlaybackContextMismatch(
+		recoveryContext,
+		currentContext,
+	);
+	const crashedWorkerObservedPlayback =
+		_getWorkerPlaybackObservationAt(worker, recoveryContext) > 0;
+	const crashedWorkerObservedBootstrap =
+		Math.max(
+			0,
+			Number(
+				worker?.__TTVABPlaybackBootstrapObservedAtByMediaKey?.get?.(
+					recoveryContext.MediaKey,
+				),
+			) || 0,
+		) > 0;
+	const crashedWorkerMayOwnPlayback = Boolean(
+		crashedWorkerObservedPlayback || crashedWorkerObservedBootstrap,
+	);
+	const healthyPlaybackOwner = _getHealthyObservedPlaybackWorker(
+		recoveryContext,
+		worker,
+		Date.now(),
+		crashedWorkerMayOwnPlayback
+			? Math.max(0, Number(worker.__TTVABCreatedAt) || 0)
+			: 0,
+		crashedWorkerMayOwnPlayback,
+	);
+	const crashedWorkerGeneration = Math.max(
+		0,
+		Number(worker.__TTVABGeneration) || 0,
+	);
+	const healthyOwnerGeneration = Math.max(
+		0,
+		Number(healthyPlaybackOwner?.__TTVABGeneration) || 0,
+	);
+	const crashedAt = Date.now();
+	worker.__TTVABCrashed = true;
+	worker.__TTVABCrashedAt = crashedAt;
+	_log(message, level);
+	pruneTrackedWorkers([worker]);
+	if (!recoveryContext.MediaKey) {
+		_installPageSideM3U8Override();
+		_log(
+			"Skipping worker recovery reload without an exact playback context",
+			"warning",
+		);
+		return true;
+	}
+	if (
+		healthyPlaybackOwner &&
+		(!crashedWorkerMayOwnPlayback ||
+			healthyOwnerGeneration > crashedWorkerGeneration) &&
+		_promoteWorkerPlaybackOwner(
+			healthyPlaybackOwner,
+			crashedAt,
+			recoveryContext,
+		)
+	) {
+		_log(
+			"Ignoring non-playback worker crash while the playback worker is healthy",
+			"info",
+		);
+		return true;
+	}
+	const recoveryState = _getWorkerRecoveryState(recoveryContext);
+	if (recoveryState.timerID !== null) {
+		clearTimeout(recoveryState.timerID);
+		recoveryState.timerID = null;
+	}
+	recoveryState.context = recoveryContext;
+	recoveryState.activeEpoch = ++_workerRecoveryEpoch;
+	recoveryState.failedGeneration = Math.max(
+		0,
+		Number(recoveryState.failedGeneration) || 0,
+		Number(worker.__TTVABGeneration) || 0,
+	);
+	recoveryState.crashedAt = crashedAt;
+	recoveryState.bootstrapDeadlineAt = crashedAt + HW_INITIAL_PONG_TIMEOUT_MS;
+	recoveryState.pipWaitDeadlineAt = crashedAt + HW_HIDDEN_STALE_MIN_MS;
+	recoveryState.expectedAfterGeneration = recoveryState.failedGeneration;
+	recoveryState.reloadDispatchedAt = 0;
+	recoveryState.successorDeadlineAt = 0;
+	recoveryState.hiddenLastMediaTime = -1;
+	recoveryState.phase = "scheduled";
+	worker.__TTVABRecoveryEpoch = recoveryState.activeEpoch;
+	if (recoveryContextIsCurrent) {
+		_installPageSideM3U8Override();
+	}
+	_attemptWorkerRestart(worker, recoveryContext);
+	return true;
+}
+
+function _attemptWorkerRestart(worker, pagePlaybackContext) {
+	if (
+		!worker ||
+		(worker.__TTVABIntentionallyTerminated && !worker.__TTVABCrashed)
+	) {
+		return;
+	}
+	const recoveryContext = _getWorkerPlaybackContext(
+		worker,
+		pagePlaybackContext,
+	);
+	const recoveryState = _getWorkerRecoveryState(recoveryContext);
+	if (!worker.__TTVABRecoveryEpoch) {
+		recoveryState.activeEpoch = ++_workerRecoveryEpoch;
+		recoveryState.failedGeneration = Math.max(
+			0,
+			Number(recoveryState.failedGeneration) || 0,
+			Number(worker.__TTVABGeneration) || 0,
+		);
+		recoveryState.crashedAt =
+			Math.max(0, Number(worker.__TTVABCrashedAt) || 0) || Date.now();
+		recoveryState.bootstrapDeadlineAt =
+			recoveryState.crashedAt + HW_INITIAL_PONG_TIMEOUT_MS;
+		recoveryState.pipWaitDeadlineAt =
+			recoveryState.crashedAt + HW_HIDDEN_STALE_MIN_MS;
+		recoveryState.expectedAfterGeneration = recoveryState.failedGeneration;
+		recoveryState.hiddenLastMediaTime = -1;
+		recoveryState.phase = "scheduled";
+		worker.__TTVABRecoveryEpoch = recoveryState.activeEpoch;
+	}
+	const recoveryEpoch = Math.max(0, Number(worker.__TTVABRecoveryEpoch) || 0);
+	if (
+		recoveryEpoch <= 0 ||
+		recoveryState.activeEpoch !== recoveryEpoch ||
+		recoveryState.timerID !== null
+	) {
+		return;
+	}
+	if (recoveryState.attempts >= HW_MAX_RESTART) {
+		recoveryState.activeEpoch = 0;
+		recoveryState.phase = "exhausted";
+		worker.__TTVABRecoveryEpoch = 0;
+		if (!recoveryState.limitLogged) {
+			recoveryState.limitLogged = true;
 			_log(
 				"Worker restart limit reached; using degraded page-side M3U8 fallback",
 				"error",
@@ -1057,55 +2280,208 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		_installPageSideM3U8Override();
 		return;
 	}
-	worker.__TTVABRestartAttempts = _WorkerRecoveryState.attempts;
-	const delay = 2 ** _WorkerRecoveryState.attempts * 500;
+	const attemptNumber = recoveryState.attempts + 1;
+	const delay = 2 ** attemptNumber * 500;
 	_log(
 		"Recovering worker in " +
 			delay / 1000 +
 			"s (attempt " +
-			_WorkerRecoveryState.attempts +
+			attemptNumber +
 			"/" +
 			HW_MAX_RESTART +
 			")",
 		"warning",
 	);
 
-	let hiddenDeferLastMediaTime = -1;
-	const runRecovery = () => {
-		if (worker.__TTVABIntentionallyTerminated) return;
+	const recoveryIsCurrent = () =>
+		recoveryState.activeEpoch === recoveryEpoch &&
+		worker.__TTVABRecoveryEpoch === recoveryEpoch;
+	const scheduleRecovery = (callback, waitMs) => {
+		if (!recoveryIsCurrent() || recoveryState.timerID !== null) return false;
+		const timerID = setTimeout(
+			() => {
+				if (recoveryState.timerID === timerID) {
+					recoveryState.timerID = null;
+				}
+				if (recoveryIsCurrent()) callback();
+			},
+			Math.max(0, Number(waitMs) || 0),
+		);
+		recoveryState.timerID = timerID;
+		return true;
+	};
+	const retryRecovery = () => {
+		if (!recoveryIsCurrent()) return;
+		recoveryState.phase = "scheduled";
+		_attemptWorkerRestart(worker, recoveryContext);
+	};
+	const confirmReplacement = () => {
 		const currentContext = _getPlaybackContextFromUrl(window.location.href);
-		if (
-			_isPlaybackContextMismatch(recoveryContext, currentContext) &&
-			(typeof _isActivePictureInPicturePlaybackContext !== "function" ||
-				!_isActivePictureInPicturePlaybackContext(recoveryContext))
-		) {
+		const contextIsCurrent = !_isPlaybackContextMismatch(
+			recoveryContext,
+			currentContext,
+		);
+		const contextIsPip = Boolean(
+			typeof _isActivePictureInPicturePlaybackContext === "function" &&
+				_isActivePictureInPicturePlaybackContext(recoveryContext),
+		);
+		if (!contextIsCurrent && !contextIsPip) {
+			recoveryState.activeEpoch = 0;
+			recoveryState.phase = "cancelled";
 			_log("Skipping stale worker recovery after navigation", "info");
 			return;
 		}
-		if (typeof _doPlayerTask !== "function") {
-			_log("Worker recovery unavailable (no player task)", "error");
+		const replacement = _getQualifiedReplacementWorker(
+			worker,
+			recoveryContext,
+			recoveryState.reloadDispatchedAt,
+			recoveryState.expectedAfterGeneration,
+		);
+		if (
+			replacement &&
+			_promoteWorkerPlaybackOwner(replacement, Date.now(), recoveryContext)
+		) {
+			const replacementGeneration = Math.max(
+				0,
+				Number(replacement.__TTVABGeneration) || 0,
+			);
+			recoveryState.retiredThroughGeneration = Math.max(
+				0,
+				Number(recoveryState.retiredThroughGeneration) || 0,
+				recoveryState.expectedAfterGeneration,
+			);
+			recoveryState.stableGeneration = replacementGeneration;
+			recoveryState.stableSince = Date.now();
+			recoveryState.activeEpoch = 0;
+			recoveryState.phase = "stabilizing";
+			_log("Replacement worker confirmed after player reload", "success");
+			return;
+		}
+		if (Date.now() >= recoveryState.successorDeadlineAt) {
+			_log("Player reload did not produce a healthy playback worker", "error");
+			retryRecovery();
+			return;
+		}
+		scheduleRecovery(confirmReplacement, 1000);
+	};
+	const runRecovery = () => {
+		if (worker.__TTVABIntentionallyTerminated && !worker.__TTVABCrashed) {
+			recoveryState.activeEpoch = 0;
+			recoveryState.phase = "cancelled";
+			return;
+		}
+		const currentContext = _getPlaybackContextFromUrl(window.location.href);
+		const contextIsCurrent = !_isPlaybackContextMismatch(
+			recoveryContext,
+			currentContext,
+		);
+		const contextIsPip = Boolean(
+			typeof _isActivePictureInPicturePlaybackContext === "function" &&
+				_isActivePictureInPicturePlaybackContext(recoveryContext),
+		);
+		if (!contextIsCurrent && !contextIsPip) {
+			recoveryState.activeEpoch = 0;
+			recoveryState.phase = "cancelled";
+			_log("Skipping stale worker recovery after navigation", "info");
 			return;
 		}
 		if (
-			typeof _isNativeDocumentHidden === "function" &&
-			_isNativeDocumentHidden() === true
+			contextIsCurrent &&
+			(recoveryState.phase === "waiting-pip" ||
+				recoveryState.phase === "degraded-pip") &&
+			typeof _installPageSideM3U8Override === "function"
 		) {
+			_installPageSideM3U8Override();
+		}
+		const automaticReplacement = _getQualifiedReplacementWorker(
+			worker,
+			recoveryContext,
+			recoveryState.crashedAt,
+			recoveryState.failedGeneration,
+			Date.now(),
+			false,
+		);
+		if (
+			automaticReplacement &&
+			_promoteWorkerPlaybackOwner(
+				automaticReplacement,
+				Date.now(),
+				recoveryContext,
+			)
+		) {
+			const replacementGeneration = Math.max(
+				0,
+				Number(automaticReplacement.__TTVABGeneration) || 0,
+			);
+			recoveryState.retiredThroughGeneration = Math.max(
+				0,
+				Number(recoveryState.retiredThroughGeneration) || 0,
+				recoveryState.failedGeneration,
+			);
+			recoveryState.stableGeneration = replacementGeneration;
+			recoveryState.stableSince = Date.now();
+			recoveryState.activeEpoch = 0;
+			recoveryState.phase = "stabilizing";
+			_log("Healthy playback worker replaced the crashed worker", "success");
+			return;
+		}
+		if (
+			typeof _hasUserPauseIntent === "function" &&
+			_hasUserPauseIntent(recoveryContext.ChannelName, recoveryContext.MediaKey)
+		) {
+			recoveryState.pipWaitDeadlineAt = Math.max(
+				Number(recoveryState.pipWaitDeadlineAt) || 0,
+				Date.now() + HW_HIDDEN_STALE_MIN_MS,
+			);
+			recoveryState.phase = "waiting-user-pause";
+			_log(
+				"Deferring worker recovery while playback is manually paused",
+				"info",
+			);
+			scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
+			return;
+		}
+		if (!contextIsCurrent && contextIsPip) {
+			if (Date.now() >= recoveryState.pipWaitDeadlineAt) {
+				const wasDegradedPip = recoveryState.phase === "degraded-pip";
+				recoveryState.phase = "degraded-pip";
+				if (!wasDegradedPip) {
+					_log(
+						"Picture-in-Picture worker recovery timed out without reloading another stream",
+						"error",
+					);
+				}
+				scheduleRecovery(runRecovery, HW_INITIAL_PONG_TIMEOUT_MS);
+				return;
+			}
+			if (recoveryState.phase !== "waiting-pip") {
+				_log(
+					"Waiting to recover a crashed Picture-in-Picture worker without reloading another stream",
+					"warning",
+				);
+			}
+			recoveryState.phase = "waiting-pip";
+			scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
+			return;
+		}
+		let playbackDead = false;
+		if (_isWorkerLifecycleThrottled()) {
 			const hiddenMedia =
 				typeof _getPrimaryMediaElement === "function"
 					? _getPrimaryMediaElement()
 					: null;
-			const hiddenMediaTime =
-				hiddenMedia instanceof HTMLMediaElement
-					? Number(hiddenMedia.currentTime) || 0
-					: -1;
-			const playbackDead =
-				hiddenMediaTime >= 0 &&
-				hiddenDeferLastMediaTime >= 0 &&
-				hiddenMediaTime <= hiddenDeferLastMediaTime + 0.2;
-			hiddenDeferLastMediaTime = hiddenMediaTime;
+			const hasHiddenMedia = hiddenMedia instanceof HTMLMediaElement;
+			const hiddenMediaTime = hasHiddenMedia
+				? Number(hiddenMedia.currentTime) || 0
+				: -1;
+			playbackDead = hasHiddenMedia
+				? recoveryState.hiddenLastMediaTime >= 0 &&
+					hiddenMediaTime <= recoveryState.hiddenLastMediaTime + 0.2
+				: recoveryState.hiddenLastMediaTime === -2;
+			recoveryState.hiddenLastMediaTime = hasHiddenMedia ? hiddenMediaTime : -2;
 			if (!playbackDead) {
 				_log("Deferring worker recovery reload until tab is visible", "info");
-				setTimeout(runRecovery, HW_WATCHDOG_INTERVAL_MS);
+				scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
 				return;
 			}
 			_log(
@@ -1113,32 +2489,94 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				"warning",
 			);
 		}
-		const now = Date.now();
-		if (now - _lastWorkerRecoveryReloadAt < HW_RECOVERY_COOLDOWN_MS) {
-			const remainingCooldown = Math.max(
-				0,
-				HW_RECOVERY_COOLDOWN_MS - (now - _lastWorkerRecoveryReloadAt),
-			);
-			_log("Deferring worker recovery reload (cooldown)", "info");
-			setTimeout(runRecovery, remainingCooldown);
+		if (
+			!playbackDead &&
+			_hasStartingReplacementWorker(
+				worker,
+				recoveryContext,
+				recoveryState.failedGeneration,
+				recoveryState.bootstrapDeadlineAt,
+			)
+		) {
+			recoveryState.phase = "waiting-worker";
+			_log("Waiting for replacement worker playback confirmation", "info");
+			scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
 			return;
 		}
-		_lastWorkerRecoveryReloadAt = now;
+		const now = Date.now();
+		const lastRecoveryReloadAt = Math.max(
+			0,
+			Number(recoveryState.lastReloadAt) || 0,
+		);
+		if (now - lastRecoveryReloadAt < HW_RECOVERY_COOLDOWN_MS) {
+			const remainingCooldown = Math.max(
+				0,
+				HW_RECOVERY_COOLDOWN_MS - (now - lastRecoveryReloadAt),
+			);
+			_log("Deferring worker recovery reload (cooldown)", "info");
+			scheduleRecovery(runRecovery, remainingCooldown);
+			return;
+		}
+		if (!_recordWorkerRecoveryAttempt(recoveryContext, now)) {
+			retryRecovery();
+			return;
+		}
+		worker.__TTVABRestartAttempts = recoveryState.attempts;
+		recoveryState.phase = "dispatching";
+		const generationBeforeReload = Math.max(
+			recoveryState.failedGeneration,
+			_getHighestWorkerGenerationForPlaybackContext(recoveryContext),
+		);
+		const reloadMarkerBefore = _getPlayerReloadAtForMediaKey(
+			recoveryContext.MediaKey,
+		);
+		const dispatchStartedAt = Date.now();
 		try {
-			_doPlayerTask(false, true, {
-				reason: "worker-recovery",
-				refreshAccessToken: true,
-				newMediaPlayerInstance: true,
-				channel: recoveryContext.ChannelName,
-				mediaKey: recoveryContext.MediaKey,
-			});
-			_log("Player reloaded to recover crashed worker", "success");
+			const accepted =
+				typeof _doPlayerTask === "function" &&
+				_doPlayerTask(false, true, {
+					reason: "worker-recovery",
+					refreshAccessToken: true,
+					newMediaPlayerInstance: true,
+					channel: recoveryContext.ChannelName,
+					mediaKey: recoveryContext.MediaKey,
+				}) === true;
+			const reloadDispatchedAt = _getPlayerReloadAtForMediaKey(
+				recoveryContext.MediaKey,
+			);
+			const didDispatchReload = Boolean(
+				accepted &&
+					reloadDispatchedAt > reloadMarkerBefore &&
+					reloadDispatchedAt >= dispatchStartedAt,
+			);
+			if (!didDispatchReload) {
+				_log("Worker recovery did not reload the player; retrying", "warning");
+				retryRecovery();
+				return;
+			}
+			recoveryState.lastReloadAt = reloadDispatchedAt;
+			recoveryState.retiredThroughGeneration = Math.max(
+				0,
+				Number(recoveryState.retiredThroughGeneration) || 0,
+				generationBeforeReload,
+			);
+			recoveryState.expectedAfterGeneration = generationBeforeReload;
+			recoveryState.reloadDispatchedAt = reloadDispatchedAt;
+			recoveryState.successorDeadlineAt =
+				reloadDispatchedAt + HW_INITIAL_PONG_TIMEOUT_MS;
+			recoveryState.phase = "awaiting-successor";
+			_log("Player reload requested for crashed worker recovery", "info");
+			scheduleRecovery(confirmReplacement, 1000);
 		} catch (recoveryErr) {
-			_log(`Worker recovery failed: ${recoveryErr.message}`, "error");
+			_log(
+				`Worker recovery failed: ${recoveryErr?.message ?? String(recoveryErr)}`,
+				"error",
+			);
+			retryRecovery();
 		}
 	};
 
-	setTimeout(runRecovery, delay);
+	scheduleRecovery(runRecovery, delay);
 }
 
 let _workerWatchdogID: ReturnType<typeof setInterval> | null = null;
@@ -1147,12 +2585,16 @@ function _startWorkerWatchdog() {
 	if (_workerWatchdogID !== null) return;
 	_workerWatchdogID = setInterval(() => {
 		const now = Date.now();
-		const isHidden =
-			typeof _isNativeDocumentHidden === "function" &&
-			_isNativeDocumentHidden() === true;
+		const isHidden = _isWorkerLifecycleThrottled();
 		for (const worker of _S.workers) {
 			if (!worker || worker.__TTVABIntentionallyTerminated) continue;
 			if (worker.__TTVABCrashed) continue;
+			const workerContext = _getWorkerPlaybackContext(worker, {
+				MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
+				ChannelName: __TTVAB_STATE__?.PageChannel || "",
+				VodID: __TTVAB_STATE__?.PageVodID || "",
+				MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
+			});
 			const lastSeen =
 				worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
 			const lastPingSentAt = Math.max(
@@ -1162,6 +2604,68 @@ function _startWorkerWatchdog() {
 			const hasUnansweredPing = lastPingSentAt > lastSeen;
 			if (!hasUnansweredPing) {
 				worker.__TTVABLastPingSentAt = now;
+			}
+			let hiddenPlaybackStopped = false;
+			const workerContextIsCurrent = !_isPlaybackContextMismatch(
+				workerContext,
+				_getPlaybackContextFromUrl(window.location.href),
+			);
+			const workerContextIsActivePip = Boolean(
+				typeof _isActivePictureInPicturePlaybackContext === "function" &&
+					_isActivePictureInPicturePlaybackContext(workerContext),
+			);
+			const hiddenHeartbeatIsStale = Boolean(
+				isHidden &&
+					hasUnansweredPing &&
+					now - lastSeen >= HW_PONG_TIMEOUT_MS &&
+					(workerContextIsCurrent || workerContextIsActivePip),
+			);
+			const hasUserPauseIntent =
+				hiddenHeartbeatIsStale &&
+				typeof _hasUserPauseIntent === "function" &&
+				_hasUserPauseIntent(workerContext.ChannelName, workerContext.MediaKey);
+			if (hiddenHeartbeatIsStale && hasUserPauseIntent) {
+				worker.__TTVABMissedPongs = 0;
+				try {
+					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+				} catch {}
+				continue;
+			}
+			if (hiddenHeartbeatIsStale && !hasUserPauseIntent) {
+				const hiddenMedia =
+					typeof _getPrimaryMediaElement === "function"
+						? _getPrimaryMediaElement()
+						: null;
+				if (hiddenMedia instanceof HTMLMediaElement) {
+					const mediaTime = Number(hiddenMedia.currentTime) || 0;
+					hiddenPlaybackStopped = Boolean(
+						worker.__TTVABHiddenHeartbeatMediaTime >= 0 &&
+							mediaTime <= worker.__TTVABHiddenHeartbeatMediaTime + 0.2,
+					);
+					worker.__TTVABHiddenHeartbeatMediaTime = mediaTime;
+					worker.__TTVABHiddenHeartbeatMissingSamples = 0;
+				} else {
+					worker.__TTVABHiddenHeartbeatMediaTime = -1;
+					worker.__TTVABHiddenHeartbeatMissingSamples =
+						Math.max(
+							0,
+							Number(worker.__TTVABHiddenHeartbeatMissingSamples) || 0,
+						) + 1;
+					hiddenPlaybackStopped =
+						worker.__TTVABHiddenHeartbeatMissingSamples >= 2;
+				}
+			} else {
+				worker.__TTVABHiddenHeartbeatMediaTime = -1;
+				worker.__TTVABHiddenHeartbeatMissingSamples = 0;
+			}
+			if (hiddenPlaybackStopped) {
+				_recoverCrashedWorker(
+					worker,
+					workerContext,
+					"Worker unresponsive while hidden playback stopped advancing",
+					"warning",
+				);
+				continue;
 			}
 			if (
 				now - lastSeen > HW_PONG_TIMEOUT_MS &&
@@ -1188,12 +2692,7 @@ function _startWorkerWatchdog() {
 				}
 				_recoverCrashedWorker(
 					worker,
-					_getWorkerPlaybackContext(worker, {
-						MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
-						ChannelName: __TTVAB_STATE__?.PageChannel || "",
-						VodID: __TTVAB_STATE__?.PageVodID || "",
-						MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
-					}),
+					workerContext,
 					"Worker unresponsive (no pong)",
 					"warning",
 				);
@@ -1205,6 +2704,570 @@ function _startWorkerWatchdog() {
 		}
 	}, HW_WATCHDOG_INTERVAL_MS);
 	_log("Worker watchdog started", "info");
+}
+
+function _attemptPageSideFallbackTerminalRearm(
+	url,
+	mediaKey,
+	cycleStartedAt,
+	priorAdOwner,
+) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const normalizedCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+	const recoveryContext = {
+		MediaType: __TTVAB_STATE__?.PageMediaType,
+		ChannelName: __TTVAB_STATE__?.PageChannel,
+		VodID: __TTVAB_STATE__?.PageVodID,
+		MediaKey: normalizedMediaKey,
+	};
+	const recoveryState = _getWorkerRecoveryState(recoveryContext, false);
+	const ownerGeneration = Math.max(
+		0,
+		Number(priorAdOwner?.workerGeneration) || 0,
+	);
+	const ownerConfirmedAt = Math.max(
+		0,
+		Number(priorAdOwner?.confirmedPlaybackAt) || 0,
+	);
+	const retiredThroughGeneration = Math.max(
+		0,
+		Number(recoveryState?.retiredThroughGeneration) || 0,
+		Number(recoveryState?.failedGeneration) || 0,
+	);
+	const currentContext = _getPlaybackContextFromUrl(window.location.href);
+	const reloadAt = _getPlayerReloadAtForMediaKey(normalizedMediaKey);
+	const ownerHandoffId =
+		typeof priorAdOwner?.handoffId === "string" && priorAdOwner.handoffId
+			? priorAdOwner.handoffId
+			: null;
+	const activeHandoffId =
+		_normalizeMediaKey(__TTVAB_STATE__?.ActiveCodecHandoffMediaKey) ===
+		normalizedMediaKey
+			? __TTVAB_STATE__?.ActiveCodecHandoffId || null
+			: null;
+	if (
+		!normalizedMediaKey ||
+		normalizedCycleStartedAt <= 0 ||
+		recoveryState?.phase !== "exhausted" ||
+		_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) !== normalizedMediaKey ||
+		_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) !==
+			normalizedMediaKey ||
+		_isPlaybackContextMismatch(recoveryContext, currentContext) ||
+		!_isPageLifecycleCycleCurrent(
+			normalizedMediaKey,
+			normalizedCycleStartedAt,
+		) ||
+		_pageSidePlaybackOwnerByUrl.get(_getExactPlaylistUrlKey(url)) !==
+			priorAdOwner ||
+		_normalizeMediaKey(priorAdOwner?.mediaKey) !== normalizedMediaKey ||
+		Math.max(0, Number(priorAdOwner?.adCycleStartedAt) || 0) !==
+			normalizedCycleStartedAt ||
+		ownerGeneration <= 0 ||
+		ownerConfirmedAt <= 0 ||
+		ownerGeneration > retiredThroughGeneration ||
+		reloadAt <= ownerConfirmedAt ||
+		Math.max(0, Number(recoveryState.terminalRearmCycleStartedAt) || 0) ===
+			normalizedCycleStartedAt ||
+		(typeof _hasUserPauseIntent === "function" &&
+			_hasUserPauseIntent(recoveryContext.ChannelName, normalizedMediaKey))
+	) {
+		return false;
+	}
+	const attemptedAt = Date.now();
+	const previousAttemptedAt = Math.max(
+		0,
+		Number(recoveryState.terminalRearmAttemptedAt) || 0,
+	);
+	if (
+		previousAttemptedAt > 0 &&
+		attemptedAt - previousAttemptedAt < HW_RECOVERY_COOLDOWN_MS
+	) {
+		return false;
+	}
+	for (const handoffId of new Set([ownerHandoffId, activeHandoffId])) {
+		if (!handoffId) continue;
+		const handoffParts = handoffId.split(":");
+		const handoffCreatedAt = Math.max(
+			0,
+			Number(handoffParts[handoffParts.length - 3]) || 0,
+		);
+		if (
+			_getCodecHandoffCycleStartedAt(handoffId) !== normalizedCycleStartedAt ||
+			(handoffCreatedAt > 0 && reloadAt < handoffCreatedAt)
+		) {
+			return false;
+		}
+	}
+	if (ownerHandoffId) {
+		priorAdOwner.handoffId = null;
+	}
+	if (activeHandoffId) {
+		__TTVAB_STATE__.ActiveCodecHandoffId = null;
+		__TTVAB_STATE__.ActiveCodecHandoffChannel = null;
+		__TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
+		_broadcastWorkers({
+			key: "UpdateCodecHandoffContext",
+			targetMediaKey: normalizedMediaKey,
+			value: {
+				clearHandoffId: activeHandoffId,
+				channelName: recoveryContext.ChannelName,
+				mediaKey: normalizedMediaKey,
+			},
+		});
+	}
+	recoveryState.terminalRearmAttemptedAt = attemptedAt;
+	const reloadBefore = _getPlayerReloadAtForMediaKey(normalizedMediaKey);
+	const accepted = Boolean(
+		typeof _doPlayerTask === "function" &&
+			_doPlayerTask(false, true, {
+				reason: "worker-recovery",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+				channel: recoveryContext.ChannelName,
+				mediaKey: normalizedMediaKey,
+				cycleStartedAt: normalizedCycleStartedAt,
+			}) === true,
+	);
+	const reloadAfter = _getPlayerReloadAtForMediaKey(normalizedMediaKey);
+	if (!accepted || reloadAfter <= reloadBefore || reloadAfter < attemptedAt) {
+		_log("Terminal worker recovery rearm could not reload the player", "error");
+		return false;
+	}
+	recoveryState.terminalRearmCycleStartedAt = normalizedCycleStartedAt;
+	_log("Terminal worker recovery rearm requested", "warning");
+	return true;
+}
+
+function _isPageSideFallbackRecoveryReady(url, text, info, mediaKey) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const podProgress =
+		__TTVAB_STATE__?.AdPodProgressByMediaKey?.[normalizedMediaKey] || null;
+	const cycleStartedAt = Math.max(0, Number(podProgress?.cycleStartedAt) || 0);
+	if (!normalizedMediaKey || cycleStartedAt <= 0 || !info) return false;
+	const expectedPodLength = Math.max(
+		0,
+		Math.trunc(Number(podProgress?.expectedPodLength) || 0),
+	);
+	const observedPodLength = Array.isArray(podProgress?.adIds)
+		? new Set(podProgress.adIds.filter(Boolean)).size
+		: 0;
+	const maxAdPodPosition = Math.max(
+		0,
+		Math.trunc(Number(podProgress?.maxAdPodPosition) || 0),
+	);
+	const observedTerminalPodPosition = Boolean(
+		expectedPodLength > 0 &&
+			(podProgress?.observedZeroAdPodPosition === true
+				? maxAdPodPosition + 1 >= expectedPodLength
+				: maxAdPodPosition >= expectedPodLength),
+	);
+	const declaredPodIncomplete = Boolean(
+		expectedPodLength > 0 &&
+			observedPodLength < expectedPodLength &&
+			!observedTerminalPodPosition,
+	);
+	const recoveryState = _getWorkerRecoveryState(
+		{
+			MediaType: __TTVAB_STATE__?.PageMediaType,
+			ChannelName: __TTVAB_STATE__?.PageChannel,
+			VodID: __TTVAB_STATE__?.PageVodID,
+			MediaKey: normalizedMediaKey,
+		},
+		false,
+	);
+	if (
+		recoveryState?.phase !== "exhausted" &&
+		recoveryState?.phase !== "stabilizing"
+	) {
+		return false;
+	}
+	const priorAdOwner = _pageSidePlaybackOwnerByUrl.get(
+		_getExactPlaylistUrlKey(url),
+	);
+	if (
+		_normalizeMediaKey(priorAdOwner?.mediaKey) !== normalizedMediaKey ||
+		Math.max(0, Number(priorAdOwner?.adCycleStartedAt) || 0) !== cycleStartedAt
+	) {
+		return false;
+	}
+	const lastMarkedProgressAt = Math.max(
+		0,
+		Number(priorAdOwner?.lastAdMarkedAt) || 0,
+		Number(podProgress?.updatedAt) || 0,
+	);
+	if (
+		Math.max(0, Number(info._PageFallbackCycleStartedAt) || 0) !==
+		cycleStartedAt
+	) {
+		info._PageFallbackCycleStartedAt = cycleStartedAt;
+		info._PageFallbackCleanStartedAt = 0;
+		info._PageFallbackCleanPlaylistCount = 0;
+		info._PageFallbackLastMediaSequence = null;
+	}
+	const now = Date.now();
+	if (
+		Math.max(0, Number(info._PageFallbackCleanStartedAt) || 0) > 0 &&
+		Math.max(0, Number(info._PageFallbackCleanStartedAt) || 0) <=
+			lastMarkedProgressAt
+	) {
+		info._PageFallbackCleanStartedAt = 0;
+		info._PageFallbackCleanPlaylistCount = 0;
+		info._PageFallbackLastMediaSequence = null;
+	}
+	const mediaSequence = _parsePlaylistFirstMediaSequence(text);
+	const previousMediaSequence =
+		typeof info._PageFallbackLastMediaSequence === "number" &&
+		Number.isFinite(info._PageFallbackLastMediaSequence)
+			? info._PageFallbackLastMediaSequence
+			: null;
+	const isVod = normalizedMediaKey.startsWith("vod:");
+	if (isVod && !text.includes("#EXT-X-ENDLIST")) return false;
+	if (
+		!isVod &&
+		previousMediaSequence !== null &&
+		mediaSequence !== null &&
+		mediaSequence <= previousMediaSequence
+	) {
+		if (mediaSequence < previousMediaSequence) {
+			info._PageFallbackCleanStartedAt = now;
+			info._PageFallbackCleanPlaylistCount = 1;
+			info._PageFallbackLastMediaSequence = mediaSequence;
+		}
+		return false;
+	}
+	if (!isVod && mediaSequence === null) return false;
+	if (!info._PageFallbackCleanStartedAt) {
+		info._PageFallbackCleanStartedAt = now;
+	}
+	info._PageFallbackCleanPlaylistCount =
+		Math.max(0, Number(info._PageFallbackCleanPlaylistCount) || 0) + 1;
+	info._PageFallbackLastMediaSequence = mediaSequence;
+	const escalation = 4;
+	const minCleanPlaylists =
+		Math.max(1, Number(__TTVAB_STATE__?.AdEndMinCleanPlaylists) || 1) +
+		escalation;
+	const graceMs =
+		Math.max(0, Number(__TTVAB_STATE__?.AdEndGraceMs) || 0) + escalation * 2500;
+	const hasEscalatedCleanProof = Boolean(
+		info._PageFallbackCleanPlaylistCount >= minCleanPlaylists &&
+			now - info._PageFallbackCleanStartedAt >= graceMs,
+	);
+	if (!hasEscalatedCleanProof) return false;
+	if (declaredPodIncomplete) {
+		const terminalEscapeMs = Math.max(
+			90000,
+			Number(__TTVAB_STATE__?.AdEndBackupHoldMaxMs) || 0,
+		);
+		if (
+			lastMarkedProgressAt <= 0 ||
+			now - lastMarkedProgressAt < terminalEscapeMs ||
+			(isVod && !text.includes("#EXT-X-ENDLIST"))
+		) {
+			return false;
+		}
+	}
+	if (
+		_getTrustedPageSidePlaybackOwner(url, normalizedMediaKey, cycleStartedAt)
+	) {
+		return true;
+	}
+	_attemptPageSideFallbackTerminalRearm(
+		url,
+		normalizedMediaKey,
+		cycleStartedAt,
+		priorAdOwner,
+	);
+	return false;
+}
+
+function _completePageSideFallbackAdRecovery(mediaKey) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const activeMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey);
+	const cycleStartedAt = Math.max(
+		0,
+		Number(
+			__TTVAB_STATE__?.AdPodProgressByMediaKey?.[normalizedMediaKey]
+				?.cycleStartedAt,
+		) || 0,
+	);
+	if (
+		!normalizedMediaKey ||
+		activeMediaKey !== normalizedMediaKey ||
+		cycleStartedAt <= 0
+	) {
+		return false;
+	}
+	const recoveryState = _getWorkerRecoveryState(
+		{
+			MediaType: __TTVAB_STATE__?.PageMediaType,
+			ChannelName: __TTVAB_STATE__?.PageChannel,
+			VodID: __TTVAB_STATE__?.PageVodID,
+			MediaKey: normalizedMediaKey,
+		},
+		false,
+	);
+	if (recoveryState?.phase === "exhausted") {
+		recoveryState.retiredThroughGeneration = Math.max(
+			0,
+			Number(recoveryState.retiredThroughGeneration) || 0,
+			Number(recoveryState.failedGeneration) || 0,
+		);
+	}
+	const endedAt = Date.now();
+	const channel =
+		__TTVAB_STATE__?.CurrentAdChannel || __TTVAB_STATE__?.PageChannel || null;
+	const handoffId =
+		_normalizeMediaKey(__TTVAB_STATE__?.ActiveCodecHandoffMediaKey) ===
+		normalizedMediaKey
+			? __TTVAB_STATE__?.ActiveCodecHandoffId || null
+			: null;
+	for (const streamInfo of Object.values(
+		__TTVAB_STATE__?.StreamInfos || {},
+	) as Array<{ MediaKey?: string | null }>) {
+		if (_normalizeMediaKey(streamInfo?.MediaKey) !== normalizedMediaKey)
+			continue;
+		_resetStreamAdState(streamInfo);
+	}
+	__TTVAB_STATE__.LastAdEndedAt = endedAt;
+	__TTVAB_STATE__.LastAdEndedChannel = channel;
+	__TTVAB_STATE__.LastAdEndedMediaKey = normalizedMediaKey;
+	__TTVAB_STATE__.LastAdEndedCycleStartedAt = cycleStartedAt;
+	__TTVAB_STATE__.CurrentAdChannel = null;
+	__TTVAB_STATE__.CurrentAdMediaKey = null;
+	if (
+		_normalizeMediaKey(__TTVAB_STATE__?.PinnedBackupPlayerMediaKey) ===
+		normalizedMediaKey
+	) {
+		__TTVAB_STATE__.PinnedBackupPlayerType = null;
+		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+	}
+	if (handoffId) {
+		__TTVAB_STATE__.ActiveCodecHandoffId = null;
+		__TTVAB_STATE__.ActiveCodecHandoffChannel = null;
+		__TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
+	}
+	__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
+	const messages: Array<Record<string, unknown>> = [
+		{
+			key: "ResetAdCycleState",
+			targetMediaKey: normalizedMediaKey,
+			value: {
+				mediaType: __TTVAB_STATE__?.PageMediaType,
+				channelName: channel,
+				vodID: __TTVAB_STATE__?.PageVodID,
+				mediaKey: normalizedMediaKey,
+				cycleStartedAt,
+			},
+		},
+		{
+			key: "UpdateLastAdEndContext",
+			targetMediaKey: normalizedMediaKey,
+			value: {
+				mediaType: __TTVAB_STATE__?.PageMediaType,
+				channelName: channel,
+				vodID: __TTVAB_STATE__?.PageVodID,
+				mediaKey: normalizedMediaKey,
+				endedAt,
+				cycleStartedAt,
+			},
+		},
+	];
+	if (handoffId) {
+		messages.push({
+			key: "UpdateCodecHandoffContext",
+			targetMediaKey: normalizedMediaKey,
+			value: {
+				clearHandoffId: handoffId,
+				channelName: channel,
+				mediaKey: normalizedMediaKey,
+			},
+		});
+	}
+	_broadcastWorkers(messages);
+	_clearAdPodProgress(normalizedMediaKey);
+	if (typeof _clearPlaybackRecoveryTimeoutsForContext === "function") {
+		_clearPlaybackRecoveryTimeoutsForContext(normalizedMediaKey);
+	}
+	if (typeof _resetPlayerBufferMonitorState === "function") {
+		_resetPlayerBufferMonitorState();
+	}
+	if (typeof _clearAdResumeIntent === "function") {
+		_clearAdResumeIntent();
+	}
+	if (typeof _restoreSuppressedMediaAfterAd === "function") {
+		_restoreSuppressedMediaAfterAd(channel, normalizedMediaKey);
+	}
+	_schedulePostAdArtifactCleanup(channel, normalizedMediaKey, cycleStartedAt);
+	_log(
+		"Page-side fallback verified sustained clean native playback after worker recovery exhausted",
+		"success",
+	);
+	return true;
+}
+
+function _ensurePageSideFallbackAdCycle(url, _codec = null, playlistText = "") {
+	const context = _normalizePlaybackContext({
+		MediaType: __TTVAB_STATE__?.PageMediaType,
+		ChannelName: __TTVAB_STATE__?.PageChannel,
+		VodID: __TTVAB_STATE__?.PageVodID,
+		MediaKey: __TTVAB_STATE__?.PageMediaKey,
+	});
+	if (!context.MediaKey) return 0;
+	const observedAdIds = [];
+	let expectedPodLength = 0;
+	let maxAdPodPosition = 0;
+	let observedZeroAdPodPosition = false;
+	for (const line of String(playlistText || "").split("\n")) {
+		if (!line.startsWith("#EXT-X-DATERANGE:")) continue;
+		const attrs = _parseAttrs(line.slice("#EXT-X-DATERANGE:".length));
+		const adId = typeof attrs.ID === "string" ? attrs.ID : null;
+		if (adId?.startsWith("stitched-ad-")) observedAdIds.push(adId);
+		expectedPodLength = Math.max(
+			expectedPodLength,
+			Math.max(0, Number(attrs["X-TV-TWITCH-AD-POD-LENGTH"]) || 0),
+		);
+		maxAdPodPosition = Math.max(
+			maxAdPodPosition,
+			Math.max(0, Number(attrs["X-TV-TWITCH-AD-POD-POSITION"]) || 0),
+		);
+		if (
+			Object.hasOwn(attrs, "X-TV-TWITCH-AD-POD-POSITION") &&
+			Number(attrs["X-TV-TWITCH-AD-POD-POSITION"]) === 0
+		) {
+			observedZeroAdPodPosition = true;
+		}
+	}
+	const now = Date.now();
+	const activeMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey);
+	const activeCycleStartedAt = Math.max(
+		0,
+		Number(
+			__TTVAB_STATE__?.AdPodProgressByMediaKey?.[context.MediaKey]
+				?.cycleStartedAt,
+		) || 0,
+	);
+	const exactOwner = _pageSidePlaybackOwnerByUrl.get(
+		_getExactPlaylistUrlKey(url),
+	);
+	if (activeMediaKey === context.MediaKey && activeCycleStartedAt > 0) {
+		if (
+			_normalizeMediaKey(exactOwner?.mediaKey) !== context.MediaKey ||
+			Math.max(0, Number(exactOwner?.adCycleStartedAt) || 0) !==
+				activeCycleStartedAt
+		) {
+			return 0;
+		}
+		const progress = _mergeAdPodProgress({
+			mediaType: context.MediaType,
+			channelName: context.ChannelName,
+			vodID: context.VodID,
+			mediaKey: context.MediaKey,
+			adIds: observedAdIds,
+			expectedPodLength,
+			maxAdPodPosition,
+			observedZeroAdPodPosition,
+			cycleStartedAt: activeCycleStartedAt,
+		});
+		_rememberPageSidePlaybackOwner(
+			context.MediaKey,
+			url,
+			null,
+			activeCycleStartedAt,
+			{ confirmedPlayback: false, adMarked: true },
+		);
+		if (progress) {
+			_broadcastWorkers({
+				key: "UpdateAdPodProgress",
+				targetMediaKey: context.MediaKey,
+				value: {
+					mediaType: context.MediaType,
+					channelName: context.ChannelName,
+					vodID: context.VodID,
+					mediaKey: context.MediaKey,
+					...progress,
+				},
+			});
+		}
+		return activeCycleStartedAt;
+	}
+	if (!_getTrustedPageSidePlaybackOwner(url, context.MediaKey)) {
+		return 0;
+	}
+	const lastEndedCycleStartedAt =
+		_normalizeMediaKey(__TTVAB_STATE__?.LastAdEndedMediaKey) ===
+		context.MediaKey
+			? Math.max(0, Number(__TTVAB_STATE__?.LastAdEndedCycleStartedAt) || 0)
+			: 0;
+	const isRecentContinuation = Boolean(
+		lastEndedCycleStartedAt > 0 &&
+			now - Math.max(0, Number(__TTVAB_STATE__?.LastAdEndedAt) || 0) <=
+				_getPostAdReentryContinuationMs(),
+	);
+	const cycleStartedAt = isRecentContinuation ? lastEndedCycleStartedAt : now;
+	if (!isRecentContinuation) {
+		_clearAdPodProgress(context.MediaKey);
+		if (typeof _clearPlaybackRecoveryTimeoutsForContext === "function") {
+			_clearPlaybackRecoveryTimeoutsForContext(context.MediaKey);
+		}
+	}
+	const progress = _mergeAdPodProgress({
+		mediaType: context.MediaType,
+		channelName: context.ChannelName,
+		vodID: context.VodID,
+		mediaKey: context.MediaKey,
+		adIds: observedAdIds,
+		expectedPodLength,
+		maxAdPodPosition,
+		observedZeroAdPodPosition,
+		cycleStartedAt,
+	});
+	__TTVAB_STATE__.CurrentAdChannel = context.ChannelName;
+	__TTVAB_STATE__.CurrentAdMediaKey = context.MediaKey;
+	__TTVAB_STATE__.LastAdDetectedAt = now;
+	__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+	__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+	_rememberPageSidePlaybackOwner(context.MediaKey, url, null, cycleStartedAt, {
+		confirmedPlayback: false,
+		adMarked: true,
+	});
+	_broadcastWorkers([
+		{
+			key: "UpdateCurrentAdContext",
+			targetMediaKey: context.MediaKey,
+			value: {
+				channelName: context.ChannelName,
+				mediaKey: context.MediaKey,
+			},
+		},
+		{
+			key: "UpdateAdPodProgress",
+			targetMediaKey: context.MediaKey,
+			value: {
+				mediaType: context.MediaType,
+				channelName: context.ChannelName,
+				vodID: context.VodID,
+				mediaKey: context.MediaKey,
+				...progress,
+			},
+		},
+	]);
+	if (!isRecentContinuation) {
+		_incrementAdsBlocked(context.ChannelName, context.MediaKey);
+	}
+	if (typeof _rememberPlayerPlaybackForAd === "function") {
+		_rememberPlayerPlaybackForAd(context.ChannelName, context.MediaKey);
+	}
+	if (typeof _ensurePlaybackMonitorsRunning === "function") {
+		_ensurePlaybackMonitorsRunning(true);
+	}
+	_log(
+		isRecentContinuation
+			? "Page-side fallback continuing the active ad cycle"
+			: "Page-side fallback detected and blocked an ad",
+		"warning",
+	);
+	return cycleStartedAt;
 }
 
 function _installPageSideM3U8Override() {
@@ -1261,35 +3324,106 @@ function _installPageSideM3U8Override() {
 			const cloned = response.clone();
 			const text = await cloned.text();
 			_rememberPageSideVariantCodecs(text, urlStr);
+			const getEmptyHoldInfo = () => {
+				let emptyHoldInfo = _pageSideEmptyHoldInfoByUrl.get(urlStr) || null;
+				if (!emptyHoldInfo) {
+					emptyHoldInfo = {
+						MediaKey: __TTVAB_STATE__?.PageMediaKey || urlStr,
+						_EmptyAdHoldMediaSequence: 0,
+						NumStrippedAdSegments: 0,
+						IsStrippingAdSegments: false,
+					};
+					_pageSideEmptyHoldInfoByUrl.set(urlStr, emptyHoldInfo);
+					while (_pageSideEmptyHoldInfoByUrl.size > 20) {
+						const oldest = _pageSideEmptyHoldInfoByUrl.keys().next().value;
+						if (oldest === undefined) break;
+						_pageSideEmptyHoldInfoByUrl.delete(oldest);
+					}
+				}
+				return emptyHoldInfo;
+			};
+			const fallbackCodecFamily = _getPlaylistUrlAliases(urlStr)
+				.map((alias) => _pageSideVariantCodecByUrl.get(alias))
+				.find(Boolean);
+			let activeAdMediaKey = _normalizeMediaKey(
+				__TTVAB_STATE__?.CurrentAdMediaKey,
+			);
+			const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+			let ownsActiveAdCycle = Boolean(
+				activeAdMediaKey && activeAdMediaKey === pageMediaKey,
+			);
 			const hasKnownAdMedia =
 				typeof _playlistHasKnownAdSegments === "function" &&
 				_playlistHasKnownAdSegments(text, {
 					includeCached: shouldBlockCachedAdSegments,
 				});
-			if (!_hasTwitchAdMetadata(text) && !hasKnownAdMedia) return response;
-
-			let emptyHoldInfo = _pageSideEmptyHoldInfoByUrl.get(urlStr) || null;
-			if (!emptyHoldInfo) {
-				emptyHoldInfo = {
-					MediaKey: __TTVAB_STATE__?.PageMediaKey || urlStr,
-					_EmptyAdHoldMediaSequence: 0,
-					NumStrippedAdSegments: 0,
-					IsStrippingAdSegments: false,
-				};
-				_pageSideEmptyHoldInfoByUrl.set(urlStr, emptyHoldInfo);
-				while (_pageSideEmptyHoldInfoByUrl.size > 20) {
-					const oldest = _pageSideEmptyHoldInfoByUrl.keys().next().value;
-					if (oldest === undefined) break;
-					_pageSideEmptyHoldInfoByUrl.delete(oldest);
+			if (!_hasTwitchAdMetadata(text) && !hasKnownAdMedia) {
+				if (!ownsActiveAdCycle || text.includes("#EXT-X-STREAM-INF")) {
+					return response;
 				}
+				const emptyHoldInfo = getEmptyHoldInfo();
+				if (
+					_isPageSideFallbackRecoveryReady(
+						urlStr,
+						text,
+						emptyHoldInfo,
+						pageMediaKey,
+					) &&
+					_completePageSideFallbackAdRecovery(pageMediaKey)
+				) {
+					return response;
+				}
+				if (
+					!_canServePageSideAvcHold(
+						urlStr,
+						pageMediaKey,
+						__TTVAB_STATE__?.AdPodProgressByMediaKey?.[pageMediaKey]
+							?.cycleStartedAt,
+					)
+				) {
+					throw _createCodecHandoffAbortError(fallbackRequestSignal);
+				}
+				const hold = _createEmptyAdHoldPlaylist(text, emptyHoldInfo);
+				_log(
+					"Page-side fallback: holding transiently clean native media during active ad",
+					"warning",
+				);
+				return new Response(hold, {
+					status: response.status,
+					statusText: response.statusText,
+					headers: response.headers,
+				});
 			}
-			const stripped = _stripM3U8Ads(text, emptyHoldInfo);
+			if (pageMediaKey && !text.includes("#EXT-X-STREAM-INF")) {
+				const cycleStartedAt = _ensurePageSideFallbackAdCycle(
+					urlStr,
+					fallbackCodecFamily,
+					text,
+				);
+				activeAdMediaKey = _normalizeMediaKey(
+					__TTVAB_STATE__?.CurrentAdMediaKey,
+				);
+				ownsActiveAdCycle = Boolean(
+					cycleStartedAt > 0 && activeAdMediaKey === pageMediaKey,
+				);
+				const emptyHoldInfo = getEmptyHoldInfo();
+				emptyHoldInfo._PageFallbackCycleStartedAt = cycleStartedAt;
+				emptyHoldInfo._PageFallbackCleanStartedAt = 0;
+				emptyHoldInfo._PageFallbackCleanPlaylistCount = 0;
+				emptyHoldInfo._PageFallbackLastMediaSequence = null;
+			}
+
+			const stripped = _stripM3U8Ads(text, getEmptyHoldInfo());
 			if (
 				stripped.includes(
 					"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
 				) &&
-				_pageSideVariantCodecByUrl.get(_getExactPlaylistUrlKey(urlStr)) !==
-					"avc"
+				!_canServePageSideAvcHold(
+					urlStr,
+					pageMediaKey,
+					__TTVAB_STATE__?.AdPodProgressByMediaKey?.[pageMediaKey]
+						?.cycleStartedAt,
+				)
 			) {
 				throw _createCodecHandoffAbortError(fallbackRequestSignal);
 			}
@@ -1455,6 +3589,16 @@ function _hookWorker() {
 						_getCodecHandoffCycleStartedAt(seedCodecHandoffId) ===
 							seedCycleStartedAt,
 				);
+				const seedPlaybackCodecEntries = Array.from(
+					_pageSideVariantCodecByUrl.entries(),
+				)
+					.filter(
+						([playlistUrl, codec]) =>
+							typeof playlistUrl === "string" &&
+							playlistUrl &&
+							_getVideoCodecFamily(codec),
+					)
+					.slice(-40);
 
 				const inlinedWorkerSource =
 					opts?.type !== "module" && workerSourceUrl.startsWith("blob:")
@@ -1475,6 +3619,7 @@ function _hookWorker() {
                 const _AD_METADATA_RE = ${_AD_METADATA_RE.toString()};
                 const _EMPTY_SEGMENT_URL = ${JSON.stringify(_EMPTY_SEGMENT_URL)};
                 const _RESERVED_ROUTE_SEGMENTS = new Set(${JSON.stringify(Array.from(_RESERVED_ROUTE_SEGMENTS))});
+                const _pageSideVariantCodecByUrl = new Map(${JSON.stringify(seedPlaybackCodecEntries)});
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}
                 ${_getWorkerBridgeMessage.toString()}
@@ -1572,9 +3717,10 @@ function _hookWorker() {
                 ${_markNativeRecoveryReady.toString()}
                 ${_clearCodecHandoffState.toString()}
                 ${_markCodecHandoffReloadFailed.toString()}
-                ${_getActiveCodecHandoffIdForInfo.toString()}
-                ${_resetStreamAdState.toString()}
-                ${_shouldReloadNativePlayerAfterAdReset.toString()}
+				${_getActiveCodecHandoffIdForInfo.toString()}
+				${_resetStreamAdState.toString()}
+				${_resetWorkerAdCycleState.toString()}
+				${_shouldReloadNativePlayerAfterAdReset.toString()}
                 ${_getStreamInfoForPlaylist.toString()}
                 ${_getSyntheticPlaybackContextForPlaylist.toString()}
                 ${_createStreamInfo.toString()}
@@ -1743,6 +3889,9 @@ function _hookWorker() {
                         case 'ClearAdPodProgress':
                             _clearAdPodProgress(data.value?.mediaKey);
                             break;
+						case 'ResetAdCycleState':
+							_resetWorkerAdCycleState(data.value);
+							break;
                         case 'UpdatePinnedBackupPlayerContext':
                             {
                                 const nextPinnedContext = _normalizePlaybackContext(data.value);
@@ -2131,10 +4280,8 @@ function _hookWorker() {
 					if (this.__TTVABCrashed || this.__TTVABIntentionallyTerminated)
 						return;
 					if (this.__TTVABFirstPongAt) return;
-					if (
-						typeof _isNativeDocumentHidden === "function" &&
-						_isNativeDocumentHidden() === true
-					) {
+					_installPageSideM3U8Override();
+					if (_isWorkerLifecycleThrottled()) {
 						_hbTimeout = setTimeout(_hbCheck, HW_INITIAL_PONG_TIMEOUT_MS);
 						return;
 					}
@@ -2238,7 +4385,10 @@ function _hookWorker() {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (!data) return;
 					e.stopImmediatePropagation?.();
-					if (this.__TTVABIntentionallyTerminated) {
+					if (this.__TTVABIntentionallyTerminated && !this.__TTVABCrashed) {
+						return;
+					}
+					if (_isWorkerGenerationRetired(this, pagePlaybackContext)) {
 						return;
 					}
 					if (
@@ -2254,6 +4404,124 @@ function _hookWorker() {
 					}
 
 					switch (data.key) {
+						case "MediaBootstrapRecoveryNeeded":
+							_handleMediaBootstrapRecoveryRequest(
+								this,
+								data,
+								pagePlaybackContext,
+								getCurrentPageContext(),
+							);
+							break;
+						case "PlaybackWorkerObserved": {
+							const observedContext = _normalizePlaybackContext({
+								MediaType: data.mediaType,
+								ChannelName: data.channel,
+								VodID: data.vodID,
+								MediaKey: data.mediaKey,
+							});
+							const workerContext = _getWorkerPlaybackContext(
+								this,
+								pagePlaybackContext,
+							);
+							const observationMatchesWorkerContext = Boolean(
+								observedContext.MediaKey &&
+									!_isPlaybackContextMismatch(workerContext, observedContext),
+							);
+							const observationMatchesActivePip = Boolean(
+								observedContext.MediaKey &&
+									typeof _isActivePictureInPicturePlaybackContext ===
+										"function" &&
+									_isActivePictureInPicturePlaybackContext(observedContext),
+							);
+							if (
+								!observationMatchesWorkerContext &&
+								!observationMatchesActivePip
+							) {
+								break;
+							}
+							_rememberPageSidePlaybackOwner(
+								observedContext.MediaKey,
+								data.playlistUrl,
+								data.codec,
+								0,
+								{
+									confirmedPlayback: true,
+									workerGeneration: this.__TTVABGeneration,
+									handoffId: data.handoffId,
+									decoderCodec: data.decoderCodec,
+								},
+							);
+							if (!(this.__TTVABPlaybackObservedAtByMediaKey instanceof Map)) {
+								this.__TTVABPlaybackObservedAtByMediaKey = new Map();
+							}
+							this.__TTVABPlaybackObservedAtByMediaKey.delete(
+								observedContext.MediaKey,
+							);
+							this.__TTVABPlaybackObservedAtByMediaKey.set(
+								observedContext.MediaKey,
+								Date.now(),
+							);
+							while (this.__TTVABPlaybackObservedAtByMediaKey.size > 8) {
+								const oldestMediaKey = this.__TTVABPlaybackObservedAtByMediaKey
+									.keys()
+									.next().value;
+								if (oldestMediaKey === undefined) break;
+								this.__TTVABPlaybackObservedAtByMediaKey.delete(oldestMediaKey);
+							}
+							if (observationMatchesWorkerContext || !workerContext.MediaKey) {
+								_rememberWorkerPageContext(this, observedContext);
+							}
+							_promoteWorkerPlaybackOwner(this, Date.now(), observedContext);
+							_beginExhaustedWorkerRecoveryStabilization(this, observedContext);
+							break;
+						}
+						case "PlaybackWorkerBootstrapObserved": {
+							const observedContext = _normalizePlaybackContext({
+								MediaType: data.mediaType,
+								ChannelName: data.channel,
+								VodID: data.vodID,
+								MediaKey: data.mediaKey,
+							});
+							const workerContext = _getWorkerPlaybackContext(
+								this,
+								pagePlaybackContext,
+							);
+							if (
+								!observedContext.MediaKey ||
+								_isPlaybackContextMismatch(workerContext, observedContext)
+							) {
+								break;
+							}
+							if (
+								!(
+									this.__TTVABPlaybackBootstrapObservedAtByMediaKey instanceof
+									Map
+								)
+							) {
+								this.__TTVABPlaybackBootstrapObservedAtByMediaKey = new Map();
+							}
+							this.__TTVABPlaybackBootstrapObservedAtByMediaKey.delete(
+								observedContext.MediaKey,
+							);
+							this.__TTVABPlaybackBootstrapObservedAtByMediaKey.set(
+								observedContext.MediaKey,
+								Date.now(),
+							);
+							while (
+								this.__TTVABPlaybackBootstrapObservedAtByMediaKey.size > 8
+							) {
+								const oldestMediaKey =
+									this.__TTVABPlaybackBootstrapObservedAtByMediaKey
+										.keys()
+										.next().value;
+								if (oldestMediaKey === undefined) break;
+								this.__TTVABPlaybackBootstrapObservedAtByMediaKey.delete(
+									oldestMediaKey,
+								);
+							}
+							_rememberWorkerPageContext(this, observedContext);
+							break;
+						}
 						case "FetchRequest":
 							void handleWorkerFetchRequest(data.value).then((responseData) => {
 								try {
@@ -2403,6 +4671,16 @@ function _hookWorker() {
 									);
 									break;
 								}
+								_rememberPageSidePlaybackOwner(
+									mediaKey,
+									data.playlistUrl,
+									null,
+									detectedCycleStartedAt,
+									{
+										confirmedPlayback: false,
+										adMarked: true,
+									},
+								);
 								const shouldStartNewCycle =
 									!__TTVAB_STATE__.CurrentAdMediaKey ||
 									__TTVAB_STATE__.CurrentAdMediaKey !== mediaKey ||
@@ -2520,6 +4798,8 @@ function _hookWorker() {
 								mediaKey: data.mediaKey || null,
 								adIds: data.adIds,
 								expectedPodLength: data.expectedPodLength,
+								maxAdPodPosition: data.maxAdPodPosition,
+								observedZeroAdPodPosition: data.observedZeroAdPodPosition,
 								cycleStartedAt: data.cycleStartedAt,
 							});
 							if (!progress || !data.mediaKey) {
@@ -3194,6 +5474,7 @@ function _hookWorker() {
 				this.__TTVABCreatedAt = Date.now();
 				this.__TTVABLastPongAt = Date.now();
 				this.__TTVABFirstPongAt = 0;
+				this.__TTVABGeneration = ++_workerGeneration;
 				this.__TTVABRestartAttempts = 0;
 				this.__TTVABMissedPongs = 0;
 				this.__TTVABLastPingSentAt = 0;
@@ -3279,7 +5560,11 @@ function _hookWorker() {
 
 			terminate() {
 				this.__TTVABIntentionallyTerminated = true;
-				pruneTrackedWorkers();
+				try {
+					const terminationContext = _getWorkerPlaybackContext(this);
+					pruneTrackedWorkers();
+					_scheduleTerminatedPlaybackWorkerRecovery(this, terminationContext);
+				} catch {}
 				return super.terminate();
 			}
 		};

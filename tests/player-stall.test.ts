@@ -464,6 +464,11 @@ describe("_doPlayerTask ad-recovery reload backoff", () => {
 		expect(result).toBe(true);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
 		expect(state._AdRecoveryConsecutiveFailures).toBe(3);
+		expect(
+			(state.LastPlayerReloadAtByMediaKey as Record<string, number>)[
+				"live:testchannel"
+			],
+		).toBe(state.LastPlayerReloadAt);
 	});
 
 	it("resumes a hidden pause nudge in a microtask instead of a throttled timer", async () => {
