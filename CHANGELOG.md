@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [15.0.0] - 2026-08-08
+
+- Recovered playback workers that crash before or during stream startup, including in hidden tabs, without treating a newly constructed worker as a successful replacement.
+- Kept recovery tied to the exact live stream, VOD, or Picture-in-Picture session, so a failed worker cannot reload or weaken protection for another Twitch page.
+- Kept unfinished ad pods on a refreshed clean backup until the same native stream advances through conservative checks, including when no backup was active when the worker failed.
+- Retried player recovery only within a bounded budget and kept the playlist guard fail-closed when a reload cannot run, preventing a delayed or retired worker from exposing native ad media or leaving a silent hold permanently stuck.
+
 ## [14.0.1] - 2026-08-02
 
 - Fixed live streams sometimes stopping after their tab or browser window lost focus. Automatic background pauses are now distinguished from manual controls and resumed for the active stream.
