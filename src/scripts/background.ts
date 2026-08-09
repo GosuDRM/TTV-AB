@@ -286,6 +286,7 @@ const ACHIEVEMENT_IDS = new Set(
 const AVG_AD_DURATION = 22;
 const MAX_CHANNELS = 100;
 const PROCESSED_FLUSH_STORAGE_KEY = "ttvProcessedCounterFlushes";
+const UNCONFIRMED_FLUSH_STORAGE_KEY = "ttvUnconfirmedCounterFlushes";
 const MAX_PROCESSED_FLUSHES = 256;
 const PROCESSED_FLUSH_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -301,7 +302,7 @@ function createProcessedFlushMap() {
 	return Object.create(null);
 }
 
-function normalizeProcessedFlushMap(value) {
+function normalizeProcessedFlushMap(value, maxEntries = MAX_PROCESSED_FLUSHES) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return createProcessedFlushMap();
 	}
@@ -323,13 +324,14 @@ function normalizeProcessedFlushMap(value) {
 	normalizedEntries.sort((a, b) => b[1] - a[1]);
 
 	const normalized = createProcessedFlushMap();
-	for (const [flushId, processedAt] of normalizedEntries.slice(
-		0,
-		MAX_PROCESSED_FLUSHES,
-	)) {
+	for (const [flushId, processedAt] of normalizedEntries.slice(0, maxEntries)) {
 		normalized[flushId] = processedAt;
 	}
 	return normalized;
+}
+
+function normalizeUnconfirmedFlushMap(value) {
+	return normalizeProcessedFlushMap(value, Number.POSITIVE_INFINITY);
 }
 
 function recordProcessedFlush(processedFlushes, flushId) {
@@ -339,8 +341,35 @@ function recordProcessedFlush(processedFlushes, flushId) {
 	}
 
 	const nextProcessedFlushes = normalizeProcessedFlushMap(processedFlushes);
+	delete nextProcessedFlushes[safeFlushId];
+	const existingEntries = Object.entries(nextProcessedFlushes);
+	if (existingEntries.length >= MAX_PROCESSED_FLUSHES) {
+		existingEntries.sort((a, b) => Number(a[1]) - Number(b[1]));
+		delete nextProcessedFlushes[existingEntries[0][0]];
+	}
 	nextProcessedFlushes[safeFlushId] = Date.now();
-	return normalizeProcessedFlushMap(nextProcessedFlushes);
+	return nextProcessedFlushes;
+}
+
+function recordUnconfirmedFlush(
+	unconfirmedFlushes,
+	flushId,
+	createdAt: unknown = 0,
+) {
+	const safeFlushId = normalizeFlushId(flushId);
+	if (!safeFlushId) {
+		return normalizeUnconfirmedFlushMap(unconfirmedFlushes);
+	}
+
+	const nextUnconfirmedFlushes =
+		normalizeUnconfirmedFlushMap(unconfirmedFlushes);
+	const now = Date.now();
+	const createdAtValue = Number(createdAt);
+	const safeCreatedAt = Number.isFinite(createdAtValue)
+		? Math.min(Math.trunc(createdAtValue), now + 5 * 60 * 1000)
+		: now;
+	nextUnconfirmedFlushes[safeFlushId] = Math.max(now, safeCreatedAt);
+	return normalizeUnconfirmedFlushMap(nextUnconfirmedFlushes);
 }
 
 function storageLocalGet(keys): Promise<PlainObject> {
@@ -509,12 +538,20 @@ async function persistCounterDelta(detail) {
 		"ttvAdsBlocked",
 		"ttvStats",
 		PROCESSED_FLUSH_STORAGE_KEY,
+		UNCONFIRMED_FLUSH_STORAGE_KEY,
 	]);
 	const baseAds = normalizeCount(stored.ttvAdsBlocked);
 	const processedFlushes = normalizeProcessedFlushMap(
 		stored[PROCESSED_FLUSH_STORAGE_KEY],
 	);
-	if (flushId && Object.hasOwn(processedFlushes, flushId)) {
+	const unconfirmedFlushes = normalizeUnconfirmedFlushMap(
+		stored[UNCONFIRMED_FLUSH_STORAGE_KEY],
+	);
+	if (
+		flushId &&
+		(Object.hasOwn(processedFlushes, flushId) ||
+			Object.hasOwn(unconfirmedFlushes, flushId))
+	) {
 		return {
 			ok: true,
 			counts: {
@@ -569,14 +606,15 @@ async function persistCounterDelta(detail) {
 	stats.channels = normalizeChannelsMap(stats.channels);
 
 	const newUnlocks = applyAchievementUnlocks(stats, nextAds);
-	const nextProcessedFlushes = flushId
-		? recordProcessedFlush(processedFlushes, flushId)
-		: processedFlushes;
+	const nextUnconfirmedFlushes = flushId
+		? recordUnconfirmedFlush(unconfirmedFlushes, flushId, safeDetail?.createdAt)
+		: unconfirmedFlushes;
 
 	await storageLocalSet({
 		ttvAdsBlocked: nextAds,
 		ttvStats: stats,
-		[PROCESSED_FLUSH_STORAGE_KEY]: nextProcessedFlushes,
+		[PROCESSED_FLUSH_STORAGE_KEY]: processedFlushes,
+		[UNCONFIRMED_FLUSH_STORAGE_KEY]: nextUnconfirmedFlushes,
 	});
 
 	return {
@@ -586,6 +624,36 @@ async function persistCounterDelta(detail) {
 		},
 		newUnlocks,
 	};
+}
+
+async function confirmCounterFlush(detail) {
+	const safeDetail = getMessageDetail(detail);
+	const flushId = normalizeFlushId(safeDetail?.flushId);
+	if (!flushId) return { ok: false, error: "invalid flush id" };
+
+	const stored = await storageLocalGet([
+		PROCESSED_FLUSH_STORAGE_KEY,
+		UNCONFIRMED_FLUSH_STORAGE_KEY,
+	]);
+	const processedFlushes = normalizeProcessedFlushMap(
+		stored[PROCESSED_FLUSH_STORAGE_KEY],
+	);
+	const unconfirmedFlushes = normalizeUnconfirmedFlushMap(
+		stored[UNCONFIRMED_FLUSH_STORAGE_KEY],
+	);
+	if (!Object.hasOwn(unconfirmedFlushes, flushId)) {
+		return { ok: true };
+	}
+
+	delete unconfirmedFlushes[flushId];
+	await storageLocalSet({
+		[PROCESSED_FLUSH_STORAGE_KEY]: recordProcessedFlush(
+			processedFlushes,
+			flushId,
+		),
+		[UNCONFIRMED_FLUSH_STORAGE_KEY]: unconfirmedFlushes,
+	});
+	return { ok: true };
 }
 
 function enqueuePersist(task) {
@@ -602,13 +670,18 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 		return undefined;
 	}
 	const message = getMessageData(rawMessage);
-	if (message?.type !== "ttvab-persist-counters") {
+	if (
+		message?.type !== "ttvab-persist-counters" &&
+		message?.type !== "ttvab-confirm-counter-flush"
+	) {
 		return undefined;
 	}
 
 	enqueuePersist(async () => {
 		try {
-			return await persistCounterDelta(message.detail);
+			return message.type === "ttvab-confirm-counter-flush"
+				? await confirmCounterFlush(message.detail)
+				: await persistCounterDelta(message.detail);
 		} catch (error) {
 			return {
 				ok: false,

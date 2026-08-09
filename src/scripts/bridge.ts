@@ -90,8 +90,6 @@ function isPlainObject(value) {
 	if (prototype === null) {
 		return true;
 	}
-	// Bridge messages cross execution realms, so prototype identity checks
-	// against the local Object.prototype are too strict here.
 	return (
 		Object.prototype.toString.call(value) === "[object Object]" &&
 		Object.getPrototypeOf(prototype) === null
@@ -628,10 +626,24 @@ function clearPersistedCounterFlush(flushId) {
 	}
 }
 
+function confirmCounterFlush(flushId) {
+	const safeFlushId = normalizeFlushId(flushId);
+	if (!safeFlushId) return false;
+	sendPersistPayload(
+		{
+			type: "ttvab-confirm-counter-flush",
+			detail: { flushId: safeFlushId },
+		},
+		undefined,
+		() => {},
+	);
+	return true;
+}
+
 function handlePersistSuccess(response, flushId = null) {
 	const safeFlushId = normalizeFlushId(flushId);
-	if (safeFlushId) {
-		clearPersistedCounterFlush(safeFlushId);
+	if (safeFlushId && clearPersistedCounterFlush(safeFlushId)) {
+		confirmCounterFlush(safeFlushId);
 	}
 
 	const newUnlocks = Array.isArray(response?.newUnlocks)
@@ -1001,6 +1013,22 @@ function handlePageBridgeMessage(rawMessage) {
 	}
 	if (message.type === "ttvab-request-state") {
 		broadcastState();
+		return;
+	}
+	if (message.type === "ttvab-persist-counter-flush") {
+		const persistedFlush = normalizePersistedCounterFlushEntry(message.detail);
+		if (!persistedFlush) return;
+		dispatchPersistPayload(
+			{
+				type: "ttvab-persist-counters",
+				detail: persistedFlush,
+			},
+			{ retryOnFailure: false },
+		);
+		return;
+	}
+	if (message.type === "ttvab-flush-counters") {
+		flushPendingCountersOnPageExit();
 		return;
 	}
 

@@ -54,6 +54,7 @@ function T<T>(name: string): T {
 
 function resetPinnedState() {
 	const state = g._PinnedBackupStallState as Record<string, unknown>;
+	state.mediaKey = null;
 	state.firstObservedAt = 0;
 	state.lastCurrentTime = 0;
 	state.lastBufferedEnd = 0;
@@ -122,7 +123,11 @@ describe("_checkPinnedBackupStall", () => {
 
 	it("forces backup re-search when playback and buffer stop advancing", () => {
 		const check = T<
-			(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void
+			(
+				player: { getHTMLVideoElement: () => HTMLVideoElement },
+				channel?: string,
+				mediaKey?: string,
+			) => void
 		>("_checkPinnedBackupStall");
 		const messages: unknown[] = [];
 		let currentTime = 10;
@@ -137,13 +142,19 @@ describe("_checkPinnedBackupStall", () => {
 		const nowSpy = vi.spyOn(Date, "now");
 
 		nowSpy.mockReturnValue(100000);
-		check(player);
+		check(player, "pipchannel", "live:pipchannel");
 		currentTime = 10;
 		bufferedEnd = 10.2;
 		nowSpy.mockReturnValue(104000);
-		check(player);
+		check(player, "pipchannel", "live:pipchannel");
 
-		expect(messages).toHaveLength(1);
+		expect(messages).toEqual([
+			{
+				key: "UpdateBackupSearchForceRefresh",
+				targetMediaKey: "live:pipchannel",
+				value: 104000,
+			},
+		]);
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt,
 		).toBe(104000);
@@ -317,6 +328,7 @@ describe("_suppressCompetingMediaDuringAd (idempotent logging)", () => {
 		const primary = makeCompetingVideo();
 		g._getPrimaryMediaElement = () => primary;
 		g._resolvePlayerMediaKey = () => "live:test";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey = "live:test";
 		const logs: string[] = [];
 		g._log = (msg: string) => {
 			logs.push(msg);
@@ -740,20 +752,27 @@ describe("_seekPastBufferedGap", () => {
 
 describe("_checkInAdPlayheadFreeze", () => {
 	const check = () =>
-		T<(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void>(
-			"_checkInAdPlayheadFreeze",
-		);
+		T<
+			(
+				player: { getHTMLVideoElement: () => HTMLVideoElement },
+				channel?: string,
+				mediaKey?: string,
+			) => void
+		>("_checkInAdPlayheadFreeze");
 
 	let realDoPlayerTask: unknown;
 	let realIsNativeDocumentHidden: unknown;
 	let playerTaskCalls: Array<[unknown, unknown]> = [];
+	let playerTaskOptions: unknown[] = [];
 
 	beforeEach(() => {
 		realDoPlayerTask = g._doPlayerTask;
 		realIsNativeDocumentHidden = g._isNativeDocumentHidden;
 		playerTaskCalls = [];
-		g._doPlayerTask = (a: unknown, b: unknown) => {
+		playerTaskOptions = [];
+		g._doPlayerTask = (a: unknown, b: unknown, options: unknown) => {
 			playerTaskCalls.push([a, b]);
+			playerTaskOptions.push(options);
 			return true;
 		};
 		g._isNativeDocumentHidden = () => false;
@@ -816,6 +835,26 @@ describe("_checkInAdPlayheadFreeze", () => {
 			[false, true],
 		]);
 		expect(seeks).toEqual([]);
+	});
+
+	it("targets PiP recovery actions to the exact ad media context", () => {
+		const { video } = makeRangesVideo([[0, 20]], 10);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(100000);
+		check()(player, "pipchannel", "live:pipchannel");
+		nowSpy.mockReturnValue(105500);
+		check()(player, "pipchannel", "live:pipchannel");
+
+		expect(playerTaskCalls).toEqual([[true, false]]);
+		expect(playerTaskOptions).toEqual([
+			{
+				reason: "buffer-recovery",
+				channel: "pipchannel",
+				mediaKey: "live:pipchannel",
+			},
+		]);
 	});
 
 	it("nudges a playhead frozen mid-range with safe headroom instead of jumping the gap (decoder wedge, issue #39)", () => {
@@ -901,6 +940,141 @@ describe("_checkInAdPlayheadFreeze", () => {
 			ct += 0.02;
 		}
 		expect(playerTaskCalls).toEqual([[true, false]]);
+	});
+});
+
+describe("_checkHiddenCleanLiveStall", () => {
+	const check = () =>
+		T<
+			(
+				player: { getHTMLVideoElement: () => HTMLVideoElement },
+				channel: string,
+				mediaKey: string,
+			) => boolean
+		>("_checkHiddenCleanLiveStall");
+	let savedHidden: unknown;
+	let savedUserPause: unknown;
+	let savedSuppressResume: unknown;
+	let savedDoPlayerTask: unknown;
+	let tasks: Array<[boolean, boolean, Record<string, unknown>]>;
+
+	beforeEach(() => {
+		savedHidden = g._isNativeDocumentHidden;
+		savedUserPause = g._hasUserPauseIntent;
+		savedSuppressResume = g._shouldSuppressAutomaticPlaybackResume;
+		savedDoPlayerTask = g._doPlayerTask;
+		tasks = [];
+		g._isNativeDocumentHidden = () => true;
+		g._hasUserPauseIntent = () => false;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._doPlayerTask = (
+			pausePlay: boolean,
+			reload: boolean,
+			options: Record<string, unknown>,
+		) => {
+			tasks.push([pausePlay, reload, options]);
+			return true;
+		};
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+		};
+		T<() => void>("_resetHiddenCleanLiveStallState")();
+	});
+
+	afterEach(() => {
+		g._isNativeDocumentHidden = savedHidden;
+		g._hasUserPauseIntent = savedUserPause;
+		g._shouldSuppressAutomaticPlaybackResume = savedSuppressResume;
+		g._doPlayerTask = savedDoPlayerTask;
+		T<() => void>("_resetHiddenCleanLiveStallState")();
+	});
+
+	it("uses only a bounded pause/play nudge for a sustained hidden clean-live freeze", () => {
+		const { video } = makeRangesVideo([[0, 40]], 30);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(100000);
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(false);
+		nowSpy.mockReturnValue(115001);
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(true);
+		nowSpy.mockReturnValue(130000);
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(false);
+
+		expect(tasks).toEqual([
+			[
+				true,
+				false,
+				{
+					reason: "buffer-recovery",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+				},
+			],
+		]);
+	});
+
+	it("stays inert for active ads and explicit user pauses", () => {
+		const { video } = makeRangesVideo([[0, 40]], 30);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(100000);
+		check()(player, "testchannel", "live:testchannel");
+		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey =
+			"live:testchannel";
+		nowSpy.mockReturnValue(120000);
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(false);
+
+		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey = null;
+		g._hasUserPauseIntent = () => true;
+		nowSpy.mockReturnValue(140000);
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(false);
+		expect(tasks).toEqual([]);
+	});
+
+	it("keeps the same-media deadline across alternating paused player elements", () => {
+		const { video: pausedVideo } = makeRangesVideo([[0, 40]], 30);
+		const { video: stalledVideo } = makeRangesVideo([[0, 40]], 30);
+		Object.defineProperty(pausedVideo, "paused", {
+			get: () => true,
+			configurable: true,
+		});
+		const nowSpy = vi.spyOn(Date, "now");
+
+		nowSpy.mockReturnValue(100000);
+		check()(
+			{ getHTMLVideoElement: () => pausedVideo },
+			"testchannel",
+			"live:testchannel",
+		);
+		nowSpy.mockReturnValue(108000);
+		check()(
+			{ getHTMLVideoElement: () => stalledVideo },
+			"testchannel",
+			"live:testchannel",
+		);
+		nowSpy.mockReturnValue(112000);
+		check()(
+			{ getHTMLVideoElement: () => pausedVideo },
+			"testchannel",
+			"live:testchannel",
+		);
+		nowSpy.mockReturnValue(116000);
+		expect(
+			check()(
+				{ getHTMLVideoElement: () => stalledVideo },
+				"testchannel",
+				"live:testchannel",
+			),
+		).toBe(true);
+		expect(tasks).toHaveLength(1);
+		expect(tasks[0][0]).toBe(true);
+		expect(tasks[0][1]).toBe(false);
 	});
 });
 
@@ -1109,6 +1283,80 @@ describe("fatal enhanced-media recovery during ads", () => {
 			},
 		});
 		expect(check()(player)).toBe(true);
+	});
+});
+
+describe("_monitorPlayerBuffering in-route PiP ad recovery", () => {
+	const replacedGlobals = [
+		"_getPlayerAndState",
+		"_hasPendingAdResumeIntent",
+		"_isNativeDocumentHidden",
+		"_trackChannelWatchTime",
+		"_hasPlayerBufferMonitorRelevantContext",
+		"_shouldSuppressAutomaticPlaybackResume",
+		"_suppressCompetingMediaDuringAd",
+		"_checkFatalAdMediaRecovery",
+		"_checkInAdPlayheadFreeze",
+	] as const;
+	let savedState: unknown;
+	let savedGlobals: Record<string, unknown>;
+	let pagePlayer: { getHTMLVideoElement: () => HTMLVideoElement };
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		savedState = g.__TTVAB_STATE__;
+		savedGlobals = Object.fromEntries(
+			replacedGlobals.map((name) => [name, g[name]]),
+		);
+		T<() => void>("_clearCachedPlayerRef")();
+		const video = document.createElement("video");
+		pagePlayer = { getHTMLVideoElement: () => video };
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PinnedBackupPlayerType: null,
+			PinnedBackupStallPollMs: 0,
+			IsBufferFixEnabled: true,
+			PlayerBufferingDelay: 600,
+		};
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(video, {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		g._getPlayerAndState = () => ({ player: pagePlayer, state: {} });
+		g._hasPendingAdResumeIntent = () => false;
+		g._isNativeDocumentHidden = () => false;
+		g._trackChannelWatchTime = () => {};
+		g._hasPlayerBufferMonitorRelevantContext = () => true;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._suppressCompetingMediaDuringAd = () => 0;
+		g._checkFatalAdMediaRecovery = vi.fn();
+		g._checkInAdPlayheadFreeze = () => {};
+	});
+
+	it("keeps page-owned fatal recovery enabled when PiP has the same key", () => {
+		T<() => void>("_monitorPlayerBuffering")();
+		expect(g._checkFatalAdMediaRecovery).toHaveBeenCalledWith(pagePlayer);
+	});
+
+	afterEach(() => {
+		T<(resetBufferState?: boolean) => void>("_stopPlayerBufferMonitor")(false);
+		window.removeEventListener(
+			"pagehide",
+			g._flushWatchTimeOnPageExit as EventListener,
+		);
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		for (const name of replacedGlobals) {
+			g[name] = savedGlobals[name];
+		}
+		g.__TTVAB_STATE__ = savedState;
+		vi.useRealTimers();
 	});
 });
 
@@ -1351,19 +1599,17 @@ describe("_isNativeDocumentHidden (pip awareness)", () => {
 
 describe("_isPlaybackPageUnfocused", () => {
 	const unfocused = () => T<() => boolean>("_isPlaybackPageUnfocused");
-	const recentTransition = () =>
-		T<() => boolean>("_isRecentUnfocusedPlaybackTransition");
+	const environmental = () =>
+		T<() => boolean>("_isUnfocusedPlaybackEnvironment");
 	let savedHidden: unknown;
 	let savedPipContext: unknown;
 	let savedHasFocus: PropertyDescriptor | undefined;
-	let savedTransitionAt: unknown;
 	let hasFocus = false;
 
 	beforeEach(() => {
 		savedHidden = g._isNativeDocumentHidden;
 		savedPipContext = g._getActivePictureInPicturePlaybackContext;
 		savedHasFocus = Object.getOwnPropertyDescriptor(document, "hasFocus");
-		savedTransitionAt = g._lastPlaybackVisibilityTransitionAt;
 		g._isNativeDocumentHidden = () => false;
 		g._getActivePictureInPicturePlaybackContext = () => null;
 		hasFocus = false;
@@ -1376,7 +1622,6 @@ describe("_isPlaybackPageUnfocused", () => {
 	afterEach(() => {
 		g._isNativeDocumentHidden = savedHidden;
 		g._getActivePictureInPicturePlaybackContext = savedPipContext;
-		g._lastPlaybackVisibilityTransitionAt = savedTransitionAt;
 		if (savedHasFocus) {
 			Object.defineProperty(document, "hasFocus", savedHasFocus);
 		} else {
@@ -1397,13 +1642,10 @@ describe("_isPlaybackPageUnfocused", () => {
 		expect(unfocused()()).toBe(false);
 	});
 
-	it("limits automatic recovery to the focus-loss transition window", () => {
-		const nowSpy = vi.spyOn(Date, "now");
-		g._lastPlaybackVisibilityTransitionAt = 100000;
-		nowSpy.mockReturnValue(109999);
-		expect(recentTransition()()).toBe(true);
-		nowSpy.mockReturnValue(110001);
-		expect(recentTransition()()).toBe(false);
+	it("keeps control-free pauses environmental for the full unfocused period", () => {
+		expect(environmental()()).toBe(true);
+		hasFocus = true;
+		expect(environmental()()).toBe(false);
 	});
 });
 
@@ -1490,6 +1732,66 @@ describe("_isPlaybackRecoveryContextCurrent (pip navigation)", () => {
 		} finally {
 			T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 			g._resolvePlayerMediaKey = previousResolveMediaKey;
+		}
+	});
+
+	it("attributes an operating-system media pause to off-route pip playback", () => {
+		const pip = document.createElement("video");
+		const savedMediaSession = Object.getOwnPropertyDescriptor(
+			navigator,
+			"mediaSession",
+		);
+		const savedPatched = window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__;
+		let pauseHandler: ((details: { action: string }) => void) | null = null;
+		let playHandler: ((details: { action: string }) => void) | null = null;
+		const mediaSession = {
+			setActionHandler(
+				action: string,
+				handler: ((details: { action: string }) => void) | null,
+			) {
+				if (action === "pause") pauseHandler = handler;
+				if (action === "play") playHandler = handler;
+			},
+		};
+		Object.defineProperty(navigator, "mediaSession", {
+			value: mediaSession,
+			configurable: true,
+		});
+		window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__ = false;
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "pagechannel",
+			PageMediaKey: "live:pagechannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+		};
+		const intentState = g._PlaybackIntentState as Record<string, unknown>;
+		intentState.userPausedMediaKey = null;
+
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(pip, {
+			MediaType: "live",
+			ChannelName: "pipstreamer",
+			MediaKey: "live:pipstreamer",
+		});
+		try {
+			T<() => boolean>("_hookMediaSessionPlaybackIntent")();
+			mediaSession.setActionHandler("pause", () => {});
+			mediaSession.setActionHandler("play", () => {});
+			if (pauseHandler) pauseHandler({ action: "pause" });
+			expect(intentState.userPausedMediaKey).toBe("live:pipstreamer");
+			expect(intentState.userPausedHadExplicitInteraction).toBe(true);
+			if (playHandler) playHandler({ action: "play" });
+			expect(intentState.userPausedMediaKey).toBeNull();
+		} finally {
+			T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+			if (savedMediaSession) {
+				Object.defineProperty(navigator, "mediaSession", savedMediaSession);
+			} else {
+				delete (navigator as unknown as Record<string, unknown>).mediaSession;
+			}
+			window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__ = savedPatched;
 		}
 	});
 });
@@ -2370,6 +2672,161 @@ describe("_shouldSuppressAutomaticPlaybackResume (pip exemption)", () => {
 	});
 });
 
+describe("_monitorSecondaryPlayerWindowClose", () => {
+	const mark = () =>
+		T<
+			(
+				kind: string,
+				channel: string,
+				mediaKey: string,
+				durationMs: number,
+				sourceWasPlaying: boolean,
+			) => boolean
+		>("_markSecondaryPlayerHandoff");
+	const monitor = () =>
+		T<
+			(
+				openedWindow: { closed: boolean },
+				descriptor: Record<string, unknown>,
+				sourceWasPlaying: boolean,
+			) => boolean
+		>("_monitorSecondaryPlayerWindowClose");
+	let savedResolveMediaKey: unknown;
+	let savedSchedule: unknown;
+	let savedResume: unknown;
+	let resumeCalls: unknown[][];
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		savedResolveMediaKey = g._resolvePlayerMediaKey;
+		savedSchedule = g._schedulePlaybackRecoveryTimeout;
+		savedResume = g._resumePrimaryPlaybackIfPaused;
+		resumeCalls = [];
+		g._resolvePlayerMediaKey = (
+			channel: string | null,
+			mediaKey: string | null,
+		) => mediaKey || (channel ? `live:${channel}` : null);
+		g._schedulePlaybackRecoveryTimeout = (callback: () => void) => {
+			callback();
+			return 1;
+		};
+		g._resumePrimaryPlaybackIfPaused = (...args: unknown[]) => {
+			resumeCalls.push(args);
+			return true;
+		};
+		const intentState = g._PlaybackIntentState as Record<string, unknown>;
+		intentState.userPausedMediaKey = null;
+		T<() => void>("_clearSecondaryPlayerHandoff")();
+	});
+
+	afterEach(() => {
+		T<() => void>("_clearSecondaryPlayerHandoff")();
+		g._resolvePlayerMediaKey = savedResolveMediaKey;
+		g._schedulePlaybackRecoveryTimeout = savedSchedule;
+		g._resumePrimaryPlaybackIfPaused = savedResume;
+		vi.useRealTimers();
+	});
+
+	it("clears the popout handoff and resumes a source that had been playing", () => {
+		const openedWindow = { closed: false };
+		const descriptor = {
+			kind: "popout",
+			channel: "chan",
+			mediaKey: "live:chan",
+		};
+		mark()("popout", "chan", "live:chan", 60000, true);
+		expect(monitor()(openedWindow, descriptor, true)).toBe(true);
+
+		openedWindow.closed = true;
+		vi.advanceTimersByTime(500);
+
+		expect(resumeCalls).toEqual([
+			["chan", "live:chan"],
+			["chan", "live:chan"],
+			["chan", "live:chan"],
+		]);
+		expect(
+			(g._PlaybackIntentState as Record<string, unknown>)
+				.secondaryPlayerHandoffKind,
+		).toBeNull();
+		expect(
+			(g._PlaybackIntentState as Record<string, unknown>)
+				.secondaryPlayerCloseMonitorId,
+		).toBeNull();
+	});
+
+	it("does not resume a previously paused or explicitly user-paused source", () => {
+		const descriptor = {
+			kind: "popout",
+			channel: "chan",
+			mediaKey: "live:chan",
+		};
+		const alreadyPausedWindow = { closed: false };
+		mark()("popout", "chan", "live:chan", 60000, false);
+		monitor()(alreadyPausedWindow, descriptor, false);
+		alreadyPausedWindow.closed = true;
+		vi.advanceTimersByTime(500);
+
+		const userPausedWindow = { closed: false };
+		mark()("popout", "chan", "live:chan", 60000, true);
+		(g._PlaybackIntentState as Record<string, unknown>).userPausedMediaKey =
+			"live:chan";
+		monitor()(userPausedWindow, descriptor, true);
+		userPausedWindow.closed = true;
+		vi.advanceTimersByTime(500);
+
+		expect(resumeCalls).toEqual([]);
+	});
+
+	it("waits for every tracked popout to close before resuming the source", () => {
+		const descriptor = {
+			kind: "popout",
+			channel: "chan",
+			mediaKey: "live:chan",
+		};
+		const firstWindow = { closed: false };
+		const secondWindow = { closed: false };
+		mark()("popout", "chan", "live:chan", 60000, true);
+		monitor()(firstWindow, descriptor, true);
+		mark()("popout", "chan", "live:chan", 60000, false);
+		monitor()(secondWindow, descriptor, false);
+
+		firstWindow.closed = true;
+		vi.advanceTimersByTime(500);
+		expect(resumeCalls).toEqual([]);
+		expect(
+			(g._PlaybackIntentState as Record<string, unknown>)
+				.secondaryPlayerHandoffKind,
+		).toBe("popout");
+
+		secondWindow.closed = true;
+		vi.advanceTimersByTime(500);
+		expect(resumeCalls).toHaveLength(3);
+	});
+
+	it("keeps monitoring a popout past the 45-minute handoff deadline", () => {
+		const descriptor = {
+			kind: "popout",
+			channel: "chan",
+			mediaKey: "live:chan",
+		};
+		const openedWindow = { closed: false };
+		mark()("popout", "chan", "live:chan", 2_700_000, true);
+		monitor()(openedWindow, descriptor, true);
+
+		vi.advanceTimersByTime(2_700_500);
+		expect(resumeCalls).toEqual([]);
+		expect(
+			(g._PlaybackIntentState as Record<string, unknown>)
+				.secondaryPlayerHandoffKind,
+		).toBe("popout");
+
+		openedWindow.closed = true;
+		vi.advanceTimersByTime(500);
+		expect(resumeCalls).toHaveLength(3);
+	});
+});
+
 describe("_capturePlayerPreferenceSnapshot (auto quality preservation)", () => {
 	const capture = () =>
 		T<
@@ -2406,6 +2863,70 @@ describe("_capturePlayerPreferenceSnapshot (auto quality preservation)", () => {
 	it("does not invent a stored preference when none exists", () => {
 		const snapshot = capture()({ state: { quality: { group: "720p60" } } });
 		expect(snapshot?.["video-quality"]).toBe(null);
+	});
+});
+
+describe("_restorePlayerPreferenceSnapshot (multi-tab preference ownership)", () => {
+	const capture = () =>
+		T<() => Record<string, unknown> | null>("_capturePlayerPreferenceSnapshot");
+	const restore = () =>
+		T<(snapshot: Record<string, unknown>) => boolean>(
+			"_restorePlayerPreferenceSnapshot",
+		);
+
+	beforeEach(() => {
+		for (const key of [
+			"video-quality",
+			"lowLatencyModeEnabled",
+			"persistenceEnabled",
+		]) {
+			localStorage.removeItem(key);
+		}
+		(
+			g._PlayerPreferenceStorageState as {
+				versions: Map<string, number>;
+			}
+		).versions.clear();
+	});
+
+	it("does not overwrite a newer preference change from another tab", () => {
+		localStorage.setItem(
+			"video-quality",
+			JSON.stringify({ default: "720p60" }),
+		);
+		localStorage.setItem("lowLatencyModeEnabled", "true");
+		const snapshot = capture()();
+		expect(snapshot).not.toBeNull();
+
+		const newerQuality = JSON.stringify({ default: "1080p60" });
+		localStorage.setItem("video-quality", newerQuality);
+		window.dispatchEvent(
+			new StorageEvent("storage", {
+				key: "video-quality",
+				oldValue: JSON.stringify({ default: "720p60" }),
+				newValue: newerQuality,
+			}),
+		);
+		localStorage.setItem("lowLatencyModeEnabled", "false");
+
+		expect(restore()(snapshot as Record<string, unknown>)).toBe(true);
+		expect(localStorage.getItem("video-quality")).toBe(newerQuality);
+		expect(localStorage.getItem("lowLatencyModeEnabled")).toBe("true");
+	});
+
+	it("protects every captured key when another tab clears shared preferences", () => {
+		localStorage.setItem("lowLatencyModeEnabled", "true");
+		localStorage.setItem("persistenceEnabled", "true");
+		const snapshot = capture()();
+		expect(snapshot).not.toBeNull();
+
+		localStorage.removeItem("lowLatencyModeEnabled");
+		localStorage.removeItem("persistenceEnabled");
+		window.dispatchEvent(new StorageEvent("storage", { key: null }));
+
+		expect(restore()(snapshot as Record<string, unknown>)).toBe(true);
+		expect(localStorage.getItem("lowLatencyModeEnabled")).toBeNull();
+		expect(localStorage.getItem("persistenceEnabled")).toBeNull();
 	});
 });
 
@@ -2491,6 +3012,7 @@ describe("channel watch-time tracking", () => {
 	};
 	const watchState = () => g._WatchTimeState as WatchState;
 	const track = () => T<(isHidden: boolean) => void>("_trackChannelWatchTime");
+	const flushOnExit = () => T<() => void>("_flushWatchTimeOnPageExit");
 	let bridgeMessages: Array<{ type: string; detail: unknown }> = [];
 	let realGetPrimary: unknown;
 	let realSendBridge: unknown;
@@ -2510,6 +3032,15 @@ describe("channel watch-time tracking", () => {
 			});
 		}
 		return video;
+	}
+
+	function clearWatchTimeJournals() {
+		for (let index = localStorage.length - 1; index >= 0; index--) {
+			const key = localStorage.key(index);
+			if (key?.startsWith("ttvab_pending_counter_flush:")) {
+				localStorage.removeItem(key);
+			}
+		}
 	}
 
 	beforeEach(() => {
@@ -2533,6 +3064,7 @@ describe("channel watch-time tracking", () => {
 		state.channel = null;
 		state.pendingMs = 0;
 		state.lastTickAt = 0;
+		clearWatchTimeJournals();
 		nowValue = 1_000_000_000_000;
 		vi.spyOn(Date, "now").mockImplementation(() => nowValue);
 	});
@@ -2545,6 +3077,7 @@ describe("channel watch-time tracking", () => {
 			value: null,
 			configurable: true,
 		});
+		clearWatchTimeJournals();
 		vi.restoreAllMocks();
 	});
 
@@ -2641,6 +3174,104 @@ describe("channel watch-time tracking", () => {
 			detail: { channel: "streamerone", seconds: 15 },
 		});
 	});
+
+	it("journals the final partial delta when isolated pagehide handling runs first", () => {
+		const eventOrder: string[] = [];
+		g._sendBridgeMessage = (type: string, detail: unknown) => {
+			eventOrder.push(type);
+			bridgeMessages.push({ type, detail });
+			return true;
+		};
+		const state = watchState();
+		state.channel = "streamerone";
+		state.pendingMs = 7000;
+		state.lastTickAt = nowValue;
+		window.addEventListener(
+			"pagehide",
+			() => {
+				eventOrder.push("isolated-pagehide");
+			},
+			{ once: true },
+		);
+		window.addEventListener("pagehide", flushOnExit(), { once: true });
+
+		window.dispatchEvent(new Event("pagehide"));
+
+		expect(eventOrder).toEqual([
+			"isolated-pagehide",
+			"ttvab-persist-counter-flush",
+			"ttvab-flush-counters",
+		]);
+		expect(
+			bridgeMessages.some((message) => message.type === "ttvab-watch-time"),
+		).toBe(false);
+		const persistedMessage = bridgeMessages[0] as {
+			type: string;
+			detail: {
+				flushId: string;
+				watchDeltas: Record<string, number>;
+			};
+		};
+		expect(persistedMessage.detail.watchDeltas).toEqual({ streamerone: 7 });
+		expect(
+			localStorage.getItem(
+				`ttvab_pending_counter_flush:${persistedMessage.detail.flushId}`,
+			),
+		).not.toBeNull();
+		expect(watchState()).toMatchObject({ pendingMs: 0, lastTickAt: 0 });
+	});
+
+	it("includes the bounded playable interval since the last watch tick on exit", () => {
+		g._getPrimaryMediaElement = () => makeWatchVideo();
+		const state = watchState();
+		state.channel = "streamerone";
+		state.pendingMs = 7000;
+		state.lastTickAt = nowValue;
+		nowValue += 3200;
+
+		flushOnExit()();
+
+		const persistedMessage = bridgeMessages[0] as {
+			detail: { watchDeltas: Record<string, number> };
+		};
+		expect(persistedMessage.detail.watchDeltas).toEqual({ streamerone: 10 });
+	});
+
+	it("does not credit exit time from a different current route", () => {
+		g._getPrimaryMediaElement = () => makeWatchVideo();
+		const state = watchState();
+		state.channel = "streamerone";
+		state.pendingMs = 7000;
+		state.lastTickAt = nowValue;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "streamertwo";
+		nowValue += 3200;
+
+		flushOnExit()();
+
+		const persistedMessage = bridgeMessages[0] as {
+			detail: { watchDeltas: Record<string, number> };
+		};
+		expect(persistedMessage.detail.watchDeltas).toEqual({ streamerone: 7 });
+	});
+
+	it("falls back to an ordered bridge flush when the exit journal is unavailable", () => {
+		const state = watchState();
+		state.channel = "streamerone";
+		state.pendingMs = 7000;
+		vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+			throw new Error("storage unavailable");
+		});
+
+		flushOnExit()();
+
+		expect(bridgeMessages).toEqual([
+			{
+				type: "ttvab-watch-time",
+				detail: { channel: "streamerone", seconds: 7 },
+			},
+			{ type: "ttvab-flush-counters", detail: undefined },
+		]);
+	});
 });
 
 describe("_checkPostBreakWedge (post-break decoder wedge watchdog)", () => {
@@ -2649,6 +3280,7 @@ describe("_checkPostBreakWedge (post-break decoder wedge watchdog)", () => {
 
 	function wedgeState() {
 		return g._PostBreakWedgeState as {
+			mediaKey: string | null;
 			remainingEvals: number;
 			lastCurrentTime: number;
 			lastTotalFrames: number;
@@ -2656,13 +3288,19 @@ describe("_checkPostBreakWedge (post-break decoder wedge watchdog)", () => {
 			healthyCount: number;
 			actionCount: number;
 			prevAdContext: boolean;
+			prevAdMediaKey: string | null;
 		};
 	}
 
 	function checkWedge() {
-		return T<(video: unknown, currentTime: number) => boolean>(
-			"_checkPostBreakWedge",
-		);
+		return T<
+			(
+				video: unknown,
+				currentTime: number,
+				channel?: string,
+				mediaKey?: string,
+			) => boolean
+		>("_checkPostBreakWedge");
 	}
 
 	function makeWedgeVideo(opts: {
@@ -2744,6 +3382,23 @@ describe("_checkPostBreakWedge (post-break decoder wedge watchdog)", () => {
 			{ nudge: false, reload: true },
 		]);
 		expect(wedgeState().remainingEvals).toBe(0);
+	});
+
+	it("disarms an ended PiP ad watchdog before it can sample the new route", () => {
+		T<(mediaKey?: string) => void>("_armPostBreakWedgeWatch")(
+			"live:pipchannel",
+		);
+		const video = makeWedgeVideo({
+			currentTime: () => 100,
+			totalFrames: () => 5000,
+		});
+
+		expect(checkWedge()(video, 100, "pagechannel", "live:pagechannel")).toBe(
+			false,
+		);
+		expect(wedgeState().remainingEvals).toBe(0);
+		expect(wedgeState().mediaKey).toBeNull();
+		expect(taskCalls).toEqual([]);
 	});
 
 	it("disarms quietly after sustained healthy frame decoding", () => {

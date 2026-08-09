@@ -280,6 +280,100 @@ describe("channel stats schema and watch-time persistence", () => {
 		expect(Object.keys(stats.channels).length).toBe(6);
 		expect(stats.achievements).not.toContain("channels_5");
 	});
+
+	it("keeps an uncleared committed flush deduplicated after 256 later confirmations", async () => {
+		const persist = g.persistCounterDelta as (
+			detail: unknown,
+		) => Promise<{ ok: boolean }>;
+		const confirm = g.confirmCounterFlush as (
+			detail: unknown,
+		) => Promise<{ ok: boolean }>;
+		const strandedFlushId = "flush:test:stranded-0001";
+
+		await persist({
+			flushId: strandedFlushId,
+			adsDelta: 0,
+			watchDeltas: { somestreamer: 1 },
+		});
+		for (let index = 0; index < 257; index++) {
+			const flushId = `flush:test:later-${String(index).padStart(4, "0")}`;
+			await persist({
+				flushId,
+				adsDelta: 0,
+				watchDeltas: { somestreamer: 1 },
+			});
+			await confirm({ flushId });
+		}
+
+		expect(
+			Object.hasOwn(
+				storageData.ttvUnconfirmedCounterFlushes as Record<string, number>,
+				strandedFlushId,
+			),
+		).toBe(true);
+		expect(
+			Object.keys(
+				storageData.ttvProcessedCounterFlushes as Record<string, number>,
+			),
+		).toHaveLength(256);
+		expect(
+			Object.hasOwn(
+				storageData.ttvProcessedCounterFlushes as Record<string, number>,
+				"flush:test:later-0256",
+			),
+		).toBe(true);
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(258);
+
+		await persist({
+			flushId: strandedFlushId,
+			adsDelta: 0,
+			watchDeltas: { somestreamer: 1 },
+		});
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(258);
+	});
+
+	it("serializes confirmation with a concurrent counter commit", async () => {
+		const persist = g.persistCounterDelta as (
+			detail: unknown,
+		) => Promise<{ ok: boolean }>;
+		const confirm = g.confirmCounterFlush as (
+			detail: unknown,
+		) => Promise<{ ok: boolean }>;
+		const enqueue = g.enqueuePersist as (
+			task: () => Promise<unknown>,
+		) => Promise<unknown>;
+		const confirmedFlushId = "flush:test:confirm-race-0001";
+		const concurrentFlushId = "flush:test:confirm-race-0002";
+
+		await persist({
+			flushId: confirmedFlushId,
+			adsDelta: 0,
+			watchDeltas: { somestreamer: 1 },
+		});
+		await Promise.all([
+			enqueue(() =>
+				persist({
+					flushId: concurrentFlushId,
+					adsDelta: 0,
+					watchDeltas: { somestreamer: 1 },
+				}),
+			),
+			enqueue(() => confirm({ flushId: confirmedFlushId })),
+		]);
+
+		const unconfirmed = storageData.ttvUnconfirmedCounterFlushes as Record<
+			string,
+			number
+		>;
+		const processed = storageData.ttvProcessedCounterFlushes as Record<
+			string,
+			number
+		>;
+		expect(Object.hasOwn(unconfirmed, confirmedFlushId)).toBe(false);
+		expect(Object.hasOwn(unconfirmed, concurrentFlushId)).toBe(true);
+		expect(Object.hasOwn(processed, confirmedFlushId)).toBe(true);
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(2);
+	});
 });
 
 describe("measured ad seconds persistence", () => {
