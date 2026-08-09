@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.2] - 2026-08-09
+
+- Fixed ad recovery repeatedly restarting playback and triggering additional prerolls after a break, which could keep backup playback active for many minutes.
+- Required playback rebuilds now keep the stream that already passed recovery checks, allowing normal quality to return without opening another ad session.
+- Unverified and ad-marked streams remain blocked while clean backup playback keeps advancing, preventing early ad exposure and freezes during restoration.
+
 ## [16.0.1] - 2026-08-09
 
 - Fixed ad recovery sometimes reloading playback into an unnecessary second preroll after the original break had already ended.
