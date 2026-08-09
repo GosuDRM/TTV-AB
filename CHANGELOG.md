@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [15.0.2] - 2026-08-09
+
+- Fixed rare ad breaks that could stay on backup playback indefinitely instead of returning to normal stream quality.
+- Kept native playback blocked until recovery is consistently clean, preventing ads from appearing during restoration.
+- Reduced unnecessary network requests during long recovery holds while keeping backup playback advancing.
+
 ## [15.0.1] - 2026-08-09
 
 - Fixed a stream sometimes remaining frozen after an ad break until playback was paused and resumed, especially when Twitch continued the same break shortly after native playback returned ([#56](https://github.com/GosuDRM/TTV-AB/issues/56)).
