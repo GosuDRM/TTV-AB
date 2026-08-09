@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v16.0.0 - 2026-08-09
+- **Single ad breaks no longer cause an unnecessary multi-minute recovery hold.** Playback returns to normal quality after the active stream advances through consecutive clean checks, while ad-marked or stale media stays blocked and backup playback keeps advancing.
+
 ### v15.0.3 - 2026-08-09
 - **Multiple Twitch tabs and secondary players now recover independently without losing playback intent.** Background streams recover from environmental pauses and stalls, closing popouts safely restores the source, Picture-in-Picture ad monitoring stays on the correct stream, and newer settings from another tab remain untouched.
 
 ### v15.0.2 - 2026-08-09
 - **Fixed a rare clean-backup hold that could continue indefinitely after an ad pod.** Playback now returns to normal stream quality after recovery is consistently clean, while ad-marked or stale media remains blocked.
-
-### v15.0.1 - 2026-08-09
-- **Post-ad continuation recovery no longer leaves playback stalled.** A continued break can re-establish exact worker and ad-cycle ownership after a native reload, allowing the final verified restore while stale worker events remain blocked ([#56](https://github.com/GosuDRM/TTV-AB/issues/56)).
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
