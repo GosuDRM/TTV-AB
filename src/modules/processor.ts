@@ -66,6 +66,9 @@ function _resetStreamAdState(info) {
 	info.NativeRecoveryProbeCycleStartedAt = 0;
 	info.NativeRecoveryProbeLastMediaSequence = null;
 	info.NativeRecoveryProbeLastAdvancedAt = 0;
+	info.NativeRecoveryAdPlaylistUrls?.clear?.();
+	info.NativeRecoveryAdMediaKey = null;
+	info.NativeRecoveryAdStartedAt = 0;
 	_resetNativeRecoveryCandidateState(info);
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
@@ -487,9 +490,8 @@ function _recordSustainedNativeResolution(info, url) {
 	}
 }
 
-function _advanceExactNativeRecoveryCandidate(
+function _isExactNativeRecoveryCandidateOwned(
 	info,
-	candidateText,
 	candidateUrl,
 	candidateIsNative,
 	requestStartMediaKey,
@@ -503,11 +505,6 @@ function _advanceExactNativeRecoveryCandidate(
 			? "visible"
 			: null;
 	const exactCandidateUrl = _getExactPlaylistUrlKey(candidateUrl);
-	const exactRequestStartMediaKey = _normalizeMediaKey(requestStartMediaKey);
-	const exactRequestStartCycleStartedAt = Math.max(
-		0,
-		Number(requestStartCycleStartedAt) || 0,
-	);
 	const preAdNativeText =
 		typeof info?.LastCleanNativeM3U8 === "string"
 			? info.LastCleanNativeM3U8
@@ -528,12 +525,49 @@ function _advanceExactNativeRecoveryCandidate(
 				includeCached: false,
 			}),
 	);
+	const ownsExactAdSessionUrl = Boolean(
+		exactCandidateUrl &&
+			info?.NativeRecoveryAdPlaylistUrls instanceof Set &&
+			info.NativeRecoveryAdPlaylistUrls.has(exactCandidateUrl) &&
+			_normalizeMediaKey(info.NativeRecoveryAdMediaKey) === mediaKey &&
+			Math.max(0, Number(info.NativeRecoveryAdStartedAt) || 0) ===
+				cycleStartedAt,
+	);
 	const ownsExactNativeUrl = Boolean(
 		exactCandidateUrl &&
 			((info?.Urls && Object.hasOwn(info.Urls, exactCandidateUrl)) ||
-				ownsExactPreAdNativeUrl),
+				ownsExactPreAdNativeUrl ||
+				ownsExactAdSessionUrl),
 	);
 	const isLive = info?.MediaType !== "vod" && !mediaKey?.startsWith("vod:");
+	return Boolean(
+		candidateIsNative === true &&
+			isLive &&
+			mediaKey &&
+			cycleStartedAt > 0 &&
+			_normalizeMediaKey(requestStartMediaKey) === mediaKey &&
+			Math.max(0, Number(requestStartCycleStartedAt) || 0) === cycleStartedAt &&
+			stage &&
+			ownsExactNativeUrl,
+	);
+}
+
+function _advanceExactNativeRecoveryCandidate(
+	info,
+	candidateText,
+	candidateUrl,
+	candidateIsNative,
+	requestStartMediaKey,
+	requestStartCycleStartedAt,
+) {
+	const mediaKey = _normalizeMediaKey(info?.MediaKey);
+	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	const stage = info?.IsHoldingBackupAfterAd
+		? "hold"
+		: info?.IsShowingAd
+			? "visible"
+			: null;
+	const exactCandidateUrl = _getExactPlaylistUrlKey(candidateUrl);
 	const candidateHasAds = Boolean(
 		typeof candidateText === "string" &&
 			(_hasPlaylistAdMarkers(candidateText) ||
@@ -542,15 +576,12 @@ function _advanceExactNativeRecoveryCandidate(
 					includeCached: false,
 				})),
 	);
-	const candidateIdentityIneligible = Boolean(
-		candidateIsNative !== true ||
-			!isLive ||
-			!mediaKey ||
-			cycleStartedAt <= 0 ||
-			exactRequestStartMediaKey !== mediaKey ||
-			exactRequestStartCycleStartedAt !== cycleStartedAt ||
-			!stage ||
-			!ownsExactNativeUrl,
+	const candidateIdentityIneligible = !_isExactNativeRecoveryCandidateOwned(
+		info,
+		candidateUrl,
+		candidateIsNative,
+		requestStartMediaKey,
+		requestStartCycleStartedAt,
 	);
 	if (candidateIdentityIneligible) {
 		_resetNativeRecoveryCandidateState(info);
@@ -638,6 +669,10 @@ async function _isAdEndStable(
 	candidateUrl = null,
 	candidateIsNative = false,
 ) {
+	if (requestAdContext && typeof requestAdContext === "object") {
+		requestAdContext.exactNativeRecoveryReady = false;
+		requestAdContext.exactNativeRecoveryOwned = false;
+	}
 	if (!info?.IsShowingAd && !info?.IsHoldingBackupAfterAd) return "ended";
 
 	const now = Date.now();
@@ -687,6 +722,16 @@ async function _isAdEndStable(
 		observedPodAds < expectedPodLength &&
 		!observedTerminalPodPosition;
 	const declaredPodComplete = expectedPodLength > 0 && !declaredPodIncomplete;
+	const exactNativeRecoveryOwned = _isExactNativeRecoveryCandidateOwned(
+		info,
+		candidateUrl,
+		candidateIsNative,
+		requestAdContext?.requestStartMediaKey,
+		requestAdContext?.requestStartCycleStartedAt,
+	);
+	if (requestAdContext && typeof requestAdContext === "object") {
+		requestAdContext.exactNativeRecoveryOwned = exactNativeRecoveryOwned;
+	}
 	const canUseExactNativeCandidate = Boolean(
 		declaredPodComplete &&
 			!info.IsUsingModifiedM3U8 &&
@@ -694,8 +739,9 @@ async function _isAdEndStable(
 			info.LastCleanBackupM3U8 &&
 			(info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType),
 	);
+	let exactNativeCandidateState = null;
 	if (canUseExactNativeCandidate) {
-		const exactNativeCandidateState = _advanceExactNativeRecoveryCandidate(
+		exactNativeCandidateState = _advanceExactNativeRecoveryCandidate(
 			info,
 			candidateText,
 			candidateUrl,
@@ -704,11 +750,28 @@ async function _isAdEndStable(
 			requestAdContext?.requestStartCycleStartedAt,
 		);
 		if (exactNativeCandidateState === "ready") {
+			if (requestAdContext && typeof requestAdContext === "object") {
+				requestAdContext.exactNativeRecoveryReady = true;
+			}
 			return info.IsHoldingBackupAfterAd ? "ended" : "ended-with-backup-hold";
 		}
 		if (exactNativeCandidateState === "pending") return "wait";
 	}
 	_resetNativeRecoveryCandidateState(info);
+	const candidateIsLive =
+		info?.MediaType !== "vod" &&
+		!_normalizeMediaKey(info?.MediaKey)?.startsWith("vod:");
+	const candidateHasRequestIdentity = Boolean(
+		candidateIsNative === true ||
+			(typeof candidateUrl === "string" && candidateUrl),
+	);
+	if (
+		candidateIsLive &&
+		candidateHasRequestIdentity &&
+		!exactNativeRecoveryOwned
+	) {
+		return "wait";
+	}
 
 	if (!fastPathReady && !slowPathReady) {
 		return "wait";
@@ -950,6 +1013,32 @@ function _resetNativeRecoveryReadyState(
 		info.NativeRecoveryProbeLastMediaSequence = null;
 		info.NativeRecoveryProbeLastAdvancedAt = 0;
 	}
+}
+
+function _invalidateNativeRecoveryAfterPlayerReload(
+	info,
+	advanceLoaderEpoch = false,
+) {
+	if (!info) return 0;
+	if (advanceLoaderEpoch) {
+		info.NativeRecoveryLoaderEpoch =
+			Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) + 1;
+	}
+	_resetNativeRecoveryReadyState(info);
+	_resetNativeRecoveryCandidateState(info);
+	info.NativeRecoveryAdPlaylistUrls?.clear?.();
+	info.NativeRecoveryAdMediaKey = null;
+	info.NativeRecoveryAdStartedAt = 0;
+	info.PendingAdEndAt = 0;
+	info.CleanPlaylistCount = 0;
+	info.AdEndMarkerBounceLogged = false;
+	info.LastNativeRecoveryHoldLogAt = 0;
+	info._IncompletePodCleanStartedAt = 0;
+	info._IncompletePodCleanPlaylistCount = 0;
+	info._IncompletePodLastMediaSequence = null;
+	info._IncompletePodCandidateUrl = null;
+	info.ConsecutiveFailedNativeProbes = 0;
+	return Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0);
 }
 
 function _markNativeRecoveryProbeFailed(info) {
@@ -1819,6 +1908,10 @@ function _createStreamInfo(context) {
 		NativeRecoveryProbeCycleStartedAt: 0,
 		NativeRecoveryProbeLastMediaSequence: null,
 		NativeRecoveryProbeLastAdvancedAt: 0,
+		NativeRecoveryAdPlaylistUrls: new Set(),
+		NativeRecoveryAdMediaKey: null,
+		NativeRecoveryAdStartedAt: 0,
+		NativeRecoveryLoaderEpoch: 0,
 		NativeRecoveryCandidateUrl: null,
 		NativeRecoveryCandidateMediaKey: null,
 		NativeRecoveryCandidateCycleStartedAt: 0,
@@ -2587,6 +2680,16 @@ function _assertM3U8RequestContextCurrent(
 	) {
 		throw _createCodecHandoffAbortError(requestSignal);
 	}
+	const expectedLoaderEpoch = Math.max(
+		0,
+		Number(requestAdContext.loaderEpoch) || 0,
+	);
+	if (
+		Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) !==
+		expectedLoaderEpoch
+	) {
+		throw _createCodecHandoffAbortError(requestSignal);
+	}
 	const expectedCycleStartedAt = Math.max(
 		0,
 		Number(requestAdContext.cycleStartedAt) || 0,
@@ -2634,6 +2737,9 @@ async function _processM3U8(
 		requestStartMediaKey &&
 			initialMediaKey &&
 			requestStartMediaKey === initialMediaKey,
+	);
+	const hasRequestStartContext = Boolean(
+		requestStartContext && typeof requestStartContext === "object",
 	);
 	if (
 		requestStartMediaKey &&
@@ -2715,14 +2821,19 @@ async function _processM3U8(
 	}
 
 	const requestAdContext = {
-		requestStartMediaKey: initialMediaKey,
-		requestStartCycleStartedAt: requestStartContextMatchesInfo
+		requestStartMediaKey: hasRequestStartContext
+			? requestStartMediaKey
+			: initialMediaKey,
+		requestStartCycleStartedAt: hasRequestStartContext
 			? Math.max(0, Number(requestStartContext?.cycleStartedAt) || 0)
 			: Math.max(0, Number(initialInfo?.VisibleAdStartedAt) || 0),
-		backupSearchEpoch: requestStartContextMatchesInfo
+		backupSearchEpoch: hasRequestStartContext
 			? Math.max(0, Number(requestStartContext?.backupSearchEpoch) || 0)
 			: Math.max(0, Number(initialInfo?.BackupSearchEpoch) || 0),
-		cycleStartedAt: requestStartContextMatchesInfo
+		loaderEpoch: hasRequestStartContext
+			? Math.max(0, Number(requestStartContext?.loaderEpoch) || 0)
+			: Math.max(0, Number(initialInfo?.NativeRecoveryLoaderEpoch) || 0),
+		cycleStartedAt: hasRequestStartContext
 			? Math.max(0, Number(requestStartContext?.cycleStartedAt) || 0)
 			: Math.max(0, Number(initialInfo?.VisibleAdStartedAt) || 0),
 		includeCachedAdSegments: Boolean(
@@ -3282,6 +3393,7 @@ async function _processM3U8Core(
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
 			if (pendingCycleIsCurrent) {
 				info.LastPlayerReload = Date.now();
+				_invalidateNativeRecoveryAfterPlayerReload(info);
 			}
 		}
 	}
@@ -3476,6 +3588,43 @@ async function _processM3U8Core(
 	if (hasAds && !info.IsHoldingBackupAfterAd) {
 		ensureVisibleAdCycle();
 	}
+	if (hasAds && !isBackupUrl) {
+		const exactAdPlaylistUrl = _getExactPlaylistUrlKey(url);
+		const adMediaKey = _normalizeMediaKey(info.MediaKey);
+		const adCycleStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
+		const requestOwnsAdPlaylist = Boolean(
+			!requestAdContext ||
+				(_normalizeMediaKey(requestAdContext.requestStartMediaKey) ===
+					adMediaKey &&
+					Math.max(0, Number(requestAdContext.loaderEpoch) || 0) ===
+						Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0)),
+		);
+		if (
+			exactAdPlaylistUrl &&
+			adMediaKey &&
+			adCycleStartedAt > 0 &&
+			requestOwnsAdPlaylist
+		) {
+			const ownsSameAdCycle = Boolean(
+				info.NativeRecoveryAdPlaylistUrls instanceof Set &&
+					_normalizeMediaKey(info.NativeRecoveryAdMediaKey) === adMediaKey &&
+					Math.max(0, Number(info.NativeRecoveryAdStartedAt) || 0) ===
+						adCycleStartedAt,
+			);
+			if (!ownsSameAdCycle) {
+				info.NativeRecoveryAdPlaylistUrls = new Set();
+				info.NativeRecoveryAdMediaKey = adMediaKey;
+				info.NativeRecoveryAdStartedAt = adCycleStartedAt;
+			}
+			info.NativeRecoveryAdPlaylistUrls.add(exactAdPlaylistUrl);
+			while (info.NativeRecoveryAdPlaylistUrls.size > 16) {
+				const oldestUrl =
+					info.NativeRecoveryAdPlaylistUrls.values().next().value;
+				if (oldestUrl === undefined) break;
+				info.NativeRecoveryAdPlaylistUrls.delete(oldestUrl);
+			}
+		}
+	}
 	if (requestAdContext && typeof requestAdContext === "object") {
 		requestAdContext.backupSearchEpoch = Math.max(
 			0,
@@ -3622,6 +3771,10 @@ async function _processM3U8Core(
 			}
 			if (adEndState === "ended") {
 				const restoredAt = Date.now();
+				const exactNativeRecoveryReady =
+					requestAdContext?.exactNativeRecoveryReady === true;
+				const exactNativeRecoveryOwned =
+					requestAdContext?.exactNativeRecoveryOwned === true;
 				const restoredCycleStartedAt = Math.max(
 					0,
 					Number(info.VisibleAdStartedAt) || 0,
@@ -3646,11 +3799,13 @@ async function _processM3U8Core(
 								!enhancedDecoderCodecIdentity ||
 								backupCodecIdentity !== enhancedDecoderCodecIdentity)),
 				);
-				info.LastCleanNativeM3U8 = text;
-				info.LastCleanNativeUrl = url;
-				info.LastCleanNativeCodec =
-					directResolution?.Codecs || res?.Codecs || null;
-				info.LastCleanNativePlaylistAt = restoredAt;
+				if (exactNativeRecoveryReady) {
+					info.LastCleanNativeM3U8 = text;
+					info.LastCleanNativeUrl = url;
+					info.LastCleanNativeCodec =
+						directResolution?.Codecs || res?.Codecs || null;
+					info.LastCleanNativePlaylistAt = restoredAt;
+				}
 				_resetStreamAdState(info);
 				__TTVAB_STATE__.CurrentAdChannel = null;
 				__TTVAB_STATE__.CurrentAdMediaKey = null;
@@ -3675,6 +3830,7 @@ async function _processM3U8Core(
 							restoredAt,
 							fromSilentBackupHold: true,
 							requiresReload,
+							refreshAccessToken: !exactNativeRecoveryOwned,
 						}),
 					);
 				}

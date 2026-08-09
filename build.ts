@@ -1243,6 +1243,11 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_hookWorkerFetch",
+			helper: "_invalidateNativeRecoveryAfterPlayerReload",
+			source: hooksSource,
+		},
+		{
 			consumer: "_stripAds",
 			helper: "_createEmptyAdHoldPlaylist",
 			source: parserSource,
@@ -1374,6 +1379,11 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_processM3U8Core",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
 			helper: "_getVideoCodecFamily",
 			source: processorSource,
 		},
@@ -1404,12 +1414,52 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_isAdEndStable",
+			helper: "_isExactNativeRecoveryCandidateOwned",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAdEndStable",
 			helper: "_advanceExactNativeRecoveryCandidate",
 			source: processorSource,
 		},
 		{
 			consumer: "_isAdEndStable",
 			helper: "_resetNativeRecoveryCandidateState",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_isExactNativeRecoveryCandidateOwned",
+			source: processorSource,
+		},
+		{
+			consumer: "_isExactNativeRecoveryCandidateOwned",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isExactNativeRecoveryCandidateOwned",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isExactNativeRecoveryCandidateOwned",
+			helper: "_playlistHasMediaSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_isExactNativeRecoveryCandidateOwned",
+			helper: "_hasPlaylistAdMarkers",
+			source: processorSource,
+		},
+		{
+			consumer: "_isExactNativeRecoveryCandidateOwned",
+			helper: "_hasExplicitAdMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_isExactNativeRecoveryCandidateOwned",
+			helper: "_playlistHasKnownAdSegments",
 			source: processorSource,
 		},
 		{
@@ -1460,6 +1510,21 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_advanceExactNativeRecoveryCandidate",
 			helper: "_getResolvedAdEndGraceMs",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_invalidateNativeRecoveryAfterPlayerReload",
+			source: processorSource,
+		},
+		{
+			consumer: "_invalidateNativeRecoveryAfterPlayerReload",
+			helper: "_resetNativeRecoveryReadyState",
+			source: processorSource,
+		},
+		{
+			consumer: "_invalidateNativeRecoveryAfterPlayerReload",
+			helper: "_resetNativeRecoveryCandidateState",
 			source: processorSource,
 		},
 		{

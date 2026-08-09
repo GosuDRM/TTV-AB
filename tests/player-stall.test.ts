@@ -1987,6 +1987,31 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(setSrcCalls).toHaveLength(3);
 	});
 
+	it("rebuilds post-ad playback without replacing the verified token session", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+
+		const result = task()(false, true, {
+			reason: "post-ad-native-restore",
+			refreshAccessToken: false,
+			newMediaPlayerInstance: true,
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 100,
+		});
+
+		expect(result).toBe(true);
+		expect(setSrcCalls).toEqual([
+			{
+				isNewMediaPlayerInstance: true,
+				refreshAccessToken: false,
+			},
+		]);
+	});
+
 	it("bypasses the generic reload debounce for an exact codec handoff", () => {
 		pipElement = null;
 		(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt =

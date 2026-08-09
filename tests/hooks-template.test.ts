@@ -150,8 +150,21 @@ describe("worker message handler hardening", () => {
 		const mutateAt = block.indexOf(
 			"__TTVAB_STATE__.HasTriggeredPlayerReload = true",
 		);
+		const loaderFenceAt = block.indexOf(
+			"_invalidateNativeRecoveryAfterPlayerReload(",
+		);
 		expect(gateAt).toBeGreaterThan(-1);
-		expect(mutateAt).toBeGreaterThan(gateAt);
+		expect(loaderFenceAt).toBeGreaterThan(gateAt);
+		expect(mutateAt).toBeGreaterThan(loaderFenceAt);
+		expect(source).toContain(
+			"Number(requestStartInfo?.NativeRecoveryLoaderEpoch) || 0",
+		);
+		expect(source).toMatch(
+			/previousUsherUrl &&[\s\S]*?nextUsherUrl &&[\s\S]*?previousUsherUrl !== nextUsherUrl[\s\S]*?_invalidateNativeRecoveryAfterPlayerReload\(info, true\)[\s\S]*?info\.UsherBaseUrl = usherUrl/,
+		);
+		expect(block).toMatch(
+			/_invalidateNativeRecoveryAfterPlayerReload\(\s*handoffInfo,\s*true,?\s*\)[\s\S]*?__TTVAB_STATE__\.HasTriggeredPlayerReload = true/,
+		);
 	});
 
 	it("gates native-restored acknowledgements before state and scheduled effects", () => {
@@ -171,6 +184,9 @@ describe("worker message handler hardening", () => {
 		expect(cleanupAt).toBeGreaterThan(gateAt);
 		expect(block).toMatch(
 			/_doPlayerTask\([\s\S]*?cycleStartedAt:\s*restoredCycleStartedAt/,
+		);
+		expect(block).toContain(
+			"refreshAccessToken: data.refreshAccessToken !== false",
 		);
 	});
 

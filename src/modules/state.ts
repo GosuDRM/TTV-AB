@@ -730,6 +730,9 @@ function _invalidateAdCycleAsyncWork(info) {
 	info.NativeRecoveryProbeCycleStartedAt = 0;
 	info.NativeRecoveryProbeLastMediaSequence = null;
 	info.NativeRecoveryProbeLastAdvancedAt = 0;
+	info.NativeRecoveryAdPlaylistUrls?.clear?.();
+	info.NativeRecoveryAdMediaKey = null;
+	info.NativeRecoveryAdStartedAt = 0;
 	info.NativeRecoveryCandidateUrl = null;
 	info.NativeRecoveryCandidateMediaKey = null;
 	info.NativeRecoveryCandidateCycleStartedAt = 0;
@@ -893,6 +896,9 @@ function _clearAdPodProgress(mediaKey) {
 		NativeRecoveryCandidateStartedAt?: number;
 		NativeRecoveryCandidateCleanCount?: number;
 		NativeRecoveryCandidateLastMediaSequence?: number | null;
+		NativeRecoveryAdPlaylistUrls?: Set<string>;
+		NativeRecoveryAdMediaKey?: string | null;
+		NativeRecoveryAdStartedAt?: number;
 		VisibleAdStartedAt?: number;
 	}>;
 	for (const info of streamInfos) {
@@ -916,6 +922,9 @@ function _clearAdPodProgress(mediaKey) {
 		info.NativeRecoveryCandidateStartedAt = 0;
 		info.NativeRecoveryCandidateCleanCount = 0;
 		info.NativeRecoveryCandidateLastMediaSequence = null;
+		info.NativeRecoveryAdPlaylistUrls?.clear?.();
+		info.NativeRecoveryAdMediaKey = null;
+		info.NativeRecoveryAdStartedAt = 0;
 		info.VisibleAdStartedAt = 0;
 		didClear = true;
 	}

@@ -717,6 +717,11 @@ function _hookWorkerFetch() {
 
 	function _syncStreamInfo(info, encodings, usherUrl) {
 		const wasUsingModifiedM3U8 = Boolean(info.IsUsingModifiedM3U8);
+		const previousUsherUrl = _getExactPlaylistUrlKey(info.UsherBaseUrl);
+		const nextUsherUrl = _getExactPlaylistUrlKey(usherUrl);
+		if (previousUsherUrl && nextUsherUrl && previousUsherUrl !== nextUsherUrl) {
+			_invalidateNativeRecoveryAfterPlayerReload(info, true);
+		}
 		info.EncodingsM3U8 = encodings;
 		info.UsherBaseUrl = usherUrl;
 		info.UsherParams = new URL(usherUrl).search;
@@ -1101,6 +1106,10 @@ function _hookWorkerFetch() {
 					: 0;
 				const requestStartContext = {
 					mediaKey: requestStartMediaKey,
+					loaderEpoch: Math.max(
+						0,
+						Number(requestStartInfo?.NativeRecoveryLoaderEpoch) || 0,
+					),
 					backupSearchEpoch: Math.max(
 						0,
 						Number(requestStartInfo?.BackupSearchEpoch) || 0,
@@ -3872,12 +3881,14 @@ function _hookWorker() {
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_resolveAdBackupTargetResolution.toString()}
-                ${_recordSustainedNativeResolution.toString()}
-				${_resetNativeRecoveryCandidateState.toString()}
-				${_advanceExactNativeRecoveryCandidate.toString()}
-                ${_isAdEndStable.toString()}
-                ${_serveBounceDebouncedPlaylist.toString()}
-                ${_resetNativeRecoveryReadyState.toString()}
+				${_recordSustainedNativeResolution.toString()}
+					${_resetNativeRecoveryCandidateState.toString()}
+					${_isExactNativeRecoveryCandidateOwned.toString()}
+					${_advanceExactNativeRecoveryCandidate.toString()}
+				${_isAdEndStable.toString()}
+				${_serveBounceDebouncedPlaylist.toString()}
+				${_resetNativeRecoveryReadyState.toString()}
+				${_invalidateNativeRecoveryAfterPlayerReload.toString()}
                 ${_markNativeRecoveryProbeFailed.toString()}
                 ${_markNativeRecoveryReady.toString()}
                 ${_clearCodecHandoffState.toString()}
@@ -4405,13 +4416,19 @@ function _hookWorker() {
 									__TTVAB_STATE__.ActiveCodecHandoffMediaKey =
 										reloadContext.MediaKey;
 								}
-								if (
-									handoffOwnsCurrentAd &&
+									if (
+										handoffOwnsCurrentAd &&
 									handoffInfo?._CodecHandoffPendingId === handoffId
 								) {
-									handoffInfo._CodecHandoffAcknowledgedId = handoffId;
-								}
-                                __TTVAB_STATE__.HasTriggeredPlayerReload = true;
+										handoffInfo._CodecHandoffAcknowledgedId = handoffId;
+									}
+									if (handoffInfo) {
+										_invalidateNativeRecoveryAfterPlayerReload(
+											handoffInfo,
+											true,
+										);
+									}
+									__TTVAB_STATE__.HasTriggeredPlayerReload = true;
                                 __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel =
                                     reloadContext.ChannelName;
                                 __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey =
@@ -5497,7 +5514,7 @@ function _hookWorker() {
 									if (requiresReload) {
 										_doPlayerTask(false, true, {
 											reason: "post-ad-native-restore",
-											refreshAccessToken: true,
+											refreshAccessToken: data.refreshAccessToken !== false,
 											newMediaPlayerInstance: true,
 											channel,
 											mediaKey,
