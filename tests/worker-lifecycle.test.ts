@@ -1323,6 +1323,7 @@ describe("worker recovery lifecycle", () => {
 				cycleStartedAt: 89999,
 				restoredAt: 270000,
 				requiresReload: true,
+				refreshAccessToken: false,
 			});
 			expect(playerTask).not.toHaveBeenCalled();
 			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
@@ -1336,11 +1337,12 @@ describe("worker recovery lifecycle", () => {
 				cycleStartedAt: 90000,
 				restoredAt: 270000,
 				requiresReload: true,
+				refreshAccessToken: false,
 			});
 			expect(playerTask).toHaveBeenCalledOnce();
 			expect(playerTask).toHaveBeenCalledWith(false, true, {
 				reason: "post-ad-native-restore",
-				refreshAccessToken: true,
+				refreshAccessToken: false,
 				newMediaPlayerInstance: true,
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
@@ -1353,6 +1355,68 @@ describe("worker recovery lifecycle", () => {
 					"live:testchannel"
 				],
 			).toBeUndefined();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it.each([
+		["an omitted token policy", undefined, true],
+		["an explicit token refresh", true, true],
+		["an exact-session token policy", false, false],
+	])("applies %s to the accepted native rebuild", (_label, value, expected) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100001);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PinnedBackupPlayerType: "autoplay",
+			PinnedBackupPlayerChannel: "testchannel",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 90000 },
+			},
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			AdCycleStaleMs: 120000,
+		});
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+
+		try {
+			const message: Record<string, unknown> = {
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 100001,
+				requiresReload: true,
+			};
+			if (value !== undefined) {
+				message.refreshAccessToken = value;
+			}
+			harness.worker.emitMessage(message);
+
+			expect(playerTask).toHaveBeenCalledOnce();
+			expect(playerTask).toHaveBeenCalledWith(false, true, {
+				reason: "post-ad-native-restore",
+				refreshAccessToken: expected,
+				newMediaPlayerInstance: true,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+			});
 		} finally {
 			harness.restore();
 		}

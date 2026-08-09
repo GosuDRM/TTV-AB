@@ -247,6 +247,11 @@ describe("main-owned declared ad pod progress", () => {
 			NativeRecoveryProbeCycleStartedAt: 1000,
 			NativeRecoveryProbeLastMediaSequence: 500,
 			NativeRecoveryProbeLastAdvancedAt: 975,
+			NativeRecoveryAdPlaylistUrls: new Set([
+				"https://edge.example/ad-session.m3u8?token=player",
+			]),
+			NativeRecoveryAdMediaKey: "live:testchannel",
+			NativeRecoveryAdStartedAt: 1000,
 			NativeRecoveryCandidateUrl: "https://edge.example/player-native.m3u8",
 			NativeRecoveryCandidateMediaKey: "live:testchannel",
 			NativeRecoveryCandidateCycleStartedAt: 1000,
@@ -294,6 +299,9 @@ describe("main-owned declared ad pod progress", () => {
 		expect(info.NativeRecoveryProbeCycleStartedAt).toBe(0);
 		expect(info.NativeRecoveryProbeLastMediaSequence).toBe(null);
 		expect(info.NativeRecoveryProbeLastAdvancedAt).toBe(0);
+		expect(info.NativeRecoveryAdPlaylistUrls.size).toBe(0);
+		expect(info.NativeRecoveryAdMediaKey).toBe(null);
+		expect(info.NativeRecoveryAdStartedAt).toBe(0);
 		expect(info.NativeRecoveryCandidateUrl).toBe(null);
 		expect(info.NativeRecoveryCandidateMediaKey).toBe(null);
 		expect(info.NativeRecoveryCandidateCycleStartedAt).toBe(0);
