@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.1] - 2026-08-09
+
+- Fixed ad recovery sometimes reloading playback into an unnecessary second preroll after the original break had already ended.
+- Recovery now keeps recognizing the verified original stream through Twitch playlist refreshes, allowing normal quality to return without restarting recovery.
+- Ad-marked or unverified playlists remain blocked while clean backup playback keeps advancing until native restoration is confirmed.
+
 ## [16.0.0] - 2026-08-09
 
 - Fixed single preroll or midroll breaks that could keep playback on backup quality for several minutes after the ad had already ended.
