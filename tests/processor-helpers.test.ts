@@ -3775,11 +3775,59 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			}
 			expect(restoredOutput).toContain("seg207.ts");
 			expect(info.IsHoldingBackupAfterAd).toBe(false);
+			expect(info.LastCleanNativeM3U8).toContain("seg207.ts");
+			expect(info.LastCleanNativeUrl).toBe(NATIVE_URL);
 			expect(nativeProbe).not.toHaveBeenCalled();
 			expect(tokenProbe).not.toHaveBeenCalled();
 		} finally {
 			g._getToken = previousToken;
 			vi.useRealTimers();
+		}
+	});
+
+	it("does not let an unverified hold candidate replace exact native ownership", async () => {
+		const ownedUrl = `${NATIVE_URL}?token=player`;
+		const unownedUrl = `${NATIVE_URL}?token=fresh-session`;
+		const preAdNative = makePlaylist(90, 3);
+		const info = setupCsaiEscapeAdEnd({
+			IsShowingAd: false,
+			IsHoldingBackupAfterAd: true,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			ExpectedAdPodLength: 1,
+			LastCleanNativeM3U8: preAdNative,
+			LastCleanNativeUrl: ownedUrl,
+			LastCleanNativeCodec: "avc1.64002a",
+			LastCleanNativePlaylistAt: Date.now() - 1000,
+		});
+		info.Urls = Object.assign(Object.create(null), {
+			[ownedUrl]: {
+				Resolution: "1920x1080",
+				Codecs: "avc1.64002a",
+			},
+		});
+		getState().StreamInfosByUrl = {
+			[ownedUrl]: info,
+			[unownedUrl]: info,
+		};
+		const previousProbe = g._canReloadNativePlayerAfterAd;
+		const probe = vi.fn(async () => false);
+		g._canReloadNativePlayerAfterAd = probe;
+
+		try {
+			for (let index = 0; index < 2; index++) {
+				const out = await processM3U8()(
+					unownedUrl,
+					makePlaylist(500 + index, 3),
+					() => Promise.reject(new Error("unexpected fetch")),
+				);
+				expect(out).toContain("seg50.ts");
+			}
+			expect(info.LastCleanNativeM3U8).toBe(preAdNative);
+			expect(info.LastCleanNativeUrl).toBe(ownedUrl);
+			expect(info.NativeRecoveryCandidateUrl).toBe(null);
+			expect(probe).toHaveBeenCalled();
+		} finally {
+			g._canReloadNativePlayerAfterAd = previousProbe;
 		}
 	});
 
@@ -5336,7 +5384,7 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 		}
 	});
 
-	it("uses two maximum exact native windows for a complete live pod without minting site sessions", async () => {
+	it("uses the exact pre-ad native URL across master-map churn without minting site sessions", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(200000);
 		const probe = stubProbe(() => true);
@@ -5358,6 +5406,11 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 		ownExactNativeUrl(info, url);
 		activateExactAdCycle(info, 100000);
 		const context = exactRequestContext(info, 100000);
+		info.LastCleanNativeM3U8 = makePlaylist(90, 3);
+		info.LastCleanNativeUrl = url;
+		info.LastCleanNativeCodec = "avc1.64002a";
+		info.LastCleanNativePlaylistAt = 99000;
+		info.Urls = Object.create(null);
 		try {
 			for (let index = 0; index < 8; index++) {
 				vi.setSystemTime(200000 + index * 2000);
@@ -5497,6 +5550,10 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 			VisibleAdStartedAt: 350000,
 			LastCleanBackupM3U8: makePlaylist(50, 3),
 			LastCleanBackupPlayerType: "site",
+			LastCleanNativeM3U8: makePlaylist(490, 3),
+			LastCleanNativeUrl: ownedUrl,
+			LastCleanNativeCodec: "avc1.64002a",
+			LastCleanNativePlaylistAt: 349000,
 		});
 		ownExactNativeUrl(info, ownedUrl);
 		activateExactAdCycle(info, 350000);

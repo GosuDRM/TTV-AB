@@ -508,10 +508,30 @@ function _advanceExactNativeRecoveryCandidate(
 		0,
 		Number(requestStartCycleStartedAt) || 0,
 	);
+	const preAdNativeText =
+		typeof info?.LastCleanNativeM3U8 === "string"
+			? info.LastCleanNativeM3U8
+			: null;
+	const preAdNativePlaylistAt = Math.max(
+		0,
+		Number(info?.LastCleanNativePlaylistAt) || 0,
+	);
+	const ownsExactPreAdNativeUrl = Boolean(
+		exactCandidateUrl &&
+			_getExactPlaylistUrlKey(info?.LastCleanNativeUrl) === exactCandidateUrl &&
+			preAdNativeText &&
+			preAdNativePlaylistAt > 0 &&
+			_playlistHasMediaSegments(preAdNativeText) &&
+			!_hasPlaylistAdMarkers(preAdNativeText) &&
+			!_hasExplicitAdMetadata(preAdNativeText) &&
+			!_playlistHasKnownAdSegments(preAdNativeText, {
+				includeCached: false,
+			}),
+	);
 	const ownsExactNativeUrl = Boolean(
 		exactCandidateUrl &&
-			info?.Urls &&
-			Object.hasOwn(info.Urls, exactCandidateUrl),
+			((info?.Urls && Object.hasOwn(info.Urls, exactCandidateUrl)) ||
+				ownsExactPreAdNativeUrl),
 	);
 	const isLive = info?.MediaType !== "vod" && !mediaKey?.startsWith("vod:");
 	const candidateHasAds = Boolean(
@@ -3573,10 +3593,13 @@ async function _processM3U8Core(
 	};
 
 	if (!hasAds && hasMediaSegments && !info.IsShowingAd) {
-		info.LastCleanNativeM3U8 = text;
-		info.LastCleanNativeUrl = url;
-		info.LastCleanNativeCodec = directResolution?.Codecs || res?.Codecs || null;
-		info.LastCleanNativePlaylistAt = Date.now();
+		if (!info.IsHoldingBackupAfterAd) {
+			info.LastCleanNativeM3U8 = text;
+			info.LastCleanNativeUrl = url;
+			info.LastCleanNativeCodec =
+				directResolution?.Codecs || res?.Codecs || null;
+			info.LastCleanNativePlaylistAt = Date.now();
+		}
 		if (info.IsHoldingBackupAfterAd) {
 			let adEndState = "wait";
 			try {
@@ -3623,6 +3646,11 @@ async function _processM3U8Core(
 								!enhancedDecoderCodecIdentity ||
 								backupCodecIdentity !== enhancedDecoderCodecIdentity)),
 				);
+				info.LastCleanNativeM3U8 = text;
+				info.LastCleanNativeUrl = url;
+				info.LastCleanNativeCodec =
+					directResolution?.Codecs || res?.Codecs || null;
+				info.LastCleanNativePlaylistAt = restoredAt;
 				_resetStreamAdState(info);
 				__TTVAB_STATE__.CurrentAdChannel = null;
 				__TTVAB_STATE__.CurrentAdMediaKey = null;
