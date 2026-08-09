@@ -3873,6 +3873,8 @@ function _hookWorker() {
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_resolveAdBackupTargetResolution.toString()}
                 ${_recordSustainedNativeResolution.toString()}
+				${_resetNativeRecoveryCandidateState.toString()}
+				${_advanceExactNativeRecoveryCandidate.toString()}
                 ${_isAdEndStable.toString()}
                 ${_serveBounceDebouncedPlaylist.toString()}
                 ${_resetNativeRecoveryReadyState.toString()}

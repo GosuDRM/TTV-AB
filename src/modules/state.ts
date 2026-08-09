@@ -730,6 +730,13 @@ function _invalidateAdCycleAsyncWork(info) {
 	info.NativeRecoveryProbeCycleStartedAt = 0;
 	info.NativeRecoveryProbeLastMediaSequence = null;
 	info.NativeRecoveryProbeLastAdvancedAt = 0;
+	info.NativeRecoveryCandidateUrl = null;
+	info.NativeRecoveryCandidateMediaKey = null;
+	info.NativeRecoveryCandidateCycleStartedAt = 0;
+	info.NativeRecoveryCandidateStage = null;
+	info.NativeRecoveryCandidateStartedAt = 0;
+	info.NativeRecoveryCandidateCleanCount = 0;
+	info.NativeRecoveryCandidateLastMediaSequence = null;
 	info.ConsecutiveFailedNativeProbes = 0;
 	info._FatalMediaRecoveryRequestId = null;
 	info.RequestedAds?.clear?.();
@@ -845,6 +852,13 @@ function _applyAdPodProgressToInfo(info, value) {
 	info._IncompletePodCleanPlaylistCount = 0;
 	info._IncompletePodLastMediaSequence = null;
 	info._IncompletePodCandidateUrl = null;
+	info.NativeRecoveryCandidateUrl = null;
+	info.NativeRecoveryCandidateMediaKey = null;
+	info.NativeRecoveryCandidateCycleStartedAt = 0;
+	info.NativeRecoveryCandidateStage = null;
+	info.NativeRecoveryCandidateStartedAt = 0;
+	info.NativeRecoveryCandidateCleanCount = 0;
+	info.NativeRecoveryCandidateLastMediaSequence = null;
 	if (nextCycleStartedAt > 0) {
 		info.VisibleAdStartedAt = nextCycleStartedAt;
 	}
@@ -872,6 +886,13 @@ function _clearAdPodProgress(mediaKey) {
 		_IncompletePodCleanPlaylistCount?: number;
 		_IncompletePodLastMediaSequence?: number | null;
 		_IncompletePodCandidateUrl?: string | null;
+		NativeRecoveryCandidateUrl?: string | null;
+		NativeRecoveryCandidateMediaKey?: string | null;
+		NativeRecoveryCandidateCycleStartedAt?: number;
+		NativeRecoveryCandidateStage?: string | null;
+		NativeRecoveryCandidateStartedAt?: number;
+		NativeRecoveryCandidateCleanCount?: number;
+		NativeRecoveryCandidateLastMediaSequence?: number | null;
 		VisibleAdStartedAt?: number;
 	}>;
 	for (const info of streamInfos) {
@@ -888,6 +909,13 @@ function _clearAdPodProgress(mediaKey) {
 		info._IncompletePodCleanPlaylistCount = 0;
 		info._IncompletePodLastMediaSequence = null;
 		info._IncompletePodCandidateUrl = null;
+		info.NativeRecoveryCandidateUrl = null;
+		info.NativeRecoveryCandidateMediaKey = null;
+		info.NativeRecoveryCandidateCycleStartedAt = 0;
+		info.NativeRecoveryCandidateStage = null;
+		info.NativeRecoveryCandidateStartedAt = 0;
+		info.NativeRecoveryCandidateCleanCount = 0;
+		info.NativeRecoveryCandidateLastMediaSequence = null;
 		info.VisibleAdStartedAt = 0;
 		didClear = true;
 	}

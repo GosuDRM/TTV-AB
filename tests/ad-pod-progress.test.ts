@@ -247,6 +247,13 @@ describe("main-owned declared ad pod progress", () => {
 			NativeRecoveryProbeCycleStartedAt: 1000,
 			NativeRecoveryProbeLastMediaSequence: 500,
 			NativeRecoveryProbeLastAdvancedAt: 975,
+			NativeRecoveryCandidateUrl: "https://edge.example/player-native.m3u8",
+			NativeRecoveryCandidateMediaKey: "live:testchannel",
+			NativeRecoveryCandidateCycleStartedAt: 1000,
+			NativeRecoveryCandidateStage: "visible",
+			NativeRecoveryCandidateStartedAt: 900,
+			NativeRecoveryCandidateCleanCount: 4,
+			NativeRecoveryCandidateLastMediaSequence: 500,
 			ConsecutiveFailedNativeProbes: 3,
 			_FatalMediaRecoveryRequestId: "old-fatal",
 			RequestedAds: new Set(["old-ad"]),
@@ -287,6 +294,13 @@ describe("main-owned declared ad pod progress", () => {
 		expect(info.NativeRecoveryProbeCycleStartedAt).toBe(0);
 		expect(info.NativeRecoveryProbeLastMediaSequence).toBe(null);
 		expect(info.NativeRecoveryProbeLastAdvancedAt).toBe(0);
+		expect(info.NativeRecoveryCandidateUrl).toBe(null);
+		expect(info.NativeRecoveryCandidateMediaKey).toBe(null);
+		expect(info.NativeRecoveryCandidateCycleStartedAt).toBe(0);
+		expect(info.NativeRecoveryCandidateStage).toBe(null);
+		expect(info.NativeRecoveryCandidateStartedAt).toBe(0);
+		expect(info.NativeRecoveryCandidateCleanCount).toBe(0);
+		expect(info.NativeRecoveryCandidateLastMediaSequence).toBe(null);
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
 		expect(firstController.signal.aborted).toBe(true);
 

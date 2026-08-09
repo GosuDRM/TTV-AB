@@ -1403,6 +1403,66 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_isAdEndStable",
+			helper: "_advanceExactNativeRecoveryCandidate",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAdEndStable",
+			helper: "_resetNativeRecoveryCandidateState",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_resetNativeRecoveryCandidateState",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_hasPlaylistAdMarkers",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_hasExplicitAdMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_playlistHasKnownAdSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_playlistHasMediaSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_parsePlaylistFirstMediaSequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_getResolvedAdEndMinCleanPlaylists",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_getResolvedAdEndGraceMs",
+			source: processorSource,
+		},
+		{
 			consumer: "_holdRetiringCodecRequest",
 			helper: "_createCodecHandoffAbortError",
 			source: processorSource,
@@ -1565,6 +1625,16 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_resetStreamAdState",
 			helper: "_resetNativeRecoveryReadyState",
+			source: processorSource,
+		},
+		{
+			consumer: "_resetStreamAdState",
+			helper: "_resetNativeRecoveryCandidateState",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_resetNativeRecoveryCandidateState",
 			source: processorSource,
 		},
 		{
