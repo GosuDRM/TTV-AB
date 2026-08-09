@@ -919,6 +919,9 @@ describe("_suppressCompetingMediaDuringAd (periodic resweep)", () => {
 
 	afterEach(() => {
 		g._getPrimaryMediaElement = realGetPrimary;
+		T<(element?: HTMLVideoElement | null) => unknown>(
+			"_clearActivePictureInPicturePlaybackContext",
+		)();
 	});
 
 	it("catches a competing element that attaches after the first sweep", () => {
@@ -951,6 +954,55 @@ describe("_suppressCompetingMediaDuringAd (periodic resweep)", () => {
 		expect(sweep()("testchannel", "live:testchannel")).toBe(0);
 		expect(competing.el.muted).toBe(true);
 		expect(suppressionState().suppressedMedia.size).toBe(1);
+	});
+
+	it("restores the new primary before switching suppression contexts", () => {
+		const firstPrimary = primary;
+		const nextPrimary = makeMedia(true).el;
+		expect(sweep()("testchannel", "live:testchannel")).toBe(1);
+		expect(nextPrimary.muted).toBe(true);
+
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "nextchannel";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+			"live:nextchannel";
+		primary = nextPrimary;
+		expect(sweep()("nextchannel", "live:nextchannel")).toBe(1);
+
+		expect(nextPrimary.muted).toBe(false);
+		expect(nextPrimary.volume).toBe(1);
+		expect(firstPrimary.muted).toBe(true);
+		expect(primary).toBe(nextPrimary);
+		expect(suppressionState().suppressedMedia.has(nextPrimary)).toBe(false);
+		expect(suppressionState().activeMediaKey).toBe("live:nextchannel");
+	});
+
+	it("keeps the exact PiP ad media audible and suppresses the new route player", () => {
+		const pip = makeMedia(true).el;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "pagechannel";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+			"live:pagechannel";
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(pip, {
+			MediaType: "live",
+			ChannelName: "pipchannel",
+			VodID: null,
+			MediaKey: "live:pipchannel",
+		});
+		const resolveMedia = T<
+			(
+				channel?: string | null,
+				mediaKey?: string | null,
+			) => HTMLMediaElement | null
+		>("_getPlaybackMediaElementForContext");
+
+		expect(resolveMedia("pipchannel", "live:pipchannel")).toBe(pip);
+		expect(resolveMedia("pagechannel", "live:pagechannel")).toBe(primary);
+		expect(resolveMedia("otherchannel", "live:otherchannel")).toBeNull();
+		expect(sweep()("pipchannel", "live:pipchannel")).toBe(1);
+		expect(pip.muted).toBe(false);
+		expect(primary.muted).toBe(true);
+		expect(primary.volume).toBe(0);
 	});
 });
 
@@ -1170,7 +1222,6 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 	let originalResume: unknown;
 	let originalUnfocused: unknown;
 	let originalAdResume: unknown;
-	let originalVisibilityTransitionAt: unknown;
 
 	beforeEach(() => {
 		T<() => void>("_clearObservedPlaybackIntentMedia")();
@@ -1194,7 +1245,6 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 		originalResume = g._resumePrimaryPlaybackIfPaused;
 		originalUnfocused = g._isPlaybackPageUnfocused;
 		originalAdResume = g._resumeActivePlayerAfterAd;
-		originalVisibilityTransitionAt = g._lastPlaybackVisibilityTransitionAt;
 		g._getPrimaryMediaElement = () => video;
 		g._guardPlaybackAcrossVisibilityTransition = (...args: unknown[]) => {
 			guardCalls.push(args);
@@ -1204,7 +1254,6 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 			return true;
 		};
 		g._isPlaybackPageUnfocused = () => true;
-		g._lastPlaybackVisibilityTransitionAt = Date.now();
 		g._resumeActivePlayerAfterAd = (...args: unknown[]) => {
 			adResumeCalls.push(args);
 			return true;
@@ -1243,7 +1292,6 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 		g._resumePrimaryPlaybackIfPaused = originalResume;
 		g._isPlaybackPageUnfocused = originalUnfocused;
 		g._resumeActivePlayerAfterAd = originalAdResume;
-		g._lastPlaybackVisibilityTransitionAt = originalVisibilityTransitionAt;
 	});
 
 	function pause() {
@@ -1276,6 +1324,47 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 		expect(intentState.userPausedHadExplicitInteraction).toBe(true);
 	});
 
+	it("keeps an operating-system media-session pause authoritative while unfocused", () => {
+		const savedMediaSession = Object.getOwnPropertyDescriptor(
+			navigator,
+			"mediaSession",
+		);
+		const savedPatched = window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__;
+		let pauseHandler: ((details: { action: string }) => void) | null = null;
+		const mediaSession = {
+			setActionHandler(
+				action: string,
+				handler: ((details: { action: string }) => void) | null,
+			) {
+				if (action === "pause") pauseHandler = handler;
+			},
+		};
+		Object.defineProperty(navigator, "mediaSession", {
+			value: mediaSession,
+			configurable: true,
+		});
+		window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__ = false;
+
+		try {
+			T<() => boolean>("_hookMediaSessionPlaybackIntent")();
+			mediaSession.setActionHandler("pause", () => {});
+			pauseHandler?.({ action: "pause" });
+			pause();
+
+			const intentState = g._PlaybackIntentState as Record<string, unknown>;
+			expect(resumeCalls).toHaveLength(0);
+			expect(intentState.userPausedMediaKey).toBe("live:testchannel");
+			expect(intentState.userPausedHadExplicitInteraction).toBe(true);
+		} finally {
+			if (savedMediaSession) {
+				Object.defineProperty(navigator, "mediaSession", savedMediaSession);
+			} else {
+				delete (navigator as unknown as Record<string, unknown>).mediaSession;
+			}
+			window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__ = savedPatched;
+		}
+	});
+
 	it("uses the existing ad resume intent gate for an unfocused ad-time pause", () => {
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
 		state.CurrentAdMediaKey = "live:testchannel";
@@ -1306,16 +1395,13 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 		]);
 	});
 
-	it("records a control-free pause after the focus-loss recovery window", () => {
-		g._lastPlaybackVisibilityTransitionAt =
-			Date.now() - Number(g._UNFOCUSED_AUTO_PAUSE_WINDOW_MS) - 1;
-
+	it("keeps a late control-free unfocused pause environmental", () => {
 		pause();
 
-		expect(resumeCalls).toHaveLength(0);
+		expect(resumeCalls).toEqual([["testchannel", "live:testchannel"]]);
 		expect(
 			(g._PlaybackIntentState as Record<string, unknown>).userPausedMediaKey,
-		).toBe("live:testchannel");
+		).toBeNull();
 	});
 });
 
