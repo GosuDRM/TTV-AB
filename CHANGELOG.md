@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.0] - 2026-08-09
+
+- Fixed single preroll or midroll breaks that could keep playback on backup quality for several minutes after the ad had already ended.
+- Playback now returns to normal stream quality after the active stream advances through the required consecutive clean checks.
+- Ad-marked or stale playlists remain blocked while clean backup playback keeps advancing, preventing early ad exposure and freezes during restoration.
+
 ## [15.0.3] - 2026-08-09
 
 - Fixed background streams that could remain paused or stalled after switching between Twitch tabs, while keeping explicit page and system media controls authoritative.
