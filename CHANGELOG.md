@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [15.0.3] - 2026-08-09
+
+- Fixed background streams that could remain paused or stalled after switching between Twitch tabs, while keeping explicit page and system media controls authoritative.
+- Closing popouts now restores the source only when appropriate, Picture-in-Picture ad recovery monitors the correct stream, and delayed recovery no longer overwrites newer playback settings from another tab.
+- Preserved the final watch-time interval when a tab closes and prevented a committed counter update from being counted again during a later replay.
+
 ## [15.0.2] - 2026-08-09
 
 - Fixed rare ad breaks that could stay on backup playback indefinitely instead of returning to normal stream quality.
