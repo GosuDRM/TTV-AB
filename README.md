@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v16.0.2 - 2026-08-09
+- **Fixed ad recovery repeatedly restarting playback after a break.** Required playback rebuilds now keep the verified stream session, preventing extra prerolls from extending recovery for many minutes.
+
 ### v16.0.1 - 2026-08-09
 - **Fixed recovery occasionally triggering a premature reload and another preroll after an ad break.** TTV AB keeps recognizing the verified original stream through Twitch playlist refreshes, so playback can return to normal quality without restarting recovery.
 
 ### v16.0.0 - 2026-08-09
 - **Single ad breaks no longer cause an unnecessary multi-minute recovery hold.** Playback returns to normal quality after the active stream advances through consecutive clean checks, while ad-marked or stale media stays blocked and backup playback keeps advancing.
-
-### v15.0.3 - 2026-08-09
-- **Multiple Twitch tabs and secondary players now recover independently without losing playback intent.** Background streams recover from environmental pauses and stalls, closing popouts safely restores the source, Picture-in-Picture ad monitoring stays on the correct stream, and newer settings from another tab remain untouched.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
