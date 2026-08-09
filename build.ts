@@ -1883,6 +1883,16 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_playlistHasMediaSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_parsePlaylistFirstMediaSequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
 			helper: "_markNativeRecoveryProbeFailed",
 			source: processorSource,
 		},
@@ -1989,6 +1999,11 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_refreshActiveBackupMediaPlaylist",
 			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_refreshHeldAutoplayBackupPlaylist",
 			source: processorSource,
 		},
 		{

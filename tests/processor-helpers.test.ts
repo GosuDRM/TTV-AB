@@ -90,6 +90,8 @@ beforeAll(() => {
 	g.console = { log() {}, warn() {}, error() {}, info() {}, debug() {} };
 	g.__realCanReloadNativePlayerAfterAd = g._canReloadNativePlayerAfterAd;
 	g.__realFindBackupStream = g._findBackupStream;
+	g.__realRefreshActiveBackupMediaPlaylist =
+		g._refreshActiveBackupMediaPlaylist;
 });
 
 afterEach(() => {
@@ -98,6 +100,10 @@ afterEach(() => {
 	}
 	if (g.__realFindBackupStream) {
 		g._findBackupStream = g.__realFindBackupStream;
+	}
+	if (g.__realRefreshActiveBackupMediaPlaylist) {
+		g._refreshActiveBackupMediaPlaylist =
+			g.__realRefreshActiveBackupMediaPlaylist;
 	}
 });
 
@@ -147,6 +153,19 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		SilentBackupHoldStartedAt: 0,
 		LastSilentBackupHoldLogAt: 0,
 		LastNativeRecoveryHoldLogAt: 0,
+		LastNativeRecoveryProbeAt: 0,
+		LastNativeRecoveryReadyPlayerType: null,
+		NativeRecoveryCleanCount: 0,
+		NativeRecoveryProbeEpoch: 0,
+		_NativeRecoveryProbeInFlight: false,
+		_NativeRecoveryProbeToken: null,
+		ConsecutiveFailedNativeProbes: 0,
+		NativeRecoveryProbeStreamUrl: null,
+		NativeRecoveryProbeMediaKey: null,
+		NativeRecoveryProbePlayerType: null,
+		NativeRecoveryProbeCycleStartedAt: 0,
+		NativeRecoveryProbeLastMediaSequence: null,
+		NativeRecoveryProbeLastAdvancedAt: 0,
 		HevcReloadPendingAfterHold: false,
 		LastAdEndBounceAt: 0,
 		LastAdEndReloadAt: 0,
@@ -599,6 +618,12 @@ describe("_resetStreamAdState", () => {
 			IsHoldingBackupAfterAd: true,
 			HevcReloadPendingAfterHold: true,
 			ConsecutiveFailedNativeProbes: 4,
+			NativeRecoveryProbeStreamUrl: "https://edge.example/native-recovery.m3u8",
+			NativeRecoveryProbeMediaKey: "live:testchannel",
+			NativeRecoveryProbePlayerType: "site",
+			NativeRecoveryProbeCycleStartedAt: 100,
+			NativeRecoveryProbeLastMediaSequence: 123,
+			NativeRecoveryProbeLastAdvancedAt: 5000,
 			ObservedAdPodIds: new Set(["stitched-ad-1"]),
 			ExpectedAdPodLength: 4,
 			MaxObservedAdPodPosition: 3,
@@ -634,6 +659,12 @@ describe("_resetStreamAdState", () => {
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 		expect(info.ConsecutiveFailedNativeProbes).toBe(0);
+		expect(info.NativeRecoveryProbeStreamUrl).toBe(null);
+		expect(info.NativeRecoveryProbeMediaKey).toBe(null);
+		expect(info.NativeRecoveryProbePlayerType).toBe(null);
+		expect(info.NativeRecoveryProbeCycleStartedAt).toBe(0);
+		expect(info.NativeRecoveryProbeLastMediaSequence).toBe(null);
+		expect(info.NativeRecoveryProbeLastAdvancedAt).toBe(0);
 		expect((info.ObservedAdPodIds as Set<string>).size).toBe(0);
 		expect(info.ExpectedAdPodLength).toBe(0);
 		expect(info.MaxObservedAdPodPosition).toBe(0);
@@ -676,6 +707,12 @@ describe("_resetStreamAdState", () => {
 		expect(info._CodecHandoffAcknowledgedId).toBe(null);
 		expect(info._CodecHandoffFailedId).toBe(null);
 		expect(info._CodecHandoffReloadRetryCount).toBe(0);
+		expect(info.NativeRecoveryProbeStreamUrl).toBe(null);
+		expect(info.NativeRecoveryProbeMediaKey).toBe(null);
+		expect(info.NativeRecoveryProbePlayerType).toBe(null);
+		expect(info.NativeRecoveryProbeCycleStartedAt).toBe(0);
+		expect(info.NativeRecoveryProbeLastMediaSequence).toBe(null);
+		expect(info.NativeRecoveryProbeLastAdvancedAt).toBe(0);
 	});
 
 	it("seeds a replacement worker stream from main-owned ad pod progress", () => {
@@ -2025,6 +2062,34 @@ describe("_refreshActiveBackupMediaPlaylist (quality target)", () => {
 		});
 	});
 
+	it("live-refreshes an active autoplay backup without starting a new search", async () => {
+		const previousAutoplayRefresh = g._refreshHeldAutoplayBackupPlaylist;
+		const refreshed = makePlaylist(400, 3);
+		const autoplayRefresh = vi.fn(async () => refreshed);
+		g._refreshHeldAutoplayBackupPlaylist = autoplayRefresh;
+		const info = makeInfo({
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			ActiveBackupResolution: low.Resolution,
+			ResolutionList: [high, low],
+		});
+		const fetchClean = vi.fn(async () => new Response(refreshed));
+		try {
+			const out = await refresh()(info, fetchClean);
+
+			expect(out).toBe(refreshed);
+			expect(autoplayRefresh).toHaveBeenCalledTimes(1);
+			expect(autoplayRefresh).toHaveBeenCalledWith(
+				info,
+				fetchClean,
+				null,
+				null,
+			);
+		} finally {
+			g._refreshHeldAutoplayBackupPlaylist = previousAutoplayRefresh;
+		}
+	});
+
 	it("live-refreshes the exact enhanced codec family instead of serving a stale snapshot", async () => {
 		const state = getState();
 		const previousQualityGroup = state.PreferredQualityGroup;
@@ -3325,7 +3390,7 @@ describe("_canReloadNativePlayerAfterAd", () => {
 			return new Response(
 				probeUrls.length === 1
 					? "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlive/index.m3u8"
-					: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+					: makePlaylist(98 + probeUrls.length, 3),
 				{ status: 200 },
 			);
 		};
@@ -3333,6 +3398,14 @@ describe("_canReloadNativePlayerAfterAd", () => {
 		try {
 			const info = makeInfo({ IsUsingBackupStream: true });
 			activateExactAdCycle(info);
+			const baseline = await fn()(
+				info,
+				async () => {
+					throw new Error("native recovery probe used raw fetch");
+				},
+				"720p",
+			);
+			info.LastNativeRecoveryProbeAt = 0;
 			const result = await fn()(
 				info,
 				async () => {
@@ -3341,9 +3414,11 @@ describe("_canReloadNativePlayerAfterAd", () => {
 				"720p",
 			);
 
+			expect(baseline).toBe(false);
 			expect(result).toBe(true);
 			expect(probeUrls).toEqual([
 				"https://usher.example/channel/hls/testchannel.m3u8",
+				"https://edge.example/live/index.m3u8",
 				"https://edge.example/live/index.m3u8",
 			]);
 		} finally {
@@ -3985,6 +4060,14 @@ describe("_processM3U8 ad-end bounce backup serving", () => {
 			ActiveBackupPlayerType: "site",
 			LastCleanBackupAt: now - backupAtOffsetMs,
 		});
+		info.NativeRecoveryCleanCount = 2;
+		info.NativeRecoveryProbeStreamUrl =
+			"https://edge.example/native-recovery.m3u8";
+		info.NativeRecoveryProbeMediaKey = info.MediaKey;
+		info.NativeRecoveryProbePlayerType = "site";
+		info.NativeRecoveryProbeCycleStartedAt = info.VisibleAdStartedAt;
+		info.NativeRecoveryProbeLastMediaSequence = 500;
+		info.NativeRecoveryProbeLastAdvancedAt = now;
 		declareAvcPlaybackUrl(info, NATIVE_URL);
 		rememberBackupPlaylistMetadata(
 			info,
@@ -4006,6 +4089,17 @@ describe("_processM3U8 ad-end bounce backup serving", () => {
 
 		expect(info.IsUsingBackupStream).toBe(true);
 		expect(out).toContain("seg50.ts");
+		expect(info.NativeRecoveryCleanCount).toBe(0);
+		expect(info.NativeRecoveryProbeStreamUrl).toBe(
+			"https://edge.example/native-recovery.m3u8",
+		);
+		expect(info.NativeRecoveryProbeMediaKey).toBe("live:testchannel");
+		expect(info.NativeRecoveryProbePlayerType).toBe("site");
+		expect(info.NativeRecoveryProbeCycleStartedAt).toBe(
+			info.VisibleAdStartedAt,
+		);
+		expect(info.NativeRecoveryProbeLastMediaSequence).toBe(500);
+		expect(info.NativeRecoveryProbeLastAdvancedAt).toBeGreaterThan(0);
 	});
 
 	it("does not serve a stale cached backup on an ad-end bounce", async () => {
@@ -4017,6 +4111,17 @@ describe("_processM3U8 ad-end bounce backup serving", () => {
 
 		expect(info.IsUsingBackupStream).toBe(false);
 		expect(out).not.toContain("seg50.ts");
+		expect(info.NativeRecoveryCleanCount).toBe(0);
+		expect(info.NativeRecoveryProbeStreamUrl).toBe(
+			"https://edge.example/native-recovery.m3u8",
+		);
+		expect(info.NativeRecoveryProbeMediaKey).toBe("live:testchannel");
+		expect(info.NativeRecoveryProbePlayerType).toBe("site");
+		expect(info.NativeRecoveryProbeCycleStartedAt).toBe(
+			info.VisibleAdStartedAt,
+		);
+		expect(info.NativeRecoveryProbeLastMediaSequence).toBe(500);
+		expect(info.NativeRecoveryProbeLastAdvancedAt).toBeGreaterThan(0);
 	});
 });
 
@@ -4179,13 +4284,21 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 		}
 	});
 
-	it("invalidates clean recovery evidence when ad markers return during the hold", async () => {
+	it("resets clean recovery evidence but keeps the exact probe session during the hold", async () => {
 		const info = setupHold({
+			VisibleAdStartedAt: 100,
 			PendingAdEndAt: Date.now() - 5000,
 			CleanPlaylistCount: 4,
 			NativeRecoveryCleanCount: 2,
 			AdEndConfirmEscalation: 1,
+			NativeRecoveryProbeStreamUrl: "https://edge.example/native-recovery.m3u8",
+			NativeRecoveryProbeMediaKey: "live:testchannel",
+			NativeRecoveryProbePlayerType: "site",
+			NativeRecoveryProbeCycleStartedAt: 100,
+			NativeRecoveryProbeLastMediaSequence: 500,
+			NativeRecoveryProbeLastAdvancedAt: Date.now(),
 		});
+		activateExactAdCycle(info, 100);
 
 		const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
 			Promise.reject(new Error("no fetch expected")),
@@ -4195,6 +4308,14 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 		expect(info.PendingAdEndAt).toBe(0);
 		expect(info.CleanPlaylistCount).toBe(0);
 		expect(info.NativeRecoveryCleanCount).toBe(0);
+		expect(info.NativeRecoveryProbeStreamUrl).toBe(
+			"https://edge.example/native-recovery.m3u8",
+		);
+		expect(info.NativeRecoveryProbeMediaKey).toBe("live:testchannel");
+		expect(info.NativeRecoveryProbePlayerType).toBe("site");
+		expect(info.NativeRecoveryProbeCycleStartedAt).toBe(100);
+		expect(info.NativeRecoveryProbeLastMediaSequence).toBe(500);
+		expect(info.NativeRecoveryProbeLastAdvancedAt).toBeGreaterThan(0);
 		expect(info.AdEndConfirmEscalation).toBe(2);
 		expect(info.IsHoldingBackupAfterAd).toBe(true);
 	});
@@ -4236,6 +4357,34 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 		expect(out).toContain("seg50.ts");
 		expect(info.FailedBackupPlayerTypes.has("site")).toBe(false);
 		expect(info.ActiveBackupPlayerType).toBe("site");
+	});
+
+	it("refreshes stale autoplay media without rerunning the candidate sweep", async () => {
+		const previousAutoplayRefresh = g._refreshHeldAutoplayBackupPlaylist;
+		const refreshed = makePlaylist(90, 3);
+		const autoplayRefresh = vi.fn(async () => refreshed);
+		const search = vi.fn(async () => ({
+			type: "embed",
+			m3u8: makePlaylist(80, 3),
+		}));
+		g._refreshHeldAutoplayBackupPlaylist = autoplayRefresh;
+		g._findBackupStream = search;
+		const info = setupHold({
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+		});
+		info.LastCleanBackupAt = Date.now() - 3000;
+		try {
+			const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+				Promise.reject(new Error("no fetch expected")),
+			);
+
+			expect(autoplayRefresh).toHaveBeenCalledTimes(1);
+			expect(search).not.toHaveBeenCalled();
+			expect(out).toContain("seg90.ts");
+		} finally {
+			g._refreshHeldAutoplayBackupPlaylist = previousAutoplayRefresh;
+		}
 	});
 });
 
@@ -5087,6 +5236,38 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 			probe.restore();
 		}
 	});
+
+	it("does not re-enter the visible-to-silent transition after the hold began", async () => {
+		const probe = stubProbe(() => false);
+		const previousLog = g._log;
+		const log = vi.fn();
+		g._log = log;
+		try {
+			const result = await fn()(
+				makePendingInfo({
+					IsShowingAd: false,
+					IsHoldingBackupAfterAd: true,
+					PendingAdEndAt: Date.now() - 10000,
+					CleanPlaylistCount: 10,
+					ConsecutiveFailedNativeProbes: 6,
+					LastCleanBackupM3U8: makePlaylist(50, 3),
+					VisibleAdStartedAt: Date.now() - 120000,
+				}),
+				null,
+			);
+
+			expect(result).toBe("wait");
+			expect(probe.calls.count).toBe(1);
+			expect(
+				log.mock.calls.some((call) =>
+					String(call[0]).includes("ending visible ad cycle"),
+				),
+			).toBe(false);
+		} finally {
+			g._log = previousLog;
+			probe.restore();
+		}
+	});
 });
 
 describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () => {
@@ -5100,7 +5281,11 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			) => Promise<boolean>
 		>("_canReloadNativePlayerAfterAd");
 
-	function stubProbeChain(tokenImpl: () => Promise<Response>) {
+	function stubProbeChain(
+		tokenImpl: () => Promise<Response>,
+		playlistImpl: (call: number) => string | Response = (call) =>
+			makePlaylist(100 + call, 3),
+	) {
 		const state = getState();
 		const previous = {
 			minProbes: state.AdEndMinNativeRecoveryProbes,
@@ -5112,6 +5297,7 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			fetchWithTimeout: g._fetchWithTimeout,
 		};
 		const tokenCalls = { count: 0 };
+		const mediaCalls = { count: 0 };
 		state.AdEndMinNativeRecoveryProbes = 3;
 		state.LastNativePlaybackAccessTokenPlayerType = "site";
 		g._getToken = () => {
@@ -5125,13 +5311,19 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 		g._buildUsherPlaybackUrl = () =>
 			new URL("https://usher.example/channel/hls/testchannel.m3u8");
 		g._getStreamUrl = () => "https://edge.example/live/index.m3u8";
-		g._fetchWithTimeout = async (_realFetch: unknown, url: unknown) =>
-			new Response(
-				String(url).includes("usher.example")
-					? "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlive/index.m3u8"
-					: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
-				{ status: 200 },
-			);
+		g._fetchWithTimeout = async (_realFetch: unknown, url: unknown) => {
+			if (String(url).includes("usher.example")) {
+				return new Response(
+					"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlive/index.m3u8",
+					{ status: 200 },
+				);
+			}
+			mediaCalls.count += 1;
+			const playlist = playlistImpl(mediaCalls.count);
+			return playlist instanceof Response
+				? playlist
+				: new Response(playlist, { status: 200 });
+		};
 		const restore = () => {
 			state.AdEndMinNativeRecoveryProbes = previous.minProbes;
 			state.LastNativePlaybackAccessTokenPlayerType = previous.lastType;
@@ -5146,7 +5338,7 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			if (previous.fetchWithTimeout === undefined) delete g._fetchWithTimeout;
 			else g._fetchWithTimeout = previous.fetchWithTimeout;
 		};
-		return { tokenCalls, restore };
+		return { tokenCalls, mediaCalls, restore };
 	}
 
 	it("counts clean probes across calls and reports ready at the threshold", async () => {
@@ -5157,12 +5349,221 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			const info = makeInfo({ IsUsingBackupStream: true });
 			activateExactAdCycle(info);
 			const results: boolean[] = [];
-			for (let i = 0; i < 3; i++) {
+			for (let i = 0; i < 4; i++) {
 				info.LastNativeRecoveryProbeAt = 0;
 				results.push(await fn()(info, null));
 			}
-			expect(results).toEqual([false, false, true]);
+			expect(results).toEqual([false, false, false, true]);
+			expect(chain.tokenCalls.count).toBe(1);
+			expect(chain.mediaCalls.count).toBe(4);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("lets one ad-marked live probe session advance to three clean proofs", async () => {
+		const adMarkedProbe = [
+			"#EXTM3U",
+			"#EXT-X-MEDIA-SEQUENCE:100",
+			'#EXT-X-DATERANGE:ID="stitched-ad-probe",CLASS="twitch-stitched-ad"',
+			"#EXTINF:2.000,live",
+			"ad-100.ts",
+		].join("\n");
+		const playlists = [
+			adMarkedProbe,
+			makePlaylist(101, 3),
+			makePlaylist(101, 3),
+			makePlaylist(102, 3),
+			makePlaylist(103, 3),
+		];
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+			(call) => playlists[call - 1],
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info, 1000);
+			const results: boolean[] = [];
+			for (let index = 0; index < playlists.length; index++) {
+				info.LastNativeRecoveryProbeAt = 0;
+				results.push(await fn()(info, null));
+			}
+
+			expect(results).toEqual([false, false, false, false, true]);
+			expect(chain.tokenCalls.count).toBe(1);
+			expect(chain.mediaCalls.count).toBe(5);
+			expect(info.NativeRecoveryProbeStreamUrl).toBe(
+				"https://edge.example/live/index.m3u8",
+			);
+			expect(info.NativeRecoveryProbeLastMediaSequence).toBe(103);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("restarts clean proof without reminting when markers return in the probe session", async () => {
+		const adMarkedProbe = [
+			"#EXTM3U",
+			"#EXT-X-MEDIA-SEQUENCE:102",
+			'#EXT-X-DATERANGE:ID="stitched-ad-probe",CLASS="twitch-stitched-ad"',
+			"#EXTINF:2.000,live",
+			"ad-102.ts",
+		].join("\n");
+		const playlists = [
+			makePlaylist(100, 3),
+			makePlaylist(101, 3),
+			adMarkedProbe,
+			makePlaylist(103, 3),
+			makePlaylist(104, 3),
+			makePlaylist(105, 3),
+		];
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+			(call) => playlists[call - 1],
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info, 1000);
+			const results: boolean[] = [];
+			for (let index = 0; index < playlists.length; index++) {
+				info.LastNativeRecoveryProbeAt = 0;
+				results.push(await fn()(info, null));
+			}
+
+			expect(results).toEqual([false, false, false, false, false, true]);
+			expect(chain.tokenCalls.count).toBe(1);
+			expect(chain.mediaCalls.count).toBe(6);
+			expect(info.NativeRecoveryProbeMediaKey).toBe("live:testchannel");
+			expect(info.NativeRecoveryProbeLastMediaSequence).toBe(105);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("remints only after a live probe sequence regresses", async () => {
+		const sequences = [100, 101, 99, 200];
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+			(call) => makePlaylist(sequences[call - 1], 3),
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info, 1000);
+			for (let index = 0; index < sequences.length; index++) {
+				info.LastNativeRecoveryProbeAt = 0;
+				expect(await fn()(info, null)).toBe(false);
+			}
+
+			expect(chain.tokenCalls.count).toBe(2);
+			expect(info.NativeRecoveryProbeLastMediaSequence).toBe(200);
+			expect(info.NativeRecoveryCleanCount).toBe(0);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("remints after the cached live probe URL stops responding", async () => {
+		const playlists = [
+			makePlaylist(100, 3),
+			new Response("unavailable", { status: 503 }),
+			makePlaylist(200, 3),
+		];
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+			(call) => playlists[call - 1],
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info, 1000);
+			for (let index = 0; index < playlists.length; index++) {
+				info.LastNativeRecoveryProbeAt = 0;
+				expect(await fn()(info, null)).toBe(false);
+			}
+
+			expect(chain.tokenCalls.count).toBe(2);
+			expect(chain.mediaCalls.count).toBe(3);
+			expect(info.NativeRecoveryProbeMediaKey).toBe("live:testchannel");
+			expect(info.NativeRecoveryProbeLastMediaSequence).toBe(200);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("expires a live probe session that stops advancing", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+			() => makePlaylist(100, 3),
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info, 90000);
+			expect(await fn()(info, null)).toBe(false);
+			vi.setSystemTime(116000);
+			info.LastNativeRecoveryProbeAt = 0;
+			expect(await fn()(info, null)).toBe(false);
+			info.LastNativeRecoveryProbeAt = 0;
+			expect(await fn()(info, null)).toBe(false);
+
+			expect(chain.tokenCalls.count).toBe(2);
+			expect(info.NativeRecoveryProbeLastAdvancedAt).toBe(116000);
+		} finally {
+			chain.restore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("timestamps live advancement when the media response is observed", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+			() => {
+				vi.setSystemTime(112000);
+				return makePlaylist(100, 3);
+			},
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info, 90000);
+			expect(await fn()(info, null)).toBe(false);
+			expect(info.NativeRecoveryProbeLastAdvancedAt).toBe(112000);
+		} finally {
+			chain.restore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("does not reuse a probe session across ad cycles, player types, or media contexts", async () => {
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+		);
+		try {
+			const state = getState();
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info, 1000);
+			expect(await fn()(info, null)).toBe(false);
+
+			activateExactAdCycle(info, 2000);
+			info.LastNativeRecoveryProbeAt = 0;
+			expect(await fn()(info, null)).toBe(false);
+			expect(chain.tokenCalls.count).toBe(2);
+			expect(info.NativeRecoveryProbeCycleStartedAt).toBe(2000);
+
+			state.LastNativePlaybackAccessTokenPlayerType = "embed";
+			info.LastNativeRecoveryProbeAt = 0;
+			expect(await fn()(info, null)).toBe(false);
 			expect(chain.tokenCalls.count).toBe(3);
+			expect(info.NativeRecoveryProbePlayerType).toBe("embed");
+
+			info.MediaKey = "live:otherchannel";
+			info.ChannelName = "otherchannel";
+			activateExactAdCycle(info, 2000);
+			info.LastNativeRecoveryProbeAt = 0;
+			expect(await fn()(info, null)).toBe(false);
+			expect(chain.tokenCalls.count).toBe(4);
+			expect(info.NativeRecoveryProbeMediaKey).toBe("live:otherchannel");
 		} finally {
 			chain.restore();
 		}
@@ -5179,12 +5580,38 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			});
 			activateExactAdCycle(info);
 			const results: boolean[] = [];
-			for (let index = 0; index < 3; index++) {
+			for (let index = 0; index < 4; index++) {
 				info.LastNativeRecoveryProbeAt = 0;
 				results.push(await fn()(info, null, null, true));
 			}
-			expect(results).toEqual([false, false, true]);
-			expect(chain.tokenCalls.count).toBe(3);
+			expect(results).toEqual([false, false, false, true]);
+			expect(chain.tokenCalls.count).toBe(1);
+			expect(chain.mediaCalls.count).toBe(4);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("requires the real clean-probe chain throughout a hold without an active backup", async () => {
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+		);
+		try {
+			const info = makeInfo({
+				IsHoldingBackupAfterAd: true,
+				IsUsingBackupStream: false,
+				IsUsingFallbackStream: false,
+			});
+			activateExactAdCycle(info);
+			const results: boolean[] = [];
+			for (let index = 0; index < 4; index++) {
+				info.LastNativeRecoveryProbeAt = 0;
+				results.push(await fn()(info, null));
+			}
+
+			expect(results).toEqual([false, false, false, true]);
+			expect(chain.tokenCalls.count).toBe(1);
+			expect(chain.mediaCalls.count).toBe(4);
 		} finally {
 			chain.restore();
 		}
@@ -5208,7 +5635,7 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			expect(chain.tokenCalls.count).toBe(1);
 			releaseToken(new Response("{}", { status: 200 }));
 			expect(await first).toBe(false);
-			expect(info.NativeRecoveryCleanCount).toBe(1);
+			expect(info.NativeRecoveryCleanCount).toBe(0);
 		} finally {
 			chain.restore();
 		}
@@ -5234,6 +5661,31 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			expect(info.NativeRecoveryCleanCount).toBe(0);
 			expect(Number(info.ConsecutiveFailedNativeProbes) || 0).toBe(0);
 			expect(info._NativeRecoveryProbeInFlight).toBe(false);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("discards an in-flight probe after its stream info changes media context", async () => {
+		let releaseToken: (response: Response) => void = () => {};
+		const chain = stubProbeChain(
+			() =>
+				new Promise<Response>((resolveToken) => {
+					releaseToken = resolveToken;
+				}),
+		);
+		try {
+			const info = makeInfo({ IsUsingBackupStream: true });
+			activateExactAdCycle(info, 1000);
+			const pending = fn()(info, null);
+			info.MediaKey = "live:otherchannel";
+			info.ChannelName = "otherchannel";
+			activateExactAdCycle(info, 1000);
+			releaseToken(new Response("{}", { status: 200 }));
+
+			expect(await pending).toBe(false);
+			expect(info.NativeRecoveryProbeStreamUrl).toBe(null);
+			expect(info.NativeRecoveryCleanCount).toBe(0);
 		} finally {
 			chain.restore();
 		}

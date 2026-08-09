@@ -724,6 +724,12 @@ function _invalidateAdCycleAsyncWork(info) {
 	info.LastNativeRecoveryProbeAt = 0;
 	info.LastNativeRecoveryReadyPlayerType = null;
 	info.NativeRecoveryCleanCount = 0;
+	info.NativeRecoveryProbeStreamUrl = null;
+	info.NativeRecoveryProbeMediaKey = null;
+	info.NativeRecoveryProbePlayerType = null;
+	info.NativeRecoveryProbeCycleStartedAt = 0;
+	info.NativeRecoveryProbeLastMediaSequence = null;
+	info.NativeRecoveryProbeLastAdvancedAt = 0;
 	info.ConsecutiveFailedNativeProbes = 0;
 	info._FatalMediaRecoveryRequestId = null;
 	info.RequestedAds?.clear?.();
