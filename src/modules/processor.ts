@@ -1861,6 +1861,7 @@ function _createStreamInfo(context) {
 		MeasuredAdIds: new Set(),
 		_SecondsReportedForCycle: 0,
 		FailedBackupPlayerTypes: new Map(),
+		LastSessionNeutralBackupProbeCycleStartedAt: 0,
 		Urls: Object.create(null),
 		ResolutionList: [],
 		BackupEncodingsM3U8Cache: Object.create(null),
@@ -5602,12 +5603,40 @@ async function _searchBackupStream(
 				continue;
 			}
 			_log(`[Trace] Checking: ${pt}`, "info");
+			let retryWithoutViewerHeaders = false;
 
-			for (let j = 0; j < 2; j++) {
+			for (let j = 0; j < 2 || retryWithoutViewerHeaders; j++) {
 				if (!searchIsCurrent()) return { type: null, m3u8: null };
+				const omitViewerHeaders = retryWithoutViewerHeaders;
+				retryWithoutViewerHeaders = false;
+				if (omitViewerHeaders) {
+					if (
+						Math.max(
+							0,
+							Number(info.LastSessionNeutralBackupProbeCycleStartedAt) || 0,
+						) === cycleStartedAt
+					) {
+						break;
+					}
+					info.LastSessionNeutralBackupProbeCycleStartedAt = cycleStartedAt;
+				}
 				let isFreshM3u8 = false;
 				let invalidateCache = false;
-				const encCache = info.BackupEncodingsM3U8Cache[pt];
+				let encCache = info.BackupEncodingsM3U8Cache[pt];
+				if (
+					typeof encCache === "object" &&
+					encCache?.viewerHeadersOmitted === true &&
+					Math.max(0, Number(encCache?.cycleStartedAt) || 0) !== cycleStartedAt
+				) {
+					if (info.BackupEncodingsM3U8Cache[pt] === encCache) {
+						info.BackupEncodingsM3U8Cache[pt] = null;
+					}
+					encCache = null;
+				}
+				let activeCacheEntry = encCache;
+				let isSessionNeutralCandidate = Boolean(
+					omitViewerHeaders || encCache?.viewerHeadersOmitted === true,
+				);
 				let enc =
 					typeof encCache === "string" ? encCache : encCache?.m3u8 || null;
 				let encBaseUrl =
@@ -5619,7 +5648,7 @@ async function _searchBackupStream(
 					isFreshM3u8 = true;
 					try {
 						const tokenProbe = await _awaitBackupProbeBeforeDeadline(
-							_getToken(info, pt, realFetch),
+							_getToken(info, pt, realFetch, omitViewerHeaders),
 							isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
 						);
 						if (!searchIsCurrent()) {
@@ -5673,12 +5702,37 @@ async function _searchBackupStream(
 									) {
 										break;
 									}
-									enc = masterBodyProbe.value;
-									encBaseUrl = usherUrl.href;
-									info.BackupEncodingsM3U8Cache[pt] = {
-										m3u8: enc,
-										baseUrl: encBaseUrl,
-									};
+									const currentCache = info.BackupEncodingsM3U8Cache[pt];
+									const keepSessionNeutralCache = Boolean(
+										!omitViewerHeaders &&
+											currentCache?.viewerHeadersOmitted === true &&
+											Math.max(0, Number(currentCache?.cycleStartedAt) || 0) ===
+												cycleStartedAt &&
+											Math.max(
+												0,
+												Number(
+													info.LastSessionNeutralBackupProbeCycleStartedAt,
+												) || 0,
+											) === cycleStartedAt,
+									);
+									if (keepSessionNeutralCache) {
+										enc = currentCache.m3u8;
+										encBaseUrl = currentCache.baseUrl || info.UsherBaseUrl;
+										activeCacheEntry = currentCache;
+										isSessionNeutralCandidate = true;
+										isFreshM3u8 = false;
+									} else {
+										enc = masterBodyProbe.value;
+										encBaseUrl = usherUrl.href;
+										activeCacheEntry = {
+											m3u8: enc,
+											baseUrl: encBaseUrl,
+											viewerHeadersOmitted: omitViewerHeaders,
+											cycleStartedAt: omitViewerHeaders ? cycleStartedAt : 0,
+										};
+										info.BackupEncodingsM3U8Cache[pt] = activeCacheEntry;
+										isSessionNeutralCandidate = omitViewerHeaders;
+									}
 
 									const lines = enc.split("\n");
 									for (let i = 0; i < lines.length; i++) {
@@ -5939,6 +5993,17 @@ async function _searchBackupStream(
 												backupM3u8 = bridged;
 												break;
 											}
+											if (isSessionNeutralCandidate) {
+												info._BackupProbation = {
+													type: pt,
+													at:
+														isFreshM3u8 || probation?.type !== pt
+															? Date.now()
+															: probation.at,
+													cleanChecks: isFreshM3u8 ? 1 : priorCleanHolds + 1,
+												};
+												break;
+											}
 										}
 										if (!searchIsCurrent()) {
 											return { type: null, m3u8: null };
@@ -6033,6 +6098,33 @@ async function _searchBackupStream(
 										}
 										info.LoggedBackupAdsByType.add(pt);
 									}
+									const canRetryWithoutViewerHeaders = Boolean(
+										isFreshM3u8 &&
+											!omitViewerHeaders &&
+											pt !== "autoplay" &&
+											!isExactEnhancedPass &&
+											info?.MediaType !== "vod" &&
+											!String(info?.MediaKey || "").startsWith("vod:") &&
+											cycleStartedAt > 0 &&
+											promotionPolicy.reason === "not-playable" &&
+											!candidateHasAds &&
+											(__TTVAB_STATE__?.AuthorizationHeader ||
+												__TTVAB_STATE__?.ClientIntegrityHeader) &&
+											_shouldBridgeHeldAutoplayDuringSearch(info) &&
+											Math.max(
+												0,
+												Number(
+													info.LastSessionNeutralBackupProbeCycleStartedAt,
+												) || 0,
+											) !== cycleStartedAt,
+									);
+									if (canRetryWithoutViewerHeaders) {
+										retryWithoutViewerHeaders = true;
+										_log(
+											`[Trace] Retrying ${pt} without viewer headers after an empty media playlist`,
+											"info",
+										);
+									}
 									_log(
 										`[Trace] Rejected ${pt} (${promotionPolicy.reason})`,
 										"warning",
@@ -6074,9 +6166,11 @@ async function _searchBackupStream(
 					if (!searchIsCurrent()) {
 						return { type: null, m3u8: null };
 					}
-					info.BackupEncodingsM3U8Cache[pt] = null;
+					if (info.BackupEncodingsM3U8Cache[pt] === activeCacheEntry) {
+						info.BackupEncodingsM3U8Cache[pt] = null;
+					}
 				}
-				if (isFreshM3u8) break;
+				if (isFreshM3u8 && !retryWithoutViewerHeaders) break;
 			}
 		}
 	}

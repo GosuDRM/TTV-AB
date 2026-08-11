@@ -143,6 +143,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_IncompletePodLastMediaSequence: null,
 		_IncompletePodCandidateUrl: null,
 		FailedBackupPlayerTypes: new Map<string, number>(),
+		LastSessionNeutralBackupProbeCycleStartedAt: 0,
 		ActiveBackupPlayerType: null,
 		ActiveBackupResolution: null,
 		IsMidroll: false,
@@ -675,6 +676,7 @@ describe("_resetStreamAdState", () => {
 			_CodecHandoffFailedId: failedHandoffId,
 			_CodecHandoffReloadRetryCount: 2,
 			_BackupProbation: { type: "site", at: 123 },
+			LastSessionNeutralBackupProbeCycleStartedAt: 100,
 		});
 		fn(info);
 		expect(info.IsShowingAd).toBe(false);
@@ -726,6 +728,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._CodecHandoffFailedId).toBe(null);
 		expect(info._CodecHandoffReloadRetryCount).toBe(0);
 		expect(info._BackupProbation).toBe(null);
+		expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(100);
 	});
 
 	it("initializes CsaiOnlyThisBreak on new stream infos", () => {
@@ -765,6 +768,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.NativeRecoveryCandidateStartedAt).toBe(0);
 		expect(info.NativeRecoveryCandidateCleanCount).toBe(0);
 		expect(info.NativeRecoveryCandidateLastMediaSequence).toBe(null);
+		expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(0);
 	});
 
 	it("seeds a replacement worker stream from main-owned ad pod progress", () => {
@@ -1173,6 +1177,7 @@ describe("_findBackupStream fresh-session probation", () => {
 		"#EXTINF:2.000,live",
 		"https://edge.example/autoplay-live-1.ts",
 	].join("\n");
+	const emptyPlaylist = ["#EXTM3U", "#EXT-X-TARGETDURATION:2"].join("\n");
 
 	function makeHoldInfo() {
 		const info = makeInfo({
@@ -1241,6 +1246,611 @@ describe("_findBackupStream fresh-session probation", () => {
 		};
 		return { tokenCalls, realFetch, restore };
 	}
+
+	function setupSessionNeutralSweep(
+		authenticatedSiteMedia: () => string,
+		neutralSiteMedia: () => string,
+		onToken?: (omitViewerHeaders: boolean) => void,
+	) {
+		const state = getState();
+		const previous = {
+			types: state.BackupPlayerTypes,
+			disable: state.DisableAutoplayBackup,
+			authorization: state.AuthorizationHeader,
+			integrity: state.ClientIntegrityHeader,
+			getToken: g._getToken,
+			extract: g._extractPlaybackAccessToken,
+		};
+		const tokenCalls: Array<{
+			playerType: string;
+			omitViewerHeaders: boolean;
+		}> = [];
+		let activePlayerType = "";
+		let activeOmitViewerHeaders = false;
+		let autoplayRefreshes = 0;
+		state.BackupPlayerTypes = ["site", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		state.AuthorizationHeader = "OAuth viewer";
+		state.ClientIntegrityHeader = "integrity";
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (
+			_info: unknown,
+			playerType: unknown,
+			_realFetch: unknown,
+			omitViewerHeaders = false,
+		) => {
+			activePlayerType = String(playerType);
+			activeOmitViewerHeaders = Boolean(omitViewerHeaders);
+			tokenCalls.push({
+				playerType: activePlayerType,
+				omitViewerHeaders: activeOmitViewerHeaders,
+			});
+			onToken?.(activeOmitViewerHeaders);
+			return new Response("{}", { status: 200 });
+		};
+		const realFetch = async (url: string) => {
+			const href = String(url);
+			if (href.includes("usher.ttvnw.net")) {
+				const master = activeOmitViewerHeaders
+					? masterPlaylist(activePlayerType).replace(
+							`/${activePlayerType}/index.m3u8`,
+							`/${activePlayerType}/index.m3u8?profile=session-neutral`,
+						)
+					: masterPlaylist(activePlayerType);
+				return new Response(master, {
+					status: 200,
+				});
+			}
+			if (/\/(?:site|embed|popout|mobile_web)\//.test(href)) {
+				return new Response(
+					href.includes("profile=session-neutral")
+						? neutralSiteMedia()
+						: authenticatedSiteMedia(),
+					{ status: 200 },
+				);
+			}
+			if (href.includes("/autoplay/")) {
+				autoplayRefreshes++;
+				return new Response(bridgePlaylist, { status: 200 });
+			}
+			return new Response(null, { status: 404 });
+		};
+		const restore = () => {
+			state.BackupPlayerTypes = previous.types;
+			state.DisableAutoplayBackup = previous.disable;
+			state.AuthorizationHeader = previous.authorization;
+			state.ClientIntegrityHeader = previous.integrity;
+			if (previous.getToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previous.getToken;
+			}
+			if (previous.extract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previous.extract;
+			}
+		};
+		return {
+			tokenCalls,
+			realFetch,
+			restore,
+			getAutoplayRefreshes: () => autoplayRefreshes,
+		};
+	}
+
+	it("retries one empty authenticated source without viewer headers while keeping autoplay live", async () => {
+		const sweep = setupSessionNeutralSweep(
+			() => emptyPlaylist,
+			() => sitePlaylist,
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			const first = await findBackupStream()(
+				info,
+				sweep.realFetch,
+				0,
+				currentResolution,
+			);
+
+			expect(first).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(sweep.tokenCalls).toEqual([
+				{ playerType: "site", omitViewerHeaders: false },
+				{ playerType: "site", omitViewerHeaders: true },
+			]);
+			expect(sweep.getAutoplayRefreshes()).toBeGreaterThan(0);
+			expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(991_000);
+			expect(info._BackupProbation).toEqual({
+				type: "site",
+				at: 1_000_000,
+				cleanChecks: 1,
+			});
+
+			nowSpy.mockReturnValue(1_002_100);
+			const second = await findBackupStream()(
+				info,
+				sweep.realFetch,
+				0,
+				currentResolution,
+			);
+
+			expect(second).toEqual({ type: "site", m3u8: sitePlaylist });
+			expect(sweep.tokenCalls).toHaveLength(2);
+			expect(info.LastCleanBackupPlayerType).toBe("site");
+			expect(info.LastCleanBackupM3U8).toBe(sitePlaylist);
+
+			const nextCycle = 1_010_000;
+			nowSpy.mockReturnValue(nextCycle);
+			info.IsShowingAd = true;
+			info.ActiveBackupPlayerType = "autoplay";
+			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupM3U8 = bridgePlaylist;
+			info.LastCleanBackupAt = nextCycle;
+			activateExactAdCycle(info, nextCycle);
+			const nextBreak = await findBackupStream()(
+				info,
+				sweep.realFetch,
+				0,
+				currentResolution,
+			);
+			expect(nextBreak).toEqual({
+				type: "autoplay",
+				m3u8: bridgePlaylist,
+			});
+			expect(sweep.tokenCalls.slice(2)).toEqual([
+				{ playerType: "site", omitViewerHeaders: false },
+				{ playerType: "site", omitViewerHeaders: true },
+			]);
+		} finally {
+			nowSpy.mockRestore();
+			sweep.restore();
+		}
+	});
+
+	it("keeps the neutral master when a concurrent authenticated search finishes later", async () => {
+		const searchBackupStream = T<
+			(
+				info: Record<string, unknown>,
+				realFetch: (url: string) => Promise<Response>,
+				startIdx?: number,
+				currentResolution?: Record<string, unknown>,
+			) => Promise<{ type: string | null; m3u8: string | null }>
+		>("_searchBackupStream");
+		const state = getState();
+		const previous = {
+			types: state.BackupPlayerTypes,
+			disable: state.DisableAutoplayBackup,
+			authorization: state.AuthorizationHeader,
+			integrity: state.ClientIntegrityHeader,
+			getToken: g._getToken,
+			extract: g._extractPlaybackAccessToken,
+		};
+		let resolveNeutralToken = () => {};
+		let reportNeutralTokenStarted = () => {};
+		let resolveAuthenticatedMaster = () => {};
+		let reportAuthenticatedMasterStarted = () => {};
+		let reportGuestMediaStarted = () => {};
+		const neutralTokenGate = new Promise<void>((resolve) => {
+			resolveNeutralToken = resolve;
+		});
+		const neutralTokenStarted = new Promise<void>((resolve) => {
+			reportNeutralTokenStarted = resolve;
+		});
+		const authenticatedMasterGate = new Promise<void>((resolve) => {
+			resolveAuthenticatedMaster = resolve;
+		});
+		const authenticatedMasterStarted = new Promise<void>((resolve) => {
+			reportAuthenticatedMasterStarted = resolve;
+		});
+		const guestMediaStarted = new Promise<void>((resolve) => {
+			reportGuestMediaStarted = resolve;
+		});
+		let authenticatedTokenCount = 0;
+		const tokenCalls: Array<{ profile: string; omitViewerHeaders: boolean }> =
+			[];
+		state.BackupPlayerTypes = ["site", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		state.AuthorizationHeader = "OAuth viewer";
+		state.ClientIntegrityHeader = "integrity";
+		g._extractPlaybackAccessToken = (token: Record<string, string>) => ({
+			signature: token.signature,
+			value: token.value,
+		});
+		g._getToken = async (
+			_info: unknown,
+			_playerType: unknown,
+			_realFetch: unknown,
+			omitViewerHeaders = false,
+		) => {
+			if (omitViewerHeaders) {
+				tokenCalls.push({
+					profile: "guest",
+					omitViewerHeaders: true,
+				});
+				reportNeutralTokenStarted();
+				await neutralTokenGate;
+				return new Response(
+					JSON.stringify({ signature: "guest", value: "guest-token" }),
+					{ status: 200 },
+				);
+			}
+			authenticatedTokenCount++;
+			const profile = `viewer-${authenticatedTokenCount}`;
+			tokenCalls.push({ profile, omitViewerHeaders: false });
+			return new Response(
+				JSON.stringify({ signature: profile, value: `${profile}-token` }),
+				{ status: 200 },
+			);
+		};
+		const viewerMaster = masterPlaylist("site").replace(
+			"/site/index.m3u8",
+			"/site/index.m3u8?profile=viewer",
+		);
+		const guestMaster = masterPlaylist("site").replace(
+			"/site/index.m3u8",
+			"/site/index.m3u8?profile=guest",
+		);
+		const realFetch = async (url: string) => {
+			const href = String(url);
+			if (href.includes("usher.ttvnw.net")) {
+				if (href.includes("sig=guest")) {
+					return new Response(guestMaster, { status: 200 });
+				}
+				if (href.includes("sig=viewer-2")) {
+					reportAuthenticatedMasterStarted();
+					await authenticatedMasterGate;
+				}
+				return new Response(viewerMaster, { status: 200 });
+			}
+			if (href.includes("profile=guest")) {
+				reportGuestMediaStarted();
+				return new Response(sitePlaylist, { status: 200 });
+			}
+			if (href.includes("profile=viewer")) {
+				return new Response(emptyPlaylist, { status: 200 });
+			}
+			if (href.includes("/autoplay/")) {
+				return new Response(bridgePlaylist, { status: 200 });
+			}
+			return new Response(null, { status: 404 });
+		};
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+
+		try {
+			const info = makeHoldInfo();
+			const firstSearch = searchBackupStream(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			await neutralTokenStarted;
+			(info.FailedBackupPlayerTypes as Map<string, number>).clear();
+			const secondSearch = searchBackupStream(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			await authenticatedMasterStarted;
+			resolveNeutralToken();
+			await guestMediaStarted;
+			resolveAuthenticatedMaster();
+			const results = await Promise.all([firstSearch, secondSearch]);
+
+			expect(results).toEqual([
+				{ type: "autoplay", m3u8: bridgePlaylist },
+				{ type: "autoplay", m3u8: bridgePlaylist },
+			]);
+			expect(tokenCalls).toEqual([
+				{ profile: "viewer-1", omitViewerHeaders: false },
+				{ profile: "guest", omitViewerHeaders: true },
+				{ profile: "viewer-2", omitViewerHeaders: false },
+			]);
+			const cachedSite = (
+				info.BackupEncodingsM3U8Cache as Record<string, Record<string, unknown>>
+			).site;
+			expect(cachedSite).toMatchObject({
+				m3u8: guestMaster,
+				viewerHeadersOmitted: true,
+				cycleStartedAt: 991_000,
+			});
+		} finally {
+			resolveNeutralToken();
+			resolveAuthenticatedMaster();
+			nowSpy.mockRestore();
+			state.BackupPlayerTypes = previous.types;
+			state.DisableAutoplayBackup = previous.disable;
+			state.AuthorizationHeader = previous.authorization;
+			state.ClientIntegrityHeader = previous.integrity;
+			if (previous.getToken === undefined) delete g._getToken;
+			else g._getToken = previous.getToken;
+			if (previous.extract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previous.extract;
+		}
+	});
+
+	it("never promotes an ad-marked neutral candidate", async () => {
+		const sweep = setupSessionNeutralSweep(
+			() => emptyPlaylist,
+			() => adPlaylist,
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			const result = await findBackupStream()(
+				info,
+				sweep.realFetch,
+				0,
+				currentResolution,
+			);
+			expect(result).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(String(result.m3u8)).not.toContain("stitched-ad");
+			expect(sweep.tokenCalls).toEqual([
+				{ playerType: "site", omitViewerHeaders: false },
+				{ playerType: "site", omitViewerHeaders: true },
+			]);
+			expect(info.LastCleanBackupPlayerType).toBe("autoplay");
+			expect(info.LastCleanBackupM3U8).toBe(bridgePlaylist);
+		} finally {
+			nowSpy.mockRestore();
+			sweep.restore();
+		}
+	});
+
+	it("keeps a first clean neutral candidate probationed when autoplay cannot refresh", async () => {
+		const sweep = setupSessionNeutralSweep(
+			() => emptyPlaylist,
+			() => sitePlaylist,
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			const unavailableBridgeFetch = async (url: string) => {
+				if (String(url).includes("/autoplay/")) {
+					return new Response(adPlaylist, { status: 200 });
+				}
+				return sweep.realFetch(url);
+			};
+			const first = await findBackupStream()(
+				info,
+				unavailableBridgeFetch,
+				0,
+				currentResolution,
+			);
+
+			expect(first).toEqual({ type: null, m3u8: null });
+			expect(info.LastCleanBackupPlayerType).toBe("autoplay");
+			expect(info.LastCleanBackupM3U8).toBe(bridgePlaylist);
+			expect(info._BackupProbation).toEqual({
+				type: "site",
+				at: 1_000_000,
+				cleanChecks: 1,
+			});
+			expect(sweep.tokenCalls).toEqual([
+				{ playerType: "site", omitViewerHeaders: false },
+				{ playerType: "site", omitViewerHeaders: true },
+				{ playerType: "autoplay", omitViewerHeaders: false },
+			]);
+
+			nowSpy.mockReturnValue(1_002_100);
+			const second = await findBackupStream()(
+				info,
+				sweep.realFetch,
+				0,
+				currentResolution,
+			);
+			expect(second).toEqual({ type: "site", m3u8: sitePlaylist });
+			expect(
+				sweep.tokenCalls.filter((call) => call.omitViewerHeaders),
+			).toHaveLength(1);
+		} finally {
+			nowSpy.mockRestore();
+			sweep.restore();
+		}
+	});
+
+	it("never uses the neutral retry for VOD or autoplay token requests", async () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			for (const scenario of ["vod", "autoplay"] as const) {
+				const sweep = setupSessionNeutralSweep(
+					() => emptyPlaylist,
+					() => sitePlaylist,
+				);
+				try {
+					const info = makeHoldInfo();
+					if (scenario === "vod") {
+						info.MediaType = "vod";
+						info.MediaKey = "vod:123456";
+						info.VodID = "123456";
+						activateExactAdCycle(info, 991_000);
+					} else {
+						getState().BackupPlayerTypes = ["autoplay"];
+						info.BackupEncodingsM3U8Cache = Object.create(null);
+					}
+					await findBackupStream()(info, sweep.realFetch, 0, currentResolution);
+					expect(sweep.tokenCalls.some((call) => call.omitViewerHeaders)).toBe(
+						false,
+					);
+				} finally {
+					sweep.restore();
+				}
+			}
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("does not add a neutral request without a held autoplay bridge", async () => {
+		const sweep = setupSessionNeutralSweep(
+			() => emptyPlaylist,
+			() => sitePlaylist,
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			info.ActiveBackupPlayerType = null;
+			info.LastCleanBackupPlayerType = null;
+			info.LastCleanBackupM3U8 = null;
+			info.LastCleanBackupAt = 0;
+			await findBackupStream()(info, sweep.realFetch, 0, currentResolution);
+			expect(sweep.tokenCalls.some((call) => call.omitViewerHeaders)).toBe(
+				false,
+			);
+		} finally {
+			nowSpy.mockRestore();
+			sweep.restore();
+		}
+	});
+
+	it("does not repeat the neutral request when no viewer headers were captured", async () => {
+		const sweep = setupSessionNeutralSweep(
+			() => emptyPlaylist,
+			() => sitePlaylist,
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			getState().AuthorizationHeader = null;
+			getState().ClientIntegrityHeader = null;
+			await findBackupStream()(
+				makeHoldInfo(),
+				sweep.realFetch,
+				0,
+				currentResolution,
+			);
+			expect(sweep.tokenCalls.some((call) => call.omitViewerHeaders)).toBe(
+				false,
+			);
+		} finally {
+			nowSpy.mockRestore();
+			sweep.restore();
+		}
+	});
+
+	it("allows only the first empty source to spend the neutral cycle budget", async () => {
+		const sweep = setupSessionNeutralSweep(
+			() => emptyPlaylist,
+			() => emptyPlaylist,
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			getState().BackupPlayerTypes = ["site", "embed", "autoplay"];
+			const result = await findBackupStream()(
+				makeHoldInfo(),
+				sweep.realFetch,
+				0,
+				currentResolution,
+			);
+			expect(result).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(sweep.tokenCalls).toEqual([
+				{ playerType: "site", omitViewerHeaders: false },
+				{ playerType: "site", omitViewerHeaders: true },
+				{ playerType: "embed", omitViewerHeaders: false },
+			]);
+		} finally {
+			nowSpy.mockRestore();
+			sweep.restore();
+		}
+	});
+
+	it("does not use the neutral retry when the authenticated source is playable or ad-marked", async () => {
+		const cases = [sitePlaylist, adPlaylist];
+		for (const authenticatedPlaylist of cases) {
+			const sweep = setupSessionNeutralSweep(
+				() => authenticatedPlaylist,
+				() => sitePlaylist,
+			);
+			const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+			try {
+				const result = await findBackupStream()(
+					makeHoldInfo(),
+					sweep.realFetch,
+					0,
+					currentResolution,
+				);
+				expect(sweep.tokenCalls).toEqual([
+					{ playerType: "site", omitViewerHeaders: false },
+				]);
+				expect(String(result.m3u8)).not.toContain("stitched-ad");
+			} finally {
+				nowSpy.mockRestore();
+				sweep.restore();
+			}
+		}
+	});
+
+	it("spends at most one neutral retry per cycle and allows one for a new break", async () => {
+		const sweep = setupSessionNeutralSweep(
+			() => emptyPlaylist,
+			() => emptyPlaylist,
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			await findBackupStream()(info, sweep.realFetch, 0, currentResolution);
+			expect(
+				sweep.tokenCalls.filter((call) => call.omitViewerHeaders),
+			).toHaveLength(1);
+
+			nowSpy.mockReturnValue(1_002_100);
+			await findBackupStream()(info, sweep.realFetch, 0, currentResolution);
+			expect(
+				sweep.tokenCalls.filter((call) => call.omitViewerHeaders),
+			).toHaveLength(1);
+
+			const nextCycle = 1_010_000;
+			nowSpy.mockReturnValue(nextCycle);
+			info.IsShowingAd = true;
+			info.ActiveBackupPlayerType = "autoplay";
+			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupM3U8 = bridgePlaylist;
+			info.LastCleanBackupAt = nextCycle;
+			activateExactAdCycle(info, nextCycle);
+			await findBackupStream()(info, sweep.realFetch, 0, currentResolution);
+			expect(
+				sweep.tokenCalls.filter((call) => call.omitViewerHeaders),
+			).toHaveLength(2);
+		} finally {
+			nowSpy.mockRestore();
+			sweep.restore();
+		}
+	});
+
+	it("consumes the cycle budget before an invalidated neutral request can finish", async () => {
+		let info: Record<string, unknown>;
+		const sweep = setupSessionNeutralSweep(
+			() => emptyPlaylist,
+			() => sitePlaylist,
+			(omitViewerHeaders) => {
+				if (omitViewerHeaders) {
+					info.BackupSearchEpoch = Number(info.BackupSearchEpoch) + 1;
+				}
+			},
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			info = makeHoldInfo();
+			const result = await findBackupStream()(
+				info,
+				sweep.realFetch,
+				0,
+				currentResolution,
+			);
+			expect(result).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(991_000);
+			expect(
+				sweep.tokenCalls.filter((call) => call.omitViewerHeaders),
+			).toHaveLength(1);
+		} finally {
+			nowSpy.mockRestore();
+			sweep.restore();
+		}
+	});
 
 	it("defers a fresh HQ session to a second clean look, then keeps the pin instead of flapping back to the bridge", async () => {
 		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
