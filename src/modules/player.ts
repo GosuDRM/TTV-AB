@@ -2141,7 +2141,17 @@ const _INDEPENDENT_VIDEO_AD_CONTAINER_BOUNDARY_SELECTOR = [
 	'[data-a-target="side-nav-bar"]',
 	'[data-test-selector="chat-scrollable-area__message-container"]',
 ].join(",");
-const _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT = 3500;
+const _INDEPENDENT_VIDEO_AD_LOG_DESCRIPTOR_LIMIT = 3500;
+const _INDEPENDENT_VIDEO_AD_LOG_VALUE_LIMIT = 256;
+const _INDEPENDENT_VIDEO_AD_LOG_SOURCE_LIMIT = 512;
+const _INDEPENDENT_VIDEO_AD_LOG_CHILD_SOURCE_LIMIT = 4;
+const _INDEPENDENT_VIDEO_AD_LOG_ATTRIBUTES = [
+	"aria-label",
+	"role",
+	"data-a-target",
+	"data-test-selector",
+	"type",
+];
 const _INDEPENDENT_VIDEO_AD_DETACHED_GRACE_MS = 10000;
 const _IndependentVideoAdSuppressionState = {
 	observer: null as MutationObserver | null,
@@ -2245,24 +2255,147 @@ function _hasBlobMediaSource(media) {
 	return source.startsWith("blob:");
 }
 
-function _serializeIndependentVideoAdElement(media) {
-	if (!(media instanceof HTMLVideoElement)) return "";
-	const html = media.outerHTML;
-	if (html.length <= _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT) return html;
-	return `${html.slice(0, _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT)}...`;
+function _limitIndependentVideoAdDiagnostic(value, maxLength) {
+	const text = typeof value === "string" ? value : String(value || "");
+	if (text.length <= maxLength) return text;
+	if (maxLength <= 3) return text.slice(0, maxLength);
+	return `${text.slice(0, maxLength - 3)}...`;
+}
+
+function _normalizeIndependentVideoAdDiagnosticValue(
+	value,
+	maxLength = _INDEPENDENT_VIDEO_AD_LOG_VALUE_LIMIT,
+) {
+	const source = (
+		typeof value === "string" ? value : String(value || "")
+	).slice(0, Math.max(0, Number(maxLength) || 0) * 2);
+	let controlled = "";
+	for (const character of source) {
+		const codePoint = character.codePointAt(0) || 0;
+		const isControl =
+			codePoint <= 0x1f ||
+			(codePoint >= 0x7f && codePoint <= 0x9f) ||
+			(codePoint >= 0x200b && codePoint <= 0x200f) ||
+			(codePoint >= 0x2028 && codePoint <= 0x202e) ||
+			(codePoint >= 0x2060 && codePoint <= 0x206f) ||
+			codePoint === 0xfeff;
+		controlled += isControl ? " " : character;
+	}
+	const normalized = controlled
+		.replace(/\s+/g, " ")
+		.trim()
+		.replace(/\\/g, "\\\\")
+		.replace(/"/g, '\\"')
+		.replace(/</g, "\\u003c")
+		.replace(/>/g, "\\u003e");
+	return _limitIndependentVideoAdDiagnostic(normalized, maxLength);
+}
+
+function _sanitizeIndependentVideoAdDiagnosticSource(value) {
+	const rawSource = typeof value === "string" ? value.trim() : "";
+	if (!rawSource) return "";
+	try {
+		if (/^blob:/i.test(rawSource)) {
+			const blobTarget = new URL(rawSource.slice(rawSource.indexOf(":") + 1));
+			if (blobTarget.origin && blobTarget.origin !== "null") {
+				return _normalizeIndependentVideoAdDiagnosticValue(
+					`blob:${blobTarget.origin}/[redacted]`,
+					_INDEPENDENT_VIDEO_AD_LOG_SOURCE_LIMIT,
+				);
+			}
+			return "blob:[redacted]";
+		}
+		const pageHref = String(globalThis.location?.href || "");
+		const baseUrl = /^https?:/i.test(pageHref)
+			? pageHref
+			: "https://www.twitch.tv/";
+		const parsed = new URL(rawSource, baseUrl);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+			return "[redacted]";
+		}
+		return _normalizeIndependentVideoAdDiagnosticValue(
+			`${parsed.protocol}//${parsed.host}${parsed.pathname || "/"}`,
+			_INDEPENDENT_VIDEO_AD_LOG_SOURCE_LIMIT,
+		);
+	} catch {
+		return "[redacted]";
+	}
 }
 
 function _describeIndependentVideoAdElement(element) {
 	if (!(element instanceof Element)) return "";
-	const attributes = Array.from(
-		element.attributes,
-		(attribute) => ` ${attribute.name}="${attribute.value}"`,
-	).join("");
-	const description = `<${element.tagName.toLowerCase()}${attributes}>`;
-	if (description.length <= _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT) {
+	try {
+		const tagName = element.tagName.toLowerCase();
+		const parts = [`<${tagName}`];
+		for (const attributeName of _INDEPENDENT_VIDEO_AD_LOG_ATTRIBUTES) {
+			const attributeValue = element.getAttribute(attributeName);
+			if (attributeValue === null) continue;
+			parts.push(
+				` ${attributeName}="${_normalizeIndependentVideoAdDiagnosticValue(attributeValue)}"`,
+			);
+		}
+
+		const source = _sanitizeIndependentVideoAdDiagnosticSource(
+			element.getAttribute("src"),
+		);
+		if (source) parts.push(` src="${source}"`);
+
+		if (element instanceof HTMLMediaElement) {
+			const currentSource = _sanitizeIndependentVideoAdDiagnosticSource(
+				element.currentSrc,
+			);
+			if (currentSource && currentSource !== source) {
+				parts.push(` current-src="${currentSource}"`);
+			}
+			parts.push(
+				` muted="${element.muted === true}"`,
+				` default-muted="${element.defaultMuted === true}"`,
+				` paused="${element.paused === true}"`,
+				` ended="${element.ended === true}"`,
+				` volume="${Number.isFinite(element.volume) ? element.volume : "unknown"}"`,
+				` ready-state="${Math.max(0, Math.trunc(Number(element.readyState) || 0))}"`,
+				` network-state="${Math.max(0, Math.trunc(Number(element.networkState) || 0))}"`,
+			);
+		}
+
+		parts.push(">");
+		return _limitIndependentVideoAdDiagnostic(
+			parts.join(""),
+			_INDEPENDENT_VIDEO_AD_LOG_DESCRIPTOR_LIMIT,
+		);
+	} catch {
+		return "<element>";
+	}
+}
+
+function _serializeIndependentVideoAdElement(media) {
+	if (!(media instanceof HTMLVideoElement)) return "";
+	const description = _describeIndependentVideoAdElement(media);
+	try {
+		const sourceElements = media.querySelectorAll("source[src]");
+		if (sourceElements.length === 0) return description;
+		const describedSources = [];
+		const sourceCount = Math.min(
+			_INDEPENDENT_VIDEO_AD_LOG_CHILD_SOURCE_LIMIT,
+			sourceElements.length,
+		);
+		for (let index = 0; index < sourceCount; index += 1) {
+			describedSources.push(
+				_describeIndependentVideoAdElement(sourceElements[index]),
+			);
+		}
+		if (sourceElements.length > describedSources.length) {
+			describedSources.push(
+				`+${sourceElements.length - describedSources.length} more`,
+			);
+		}
+		return _limitIndependentVideoAdDiagnostic(
+			`${description} sources=[${describedSources.join(", ")}]`,
+			_INDEPENDENT_VIDEO_AD_LOG_DESCRIPTOR_LIMIT,
+		);
+	} catch {
 		return description;
 	}
-	return `${description.slice(0, _INDEPENDENT_VIDEO_AD_LOG_HTML_LIMIT)}...`;
 }
 
 function _serializeIndependentVideoAdAncestry(media) {
@@ -2277,7 +2410,10 @@ function _serializeIndependentVideoAdAncestry(media) {
 		chain.push(_describeIndependentVideoAdElement(element));
 		element = element.parentElement;
 	}
-	return chain.join(" < ");
+	return _limitIndependentVideoAdDiagnostic(
+		chain.join(" < "),
+		_INDEPENDENT_VIDEO_AD_LOG_DESCRIPTOR_LIMIT,
+	);
 }
 
 function _isIndependentVideoAdDiagnosticCandidate(media) {

@@ -46,7 +46,7 @@ const TRANSLATIONS = {
 		channelModalRank: "#{rank} of {total}",
 		logDialogTitle: "Attach debug logs?",
 		logDialogText:
-			"Save a TTV AB log file from your open Twitch tabs to attach to the issue. Nothing is uploaded.",
+			"The file includes recent extension events and limited playback and page context from your open Twitch tabs. Nothing is uploaded.",
 		logDialogGenerate: "Generate log file",
 		logDialogSkip: "No thanks, open GitHub",
 		versionLabel: "Version {version}",
@@ -122,7 +122,7 @@ const TRANSLATIONS = {
 		channelModalRank: "n.º {rank} de {total}",
 		logDialogTitle: "¿Adjuntar registros de depuración?",
 		logDialogText:
-			"Guarda un archivo de registro de TTV AB desde tus pestañas de Twitch abiertas para adjuntarlo al reporte. No se sube nada.",
+			"El archivo incluye eventos recientes de la extensión y contexto limitado de reproducción y página de tus pestañas de Twitch abiertas. No se sube nada.",
 		logDialogGenerate: "Generar archivo de registro",
 		logDialogSkip: "No, gracias, abrir GitHub",
 		versionLabel: "Versión {version}",
@@ -211,7 +211,7 @@ const TRANSLATIONS = {
 		channelModalRank: "n° {rank} sur {total}",
 		logDialogTitle: "Joindre les journaux de débogage ?",
 		logDialogText:
-			"Enregistrez un fichier journal TTV AB depuis vos onglets Twitch ouverts pour le joindre au rapport. Rien n'est envoyé.",
+			"Le fichier contient les événements récents de l'extension et un contexte limité de lecture et de page provenant de vos onglets Twitch ouverts. Rien n'est envoyé.",
 		logDialogGenerate: "Générer le fichier journal",
 		logDialogSkip: "Non merci, ouvrir GitHub",
 		versionLabel: "Version {version}",
@@ -305,7 +305,7 @@ const TRANSLATIONS = {
 		channelModalRank: "Nr. {rank} von {total}",
 		logDialogTitle: "Debug-Protokolle anhängen?",
 		logDialogText:
-			"Speichere eine TTV-AB-Protokolldatei aus deinen offenen Twitch-Tabs, um sie dem Issue anzuhängen. Es wird nichts hochgeladen.",
+			"Die Datei enthält aktuelle Erweiterungsereignisse sowie begrenzte Wiedergabe- und Seiteninformationen aus deinen offenen Twitch-Tabs. Es wird nichts hochgeladen.",
 		logDialogGenerate: "Protokolldatei erstellen",
 		logDialogSkip: "Nein danke, GitHub öffnen",
 		versionLabel: "Version {version}",
@@ -408,7 +408,7 @@ const TRANSLATIONS = {
 		channelModalRank: "nº {rank} de {total}",
 		logDialogTitle: "Anexar registros de depuração?",
 		logDialogText:
-			"Salve um arquivo de log do TTV AB das suas abas do Twitch abertas para anexar ao relato. Nada é enviado.",
+			"O arquivo inclui eventos recentes da extensão e contexto limitado de reprodução e página das abas do Twitch abertas. Nada é enviado.",
 		logDialogGenerate: "Gerar arquivo de log",
 		logDialogSkip: "Não, obrigado, abrir o GitHub",
 		versionLabel: "Versão {version}",
@@ -496,7 +496,7 @@ const TRANSLATIONS = {
 		channelModalRank: "n. {rank} di {total}",
 		logDialogTitle: "Allegare i log di debug?",
 		logDialogText:
-			"Salva un file di log di TTV AB dalle schede Twitch aperte da allegare alla segnalazione. Non viene caricato nulla.",
+			"Il file include eventi recenti dell'estensione e un contesto limitato di riproduzione e pagina dalle schede Twitch aperte. Non viene caricato nulla.",
 		logDialogGenerate: "Genera file di log",
 		logDialogSkip: "No grazie, apri GitHub",
 		versionLabel: "Versione {version}",
@@ -583,7 +583,7 @@ const TRANSLATIONS = {
 		channelModalRank: "{total}件中 {rank}位",
 		logDialogTitle: "デバッグログを添付しますか？",
 		logDialogText:
-			"開いているTwitchタブからTTV ABのログファイルを保存して、Issueに添付できます。何もアップロードされません。",
+			"ファイルには、開いているTwitchタブの最近の拡張機能イベントと、限定的な再生およびページ情報が含まれます。何もアップロードされません。",
 		logDialogGenerate: "ログファイルを生成",
 		logDialogSkip: "いいえ、GitHubを開く",
 		versionLabel: "バージョン {version}",
@@ -682,7 +682,7 @@ const TRANSLATIONS = {
 		channelModalRank: "{total}개 중 {rank}위",
 		logDialogTitle: "디버그 로그를 첨부할까요?",
 		logDialogText:
-			"열려 있는 Twitch 탭에서 TTV AB 로그 파일을 저장해 이슈에 첨부하세요. 아무것도 업로드되지 않습니다.",
+			"파일에는 열려 있는 Twitch 탭의 최근 확장 프로그램 이벤트와 제한된 재생 및 페이지 정보가 포함됩니다. 아무것도 업로드되지 않습니다.",
 		logDialogGenerate: "로그 파일 생성",
 		logDialogSkip: "아니요, GitHub 열기",
 		versionLabel: "버전 {version}",
@@ -759,7 +759,7 @@ const TRANSLATIONS = {
 		channelModalRank: "第 {rank} 名（共 {total} 个）",
 		logDialogTitle: "附加调试日志？",
 		logDialogText:
-			"从已打开的 Twitch 标签页保存 TTV AB 日志文件以附加到问题报告。不会上传任何内容。",
+			"文件包含已打开的 Twitch 标签页中的近期扩展事件，以及有限的播放和页面信息。不会上传任何内容。",
 		logDialogGenerate: "生成日志文件",
 		logDialogSkip: "不用了，打开 GitHub",
 		versionLabel: "版本 {version}",
@@ -824,7 +824,7 @@ const TRANSLATIONS = {
 		channelModalRank: "第 {rank} 名（共 {total} 個）",
 		logDialogTitle: "附加偵錯日誌？",
 		logDialogText:
-			"從已開啟的 Twitch 分頁儲存 TTV AB 日誌檔案以附加到問題回報。不會上傳任何內容。",
+			"檔案包含已開啟的 Twitch 分頁中的近期擴充功能事件，以及有限的播放和頁面資訊。不會上傳任何內容。",
 		logDialogGenerate: "產生日誌檔案",
 		logDialogSkip: "不用了，開啟 GitHub",
 		versionLabel: "版本 {version}",
@@ -891,7 +891,7 @@ const TRANSLATIONS = {
 		channelModalRank: "№{rank} из {total}",
 		logDialogTitle: "Прикрепить журналы отладки?",
 		logDialogText:
-			"Сохраните файл журнала TTV AB из открытых вкладок Twitch, чтобы прикрепить его к обращению. Ничего не отправляется.",
+			"Файл содержит недавние события расширения и ограниченные сведения о воспроизведении и странице из открытых вкладок Twitch. Ничего не отправляется.",
 		logDialogGenerate: "Создать файл журнала",
 		logDialogSkip: "Нет, спасибо, открыть GitHub",
 		versionLabel: "Версия {version}",
@@ -994,7 +994,7 @@ const TRANSLATIONS = {
 		channelModalRank: "№{rank} з {total}",
 		logDialogTitle: "Прикріпити журнали налагодження?",
 		logDialogText:
-			"Збережіть файл журналу TTV AB з відкритих вкладок Twitch, щоб прикріпити його до звернення. Нічого не відправляється.",
+			"Файл містить останні події розширення та обмежені відомості про відтворення і сторінку з відкритих вкладок Twitch. Нічого не надсилається.",
 		logDialogGenerate: "Створити файл журналу",
 		logDialogSkip: "Ні, дякую, відкрити GitHub",
 		versionLabel: "Версія {version}",

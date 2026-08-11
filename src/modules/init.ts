@@ -66,14 +66,310 @@ function _getTrustedBridgeMessageDetail(value) {
 	return value;
 }
 
-function _collectPageLogEntries() {
-	if (typeof _captureIndependentVideoAdDiagnostics === "function") {
-		_captureIndependentVideoAdDiagnostics();
+const _PAGE_LOG_EXPORT_MAX_ENTRIES = 1000;
+const _PAGE_LOG_EXPORT_MAX_BYTES = 2 * 1024 * 1024;
+
+function _getSafePageLogString(value, maxLength) {
+	if (typeof value !== "string") return "";
+	try {
+		const limit = Math.max(0, Number(maxLength) || 0);
+		let bounded = value.slice(0, limit * 2);
+		try {
+			bounded = _formatLogText(bounded);
+		} catch {}
+		let sanitized = "";
+		for (const character of bounded.replace(/\r\n?/g, "\n")) {
+			const code = character.charCodeAt(0);
+			if (code === 10 || (code >= 32 && code !== 127)) {
+				sanitized += character;
+			}
+			if (sanitized.length >= limit) break;
+		}
+		return sanitized;
+	} catch {
+		return "";
 	}
-	const buffer = Array.isArray(globalThis.__TTVAB_LOGS__)
-		? (globalThis.__TTVAB_LOGS__ as PlainObject[])
-		: [];
-	return buffer.slice(-1000);
+}
+
+function _getSafePageLogNumber(value, fallback = 0) {
+	return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function _getPageLogEntryByteLength(entry) {
+	try {
+		return new TextEncoder().encode(JSON.stringify(entry)).byteLength + 1;
+	} catch {
+		try {
+			return JSON.stringify(entry).length * 4 + 1;
+		} catch {
+			return _PAGE_LOG_EXPORT_MAX_BYTES + 1;
+		}
+	}
+}
+
+function _collectPageLogEntries() {
+	try {
+		if (typeof _captureIndependentVideoAdDiagnostics === "function") {
+			_captureIndependentVideoAdDiagnostics();
+		}
+	} catch {
+		_log("Independent video diagnostic snapshot failed", "warning");
+	}
+
+	let buffer: PlainObject[] = [];
+	try {
+		if (Array.isArray(globalThis.__TTVAB_LOGS__)) {
+			buffer = globalThis.__TTVAB_LOGS__ as PlainObject[];
+		}
+	} catch {}
+
+	let length = 0;
+	try {
+		const observedLength = buffer.length;
+		if (
+			typeof observedLength === "number" &&
+			Number.isSafeInteger(observedLength) &&
+			observedLength >= 0
+		) {
+			length = observedLength;
+		}
+	} catch {}
+	const entries: PlainObject[] = [];
+	let usedBytes = 2;
+	const oldestIndex = Math.max(0, length - 1200);
+	for (let index = length - 1; index >= oldestIndex; index -= 1) {
+		if (entries.length >= _PAGE_LOG_EXPORT_MAX_ENTRIES) break;
+		try {
+			const source = buffer[index];
+			if (!source || typeof source !== "object" || Array.isArray(source)) {
+				continue;
+			}
+			const rawTimestamp = _getSafePageLogNumber(source.t, 0);
+			const timestamp =
+				rawTimestamp >= 0 && rawTimestamp <= 8640000000000000
+					? Math.trunc(rawTimestamp)
+					: 0;
+			const rawLevel =
+				typeof source.l === "string"
+					? _getSafePageLogString(source.l, 16).toLowerCase()
+					: "info";
+			const level = ["debug", "info", "success", "warning", "error"].includes(
+				rawLevel,
+			)
+				? rawLevel
+				: "info";
+			const message =
+				typeof source.m === "string"
+					? _getSafePageLogString(source.m, 4000)
+					: "[Invalid log message]";
+			const entry: PlainObject = { t: timestamp, l: level, m: message };
+			if (source.w === true) {
+				entry.w = true;
+				const generation = Math.max(
+					0,
+					Math.min(1000000, Math.trunc(_getSafePageLogNumber(source.g, 0))),
+				);
+				if (generation > 0) entry.g = generation;
+				const mediaKey =
+					typeof source.k === "string"
+						? _getSafePageLogString(source.k, 160).replace(/\n/g, "")
+						: "";
+				if (mediaKey) entry.k = mediaKey;
+			}
+			const entryBytes = _getPageLogEntryByteLength(entry);
+			if (
+				entries.length > 0 &&
+				usedBytes + entryBytes > _PAGE_LOG_EXPORT_MAX_BYTES
+			) {
+				break;
+			}
+			entries.unshift(entry);
+			usedBytes += entryBytes;
+		} catch {}
+	}
+
+	return {
+		entries,
+		truncatedEntries: Math.max(0, length - entries.length),
+	};
+}
+
+function _getSafePageLogUrl() {
+	try {
+		const url = new URL(String(window.location?.href || ""));
+		if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+		return `${url.origin}${url.pathname || "/"}`.slice(0, 2048);
+	} catch {
+		return null;
+	}
+}
+
+function _collectPageLogMediaState(state) {
+	let media = null;
+	let activeMediaKey = null;
+	let pageMediaKey = null;
+	try {
+		pageMediaKey = state?.PageMediaKey || null;
+		activeMediaKey = state?.CurrentAdMediaKey || pageMediaKey;
+		const activeChannel = state?.CurrentAdChannel || state?.PageChannel || null;
+		if (
+			activeMediaKey &&
+			typeof _getPlaybackMediaElementForContext === "function"
+		) {
+			media = _getPlaybackMediaElementForContext(activeChannel, activeMediaKey);
+		}
+	} catch {}
+	const canUsePageFallback = !activeMediaKey || activeMediaKey === pageMediaKey;
+	if (!media && canUsePageFallback) {
+		try {
+			if (typeof _getPrimaryMediaElement === "function") {
+				media = _getPrimaryMediaElement();
+			}
+		} catch {}
+	}
+	if (!media && canUsePageFallback) {
+		try {
+			if (typeof _getFallbackPrimaryVideoElement === "function") {
+				media = _getFallbackPrimaryVideoElement();
+			}
+		} catch {}
+	}
+	if (!media || typeof media !== "object") return null;
+
+	try {
+		const buffered = [];
+		const rangeCount = Math.min(
+			4,
+			Math.max(0, Math.trunc(_getSafePageLogNumber(media.buffered?.length, 0))),
+		);
+		for (let index = 0; index < rangeCount; index += 1) {
+			try {
+				const start = _getSafePageLogNumber(media.buffered.start(index), -1);
+				const end = _getSafePageLogNumber(media.buffered.end(index), -1);
+				if (start >= 0 && end >= start) buffered.push({ start, end });
+			} catch {}
+		}
+		const duration = _getSafePageLogNumber(media.duration, -1);
+		return {
+			tag: _getSafePageLogString(media.localName || "media", 16).replace(
+				/\n/g,
+				"",
+			),
+			currentTime: Math.max(0, _getSafePageLogNumber(media.currentTime, 0)),
+			duration: duration >= 0 ? duration : null,
+			paused: media.paused === true,
+			ended: media.ended === true,
+			readyState: Math.max(
+				0,
+				Math.trunc(_getSafePageLogNumber(media.readyState, 0)),
+			),
+			networkState: Math.max(
+				0,
+				Math.trunc(_getSafePageLogNumber(media.networkState, 0)),
+			),
+			playbackRate: _getSafePageLogNumber(media.playbackRate, 1),
+			muted: media.muted === true,
+			volume: Math.min(1, Math.max(0, _getSafePageLogNumber(media.volume, 0))),
+			width: Math.max(
+				0,
+				Math.trunc(
+					_getSafePageLogNumber(media.videoWidth || media.clientWidth, 0),
+				),
+			),
+			height: Math.max(
+				0,
+				Math.trunc(
+					_getSafePageLogNumber(media.videoHeight || media.clientHeight, 0),
+				),
+			),
+			buffered,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function _collectPageLogContext() {
+	try {
+		const state =
+			typeof __TTVAB_STATE__ !== "undefined" && __TTVAB_STATE__
+				? __TTVAB_STATE__
+				: null;
+		const currentAdMediaKey = _getSafePageLogString(
+			state?.CurrentAdMediaKey,
+			160,
+		).replace(/\n/g, "");
+		const progress = currentAdMediaKey
+			? state?.AdPodProgressByMediaKey?.[currentAdMediaKey]
+			: null;
+		const workers = [];
+		const workerList = Array.isArray(_S?.workers) ? _S.workers : [];
+		for (
+			let index = Math.max(0, workerList.length - 12);
+			index < workerList.length;
+			index += 1
+		) {
+			try {
+				const worker = workerList[index];
+				workers.push({
+					generation: Math.max(
+						0,
+						Math.min(
+							1000000,
+							Math.trunc(_getSafePageLogNumber(worker?.__TTVABGeneration, 0)),
+						),
+					),
+					mediaKey:
+						_getSafePageLogString(worker?.__TTVABPageMediaKey, 160).replace(
+							/\n/g,
+							"",
+						) || null,
+					crashed: worker?.__TTVABCrashed === true,
+					terminated: worker?.__TTVABIntentionallyTerminated === true,
+					lastPongAt: Math.max(
+						0,
+						Math.trunc(_getSafePageLogNumber(worker?.__TTVABLastPongAt, 0)),
+					),
+				});
+			} catch {}
+		}
+		return {
+			pageUrl: _getSafePageLogUrl(),
+			pageMediaKey:
+				_getSafePageLogString(state?.PageMediaKey, 160).replace(/\n/g, "") ||
+				null,
+			pageChannel:
+				_getSafePageLogString(state?.PageChannel, 80).replace(/\n/g, "") ||
+				null,
+			visibility: _getSafePageLogString(document.visibilityState, 24).replace(
+				/\n/g,
+				"",
+			),
+			focused: document.hasFocus?.() === true,
+			enabled: state?.IsAdStrippingEnabled === true,
+			adSpoofingEnabled: state?.DisableAdSpoofing !== true,
+			autoplayBackupEnabled: state?.DisableAutoplayBackup !== true,
+			currentAdMediaKey: currentAdMediaKey || null,
+			activeCycleStartedAt: Math.max(
+				0,
+				Math.trunc(_getSafePageLogNumber(progress?.cycleStartedAt, 0)),
+			),
+			pinnedBackupPlayerType:
+				_getSafePageLogString(state?.PinnedBackupPlayerType, 40).replace(
+					/\n/g,
+					"",
+				) || null,
+			pinnedBackupMediaKey:
+				_getSafePageLogString(state?.PinnedBackupPlayerMediaKey, 160).replace(
+					/\n/g,
+					"",
+				) || null,
+			workers,
+			media: _collectPageLogMediaState(state),
+		};
+	} catch {
+		return null;
+	}
 }
 
 function _bindBridgePort() {
@@ -225,9 +521,12 @@ function _initToggleListener() {
 		const requestId =
 			typeof safeDetail?.requestId === "string" ? safeDetail.requestId : null;
 		if (!requestId) return;
+		const collected = _collectPageLogEntries();
 		_sendBridgeMessage("ttvab-logs", {
 			requestId,
-			entries: _collectPageLogEntries(),
+			entries: collected.entries,
+			context: _collectPageLogContext(),
+			truncatedEntries: collected.truncatedEntries,
 		});
 	});
 }

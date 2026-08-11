@@ -1,4 +1,358 @@
 // TTV AB - Popup Script
+const _LOG_QUERY_TABS_TIMEOUT_MS = 2500;
+const _LOG_COLLECT_TAB_TIMEOUT_MS = 2500;
+const _LOG_EXPORT_MAX_TABS = 16;
+const _LOG_EXPORT_BATCH_SIZE = 4;
+const _LOG_EXPORT_MAX_CHARACTERS = 2 * 1024 * 1024;
+const _LOG_EXPORT_UNKNOWN_TIMESTAMP = "????-??-??T??:??:??.???Z";
+const _LOG_EXPORT_LEVELS = new Set([
+    "debug",
+    "info",
+    "success",
+    "warning",
+    "error",
+]);
+function _sanitizeLogExportText(value, maxLength = 4000) {
+    const text = typeof value === "string" ? value : "";
+    const limit = Math.max(0, maxLength);
+    let sanitized = "";
+    for (const character of text.replace(/\r\n?/g, "\n")) {
+        const code = character.charCodeAt(0);
+        if (code === 10 || (code >= 32 && code !== 127)) {
+            sanitized += character;
+        }
+        if (sanitized.length >= limit)
+            break;
+    }
+    return sanitized;
+}
+function _sanitizeLogExportTabUrl(value) {
+    try {
+        const url = new URL(String(value || ""));
+        if (url.protocol !== "https:" && url.protocol !== "http:") {
+            return "https://www.twitch.tv/";
+        }
+        url.username = "";
+        url.password = "";
+        url.search = "";
+        url.hash = "";
+        return `${url.origin}${url.pathname || "/"}`.slice(0, 2048);
+    }
+    catch {
+        return "https://www.twitch.tv/";
+    }
+}
+function _formatLogExportTimestamp(value) {
+    let numericValue = Number.NaN;
+    try {
+        numericValue = Number(value);
+    }
+    catch { }
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+        return _LOG_EXPORT_UNKNOWN_TIMESTAMP;
+    }
+    const date = new Date(numericValue);
+    if (!Number.isFinite(date.getTime()))
+        return _LOG_EXPORT_UNKNOWN_TIMESTAMP;
+    try {
+        return date.toISOString();
+    }
+    catch {
+        return _LOG_EXPORT_UNKNOWN_TIMESTAMP;
+    }
+}
+function _stringifyLogExportValue(value, maxLength = 16000) {
+    try {
+        return _sanitizeLogExportText(JSON.stringify(value), maxLength).replace(/\n/g, " ");
+    }
+    catch {
+        return "{}";
+    }
+}
+function _formatLogEntryLine(entry) {
+    const timestamp = _formatLogExportTimestamp(entry?.t);
+    const generation = typeof entry?.g === "number" && Number.isFinite(entry.g)
+        ? Math.max(0, Math.trunc(entry.g))
+        : 0;
+    const context = entry?.w === true
+        ? `worker${generation > 0 ? `#g${generation}` : ""}`
+        : "page";
+    const rawLevel = typeof entry?.l === "string" ? entry.l.toLowerCase() : "info";
+    const level = _LOG_EXPORT_LEVELS.has(rawLevel) ? rawLevel : "info";
+    const mediaKey = _sanitizeLogExportText(entry?.k, 160).replace(/\n/g, "");
+    const ownership = mediaKey ? ` media=${mediaKey}` : "";
+    const messageLines = _sanitizeLogExportText(entry?.m).split("\n");
+    const prefix = `${timestamp} [${context}:${level}]${ownership}`;
+    return messageLines
+        .map((line, index) => `${prefix}${index === 0 ? " " : " | "}${line}`)
+        .join("\n");
+}
+function _formatLogContextLines(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        return [];
+    const context = value;
+    const pageState = {
+        mediaKey: typeof context.pageMediaKey === "string"
+            ? _sanitizeLogExportText(context.pageMediaKey, 160).replace(/\n/g, "")
+            : null,
+        channel: typeof context.pageChannel === "string"
+            ? _sanitizeLogExportText(context.pageChannel, 80).replace(/\n/g, "")
+            : null,
+        visibility: typeof context.visibility === "string"
+            ? _sanitizeLogExportText(context.visibility, 24).replace(/\n/g, "")
+            : "unknown",
+        focused: context.focused === true,
+        enabled: context.enabled === true,
+        adSpoofingEnabled: context.adSpoofingEnabled === true,
+        autoplayBackupEnabled: context.autoplayBackupEnabled === true,
+        currentAdMediaKey: typeof context.currentAdMediaKey === "string"
+            ? _sanitizeLogExportText(context.currentAdMediaKey, 160).replace(/\n/g, "")
+            : null,
+        activeCycleStartedAt: typeof context.activeCycleStartedAt === "number" &&
+            Number.isFinite(context.activeCycleStartedAt)
+            ? context.activeCycleStartedAt
+            : 0,
+        pinnedBackupPlayerType: typeof context.pinnedBackupPlayerType === "string"
+            ? _sanitizeLogExportText(context.pinnedBackupPlayerType, 40).replace(/\n/g, "")
+            : null,
+        pinnedBackupMediaKey: typeof context.pinnedBackupMediaKey === "string"
+            ? _sanitizeLogExportText(context.pinnedBackupMediaKey, 160).replace(/\n/g, "")
+            : null,
+    };
+    const lines = [`Page state: ${_stringifyLogExportValue(pageState)}`];
+    if (Array.isArray(context.workers)) {
+        lines.push(`Workers: ${_stringifyLogExportValue(context.workers)}`);
+    }
+    if (context.media && typeof context.media === "object") {
+        lines.push(`Media state: ${_stringifyLogExportValue(context.media)}`);
+    }
+    return lines;
+}
+function _describeLogCollectionError(value) {
+    const labels = {
+        "tab-query-timeout": "Twitch tab query timed out",
+        "tab-query-failed": "Twitch tab query failed",
+        "content-script-unavailable": "extension bridge is unavailable in this tab",
+        "extension-response-timeout": "extension response timed out",
+        "page-bridge-unavailable": "page bridge is not connected",
+        "page-response-timeout": "page log response timed out",
+        "page-message-failed": "page log request failed",
+        "collection-failed": "log collection failed",
+    };
+    return labels[String(value || "")] || labels["collection-failed"];
+}
+function _queryTwitchTabs(timeoutMs = _LOG_QUERY_TABS_TIMEOUT_MS) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (tabs, error) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve({ tabs, error });
+        };
+        const timer = setTimeout(() => finish([], "tab-query-timeout"), Math.max(0, timeoutMs));
+        try {
+            chrome.tabs.query({ url: "*://*.twitch.tv/*" }, (tabs) => {
+                if (chrome.runtime.lastError || !Array.isArray(tabs)) {
+                    finish([], "tab-query-failed");
+                    return;
+                }
+                finish(tabs, null);
+            });
+        }
+        catch {
+            finish([], "tab-query-failed");
+        }
+    });
+}
+function _collectTabLogEntries(tabId, timeoutMs = _LOG_COLLECT_TAB_TIMEOUT_MS) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (result) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(result);
+        };
+        const fail = (error) => finish({ entries: [], context: null, error, truncatedEntries: 0 });
+        const timer = setTimeout(() => fail("extension-response-timeout"), Math.max(0, timeoutMs));
+        try {
+            chrome.tabs.sendMessage(tabId, { type: "ttvab-collect-logs" }, { frameId: 0 }, (response) => {
+                if (chrome.runtime.lastError) {
+                    fail("content-script-unavailable");
+                    return;
+                }
+                const data = response;
+                if (data?.ok !== true) {
+                    fail(typeof data?.error === "string"
+                        ? data.error
+                        : "collection-failed");
+                    return;
+                }
+                finish({
+                    entries: Array.isArray(data?.entries) ? data.entries : [],
+                    context: data?.context &&
+                        typeof data.context === "object" &&
+                        !Array.isArray(data.context)
+                        ? data.context
+                        : null,
+                    error: null,
+                    truncatedEntries: typeof data?.truncatedEntries === "number" &&
+                        Number.isFinite(data.truncatedEntries)
+                        ? Math.max(0, Math.trunc(data.truncatedEntries))
+                        : 0,
+                });
+            });
+        }
+        catch {
+            fail("content-script-unavailable");
+        }
+    });
+}
+function _selectLogExportTabs(tabs, maxTabs = _LOG_EXPORT_MAX_TABS) {
+    const withIds = Array.isArray(tabs)
+        ? tabs.filter((tab) => typeof tab?.id === "number")
+        : [];
+    withIds.sort((a, b) => {
+        const activeDelta = Number(b.active === true) - Number(a.active === true);
+        if (activeDelta !== 0)
+            return activeDelta;
+        return (Number(b.lastAccessed) || 0) - (Number(a.lastAccessed) || 0);
+    });
+    const safeMaxTabs = Math.max(1, Math.trunc(Number(maxTabs) || 1));
+    return {
+        tabs: withIds.slice(0, safeMaxTabs),
+        omittedTabs: Math.max(0, withIds.length - safeMaxTabs),
+    };
+}
+function _buildTabLogSection(tab, index, result, maxCharacters) {
+    const collectedPageUrl = typeof result.context?.pageUrl === "string"
+        ? result.context.pageUrl
+        : tab.url;
+    const lines = [
+        `==== Tab ${index + 1}: ${_sanitizeLogExportTabUrl(collectedPageUrl)} ====`,
+        ..._formatLogContextLines(result.context),
+    ];
+    if (!result.context && !result.error) {
+        lines.push("(page state snapshot unavailable)");
+    }
+    if (result.error) {
+        lines.push(`(collection failed: ${_describeLogCollectionError(result.error)})`);
+    }
+    else if (result.entries.length === 0) {
+        lines.push("(no TTV AB log entries captured in this tab)");
+    }
+    else {
+        for (const entry of result.entries) {
+            lines.push(_formatLogEntryLine(entry));
+        }
+    }
+    if (result.truncatedEntries > 0) {
+        lines.push(`(${result.truncatedEntries} older log entries omitted by the export size limit)`);
+    }
+    lines.push("");
+    const text = lines.join("\n");
+    const safeMax = Math.max(0, Math.trunc(Number(maxCharacters) || 0));
+    if (text.length <= safeMax)
+        return { text, truncated: false };
+    const marker = "\n...(tab section truncated by the export size limit)...\n";
+    if (safeMax <= marker.length) {
+        return { text: marker.slice(0, safeMax), truncated: true };
+    }
+    return {
+        text: `${text.slice(0, safeMax - marker.length)}${marker}`,
+        truncated: true,
+    };
+}
+async function _buildLogExport(isCancelled = () => false) {
+    const manifestVersion = chrome.runtime.getManifest?.()?.version || "?";
+    const headerLines = [
+        "TTV AB debug log",
+        `Version: ${manifestVersion}`,
+        `Exported: ${new Date().toISOString()}`,
+        "",
+    ];
+    const queryResult = await _queryTwitchTabs();
+    if (isCancelled())
+        return "";
+    if (queryResult.error) {
+        headerLines.push(`Log collection status: ${_describeLogCollectionError(queryResult.error)}.`);
+        return headerLines.join("\n");
+    }
+    const selected = _selectLogExportTabs(queryResult.tabs);
+    if (selected.tabs.length === 0) {
+        headerLines.push("No open Twitch tabs were found, so no runtime log entries were captured.", "Open a twitch.tv stream, let the issue happen, then export again.");
+        return headerLines.join("\n");
+    }
+    if (selected.omittedTabs > 0) {
+        headerLines.push(`${selected.omittedTabs} older Twitch tabs were omitted to keep the export bounded.`, "");
+    }
+    const parts = [headerLines.join("\n")];
+    let usedCharacters = parts[0].length;
+    let stoppedAt = selected.tabs.length;
+    for (let batchStart = 0; batchStart < selected.tabs.length; batchStart += _LOG_EXPORT_BATCH_SIZE) {
+        if (isCancelled())
+            break;
+        const batch = selected.tabs.slice(batchStart, batchStart + _LOG_EXPORT_BATCH_SIZE);
+        const results = await Promise.all(batch.map((tab) => _collectTabLogEntries(tab.id)));
+        if (isCancelled())
+            break;
+        for (let offset = 0; offset < batch.length; offset += 1) {
+            const remaining = _LOG_EXPORT_MAX_CHARACTERS - usedCharacters - 1;
+            if (remaining <= 0) {
+                stoppedAt = batchStart + offset;
+                break;
+            }
+            const section = _buildTabLogSection(batch[offset], batchStart + offset, results[offset], remaining);
+            parts.push(section.text);
+            usedCharacters += section.text.length + 1;
+            if (section.truncated) {
+                stoppedAt = batchStart + offset + 1;
+                break;
+            }
+        }
+        if (stoppedAt < selected.tabs.length)
+            break;
+    }
+    const omittedBySize = selected.tabs.length - stoppedAt;
+    if (omittedBySize > 0 && usedCharacters < _LOG_EXPORT_MAX_CHARACTERS) {
+        const note = `${omittedBySize} additional Twitch tabs were omitted because the export reached its size limit.`;
+        const remaining = _LOG_EXPORT_MAX_CHARACTERS - usedCharacters - 1;
+        if (remaining > 0)
+            parts.push(note.slice(0, remaining));
+    }
+    return parts.join("\n").slice(0, _LOG_EXPORT_MAX_CHARACTERS);
+}
+function _downloadLogExport(text) {
+    const stamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")
+        .replace("T", "_")
+        .slice(0, 19);
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    let clicked = false;
+    try {
+        anchor.href = url;
+        anchor.download = `ttv-ab-logs-${stamp}.txt`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        clicked = true;
+        return true;
+    }
+    finally {
+        anchor.remove();
+        if (clicked) {
+            setTimeout(() => URL.revokeObjectURL(url), 30000);
+        }
+        else {
+            URL.revokeObjectURL(url);
+        }
+    }
+}
 document.addEventListener("DOMContentLoaded", () => {
     const THEME_KEY = "ttvab_theme";
     const VALID_THEMES = ["default", "retro"];
@@ -304,7 +658,6 @@ document.addEventListener("DOMContentLoaded", () => {
         reportBugLink.title = reportBugLabel;
         reportBugLink.setAttribute("aria-label", reportBugLabel);
     }
-    const LOG_COLLECT_TAB_TIMEOUT_MS = 2500;
     function openIssuesPage() {
         const issuesUrl = reportBugLink.href || "https://github.com/GosuDRM/TTV-AB/issues";
         try {
@@ -327,119 +680,22 @@ document.addEventListener("DOMContentLoaded", () => {
         catch { }
         window.open(changelogUrl, "_blank", "noopener,noreferrer");
     }
-    function hideLogDialog() {
+    let logExportInProgress = false;
+    let logExportGeneration = 0;
+    function hideLogDialog(invalidateExport = false) {
+        if (invalidateExport && logExportInProgress) {
+            logExportGeneration += 1;
+        }
         logDialogOverlay.hidden = true;
-        logDialogGenerate.disabled = false;
-        logDialogSkip.disabled = false;
-    }
-    function queryTwitchTabs() {
-        return new Promise((resolve) => {
-            try {
-                chrome.tabs.query({ url: "*://*.twitch.tv/*" }, (tabs) => {
-                    if (chrome.runtime.lastError || !Array.isArray(tabs)) {
-                        resolve([]);
-                        return;
-                    }
-                    resolve(tabs);
-                });
-            }
-            catch {
-                resolve([]);
-            }
-        });
-    }
-    function collectTabLogEntries(tabId) {
-        return new Promise((resolve) => {
-            let settled = false;
-            const finish = (entries) => {
-                if (settled)
-                    return;
-                settled = true;
-                resolve(entries);
-            };
-            const timer = setTimeout(() => finish([]), LOG_COLLECT_TAB_TIMEOUT_MS);
-            try {
-                chrome.tabs.sendMessage(tabId, { type: "ttvab-collect-logs" }, { frameId: 0 }, (response) => {
-                    clearTimeout(timer);
-                    if (chrome.runtime.lastError) {
-                        finish([]);
-                        return;
-                    }
-                    const data = response;
-                    finish(Array.isArray(data?.entries) ? data.entries : []);
-                });
-            }
-            catch {
-                clearTimeout(timer);
-                finish([]);
-            }
-        });
-    }
-    function formatLogEntryLine(entry) {
-        const timestamp = Number.isFinite(Number(entry.t))
-            ? new Date(Number(entry.t)).toISOString()
-            : "????-??-??T??:??:??.???Z";
-        const context = entry.w === true ? "worker" : "page";
-        const level = typeof entry.l === "string" && entry.l ? entry.l : "info";
-        const message = typeof entry.m === "string" ? entry.m : "";
-        return `${timestamp} [${context}:${level}] ${message}`;
-    }
-    async function buildLogExport() {
-        const manifestVersion = chrome.runtime.getManifest?.()?.version || "?";
-        const lines = [
-            "TTV AB debug log",
-            `Version: ${manifestVersion}`,
-            `Exported: ${new Date().toISOString()}`,
-            `Browser: ${navigator.userAgent}`,
-            "",
-        ];
-        const tabs = await queryTwitchTabs();
-        const tabsWithIds = tabs.filter((tab) => typeof tab.id === "number");
-        if (tabsWithIds.length === 0) {
-            lines.push("No open Twitch tabs were found, so no runtime log entries were captured.", "Open a twitch.tv stream, let the issue happen, then export again.");
-            return lines.join("\n");
-        }
-        const sections = await Promise.all(tabsWithIds.map(async (tab, index) => {
-            const entries = await collectTabLogEntries(tab.id);
-            const sectionLines = [
-                `==== Tab ${index + 1}: ${tab.url || "twitch.tv"} ====`,
-            ];
-            if (entries.length === 0) {
-                sectionLines.push("(no TTV AB log entries captured in this tab)");
-            }
-            else {
-                for (const entry of entries) {
-                    sectionLines.push(formatLogEntryLine(entry));
-                }
-            }
-            sectionLines.push("");
-            return sectionLines;
-        }));
-        for (const sectionLines of sections) {
-            lines.push(...sectionLines);
-        }
-        return lines.join("\n");
-    }
-    function downloadLogExport(text) {
-        const stamp = new Date()
-            .toISOString()
-            .replace(/[:.]/g, "-")
-            .replace("T", "_")
-            .slice(0, 19);
-        const blob = new Blob([text], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `ttv-ab-logs-${stamp}.txt`;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        logDialogGenerate.disabled = logExportInProgress;
+        logDialogSkip.disabled = logExportInProgress;
     }
     reportBugLink.addEventListener("click", (event) => {
         event.preventDefault();
         logDialogOverlay.hidden = false;
-        logDialogGenerate.focus();
+        logDialogGenerate.disabled = logExportInProgress;
+        logDialogSkip.disabled = logExportInProgress;
+        (logExportInProgress ? logDialogClose : logDialogGenerate).focus();
     });
     versionText.addEventListener("click", () => {
         openChangelogPage();
@@ -455,36 +711,48 @@ document.addEventListener("DOMContentLoaded", () => {
         openIssuesPage();
     });
     logDialogClose.addEventListener("click", () => {
-        hideLogDialog();
+        hideLogDialog(true);
     });
     logDialogOverlay.addEventListener("click", (event) => {
         if (event.target === logDialogOverlay) {
-            hideLogDialog();
+            hideLogDialog(true);
         }
     });
     window.addEventListener("keydown", (event) => {
         if (event.key !== "Escape")
             return;
         if (!logDialogOverlay.hidden) {
-            hideLogDialog();
+            hideLogDialog(true);
         }
         if (!channelModalOverlay.hidden) {
             hideChannelModal();
         }
     });
     logDialogGenerate.addEventListener("click", () => {
-        if (logDialogGenerate.disabled)
+        if (logDialogGenerate.disabled || logExportInProgress)
             return;
+        logExportInProgress = true;
+        const generation = ++logExportGeneration;
         logDialogGenerate.disabled = true;
         logDialogSkip.disabled = true;
-        buildLogExport()
+        _buildLogExport(() => generation !== logExportGeneration)
             .then((text) => {
-            downloadLogExport(text);
-        })
-            .catch(() => { })
-            .then(() => {
+            if (generation !== logExportGeneration)
+                return;
+            _downloadLogExport(text);
             hideLogDialog();
             openIssuesPage();
+        })
+            .catch((error) => {
+            if (generation !== logExportGeneration)
+                return;
+            console.error("[TTV AB] Log export failed:", error);
+            logDialogOverlay.hidden = false;
+        })
+            .finally(() => {
+            logExportInProgress = false;
+            logDialogGenerate.disabled = false;
+            logDialogSkip.disabled = false;
         });
     });
     let latestChannelStats = Object.create(null);
