@@ -295,41 +295,166 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(ad.video.volume).toBe(0);
 	});
 
-	it("records the original ad element markup when suppression begins", () => {
+	it("records a privacy-safe ad descriptor when suppression begins", () => {
 		const log = vi.fn();
 		g._log = log;
-		makeVideo("Video Advertisement");
+		const ad = makeVideo("Video Advertisement");
+		ad.video.src =
+			"https://m.media-amazon.com/independent-ad.mp4?token=viewer-secret#creative-secret";
+		ad.video.setAttribute("role", "presentation");
+		ad.video.setAttribute("data-a-target", "side-ad-video");
+		ad.video.setAttribute("data-test-selector", "side-ad-creative");
+		ad.video.setAttribute("type", "video/mp4");
+		ad.video.setAttribute("data-private", "private-ad-value");
+		ad.video.id = "private-ad-id";
+		ad.video.className = "private-ad-class";
+		ad.video.style.setProperty("background-image", "url(private-style-value)");
 
 		expect(suppress()()).toBe(1);
-		expect(log).toHaveBeenCalledWith(
-			expect.stringContaining(
-				'<video aria-label="Video Advertisement" src="https://m.media-amazon.com/independent-ad.mp4"',
-			),
-			"info",
+		const message = String(
+			log.mock.calls.find(([entry]) =>
+				String(entry).startsWith("Suppressed independent"),
+			)?.[0],
 		);
-		expect(
-			String(
-				log.mock.calls.find(([message]) =>
-					String(message).startsWith("Suppressed independent"),
-				)?.[0],
-			),
-		).not.toContain("data-ttvab-independent-ad-suppressed");
+		expect(message).toContain(
+			'<video aria-label="Video Advertisement" role="presentation" data-a-target="side-ad-video" data-test-selector="side-ad-creative" type="video/mp4" src="https://m.media-amazon.com/independent-ad.mp4"',
+		);
+		expect(message).toContain('muted="false"');
+		expect(message).toContain('volume="1"');
+		expect(message).not.toMatch(
+			/token=|viewer-secret|creative-secret|data-private|private-ad-value|private-ad-id|private-ad-class|style=|private-style-value|data-ttvab-independent-ad-suppressed/,
+		);
 	});
 
-	it("captures current ad markup for an on-demand log export", () => {
+	it("captures bounded allowlisted structure for an on-demand log export", () => {
 		const log = vi.fn();
 		g._log = log;
 		const ad = makeVideo(null);
-		ad.video.setAttribute("aria-label", "Publicidad en video");
-		ad.video.src = "https://m.media-amazon.com/export-snapshot.mp4";
+		ad.video.setAttribute("aria-label", 'Publicidad\n"privada"\u202e');
+		ad.video.src =
+			"https://m.media-amazon.com/export-snapshot.mp4?token=viewer-token#private-fragment";
+		ad.video.setAttribute("data-private", "media-private-value");
+		const source = document.createElement("source");
+		source.type = "video/mp4";
+		source.src =
+			"https://m.media-amazon.com/source-ad.mp4?signature=source-secret#source-fragment";
+		source.setAttribute("data-private", "source-private-value");
+		ad.video.appendChild(source);
+		const container = document.createElement("section");
+		container.setAttribute("role", "complementary");
+		container.setAttribute("data-a-target", "ad\nslot");
+		container.setAttribute("data-test-selector", 'side"ad');
+		container.setAttribute("data-private", "ancestor-private-value");
+		container.style.setProperty("display", "grid");
+		container.appendChild(ad.video);
+		document.body.appendChild(container);
 
-		expect(T<() => number>("_captureIndependentVideoAdDiagnostics")()).toBe(1);
-		expect(log).toHaveBeenCalledWith(
-			expect.stringContaining(
-				'<video aria-label="Publicidad en video" src="https://m.media-amazon.com/export-snapshot.mp4"',
-			),
-			"info",
+		try {
+			expect(suppress()()).toBe(1);
+			log.mockClear();
+			expect(T<() => number>("_captureIndependentVideoAdDiagnostics")()).toBe(
+				1,
+			);
+			const snapshot = String(
+				log.mock.calls.find(([entry]) =>
+					String(entry).startsWith(
+						"Independent video advertisement log snapshot:",
+					),
+				)?.[0],
+			);
+			const ancestry = String(
+				log.mock.calls.find(([entry]) =>
+					String(entry).startsWith("Independent video advertisement ancestry:"),
+				)?.[0],
+			);
+
+			expect(snapshot).toContain('aria-label="Publicidad \\"privada\\""');
+			expect(snapshot).toContain(
+				'src="https://m.media-amazon.com/export-snapshot.mp4"',
+			);
+			expect(snapshot).toContain(
+				'sources=[<source type="video/mp4" src="https://m.media-amazon.com/source-ad.mp4">]',
+			);
+			expect(snapshot).toContain('muted="true"');
+			expect(ancestry).toContain(
+				'<section role="complementary" data-a-target="ad slot" data-test-selector="side\\"ad">',
+			);
+			expect(`${snapshot}\n${ancestry}`).not.toMatch(
+				/viewer-token|private-fragment|source-secret|source-fragment|data-private|private-value|style=|data-ttvab-independent-ad-(?:suppressed|container)|\u202e/,
+			);
+			expect(snapshot.split("\n")).toHaveLength(1);
+			expect(ancestry.split("\n")).toHaveLength(1);
+		} finally {
+			container.remove();
+		}
+	});
+
+	it("redacts blob identifiers and bounds adversarial descriptor values", () => {
+		const video = document.createElement("video");
+		video.setAttribute("aria-label", "x".repeat(10000));
+		video.setAttribute("role", "y".repeat(10000));
+		video.src =
+			"blob:https://www.twitch.tv/private-blob-identifier?token=blob-secret#fragment";
+		const wrapper = document.createElement("div");
+		wrapper.setAttribute("role", "z".repeat(10000));
+		wrapper.setAttribute("data-private", "ancestor-secret");
+		wrapper.appendChild(video);
+		document.body.appendChild(wrapper);
+		for (let index = 0; index < 8; index += 1) {
+			const source = document.createElement("source");
+			source.type = "v".repeat(10000);
+			source.src = `https://m.media-amazon.com/${"p".repeat(
+				10000,
+			)}.mp4?token=source-${index}`;
+			video.appendChild(source);
+		}
+
+		try {
+			const snapshot = T<(media: HTMLVideoElement) => string>(
+				"_serializeIndependentVideoAdElement",
+			)(video);
+			const ancestry = T<(media: HTMLVideoElement) => string>(
+				"_serializeIndependentVideoAdAncestry",
+			)(video);
+			const limit = g._INDEPENDENT_VIDEO_AD_LOG_DESCRIPTOR_LIMIT as number;
+
+			expect(snapshot.length).toBeLessThanOrEqual(limit);
+			expect(ancestry.length).toBeLessThanOrEqual(limit);
+			expect(snapshot).toContain("blob:https://www.twitch.tv/[redacted]");
+			expect(snapshot).not.toMatch(
+				/private-blob-identifier|blob-secret|token=|source-\d|ancestor-secret/,
+			);
+			expect(ancestry).not.toContain("ancestor-secret");
+		} finally {
+			wrapper.remove();
+		}
+	});
+
+	it("reads only the bounded child-source diagnostic window", () => {
+		const video = document.createElement("video");
+		const sources = Array.from({ length: 4 }, () =>
+			document.createElement("source"),
 		);
+		const collection = new Proxy(
+			{ length: 1000, ...sources },
+			{
+				get(target, property, receiver) {
+					if (typeof property === "string" && Number(property) >= 4) {
+						throw new Error("source outside diagnostic window was read");
+					}
+					return Reflect.get(target, property, receiver);
+				},
+			},
+		);
+		vi.spyOn(video, "querySelectorAll").mockReturnValue(
+			collection as unknown as NodeListOf<HTMLSourceElement>,
+		);
+
+		const snapshot = T<(media: HTMLVideoElement) => string>(
+			"_serializeIndependentVideoAdElement",
+		)(video);
+
+		expect(snapshot).toContain("+996 more");
 	});
 
 	it("restores suppressed ads when ad blocking is disabled", () => {

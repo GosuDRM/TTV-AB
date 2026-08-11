@@ -454,6 +454,7 @@ function validateSharedDefinitions() {
 	const initPath = path.join(DIST_DIR, "src", "modules", "init.js");
 	const hooksPath = path.join(DIST_DIR, "src", "modules", "hooks.js");
 	const statePath = path.join(DIST_DIR, "src", "modules", "state.js");
+	const loggerPath = path.join(DIST_DIR, "src", "modules", "logger.js");
 	const workerPath = path.join(DIST_DIR, "src", "modules", "worker.js");
 	const processorPath = path.join(DIST_DIR, "src", "modules", "processor.js");
 	const apiPath = path.join(DIST_DIR, "src", "modules", "api.js");
@@ -691,6 +692,7 @@ function validateSharedDefinitions() {
 	const initSource = fs.readFileSync(initPath, "utf8");
 	const hooksSource = fs.readFileSync(hooksPath, "utf8");
 	const stateSource = fs.readFileSync(statePath, "utf8");
+	const loggerSource = fs.readFileSync(loggerPath, "utf8");
 	const workerSource = fs.readFileSync(workerPath, "utf8");
 	const parserSource = fs.readFileSync(
 		path.join(DIST_DIR, "src", "modules", "parser.js"),
@@ -1236,6 +1238,11 @@ function validateSharedDefinitions() {
 	}
 
 	const requiredInjectedPairs = [
+		{
+			consumer: "_log",
+			helper: "_formatLogText",
+			source: loggerSource,
+		},
 		{
 			consumer: "_hookWorkerFetch",
 			helper: "_invalidateNativeRecoveryAfterPlayerReload",

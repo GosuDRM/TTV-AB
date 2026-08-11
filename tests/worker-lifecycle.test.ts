@@ -23,6 +23,7 @@ function loadModule(modulePath: string) {
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
+	loadModule("../dist/src/modules/logger.js");
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/state.js");
 	loadModule("../dist/src/modules/api.js");
@@ -247,6 +248,91 @@ function installWorkerMessageHarness() {
 		throw error;
 	}
 }
+
+describe("worker log ingestion", () => {
+	it("tags, bounds, normalizes, and redacts worker log entries", () => {
+		delete g.__TTVAB_LOGS__;
+		const { worker, restore } = installWorkerMessageHarness();
+
+		try {
+			worker.emitMessage({
+				key: "LogEntry",
+				value: {
+					t: 1234,
+					l: "warning",
+					m: "https://edge.example/live.m3u8?token=worker-secret&sig=signature-secret",
+				},
+			});
+			const entries = g.__TTVAB_LOGS__ as Array<Record<string, unknown>>;
+			expect(entries).toHaveLength(1);
+			expect(entries[0]).toEqual({
+				t: 1234,
+				l: "warning",
+				m: "https://edge.example/live.m3u8?token=[redacted]&sig=[redacted]",
+				w: true,
+				g: 1,
+				k: "live:testchannel",
+			});
+
+			Object.assign(worker, {
+				__TTVABGeneration: Number.MAX_VALUE,
+				__TTVABPageMediaKey: "invalid-media-key",
+			});
+			worker.emitMessage({
+				key: "LogEntry",
+				value: {
+					t: Number.MAX_VALUE,
+					l: "info",
+					m: "x".repeat(5000),
+				},
+			});
+			expect(entries[1]).toMatchObject({
+				l: "info",
+				w: true,
+				g: 1000000,
+				k: null,
+			});
+			expect(Number(entries[1]?.t)).toBeLessThanOrEqual(8640000000000000);
+			expect(String(entries[1]?.m)).toHaveLength(4000);
+
+			worker.emitMessage({
+				key: "LogEntry",
+				value: {
+					t: {
+						valueOf: vi.fn(() => {
+							throw new Error("timestamp coercion attempted");
+						}),
+					},
+					l: "info",
+					m: { huge: new Array(100000) },
+				},
+			});
+			expect(entries[2]?.m).toBe("[Invalid worker log message]");
+		} finally {
+			restore();
+			delete g.__TTVAB_LOGS__;
+		}
+	});
+
+	it("keeps worker log ingestion isolated from a poisoned page buffer", () => {
+		const { proxy, revoke } = Proxy.revocable([], {});
+		g.__TTVAB_LOGS__ = proxy;
+		revoke();
+		const { worker, restore } = installWorkerMessageHarness();
+
+		try {
+			expect(() =>
+				worker.emitMessage({
+					key: "LogEntry",
+					value: { t: 1, l: "info", m: "safe" },
+				}),
+			).not.toThrow();
+		} finally {
+			restore();
+			delete g.__TTVAB_LOGS__;
+		}
+	});
+});
 
 describe("MAIN bridge token handshake", () => {
 	it("rejects arbitrary page bridge tokens before MAIN creates one", () => {

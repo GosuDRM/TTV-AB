@@ -3792,6 +3792,7 @@ function _hookWorker() {
                 const _EMPTY_SEGMENT_URL = ${JSON.stringify(_EMPTY_SEGMENT_URL)};
                 const _RESERVED_ROUTE_SEGMENTS = new Set(${JSON.stringify(Array.from(_RESERVED_ROUTE_SEGMENTS))});
                 const _pageSideVariantCodecByUrl = new Map(${JSON.stringify(seedPlaybackCodecEntries)});
+				${_formatLogText.toString()}
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}
                 ${_getWorkerBridgeMessage.toString()}
@@ -4715,23 +4716,51 @@ function _hookWorker() {
 							});
 							break;
 						case "LogEntry": {
-							const entry = data.value as PlainObject | null;
-							if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-								if (!Array.isArray(globalThis.__TTVAB_LOGS__)) {
-									globalThis.__TTVAB_LOGS__ = [];
+							try {
+								const entry = data.value as PlainObject | null;
+								if (
+									entry &&
+									typeof entry === "object" &&
+									!Array.isArray(entry)
+								) {
+									if (!Array.isArray(globalThis.__TTVAB_LOGS__)) {
+										globalThis.__TTVAB_LOGS__ = [];
+									}
+									const rawTimestamp =
+										typeof entry.t === "number" ? entry.t : Number.NaN;
+									const timestamp =
+										Number.isFinite(rawTimestamp) &&
+										rawTimestamp >= 0 &&
+										rawTimestamp <= 8640000000000000
+											? Math.trunc(rawTimestamp)
+											: Date.now();
+									const rawGeneration =
+										typeof this.__TTVABGeneration === "number"
+											? this.__TTVABGeneration
+											: 0;
+									const workerGeneration = Number.isFinite(rawGeneration)
+										? Math.min(1000000, Math.max(0, Math.trunc(rawGeneration)))
+										: 0;
+									const buffer = globalThis.__TTVAB_LOGS__ as PlainObject[];
+									buffer.push({
+										t: timestamp,
+										l:
+											typeof entry.l === "string"
+												? entry.l.slice(0, 16)
+												: "info",
+										m:
+											typeof entry.m === "string"
+												? _formatLogText(entry.m)
+												: "[Invalid worker log message]",
+										w: true,
+										g: workerGeneration,
+										k: _normalizeMediaKey(this.__TTVABPageMediaKey),
+									});
+									if (buffer.length > 1200) {
+										buffer.splice(0, buffer.length - 1000);
+									}
 								}
-								const buffer = globalThis.__TTVAB_LOGS__ as PlainObject[];
-								buffer.push({
-									t: Number(entry.t) || Date.now(),
-									l:
-										typeof entry.l === "string" ? entry.l.slice(0, 16) : "info",
-									m: typeof entry.m === "string" ? entry.m.slice(0, 4000) : "",
-									w: true,
-								});
-								if (buffer.length > 1200) {
-									buffer.splice(0, buffer.length - 1000);
-								}
-							}
+							} catch {}
 							break;
 						}
 						case "AdBlocked":

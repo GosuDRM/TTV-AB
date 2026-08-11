@@ -307,10 +307,12 @@ function bindPageBridgePort(port) {
 		} catch {}
 	}
 	pageBridgePort = port;
-	pageBridgePort.addEventListener("message", (event) => {
+	const boundPort = port;
+	boundPort.addEventListener("message", (event) => {
+		if (pageBridgePort !== boundPort) return;
 		handlePageBridgeMessage(event.data);
 	});
-	pageBridgePort.start?.();
+	boundPort.start?.();
 	return true;
 }
 
@@ -1006,6 +1008,7 @@ function handlePageBridgeMessage(rawMessage) {
 			return;
 		}
 		pageBridgeConnected = true;
+		handshakeRetryCount = 0;
 		clearHandshakeRetryTimeout();
 		flushPageMessages();
 		broadcastState();
@@ -1101,7 +1104,16 @@ function handlePageBridgeMessage(rawMessage) {
 		if (!pending) return;
 		pendingLogCollections.delete(requestId as string);
 		clearTimeout(pending.timer);
-		pending.respond({ ok: true, entries: sanitizeLogEntries(detail?.entries) });
+		const sanitized = sanitizeLogEntries(detail?.entries);
+		respondToLogCollection(pending.respond, {
+			ok: true,
+			entries: sanitized.entries,
+			context: sanitizeLogContext(detail?.context),
+			truncatedEntries: addTruncatedLogEntryCounts(
+				sanitized.truncatedEntries,
+				detail?.truncatedEntries,
+			),
+		});
 		return;
 	}
 }
@@ -1113,20 +1125,300 @@ type PendingLogCollection = {
 const pendingLogCollections = new Map<string, PendingLogCollection>();
 const LOG_COLLECT_TIMEOUT_MS = 1500;
 const MAX_LOG_EXPORT_ENTRIES = 1000;
+const MAX_LOG_EXPORT_BYTES = 2 * 1024 * 1024;
+const MAX_LOG_MESSAGE_CHARS = 4000;
+const MAX_LOG_TRUNCATED_ENTRIES = 1000000;
+const MAX_LOG_TIMESTAMP_MS = 8640000000000000;
+const MAX_LOG_CONTEXT_WORKERS = 12;
+const MAX_LOG_CONTEXT_BUFFERED_RANGES = 4;
+const LOG_LEVELS = new Set(["debug", "info", "success", "warning", "error"]);
+let logCollectionSequence = 0;
+
+function sanitizeLogTimestamp(value) {
+	if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+	if (value < 0 || value > MAX_LOG_TIMESTAMP_MS) return 0;
+	return Math.trunc(value);
+}
+
+function sanitizeLogGeneration(value) {
+	if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+	return Math.min(1000000, Math.max(0, Math.trunc(value)));
+}
+
+function sanitizeLogString(value, maxLength) {
+	if (typeof value !== "string") return "";
+	const limit = Math.max(0, maxLength);
+	let sanitized = "";
+	for (const character of value.slice(0, limit * 2)) {
+		const code = character.charCodeAt(0);
+		sanitized += code <= 31 || code === 127 ? " " : character;
+		if (sanitized.length >= limit) break;
+	}
+	return sanitized.slice(0, limit);
+}
+
+function redactLogUrl(value) {
+	try {
+		const rawValue = String(value);
+		const isBlob = rawValue.toLowerCase().startsWith("blob:");
+		const parsed = new URL(isBlob ? rawValue.slice(5) : rawValue);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+			return "[redacted-url]";
+		}
+		if (isBlob) return `blob:${parsed.origin}/[redacted]`;
+		return `${parsed.origin}${parsed.pathname}${parsed.search ? "?[redacted]" : ""}${parsed.hash ? "#[redacted]" : ""}`;
+	} catch {
+		return "[redacted-url]";
+	}
+}
+
+function sanitizeLogMessage(value) {
+	if (typeof value !== "string") return "";
+	let bounded = "";
+	for (const character of value.slice(0, MAX_LOG_MESSAGE_CHARS * 2)) {
+		const code = character.charCodeAt(0);
+		if (
+			code <= 9 ||
+			code === 11 ||
+			code === 12 ||
+			(code >= 14 && code <= 31) ||
+			code === 127 ||
+			(code >= 0x200b && code <= 0x200f) ||
+			(code >= 0x202a && code <= 0x202e) ||
+			(code >= 0x2060 && code <= 0x206f) ||
+			code === 0xfeff
+		) {
+			continue;
+		}
+		bounded += character;
+	}
+	const withoutCookieHeaders = bounded.replace(
+		/\b(cookie|set-cookie)\s*:\s*[^\r\n]*/gi,
+		"$1: [redacted]",
+	);
+	const withoutSensitiveAssignments = withoutCookieHeaders.replace(
+		/(["']?)(authorization|client-integrity|client_integrity|client-id|client_id|cookie|set-cookie|oauth|access-token|access_token|refresh-token|refresh_token|token|sig|signature|auth|x-device-id|x_device_id|device-id|device_id|did|session-id|session_id|session|user-id|user_id|uid)\1(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:basic|bearer|oauth)\s+[^\s,;&]+|[^\s,;&]+)/gi,
+		(_match, quote, key, separator) =>
+			`${quote}${key}${quote}${separator}[redacted]`,
+	);
+	const withoutSensitiveUrls = withoutSensitiveAssignments.replace(
+		/(?:blob:)?https?:\/\/[^\s<>"']+/gi,
+		redactLogUrl,
+	);
+	return sanitizeLogString(withoutSensitiveUrls, MAX_LOG_MESSAGE_CHARS);
+}
+
+function getLogEntryByteLength(entry) {
+	try {
+		return new TextEncoder().encode(JSON.stringify(entry)).byteLength;
+	} catch {
+		return MAX_LOG_EXPORT_BYTES + 1;
+	}
+}
+
+function sanitizeLogEntry(value) {
+	if (!isPlainObject(value)) return null;
+	const level =
+		typeof value.l === "string" && LOG_LEVELS.has(value.l.toLowerCase())
+			? value.l.toLowerCase()
+			: "info";
+	const entry: PlainObject = {
+		t: sanitizeLogTimestamp(value.t),
+		l: level,
+		m: sanitizeLogMessage(value.m),
+		w: value.w === true,
+	};
+	if (entry.w === true) {
+		entry.g = sanitizeLogGeneration(value.g);
+		entry.k = normalizeMediaKey(value.k);
+	}
+	return entry;
+}
 
 function sanitizeLogEntries(value) {
-	if (!Array.isArray(value)) return [];
-	const entries = [];
-	for (const item of value.slice(-MAX_LOG_EXPORT_ENTRIES)) {
-		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-		entries.push({
-			t: Number.isFinite(Number(item.t)) ? Math.trunc(Number(item.t)) : 0,
-			l: typeof item.l === "string" ? item.l.slice(0, 16) : "info",
-			m: typeof item.m === "string" ? item.m.slice(0, 4000) : "",
-			w: item.w === true,
-		});
+	if (!Array.isArray(value)) {
+		return { entries: [], truncatedEntries: 0 };
 	}
-	return entries;
+	const entries: PlainObject[] = [];
+	let totalBytes = 2;
+	const minimumIndex = Math.max(0, value.length - MAX_LOG_EXPORT_ENTRIES);
+	let truncatedEntries = minimumIndex;
+	for (let index = value.length - 1; index >= minimumIndex; index--) {
+		if (entries.length >= MAX_LOG_EXPORT_ENTRIES) {
+			truncatedEntries += index - minimumIndex + 1;
+			break;
+		}
+		const entry = sanitizeLogEntry(value[index]);
+		if (!entry) {
+			truncatedEntries++;
+			continue;
+		}
+		const entryBytes =
+			getLogEntryByteLength(entry) + (entries.length > 0 ? 1 : 0);
+		if (totalBytes + entryBytes > MAX_LOG_EXPORT_BYTES) {
+			truncatedEntries += index - minimumIndex + 1;
+			break;
+		}
+		entries.push(entry);
+		totalBytes += entryBytes;
+	}
+	entries.reverse();
+	return {
+		entries,
+		truncatedEntries: Math.min(MAX_LOG_TRUNCATED_ENTRIES, truncatedEntries),
+	};
+}
+
+function addTruncatedLogEntryCounts(first, second) {
+	const normalize = (value) =>
+		typeof value === "number" && Number.isFinite(value)
+			? Math.max(0, Math.trunc(value))
+			: 0;
+	return Math.min(
+		MAX_LOG_TRUNCATED_ENTRIES,
+		normalize(first) + normalize(second),
+	);
+}
+
+function sanitizeLogContextString(value, maxLength = 256) {
+	const sanitized = sanitizeLogMessage(
+		typeof value === "string" ? value : "",
+	).slice(0, maxLength);
+	return sanitized || null;
+}
+
+function sanitizeLogContextUrl(value) {
+	if (typeof value !== "string") return "";
+	try {
+		const parsed = new URL(value);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+		return sanitizeLogString(`${parsed.origin}${parsed.pathname}`, 2048);
+	} catch {
+		return "";
+	}
+}
+
+function sanitizeLogContextNumber(value, minimum, maximum, fallback = 0) {
+	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+	return Math.min(maximum, Math.max(minimum, value));
+}
+
+function sanitizeLogContextWorker(value) {
+	if (!isPlainObject(value)) return null;
+	return {
+		generation: sanitizeLogGeneration(value.generation),
+		mediaKey: normalizeMediaKey(value.mediaKey),
+		crashed: value.crashed === true,
+		terminated: value.terminated === true,
+		lastPongAt: sanitizeLogTimestamp(value.lastPongAt),
+	};
+}
+
+function sanitizeLogContextMedia(value) {
+	if (!isPlainObject(value)) return null;
+	const buffered = [];
+	if (Array.isArray(value.buffered)) {
+		for (
+			let index = 0;
+			index < Math.min(value.buffered.length, MAX_LOG_CONTEXT_BUFFERED_RANGES);
+			index++
+		) {
+			const range = value.buffered[index];
+			if (!isPlainObject(range)) continue;
+			const start = sanitizeLogContextNumber(range.start, 0, 1000000000, -1);
+			const end = sanitizeLogContextNumber(range.end, 0, 1000000000, -1);
+			if (start < 0 || end < start) continue;
+			buffered.push({ start, end });
+		}
+	}
+	const duration = sanitizeLogContextNumber(value.duration, 0, 1000000000, -1);
+	return {
+		tag: sanitizeLogString(value.tag, 16).toLowerCase(),
+		currentTime: sanitizeLogContextNumber(value.currentTime, 0, 1000000000),
+		duration: duration >= 0 ? duration : null,
+		paused: value.paused === true,
+		ended: value.ended === true,
+		readyState: Math.trunc(sanitizeLogContextNumber(value.readyState, 0, 4)),
+		networkState: Math.trunc(
+			sanitizeLogContextNumber(value.networkState, 0, 3),
+		),
+		playbackRate: sanitizeLogContextNumber(value.playbackRate, 0, 16, 1),
+		muted: value.muted === true,
+		volume: sanitizeLogContextNumber(value.volume, 0, 1, 1),
+		width: Math.trunc(sanitizeLogContextNumber(value.width, 0, 16384)),
+		height: Math.trunc(sanitizeLogContextNumber(value.height, 0, 16384)),
+		buffered,
+	};
+}
+
+function sanitizeLogContext(value) {
+	if (!isPlainObject(value)) return null;
+	const context = value;
+	const workers = [];
+	if (Array.isArray(context.workers)) {
+		for (
+			let index = 0;
+			index < Math.min(context.workers.length, MAX_LOG_CONTEXT_WORKERS);
+			index++
+		) {
+			const worker = context.workers[index];
+			const sanitized = sanitizeLogContextWorker(worker);
+			if (sanitized) workers.push(sanitized);
+		}
+	}
+	const visibility =
+		context.visibility === "visible" || context.visibility === "hidden"
+			? context.visibility
+			: "unknown";
+	return {
+		pageUrl: sanitizeLogContextUrl(context.pageUrl),
+		pageMediaKey: normalizeMediaKey(context.pageMediaKey),
+		pageChannel: normalizeChannelName(context.pageChannel),
+		visibility,
+		focused: context.focused === true,
+		enabled: context.enabled === true,
+		adSpoofingEnabled: context.adSpoofingEnabled === true,
+		autoplayBackupEnabled: context.autoplayBackupEnabled === true,
+		currentAdMediaKey: normalizeMediaKey(context.currentAdMediaKey),
+		activeCycleStartedAt: sanitizeLogTimestamp(context.activeCycleStartedAt),
+		pinnedBackupPlayerType: sanitizeLogContextString(
+			context.pinnedBackupPlayerType,
+			32,
+		),
+		pinnedBackupMediaKey: normalizeMediaKey(context.pinnedBackupMediaKey),
+		workers,
+		media: sanitizeLogContextMedia(context.media),
+	};
+}
+
+function respondToLogCollection(respond, response) {
+	try {
+		respond(response);
+	} catch {}
+}
+
+function failPendingLogCollections(error) {
+	for (const pending of pendingLogCollections.values()) {
+		clearTimeout(pending.timer);
+		respondToLogCollection(pending.respond, { ok: false, error });
+	}
+	pendingLogCollections.clear();
+}
+
+function invalidatePageBridgeAfterLogFailure(error) {
+	const stalePort = pageBridgePort;
+	pageBridgeConnected = false;
+	pageBridgePort = null;
+	try {
+		stalePort?.close?.();
+	} catch {}
+	failPendingLogCollections(error);
+	startBridgeHandshake();
+}
+
+function handleBridgePageExit() {
+	flushPendingCountersOnPageExit();
+	failPendingLogCollections("page-message-failed");
 }
 
 chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
@@ -1138,13 +1430,18 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 		return undefined;
 	}
 	if (!pageBridgeConnected || !pageBridgePort) {
-		sendResponse({ ok: true, entries: [] });
+		respondToLogCollection(sendResponse, {
+			ok: false,
+			error: "page-bridge-unavailable",
+		});
+		startBridgeHandshake();
 		return undefined;
 	}
-	const requestId = `logs-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+	logCollectionSequence = (logCollectionSequence + 1) % 1000000;
+	const requestId = `logs-${Date.now()}-${logCollectionSequence}-${Math.random().toString(36).slice(2, 10)}`;
 	const timer = setTimeout(() => {
-		pendingLogCollections.delete(requestId);
-		sendResponse({ ok: true, entries: [] });
+		if (!pendingLogCollections.has(requestId)) return;
+		invalidatePageBridgeAfterLogFailure("page-response-timeout");
 	}, LOG_COLLECT_TIMEOUT_MS);
 	pendingLogCollections.set(requestId, { respond: sendResponse, timer });
 	try {
@@ -1153,12 +1450,10 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 			detail: { requestId },
 		});
 	} catch {
-		clearTimeout(timer);
-		pendingLogCollections.delete(requestId);
-		sendResponse({ ok: true, entries: [] });
+		invalidatePageBridgeAfterLogFailure("page-message-failed");
 	}
 	return true;
 });
 
-window.addEventListener("pagehide", flushPendingCountersOnPageExit, true);
-window.addEventListener("beforeunload", flushPendingCountersOnPageExit, true);
+window.addEventListener("pagehide", handleBridgePageExit, true);
+window.addEventListener("beforeunload", handleBridgePageExit, true);
