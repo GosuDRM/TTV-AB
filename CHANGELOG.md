@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.4] - 2026-08-11
+
+- Fixed Generate Log sometimes taking too long or never finishing when a Twitch tab stopped responding or its page bridge was unavailable.
+- Added clearer playback, ad-cycle, worker, and media ownership details so exported logs are more useful for diagnosing recovery issues across multiple tabs.
+- Redacted credentials, tokens, URL queries, and sensitive page details while bounding each export's size, keeping diagnostic files safer and more reliable to generate.
+
 ## [16.0.3] - 2026-08-11
 
 - Fixed some smaller channels remaining at 360p after ads when Twitch returned empty higher-quality streams ([#57](https://github.com/GosuDRM/TTV-AB/issues/57)).
