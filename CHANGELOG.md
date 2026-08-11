@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.3] - 2026-08-11
+
+- Fixed some smaller channels remaining at 360p after ads when Twitch returned empty higher-quality streams ([#57](https://github.com/GosuDRM/TTV-AB/issues/57)).
+- Higher-quality playback now gets one bounded fallback when Twitch's normal response is unusable, without changing successful playback on larger channels.
+- Empty and ad-marked streams remain blocked while the clean backup keeps advancing, preventing ad exposure and freezes during the quality handoff.
+
 ## [16.0.2] - 2026-08-09
 
 - Fixed ad recovery repeatedly restarting playback and triggering additional prerolls after a break, which could keep backup playback active for many minutes.
