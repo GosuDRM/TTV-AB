@@ -202,7 +202,12 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 	});
 }
 
-async function _getToken(playbackContext, playerType, realFetch) {
+async function _getToken(
+	playbackContext,
+	playerType,
+	realFetch,
+	omitViewerHeaders = false,
+) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
 	const normalizedContext =
@@ -248,7 +253,7 @@ async function _getToken(playbackContext, playerType, realFetch) {
 
 		try {
 			_log(
-				`[Trace] Requesting token for ${playerType} (${logTarget})${attempt > 0 ? ` retry ${attempt}` : ""}`,
+				`[Trace] Requesting token for ${playerType} (${logTarget})${omitViewerHeaders ? " without viewer headers" : ""}${attempt > 0 ? ` retry ${attempt}` : ""}`,
 				"info",
 			);
 			const acceptLanguage =
@@ -262,11 +267,11 @@ async function _getToken(playbackContext, playerType, realFetch) {
 				"Accept-Language": acceptLanguage,
 			};
 
-			if (__TTVAB_STATE__.ClientIntegrityHeader) {
+			if (!omitViewerHeaders && __TTVAB_STATE__.ClientIntegrityHeader) {
 				headers["Client-Integrity"] = __TTVAB_STATE__.ClientIntegrityHeader;
 			}
 
-			if (__TTVAB_STATE__.AuthorizationHeader) {
+			if (!omitViewerHeaders && __TTVAB_STATE__.AuthorizationHeader) {
 				headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
 			}
 

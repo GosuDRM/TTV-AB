@@ -366,6 +366,74 @@ describe("_createFetchRelayResponse", () => {
 	});
 });
 
+describe("_getToken viewer header policy", () => {
+	const getToken = () =>
+		T<
+			(
+				playbackContext: Record<string, unknown>,
+				playerType: string,
+				realFetch: typeof fetch,
+				omitViewerHeaders?: boolean,
+			) => Promise<Response>
+		>("_getToken");
+
+	it("keeps viewer headers by default and omits only them for the bounded neutral retry", async () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.AuthorizationHeader = "OAuth viewer";
+		state.ClientIntegrityHeader = "integrity";
+		state.ClientVersion = "version";
+		state.ClientSession = "session";
+		state.GQLDeviceID = "device";
+		const requests: Array<Record<string, unknown>> = [];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: Record<string, unknown>,
+		) => {
+			requests.push(options);
+			return new Response("{}", { status: 200 });
+		};
+		const context = {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		};
+		const unexpectedFetch = async () => {
+			throw new Error("unexpected direct token fetch");
+		};
+
+		await getToken()(context, "site", unexpectedFetch, false);
+		await getToken()(context, "site", unexpectedFetch, true);
+
+		expect(requests).toHaveLength(2);
+		const viewerHeaders = requests[0].headers as Record<string, string>;
+		const neutralHeaders = requests[1].headers as Record<string, string>;
+		expect(viewerHeaders).toMatchObject({
+			"Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+			"X-Device-Id": "device",
+			"Client-Version": "version",
+			"Client-Session-Id": "session",
+			"Client-Integrity": "integrity",
+			Authorization: "OAuth viewer",
+		});
+		expect(neutralHeaders).toMatchObject({
+			"Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+			"X-Device-Id": "device",
+			"Client-Version": "version",
+			"Client-Session-Id": "session",
+		});
+		expect(neutralHeaders).not.toHaveProperty("Client-Integrity");
+		expect(neutralHeaders).not.toHaveProperty("Authorization");
+		expect(requests[0].body).toBe(requests[1].body);
+		expect(JSON.parse(String(requests[1].body))).toMatchObject({
+			variables: {
+				login: "testchannel",
+				playerType: "site",
+				platform: "web",
+			},
+		});
+	});
+});
+
 describe("_notifyAdComplete (recent spoof dedup across bounces)", () => {
 	const notify = () =>
 		T<
