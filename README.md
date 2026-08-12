@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-16.0.4-purple)
+![Version](https://img.shields.io/badge/version-16.0.5-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-16.0.4-yellow)
+![Chrome](https://img.shields.io/badge/chrome-16.0.5-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v16.0.5 - 2026-08-12
+- **Time Saved is now measured instead of estimated.** The dashboard uses Twitch-declared durations for observed stitched ads, preserves fractional seconds, excludes unknown lengths instead of guessing, and prevents replayed measurements from inflating totals.
+
 ### v16.0.4 - 2026-08-11
 - **Made Generate Log faster, safer, and more useful.** Unresponsive tabs can no longer hold an export open indefinitely, while bounded playback diagnostics and stronger privacy redaction make bug reports easier to investigate.
 
 ### v16.0.3 - 2026-08-11
 - **Fixed some smaller channels remaining at 360p after ads.** When Twitch returns an empty higher-quality stream, TTV AB gets one bounded fallback while keeping the clean backup advancing and all ad-marked media blocked.
-
-### v16.0.2 - 2026-08-09
-- **Fixed ad recovery repeatedly restarting playback after a break.** Required playback rebuilds now keep the verified stream session, preventing extra prerolls from extending recovery for many minutes.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
