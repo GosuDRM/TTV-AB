@@ -746,12 +746,6 @@ function validateSharedDefinitions() {
 		"{",
 		"}",
 	);
-	const popupAvgAdDurationMatch = popupSource.match(
-		/const AVG_AD_DURATION = (\d+);/,
-	);
-	const backgroundAvgAdDurationMatch = backgroundSource.match(
-		/const AVG_AD_DURATION = (\d+);/,
-	);
 	const popupAchievementsLiteral = extractLiteral(
 		popupSource,
 		"const ACHIEVEMENTS =",
@@ -774,8 +768,6 @@ function validateSharedDefinitions() {
 	if (
 		!backgroundGetDateKeyLiteral ||
 		!popupGetDateKeyLiteral ||
-		!popupAvgAdDurationMatch ||
-		!backgroundAvgAdDurationMatch ||
 		!popupAchievementsLiteral ||
 		!backgroundAchievementsLiteral ||
 		!uiAchievementInfoLiteral
@@ -790,15 +782,6 @@ function validateSharedDefinitions() {
 		throw new Error(
 			"Popup and background getDateKey implementations are out of sync",
 		);
-	}
-
-	const popupAvgAdDuration = Number.parseInt(popupAvgAdDurationMatch[1], 10);
-	const backgroundAvgAdDuration = Number.parseInt(
-		backgroundAvgAdDurationMatch[1],
-		10,
-	);
-	if (popupAvgAdDuration !== backgroundAvgAdDuration) {
-		throw new Error("Popup and background AVG_AD_DURATION are out of sync");
 	}
 
 	const popupAchievements = Function(`return (${popupAchievementsLiteral});`)();
@@ -958,7 +941,7 @@ function validateSharedDefinitions() {
 			"function _normalizeCount(value)",
 		) !== normalizeCodeSnippet(stateNormalizeCount) ||
 		!popupFormatNumber.includes("normalizeCount(num)") ||
-		!popupUpdateTimeSaved.includes("normalizeCount(adsCount)")
+		!popupUpdateTimeSaved.includes("latestMeasuredMilliseconds")
 	) {
 		throw new Error(
 			"Popup, background, and state counter normalizers are out of sync",

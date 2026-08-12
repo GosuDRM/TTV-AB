@@ -45,6 +45,7 @@ beforeEach(() => {
 		PageChannel: "testchannel",
 		PageVodID: null,
 		PageMediaKey: "live:testchannel",
+		IsAdStrippingEnabled: true,
 		LastPlayerReloadAt: 0,
 		LastPlayerReloadAtByMediaKey: Object.create(null),
 	};
@@ -1011,6 +1012,111 @@ describe("worker recovery lifecycle", () => {
 			expect(recover).toHaveBeenCalledOnce();
 		} finally {
 			g._recoverCrashedWorker = previousRecover;
+		}
+	});
+
+	it("drops queued ad recovery work after the master toggle turns off", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			IsAdStrippingEnabled: false,
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			PinnedBackupPlayerType: null,
+			PinnedBackupPlayerChannel: null,
+			PinnedBackupPlayerMediaKey: null,
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			AdPodProgressByMediaKey: Object.create(null),
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			LastAdEndedAt: 0,
+			LastAdEndedChannel: null,
+			LastAdEndedMediaKey: null,
+			LastAdEndedCycleStartedAt: 0,
+			AdCycleStaleMs: 120000,
+		});
+		const previousRecover = g._recoverCrashedWorker;
+		const previousFatalRecovery = g._acceptFatalAdMediaRecoveryReady;
+		const previousSuppress = g._suppressCompetingMediaDuringAd;
+		const previousSchedule = g._schedulePlaybackRecoveryTimeout;
+		const previousPlayerTask = g._doPlayerTask;
+		const previousCycleCurrent = g._isCodecHandoffCycleCurrent;
+		const recover = vi.fn();
+		const fatalRecovery = vi.fn();
+		const suppress = vi.fn();
+		const schedule = vi.fn();
+		const playerTask = vi.fn();
+		const cycleCurrent = vi.fn(() => false);
+		g._recoverCrashedWorker = recover;
+		g._acceptFatalAdMediaRecoveryReady = fatalRecovery;
+		g._suppressCompetingMediaDuringAd = suppress;
+		g._schedulePlaybackRecoveryTimeout = schedule;
+		g._doPlayerTask = playerTask;
+		g._isCodecHandoffCycleCurrent = cycleCurrent;
+		const harness = installWorkerMessageHarness();
+		const initialMessageCount = harness.worker.messages.length;
+		const context = {
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			pageChannel: "testchannel",
+			pageMediaKey: "live:testchannel",
+			cycleStartedAt: 1234,
+		};
+
+		try {
+			for (const message of [
+				{
+					key: "MediaBootstrapRecoveryNeeded",
+					mediaType: "live",
+					...context,
+				},
+				{
+					key: "AdDetected",
+					detectedAt: 1234,
+					playlistUrl:
+						"https://video-weaver.example.ttvnw.net/v1/playlist/queued.m3u8",
+					...context,
+				},
+				{ key: "AdPodProgress", adIds: ["stitched-ad-queued"], ...context },
+				{ key: "BackupPlayerTypeSelected", value: "autoplay", ...context },
+				{ key: "FatalMediaRecoveryReady", ...context },
+				{ key: "PauseResumePlayer", ...context },
+				{ key: "ReloadPlayer", reason: "ad-recovery", ...context },
+			]) {
+				harness.worker.emitMessage(message);
+			}
+
+			expect(state.CurrentAdChannel).toBeNull();
+			expect(state.CurrentAdMediaKey).toBeNull();
+			expect(state.PinnedBackupPlayerType).toBeNull();
+			expect(Object.keys(state.AdPodProgressByMediaKey as object)).toEqual([]);
+			expect(harness.worker.messages).toHaveLength(initialMessageCount);
+			expect(recover).not.toHaveBeenCalled();
+			expect(fatalRecovery).not.toHaveBeenCalled();
+			expect(suppress).not.toHaveBeenCalled();
+			expect(schedule).not.toHaveBeenCalled();
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(cycleCurrent).not.toHaveBeenCalled();
+
+			harness.worker.emitMessage({
+				key: "AdEnded",
+				endedAt: 1235,
+				...context,
+			});
+			expect(cycleCurrent).not.toHaveBeenCalled();
+		} finally {
+			harness.restore();
+			g._recoverCrashedWorker = previousRecover;
+			g._acceptFatalAdMediaRecoveryReady = previousFatalRecovery;
+			g._suppressCompetingMediaDuringAd = previousSuppress;
+			g._schedulePlaybackRecoveryTimeout = previousSchedule;
+			g._doPlayerTask = previousPlayerTask;
+			g._isCodecHandoffCycleCurrent = previousCycleCurrent;
 		}
 	});
 
@@ -5591,6 +5697,179 @@ describe("page-side M3U8 fallback", () => {
 		}
 	});
 
+	it("passes through degraded playlists and segments after disabling mid-cycle", async () => {
+		const install = T<() => void>("_installPageSideM3U8Override");
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const originalFetch = window.fetch;
+		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const originalFallbackActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const previousState = { ...state };
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/degraded-toggle.m3u8";
+		const adSegmentUrl = "https://edge.example/adsquared/ad-700.ts";
+		const emptyHoldSegmentUrl =
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4";
+		const adPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:700",
+			"#EXT-X-CUE-OUT:30",
+			"#EXTINF:2.000,",
+			adSegmentUrl,
+		].join("\n");
+		const cleanPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:701",
+			"#EXTINF:2.000,",
+			"https://edge.example/live-701.ts",
+		].join("\n");
+		let currentPlaylist = adPlaylist;
+		const rawFetch = vi.fn(async (input: unknown) => {
+			const url = input instanceof Request ? input.url : String(input);
+			return new Response(
+				url === mediaUrl ? currentPlaylist : `native:${url}`,
+				{ status: 200 },
+			);
+		});
+		window.fetch = rawFetch as typeof fetch;
+		scopedWindow.__TTVAB_REAL_FETCH__ = null;
+		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+		Object.assign(state, {
+			IsAdStrippingEnabled: true,
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			AdPodProgressByMediaKey: Object.create(null),
+			StreamInfos: Object.create(null),
+		});
+		(g._S as { adsBlocked: number }).adsBlocked = 0;
+		confirmPlaybackOwner("live:testchannel", mediaUrl, "avc1.64002A");
+
+		try {
+			install();
+			const blocked = await (await window.fetch(mediaUrl)).text();
+			expect(blocked).not.toContain(adSegmentUrl);
+			expect(blocked).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect((g._S as { adsBlocked: number }).adsBlocked).toBe(1);
+
+			state.IsAdStrippingEnabled = false;
+			currentPlaylist = cleanPlaylist;
+			expect(await (await window.fetch(mediaUrl)).text()).toBe(cleanPlaylist);
+			expect(await (await window.fetch(adSegmentUrl)).text()).toBe(
+				`native:${adSegmentUrl}`,
+			);
+			expect(await (await window.fetch(emptyHoldSegmentUrl)).text()).toBe(
+				`native:${emptyHoldSegmentUrl}`,
+			);
+			expect((g._pageSideEmptyHoldInfoByUrl as Map<string, unknown>).size).toBe(
+				0,
+			);
+			expect((g._S as { adsBlocked: number }).adsBlocked).toBe(1);
+
+			state.CurrentAdChannel = null;
+			state.CurrentAdMediaKey = null;
+			state.AdPodProgressByMediaKey = Object.create(null);
+			currentPlaylist = adPlaylist;
+			expect(await (await window.fetch(mediaUrl)).text()).toBe(adPlaylist);
+			expect(state.CurrentAdMediaKey).toBeNull();
+			expect(
+				(state.AdPodProgressByMediaKey as Record<string, unknown>)[
+					"live:testchannel"
+				],
+			).toBeUndefined();
+			expect((g._S as { adsBlocked: number }).adsBlocked).toBe(1);
+		} finally {
+			window.fetch = originalFetch;
+			for (const key of Object.keys(state)) delete state[key];
+			Object.assign(state, previousState);
+			if (originalRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			}
+			if (originalFallbackActive === undefined) {
+				delete scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+			} else {
+				scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = originalFallbackActive;
+			}
+		}
+	});
+
+	it("does not mutate a degraded playlist when disabled during fetch", async () => {
+		const install = T<() => void>("_installPageSideM3U8Override");
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const originalFetch = window.fetch;
+		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const originalFallbackActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const previousState = { ...state };
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/degraded-pending-toggle.m3u8";
+		const playlist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:800",
+			"#EXT-X-CUE-OUT:30",
+			"#EXTINF:2.000,",
+			"https://edge.example/adsquared/ad-800.ts",
+		].join("\n");
+		let releaseFetch: ((response: Response) => void) | null = null;
+		window.fetch = vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					releaseFetch = resolve;
+				}),
+		) as typeof fetch;
+		scopedWindow.__TTVAB_REAL_FETCH__ = null;
+		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+		Object.assign(state, {
+			IsAdStrippingEnabled: true,
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			AdPodProgressByMediaKey: Object.create(null),
+			StreamInfos: Object.create(null),
+		});
+		(g._S as { adsBlocked: number }).adsBlocked = 0;
+		confirmPlaybackOwner("live:testchannel", mediaUrl, "avc1.64002A");
+
+		try {
+			install();
+			const pending = window.fetch(mediaUrl);
+			state.IsAdStrippingEnabled = false;
+			releaseFetch?.(new Response(playlist, { status: 200 }));
+			expect(await (await pending).text()).toBe(playlist);
+			expect(state.CurrentAdMediaKey).toBeNull();
+			expect(
+				(state.AdPodProgressByMediaKey as Record<string, unknown>)[
+					"live:testchannel"
+				],
+			).toBeUndefined();
+			expect((g._S as { adsBlocked: number }).adsBlocked).toBe(0);
+		} finally {
+			window.fetch = originalFetch;
+			for (const key of Object.keys(state)) delete state[key];
+			Object.assign(state, previousState);
+			if (originalRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			}
+			if (originalFallbackActive === undefined) {
+				delete scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+			} else {
+				scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = originalFallbackActive;
+			}
+		}
+	});
+
 	it("does not let an unproven auxiliary playlist claim or leak an ad cycle", async () => {
 		const install = T<() => void>("_installPageSideM3U8Override");
 		const scopedWindow = window as unknown as Record<string, unknown>;
@@ -6120,6 +6399,7 @@ describe("worker mixed-codec master selection", () => {
 		state.PageChannel = null;
 		state.PageVodID = "2827992810";
 		state.PageMediaKey = "vod:2827992810";
+		state.IsAdStrippingEnabled = true;
 		g.fetch = rawFetch;
 		const report = vi.fn();
 		g._postWorkerBridgeMessage = report;
@@ -6194,6 +6474,7 @@ describe("worker mixed-codec master selection", () => {
 		state.PageMediaType = "live";
 		state.PageChannel = "testchannel";
 		state.PageMediaKey = "live:testchannel";
+		state.IsAdStrippingEnabled = true;
 		g.fetch = rawFetch;
 		const usherUrl =
 			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=test&token=test";
@@ -6246,6 +6527,159 @@ describe("worker mixed-codec master selection", () => {
 });
 
 describe("worker media-playlist exception fail-closed path", () => {
+	it("processes the first ad-marked media response before settings resolve", async () => {
+		const originalFetch = g.fetch;
+		const originalProcess = g._processM3U8;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/startup-ad.m3u8";
+		const nativePlaylist = "#EXTM3U\n#EXT-X-CUE-OUT:30\n#EXTINF:2,\nad.ts";
+		const blockedPlaylist = "#EXTM3U\n#EXT-X-ENDLIST";
+		const rawFetch = vi.fn(
+			async () => new Response(nativePlaylist, { status: 200 }),
+		);
+		const process = vi.fn(async () => blockedPlaylist);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		g.fetch = rawFetch;
+		g._processM3U8 = process;
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const result = await (await (g.fetch as typeof fetch)(mediaUrl)).text();
+
+			expect(state.IsAdStrippingEnabled).toBe(true);
+			expect(result).toBe(blockedPlaylist);
+			expect(process).toHaveBeenCalledOnce();
+		} finally {
+			g.fetch = originalFetch;
+			g._processM3U8 = originalProcess;
+		}
+	});
+
+	it("returns the native response when disabled during the first media fetch", async () => {
+		const originalFetch = g.fetch;
+		const originalProcess = g._processM3U8;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/startup-disable.m3u8";
+		const nativePlaylist = "#EXTM3U\n#EXT-X-CUE-OUT:30\n#EXTINF:2,\nad.ts";
+		let finishFetch = (_response: Response) => {
+			throw new Error("Fetch did not start");
+		};
+		const rawFetch = vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					finishFetch = resolve;
+				}),
+		);
+		const process = vi.fn(async () => "#EXTM3U\n#EXT-X-ENDLIST");
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		g.fetch = rawFetch;
+		g._processM3U8 = process;
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const pendingResponse = (g.fetch as typeof fetch)(mediaUrl);
+			await vi.waitFor(() => expect(rawFetch).toHaveBeenCalledOnce());
+			state.IsAdStrippingEnabled = false;
+			finishFetch(new Response(nativePlaylist, { status: 200 }));
+
+			const result = await (await pendingResponse).text();
+			expect(result).toBe(nativePlaylist);
+			expect(process).not.toHaveBeenCalled();
+		} finally {
+			g.fetch = originalFetch;
+			g._processM3U8 = originalProcess;
+		}
+	});
+
+	it.each([
+		{ label: "finishes", reject: false },
+		{ label: "aborts", reject: true },
+	])("returns native media when pending backup processing $label after disabling", async ({
+		reject,
+	}) => {
+		const originalFetch = g.fetch;
+		const originalProcess = g._processM3U8;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/pending-toggle.m3u8";
+		const nativePlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:500",
+			"#EXT-X-CUE-OUT:30",
+			"#EXTINF:2.000,",
+			"ad-500.ts",
+		].join("\n");
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const resolution = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			FrameRate: 60,
+			Codecs: "avc1.64002A,mp4a.40.2",
+		};
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		info.IsShowingAd = true;
+		info.VisibleAdStartedAt = 100;
+		info.ResolutionList = [resolution];
+		info.Urls = Object.create(null);
+		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			mediaUrl,
+		)) {
+			(info.Urls as Record<string, unknown>)[alias] = resolution;
+			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+		}
+		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+		state.IsAdStrippingEnabled = true;
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 100 },
+		};
+		const rawFetch = vi.fn(
+			async () => new Response(nativePlaylist, { status: 200 }),
+		);
+		const processStarted = vi.fn();
+		let settleProcessing = (_reason: unknown) => {
+			throw new Error("Processing did not start");
+		};
+		g.fetch = rawFetch;
+		g._processM3U8 = () =>
+			new Promise((resolve, rejectProcessing) => {
+				processStarted();
+				settleProcessing = reject ? rejectProcessing : resolve;
+			});
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const pendingResponse = (g.fetch as typeof fetch)(mediaUrl);
+			await vi.waitFor(() => expect(processStarted).toHaveBeenCalledOnce());
+			state.CurrentAdChannel = null;
+			state.CurrentAdMediaKey = null;
+			state.IsAdStrippingEnabled = false;
+			settleProcessing(
+				reject
+					? new DOMException("Backup search ownership changed", "AbortError")
+					: "#EXTM3U\n#EXT-X-ENDLIST",
+			);
+
+			const result = await (await pendingResponse).text();
+			expect(result).toBe(nativePlaylist);
+			expect(rawFetch).toHaveBeenCalledOnce();
+			expect(rawFetch).toHaveBeenCalledWith(mediaUrl, undefined);
+		} finally {
+			g.fetch = originalFetch;
+			g._processM3U8 = originalProcess;
+		}
+	});
+
 	it.each([
 		{
 			label: "HEVC",
@@ -6265,6 +6699,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 		const rawFetch = vi.fn(async () => new Response(null, { status: 200 }));
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
 		const info = T<
 			(context: Record<string, unknown>) => Record<string, unknown>
 		>("_createStreamInfo")({
@@ -6299,6 +6734,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 		const rawFetch = vi.fn(async () => new Response(null, { status: 200 }));
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
 		const info = T<
 			(context: Record<string, unknown>) => Record<string, unknown>
 		>("_createStreamInfo")({
@@ -6356,6 +6792,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-active.m3u8";
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
 		const resolution = {
 			Name: "1080p60",
 			Resolution: "1920x1080",
@@ -6427,6 +6864,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 		);
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
 		const info = T<
 			(context: Record<string, unknown>) => Record<string, unknown>
 		>("_createStreamInfo")({
@@ -6481,6 +6919,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 		].join("\n");
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
 		const mediaUrl =
 			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-activating.m3u8";
 		const resolution = {
@@ -6546,6 +6985,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 		].join("\n");
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
 		const mediaUrl =
 			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-stale.m3u8";
 		const resolution = {
@@ -6617,6 +7057,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 		].join("\n");
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
 		const mediaUrl =
 			"https://video-weaver.example.ttvnw.net/v1/playlist/post-ad-avc.m3u8";
 		const resolution = {
@@ -6677,6 +7118,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 		);
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = true;
 		const mediaUrl =
 			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-active.m3u8";
 		const resolution = {
@@ -6747,6 +7189,38 @@ describe("worker media-playlist exception fail-closed path", () => {
 });
 
 describe("worker ad-segment codec ownership", () => {
+	it("passes empty-hold and known ad segments through while disabled", async () => {
+		const originalFetch = g.fetch;
+		const emptyHoldUrl =
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel";
+		const knownAdUrl = "https://edge.example/adsquared/unowned-ad.ts";
+		const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
+			const url = input instanceof Request ? input.url : String(input);
+			return new Response(`native:${url}`, { status: 200 });
+		});
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.IsAdStrippingEnabled = false;
+		state.CurrentAdChannel = "testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.SimulatedAdsDepth = 1;
+		g.fetch = rawFetch;
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			expect(await (await (g.fetch as typeof fetch)(emptyHoldUrl)).text()).toBe(
+				`native:${emptyHoldUrl}`,
+			);
+			expect(await (await (g.fetch as typeof fetch)(knownAdUrl)).text()).toBe(
+				`native:${knownAdUrl}`,
+			);
+			expect(rawFetch).toHaveBeenNthCalledWith(1, emptyHoldUrl);
+			expect(rawFetch).toHaveBeenNthCalledWith(2, knownAdUrl);
+			expect(rawFetch).not.toHaveBeenCalledWith(g._EMPTY_SEGMENT_URL);
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
 	const enhancedOrUnknownCases = [
 		{
 			label: "explicit HEVC",

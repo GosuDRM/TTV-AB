@@ -197,8 +197,7 @@ describe("channel stats schema and watch-time persistence", () => {
 			firstSeen: 0,
 			lastSeen: 0,
 			watchSeconds: 0,
-			adSeconds: 0,
-			measuredAds: 0,
+			adMilliseconds: 0,
 		});
 	});
 
@@ -376,78 +375,268 @@ describe("channel stats schema and watch-time persistence", () => {
 	});
 });
 
-describe("measured ad seconds persistence", () => {
+describe("measured ad duration persistence", () => {
 	beforeEach(() => {
 		storageData = {};
 	});
 	const persist = () =>
-		g.persistCounterDelta as (detail: unknown) => Promise<{ ok: boolean }>;
+		g.persistCounterDelta as (
+			detail: unknown,
+			sourceTabId?: number,
+		) => Promise<{ ok: boolean }>;
 	function stats() {
 		return storageData.ttvStats as Record<string, unknown> & {
 			channels: Record<string, Record<string, number>>;
 		};
 	}
 
-	it("accumulates measured seconds, break counts, and per-channel attribution", async () => {
-		await persist()({
-			flushId: "flush:test:secs-0001",
-			adsDelta: 1,
-			channelDeltas: { somestreamer: 1 },
-			adSecondsDelta: 75,
-			measuredBreaksDelta: 1,
-			channelAdSecondsDeltas: { somestreamer: 75 },
-			channelMeasuredBreaksDeltas: { somestreamer: 1 },
-		});
-		await persist()({
-			flushId: "flush:test:secs-0002",
-			adsDelta: 1,
-			channelDeltas: { somestreamer: 1 },
-			adSecondsDelta: 45,
-			measuredBreaksDelta: 1,
-			channelAdSecondsDeltas: { somestreamer: 45 },
-			channelMeasuredBreaksDeltas: { somestreamer: 1 },
-		});
-		expect(stats().adSecondsSaved).toBe(120);
-		expect(stats().adBreaksMeasured).toBe(2);
-		expect(stats().channels.somestreamer.adSeconds).toBe(120);
-		expect(stats().channels.somestreamer.measuredAds).toBe(2);
+	it("accumulates fractional declared durations with per-channel attribution", async () => {
+		await persist()(
+			{
+				flushId: "flush:test:duration-0001",
+				adsDelta: 1,
+				channelDeltas: { somestreamer: 1 },
+				adMeasurements: [
+					{
+						id: "stitched-ad-first",
+						durationMilliseconds: 75050,
+						mediaKey: "live:somestreamer",
+						channel: "somestreamer",
+					},
+				],
+			},
+			7,
+		);
+		await persist()(
+			{
+				flushId: "flush:test:duration-0002",
+				adsDelta: 1,
+				channelDeltas: { somestreamer: 1 },
+				adMeasurements: [
+					{
+						id: "stitched-ad-second",
+						durationMilliseconds: 44950,
+						mediaKey: "live:somestreamer",
+						channel: "somestreamer",
+					},
+				],
+			},
+			7,
+		);
+		expect(stats().adMillisecondsSaved).toBe(120000);
+		expect(stats().channels.somestreamer.adMilliseconds).toBe(120000);
 	});
 
-	it("caps a single flush at the per-flush ceiling", async () => {
+	it("deduplicates the same creative across flushes and worker replacements", async () => {
+		const measurement = {
+			id: "stitched-ad-replacement",
+			durationMilliseconds: 30000,
+			startDateMilliseconds: Date.parse("2026-08-12T10:00:00.000Z"),
+			mediaKey: "live:somestreamer",
+			channel: "somestreamer",
+		};
+		await persist()(
+			{
+				flushId: "flush:test:replacement-0001",
+				adMeasurements: [measurement],
+			},
+			7,
+		);
+		await persist()(
+			{
+				flushId: "flush:test:replacement-0002",
+				adMeasurements: [measurement],
+			},
+			7,
+		);
+
+		expect(stats().adMillisecondsSaved).toBe(30000);
+		expect(stats().channels.somestreamer.adMilliseconds).toBe(30000);
+	});
+
+	it("counts a reused playlist ID when START-DATE identifies a new occurrence", async () => {
+		const measurement = {
+			id: "stitched-ad-reused",
+			durationMilliseconds: 15000,
+			mediaKey: "live:somestreamer",
+			channel: "somestreamer",
+		};
+		await persist()(
+			{
+				flushId: "flush:test:reused-0001",
+				adMeasurements: [
+					{
+						...measurement,
+						startDateMilliseconds: Date.parse("2026-08-12T10:00:00.000Z"),
+					},
+				],
+			},
+			7,
+		);
+		await persist()(
+			{
+				flushId: "flush:test:reused-0002",
+				adMeasurements: [
+					{
+						...measurement,
+						startDateMilliseconds: Date.parse("2026-08-12T10:01:00.000Z"),
+					},
+				],
+			},
+			7,
+		);
+
+		expect(stats().adMillisecondsSaved).toBe(30000);
+	});
+
+	it("keeps semantic deduplication scoped to the tab and media", async () => {
+		const first = {
+			id: "stitched-ad-shared",
+			durationMilliseconds: 15000,
+			mediaKey: "live:somestreamer",
+			channel: "somestreamer",
+		};
+		await persist()(
+			{ flushId: "flush:test:scope-0001", adMeasurements: [first] },
+			7,
+		);
+		await persist()(
+			{ flushId: "flush:test:scope-0002", adMeasurements: [first] },
+			8,
+		);
+		await persist()(
+			{
+				flushId: "flush:test:scope-0003",
+				adMeasurements: [
+					{
+						...first,
+						mediaKey: "live:otherstreamer",
+						channel: "otherstreamer",
+					},
+				],
+			},
+			7,
+		);
+
+		expect(stats().adMillisecondsSaved).toBe(45000);
+		expect(stats().channels.somestreamer.adMilliseconds).toBe(30000);
+		expect(stats().channels.otherstreamer.adMilliseconds).toBe(15000);
+	});
+
+	it("accepts a creative again after its bounded deduplication window expires", async () => {
+		storageData = {
+			ttvRecentAdMeasurements: {
+				"tab:7\nlive:somestreamer\nstitched-ad-expired\n0":
+					Date.now() - 4 * 24 * 60 * 60 * 1000,
+			},
+		};
+		await persist()(
+			{
+				flushId: "flush:test:expired-0001",
+				adMeasurements: [
+					{
+						id: "stitched-ad-expired",
+						durationMilliseconds: 30000,
+						mediaKey: "live:somestreamer",
+						channel: "somestreamer",
+					},
+				],
+			},
+			7,
+		);
+
+		expect(stats().adMillisecondsSaved).toBe(30000);
+	});
+
+	it("hard-caps the persisted semantic deduplication map", () => {
+		const now = Date.now();
+		const recent: Record<string, number> = {};
+		for (let index = 0; index < 1005; index++) {
+			recent[`tab:7\nlive:somestreamer\nstitched-ad-${index}\n0`] = now - index;
+		}
+		const normalize = g.normalizeRecentAdMeasurements as (
+			value: unknown,
+		) => Record<string, number>;
+		const normalized = normalize(recent);
+
+		expect(Object.keys(normalized)).toHaveLength(1000);
+		expect(normalized).not.toHaveProperty(
+			"tab:7\nlive:somestreamer\nstitched-ad-1004\n0",
+		);
+	});
+
+	it("migrates legacy seconds and caps a legacy flush at the existing ceiling", async () => {
+		storageData = {
+			ttvStats: {
+				adSecondsSaved: 12,
+				channels: { somestreamer: { adSeconds: 3 } },
+			},
+		};
 		await persist()({
-			flushId: "flush:test:secs-0003",
+			flushId: "flush:test:legacy-0001",
 			adsDelta: 1,
 			channelDeltas: { somestreamer: 1 },
 			adSecondsDelta: 999999,
-			measuredBreaksDelta: 1,
 		});
-		expect(stats().adSecondsSaved).toBe(14400);
+		expect(stats().adMillisecondsSaved).toBe(14412000);
+		expect(stats().channels.somestreamer.adMilliseconds).toBe(3000);
 	});
 
-	it("blends measured and estimated time for achievements", () => {
-		const blend = g.computeBlendedTimeSaved as (
+	it("uses only measured duration for time-based achievements", () => {
+		const measured = g.computeMeasuredTimeSaved as (
 			statsState: unknown,
-			totalAds: number,
 		) => number;
-		expect(blend({ adSecondsSaved: 600, adBreaksMeasured: 10 }, 15)).toBe(
-			600 + 5 * 22,
-		);
-		expect(blend({ adSecondsSaved: 0, adBreaksMeasured: 0 }, 4)).toBe(88);
-		expect(blend({ adSecondsSaved: 900, adBreaksMeasured: 20 }, 10)).toBe(900);
+		expect(measured({ adMillisecondsSaved: 600000 })).toBe(600000);
+		expect(measured({ adMillisecondsSaved: 0 })).toBe(0);
+		expect(measured({})).toBe(0);
 	});
 
-	it("persists seconds-only flushes without touching the ads total", async () => {
+	it("removes time achievements unlocked by the retired estimate", () => {
+		const normalize = g.normalizeStatsState as (statsState: unknown) => {
+			achievements: string[];
+		};
+		expect(
+			normalize({
+				adMillisecondsSaved: 0,
+				achievements: ["first_block", "time_1h", "time_10h"],
+			}).achievements,
+		).toEqual(["first_block"]);
+		expect(
+			normalize({
+				adMillisecondsSaved: 3600000,
+				achievements: ["time_1h", "time_10h"],
+			}).achievements,
+		).toEqual(["time_1h"]);
+	});
+
+	it("keeps legacy seconds-only flushes compatible without touching the ads total", async () => {
 		storageData = { ttvAdsBlocked: 7 };
 		await persist()({
-			flushId: "flush:test:secs-0004",
+			flushId: "flush:test:legacy-0002",
 			adsDelta: 0,
 			adSecondsDelta: 30,
-			measuredBreaksDelta: 1,
 			channelAdSecondsDeltas: { somestreamer: 30 },
-			channelMeasuredBreaksDeltas: { somestreamer: 1 },
 		});
 		expect(storageData.ttvAdsBlocked).toBe(7);
-		expect(stats().adSecondsSaved).toBe(30);
+		expect(stats().adMillisecondsSaved).toBe(30000);
+		expect(stats().channels.somestreamer.adMilliseconds).toBe(30000);
 		expect(stats().channels.somestreamer.ads).toBe(0);
+	});
+
+	it("does not add a legacy aggregate when a measurement record is present", async () => {
+		await persist()({
+			flushId: "flush:test:mixed-0001",
+			adSecondsDelta: 999,
+			adMeasurements: [
+				{
+					id: "stitched-ad-mixed",
+					durationMilliseconds: 15050,
+					mediaKey: "live:somestreamer",
+					channel: "somestreamer",
+				},
+			],
+		});
+
+		expect(stats().adMillisecondsSaved).toBe(15050);
 	});
 });

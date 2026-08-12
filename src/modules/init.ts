@@ -392,6 +392,14 @@ function _initToggleListener() {
 			_setIndependentVideoAdGuardEnabled(enabled);
 		}
 		if (!enabled) {
+			for (const mediaKey of Object.keys(
+				__TTVAB_STATE__.AdPodProgressByMediaKey || {},
+			)) {
+				_clearAdPodProgress(mediaKey);
+			}
+			__TTVAB_STATE__.AdPodProgressByMediaKey = Object.create(null);
+			_pageAdCycleControlByMediaKey.clear();
+			_pageSideEmptyHoldInfoByUrl.clear();
 			__TTVAB_STATE__.CurrentAdChannel = null;
 			__TTVAB_STATE__.CurrentAdMediaKey = null;
 			__TTVAB_STATE__.PinnedBackupPlayerType = null;
@@ -409,8 +417,11 @@ function _initToggleListener() {
 			__TTVAB_STATE__.LastAdEndedAt = 0;
 			__TTVAB_STATE__.LastAdEndedChannel = null;
 			__TTVAB_STATE__.LastAdEndedMediaKey = null;
+			__TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
+			__TTVAB_STATE__.LastAdDetectedAt = 0;
 			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
 			__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+			__TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
 			__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 			if (typeof _clearAdResumeIntent === "function") {
 				_clearAdResumeIntent();
@@ -427,6 +438,9 @@ function _initToggleListener() {
 			if (typeof _clearPendingPlayerPreferenceRestore === "function") {
 				_clearPendingPlayerPreferenceRestore();
 			}
+		}
+		_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
+		if (!enabled) {
 			_broadcastWorkers({
 				key: "ResetPlaybackRecoveryState",
 				value: { clearAdContext: true },
@@ -440,7 +454,6 @@ function _initToggleListener() {
 				value: null,
 			});
 		}
-		_broadcastWorkers({ key: "UpdateToggleState", value: enabled });
 		_log(
 			`Ad blocking ${enabled ? "enabled" : "disabled"}`,
 			enabled ? "success" : "warning",

@@ -890,12 +890,16 @@ function _hookWorkerFetch() {
 				headers: response.headers,
 			});
 
+			const shouldBlockAdSegments =
+				__TTVAB_STATE__.IsAdStrippingEnabled === true;
 			const shouldBlockCachedAdSegments = Boolean(
-				__TTVAB_STATE__.CurrentAdMediaKey ||
-					__TTVAB_STATE__.CurrentAdChannel ||
-					__TTVAB_STATE__.SimulatedAdsDepth > 0,
+				shouldBlockAdSegments &&
+					(__TTVAB_STATE__.CurrentAdMediaKey ||
+						__TTVAB_STATE__.CurrentAdChannel ||
+						__TTVAB_STATE__.SimulatedAdsDepth > 0),
 			);
 			if (
+				shouldBlockAdSegments &&
 				typeof _isEmptyAdHoldSegmentUrl === "function" &&
 				_isEmptyAdHoldSegmentUrl(url)
 			) {
@@ -934,6 +938,7 @@ function _hookWorkerFetch() {
 				(segmentMediaKey && __TTVAB_STATE__.StreamInfos?.[segmentMediaKey]) ||
 				null;
 			if (
+				shouldBlockAdSegments &&
 				typeof _isKnownAdSegmentUrl === "function" &&
 				_isKnownAdSegmentUrl(url, {
 					includeCached: shouldBlockCachedAdSegments,
@@ -1123,7 +1128,15 @@ function _hookWorkerFetch() {
 					requestStartDecoderCodecFamily === "hevc" ||
 						requestStartDecoderCodecFamily === "av1",
 				);
+				const mediaRequestSignal =
+					opts?.signal ||
+					(typeof Request !== "undefined" && resource instanceof Request
+						? resource.signal
+						: null);
 				const response = await realFetch.apply(this, getFetchArgs(url));
+				if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
+					return response;
+				}
 				if (response.status === 200) {
 					const text = await response.text();
 					const responseInfo =
@@ -1142,6 +1155,13 @@ function _hookWorkerFetch() {
 							);
 						}
 					};
+					const returnNativeMediaResponse = () => {
+						reportSuccessfulMediaResponse();
+						return new Response(text, responseInit(response));
+					};
+					if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
+						return returnNativeMediaResponse();
+					}
 					const responseMediaKey = _normalizeMediaKey(responseInfo?.MediaKey);
 					const responseHasExactActiveAdContext = Boolean(
 						responseInfo &&
@@ -1192,15 +1212,21 @@ function _hookWorkerFetch() {
 							url,
 							text,
 							realFetch,
-							opts?.signal ||
-								(typeof Request !== "undefined" && resource instanceof Request
-									? resource.signal
-									: null),
+							mediaRequestSignal,
 							requestStartContext,
 						);
+						if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
+							return returnNativeMediaResponse();
+						}
 						reportSuccessfulMediaResponse();
 						return new Response(processedText, responseInit(response));
 					} catch (err) {
+						if (
+							__TTVAB_STATE__.IsAdStrippingEnabled !== true &&
+							mediaRequestSignal?.aborted !== true
+						) {
+							return returnNativeMediaResponse();
+						}
 						if (err?.name === "AbortError") {
 							throw err;
 						}
@@ -3279,6 +3305,7 @@ function _completePageSideFallbackAdRecovery(mediaKey) {
 }
 
 function _ensurePageSideFallbackAdCycle(url, _codec = null, playlistText = "") {
+	if (__TTVAB_STATE__?.IsAdStrippingEnabled !== true) return 0;
 	const context = _normalizePlaybackContext({
 		MediaType: __TTVAB_STATE__?.PageMediaType,
 		ChannelName: __TTVAB_STATE__?.PageChannel,
@@ -3451,8 +3478,20 @@ function _installPageSideM3U8Override() {
 	if (!window.__TTVAB_REAL_FETCH__) {
 		window.__TTVAB_REAL_FETCH__ = realFetch;
 	}
+	let fallbackWasEnabled = __TTVAB_STATE__?.IsAdStrippingEnabled === true;
+	const shouldPassThrough = () => {
+		const enabled = __TTVAB_STATE__?.IsAdStrippingEnabled === true;
+		if (!enabled && fallbackWasEnabled) {
+			_pageSideEmptyHoldInfoByUrl.clear();
+		}
+		fallbackWasEnabled = enabled;
+		return !enabled;
+	};
 
 	window.fetch = async function (...args) {
+		if (shouldPassThrough()) {
+			return realFetch.apply(this, args);
+		}
 		const [urlOrRequest] = args;
 		const urlStr =
 			urlOrRequest instanceof Request
@@ -3491,10 +3530,12 @@ function _installPageSideM3U8Override() {
 
 		try {
 			const response = await realFetch.apply(this, args);
+			if (shouldPassThrough()) return response;
 			if (response.status !== 200) return response;
 
 			const cloned = response.clone();
 			const text = await cloned.text();
+			if (shouldPassThrough()) return response;
 			_rememberPageSideVariantCodecs(text, urlStr);
 			const getEmptyHoldInfo = () => {
 				let emptyHoldInfo = _pageSideEmptyHoldInfoByUrl.get(urlStr) || null;
@@ -3987,7 +4028,30 @@ function _hookWorker() {
                         case 'UpdateDeviceId': __TTVAB_STATE__.GQLDeviceID = data.value; break;
                         case 'UpdateClientIntegrityHeader': __TTVAB_STATE__.ClientIntegrityHeader = data.value; break;
                         case 'UpdateAuthorizationHeader': __TTVAB_STATE__.AuthorizationHeader = data.value; break;
-                        case 'UpdateToggleState': __TTVAB_STATE__.IsAdStrippingEnabled = data.value; break;
+                        case 'UpdateToggleState':
+                            {
+                                const enabled = data.value === true;
+                                if (!enabled) {
+                                    for (const streamInfo of Object.values(__TTVAB_STATE__.StreamInfos)) {
+                                        _resetStreamAdState(streamInfo);
+                                    }
+                                    __TTVAB_STATE__.CurrentAdChannel = null;
+                                    __TTVAB_STATE__.CurrentAdMediaKey = null;
+                                    __TTVAB_STATE__.PinnedBackupPlayerType = null;
+                                    __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+                                    __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+                                    __TTVAB_STATE__.ActiveCodecHandoffId = null;
+                                    __TTVAB_STATE__.ActiveCodecHandoffChannel = null;
+                                    __TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
+                                    __TTVAB_STATE__.AdPodProgressByMediaKey = Object.create(null);
+                                    __TTVAB_STATE__.LastAdEndedAt = 0;
+                                    __TTVAB_STATE__.LastAdEndedChannel = null;
+                                    __TTVAB_STATE__.LastAdEndedMediaKey = null;
+                                    __TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
+                                }
+                                __TTVAB_STATE__.IsAdStrippingEnabled = enabled;
+                            }
+                            break;
                         case 'UpdateAdSpoofingState': __TTVAB_STATE__.DisableAdSpoofing = data.value === true; break;
                         case 'UpdateAutoplayBackupState': __TTVAB_STATE__.DisableAutoplayBackup = data.value === true; break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
@@ -4033,6 +4097,12 @@ function _hookWorker() {
                         case 'UpdateCurrentAdContext':
                             {
                                 const nextAdContext = _normalizePlaybackContext(data.value);
+                                if (
+                                    __TTVAB_STATE__.IsAdStrippingEnabled !== true &&
+                                    nextAdContext.MediaKey
+                                ) {
+                                    break;
+                                }
                                 __TTVAB_STATE__.CurrentAdChannel = nextAdContext.ChannelName;
                                 __TTVAB_STATE__.CurrentAdMediaKey = nextAdContext.MediaKey;
                             }
@@ -4040,6 +4110,12 @@ function _hookWorker() {
                         case 'UpdateLastAdEndContext':
                             {
                                 const lastEndContext = _normalizePlaybackContext(data.value);
+                                if (
+                                    __TTVAB_STATE__.IsAdStrippingEnabled !== true &&
+                                    (lastEndContext.MediaKey || Number(data.value?.endedAt) > 0)
+                                ) {
+                                    break;
+                                }
                                 __TTVAB_STATE__.LastAdEndedAt = Math.max(0, Number(data.value?.endedAt) || 0);
                                 __TTVAB_STATE__.LastAdEndedChannel = lastEndContext.ChannelName;
                                 __TTVAB_STATE__.LastAdEndedMediaKey = lastEndContext.MediaKey;
@@ -4051,6 +4127,9 @@ function _hookWorker() {
                             break;
                         case 'UpdateAdPodProgress':
                             {
+                                if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
+                                    break;
+                                }
                                 const progressContext = _normalizePlaybackContext(data.value);
                                 const progressInfo =
                                     (progressContext.MediaKey &&
@@ -4073,6 +4152,12 @@ function _hookWorker() {
                             {
                                 const nextPinnedContext = _normalizePlaybackContext(data.value);
                                 const nextPinnedType = data.value?.type || null;
+                                if (
+                                    __TTVAB_STATE__.IsAdStrippingEnabled !== true &&
+                                    (nextPinnedType || nextPinnedContext.MediaKey)
+                                ) {
+                                    break;
+                                }
                                 const nextPinnedCycleStartedAt = Math.max(
                                     0,
                                     Number(data.value?.cycleStartedAt) || 0,
@@ -4102,6 +4187,9 @@ function _hookWorker() {
                             }
                             break;
                         case 'PrepareFatalMediaRecovery':
+                            if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
+                                break;
+                            }
                             if (
                                 typeof __TTVAB_STATE__.PrepareFatalMediaRecovery === "function"
                             ) {
@@ -4116,6 +4204,12 @@ function _hookWorker() {
                                     data.value.handoffId
                                         ? data.value.handoffId
                                         : null;
+                                if (
+                                    __TTVAB_STATE__.IsAdStrippingEnabled !== true &&
+                                    nextHandoffId
+                                ) {
+                                    break;
+                                }
                                 const clearHandoffId =
                                     typeof data.value?.clearHandoffId === "string" &&
                                     data.value.clearHandoffId
@@ -4246,7 +4340,10 @@ function _hookWorker() {
                             }
                             break;
                         case 'UpdateBackupSearchForceRefresh':
-                            __TTVAB_STATE__.BackupSearchForceRefreshAt = Number(data.value) || 0;
+                            __TTVAB_STATE__.BackupSearchForceRefreshAt =
+                                __TTVAB_STATE__.IsAdStrippingEnabled === true
+                                    ? Number(data.value) || 0
+                                    : 0;
                             break;
                         case 'ResetPlaybackRecoveryState':
                             {
@@ -4585,6 +4682,37 @@ function _hookWorker() {
 					) {
 						return;
 					}
+					if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
+						if (
+							data.key === "AdEnded" ||
+							data.key === "NativePlaybackRestored"
+						) {
+							_clearAdPodProgress(data.mediaKey);
+							if (
+								typeof _clearPlaybackRecoveryTimeoutsForContext === "function"
+							) {
+								_clearPlaybackRecoveryTimeoutsForContext(data.mediaKey);
+							}
+							if (typeof _clearAdResumeIntent === "function") {
+								_clearAdResumeIntent();
+							}
+							if (typeof _clearSuppressedMediaTracking === "function") {
+								_clearSuppressedMediaTracking({ restoreConnected: true });
+							}
+							return;
+						}
+						if (
+							data.key === "MediaBootstrapRecoveryNeeded" ||
+							data.key === "AdDetected" ||
+							data.key === "AdPodProgress" ||
+							data.key === "BackupPlayerTypeSelected" ||
+							data.key === "FatalMediaRecoveryReady" ||
+							data.key === "PauseResumePlayer" ||
+							data.key === "ReloadPlayer"
+						) {
+							return;
+						}
+					}
 
 					switch (data.key) {
 						case "MediaBootstrapRecoveryNeeded":
@@ -4809,21 +4937,66 @@ function _hookWorker() {
 							if (isStalePlaybackEvent(data)) {
 								break;
 							}
+							const measurements = Array.isArray(data.measurements)
+								? data.measurements
+										.slice(0, 50)
+										.map((measurement) => {
+											const id =
+												typeof measurement?.id === "string" &&
+												measurement.id.startsWith("stitched-ad-") &&
+												measurement.id.length <= 256
+													? measurement.id
+													: null;
+											const durationMilliseconds = Number.isFinite(
+												measurement?.durationMilliseconds,
+											)
+												? Math.max(
+														0,
+														Math.trunc(measurement.durationMilliseconds),
+													)
+												: 0;
+											const startDateMilliseconds = Number.isSafeInteger(
+												measurement?.startDateMilliseconds,
+											)
+												? Math.max(0, measurement.startDateMilliseconds)
+												: 0;
+											return id &&
+												durationMilliseconds > 0 &&
+												durationMilliseconds <= 600000
+												? {
+														id,
+														durationMilliseconds,
+														...(startDateMilliseconds
+															? { startDateMilliseconds }
+															: {}),
+													}
+												: null;
+										})
+										.filter(Boolean)
+								: [];
+							if (measurements.length > 0) {
+								_sendBridgeMessage("ttvab-ad-seconds", {
+									measurements,
+									cycleStartedAt: Math.max(0, Number(data.cycleStartedAt) || 0),
+									channel: data.channel || null,
+									mediaKey: data.mediaKey || null,
+									pageChannel: data.pageChannel || null,
+									pageMediaKey: data.pageMediaKey || null,
+								});
+								break;
+							}
 							const measuredSeconds = Number.isFinite(data.seconds as number)
 								? Math.max(0, Math.trunc(data.seconds as number))
 								: 0;
-							if (measuredSeconds <= 0) break;
-							_sendBridgeMessage("ttvab-ad-seconds", {
-								seconds: measuredSeconds,
-								measuredBreakDelta:
-									data.measuredBreakDelta === 1 || data.measuredBreakDelta === 0
-										? data.measuredBreakDelta
-										: 1,
-								channel: data.channel || null,
-								mediaKey: data.mediaKey || null,
-								pageChannel: data.pageChannel || null,
-								pageMediaKey: data.pageMediaKey || null,
-							});
+							if (measuredSeconds > 0) {
+								_sendBridgeMessage("ttvab-ad-seconds", {
+									seconds: measuredSeconds,
+									channel: data.channel || null,
+									mediaKey: data.mediaKey || null,
+									pageChannel: data.pageChannel || null,
+									pageMediaKey: data.pageMediaKey || null,
+								});
+							}
 							break;
 						}
 						case "AdDetected":

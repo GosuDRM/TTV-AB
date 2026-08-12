@@ -329,46 +329,90 @@ async function _getToken(
 function _recordAdDurations(textStr, info) {
 	try {
 		if (!textStr || typeof textStr !== "string" || !info) return;
-		const matches = [
-			...textStr.matchAll(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/g),
-		];
-		if (matches.length === 0) return;
+		const cycleStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
+		if (cycleStartedAt <= 0) return;
 		if (!(info.MeasuredAdIds instanceof Set)) {
 			info.MeasuredAdIds = new Set();
 		}
-		let seconds = 0;
-		for (let i = 0; i < matches.length; i++) {
-			const idMatch = matches[i][1].match(/^ID="([^"]+)"/);
-			const stitchedAdId = idMatch ? idMatch[1] : "";
-			if (!stitchedAdId || info.MeasuredAdIds.has(stitchedAdId)) continue;
-			const attr = _parseAttrs(matches[i][1]);
-			const adDuration =
-				parseInt(attr["X-TV-TWITCH-AD-DURATION"] || "0", 10) || 0;
-			if (adDuration <= 0 || adDuration > 600) continue;
-			info.MeasuredAdIds.add(stitchedAdId);
-			seconds += adDuration;
+		const measurements = [];
+		const measurementKeys = new Set();
+		for (const line of textStr.split(/\r?\n/)) {
+			if (!line.startsWith("#EXT-X-DATERANGE:")) continue;
+			const attr = _parseAttrs(line.slice("#EXT-X-DATERANGE:".length));
+			const stitchedAdId = attr.ID || "";
+			if (
+				typeof stitchedAdId !== "string" ||
+				!stitchedAdId.startsWith("stitched-ad-") ||
+				stitchedAdId.length > 256 ||
+				/\p{Cc}/u.test(stitchedAdId)
+			) {
+				continue;
+			}
+			const measurementKey = `${cycleStartedAt}:${stitchedAdId}`;
+			const standardDurationText = String(attr.DURATION || "");
+			const twitchDurationText = String(attr["X-TV-TWITCH-AD-DURATION"] || "");
+			const standardDurationSeconds = /^\d+(?:\.\d+)?$/.test(
+				standardDurationText,
+			)
+				? Number(standardDurationText)
+				: 0;
+			const durationText =
+				standardDurationSeconds > 0 ? standardDurationText : twitchDurationText;
+			if (!/^\d+(?:\.\d+)?$/.test(durationText)) continue;
+			const durationSeconds = Number(durationText);
+			const durationMilliseconds = Math.round(durationSeconds * 1000);
+			if (
+				!Number.isFinite(durationMilliseconds) ||
+				durationMilliseconds <= 0 ||
+				durationMilliseconds > 600000
+			) {
+				continue;
+			}
+			const startDateText = String(attr["START-DATE"] || "");
+			const parsedStartDate =
+				startDateText.length <= 64 ? Date.parse(startDateText) : Number.NaN;
+			const startDateMilliseconds =
+				Number.isSafeInteger(parsedStartDate) && parsedStartDate > 0
+					? parsedStartDate
+					: 0;
+			const occurrenceKey = startDateMilliseconds
+				? `${measurementKey}:${startDateMilliseconds}`
+				: measurementKey;
+			if (
+				info.MeasuredAdIds.has(occurrenceKey) ||
+				measurementKeys.has(occurrenceKey)
+			) {
+				continue;
+			}
+			measurementKeys.add(occurrenceKey);
+			measurements.push({
+				id: stitchedAdId,
+				durationMilliseconds,
+				...(startDateMilliseconds ? { startDateMilliseconds } : {}),
+			});
+			if (measurements.length >= 50) break;
 		}
-		while (info.MeasuredAdIds.size > 500) {
-			const first = info.MeasuredAdIds.values().next().value;
-			if (first === undefined) break;
-			info.MeasuredAdIds.delete(first);
-		}
-		if (seconds <= 0) return;
-		const cycleStamp = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
-		const measuredBreakDelta =
-			cycleStamp > 0 && info._SecondsReportedForCycle === cycleStamp ? 0 : 1;
-		info._SecondsReportedForCycle = cycleStamp;
+		if (measurements.length === 0) return;
 		if (typeof self !== "undefined" && self.postMessage) {
-			_postWorkerBridgeMessage(
+			const didPost = _postWorkerBridgeMessage(
 				self,
 				_createPageScopedWorkerEvent({
 					key: "AdSecondsBlocked",
-					seconds,
-					measuredBreakDelta,
+					measurements,
+					cycleStartedAt,
 					channel: info.ChannelName || null,
 					mediaKey: info.MediaKey || null,
 				}),
 			);
+			if (!didPost) return;
+			for (const measurementKey of measurementKeys) {
+				info.MeasuredAdIds.add(measurementKey);
+			}
+			while (info.MeasuredAdIds.size > 500) {
+				const first = info.MeasuredAdIds.values().next().value;
+				if (first === undefined) break;
+				info.MeasuredAdIds.delete(first);
+			}
 		}
 	} catch {}
 }

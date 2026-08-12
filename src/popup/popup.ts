@@ -431,6 +431,235 @@ function _downloadLogExport(text: string) {
 	}
 }
 
+const _POPUP_TOGGLE_NAMES = [
+	"adblock",
+	"adSpoofing",
+	"autoplayBackup",
+] as const;
+const _POPUP_TOGGLE_STORAGE_KEYS = {
+	adblock: "ttvAdblockEnabled",
+	adSpoofing: "ttvAdSpoofingEnabled",
+	autoplayBackup: "ttvAutoplayBackupEnabled",
+} as const;
+const _POPUP_TOGGLE_READ_RETRY_DELAYS = [100, 300, 1000];
+const _POPUP_TOGGLE_READ_SLOW_RETRY_MS = 30000;
+const _POPUP_TOGGLE_READ_TIMEOUT_MS = 1000;
+const _POPUP_TOGGLE_WRITE_TIMEOUT_MS = 1000;
+
+function _createPopupToggleController(options) {
+	const values = {
+		adblock: true,
+		adSpoofing: true,
+		autoplayBackup: true,
+	};
+	const revisions = {
+		adblock: 0,
+		adSpoofing: 0,
+		autoplayBackup: 0,
+	};
+	const writeSequences = {
+		adblock: 0,
+		adSpoofing: 0,
+		autoplayBackup: 0,
+	};
+	const pending = {
+		adblock: false,
+		adSpoofing: false,
+		autoplayBackup: false,
+	};
+	const writeTimeoutTimers = {
+		adblock: null,
+		adSpoofing: null,
+		autoplayBackup: null,
+	};
+	const schedule = options.schedule || setTimeout;
+	const cancel = options.cancel || clearTimeout;
+	let ready = false;
+	let started = false;
+	let readSequence = 0;
+	let readFailureCount = 0;
+	let readInFlight = false;
+	let readRetryTimer = null;
+	let readTimeoutTimer = null;
+
+	function snapshot() {
+		return {
+			ready,
+			values: { ...values },
+			pending: { ...pending },
+			available: {
+				adblock: ready && !pending.adblock,
+				adSpoofing:
+					ready && values.adblock && !pending.adblock && !pending.adSpoofing,
+				autoplayBackup:
+					ready &&
+					values.adblock &&
+					!pending.adblock &&
+					!pending.autoplayBackup,
+			},
+		};
+	}
+
+	function render() {
+		options.render(snapshot());
+	}
+
+	function clearReadRetryTimer() {
+		if (readRetryTimer !== null) {
+			cancel(readRetryTimer);
+			readRetryTimer = null;
+		}
+	}
+
+	function clearReadTimeoutTimer() {
+		if (readTimeoutTimer !== null) {
+			cancel(readTimeoutTimer);
+			readTimeoutTimer = null;
+		}
+	}
+
+	function clearWriteTimeout(name) {
+		if (writeTimeoutTimers[name] === null) return;
+		cancel(writeTimeoutTimers[name]);
+		writeTimeoutTimers[name] = null;
+	}
+
+	function scheduleReadRetry() {
+		if (ready || readInFlight || readRetryTimer !== null) return;
+		const retryDelay =
+			_POPUP_TOGGLE_READ_RETRY_DELAYS[readFailureCount - 1] ??
+			_POPUP_TOGGLE_READ_SLOW_RETRY_MS;
+		readRetryTimer = schedule(() => {
+			readRetryTimer = null;
+			beginRead();
+		}, retryDelay);
+	}
+
+	function beginRead(resetFailures = false) {
+		if (readInFlight) return false;
+		if (resetFailures) readFailureCount = 0;
+		clearReadRetryTimer();
+		ready = false;
+		render();
+		readInFlight = true;
+		const sequence = ++readSequence;
+		const readRevisions = { ...revisions };
+		let settled = false;
+		const finish = (result, error) => {
+			if (settled || sequence !== readSequence) return;
+			settled = true;
+			clearReadTimeoutTimer();
+			readInFlight = false;
+			const readError =
+				error ||
+				(!result || typeof result !== "object" || Array.isArray(result)
+					? "Storage returned no settings"
+					: null);
+			if (readError) {
+				readFailureCount++;
+				options.onReadError?.(readError, readFailureCount);
+				scheduleReadRetry();
+				render();
+				return;
+			}
+			for (const name of _POPUP_TOGGLE_NAMES) {
+				if (revisions[name] !== readRevisions[name]) continue;
+				values[name] = result[_POPUP_TOGGLE_STORAGE_KEYS[name]] !== false;
+			}
+			readFailureCount = 0;
+			ready = true;
+			render();
+		};
+		readTimeoutTimer = schedule(
+			() => finish(null, "Settings read timed out"),
+			_POPUP_TOGGLE_READ_TIMEOUT_MS,
+		);
+		try {
+			options.read(Object.values(_POPUP_TOGGLE_STORAGE_KEYS), finish);
+		} catch (error) {
+			finish(null, error instanceof Error ? error.message : String(error));
+		}
+		return true;
+	}
+
+	function applyStorageChanges(changes) {
+		if (!changes || typeof changes !== "object") return false;
+		let changed = false;
+		for (const name of _POPUP_TOGGLE_NAMES) {
+			const storageKey = _POPUP_TOGGLE_STORAGE_KEYS[name];
+			if (!Object.hasOwn(changes, storageKey)) continue;
+			revisions[name]++;
+			values[name] = changes[storageKey]?.newValue !== false;
+			if (pending[name]) {
+				writeSequences[name]++;
+				pending[name] = false;
+				clearWriteTimeout(name);
+			}
+			changed = true;
+		}
+		if (changed) render();
+		return changed;
+	}
+
+	function write(name, enabled) {
+		if (!_POPUP_TOGGLE_NAMES.includes(name)) return false;
+		if (!ready || pending[name] || (name !== "adblock" && !values.adblock)) {
+			render();
+			return false;
+		}
+		const normalizedEnabled = enabled === true;
+		const sequence = ++writeSequences[name];
+		values[name] = normalizedEnabled;
+		pending[name] = true;
+		render();
+		let settled = false;
+		const finish = (error) => {
+			if (settled || sequence !== writeSequences[name]) return;
+			settled = true;
+			clearWriteTimeout(name);
+			pending[name] = false;
+			if (error) {
+				options.onWriteError?.(name, error);
+				beginRead(true);
+				return;
+			}
+			render();
+			if (values[name] === normalizedEnabled) {
+				options.onWriteSuccess?.(name, normalizedEnabled);
+			}
+		};
+		writeTimeoutTimers[name] = schedule(
+			() => finish("Settings write timed out"),
+			_POPUP_TOGGLE_WRITE_TIMEOUT_MS,
+		);
+		try {
+			options.write(
+				_POPUP_TOGGLE_STORAGE_KEYS[name],
+				normalizedEnabled,
+				finish,
+			);
+		} catch (error) {
+			finish(error instanceof Error ? error.message : String(error));
+		}
+		return true;
+	}
+
+	function start() {
+		if (started) return false;
+		started = true;
+		beginRead(true);
+		return true;
+	}
+
+	return {
+		applyStorageChanges,
+		getSnapshot: snapshot,
+		refresh: () => beginRead(true),
+		start,
+		write,
+	};
+}
+
 document.addEventListener("DOMContentLoaded", () => {
 	const THEME_KEY = "ttvab_theme";
 	const VALID_THEMES = ["default", "retro"];
@@ -840,6 +1069,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			"aria-label",
 			String(t.adSpoofing ?? "Ad Spoofing"),
 		);
+		autoplayBackupToggle.setAttribute(
+			"aria-label",
+			String(t.autoplayBackup ?? "Low Quality Fallback"),
+		);
 		achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
 		footerText.textContent = String(t.footerBy ?? " — by ");
 		const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
@@ -959,8 +1192,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	let latestChannelStats: TTVABChannelMap = Object.create(null);
 	let latestAdsTotal = 0;
-	let latestMeasuredSeconds = 0;
-	let latestMeasuredBreaks = 0;
+	let latestMeasuredMilliseconds = 0;
 	let openChannelModalName: string | null = null;
 
 	function prefersReducedMotion() {
@@ -1213,14 +1445,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			.catch(() => {});
 	}
 
-	function computeBlendedSeconds(measuredSeconds, measuredBreaks, totalBreaks) {
-		const unmeasured = Math.max(
-			0,
-			normalizeCount(totalBreaks) - normalizeCount(measuredBreaks),
-		);
-		return normalizeCount(measuredSeconds) + unmeasured * AVG_AD_DURATION;
-	}
-
 	function fillChannelModal(channelName) {
 		const entry = normalizeChannelEntry(latestChannelStats[channelName]);
 		const rankedEntries = Object.entries(latestChannelStats)
@@ -1254,10 +1478,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		animateStatValue(channelModalWatch, entry.watchSeconds, (value) =>
 			formatWatchTime(value),
 		);
-		animateStatValue(
-			channelModalSaved,
-			computeBlendedSeconds(entry.adSeconds, entry.measuredAds, entry.ads),
-			(value) => formatTimeSaved(value),
+		animateStatValue(channelModalSaved, entry.adMilliseconds, (value) =>
+			formatTimeSaved(value),
 		);
 		animateStatValue(channelModalBreaks, Math.ceil(entry.ads / 3), (value) =>
 			formatNumber(value),
@@ -1346,6 +1568,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		setStoredLanguage(normalizedSavedLang);
 	}
 	langSelector.value = currentLang;
+	let selectedLanguage = currentLang;
 	applyTranslations(getLang());
 
 	try {
@@ -1370,7 +1593,11 @@ document.addEventListener("DOMContentLoaded", () => {
 		const nextSelector = e.currentTarget;
 		if (!(nextSelector instanceof HTMLSelectElement)) return;
 		const lang = nextSelector.value;
-		setStoredLanguage(lang);
+		if (!setStoredLanguage(lang)) {
+			nextSelector.value = selectedLanguage;
+			return;
+		}
+		selectedLanguage = lang;
 		const effectiveLang =
 			lang === "auto" ? getAutoLanguageState().language : lang;
 		applyTranslations(effectiveLang);
@@ -1401,13 +1628,13 @@ document.addEventListener("DOMContentLoaded", () => {
 			.forEach((dot) => {
 				dot.addEventListener("click", () => {
 					const theme = dot.dataset.themeValue || "retro";
-					setStoredTheme(theme);
-					applyTheme(theme);
+					if (setStoredTheme(theme)) {
+						applyTheme(theme);
+					}
 				});
 			});
 	}
 
-	const AVG_AD_DURATION = 22;
 	const MAX_CHANNELS = 100;
 
 	const ACHIEVEMENTS = [
@@ -1445,13 +1672,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		{
 			id: "time_1h",
 			icon: "⏱️",
-			threshold: 3600,
+			threshold: 3600000,
 			type: "time",
 		},
 		{
 			id: "time_10h",
 			icon: "⏰",
-			threshold: 36000,
+			threshold: 36000000,
 			type: "time",
 		},
 		{
@@ -1483,14 +1710,36 @@ document.addEventListener("DOMContentLoaded", () => {
 		ACHIEVEMENTS.map((achievement) => achievement.id),
 	);
 
-	function formatTimeSaved(seconds) {
-		const safeSeconds = normalizeCount(seconds);
-		if (safeSeconds < 60) return `~${safeSeconds}s`;
-		const hours = Math.floor(safeSeconds / 3600);
-		const minutes = Math.floor((safeSeconds % 3600) / 60);
-		const secs = safeSeconds % 60;
-		if (hours > 0) return `~${hours}h ${minutes}m`;
-		return `~${minutes}m ${secs}s`;
+	function normalizeAchievementList(value, measuredMilliseconds = 0) {
+		if (!Array.isArray(value)) return [];
+		const safeMeasuredMilliseconds = normalizeCount(measuredMilliseconds);
+		return [
+			...new Set(
+				value.filter((id) => {
+					if (typeof id !== "string" || !ACHIEVEMENT_IDS.has(id)) {
+						return false;
+					}
+					const achievement = ACHIEVEMENTS.find((entry) => entry.id === id);
+					return (
+						achievement?.type !== "time" ||
+						safeMeasuredMilliseconds >= achievement.threshold
+					);
+				}),
+			),
+		];
+	}
+
+	function formatTimeSaved(milliseconds) {
+		const safeMilliseconds = normalizeCount(milliseconds);
+		const hours = Math.floor(safeMilliseconds / 3600000);
+		const minutes = Math.floor((safeMilliseconds % 3600000) / 60000);
+		const secondsWithinMinute = (safeMilliseconds % 60000) / 1000;
+		const secondsText = Number.isInteger(secondsWithinMinute)
+			? String(secondsWithinMinute)
+			: secondsWithinMinute.toFixed(3).replace(/0+$/, "");
+		if (hours > 0) return `${hours}h ${minutes}m ${secondsText}s`;
+		if (minutes > 0) return `${minutes}m ${secondsText}s`;
+		return `${secondsText}s`;
 	}
 
 	function normalizeCount(value) {
@@ -1543,18 +1792,19 @@ document.addEventListener("DOMContentLoaded", () => {
 				firstSeen: 0,
 				lastSeen: 0,
 				watchSeconds: 0,
-				adSeconds: 0,
-				measuredAds: 0,
+				adMilliseconds: 0,
 			};
 		}
 		const safeValue: PlainObject = isPlainObject(value) ? value : {};
+		const adMilliseconds = Object.hasOwn(safeValue, "adMilliseconds")
+			? normalizeCount(safeValue.adMilliseconds)
+			: normalizeCount(safeValue.adSeconds) * 1000;
 		return {
 			ads: normalizeCount(safeValue.ads),
 			firstSeen: normalizeTimestamp(safeValue.firstSeen),
 			lastSeen: normalizeTimestamp(safeValue.lastSeen),
 			watchSeconds: normalizeCount(safeValue.watchSeconds),
-			adSeconds: normalizeCount(safeValue.adSeconds),
-			measuredAds: normalizeCount(safeValue.measuredAds),
+			adMilliseconds,
 		};
 	}
 
@@ -1571,8 +1821,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				firstSeenCandidates.length > 0 ? Math.min(...firstSeenCandidates) : 0,
 			lastSeen: Math.max(target.lastSeen, incoming.lastSeen),
 			watchSeconds: target.watchSeconds + incoming.watchSeconds,
-			adSeconds: target.adSeconds + incoming.adSeconds,
-			measuredAds: target.measuredAds + incoming.measuredAds,
+			adMilliseconds: target.adMilliseconds + incoming.adMilliseconds,
 		};
 	}
 
@@ -1623,14 +1872,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		return normalized;
 	}
 
-	function updateTimeSaved(adsCount) {
-		timeSaved.textContent = formatTimeSaved(
-			computeBlendedSeconds(
-				latestMeasuredSeconds,
-				latestMeasuredBreaks,
-				normalizeCount(adsCount),
-			),
-		);
+	function updateTimeSaved() {
+		timeSaved.textContent = formatTimeSaved(latestMeasuredMilliseconds);
 	}
 
 	function getLast7Days() {
@@ -1779,11 +2022,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			achievementsGrid.querySelectorAll<HTMLButtonElement>(
 				".achievement-badge",
 			);
-		const timeSavedSecs = computeBlendedSeconds(
-			latestMeasuredSeconds,
-			latestMeasuredBreaks,
-			safeAdsBlocked,
-		);
+		const timeSavedMilliseconds = latestMeasuredMilliseconds;
 		const t = getTranslations();
 		let unlockedCount = 0;
 		let nextAch = null;
@@ -1809,7 +2048,7 @@ document.addEventListener("DOMContentLoaded", () => {
 							value = safeAdsBlocked;
 							break;
 						case "time":
-							value = timeSavedSecs;
+							value = timeSavedMilliseconds;
 							break;
 						case "channels":
 							value = safeChannelCount;
@@ -1852,15 +2091,13 @@ document.addEventListener("DOMContentLoaded", () => {
 				: ({} as PlainObject);
 			const daily = normalizeDailyStatsMap(stats.daily);
 			const channels = normalizeChannelsMap(stats.channels);
-			const achievements = Array.isArray(stats.achievements)
-				? [
-						...new Set(
-							stats.achievements.filter(
-								(id) => typeof id === "string" && ACHIEVEMENT_IDS.has(id),
-							),
-						),
-					]
-				: [];
+			const measuredMilliseconds = Object.hasOwn(stats, "adMillisecondsSaved")
+				? normalizeCount(stats.adMillisecondsSaved)
+				: normalizeCount(stats.adSecondsSaved) * 1000;
+			const achievements = normalizeAchievementList(
+				stats.achievements,
+				measuredMilliseconds,
+			);
 			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
 			let channelCount = 0;
 			for (const entry of Object.values(channels)) {
@@ -1869,9 +2106,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 			latestChannelStats = channels;
 			latestAdsTotal = adsCount;
-			latestMeasuredSeconds = normalizeCount(stats.adSecondsSaved);
-			latestMeasuredBreaks = normalizeCount(stats.adBreaksMeasured);
-			updateTimeSaved(adsCount);
+			latestMeasuredMilliseconds = measuredMilliseconds;
+			updateTimeSaved();
 			refreshOpenChannelModal();
 
 			renderChart(daily);
@@ -1881,122 +2117,94 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	}
 
-	chrome.storage.local.get(
-		[
-			"ttvAdblockEnabled",
-			"ttvAdSpoofingEnabled",
-			"ttvAutoplayBackupEnabled",
-			"ttvAdsBlocked",
-		],
-		(result) => {
-			if (chrome.runtime.lastError) {
-				console.error(
-					"[TTV AB] Popup init read error:",
-					chrome.runtime.lastError.message,
-				);
-			}
-			const safeResult = (result || {}) as PlainObject;
-			const enabled = safeResult.ttvAdblockEnabled !== false;
-			const adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
-			const autoplayBackupEnabled =
-				safeResult.ttvAutoplayBackupEnabled !== false;
-			toggle.checked = enabled;
-			adSpoofingToggle.checked = adSpoofingEnabled;
-			autoplayBackupToggle.checked = autoplayBackupEnabled;
-			updateStatus(enabled, false);
-			syncSubTogglesState(enabled);
+	function setToggleRowOpacity(element, enabled) {
+		const opacity = enabled ? "1" : "0.4";
+		const row = element.closest(".toggle-row");
+		const label = row?.querySelector(".toggle-label");
+		const slider = row?.querySelector(".slider");
+		if (label) (label as HTMLElement).style.opacity = opacity;
+		if (slider) (slider as HTMLElement).style.opacity = opacity;
+	}
 
-			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
-			adsBlockedCount.textContent = formatNumber(adsCount);
-			updateTimeSaved(adsCount);
+	let toggleStatusReady = false;
+
+	function renderPopupToggleState(snapshot) {
+		toggle.checked = snapshot.values.adblock;
+		adSpoofingToggle.checked = snapshot.values.adSpoofing;
+		autoplayBackupToggle.checked = snapshot.values.autoplayBackup;
+		toggle.disabled = !snapshot.available.adblock;
+		adSpoofingToggle.disabled = !snapshot.available.adSpoofing;
+		autoplayBackupToggle.disabled = !snapshot.available.autoplayBackup;
+		setToggleRowOpacity(adSpoofingToggle, snapshot.available.adSpoofing);
+		setToggleRowOpacity(
+			autoplayBackupToggle,
+			snapshot.available.autoplayBackup,
+		);
+		if (snapshot.ready && toggleStatusReady) {
+			updateStatus(snapshot.values.adblock, false);
+		}
+	}
+
+	const popupToggleController = _createPopupToggleController({
+		read(keys, finish) {
+			chrome.storage.local.get(keys, (result) => {
+				const error = chrome.runtime.lastError?.message || null;
+				finish(result, error);
+			});
 		},
-	);
-
-	loadStatistics();
+		write(storageKey, enabled, finish) {
+			chrome.storage.local.set({ [storageKey]: enabled }, () => {
+				finish(chrome.runtime.lastError?.message || null);
+			});
+		},
+		render: renderPopupToggleState,
+		onReadError(error, attempt) {
+			console.error(
+				`[TTV AB] Popup settings read error (attempt ${attempt}):`,
+				error,
+			);
+		},
+		onWriteError(name, error) {
+			console.error(`[TTV AB] Popup ${name} toggle write error:`, error);
+		},
+		onWriteSuccess(name, enabled) {
+			updateStatus(enabled, true, name);
+		},
+	});
 
 	chrome.storage.onChanged.addListener((changes, namespace) => {
 		if (namespace !== "local") return;
-		if (changes.ttvAdblockEnabled) {
-			const enabled = changes.ttvAdblockEnabled.newValue !== false;
-			toggle.checked = enabled;
-			updateStatus(enabled, false);
-			syncSubTogglesState(enabled);
-		}
-		if (changes.ttvAdSpoofingEnabled) {
-			const adSpoofingEnabled = changes.ttvAdSpoofingEnabled.newValue !== false;
-			adSpoofingToggle.checked = adSpoofingEnabled;
-		}
-		if (changes.ttvAutoplayBackupEnabled) {
-			const autoplayBackupEnabled =
-				changes.ttvAutoplayBackupEnabled.newValue === true;
-			autoplayBackupToggle.checked = autoplayBackupEnabled;
-		}
+		popupToggleController.applyStorageChanges(changes);
 		if (changes.ttvAdsBlocked) {
 			const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
 			animateCounter(adsBlockedCount, newCount);
-			updateTimeSaved(newCount);
 		}
 		if (changes.ttvStats) {
 			loadStatistics();
 		}
 	});
 
-	function syncSubTogglesState(adblockEnabled: boolean) {
-		if (adSpoofingToggle) {
-			adSpoofingToggle.disabled = !adblockEnabled;
-			const label = adSpoofingToggle
-				.closest(".toggle-row")
-				?.querySelector(".toggle-label");
-			const slider = adSpoofingToggle
-				.closest(".toggle-row")
-				?.querySelector(".slider");
-			if (label)
-				(label as HTMLElement).style.opacity = adblockEnabled ? "1" : "0.4";
-			if (slider)
-				(slider as HTMLElement).style.opacity = adblockEnabled ? "1" : "0.4";
-		}
-		if (autoplayBackupToggle) {
-			autoplayBackupToggle.disabled = !adblockEnabled;
-			const label = autoplayBackupToggle
-				.closest(".toggle-row")
-				?.querySelector(".toggle-label");
-			const slider = autoplayBackupToggle
-				.closest(".toggle-row")
-				?.querySelector(".slider");
-			if (label)
-				(label as HTMLElement).style.opacity = adblockEnabled ? "1" : "0.4";
-			if (slider)
-				(slider as HTMLElement).style.opacity = adblockEnabled ? "1" : "0.4";
-		}
-	}
+	popupToggleController.start();
 
-	let toggleWriteInFlight = false;
-
-	toggle.addEventListener("change", () => {
-		if (toggleWriteInFlight) return;
-		toggleWriteInFlight = true;
-		toggle.disabled = true;
-		const enabled = toggle.checked;
-		const previousEnabled = !enabled;
-		chrome.storage.local.set({ ttvAdblockEnabled: enabled }, () => {
-			toggleWriteInFlight = false;
-			toggle.disabled = false;
-			if (chrome.runtime.lastError) {
-				console.error(
-					"[TTV AB] Popup toggle write error:",
-					chrome.runtime.lastError.message,
-				);
-				toggle.checked = previousEnabled;
-				updateStatus(previousEnabled);
-				syncSubTogglesState(previousEnabled);
-				return;
-			}
-			updateStatus(enabled, true);
-			syncSubTogglesState(enabled);
-		});
+	chrome.storage.local.get(["ttvAdsBlocked"], (result) => {
+		if (chrome.runtime.lastError) {
+			console.error(
+				"[TTV AB] Popup count read error:",
+				chrome.runtime.lastError.message,
+			);
+			return;
+		}
+		const safeResult = (result || {}) as PlainObject;
+		adsBlockedCount.textContent = formatNumber(
+			normalizeCount(safeResult.ttvAdsBlocked),
+		);
 	});
 
-	let adSpoofingWriteInFlight = false;
+	loadStatistics();
+
+	toggle.addEventListener("change", () => {
+		popupToggleController.write("adblock", toggle.checked);
+	});
 
 	const adSpoofingInfoIcon = document.getElementById("adSpoofingInfoIcon");
 	const adSpoofingTooltip = document.getElementById("adSpoofingTooltip");
@@ -2028,28 +2236,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	adSpoofingToggle.addEventListener("change", () => {
-		if (adSpoofingWriteInFlight) return;
-		adSpoofingWriteInFlight = true;
-		adSpoofingToggle.disabled = true;
-		const enabled = adSpoofingToggle.checked;
-		const previousEnabled = !enabled;
-		chrome.storage.local.set({ ttvAdSpoofingEnabled: enabled }, () => {
-			adSpoofingWriteInFlight = false;
-			adSpoofingToggle.disabled = false;
-			if (chrome.runtime.lastError) {
-				console.error(
-					"[TTV AB] Popup ad spoofing toggle write error:",
-					chrome.runtime.lastError.message,
-				);
-				adSpoofingToggle.checked = previousEnabled;
-				updateStatus(previousEnabled, false, "adSpoofing");
-				return;
-			}
-			updateStatus(enabled, true, "adSpoofing");
-		});
+		popupToggleController.write("adSpoofing", adSpoofingToggle.checked);
 	});
 
-	let autoplayBackupWriteInFlight = false;
 	let bypassAutoplayBackupWarning = false;
 	let isAutoplayBackupWarningContext = false;
 
@@ -2082,10 +2271,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	if (autoplayBackupToggle) {
 		autoplayBackupToggle.addEventListener("change", () => {
-			if (autoplayBackupWriteInFlight) {
-				bypassAutoplayBackupWarning = false;
-				return;
-			}
 			const disabling = !autoplayBackupToggle.checked;
 			if (disabling && !bypassAutoplayBackupWarning) {
 				autoplayBackupToggle.checked = true;
@@ -2101,24 +2286,10 @@ document.addEventListener("DOMContentLoaded", () => {
 				return;
 			}
 			bypassAutoplayBackupWarning = false;
-			autoplayBackupWriteInFlight = true;
-			autoplayBackupToggle.disabled = true;
-			const enabled = autoplayBackupToggle.checked;
-			const previousEnabled = !enabled;
-			chrome.storage.local.set({ ttvAutoplayBackupEnabled: enabled }, () => {
-				autoplayBackupWriteInFlight = false;
-				autoplayBackupToggle.disabled = false;
-				if (chrome.runtime.lastError) {
-					console.error(
-						"[TTV AB] Popup autoplay backup toggle write error:",
-						chrome.runtime.lastError.message,
-					);
-					autoplayBackupToggle.checked = previousEnabled;
-					updateStatus(previousEnabled, false, "autoplayBackup");
-					return;
-				}
-				updateStatus(enabled, true, "autoplayBackup");
-			});
+			popupToggleController.write(
+				"autoplayBackup",
+				autoplayBackupToggle.checked,
+			);
 		});
 
 		const autoplayBackupModalClose = document.getElementById(
@@ -2324,6 +2495,12 @@ document.addEventListener("DOMContentLoaded", () => {
 			renderStatusHelperText(getTranslations());
 			statusTimeout = null;
 		}, 1500);
+	}
+
+	toggleStatusReady = true;
+	const initialToggleSnapshot = popupToggleController.getSnapshot();
+	if (initialToggleSnapshot.ready) {
+		updateStatus(initialToggleSnapshot.values.adblock, false);
 	}
 
 	function formatNumber(num) {

@@ -205,6 +205,14 @@ const BRIDGE_ANNOUNCE_MESSAGE = "ttvab-bridge-announce";
 const BRIDGE_HANDSHAKE_RETRY_MS = 75;
 const FLUSH_DELAY_MS = 200;
 const MAX_FLUSH_RETRY_DELAY_MS = 2000;
+const INITIAL_STORAGE_READ_TIMEOUT_MS = 1000;
+const INITIAL_STORAGE_FAST_RETRY_MS = 250;
+const INITIAL_STORAGE_SLOW_RETRY_MS = 30000;
+const MAX_INITIAL_STORAGE_FAST_RETRIES = 3;
+const MAX_FLUSH_RETRY_ATTEMPTS = 6;
+const MAX_RETRY_FLUSH_ENTRIES = 64;
+const PERSISTED_FLUSH_RECOVERY_BASE_DELAY_MS = 30000;
+const PERSISTED_FLUSH_RECOVERY_MAX_DELAY_MS = 5 * 60 * 1000;
 const pendingPageMessages = [];
 const MAX_PENDING_PAGE_MESSAGES = 64;
 let pageBridgePort = null;
@@ -378,6 +386,22 @@ const bridgeState = {
 	autoplayBackupEnabled: true,
 	storedAdsCount: 0,
 };
+const storageChangeVersions = {
+	ttvAdblockEnabled: 0,
+	ttvAdSpoofingEnabled: 0,
+	ttvAutoplayBackupEnabled: 0,
+	ttvAdsBlocked: 0,
+};
+const INITIAL_STORAGE_KEYS = [
+	"ttvAdblockEnabled",
+	"ttvAdSpoofingEnabled",
+	"ttvAutoplayBackupEnabled",
+	"ttvAdsBlocked",
+];
+let initialStorageReadGeneration = 0;
+let initialStorageReadFastRetries = 0;
+let initialStorageReadInFlight = false;
+let initialStorageReadTimer = null;
 const MAX_MESSAGE_DELTA = 50;
 const LEGACY_PERSISTED_COUNTER_FLUSHES_KEY = "ttvab_pending_counter_flushes";
 const PERSISTED_COUNTER_FLUSH_KEY_PREFIX = "ttvab_pending_counter_flush:";
@@ -390,17 +414,20 @@ const WATCH_FLUSH_DELAY_MS = 5000;
 
 const MAX_AD_SECONDS_MESSAGE = 3600;
 const MAX_PENDING_AD_SECONDS = 14400;
+const MAX_AD_MEASUREMENTS_MESSAGE = 50;
+const MAX_PENDING_AD_MEASUREMENTS = 50;
 
 let pendingAdsDelta = 0;
 let pendingAdChannels = createChannelsMap();
 let pendingWatchSeconds = createChannelsMap();
 let pendingAdSeconds = 0;
-let pendingMeasuredBreaks = 0;
 let pendingChannelAdSeconds = createChannelsMap();
-let pendingChannelMeasuredBreaks = createChannelsMap();
+let pendingAdMeasurements = new Map();
 let flushTimeout = null;
 let didMigrateLegacyPersistedCounterFlushes = false;
 const retryFlushEntries = new Map();
+let persistedFlushRecoveryTimeout = null;
+let persistedFlushRecoveryAttempt = 0;
 
 function normalizeFlushId(value) {
 	if (typeof value !== "string") return null;
@@ -418,6 +445,70 @@ function createCounterFlushId() {
 		return `flush:${Date.now().toString(16)}:${randomHex}`;
 	}
 	return `flush:${Date.now().toString(16)}:${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeAdMeasurement(value, fallbackContext = null) {
+	const safeValue = getBridgeMessageDetail(value);
+	const safeFallback = getBridgeMessageDetail(fallbackContext);
+	const id =
+		typeof safeValue?.id === "string" &&
+		safeValue.id.startsWith("stitched-ad-") &&
+		safeValue.id.length <= 256 &&
+		!/\p{Cc}/u.test(safeValue.id)
+			? safeValue.id
+			: null;
+	const durationMilliseconds = Math.min(
+		normalizeCount(safeValue?.durationMilliseconds),
+		600000,
+	);
+	const rawStartDateMilliseconds = Number(safeValue?.startDateMilliseconds);
+	const startDateMilliseconds = Number.isSafeInteger(rawStartDateMilliseconds)
+		? Math.max(0, rawStartDateMilliseconds)
+		: 0;
+	const mediaKey = normalizeMediaKey(
+		safeValue?.mediaKey || safeFallback?.mediaKey,
+	);
+	const channel =
+		normalizeChannelName(safeValue?.channel || safeFallback?.channel) ||
+		(mediaKey?.startsWith("live:") ? mediaKey.slice(5) : null);
+	if (!id || !mediaKey || durationMilliseconds <= 0) return null;
+	return {
+		id,
+		durationMilliseconds,
+		mediaKey,
+		channel,
+		...(startDateMilliseconds ? { startDateMilliseconds } : {}),
+	};
+}
+
+function getAdMeasurementKey(measurement) {
+	const safeMeasurement = normalizeAdMeasurement(measurement);
+	return safeMeasurement
+		? `${safeMeasurement.mediaKey}\n${safeMeasurement.id}\n${normalizeCount(
+				safeMeasurement.startDateMilliseconds,
+			)}`
+		: null;
+}
+
+function normalizeAdMeasurements(
+	value,
+	fallbackContext = null,
+	maxEntries = 50,
+) {
+	if (!Array.isArray(value)) return [];
+	const normalized = [];
+	const seenKeys = new Set();
+	for (const entry of value) {
+		const measurement = normalizeAdMeasurement(entry, fallbackContext);
+		const measurementKey = getAdMeasurementKey(measurement);
+		if (!measurement || !measurementKey || seenKeys.has(measurementKey)) {
+			continue;
+		}
+		seenKeys.add(measurementKey);
+		normalized.push(measurement);
+		if (normalized.length >= Math.max(0, normalizeCount(maxEntries))) break;
+	}
+	return normalized;
 }
 
 function normalizePersistedCounterFlushEntry(value) {
@@ -441,13 +532,23 @@ function normalizePersistedCounterFlushEntry(value) {
 		normalizeCount(safeValue?.adSecondsDelta),
 		MAX_PENDING_AD_SECONDS,
 	);
-	const measuredBreaksDelta = normalizeCount(safeValue?.measuredBreaksDelta);
 	const channelAdSecondsDeltas = mergeChannelDeltaMaps(
 		createChannelsMap(),
 		safeValue?.channelAdSecondsDeltas,
 	);
+	const adMeasurements = normalizeAdMeasurements(
+		safeValue?.adMeasurements,
+		null,
+		MAX_PENDING_AD_MEASUREMENTS,
+	);
 
-	if (!flushId || (adsDelta <= 0 && !hasWatchDeltas && adSecondsDelta <= 0)) {
+	if (
+		!flushId ||
+		(adsDelta <= 0 &&
+			!hasWatchDeltas &&
+			adSecondsDelta <= 0 &&
+			adMeasurements.length === 0)
+	) {
 		return null;
 	}
 
@@ -460,12 +561,10 @@ function normalizePersistedCounterFlushEntry(value) {
 	};
 	if (adSecondsDelta > 0) {
 		entry.adSecondsDelta = adSecondsDelta;
-		entry.measuredBreaksDelta = measuredBreaksDelta;
 		entry.channelAdSecondsDeltas = channelAdSecondsDeltas;
-		entry.channelMeasuredBreaksDeltas = mergeChannelDeltaMaps(
-			createChannelsMap(),
-			safeValue?.channelMeasuredBreaksDeltas,
-		);
+	}
+	if (adMeasurements.length > 0) {
+		entry.adMeasurements = adMeasurements;
 	}
 	return entry;
 }
@@ -646,6 +745,14 @@ function handlePersistSuccess(response, flushId = null) {
 	const safeFlushId = normalizeFlushId(flushId);
 	if (safeFlushId && clearPersistedCounterFlush(safeFlushId)) {
 		confirmCounterFlush(safeFlushId);
+		if (
+			readPersistedCounterFlushes().length === 0 &&
+			retryFlushEntries.size === 0
+		) {
+			clearPersistedFlushRecovery();
+		} else {
+			schedulePersistedFlushRecovery();
+		}
 	}
 
 	const newUnlocks = Array.isArray(response?.newUnlocks)
@@ -683,6 +790,36 @@ function clearScheduledRetryFlush(flushId = null) {
 	return true;
 }
 
+function clearPersistedFlushRecovery() {
+	if (persistedFlushRecoveryTimeout) {
+		clearTimeout(persistedFlushRecoveryTimeout);
+	}
+	persistedFlushRecoveryTimeout = null;
+	persistedFlushRecoveryAttempt = 0;
+}
+
+function schedulePersistedFlushRecovery() {
+	if (persistedFlushRecoveryTimeout) return false;
+	const hasExhaustedMemoryRetry = Array.from(retryFlushEntries.values()).some(
+		(entry) => !entry.timeoutId,
+	);
+	if (readPersistedCounterFlushes().length === 0 && !hasExhaustedMemoryRetry) {
+		persistedFlushRecoveryAttempt = 0;
+		return false;
+	}
+	const delay = Math.min(
+		PERSISTED_FLUSH_RECOVERY_MAX_DELAY_MS,
+		PERSISTED_FLUSH_RECOVERY_BASE_DELAY_MS *
+			2 ** Math.min(persistedFlushRecoveryAttempt, 4),
+	);
+	persistedFlushRecoveryTimeout = setTimeout(() => {
+		persistedFlushRecoveryTimeout = null;
+		persistedFlushRecoveryAttempt += 1;
+		replayPersistedCounterFlushes();
+	}, delay);
+	return true;
+}
+
 function scheduleRetryFlush(payload, flushId) {
 	const safeFlushId = normalizeFlushId(flushId);
 	if (!safeFlushId) return false;
@@ -693,6 +830,21 @@ function scheduleRetryFlush(payload, flushId) {
 	}
 
 	const retryCount = Number(previousEntry?.retryCount || 0) + 1;
+	if (retryCount > MAX_FLUSH_RETRY_ATTEMPTS) {
+		retryFlushEntries.delete(safeFlushId);
+		retryFlushEntries.set(safeFlushId, {
+			payload,
+			retryCount: MAX_FLUSH_RETRY_ATTEMPTS,
+			timeoutId: null,
+		});
+		while (retryFlushEntries.size > MAX_RETRY_FLUSH_ENTRIES) {
+			const oldestFlushId = retryFlushEntries.keys().next().value;
+			if (oldestFlushId === undefined) break;
+			clearScheduledRetryFlush(oldestFlushId);
+		}
+		schedulePersistedFlushRecovery();
+		return false;
+	}
 	const nextDelay = Math.min(
 		MAX_FLUSH_RETRY_DELAY_MS,
 		FLUSH_DELAY_MS * 2 ** Math.min(retryCount, 4),
@@ -708,12 +860,18 @@ function scheduleRetryFlush(payload, flushId) {
 			if (!currentEntry) {
 				return;
 			}
-			retryFlushEntries.delete(safeFlushId);
+			currentEntry.timeoutId = null;
 			dispatchPersistPayload(currentEntry.payload, { retryOnFailure: true });
 		},
 		Math.max(0, nextDelay),
 	);
+	retryFlushEntries.delete(safeFlushId);
 	retryFlushEntries.set(safeFlushId, nextEntry);
+	while (retryFlushEntries.size > MAX_RETRY_FLUSH_ENTRIES) {
+		const oldestFlushId = retryFlushEntries.keys().next().value;
+		if (oldestFlushId === undefined) break;
+		clearScheduledRetryFlush(oldestFlushId);
+	}
 	return true;
 }
 
@@ -746,7 +904,9 @@ function dispatchPersistPayload(
 	const safeDetail = getBridgeMessageDetail(payload?.detail);
 	const flushId = normalizeFlushId(safeDetail?.flushId);
 	if (flushId) {
-		persistCounterFlushForReplay(safeDetail);
+		if (persistCounterFlushForReplay(safeDetail)) {
+			schedulePersistedFlushRecovery();
+		}
 	}
 
 	sendPersistPayload(
@@ -770,7 +930,10 @@ function dispatchPersistPayload(
 }
 
 function replayPersistedCounterFlushes() {
-	for (const pendingFlush of readPersistedCounterFlushes()) {
+	const pendingFlushes = readPersistedCounterFlushes();
+	const persistedFlushIds = new Set();
+	for (const pendingFlush of pendingFlushes) {
+		persistedFlushIds.add(pendingFlush.flushId);
 		dispatchPersistPayload(
 			{
 				type: "ttvab-persist-counters",
@@ -778,6 +941,15 @@ function replayPersistedCounterFlushes() {
 			},
 			{ retryOnFailure: false },
 		);
+	}
+	for (const [flushId, retryEntry] of retryFlushEntries) {
+		if (retryEntry.timeoutId || persistedFlushIds.has(flushId)) continue;
+		dispatchPersistPayload(retryEntry.payload, { retryOnFailure: false });
+	}
+	if (pendingFlushes.length > 0 || retryFlushEntries.size > 0) {
+		schedulePersistedFlushRecovery();
+	} else {
+		clearPersistedFlushRecovery();
 	}
 }
 
@@ -813,9 +985,8 @@ function reconcilePendingDelta(kind, nextStoredCount) {
 			pendingAdsDelta = 0;
 			pendingAdChannels = createChannelsMap();
 			pendingAdSeconds = 0;
-			pendingMeasuredBreaks = 0;
 			pendingChannelAdSeconds = createChannelsMap();
-			pendingChannelMeasuredBreaks = createChannelsMap();
+			pendingAdMeasurements = new Map();
 		}
 		bridgeState.storedAdsCount = safeStoredCount;
 	}
@@ -868,20 +1039,25 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	const channelDeltas = pendingAdChannels;
 	const watchDeltas = pendingWatchSeconds;
 	const adSecondsDelta = pendingAdSeconds;
-	const measuredBreaksDelta = pendingMeasuredBreaks;
 	const channelAdSecondsDeltas = pendingChannelAdSeconds;
-	const channelMeasuredBreaksDeltas = pendingChannelMeasuredBreaks;
+	const adMeasurements = Array.from(pendingAdMeasurements.values());
 
 	pendingAdsDelta = 0;
 	pendingAdChannels = createChannelsMap();
 	pendingWatchSeconds = createChannelsMap();
 	pendingAdSeconds = 0;
-	pendingMeasuredBreaks = 0;
 	pendingChannelAdSeconds = createChannelsMap();
-	pendingChannelMeasuredBreaks = createChannelsMap();
+	pendingAdMeasurements = new Map();
 
 	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
-	if (adsDelta === 0 && !hasWatchDeltas && adSecondsDelta === 0) return;
+	if (
+		adsDelta === 0 &&
+		!hasWatchDeltas &&
+		adSecondsDelta === 0 &&
+		adMeasurements.length === 0
+	) {
+		return;
+	}
 
 	const detail: PlainObject = {
 		adsDelta,
@@ -894,9 +1070,10 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	}
 	if (adSecondsDelta > 0) {
 		detail.adSecondsDelta = adSecondsDelta;
-		detail.measuredBreaksDelta = measuredBreaksDelta;
 		detail.channelAdSecondsDeltas = channelAdSecondsDeltas;
-		detail.channelMeasuredBreaksDeltas = channelMeasuredBreaksDeltas;
+	}
+	if (adMeasurements.length > 0) {
+		detail.adMeasurements = adMeasurements;
 	}
 	const payload = {
 		type: "ttvab-persist-counters",
@@ -910,6 +1087,7 @@ function hasPendingCounters() {
 	return (
 		pendingAdsDelta > 0 ||
 		pendingAdSeconds > 0 ||
+		pendingAdMeasurements.size > 0 ||
 		Object.keys(pendingWatchSeconds).length > 0
 	);
 }
@@ -919,85 +1097,197 @@ function flushPendingCountersOnPageExit() {
 	flushCounters({ fireAndForget: true });
 }
 
-chrome.storage.local.get(
-	[
-		"ttvAdblockEnabled",
-		"ttvAdSpoofingEnabled",
-		"ttvAutoplayBackupEnabled",
-		"ttvAdsBlocked",
-	],
-	(result) => {
-		if (chrome.runtime.lastError) {
-			console.error(
-				"[TTV AB] Init read error:",
-				chrome.runtime.lastError.message,
-			);
+function normalizeDefaultEnabled(value) {
+	return value !== false;
+}
+
+function handleStorageChanges(changes, namespace) {
+	if (namespace !== "local") return;
+	if (changes.ttvAdblockEnabled) {
+		storageChangeVersions.ttvAdblockEnabled += 1;
+		const wasEnabled = bridgeState.enabled;
+		bridgeState.enabled = normalizeDefaultEnabled(
+			changes.ttvAdblockEnabled.newValue,
+		);
+		if (bridgeStateReady && bridgeState.enabled !== wasEnabled) {
+			sendToPage("ttvab-toggle", {
+				enabled: bridgeState.enabled,
+			});
 		}
-		const safeResult = result || {};
-		bridgeState.enabled = safeResult.ttvAdblockEnabled !== false;
-		bridgeState.adSpoofingEnabled = safeResult.ttvAdSpoofingEnabled !== false;
-		bridgeState.autoplayBackupEnabled =
-			safeResult.ttvAutoplayBackupEnabled !== false;
-		bridgeState.storedAdsCount = normalizeCount(safeResult.ttvAdsBlocked);
-		bridgeStateReady = true;
+	}
+	if (changes.ttvAdSpoofingEnabled) {
+		storageChangeVersions.ttvAdSpoofingEnabled += 1;
+		const wasAdSpoofingEnabled = bridgeState.adSpoofingEnabled;
+		bridgeState.adSpoofingEnabled = normalizeDefaultEnabled(
+			changes.ttvAdSpoofingEnabled.newValue,
+		);
+		if (
+			bridgeStateReady &&
+			bridgeState.adSpoofingEnabled !== wasAdSpoofingEnabled
+		) {
+			sendToPage("ttvab-toggle-ad-spoofing", {
+				enabled: bridgeState.adSpoofingEnabled,
+			});
+		}
+	}
+	if (changes.ttvAutoplayBackupEnabled) {
+		storageChangeVersions.ttvAutoplayBackupEnabled += 1;
+		const wasAutoplayBackupEnabled = bridgeState.autoplayBackupEnabled;
+		bridgeState.autoplayBackupEnabled = normalizeDefaultEnabled(
+			changes.ttvAutoplayBackupEnabled.newValue,
+		);
+		if (
+			bridgeStateReady &&
+			bridgeState.autoplayBackupEnabled !== wasAutoplayBackupEnabled
+		) {
+			sendToPage("ttvab-toggle-autoplay-backup", {
+				enabled: bridgeState.autoplayBackupEnabled,
+			});
+		}
+	}
+	if (changes.ttvAdsBlocked) {
+		storageChangeVersions.ttvAdsBlocked += 1;
+		const nextAdsCount = normalizeCount(changes.ttvAdsBlocked.newValue);
+		const previousAdsCount = bridgeState.storedAdsCount;
+		reconcilePendingDelta("ads", nextAdsCount);
+		if (bridgeStateReady && nextAdsCount !== previousAdsCount) {
+			sendToPage("ttvab-init-count", {
+				count: nextAdsCount,
+			});
+		}
+	}
+}
 
-		broadcastState();
+function clearInitialStorageReadTimer() {
+	if (initialStorageReadTimer) {
+		clearTimeout(initialStorageReadTimer);
+	}
+	initialStorageReadTimer = null;
+}
 
-		startBridgeHandshake();
+function scheduleInitialStorageReadRetry() {
+	if (
+		bridgeStateReady ||
+		initialStorageReadInFlight ||
+		initialStorageReadTimer
+	) {
+		return;
+	}
+	const useFastRetry =
+		initialStorageReadFastRetries < MAX_INITIAL_STORAGE_FAST_RETRIES;
+	if (useFastRetry) {
+		initialStorageReadFastRetries += 1;
+	}
+	initialStorageReadTimer = setTimeout(
+		() => {
+			initialStorageReadTimer = null;
+			readInitialStorageState();
+		},
+		useFastRetry
+			? INITIAL_STORAGE_FAST_RETRY_MS
+			: INITIAL_STORAGE_SLOW_RETRY_MS,
+	);
+}
 
-		try {
-			window.postMessage(
-				{ type: BRIDGE_ANNOUNCE_MESSAGE },
-				window.location.origin,
-			);
-		} catch {}
+function failInitialStorageRead(generation, errorMessage) {
+	if (
+		bridgeStateReady ||
+		generation !== initialStorageReadGeneration ||
+		!initialStorageReadInFlight
+	) {
+		return;
+	}
+	clearInitialStorageReadTimer();
+	initialStorageReadInFlight = false;
+	console.error("[TTV AB] Init read error:", errorMessage);
+	scheduleInitialStorageReadRetry();
+}
 
-		chrome.storage.onChanged.addListener((changes, namespace) => {
-			if (namespace !== "local") return;
-			if (changes.ttvAdblockEnabled) {
-				const wasEnabled = bridgeState.enabled;
-				bridgeState.enabled = changes.ttvAdblockEnabled.newValue !== false;
-				if (bridgeState.enabled !== wasEnabled) {
-					sendToPage("ttvab-toggle", {
-						enabled: bridgeState.enabled,
-					});
-				}
+function readInitialStorageState() {
+	if (
+		bridgeStateReady ||
+		initialStorageReadInFlight ||
+		initialStorageReadTimer
+	) {
+		return;
+	}
+	initialStorageReadInFlight = true;
+	const generation = ++initialStorageReadGeneration;
+	const readVersions = { ...storageChangeVersions };
+	initialStorageReadTimer = setTimeout(() => {
+		if (generation !== initialStorageReadGeneration) return;
+		initialStorageReadTimer = null;
+		failInitialStorageRead(generation, "Storage read timed out");
+	}, INITIAL_STORAGE_READ_TIMEOUT_MS);
+	try {
+		chrome.storage.local.get(INITIAL_STORAGE_KEYS, (result) => {
+			const readError = chrome.runtime.lastError;
+			if (
+				bridgeStateReady ||
+				generation !== initialStorageReadGeneration ||
+				!initialStorageReadInFlight
+			) {
+				return;
 			}
-			if (changes.ttvAdSpoofingEnabled) {
-				const wasAdSpoofingEnabled = bridgeState.adSpoofingEnabled;
-				bridgeState.adSpoofingEnabled =
-					changes.ttvAdSpoofingEnabled.newValue !== false;
-				if (bridgeState.adSpoofingEnabled !== wasAdSpoofingEnabled) {
-					sendToPage("ttvab-toggle-ad-spoofing", {
-						enabled: bridgeState.adSpoofingEnabled,
-					});
-				}
+			if (readError || !isPlainObject(result)) {
+				failInitialStorageRead(
+					generation,
+					readError?.message || "Storage returned no settings",
+				);
+				return;
 			}
-			if (changes.ttvAutoplayBackupEnabled) {
-				const wasAutoplayBackupEnabled = bridgeState.autoplayBackupEnabled;
-				bridgeState.autoplayBackupEnabled =
-					changes.ttvAutoplayBackupEnabled.newValue === true;
-				if (bridgeState.autoplayBackupEnabled !== wasAutoplayBackupEnabled) {
-					sendToPage("ttvab-toggle-autoplay-backup", {
-						enabled: bridgeState.autoplayBackupEnabled,
-					});
-				}
+			clearInitialStorageReadTimer();
+			initialStorageReadInFlight = false;
+
+			if (
+				storageChangeVersions.ttvAdblockEnabled ===
+				readVersions.ttvAdblockEnabled
+			) {
+				bridgeState.enabled = normalizeDefaultEnabled(result.ttvAdblockEnabled);
 			}
-			if (changes.ttvAdsBlocked) {
-				const nextAdsCount = normalizeCount(changes.ttvAdsBlocked.newValue);
-				const previousAdsCount = bridgeState.storedAdsCount;
-				reconcilePendingDelta("ads", nextAdsCount);
-				if (nextAdsCount !== previousAdsCount) {
-					sendToPage("ttvab-init-count", {
-						count: nextAdsCount,
-					});
-				}
+			if (
+				storageChangeVersions.ttvAdSpoofingEnabled ===
+				readVersions.ttvAdSpoofingEnabled
+			) {
+				bridgeState.adSpoofingEnabled = normalizeDefaultEnabled(
+					result.ttvAdSpoofingEnabled,
+				);
 			}
+			if (
+				storageChangeVersions.ttvAutoplayBackupEnabled ===
+				readVersions.ttvAutoplayBackupEnabled
+			) {
+				bridgeState.autoplayBackupEnabled = normalizeDefaultEnabled(
+					result.ttvAutoplayBackupEnabled,
+				);
+			}
+			if (storageChangeVersions.ttvAdsBlocked === readVersions.ttvAdsBlocked) {
+				bridgeState.storedAdsCount = normalizeCount(result.ttvAdsBlocked);
+			}
+			bridgeStateReady = true;
+
+			broadcastState();
+			startBridgeHandshake();
+
+			try {
+				window.postMessage(
+					{ type: BRIDGE_ANNOUNCE_MESSAGE },
+					window.location.origin,
+				);
+			} catch {}
+
+			replayPersistedCounterFlushes();
 		});
+	} catch (error) {
+		failInitialStorageRead(
+			generation,
+			error instanceof Error ? error.message : String(error),
+		);
+	}
+}
 
-		replayPersistedCounterFlushes();
-	},
-);
+chrome.storage.onChanged.addListener(handleStorageChanges);
+readInitialStorageState();
 
 function handlePageBridgeMessage(rawMessage) {
 	const message = getBridgeMessageData(rawMessage);
@@ -1056,29 +1346,58 @@ function handlePageBridgeMessage(rawMessage) {
 		return;
 	}
 	if (message.type === "ttvab-ad-seconds") {
-		const measuredSeconds = Math.min(
-			normalizeCount(detail?.seconds),
-			MAX_AD_SECONDS_MESSAGE,
+		const eventPlaybackContext = getMessagePlaybackContext(detail);
+		const measurementContext = {
+			mediaKey:
+				normalizeMediaKey(detail?.mediaKey) || eventPlaybackContext.mediaKey,
+			channel:
+				normalizeChannelName(detail?.channel) ||
+				eventPlaybackContext.channelName,
+		};
+		const measurements = normalizeAdMeasurements(
+			detail?.measurements,
+			measurementContext,
+			MAX_AD_MEASUREMENTS_MESSAGE,
 		);
-		if (measuredSeconds <= 0) return;
-		pendingAdSeconds = Math.min(
-			pendingAdSeconds + measuredSeconds,
-			MAX_PENDING_AD_SECONDS,
-		);
-		pendingMeasuredBreaks += detail?.measuredBreakDelta === 1 ? 1 : 0;
-		const measuredChannel = normalizeChannelName(detail?.channel);
-		if (measuredChannel) {
-			pendingChannelAdSeconds[measuredChannel] = Math.min(
-				normalizeCount(pendingChannelAdSeconds[measuredChannel]) +
-					measuredSeconds,
-				MAX_PENDING_AD_SECONDS,
-			);
-			if (detail?.measuredBreakDelta === 1) {
-				pendingChannelMeasuredBreaks[measuredChannel] =
-					normalizeCount(pendingChannelMeasuredBreaks[measuredChannel]) + 1;
+		if (measurements.length > 0 && pendingAdSeconds > 0) {
+			flushCounters();
+		}
+		for (const measurement of measurements) {
+			const measurementKey = getAdMeasurementKey(measurement);
+			if (!measurementKey || pendingAdMeasurements.has(measurementKey)) {
+				continue;
+			}
+			pendingAdMeasurements.set(measurementKey, measurement);
+			while (pendingAdMeasurements.size > MAX_PENDING_AD_MEASUREMENTS) {
+				const oldestKey = pendingAdMeasurements.keys().next().value;
+				if (oldestKey === undefined) break;
+				pendingAdMeasurements.delete(oldestKey);
 			}
 		}
-		scheduleFlush();
+		const measuredSeconds =
+			measurements.length > 0
+				? 0
+				: Math.min(normalizeCount(detail?.seconds), MAX_AD_SECONDS_MESSAGE);
+		if (measuredSeconds > 0) {
+			if (pendingAdMeasurements.size > 0) {
+				flushCounters();
+			}
+			pendingAdSeconds = Math.min(
+				pendingAdSeconds + measuredSeconds,
+				MAX_PENDING_AD_SECONDS,
+			);
+			const measuredChannel = normalizeChannelName(detail?.channel);
+			if (measuredChannel) {
+				pendingChannelAdSeconds[measuredChannel] = Math.min(
+					normalizeCount(pendingChannelAdSeconds[measuredChannel]) +
+						measuredSeconds,
+					MAX_PENDING_AD_SECONDS,
+				);
+			}
+		}
+		if (measurements.length > 0 || measuredSeconds > 0) {
+			scheduleFlush();
+		}
 		return;
 	}
 	if (message.type === "ttvab-watch-time") {
