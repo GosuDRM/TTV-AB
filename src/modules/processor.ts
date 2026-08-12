@@ -1859,7 +1859,6 @@ function _createStreamInfo(context) {
 		_IncompletePodLastMediaSequence: null,
 		_IncompletePodCandidateUrl: null,
 		MeasuredAdIds: new Set(),
-		_SecondsReportedForCycle: 0,
 		FailedBackupPlayerTypes: new Map(),
 		LastSessionNeutralBackupProbeCycleStartedAt: 0,
 		Urls: Object.create(null),

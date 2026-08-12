@@ -7774,6 +7774,9 @@ describe("processor tunables are seeded in state", () => {
 		const scope: Record<string, unknown> = {};
 		T<(s: Record<string, unknown>) => void>("_declareState")(scope);
 		const declared = scope.__TTVAB_STATE__ as Record<string, unknown>;
+		expect(declared.IsAdStrippingEnabled).toBe(true);
+		expect(declared.DisableAdSpoofing).toBe(false);
+		expect(declared.DisableAutoplayBackup).toBe(false);
 		expect(declared.SilentBackupHoldMaxMs).toBe(120000);
 		expect(declared.AdEndBounceDebounceMs).toBe(3000);
 		expect(declared.ActiveCodecHandoffId).toBe(null);

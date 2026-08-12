@@ -12,6 +12,17 @@ import {
 
 const g = globalThis as Record<string, unknown>;
 const runtimeMessages: Array<Record<string, unknown>> = [];
+type StorageChange = { newValue?: unknown; oldValue?: unknown };
+type StorageChanges = Record<string, StorageChange>;
+type StorageGetCallback = (result?: Record<string, unknown>) => void;
+let storageGetImplementation: (
+	keys: string[],
+	callback: StorageGetCallback,
+) => void = () => {};
+let storageChangeListener:
+	| ((changes: StorageChanges, namespace: string) => void)
+	| null = null;
+const storageSetupOrder: string[] = [];
 let runtimeLogListener:
 	| ((
 			message: unknown,
@@ -51,8 +62,20 @@ beforeAll(() => {
 			},
 		},
 		storage: {
-			local: { get: () => {} },
-			onChanged: { addListener: () => {} },
+			local: {
+				get: (keys: string[], callback: StorageGetCallback) => {
+					storageSetupOrder.push("get");
+					storageGetImplementation(keys, callback);
+				},
+			},
+			onChanged: {
+				addListener: (
+					listener: (changes: StorageChanges, namespace: string) => void,
+				) => {
+					storageSetupOrder.push("listener");
+					storageChangeListener = listener;
+				},
+			},
 		},
 	};
 	loadBridge();
@@ -61,6 +84,22 @@ beforeAll(() => {
 beforeEach(() => {
 	runtimeMessages.length = 0;
 	localStorage.clear();
+	storageGetImplementation = () => {};
+	(
+		g.chrome as { runtime: { lastError: { message: string } | null } }
+	).runtime.lastError = null;
+	(g.clearScheduledRetryFlush as () => boolean)();
+	(g.clearPersistedFlushRecovery as () => void)();
+	if (g.flushTimeout) {
+		clearTimeout(g.flushTimeout as ReturnType<typeof setTimeout>);
+	}
+	g.flushTimeout = null;
+	g.pendingAdsDelta = 0;
+	g.pendingAdChannels = Object.create(null);
+	g.pendingWatchSeconds = Object.create(null);
+	g.pendingAdSeconds = 0;
+	g.pendingChannelAdSeconds = Object.create(null);
+	g.pendingAdMeasurements = new Map();
 	const pending = g.pendingLogCollections as Map<
 		string,
 		{ timer: ReturnType<typeof setTimeout> }
@@ -79,6 +118,26 @@ beforeEach(() => {
 	g.bridgeStateReady = false;
 	g.handshakeRetryCount = 0;
 	g.logCollectionSequence = 0;
+	if (g.initialStorageReadTimer) {
+		clearTimeout(g.initialStorageReadTimer as ReturnType<typeof setTimeout>);
+	}
+	g.initialStorageReadTimer = null;
+	g.initialStorageReadGeneration = 0;
+	g.initialStorageReadFastRetries = 0;
+	g.initialStorageReadInFlight = false;
+	Object.assign(g.storageChangeVersions as Record<string, number>, {
+		ttvAdblockEnabled: 0,
+		ttvAdSpoofingEnabled: 0,
+		ttvAutoplayBackupEnabled: 0,
+		ttvAdsBlocked: 0,
+	});
+	Object.assign(g.bridgeState as Record<string, unknown>, {
+		enabled: true,
+		adSpoofingEnabled: true,
+		autoplayBackupEnabled: true,
+		storedAdsCount: 0,
+	});
+	(g.pendingPageMessages as unknown[]).length = 0;
 });
 
 afterEach(() => {
@@ -134,6 +193,192 @@ function makeExitFlush() {
 	};
 }
 
+function finishStorageRead(
+	callback: StorageGetCallback,
+	result?: Record<string, unknown>,
+	error: string | null = null,
+) {
+	const runtime = (
+		g.chrome as { runtime: { lastError: { message: string } | null } }
+	).runtime;
+	runtime.lastError = error ? { message: error } : null;
+	try {
+		callback(result);
+	} finally {
+		runtime.lastError = null;
+	}
+}
+
+describe("settings initialization lifecycle", () => {
+	it("listens before reading and keeps newer changes over a stale snapshot", () => {
+		expect(storageSetupOrder.slice(0, 2)).toEqual(["listener", "get"]);
+		let readCallback: StorageGetCallback | null = null;
+		storageGetImplementation = (_keys, callback) => {
+			readCallback = callback;
+		};
+
+		(g.readInitialStorageState as () => void)();
+		storageChangeListener?.(
+			{
+				ttvAdblockEnabled: { oldValue: false, newValue: true },
+				ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
+			},
+			"local",
+		);
+		readCallback?.({
+			ttvAdblockEnabled: false,
+			ttvAdSpoofingEnabled: false,
+			ttvAutoplayBackupEnabled: false,
+			ttvAdsBlocked: 7,
+		});
+
+		expect(g.bridgeStateReady).toBe(true);
+		expect(g.bridgeState).toEqual({
+			enabled: true,
+			adSpoofingEnabled: false,
+			autoplayBackupEnabled: true,
+			storedAdsCount: 7,
+		});
+	});
+
+	it("treats removed default-on settings as enabled during live sync", () => {
+		g.bridgeStateReady = true;
+		Object.assign(g.bridgeState as Record<string, unknown>, {
+			enabled: false,
+			adSpoofingEnabled: false,
+			autoplayBackupEnabled: false,
+		});
+		const port = makePagePort();
+		g.pageBridgePort = port;
+		g.pageBridgeConnected = true;
+
+		storageChangeListener?.(
+			{
+				ttvAdblockEnabled: { oldValue: false, newValue: undefined },
+				ttvAdSpoofingEnabled: { oldValue: false, newValue: undefined },
+				ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
+			},
+			"local",
+		);
+
+		expect(g.bridgeState).toMatchObject({
+			enabled: true,
+			adSpoofingEnabled: true,
+			autoplayBackupEnabled: true,
+		});
+		expect(port.messages).toEqual([
+			{ type: "ttvab-toggle", detail: { enabled: true } },
+			{ type: "ttvab-toggle-ad-spoofing", detail: { enabled: true } },
+			{ type: "ttvab-toggle-autoplay-backup", detail: { enabled: true } },
+		]);
+	});
+
+	it("times out a stalled read and ignores its late callback", () => {
+		vi.useFakeTimers();
+		const readCallbacks: StorageGetCallback[] = [];
+		storageGetImplementation = (_keys, callback) => {
+			readCallbacks.push(callback);
+		};
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		(g.readInitialStorageState as () => void)();
+		(g.readInitialStorageState as () => void)();
+		expect(readCallbacks).toHaveLength(1);
+		expect(g.initialStorageReadInFlight).toBe(true);
+
+		vi.advanceTimersByTime(1000);
+		expect(g.bridgeStateReady).toBe(false);
+		expect(g.initialStorageReadInFlight).toBe(false);
+		expect(errorSpy).toHaveBeenCalledWith(
+			"[TTV AB] Init read error:",
+			"Storage read timed out",
+		);
+
+		vi.advanceTimersByTime(250);
+		expect(readCallbacks).toHaveLength(2);
+		expect(g.initialStorageReadInFlight).toBe(true);
+
+		finishStorageRead(readCallbacks[0], { ttvAdblockEnabled: false });
+		expect(g.bridgeStateReady).toBe(false);
+		expect((g.bridgeState as { enabled: boolean }).enabled).toBe(true);
+
+		finishStorageRead(readCallbacks[1], { ttvAdblockEnabled: true });
+		expect(g.bridgeStateReady).toBe(true);
+		expect(g.initialStorageReadInFlight).toBe(false);
+		expect(g.initialStorageReadTimer).toBeNull();
+	});
+
+	it("uses three fast retries then one recurring slow recovery timer", () => {
+		vi.useFakeTimers();
+		const readCallbacks: StorageGetCallback[] = [];
+		storageGetImplementation = (_keys, callback) => {
+			readCallbacks.push(callback);
+		};
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		(g.readInitialStorageState as () => void)();
+		for (let attempt = 0; attempt < 4; attempt++) {
+			finishStorageRead(
+				readCallbacks[attempt],
+				undefined,
+				"storage unavailable",
+			);
+			if (attempt < 3) {
+				vi.advanceTimersByTime(249);
+				expect(readCallbacks).toHaveLength(attempt + 1);
+				vi.advanceTimersByTime(1);
+				expect(readCallbacks).toHaveLength(attempt + 2);
+			}
+		}
+
+		expect(g.bridgeStateReady).toBe(false);
+		expect(g.initialStorageReadInFlight).toBe(false);
+		expect(g.initialStorageReadTimer).not.toBeNull();
+		vi.advanceTimersByTime(29999);
+		expect(readCallbacks).toHaveLength(4);
+		vi.advanceTimersByTime(1);
+		expect(readCallbacks).toHaveLength(5);
+		expect(g.initialStorageReadInFlight).toBe(true);
+
+		finishStorageRead(readCallbacks[4], {
+			ttvAdblockEnabled: true,
+			ttvAdSpoofingEnabled: true,
+			ttvAutoplayBackupEnabled: true,
+		});
+
+		expect(g.bridgeStateReady).toBe(true);
+		expect(g.initialStorageReadInFlight).toBe(false);
+		expect(g.initialStorageReadTimer).toBeNull();
+		expect(errorSpy).toHaveBeenCalledTimes(4);
+	});
+
+	it("starts the handshake when storage resolves after an early token", () => {
+		vi.useFakeTimers();
+		let readCallback: StorageGetCallback | null = null;
+		storageGetImplementation = (_keys, callback) => {
+			readCallback = callback;
+		};
+		(g.readInitialStorageState as () => void)();
+		const token = "0123456789abcdef0123456789abcdef";
+
+		(g.handleBridgeTokenRequest as (event: unknown) => void)({
+			source: window,
+			data: {
+				type: "ttvab-bridge-token-request",
+				detail: { token },
+			},
+			stopImmediatePropagation: vi.fn(),
+		});
+
+		expect(g.bridgeSessionToken).toBe(token);
+		expect(g.handshakeRetryCount).toBe(0);
+		readCallback?.({});
+		expect(g.bridgeStateReady).toBe(true);
+		expect(g.handshakeRetryCount).toBe(1);
+		expect(g.pageBridgePort).not.toBeNull();
+	});
+});
+
 describe("page-exit counter journal lifecycle", () => {
 	it("dispatches the exact journaled watch delta and confirms only after clearing it", () => {
 		const flush = makeExitFlush();
@@ -180,6 +425,287 @@ describe("page-exit counter journal lifecycle", () => {
 		expect(runtimeMessages[0]?.type).toBe("ttvab-persist-counters");
 		expect(localStorage.getItem(storageKey)).not.toBeNull();
 		removeItem.mockRestore();
+	});
+
+	it("preserves measured ad records through journal dispatch and confirmation", () => {
+		const flush = {
+			...makeExitFlush(),
+			flushId: "flush:test:page-exit-0002",
+			watchDeltas: {},
+			adMeasurements: [
+				{
+					id: "stitched-ad-page-exit",
+					durationMilliseconds: 15050,
+					mediaKey: "live:somestreamer",
+					channel: "somestreamer",
+				},
+			],
+		};
+		const storageKey = `ttvab_pending_counter_flush:${flush.flushId}`;
+		localStorage.setItem(storageKey, JSON.stringify(flush));
+
+		handlePageMessage({
+			type: "ttvab-persist-counter-flush",
+			detail: flush,
+		});
+
+		expect(runtimeMessages[0]).toEqual({
+			type: "ttvab-persist-counters",
+			detail: expect.objectContaining({
+				flushId: flush.flushId,
+				adMeasurements: flush.adMeasurements,
+			}),
+		});
+		expect(runtimeMessages[1]).toEqual({
+			type: "ttvab-confirm-counter-flush",
+			detail: { flushId: flush.flushId },
+		});
+		expect(localStorage.getItem(storageKey)).toBeNull();
+	});
+});
+
+describe("counter retry bounds", () => {
+	it("uses bounded fast retries before one slow journal recovery loop", () => {
+		vi.useFakeTimers();
+		const previousSendPersistPayload = g.sendPersistPayload;
+		g.sendPersistPayload = (
+			_payload: unknown,
+			_success: unknown,
+			onFailure: (error: string) => void,
+		) => onFailure("background unavailable");
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const flushId = "flush:test:retry-bound-0001";
+		const payload = {
+			type: "ttvab-persist-counters",
+			detail: {
+				flushId,
+				createdAt: Date.now(),
+				adsDelta: 0,
+				channelDeltas: {},
+				watchDeltas: { somestreamer: 1 },
+			},
+		};
+
+		try {
+			(g.dispatchPersistPayload as (value: unknown, options: unknown) => void)(
+				payload,
+				{ retryOnFailure: true },
+			);
+			const retries = g.retryFlushEntries as Map<
+				string,
+				{ retryCount: number }
+			>;
+			expect(retries.get(flushId)?.retryCount).toBe(1);
+
+			for (const [delay, expectedCount] of [
+				[400, 2],
+				[800, 3],
+				[1600, 4],
+				[2000, 5],
+				[2000, 6],
+			] as const) {
+				vi.advanceTimersByTime(delay);
+				expect(retries.get(flushId)?.retryCount).toBe(expectedCount);
+			}
+
+			vi.advanceTimersByTime(2000);
+			expect(retries.get(flushId)).toMatchObject({
+				retryCount: 6,
+				timeoutId: null,
+			});
+			expect(errorSpy).toHaveBeenCalledTimes(7);
+			expect(
+				localStorage.getItem(`ttvab_pending_counter_flush:${flushId}`),
+			).not.toBeNull();
+			expect(g.persistedFlushRecoveryTimeout).not.toBeNull();
+
+			g.sendPersistPayload = previousSendPersistPayload;
+			vi.advanceTimersByTime(30000);
+
+			expect(
+				localStorage.getItem(`ttvab_pending_counter_flush:${flushId}`),
+			).toBeNull();
+			expect(retries.has(flushId)).toBe(false);
+			expect(g.persistedFlushRecoveryTimeout).toBeNull();
+		} finally {
+			g.sendPersistPayload = previousSendPersistPayload;
+		}
+	});
+
+	it("hard-caps simultaneous retry entries", () => {
+		vi.useFakeTimers();
+		const schedule = g.scheduleRetryFlush as (
+			payload: unknown,
+			flushId: string,
+		) => boolean;
+		for (let index = 0; index < 65; index++) {
+			const flushId = `flush:test:retry-${String(index).padStart(4, "0")}`;
+			schedule(
+				{
+					type: "ttvab-persist-counters",
+					detail: { flushId },
+				},
+				flushId,
+			);
+		}
+		const retries = g.retryFlushEntries as Map<string, unknown>;
+
+		expect(retries.size).toBe(64);
+		expect(retries.has("flush:test:retry-0000")).toBe(false);
+		expect(retries.has("flush:test:retry-0064")).toBe(true);
+	});
+
+	it("keeps one bounded slow retry when the journal is temporarily unavailable", () => {
+		vi.useFakeTimers();
+		const previousSendPersistPayload = g.sendPersistPayload;
+		g.sendPersistPayload = (
+			_payload: unknown,
+			_success: unknown,
+			onFailure: (error: string) => void,
+		) => onFailure("background unavailable");
+		const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+			throw new Error("storage unavailable");
+		});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const flushId = "flush:test:memory-recovery-0001";
+		const payload = {
+			type: "ttvab-persist-counters",
+			detail: {
+				flushId,
+				createdAt: Date.now(),
+				adsDelta: 0,
+				channelDeltas: {},
+				watchDeltas: { somestreamer: 1 },
+			},
+		};
+
+		try {
+			(g.dispatchPersistPayload as (value: unknown, options: unknown) => void)(
+				payload,
+				{ retryOnFailure: true },
+			);
+			for (const delay of [400, 800, 1600, 2000, 2000, 2000]) {
+				vi.advanceTimersByTime(delay);
+			}
+			const retries = g.retryFlushEntries as Map<string, unknown>;
+			expect(retries.has(flushId)).toBe(true);
+			expect(
+				localStorage.getItem(`ttvab_pending_counter_flush:${flushId}`),
+			).toBeNull();
+			expect(g.persistedFlushRecoveryTimeout).not.toBeNull();
+
+			setItem.mockRestore();
+			g.sendPersistPayload = previousSendPersistPayload;
+			vi.advanceTimersByTime(30000);
+
+			expect(retries.has(flushId)).toBe(false);
+			expect(g.persistedFlushRecoveryTimeout).toBeNull();
+		} finally {
+			setItem.mockRestore();
+			g.sendPersistPayload = previousSendPersistPayload;
+			errorSpy.mockRestore();
+		}
+	});
+});
+
+describe("measured ad duration batching", () => {
+	it("normalizes and journals unique records before background persistence", () => {
+		const startDateMilliseconds = Date.parse("2026-08-12T10:00:00.000Z");
+		handlePageMessage({
+			type: "ttvab-ad-seconds",
+			detail: {
+				mediaKey: "live:somestreamer",
+				channel: "somestreamer",
+				measurements: [
+					{
+						id: "stitched-ad-first",
+						durationMilliseconds: 15050,
+						startDateMilliseconds,
+					},
+					{
+						id: "stitched-ad-first",
+						durationMilliseconds: 15050,
+						startDateMilliseconds,
+					},
+					{ id: "not-stitched", durationMilliseconds: 30000 },
+				],
+			},
+		});
+		handlePageMessage({
+			type: "ttvab-ad-seconds",
+			detail: {
+				mediaKey: "live:somestreamer",
+				channel: "somestreamer",
+				measurements: [
+					{ id: "stitched-ad-second", durationMilliseconds: 30000 },
+				],
+			},
+		});
+
+		(g.flushCounters as (options: unknown) => void)({ fireAndForget: true });
+
+		const persisted = runtimeMessages.find(
+			(message) => message.type === "ttvab-persist-counters",
+		);
+		expect(persisted).toEqual({
+			type: "ttvab-persist-counters",
+			detail: expect.objectContaining({
+				adMeasurements: [
+					{
+						id: "stitched-ad-first",
+						durationMilliseconds: 15050,
+						startDateMilliseconds,
+						mediaKey: "live:somestreamer",
+						channel: "somestreamer",
+					},
+					{
+						id: "stitched-ad-second",
+						durationMilliseconds: 30000,
+						mediaKey: "live:somestreamer",
+						channel: "somestreamer",
+					},
+				],
+			}),
+		});
+		expect((g.pendingAdMeasurements as Map<string, unknown>).size).toBe(0);
+	});
+
+	it("keeps legacy aggregates separate from new per-ad records", () => {
+		handlePageMessage({
+			type: "ttvab-ad-seconds",
+			detail: {
+				seconds: 30,
+				channel: "somestreamer",
+				mediaKey: "live:somestreamer",
+			},
+		});
+		handlePageMessage({
+			type: "ttvab-ad-seconds",
+			detail: {
+				channel: "somestreamer",
+				mediaKey: "live:somestreamer",
+				measurements: [
+					{ id: "stitched-ad-current", durationMilliseconds: 15000 },
+				],
+			},
+		});
+		(g.flushCounters as (options: unknown) => void)({ fireAndForget: true });
+
+		const persistedDetails = runtimeMessages
+			.filter((message) => message.type === "ttvab-persist-counters")
+			.map((message) => message.detail as Record<string, unknown>);
+		expect(persistedDetails).toHaveLength(2);
+		expect(persistedDetails[0]).toMatchObject({ adSecondsDelta: 30 });
+		expect(persistedDetails[0]).not.toHaveProperty("adMeasurements");
+		expect(persistedDetails[1]).toMatchObject({
+			adMeasurements: [
+				expect.objectContaining({
+					id: "stitched-ad-current",
+					durationMilliseconds: 15000,
+				}),
+			],
+		});
+		expect(persistedDetails[1]).not.toHaveProperty("adSecondsDelta");
 	});
 });
 

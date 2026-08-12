@@ -119,7 +119,11 @@ function _getPendingBridgeCounterDetail(message) {
 	}
 
 	const type = typeof message.type === "string" ? message.type : null;
-	if (type !== "ttvab-ad-blocked") {
+	if (
+		type !== "ttvab-ad-blocked" &&
+		(type !== "ttvab-ad-seconds" ||
+			!Array.isArray(message.detail?.measurements))
+	) {
 		return null;
 	}
 
@@ -143,6 +147,10 @@ function _getPendingBridgeCounterIdentity(message) {
 		typeof detail.pageChannel === "string" ? detail.pageChannel : "";
 	const safePageMediaKey =
 		typeof detail.pageMediaKey === "string" ? detail.pageMediaKey : "";
+	const safeCycleStartedAt =
+		type === "ttvab-ad-seconds"
+			? Math.max(0, Number(detail.cycleStartedAt) || 0)
+			: 0;
 
 	return [
 		type,
@@ -150,6 +158,7 @@ function _getPendingBridgeCounterIdentity(message) {
 		safeMediaKey,
 		safePageChannel,
 		safePageMediaKey,
+		safeCycleStartedAt,
 	].join("|");
 }
 
@@ -157,6 +166,32 @@ function _mergePendingBridgeCounterMessages(target, incoming) {
 	const targetDetail = _getPendingBridgeCounterDetail(target);
 	const incomingDetail = _getPendingBridgeCounterDetail(incoming);
 	if (!targetDetail || !incomingDetail) return false;
+	if (target.type === "ttvab-ad-seconds") {
+		const measurements = [];
+		const seenIds = new Set();
+		for (const measurement of [
+			...targetDetail.measurements,
+			...incomingDetail.measurements,
+		]) {
+			const id = typeof measurement?.id === "string" ? measurement.id : null;
+			const startDateMilliseconds = Number.isSafeInteger(
+				measurement?.startDateMilliseconds,
+			)
+				? Math.max(0, measurement.startDateMilliseconds)
+				: 0;
+			const measurementIdentity = id ? `${id}|${startDateMilliseconds}` : null;
+			if (!measurementIdentity || seenIds.has(measurementIdentity)) continue;
+			seenIds.add(measurementIdentity);
+			measurements.push(measurement);
+			if (measurements.length > 50) return false;
+		}
+		target.detail = {
+			...targetDetail,
+			...incomingDetail,
+			measurements,
+		};
+		return true;
+	}
 
 	const mergedCount = Math.max(
 		_normalizeCount(targetDetail.count),

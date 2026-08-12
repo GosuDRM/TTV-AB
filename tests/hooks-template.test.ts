@@ -6,6 +6,8 @@ const hooksJs = () =>
 	readFileSync(resolve(__dirname, "../dist/src/modules/hooks.js"), "utf8");
 const hooksTs = () =>
 	readFileSync(resolve(__dirname, "../src/modules/hooks.ts"), "utf8");
+const initTs = () =>
+	readFileSync(resolve(__dirname, "../src/modules/init.ts"), "utf8");
 const parserJs = () =>
 	readFileSync(resolve(__dirname, "../dist/src/modules/parser.js"), "utf8");
 const processorJs = () =>
@@ -86,6 +88,95 @@ describe("worker message handler hardening", () => {
 		);
 	});
 
+	it("invalidates worker ad work before accepting disabled state", () => {
+		const source = hooksJs();
+		const blockStart = source.indexOf("case 'UpdateToggleState':");
+		const blockEnd = source.indexOf(
+			"case 'UpdateAdSpoofingState':",
+			blockStart,
+		);
+		const block = source.slice(blockStart, blockEnd);
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		const resetAt = block.indexOf("_resetStreamAdState(streamInfo)");
+		const disableAt = block.indexOf(
+			"__TTVAB_STATE__.IsAdStrippingEnabled = enabled",
+		);
+		const clearProgressAt = block.indexOf(
+			"__TTVAB_STATE__.AdPodProgressByMediaKey = Object.create(null)",
+		);
+		expect(resetAt).toBeGreaterThan(-1);
+		expect(clearProgressAt).toBeGreaterThan(resetAt);
+		expect(disableAt).toBeGreaterThan(resetAt);
+		expect(disableAt).toBeGreaterThan(clearProgressAt);
+	});
+
+	it("drops queued ad recovery work while disabled but keeps terminal events", () => {
+		const source = hooksJs();
+		const handlerStart = source.indexOf(
+			'this.addEventListener("message", (e) =>',
+		);
+		const fenceStart = source.indexOf(
+			"if (__TTVAB_STATE__.IsAdStrippingEnabled !== true)",
+			handlerStart,
+		);
+		const mainSwitch = source.indexOf("switch (data.key)", fenceStart);
+		const fence = source.slice(fenceStart, mainSwitch);
+
+		expect(handlerStart).toBeGreaterThan(-1);
+		expect(fenceStart).toBeGreaterThan(handlerStart);
+		expect(mainSwitch).toBeGreaterThan(fenceStart);
+		for (const key of [
+			"MediaBootstrapRecoveryNeeded",
+			"AdDetected",
+			"AdPodProgress",
+			"BackupPlayerTypeSelected",
+			"FatalMediaRecoveryReady",
+			"PauseResumePlayer",
+			"ReloadPlayer",
+		]) {
+			expect(fence).toContain(`data.key === "${key}"`);
+		}
+		expect(fence).toContain('data.key === "AdEnded"');
+		expect(fence).toContain('data.key === "NativePlaybackRestored"');
+		expect(fence).toContain("_clearAdPodProgress(data.mediaKey)");
+		expect(fence).toContain(
+			"_clearSuppressedMediaTracking({ restoreConnected: true })",
+		);
+	});
+
+	it("rejects non-terminal ad state updates in disabled workers", () => {
+		const source = hooksJs();
+		expect(source).toMatch(
+			/case 'UpdateCurrentAdContext':[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?nextAdContext\.MediaKey[\s\S]*?break;/,
+		);
+		expect(source).toMatch(
+			/case 'UpdateAdPodProgress':[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?break;/,
+		);
+		expect(source).toMatch(
+			/case 'UpdatePinnedBackupPlayerContext':[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?nextPinnedType[\s\S]*?break;/,
+		);
+	});
+
+	it("clears page cycle ownership when the master toggle turns off", () => {
+		const source = initTs();
+		const listenerStart = source.indexOf('_onInternalMessage("ttvab-toggle"');
+		const listenerEnd = source.indexOf(
+			'_onInternalMessage("ttvab-toggle-buffer-fix"',
+			listenerStart,
+		);
+		const listener = source.slice(listenerStart, listenerEnd);
+
+		expect(listenerStart).toBeGreaterThan(-1);
+		expect(listenerEnd).toBeGreaterThan(listenerStart);
+		expect(listener).toContain("_clearAdPodProgress(mediaKey)");
+		expect(listener).toContain(
+			"__TTVAB_STATE__.AdPodProgressByMediaKey = Object.create(null)",
+		);
+		expect(listener).toContain("_pageAdCycleControlByMediaKey.clear()");
+		expect(listener).toContain("_pageSideEmptyHoldInfoByUrl.clear()");
+	});
+
 	it("releases provisional ad-cycle authority when an unpromoted worker retires", () => {
 		const source = hooksJs();
 		expect(source).toMatch(
@@ -104,7 +195,11 @@ describe("worker message handler hardening", () => {
 
 	it("preserves canonical cycle-two pod progress when it arrives before the page ad context", () => {
 		const source = hooksJs();
-		const blockStart = source.indexOf('case "AdDetected":');
+		const handlerStart = source.indexOf(
+			'this.addEventListener("message", (e) =>',
+		);
+		const mainSwitch = source.indexOf("switch (data.key)", handlerStart);
+		const blockStart = source.indexOf('case "AdDetected":', mainSwitch);
 		const blockEnd = source.indexOf('case "AdPodProgress":', blockStart);
 		const block = source.slice(blockStart, blockEnd);
 		expect(blockStart).toBeGreaterThan(-1);
@@ -169,7 +264,14 @@ describe("worker message handler hardening", () => {
 
 	it("gates native-restored acknowledgements before state and scheduled effects", () => {
 		const source = hooksJs();
-		const blockStart = source.indexOf('case "NativePlaybackRestored":');
+		const handlerStart = source.indexOf(
+			'this.addEventListener("message", (e) =>',
+		);
+		const mainSwitch = source.indexOf("switch (data.key)", handlerStart);
+		const blockStart = source.indexOf(
+			'case "NativePlaybackRestored":',
+			mainSwitch,
+		);
 		const blockEnd = source.indexOf('case "PauseResumePlayer":', blockStart);
 		const block = source.slice(blockStart, blockEnd);
 		expect(blockStart).toBeGreaterThan(-1);

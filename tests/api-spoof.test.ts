@@ -64,6 +64,172 @@ function adRangeNoPodLength(id: number) {
 	return `#EXT-X-DATERANGE:ID="stitched-ad-${id}",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-RADS-TOKEN="rad-${id}",X-TV-TWITCH-AD-POD-POSITION="${id}",X-TV-TWITCH-AD-DURATION="15.000",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"`;
 }
 
+describe("_recordAdDurations", () => {
+	function record() {
+		return T<
+			(
+				text: string,
+				info: {
+					MeasuredAdIds: Set<string>;
+					VisibleAdStartedAt: number;
+					ChannelName: string;
+					MediaKey: string;
+				},
+			) => void
+		>("_recordAdDurations");
+	}
+
+	function makeInfo() {
+		return {
+			MeasuredAdIds: new Set<string>(),
+			VisibleAdStartedAt: 123456,
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		};
+	}
+
+	it("records reordered standard DURATION metadata on the final line with millisecond precision", () => {
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return true;
+		};
+		const info = makeInfo();
+		const startDateMilliseconds = Date.parse("2026-08-12T10:00:00.000Z");
+
+		record()(
+			'#EXTM3U\n#EXT-X-DATERANGE:CLASS="twitch-stitched-ad",DURATION="15.050",START-DATE="2026-08-12T10:00:00.000Z",ID="stitched-ad-final"',
+			info,
+		);
+
+		expect(messages).toEqual([
+			{
+				key: "AdSecondsBlocked",
+				measurements: [
+					{
+						id: "stitched-ad-final",
+						durationMilliseconds: 15050,
+						startDateMilliseconds,
+					},
+				],
+				cycleStartedAt: 123456,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+			},
+		]);
+		expect(info.MeasuredAdIds).toEqual(
+			new Set([`123456:stitched-ad-final:${startDateMilliseconds}`]),
+		);
+	});
+
+	it("uses the Twitch duration fallback and reports each creative once per cycle", () => {
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return true;
+		};
+		const info = makeInfo();
+		const playlist =
+			'#EXTM3U\r\n#EXT-X-DATERANGE:X-TV-TWITCH-AD-DURATION="15.900",DURATION="0",ID="stitched-ad-fallback"\r\n';
+
+		record()(playlist, info);
+		record()(playlist, info);
+		info.VisibleAdStartedAt = 654321;
+		record()(playlist, info);
+
+		expect(messages).toHaveLength(2);
+		expect(messages.map((message) => message.measurements)).toEqual([
+			[{ id: "stitched-ad-fallback", durationMilliseconds: 15900 }],
+			[{ id: "stitched-ad-fallback", durationMilliseconds: 15900 }],
+		]);
+	});
+
+	it("rejects invalid, planned-only, and unbounded durations", () => {
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return true;
+		};
+		const info = makeInfo();
+
+		record()(
+			[
+				'#EXT-X-DATERANGE:ID="stitched-ad-zero",DURATION="0"',
+				'#EXT-X-DATERANGE:ID="stitched-ad-planned",PLANNED-DURATION="30"',
+				'#EXT-X-DATERANGE:ID="stitched-ad-long",DURATION="600.001"',
+				'#EXT-X-DATERANGE:ID="stitched-ad-exponent",DURATION="1e2"',
+				'#EXT-X-DATERANGE:ID="stitched-ad-hex",DURATION="0x10"',
+				'#EXT-X-DATERANGE:ID="other-ad",DURATION="15"',
+			].join("\n"),
+			info,
+		);
+
+		expect(messages).toEqual([]);
+		expect(info.MeasuredAdIds.size).toBe(0);
+	});
+
+	it("does not mark a duration delivered until the worker bridge accepts it", () => {
+		let shouldAccept = false;
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return shouldAccept;
+		};
+		const info = makeInfo();
+		const playlist = '#EXT-X-DATERANGE:ID="stitched-ad-retry",DURATION="30"';
+
+		record()(playlist, info);
+		expect(info.MeasuredAdIds.size).toBe(0);
+		shouldAccept = true;
+		record()(playlist, info);
+
+		expect(messages).toHaveLength(2);
+		expect(info.MeasuredAdIds.has("123456:stitched-ad-retry")).toBe(true);
+	});
+
+	it("bounds each worker message and delivers the remaining records on the next poll", () => {
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return true;
+		};
+		const info = makeInfo();
+		const playlist = Array.from(
+			{ length: 60 },
+			(_, index) =>
+				`#EXT-X-DATERANGE:ID="stitched-ad-bounded-${index}",DURATION="1"`,
+		).join("\n");
+
+		record()(playlist, info);
+		record()(playlist, info);
+		record()(playlist, info);
+
+		expect(messages).toHaveLength(2);
+		expect(
+			(messages[0].measurements as Array<Record<string, unknown>>).length,
+		).toBe(50);
+		expect(
+			(messages[1].measurements as Array<Record<string, unknown>>).length,
+		).toBe(10);
+		expect(info.MeasuredAdIds.size).toBe(60);
+	});
+});
+
 describe("_notifyAdComplete", () => {
 	function captureWorkerMessages() {
 		const messages: Array<Record<string, unknown>> = [];

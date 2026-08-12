@@ -1,0 +1,437 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+const g = globalThis as Record<string, unknown>;
+
+type ToggleSnapshot = {
+	ready: boolean;
+	values: Record<string, boolean>;
+	pending: Record<string, boolean>;
+	available: Record<string, boolean>;
+};
+
+type ToggleController = {
+	applyStorageChanges: (changes: Record<string, unknown>) => boolean;
+	getSnapshot: () => ToggleSnapshot;
+	refresh: () => void;
+	start: () => boolean;
+	write: (name: string, enabled: boolean) => boolean;
+};
+
+type ReadEntry = {
+	keys: string[];
+	finish: (
+		result: Record<string, unknown> | null,
+		error?: string | null,
+	) => void;
+};
+
+type WriteEntry = {
+	storageKey: string;
+	enabled: boolean;
+	finish: (error?: string | null) => void;
+};
+
+function loadToggleController() {
+	const source = readFileSync(
+		resolve(__dirname, "../src/popup/popup.ts"),
+		"utf8",
+	);
+	const javascript = transpileModule(source, {
+		compilerOptions: {
+			target: ScriptTarget.ES2022,
+			module: ModuleKind.None,
+		},
+	}).outputText;
+	const start = javascript.indexOf("const _POPUP_TOGGLE_NAMES");
+	const end = javascript.indexOf(
+		'document.addEventListener("DOMContentLoaded"',
+	);
+	if (start < 0 || end <= start) throw new Error("toggle controller not found");
+	new Function(
+		"globalThis",
+		`${javascript.slice(start, end)}\nglobalThis._createPopupToggleController = _createPopupToggleController;`,
+	)(globalThis);
+}
+
+function makeHarness() {
+	const reads: ReadEntry[] = [];
+	const writes: WriteEntry[] = [];
+	const renders: ToggleSnapshot[] = [];
+	const successes: Array<{ name: string; enabled: boolean }> = [];
+	const readErrors: Array<{ error: string; attempt: number }> = [];
+	const writeErrors: Array<{ name: string; error: string }> = [];
+	const create = g._createPopupToggleController as (options: {
+		read: (keys: string[], finish: ReadEntry["finish"]) => void;
+		write: (
+			storageKey: string,
+			enabled: boolean,
+			finish: WriteEntry["finish"],
+		) => void;
+		render: (snapshot: ToggleSnapshot) => void;
+		onReadError: (error: string, attempt: number) => void;
+		onWriteError: (name: string, error: string) => void;
+		onWriteSuccess: (name: string, enabled: boolean) => void;
+	}) => ToggleController;
+	const controller = create({
+		read(keys, finish) {
+			reads.push({ keys, finish });
+		},
+		write(storageKey, enabled, finish) {
+			writes.push({ storageKey, enabled, finish });
+		},
+		render(snapshot) {
+			renders.push(snapshot);
+		},
+		onReadError(error, attempt) {
+			readErrors.push({ error, attempt });
+		},
+		onWriteError(name, error) {
+			writeErrors.push({ name, error });
+		},
+		onWriteSuccess(name, enabled) {
+			successes.push({ name, enabled });
+		},
+	});
+	return {
+		controller,
+		reads,
+		writes,
+		renders,
+		successes,
+		readErrors,
+		writeErrors,
+	};
+}
+
+beforeAll(loadToggleController);
+
+afterEach(() => {
+	vi.useRealTimers();
+});
+
+describe("popup toggle authority", () => {
+	it("keeps controls unavailable and preserves events newer than the initial read", () => {
+		const harness = makeHarness();
+
+		expect(harness.controller.start()).toBe(true);
+		expect(harness.renders.at(-1)).toEqual(
+			expect.objectContaining({
+				ready: false,
+				available: {
+					adblock: false,
+					adSpoofing: false,
+					autoplayBackup: false,
+				},
+			}),
+		);
+
+		harness.controller.applyStorageChanges({
+			ttvAdblockEnabled: { oldValue: true, newValue: false },
+		});
+		harness.reads[0].finish({
+			ttvAdblockEnabled: true,
+			ttvAdSpoofingEnabled: false,
+		});
+
+		expect(harness.controller.getSnapshot()).toEqual(
+			expect.objectContaining({
+				ready: true,
+				values: {
+					adblock: false,
+					adSpoofing: false,
+					autoplayBackup: true,
+				},
+				available: {
+					adblock: true,
+					adSpoofing: false,
+					autoplayBackup: false,
+				},
+			}),
+		);
+	});
+
+	it("treats removed keys as default-on for every toggle", () => {
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({
+			ttvAdblockEnabled: false,
+			ttvAdSpoofingEnabled: false,
+			ttvAutoplayBackupEnabled: false,
+		});
+
+		harness.controller.applyStorageChanges({
+			ttvAdblockEnabled: { oldValue: false, newValue: undefined },
+			ttvAdSpoofingEnabled: { oldValue: false, newValue: undefined },
+			ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
+		});
+
+		expect(harness.controller.getSnapshot().values).toEqual({
+			adblock: true,
+			adSpoofing: true,
+			autoplayBackup: true,
+		});
+	});
+
+	it("keeps an external update authoritative over a stale write callback", () => {
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({});
+
+		expect(harness.controller.write("autoplayBackup", false)).toBe(true);
+		expect(harness.writes[0]).toEqual(
+			expect.objectContaining({
+				storageKey: "ttvAutoplayBackupEnabled",
+				enabled: false,
+			}),
+		);
+		harness.controller.applyStorageChanges({
+			ttvAdblockEnabled: { newValue: false },
+			ttvAutoplayBackupEnabled: { newValue: true },
+		});
+		expect(harness.controller.getSnapshot().pending.autoplayBackup).toBe(false);
+		harness.writes[0].finish(null);
+
+		const snapshot = harness.controller.getSnapshot();
+		expect(snapshot.values).toEqual({
+			adblock: false,
+			adSpoofing: true,
+			autoplayBackup: true,
+		});
+		expect(snapshot.available.autoplayBackup).toBe(false);
+		expect(harness.successes).toEqual([]);
+	});
+
+	it("releases a pending control from authoritative storage and clears its timeout", () => {
+		vi.useFakeTimers();
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({});
+
+		harness.controller.write("adSpoofing", false);
+		expect(harness.controller.getSnapshot().pending.adSpoofing).toBe(true);
+
+		harness.controller.applyStorageChanges({
+			ttvAdSpoofingEnabled: { newValue: true },
+		});
+		expect(harness.controller.getSnapshot()).toEqual(
+			expect.objectContaining({
+				values: expect.objectContaining({ adSpoofing: true }),
+				pending: expect.objectContaining({ adSpoofing: false }),
+				available: expect.objectContaining({ adSpoofing: true }),
+			}),
+		);
+
+		vi.advanceTimersByTime(5000);
+		expect(harness.reads).toHaveLength(1);
+		harness.writes[0].finish(null);
+		expect(harness.successes).toEqual([]);
+	});
+
+	it("times out an unacknowledged write and rereads authoritative state", () => {
+		vi.useFakeTimers();
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({});
+
+		harness.controller.write("adblock", false);
+		vi.advanceTimersByTime(1000);
+
+		expect(harness.controller.getSnapshot()).toEqual(
+			expect.objectContaining({
+				ready: false,
+				pending: expect.objectContaining({ adblock: false }),
+			}),
+		);
+		expect(harness.writeErrors).toEqual([
+			{ name: "adblock", error: "Settings write timed out" },
+		]);
+		expect(harness.reads).toHaveLength(2);
+
+		harness.writes[0].finish(null);
+		harness.reads[1].finish({ ttvAdblockEnabled: true });
+		expect(harness.controller.getSnapshot()).toEqual(
+			expect.objectContaining({
+				ready: true,
+				values: expect.objectContaining({ adblock: true }),
+			}),
+		);
+		expect(harness.successes).toEqual([]);
+	});
+
+	it("keeps child controls gated while enabling the master is pending", () => {
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({ ttvAdblockEnabled: false });
+
+		harness.controller.write("adblock", true);
+		expect(harness.controller.getSnapshot().available).toEqual({
+			adblock: false,
+			adSpoofing: false,
+			autoplayBackup: false,
+		});
+
+		harness.writes[0].finish(null);
+		expect(harness.controller.getSnapshot().available).toEqual({
+			adblock: true,
+			adSpoofing: true,
+			autoplayBackup: true,
+		});
+	});
+
+	it("disables all controls after a failed write until a fresh read resolves", () => {
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({});
+		harness.controller.write("adblock", false);
+
+		harness.writes[0].finish("storage unavailable");
+
+		expect(harness.controller.getSnapshot().ready).toBe(false);
+		expect(harness.controller.getSnapshot().available).toEqual({
+			adblock: false,
+			adSpoofing: false,
+			autoplayBackup: false,
+		});
+		expect(harness.writeErrors).toEqual([
+			{ name: "adblock", error: "storage unavailable" },
+		]);
+		expect(harness.reads).toHaveLength(2);
+
+		harness.controller.applyStorageChanges({
+			ttvAdblockEnabled: { newValue: false },
+		});
+		harness.reads[1].finish({ ttvAdblockEnabled: true });
+
+		expect(harness.controller.getSnapshot().values.adblock).toBe(false);
+		expect(harness.controller.getSnapshot().available.adSpoofing).toBe(false);
+	});
+
+	it("keeps storage changes provisional until an authoritative read succeeds", () => {
+		vi.useFakeTimers();
+		const harness = makeHarness();
+		harness.controller.start();
+
+		harness.controller.applyStorageChanges({
+			ttvAdblockEnabled: { newValue: false },
+			ttvAdSpoofingEnabled: { newValue: false },
+			ttvAutoplayBackupEnabled: { newValue: false },
+		});
+
+		expect(harness.controller.getSnapshot()).toEqual(
+			expect.objectContaining({
+				ready: false,
+				values: {
+					adblock: false,
+					adSpoofing: false,
+					autoplayBackup: false,
+				},
+			}),
+		);
+
+		harness.reads[0].finish(null);
+		expect(harness.readErrors).toEqual([
+			{ error: "Storage returned no settings", attempt: 1 },
+		]);
+		expect(harness.controller.getSnapshot().ready).toBe(false);
+		expect(vi.getTimerCount()).toBe(1);
+	});
+
+	it("uses one slow retry until a delayed settings read succeeds", () => {
+		vi.useFakeTimers();
+		const harness = makeHarness();
+		harness.controller.start();
+
+		harness.reads[0].finish(null, "failure 1");
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(100);
+		harness.reads[1].finish(null, "failure 2");
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(300);
+		harness.reads[2].finish(null, "failure 3");
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(1000);
+		harness.reads[3].finish(null, "failure 4");
+		expect(vi.getTimerCount()).toBe(1);
+
+		vi.advanceTimersByTime(29999);
+		expect(harness.reads).toHaveLength(4);
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(1);
+		expect(harness.reads).toHaveLength(5);
+		expect(vi.getTimerCount()).toBe(1);
+
+		harness.reads[4].finish(null, "failure 5");
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(30000);
+		expect(harness.reads).toHaveLength(6);
+		expect(vi.getTimerCount()).toBe(1);
+
+		harness.reads[5].finish({
+			ttvAdblockEnabled: true,
+			ttvAdSpoofingEnabled: true,
+			ttvAutoplayBackupEnabled: true,
+		});
+		expect(harness.controller.getSnapshot().ready).toBe(true);
+		expect(vi.getTimerCount()).toBe(0);
+		vi.advanceTimersByTime(60000);
+
+		expect(harness.reads).toHaveLength(6);
+		expect(harness.readErrors.map((entry) => entry.attempt)).toEqual([
+			1, 2, 3, 4, 5,
+		]);
+	});
+
+	it("times out stalled reads and ignores their late callbacks", () => {
+		vi.useFakeTimers();
+		const harness = makeHarness();
+		harness.controller.start();
+
+		vi.advanceTimersByTime(1000);
+		expect(harness.readErrors).toEqual([
+			{ error: "Settings read timed out", attempt: 1 },
+		]);
+		expect(harness.controller.getSnapshot().ready).toBe(false);
+		expect(vi.getTimerCount()).toBe(1);
+
+		vi.advanceTimersByTime(100);
+		expect(harness.reads).toHaveLength(2);
+		expect(vi.getTimerCount()).toBe(1);
+		harness.reads[0].finish({ ttvAdblockEnabled: false });
+		expect(harness.controller.getSnapshot().ready).toBe(false);
+
+		harness.reads[1].finish({ ttvAdblockEnabled: true });
+		expect(harness.controller.getSnapshot().ready).toBe(true);
+		expect(harness.controller.getSnapshot().values.adblock).toBe(true);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("ships disabled controls and localizes the fallback control label", () => {
+		const html = readFileSync(
+			resolve(__dirname, "../src/popup/popup.html"),
+			"utf8",
+		);
+		const source = readFileSync(
+			resolve(__dirname, "../src/popup/popup.ts"),
+			"utf8",
+		);
+
+		for (const id of [
+			"enableToggle",
+			"adSpoofingToggle",
+			"autoplayBackupToggle",
+		]) {
+			expect(html).toMatch(
+				new RegExp(`<input[^>]+id="${id}"[^>]+disabled[^>]*>`),
+			);
+		}
+		expect(source).toMatch(
+			/autoplayBackupToggle\.setAttribute\([\s\S]*?String\(t\.autoplayBackup \?\? "Low Quality Fallback"\)/,
+		);
+		expect(source).toContain("if (!setStoredLanguage(lang)) {");
+		expect(source).toContain("nextSelector.value = selectedLanguage;");
+		expect(source).toContain("if (setStoredTheme(theme)) {");
+	});
+});

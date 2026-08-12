@@ -4,8 +4,7 @@ type TTVABChannelEntry = {
 	firstSeen: number;
 	lastSeen: number;
 	watchSeconds: number;
-	adSeconds: number;
-	measuredAds: number;
+	adMilliseconds: number;
 };
 type TTVABChannelMap = Record<string, TTVABChannelEntry>;
 type TTVABChannelDeltaMap = Record<string, number>;
@@ -17,8 +16,7 @@ type TTVABStatsState = {
 	daily: TTVABDailyStatsMap;
 	channels: TTVABChannelMap;
 	achievements: string[];
-	adSecondsSaved: number;
-	adBreaksMeasured: number;
+	adMillisecondsSaved: number;
 };
 type TTVABVisibilityGetter =
 	| ((this: Document, ...args: never[]) => unknown)
