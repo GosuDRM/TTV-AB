@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.5] - 2026-08-12
+
+- Time Saved now uses durations declared by Twitch for the stitched ads actually observed, instead of adding a 22-second estimate for unknown ad lengths.
+- Fractional ad lengths are preserved and duplicate measurements are rejected across worker replacement, page reload, and delayed counter replay.
+- Time-based achievements now follow the Time Saved total instead of legacy estimates.
+- Counter retries and measurement history are bounded so temporary background failures recover without endless retry activity or unbounded memory growth.
+- Toggle settings now stay synchronized across open tabs, recover automatically after temporary storage errors, and stop all ad-path interception as soon as Ad Blocking is turned off.
+- Popup controls now wait for saved settings, keep outside changes authoritative, and recover from missing storage callbacks instead of showing stale values.
+- Failed theme or language saves no longer leave the popup showing an unsaved choice.
+
 ## [16.0.4] - 2026-08-11
 
 - Fixed Generate Log sometimes taking too long or never finishing when a Twitch tab stopped responding or its page bridge was unavailable.
