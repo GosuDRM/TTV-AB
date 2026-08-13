@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.6] - 2026-08-13
+
+- Disabling Low Quality Fallback no longer reloads Twitch playback, avoiding the extra preroll and long recovery gap previously caused by changing the setting.
+- A verified clean fallback now keeps refreshing while other ad-free sources are checked, so playback can keep advancing without suppressing the higher-quality search.
+- Backup quality logs and recovery decisions now use the resolution Twitch actually selected instead of the requested target.
+- Generate Log now clearly shows whether Ad Blocking, Ad Spoofing, and Low Quality Fallback are enabled.
+- Low Quality Fallback descriptions now accurately explain that an emergency lower-quality stream may still be used when other safe sources are unavailable.
+
 ## [16.0.5] - 2026-08-12
 
 - Time Saved now uses durations declared by Twitch for the stitched ads actually observed, instead of adding a 22-second estimate for unknown ad lengths.
