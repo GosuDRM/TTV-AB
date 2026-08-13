@@ -59,10 +59,12 @@ beforeEach(() => {
 	independentState.suppressedContainers.clear();
 	const state = g._AdAudioSuppressionState as {
 		suppressedMedia: Map<HTMLMediaElement, unknown>;
+		detachedMediaStates: WeakMap<HTMLMediaElement, unknown>;
 		activeMediaKey: string | null;
 		lastSuppressedCount: number;
 	};
 	state.suppressedMedia.clear();
+	state.detachedMediaStates = new WeakMap();
 	state.activeMediaKey = null;
 	state.lastSuppressedCount = 0;
 	for (const el of [...document.querySelectorAll("video, audio")]) {
@@ -79,6 +81,7 @@ function T<T>(name: string): T {
 function suppressionState() {
 	return g._AdAudioSuppressionState as {
 		suppressedMedia: Map<HTMLMediaElement, unknown>;
+		detachedMediaStates: WeakMap<HTMLMediaElement, unknown>;
 		activeMediaKey: string | null;
 		lastSuppressedCount: number;
 	};
@@ -920,18 +923,19 @@ describe("_installIndependentVideoAdObserver", () => {
 describe("_pruneDisconnectedSuppressedMedia", () => {
 	const prune = () => T<() => number>("_pruneDisconnectedSuppressedMedia");
 
-	it("unmutes a detached element before dropping it from tracking", () => {
+	it("keeps a detached element silent while dropping its strong reference", () => {
 		const detached = addSuppressed(false);
 		suppressionState().activeMediaKey = "live:testchannel";
 
 		const pruned = prune()();
 
 		expect(pruned).toBe(1);
-		expect(detached.muted).toBe(false);
-		expect(detached.defaultMuted).toBe(false);
-		expect(detached.volume).toBe(1);
+		expect(detached.muted).toBe(true);
+		expect(detached.defaultMuted).toBe(true);
+		expect(detached.volume).toBe(0);
 		expect(detached.hasAttribute("data-ttvab-audio-suppressed")).toBe(false);
 		expect(suppressionState().suppressedMedia.size).toBe(0);
+		expect(suppressionState().detachedMediaStates.has(detached)).toBe(true);
 	});
 
 	it("leaves connected suppressed elements muted and tracked", () => {
@@ -1004,6 +1008,62 @@ describe("_restoreSuppressedMediaAfterAd", () => {
 			false,
 		);
 		expect(suppressionState().suppressedMedia.size).toBe(0);
+	});
+
+	it("keeps a detached stale player silent while restoring the current primary", () => {
+		const primary = addSuppressed(true);
+		const detachedStale = addSuppressed(false);
+		const logs: string[] = [];
+		suppressionState().activeMediaKey = "live:testchannel";
+		g._getPrimaryMediaElement = () => primary;
+		g._log = (message: string) => {
+			logs.push(message);
+		};
+
+		const restored = restore()("testchannel", "live:testchannel");
+
+		expect(restored).toBe(1);
+		expect(primary.muted).toBe(false);
+		expect(primary.defaultMuted).toBe(false);
+		expect(primary.volume).toBe(1);
+		expect(detachedStale.muted).toBe(true);
+		expect(detachedStale.defaultMuted).toBe(true);
+		expect(detachedStale.volume).toBe(0);
+		expect(detachedStale.hasAttribute("data-ttvab-audio-suppressed")).toBe(
+			false,
+		);
+		expect(suppressionState().suppressedMedia.size).toBe(0);
+		expect(suppressionState().detachedMediaStates.has(detachedStale)).toBe(
+			true,
+		);
+		document.body.appendChild(detachedStale);
+		expect(T<() => number>("_restoreReattachedSuppressedPrimaryMedia")()).toBe(
+			0,
+		);
+		expect(detachedStale.muted).toBe(true);
+		expect(logs).toEqual(["Restored 1 suppressed media element after ad"]);
+	});
+
+	it("restores a detached primary that remounts after ad cleanup", () => {
+		const detached = addSuppressed(false);
+		suppressionState().activeMediaKey = "live:testchannel";
+		g._getPrimaryMediaElement = () => null;
+
+		expect(restore()("testchannel", "live:testchannel")).toBe(0);
+		expect(detached.muted).toBe(true);
+		expect(suppressionState().detachedMediaStates.has(detached)).toBe(true);
+
+		document.body.appendChild(detached);
+		g._getPrimaryMediaElement = () => detached;
+		const restored = T<() => number>(
+			"_restoreReattachedSuppressedPrimaryMedia",
+		)();
+
+		expect(restored).toBe(1);
+		expect(detached.muted).toBe(false);
+		expect(detached.defaultMuted).toBe(false);
+		expect(detached.volume).toBe(1);
+		expect(suppressionState().detachedMediaStates.has(detached)).toBe(false);
 	});
 });
 
@@ -1079,6 +1139,25 @@ describe("_suppressCompetingMediaDuringAd (periodic resweep)", () => {
 		expect(sweep()("testchannel", "live:testchannel")).toBe(0);
 		expect(competing.el.muted).toBe(true);
 		expect(suppressionState().suppressedMedia.size).toBe(1);
+	});
+
+	it("restores a detached suppressed element only after it returns as primary", () => {
+		const competing = makeMedia(true).el;
+		expect(sweep()("testchannel", "live:testchannel")).toBe(1);
+		competing.remove();
+
+		expect(sweep()("testchannel", "live:testchannel")).toBe(0);
+		expect(competing.muted).toBe(true);
+		expect(suppressionState().suppressedMedia.size).toBe(0);
+		expect(suppressionState().detachedMediaStates.has(competing)).toBe(true);
+
+		document.body.appendChild(competing);
+		primary = competing;
+		expect(sweep()("testchannel", "live:testchannel")).toBe(1);
+		expect(competing.muted).toBe(false);
+		expect(competing.defaultMuted).toBe(false);
+		expect(competing.volume).toBe(1);
+		expect(suppressionState().detachedMediaStates.has(competing)).toBe(false);
 	});
 
 	it("restores the new primary before switching suppression contexts", () => {

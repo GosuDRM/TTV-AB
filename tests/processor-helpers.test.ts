@@ -224,6 +224,8 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_CodecHandoffReloadRetryCount: 0,
 		_SpliceStreamId: null,
 		_SpliceBoundarySeq: null,
+		_SpliceDiscontinuityOffset: 0,
+		_SpliceLastDiscontinuitySequence: null,
 		...overrides,
 	};
 }
@@ -676,6 +678,10 @@ describe("_resetStreamAdState", () => {
 			_CodecHandoffAcknowledgedId: pendingHandoffId,
 			_CodecHandoffFailedId: failedHandoffId,
 			_CodecHandoffReloadRetryCount: 2,
+			_SpliceStreamId: "autoplay|640x360|avc1.64002a",
+			_SpliceBoundarySeq: 400,
+			_SpliceDiscontinuityOffset: 3,
+			_SpliceLastDiscontinuitySequence: 5,
 			_BackupProbation: { type: "site", at: 123 },
 			LastSessionNeutralBackupProbeCycleStartedAt: 100,
 		});
@@ -728,6 +734,10 @@ describe("_resetStreamAdState", () => {
 		expect(info._CodecHandoffAcknowledgedId).toBe(null);
 		expect(info._CodecHandoffFailedId).toBe(null);
 		expect(info._CodecHandoffReloadRetryCount).toBe(0);
+		expect(info._SpliceStreamId).toBe(null);
+		expect(info._SpliceBoundarySeq).toBe(null);
+		expect(info._SpliceDiscontinuityOffset).toBe(0);
+		expect(info._SpliceLastDiscontinuitySequence).toBe(null);
 		expect(info._BackupProbation).toBe(null);
 		expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(100);
 	});
@@ -4255,6 +4265,18 @@ describe("_insertBoundaryDiscontinuity (seamless splice bridge)", () => {
 		const twice = fn()(once, 100, 100);
 		expect(countDiscontinuity(twice)).toBe(1);
 	});
+
+	it("does not double-insert a CRLF boundary marker", () => {
+		const once = fn()(makePlaylist(100, 3), 100, 100).replace(/\n/g, "\r\n");
+		const twice = fn()(once, 100, 100);
+		expect(countDiscontinuity(twice)).toBe(1);
+	});
+
+	it("does not mistake the discontinuity sequence header for a media boundary", () => {
+		const out = fn()(makePlaylist(100, 3, 7), 100, 100);
+		expect(countDiscontinuity(out)).toBe(1);
+		expect(out).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:7");
+	});
 });
 
 describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
@@ -4273,6 +4295,8 @@ describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
 		expect(fn()(info, pl)).toBe(pl);
 		expect(info._SpliceStreamId).toBe(null);
 		expect(info._SpliceBoundarySeq).toBe(null);
+		expect(info._SpliceDiscontinuityOffset).toBe(0);
+		expect(info._SpliceLastDiscontinuitySequence).toBe(null);
 	});
 
 	it("bridges the first backup playlist exactly once and records the boundary", () => {
@@ -4283,8 +4307,10 @@ describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
 		});
 		const out = fn()(info, makePlaylist(500, 4));
 		expect(countDiscontinuity(out)).toBe(1);
-		expect(info._SpliceStreamId).toBe("site|1080p60");
+		expect(info._SpliceStreamId).toBe("site|1080p60|?");
 		expect(info._SpliceBoundarySeq).toBe(500);
+		expect(info._SpliceDiscontinuityOffset).toBe(0);
+		expect(info._SpliceLastDiscontinuitySequence).toBe(1);
 	});
 
 	it("stops inserting the marker after the boundary scrolls off but keeps disc-seq", () => {
@@ -4311,8 +4337,47 @@ describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
 		info.ActiveBackupResolution = "1080p60";
 		const upgraded = fn()(info, makePlaylist(900, 4));
 		expect(countDiscontinuity(upgraded)).toBe(1);
-		expect(info._SpliceStreamId).toBe("site|1080p60");
+		expect(upgraded).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:1");
+		expect(info._SpliceStreamId).toBe("site|1080p60|?");
 		expect(info._SpliceBoundarySeq).toBe(900);
+		expect(info._SpliceLastDiscontinuitySequence).toBe(2);
+
+		const refreshed = fn()(info, makePlaylist(904, 4));
+		expect(countDiscontinuity(refreshed)).toBe(0);
+		expect(refreshed).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:2");
+		expect(info._SpliceLastDiscontinuitySequence).toBe(2);
+	});
+
+	it("keeps continuity monotonic across raw sequence and codec changes", () => {
+		const info = makeInfo({
+			IsUsingBackupStream: true,
+			ActiveBackupPlayerType: "autoplay",
+			ActiveBackupResolution: "640x360",
+			LastCleanBackupCodec: "avc1.4d401f",
+		});
+		const low = [
+			makePlaylist(20, 3, 5),
+			"#EXT-X-DISCONTINUITY",
+			"#EXTINF:2.000,live",
+			"seg23.ts",
+		].join("\n");
+		const bridgedLow = fn()(info, low);
+		expect(info._SpliceLastDiscontinuitySequence).toBe(7);
+		expect(countDiscontinuity(bridgedLow)).toBe(2);
+
+		info.ActiveBackupPlayerType = "mobile_web";
+		info.ActiveBackupResolution = "1920x1080";
+		info.LastCleanBackupCodec = "avc1.64002a";
+		const high = fn()(info, makePlaylist(900, 4, 12));
+		expect(high).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:7");
+		expect(countDiscontinuity(high)).toBe(1);
+		expect(info._SpliceLastDiscontinuitySequence).toBe(8);
+		expect(info._SpliceStreamId).toBe("mobile_web|1920x1080|avc1.64002a");
+
+		const refreshed = fn()(info, makePlaylist(904, 4, 12));
+		expect(countDiscontinuity(refreshed)).toBe(0);
+		expect(refreshed).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:8");
+		expect(info._SpliceLastDiscontinuitySequence).toBe(8);
 	});
 
 	it("leaves segmentless (master) playlists untouched", () => {
@@ -8035,6 +8100,47 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		const out = await core(bridgeUrl, adLadenNative, fetchStub);
 		expect(out).not.toBe(cleanNative);
 		expect(String(out)).toContain("https://edge.example/backup-live-1.ts");
+	});
+
+	it("keeps the decoder rebuild latched after a below-native autoplay bridge is promoted", async () => {
+		const cycleStartedAt = Date.now() - 1000;
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativeUrl: bridgeUrl,
+			LastCleanNativePlaylistAt: Date.now(),
+			LastCleanBackupM3U8: cleanBackup,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupResolution: "640x360",
+			LastCleanBackupCodecFamily: "avc",
+			LastCleanBackupCodec: "avc1.4d401f",
+			LastCleanBackupAt: Date.now() - 100,
+			SustainedNativeResolution: {
+				Resolution: "1920x1080",
+				Codecs: "avc1.64002a,mp4a.40.2",
+			},
+			_BackupSearchStartedAt: Date.now() - 500,
+		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		activateExactAdCycle(info, cycleStartedAt);
+		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = async () => ({
+			type: "autoplay",
+			m3u8: cleanBackup,
+		});
+
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
+		const out = await core(bridgeUrl, adLadenNative, fetchStub);
+
+		expect(out).toContain("https://edge.example/backup-live-1.ts");
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
+		info.ActiveBackupPlayerType = "mobile_web";
+		info.ActiveBackupResolution = "1920x1080";
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
 	});
 
 	it("keeps bridging on clean native while the pre-warmed search is still in flight", async () => {
