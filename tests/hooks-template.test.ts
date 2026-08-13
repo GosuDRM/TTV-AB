@@ -111,6 +111,44 @@ describe("worker message handler hardening", () => {
 		expect(disableAt).toBeGreaterThan(clearProgressAt);
 	});
 
+	it("reconsiders fallback ordering without aborting in-flight media", () => {
+		const source = hooksJs();
+		const blockStart = source.indexOf("case 'UpdateAutoplayBackupState':");
+		const blockEnd = source.indexOf("case 'UpdateAdsBlocked':", blockStart);
+		const block = source.slice(blockStart, blockEnd);
+
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		expect(block).toContain(
+			"__TTVAB_STATE__.DisableAutoplayBackup === shouldDisableAutoplayBackup",
+		);
+		expect(block).toContain("streamInfo._LastBackupSearchCompletedAt = 0");
+		expect(block).not.toContain("streamInfo.BackupSearchEpoch =");
+		expect(block).not.toContain("streamInfo._BackupSearchPromises?.clear?.()");
+		expect(block).not.toContain("_resetStreamAdState");
+		expect(block).not.toContain("LastCleanBackupM3U8");
+		expect(block).not.toContain("BackupEncodingsM3U8Cache");
+		expect(block).not.toContain("IsUsingBackupStream");
+	});
+
+	it("changes the low quality fallback preference without reloading playback", () => {
+		const source = initTs();
+		const blockStart = source.indexOf(
+			'_onInternalMessage("ttvab-toggle-autoplay-backup"',
+		);
+		const blockEnd = source.indexOf(
+			'_onInternalMessage("ttvab-toggle-debug"',
+			blockStart,
+		);
+		const block = source.slice(blockStart, blockEnd);
+
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		expect(block).toContain('key: "UpdateAutoplayBackupState"');
+		expect(block).not.toContain("_doPlayerTask");
+		expect(block).not.toContain("ReloadPlayer");
+	});
+
 	it("drops queued ad recovery work while disabled but keeps terminal events", () => {
 		const source = hooksJs();
 		const handlerStart = source.indexOf(

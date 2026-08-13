@@ -3890,6 +3890,8 @@ function _hookWorker() {
                 ${_getVideoCodecIdentity.toString()}
                 ${_getBackupVariantCodecFamily.toString()}
                 ${_getBackupVariantCodecIdentity.toString()}
+                ${_getBackupVariantResolution.toString()}
+                ${_setBackupVariantResolution.toString()}
                 ${_rememberBackupPlaylistMetadata.toString()}
                 ${_rememberSegmentCodecOwnership.toString()}
                 ${_isLastCleanNativeForRequest.toString()}
@@ -4053,7 +4055,18 @@ function _hookWorker() {
                             }
                             break;
                         case 'UpdateAdSpoofingState': __TTVAB_STATE__.DisableAdSpoofing = data.value === true; break;
-                        case 'UpdateAutoplayBackupState': __TTVAB_STATE__.DisableAutoplayBackup = data.value === true; break;
+                        case 'UpdateAutoplayBackupState':
+                            {
+                                const shouldDisableAutoplayBackup = data.value === true;
+                                if (__TTVAB_STATE__.DisableAutoplayBackup === shouldDisableAutoplayBackup) {
+                                    break;
+                                }
+                                __TTVAB_STATE__.DisableAutoplayBackup = shouldDisableAutoplayBackup;
+                                for (const streamInfo of Object.values(__TTVAB_STATE__.StreamInfos)) {
+                                    streamInfo._LastBackupSearchCompletedAt = 0;
+                                }
+                            }
+                            break;
                         case 'UpdateAdsBlocked': _S.adsBlocked = data.value; break;
                         case 'UpdateGQLHash': __TTVAB_STATE__.PlaybackAccessTokenHash = data.value; break;
                         case 'UpdateLastNativePlaybackAccessTokenPlayerType': __TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType = data.value; break;

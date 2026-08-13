@@ -747,6 +747,7 @@ function _invalidateAdCycleAsyncWork(info) {
 	info._BackupProbation = null;
 	info.BackupPlaylistMetadata?.clear?.();
 	info.LastCleanBackupM3U8 = null;
+	info.LastCleanBackupResolution = null;
 	info.LastCleanBackupAt = 0;
 	info._IncompletePodCleanStartedAt = 0;
 	info._IncompletePodCleanPlaylistCount = 0;

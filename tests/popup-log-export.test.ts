@@ -100,6 +100,23 @@ describe("popup log formatting", () => {
 		).toHaveLength(2048);
 	});
 
+	it("labels the current playback settings explicitly", () => {
+		const format = T<(value: unknown) => string[]>("_formatLogContextLines");
+
+		expect(
+			format({
+				enabled: true,
+				adSpoofingEnabled: false,
+				autoplayBackupEnabled: false,
+			})[0],
+		).toBe(
+			"Settings: Ad Blocking enabled | Ad Spoofing disabled | Low Quality Fallback disabled",
+		);
+		expect(format({ autoplayBackupEnabled: true })[0]).toContain(
+			"Low Quality Fallback enabled",
+		);
+	});
+
 	it("writes explicit collection failures and hard-bounds each tab section", () => {
 		const build = T<
 			(

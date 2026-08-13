@@ -507,18 +507,6 @@ function _initToggleListener() {
 			`Low quality fallback ${enabled ? "enabled" : "disabled"}`,
 			enabled ? "success" : "warning",
 		);
-
-		if (
-			shouldDisable &&
-			__TTVAB_STATE__.PlayerHasPlayedOnce &&
-			typeof _doPlayerTask === "function"
-		) {
-			_log(
-				"Disabling low quality fallback; reloading player to restore native high quality stream.",
-				"info",
-			);
-			_doPlayerTask(false, true, { reason: "manual" });
-		}
 	});
 
 	_onInternalMessage("ttvab-toggle-debug", (detail) => {

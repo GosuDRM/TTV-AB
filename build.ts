@@ -2152,6 +2152,16 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_getBackupVariantResolution",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getBackupVariantResolution",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
 			consumer: "_refreshHeldAutoplayBackupPlaylist",
 			helper: "_getBackupVariantCodecIdentity",
 			source: processorSource,
@@ -2164,6 +2174,36 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_searchBackupStream",
 			helper: "_getBackupVariantCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_getBackupVariantResolution",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_getBackupVariantResolution",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_getBackupVariantResolution",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_setBackupVariantResolution",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_setBackupVariantResolution",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_setBackupVariantResolution",
 			source: processorSource,
 		},
 		{
