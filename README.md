@@ -70,14 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v16.0.7 - 2026-08-13
+- **Fixed overlapping or out-of-sync audio after ad recovery.** Stale Twitch players now stay muted, quality changes keep audio and video on one timeline, and playback is cleanly rebuilt after an emergency low-quality backup ([#58](https://github.com/GosuDRM/TTV-AB/issues/58)).
+
 ### v16.0.6 - 2026-08-13
 - **Made Low Quality Fallback changes smoother and easier to diagnose.** Disabling it no longer reloads the player, clean fallback playback keeps advancing while other sources are checked, and Generate Log now shows the active setting and actual selected backup resolution.
 
 ### v16.0.5 - 2026-08-12
 - **Time Saved is now measured instead of estimated.** The dashboard uses Twitch-declared durations for observed stitched ads, preserves fractional seconds, excludes unknown lengths instead of guessing, and prevents replayed measurements from inflating totals.
-
-### v16.0.4 - 2026-08-11
-- **Made Generate Log faster, safer, and more useful.** Unresponsive tabs can no longer hold an export open indefinitely, while bounded playback diagnostics and stronger privacy redaction make bug reports easier to investigate.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
