@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.7] - 2026-08-13
+
+- Detached Twitch players now stay muted when native playback returns, preventing stale and current audio from playing at the same time ([#58](https://github.com/GosuDRM/TTV-AB/issues/58)).
+- Backup source, quality, and codec changes now keep HLS discontinuity numbering continuous, helping Firefox align audio and video timestamps during clean stream handoffs.
+- An emergency low-quality backup now keeps the native-return rebuild requirement even after a later quality upgrade, preventing stale decoder timing from carrying into restored playback.
+
 ## [16.0.6] - 2026-08-13
 
 - Disabling Low Quality Fallback no longer reloads Twitch playback, avoiding the extra preroll and long recovery gap previously caused by changing the setting.
