@@ -188,6 +188,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		LastPlayerReload: 0,
 		LastCleanBackupM3U8: null,
 		LastCleanBackupPlayerType: null,
+		LastCleanBackupResolution: null,
 		LastCleanBackupCodecFamily: null,
 		LastCleanBackupCodec: null,
 		LastCleanBackupAt: 0,
@@ -744,6 +745,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.EnhancedDecoderCodecFamily).toBe(null);
 		expect(info.EnhancedDecoderCodec).toBe(null);
 		expect(info.LastCleanBackupCodec).toBe(null);
+		expect(info.LastCleanBackupResolution).toBe(null);
 		expect(info._BackupSearchPromises).toBeInstanceOf(Map);
 		expect(info._CodecHandoffSequence).toBe(0);
 		expect(info._CodecHandoffPendingId).toBe(null);
@@ -2034,6 +2036,7 @@ describe("_findBackupStream fresh-session probation", () => {
 				currentResolution,
 			);
 			expect(first.type).toBe("autoplay");
+			expect(info._LastBackupSearchCompletedAt).toBe(0);
 			expect(info._BackupProbation).toEqual({
 				type: "site",
 				at: 1_000_000,
@@ -2148,6 +2151,20 @@ describe("_shouldHoldBridgeInsteadOfRotating", () => {
 			const info = makeBridgeInfo();
 			expect(guard()(info, { Resolution: "1280x720" })).toBe(false);
 		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("never suppresses the normal-quality search while the fallback is disabled", () => {
+		const state = getState();
+		const previousDisable = state.DisableAutoplayBackup;
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		state.DisableAutoplayBackup = true;
+		try {
+			const info = makeBridgeInfo({ _BackupPinFlipCount: 2 });
+			expect(guard()(info, { Resolution: "640x360" })).toBe(false);
+		} finally {
+			state.DisableAutoplayBackup = previousDisable;
 			nowSpy.mockRestore();
 		}
 	});
@@ -2674,9 +2691,13 @@ describe("_refreshActiveBackupMediaPlaylist (quality target)", () => {
 		fn: () => Promise<void>,
 	) {
 		const previousGetStreamUrl = g._getStreamUrl;
-		g._getStreamUrl = (_enc: unknown, targetRes: Record<string, unknown>) => {
+		g._getStreamUrl = (
+			enc: unknown,
+			targetRes: Record<string, unknown>,
+			baseUrl: unknown,
+		) => {
 			info.SelectedRefreshResolution = targetRes?.Resolution || null;
-			return "https://edge.example/live/index.m3u8";
+			return previousGetStreamUrl(enc, targetRes, baseUrl);
 		};
 		try {
 			await fn();
@@ -2720,6 +2741,26 @@ describe("_refreshActiveBackupMediaPlaylist (quality target)", () => {
 
 			expect(out).toContain("seg.ts");
 			expect(info.SelectedRefreshResolution).toBe(low.Resolution);
+			expect(info.ActiveBackupResolution).toBe(low.Resolution);
+		});
+	});
+
+	it("records the selected variant instead of the unavailable requested quality", async () => {
+		const info = backupInfo({
+			SustainedNativeResolution: high,
+			BackupEncodingsM3U8Cache: {
+				embed: {
+					m3u8: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1300000,RESOLUTION=640x360\nlow.m3u8",
+					baseUrl: "https://usher.example/master.m3u8",
+				},
+			},
+		});
+
+		await withGetStreamUrlStub(info, async () => {
+			const out = await refresh()(info, fetchClean);
+
+			expect(out).toContain("seg.ts");
+			expect(info.SelectedRefreshResolution).toBe(high.Resolution);
 			expect(info.ActiveBackupResolution).toBe(low.Resolution);
 		});
 	});
@@ -3773,6 +3814,66 @@ describe("_findBackupStream held-autoplay bridging during HQ probe", () => {
 			expect(info.LastCleanBackupM3U8).toBe(freshAutoplayPlaylist);
 		} finally {
 			releaseSearch({ type: null, m3u8: null });
+			state.DisableAutoplayBackup = previousDisable;
+		}
+	});
+
+	it("keeps the current clean bridge advancing while disabled HQ search continues", async () => {
+		const state = getState();
+		const previousDisable = state.DisableAutoplayBackup;
+		state.DisableAutoplayBackup = true;
+		const info = makeHeldAutoplayInfo(Date.now());
+		let releaseSearch: (value: {
+			type: string | null;
+			m3u8: string | null;
+		}) => void = () => {};
+		info._BackupSearchPromise = new Promise((resolve) => {
+			releaseSearch = resolve;
+		});
+
+		try {
+			const result = await findBackupStream()(
+				info,
+				async () => new Response(freshAutoplayPlaylist, { status: 200 }),
+				0,
+				currentResolution,
+			);
+
+			expect(result).toEqual({
+				type: "autoplay",
+				m3u8: freshAutoplayPlaylist,
+			});
+			expect(info.ActiveBackupResolution).toBe("640x360");
+		} finally {
+			releaseSearch({ type: null, m3u8: null });
+			state.DisableAutoplayBackup = previousDisable;
+		}
+	});
+
+	it("rejects an ad-marked continuity refresh while disabled", async () => {
+		const state = getState();
+		const previousDisable = state.DisableAutoplayBackup;
+		state.DisableAutoplayBackup = true;
+		const info = makeHeldAutoplayInfo(Date.now());
+		info._BackupSearchPromise = Promise.resolve({
+			type: "embed",
+			m3u8: staleHeldPlaylist,
+		});
+
+		try {
+			const result = await findBackupStream()(
+				info,
+				async () => new Response(adMarkedPlaylist, { status: 200 }),
+				0,
+				currentResolution,
+			);
+
+			expect(result).toEqual({
+				type: "embed",
+				m3u8: staleHeldPlaylist,
+			});
+			expect(info.LastCleanBackupM3U8).toBe(staleHeldPlaylist);
+		} finally {
 			state.DisableAutoplayBackup = previousDisable;
 		}
 	});
@@ -9425,6 +9526,30 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		expect(() => assertCurrent(info, staleContext)).toThrowError(
 			expect.objectContaining({ name: "AbortError" }),
 		);
+	});
+
+	it("keeps a media request current when only fallback ordering changes", () => {
+		const assertCurrent = T<
+			(
+				info: Record<string, unknown>,
+				requestAdContext: Record<string, unknown>,
+			) => boolean
+		>("_assertM3U8RequestContextCurrent");
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 600,
+			BackupSearchEpoch: 4,
+			_LastBackupSearchCompletedAt: 1234,
+		});
+		activateAdContext(info, 600);
+		const requestContext = {
+			backupSearchEpoch: 4,
+			cycleStartedAt: 600,
+		};
+
+		info._LastBackupSearchCompletedAt = 0;
+
+		expect(assertCurrent(info, requestContext)).toBe(true);
 	});
 
 	it("never reuses a fresh cycle-one backup snapshot after cycle two starts", async () => {

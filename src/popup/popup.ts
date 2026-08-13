@@ -148,7 +148,15 @@ function _formatLogContextLines(value): string[] {
 					)
 				: null,
 	};
-	const lines = [`Page state: ${_stringifyLogExportValue(pageState)}`];
+	const settings = [
+		`Ad Blocking ${pageState.enabled ? "enabled" : "disabled"}`,
+		`Ad Spoofing ${pageState.adSpoofingEnabled ? "enabled" : "disabled"}`,
+		`Low Quality Fallback ${pageState.autoplayBackupEnabled ? "enabled" : "disabled"}`,
+	].join(" | ");
+	const lines = [
+		`Settings: ${settings}`,
+		`Page state: ${_stringifyLogExportValue(pageState)}`,
+	];
 	if (Array.isArray(context.workers)) {
 		lines.push(`Workers: ${_stringifyLogExportValue(context.workers)}`);
 	}

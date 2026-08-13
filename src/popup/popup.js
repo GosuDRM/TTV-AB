@@ -119,7 +119,15 @@ function _formatLogContextLines(value) {
             ? _sanitizeLogExportText(context.pinnedBackupMediaKey, 160).replace(/\n/g, "")
             : null,
     };
-    const lines = [`Page state: ${_stringifyLogExportValue(pageState)}`];
+    const settings = [
+        `Ad Blocking ${pageState.enabled ? "enabled" : "disabled"}`,
+        `Ad Spoofing ${pageState.adSpoofingEnabled ? "enabled" : "disabled"}`,
+        `Low Quality Fallback ${pageState.autoplayBackupEnabled ? "enabled" : "disabled"}`,
+    ].join(" | ");
+    const lines = [
+        `Settings: ${settings}`,
+        `Page state: ${_stringifyLogExportValue(pageState)}`,
+    ];
     if (Array.isArray(context.workers)) {
         lines.push(`Workers: ${_stringifyLogExportValue(context.workers)}`);
     }
