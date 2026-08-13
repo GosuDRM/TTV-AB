@@ -90,6 +90,8 @@ function _resetStreamAdState(info) {
 	_clearCodecHandoffState(info);
 	info._SpliceStreamId = null;
 	info._SpliceBoundarySeq = null;
+	info._SpliceDiscontinuityOffset = 0;
+	info._SpliceLastDiscontinuitySequence = null;
 	if (
 		endedCodecHandoffId &&
 		__TTVAB_STATE__?.ActiveCodecHandoffId === endedCodecHandoffId &&
@@ -1318,17 +1320,31 @@ function _setPlaylistDiscontinuitySequence(lines, value) {
 	lines.splice(at, 0, `#EXT-X-DISCONTINUITY-SEQUENCE:${value}`);
 }
 
-function _insertBoundaryDiscontinuity(text, boundarySeq, firstSeq) {
+function _insertBoundaryDiscontinuity(
+	text,
+	boundarySeq,
+	firstSeq,
+	discontinuityOffset = 0,
+) {
 	if (typeof text !== "string" || boundarySeq == null || firstSeq == null) {
 		return text;
 	}
 	const pos = boundarySeq - firstSeq;
 	const lines = text.split("\n");
+	const offset = Number.isFinite(Number(discontinuityOffset))
+		? Math.trunc(Number(discontinuityOffset))
+		: 0;
+	if (offset !== 0) {
+		_setPlaylistDiscontinuitySequence(
+			lines,
+			Math.max(0, _parsePlaylistDiscontinuitySequence(text) + offset),
+		);
+	}
 
 	if (pos < 0) {
 		_setPlaylistDiscontinuitySequence(
 			lines,
-			_parsePlaylistDiscontinuitySequence(text) + 1,
+			Math.max(0, _parsePlaylistDiscontinuitySequence(text) + offset + 1),
 		);
 		return lines.join("\n");
 	}
@@ -1344,9 +1360,9 @@ function _insertBoundaryDiscontinuity(text, boundarySeq, firstSeq) {
 			seen++;
 		}
 	}
-	if (insertAt < 0) return text;
-	if (insertAt > 0 && lines[insertAt - 1].startsWith("#EXT-X-DISCONTINUITY")) {
-		return text;
+	if (insertAt < 0) return lines.join("\n");
+	if (insertAt > 0 && lines[insertAt - 1].trim() === "#EXT-X-DISCONTINUITY") {
+		return lines.join("\n");
 	}
 	lines.splice(insertAt, 0, "#EXT-X-DISCONTINUITY");
 	return lines.join("\n");
@@ -1357,20 +1373,65 @@ function _applyBackupSpliceBridge(info, text) {
 	if (!info.IsUsingBackupStream) {
 		info._SpliceStreamId = null;
 		info._SpliceBoundarySeq = null;
+		info._SpliceDiscontinuityOffset = 0;
+		info._SpliceLastDiscontinuitySequence = null;
 		return text;
 	}
 	if (!_playlistHasMediaSegments(text)) return text;
 
-	const identity = `${info.ActiveBackupPlayerType || "?"}|${info.ActiveBackupResolution || "?"}`;
+	const backupCodec =
+		_getVideoCodecIdentity(info.LastCleanBackupCodec) ||
+		_getVideoCodecFamily(info.LastCleanBackupCodecFamily) ||
+		"?";
+	const identity = `${info.ActiveBackupPlayerType || "?"}|${info.ActiveBackupResolution || "?"}|${backupCodec}`;
 	const firstSeq = _parsePlaylistFirstMediaSequence(text);
 	if (firstSeq == null) return text;
 
+	const getDiscontinuityRange = (playlist) => {
+		let current = _parsePlaylistDiscontinuitySequence(playlist);
+		let first = null;
+		let last = null;
+		for (const line of playlist.split("\n")) {
+			const trimmed = line.trim();
+			if (trimmed === "#EXT-X-DISCONTINUITY") {
+				current += 1;
+			} else if (
+				trimmed.startsWith("#EXTINF") ||
+				trimmed.startsWith("#EXT-X-PART:")
+			) {
+				if (first == null) first = current;
+				last = current;
+			}
+		}
+		return { first, last };
+	};
+
 	if (info._SpliceStreamId !== identity) {
+		const hadPreviousIdentity = Boolean(info._SpliceStreamId);
+		const previousLast = Number(info._SpliceLastDiscontinuitySequence);
 		info._SpliceStreamId = identity;
 		info._SpliceBoundarySeq = firstSeq;
+		info._SpliceDiscontinuityOffset = 0;
+		if (hadPreviousIdentity && Number.isFinite(previousLast)) {
+			const candidate = _insertBoundaryDiscontinuity(text, firstSeq, firstSeq);
+			const candidateFirst = getDiscontinuityRange(candidate).first;
+			if (Number.isFinite(candidateFirst)) {
+				info._SpliceDiscontinuityOffset = previousLast + 1 - candidateFirst;
+			}
+		}
 	}
 
-	return _insertBoundaryDiscontinuity(text, info._SpliceBoundarySeq, firstSeq);
+	const output = _insertBoundaryDiscontinuity(
+		text,
+		info._SpliceBoundarySeq,
+		firstSeq,
+		info._SpliceDiscontinuityOffset,
+	);
+	const outputLast = getDiscontinuityRange(output).last;
+	if (Number.isFinite(outputLast)) {
+		info._SpliceLastDiscontinuitySequence = outputLast;
+	}
+	return output;
 }
 
 function _getNativeRecoveryProbePlayerType() {
@@ -1946,6 +2007,8 @@ function _createStreamInfo(context) {
 		_CodecHandoffReloadRetryCount: 0,
 		_SpliceStreamId: null,
 		_SpliceBoundarySeq: null,
+		_SpliceDiscontinuityOffset: 0,
+		_SpliceLastDiscontinuitySequence: null,
 	};
 }
 
@@ -3707,13 +3770,11 @@ async function _processM3U8Core(
 		).catch(() => {});
 		return _stripAds(text, true, info);
 	}
-	const enterSilentBackupHold = (
-		enteredAt,
-		heldBackupPlayerType,
-		heldBackupResolution,
+	const backupRequiresNativeRestoreReload = (
+		backupPlayerType,
+		backupResolution,
 	) => {
-		_resetNativeRecoveryCandidateState(info);
-		const [, heldH] = String(heldBackupResolution || "0x0")
+		const [, backupH] = String(backupResolution || "0x0")
 			.split("x")
 			.map(Number);
 		const [, nativeH] = String(
@@ -3721,7 +3782,7 @@ async function _processM3U8Core(
 		)
 			.split("x")
 			.map(Number);
-		const heldHeight = Number.isFinite(heldH) ? heldH : 0;
+		const backupHeight = Number.isFinite(backupH) ? backupH : 0;
 		const nativeHeight = Number.isFinite(nativeH) ? nativeH : 0;
 		const enhancedDecoderCodecFamily =
 			_getVideoCodecFamily(info.EnhancedDecoderCodecFamily) ||
@@ -3729,23 +3790,33 @@ async function _processM3U8Core(
 		const enhancedDecoderCodecIdentity =
 			_getVideoCodecIdentity(info.EnhancedDecoderCodec) ||
 			_getVideoCodecIdentity(info.SustainedNativeResolution?.Codecs);
-		const heldBackupCodecFamily = _getVideoCodecFamily(
+		const backupCodecFamily = _getVideoCodecFamily(
 			info.LastCleanBackupCodecFamily,
 		);
-		const heldBackupCodecIdentity = _getVideoCodecIdentity(
+		const backupCodecIdentity = _getVideoCodecIdentity(
 			info.LastCleanBackupCodec,
 		);
-		const heldBackupMatchesNativeCodec = Boolean(
+		const backupMatchesNativeCodec = Boolean(
 			!enhancedDecoderCodecFamily ||
-				(heldBackupCodecFamily === enhancedDecoderCodecFamily &&
+				(backupCodecFamily === enhancedDecoderCodecFamily &&
 					enhancedDecoderCodecIdentity &&
-					heldBackupCodecIdentity === enhancedDecoderCodecIdentity),
+					backupCodecIdentity === enhancedDecoderCodecIdentity),
 		);
-		const heldAutoplayMatchedNative =
-			heldBackupMatchesNativeCodec &&
-			heldHeight > 0 &&
-			nativeHeight > 0 &&
-			heldHeight >= nativeHeight;
+		if (enhancedDecoderCodecFamily && !backupMatchesNativeCodec) return true;
+		return Boolean(
+			backupPlayerType === "autoplay" &&
+				(!backupMatchesNativeCodec ||
+					backupHeight <= 0 ||
+					nativeHeight <= 0 ||
+					backupHeight < nativeHeight),
+		);
+	};
+	const enterSilentBackupHold = (
+		enteredAt,
+		heldBackupPlayerType,
+		heldBackupResolution,
+	) => {
+		_resetNativeRecoveryCandidateState(info);
 		info.IsShowingAd = false;
 		info.IsHoldingBackupAfterAd = true;
 		info.SilentBackupHoldStartedAt = enteredAt;
@@ -3756,8 +3827,10 @@ async function _processM3U8Core(
 		info.HevcReloadPendingAfterHold = Boolean(
 			info.HevcReloadPendingAfterHold ||
 				info.IsUsingModifiedM3U8 ||
-				(enhancedDecoderCodecFamily && !heldBackupMatchesNativeCodec) ||
-				(heldBackupPlayerType === "autoplay" && !heldAutoplayMatchedNative),
+				backupRequiresNativeRestoreReload(
+					heldBackupPlayerType,
+					heldBackupResolution,
+				),
 		);
 		if (heldBackupPlayerType) {
 			__TTVAB_STATE__.PinnedBackupPlayerType = heldBackupPlayerType;
@@ -4480,6 +4553,12 @@ async function _processM3U8Core(
 			backupType === info.LastCleanBackupPlayerType
 				? info.LastCleanBackupResolution || null
 				: null;
+		if (
+			backupM3u8 &&
+			backupRequiresNativeRestoreReload(backupType, info.ActiveBackupResolution)
+		) {
+			info.HevcReloadPendingAfterHold = true;
+		}
 		if (backupType) {
 			__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;

@@ -28,6 +28,7 @@ let _cachedReactRootNode = null;
 let _cachedReactContainerKey = null;
 const _AdAudioSuppressionState = {
 	suppressedMedia: new Map(),
+	detachedMediaStates: new WeakMap(),
 	activeMediaKey: null,
 	lastSuppressedCount: 0,
 };
@@ -3242,7 +3243,10 @@ function _pruneDisconnectedSuppressedMedia() {
 		state,
 	] of _AdAudioSuppressionState.suppressedMedia.entries()) {
 		if (media instanceof HTMLMediaElement && media.isConnected) continue;
-		_restoreSuppressedMediaElement(media, state);
+		_silenceSuppressedMediaElement(media);
+		if (media instanceof HTMLMediaElement) {
+			_AdAudioSuppressionState.detachedMediaStates.set(media, state);
+		}
 		_AdAudioSuppressionState.suppressedMedia.delete(media);
 		prunedCount += 1;
 	}
@@ -3299,6 +3303,9 @@ function _clearSuppressedMediaTracking(
 			_restoreSuppressedMediaElement(media, state)
 		) {
 			restoredCount += 1;
+		} else if (media instanceof HTMLMediaElement) {
+			_silenceSuppressedMediaElement(media);
+			_AdAudioSuppressionState.detachedMediaStates.set(media, state);
 		}
 	}
 
@@ -3329,12 +3336,14 @@ function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
 		_clearSuppressedMediaTracking({ restoreConnected: true });
 	} else {
 		const primarySuppression =
-			_AdAudioSuppressionState.suppressedMedia.get(primaryMedia);
+			_AdAudioSuppressionState.suppressedMedia.get(primaryMedia) ||
+			_AdAudioSuppressionState.detachedMediaStates.get(primaryMedia);
 		if (
 			primarySuppression &&
 			_restoreSuppressedMediaElement(primaryMedia, primarySuppression)
 		) {
 			_AdAudioSuppressionState.suppressedMedia.delete(primaryMedia);
+			_AdAudioSuppressionState.detachedMediaStates.delete(primaryMedia);
 		}
 	}
 
@@ -3346,6 +3355,15 @@ function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
 			continue;
 		}
 
+		const detachedSuppression =
+			_AdAudioSuppressionState.detachedMediaStates.get(media);
+		if (
+			detachedSuppression &&
+			!_AdAudioSuppressionState.suppressedMedia.has(media)
+		) {
+			_AdAudioSuppressionState.suppressedMedia.set(media, detachedSuppression);
+			_AdAudioSuppressionState.detachedMediaStates.delete(media);
+		}
 		const alreadySuppressed =
 			_AdAudioSuppressionState.suppressedMedia.has(media);
 		if (!alreadySuppressed) {
@@ -3379,10 +3397,32 @@ function _suppressCompetingMediaDuringAd(channel = null, mediaKey = null) {
 	return suppressedCount;
 }
 
+function _restoreReattachedSuppressedPrimaryMedia() {
+	const primaryMedia = _getPrimaryMediaElement();
+	const pipMedia =
+		typeof _getPictureInPictureVideo === "function"
+			? _getPictureInPictureVideo()
+			: null;
+	let restoredCount = 0;
+	for (const media of new Set([primaryMedia, pipMedia])) {
+		if (!(media instanceof HTMLMediaElement) || !media.isConnected) continue;
+		const state = _AdAudioSuppressionState.detachedMediaStates.get(media);
+		if (!state || !_restoreSuppressedMediaElement(media, state)) continue;
+		_AdAudioSuppressionState.detachedMediaStates.delete(media);
+		restoredCount += 1;
+	}
+	if (restoredCount > 0) {
+		_log(
+			`Restored ${restoredCount} reattached media element${restoredCount === 1 ? "" : "s"} after ad`,
+			"info",
+		);
+	}
+	return restoredCount;
+}
+
 function _restoreSuppressedMediaAfterAd(channel = null, mediaKey = null) {
 	const safeMediaKey = _resolvePlayerMediaKey(channel, mediaKey);
 	const activeMediaKey = _AdAudioSuppressionState.activeMediaKey;
-	_pruneDisconnectedSuppressedMedia();
 	if (safeMediaKey && activeMediaKey && safeMediaKey !== activeMediaKey) {
 		const suppressedAdStillActive =
 			_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) === activeMediaKey;
@@ -3402,12 +3442,13 @@ function _restoreSuppressedMediaAfterAd(channel = null, mediaKey = null) {
 		media,
 		state,
 	] of _AdAudioSuppressionState.suppressedMedia.entries()) {
-		if (media === primaryMedia || media === pipMedia) {
+		if (media.isConnected && (media === primaryMedia || media === pipMedia)) {
 			if (_restoreSuppressedMediaElement(media, state)) {
 				restoredCount += 1;
 			}
 		} else {
 			_silenceSuppressedMediaElement(media);
+			_AdAudioSuppressionState.detachedMediaStates.set(media, state);
 		}
 	}
 
@@ -5491,6 +5532,9 @@ function _monitorPlayerBuffering() {
 		try {
 			_trackChannelWatchTime(isHidden);
 		} catch {}
+		if (!hasActiveAdContext && currentMediaKey) {
+			_restoreReattachedSuppressedPrimaryMedia();
+		}
 		if (!_hasPlayerBufferMonitorRelevantContext()) {
 			_resetPlayerBufferMonitorState();
 			return idleDelay;

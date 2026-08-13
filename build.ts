@@ -2327,6 +2327,16 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_applyBackupSpliceBridge",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyBackupSpliceBridge",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
 			consumer: "_processM3U8Core",
 			helper: "_hasExplicitAdMetadata",
 			source: processorSource,
