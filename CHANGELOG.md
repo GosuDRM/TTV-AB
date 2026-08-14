@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.8] - 2026-08-14
+
+- Fixed error 4000 on enhanced-quality HEVC and AV1 streams when Twitch briefly changes stream quality before an ad break ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
+- Enhanced-quality playback now stays stable across repeated ad breaks and temporary quality changes without receiving an incompatible fallback stream.
+- Playback that becomes stuck during ad recovery now verifies a clean compatible stream before rebuilding the player, preventing an indefinite freeze.
+- Generate Log now includes the browser media error code, making playback failures easier to diagnose.
+
 ## [16.0.7] - 2026-08-13
 
 - Detached Twitch players now stay muted when native playback returns, preventing stale and current audio from playing at the same time ([#58](https://github.com/GosuDRM/TTV-AB/issues/58)).
