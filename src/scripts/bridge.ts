@@ -1657,6 +1657,7 @@ function sanitizeLogContextMedia(value) {
 		duration: duration >= 0 ? duration : null,
 		paused: value.paused === true,
 		ended: value.ended === true,
+		errorCode: Math.trunc(sanitizeLogContextNumber(value.errorCode, 0, 4)),
 		readyState: Math.trunc(sanitizeLogContextNumber(value.readyState, 0, 4)),
 		networkState: Math.trunc(
 			sanitizeLogContextNumber(value.networkState, 0, 3),

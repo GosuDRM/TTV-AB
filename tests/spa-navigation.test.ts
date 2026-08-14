@@ -254,6 +254,7 @@ describe("_collectPageLogContext", () => {
 			duration: Number.POSITIVE_INFINITY,
 			paused: false,
 			ended: false,
+			error: { code: 3 },
 			readyState: 4,
 			networkState: 1,
 			playbackRate: 1,
@@ -307,6 +308,7 @@ describe("_collectPageLogContext", () => {
 				tag: "video",
 				currentTime: 42,
 				duration: null,
+				errorCode: 3,
 				width: 1920,
 				height: 1080,
 				buffered: [

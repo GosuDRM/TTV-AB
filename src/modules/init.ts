@@ -259,6 +259,10 @@ function _collectPageLogMediaState(state) {
 			duration: duration >= 0 ? duration : null,
 			paused: media.paused === true,
 			ended: media.ended === true,
+			errorCode: Math.min(
+				4,
+				Math.max(0, Math.trunc(_getSafePageLogNumber(media.error?.code, 0))),
+			),
 			readyState: Math.max(
 				0,
 				Math.trunc(_getSafePageLogNumber(media.readyState, 0)),

@@ -18,6 +18,11 @@ function _resetStreamAdState(info) {
 	const hadStrippedAdSegments =
 		Math.max(0, Number(info?.NumStrippedAdSegments) || 0) > 0;
 	const endedCodecHandoffId = _getActiveCodecHandoffIdForInfo(info);
+	const completedCodecHandoff = Boolean(
+		endedCodecHandoffId &&
+			info?._CodecHandoffPendingId === endedCodecHandoffId &&
+			info?._CodecHandoffAcknowledgedId === endedCodecHandoffId,
+	);
 
 	info.IsShowingAd = false;
 	info.IsUsingModifiedM3U8 = false;
@@ -87,7 +92,7 @@ function _resetStreamAdState(info) {
 	info._BackupProbation = null;
 	info._EmptyAdHoldMediaSequence = 0;
 	info._FatalMediaRecoveryRequestId = null;
-	_clearCodecHandoffState(info);
+	_clearCodecHandoffState(info, null, completedCodecHandoff);
 	info._SpliceStreamId = null;
 	info._SpliceBoundarySeq = null;
 	info._SpliceDiscontinuityOffset = 0;
@@ -2075,7 +2080,11 @@ function _getExactPlaylistUrlKey(url, baseUrl = null) {
 	}
 }
 
-function _clearCodecHandoffState(info, handoffId = null) {
+function _clearCodecHandoffState(
+	info,
+	handoffId = null,
+	clearDecoderOwnership = true,
+) {
 	if (!info) return false;
 	const exactHandoffId =
 		typeof handoffId === "string" && handoffId ? handoffId : null;
@@ -2099,7 +2108,10 @@ function _clearCodecHandoffState(info, handoffId = null) {
 	info._CodecHandoffFailedId = null;
 	info._CodecHandoffReloadRetryCount = 0;
 	info.IsUsingModifiedM3U8 = false;
-	if (!exactHandoffId || completedExactHandoff) {
+	if (
+		clearDecoderOwnership === true &&
+		(!exactHandoffId || completedExactHandoff)
+	) {
 		info.EnhancedDecoderCodecFamily = null;
 		info.EnhancedDecoderCodec = null;
 	}
@@ -3344,11 +3356,16 @@ async function _processM3U8Core(
 	info.LastActivityAt = Date.now();
 
 	const currentAliases = _getPlaylistUrlAliases(url);
+	const exactRequestUrl = _getExactPlaylistUrlKey(url);
+	const isExactCurrentNativeVariant = Boolean(
+		exactRequestUrl && info?.Urls && Object.hasOwn(info.Urls, exactRequestUrl),
+	);
 	const isBackupUrl = Boolean(
-		currentAliases.some((alias) => info.BackupVariantUrls?.has(alias)) ||
-			(info.ActiveBackupPlayerType &&
-				info.BackupEncodingsM3U8Cache[info.ActiveBackupPlayerType]?.baseUrl ===
-					url),
+		!isExactCurrentNativeVariant &&
+			(currentAliases.some((alias) => info.BackupVariantUrls?.has(alias)) ||
+				(info.ActiveBackupPlayerType &&
+					info.BackupEncodingsM3U8Cache[info.ActiveBackupPlayerType]
+						?.baseUrl === url)),
 	);
 	const isEnhancedBackupUrl = Boolean(
 		isBackupUrl &&

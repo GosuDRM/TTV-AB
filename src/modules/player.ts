@@ -117,6 +117,7 @@ const _SECONDARY_PLAYER_HANDOFF_WINDOW_MS = 2700000;
 const _SECONDARY_PLAYER_CLOSE_POLL_MS = 500;
 const _HIDDEN_CLEAN_LIVE_STALL_DETECT_MS = 15000;
 const _HIDDEN_CLEAN_LIVE_STALL_REPEAT_MS = 30000;
+const _UNREADY_AD_MEDIA_RECOVERY_MS = 12000;
 const _PinnedBackupStallState = {
 	mediaKey: null as string | null,
 	firstObservedAt: 0,
@@ -145,7 +146,10 @@ const _FatalAdMediaRecoveryState = {
 	video: null as HTMLMediaElement | null,
 	mediaKey: null as string | null,
 	recoveryId: null as string | null,
+	recoveryKind: null as "media-error" | "unready" | null,
+	pinnedType: null as string | null,
 	cycleStartedAt: 0,
+	unreadyStartedAt: 0,
 	requestedAt: 0,
 	committed: false,
 };
@@ -170,7 +174,10 @@ function _resetFatalAdMediaRecoveryState(recoveryId = null) {
 	_FatalAdMediaRecoveryState.video = null;
 	_FatalAdMediaRecoveryState.mediaKey = null;
 	_FatalAdMediaRecoveryState.recoveryId = null;
+	_FatalAdMediaRecoveryState.recoveryKind = null;
+	_FatalAdMediaRecoveryState.pinnedType = null;
 	_FatalAdMediaRecoveryState.cycleStartedAt = 0;
+	_FatalAdMediaRecoveryState.unreadyStartedAt = 0;
 	_FatalAdMediaRecoveryState.requestedAt = 0;
 	_FatalAdMediaRecoveryState.committed = false;
 	return true;
@@ -192,35 +199,94 @@ function _createFatalAdMediaRecoveryId(mediaKey) {
 	}
 	return `${mediaKey}:${cycleStartedAt}:${Date.now()}:fatal-media:${nonce}`;
 }
+function _isOwnedUnreadyAdMedia(video, pageMediaKey, cycleStartedAt) {
+	const pinnedType =
+		typeof __TTVAB_STATE__?.PinnedBackupPlayerType === "string" &&
+		__TTVAB_STATE__.PinnedBackupPlayerType
+			? __TTVAB_STATE__.PinnedBackupPlayerType
+			: null;
+	const pinnedMediaKey = _normalizeMediaKey(
+		__TTVAB_STATE__?.PinnedBackupPlayerMediaKey,
+	);
+	const pageChannel = _normalizePlayerChannel(__TTVAB_STATE__?.PageChannel);
+	let bufferedLength = 0;
+	try {
+		bufferedLength = Math.max(0, Number(video?.buffered?.length) || 0);
+	} catch {
+		return false;
+	}
+	return Boolean(
+		video instanceof HTMLMediaElement &&
+			video.isConnected &&
+			!video.ended &&
+			!video.error &&
+			pageMediaKey &&
+			_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) === pageMediaKey &&
+			_getCurrentAdBreakStartedAt(pageMediaKey) === cycleStartedAt &&
+			pinnedType &&
+			pinnedMediaKey === pageMediaKey &&
+			__TTVAB_STATE__?.PlayerHasPlayedOnce === true &&
+			!_isNativeDocumentHidden() &&
+			Number(video.readyState) === 0 &&
+			Number(video.networkState) === 0 &&
+			(Number(video.currentTime) || 0) === 0 &&
+			bufferedLength === 0 &&
+			_hasPendingAdResumeIntent(pageChannel, pageMediaKey) &&
+			!_hasUserPauseIntent(pageChannel, pageMediaKey) &&
+			!_shouldSuppressAutomaticPlaybackResume(pageChannel, pageMediaKey),
+	);
+}
 function _checkFatalAdMediaRecovery(player) {
 	const video = player?.getHTMLVideoElement?.() || null;
 	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
 	const adMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey);
 	const errorCode = _getFatalAdMediaErrorCode(video);
 	const cycleStartedAt = _getCurrentAdBreakStartedAt(pageMediaKey);
+	const isOwnedUnready =
+		!errorCode && _isOwnedUnreadyAdMedia(video, pageMediaKey, cycleStartedAt);
 	if (
 		!(video instanceof HTMLMediaElement) ||
 		video.ended ||
 		!pageMediaKey ||
 		adMediaKey !== pageMediaKey ||
 		cycleStartedAt <= 0 ||
-		!errorCode
+		(!errorCode && !isOwnedUnready)
 	) {
-		if (
-			_FatalAdMediaRecoveryState.video !== video ||
-			_FatalAdMediaRecoveryState.mediaKey !== pageMediaKey ||
-			!errorCode
-		) {
-			_resetFatalAdMediaRecoveryState();
-		}
+		_resetFatalAdMediaRecoveryState();
 		return false;
 	}
 
 	const now = Date.now();
-	if (
+	const recoveryKind = errorCode ? "media-error" : "unready";
+	const pinnedType = isOwnedUnready
+		? __TTVAB_STATE__.PinnedBackupPlayerType
+		: null;
+	const observationMatches = Boolean(
 		_FatalAdMediaRecoveryState.video === video &&
-		_FatalAdMediaRecoveryState.mediaKey === pageMediaKey &&
-		_FatalAdMediaRecoveryState.cycleStartedAt === cycleStartedAt &&
+			_FatalAdMediaRecoveryState.mediaKey === pageMediaKey &&
+			_FatalAdMediaRecoveryState.cycleStartedAt === cycleStartedAt &&
+			_FatalAdMediaRecoveryState.recoveryKind === recoveryKind &&
+			(recoveryKind !== "unready" ||
+				_FatalAdMediaRecoveryState.pinnedType === pinnedType),
+	);
+	if (!observationMatches) {
+		_resetFatalAdMediaRecoveryState();
+		_FatalAdMediaRecoveryState.video = video;
+		_FatalAdMediaRecoveryState.mediaKey = pageMediaKey;
+		_FatalAdMediaRecoveryState.recoveryKind = recoveryKind;
+		_FatalAdMediaRecoveryState.pinnedType = pinnedType;
+		_FatalAdMediaRecoveryState.cycleStartedAt = cycleStartedAt;
+		_FatalAdMediaRecoveryState.unreadyStartedAt =
+			recoveryKind === "unready" ? now : 0;
+	}
+	if (
+		recoveryKind === "unready" &&
+		now - _FatalAdMediaRecoveryState.unreadyStartedAt <
+			_UNREADY_AD_MEDIA_RECOVERY_MS
+	) {
+		return false;
+	}
+	if (
 		_FatalAdMediaRecoveryState.recoveryId &&
 		(now - _FatalAdMediaRecoveryState.requestedAt < 30000 ||
 			_FatalAdMediaRecoveryState.committed)
@@ -235,6 +301,8 @@ function _checkFatalAdMediaRecovery(player) {
 	_FatalAdMediaRecoveryState.video = video;
 	_FatalAdMediaRecoveryState.mediaKey = pageMediaKey;
 	_FatalAdMediaRecoveryState.recoveryId = recoveryId;
+	_FatalAdMediaRecoveryState.recoveryKind = recoveryKind;
+	_FatalAdMediaRecoveryState.pinnedType = pinnedType;
 	_FatalAdMediaRecoveryState.cycleStartedAt = cycleStartedAt;
 	_FatalAdMediaRecoveryState.requestedAt = now;
 	_FatalAdMediaRecoveryState.committed = false;
@@ -243,6 +311,7 @@ function _checkFatalAdMediaRecovery(player) {
 		targetMediaKey: pageMediaKey,
 		value: {
 			recoveryId,
+			recoveryKind,
 			requestedAt: now,
 			cycleStartedAt,
 			channelName: __TTVAB_STATE__?.PageChannel || null,
@@ -250,7 +319,9 @@ function _checkFatalAdMediaRecovery(player) {
 		},
 	});
 	_log(
-		`Fatal media error ${errorCode} during ad recovery; verifying a fresh clean AVC backup`,
+		errorCode
+			? `Fatal media error ${errorCode} during ad recovery; verifying a fresh clean AVC backup`
+			: "Ad recovery media remained unready for 12s; verifying a fresh clean AVC backup",
 		"warning",
 	);
 	return true;
@@ -283,6 +354,15 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 	const verifiedAt = Math.max(0, Number(data?.verifiedAt) || 0);
 	const { player } = _getPlayerAndState();
 	const video = player?.getHTMLVideoElement?.() || null;
+	const recoveryKind = _FatalAdMediaRecoveryState.recoveryKind;
+	const recoveryConditionStillActive =
+		recoveryKind === "media-error"
+			? Boolean(_getFatalAdMediaErrorCode(video))
+			: recoveryKind === "unready"
+				? _isOwnedUnreadyAdMedia(video, pageMediaKey, eventCycleStartedAt) &&
+					_FatalAdMediaRecoveryState.pinnedType ===
+						__TTVAB_STATE__?.PinnedBackupPlayerType
+				: false;
 	if (
 		!mediaKey ||
 		mediaKey !== _FatalAdMediaRecoveryState.mediaKey ||
@@ -293,7 +373,7 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 		_getCodecHandoffCycleStartedAt(recoveryId) !== eventCycleStartedAt ||
 		!_isCodecHandoffCycleCurrent(mediaKey, eventCycleStartedAt) ||
 		video !== _FatalAdMediaRecoveryState.video ||
-		!_getFatalAdMediaErrorCode(video)
+		!recoveryConditionStillActive
 	) {
 		if (mediaKey === _FatalAdMediaRecoveryState.mediaKey) {
 			_broadcastWorkers({
@@ -332,7 +412,9 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 			throw new Error("player reload was not accepted");
 		}
 		_log(
-			"Fresh clean AVC backup verified; reloading the failed enhanced decoder",
+			recoveryKind === "unready"
+				? "Fresh clean AVC backup verified; rebuilding the unready ad recovery player"
+				: "Fresh clean AVC backup verified; reloading the failed enhanced decoder",
 			"info",
 		);
 		return true;
