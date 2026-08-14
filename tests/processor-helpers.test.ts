@@ -724,8 +724,8 @@ describe("_resetStreamAdState", () => {
 		expect(info._IncompletePodLastMediaSequence).toBe(null);
 		expect(info._IncompletePodCandidateUrl).toBe(null);
 		expect(info.LastCleanNativeUrl).toBe("https://edge.example/native.m3u8");
-		expect(info.EnhancedDecoderCodecFamily).toBe(null);
-		expect(info.EnhancedDecoderCodec).toBe(null);
+		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+		expect(info.EnhancedDecoderCodec).toBe("hev1.1.6.L153.B0");
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
 		expect(info._FatalMediaRecoveryRequestId).toBe(null);
@@ -740,6 +740,31 @@ describe("_resetStreamAdState", () => {
 		expect(info._SpliceLastDiscontinuitySequence).toBe(null);
 		expect(info._BackupProbation).toBe(null);
 		expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(100);
+	});
+
+	it("clears enhanced decoder ownership after a completed exact handoff", () => {
+		const fn = T<(info: Record<string, unknown>) => Record<string, unknown>>(
+			"_resetStreamAdState",
+		);
+		const handoffId = "live:testchannel:100:200:1:completed-reset";
+		const info = makeInfo({
+			VisibleAdStartedAt: 100,
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: "hev1.1.6.L153.B0",
+			_CodecHandoffPendingId: handoffId,
+			_CodecHandoffAcknowledgedId: handoffId,
+		});
+		const state = getState();
+		activateExactAdCycle(info, 100);
+		state.ActiveCodecHandoffId = handoffId;
+		state.ActiveCodecHandoffChannel = "testchannel";
+		state.ActiveCodecHandoffMediaKey = "live:testchannel";
+
+		fn(info);
+
+		expect(info.EnhancedDecoderCodecFamily).toBe(null);
+		expect(info.EnhancedDecoderCodec).toBe(null);
+		expect(state.ActiveCodecHandoffId).toBe(null);
 	});
 
 	it("initializes CsaiOnlyThisBreak on new stream infos", () => {
@@ -9194,6 +9219,82 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 
 		await core()(avcUrl, cleanNative, fetchStub);
 		expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+	});
+
+	it("lets an exact current native variant outrank a stored same-path backup alias", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const nativeUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=native";
+		const backupUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
+		const aliases = T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			backupUrl,
+		);
+		const info = makeEnhancedInfo({
+			Urls: {
+				[nativeUrl]: hevcSource,
+				[avcUrl]: avcSource,
+			},
+			EnhancedVariantUrls: new Set([nativeUrl]),
+			BackupVariantUrls: new Set(aliases),
+			EnhancedDecoderCodecFamily: null,
+			EnhancedDecoderCodec: null,
+			SustainedNativeResolution: hevcSource,
+			SustainedNativeResolutionAt: 1,
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		getState().LastAdEndedAt = 0;
+		const cleanNative = makePlaylist(700, 3);
+
+		try {
+			await core()(nativeUrl, cleanNative, fetchStub);
+			expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+			expect(info.EnhancedDecoderCodec).toBe("hev1.1.6.l153.b0");
+			expect(info.SustainedNativeResolutionAt).toBe(300000);
+
+			vi.setSystemTime(306000);
+			await core()(avcUrl, cleanNative, fetchStub);
+			await core()(avcUrl, cleanNative, fetchStub);
+
+			expect(info.SustainedNativeResolution).toBe(hevcSource);
+			expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+			expect(info.EnhancedDecoderCodec).toBe("hev1.1.6.l153.b0");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps a different-token same-path candidate classified as backup", async () => {
+		const nativeUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=native";
+		const backupUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
+		const aliases = T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			backupUrl,
+		);
+		const info = makeEnhancedInfo({
+			Urls: {
+				[nativeUrl]: hevcSource,
+				[avcUrl]: avcSource,
+			},
+			EnhancedVariantUrls: new Set([nativeUrl]),
+			BackupVariantUrls: new Set(aliases),
+			SustainedNativeResolution: hevcSource,
+			SustainedNativeResolutionAt: 123,
+			LastCleanNativeM3U8: "native-before-backup",
+			LastCleanNativeUrl: nativeUrl,
+			LastCleanNativePlaylistAt: 122,
+		});
+		g._getStreamInfoForPlaylist = () => info;
+
+		const out = await core()(backupUrl, makePlaylist(700, 3), fetchStub);
+
+		expect(out).toContain("seg700.ts");
+		expect(info.SustainedNativeResolutionAt).toBe(123);
+		expect(info.LastCleanNativeM3U8).toBe("native-before-backup");
+		expect(info.LastCleanNativeUrl).toBe(nativeUrl);
+		expect(info.LastCleanNativePlaylistAt).toBe(122);
 	});
 
 	it("clears a stale enhanced owner after a sustained clean native AVC demotion", async () => {

@@ -1093,6 +1093,7 @@ describe("fatal enhanced-media recovery during ads", () => {
 	let video: HTMLVideoElement;
 	let player: { getHTMLVideoElement: () => HTMLVideoElement };
 	let errorCode: number;
+	let readyState: number;
 
 	beforeEach(() => {
 		saved = {
@@ -1103,17 +1104,23 @@ describe("fatal enhanced-media recovery during ads", () => {
 			getCodecHandoffCycleStartedAt: g._getCodecHandoffCycleStartedAt,
 			getCurrentAdBreakStartedAt: g._getCurrentAdBreakStartedAt,
 			isCodecHandoffCycleCurrent: g._isCodecHandoffCycleCurrent,
+			hasPendingAdResumeIntent: g._hasPendingAdResumeIntent,
+			hasUserPauseIntent: g._hasUserPauseIntent,
+			isNativeDocumentHidden: g._isNativeDocumentHidden,
+			shouldSuppressAutomaticPlaybackResume:
+				g._shouldSuppressAutomaticPlaybackResume,
 		};
 		messages = [];
 		reloads = [];
 		errorCode = 3;
+		readyState = 0;
 		video = document.createElement("video");
 		Object.defineProperty(video, "error", {
 			get: () => (errorCode ? { code: errorCode } : null),
 			configurable: true,
 		});
 		Object.defineProperty(video, "readyState", {
-			get: () => 0,
+			get: () => readyState,
 			configurable: true,
 		});
 		Object.defineProperty(video, "ended", {
@@ -1179,6 +1186,10 @@ describe("fatal enhanced-media recovery during ads", () => {
 			reloads.push(options);
 			return true;
 		};
+		g._hasPendingAdResumeIntent = () => true;
+		g._hasUserPauseIntent = () => false;
+		g._isNativeDocumentHidden = () => false;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
 		T<() => boolean>("_resetFatalAdMediaRecoveryState")();
 	});
 
@@ -1191,7 +1202,24 @@ describe("fatal enhanced-media recovery during ads", () => {
 		g._getCodecHandoffCycleStartedAt = saved.getCodecHandoffCycleStartedAt;
 		g._getCurrentAdBreakStartedAt = saved.getCurrentAdBreakStartedAt;
 		g._isCodecHandoffCycleCurrent = saved.isCodecHandoffCycleCurrent;
+		g._hasPendingAdResumeIntent = saved.hasPendingAdResumeIntent;
+		g._hasUserPauseIntent = saved.hasUserPauseIntent;
+		g._isNativeDocumentHidden = saved.isNativeDocumentHidden;
+		g._shouldSuppressAutomaticPlaybackResume =
+			saved.shouldSuppressAutomaticPlaybackResume;
+		video.remove();
+		vi.useRealTimers();
 	});
+
+	function enableUnreadyRecoveryContext() {
+		errorCode = 0;
+		document.body.append(video);
+		Object.assign(g.__TTVAB_STATE__ as Record<string, unknown>, {
+			PinnedBackupPlayerType: "autoplay",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			PlayerHasPlayedOnce: true,
+		});
+	}
 
 	it("requests one worker-verified recovery for a fatal error at readyState zero", () => {
 		expect(check()(player)).toBe(true);
@@ -1213,6 +1241,105 @@ describe("fatal enhanced-media recovery during ads", () => {
 
 	it.each([0, 1])("does not recover non-fatal media error code %s", (code) => {
 		errorCode = code;
+		expect(check()(player)).toBe(false);
+		expect(messages).toEqual([]);
+	});
+
+	it("waits for a continuous owned unready state before requesting recovery", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		enableUnreadyRecoveryContext();
+
+		expect(check()(player)).toBe(false);
+		vi.setSystemTime(111999);
+		expect(check()(player)).toBe(false);
+		expect(messages).toEqual([]);
+
+		vi.setSystemTime(112000);
+		expect(check()(player)).toBe(true);
+		expect(check()(player)).toBe(false);
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toMatchObject({
+			key: "PrepareFatalMediaRecovery",
+			targetMediaKey: "live:testchannel",
+			value: {
+				recoveryKind: "unready",
+				mediaKey: "live:testchannel",
+			},
+		});
+	});
+
+	it("cancels an unready recovery when media starts loading before proof arrives", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		enableUnreadyRecoveryContext();
+		expect(check()(player)).toBe(false);
+		vi.setSystemTime(112000);
+		expect(check()(player)).toBe(true);
+		const request = messages[0].value as Record<string, unknown>;
+
+		readyState = 1;
+		expect(
+			accept()({
+				recoveryId: request.recoveryId,
+				verifiedAt: Number(request.requestedAt) + 1,
+				cycleStartedAt: request.cycleStartedAt,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+			}),
+		).toBe(false);
+		expect(reloads).toEqual([]);
+		expect(messages.at(-1)).toMatchObject({
+			key: "UpdateCodecHandoffContext",
+			value: { clearHandoffId: request.recoveryId },
+		});
+	});
+
+	it("commits one verified reload while the owned media remains unready", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		enableUnreadyRecoveryContext();
+		expect(check()(player)).toBe(false);
+		vi.setSystemTime(112000);
+		expect(check()(player)).toBe(true);
+		const request = messages[0].value as Record<string, unknown>;
+
+		expect(
+			accept()({
+				recoveryId: request.recoveryId,
+				verifiedAt: Number(request.requestedAt) + 1,
+				cycleStartedAt: request.cycleStartedAt,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+			}),
+		).toBe(true);
+		expect(reloads).toEqual([
+			expect.objectContaining({
+				reason: "codec-handoff",
+				handoffId: request.recoveryId,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+				replaceCodecHandoff: true,
+			}),
+		]);
+	});
+
+	it("does not recover an unready player when the user paused or ownership differs", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		enableUnreadyRecoveryContext();
+		g._hasUserPauseIntent = () => true;
+
+		expect(check()(player)).toBe(false);
+		vi.setSystemTime(130000);
+		expect(check()(player)).toBe(false);
+		expect(messages).toEqual([]);
+
+		g._hasUserPauseIntent = () => false;
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PinnedBackupPlayerMediaKey =
+			"live:otherchannel";
+		expect(check()(player)).toBe(false);
+		vi.setSystemTime(160000);
 		expect(check()(player)).toBe(false);
 		expect(messages).toEqual([]);
 	});
