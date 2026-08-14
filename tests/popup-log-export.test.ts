@@ -33,7 +33,7 @@ beforeAll(() => {
 	g.chrome = {
 		runtime: {
 			lastError: null,
-			getManifest: () => ({ version: "16.0.7" }),
+			getManifest: () => ({ version: "16.0.8" }),
 		},
 		tabs: {
 			query: () => {},
