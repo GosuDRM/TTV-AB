@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.0.9] - 2026-08-15
+
+- Fixed live playback buffering indefinitely when an ad continued immediately after native recovery ([#59](https://github.com/GosuDRM/TTV-AB/issues/59)).
+- Rapid ad continuation now keeps page and worker backup ownership synchronized, so the active player remains monitored and resumes safely.
+- When a clean backup is advancing on a new timeline, recovery now returns the exact live player to that backup's current edge instead of exhausting source retries. Stale backups still rotate, and VOD or explicitly paused playback is never repositioned.
+
 ## [16.0.8] - 2026-08-14
 
 - Fixed error 4000 on enhanced-quality HEVC and AV1 streams when Twitch briefly changes stream quality before an ad break ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
