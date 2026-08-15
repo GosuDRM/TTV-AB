@@ -4512,6 +4512,52 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		getState().PinnedBackupPlayerMediaKey = null;
 	});
 
+	it("reannounces backup ownership when rapid reentry goes directly into a silent hold", async () => {
+		const state = getState();
+		const info = setupCsaiEscapeAdEnd({
+			ConsecutiveFailedNativeProbes: 6,
+			IsUsingBackupStream: false,
+			ActiveBackupPlayerType: null,
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupAt: Date.now(),
+		});
+		state.PinnedBackupPlayerType = null;
+		state.PinnedBackupPlayerChannel = null;
+		state.PinnedBackupPlayerMediaKey = null;
+		g._canReloadNativePlayerAfterAd = async () => false;
+
+		try {
+			const out = await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+				Promise.reject(new Error("unexpected fetch")),
+			);
+			const messages = sentMessages();
+			const selectedAt = messages.findIndex(
+				(message) => message.key === "BackupPlayerTypeSelected",
+			);
+			const endedAt = messages.findIndex(
+				(message) => message.key === "AdEnded",
+			);
+
+			expect(messages[selectedAt]).toMatchObject({
+				key: "BackupPlayerTypeSelected",
+				value: "autoplay",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: info.VisibleAdStartedAt,
+			});
+			expect(selectedAt).toBeLessThan(endedAt);
+			expect(messages[endedAt]).toMatchObject({
+				key: "AdEnded",
+				holdingBackup: true,
+			});
+			expect(out).toContain("seg50.ts");
+		} finally {
+			state.PinnedBackupPlayerType = null;
+			state.PinnedBackupPlayerChannel = null;
+			state.PinnedBackupPlayerMediaKey = null;
+		}
+	});
+
 	it("refreshes a stale source backup before entering an ended silent hold", async () => {
 		const previousActiveRefresh = g._refreshActiveBackupMediaPlaylist;
 		const previousAutoplayRefresh = g._refreshHeldAutoplayBackupPlaylist;

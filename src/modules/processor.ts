@@ -3853,6 +3853,18 @@ async function _processM3U8Core(
 			__TTVAB_STATE__.PinnedBackupPlayerType = heldBackupPlayerType;
 			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
 			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
+			if (typeof self !== "undefined" && self.postMessage) {
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "BackupPlayerTypeSelected",
+						value: heldBackupPlayerType,
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+						cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+					}),
+				);
+			}
 		}
 		if (info._AdRequestController) {
 			info._AdRequestController.abort();

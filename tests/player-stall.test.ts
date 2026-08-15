@@ -91,6 +91,90 @@ function makePlayer(currentTime: () => number, bufferedEnd: () => number) {
 	};
 }
 
+function makePinnedTimelineHarness(
+	options: {
+		ranges?: Array<[number, number]>;
+		mediaType?: "live" | "vod";
+		targetMediaKey?: string;
+		channel?: string | null;
+		currentAdMediaKey?: string;
+		pinnedMediaKey?: string;
+		currentElementMatches?: boolean;
+		fatalErrorCode?: number;
+		userPaused?: boolean;
+		secondarySuppressed?: boolean;
+	} = {},
+) {
+	const check = T<
+		(
+			player: { getHTMLVideoElement: () => HTMLVideoElement },
+			channel?: string,
+			mediaKey?: string,
+		) => void
+	>("_checkPinnedBackupStall");
+	const ranges = options.ranges ?? [[0.044, 31.5]];
+	const targetMediaKey = options.targetMediaKey ?? "live:testchannel";
+	const channel =
+		options.channel === undefined ? "testchannel" : options.channel;
+	const { video, seeks } = makeRangesVideo(ranges, 70.604, true);
+	const otherVideo = document.createElement("video");
+	const player = { getHTMLVideoElement: () => video };
+	const messages: unknown[] = [];
+	const resume = vi.fn();
+	const scheduleResumeRetries = vi.fn();
+	const replacedGlobals = [
+		"_broadcastWorkers",
+		"_resumeActivePlayerIfPaused",
+		"_scheduleResumeRetries",
+		"_getPlaybackMediaElementForContext",
+		"_getFatalAdMediaErrorCode",
+		"_getPlayerLifecycleCycleStartedAt",
+		"_hasUserPauseIntent",
+		"_shouldSuppressAutomaticPlaybackResume",
+	] as const;
+	const saved = Object.fromEntries(
+		replacedGlobals.map((name) => [name, g[name]]),
+	) as Record<(typeof replacedGlobals)[number], unknown>;
+	const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+	Object.assign(state, {
+		PageMediaType: options.mediaType ?? "live",
+		PageChannel: channel,
+		PageMediaKey: targetMediaKey,
+		CurrentAdChannel: channel,
+		CurrentAdMediaKey: options.currentAdMediaKey ?? targetMediaKey,
+		PinnedBackupPlayerChannel: channel,
+		PinnedBackupPlayerMediaKey: options.pinnedMediaKey ?? targetMediaKey,
+	});
+	g._broadcastWorkers = (message: unknown) => messages.push(message);
+	g._resumeActivePlayerIfPaused = resume;
+	g._scheduleResumeRetries = scheduleResumeRetries;
+	g._getPlaybackMediaElementForContext = () =>
+		options.currentElementMatches === false ? otherVideo : video;
+	g._getFatalAdMediaErrorCode = () => options.fatalErrorCode ?? 0;
+	g._getPlayerLifecycleCycleStartedAt = () => 99123;
+	g._hasUserPauseIntent = () => options.userPaused === true;
+	g._shouldSuppressAutomaticPlaybackResume = () =>
+		options.secondarySuppressed === true;
+	const nowSpy = vi.spyOn(Date, "now");
+
+	return {
+		ranges,
+		seeks,
+		messages,
+		resume,
+		scheduleResumeRetries,
+		state,
+		sample(at: number) {
+			nowSpy.mockReturnValue(at);
+			check(player, channel ?? undefined, targetMediaKey);
+		},
+		restore() {
+			for (const name of replacedGlobals) g[name] = saved[name];
+			nowSpy.mockRestore();
+		},
+	};
+}
+
 describe("_checkPinnedBackupStall", () => {
 	it("does not force backup re-search while playback advances with safe buffer", () => {
 		const check = T<
@@ -158,6 +242,187 @@ describe("_checkPinnedBackupStall", () => {
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).BackupSearchForceRefreshAt,
 		).toBe(104000);
+	});
+
+	it("realigns an advancing pinned live backup whose timeline restarted behind the playhead", () => {
+		const harness = makePinnedTimelineHarness();
+
+		try {
+			harness.sample(100000);
+			harness.ranges[0][1] = 33;
+			harness.sample(102999);
+			expect(harness.seeks).toEqual([]);
+			expect(harness.resume).not.toHaveBeenCalled();
+			harness.ranges[0][1] = 33.734;
+			harness.sample(103000);
+
+			expect(harness.seeks).toEqual([expect.closeTo(33.234, 3)]);
+			expect(harness.messages).toEqual([]);
+			expect(harness.state.BackupSearchForceRefreshAt).toBe(0);
+			expect(
+				(g._PinnedBackupStallState as Record<string, unknown>)
+					.forceRefreshCount,
+			).toBe(0);
+			expect(harness.resume).toHaveBeenCalledWith(
+				"testchannel",
+				"live:testchannel",
+			);
+			expect(harness.scheduleResumeRetries).toHaveBeenCalledWith(
+				"testchannel",
+				"live:testchannel",
+				[180, 650],
+				{ cycleStartedAt: 99123 },
+			);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("keeps re-searching when an off-timeline backup buffer is stale", () => {
+		const harness = makePinnedTimelineHarness({ ranges: [] });
+
+		try {
+			harness.sample(100000);
+			harness.ranges.push([0.044, 33.734]);
+			harness.sample(101500);
+			harness.sample(104000);
+
+			expect(harness.seeks).toEqual([]);
+			expect(harness.messages).toEqual([
+				{
+					key: "UpdateBackupSearchForceRefresh",
+					targetMediaKey: "live:testchannel",
+					value: 104000,
+				},
+			]);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("never realigns an advancing VOD buffer", () => {
+		const harness = makePinnedTimelineHarness({
+			mediaType: "vod",
+			targetMediaKey: "vod:12345",
+			channel: null,
+		});
+
+		try {
+			harness.sample(100000);
+			harness.ranges[0][1] = 33.734;
+			harness.sample(104000);
+
+			expect(harness.seeks).toEqual([]);
+			expect(harness.resume).not.toHaveBeenCalled();
+			expect(harness.scheduleResumeRetries).not.toHaveBeenCalled();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it.each([
+		["an explicit user pause", "_hasUserPauseIntent"],
+		["a secondary-player handoff", "_shouldSuppressAutomaticPlaybackResume"],
+	] as const)("does not realign during %s", (_label, guardName) => {
+		const harness = makePinnedTimelineHarness({
+			userPaused: guardName === "_hasUserPauseIntent",
+			secondarySuppressed:
+				guardName === "_shouldSuppressAutomaticPlaybackResume",
+		});
+
+		try {
+			harness.sample(100000);
+			harness.ranges[0][1] = 33.734;
+			harness.sample(104000);
+
+			expect(harness.seeks).toEqual([]);
+			expect(harness.resume).not.toHaveBeenCalled();
+			expect(harness.scheduleResumeRetries).not.toHaveBeenCalled();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it.each([
+		[
+			"the active ad owner differs",
+			{
+				currentAdMediaKey: "live:otherchannel",
+				pinnedMediaKey: "live:testchannel",
+				currentElementMatches: true,
+				fatalErrorCode: 0,
+			},
+		],
+		[
+			"the pinned owner differs",
+			{
+				currentAdMediaKey: "live:testchannel",
+				pinnedMediaKey: "live:otherchannel",
+				currentElementMatches: true,
+				fatalErrorCode: 0,
+			},
+		],
+		[
+			"the resolved media element differs",
+			{
+				currentAdMediaKey: "live:testchannel",
+				pinnedMediaKey: "live:testchannel",
+				currentElementMatches: false,
+				fatalErrorCode: 0,
+			},
+		],
+		[
+			"fatal media recovery owns the element",
+			{
+				currentAdMediaKey: "live:testchannel",
+				pinnedMediaKey: "live:testchannel",
+				currentElementMatches: true,
+				fatalErrorCode: 3,
+			},
+		],
+	] as const)("does not realign when %s", (_label, ownership) => {
+		const harness = makePinnedTimelineHarness(ownership);
+
+		try {
+			harness.sample(100000);
+			harness.ranges[0][1] = 33.734;
+			harness.sample(104000);
+
+			expect(harness.seeks).toEqual([]);
+			expect(harness.resume).not.toHaveBeenCalled();
+			expect(harness.scheduleResumeRetries).not.toHaveBeenCalled();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("uses the first positive buffer after an empty sample as an evidence baseline", () => {
+		const harness = makePinnedTimelineHarness({ ranges: [] });
+
+		try {
+			harness.sample(100000);
+			harness.ranges.push([0.044, 31.5]);
+			harness.sample(101500);
+			harness.ranges[0][1] = 33;
+			harness.sample(102999);
+			expect(harness.seeks).toEqual([]);
+			harness.ranges[0][1] = 33.734;
+			harness.sample(103000);
+
+			expect(harness.seeks).toEqual([expect.closeTo(33.234, 3)]);
+			expect(harness.resume).toHaveBeenCalledWith(
+				"testchannel",
+				"live:testchannel",
+			);
+			expect(harness.scheduleResumeRetries).toHaveBeenCalledWith(
+				"testchannel",
+				"live:testchannel",
+				[180, 650],
+				{ cycleStartedAt: 99123 },
+			);
+		} finally {
+			harness.restore();
+		}
 	});
 
 	it("defers to in-ad freeze recovery when the playhead freezes with safe buffered headroom", () => {
@@ -642,7 +907,11 @@ describe("_trySeekPastFrozenBufferGap", () => {
 	});
 });
 
-function makeRangesVideo(ranges: Array<[number, number]>, currentTime: number) {
+function makeRangesVideo(
+	ranges: Array<[number, number]>,
+	currentTime: number,
+	paused = false,
+) {
 	const seeks: number[] = [];
 	const video = document.createElement("video");
 	let ct = currentTime;
@@ -671,7 +940,7 @@ function makeRangesVideo(ranges: Array<[number, number]>, currentTime: number) {
 		configurable: true,
 	});
 	Object.defineProperty(video, "paused", {
-		get: () => false,
+		get: () => paused,
 		configurable: true,
 	});
 	return { video: video as HTMLVideoElement, seeks };
