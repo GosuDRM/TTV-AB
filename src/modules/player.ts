@@ -4978,6 +4978,9 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 		_normalizeMediaKey(mediaKey) ||
 		_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey) ||
 		_resolvePlayerMediaKey(channel, mediaKey);
+	const safeChannel =
+		_normalizePlayerChannel(channel) ||
+		_normalizePlayerChannel(__TTVAB_STATE__.PinnedBackupPlayerChannel);
 	if (
 		_PinnedBackupStallState.lastPinnedType !== pinnedType ||
 		_PinnedBackupStallState.mediaKey !== safeMediaKey
@@ -5021,6 +5024,62 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 	const bufferHeadroom = bufferedEnd - currentTime;
 	const bufferSafe = bufferHeadroom > _getLowLatencyDangerZone();
 	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
+	const canRealignPinnedLiveBackup = Boolean(
+		safeMediaKey?.startsWith("live:") &&
+			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) === safeMediaKey &&
+			_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey) ===
+				safeMediaKey &&
+			!currentTimeAdvanced &&
+			currentTime > bufferedEnd + _getLowLatencyDangerZone() &&
+			_getFatalAdMediaErrorCode(video) === 0 &&
+			!_hasUserPauseIntent(safeChannel, safeMediaKey) &&
+			!_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey) &&
+			_getPlaybackMediaElementForContext(safeChannel, safeMediaKey) === video,
+	);
+	const firstOwnedBufferObservation = Boolean(
+		canRealignPinnedLiveBackup &&
+			_PinnedBackupStallState.firstObservedAt > 0 &&
+			_PinnedBackupStallState.lastBufferedEnd <= 0 &&
+			bufferedEnd > 0,
+	);
+
+	if (firstOwnedBufferObservation) {
+		_PinnedBackupStallState.lastCurrentTime = currentTime;
+		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
+		return;
+	}
+
+	const ownsAdvancingLiveBackup = Boolean(
+		canRealignPinnedLiveBackup &&
+			_PinnedBackupStallState.firstObservedAt > 0 &&
+			now - _PinnedBackupStallState.firstObservedAt >= stallThresholdMs &&
+			bufferAdvanced,
+	);
+
+	if (ownsAdvancingLiveBackup) {
+		let timelineRealigned = false;
+		try {
+			const bufferedStart = Number(
+				video.buffered.start(video.buffered.length - 1),
+			);
+			if (Number.isFinite(bufferedStart) && bufferedStart <= bufferedEnd) {
+				video.currentTime = Math.max(bufferedStart, bufferedEnd - 0.5);
+				timelineRealigned = true;
+			}
+		} catch {}
+		if (timelineRealigned) {
+			_resetPinnedBackupStallState();
+			_log(
+				`Pinned backup timeline realigned (${pinnedType}): currentTime=${currentTime.toFixed(2)}s, liveEdge=${bufferedEnd.toFixed(2)}s`,
+				"warning",
+			);
+			_resumeActivePlayerIfPaused(safeChannel, safeMediaKey);
+			_scheduleResumeRetries(safeChannel, safeMediaKey, [180, 650], {
+				cycleStartedAt: _getPlayerLifecycleCycleStartedAt(safeMediaKey),
+			});
+			return;
+		}
+	}
 
 	if (currentTimeAdvanced || (bufferSafe && bufferAdvanced)) {
 		_PinnedBackupStallState.firstObservedAt = 0;
