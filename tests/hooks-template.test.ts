@@ -316,14 +316,14 @@ describe("worker message handler hardening", () => {
 		expect(blockEnd).toBeGreaterThan(blockStart);
 		const gateAt = block.indexOf("_isCodecHandoffCycleCurrent(");
 		const stateMutationAt = block.indexOf("__TTVAB_STATE__.LastAdEndedAt =");
-		const playerTaskAt = block.indexOf("_doPlayerTask(");
+		const playerTaskAt = block.indexOf("_runPostAdPlayerTask(");
 		const cleanupAt = block.indexOf("_schedulePostAdArtifactCleanup(");
 		expect(gateAt).toBeGreaterThan(-1);
 		expect(stateMutationAt).toBeGreaterThan(gateAt);
 		expect(playerTaskAt).toBeGreaterThan(gateAt);
 		expect(cleanupAt).toBeGreaterThan(gateAt);
 		expect(block).toMatch(
-			/_doPlayerTask\([\s\S]*?cycleStartedAt:\s*restoredCycleStartedAt/,
+			/_runPostAdPlayerTask\([\s\S]*?cycleStartedAt:\s*restoredCycleStartedAt/,
 		);
 		expect(block).toContain(
 			"refreshAccessToken: data.refreshAccessToken !== false",
