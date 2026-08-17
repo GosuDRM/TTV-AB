@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.1.0] - 2026-08-17
+
+- Fixed Twitch sometimes staying on an endless black loading screen after an ad ended ([#61](https://github.com/GosuDRM/TTV-AB/issues/61)).
+- Recovery now stays active until replacement playback is healthy, with bounded retries that stop cleanly instead of abandoning recovery or repeatedly reloading.
+- Backup ownership and native playback restoration now stay tied to the exact worker, stream, and ad cycle so delayed recovery messages cannot take over the wrong player.
+- Native playback is no longer mistaken for an old fallback route during recovery, without weakening ad detection or accepting a different stream session.
+
 ## [16.0.9] - 2026-08-15
 
 - Fixed live playback buffering indefinitely when an ad continued immediately after native recovery ([#59](https://github.com/GosuDRM/TTV-AB/issues/59)).

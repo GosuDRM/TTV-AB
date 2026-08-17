@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-16.0.9-purple)
+![Version](https://img.shields.io/badge/version-16.1.0-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-16.0.9-yellow)
+![Chrome](https://img.shields.io/badge/chrome-16.1.0-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -70,17 +70,14 @@ When a channel opens during an ad, or an ad starts mid-stream, the extension swi
 
 ## 🔔 What's New
 
+### v16.1.0 - 2026-08-17
+- **Fixed endless black loading after ads.** Recovery now stays active until replacement playback is healthy, handles delayed Twitch player remounts and backup timeline changes, and avoids repeated reload loops ([#61](https://github.com/GosuDRM/TTV-AB/issues/61)).
+
 ### v16.0.9 - 2026-08-15
 - **Fixed live playback buffering indefinitely when an ad continued after native recovery.** Rapid ad continuation now keeps backup ownership synchronized and returns a stranded playhead to the actively advancing clean stream instead of exhausting source retries ([#59](https://github.com/GosuDRM/TTV-AB/issues/59)).
 
 ### v16.0.8 - 2026-08-14
 - **Fixed error 4000 on enhanced-quality HEVC and AV1 streams.** Temporary Twitch quality changes no longer break recovery during repeated ads, and a stuck player can now rebuild from a verified compatible stream instead of remaining frozen ([#50](https://github.com/GosuDRM/TTV-AB/issues/50)).
-
-### v16.0.7 - 2026-08-13
-- **Fixed overlapping or out-of-sync audio after ad recovery.** Stale Twitch players now stay muted, quality changes keep audio and video on one timeline, and playback is cleanly rebuilt after an emergency low-quality backup ([#58](https://github.com/GosuDRM/TTV-AB/issues/58)).
-
-### v16.0.6 - 2026-08-13
-- **Made Low Quality Fallback changes smoother and easier to diagnose.** Disabling it no longer reloads the player, clean fallback playback keeps advancing while other sources are checked, and Generate Log now shows the active setting and actual selected backup resolution.
 
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
