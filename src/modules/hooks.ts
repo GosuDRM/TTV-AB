@@ -51,6 +51,8 @@ function _claimPageAdCycleControl(
 	cycleStartedAt,
 	workerGeneration,
 	eventAt,
+	allowConfirmedTerminalTakeover = false,
+	terminalWorker = null,
 ) {
 	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
 	const normalizedCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
@@ -73,14 +75,22 @@ function _claimPageAdCycleControl(
 		0,
 		Number(previous?.cycleStartedAt) || 0,
 	);
+	const canTakeOverProvisionalTerminalControl = Boolean(
+		allowConfirmedTerminalTakeover === true &&
+			_isConfirmedPlaybackOwnerFinishingProvisionalAdCycle(
+				normalizedMediaKey,
+				normalizedCycleStartedAt,
+				terminalWorker,
+			),
+	);
 	if (
 		previous &&
 		(previousCycleStartedAt > normalizedCycleStartedAt ||
 			(previousCycleStartedAt === normalizedCycleStartedAt &&
-				(Math.max(0, Number(previous.workerGeneration) || 0) >
-					normalizedWorkerGeneration ||
-					Math.max(0, Number(previous.latestEventAt) || 0) >
-						normalizedEventAt)))
+				(Math.max(0, Number(previous.latestEventAt) || 0) > normalizedEventAt ||
+					(!canTakeOverProvisionalTerminalControl &&
+						Math.max(0, Number(previous.workerGeneration) || 0) >
+							normalizedWorkerGeneration))))
 	) {
 		return false;
 	}
@@ -98,11 +108,74 @@ function _claimPageAdCycleControl(
 	return true;
 }
 
+function _isConfirmedPlaybackOwnerFinishingProvisionalAdCycle(
+	mediaKey,
+	cycleStartedAt,
+	worker,
+	now = Date.now(),
+) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	const normalizedCycleStartedAt = Math.max(0, Number(cycleStartedAt) || 0);
+	const normalizedWorkerGeneration = Math.max(
+		0,
+		Number(worker?.__TTVABGeneration) || 0,
+	);
+	const normalizedNow = Math.max(0, Number(now) || 0);
+	const control = normalizedMediaKey
+		? _pageAdCycleControlByMediaKey.get(normalizedMediaKey) || null
+		: null;
+	const controlWorkerGeneration = Math.max(
+		0,
+		Number(control?.workerGeneration) || 0,
+	);
+	const playbackContext = { MediaKey: normalizedMediaKey };
+	const confirmedPlaybackOwnerGeneration =
+		_getConfirmedWorkerPlaybackOwnerGeneration(normalizedMediaKey);
+	const healthyPlaybackOwner = _getHealthyObservedPlaybackWorker(
+		playbackContext,
+		null,
+		normalizedNow,
+		0,
+		true,
+	);
+	const matchingConfirmedWorkers = Array.isArray(_S?.workers)
+		? _S.workers.filter(
+				(candidate) =>
+					candidate &&
+					Math.max(0, Number(candidate.__TTVABGeneration) || 0) ===
+						confirmedPlaybackOwnerGeneration &&
+					_getWorkerRecoveryContextKey(_getWorkerPlaybackContext(candidate)) ===
+						_getWorkerRecoveryContextKey(playbackContext),
+			)
+		: [];
+	const recoveryState = _getWorkerRecoveryState(playbackContext, false);
+	const retiredThroughGeneration = Math.max(
+		0,
+		Number(recoveryState?.retiredThroughGeneration) || 0,
+	);
+	return Boolean(
+		normalizedMediaKey &&
+			normalizedCycleStartedAt > 0 &&
+			normalizedWorkerGeneration > 0 &&
+			normalizedNow > 0 &&
+			Math.max(0, Number(control?.cycleStartedAt) || 0) ===
+				normalizedCycleStartedAt &&
+			controlWorkerGeneration > normalizedWorkerGeneration &&
+			confirmedPlaybackOwnerGeneration === normalizedWorkerGeneration &&
+			matchingConfirmedWorkers.length === 1 &&
+			matchingConfirmedWorkers[0] === worker &&
+			healthyPlaybackOwner === worker &&
+			retiredThroughGeneration < normalizedWorkerGeneration &&
+			!_isWorkerGenerationRetired(worker, playbackContext),
+	);
+}
+
 function _isPageAdCycleControlEventCurrent(
 	mediaKey,
 	cycleStartedAt,
 	workerGeneration,
 	eventAt,
+	terminalWorker = null,
 ) {
 	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
 	if (!normalizedMediaKey) return false;
@@ -137,6 +210,15 @@ function _isPageAdCycleControlEventCurrent(
 		Number(control.workerGeneration) || 0,
 	);
 	if (normalizedWorkerGeneration === controlWorkerGeneration) return true;
+	if (
+		_isConfirmedPlaybackOwnerFinishingProvisionalAdCycle(
+			normalizedMediaKey,
+			normalizedCycleStartedAt,
+			terminalWorker,
+		)
+	) {
+		return true;
+	}
 	const playbackOwnerGeneration =
 		_getConfirmedWorkerPlaybackOwnerGeneration(normalizedMediaKey);
 	return Boolean(
@@ -488,6 +570,53 @@ function _runPostAdArtifactCleanup() {
 			_resetPostAdDisplayArtifact(el);
 		}
 	} catch (_e) {}
+}
+
+function _runPostAdPlayerTask(isPausePlay, isReload, options, attempt = 0) {
+	if (typeof _doPlayerTask !== "function") return false;
+	const channel = options?.channel || null;
+	const mediaKey = options?.mediaKey || null;
+	if (
+		(typeof _hasPendingAdResumeIntent === "function" &&
+			!_hasPendingAdResumeIntent(channel, mediaKey)) ||
+		(typeof _hasUserPauseIntent === "function" &&
+			_hasUserPauseIntent(channel, mediaKey)) ||
+		(typeof _shouldSuppressAutomaticPlaybackResume === "function" &&
+			_shouldSuppressAutomaticPlaybackResume(channel, mediaKey))
+	) {
+		return false;
+	}
+	let didRun = false;
+	try {
+		didRun = _doPlayerTask(isPausePlay, isReload, options) === true;
+	} catch (error) {
+		_log(
+			`Post-ad player task failed (${options?.reason || "ad-recovery"}): ${error?.message ?? String(error)}`,
+			"warning",
+		);
+	}
+	if (didRun) return true;
+
+	const retryDelays = [80, 250, 700];
+	if (
+		attempt >= retryDelays.length ||
+		typeof _schedulePlaybackRecoveryTimeout !== "function"
+	) {
+		_log(
+			`Post-ad player task remained unavailable (${options?.reason || "ad-recovery"})`,
+			"warning",
+		);
+		return false;
+	}
+
+	_schedulePlaybackRecoveryTimeout(
+		() => _runPostAdPlayerTask(isPausePlay, isReload, options, attempt + 1),
+		retryDelays[attempt],
+		options?.channel || null,
+		options?.mediaKey || null,
+		Math.max(0, Number(options?.cycleStartedAt) || 0),
+	);
+	return false;
 }
 
 function _schedulePostAdArtifactCleanup(
@@ -5436,6 +5565,7 @@ function _hookWorker() {
 										endedCycleStartedAt,
 										sourceWorkerGeneration,
 										reportedEndedAt,
+										this,
 									)
 								) {
 									_log(
@@ -5469,6 +5599,8 @@ function _hookWorker() {
 									endedCycleStartedAt,
 									sourceWorkerGeneration,
 									endedAt,
+									true,
+									this,
 								);
 								__TTVAB_STATE__.LastAdEndedAt = endedAt;
 								__TTVAB_STATE__.LastAdEndedChannel = endedContext.ChannelName;
@@ -5548,12 +5680,6 @@ function _hookWorker() {
 								) {
 									_resetPlayerBufferMonitorState();
 								}
-								if (
-									!isHoldingBackup &&
-									typeof _clearAdResumeIntent === "function"
-								) {
-									_clearAdResumeIntent();
-								}
 								__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
 								if (!isHoldingBackup) {
 									_clearAdPodProgress(mediaKey);
@@ -5618,6 +5744,7 @@ function _hookWorker() {
 										restoredCycleStartedAt,
 										sourceWorkerGeneration,
 										reportedRestoredAt,
+										this,
 									)
 								) {
 									_log(
@@ -5632,9 +5759,20 @@ function _hookWorker() {
 										restoredCycleStartedAt,
 										sourceWorkerGeneration,
 										reportedRestoredAt,
+										true,
+										this,
 									);
 								}
-								const requiresReload = data.requiresReload === true;
+								const requiresTimelineRestoreReload = Boolean(
+									typeof _consumePinnedBackupTimelineRestore === "function" &&
+										_consumePinnedBackupTimelineRestore(
+											mediaKey,
+											restoredCycleStartedAt,
+										),
+								);
+								const requiresReload = Boolean(
+									data.requiresReload === true || requiresTimelineRestoreReload,
+								);
 								const restoredHandoffId =
 									_normalizeMediaKey(
 										__TTVAB_STATE__.ActiveCodecHandoffMediaKey,
@@ -5725,25 +5863,18 @@ function _hookWorker() {
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
 								}
-								if (typeof _doPlayerTask === "function") {
-									if (requiresReload) {
-										_doPlayerTask(false, true, {
-											reason: "post-ad-native-restore",
-											refreshAccessToken: data.refreshAccessToken !== false,
-											newMediaPlayerInstance: true,
-											channel,
-											mediaKey,
-											cycleStartedAt: restoredCycleStartedAt,
-										});
-									} else {
-										_doPlayerTask(true, false, {
-											reason: "post-ad-native-restore",
-											channel,
-											mediaKey,
-											cycleStartedAt: restoredCycleStartedAt,
-										});
-									}
-								}
+								_runPostAdPlayerTask(!requiresReload, requiresReload, {
+									reason: "post-ad-native-restore",
+									...(requiresReload
+										? {
+												refreshAccessToken: data.refreshAccessToken !== false,
+												newMediaPlayerInstance: true,
+											}
+										: {}),
+									channel,
+									mediaKey,
+									cycleStartedAt: restoredCycleStartedAt,
+								});
 								_schedulePostAdArtifactCleanup(
 									channel,
 									mediaKey,
@@ -5773,12 +5904,13 @@ function _hookWorker() {
 							}
 							_log("Resuming player", "info");
 							if (typeof _doPlayerTask === "function") {
-								_doPlayerTask(true, false, {
+								_runPostAdPlayerTask(true, false, {
 									reason: "ad-recovery",
 									channel:
 										typeof data.channel === "string" ? data.channel : null,
 									mediaKey:
 										typeof data.mediaKey === "string" ? data.mediaKey : null,
+									cycleStartedAt: Math.max(0, Number(data.cycleStartedAt) || 0),
 								});
 							}
 							break;
@@ -5869,7 +6001,10 @@ function _hookWorker() {
 							) {
 								_clearPlaybackRecoveryTimeoutsForContext(data.mediaKey || null);
 							}
-							if (typeof _clearAdResumeIntent === "function") {
+							if (
+								eventIsCodecHandoff &&
+								typeof _clearAdResumeIntent === "function"
+							) {
 								_clearAdResumeIntent();
 							}
 							if (typeof _doPlayerTask === "function") {
@@ -5905,6 +6040,10 @@ function _hookWorker() {
 										},
 									});
 								};
+								if (reloadReason !== "codec-handoff") {
+									_runPostAdPlayerTask(false, true, reloadOptions);
+									break;
+								}
 								const runReload = (attempt = 0) => {
 									if (
 										attempt > 0 &&
@@ -5932,7 +6071,7 @@ function _hookWorker() {
 											"warning",
 										);
 									}
-									if (didReload || reloadReason !== "codec-handoff") return;
+									if (didReload) return;
 									const retryDelays = [50, 180, 500, 1100];
 									if (attempt < retryDelays.length) {
 										setTimeout(

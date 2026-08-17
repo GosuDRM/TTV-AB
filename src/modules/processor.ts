@@ -520,11 +520,22 @@ function _isExactNativeRecoveryCandidateOwned(
 		0,
 		Number(info?.LastCleanNativePlaylistAt) || 0,
 	);
+	const preAdNativeLoaderEpoch = Math.max(
+		0,
+		Number(info?.LastCleanNativeLoaderEpoch) || 0,
+	);
+	const currentLoaderEpoch = Math.max(
+		0,
+		Number(info?.NativeRecoveryLoaderEpoch) || 0,
+	);
 	const ownsExactPreAdNativeUrl = Boolean(
 		exactCandidateUrl &&
 			_getExactPlaylistUrlKey(info?.LastCleanNativeUrl) === exactCandidateUrl &&
 			preAdNativeText &&
 			preAdNativePlaylistAt > 0 &&
+			preAdNativePlaylistAt <= cycleStartedAt &&
+			cycleStartedAt - preAdNativePlaylistAt <= 60000 &&
+			preAdNativeLoaderEpoch === currentLoaderEpoch &&
 			_playlistHasMediaSegments(preAdNativeText) &&
 			!_hasPlaylistAdMarkers(preAdNativeText) &&
 			!_hasExplicitAdMetadata(preAdNativeText) &&
@@ -1941,6 +1952,7 @@ function _createStreamInfo(context) {
 		LastCleanNativeUrl: null,
 		LastCleanNativeCodec: null,
 		LastCleanNativePlaylistAt: 0,
+		LastCleanNativeLoaderEpoch: 0,
 		LastCleanBackupM3U8: null,
 		LastCleanBackupPlayerType: null,
 		LastCleanBackupResolution: null,
@@ -3357,8 +3369,26 @@ async function _processM3U8Core(
 
 	const currentAliases = _getPlaylistUrlAliases(url);
 	const exactRequestUrl = _getExactPlaylistUrlKey(url);
-	const isExactCurrentNativeVariant = Boolean(
+	const isExactCurrentMasterVariant = Boolean(
 		exactRequestUrl && info?.Urls && Object.hasOwn(info.Urls, exactRequestUrl),
+	);
+	const isExactCurrentCycleNativeVariant = Boolean(
+		!isExactCurrentMasterVariant &&
+			(info.IsShowingAd || info.IsHoldingBackupAfterAd) &&
+			_isExactNativeRecoveryCandidateOwned(
+				info,
+				url,
+				true,
+				requestAdContext
+					? requestAdContext.requestStartMediaKey
+					: info?.MediaKey,
+				requestAdContext
+					? requestAdContext.requestStartCycleStartedAt
+					: info?.VisibleAdStartedAt,
+			),
+	);
+	const isExactCurrentNativeVariant = Boolean(
+		isExactCurrentMasterVariant || isExactCurrentCycleNativeVariant,
 	);
 	const isBackupUrl = Boolean(
 		!isExactCurrentNativeVariant &&
@@ -3880,6 +3910,10 @@ async function _processM3U8Core(
 			info.LastCleanNativeCodec =
 				directResolution?.Codecs || res?.Codecs || null;
 			info.LastCleanNativePlaylistAt = Date.now();
+			info.LastCleanNativeLoaderEpoch = Math.max(
+				0,
+				Number(info.NativeRecoveryLoaderEpoch) || 0,
+			);
 		}
 		if (info.IsHoldingBackupAfterAd) {
 			let adEndState = "wait";
@@ -3937,6 +3971,10 @@ async function _processM3U8Core(
 					info.LastCleanNativeCodec =
 						directResolution?.Codecs || res?.Codecs || null;
 					info.LastCleanNativePlaylistAt = restoredAt;
+					info.LastCleanNativeLoaderEpoch = Math.max(
+						0,
+						Number(info.NativeRecoveryLoaderEpoch) || 0,
+					);
 				}
 				_resetStreamAdState(info);
 				__TTVAB_STATE__.CurrentAdChannel = null;

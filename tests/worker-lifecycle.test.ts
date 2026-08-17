@@ -73,6 +73,7 @@ afterEach(() => {
 	vi.useRealTimers();
 	vi.restoreAllMocks();
 	delete g._doPlayerTask;
+	delete g._schedulePlaybackRecoveryTimeout;
 });
 
 function T<T>(name: string): T {
@@ -86,6 +87,31 @@ function recordTestPlayerReload(mediaKey: string, at = Date.now()) {
 	return T<(key: string, reloadedAt: number) => number>(
 		"_recordPlayerReloadAt",
 	)(mediaKey, at);
+}
+
+function installCycleFencedRecoveryScheduler() {
+	const schedule = vi.fn(
+		(
+			callback: () => void,
+			delay: number,
+			_channel: string | null,
+			mediaKey: string | null,
+			cycleStartedAt: number,
+		) =>
+			setTimeout(() => {
+				if (
+					cycleStartedAt > 0 &&
+					!T<(key: string | null, cycle: number) => boolean>(
+						"_isPageLifecycleCycleCurrent",
+					)(mediaKey, cycleStartedAt)
+				) {
+					return;
+				}
+				callback();
+			}, delay),
+	);
+	g._schedulePlaybackRecoveryTimeout = schedule;
+	return schedule;
 }
 
 function confirmPlaybackOwner(
@@ -248,6 +274,88 @@ function installWorkerMessageHarness() {
 		restore();
 		throw error;
 	}
+}
+
+function emitHarnessWorkerPong(worker: {
+	emitMessage: (message: Record<string, unknown>) => void;
+}) {
+	worker.emitMessage({ key: "Pong" });
+}
+
+function confirmHarnessWorkerPlayback(
+	worker: { emitMessage: (message: Record<string, unknown>) => void },
+	playlistUrl = "https://video-weaver.example.ttvnw.net/v1/playlist/native.m3u8",
+) {
+	emitHarnessWorkerPong(worker);
+	worker.emitMessage({
+		key: "PlaybackWorkerObserved",
+		mediaType: "live",
+		channel: "testchannel",
+		mediaKey: "live:testchannel",
+		playlistUrl,
+		codec: "avc1.64002A",
+	});
+}
+
+function setProvisionalTerminalState(lastEndedAt: number) {
+	const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+	Object.assign(state, {
+		PageMediaType: "live",
+		PageChannel: "testchannel",
+		PageVodID: null,
+		PageMediaKey: "live:testchannel",
+		CurrentAdChannel: null,
+		CurrentAdMediaKey: null,
+		PinnedBackupPlayerType: null,
+		PinnedBackupPlayerChannel: null,
+		PinnedBackupPlayerMediaKey: null,
+		ActiveCodecHandoffId: null,
+		ActiveCodecHandoffChannel: null,
+		ActiveCodecHandoffMediaKey: null,
+		AdPodProgressByMediaKey: Object.create(null),
+		StreamInfos: Object.create(null),
+		StreamInfosByUrl: Object.create(null),
+		LastAdEndedAt: lastEndedAt,
+		LastAdEndedChannel: "testchannel",
+		LastAdEndedMediaKey: "live:testchannel",
+		LastAdEndedCycleStartedAt: 90000,
+		AdCycleStaleMs: 120000,
+	});
+	return state;
+}
+
+function emitProvisionalContinuation(
+	worker: { emitMessage: (message: Record<string, unknown>) => void },
+	detectedAt: number,
+) {
+	worker.emitMessage({
+		key: "AdDetected",
+		channel: "testchannel",
+		mediaKey: "live:testchannel",
+		pageChannel: "testchannel",
+		pageMediaKey: "live:testchannel",
+		continued: true,
+		cycleStartedAt: 90000,
+		detectedAt,
+		playlistUrl:
+			"https://video-weaver.example.ttvnw.net/v1/playlist/provisional.m3u8",
+	});
+}
+
+function emitNativePlaybackRestored(
+	worker: { emitMessage: (message: Record<string, unknown>) => void },
+	restoredAt: number,
+) {
+	worker.emitMessage({
+		key: "NativePlaybackRestored",
+		channel: "testchannel",
+		mediaKey: "live:testchannel",
+		pageChannel: "testchannel",
+		pageMediaKey: "live:testchannel",
+		cycleStartedAt: 90000,
+		restoredAt,
+		requiresReload: true,
+	});
 }
 
 describe("worker log ingestion", () => {
@@ -1552,6 +1660,77 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
+	it("rebuilds native playback after an exact pinned-backup timeline realignment", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100001);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PinnedBackupPlayerType: "site",
+			PinnedBackupPlayerChannel: "testchannel",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 90000 },
+			},
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			AdCycleStaleMs: 120000,
+		});
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const previousConsumeTimelineRestore =
+			g._consumePinnedBackupTimelineRestore;
+		let timelineRestorePending = true;
+		const consumeTimelineRestore = vi.fn(() => {
+			const shouldReload = timelineRestorePending;
+			timelineRestorePending = false;
+			return shouldReload;
+		});
+		g._consumePinnedBackupTimelineRestore = consumeTimelineRestore;
+		const harness = installWorkerMessageHarness();
+
+		try {
+			harness.worker.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 100001,
+				requiresReload: true,
+				refreshAccessToken: false,
+			});
+
+			expect(playerTask).toHaveBeenCalledOnce();
+			expect(playerTask).toHaveBeenCalledWith(false, true, {
+				reason: "post-ad-native-restore",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+			});
+			expect(consumeTimelineRestore).toHaveBeenCalledOnce();
+			expect(consumeTimelineRestore).toHaveBeenCalledWith(
+				"live:testchannel",
+				90000,
+			);
+			expect(timelineRestorePending).toBe(false);
+		} finally {
+			harness.restore();
+			g._consumePinnedBackupTimelineRestore = previousConsumeTimelineRestore;
+		}
+	});
+
 	it.each([
 		["an omitted token policy", undefined, true],
 		["an explicit token refresh", true, true],
@@ -1614,7 +1793,434 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
-	it("returns terminal authority to a healthy owner after a provisional claimant crashes", () => {
+	it.each([
+		{
+			name: "reload returns false",
+			requiresReload: true,
+			firstAttempt: () => false,
+			expectedPausePlay: false,
+			expectedReload: true,
+			expectedOptions: {
+				reason: "post-ad-native-restore",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+			},
+		},
+		{
+			name: "pause resume throws",
+			requiresReload: false,
+			firstAttempt: () => {
+				throw new Error("player remount in progress");
+			},
+			expectedPausePlay: true,
+			expectedReload: false,
+			expectedOptions: {
+				reason: "post-ad-native-restore",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+			},
+		},
+	])("retries the native restore action when $name", async ({
+		requiresReload,
+		firstAttempt,
+		expectedPausePlay,
+		expectedReload,
+		expectedOptions,
+	}) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PinnedBackupPlayerType: "autoplay",
+			PinnedBackupPlayerChannel: "testchannel",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 90000 },
+			},
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			AdCycleStaleMs: 120000,
+		});
+		const playerTask = vi
+			.fn()
+			.mockImplementationOnce(firstAttempt)
+			.mockReturnValue(true);
+		g._doPlayerTask = playerTask;
+		const scheduleRecovery = installCycleFencedRecoveryScheduler();
+		const harness = installWorkerMessageHarness();
+
+		try {
+			vi.setSystemTime(100001);
+			harness.worker.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				restoredAt: 100001,
+				requiresReload,
+				refreshAccessToken: false,
+			});
+			expect(playerTask).toHaveBeenCalledOnce();
+			expect(playerTask).toHaveBeenLastCalledWith(
+				expectedPausePlay,
+				expectedReload,
+				expectedOptions,
+			);
+			expect(scheduleRecovery).toHaveBeenCalledWith(
+				expect.any(Function),
+				80,
+				"testchannel",
+				"live:testchannel",
+				90000,
+			);
+
+			await vi.advanceTimersByTimeAsync(80);
+			expect(playerTask).toHaveBeenCalledTimes(2);
+			expect(playerTask).toHaveBeenLastCalledWith(
+				expectedPausePlay,
+				expectedReload,
+				expectedOptions,
+			);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("keeps post-ad recovery armed while an ordinary reload waits for the player", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PinnedBackupPlayerType: "site",
+			PinnedBackupPlayerChannel: "testchannel",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 90000 },
+			},
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			ShouldResumeAfterAd: true,
+			ShouldResumeAfterAdChannel: "testchannel",
+			ShouldResumeAfterAdMediaKey: "live:testchannel",
+			ShouldResumeAfterAdUntil: 115000,
+			AdCycleStaleMs: 120000,
+			_AdRecoveryConsecutiveFailures: 0,
+		});
+		const playerTask = vi
+			.fn()
+			.mockReturnValueOnce(undefined)
+			.mockReturnValue(true);
+		g._doPlayerTask = playerTask;
+		const scheduleRecovery = installCycleFencedRecoveryScheduler();
+		const harness = installWorkerMessageHarness();
+
+		try {
+			vi.setSystemTime(100001);
+			harness.worker.emitMessage({
+				key: "AdEnded",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				endedAt: 100001,
+				willReload: true,
+				holdingBackup: false,
+			});
+			expect(state.ShouldResumeAfterAd).toBe(true);
+
+			harness.worker.emitMessage({
+				key: "ReloadPlayer",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				reason: "post-ad",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: false,
+			});
+			expect(playerTask).toHaveBeenCalledOnce();
+			expect(state.ShouldResumeAfterAd).toBe(true);
+			expect(scheduleRecovery).toHaveBeenCalledWith(
+				expect.any(Function),
+				80,
+				"testchannel",
+				"live:testchannel",
+				90000,
+			);
+
+			await vi.advanceTimersByTimeAsync(80);
+			expect(playerTask).toHaveBeenCalledTimes(2);
+			expect(playerTask).toHaveBeenLastCalledWith(false, true, {
+				reason: "post-ad",
+				handoffId: null,
+				cycleStartedAt: 90000,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: false,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+			});
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(playerTask).toHaveBeenCalledTimes(2);
+			expect(state.ShouldResumeAfterAd).toBe(true);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("retries a rejected post-ad pause resume without dropping playback intent", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PinnedBackupPlayerType: null,
+			PinnedBackupPlayerChannel: null,
+			PinnedBackupPlayerMediaKey: null,
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 190000 },
+			},
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			ShouldResumeAfterAd: true,
+			ShouldResumeAfterAdChannel: "testchannel",
+			ShouldResumeAfterAdMediaKey: "live:testchannel",
+			ShouldResumeAfterAdUntil: 215000,
+			AdCycleStaleMs: 120000,
+			_AdRecoveryConsecutiveFailures: 0,
+		});
+		const playerTask = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+		g._doPlayerTask = playerTask;
+		const scheduleRecovery = installCycleFencedRecoveryScheduler();
+		const harness = installWorkerMessageHarness();
+
+		try {
+			vi.setSystemTime(200001);
+			harness.worker.emitMessage({
+				key: "AdEnded",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 190000,
+				endedAt: 200001,
+				willReload: false,
+				holdingBackup: false,
+			});
+			harness.worker.emitMessage({
+				key: "PauseResumePlayer",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 190000,
+			});
+			expect(playerTask).toHaveBeenCalledOnce();
+			expect(state.ShouldResumeAfterAd).toBe(true);
+			expect(scheduleRecovery).toHaveBeenCalledWith(
+				expect.any(Function),
+				80,
+				"testchannel",
+				"live:testchannel",
+				190000,
+			);
+
+			await vi.advanceTimersByTimeAsync(80);
+			expect(playerTask).toHaveBeenCalledTimes(2);
+			expect(playerTask).toHaveBeenLastCalledWith(true, false, {
+				reason: "ad-recovery",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 190000,
+			});
+			expect(state.ShouldResumeAfterAd).toBe(true);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("does not start a post-ad task after explicit user pause", () => {
+		const previousPlayerTask = g._doPlayerTask;
+		const previousPendingIntent = g._hasPendingAdResumeIntent;
+		const previousUserPause = g._hasUserPauseIntent;
+		const previousSuppress = g._shouldSuppressAutomaticPlaybackResume;
+		const previousSchedule = g._schedulePlaybackRecoveryTimeout;
+		const playerTask = vi.fn(() => true);
+		const schedule = vi.fn();
+		g._doPlayerTask = playerTask;
+		g._hasPendingAdResumeIntent = () => true;
+		g._hasUserPauseIntent = () => true;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._schedulePlaybackRecoveryTimeout = schedule;
+
+		try {
+			expect(
+				T<
+					(
+						isPausePlay: boolean,
+						isReload: boolean,
+						options: Record<string, unknown>,
+					) => boolean
+				>("_runPostAdPlayerTask")(false, true, {
+					reason: "post-ad-native-restore",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 90000,
+				}),
+			).toBe(false);
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(schedule).not.toHaveBeenCalled();
+		} finally {
+			g._doPlayerTask = previousPlayerTask;
+			g._hasPendingAdResumeIntent = previousPendingIntent;
+			g._hasUserPauseIntent = previousUserPause;
+			g._shouldSuppressAutomaticPlaybackResume = previousSuppress;
+			g._schedulePlaybackRecoveryTimeout = previousSchedule;
+		}
+	});
+
+	it.each([
+		"resume intent completed",
+		"user paused",
+	])("drops a queued post-ad retry when %s", async (reason) => {
+		vi.useFakeTimers();
+		const previousPlayerTask = g._doPlayerTask;
+		const previousPendingIntent = g._hasPendingAdResumeIntent;
+		const previousUserPause = g._hasUserPauseIntent;
+		const previousSuppress = g._shouldSuppressAutomaticPlaybackResume;
+		const previousSchedule = g._schedulePlaybackRecoveryTimeout;
+		let pendingIntent = true;
+		let userPaused = false;
+		const playerTask = vi.fn(() => false);
+		g._doPlayerTask = playerTask;
+		g._hasPendingAdResumeIntent = () => pendingIntent;
+		g._hasUserPauseIntent = () => userPaused;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._schedulePlaybackRecoveryTimeout = (
+			callback: () => void,
+			delay: number,
+		) => setTimeout(callback, delay);
+
+		try {
+			T<
+				(
+					isPausePlay: boolean,
+					isReload: boolean,
+					options: Record<string, unknown>,
+				) => boolean
+			>("_runPostAdPlayerTask")(false, true, {
+				reason: "post-ad-native-restore",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+			});
+			expect(playerTask).toHaveBeenCalledOnce();
+
+			if (reason === "user paused") {
+				userPaused = true;
+			} else {
+				pendingIntent = false;
+			}
+			await vi.advanceTimersByTimeAsync(80);
+			expect(playerTask).toHaveBeenCalledOnce();
+		} finally {
+			g._doPlayerTask = previousPlayerTask;
+			g._hasPendingAdResumeIntent = previousPendingIntent;
+			g._hasUserPauseIntent = previousUserPause;
+			g._shouldSuppressAutomaticPlaybackResume = previousSuppress;
+			g._schedulePlaybackRecoveryTimeout = previousSchedule;
+		}
+	});
+
+	it("drops a queued ordinary recovery retry when the ad cycle changes", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			LastAdEndedAt: 300000,
+			LastAdEndedChannel: "testchannel",
+			LastAdEndedMediaKey: "live:testchannel",
+			LastAdEndedCycleStartedAt: 290000,
+			AdPodProgressByMediaKey: Object.create(null),
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+		});
+		const playerTask = vi.fn(() => false);
+		g._doPlayerTask = playerTask;
+		const scheduleRecovery = installCycleFencedRecoveryScheduler();
+		const harness = installWorkerMessageHarness();
+
+		try {
+			harness.worker.emitMessage({
+				key: "ReloadPlayer",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 290000,
+				reason: "post-ad",
+			});
+			expect(playerTask).toHaveBeenCalledOnce();
+			expect(scheduleRecovery).toHaveBeenCalledWith(
+				expect.any(Function),
+				80,
+				"testchannel",
+				"live:testchannel",
+				290000,
+			);
+
+			state.CurrentAdChannel = "testchannel";
+			state.CurrentAdMediaKey = "live:testchannel";
+			state.AdPodProgressByMediaKey = {
+				"live:testchannel": { cycleStartedAt: 300001 },
+			};
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(playerTask).toHaveBeenCalledOnce();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("returns provisional terminal authority to the confirmed playback owner", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
@@ -1645,17 +2251,7 @@ describe("worker recovery lifecycle", () => {
 		const harness = installWorkerMessageHarness();
 		const playbackOwner = harness.worker;
 		const provisionalClaimant = harness.createWorker();
-		Object.assign(playbackOwner as unknown as Record<string, unknown>, {
-			__TTVABFirstPongAt: 100000,
-			__TTVABLastPongAt: 100000,
-			__TTVABPlaybackObservedAtByMediaKey: new Map([
-				["live:testchannel", 100000],
-			]),
-		});
-		(g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>).set(
-			"live:testchannel",
-			1,
-		);
+		confirmHarnessWorkerPlayback(playbackOwner);
 		const controls = g._pageAdCycleControlByMediaKey as Map<
 			string,
 			{
@@ -1687,70 +2283,25 @@ describe("worker recovery lifecycle", () => {
 
 			vi.setSystemTime(104844);
 			playbackOwner.emitMessage({
-				key: "NativePlaybackRestored",
+				key: "AdEnded",
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
 				pageChannel: "testchannel",
 				pageMediaKey: "live:testchannel",
 				cycleStartedAt: 90000,
-				restoredAt: 104844,
-				requiresReload: true,
+				endedAt: 104844,
+				holdingBackup: true,
 			});
 			expect(playerTask).not.toHaveBeenCalled();
 			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
-
-			expect(
-				T<
-					(
-						worker: unknown,
-						context: Record<string, unknown>,
-						message: string,
-						level: string,
-					) => boolean
-				>("_recoverCrashedWorker")(
-					provisionalClaimant,
-					{ MediaType: "live", ChannelName: "testchannel" },
-					"provisional worker crashed",
-					"error",
-				),
-			).toBe(true);
 			expect(controls.get("live:testchannel")).toMatchObject({
 				cycleStartedAt: 90000,
 				workerGeneration: 1,
-				latestEventAt: 104843,
+				latestEventAt: 104844,
 			});
 
-			const recoveryState = T<
-				(context: Record<string, unknown>) => Record<string, unknown>
-			>("_getWorkerRecoveryState")({
-				MediaType: "live",
-				ChannelName: "testchannel",
-				MediaKey: "live:testchannel",
-			});
-			Object.assign(recoveryState, {
-				activeEpoch: 1,
-				failedGeneration: 2,
-				retiredThroughGeneration: 0,
-			});
-			vi.setSystemTime(104846);
+			vi.setSystemTime(104845);
 			provisionalClaimant.emitMessage({
-				key: "AdDetected",
-				channel: "testchannel",
-				mediaKey: "live:testchannel",
-				pageChannel: "testchannel",
-				pageMediaKey: "live:testchannel",
-				continued: true,
-				cycleStartedAt: 90000,
-				detectedAt: 104846,
-				playlistUrl:
-					"https://video-weaver.example.ttvnw.net/v1/playlist/queued.m3u8",
-			});
-			expect(controls.get("live:testchannel")).toMatchObject({
-				workerGeneration: 1,
-				latestEventAt: 104846,
-			});
-
-			playbackOwner.emitMessage({
 				key: "NativePlaybackRestored",
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
@@ -1760,20 +2311,13 @@ describe("worker recovery lifecycle", () => {
 				restoredAt: 104845,
 				requiresReload: true,
 			});
-			provisionalClaimant.emitMessage({
-				key: "NativePlaybackRestored",
-				channel: "testchannel",
-				mediaKey: "live:testchannel",
-				pageChannel: "testchannel",
-				pageMediaKey: "live:testchannel",
-				cycleStartedAt: 90000,
-				restoredAt: 104847,
-				requiresReload: true,
-			});
 			expect(playerTask).not.toHaveBeenCalled();
-			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 1,
+				latestEventAt: 104844,
+			});
 
-			vi.setSystemTime(104848);
+			vi.setSystemTime(104846);
 			playbackOwner.emitMessage({
 				key: "NativePlaybackRestored",
 				channel: "testchannel",
@@ -1781,11 +2325,193 @@ describe("worker recovery lifecycle", () => {
 				pageChannel: "testchannel",
 				pageMediaKey: "live:testchannel",
 				cycleStartedAt: 90000,
-				restoredAt: 104848,
+				restoredAt: 104846,
 				requiresReload: true,
 			});
 			expect(playerTask).toHaveBeenCalledOnce();
 			expect(state.CurrentAdMediaKey).toBeNull();
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 1,
+				latestEventAt: 104846,
+			});
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("rejects terminal reclaim from a confirmed owner with stale playback evidence", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const state = setProvisionalTerminalState(116000);
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		const playbackOwner = harness.worker;
+		const provisionalClaimant = harness.createWorker();
+		confirmHarnessWorkerPlayback(playbackOwner);
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{ workerGeneration: number; latestEventAt: number }
+		>;
+
+		try {
+			vi.setSystemTime(116000);
+			emitHarnessWorkerPong(playbackOwner);
+			vi.setSystemTime(116001);
+			emitProvisionalContinuation(provisionalClaimant, 116001);
+			vi.setSystemTime(116002);
+			emitNativePlaybackRestored(playbackOwner, 116002);
+
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 2,
+				latestEventAt: 116001,
+			});
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("rejects terminal reclaim from a crashed confirmed owner", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		const state = setProvisionalTerminalState(200000);
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		const playbackOwner = harness.worker;
+		const provisionalClaimant = harness.createWorker();
+		confirmHarnessWorkerPlayback(playbackOwner);
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{ workerGeneration: number; latestEventAt: number }
+		>;
+
+		try {
+			vi.setSystemTime(204843);
+			emitProvisionalContinuation(provisionalClaimant, 204843);
+			(playbackOwner as unknown as Record<string, unknown>).__TTVABCrashed =
+				true;
+			vi.setSystemTime(204844);
+			emitNativePlaybackRestored(playbackOwner, 204844);
+
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 2,
+				latestEventAt: 204843,
+			});
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("rejects a tracked lookalike with the confirmed owner generation", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const state = setProvisionalTerminalState(300000);
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		const playbackOwner = harness.worker;
+		const provisionalClaimant = harness.createWorker();
+		const lookalike = harness.createWorker();
+		confirmHarnessWorkerPlayback(playbackOwner);
+		(lookalike as unknown as Record<string, unknown>).__TTVABGeneration = 1;
+		confirmHarnessWorkerPlayback(
+			lookalike,
+			"https://video-weaver.example.ttvnw.net/v1/playlist/lookalike.m3u8",
+		);
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{ workerGeneration: number; latestEventAt: number }
+		>;
+
+		try {
+			vi.setSystemTime(304843);
+			emitProvisionalContinuation(provisionalClaimant, 304843);
+			vi.setSystemTime(304844);
+			emitNativePlaybackRestored(lookalike, 304844);
+
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 2,
+				latestEventAt: 304843,
+			});
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("rejects terminal reclaim from an explicitly retired confirmed owner", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(400000);
+		const state = setProvisionalTerminalState(400000);
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		const playbackOwner = harness.worker;
+		const provisionalClaimant = harness.createWorker();
+		confirmHarnessWorkerPlayback(playbackOwner);
+		const recoveryState = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_getWorkerRecoveryState")({ MediaKey: "live:testchannel" });
+		recoveryState.retiredThroughGeneration = 1;
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{ workerGeneration: number; latestEventAt: number }
+		>;
+
+		try {
+			vi.setSystemTime(404843);
+			emitProvisionalContinuation(provisionalClaimant, 404843);
+			vi.setSystemTime(404844);
+			emitNativePlaybackRestored(playbackOwner, 404844);
+
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 2,
+				latestEventAt: 404843,
+			});
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("does not supersede a newer confirmed playback owner", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(500000);
+		const state = setProvisionalTerminalState(500000);
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		const playbackOwner = harness.worker;
+		const provisionalClaimant = harness.createWorker();
+		confirmHarnessWorkerPlayback(playbackOwner);
+		const controls = g._pageAdCycleControlByMediaKey as Map<
+			string,
+			{ workerGeneration: number; latestEventAt: number }
+		>;
+
+		try {
+			vi.setSystemTime(504843);
+			emitProvisionalContinuation(provisionalClaimant, 504843);
+			confirmHarnessWorkerPlayback(
+				provisionalClaimant,
+				"https://video-weaver.example.ttvnw.net/v1/playlist/new-owner.m3u8",
+			);
+			vi.setSystemTime(504844);
+			emitNativePlaybackRestored(playbackOwner, 504844);
+
+			expect(playerTask).not.toHaveBeenCalled();
+			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+			expect(controls.get("live:testchannel")).toMatchObject({
+				workerGeneration: 2,
+				latestEventAt: 504843,
+			});
 		} finally {
 			harness.restore();
 		}

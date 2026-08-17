@@ -196,6 +196,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		LastCleanNativeUrl: null,
 		LastCleanNativeCodec: null,
 		LastCleanNativePlaylistAt: 0,
+		LastCleanNativeLoaderEpoch: 0,
 		BackupEncodingsM3U8Cache: Object.create(null),
 		BackupVariantUrls: new Set<string>(),
 		EnhancedVariantUrls: new Set<string>(),
@@ -8679,6 +8680,32 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		info: Record<string, unknown>,
 		cycleStartedAt = Math.max(1, Number(info.VisibleAdStartedAt) || Date.now()),
 	) => activateExactAdCycle(info, cycleStartedAt);
+	const makeNativeAliasCollisionInfo = (
+		nativeUrl: string,
+		backupUrl: string,
+		cycleStartedAt: number,
+		overrides: Record<string, unknown> = {},
+	) => {
+		const aliases = T<(url: string) => string[]>("_getPlaylistUrlAliases")(
+			backupUrl,
+		);
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: cycleStartedAt,
+			Urls: { [new URL(nativeUrl).pathname]: avcSource },
+			ResolutionList: [avcSource],
+			EnhancedVariantUrls: new Set(),
+			EnhancedDecoderCodecFamily: null,
+			EnhancedDecoderCodec: null,
+			ModifiedM3U8: null,
+			BackupVariantUrls: new Set(aliases),
+			LastAdPodProgressAt: 1,
+			...overrides,
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info, cycleStartedAt);
+		return { aliases, info };
+	};
 	const activateHandoffContext = (
 		info: Record<string, unknown>,
 		handoffId: string,
@@ -9306,6 +9333,173 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 			expect(info.SustainedNativeResolution).toBe(hevcSource);
 			expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
 			expect(info.EnhancedDecoderCodec).toBe("hev1.1.6.l153.b0");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("lets the exact current-cycle pre-ad native URL outrank a stored same-path backup alias", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const cycleStartedAt = 250000;
+		const nativeUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=player";
+		const backupUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
+		const { aliases, info } = makeNativeAliasCollisionInfo(
+			nativeUrl,
+			backupUrl,
+			cycleStartedAt,
+			{
+				LastCleanNativeM3U8: makePlaylist(700, 3),
+				LastCleanNativeUrl: nativeUrl,
+				LastCleanNativeCodec: avcSource.Codecs,
+				LastCleanNativePlaylistAt: cycleStartedAt - 1000,
+			},
+		);
+
+		try {
+			await process()(nativeUrl, allAdNative, fetchStub);
+
+			expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set([nativeUrl]));
+			expect(info.NativeRecoveryAdMediaKey).toBe("live:testchannel");
+			expect(info.NativeRecoveryAdStartedAt).toBe(cycleStartedAt);
+			expect(info.LastAdPodProgressAt).toBe(300000);
+			expect(info.BackupVariantUrls).toEqual(new Set(aliases));
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		["stale pre-ad snapshot", 60001, 0, 0],
+		["prior loader snapshot", 1000, 0, 1],
+		["post-cycle snapshot", -1, 0, 0],
+	] as const)("keeps a %s classified as backup", async (_label, snapshotAge, snapshotLoaderEpoch, currentLoaderEpoch) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const cycleStartedAt = 250000;
+		const nativeUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=player";
+		const backupUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
+		const { aliases, info } = makeNativeAliasCollisionInfo(
+			nativeUrl,
+			backupUrl,
+			cycleStartedAt,
+			{
+				LastCleanNativeM3U8: makePlaylist(700, 3),
+				LastCleanNativeUrl: nativeUrl,
+				LastCleanNativeCodec: avcSource.Codecs,
+				LastCleanNativePlaylistAt: cycleStartedAt - snapshotAge,
+				LastCleanNativeLoaderEpoch: snapshotLoaderEpoch,
+				NativeRecoveryLoaderEpoch: currentLoaderEpoch,
+			},
+		);
+
+		try {
+			const output = await process()(nativeUrl, allAdNative, fetchStub);
+
+			expect(info.LastAdPodProgressAt).toBe(1);
+			expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set());
+			expect(info.BackupVariantUrls).toEqual(new Set(aliases));
+			expect(output).not.toContain("stitched-ad-100.ts");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("lets an exact current-cycle native recovery URL outrank a stored same-path backup alias", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(400000);
+		const cycleStartedAt = 350000;
+		const nativeUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=player";
+		const backupUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
+		const { aliases, info } = makeNativeAliasCollisionInfo(
+			nativeUrl,
+			backupUrl,
+			cycleStartedAt,
+			{
+				NativeRecoveryAdPlaylistUrls: new Set([nativeUrl]),
+				NativeRecoveryAdMediaKey: "live:testchannel",
+				NativeRecoveryAdStartedAt: cycleStartedAt,
+			},
+		);
+
+		try {
+			await process()(nativeUrl, allAdNative, fetchStub);
+
+			expect(info.LastAdPodProgressAt).toBe(400000);
+			expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set([nativeUrl]));
+			expect(info.BackupVariantUrls).toEqual(new Set(aliases));
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps a stale-cycle native recovery URL classified as backup", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(500000);
+		const cycleStartedAt = 450000;
+		const staleCycleStartedAt = cycleStartedAt - 10000;
+		const nativeUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=player";
+		const backupUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
+		const { aliases, info } = makeNativeAliasCollisionInfo(
+			nativeUrl,
+			backupUrl,
+			cycleStartedAt,
+			{
+				NativeRecoveryAdPlaylistUrls: new Set([nativeUrl]),
+				NativeRecoveryAdMediaKey: "live:testchannel",
+				NativeRecoveryAdStartedAt: staleCycleStartedAt,
+			},
+		);
+
+		try {
+			await process()(nativeUrl, allAdNative, fetchStub);
+
+			expect(info.LastAdPodProgressAt).toBe(1);
+			expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set([nativeUrl]));
+			expect(info.NativeRecoveryAdStartedAt).toBe(staleCycleStartedAt);
+			expect(info.BackupVariantUrls).toEqual(new Set(aliases));
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps a different-token same-path URL classified as backup despite current-cycle native ownership", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(600000);
+		const cycleStartedAt = 550000;
+		const nativeUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=player";
+		const backupUrl =
+			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
+		const { aliases, info } = makeNativeAliasCollisionInfo(
+			nativeUrl,
+			backupUrl,
+			cycleStartedAt,
+			{
+				LastCleanNativeM3U8: makePlaylist(700, 3),
+				LastCleanNativeUrl: nativeUrl,
+				LastCleanNativeCodec: avcSource.Codecs,
+				LastCleanNativePlaylistAt: cycleStartedAt - 1000,
+				NativeRecoveryAdPlaylistUrls: new Set([nativeUrl]),
+				NativeRecoveryAdMediaKey: "live:testchannel",
+				NativeRecoveryAdStartedAt: cycleStartedAt,
+			},
+		);
+
+		try {
+			await process()(backupUrl, allAdNative, fetchStub);
+
+			expect(info.LastAdPodProgressAt).toBe(1);
+			expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set([nativeUrl]));
+			expect(info.BackupVariantUrls).toEqual(new Set(aliases));
 		} finally {
 			vi.useRealTimers();
 		}
