@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.1] - 2026-08-21
+
+- Fixed normal stream quality sometimes staying on the low-quality fallback when an ad ended while the tab was hidden or suspended.
+- Returning to the stream now starts one normal-quality source check while the clean fallback continues refreshing, so quality can recover without draining the buffer or exposing an ad.
+- Exact native recovery now survives long Picture-in-Picture sessions and delayed hidden-tab player remounts, while explicit pauses, newer ad cycles, stale streams, and the strict recovery limit still stop it.
+- Automatic recovery keeps the viewer's saved quality instead of replacing it with a temporary low rung.
+
 ## [16.2.0] - 2026-08-21
 
 - Fixed channel-open ad breaks treating an initial 360p sample as established native quality, which could leave playback at 360p or cause buffering during a later break ([#61](https://github.com/GosuDRM/TTV-AB/issues/61), [#62](https://github.com/GosuDRM/TTV-AB/issues/62)).
