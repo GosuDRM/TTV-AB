@@ -393,4 +393,92 @@ describe("popup log collection lifecycle", () => {
 		expect(createObjectURL).toHaveBeenCalledTimes(1);
 		expect(revokeObjectURL).toHaveBeenCalledWith("blob:test");
 	});
+
+	it("requests a direct text-file destination before log collection on Chromium", async () => {
+		const handle = { createWritable: vi.fn() };
+		const picker = vi.fn(async () => handle);
+		Object.defineProperty(window, "showSaveFilePicker", {
+			configurable: true,
+			value: picker,
+		});
+		try {
+			const request = T<() => Promise<typeof handle> | null>(
+				"_requestLogExportFile",
+			);
+			const destination = request();
+
+			expect(picker).toHaveBeenCalledTimes(1);
+			expect(picker).toHaveBeenCalledWith(
+				expect.objectContaining({
+					id: "ttv-ab-log-export",
+					startIn: "downloads",
+					suggestedName: expect.stringMatching(/^ttv-ab-logs-.*\.txt$/),
+				}),
+			);
+			await expect(destination).resolves.toBe(handle);
+		} finally {
+			delete (window as unknown as Record<string, unknown>).showSaveFilePicker;
+		}
+	});
+
+	it("writes and closes a picked file before reporting success", async () => {
+		const order: string[] = [];
+		const writable = {
+			write: vi.fn(async () => {
+				order.push("write");
+			}),
+			close: vi.fn(async () => {
+				order.push("close");
+			}),
+			abort: vi.fn(async () => {
+				order.push("abort");
+			}),
+		};
+		const write = T<
+			(
+				handle: { createWritable: () => Promise<typeof writable> },
+				text: string,
+			) => Promise<boolean>
+		>("_writeLogExportFile");
+
+		await expect(
+			write({ createWritable: async () => writable }, "diagnostics"),
+		).resolves.toBe(true);
+		expect(order).toEqual(["write", "close"]);
+		expect(writable.write).toHaveBeenCalledWith("diagnostics");
+		expect(writable.abort).not.toHaveBeenCalled();
+	});
+
+	it("aborts a picked-file write after a failure", async () => {
+		const failure = new Error("disk full");
+		const writable = {
+			write: vi.fn(async () => {
+				throw failure;
+			}),
+			close: vi.fn(async () => {}),
+			abort: vi.fn(async () => {}),
+		};
+		const write = T<
+			(
+				handle: { createWritable: () => Promise<typeof writable> },
+				text: string,
+			) => Promise<boolean>
+		>("_writeLogExportFile");
+
+		await expect(
+			write({ createWritable: async () => writable }, "diagnostics"),
+		).rejects.toBe(failure);
+		expect(writable.abort).toHaveBeenCalledTimes(1);
+		expect(writable.close).not.toHaveBeenCalled();
+	});
+
+	it("treats picker cancellation separately from download failures", () => {
+		const isCancellation = T<(error: unknown) => boolean>(
+			"_isLogExportCancellation",
+		);
+		expect(isCancellation(new DOMException("cancelled", "AbortError"))).toBe(
+			true,
+		);
+		expect(isCancellation(new Error("download failed"))).toBe(false);
+	});
 });

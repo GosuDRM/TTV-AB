@@ -490,6 +490,7 @@ function _recordSustainedNativeResolution(info, url) {
 	info.SustainedNativeResolution = resolution;
 	info.SustainedNativeResolutionAt = now;
 	if (resolution.Resolution && resolution.Resolution !== prevResolution) {
+		info.SustainedNativeResolutionStartedAt = now;
 		_log(
 			`[Trace] Sustained native quality: ${prevResolution || "none"} -> ${resolution.Resolution}`,
 			"info",
@@ -1948,6 +1949,7 @@ function _createStreamInfo(context) {
 		ActiveBackupResolution: null,
 		SustainedNativeResolution: null,
 		SustainedNativeResolutionAt: 0,
+		SustainedNativeResolutionStartedAt: 0,
 		LastCleanNativeM3U8: null,
 		LastCleanNativeUrl: null,
 		LastCleanNativeCodec: null,
@@ -3819,18 +3821,8 @@ async function _processM3U8Core(
 	}
 	const backupRequiresNativeRestoreReload = (
 		backupPlayerType,
-		backupResolution,
+		_backupResolution,
 	) => {
-		const [, backupH] = String(backupResolution || "0x0")
-			.split("x")
-			.map(Number);
-		const [, nativeH] = String(
-			info.SustainedNativeResolution?.Resolution || "0x0",
-		)
-			.split("x")
-			.map(Number);
-		const backupHeight = Number.isFinite(backupH) ? backupH : 0;
-		const nativeHeight = Number.isFinite(nativeH) ? nativeH : 0;
 		const enhancedDecoderCodecFamily =
 			_getVideoCodecFamily(info.EnhancedDecoderCodecFamily) ||
 			_getVideoCodecFamily(info.SustainedNativeResolution?.Codecs);
@@ -3849,14 +3841,8 @@ async function _processM3U8Core(
 					enhancedDecoderCodecIdentity &&
 					backupCodecIdentity === enhancedDecoderCodecIdentity),
 		);
-		if (enhancedDecoderCodecFamily && !backupMatchesNativeCodec) return true;
-		return Boolean(
-			backupPlayerType === "autoplay" &&
-				(!backupMatchesNativeCodec ||
-					backupHeight <= 0 ||
-					nativeHeight <= 0 ||
-					backupHeight < nativeHeight),
-		);
+		if (backupPlayerType === "autoplay") return true;
+		return Boolean(enhancedDecoderCodecFamily && !backupMatchesNativeCodec);
 	};
 	const enterSilentBackupHold = (
 		enteredAt,
@@ -5118,6 +5104,26 @@ function _shouldHoldBridgeInsteadOfRotating(info, targetRes) {
 	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
 	if (!_shouldBridgeHeldAutoplayDuringSearch(info)) return false;
 	if ((Number(info?._BackupPinFlipCount) || 0) >= 2) return true;
+	const preferredQualityGroup =
+		typeof __TTVAB_STATE__?.PreferredQualityGroup === "string"
+			? __TTVAB_STATE__.PreferredQualityGroup.trim().toLowerCase()
+			: "";
+	const hasExplicitQuality = Boolean(
+		preferredQualityGroup && preferredQualityGroup !== "auto",
+	);
+	const nativeQualityStartedAt = Math.max(
+		0,
+		Number(info?.SustainedNativeResolutionStartedAt) || 0,
+	);
+	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	if (
+		!hasExplicitQuality &&
+		(!nativeQualityStartedAt ||
+			!cycleStartedAt ||
+			cycleStartedAt - nativeQualityStartedAt < 10000)
+	) {
+		return false;
+	}
 	const [, targetHeight] = String(targetRes?.Resolution || "0x0")
 		.split("x")
 		.map(Number);
@@ -5345,6 +5351,10 @@ async function _prepareFatalMediaRecovery(info, realFetch, request) {
 	const currentAdMediaKey = _normalizeMediaKey(
 		__TTVAB_STATE__?.CurrentAdMediaKey,
 	);
+	const requiresCodecHandoff = Boolean(
+		typeof info?.ModifiedM3U8 === "string" && info.ModifiedM3U8,
+	);
+	const recoveryMaster = requiresCodecHandoff ? info.ModifiedM3U8 : null;
 	if (
 		!recoveryId ||
 		!requestedAt ||
@@ -5357,8 +5367,6 @@ async function _prepareFatalMediaRecovery(info, realFetch, request) {
 		currentAdMediaKey !== mediaKey ||
 		!_isCodecHandoffCycleCurrent(mediaKey, requestedCycleStartedAt, info) ||
 		(!info?.IsShowingAd && !info?.IsHoldingBackupAfterAd) ||
-		typeof info?.ModifiedM3U8 !== "string" ||
-		!info.ModifiedM3U8 ||
 		typeof realFetch !== "function"
 	) {
 		return false;
@@ -5372,8 +5380,7 @@ async function _prepareFatalMediaRecovery(info, realFetch, request) {
 				_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) === mediaKey &&
 				_isCodecHandoffCycleCurrent(mediaKey, requestedCycleStartedAt, info) &&
 				(info.IsShowingAd || info.IsHoldingBackupAfterAd) &&
-				typeof info.ModifiedM3U8 === "string" &&
-				info.ModifiedM3U8,
+				(!requiresCodecHandoff || info.ModifiedM3U8 === recoveryMaster),
 		);
 	};
 
@@ -5439,10 +5446,12 @@ async function _prepareFatalMediaRecovery(info, realFetch, request) {
 		return false;
 	}
 
-	info._CodecHandoffPendingId = recoveryId;
-	info._CodecHandoffAcknowledgedId = null;
-	info._CodecHandoffFailedId = null;
-	info.IsUsingModifiedM3U8 = true;
+	if (requiresCodecHandoff) {
+		info._CodecHandoffPendingId = recoveryId;
+		info._CodecHandoffAcknowledgedId = null;
+		info._CodecHandoffFailedId = null;
+		info.IsUsingModifiedM3U8 = true;
+	}
 	if (typeof self !== "undefined" && self.postMessage) {
 		_postWorkerBridgeMessage(
 			self,
@@ -5453,6 +5462,7 @@ async function _prepareFatalMediaRecovery(info, realFetch, request) {
 				mediaKey,
 				cycleStartedAt: requestedCycleStartedAt,
 				verifiedAt,
+				requiresCodecHandoff,
 				backupPlayerType:
 					info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType || null,
 			}),
@@ -5744,22 +5754,6 @@ async function _searchBackupStream(
 				"[Trace] LQ autoplay prioritized first for fast clean first-frame (seamless LQ→HQ hold)",
 				"info",
 			);
-		} else if (
-			__TTVAB_STATE__.DisableAutoplayBackup &&
-			(__TTVAB_STATE__?.BackupPlayerTypes || []).includes("autoplay") &&
-			!passPlayerTypes.includes("autoplay")
-		) {
-			passPlayerTypes.push("autoplay");
-			if (!info._LoggedWhitelistByType) {
-				info._LoggedWhitelistByType = new Set();
-			}
-			if (!info._LoggedWhitelistByType.has("lq-emergency")) {
-				info._LoggedWhitelistByType.add("lq-emergency");
-				_log(
-					"[Trace] LQ autoplay appended as emergency last-resort after source backups",
-					"info",
-				);
-			}
 		}
 		if (codecPass > 0) {
 			_log(
@@ -6143,8 +6137,16 @@ async function _searchBackupStream(
 													allowSelectedPromotion: false,
 													reason: "policy-unavailable",
 												};
+									const autoplayWasDisabledDuringSearch = Boolean(
+										pt === "autoplay" &&
+											__TTVAB_STATE__.DisableAutoplayBackup &&
+											info.ActiveBackupPlayerType !== "autoplay",
+									);
 
-									if (promotionPolicy.allowSelectedPromotion) {
+									if (
+										promotionPolicy.allowSelectedPromotion &&
+										!autoplayWasDisabledDuringSearch
+									) {
 										const probation = info._BackupProbation;
 										const requiredCleanHolds =
 											(Number(info._BackupPinFlipCount) || 0) > 0 ? 2 : 1;

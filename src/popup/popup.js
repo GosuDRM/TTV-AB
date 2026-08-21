@@ -1,6 +1,6 @@
 // TTV AB - Popup Script
 const _LOG_QUERY_TABS_TIMEOUT_MS = 2500;
-const _LOG_COLLECT_TAB_TIMEOUT_MS = 2500;
+const _LOG_COLLECT_TAB_TIMEOUT_MS = 8000;
 const _LOG_EXPORT_MAX_TABS = 16;
 const _LOG_EXPORT_BATCH_SIZE = 4;
 const _LOG_EXPORT_MAX_CHARACTERS = 2 * 1024 * 1024;
@@ -333,19 +333,59 @@ async function _buildLogExport(isCancelled = () => false) {
     }
     return parts.join("\n").slice(0, _LOG_EXPORT_MAX_CHARACTERS);
 }
-function _downloadLogExport(text) {
+function _getLogExportFilename() {
     const stamp = new Date()
         .toISOString()
         .replace(/[:.]/g, "-")
         .replace("T", "_")
         .slice(0, 19);
+    return `ttv-ab-logs-${stamp}.txt`;
+}
+function _requestLogExportFile() {
+    const picker = window.showSaveFilePicker;
+    if (typeof picker !== "function")
+        return null;
+    return picker.call(window, {
+        id: "ttv-ab-log-export",
+        suggestedName: _getLogExportFilename(),
+        startIn: "downloads",
+        types: [
+            {
+                description: "Text file",
+                accept: { "text/plain": [".txt"] },
+            },
+        ],
+    });
+}
+async function _writeLogExportFile(handle, text) {
+    const writable = await handle.createWritable();
+    try {
+        await writable.write(text);
+        await writable.close();
+        return true;
+    }
+    catch (error) {
+        try {
+            await writable.abort?.();
+        }
+        catch { }
+        throw error;
+    }
+}
+function _isLogExportCancellation(error) {
+    return Boolean(error &&
+        typeof error === "object" &&
+        "name" in error &&
+        error.name === "AbortError");
+}
+function _downloadLogExport(text) {
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     let clicked = false;
     try {
         anchor.href = url;
-        anchor.download = `ttv-ab-logs-${stamp}.txt`;
+        anchor.download = _getLogExportFilename();
         document.body.appendChild(anchor);
         anchor.click();
         clicked = true;
@@ -960,17 +1000,36 @@ document.addEventListener("DOMContentLoaded", () => {
         const generation = ++logExportGeneration;
         logDialogGenerate.disabled = true;
         logDialogSkip.disabled = true;
-        _buildLogExport(() => generation !== logExportGeneration)
-            .then((text) => {
+        let destination;
+        try {
+            destination = _requestLogExportFile();
+        }
+        catch (error) {
+            destination = Promise.reject(error);
+        }
+        Promise.resolve(destination)
+            .then(async (handle) => {
+            const text = await _buildLogExport(() => generation !== logExportGeneration);
             if (generation !== logExportGeneration)
                 return;
-            _downloadLogExport(text);
+            if (handle) {
+                await _writeLogExportFile(handle, text);
+            }
+            else {
+                _downloadLogExport(text);
+            }
+            if (generation !== logExportGeneration)
+                return;
             hideLogDialog();
             openIssuesPage();
         })
             .catch((error) => {
             if (generation !== logExportGeneration)
                 return;
+            if (_isLogExportCancellation(error)) {
+                logDialogOverlay.hidden = false;
+                return;
+            }
             console.error("[TTV AB] Log export failed:", error);
             logDialogOverlay.hidden = false;
         })

@@ -146,6 +146,9 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		LastSessionNeutralBackupProbeCycleStartedAt: 0,
 		ActiveBackupPlayerType: null,
 		ActiveBackupResolution: null,
+		SustainedNativeResolution: null,
+		SustainedNativeResolutionAt: 0,
+		SustainedNativeResolutionStartedAt: 0,
 		IsMidroll: false,
 		IsStrippingAdSegments: false,
 		CsaiOnlyThisBreak: false,
@@ -508,6 +511,22 @@ describe("_recordSustainedNativeResolution (bandwidth high-water mark)", () => {
 		const info = makeInfo({ Urls: urlsFor(url360, r360) });
 		record()(info, url360);
 		expect(info.SustainedNativeResolution).toEqual(r360);
+		expect(info.SustainedNativeResolutionStartedAt).toBeGreaterThan(0);
+	});
+
+	it("keeps the first-seen time while the same native quality becomes established", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(100000);
+		try {
+			const info = makeInfo({ Urls: urlsFor(url360, r360) });
+			record()(info, url360);
+			nowSpy.mockReturnValue(120000);
+			record()(info, url360);
+
+			expect(info.SustainedNativeResolutionStartedAt).toBe(100000);
+			expect(info.SustainedNativeResolutionAt).toBe(120000);
+		} finally {
+			nowSpy.mockRestore();
+		}
 	});
 
 	it("climbs immediately when the player moves to a higher variant", () => {
@@ -2001,7 +2020,7 @@ describe("_findBackupStream fresh-session probation", () => {
 		}
 	});
 
-	it("skips the HQ probe entirely when the bridge already serves the target quality", async () => {
+	it("still probes HQ when 360p was only observed at cold startup", async () => {
 		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
 		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
 		try {
@@ -2011,6 +2030,28 @@ describe("_findBackupStream fresh-session probation", () => {
 				Resolution: "640x360",
 				FrameRate: 30,
 			});
+			expect(result.type).toBe("autoplay");
+			expect(result.m3u8).toBe(bridgePlaylist);
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info._BackupProbation).toMatchObject({ type: "site" });
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("skips HQ probing when 360p was established before the ad", async () => {
+		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			info.SustainedNativeResolutionStartedAt = 970_000;
+			const result = await findBackupStream()(info, realFetch, 0, {
+				Name: "360p",
+				Resolution: "640x360",
+				FrameRate: 30,
+			});
+
 			expect(result.type).toBe("autoplay");
 			expect(result.m3u8).toBe(bridgePlaylist);
 			expect(tokenCalls).toEqual([]);
@@ -2162,6 +2203,7 @@ describe("_shouldHoldBridgeInsteadOfRotating", () => {
 		return makeInfo({
 			IsShowingAd: true,
 			VisibleAdStartedAt: 991_000,
+			SustainedNativeResolutionStartedAt: 970_000,
 			ActiveBackupPlayerType: "autoplay",
 			LastCleanBackupPlayerType: "autoplay",
 			LastCleanBackupM3U8: "#EXTM3U",
@@ -2177,6 +2219,32 @@ describe("_shouldHoldBridgeInsteadOfRotating", () => {
 			const info = makeBridgeInfo();
 			expect(guard()(info, { Resolution: "640x360" })).toBe(true);
 		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("does not trust a startup quality sample recorded just before the ad", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeBridgeInfo({
+				SustainedNativeResolutionStartedAt: 990_999,
+			});
+			expect(guard()(info, { Resolution: "640x360" })).toBe(false);
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("honors an explicit 360p preference without waiting for a baseline", () => {
+		const state = getState();
+		const previousQuality = state.PreferredQualityGroup;
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		state.PreferredQualityGroup = "360p";
+		try {
+			const info = makeBridgeInfo({ SustainedNativeResolutionStartedAt: 0 });
+			expect(guard()(info, { Resolution: "640x360" })).toBe(true);
+		} finally {
+			state.PreferredQualityGroup = previousQuality;
 			nowSpy.mockRestore();
 		}
 	});
@@ -3445,7 +3513,7 @@ describe("_findBackupStream fallback policy", () => {
 		}
 	});
 
-	it("tries autoplay only as an emergency candidate when source backups are ad-marked", async () => {
+	it("never acquires autoplay when Low Quality Fallback is disabled", async () => {
 		const state = getState();
 		const previousTypes = state.BackupPlayerTypes;
 		const previousDisable = state.DisableAutoplayBackup;
@@ -3488,9 +3556,8 @@ describe("_findBackupStream fallback policy", () => {
 				currentResolution,
 			);
 
-			expect(tokenCalls).toEqual(["embed", "autoplay"]);
-			expect(result.type).toBe("autoplay");
-			expect(result.m3u8).toBe(cleanPlaylist);
+			expect(tokenCalls).toEqual(["embed"]);
+			expect(result).toEqual({ type: null, m3u8: null });
 		} finally {
 			state.BackupPlayerTypes = previousTypes;
 			state.DisableAutoplayBackup = previousDisable;
@@ -3504,6 +3571,59 @@ describe("_findBackupStream fallback policy", () => {
 			} else {
 				g._extractPlaybackAccessToken = previousExtract;
 			}
+		}
+	});
+
+	it("does not promote autoplay when the toggle is disabled during its request", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["autoplay", "embed"];
+		state.DisableAutoplayBackup = false;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			if (activePlayerType === "autoplay") {
+				state.DisableAutoplayBackup = true;
+			}
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo(),
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					return new Response(cleanPlaylist, { status: 200 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["autoplay", "embed"]);
+			expect(result.type).toBe("embed");
+			expect(result.m3u8).toBe(cleanPlaylist);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
 		}
 	});
 
@@ -4902,7 +5022,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		}
 	});
 
-	it("skips the post-hold reload when the autoplay backup already held native quality", async () => {
+	it("reloads after a same-resolution autoplay hold because its timeline is independent", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			ConsecutiveFailedNativeProbes: 6,
 			ActiveBackupPlayerType: "autoplay",
@@ -4917,7 +5037,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		);
 
 		expect(info.IsHoldingBackupAfterAd).toBe(true);
-		expect(info.HevcReloadPendingAfterHold).toBe(false);
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
 	});
 
 	it("still reloads a same-resolution autoplay hold when the backup codec is unknown", async () => {
@@ -4942,7 +5062,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(info.HevcReloadPendingAfterHold).toBe(true);
 	});
 
-	it("keeps a same-family enhanced backup reload-free at native quality", async () => {
+	it("reloads a same-family enhanced autoplay hold before native playback", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			ConsecutiveFailedNativeProbes: 6,
 			ActiveBackupPlayerType: "autoplay",
@@ -4965,7 +5085,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		);
 
 		expect(info.IsHoldingBackupAfterAd).toBe(true);
-		expect(info.HevcReloadPendingAfterHold).toBe(false);
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
 	});
 
 	it("still reloads after the hold when the autoplay backup was below native quality", async () => {
@@ -11000,6 +11120,42 @@ describe("_prepareFatalMediaRecovery", () => {
 			key: "FatalMediaRecoveryReady",
 			recoveryId: request.recoveryId,
 			mediaKey: "live:testchannel",
+		});
+	});
+
+	it("authorizes ordinary AVC recovery without inventing a codec handoff", async () => {
+		const requestedAt = Date.now();
+		const info = makeInfo({
+			IsShowingAd: true,
+			ActiveBackupPlayerType: "site",
+			LastCleanBackupPlayerType: "site",
+			LastCleanBackupAt: requestedAt - 1000,
+		});
+		g._refreshActiveBackupMediaPlaylist = vi.fn(async () => {
+			info.LastCleanBackupAt = Date.now();
+			info.LastCleanBackupM3U8 = cleanBackup;
+			info.LastCleanBackupCodecFamily = "avc";
+			return cleanBackup;
+		});
+		g._findBackupStream = vi.fn();
+		const request = fatalRequest(info, "ordinary-avc", requestedAt);
+
+		const ready = await prepare()(
+			info,
+			async () => new Response("", { status: 500 }),
+			request,
+		);
+
+		expect(ready).toBe(true);
+		expect(g._refreshActiveBackupMediaPlaylist).toHaveBeenCalledTimes(1);
+		expect(info._CodecHandoffPendingId).toBe(null);
+		expect(info.IsUsingModifiedM3U8).toBe(false);
+		expect(
+			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls[0][1],
+		).toMatchObject({
+			key: "FatalMediaRecoveryReady",
+			recoveryId: request.recoveryId,
+			requiresCodecHandoff: false,
 		});
 	});
 
