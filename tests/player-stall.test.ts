@@ -96,6 +96,7 @@ function makePlayer(currentTime: () => number, bufferedEnd: () => number) {
 function makePinnedTimelineHarness(
 	options: {
 		ranges?: Array<[number, number]>;
+		currentTime?: number;
 		mediaType?: "live" | "vod";
 		targetMediaKey?: string;
 		channel?: string | null;
@@ -118,7 +119,11 @@ function makePinnedTimelineHarness(
 	const targetMediaKey = options.targetMediaKey ?? "live:testchannel";
 	const channel =
 		options.channel === undefined ? "testchannel" : options.channel;
-	const { video, seeks } = makeRangesVideo(ranges, 70.604, true);
+	const { video, seeks } = makeRangesVideo(
+		ranges,
+		options.currentTime ?? 70.604,
+		true,
+	);
 	const otherVideo = document.createElement("video");
 	const player = { getHTMLVideoElement: () => video };
 	const messages: unknown[] = [];
@@ -278,6 +283,35 @@ describe("_checkPinnedBackupStall", () => {
 				"live:testchannel",
 				[180, 650],
 				{ cycleStartedAt: 99123 },
+			);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("realigns an advancing pinned live backup whose timeline jumped ahead of the playhead", () => {
+		const harness = makePinnedTimelineHarness({
+			currentTime: 1025.7,
+			ranges: [[1257.8, 1261.5]],
+		});
+
+		try {
+			harness.sample(100000);
+			harness.ranges[0][1] = 1263;
+			harness.sample(102999);
+			expect(harness.seeks).toEqual([]);
+			harness.ranges[0][1] = 1264.4;
+			harness.sample(103000);
+
+			expect(harness.seeks).toEqual([expect.closeTo(1263.9, 3)]);
+			expect(harness.messages).toEqual([]);
+			expect(g._PinnedBackupTimelineRestoreState).toMatchObject({
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 99123,
+			});
+			expect(harness.resume).toHaveBeenCalledWith(
+				"testchannel",
+				"live:testchannel",
 			);
 		} finally {
 			harness.restore();
@@ -1625,6 +1659,35 @@ describe("fatal enhanced-media recovery during ads", () => {
 		]);
 	});
 
+	it("rebuilds an ordinary AVC player without a codec-handoff identity", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		enableUnreadyRecoveryContext();
+		expect(check()(player)).toBe(false);
+		vi.setSystemTime(112000);
+		expect(check()(player)).toBe(true);
+		const request = messages[0].value as Record<string, unknown>;
+
+		expect(
+			accept()({
+				recoveryId: request.recoveryId,
+				verifiedAt: Number(request.requestedAt) + 1,
+				cycleStartedAt: request.cycleStartedAt,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				requiresCodecHandoff: false,
+			}),
+		).toBe(true);
+		expect(reloads).toEqual([
+			expect.objectContaining({
+				reason: "ad-recovery",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			}),
+		]);
+		expect(reloads[0]).not.toHaveProperty("handoffId");
+	});
+
 	it("does not recover an unready player when the user paused or ownership differs", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
@@ -1974,7 +2037,7 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 		expect(tasks).toEqual([]);
 	});
 
-	it("expires observed recovery when the page player never remounts", () => {
+	it("preserves bounded recovery ownership while the page player is unmounted", () => {
 		videoEnded = false;
 		expect(
 			T<
@@ -2001,16 +2064,45 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 		>;
 		expect(transaction.video).toBe(video);
 		playerAvailable = false;
+		expect(
+			T<
+				(
+					isPausePlay: boolean,
+					isReload: boolean,
+					options: Record<string, unknown>,
+				) => boolean
+			>("_rememberPendingPostAdRecoveryOperation")(false, true, {
+				reason: "post-ad-native-restore",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 440000,
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
 
 		T<() => void>("_monitorPlayerBuffering")();
 		vi.advanceTimersByTime(30600);
 
-		expect(transaction.mediaKey).toBeNull();
+		expect(transaction.mediaKey).toBe("live:testchannel");
 		expect(transaction.video).toBeNull();
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd,
-		).toBe(false);
+		).toBe(true);
 		expect(tasks).toEqual([]);
+
+		playerAvailable = true;
+		vi.advanceTimersByTime(1800);
+
+		expect(tasks).toEqual([
+			expect.objectContaining({
+				isReload: true,
+				reason: "post-ad-native-restore",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+			}),
+		]);
+		expect(transaction.pendingOperation).toBeNull();
 	});
 });
 
@@ -2659,6 +2751,14 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
 		state.CurrentAdMediaKey = null;
 		state.CurrentAdChannel = null;
+		const baselineVideo = document.createElement("video");
+		const playerAndState = (
+			g._getPlayerAndState as () => {
+				player: { getHTMLVideoElement: () => HTMLVideoElement | null };
+				state: unknown;
+			}
+		)();
+		playerAndState.player.getHTMLVideoElement = () => baselineVideo;
 
 		const result = task()(false, true, {
 			reason: "post-ad-native-restore",
@@ -2676,6 +2776,13 @@ describe("_doPlayerTask (pip reload policy)", () => {
 				refreshAccessToken: false,
 			},
 		]);
+		expect(
+			(
+				g._PostAdRecoveryTransactionState as {
+					requiredReplacementVideo: WeakRef<HTMLMediaElement> | null;
+				}
+			).requiredReplacementVideo?.deref(),
+		).toBe(baselineVideo);
 	});
 
 	it("rejects stale, no-intent, and user-paused terminal restore tasks", () => {
@@ -3683,6 +3790,11 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 			reloadRequestCount: number;
 			acceptedReloadCount: number;
 			expiresAt: number;
+			passive: boolean;
+			terminalNudgeAttempted: boolean;
+			requiresReplacement: boolean;
+			requiredReplacementVideo: WeakRef<HTMLMediaElement> | null;
+			initialOperationCompleted: boolean;
 		};
 	let saved: Record<string, unknown>;
 	let reloads: Array<Record<string, unknown>>;
@@ -3899,7 +4011,7 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		).toBe(true);
 	});
 
-	it("bounds a second all-zero rebuild and releases terminal recovery", () => {
+	it("bounds real rebuilds and keeps passive ownership after one final nudge", () => {
 		const firstPlayback = makePlayback();
 		reloadOutcomes.push(true, true);
 		arm(firstPlayback);
@@ -3920,15 +4032,22 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(sample(512000)).toBe(false);
 		expect(sample(514099)).toBe(false);
 		expect(transaction().video).toBe(currentPlayback.video);
-		expect(sample(514100)).toBe(false);
-		expect(transaction().mediaKey).toBeNull();
-		expect(transaction().video).toBeNull();
+		expect(sample(514100)).toBe(true);
+		expect(transaction().mediaKey).toBe("live:chan");
+		expect(transaction().passive).toBe(true);
+		expect(transaction().terminalNudgeAttempted).toBe(true);
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd,
-		).toBe(false);
+		).toBe(true);
 		expect(sample(520000)).toBe(false);
 		expect(reloadCalls()).toHaveLength(2);
-		expect(reloads).toHaveLength(2);
+		expect(reloads).toHaveLength(3);
+		expect(reloads[2]).toMatchObject({
+			isPausePlay: true,
+			isReload: false,
+			reason: "ad-recovery",
+			mediaKey: "live:chan",
+		});
 	});
 
 	it("waits for the full observation window at the monitor cadence", () => {
@@ -3992,6 +4111,36 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(
 			(g._PlayerBufferState as Record<string, unknown>).postAdGraceUntil,
 		).toBeGreaterThan(502800);
+	});
+
+	it("does not accept an advancing pre-reload fallback as the replacement", () => {
+		const fallback = makePlayback({
+			currentTime: 10,
+			bufferedEnd: 20,
+			readyState: 4,
+			videoWidth: 640,
+		});
+		arm(fallback);
+		transaction().requiresReplacement = true;
+		transaction().requiredReplacementVideo = new WeakRef(fallback.video);
+		transaction().initialOperationCompleted = true;
+
+		expect(sample(500000)).toBe(false);
+		fallback.setCurrentTime(10.8);
+		expect(sample(500800)).toBe(false);
+		expect(transaction().mediaKey).toBe("live:chan");
+
+		const replacement = makePlayback({
+			currentTime: 30,
+			bufferedEnd: 40,
+			readyState: 4,
+			videoWidth: 1920,
+		});
+		currentPlayback = replacement;
+		expect(sample(501000)).toBe(false);
+		replacement.setCurrentTime(30.8);
+		expect(sample(501800)).toBe(true);
+		expect(transaction().mediaKey).toBeNull();
 	});
 
 	it.each([

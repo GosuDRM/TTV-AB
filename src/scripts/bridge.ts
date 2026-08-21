@@ -1442,7 +1442,7 @@ type PendingLogCollection = {
 	timer: ReturnType<typeof setTimeout>;
 };
 const pendingLogCollections = new Map<string, PendingLogCollection>();
-const LOG_COLLECT_TIMEOUT_MS = 1500;
+const LOG_COLLECT_TIMEOUT_MS = 5000;
 const MAX_LOG_EXPORT_ENTRIES = 1000;
 const MAX_LOG_EXPORT_BYTES = 2 * 1024 * 1024;
 const MAX_LOG_MESSAGE_CHARS = 4000;

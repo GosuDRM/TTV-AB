@@ -122,6 +122,16 @@ const _SECONDARY_PLAYER_CLOSE_POLL_MS = 500;
 const _HIDDEN_CLEAN_LIVE_STALL_DETECT_MS = 15000;
 const _HIDDEN_CLEAN_LIVE_STALL_REPEAT_MS = 30000;
 const _UNREADY_AD_MEDIA_RECOVERY_MS = 12000;
+type PlayerTaskOptions = {
+	reason?: string;
+	handoffId?: string | null;
+	refreshAccessToken?: boolean;
+	newMediaPlayerInstance?: boolean;
+	replaceCodecHandoff?: boolean;
+	channel?: string | null;
+	mediaKey?: string | null;
+	cycleStartedAt?: number | null;
+};
 const _PostAdRecoveryTransactionState = {
 	channel: null as string | null,
 	mediaKey: null as string | null,
@@ -136,6 +146,17 @@ const _PostAdRecoveryTransactionState = {
 	expiresAt: 0,
 	lastCheckedAt: 0,
 	suspendedAt: 0,
+	requiresReplacement: false,
+	requiredReplacementVideo: null as WeakRef<HTMLMediaElement> | null,
+	pendingOperation: null as {
+		isPausePlay: boolean;
+		isReload: boolean;
+		options: PlayerTaskOptions;
+	} | null,
+	pendingOperationReadyAt: 0,
+	initialOperationCompleted: false,
+	terminalNudgeAttempted: false,
+	passive: false,
 };
 const _PinnedBackupTimelineRestoreState = {
 	mediaKey: null as string | null,
@@ -358,18 +379,23 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
 	const adMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey);
 	const eventCycleStartedAt = Math.max(0, Number(data?.cycleStartedAt) || 0);
+	const requiresCodecHandoff = data?.requiresCodecHandoff !== false;
+	const clearCodecHandoff = () => {
+		if (!requiresCodecHandoff || !mediaKey) return;
+		_broadcastWorkers({
+			key: "UpdateCodecHandoffContext",
+			targetMediaKey: mediaKey,
+			value: {
+				clearHandoffId: recoveryId,
+				channelName: __TTVAB_STATE__?.PageChannel || null,
+				mediaKey,
+			},
+		});
+	};
 	if (!recoveryId) return false;
 	if (_FatalAdMediaRecoveryState.recoveryId !== recoveryId) {
 		if (mediaKey && mediaKey === pageMediaKey && mediaKey === adMediaKey) {
-			_broadcastWorkers({
-				key: "UpdateCodecHandoffContext",
-				targetMediaKey: mediaKey,
-				value: {
-					clearHandoffId: recoveryId,
-					channelName: __TTVAB_STATE__?.PageChannel || null,
-					mediaKey,
-				},
-			});
+			clearCodecHandoff();
 		}
 		return false;
 	}
@@ -399,15 +425,7 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 		!recoveryConditionStillActive
 	) {
 		if (mediaKey === _FatalAdMediaRecoveryState.mediaKey) {
-			_broadcastWorkers({
-				key: "UpdateCodecHandoffContext",
-				targetMediaKey: mediaKey,
-				value: {
-					clearHandoffId: recoveryId,
-					channelName: __TTVAB_STATE__?.PageChannel || null,
-					mediaKey,
-				},
-			});
+			clearCodecHandoff();
 			_resetFatalAdMediaRecoveryState(recoveryId);
 		}
 		return false;
@@ -419,12 +437,13 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 	_FatalAdMediaRecoveryState.committed = true;
 	try {
 		const didReload = _doPlayerTask(false, true, {
-			reason: "codec-handoff",
-			handoffId: recoveryId,
+			reason: requiresCodecHandoff ? "codec-handoff" : "ad-recovery",
+			...(requiresCodecHandoff
+				? { handoffId: recoveryId, replaceCodecHandoff: true }
+				: {}),
 			cycleStartedAt: eventCycleStartedAt,
 			refreshAccessToken: true,
 			newMediaPlayerInstance: true,
-			replaceCodecHandoff: true,
 			channel:
 				typeof data?.channel === "string"
 					? data.channel
@@ -437,20 +456,14 @@ function _acceptFatalAdMediaRecoveryReady(data) {
 		_log(
 			recoveryKind === "unready"
 				? "Fresh clean AVC backup verified; rebuilding the unready ad recovery player"
-				: "Fresh clean AVC backup verified; reloading the failed enhanced decoder",
+				: requiresCodecHandoff
+					? "Fresh clean AVC backup verified; reloading the failed enhanced decoder"
+					: "Fresh clean AVC backup verified; rebuilding the failed ad recovery player",
 			"info",
 		);
 		return true;
 	} catch (error) {
-		_broadcastWorkers({
-			key: "UpdateCodecHandoffContext",
-			targetMediaKey: mediaKey,
-			value: {
-				clearHandoffId: recoveryId,
-				channelName: __TTVAB_STATE__?.PageChannel || null,
-				mediaKey,
-			},
-		});
+		clearCodecHandoff();
 		_resetFatalAdMediaRecoveryState(recoveryId);
 		_log(
 			`Fatal media recovery reload failed: ${error?.message ?? String(error)}`,
@@ -4101,6 +4114,13 @@ function _resetPostAdRecoveryTransaction() {
 	_PostAdRecoveryTransactionState.expiresAt = 0;
 	_PostAdRecoveryTransactionState.lastCheckedAt = 0;
 	_PostAdRecoveryTransactionState.suspendedAt = 0;
+	_PostAdRecoveryTransactionState.requiresReplacement = false;
+	_PostAdRecoveryTransactionState.requiredReplacementVideo = null;
+	_PostAdRecoveryTransactionState.pendingOperation = null;
+	_PostAdRecoveryTransactionState.pendingOperationReadyAt = 0;
+	_PostAdRecoveryTransactionState.initialOperationCompleted = false;
+	_PostAdRecoveryTransactionState.terminalNudgeAttempted = false;
+	_PostAdRecoveryTransactionState.passive = false;
 }
 
 function _resetPostAdRecoveryMonitorSamples() {
@@ -4209,6 +4229,30 @@ function _cancelPostAdRecoveryTransaction(clearResumeIntent = true) {
 	}
 }
 
+function _rememberPendingPostAdRecoveryOperation(
+	isPausePlay,
+	isReload,
+	options: PlayerTaskOptions,
+) {
+	if (!_PostAdRecoveryTransactionState.mediaKey) return false;
+	_PostAdRecoveryTransactionState.pendingOperation = {
+		isPausePlay: isPausePlay === true,
+		isReload: isReload === true,
+		options: { ...options },
+	};
+	_PostAdRecoveryTransactionState.pendingOperationReadyAt = Date.now() + 1500;
+	if (isReload && options.newMediaPlayerInstance !== false) {
+		_PostAdRecoveryTransactionState.requiresReplacement = true;
+	}
+	return true;
+}
+
+function _completePendingPostAdRecoveryOperation() {
+	_PostAdRecoveryTransactionState.pendingOperation = null;
+	_PostAdRecoveryTransactionState.pendingOperationReadyAt = 0;
+	_PostAdRecoveryTransactionState.initialOperationCompleted = true;
+}
+
 function _requestPostAdRecoveryReload(
 	channel,
 	mediaKey,
@@ -4217,6 +4261,7 @@ function _requestPostAdRecoveryReload(
 ) {
 	const now = Date.now();
 	if (
+		_PostAdRecoveryTransactionState.passive ||
 		_PostAdRecoveryTransactionState.acceptedReloadCount >=
 			_POST_AD_RECOVERY_MAX_ACCEPTED_RELOADS ||
 		_PostAdRecoveryTransactionState.reloadRequestCount >=
@@ -4326,12 +4371,13 @@ function _maintainPostAdRecoveryTransactionLifetime() {
 	) {
 		return true;
 	}
+	_PostAdRecoveryTransactionState.passive = true;
+	_PostAdRecoveryTransactionState.expiresAt = 0;
 	_log(
-		"Post-ad recovery remained unhealthy after bounded rebuilds; ending recovery",
+		"Post-ad recovery reached its automation limit; keeping passive recovery ownership",
 		"warning",
 	);
-	_cancelPostAdRecoveryTransaction(true);
-	return false;
+	return true;
 }
 
 function _handlePendingPostAdRecovery(
@@ -4373,6 +4419,22 @@ function _handlePendingPostAdRecovery(
 	) {
 		return false;
 	}
+	const pendingOperation = _PostAdRecoveryTransactionState.pendingOperation;
+	if (
+		pendingOperation &&
+		now >= _PostAdRecoveryTransactionState.pendingOperationReadyAt
+	) {
+		const didRun = _doPlayerTask(
+			pendingOperation.isPausePlay,
+			pendingOperation.isReload,
+			pendingOperation.options,
+		);
+		if (didRun === true) {
+			_completePendingPostAdRecoveryOperation();
+			return true;
+		}
+		_PostAdRecoveryTransactionState.pendingOperationReadyAt = now + 1500;
+	}
 
 	const liveCurrentTime = Number(liveVideo.currentTime) || 0;
 	const isNewObservation =
@@ -4408,7 +4470,17 @@ function _handlePendingPostAdRecovery(
 		recoveryAge >= _POST_AD_RECOVERY_RELOAD_COOLDOWN_MS &&
 		(liveVideoWidth <= 0 || _PostAdRecoveryTransactionState.stallTicks >= 2);
 
-	if (advanced && _isPlaybackHealthyAfterAd(player, playerCore, liveVideo)) {
+	const replacementIsReady = Boolean(
+		!_PostAdRecoveryTransactionState.requiresReplacement ||
+			(_PostAdRecoveryTransactionState.initialOperationCompleted &&
+				_PostAdRecoveryTransactionState.requiredReplacementVideo?.deref() !==
+					liveVideo),
+	);
+	if (
+		advanced &&
+		replacementIsReady &&
+		_isPlaybackHealthyAfterAd(player, playerCore, liveVideo)
+	) {
 		_finishPostAdRecoveryTransaction(liveCurrentTime);
 		return true;
 	}
@@ -4425,14 +4497,34 @@ function _handlePendingPostAdRecovery(
 		_PlayerBufferState.postAdUnhealthyCount = 0;
 		return true;
 	}
+	const recoveryIsCapped = Boolean(
+		_PostAdRecoveryTransactionState.passive ||
+			_PostAdRecoveryTransactionState.acceptedReloadCount >=
+				_POST_AD_RECOVERY_MAX_ACCEPTED_RELOADS ||
+			_PostAdRecoveryTransactionState.reloadRequestCount >=
+				_POST_AD_RECOVERY_MAX_RELOAD_REQUESTS,
+	);
+	if (recoveryIsCapped) {
+		if (!_PostAdRecoveryTransactionState.passive) {
+			return false;
+		}
+		if (
+			!_PostAdRecoveryTransactionState.terminalNudgeAttempted &&
+			_retryPostAdPauseResume(safeChannel, safeMediaKey)
+		) {
+			_PostAdRecoveryTransactionState.terminalNudgeAttempted = true;
+			_log(
+				"Post-ad rebuild limit reached; applying one final pause/play recovery",
+				"warning",
+			);
+			return true;
+		}
+		return false;
+	}
 	if (
-		_PostAdRecoveryTransactionState.acceptedReloadCount >=
-			_POST_AD_RECOVERY_MAX_ACCEPTED_RELOADS ||
-		_PostAdRecoveryTransactionState.reloadRequestCount >=
-			_POST_AD_RECOVERY_MAX_RELOAD_REQUESTS ||
-		(_PostAdRecoveryTransactionState.lastReloadRequestAt > 0 &&
-			now - _PostAdRecoveryTransactionState.lastReloadRequestAt <
-				_POST_AD_RECOVERY_RELOAD_COOLDOWN_MS)
+		_PostAdRecoveryTransactionState.lastReloadRequestAt > 0 &&
+		now - _PostAdRecoveryTransactionState.lastReloadRequestAt <
+			_POST_AD_RECOVERY_RELOAD_COOLDOWN_MS
 	) {
 		return false;
 	}
@@ -4783,20 +4875,7 @@ function _registerPipDeferredReload(
 	return true;
 }
 
-function _doPlayerTask(
-	isPausePlay,
-	isReload,
-	options: {
-		reason?: string;
-		handoffId?: string | null;
-		refreshAccessToken?: boolean;
-		newMediaPlayerInstance?: boolean;
-		replaceCodecHandoff?: boolean;
-		channel?: string | null;
-		mediaKey?: string | null;
-		cycleStartedAt?: number | null;
-	} = {},
-) {
+function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 	const requestedChannel = _normalizePlayerChannel(options.channel);
 	const requestedMediaKey = _normalizeMediaKey(options.mediaKey);
 	const taskChannel =
@@ -4834,16 +4913,29 @@ function _doPlayerTask(
 	) {
 		return false;
 	}
+	if (
+		isTerminalPostAdTask &&
+		isReload &&
+		options.newMediaPlayerInstance !== false
+	) {
+		_PostAdRecoveryTransactionState.requiresReplacement = true;
+	}
 	const { player, state: playerState } = _getPlayerAndState();
 
 	if (!player && !isPipTask) {
+		if (isTerminalPostAdTask) {
+			_rememberPendingPostAdRecoveryOperation(isPausePlay, isReload, options);
+		}
 		_log("Could not find player", "warning");
-		return;
+		return false;
 	}
 
 	if (!playerState && isReload && !isPipTask) {
+		if (isTerminalPostAdTask) {
+			_rememberPendingPostAdRecoveryOperation(isPausePlay, isReload, options);
+		}
 		_log("Could not find player state for reload", "warning");
-		return;
+		return false;
 	}
 
 	const playerCore = _getPlayerCore(player);
@@ -4990,6 +5082,9 @@ function _doPlayerTask(
 			_scheduleResumeRetries(taskChannel, taskMediaKey, [50, 180, 500], {
 				cycleStartedAt: requestedCycleStartedAt,
 			});
+			if (isTerminalPostAdTask) {
+				_completePendingPostAdRecoveryOperation();
+			}
 			return true;
 		}
 		if (_isPlayerPaused(player, playerCore)) {
@@ -5020,6 +5115,9 @@ function _doPlayerTask(
 				taskMediaKey,
 				requestedCycleStartedAt,
 			);
+		}
+		if (isTerminalPostAdTask) {
+			_completePendingPostAdRecoveryOperation();
 		}
 		return true;
 	}
@@ -5080,6 +5178,10 @@ function _doPlayerTask(
 				? playerState.props.content.type
 				: null;
 		const reloadVideo = player?.getHTMLVideoElement?.() || null;
+		const replacementBaselineVideo =
+			isTerminalPostAdTask && options.newMediaPlayerInstance !== false
+				? reloadVideo
+				: null;
 		const vodResumePosition =
 			reloadContentType === "vod" &&
 			Number.isFinite(Number(reloadVideo?.currentTime)) &&
@@ -5196,6 +5298,26 @@ function _doPlayerTask(
 				}
 			}
 			throw error;
+		}
+		if (replacementBaselineVideo instanceof HTMLMediaElement) {
+			_PostAdRecoveryTransactionState.requiresReplacement = true;
+			_PostAdRecoveryTransactionState.requiredReplacementVideo = new WeakRef(
+				replacementBaselineVideo,
+			);
+			_PostAdRecoveryTransactionState.video = null;
+			_PostAdRecoveryTransactionState.observedAt = 0;
+			_PostAdRecoveryTransactionState.lastCurrentTime = 0;
+			_PostAdRecoveryTransactionState.stallTicks = 0;
+		}
+		if (
+			isTerminalPostAdTask &&
+			reason === "post-ad-native-restore" &&
+			!_PostAdRecoveryTransactionState.initialOperationCompleted
+		) {
+			_PostAdRecoveryTransactionState.acceptedReloadCount++;
+		}
+		if (isTerminalPostAdTask) {
+			_completePendingPostAdRecoveryOperation();
 		}
 
 		_broadcastWorkers({
@@ -5359,6 +5481,13 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 		video.buffered && video.buffered.length > 0
 			? video.buffered.end(video.buffered.length - 1)
 			: 0;
+	let bufferedStart = 0;
+	try {
+		bufferedStart =
+			video.buffered && video.buffered.length > 0
+				? Number(video.buffered.start(video.buffered.length - 1)) || 0
+				: 0;
+	} catch {}
 	const now = Date.now();
 	const stallThresholdMs = Math.max(
 		500,
@@ -5378,13 +5507,18 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 	const bufferHeadroom = bufferedEnd - currentTime;
 	const bufferSafe = bufferHeadroom > _getLowLatencyDangerZone();
 	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
+	const playheadOutsidePinnedTimeline = Boolean(
+		currentTime > bufferedEnd + _getLowLatencyDangerZone() ||
+			(bufferedStart > 0 &&
+				currentTime < bufferedStart - _getLowLatencyDangerZone()),
+	);
 	const canRealignPinnedLiveBackup = Boolean(
 		safeMediaKey?.startsWith("live:") &&
 			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) === safeMediaKey &&
 			_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey) ===
 				safeMediaKey &&
 			!currentTimeAdvanced &&
-			currentTime > bufferedEnd + _getLowLatencyDangerZone() &&
+			playheadOutsidePinnedTimeline &&
 			_getFatalAdMediaErrorCode(video) === 0 &&
 			!_hasUserPauseIntent(safeChannel, safeMediaKey) &&
 			!_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey) &&
@@ -5413,9 +5547,6 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 	if (ownsAdvancingLiveBackup) {
 		let timelineRealigned = false;
 		try {
-			const bufferedStart = Number(
-				video.buffered.start(video.buffered.length - 1),
-			);
 			if (Number.isFinite(bufferedStart) && bufferedStart <= bufferedEnd) {
 				video.currentTime = Math.max(bufferedStart, bufferedEnd - 0.5);
 				timelineRealigned = true;
@@ -5437,7 +5568,10 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 		}
 	}
 
-	if (currentTimeAdvanced || (bufferSafe && bufferAdvanced)) {
+	if (
+		currentTimeAdvanced ||
+		(!canRealignPinnedLiveBackup && bufferSafe && bufferAdvanced)
+	) {
 		_PinnedBackupStallState.firstObservedAt = 0;
 		_PinnedBackupStallState.forceRefreshCount = 0;
 		_PinnedBackupStallState.lastForceRefreshAt = 0;
@@ -6014,8 +6148,6 @@ function _monitorPlayerBuffering() {
 			if (_hasUserPauseIntent(__TTVAB_STATE__.PageChannel, currentMediaKey)) {
 				_cancelPostAdRecoveryTransaction(true);
 				hasPendingPostAdRecovery = false;
-			} else if (!_maintainPostAdRecoveryTransactionLifetime()) {
-				hasPendingPostAdRecovery = false;
 			}
 		}
 		if (!hasPendingPostAdRecovery) {
@@ -6407,6 +6539,11 @@ function _monitorPlayerBuffering() {
 				_syncPreferredQualityGroupThrottled();
 				_cachedPlayerRef = playerAndState;
 				_cachedPlayerRefMediaKey = currentMediaKey;
+			} else if (_PostAdRecoveryTransactionState.mediaKey) {
+				_PostAdRecoveryTransactionState.video = null;
+				_PostAdRecoveryTransactionState.observedAt = 0;
+				_PostAdRecoveryTransactionState.lastCurrentTime = 0;
+				_PostAdRecoveryTransactionState.stallTicks = 0;
 			}
 		}
 

@@ -985,7 +985,7 @@ describe("runtime log collection lifecycle", () => {
 			(message) => (message.detail as { requestId: string }).requestId,
 		);
 
-		vi.advanceTimersByTime(1500);
+		vi.advanceTimersByTime(5000);
 
 		expect(firstResponse).toHaveBeenCalledWith({
 			ok: false,
@@ -1052,7 +1052,7 @@ describe("runtime log collection lifecycle", () => {
 		g.pageBridgePort = stalePort;
 		g.pageBridgeConnected = true;
 		requestRuntimeLogs(vi.fn());
-		vi.advanceTimersByTime(1500);
+		vi.advanceTimersByTime(5000);
 
 		const token = "0123456789abcdef0123456789abcdef";
 		const replacementPort = makePagePort();
