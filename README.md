@@ -1,7 +1,7 @@
 # TTV AB
 
 ![Version](https://img.shields.io/badge/version-16.2.1-purple)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-MIT--based%20with%20attribution-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
@@ -112,4 +112,4 @@ TTV AB operates entirely on your device. No data is ever sent to external server
 
 ## 📄 License
 
-MIT License with Attribution. See [LICENSE](LICENSE) for details.
+This project uses an MIT-based license with a repository attribution requirement. See [LICENSE](LICENSE) for details.

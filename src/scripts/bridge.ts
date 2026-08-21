@@ -1,5 +1,5 @@
 // TTV AB - Bridge Script
-// https://github.com/GosuDRM/TTV-AB | MIT License
+// https://github.com/GosuDRM/TTV-AB | See LICENSE for terms
 
 function normalizeCount(value) {
 	const numericValue =
