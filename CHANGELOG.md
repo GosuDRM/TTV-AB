@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.0] - 2026-08-21
+
+- Fixed channel-open ad breaks treating an initial 360p sample as established native quality, which could leave playback at 360p or cause buffering during a later break ([#61](https://github.com/GosuDRM/TTV-AB/issues/61), [#62](https://github.com/GosuDRM/TTV-AB/issues/62)).
+- Every served low-quality autoplay backup now returns through an owned native player rebuild, without refreshing the already verified playback token. Pinned backup recovery also realigns timestamp jumps in either direction.
+- Disabling Low Quality Fallback now prevents every new autoplay backup acquisition. An already active clean bridge keeps refreshing only until a normal-quality source passes the existing ad-free probation checks, avoiding a buffer drop or early native return.
+- Post-ad recovery now survives delayed player remounts, background tabs, and Picture-in-Picture while retaining a strict limit of two accepted rebuilds and one final pause/play attempt. Detached replacement markers use weak ownership so recovery cannot retain an obsolete media element.
+- Fatal recovery for ordinary AVC playback now requires a freshly fetched, playable, ad-free AVC backup before rebuilding, matching the safety gate already used for enhanced-quality decoder failures.
+- Generate Log now gives slow tabs longer to respond. On supported Chromium browsers it asks for a destination before collection and writes directly to the chosen file, avoiding ordinary download-manager interception; Firefox retains the standard download fallback.
+
 ## [16.1.0] - 2026-08-17
 
 - Fixed Twitch sometimes staying on an endless black loading screen after an ad ended ([#61](https://github.com/GosuDRM/TTV-AB/issues/61)).
