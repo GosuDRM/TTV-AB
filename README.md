@@ -52,19 +52,22 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 ## ⚙️ How It Works
 
-TTV AB intercepts Twitch's HLS video playlists at the network level. When Twitch injects ad-marked segments or forces the player onto an ad-only path, the extension:
+TTV AB inspects Twitch's HLS playlists inside the browser before the video player uses them. Clean playlists pass through unchanged. On VOD pages, it also blocks the narrowly scoped client-side ad requests used by Twitch.
 
 <p align="center">
-  <img src="assets/pipeline.svg" alt="Animated ad-blocking pipeline: the worker fetch hook inspects every Twitch playlist; clean playlists pass straight through to native playback, while ad breaks are stripped and bridged with a clean backup stream until native quality is restored." width="860">
+  <img src="assets/pipeline.svg" alt="Animated ad-blocking pipeline: the Twitch player worker passes clean playlists through unchanged, rejects ad-marked media, keeps a verified clean backup live, and restores native playback only after repeated clean checks." width="860">
 </p>
 
-- Strips ad segments from M3U8 media playlists in real time
-- Fetches clean backup streams using alternative player types when the native stream is ad-locked
-- Serves a valid empty video segment in place of blocked ad content to keep the decoder stable
-- Monitors playback health and automatically recovers from stalls after ad breaks
-- Restores your original quality and volume settings once native playback resumes
+- Keeps the last clean native playlist flowing, when available, while checking alternative Twitch player sources one at a time
+- Accepts only playable, ad-free backups and refreshes the active backup at the live edge so it does not freeze
+- Uses a small local hold segment only when removing ads would otherwise leave the decoder with no media
+- Monitors backup health and rotates to another verified source if the active backup stalls
+- Keeps recovery tied to the current player across background tabs and Picture-in-Picture while respecting explicit pauses
+- Returns to native playback only after repeated clean checks for the same stream and ad cycle, then restores the saved quality and audio state
 
-When a channel opens during an ad, or an ad starts mid-stream, the extension switches to a clean backup stream within a couple of seconds so video starts playing right away. The backup targets the quality your connection has been sustaining (even if the player had just restarted on a low rung when the ad hit), with a 360p floor so a channel-open preroll never starts blurrier than 360p while the player is still ramping up from its lowest quality. Your full native quality and audio are restored automatically and seamlessly once the ad window ends. The optional **Low Quality Fallback** toggle trades some quality for an even faster first frame, starting on a quick low-resolution stream and climbing back up as the break ends.
+With **Low Quality Fallback** enabled, a clean 360p autoplay source can start sooner while normal-quality backups are checked. With it disabled, new autoplay backups are skipped and normal-quality sources are tried first. The transition can take longer, and a lower-quality rendition may still be used as a last resort when necessary to keep the ad blocked.
+
+When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and completion signals expected for the blocked break. This setting is separate from playlist blocking and can be turned off without disabling core ad blocking.
 
 ## 🔔 What's New
 
