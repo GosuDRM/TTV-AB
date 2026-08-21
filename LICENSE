@@ -1,4 +1,4 @@
-MIT License
+MIT-Based License with Repository Attribution
 
 Copyright (c) 2025 GosuDRM (gianpacayra@gmail.com)
 
@@ -12,10 +12,10 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-Attribution Requirement:
-If you modify or redistribute this software, you must provide appropriate 
-credit to the original author (GosuDRM) by including a link to the original 
-repository: https://github.com/GosuDRM/TTV-AB
+Additional Repository Attribution Requirement:
+If you modify or redistribute this software, you must give appropriate credit
+to the original author, GosuDRM, and include a link to the original repository:
+https://github.com/GosuDRM/TTV-AB
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

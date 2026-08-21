@@ -1,5 +1,5 @@
 // TTV AB - Background Service Worker
-// https://github.com/GosuDRM/TTV-AB | MIT License
+// https://github.com/GosuDRM/TTV-AB | See LICENSE for terms
 
 function getDateKey(date = new Date()) {
 	const year = date.getFullYear();

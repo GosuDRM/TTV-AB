@@ -417,9 +417,9 @@ function validateSharedDefinitions() {
 			`package bugs.url must match the canonical issue tracker: ${packageJson.bugs?.url || "missing"}`,
 		);
 	}
-	if (packageJson.license !== "MIT") {
+	if (packageJson.license !== "SEE LICENSE IN LICENSE") {
 		throw new Error(
-			`package license must remain MIT: ${packageJson.license || "missing"}`,
+			`package license must reference LICENSE: ${packageJson.license || "missing"}`,
 		);
 	}
 	if (packageLock.name !== packageJson.name) {
