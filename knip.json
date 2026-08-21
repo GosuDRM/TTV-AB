@@ -1,5 +1,5 @@
 {
-	"$schema": "https://unpkg.com/knip@6.0.3/schema.json",
+	"$schema": "https://unpkg.com/knip@6.32.2/schema.json",
 	"entry": [
 		"build.ts!",
 		"src/types/browser-globals.d.ts!",
@@ -10,5 +10,5 @@
 		"src/scripts/bridge.ts!",
 		"src/popup/popup.html!"
 	],
-	"project": ["build.ts!", "src/**/*.ts!", "src/**/*.d.ts!", "src/**/*.html!"]
+	"project": ["src/**/*.ts!", "src/**/*.d.ts!"]
 }
