@@ -579,6 +579,7 @@ function _init() {
 	_bindBridgePort();
 	_declareState(window);
 	_syncPagePlaybackContext({ broadcast: false });
+	_syncPagePlaybackVisibilityState();
 
 	_onInternalMessage("ttvab-init-count", (detail) => {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);

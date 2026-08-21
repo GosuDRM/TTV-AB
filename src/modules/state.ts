@@ -1055,6 +1055,7 @@ function _declareState(scope) {
 		PageChannel: null,
 		PageVodID: null,
 		PageMediaKey: null,
+		PagePlaybackVisibleSinceAt: 0,
 		PreferredQualityGroup: null,
 		HasResolvedAdsCountState: false,
 		PlayerHasPlayedOnce: false,

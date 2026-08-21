@@ -4054,6 +4054,8 @@ function _hookWorker() {
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_resolveAdBackupTargetResolution.toString()}
+				${_getPendingForegroundQualityProbeAt.toString()}
+				${_startForegroundQualityProbe.toString()}
 				${_recordSustainedNativeResolution.toString()}
 					${_resetNativeRecoveryCandidateState.toString()}
 					${_isExactNativeRecoveryCandidateOwned.toString()}
@@ -4145,6 +4147,7 @@ function _hookWorker() {
                 __TTVAB_STATE__.PageChannel = ${JSON.stringify(pagePlaybackContext.ChannelName)};
                 __TTVAB_STATE__.PageVodID = ${JSON.stringify(pagePlaybackContext.VodID)};
                 __TTVAB_STATE__.PageMediaKey = ${JSON.stringify(pagePlaybackContext.MediaKey)};
+                __TTVAB_STATE__.PagePlaybackVisibleSinceAt = ${JSON.stringify(__TTVAB_STATE__.PagePlaybackVisibleSinceAt)};
                 __TTVAB_STATE__.PreferredQualityGroup = ${JSON.stringify(__TTVAB_STATE__.PreferredQualityGroup)};
                 __TTVAB_STATE__.PlayerHasPlayedOnce = ${JSON.stringify(__TTVAB_STATE__.PlayerHasPlayedOnce)};
                 __TTVAB_STATE__.PlayerIsPlaying = ${JSON.stringify(__TTVAB_STATE__.PlayerIsPlaying)};
@@ -4235,6 +4238,12 @@ function _hookWorker() {
                             break;
                         case 'UpdatePreferredQualityGroup':
                             __TTVAB_STATE__.PreferredQualityGroup = data.value || null;
+                            break;
+                        case 'UpdatePagePlaybackVisibleSinceAt':
+                            __TTVAB_STATE__.PagePlaybackVisibleSinceAt = Math.max(
+                                0,
+                                Number(data.value) || 0,
+                            );
                             break;
                         case 'UpdateCurrentAdContext':
                             {
@@ -5762,6 +5771,20 @@ function _hookWorker() {
 										true,
 										this,
 									);
+								}
+								if (
+									typeof _hasPendingAdResumeIntent === "function" &&
+									!(
+										typeof _hasUserPauseIntent === "function" &&
+										_hasUserPauseIntent(channel, mediaKey)
+									) &&
+									!(
+										typeof _shouldSuppressAutomaticPlaybackResume ===
+											"function" &&
+										_shouldSuppressAutomaticPlaybackResume(channel, mediaKey)
+									)
+								) {
+									_hasPendingAdResumeIntent(channel, mediaKey);
 								}
 								const requiresTimelineRestoreReload = Boolean(
 									typeof _consumePinnedBackupTimelineRestore === "function" &&

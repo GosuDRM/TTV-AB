@@ -2037,7 +2037,7 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 		expect(tasks).toEqual([]);
 	});
 
-	it("preserves bounded recovery ownership while the page player is unmounted", () => {
+	it("ends bounded recovery when a visible page player stays unmounted", () => {
 		videoEnded = false;
 		expect(
 			T<
@@ -2084,15 +2084,57 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 		T<() => void>("_monitorPlayerBuffering")();
 		vi.advanceTimersByTime(30600);
 
+		expect(transaction.mediaKey).toBeNull();
+		expect(transaction.video).toBeNull();
+		expect(transaction.pendingOperation).toBeNull();
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd,
+		).toBe(false);
+		expect(tasks).toEqual([]);
+
+		playerAvailable = true;
+		vi.advanceTimersByTime(1800);
+		expect(tasks).toEqual([]);
+	});
+
+	it("runs an exact queued native restore after a hidden player remounts", () => {
+		const transaction = g._PostAdRecoveryTransactionState as Record<
+			string,
+			unknown
+		>;
+		hidden = true;
+		playerAvailable = false;
+		video.remove();
+		expect(
+			T<
+				(
+					isPausePlay: boolean,
+					isReload: boolean,
+					options: Record<string, unknown>,
+				) => boolean
+			>("_rememberPendingPostAdRecoveryOperation")(false, true, {
+				reason: "post-ad-native-restore",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 440000,
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
+
+		T<() => void>("_monitorPlayerBuffering")();
+		vi.advanceTimersByTime(30600);
+
 		expect(transaction.mediaKey).toBe("live:testchannel");
 		expect(transaction.video).toBeNull();
+		expect(transaction.pendingOperation).not.toBeNull();
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd,
 		).toBe(true);
 		expect(tasks).toEqual([]);
 
 		playerAvailable = true;
-		vi.advanceTimersByTime(1800);
+		vi.advanceTimersByTime(5400);
 
 		expect(tasks).toEqual([
 			expect.objectContaining({
@@ -2340,6 +2382,82 @@ describe("_isNativeDocumentHidden (pip awareness)", () => {
 			hidden: () => false,
 		};
 		expect(hidden()()).toBe(false);
+	});
+});
+
+describe("_syncPagePlaybackVisibilityState", () => {
+	const sync = () =>
+		T<(forceHidden?: boolean) => boolean>("_syncPagePlaybackVisibilityState");
+	let savedState: unknown;
+	let savedHidden: unknown;
+	let savedPipContext: unknown;
+	let savedBroadcast: unknown;
+	let hidden = true;
+	let pipActive = false;
+	let messages: Array<Record<string, unknown>> = [];
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(700000);
+		savedState = g.__TTVAB_STATE__;
+		savedHidden = g._isNativeDocumentHidden;
+		savedPipContext = g._getActivePictureInPicturePlaybackContext;
+		savedBroadcast = g._broadcastWorkers;
+		hidden = true;
+		pipActive = false;
+		messages = [];
+		g.__TTVAB_STATE__ = { PagePlaybackVisibleSinceAt: 0 };
+		g._isNativeDocumentHidden = () => hidden;
+		g._getActivePictureInPicturePlaybackContext = () =>
+			pipActive ? { MediaKey: "live:testchannel" } : null;
+		g._broadcastWorkers = (message: Record<string, unknown>) => {
+			messages.push(message);
+		};
+	});
+
+	afterEach(() => {
+		g.__TTVAB_STATE__ = savedState;
+		g._isNativeDocumentHidden = savedHidden;
+		g._getActivePictureInPicturePlaybackContext = savedPipContext;
+		g._broadcastWorkers = savedBroadcast;
+		vi.useRealTimers();
+	});
+
+	it("broadcasts only real hidden and visible edges while treating pip as visible", () => {
+		expect(sync()()).toBe(false);
+		expect(messages).toEqual([]);
+
+		hidden = false;
+		expect(sync()()).toBe(true);
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).PagePlaybackVisibleSinceAt,
+		).toBe(700000);
+		expect(messages).toEqual([
+			{ key: "UpdatePagePlaybackVisibleSinceAt", value: 700000 },
+		]);
+		expect(sync()()).toBe(false);
+
+		hidden = true;
+		expect(sync()()).toBe(true);
+		expect(messages.at(-1)).toEqual({
+			key: "UpdatePagePlaybackVisibleSinceAt",
+			value: 0,
+		});
+
+		pipActive = true;
+		vi.setSystemTime(701000);
+		expect(sync()()).toBe(true);
+		expect(messages.at(-1)).toEqual({
+			key: "UpdatePagePlaybackVisibleSinceAt",
+			value: 701000,
+		});
+
+		pipActive = false;
+		expect(sync()()).toBe(true);
+		expect(messages.at(-1)).toEqual({
+			key: "UpdatePagePlaybackVisibleSinceAt",
+			value: 0,
+		});
 	});
 });
 
@@ -2759,6 +2877,8 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			}
 		)();
 		playerAndState.player.getHTMLVideoElement = () => baselineVideo;
+		const capturePreference = vi.fn(() => null);
+		g._capturePlayerPreferenceSnapshot = capturePreference;
 
 		const result = task()(false, true, {
 			reason: "post-ad-native-restore",
@@ -2776,6 +2896,11 @@ describe("_doPlayerTask (pip reload policy)", () => {
 				refreshAccessToken: false,
 			},
 		]);
+		expect(capturePreference).toHaveBeenCalledWith(
+			expect.anything(),
+			baselineVideo,
+			expect.objectContaining({ preserveConfiguredQuality: true }),
+		);
 		expect(
 			(
 				g._PostAdRecoveryTransactionState as {
@@ -2849,30 +2974,33 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			"otherchannel",
 			"live:testchannel",
 		],
-	])("rejects a codec handoff with %s", (_label, currentAdMediaKey, currentAdChannel, mediaKey) => {
-		pipElement = null;
-		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey =
-			currentAdMediaKey;
-		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdChannel =
-			currentAdChannel;
+	])(
+		"rejects a codec handoff with %s",
+		(_label, currentAdMediaKey, currentAdChannel, mediaKey) => {
+			pipElement = null;
+			(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey =
+				currentAdMediaKey;
+			(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdChannel =
+				currentAdChannel;
 
-		const result = task()(false, true, {
-			reason: "codec-handoff",
-			handoffId: handoffId("invalid-context"),
-			channel: "testchannel",
-			mediaKey,
-			cycleStartedAt,
-			refreshAccessToken: true,
-			newMediaPlayerInstance: true,
-		});
+			const result = task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: handoffId("invalid-context"),
+				channel: "testchannel",
+				mediaKey,
+				cycleStartedAt,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			});
 
-		expect(result).toBe(false);
-		expect(setSrcCalls).toEqual([]);
-		expect(workerMessages).toEqual([]);
-		expect(
-			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
-		).toBeUndefined();
-	});
+			expect(result).toBe(false);
+			expect(setSrcCalls).toEqual([]);
+			expect(workerMessages).toEqual([]);
+			expect(
+				(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
+			).toBeUndefined();
+		},
+	);
 
 	it("pre-arms workers with the exact codec handoff before setSrc", () => {
 		pipElement = null;
@@ -3190,6 +3318,53 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(setSrcCalls).toHaveLength(1);
 	});
 
+	it("keeps an exact native restore deferred through a long pip session", () => {
+		const pip = pipElement as HTMLVideoElement;
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		state.LastAdEndedAt = Date.now();
+		state.LastAdEndedMediaKey = "live:testchannel";
+		state.LastAdEndedCycleStartedAt = 100;
+		const startedAt = Date.now();
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(startedAt);
+
+		try {
+			expect(
+				task()(false, true, {
+					reason: "post-ad-native-restore",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 100,
+					refreshAccessToken: false,
+					newMediaPlayerInstance: true,
+				}),
+			).toBe(true);
+			expect(setSrcCalls).toEqual([]);
+
+			nowSpy.mockReturnValue(startedAt + 121000);
+			pipElement = null;
+			pip.dispatchEvent(new Event("leavepictureinpicture"));
+
+			expect(setSrcCalls).toEqual([
+				{
+					isNewMediaPlayerInstance: true,
+					refreshAccessToken: false,
+				},
+			]);
+			expect(workerMessages.at(-1)).toMatchObject({
+				key: "TriggeredPlayerReload",
+				value: {
+					reason: "post-ad-native-restore",
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 100,
+				},
+			});
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
 	it("drops a same-media cycle-one deferred pip reload and accepts cycle two", () => {
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
 		state.CurrentAdMediaKey = null;
@@ -3489,6 +3664,43 @@ describe("_shouldSuppressAutomaticPlaybackResume (pip exemption)", () => {
 		expect(suppress()("chan", "live:chan")).toBe(false);
 	});
 
+	it("keeps exact ad resume authorization for pip but clears it for popout", () => {
+		const begin = T<
+			(
+				descriptor: Record<string, unknown>,
+				options: Record<string, unknown>,
+			) => boolean
+		>("_beginSecondaryPlayerHandoff");
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const armResume = () => {
+			Object.assign(state, {
+				ShouldResumeAfterAd: true,
+				ShouldResumeAfterAdChannel: "chan",
+				ShouldResumeAfterAdMediaKey: "live:chan",
+				ShouldResumeAfterAdUntil: Date.now() + 15000,
+			});
+		};
+
+		armResume();
+		expect(
+			begin(
+				{ kind: "pip", channel: "chan", mediaKey: "live:chan" },
+				{ pauseSource: false, sourceWasPlaying: false },
+			),
+		).toBe(true);
+		expect(state.ShouldResumeAfterAd).toBe(true);
+
+		clear()();
+		armResume();
+		expect(
+			begin(
+				{ kind: "popout", channel: "chan", mediaKey: "live:chan" },
+				{ pauseSource: false, sourceWasPlaying: false },
+			),
+		).toBe(true);
+		expect(state.ShouldResumeAfterAd).toBe(false);
+	});
+
 	it("still suppresses during a popout handoff", () => {
 		expect(mark()("popout", "chan", "live:chan", 60000, false)).toBe(true);
 		expect(suppress()("chan", "live:chan")).toBe(true);
@@ -3679,6 +3891,21 @@ describe("_capturePlayerPreferenceSnapshot (auto quality preservation)", () => {
 		);
 	});
 
+	it("preserves an explicit stored quality during automatic recovery", () => {
+		localStorage.setItem(
+			"video-quality",
+			JSON.stringify({ default: "1080p60" }),
+		);
+		const snapshot = capture()(
+			{ state: { quality: { group: "360p" } } },
+			null,
+			{ preserveConfiguredQuality: true },
+		);
+		expect(snapshot?.["video-quality"]).toBe(
+			JSON.stringify({ default: "1080p60" }),
+		);
+	});
+
 	it("does not convert a stored auto preference into the live rung", () => {
 		localStorage.setItem("video-quality", JSON.stringify({ default: "auto" }));
 		const snapshot = capture()({ state: { quality: { group: "720p60" } } });
@@ -3790,8 +4017,6 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 			reloadRequestCount: number;
 			acceptedReloadCount: number;
 			expiresAt: number;
-			passive: boolean;
-			terminalNudgeAttempted: boolean;
 			requiresReplacement: boolean;
 			requiredReplacementVideo: WeakRef<HTMLMediaElement> | null;
 			initialOperationCompleted: boolean;
@@ -4011,7 +4236,7 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		).toBe(true);
 	});
 
-	it("bounds real rebuilds and keeps passive ownership after one final nudge", () => {
+	it("ends exact recovery at its strict cap without an extra playback action", () => {
 		const firstPlayback = makePlayback();
 		reloadOutcomes.push(true, true);
 		arm(firstPlayback);
@@ -4032,22 +4257,15 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(sample(512000)).toBe(false);
 		expect(sample(514099)).toBe(false);
 		expect(transaction().video).toBe(currentPlayback.video);
-		expect(sample(514100)).toBe(true);
-		expect(transaction().mediaKey).toBe("live:chan");
-		expect(transaction().passive).toBe(true);
-		expect(transaction().terminalNudgeAttempted).toBe(true);
+		expect(sample(514100)).toBe(false);
+		expect(transaction().mediaKey).toBeNull();
+		expect(transaction().video).toBeNull();
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd,
-		).toBe(true);
+		).toBe(false);
 		expect(sample(520000)).toBe(false);
 		expect(reloadCalls()).toHaveLength(2);
-		expect(reloads).toHaveLength(3);
-		expect(reloads[2]).toMatchObject({
-			isPausePlay: true,
-			isReload: false,
-			reason: "ad-recovery",
-			mediaKey: "live:chan",
-		});
+		expect(reloads).toHaveLength(2);
 	});
 
 	it("waits for the full observation window at the monitor cadence", () => {
@@ -4143,39 +4361,39 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(transaction().mediaKey).toBeNull();
 	});
 
-	it.each([
-		"hidden",
-		"Picture-in-Picture",
-	])("preserves recovery while %s before the first sample exceeds its lifetime", (suspension) => {
-		const playback = makePlayback();
-		reloadOutcomes.push(true);
-		if (suspension === "hidden") hidden = true;
-		else pipActive = true;
-		(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAdUntil =
-			500500;
-		arm(playback);
+	it.each(["hidden", "Picture-in-Picture"])(
+		"preserves recovery while %s before the first sample exceeds its lifetime",
+		(suspension) => {
+			const playback = makePlayback();
+			reloadOutcomes.push(true);
+			if (suspension === "hidden") hidden = true;
+			else pipActive = true;
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAdUntil =
+				500500;
+			arm(playback);
 
-		expect(sample(531000)).toBe(false);
-		expect(transaction().mediaKey).toBe("live:chan");
-		expect(transaction().cycleStartedAt).toBe(440000);
-		expect(transaction().video).toBeNull();
-		expect(
-			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd,
-		).toBe(true);
+			expect(sample(531000)).toBe(false);
+			expect(transaction().mediaKey).toBe("live:chan");
+			expect(transaction().cycleStartedAt).toBe(440000);
+			expect(transaction().video).toBeNull();
+			expect(
+				(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd,
+			).toBe(true);
 
-		hidden = false;
-		pipActive = false;
-		expect(sample(532000)).toBe(false);
-		expect(transaction().expiresAt).toBe(562000);
-		expect(
-			T<(channel: string, mediaKey: string) => boolean>(
-				"_hasPendingAdResumeIntent",
-			)("chan", "live:chan"),
-		).toBe(true);
-		expect(sample(534000)).toBe(true);
-		expect(reloadCalls()).toHaveLength(1);
-		expect(transaction().acceptedReloadCount).toBe(1);
-	});
+			hidden = false;
+			pipActive = false;
+			expect(sample(532000)).toBe(false);
+			expect(transaction().expiresAt).toBe(562000);
+			expect(
+				T<(channel: string, mediaKey: string) => boolean>(
+					"_hasPendingAdResumeIntent",
+				)("chan", "live:chan"),
+			).toBe(true);
+			expect(sample(534000)).toBe(true);
+			expect(reloadCalls()).toHaveLength(1);
+			expect(transaction().acceptedReloadCount).toBe(1);
+		},
+	);
 
 	it("suspends while hidden or in PiP and cancels on explicit pause", () => {
 		const playback = makePlayback();
