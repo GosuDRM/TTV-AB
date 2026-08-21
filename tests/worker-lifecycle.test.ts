@@ -645,46 +645,46 @@ describe("worker recovery lifecycle", () => {
 		expect(recoveryState.attempts).toBe(3);
 	});
 
-	it.each([
-		"cancelled",
-		"degraded-pip",
-	])("clears %s recovery debt only after sustained successor playback", (phase) => {
-		const context = {
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		};
-		const recoveryState = T<
-			(context: Record<string, unknown>) => Record<string, unknown>
-		>("_getWorkerRecoveryState")(context);
-		recoveryState.attempts = 2;
-		recoveryState.failedGeneration = 1;
-		recoveryState.crashedAt = 1000;
-		recoveryState.phase = phase;
-		const replacement = {
-			__TTVABGeneration: 2,
-			__TTVABPageMediaKey: "live:testchannel",
-			__TTVABPlaybackObservedAtByMediaKey: new Map([
-				["live:testchannel", 2000],
-			]),
-		};
+	it.each(["cancelled", "degraded-pip"])(
+		"clears %s recovery debt only after sustained successor playback",
+		(phase) => {
+			const context = {
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
+			};
+			const recoveryState = T<
+				(context: Record<string, unknown>) => Record<string, unknown>
+			>("_getWorkerRecoveryState")(context);
+			recoveryState.attempts = 2;
+			recoveryState.failedGeneration = 1;
+			recoveryState.crashedAt = 1000;
+			recoveryState.phase = phase;
+			const replacement = {
+				__TTVABGeneration: 2,
+				__TTVABPageMediaKey: "live:testchannel",
+				__TTVABPlaybackObservedAtByMediaKey: new Map([
+					["live:testchannel", 2000],
+				]),
+			};
 
-		T<(worker: Record<string, unknown>, now?: number) => void>(
-			"_markWorkerPong",
-		)(replacement, 2000);
-		expect(recoveryState.phase).toBe("stabilizing");
-		expect(recoveryState.attempts).toBe(2);
+			T<(worker: Record<string, unknown>, now?: number) => void>(
+				"_markWorkerPong",
+			)(replacement, 2000);
+			expect(recoveryState.phase).toBe("stabilizing");
+			expect(recoveryState.attempts).toBe(2);
 
-		replacement.__TTVABPlaybackObservedAtByMediaKey.set(
-			"live:testchannel",
-			62000,
-		);
-		T<(worker: Record<string, unknown>, now?: number) => void>(
-			"_markWorkerPong",
-		)(replacement, 62000);
-		expect(recoveryState.attempts).toBe(0);
-		expect(recoveryState.phase).toBe("idle");
-	});
+			replacement.__TTVABPlaybackObservedAtByMediaKey.set(
+				"live:testchannel",
+				62000,
+			);
+			T<(worker: Record<string, unknown>, now?: number) => void>(
+				"_markWorkerPong",
+			)(replacement, 62000);
+			expect(recoveryState.attempts).toBe(0);
+			expect(recoveryState.phase).toBe("idle");
+		},
+	);
 
 	it("returns to exhausted after a provisional replacement fails early", () => {
 		const context = {
@@ -1481,6 +1481,73 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
+	it("renews exact resume intent before clearing the active ad context", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: "testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PinnedBackupPlayerType: "autoplay",
+			PinnedBackupPlayerChannel: "testchannel",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			AdPodProgressByMediaKey: {
+				"live:testchannel": { cycleStartedAt: 190000 },
+			},
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			ShouldResumeAfterAd: true,
+			ShouldResumeAfterAdChannel: "testchannel",
+			ShouldResumeAfterAdMediaKey: "live:testchannel",
+			ShouldResumeAfterAdUntil: 199000,
+			AdCycleStaleMs: 120000,
+		});
+		const previousPendingIntent = g._hasPendingAdResumeIntent;
+		const previousUserPause = g._hasUserPauseIntent;
+		const previousSuppress = g._shouldSuppressAutomaticPlaybackResume;
+		const activeAdAtIntentChecks: unknown[] = [];
+		g._hasPendingAdResumeIntent = vi.fn(() => {
+			activeAdAtIntentChecks.push(state.CurrentAdMediaKey);
+			if (state.ShouldResumeAfterAd !== true) return false;
+			state.ShouldResumeAfterAdUntil = Date.now() + 15000;
+			return true;
+		});
+		g._hasUserPauseIntent = () => false;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		confirmHarnessWorkerPlayback(harness.worker);
+
+		try {
+			harness.worker.emitMessage({
+				key: "NativePlaybackRestored",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 190000,
+				restoredAt: 200001,
+				requiresReload: true,
+				refreshAccessToken: false,
+			});
+
+			expect(activeAdAtIntentChecks[0]).toBe("live:testchannel");
+			expect(state.ShouldResumeAfterAdUntil).toBe(215000);
+			expect(state.CurrentAdMediaKey).toBeNull();
+			expect(playerTask).toHaveBeenCalledOnce();
+		} finally {
+			harness.restore();
+			g._hasPendingAdResumeIntent = previousPendingIntent;
+			g._hasUserPauseIntent = previousUserPause;
+			g._shouldSuppressAutomaticPlaybackResume = previousSuppress;
+		}
+	});
+
 	it("re-arms a rapid same-cycle continuation and accepts its final restore", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
@@ -1824,82 +1891,85 @@ describe("worker recovery lifecycle", () => {
 				cycleStartedAt: 90000,
 			},
 		},
-	])("retries the native restore action when $name", async ({
-		requiresReload,
-		firstAttempt,
-		expectedPausePlay,
-		expectedReload,
-		expectedOptions,
-	}) => {
-		vi.useFakeTimers();
-		vi.setSystemTime(100000);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		Object.assign(state, {
-			PageMediaType: "live",
-			PageChannel: "testchannel",
-			PageVodID: null,
-			PageMediaKey: "live:testchannel",
-			CurrentAdChannel: "testchannel",
-			CurrentAdMediaKey: "live:testchannel",
-			PinnedBackupPlayerType: "autoplay",
-			PinnedBackupPlayerChannel: "testchannel",
-			PinnedBackupPlayerMediaKey: "live:testchannel",
-			ActiveCodecHandoffId: null,
-			ActiveCodecHandoffChannel: null,
-			ActiveCodecHandoffMediaKey: null,
-			AdPodProgressByMediaKey: {
-				"live:testchannel": { cycleStartedAt: 90000 },
-			},
-			StreamInfos: Object.create(null),
-			StreamInfosByUrl: Object.create(null),
-			AdCycleStaleMs: 120000,
-		});
-		const playerTask = vi
-			.fn()
-			.mockImplementationOnce(firstAttempt)
-			.mockReturnValue(true);
-		g._doPlayerTask = playerTask;
-		const scheduleRecovery = installCycleFencedRecoveryScheduler();
-		const harness = installWorkerMessageHarness();
-
-		try {
-			vi.setSystemTime(100001);
-			harness.worker.emitMessage({
-				key: "NativePlaybackRestored",
-				channel: "testchannel",
-				mediaKey: "live:testchannel",
-				pageChannel: "testchannel",
-				pageMediaKey: "live:testchannel",
-				cycleStartedAt: 90000,
-				restoredAt: 100001,
-				requiresReload,
-				refreshAccessToken: false,
+	])(
+		"retries the native restore action when $name",
+		async ({
+			requiresReload,
+			firstAttempt,
+			expectedPausePlay,
+			expectedReload,
+			expectedOptions,
+		}) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaType: "live",
+				PageChannel: "testchannel",
+				PageVodID: null,
+				PageMediaKey: "live:testchannel",
+				CurrentAdChannel: "testchannel",
+				CurrentAdMediaKey: "live:testchannel",
+				PinnedBackupPlayerType: "autoplay",
+				PinnedBackupPlayerChannel: "testchannel",
+				PinnedBackupPlayerMediaKey: "live:testchannel",
+				ActiveCodecHandoffId: null,
+				ActiveCodecHandoffChannel: null,
+				ActiveCodecHandoffMediaKey: null,
+				AdPodProgressByMediaKey: {
+					"live:testchannel": { cycleStartedAt: 90000 },
+				},
+				StreamInfos: Object.create(null),
+				StreamInfosByUrl: Object.create(null),
+				AdCycleStaleMs: 120000,
 			});
-			expect(playerTask).toHaveBeenCalledOnce();
-			expect(playerTask).toHaveBeenLastCalledWith(
-				expectedPausePlay,
-				expectedReload,
-				expectedOptions,
-			);
-			expect(scheduleRecovery).toHaveBeenCalledWith(
-				expect.any(Function),
-				80,
-				"testchannel",
-				"live:testchannel",
-				90000,
-			);
+			const playerTask = vi
+				.fn()
+				.mockImplementationOnce(firstAttempt)
+				.mockReturnValue(true);
+			g._doPlayerTask = playerTask;
+			const scheduleRecovery = installCycleFencedRecoveryScheduler();
+			const harness = installWorkerMessageHarness();
 
-			await vi.advanceTimersByTimeAsync(80);
-			expect(playerTask).toHaveBeenCalledTimes(2);
-			expect(playerTask).toHaveBeenLastCalledWith(
-				expectedPausePlay,
-				expectedReload,
-				expectedOptions,
-			);
-		} finally {
-			harness.restore();
-		}
-	});
+			try {
+				vi.setSystemTime(100001);
+				harness.worker.emitMessage({
+					key: "NativePlaybackRestored",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					pageChannel: "testchannel",
+					pageMediaKey: "live:testchannel",
+					cycleStartedAt: 90000,
+					restoredAt: 100001,
+					requiresReload,
+					refreshAccessToken: false,
+				});
+				expect(playerTask).toHaveBeenCalledOnce();
+				expect(playerTask).toHaveBeenLastCalledWith(
+					expectedPausePlay,
+					expectedReload,
+					expectedOptions,
+				);
+				expect(scheduleRecovery).toHaveBeenCalledWith(
+					expect.any(Function),
+					80,
+					"testchannel",
+					"live:testchannel",
+					90000,
+				);
+
+				await vi.advanceTimersByTimeAsync(80);
+				expect(playerTask).toHaveBeenCalledTimes(2);
+				expect(playerTask).toHaveBeenLastCalledWith(
+					expectedPausePlay,
+					expectedReload,
+					expectedOptions,
+				);
+			} finally {
+				harness.restore();
+			}
+		},
+	);
 
 	it("keeps post-ad recovery armed while an ordinary reload waits for the player", async () => {
 		vi.useFakeTimers();
@@ -2112,58 +2182,58 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
-	it.each([
-		"resume intent completed",
-		"user paused",
-	])("drops a queued post-ad retry when %s", async (reason) => {
-		vi.useFakeTimers();
-		const previousPlayerTask = g._doPlayerTask;
-		const previousPendingIntent = g._hasPendingAdResumeIntent;
-		const previousUserPause = g._hasUserPauseIntent;
-		const previousSuppress = g._shouldSuppressAutomaticPlaybackResume;
-		const previousSchedule = g._schedulePlaybackRecoveryTimeout;
-		let pendingIntent = true;
-		let userPaused = false;
-		const playerTask = vi.fn(() => false);
-		g._doPlayerTask = playerTask;
-		g._hasPendingAdResumeIntent = () => pendingIntent;
-		g._hasUserPauseIntent = () => userPaused;
-		g._shouldSuppressAutomaticPlaybackResume = () => false;
-		g._schedulePlaybackRecoveryTimeout = (
-			callback: () => void,
-			delay: number,
-		) => setTimeout(callback, delay);
+	it.each(["resume intent completed", "user paused"])(
+		"drops a queued post-ad retry when %s",
+		async (reason) => {
+			vi.useFakeTimers();
+			const previousPlayerTask = g._doPlayerTask;
+			const previousPendingIntent = g._hasPendingAdResumeIntent;
+			const previousUserPause = g._hasUserPauseIntent;
+			const previousSuppress = g._shouldSuppressAutomaticPlaybackResume;
+			const previousSchedule = g._schedulePlaybackRecoveryTimeout;
+			let pendingIntent = true;
+			let userPaused = false;
+			const playerTask = vi.fn(() => false);
+			g._doPlayerTask = playerTask;
+			g._hasPendingAdResumeIntent = () => pendingIntent;
+			g._hasUserPauseIntent = () => userPaused;
+			g._shouldSuppressAutomaticPlaybackResume = () => false;
+			g._schedulePlaybackRecoveryTimeout = (
+				callback: () => void,
+				delay: number,
+			) => setTimeout(callback, delay);
 
-		try {
-			T<
-				(
-					isPausePlay: boolean,
-					isReload: boolean,
-					options: Record<string, unknown>,
-				) => boolean
-			>("_runPostAdPlayerTask")(false, true, {
-				reason: "post-ad-native-restore",
-				channel: "testchannel",
-				mediaKey: "live:testchannel",
-				cycleStartedAt: 90000,
-			});
-			expect(playerTask).toHaveBeenCalledOnce();
+			try {
+				T<
+					(
+						isPausePlay: boolean,
+						isReload: boolean,
+						options: Record<string, unknown>,
+					) => boolean
+				>("_runPostAdPlayerTask")(false, true, {
+					reason: "post-ad-native-restore",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 90000,
+				});
+				expect(playerTask).toHaveBeenCalledOnce();
 
-			if (reason === "user paused") {
-				userPaused = true;
-			} else {
-				pendingIntent = false;
+				if (reason === "user paused") {
+					userPaused = true;
+				} else {
+					pendingIntent = false;
+				}
+				await vi.advanceTimersByTimeAsync(80);
+				expect(playerTask).toHaveBeenCalledOnce();
+			} finally {
+				g._doPlayerTask = previousPlayerTask;
+				g._hasPendingAdResumeIntent = previousPendingIntent;
+				g._hasUserPauseIntent = previousUserPause;
+				g._shouldSuppressAutomaticPlaybackResume = previousSuppress;
+				g._schedulePlaybackRecoveryTimeout = previousSchedule;
 			}
-			await vi.advanceTimersByTimeAsync(80);
-			expect(playerTask).toHaveBeenCalledOnce();
-		} finally {
-			g._doPlayerTask = previousPlayerTask;
-			g._hasPendingAdResumeIntent = previousPendingIntent;
-			g._hasUserPauseIntent = previousUserPause;
-			g._shouldSuppressAutomaticPlaybackResume = previousSuppress;
-			g._schedulePlaybackRecoveryTimeout = previousSchedule;
-		}
-	});
+		},
+	);
 
 	it("drops a queued ordinary recovery retry when the ad cycle changes", async () => {
 		vi.useFakeTimers();
@@ -3108,67 +3178,66 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
-	it.each([
-		"false",
-		"undefined",
-		"throw",
-	] as const)("retries when player recovery returns %s before succeeding", (outcome) => {
-		vi.useFakeTimers();
-		vi.setSystemTime(100000);
-		const attempt = T<
-			(
-				worker: Record<string, unknown>,
-				context: Record<string, unknown>,
-			) => void
-		>("_attemptWorkerRestart");
-		const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
-		const recoveryState = T<
-			(context: Record<string, unknown>) => Record<string, unknown>
-		>("_getWorkerRecoveryState")({
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		});
-		g._getPlaybackContextFromUrl = () => ({
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		});
-		const playerTask = vi.fn((): boolean | undefined => {
-			recordTestPlayerReload("live:testchannel");
-			return true;
-		});
-		playerTask.mockImplementationOnce(() => {
-			if (outcome === "throw") throw new Error("player unavailable");
-			if (outcome === "undefined") return undefined;
-			return false;
-		});
-		g._doPlayerTask = playerTask;
+	it.each(["false", "undefined", "throw"] as const)(
+		"retries when player recovery returns %s before succeeding",
+		(outcome) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			const attempt = T<
+				(
+					worker: Record<string, unknown>,
+					context: Record<string, unknown>,
+				) => void
+			>("_attemptWorkerRestart");
+			const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
+			const recoveryState = T<
+				(context: Record<string, unknown>) => Record<string, unknown>
+			>("_getWorkerRecoveryState")({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
+			});
+			g._getPlaybackContextFromUrl = () => ({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
+			});
+			const playerTask = vi.fn((): boolean | undefined => {
+				recordTestPlayerReload("live:testchannel");
+				return true;
+			});
+			playerTask.mockImplementationOnce(() => {
+				if (outcome === "throw") throw new Error("player unavailable");
+				if (outcome === "undefined") return undefined;
+				return false;
+			});
+			g._doPlayerTask = playerTask;
 
-		try {
-			attempt(
-				{
-					__TTVABCrashed: true,
-					__TTVABGeneration: 1,
-					__TTVABPageMediaKey: "live:testchannel",
-				},
-				{ MediaType: "live", ChannelName: "testchannel" },
-			);
-			vi.advanceTimersByTime(2999);
-			expect(playerTask).toHaveBeenCalledOnce();
-			expect(recoveryState.lastReloadAt).toBe(0);
+			try {
+				attempt(
+					{
+						__TTVABCrashed: true,
+						__TTVABGeneration: 1,
+						__TTVABPageMediaKey: "live:testchannel",
+					},
+					{ MediaType: "live", ChannelName: "testchannel" },
+				);
+				vi.advanceTimersByTime(2999);
+				expect(playerTask).toHaveBeenCalledOnce();
+				expect(recoveryState.lastReloadAt).toBe(0);
 
-			vi.advanceTimersByTime(1);
-			expect(playerTask).toHaveBeenCalledTimes(2);
-			expect(recoveryState.lastReloadAt).toBe(103000);
-		} finally {
-			if (previousGetPlaybackContext === undefined) {
-				delete g._getPlaybackContextFromUrl;
-			} else {
-				g._getPlaybackContextFromUrl = previousGetPlaybackContext;
+				vi.advanceTimersByTime(1);
+				expect(playerTask).toHaveBeenCalledTimes(2);
+				expect(recoveryState.lastReloadAt).toBe(103000);
+			} finally {
+				if (previousGetPlaybackContext === undefined) {
+					delete g._getPlaybackContextFromUrl;
+				} else {
+					g._getPlaybackContextFromUrl = previousGetPlaybackContext;
+				}
 			}
-		}
-	});
+		},
+	);
 
 	it("keeps retrying a crashed worker after Twitch terminates its old instance", () => {
 		vi.useFakeTimers();
@@ -5479,87 +5548,87 @@ describe("page-side M3U8 fallback", () => {
 		expect(getTrusted(url, "live:testchannel", 90000)).not.toBeNull();
 	});
 
-	it.each([
-		"avc",
-		"hevc",
-		"av1",
-		null,
-	])("fails closed on transiently clean inherited media with only %s capability metadata", async (codecFamily) => {
-		const install = T<() => void>("_installPageSideM3U8Override");
-		const scopedWindow = window as unknown as Record<string, unknown>;
-		const originalFetch = window.fetch;
-		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
-		const originalFallbackActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		const previousState = {
-			currentAdMediaKey: state.CurrentAdMediaKey,
-			pageMediaKey: state.PageMediaKey,
-			pageChannel: state.PageChannel,
-		};
-		const playlist = [
-			"#EXTM3U",
-			"#EXT-X-TARGETDURATION:2",
-			"#EXT-X-MEDIA-SEQUENCE:500",
-			"#EXTINF:2.000,",
-			"https://edge.example/content-500.ts",
-		].join("\n");
-		const rawFetch = vi.fn(async () => new Response(playlist, { status: 200 }));
-		const url = `https://video-weaver.example.ttvnw.net/v1/playlist/${
-			codecFamily || "unknown"
-		}-clean.m3u8`;
-		const variantCodecByUrl = g._pageSideVariantCodecByUrl as Map<
-			string,
-			string
-		>;
-		window.fetch = rawFetch as typeof fetch;
-		scopedWindow.__TTVAB_REAL_FETCH__ = null;
-		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
-		(g._pageSideEmptyHoldInfoByUrl as Map<string, unknown>).clear();
-		variantCodecByUrl.clear();
-		state.CurrentAdMediaKey = "live:testchannel";
-		state.PageMediaKey = "live:testchannel";
-		state.PageChannel = "testchannel";
-		if (codecFamily) {
-			const codec =
-				codecFamily === "avc"
-					? "avc1.64002A"
-					: codecFamily === "hevc"
-						? "hev1.1.6.L153.B0"
-						: "av01.0.13M.08";
-			T<(text: string, baseUrl: string) => boolean>(
-				"_rememberPageSideVariantCodecs",
-			)(
-				[
-					"#EXTM3U",
-					`#EXT-X-STREAM-INF:BANDWIDTH=8000000,CODECS="${codec},mp4a.40.2"`,
-					url,
-				].join("\n"),
-				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+	it.each(["avc", "hevc", "av1", null])(
+		"fails closed on transiently clean inherited media with only %s capability metadata",
+		async (codecFamily) => {
+			const install = T<() => void>("_installPageSideM3U8Override");
+			const scopedWindow = window as unknown as Record<string, unknown>;
+			const originalFetch = window.fetch;
+			const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+			const originalFallbackActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			const previousState = {
+				currentAdMediaKey: state.CurrentAdMediaKey,
+				pageMediaKey: state.PageMediaKey,
+				pageChannel: state.PageChannel,
+			};
+			const playlist = [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:500",
+				"#EXTINF:2.000,",
+				"https://edge.example/content-500.ts",
+			].join("\n");
+			const rawFetch = vi.fn(
+				async () => new Response(playlist, { status: 200 }),
 			);
-		}
+			const url = `https://video-weaver.example.ttvnw.net/v1/playlist/${
+				codecFamily || "unknown"
+			}-clean.m3u8`;
+			const variantCodecByUrl = g._pageSideVariantCodecByUrl as Map<
+				string,
+				string
+			>;
+			window.fetch = rawFetch as typeof fetch;
+			scopedWindow.__TTVAB_REAL_FETCH__ = null;
+			scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+			(g._pageSideEmptyHoldInfoByUrl as Map<string, unknown>).clear();
+			variantCodecByUrl.clear();
+			state.CurrentAdMediaKey = "live:testchannel";
+			state.PageMediaKey = "live:testchannel";
+			state.PageChannel = "testchannel";
+			if (codecFamily) {
+				const codec =
+					codecFamily === "avc"
+						? "avc1.64002A"
+						: codecFamily === "hevc"
+							? "hev1.1.6.L153.B0"
+							: "av01.0.13M.08";
+				T<(text: string, baseUrl: string) => boolean>(
+					"_rememberPageSideVariantCodecs",
+				)(
+					[
+						"#EXTM3U",
+						`#EXT-X-STREAM-INF:BANDWIDTH=8000000,CODECS="${codec},mp4a.40.2"`,
+						url,
+					].join("\n"),
+					"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+				);
+			}
 
-		try {
-			install();
-			await expect(window.fetch(url)).rejects.toMatchObject({
-				name: "AbortError",
-			});
-		} finally {
-			window.fetch = originalFetch;
-			if (originalRealFetch === undefined) {
-				delete scopedWindow.__TTVAB_REAL_FETCH__;
-			} else {
-				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			try {
+				install();
+				await expect(window.fetch(url)).rejects.toMatchObject({
+					name: "AbortError",
+				});
+			} finally {
+				window.fetch = originalFetch;
+				if (originalRealFetch === undefined) {
+					delete scopedWindow.__TTVAB_REAL_FETCH__;
+				} else {
+					scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+				}
+				if (originalFallbackActive === undefined) {
+					delete scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+				} else {
+					scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = originalFallbackActive;
+				}
+				state.CurrentAdMediaKey = previousState.currentAdMediaKey;
+				state.PageMediaKey = previousState.pageMediaKey;
+				state.PageChannel = previousState.pageChannel;
 			}
-			if (originalFallbackActive === undefined) {
-				delete scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
-			} else {
-				scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = originalFallbackActive;
-			}
-			state.CurrentAdMediaKey = previousState.currentAdMediaKey;
-			state.PageMediaKey = previousState.pageMediaKey;
-			state.PageChannel = previousState.pageChannel;
-		}
-	});
+		},
+	);
 
 	it("serves an AVC hold only from exact confirmed ownership after handoff clears", async () => {
 		vi.useFakeTimers();
@@ -6743,72 +6812,73 @@ describe("page-side M3U8 fallback", () => {
 		}
 	});
 
-	it.each([
-		"hevc",
-		"av1",
-		null,
-	])("aborts an all-ad degraded playlist whose rendition codec is %s", async (codecFamily) => {
-		const install = T<() => void>("_installPageSideM3U8Override");
-		const scopedWindow = window as unknown as Record<string, unknown>;
-		const originalFetch = window.fetch;
-		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
-		const originalFallbackActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
-		const playlist = [
-			"#EXTM3U",
-			"#EXT-X-TARGETDURATION:2",
-			"#EXT-X-MEDIA-SEQUENCE:410",
-			"#EXTINF:2.000,",
-			"https://edge.example/_404/ad-410.ts",
-		].join("\n");
-		const rawFetch = vi.fn(async () => new Response(playlist, { status: 200 }));
-		const url = `https://video-weaver.example.ttvnw.net/v1/playlist/${
-			codecFamily || "unknown"
-		}-live.m3u8`;
-		const variantCodecByUrl = g._pageSideVariantCodecByUrl as Map<
-			string,
-			string
-		>;
-		window.fetch = rawFetch as typeof fetch;
-		scopedWindow.__TTVAB_REAL_FETCH__ = null;
-		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
-		(g._pageSideEmptyHoldInfoByUrl as Map<string, unknown>).clear();
-		variantCodecByUrl.clear();
-		if (codecFamily) {
-			const codec =
-				codecFamily === "hevc" ? "hev1.1.6.L153.B0" : "av01.0.13M.08";
-			T<(text: string, baseUrl: string) => boolean>(
-				"_rememberPageSideVariantCodecs",
-			)(
-				[
-					"#EXTM3U",
-					`#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,CODECS="${codec},mp4a.40.2"`,
-					url,
-				].join("\n"),
-				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+	it.each(["hevc", "av1", null])(
+		"aborts an all-ad degraded playlist whose rendition codec is %s",
+		async (codecFamily) => {
+			const install = T<() => void>("_installPageSideM3U8Override");
+			const scopedWindow = window as unknown as Record<string, unknown>;
+			const originalFetch = window.fetch;
+			const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+			const originalFallbackActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+			const playlist = [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:410",
+				"#EXTINF:2.000,",
+				"https://edge.example/_404/ad-410.ts",
+			].join("\n");
+			const rawFetch = vi.fn(
+				async () => new Response(playlist, { status: 200 }),
 			);
-		}
-
-		try {
-			install();
-			await expect(window.fetch(url)).rejects.toMatchObject({
-				name: "AbortError",
-			});
-			expect(rawFetch).toHaveBeenCalledOnce();
-		} finally {
-			window.fetch = originalFetch;
+			const url = `https://video-weaver.example.ttvnw.net/v1/playlist/${
+				codecFamily || "unknown"
+			}-live.m3u8`;
+			const variantCodecByUrl = g._pageSideVariantCodecByUrl as Map<
+				string,
+				string
+			>;
+			window.fetch = rawFetch as typeof fetch;
+			scopedWindow.__TTVAB_REAL_FETCH__ = null;
+			scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+			(g._pageSideEmptyHoldInfoByUrl as Map<string, unknown>).clear();
 			variantCodecByUrl.clear();
-			if (originalRealFetch === undefined) {
-				delete scopedWindow.__TTVAB_REAL_FETCH__;
-			} else {
-				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			if (codecFamily) {
+				const codec =
+					codecFamily === "hevc" ? "hev1.1.6.L153.B0" : "av01.0.13M.08";
+				T<(text: string, baseUrl: string) => boolean>(
+					"_rememberPageSideVariantCodecs",
+				)(
+					[
+						"#EXTM3U",
+						`#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,CODECS="${codec},mp4a.40.2"`,
+						url,
+					].join("\n"),
+					"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+				);
 			}
-			if (originalFallbackActive === undefined) {
-				delete scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
-			} else {
-				scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = originalFallbackActive;
+
+			try {
+				install();
+				await expect(window.fetch(url)).rejects.toMatchObject({
+					name: "AbortError",
+				});
+				expect(rawFetch).toHaveBeenCalledOnce();
+			} finally {
+				window.fetch = originalFetch;
+				variantCodecByUrl.clear();
+				if (originalRealFetch === undefined) {
+					delete scopedWindow.__TTVAB_REAL_FETCH__;
+				} else {
+					scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+				}
+				if (originalFallbackActive === undefined) {
+					delete scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+				} else {
+					scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = originalFallbackActive;
+				}
 			}
-		}
-	});
+		},
+	);
 
 	it("does not refetch raw media when degraded inspection throws", async () => {
 		const install = T<() => void>("_installPageSideM3U8Override");
@@ -7322,89 +7392,90 @@ describe("worker media-playlist exception fail-closed path", () => {
 	it.each([
 		{ label: "finishes", reject: false },
 		{ label: "aborts", reject: true },
-	])("returns native media when pending backup processing $label after disabling", async ({
-		reject,
-	}) => {
-		const originalFetch = g.fetch;
-		const originalProcess = g._processM3U8;
-		const mediaUrl =
-			"https://video-weaver.example.ttvnw.net/v1/playlist/pending-toggle.m3u8";
-		const nativePlaylist = [
-			"#EXTM3U",
-			"#EXT-X-TARGETDURATION:2",
-			"#EXT-X-MEDIA-SEQUENCE:500",
-			"#EXT-X-CUE-OUT:30",
-			"#EXTINF:2.000,",
-			"ad-500.ts",
-		].join("\n");
-		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		const resolution = {
-			Name: "1080p60",
-			Resolution: "1920x1080",
-			FrameRate: 60,
-			Codecs: "avc1.64002A,mp4a.40.2",
-		};
-		const info = T<
-			(context: Record<string, unknown>) => Record<string, unknown>
-		>("_createStreamInfo")({
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		});
-		info.IsShowingAd = true;
-		info.VisibleAdStartedAt = 100;
-		info.ResolutionList = [resolution];
-		info.Urls = Object.create(null);
-		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
-			mediaUrl,
-		)) {
-			(info.Urls as Record<string, unknown>)[alias] = resolution;
-			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
-		}
-		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
-		state.IsAdStrippingEnabled = true;
-		state.CurrentAdChannel = "testchannel";
-		state.CurrentAdMediaKey = "live:testchannel";
-		state.AdPodProgressByMediaKey = {
-			"live:testchannel": { cycleStartedAt: 100 },
-		};
-		const rawFetch = vi.fn(
-			async () => new Response(nativePlaylist, { status: 200 }),
-		);
-		const processStarted = vi.fn();
-		let settleProcessing = (_reason: unknown) => {
-			throw new Error("Processing did not start");
-		};
-		g.fetch = rawFetch;
-		g._processM3U8 = () =>
-			new Promise((resolve, rejectProcessing) => {
-				processStarted();
-				settleProcessing = reject ? rejectProcessing : resolve;
+	])(
+		"returns native media when pending backup processing $label after disabling",
+		async ({ reject }) => {
+			const originalFetch = g.fetch;
+			const originalProcess = g._processM3U8;
+			const mediaUrl =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/pending-toggle.m3u8";
+			const nativePlaylist = [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:500",
+				"#EXT-X-CUE-OUT:30",
+				"#EXTINF:2.000,",
+				"ad-500.ts",
+			].join("\n");
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			const resolution = {
+				Name: "1080p60",
+				Resolution: "1920x1080",
+				FrameRate: 60,
+				Codecs: "avc1.64002A,mp4a.40.2",
+			};
+			const info = T<
+				(context: Record<string, unknown>) => Record<string, unknown>
+			>("_createStreamInfo")({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
 			});
-
-		try {
-			T<() => void>("_hookWorkerFetch")();
-			const pendingResponse = (g.fetch as typeof fetch)(mediaUrl);
-			await vi.waitFor(() => expect(processStarted).toHaveBeenCalledOnce());
-			state.CurrentAdChannel = null;
-			state.CurrentAdMediaKey = null;
-			state.IsAdStrippingEnabled = false;
-			settleProcessing(
-				reject
-					? new DOMException("Backup search ownership changed", "AbortError")
-					: "#EXTM3U\n#EXT-X-ENDLIST",
+			info.IsShowingAd = true;
+			info.VisibleAdStartedAt = 100;
+			info.ResolutionList = [resolution];
+			info.Urls = Object.create(null);
+			for (const alias of T<(url: string) => string[]>(
+				"_getPlaylistUrlAliases",
+			)(mediaUrl)) {
+				(info.Urls as Record<string, unknown>)[alias] = resolution;
+				(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+			}
+			(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+			state.IsAdStrippingEnabled = true;
+			state.CurrentAdChannel = "testchannel";
+			state.CurrentAdMediaKey = "live:testchannel";
+			state.AdPodProgressByMediaKey = {
+				"live:testchannel": { cycleStartedAt: 100 },
+			};
+			const rawFetch = vi.fn(
+				async () => new Response(nativePlaylist, { status: 200 }),
 			);
+			const processStarted = vi.fn();
+			let settleProcessing = (_reason: unknown) => {
+				throw new Error("Processing did not start");
+			};
+			g.fetch = rawFetch;
+			g._processM3U8 = () =>
+				new Promise((resolve, rejectProcessing) => {
+					processStarted();
+					settleProcessing = reject ? rejectProcessing : resolve;
+				});
 
-			const result = await (await pendingResponse).text();
-			expect(result).toBe(nativePlaylist);
-			expect(rawFetch).toHaveBeenCalledOnce();
-			expect(rawFetch).toHaveBeenCalledWith(mediaUrl, undefined);
-		} finally {
-			g.fetch = originalFetch;
-			g._processM3U8 = originalProcess;
-		}
-	});
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				const pendingResponse = (g.fetch as typeof fetch)(mediaUrl);
+				await vi.waitFor(() => expect(processStarted).toHaveBeenCalledOnce());
+				state.CurrentAdChannel = null;
+				state.CurrentAdMediaKey = null;
+				state.IsAdStrippingEnabled = false;
+				settleProcessing(
+					reject
+						? new DOMException("Backup search ownership changed", "AbortError")
+						: "#EXTM3U\n#EXT-X-ENDLIST",
+				);
+
+				const result = await (await pendingResponse).text();
+				expect(result).toBe(nativePlaylist);
+				expect(rawFetch).toHaveBeenCalledOnce();
+				expect(rawFetch).toHaveBeenCalledWith(mediaUrl, undefined);
+			} finally {
+				g.fetch = originalFetch;
+				g._processM3U8 = originalProcess;
+			}
+		},
+	);
 
 	it.each([
 		{
@@ -7417,43 +7488,43 @@ describe("worker media-playlist exception fail-closed path", () => {
 			family: "av1",
 			codec: "av01.0.13M.08",
 		},
-	])("aborts an AVC empty hold while the $label decoder owns playback", async ({
-		family,
-		codec,
-	}) => {
-		const originalFetch = g.fetch;
-		const rawFetch = vi.fn(async () => new Response(null, { status: 200 }));
-		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		state.IsAdStrippingEnabled = true;
-		const info = T<
-			(context: Record<string, unknown>) => Record<string, unknown>
-		>("_createStreamInfo")({
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		});
-		info.EnhancedDecoderCodecFamily = family;
-		info.EnhancedDecoderCodec = codec;
-		state.StreamInfos = { "live:testchannel": info };
-		state.CurrentAdChannel = "testchannel";
-		state.CurrentAdMediaKey = "live:testchannel";
-		g.fetch = rawFetch;
-		const emptyHoldUrl =
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel";
-
-		try {
-			T<() => void>("_hookWorkerFetch")();
-			await expect(
-				(g.fetch as typeof fetch)(emptyHoldUrl),
-			).rejects.toMatchObject({
-				name: "AbortError",
+	])(
+		"aborts an AVC empty hold while the $label decoder owns playback",
+		async ({ family, codec }) => {
+			const originalFetch = g.fetch;
+			const rawFetch = vi.fn(async () => new Response(null, { status: 200 }));
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.IsAdStrippingEnabled = true;
+			const info = T<
+				(context: Record<string, unknown>) => Record<string, unknown>
+			>("_createStreamInfo")({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
 			});
-			expect(rawFetch).not.toHaveBeenCalled();
-		} finally {
-			g.fetch = originalFetch;
-		}
-	});
+			info.EnhancedDecoderCodecFamily = family;
+			info.EnhancedDecoderCodec = codec;
+			state.StreamInfos = { "live:testchannel": info };
+			state.CurrentAdChannel = "testchannel";
+			state.CurrentAdMediaKey = "live:testchannel";
+			g.fetch = rawFetch;
+			const emptyHoldUrl =
+				"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel";
+
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				await expect(
+					(g.fetch as typeof fetch)(emptyHoldUrl),
+				).rejects.toMatchObject({
+					name: "AbortError",
+				});
+				expect(rawFetch).not.toHaveBeenCalled();
+			} finally {
+				g.fetch = originalFetch;
+			}
+		},
+	);
 
 	it("keeps the AVC empty hold available after enhanced ownership clears", async () => {
 		const originalFetch = g.fetch;
@@ -7509,68 +7580,71 @@ describe("worker media-playlist exception fail-closed path", () => {
 				"clean-500.ts",
 			].join("\n"),
 		},
-	])("does not expose an AVC $label response after enhanced-owner processing fails", async ({
-		playlist,
-	}) => {
-		const originalFetch = g.fetch;
-		const originalProcess = g._processM3U8;
-		const mediaUrl =
-			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-active.m3u8";
-		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		state.IsAdStrippingEnabled = true;
-		const resolution = {
-			Name: "1080p60",
-			Resolution: "1920x1080",
-			FrameRate: 60,
-			Codecs: "avc1.64002A,mp4a.40.2",
-		};
-		const info = T<
-			(context: Record<string, unknown>) => Record<string, unknown>
-		>("_createStreamInfo")({
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		});
-		info.IsShowingAd = true;
-		info.VisibleAdStartedAt = 100;
-		info.EnhancedDecoderCodecFamily = "hevc";
-		info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
-		info.ResolutionList = [resolution];
-		info.Urls = Object.create(null);
-		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
-			mediaUrl,
-		)) {
-			(info.Urls as Record<string, unknown>)[alias] = resolution;
-			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
-		}
-		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
-		state.CurrentAdChannel = "testchannel";
-		state.CurrentAdMediaKey = "live:testchannel";
-		state.AdPodProgressByMediaKey = {
-			"live:testchannel": { cycleStartedAt: 100 },
-		};
-		const rawFetch = vi.fn(async () => {
-			info.EnhancedDecoderCodecFamily = null;
-			info.EnhancedDecoderCodec = null;
-			return new Response(playlist, { status: 200 });
-		});
-		g.fetch = rawFetch;
-		g._processM3U8 = async () => {
-			throw new Error("forced processing failure");
-		};
-
-		try {
-			T<() => void>("_hookWorkerFetch")();
-			await expect((g.fetch as typeof fetch)(mediaUrl)).rejects.toMatchObject({
-				name: "AbortError",
+	])(
+		"does not expose an AVC $label response after enhanced-owner processing fails",
+		async ({ playlist }) => {
+			const originalFetch = g.fetch;
+			const originalProcess = g._processM3U8;
+			const mediaUrl =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/avc-active.m3u8";
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.IsAdStrippingEnabled = true;
+			const resolution = {
+				Name: "1080p60",
+				Resolution: "1920x1080",
+				FrameRate: 60,
+				Codecs: "avc1.64002A,mp4a.40.2",
+			};
+			const info = T<
+				(context: Record<string, unknown>) => Record<string, unknown>
+			>("_createStreamInfo")({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
 			});
-			expect(rawFetch).toHaveBeenCalledOnce();
-		} finally {
-			g.fetch = originalFetch;
-			g._processM3U8 = originalProcess;
-		}
-	});
+			info.IsShowingAd = true;
+			info.VisibleAdStartedAt = 100;
+			info.EnhancedDecoderCodecFamily = "hevc";
+			info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
+			info.ResolutionList = [resolution];
+			info.Urls = Object.create(null);
+			for (const alias of T<(url: string) => string[]>(
+				"_getPlaylistUrlAliases",
+			)(mediaUrl)) {
+				(info.Urls as Record<string, unknown>)[alias] = resolution;
+				(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+			}
+			(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+			state.CurrentAdChannel = "testchannel";
+			state.CurrentAdMediaKey = "live:testchannel";
+			state.AdPodProgressByMediaKey = {
+				"live:testchannel": { cycleStartedAt: 100 },
+			};
+			const rawFetch = vi.fn(async () => {
+				info.EnhancedDecoderCodecFamily = null;
+				info.EnhancedDecoderCodec = null;
+				return new Response(playlist, { status: 200 });
+			});
+			g.fetch = rawFetch;
+			g._processM3U8 = async () => {
+				throw new Error("forced processing failure");
+			};
+
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				await expect((g.fetch as typeof fetch)(mediaUrl)).rejects.toMatchObject(
+					{
+						name: "AbortError",
+					},
+				);
+				expect(rawFetch).toHaveBeenCalledOnce();
+			} finally {
+				g.fetch = originalFetch;
+				g._processM3U8 = originalProcess;
+			}
+		},
+	);
 
 	it("aborts an ad-marked unresolved rendition after processing fails", async () => {
 		const originalFetch = g.fetch;
@@ -7632,72 +7706,75 @@ describe("worker media-playlist exception fail-closed path", () => {
 	it.each([
 		{ label: "the 1440p ad context", ownerAtStart: true },
 		{ label: "the 1440p owner and ad context", ownerAtStart: false },
-	])("aborts an AVC response when $label activates during fetch", async ({
-		ownerAtStart,
-	}) => {
-		const originalFetch = g.fetch;
-		const cleanPlaylist = [
-			"#EXTM3U",
-			"#EXT-X-TARGETDURATION:2",
-			"#EXT-X-MEDIA-SEQUENCE:500",
-			"#EXTINF:2.000,live",
-			"clean-500.ts",
-		].join("\n");
-		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		state.IsAdStrippingEnabled = true;
-		const mediaUrl =
-			"https://video-weaver.example.ttvnw.net/v1/playlist/avc-activating.m3u8";
-		const resolution = {
-			Name: "1080p60",
-			Resolution: "1920x1080",
-			FrameRate: 60,
-			Codecs: "avc1.64002A,mp4a.40.2",
-		};
-		const info = T<
-			(context: Record<string, unknown>) => Record<string, unknown>
-		>("_createStreamInfo")({
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		});
-		info.EnhancedDecoderCodecFamily = ownerAtStart ? "hevc" : null;
-		info.EnhancedDecoderCodec = ownerAtStart ? "hev1.1.6.L153.B0" : null;
-		info.ResolutionList = [resolution];
-		info.Urls = Object.create(null);
-		for (const alias of T<(url: string) => string[]>("_getPlaylistUrlAliases")(
-			mediaUrl,
-		)) {
-			(info.Urls as Record<string, unknown>)[alias] = resolution;
-			(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
-		}
-		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
-		state.CurrentAdChannel = null;
-		state.CurrentAdMediaKey = null;
-		const rawFetch = vi.fn(async () => {
-			if (!ownerAtStart) {
-				info.EnhancedDecoderCodecFamily = "hevc";
-				info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
-			}
-			state.CurrentAdChannel = "testchannel";
-			state.CurrentAdMediaKey = "live:testchannel";
-			state.AdPodProgressByMediaKey = {
-				"live:testchannel": { cycleStartedAt: 100 },
+	])(
+		"aborts an AVC response when $label activates during fetch",
+		async ({ ownerAtStart }) => {
+			const originalFetch = g.fetch;
+			const cleanPlaylist = [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:500",
+				"#EXTINF:2.000,live",
+				"clean-500.ts",
+			].join("\n");
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.IsAdStrippingEnabled = true;
+			const mediaUrl =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/avc-activating.m3u8";
+			const resolution = {
+				Name: "1080p60",
+				Resolution: "1920x1080",
+				FrameRate: 60,
+				Codecs: "avc1.64002A,mp4a.40.2",
 			};
-			return new Response(cleanPlaylist, { status: 200 });
-		});
-		g.fetch = rawFetch;
-
-		try {
-			T<() => void>("_hookWorkerFetch")();
-			await expect((g.fetch as typeof fetch)(mediaUrl)).rejects.toMatchObject({
-				name: "AbortError",
+			const info = T<
+				(context: Record<string, unknown>) => Record<string, unknown>
+			>("_createStreamInfo")({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
 			});
-			expect(rawFetch).toHaveBeenCalledOnce();
-		} finally {
-			g.fetch = originalFetch;
-		}
-	});
+			info.EnhancedDecoderCodecFamily = ownerAtStart ? "hevc" : null;
+			info.EnhancedDecoderCodec = ownerAtStart ? "hev1.1.6.L153.B0" : null;
+			info.ResolutionList = [resolution];
+			info.Urls = Object.create(null);
+			for (const alias of T<(url: string) => string[]>(
+				"_getPlaylistUrlAliases",
+			)(mediaUrl)) {
+				(info.Urls as Record<string, unknown>)[alias] = resolution;
+				(state.StreamInfosByUrl as Record<string, unknown>)[alias] = info;
+			}
+			(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+			state.CurrentAdChannel = null;
+			state.CurrentAdMediaKey = null;
+			const rawFetch = vi.fn(async () => {
+				if (!ownerAtStart) {
+					info.EnhancedDecoderCodecFamily = "hevc";
+					info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
+				}
+				state.CurrentAdChannel = "testchannel";
+				state.CurrentAdMediaKey = "live:testchannel";
+				state.AdPodProgressByMediaKey = {
+					"live:testchannel": { cycleStartedAt: 100 },
+				};
+				return new Response(cleanPlaylist, { status: 200 });
+			});
+			g.fetch = rawFetch;
+
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				await expect((g.fetch as typeof fetch)(mediaUrl)).rejects.toMatchObject(
+					{
+						name: "AbortError",
+					},
+				);
+				expect(rawFetch).toHaveBeenCalledOnce();
+			} finally {
+				g.fetch = originalFetch;
+			}
+		},
+	);
 
 	it("aborts a stale in-flight AVC response from the retiring 1440p ad cycle", async () => {
 		const originalFetch = g.fetch;
@@ -7989,48 +8066,45 @@ describe("worker ad-segment codec ownership", () => {
 		},
 	];
 
-	it.each(
-		enhancedOrUnknownCases,
-	)("aborts a $label ad segment without fetching an AVC empty segment", async ({
-		url,
-		cached,
-		owner,
-	}) => {
-		const originalFetch = g.fetch;
-		const originalExactKey = g._getExactPlaylistUrlKey;
-		const originalAbortError = g._createCodecHandoffAbortError;
-		const rawFetch = vi.fn(async () => new Response("unexpected"));
-		const exactKey = String(url);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		state.CurrentAdChannel = "testchannel";
-		state.CurrentAdMediaKey = "live:testchannel";
-		state.SimulatedAdsDepth = 0;
-		state.AdSignifier = "stitched";
-		state.AdSegmentCache = new Map(cached ? [[exactKey, Date.now()]] : []);
-		state.SegmentCodecOwners = new Map(owner ? [[exactKey, owner]] : []);
-		g.fetch = rawFetch;
-		g._getExactPlaylistUrlKey = (value: unknown) => String(value || "");
-		g._createCodecHandoffAbortError = () =>
-			new DOMException("Unsafe ad segment codec", "AbortError");
+	it.each(enhancedOrUnknownCases)(
+		"aborts a $label ad segment without fetching an AVC empty segment",
+		async ({ url, cached, owner }) => {
+			const originalFetch = g.fetch;
+			const originalExactKey = g._getExactPlaylistUrlKey;
+			const originalAbortError = g._createCodecHandoffAbortError;
+			const rawFetch = vi.fn(async () => new Response("unexpected"));
+			const exactKey = String(url);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.CurrentAdChannel = "testchannel";
+			state.CurrentAdMediaKey = "live:testchannel";
+			state.SimulatedAdsDepth = 0;
+			state.AdSignifier = "stitched";
+			state.AdSegmentCache = new Map(cached ? [[exactKey, Date.now()]] : []);
+			state.SegmentCodecOwners = new Map(owner ? [[exactKey, owner]] : []);
+			g.fetch = rawFetch;
+			g._getExactPlaylistUrlKey = (value: unknown) => String(value || "");
+			g._createCodecHandoffAbortError = () =>
+				new DOMException("Unsafe ad segment codec", "AbortError");
 
-		try {
-			T<() => void>("_hookWorkerFetch")();
+			try {
+				T<() => void>("_hookWorkerFetch")();
 
-			await expect((g.fetch as typeof fetch)(url)).rejects.toMatchObject({
-				name: "AbortError",
-			});
-			expect(rawFetch).not.toHaveBeenCalled();
-		} finally {
-			g.fetch = originalFetch;
-			if (originalExactKey === undefined) delete g._getExactPlaylistUrlKey;
-			else g._getExactPlaylistUrlKey = originalExactKey;
-			if (originalAbortError === undefined) {
-				delete g._createCodecHandoffAbortError;
-			} else {
-				g._createCodecHandoffAbortError = originalAbortError;
+				await expect((g.fetch as typeof fetch)(url)).rejects.toMatchObject({
+					name: "AbortError",
+				});
+				expect(rawFetch).not.toHaveBeenCalled();
+			} finally {
+				g.fetch = originalFetch;
+				if (originalExactKey === undefined) delete g._getExactPlaylistUrlKey;
+				else g._getExactPlaylistUrlKey = originalExactKey;
+				if (originalAbortError === undefined) {
+					delete g._createCodecHandoffAbortError;
+				} else {
+					g._createCodecHandoffAbortError = originalAbortError;
+				}
 			}
-		}
-	});
+		},
+	);
 
 	it("uses the AVC empty segment after enhanced decoder ownership clears", async () => {
 		const originalFetch = g.fetch;
@@ -8090,60 +8164,60 @@ describe("worker ad-segment codec ownership", () => {
 	it.each([
 		{ family: "hevc", codec: "hev1.1.6.L153.B0" },
 		{ family: "av1", codec: "av01.0.13M.08" },
-	])("aborts an AVC-owned ad segment while the $family decoder still owns playback", async ({
-		family,
-		codec,
-	}) => {
-		const originalFetch = g.fetch;
-		const originalExactKey = g._getExactPlaylistUrlKey;
-		const originalAbortError = g._createCodecHandoffAbortError;
-		const rawFetch = vi.fn(async () => new Response("unexpected"));
-		const url = "https://edge.example/ad-cycle/avc-owned-enhanced.ts";
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		state.CurrentAdChannel = "testchannel";
-		state.CurrentAdMediaKey = "live:testchannel";
-		state.SimulatedAdsDepth = 0;
-		state.AdSignifier = "stitched";
-		state.AdSegmentCache = new Map([[url, Date.now()]]);
-		state.SegmentCodecOwners = new Map([
-			[
-				url,
-				{
-					codecFamily: "avc",
-					mediaKey: "live:testchannel",
-					recordedAt: 100,
-					ambiguous: false,
+	])(
+		"aborts an AVC-owned ad segment while the $family decoder still owns playback",
+		async ({ family, codec }) => {
+			const originalFetch = g.fetch;
+			const originalExactKey = g._getExactPlaylistUrlKey;
+			const originalAbortError = g._createCodecHandoffAbortError;
+			const rawFetch = vi.fn(async () => new Response("unexpected"));
+			const url = "https://edge.example/ad-cycle/avc-owned-enhanced.ts";
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.CurrentAdChannel = "testchannel";
+			state.CurrentAdMediaKey = "live:testchannel";
+			state.SimulatedAdsDepth = 0;
+			state.AdSignifier = "stitched";
+			state.AdSegmentCache = new Map([[url, Date.now()]]);
+			state.SegmentCodecOwners = new Map([
+				[
+					url,
+					{
+						codecFamily: "avc",
+						mediaKey: "live:testchannel",
+						recordedAt: 100,
+						ambiguous: false,
+					},
+				],
+			]);
+			state.StreamInfos = {
+				"live:testchannel": {
+					EnhancedDecoderCodecFamily: family,
+					EnhancedDecoderCodec: codec,
 				},
-			],
-		]);
-		state.StreamInfos = {
-			"live:testchannel": {
-				EnhancedDecoderCodecFamily: family,
-				EnhancedDecoderCodec: codec,
-			},
-		};
-		g.fetch = rawFetch;
-		g._getExactPlaylistUrlKey = (value: unknown) => String(value || "");
-		g._createCodecHandoffAbortError = () =>
-			new DOMException("Unsafe ad segment codec", "AbortError");
+			};
+			g.fetch = rawFetch;
+			g._getExactPlaylistUrlKey = (value: unknown) => String(value || "");
+			g._createCodecHandoffAbortError = () =>
+				new DOMException("Unsafe ad segment codec", "AbortError");
 
-		try {
-			T<() => void>("_hookWorkerFetch")();
-			await expect((g.fetch as typeof fetch)(url)).rejects.toMatchObject({
-				name: "AbortError",
-			});
-			expect(rawFetch).not.toHaveBeenCalled();
-		} finally {
-			g.fetch = originalFetch;
-			if (originalExactKey === undefined) delete g._getExactPlaylistUrlKey;
-			else g._getExactPlaylistUrlKey = originalExactKey;
-			if (originalAbortError === undefined) {
-				delete g._createCodecHandoffAbortError;
-			} else {
-				g._createCodecHandoffAbortError = originalAbortError;
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				await expect((g.fetch as typeof fetch)(url)).rejects.toMatchObject({
+					name: "AbortError",
+				});
+				expect(rawFetch).not.toHaveBeenCalled();
+			} finally {
+				g.fetch = originalFetch;
+				if (originalExactKey === undefined) delete g._getExactPlaylistUrlKey;
+				else g._getExactPlaylistUrlKey = originalExactKey;
+				if (originalAbortError === undefined) {
+					delete g._createCodecHandoffAbortError;
+				} else {
+					g._createCodecHandoffAbortError = originalAbortError;
+				}
 			}
-		}
-	});
+		},
+	);
 });
 
 describe("worker watchdog visibility awareness", () => {

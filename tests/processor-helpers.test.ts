@@ -57,6 +57,7 @@ beforeAll(() => {
 		PageChannel: null,
 		PageVodID: null,
 		PageMediaKey: null,
+		PagePlaybackVisibleSinceAt: 0,
 		LastAdEndedAt: 0,
 		LastAdEndedChannel: null,
 		LastAdEndedMediaKey: null,
@@ -99,6 +100,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+	getState().PagePlaybackVisibleSinceAt = 0;
 	if (g.__realCanReloadNativePlayerAfterAd) {
 		g._canReloadNativePlayerAfterAd = g.__realCanReloadNativePlayerAfterAd;
 	}
@@ -215,6 +217,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_BackupSearchKey: null,
 		_BackupSearchPromises: new Map<string, Promise<unknown>>(),
 		BackupSearchEpoch: 0,
+		_ForegroundQualityProbeAppliedAt: 0,
 		_BackupProbation: null,
 		_BackupPinFlipCount: 0,
 		_LoggedOfflineTransition: false,
@@ -506,6 +509,16 @@ describe("_recordSustainedNativeResolution (bandwidth high-water mark)", () => {
 	const url360 = "https://video.example.com/360.m3u8";
 	const r1080 = { Resolution: "1920x1080", Name: "1080p60" };
 	const r360 = { Resolution: "640x360", Name: "360p" };
+	let previousVisibleSinceAt: unknown;
+
+	beforeEach(() => {
+		previousVisibleSinceAt = getState().PagePlaybackVisibleSinceAt;
+		getState().PagePlaybackVisibleSinceAt = Date.now() - 20000;
+	});
+
+	afterEach(() => {
+		getState().PagePlaybackVisibleSinceAt = previousVisibleSinceAt;
+	});
 
 	it("records the resolution of the native variant the player is requesting", () => {
 		const info = makeInfo({ Urls: urlsFor(url360, r360) });
@@ -555,6 +568,26 @@ describe("_recordSustainedNativeResolution (bandwidth high-water mark)", () => {
 			SustainedNativeResolution: r1080,
 			SustainedNativeResolutionAt: Date.now() - 61000,
 		});
+		record()(info, url360);
+		expect(info.SustainedNativeResolution).toEqual(r360);
+	});
+
+	it("keeps the foreground baseline while hidden or during the visible ramp", () => {
+		const now = Date.now();
+		const info = makeInfo({
+			Urls: urlsFor(url360, r360),
+			SustainedNativeResolution: r1080,
+			SustainedNativeResolutionAt: now - 61000,
+		});
+		getState().PagePlaybackVisibleSinceAt = 0;
+		record()(info, url360);
+		expect(info.SustainedNativeResolution).toEqual(r1080);
+
+		getState().PagePlaybackVisibleSinceAt = now - 5000;
+		record()(info, url360);
+		expect(info.SustainedNativeResolution).toEqual(r1080);
+
+		getState().PagePlaybackVisibleSinceAt = now - 10000;
 		record()(info, url360);
 		expect(info.SustainedNativeResolution).toEqual(r360);
 	});
@@ -703,6 +736,7 @@ describe("_resetStreamAdState", () => {
 			_SpliceDiscontinuityOffset: 3,
 			_SpliceLastDiscontinuitySequence: 5,
 			_BackupProbation: { type: "site", at: 123 },
+			_ForegroundQualityProbeAppliedAt: 456,
 			LastSessionNeutralBackupProbeCycleStartedAt: 100,
 		});
 		fn(info);
@@ -759,6 +793,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._SpliceDiscontinuityOffset).toBe(0);
 		expect(info._SpliceLastDiscontinuitySequence).toBe(null);
 		expect(info._BackupProbation).toBe(null);
+		expect(info._ForegroundQualityProbeAppliedAt).toBe(0);
 		expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(100);
 	});
 
@@ -2062,6 +2097,82 @@ describe("_findBackupStream fresh-session probation", () => {
 		}
 	});
 
+	it("retries normal quality after foreground return and completes its clean probation", async () => {
+		const state = getState();
+		const previous = {
+			pageMediaKey: state.PageMediaKey,
+			visibleSinceAt: state.PagePlaybackVisibleSinceAt,
+			preferredQualityGroup: state.PreferredQualityGroup,
+		};
+		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			Object.assign(state, {
+				PageMediaKey: "live:testchannel",
+				PagePlaybackVisibleSinceAt: 999_500,
+				PreferredQualityGroup: null,
+			});
+			const info = makeHoldInfo();
+			info.SustainedNativeResolutionStartedAt = 970_000;
+			const target360 = {
+				Name: "360p",
+				Resolution: "640x360",
+				FrameRate: 30,
+			};
+			const first = await findBackupStream()(info, realFetch, 0, target360);
+			expect(first).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info._ForegroundQualityProbeAppliedAt).toBe(999_500);
+			expect(info._BackupProbation).toMatchObject({ type: "site" });
+
+			nowSpy.mockReturnValue(1_001_600);
+			const second = await findBackupStream()(info, realFetch, 0, target360);
+			expect(second).toEqual({ type: "site", m3u8: sitePlaylist });
+			expect(tokenCalls).toEqual(["site"]);
+		} finally {
+			state.PageMediaKey = previous.pageMediaKey;
+			state.PagePlaybackVisibleSinceAt = previous.visibleSinceAt;
+			state.PreferredQualityGroup = previous.preferredQualityGroup;
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("keeps the clean bridge when the foreground normal-quality candidate is ad-marked", async () => {
+		const state = getState();
+		const previous = {
+			pageMediaKey: state.PageMediaKey,
+			visibleSinceAt: state.PagePlaybackVisibleSinceAt,
+			preferredQualityGroup: state.PreferredQualityGroup,
+		};
+		const { tokenCalls, realFetch, restore } = setupSweep(() => adPlaylist);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			Object.assign(state, {
+				PageMediaKey: "live:testchannel",
+				PagePlaybackVisibleSinceAt: 999_500,
+				PreferredQualityGroup: null,
+			});
+			const info = makeHoldInfo();
+			info.SustainedNativeResolutionStartedAt = 970_000;
+			const result = await findBackupStream()(info, realFetch, 0, {
+				Name: "360p",
+				Resolution: "640x360",
+				FrameRate: 30,
+			});
+			expect(result).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(String(result.m3u8)).not.toContain("stitched-ad");
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info._BackupProbation).toBe(null);
+		} finally {
+			state.PageMediaKey = previous.pageMediaKey;
+			state.PagePlaybackVisibleSinceAt = previous.visibleSinceAt;
+			state.PreferredQualityGroup = previous.preferredQualityGroup;
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
 	it("caps backup rotation on the stable bridge after repeated ad-marked flips", async () => {
 		const { tokenCalls, realFetch, restore } = setupSweep(() => sitePlaylist);
 		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
@@ -2183,6 +2294,133 @@ describe("_findBackupStream fresh-session probation", () => {
 	});
 });
 
+describe("_getPendingForegroundQualityProbeAt", () => {
+	const pending = () =>
+		T<(info: Record<string, unknown>) => number>(
+			"_getPendingForegroundQualityProbeAt",
+		);
+
+	it("requires the exact current autoplay cycle and consumes each visible edge once", () => {
+		const state = getState();
+		const saved = {
+			pageMediaKey: state.PageMediaKey,
+			currentAdMediaKey: state.CurrentAdMediaKey,
+			visibleSinceAt: state.PagePlaybackVisibleSinceAt,
+			preferredQualityGroup: state.PreferredQualityGroup,
+		};
+		const visibleSinceAt = 1_000_000;
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 990_000,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2,\nbridge.ts",
+			LastCleanBackupAt: 999_000,
+			BackupEncodingsM3U8Cache: {
+				autoplay: [
+					"#EXTM3U",
+					"#EXT-X-STREAM-INF:RESOLUTION=640x360",
+					"https://cdn.example/360.m3u8",
+				].join("\n"),
+			},
+		});
+		Object.assign(state, {
+			PageMediaKey: "live:testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PagePlaybackVisibleSinceAt: visibleSinceAt,
+			PreferredQualityGroup: null,
+		});
+
+		try {
+			expect(pending()(info)).toBe(visibleSinceAt);
+			state.PageMediaKey = "live:other";
+			expect(pending()(info)).toBe(0);
+			state.PageMediaKey = "live:testchannel";
+			info._ForegroundQualityProbeAppliedAt = visibleSinceAt;
+			expect(pending()(info)).toBe(0);
+			info._BackupProbation = { type: "site", at: visibleSinceAt };
+			expect(pending()(info)).toBe(visibleSinceAt);
+			info._BackupProbation = null;
+			info._ForegroundQualityProbeAppliedAt = 0;
+			state.PreferredQualityGroup = "360p";
+			expect(pending()(info)).toBe(0);
+			state.PreferredQualityGroup = null;
+			info.VisibleAdStartedAt = visibleSinceAt;
+			expect(pending()(info)).toBe(0);
+		} finally {
+			state.PageMediaKey = saved.pageMediaKey;
+			state.CurrentAdMediaKey = saved.currentAdMediaKey;
+			state.PagePlaybackVisibleSinceAt = saved.visibleSinceAt;
+			state.PreferredQualityGroup = saved.preferredQualityGroup;
+		}
+	});
+});
+
+describe("_startForegroundQualityProbe", () => {
+	const start = () =>
+		T<
+			(
+				info: Record<string, unknown>,
+				realFetch: unknown,
+				currentResolution?: unknown,
+				codecOverride?: string | null,
+			) => boolean
+		>("_startForegroundQualityProbe");
+
+	it("starts one sequential search for the exact foreground edge", async () => {
+		const state = getState();
+		const saved = {
+			pageMediaKey: state.PageMediaKey,
+			currentAdMediaKey: state.CurrentAdMediaKey,
+			visibleSinceAt: state.PagePlaybackVisibleSinceAt,
+			preferredQualityGroup: state.PreferredQualityGroup,
+		};
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 990000,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2,\nbridge.ts",
+			LastCleanBackupAt: 999000,
+			BackupEncodingsM3U8Cache: {
+				autoplay: [
+					"#EXTM3U",
+					"#EXT-X-STREAM-INF:RESOLUTION=640x360",
+					"https://cdn.example/360.m3u8",
+				].join("\n"),
+			},
+		});
+		Object.assign(state, {
+			PageMediaKey: "live:testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PagePlaybackVisibleSinceAt: 999500,
+			PreferredQualityGroup: null,
+		});
+		const search = vi.fn(async () => ({
+			type: "site",
+			m3u8: "#EXTM3U\n#EXTINF:2,\nsource.ts",
+		}));
+		g._findBackupStream = search;
+
+		try {
+			expect(start()(info, () => Promise.resolve(), { Name: "360p" })).toBe(
+				true,
+			);
+			await Promise.resolve();
+			expect(search).toHaveBeenCalledOnce();
+
+			info._BackupSearchPromise = Promise.resolve(null);
+			expect(start()(info, () => Promise.resolve())).toBe(false);
+			expect(search).toHaveBeenCalledOnce();
+		} finally {
+			state.PageMediaKey = saved.pageMediaKey;
+			state.CurrentAdMediaKey = saved.currentAdMediaKey;
+			state.PagePlaybackVisibleSinceAt = saved.visibleSinceAt;
+			state.PreferredQualityGroup = saved.preferredQualityGroup;
+		}
+	});
+});
+
 describe("_shouldHoldBridgeInsteadOfRotating", () => {
 	const guard = () =>
 		T<
@@ -2219,6 +2457,37 @@ describe("_shouldHoldBridgeInsteadOfRotating", () => {
 			const info = makeBridgeInfo();
 			expect(guard()(info, { Resolution: "640x360" })).toBe(true);
 		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("reopens Auto quality probing after foreground return without bypassing the flip cap", () => {
+		const state = getState();
+		const saved = {
+			pageMediaKey: state.PageMediaKey,
+			currentAdMediaKey: state.CurrentAdMediaKey,
+			visibleSinceAt: state.PagePlaybackVisibleSinceAt,
+			preferredQualityGroup: state.PreferredQualityGroup,
+		};
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		Object.assign(state, {
+			PageMediaKey: "live:testchannel",
+			CurrentAdMediaKey: "live:testchannel",
+			PagePlaybackVisibleSinceAt: 999_500,
+			PreferredQualityGroup: null,
+		});
+		try {
+			const info = makeBridgeInfo();
+			expect(guard()(info, { Resolution: "640x360" })).toBe(false);
+			info._BackupPinFlipCount = 2;
+			expect(guard()(info, { Resolution: "640x360" })).toBe(true);
+		} finally {
+			Object.assign(state, {
+				PageMediaKey: saved.pageMediaKey,
+				CurrentAdMediaKey: saved.currentAdMediaKey,
+				PagePlaybackVisibleSinceAt: saved.visibleSinceAt,
+				PreferredQualityGroup: saved.preferredQualityGroup,
+			});
 			nowSpy.mockRestore();
 		}
 	});
@@ -3060,76 +3329,79 @@ describe("_findBackupStream fallback policy", () => {
 	it.each([
 		["HEVC", "hevc", "hev1.1.6.L153.B0", "hevc"],
 		["AV1", "av1", "av01.0.13M.08", "av1"],
-	])("selects a clean %s backup from the exact active codec family", async (_label, codecFamily, codecs, expectedPath) => {
-		const state = getState();
-		const previousTypes = state.BackupPlayerTypes;
-		const previousDisable = state.DisableAutoplayBackup;
-		const previousGetToken = g._getToken;
-		const previousExtract = g._extractPlaybackAccessToken;
-		const requestedVariants: string[] = [];
-		const enhancedMaster = [
-			"#EXTM3U",
-			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60"',
-			"https://cdn.example/site/hevc/index.m3u8",
-			'#EXT-X-STREAM-INF:BANDWIDTH=14000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="av01.0.13M.08,mp4a.40.2",VIDEO="1440p60"',
-			"https://cdn.example/site/av1/index.m3u8",
-			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
-			"https://cdn.example/site/avc/index.m3u8",
-		].join("\n");
-		const target = {
-			Name: "1440p60",
-			Resolution: "2560x1440",
-			FrameRate: 60,
-			Codecs: codecs,
-		};
+	])(
+		"selects a clean %s backup from the exact active codec family",
+		async (_label, codecFamily, codecs, expectedPath) => {
+			const state = getState();
+			const previousTypes = state.BackupPlayerTypes;
+			const previousDisable = state.DisableAutoplayBackup;
+			const previousGetToken = g._getToken;
+			const previousExtract = g._extractPlaybackAccessToken;
+			const requestedVariants: string[] = [];
+			const enhancedMaster = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60"',
+				"https://cdn.example/site/hevc/index.m3u8",
+				'#EXT-X-STREAM-INF:BANDWIDTH=14000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="av01.0.13M.08,mp4a.40.2",VIDEO="1440p60"',
+				"https://cdn.example/site/av1/index.m3u8",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+				"https://cdn.example/site/avc/index.m3u8",
+			].join("\n");
+			const target = {
+				Name: "1440p60",
+				Resolution: "2560x1440",
+				FrameRate: 60,
+				Codecs: codecs,
+			};
 
-		state.BackupPlayerTypes = ["site"];
-		state.DisableAutoplayBackup = true;
-		g._extractPlaybackAccessToken = () => ({
-			signature: "sig",
-			value: "token",
-		});
-		g._getToken = async () => new Response("{}", { status: 200 });
-
-		try {
-			const info = makeInfo({
-				IsShowingAd: true,
-				VisibleAdStartedAt: Date.now() - 500,
-				ModifiedM3U8: "#EXTM3U",
-				EnhancedDecoderCodecFamily: codecFamily,
-				EnhancedDecoderCodec: codecs,
-				SustainedNativeResolution: target,
-				ResolutionList: [target],
+			state.BackupPlayerTypes = ["site"];
+			state.DisableAutoplayBackup = true;
+			g._extractPlaybackAccessToken = () => ({
+				signature: "sig",
+				value: "token",
 			});
-			const result = await findBackupStream()(
-				info,
-				async (url) => {
-					const href = String(url);
-					if (href.includes("usher.ttvnw.net")) {
-						return new Response(enhancedMaster, { status: 200 });
-					}
-					requestedVariants.push(href);
-					return new Response(cleanPlaylist, { status: 200 });
-				},
-				0,
-				target,
-			);
+			g._getToken = async () => new Response("{}", { status: 200 });
 
-			expect(requestedVariants).toEqual([
-				`https://cdn.example/site/${expectedPath}/index.m3u8`,
-			]);
-			expect(result.type).toBe("site");
-			expect(result.m3u8).toBe(cleanPlaylist);
-			expect(info.LastCleanBackupCodecFamily).toBe(codecFamily);
-		} finally {
-			state.BackupPlayerTypes = previousTypes;
-			state.DisableAutoplayBackup = previousDisable;
-			if (previousGetToken === undefined) delete g._getToken;
-			else g._getToken = previousGetToken;
-			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
-			else g._extractPlaybackAccessToken = previousExtract;
-		}
-	});
+			try {
+				const info = makeInfo({
+					IsShowingAd: true,
+					VisibleAdStartedAt: Date.now() - 500,
+					ModifiedM3U8: "#EXTM3U",
+					EnhancedDecoderCodecFamily: codecFamily,
+					EnhancedDecoderCodec: codecs,
+					SustainedNativeResolution: target,
+					ResolutionList: [target],
+				});
+				const result = await findBackupStream()(
+					info,
+					async (url) => {
+						const href = String(url);
+						if (href.includes("usher.ttvnw.net")) {
+							return new Response(enhancedMaster, { status: 200 });
+						}
+						requestedVariants.push(href);
+						return new Response(cleanPlaylist, { status: 200 });
+					},
+					0,
+					target,
+				);
+
+				expect(requestedVariants).toEqual([
+					`https://cdn.example/site/${expectedPath}/index.m3u8`,
+				]);
+				expect(result.type).toBe("site");
+				expect(result.m3u8).toBe(cleanPlaylist);
+				expect(info.LastCleanBackupCodecFamily).toBe(codecFamily);
+			} finally {
+				state.BackupPlayerTypes = previousTypes;
+				state.DisableAutoplayBackup = previousDisable;
+				if (previousGetToken === undefined) delete g._getToken;
+				else g._getToken = previousGetToken;
+				if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+				else g._extractPlaybackAccessToken = previousExtract;
+			}
+		},
+	);
 
 	it("rejects a mismatched HEVC descriptor and falls through to a clean AVC backup", async () => {
 		const state = getState();
@@ -3197,88 +3469,91 @@ describe("_findBackupStream fallback policy", () => {
 	it.each([
 		["HEVC", "hevc", "hev1.1.6.L153.B0"],
 		["AV1", "av1", "av01.0.13M.08"],
-	])("checks every source for an exact %s backup before autoplay AVC", async (_label, codecFamily, codecs) => {
-		const state = getState();
-		const previousTypes = state.BackupPlayerTypes;
-		const previousDisable = state.DisableAutoplayBackup;
-		const previousGetToken = g._getToken;
-		const previousExtract = g._extractPlaybackAccessToken;
-		const tokenCalls: string[] = [];
-		const requestedVariants: string[] = [];
-		let activePlayerType = "";
-		const target = {
-			Name: "1440p60",
-			Resolution: "2560x1440",
-			FrameRate: 60,
-			Codecs: codecs,
-		};
-		const exactMaster = [
-			"#EXTM3U",
-			`#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="${codecs},mp4a.40.2",VIDEO="1440p60"`,
-			`https://cdn.example/site/${codecFamily}/index.m3u8`,
-			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
-			"https://cdn.example/site/avc/index.m3u8",
-		].join("\n");
-		const autoplayMaster = [
-			"#EXTM3U",
-			'#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=640x360,FRAME-RATE=30.000,CODECS="avc1.4D401E,mp4a.40.2",VIDEO="360p"',
-			"https://cdn.example/autoplay/avc/index.m3u8",
-		].join("\n");
-
-		state.BackupPlayerTypes = ["site", "autoplay"];
-		state.DisableAutoplayBackup = false;
-		g._extractPlaybackAccessToken = () => ({
-			signature: "sig",
-			value: "token",
-		});
-		g._getToken = async (_info, playerType) => {
-			activePlayerType = String(playerType);
-			tokenCalls.push(activePlayerType);
-			return new Response("{}", { status: 200 });
-		};
-
-		try {
-			const info = makeInfo({
-				IsShowingAd: true,
-				VisibleAdStartedAt: Date.now() - 500,
-				ModifiedM3U8: "#EXTM3U",
-				EnhancedDecoderCodecFamily: codecFamily,
-				EnhancedDecoderCodec: codecs,
-				SustainedNativeResolution: target,
-				ResolutionList: [target],
-			});
-			const result = await findBackupStream()(
-				info,
-				async (url) => {
-					const href = String(url);
-					if (href.includes("usher.ttvnw.net")) {
-						return new Response(
-							activePlayerType === "autoplay" ? autoplayMaster : exactMaster,
-							{ status: 200 },
-						);
-					}
-					requestedVariants.push(href);
-					return new Response(cleanPlaylist, { status: 200 });
-				},
-				0,
-				target,
-			);
-
-			expect(tokenCalls).toEqual(["site"]);
-			expect(requestedVariants).toEqual([
+	])(
+		"checks every source for an exact %s backup before autoplay AVC",
+		async (_label, codecFamily, codecs) => {
+			const state = getState();
+			const previousTypes = state.BackupPlayerTypes;
+			const previousDisable = state.DisableAutoplayBackup;
+			const previousGetToken = g._getToken;
+			const previousExtract = g._extractPlaybackAccessToken;
+			const tokenCalls: string[] = [];
+			const requestedVariants: string[] = [];
+			let activePlayerType = "";
+			const target = {
+				Name: "1440p60",
+				Resolution: "2560x1440",
+				FrameRate: 60,
+				Codecs: codecs,
+			};
+			const exactMaster = [
+				"#EXTM3U",
+				`#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="${codecs},mp4a.40.2",VIDEO="1440p60"`,
 				`https://cdn.example/site/${codecFamily}/index.m3u8`,
-			]);
-			expect(result.type).toBe("site");
-			expect(info.LastCleanBackupCodecFamily).toBe(codecFamily);
-		} finally {
-			state.BackupPlayerTypes = previousTypes;
-			state.DisableAutoplayBackup = previousDisable;
-			if (previousGetToken === undefined) delete g._getToken;
-			else g._getToken = previousGetToken;
-			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
-			else g._extractPlaybackAccessToken = previousExtract;
-		}
-	});
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
+				"https://cdn.example/site/avc/index.m3u8",
+			].join("\n");
+			const autoplayMaster = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=640x360,FRAME-RATE=30.000,CODECS="avc1.4D401E,mp4a.40.2",VIDEO="360p"',
+				"https://cdn.example/autoplay/avc/index.m3u8",
+			].join("\n");
+
+			state.BackupPlayerTypes = ["site", "autoplay"];
+			state.DisableAutoplayBackup = false;
+			g._extractPlaybackAccessToken = () => ({
+				signature: "sig",
+				value: "token",
+			});
+			g._getToken = async (_info, playerType) => {
+				activePlayerType = String(playerType);
+				tokenCalls.push(activePlayerType);
+				return new Response("{}", { status: 200 });
+			};
+
+			try {
+				const info = makeInfo({
+					IsShowingAd: true,
+					VisibleAdStartedAt: Date.now() - 500,
+					ModifiedM3U8: "#EXTM3U",
+					EnhancedDecoderCodecFamily: codecFamily,
+					EnhancedDecoderCodec: codecs,
+					SustainedNativeResolution: target,
+					ResolutionList: [target],
+				});
+				const result = await findBackupStream()(
+					info,
+					async (url) => {
+						const href = String(url);
+						if (href.includes("usher.ttvnw.net")) {
+							return new Response(
+								activePlayerType === "autoplay" ? autoplayMaster : exactMaster,
+								{ status: 200 },
+							);
+						}
+						requestedVariants.push(href);
+						return new Response(cleanPlaylist, { status: 200 });
+					},
+					0,
+					target,
+				);
+
+				expect(tokenCalls).toEqual(["site"]);
+				expect(requestedVariants).toEqual([
+					`https://cdn.example/site/${codecFamily}/index.m3u8`,
+				]);
+				expect(result.type).toBe("site");
+				expect(info.LastCleanBackupCodecFamily).toBe(codecFamily);
+			} finally {
+				state.BackupPlayerTypes = previousTypes;
+				state.DisableAutoplayBackup = previousDisable;
+				if (previousGetToken === undefined) delete g._getToken;
+				else g._getToken = previousGetToken;
+				if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+				else g._extractPlaybackAccessToken = previousExtract;
+			}
+		},
+	);
 
 	it("starts explicit AVC emergency selection only after every source lacks the active enhanced family", async () => {
 		const state = getState();
@@ -3437,81 +3712,84 @@ describe("_findBackupStream fallback policy", () => {
 	it.each([
 		["ad-marked", 200],
 		["unavailable", 404],
-	])("tries clean AVC only after the exact same-family backup is %s", async (_label, exactStatus) => {
-		const state = getState();
-		const previousTypes = state.BackupPlayerTypes;
-		const previousDisable = state.DisableAutoplayBackup;
-		const previousGetToken = g._getToken;
-		const previousExtract = g._extractPlaybackAccessToken;
-		const requestedVariants: string[] = [];
-		const target = {
-			Name: "1440p60",
-			Resolution: "2560x1440",
-			FrameRate: 60,
-			Codecs: "hev1.1.6.L153.B0",
-		};
-		const enhancedMaster = [
-			"#EXTM3U",
-			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60"',
-			"https://cdn.example/site/hevc/index.m3u8",
-			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
-			"https://cdn.example/site/avc/index.m3u8",
-		].join("\n");
-
-		state.BackupPlayerTypes = ["site"];
-		state.DisableAutoplayBackup = true;
-		g._extractPlaybackAccessToken = () => ({
-			signature: "sig",
-			value: "token",
-		});
-		g._getToken = async () => new Response("{}", { status: 200 });
-
-		try {
-			const info = makeInfo({
-				IsShowingAd: true,
-				VisibleAdStartedAt: Date.now() - 500,
-				ModifiedM3U8: "#EXTM3U",
-				EnhancedDecoderCodecFamily: "hevc",
-				EnhancedDecoderCodec: target.Codecs,
-				SustainedNativeResolution: target,
-				ResolutionList: [target],
-			});
-			const result = await findBackupStream()(
-				info,
-				async (url) => {
-					const href = String(url);
-					if (href.includes("usher.ttvnw.net")) {
-						return new Response(enhancedMaster, { status: 200 });
-					}
-					requestedVariants.push(href);
-					if (href.includes("/hevc/")) {
-						return exactStatus === 200
-							? new Response(adPlaylist, { status: 200 })
-							: new Response(null, { status: exactStatus });
-					}
-					return new Response(cleanPlaylist, { status: 200 });
-				},
-				0,
-				target,
-			);
-
-			expect(requestedVariants).toEqual([
+	])(
+		"tries clean AVC only after the exact same-family backup is %s",
+		async (_label, exactStatus) => {
+			const state = getState();
+			const previousTypes = state.BackupPlayerTypes;
+			const previousDisable = state.DisableAutoplayBackup;
+			const previousGetToken = g._getToken;
+			const previousExtract = g._extractPlaybackAccessToken;
+			const requestedVariants: string[] = [];
+			const target = {
+				Name: "1440p60",
+				Resolution: "2560x1440",
+				FrameRate: 60,
+				Codecs: "hev1.1.6.L153.B0",
+			};
+			const enhancedMaster = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60"',
 				"https://cdn.example/site/hevc/index.m3u8",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.4D402A,mp4a.40.2",VIDEO="1080p60"',
 				"https://cdn.example/site/avc/index.m3u8",
-			]);
-			expect(result).toEqual({ type: "site", m3u8: cleanPlaylist });
-			expect(info.LastCleanBackupM3U8).toBe(cleanPlaylist);
-			expect(info.LastCleanBackupCodecFamily).toBe("avc");
-			expect(result.m3u8).not.toContain("stitched-ad");
-		} finally {
-			state.BackupPlayerTypes = previousTypes;
-			state.DisableAutoplayBackup = previousDisable;
-			if (previousGetToken === undefined) delete g._getToken;
-			else g._getToken = previousGetToken;
-			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
-			else g._extractPlaybackAccessToken = previousExtract;
-		}
-	});
+			].join("\n");
+
+			state.BackupPlayerTypes = ["site"];
+			state.DisableAutoplayBackup = true;
+			g._extractPlaybackAccessToken = () => ({
+				signature: "sig",
+				value: "token",
+			});
+			g._getToken = async () => new Response("{}", { status: 200 });
+
+			try {
+				const info = makeInfo({
+					IsShowingAd: true,
+					VisibleAdStartedAt: Date.now() - 500,
+					ModifiedM3U8: "#EXTM3U",
+					EnhancedDecoderCodecFamily: "hevc",
+					EnhancedDecoderCodec: target.Codecs,
+					SustainedNativeResolution: target,
+					ResolutionList: [target],
+				});
+				const result = await findBackupStream()(
+					info,
+					async (url) => {
+						const href = String(url);
+						if (href.includes("usher.ttvnw.net")) {
+							return new Response(enhancedMaster, { status: 200 });
+						}
+						requestedVariants.push(href);
+						if (href.includes("/hevc/")) {
+							return exactStatus === 200
+								? new Response(adPlaylist, { status: 200 })
+								: new Response(null, { status: exactStatus });
+						}
+						return new Response(cleanPlaylist, { status: 200 });
+					},
+					0,
+					target,
+				);
+
+				expect(requestedVariants).toEqual([
+					"https://cdn.example/site/hevc/index.m3u8",
+					"https://cdn.example/site/avc/index.m3u8",
+				]);
+				expect(result).toEqual({ type: "site", m3u8: cleanPlaylist });
+				expect(info.LastCleanBackupM3U8).toBe(cleanPlaylist);
+				expect(info.LastCleanBackupCodecFamily).toBe("avc");
+				expect(result.m3u8).not.toContain("stitched-ad");
+			} finally {
+				state.BackupPlayerTypes = previousTypes;
+				state.DisableAutoplayBackup = previousDisable;
+				if (previousGetToken === undefined) delete g._getToken;
+				else g._getToken = previousGetToken;
+				if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+				else g._extractPlaybackAccessToken = previousExtract;
+			}
+		},
+	);
 
 	it("never acquires autoplay when Low Quality Fallback is disabled", async () => {
 		const state = getState();
@@ -5808,6 +6086,69 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 		expect(info.IsHoldingBackupAfterAd).toBe(true);
 	});
 
+	it("keeps the fresh autoplay bridge flowing while foreground quality probing starts", async () => {
+		const state = getState();
+		const saved = {
+			pageMediaKey: state.PageMediaKey,
+			visibleSinceAt: state.PagePlaybackVisibleSinceAt,
+			preferredQualityGroup: state.PreferredQualityGroup,
+			startForegroundProbe: g._startForegroundQualityProbe,
+		};
+		const now = Date.now();
+		const startForegroundProbe = vi.fn(() => true);
+		g._startForegroundQualityProbe = startForegroundProbe;
+		const info = setupHold({
+			VisibleAdStartedAt: now - 10000,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupAt: now,
+			BackupEncodingsM3U8Cache: {
+				autoplay: [
+					"#EXTM3U",
+					"#EXT-X-STREAM-INF:RESOLUTION=640x360",
+					"https://cdn.example/autoplay-360.m3u8",
+				].join("\n"),
+			},
+		});
+		const lowRequestedResolution = {
+			Name: "360p",
+			Resolution: "640x360",
+			FrameRate: 30,
+			Codecs: TEST_AVC_RESOLUTION.Codecs,
+		};
+		info.Urls = { [NATIVE_URL]: lowRequestedResolution };
+		info.ResolutionList = [TEST_AVC_RESOLUTION, lowRequestedResolution];
+		info.SustainedNativeResolution = TEST_AVC_RESOLUTION;
+		Object.assign(state, {
+			PageMediaKey: "live:testchannel",
+			PagePlaybackVisibleSinceAt: now - 100,
+			PreferredQualityGroup: null,
+		});
+
+		try {
+			const out = await processM3U8()(NATIVE_URL, adMarkedNative(), () =>
+				Promise.reject(new Error("no fetch expected")),
+			);
+
+			expect(startForegroundProbe).toHaveBeenCalledOnce();
+			expect(startForegroundProbe.mock.calls[0]?.[0]).toBe(info);
+			expect(startForegroundProbe.mock.calls[0]?.[1]).toEqual(
+				expect.any(Function),
+			);
+			expect(startForegroundProbe.mock.calls[0]?.[2]).toEqual(
+				TEST_AVC_RESOLUTION,
+			);
+			expect(out).toContain("seg50.ts");
+			expect(out).not.toContain("native-live-300.ts");
+			expect(info.IsHoldingBackupAfterAd).toBe(true);
+		} finally {
+			state.PageMediaKey = saved.pageMediaKey;
+			state.PagePlaybackVisibleSinceAt = saved.visibleSinceAt;
+			state.PreferredQualityGroup = saved.preferredQualityGroup;
+			g._startForegroundQualityProbe = saved.startForegroundProbe;
+		}
+	});
+
 	it("never exits a silent hold into an ad-marked native playlist at the hold limit", async () => {
 		const previousMax = getState().SilentBackupHoldMaxMs;
 		getState().SilentBackupHoldMaxMs = 1000;
@@ -6232,6 +6573,16 @@ describe("_recordSustainedNativeResolution (ad-break poisoning guard)", () => {
 		);
 	const URL_360 = "https://edge.example/sustained/360.m3u8";
 	const URL_1080 = "https://edge.example/sustained/1080.m3u8";
+	let previousVisibleSinceAt: unknown;
+
+	beforeEach(() => {
+		previousVisibleSinceAt = getState().PagePlaybackVisibleSinceAt;
+		getState().PagePlaybackVisibleSinceAt = Date.now() - 20000;
+	});
+
+	afterEach(() => {
+		getState().PagePlaybackVisibleSinceAt = previousVisibleSinceAt;
+	});
 
 	function makeQualityInfo(overrides: Record<string, unknown> = {}) {
 		return makeInfo({
@@ -8873,33 +9224,36 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 				Codecs: "av01.0.13M.08",
 			},
 		],
-	])("records explicit ad segment ownership for a processed %s rendition", async (codecFamily, renditionUrl, rendition) => {
-		const info = makeEnhancedInfo({
-			ResolutionList: [rendition, avcSource],
-			Urls: {
-				[renditionUrl]: rendition,
-				[avcUrl]: avcSource,
-			},
-			EnhancedVariantUrls: new Set([renditionUrl]),
-		});
-		g._getStreamInfoForPlaylist = () => info;
+	])(
+		"records explicit ad segment ownership for a processed %s rendition",
+		async (codecFamily, renditionUrl, rendition) => {
+			const info = makeEnhancedInfo({
+				ResolutionList: [rendition, avcSource],
+				Urls: {
+					[renditionUrl]: rendition,
+					[avcUrl]: avcSource,
+				},
+				EnhancedVariantUrls: new Set([renditionUrl]),
+			});
+			g._getStreamInfoForPlaylist = () => info;
 
-		await core()(renditionUrl, allAdNative, fetchStub);
+			await core()(renditionUrl, allAdNative, fetchStub);
 
-		const exactKey = T<(url: string) => string>("_getExactPlaylistUrlKey")(
-			"https://edge.example/stitched-ad-100.ts",
-		);
-		const owners = getState().SegmentCodecOwners as Map<
-			string,
-			Record<string, unknown>
-		>;
-		expect(owners.get(exactKey)).toMatchObject({
-			codecFamily,
-			mediaKey: "live:testchannel",
-			ambiguous: false,
-		});
-		expect(Number(owners.get(exactKey)?.recordedAt)).toBeGreaterThan(0);
-	});
+			const exactKey = T<(url: string) => string>("_getExactPlaylistUrlKey")(
+				"https://edge.example/stitched-ad-100.ts",
+			);
+			const owners = getState().SegmentCodecOwners as Map<
+				string,
+				Record<string, unknown>
+			>;
+			expect(owners.get(exactKey)).toMatchObject({
+				codecFamily,
+				mediaKey: "live:testchannel",
+				ambiguous: false,
+			});
+			expect(Number(owners.get(exactKey)?.recordedAt)).toBeGreaterThan(0);
+		},
+	);
 
 	it("aborts ad media with an unresolved rendition codec instead of returning an AVC hold", async () => {
 		const unknownUrl =
@@ -9495,39 +9849,42 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		["stale pre-ad snapshot", 60001, 0, 0],
 		["prior loader snapshot", 1000, 0, 1],
 		["post-cycle snapshot", -1, 0, 0],
-	] as const)("keeps a %s classified as backup", async (_label, snapshotAge, snapshotLoaderEpoch, currentLoaderEpoch) => {
-		vi.useFakeTimers();
-		vi.setSystemTime(300000);
-		const cycleStartedAt = 250000;
-		const nativeUrl =
-			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=player";
-		const backupUrl =
-			"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
-		const { aliases, info } = makeNativeAliasCollisionInfo(
-			nativeUrl,
-			backupUrl,
-			cycleStartedAt,
-			{
-				LastCleanNativeM3U8: makePlaylist(700, 3),
-				LastCleanNativeUrl: nativeUrl,
-				LastCleanNativeCodec: avcSource.Codecs,
-				LastCleanNativePlaylistAt: cycleStartedAt - snapshotAge,
-				LastCleanNativeLoaderEpoch: snapshotLoaderEpoch,
-				NativeRecoveryLoaderEpoch: currentLoaderEpoch,
-			},
-		);
+	] as const)(
+		"keeps a %s classified as backup",
+		async (_label, snapshotAge, snapshotLoaderEpoch, currentLoaderEpoch) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(300000);
+			const cycleStartedAt = 250000;
+			const nativeUrl =
+				"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=player";
+			const backupUrl =
+				"https://video-weaver.example/v1/playlist/shared-live.m3u8?token=backup";
+			const { aliases, info } = makeNativeAliasCollisionInfo(
+				nativeUrl,
+				backupUrl,
+				cycleStartedAt,
+				{
+					LastCleanNativeM3U8: makePlaylist(700, 3),
+					LastCleanNativeUrl: nativeUrl,
+					LastCleanNativeCodec: avcSource.Codecs,
+					LastCleanNativePlaylistAt: cycleStartedAt - snapshotAge,
+					LastCleanNativeLoaderEpoch: snapshotLoaderEpoch,
+					NativeRecoveryLoaderEpoch: currentLoaderEpoch,
+				},
+			);
 
-		try {
-			const output = await process()(nativeUrl, allAdNative, fetchStub);
+			try {
+				const output = await process()(nativeUrl, allAdNative, fetchStub);
 
-			expect(info.LastAdPodProgressAt).toBe(1);
-			expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set());
-			expect(info.BackupVariantUrls).toEqual(new Set(aliases));
-			expect(output).not.toContain("stitched-ad-100.ts");
-		} finally {
-			vi.useRealTimers();
-		}
-	});
+				expect(info.LastAdPodProgressAt).toBe(1);
+				expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set());
+				expect(info.BackupVariantUrls).toEqual(new Set(aliases));
+				expect(output).not.toContain("stitched-ad-100.ts");
+			} finally {
+				vi.useRealTimers();
+			}
+		},
+	);
 
 	it("lets an exact current-cycle native recovery URL outrank a stored same-path backup alias", async () => {
 		vi.useFakeTimers();
@@ -9661,6 +10018,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		const info = makeEnhancedInfo();
 		g._getStreamInfoForPlaylist = () => info;
 		getState().LastAdEndedAt = 0;
+		getState().PagePlaybackVisibleSinceAt = Date.now() - 20000;
 		const cleanNative = makePlaylist(700, 3);
 
 		await core()(bridgeUrl, cleanNative, fetchStub);
@@ -10156,20 +10514,23 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 	it.each([
 		["a recent failed search", { _LastBackupSearchCompletedAt: Date.now() }],
 		["fallback mode", { IsUsingFallbackStream: true }],
-	])("never returns raw enhanced ad media after %s", async (_label, overrides) => {
-		const info = makeEnhancedInfo({
-			IsShowingAd: true,
-			VisibleAdStartedAt: Date.now() - 1000,
-			...overrides,
-		});
-		g._getStreamInfoForPlaylist = () => info;
+	])(
+		"never returns raw enhanced ad media after %s",
+		async (_label, overrides) => {
+			const info = makeEnhancedInfo({
+				IsShowingAd: true,
+				VisibleAdStartedAt: Date.now() - 1000,
+				...overrides,
+			});
+			g._getStreamInfoForPlaylist = () => info;
 
-		const out = await core()(bridgeUrl, mixedOpaqueAdNative, fetchStub);
+			const out = await core()(bridgeUrl, mixedOpaqueAdNative, fetchStub);
 
-		expect(out).not.toContain("stitched-ad-101.ts");
-		expect(out).not.toContain("content-102.ts");
-		expect(out).toContain("native-live-103.ts");
-	});
+			expect(out).not.toContain("stitched-ad-101.ts");
+			expect(out).not.toContain("content-102.ts");
+			expect(out).toContain("native-live-103.ts");
+		},
+	);
 
 	it("starts the clean backup search on an all-ad cold enhanced preroll and retires only through the real request signal", async () => {
 		const info = makeEnhancedInfo();

@@ -1119,7 +1119,8 @@ describe("runtime log collection lifecycle", () => {
 		const request = replacementPort.messages.find(
 			(message) => message.type === "ttvab-collect-logs",
 		);
-		const requestId = (request?.detail as { requestId?: string }).requestId;
+		const requestId = (request?.detail as { requestId?: string } | undefined)
+			?.requestId;
 
 		stalePort.emitMessage({
 			type: "ttvab-logs",

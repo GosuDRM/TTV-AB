@@ -1258,6 +1258,46 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_getPendingForegroundQualityProbeAt",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getPendingForegroundQualityProbeAt",
+			helper: "_getBackupBridgeMaxVariantHeight",
+			source: processorSource,
+		},
+		{
+			consumer: "_startForegroundQualityProbe",
+			helper: "_getPendingForegroundQualityProbeAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_startForegroundQualityProbe",
+			helper: "_findBackupStream",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_getPendingForegroundQualityProbeAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_startForegroundQualityProbe",
+			source: processorSource,
+		},
+		{
+			consumer: "_shouldHoldBridgeInsteadOfRotating",
+			helper: "_getPendingForegroundQualityProbeAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_getPendingForegroundQualityProbeAt",
+			source: processorSource,
+		},
+		{
 			consumer: "_degradeToDecodableResolution",
 			helper: "_isEnhancedCodecString",
 			source: parserSource,

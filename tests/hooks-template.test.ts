@@ -82,6 +82,25 @@ describe("worker message handler hardening", () => {
 		);
 	});
 
+	it("seeds playback visibility before workers and serializes foreground recovery", () => {
+		const source = hooksTs();
+		const initSource = initTs();
+		expect(source).toContain(
+			"__TTVAB_STATE__.PagePlaybackVisibleSinceAt = ${JSON.stringify(__TTVAB_STATE__.PagePlaybackVisibleSinceAt)}",
+		);
+		expect(source).toContain("case 'UpdatePagePlaybackVisibleSinceAt':");
+		expect(source).toContain(
+			"${_getPendingForegroundQualityProbeAt.toString()}",
+		);
+		expect(source).toContain("${_startForegroundQualityProbe.toString()}");
+		const visibilityAt = initSource.indexOf(
+			"_syncPagePlaybackVisibilityState();",
+		);
+		const workerHookAt = initSource.indexOf("_hookWorker();");
+		expect(visibilityAt).toBeGreaterThan(-1);
+		expect(workerHookAt).toBeGreaterThan(visibilityAt);
+	});
+
 	it("timestamps the toggle-off terminal event before page lifecycle fencing", () => {
 		expect(processorJs()).toMatch(
 			/Ad blocking disabled - restoring native stream state[\s\S]*?key:\s*"AdEnded"[\s\S]*?endedAt:\s*Date\.now\(\)/,
@@ -315,10 +334,13 @@ describe("worker message handler hardening", () => {
 		expect(blockStart).toBeGreaterThan(-1);
 		expect(blockEnd).toBeGreaterThan(blockStart);
 		const gateAt = block.indexOf("_isCodecHandoffCycleCurrent(");
+		const renewIntentAt = block.indexOf("_hasPendingAdResumeIntent(");
 		const stateMutationAt = block.indexOf("__TTVAB_STATE__.LastAdEndedAt =");
 		const playerTaskAt = block.indexOf("_runPostAdPlayerTask(");
 		const cleanupAt = block.indexOf("_schedulePostAdArtifactCleanup(");
 		expect(gateAt).toBeGreaterThan(-1);
+		expect(renewIntentAt).toBeGreaterThan(gateAt);
+		expect(stateMutationAt).toBeGreaterThan(renewIntentAt);
 		expect(stateMutationAt).toBeGreaterThan(gateAt);
 		expect(playerTaskAt).toBeGreaterThan(gateAt);
 		expect(cleanupAt).toBeGreaterThan(gateAt);
