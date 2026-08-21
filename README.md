@@ -33,7 +33,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Keeps recovery working in background tabs and Picture-in-Picture
 - ✅ Removes stale Twitch ad overlays after playback returns
 - ✅ Independent, live-updating controls for Ad Blocking, Ad Spoofing, and Low Quality Fallback
-- ✅ Optional Ad Spoofing to reduce anti-adblock detection, with a separate toggle if it affects channel points
+- ✅ Optional Ad Spoofing to reduce anti-adblock detection
 - ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, but lower quality may still be used as a last resort
 - ✅ Persistent, live-updating Ads Blocked and Time Saved totals
 - ✅ Statistics dashboard with weekly charts, detailed per-channel history, and **12 Achievement Badges**
