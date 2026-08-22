@@ -71,15 +71,15 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v16.2.2 - 2026-08-23
+- **Fixed a brief playback hiccup after some ad breaks.** Twitch can rebuild its internal player while reusing the same video element. Recovery now confirms the exact clean native reload without interrupting a stream that is already advancing, while genuine stalls remain bounded.
+
 ### v16.2.1 - 2026-08-21
 - **Fixed normal quality sometimes not returning after an ad in hidden tabs or long Picture-in-Picture sessions.** Returning to the stream now checks a normal-quality source while the clean fallback keeps playing, preserves the saved quality, and keeps recovery tied to the exact stream and ad cycle.
 
 ### v16.2.0 - 2026-08-21
 - **Fixed streams getting stuck at 360p or buffering after ad recovery.** Startup quality samples can no longer be mistaken for established native quality, every low-quality bridge returns through an owned native player rebuild, and recovery handles backup timelines that jump in either direction ([#61](https://github.com/GosuDRM/TTV-AB/issues/61), [#62](https://github.com/GosuDRM/TTV-AB/issues/62)).
 - **Generate Log is more reliable on Chromium.** It now asks where to save before collecting logs and writes directly when the browser supports it, avoiding ordinary download interception. Firefox keeps the normal download fallback, and slow tabs have more time to respond ([#62](https://github.com/GosuDRM/TTV-AB/issues/62)).
-
-### v16.1.0 - 2026-08-17
-- **Fixed endless black loading after ads.** Recovery now stays active until replacement playback is healthy, handles delayed Twitch player remounts and backup timeline changes, and avoids repeated reload loops ([#61](https://github.com/GosuDRM/TTV-AB/issues/61)).
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
