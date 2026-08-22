@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.3] - 2026-08-23
+
+- Added compatibility with the Previews extension for Twitch hover previews by preventing TTV AB from intercepting its own already-protected player worker a second time ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
+- Preview players keep independent stream ownership and the same ad-free validation as normal playback, without a preview bypass or weaker preroll protection.
+- Removing duplicate worker listeners prevents repeated playlist failures and recovery bookkeeping from amplifying a failed stream start into additional churn.
+
 ## [16.2.2] - 2026-08-23
 
 - Fixed a brief playback hiccup after ad recovery when Twitch rebuilt its internal player without replacing the video element.
