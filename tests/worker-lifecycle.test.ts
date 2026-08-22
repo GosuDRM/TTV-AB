@@ -64,6 +64,7 @@ beforeEach(() => {
 	(g._pageSideVariantCodecByUrl as Map<string, unknown>).clear();
 	(g._pageSidePlaybackOwnerByUrl as Map<string, unknown>).clear();
 	(g._pageAdCycleControlByMediaKey as Map<string, unknown>).clear();
+	(g._trackedExtensionBlobUrls as Set<string>).clear();
 	g._workerGeneration = 0;
 	g._workerRecoveryEpoch = 0;
 	window.history.replaceState(null, "", "/testchannel");
@@ -523,6 +524,26 @@ describe("MAIN bridge token handshake", () => {
 });
 
 describe("worker recovery lifecycle", () => {
+	it("keeps one playback hook when a compatible extension wraps the exposed Worker", () => {
+		const harness = installWorkerMessageHarness();
+		try {
+			const exposedWorker = window.Worker;
+			class CompatibleWorker extends exposedWorker {}
+			window.Worker = CompatibleWorker;
+
+			const wrappedWorker = harness.createWorker();
+			const workers = (g._S as { workers: Worker[] }).workers;
+
+			expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+			expect(workers).toHaveLength(2);
+			expect(new Set(workers).size).toBe(2);
+			expect(workers[1]).toBe(wrappedWorker);
+			expect(g._workerGeneration).toBe(2);
+		} finally {
+			harness.restore();
+		}
+	});
+
 	it("caps recovery attempts across replacement workers for the same playback context", () => {
 		const recordAttempt = T<
 			(context: Record<string, unknown>, now?: number) => boolean
