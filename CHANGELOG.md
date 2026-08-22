@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.2] - 2026-08-23
+
+- Fixed a brief playback hiccup after ad recovery when Twitch rebuilt its internal player without replacing the video element.
+- Advancing native playback is no longer repeatedly paused, resumed, or rebuilt a second time while recovery confirms the exact reload.
+- Same-element recovery now requires a clean native response owned by the exact stream, ad cycle, and reload. Ad-marked and backup responses cannot satisfy it, and genuine stalls retain the existing strict recovery limit.
+
 ## [16.2.1] - 2026-08-21
 
 - Fixed normal stream quality sometimes staying on the low-quality fallback when an ad ended while the tab was hidden or suspended.
