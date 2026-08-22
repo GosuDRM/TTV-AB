@@ -150,6 +150,24 @@ describe("worker message handler hardening", () => {
 		expect(block).not.toContain("IsUsingBackupStream");
 	});
 
+	it("seeds and updates exact Previews player ownership in workers", () => {
+		const source = hooksJs();
+		expect(source).toContain(
+			"__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup = ${JSON.stringify(__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup === true)}",
+		);
+		const blockStart = source.indexOf("case 'UpdatePageContext':");
+		const blockEnd = source.indexOf(
+			"case 'UpdatePreferredQualityGroup':",
+			blockStart,
+		);
+		const block = source.slice(blockStart, blockEnd);
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		expect(block).toContain(
+			"__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup = data.value.allowPreviewEmergencyAutoplayBackup",
+		);
+	});
+
 	it("changes the low quality fallback preference without reloading playback", () => {
 		const source = initTs();
 		const blockStart = source.indexOf(

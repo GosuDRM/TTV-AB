@@ -1215,7 +1215,10 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 		T<
 			(
 				context: Record<string, unknown>,
-				options?: { broadcast?: boolean },
+				options?: {
+					broadcast?: boolean;
+					allowPreviewEmergencyAutoplayBackup?: boolean;
+				},
 			) => Record<string, unknown>
 		>("_setPagePlaybackContext");
 
@@ -1225,6 +1228,7 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 			PageChannel: "testchannel",
 			PageVodID: null,
 			PageMediaKey: mediaKey,
+			AllowPreviewEmergencyAutoplayBackup: false,
 			CurrentAdMediaKey: "live:testchannel",
 			CurrentAdChannel: "testchannel",
 			PinnedBackupPlayerType: "embed",
@@ -1267,6 +1271,40 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 
 		expect(media.muted).toBe(true);
 		expect(suppressionState().suppressedMedia.size).toBe(1);
+	});
+
+	it("propagates exact Previews player ownership with the page context", () => {
+		navState("live:testchannel");
+		const postMessage = vi.fn();
+		(g._S as { workers: unknown[] }).workers = [
+			{
+				__TTVABPageMediaKey: "live:testchannel",
+				postMessage,
+			},
+		];
+
+		setContext()(
+			{ MediaType: "live", ChannelName: "testchannel" },
+			{ allowPreviewEmergencyAutoplayBackup: true },
+		);
+
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>)
+				.AllowPreviewEmergencyAutoplayBackup,
+		).toBe(true);
+		const messages = postMessage.mock.calls.map(
+			([envelope]) =>
+				(envelope as { message: Record<string, unknown> }).message,
+		);
+		expect(messages).toContainEqual(
+			expect.objectContaining({
+				key: "UpdatePageContext",
+				value: expect.objectContaining({
+					mediaKey: "live:testchannel",
+					allowPreviewEmergencyAutoplayBackup: true,
+				}),
+			}),
+		);
 	});
 
 	it("drops detached suppressed elements from tracking on navigation", () => {

@@ -150,6 +150,25 @@ function _normalizePlaybackContext(context) {
 	};
 }
 
+function _isPreviewsPlayerUrl(rawUrl) {
+	try {
+		const baseUrl =
+			typeof globalThis?.location?.href === "string"
+				? globalThis.location.href
+				: "https://www.twitch.tv/";
+		const parsedUrl = new URL(String(rawUrl || ""), baseUrl);
+		const previewType = parsedUrl.searchParams.get("tp_prev");
+		return Boolean(
+			parsedUrl.protocol === "https:" &&
+				parsedUrl.hostname.toLowerCase() === "player.twitch.tv" &&
+				(previewType === "s" || previewType === "d") &&
+				_normalizeChannelName(parsedUrl.searchParams.get("channel")),
+		);
+	} catch {
+		return false;
+	}
+}
+
 function _getPlaybackContextFromUrl(rawUrl) {
 	let parsedUrl = null;
 	let pathname = "";

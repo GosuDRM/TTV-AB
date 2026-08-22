@@ -493,7 +493,10 @@ function _broadcastWorkers(messages) {
 
 function _setPagePlaybackContext(
 	context,
-	options: { broadcast?: boolean } = {},
+	options: {
+		broadcast?: boolean;
+		allowPreviewEmergencyAutoplayBackup?: boolean;
+	} = {},
 ) {
 	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) {
 		return _normalizePlaybackContext(context);
@@ -501,6 +504,12 @@ function _setPagePlaybackContext(
 
 	const normalizedContext = _normalizePlaybackContext(context);
 	const previousMediaKey = __TTVAB_STATE__.PageMediaKey || null;
+	const previousPreviewEmergencyAutoplay =
+		__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup === true;
+	const nextPreviewEmergencyAutoplay =
+		typeof options.allowPreviewEmergencyAutoplayBackup === "boolean"
+			? options.allowPreviewEmergencyAutoplayBackup
+			: previousPreviewEmergencyAutoplay;
 	const activePipContext =
 		typeof _getActivePictureInPicturePlaybackContext === "function"
 			? _getActivePictureInPicturePlaybackContext()
@@ -511,13 +520,16 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.PageMediaType !== normalizedContext.MediaType ||
 		__TTVAB_STATE__.PageChannel !== normalizedContext.ChannelName ||
 		__TTVAB_STATE__.PageVodID !== normalizedContext.VodID ||
-		previousMediaKey !== normalizedContext.MediaKey;
+		previousMediaKey !== normalizedContext.MediaKey ||
+		previousPreviewEmergencyAutoplay !== nextPreviewEmergencyAutoplay;
 	const didMediaKeyChange = previousMediaKey !== normalizedContext.MediaKey;
 
 	__TTVAB_STATE__.PageMediaType = normalizedContext.MediaType;
 	__TTVAB_STATE__.PageChannel = normalizedContext.ChannelName;
 	__TTVAB_STATE__.PageVodID = normalizedContext.VodID;
 	__TTVAB_STATE__.PageMediaKey = normalizedContext.MediaKey;
+	__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup =
+		nextPreviewEmergencyAutoplay;
 
 	if (didMediaKeyChange) {
 		if (typeof _resetPlaybackIntentForNavigation === "function") {
@@ -587,6 +599,7 @@ function _setPagePlaybackContext(
 					channelName: normalizedContext.ChannelName,
 					vodID: normalizedContext.VodID,
 					mediaKey: normalizedContext.MediaKey,
+					allowPreviewEmergencyAutoplayBackup: nextPreviewEmergencyAutoplay,
 					preservedMediaKey,
 				},
 			},
@@ -729,10 +742,11 @@ function _recordPlayerReloadAt(mediaKey, at = Date.now()) {
 }
 
 function _syncPagePlaybackContext(options = {}) {
-	return _setPagePlaybackContext(
-		_getPlaybackContextFromUrl(globalThis?.location?.href || ""),
-		options,
-	);
+	const pageUrl = globalThis?.location?.href || "";
+	return _setPagePlaybackContext(_getPlaybackContextFromUrl(pageUrl), {
+		...options,
+		allowPreviewEmergencyAutoplayBackup: _isPreviewsPlayerUrl(pageUrl),
+	});
 }
 
 function _invalidateAdCycleAsyncWork(info) {
@@ -1055,6 +1069,7 @@ function _declareState(scope) {
 		PageChannel: null,
 		PageVodID: null,
 		PageMediaKey: null,
+		AllowPreviewEmergencyAutoplayBackup: false,
 		PagePlaybackVisibleSinceAt: 0,
 		PreferredQualityGroup: null,
 		HasResolvedAdsCountState: false,

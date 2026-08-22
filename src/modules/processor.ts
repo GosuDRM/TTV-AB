@@ -347,10 +347,17 @@ function _getRecentCleanBackupPlayerTypeForInfo(info, now = Date.now()) {
 	return playerType;
 }
 
+function _isAutoplayBackupAvailableForSearch() {
+	return Boolean(
+		__TTVAB_STATE__?.DisableAutoplayBackup !== true ||
+			__TTVAB_STATE__?.AllowPreviewEmergencyAutoplayBackup === true,
+	);
+}
+
 function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 	const configuredPlayerTypes = [
 		...(__TTVAB_STATE__?.BackupPlayerTypes || []),
-	].filter((pt) => pt !== "autoplay" || !__TTVAB_STATE__.DisableAutoplayBackup);
+	].filter((pt) => pt !== "autoplay" || _isAutoplayBackupAvailableForSearch());
 	const orderedPlayerTypes = [];
 	const pushUnique = (playerType) => {
 		if (
@@ -6344,15 +6351,15 @@ async function _searchBackupStream(
 													allowSelectedPromotion: false,
 													reason: "policy-unavailable",
 												};
-									const autoplayWasDisabledDuringSearch = Boolean(
+									const autoplayWasUnavailableDuringSearch = Boolean(
 										pt === "autoplay" &&
-											__TTVAB_STATE__.DisableAutoplayBackup &&
+											!_isAutoplayBackupAvailableForSearch() &&
 											info.ActiveBackupPlayerType !== "autoplay",
 									);
 
 									if (
 										promotionPolicy.allowSelectedPromotion &&
-										!autoplayWasDisabledDuringSearch
+										!autoplayWasUnavailableDuringSearch
 									) {
 										const probation = info._BackupProbation;
 										const requiredCleanHolds =
@@ -6455,7 +6462,8 @@ async function _searchBackupStream(
 									if (
 										isDoingMinimalRequests &&
 										candidateIsPlayable &&
-										!candidateHasAds
+										!candidateHasAds &&
+										!autoplayWasUnavailableDuringSearch
 									) {
 										if (
 											isExactEnhancedPass &&

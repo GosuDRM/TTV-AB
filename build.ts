@@ -1932,6 +1932,11 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_searchBackupStream",
+			helper: "_isAutoplayBackupAvailableForSearch",
+			source: processorSource,
+		},
+		{
 			consumer: "_shouldHoldBridgeInsteadOfRotating",
 			helper: "_getBackupBridgeMaxVariantHeight",
 			source: processorSource,
@@ -1944,6 +1949,11 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_getOrderedBackupPlayerTypes",
 			helper: "_getRecentCleanBackupPlayerTypeForInfo",
+			source: processorSource,
+		},
+		{
+			consumer: "_getOrderedBackupPlayerTypes",
+			helper: "_isAutoplayBackupAvailableForSearch",
 			source: processorSource,
 		},
 		{
