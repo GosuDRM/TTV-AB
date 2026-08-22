@@ -88,6 +88,7 @@ beforeAll(() => {
 		GQLDeviceID: null,
 		PreferredQualityGroup: null,
 		DisableAutoplayBackup: false,
+		AllowPreviewEmergencyAutoplayBackup: false,
 	};
 	g.globalThis = g;
 	g.self = g;
@@ -101,6 +102,7 @@ beforeAll(() => {
 
 afterEach(() => {
 	getState().PagePlaybackVisibleSinceAt = 0;
+	getState().AllowPreviewEmergencyAutoplayBackup = false;
 	if (g.__realCanReloadNativePlayerAfterAd) {
 		g._canReloadNativePlayerAfterAd = g.__realCanReloadNativePlayerAfterAd;
 	}
@@ -2528,16 +2530,19 @@ describe("_shouldHoldBridgeInsteadOfRotating", () => {
 		}
 	});
 
-	it("never suppresses the normal-quality search while the fallback is disabled", () => {
+	it("never suppresses the normal-quality search for a preview emergency source", () => {
 		const state = getState();
 		const previousDisable = state.DisableAutoplayBackup;
+		const previousPreview = state.AllowPreviewEmergencyAutoplayBackup;
 		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
 		state.DisableAutoplayBackup = true;
+		state.AllowPreviewEmergencyAutoplayBackup = true;
 		try {
 			const info = makeBridgeInfo({ _BackupPinFlipCount: 2 });
 			expect(guard()(info, { Resolution: "640x360" })).toBe(false);
 		} finally {
 			state.DisableAutoplayBackup = previousDisable;
+			state.AllowPreviewEmergencyAutoplayBackup = previousPreview;
 			nowSpy.mockRestore();
 		}
 	});
@@ -2745,6 +2750,13 @@ describe("_getOrderedBackupPlayerTypes (LQ fallback contract)", () => {
 		expect(result).toContain("autoplay");
 	});
 
+	it("keeps autoplay last as an emergency source for an exact Previews player", () => {
+		getState().DisableAutoplayBackup = true;
+		getState().AllowPreviewEmergencyAutoplayBackup = true;
+		const result = fn()(makeInfo());
+		expect(result).toEqual(["embed", "popout", "autoplay"]);
+	});
+
 	it("tries autoplay first on a cold active ad cycle when LQ fallback is enabled", () => {
 		getState().DisableAutoplayBackup = false;
 		const result = fn()(
@@ -2915,6 +2927,16 @@ describe("_shouldTryAutoplayFirst (LQ fallback)", () => {
 		getState().DisableAutoplayBackup = true;
 	});
 
+	it("does not prioritize the preview emergency source", () => {
+		getState().DisableAutoplayBackup = true;
+		getState().AllowPreviewEmergencyAutoplayBackup = true;
+		const info = makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: Date.now() - 500,
+		});
+		expect(fn()(info)).toBe(false);
+	});
+
 	it("does not prioritize autoplay on a new ad cycle (backup stale from a prior cycle)", () => {
 		getState().DisableAutoplayBackup = false;
 		const info = makeInfo({
@@ -3011,6 +3033,22 @@ describe("_shouldHoldAutoplayBackupDuringAd", () => {
 
 	it("does not hold autoplay when LQ fallback is disabled", () => {
 		getState().DisableAutoplayBackup = true;
+		const startedAt = Date.now() - 2000;
+		const info = makeInfo({
+			IsShowingAd: true,
+			ActiveBackupPlayerType: "autoplay",
+			LastCleanBackupPlayerType: "autoplay",
+			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2.000,live\nseg.ts",
+			LastCleanBackupAt: startedAt + 1000,
+			VisibleAdStartedAt: startedAt,
+			_LqHoldStartAt: startedAt,
+		});
+		expect(fn()(info)).toBe(false);
+	});
+
+	it("does not turn the preview emergency source into a normal LQ dwell", () => {
+		getState().DisableAutoplayBackup = true;
+		getState().AllowPreviewEmergencyAutoplayBackup = true;
 		const startedAt = Date.now() - 2000;
 		const info = makeInfo({
 			IsShowingAd: true,
@@ -3852,6 +3890,166 @@ describe("_findBackupStream fallback policy", () => {
 		}
 	});
 
+	it("uses clean autoplay last when an exact Previews player has no clean normal source", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousPreview = state.AllowPreviewEmergencyAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["embed", "autoplay"];
+		state.DisableAutoplayBackup = true;
+		state.AllowPreviewEmergencyAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo(),
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					if (href.includes("/embed/")) {
+						return new Response(adPlaylist, { status: 200 });
+					}
+					if (href.includes("/autoplay/")) {
+						return new Response(cleanPlaylist, { status: 200 });
+					}
+					return new Response(null, { status: 404 });
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["embed", "autoplay"]);
+			expect(result).toEqual({ type: "autoplay", m3u8: cleanPlaylist });
+			expect(result.m3u8).not.toContain("stitched-ad");
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			state.AllowPreviewEmergencyAutoplayBackup = previousPreview;
+			if (previousGetToken === undefined) {
+				delete g._getToken;
+			} else {
+				g._getToken = previousGetToken;
+			}
+			if (previousExtract === undefined) {
+				delete g._extractPlaybackAccessToken;
+			} else {
+				g._extractPlaybackAccessToken = previousExtract;
+			}
+		}
+	});
+
+	it("stops before autoplay when a preview normal-quality source is clean", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousPreview = state.AllowPreviewEmergencyAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+		let activePlayerType = "";
+
+		state.BackupPlayerTypes = ["embed", "autoplay"];
+		state.DisableAutoplayBackup = true;
+		state.AllowPreviewEmergencyAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			activePlayerType = String(playerType);
+			tokenCalls.push(activePlayerType);
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo(),
+				async (url) => {
+					const href = String(url);
+					if (href.includes("usher.ttvnw.net")) {
+						return new Response(masterPlaylist(activePlayerType), {
+							status: 200,
+						});
+					}
+					if (href.includes("/embed/")) {
+						return new Response(cleanPlaylist, { status: 200 });
+					}
+					throw new Error("autoplay should not be requested");
+				},
+				0,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["embed"]);
+			expect(result).toEqual({ type: "embed", m3u8: cleanPlaylist });
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			state.AllowPreviewEmergencyAutoplayBackup = previousPreview;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+		}
+	});
+
+	it("rejects an ad-marked preview emergency source", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousPreview = state.AllowPreviewEmergencyAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+
+		state.BackupPlayerTypes = ["autoplay"];
+		state.DisableAutoplayBackup = true;
+		state.AllowPreviewEmergencyAutoplayBackup = true;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async () => new Response("{}", { status: 200 });
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo(),
+				async (url) =>
+					String(url).includes("usher.ttvnw.net")
+						? new Response(masterPlaylist("autoplay"), { status: 200 })
+						: new Response(adPlaylist, { status: 200 }),
+				0,
+				currentResolution,
+			);
+
+			expect(result).toEqual({ type: null, m3u8: null });
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			state.AllowPreviewEmergencyAutoplayBackup = previousPreview;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+		}
+	});
+
 	it("does not promote autoplay when the toggle is disabled during its request", async () => {
 		const state = getState();
 		const previousTypes = state.BackupPlayerTypes;
@@ -3895,6 +4093,49 @@ describe("_findBackupStream fallback policy", () => {
 			expect(tokenCalls).toEqual(["autoplay", "embed"]);
 			expect(result.type).toBe("embed");
 			expect(result.m3u8).toBe(cleanPlaylist);
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.DisableAutoplayBackup = previousDisable;
+			if (previousGetToken === undefined) delete g._getToken;
+			else g._getToken = previousGetToken;
+			if (previousExtract === undefined) delete g._extractPlaybackAccessToken;
+			else g._extractPlaybackAccessToken = previousExtract;
+		}
+	});
+
+	it("does not let a minimal-request search bypass a disabled fallback", async () => {
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousDisable = state.DisableAutoplayBackup;
+		const previousGetToken = g._getToken;
+		const previousExtract = g._extractPlaybackAccessToken;
+		const tokenCalls: string[] = [];
+
+		state.BackupPlayerTypes = ["embed", "autoplay"];
+		state.DisableAutoplayBackup = false;
+		g._extractPlaybackAccessToken = () => ({
+			signature: "sig",
+			value: "token",
+		});
+		g._getToken = async (_info, playerType) => {
+			tokenCalls.push(String(playerType));
+			state.DisableAutoplayBackup = true;
+			return new Response("{}", { status: 200 });
+		};
+
+		try {
+			const result = await findBackupStream()(
+				makeInfo(),
+				async (url) =>
+					String(url).includes("usher.ttvnw.net")
+						? new Response(masterPlaylist("autoplay"), { status: 200 })
+						: new Response(cleanPlaylist, { status: 200 }),
+				1,
+				currentResolution,
+			);
+
+			expect(tokenCalls).toEqual(["autoplay"]);
+			expect(result).toEqual({ type: null, m3u8: null });
 		} finally {
 			state.BackupPlayerTypes = previousTypes;
 			state.DisableAutoplayBackup = previousDisable;
@@ -8549,6 +8790,7 @@ describe("processor tunables are seeded in state", () => {
 		expect(declared.IsAdStrippingEnabled).toBe(true);
 		expect(declared.DisableAdSpoofing).toBe(false);
 		expect(declared.DisableAutoplayBackup).toBe(false);
+		expect(declared.AllowPreviewEmergencyAutoplayBackup).toBe(false);
 		expect(declared.SilentBackupHoldMaxMs).toBe(120000);
 		expect(declared.AdEndBounceDebounceMs).toBe(3000);
 		expect(declared.ActiveCodecHandoffId).toBe(null);

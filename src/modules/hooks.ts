@@ -4064,6 +4064,7 @@ function _hookWorker() {
                 ${_isBackupPlayerRetryCoolingDown.toString()}
                 ${_getPinnedBackupPlayerTypeForInfo.toString()}
                 ${_getRecentCleanBackupPlayerTypeForInfo.toString()}
+				${_isAutoplayBackupAvailableForSearch.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_resolveAdBackupTargetResolution.toString()}
@@ -4160,6 +4161,7 @@ function _hookWorker() {
                 __TTVAB_STATE__.PageChannel = ${JSON.stringify(pagePlaybackContext.ChannelName)};
                 __TTVAB_STATE__.PageVodID = ${JSON.stringify(pagePlaybackContext.VodID)};
                 __TTVAB_STATE__.PageMediaKey = ${JSON.stringify(pagePlaybackContext.MediaKey)};
+				__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup = ${JSON.stringify(__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup === true)};
                 __TTVAB_STATE__.PagePlaybackVisibleSinceAt = ${JSON.stringify(__TTVAB_STATE__.PagePlaybackVisibleSinceAt)};
                 __TTVAB_STATE__.PreferredQualityGroup = ${JSON.stringify(__TTVAB_STATE__.PreferredQualityGroup)};
                 __TTVAB_STATE__.PlayerHasPlayedOnce = ${JSON.stringify(__TTVAB_STATE__.PlayerHasPlayedOnce)};
@@ -4237,6 +4239,9 @@ function _hookWorker() {
                                     __TTVAB_STATE__.PageChannel = nextPageContext.ChannelName;
                                     __TTVAB_STATE__.PageVodID = nextPageContext.VodID;
                                     __TTVAB_STATE__.PageMediaKey = nextPageContext.MediaKey;
+									if (typeof data.value?.allowPreviewEmergencyAutoplayBackup === 'boolean') {
+										__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup = data.value.allowPreviewEmergencyAutoplayBackup;
+									}
                                     const pendingReloadMediaKey = _normalizeMediaKey(
                                         __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
                                     );

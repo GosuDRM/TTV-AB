@@ -134,6 +134,36 @@ describe("_getPlaybackContextFromUrl", () => {
 	});
 });
 
+describe("_isPreviewsPlayerUrl", () => {
+	const fn = () => T<(url: string) => boolean>("_isPreviewsPlayerUrl");
+
+	it.each(["s", "d"])("accepts an exact %s preview player", (previewType) => {
+		expect(
+			fn()(
+				`https://player.twitch.tv/?channel=Preview_Channel&parent=twitch.tv&tp_prev=${previewType}&tp_q=auto`,
+			),
+		).toBe(true);
+	});
+
+	it("uses the preview marker rather than optional embed parameters", () => {
+		expect(
+			fn()("https://player.twitch.tv/?channel=testchannel&tp_prev=s"),
+		).toBe(true);
+	});
+
+	it.each([
+		"https://www.twitch.tv/testchannel?parent=twitch.tv&tp_prev=s",
+		"https://player.twitch.tv/?channel=testchannel&parent=twitch.tv",
+		"https://player.twitch.tv/?channel=testchannel&parent=twitch.tv&tp_prev=c",
+		"https://player.twitch.tv.example.com/?channel=testchannel&tp_prev=s",
+		"https://player.twitch.tv/?channel=testchannel&tp_prev=S",
+		"https://player.twitch.tv/?channel=bad-channel&parent=twitch.tv&tp_prev=s",
+		"http://player.twitch.tv/?channel=testchannel&parent=twitch.tv&tp_prev=s",
+	])("rejects non-Previews playback context %s", (url) => {
+		expect(fn()(url)).toBe(false);
+	});
+});
+
 describe("_getPlaybackContextFromUsherUrl", () => {
 	const fn = () =>
 		T<(url: string) => Record<string, unknown> | null>(
