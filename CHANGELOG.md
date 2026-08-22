@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.4] - 2026-08-23
+
+- Fixed Twitch hover previews still failing with Error 2000 when Low Quality Fallback was disabled and every normal-quality backup remained ad-marked ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
+- Previews now use a validated clean fallback only after all normal-quality sources fail, while ordinary Twitch players continue honoring the disabled setting.
+- The emergency preview stream retains the existing ad detection and live refresh safeguards, keeping playback moving without weakening native recovery checks.
+
 ## [16.2.3] - 2026-08-23
 
 - Added compatibility with the Previews extension for Twitch hover previews by preventing TTV AB from intercepting its own already-protected player worker a second time ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
