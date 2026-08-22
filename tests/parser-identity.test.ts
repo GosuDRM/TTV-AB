@@ -120,6 +120,18 @@ describe("_getPlaybackContextFromUrl", () => {
 			"live",
 		);
 	});
+	it("hover preview iframe", () => {
+		expect(
+			fn()(
+				"https://player.twitch.tv/?channel=Preview_Channel&parent=twitch.tv&tp_prev=s&tp_q=720p60",
+			),
+		).toEqual({
+			MediaType: "live",
+			ChannelName: "preview_channel",
+			VodID: null,
+			MediaKey: "live:preview_channel",
+		});
+	});
 });
 
 describe("_getPlaybackContextFromUsherUrl", () => {

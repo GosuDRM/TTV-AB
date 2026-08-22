@@ -3884,6 +3884,15 @@ function _hookWorker() {
 					isTwitch = false;
 				}
 
+				if (workerSourceUrl && _trackedExtensionBlobUrls.has(workerSourceUrl)) {
+					_log(
+						"[Trace] Compatible worker wrapper retained the existing playback hook",
+						"info",
+					);
+					super(url, opts);
+					return;
+				}
+
 				if (!isTwitch) {
 					super(url, opts);
 					return;
