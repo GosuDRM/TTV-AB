@@ -317,6 +317,39 @@ describe("worker message handler hardening", () => {
 		expect(block).toMatch(
 			/_invalidateNativeRecoveryAfterPlayerReload\(\s*handoffInfo,\s*true,?\s*\)[\s\S]*?__TTVAB_STATE__\.HasTriggeredPlayerReload = true/,
 		);
+		expect(block).toMatch(
+			/repeatsPendingReload[\s\S]*?PendingTriggeredPlayerReloadAt[\s\S]*?reloadAt \|\| Date\.now\(\)/,
+		);
+		expect(source).toContain("seedPostAdNativeReloadContext");
+		expect(source).toContain(
+			"_getPendingPostAdNativeReloadContext(pagePlaybackContext.MediaKey)",
+		);
+	});
+
+	it("accepts exact post-ad native reload proof only through the fenced page handler", () => {
+		const source = hooksJs();
+		const handlerStart = source.indexOf(
+			'this.addEventListener("message", (e) =>',
+		);
+		const mainSwitch = source.indexOf("switch (data.key)", handlerStart);
+		const blockStart = source.indexOf(
+			'case "PostAdNativeReloadReady":',
+			mainSwitch,
+		);
+		const blockEnd = source.indexOf(
+			'case "PlaybackWorkerBootstrapObserved":',
+			blockStart,
+		);
+		const block = source.slice(blockStart, blockEnd);
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		expect(block).toMatch(/isStalePlaybackEvent\(data\)/);
+		expect(block).toMatch(
+			/_isPlaybackContextMismatch\(workerContext, reloadContext\)/,
+		);
+		expect(block).toMatch(
+			/_confirmPostAdNativeReload\(\{[\s\S]*?cycleStartedAt:[\s\S]*?reloadAt:[\s\S]*?confirmedAt:/,
+		);
 	});
 
 	it("gates native-restored acknowledgements before state and scheduled effects", () => {

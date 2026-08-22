@@ -5577,8 +5577,28 @@ describe("_processM3U8 triggered-reload consumption (context-scoped)", () => {
 		expect(info.LastPlayerReload).toBe(0);
 	});
 
+	it("does not consume or confirm a matching reload from a clean backup URL", async () => {
+		const info = setup();
+		(info.BackupVariantUrls as Set<string>).add(URL_A);
+		const postMessage = vi.fn();
+		g._postWorkerBridgeMessage = postMessage;
+		armPendingReload("live:chana", "chana", 100);
+
+		await processM3U8()(URL_A, cleanPlaylist(100), () =>
+			Promise.reject(new Error("no fetch expected")),
+		);
+
+		expect(getState().HasTriggeredPlayerReload).toBe(true);
+		expect(getState().PendingTriggeredPlayerReloadAt).toBe(1000);
+		expect(postMessage).not.toHaveBeenCalled();
+		expect(info.LastPlayerReload).toBe(0);
+	});
+
 	it("consumes the pending reload for the matching stream", async () => {
 		const info = setup();
+		declareAvcPlaybackUrl(info, URL_A);
+		const postMessage = vi.fn();
+		g._postWorkerBridgeMessage = postMessage;
 		const previousCycleCurrent = g._isPageLifecycleCycleCurrent;
 		const cycleCurrent = vi.fn(() => true);
 		g._isPageLifecycleCycleCurrent = cycleCurrent;
@@ -5618,6 +5638,16 @@ describe("_processM3U8 triggered-reload consumption (context-scoped)", () => {
 		expect(cycleCurrent).toHaveBeenCalledWith("live:chana", 100);
 		expect(getState().HasTriggeredPlayerReload).toBe(false);
 		expect(getState().PendingTriggeredPlayerReloadMediaKey).toBe(null);
+		expect(postMessage).toHaveBeenCalledWith(
+			g,
+			expect.objectContaining({
+				key: "PostAdNativeReloadReady",
+				mediaKey: "live:chana",
+				cycleStartedAt: 100,
+				reloadAt: 1000,
+				loaderEpoch: 4,
+			}),
+		);
 		expect(info.LastPlayerReload).toBeGreaterThan(0);
 		expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set());
 		expect(info.NativeRecoveryAdMediaKey).toBe(null);
@@ -5632,6 +5662,39 @@ describe("_processM3U8 triggered-reload consumption (context-scoped)", () => {
 		expect(info._IncompletePodCleanPlaylistCount).toBe(0);
 		expect(info._IncompletePodLastMediaSequence).toBe(null);
 		expect(info._IncompletePodCandidateUrl).toBe(null);
+	});
+
+	it("does not confirm a matching reload from an ad-marked native response", async () => {
+		const info = setup();
+		declareAvcPlaybackUrl(info, URL_A);
+		const postMessage = vi.fn();
+		g._postWorkerBridgeMessage = postMessage;
+		const previousCycleCurrent = g._isPageLifecycleCycleCurrent;
+		g._isPageLifecycleCycleCurrent = () => true;
+		g._findBackupStream = () => Promise.resolve(null);
+		armPendingReload("live:chana", "chana", 100);
+
+		try {
+			await processM3U8()(URL_A, adMarkedPlaylist(300), () =>
+				Promise.reject(new Error("no fetch expected")),
+			);
+		} finally {
+			if (previousCycleCurrent === undefined) {
+				delete g._isPageLifecycleCycleCurrent;
+			} else {
+				g._isPageLifecycleCycleCurrent = previousCycleCurrent;
+			}
+		}
+
+		expect(getState().HasTriggeredPlayerReload).toBe(false);
+		expect(getState().PendingTriggeredPlayerReloadMediaKey).toBe(null);
+		expect(
+			postMessage.mock.calls.some(
+				([, message]) =>
+					(message as Record<string, unknown>)?.key ===
+					"PostAdNativeReloadReady",
+			),
+		).toBe(false);
 	});
 
 	it("consumes a stale-cycle reload without invalidating current proof", async () => {

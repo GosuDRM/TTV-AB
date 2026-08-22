@@ -3588,6 +3588,8 @@ async function _processM3U8Core(
 		return text;
 	}
 
+	let matchedPlayerReloadAt = 0;
+	let matchedPlayerReloadCycleStartedAt = 0;
 	if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
 		const pendingReloadMediaKey = _normalizeMediaKey(
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
@@ -3598,6 +3600,10 @@ async function _processM3U8Core(
 		const pendingReloadCycleStartedAt = Math.max(
 			0,
 			Number(__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt) || 0,
+		);
+		const pendingReloadAt = Math.max(
+			0,
+			Number(__TTVAB_STATE__.PendingTriggeredPlayerReloadAt) || 0,
 		);
 		const reloadMatchesThisStream =
 			(!pendingReloadMediaKey && !pendingReloadChannel) ||
@@ -3619,6 +3625,8 @@ async function _processM3U8Core(
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
 			if (pendingCycleIsCurrent) {
+				matchedPlayerReloadAt = pendingReloadAt;
+				matchedPlayerReloadCycleStartedAt = pendingReloadCycleStartedAt;
 				info.LastPlayerReload = Date.now();
 				_invalidateNativeRecoveryAfterPlayerReload(info);
 			}
@@ -3987,6 +3995,53 @@ async function _processM3U8Core(
 				0,
 				Number(info.NativeRecoveryLoaderEpoch) || 0,
 			);
+		}
+		const currentLoaderEpoch = Math.max(
+			0,
+			Number(info.NativeRecoveryLoaderEpoch) || 0,
+		);
+		if (
+			matchedPlayerReloadAt > 0 &&
+			matchedPlayerReloadCycleStartedAt > 0 &&
+			!isBackupUrl &&
+			isExactCurrentNativeVariant &&
+			directResolution &&
+			!info.IsHoldingBackupAfterAd &&
+			!info.IsUsingModifiedM3U8 &&
+			!info.IsUsingFallbackStream &&
+			!info.IsUsingBackupStream &&
+			_getExactPlaylistUrlKey(info.LastCleanNativeUrl) === exactRequestUrl &&
+			Math.max(0, Number(info.LastCleanNativeLoaderEpoch) || 0) ===
+				currentLoaderEpoch &&
+			(!requestAdContext ||
+				Math.max(0, Number(requestAdContext.loaderEpoch) || 0) ===
+					currentLoaderEpoch)
+		) {
+			const confirmedAt = Date.now();
+			if (
+				confirmedAt >= matchedPlayerReloadAt &&
+				typeof self !== "undefined" &&
+				self.postMessage
+			) {
+				try {
+					_postWorkerBridgeMessage(
+						self,
+						_createPageScopedWorkerEvent({
+							key: "PostAdNativeReloadReady",
+							channel: info.ChannelName,
+							mediaKey: info.MediaKey,
+							cycleStartedAt: matchedPlayerReloadCycleStartedAt,
+							reloadAt: matchedPlayerReloadAt,
+							confirmedAt,
+							loaderEpoch: currentLoaderEpoch,
+						}),
+					);
+					_log(
+						"[Trace] Exact native playback confirmed after player rebuild",
+						"info",
+					);
+				} catch {}
+			}
 		}
 		if (info.IsHoldingBackupAfterAd) {
 			let adEndState = "wait";

@@ -2905,9 +2905,32 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			(
 				g._PostAdRecoveryTransactionState as {
 					requiredReplacementVideo: WeakRef<HTMLMediaElement> | null;
+					requiredNativeReloadAt: number;
 				}
 			).requiredReplacementVideo?.deref(),
 		).toBe(baselineVideo);
+		const recoveryTransaction = g._PostAdRecoveryTransactionState as {
+			requiredNativeReloadAt: number;
+		};
+		expect(recoveryTransaction.requiredNativeReloadAt).toBeGreaterThan(0);
+		expect(workerMessages.at(-1)).toMatchObject({
+			key: "TriggeredPlayerReload",
+			value: {
+				reason: "post-ad-native-restore",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+				reloadAt: recoveryTransaction.requiredNativeReloadAt,
+			},
+		});
+		expect(
+			T<(mediaKey: string) => Record<string, unknown> | null>(
+				"_getPendingPostAdNativeReloadContext",
+			)("live:testchannel"),
+		).toMatchObject({
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 100,
+			reloadAt: recoveryTransaction.requiredNativeReloadAt,
+		});
 	});
 
 	it("rejects stale, no-intent, and user-paused terminal restore tasks", () => {
@@ -4019,6 +4042,8 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 			expiresAt: number;
 			requiresReplacement: boolean;
 			requiredReplacementVideo: WeakRef<HTMLMediaElement> | null;
+			requiredNativeReloadAt: number;
+			nativeReloadConfirmedAt: number;
 			initialOperationCompleted: boolean;
 		};
 	let saved: Record<string, unknown>;
@@ -4359,6 +4384,64 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		replacement.setCurrentTime(30.8);
 		expect(sample(501800)).toBe(true);
 		expect(transaction().mediaKey).toBeNull();
+	});
+
+	it("accepts advancing low-buffer playback on the reused element only after exact native proof", () => {
+		const playback = makePlayback({
+			currentTime: 10,
+			bufferedEnd: 10.04,
+			readyState: 2,
+			videoWidth: 1920,
+		});
+		arm(playback);
+		transaction().requiresReplacement = true;
+		transaction().requiredReplacementVideo = new WeakRef(playback.video);
+		transaction().requiredNativeReloadAt = 499000;
+		transaction().initialOperationCompleted = true;
+		T<(mediaKey: string, at: number) => void>("_recordPlayerReloadAt")(
+			"live:chan",
+			499000,
+		);
+
+		expect(sample(500000)).toBe(false);
+		playback.setCurrentTime(10.8);
+		expect(sample(500800)).toBe(false);
+		expect(reloads).toEqual([]);
+		expect(
+			(g._PlayerBufferState as Record<string, unknown>).postAdUnhealthyCount,
+		).toBe(0);
+		playback.setCurrentTime(11.5);
+		expect(sample(512000)).toBe(false);
+		expect(reloads).toEqual([]);
+
+		const confirm = T<(data: Record<string, unknown>) => boolean>(
+			"_confirmPostAdNativeReload",
+		);
+		expect(
+			confirm({
+				channel: "chan",
+				mediaKey: "live:chan",
+				cycleStartedAt: 440000,
+				reloadAt: 498999,
+				confirmedAt: 512050,
+			}),
+		).toBe(false);
+		expect(
+			confirm({
+				channel: "chan",
+				mediaKey: "live:chan",
+				cycleStartedAt: 440000,
+				reloadAt: 499000,
+				confirmedAt: 512050,
+			}),
+		).toBe(true);
+		expect(transaction().nativeReloadConfirmedAt).toBe(512050);
+
+		expect(sample(512100)).toBe(false);
+		playback.setCurrentTime(11.8);
+		expect(sample(512300)).toBe(true);
+		expect(transaction().mediaKey).toBeNull();
+		expect(reloads).toEqual([]);
 	});
 
 	it.each(["hidden", "Picture-in-Picture"])(

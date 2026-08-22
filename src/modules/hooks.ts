@@ -3900,6 +3900,10 @@ function _hookWorker() {
 					pagePlaybackContext.MediaKey &&
 					_normalizeMediaKey(__TTVAB_STATE__.LastAdEndedMediaKey) ===
 						pagePlaybackContext.MediaKey;
+				const seedPostAdNativeReloadContext =
+					typeof _getPendingPostAdNativeReloadContext === "function"
+						? _getPendingPostAdNativeReloadContext(pagePlaybackContext.MediaKey)
+						: null;
 				const seedPinnedBackupContext =
 					pagePlaybackContext.MediaKey &&
 					_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey) ===
@@ -4151,6 +4155,11 @@ function _hookWorker() {
                 __TTVAB_STATE__.PreferredQualityGroup = ${JSON.stringify(__TTVAB_STATE__.PreferredQualityGroup)};
                 __TTVAB_STATE__.PlayerHasPlayedOnce = ${JSON.stringify(__TTVAB_STATE__.PlayerHasPlayedOnce)};
                 __TTVAB_STATE__.PlayerIsPlaying = ${JSON.stringify(__TTVAB_STATE__.PlayerIsPlaying)};
+				__TTVAB_STATE__.HasTriggeredPlayerReload = ${JSON.stringify(Boolean(seedPostAdNativeReloadContext))};
+				__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = ${JSON.stringify(seedPostAdNativeReloadContext?.channelName || null)};
+				__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = ${JSON.stringify(seedPostAdNativeReloadContext?.mediaKey || null)};
+				__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = ${JSON.stringify(Math.max(0, Number(seedPostAdNativeReloadContext?.reloadAt) || 0))};
+				__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = ${JSON.stringify(Math.max(0, Number(seedPostAdNativeReloadContext?.cycleStartedAt) || 0))};
 
                 self.addEventListener('message', function(e) {
                     const data = _getWorkerBridgeMessage(e.data);
@@ -4182,6 +4191,11 @@ function _hookWorker() {
                                     __TTVAB_STATE__.LastAdEndedChannel = null;
                                     __TTVAB_STATE__.LastAdEndedMediaKey = null;
                                     __TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
+									__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+									__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
+									__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
+									__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+									__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
                                 }
                                 __TTVAB_STATE__.IsAdStrippingEnabled = enabled;
                             }
@@ -4597,7 +4611,7 @@ function _hookWorker() {
                             }
                             break;
 						case 'TriggeredPlayerReload':
-                            {
+							{
                                 const reloadContext = _normalizePlaybackContext(
                                     data.value || {
                                         mediaType: __TTVAB_STATE__.PageMediaType,
@@ -4614,6 +4628,10 @@ function _hookWorker() {
 								const handoffCycleStartedAt = Math.max(
 									0,
 									Number(data.value?.cycleStartedAt) || 0,
+								);
+								const reloadAt = Math.max(
+									0,
+									Number(data.value?.reloadAt) || 0,
 								);
 								const handoffInfo =
 									(reloadContext.MediaKey &&
@@ -4671,7 +4689,26 @@ function _hookWorker() {
 								) {
 										handoffInfo._CodecHandoffAcknowledgedId = handoffId;
 									}
-									if (handoffInfo) {
+									const repeatsPendingReload = Boolean(
+										reloadAt > 0 &&
+											_normalizeMediaKey(
+												__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
+											) === reloadContext.MediaKey &&
+											Math.max(
+												0,
+												Number(
+													__TTVAB_STATE__.PendingTriggeredPlayerReloadAt,
+												) || 0,
+											) === reloadAt &&
+											Math.max(
+												0,
+												Number(
+													__TTVAB_STATE__
+														.PendingTriggeredPlayerReloadCycleStartedAt,
+												) || 0,
+											) === handoffCycleStartedAt,
+									);
+									if (handoffInfo && !repeatsPendingReload) {
 										_invalidateNativeRecoveryAfterPlayerReload(
 											handoffInfo,
 											true,
@@ -4682,7 +4719,8 @@ function _hookWorker() {
                                     reloadContext.ChannelName;
                                 __TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey =
                                     reloadContext.MediaKey;
-                                __TTVAB_STATE__.PendingTriggeredPlayerReloadAt = Date.now();
+								__TTVAB_STATE__.PendingTriggeredPlayerReloadAt =
+									reloadAt || Date.now();
 								__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt =
 									handoffCycleStartedAt;
                             }
@@ -4858,6 +4896,7 @@ function _hookWorker() {
 							data.key === "AdPodProgress" ||
 							data.key === "BackupPlayerTypeSelected" ||
 							data.key === "FatalMediaRecoveryReady" ||
+							data.key === "PostAdNativeReloadReady" ||
 							data.key === "PauseResumePlayer" ||
 							data.key === "ReloadPlayer"
 						) {
@@ -4935,6 +4974,36 @@ function _hookWorker() {
 							}
 							_promoteWorkerPlaybackOwner(this, Date.now(), observedContext);
 							_beginExhaustedWorkerRecoveryStabilization(this, observedContext);
+							break;
+						}
+						case "PostAdNativeReloadReady": {
+							if (isStalePlaybackEvent(data)) {
+								break;
+							}
+							const reloadContext = _normalizePlaybackContext({
+								MediaType: data.mediaType,
+								ChannelName: data.channel,
+								VodID: data.vodID,
+								MediaKey: data.mediaKey,
+							});
+							const workerContext = _getWorkerPlaybackContext(
+								this,
+								pagePlaybackContext,
+							);
+							if (
+								!reloadContext.MediaKey ||
+								_isPlaybackContextMismatch(workerContext, reloadContext) ||
+								typeof _confirmPostAdNativeReload !== "function"
+							) {
+								break;
+							}
+							_confirmPostAdNativeReload({
+								channel: reloadContext.ChannelName,
+								mediaKey: reloadContext.MediaKey,
+								cycleStartedAt: data.cycleStartedAt,
+								reloadAt: data.reloadAt,
+								confirmedAt: data.confirmedAt,
+							});
 							break;
 						}
 						case "PlaybackWorkerBootstrapObserved": {

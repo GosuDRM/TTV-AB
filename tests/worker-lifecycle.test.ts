@@ -443,6 +443,49 @@ describe("worker log ingestion", () => {
 	});
 });
 
+describe("post-ad native reload acknowledgement", () => {
+	it("forwards exact current-worker proof and ignores stale playback context", () => {
+		const confirm = vi.fn(() => true);
+		g._confirmPostAdNativeReload = confirm;
+		const { worker, restore } = installWorkerMessageHarness();
+
+		try {
+			worker.emitMessage({
+				key: "PostAdNativeReloadReady",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				pageChannel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				reloadAt: 100000,
+				confirmedAt: 100100,
+			});
+			expect(confirm).toHaveBeenCalledWith({
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				reloadAt: 100000,
+				confirmedAt: 100100,
+			});
+
+			worker.emitMessage({
+				key: "PostAdNativeReloadReady",
+				channel: "otherchannel",
+				mediaKey: "live:otherchannel",
+				pageChannel: "otherchannel",
+				pageMediaKey: "live:otherchannel",
+				cycleStartedAt: 90000,
+				reloadAt: 100000,
+				confirmedAt: 100100,
+			});
+			expect(confirm).toHaveBeenCalledOnce();
+		} finally {
+			restore();
+			delete g._confirmPostAdNativeReload;
+		}
+	});
+});
+
 describe("MAIN bridge token handshake", () => {
 	it("rejects arbitrary page bridge tokens before MAIN creates one", () => {
 		const attachBridgePort =

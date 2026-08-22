@@ -148,6 +148,8 @@ const _PostAdRecoveryTransactionState = {
 	suspendedAt: 0,
 	requiresReplacement: false,
 	requiredReplacementVideo: null as WeakRef<HTMLMediaElement> | null,
+	requiredNativeReloadAt: 0,
+	nativeReloadConfirmedAt: 0,
 	pendingOperation: null as {
 		isPausePlay: boolean;
 		isReload: boolean;
@@ -4166,6 +4168,8 @@ function _resetPostAdRecoveryTransaction() {
 	_PostAdRecoveryTransactionState.suspendedAt = 0;
 	_PostAdRecoveryTransactionState.requiresReplacement = false;
 	_PostAdRecoveryTransactionState.requiredReplacementVideo = null;
+	_PostAdRecoveryTransactionState.requiredNativeReloadAt = 0;
+	_PostAdRecoveryTransactionState.nativeReloadConfirmedAt = 0;
 	_PostAdRecoveryTransactionState.pendingOperation = null;
 	_PostAdRecoveryTransactionState.pendingOperationReadyAt = 0;
 	_PostAdRecoveryTransactionState.initialOperationCompleted = false;
@@ -4223,6 +4227,62 @@ function _isPostAdRecoveryTransactionCurrent(channel = null, mediaKey = null) {
 		_resetPostAdRecoveryTransaction();
 	}
 	return isCurrent;
+}
+
+function _getPendingPostAdNativeReloadContext(mediaKey = null) {
+	const transactionMediaKey = _normalizeMediaKey(
+		_PostAdRecoveryTransactionState.mediaKey,
+	);
+	const safeMediaKey = _normalizeMediaKey(mediaKey);
+	const reloadAt = Math.max(
+		0,
+		Number(_PostAdRecoveryTransactionState.requiredNativeReloadAt) || 0,
+	);
+	if (
+		!transactionMediaKey ||
+		(safeMediaKey && safeMediaKey !== transactionMediaKey) ||
+		!_PostAdRecoveryTransactionState.requiresReplacement ||
+		reloadAt <= 0 ||
+		!_isPostAdRecoveryCycleCurrent(
+			transactionMediaKey,
+			_PostAdRecoveryTransactionState.cycleStartedAt,
+		)
+	) {
+		return null;
+	}
+	return {
+		channelName: _PostAdRecoveryTransactionState.channel,
+		mediaKey: transactionMediaKey,
+		cycleStartedAt: _PostAdRecoveryTransactionState.cycleStartedAt,
+		reloadAt,
+	};
+}
+
+function _confirmPostAdNativeReload(data = null) {
+	const safeChannel = _normalizePlayerChannel(data?.channel);
+	const safeMediaKey = _normalizeMediaKey(data?.mediaKey);
+	const safeCycleStartedAt = Math.max(0, Number(data?.cycleStartedAt) || 0);
+	const safeReloadAt = Math.max(0, Number(data?.reloadAt) || 0);
+	const safeConfirmedAt = Math.max(0, Number(data?.confirmedAt) || 0);
+	if (
+		!safeMediaKey ||
+		safeCycleStartedAt <= 0 ||
+		safeReloadAt <= 0 ||
+		safeConfirmedAt < safeReloadAt ||
+		!_isPostAdRecoveryTransactionCurrent(safeChannel, safeMediaKey) ||
+		_PostAdRecoveryTransactionState.cycleStartedAt !== safeCycleStartedAt ||
+		_PostAdRecoveryTransactionState.requiredNativeReloadAt !== safeReloadAt ||
+		_getPlayerReloadAtForMediaKey(safeMediaKey) !== safeReloadAt
+	) {
+		return false;
+	}
+	_PostAdRecoveryTransactionState.nativeReloadConfirmedAt = safeConfirmedAt;
+	_PostAdRecoveryTransactionState.video = null;
+	_PostAdRecoveryTransactionState.observedAt = 0;
+	_PostAdRecoveryTransactionState.lastCurrentTime = 0;
+	_PostAdRecoveryTransactionState.stallTicks = 0;
+	_PlayerBufferState.postAdUnhealthyCount = 0;
+	return true;
 }
 
 function _startPostAdRecoveryTransaction(
@@ -4560,19 +4620,32 @@ function _handlePendingPostAdRecovery(
 		recoveryAge >= _POST_AD_RECOVERY_RELOAD_COOLDOWN_MS &&
 		(liveVideoWidth <= 0 || _PostAdRecoveryTransactionState.stallTicks >= 2);
 
+	const hasAdvancingFrames = Boolean(
+		advanced &&
+			!isLivePaused &&
+			!liveVideo.ended &&
+			Number(liveVideo.readyState) >= 2 &&
+			liveVideoWidth > 0,
+	);
+	const exactNativeReloadIsReady = Boolean(
+		_PostAdRecoveryTransactionState.requiredNativeReloadAt > 0 &&
+			_PostAdRecoveryTransactionState.nativeReloadConfirmedAt >=
+				_PostAdRecoveryTransactionState.requiredNativeReloadAt,
+	);
 	const replacementIsReady = Boolean(
 		!_PostAdRecoveryTransactionState.requiresReplacement ||
 			(_PostAdRecoveryTransactionState.initialOperationCompleted &&
-				_PostAdRecoveryTransactionState.requiredReplacementVideo?.deref() !==
-					liveVideo),
+				(_PostAdRecoveryTransactionState.requiredReplacementVideo?.deref() !==
+					liveVideo ||
+					exactNativeReloadIsReady)),
 	);
-	if (
-		advanced &&
-		replacementIsReady &&
-		_isPlaybackHealthyAfterAd(player, playerCore, liveVideo)
-	) {
+	if (hasAdvancingFrames && replacementIsReady) {
 		_finishPostAdRecoveryTransaction(liveCurrentTime);
 		return true;
+	}
+	if (hasAdvancingFrames) {
+		_PlayerBufferState.postAdUnhealthyCount = 0;
+		return false;
 	}
 
 	if (
@@ -5296,6 +5369,19 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 				preserveConfiguredQuality: reason !== "manual",
 			},
 		);
+		if (isTerminalPostAdTask && options.newMediaPlayerInstance !== false) {
+			_PostAdRecoveryTransactionState.requiresReplacement = true;
+			_PostAdRecoveryTransactionState.requiredReplacementVideo =
+				replacementBaselineVideo instanceof HTMLMediaElement
+					? new WeakRef(replacementBaselineVideo)
+					: null;
+			_PostAdRecoveryTransactionState.requiredNativeReloadAt = now;
+			_PostAdRecoveryTransactionState.nativeReloadConfirmedAt = 0;
+			_PostAdRecoveryTransactionState.video = null;
+			_PostAdRecoveryTransactionState.observedAt = 0;
+			_PostAdRecoveryTransactionState.lastCurrentTime = 0;
+			_PostAdRecoveryTransactionState.stallTicks = 0;
+		}
 
 		if (reason === "manual") {
 			_log("Reloading player", "info");
@@ -5399,16 +5485,6 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 			}
 			throw error;
 		}
-		if (replacementBaselineVideo instanceof HTMLMediaElement) {
-			_PostAdRecoveryTransactionState.requiresReplacement = true;
-			_PostAdRecoveryTransactionState.requiredReplacementVideo = new WeakRef(
-				replacementBaselineVideo,
-			);
-			_PostAdRecoveryTransactionState.video = null;
-			_PostAdRecoveryTransactionState.observedAt = 0;
-			_PostAdRecoveryTransactionState.lastCurrentTime = 0;
-			_PostAdRecoveryTransactionState.stallTicks = 0;
-		}
 		if (
 			isTerminalPostAdTask &&
 			reason === "post-ad-native-restore" &&
@@ -5430,6 +5506,7 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 				reason,
 				handoffId,
 				cycleStartedAt: requestedCycleStartedAt,
+				reloadAt: now,
 			},
 		});
 
