@@ -3871,6 +3871,7 @@ function _hookWorker() {
 
 		return false;
 	};
+	const workerHookSourceMarker = `__TTVAB_WORKER_HOOK_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}__`;
 	const createHookedWorkerConstructor = (BaseWorker) => {
 		const reinsertNames = _getReinsert(BaseWorker);
 		const HookedWorker = class Worker extends _cleanWorker(BaseWorker) {
@@ -3960,6 +3961,15 @@ function _hookWorker() {
 						? _readBlobUrlSync(workerSourceUrl)
 						: null;
 
+				if (inlinedWorkerSource?.includes(workerHookSourceMarker)) {
+					_log(
+						"[Trace] Copied worker blob retained the existing playback hook",
+						"info",
+					);
+					super(url, opts);
+					return;
+				}
+
 				const originalWorkerLoadCode =
 					inlinedWorkerSource ||
 					(opts?.type === "module"
@@ -3967,6 +3977,7 @@ function _hookWorker() {
 						: `importScripts(${JSON.stringify(workerSourceUrl)});`);
 
 				const injectedCode = `
+            ${JSON.stringify(workerHookSourceMarker)};
             (function() {
                 const _C = ${JSON.stringify(_C)};
                 const _S = ${JSON.stringify({ ..._S, workers: [] })};

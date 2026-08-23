@@ -185,10 +185,20 @@ function makeBridgePort() {
 	};
 }
 
-function installWorkerMessageHarness() {
+function installWorkerMessageHarness(
+	options: { preserveBlobSources?: boolean } = {},
+) {
 	const originalWorkerDescriptor = Object.getOwnPropertyDescriptor(
 		window,
 		"Worker",
+	);
+	const originalBlobDescriptor = Object.getOwnPropertyDescriptor(
+		globalThis,
+		"Blob",
+	);
+	const originalXMLHttpRequestDescriptor = Object.getOwnPropertyDescriptor(
+		globalThis,
+		"XMLHttpRequest",
 	);
 	const originalCreateObjectURLDescriptor = Object.getOwnPropertyDescriptor(
 		URL,
@@ -198,11 +208,38 @@ function installWorkerMessageHarness() {
 		URL,
 		"revokeObjectURL",
 	);
+	const blobSources = new Map<string, string>();
+	let blobSequence = 0;
+	class TestBlob {
+		source: string;
+
+		constructor(parts: unknown[]) {
+			this.source = parts.map(String).join("");
+		}
+	}
+	class TestXMLHttpRequest {
+		responseText = "";
+		url = "";
+
+		open(_method: string, url: string) {
+			this.url = url;
+		}
+
+		overrideMimeType() {}
+
+		send() {
+			this.responseText = blobSources.get(this.url) || "";
+		}
+	}
 	class TestWorker extends EventTarget {
 		messages: unknown[] = [];
+		url = "";
+		source = "";
 
-		constructor(..._args: unknown[]) {
+		constructor(url: unknown, ..._args: unknown[]) {
 			super();
+			this.url = String(url);
+			this.source = blobSources.get(this.url) || "";
 		}
 
 		postMessage(message: unknown) {
@@ -230,6 +267,20 @@ function installWorkerMessageHarness() {
 		} else {
 			delete (window as unknown as Record<string, unknown>).Worker;
 		}
+		if (originalBlobDescriptor) {
+			Object.defineProperty(globalThis, "Blob", originalBlobDescriptor);
+		} else {
+			delete (globalThis as Record<string, unknown>).Blob;
+		}
+		if (originalXMLHttpRequestDescriptor) {
+			Object.defineProperty(
+				globalThis,
+				"XMLHttpRequest",
+				originalXMLHttpRequestDescriptor,
+			);
+		} else {
+			delete (globalThis as Record<string, unknown>).XMLHttpRequest;
+		}
 		if (originalCreateObjectURLDescriptor) {
 			Object.defineProperty(
 				URL,
@@ -251,9 +302,27 @@ function installWorkerMessageHarness() {
 	};
 
 	try {
+		if (options.preserveBlobSources) {
+			Object.defineProperty(globalThis, "Blob", {
+				configurable: true,
+				value: TestBlob,
+			});
+			Object.defineProperty(globalThis, "XMLHttpRequest", {
+				configurable: true,
+				value: TestXMLHttpRequest,
+			});
+		}
 		Object.defineProperty(URL, "createObjectURL", {
 			configurable: true,
-			value: vi.fn(() => "blob:https://www.twitch.tv/ttvab-test-worker"),
+			value: vi.fn((blob: TestBlob) => {
+				const url = options.preserveBlobSources
+					? `blob:https://www.twitch.tv/ttvab-test-worker-${++blobSequence}`
+					: "blob:https://www.twitch.tv/ttvab-test-worker";
+				if (options.preserveBlobSources) {
+					blobSources.set(url, blob.source);
+				}
+				return url;
+			}),
 		});
 		Object.defineProperty(URL, "revokeObjectURL", {
 			configurable: true,
@@ -270,7 +339,7 @@ function installWorkerMessageHarness() {
 				"https://static.twitchcdn.net/assets/player-worker.js",
 			) as unknown as TestWorker;
 		const worker = createWorker();
-		return { worker, createWorker, restore };
+		return { worker, createWorker, restore, blobSources };
 	} catch (error) {
 		restore();
 		throw error;
@@ -537,6 +606,64 @@ describe("worker recovery lifecycle", () => {
 			expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
 			expect(workers).toHaveLength(2);
 			expect(new Set(workers).size).toBe(2);
+			expect(workers[1]).toBe(wrappedWorker);
+			expect(g._workerGeneration).toBe(2);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("keeps one playback hook when TwitchNoSub copies the worker blob", () => {
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		try {
+			const state = g._S as {
+				conflicts: string[];
+				toleratedWorkerWrappers: Array<{
+					name: string;
+					signatures: string[];
+				}>;
+			};
+			state.conflicts = ["twitch", "isVariantA"];
+			state.toleratedWorkerWrappers = [
+				{
+					name: "TwitchNoSub",
+					signatures: ["${patch_url}", "twitchBlobUrl", "getWasmWorkerJs"],
+				},
+			];
+			const exposedWorker = window.Worker;
+			const getWasmWorkerJs = (twitchBlobUrl: string) => {
+				const request = new XMLHttpRequest();
+				request.open("GET", twitchBlobUrl, false);
+				request.send();
+				return request.responseText;
+			};
+			class TwitchNoSubWorker extends exposedWorker {
+				constructor(twitchBlobUrl: string | URL, opts?: WorkerOptions) {
+					const patch_url = "chrome-extension://test/patch_amazonworker.js";
+					const workerString = getWasmWorkerJs(String(twitchBlobUrl));
+					const blobUrl = URL.createObjectURL(
+						new Blob([`importScripts('${patch_url}');\n${workerString}`]),
+					);
+					super(blobUrl, opts);
+				}
+			}
+			window.Worker = TwitchNoSubWorker;
+
+			const wrappedWorker = harness.createWorker();
+			const initialMarkers =
+				harness.worker.source.match(/__TTVAB_WORKER_HOOK_/g);
+			const initialHookLogs =
+				harness.worker.source.match(/Worker fetch hooked/g);
+			const markers = wrappedWorker.source.match(/__TTVAB_WORKER_HOOK_/g) || [];
+			const hookLogs = wrappedWorker.source.match(/Worker fetch hooked/g) || [];
+			const workers = (g._S as { workers: Worker[] }).workers;
+
+			expect(initialMarkers).toHaveLength(1);
+			expect(initialHookLogs).toHaveLength(1);
+			expect(markers).toHaveLength(1);
+			expect(hookLogs).toHaveLength(1);
+			expect(URL.createObjectURL).toHaveBeenCalledTimes(3);
+			expect(workers).toHaveLength(2);
 			expect(workers[1]).toBe(wrappedWorker);
 			expect(g._workerGeneration).toBe(2);
 		} finally {
