@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.5] - 2026-08-24
+
+- Added TwitchNoSub compatibility: copying an already protected preview player worker into a new blob no longer installs the playback hook twice ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
+- Copied compatible workers now retain one complete ad-blocking pipeline, preventing duplicate fetch handlers, listeners, and recovery bookkeeping without weakening playlist validation.
+
 ## [16.2.4] - 2026-08-23
 
 - Fixed Twitch hover previews still failing with Error 2000 when Low Quality Fallback was disabled and every normal-quality backup remained ad-marked ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).

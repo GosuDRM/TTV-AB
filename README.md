@@ -71,14 +71,14 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v16.2.5 - 2026-08-24
+- **Added TwitchNoSub compatibility.** When TwitchNoSub rebuilds a Twitch worker under a new blob URL, the playback hook is no longer installed twice; copied workers keep one complete ad-blocking pipeline, preventing duplicate fetch handlers and recovery activity without weakening playlist validation ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
+
 ### v16.2.4 - 2026-08-23
 - **Fixed Previews hover streams failing with Error 2000 when Low Quality Fallback was disabled.** Previews can now use a validated clean fallback after every normal-quality source fails, while ordinary Twitch players continue honoring the disabled setting ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
 
 ### v16.2.3 - 2026-08-23
 - **Improved compatibility with Twitch hover-preview and other playback extensions.** Player workers are now protected once even when another extension wraps them, preventing duplicate listener and recovery activity from amplifying startup failures. Hover previews keep the same ad-free validation as normal playback ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
-
-### v16.2.2 - 2026-08-23
-- **Fixed a brief playback hiccup after some ad breaks.** Twitch can rebuild its internal player while reusing the same video element. Recovery now confirms the exact clean native reload without interrupting a stream that is already advancing, while genuine stalls remain bounded.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
