@@ -7511,6 +7511,68 @@ describe("worker mixed-codec master selection", () => {
 			g.fetch = originalFetch;
 		}
 	});
+
+	it("keeps an exact Previews player on AVC before a preroll can force a decoder reload", async () => {
+		const originalFetch = g.fetch;
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60-hevc"',
+			"https://edge.example/1440-hevc/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=14000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="av01.0.13M.08,mp4a.40.2",VIDEO="1440p60-av1"',
+			"https://edge.example/1440-av1/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.64002A,mp4a.40.2",VIDEO="1080p60"',
+			"https://edge.example/1080-avc/index.m3u8",
+		].join("\n");
+		let nextMaster = master;
+		const rawFetch = vi.fn(
+			async () => new Response(nextMaster, { status: 200 }),
+		);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageMediaType = "live";
+		state.PageChannel = "testchannel";
+		state.PageMediaKey = "live:testchannel";
+		state.IsAdStrippingEnabled = true;
+		state.AllowPreviewEmergencyAutoplayBackup = true;
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const previewMaster = await (
+				await (g.fetch as typeof fetch)(usherUrl)
+			).text();
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+
+			expect(previewMaster).not.toContain("1440-hevc/index.m3u8");
+			expect(previewMaster).not.toContain("1440-av1/index.m3u8");
+			expect(previewMaster).toContain("1080-avc/index.m3u8");
+			expect(info.IsUsingModifiedM3U8).toBe(false);
+			expect(state.CurrentAdMediaKey).toBe(null);
+
+			nextMaster = master.split("\n").slice(0, 5).join("\n");
+			const enhancedOnlyMaster = await (
+				await (g.fetch as typeof fetch)(usherUrl)
+			).text();
+			expect(enhancedOnlyMaster).toBe(nextMaster);
+			expect(info.ModifiedM3U8).toBe(null);
+			expect(info.IsUsingModifiedM3U8).toBe(false);
+
+			nextMaster = master;
+			state.IsAdStrippingEnabled = false;
+			const disabledMaster = await (
+				await (g.fetch as typeof fetch)(usherUrl)
+			).text();
+			expect(disabledMaster).toBe(master);
+			expect(info.IsUsingModifiedM3U8).toBe(false);
+			expect(rawFetch).toHaveBeenCalledTimes(3);
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
 });
 
 describe("worker media-playlist exception fail-closed path", () => {
