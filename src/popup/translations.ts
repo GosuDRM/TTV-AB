@@ -16,14 +16,15 @@ const TRANSLATIONS = {
 		adBlocking: "Ad Blocking",
 		adSpoofing: "Ad Spoofing",
 		adSpoofingDesc:
-			"Sends ad-watch signals to Twitch to reduce anti-adblock detection.",
-		adSpoofingFootnote: "Disable if you experience issues.",
+			"When TTV AB blocks an ad, this option sends Twitch the same impression, progress, and completion events that the Twitch player normally reports. The goal is to make the blocked ad break look completed without playing the ad.",
+		adSpoofingFootnote:
+			"This sends extra requests to Twitch and does not block ads by itself. If you turn it off, only these signals stop; ad blocking keeps working normally.",
 		adSpoofingGotIt: "Got it",
 		autoplayBackup: "Low Quality Fallback",
 		autoplayBackupDesc:
-			"Enabled by default. Starts with a fast 360p backup while checking other ad-free sources. When disabled, other backup sources are checked first, but 360p may still be used as a last resort to keep the ad blocked and reduce the risk of a longer interruption.",
+			"Enabled by default. Can start with a fast, ad-free autoplay stream, usually at 360p, then check for a verified higher-quality backup without reloading the player.",
 		autoplayBackupWarning:
-			"Enabled by default for faster ad recovery. When disabled, a lower-quality stream may still be used temporarily if other ad-free sources are unavailable or do not offer the selected quality.",
+			"Turning it off skips new autoplay backups during normal Twitch playback, so ad transitions may take longer or briefly interrupt playback. Other backups may still be lower quality.",
 		autoplayBackupGotIt: "Got it",
 		stable: "Stable",
 		changesInstantly: "Changes take effect instantly",
@@ -92,14 +93,15 @@ const TRANSLATIONS = {
 		adBlocking: "Bloqueo de anuncios",
 		adSpoofing: "Simulación de anuncios",
 		adSpoofingDesc:
-			"Envía señales de visualización de anuncios a Twitch para reducir la detección del bloqueo de anuncios.",
-		adSpoofingFootnote: "Desactívalo si tienes problemas.",
+			"Cuando TTV AB bloquea un anuncio, envía a Twitch los mismos eventos de impresión, progreso y finalización que normalmente notifica el reproductor. El objetivo es que la pausa publicitaria bloqueada figure como completada sin reproducir el anuncio.",
+		adSpoofingFootnote:
+			"Esto genera solicitudes adicionales a Twitch y no bloquea anuncios por sí solo. Si desactivas esta opción, solo se dejan de enviar esas señales; el bloqueo de anuncios sigue funcionando con normalidad.",
 		adSpoofingGotIt: "Entendido",
 		autoplayBackup: "Respaldo de baja calidad",
 		autoplayBackupDesc:
-			"Activado por defecto. Empieza con un flujo de respaldo rápido en 360p mientras comprueba otras fuentes sin anuncios. Cuando está desactivado, comprueba primero las demás fuentes de respaldo, pero aún puede usar 360p como último recurso para mantener bloqueado el anuncio y reducir el riesgo de una interrupción más larga.",
+			"Activado por defecto. Puede empezar con un flujo de reproducción automática rápido y sin anuncios, normalmente a 360p, y después buscar un respaldo verificado de mayor calidad sin recargar el reproductor.",
 		autoplayBackupWarning:
-			"Activado por defecto para recuperar la reproducción más rápido durante los anuncios. Aunque esté desactivado, puede usarse temporalmente un flujo de menor calidad si las demás fuentes sin anuncios no están disponibles o no ofrecen la calidad seleccionada.",
+			"Al desactivar esta opción, TTV AB omite los nuevos respaldos de reproducción automática durante la reproducción normal de Twitch, por lo que las transiciones durante los anuncios pueden tardar más o interrumpir brevemente la reproducción. Otros respaldos aún pueden tener menor calidad.",
 		autoplayBackupGotIt: "Entendido",
 		stable: "Estable",
 		changesInstantly: "Los cambios se aplican al instante",
@@ -180,14 +182,15 @@ const TRANSLATIONS = {
 		adBlocking: "Blocage des pubs",
 		adSpoofing: "Simulation de pubs",
 		adSpoofingDesc:
-			"Envoie des signaux de visionnage de pubs à Twitch pour réduire la détection du bloqueur de pubs.",
-		adSpoofingFootnote: "Désactivez en cas de problème.",
+			"Lorsque TTV AB bloque une publicité, cette option envoie à Twitch les mêmes événements de diffusion, de progression et de fin de publicité que le lecteur Twitch transmet habituellement. Le but est de faire passer la coupure publicitaire bloquée pour terminée sans diffuser la publicité.",
+		adSpoofingFootnote:
+			"Cette option envoie des requêtes supplémentaires à Twitch et ne bloque pas les publicités à elle seule. Si vous la désactivez, seul l’envoi de ces signaux s’arrête ; le blocage des publicités continue de fonctionner normalement.",
 		adSpoofingGotIt: "Compris",
 		autoplayBackup: "Secours basse qualité",
 		autoplayBackupDesc:
-			"Activé par défaut. Commence par un flux de secours rapide en 360p tout en vérifiant les autres sources sans publicité. Lorsqu'il est désactivé, les autres sources de secours sont vérifiées en premier, mais un flux 360p peut encore être utilisé en dernier recours pour continuer à bloquer la publicité et réduire le risque d'une interruption plus longue.",
+			"Activée par défaut. TTV AB peut commencer par un flux de lecture automatique rapide et sans publicité, généralement en 360p, puis chercher un secours vérifié de meilleure qualité sans recharger le lecteur.",
 		autoplayBackupWarning:
-			"Activé par défaut pour reprendre la lecture plus rapidement pendant les publicités. Même lorsque cette option est désactivée, un flux de qualité inférieure peut être utilisé temporairement si les autres sources sans publicité sont indisponibles ou n'offrent pas la qualité sélectionnée.",
+			"Si vous la désactivez, TTV AB ignore les nouveaux flux de lecture automatique pendant la lecture normale sur Twitch. Les transitions publicitaires peuvent alors être plus lentes ou interrompre brièvement la lecture. Les autres flux peuvent rester de qualité inférieure.",
 		autoplayBackupGotIt: "Compris",
 		stable: "Stable",
 		changesInstantly: "Les changements s'appliquent instantanément",
@@ -275,14 +278,15 @@ const TRANSLATIONS = {
 		adBlocking: "Werbeblockierung",
 		adSpoofing: "Werbe-Spoofing",
 		adSpoofingDesc:
-			"Sendet Werbe-Signale an Twitch, um die Erkennung des Werbeblockers zu erschweren.",
-		adSpoofingFootnote: "Deaktiviere es bei Problemen.",
+			"Wenn TTV AB Werbung blockiert, sendet diese Option dieselben Meldungen zu Einblendung, Fortschritt und Abschluss an Twitch, die der Player normalerweise übermittelt. Dadurch soll die blockierte Werbepause als abgeschlossen erscheinen, ohne die Werbung abzuspielen.",
+		adSpoofingFootnote:
+			"Dabei werden zusätzliche Anfragen an Twitch gesendet; die Funktion selbst blockiert keine Werbung. Wenn du sie deaktivierst, sendet TTV AB lediglich diese Meldungen nicht mehr. Die Werbeblockierung funktioniert wie gewohnt weiter.",
 		adSpoofingGotIt: "Verstanden",
 		autoplayBackup: "Fallback geringer Qualität",
 		autoplayBackupDesc:
-			"Standardmäßig aktiviert. Startet mit einem schnellen 360p-Backup-Stream, während andere werbefreie Quellen geprüft werden. Wenn die Option deaktiviert ist, werden zuerst die anderen Backup-Quellen geprüft. 360p kann jedoch weiterhin als letzter Ausweg verwendet werden, um Werbung weiterhin zu blockieren und das Risiko einer längeren Unterbrechung zu verringern.",
+			"Standardmäßig aktiviert. TTV AB kann zuerst einen schnellen, werbefreien Autoplay-Stream verwenden, meist in 360p, und danach ohne Neuladen des Players nach einem geprüften Backup mit besserer Qualität suchen.",
 		autoplayBackupWarning:
-			"Standardmäßig aktiviert, um die Wiedergabe bei Werbung schneller fortzusetzen. Auch bei deaktivierter Option kann vorübergehend ein Stream mit geringerer Qualität verwendet werden, wenn die anderen werbefreien Quellen nicht verfügbar sind oder die ausgewählte Qualität nicht anbieten.",
+			"Wenn du die Option deaktivierst, überspringt TTV AB bei normaler Twitch-Wiedergabe neue Autoplay-Backups. Werbeübergänge können dadurch länger dauern oder die Wiedergabe kurz unterbrechen. Andere Backups können trotzdem eine niedrigere Qualität haben.",
 		autoplayBackupGotIt: "Verstanden",
 		stable: "Stabil",
 		changesInstantly: "Änderungen werden sofort übernommen",
@@ -378,14 +382,15 @@ const TRANSLATIONS = {
 		adBlocking: "Bloqueio de anúncios",
 		adSpoofing: "Simulação de anúncios",
 		adSpoofingDesc:
-			"Envia sinais de visualização de anúncios ao Twitch para reduzir a detecção do bloqueador.",
-		adSpoofingFootnote: "Desative se tiver problemas.",
+			"Quando o TTV AB bloqueia um anúncio, esta opção envia à Twitch os mesmos eventos de impressão, progresso e conclusão que o player normalmente envia. O objetivo é fazer com que o intervalo publicitário bloqueado apareça como concluído sem reproduzir o anúncio.",
+		adSpoofingFootnote:
+			"Isso gera solicitações extras à Twitch e não bloqueia anúncios por conta própria. Ao desativar a opção, apenas esses sinais deixam de ser enviados; o bloqueio de anúncios continua funcionando normalmente.",
 		adSpoofingGotIt: "Entendi",
 		autoplayBackup: "Reserva de baixa qualidade",
 		autoplayBackupDesc:
-			"Ativado por padrão. Começa com um fluxo de reserva rápido em 360p enquanto verifica outras fontes sem anúncios. Quando desativado, verifica primeiro as demais fontes de reserva, mas ainda pode usar 360p como último recurso para manter o anúncio bloqueado e reduzir o risco de uma interrupção mais longa.",
+			"Ativado por padrão. O TTV AB pode começar com um fluxo de reprodução automática rápido e sem anúncios, geralmente em 360p, e depois procurar uma fonte de reserva verificada e com melhor qualidade sem recarregar o player.",
 		autoplayBackupWarning:
-			"Ativado por padrão para retomar a reprodução mais rapidamente durante os anúncios. Mesmo desativado, um fluxo de qualidade mais baixa pode ser usado temporariamente se as outras fontes sem anúncios não estiverem disponíveis ou não oferecerem a qualidade selecionada.",
+			"Ao desativar esta opção, o TTV AB ignora novos fluxos de reprodução automática durante a reprodução normal da Twitch. As transições de anúncios podem demorar mais ou interromper a reprodução por instantes. Outras fontes de reserva ainda podem ter qualidade inferior.",
 		autoplayBackupGotIt: "Entendi",
 		stable: "Estável",
 		changesInstantly: "As alterações entram em vigor imediatamente",
@@ -466,14 +471,15 @@ const TRANSLATIONS = {
 		adBlocking: "Blocco annunci",
 		adSpoofing: "Spoofing annunci",
 		adSpoofingDesc:
-			"Invia segnali di visualizzazione annunci a Twitch per ridurre il rilevamento dell'ad blocker.",
-		adSpoofingFootnote: "Disattiva in caso di problemi.",
+			"Quando TTV AB blocca un annuncio, questa opzione invia a Twitch gli stessi eventi di visualizzazione, avanzamento e completamento che il player segnala normalmente. L'obiettivo è far risultare completata l'interruzione pubblicitaria bloccata senza riprodurre l'annuncio.",
+		adSpoofingFootnote:
+			"Questa opzione invia richieste aggiuntive a Twitch e non blocca gli annunci da sola. Se la disattivi, TTV AB smette soltanto di inviare questi segnali; il blocco degli annunci continua a funzionare normalmente.",
 		adSpoofingGotIt: "Capito",
 		autoplayBackup: "Riserva a bassa qualità",
 		autoplayBackupDesc:
-			"Attivato per impostazione predefinita. Inizia con un rapido flusso di riserva a 360p mentre controlla le altre fonti senza pubblicità. Quando è disattivato, controlla prima le altre fonti di riserva, ma può comunque usare il 360p come ultima risorsa per mantenere bloccata la pubblicità e ridurre il rischio di un'interruzione più lunga.",
+			"Attivata per impostazione predefinita. TTV AB può iniziare con un rapido flusso autoplay senza pubblicità, di solito a 360p, e poi cercare una riserva verificata di qualità superiore senza ricaricare il player.",
 		autoplayBackupWarning:
-			"Attivato per impostazione predefinita per riprendere più rapidamente la riproduzione durante gli annunci. Anche se disattivato, può essere usato temporaneamente un flusso di qualità inferiore se le altre fonti senza pubblicità non sono disponibili o non offrono la qualità selezionata.",
+			"Se la disattivi, TTV AB ignora i nuovi flussi autoplay durante la normale riproduzione su Twitch. I passaggi durante gli annunci possono richiedere più tempo o interrompere brevemente la riproduzione. Le altre riserve possono comunque avere una qualità inferiore.",
 		autoplayBackupGotIt: "Capito",
 		stable: "Stabile",
 		changesInstantly: "Le modifiche hanno effetto immediato",
@@ -554,14 +560,15 @@ const TRANSLATIONS = {
 		adBlocking: "広告ブロック",
 		adSpoofing: "広告スプーフィング",
 		adSpoofingDesc:
-			"広告ブロックの検出を回避するため、広告を視聴したという信号をTwitchに送信します。",
-		adSpoofingFootnote: "問題がある場合は無効にしてください。",
+			"TTV AB が広告をブロックすると、Twitch プレーヤーが通常送信する広告の表示、進行状況、完了の各イベントを代わりに送信します。広告を再生せずに、その広告ブレイクが完了済みとして扱われるようにする機能です。",
+		adSpoofingFootnote:
+			"この機能により Twitch への追加リクエストが発生しますが、広告をブロックする機能ではありません。無効にしても停止するのはこれらの信号だけで、広告ブロックは通常どおり機能します。",
 		adSpoofingGotIt: "了解",
 		autoplayBackup: "低画質フォールバック",
 		autoplayBackupDesc:
-			"デフォルトで有効です。広告のない他のソースを確認している間、まず360pのバックアップストリームですばやく再生を再開します。無効の場合は他のバックアップソースを先に確認しますが、広告をブロックしたまま長時間の中断のリスクを減らすため、最終手段として360pを使用することがあります。",
+			"既定で有効です。広告のない高速な自動再生ストリーム（通常は 360p）から始め、プレーヤーを再読み込みせずに、確認済みのより高画質なバックアップを探します。",
 		autoplayBackupWarning:
-			"広告中の再生をすばやく復帰させるため、デフォルトで有効です。無効にしていても、広告のない他のソースが利用できない場合や、選択した画質に対応していない場合は、一時的に低画質ストリームを使用することがあります。",
+			"無効にすると、通常の Twitch 再生では新しい自動再生バックアップを使用しないため、広告中の切り替えに時間がかかったり、再生が一時的に途切れたりすることがあります。別のバックアップでも低画質になる場合があります。",
 		autoplayBackupGotIt: "了解",
 		stable: "安定版",
 		changesInstantly: "変更はすぐに反映されます",
@@ -653,14 +660,15 @@ const TRANSLATIONS = {
 		adBlocking: "광고 차단",
 		adSpoofing: "광고 스푸핑",
 		adSpoofingDesc:
-			"광고 차단 탐지를 줄이기 위해 광고 시청 신호를 Twitch에 보냅니다.",
-		adSpoofingFootnote: "문제가 있으면 비활성화하세요.",
+			"TTV AB가 광고를 차단하면 Twitch 플레이어가 일반적으로 보내는 광고 노출, 진행 상황, 완료 이벤트를 대신 전송합니다. 광고를 재생하지 않고도 해당 광고 구간이 완료된 것으로 처리되게 하려는 기능입니다.",
+		adSpoofingFootnote:
+			"이 기능은 Twitch에 추가 요청을 보내지만 자체적으로 광고를 차단하지는 않습니다. 꺼도 이러한 신호만 중단되며 광고 차단은 계속 정상적으로 작동합니다.",
 		adSpoofingGotIt: "확인",
 		autoplayBackup: "저화질 폴백",
 		autoplayBackupDesc:
-			"기본적으로 활성화되어 있습니다. 광고 없는 다른 소스를 확인하는 동안 먼저 빠른 360p 백업 스트림으로 재생을 복구합니다. 비활성화하면 다른 백업 소스를 먼저 확인하지만, 광고를 계속 차단하면서 더 긴 재생 중단의 위험을 줄이기 위해 최후의 수단으로 360p를 사용할 수 있습니다.",
+			"기본적으로 켜져 있습니다. 광고가 없는 빠른 자동 재생 스트림(보통 360p)으로 시작한 뒤, 플레이어를 새로고침하지 않고 검증된 더 높은 화질의 백업을 찾습니다.",
 		autoplayBackupWarning:
-			"광고 중 재생을 빠르게 복구하기 위해 기본적으로 활성화되어 있습니다. 비활성화해도 광고 없는 다른 소스를 사용할 수 없거나 해당 소스가 선택한 화질을 제공하지 않으면 일시적으로 저화질 스트림을 사용할 수 있습니다.",
+			"끄면 일반 Twitch 재생에서 새로운 자동 재생 백업을 건너뛰므로 광고 전환이 더 오래 걸리거나 재생이 잠시 끊길 수 있습니다. 다른 백업도 낮은 화질일 수 있습니다.",
 		autoplayBackupGotIt: "확인",
 		stable: "안정판",
 		changesInstantly: "변경 사항이 즉시 적용됩니다",
@@ -730,14 +738,16 @@ const TRANSLATIONS = {
 		achievements: "成就",
 		adBlocking: "广告拦截",
 		adSpoofing: "广告伪装",
-		adSpoofingDesc: "向 Twitch 发送广告观看信标，以减少广告拦截器的检测。",
-		adSpoofingFootnote: "如遇到问题，请禁用此功能。",
+		adSpoofingDesc:
+			"TTV AB 拦截广告后，会代替 Twitch 播放器发送通常上报的广告展示、播放进度和完成事件，尝试让该广告时段在不播放广告的情况下被视为已完成。",
+		adSpoofingFootnote:
+			"此功能会向 Twitch 发出额外请求，本身并不负责拦截广告。关闭后只会停止发送这些信号，广告拦截仍会正常工作。",
 		adSpoofingGotIt: "知道了",
 		autoplayBackup: "低画质备选流",
 		autoplayBackupDesc:
-			"默认开启。在检查其他无广告源的同时，会先通过快速的 360p 备选流恢复播放。关闭后会优先检查其他备选源，但为了在继续屏蔽广告的同时降低长时间播放中断的风险，仍可能将 360p 作为最后手段。",
+			"默认开启。可以先使用快速、无广告的自动播放流（通常为 360p），再寻找经过验证的更高画质备选流，无需重新加载播放器。",
 		autoplayBackupWarning:
-			"默认开启，以便在广告期间更快恢复播放。即使关闭，如果其他无广告源不可用或不提供所选画质，也可能临时使用较低画质的流。",
+			"关闭后，普通 Twitch 播放会跳过新的自动播放备选流，因此广告切换可能更慢或导致播放短暂中断。其他备选流仍可能画质较低。",
 		autoplayBackupGotIt: "知道了",
 		stable: "稳定版",
 		changesInstantly: "更改会立即生效",
@@ -795,14 +805,16 @@ const TRANSLATIONS = {
 		achievements: "成就",
 		adBlocking: "廣告攔截",
 		adSpoofing: "廣告偽裝",
-		adSpoofingDesc: "向 Twitch 傳送廣告觀看訊號，以減少廣告攔截器的偵測。",
-		adSpoofingFootnote: "如遇到問題，請停用此功能。",
+		adSpoofingDesc:
+			"TTV AB 攔截廣告後，會代替 Twitch 播放器傳送通常回報的廣告曝光、播放進度與完成事件，嘗試讓該廣告時段在不播放廣告的情況下被視為已完成。",
+		adSpoofingFootnote:
+			"此功能會向 Twitch 發出額外請求，本身並不負責攔截廣告。停用後只會停止傳送這些訊號，廣告攔截仍會正常運作。",
 		adSpoofingGotIt: "知道了",
 		autoplayBackup: "低畫質備選串流",
 		autoplayBackupDesc:
-			"預設開啟。在檢查其他無廣告來源的同時，會先透過快速的 360p 備選串流恢復播放。關閉後會優先檢查其他備選來源，但為了在繼續阻擋廣告的同時降低長時間播放中斷的風險，仍可能將 360p 作為最後手段。",
+			"預設開啟。可以先使用快速且無廣告的自動播放串流（通常為 360p），再尋找經過驗證的較高畫質備選串流，無須重新載入播放器。",
 		autoplayBackupWarning:
-			"預設開啟，以便在廣告期間更快恢復播放。即使關閉，若其他無廣告來源無法使用或不提供所選畫質，也可能暫時使用較低畫質的串流。",
+			"停用後，一般 Twitch 播放會略過新的自動播放備選串流，因此廣告切換可能較慢或使播放短暫中斷。其他備選串流仍可能畫質較低。",
 		autoplayBackupGotIt: "知道了",
 		stable: "穩定版",
 		changesInstantly: "變更會立即生效",
@@ -861,14 +873,15 @@ const TRANSLATIONS = {
 		adBlocking: "Блокировка рекламы",
 		adSpoofing: "Подмена рекламы",
 		adSpoofingDesc:
-			"Отправляет сигналы просмотра рекламы в Twitch, чтобы снизить вероятность обнаружения блокировщика.",
-		adSpoofingFootnote: "Отключите при возникновении проблем.",
+			"Когда TTV AB блокирует рекламу, эта функция отправляет Twitch те же события показа, прогресса и завершения, которые обычно передаёт плеер. Так заблокированный рекламный блок может считаться завершённым без воспроизведения рекламы.",
+		adSpoofingFootnote:
+			"При этом отправляются дополнительные запросы к Twitch; сама функция рекламу не блокирует. Если её отключить, перестанут отправляться только эти сигналы, а блокировка рекламы продолжит работать как обычно.",
 		adSpoofingGotIt: "Понятно",
 		autoplayBackup: "Резерв низкого качества",
 		autoplayBackupDesc:
-			"По умолчанию включено. Сначала запускается быстрый резервный поток 360p, пока проверяются другие источники без рекламы. Когда настройка отключена, сначала проверяются другие резервные источники, но 360p всё ещё может использоваться как последнее средство для продолжения блокировки рекламы и снижения риска более долгой паузы.",
+			"По умолчанию включено. Сначала может использоваться быстрый поток без рекламы с автозапуском, обычно с качеством 360p, а затем без перезагрузки плеера ищется проверенный резерв лучшего качества.",
 		autoplayBackupWarning:
-			"По умолчанию включено для более быстрого восстановления воспроизведения при рекламе. Даже при отключённой настройке поток более низкого качества может временно использоваться, если другие источники без рекламы недоступны или не предлагают выбранное качество.",
+			"Если отключить настройку, TTV AB будет пропускать новые потоки с автозапуском при обычном просмотре Twitch. Переходы во время рекламы могут занять больше времени или ненадолго прервать воспроизведение. Другие резервные потоки всё равно могут быть ниже качеством.",
 		autoplayBackupGotIt: "Понятно",
 		stable: "Стабильная",
 		changesInstantly: "Изменения применяются мгновенно",
@@ -964,14 +977,15 @@ const TRANSLATIONS = {
 		adBlocking: "Блокування реклами",
 		adSpoofing: "Підміна реклами",
 		adSpoofingDesc:
-			"Відправляє сигнали перегляду реклами в Twitch, щоб знизити вірогідність виявлення блокувальника.",
-		adSpoofingFootnote: "Вимкніть при появі проблем.",
+			"Коли TTV AB блокує рекламу, ця функція надсилає Twitch ті самі події показу, прогресу та завершення, які зазвичай передає програвач. Так заблокований рекламний блок може вважатися завершеним без відтворення реклами.",
+		adSpoofingFootnote:
+			"При цьому надсилаються додаткові запити до Twitch; сама функція рекламу не блокує. Якщо її вимкнути, припиниться лише надсилання цих сигналів, а блокування реклами продовжить працювати як завжди.",
 		adSpoofingGotIt: "Зрозуміло",
-		autoplayBackup: "Резерв нізької якості",
+		autoplayBackup: "Резерв низької якості",
 		autoplayBackupDesc:
-			"За замовчуванням увімкнено. Спочатку запускається швидкий резервний потік 360p, поки перевіряються інші джерела без реклами. Коли налаштування вимкнено, спочатку перевіряються інші резервні джерела, але 360p усе ще може використовуватися як останній засіб, щоб і надалі блокувати рекламу та зменшити ризик довшої перерви.",
+			"За замовчуванням увімкнено. Спочатку може використовуватися швидкий потік без реклами з автовідтворенням, зазвичай із якістю 360p, а потім без перезавантаження програвача шукається перевірений резерв кращої якості.",
 		autoplayBackupWarning:
-			"За замовчуванням увімкнено для швидшого відновлення відтворення під час реклами. Навіть коли налаштування вимкнено, потік нижчої якості може тимчасово використовуватися, якщо інші джерела без реклами недоступні або не пропонують вибрану якість.",
+			"Якщо вимкнути налаштування, TTV AB пропускатиме нові потоки з автовідтворенням під час звичайного перегляду Twitch. Переходи під час реклами можуть тривати довше або ненадовго перервати відтворення. Інші резервні потоки все одно можуть мати нижчу якість.",
 		autoplayBackupGotIt: "Зрозуміло",
 		stable: "Стабільна",
 		changesInstantly: "Зміни застосовуються миттєво",
