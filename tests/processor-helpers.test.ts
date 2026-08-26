@@ -8822,6 +8822,14 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		"#EXTINF:2.000,live",
 		"https://edge.example/native-live-2.ts",
 	].join("\n");
+	const csaiOnlyAdNative = [
+		"#EXTM3U",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXT-X-MEDIA-SEQUENCE:99",
+		'#EXT-X-DATERANGE:ID="stitched-ad-99",CLASS="twitch-stitched-ad",START-DATE="2026-06-12T00:00:00Z"',
+		"#EXTINF:2.000,live",
+		"https://edge.example/stitched-ad-99.ts",
+	].join("\n");
 	const fetchStub = async () => new Response(null, { status: 404 });
 
 	let previousGetInfo: unknown;
@@ -8875,6 +8883,60 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		const second = await core(bridgeUrl, adLadenNative, fetchStub);
 		expect(second).toBe(cleanNative);
 		expect(findCalls.length).toBe(1);
+	});
+
+	it("keeps a fresh exact native bridge flowing when CSAI stripping would create an empty media segment", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativeUrl: bridgeUrl,
+			LastCleanNativePlaylistAt: Date.now(),
+		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		g._getStreamInfoForPlaylist = () => info;
+		const findCalls: unknown[][] = [];
+		g._findBackupStream = (...args: unknown[]) => {
+			findCalls.push(args);
+			return new Promise(() => {});
+		};
+
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
+		const output = await core(bridgeUrl, csaiOnlyAdNative, fetchStub);
+
+		expect(output).toBe(cleanNative);
+		expect(output).not.toContain("__ttvab_empty_hold_segment.mp4");
+		expect(output).not.toContain("stitched-ad-99.ts");
+		expect(info.CsaiOnlyThisBreak).toBe(true);
+		expect(findCalls).toHaveLength(1);
+	});
+
+	it("keeps cold-start CSAI fail-closed when the exact native cache is stale", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativeUrl: bridgeUrl,
+			LastCleanNativePlaylistAt: Date.now() - 3000,
+		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		g._getStreamInfoForPlaylist = () => info;
+		const findCalls: unknown[][] = [];
+		g._findBackupStream = (...args: unknown[]) => {
+			findCalls.push(args);
+			return new Promise(() => {});
+		};
+
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
+		const output = await core(bridgeUrl, csaiOnlyAdNative, fetchStub);
+
+		expect(output).not.toBe(cleanNative);
+		expect(output).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(output).not.toContain("stitched-ad-99.ts");
+		expect(info.CsaiOnlyThisBreak).toBe(true);
+		expect(findCalls).toHaveLength(1);
 	});
 
 	it("keeps a VOD advancing on clean native media while its backup search starts", async () => {
