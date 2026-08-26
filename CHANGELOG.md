@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.6] - 2026-08-26
+
+- Fixed Firefox tabs freezing or crashing when an ad began before a clean backup was ready. The local hold now provides playable silent media so the decoder keeps advancing safely ([#65](https://github.com/GosuDRM/TTV-AB/issues/65)).
+- Ad breaks now keep an exact recent clean stream flowing while the existing one-at-a-time backup search runs. Stale caches and ad-marked media remain rejected.
+- Playback that remains paused after accepted resume attempts now reaches the existing bounded post-ad rebuild. The rebuild preserves the verified playback session to avoid opening another preroll, while strict recovery limits remain unchanged.
+
 ## [16.2.5] - 2026-08-24
 
 - Added TwitchNoSub compatibility: copying an already protected preview player worker into a new blob no longer installs the playback hook twice ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
