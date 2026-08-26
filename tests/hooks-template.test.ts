@@ -22,23 +22,31 @@ describe("empty ad segment single source", () => {
 		expect(hooksJs()).toContain("JSON.stringify(_EMPTY_SEGMENT_URL)");
 	});
 
-	it("parser segment is a structurally valid MP4", () => {
+	it("parser segment carries decodable AVC and audio media for the hold", () => {
 		const match = parserJs().match(/data:video\/mp4;base64,([A-Za-z0-9+/=]+)/);
 		expect(match).not.toBeNull();
 		const bytes = Buffer.from(match?.[1] ?? "", "base64");
 		expect(bytes.length).toBeGreaterThan(0);
 		const names: string[] = [];
+		let mediaPayloadSize = 0;
 		let offset = 0;
 		while (offset + 8 <= bytes.length) {
 			const size = bytes.readUInt32BE(offset);
 			expect(size).toBeGreaterThanOrEqual(8);
 			expect(offset + size).toBeLessThanOrEqual(bytes.length);
-			names.push(bytes.toString("latin1", offset + 4, offset + 8));
+			const name = bytes.toString("latin1", offset + 4, offset + 8);
+			names.push(name);
+			if (name === "mdat") mediaPayloadSize += size - 8;
 			offset += size;
 		}
 		expect(offset).toBe(bytes.length);
 		expect(names[0]).toBe("ftyp");
 		expect(names).toContain("moov");
+		expect(names).toContain("moof");
+		expect(names).toContain("mdat");
+		expect(mediaPayloadSize).toBeGreaterThan(0);
+		expect(bytes.includes(Buffer.from("avc1"))).toBe(true);
+		expect(bytes.includes(Buffer.from("mp4a"))).toBe(true);
 	});
 });
 

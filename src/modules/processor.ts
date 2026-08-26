@@ -4530,6 +4530,22 @@ async function _processM3U8Core(
 						.then(clearOwnedSearchStart)
 						.catch(clearOwnedSearchStart);
 				}
+				const cleanNativeBridge = _isRecentPostAdReentry(info)
+					? null
+					: _getSameRequestCleanNative(
+							info,
+							url,
+							directResolution?.Codecs || res?.Codecs || null,
+							isEnhancedCodec,
+							2000,
+						);
+				if (cleanNativeBridge) {
+					_log(
+						"[Trace] Returning native playlist to prevent buffer drain during backup search",
+						"info",
+					);
+					return cleanNativeBridge;
+				}
 				return _stripAds(text, false, info);
 			}
 		}

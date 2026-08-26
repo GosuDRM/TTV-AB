@@ -2004,7 +2004,7 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 		expect(reloadTasks).toEqual([
 			expect.objectContaining({
 				reason: "ad-recovery",
-				refreshAccessToken: true,
+				refreshAccessToken: false,
 				newMediaPlayerInstance: true,
 				mediaKey: "live:testchannel",
 				cycleStartedAt: 440000,
@@ -4155,15 +4155,17 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 			bufferedEnd?: number;
 			readyState?: number;
 			videoWidth?: number;
+			paused?: boolean;
 		} = {},
 	): Playback {
 		let currentTime = options.currentTime ?? 0;
 		const bufferedEnd = options.bufferedEnd ?? 0;
 		const readyState = options.readyState ?? 0;
 		const videoWidth = options.videoWidth ?? 0;
+		const paused = options.paused ?? false;
 		const video = document.createElement("video");
 		Object.defineProperties(video, {
-			paused: { get: () => false, configurable: true },
+			paused: { get: () => paused, configurable: true },
 			ended: { get: () => false, configurable: true },
 			currentTime: { get: () => currentTime, configurable: true },
 			readyState: { get: () => readyState, configurable: true },
@@ -4181,7 +4183,7 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		videos.push(video);
 		const player = {
 			getHTMLVideoElement: () => video,
-			isPaused: () => false,
+			isPaused: () => paused,
 			getBufferDuration: () => Math.max(0, bufferedEnd - currentTime),
 		};
 		return {
@@ -4228,7 +4230,7 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(reloadCalls()).toHaveLength(1);
 		expect(reloadCalls()[0]).toMatchObject({
 			newMediaPlayerInstance: true,
-			refreshAccessToken: true,
+			refreshAccessToken: false,
 			mediaKey: "live:chan",
 			cycleStartedAt: 440000,
 		});
@@ -4304,6 +4306,35 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		}
 		expect(sample(501800)).toBe(true);
 		expect(reloadCalls()).toHaveLength(1);
+	});
+
+	it("does not let accepted resume calls starve a guarded rebuild when playback stays paused", () => {
+		const playback = makePlayback({
+			currentTime: 10,
+			bufferedEnd: 20,
+			readyState: 4,
+			videoWidth: 1920,
+			paused: true,
+		});
+		reloadOutcomes.push(true);
+		arm(playback);
+
+		for (const at of [500000, 501800, 503600, 505400, 507200, 509000]) {
+			expect(sample(at)).toBe(true);
+			expect(reloadCalls()).toHaveLength(0);
+		}
+		expect(sample(510800)).toBe(true);
+		expect(reloadCalls()).toEqual([
+			expect.objectContaining({
+				reason: "ad-recovery",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+				mediaKey: "live:chan",
+				cycleStartedAt: 440000,
+			}),
+		]);
+		expect(transaction().reloadRequestCount).toBe(1);
+		expect(transaction().acceptedReloadCount).toBe(1);
 	});
 
 	it("starts terminal ordinary ad-recovery tasks under exact post-ad ownership", () => {

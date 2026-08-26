@@ -4446,7 +4446,7 @@ function _requestPostAdRecoveryReload(
 		taskAccepted =
 			_doPlayerTask(false, true, {
 				reason: "ad-recovery",
-				refreshAccessToken: true,
+				refreshAccessToken: false,
 				newMediaPlayerInstance: true,
 				channel,
 				mediaKey,
@@ -4699,14 +4699,13 @@ function _handlePendingPostAdRecovery(
 		}
 	}
 
+	let resumeAttempted = false;
 	if (
 		_isPlayerPaused(player, playerCore, liveVideo) &&
 		(!__TTVAB_STATE__.LastAdRecoveryResumeAt ||
-			Date.now() - __TTVAB_STATE__.LastAdRecoveryResumeAt >= 1500) &&
-		_resumePlayerAfterAdIfNeeded(safeChannel, safeMediaKey)
+			Date.now() - __TTVAB_STATE__.LastAdRecoveryResumeAt >= 1500)
 	) {
-		_PlayerBufferState.postAdUnhealthyCount++;
-		return true;
+		resumeAttempted = _resumePlayerAfterAdIfNeeded(safeChannel, safeMediaKey);
 	}
 
 	_PlayerBufferState.postAdUnhealthyCount++;
@@ -4737,7 +4736,7 @@ function _handlePendingPostAdRecovery(
 		}
 	}
 
-	return false;
+	return resumeAttempted;
 }
 
 function _capturePlayerPreferenceSnapshot(
