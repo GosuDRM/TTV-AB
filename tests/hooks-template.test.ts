@@ -518,12 +518,13 @@ describe("enhanced-codec handoff retirement", () => {
 		expect(hooksJs()).not.toContain("matchesActiveAdMediaKey");
 	});
 
-	it("keeps the original mixed master until an exact codec handoff is active", () => {
+	it("keeps ordinary mixed masters and restricts only exact previews or current handoffs", () => {
 		expect(hooksJs()).toMatch(
-			/const playlist = info\.IsUsingModifiedM3U8\s*\?\s*info\.ModifiedM3U8\s*:\s*info\.EncodingsM3U8/,
+			/const playlist =\s*info\.IsUsingModifiedM3U8 \|\| keepExactPreviewOnAvc\s*\? info\.ModifiedM3U8\s*:\s*info\.EncodingsM3U8/,
 		);
 		expect(hooksJs()).not.toMatch(/const playlist = info\.ModifiedM3U8\s*\?/);
 		expect(hooksJs()).toContain("const activeAdMediaMatches = Boolean(");
+		expect(hooksJs()).toContain("const keepExactPreviewOnAvc = Boolean(");
 		expect(hooksJs()).toMatch(
 			/info\.IsUsingModifiedM3U8 =\s*activeAdMediaMatches\s*&&\s*\(activeCodecHandoffMatches \|\| hasAcknowledgedCodecHandoff\)/,
 		);

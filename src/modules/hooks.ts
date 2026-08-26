@@ -1144,9 +1144,21 @@ function _hookWorkerFetch() {
 						_log(`Stream initialized: ${logTarget}`, "success");
 					}
 
-					const playlist = info.IsUsingModifiedM3U8
-						? info.ModifiedM3U8
-						: info.EncodingsM3U8;
+					const keepExactPreviewOnAvc = Boolean(
+						__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup === true &&
+							__TTVAB_STATE__.IsAdStrippingEnabled === true &&
+							info.ModifiedM3U8,
+					);
+					if (isNewInfo && keepExactPreviewOnAvc) {
+						_log(
+							"[Trace] Previews player staying on AVC to avoid an ad-start decoder handoff",
+							"info",
+						);
+					}
+					const playlist =
+						info.IsUsingModifiedM3U8 || keepExactPreviewOnAvc
+							? info.ModifiedM3U8
+							: info.EncodingsM3U8;
 					reportPlaybackWorkerBootstrapObserved(playbackContext);
 					return new Response(
 						_replaceServerTime(playlist, serverTime),
