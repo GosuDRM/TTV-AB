@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.7] - 2026-08-27
+
+- Fixed Previews hover streams getting stuck on Error 2000 when a preroll forced the short-lived player to rebuild from an enhanced HEVC or AV1 stream onto AVC ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
+- Exact Previews players now start from Twitch's available native AVC variants while ad blocking is enabled, avoiding that ad-start decoder transition without changing media-playlist validation, live backup refresh, or sequential source search.
+- Ordinary Twitch playback and other embeds retain enhanced HEVC and AV1 quality. If Twitch provides no AVC fallback, the original master remains unchanged instead of returning an empty playlist.
+
 ## [16.2.6] - 2026-08-26
 
 - Fixed Firefox tabs freezing or crashing when an ad began before a clean backup was ready. The local hold now provides playable silent media so the decoder keeps advancing safely ([#65](https://github.com/GosuDRM/TTV-AB/issues/65)).
