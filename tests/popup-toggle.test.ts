@@ -56,6 +56,35 @@ function loadToggleController() {
 	)(globalThis);
 }
 
+function loadPopupExplanations() {
+	const html = readFileSync(
+		resolve(__dirname, "../src/popup/popup.html"),
+		"utf8",
+	);
+	const source = readFileSync(
+		resolve(__dirname, "../src/popup/translations.ts"),
+		"utf8",
+	);
+	const javascript = transpileModule(source, {
+		compilerOptions: {
+			target: ScriptTarget.ES2022,
+			module: ModuleKind.None,
+		},
+	}).outputText;
+	const translations = new Function(
+		`${javascript}\nreturn TRANSLATIONS;`,
+	)() as Record<
+		string,
+		{
+			adSpoofingDesc: string;
+			adSpoofingFootnote: string;
+			autoplayBackupDesc: string;
+			autoplayBackupWarning: string;
+		}
+	>;
+	return { html, source, translations };
+}
+
 function makeHarness() {
 	const reads: ReadEntry[] = [];
 	const writes: WriteEntry[] = [];
@@ -433,5 +462,63 @@ describe("popup toggle authority", () => {
 		expect(source).toContain("if (!setStoredLanguage(lang)) {");
 		expect(source).toContain("nextSelector.value = selectedLanguage;");
 		expect(source).toContain("if (setStoredTheme(theme)) {");
+	});
+});
+
+describe("popup setting explanations", () => {
+	it("describes the telemetry separately from the ad-blocking behavior", () => {
+		const { html, source, translations } = loadPopupExplanations();
+		const english = translations.en;
+
+		expect(english.adSpoofingDesc).toContain(
+			"impression, progress, and completion events",
+		);
+		expect(english.adSpoofingDesc).toContain("without playing the ad");
+		expect(english.adSpoofingFootnote).toContain("extra requests to Twitch");
+		expect(english.adSpoofingFootnote).toContain(
+			"does not block ads by itself",
+		);
+		expect(english.adSpoofingFootnote).toContain(
+			"ad blocking keeps working normally",
+		);
+		expect(html).toContain(
+			`data-i18n="adSpoofingDesc">${english.adSpoofingDesc}</p>`,
+		);
+		expect(html).toContain(
+			`data-i18n="adSpoofingFootnote">${english.adSpoofingFootnote}</p>`,
+		);
+		expect(`${html}\n${source}`).not.toMatch(/channel points/i);
+	});
+
+	it("distinguishes the fast bridge from disabled-mode tradeoffs", () => {
+		const { html, translations } = loadPopupExplanations();
+		const english = translations.en;
+
+		expect(english.autoplayBackupDesc).toContain(
+			"fast, ad-free autoplay stream",
+		);
+		expect(english.autoplayBackupDesc).toContain("usually at 360p");
+		expect(english.autoplayBackupDesc).toContain(
+			"then check for a verified higher-quality backup",
+		);
+		expect(english.autoplayBackupDesc).toContain(
+			"without reloading the player",
+		);
+		expect(english.autoplayBackupWarning).toContain(
+			"skips new autoplay backups during normal Twitch playback",
+		);
+		expect(english.autoplayBackupWarning).toContain(
+			"may take longer or briefly interrupt playback",
+		);
+		expect(english.autoplayBackupWarning).toContain(
+			"may still be lower quality",
+		);
+		expect(english.autoplayBackupWarning).not.toMatch(/preview/i);
+		expect(html).toContain(
+			`data-i18n="autoplayBackupDesc">${english.autoplayBackupDesc}</p>`,
+		);
+		expect(html).toContain(
+			`data-i18n="autoplayBackupWarning">${english.autoplayBackupWarning}</p>`,
+		);
 	});
 });

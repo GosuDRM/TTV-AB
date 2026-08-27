@@ -2375,8 +2375,8 @@
     <div class="modal-overlay" id="adSpoofingTooltip" hidden>
         <div class="modal-box">
             <p><strong data-i18n="adSpoofing">Ad Spoofing</strong></p>
-            <p data-i18n="adSpoofingDesc">Sends fake ad-watch beacons to Twitch to reduce anti-adblock fingerprinting. May interfere with channel points collection on some accounts.</p>
-            <p data-i18n="adSpoofingFootnote">Disable if you experience issues claiming channel points.</p>
+            <p data-i18n="adSpoofingDesc">When TTV AB blocks an ad, this option sends Twitch the same impression, progress, and completion events that the Twitch player normally reports. The goal is to make the blocked ad break look completed without playing the ad.</p>
+            <p data-i18n="adSpoofingFootnote">This sends extra requests to Twitch and does not block ads by itself. If you turn it off, only these signals stop; ad blocking keeps working normally.</p>
             <button type="button" class="modal-close" id="adSpoofingModalClose" data-i18n="adSpoofingGotIt">Got it</button>
         </div>
     </div>
@@ -2384,8 +2384,8 @@
     <div class="modal-overlay" id="autoplayBackupTooltip" hidden>
         <div class="modal-box">
             <p><strong data-i18n="autoplayBackup">Low Quality Fallback</strong></p>
-            <p data-i18n="autoplayBackupDesc">Enabled by default. Starts with a fast 360p backup while checking other ad-free sources. When disabled, other backup sources are checked first, but 360p may still be used as a last resort to keep the ad blocked and reduce the risk of a longer interruption.</p>
-            <p data-i18n="autoplayBackupWarning">Enabled by default for faster ad recovery. When disabled, a lower-quality stream may still be used temporarily if other ad-free sources are unavailable or do not offer the selected quality.</p>
+            <p data-i18n="autoplayBackupDesc">Enabled by default. Can start with a fast, ad-free autoplay stream, usually at 360p, then check for a verified higher-quality backup without reloading the player.</p>
+            <p data-i18n="autoplayBackupWarning">Turning it off skips new autoplay backups during normal Twitch playback, so ad transitions may take longer or briefly interrupt playback. Other backups may still be lower quality.</p>
             <button type="button" class="modal-close" id="autoplayBackupModalClose" data-i18n="autoplayBackupGotIt">Got it</button>
         </div>
     </div>
