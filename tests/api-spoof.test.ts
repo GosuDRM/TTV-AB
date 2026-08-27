@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -752,5 +760,53 @@ describe("_getToken (exhausted-failure sentinel)", () => {
 		const res = await getToken("somechannel", "site", timeoutFetch);
 		expect(attempts).toBe(3);
 		expect(res.status).toBe(0);
+	});
+
+	it("stops a token relay at the caller's overall search deadline", async () => {
+		vi.useFakeTimers({ now: 100_000 });
+		const getToken =
+			T<
+				(
+					ctx: unknown,
+					playerType: string,
+					realFetch: unknown,
+					omitViewerHeaders?: boolean,
+					requestDeadlineAt?: number,
+				) => Promise<Response>
+			>("_getToken");
+		const relayTimeouts: number[] = [];
+		g._fetchViaWorkerBridge = (
+			_url: string,
+			_options: unknown,
+			timeoutMs: number,
+		) => {
+			relayTimeouts.push(timeoutMs);
+			return new Promise((_resolve, reject) => {
+				setTimeout(() => {
+					const error = new Error("fetch relay timeout");
+					error.name = "TimeoutError";
+					reject(error);
+				}, timeoutMs);
+			});
+		};
+		const directFetch = vi.fn(async () => new Response(null, { status: 200 }));
+
+		try {
+			const pending = getToken(
+				"somechannel",
+				"site",
+				directFetch,
+				false,
+				101_000,
+			);
+			await vi.advanceTimersByTimeAsync(1000);
+			const response = await pending;
+
+			expect(relayTimeouts).toEqual([1000]);
+			expect(directFetch).not.toHaveBeenCalled();
+			expect(response.status).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

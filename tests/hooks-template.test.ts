@@ -194,6 +194,8 @@ describe("worker message handler hardening", () => {
 		expect(block).toContain("_stripHevcBackupVariants(");
 		expect(block).toContain("exactValidatedStreamUrl");
 		expect(block).toContain("selectedMasterLines");
+		expect(block).toContain("validationDeadlineAt");
+		expect(block).toContain("_PreviewMasterFallbackRetryAt");
 		expect(source).toContain("throw retryError");
 		expect(source).not.toContain('mode: "no-cors"');
 	});

@@ -426,7 +426,11 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 	return resolution;
 }
 
-function _resolveAdBackupTargetResolution(info, url = "") {
+function _resolveAdBackupTargetResolution(
+	info,
+	url = "",
+	requestedResolution = null,
+) {
 	const resolutionList = Array.isArray(info?.ResolutionList)
 		? info.ResolutionList.filter(Boolean)
 		: [];
@@ -435,18 +439,32 @@ function _resolveAdBackupTargetResolution(info, url = "") {
 		_resolvePlaybackResolutionForUrl(info, url),
 		resolutionList,
 	);
+	const ownedRequestedResolution = _degradeToDecodableResolution(
+		info,
+		requestedResolution,
+		resolutionList,
+	);
 	const preferredResolution = _resolvePreferredBackupResolution(info);
-	if (!preferredResolution) return urlResolution;
-	if (!urlResolution) return preferredResolution;
 	const heightOf = (entry) => {
 		const [, h] = String(entry?.Resolution || "0x0")
 			.split("x")
 			.map(Number);
 		return Number.isFinite(h) ? h : 0;
 	};
-	return heightOf(preferredResolution) > heightOf(urlResolution)
-		? preferredResolution
-		: urlResolution;
+	let targetResolution = null;
+	for (const candidate of [
+		urlResolution,
+		ownedRequestedResolution,
+		preferredResolution,
+	]) {
+		if (
+			candidate &&
+			(!targetResolution || heightOf(candidate) > heightOf(targetResolution))
+		) {
+			targetResolution = candidate;
+		}
+	}
+	return targetResolution;
 }
 
 function _getPendingForegroundQualityProbeAt(info) {
@@ -2096,6 +2114,7 @@ function _createStreamInfo(context) {
 		_BackupSearchPromise: null,
 		_BackupSearchKey: null,
 		_BackupSearchPromises: new Map(),
+		_PreviewMasterFallbackRetryAt: 0,
 		BackupSearchEpoch: 0,
 		_ForegroundQualityProbeAppliedAt: 0,
 		ConsecutiveFailedNativeProbes: 0,
@@ -5683,21 +5702,25 @@ async function _findBackupStream(
 	startIdx = 0,
 	currentResolution = null,
 	codecOverride = null,
+	searchDeadlineAt = 0,
 ) {
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	const searchResolution =
+		_resolveAdBackupTargetResolution(info, "", currentResolution) ||
+		currentResolution;
 	const targetCodec =
 		_getVideoCodecIdentity(codecOverride) ||
 		_getVideoCodecFamily(codecOverride) ||
 		(info?.IsUsingModifiedM3U8
 			? "avc"
 			: _getVideoCodecIdentity(info?.EnhancedDecoderCodec) ||
-				_getVideoCodecIdentity(currentResolution?.Codecs) ||
+				_getVideoCodecIdentity(searchResolution?.Codecs) ||
 				_getVideoCodecFamily(info?.EnhancedDecoderCodecFamily) ||
-				_getVideoCodecFamily(currentResolution?.Codecs) ||
+				_getVideoCodecFamily(searchResolution?.Codecs) ||
 				"auto");
 	const targetKey =
-		currentResolution?.Resolution || currentResolution?.Name || "auto";
+		searchResolution?.Resolution || searchResolution?.Name || "auto";
 	const searchKey = [
 		_normalizeMediaKey(info?.MediaKey) || "unknown",
 		backupSearchEpoch,
@@ -5750,7 +5773,7 @@ async function _findBackupStream(
 			const bridged = await _refreshHeldAutoplayBackupPlaylist(
 				info,
 				realFetch,
-				currentResolution,
+				searchResolution,
 				codecOverride,
 			);
 			if (bridged) return { type: "autoplay", m3u8: bridged };
@@ -5763,8 +5786,9 @@ async function _findBackupStream(
 				info,
 				realFetch,
 				startIdx,
-				currentResolution,
+				searchResolution,
 				codecOverride,
+				searchDeadlineAt,
 			);
 		} finally {
 			if (info?._BackupSearchPromises?.get?.(searchKey) === searchPromise) {
@@ -5793,7 +5817,7 @@ async function _findBackupStream(
 			const bridged = await _refreshHeldAutoplayBackupPlaylist(
 				info,
 				realFetch,
-				currentResolution,
+				searchResolution,
 				codecOverride,
 			);
 			if (bridged) {
@@ -5814,14 +5838,20 @@ async function _searchBackupStream(
 	startIdx = 0,
 	currentResolution = null,
 	codecOverride = null,
+	searchDeadlineAt = 0,
 ) {
 	let backupType = null;
 	let backupM3u8 = null;
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	const resolvedSearchDeadlineAt = Math.max(0, Number(searchDeadlineAt) || 0);
+	const searchDeadlineExceeded = () =>
+		resolvedSearchDeadlineAt > 0 && Date.now() >= resolvedSearchDeadlineAt;
 	const searchIsCurrent = () =>
 		_isBackupSearchContextCurrent(info, backupSearchEpoch, cycleStartedAt);
-	if (!searchIsCurrent()) return { type: null, m3u8: null };
+	if (!searchIsCurrent() || searchDeadlineExceeded()) {
+		return { type: null, m3u8: null };
+	}
 	_forceClearBackupCooldownsIfStale(info);
 
 	let playerTypes = _getOrderedBackupPlayerTypes(info, startIdx);
@@ -5895,13 +5925,21 @@ async function _searchBackupStream(
 		!backupM3u8 && codecPass < codecSearchPasses.length;
 		codecPass++
 	) {
-		if (!searchIsCurrent()) return { type: null, m3u8: null };
+		if (!searchIsCurrent() || searchDeadlineExceeded()) {
+			return { type: null, m3u8: null };
+		}
 		const codecSelection = codecSearchPasses[codecPass];
 		const codecFamily = _getVideoCodecFamily(codecSelection);
 		const isExactEnhancedPass =
 			Boolean(activeEnhancedCodecFamily) &&
 			codecPass === 0 &&
 			codecFamily === activeEnhancedCodecFamily;
+		const probeDeadlines = [
+			resolvedSearchDeadlineAt,
+			isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+		].filter((deadlineAt) => deadlineAt > 0);
+		const probeDeadlineAt =
+			probeDeadlines.length > 0 ? Math.min(...probeDeadlines) : 0;
 		let passPlayerTypes = [...playerTypes];
 		const heldBackupCodecFamily = _getVideoCodecFamily(
 			info?.LastCleanBackupCodecFamily,
@@ -5992,7 +6030,9 @@ async function _searchBackupStream(
 			);
 
 		for (let pi = 0; !backupM3u8 && pi < passPlayerTypes.length; pi++) {
-			if (!searchIsCurrent()) return { type: null, m3u8: null };
+			if (!searchIsCurrent() || searchDeadlineExceeded()) {
+				return { type: null, m3u8: null };
+			}
 			if (isExactEnhancedPass && Date.now() >= exactCodecProbeDeadlineAt) {
 				break;
 			}
@@ -6026,7 +6066,9 @@ async function _searchBackupStream(
 			let retryWithoutViewerHeaders = false;
 
 			for (let j = 0; j < 2 || retryWithoutViewerHeaders; j++) {
-				if (!searchIsCurrent()) return { type: null, m3u8: null };
+				if (!searchIsCurrent() || searchDeadlineExceeded()) {
+					return { type: null, m3u8: null };
+				}
 				const omitViewerHeaders = retryWithoutViewerHeaders;
 				retryWithoutViewerHeaders = false;
 				if (omitViewerHeaders) {
@@ -6068,8 +6110,14 @@ async function _searchBackupStream(
 					isFreshM3u8 = true;
 					try {
 						const tokenProbe = await _awaitBackupProbeBeforeDeadline(
-							_getToken(info, pt, realFetch, omitViewerHeaders),
-							isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+							_getToken(
+								info,
+								pt,
+								realFetch,
+								omitViewerHeaders,
+								probeDeadlineAt,
+							),
+							probeDeadlineAt,
 						);
 						if (!searchIsCurrent()) {
 							return { type: null, m3u8: null };
@@ -6079,7 +6127,7 @@ async function _searchBackupStream(
 						if (tokenRes.status === 200) {
 							const tokenBodyProbe = await _awaitBackupProbeBeforeDeadline(
 								tokenRes.json(),
-								isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+								probeDeadlineAt,
 							);
 							if (!searchIsCurrent()) {
 								return { type: null, m3u8: null };
@@ -6100,7 +6148,7 @@ async function _searchBackupStream(
 								}
 								const masterProbe = await _awaitBackupProbeBeforeDeadline(
 									_fetchWithTimeout(realFetch, usherUrl.href),
-									isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+									probeDeadlineAt,
 								);
 								if (!searchIsCurrent()) {
 									return { type: null, m3u8: null };
@@ -6110,7 +6158,7 @@ async function _searchBackupStream(
 								if (encRes.status === 200) {
 									const masterBodyProbe = await _awaitBackupProbeBeforeDeadline(
 										encRes.text(),
-										isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+										probeDeadlineAt,
 									);
 									if (!searchIsCurrent()) {
 										return { type: null, m3u8: null };
@@ -6315,7 +6363,7 @@ async function _searchBackupStream(
 							);
 							const streamProbe = await _awaitBackupProbeBeforeDeadline(
 								_fetchWithTimeout(realFetch, streamUrl),
-								isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+								probeDeadlineAt,
 							);
 							if (!searchIsCurrent()) {
 								return { type: null, m3u8: null };
@@ -6325,7 +6373,7 @@ async function _searchBackupStream(
 							if (streamRes.status === 200) {
 								const streamBodyProbe = await _awaitBackupProbeBeforeDeadline(
 									streamRes.text(),
-									isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+									probeDeadlineAt,
 								);
 								if (!searchIsCurrent()) {
 									return { type: null, m3u8: null };
@@ -6398,9 +6446,9 @@ async function _searchBackupStream(
 														realFetch,
 														currentResolution,
 														codecSelection,
-														isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+														probeDeadlineAt,
 													),
-													isExactEnhancedPass ? exactCodecProbeDeadlineAt : 0,
+													probeDeadlineAt,
 												);
 											if (!searchIsCurrent()) {
 												return { type: null, m3u8: null };
@@ -6614,7 +6662,9 @@ async function _searchBackupStream(
 		}
 	}
 
-	if (!searchIsCurrent()) return { type: null, m3u8: null };
+	if (!searchIsCurrent() || searchDeadlineExceeded()) {
+		return { type: null, m3u8: null };
+	}
 	if (foregroundQualityProbeAt > 0 && !foregroundQualityProbeAttempted) {
 		info._ForegroundQualityProbeAppliedAt = foregroundQualityProbeAt;
 	}

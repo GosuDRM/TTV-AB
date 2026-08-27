@@ -7758,6 +7758,64 @@ describe("worker mixed-codec master selection", () => {
 		}
 	});
 
+	it("bounds a stalled Previews fallback sweep and cools down immediate retries", async () => {
+		vi.useFakeTimers({ now: 100_000 });
+		const originalFetch = g.fetch;
+		const originalGetToken = g._getToken;
+		const retryError = new TypeError("Failed to fetch after retry");
+		let nativeAttempts = 0;
+		const rawFetch = vi.fn(async () => {
+			nativeAttempts++;
+			if (nativeAttempts % 2 === 1) {
+				throw new TypeError("Failed to fetch");
+			}
+			throw retryError;
+		});
+		const getToken = vi.fn(() => new Promise(() => {}));
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			IsAdStrippingEnabled: true,
+			AllowPreviewEmergencyAutoplayBackup: true,
+			DisableAutoplayBackup: true,
+			BackupPlayerTypes: ["embed", "autoplay"],
+		});
+		g._getToken = getToken;
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const firstRequest = expect(
+				(g.fetch as typeof fetch)(usherUrl),
+			).rejects.toBe(retryError);
+			await vi.advanceTimersByTimeAsync(5000);
+			await firstRequest;
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+
+			expect(getToken).toHaveBeenCalledOnce();
+			expect(info._BackupSearchPromise).toBe(null);
+			expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(0);
+			expect(Number(info._PreviewMasterFallbackRetryAt)).toBe(115_000);
+
+			await expect((g.fetch as typeof fetch)(usherUrl)).rejects.toBe(
+				retryError,
+			);
+			expect(getToken).toHaveBeenCalledOnce();
+			expect(nativeAttempts).toBe(4);
+		} finally {
+			g.fetch = originalFetch;
+			g._getToken = originalGetToken;
+			vi.useRealTimers();
+		}
+	});
+
 	it("keeps a twice-rejected Previews master fail-closed when every validated source is ad-marked", async () => {
 		const originalFetch = g.fetch;
 		const originalGetToken = g._getToken;

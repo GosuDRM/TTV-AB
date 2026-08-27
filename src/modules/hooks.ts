@@ -873,6 +873,8 @@ function _hookWorkerFetch() {
 			info.EnhancedDecoderCodec || info.EnhancedDecoderCodecFamily,
 		);
 		if (
+			Date.now() <
+				Math.max(0, Number(info._PreviewMasterFallbackRetryAt) || 0) ||
 			Math.max(0, Number(info.VisibleAdStartedAt) || 0) > 0 ||
 			info.IsShowingAd === true ||
 			info.IsHoldingBackupAfterAd === true ||
@@ -902,8 +904,17 @@ function _hookWorkerFetch() {
 			info.ResolutionList,
 		);
 		const validationStartedAt = Date.now();
+		const validationDeadlineAt = validationStartedAt + 5000;
+		info._PreviewMasterFallbackRetryAt = validationDeadlineAt + 10000;
 		const fallback = await _awaitWithRequestSignal(
-			_findBackupStream(info, realFetch, 0, fallbackTargetResolution, "avc"),
+			_findBackupStream(
+				info,
+				realFetch,
+				0,
+				fallbackTargetResolution,
+				"avc",
+				validationDeadlineAt,
+			),
 			requestSignal,
 		);
 		if (
@@ -1068,6 +1079,7 @@ function _hookWorkerFetch() {
 		info.ActiveBackupPlayerType = fallbackType;
 		info.ActiveBackupResolution = info.LastCleanBackupResolution || null;
 		info.LastActivityAt = Date.now();
+		info._PreviewMasterFallbackRetryAt = 0;
 		for (const alias of _getPlaylistUrlAliases(exactValidatedStreamUrl)) {
 			__TTVAB_STATE__.StreamInfosByUrl[alias] = info;
 		}
