@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.8] - 2026-08-27
+
+- Fixed Previews hover streams still stopping with Error 2000 when Twitch supplied a master response for `www.twitch.tv` to the `player.twitch.tv` iframe ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
+- An affected preview now retries the same native request once with a fresh Twitch cache key, then continues through the existing AVC and ad-free playlist checks. Ordinary streams and cancelled requests are unchanged.
+- Updated the Ad Spoofing explanation to describe the Twitch ad events it sends and clarify that disabling it leaves ad blocking active.
+- Shortened and corrected the Low Quality Fallback explanation so its temporary 360p bridge, quality upgrade, and disabled-mode playback tradeoff are clear across all 12 supported languages.
+
 ## [16.2.7] - 2026-08-27
 
 - Fixed Previews hover streams getting stuck on Error 2000 when a preroll forced the short-lived player to rebuild from an enhanced HEVC or AV1 stream onto AVC ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
