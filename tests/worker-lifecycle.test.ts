@@ -7573,6 +7573,85 @@ describe("worker mixed-codec master selection", () => {
 			g.fetch = originalFetch;
 		}
 	});
+
+	it("retries the exact native Previews master once after a pre-byte fetch rejection", async () => {
+		const originalFetch = g.fetch;
+		const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.7654321);
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60-hevc"',
+			"https://edge.example/1440-hevc/index.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.64002A,mp4a.40.2",VIDEO="1080p60"',
+			"https://edge.example/1080-avc/index.m3u8",
+		].join("\n");
+		const rawFetch = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError("Failed to fetch"))
+			.mockResolvedValueOnce(new Response(master, { status: 200 }));
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageMediaType = "live";
+		state.PageChannel = "testchannel";
+		state.PageMediaKey = "live:testchannel";
+		state.IsAdStrippingEnabled = true;
+		state.AllowPreviewEmergencyAutoplayBackup = true;
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const output = await (await (g.fetch as typeof fetch)(usherUrl)).text();
+			const retryUrl = new URL(String(rawFetch.mock.calls[1]?.[0]));
+			const retryOptions = rawFetch.mock.calls[1]?.[1] as RequestInit;
+
+			expect(rawFetch).toHaveBeenCalledTimes(2);
+			expect(retryUrl.searchParams.get("p")).toBe(
+				String(Math.floor(0.7654321 * 10000000)),
+			);
+			expect(retryUrl.searchParams.get("p")).not.toBe("1234567");
+			expect(retryUrl.searchParams.get("sig")).toBe("test");
+			expect(retryUrl.searchParams.get("token")).toBe("test");
+			expect(retryOptions.cache).toBe("no-store");
+			expect(output).not.toContain("1440-hevc/index.m3u8");
+			expect(output).toContain("1080-avc/index.m3u8");
+		} finally {
+			g.fetch = originalFetch;
+			randomSpy.mockRestore();
+		}
+	});
+
+	it.each([
+		["an ordinary player", false, true, new TypeError("Failed to fetch")],
+		["disabled blocking", true, false, new TypeError("Failed to fetch")],
+		[
+			"a cancelled Preview request",
+			true,
+			true,
+			new DOMException("cancelled", "AbortError"),
+		],
+	])("does not retry %s", async (_name, isPreview, enabled, error) => {
+		const originalFetch = g.fetch;
+		const rawFetch = vi.fn().mockRejectedValue(error);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageMediaType = "live";
+		state.PageChannel = "testchannel";
+		state.PageMediaKey = "live:testchannel";
+		state.IsAdStrippingEnabled = enabled;
+		state.AllowPreviewEmergencyAutoplayBackup = isPreview;
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect((g.fetch as typeof fetch)(usherUrl)).rejects.toBe(error);
+			expect(rawFetch).toHaveBeenCalledOnce();
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
 });
 
 describe("worker media-playlist exception fail-closed path", () => {

@@ -1114,7 +1114,47 @@ function _hookWorkerFetch() {
 					url = urlObj.toString();
 				}
 
-				const response = await realFetch.apply(this, getFetchArgs(url));
+				let response: Response;
+				try {
+					response = await realFetch.apply(this, getFetchArgs(url));
+				} catch (error) {
+					const requestSignal =
+						opts?.signal ||
+						(typeof Request !== "undefined" && resource instanceof Request
+							? resource.signal
+							: null);
+					const shouldRetryExactPreviewMaster = Boolean(
+						__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup === true &&
+							__TTVAB_STATE__.IsAdStrippingEnabled === true &&
+							playbackContext.MediaType === "live" &&
+							error?.name === "TypeError" &&
+							!requestSignal?.aborted,
+					);
+					if (!shouldRetryExactPreviewMaster) throw error;
+
+					const retryUrl = new URL(url);
+					const previousCacheKey = retryUrl.searchParams.get("p");
+					let nextCacheKey = String(Math.floor(Math.random() * 10000000));
+					if (nextCacheKey === previousCacheKey) {
+						nextCacheKey = String((Number(nextCacheKey) + 1) % 10000000);
+					}
+					retryUrl.searchParams.set("p", nextCacheKey);
+					url = retryUrl.toString();
+					const retryOptions = {
+						...(opts && typeof opts === "object" ? opts : {}),
+						cache: "no-store",
+					};
+					_log(
+						"[Trace] Retrying exact Previews master fetch with a fresh cache key",
+						"info",
+					);
+					response = await realFetch.apply(this, [
+						typeof Request !== "undefined" && resource instanceof Request
+							? new Request(url, resource)
+							: url,
+						retryOptions,
+					]);
+				}
 				if (response.status !== 200) return response;
 
 				const encodings = await response.text();
