@@ -7621,6 +7621,306 @@ describe("worker mixed-codec master selection", () => {
 		}
 	});
 
+	it("recovers a twice-rejected Previews master only after a sequential clean media validation", async () => {
+		const originalFetch = g.fetch;
+		const originalGetToken = g._getToken;
+		const originalExtract = g._extractPlaybackAccessToken;
+		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		const retryError = new TypeError("Failed to fetch after retry");
+		const tokenCalls: string[] = [];
+		const report = vi.fn();
+		const adPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:1",
+			"#EXT-X-CUE-OUT:30",
+			"#EXTINF:2.000,",
+			"https://embed.example/stitched-ad-1.ts",
+		].join("\n");
+		const cleanPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:10",
+			"#EXTINF:2.000,",
+			"https://autoplay.example/live-10.ts",
+		].join("\n");
+		const backupMaster = (type: string) =>
+			[
+				"#EXTM3U",
+				`#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="${type}-hevc",NAME="1440p"`,
+				`#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="${type}-hevc"`,
+				`https://${type}.example/hevc.m3u8`,
+				`#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="${type}-360",NAME="360p"`,
+				`#EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=640x360,CODECS="avc1.4D401F,mp4a.40.2",VIDEO="${type}-360"`,
+				`https://${type}.example/avc.m3u8`,
+				`#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="${type}-160",NAME="160p"`,
+				`#EXT-X-STREAM-INF:BANDWIDTH=230000,RESOLUTION=284x160,CODECS="avc1.4D401F,mp4a.40.2",VIDEO="${type}-160"`,
+				`https://${type}.example/unvalidated-avc.m3u8`,
+			].join("\n");
+		let nativeAttempts = 0;
+		let autoplayMediaAttempts = 0;
+		const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
+			const href =
+				typeof input === "string"
+					? input
+					: input instanceof URL
+						? input.href
+						: input.url;
+			if (href.includes("sig=test")) {
+				nativeAttempts++;
+				throw nativeAttempts === 1
+					? new TypeError("Failed to fetch")
+					: retryError;
+			}
+			if (href.includes("sig=embed-sig")) {
+				return new Response(backupMaster("embed"), { status: 200 });
+			}
+			if (href.includes("sig=autoplay-sig")) {
+				return new Response(backupMaster("autoplay"), { status: 200 });
+			}
+			if (href === "https://embed.example/avc.m3u8") {
+				return new Response(adPlaylist, { status: 200 });
+			}
+			if (href === "https://autoplay.example/avc.m3u8") {
+				autoplayMediaAttempts++;
+				return new Response(cleanPlaylist, { status: 200 });
+			}
+			if (href.includes("unvalidated-avc.m3u8")) {
+				throw new Error("unselected rendition must not be fetched");
+			}
+			return new Response(null, { status: 404 });
+		});
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			IsAdStrippingEnabled: true,
+			AllowPreviewEmergencyAutoplayBackup: true,
+			DisableAutoplayBackup: true,
+			BackupPlayerTypes: ["embed", "autoplay"],
+		});
+		g._getToken = async (_info: unknown, playerType: string) => {
+			tokenCalls.push(playerType);
+			return new Response(
+				JSON.stringify({
+					signature: `${playerType}-sig`,
+					value: `${playerType}-token`,
+				}),
+				{ status: 200 },
+			);
+		};
+		g._extractPlaybackAccessToken = (payload: unknown) => payload;
+		g.fetch = rawFetch;
+		g._postWorkerBridgeMessage = report;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const master = await (await (g.fetch as typeof fetch)(usherUrl)).text();
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+
+			expect(nativeAttempts).toBe(2);
+			expect(tokenCalls).toEqual(["embed", "autoplay"]);
+			expect(master).toContain("https://autoplay.example/avc.m3u8");
+			expect(master).not.toContain("autoplay.example/hevc.m3u8");
+			expect(master).not.toContain("unvalidated-avc.m3u8");
+			expect(master).toContain('GROUP-ID="autoplay-360"');
+			expect(master).not.toContain('GROUP-ID="autoplay-160"');
+			expect(master).not.toContain("embed.example");
+			expect(info.LastCleanBackupPlayerType).toBe("autoplay");
+			expect(info.LastCleanBackupM3U8).toBe(cleanPlaylist);
+			expect(info.ActiveBackupPlayerType).toBe("autoplay");
+			expect(info.IsUsingModifiedM3U8).toBe(false);
+			expect(state.CurrentAdMediaKey).toBe(null);
+			expect(
+				report.mock.calls.filter(
+					([, message]) =>
+						(message as Record<string, unknown>)?.key ===
+						"PlaybackWorkerBootstrapObserved",
+				),
+			).toHaveLength(1);
+			await expect(
+				(g.fetch as typeof fetch)("https://autoplay.example/avc.m3u8").then(
+					(response) => response.text(),
+				),
+			).resolves.toBe(cleanPlaylist);
+			expect(autoplayMediaAttempts).toBe(2);
+		} finally {
+			g.fetch = originalFetch;
+			g._getToken = originalGetToken;
+			g._extractPlaybackAccessToken = originalExtract;
+			g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+		}
+	});
+
+	it("keeps a twice-rejected Previews master fail-closed when every validated source is ad-marked", async () => {
+		const originalFetch = g.fetch;
+		const originalGetToken = g._getToken;
+		const originalExtract = g._extractPlaybackAccessToken;
+		const retryError = new TypeError("Failed to fetch after retry");
+		const tokenCalls: string[] = [];
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=640x360,CODECS="avc1.4D401F,mp4a.40.2"',
+			"https://autoplay.example/avc.m3u8",
+		].join("\n");
+		const adPlaylist = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-CUE-OUT:30",
+			"#EXTINF:2.000,",
+			"https://autoplay.example/stitched-ad-1.ts",
+		].join("\n");
+		let nativeAttempts = 0;
+		const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
+			const href =
+				typeof input === "string"
+					? input
+					: input instanceof URL
+						? input.href
+						: input.url;
+			if (href.includes("sig=test")) {
+				nativeAttempts++;
+				throw nativeAttempts === 1
+					? new TypeError("Failed to fetch")
+					: retryError;
+			}
+			if (href.includes("sig=autoplay-sig")) {
+				return new Response(master, { status: 200 });
+			}
+			if (href === "https://autoplay.example/avc.m3u8") {
+				return new Response(adPlaylist, { status: 200 });
+			}
+			return new Response(null, { status: 404 });
+		});
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			IsAdStrippingEnabled: true,
+			AllowPreviewEmergencyAutoplayBackup: true,
+			DisableAutoplayBackup: true,
+			BackupPlayerTypes: ["autoplay"],
+		});
+		g._getToken = async (_info: unknown, playerType: string) => {
+			tokenCalls.push(playerType);
+			return new Response(
+				JSON.stringify({
+					signature: `${playerType}-sig`,
+					value: `${playerType}-token`,
+				}),
+				{ status: 200 },
+			);
+		};
+		g._extractPlaybackAccessToken = (payload: unknown) => payload;
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect((g.fetch as typeof fetch)(usherUrl)).rejects.toBe(
+				retryError,
+			);
+			expect(nativeAttempts).toBe(2);
+			expect(tokenCalls).toEqual(["autoplay"]);
+			expect(state.CurrentAdMediaKey).toBe(null);
+		} finally {
+			g.fetch = originalFetch;
+			g._getToken = originalGetToken;
+			g._extractPlaybackAccessToken = originalExtract;
+		}
+	});
+
+	it("does not replace a twice-rejected Previews master under enhanced decoder ownership", async () => {
+		const originalFetch = g.fetch;
+		const originalGetToken = g._getToken;
+		const retryError = new TypeError("Failed to fetch after retry");
+		const getToken = vi.fn();
+		const rawFetch = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError("Failed to fetch"))
+			.mockRejectedValueOnce(retryError);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			IsAdStrippingEnabled: true,
+			AllowPreviewEmergencyAutoplayBackup: true,
+		});
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		info.EnhancedDecoderCodecFamily = "hevc";
+		(state.StreamInfos as Record<string, Record<string, unknown>>)[
+			"live:testchannel"
+		] = info;
+		g._getToken = getToken;
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect((g.fetch as typeof fetch)(usherUrl)).rejects.toBe(
+				retryError,
+			);
+			expect(rawFetch).toHaveBeenCalledTimes(2);
+			expect(getToken).not.toHaveBeenCalled();
+			expect(info.EnhancedDecoderCodecFamily).toBe("hevc");
+		} finally {
+			g.fetch = originalFetch;
+			g._getToken = originalGetToken;
+		}
+	});
+
+	it("does not start Preview master recovery after the retry is cancelled", async () => {
+		const originalFetch = g.fetch;
+		const originalGetToken = g._getToken;
+		const cancelled = new DOMException("cancelled", "AbortError");
+		const getToken = vi.fn();
+		const rawFetch = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError("Failed to fetch"))
+			.mockRejectedValueOnce(cancelled);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			IsAdStrippingEnabled: true,
+			AllowPreviewEmergencyAutoplayBackup: true,
+		});
+		g._getToken = getToken;
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect((g.fetch as typeof fetch)(usherUrl)).rejects.toBe(cancelled);
+			expect(rawFetch).toHaveBeenCalledTimes(2);
+			expect(getToken).not.toHaveBeenCalled();
+		} finally {
+			g.fetch = originalFetch;
+			g._getToken = originalGetToken;
+		}
+	});
+
 	it.each([
 		["an ordinary player", false, true, new TypeError("Failed to fetch")],
 		["disabled blocking", true, false, new TypeError("Failed to fetch")],
