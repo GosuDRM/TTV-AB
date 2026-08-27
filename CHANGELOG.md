@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.2.9] - 2026-08-27
+
+- Fixed exact Previews hover streams still ending in Error 2000 when both the native master request and its fresh-cache retry were rejected before playlist bytes arrived ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
+- Affected previews now check fresh Twitch player sessions sequentially and expose only the exact AVC rendition after its live media playlist proves playable and ad-free.
+- Playback fetches that validated rendition live instead of replaying a snapshot. Cancelled requests, ad-marked candidates, enhanced decoder ownership, and ordinary players remain fail-closed or unchanged.
+
 ## [16.2.8] - 2026-08-27
 
 - Fixed Previews hover streams still stopping with Error 2000 when Twitch supplied a master response for `www.twitch.tv` to the `player.twitch.tv` iframe ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).

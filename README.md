@@ -71,14 +71,14 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v16.2.9 - 2026-08-27
+- **Fixed Previews hover streams still ending in Error 2000 after both native master requests were rejected.** Affected previews now check fresh Twitch sessions one at a time and start only from the exact AVC rendition whose live media playlist is playable and ad-free. Cancelled requests, ordinary players, and enhanced decoder ownership remain unchanged ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
+
 ### v16.2.8 - 2026-08-27
 - **Fixed the remaining Previews Error 2000 path and clarified the popup controls.** A hover preview whose native master request is rejected with the wrong Twitch origin now retries that request once before using the same AVC and ad-free playlist checks. The Ad Spoofing and Low Quality Fallback info dialogs are also clearer across all 12 supported languages ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
 
 ### v16.2.7 - 2026-08-27
 - **Fixed Previews hover streams getting stuck on Error 2000 when a preroll forced an enhanced-to-AVC decoder rebuild.** Exact Previews players now start from Twitch's available native AVC variants while ad blocking is enabled. Ordinary Twitch playback and other embeds retain enhanced HEVC and AV1 quality, and masters without an AVC fallback remain unchanged ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
-
-### v16.2.6 - 2026-08-26
-- **Fixed Firefox tabs freezing or crashing when ads begin.** Cold-start holds now contain decodable silent media, fresh exact native playlists keep flowing while a clean backup is found, and accepted resume attempts can no longer postpone bounded post-ad recovery. Stale or ad-marked playlists remain rejected, with sequential backup search and strict recovery limits unchanged ([#65](https://github.com/GosuDRM/TTV-AB/issues/65)).
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
