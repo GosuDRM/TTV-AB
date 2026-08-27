@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.3.0] - 2026-08-28
+
+- Fixed backup searches using a temporary 360p autoplay request as a separate quality target even when the same stream had already sustained 1080p playback ([#65](https://github.com/GosuDRM/TTV-AB/issues/65)).
+- Backup callers now resolve one owned quality target before entering the single sequential search, preventing duplicate low-quality and normal-quality sweeps from leaving playback on 360p or 480p.
+- Bounded the rejected Previews master fallback to five seconds and cooled down failed retries for fifteen seconds. Token, master, and media validation share the same deadline, while ad-marked candidates remain rejected and the original native error remains fail-closed ([#66](https://github.com/GosuDRM/TTV-AB/issues/66)).
+
 ## [16.2.9] - 2026-08-27
 
 - Fixed exact Previews hover streams still ending in Error 2000 when both the native master request and its fresh-cache retry were rejected before playlist bytes arrived ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
