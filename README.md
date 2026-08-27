@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-16.2.7-purple)
+![Version](https://img.shields.io/badge/version-16.2.8-purple)
 ![License](https://img.shields.io/badge/license-MIT--based%20with%20attribution-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-16.2.7-yellow)
+![Chrome](https://img.shields.io/badge/chrome-16.2.8-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
