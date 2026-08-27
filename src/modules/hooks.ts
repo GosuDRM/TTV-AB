@@ -844,6 +844,236 @@ function _hookWorkerFetch() {
 		}
 	}
 
+	async function _getValidatedPreviewMasterFallback(
+		playbackContext,
+		failedMasterUrl,
+		requestSignal = null,
+	) {
+		const fallbackContext = _normalizePlaybackContext(playbackContext);
+		if (
+			__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup !== true ||
+			__TTVAB_STATE__.IsAdStrippingEnabled !== true ||
+			fallbackContext.MediaType !== "live" ||
+			!fallbackContext.MediaKey ||
+			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) !==
+				fallbackContext.MediaKey ||
+			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ||
+			requestSignal?.aborted
+		) {
+			return null;
+		}
+
+		let info = __TTVAB_STATE__.StreamInfos[fallbackContext.MediaKey] || null;
+		if (!info) {
+			_pruneStreamInfos();
+			info = __TTVAB_STATE__.StreamInfos[fallbackContext.MediaKey] =
+				_createStreamInfo(fallbackContext);
+		}
+		const enhancedDecoderFamily = _getVideoCodecFamily(
+			info.EnhancedDecoderCodec || info.EnhancedDecoderCodecFamily,
+		);
+		if (
+			Math.max(0, Number(info.VisibleAdStartedAt) || 0) > 0 ||
+			info.IsShowingAd === true ||
+			info.IsHoldingBackupAfterAd === true ||
+			info.IsUsingModifiedM3U8 === true ||
+			enhancedDecoderFamily === "hevc" ||
+			enhancedDecoderFamily === "av1" ||
+			_getActiveCodecHandoffIdForInfo(info)
+		) {
+			return null;
+		}
+
+		info.MediaType = fallbackContext.MediaType;
+		info.MediaKey = fallbackContext.MediaKey;
+		info.ChannelName = fallbackContext.ChannelName;
+		info.VodID = fallbackContext.VodID;
+		info.UsherBaseUrl = failedMasterUrl;
+		info.UsherParams = new URL(failedMasterUrl).search;
+		info.LastActivityAt = Date.now();
+
+		const fallbackTargetResolution = _applyBackupResolutionFloor(
+			_getFallbackResolution(info, "") ||
+				info.ResolutionList?.[0] ||
+				(typeof __TTVAB_STATE__.PreferredQualityGroup === "string" &&
+				__TTVAB_STATE__.PreferredQualityGroup.trim()
+					? { Name: __TTVAB_STATE__.PreferredQualityGroup.trim() }
+					: null),
+			info.ResolutionList,
+		);
+		const validationStartedAt = Date.now();
+		const fallback = await _awaitWithRequestSignal(
+			_findBackupStream(info, realFetch, 0, fallbackTargetResolution, "avc"),
+			requestSignal,
+		);
+		if (
+			requestSignal?.aborted ||
+			__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup !== true ||
+			__TTVAB_STATE__.IsAdStrippingEnabled !== true ||
+			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) !==
+				fallbackContext.MediaKey ||
+			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey)
+		) {
+			return null;
+		}
+
+		const fallbackType =
+			typeof fallback?.type === "string" && fallback.type
+				? fallback.type
+				: null;
+		const validatedMedia =
+			typeof fallback?.m3u8 === "string" && fallback.m3u8
+				? fallback.m3u8
+				: null;
+		const validatedAt = Math.max(0, Number(info.LastCleanBackupAt) || 0);
+		const cacheEntry = fallbackType
+			? info.BackupEncodingsM3U8Cache?.[fallbackType]
+			: null;
+		const cachedMaster =
+			typeof cacheEntry === "string"
+				? cacheEntry
+				: typeof cacheEntry?.m3u8 === "string"
+					? cacheEntry.m3u8
+					: null;
+		const cachedMasterUrl =
+			typeof cacheEntry === "object" && cacheEntry?.baseUrl
+				? cacheEntry.baseUrl
+				: info.UsherBaseUrl;
+		if (
+			!fallbackType ||
+			!validatedMedia ||
+			!cachedMaster ||
+			validatedAt < validationStartedAt ||
+			info.LastCleanBackupPlayerType !== fallbackType ||
+			info.LastCleanBackupM3U8 !== validatedMedia ||
+			_getVideoCodecFamily(info.LastCleanBackupCodecFamily) !== "avc" ||
+			!_playlistHasMediaSegments(validatedMedia) ||
+			_hasPlaylistAdMarkers(validatedMedia) ||
+			_hasExplicitAdMetadata(validatedMedia) ||
+			_playlistHasKnownAdSegments(validatedMedia, { includeCached: false })
+		) {
+			return null;
+		}
+
+		const compatibleMaster = _stripHevcBackupVariants(
+			info,
+			cachedMaster,
+			info.LastCleanBackupResolution
+				? { Resolution: info.LastCleanBackupResolution }
+				: null,
+			"avc",
+		);
+		if (
+			typeof compatibleMaster !== "string" ||
+			!compatibleMaster.includes("#EXT-X-STREAM-INF")
+		) {
+			return null;
+		}
+
+		const validatedStreamUrl = _getStreamUrl(
+			compatibleMaster,
+			fallbackTargetResolution,
+			cachedMasterUrl,
+		);
+		const exactValidatedStreamUrl = _getExactPlaylistUrlKey(validatedStreamUrl);
+		const selectedResolution = _getBackupVariantResolution(
+			compatibleMaster,
+			validatedStreamUrl,
+			cachedMasterUrl,
+		);
+		const selectedCodecFamily = _getBackupVariantCodecFamily(
+			compatibleMaster,
+			validatedStreamUrl,
+			cachedMasterUrl,
+		);
+		if (
+			!exactValidatedStreamUrl ||
+			selectedResolution !== info.LastCleanBackupResolution ||
+			_getVideoCodecFamily(selectedCodecFamily) !== "avc" ||
+			!info.BackupVariantUrls?.has(exactValidatedStreamUrl) ||
+			info.BackupVariantPlayerTypes?.get?.(exactValidatedStreamUrl) !==
+				fallbackType
+		) {
+			return null;
+		}
+		const masterLines = compatibleMaster.split(/\r?\n/);
+		let selectedVariantLine = null;
+		let selectedVariantUri = null;
+		for (let index = 0; index < masterLines.length - 1; index++) {
+			const line = masterLines[index];
+			const uri = masterLines[index + 1]?.trim();
+			if (
+				!line?.startsWith("#EXT-X-STREAM-INF") ||
+				!uri ||
+				uri.startsWith("#") ||
+				_getExactPlaylistUrlKey(uri, cachedMasterUrl) !==
+					exactValidatedStreamUrl
+			) {
+				continue;
+			}
+			selectedVariantLine = line;
+			selectedVariantUri = uri;
+			break;
+		}
+		if (!selectedVariantLine || !selectedVariantUri) return null;
+
+		const selectedVariantAttrs = _parseAttrs(selectedVariantLine);
+		const selectedMediaGroups = new Set(
+			[
+				selectedVariantAttrs.AUDIO,
+				selectedVariantAttrs.VIDEO,
+				selectedVariantAttrs.SUBTITLES,
+				selectedVariantAttrs["CLOSED-CAPTIONS"],
+			].filter((value) => value && value !== "NONE"),
+		);
+		const selectedMasterLines = [];
+		for (let index = 0; index < masterLines.length; index++) {
+			const line = masterLines[index];
+			const trimmedLine = line?.trim();
+			if (line?.startsWith("#EXT-X-STREAM-INF")) {
+				const uri = masterLines[index + 1]?.trim();
+				if (line === selectedVariantLine && uri === selectedVariantUri) {
+					selectedMasterLines.push(
+						line,
+						_absolutizePlaylistUrl(uri, cachedMasterUrl),
+					);
+				}
+				index++;
+				continue;
+			}
+			if (line?.startsWith("#EXT-X-I-FRAME-STREAM-INF")) continue;
+			if (line?.startsWith("#EXT-X-MEDIA:")) {
+				const mediaAttrs = _parseAttrs(line);
+				if (!selectedMediaGroups.has(mediaAttrs["GROUP-ID"])) continue;
+				if (mediaAttrs.URI) return null;
+			}
+			if (trimmedLine && !trimmedLine.startsWith("#")) continue;
+			if (typeof line !== "string" || !line.includes('URI="')) {
+				selectedMasterLines.push(line);
+				continue;
+			}
+			selectedMasterLines.push(
+				line.replace(/URI="([^"]+)"/g, (_match, value) => {
+					return `URI="${_absolutizePlaylistUrl(value, cachedMasterUrl)}"`;
+				}),
+			);
+		}
+		const master = selectedMasterLines.join("\n");
+		if (
+			!master.includes(selectedVariantLine) ||
+			!master.includes(exactValidatedStreamUrl)
+		) {
+			return null;
+		}
+		info.ActiveBackupPlayerType = fallbackType;
+		info.ActiveBackupResolution = info.LastCleanBackupResolution || null;
+		info.LastActivityAt = Date.now();
+		for (const alias of _getPlaylistUrlAliases(exactValidatedStreamUrl)) {
+			__TTVAB_STATE__.StreamInfosByUrl[alias] = info;
+		}
+		return { type: fallbackType, master };
+	}
+
 	function _syncStreamInfo(info, encodings, usherUrl) {
 		const wasUsingModifiedM3U8 = Boolean(info.IsUsingModifiedM3U8);
 		const previousUsherUrl = _getExactPlaylistUrlKey(info.UsherBaseUrl);
@@ -1148,12 +1378,49 @@ function _hookWorkerFetch() {
 						"[Trace] Retrying exact Previews master fetch with a fresh cache key",
 						"info",
 					);
-					response = await realFetch.apply(this, [
-						typeof Request !== "undefined" && resource instanceof Request
-							? new Request(url, resource)
-							: url,
-						retryOptions,
-					]);
+					try {
+						response = await realFetch.apply(this, [
+							typeof Request !== "undefined" && resource instanceof Request
+								? new Request(url, resource)
+								: url,
+							retryOptions,
+						]);
+					} catch (retryError) {
+						if (retryError?.name === "TypeError" && !requestSignal?.aborted) {
+							try {
+								const fallback = await _getValidatedPreviewMasterFallback(
+									playbackContext,
+									url,
+									requestSignal,
+								);
+								if (fallback) {
+									_log(
+										`[Trace] Exact Previews master recovered with validated clean ${fallback.type}`,
+										"success",
+									);
+									reportPlaybackWorkerBootstrapObserved(playbackContext);
+									return new Response(fallback.master, {
+										status: 200,
+										headers: {
+											"Content-Type": "application/vnd.apple.mpegurl",
+										},
+									});
+								}
+							} catch (fallbackError) {
+								if (
+									requestSignal?.aborted ||
+									fallbackError?.name === "AbortError"
+								) {
+									throw fallbackError;
+								}
+								_log(
+									`[Trace] Validated Previews master recovery failed: ${fallbackError?.message ?? String(fallbackError)}`,
+									"warning",
+								);
+							}
+						}
+						throw retryError;
+					}
 				}
 				if (response.status !== 200) return response;
 

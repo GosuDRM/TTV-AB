@@ -176,6 +176,28 @@ describe("worker message handler hardening", () => {
 		);
 	});
 
+	it("keeps rejected Previews master recovery media-validated and fail-closed", () => {
+		const source = hooksJs();
+		const blockStart = source.indexOf(
+			"async function _getValidatedPreviewMasterFallback(",
+		);
+		const blockEnd = source.indexOf("function _syncStreamInfo(", blockStart);
+		const block = source.slice(blockStart, blockEnd);
+
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		expect(block).toContain("_findBackupStream(");
+		expect(block).toContain("_playlistHasMediaSegments(validatedMedia)");
+		expect(block).toContain("_hasPlaylistAdMarkers(validatedMedia)");
+		expect(block).toContain("_hasExplicitAdMetadata(validatedMedia)");
+		expect(block).toContain("_playlistHasKnownAdSegments(validatedMedia");
+		expect(block).toContain("_stripHevcBackupVariants(");
+		expect(block).toContain("exactValidatedStreamUrl");
+		expect(block).toContain("selectedMasterLines");
+		expect(source).toContain("throw retryError");
+		expect(source).not.toContain('mode: "no-cors"');
+	});
+
 	it("changes the low quality fallback preference without reloading playback", () => {
 		const source = initTs();
 		const blockStart = source.indexOf(
