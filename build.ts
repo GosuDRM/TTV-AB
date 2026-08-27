@@ -2412,6 +2412,11 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_findBackupStream",
+			helper: "_resolveAdBackupTargetResolution",
+			source: processorSource,
+		},
+		{
 			consumer: "_searchBackupStream",
 			helper: "_getVideoCodecFamily",
 			source: processorSource,

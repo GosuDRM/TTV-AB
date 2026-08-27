@@ -8532,6 +8532,58 @@ describe("_findBackupStream (in-flight coalescing)", () => {
 		expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(0);
 	});
 
+	it("keeps a temporary low bridge from replacing the sustained native quality target", async () => {
+		const state = getState();
+		const previousQuality = state.PreferredQualityGroup;
+		const low = {
+			Name: "360p",
+			Resolution: "640x360",
+			Codecs: "avc1.4D401E,mp4a.40.2",
+		};
+		const high = {
+			Name: "1080p60",
+			Resolution: "1920x1080",
+			Codecs: "avc1.64002A,mp4a.40.2",
+		};
+		let searchedResolution: unknown = null;
+		let resolveSearch: (value: SearchResult) => void = () => {};
+		g._searchBackupStream = (
+			_info: unknown,
+			_realFetch: unknown,
+			_startIdx: unknown,
+			currentResolution: unknown,
+		) => {
+			searchCalls++;
+			searchedResolution = currentResolution;
+			return new Promise<SearchResult>((resolve) => {
+				resolveSearch = resolve;
+			});
+		};
+		state.PreferredQualityGroup = null;
+		const info = makeInfo({
+			ResolutionList: [high, low],
+			SustainedNativeResolution: high,
+		});
+
+		try {
+			const lowRequest = fn()(info, null, 0, low);
+			const highRequest = fn()(info, null, 0, high);
+			expect(searchCalls).toBe(1);
+			expect(searchedResolution).toBe(high);
+			expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(1);
+
+			resolveSearch({ type: "site", m3u8: "#BACKUP" });
+			const [lowResult, highResult] = await Promise.all([
+				lowRequest,
+				highRequest,
+			]);
+			expect(lowResult).toBe(highResult);
+			expect((info._BackupSearchPromises as Map<string, unknown>).size).toBe(0);
+		} finally {
+			state.PreferredQualityGroup = previousQuality;
+		}
+	});
+
 	it("does not coalesce searches with different start, codec, or target keys", async () => {
 		const resolvers: Array<(value: SearchResult) => void> = [];
 		g._searchBackupStream = () => {

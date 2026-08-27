@@ -207,6 +207,7 @@ async function _getToken(
 	playerType,
 	realFetch,
 	omitViewerHeaders = false,
+	requestDeadlineAt = 0,
 ) {
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
@@ -245,10 +246,19 @@ async function _getToken(
 
 	const maxRetries = 2;
 	let lastError = null;
+	const deadlineAt = Math.max(0, Number(requestDeadlineAt) || 0);
+	const remainingDeadlineMs = () =>
+		deadlineAt > 0
+			? Math.max(0, deadlineAt - Date.now())
+			: Number.POSITIVE_INFINITY;
 
 	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		if (remainingDeadlineMs() <= 0) break;
 		if (attempt > 0) {
-			await new Promise((r) => setTimeout(r, attempt * 500));
+			await new Promise((r) =>
+				setTimeout(r, Math.min(attempt * 500, remainingDeadlineMs())),
+			);
+			if (remainingDeadlineMs() <= 0) break;
 		}
 
 		try {
@@ -284,18 +294,25 @@ async function _getToken(
 
 			if (typeof _fetchViaWorkerBridge === "function") {
 				try {
-					res = await _fetchViaWorkerBridge(_GQL_URL, requestOptions, 5000);
+					res = await _fetchViaWorkerBridge(
+						_GQL_URL,
+						requestOptions,
+						Math.max(1, Math.min(5000, remainingDeadlineMs())),
+					);
 				} catch (bridgeError) {
 					_log(`Spoof relay error: ${bridgeError.message}`, "warning");
 				}
 			}
 
 			if (!res) {
+				if (remainingDeadlineMs() <= 0) {
+					throw new Error("token fetch deadline exceeded");
+				}
 				res = await _fetchWithTimeout(
 					fetchFunc,
 					_GQL_URL,
 					requestOptions,
-					3000,
+					Math.max(1, Math.min(3000, remainingDeadlineMs())),
 				);
 			}
 
