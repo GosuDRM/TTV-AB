@@ -334,6 +334,148 @@ function cycleHandoffId(
 	return `${String(info.MediaKey)}:${cycleStartedAt}:${createdAt}:${sequence}:${label}`;
 }
 
+describe("playlist scan fast paths", () => {
+	it("retains every explicit ad-segment signal when cached lookup is skipped", () => {
+		const hasKnownAdSegments = T<
+			(text: string, options?: { includeCached?: boolean }) => boolean
+		>("_playlistHasKnownAdSegments");
+		const state = getState();
+		const previousAdSignifier = state.AdSignifier;
+		const previousAdSegmentCache = state.AdSegmentCache;
+		state.AdSignifier = "stitched";
+		state.AdSegmentCache = new Map([
+			["https://edge.example/opaque/ad-4.ts", Date.now()],
+		]);
+
+		try {
+			for (const segmentUrl of [
+				"https://edge.example/stitched-ad-1.ts",
+				"https://edge.example/adsquared/ad-2.ts",
+				"https://edge.example/_404/ad-3.ts",
+			]) {
+				const playlist = ["#EXTM3U", "#EXTINF:2.000,", segmentUrl].join("\n");
+				expect(hasKnownAdSegments(playlist, { includeCached: false })).toBe(
+					true,
+				);
+			}
+
+			const opaquePlaylist = [
+				"#EXTM3U",
+				"#EXTINF:2.000,",
+				"https://edge.example/opaque/ad-4.ts",
+			].join("\n");
+			expect(hasKnownAdSegments(opaquePlaylist)).toBe(true);
+			expect(hasKnownAdSegments(opaquePlaylist, { includeCached: false })).toBe(
+				false,
+			);
+		} finally {
+			state.AdSignifier = previousAdSignifier;
+			state.AdSegmentCache = previousAdSegmentCache;
+		}
+	});
+
+	it("collects exact segment ownership keys during URL normalization", () => {
+		const collection: { urls: string[]; isComplete: boolean } = {
+			urls: [],
+			isComplete: true,
+		};
+		const playlist = [
+			"#EXTM3U",
+			"#EXTINF:2.000,",
+			"segment-1.m4s#media-fragment",
+			'#EXT-X-PART:DURATION=0.5,URI="part-2.m4s#part-fragment"',
+			'#EXT-X-PRELOAD-HINT:TYPE=PART,URI="part-3.m4s"',
+			"#EXT-X-TWITCH-PREFETCH:segment-4.ts",
+		].join("\n");
+
+		const normalized = T<
+			(
+				text: string,
+				baseUrl: string,
+				collection: { urls: string[]; isComplete: boolean },
+			) => string
+		>("_absolutizeMediaPlaylistUrls")(
+			playlist,
+			"https://edge.example/live/index.m3u8?token=test",
+			collection,
+		);
+
+		expect(normalized).toContain(
+			"https://edge.example/live/segment-1.m4s#media-fragment",
+		);
+		expect(collection).toEqual({
+			isComplete: true,
+			urls: [
+				"https://edge.example/live/segment-1.m4s",
+				"https://edge.example/live/part-2.m4s",
+				"https://edge.example/live/part-3.m4s",
+				"https://edge.example/live/segment-4.ts",
+			],
+		});
+	});
+
+	it("records collected ownership keys without canonicalizing them again", () => {
+		const previousExactKey = g._getExactPlaylistUrlKey;
+		const exactKey = vi.fn(() => {
+			throw new Error("collected keys must already be exact");
+		});
+		const state = getState();
+		const previousSegmentCodecOwners = state.SegmentCodecOwners;
+		state.SegmentCodecOwners = new Map();
+		g._getExactPlaylistUrlKey = exactKey;
+		const info = makeInfo();
+		const segmentUrl = "https://edge.example/live/segment-1.m4s";
+
+		try {
+			expect(
+				T<
+					(
+						info: Record<string, unknown>,
+						text: string,
+						codecFamily: string,
+						exactSegmentUrls: string[],
+					) => boolean
+				>("_rememberSegmentCodecOwnership")(info, "#EXTM3U", "avc", [
+					segmentUrl,
+				]),
+			).toBe(true);
+			expect(exactKey).not.toHaveBeenCalled();
+			expect(
+				(state.SegmentCodecOwners as Map<string, Record<string, unknown>>).get(
+					segmentUrl,
+				),
+			).toMatchObject({
+				codecFamily: "avc",
+				mediaKey: "live:testchannel",
+				ambiguous: false,
+			});
+		} finally {
+			g._getExactPlaylistUrlKey = previousExactKey;
+			state.SegmentCodecOwners = previousSegmentCodecOwners;
+		}
+	});
+
+	it("marks malformed media duration ownership for the existing fallback scan", () => {
+		const collection: { urls: string[]; isComplete: boolean } = {
+			urls: [],
+			isComplete: true,
+		};
+		T<
+			(
+				text: string,
+				baseUrl: string,
+				collection: { urls: string[]; isComplete: boolean },
+			) => string
+		>("_absolutizeMediaPlaylistUrls")(
+			["#EXTM3U", "#EXTINF:2.000,", "#EXT-X-DISCONTINUITY"].join("\n"),
+			"https://edge.example/live/index.m3u8",
+			collection,
+		);
+
+		expect(collection).toEqual({ urls: [], isComplete: false });
+	});
+});
+
 describe("_getStreamUrl (resolution selection)", () => {
 	const fn = () =>
 		T<
@@ -10479,6 +10621,31 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		expect(reloadMessages()).toHaveLength(0);
 		expect(info.IsUsingModifiedM3U8).toBe(false);
 		expect(info._CodecHandoffPendingId).toBe(null);
+	});
+
+	it("skips enhanced-only native validation on an ordinary clean AVC poll", async () => {
+		const previousMatch = g._isLastCleanNativeForRequest;
+		const matchesLastCleanNative = vi.fn((...args: unknown[]) =>
+			(previousMatch as (...args: unknown[]) => boolean)(...args),
+		);
+		const info = makeInfo({
+			ResolutionList: [avcSource],
+			Urls: { [avcUrl]: avcSource },
+			EnhancedVariantUrls: new Set(),
+			EnhancedDecoderCodecFamily: null,
+			EnhancedDecoderCodec: null,
+		});
+		g._getStreamInfoForPlaylist = () => info;
+		g._isLastCleanNativeForRequest = matchesLastCleanNative;
+
+		try {
+			const out = await process()(avcUrl, makePlaylist(705, 3), fetchStub);
+
+			expect(out).toContain("seg705.ts");
+			expect(matchesLastCleanNative).not.toHaveBeenCalled();
+		} finally {
+			g._isLastCleanNativeForRequest = previousMatch;
+		}
 	});
 
 	it("ignores a foreign ad context during a clean AVC poll", async () => {

@@ -68,6 +68,8 @@ function _getTrustedBridgeMessageDetail(value) {
 
 const _PAGE_LOG_EXPORT_MAX_ENTRIES = 1000;
 const _PAGE_LOG_EXPORT_MAX_BYTES = 2 * 1024 * 1024;
+const _PAGE_LOG_TEXT_ENCODER =
+	typeof TextEncoder === "function" ? new TextEncoder() : null;
 
 function _getSafePageLogString(value, maxLength) {
 	if (typeof value !== "string") return "";
@@ -97,7 +99,8 @@ function _getSafePageLogNumber(value, fallback = 0) {
 
 function _getPageLogEntryByteLength(entry) {
 	try {
-		return new TextEncoder().encode(JSON.stringify(entry)).byteLength + 1;
+		if (!_PAGE_LOG_TEXT_ENCODER) throw new Error("TextEncoder unavailable");
+		return _PAGE_LOG_TEXT_ENCODER.encode(JSON.stringify(entry)).byteLength + 1;
 	} catch {
 		try {
 			return JSON.stringify(entry).length * 4 + 1;
@@ -183,10 +186,11 @@ function _collectPageLogEntries() {
 			) {
 				break;
 			}
-			entries.unshift(entry);
+			entries.push(entry);
 			usedBytes += entryBytes;
 		} catch {}
 	}
+	entries.reverse();
 
 	return {
 		entries,

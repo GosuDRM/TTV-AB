@@ -5309,6 +5309,183 @@ describe("MAIN VOD ad request guard", () => {
 	});
 });
 
+describe("MAIN GQL response classification", () => {
+	const gqlUrl = "https://gql.twitch.tv/gql";
+	const makeTokenPayload = (playerType: string) => ({
+		data: {
+			streamPlaybackAccessToken: {
+				signature: "test-signature",
+				value: JSON.stringify({ playerType }),
+			},
+		},
+	});
+
+	it.each(["options", "request"])(
+		"does not clone a known unrelated %s response",
+		async (requestKind) => {
+			const originalFetch = window.fetch;
+			const scopedWindow = window as unknown as Record<string, unknown>;
+			const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+			const xhrPrototype = window.XMLHttpRequest.prototype;
+			const originalOpen = xhrPrototype.open;
+			const response = new Response(JSON.stringify(makeTokenPayload("site")), {
+				status: 200,
+			});
+			const clone = vi.spyOn(response, "clone");
+			const nativeFetch = vi.fn(async () => response);
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.LastNativePlaybackAccessTokenPlayerType = null;
+			window.fetch = nativeFetch as typeof fetch;
+			const body = JSON.stringify({
+				operationName: "ChannelShell",
+				variables: { channel: "testchannel" },
+			});
+
+			try {
+				T<() => void>("_hookMainFetch")();
+				if (requestKind === "request") {
+					await window.fetch(new Request(gqlUrl, { method: "POST", body }));
+				} else {
+					await window.fetch(gqlUrl, { method: "POST", body });
+				}
+				await Promise.resolve();
+
+				expect(nativeFetch).toHaveBeenCalledOnce();
+				expect(clone).not.toHaveBeenCalled();
+				expect(state.LastNativePlaybackAccessTokenPlayerType).toBe(null);
+			} finally {
+				window.fetch = originalFetch;
+				xhrPrototype.open = originalOpen;
+				if (originalRealFetch === undefined) {
+					delete scopedWindow.__TTVAB_REAL_FETCH__;
+				} else {
+					scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+				}
+			}
+		},
+	);
+
+	it("inspects batched playback and unreadable requests without losing token state", async () => {
+		const originalFetch = window.fetch;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const xhrPrototype = window.XMLHttpRequest.prototype;
+		const originalOpen = xhrPrototype.open;
+		const playbackResponse = new Response(
+			JSON.stringify(makeTokenPayload("site")),
+			{ status: 200 },
+		);
+		const unreadableResponse = new Response(
+			JSON.stringify(makeTokenPayload("mobile_web")),
+			{ status: 200 },
+		);
+		const playbackClone = vi.spyOn(playbackResponse, "clone");
+		const unreadableClone = vi.spyOn(unreadableResponse, "clone");
+		const nativeFetch = vi
+			.fn()
+			.mockResolvedValueOnce(playbackResponse)
+			.mockResolvedValueOnce(unreadableResponse);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PlaybackAccessTokenHash = null;
+		state.LastNativePlaybackAccessTokenPlayerType = null;
+		window.fetch = nativeFetch as typeof fetch;
+		const playbackBody = JSON.stringify([
+			{ operationName: "ChannelShell", variables: {} },
+			{
+				operationName: "PlaybackAccessToken",
+				variables: { playerType: "site" },
+				extensions: {
+					persistedQuery: { sha256Hash: "playback-hash" },
+				},
+			},
+		]);
+
+		try {
+			T<() => void>("_hookMainFetch")();
+			await window.fetch(gqlUrl, { method: "POST", body: playbackBody });
+			await vi.waitFor(() => {
+				expect(state.LastNativePlaybackAccessTokenPlayerType).toBe("site");
+			});
+			expect(state.PlaybackAccessTokenHash).toBe("playback-hash");
+			expect(playbackClone).toHaveBeenCalledOnce();
+
+			state.LastNativePlaybackAccessTokenPlayerType = null;
+			await window.fetch(gqlUrl, { method: "POST", body: "{" });
+			await vi.waitFor(() => {
+				expect(state.LastNativePlaybackAccessTokenPlayerType).toBe(
+					"mobile_web",
+				);
+			});
+			expect(unreadableClone).toHaveBeenCalledOnce();
+		} finally {
+			window.fetch = originalFetch;
+			xhrPrototype.open = originalOpen;
+			if (originalRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			}
+		}
+	});
+
+	it("keeps Picture-by-Picture playback token state isolated", async () => {
+		const originalFetch = window.fetch;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const xhrPrototype = window.XMLHttpRequest.prototype;
+		const originalOpen = xhrPrototype.open;
+		const response = new Response(JSON.stringify(makeTokenPayload("site")), {
+			status: 200,
+		});
+		const clone = vi.spyOn(response, "clone");
+		const nativeFetch = vi.fn(async () => response);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PlaybackAccessTokenHash = null;
+		state.LastNativePlaybackAccessTokenPlayerType = null;
+		window.fetch = nativeFetch as typeof fetch;
+		const body = JSON.stringify({
+			operationName: "PlaybackAccessToken",
+			variables: { playerType: "picture-by-picture" },
+			extensions: { persistedQuery: { sha256Hash: "pip-hash" } },
+		});
+
+		try {
+			T<() => void>("_hookMainFetch")();
+			await window.fetch("https://gql.twitch.tv.example/gql", {
+				method: "POST",
+				body: JSON.stringify({
+					operationName: "PlaybackAccessToken",
+					variables: { playerType: "site" },
+					extensions: {
+						persistedQuery: { sha256Hash: "lookalike-hash" },
+					},
+				}),
+			});
+			expect(clone).not.toHaveBeenCalled();
+			expect(state.PlaybackAccessTokenHash).toBe(null);
+
+			await window.fetch(gqlUrl, { method: "POST", body });
+			await Promise.resolve();
+
+			expect(clone).not.toHaveBeenCalled();
+			expect(state.PlaybackAccessTokenHash).toBe(null);
+			expect(state.LastNativePlaybackAccessTokenPlayerType).toBe(null);
+			expect(nativeFetch).toHaveBeenCalledTimes(2);
+		} finally {
+			window.fetch = originalFetch;
+			xhrPrototype.open = originalOpen;
+			if (originalRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			}
+		}
+	});
+});
+
 describe("page-side M3U8 fallback", () => {
 	it("detects Twitch ad metadata beyond literal stitched-ad markers", () => {
 		const hasMetadata = T<(text: string) => boolean>("_hasTwitchAdMetadata");
@@ -8682,6 +8859,128 @@ describe("worker media-playlist exception fail-closed path", () => {
 });
 
 describe("worker ad-segment codec ownership", () => {
+	it("uses exact ownership directly while preserving ordinary segment observation", async () => {
+		const originalFetch = g.fetch;
+		const originalExactKey = g._getExactPlaylistUrlKey;
+		const originalEmptyHoldCheck = g._isEmptyAdHoldSegmentUrl;
+		const originalPlaybackContext = g._getPlaybackContextFromUsherUrl;
+		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		const rawFetch = vi.fn(async () => new Response("native-segment"));
+		const exactKey = vi.fn((value: unknown) =>
+			(originalExactKey as (value: unknown) => string)(value),
+		);
+		const emptyHoldCheck = vi.fn((value: unknown) =>
+			(originalEmptyHoldCheck as (value: unknown) => boolean)(value),
+		);
+		const playbackContext = vi.fn((value: unknown) =>
+			(originalPlaybackContext as (value: unknown) => unknown)(value),
+		);
+		const report = vi.fn();
+		const segmentUrl = "https://edge.example/live/segment-1.m4s?token=test";
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const info = {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			VodID: null,
+			MediaKey: "live:testchannel",
+			EnhancedDecoderCodec: null,
+			EnhancedDecoderCodecFamily: null,
+		};
+		state.StreamInfos = { "live:testchannel": info };
+		state.SegmentCodecOwners = new Map([
+			[
+				segmentUrl,
+				{
+					codecFamily: "avc",
+					mediaKey: "live:testchannel",
+					recordedAt: 100,
+					ambiguous: false,
+				},
+			],
+		]);
+		g.fetch = rawFetch;
+		g._getExactPlaylistUrlKey = exactKey;
+		g._isEmptyAdHoldSegmentUrl = emptyHoldCheck;
+		g._getPlaybackContextFromUsherUrl = playbackContext;
+		g._postWorkerBridgeMessage = report;
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect(
+				(g.fetch as typeof fetch)(segmentUrl).then((response) =>
+					response.text(),
+				),
+			).resolves.toBe("native-segment");
+			expect(exactKey).not.toHaveBeenCalled();
+			expect(emptyHoldCheck).not.toHaveBeenCalled();
+			expect(playbackContext).not.toHaveBeenCalled();
+			expect(rawFetch).toHaveBeenCalledOnce();
+			expect(report).toHaveBeenCalledOnce();
+			expect(report.mock.calls[0]?.[1]).toMatchObject({
+				key: "PlaybackWorkerObserved",
+				mediaKey: "live:testchannel",
+			});
+		} finally {
+			g.fetch = originalFetch;
+			g._getExactPlaylistUrlKey = originalExactKey;
+			g._isEmptyAdHoldSegmentUrl = originalEmptyHoldCheck;
+			g._getPlaybackContextFromUsherUrl = originalPlaybackContext;
+			g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+		}
+	});
+
+	it("falls back to canonical ownership before replacing a known AVC ad segment", async () => {
+		const originalFetch = g.fetch;
+		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		const segmentUrl =
+			"https://edge.example/adsquared/ad-segment.ts#request-fragment";
+		const exactKey = T<(value: string) => string>("_getExactPlaylistUrlKey")(
+			segmentUrl,
+		);
+		const rawFetch = vi.fn(async () => new Response("empty-avc-segment"));
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.StreamInfos = {
+			"live:testchannel": {
+				MediaType: "live",
+				ChannelName: "testchannel",
+				VodID: null,
+				MediaKey: "live:testchannel",
+				EnhancedDecoderCodec: null,
+				EnhancedDecoderCodecFamily: null,
+			},
+		};
+		state.SegmentCodecOwners = new Map([
+			[
+				exactKey,
+				{
+					codecFamily: "avc",
+					mediaKey: "live:testchannel",
+					recordedAt: 100,
+					ambiguous: false,
+				},
+			],
+		]);
+		g.fetch = rawFetch;
+		g._postWorkerBridgeMessage = vi.fn();
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			await expect(
+				(g.fetch as typeof fetch)(segmentUrl).then((response) =>
+					response.text(),
+				),
+			).resolves.toBe("empty-avc-segment");
+			expect(rawFetch).toHaveBeenCalledOnce();
+			expect(rawFetch).toHaveBeenCalledWith(g._EMPTY_SEGMENT_URL);
+			expect(rawFetch).not.toHaveBeenCalledWith(segmentUrl);
+		} finally {
+			g.fetch = originalFetch;
+			g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+		}
+	});
+
 	it("passes empty-hold and known ad segments through while disabled", async () => {
 		const originalFetch = g.fetch;
 		const emptyHoldUrl =

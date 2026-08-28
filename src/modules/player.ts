@@ -3006,6 +3006,7 @@ function _suppressIndependentVideoAdsForNode(node) {
 }
 
 function _handleIndependentVideoAdMutations(records) {
+	if (!_isIndependentVideoAdGuardEnabled()) return;
 	for (const record of records) {
 		if (record.type === "attributes") {
 			_suppressIndependentVideoAdsForNode(record.target);

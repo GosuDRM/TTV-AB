@@ -650,7 +650,6 @@ function _isExactNativeRecoveryCandidateOwned(
 			preAdNativeLoaderEpoch === currentLoaderEpoch &&
 			_playlistHasMediaSegments(preAdNativeText) &&
 			!_hasPlaylistAdMarkers(preAdNativeText) &&
-			!_hasExplicitAdMetadata(preAdNativeText) &&
 			!_playlistHasKnownAdSegments(preAdNativeText, {
 				includeCached: false,
 			}),
@@ -701,7 +700,6 @@ function _advanceExactNativeRecoveryCandidate(
 	const candidateHasAds = Boolean(
 		typeof candidateText === "string" &&
 			(_hasPlaylistAdMarkers(candidateText) ||
-				_hasExplicitAdMetadata(candidateText) ||
 				_playlistHasKnownAdSegments(candidateText, {
 					includeCached: false,
 				})),
@@ -1894,7 +1892,6 @@ async function _canReloadNativePlayerAfterAd(
 		}
 		const nativeHasAds =
 			_hasPlaylistAdMarkers(nativeM3u8) ||
-			_hasExplicitAdMetadata(nativeM3u8) ||
 			_playlistHasKnownAdSegments(nativeM3u8, {
 				includeCached: false,
 			});
@@ -2598,7 +2595,12 @@ function _rememberBackupPlaylistMetadata(
 	return m3u8;
 }
 
-function _rememberSegmentCodecOwnership(info, text, codecFamily = null) {
+function _rememberSegmentCodecOwnership(
+	info,
+	text,
+	codecFamily = null,
+	exactSegmentUrls = null,
+) {
 	const normalizedCodecFamily = _getVideoCodecFamily(codecFamily);
 	if (
 		!info ||
@@ -2615,8 +2617,8 @@ function _rememberSegmentCodecOwnership(info, text, codecFamily = null) {
 	if (!(__TTVAB_STATE__.SegmentCodecOwners instanceof Map)) {
 		__TTVAB_STATE__.SegmentCodecOwners = new Map();
 	}
-	const rememberUrl = (rawUrl) => {
-		const url = _getExactPlaylistUrlKey(rawUrl);
+	const rememberUrl = (rawUrl, isExact = false) => {
+		const url = isExact ? rawUrl : _getExactPlaylistUrlKey(rawUrl);
 		if (!url) return;
 		const previous = __TTVAB_STATE__.SegmentCodecOwners.get(url) || null;
 		const conflicts = Boolean(
@@ -2643,20 +2645,26 @@ function _rememberSegmentCodecOwnership(info, text, codecFamily = null) {
 					},
 		);
 	};
-	const lines = text.split("\n");
-	for (let index = 0; index < lines.length; index++) {
-		const line = lines[index];
-		if (line?.startsWith("#EXTINF")) {
-			rememberUrl(lines[index + 1]);
-			index++;
-			continue;
+	if (Array.isArray(exactSegmentUrls)) {
+		for (const segmentUrl of exactSegmentUrls) {
+			rememberUrl(segmentUrl, true);
 		}
-		if (_isMediaPartLine(line) || _isPartPreloadHintLine(line)) {
-			rememberUrl(_getTaggedPlaylistUri(line));
-			continue;
-		}
-		if (line?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
-			rememberUrl(line.substring("#EXT-X-TWITCH-PREFETCH:".length).trim());
+	} else {
+		const lines = text.split("\n");
+		for (let index = 0; index < lines.length; index++) {
+			const line = lines[index];
+			if (line?.startsWith("#EXTINF")) {
+				rememberUrl(lines[index + 1]);
+				index++;
+				continue;
+			}
+			if (_isMediaPartLine(line) || _isPartPreloadHintLine(line)) {
+				rememberUrl(_getTaggedPlaylistUri(line));
+				continue;
+			}
+			if (line?.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+				rememberUrl(line.substring("#EXT-X-TWITCH-PREFETCH:".length).trim());
+			}
 		}
 	}
 	while (__TTVAB_STATE__.SegmentCodecOwners.size > 1000) {
@@ -2711,7 +2719,6 @@ function _getSameRequestCleanNative(
 		typeof info?.LastCleanNativeM3U8 !== "string" ||
 		!info.LastCleanNativeM3U8 ||
 		_hasPlaylistAdMarkers(info.LastCleanNativeM3U8) ||
-		_hasExplicitAdMetadata(info.LastCleanNativeM3U8) ||
 		_playlistHasKnownAdSegments(info.LastCleanNativeM3U8, {
 			includeCached: false,
 		})
@@ -2765,7 +2772,6 @@ async function _holdRetiringCodecRequest(
 		sourceMatchesRetiringCodec &&
 		_playlistHasMediaSegments(text) &&
 		!_hasPlaylistAdMarkers(text) &&
-		!_hasExplicitAdMetadata(text) &&
 		!_playlistHasKnownAdSegments(text, { includeCached: false });
 	while (true) {
 		if (requestSignal?.aborted) {
@@ -3143,28 +3149,27 @@ async function _processM3U8(
 	);
 	const requestWasAdMarked =
 		_hasPlaylistAdMarkers(text) ||
-		_hasExplicitAdMetadata(text) ||
 		_playlistHasKnownAdSegments(text, {
 			includeCached: requestMayUseCachedAdSegments,
 		});
-	const resultHasPotentialAdMedia = result
-		.replace(/\r/g, "")
-		.split("\n")
-		.some(
-			(line) =>
-				(line.startsWith("#EXTINF") && !line.includes(",live")) ||
-				_isMediaPartLine(line) ||
-				_isPartPreloadHintLine(line) ||
-				line.startsWith("#EXT-X-TWITCH-PREFETCH:"),
-		);
-	if (
+	const shouldStripPotentialEnhancedAdMedia = Boolean(
 		responseHasEnhancedDecoderOwner &&
-		requestWasAdMarked &&
-		resultHasPotentialAdMedia &&
-		!returnedCachedBackupBeforeEnhancedStrip &&
-		!returnedCachedNativeBeforeEnhancedStrip &&
-		!returnedEmptyHoldBeforeEnhancedStrip
-	) {
+			requestWasAdMarked &&
+			!returnedCachedBackupBeforeEnhancedStrip &&
+			!returnedCachedNativeBeforeEnhancedStrip &&
+			!returnedEmptyHoldBeforeEnhancedStrip &&
+			result
+				.replace(/\r/g, "")
+				.split("\n")
+				.some(
+					(line) =>
+						(line.startsWith("#EXTINF") && !line.includes(",live")) ||
+						_isMediaPartLine(line) ||
+						_isPartPreloadHintLine(line) ||
+						line.startsWith("#EXT-X-TWITCH-PREFETCH:"),
+				),
+	);
+	if (shouldStripPotentialEnhancedAdMedia) {
 		result = _stripAds(result, true, info, false, true);
 	}
 
@@ -3181,13 +3186,6 @@ async function _processM3U8(
 		typeof info.LastCleanNativeM3U8 === "string" &&
 			info.LastCleanNativeM3U8 &&
 			result === info.LastCleanNativeM3U8,
-	);
-	const lastCleanNativeMatchesRequest = _isLastCleanNativeForRequest(
-		info,
-		url,
-		requestCodecs,
-		requestIsEnhanced,
-		retiringCodec,
 	);
 	const requestCodecFamily = _getVideoCodecFamily(requestCodecs);
 	const requestCodecIdentity = _getVideoCodecIdentity(requestCodecs);
@@ -3285,7 +3283,14 @@ async function _processM3U8(
 				(!returnedBackupMatchesRetiringOwner ||
 					!requestCanUseRetiringOwnerBackup)) ||
 				returnedAvcEmptyHold ||
-				(returnedCachedNative && !lastCleanNativeMatchesRequest) ||
+				(returnedCachedNative &&
+					!_isLastCleanNativeForRequest(
+						info,
+						url,
+						requestCodecs,
+						requestIsEnhanced,
+						retiringCodec,
+					)) ||
 				responseCodecConflictsWithRetiringOwner),
 	);
 	if (!unsafeEnhancedResponse) {
@@ -3337,7 +3342,6 @@ async function _processM3U8(
 				backupAgeMs >= 0 &&
 				backupAgeMs < 900 &&
 				!_hasPlaylistAdMarkers(info.LastCleanBackupM3U8) &&
-				!_hasExplicitAdMetadata(info.LastCleanBackupM3U8) &&
 				!_playlistHasKnownAdSegments(info.LastCleanBackupM3U8, {
 					includeCached: false,
 				}),
@@ -3439,7 +3443,8 @@ async function _processM3U8Core(
 	requestAdContext = null,
 	requestSignal = null,
 ) {
-	text = _absolutizeMediaPlaylistUrls(text, url);
+	const segmentUrlCollection = { urls: [], isComplete: true };
+	text = _absolutizeMediaPlaylistUrls(text, url, segmentUrlCollection);
 
 	let info = _getStreamInfoForPlaylist(url);
 	if (!info) {
@@ -3463,7 +3468,6 @@ async function _processM3U8Core(
 		);
 		const unknownPlaylistHasAds =
 			_hasPlaylistAdMarkers(text) ||
-			_hasExplicitAdMetadata(text) ||
 			_playlistHasKnownAdSegments(text, { includeCached: false }) ||
 			__TTVAB_STATE__.SimulatedAdsDepth > 0;
 		if (!unknownPlaylistHasAds && !inheritsCurrentAdCycle) {
@@ -3521,7 +3525,6 @@ async function _processM3U8Core(
 	const backupPlaylistHasAds = Boolean(
 		isBackupUrl &&
 			(_hasPlaylistAdMarkers(text) ||
-				_hasExplicitAdMetadata(text) ||
 				_playlistHasKnownAdSegments(text) ||
 				__TTVAB_STATE__.SimulatedAdsDepth > 0),
 	);
@@ -3663,7 +3666,7 @@ async function _processM3U8Core(
 	const res = directResolution || _resolvePlaybackResolutionForUrl(info, url);
 	const isEnhancedCodec = Boolean(
 		_isEnhancedCodecString(directResolution?.Codecs) ||
-			info.EnhancedVariantUrls?.has(_getExactPlaylistUrlKey(url)),
+			info.EnhancedVariantUrls?.has(exactRequestUrl),
 	);
 	const requestCodecFamily = _getVideoCodecFamily(
 		directResolution?.Codecs || res?.Codecs,
@@ -3678,7 +3681,12 @@ async function _processM3U8Core(
 				_getVideoCodecFamily(info.EnhancedDecoderCodecFamily)
 			: "avc"
 		: requestCodecFamily;
-	_rememberSegmentCodecOwnership(info, text, segmentCodecFamily);
+	_rememberSegmentCodecOwnership(
+		info,
+		text,
+		segmentCodecFamily,
+		segmentUrlCollection.isComplete ? segmentUrlCollection.urls : null,
+	);
 	if (
 		isEnhancedCodec &&
 		(requestCodecFamily === "hevc" || requestCodecFamily === "av1")
@@ -3723,8 +3731,7 @@ async function _processM3U8Core(
 			requestCodecIdentity &&
 		previousSustainedNativeResolution?.Resolution ===
 			directResolution.Resolution &&
-		_getExactPlaylistUrlKey(info.LastCleanNativeUrl) ===
-			_getExactPlaylistUrlKey(url) &&
+		_getExactPlaylistUrlKey(info.LastCleanNativeUrl) === exactRequestUrl &&
 		_getVideoCodecIdentity(info.LastCleanNativeCodec) ===
 			requestCodecIdentity &&
 		(Number(info.LastCleanNativePlaylistAt) || 0) > 0 &&
@@ -3851,7 +3858,7 @@ async function _processM3U8Core(
 		ensureVisibleAdCycle();
 	}
 	if (hasAds && !isBackupUrl) {
-		const exactAdPlaylistUrl = _getExactPlaylistUrlKey(url);
+		const exactAdPlaylistUrl = exactRequestUrl;
 		const adMediaKey = _normalizeMediaKey(info.MediaKey);
 		const adCycleStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
 		const requestOwnsAdPlaylist = Boolean(
@@ -3898,7 +3905,7 @@ async function _processM3U8Core(
 		);
 	}
 	if (isBackupUrl && backupPlaylistHasAds) {
-		const exactBackupUrl = _getExactPlaylistUrlKey(url);
+		const exactBackupUrl = exactRequestUrl;
 		const exactBackupOwner =
 			info.BackupVariantPlayerTypes?.get?.(exactBackupUrl);
 		const contaminatedBackupType =
@@ -5430,7 +5437,6 @@ async function _refreshHeldAutoplayBackupPlaylist(
 		if (!m3u8 || !_playlistHasMediaSegments(m3u8)) return null;
 		const hasAds =
 			_hasPlaylistAdMarkers(m3u8) ||
-			_hasExplicitAdMetadata(m3u8) ||
 			_playlistHasKnownAdSegments(m3u8, { includeCached: false });
 		if (hasAds) return null;
 		info.LastCleanBackupM3U8 = m3u8;
@@ -5534,7 +5540,6 @@ async function _refreshActiveBackupMediaPlaylist(
 		if (!m3u8 || !_playlistHasMediaSegments(m3u8)) return null;
 		const hasAds =
 			_hasPlaylistAdMarkers(m3u8) ||
-			_hasExplicitAdMetadata(m3u8) ||
 			_playlistHasKnownAdSegments(m3u8, { includeCached: false });
 		if (hasAds) return null;
 		info.LastCleanBackupM3U8 = m3u8;
@@ -5658,7 +5663,6 @@ async function _prepareFatalMediaRecovery(info, realFetch, request) {
 			verifiedAt >= requestedAt &&
 			_playlistHasMediaSegments(cleanBackup) &&
 			!_hasPlaylistAdMarkers(cleanBackup) &&
-			!_hasExplicitAdMetadata(cleanBackup) &&
 			!_playlistHasKnownAdSegments(cleanBackup, { includeCached: false }),
 	);
 	if (
@@ -6396,7 +6400,6 @@ async function _searchBackupStream(
 									const candidateIsPlayable = _playlistHasMediaSegments(m3u8);
 									const candidateHasAds =
 										_hasPlaylistAdMarkers(m3u8) ||
-										_hasExplicitAdMetadata(m3u8) ||
 										_playlistHasKnownAdSegments(m3u8, {
 											includeCached: false,
 										});

@@ -1445,6 +1445,8 @@ const pendingLogCollections = new Map<string, PendingLogCollection>();
 const LOG_COLLECT_TIMEOUT_MS = 5000;
 const MAX_LOG_EXPORT_ENTRIES = 1000;
 const MAX_LOG_EXPORT_BYTES = 2 * 1024 * 1024;
+const LOG_TEXT_ENCODER =
+	typeof TextEncoder === "function" ? new TextEncoder() : null;
 const MAX_LOG_MESSAGE_CHARS = 4000;
 const MAX_LOG_TRUNCATED_ENTRIES = 1000000;
 const MAX_LOG_TIMESTAMP_MS = 8640000000000000;
@@ -1529,7 +1531,8 @@ function sanitizeLogMessage(value) {
 
 function getLogEntryByteLength(entry) {
 	try {
-		return new TextEncoder().encode(JSON.stringify(entry)).byteLength;
+		if (!LOG_TEXT_ENCODER) throw new Error("TextEncoder unavailable");
+		return LOG_TEXT_ENCODER.encode(JSON.stringify(entry)).byteLength;
 	} catch {
 		return MAX_LOG_EXPORT_BYTES + 1;
 	}
