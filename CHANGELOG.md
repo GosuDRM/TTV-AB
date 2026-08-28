@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.3.1] - 2026-08-29
+
+- Reduced ordinary worker segment overhead by checking exact codec ownership first and deferring synthetic-hold and Usher URL parsing until the request shape can need them. Canonical fallback and successful worker observation remain intact.
+- Clean playlists now avoid duplicate ad-metadata checks, enhanced-only result scans, and a second segment URL canonicalization pass. Explicit and cached opaque ad segments retain their existing detection paths.
+- Named unrelated GQL operations skip response cloning only after valid request classification. PlaybackAccessToken, malformed, and unknown requests retain response inspection, while Picture-by-Picture token state remains isolated.
+- Disabled independent-video monitoring now skips DOM mutation traversal, and bounded diagnostic exports reuse their text encoder and reverse collected entries once.
+- Known issue: ad blocking at 1440p can leave playback stuck on the loading circle without recovering. A fix is planned for the next release.
+
 ## [16.3.0] - 2026-08-28
 
 - Fixed backup searches using a temporary 360p autoplay request as a separate quality target even when the same stream had already sustained 1080p playback ([#65](https://github.com/GosuDRM/TTV-AB/issues/65)).
