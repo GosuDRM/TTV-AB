@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.3.2] - 2026-08-29
+
+- Fixed a post-ad recovery loop that could repeatedly block new prerolls and keep 1440p or enhanced-quality playback cycling through the fallback stream.
+- Decoder rebuilds now stay on the exact verified native playlist session instead of adopting the fresh ad-bearing master Twitch may issue after a long-running stream. The preserved media playlist is still fetched live and remains subject to the normal ad and ownership checks.
+
 ## [16.3.1] - 2026-08-29
 
 - Reduced ordinary worker segment overhead by checking exact codec ownership first and deferring synthetic-hold and Usher URL parsing until the request shape can need them. Canonical fallback and successful worker observation remain intact.

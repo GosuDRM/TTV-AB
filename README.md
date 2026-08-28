@@ -71,14 +71,14 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v16.3.2 - 2026-08-29
+- **Fixed post-ad recovery repeatedly starting another preroll after long-running 1440p or enhanced-quality streams.** Decoder rebuilds now keep the exact verified native session while continuing to fetch live media, so playback can return once instead of cycling through ad blocking and fallback recovery.
+
 ### v16.3.1 - 2026-08-29
 - **Reduced extension processing overhead during normal playback without relaxing ad blocking or recovery checks.** Ordinary media requests now avoid repeated URL parsing, clean playlists skip enhanced-recovery work they do not need, and unrelated Twitch GQL responses are left untouched after their request is safely identified. Codec ownership, cached-ad detection, sequential backup validation, live refresh, and native restoration remain fail-closed.
 
 ### v16.3.0 - 2026-08-28
 - **Fixed some streams staying on 360p or 480p after ad recovery and prevented a stalled Previews fallback from keeping playback loading indefinitely.** Backup searches now retain the stream's sustained quality target, share one sequential search, and stop failed Preview recovery attempts within a strict deadline without accepting ad-marked media ([#65](https://github.com/GosuDRM/TTV-AB/issues/65), [#66](https://github.com/GosuDRM/TTV-AB/issues/66)).
-
-### v16.2.9 - 2026-08-27
-- **Fixed Previews hover streams still ending in Error 2000 after both native master requests were rejected.** Affected previews now check fresh Twitch sessions one at a time and start only from the exact AVC rendition whose live media playlist is playable and ad-free. Cancelled requests, ordinary players, and enhanced decoder ownership remain unchanged ([#63](https://github.com/GosuDRM/TTV-AB/issues/63)).
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
