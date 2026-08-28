@@ -181,6 +181,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		NativeRecoveryAdPlaylistUrls: new Set<string>(),
 		NativeRecoveryAdMediaKey: null,
 		NativeRecoveryAdStartedAt: 0,
+		_PendingPostAdNativeMaster: null,
 		NativeRecoveryLoaderEpoch: 0,
 		NativeRecoveryCandidateUrl: null,
 		NativeRecoveryCandidateMediaKey: null,
@@ -845,6 +846,14 @@ describe("_resetStreamAdState", () => {
 			]),
 			NativeRecoveryAdMediaKey: "live:testchannel",
 			NativeRecoveryAdStartedAt: 100,
+			_PendingPostAdNativeMaster: {
+				master: "#EXTM3U",
+				masterUrl: "https://usher.example/native.m3u8",
+				playlistUrl: "https://edge.example/native.m3u8",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+				expiresAt: 5000,
+			},
 			NativeRecoveryLoaderEpoch: 3,
 			NativeRecoveryCandidateUrl: "https://edge.example/native.m3u8",
 			NativeRecoveryCandidateMediaKey: "live:testchannel",
@@ -904,6 +913,7 @@ describe("_resetStreamAdState", () => {
 		expect((info.NativeRecoveryAdPlaylistUrls as Set<string>).size).toBe(0);
 		expect(info.NativeRecoveryAdMediaKey).toBe(null);
 		expect(info.NativeRecoveryAdStartedAt).toBe(0);
+		expect(info._PendingPostAdNativeMaster).toBe(null);
 		expect(info.NativeRecoveryLoaderEpoch).toBe(3);
 		expect(info.NativeRecoveryCandidateUrl).toBe(null);
 		expect(info.NativeRecoveryCandidateMediaKey).toBe(null);
@@ -5370,7 +5380,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		}
 	});
 
-	it("serves refreshed backup through both exact windows before restoring the current native playlist", async () => {
+	it("arms the verified native session before a required post-ad decoder rebuild", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(600000);
 		const previousToken = g._getToken;
@@ -5380,6 +5390,13 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		const tokenProbe = vi.fn(async () => {
 			throw new Error("unexpected native token probe");
 		});
+		const nativeMasterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=verified&token=verified";
+		const nativeMaster = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+			NATIVE_URL,
+		].join("\n");
 		const info = setupCsaiEscapeAdEnd({
 			ObservedAdPodIds: new Set(["stitched-ad-1"]),
 			ExpectedAdPodLength: 1,
@@ -5387,6 +5404,8 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			LastCleanBackupCodecFamily: "avc",
 			LastCleanBackupCodec: "avc1.64002a",
 			HevcReloadPendingAfterHold: true,
+			EncodingsM3U8: nativeMaster,
+			UsherBaseUrl: nativeMasterUrl,
 		});
 		info.Urls = Object.assign(Object.create(null), {
 			[NATIVE_URL]: {
@@ -5466,6 +5485,23 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 				requiresReload: true,
 				refreshAccessToken: false,
 			});
+			expect(info._PendingPostAdNativeMaster).toEqual({
+				master: nativeMaster,
+				masterUrl: nativeMasterUrl,
+				playlistUrl: NATIVE_URL,
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 590000,
+				expiresAt: 660000,
+			});
+			const rebuiltSessionPlaylist = makePlaylist(300, 3);
+			const rebuiltSessionOutput = await processM3U8()(
+				NATIVE_URL,
+				rebuiltSessionPlaylist,
+				() => Promise.reject(new Error("unexpected fetch")),
+			);
+			expect(rebuiltSessionOutput).toContain("seg300.ts");
+			expect(rebuiltSessionOutput).toContain("seg302.ts");
+			expect(info._PendingPostAdNativeMaster).toBe(null);
 		} finally {
 			g._getToken = previousToken;
 			g._notifyAdComplete = previousNotifyAdComplete;
