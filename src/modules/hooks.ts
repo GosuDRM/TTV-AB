@@ -694,6 +694,110 @@ function _hookWorkerFetch() {
 		statusText: response.statusText,
 		headers: response.headers,
 	});
+	const getPendingPostAdNativeMaster = (info, playbackContext) => {
+		const pending = info?._PendingPostAdNativeMaster;
+		if (!pending) return null;
+		const rejectPending = () => {
+			info._PendingPostAdNativeMaster = null;
+			return null;
+		};
+		const mediaKey = _normalizeMediaKey(playbackContext?.MediaKey);
+		const cycleStartedAt = Math.max(0, Number(pending.cycleStartedAt) || 0);
+		if (
+			playbackContext?.MediaType === "vod" ||
+			!mediaKey ||
+			_normalizeMediaKey(pending.mediaKey) !== mediaKey ||
+			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) !== mediaKey ||
+			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ||
+			_normalizeMediaKey(__TTVAB_STATE__.LastAdEndedMediaKey) !== mediaKey ||
+			Math.max(0, Number(__TTVAB_STATE__.LastAdEndedCycleStartedAt) || 0) !==
+				cycleStartedAt ||
+			Date.now() > Math.max(0, Number(pending.expiresAt) || 0) ||
+			typeof pending.master !== "string" ||
+			!pending.master ||
+			typeof pending.masterUrl !== "string" ||
+			!pending.masterUrl ||
+			typeof pending.playlistUrl !== "string" ||
+			!pending.playlistUrl
+		) {
+			return rejectPending();
+		}
+
+		const exactPlaylistUrl = _getExactPlaylistUrlKey(pending.playlistUrl);
+		const masterLines = pending.master.split(/\r?\n/);
+		let selectedVariantIndex = -1;
+		let selectedVariantLine = null;
+		let selectedVariantUri = null;
+		for (let index = 0; index < masterLines.length - 1; index++) {
+			const line = masterLines[index];
+			const uri = masterLines[index + 1]?.trim();
+			if (
+				!line?.startsWith("#EXT-X-STREAM-INF") ||
+				!uri ||
+				uri.startsWith("#") ||
+				_getExactPlaylistUrlKey(uri, pending.masterUrl) !== exactPlaylistUrl
+			) {
+				continue;
+			}
+			selectedVariantIndex = index;
+			selectedVariantLine = line;
+			selectedVariantUri = uri;
+			break;
+		}
+		if (!selectedVariantLine || !selectedVariantUri) {
+			return rejectPending();
+		}
+
+		const selectedVariantAttrs = _parseAttrs(selectedVariantLine);
+		const selectedMediaGroups = new Set(
+			[
+				selectedVariantAttrs.AUDIO,
+				selectedVariantAttrs.VIDEO,
+				selectedVariantAttrs.SUBTITLES,
+				selectedVariantAttrs["CLOSED-CAPTIONS"],
+			].filter((value) => value && value !== "NONE"),
+		);
+		const selectedMasterLines = [];
+		for (let index = 0; index < masterLines.length; index++) {
+			const line = masterLines[index];
+			const trimmedLine = line?.trim();
+			if (line?.startsWith("#EXT-X-STREAM-INF")) {
+				const uri = masterLines[index + 1]?.trim();
+				if (index === selectedVariantIndex && uri === selectedVariantUri) {
+					selectedMasterLines.push(
+						line,
+						_absolutizePlaylistUrl(uri, pending.masterUrl),
+					);
+				}
+				index++;
+				continue;
+			}
+			if (line?.startsWith("#EXT-X-I-FRAME-STREAM-INF")) continue;
+			if (line?.startsWith("#EXT-X-MEDIA:")) {
+				const mediaAttrs = _parseAttrs(line);
+				if (!selectedMediaGroups.has(mediaAttrs["GROUP-ID"])) continue;
+				if (mediaAttrs.URI) return rejectPending();
+			}
+			if (trimmedLine && !trimmedLine.startsWith("#")) continue;
+			if (typeof line !== "string" || !line.includes('URI="')) {
+				selectedMasterLines.push(line);
+				continue;
+			}
+			selectedMasterLines.push(
+				line.replace(/URI="([^"]+)"/g, (_match, value) => {
+					return `URI="${_absolutizePlaylistUrl(value, pending.masterUrl)}"`;
+				}),
+			);
+		}
+		const master = selectedMasterLines.join("\n");
+		if (
+			!master.includes(selectedVariantLine) ||
+			!master.includes(exactPlaylistUrl)
+		) {
+			return rejectPending();
+		}
+		return master;
+	};
 	const observedPlaybackMediaKeys = new Map();
 	const requestedMediaBootstrapRecoveryCycles = new Set();
 	const reportPlaybackWorkerObserved = (
@@ -1445,6 +1549,22 @@ function _hookWorkerFetch() {
 				const encodings = await response.text();
 				const serverTime = _getServerTime(encodings);
 				let info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
+				const pendingPostAdNativeMaster = getPendingPostAdNativeMaster(
+					info,
+					playbackContext,
+				);
+				if (pendingPostAdNativeMaster) {
+					info.LastActivityAt = Date.now();
+					_log(
+						"[Trace] Reusing verified native playlist session for post-ad decoder rebuild",
+						"success",
+					);
+					reportPlaybackWorkerBootstrapObserved(playbackContext);
+					return new Response(
+						_replaceServerTime(pendingPostAdNativeMaster, serverTime),
+						getResponseInit(response),
+					);
+				}
 				const previousModifiedM3U8 =
 					typeof info?.ModifiedM3U8 === "string" && info.ModifiedM3U8
 						? info.ModifiedM3U8

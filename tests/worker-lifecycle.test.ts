@@ -7403,6 +7403,101 @@ describe("worker mixed-codec master selection", () => {
 		}
 	});
 
+	it("keeps a required post-ad rebuild on the exact verified media session instead of adopting a new preroll master", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const originalFetch = g.fetch;
+		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		const verifiedVariantUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/verified-hevc.m3u8?session=owned";
+		const otherVerifiedVariantUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/verified-avc.m3u8?session=owned";
+		const freshPrerollVariantUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/fresh-ad.m3u8?session=new";
+		const previousUsherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=owned&token=owned";
+		const nextUsherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=new&token=new";
+		const verifiedMaster = [
+			"#EXTM3U",
+			'#EXT-X-TWITCH-INFO:SERVER-TIME="100.000"',
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60-hevc"',
+			verifiedVariantUrl,
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2",VIDEO="1080p60"',
+			otherVerifiedVariantUrl,
+		].join("\n");
+		const freshPrerollMaster = [
+			"#EXTM3U",
+			'#EXT-X-TWITCH-INFO:SERVER-TIME="101.000"',
+			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60-hevc"',
+			freshPrerollVariantUrl,
+		].join("\n");
+		const rawFetch = vi.fn(
+			async () => new Response(freshPrerollMaster, { status: 200 }),
+		);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			LastAdEndedAt: 100000,
+			LastAdEndedChannel: "testchannel",
+			LastAdEndedMediaKey: "live:testchannel",
+			LastAdEndedCycleStartedAt: 90000,
+		});
+		const info = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_createStreamInfo")({
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		Object.assign(info, {
+			EncodingsM3U8: verifiedMaster,
+			UsherBaseUrl: previousUsherUrl,
+			_PendingPostAdNativeMaster: {
+				master: verifiedMaster,
+				masterUrl: previousUsherUrl,
+				playlistUrl: verifiedVariantUrl,
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 90000,
+				expiresAt: 130000,
+			},
+		});
+		(state.StreamInfos as Record<string, unknown>)["live:testchannel"] = info;
+		g.fetch = rawFetch;
+		g._postWorkerBridgeMessage = vi.fn();
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			for (let attempt = 0; attempt < 2; attempt++) {
+				const output = await (
+					await (g.fetch as typeof fetch)(nextUsherUrl)
+				).text();
+				expect(output).toContain(verifiedVariantUrl);
+				expect(output).toContain('SERVER-TIME="101.000"');
+				expect(output).not.toContain(otherVerifiedVariantUrl);
+				expect(output).not.toContain(freshPrerollVariantUrl);
+			}
+			expect(info._PendingPostAdNativeMaster).not.toBeNull();
+
+			vi.setSystemTime(130001);
+			const expiredOutput = await (
+				await (g.fetch as typeof fetch)(nextUsherUrl)
+			).text();
+			expect(expiredOutput).toContain(freshPrerollVariantUrl);
+			expect(expiredOutput).not.toContain(verifiedVariantUrl);
+			expect(info._PendingPostAdNativeMaster).toBeNull();
+		} finally {
+			g.fetch = originalFetch;
+			g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+			vi.useRealTimers();
+		}
+	});
+
 	it("reports media ownership only after a successful usable response", async () => {
 		const originalFetch = g.fetch;
 		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;

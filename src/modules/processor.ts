@@ -74,6 +74,7 @@ function _resetStreamAdState(info) {
 	info.NativeRecoveryAdPlaylistUrls?.clear?.();
 	info.NativeRecoveryAdMediaKey = null;
 	info.NativeRecoveryAdStartedAt = 0;
+	info._PendingPostAdNativeMaster = null;
 	_resetNativeRecoveryCandidateState(info);
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
@@ -2100,6 +2101,7 @@ function _createStreamInfo(context) {
 		NativeRecoveryAdPlaylistUrls: new Set(),
 		NativeRecoveryAdMediaKey: null,
 		NativeRecoveryAdStartedAt: 0,
+		_PendingPostAdNativeMaster: null,
 		NativeRecoveryLoaderEpoch: 0,
 		NativeRecoveryCandidateUrl: null,
 		NativeRecoveryCandidateMediaKey: null,
@@ -3754,6 +3756,17 @@ async function _processM3U8Core(
 		throw _createCodecHandoffAbortError(requestSignal);
 	}
 	const hasMediaSegments = _playlistHasMediaSegments(text);
+	const pendingPostAdNativeMaster = info._PendingPostAdNativeMaster;
+	if (
+		pendingPostAdNativeMaster &&
+		_normalizeMediaKey(pendingPostAdNativeMaster.mediaKey) ===
+			_normalizeMediaKey(info.MediaKey) &&
+		_getExactPlaylistUrlKey(pendingPostAdNativeMaster.playlistUrl) ===
+			exactRequestUrl &&
+		(hasAds || hasMediaSegments)
+	) {
+		info._PendingPostAdNativeMaster = null;
+	}
 	const ensureVisibleAdCycle = () => {
 		if (info.IsShowingAd) return;
 		const now = Date.now();
@@ -4126,6 +4139,24 @@ async function _processM3U8Core(
 								!enhancedDecoderCodecIdentity ||
 								backupCodecIdentity !== enhancedDecoderCodecIdentity)),
 				);
+				const pendingPostAdNativeMaster =
+					requiresReload &&
+					exactNativeRecoveryOwned &&
+					info.MediaType !== "vod" &&
+					typeof info.EncodingsM3U8 === "string" &&
+					info.EncodingsM3U8 &&
+					typeof info.UsherBaseUrl === "string" &&
+					info.UsherBaseUrl &&
+					exactRequestUrl
+						? {
+								master: info.EncodingsM3U8,
+								masterUrl: info.UsherBaseUrl,
+								playlistUrl: exactRequestUrl,
+								mediaKey: info.MediaKey,
+								cycleStartedAt: restoredCycleStartedAt,
+								expiresAt: restoredAt + 30000,
+							}
+						: null;
 				if (exactNativeRecoveryReady) {
 					info.LastCleanNativeM3U8 = text;
 					info.LastCleanNativeUrl = url;
@@ -4138,6 +4169,7 @@ async function _processM3U8Core(
 					);
 				}
 				_resetStreamAdState(info);
+				info._PendingPostAdNativeMaster = pendingPostAdNativeMaster;
 				__TTVAB_STATE__.CurrentAdChannel = null;
 				__TTVAB_STATE__.CurrentAdMediaKey = null;
 				__TTVAB_STATE__.PinnedBackupPlayerType = null;
