@@ -411,22 +411,47 @@ function _playlistHasKnownAdSegments(
 	options: { includeCached?: boolean } = {},
 ) {
 	if (typeof text !== "string" || !text) return false;
+	if (
+		options.includeCached === false &&
+		(!__TTVAB_STATE__.AdSignifier ||
+			!text.includes(__TTVAB_STATE__.AdSignifier)) &&
+		!text.includes("/adsquared/") &&
+		!text.includes("/_404/")
+	) {
+		return false;
+	}
 	return _playlistLinesHaveKnownAdSegments(text.split("\n"), options);
 }
 
-function _absolutizePlaylistUrl(rawUrl, baseUrl = null) {
+function _absolutizePlaylistUrl(
+	rawUrl,
+	baseUrl = null,
+	segmentUrlCollection = null,
+) {
 	const candidate = typeof rawUrl === "string" ? rawUrl.trim() : "";
 	if (!candidate || !baseUrl || candidate.startsWith("#")) {
+		if (segmentUrlCollection) segmentUrlCollection.isComplete = false;
 		return candidate || rawUrl;
 	}
 	try {
-		return new URL(candidate, baseUrl).href;
+		const parsedUrl = new URL(candidate, baseUrl);
+		const normalizedUrl = parsedUrl.href;
+		if (segmentUrlCollection) {
+			parsedUrl.hash = "";
+			segmentUrlCollection.urls.push(parsedUrl.href);
+		}
+		return normalizedUrl;
 	} catch {
+		if (segmentUrlCollection) segmentUrlCollection.isComplete = false;
 		return rawUrl;
 	}
 }
 
-function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
+function _absolutizeMediaPlaylistUrls(
+	text,
+	baseUrl = null,
+	segmentUrlCollection = null,
+) {
 	if (
 		typeof text !== "string" ||
 		!text ||
@@ -439,25 +464,51 @@ function _absolutizeMediaPlaylistUrls(text, baseUrl = null) {
 		return text;
 	}
 
-	return text
-		.split("\n")
-		.map((line) => {
+	const lines = text.split("\n");
+	return lines
+		.map((line, index) => {
+			const followsMediaDuration = lines[index - 1]?.startsWith("#EXTINF");
+			if (
+				followsMediaDuration &&
+				segmentUrlCollection &&
+				(typeof line !== "string" || !line || line.startsWith("#"))
+			) {
+				segmentUrlCollection.isComplete = false;
+			}
 			if (typeof line !== "string" || !line) return line;
 			if (!line.startsWith("#")) {
-				return _absolutizePlaylistUrl(line, baseUrl);
+				return _absolutizePlaylistUrl(
+					line,
+					baseUrl,
+					followsMediaDuration ? segmentUrlCollection : null,
+				);
 			}
 			if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
 				const prefetchUrl = line
 					.substring("#EXT-X-TWITCH-PREFETCH:".length)
 					.trim();
-				const normalizedPrefetch = _absolutizePlaylistUrl(prefetchUrl, baseUrl);
+				const normalizedPrefetch = _absolutizePlaylistUrl(
+					prefetchUrl,
+					baseUrl,
+					segmentUrlCollection,
+				);
 				return `#EXT-X-TWITCH-PREFETCH:${normalizedPrefetch}`;
 			}
 			if (!line.includes('URI="')) {
 				return line;
 			}
+			const shouldCollectTaggedUrl =
+				_isMediaPartLine(line) || _isPartPreloadHintLine(line);
+			let collectedTaggedUrl = false;
 			return line.replace(/URI="([^"]+)"/g, (_match, value) => {
-				const normalizedValue = _absolutizePlaylistUrl(value, baseUrl);
+				const normalizedValue = _absolutizePlaylistUrl(
+					value,
+					baseUrl,
+					shouldCollectTaggedUrl && !collectedTaggedUrl
+						? segmentUrlCollection
+						: null,
+				);
+				if (shouldCollectTaggedUrl) collectedTaggedUrl = true;
 				return `URI="${normalizedValue}"`;
 			});
 		})

@@ -678,6 +678,22 @@ function _isPageLifecycleCycleCurrent(mediaKey, cycleStartedAt) {
 function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
 	const realFetch = fetch;
+	const getFetchArgs = (resource, opts, args, nextUrl) => {
+		if (typeof resource === "string" || resource instanceof URL) {
+			return [nextUrl, opts];
+		}
+
+		if (typeof Request !== "undefined" && resource instanceof Request) {
+			return [new Request(nextUrl, resource), opts];
+		}
+
+		return args;
+	};
+	const getResponseInit = (response) => ({
+		status: response.status,
+		statusText: response.statusText,
+		headers: response.headers,
+	});
 	const observedPlaybackMediaKeys = new Map();
 	const requestedMediaBootstrapRecoveryCycles = new Set();
 	const reportPlaybackWorkerObserved = (
@@ -960,7 +976,6 @@ function _hookWorkerFetch() {
 			_getVideoCodecFamily(info.LastCleanBackupCodecFamily) !== "avc" ||
 			!_playlistHasMediaSegments(validatedMedia) ||
 			_hasPlaylistAdMarkers(validatedMedia) ||
-			_hasExplicitAdMetadata(validatedMedia) ||
 			_playlistHasKnownAdSegments(validatedMedia, { includeCached: false })
 		) {
 			return null;
@@ -1242,24 +1257,7 @@ function _hookWorkerFetch() {
 				return await realFetch.apply(this, args);
 			}
 
-			const getFetchArgs = (nextUrl) => {
-				if (typeof resource === "string" || resource instanceof URL) {
-					return [nextUrl, opts];
-				}
-
-				if (typeof Request !== "undefined" && resource instanceof Request) {
-					return [new Request(nextUrl, resource), opts];
-				}
-
-				return args;
-			};
-
 			let url = requestUrl.trimEnd();
-			const responseInit = (response) => ({
-				status: response.status,
-				statusText: response.statusText,
-				headers: response.headers,
-			});
 
 			const shouldBlockAdSegments =
 				__TTVAB_STATE__.IsAdStrippingEnabled === true;
@@ -1271,6 +1269,7 @@ function _hookWorkerFetch() {
 			);
 			if (
 				shouldBlockAdSegments &&
+				url.includes("/__ttvab_empty_hold_segment.mp4") &&
 				typeof _isEmptyAdHoldSegmentUrl === "function" &&
 				_isEmptyAdHoldSegmentUrl(url)
 			) {
@@ -1301,9 +1300,11 @@ function _hookWorkerFetch() {
 				}
 				return await realFetch(_EMPTY_SEGMENT_URL);
 			}
-			const segmentOwner = __TTVAB_STATE__.SegmentCodecOwners?.get?.(
-				_getExactPlaylistUrlKey(url),
-			);
+			const segmentCodecOwners = __TTVAB_STATE__.SegmentCodecOwners;
+			let segmentOwner = segmentCodecOwners?.get?.(url);
+			if (segmentOwner === undefined) {
+				segmentOwner = segmentCodecOwners?.get?.(_getExactPlaylistUrlKey(url));
+			}
 			const segmentMediaKey = _normalizeMediaKey(segmentOwner?.mediaKey);
 			const segmentInfo =
 				(segmentMediaKey && __TTVAB_STATE__.StreamInfos?.[segmentMediaKey]) ||
@@ -1338,7 +1339,9 @@ function _hookWorkerFetch() {
 				throw _createCodecHandoffAbortError(segmentRequestSignal);
 			}
 
-			const playbackContext = _getPlaybackContextFromUsherUrl(url);
+			const playbackContext = /\.m3u8(?:$|[?#])/i.test(url)
+				? _getPlaybackContextFromUsherUrl(url)
+				: null;
 			if (playbackContext?.MediaKey) {
 				__TTVAB_STATE__.V2API =
 					url.includes("/api/v2/") || url.includes("/vod/v2/");
@@ -1358,7 +1361,10 @@ function _hookWorkerFetch() {
 
 				let response: Response;
 				try {
-					response = await realFetch.apply(this, getFetchArgs(url));
+					response = await realFetch.apply(
+						this,
+						getFetchArgs(resource, opts, args, url),
+					);
 				} catch (error) {
 					const requestSignal =
 						opts?.signal ||
@@ -1481,7 +1487,7 @@ function _hookWorkerFetch() {
 					reportPlaybackWorkerBootstrapObserved(playbackContext);
 					return new Response(
 						_replaceServerTime(playlist, serverTime),
-						responseInit(response),
+						getResponseInit(response),
 					);
 				} catch (err) {
 					_log(
@@ -1508,7 +1514,7 @@ function _hookWorkerFetch() {
 							reportPlaybackWorkerBootstrapObserved(playbackContext);
 							return new Response(
 								_replaceServerTime(filteredMaster, serverTime),
-								responseInit(response),
+								getResponseInit(response),
 							);
 						}
 						const masterRequestSignal =
@@ -1519,7 +1525,7 @@ function _hookWorkerFetch() {
 						throw _createCodecHandoffAbortError(masterRequestSignal);
 					}
 					reportPlaybackWorkerBootstrapObserved(playbackContext);
-					return new Response(encodings, responseInit(response));
+					return new Response(encodings, getResponseInit(response));
 				}
 			}
 
@@ -1593,7 +1599,10 @@ function _hookWorkerFetch() {
 					(typeof Request !== "undefined" && resource instanceof Request
 						? resource.signal
 						: null);
-				const response = await realFetch.apply(this, getFetchArgs(url));
+				const response = await realFetch.apply(
+					this,
+					getFetchArgs(resource, opts, args, url),
+				);
 				if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
 					return response;
 				}
@@ -1617,7 +1626,7 @@ function _hookWorkerFetch() {
 					};
 					const returnNativeMediaResponse = () => {
 						reportSuccessfulMediaResponse();
-						return new Response(text, responseInit(response));
+						return new Response(text, getResponseInit(response));
 					};
 					if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
 						return returnNativeMediaResponse();
@@ -1679,7 +1688,7 @@ function _hookWorkerFetch() {
 							return returnNativeMediaResponse();
 						}
 						reportSuccessfulMediaResponse();
-						return new Response(processedText, responseInit(response));
+						return new Response(processedText, getResponseInit(response));
 					} catch (err) {
 						if (
 							__TTVAB_STATE__.IsAdStrippingEnabled !== true &&
@@ -1708,7 +1717,6 @@ function _hookWorkerFetch() {
 						);
 						const requestWasAdMarked =
 							_hasPlaylistAdMarkers(text) ||
-							_hasExplicitAdMetadata(text) ||
 							_playlistHasKnownAdSegments(text, {
 								includeCached: mayUseCachedAdSegments,
 							});
@@ -1746,7 +1754,7 @@ function _hookWorkerFetch() {
 								throw _createCodecHandoffAbortError(failedRequestSignal);
 							}
 							reportSuccessfulMediaResponse();
-							return new Response(text, responseInit(response));
+							return new Response(text, getResponseInit(response));
 						}
 						const failedRequestIsEnhanced = Boolean(
 							_isEnhancedCodecString(
@@ -1793,7 +1801,7 @@ function _hookWorkerFetch() {
 						}
 						const failClosedPlaylist = _stripAds(text, true, failedInfo);
 						reportSuccessfulMediaResponse();
-						return new Response(failClosedPlaylist, responseInit(response));
+						return new Response(failClosedPlaylist, getResponseInit(response));
 					}
 				}
 				return response;
@@ -6685,6 +6693,12 @@ function _hookMainFetch() {
 	const realFetch = window.fetch;
 	window.__TTVAB_REAL_FETCH__ = realFetch;
 	const isGqlEndpointUrl = (urlStr) => {
+		if (
+			typeof urlStr === "string" &&
+			urlStr.startsWith("https://gql.twitch.tv/")
+		) {
+			return true;
+		}
 		try {
 			return new URL(urlStr).hostname === "gql.twitch.tv";
 		} catch {
@@ -6867,21 +6881,30 @@ function _hookMainFetch() {
 		]);
 	};
 	const processGqlBody = (bodyText) => {
-		if (typeof bodyText !== "string" || !bodyText) return;
+		if (typeof bodyText !== "string" || !bodyText) return "unknown";
 		try {
 			const data = JSON.parse(bodyText);
 			const operations = Array.isArray(data) ? data : [data];
+			let hasPlaybackAccessToken = false;
+			let hasOnlyKnownOperations = operations.length > 0;
 			for (const op of operations) {
-				if (
-					op?.operationName === "PlaybackAccessToken" &&
-					op.extensions?.persistedQuery?.sha256Hash
-				) {
+				const operationName = op?.operationName;
+				if (typeof operationName !== "string" || !operationName) {
+					hasOnlyKnownOperations = false;
+					continue;
+				}
+				if (operationName !== "PlaybackAccessToken") continue;
+				hasPlaybackAccessToken = true;
+				if (op.extensions?.persistedQuery?.sha256Hash) {
 					updatePlaybackAccessTokenHash(
 						op.extensions.persistedQuery.sha256Hash,
 					);
 				}
 			}
+			if (hasPlaybackAccessToken) return "playback";
+			if (hasOnlyKnownOperations) return "unrelated";
 		} catch {}
+		return "unknown";
 	};
 	const processGqlResponse = async (response) => {
 		if (response?.status !== 200) return;
@@ -6908,16 +6931,21 @@ function _hookMainFetch() {
 		const [url, opts] = args;
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
-			const requestMethod =
-				typeof opts?.method === "string" && opts.method
-					? opts.method
-					: url instanceof Request
-						? url.method
-						: "GET";
-			const blockedVodAdRequest =
-				requestMethod.trim().toUpperCase() === "GET"
-					? getBlockedVodAdRequest(urlStr)
-					: null;
+			let blockedVodAdRequest = null;
+			if (
+				__TTVAB_STATE__.IsAdStrippingEnabled === true &&
+				__TTVAB_STATE__.PageMediaType === "vod"
+			) {
+				const requestMethod =
+					typeof opts?.method === "string" && opts.method
+						? opts.method
+						: url instanceof Request
+							? url.method
+							: "GET";
+				if (requestMethod.trim().toUpperCase() === "GET") {
+					blockedVodAdRequest = getBlockedVodAdRequest(urlStr);
+				}
+			}
 			if (blockedVodAdRequest) {
 				recordBlockedVodAdRequest(blockedVodAdRequest);
 				return new Response(null, {
@@ -6930,6 +6958,7 @@ function _hookMainFetch() {
 				let nextArgs = args;
 				let headers = opts?.headers;
 				let shouldSkipPlaybackAccessTokenState = false;
+				let shouldInspectPlaybackAccessTokenResponse = true;
 
 				if (url instanceof Request) {
 					let effectiveRequest = url;
@@ -6943,7 +6972,8 @@ function _hookMainFetch() {
 							isPictureInPicturePlaybackAccessTokenBody(text);
 						if (!shouldSkipPlaybackAccessTokenState) {
 							const rewritten = rewritePlaybackAccessTokenBody(text);
-							processGqlBody(rewritten.bodyText);
+							shouldInspectPlaybackAccessTokenResponse =
+								processGqlBody(rewritten.bodyText) !== "unrelated";
 							if (rewritten.changed) {
 								nextArgs = [
 									new Request(effectiveRequest, {
@@ -6953,8 +6983,11 @@ function _hookMainFetch() {
 							} else if (effectiveRequest !== url || args.length !== 1) {
 								nextArgs = [effectiveRequest];
 							}
-						} else if (effectiveRequest !== url || args.length !== 1) {
-							nextArgs = [effectiveRequest];
+						} else {
+							shouldInspectPlaybackAccessTokenResponse = false;
+							if (effectiveRequest !== url || args.length !== 1) {
+								nextArgs = [effectiveRequest];
+							}
 						}
 					} catch (_e) {}
 				} else if (typeof opts?.body === "string") {
@@ -6962,10 +6995,13 @@ function _hookMainFetch() {
 						isPictureInPicturePlaybackAccessTokenBody(opts.body);
 					if (!shouldSkipPlaybackAccessTokenState) {
 						const rewritten = rewritePlaybackAccessTokenBody(opts.body);
-						processGqlBody(rewritten.bodyText);
+						shouldInspectPlaybackAccessTokenResponse =
+							processGqlBody(rewritten.bodyText) !== "unrelated";
 						if (rewritten.changed) {
 							nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
 						}
+					} else {
+						shouldInspectPlaybackAccessTokenResponse = false;
 					}
 				}
 
@@ -7035,7 +7071,7 @@ function _hookMainFetch() {
 					updateWorkers(updates);
 				}
 				const response = await realFetch.apply(this, nextArgs);
-				if (!shouldSkipPlaybackAccessTokenState) {
+				if (shouldInspectPlaybackAccessTokenResponse) {
 					void processGqlResponse(response);
 				}
 				return response;

@@ -873,6 +873,37 @@ describe("_pruneIndependentVideoAdSuppressions", () => {
 });
 
 describe("_installIndependentVideoAdObserver", () => {
+	it("skips mutation traversal only while ad blocking is disabled", () => {
+		const originalSuppressForNode = g._suppressIndependentVideoAdsForNode;
+		const suppressForNode = vi.fn();
+		g._suppressIndependentVideoAdsForNode = suppressForNode;
+		const state = g.__TTVAB_STATE__ as { IsAdStrippingEnabled: boolean };
+		const node = document.createElement("div");
+		const records = [
+			{
+				type: "childList",
+				addedNodes: [node],
+			},
+		] as unknown as MutationRecord[];
+
+		try {
+			state.IsAdStrippingEnabled = false;
+			T<(records: MutationRecord[]) => void>(
+				"_handleIndependentVideoAdMutations",
+			)(records);
+			expect(suppressForNode).not.toHaveBeenCalled();
+
+			state.IsAdStrippingEnabled = true;
+			T<(records: MutationRecord[]) => void>(
+				"_handleIndependentVideoAdMutations",
+			)(records);
+			expect(suppressForNode).toHaveBeenCalledOnce();
+			expect(suppressForNode).toHaveBeenCalledWith(node);
+		} finally {
+			g._suppressIndependentVideoAdsForNode = originalSuppressForNode;
+		}
+	});
+
 	it("observes the document without requiring a document root", () => {
 		const nativeMutationObserver = g.MutationObserver;
 		const observe = vi.fn();

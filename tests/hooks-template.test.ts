@@ -189,7 +189,7 @@ describe("worker message handler hardening", () => {
 		expect(block).toContain("_findBackupStream(");
 		expect(block).toContain("_playlistHasMediaSegments(validatedMedia)");
 		expect(block).toContain("_hasPlaylistAdMarkers(validatedMedia)");
-		expect(block).toContain("_hasExplicitAdMetadata(validatedMedia)");
+		expect(block).not.toContain("_hasExplicitAdMetadata(validatedMedia)");
 		expect(block).toContain("_playlistHasKnownAdSegments(validatedMedia");
 		expect(block).toContain("_stripHevcBackupVariants(");
 		expect(block).toContain("exactValidatedStreamUrl");
