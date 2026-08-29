@@ -71,14 +71,14 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v16.3.3 - 2026-08-29
+- **Fixed 1440p streams getting stuck on a loading circle after an ad was blocked.** The temporary AVC handoff now keeps the exact post-ad recovery authorization through long breaks, while explicit pauses still stop automatic playback.
+
 ### v16.3.2 - 2026-08-29
 - **Fixed post-ad recovery repeatedly starting another preroll after long-running 1440p or enhanced-quality streams.** Decoder rebuilds now keep the exact verified native session while continuing to fetch live media, so playback can return once instead of cycling through ad blocking and fallback recovery.
 
 ### v16.3.1 - 2026-08-29
 - **Reduced extension processing overhead during normal playback without relaxing ad blocking or recovery checks.** Ordinary media requests now avoid repeated URL parsing, clean playlists skip enhanced-recovery work they do not need, and unrelated Twitch GQL responses are left untouched after their request is safely identified. Codec ownership, cached-ad detection, sequential backup validation, live refresh, and native restoration remain fail-closed.
-
-### v16.3.0 - 2026-08-28
-- **Fixed some streams staying on 360p or 480p after ad recovery and prevented a stalled Previews fallback from keeping playback loading indefinitely.** Backup searches now retain the stream's sustained quality target, share one sequential search, and stop failed Preview recovery attempts within a strict deadline without accepting ad-marked media ([#65](https://github.com/GosuDRM/TTV-AB/issues/65), [#66](https://github.com/GosuDRM/TTV-AB/issues/66)).
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
