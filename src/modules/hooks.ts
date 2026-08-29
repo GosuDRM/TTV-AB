@@ -6170,6 +6170,21 @@ function _hookWorker() {
 								__TTVAB_STATE__.LastAdEndedCycleStartedAt = endedCycleStartedAt;
 								if (
 									!isHoldingBackup &&
+									typeof _hasPendingAdResumeIntent === "function" &&
+									!(
+										typeof _hasUserPauseIntent === "function" &&
+										_hasUserPauseIntent(channel, mediaKey)
+									) &&
+									!(
+										typeof _shouldSuppressAutomaticPlaybackResume ===
+											"function" &&
+										_shouldSuppressAutomaticPlaybackResume(channel, mediaKey)
+									)
+								) {
+									_hasPendingAdResumeIntent(channel, mediaKey);
+								}
+								if (
+									!isHoldingBackup &&
 									_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
 										mediaKey
 								) {
@@ -6576,12 +6591,6 @@ function _hookWorker() {
 								typeof _clearPlaybackRecoveryTimeoutsForContext === "function"
 							) {
 								_clearPlaybackRecoveryTimeoutsForContext(data.mediaKey || null);
-							}
-							if (
-								eventIsCodecHandoff &&
-								typeof _clearAdResumeIntent === "function"
-							) {
-								_clearAdResumeIntent();
 							}
 							if (typeof _doPlayerTask === "function") {
 								const reloadReason =

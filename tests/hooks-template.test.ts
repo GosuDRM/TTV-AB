@@ -435,6 +435,30 @@ describe("worker message handler hardening", () => {
 		);
 	});
 
+	it("renews generic ad-end recovery before clearing active ownership", () => {
+		const source = hooksJs();
+		const handlerStart = source.indexOf(
+			'this.addEventListener("message", (e) =>',
+		);
+		const mainSwitch = source.indexOf("switch (data.key)", handlerStart);
+		const blockStart = source.indexOf('case "AdEnded":', mainSwitch);
+		const blockEnd = source.indexOf(
+			'case "NativePlaybackRestored":',
+			blockStart,
+		);
+		const block = source.slice(blockStart, blockEnd);
+		expect(blockStart).toBeGreaterThan(-1);
+		expect(blockEnd).toBeGreaterThan(blockStart);
+		const gateAt = block.indexOf("_isCodecHandoffCycleCurrent(");
+		const renewIntentAt = block.indexOf("_hasPendingAdResumeIntent(");
+		const clearActiveAdAt = block.indexOf(
+			"__TTVAB_STATE__.CurrentAdChannel = null",
+		);
+		expect(gateAt).toBeGreaterThan(-1);
+		expect(renewIntentAt).toBeGreaterThan(gateAt);
+		expect(clearActiveAdAt).toBeGreaterThan(renewIntentAt);
+	});
+
 	it("bootstrap does not serialize tracked workers", () => {
 		expect(hooksJs()).toMatch(
 			/JSON\.stringify\(\{\s*\.\.\._S,\s*workers:\s*\[\]\s*\}\)/,

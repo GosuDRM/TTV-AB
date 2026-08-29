@@ -2254,6 +2254,149 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
+	it.each([
+		{
+			name: "keeps terminal recovery authorized after an enhanced-codec handoff",
+			userPausedBeforeAdEnd: false,
+			expectedPlayerTaskCount: 2,
+		},
+		{
+			name: "does not restore terminal recovery after an explicit pause",
+			userPausedBeforeAdEnd: true,
+			expectedPlayerTaskCount: 1,
+		},
+	])("$name", ({ userPausedBeforeAdEnd, expectedPlayerTaskCount }) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const cycleStartedAt = 90000;
+		const context = {
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			pageChannel: "testchannel",
+			pageMediaKey: "live:testchannel",
+			cycleStartedAt,
+		};
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageVodID: null,
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			AdPodProgressByMediaKey: Object.create(null),
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+			LastAdEndedAt: 0,
+			LastAdEndedCycleStartedAt: 0,
+			AdCycleStaleMs: 120000,
+		});
+		const previousFunctions = {
+			clearIntent: g._clearAdResumeIntent,
+			hasPendingIntent: g._hasPendingAdResumeIntent,
+			hasUserPause: g._hasUserPauseIntent,
+			rememberPlayback: g._rememberPlayerPlaybackForAd,
+			suppressResume: g._shouldSuppressAutomaticPlaybackResume,
+		};
+		let userPaused = false;
+		let resumeAuthorized = false;
+		let resumeUntil = 0;
+		const clearIntent = () => {
+			resumeAuthorized = false;
+			resumeUntil = 0;
+		};
+		g._clearAdResumeIntent = vi.fn(clearIntent);
+		g._hasUserPauseIntent = () => userPaused;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._rememberPlayerPlaybackForAd = vi.fn(() => {
+			if (userPaused) {
+				clearIntent();
+				return;
+			}
+			resumeAuthorized = true;
+			resumeUntil = Date.now() + 15000;
+		});
+		g._hasPendingAdResumeIntent = (_channel: string, mediaKey: string) => {
+			if (!resumeAuthorized || mediaKey !== context.mediaKey) return false;
+			if (resumeUntil <= Date.now()) {
+				if (state.CurrentAdMediaKey !== mediaKey) {
+					clearIntent();
+					return false;
+				}
+				resumeUntil = Date.now() + 15000;
+			}
+			return true;
+		};
+		const playerTask = vi.fn(() => true);
+		g._doPlayerTask = playerTask;
+		const harness = installWorkerMessageHarness();
+		const handoffId = "live:testchannel:90000:101000:1:resume-intent-handoff";
+
+		try {
+			harness.worker.emitMessage({
+				key: "AdDetected",
+				...context,
+				detectedAt: 100000,
+				playlistUrl:
+					"https://video-weaver.example.ttvnw.net/v1/playlist/enhanced-ad.m3u8",
+			});
+			expect(resumeAuthorized).toBe(true);
+
+			vi.setSystemTime(101000);
+			harness.worker.emitMessage({
+				key: "ReloadPlayer",
+				...context,
+				reason: "codec-handoff",
+				handoffId,
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			});
+			expect(playerTask).toHaveBeenCalledOnce();
+
+			userPaused = userPausedBeforeAdEnd;
+			vi.setSystemTime(180000);
+			harness.worker.emitMessage({
+				key: "AdEnded",
+				...context,
+				endedAt: 180000,
+				handoffId,
+				willReload: true,
+				holdingBackup: false,
+			});
+			harness.worker.emitMessage({
+				key: "ReloadPlayer",
+				...context,
+				reason: "post-ad",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: true,
+			});
+
+			expect(playerTask).toHaveBeenCalledTimes(expectedPlayerTaskCount);
+			if (userPausedBeforeAdEnd) {
+				expect(resumeAuthorized).toBe(false);
+			} else {
+				expect(resumeAuthorized).toBe(true);
+				expect(playerTask).toHaveBeenLastCalledWith(false, true, {
+					reason: "post-ad",
+					handoffId: null,
+					cycleStartedAt,
+					refreshAccessToken: true,
+					newMediaPlayerInstance: true,
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+				});
+			}
+		} finally {
+			harness.restore();
+			g._clearAdResumeIntent = previousFunctions.clearIntent;
+			g._hasPendingAdResumeIntent = previousFunctions.hasPendingIntent;
+			g._hasUserPauseIntent = previousFunctions.hasUserPause;
+			g._rememberPlayerPlaybackForAd = previousFunctions.rememberPlayback;
+			g._shouldSuppressAutomaticPlaybackResume =
+				previousFunctions.suppressResume;
+		}
+	});
+
 	it("retries a rejected post-ad pause resume without dropping playback intent", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(200000);
