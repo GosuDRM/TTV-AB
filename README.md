@@ -35,6 +35,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Independent, live-updating controls for Ad Blocking, Ad Spoofing, and Low Quality Fallback
 - ✅ Optional Ad Spoofing to reduce anti-adblock detection
 - ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, but lower quality may still be used as a last resort
+- ✅ Optional Turbo Mode that pauses new statistics and achievements while preserving existing history and all ad-blocking controls
 - ✅ Persistent, live-updating Ads Blocked and Time Saved totals
 - ✅ Statistics dashboard with weekly charts, detailed per-channel history, and **12 Achievement Badges**
 - ✅ Language selector, with 12 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU, UK)
@@ -71,14 +72,15 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.0.0 - 2026-08-29
+- **Added Turbo Mode for a focused ad-blocking popup.** It pauses new statistics and achievements, clears the badge, and dynamically collapses the dashboard without changing Ad Blocking, Ad Spoofing, Low Quality Fallback, or playback recovery.
+- **Fixed Generate Log sometimes producing no file.** Log collection now continues in a dedicated tab and waits for an explicit save action, so closing the extension popup no longer cancels the export.
+
 ### v16.3.3 - 2026-08-29
 - **Fixed 1440p streams getting stuck on a loading circle after an ad was blocked.** The temporary AVC handoff now keeps the exact post-ad recovery authorization through long breaks, while explicit pauses still stop automatic playback.
 
 ### v16.3.2 - 2026-08-29
 - **Fixed post-ad recovery repeatedly starting another preroll after long-running 1440p or enhanced-quality streams.** Decoder rebuilds now keep the exact verified native session while continuing to fetch live media, so playback can return once instead of cycling through ad blocking and fallback recovery.
-
-### v16.3.1 - 2026-08-29
-- **Reduced extension processing overhead during normal playback without relaxing ad blocking or recovery checks.** Ordinary media requests now avoid repeated URL parsing, clean playlists skip enhanced-recovery work they do not need, and unrelated Twitch GQL responses are left untouched after their request is safely identified. Codec ownership, cached-ad detection, sequential backup validation, live refresh, and native restoration remain fail-closed.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
