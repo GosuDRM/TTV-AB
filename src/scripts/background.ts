@@ -22,6 +22,9 @@ function normalizeCount(value) {
 
 const BADGE_BACKGROUND_COLOR = "#E0245E";
 const BADGE_TEXT_COLOR = "#FFFFFF";
+const TURBO_MODE_STORAGE_KEY = "ttvTurboMode";
+let turboModeEnabled = false;
+let turboModeRevision = 0;
 const BADGE_UNITS = [
 	{ value: 1e12, suffix: "T" },
 	{ value: 1e9, suffix: "B" },
@@ -73,6 +76,10 @@ function applyBadgeCount(value) {
 			color: BADGE_TEXT_COLOR,
 		});
 	}
+}
+
+function createTurboCounterResponse() {
+	return { ok: true, counts: null, newUnlocks: [] };
 }
 
 function normalizeChannelName(value) {
@@ -697,10 +704,14 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 	const stored = await storageLocalGet([
 		"ttvAdsBlocked",
 		"ttvStats",
+		TURBO_MODE_STORAGE_KEY,
 		PROCESSED_FLUSH_STORAGE_KEY,
 		UNCONFIRMED_FLUSH_STORAGE_KEY,
 		RECENT_AD_MEASUREMENTS_STORAGE_KEY,
 	]);
+	if (turboModeEnabled || stored[TURBO_MODE_STORAGE_KEY] === true) {
+		return createTurboCounterResponse();
+	}
 	const baseAds = normalizeCount(stored.ttvAdsBlocked);
 	const processedFlushes = normalizeProcessedFlushMap(
 		stored[PROCESSED_FLUSH_STORAGE_KEY],
@@ -798,6 +809,9 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 	const nextUnconfirmedFlushes = flushId
 		? recordUnconfirmedFlush(unconfirmedFlushes, flushId, safeDetail?.createdAt)
 		: unconfirmedFlushes;
+	if (turboModeEnabled) {
+		return createTurboCounterResponse();
+	}
 
 	await storageLocalSet({
 		ttvAdsBlocked: nextAds,
@@ -892,10 +906,12 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 	return true;
 });
 
-function refreshBadgeFromStorage() {
-	storageLocalGet(["ttvAdsBlocked"])
+function refreshBadgeFromStorage(revision = turboModeRevision) {
+	storageLocalGet(["ttvAdsBlocked", TURBO_MODE_STORAGE_KEY])
 		.then((stored) => {
-			applyBadgeCount(stored.ttvAdsBlocked);
+			if (revision !== turboModeRevision) return;
+			turboModeEnabled = stored[TURBO_MODE_STORAGE_KEY] === true;
+			applyBadgeCount(turboModeEnabled ? 0 : stored.ttvAdsBlocked);
 		})
 		.catch(() => {});
 }
@@ -903,6 +919,16 @@ function refreshBadgeFromStorage() {
 if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
 	chrome.storage.onChanged.addListener((changes, namespace) => {
 		if (namespace !== "local") return;
+		if (changes[TURBO_MODE_STORAGE_KEY]) {
+			turboModeRevision += 1;
+			turboModeEnabled = changes[TURBO_MODE_STORAGE_KEY].newValue === true;
+			if (turboModeEnabled) {
+				applyBadgeCount(0);
+			} else {
+				refreshBadgeFromStorage(turboModeRevision);
+			}
+		}
+		if (turboModeEnabled) return;
 		if (!changes.ttvAdsBlocked) return;
 		applyBadgeCount(changes.ttvAdsBlocked.newValue);
 	});

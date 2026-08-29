@@ -25,7 +25,6 @@ const STATIC_ROOT_FILES = [
 	"LICENSE",
 	"PRIVACY.md",
 	"README.md",
-	"src/popup/translations.js",
 ];
 const STATIC_ROOT_DIRECTORIES = ["assets", "_locales"];
 
@@ -450,6 +449,12 @@ function validateSharedDefinitions() {
 		"popup",
 		"translations.js",
 	);
+	const trackedTranslationsPath = path.join(
+		SOURCE_ROOT,
+		"src",
+		"popup",
+		"translations.js",
+	);
 	const translationsTsPath = path.join(
 		SOURCE_ROOT,
 		"src",
@@ -636,6 +641,18 @@ function validateSharedDefinitions() {
 	const backgroundSource = fs.readFileSync(backgroundPath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
 	const translationsSource = fs.readFileSync(translationsPath, "utf8");
+	const trackedTranslationsSource = fs.readFileSync(
+		trackedTranslationsPath,
+		"utf8",
+	);
+	if (
+		normalizeCodeSnippet(trackedTranslationsSource) !==
+		normalizeCodeSnippet(translationsSource)
+	) {
+		throw new Error(
+			"Tracked src/popup/translations.js is out of sync with compiled translations.ts output",
+		);
+	}
 	const translationsTsSource = fs.readFileSync(translationsTsPath, "utf8");
 	const translationsContext: {
 		TRANSLATIONS?: Record<string, TranslationLocale>;

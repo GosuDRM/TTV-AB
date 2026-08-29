@@ -29,8 +29,8 @@
         }
 
         html {
-            width: 300px;
-            max-width: 300px;
+            width: 320px;
+            max-width: 100vw;
             overflow-x: hidden;
             background: #1a1a2e;
             transition: background 0.4s ease;
@@ -39,11 +39,26 @@
         body {
             width: 100%;
             min-height: 100%;
-            padding: 20px;
+            padding: clamp(14px, 5vw, 20px);
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             color: #fff;
             overflow-x: hidden;
+        }
+
+        html.log-export-page {
+            width: 100%;
+            max-width: none;
+            min-height: 100%;
+        }
+
+        html.log-export-page body {
+            min-height: 100vh;
+            padding: 0;
+        }
+
+        html.log-export-page body > :not(#logDialogOverlay) {
+            display: none;
         }
 
         .header {
@@ -435,6 +450,131 @@
             }
         }
 
+        .turbo-card {
+            position: relative;
+            isolation: isolate;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            overflow: hidden;
+            margin-bottom: 16px;
+            padding: 12px 14px;
+            border: 1px solid rgba(145, 70, 255, 0.35);
+            border-radius: 12px;
+            background: linear-gradient(125deg, rgba(145, 70, 255, 0.16), rgba(47, 240, 230, 0.06));
+            box-shadow: 0 8px 24px rgba(5, 1, 20, 0.2);
+            transition: border-color 0.35s ease, background 0.35s ease, box-shadow 0.35s ease, transform 0.35s ease;
+        }
+
+        .turbo-card::after {
+            position: absolute;
+            z-index: -1;
+            inset: -70% -25%;
+            content: "";
+            background: linear-gradient(100deg, transparent 35%, rgba(255, 255, 255, 0.2) 50%, transparent 65%);
+            opacity: 0;
+            transform: translateX(-70%) rotate(8deg);
+            pointer-events: none;
+        }
+
+        .turbo-card-copy {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .turbo-icon {
+            flex: 0 0 auto;
+            display: grid;
+            place-items: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            background: rgba(145, 70, 255, 0.18);
+            color: #d9ccff;
+            font-size: 17px;
+            box-shadow: inset 0 0 0 1px rgba(145, 70, 255, 0.24);
+            transition: color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+        }
+
+        .turbo-card-text {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .turbo-title {
+            width: fit-content;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .turbo-description {
+            color: #8f86a8;
+            font-size: 9px;
+            line-height: 1.35;
+            transition: color 0.3s ease;
+        }
+
+        .turbo-toggle {
+            flex: 0 0 auto;
+        }
+
+        html.turbo-mode .turbo-card {
+            border-color: rgba(47, 240, 230, 0.65);
+            background: linear-gradient(125deg, rgba(145, 70, 255, 0.2), rgba(47, 240, 230, 0.16));
+            box-shadow: 0 0 22px rgba(47, 240, 230, 0.16), inset 0 0 24px rgba(145, 70, 255, 0.08);
+            transform: translateY(-1px);
+        }
+
+        html.turbo-mode .turbo-card::after {
+            animation: turbo-scan 0.9s ease-out;
+        }
+
+        html.turbo-mode .turbo-icon {
+            background: rgba(47, 240, 230, 0.16);
+            color: #2ff0e6;
+            box-shadow: inset 0 0 0 1px rgba(47, 240, 230, 0.4), 0 0 14px rgba(47, 240, 230, 0.3);
+            animation: turbo-charge 1.8s ease-in-out infinite;
+        }
+
+        html.turbo-mode .turbo-description {
+            color: #a9e9e5;
+        }
+
+        @keyframes turbo-scan {
+            0% {
+                opacity: 0;
+                transform: translateX(-70%) rotate(8deg);
+            }
+
+            35% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0;
+                transform: translateX(70%) rotate(8deg);
+            }
+        }
+
+        @keyframes turbo-charge {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.08);
+            }
+        }
+
         .status-card {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 12px;
@@ -554,7 +694,32 @@
             position: relative;
         }
 
-        .info-icon {
+        .turbo-collapsible {
+            display: grid;
+            grid-template-rows: 1fr;
+            opacity: 1;
+            transform: translateY(0);
+            transition: grid-template-rows 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.24s ease, transform 0.38s ease;
+        }
+
+        .turbo-collapsible-content {
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        html.turbo-mode .turbo-collapsible {
+            grid-template-rows: 0fr;
+            opacity: 0;
+            transform: translateY(-8px);
+            pointer-events: none;
+        }
+
+        html.turbo-mode .status-card {
+            border-color: rgba(145, 70, 255, 0.28);
+            box-shadow: 0 8px 22px rgba(5, 1, 20, 0.2);
+        }
+
+		.info-icon {
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -1432,6 +1597,10 @@
             text-align: center;
         }
 
+        html.log-export-page .log-dialog {
+            max-width: 360px;
+        }
+
         .log-dialog-close {
             position: absolute;
             z-index: 3;
@@ -1541,10 +1710,21 @@
             color: #fff;
         }
 
-        .report-bug:focus-visible {
-            outline: 2px solid rgba(244, 67, 54, 0.85);
-            outline-offset: 2px;
-        }
+		.report-bug:focus-visible {
+			outline: 2px solid rgba(244, 67, 54, 0.85);
+			outline-offset: 2px;
+		}
+
+		html.turbo-mode .report-bug {
+			border-color: rgba(47, 240, 230, 0.4);
+			background: rgba(47, 240, 230, 0.08);
+			color: #8cf8f2;
+		}
+
+		html.turbo-mode .report-bug:hover {
+			border-color: rgba(47, 240, 230, 0.75);
+			background: rgba(47, 240, 230, 0.16);
+		}
 
         /* ===================== Retro Synthwave Theme ===================== */
         html[data-theme="retro"] {
@@ -1659,6 +1839,39 @@
             border: 2px solid var(--r-line);
             border-radius: 0;
             box-shadow: 0 0 14px rgba(255, 61, 180, 0.2), inset 0 0 22px rgba(255, 61, 180, 0.05);
+        }
+
+        html[data-theme="retro"] .turbo-card {
+            border: 2px solid var(--r-line);
+            border-radius: 0;
+            background: var(--r-panel);
+            box-shadow: 0 0 14px rgba(255, 61, 180, 0.2), inset 0 0 22px rgba(255, 61, 180, 0.05);
+        }
+
+        html[data-theme="retro"] .turbo-icon {
+            border-radius: 0;
+            background: rgba(255, 61, 180, 0.12);
+            color: var(--r-magenta);
+            box-shadow: inset 0 0 0 1px rgba(255, 61, 180, 0.45), 0 0 9px rgba(255, 61, 180, 0.25);
+        }
+
+        html[data-theme="retro"] .turbo-title {
+            color: var(--r-text);
+        }
+
+        html[data-theme="retro"] .turbo-description {
+            color: var(--r-muted);
+        }
+
+        html[data-theme="retro"].turbo-mode .turbo-card {
+            border-color: var(--r-cyan);
+            box-shadow: 0 0 16px rgba(47, 240, 230, 0.35), inset 0 0 24px rgba(47, 240, 230, 0.08);
+        }
+
+        html[data-theme="retro"].turbo-mode .turbo-icon {
+            background: rgba(47, 240, 230, 0.14);
+            color: var(--r-cyan);
+            box-shadow: inset 0 0 0 1px var(--r-cyan), 0 0 12px rgba(47, 240, 230, 0.45);
         }
 
         html[data-theme="retro"] .counter-row {
@@ -1876,6 +2089,12 @@
             color: #fff;
         }
 
+        html[data-theme="retro"].turbo-mode .report-bug {
+            border-color: var(--r-cyan);
+            color: var(--r-cyan);
+            box-shadow: 0 0 12px rgba(47, 240, 230, 0.25);
+        }
+
         html[data-theme="retro"] .footer {
             border-top: 1px solid rgba(255, 61, 180, 0.2);
         }
@@ -2033,6 +2252,103 @@
             }
         }
 
+        @media (max-width: 319px) {
+            html:not(.log-export-page) {
+                width: 100vw;
+                min-width: 280px;
+            }
+
+            body {
+                padding: 14px;
+            }
+
+            .header {
+                gap: 9px;
+            }
+
+            .turbo-card {
+                gap: 8px;
+                padding: 10px 12px;
+            }
+
+            .turbo-card-copy {
+                gap: 8px;
+            }
+
+            .turbo-description {
+                font-size: 8.5px;
+            }
+
+            .toggle-row {
+                padding-inline: 12px;
+            }
+
+            .footer {
+                flex-wrap: nowrap;
+                gap: 6px;
+            }
+
+            .footer > span {
+                white-space: nowrap;
+                font-size: 9px;
+            }
+
+            .lang-selector {
+                width: 122px;
+                min-width: 0;
+                max-width: 48%;
+            }
+        }
+
+        @media (max-height: 620px) {
+            body {
+                padding-block: 14px;
+            }
+
+            .header,
+            .turbo-card {
+                margin-bottom: 10px;
+            }
+
+            .description-text {
+                max-height: 2.6em;
+                overflow: hidden;
+            }
+
+            .status-card {
+                margin-bottom: 0;
+                padding: 14px;
+            }
+
+            .counter-row {
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+
+            .time-saved-row {
+                margin-top: 6px;
+                padding-top: 6px;
+            }
+
+            .stats-toggle {
+                margin-top: 8px;
+                padding-block: 10px;
+            }
+
+            .toggle-container {
+                margin-top: 10px;
+            }
+
+            .report-bug {
+                margin-top: 10px;
+            }
+
+            .footer {
+                margin-top: 10px;
+                padding-top: 8px;
+            }
+        }
+
         @media (prefers-reduced-motion: reduce) {
 
             .description-text,
@@ -2041,7 +2357,9 @@
             .status-dot,
             .donate-btn,
             .title::before,
-            .title::after {
+            .title::after,
+			html.turbo-mode .turbo-card::after,
+			html.turbo-mode .turbo-icon {
                 animation: none;
             }
 
@@ -2060,7 +2378,11 @@
             .achievement-badge.unlocked,
             .author-link,
             .lang-selector,
-            .info {
+            .info,
+            .turbo-card,
+            .turbo-icon,
+            .turbo-description,
+            .turbo-collapsible {
                 transition: none;
             }
 
@@ -2103,7 +2425,7 @@
         <div class="header-content">
             <div class="title" data-text="TTV AB">TTV AB</div>
             <div class="version-row">
-                <div class="version" role="link" tabindex="0" id="versionText" aria-label="Version 16.3.3">v16.3.3</div>
+				<div class="version" role="link" tabindex="0" id="versionText" aria-label="Version 16.3.3">v16.3.3</div>
                 <span class="stable-badge" data-i18n="stable">Stable</span>
             </div>
             <div class="description-text" id="descriptionText">Lightweight, powerful ad blocker designed specifically
@@ -2126,6 +2448,21 @@
         </div>
     </div>
 
+    <div class="turbo-card" id="turboCard">
+        <div class="turbo-card-copy">
+            <span class="turbo-icon" aria-hidden="true">⚡</span>
+            <span class="turbo-card-text">
+                <label class="turbo-title" id="turboModeLabel" for="turboModeToggle" data-i18n="turboMode">Turbo Mode</label>
+                <span class="turbo-description" id="turboModeDescription" aria-live="polite" aria-atomic="true">Statistics and achievements are active.</span>
+            </span>
+        </div>
+        <label class="toggle turbo-toggle">
+            <input type="checkbox" id="turboModeToggle" disabled aria-label="Turbo Mode"
+                aria-describedby="turboModeDescription">
+            <span class="slider"></span>
+        </label>
+    </div>
+
     <div class="status-card">
         <div class="status-row">
             <span class="status-label" data-i18n="status">Status</span>
@@ -2135,26 +2472,30 @@
                     aria-atomic="true">Active</span>
             </div>
         </div>
-        <div class="counter-row">
-            <span class="counter-label" data-i18n="adsBlocked">Ads Blocked</span>
-            <span class="counter-value" id="adsBlockedCount" aria-live="polite" aria-atomic="true">0</span>
-        </div>
-        <div class="counter-row time-saved-row">
-            <span class="counter-label" data-i18n="timeSaved">Time Saved</span>
-            <span class="counter-value time-saved-value" id="timeSaved" aria-live="polite" aria-atomic="true">0s</span>
+        <div class="turbo-collapsible status-counters" id="statusCounters">
+            <div class="turbo-collapsible-content">
+                <div class="counter-row">
+                    <span class="counter-label" data-i18n="adsBlocked">Ads Blocked</span>
+                    <span class="counter-value" id="adsBlockedCount" aria-live="polite" aria-atomic="true">0</span>
+                </div>
+                <div class="counter-row time-saved-row">
+                    <span class="counter-label" data-i18n="timeSaved">Time Saved</span>
+                    <span class="counter-value time-saved-value" id="timeSaved" aria-live="polite" aria-atomic="true">0s</span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Statistics Toggle -->
-    <button type="button" class="stats-toggle" id="statsToggle" aria-expanded="false" aria-controls="statsPanel"
-        aria-label="Statistics">
-        <span class="stats-toggle-text">📊 <span data-i18n="statistics">Statistics</span></span>
-        <span class="stats-toggle-arrow">▼</span>
-    </button>
+    <div class="turbo-collapsible turbo-stats-shell" id="turboStatsShell">
+        <div class="turbo-collapsible-content">
+            <button type="button" class="stats-toggle" id="statsToggle" aria-expanded="false" aria-controls="statsPanel"
+                aria-label="Statistics">
+                <span class="stats-toggle-text">📊 <span data-i18n="statistics">Statistics</span></span>
+                <span class="stats-toggle-arrow">▼</span>
+            </button>
 
-    <!-- Collapsible Stats Panel -->
-    <div class="stats-panel" id="statsPanel" hidden aria-hidden="true">
-        <div class="stats-content">
+            <div class="stats-panel" id="statsPanel" hidden aria-hidden="true">
+                <div class="stats-content">
             <!-- Weekly Chart -->
             <div class="stats-section">
                 <div class="stats-section-title">📈 <span data-i18n="last7Days">This Week</span></div>
@@ -2224,6 +2565,8 @@
                 </div>
                 <div class="next-achievement" id="nextAchievement" aria-live="polite" aria-atomic="true">Next: <span class="next-achievement-name">⚔️ Ad Slayer</span></div>
             </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -2266,7 +2609,7 @@
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
             <path d="M20 8h-2.81a5.985 5.985 0 0 0-1.82-1.96L17.5.61 15.59 3l-2.17 2.17a6.002 6.002 0 0 0-2.83 0L8.41 3 7.5.61l1.62 1.63A5.985 5.985 0 0 0 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81a5.99 5.99 0 0 0 10.38 0H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/>
         </svg>
-        <span data-i18n="reportBugLabel">Report a bug.</span>
+        <span id="reportBugText" data-i18n="reportBugLabel">Report a bug.</span>
     </a>
 
     <div class="channel-modal-overlay" id="channelModalOverlay" hidden>
@@ -2337,7 +2680,7 @@
         <div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="logDialogTitle">
             <button type="button" class="log-dialog-close" id="logDialogClose" aria-label="Close">×</button>
             <div class="log-dialog-title" id="logDialogTitle" data-i18n="logDialogTitle">Attach debug logs?</div>
-            <p class="log-dialog-text" data-i18n="logDialogText">The file includes recent extension events and limited playback and page context from your open Twitch tabs. Nothing is uploaded.</p>
+            <p class="log-dialog-text" id="logDialogText" data-i18n="logDialogText">The file includes recent extension events and limited playback and page context from your open Twitch tabs. Nothing is uploaded.</p>
             <div class="log-dialog-actions">
                 <button type="button" class="log-dialog-btn primary" id="logDialogGenerate"
                     data-i18n="logDialogGenerate">Generate log file</button>

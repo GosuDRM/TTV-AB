@@ -5,6 +5,7 @@ const _LOG_EXPORT_MAX_TABS = 16;
 const _LOG_EXPORT_BATCH_SIZE = 4;
 const _LOG_EXPORT_MAX_CHARACTERS = 2 * 1024 * 1024;
 const _LOG_EXPORT_UNKNOWN_TIMESTAMP = "????-??-??T??:??:??.???Z";
+const _LOG_EXPORT_PAGE_PARAMETER = "ttvab-log-export";
 const _LOG_EXPORT_LEVELS = new Set([
     "debug",
     "info",
@@ -12,6 +13,39 @@ const _LOG_EXPORT_LEVELS = new Set([
     "warning",
     "error",
 ]);
+let _activeLogExportUrl = null;
+function _isLogExportPage(search = window.location.search) {
+    return new URLSearchParams(search).get(_LOG_EXPORT_PAGE_PARAMETER) === "1";
+}
+function _getLogExportPageUrl() {
+    let pageUrl = "";
+    try {
+        pageUrl = chrome.runtime?.getURL?.("src/popup/popup.html") || "";
+    }
+    catch { }
+    if (!pageUrl) {
+        pageUrl = `${window.location.origin}${window.location.pathname}`;
+    }
+    return `${pageUrl}?${_LOG_EXPORT_PAGE_PARAMETER}=1`;
+}
+function _openLogExportPage() {
+    const url = _getLogExportPageUrl();
+    try {
+        if (chrome?.tabs?.create) {
+            chrome.tabs.create({ url, active: true });
+            return true;
+        }
+    }
+    catch { }
+    return window.open(url, "_blank", "noopener,noreferrer") !== null;
+}
+function _releaseLogExportUrl() {
+    if (!_activeLogExportUrl)
+        return;
+    URL.revokeObjectURL(_activeLogExportUrl);
+    _activeLogExportUrl = null;
+}
+window.addEventListener("pagehide", _releaseLogExportUrl);
 function _sanitizeLogExportText(value, maxLength = 4000) {
     const text = typeof value === "string" ? value : "";
     const limit = Math.max(0, maxLength);
@@ -379,6 +413,7 @@ function _isLogExportCancellation(error) {
         error.name === "AbortError");
 }
 function _downloadLogExport(text) {
+    _releaseLogExportUrl();
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -389,14 +424,12 @@ function _downloadLogExport(text) {
         document.body.appendChild(anchor);
         anchor.click();
         clicked = true;
+        _activeLogExportUrl = url;
         return true;
     }
     finally {
         anchor.remove();
-        if (clicked) {
-            setTimeout(() => URL.revokeObjectURL(url), 30000);
-        }
-        else {
+        if (!clicked) {
             URL.revokeObjectURL(url);
         }
     }
@@ -405,11 +438,13 @@ const _POPUP_TOGGLE_NAMES = [
     "adblock",
     "adSpoofing",
     "autoplayBackup",
+    "turbo",
 ];
 const _POPUP_TOGGLE_STORAGE_KEYS = {
     adblock: "ttvAdblockEnabled",
     adSpoofing: "ttvAdSpoofingEnabled",
     autoplayBackup: "ttvAutoplayBackupEnabled",
+    turbo: "ttvTurboMode",
 };
 const _POPUP_TOGGLE_READ_RETRY_DELAYS = [100, 300, 1000];
 const _POPUP_TOGGLE_READ_SLOW_RETRY_MS = 30000;
@@ -420,26 +455,31 @@ function _createPopupToggleController(options) {
         adblock: true,
         adSpoofing: true,
         autoplayBackup: true,
+        turbo: false,
     };
     const revisions = {
         adblock: 0,
         adSpoofing: 0,
         autoplayBackup: 0,
+        turbo: 0,
     };
     const writeSequences = {
         adblock: 0,
         adSpoofing: 0,
         autoplayBackup: 0,
+        turbo: 0,
     };
     const pending = {
         adblock: false,
         adSpoofing: false,
         autoplayBackup: false,
+        turbo: false,
     };
     const writeTimeoutTimers = {
         adblock: null,
         adSpoofing: null,
         autoplayBackup: null,
+        turbo: null,
     };
     const schedule = options.schedule || setTimeout;
     const cancel = options.cancel || clearTimeout;
@@ -462,8 +502,12 @@ function _createPopupToggleController(options) {
                     values.adblock &&
                     !pending.adblock &&
                     !pending.autoplayBackup,
+                turbo: ready && !pending.turbo,
             },
         };
+    }
+    function normalizeValue(name, value) {
+        return name === "turbo" ? value === true : value !== false;
     }
     function render() {
         options.render(snapshot());
@@ -528,7 +572,7 @@ function _createPopupToggleController(options) {
             for (const name of _POPUP_TOGGLE_NAMES) {
                 if (revisions[name] !== readRevisions[name])
                     continue;
-                values[name] = result[_POPUP_TOGGLE_STORAGE_KEYS[name]] !== false;
+                values[name] = normalizeValue(name, result[_POPUP_TOGGLE_STORAGE_KEYS[name]]);
             }
             readFailureCount = 0;
             ready = true;
@@ -552,7 +596,7 @@ function _createPopupToggleController(options) {
             if (!Object.hasOwn(changes, storageKey))
                 continue;
             revisions[name]++;
-            values[name] = changes[storageKey]?.newValue !== false;
+            values[name] = normalizeValue(name, changes[storageKey]?.newValue);
             if (pending[name]) {
                 writeSequences[name]++;
                 pending[name] = false;
@@ -567,7 +611,8 @@ function _createPopupToggleController(options) {
     function write(name, enabled) {
         if (!_POPUP_TOGGLE_NAMES.includes(name))
             return false;
-        if (!ready || pending[name] || (name !== "adblock" && !values.adblock)) {
+        const requiresAdblock = name === "adSpoofing" || name === "autoplayBackup";
+        if (!ready || pending[name] || (requiresAdblock && !values.adblock)) {
             render();
             return false;
         }
@@ -618,6 +663,8 @@ function _createPopupToggleController(options) {
     };
 }
 document.addEventListener("DOMContentLoaded", () => {
+    const isLogExportPage = _isLogExportPage();
+    document.documentElement.classList.toggle("log-export-page", isLogExportPage);
     const THEME_KEY = "ttvab_theme";
     const VALID_THEMES = ["default", "retro"];
     function getStoredTheme() {
@@ -664,14 +711,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const infoText = document.getElementById("infoText");
     const adSpoofingToggle = document.getElementById("adSpoofingToggle");
     const autoplayBackupToggle = document.getElementById("autoplayBackupToggle");
+    const turboModeToggle = document.getElementById("turboModeToggle");
+    const turboModeDescription = document.getElementById("turboModeDescription");
+    const statusCounters = document.getElementById("statusCounters");
+    const turboStatsShell = document.getElementById("turboStatsShell");
     const donateButton = document.getElementById("donateBtn");
     const repoLink = document.getElementById("repoLink");
     const authorLink = document.getElementById("authorLink");
     const reportBugLink = document.getElementById("reportBugLink");
+    const reportBugText = document.getElementById("reportBugText");
     const logDialogOverlay = document.getElementById("logDialogOverlay");
     const logDialogGenerate = document.getElementById("logDialogGenerate");
     const logDialogSkip = document.getElementById("logDialogSkip");
     const logDialogClose = document.getElementById("logDialogClose");
+    const logDialogText = document.getElementById("logDialogText");
     const channelModalOverlay = document.getElementById("channelModalOverlay");
     const channelModalClose = document.getElementById("channelModalClose");
     const channelModalVisit = document.getElementById("channelModalVisit");
@@ -711,14 +764,20 @@ document.addEventListener("DOMContentLoaded", () => {
         infoText,
         adSpoofingToggle,
         autoplayBackupToggle,
+        turboModeToggle,
+        turboModeDescription,
+        statusCounters,
+        turboStatsShell,
         donateButton,
         repoLink,
         authorLink,
         reportBugLink,
+        reportBugText,
         logDialogOverlay,
         logDialogGenerate,
         logDialogSkip,
         logDialogClose,
+        logDialogText,
         channelModalOverlay,
         channelModalClose,
         channelModalVisit,
@@ -742,6 +801,9 @@ document.addEventListener("DOMContentLoaded", () => {
         console.error(`[TTV AB] Popup missing required element: ${name}`);
         return;
     }
+    let turboModeEnabled = false;
+    let turboModeReady = false;
+    let statisticsReadGeneration = 0;
     const LANG_KEY = "ttvab_lang";
     function getStoredLanguage() {
         try {
@@ -884,6 +946,22 @@ document.addEventListener("DOMContentLoaded", () => {
             desc: "",
         });
     }
+    function updateTurboCopy(translations = getTranslations()) {
+        const turboLabel = String(translations.turboMode ?? "Turbo Mode");
+        const turboDescription = String(turboModeEnabled
+            ? (translations.turboModeEnabled ??
+                "Statistics and achievements are paused.")
+            : (translations.turboModeDisabled ??
+                "Statistics and achievements are active."));
+        const reportLabel = String(turboModeEnabled
+            ? (translations.logDialogGenerate ?? "Generate log file")
+            : (translations.reportBugLabel ?? "Report a bug."));
+        turboModeToggle.setAttribute("aria-label", turboLabel);
+        turboModeDescription.textContent = turboDescription;
+        reportBugText.textContent = reportLabel;
+        reportBugLink.title = reportLabel;
+        reportBugLink.setAttribute("aria-label", reportLabel);
+    }
     function applyTranslations(lang) {
         const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
         document.documentElement.lang = String((lang || "en").replace("_", "-"));
@@ -919,12 +997,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const authorLabel = String(t.authorLinkLabel ?? "Open GosuDRM on GitHub");
         authorLink.title = authorLabel;
         authorLink.setAttribute("aria-label", authorLabel);
-        const reportBugLabel = String(t.reportBugLabel ?? "Found a Bug? Report it");
-        reportBugLink.title = reportBugLabel;
-        reportBugLink.setAttribute("aria-label", reportBugLabel);
+        updateTurboCopy(t);
     }
     function openIssuesPage() {
         const issuesUrl = reportBugLink.href || "https://github.com/GosuDRM/TTV-AB/issues";
+        if (isLogExportPage) {
+            window.location.assign(issuesUrl);
+            return;
+        }
         try {
             if (chrome?.tabs?.create) {
                 chrome.tabs.create({ url: issuesUrl });
@@ -947,6 +1027,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     let logExportInProgress = false;
     let logExportGeneration = 0;
+    let preparedLogExportText = null;
+    function setLogExportFailure(error) {
+        const rawMessage = error instanceof Error ? error.message : String(error || "");
+        const message = _sanitizeLogExportText(rawMessage, 240)
+            .replace(/\n/g, " ")
+            .trim();
+        logDialogText.textContent = message
+            ? `Log export failed: ${message}`
+            : "Log export failed. Try again.";
+    }
+    function prepareLogExport() {
+        if (logExportInProgress)
+            return;
+        logExportInProgress = true;
+        preparedLogExportText = null;
+        const generation = ++logExportGeneration;
+        logDialogOverlay.hidden = false;
+        logDialogOverlay.setAttribute("aria-busy", "true");
+        logDialogGenerate.disabled = true;
+        logDialogSkip.disabled = false;
+        logDialogText.textContent = String(getTranslations().logDialogText ??
+            "The file includes recent extension events and limited playback and page context from your open Twitch tabs. Nothing is uploaded.");
+        _buildLogExport(() => generation !== logExportGeneration)
+            .then((text) => {
+            if (generation !== logExportGeneration)
+                return;
+            preparedLogExportText = text;
+            logDialogGenerate.disabled = false;
+            logDialogGenerate.focus();
+        })
+            .catch((error) => {
+            if (generation !== logExportGeneration)
+                return;
+            console.error("[TTV AB] Log export failed:", error);
+            setLogExportFailure(error);
+            logDialogGenerate.disabled = false;
+        })
+            .finally(() => {
+            if (generation !== logExportGeneration)
+                return;
+            logExportInProgress = false;
+            logDialogOverlay.removeAttribute("aria-busy");
+        });
+    }
     function hideLogDialog(invalidateExport = false) {
         if (invalidateExport && logExportInProgress) {
             logExportGeneration += 1;
@@ -976,17 +1100,19 @@ document.addEventListener("DOMContentLoaded", () => {
         openIssuesPage();
     });
     logDialogClose.addEventListener("click", () => {
+        if (isLogExportPage)
+            return;
         hideLogDialog(true);
     });
     logDialogOverlay.addEventListener("click", (event) => {
-        if (event.target === logDialogOverlay) {
+        if (!isLogExportPage && event.target === logDialogOverlay) {
             hideLogDialog(true);
         }
     });
     window.addEventListener("keydown", (event) => {
         if (event.key !== "Escape")
             return;
-        if (!logDialogOverlay.hidden) {
+        if (!isLogExportPage && !logDialogOverlay.hidden) {
             hideLogDialog(true);
         }
         if (!channelModalOverlay.hidden) {
@@ -996,10 +1122,21 @@ document.addEventListener("DOMContentLoaded", () => {
     logDialogGenerate.addEventListener("click", () => {
         if (logDialogGenerate.disabled || logExportInProgress)
             return;
+        if (!isLogExportPage) {
+            if (!_openLogExportPage()) {
+                setLogExportFailure(new Error("Unable to open the log export tab."));
+            }
+            return;
+        }
+        if (!preparedLogExportText) {
+            prepareLogExport();
+            return;
+        }
         logExportInProgress = true;
         const generation = ++logExportGeneration;
         logDialogGenerate.disabled = true;
         logDialogSkip.disabled = true;
+        const text = preparedLogExportText;
         let destination;
         try {
             destination = _requestLogExportFile();
@@ -1009,9 +1146,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         Promise.resolve(destination)
             .then(async (handle) => {
-            const text = await _buildLogExport(() => generation !== logExportGeneration);
-            if (generation !== logExportGeneration)
-                return;
             if (handle) {
                 await _writeLogExportFile(handle, text);
             }
@@ -1020,8 +1154,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (generation !== logExportGeneration)
                 return;
-            hideLogDialog();
-            openIssuesPage();
+            logDialogSkip.textContent = String(getTranslations().reportBugLabel ?? "Report a bug.");
+            logDialogSkip.focus();
         })
             .catch((error) => {
             if (generation !== logExportGeneration)
@@ -1031,6 +1165,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             console.error("[TTV AB] Log export failed:", error);
+            setLogExportFailure(error);
             logDialogOverlay.hidden = false;
         })
             .finally(() => {
@@ -1382,6 +1517,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     catch (error) {
         console.error("[TTV AB] Popup manifest read error:", error);
+    }
+    if (isLogExportPage) {
+        logDialogClose.hidden = true;
+        prepareLogExport();
+        return;
     }
     langSelector.addEventListener("change", (e) => {
         const nextSelector = e.currentTarget;
@@ -1810,8 +1950,41 @@ document.addEventListener("DOMContentLoaded", () => {
             nextAchievement.append(nextAchievementName);
         }
     }
+    function applyTurboPresentation(enabled, ready) {
+        const wasReady = turboModeReady;
+        const wasEnabled = turboModeEnabled;
+        turboModeEnabled = enabled === true;
+        turboModeReady = ready === true;
+        const isActive = turboModeReady && turboModeEnabled;
+        document.documentElement.classList.toggle("turbo-mode", isActive);
+        statusCounters.setAttribute("aria-hidden", String(isActive));
+        turboStatsShell.setAttribute("aria-hidden", String(isActive));
+        statusCounters.inert = isActive;
+        turboStatsShell.inert = isActive;
+        if (isActive) {
+            statisticsReadGeneration++;
+            if (turboStatsShell.contains(document.activeElement)) {
+                turboModeToggle.focus();
+            }
+            if (statsPanel.classList.contains("expanded")) {
+                setStatsPanelExpanded(false);
+            }
+            if (!channelModalOverlay.hidden) {
+                hideChannelModal();
+            }
+        }
+        updateTurboCopy();
+        if (turboModeReady && !turboModeEnabled && (!wasReady || wasEnabled)) {
+            loadStatistics();
+        }
+    }
     function loadStatistics() {
+        if (!turboModeReady || turboModeEnabled)
+            return false;
+        const generation = ++statisticsReadGeneration;
         chrome.storage.local.get(["ttvStats", "ttvAdsBlocked"], (result) => {
+            if (generation !== statisticsReadGeneration || turboModeEnabled)
+                return;
             if (chrome.runtime.lastError) {
                 console.error("[TTV AB] Popup stats read error:", chrome.runtime.lastError.message);
             }
@@ -1834,6 +2007,7 @@ document.addEventListener("DOMContentLoaded", () => {
             latestChannelStats = channels;
             latestAdsTotal = adsCount;
             latestMeasuredMilliseconds = measuredMilliseconds;
+            adsBlockedCount.textContent = formatNumber(adsCount);
             updateTimeSaved();
             refreshOpenChannelModal();
             renderChart(daily);
@@ -1841,6 +2015,7 @@ document.addEventListener("DOMContentLoaded", () => {
             renderAchievements(achievements, adsCount, channelCount);
             syncExpandedStatsPanelHeight();
         });
+        return true;
     }
     function setToggleRowOpacity(element, enabled) {
         const opacity = enabled ? "1" : "0.4";
@@ -1857,14 +2032,17 @@ document.addEventListener("DOMContentLoaded", () => {
         toggle.checked = snapshot.values.adblock;
         adSpoofingToggle.checked = snapshot.values.adSpoofing;
         autoplayBackupToggle.checked = snapshot.values.autoplayBackup;
+        turboModeToggle.checked = snapshot.values.turbo;
         toggle.disabled = !snapshot.available.adblock;
         adSpoofingToggle.disabled = !snapshot.available.adSpoofing;
         autoplayBackupToggle.disabled = !snapshot.available.autoplayBackup;
+        turboModeToggle.disabled = !snapshot.available.turbo;
         setToggleRowOpacity(adSpoofingToggle, snapshot.available.adSpoofing);
         setToggleRowOpacity(autoplayBackupToggle, snapshot.available.autoplayBackup);
         if (snapshot.ready && toggleStatusReady) {
             updateStatus(snapshot.values.adblock, false);
         }
+        applyTurboPresentation(snapshot.values.turbo, snapshot.ready);
     }
     const popupToggleController = _createPopupToggleController({
         read(keys, finish) {
@@ -1886,6 +2064,8 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error(`[TTV AB] Popup ${name} toggle write error:`, error);
         },
         onWriteSuccess(name, enabled) {
+            if (name === "turbo")
+                return;
             updateStatus(enabled, true, name);
         },
     });
@@ -1893,6 +2073,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (namespace !== "local")
             return;
         popupToggleController.applyStorageChanges(changes);
+        if (!turboModeReady || turboModeEnabled)
+            return;
         if (changes.ttvAdsBlocked) {
             const newCount = normalizeCount(changes.ttvAdsBlocked.newValue);
             animateCounter(adsBlockedCount, newCount);
@@ -1901,18 +2083,11 @@ document.addEventListener("DOMContentLoaded", () => {
             loadStatistics();
         }
     });
-    popupToggleController.start();
-    chrome.storage.local.get(["ttvAdsBlocked"], (result) => {
-        if (chrome.runtime.lastError) {
-            console.error("[TTV AB] Popup count read error:", chrome.runtime.lastError.message);
-            return;
-        }
-        const safeResult = (result || {});
-        adsBlockedCount.textContent = formatNumber(normalizeCount(safeResult.ttvAdsBlocked));
-    });
-    loadStatistics();
     toggle.addEventListener("change", () => {
         popupToggleController.write("adblock", toggle.checked);
+    });
+    turboModeToggle.addEventListener("change", () => {
+        popupToggleController.write("turbo", turboModeToggle.checked);
     });
     const adSpoofingInfoIcon = document.getElementById("adSpoofingInfoIcon");
     const adSpoofingTooltip = document.getElementById("adSpoofingTooltip");
@@ -2165,6 +2340,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 1500);
     }
     toggleStatusReady = true;
+    popupToggleController.start();
     const initialToggleSnapshot = popupToggleController.getSnapshot();
     if (initialToggleSnapshot.ready) {
         updateStatus(initialToggleSnapshot.values.adblock, false);

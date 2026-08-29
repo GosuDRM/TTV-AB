@@ -129,12 +129,14 @@ beforeEach(() => {
 		ttvAdblockEnabled: 0,
 		ttvAdSpoofingEnabled: 0,
 		ttvAutoplayBackupEnabled: 0,
+		ttvTurboMode: 0,
 		ttvAdsBlocked: 0,
 	});
 	Object.assign(g.bridgeState as Record<string, unknown>, {
 		enabled: true,
 		adSpoofingEnabled: true,
 		autoplayBackupEnabled: true,
+		turboMode: false,
 		storedAdsCount: 0,
 	});
 	(g.pendingPageMessages as unknown[]).length = 0;
@@ -222,6 +224,7 @@ describe("settings initialization lifecycle", () => {
 			{
 				ttvAdblockEnabled: { oldValue: false, newValue: true },
 				ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
+				ttvTurboMode: { oldValue: false, newValue: true },
 			},
 			"local",
 		);
@@ -229,6 +232,7 @@ describe("settings initialization lifecycle", () => {
 			ttvAdblockEnabled: false,
 			ttvAdSpoofingEnabled: false,
 			ttvAutoplayBackupEnabled: false,
+			ttvTurboMode: false,
 			ttvAdsBlocked: 7,
 		});
 
@@ -237,6 +241,7 @@ describe("settings initialization lifecycle", () => {
 			enabled: true,
 			adSpoofingEnabled: false,
 			autoplayBackupEnabled: true,
+			turboMode: true,
 			storedAdsCount: 7,
 		});
 	});
@@ -271,6 +276,100 @@ describe("settings initialization lifecycle", () => {
 			{ type: "ttvab-toggle-ad-spoofing", detail: { enabled: true } },
 			{ type: "ttvab-toggle-autoplay-backup", detail: { enabled: true } },
 		]);
+	});
+
+	it("isolates Turbo from playback controls and discards statistic work", () => {
+		g.bridgeStateReady = true;
+		(g.bridgeState as Record<string, unknown>).storedAdsCount = 46;
+		const port = makePagePort();
+		g.pageBridgePort = port;
+		g.pageBridgeConnected = true;
+
+		handlePageMessage({
+			type: "ttvab-ad-blocked",
+			detail: { count: 47, delta: 1, channel: "somestreamer" },
+		});
+		const flush = {
+			...makeExitFlush(),
+			flushId: "flush:test:turbo-0001",
+		};
+		const storageKey = `ttvab_pending_counter_flush:${flush.flushId}`;
+		localStorage.setItem(storageKey, JSON.stringify(flush));
+
+		storageChangeListener?.(
+			{ ttvTurboMode: { oldValue: false, newValue: true } },
+			"local",
+		);
+
+		expect(g.bridgeState).toMatchObject({
+			enabled: true,
+			adSpoofingEnabled: true,
+			autoplayBackupEnabled: true,
+			turboMode: true,
+			storedAdsCount: 46,
+		});
+		expect(port.messages).toEqual([]);
+		expect(g.pendingAdsDelta).toBe(0);
+		expect(g.pendingAdSeconds).toBe(0);
+		expect(g.pendingWatchSeconds).toEqual({});
+		expect((g.pendingAdMeasurements as Map<string, unknown>).size).toBe(0);
+		expect(g.flushTimeout).toBeNull();
+		expect(localStorage.getItem(storageKey)).toBeNull();
+
+		handlePageMessage({
+			type: "ttvab-ad-blocked",
+			detail: { count: 48, delta: 1, channel: "somestreamer" },
+		});
+		handlePageMessage({
+			type: "ttvab-ad-seconds",
+			detail: { seconds: 30, channel: "somestreamer" },
+		});
+		handlePageMessage({
+			type: "ttvab-watch-time",
+			detail: { seconds: 60, channel: "somestreamer" },
+		});
+		handlePageMessage({ type: "ttvab-flush-counters" });
+
+		expect(g.pendingAdsDelta).toBe(0);
+		expect(g.pendingAdSeconds).toBe(0);
+		expect(g.pendingWatchSeconds).toEqual({});
+		expect(runtimeMessages).toEqual([]);
+
+		storageChangeListener?.(
+			{ ttvTurboMode: { oldValue: true, newValue: false } },
+			"local",
+		);
+		expect(port.messages).toEqual([
+			{ type: "ttvab-init-count", detail: { count: 46 } },
+		]);
+		handlePageMessage({
+			type: "ttvab-ad-blocked",
+			detail: { count: 47, delta: 1, channel: "somestreamer" },
+		});
+		expect(g.pendingAdsDelta).toBe(1);
+	});
+
+	it("seeds the preserved count in Turbo without broadcasting a Turbo control", () => {
+		Object.assign(g.bridgeState as Record<string, unknown>, {
+			turboMode: true,
+			storedAdsCount: 46,
+		});
+		const port = makePagePort();
+		g.pageBridgePort = port;
+		g.pageBridgeConnected = true;
+
+		(g.broadcastState as () => void)();
+
+		expect(port.messages).toEqual([
+			{ type: "ttvab-toggle", detail: { enabled: true } },
+			{ type: "ttvab-toggle-buffer-fix", detail: { enabled: true } },
+			{ type: "ttvab-toggle-ad-spoofing", detail: { enabled: true } },
+			{ type: "ttvab-toggle-autoplay-backup", detail: { enabled: true } },
+			{ type: "ttvab-init-count", detail: { count: 46 } },
+		]);
+		expect(
+			port.messages.some((message) => message.type.includes("turbo")),
+		).toBe(false);
 	});
 
 	it("times out a stalled read and ignores its late callback", () => {
