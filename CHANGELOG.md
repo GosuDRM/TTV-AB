@@ -2,6 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [16.3.3] - 2026-08-29
+
+- Fixed 1440p streams getting stuck on a loading circle after an ad was blocked.
+- The final native-player rebuild now remains authorized through long ad breaks and the temporary AVC handoff, while an explicit pause still prevents automatic playback.
+
 ## [16.3.2] - 2026-08-29
 
 - Fixed a post-ad recovery loop that could repeatedly block new prerolls and keep 1440p or enhanced-quality playback cycling through the fallback stream.
