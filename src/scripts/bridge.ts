@@ -384,18 +384,21 @@ const bridgeState = {
 	enabled: true,
 	adSpoofingEnabled: true,
 	autoplayBackupEnabled: true,
+	turboMode: false,
 	storedAdsCount: 0,
 };
 const storageChangeVersions = {
 	ttvAdblockEnabled: 0,
 	ttvAdSpoofingEnabled: 0,
 	ttvAutoplayBackupEnabled: 0,
+	ttvTurboMode: 0,
 	ttvAdsBlocked: 0,
 };
 const INITIAL_STORAGE_KEYS = [
 	"ttvAdblockEnabled",
 	"ttvAdSpoofingEnabled",
 	"ttvAutoplayBackupEnabled",
+	"ttvTurboMode",
 	"ttvAdsBlocked",
 ];
 let initialStorageReadGeneration = 0;
@@ -755,9 +758,10 @@ function handlePersistSuccess(response, flushId = null) {
 		}
 	}
 
-	const newUnlocks = Array.isArray(response?.newUnlocks)
-		? response.newUnlocks
-		: [];
+	const newUnlocks =
+		!bridgeState.turboMode && Array.isArray(response?.newUnlocks)
+			? response.newUnlocks
+			: [];
 	for (const id of newUnlocks) {
 		postAchievementUnlock(id);
 	}
@@ -903,6 +907,11 @@ function dispatchPersistPayload(
 	const retryOnFailure = options.retryOnFailure === true;
 	const safeDetail = getBridgeMessageDetail(payload?.detail);
 	const flushId = normalizeFlushId(safeDetail?.flushId);
+	if (bridgeState.turboMode) {
+		clearScheduledRetryFlush(flushId);
+		if (flushId) clearPersistedCounterFlush(flushId);
+		return false;
+	}
 	if (flushId) {
 		if (persistCounterFlushForReplay(safeDetail)) {
 			schedulePersistedFlushRecovery();
@@ -927,9 +936,14 @@ function dispatchPersistPayload(
 			scheduleRetryFlush(payload, flushId);
 		},
 	);
+	return true;
 }
 
 function replayPersistedCounterFlushes() {
+	if (bridgeState.turboMode) {
+		discardCounterWorkForTurboMode();
+		return;
+	}
 	const pendingFlushes = readPersistedCounterFlushes();
 	const persistedFlushIds = new Set();
 	for (const pendingFlush of pendingFlushes) {
@@ -957,6 +971,25 @@ function clearScheduledFlush() {
 	if (!flushTimeout) return;
 	clearTimeout(flushTimeout);
 	flushTimeout = null;
+}
+
+function resetPendingCounters() {
+	pendingAdsDelta = 0;
+	pendingAdChannels = createChannelsMap();
+	pendingWatchSeconds = createChannelsMap();
+	pendingAdSeconds = 0;
+	pendingChannelAdSeconds = createChannelsMap();
+	pendingAdMeasurements = new Map();
+}
+
+function discardCounterWorkForTurboMode() {
+	clearScheduledFlush();
+	resetPendingCounters();
+	clearScheduledRetryFlush();
+	clearPersistedFlushRecovery();
+	for (const entry of readPersistedCounterFlushes()) {
+		clearPersistedCounterFlush(entry.flushId);
+	}
 }
 
 function broadcastState() {
@@ -1022,6 +1055,10 @@ function queueExplicitDelta(kind, delta) {
 }
 
 function scheduleFlush(delay = FLUSH_DELAY_MS) {
+	if (bridgeState.turboMode) {
+		discardCounterWorkForTurboMode();
+		return;
+	}
 	if (flushTimeout) return;
 	flushTimeout = setTimeout(
 		() => {
@@ -1033,6 +1070,10 @@ function scheduleFlush(delay = FLUSH_DELAY_MS) {
 }
 
 function flushCounters(options: { fireAndForget?: boolean } = {}) {
+	if (bridgeState.turboMode) {
+		discardCounterWorkForTurboMode();
+		return;
+	}
 	const fireAndForget = options.fireAndForget === true;
 	clearScheduledFlush();
 	const adsDelta = pendingAdsDelta;
@@ -1042,12 +1083,7 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	const channelAdSecondsDeltas = pendingChannelAdSeconds;
 	const adMeasurements = Array.from(pendingAdMeasurements.values());
 
-	pendingAdsDelta = 0;
-	pendingAdChannels = createChannelsMap();
-	pendingWatchSeconds = createChannelsMap();
-	pendingAdSeconds = 0;
-	pendingChannelAdSeconds = createChannelsMap();
-	pendingAdMeasurements = new Map();
+	resetPendingCounters();
 
 	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
 	if (
@@ -1145,10 +1181,24 @@ function handleStorageChanges(changes, namespace) {
 			});
 		}
 	}
+	if (changes.ttvTurboMode) {
+		storageChangeVersions.ttvTurboMode += 1;
+		const wasTurboMode = bridgeState.turboMode;
+		bridgeState.turboMode = changes.ttvTurboMode.newValue === true;
+		if (bridgeState.turboMode && !wasTurboMode) {
+			discardCounterWorkForTurboMode();
+		} else if (bridgeStateReady && wasTurboMode && !bridgeState.turboMode) {
+			sendToPage("ttvab-init-count", {
+				count: normalizeCount(bridgeState.storedAdsCount),
+			});
+		}
+	}
 	if (changes.ttvAdsBlocked) {
 		storageChangeVersions.ttvAdsBlocked += 1;
 		const nextAdsCount = normalizeCount(changes.ttvAdsBlocked.newValue);
 		const previousAdsCount = bridgeState.storedAdsCount;
+		bridgeState.storedAdsCount = nextAdsCount;
+		if (bridgeState.turboMode) return;
 		reconcilePendingDelta("ads", nextAdsCount);
 		if (bridgeStateReady && nextAdsCount !== previousAdsCount) {
 			sendToPage("ttvab-init-count", {
@@ -1261,6 +1311,9 @@ function readInitialStorageState() {
 					result.ttvAutoplayBackupEnabled,
 				);
 			}
+			if (storageChangeVersions.ttvTurboMode === readVersions.ttvTurboMode) {
+				bridgeState.turboMode = result.ttvTurboMode === true;
+			}
 			if (storageChangeVersions.ttvAdsBlocked === readVersions.ttvAdsBlocked) {
 				bridgeState.storedAdsCount = normalizeCount(result.ttvAdsBlocked);
 			}
@@ -1276,7 +1329,11 @@ function readInitialStorageState() {
 				);
 			} catch {}
 
-			replayPersistedCounterFlushes();
+			if (bridgeState.turboMode) {
+				discardCounterWorkForTurboMode();
+			} else {
+				replayPersistedCounterFlushes();
+			}
 		});
 	} catch (error) {
 		failInitialStorageRead(
@@ -1309,6 +1366,10 @@ function handlePageBridgeMessage(rawMessage) {
 		return;
 	}
 	if (message.type === "ttvab-persist-counter-flush") {
+		if (bridgeState.turboMode) {
+			discardCounterWorkForTurboMode();
+			return;
+		}
 		const persistedFlush = normalizePersistedCounterFlushEntry(message.detail);
 		if (!persistedFlush) return;
 		dispatchPersistPayload(
@@ -1321,11 +1382,23 @@ function handlePageBridgeMessage(rawMessage) {
 		return;
 	}
 	if (message.type === "ttvab-flush-counters") {
+		if (bridgeState.turboMode) {
+			discardCounterWorkForTurboMode();
+			return;
+		}
 		flushPendingCountersOnPageExit();
 		return;
 	}
 
 	const detail = getBridgeMessageDetail(message.detail);
+	if (
+		bridgeState.turboMode &&
+		(message.type === "ttvab-ad-blocked" ||
+			message.type === "ttvab-ad-seconds" ||
+			message.type === "ttvab-watch-time")
+	) {
+		return;
+	}
 	if (message.type === "ttvab-ad-blocked") {
 		if (!detail || !Number.isFinite(detail.count)) return;
 		const eventPlaybackContext = getMessagePlaybackContext(detail);

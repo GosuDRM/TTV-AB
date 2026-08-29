@@ -34,8 +34,10 @@ beforeAll(() => {
 		runtime: {
 			lastError: null,
 			getManifest: () => ({ version: "16.2.0" }),
+			getURL: (path: string) => `moz-extension://ttv-ab/${path}`,
 		},
 		tabs: {
+			create: () => {},
 			query: () => {},
 			sendMessage: () => {},
 		},
@@ -46,17 +48,36 @@ beforeAll(() => {
 beforeEach(() => {
 	const chromeState = g.chrome as Record<string, Record<string, unknown>>;
 	chromeState.runtime.lastError = null;
+	chromeState.runtime.getURL = (path: string) =>
+		`moz-extension://ttv-ab/${path}`;
+	chromeState.tabs.create = () => {};
 	chromeState.tabs.query = () => {};
 	chromeState.tabs.sendMessage = () => {};
 	g._LOG_EXPORT_MAX_CHARACTERS = 2 * 1024 * 1024;
 });
 
 afterEach(() => {
+	T<() => void>("_releaseLogExportUrl")();
 	vi.useRealTimers();
 	vi.restoreAllMocks();
 });
 
 describe("popup log formatting", () => {
+	it("moves collection into a durable extension tab before the action popup unloads", () => {
+		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+		chromeState.tabs.create = vi.fn();
+		const isExportPage = T<(search?: string) => boolean>("_isLogExportPage");
+		const openExportPage = T<() => boolean>("_openLogExportPage");
+
+		expect(isExportPage("?ttvab-log-export=1")).toBe(true);
+		expect(isExportPage("")).toBe(false);
+		expect(openExportPage()).toBe(true);
+		expect(chromeState.tabs.create).toHaveBeenCalledWith({
+			url: "moz-extension://ttv-ab/src/popup/popup.html?ttvab-log-export=1",
+			active: true,
+		});
+	});
+
 	it("formats malformed timestamps and multiline worker ownership safely", () => {
 		const format = T<(entry: Record<string, unknown>) => string>(
 			"_formatLogEntryLine",
@@ -391,6 +412,28 @@ describe("popup log collection lifecycle", () => {
 
 		expect(() => download("test")).toThrow("download blocked");
 		expect(createObjectURL).toHaveBeenCalledTimes(1);
+		expect(revokeObjectURL).toHaveBeenCalledWith("blob:test");
+	});
+
+	it("keeps the Firefox download URL alive until the durable export page exits", () => {
+		const createObjectURL = vi.fn(() => "blob:test");
+		const revokeObjectURL = vi.fn();
+		Object.defineProperty(URL, "createObjectURL", {
+			configurable: true,
+			value: createObjectURL,
+		});
+		Object.defineProperty(URL, "revokeObjectURL", {
+			configurable: true,
+			value: revokeObjectURL,
+		});
+		vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+		const download = T<(text: string) => boolean>("_downloadLogExport");
+
+		expect(download("test")).toBe(true);
+		expect(createObjectURL).toHaveBeenCalledTimes(1);
+		expect(revokeObjectURL).not.toHaveBeenCalled();
+
+		window.dispatchEvent(new Event("pagehide"));
 		expect(revokeObjectURL).toHaveBeenCalledWith("blob:test");
 	});
 

@@ -1,6 +1,6 @@
 # Privacy Policy for TTV AB
 
-**Last Updated:** August 22, 2026
+**Last Updated:** August 29, 2026
 
 This Privacy Policy explains how TTV AB ("the Extension") handles data while you use Twitch.
 
@@ -27,7 +27,7 @@ These requests are sent only to Twitch-related HTTPS endpoints for the functions
 
 The Extension uses browser-local extension storage and bounded entries in Twitch's local site storage. Stored data can include:
 
-- The Ad Blocking enable/disable toggle, plus the Ad Spoofing and Low Quality Fallback settings.
+- The Ad Blocking enable/disable toggle, plus the Ad Spoofing, Low Quality Fallback, and Turbo Mode settings.
 - The selected language and popup theme.
 - Local UI data such as welcome/donation reminder dismissal timing and related presentation state.
 - The persistent "Ads Blocked" counter and recent daily totals.
@@ -56,7 +56,7 @@ The popup and in-page notices contain links to Twitch, GitHub, and Ko-fi. These 
 
 Settings and statistics remain in browser-local storage until they are cleared or the Extension is uninstalled. Daily history, caches, and delivery-safety records are bounded or periodically pruned. Small reminder and pending statistics-delivery records stored under Twitch's site storage can be removed by clearing site data for twitch.tv.
 
-Disabling Ad Spoofing stops future simulated ad-event requests. Clearing the Extension's browser storage removes its saved settings, statistics, achievements, and channel image cache.
+Enabling Turbo Mode pauses future statistics and achievement updates, clears pending local statistics delivery, and keeps existing history stored for when Turbo Mode is disabled. Disabling Ad Spoofing stops future simulated ad-event requests. Clearing the Extension's browser storage removes its saved settings, statistics, achievements, and channel image cache.
 
 ## 7. Browser Permissions
 

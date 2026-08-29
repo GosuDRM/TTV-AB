@@ -80,6 +80,9 @@ function loadPopupExplanations() {
 			adSpoofingFootnote: string;
 			autoplayBackupDesc: string;
 			autoplayBackupWarning: string;
+			turboMode: string;
+			turboModeEnabled: string;
+			turboModeDisabled: string;
 		}
 	>;
 	return { html, source, translations };
@@ -153,6 +156,7 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: false,
+					turbo: false,
 				},
 			}),
 		);
@@ -172,36 +176,66 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: true,
+					turbo: false,
 				},
 				available: {
 					adblock: true,
 					adSpoofing: false,
 					autoplayBackup: false,
+					turbo: true,
 				},
 			}),
 		);
 	});
 
-	it("treats removed keys as default-on for every toggle", () => {
+	it("restores playback toggles by default while Turbo remains opt-in", () => {
 		const harness = makeHarness();
 		harness.controller.start();
 		harness.reads[0].finish({
 			ttvAdblockEnabled: false,
 			ttvAdSpoofingEnabled: false,
 			ttvAutoplayBackupEnabled: false,
+			ttvTurboMode: true,
 		});
 
 		harness.controller.applyStorageChanges({
 			ttvAdblockEnabled: { oldValue: false, newValue: undefined },
 			ttvAdSpoofingEnabled: { oldValue: false, newValue: undefined },
 			ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
+			ttvTurboMode: { oldValue: true, newValue: undefined },
 		});
 
 		expect(harness.controller.getSnapshot().values).toEqual({
 			adblock: true,
 			adSpoofing: true,
 			autoplayBackup: true,
+			turbo: false,
 		});
+	});
+
+	it("keeps Turbo available when ad blocking is off and writes only its UI key", () => {
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({ ttvAdblockEnabled: false });
+
+		expect(harness.controller.getSnapshot()).toEqual(
+			expect.objectContaining({
+				values: expect.objectContaining({ turbo: false }),
+				available: expect.objectContaining({
+					adblock: true,
+					adSpoofing: false,
+					autoplayBackup: false,
+					turbo: true,
+				}),
+			}),
+		);
+		expect(harness.controller.write("turbo", true)).toBe(true);
+		expect(harness.writes[0]).toEqual(
+			expect.objectContaining({
+				storageKey: "ttvTurboMode",
+				enabled: true,
+			}),
+		);
 	});
 
 	it("keeps an external update authoritative over a stale write callback", () => {
@@ -228,6 +262,7 @@ describe("popup toggle authority", () => {
 			adblock: false,
 			adSpoofing: true,
 			autoplayBackup: true,
+			turbo: false,
 		});
 		expect(snapshot.available.autoplayBackup).toBe(false);
 		expect(harness.successes).toEqual([]);
@@ -300,6 +335,7 @@ describe("popup toggle authority", () => {
 			adblock: false,
 			adSpoofing: false,
 			autoplayBackup: false,
+			turbo: true,
 		});
 
 		harness.writes[0].finish(null);
@@ -307,6 +343,7 @@ describe("popup toggle authority", () => {
 			adblock: true,
 			adSpoofing: true,
 			autoplayBackup: true,
+			turbo: true,
 		});
 	});
 
@@ -323,6 +360,7 @@ describe("popup toggle authority", () => {
 			adblock: false,
 			adSpoofing: false,
 			autoplayBackup: false,
+			turbo: false,
 		});
 		expect(harness.writeErrors).toEqual([
 			{ name: "adblock", error: "storage unavailable" },
@@ -356,6 +394,7 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: false,
+					turbo: false,
 				},
 			}),
 		);
@@ -451,6 +490,7 @@ describe("popup toggle authority", () => {
 			"enableToggle",
 			"adSpoofingToggle",
 			"autoplayBackupToggle",
+			"turboModeToggle",
 		]) {
 			expect(html).toMatch(
 				new RegExp(`<input[^>]+id="${id}"[^>]+disabled[^>]*>`),
@@ -462,10 +502,75 @@ describe("popup toggle authority", () => {
 		expect(source).toContain("if (!setStoredLanguage(lang)) {");
 		expect(source).toContain("nextSelector.value = selectedLanguage;");
 		expect(source).toContain("if (setStoredTheme(theme)) {");
+		expect(source).toContain(
+			'document.documentElement.classList.toggle("turbo-mode", isActive);',
+		);
+		expect(source).toContain("turboStatsShell.inert = isActive;");
+		expect(html).toContain('id="themeToggle"');
+		expect(html).toContain('id="langSelector"');
+		expect(html).toContain('value="auto" id="langAutoOption"');
+		expect(html).toContain('id="reportBugText"');
+		expect(html).toMatch(
+			/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.turbo-collapsible/,
+		);
+	});
+
+	it("lets the toolbar popup use its intrinsic content height", () => {
+		const html = readFileSync(
+			resolve(__dirname, "../src/popup/popup.html"),
+			"utf8",
+		);
+		const bodyRule = html.match(/\n {8}body \{([\s\S]*?)\n {8}\}/)?.[1];
+
+		expect(bodyRule).toBeDefined();
+		expect(bodyRule).not.toContain("max-height: 100vh");
+		expect(bodyRule).not.toContain("overflow-y: auto");
+	});
+
+	it("compacts vertical gaps so constrained popups keep the locale footer visible", () => {
+		const html = readFileSync(
+			resolve(__dirname, "../src/popup/popup.html"),
+			"utf8",
+		);
+		const narrowRules = html.match(
+			/@media \(max-width: 319px\) \{([\s\S]*?)@media \(max-height: 620px\)/,
+		)?.[1];
+		const compactRules = html.match(
+			/@media \(max-height: 620px\) \{([\s\S]*?)@media \(prefers-reduced-motion: reduce\)/,
+		)?.[1];
+
+		expect(narrowRules).toBeDefined();
+		expect(narrowRules).toMatch(
+			/\.footer\s*\{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?gap:\s*6px;/,
+		);
+		expect(narrowRules).toMatch(
+			/\.footer\s*>\s*span\s*\{[\s\S]*?white-space:\s*nowrap;/,
+		);
+		expect(compactRules).toBeDefined();
+		expect(compactRules).toMatch(
+			/\.description-text\s*\{[\s\S]*?max-height:\s*2\.6em;[\s\S]*?overflow:\s*hidden;/,
+		);
+		expect(compactRules).toMatch(/\.status-card\s*\{\s*margin-bottom:\s*0;/);
+		expect(compactRules).toMatch(/\.stats-toggle\s*\{\s*margin-top:\s*8px;/);
+		expect(compactRules).toMatch(
+			/\.footer\s*\{[\s\S]*?margin-top:\s*10px;[\s\S]*?padding-top:\s*8px;/,
+		);
+		expect(html).toContain('id="langSelector"');
 	});
 });
 
 describe("popup setting explanations", () => {
+	it("localizes Turbo state in every supported locale", () => {
+		const { translations } = loadPopupExplanations();
+
+		expect(Object.keys(translations)).toHaveLength(12);
+		for (const translation of Object.values(translations)) {
+			expect(translation.turboMode.trim()).not.toBe("");
+			expect(translation.turboModeEnabled.trim()).not.toBe("");
+			expect(translation.turboModeDisabled.trim()).not.toBe("");
+		}
+	});
+
 	it("describes the telemetry separately from the ad-blocking behavior", () => {
 		const { html, source, translations } = loadPopupExplanations();
 		const english = translations.en;

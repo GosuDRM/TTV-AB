@@ -63,6 +63,9 @@ beforeAll(() => {
 
 beforeEach(() => {
 	badgeCalls.length = 0;
+	storageData = {};
+	g.turboModeEnabled = false;
+	g.turboModeRevision = 0;
 });
 
 function fmt(n: number): string {
@@ -155,6 +158,66 @@ describe("storage-driven badge refresh", () => {
 			listener({ ttvStats: { newValue: {} } }, "local");
 		}
 		expect(badgeCalls.length).toBe(0);
+	});
+
+	it("clears the badge in Turbo and restores the preserved count afterward", async () => {
+		storageData = { ttvAdsBlocked: 46, ttvTurboMode: false };
+		for (const listener of storageChangeListeners) {
+			listener({ ttvTurboMode: { newValue: true } }, "local");
+		}
+		expect(
+			badgeCalls.find((call) => call.method === "setBadgeText")?.arg,
+		).toEqual({ text: "" });
+
+		badgeCalls.length = 0;
+		for (const listener of storageChangeListeners) {
+			listener({ ttvAdsBlocked: { newValue: 47 } }, "local");
+		}
+		expect(badgeCalls).toEqual([]);
+
+		storageData = { ttvAdsBlocked: 46, ttvTurboMode: false };
+		for (const listener of storageChangeListeners) {
+			listener({ ttvTurboMode: { newValue: false } }, "local");
+		}
+		await Promise.resolve();
+		expect(
+			badgeCalls.find((call) => call.method === "setBadgeText")?.arg,
+		).toEqual({ text: "46" });
+	});
+
+	it("ignores a stale badge refresh after Turbo is re-enabled", async () => {
+		const storageLocal = (
+			g.chrome as {
+				storage: {
+					local: {
+						get: (
+							keys: unknown,
+							callback: (result: Record<string, unknown>) => void,
+						) => void;
+					};
+				};
+			}
+		).storage.local;
+		const originalGet = storageLocal.get;
+		let finishRead: ((result: Record<string, unknown>) => void) | null = null;
+		storageLocal.get = (_keys, callback) => {
+			finishRead = callback;
+		};
+
+		try {
+			for (const listener of storageChangeListeners) {
+				listener({ ttvTurboMode: { newValue: false } }, "local");
+				listener({ ttvTurboMode: { newValue: true } }, "local");
+			}
+			badgeCalls.length = 0;
+			finishRead?.({ ttvAdsBlocked: 46, ttvTurboMode: false });
+			await Promise.resolve();
+
+			expect(g.turboModeEnabled).toBe(true);
+			expect(badgeCalls).toEqual([]);
+		} finally {
+			storageLocal.get = originalGet;
+		}
 	});
 });
 
@@ -278,6 +341,51 @@ describe("channel stats schema and watch-time persistence", () => {
 		const stats = getStoredStats();
 		expect(Object.keys(stats.channels).length).toBe(6);
 		expect(stats.achievements).not.toContain("channels_5");
+	});
+
+	it("preserves all existing statistics while Turbo is enabled", async () => {
+		setStorage({
+			ttvTurboMode: true,
+			ttvAdsBlocked: 46,
+			ttvStats: {
+				channels: { somestreamer: { ads: 46, watchSeconds: 600 } },
+				daily: { "2026-08-29": { ads: 3 } },
+				achievements: ["first_block"],
+			},
+		});
+		const before = structuredClone(storageData);
+
+		const response = await persist()({
+			flushId: "flush:test:turbo-0001",
+			adsDelta: 1,
+			channelDeltas: { somestreamer: 1 },
+			watchDeltas: { somestreamer: 60 },
+		});
+
+		expect(response).toEqual({ ok: true, counts: null, newUnlocks: [] });
+		expect(storageData).toEqual(before);
+	});
+
+	it("drops an in-flight statistic commit when Turbo activates", async () => {
+		setStorage({
+			ttvTurboMode: false,
+			ttvAdsBlocked: 46,
+			ttvStats: { channels: {}, daily: {}, achievements: [] },
+		});
+		const before = structuredClone(storageData);
+		const responsePromise = persist()({
+			flushId: "flush:test:turbo-race-0001",
+			adsDelta: 1,
+			channelDeltas: { somestreamer: 1 },
+		});
+
+		for (const listener of storageChangeListeners) {
+			listener({ ttvTurboMode: { newValue: true } }, "local");
+		}
+		const response = await responsePromise;
+
+		expect(response).toEqual({ ok: true, counts: null, newUnlocks: [] });
+		expect(storageData).toEqual(before);
 	});
 
 	it("keeps an uncleared committed flush deduplicated after 256 later confirmations", async () => {
