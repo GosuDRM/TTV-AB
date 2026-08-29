@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.0.0] - 2026-08-29
+
+- Added opt-in Turbo Mode, which pauses new statistics and achievements, clears the badge, and preserves existing history until the mode is disabled.
+- Turbo Mode changes only popup presentation and statistics handling. Ad Blocking, Ad Spoofing, Low Quality Fallback, worker interception, backup validation, and playback recovery retain their existing settings and behavior.
+- Fixed the Chromium toolbar popup collapsing into a tiny scrollable strip because its body height was constrained by the popup's initial viewport.
+- Pending, replayed, and in-flight counter updates are discarded while Turbo Mode is active. Disabling it reseeds the tab counter from the preserved stored total so paused activity cannot be backfilled.
+- Fixed Generate Log sometimes producing no file when the extension popup closed during collection.
+- Log collection now continues in a dedicated extension tab, waits for an explicit save action, and keeps Firefox download data available until that tab closes.
+- Added a build check that rejects a stale shipped popup translation file.
+
 ## [16.3.3] - 2026-08-29
 
 - Fixed 1440p streams getting stuck on a loading circle after an ad was blocked.
