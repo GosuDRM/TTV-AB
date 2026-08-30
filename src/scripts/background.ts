@@ -869,11 +869,77 @@ function enqueuePersist(task) {
 	return nextTask;
 }
 
+function getPreviewFailureDiagnosticSender(sender) {
+	try {
+		const tabId = sender?.tab?.id;
+		const frameId = sender?.frameId;
+		if (
+			!Number.isInteger(tabId) ||
+			tabId < 0 ||
+			!Number.isInteger(frameId) ||
+			frameId <= 0
+		) {
+			return null;
+		}
+		const parsed = new URL(String(sender?.url || ""));
+		const channel = normalizeChannelName(parsed.searchParams.get("channel"));
+		const previewType = parsed.searchParams.get("tp_prev");
+		if (
+			parsed.protocol !== "https:" ||
+			parsed.hostname.toLowerCase() !== "player.twitch.tv" ||
+			!channel ||
+			(previewType !== "s" && previewType !== "d")
+		) {
+			return null;
+		}
+		return { tabId, channel, previewType };
+	} catch {
+		return null;
+	}
+}
+
+function forwardPreviewFailureDiagnostic(detail, sender) {
+	const source = getPreviewFailureDiagnosticSender(sender);
+	const safeDetail = getMessageDetail(detail);
+	if (
+		!source ||
+		!safeDetail ||
+		typeof chrome.tabs?.sendMessage !== "function"
+	) {
+		return false;
+	}
+	try {
+		chrome.tabs.sendMessage(
+			source.tabId,
+			{
+				type: "ttvab-preview-failure-diagnostic-forward",
+				detail: {
+					...safeDetail,
+					channel: source.channel,
+					mediaKey: `live:${source.channel}`,
+					previewType: source.previewType,
+				},
+			},
+			{ frameId: 0 },
+			() => {
+				void chrome.runtime.lastError;
+			},
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 	if (sender?.id !== chrome.runtime.id) {
 		return undefined;
 	}
 	const message = getMessageData(rawMessage);
+	if (message?.type === "ttvab-preview-failure-diagnostic") {
+		forwardPreviewFailureDiagnostic(message.detail, sender);
+		return undefined;
+	}
 	if (
 		message?.type !== "ttvab-persist-counters" &&
 		message?.type !== "ttvab-confirm-counter-flush"

@@ -35,6 +35,7 @@ beforeAll(() => {
 beforeEach(() => {
 	g._S = {
 		workers: [],
+		workerRefs: [],
 		conflicts: [],
 		reinsertPatterns: [],
 		toleratedWorkerWrappers: [],
@@ -509,6 +510,78 @@ describe("worker log ingestion", () => {
 		} finally {
 			restore();
 			delete g.__TTVAB_LOGS__;
+		}
+	});
+});
+
+describe("worker fetch relay ownership", () => {
+	it("aborts the exact page fetch when the worker retires its request", async () => {
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const previousRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		let relaySignal: AbortSignal | null = null;
+		scopedWindow.__TTVAB_REAL_FETCH__ = vi.fn(
+			(_url: string, options: RequestInit) =>
+				new Promise<Response>((_resolve, reject) => {
+					relaySignal = options.signal as AbortSignal;
+					relaySignal.addEventListener(
+						"abort",
+						() => reject(new DOMException("retired", "AbortError")),
+						{ once: true },
+					);
+				}),
+		);
+		const { worker, restore } = installWorkerMessageHarness();
+		const workerState = worker as unknown as {
+			__TTVABFetchControllers: Map<string, AbortController>;
+		};
+
+		try {
+			worker.emitMessage({
+				key: "FetchRequest",
+				value: {
+					id: "fetch-route-a",
+					url: "https://gql.twitch.tv/gql",
+					options: { method: "POST" },
+				},
+			});
+			expect(workerState.__TTVABFetchControllers.has("fetch-route-a")).toBe(
+				true,
+			);
+
+			worker.emitMessage({
+				key: "CancelFetchRequest",
+				value: { id: "fetch-route-a" },
+			});
+			expect(relaySignal?.aborted).toBe(true);
+			expect(workerState.__TTVABFetchControllers.size).toBe(0);
+			await Promise.resolve();
+		} finally {
+			restore();
+			if (previousRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = previousRealFetch;
+			}
+		}
+	});
+
+	it("marks watch ownership only after current media playback is observed", () => {
+		const previousMarkWatchOwnership = g._markWatchTimePlaybackOwned;
+		const markWatchOwnership = vi.fn();
+		g._markWatchTimePlaybackOwned = markWatchOwnership;
+		const { worker, restore } = installWorkerMessageHarness();
+
+		try {
+			confirmHarnessWorkerPlayback(worker);
+			expect(markWatchOwnership).toHaveBeenCalledOnce();
+			expect(markWatchOwnership).toHaveBeenCalledWith("live:testchannel");
+		} finally {
+			restore();
+			if (previousMarkWatchOwnership === undefined) {
+				delete g._markWatchTimePlaybackOwned;
+			} else {
+				g._markWatchTimePlaybackOwned = previousMarkWatchOwnership;
+			}
 		}
 	});
 });
@@ -1650,6 +1723,13 @@ describe("worker recovery lifecycle", () => {
 			string,
 			{ workerGeneration: number; latestEventAt: number }
 		>;
+		const relayAbort = vi.fn();
+		const provisionalWorkerState = provisionalClaimant as unknown as {
+			__TTVABFetchControllers: Map<string, { abort: () => void }>;
+		};
+		provisionalWorkerState.__TTVABFetchControllers.set("relay-1", {
+			abort: relayAbort,
+		});
 
 		try {
 			expect(
@@ -1663,6 +1743,11 @@ describe("worker recovery lifecycle", () => {
 				>("_claimPageAdCycleControl")("live:testchannel", 100, 2, 1000),
 			).toBe(true);
 			provisionalClaimant.terminate();
+			expect(relayAbort).toHaveBeenCalledOnce();
+			expect(provisionalWorkerState.__TTVABFetchControllers.size).toBe(0);
+			expect((g._S as { workers: unknown[] }).workers).not.toContain(
+				provisionalClaimant,
+			);
 			expect(controls.get("live:testchannel")).toMatchObject({
 				workerGeneration: 1,
 				latestEventAt: 1000,
@@ -5240,6 +5325,117 @@ describe("worker recovery lifecycle", () => {
 	});
 });
 
+describe("bounded long-session registries", () => {
+	it("delivers playback visibility only to the exact media worker", () => {
+		const pageWorker = {
+			__TTVABPageMediaKey: "live:pagechannel",
+			postMessage: vi.fn(),
+		};
+		const pipWorker = {
+			__TTVABPageMediaKey: "live:pipchannel",
+			postMessage: vi.fn(),
+		};
+		const unknownWorker = { postMessage: vi.fn() };
+		(g._S as { workers: unknown[] }).workers = [
+			pageWorker,
+			pipWorker,
+			unknownWorker,
+		];
+
+		T<(message: Record<string, unknown>) => void>("_broadcastWorkers")({
+			key: "UpdatePagePlaybackVisibleSinceAt",
+			targetMediaKey: "live:pipchannel",
+			value: 1000,
+		});
+
+		expect(pipWorker.postMessage).toHaveBeenCalledOnce();
+		expect(pageWorker.postMessage).not.toHaveBeenCalled();
+		expect(unknownWorker.postMessage).not.toHaveBeenCalled();
+	});
+
+	it("keeps active playback workers strong and demotes surplus inactive handles", () => {
+		const activeWorker = {
+			__TTVABGeneration: 1,
+			__TTVABPageMediaType: "live",
+			__TTVABPageChannel: "testchannel",
+			__TTVABPageMediaKey: "live:testchannel",
+			postMessage: vi.fn(),
+		};
+		const auxiliaryWorkers = Array.from({ length: 45 }, (_, index) => ({
+			__TTVABGeneration: index + 2,
+			__TTVABPageMediaType: "live",
+			__TTVABPageChannel: `aux${index}`,
+			__TTVABPageMediaKey: `live:aux${index}`,
+			postMessage: vi.fn(),
+		}));
+		(g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>).set(
+			"live:testchannel",
+			1,
+		);
+		(g._S as { workers: unknown[] }).workers = [
+			activeWorker,
+			...auxiliaryWorkers,
+		];
+
+		T<(worker: Record<string, unknown>) => boolean>("_promoteTrackedWorker")(
+			activeWorker,
+		);
+
+		const registry = g._S as {
+			workers: unknown[];
+			workerRefs: Array<WeakRef<Record<string, unknown>>>;
+		};
+		expect(registry.workers).toHaveLength(40);
+		expect(registry.workers).toContain(activeWorker);
+		expect(registry.workers).toContain(auxiliaryWorkers.at(-1));
+		expect(registry.workers).not.toContain(auxiliaryWorkers[0]);
+		expect(
+			registry.workerRefs.some(
+				(entry) => entry.deref() === auxiliaryWorkers[0],
+			),
+		).toBe(true);
+
+		T<(message: Record<string, unknown>) => void>("_broadcastWorkers")({
+			key: "UpdateToggleState",
+			value: false,
+		});
+		expect(auxiliaryWorkers[0].postMessage).toHaveBeenCalledOnce();
+
+		(
+			auxiliaryWorkers[0] as (typeof auxiliaryWorkers)[number] & {
+				__TTVABIntentionallyTerminated: boolean;
+			}
+		).__TTVABIntentionallyTerminated = true;
+		T<(message: Record<string, unknown>) => void>("_broadcastWorkers")({
+			key: "UpdateToggleState",
+			value: true,
+		});
+		expect(auxiliaryWorkers[0].postMessage).toHaveBeenCalledOnce();
+		expect(
+			registry.workerRefs.some(
+				(entry) => entry.deref() === auxiliaryWorkers[0],
+			),
+		).toBe(false);
+	});
+
+	it("bounds per-media reload history without evicting the current context", () => {
+		const recordReload = T<(mediaKey: string, at: number) => number>(
+			"_recordPlayerReloadAt",
+		);
+		recordReload("live:testchannel", 1);
+		for (let index = 0; index < 40; index++) {
+			recordReload(`live:history${index}`, index + 2);
+		}
+
+		const reloads = (g.__TTVAB_STATE__ as Record<string, unknown>)
+			.LastPlayerReloadAtByMediaKey as Record<string, number>;
+		expect(Object.keys(reloads)).toHaveLength(32);
+		expect(reloads["live:testchannel"]).toBe(1);
+		expect(reloads["live:history39"]).toBe(41);
+		expect(reloads["live:history0"]).toBeUndefined();
+	});
+});
+
 describe("MAIN VOD ad request guard", () => {
 	it("rewrites standard-video VOD XHR to a local empty VAST", async () => {
 		const originalFetch = window.fetch;
@@ -7546,6 +7742,133 @@ describe("worker mixed-codec master selection", () => {
 		}
 	});
 
+	it("rejects a delayed A master after a rapid A to B to A route cycle", async () => {
+		const originalFetch = g.fetch;
+		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		const oldAUrl =
+			"https://usher.ttvnw.net/api/channel/hls/alpha.m3u8?sig=old";
+		const betaUrl =
+			"https://usher.ttvnw.net/api/channel/hls/beta.m3u8?sig=beta";
+		const newAUrl =
+			"https://usher.ttvnw.net/api/channel/hls/alpha.m3u8?sig=new";
+		const makeMaster = (variantUrl: string) =>
+			[
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+				variantUrl,
+			].join("\n");
+		let resolveOldA: ((response: Response) => void) | null = null;
+		const rawFetch = vi.fn((input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === oldAUrl) {
+				return new Promise<Response>((resolve) => {
+					resolveOldA = resolve;
+				});
+			}
+			if (url === betaUrl) {
+				return Promise.resolve(
+					new Response(makeMaster("https://edge.example/beta/index.m3u8")),
+				);
+			}
+			return Promise.resolve(
+				new Response(makeMaster("https://edge.example/alpha-new/index.m3u8")),
+			);
+		});
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "alpha",
+			PageMediaKey: "live:alpha",
+			PagePlaybackContextGeneration: 1,
+		});
+		g.fetch = rawFetch;
+		g._postWorkerBridgeMessage = vi.fn();
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const delayedA = (g.fetch as typeof fetch)(oldAUrl);
+			Object.assign(state, {
+				PageChannel: "beta",
+				PageMediaKey: "live:beta",
+				PagePlaybackContextGeneration: 2,
+			});
+			await (g.fetch as typeof fetch)(betaUrl);
+			Object.assign(state, {
+				PageChannel: "alpha",
+				PageMediaKey: "live:alpha",
+				PagePlaybackContextGeneration: 3,
+			});
+			await (g.fetch as typeof fetch)(newAUrl);
+			resolveOldA?.(
+				new Response(makeMaster("https://edge.example/alpha-old/index.m3u8")),
+			);
+
+			await expect(delayedA).rejects.toMatchObject({ name: "AbortError" });
+			const alphaInfo = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:alpha"];
+			expect(alphaInfo.EncodingsM3U8).toContain("alpha-new/index.m3u8");
+			expect(alphaInfo.EncodingsM3U8).not.toContain("alpha-old/index.m3u8");
+			expect(alphaInfo.UsherBaseUrl).toBe(newAUrl);
+		} finally {
+			g.fetch = originalFetch;
+			g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+		}
+	});
+
+	it("keeps the newest completed master when same-route requests finish out of order", async () => {
+		const originalFetch = g.fetch;
+		const oldUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=old";
+		const newUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=new";
+		const makeMaster = (variantUrl: string) =>
+			[
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+				variantUrl,
+			].join("\n");
+		let resolveOld: ((response: Response) => void) | null = null;
+		const rawFetch = vi.fn((input: RequestInfo | URL) => {
+			if (String(input) === oldUrl) {
+				return new Promise<Response>((resolve) => {
+					resolveOld = resolve;
+				});
+			}
+			return Promise.resolve(
+				new Response(makeMaster("https://edge.example/new/index.m3u8")),
+			);
+		});
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			PagePlaybackContextGeneration: 1,
+		});
+		g.fetch = rawFetch;
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const delayed = (g.fetch as typeof fetch)(oldUrl);
+			await (g.fetch as typeof fetch)(newUrl);
+			resolveOld?.(
+				new Response(makeMaster("https://edge.example/old/index.m3u8")),
+			);
+
+			await expect(delayed).rejects.toMatchObject({ name: "AbortError" });
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+			expect(info.EncodingsM3U8).toContain("edge.example/new/index.m3u8");
+			expect(info.EncodingsM3U8).not.toContain("edge.example/old/index.m3u8");
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
 	it("keeps a required post-ad rebuild on the exact verified media session instead of adopting a new preroll master", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
@@ -8235,8 +8558,10 @@ describe("worker mixed-codec master selection", () => {
 		const originalFetch = g.fetch;
 		const originalGetToken = g._getToken;
 		const originalExtract = g._extractPlaybackAccessToken;
+		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
 		const retryError = new TypeError("Failed to fetch after retry");
 		const tokenCalls: string[] = [];
+		const report = vi.fn();
 		const master = [
 			"#EXTM3U",
 			'#EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=640x360,CODECS="avc1.4D401F,mp4a.40.2"',
@@ -8293,6 +8618,7 @@ describe("worker mixed-codec master selection", () => {
 			);
 		};
 		g._extractPlaybackAccessToken = (payload: unknown) => payload;
+		g._postWorkerBridgeMessage = report;
 		g.fetch = rawFetch;
 		const usherUrl =
 			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
@@ -8305,10 +8631,64 @@ describe("worker mixed-codec master selection", () => {
 			expect(nativeAttempts).toBe(2);
 			expect(tokenCalls).toEqual(["autoplay"]);
 			expect(state.CurrentAdMediaKey).toBe(null);
+			expect(
+				report.mock.calls
+					.map(([, message]) => message as Record<string, unknown>)
+					.filter((message) => message.key === "PreviewMasterRecoveryFailed"),
+			).toEqual([
+				expect.objectContaining({
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					reason: "clean-fallback-unavailable",
+					status: 0,
+				}),
+			]);
 		} finally {
 			g.fetch = originalFetch;
 			g._getToken = originalGetToken;
 			g._extractPlaybackAccessToken = originalExtract;
+			g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+		}
+	});
+
+	it("reports an exact Previews HTTP master failure without replacing its response", async () => {
+		const originalFetch = g.fetch;
+		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		const report = vi.fn();
+		const rawFetch = vi.fn(async () => new Response(null, { status: 403 }));
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			IsAdStrippingEnabled: true,
+			AllowPreviewEmergencyAutoplayBackup: true,
+		});
+		g._postWorkerBridgeMessage = report;
+		g.fetch = rawFetch;
+		const usherUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?p=1234567&sig=test&token=test";
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const response = await (g.fetch as typeof fetch)(usherUrl);
+
+			expect(response.status).toBe(403);
+			expect(rawFetch).toHaveBeenCalledOnce();
+			expect(
+				report.mock.calls
+					.map(([, message]) => message as Record<string, unknown>)
+					.filter((message) => message.key === "PreviewMasterRecoveryFailed"),
+			).toEqual([
+				expect.objectContaining({
+					reason: "http-status",
+					status: 403,
+				}),
+			]);
+		} finally {
+			g.fetch = originalFetch;
+			g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
 		}
 	});
 
@@ -9479,6 +9859,7 @@ describe("worker watchdog visibility awareness", () => {
 		stopWatchdog();
 		delete g._isNativeDocumentHidden;
 		delete g._isPlaybackPageUnfocused;
+		delete g._isActivePictureInPicturePlaybackContext;
 		delete g._getPrimaryMediaElement;
 		delete g._installPageSideM3U8Override;
 		delete g._hasUserPauseIntent;
@@ -9504,6 +9885,53 @@ describe("worker watchdog visibility awareness", () => {
 		expect(worker.__TTVABMissedPongs).toBe(0);
 		expect(worker.__TTVABCrashed).toBeUndefined();
 		expect(worker.pings).toBeGreaterThan(0);
+	});
+
+	it("applies foreground heartbeat limits only to the exact pip worker", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		g._isPlaybackPageUnfocused = (context: Record<string, unknown>) =>
+			context?.MediaKey === "live:pagechannel";
+		g._isActivePictureInPicturePlaybackContext = (
+			context: Record<string, unknown>,
+		) => context?.MediaKey === "live:pipchannel";
+		const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
+		g._getPlaybackContextFromUrl = () => ({
+			MediaType: "live",
+			ChannelName: "pagechannel",
+			MediaKey: "live:pagechannel",
+		});
+		const media = document.createElement("video");
+		Object.defineProperty(media, "currentTime", {
+			configurable: true,
+			get: () => (Date.now() - 100000) / 1000,
+		});
+		g._getPrimaryMediaElement = () => media;
+		g._installPageSideM3U8Override = () => {};
+		g._doPlayerTask = () => false;
+		const pipWorker = makeTrackedWorker({
+			__TTVABPageMediaType: "live",
+			__TTVABPageChannel: "pipchannel",
+			__TTVABPageMediaKey: "live:pipchannel",
+		});
+		const pageWorker = makeTrackedWorker({
+			__TTVABPageMediaType: "live",
+			__TTVABPageChannel: "pagechannel",
+			__TTVABPageMediaKey: "live:pagechannel",
+		});
+
+		try {
+			startWatchdog();
+			vi.advanceTimersByTime(35000);
+			expect(pipWorker.__TTVABCrashed).toBe(true);
+			expect(pageWorker.__TTVABCrashed).toBeUndefined();
+		} finally {
+			if (previousGetPlaybackContext === undefined) {
+				delete g._getPlaybackContextFromUrl;
+			} else {
+				g._getPlaybackContextFromUrl = previousGetPlaybackContext;
+			}
+		}
 	});
 
 	it("recovers a silent hidden worker when playback stops advancing", () => {

@@ -21,6 +21,9 @@ type TTVABStatsState = {
 type TTVABVisibilityGetter =
 	| ((this: Document, ...args: never[]) => unknown)
 	| null;
+type TTVABDocumentMethod =
+	| ((this: Document, ...args: never[]) => unknown)
+	| null;
 
 // biome-ignore lint/suspicious/noExplicitAny: runtime state is intentionally a dynamic bag shared across injected scripts
 declare const __TTVAB_STATE__: any;
@@ -64,6 +67,7 @@ interface Window {
 		webkitHidden?: TTVABVisibilityGetter;
 		mozHidden?: TTVABVisibilityGetter;
 		visibilityState?: TTVABVisibilityGetter;
+		hasFocus?: TTVABDocumentMethod;
 	};
 	__TTVAB_REAL_FETCH__?: typeof fetch;
 }
@@ -90,6 +94,7 @@ interface Worker {
 	__TTVABPageChannel?: string | null;
 	__TTVABPageVodID?: string | null;
 	__TTVABPageMediaKey?: string | null;
+	__TTVABFetchControllers?: Map<string, AbortController>;
 	__TTVABWorkerUrl?: string;
 	__TTVABWorkerOpts?: unknown;
 }

@@ -68,6 +68,7 @@ function _getTrustedBridgeMessageDetail(value) {
 
 const _PAGE_LOG_EXPORT_MAX_ENTRIES = 1000;
 const _PAGE_LOG_EXPORT_MAX_BYTES = 2 * 1024 * 1024;
+const _PREVIEW_FAILURE_LOG_MAX_ENTRIES = 64;
 const _PAGE_LOG_TEXT_ENCODER =
 	typeof TextEncoder === "function" ? new TextEncoder() : null;
 
@@ -349,11 +350,16 @@ function _collectPageLogContext() {
 			pageChannel:
 				_getSafePageLogString(state?.PageChannel, 80).replace(/\n/g, "") ||
 				null,
-			visibility: _getSafePageLogString(document.visibilityState, 24).replace(
-				/\n/g,
-				"",
-			),
-			focused: document.hasFocus?.() === true,
+			visibility: _getSafePageLogString(
+				typeof _getNativeDocumentVisibilityState === "function"
+					? _getNativeDocumentVisibilityState()
+					: document.visibilityState,
+				24,
+			).replace(/\n/g, ""),
+			focused:
+				typeof _isNativeDocumentFocused === "function"
+					? _isNativeDocumentFocused()
+					: document.hasFocus?.() === true,
 			enabled: state?.IsAdStrippingEnabled === true,
 			adSpoofingEnabled: state?.DisableAdSpoofing !== true,
 			autoplayBackupEnabled: state?.DisableAutoplayBackup !== true,
@@ -377,6 +383,53 @@ function _collectPageLogContext() {
 		};
 	} catch {
 		return null;
+	}
+}
+
+function _forwardPreviewFailureDiagnostics(value) {
+	try {
+		const detail = _getTrustedBridgeMessageDetail(value);
+		const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+		const mediaKey = _normalizeMediaKey(detail?.mediaKey);
+		if (
+			!detail ||
+			!mediaKey ||
+			mediaKey !== pageMediaKey ||
+			typeof _isPreviewsPlayerUrl !== "function" ||
+			!_isPreviewsPlayerUrl(globalThis.location?.href || "")
+		) {
+			return false;
+		}
+
+		const collected = _collectPageLogEntries();
+		const entries = collected.entries.slice(-_PREVIEW_FAILURE_LOG_MAX_ENTRIES);
+		const omittedEntries = Math.max(
+			0,
+			collected.entries.length - entries.length,
+		);
+		const rawReportedAt = _getSafePageLogNumber(detail.reportedAt, Date.now());
+		const reportedAt =
+			rawReportedAt >= 0 && rawReportedAt <= 8640000000000000
+				? Math.trunc(rawReportedAt)
+				: 0;
+		const rawStatus = _getSafePageLogNumber(detail.status, 0);
+		const status =
+			rawStatus >= 100 && rawStatus <= 599 ? Math.trunc(rawStatus) : 0;
+		_sendBridgeMessage("ttvab-preview-failure-diagnostic", {
+			mediaKey,
+			reason: _getSafePageLogString(detail.reason, 48).replace(/\n/g, ""),
+			reportedAt,
+			status,
+			entries,
+			context: _collectPageLogContext(),
+			truncatedEntries: Math.min(
+				1000000,
+				Math.max(0, collected.truncatedEntries) + omittedEntries,
+			),
+		});
+		return true;
+	} catch {
+		return false;
 	}
 }
 
@@ -583,6 +636,7 @@ function _init() {
 	_bindBridgePort();
 	_declareState(window);
 	_syncPagePlaybackContext({ broadcast: false });
+	_hookVisibilityState();
 	_syncPagePlaybackVisibilityState();
 
 	_onInternalMessage("ttvab-init-count", (detail) => {
@@ -613,7 +667,6 @@ function _init() {
 	_initAchievementListener();
 	_hookSpaNavigation();
 
-	_hookVisibilityState();
 	if (typeof _hookIndependentVideoAdGuard === "function") {
 		_hookIndependentVideoAdGuard();
 	}

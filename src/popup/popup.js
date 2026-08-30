@@ -721,6 +721,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const reportBugLink = document.getElementById("reportBugLink");
     const reportBugText = document.getElementById("reportBugText");
     const logDialogOverlay = document.getElementById("logDialogOverlay");
+    const logDialog = document.getElementById("logDialog");
+    const logDialogTitle = document.getElementById("logDialogTitle");
     const logDialogGenerate = document.getElementById("logDialogGenerate");
     const logDialogSkip = document.getElementById("logDialogSkip");
     const logDialogClose = document.getElementById("logDialogClose");
@@ -774,6 +776,8 @@ document.addEventListener("DOMContentLoaded", () => {
         reportBugLink,
         reportBugText,
         logDialogOverlay,
+        logDialog,
+        logDialogTitle,
         logDialogGenerate,
         logDialogSkip,
         logDialogClose,
@@ -804,6 +808,28 @@ document.addEventListener("DOMContentLoaded", () => {
     let turboModeEnabled = false;
     let turboModeReady = false;
     let statisticsReadGeneration = 0;
+    let turboLayoutGeneration = 0;
+    function settleTurboLayout(generation) {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (generation !== turboLayoutGeneration ||
+                    !turboModeReady ||
+                    !turboModeEnabled) {
+                    return;
+                }
+                document.documentElement.classList.add("turbo-layout-collapsed");
+            });
+        });
+    }
+    turboStatsShell.addEventListener("transitionend", (event) => {
+        if (event.target !== turboStatsShell ||
+            event.propertyName !== "grid-template-rows" ||
+            !turboModeReady ||
+            !turboModeEnabled) {
+            return;
+        }
+        settleTurboLayout(turboLayoutGeneration);
+    });
     const LANG_KEY = "ttvab_lang";
     function getStoredLanguage() {
         try {
@@ -953,9 +979,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 "Statistics and achievements are paused.")
             : (translations.turboModeDisabled ??
                 "Statistics and achievements are active."));
-        const reportLabel = String(turboModeEnabled
-            ? (translations.logDialogGenerate ?? "Generate log file")
-            : (translations.reportBugLabel ?? "Report a bug."));
+        const reportLabel = String(translations.reportBugLabel ?? "Report a bug.");
         turboModeToggle.setAttribute("aria-label", turboLabel);
         turboModeDescription.textContent = turboDescription;
         reportBugText.textContent = reportLabel;
@@ -1028,11 +1052,50 @@ document.addEventListener("DOMContentLoaded", () => {
     let logExportInProgress = false;
     let logExportGeneration = 0;
     let preparedLogExportText = null;
+    function getLogExportPageText(key, fallbackKey, fallback) {
+        const translations = getTranslations();
+        const localizedFallback = fallbackKey ? translations[fallbackKey] : null;
+        return String(translations[key] ??
+            localizedFallback ??
+            TRANSLATIONS.en[key] ??
+            fallback);
+    }
+    function applyLogExportPageState(state) {
+        if (!isLogExportPage)
+            return;
+        logDialogGenerate.hidden = false;
+        logDialogSkip.classList.remove("primary");
+        logDialogSkip.textContent = getLogExportPageText("logExportContinue", "logDialogSkip", "Continue to GitHub without a log");
+        if (state === "preparing") {
+            logDialogTitle.textContent = getLogExportPageText("logExportPreparingTitle", "logDialogGenerate", "Preparing your debug log");
+            logDialogText.textContent = String(getTranslations().logDialogText ??
+                "The file includes recent extension events and limited playback and page context from your open Twitch tabs. Nothing is uploaded.");
+            logDialogGenerate.textContent = getLogExportPageText("logExportPreparingAction", "logDialogGenerate", "Preparing...");
+            return;
+        }
+        if (state === "ready") {
+            logDialogTitle.textContent = getLogExportPageText("logExportReadyTitle", "logDialogGenerate", "Debug log ready");
+            logDialogText.textContent = getLogExportPageText("logExportReadyText", "logDialogText", "Save the file, then attach it to your GitHub issue. Nothing is uploaded automatically.");
+            logDialogGenerate.textContent = getLogExportPageText("logExportSave", "logDialogGenerate", "Save log file");
+            return;
+        }
+        if (state === "failed") {
+            logDialogTitle.textContent = getLogExportPageText("logExportFailedTitle", "logDialogTitle", "Could not prepare the debug log");
+            logDialogGenerate.textContent = getLogExportPageText("logExportRetry", "logDialogGenerate", "Try again");
+            return;
+        }
+        logDialogTitle.textContent = getLogExportPageText("logExportSavedTitle", "reportBugLabel", "Debug log saved");
+        logDialogText.textContent = getLogExportPageText("logExportSavedText", "logDialogText", "Attach the saved file to your GitHub issue, then continue to GitHub.");
+        logDialogGenerate.hidden = true;
+        logDialogSkip.classList.add("primary");
+        logDialogSkip.textContent = getLogExportPageText("logExportOpenIssue", "reportBugLabel", "Continue to GitHub");
+    }
     function setLogExportFailure(error) {
         const rawMessage = error instanceof Error ? error.message : String(error || "");
         const message = _sanitizeLogExportText(rawMessage, 240)
             .replace(/\n/g, " ")
             .trim();
+        applyLogExportPageState("failed");
         logDialogText.textContent = message
             ? `Log export failed: ${message}`
             : "Log export failed. Try again.";
@@ -1047,13 +1110,13 @@ document.addEventListener("DOMContentLoaded", () => {
         logDialogOverlay.setAttribute("aria-busy", "true");
         logDialogGenerate.disabled = true;
         logDialogSkip.disabled = false;
-        logDialogText.textContent = String(getTranslations().logDialogText ??
-            "The file includes recent extension events and limited playback and page context from your open Twitch tabs. Nothing is uploaded.");
+        applyLogExportPageState("preparing");
         _buildLogExport(() => generation !== logExportGeneration)
             .then((text) => {
             if (generation !== logExportGeneration)
                 return;
             preparedLogExportText = text;
+            applyLogExportPageState("ready");
             logDialogGenerate.disabled = false;
             logDialogGenerate.focus();
         })
@@ -1126,6 +1189,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!_openLogExportPage()) {
                 setLogExportFailure(new Error("Unable to open the log export tab."));
             }
+            else {
+                hideLogDialog(true);
+                window.close();
+            }
             return;
         }
         if (!preparedLogExportText) {
@@ -1154,13 +1221,14 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (generation !== logExportGeneration)
                 return;
-            logDialogSkip.textContent = String(getTranslations().reportBugLabel ?? "Report a bug.");
+            applyLogExportPageState("saved");
             logDialogSkip.focus();
         })
             .catch((error) => {
             if (generation !== logExportGeneration)
                 return;
             if (_isLogExportCancellation(error)) {
+                applyLogExportPageState("ready");
                 logDialogOverlay.hidden = false;
                 return;
             }
@@ -1519,7 +1587,10 @@ document.addEventListener("DOMContentLoaded", () => {
         console.error("[TTV AB] Popup manifest read error:", error);
     }
     if (isLogExportPage) {
+        document.title = "TTV AB - Debug log";
         logDialogClose.hidden = true;
+        logDialog.setAttribute("role", "main");
+        logDialog.removeAttribute("aria-modal");
         prepareLogExport();
         return;
     }
@@ -1956,7 +2027,23 @@ document.addEventListener("DOMContentLoaded", () => {
         turboModeEnabled = enabled === true;
         turboModeReady = ready === true;
         const isActive = turboModeReady && turboModeEnabled;
-        document.documentElement.classList.toggle("turbo-mode", isActive);
+        const popupRoot = document.documentElement;
+        const wasVisuallyActive = popupRoot.classList.contains("turbo-mode");
+        if (isActive && !wasVisuallyActive) {
+            turboLayoutGeneration++;
+            popupRoot.classList.remove("turbo-layout-collapsed");
+            const collapseGeneration = turboLayoutGeneration;
+            const collapseDelay = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+                ? 0
+                : 440;
+            window.setTimeout(() => settleTurboLayout(collapseGeneration), collapseDelay);
+        }
+        if (!isActive && wasVisuallyActive) {
+            turboLayoutGeneration++;
+            popupRoot.classList.remove("turbo-layout-collapsed");
+            turboStatsShell.getBoundingClientRect();
+        }
+        popupRoot.classList.toggle("turbo-mode", isActive);
         statusCounters.setAttribute("aria-hidden", String(isActive));
         turboStatsShell.setAttribute("aria-hidden", String(isActive));
         statusCounters.inert = isActive;

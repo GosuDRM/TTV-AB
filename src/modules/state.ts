@@ -2,6 +2,7 @@
 
 const _S = {
 	workers: [],
+	workerRefs: [] as WeakRef<object>[],
 	conflicts: ["twitch", "isVariantA"],
 	reinsertPatterns: ["isVariantA"],
 	toleratedWorkerWrappers: [
@@ -12,6 +13,8 @@ const _S = {
 	],
 	adsBlocked: 0,
 };
+const _MAX_DORMANT_WORKER_REFS = 128;
+const _MAX_PLAYER_RELOAD_MEDIA_KEYS = 32;
 const _BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const _BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const _BRIDGE_TOKEN_REQUEST_MESSAGE = "ttvab-bridge-token-request";
@@ -439,12 +442,52 @@ function _postWorkerBridgeMessage(target, message) {
 	return true;
 }
 
+function _forgetDormantWorker(worker) {
+	if (!Array.isArray(_S.workerRefs) || _S.workerRefs.length === 0) {
+		return false;
+	}
+	const previousLength = _S.workerRefs.length;
+	_S.workerRefs = _S.workerRefs.filter((workerRef) => {
+		const candidate = workerRef?.deref?.();
+		return candidate && candidate !== worker;
+	});
+	return _S.workerRefs.length !== previousLength;
+}
+
+function _rememberDormantWorker(worker) {
+	if (!worker || typeof WeakRef !== "function") return false;
+	if (!Array.isArray(_S.workerRefs)) _S.workerRefs = [];
+	_forgetDormantWorker(worker);
+	_S.workerRefs.push(new WeakRef(worker));
+	if (_S.workerRefs.length > _MAX_DORMANT_WORKER_REFS) {
+		_S.workerRefs = _S.workerRefs
+			.filter((workerRef) => workerRef?.deref?.())
+			.slice(-_MAX_DORMANT_WORKER_REFS);
+	}
+	return true;
+}
+
 function _broadcastWorkers(messages) {
 	const queue = Array.isArray(messages) ? messages : [messages];
-	if (queue.length === 0 || _S.workers.length === 0) return;
+	const workerRefs = Array.isArray(_S.workerRefs) ? _S.workerRefs : [];
+	if (
+		queue.length === 0 ||
+		(_S.workers.length === 0 && workerRefs.length === 0)
+	)
+		return;
 
 	const aliveWorkers = [];
-	for (const worker of _S.workers) {
+	const aliveWorkerRefs: WeakRef<object>[] = [];
+	const seenWorkers = new Set();
+	const sendMessages = (worker) => {
+		if (
+			!worker ||
+			seenWorkers.has(worker) ||
+			worker.__TTVABIntentionallyTerminated ||
+			worker.__TTVABCrashed
+		)
+			return false;
+		seenWorkers.add(worker);
 		let isAlive = true;
 		for (const message of queue) {
 			try {
@@ -453,10 +496,15 @@ function _broadcastWorkers(messages) {
 					typeof _getWorkerPlaybackContext === "function"
 						? _getWorkerPlaybackContext(worker)
 						: null;
+				const requiresExactTarget =
+					message?.key === "UpdatePagePlaybackVisibleSinceAt";
 				if (
 					targetMediaKey &&
-					workerPlaybackContext?.MediaKey &&
-					workerPlaybackContext.MediaKey !== targetMediaKey
+					((requiresExactTarget &&
+						workerPlaybackContext?.MediaKey !== targetMediaKey) ||
+						(!requiresExactTarget &&
+							workerPlaybackContext?.MediaKey &&
+							workerPlaybackContext.MediaKey !== targetMediaKey))
 				) {
 					continue;
 				}
@@ -483,12 +531,24 @@ function _broadcastWorkers(messages) {
 				break;
 			}
 		}
+		return isAlive;
+	};
+
+	for (const worker of _S.workers) {
+		const isAlive = sendMessages(worker);
 		if (isAlive) {
 			aliveWorkers.push(worker);
 		}
 	}
+	for (const workerRef of workerRefs) {
+		const worker = workerRef?.deref?.();
+		if (sendMessages(worker)) {
+			aliveWorkerRefs.push(workerRef);
+		}
+	}
 
 	_S.workers = aliveWorkers;
+	_S.workerRefs = aliveWorkerRefs.slice(-_MAX_DORMANT_WORKER_REFS);
 }
 
 function _setPagePlaybackContext(
@@ -515,6 +575,38 @@ function _setPagePlaybackContext(
 			? _getActivePictureInPicturePlaybackContext()
 			: null;
 	const preservedMediaKey = _normalizeMediaKey(activePipContext?.MediaKey);
+	const preservesCurrentAd = Boolean(
+		preservedMediaKey &&
+			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+				preservedMediaKey,
+	);
+	const preservesPinnedBackup = Boolean(
+		preservedMediaKey &&
+			_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey) ===
+				preservedMediaKey,
+	);
+	const preservesCodecHandoff = Boolean(
+		preservedMediaKey &&
+			_normalizeMediaKey(__TTVAB_STATE__.ActiveCodecHandoffMediaKey) ===
+				preservedMediaKey,
+	);
+	const preservesResumeIntent = Boolean(
+		preservedMediaKey &&
+			__TTVAB_STATE__.ShouldResumeAfterAd === true &&
+			_normalizeMediaKey(__TTVAB_STATE__.ShouldResumeAfterAdMediaKey) ===
+				preservedMediaKey,
+	);
+	const preservesLastAdEnd = Boolean(
+		preservedMediaKey &&
+			_normalizeMediaKey(__TTVAB_STATE__.LastAdEndedMediaKey) ===
+				preservedMediaKey,
+	);
+	const preservesPendingReload = Boolean(
+		preservedMediaKey &&
+			_normalizeMediaKey(
+				__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
+			) === preservedMediaKey,
+	);
 	let didResetAdScopedState = false;
 	const hasChanged =
 		__TTVAB_STATE__.PageMediaType !== normalizedContext.MediaType ||
@@ -532,6 +624,9 @@ function _setPagePlaybackContext(
 		nextPreviewEmergencyAutoplay;
 
 	if (didMediaKeyChange) {
+		__TTVAB_STATE__.PagePlaybackContextGeneration =
+			Math.max(0, Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) +
+			1;
 		if (typeof _resetPlaybackIntentForNavigation === "function") {
 			_resetPlaybackIntentForNavigation(
 				normalizedContext.ChannelName,
@@ -542,32 +637,46 @@ function _setPagePlaybackContext(
 		}
 		if (typeof _clearSuppressedMediaTracking === "function") {
 			_clearSuppressedMediaTracking({
-				restoreConnected: true,
+				restoreConnected: false,
 				preserveMediaKey: preservedMediaKey,
 			});
+		}
+		if (typeof _clearWatchTimePlaybackOwnership === "function") {
+			_clearWatchTimePlaybackOwnership();
 		}
 		if (typeof _clearPlaybackRecoveryTimeouts === "function") {
 			_clearPlaybackRecoveryTimeouts(preservedMediaKey);
 		}
-		__TTVAB_STATE__.HasTriggeredPlayerReload = false;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
-		__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
+		if (!preservesPendingReload) {
+			__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+			__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
+		}
 		__TTVAB_STATE__.LastPlayerReloadAt = 0;
-		__TTVAB_STATE__.ShouldResumeAfterAd = false;
-		__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
-		__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
-		__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
-		__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
-		__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
-		__TTVAB_STATE__.LastAdEndedAt = 0;
-		__TTVAB_STATE__.LastAdEndedChannel = null;
-		__TTVAB_STATE__.LastAdEndedMediaKey = null;
-		__TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
-		__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
+		if (!preservesResumeIntent) {
+			__TTVAB_STATE__.ShouldResumeAfterAd = false;
+			__TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
+			__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
+			__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
+		}
+		if (!preservesCurrentAd) {
+			__TTVAB_STATE__.LastAdRecoveryReloadAt = 0;
+			__TTVAB_STATE__.LastAdRecoveryResumeAt = 0;
+			__TTVAB_STATE__._AdRecoveryConsecutiveFailures = 0;
+		}
+		if (!preservesLastAdEnd) {
+			__TTVAB_STATE__.LastAdEndedAt = 0;
+			__TTVAB_STATE__.LastAdEndedChannel = null;
+			__TTVAB_STATE__.LastAdEndedMediaKey = null;
+			__TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
+		}
 
 		if (previousMediaKey && previousMediaKey !== preservedMediaKey) {
+			_invalidateAdCycleAsyncWork(
+				__TTVAB_STATE__.StreamInfos[previousMediaKey],
+			);
 			delete __TTVAB_STATE__.StreamInfos[previousMediaKey];
 			delete __TTVAB_STATE__.AdPodProgressByMediaKey?.[previousMediaKey];
 			for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
@@ -579,14 +688,20 @@ function _setPagePlaybackContext(
 			}
 		}
 
-		__TTVAB_STATE__.CurrentAdChannel = null;
-		__TTVAB_STATE__.CurrentAdMediaKey = null;
-		__TTVAB_STATE__.PinnedBackupPlayerType = null;
-		__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
-		__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
-		__TTVAB_STATE__.ActiveCodecHandoffId = null;
-		__TTVAB_STATE__.ActiveCodecHandoffChannel = null;
-		__TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
+		if (!preservesCurrentAd) {
+			__TTVAB_STATE__.CurrentAdChannel = null;
+			__TTVAB_STATE__.CurrentAdMediaKey = null;
+		}
+		if (!preservesPinnedBackup) {
+			__TTVAB_STATE__.PinnedBackupPlayerType = null;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+		}
+		if (!preservesCodecHandoff) {
+			__TTVAB_STATE__.ActiveCodecHandoffId = null;
+			__TTVAB_STATE__.ActiveCodecHandoffChannel = null;
+			__TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
+		}
 		didResetAdScopedState = true;
 	}
 
@@ -600,6 +715,10 @@ function _setPagePlaybackContext(
 					vodID: normalizedContext.VodID,
 					mediaKey: normalizedContext.MediaKey,
 					allowPreviewEmergencyAutoplayBackup: nextPreviewEmergencyAutoplay,
+					playbackContextGeneration: Math.max(
+						0,
+						Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+					),
 					preservedMediaKey,
 				},
 			},
@@ -625,6 +744,12 @@ function _setPagePlaybackContext(
 			});
 		}
 		_broadcastWorkers(messages);
+		if (
+			didMediaKeyChange &&
+			typeof _syncPagePlaybackVisibilityState === "function"
+		) {
+			_syncPagePlaybackVisibilityState();
+		}
 	}
 
 	return normalizedContext;
@@ -636,8 +761,10 @@ function _releasePlaybackContext(context) {
 	const releasedMediaKey = releasedContext.MediaKey;
 	if (!releasedMediaKey) return false;
 
+	_invalidateAdCycleAsyncWork(__TTVAB_STATE__.StreamInfos[releasedMediaKey]);
 	delete __TTVAB_STATE__.StreamInfos[releasedMediaKey];
 	delete __TTVAB_STATE__.AdPodProgressByMediaKey?.[releasedMediaKey];
+	delete __TTVAB_STATE__.LastPlayerReloadAtByMediaKey?.[releasedMediaKey];
 	for (const url in __TTVAB_STATE__.StreamInfosByUrl) {
 		if (__TTVAB_STATE__.StreamInfosByUrl[url]?.MediaKey === releasedMediaKey) {
 			delete __TTVAB_STATE__.StreamInfosByUrl[url];
@@ -738,6 +865,29 @@ function _recordPlayerReloadAt(mediaKey, at = Date.now()) {
 	delete __TTVAB_STATE__.LastPlayerReloadAtByMediaKey[normalizedMediaKey];
 	__TTVAB_STATE__.LastPlayerReloadAtByMediaKey[normalizedMediaKey] =
 		normalizedAt;
+	const protectedMediaKeys = new Set(
+		[
+			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey),
+			_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey),
+			_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey),
+			_normalizeMediaKey(
+				typeof _getActivePictureInPicturePlaybackContext === "function"
+					? _getActivePictureInPicturePlaybackContext()?.MediaKey
+					: null,
+			),
+		].filter(Boolean),
+	);
+	let reloadMediaKeys = Object.keys(
+		__TTVAB_STATE__.LastPlayerReloadAtByMediaKey,
+	);
+	for (const candidateMediaKey of reloadMediaKeys) {
+		if (reloadMediaKeys.length <= _MAX_PLAYER_RELOAD_MEDIA_KEYS) break;
+		if (protectedMediaKeys.has(candidateMediaKey)) continue;
+		delete __TTVAB_STATE__.LastPlayerReloadAtByMediaKey[candidateMediaKey];
+		reloadMediaKeys = reloadMediaKeys.filter(
+			(mediaKeyEntry) => mediaKeyEntry !== candidateMediaKey,
+		);
+	}
 	return normalizedAt;
 }
 
@@ -796,6 +946,10 @@ function _invalidateAdCycleAsyncWork(info) {
 	if (info._AdRequestController) {
 		info._AdRequestController.abort?.();
 		info._AdRequestController = null;
+	}
+	if (info._AdCycleRequestController) {
+		info._AdCycleRequestController.abort?.();
+		info._AdCycleRequestController = null;
 	}
 	return true;
 }
@@ -914,6 +1068,13 @@ function _applyAdPodProgressToInfo(info, value) {
 	info.NativeRecoveryCandidateLastMediaSequence = null;
 	if (nextCycleStartedAt > 0) {
 		info.VisibleAdStartedAt = nextCycleStartedAt;
+		if (
+			(!info._AdCycleRequestController ||
+				info._AdCycleRequestController.signal?.aborted) &&
+			typeof AbortController === "function"
+		) {
+			info._AdCycleRequestController = new AbortController();
+		}
 	}
 	return entry;
 }
@@ -1069,6 +1230,7 @@ function _declareState(scope) {
 		PageChannel: null,
 		PageVodID: null,
 		PageMediaKey: null,
+		PagePlaybackContextGeneration: 0,
 		AllowPreviewEmergencyAutoplayBackup: false,
 		PagePlaybackVisibleSinceAt: 0,
 		PreferredQualityGroup: null,

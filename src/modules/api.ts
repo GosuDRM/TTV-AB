@@ -150,9 +150,54 @@ function _createFetchRelayResponse(payload, requestUrl = null) {
 	return response;
 }
 
-async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
+function _createRequestAbortError(requestSignal = null) {
+	if (
+		requestSignal?.reason instanceof Error &&
+		requestSignal.reason.name === "AbortError"
+	) {
+		return requestSignal.reason;
+	}
+	try {
+		return new DOMException("Playback request retired", "AbortError");
+	} catch {
+		const error = new Error("Playback request retired");
+		error.name = "AbortError";
+		return error;
+	}
+}
+
+function _waitForRequestDelay(delayMs, requestSignal = null) {
+	if (requestSignal?.aborted) {
+		return Promise.reject(_createRequestAbortError(requestSignal));
+	}
+	return new Promise((resolve, reject) => {
+		const timeoutId = setTimeout(
+			() => {
+				requestSignal?.removeEventListener?.("abort", onAbort);
+				resolve(undefined);
+			},
+			Math.max(0, Number(delayMs) || 0),
+		);
+		const onAbort = () => {
+			clearTimeout(timeoutId);
+			requestSignal?.removeEventListener?.("abort", onAbort);
+			reject(_createRequestAbortError(requestSignal));
+		};
+		requestSignal?.addEventListener?.("abort", onAbort, { once: true });
+	});
+}
+
+async function _fetchViaWorkerBridge(
+	url,
+	options,
+	timeoutMs = 5000,
+	requestSignal = null,
+) {
 	if (!_isWorkerContext() || typeof self?.postMessage !== "function") {
 		return null;
+	}
+	if (requestSignal?.aborted) {
+		throw _createRequestAbortError(requestSignal);
 	}
 
 	let pendingRequests = __TTVAB_STATE__.PendingFetchRequests;
@@ -165,23 +210,50 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 	const requestId = `fetch-${Date.now()}-${nextSeq}`;
 
 	return new Promise((resolve, reject) => {
-		const timeoutId = setTimeout(() => {
+		let settled = false;
+		let timeoutId = null;
+		const relayOptions = { ...(options || {}) };
+		delete relayOptions.signal;
+		const cancelRelay = () => {
+			try {
+				_postWorkerBridgeMessage(self, {
+					key: "CancelFetchRequest",
+					value: { id: requestId },
+				});
+			} catch {}
+		};
+		const cleanup = () => {
+			if (timeoutId !== null) clearTimeout(timeoutId);
+			requestSignal?.removeEventListener?.("abort", onAbort);
 			pendingRequests.delete(requestId);
-			reject(new Error("fetch relay timeout"));
+		};
+		const finish = (callback, value) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			callback(value);
+		};
+		const onAbort = () => {
+			cancelRelay();
+			finish(reject, _createRequestAbortError(requestSignal));
+		};
+		timeoutId = setTimeout(() => {
+			cancelRelay();
+			finish(reject, new Error("fetch relay timeout"));
 		}, timeoutMs);
+		requestSignal?.addEventListener?.("abort", onAbort, { once: true });
 
 		pendingRequests.set(requestId, {
 			resolve: (payload) => {
-				clearTimeout(timeoutId);
 				try {
-					resolve(_createFetchRelayResponse(payload, url));
+					finish(resolve, _createFetchRelayResponse(payload, url));
 				} catch (error) {
-					reject(error);
+					finish(reject, error);
 				}
 			},
 			reject: (error) => {
-				clearTimeout(timeoutId);
-				reject(
+				finish(
+					reject,
 					error instanceof Error
 						? error
 						: new Error(
@@ -196,7 +268,7 @@ async function _fetchViaWorkerBridge(url, options, timeoutMs = 5000) {
 			value: {
 				id: requestId,
 				url,
-				options,
+				options: relayOptions,
 			},
 		});
 	});
@@ -208,7 +280,11 @@ async function _getToken(
 	realFetch,
 	omitViewerHeaders = false,
 	requestDeadlineAt = 0,
+	requestSignal = null,
 ) {
+	if (requestSignal?.aborted) {
+		throw _createRequestAbortError(requestSignal);
+	}
 	const fetchFunc = realFetch || fetch;
 	const reqPlayerType = playerType;
 	const normalizedContext =
@@ -253,10 +329,14 @@ async function _getToken(
 			: Number.POSITIVE_INFINITY;
 
 	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		if (requestSignal?.aborted) {
+			throw _createRequestAbortError(requestSignal);
+		}
 		if (remainingDeadlineMs() <= 0) break;
 		if (attempt > 0) {
-			await new Promise((r) =>
-				setTimeout(r, Math.min(attempt * 500, remainingDeadlineMs())),
+			await _waitForRequestDelay(
+				Math.min(attempt * 500, remainingDeadlineMs()),
+				requestSignal,
 			);
 			if (remainingDeadlineMs() <= 0) break;
 		}
@@ -298,8 +378,12 @@ async function _getToken(
 						_GQL_URL,
 						requestOptions,
 						Math.max(1, Math.min(5000, remainingDeadlineMs())),
+						requestSignal,
 					);
 				} catch (bridgeError) {
+					if (requestSignal?.aborted) {
+						throw _createRequestAbortError(requestSignal);
+					}
 					_log(`Spoof relay error: ${bridgeError.message}`, "warning");
 				}
 			}
@@ -311,7 +395,7 @@ async function _getToken(
 				res = await _fetchWithTimeout(
 					fetchFunc,
 					_GQL_URL,
-					requestOptions,
+					{ ...requestOptions, signal: requestSignal },
 					Math.max(1, Math.min(3000, remainingDeadlineMs())),
 				);
 			}
@@ -319,6 +403,9 @@ async function _getToken(
 			_log(`[Trace] Token response: ${res.status}`, "info");
 			return res;
 		} catch (e) {
+			if (requestSignal?.aborted) {
+				throw _createRequestAbortError(requestSignal);
+			}
 			lastError = e;
 			if (
 				attempt < maxRetries &&

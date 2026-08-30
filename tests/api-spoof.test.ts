@@ -11,6 +11,7 @@ import {
 } from "vitest";
 
 const g = globalThis as Record<string, unknown>;
+let realFetchViaWorkerBridge: unknown;
 
 type GqlPacket = {
 	variables?: {
@@ -34,6 +35,7 @@ beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/api.js");
+	realFetchViaWorkerBridge = g._fetchViaWorkerBridge;
 });
 
 beforeEach(() => {
@@ -540,6 +542,45 @@ describe("_createFetchRelayResponse", () => {
 	});
 });
 
+describe("_fetchViaWorkerBridge cancellation", () => {
+	it("retires the exact page relay and clears worker pending state", async () => {
+		const previousIsWorkerContext = g._isWorkerContext;
+		const postMessage = vi.fn(() => true);
+		const controller = new AbortController();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PendingFetchRequests = new Map();
+		state.FetchRequestSeq = 0;
+		g._isWorkerContext = () => true;
+		g._postWorkerBridgeMessage = postMessage;
+		const fetchViaBridge = realFetchViaWorkerBridge as (
+			url: string,
+			options: Record<string, unknown>,
+			timeoutMs: number,
+			requestSignal: AbortSignal,
+		) => Promise<Response>;
+
+		try {
+			const pending = fetchViaBridge(
+				"https://gql.twitch.tv/gql",
+				{ method: "POST" },
+				5000,
+				controller.signal,
+			);
+			controller.abort();
+
+			await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+			expect(
+				postMessage.mock.calls.map(
+					([, message]) => (message as Record<string, unknown>).key,
+				),
+			).toEqual(["FetchRequest", "CancelFetchRequest"]);
+			expect((state.PendingFetchRequests as Map<string, unknown>).size).toBe(0);
+		} finally {
+			g._isWorkerContext = previousIsWorkerContext;
+		}
+	});
+});
+
 describe("_getToken viewer header policy", () => {
 	const getToken = () =>
 		T<
@@ -760,6 +801,57 @@ describe("_getToken (exhausted-failure sentinel)", () => {
 		const res = await getToken("somechannel", "site", timeoutFetch);
 		expect(attempts).toBe(3);
 		expect(res.status).toBe(0);
+	});
+
+	it("does not retry or fall through to direct fetch after route cancellation", async () => {
+		const getToken =
+			T<
+				(
+					ctx: unknown,
+					playerType: string,
+					realFetch: unknown,
+					omitViewerHeaders: boolean,
+					requestDeadlineAt: number,
+					requestSignal: AbortSignal,
+				) => Promise<Response>
+			>("_getToken");
+		const controller = new AbortController();
+		let markRelayStarted: (() => void) | null = null;
+		const relayStarted = new Promise<void>((resolve) => {
+			markRelayStarted = resolve;
+		});
+		const relay = vi.fn(
+			(
+				_url: string,
+				_options: unknown,
+				_timeoutMs: number,
+				requestSignal: AbortSignal,
+			) =>
+				new Promise<Response>((_resolve, reject) => {
+					markRelayStarted?.();
+					requestSignal.addEventListener(
+						"abort",
+						() => reject(new DOMException("retired", "AbortError")),
+						{ once: true },
+					);
+				}),
+		);
+		g._fetchViaWorkerBridge = relay;
+		const directFetch = vi.fn();
+		const pending = getToken(
+			"somechannel",
+			"site",
+			directFetch,
+			false,
+			0,
+			controller.signal,
+		);
+		await relayStarted;
+		controller.abort();
+
+		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+		expect(relay).toHaveBeenCalledOnce();
+		expect(directFetch).not.toHaveBeenCalled();
 	});
 
 	it("stops a token relay at the caller's overall search deadline", async () => {

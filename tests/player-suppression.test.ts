@@ -29,6 +29,14 @@ beforeEach(() => {
 	if (typeof clearPictureInPictureContext === "function") {
 		clearPictureInPictureContext();
 	}
+	const resetPostAdRecoveryTransaction = g._resetPostAdRecoveryTransaction;
+	if (typeof resetPostAdRecoveryTransaction === "function") {
+		resetPostAdRecoveryTransaction();
+	}
+	const clearPinnedBackupTimelineRestore = g._clearPinnedBackupTimelineRestore;
+	if (typeof clearPinnedBackupTimelineRestore === "function") {
+		clearPinnedBackupTimelineRestore();
+	}
 	const setIndependentVideoAdGuardEnabled =
 		g._setIndependentVideoAdGuardEnabled;
 	if (typeof setIndependentVideoAdGuardEnabled === "function") {
@@ -1259,35 +1267,81 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 			PageChannel: "testchannel",
 			PageVodID: null,
 			PageMediaKey: mediaKey,
+			PagePlaybackVisibleSinceAt: 0,
 			AllowPreviewEmergencyAutoplayBackup: false,
 			CurrentAdMediaKey: "live:testchannel",
 			CurrentAdChannel: "testchannel",
 			PinnedBackupPlayerType: "embed",
 			PinnedBackupPlayerChannel: "testchannel",
 			PinnedBackupPlayerMediaKey: "live:testchannel",
+			ActiveCodecHandoffId: null,
+			ActiveCodecHandoffChannel: null,
+			ActiveCodecHandoffMediaKey: null,
+			HasTriggeredPlayerReload: false,
+			PendingTriggeredPlayerReloadChannel: null,
+			PendingTriggeredPlayerReloadMediaKey: null,
+			PendingTriggeredPlayerReloadAt: 0,
+			PendingTriggeredPlayerReloadCycleStartedAt: 0,
+			LastPlayerReloadAt: 0,
+			LastPlayerReloadAtByMediaKey: Object.create(null),
+			LastAdRecoveryReloadAt: 0,
+			LastAdRecoveryResumeAt: 0,
+			LastAdEndedAt: 0,
+			LastAdEndedChannel: null,
+			LastAdEndedMediaKey: null,
+			LastAdEndedCycleStartedAt: 0,
+			ShouldResumeAfterAd: false,
+			ShouldResumeAfterAdChannel: null,
+			ShouldResumeAfterAdMediaKey: null,
+			ShouldResumeAfterAdUntil: 0,
+			AdPodProgressByMediaKey: Object.create(null),
 			StreamInfos: Object.create(null),
 			StreamInfosByUrl: Object.create(null),
 		};
 		(g._S as Record<string, unknown>).workers = [];
+		(g._S as Record<string, unknown>).workerRefs = [];
 	}
 
-	it("restores connected suppressed media when the media key changes", () => {
+	it("keeps a connected competitor silent until it becomes the current primary", () => {
 		navState("live:testchannel");
 		const media = addSuppressed(true);
+		const nextPrimary = document.createElement("video");
+		document.body.appendChild(nextPrimary);
 		suppressionState().activeMediaKey = "live:testchannel";
+		const previousGetPrimary = g._getPrimaryMediaElement;
 
-		setContext()(
-			{ MediaType: "live", ChannelName: "otherchannel" },
-			{ broadcast: false },
-		);
+		try {
+			setContext()(
+				{ MediaType: "live", ChannelName: "otherchannel" },
+				{ broadcast: false },
+			);
 
-		expect(media.muted).toBe(false);
-		expect(media.volume).toBe(1);
-		expect(media.hasAttribute("data-ttvab-audio-suppressed")).toBe(false);
-		expect(suppressionState().suppressedMedia.size).toBe(0);
-		expect(
-			(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey,
-		).toBe(null);
+			expect(media.muted).toBe(true);
+			expect(media.volume).toBe(0);
+			expect(media.hasAttribute("data-ttvab-audio-suppressed")).toBe(false);
+			expect(suppressionState().suppressedMedia.size).toBe(0);
+			expect(suppressionState().detachedMediaStates.has(media)).toBe(true);
+			expect(
+				(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey,
+			).toBe(null);
+
+			g._getPrimaryMediaElement = () => nextPrimary;
+			expect(
+				T<() => number>("_restoreReattachedSuppressedPrimaryMedia")(),
+			).toBe(0);
+			expect(media.muted).toBe(true);
+
+			g._getPrimaryMediaElement = () => media;
+			expect(
+				T<() => number>("_restoreReattachedSuppressedPrimaryMedia")(),
+			).toBe(1);
+			expect(media.muted).toBe(false);
+			expect(media.volume).toBe(1);
+			expect(media.hasAttribute("data-ttvab-audio-suppressed")).toBe(false);
+			expect(suppressionState().detachedMediaStates.has(media)).toBe(false);
+		} finally {
+			g._getPrimaryMediaElement = previousGetPrimary;
+		}
 	});
 
 	it("keeps suppression intact when the context is unchanged", () => {
@@ -1353,6 +1407,19 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 
 	it("preserves the active pip stream and scopes worker cleanup when the page navigates", () => {
 		navState("live:testchannel");
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.ShouldResumeAfterAd = true;
+		state.ShouldResumeAfterAdChannel = "testchannel";
+		state.ShouldResumeAfterAdMediaKey = "live:testchannel";
+		state.ShouldResumeAfterAdUntil = Date.now() + 15000;
+		state.ActiveCodecHandoffId = "handoff-1";
+		state.ActiveCodecHandoffChannel = "testchannel";
+		state.ActiveCodecHandoffMediaKey = "live:testchannel";
+		state.HasTriggeredPlayerReload = true;
+		state.PendingTriggeredPlayerReloadChannel = "testchannel";
+		state.PendingTriggeredPlayerReloadMediaKey = "live:testchannel";
+		state.PendingTriggeredPlayerReloadAt = Date.now();
+		state.PendingTriggeredPlayerReloadCycleStartedAt = 5000;
 		const streamInfo = { MediaKey: "live:testchannel" };
 		(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).StreamInfos as Record<
@@ -1390,6 +1457,11 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 		).toBe(streamInfo);
 		expect(media.muted).toBe(true);
 		expect(suppressionState().suppressedMedia.size).toBe(1);
+		expect(state.CurrentAdMediaKey).toBe("live:testchannel");
+		expect(state.PinnedBackupPlayerMediaKey).toBe("live:testchannel");
+		expect(state.ActiveCodecHandoffMediaKey).toBe("live:testchannel");
+		expect(state.ShouldResumeAfterAdMediaKey).toBe("live:testchannel");
+		expect(state.PendingTriggeredPlayerReloadMediaKey).toBe("live:testchannel");
 		const messages = postMessage.mock.calls.map(
 			([envelope]) =>
 				(envelope as { message: Record<string, unknown> }).message,
@@ -1412,6 +1484,57 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 				}),
 			]),
 		);
+	});
+
+	it("preserves exact post-ad recovery and decoder repair ownership for pip navigation", () => {
+		navState("live:testchannel");
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		state.LastAdEndedAt = Date.now();
+		state.LastAdEndedChannel = "testchannel";
+		state.LastAdEndedMediaKey = "live:testchannel";
+		state.LastAdEndedCycleStartedAt = 5000;
+		state.ShouldResumeAfterAd = true;
+		state.ShouldResumeAfterAdChannel = "testchannel";
+		state.ShouldResumeAfterAdMediaKey = "live:testchannel";
+		state.ShouldResumeAfterAdUntil = Date.now() + 15000;
+		const transaction = g._PostAdRecoveryTransactionState as Record<
+			string,
+			unknown
+		>;
+		transaction.channel = "testchannel";
+		transaction.mediaKey = "live:testchannel";
+		transaction.cycleStartedAt = 5000;
+		transaction.expiresAt = Date.now() + 30000;
+		T<(mediaKey: string, cycleStartedAt: number) => boolean>(
+			"_markPinnedBackupTimelineRestore",
+		)("live:testchannel", 5000);
+		const pip = document.createElement("video");
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(pip, {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+
+		setContext()(
+			{ MediaType: "live", ChannelName: "otherchannel" },
+			{ broadcast: false },
+		);
+
+		expect(state.LastAdEndedMediaKey).toBe("live:testchannel");
+		expect(state.ShouldResumeAfterAdMediaKey).toBe("live:testchannel");
+		expect(transaction.mediaKey).toBe("live:testchannel");
+		expect(
+			(g._PinnedBackupTimelineRestoreState as Record<string, unknown>).mediaKey,
+		).toBe("live:testchannel");
+		expect(
+			T<(mediaKey: string, cycleStartedAt: number) => boolean>(
+				"_isPostAdRecoveryCycleCurrent",
+			)("live:testchannel", 5000),
+		).toBe(true);
 	});
 });
 

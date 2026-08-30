@@ -38,7 +38,6 @@
 
         body {
             width: 100%;
-            min-height: 100%;
             padding: clamp(14px, 5vw, 20px);
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -699,6 +698,7 @@
             grid-template-rows: 1fr;
             opacity: 1;
             transform: translateY(0);
+            overflow: hidden;
             transition: grid-template-rows 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.24s ease, transform 0.38s ease;
         }
 
@@ -712,6 +712,10 @@
             opacity: 0;
             transform: translateY(-8px);
             pointer-events: none;
+        }
+
+        html.turbo-mode.turbo-layout-collapsed .turbo-collapsible {
+            display: none;
         }
 
         html.turbo-mode .status-card {
@@ -1597,8 +1601,14 @@
             text-align: center;
         }
 
-        html.log-export-page .log-dialog {
-            max-width: 360px;
+        .log-export-brand {
+            display: none;
+        }
+
+        .log-export-brand img {
+            width: 42px;
+            height: 42px;
+            object-fit: contain;
         }
 
         .log-dialog-close {
@@ -1687,6 +1697,62 @@
             outline-offset: 2px;
         }
 
+        html.log-export-page .log-dialog-overlay {
+            position: static;
+            min-height: 100vh;
+            align-items: flex-start;
+            justify-content: center;
+            padding: clamp(56px, 12vh, 120px) 24px;
+            background: transparent;
+            backdrop-filter: none;
+        }
+
+        html.log-export-page .log-dialog {
+            max-width: 480px;
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+            text-align: left;
+        }
+
+        html.log-export-page .log-export-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 30px;
+            color: #fff;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        html.log-export-page .log-dialog-title {
+            margin-bottom: 10px;
+            font-size: 24px;
+            line-height: 1.2;
+        }
+
+        html.log-export-page .log-dialog-text {
+            max-width: 440px;
+            margin-bottom: 22px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        html.log-export-page .log-dialog-actions {
+            max-width: 360px;
+        }
+
+        html.log-export-page .log-dialog-btn {
+            padding: 11px 14px;
+        }
+
+        html.log-export-page .log-dialog-close {
+            display: none;
+        }
+
         .report-bug {
             display: flex;
             align-items: center;
@@ -1713,17 +1779,6 @@
 		.report-bug:focus-visible {
 			outline: 2px solid rgba(244, 67, 54, 0.85);
 			outline-offset: 2px;
-		}
-
-		html.turbo-mode .report-bug {
-			border-color: rgba(47, 240, 230, 0.4);
-			background: rgba(47, 240, 230, 0.08);
-			color: #8cf8f2;
-		}
-
-		html.turbo-mode .report-bug:hover {
-			border-color: rgba(47, 240, 230, 0.75);
-			background: rgba(47, 240, 230, 0.16);
 		}
 
         /* ===================== Retro Synthwave Theme ===================== */
@@ -2087,12 +2142,6 @@
             background: rgba(0, 230, 118, 0.16);
             border-color: #00e676;
             color: #fff;
-        }
-
-        html[data-theme="retro"].turbo-mode .report-bug {
-            border-color: var(--r-cyan);
-            color: var(--r-cyan);
-            box-shadow: 0 0 12px rgba(47, 240, 230, 0.25);
         }
 
         html[data-theme="retro"] .footer {
@@ -2677,9 +2726,14 @@
     </div>
 
     <div class="log-dialog-overlay" id="logDialogOverlay" hidden>
-        <div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="logDialogTitle">
+        <div class="log-dialog" id="logDialog" role="dialog" aria-modal="true" aria-labelledby="logDialogTitle">
+            <div class="log-export-brand">
+                <img src="../../assets/icons/icon128.png" alt="" aria-hidden="true" width="42" height="42">
+                <span>TTV AB</span>
+            </div>
             <button type="button" class="log-dialog-close" id="logDialogClose" aria-label="Close">×</button>
-            <div class="log-dialog-title" id="logDialogTitle" data-i18n="logDialogTitle">Attach debug logs?</div>
+            <div class="log-dialog-title" id="logDialogTitle" data-i18n="logDialogTitle" aria-live="polite"
+                aria-atomic="true">Attach debug logs?</div>
             <p class="log-dialog-text" id="logDialogText" data-i18n="logDialogText">The file includes recent extension events and limited playback and page context from your open Twitch tabs. Nothing is uploaded.</p>
             <div class="log-dialog-actions">
                 <button type="button" class="log-dialog-btn primary" id="logDialogGenerate"

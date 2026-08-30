@@ -26,7 +26,7 @@ const storageSetupOrder: string[] = [];
 let runtimeLogListener:
 	| ((
 			message: unknown,
-			sender: { id?: string },
+			sender: { id?: string; tab?: { id?: number } },
 			sendResponse: (response: unknown) => void,
 	  ) => unknown)
 	| null = null;
@@ -118,6 +118,8 @@ beforeEach(() => {
 	g.bridgeStateReady = false;
 	g.handshakeRetryCount = 0;
 	g.logCollectionSequence = 0;
+	(g.previewFailureDiagnostics as unknown[]).length = 0;
+	g.droppedPreviewFailureLogEntries = 0;
 	if (g.initialStorageReadTimer) {
 		clearTimeout(g.initialStorageReadTimer as ReturnType<typeof setTimeout>);
 	}
@@ -161,6 +163,16 @@ function requestRuntimeLogs(sendResponse: (response: unknown) => void) {
 		{ id: "ttvab-test" },
 		sendResponse,
 	);
+}
+
+function dispatchRuntimeMessage(
+	message: Record<string, unknown>,
+	sender: { id?: string; tab?: { id?: number } } = { id: "ttvab-test" },
+	sendResponse: (response: unknown) => void = () => {},
+) {
+	if (!runtimeLogListener)
+		throw new Error("runtime listener was not installed");
+	return runtimeLogListener(message, sender, sendResponse);
 }
 
 function makePagePort(shouldThrow = false) {
@@ -809,6 +821,30 @@ describe("measured ad duration batching", () => {
 });
 
 describe("log export sanitization", () => {
+	it("recognizes only exact Previews hover-player frame URLs", () => {
+		const classify = g.getExactPreviewsPlayerFrameContext as (
+			value: unknown,
+		) => Record<string, unknown> | null;
+
+		expect(
+			classify(
+				"https://player.twitch.tv/?channel=Some_Channel&parent=twitch.tv&tp_prev=s",
+			),
+		).toEqual({
+			channel: "some_channel",
+			mediaKey: "live:some_channel",
+			previewType: "s",
+		});
+		for (const url of [
+			"https://player.twitch.tv/?channel=some_channel&tp_prev=c",
+			"https://player.twitch.tv.example.com/?channel=some_channel&tp_prev=s",
+			"http://player.twitch.tv/?channel=some_channel&tp_prev=s",
+			"https://player.twitch.tv/?channel=bad-channel&tp_prev=d",
+		]) {
+			expect(classify(url)).toBeNull();
+		}
+	});
+
 	it("normalizes fields and removes control characters and secrets", () => {
 		const sanitize = g.sanitizeLogEntries as (value: unknown) => {
 			entries: Array<Record<string, unknown>>;
@@ -1008,6 +1044,148 @@ describe("log export sanitization", () => {
 });
 
 describe("runtime log collection lifecycle", () => {
+	it("routes authenticated page preview diagnostics through the isolated bridge", () => {
+		const originalForward = g.forwardPreviewFailureDiagnostic;
+		const forward = vi.fn();
+		g.forwardPreviewFailureDiagnostic = forward;
+		try {
+			handlePageMessage({
+				type: "ttvab-preview-failure-diagnostic",
+				detail: { mediaKey: "live:some_channel" },
+			});
+			expect(forward).toHaveBeenCalledWith({
+				mediaKey: "live:some_channel",
+			});
+		} finally {
+			g.forwardPreviewFailureDiagnostic = originalForward;
+		}
+	});
+
+	it("retains a bounded sanitized hover-preview failure snapshot in the top frame", () => {
+		const firstResponse = vi.fn();
+		const port = makePagePort();
+		g.pageBridgePort = port;
+		g.pageBridgeConnected = true;
+
+		dispatchRuntimeMessage({
+			type: "ttvab-preview-failure-diagnostic-forward",
+			detail: {
+				channel: "Some_Channel",
+				mediaKey: "live:some_channel",
+				previewType: "s",
+				reason: "clean-fallback-unavailable",
+				reportedAt: 2000,
+				status: 0,
+				entries: [
+					{
+						t: 1900,
+						l: "warning",
+						m: "token=private hover worker failed",
+						w: true,
+						g: 4,
+						k: "live:some_channel",
+					},
+				],
+				context: {
+					pageMediaKey: "live:some_channel",
+					pageChannel: "some_channel",
+					media: {
+						errorCode: 2,
+						readyState: 0,
+						networkState: 3,
+						paused: true,
+						currentTime: 0,
+						buffered: [],
+					},
+				},
+				truncatedEntries: 3,
+			},
+		});
+
+		expect(requestRuntimeLogs(firstResponse)).toBe(true);
+		const request = port.messages[0]?.detail as { requestId: string };
+		handlePageMessage({
+			type: "ttvab-logs",
+			detail: {
+				requestId: request.requestId,
+				entries: [{ t: 1800, l: "info", m: "top frame", w: false }],
+				context: { pageUrl: "https://www.twitch.tv/current_channel" },
+				truncatedEntries: 0,
+			},
+		});
+
+		const response = firstResponse.mock.calls[0]?.[0] as {
+			entries: Array<Record<string, unknown>>;
+			truncatedEntries: number;
+		};
+		const messages = response.entries.map((entry) => String(entry.m));
+		expect(messages).toContain("top frame");
+		expect(messages).toContain(
+			"Hover preview some_channel master failed: type=s reason=clean-fallback-unavailable",
+		);
+		expect(messages).toContain(
+			"Hover preview some_channel state: error=2 ready=0 network=3 paused=true time=0 buffered=none",
+		);
+		expect(messages.some((message) => message.includes("token=private"))).toBe(
+			false,
+		);
+		expect(messages).toContain(
+			"[Hover preview some_channel] token=[redacted] hover worker failed",
+		);
+		expect(response.truncatedEntries).toBe(3);
+	});
+
+	it("does not accept a forwarded preview snapshot directly from another content frame", () => {
+		dispatchRuntimeMessage(
+			{
+				type: "ttvab-preview-failure-diagnostic-forward",
+				detail: {
+					channel: "some_channel",
+					mediaKey: "live:some_channel",
+					previewType: "s",
+					reason: "retry-failed",
+					entries: [],
+					context: { pageMediaKey: "live:some_channel" },
+				},
+			},
+			{ id: "ttvab-test", tab: { id: 7 } },
+		);
+
+		expect(g.previewFailureDiagnostics).toEqual([]);
+	});
+
+	it("caps retained preview failures without deduplicating repeated reports", () => {
+		const retain = g.retainPreviewFailureDiagnostic as (
+			value: unknown,
+		) => boolean;
+		for (let index = 0; index < 5; index++) {
+			expect(
+				retain({
+					channel: `channel_${index}`,
+					mediaKey: `live:channel_${index}`,
+					previewType: "d",
+					reason: "retry-failed",
+					reportedAt: 1000 + index,
+					entries: [{ t: 1000 + index, l: "warning", m: `failure ${index}` }],
+					context: { pageMediaKey: `live:channel_${index}` },
+				}),
+			).toBe(true);
+		}
+
+		expect(g.previewFailureDiagnostics).toHaveLength(4);
+		expect(g.droppedPreviewFailureLogEntries).toBe(2);
+		const merge = g.mergePreviewFailureDiagnostics as (entries: unknown[]) => {
+			entries: Array<Record<string, unknown>>;
+		};
+		const messages = merge([]).entries.map((entry) => String(entry.m));
+		expect(messages.some((message) => message.includes("channel_0"))).toBe(
+			false,
+		);
+		expect(
+			messages.filter((message) => message.includes("channel_4")),
+		).toHaveLength(2);
+	});
+
 	it("returns an explicit error when the page bridge is unavailable", () => {
 		const response = vi.fn();
 

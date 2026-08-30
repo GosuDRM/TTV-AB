@@ -503,9 +503,17 @@ describe("popup toggle authority", () => {
 		expect(source).toContain("nextSelector.value = selectedLanguage;");
 		expect(source).toContain("if (setStoredTheme(theme)) {");
 		expect(source).toContain(
-			'document.documentElement.classList.toggle("turbo-mode", isActive);',
+			'popupRoot.classList.toggle("turbo-mode", isActive);',
 		);
 		expect(source).toContain("turboStatsShell.inert = isActive;");
+		expect(source).toContain('translations.reportBugLabel ?? "Report a bug."');
+		expect(source).not.toMatch(
+			/turboModeEnabled[\s\S]{0,120}translations\.logDialogGenerate/,
+		);
+		expect(html).not.toContain("html.turbo-mode .report-bug");
+		expect(html).not.toContain(
+			'html[data-theme="retro"].turbo-mode .report-bug',
+		);
 		expect(html).toContain('id="themeToggle"');
 		expect(html).toContain('id="langSelector"');
 		expect(html).toContain('value="auto" id="langAutoOption"');
@@ -523,8 +531,60 @@ describe("popup toggle authority", () => {
 		const bodyRule = html.match(/\n {8}body \{([\s\S]*?)\n {8}\}/)?.[1];
 
 		expect(bodyRule).toBeDefined();
+		expect(bodyRule).not.toContain("min-height");
 		expect(bodyRule).not.toContain("max-height: 100vh");
 		expect(bodyRule).not.toContain("overflow-y: auto");
+		expect(html).toMatch(
+			/html\.log-export-page body\s*\{[\s\S]*?min-height:\s*100vh;/,
+		);
+	});
+
+	it("keeps the v17.0.0 Turbo motion without a stale Firefox compositor frame", () => {
+		const html = readFileSync(
+			resolve(__dirname, "../src/popup/popup.html"),
+			"utf8",
+		);
+		const source = readFileSync(
+			resolve(__dirname, "../src/popup/popup.ts"),
+			"utf8",
+		);
+		const turboBaseRule = html.match(
+			/\n {8}\.turbo-collapsible \{([\s\S]*?)\n {8}\}/,
+		)?.[1];
+		const turboActiveRule = html.match(
+			/html\.turbo-mode \.turbo-collapsible \{([\s\S]*?)\n {8}\}/,
+		)?.[1];
+		const turboSettledRule = html.match(
+			/html\.turbo-mode\.turbo-layout-collapsed \.turbo-collapsible \{([\s\S]*?)\n {8}\}/,
+		)?.[1];
+
+		expect(turboBaseRule).toContain(
+			"transition: grid-template-rows 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.24s ease, transform 0.38s ease;",
+		);
+		expect(turboBaseRule).toContain("overflow: hidden;");
+		expect(turboBaseRule).not.toContain("will-change");
+		expect(turboBaseRule).toContain("transform: translateY(0);");
+		expect(turboActiveRule).toContain("grid-template-rows: 0fr;");
+		expect(turboActiveRule).toContain("transform: translateY(-8px);");
+		expect(turboActiveRule).not.toContain("display: none;");
+		expect(turboSettledRule).toContain("display: none;");
+		expect(source).toContain(
+			'turboStatsShell.addEventListener("transitionend", (event) => {',
+		);
+		expect(source).toContain('event.propertyName !== "grid-template-rows"');
+		expect(source).toContain("settleTurboLayout(turboLayoutGeneration);");
+		expect(source).toContain("requestAnimationFrame(() => {");
+		expect(source).toContain("generation !== turboLayoutGeneration");
+		expect(source).toContain("const collapseDelay = window.matchMedia(");
+		expect(source).toContain("? 0");
+		expect(source).toContain(": 440;");
+		expect(source).toContain(
+			'document.documentElement.classList.add("turbo-layout-collapsed")',
+		);
+		expect(source).toContain(
+			'popupRoot.classList.remove("turbo-layout-collapsed")',
+		);
+		expect(source).toContain("turboStatsShell.getBoundingClientRect();");
 	});
 
 	it("compacts vertical gaps so constrained popups keep the locale footer visible", () => {

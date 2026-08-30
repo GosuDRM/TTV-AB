@@ -78,6 +78,31 @@ describe("popup log formatting", () => {
 		});
 	});
 
+	it("uses one dedicated export page and closes the originating popup", () => {
+		const html = readFileSync(
+			resolve(__dirname, "../src/popup/popup.html"),
+			"utf8",
+		);
+		const source = readFileSync(
+			resolve(__dirname, "../src/popup/popup.ts"),
+			"utf8",
+		);
+		const pageOverlayRule = html.match(
+			/html\.log-export-page \.log-dialog-overlay \{([\s\S]*?)\n {8}\}/,
+		)?.[1];
+
+		expect(pageOverlayRule).toContain("position: static;");
+		expect(pageOverlayRule).toContain("background: transparent;");
+		expect(pageOverlayRule).toContain("backdrop-filter: none;");
+		expect(html).toContain('class="log-export-brand"');
+		expect(html).toContain('id="logDialog" role="dialog"');
+		expect(source).toContain('logDialog.setAttribute("role", "main");');
+		expect(source).toContain('logDialog.removeAttribute("aria-modal");');
+		expect(source).toContain('applyLogExportPageState("ready");');
+		expect(source).toContain('applyLogExportPageState("saved");');
+		expect(source).toMatch(/hideLogDialog\(true\);\s+window\.close\(\);/);
+	});
+
 	it("formats malformed timestamps and multiline worker ownership safely", () => {
 		const format = T<(entry: Record<string, unknown>) => string>(
 			"_formatLogEntryLine",
