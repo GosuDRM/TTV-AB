@@ -72,15 +72,16 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.1.1 - 2026-08-31
+- **Fixed rapid channel switching and long-running playback ownership.** Stale or out-of-order player work can no longer retake the current stream, while worker tracking stays bounded without evicting current or Picture-in-Picture playback.
+- **Corrected focus, multi-tab, and watch-time handling.** Hidden tabs, active Picture-in-Picture, and channel transitions remain separate, and passive hover or directory previews no longer count as watched streams.
+
 ### v17.0.0 - 2026-08-29
 - **Added Turbo Mode for a focused ad-blocking popup.** It pauses new statistics and achievements, clears the badge, and dynamically collapses the dashboard without changing Ad Blocking, Ad Spoofing, Low Quality Fallback, or playback recovery.
 - **Fixed Generate Log sometimes producing no file.** Log collection now continues in a dedicated tab and waits for an explicit save action, so closing the extension popup no longer cancels the export.
 
 ### v16.3.3 - 2026-08-29
 - **Fixed 1440p streams getting stuck on a loading circle after an ad was blocked.** The temporary AVC handoff now keeps the exact post-ad recovery authorization through long breaks, while explicit pauses still stop automatic playback.
-
-### v16.3.2 - 2026-08-29
-- **Fixed post-ad recovery repeatedly starting another preroll after long-running 1440p or enhanced-quality streams.** Decoder rebuilds now keep the exact verified native session while continuing to fetch live media, so playback can return once instead of cycling through ad blocking and fallback recovery.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.1.1] - 2026-08-31
+
+- Fixed rapid channel switching and out-of-order playlist requests so stale channel work cannot take control of the current stream.
+- Bounded worker tracking for long-running and multi-tab sessions while preserving the exact current and Picture-in-Picture playback owners.
+- Corrected focus, hidden-tab, Picture-in-Picture, and watch-time ownership so passive hover and directory previews are not counted as watched streams.
+- Retained bounded Previews hover-player recovery failures for Generate Log after the temporary preview frame closes.
+- Revised Report a bug so the toolbar popup closes after opening the dedicated debug-log page, which now shows localized preparation, save, failure, and GitHub handoff states without a duplicate modal.
+
 ## [17.0.0] - 2026-08-29
 
 - Added opt-in Turbo Mode, which pauses new statistics and achievements, clears the badge, and preserves existing history until the mode is disabled.
