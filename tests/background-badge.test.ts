@@ -6,10 +6,22 @@ const g = globalThis as Record<string, unknown>;
 
 type BadgeCall = { method: string; arg: unknown };
 const badgeCalls: BadgeCall[] = [];
+const tabMessages: Array<{
+	tabId: number;
+	message: Record<string, unknown>;
+	options: Record<string, unknown>;
+}> = [];
 let storageData: Record<string, unknown> = {};
 const storageChangeListeners: Array<
 	(changes: Record<string, { newValue?: unknown }>, namespace: string) => void
 > = [];
+let runtimeMessageListener:
+	| ((
+			message: unknown,
+			sender: Record<string, unknown>,
+			sendResponse: (response: unknown) => void,
+	  ) => unknown)
+	| null = null;
 
 function loadBackground() {
 	const js = readFileSync(
@@ -28,7 +40,22 @@ beforeAll(() => {
 		runtime: {
 			id: "ttvab-test",
 			lastError: null,
-			onMessage: { addListener: () => {} },
+			onMessage: {
+				addListener: (listener: typeof runtimeMessageListener) => {
+					runtimeMessageListener = listener;
+				},
+			},
+		},
+		tabs: {
+			sendMessage: (
+				tabId: number,
+				message: Record<string, unknown>,
+				options: Record<string, unknown>,
+				callback: () => void,
+			) => {
+				tabMessages.push({ tabId, message, options });
+				callback();
+			},
 		},
 		storage: {
 			local: {
@@ -63,9 +90,71 @@ beforeAll(() => {
 
 beforeEach(() => {
 	badgeCalls.length = 0;
+	tabMessages.length = 0;
 	storageData = {};
 	g.turboModeEnabled = false;
 	g.turboModeRevision = 0;
+});
+
+describe("hover preview diagnostic routing", () => {
+	it("forwards only an exact child Previews frame to frame zero", () => {
+		if (!runtimeMessageListener) throw new Error("runtime listener missing");
+		const detail = {
+			mediaKey: "live:spoofed",
+			reason: "retry-failed",
+			entries: [],
+			context: { pageMediaKey: "live:some_channel" },
+		};
+		runtimeMessageListener(
+			{ type: "ttvab-preview-failure-diagnostic", detail },
+			{
+				id: "ttvab-test",
+				frameId: 12,
+				tab: { id: 7 },
+				url: "https://player.twitch.tv/?channel=Some_Channel&parent=twitch.tv&tp_prev=d",
+			},
+			() => {},
+		);
+
+		expect(tabMessages).toEqual([
+			{
+				tabId: 7,
+				message: {
+					type: "ttvab-preview-failure-diagnostic-forward",
+					detail: {
+						...detail,
+						channel: "some_channel",
+						mediaKey: "live:some_channel",
+						previewType: "d",
+					},
+				},
+				options: { frameId: 0 },
+			},
+		]);
+
+		for (const sender of [
+			{
+				id: "ttvab-test",
+				frameId: 0,
+				tab: { id: 7 },
+				url: "https://player.twitch.tv/?channel=some_channel&tp_prev=s",
+			},
+			{
+				id: "ttvab-test",
+				frameId: 3,
+				tab: { id: 7 },
+				url: "https://player.twitch.tv.example.com/?channel=some_channel&tp_prev=s",
+			},
+		]) {
+			runtimeMessageListener(
+				{ type: "ttvab-preview-failure-diagnostic", detail },
+				sender,
+				() => {},
+			);
+		}
+
+		expect(tabMessages).toHaveLength(1);
+	});
 });
 
 function fmt(n: number): string {

@@ -113,6 +113,10 @@ function _resetStreamAdState(info) {
 		info._AdRequestController.abort();
 		info._AdRequestController = null;
 	}
+	if (info._AdCycleRequestController) {
+		info._AdCycleRequestController.abort();
+		info._AdCycleRequestController = null;
+	}
 	_resetNativeRecoveryReadyState(info);
 
 	return {
@@ -1579,10 +1583,19 @@ function _getNativeRecoveryProbePlayerType() {
 async function _fetchWithTimeout(
 	realFetch,
 	url,
-	options = {},
+	options: RequestInit = {},
 	timeoutMs = 3500,
 ) {
 	const controller = new AbortController();
+	const externalSignal = options?.signal || null;
+	const abortFromExternalSignal = () => controller.abort();
+	if (externalSignal?.aborted) {
+		abortFromExternalSignal();
+	} else {
+		externalSignal?.addEventListener?.("abort", abortFromExternalSignal, {
+			once: true,
+		});
+	}
 	const id = setTimeout(() => controller.abort(), timeoutMs);
 	try {
 		const response = await realFetch(url, {
@@ -1602,6 +1615,7 @@ async function _fetchWithTimeout(
 		});
 	} finally {
 		clearTimeout(id);
+		externalSignal?.removeEventListener?.("abort", abortFromExternalSignal);
 	}
 }
 
@@ -1745,6 +1759,7 @@ async function _canReloadNativePlayerAfterAd(
 	const nativePlayerType = _getNativeRecoveryProbePlayerType();
 	const probeMediaKey = _normalizeMediaKey(info.MediaKey);
 	const probeCycleStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
+	const requestSignal = info?._AdCycleRequestController?.signal || null;
 	const probeIsLive =
 		info?.MediaType !== "vod" && !probeMediaKey?.startsWith("vod:");
 	const cachedProbeStreamUrl =
@@ -1778,6 +1793,7 @@ async function _canReloadNativePlayerAfterAd(
 		info._NativeRecoveryProbeToken !== probeToken ||
 		(Number(info.NativeRecoveryProbeEpoch) || 0) !== probeEpoch ||
 		!probeMediaKey ||
+		requestSignal?.aborted ||
 		_normalizeMediaKey(info.MediaKey) !== probeMediaKey ||
 		probeCycleStartedAt <= 0 ||
 		!_isCodecHandoffCycleCurrent(probeMediaKey, probeCycleStartedAt, info);
@@ -1786,7 +1802,14 @@ async function _canReloadNativePlayerAfterAd(
 
 	try {
 		if (!probeStreamUrl) {
-			const tokenRes = await _getToken(info, nativePlayerType, realFetch);
+			const tokenRes = await _getToken(
+				info,
+				nativePlayerType,
+				realFetch,
+				false,
+				0,
+				requestSignal,
+			);
 			if (probeInvalidated()) {
 				return false;
 			}
@@ -1824,7 +1847,9 @@ async function _canReloadNativePlayerAfterAd(
 				return false;
 			}
 
-			const encRes = await _fetchWithTimeout(realFetch, usherUrl.href);
+			const encRes = await _fetchWithTimeout(realFetch, usherUrl.href, {
+				signal: requestSignal,
+			});
 			if (probeInvalidated()) {
 				return false;
 			}
@@ -1864,7 +1889,9 @@ async function _canReloadNativePlayerAfterAd(
 			}
 		}
 
-		const streamRes = await _fetchWithTimeout(realFetch, probeStreamUrl);
+		const streamRes = await _fetchWithTimeout(realFetch, probeStreamUrl, {
+			signal: requestSignal,
+		});
 		if (probeInvalidated()) {
 			return false;
 		}
@@ -2131,6 +2158,10 @@ function _createStreamInfo(context) {
 		LoggedBackupAdsByType: null,
 		_EmptyAdHoldMediaSequence: 0,
 		_FatalMediaRecoveryRequestId: null,
+		_AdCycleRequestController:
+			ownsCurrentAdCycle && typeof AbortController === "function"
+				? new AbortController()
+				: null,
 		_CodecHandoffSequence: 0,
 		_CodecHandoffPendingId: null,
 		_CodecHandoffAcknowledgedId: null,
@@ -3830,6 +3861,9 @@ async function _processM3U8Core(
 		__TTVAB_STATE__.LastAdDetectedAt = now;
 		info.FailedBackupPlayerTypes?.clear?.();
 		if (cycleChanged) {
+			info._AdCycleRequestController?.abort?.();
+			info._AdCycleRequestController =
+				typeof AbortController === "function" ? new AbortController() : null;
 			_resetNativeRecoveryReadyState(info);
 			info.BackupSearchEpoch =
 				Math.max(0, Number(info.BackupSearchEpoch) || 0) + 1;
@@ -3842,6 +3876,13 @@ async function _processM3U8Core(
 			info.LastCleanBackupResolution = null;
 			info.LastCleanBackupAt = 0;
 			info.BackupPlaylistMetadata?.clear?.();
+		}
+		if (
+			(!info._AdCycleRequestController ||
+				info._AdCycleRequestController.signal?.aborted) &&
+			typeof AbortController === "function"
+		) {
+			info._AdCycleRequestController = new AbortController();
 		}
 		if (!isContinuingAdCycle) {
 			_incrementAdsBlocked(info.ChannelName, info.MediaKey);
@@ -5449,7 +5490,9 @@ async function _refreshHeldAutoplayBackupPlaylist(
 		encBaseUrl,
 	);
 	try {
-		const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
+		const streamRes = await _fetchWithTimeout(realFetch, streamUrl, {
+			signal: info?._AdCycleRequestController?.signal || null,
+		});
 		if (streamRes.status !== 200) return null;
 		const m3u8 = _absolutizeMediaPlaylistUrls(
 			await streamRes.text(),
@@ -5558,7 +5601,9 @@ async function _refreshActiveBackupMediaPlaylist(
 	);
 
 	try {
-		const streamRes = await _fetchWithTimeout(realFetch, streamUrl);
+		const streamRes = await _fetchWithTimeout(realFetch, streamUrl, {
+			signal: info?._AdCycleRequestController?.signal || null,
+		});
 		if (streamRes.status !== 200) return null;
 		const m3u8 = _absolutizeMediaPlaylistUrls(
 			await streamRes.text(),
@@ -5880,10 +5925,12 @@ async function _searchBackupStream(
 	let backupM3u8 = null;
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	const requestSignal = info?._AdCycleRequestController?.signal || null;
 	const resolvedSearchDeadlineAt = Math.max(0, Number(searchDeadlineAt) || 0);
 	const searchDeadlineExceeded = () =>
 		resolvedSearchDeadlineAt > 0 && Date.now() >= resolvedSearchDeadlineAt;
 	const searchIsCurrent = () =>
+		!requestSignal?.aborted &&
 		_isBackupSearchContextCurrent(info, backupSearchEpoch, cycleStartedAt);
 	if (!searchIsCurrent() || searchDeadlineExceeded()) {
 		return { type: null, m3u8: null };
@@ -6152,6 +6199,7 @@ async function _searchBackupStream(
 								realFetch,
 								omitViewerHeaders,
 								probeDeadlineAt,
+								requestSignal,
 							),
 							probeDeadlineAt,
 						);
@@ -6183,7 +6231,9 @@ async function _searchBackupStream(
 									continue;
 								}
 								const masterProbe = await _awaitBackupProbeBeforeDeadline(
-									_fetchWithTimeout(realFetch, usherUrl.href),
+									_fetchWithTimeout(realFetch, usherUrl.href, {
+										signal: requestSignal,
+									}),
 									probeDeadlineAt,
 								);
 								if (!searchIsCurrent()) {
@@ -6398,7 +6448,9 @@ async function _searchBackupStream(
 								encBaseUrl,
 							);
 							const streamProbe = await _awaitBackupProbeBeforeDeadline(
-								_fetchWithTimeout(realFetch, streamUrl),
+								_fetchWithTimeout(realFetch, streamUrl, {
+									signal: requestSignal,
+								}),
 								probeDeadlineAt,
 							);
 							if (!searchIsCurrent()) {

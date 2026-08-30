@@ -110,6 +110,17 @@ describe("_getPlaybackContextFromUrl", () => {
 	it("reserved route", () => {
 		expect(fn()("https://www.twitch.tv/browse").ChannelName).toBeNull();
 	});
+	it.each(["activate", "bits", "login", "signup"])(
+		"does not treat the system route /%s as a live channel",
+		(route) => {
+			expect(fn()(`https://www.twitch.tv/${route}`)).toEqual({
+				MediaType: null,
+				ChannelName: null,
+				VodID: null,
+				MediaKey: null,
+			});
+		},
+	);
 	it("popout", () => {
 		expect(
 			fn()("https://www.twitch.tv/popout/testchannel/player").MediaType,

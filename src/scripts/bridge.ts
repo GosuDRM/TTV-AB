@@ -46,6 +46,29 @@ function normalizeMediaKey(value) {
 	return null;
 }
 
+function getExactPreviewsPlayerFrameContext(value) {
+	try {
+		const parsed = new URL(String(value || ""));
+		const channel = normalizeChannelName(parsed.searchParams.get("channel"));
+		const previewType = parsed.searchParams.get("tp_prev");
+		if (
+			parsed.protocol !== "https:" ||
+			parsed.hostname.toLowerCase() !== "player.twitch.tv" ||
+			!channel ||
+			(previewType !== "s" && previewType !== "d")
+		) {
+			return null;
+		}
+		return {
+			channel,
+			mediaKey: buildMediaKey("live", channel),
+			previewType,
+		};
+	} catch {
+		return null;
+	}
+}
+
 const RESERVED_ROUTE_SEGMENTS = new Set([
 	"browse",
 	"clip",
@@ -202,6 +225,9 @@ const BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
 const BRIDGE_READY_MESSAGE = "ttvab-bridge-ready";
 const BRIDGE_TOKEN_REQUEST_MESSAGE = "ttvab-bridge-token-request";
 const BRIDGE_ANNOUNCE_MESSAGE = "ttvab-bridge-announce";
+const PREVIEW_FAILURE_DIAGNOSTIC_MESSAGE = "ttvab-preview-failure-diagnostic";
+const PREVIEW_FAILURE_DIAGNOSTIC_FORWARD_MESSAGE =
+	"ttvab-preview-failure-diagnostic-forward";
 const BRIDGE_HANDSHAKE_RETRY_MS = 75;
 const FLUSH_DELAY_MS = 200;
 const MAX_FLUSH_RETRY_DELAY_MS = 2000;
@@ -1365,6 +1391,10 @@ function handlePageBridgeMessage(rawMessage) {
 		broadcastState();
 		return;
 	}
+	if (message.type === PREVIEW_FAILURE_DIAGNOSTIC_MESSAGE) {
+		forwardPreviewFailureDiagnostic(message.detail);
+		return;
+	}
 	if (message.type === "ttvab-persist-counter-flush") {
 		if (bridgeState.turboMode) {
 			discardCounterWorkForTurboMode();
@@ -1497,14 +1527,18 @@ function handlePageBridgeMessage(rawMessage) {
 		pendingLogCollections.delete(requestId as string);
 		clearTimeout(pending.timer);
 		const sanitized = sanitizeLogEntries(detail?.entries);
-		respondToLogCollection(pending.respond, {
-			ok: true,
-			entries: sanitized.entries,
-			context: sanitizeLogContext(detail?.context),
-			truncatedEntries: addTruncatedLogEntryCounts(
+		const merged = mergePreviewFailureDiagnostics(
+			sanitized.entries,
+			addTruncatedLogEntryCounts(
 				sanitized.truncatedEntries,
 				detail?.truncatedEntries,
 			),
+		);
+		respondToLogCollection(pending.respond, {
+			ok: true,
+			entries: merged.entries,
+			context: sanitizeLogContext(detail?.context),
+			truncatedEntries: merged.truncatedEntries,
 		});
 		return;
 	}
@@ -1525,7 +1559,28 @@ const MAX_LOG_TRUNCATED_ENTRIES = 1000000;
 const MAX_LOG_TIMESTAMP_MS = 8640000000000000;
 const MAX_LOG_CONTEXT_WORKERS = 12;
 const MAX_LOG_CONTEXT_BUFFERED_RANGES = 4;
+const MAX_PREVIEW_FAILURE_DIAGNOSTICS = 4;
+const MAX_PREVIEW_FAILURE_LOG_ENTRIES = 64;
 const LOG_LEVELS = new Set(["debug", "info", "success", "warning", "error"]);
+const PREVIEW_FAILURE_REASONS = new Set([
+	"retry-failed",
+	"clean-fallback-unavailable",
+	"fallback-validation-failed",
+	"http-status",
+]);
+type PreviewFailureDiagnostic = {
+	channel: string;
+	mediaKey: string;
+	previewType: "s" | "d";
+	reason: string;
+	reportedAt: number;
+	status: number;
+	entries: PlainObject[];
+	context: PlainObject | null;
+	truncatedEntries: number;
+};
+const previewFailureDiagnostics: PreviewFailureDiagnostic[] = [];
+let droppedPreviewFailureLogEntries = 0;
 let logCollectionSequence = 0;
 
 function sanitizeLogTimestamp(value) {
@@ -1787,6 +1842,157 @@ function sanitizeLogContext(value) {
 	};
 }
 
+function sanitizePreviewFailureDiagnostic(value, frameContext) {
+	if (!isPlainObject(value) || !isPlainObject(frameContext)) return null;
+	const channel = normalizeChannelName(frameContext.channel);
+	const mediaKey = normalizeMediaKey(frameContext.mediaKey);
+	const previewType =
+		frameContext.previewType === "s" || frameContext.previewType === "d"
+			? frameContext.previewType
+			: null;
+	if (!channel || mediaKey !== buildMediaKey("live", channel) || !previewType) {
+		return null;
+	}
+	const context = sanitizeLogContext(value.context);
+	if (
+		normalizeMediaKey(value.mediaKey) !== mediaKey ||
+		normalizeMediaKey(context?.pageMediaKey) !== mediaKey
+	) {
+		return null;
+	}
+	const rawEntries = Array.isArray(value.entries) ? value.entries : [];
+	const minimumIndex = Math.max(
+		0,
+		rawEntries.length - MAX_PREVIEW_FAILURE_LOG_ENTRIES,
+	);
+	const sanitized = sanitizeLogEntries(rawEntries.slice(minimumIndex));
+	const reason =
+		typeof value.reason === "string" &&
+		PREVIEW_FAILURE_REASONS.has(value.reason)
+			? value.reason
+			: "retry-failed";
+	const rawStatus = Number(value.status);
+	const status =
+		Number.isFinite(rawStatus) && rawStatus >= 100 && rawStatus <= 599
+			? Math.trunc(rawStatus)
+			: 0;
+	return {
+		channel,
+		mediaKey,
+		previewType,
+		reason,
+		reportedAt: sanitizeLogTimestamp(value.reportedAt),
+		status,
+		entries: sanitized.entries,
+		context,
+		truncatedEntries: addTruncatedLogEntryCounts(
+			minimumIndex + sanitized.truncatedEntries,
+			value.truncatedEntries,
+		),
+	};
+}
+
+function forwardPreviewFailureDiagnostic(value) {
+	if (window.top === window) return false;
+	const frameContext = getExactPreviewsPlayerFrameContext(
+		globalThis.location?.href,
+	);
+	const diagnostic = sanitizePreviewFailureDiagnostic(value, frameContext);
+	if (!diagnostic) return false;
+	try {
+		chrome.runtime.sendMessage(
+			{
+				type: PREVIEW_FAILURE_DIAGNOSTIC_MESSAGE,
+				detail: diagnostic,
+			},
+			() => {
+				void chrome.runtime.lastError;
+			},
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function retainPreviewFailureDiagnostic(value) {
+	if (window.top !== window || !isPlainObject(value)) return false;
+	const frameContext = {
+		channel: value.channel,
+		mediaKey: value.mediaKey,
+		previewType: value.previewType,
+	};
+	const diagnostic = sanitizePreviewFailureDiagnostic(value, frameContext);
+	if (!diagnostic) return false;
+	previewFailureDiagnostics.push(diagnostic as PreviewFailureDiagnostic);
+	while (previewFailureDiagnostics.length > MAX_PREVIEW_FAILURE_DIAGNOSTICS) {
+		const dropped = previewFailureDiagnostics.shift();
+		const droppedMedia: PlainObject | null = isPlainObject(
+			dropped?.context?.media,
+		)
+			? (dropped?.context?.media as PlainObject)
+			: null;
+		droppedPreviewFailureLogEntries = addTruncatedLogEntryCounts(
+			droppedPreviewFailureLogEntries,
+			1 +
+				(Array.isArray(dropped?.entries) ? dropped.entries.length : 0) +
+				(droppedMedia ? 1 : 0) +
+				Number(dropped?.truncatedEntries || 0),
+		);
+	}
+	return true;
+}
+
+function mergePreviewFailureDiagnostics(entries, truncatedEntries = 0) {
+	const mergedEntries = Array.isArray(entries) ? [...entries] : [];
+	let previewTruncatedEntries = droppedPreviewFailureLogEntries;
+	for (const diagnostic of previewFailureDiagnostics) {
+		const label = `Hover preview ${diagnostic.channel}`;
+		mergedEntries.push({
+			t: diagnostic.reportedAt,
+			l: "warning",
+			m: `${label} master failed: type=${diagnostic.previewType} reason=${diagnostic.reason}${diagnostic.status ? ` status=${diagnostic.status}` : ""}`,
+			w: false,
+		});
+		const media: PlainObject | null = isPlainObject(diagnostic.context?.media)
+			? (diagnostic.context?.media as PlainObject)
+			: null;
+		if (media) {
+			const buffered = Array.isArray(media.buffered)
+				? media.buffered.map((range) => `${range.start}-${range.end}`).join(",")
+				: "";
+			mergedEntries.push({
+				t: diagnostic.reportedAt,
+				l: "info",
+				m: `${label} state: error=${media.errorCode} ready=${media.readyState} network=${media.networkState} paused=${media.paused} time=${media.currentTime} buffered=${buffered || "none"}`,
+				w: false,
+			});
+		}
+		for (const entry of diagnostic.entries) {
+			mergedEntries.push({
+				...entry,
+				m: `[${label}] ${entry.m}`,
+			});
+		}
+		previewTruncatedEntries = addTruncatedLogEntryCounts(
+			previewTruncatedEntries,
+			diagnostic.truncatedEntries,
+		);
+	}
+	mergedEntries.sort(
+		(first, second) =>
+			sanitizeLogTimestamp(first?.t) - sanitizeLogTimestamp(second?.t),
+	);
+	const sanitized = sanitizeLogEntries(mergedEntries);
+	return {
+		entries: sanitized.entries,
+		truncatedEntries: addTruncatedLogEntryCounts(
+			addTruncatedLogEntryCounts(truncatedEntries, previewTruncatedEntries),
+			sanitized.truncatedEntries,
+		),
+	};
+}
+
 function respondToLogCollection(respond, response) {
 	try {
 		respond(response);
@@ -1822,6 +2028,12 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 		return undefined;
 	}
 	const message = getBridgeMessageData(rawMessage);
+	if (message?.type === PREVIEW_FAILURE_DIAGNOSTIC_FORWARD_MESSAGE) {
+		if (!sender?.tab) {
+			retainPreviewFailureDiagnostic(message.detail);
+		}
+		return undefined;
+	}
 	if (message?.type !== "ttvab-collect-logs") {
 		return undefined;
 	}

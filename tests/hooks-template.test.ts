@@ -104,8 +104,11 @@ describe("worker message handler hardening", () => {
 		const visibilityAt = initSource.indexOf(
 			"_syncPagePlaybackVisibilityState();",
 		);
+		const visibilityHookAt = initSource.indexOf("_hookVisibilityState();");
 		const workerHookAt = initSource.indexOf("_hookWorker();");
 		expect(visibilityAt).toBeGreaterThan(-1);
+		expect(visibilityHookAt).toBeGreaterThan(-1);
+		expect(visibilityAt).toBeGreaterThan(visibilityHookAt);
 		expect(workerHookAt).toBeGreaterThan(visibilityAt);
 	});
 
@@ -197,6 +200,9 @@ describe("worker message handler hardening", () => {
 		expect(block).toContain("validationDeadlineAt");
 		expect(block).toContain("_PreviewMasterFallbackRetryAt");
 		expect(source).toContain("throw retryError");
+		expect(source).toContain('key: "PreviewMasterRecoveryFailed"');
+		expect(source).toContain('case "PreviewMasterRecoveryFailed":');
+		expect(source).toContain("_forwardPreviewFailureDiagnostics(data)");
 		expect(source).not.toContain('mode: "no-cors"');
 	});
 
@@ -459,9 +465,9 @@ describe("worker message handler hardening", () => {
 		expect(clearActiveAdAt).toBeGreaterThan(renewIntentAt);
 	});
 
-	it("bootstrap does not serialize tracked workers", () => {
+	it("bootstrap does not serialize tracked worker handles", () => {
 		expect(hooksJs()).toMatch(
-			/JSON\.stringify\(\{\s*\.\.\._S,\s*workers:\s*\[\]\s*\}\)/,
+			/JSON\.stringify\(\{\s*\.\.\._S,\s*workers:\s*\[\],\s*workerRefs:\s*\[\]\s*\}\)/,
 		);
 	});
 
@@ -505,7 +511,9 @@ describe("worker message handler hardening", () => {
 		);
 		const block = source.slice(checkStart, checkEnd);
 		const fallbackAt = block.indexOf("_installPageSideM3U8Override();");
-		const throttleAt = block.indexOf("if (_isWorkerLifecycleThrottled())");
+		const throttleAt = block.indexOf(
+			"if (_isWorkerLifecycleThrottled(pagePlaybackContext))",
+		);
 		const recoveryAt = block.indexOf("_recoverCrashedWorker(");
 
 		expect(checkStart).toBeGreaterThan(-1);

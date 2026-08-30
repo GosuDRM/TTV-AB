@@ -2340,11 +2340,32 @@ describe("_doPlayerTask (vod position restore after reload)", () => {
 });
 
 describe("_isNativeDocumentHidden (pip awareness)", () => {
-	const hidden = () => T<() => boolean>("_isNativeDocumentHidden");
+	const hidden = () =>
+		T<(context?: Record<string, unknown>) => boolean>(
+			"_isNativeDocumentHidden",
+		);
 	let pipElement: HTMLVideoElement | null = null;
+	let savedState: unknown;
+	let savedPipContext: unknown;
 
 	beforeEach(() => {
 		pipElement = null;
+		savedState = g.__TTVAB_STATE__;
+		savedPipContext = g._getActivePictureInPicturePlaybackContext;
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+		};
+		g._getActivePictureInPicturePlaybackContext = () =>
+			pipElement
+				? {
+						MediaType: "live",
+						ChannelName: "testchannel",
+						MediaKey: "live:testchannel",
+						element: pipElement,
+					}
+				: null;
 		Object.defineProperty(document, "pictureInPictureElement", {
 			get: () => pipElement,
 			configurable: true,
@@ -2354,6 +2375,8 @@ describe("_isNativeDocumentHidden (pip awareness)", () => {
 	});
 
 	afterEach(() => {
+		g.__TTVAB_STATE__ = savedState;
+		g._getActivePictureInPicturePlaybackContext = savedPipContext;
 		Object.defineProperty(document, "pictureInPictureElement", {
 			value: null,
 			configurable: true,
@@ -2375,6 +2398,11 @@ describe("_isNativeDocumentHidden (pip awareness)", () => {
 		};
 		pipElement = document.createElement("video");
 		expect(hidden()()).toBe(false);
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "otherchannel";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+			"live:otherchannel";
+		expect(hidden()()).toBe(true);
+		expect(hidden()({ MediaKey: "live:testchannel" })).toBe(false);
 	});
 
 	it("stays visible when neither pip nor the visibility getters report hidden", () => {
@@ -2382,6 +2410,32 @@ describe("_isNativeDocumentHidden (pip awareness)", () => {
 			hidden: () => false,
 		};
 		expect(hidden()()).toBe(false);
+	});
+
+	it("reads the native getter past a Previews-style own visibility override", () => {
+		const ownHidden = Object.getOwnPropertyDescriptor(document, "hidden");
+		const nativeGetter = T<(propertyName: string) => (() => unknown) | null>(
+			"_getDocumentPropertyGetter",
+		)("hidden");
+		expect(nativeGetter).toBeTypeOf("function");
+		const expectedHidden = nativeGetter?.call(document) === true;
+		try {
+			Object.defineProperty(document, "hidden", {
+				value: !expectedHidden,
+				configurable: true,
+			});
+			(globalThis as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ =
+				undefined;
+			expect(T<() => boolean>("_isNativeVisibilityHidden")()).toBe(
+				expectedHidden,
+			);
+		} finally {
+			if (ownHidden) {
+				Object.defineProperty(document, "hidden", ownHidden);
+			} else {
+				delete (document as unknown as Record<string, unknown>).hidden;
+			}
+		}
 	});
 });
 
@@ -2406,12 +2460,24 @@ describe("_syncPagePlaybackVisibilityState", () => {
 		hidden = true;
 		pipActive = false;
 		messages = [];
-		g.__TTVAB_STATE__ = { PagePlaybackVisibleSinceAt: 0 };
-		g._isNativeDocumentHidden = () => hidden;
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			PagePlaybackVisibleSinceAt: 0,
+		};
+		const intentState = g._PlaybackIntentState as Record<string, unknown>;
+		intentState.pagePlaybackVisibilityMediaKey = "live:testchannel";
+		intentState.pictureInPictureVisibilityMediaKey = null;
+		intentState.pictureInPictureVisibleSinceAt = 0;
+		g._isNativeDocumentHidden = (context: Record<string, unknown>) =>
+			hidden && !(pipActive && context?.MediaKey === "live:testchannel");
 		g._getActivePictureInPicturePlaybackContext = () =>
 			pipActive ? { MediaKey: "live:testchannel" } : null;
-		g._broadcastWorkers = (message: Record<string, unknown>) => {
-			messages.push(message);
+		g._broadcastWorkers = (
+			message: Record<string, unknown> | Array<Record<string, unknown>>,
+		) => {
+			messages.push(...(Array.isArray(message) ? message : [message]));
 		};
 	});
 
@@ -2433,7 +2499,11 @@ describe("_syncPagePlaybackVisibilityState", () => {
 			(g.__TTVAB_STATE__ as Record<string, unknown>).PagePlaybackVisibleSinceAt,
 		).toBe(700000);
 		expect(messages).toEqual([
-			{ key: "UpdatePagePlaybackVisibleSinceAt", value: 700000 },
+			{
+				key: "UpdatePagePlaybackVisibleSinceAt",
+				targetMediaKey: "live:testchannel",
+				value: 700000,
+			},
 		]);
 		expect(sync()()).toBe(false);
 
@@ -2441,6 +2511,7 @@ describe("_syncPagePlaybackVisibilityState", () => {
 		expect(sync()()).toBe(true);
 		expect(messages.at(-1)).toEqual({
 			key: "UpdatePagePlaybackVisibleSinceAt",
+			targetMediaKey: "live:testchannel",
 			value: 0,
 		});
 
@@ -2449,6 +2520,7 @@ describe("_syncPagePlaybackVisibilityState", () => {
 		expect(sync()()).toBe(true);
 		expect(messages.at(-1)).toEqual({
 			key: "UpdatePagePlaybackVisibleSinceAt",
+			targetMediaKey: "live:testchannel",
 			value: 701000,
 		});
 
@@ -2456,26 +2528,74 @@ describe("_syncPagePlaybackVisibilityState", () => {
 		expect(sync()()).toBe(true);
 		expect(messages.at(-1)).toEqual({
 			key: "UpdatePagePlaybackVisibleSinceAt",
+			targetMediaKey: "live:testchannel",
 			value: 0,
 		});
+	});
+
+	it("keeps off-route pip visible while publishing the hidden page context separately", () => {
+		hidden = false;
+		expect(sync()()).toBe(true);
+		pipActive = true;
+		expect(sync()()).toBe(false);
+
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "otherchannel";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+			"live:otherchannel";
+		hidden = true;
+		vi.setSystemTime(701000);
+		expect(sync()()).toBe(true);
+
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).PagePlaybackVisibleSinceAt,
+		).toBe(0);
+		expect(messages.slice(-2)).toEqual([
+			{
+				key: "UpdatePagePlaybackVisibleSinceAt",
+				targetMediaKey: "live:otherchannel",
+				value: 0,
+			},
+			{
+				key: "UpdatePagePlaybackVisibleSinceAt",
+				targetMediaKey: "live:testchannel",
+				value: 700000,
+			},
+		]);
 	});
 });
 
 describe("_isPlaybackPageUnfocused", () => {
-	const unfocused = () => T<() => boolean>("_isPlaybackPageUnfocused");
+	const unfocused = () =>
+		T<(context?: Record<string, unknown>) => boolean>(
+			"_isPlaybackPageUnfocused",
+		);
 	const environmental = () =>
 		T<() => boolean>("_isUnfocusedPlaybackEnvironment");
 	let savedHidden: unknown;
 	let savedPipContext: unknown;
+	let savedState: unknown;
 	let savedHasFocus: PropertyDescriptor | undefined;
+	let savedNativeVisibility: unknown;
 	let hasFocus = false;
 
 	beforeEach(() => {
 		savedHidden = g._isNativeDocumentHidden;
 		savedPipContext = g._getActivePictureInPicturePlaybackContext;
+		savedState = g.__TTVAB_STATE__;
 		savedHasFocus = Object.getOwnPropertyDescriptor(document, "hasFocus");
+		savedNativeVisibility = (window as unknown as Record<string, unknown>)
+			.__TTVAB_NATIVE_VISIBILITY__;
+		(window as unknown as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ =
+			{
+				hasFocus: () => hasFocus,
+			};
 		g._isNativeDocumentHidden = () => false;
 		g._getActivePictureInPicturePlaybackContext = () => null;
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+		};
 		hasFocus = false;
 		Object.defineProperty(document, "hasFocus", {
 			value: () => hasFocus,
@@ -2486,6 +2606,9 @@ describe("_isPlaybackPageUnfocused", () => {
 	afterEach(() => {
 		g._isNativeDocumentHidden = savedHidden;
 		g._getActivePictureInPicturePlaybackContext = savedPipContext;
+		g.__TTVAB_STATE__ = savedState;
+		(window as unknown as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ =
+			savedNativeVisibility;
 		if (savedHasFocus) {
 			Object.defineProperty(document, "hasFocus", savedHasFocus);
 		} else {
@@ -2499,11 +2622,34 @@ describe("_isPlaybackPageUnfocused", () => {
 		expect(unfocused()()).toBe(false);
 	});
 
+	it("ignores a Previews-style hasFocus override", () => {
+		hasFocus = true;
+		(window as unknown as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ =
+			{
+				hasFocus: () => false,
+			};
+		expect(unfocused()()).toBe(true);
+	});
+
 	it("does not reinterpret Picture-in-Picture controls as page blur", () => {
 		g._getActivePictureInPicturePlaybackContext = () => ({
 			MediaKey: "live:testchannel",
 		});
 		expect(unfocused()()).toBe(false);
+	});
+
+	it("does not let off-route pip mask blur for the current page", () => {
+		g._getActivePictureInPicturePlaybackContext = () => ({
+			MediaType: "live",
+			ChannelName: "pipchannel",
+			MediaKey: "live:pipchannel",
+		});
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "pagechannel";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+			"live:pagechannel";
+
+		expect(unfocused()()).toBe(true);
+		expect(unfocused()({ MediaKey: "live:pipchannel" })).toBe(false);
 	});
 
 	it("keeps control-free pauses environmental for the full unfocused period", () => {
@@ -2812,6 +2958,33 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		});
 
 		expect(result).toBe(true);
+		expect(setSrcCalls).toEqual([]);
+		expect(pauseCalls).toBe(1);
+		expect(resumeRetryCalls).toContainEqual([
+			"testchannel",
+			"live:testchannel",
+			[50, 180, 500, 1100],
+			{ cycleStartedAt: 100 },
+		]);
+	});
+
+	it("runs the exact terminal pip nudge after the page route changes", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageChannel = "otherchannel";
+		state.PageMediaKey = "live:otherchannel";
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+
+		expect(
+			task()(false, true, {
+				reason: "post-ad-native-restore",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(true);
 		expect(setSrcCalls).toEqual([]);
 		expect(pauseCalls).toBe(1);
 		expect(resumeRetryCalls).toContainEqual([
@@ -4556,6 +4729,7 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 describe("channel watch-time tracking", () => {
 	type WatchState = {
 		channel: string | null;
+		ownedMediaKey: string | null;
 		pendingMs: number;
 		lastTickAt: number;
 	};
@@ -4565,6 +4739,8 @@ describe("channel watch-time tracking", () => {
 	let bridgeMessages: Array<{ type: string; detail: unknown }> = [];
 	let realGetPrimary: unknown;
 	let realSendBridge: unknown;
+	let realIsPreviewsPlayerUrl: unknown;
+	let isPreviewsPlayer = false;
 	let nowValue = 1_000_000_000_000;
 
 	function makeWatchVideo(overrides: Record<string, unknown> = {}) {
@@ -4596,6 +4772,9 @@ describe("channel watch-time tracking", () => {
 		bridgeMessages = [];
 		realGetPrimary = g._getPrimaryMediaElement;
 		realSendBridge = g._sendBridgeMessage;
+		realIsPreviewsPlayerUrl = g._isPreviewsPlayerUrl;
+		isPreviewsPlayer = false;
+		g._isPreviewsPlayerUrl = () => isPreviewsPlayer;
 		g._sendBridgeMessage = (type: string, detail: unknown) => {
 			bridgeMessages.push({ type, detail });
 			return true;
@@ -4603,6 +4782,7 @@ describe("channel watch-time tracking", () => {
 		g.__TTVAB_STATE__ = {
 			PageMediaType: "live",
 			PageChannel: "streamerone",
+			PageMediaKey: "live:streamerone",
 		};
 		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		Object.defineProperty(document, "pictureInPictureElement", {
@@ -4611,6 +4791,7 @@ describe("channel watch-time tracking", () => {
 		});
 		const state = watchState();
 		state.channel = null;
+		state.ownedMediaKey = "live:streamerone";
 		state.pendingMs = 0;
 		state.lastTickAt = 0;
 		clearWatchTimeJournals();
@@ -4621,6 +4802,7 @@ describe("channel watch-time tracking", () => {
 	afterEach(() => {
 		g._getPrimaryMediaElement = realGetPrimary;
 		g._sendBridgeMessage = realSendBridge;
+		g._isPreviewsPlayerUrl = realIsPreviewsPlayerUrl;
 		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		Object.defineProperty(document, "pictureInPictureElement", {
 			value: null,
@@ -4663,6 +4845,49 @@ describe("channel watch-time tracking", () => {
 		expect(watchState().pendingMs).toBe(0);
 	});
 
+	it("does not count passive Previews hover or directory players", () => {
+		isPreviewsPlayer = true;
+		g._getPrimaryMediaElement = () => makeWatchVideo();
+		expect(
+			T<(mediaKey: string) => boolean>("_markWatchTimePlaybackOwned")(
+				"live:streamerone",
+			),
+		).toBe(false);
+		track()(false);
+		nowValue += 2000;
+		track()(false);
+		expect(watchState()).toMatchObject({
+			channel: null,
+			ownedMediaKey: null,
+			pendingMs: 0,
+			lastTickAt: 0,
+		});
+		expect(bridgeMessages).toEqual([]);
+	});
+
+	it("counts a Previews player only after it enters Picture-in-Picture", () => {
+		isPreviewsPlayer = true;
+		const pipVideo = makeWatchVideo();
+		Object.defineProperty(document, "pictureInPictureElement", {
+			value: pipVideo,
+			configurable: true,
+		});
+		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(pipVideo, {
+			MediaType: "live",
+			ChannelName: "streamerone",
+			MediaKey: "live:streamerone",
+		});
+		track()(true);
+		nowValue += 2000;
+		track()(true);
+		expect(watchState()).toMatchObject({
+			channel: "streamerone",
+			pendingMs: 2000,
+		});
+	});
+
 	it("sends a watch-time delta once the flush threshold accrues", () => {
 		g._getPrimaryMediaElement = () => makeWatchVideo();
 		track()(false);
@@ -4687,6 +4912,9 @@ describe("channel watch-time tracking", () => {
 			track()(false);
 		}
 		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "streamertwo";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+			"live:streamertwo";
+		T<() => void>("_clearWatchTimePlaybackOwnership")();
 		nowValue += 1000;
 		track()(false);
 		expect(bridgeMessages.length).toBe(1);
@@ -4696,6 +4924,44 @@ describe("channel watch-time tracking", () => {
 		});
 		expect(watchState().channel).toBe("streamertwo");
 		expect(watchState().pendingMs).toBe(0);
+	});
+
+	it("does not credit an old channel element to a new route before media ownership arrives", () => {
+		const reusedVideo = makeWatchVideo();
+		g._getPrimaryMediaElement = () => reusedVideo;
+		track()(false);
+		nowValue += 2000;
+		track()(false);
+
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "streamertwo";
+		(g.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+			"live:streamertwo";
+		T<() => void>("_clearWatchTimePlaybackOwnership")();
+		nowValue += 1000;
+		track()(false);
+		nowValue += 1000;
+		track()(false);
+
+		expect(bridgeMessages[0]).toEqual({
+			type: "ttvab-watch-time",
+			detail: { channel: "streamerone", seconds: 2 },
+		});
+		expect(watchState()).toMatchObject({
+			channel: "streamertwo",
+			ownedMediaKey: null,
+			pendingMs: 0,
+			lastTickAt: 0,
+		});
+
+		expect(
+			T<(mediaKey: string) => boolean>("_markWatchTimePlaybackOwned")(
+				"live:streamertwo",
+			),
+		).toBe(true);
+		track()(false);
+		nowValue += 1000;
+		track()(false);
+		expect(watchState().pendingMs).toBe(1000);
 	});
 
 	it("credits hidden pip watch time to the pip channel after page navigation", () => {
