@@ -491,6 +491,39 @@ describe("settings initialization lifecycle", () => {
 });
 
 describe("page-exit counter journal lifecycle", () => {
+	it("schedules recovery for a new journal without scanning it twice", () => {
+		vi.useFakeTimers();
+		const flush = makeExitFlush();
+		const storageKey = `ttvab_pending_counter_flush:${flush.flushId}`;
+		const originalReadPersistedCounterFlushes = g.readPersistedCounterFlushes;
+		const originalSendPersistPayload = g.sendPersistPayload;
+		const readPersistedCounterFlushes = vi.fn(
+			originalReadPersistedCounterFlushes as () => unknown[],
+		);
+		g.readPersistedCounterFlushes = readPersistedCounterFlushes;
+		g.sendPersistPayload = vi.fn();
+
+		try {
+			(
+				g.dispatchPersistPayload as (
+					payload: Record<string, unknown>,
+					options?: Record<string, unknown>,
+				) => boolean
+			)({
+				type: "ttvab-persist-counters",
+				detail: flush,
+			});
+
+			expect(readPersistedCounterFlushes).toHaveBeenCalledOnce();
+			expect(localStorage.getItem(storageKey)).not.toBeNull();
+			expect(g.persistedFlushRecoveryTimeout).not.toBeNull();
+		} finally {
+			g.readPersistedCounterFlushes = originalReadPersistedCounterFlushes;
+			g.sendPersistPayload = originalSendPersistPayload;
+			(g.clearPersistedFlushRecovery as () => void)();
+		}
+	});
+
 	it("dispatches the exact journaled watch delta and confirms only after clearing it", () => {
 		const flush = makeExitFlush();
 		const storageKey = `ttvab_pending_counter_flush:${flush.flushId}`;
