@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.1.2] - 2026-09-01
+
+Fixed
+
+- **Low Quality Fallback Recovery** - Fixed a repeat black-screen loading loop after ads when Low Quality Fallback is disabled. The verified native session is now retained for the final recovery step, while the enabled fallback retains its guarded return to normal quality ([#69](https://github.com/GosuDRM/TTV-AB/issues/69)).
+
+Changed
+
+- **Lower Statistics Overhead** - Counter replay reuses the journal it just persisted instead of immediately scanning storage again, while retaining crash recovery, validation, expiry, and size limits.
+- **On-Demand Page Ad Monitoring** - The independent video-ad observer disconnects when ad blocking is disabled and reinstalls before the next enable-time scan.
+
 ## [17.1.1] - 2026-08-31
 
 Fixed
