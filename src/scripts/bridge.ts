@@ -737,8 +737,7 @@ function persistCounterFlushForReplay(entry) {
 
 	try {
 		localStorage.setItem(storageKey, JSON.stringify(safeEntry));
-		readPersistedCounterFlushes();
-		return true;
+		return readPersistedCounterFlushes();
 	} catch {
 		return false;
 	}
@@ -828,12 +827,16 @@ function clearPersistedFlushRecovery() {
 	persistedFlushRecoveryAttempt = 0;
 }
 
-function schedulePersistedFlushRecovery() {
+function schedulePersistedFlushRecovery(hasPersistedWork = false) {
 	if (persistedFlushRecoveryTimeout) return false;
 	const hasExhaustedMemoryRetry = Array.from(retryFlushEntries.values()).some(
 		(entry) => !entry.timeoutId,
 	);
-	if (readPersistedCounterFlushes().length === 0 && !hasExhaustedMemoryRetry) {
+	if (
+		!hasPersistedWork &&
+		readPersistedCounterFlushes().length === 0 &&
+		!hasExhaustedMemoryRetry
+	) {
 		persistedFlushRecoveryAttempt = 0;
 		return false;
 	}
@@ -939,8 +942,9 @@ function dispatchPersistPayload(
 		return false;
 	}
 	if (flushId) {
-		if (persistCounterFlushForReplay(safeDetail)) {
-			schedulePersistedFlushRecovery();
+		const persistedFlushes = persistCounterFlushForReplay(safeDetail);
+		if (persistedFlushes) {
+			schedulePersistedFlushRecovery(persistedFlushes.length > 0);
 		}
 	}
 

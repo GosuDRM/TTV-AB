@@ -881,7 +881,7 @@ describe("_pruneIndependentVideoAdSuppressions", () => {
 });
 
 describe("_installIndependentVideoAdObserver", () => {
-	it("skips mutation traversal only while ad blocking is disabled", () => {
+	it("keeps queued mutation callbacks inert while ad blocking is disabled", () => {
 		const originalSuppressForNode = g._suppressIndependentVideoAdsForNode;
 		const suppressForNode = vi.fn();
 		g._suppressIndependentVideoAdsForNode = suppressForNode;
@@ -909,6 +909,69 @@ describe("_installIndependentVideoAdObserver", () => {
 			expect(suppressForNode).toHaveBeenCalledWith(node);
 		} finally {
 			g._suppressIndependentVideoAdsForNode = originalSuppressForNode;
+		}
+	});
+
+	it("observes only while blocking is enabled and reinstalls before rescanning", () => {
+		const nativeMutationObserver = g.MutationObserver;
+		const originalSuppressInDocument = g._suppressIndependentVideoAdsInDocument;
+		const observers: Array<{
+			disconnect: ReturnType<typeof vi.fn>;
+			observe: ReturnType<typeof vi.fn>;
+		}> = [];
+		class TestMutationObserver {
+			disconnect = vi.fn();
+			observe = vi.fn();
+
+			constructor() {
+				observers.push(this);
+			}
+		}
+		const observerWasInstalledDuringScan: boolean[] = [];
+		g.MutationObserver = TestMutationObserver;
+		g._suppressIndependentVideoAdsInDocument = vi.fn(() => {
+			observerWasInstalledDuringScan.push(
+				Boolean(
+					(
+						g._IndependentVideoAdSuppressionState as {
+							observer: MutationObserver | null;
+						}
+					).observer,
+				),
+			);
+			return 0;
+		});
+		const state = g.__TTVAB_STATE__ as { IsAdStrippingEnabled: boolean };
+		const setEnabled = T<(enabled: boolean) => boolean>(
+			"_setIndependentVideoAdGuardEnabled",
+		);
+
+		try {
+			state.IsAdStrippingEnabled = true;
+			expect(setEnabled(true)).toBe(true);
+			expect(observers).toHaveLength(1);
+			expect(observerWasInstalledDuringScan).toEqual([true]);
+
+			state.IsAdStrippingEnabled = false;
+			expect(setEnabled(false)).toBe(true);
+			expect(observers[0]?.disconnect).toHaveBeenCalledOnce();
+			expect(
+				(
+					g._IndependentVideoAdSuppressionState as {
+						observer: MutationObserver | null;
+					}
+				).observer,
+			).toBeNull();
+
+			state.IsAdStrippingEnabled = true;
+			expect(setEnabled(true)).toBe(true);
+			expect(observers).toHaveLength(2);
+			expect(observerWasInstalledDuringScan).toEqual([true, true]);
+		} finally {
+			state.IsAdStrippingEnabled = false;
+			setEnabled(false);
+			g.MutationObserver = nativeMutationObserver;
+			g._suppressIndependentVideoAdsInDocument = originalSuppressInDocument;
 		}
 	});
 

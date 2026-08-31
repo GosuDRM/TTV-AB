@@ -3147,10 +3147,13 @@ function _pruneIndependentVideoAdSuppressions() {
 function _setIndependentVideoAdGuardEnabled(enabled) {
 	if (typeof document === "undefined") return false;
 	if (!enabled) {
+		_IndependentVideoAdSuppressionState.observer?.disconnect();
+		_IndependentVideoAdSuppressionState.observer = null;
 		document.getElementById(_INDEPENDENT_VIDEO_AD_STYLE_ID)?.remove();
 		_restoreIndependentVideoAds();
 		return true;
 	}
+	_installIndependentVideoAdObserver();
 	const didInstallStyle = _ensureIndependentVideoAdStyle();
 	_suppressIndependentVideoAdsInDocument();
 	return didInstallStyle;
@@ -3238,7 +3241,6 @@ function _hookIndependentVideoAdGuard() {
 			true,
 		);
 	}
-	_installIndependentVideoAdObserver();
 
 	window.__TTVAB_INDEPENDENT_VIDEO_AD_GUARD__ = true;
 }
