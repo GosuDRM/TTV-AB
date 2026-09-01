@@ -5380,6 +5380,77 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		}
 	});
 
+	it("keeps no-backup native recovery on the exact soft-reload session", async () => {
+		const state = getState();
+		const previousDisableAutoplayBackup = state.DisableAutoplayBackup;
+		const info = setupCsaiEscapeAdEnd({
+			IsUsingBackupStream: false,
+			ActiveBackupPlayerType: null,
+			LastCleanBackupM3U8: null,
+			LastCleanBackupPlayerType: null,
+			LastCleanBackupAt: 0,
+			NumStrippedAdSegments: 1,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			ExpectedAdPodLength: 1,
+		});
+		state.DisableAutoplayBackup = true;
+
+		try {
+			const native = makePlaylist(100, 3);
+			const out = await processM3U8()(NATIVE_URL, native, () =>
+				Promise.reject(new Error("unexpected fetch")),
+			);
+			const messages = sentMessages();
+
+			expect(out).toContain("seg100.ts");
+			expect(out).toContain("seg102.ts");
+			expect(
+				messages.find((message) => message.key === "AdEnded"),
+			).toMatchObject({
+				holdingBackup: false,
+				willReload: true,
+			});
+			expect(
+				messages.find((message) => message.key === "ReloadPlayer"),
+			).toMatchObject({
+				reason: "post-ad",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: false,
+			});
+			expect(info.IsShowingAd).toBe(false);
+			expect(info._PendingPostAdNativeMaster).toBe(null);
+		} finally {
+			state.DisableAutoplayBackup = previousDisableAutoplayBackup;
+		}
+	});
+
+	it("still refreshes the token for a no-backup hard decoder rebuild", async () => {
+		const info = setupCsaiEscapeAdEnd({
+			IsUsingModifiedM3U8: true,
+			IsUsingBackupStream: false,
+			ActiveBackupPlayerType: null,
+			LastCleanBackupM3U8: null,
+			LastCleanBackupPlayerType: null,
+			LastCleanBackupAt: 0,
+			NumStrippedAdSegments: 1,
+			ObservedAdPodIds: new Set(["stitched-ad-1"]),
+			ExpectedAdPodLength: 1,
+		});
+
+		await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+			Promise.reject(new Error("unexpected fetch")),
+		);
+
+		expect(
+			sentMessages().find((message) => message.key === "ReloadPlayer"),
+		).toMatchObject({
+			reason: "post-ad",
+			refreshAccessToken: true,
+			newMediaPlayerInstance: true,
+		});
+		expect(info._PendingPostAdNativeMaster).toBe(null);
+	});
+
 	it("arms the verified native session before a required post-ad decoder rebuild", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(600000);
