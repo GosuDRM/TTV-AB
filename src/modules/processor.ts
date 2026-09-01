@@ -5216,6 +5216,9 @@ async function _processM3U8Core(
 			let shouldPauseResumePlayer = false;
 			let reloadKind = "post-ad";
 			const needsHardReload = shouldUseHevcReload;
+			const reuseExactNativeSession = Boolean(
+				!needsHardReload && requestAdContext?.exactNativeRecoveryOwned === true,
+			);
 
 			if (isCsaiBreak) {
 				if (
@@ -5260,6 +5263,12 @@ async function _processM3U8Core(
 			if (shouldReloadPlayer) {
 				info.LastPlayerReload = Date.now();
 				info.LastAdEndReloadKind = reloadKind;
+				if (reuseExactNativeSession) {
+					_log(
+						"[Trace] Reusing exact native playback session for post-ad soft reload",
+						"success",
+					);
+				}
 				_postWorkerBridgeMessage(
 					self,
 					_createPageScopedWorkerEvent({
@@ -5268,7 +5277,7 @@ async function _processM3U8Core(
 						mediaKey: info.MediaKey,
 						reason: reloadKind,
 						cycleStartedAt: endedCycleStartedAt,
-						refreshAccessToken: true,
+						refreshAccessToken: !reuseExactNativeSession,
 						newMediaPlayerInstance: needsHardReload,
 					}),
 				);
