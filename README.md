@@ -72,6 +72,14 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.4.0 - 2026-09-06
+
+- **Preview Playback** - Fixed a worker startup race that could interrupt valid Team-page streams, channel banners, and Previews hover players with Error #2000. Navigation now retires outdated Team-page requests while preserving the exact active Picture-in-Picture worker ([#73](https://github.com/GosuDRM/TTV-AB/issues/73)).
+- **Worker Startup Cleanup** - Released temporary worker data when a player worker cannot be created.
+- **Background Worker Cleanup** - Stopped background startup checks from keeping unused player workers in memory. The cause of the original crash and high-memory report in [#71](https://github.com/GosuDRM/TTV-AB/issues/71) remains unconfirmed.
+- **Paused Playback Cleanup** - Prevented repeated early worker shutdowns from accumulating recovery checks while paused, while preserving recovery deadlines and Picture-in-Picture ownership.
+- **Statistics Recovery** - Bounded pending statistics requests during storage delays, avoided duplicate replay requests, and preserved recovery when storage resumes. Discarded updates no longer return after toggling Turbo Mode.
+
 ### v17.3.0 - 2026-09-05
 
 - **Channel Banner Playback** - Fixed channel-page banner VODs and recommended streams failing with a black screen or player error while the extension was enabled, including when Ad Blocking was turned off ([#72](https://github.com/GosuDRM/TTV-AB/issues/72)).
@@ -81,10 +89,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 ### v17.1.2 - 2026-09-01
 - **Fixed Low Quality Fallback recovery.** The final post-ad recovery step now keeps the exact verified native session when Low Quality Fallback is disabled, preventing the repeat black-screen loading loop reported in [#69](https://github.com/GosuDRM/TTV-AB/issues/69). When enabled, the temporary fallback retains its guarded return to normal quality.
 - **Reduced extension overhead.** Statistics replay avoids a redundant storage scan, and unused page-ad monitoring pauses while ad blocking is disabled. The 1440p ad-blocking and recovery paths are unchanged.
-
-### v17.1.1 - 2026-08-31
-- **Fixed rapid channel switching and long-running playback ownership.** Stale or out-of-order player work can no longer retake the current stream, while worker tracking stays bounded without evicting current or Picture-in-Picture playback.
-- **Corrected focus, multi-tab, and watch-time handling.** Hidden tabs, active Picture-in-Picture, and channel transitions remain separate, and passive hover or directory previews no longer count as watched streams.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
