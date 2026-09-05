@@ -2120,6 +2120,49 @@ let _workerGeneration = 0;
 let _workerRecoveryEpoch = 0;
 const _WorkerRecoveryStates = new Map();
 const _WorkerPlaybackOwnerGenerationByContext = new Map();
+const _WorkerTerminationRecoveryByContext = new Map<string, Worker>();
+
+function _clearWorkerInitialHeartbeat(worker) {
+	if (worker?.__TTVABInitialHeartbeatTimer != null) {
+		clearTimeout(worker.__TTVABInitialHeartbeatTimer);
+		worker.__TTVABInitialHeartbeatTimer = null;
+	}
+}
+
+function _scheduleWorkerInitialHeartbeat(worker, pagePlaybackContext) {
+	_clearWorkerInitialHeartbeat(worker);
+	const workerRef = new WeakRef<Worker>(worker);
+	const checkHeartbeat = () => {
+		const currentWorker = workerRef.deref();
+		if (!currentWorker) return;
+		currentWorker.__TTVABInitialHeartbeatTimer = null;
+		if (
+			currentWorker.__TTVABCrashed ||
+			currentWorker.__TTVABIntentionallyTerminated ||
+			currentWorker.__TTVABFirstPongAt
+		) {
+			return;
+		}
+		_installPageSideM3U8Override();
+		if (_isWorkerLifecycleThrottled(pagePlaybackContext)) {
+			currentWorker.__TTVABInitialHeartbeatTimer = setTimeout(
+				checkHeartbeat,
+				HW_INITIAL_PONG_TIMEOUT_MS,
+			);
+			return;
+		}
+		_recoverCrashedWorker(
+			currentWorker,
+			pagePlaybackContext,
+			"Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback",
+			"warning",
+		);
+	};
+	worker.__TTVABInitialHeartbeatTimer = setTimeout(
+		checkHeartbeat,
+		HW_INITIAL_PONG_TIMEOUT_MS,
+	);
+}
 
 function _isWorkerLifecycleThrottled(playbackContext = null) {
 	if (typeof _isPlaybackPageUnfocused === "function") {
@@ -2401,6 +2444,7 @@ function _markWorkerPong(worker, now = Date.now()) {
 	) {
 		return;
 	}
+	_clearWorkerInitialHeartbeat(worker);
 	worker.__TTVABLastPongAt = now;
 	if (!worker.__TTVABFirstPongAt) worker.__TTVABFirstPongAt = now;
 	worker.__TTVABMissedPongs = 0;
@@ -2787,6 +2831,16 @@ function _isWorkerGenerationRetired(worker, pagePlaybackContext = null) {
 	return playbackOwnerGeneration > workerGeneration;
 }
 
+function _clearWorkerTerminationRecovery(mediaKey) {
+	const worker = _WorkerTerminationRecoveryByContext.get(mediaKey);
+	if (!worker) return;
+	if (worker.__TTVABTerminationRecoveryTimer != null) {
+		clearTimeout(worker.__TTVABTerminationRecoveryTimer);
+		worker.__TTVABTerminationRecoveryTimer = null;
+	}
+	_WorkerTerminationRecoveryByContext.delete(mediaKey);
+}
+
 function _scheduleTerminatedPlaybackWorkerRecovery(
 	worker,
 	pagePlaybackContext,
@@ -2824,6 +2878,17 @@ function _scheduleTerminatedPlaybackWorkerRecovery(
 		typeof _isActivePictureInPicturePlaybackContext === "function" &&
 			_isActivePictureInPicturePlaybackContext(recoveryContext),
 	);
+	for (const mediaKey of _WorkerTerminationRecoveryByContext.keys()) {
+		if (
+			mediaKey !== currentContext.MediaKey &&
+			!(
+				typeof _isActivePictureInPicturePlaybackContext === "function" &&
+				_isActivePictureInPicturePlaybackContext({ MediaKey: mediaKey })
+			)
+		) {
+			_clearWorkerTerminationRecovery(mediaKey);
+		}
+	}
 	if (!contextIsCurrent && !contextIsPip) return false;
 	const now = Date.now();
 	const terminatedGeneration = Math.max(
@@ -2852,6 +2917,37 @@ function _scheduleTerminatedPlaybackWorkerRecovery(
 			return false;
 		}
 	}
+	const previousWorker = _WorkerTerminationRecoveryByContext.get(
+		recoveryContext.MediaKey,
+	);
+	if (previousWorker) {
+		if (
+			Number(previousWorker.__TTVABGeneration) >= terminatedGeneration ||
+			(!terminatedWorkerObservedPlayback && !terminatedWorkerObservedBootstrap)
+		) {
+			return false;
+		}
+		_clearWorkerTerminationRecovery(recoveryContext.MediaKey);
+	}
+	const scheduleMonitor = (callback, delayMs) => {
+		const timerID = setTimeout(() => {
+			if (worker.__TTVABTerminationRecoveryTimer !== timerID) return;
+			worker.__TTVABTerminationRecoveryTimer = null;
+			try {
+				callback();
+			} finally {
+				if (
+					worker.__TTVABTerminationRecoveryTimer == null &&
+					_WorkerTerminationRecoveryByContext.get(recoveryContext.MediaKey) ===
+						worker
+				) {
+					_WorkerTerminationRecoveryByContext.delete(recoveryContext.MediaKey);
+				}
+			}
+		}, delayMs);
+		worker.__TTVABTerminationRecoveryTimer = timerID;
+		_WorkerTerminationRecoveryByContext.set(recoveryContext.MediaKey, worker);
+	};
 	if (!terminatedWorkerObservedPlayback && !terminatedWorkerObservedBootstrap) {
 		let pageFallbackInstalled = false;
 		if (contextIsCurrent) {
@@ -2866,14 +2962,6 @@ function _scheduleTerminatedPlaybackWorkerRecovery(
 		let stalledSince = 0;
 		let mediaTimeByElement = new WeakMap();
 		worker.__TTVABTerminatedAt = terminatedAt;
-		const scheduleMonitor = (callback, delayMs) => {
-			const timerID = setTimeout(() => {
-				if (worker.__TTVABTerminationRecoveryTimer !== timerID) return;
-				worker.__TTVABTerminationRecoveryTimer = null;
-				callback();
-			}, delayMs);
-			worker.__TTVABTerminationRecoveryTimer = timerID;
-		};
 		const monitorUnobservedTermination = () => {
 			const checkedAt = Date.now();
 			const latestContext = _getPlaybackContextFromUrl(window.location.href);
@@ -3033,10 +3121,7 @@ function _scheduleTerminatedPlaybackWorkerRecovery(
 	if (contextIsCurrent) {
 		_installPageSideM3U8Override();
 	}
-	const timerID = setTimeout(() => {
-		if (worker.__TTVABTerminationRecoveryTimer === timerID) {
-			worker.__TTVABTerminationRecoveryTimer = null;
-		}
+	scheduleMonitor(() => {
 		const latestContext = _getPlaybackContextFromUrl(window.location.href);
 		const contextStillCurrent = !_isPlaybackContextMismatch(
 			recoveryContext,
@@ -3070,7 +3155,6 @@ function _scheduleTerminatedPlaybackWorkerRecovery(
 			true,
 		);
 	}, HW_INITIAL_PONG_TIMEOUT_MS);
-	worker.__TTVABTerminationRecoveryTimer = timerID;
 	return true;
 }
 
@@ -3129,6 +3213,7 @@ function _recoverCrashedWorker(
 		Number(healthyPlaybackOwner?.__TTVABGeneration) || 0,
 	);
 	const crashedAt = Date.now();
+	_clearWorkerInitialHeartbeat(worker);
 	worker.__TTVABCrashed = true;
 	worker.__TTVABCrashedAt = crashedAt;
 	_reassignPageAdCycleControlAfterWorkerRetirement(
@@ -5411,36 +5496,22 @@ function _hookWorker() {
 					new Blob([injectedCode], { type: "text/javascript" }),
 				);
 				_trackedExtensionBlobUrls.add(blobUrl);
-				super(blobUrl, opts);
+				try {
+					super(blobUrl, opts);
+				} catch (error) {
+					try {
+						URL.revokeObjectURL(blobUrl);
+					} catch {}
+					_trackedExtensionBlobUrls.delete(blobUrl);
+					throw error;
+				}
 				setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
 				this.__TTVABFetchControllers = new Map();
 
-				let _hbTimeout: ReturnType<typeof setTimeout> | null = null;
-				const _hbCheck = () => {
-					_hbTimeout = null;
-					if (this.__TTVABCrashed || this.__TTVABIntentionallyTerminated)
-						return;
-					if (this.__TTVABFirstPongAt) return;
-					_installPageSideM3U8Override();
-					if (_isWorkerLifecycleThrottled(pagePlaybackContext)) {
-						_hbTimeout = setTimeout(_hbCheck, HW_INITIAL_PONG_TIMEOUT_MS);
-						return;
-					}
-					_recoverCrashedWorker(
-						this,
-						pagePlaybackContext,
-						"Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback",
-						"warning",
-					);
-				};
-				_hbTimeout = setTimeout(_hbCheck, HW_INITIAL_PONG_TIMEOUT_MS);
+				_scheduleWorkerInitialHeartbeat(this, pagePlaybackContext);
 				this.addEventListener("message", (e) => {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (data?.key === "Pong") {
-						if (_hbTimeout !== null) {
-							clearTimeout(_hbTimeout);
-							_hbTimeout = null;
-						}
 						_markWorkerPong(this);
 					}
 				});
@@ -6954,6 +7025,12 @@ function _hookWorker() {
 							channelName: __TTVAB_STATE__.PageChannel,
 							vodID: __TTVAB_STATE__.PageVodID,
 							mediaKey: __TTVAB_STATE__.PageMediaKey,
+							playbackContextGeneration: Math.max(
+								0,
+								Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+							),
+							allowPreviewEmergencyAutoplayBackup:
+								__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup === true,
 						},
 					});
 					_postWorkerBridgeMessage(this, {
@@ -7009,6 +7086,7 @@ function _hookWorker() {
 
 			terminate() {
 				this.__TTVABIntentionallyTerminated = true;
+				_clearWorkerInitialHeartbeat(this);
 				try {
 					for (const controller of this.__TTVABFetchControllers?.values?.() ||
 						[]) {

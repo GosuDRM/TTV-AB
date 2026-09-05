@@ -455,6 +455,9 @@ let pendingAdMeasurements = new Map();
 let flushTimeout = null;
 let didMigrateLegacyPersistedCounterFlushes = false;
 const retryFlushEntries = new Map();
+const MAX_IN_FLIGHT_PERSIST_REQUESTS = 64;
+const inFlightPersistRequests = new Set<string | symbol>();
+let persistWorkGeneration = 0;
 let persistedFlushRecoveryTimeout = null;
 let persistedFlushRecoveryAttempt = 0;
 
@@ -909,8 +912,19 @@ function scheduleRetryFlush(payload, flushId) {
 }
 
 function sendPersistPayload(payload, onSuccess, onFailure) {
+	const flushId = normalizeFlushId(
+		getBridgeMessageDetail(payload?.detail)?.flushId,
+	);
+	const requestKey = flushId ? `${payload.type}:${flushId}` : Symbol();
+	if (inFlightPersistRequests.has(requestKey)) return false;
+	if (inFlightPersistRequests.size >= MAX_IN_FLIGHT_PERSIST_REQUESTS) {
+		onFailure?.("Counter persistence busy");
+		return false;
+	}
+	inFlightPersistRequests.add(requestKey);
 	try {
 		chrome.runtime.sendMessage(payload, (response) => {
+			inFlightPersistRequests.delete(requestKey);
 			if (chrome.runtime.lastError) {
 				onFailure?.(chrome.runtime.lastError.message);
 				return;
@@ -925,8 +939,11 @@ function sendPersistPayload(payload, onSuccess, onFailure) {
 			onSuccess?.(safeResponse);
 		});
 	} catch (error) {
+		inFlightPersistRequests.delete(requestKey);
 		onFailure?.(error instanceof Error ? error.message : String(error));
+		return false;
 	}
+	return true;
 }
 
 function dispatchPersistPayload(
@@ -941,6 +958,7 @@ function dispatchPersistPayload(
 		if (flushId) clearPersistedCounterFlush(flushId);
 		return false;
 	}
+	const workGeneration = persistWorkGeneration;
 	if (flushId) {
 		const persistedFlushes = persistCounterFlushForReplay(safeDetail);
 		if (persistedFlushes) {
@@ -951,6 +969,7 @@ function dispatchPersistPayload(
 	sendPersistPayload(
 		payload,
 		(response) => {
+			if (workGeneration !== persistWorkGeneration) return;
 			clearScheduledRetryFlush(flushId);
 			handlePersistSuccess(response, flushId);
 			if (hasPendingCounters()) {
@@ -958,7 +977,7 @@ function dispatchPersistPayload(
 			}
 		},
 		(errorMessage) => {
-			if (!retryOnFailure) {
+			if (!retryOnFailure || workGeneration !== persistWorkGeneration) {
 				return;
 			}
 
@@ -1013,6 +1032,7 @@ function resetPendingCounters() {
 }
 
 function discardCounterWorkForTurboMode() {
+	persistWorkGeneration++;
 	clearScheduledFlush();
 	resetPendingCounters();
 	clearScheduledRetryFlush();

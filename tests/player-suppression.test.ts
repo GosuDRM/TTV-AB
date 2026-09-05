@@ -1501,10 +1501,15 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 			MediaKey: "live:testchannel",
 		});
 		const postMessage = vi.fn();
+		const pagePostMessage = vi.fn();
 		(g._S as { workers: unknown[] }).workers = [
 			{
 				__TTVABPageMediaKey: "live:testchannel",
 				postMessage,
+			},
+			{
+				__TTVABPageMediaKey: "live:oldpage",
+				postMessage: pagePostMessage,
 			},
 		];
 
@@ -1525,7 +1530,8 @@ describe("_setPagePlaybackContext (navigation suppression cleanup)", () => {
 		expect(state.ActiveCodecHandoffMediaKey).toBe("live:testchannel");
 		expect(state.ShouldResumeAfterAdMediaKey).toBe("live:testchannel");
 		expect(state.PendingTriggeredPlayerReloadMediaKey).toBe("live:testchannel");
-		const messages = postMessage.mock.calls.map(
+		expect(postMessage).not.toHaveBeenCalled();
+		const messages = pagePostMessage.mock.calls.map(
 			([envelope]) =>
 				(envelope as { message: Record<string, unknown> }).message,
 		);

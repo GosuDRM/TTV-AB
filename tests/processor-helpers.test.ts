@@ -57,6 +57,7 @@ beforeAll(() => {
 		PageChannel: null,
 		PageVodID: null,
 		PageMediaKey: null,
+		PagePlaybackRouteKey: null,
 		PagePlaybackVisibleSinceAt: 0,
 		LastAdEndedAt: 0,
 		LastAdEndedChannel: null,

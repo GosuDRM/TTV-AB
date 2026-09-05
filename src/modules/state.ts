@@ -509,16 +509,22 @@ function _broadcastWorkers(messages) {
 					continue;
 				}
 				if (
-					message?.key === "UpdatePageContext" &&
-					typeof _rememberWorkerPageContext === "function"
+					message?.key === "UpdatePageContext" ||
+					message?.key === "ResetPlaybackRecoveryState"
 				) {
 					const preservedMediaKey = _normalizeMediaKey(
 						message.value?.preservedMediaKey,
 					);
-					const workerMediaKey =
-						workerPlaybackContext?.MediaKey ||
-						_normalizeMediaKey(worker?.__TTVABPageMediaKey);
-					if (!preservedMediaKey || workerMediaKey !== preservedMediaKey) {
+					const workerMediaKey = _normalizeMediaKey(
+						worker?.__TTVABPageMediaKey,
+					);
+					if (preservedMediaKey && workerMediaKey === preservedMediaKey) {
+						continue;
+					}
+					if (
+						message.key === "UpdatePageContext" &&
+						typeof _rememberWorkerPageContext === "function"
+					) {
 						_rememberWorkerPageContext(worker, message.value);
 					}
 				}
@@ -556,6 +562,7 @@ function _setPagePlaybackContext(
 	options: {
 		broadcast?: boolean;
 		allowPreviewEmergencyAutoplayBackup?: boolean;
+		pageRouteKey?: string | null;
 	} = {},
 ) {
 	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) {
@@ -564,6 +571,10 @@ function _setPagePlaybackContext(
 
 	const normalizedContext = _normalizePlaybackContext(context);
 	const previousMediaKey = __TTVAB_STATE__.PageMediaKey || null;
+	const previousRouteKey =
+		__TTVAB_STATE__.PagePlaybackRouteKey || previousMediaKey;
+	const nextRouteKey = options.pageRouteKey || normalizedContext.MediaKey;
+	const didRouteKeyChange = previousRouteKey !== nextRouteKey;
 	const previousPreviewEmergencyAutoplay =
 		__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup === true;
 	const nextPreviewEmergencyAutoplay =
@@ -613,23 +624,27 @@ function _setPagePlaybackContext(
 		__TTVAB_STATE__.PageChannel !== normalizedContext.ChannelName ||
 		__TTVAB_STATE__.PageVodID !== normalizedContext.VodID ||
 		previousMediaKey !== normalizedContext.MediaKey ||
-		previousPreviewEmergencyAutoplay !== nextPreviewEmergencyAutoplay;
+		previousPreviewEmergencyAutoplay !== nextPreviewEmergencyAutoplay ||
+		didRouteKeyChange;
 	const didMediaKeyChange = previousMediaKey !== normalizedContext.MediaKey;
 
 	__TTVAB_STATE__.PageMediaType = normalizedContext.MediaType;
 	__TTVAB_STATE__.PageChannel = normalizedContext.ChannelName;
 	__TTVAB_STATE__.PageVodID = normalizedContext.VodID;
 	__TTVAB_STATE__.PageMediaKey = normalizedContext.MediaKey;
+	__TTVAB_STATE__.PagePlaybackRouteKey = nextRouteKey;
 	__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup =
 		nextPreviewEmergencyAutoplay;
 
+	if (didMediaKeyChange || didRouteKeyChange) {
+		__TTVAB_STATE__.PagePlaybackContextGeneration =
+			Math.max(0, Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) +
+			1;
+	}
 	if (didMediaKeyChange) {
 		if (typeof _clearWorkerRecoveryNotice === "function") {
 			_clearWorkerRecoveryNotice();
 		}
-		__TTVAB_STATE__.PagePlaybackContextGeneration =
-			Math.max(0, Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) +
-			1;
 		if (typeof _resetPlaybackIntentForNavigation === "function") {
 			_resetPlaybackIntentForNavigation(
 				normalizedContext.ChannelName,
@@ -899,8 +914,17 @@ function _recordPlayerReloadAt(mediaKey, at = Date.now()) {
 
 function _syncPagePlaybackContext(options = {}) {
 	const pageUrl = globalThis?.location?.href || "";
-	return _setPagePlaybackContext(_getPlaybackContextFromUrl(pageUrl), {
+	const playbackContext = _getPlaybackContextFromUrl(pageUrl);
+	let pageRouteKey = playbackContext.MediaKey;
+	if (!pageRouteKey) {
+		try {
+			const parsedUrl = new URL(pageUrl);
+			pageRouteKey = `${parsedUrl.origin}${parsedUrl.pathname}`;
+		} catch {}
+	}
+	return _setPagePlaybackContext(playbackContext, {
 		...options,
+		pageRouteKey,
 		allowPreviewEmergencyAutoplayBackup: _isPreviewsPlayerUrl(pageUrl),
 	});
 }
@@ -1236,6 +1260,7 @@ function _declareState(scope) {
 		PageChannel: null,
 		PageVodID: null,
 		PageMediaKey: null,
+		PagePlaybackRouteKey: null,
 		PagePlaybackContextGeneration: 0,
 		AllowPreviewEmergencyAutoplayBackup: false,
 		PagePlaybackVisibleSinceAt: 0,

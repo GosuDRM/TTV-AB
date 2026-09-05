@@ -314,6 +314,9 @@ const MAX_PROCESSED_FLUSHES = 256;
 const PROCESSED_FLUSH_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 let persistChain: Promise<unknown> = Promise.resolve();
+const MAX_PENDING_PERSIST_TASKS = 64;
+const pendingPersistKeys = new Set<string>();
+let pendingPersistTaskCount = 0;
 
 function normalizeFlushId(value) {
 	if (typeof value !== "string") return null;
@@ -667,6 +670,7 @@ function applyAchievementUnlocks(stats, totalAdsBlocked) {
 }
 
 async function persistCounterDelta(detail, sourceTabId = null) {
+	const persistRevision = turboModeRevision;
 	const safeDetail = getMessageDetail(detail);
 	const flushId = normalizeFlushId(safeDetail?.flushId);
 	const adsDelta = normalizeCount(safeDetail?.adsDelta);
@@ -709,7 +713,11 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		UNCONFIRMED_FLUSH_STORAGE_KEY,
 		RECENT_AD_MEASUREMENTS_STORAGE_KEY,
 	]);
-	if (turboModeEnabled || stored[TURBO_MODE_STORAGE_KEY] === true) {
+	if (
+		turboModeEnabled ||
+		stored[TURBO_MODE_STORAGE_KEY] === true ||
+		persistRevision !== turboModeRevision
+	) {
 		return createTurboCounterResponse();
 	}
 	const baseAds = normalizeCount(stored.ttvAdsBlocked);
@@ -860,8 +868,19 @@ async function confirmCounterFlush(detail) {
 	return { ok: true };
 }
 
-function enqueuePersist(task) {
-	const nextTask = persistChain.then(task, task);
+function enqueuePersist(task, key = null) {
+	if (
+		pendingPersistTaskCount >= MAX_PENDING_PERSIST_TASKS ||
+		(key && pendingPersistKeys.has(key))
+	) {
+		return Promise.resolve({ ok: false, error: "Counter persistence busy" });
+	}
+	pendingPersistTaskCount++;
+	if (key) pendingPersistKeys.add(key);
+	const nextTask = persistChain.then(task, task).finally(() => {
+		pendingPersistTaskCount--;
+		if (key) pendingPersistKeys.delete(key);
+	});
 	persistChain = nextTask.catch((error) => {
 		console.error("[TTV AB] Background persist error:", error);
 		return undefined;
@@ -947,18 +966,27 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 		return undefined;
 	}
 
-	enqueuePersist(async () => {
-		try {
-			return message.type === "ttvab-confirm-counter-flush"
-				? await confirmCounterFlush(message.detail)
-				: await persistCounterDelta(message.detail, sender?.tab?.id);
-		} catch (error) {
-			return {
-				ok: false,
-				error: error instanceof Error ? error.message : String(error),
-			};
-		}
-	})
+	const flushId = normalizeFlushId(getMessageDetail(message.detail)?.flushId);
+	const persistRevision = turboModeRevision;
+	enqueuePersist(
+		async () => {
+			try {
+				if (message.type === "ttvab-confirm-counter-flush") {
+					return await confirmCounterFlush(message.detail);
+				}
+				if (persistRevision !== turboModeRevision) {
+					return createTurboCounterResponse();
+				}
+				return await persistCounterDelta(message.detail, sender?.tab?.id);
+			} catch (error) {
+				return {
+					ok: false,
+					error: error instanceof Error ? error.message : String(error),
+				};
+			}
+		},
+		flushId ? `${message.type}:${flushId}` : null,
+	)
 		.then((response) => {
 			sendResponse(response);
 		})
