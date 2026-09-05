@@ -72,6 +72,12 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.3.0 - 2026-09-05
+
+- **Channel Banner Playback** - Fixed channel-page banner VODs and recommended streams failing with a black screen or player error while the extension was enabled, including when Ad Blocking was turned off ([#72](https://github.com/GosuDRM/TTV-AB/issues/72)).
+- **Post-Ad Recovery** - Improved recovery from black loading screens when Low Quality Fallback is disabled and Twitch's player temporarily disappears or remains unready. Repeated soft reloads are ignored, expired recovery stops, and healthy playback avoids an extra rebuild ([#70](https://github.com/GosuDRM/TTV-AB/issues/70)).
+- **Player Recovery Failures** - Source reloads now handle asynchronous failures and resume only while their playback context is still current. Recovery avoids reloading a source through a crashed worker and offers a manual tab refresh when recovery is exhausted. This does not establish or fix the cause of Twitch's original worker crash ([#71](https://github.com/GosuDRM/TTV-AB/issues/71)).
+
 ### v17.1.2 - 2026-09-01
 - **Fixed Low Quality Fallback recovery.** The final post-ad recovery step now keeps the exact verified native session when Low Quality Fallback is disabled, preventing the repeat black-screen loading loop reported in [#69](https://github.com/GosuDRM/TTV-AB/issues/69). When enabled, the temporary fallback retains its guarded return to normal quality.
 - **Reduced extension overhead.** Statistics replay avoids a redundant storage scan, and unused page-ad monitoring pauses while ad blocking is disabled. The 1440p ad-blocking and recovery paths are unchanged.
@@ -79,10 +85,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 ### v17.1.1 - 2026-08-31
 - **Fixed rapid channel switching and long-running playback ownership.** Stale or out-of-order player work can no longer retake the current stream, while worker tracking stays bounded without evicting current or Picture-in-Picture playback.
 - **Corrected focus, multi-tab, and watch-time handling.** Hidden tabs, active Picture-in-Picture, and channel transitions remain separate, and passive hover or directory previews no longer count as watched streams.
-
-### v17.0.0 - 2026-08-29
-- **Added Turbo Mode for a focused ad-blocking popup.** It pauses new statistics and achievements, clears the badge, and dynamically collapses the dashboard without changing Ad Blocking, Ad Spoofing, Low Quality Fallback, or playback recovery.
-- **Fixed Generate Log sometimes producing no file.** Log collection now continues in a dedicated tab and waits for an explicit save action, so closing the extension popup no longer cancels the export.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
