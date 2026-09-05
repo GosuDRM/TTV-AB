@@ -7742,6 +7742,195 @@ describe("worker mixed-codec master selection", () => {
 		}
 	});
 
+	it.each([
+		[
+			"live stream with ad blocking enabled",
+			true,
+			"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8?sig=live",
+			"live:featuredchannel",
+		],
+		[
+			"live stream with ad blocking disabled",
+			false,
+			"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8?sig=live",
+			"live:featuredchannel",
+		],
+		[
+			"VOD with ad blocking enabled",
+			true,
+			"https://usher.ttvnw.net/vod/v2/123456789.m3u8?sig=vod",
+			"vod:123456789",
+		],
+		[
+			"VOD with ad blocking disabled",
+			false,
+			"https://usher.ttvnw.net/vod/v2/123456789.m3u8?sig=vod",
+			"vod:123456789",
+		],
+	])(
+		"keeps an in-banner %s master while the surrounding channel route is unchanged",
+		async (_label, enabled, masterUrl, expectedMediaKey) => {
+			const originalFetch = g.fetch;
+			const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+			const variantUrl = `https://edge.example/${expectedMediaKey.replace(":", "-")}/index.m3u8`;
+			const master = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+				variantUrl,
+			].join("\n");
+			const rawFetch = vi.fn(async () => new Response(master, { status: 200 }));
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaType: "live",
+				PageChannel: "visitedchannel",
+				PageVodID: null,
+				PageMediaKey: "live:visitedchannel",
+				PagePlaybackContextGeneration: 7,
+				IsAdStrippingEnabled: enabled,
+			});
+			g.fetch = rawFetch;
+			g._postWorkerBridgeMessage = vi.fn();
+
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				const fetchMaster = g.fetch as typeof fetch;
+				const output = await (await fetchMaster(masterUrl)).text();
+				const info = (
+					state.StreamInfos as Record<string, Record<string, unknown>>
+				)[expectedMediaKey];
+
+				expect(output).toBe(master);
+				expect(rawFetch).toHaveBeenCalledOnce();
+				expect(state.PageMediaKey).toBe("live:visitedchannel");
+				expect(state.PagePlaybackContextGeneration).toBe(7);
+				expect(info).toMatchObject({
+					MediaKey: expectedMediaKey,
+					UsherBaseUrl: masterUrl,
+				});
+			} finally {
+				g.fetch = originalFetch;
+				g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+			}
+		},
+	);
+
+	it.each([
+		["live", "api/channel/hls/featuredchannel", "live:featuredchannel"],
+		["vod", "vod/v2/123456789", "vod:123456789"],
+	])(
+		"blocks ads in accepted in-banner %s media using the real processor",
+		async (_type, masterPath, mediaKey) => {
+			const originalFetch = g.fetch;
+			const originalFindBackup = g._findBackupStream;
+			const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+			const masterUrl = `https://usher.ttvnw.net/${masterPath}.m3u8?sig=native`;
+			const variantUrl =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/featured.m3u8";
+			const master = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+				variantUrl,
+			].join("\n");
+			const adPlaylist = [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-CUE-OUT:30",
+				"#EXTINF:2.000,",
+				"https://edge.example/stitched-ad-1.ts",
+			].join("\n");
+			const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
+				return new Response(String(input) === masterUrl ? master : adPlaylist, {
+					status: 200,
+				});
+			});
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaType: "live",
+				PageChannel: "visitedchannel",
+				PageMediaKey: "live:visitedchannel",
+				PagePlaybackContextGeneration: 7,
+				IsAdStrippingEnabled: true,
+				IsAdSpoofingEnabled: false,
+			});
+			g.fetch = rawFetch;
+			g._findBackupStream = vi.fn(async () => null);
+			g._postWorkerBridgeMessage = vi.fn();
+
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				await (g.fetch as typeof fetch)(masterUrl);
+				const output = await (
+					await (g.fetch as typeof fetch)(variantUrl)
+				).text();
+
+				expect(output).not.toContain("stitched-ad-1.ts");
+				expect(output).not.toContain("#EXT-X-CUE-OUT");
+				expect(output).toContain("/__ttvab_empty_hold_segment.mp4");
+				expect(
+					(state.StreamInfos as Record<string, unknown>)[mediaKey],
+				).toMatchObject({
+					IsShowingAd: true,
+					MediaKey: mediaKey,
+				});
+				expect(state.PageMediaKey).toBe("live:visitedchannel");
+			} finally {
+				g.fetch = originalFetch;
+				g._findBackupStream = originalFindBackup;
+				g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+			}
+		},
+	);
+
+	it("rejects a delayed in-banner master after the surrounding route changes", async () => {
+		const originalFetch = g.fetch;
+		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8?sig=live";
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+			"https://edge.example/featured/index.m3u8",
+		].join("\n");
+		let resolveMaster: ((response: Response) => void) | null = null;
+		const rawFetch = vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					resolveMaster = resolve;
+				}),
+		);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageChannel: "visitedchannel",
+			PageMediaKey: "live:visitedchannel",
+			PagePlaybackContextGeneration: 7,
+		});
+		g.fetch = rawFetch;
+		g._postWorkerBridgeMessage = vi.fn();
+
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			const delayed = (g.fetch as typeof fetch)(masterUrl);
+			Object.assign(state, {
+				PageChannel: "nextchannel",
+				PageMediaKey: "live:nextchannel",
+				PagePlaybackContextGeneration: 8,
+			});
+			resolveMaster?.(new Response(master, { status: 200 }));
+
+			await expect(delayed).rejects.toMatchObject({ name: "AbortError" });
+			expect(
+				(state.StreamInfos as Record<string, unknown>)["live:featuredchannel"],
+			).toBeUndefined();
+		} finally {
+			g.fetch = originalFetch;
+			g._postWorkerBridgeMessage = originalPostWorkerBridgeMessage;
+		}
+	});
+
 	it("rejects a delayed A master after a rapid A to B to A route cycle", async () => {
 		const originalFetch = g.fetch;
 		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;

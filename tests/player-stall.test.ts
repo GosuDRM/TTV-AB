@@ -2950,6 +2950,118 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		for (const name of stubbed) g[name] = saved[name];
 	});
 
+	it("waits for Twitch's asynchronous source load before resuming playback", async () => {
+		const { state } =
+			T<() => { state: { setSrc: unknown } }>("_getPlayerAndState")();
+		let complete!: (value: string) => void;
+		state.setSrc = () =>
+			new Promise<string>((resolve) => {
+				complete = resolve;
+			});
+		const play = vi.spyOn(g, "_playPlaybackTarget");
+		expect(task()(false, true, { reason: "manual" })).toBe(true);
+		expect(play).not.toHaveBeenCalled();
+		expect(resumeRetryCalls).toEqual([]);
+		expect(workerMessages).toContainEqual(
+			expect.objectContaining({ key: "TriggeredPlayerReload" }),
+		);
+		complete("success");
+		await Promise.resolve();
+		expect(play).toHaveBeenCalledTimes(1);
+		expect(resumeRetryCalls).toHaveLength(1);
+	});
+
+	it.each(["failure", "skipped", false])(
+		"does not resume a source load that resolves to %s",
+		async (result) => {
+			const { state } =
+				T<() => { state: { setSrc: unknown } }>("_getPlayerAndState")();
+			state.setSrc = () => Promise.resolve(result);
+			const play = vi.spyOn(g, "_playPlaybackTarget");
+			const log = vi.spyOn(g, "_log");
+			expect(task()(false, true, { reason: "manual" })).toBe(true);
+			await Promise.resolve();
+			expect(play).not.toHaveBeenCalled();
+			expect(resumeRetryCalls).toEqual([]);
+			expect(log).toHaveBeenCalledWith(
+				expect.stringContaining("Player source reload failed"),
+				"warning",
+			);
+		},
+	);
+
+	it("handles an asynchronous source failure and rolls back the exact codec handoff", async () => {
+		const { state } =
+			T<() => { state: { setSrc: unknown } }>("_getPlayerAndState")();
+		state.setSrc = () => Promise.reject(new Error("token unavailable"));
+		const play = vi.spyOn(g, "_playPlaybackTarget");
+		const log = vi.spyOn(g, "_log");
+		const id = handoffId("async-failure");
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: id,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
+			}),
+		).toBe(true);
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(play).not.toHaveBeenCalled();
+		expect(
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ActiveCodecHandoffId,
+		).toBeNull();
+		expect(workerMessages).toContainEqual(
+			expect.objectContaining({
+				key: "UpdateCodecHandoffContext",
+				value: expect.objectContaining({ clearHandoffId: id }),
+			}),
+		);
+		expect(log).toHaveBeenCalledWith(
+			expect.stringContaining("token unavailable"),
+			"warning",
+		);
+	});
+
+	it.each([
+		"navigation",
+		"player replacement",
+		"new cycle",
+		"new reload",
+		"user pause",
+	])("discards delayed source completion after %s", async (change) => {
+		const { state } =
+			T<() => { state: { setSrc: unknown } }>("_getPlayerAndState")();
+		let complete!: (value: string) => void;
+		state.setSrc = () =>
+			new Promise<string>((resolve) => {
+				complete = resolve;
+			});
+		const play = vi.spyOn(g, "_playPlaybackTarget");
+		expect(task()(false, true, { reason: "manual" })).toBe(true);
+		if (change === "navigation")
+			vi.spyOn(g, "_isPlaybackRecoveryContextCurrent").mockReturnValue(false);
+		if (change === "player replacement")
+			vi.spyOn(g, "_getPlayerAndState").mockReturnValue({ player: {}, state });
+		if (change === "new cycle") {
+			(g.__TTVAB_STATE__ as Record<string, unknown>).AdPodProgressByMediaKey = {
+				"live:testchannel": { cycleStartedAt: 200 },
+			};
+		}
+		if (change === "new reload")
+			T<(key: string, at: number) => void>("_recordPlayerReloadAt")(
+				"live:testchannel",
+				Date.now() + 1,
+			);
+		if (change === "user pause")
+			vi.spyOn(g, "_hasUserPauseIntent").mockReturnValue(true);
+		complete("success");
+		await Promise.resolve();
+		expect(play).not.toHaveBeenCalled();
+		expect(resumeRetryCalls).toEqual([]);
+	});
+
 	it("downgrades an automatic hard reload to pause/play under pip", () => {
 		const result = task()(false, true, {
 			reason: "ad-recovery",
@@ -3106,6 +3218,198 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		});
 	});
 
+	it("keeps an exact-session post-ad soft reload under bounded ownership", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+
+		const result = task()(false, true, {
+			reason: "post-ad",
+			refreshAccessToken: false,
+			newMediaPlayerInstance: false,
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 100,
+		});
+
+		expect(result).toBe(true);
+		expect(setSrcCalls).toEqual([
+			{
+				isNewMediaPlayerInstance: false,
+				refreshAccessToken: false,
+			},
+		]);
+		expect(g._PostAdRecoveryTransactionState).toMatchObject({
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 100,
+			requiresReplacement: false,
+			acceptedReloadCount: 1,
+			initialOperationCompleted: true,
+		});
+		expect(workerMessages.at(-1)).toMatchObject({
+			key: "TriggeredPlayerReload",
+			value: {
+				reason: "post-ad",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+			},
+		});
+	});
+
+	it("does not repeat an accepted exact-session soft reload after the debounce", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		const now = Date.now();
+		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+		const options = {
+			reason: "post-ad",
+			refreshAccessToken: false,
+			newMediaPlayerInstance: false,
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 100,
+		};
+
+		expect(task()(false, true, options)).toBe(true);
+		clock.mockReturnValue(now + 2000);
+		expect(task()(false, true, options)).toBe(true);
+		expect(setSrcCalls).toHaveLength(1);
+		expect(g._PostAdRecoveryTransactionState).toMatchObject({
+			acceptedReloadCount: 1,
+			initialOperationCompleted: true,
+		});
+	});
+
+	it("counts the soft reload even when pause/resume already completed an operation", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		T<(channel: string, mediaKey: string, cycle: number) => boolean>(
+			"_startPostAdRecoveryTransaction",
+		)("testchannel", "live:testchannel", 100);
+		T<() => void>("_completePendingPostAdRecoveryOperation")();
+
+		expect(
+			task()(false, true, {
+				reason: "post-ad",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: false,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+			}),
+		).toBe(true);
+		expect(setSrcCalls).toHaveLength(1);
+		expect(g._PostAdRecoveryTransactionState).toMatchObject({
+			acceptedReloadCount: 1,
+			initialOperationCompleted: true,
+		});
+	});
+
+	it("retains one real rebuild after the soft reload and rejects further recovery", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		const now = Date.now();
+		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+		const options = {
+			reason: "post-ad",
+			refreshAccessToken: false,
+			newMediaPlayerInstance: false,
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 100,
+		};
+		const requestReload = T<
+			(
+				channel: string,
+				mediaKey: string,
+				cycle: number,
+				message: string,
+			) => boolean
+		>("_requestPostAdRecoveryReload");
+
+		expect(task()(false, true, options)).toBe(true);
+		clock.mockReturnValue(now + 2000);
+		expect(requestReload("testchannel", "live:testchannel", 100, "test")).toBe(
+			true,
+		);
+		expect(g._PostAdRecoveryTransactionState).toMatchObject({
+			acceptedReloadCount: 2,
+			reloadRequestCount: 1,
+			requiresReplacement: true,
+		});
+		clock.mockReturnValue(now + 4000);
+		expect(task()(false, true, options)).toBe(true);
+		expect(requestReload("testchannel", "live:testchannel", 100, "test")).toBe(
+			false,
+		);
+		expect(setSrcCalls).toEqual([
+			{ isNewMediaPlayerInstance: false, refreshAccessToken: false },
+			{ isNewMediaPlayerInstance: true, refreshAccessToken: false },
+		]);
+	});
+
+	it("rejects an expired exact-session soft reload before the next monitor tick", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+		expect(
+			T<(channel: string, mediaKey: string, cycle: number) => boolean>(
+				"_startPostAdRecoveryTransaction",
+			)("testchannel", "live:testchannel", 100),
+		).toBe(true);
+		(g._PostAdRecoveryTransactionState as { expiresAt: number }).expiresAt =
+			Date.now() - 1;
+
+		expect(
+			task()(false, true, {
+				reason: "post-ad",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: false,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+			}),
+		).toBe(false);
+		expect(setSrcCalls).toEqual([]);
+		expect(state.ShouldResumeAfterAd).toBe(false);
+	});
+
+	it("does not enroll an ordinary post-ad reload as exact-session recovery", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
+
+		expect(
+			task()(false, true, {
+				reason: "post-ad",
+				refreshAccessToken: true,
+				newMediaPlayerInstance: false,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+			}),
+		).toBe(true);
+		expect(
+			(g._PostAdRecoveryTransactionState as { mediaKey: string | null })
+				.mediaKey,
+		).toBeNull();
+	});
+
 	it("rejects stale, no-intent, and user-paused terminal restore tasks", () => {
 		pipElement = null;
 		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
@@ -3121,6 +3425,37 @@ describe("_doPlayerTask (pip reload policy)", () => {
 			cycleStartedAt: 100,
 		};
 
+		state.LastAdEndedCycleStartedAt = 200;
+		expect(task()(false, true, options)).toBe(false);
+
+		state.LastAdEndedCycleStartedAt = 100;
+		state.ShouldResumeAfterAd = false;
+		expect(task()(false, true, options)).toBe(false);
+
+		state.ShouldResumeAfterAd = true;
+		(g._PlaybackIntentState as Record<string, unknown>).userPausedMediaKey =
+			"live:testchannel";
+		expect(task()(false, true, options)).toBe(false);
+		expect(setSrcCalls).toEqual([]);
+	});
+
+	it("rejects active, stale, no-intent, and user-paused exact-session soft reloads", () => {
+		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const options = {
+			reason: "post-ad",
+			refreshAccessToken: false,
+			newMediaPlayerInstance: false,
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 100,
+		};
+
+		expect(task()(false, true, options)).toBe(false);
+
+		state.CurrentAdMediaKey = null;
+		state.CurrentAdChannel = null;
 		state.LastAdEndedCycleStartedAt = 200;
 		expect(task()(false, true, options)).toBe(false);
 
@@ -4530,6 +4865,79 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(transaction().mediaKey).toBe("live:chan");
 		expect(transaction().cycleStartedAt).toBe(440000);
 		expect(transaction().expiresAt).toBe(530000);
+	});
+
+	it("retains an exact post-ad soft reload while the player remounts", () => {
+		currentPlayback = null;
+		nowSpy.mockReturnValue(500000);
+		const actualDoPlayerTask = saved.doPlayerTask as (
+			isPausePlay: boolean,
+			isReload: boolean,
+			options: Record<string, unknown>,
+		) => unknown;
+
+		expect(
+			actualDoPlayerTask(false, true, {
+				reason: "post-ad",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: false,
+				channel: "chan",
+				mediaKey: "live:chan",
+				cycleStartedAt: 440000,
+			}),
+		).toBe(false);
+
+		expect(transaction().mediaKey).toBe("live:chan");
+		expect(
+			(
+				g._PostAdRecoveryTransactionState as {
+					pendingOperation: Record<string, unknown> | null;
+				}
+			).pendingOperation,
+		).toMatchObject({
+			isPausePlay: false,
+			isReload: true,
+			options: {
+				reason: "post-ad",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: false,
+				mediaKey: "live:chan",
+				cycleStartedAt: 440000,
+			},
+		});
+	});
+
+	it("accepts advancing playback on the reused exact session without rebuilding", () => {
+		const playback = makePlayback({
+			currentTime: 10,
+			bufferedEnd: 20,
+			readyState: 4,
+			videoWidth: 1920,
+		});
+		arm(playback);
+		transaction().acceptedReloadCount = 1;
+		transaction().initialOperationCompleted = true;
+
+		expect(sample(500000)).toBe(false);
+		playback.setCurrentTime(10.8);
+		expect(sample(500800)).toBe(true);
+		expect(transaction().mediaKey).toBeNull();
+		expect(reloadCalls()).toEqual([]);
+	});
+
+	it("allows only one bounded rebuild after an exact-session soft reload stalls", () => {
+		const playback = makePlayback();
+		reloadOutcomes.push(true);
+		arm(playback);
+		transaction().acceptedReloadCount = 1;
+		transaction().initialOperationCompleted = true;
+
+		expect(sample(500000)).toBe(false);
+		expect(sample(502000)).toBe(true);
+		expect(reloadCalls()).toHaveLength(1);
+		expect(transaction().acceptedReloadCount).toBe(2);
+		expect(sample(504000)).toBe(false);
+		expect(reloadCalls()).toHaveLength(1);
 	});
 
 	it("disarms only after the exact replacement is healthy and advancing", () => {
