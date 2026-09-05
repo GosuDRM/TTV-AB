@@ -89,6 +89,8 @@ beforeEach(() => {
 		g.chrome as { runtime: { lastError: { message: string } | null } }
 	).runtime.lastError = null;
 	(g.clearScheduledRetryFlush as () => boolean)();
+	(g.inFlightPersistRequests as Set<unknown>).clear();
+	g.persistWorkGeneration = 0;
 	(g.clearPersistedFlushRecovery as () => void)();
 	if (g.flushTimeout) {
 		clearTimeout(g.flushTimeout as ReturnType<typeof setTimeout>);
@@ -487,6 +489,168 @@ describe("settings initialization lifecycle", () => {
 		expect(g.bridgeStateReady).toBe(true);
 		expect(g.handshakeRetryCount).toBe(1);
 		expect(g.pageBridgePort).not.toBeNull();
+	});
+});
+
+describe("bounded in-flight persistence", () => {
+	function holdRequests() {
+		const runtime = (
+			g.chrome as {
+				runtime: {
+					sendMessage: (
+						message: Record<string, unknown>,
+						callback: (response: unknown) => void,
+					) => void;
+				};
+			}
+		).runtime;
+		const originalSend = runtime.sendMessage;
+		const pending: Array<{
+			message: Record<string, unknown>;
+			respond: (response: unknown) => void;
+		}> = [];
+		const send = vi
+			.spyOn(runtime, "sendMessage")
+			.mockImplementation((message, respond) => {
+				if (message.type === "ttvab-confirm-counter-flush") {
+					originalSend(message, respond);
+					return;
+				}
+				pending.push({ message, respond });
+			});
+		return { pending, send };
+	}
+
+	function dispatch(index: number) {
+		(
+			g.dispatchPersistPayload as (
+				payload: unknown,
+				options: unknown,
+			) => boolean
+		)(
+			{
+				type: "ttvab-persist-counters",
+				detail: {
+					...makeExitFlush(),
+					flushId: `flush:test:in-flight-${index}`,
+				},
+			},
+			{ retryOnFailure: true },
+		);
+	}
+
+	it("does not replay the same unanswered flush or confirm it before success", () => {
+		vi.useFakeTimers();
+		const held = holdRequests();
+		try {
+			dispatch(1);
+			vi.advanceTimersByTime(3600000);
+			expect(held.pending).toHaveLength(1);
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(1);
+			expect((g.readPersistedCounterFlushes as () => unknown[])()).toHaveLength(
+				1,
+			);
+			expect(runtimeMessages).toHaveLength(0);
+			held.pending[0].respond({ ok: true, newUnlocks: [] });
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(0);
+			expect((g.readPersistedCounterFlushes as () => unknown[])()).toHaveLength(
+				0,
+			);
+			expect(runtimeMessages).toHaveLength(1);
+			expect(runtimeMessages[0].type).toBe("ttvab-confirm-counter-flush");
+		} finally {
+			held.send.mockRestore();
+		}
+	});
+
+	it("bounds unanswered requests while keeping unsent journal entries replayable", () => {
+		vi.useFakeTimers();
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		const held = holdRequests();
+		try {
+			for (let index = 0; index < 100; index++) dispatch(index);
+			vi.advanceTimersByTime(3600000);
+			expect(held.pending).toHaveLength(64);
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(64);
+			expect((g.readPersistedCounterFlushes as () => unknown[])()).toHaveLength(
+				100,
+			);
+			held.send.mockRestore();
+			for (const request of held.pending)
+				request.respond({ ok: true, newUnlocks: [] });
+			(g.replayPersistedCounterFlushes as () => void)();
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(0);
+			expect((g.readPersistedCounterFlushes as () => unknown[])()).toHaveLength(
+				0,
+			);
+			expect((g.retryFlushEntries as Map<string, unknown>).size).toBe(0);
+		} finally {
+			held.send.mockRestore();
+		}
+	});
+
+	it("releases failed requests so the exact journaled payload can retry", () => {
+		vi.useFakeTimers();
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		const held = holdRequests();
+		try {
+			dispatch(1);
+			held.pending[0].respond({ ok: false, error: "storage busy" });
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(0);
+			expect((g.readPersistedCounterFlushes as () => unknown[])()).toHaveLength(
+				1,
+			);
+			vi.advanceTimersByTime(400);
+			expect(held.pending).toHaveLength(2);
+			expect(held.pending[1].message).toEqual(held.pending[0].message);
+			held.pending[1].respond({ ok: true, newUnlocks: [] });
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(0);
+			expect((g.retryFlushEntries as Map<string, unknown>).size).toBe(0);
+		} finally {
+			held.send.mockRestore();
+		}
+	});
+
+	it("releases admission when sending throws", () => {
+		vi.useFakeTimers();
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		const held = holdRequests();
+		held.send.mockImplementationOnce(() => {
+			throw new Error("runtime unavailable");
+		});
+		try {
+			dispatch(1);
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(0);
+			vi.advanceTimersByTime(400);
+			expect(held.pending).toHaveLength(1);
+			held.pending[0].respond({ ok: true, newUnlocks: [] });
+			expect((g.readPersistedCounterFlushes as () => unknown[])()).toHaveLength(
+				0,
+			);
+		} finally {
+			held.send.mockRestore();
+		}
+	});
+
+	it("keeps the request cap through Turbo toggles and ignores discarded callbacks", () => {
+		vi.useFakeTimers();
+		const held = holdRequests();
+		try {
+			for (let index = 0; index < 64; index++) dispatch(index);
+			for (const newValue of [true, false])
+				storageChangeListener?.({ ttvTurboMode: { newValue } }, "local");
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(64);
+			expect((g.readPersistedCounterFlushes as () => unknown[])()).toHaveLength(
+				0,
+			);
+			for (const request of held.pending)
+				request.respond({ ok: false, error: "storage unavailable" });
+			expect((g.inFlightPersistRequests as Set<unknown>).size).toBe(0);
+			expect((g.retryFlushEntries as Map<string, unknown>).size).toBe(0);
+			expect(g.persistedFlushRecoveryTimeout).toBeNull();
+		} finally {
+			held.send.mockRestore();
+		}
 	});
 });
 

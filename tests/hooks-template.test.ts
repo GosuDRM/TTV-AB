@@ -504,9 +504,11 @@ describe("worker message handler hardening", () => {
 
 	it("installs degraded ad blocking on the first heartbeat miss while reload stays throttled", () => {
 		const source = hooksJs();
-		const checkStart = source.indexOf("const _hbCheck = () => {");
+		const checkStart = source.indexOf(
+			"function _scheduleWorkerInitialHeartbeat(",
+		);
 		const checkEnd = source.indexOf(
-			'this.addEventListener("message", (e) => {',
+			"function _isWorkerLifecycleThrottled(",
 			checkStart,
 		);
 		const block = source.slice(checkStart, checkEnd);
@@ -521,6 +523,9 @@ describe("worker message handler hardening", () => {
 		expect(fallbackAt).toBeGreaterThan(-1);
 		expect(throttleAt).toBeGreaterThan(fallbackAt);
 		expect(recoveryAt).toBeGreaterThan(throttleAt);
+		expect(block).toContain("new WeakRef(worker)");
+		expect(block).toContain("workerRef.deref()");
+		expect(block).not.toContain("this.");
 	});
 });
 

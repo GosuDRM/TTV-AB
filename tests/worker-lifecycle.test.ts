@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createContext, runInContext } from "node:vm";
 import {
 	afterEach,
 	beforeAll,
@@ -17,7 +18,7 @@ function loadModule(modulePath: string) {
 		.replace(/^"use strict";\s*/m, "")
 		.replace(/^const (_\w+|_C|_S)\s*=/gm, "globalThis.$1 =")
 		.replace(/^let\s+(_\w+)/gm, "globalThis.$1")
-		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function");
+		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function $2");
 	new Function("globalThis", js)(globalThis);
 }
 
@@ -50,7 +51,7 @@ beforeEach(() => {
 		LastPlayerReloadAt: 0,
 		LastPlayerReloadAtByMediaKey: Object.create(null),
 	};
-	g._log = () => {};
+	g._log = function _log() {};
 	if (g._bridgeTokenRequestTimer) {
 		clearTimeout(g._bridgeTokenRequestTimer as ReturnType<typeof setTimeout>);
 	}
@@ -72,6 +73,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	for (const mediaKey of (
+		g._WorkerTerminationRecoveryByContext as Map<string, unknown>
+	).keys()) {
+		T<(key: string) => void>("_clearWorkerTerminationRecovery")(mediaKey);
+	}
 	vi.useRealTimers();
 	vi.restoreAllMocks();
 	delete g._doPlayerTask;
@@ -187,7 +193,11 @@ function makeBridgePort() {
 }
 
 function installWorkerMessageHarness(
-	options: { preserveBlobSources?: boolean } = {},
+	options: {
+		preserveBlobSources?: boolean;
+		hookRevokeObjectURL?: boolean;
+		onConstruct?: () => void;
+	} = {},
 ) {
 	const originalWorkerDescriptor = Object.getOwnPropertyDescriptor(
 		window,
@@ -239,6 +249,7 @@ function installWorkerMessageHarness(
 
 		constructor(url: unknown, ..._args: unknown[]) {
 			super();
+			options.onConstruct?.();
 			this.url = String(url);
 			this.source = blobSources.get(this.url) || "";
 		}
@@ -325,22 +336,25 @@ function installWorkerMessageHarness(
 				return url;
 			}),
 		});
+		const revokeObjectURL = vi.fn((url: string) => blobSources.delete(url));
 		Object.defineProperty(URL, "revokeObjectURL", {
 			configurable: true,
-			value: vi.fn(),
+			writable: true,
+			value: revokeObjectURL,
 		});
 		Object.defineProperty(window, "Worker", {
 			configurable: true,
 			writable: true,
 			value: TestWorker,
 		});
+		if (options.hookRevokeObjectURL) T<() => void>("_hookRevokeObjectURL")();
 		T<() => void>("_hookWorker")();
 		const createWorker = () =>
 			new window.Worker(
 				"https://static.twitchcdn.net/assets/player-worker.js",
 			) as unknown as TestWorker;
 		const worker = createWorker();
-		return { worker, createWorker, restore, blobSources };
+		return { worker, createWorker, restore, blobSources, revokeObjectURL };
 	} catch (error) {
 		restore();
 		throw error;
@@ -351,6 +365,50 @@ function emitHarnessWorkerPong(worker: {
 	emitMessage: (message: Record<string, unknown>) => void;
 }) {
 	worker.emitMessage({ key: "Pong" });
+}
+
+function startHarnessWorkerRuntime(
+	worker: { source: string; messages: unknown[] },
+	fetch: typeof globalThis.fetch,
+) {
+	const listeners: Array<(event: { data: unknown }) => void> = [];
+	const scope: Record<string, unknown> = {
+		URL,
+		URLSearchParams,
+		Headers,
+		Request,
+		Response,
+		AbortController,
+		AbortSignal,
+		DOMException,
+		setTimeout,
+		clearTimeout,
+		setInterval,
+		clearInterval,
+		fetch,
+		console,
+		postMessage: vi.fn(),
+		importScripts: vi.fn(),
+		addEventListener: (
+			type: string,
+			listener: (event: { data: unknown }) => void,
+		) => {
+			if (type === "message") listeners.push(listener);
+		},
+	};
+	scope.self = scope;
+	runInContext(worker.source, createContext(scope));
+	return {
+		scope,
+		deliver: (message: unknown) => {
+			for (const listener of listeners) listener({ data: message });
+		},
+		deliverBootstrap: (startIndex = 0) => {
+			for (const message of worker.messages.slice(startIndex)) {
+				for (const listener of listeners) listener({ data: message });
+			}
+		},
+	};
 }
 
 function confirmHarnessWorkerPlayback(
@@ -428,6 +486,335 @@ function emitNativePlaybackRestored(
 		requiresReload: true,
 	});
 }
+
+describe("worker resource cleanup", () => {
+	it("revokes failed construction blobs without shortening successful startup grace", () => {
+		vi.useFakeTimers();
+		let failConstruction = false;
+		const failure = new Error("native construction failed");
+		const harness = installWorkerMessageHarness({
+			preserveBlobSources: true,
+			hookRevokeObjectURL: true,
+			onConstruct: () => {
+				if (failConstruction) throw failure;
+			},
+		});
+		try {
+			emitHarnessWorkerPong(harness.worker);
+			failConstruction = true;
+			for (let index = 0; index < 100; index++) {
+				expect(harness.createWorker).toThrow(failure);
+			}
+			expect((g._trackedExtensionBlobUrls as Set<string>).size).toBe(1);
+			expect(harness.revokeObjectURL).not.toHaveBeenCalled();
+			vi.advanceTimersByTime(3500);
+			expect(harness.revokeObjectURL).toHaveBeenCalledTimes(100);
+			expect(harness.blobSources.size).toBe(1);
+			expect(harness.blobSources.has(harness.worker.url)).toBe(true);
+			vi.advanceTimersByTime(29999);
+			expect(harness.blobSources.has(harness.worker.url)).toBe(true);
+			vi.advanceTimersByTime(1);
+			expect(harness.blobSources.size).toBe(0);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("preserves a construction exception even when URL cleanup throws", () => {
+		vi.useFakeTimers();
+		let failConstruction = false;
+		const failure = new Error("native construction failed");
+		const harness = installWorkerMessageHarness({
+			preserveBlobSources: true,
+			onConstruct: () => {
+				if (failConstruction) throw failure;
+			},
+		});
+		try {
+			failConstruction = true;
+			harness.revokeObjectURL.mockImplementation(() => {
+				throw new Error("URL cleanup failed");
+			});
+			expect(harness.createWorker).toThrow(failure);
+			expect((g._trackedExtensionBlobUrls as Set<string>).size).toBe(1);
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("stops initial heartbeat polling when the weak worker owner disappears", () => {
+		vi.useFakeTimers();
+		const previousWeakRef = globalThis.WeakRef;
+		const previousFallback = g._installPageSideM3U8Override;
+		const references: Array<{ value: object | undefined }> = [];
+		class TestWeakRef {
+			value: object | undefined;
+			constructor(value: object) {
+				this.value = value;
+				references.push(this);
+			}
+			deref() {
+				return this.value;
+			}
+		}
+		Object.defineProperty(globalThis, "WeakRef", {
+			configurable: true,
+			writable: true,
+			value: TestWeakRef,
+		});
+		g._installPageSideM3U8Override = vi.fn();
+		try {
+			T<(worker: object, context: object) => void>(
+				"_scheduleWorkerInitialHeartbeat",
+			)({}, { MediaKey: "live:testchannel" });
+			expect(references).toHaveLength(1);
+			references[0].value = undefined;
+			vi.advanceTimersByTime(3600000);
+			expect(vi.getTimerCount()).toBe(0);
+			expect(g._installPageSideM3U8Override).not.toHaveBeenCalled();
+		} finally {
+			globalThis.WeakRef = previousWeakRef;
+			g._installPageSideM3U8Override = previousFallback;
+		}
+	});
+
+	it("retains delayed current-worker startup and clears its timer on Pong", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const previousFallback = g._installPageSideM3U8Override;
+		const previousThrottle = g._isWorkerLifecycleThrottled;
+		g._installPageSideM3U8Override = vi.fn();
+		g._isWorkerLifecycleThrottled = () => true;
+		const worker = {
+			__TTVABGeneration: 1,
+			__TTVABPageMediaKey: "live:testchannel",
+			__TTVABInitialHeartbeatTimer: null,
+		};
+		try {
+			T<(worker: object, context: object) => void>(
+				"_scheduleWorkerInitialHeartbeat",
+			)(worker, { MediaKey: "live:testchannel" });
+			vi.advanceTimersByTime(3600000);
+			expect(vi.getTimerCount()).toBe(1);
+			expect(g._installPageSideM3U8Override).toHaveBeenCalled();
+			T<(worker: object) => void>("_markWorkerPong")(worker);
+			expect(worker.__TTVABInitialHeartbeatTimer).toBeNull();
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			g._installPageSideM3U8Override = previousFallback;
+			g._isWorkerLifecycleThrottled = previousThrottle;
+		}
+	});
+
+	it("cancels a wrapped worker's initial heartbeat immediately on termination", () => {
+		vi.useFakeTimers();
+		const harness = installWorkerMessageHarness();
+		const worker = harness.worker as unknown as Worker;
+		try {
+			expect(worker.__TTVABInitialHeartbeatTimer).not.toBeNull();
+			window.history.replaceState(null, "", "/directory");
+			harness.worker.terminate();
+			expect(worker.__TTVABInitialHeartbeatTimer).toBeNull();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it("deduplicates paused termination monitors without resuming playback", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const previousFallback = g._installPageSideM3U8Override;
+		const previousPause = g._hasUserPauseIntent;
+		g._installPageSideM3U8Override = vi.fn();
+		g._hasUserPauseIntent = () => true;
+		const workers: Worker[] = [];
+		try {
+			for (let generation = 1; generation <= 200; generation++) {
+				const worker = {
+					__TTVABGeneration: generation,
+					__TTVABPageMediaKey: "live:testchannel",
+					__TTVABIntentionallyTerminated: true,
+				} as Worker;
+				workers.push(worker);
+				expect(
+					T<(worker: Worker, context: object) => boolean>(
+						"_scheduleTerminatedPlaybackWorkerRecovery",
+					)(worker, {}),
+				).toBe(generation === 1);
+			}
+			vi.advanceTimersByTime(3600000);
+			expect(
+				workers.filter(
+					(worker) => worker.__TTVABTerminationRecoveryTimer != null,
+				),
+			).toHaveLength(1);
+			expect(workers.some((worker) => worker.__TTVABCrashed)).toBe(false);
+			expect(vi.getTimerCount()).toBe(1);
+			expect(
+				(g._WorkerTerminationRecoveryByContext as Map<string, Worker>).size,
+			).toBe(1);
+			window.history.replaceState(null, "", "/anotherchannel");
+			vi.advanceTimersByTime(5000);
+			expect(vi.getTimerCount()).toBe(0);
+			expect(
+				(g._WorkerTerminationRecoveryByContext as Map<string, Worker>).size,
+			).toBe(0);
+		} finally {
+			g._installPageSideM3U8Override = previousFallback;
+			g._hasUserPauseIntent = previousPause;
+		}
+	});
+
+	it("does not postpone the startup deadline through repeated unobserved terminations", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const previousFallback = g._installPageSideM3U8Override;
+		g._installPageSideM3U8Override = vi.fn();
+		const first = {
+			__TTVABGeneration: 1,
+			__TTVABPageMediaKey: "live:testchannel",
+		} as Worker;
+		const schedule = T<(worker: Worker, context: object) => boolean>(
+			"_scheduleTerminatedPlaybackWorkerRecovery",
+		);
+		try {
+			expect(schedule(first, {})).toBe(true);
+			for (let generation = 2; generation <= 180; generation++) {
+				vi.advanceTimersByTime(1000);
+				expect(
+					schedule(
+						{
+							__TTVABGeneration: generation,
+							__TTVABPageMediaKey: "live:testchannel",
+						} as Worker,
+						{},
+					),
+				).toBe(false);
+			}
+			expect(first.__TTVABCrashed).toBeUndefined();
+			vi.advanceTimersByTime(1000);
+			expect(first.__TTVABCrashed).toBe(true);
+			expect(
+				(g._WorkerTerminationRecoveryByContext as Map<string, Worker>).size,
+			).toBe(0);
+		} finally {
+			g._installPageSideM3U8Override = previousFallback;
+		}
+	});
+
+	it("replaces an unobserved monitor only when a newer terminated worker observed playback", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const previousFallback = g._installPageSideM3U8Override;
+		g._installPageSideM3U8Override = vi.fn();
+		const first = {
+			__TTVABGeneration: 1,
+			__TTVABPageMediaKey: "live:testchannel",
+		} as Worker;
+		const observed = {
+			__TTVABGeneration: 2,
+			__TTVABPageMediaKey: "live:testchannel",
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				["live:testchannel", 100000],
+			]),
+		} as Worker;
+		const schedule = T<(worker: Worker, context: object) => boolean>(
+			"_scheduleTerminatedPlaybackWorkerRecovery",
+		);
+		try {
+			expect(schedule(first, {})).toBe(true);
+			expect(schedule(observed, {})).toBe(true);
+			expect(first.__TTVABTerminationRecoveryTimer).toBeNull();
+			expect(
+				(g._WorkerTerminationRecoveryByContext as Map<string, Worker>).get(
+					"live:testchannel",
+				),
+			).toBe(observed);
+			vi.advanceTimersByTime(15000);
+			expect(observed.__TTVABCrashed).toBe(true);
+			expect(first.__TTVABCrashed).toBeUndefined();
+		} finally {
+			g._installPageSideM3U8Override = previousFallback;
+		}
+	});
+
+	it("does not replace observed-worker recovery with an auxiliary termination", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const previousFallback = g._installPageSideM3U8Override;
+		g._installPageSideM3U8Override = vi.fn();
+		const observed = {
+			__TTVABGeneration: 1,
+			__TTVABPageMediaKey: "live:testchannel",
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				["live:testchannel", 90000],
+			]),
+		} as Worker;
+		const auxiliary = {
+			__TTVABGeneration: 2,
+			__TTVABPageMediaKey: "live:testchannel",
+		} as Worker;
+		const schedule = T<(worker: Worker, context: object) => boolean>(
+			"_scheduleTerminatedPlaybackWorkerRecovery",
+		);
+		try {
+			expect(schedule(observed, {})).toBe(true);
+			const timer = observed.__TTVABTerminationRecoveryTimer;
+			expect(schedule(auxiliary, {})).toBe(false);
+			expect(observed.__TTVABTerminationRecoveryTimer).toBe(timer);
+			vi.advanceTimersByTime(15000);
+			expect(observed.__TTVABCrashed).toBe(true);
+			expect(
+				(g._WorkerTerminationRecoveryByContext as Map<string, Worker>).size,
+			).toBe(0);
+		} finally {
+			g._installPageSideM3U8Override = previousFallback;
+		}
+	});
+
+	it("keeps only page and exact PiP termination owners across rapid navigation", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const previousFallback = g._installPageSideM3U8Override;
+		const previousPip = g._isActivePictureInPicturePlaybackContext;
+		g._installPageSideM3U8Override = vi.fn();
+		g._isActivePictureInPicturePlaybackContext = (context: {
+			MediaKey?: string;
+		}) => context.MediaKey === "live:pipchannel";
+		const schedule = T<(worker: Worker, context: object) => boolean>(
+			"_scheduleTerminatedPlaybackWorkerRecovery",
+		);
+		const pip = {
+			__TTVABGeneration: 1,
+			__TTVABPageMediaKey: "live:pipchannel",
+		} as Worker;
+		try {
+			expect(schedule(pip, {})).toBe(true);
+			const pipTimer = pip.__TTVABTerminationRecoveryTimer;
+			for (let generation = 2; generation <= 100; generation++) {
+				const channel = `channel${generation}`;
+				window.history.replaceState(null, "", `/${channel}`);
+				expect(
+					schedule(
+						{
+							__TTVABGeneration: generation,
+							__TTVABPageMediaKey: `live:${channel}`,
+						} as Worker,
+						{},
+					),
+				).toBe(true);
+				expect(
+					(g._WorkerTerminationRecoveryByContext as Map<string, Worker>).size,
+				).toBe(2);
+			}
+			expect(pip.__TTVABTerminationRecoveryTimer).toBe(pipTimer);
+			expect(vi.getTimerCount()).toBe(2);
+		} finally {
+			g._installPageSideM3U8Override = previousFallback;
+			g._isActivePictureInPicturePlaybackContext = previousPip;
+		}
+	});
+});
 
 describe("worker log ingestion", () => {
 	it("tags, bounds, normalizes, and redacts worker log entries", () => {
@@ -1196,6 +1583,30 @@ describe("worker recovery lifecycle", () => {
 
 		expect(getContext(pipWorker).MediaKey).toBe("live:pipchannel");
 		expect(getContext(pageWorker).MediaKey).toBe("live:newpage");
+		expect(pipWorker.postMessage).not.toHaveBeenCalled();
+		expect(pageWorker.postMessage).toHaveBeenCalledOnce();
+		broadcast({ key: "UpdateAutoplayBackupState", value: true });
+		expect(pipWorker.postMessage).toHaveBeenCalledOnce();
+		expect(pageWorker.postMessage).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not grant an unknown worker PiP ownership from the surrounding page", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageChannel = "pipchannel";
+		state.PageMediaKey = "live:pipchannel";
+		const worker = { postMessage: vi.fn() };
+		(g._S as { workers: unknown[] }).workers = [worker];
+		T<(message: Record<string, unknown>) => void>("_broadcastWorkers")({
+			key: "UpdatePageContext",
+			value: {
+				mediaType: "live",
+				channelName: "pipchannel",
+				mediaKey: "live:pipchannel",
+				playbackContextGeneration: 2,
+				preservedMediaKey: "live:pipchannel",
+			},
+		});
+		expect(worker.postMessage).toHaveBeenCalledOnce();
 	});
 
 	it("keeps a preserved PiP reload fence across page navigation", () => {
@@ -7696,6 +8107,306 @@ describe("page-side M3U8 fallback", () => {
 });
 
 describe("worker mixed-codec master selection", () => {
+	it.each([
+		["Team", "https://www.twitch.tv/team/testteam"],
+		[
+			"Previews sidebar",
+			"https://player.twitch.tv/?channel=featuredchannel&parent=twitch.tv&tp_prev=s",
+		],
+		[
+			"Previews directory",
+			"https://player.twitch.tv/?channel=featuredchannel&parent=twitch.tv&tp_prev=d",
+		],
+	])(
+		"keeps %s media fail-closed after real worker startup",
+		async (_label, pageUrl) => {
+			vi.useFakeTimers();
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const pageState = g.__TTVAB_STATE__ as Record<string, unknown>;
+			pageState.DisableAdSpoofing = true;
+			pageState.DisableAutoplayBackup = true;
+			vi.spyOn(window.location, "href", "get").mockReturnValue(pageUrl);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const masterUrl =
+				"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8?sig=native";
+			const variantUrl =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/featured.m3u8";
+			const master = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+				variantUrl,
+			].join("\n");
+			const adPlaylist =
+				"#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-CUE-OUT:30\n#EXTINF:2.000,\nhttps://edge.example/stitched-ad-1.ts";
+			const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
+				if (String(input) === masterUrl) return new Response(master);
+				if (String(input) === variantUrl) return new Response(adPlaylist);
+				return new Response("unavailable", { status: 503 });
+			});
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+				runtime.deliverBootstrap();
+				const workerFetch = runtime.scope.fetch as typeof fetch;
+				expect(await (await workerFetch(masterUrl)).text()).toBe(master);
+				const output = await (await workerFetch(variantUrl)).text();
+				expect(output).not.toContain("stitched-ad-1.ts");
+				expect(output).not.toContain("#EXT-X-CUE-OUT");
+				expect(output).toContain("/__ttvab_empty_hold_segment.mp4");
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
+	it.each([
+		["channel", "/featuredchannel"],
+		["Team", "/team/testteam"],
+	])(
+		"keeps a pending %s master current across query and hash changes",
+		async (_label, pagePath) => {
+			vi.useFakeTimers();
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			let pageUrl = `https://www.twitch.tv${pagePath}`;
+			vi.spyOn(window.location, "href", "get").mockImplementation(
+				() => pageUrl,
+			);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			let resolveMaster: ((response: Response) => void) | null = null;
+			const nativeFetch = vi.fn(
+				() =>
+					new Promise<Response>((resolve) => {
+						resolveMaster = resolve;
+					}),
+			);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+				runtime.deliverBootstrap();
+				const pending = (runtime.scope.fetch as typeof fetch)(
+					"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8?sig=native",
+				).then((response) => response.text());
+				const deliveredMessages = harness.worker.messages.length;
+				pageUrl += "?sort=recent#members";
+				T<(options: { broadcast: boolean }) => unknown>(
+					"_syncPagePlaybackContext",
+				)({ broadcast: true });
+				runtime.deliverBootstrap(deliveredMessages);
+				const master =
+					"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://edge.example/current.m3u8";
+				resolveMaster?.(new Response(master));
+				expect(await pending).toBe(master);
+				expect(harness.worker.messages).toHaveLength(deliveredMessages);
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
+	it.each([
+		["channel to Team", "/featuredchannel", "/team/nextteam"],
+		["Team to Team", "/team/firstteam", "/team/nextteam"],
+		["Team to channel", "/team/firstteam", "/nextchannel"],
+	])(
+		"preserves the exact PiP worker master and recovery across %s navigation",
+		async (_label, initialPath, nextPath) => {
+			vi.useFakeTimers();
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			let pageUrl = `https://www.twitch.tv${initialPath}`;
+			vi.spyOn(window.location, "href", "get").mockImplementation(
+				() => pageUrl,
+			);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const previousGetPip = g._getActivePictureInPicturePlaybackContext;
+			let resolveMaster: ((response: Response) => void) | null = null;
+			const master =
+				"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://edge.example/pip.m3u8";
+			const nativeFetch = vi
+				.fn()
+				.mockResolvedValueOnce(new Response(master))
+				.mockImplementation(
+					() =>
+						new Promise<Response>((resolve) => {
+							resolveMaster = resolve;
+						}),
+				);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+				runtime.deliverBootstrap();
+				const workerFetch = runtime.scope.fetch as typeof fetch;
+				const url =
+					"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8?sig=pip";
+				await workerFetch(url);
+				harness.worker.emitMessage({
+					key: "PlaybackWorkerBootstrapObserved",
+					mediaType: "live",
+					channel: "featuredchannel",
+					mediaKey: "live:featuredchannel",
+				});
+				g._getActivePictureInPicturePlaybackContext = () => ({
+					MediaType: "live",
+					ChannelName: "featuredchannel",
+					MediaKey: "live:featuredchannel",
+				});
+				const workerState = runtime.scope.__TTVAB_STATE__ as Record<
+					string,
+					unknown
+				>;
+				workerState.HasTriggeredPlayerReload = true;
+				workerState.PendingTriggeredPlayerReloadMediaKey =
+					"live:featuredchannel";
+				const generation = workerState.PagePlaybackContextGeneration;
+				const pending = workerFetch(url)
+					.then((response) => response.text())
+					.catch((error: Error) => error);
+				const deliveredMessages = harness.worker.messages.length;
+				pageUrl = `https://www.twitch.tv${nextPath}`;
+				T<(options: { broadcast: boolean }) => unknown>(
+					"_syncPagePlaybackContext",
+				)({ broadcast: true });
+				runtime.deliverBootstrap(deliveredMessages);
+				resolveMaster?.(new Response(master));
+				expect(await pending).toBe(master);
+				expect(workerState.PagePlaybackContextGeneration).toBe(generation);
+				expect(workerState.HasTriggeredPlayerReload).toBe(true);
+				expect(workerState.PendingTriggeredPlayerReloadMediaKey).toBe(
+					"live:featuredchannel",
+				);
+			} finally {
+				g._getActivePictureInPicturePlaybackContext = previousGetPip;
+				harness.restore();
+			}
+		},
+	);
+
+	it.each([
+		["another channel", "/visitedchannel", "/nextchannel"],
+		["another Team page", "/team/firstteam", "/team/nextteam"],
+	])(
+		"retires a pending preview master after navigating to %s through the real page-to-worker path",
+		async (_label, initialPath, nextPath) => {
+			vi.useFakeTimers();
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			let pageUrl = `https://www.twitch.tv${initialPath}`;
+			vi.spyOn(window.location, "href", "get").mockImplementation(
+				() => pageUrl,
+			);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			let resolveMaster: ((response: Response) => void) | null = null;
+			const nativeFetch = vi.fn(
+				() =>
+					new Promise<Response>((resolve) => {
+						resolveMaster = resolve;
+					}),
+			);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+				runtime.deliverBootstrap();
+				const pending = (runtime.scope.fetch as typeof fetch)(
+					"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8?sig=old",
+				).catch((error: Error) => error);
+				const deliveredMessages = harness.worker.messages.length;
+				pageUrl = `https://www.twitch.tv${nextPath}`;
+				T<(options: { broadcast: boolean }) => unknown>(
+					"_syncPagePlaybackContext",
+				)({ broadcast: true });
+				runtime.deliverBootstrap(deliveredMessages);
+				resolveMaster?.(
+					new Response(
+						"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://edge.example/old.m3u8",
+					),
+				);
+				expect(await pending).toMatchObject({ name: "AbortError" });
+				const workerState = runtime.scope.__TTVAB_STATE__ as Record<
+					string,
+					unknown
+				>;
+				expect(
+					(workerState.StreamInfos as Record<string, unknown>)[
+						"live:featuredchannel"
+					],
+				).toBeUndefined();
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
+	it.each([
+		["Team preview", "/team/testteam", true],
+		["Team preview with blocking off", "/team/testteam", false],
+		["directory preview", "/directory/game/testgame", true],
+		["channel banner", "/visitedchannel", true],
+		[
+			"Previews sidebar frame",
+			"https://player.twitch.tv/?channel=featuredchannel&parent=twitch.tv&tp_prev=s&tp_q=720p60",
+			true,
+		],
+		[
+			"Previews directory frame",
+			"https://player.twitch.tv/?channel=featuredchannel&parent=twitch.tv&tp_prev=d&tp_q=auto",
+			true,
+		],
+	])(
+		"keeps an early %s master current across the real worker bootstrap messages",
+		async (_label, pagePath, enabled) => {
+			vi.useFakeTimers();
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const pageState = g.__TTVAB_STATE__ as Record<string, unknown>;
+			pageState.PagePlaybackContextGeneration = 7;
+			pageState.IsAdStrippingEnabled = enabled;
+			vi.spyOn(window.location, "href", "get").mockReturnValue(
+				new URL(pagePath, "https://www.twitch.tv").href,
+			);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			let resolveMaster: ((response: Response) => void) | null = null;
+			const nativeFetch = vi.fn(
+				() =>
+					new Promise<Response>((resolve) => {
+						resolveMaster = resolve;
+					}),
+			);
+			const master = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2"',
+				"https://edge.example/featured/index.m3u8",
+			].join("\n");
+
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+				const workerState = runtime.scope.__TTVAB_STATE__ as Record<
+					string,
+					unknown
+				>;
+				const generation = workerState.PagePlaybackContextGeneration;
+				const request = (runtime.scope.fetch as typeof fetch)(
+					"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8?sig=native",
+				).then((response) => response.text());
+				const result = request.catch((error: Error) => error);
+				runtime.deliverBootstrap();
+				resolveMaster?.(new Response(master));
+				expect(await result).toBe(master);
+				expect(workerState.PagePlaybackContextGeneration).toBe(generation);
+				expect(generation).toBe(pageState.PagePlaybackContextGeneration);
+				expect(workerState.PageMediaKey).toBe(pageState.PageMediaKey);
+				expect(workerState.AllowPreviewEmergencyAutoplayBackup).toBe(
+					pageState.AllowPreviewEmergencyAutoplayBackup,
+				);
+				expect(nativeFetch).toHaveBeenCalledOnce();
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
 	it("deduplicates exact media-bootstrap recovery requests per ad cycle", () => {
 		const originalFetch = g.fetch;
 		const originalPostWorkerBridgeMessage = g._postWorkerBridgeMessage;

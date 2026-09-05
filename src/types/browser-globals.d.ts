@@ -79,6 +79,7 @@ interface Worker {
 	__TTVABCreatedAt?: number;
 	__TTVABLastPongAt?: number;
 	__TTVABFirstPongAt?: number;
+	__TTVABInitialHeartbeatTimer?: ReturnType<typeof setTimeout> | null;
 	__TTVABGeneration?: number;
 	__TTVABPlaybackBootstrapObservedAtByMediaKey?: Map<string, number>;
 	__TTVABPlaybackObservedAtByMediaKey?: Map<string, number>;

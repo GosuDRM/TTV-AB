@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -94,6 +94,189 @@ beforeEach(() => {
 	storageData = {};
 	g.turboModeEnabled = false;
 	g.turboModeRevision = 0;
+});
+
+describe("bounded counter persistence admission", () => {
+	function getStoredStats() {
+		return storageData.ttvStats as {
+			channels: Record<string, { watchSeconds: number }>;
+		};
+	}
+	function send(flushId: string, type = "ttvab-persist-counters") {
+		return new Promise<{ ok: boolean; error?: string }>((resolveResponse) => {
+			if (!runtimeMessageListener) throw new Error("runtime listener missing");
+			runtimeMessageListener(
+				{ type, detail: { flushId, watchDeltas: { somestreamer: 1 } } },
+				{ id: "ttvab-test", tab: { id: 1 } },
+				resolveResponse,
+			);
+		});
+	}
+
+	function holdStorageRead() {
+		const local = (
+			g.chrome as {
+				storage: {
+					local: {
+						get: (keys: unknown, callback: (value: unknown) => void) => void;
+					};
+				};
+			}
+		).storage.local;
+		let release = () => {};
+		let started = () => {};
+		const ready = new Promise<void>((resolveStarted) => {
+			started = resolveStarted;
+		});
+		const get = vi
+			.spyOn(local, "get")
+			.mockImplementationOnce((_keys, callback) => {
+				release = () => callback(storageData);
+				started();
+			});
+		return { ready, get, release: () => release() };
+	}
+
+	it("rejects duplicate pending IDs without retaining additional response waiters", async () => {
+		const held = holdStorageRead();
+		const first = send("flush:test:pending-duplicate");
+		try {
+			await held.ready;
+			const duplicates = await Promise.all(
+				Array.from({ length: 1000 }, () =>
+					send("flush:test:pending-duplicate"),
+				),
+			);
+			expect(duplicates.every((response) => !response.ok)).toBe(true);
+			expect(held.get).toHaveBeenCalledOnce();
+			expect(g.pendingPersistTaskCount).toBe(1);
+			expect((g.pendingPersistKeys as Set<string>).size).toBe(1);
+		} finally {
+			held.release();
+			await first;
+			held.get.mockRestore();
+		}
+		expect(g.pendingPersistTaskCount).toBe(0);
+		expect((g.pendingPersistKeys as Set<string>).size).toBe(0);
+		expect((await send("flush:test:pending-duplicate")).ok).toBe(true);
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(1);
+	});
+
+	it("bounds distinct queued flushes and accepts durable replay after storage resumes", async () => {
+		const held = holdStorageRead();
+		const requests = Array.from({ length: 100 }, (_, index) =>
+			send(`flush:test:pending-cap-${index}`),
+		);
+		let responses: Array<{ ok: boolean }> = [];
+		try {
+			await held.ready;
+			expect(g.pendingPersistTaskCount).toBe(64);
+			expect((g.pendingPersistKeys as Set<string>).size).toBe(64);
+			expect(held.get).toHaveBeenCalledOnce();
+		} finally {
+			held.release();
+			responses = await Promise.all(requests);
+			held.get.mockRestore();
+		}
+		expect(responses.filter((response) => response.ok)).toHaveLength(64);
+		expect(g.pendingPersistTaskCount).toBe(0);
+		for (let index = 0; index < responses.length; index++) {
+			if (!responses[index].ok)
+				expect((await send(`flush:test:pending-cap-${index}`)).ok).toBe(true);
+		}
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(100);
+	});
+
+	it("keeps writes serialized while a storage write callback is delayed", async () => {
+		const local = (
+			g.chrome as {
+				storage: {
+					local: {
+						set: (value: Record<string, unknown>, callback: () => void) => void;
+					};
+				};
+			}
+		).storage.local;
+		const originalSet = local.set;
+		let release = () => {};
+		let started = () => {};
+		const ready = new Promise<void>((resolveStarted) => {
+			started = resolveStarted;
+		});
+		const set = vi
+			.spyOn(local, "set")
+			.mockImplementationOnce((value, callback) => {
+				release = () => originalSet(value, callback);
+				started();
+			});
+		const first = send("flush:test:pending-write-1");
+		const second = send("flush:test:pending-write-2");
+		try {
+			await ready;
+			expect(set).toHaveBeenCalledOnce();
+			expect(g.pendingPersistTaskCount).toBe(2);
+		} finally {
+			release();
+			await Promise.all([first, second]);
+			set.mockRestore();
+		}
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(2);
+		expect(g.pendingPersistTaskCount).toBe(0);
+	});
+
+	it("releases failed admission keys and orders confirmations after their write", async () => {
+		const local = (
+			g.chrome as {
+				storage: {
+					local: {
+						get: (keys: unknown, callback: (value: unknown) => void) => void;
+					};
+				};
+			}
+		).storage.local;
+		const get = vi.spyOn(local, "get").mockImplementationOnce(() => {
+			throw new Error("storage unavailable");
+		});
+		try {
+			expect((await send("flush:test:failed-admission")).ok).toBe(false);
+			expect(g.pendingPersistTaskCount).toBe(0);
+			expect((g.pendingPersistKeys as Set<string>).size).toBe(0);
+		} finally {
+			get.mockRestore();
+		}
+		const responses = await Promise.all([
+			send("flush:test:failed-admission"),
+			send("flush:test:failed-admission", "ttvab-confirm-counter-flush"),
+		]);
+		expect(responses.every((response) => response.ok)).toBe(true);
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(1);
+		expect(
+			Object.hasOwn(
+				storageData.ttvUnconfirmedCounterFlushes as object,
+				"flush:test:failed-admission",
+			),
+		).toBe(false);
+	});
+
+	it("does not backfill queued or in-flight work after Turbo is enabled then disabled", async () => {
+		const held = holdStorageRead();
+		const first = send("flush:test:turbo-held-first");
+		const second = send("flush:test:turbo-held-second");
+		try {
+			await held.ready;
+			for (const newValue of [true, false]) {
+				for (const listener of storageChangeListeners)
+					listener({ ttvTurboMode: { newValue } }, "local");
+			}
+		} finally {
+			held.release();
+			await Promise.all([first, second]);
+			held.get.mockRestore();
+		}
+		expect(storageData.ttvStats).toBeUndefined();
+		expect((await send("flush:test:turbo-new-work")).ok).toBe(true);
+		expect(getStoredStats().channels.somestreamer.watchSeconds).toBe(1);
+	});
 });
 
 describe("hover preview diagnostic routing", () => {
