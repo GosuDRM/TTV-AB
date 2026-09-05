@@ -1463,6 +1463,9 @@ function _hookWorkerFetch() {
 				: null;
 			if (playbackContext?.MediaKey) {
 				const requestMediaKey = playbackContext.MediaKey;
+				const requestPageMediaKey = _normalizeMediaKey(
+					__TTVAB_STATE__.PageMediaKey,
+				);
 				const requestContextGeneration = Math.max(
 					0,
 					Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
@@ -1476,7 +1479,7 @@ function _hookWorkerFetch() {
 				const assertMasterRequestCurrent = () => {
 					if (
 						_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) !==
-							requestMediaKey ||
+							requestPageMediaKey ||
 						Math.max(
 							0,
 							Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
@@ -2321,6 +2324,9 @@ function _promoteWorkerPlaybackOwner(
 	if (didPromote) {
 		_WorkerPlaybackOwnerGenerationByContext.delete(contextKey);
 		_WorkerPlaybackOwnerGenerationByContext.set(contextKey, generation);
+		if (typeof _clearWorkerRecoveryNotice === "function") {
+			_clearWorkerRecoveryNotice(mediaKey);
+		}
 	}
 	while (_WorkerPlaybackOwnerGenerationByContext.size > 32) {
 		const oldestContextKey = _WorkerPlaybackOwnerGenerationByContext
@@ -3235,6 +3241,9 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			);
 		}
 		_installPageSideM3U8Override();
+		if (typeof _showWorkerRecoveryNotice === "function") {
+			_showWorkerRecoveryNotice(recoveryContext.MediaKey);
+		}
 		return;
 	}
 	const attemptNumber = recoveryState.attempts + 1;

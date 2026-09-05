@@ -70,6 +70,65 @@ function _getNextReminderDelayMs() {
 	);
 }
 
+let _workerRecoveryNoticeMediaKey: string | null = null;
+
+function _clearWorkerRecoveryNotice(mediaKey = null) {
+	if (
+		!_workerRecoveryNoticeMediaKey ||
+		(mediaKey && _workerRecoveryNoticeMediaKey !== mediaKey)
+	)
+		return;
+	const notice = document.getElementById("ttvab-worker-recovery");
+	if (!mediaKey || notice?.dataset.mediaKey === mediaKey) notice?.remove();
+	_workerRecoveryNoticeMediaKey = null;
+}
+
+function _showWorkerRecoveryNotice(mediaKey) {
+	const canRefresh = () => {
+		const context = _getPlaybackContextFromUrl(window.location.href);
+		return Boolean(
+			mediaKey &&
+				context.MediaKey === mediaKey &&
+				_getWorkerRecoveryState(context, false)?.phase === "exhausted",
+		);
+	};
+	if (!document.body || !canRefresh()) return;
+	const existing = document.getElementById("ttvab-worker-recovery");
+	if (existing?.dataset.mediaKey === mediaKey) return;
+	_clearWorkerRecoveryNotice();
+	const notice = document.createElement("div");
+	notice.id = "ttvab-worker-recovery";
+	notice.dataset.mediaKey = mediaKey;
+	notice.setAttribute("role", "status");
+	notice.style.cssText =
+		"position:fixed;bottom:20px;right:20px;z-index:2147483647;max-width:360px;padding:16px;border:1px solid #9146ff;border-radius:8px;background:#18181b;color:#efeff1;font:14px/1.5 sans-serif;box-shadow:0 4px 16px #0008";
+	const message = document.createElement("p");
+	message.textContent =
+		"TTV AB could not restart Twitch's player worker. Refresh this tab to retry playback. Chat will reconnect and picture-in-picture will close.";
+	message.style.margin = "0 0 12px";
+	const refresh = document.createElement("button");
+	refresh.type = "button";
+	refresh.textContent = "Refresh tab";
+	refresh.style.cssText =
+		"padding:6px 12px;border:0;border-radius:4px;background:#9146ff;color:white;cursor:pointer;font:inherit";
+	refresh.onclick = () => {
+		if (!canRefresh()) {
+			_clearWorkerRecoveryNotice(mediaKey);
+			return;
+		}
+		window.location.reload();
+	};
+	const dismiss = document.createElement("button");
+	dismiss.type = "button";
+	dismiss.textContent = "Dismiss";
+	dismiss.style.cssText =
+		"margin-left:8px;padding:6px 12px;border:0;border-radius:4px;background:#303036;color:#efeff1;cursor:pointer;font:inherit";
+	dismiss.onclick = () => _clearWorkerRecoveryNotice(mediaKey);
+	notice.append(message, refresh, dismiss);
+	document.body.appendChild(notice);
+	_workerRecoveryNoticeMediaKey = mediaKey;
+}
+
 function _showDonation() {
 	try {
 		const uiFlags = _getUiFlags();

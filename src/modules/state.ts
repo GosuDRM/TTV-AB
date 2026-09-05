@@ -624,6 +624,9 @@ function _setPagePlaybackContext(
 		nextPreviewEmergencyAutoplay;
 
 	if (didMediaKeyChange) {
+		if (typeof _clearWorkerRecoveryNotice === "function") {
+			_clearWorkerRecoveryNotice();
+		}
 		__TTVAB_STATE__.PagePlaybackContextGeneration =
 			Math.max(0, Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) +
 			1;
@@ -760,6 +763,9 @@ function _releasePlaybackContext(context) {
 	const releasedContext = _normalizePlaybackContext(context);
 	const releasedMediaKey = releasedContext.MediaKey;
 	if (!releasedMediaKey) return false;
+	if (typeof _clearWorkerRecoveryNotice === "function") {
+		_clearWorkerRecoveryNotice(releasedMediaKey);
+	}
 
 	_invalidateAdCycleAsyncWork(__TTVAB_STATE__.StreamInfos[releasedMediaKey]);
 	delete __TTVAB_STATE__.StreamInfos[releasedMediaKey];
