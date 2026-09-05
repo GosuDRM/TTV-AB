@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.4.0] - 2026-09-06
+
+Fixed
+
+- **Preview Playback** - Fixed a worker startup race that could interrupt valid Team-page streams, channel banners, and Previews hover players with Error #2000. Navigation now retires outdated Team-page requests while preserving the exact active Picture-in-Picture worker ([#73](https://github.com/GosuDRM/TTV-AB/issues/73)).
+- **Worker Startup Cleanup** - Released temporary worker data when a player worker cannot be created.
+- **Background Worker Cleanup** - Stopped background startup checks from keeping unused player workers in memory. The cause of the original crash and high-memory report in [#71](https://github.com/GosuDRM/TTV-AB/issues/71) remains unconfirmed.
+- **Paused Playback Cleanup** - Prevented repeated early worker shutdowns from accumulating recovery checks while paused, while preserving recovery deadlines and Picture-in-Picture ownership.
+- **Statistics Recovery** - Bounded pending statistics requests during storage delays, avoided duplicate replay requests, and preserved recovery when storage resumes. Discarded updates no longer return after toggling Turbo Mode.
+
 ## [17.3.0] - 2026-09-05
 
 Fixed
