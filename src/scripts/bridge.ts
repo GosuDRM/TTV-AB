@@ -143,6 +143,38 @@ function mergeChannelDeltaMaps(target, source) {
 	return target;
 }
 
+function mergeWatchIntervalMaps(target, source) {
+	if (!isPlainObject(source)) return target;
+	for (const [channel, intervals] of Object.entries(source)) {
+		const safeChannel = normalizeChannelName(channel);
+		if (!safeChannel || !Array.isArray(intervals)) continue;
+		const combined = [
+			...(target[safeChannel] || []),
+			...intervals.slice(0, 512),
+		]
+			.filter(
+				(interval) =>
+					Array.isArray(interval) &&
+					Number.isFinite(interval[0]) &&
+					Number.isFinite(interval[1]) &&
+					interval[0] > 0 &&
+					interval[1] > interval[0],
+			)
+			.sort((a, b) => a[0] - b[0]);
+		const merged = [];
+		for (const [start, end] of combined) {
+			const previous = merged.at(-1);
+			if (previous && start <= previous[1]) {
+				previous[1] = Math.max(previous[1], end);
+			} else {
+				merged.push([start, end]);
+			}
+		}
+		target[safeChannel] = merged.slice(-512);
+	}
+	return target;
+}
+
 function _getCurrentPlaybackContext() {
 	const segments = window.location.pathname.split("/").filter(Boolean);
 	const firstSegment = segments[0] || null;
@@ -449,6 +481,7 @@ const MAX_PENDING_AD_MEASUREMENTS = 50;
 let pendingAdsDelta = 0;
 let pendingAdChannels = createChannelsMap();
 let pendingWatchSeconds = createChannelsMap();
+let pendingWatchIntervals = createChannelsMap();
 let pendingAdSeconds = 0;
 let pendingChannelAdSeconds = createChannelsMap();
 let pendingAdMeasurements = new Map();
@@ -591,6 +624,12 @@ function normalizePersistedCounterFlushEntry(value) {
 		watchDeltas,
 		createdAt,
 	};
+	if (isPlainObject(safeValue?.watchIntervals)) {
+		entry.watchIntervals = mergeWatchIntervalMaps(
+			createChannelsMap(),
+			safeValue.watchIntervals,
+		);
+	}
 	if (adSecondsDelta > 0) {
 		entry.adSecondsDelta = adSecondsDelta;
 		entry.channelAdSecondsDeltas = channelAdSecondsDeltas;
@@ -1026,6 +1065,7 @@ function resetPendingCounters() {
 	pendingAdsDelta = 0;
 	pendingAdChannels = createChannelsMap();
 	pendingWatchSeconds = createChannelsMap();
+	pendingWatchIntervals = createChannelsMap();
 	pendingAdSeconds = 0;
 	pendingChannelAdSeconds = createChannelsMap();
 	pendingAdMeasurements = new Map();
@@ -1129,6 +1169,7 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	const adsDelta = pendingAdsDelta;
 	const channelDeltas = pendingAdChannels;
 	const watchDeltas = pendingWatchSeconds;
+	const watchIntervals = pendingWatchIntervals;
 	const adSecondsDelta = pendingAdSeconds;
 	const channelAdSecondsDeltas = pendingChannelAdSeconds;
 	const adMeasurements = Array.from(pendingAdMeasurements.values());
@@ -1153,6 +1194,8 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	};
 	if (hasWatchDeltas) {
 		detail.watchDeltas = watchDeltas;
+		if (Object.keys(watchIntervals).length > 0)
+			detail.watchIntervals = watchIntervals;
 	}
 	if (adSecondsDelta > 0) {
 		detail.adSecondsDelta = adSecondsDelta;
@@ -1534,6 +1577,11 @@ function handlePageBridgeMessage(rawMessage) {
 			MAX_WATCH_MESSAGE_SECONDS,
 		);
 		if (!watchChannel || watchSeconds <= 0) return;
+		if (Array.isArray(detail?.intervals)) {
+			mergeWatchIntervalMaps(pendingWatchIntervals, {
+				[watchChannel]: detail.intervals,
+			});
+		}
 		pendingWatchSeconds[watchChannel] = Math.min(
 			normalizeCount(pendingWatchSeconds[watchChannel]) + watchSeconds,
 			MAX_PENDING_WATCH_SECONDS,

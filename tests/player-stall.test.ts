@@ -5139,6 +5139,7 @@ describe("channel watch-time tracking", () => {
 		channel: string | null;
 		ownedMediaKey: string | null;
 		pendingMs: number;
+		pendingIntervals: number[][];
 		lastTickAt: number;
 	};
 	const watchState = () => g._WatchTimeState as WatchState;
@@ -5201,6 +5202,7 @@ describe("channel watch-time tracking", () => {
 		state.channel = null;
 		state.ownedMediaKey = "live:streamerone";
 		state.pendingMs = 0;
+		state.pendingIntervals = [];
 		state.lastTickAt = 0;
 		clearWatchTimeJournals();
 		nowValue = 1_000_000_000_000;
@@ -5308,6 +5310,7 @@ describe("channel watch-time tracking", () => {
 		expect(bridgeMessages[0].detail).toEqual({
 			channel: "streamerone",
 			seconds: 15,
+			intervals: [[nowValue - 16000, nowValue - 1000]],
 		});
 		expect(watchState().pendingMs).toBe(1000);
 	});
@@ -5329,6 +5332,7 @@ describe("channel watch-time tracking", () => {
 		expect(bridgeMessages[0].detail).toEqual({
 			channel: "streamerone",
 			seconds: 5,
+			intervals: [[nowValue - 6000, nowValue - 1000]],
 		});
 		expect(watchState().channel).toBe("streamertwo");
 		expect(watchState().pendingMs).toBe(0);
@@ -5352,7 +5356,11 @@ describe("channel watch-time tracking", () => {
 
 		expect(bridgeMessages[0]).toEqual({
 			type: "ttvab-watch-time",
-			detail: { channel: "streamerone", seconds: 2 },
+			detail: {
+				channel: "streamerone",
+				seconds: 2,
+				intervals: [[nowValue - 4000, nowValue - 2000]],
+			},
 		});
 		expect(watchState()).toMatchObject({
 			channel: "streamertwo",
@@ -5394,7 +5402,11 @@ describe("channel watch-time tracking", () => {
 
 		expect(bridgeMessages[0]).toEqual({
 			type: "ttvab-watch-time",
-			detail: { channel: "streamerone", seconds: 15 },
+			detail: {
+				channel: "streamerone",
+				seconds: 15,
+				intervals: [[nowValue - 16000, nowValue - 1000]],
+			},
 		});
 	});
 
@@ -5408,6 +5420,7 @@ describe("channel watch-time tracking", () => {
 		const state = watchState();
 		state.channel = "streamerone";
 		state.pendingMs = 7000;
+		state.pendingIntervals = [[nowValue - 7000, nowValue]];
 		state.lastTickAt = nowValue;
 		window.addEventListener(
 			"pagehide",
@@ -5449,6 +5462,7 @@ describe("channel watch-time tracking", () => {
 		const state = watchState();
 		state.channel = "streamerone";
 		state.pendingMs = 7000;
+		state.pendingIntervals = [[nowValue - 7000, nowValue]];
 		state.lastTickAt = nowValue;
 		nowValue += 3200;
 
@@ -5465,6 +5479,7 @@ describe("channel watch-time tracking", () => {
 		const state = watchState();
 		state.channel = "streamerone";
 		state.pendingMs = 7000;
+		state.pendingIntervals = [[nowValue - 7000, nowValue]];
 		state.lastTickAt = nowValue;
 		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "streamertwo";
 		nowValue += 3200;
@@ -5481,6 +5496,7 @@ describe("channel watch-time tracking", () => {
 		const state = watchState();
 		state.channel = "streamerone";
 		state.pendingMs = 7000;
+		state.pendingIntervals = [[nowValue - 7000, nowValue]];
 		vi.spyOn(localStorage, "setItem").mockImplementation(() => {
 			throw new Error("storage unavailable");
 		});
@@ -5490,7 +5506,11 @@ describe("channel watch-time tracking", () => {
 		expect(bridgeMessages).toEqual([
 			{
 				type: "ttvab-watch-time",
-				detail: { channel: "streamerone", seconds: 7 },
+				detail: {
+					channel: "streamerone",
+					seconds: 7,
+					intervals: [[nowValue - 7000, nowValue]],
+				},
 			},
 			{ type: "ttvab-flush-counters", detail: undefined },
 		]);

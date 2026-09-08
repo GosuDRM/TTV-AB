@@ -94,6 +94,7 @@ beforeEach(() => {
 	storageData = {};
 	g.turboModeEnabled = false;
 	g.turboModeRevision = 0;
+	g.watchStatsSinceAt = 0;
 });
 
 describe("bounded counter persistence admission", () => {
@@ -657,7 +658,10 @@ describe("channel stats schema and watch-time persistence", () => {
 		const response = await responsePromise;
 
 		expect(response).toEqual({ ok: true, counts: null, newUnlocks: [] });
-		expect(storageData).toEqual(before);
+		expect(storageData).toEqual({
+			...before,
+			ttvWatchStatsSinceAt: expect.any(Number),
+		});
 	});
 
 	it("keeps an uncleared committed flush deduplicated after 256 later confirmations", async () => {
