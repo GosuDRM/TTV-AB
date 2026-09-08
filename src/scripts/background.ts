@@ -23,8 +23,10 @@ function normalizeCount(value) {
 const BADGE_BACKGROUND_COLOR = "#E0245E";
 const BADGE_TEXT_COLOR = "#FFFFFF";
 const TURBO_MODE_STORAGE_KEY = "ttvTurboMode";
+const WATCH_STATS_SINCE_STORAGE_KEY = "ttvWatchStatsSinceAt";
 let turboModeEnabled = false;
 let turboModeRevision = 0;
+let watchStatsSinceAt = 0;
 const BADGE_UNITS = [
 	{ value: 1e12, suffix: "T" },
 	{ value: 1e9, suffix: "B" },
@@ -709,6 +711,7 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		"ttvAdsBlocked",
 		"ttvStats",
 		TURBO_MODE_STORAGE_KEY,
+		WATCH_STATS_SINCE_STORAGE_KEY,
 		PROCESSED_FLUSH_STORAGE_KEY,
 		UNCONFIRMED_FLUSH_STORAGE_KEY,
 		RECENT_AD_MEASUREMENTS_STORAGE_KEY,
@@ -719,6 +722,36 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		persistRevision !== turboModeRevision
 	) {
 		return createTurboCounterResponse();
+	}
+	const watchSinceAt = Math.max(
+		watchStatsSinceAt,
+		normalizeCount(stored[WATCH_STATS_SINCE_STORAGE_KEY]),
+	);
+	for (const channel of Object.keys(watchDeltas)) {
+		const intervals = safeDetail?.watchIntervals?.[channel];
+		if (!Array.isArray(intervals)) continue;
+		let milliseconds = 0;
+		let previousEnd = watchSinceAt;
+		const sorted = intervals
+			.slice(0, 512)
+			.filter(
+				(interval) =>
+					Array.isArray(interval) &&
+					Number.isFinite(interval[0]) &&
+					Number.isFinite(interval[1]) &&
+					interval[0] > 0 &&
+					interval[1] > interval[0],
+			)
+			.sort((a, b) => a[0] - b[0]);
+		for (const [start, end] of sorted) {
+			const boundedEnd = Math.min(end, Date.now());
+			milliseconds += Math.max(0, boundedEnd - Math.max(start, previousEnd));
+			previousEnd = Math.max(previousEnd, boundedEnd);
+		}
+		watchDeltas[channel] = Math.min(
+			watchDeltas[channel],
+			Math.floor(milliseconds / 1000),
+		);
 	}
 	const baseAds = normalizeCount(stored.ttvAdsBlocked);
 	const processedFlushes = normalizeProcessedFlushMap(
@@ -766,6 +799,7 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		stats.channels[channelName] = entry;
 	}
 	for (const [channelName, watchDelta] of Object.entries(watchDeltas)) {
+		if (watchDelta <= 0) continue;
 		const entry = normalizeChannelEntry(stats.channels[channelName]);
 		entry.watchSeconds += normalizeCount(watchDelta);
 		stats.channels[channelName] = entry;
@@ -1016,6 +1050,16 @@ if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
 		if (changes[TURBO_MODE_STORAGE_KEY]) {
 			turboModeRevision += 1;
 			turboModeEnabled = changes[TURBO_MODE_STORAGE_KEY].newValue === true;
+			watchStatsSinceAt = Date.now();
+			persistChain = persistChain
+				.then(() =>
+					storageLocalSet({
+						[WATCH_STATS_SINCE_STORAGE_KEY]: watchStatsSinceAt,
+					}),
+				)
+				.catch((error) => {
+					console.error("[TTV AB] Watch-time boundary persist error:", error);
+				});
 			if (turboModeEnabled) {
 				applyBadgeCount(0);
 			} else {

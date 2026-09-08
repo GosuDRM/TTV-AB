@@ -99,6 +99,7 @@ beforeEach(() => {
 	g.pendingAdsDelta = 0;
 	g.pendingAdChannels = Object.create(null);
 	g.pendingWatchSeconds = Object.create(null);
+	g.pendingWatchIntervals = Object.create(null);
 	g.pendingAdSeconds = 0;
 	g.pendingChannelAdSeconds = Object.create(null);
 	g.pendingAdMeasurements = new Map();

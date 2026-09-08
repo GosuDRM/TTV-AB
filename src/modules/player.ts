@@ -6375,6 +6375,7 @@ const _WatchTimeState = {
 	channel: null as string | null,
 	ownedMediaKey: null as string | null,
 	pendingMs: 0,
+	pendingIntervals: [] as number[][],
 	lastTickAt: 0,
 };
 const _WATCH_TICK_MAX_GAP_MS = 5000;
@@ -6415,20 +6416,54 @@ function _markWatchTimePlaybackOwned(mediaKey) {
 	return true;
 }
 
+function _recordWatchTimeInterval(now) {
+	const elapsed = Math.min(
+		Math.max(0, now - _WatchTimeState.lastTickAt),
+		_WATCH_TICK_MAX_GAP_MS,
+	);
+	if (elapsed <= 0) return;
+	const start = now - elapsed;
+	const lastInterval = _WatchTimeState.pendingIntervals.at(-1);
+	if (lastInterval?.[1] === start) {
+		lastInterval[1] = now;
+	} else {
+		_WatchTimeState.pendingIntervals.push([start, now]);
+	}
+	_WatchTimeState.pendingMs += elapsed;
+}
+
+function _takeWatchTimeIntervals(milliseconds) {
+	const intervals = [];
+	while (milliseconds > 0 && _WatchTimeState.pendingIntervals.length > 0) {
+		const interval = _WatchTimeState.pendingIntervals[0];
+		const duration = Math.min(milliseconds, interval[1] - interval[0]);
+		intervals.push([interval[0], interval[0] + duration]);
+		interval[0] += duration;
+		milliseconds -= duration;
+		if (interval[0] >= interval[1]) _WatchTimeState.pendingIntervals.shift();
+	}
+	return intervals;
+}
+
 function _flushWatchTime(force = false) {
 	if (!force && _WatchTimeState.pendingMs < _WATCH_FLUSH_THRESHOLD_MS) {
 		return;
 	}
 	const seconds = Math.floor(_WatchTimeState.pendingMs / 1000);
 	if (seconds <= 0 || !_WatchTimeState.channel) {
-		if (force) _WatchTimeState.pendingMs = 0;
+		if (force) {
+			_WatchTimeState.pendingMs = 0;
+			_WatchTimeState.pendingIntervals = [];
+		}
 		return;
 	}
 	_WatchTimeState.pendingMs -= seconds * 1000;
+	const intervals = _takeWatchTimeIntervals(seconds * 1000);
 	if (typeof _sendBridgeMessage === "function") {
 		_sendBridgeMessage("ttvab-watch-time", {
 			channel: _WatchTimeState.channel,
 			seconds,
+			intervals,
 		});
 	}
 }
@@ -6490,14 +6525,13 @@ function _flushWatchTimeOnPageExit() {
 			!media.ended &&
 			Number(media.readyState) >= 2
 		) {
-			_WatchTimeState.pendingMs += Math.min(
-				Math.max(0, Date.now() - _WatchTimeState.lastTickAt),
-				_WATCH_TICK_MAX_GAP_MS,
-			);
+			_recordWatchTimeInterval(Date.now());
 		}
 	}
 	const seconds = Math.floor(_WatchTimeState.pendingMs / 1000);
+	const intervals = _takeWatchTimeIntervals(seconds * 1000);
 	_WatchTimeState.pendingMs = 0;
+	_WatchTimeState.pendingIntervals = [];
 	_WatchTimeState.lastTickAt = 0;
 
 	if (seconds > 0 && channel) {
@@ -6508,6 +6542,7 @@ function _flushWatchTimeOnPageExit() {
 			adsDelta: 0,
 			channelDeltas: {},
 			watchDeltas: { [channel]: seconds },
+			watchIntervals: { [channel]: intervals },
 		};
 		let journaled = false;
 		try {
@@ -6522,7 +6557,7 @@ function _flushWatchTimeOnPageExit() {
 			if (journaled) {
 				_sendBridgeMessage("ttvab-persist-counter-flush", detail);
 			} else {
-				_sendBridgeMessage("ttvab-watch-time", { channel, seconds });
+				_sendBridgeMessage("ttvab-watch-time", { channel, seconds, intervals });
 			}
 		}
 	}
@@ -6561,6 +6596,7 @@ function _trackChannelWatchTime(isHidden) {
 		_flushWatchTime(true);
 		_WatchTimeState.channel = channel;
 		_WatchTimeState.pendingMs = 0;
+		_WatchTimeState.pendingIntervals = [];
 		_WatchTimeState.lastTickAt = 0;
 	}
 	if (!channel) return;
@@ -6596,10 +6632,7 @@ function _trackChannelWatchTime(isHidden) {
 	}
 
 	if (_WatchTimeState.lastTickAt > 0) {
-		_WatchTimeState.pendingMs += Math.min(
-			Math.max(0, now - _WatchTimeState.lastTickAt),
-			_WATCH_TICK_MAX_GAP_MS,
-		);
+		_recordWatchTimeInterval(now);
 	}
 	_WatchTimeState.lastTickAt = now;
 	_flushWatchTime();
