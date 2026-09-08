@@ -9904,6 +9904,9 @@ describe("worker media-playlist exception fail-closed path", () => {
 				).rejects.toMatchObject({
 					name: "AbortError",
 				});
+				await expect(
+					(g.fetch as typeof fetch)(`${emptyHoldUrl}&init=1`),
+				).rejects.toMatchObject({ name: "AbortError" });
 				expect(rawFetch).not.toHaveBeenCalled();
 			} finally {
 				g.fetch = originalFetch;
@@ -9911,37 +9914,56 @@ describe("worker media-playlist exception fail-closed path", () => {
 		},
 	);
 
-	it("keeps the AVC empty hold available after enhanced ownership clears", async () => {
-		const originalFetch = g.fetch;
-		const rawFetch = vi.fn(async () => new Response(null, { status: 200 }));
-		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		state.IsAdStrippingEnabled = true;
-		const info = T<
-			(context: Record<string, unknown>) => Record<string, unknown>
-		>("_createStreamInfo")({
-			MediaType: "live",
-			ChannelName: "testchannel",
-			MediaKey: "live:testchannel",
-		});
-		state.StreamInfos = { "live:testchannel": info };
-		state.CurrentAdChannel = "testchannel";
-		state.CurrentAdMediaKey = "live:testchannel";
-		g.fetch = rawFetch;
-		const emptyHoldUrl =
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel";
+	it.each([false, true])(
+		"serves the AVC hold media and initialization after enhanced ownership clears (init: %s)",
+		async (initializationOnly) => {
+			const originalFetch = g.fetch;
+			const rawFetch = vi.fn(
+				async () =>
+					new Response(
+						Buffer.from(String(g._EMPTY_SEGMENT_URL).split(",")[1], "base64"),
+					),
+			);
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.IsAdStrippingEnabled = true;
+			const info = T<
+				(context: Record<string, unknown>) => Record<string, unknown>
+			>("_createStreamInfo")({
+				MediaType: "live",
+				ChannelName: "testchannel",
+				MediaKey: "live:testchannel",
+			});
+			state.StreamInfos = { "live:testchannel": info };
+			state.CurrentAdChannel = "testchannel";
+			state.CurrentAdMediaKey = "live:testchannel";
+			g.fetch = rawFetch;
+			const emptyHoldUrl =
+				"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel" +
+				(initializationOnly ? "&init=1" : "");
 
-		try {
-			T<() => void>("_hookWorkerFetch")();
-			await expect(
-				(g.fetch as typeof fetch)(emptyHoldUrl),
-			).resolves.toBeInstanceOf(Response);
-			expect(rawFetch).toHaveBeenCalledOnce();
-			expect(rawFetch).toHaveBeenCalledWith(g._EMPTY_SEGMENT_URL);
-		} finally {
-			g.fetch = originalFetch;
-		}
-	});
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				const response = await (g.fetch as typeof fetch)(emptyHoldUrl);
+				const bytes = Buffer.from(await response.arrayBuffer());
+				expect(bytes.toString("ascii", 4, 8)).toBe(
+					initializationOnly ? "ftyp" : "moof",
+				);
+				expect(
+					bytes.includes(Buffer.from(initializationOnly ? "moov" : "mdat")),
+				).toBe(true);
+				expect(
+					bytes.includes(Buffer.from(initializationOnly ? "mdat" : "moov")),
+				).toBe(false);
+				expect(rawFetch).toHaveBeenCalledOnce();
+				expect(rawFetch).toHaveBeenCalledWith(g._EMPTY_SEGMENT_URL, {
+					signal: null,
+				});
+			} finally {
+				g.fetch = originalFetch;
+			}
+		},
+	);
 
 	it.each([
 		{
@@ -10367,7 +10389,19 @@ describe("worker media-playlist exception fail-closed path", () => {
 			const staleResult = await (
 				await (g.fetch as typeof fetch)(mediaUrl)
 			).text();
-			expect(staleResult).toBe(opaqueAdPlaylist);
+			expect(staleResult).toContain(opaqueAdUrl);
+			expect(staleResult).not.toContain("__ttvab_empty_hold_segment.mp4");
+			expect(
+				staleResult
+					.split("\n")
+					.filter(
+						(line) => !/^#EXT-X-(?:MEDIA-SEQUENCE|DISCONTINUITY)/.test(line),
+					),
+			).toEqual(
+				opaqueAdPlaylist
+					.split("\n")
+					.filter((line) => !line.startsWith("#EXT-X-MEDIA-SEQUENCE:")),
+			);
 			expect(rawFetch).toHaveBeenCalledTimes(2);
 		} finally {
 			g.fetch = originalFetch;

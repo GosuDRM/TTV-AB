@@ -1245,6 +1245,151 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_processM3U8",
+			helper: "_applyEmptyHoldPlaylistContinuity",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getEmptyHoldUpstreamUrl",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_applyEmptyHoldPlaylistContinuity",
+			source: hooksSource,
+		},
+		{
+			consumer: "_installPageSideM3U8Override",
+			helper: "_getEmptyHoldPlaylistKey",
+			source: hooksSource,
+		},
+		{
+			consumer: "_installPageSideM3U8Override",
+			helper: "_getEmptyHoldUpstreamUrl",
+			source: hooksSource,
+		},
+		{
+			consumer: "_installPageSideM3U8Override",
+			helper: "_applyEmptyHoldPlaylistContinuity",
+			source: hooksSource,
+		},
+		{
+			consumer: "_getEmptyHoldPlaylistKey",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getEmptyHoldUpstreamUrl",
+			helper: "_getEmptyHoldPlaylistKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyEmptyHoldPlaylistContinuity",
+			helper: "_getEmptyHoldPlaylistKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyEmptyHoldPlaylistContinuity",
+			helper: "_parsePlaylistFirstMediaSequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyEmptyHoldPlaylistContinuity",
+			helper: "_parsePlaylistDiscontinuitySequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyEmptyHoldPlaylistContinuity",
+			helper: "_setPlaylistDiscontinuitySequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyEmptyHoldPlaylistContinuity",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getEmptyAdHoldResponse",
+			source: hooksSource,
+		},
+		{
+			consumer: "_installPageSideM3U8Override",
+			helper: "_getEmptyAdHoldResponse",
+			source: hooksSource,
+		},
+		{
+			consumer: "_applyBackupSpliceBridge",
+			helper: "_parsePlaylistDiscontinuitySequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_parsePlaylistFirstMediaSequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_startEarlyNoBackupRetry",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getEarlyNoBackupRetry",
+			helper: "_getVideoCodecFamily",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_startEarlyNoBackupRetry",
+			source: processorSource,
+		},
+		{
+			consumer: "_startEarlyNoBackupRetry",
+			helper: "_findBackupStream",
+			source: processorSource,
+		},
+		{
+			consumer: "_startEarlyNoBackupRetry",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_getEarlyNoBackupRetry",
+			source: processorSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_getEarlyNoBackupRetry",
+			source: processorSource,
+		},
+		{
+			consumer: "_getEarlyNoBackupRetry",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getEarlyNoBackupRetry",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_getEarlyNoBackupRetry",
+			helper: "_isRecentPostAdReentry",
+			source: processorSource,
+		},
+		{
+			consumer: "_getEarlyNoBackupRetry",
+			helper: "_getPendingForegroundQualityProbeAt",
+			source: processorSource,
+		},
+		{
+			consumer: "_getEarlyNoBackupRetry",
+			helper: "_getOrderedBackupPlayerTypes",
+			source: processorSource,
+		},
+		{
 			consumer: "_log",
 			helper: "_formatLogText",
 			source: loggerSource,
@@ -1935,6 +2080,16 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_isAutoplayBackupAvailableForSearch",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_shouldBridgeHeldAutoplayDuringSearch",
+			source: processorSource,
+		},
+		{
 			consumer: "_searchBackupStream",
 			helper: "_getFallbackPromotionPolicy",
 			source: processorSource,
@@ -2292,6 +2447,11 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_rememberBackupPlaylistMetadata",
 			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberBackupPlaylistMetadata",
+			helper: "_getExactPlaylistUrlKey",
 			source: processorSource,
 		},
 		{

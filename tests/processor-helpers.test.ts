@@ -218,6 +218,8 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		ModifiedM3U8: null,
 		_BackupSearchStartedAt: 0,
 		_LastBackupSearchCompletedAt: 0,
+		_LastNoBackupProbeAt: 0,
+		_NoBackupRecoveryCandidates: new Map(),
 		_BackupSearchKey: null,
 		_BackupSearchPromises: new Map<string, Promise<unknown>>(),
 		BackupSearchEpoch: 0,
@@ -227,6 +229,8 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_LoggedOfflineTransition: false,
 		_AdRequestController: null,
 		_EmptyAdHoldMediaSequence: 0,
+		_EmptyAdHoldDiscontinuitySequence: 0,
+		_EmptyHoldTimelineByUrl: new Map(),
 		_FatalMediaRecoveryRequestId: null,
 		_CodecHandoffSequence: 0,
 		_CodecHandoffPendingId: null,
@@ -879,6 +883,12 @@ describe("_resetStreamAdState", () => {
 			EnhancedDecoderCodec: "hev1.1.6.L153.B0",
 			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 			_EmptyAdHoldMediaSequence: 12,
+			_EmptyAdHoldDiscontinuitySequence: 5,
+			_EmptyHoldTimelineByUrl: new Map([
+				["https://test/stream.m3u8", { lastSequence: 12 }],
+			]),
+			_LastNoBackupProbeAt: 100,
+			_NoBackupRecoveryCandidates: new Map([["site", { cleanStartedAt: 100 }]]),
 			_FatalMediaRecoveryRequestId: "fatal-recovery-old",
 			_CodecHandoffSequence: 4,
 			_CodecHandoffPendingId: pendingHandoffId,
@@ -937,6 +947,10 @@ describe("_resetStreamAdState", () => {
 		expect(info.EnhancedDecoderCodec).toBe("hev1.1.6.L153.B0");
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
+		expect(info._EmptyAdHoldDiscontinuitySequence).toBe(0);
+		expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
+		expect(info._LastNoBackupProbeAt).toBe(0);
+		expect(info._NoBackupRecoveryCandidates.size).toBe(0);
 		expect(info._FatalMediaRecoveryRequestId).toBe(null);
 		expect(info._CodecHandoffSequence).toBe(5);
 		expect(info._CodecHandoffPendingId).toBe(null);
@@ -4599,6 +4613,7 @@ describe("_findBackupStream held-autoplay bridging during HQ probe", () => {
 	const makeHeldAutoplayInfo = (now: number) => {
 		const info = makeInfo({
 			IsShowingAd: true,
+			IsUsingBackupStream: true,
 			VisibleAdStartedAt: now - 20000,
 			ActiveBackupPlayerType: "autoplay",
 			LastCleanBackupPlayerType: "autoplay",
@@ -10149,7 +10164,19 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 			];
 
 			const staleResult = await process()(avcUrl, opaqueAdPlaylist, fetchStub);
-			expect(staleResult).toBe(opaqueAdPlaylist);
+			expect(staleResult).toContain(opaqueAdUrl);
+			expect(staleResult).not.toContain("__ttvab_empty_hold_segment.mp4");
+			expect(
+				staleResult
+					.split("\n")
+					.filter(
+						(line) => !/^#EXT-X-(?:MEDIA-SEQUENCE|DISCONTINUITY)/.test(line),
+					),
+			).toEqual(
+				opaqueAdPlaylist
+					.split("\n")
+					.filter((line) => !line.startsWith("#EXT-X-MEDIA-SEQUENCE:")),
+			);
 		} finally {
 			g._processM3U8Core = realCore;
 			getState().AdSegmentCache = new Map();
