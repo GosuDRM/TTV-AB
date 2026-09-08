@@ -2879,6 +2879,7 @@ ${bootstrapCall}();
 				];
 				const zipCmd = `zip -r "${sourceZip}" ${sourceFiles.map((f) => `"${f}"`).join(" ")} -x "node_modules/*" "dist/*" ".git/*" "*.xpi" "*.zip"`;
 				const { execSync } = require("node:child_process");
+				fs.rmSync(sourceZip, { force: true });
 				execSync(zipCmd, { cwd: SOURCE_ROOT });
 				console.log(`  Created ${path.basename(sourceZip)}`);
 			} catch (err) {
