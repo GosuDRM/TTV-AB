@@ -199,7 +199,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(result).not.toContain("stitched-ad");
 		expect(result).not.toContain("https://edge/stitched-ad");
 		expect(result).toContain("#EXT-X-DISCONTINUITY");
-		expect(result).toContain("#EXTINF:1.000,live");
+		expect(result).toContain("#EXTINF:1.021,live");
 		expect(result).toContain(
 			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
 		);
@@ -211,6 +211,131 @@ describe("_stripAds (empty-playlist recovery)", () => {
 
 		st.SimulatedAdsDepth = originalSimulated;
 		st.AllSegmentsAreAdSegments = originalAllSegments;
+	});
+
+	it("advances discontinuity ownership as earlier hold boundaries leave the playlist", () => {
+		const create = T<(text: string, info: Record<string, unknown>) => string>(
+			"_createEmptyAdHoldPlaylist",
+		);
+		const info = makeInfo();
+		const input =
+			"#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100\n#EXT-X-DISCONTINUITY-SEQUENCE:4\n#EXTINF:2,stitched-ad\nad.ts";
+		const first = create(input, info);
+		const second = create(input, info);
+		expect(first).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:4");
+		expect(second).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:5");
+		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:102");
+	});
+
+	it("uses its own initialization section without inheriting native encryption or byte ranges", () => {
+		const create = T<(text: string, info: Record<string, unknown>) => string>(
+			"_createEmptyAdHoldPlaylist",
+		);
+		const input = [
+			"#EXTM3U",
+			"#EXT-X-VERSION:3",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:100",
+			'#EXT-X-MAP:URI="native-init.mp4"',
+			'#EXT-X-KEY:METHOD=AES-128,URI="native.key"',
+			"#EXT-X-BYTERANGE:4096@100",
+			"#EXT-X-DISCONTINUITY",
+			"#EXTINF:2,stitched-ad",
+			"ad.mp4",
+		].join("\n");
+		const output = create(input, makeInfo());
+		expect(output).toContain("#EXT-X-VERSION:7");
+		expect(output).toMatch(
+			/#EXT-X-MAP:URI="https:\/\/www\.twitch\.tv\/__ttvab_empty_hold_segment\.mp4\?[^"\n]*init=1"/,
+		);
+		expect(output).not.toContain("native-init");
+		expect(output).not.toContain("native.key");
+		expect(output).not.toContain("#EXT-X-BYTERANGE");
+		expect(
+			output.split("\n").filter((line) => line === "#EXT-X-DISCONTINUITY"),
+		).toHaveLength(1);
+	});
+
+	it("advances both hold tracks on the same clock without changing decodable media", async () => {
+		const respond = T<
+			(url: string, realFetch: typeof fetch) => Promise<Response>
+		>("_getEmptyAdHoldResponse");
+		const original = Buffer.from(
+			String(g._EMPTY_SEGMENT_URL).split(",")[1],
+			"base64",
+		);
+		const realFetch = (async () => new Response(original)) as typeof fetch;
+		const boxes = (bytes: Buffer) => {
+			const result: Record<string, Buffer> = {};
+			for (let offset = 0; offset < bytes.length; ) {
+				const size = bytes.readUInt32BE(offset);
+				expect(size).toBeGreaterThanOrEqual(8);
+				expect(offset + size).toBeLessThanOrEqual(bytes.length);
+				const type = bytes.toString("ascii", offset + 4, offset + 8);
+				result[type] = bytes.subarray(offset, offset + size);
+				offset += size;
+			}
+			return result;
+		};
+		const originalBoxes = boxes(original);
+		const timescales = new Map<number, number>();
+		const moov = originalBoxes.moov;
+		for (let offset = 8; offset < moov.length; ) {
+			const size = moov.readUInt32BE(offset);
+			if (moov.toString("ascii", offset + 4, offset + 8) === "trak") {
+				const track = boxes(moov.subarray(offset + 8, offset + size));
+				const media = boxes(track.mdia.subarray(8));
+				timescales.set(
+					track.tkhd.readUInt32BE(20),
+					media.mdhd.readUInt32BE(20),
+				);
+			}
+			offset += size;
+		}
+		expect(timescales).toEqual(
+			new Map([
+				[1, 16384],
+				[2, 48000],
+			]),
+		);
+		let previousVideoTime = -1n;
+		for (const sequence of [1, 2, 1_000_000_000]) {
+			const response = await respond(
+				`https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=${sequence}`,
+				realFetch,
+			);
+			const media = Buffer.from(await response.arrayBuffer());
+			const fragments = boxes(media);
+			expect(fragments.mdat).toEqual(originalBoxes.mdat);
+			expect(fragments.mfra).toBeUndefined();
+			const moof = fragments.moof;
+			const tracks = new Map<number, bigint>();
+			for (let offset = 8; offset < moof.length; ) {
+				const size = moof.readUInt32BE(offset);
+				const type = moof.toString("ascii", offset + 4, offset + 8);
+				if (type === "mfhd") {
+					expect(moof.readUInt32BE(offset + 12)).toBe(sequence);
+				} else if (type === "traf") {
+					const track = boxes(moof.subarray(offset + 8, offset + size));
+					const trackId = track.tfhd.readUInt32BE(12);
+					expect(track.tfdt[8]).toBe(1);
+					tracks.set(trackId, track.tfdt.readBigUInt64BE(12));
+					if (trackId === 1) {
+						expect(track.tfhd.readUInt32BE(16)).toBe(16734);
+					}
+				}
+				offset += size;
+			}
+			const videoTime = tracks.get(1) as bigint;
+			const audioTime = tracks.get(2) as bigint;
+			expect(videoTime).toBeGreaterThan(previousVideoTime);
+			expect(videoTime).toBe(BigInt(sequence) * 16734n);
+			expect(audioTime * 16384n - videoTime * 48000n).toBeGreaterThanOrEqual(
+				0n,
+			);
+			expect(audioTime * 16384n - videoTime * 48000n).toBeLessThan(16384n);
+			previousVideoTime = videoTime;
+		}
 	});
 
 	it("recognizes only synthetic empty hold segment URLs", () => {

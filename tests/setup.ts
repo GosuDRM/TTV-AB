@@ -8,7 +8,7 @@ function loadModule(modulePath: string) {
 	const js = readFileSync(resolve(__dirname, modulePath), "utf8")
 		.replace(/^"use strict";\s*/m, "")
 		.replace(/^const (_\w+|_C|_S)\s*=/gm, "globalThis.$1 =")
-		.replace(/^function (_\w+)/gm, "globalThis.$1 = function");
+		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function $2");
 	new Function("globalThis", js)(globalThis);
 }
 

@@ -523,7 +523,16 @@ function _createEmptyAdHoldPlaylist(text, info) {
 	const headerLines = (_extractPlaylistHeaders(text) || "#EXTM3U")
 		.split("\n")
 		.map((line) => line.trim())
-		.filter(Boolean);
+		.filter((line) =>
+			/^#EXTM3U$|^#EXT-X-(?:VERSION|TARGETDURATION|MEDIA-SEQUENCE):/.test(line),
+		);
+	const versionIndex = headerLines.findIndex((line) =>
+		line.startsWith("#EXT-X-VERSION:"),
+	);
+	if (versionIndex >= 0) {
+		headerLines[versionIndex] =
+			`#EXT-X-VERSION:${Math.max(7, Number(headerLines[versionIndex].split(":")[1]) || 0)}`;
+	}
 	if (!headerLines.includes("#EXTM3U")) {
 		headerLines.unshift("#EXTM3U");
 	}
@@ -563,6 +572,16 @@ function _createEmptyAdHoldPlaylist(text, info) {
 		headerLines.push(mediaSequenceLine);
 	}
 
+	const sourceDiscontinuitySequence =
+		Number(text?.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/)?.[1]) || 0;
+	const discontinuitySequence = Math.max(
+		sourceDiscontinuitySequence,
+		Number(info?._EmptyAdHoldDiscontinuitySequence) || 0,
+		Number(info?._SpliceLastDiscontinuitySequence) || 0,
+	);
+	if (info) info._EmptyAdHoldDiscontinuitySequence = discontinuitySequence + 1;
+	headerLines.push(`#EXT-X-DISCONTINUITY-SEQUENCE:${discontinuitySequence}`);
+
 	const emptySegmentUrl = new URL(
 		"/__ttvab_empty_hold_segment.mp4",
 		"https://www.twitch.tv",
@@ -573,13 +592,105 @@ function _createEmptyAdHoldPlaylist(text, info) {
 			? info.MediaKey
 			: "unknown";
 	emptySegmentUrl.searchParams.set("media", mediaKey);
+	const initializationUrl = new URL(emptySegmentUrl);
+	initializationUrl.searchParams.set("init", "1");
 
 	return [
 		...headerLines,
 		"#EXT-X-DISCONTINUITY",
-		"#EXTINF:1.000,live",
+		"#EXT-X-KEY:METHOD=NONE",
+		`#EXT-X-MAP:URI="${initializationUrl.href}"`,
+		"#EXTINF:1.021,live",
 		emptySegmentUrl.href,
 	].join("\n");
+}
+
+async function _getEmptyAdHoldResponse(url, realFetch, signal = null) {
+	const response = await realFetch(_EMPTY_SEGMENT_URL, { signal });
+	const bytes = await response.arrayBuffer();
+	if (signal?.aborted) {
+		throw new DOMException("Empty hold request aborted", "AbortError");
+	}
+	const view = new DataView(bytes);
+	let boundary = 0;
+	while (boundary + 8 <= view.byteLength) {
+		const size = view.getUint32(boundary);
+		if (size < 8 || boundary + size > view.byteLength) break;
+		if (view.getUint32(boundary + 4) === 0x6d6f6f66) break;
+		boundary += size;
+	}
+	if (
+		boundary <= 0 ||
+		boundary + 8 > view.byteLength ||
+		view.getUint32(boundary + 4) !== 0x6d6f6f66
+	) {
+		throw new Error("Invalid empty hold media fragment");
+	}
+	const parameters = new URL(url).searchParams;
+	const initializationOnly = parameters.get("init") === "1";
+	let end = boundary;
+	if (!initializationOnly) {
+		const sequence = Number(parameters.get("seq"));
+		if (!Number.isSafeInteger(sequence) || sequence < 1) {
+			throw new Error("Invalid empty hold media sequence");
+		}
+		const fragmentEnd = boundary + view.getUint32(boundary);
+		if (
+			fragmentEnd + 8 > view.byteLength ||
+			view.getUint32(fragmentEnd + 4) !== 0x6d646174
+		) {
+			throw new Error("Invalid empty hold media payload");
+		}
+		end = fragmentEnd + view.getUint32(fragmentEnd);
+		if (end <= fragmentEnd + 8 || end > view.byteLength) {
+			throw new Error("Invalid empty hold media payload");
+		}
+		const decodeTimeOffsets: number[] = [];
+		let videoDuration = 0n;
+		for (let offset = boundary + 8; offset < fragmentEnd; ) {
+			const size = view.getUint32(offset);
+			if (size < 8 || offset + size > fragmentEnd) {
+				throw new Error("Invalid empty hold media fragment");
+			}
+			const type = view.getUint32(offset + 4);
+			if (type === 0x6d666864) {
+				view.setUint32(offset + 12, Number(BigInt(sequence) & 0xffffffffn));
+			} else if (type === 0x74726166) {
+				let trackId = 0;
+				for (let child = offset + 8; child < offset + size; ) {
+					const childSize = view.getUint32(child);
+					if (childSize < 8 || child + childSize > offset + size) {
+						throw new Error("Invalid empty hold media track");
+					}
+					const childType = view.getUint32(child + 4);
+					if (childType === 0x74666864) {
+						trackId = view.getUint32(child + 12);
+						if (trackId === 1) {
+							videoDuration = BigInt(view.getUint32(child + 16));
+						}
+					} else if (
+						childType === 0x74666474 &&
+						view.getUint8(child + 8) === 1
+					) {
+						decodeTimeOffsets[trackId] = child + 12;
+					}
+					child += childSize;
+				}
+			}
+			offset += size;
+		}
+		if (!decodeTimeOffsets[1] || !decodeTimeOffsets[2] || videoDuration <= 0n) {
+			throw new Error("Invalid empty hold media timing");
+		}
+		const videoTimestamp = BigInt(sequence) * videoDuration;
+		const audioTimestamp = (videoTimestamp * 48000n + 16383n) / 16384n;
+		view.setBigUint64(decodeTimeOffsets[1], videoTimestamp);
+		view.setBigUint64(decodeTimeOffsets[2], audioTimestamp);
+	}
+	return new Response(bytes.slice(initializationOnly ? 0 : boundary, end), {
+		status: 200,
+		headers: { "Content-Type": "video/mp4", "Cache-Control": "no-store" },
+	});
 }
 
 function _isEmptyAdHoldSegmentUrl(url) {

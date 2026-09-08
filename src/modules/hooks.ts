@@ -486,7 +486,7 @@ function _resetWorkerAdCycleState(value) {
 		if (infoCycleStartedAt > cycleStartedAt) {
 			continue;
 		}
-		_resetStreamAdState(info);
+		_resetStreamAdState(info, true);
 		didReset = true;
 	}
 	if (progressCycleStartedAt === cycleStartedAt) {
@@ -1417,7 +1417,14 @@ function _hookWorkerFetch() {
 							: null);
 					throw _createCodecHandoffAbortError(emptyHoldRequestSignal);
 				}
-				return await realFetch(_EMPTY_SEGMENT_URL);
+				return await _getEmptyAdHoldResponse(
+					url,
+					realFetch,
+					opts?.signal ||
+						(typeof Request !== "undefined" && resource instanceof Request
+							? resource.signal
+							: null),
+				);
 			}
 			const segmentCodecOwners = __TTVAB_STATE__.SegmentCodecOwners;
 			let segmentOwner = segmentCodecOwners?.get?.(url);
@@ -1815,7 +1822,12 @@ function _hookWorkerFetch() {
 						: null);
 				const response = await realFetch.apply(
 					this,
-					getFetchArgs(resource, opts, args, url),
+					getFetchArgs(
+						resource,
+						opts,
+						args,
+						_getEmptyHoldUpstreamUrl(requestStartInfo, url),
+					),
 				);
 				if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
 					return response;
@@ -1968,7 +1980,11 @@ function _hookWorkerFetch() {
 								throw _createCodecHandoffAbortError(failedRequestSignal);
 							}
 							reportSuccessfulMediaResponse();
-							return new Response(text, getResponseInit(response));
+							return new Response(
+								_applyEmptyHoldPlaylistContinuity(failedInfo, url, text) ??
+									text,
+								getResponseInit(response),
+							);
 						}
 						const failedRequestIsEnhanced = Boolean(
 							_isEnhancedCodecString(
@@ -2015,7 +2031,14 @@ function _hookWorkerFetch() {
 						}
 						const failClosedPlaylist = _stripAds(text, true, failedInfo);
 						reportSuccessfulMediaResponse();
-						return new Response(failClosedPlaylist, getResponseInit(response));
+						return new Response(
+							_applyEmptyHoldPlaylistContinuity(
+								failedInfo,
+								url,
+								failClosedPlaylist,
+							) ?? failClosedPlaylist,
+							getResponseInit(response),
+						);
 					}
 				}
 				return response;
@@ -4077,7 +4100,7 @@ function _completePageSideFallbackAdRecovery(mediaKey) {
 	) as Array<{ MediaKey?: string | null }>) {
 		if (_normalizeMediaKey(streamInfo?.MediaKey) !== normalizedMediaKey)
 			continue;
-		_resetStreamAdState(streamInfo);
+		_resetStreamAdState(streamInfo, true);
 	}
 	__TTVAB_STATE__.LastAdEndedAt = endedAt;
 	__TTVAB_STATE__.LastAdEndedChannel = channel;
@@ -4369,7 +4392,11 @@ function _installPageSideM3U8Override() {
 
 		if (!isM3U8) {
 			if (_isEmptyAdHoldSegmentUrl(urlStr)) {
-				return realFetch(_EMPTY_SEGMENT_URL);
+				return _getEmptyAdHoldResponse(
+					urlStr,
+					realFetch,
+					fallbackRequestSignal,
+				);
 			}
 			if (
 				_isKnownAdSegmentUrl(urlStr, {
@@ -4382,7 +4409,21 @@ function _installPageSideM3U8Override() {
 		}
 
 		try {
-			const response = await realFetch.apply(this, args);
+			const timelineKey = _getEmptyHoldPlaylistKey(urlStr);
+			const upstreamUrl = _getEmptyHoldUpstreamUrl(
+				_pageSideEmptyHoldInfoByUrl.get(timelineKey),
+				urlStr,
+			);
+			const fetchArgs =
+				upstreamUrl === urlStr
+					? args
+					: [
+							urlOrRequest instanceof Request
+								? new Request(upstreamUrl, urlOrRequest)
+								: upstreamUrl,
+							...args.slice(1),
+						];
+			const response = await realFetch.apply(this, fetchArgs);
 			if (shouldPassThrough()) return response;
 			if (response.status !== 200) return response;
 
@@ -4390,16 +4431,32 @@ function _installPageSideM3U8Override() {
 			const text = await cloned.text();
 			if (shouldPassThrough()) return response;
 			_rememberPageSideVariantCodecs(text, urlStr);
+			const getContinuousResponse = (playlist) => {
+				const mapped = _applyEmptyHoldPlaylistContinuity(
+					_pageSideEmptyHoldInfoByUrl.get(timelineKey),
+					urlStr,
+					playlist,
+				);
+				if (mapped == null && playlist === text) return response;
+				return new Response(mapped ?? playlist, {
+					status: response.status,
+					statusText: response.statusText,
+					headers: response.headers,
+				});
+			};
 			const getEmptyHoldInfo = () => {
-				let emptyHoldInfo = _pageSideEmptyHoldInfoByUrl.get(urlStr) || null;
+				let emptyHoldInfo =
+					_pageSideEmptyHoldInfoByUrl.get(timelineKey) || null;
 				if (!emptyHoldInfo) {
 					emptyHoldInfo = {
 						MediaKey: __TTVAB_STATE__?.PageMediaKey || urlStr,
 						_EmptyAdHoldMediaSequence: 0,
+						_EmptyAdHoldDiscontinuitySequence: 0,
+						_EmptyHoldTimelineByUrl: new Map(),
 						NumStrippedAdSegments: 0,
 						IsStrippingAdSegments: false,
 					};
-					_pageSideEmptyHoldInfoByUrl.set(urlStr, emptyHoldInfo);
+					_pageSideEmptyHoldInfoByUrl.set(timelineKey, emptyHoldInfo);
 					while (_pageSideEmptyHoldInfoByUrl.size > 20) {
 						const oldest = _pageSideEmptyHoldInfoByUrl.keys().next().value;
 						if (oldest === undefined) break;
@@ -4425,7 +4482,7 @@ function _installPageSideM3U8Override() {
 				});
 			if (!_hasTwitchAdMetadata(text) && !hasKnownAdMedia) {
 				if (!ownsActiveAdCycle || text.includes("#EXT-X-STREAM-INF")) {
-					return response;
+					return getContinuousResponse(text);
 				}
 				const emptyHoldInfo = getEmptyHoldInfo();
 				if (
@@ -4437,7 +4494,7 @@ function _installPageSideM3U8Override() {
 					) &&
 					_completePageSideFallbackAdRecovery(pageMediaKey)
 				) {
-					return response;
+					return getContinuousResponse(text);
 				}
 				if (
 					!_canServePageSideAvcHold(
@@ -4454,11 +4511,7 @@ function _installPageSideM3U8Override() {
 					"Page-side fallback: holding transiently clean native media during active ad",
 					"warning",
 				);
-				return new Response(hold, {
-					status: response.status,
-					statusText: response.statusText,
-					headers: response.headers,
-				});
+				return getContinuousResponse(hold);
 			}
 			if (pageMediaKey && !text.includes("#EXT-X-STREAM-INF")) {
 				const cycleStartedAt = _ensurePageSideFallbackAdCycle(
@@ -4493,14 +4546,10 @@ function _installPageSideM3U8Override() {
 			) {
 				throw _createCodecHandoffAbortError(fallbackRequestSignal);
 			}
-			if (stripped === text) return response;
+			if (stripped === text) return getContinuousResponse(text);
 
 			_log("Page-side fallback: stripped ads from M3U8", "info");
-			return new Response(stripped, {
-				status: response.status,
-				statusText: response.statusText,
-				headers: response.headers,
-			});
+			return getContinuousResponse(stripped);
 		} catch (error) {
 			_log(
 				`Page-side M3U8 inspection failed for ${urlStr}: ${error?.message ?? String(error)}`,
@@ -4553,6 +4602,7 @@ function _stripM3U8Ads(text, emptyHoldInfo = null) {
 	const info = emptyHoldInfo || {
 		MediaKey: __TTVAB_STATE__?.PageMediaKey || "degraded-page-fallback",
 		_EmptyAdHoldMediaSequence: 0,
+		_EmptyAdHoldDiscontinuitySequence: 0,
 		NumStrippedAdSegments: 0,
 		IsStrippingAdSegments: false,
 	};
@@ -4744,6 +4794,7 @@ function _hookWorker() {
                 ${_absolutizePlaylistUrl.toString()}
                 ${_absolutizeMediaPlaylistUrls.toString()}
                 ${_createEmptyAdHoldPlaylist.toString()}
+                ${_getEmptyAdHoldResponse.toString()}
                 ${_isEmptyAdHoldSegmentUrl.toString()}
                 ${_stripAds.toString()}
                 ${_extractPlaylistHeaders.toString()}
@@ -4795,6 +4846,8 @@ function _hookWorker() {
                 ${_doesPlaybackContextMatchInfo.toString()}
                 ${_isRecentPostAdReentry.toString()}
                 ${_getBackupPlayerRetryCooldownMs.toString()}
+                ${_getEarlyNoBackupRetry.toString()}
+                ${_startEarlyNoBackupRetry.toString()}
                 ${_forceClearBackupCooldownsIfStale.toString()}
                 ${_markBackupPlayerRetryCooldown.toString()}
                 ${_clearBackupPlayerRetryCooldown.toString()}
@@ -4849,6 +4902,9 @@ function _hookWorker() {
                 ${_setPlaylistDiscontinuitySequence.toString()}
                 ${_insertBoundaryDiscontinuity.toString()}
                 ${_applyBackupSpliceBridge.toString()}
+                ${_getEmptyHoldPlaylistKey.toString()}
+                ${_getEmptyHoldUpstreamUrl.toString()}
+                ${_applyEmptyHoldPlaylistContinuity.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
