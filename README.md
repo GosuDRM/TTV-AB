@@ -72,6 +72,10 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.5.5 - 2026-09-10
+
+- **Post-Ad Quality Recovery** - Improved recovery from streams staying at 360p after ads or losing the 1440p option, while preserving the selected quality when Twitch still offers it ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+
 ### v17.5.4 - 2026-09-09
 
 - **Faster Backup Recovery** - Added earlier checks for clean backups to help playback resume sooner when Low Quality Fallback is disabled.
@@ -87,12 +91,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Background Worker Cleanup** - Stopped background startup checks from keeping unused player workers in memory. The cause of the original crash and high-memory report in [#71](https://github.com/GosuDRM/TTV-AB/issues/71) remains unconfirmed.
 - **Paused Playback Cleanup** - Prevented repeated early worker shutdowns from accumulating recovery checks while paused, while preserving recovery deadlines and Picture-in-Picture ownership.
 - **Statistics Recovery** - Bounded pending statistics requests during storage delays, avoided duplicate replay requests, and preserved recovery when storage resumes. Discarded updates no longer return after toggling Turbo Mode.
-
-### v17.3.0 - 2026-09-05
-
-- **Channel Banner Playback** - Fixed channel-page banner VODs and recommended streams failing with a black screen or player error while the extension was enabled, including when Ad Blocking was turned off ([#72](https://github.com/GosuDRM/TTV-AB/issues/72)).
-- **Post-Ad Recovery** - Improved recovery from black loading screens when Low Quality Fallback is disabled and Twitch's player temporarily disappears or remains unready. Repeated soft reloads are ignored, expired recovery stops, and healthy playback avoids an extra rebuild ([#70](https://github.com/GosuDRM/TTV-AB/issues/70)).
-- **Player Recovery Failures** - Source reloads now handle asynchronous failures and resume only while their playback context is still current. Recovery avoids reloading a source through a crashed worker and offers a manual tab refresh when recovery is exhausted. This does not establish or fix the cause of Twitch's original worker crash ([#71](https://github.com/GosuDRM/TTV-AB/issues/71)).
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
