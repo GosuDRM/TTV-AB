@@ -111,6 +111,190 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it.each([
+		["site", true],
+		["autoplay", true],
+		["site", false],
+		["autoplay", false],
+	])(
+		"preserves %s ownership through playlist whitespace cleanup (empty hold: %s)",
+		async (type, usedEmptyHold) => {
+			const { context, info, hold } = setup();
+			const processCore = context._processM3U8Core;
+			if (usedEmptyHold) await hold();
+			context._processM3U8Core = processCore;
+			context.state.DisableAutoplayBackup = type === "site";
+			info.CsaiOnlyThisBreak = true;
+			let sequence = 100;
+			const select = () => {
+				const text = `${playlist(sequence)}\n\n`;
+				info.LastCleanBackupM3U8 = text;
+				info.LastCleanBackupAt = Date.now();
+				info.LastCleanBackupPlayerType = type;
+				info.LastCleanBackupResolution = "1920x1080";
+				info.LastCleanBackupCodecFamily = "avc";
+				info.LastCleanBackupCodec = codec;
+				context._rememberBackupPlaylistMetadata(info, text, "avc", codec, {
+					playerType: type,
+					resolution: "1920x1080",
+					playlistUrl: `https://edge.example/${type}.m3u8?session=one`,
+					sessionUrl: "https://usher.ttvnw.net/master.m3u8?session=one",
+				});
+				return { type, m3u8: text };
+			};
+			const search = vi.fn(async () => select());
+			context._findBackupStream = search;
+			const ad = playlist(400, 1, "stitched-ad");
+			const fetch = vi.fn();
+			const first = segments(await context._processM3U8(nativeUrl, ad, fetch));
+			if (usedEmptyHold) {
+				expect(info._EmptyHoldTimelineByUrl.get(nativeUrl).kind).toBe("backup");
+			} else {
+				expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
+			}
+			sequence++;
+			select();
+			const refreshed = segments(
+				await context._processM3U8(nativeUrl, ad, fetch),
+			);
+			expect(refreshed.slice(0, 2)).toEqual(first.slice(1));
+			info._LastBackupSearchCompletedAt = 0;
+			const selectedAgain = segments(
+				await context._processM3U8(nativeUrl, ad, fetch),
+			);
+			expect(selectedAgain).toEqual(refreshed);
+			expect(search).toHaveBeenCalledTimes(2);
+			expect(fetch).not.toHaveBeenCalled();
+		},
+	);
+
+	it("keeps an unowned selected backup out of the response after whitespace cleanup", async () => {
+		const { context, info, hold } = setup();
+		const processCore = context._processM3U8Core;
+		await hold();
+		context._processM3U8Core = processCore;
+		info.CsaiOnlyThisBreak = true;
+		context._findBackupStream = async () => {
+			info.LastCleanBackupM3U8 = `${playlist(100)}\n`;
+			info.LastCleanBackupAt = Date.now();
+			return { type: "site", m3u8: info.LastCleanBackupM3U8 };
+		};
+		const output = await context._processM3U8(
+			nativeUrl,
+			playlist(400, 1, "stitched-ad"),
+			vi.fn(),
+		);
+		expect(output).toContain("__ttvab_empty_hold_segment");
+		expect(output).not.toContain("https://edge.example/clean-");
+		expect(info._EmptyHoldTimelineByUrl.get(nativeUrl).kind).toBe("hold");
+	});
+
+	it("keeps matching backup media synchronized across held quality requests", async () => {
+		const { context, info, hold, serve } = setup();
+		await hold();
+		const otherUrl = nativeUrl.replace("native", "720p");
+		context._applyEmptyHoldPlaylistContinuity(
+			info,
+			otherUrl,
+			context._createEmptyAdHoldPlaylist(playlist(400), info),
+		);
+		const first = segments(await serve(playlist(100), "site"));
+		const other = segments(
+			context._applyEmptyHoldPlaylistContinuity(info, otherUrl, playlist(100)),
+		);
+		expect(
+			other.map(({ url, discontinuity }) => ({ url, discontinuity })),
+		).toEqual(first.map(({ url, discontinuity }) => ({ url, discontinuity })));
+		const refreshed = segments(await serve(playlist(101), "site"));
+		const otherRefresh = segments(
+			context._applyEmptyHoldPlaylistContinuity(info, otherUrl, playlist(101)),
+		);
+		expect(refreshed.slice(0, 2)).toEqual(first.slice(1));
+		expect(otherRefresh.slice(0, 2)).toEqual(other.slice(1));
+	});
+
+	it("joins an owned quality request to the active backup timeline without another hold", async () => {
+		const { context, info, hold, serve } = setup();
+		await hold();
+		const first = segments(await serve(playlist(100), "site"));
+		const otherUrl = nativeUrl.replace("native", "720p");
+		info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+		const other = segments(
+			context._applyEmptyHoldPlaylistContinuity(info, otherUrl, playlist(100)),
+		);
+		expect(
+			other.map(({ url, discontinuity }) => ({ url, discontinuity })),
+		).toEqual(first.map(({ url, discontinuity }) => ({ url, discontinuity })));
+	});
+
+	it("preserves matching backup discontinuities when quality requests see different sliding windows", async () => {
+		const { context, info, hold, serve } = setup();
+		await hold();
+		const otherUrl = nativeUrl.replace("native", "720p");
+		info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+		context._applyEmptyHoldPlaylistContinuity(
+			info,
+			otherUrl,
+			context._createEmptyAdHoldPlaylist(playlist(400), info),
+		);
+		const firstText = playlist(100)
+			.replace("DISCONTINUITY-SEQUENCE:0", "DISCONTINUITY-SEQUENCE:6")
+			.replace(
+				"#EXTINF:2.000,live\nhttps://edge.example/clean-101",
+				"#EXT-X-DISCONTINUITY\n#EXTINF:2.000,live\nhttps://edge.example/clean-101",
+			)
+			.replaceAll("\n", "\r\n");
+		const first = segments(await serve(firstText, "site"));
+		const metadata = info.BackupPlaylistMetadata.get(firstText);
+		const nextText = playlist(101).replace(
+			"DISCONTINUITY-SEQUENCE:0",
+			"DISCONTINUITY-SEQUENCE:7",
+		);
+		const other = segments(
+			context._applyEmptyHoldPlaylistContinuity(
+				info,
+				otherUrl,
+				nextText,
+				metadata,
+			),
+		);
+		const refreshed = segments(await serve(nextText, "site"));
+		expect(refreshed.slice(0, 2)).toEqual(first.slice(1));
+		expect(
+			other.map(({ url, discontinuity }) => ({ url, discontinuity })),
+		).toEqual(
+			refreshed.map(({ url, discontinuity }) => ({ url, discontinuity })),
+		);
+	});
+
+	it("keeps native renditions in the same exact master synchronized after backup recovery", async () => {
+		const { context, info, hold, serve } = setup();
+		await hold();
+		const otherUrl = nativeUrl.replace("native", "720p");
+		info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+		context._applyEmptyHoldPlaylistContinuity(
+			info,
+			otherUrl,
+			context._createEmptyAdHoldPlaylist(playlist(400), info),
+		);
+		await serve(playlist(100), "site");
+		context._applyEmptyHoldPlaylistContinuity(info, otherUrl, playlist(100));
+		context._resetStreamAdState(info, true);
+		const first = segments(await serve(playlist(200, 3, "native")));
+		const other = segments(
+			context._applyEmptyHoldPlaylistContinuity(
+				info,
+				otherUrl,
+				playlist(300, 3, "native-other"),
+			),
+		);
+		expect(other[0].discontinuity).toBe(first[0].discontinuity);
+		const previousLast = first.at(-1).discontinuity;
+		info.UsherBaseUrl += "?token=replacement";
+		const replacement = segments(await serve(playlist(201, 3, "replacement")));
+		expect(replacement[0].discontinuity).toBeGreaterThan(previousLast);
+	});
+
 	it("makes clean segments downloadable immediately after a long hold", async () => {
 		const { hold, serve, fetch } = setup();
 		let lastHold = "";
@@ -486,7 +670,7 @@ describe("empty hold playlist continuity", () => {
 		context._ensurePageSideFallbackAdCycle = () => info.VisibleAdStartedAt;
 		context._installPageSideM3U8Override();
 		const hold = segments(await (await context.fetch(url)).text())[0];
-		expect(hold.url).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(hold.url).toContain("__ttvab_empty_hold_segment.ts");
 		context.state.CurrentAdMediaKey = null;
 		context.state.CurrentAdChannel = null;
 		current = playlist(10);
