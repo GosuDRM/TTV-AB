@@ -76,6 +76,7 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 - **Faster Backup Recovery** - Added earlier checks for clean backups to help playback resume sooner when Low Quality Fallback is disabled.
 - **Backup Playback** - Improved playback continuity when leaving the silent hold, switching backups, and returning to native quality.
+- **Audio Sync** - Improved audio and video timing during backup refreshes and quality changes.
 - **Low Quality Fallback** - Fixed a cached 360p autoplay backup being selected while Low Quality Fallback is disabled. A clean backup already playing can continue until normal quality is ready.
 - **Turbo Watch Time** - Prevented watch time collected during Turbo Mode from being added after it is disabled, including delayed updates recovered after closing a tab.
 
