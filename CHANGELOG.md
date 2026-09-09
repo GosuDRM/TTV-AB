@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.5.5] - 2026-09-10
+
+Fixed
+
+- **Post-Ad Quality Recovery** - Improved recovery from streams staying at 360p after ads or losing the 1440p option, while preserving the selected quality when Twitch still offers it ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+
 ## [17.5.4] - 2026-09-09
 
 Changed
