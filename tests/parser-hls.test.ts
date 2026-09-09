@@ -199,9 +199,9 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(result).not.toContain("stitched-ad");
 		expect(result).not.toContain("https://edge/stitched-ad");
 		expect(result).toContain("#EXT-X-DISCONTINUITY");
-		expect(result).toContain("#EXTINF:1.021,live");
+		expect(result).toContain("#EXTINF:1.024,live");
 		expect(result).toContain(
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 		);
 		expect(result).not.toContain("data:video/mp4;base64,");
 		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:1");
@@ -227,7 +227,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:102");
 	});
 
-	it("uses its own initialization section without inheriting native encryption or byte ranges", () => {
+	it("uses self-contained transport media without native initialization, encryption or byte ranges", () => {
 		const create = T<(text: string, info: Record<string, unknown>) => string>(
 			"_createEmptyAdHoldPlaylist",
 		);
@@ -244,10 +244,9 @@ describe("_stripAds (empty-playlist recovery)", () => {
 			"ad.mp4",
 		].join("\n");
 		const output = create(input, makeInfo());
-		expect(output).toContain("#EXT-X-VERSION:7");
-		expect(output).toMatch(
-			/#EXT-X-MAP:URI="https:\/\/www\.twitch\.tv\/__ttvab_empty_hold_segment\.mp4\?[^"\n]*init=1"/,
-		);
+		expect(output).toContain("#EXT-X-VERSION:3");
+		expect(output).not.toContain("#EXT-X-MAP");
+		expect(output).toContain("#EXT-X-KEY:METHOD=NONE");
 		expect(output).not.toContain("native-init");
 		expect(output).not.toContain("native.key");
 		expect(output).not.toContain("#EXT-X-BYTERANGE");
@@ -256,95 +255,156 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		).toHaveLength(1);
 	});
 
-	it("advances both hold tracks on the same clock without changing decodable media", async () => {
+	it("advances complete AVC and AAC packets together, including at the transport clock wrap", async () => {
 		const respond = T<
 			(url: string, realFetch: typeof fetch) => Promise<Response>
 		>("_getEmptyAdHoldResponse");
 		const original = Buffer.from(
-			String(g._EMPTY_SEGMENT_URL).split(",")[1],
+			String(g._EMPTY_HOLD_SEGMENT_URL).split(",")[1],
 			"base64",
 		);
 		const realFetch = (async () => new Response(original)) as typeof fetch;
-		const boxes = (bytes: Buffer) => {
-			const result: Record<string, Buffer> = {};
-			for (let offset = 0; offset < bytes.length; ) {
-				const size = bytes.readUInt32BE(offset);
-				expect(size).toBeGreaterThanOrEqual(8);
-				expect(offset + size).toBeLessThanOrEqual(bytes.length);
-				const type = bytes.toString("ascii", offset + 4, offset + 8);
-				result[type] = bytes.subarray(offset, offset + size);
-				offset += size;
-			}
-			return result;
-		};
-		const originalBoxes = boxes(original);
-		const timescales = new Map<number, number>();
-		const moov = originalBoxes.moov;
-		for (let offset = 8; offset < moov.length; ) {
-			const size = moov.readUInt32BE(offset);
-			if (moov.toString("ascii", offset + 4, offset + 8) === "trak") {
-				const track = boxes(moov.subarray(offset + 8, offset + size));
-				const media = boxes(track.mdia.subarray(8));
-				timescales.set(
-					track.tkhd.readUInt32BE(20),
-					media.mdhd.readUInt32BE(20),
-				);
-			}
-			offset += size;
-		}
-		expect(timescales).toEqual(
-			new Map([
-				[1, 16384],
-				[2, 48000],
-			]),
-		);
-		let previousVideoTime = -1n;
-		for (const sequence of [1, 2, 1_000_000_000]) {
-			const response = await respond(
-				`https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=${sequence}`,
-				realFetch,
-			);
-			const media = Buffer.from(await response.arrayBuffer());
-			const fragments = boxes(media);
-			expect(fragments.mdat).toEqual(originalBoxes.mdat);
-			expect(fragments.mfra).toBeUndefined();
-			const moof = fragments.moof;
-			const tracks = new Map<number, bigint>();
-			for (let offset = 8; offset < moof.length; ) {
-				const size = moof.readUInt32BE(offset);
-				const type = moof.toString("ascii", offset + 4, offset + 8);
-				if (type === "mfhd") {
-					expect(moof.readUInt32BE(offset + 12)).toBe(sequence);
-				} else if (type === "traf") {
-					const track = boxes(moof.subarray(offset + 8, offset + size));
-					const trackId = track.tfhd.readUInt32BE(12);
-					expect(track.tfdt[8]).toBe(1);
-					tracks.set(trackId, track.tfdt.readBigUInt64BE(12));
-					if (trackId === 1) {
-						expect(track.tfhd.readUInt32BE(16)).toBe(16734);
+		const inspect = (bytes: Buffer) => {
+			const normalized = Buffer.from(bytes);
+			const clocks: number[] = [];
+			const timestamps: number[] = [];
+			const videoTimes: number[] = [];
+			const audioTimes: number[] = [];
+			const packets = new Map<number, Buffer[]>();
+			const audio: Buffer[] = [];
+			const finishPacket = (pid: number) => {
+				const parts = packets.get(pid);
+				if (!parts) return;
+				const packet = Buffer.concat(parts);
+				expect(packet.readUInt16BE(4)).toBe(packet.length - 6);
+				expect(packet.length).toBeGreaterThan(9 + packet[8]);
+				if (packet[3] === 192) audio.push(packet.subarray(9 + packet[8]));
+			};
+			expect(bytes.length % 188).toBe(0);
+			for (let offset = 0; offset < bytes.length; offset += 188) {
+				expect(bytes[offset]).toBe(71);
+				const pid = bytes.readUInt16BE(offset + 1) & 8191;
+				let payload = offset + 4;
+				if (bytes[offset + 3] & 32) {
+					const length = bytes[payload];
+					if (length >= 7 && bytes[payload + 1] & 16) {
+						const pcr = payload + 2;
+						clocks.push(bytes.readUInt32BE(pcr) * 2 + (bytes[pcr + 4] >> 7));
+						normalized.fill(0, pcr, pcr + 4);
+						normalized[pcr + 4] &= 127;
+					}
+					payload += 1 + length;
+				}
+				if (!(bytes[offset + 3] & 16)) continue;
+				if (bytes[offset + 1] & 64) {
+					finishPacket(pid);
+					packets.delete(pid);
+					if (bytes.readUIntBE(payload, 3) !== 1) continue;
+					packets.set(pid, []);
+					const flags = bytes[payload + 7] >> 6;
+					expect([2, 3]).toContain(flags);
+					for (let index = 0; index < (flags === 3 ? 2 : 1); index++) {
+						const position = payload + 9 + index * 5;
+						const value =
+							((bytes[position] >> 1) & 7) * 2 ** 30 +
+							(bytes.readUInt16BE(position + 1) >> 1) * 2 ** 15 +
+							(bytes.readUInt16BE(position + 3) >> 1);
+						timestamps.push(value);
+						if (index === 0) {
+							(bytes[payload + 3] === 224 ? videoTimes : audioTimes).push(
+								value,
+							);
+						}
+						normalized.fill(0, position, position + 5);
 					}
 				}
-				offset += size;
+				packets.get(pid)?.push(bytes.subarray(payload, offset + 188));
 			}
-			const videoTime = tracks.get(1) as bigint;
-			const audioTime = tracks.get(2) as bigint;
-			expect(videoTime).toBeGreaterThan(previousVideoTime);
-			expect(videoTime).toBe(BigInt(sequence) * 16734n);
-			expect(audioTime * 16384n - videoTime * 48000n).toBeGreaterThanOrEqual(
-				0n,
+			for (const pid of packets.keys()) finishPacket(pid);
+			const audioBytes = Buffer.concat(audio);
+			let audioFrames = 0;
+			for (let offset = 0; offset < audioBytes.length; audioFrames++) {
+				expect(audioBytes.readUInt16BE(offset) & 65526).toBe(65520);
+				const length =
+					(audioBytes[offset + 3] & 3) * 2048 +
+					audioBytes[offset + 4] * 8 +
+					(audioBytes[offset + 5] >> 5);
+				expect(length).toBeGreaterThan(7);
+				expect(offset + length).toBeLessThanOrEqual(audioBytes.length);
+				offset += length;
+			}
+			expect(audioFrames).toBe(48);
+			expect(videoTimes).toHaveLength(32);
+			expect(videoTimes[0]).toBe(audioTimes[0]);
+			return { normalized, clocks, timestamps, videoTimes };
+		};
+		const template = inspect(original);
+		expect(template.videoTimes).toEqual(
+			Array.from({ length: 32 }, (_, index) => index * 2880),
+		);
+		expect(template.clocks.length).toBeGreaterThan(0);
+		for (const sequence of [1, 2, 93_206, 93_207, 1_000_000_000]) {
+			const response = await respond(
+				`https://www.twitch.tv/__ttvab_empty_hold_segment.ts?seq=${sequence}`,
+				realFetch,
 			);
-			expect(audioTime * 16384n - videoTime * 48000n).toBeLessThan(16384n);
-			previousVideoTime = videoTime;
+			expect(response.headers.get("content-type")).toBe("video/mp2t");
+			expect(response.headers.get("cache-control")).toBe("no-store");
+			const advanced = inspect(Buffer.from(await response.arrayBuffer()));
+			expect(advanced.normalized).toEqual(template.normalized);
+			const advance = (value: number) => (value + sequence * 92160) % 2 ** 33;
+			expect(advanced.timestamps).toEqual(template.timestamps.map(advance));
+			expect(advanced.clocks).toEqual(template.clocks.map(advance));
 		}
+	});
+
+	it("rejects malformed and canceled synthetic media instead of returning undecodable bytes", async () => {
+		const respond = T<
+			(
+				url: string,
+				realFetch: typeof fetch,
+				signal?: AbortSignal,
+			) => Promise<Response>
+		>("_getEmptyAdHoldResponse");
+		const original = Buffer.from(
+			String(g._EMPTY_HOLD_SEGMENT_URL).split(",")[1],
+			"base64",
+		);
+		const url = "https://www.twitch.tv/__ttvab_empty_hold_segment.ts?seq=1";
+		for (const sequence of ["0", "-1", "NaN", "1.5", "9007199254740992"]) {
+			await expect(
+				respond(url.replace("seq=1", `seq=${sequence}`), fetch),
+			).rejects.toThrow("Invalid empty hold media sequence");
+		}
+		for (const bytes of [
+			Buffer.alloc(0),
+			original.subarray(0, -1),
+			Buffer.alloc(188),
+		]) {
+			await expect(
+				respond(url, (async () => new Response(bytes)) as typeof fetch),
+			).rejects.toThrow("Invalid empty hold transport");
+		}
+		const controller = new AbortController();
+		await expect(
+			respond(
+				url,
+				(async () => {
+					controller.abort();
+					return new Response(original);
+				}) as typeof fetch,
+				controller.signal,
+			),
+		).rejects.toMatchObject({ name: "AbortError" });
 	});
 
 	it("recognizes only synthetic empty hold segment URLs", () => {
 		const fn = T<(url: string) => boolean>("_isEmptyAdHoldSegmentUrl");
 		expect(
-			fn("https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1"),
+			fn("https://www.twitch.tv/__ttvab_empty_hold_segment.ts?seq=1"),
 		).toBe(true);
 		expect(
-			fn("https://static-cdn.jtvnw.net/__ttvab_empty_hold_segment.mp4"),
+			fn("https://static-cdn.jtvnw.net/__ttvab_empty_hold_segment.ts"),
 		).toBe(false);
 		expect(fn("https://www.twitch.tv/normal-segment.mp4")).toBe(false);
 	});
@@ -385,7 +445,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(result).not.toContain("old-clean-backup.ts");
 		expect(result).not.toContain("old-clean-native.ts");
 		expect(result).toContain(
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 		);
 		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:41");
 	});
@@ -407,7 +467,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(result).not.toContain("segment-70.ts");
 		expect(result).not.toContain("segment-71.ts");
 		expect(result).toContain(
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 		);
 		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:71");
 	});

@@ -1618,9 +1618,9 @@ function _insertBoundaryDiscontinuity(
 	return lines.join("\n");
 }
 
-function _applyBackupSpliceBridge(info, text) {
+function _applyBackupSpliceBridge(info, text, backupMetadata = null) {
 	if (!info || typeof text !== "string" || !text) return text;
-	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.mp4")) {
+	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.ts")) {
 		info._SpliceStreamId = "empty-hold";
 		info._SpliceBoundarySeq = null;
 		info._SpliceDiscontinuityOffset = 0;
@@ -1637,7 +1637,7 @@ function _applyBackupSpliceBridge(info, text) {
 	}
 	if (!_playlistHasMediaSegments(text)) return text;
 
-	const metadata = info.BackupPlaylistMetadata?.get?.(text);
+	const metadata = backupMetadata || info.BackupPlaylistMetadata?.get?.(text);
 	const backupCodec =
 		_getVideoCodecIdentity(metadata?.codec || info.LastCleanBackupCodec) ||
 		_getVideoCodecFamily(
@@ -1765,13 +1765,16 @@ function _applyEmptyHoldPlaylistContinuity(
 	)
 		return null;
 	const isHold = text.includes(
-		"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+		"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 	);
 	if (!isHold && !info._EmptyHoldTimelineByUrl?.size) return null;
 	const key = _getEmptyHoldPlaylistKey(url);
 	if (!key || text.includes("#EXT-X-STREAM-INF")) return null;
 	const previous = info._EmptyHoldTimelineByUrl?.get?.(key) || null;
-	if (!isHold && !previous) return null;
+	const isOwnedNativeVariant = Boolean(
+		info.Urls && Object.hasOwn(info.Urls, key),
+	);
+	if (!isHold && !previous && !isOwnedNativeVariant) return null;
 	if (/#EXT-X-SKIP:/.test(text)) {
 		throw new DOMException(
 			"Empty hold recovery requires a full playlist",
@@ -1825,11 +1828,41 @@ function _applyEmptyHoldPlaylistContinuity(
 						metadata.sessionUrl,
 						metadata.playlistUrl,
 					]
-				: [kind, key],
+				: [
+						kind,
+						isOwnedNativeVariant
+							? _getExactPlaylistUrlKey(info.UsherBaseUrl) || key
+							: key,
+					],
 	);
 	const changedSource = previous?.identity !== identity;
+	let sharedTimeline = null;
+	let lastDiscontinuity = -1;
+	if (changedSource && !isHold) {
+		for (const candidate of info._EmptyHoldTimelineByUrl.values()) {
+			lastDiscontinuity = Math.max(
+				lastDiscontinuity,
+				candidate.lastDiscontinuity,
+			);
+			if (
+				candidate.identity === identity &&
+				(!sharedTimeline ||
+					candidate.discontinuityOffset > sharedTimeline.discontinuityOffset)
+			) {
+				sharedTimeline = candidate;
+			}
+		}
+		if (
+			previous &&
+			sharedTimeline &&
+			firstDiscontinuity + sharedTimeline.discontinuityOffset <=
+				previous.lastDiscontinuity
+		) {
+			sharedTimeline = null;
+		}
+	}
 	const addBoundary = changedSource
-		? Boolean(previous && !isHold && firstDiscontinuity === baseDiscontinuity)
+		? Boolean(!isHold && firstDiscontinuity === baseDiscontinuity)
 		: previous.addBoundary;
 	const timeline = changedSource
 		? {
@@ -1840,15 +1873,12 @@ function _applyEmptyHoldPlaylistContinuity(
 				mediaOffset: previous
 					? Math.max(0, previous.lastSequence + 1 - firstSequence)
 					: 0,
-				discontinuityOffset: previous
+				discontinuityOffset: isHold
 					? Math.max(
 							0,
-							previous.lastDiscontinuity +
-								1 -
-								firstDiscontinuity -
-								Number(addBoundary),
+							(previous?.lastDiscontinuity ?? -1) + 1 - firstDiscontinuity,
 						)
-					: 0,
+					: (sharedTimeline?.discontinuityOffset ?? lastDiscontinuity + 1),
 				lastSequence: 0,
 				lastDiscontinuity: 0,
 				lastRawFirstSequence: firstSequence,
@@ -1869,7 +1899,8 @@ function _applyEmptyHoldPlaylistContinuity(
 		lines,
 		baseDiscontinuity +
 			timeline.discontinuityOffset +
-			Number(boundaryScrolledOut),
+			Number(boundaryScrolledOut) -
+			Number(timeline.addBoundary),
 	);
 	const mediaSequenceLine = `#EXT-X-MEDIA-SEQUENCE:${firstSequence + timeline.mediaOffset}`;
 	const mediaSequenceIndex = lines.findIndex((line) =>
@@ -1958,7 +1989,7 @@ function _applyEmptyHoldPlaylistContinuity(
 	);
 	timeline.lastDiscontinuity = Math.max(
 		timeline.lastDiscontinuity,
-		discontinuity + timeline.discontinuityOffset + Number(timeline.addBoundary),
+		discontinuity + timeline.discontinuityOffset,
 	);
 	if (!(info._EmptyHoldTimelineByUrl instanceof Map))
 		info._EmptyHoldTimelineByUrl = new Map();
@@ -1970,7 +2001,7 @@ function _applyEmptyHoldPlaylistContinuity(
 	}
 	if (changedSource && previous) {
 		_log(
-			`[Recovery] Playlist continuity after empty hold: ${previous.kind} -> ${metadata?.playerType || kind}; media ${firstSequence} -> ${firstSequence + timeline.mediaOffset}; discontinuity ${previous.lastDiscontinuity} -> ${firstDiscontinuity + timeline.discontinuityOffset + Number(timeline.addBoundary)}`,
+			`[Recovery] Playlist continuity after empty hold: ${previous.kind} -> ${metadata?.playerType || kind}; media ${firstSequence} -> ${firstSequence + timeline.mediaOffset}; discontinuity ${previous.lastDiscontinuity} -> ${firstDiscontinuity + timeline.discontinuityOffset}`,
 			"info",
 		);
 	}
@@ -3531,6 +3562,7 @@ async function _processM3U8(
 				requestStartContext?.includeCachedAdSegments,
 		),
 		responseDeadlineAt: initialHasEnhancedDecoderOwner ? Date.now() + 10000 : 0,
+		backupMetadata: null,
 	};
 	const coreResultProbe = await _awaitBackupProbeBeforeDeadline(
 		_awaitWithRequestSignal(
@@ -3578,9 +3610,10 @@ async function _processM3U8(
 	);
 
 	const resultBackupMetadata =
-		info.BackupPlaylistMetadata instanceof Map
+		requestAdContext.backupMetadata ||
+		(info.BackupPlaylistMetadata instanceof Map
 			? info.BackupPlaylistMetadata.get(result) || null
-			: null;
+			: null);
 	const returnedCachedBackupBeforeEnhancedStrip = Boolean(
 		resultBackupMetadata ||
 			(typeof info.LastCleanBackupM3U8 === "string" &&
@@ -3593,7 +3626,7 @@ async function _processM3U8(
 			result === info.LastCleanNativeM3U8,
 	);
 	const returnedEmptyHoldBeforeEnhancedStrip = result.includes(
-		"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+		"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 	);
 	const requestMayUseCachedAdSegments = Boolean(
 		requestAdContext.includeCachedAdSegments ||
@@ -3634,7 +3667,7 @@ async function _processM3U8(
 				result === info.LastCleanBackupM3U8),
 	);
 	const returnedAvcEmptyHold = result.includes(
-		"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+		"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 	);
 	const returnedCachedNative = Boolean(
 		typeof info.LastCleanNativeM3U8 === "string" &&
@@ -3761,7 +3794,7 @@ async function _processM3U8(
 				url,
 				result,
 				resultBackupMetadata,
-			) ?? _applyBackupSpliceBridge(info, result)
+			) ?? _applyBackupSpliceBridge(info, result, resultBackupMetadata)
 		);
 	}
 
@@ -5390,6 +5423,13 @@ async function _processM3U8Core(
 
 		if (backupM3u8) {
 			if (__TTVAB_STATE__.IsAdStrippingEnabled) {
+				if (requestAdContext) {
+					requestAdContext.backupMetadata =
+						info.BackupPlaylistMetadata?.get?.(backupM3u8) ||
+						(backupM3u8 === info.LastCleanBackupM3U8
+							? { ambiguous: true }
+							: null);
+				}
 				text = _stripAds(text, false, info);
 			}
 		} else if (isEnhancedCodec && info.ModifiedM3U8) {

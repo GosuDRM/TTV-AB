@@ -6270,7 +6270,7 @@ describe("page-side M3U8 fallback", () => {
 		expect(stripped).not.toContain("ad-1.ts");
 		expect(stripped).not.toContain("ad-2.ts");
 		expect(stripped).not.toContain("clean.ts");
-		expect(stripped).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(stripped).toContain("__ttvab_empty_hold_segment.ts");
 	});
 
 	it("serves an advancing empty hold when degraded stripping removes every segment", () => {
@@ -6298,7 +6298,7 @@ describe("page-side M3U8 fallback", () => {
 
 		expect(first).not.toContain("ad-70.ts");
 		expect(first).not.toContain("ad-71.ts");
-		expect(first).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(first).toContain("__ttvab_empty_hold_segment.ts");
 		expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:71");
 		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:72");
 	});
@@ -6794,7 +6794,7 @@ describe("page-side M3U8 fallback", () => {
 		try {
 			install();
 			const hold = await (await window.fetch(url)).text();
-			expect(hold).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(hold).toContain("__ttvab_empty_hold_segment.ts");
 
 			state.ActiveCodecHandoffId = "live:testchannel:90000:100001:1:pending";
 			state.ActiveCodecHandoffMediaKey = "live:testchannel";
@@ -6805,7 +6805,7 @@ describe("page-side M3U8 fallback", () => {
 			state.ActiveCodecHandoffId = null;
 			state.ActiveCodecHandoffMediaKey = null;
 			const resumedHold = await (await window.fetch(url)).text();
-			expect(resumedHold).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(resumedHold).toContain("__ttvab_empty_hold_segment.ts");
 		} finally {
 			window.fetch = originalFetch;
 			Object.assign(state, previousState);
@@ -7622,7 +7622,7 @@ describe("page-side M3U8 fallback", () => {
 			"https://video-weaver.example.ttvnw.net/v1/playlist/degraded-toggle.m3u8";
 		const adSegmentUrl = "https://edge.example/adsquared/ad-700.ts";
 		const emptyHoldSegmentUrl =
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4";
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts";
 		const adPlaylist = [
 			"#EXTM3U",
 			"#EXT-X-TARGETDURATION:2",
@@ -7666,7 +7666,7 @@ describe("page-side M3U8 fallback", () => {
 			install();
 			const blocked = await (await window.fetch(mediaUrl)).text();
 			expect(blocked).not.toContain(adSegmentUrl);
-			expect(blocked).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(blocked).toContain("__ttvab_empty_hold_segment.ts");
 			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
 			expect((g._S as { adsBlocked: number }).adsBlocked).toBe(1);
 
@@ -7835,7 +7835,7 @@ describe("page-side M3U8 fallback", () => {
 			confirmPlaybackOwner("live:testchannel", ownedUrl, "avc1.64002A");
 			const blocked = await (await window.fetch(ownedUrl)).text();
 			expect(blocked).not.toContain("adsquared");
-			expect(blocked).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(blocked).toContain("__ttvab_empty_hold_segment.ts");
 			expect(state.CurrentAdMediaKey).toBe("live:testchannel");
 			expect((g._S as { adsBlocked: number }).adsBlocked).toBe(1);
 		} finally {
@@ -7911,7 +7911,7 @@ describe("page-side M3U8 fallback", () => {
 					expect(lines[i + 1]?.startsWith("#")).toBe(false);
 				}
 			}
-			expect(first).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(first).toContain("__ttvab_empty_hold_segment.ts");
 			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:301");
 			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:302");
 			expect(rawFetch).toHaveBeenCalledTimes(2);
@@ -8153,7 +8153,7 @@ describe("worker mixed-codec master selection", () => {
 				const output = await (await workerFetch(variantUrl)).text();
 				expect(output).not.toContain("stitched-ad-1.ts");
 				expect(output).not.toContain("#EXT-X-CUE-OUT");
-				expect(output).toContain("/__ttvab_empty_hold_segment.mp4");
+				expect(output).toContain("/__ttvab_empty_hold_segment.ts");
 			} finally {
 				harness.restore();
 			}
@@ -8578,7 +8578,7 @@ describe("worker mixed-codec master selection", () => {
 
 				expect(output).not.toContain("stitched-ad-1.ts");
 				expect(output).not.toContain("#EXT-X-CUE-OUT");
-				expect(output).toContain("/__ttvab_empty_hold_segment.mp4");
+				expect(output).toContain("/__ttvab_empty_hold_segment.ts");
 				expect(
 					(state.StreamInfos as Record<string, unknown>)[mediaKey],
 				).toMatchObject({
@@ -9056,7 +9056,7 @@ describe("worker mixed-codec master selection", () => {
 				await (g.fetch as typeof fetch)(variantUrl)
 			).text();
 			expect(mediaOutput).toContain("/1080p/0.ts");
-			expect(mediaOutput).not.toContain("__ttvab_empty_hold_segment.mp4");
+			expect(mediaOutput).not.toContain("__ttvab_empty_hold_segment.ts");
 			expect(
 				report.mock.calls.filter(
 					([, message]) =>
@@ -9895,7 +9895,7 @@ describe("worker media-playlist exception fail-closed path", () => {
 			state.CurrentAdMediaKey = "live:testchannel";
 			g.fetch = rawFetch;
 			const emptyHoldUrl =
-				"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel";
+				"https://www.twitch.tv/__ttvab_empty_hold_segment.ts?seq=1&media=live%3Atestchannel";
 
 			try {
 				T<() => void>("_hookWorkerFetch")();
@@ -9904,9 +9904,6 @@ describe("worker media-playlist exception fail-closed path", () => {
 				).rejects.toMatchObject({
 					name: "AbortError",
 				});
-				await expect(
-					(g.fetch as typeof fetch)(`${emptyHoldUrl}&init=1`),
-				).rejects.toMatchObject({ name: "AbortError" });
 				expect(rawFetch).not.toHaveBeenCalled();
 			} finally {
 				g.fetch = originalFetch;
@@ -9914,14 +9911,17 @@ describe("worker media-playlist exception fail-closed path", () => {
 		},
 	);
 
-	it.each([false, true])(
-		"serves the AVC hold media and initialization after enhanced ownership clears (init: %s)",
-		async (initializationOnly) => {
+	it.each([1, 2])(
+		"serves self-contained AVC and AAC hold media after enhanced ownership clears (sequence: %s)",
+		async (sequence) => {
 			const originalFetch = g.fetch;
 			const rawFetch = vi.fn(
 				async () =>
 					new Response(
-						Buffer.from(String(g._EMPTY_SEGMENT_URL).split(",")[1], "base64"),
+						Buffer.from(
+							String(g._EMPTY_HOLD_SEGMENT_URL).split(",")[1],
+							"base64",
+						),
 					),
 			);
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
@@ -9938,25 +9938,20 @@ describe("worker media-playlist exception fail-closed path", () => {
 			state.CurrentAdChannel = "testchannel";
 			state.CurrentAdMediaKey = "live:testchannel";
 			g.fetch = rawFetch;
-			const emptyHoldUrl =
-				"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel" +
-				(initializationOnly ? "&init=1" : "");
+			const emptyHoldUrl = `https://www.twitch.tv/__ttvab_empty_hold_segment.ts?seq=${sequence}&media=live%3Atestchannel`;
 
 			try {
 				T<() => void>("_hookWorkerFetch")();
 				const response = await (g.fetch as typeof fetch)(emptyHoldUrl);
 				const bytes = Buffer.from(await response.arrayBuffer());
-				expect(bytes.toString("ascii", 4, 8)).toBe(
-					initializationOnly ? "ftyp" : "moof",
-				);
-				expect(
-					bytes.includes(Buffer.from(initializationOnly ? "moov" : "mdat")),
-				).toBe(true);
-				expect(
-					bytes.includes(Buffer.from(initializationOnly ? "mdat" : "moov")),
-				).toBe(false);
+				expect(response.headers.get("content-type")).toBe("video/mp2t");
+				expect(bytes.length).toBeGreaterThan(188);
+				expect(bytes.length % 188).toBe(0);
+				for (let offset = 0; offset < bytes.length; offset += 188) {
+					expect(bytes[offset]).toBe(71);
+				}
 				expect(rawFetch).toHaveBeenCalledOnce();
-				expect(rawFetch).toHaveBeenCalledWith(g._EMPTY_SEGMENT_URL, {
+				expect(rawFetch).toHaveBeenCalledWith(g._EMPTY_HOLD_SEGMENT_URL, {
 					signal: null,
 				});
 			} finally {
@@ -10384,13 +10379,13 @@ describe("worker media-playlist exception fail-closed path", () => {
 				await (g.fetch as typeof fetch)(mediaUrl)
 			).text();
 			expect(activeResult).not.toContain(opaqueAdUrl);
-			expect(activeResult).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(activeResult).toContain("__ttvab_empty_hold_segment.ts");
 
 			const staleResult = await (
 				await (g.fetch as typeof fetch)(mediaUrl)
 			).text();
 			expect(staleResult).toContain(opaqueAdUrl);
-			expect(staleResult).not.toContain("__ttvab_empty_hold_segment.mp4");
+			expect(staleResult).not.toContain("__ttvab_empty_hold_segment.ts");
 			expect(
 				staleResult
 					.split("\n")
@@ -10536,7 +10531,7 @@ describe("worker ad-segment codec ownership", () => {
 	it("passes empty-hold and known ad segments through while disabled", async () => {
 		const originalFetch = g.fetch;
 		const emptyHoldUrl =
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=1&media=live%3Atestchannel";
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts?seq=1&media=live%3Atestchannel";
 		const knownAdUrl = "https://edge.example/adsquared/unowned-ad.ts";
 		const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
 			const url = input instanceof Request ? input.url : String(input);

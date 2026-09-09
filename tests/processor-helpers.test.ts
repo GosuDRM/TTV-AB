@@ -1319,7 +1319,7 @@ describe("_resetStreamAdState", () => {
 			);
 
 			expect(out).toContain("seg900.ts");
-			expect(out).not.toContain("__ttvab_empty_hold_segment.mp4");
+			expect(out).not.toContain("__ttvab_empty_hold_segment.ts");
 			expect(Object.keys(state.StreamInfos as Record<string, unknown>)).toEqual(
 				[],
 			);
@@ -5794,7 +5794,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 				Promise.reject(new Error("unexpected fetch")),
 			);
 
-			expect(first).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(first).toContain("__ttvab_empty_hold_segment.ts");
 			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:101");
 			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:102");
 			expect(first).not.toContain("seg50.ts");
@@ -7123,7 +7123,7 @@ describe("_processM3U8 rapid reentry cycle ownership", () => {
 		expect(setup.info._BackupSearchKey).toBe(null);
 		expect(setup.info.LastCleanBackupM3U8).toBe(null);
 		expect(out).not.toContain("seg610.ts");
-		expect(out).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(out).toContain("__ttvab_empty_hold_segment.ts");
 		expect(setup.findBackup).toHaveBeenCalled();
 		expect(adDetectedMessage(setup.messages)).toMatchObject({
 			continued: true,
@@ -9223,7 +9223,7 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		const output = await core(bridgeUrl, csaiOnlyAdNative, fetchStub);
 
 		expect(output).toBe(cleanNative);
-		expect(output).not.toContain("__ttvab_empty_hold_segment.mp4");
+		expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
 		expect(output).not.toContain("stitched-ad-99.ts");
 		expect(info.CsaiOnlyThisBreak).toBe(true);
 		expect(findCalls).toHaveLength(1);
@@ -9250,7 +9250,7 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		const output = await core(bridgeUrl, csaiOnlyAdNative, fetchStub);
 
 		expect(output).not.toBe(cleanNative);
-		expect(output).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(output).toContain("__ttvab_empty_hold_segment.ts");
 		expect(output).not.toContain("stitched-ad-99.ts");
 		expect(info.CsaiOnlyThisBreak).toBe(true);
 		expect(findCalls).toHaveLength(1);
@@ -10152,7 +10152,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		try {
 			const activeResult = await process()(avcUrl, opaqueAdPlaylist, fetchStub);
 			expect(activeResult).not.toContain(opaqueAdUrl);
-			expect(activeResult).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(activeResult).toContain("__ttvab_empty_hold_segment.ts");
 
 			info.IsShowingAd = false;
 			info.IsHoldingBackupAfterAd = false;
@@ -10165,7 +10165,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 
 			const staleResult = await process()(avcUrl, opaqueAdPlaylist, fetchStub);
 			expect(staleResult).toContain(opaqueAdUrl);
-			expect(staleResult).not.toContain("__ttvab_empty_hold_segment.mp4");
+			expect(staleResult).not.toContain("__ttvab_empty_hold_segment.ts");
 			expect(
 				staleResult
 					.split("\n")
@@ -10316,7 +10316,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 
 		const out = await core()(avcUrl, allAdNative, fetchStub);
 
-		expect(out).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(out).toContain("__ttvab_empty_hold_segment.ts");
 		expect(out).not.toContain("stitched-ad-100.ts");
 		expect(out).not.toContain("avc-backup-500.ts");
 		expect(info.LastCleanBackupM3U8).toBe(null);
@@ -10362,7 +10362,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 
 		expect(out).toContain("hevc-backup-500.ts");
 		expect(out).not.toContain("stitched-ad-100.ts");
-		expect(out).not.toContain("__ttvab_empty_hold_segment.mp4");
+		expect(out).not.toContain("__ttvab_empty_hold_segment.ts");
 		expect(findBackup).toHaveBeenCalledTimes(1);
 		expect(reloadMessages()).toHaveLength(0);
 	});
@@ -11025,7 +11025,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 			"#EXT-X-TARGETDURATION:1",
 			"#EXT-X-MEDIA-SEQUENCE:501",
 			"#EXTINF:1.000,live",
-			"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4?seq=501&media=live%3Atestchannel",
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts?seq=501&media=live%3Atestchannel",
 		].join("\n");
 		const controller = new AbortController();
 		const realCore = g._processM3U8Core;
@@ -11228,7 +11228,7 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		expect(findBackup).toHaveBeenCalled();
 		expect(out).not.toContain("seg820.ts");
 		expect(out).not.toContain("stitched-ad-100.ts");
-		expect(out).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(out).toContain("__ttvab_empty_hold_segment.ts");
 		expect(info.IsUsingBackupStream).toBe(false);
 	});
 

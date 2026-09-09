@@ -213,7 +213,7 @@ function setup(
 	const firstFailure = async () => {
 		const result = process();
 		await vi.advanceTimersByTimeAsync(firstSweepDuration);
-		expect(await result).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(await result).toContain("__ttvab_empty_hold_segment.ts");
 		expect(tokens).toEqual(["site", "embed", "popout", "mobile_web"]);
 		expect(info._LastBackupSearchCompletedAt).toBe(
 			startedAt + firstSweepDuration,
@@ -246,7 +246,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		for (let attempt = 0; attempt < 6; attempt++) {
 			vi.setSystemTime(completedAt + 1000 + attempt * 2000);
 			const hold = await fixture.process();
-			expect(hold).toContain("__ttvab_empty_hold_segment.mp4");
+			expect(hold).toContain("__ttvab_empty_hold_segment.ts");
 			expect(hold).not.toBe(previousHold);
 			expect(hold).not.toContain("stitched-ad");
 			previousHold = hold;
@@ -268,7 +268,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		vi.setSystemTime(completedAt + 15000);
 		const regular = fixture.process();
 		await vi.advanceTimersByTimeAsync(6000);
-		expect(await regular).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(await regular).toContain("__ttvab_empty_hold_segment.ts");
 		expect(fixture.tokens).toEqual([
 			"site",
 			"embed",
@@ -294,7 +294,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		vi.setSystemTime(firstCompletedAt + 15000);
 		const regular = fixture.process();
 		await vi.advanceTimersByTimeAsync(6000);
-		expect(await regular).toContain("__ttvab_empty_hold_segment.mp4");
+		expect(await regular).toContain("__ttvab_empty_hold_segment.ts");
 		const completedAt = fixture.info._LastBackupSearchCompletedAt;
 		expect(fixture.info._NoBackupRecoveryCandidates.get("site")).not.toBe(
 			originalCandidate,
@@ -304,7 +304,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		for (let attempt = 0; attempt < 3; attempt++) {
 			vi.setSystemTime(completedAt + 2000 + attempt * 2000);
 			expect(await fixture.process()).toContain(
-				"__ttvab_empty_hold_segment.mp4",
+				"__ttvab_empty_hold_segment.ts",
 			);
 			await vi.advanceTimersByTimeAsync(500);
 			if (attempt < 2) expect(fixture.info.LastCleanBackupM3U8).toBeNull();
@@ -337,7 +337,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		for (let attempt = 0; attempt < 3; attempt++) {
 			vi.setSystemTime(startedAt + 9000 + attempt * 2000);
 			expect(await fixture.process()).toContain(
-				"__ttvab_empty_hold_segment.mp4",
+				"__ttvab_empty_hold_segment.ts",
 			);
 			await vi.advanceTimersByTimeAsync(500);
 			expect(fixture.info.LastCleanBackupM3U8).toBeNull();
@@ -360,7 +360,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		await vi.advanceTimersByTimeAsync(500);
 		vi.setSystemTime(startedAt + 11000);
 		expect(await fixture.process(false)).toContain(
-			"__ttvab_empty_hold_segment.mp4",
+			"__ttvab_empty_hold_segment.ts",
 		);
 		await vi.advanceTimersByTimeAsync(500);
 		expect(fixture.info.LastCleanBackupM3U8).toContain("/content-");
@@ -422,7 +422,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 				};
 			vi.setSystemTime(startedAt + 11000);
 			expect(await fixture.process()).toContain(
-				"__ttvab_empty_hold_segment.mp4",
+				"__ttvab_empty_hold_segment.ts",
 			);
 			await vi.advanceTimersByTimeAsync(500);
 			expect(fixture.info.LastCleanBackupM3U8).toBeNull();
@@ -496,7 +496,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 			vi.setSystemTime(regularRetryAt - 1500);
 			fixture.controls.hang = stage;
 			expect(await fixture.process()).toContain(
-				"__ttvab_empty_hold_segment.mp4",
+				"__ttvab_empty_hold_segment.ts",
 			);
 			await vi.advanceTimersByTimeAsync(1250);
 			expect(fixture.aborted).toEqual([stage]);

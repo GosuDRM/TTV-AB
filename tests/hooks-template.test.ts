@@ -16,13 +16,15 @@ const processorJs = () =>
 describe("empty ad segment single source", () => {
 	it("hooks does not embed its own segment blob", () => {
 		expect(hooksJs()).not.toContain("data:video/mp4;base64,");
+		expect(hooksJs()).not.toContain("data:video/mp2t;base64,");
 	});
 
 	it("worker bootstrap serializes the parser segment constant", () => {
 		expect(hooksJs()).toContain("JSON.stringify(_EMPTY_SEGMENT_URL)");
+		expect(hooksJs()).toContain("JSON.stringify(_EMPTY_HOLD_SEGMENT_URL)");
 	});
 
-	it("parser segment carries decodable AVC and audio media for the hold", () => {
+	it("direct ad-segment replacement carries decodable AVC and audio media", () => {
 		const match = parserJs().match(/data:video\/mp4;base64,([A-Za-z0-9+/=]+)/);
 		expect(match).not.toBeNull();
 		const bytes = Buffer.from(match?.[1] ?? "", "base64");

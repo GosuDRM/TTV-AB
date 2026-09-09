@@ -1388,7 +1388,7 @@ function _hookWorkerFetch() {
 			);
 			if (
 				shouldBlockAdSegments &&
-				url.includes("/__ttvab_empty_hold_segment.mp4") &&
+				url.includes("/__ttvab_empty_hold_segment.ts") &&
 				typeof _isEmptyAdHoldSegmentUrl === "function" &&
 				_isEmptyAdHoldSegmentUrl(url)
 			) {
@@ -4535,7 +4535,7 @@ function _installPageSideM3U8Override() {
 			const stripped = _stripM3U8Ads(text, getEmptyHoldInfo());
 			if (
 				stripped.includes(
-					"https://www.twitch.tv/__ttvab_empty_hold_segment.mp4",
+					"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 				) &&
 				!_canServePageSideAvcHold(
 					urlStr,
@@ -4758,6 +4758,7 @@ function _hookWorker() {
                 const _ATTR_REGEX = ${_ATTR_REGEX.toString()};
                 const _AD_METADATA_RE = ${_AD_METADATA_RE.toString()};
                 const _EMPTY_SEGMENT_URL = ${JSON.stringify(_EMPTY_SEGMENT_URL)};
+                const _EMPTY_HOLD_SEGMENT_URL = ${JSON.stringify(_EMPTY_HOLD_SEGMENT_URL)};
                 const _RESERVED_ROUTE_SEGMENTS = new Set(${JSON.stringify(Array.from(_RESERVED_ROUTE_SEGMENTS))});
                 const _pageSideVariantCodecByUrl = new Map(${JSON.stringify(seedPlaybackCodecEntries)});
 				${_formatLogText.toString()}

@@ -1146,6 +1146,15 @@ function validateSharedDefinitions() {
 		),
 	);
 	if (
+		!hooksSource.includes(
+			"const _EMPTY_HOLD_SEGMENT_URL = ${JSON.stringify(_EMPTY_HOLD_SEGMENT_URL)};",
+		)
+	) {
+		throw new Error(
+			"Worker empty hold media must be serialized from the parser constant",
+		);
+	}
+	if (
 		hooksSource.includes("_pageSideVariantCodecByUrl.get(alias)") &&
 		!hooksSource.includes(
 			"const _pageSideVariantCodecByUrl = new Map(${JSON.stringify(seedPlaybackCodecEntries)});",
