@@ -1597,6 +1597,27 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_isAdEndStable",
+			helper: "_isNativeRecoveryCodecHandoffReady",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_isNativeRecoveryCodecHandoffReady",
+			source: processorSource,
+		},
+		...[
+			"_normalizeMediaKey",
+			"_getExactPlaylistUrlKey",
+			"_getVideoCodecFamily",
+			"_getCodecHandoffCycleStartedAt",
+			"_isCodecHandoffCycleCurrent",
+		].map((helper) => ({
+			consumer: "_isNativeRecoveryCodecHandoffReady",
+			helper,
+			source: processorSource,
+		})),
+		{
+			consumer: "_isAdEndStable",
 			helper: "_advanceExactNativeRecoveryCandidate",
 			source: processorSource,
 		},
