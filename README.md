@@ -72,6 +72,10 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.5.6 - 2026-09-10
+
+- **360p Recovery Follow-Up** - Fixed a remaining recovery loop after switching to the temporary low-quality stream during ads ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)). The separate full-tab freeze remains under investigation.
+
 ### v17.5.5 - 2026-09-10
 
 - **Post-Ad Quality Recovery** - Improved recovery from streams staying at 360p after ads or losing the 1440p option, while preserving the selected quality when Twitch still offers it ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
@@ -83,14 +87,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Audio Sync** - Improved audio and video timing during backup refreshes and quality changes.
 - **Low Quality Fallback** - Fixed a cached 360p autoplay backup being selected while Low Quality Fallback is disabled. A clean backup already playing can continue until normal quality is ready.
 - **Turbo Watch Time** - Prevented watch time collected during Turbo Mode from being added after it is disabled, including delayed updates recovered after closing a tab.
-
-### v17.4.0 - 2026-09-06
-
-- **Preview Playback** - Fixed a worker startup race that could interrupt valid Team-page streams, channel banners, and Previews hover players with Error #2000. Navigation now retires outdated Team-page requests while preserving the exact active Picture-in-Picture worker ([#73](https://github.com/GosuDRM/TTV-AB/issues/73)).
-- **Worker Startup Cleanup** - Released temporary worker data when a player worker cannot be created.
-- **Background Worker Cleanup** - Stopped background startup checks from keeping unused player workers in memory. The cause of the original crash and high-memory report in [#71](https://github.com/GosuDRM/TTV-AB/issues/71) remains unconfirmed.
-- **Paused Playback Cleanup** - Prevented repeated early worker shutdowns from accumulating recovery checks while paused, while preserving recovery deadlines and Picture-in-Picture ownership.
-- **Statistics Recovery** - Bounded pending statistics requests during storage delays, avoided duplicate replay requests, and preserved recovery when storage resumes. Discarded updates no longer return after toggling Turbo Mode.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
