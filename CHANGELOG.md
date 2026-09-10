@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.5.6] - 2026-09-10
+
+Fixed
+
+- **360p Recovery Follow-Up** - Fixed a remaining recovery loop after switching to the temporary low-quality stream during ads ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)). The separate full-tab freeze remains under investigation.
+
 ## [17.5.5] - 2026-09-10
 
 Fixed
