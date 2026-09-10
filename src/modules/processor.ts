@@ -911,6 +911,30 @@ function _advanceExactNativeRecoveryCandidate(
 		: "pending";
 }
 
+function _isNativeRecoveryCodecHandoffReady(info, candidateUrl) {
+	const handoffId = info?._CodecHandoffPendingId;
+	if (!handoffId) return true;
+	const mediaKey = _normalizeMediaKey(info.MediaKey);
+	const cycleStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
+	return Boolean(
+		info.IsUsingModifiedM3U8 &&
+			handoffId === info._CodecHandoffAcknowledgedId &&
+			handoffId !== info._CodecHandoffFailedId &&
+			handoffId === __TTVAB_STATE__?.ActiveCodecHandoffId &&
+			mediaKey &&
+			mediaKey ===
+				_normalizeMediaKey(__TTVAB_STATE__?.ActiveCodecHandoffMediaKey) &&
+			cycleStartedAt > 0 &&
+			_getCodecHandoffCycleStartedAt(handoffId) === cycleStartedAt &&
+			_isCodecHandoffCycleCurrent(mediaKey, cycleStartedAt, info) &&
+			!info.EnhancedDecoderCodecFamily &&
+			!info.EnhancedDecoderCodec &&
+			_getVideoCodecFamily(
+				info.Urls?.[_getExactPlaylistUrlKey(candidateUrl)]?.Codecs,
+			) === "avc",
+	);
+}
+
 async function _isAdEndStable(
 	info,
 	realFetch,
@@ -990,7 +1014,7 @@ async function _isAdEndStable(
 		info.IsHoldingBackupAfterAd &&
 		(info.IsUsingModifiedM3U8 || !declaredPodComplete) &&
 		exactNativeRecoveryOwned &&
-		!info._CodecHandoffPendingId &&
+		_isNativeRecoveryCodecHandoffReady(info, candidateUrl) &&
 		info.LastCleanBackupM3U8 &&
 		(info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType) &&
 		typeof info.EncodingsM3U8 === "string" &&
@@ -1018,13 +1042,15 @@ async function _isAdEndStable(
 				master: info.EncodingsM3U8,
 				masterUrl: info.UsherBaseUrl,
 				playlistUrl,
+				requestUrl: _getExactPlaylistUrlKey(candidateUrl),
+				handoffId: info._CodecHandoffPendingId || null,
 			};
 		}
 	}
 	const canUseExactNativeCandidate = Boolean(
 		((declaredPodComplete && !info.IsUsingModifiedM3U8) ||
 			(ownedNativeRecoveryTarget && !declaredPodIncomplete)) &&
-			!info._CodecHandoffPendingId &&
+			(!info._CodecHandoffPendingId || ownedNativeRecoveryTarget) &&
 			info.LastCleanBackupM3U8 &&
 			(info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType),
 	);
@@ -2308,6 +2334,12 @@ async function _canReloadNativePlayerAfterAd(
 				!probeStreamUrl ||
 				info.EncodingsM3U8 !== ownedNativeRecoveryTarget.master ||
 				info.UsherBaseUrl !== ownedNativeRecoveryTarget.masterUrl ||
+				(info._CodecHandoffPendingId || null) !==
+					(ownedNativeRecoveryTarget.handoffId || null) ||
+				!_isNativeRecoveryCodecHandoffReady(
+					info,
+					ownedNativeRecoveryTarget.requestUrl || probeStreamUrl,
+				) ||
 				!Object.hasOwn(info.Urls || {}, probeStreamUrl) ||
 				Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) !==
 					probeLoaderEpoch ||
@@ -2532,6 +2564,9 @@ async function _canReloadNativePlayerAfterAd(
 		return false;
 	} finally {
 		if (info._NativeRecoveryProbeToken === probeToken) {
+			if (ownedNativeRecoveryTarget && probeInvalidated()) {
+				_resetNativeRecoveryReadyState(info, true);
+			}
 			info._NativeRecoveryProbeInFlight = false;
 			info._NativeRecoveryProbeToken = null;
 		}

@@ -4865,6 +4865,7 @@ function _hookWorker() {
 					${_resetNativeRecoveryCandidateState.toString()}
 					${_isExactNativeRecoveryCandidateOwned.toString()}
 					${_advanceExactNativeRecoveryCandidate.toString()}
+				${_isNativeRecoveryCodecHandoffReady.toString()}
 				${_isAdEndStable.toString()}
 				${_serveBounceDebouncedPlaylist.toString()}
 				${_resetNativeRecoveryReadyState.toString()}

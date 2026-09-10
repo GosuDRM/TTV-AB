@@ -8107,6 +8107,141 @@ describe("page-side M3U8 fallback", () => {
 });
 
 describe("worker mixed-codec master selection", () => {
+	it("recovers native quality after the injected worker acknowledges the AVC handoff", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const mediaKey = "live:testchannel";
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=owned";
+		const avcUrl = "https://edge.example/1080p.m3u8?token=owned";
+		const hevcUrl = "https://edge.example/1440p.m3u8?token=owned";
+		const backupUrl = "https://edge.example/360p.m3u8?token=backup";
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:RESOLUTION=2560x1440,FRAME-RATE=60,VIDEO="chunked",CODECS="hev1.1.2.L150.90,mp4a.40.2"',
+			hevcUrl,
+			'#EXT-X-STREAM-INF:RESOLUTION=1920x1080,FRAME-RATE=60,VIDEO="1080p60",CODECS="avc1.64002a,mp4a.40.2"',
+			avcUrl,
+		].join("\n");
+		let sequence = 500;
+		const playlist = (prefix: string) =>
+			`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${++sequence}\n#EXTINF:2.000,live\nhttps://edge.example/${prefix}-${sequence}.ts`;
+		const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.startsWith(masterUrl)) return new Response(master);
+			if (url === avcUrl) return new Response(playlist("avc"));
+			if (url === hevcUrl) return new Response(playlist("hevc"));
+			if (url === backupUrl) return new Response(playlist("backup"));
+			throw new Error(`Unexpected recovery fetch: ${url}`);
+		});
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+			runtime.scope.Date = Date;
+			runtime.deliverBootstrap();
+			const workerFetch = runtime.scope.fetch as typeof fetch;
+			await workerFetch(masterUrl);
+			const workerState = runtime.scope.__TTVAB_STATE__ as Record<
+				string,
+				unknown
+			>;
+			const info = (
+				workerState.StreamInfos as Record<string, Record<string, unknown>>
+			)[mediaKey];
+			Object.assign(info, {
+				IsHoldingBackupAfterAd: true,
+				IsUsingBackupStream: true,
+				HevcReloadPendingAfterHold: true,
+				VisibleAdStartedAt: 100000,
+				SilentBackupHoldStartedAt: 190000,
+				LastAdPodProgressAt: 108000,
+				ExpectedAdPodLength: 7,
+				MaxObservedAdPodPosition: 2,
+				SustainedNativeResolution: (info.Urls as Record<string, unknown>)[
+					hevcUrl
+				],
+				ActiveBackupPlayerType: "autoplay",
+				ActiveBackupResolution: "640x360",
+				LastCleanBackupM3U8: playlist("backup"),
+				LastCleanBackupPlayerType: "autoplay",
+				LastCleanBackupResolution: "640x360",
+				LastCleanBackupCodecFamily: "avc",
+				LastCleanBackupCodec: "avc1.64002a,mp4a.40.2",
+				LastCleanBackupAt: 198000,
+			});
+			(info.ObservedAdPodIds as Set<string>).add("one");
+			(info.ObservedAdPodIds as Set<string>).add("two");
+			(info.BackupEncodingsM3U8Cache as Record<string, unknown>).autoplay = {
+				m3u8: `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="avc1.64002a,mp4a.40.2"\n${backupUrl}`,
+				baseUrl: masterUrl.replace("owned", "backup"),
+			};
+			const handoffId = `${mediaKey}:100000:200000:1:handoff`;
+			const send = (key: string, value: unknown) =>
+				runtime.deliver(
+					T<(message: Record<string, unknown>) => unknown>(
+						"_createWorkerBridgeMessage",
+					)({ key, value }),
+				);
+			send("UpdateCurrentAdContext", {
+				mediaKey,
+				channelName: "testchannel",
+				cycleStartedAt: 100000,
+			});
+			send("UpdateCodecHandoffContext", {
+				mediaKey,
+				channelName: "testchannel",
+				cycleStartedAt: 100000,
+				handoffId,
+			});
+			send("TriggeredPlayerReload", {
+				mediaKey,
+				channelName: "testchannel",
+				cycleStartedAt: 100000,
+				handoffId,
+				reason: "codec-handoff",
+				reloadAt: Date.now(),
+			});
+			expect(info._CodecHandoffAcknowledgedId).toBe(handoffId);
+			const fallbackMaster = await (
+				await workerFetch(`${masterUrl}&handoff=1`)
+			).text();
+			expect(fallbackMaster).toContain(avcUrl);
+			expect(fallbackMaster).not.toContain(hevcUrl);
+			for (let index = 0; index < 30 && info.IsHoldingBackupAfterAd; index++) {
+				vi.setSystemTime(Date.now() + 2000);
+				const output = await (await workerFetch(avcUrl)).text();
+				expect(output).not.toContain("hevc-");
+				if (info.IsHoldingBackupAfterAd) expect(output).toContain("backup-");
+			}
+			expect(info.IsHoldingBackupAfterAd).toBe(false);
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
+				playlistUrl: hevcUrl,
+				mediaKey,
+				cycleStartedAt: 100000,
+			});
+			const restored = (
+				runtime.scope.postMessage as ReturnType<typeof vi.fn>
+			).mock.calls
+				.map(
+					([message]) =>
+						(message as { message: Record<string, unknown> }).message,
+				)
+				.find((message) => message?.key === "NativePlaybackRestored");
+			expect(restored).toMatchObject({
+				requiresReload: true,
+				refreshAccessToken: false,
+			});
+			const rebuiltMaster = await (
+				await workerFetch(`${masterUrl}&rebuild=1`)
+			).text();
+			expect(rebuiltMaster).toContain(hevcUrl);
+			expect(rebuiltMaster).not.toContain(avcUrl);
+		} finally {
+			harness.restore();
+		}
+	});
+
 	it.each([
 		["Team", "https://www.twitch.tv/team/testteam"],
 		[

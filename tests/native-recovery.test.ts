@@ -37,7 +37,7 @@ const playlist = (sequence: number, prefix: string, adMarked = false) =>
 		]).flat(),
 	].join("\n");
 
-function setup() {
+function setup(withCodecHandoff = true) {
 	let now = 200000;
 	vi.spyOn(Date, "now").mockImplementation(() => now);
 	const report = vi.fn();
@@ -131,6 +131,17 @@ function setup() {
 		info.Urls[resolution.Url] = resolution;
 		state.StreamInfosByUrl[resolution.Url] = info;
 	}
+	if (withCodecHandoff) {
+		const handoffId = context._requestCodecHandoffReload(
+			info,
+			info.VisibleAdStartedAt,
+		);
+		info._CodecHandoffAcknowledgedId = handoffId;
+		info.NativeRecoveryLoaderEpoch = 1;
+		state.ActiveCodecHandoffId = handoffId;
+		state.ActiveCodecHandoffMediaKey = info.MediaKey;
+		state.ActiveCodecHandoffChannel = info.ChannelName;
+	}
 	info.BackupEncodingsM3U8Cache.autoplay = {
 		m3u8: `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="${avc}"\n${backupUrl}`,
 		baseUrl: masterUrl.replaceAll("owned", "autoplay"),
@@ -181,16 +192,93 @@ function setup() {
 			fetch,
 		);
 	};
+	const checkRecovery = async () => {
+		now += 2000;
+		return context._isAdEndStable(
+			info,
+			fetch,
+			resolutions[1],
+			{
+				requestStartMediaKey: info.MediaKey,
+				requestStartCycleStartedAt: info.VisibleAdStartedAt,
+				cycleStartedAt: info.VisibleAdStartedAt,
+				loaderEpoch: info.NativeRecoveryLoaderEpoch,
+				backupSearchEpoch: info.BackupSearchEpoch,
+			},
+			null,
+			playlist(++requestSequence, "avc"),
+			nativeUrl,
+			true,
+		);
+	};
 	const restored = () =>
 		report.mock.calls.find(
 			([, message]) => message.key === "NativePlaybackRestored",
 		)?.[1];
-	return { context, info, state, fetch, target, token, serve, restored };
+	return {
+		context,
+		info,
+		state,
+		fetch,
+		target,
+		token,
+		serve,
+		checkRecovery,
+		restored,
+	};
 }
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("owned native recovery after a codec fallback", () => {
+	it("retains owned recovery when no codec handoff was required", async () => {
+		const { serve, restored, token } = setup(false);
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		expect(restored()).toMatchObject({
+			requiresReload: true,
+			refreshAccessToken: false,
+		});
+		expect(token).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"unacknowledged",
+		"wrong-acknowledgment",
+		"failed",
+		"superseded",
+		"other-media",
+		"old-cycle",
+		"enhanced-decoder",
+	])(
+		"keeps the clean bridge while the codec handoff is %s",
+		async (failure) => {
+			const { info, state, target, checkRecovery, restored } = setup();
+			if (failure === "unacknowledged") info._CodecHandoffAcknowledgedId = null;
+			if (failure === "wrong-acknowledgment")
+				info._CodecHandoffAcknowledgedId = "other";
+			if (failure === "failed")
+				info._CodecHandoffFailedId = info._CodecHandoffPendingId;
+			if (failure === "superseded") state.ActiveCodecHandoffId = "other";
+			if (failure === "other-media")
+				state.ActiveCodecHandoffMediaKey = "live:otherchannel";
+			if (failure === "old-cycle") {
+				info._CodecHandoffPendingId = info._CodecHandoffPendingId.replace(
+					":100000:",
+					":99999:",
+				);
+				info._CodecHandoffAcknowledgedId = info._CodecHandoffPendingId;
+				state.ActiveCodecHandoffId = info._CodecHandoffPendingId;
+			}
+			if (failure === "enhanced-decoder")
+				info.EnhancedDecoderCodecFamily = "hevc";
+			for (let index = 0; index < 30; index++)
+				expect(await checkRecovery()).toBe("wait");
+			expect(target).not.toHaveBeenCalled();
+			expect(restored()).toBeUndefined();
+			expect(info.IsHoldingBackupAfterAd).toBe(true);
+		},
+	);
+
 	it.each([
 		{ disabled: false, pod: "incomplete" },
 		{ disabled: true, pod: "incomplete" },
@@ -453,10 +541,13 @@ describe("owned native recovery after a codec fallback", () => {
 		"route",
 		"generation",
 		"replacement",
+		"handoff",
+		"acknowledgment",
+		"decoder",
 	])(
 		"discards native readiness when %s ownership changes during a probe",
 		async (change) => {
-			const { info, state, target, serve, restored } = setup();
+			const { info, state, target, serve, checkRecovery, restored } = setup();
 			for (let index = 0; index < 25 && target.mock.calls.length < 3; index++)
 				await serve();
 			let release: (response: Response) => void;
@@ -471,7 +562,9 @@ describe("owned native recovery after a codec fallback", () => {
 						entered();
 					}),
 			);
-			const pending = serve().catch((error: Error) => error);
+			const pending = (change === "decoder" ? checkRecovery() : serve()).catch(
+				(error: Error) => error,
+			);
 			await started;
 			if (change === "master")
 				info.EncodingsM3U8 = master.replaceAll(
@@ -485,8 +578,12 @@ describe("owned native recovery after a codec fallback", () => {
 			if (change === "generation") state.PagePlaybackContextGeneration = 1;
 			if (change === "replacement")
 				state.StreamInfos[info.MediaKey] = { ...info };
+			if (change === "handoff") state.ActiveCodecHandoffId = "replacement";
+			if (change === "acknowledgment") info._CodecHandoffAcknowledgedId = null;
+			if (change === "decoder") info.EnhancedDecoderCodecFamily = "hevc";
 			release(new Response(playlist(1004, "hevc")));
-			await pending;
+			const result = await pending;
+			if (change === "decoder") expect(result).toBe("wait");
 			expect(restored()).toBeUndefined();
 			expect(info._PendingPostAdNativeMaster).toBeNull();
 		},
