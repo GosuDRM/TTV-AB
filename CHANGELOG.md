@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.5.7] - 2026-09-11
+
+Fixed
+
+- **Worker Recovery Loops** - Stopped repeated player reloads after Twitch's playback worker crashes or stops. The existing Refresh tab prompt remains available when recovery cannot restart playback ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Channel Banner Recovery** - Prevented unrelated worker failures from restarting healthy banner VODs or recommended live streams ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+
+The reported full-tab freeze remains under investigation.
+
 ## [17.5.6] - 2026-09-10
 
 Fixed
