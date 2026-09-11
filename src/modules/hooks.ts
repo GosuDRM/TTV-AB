@@ -815,11 +815,25 @@ function _hookWorkerFetch() {
 	};
 	const observedPlaybackMediaKeys = new Map();
 	const requestedMediaBootstrapRecoveryCycles = new Set();
+	const isPlaybackObservationCurrent = (owner) =>
+		Boolean(
+			owner &&
+				!owner.signal?.aborted &&
+				owner.pageMediaKey ===
+					_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) &&
+				owner.pageContextGeneration ===
+					Math.max(
+						0,
+						Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+					),
+		);
 	const reportPlaybackWorkerObserved = (
 		context,
 		playlistUrl = null,
 		codec = null,
+		requestOwner = null,
 	) => {
+		if (!isPlaybackObservationCurrent(requestOwner)) return false;
 		const observedContext = _normalizePlaybackContext(context);
 		if (!observedContext.MediaKey) return false;
 		const observedPlaylistUrl =
@@ -833,7 +847,7 @@ function _hookWorkerFetch() {
 			_getVideoCodecFamily(context?.EnhancedDecoderCodecFamily) ||
 			null;
 		const observedHandoffId = _getActiveCodecHandoffIdForInfo(context);
-		const observationKey = `${observedContext.MediaKey}|${observedPlaylistUrl || "context"}|${observedCodec || "unknown"}|${observedDecoderCodec || "native"}|${observedHandoffId || "settled"}`;
+		const observationKey = `${requestOwner.pageMediaKey}|${requestOwner.pageContextGeneration}|${observedContext.MediaKey}|${observedPlaylistUrl || "context"}|${observedCodec || "unknown"}|${observedDecoderCodec || "native"}|${observedHandoffId || "settled"}`;
 		const now = Date.now();
 		const lastObservedAt = Math.max(
 			0,
@@ -853,6 +867,8 @@ function _hookWorkerFetch() {
 					channel: observedContext.ChannelName,
 					vodID: observedContext.VodID,
 					mediaKey: observedContext.MediaKey,
+					pageMediaKey: requestOwner.pageMediaKey,
+					pageContextGeneration: requestOwner.pageContextGeneration,
 					playlistUrl: observedPlaylistUrl,
 					codec: observedCodec,
 					decoderCodec: observedDecoderCodec,
@@ -873,7 +889,8 @@ function _hookWorkerFetch() {
 		}
 		return true;
 	};
-	const reportPlaybackWorkerBootstrapObserved = (context) => {
+	const reportPlaybackWorkerBootstrapObserved = (context, requestOwner) => {
+		if (!isPlaybackObservationCurrent(requestOwner)) return false;
 		const observedContext = _normalizePlaybackContext(context);
 		if (!observedContext.MediaKey) return false;
 		if (typeof self !== "undefined" && self.postMessage) {
@@ -884,6 +901,8 @@ function _hookWorkerFetch() {
 					channel: observedContext.ChannelName,
 					vodID: observedContext.VodID,
 					mediaKey: observedContext.MediaKey,
+					pageMediaKey: requestOwner.pageMediaKey,
+					pageContextGeneration: requestOwner.pageContextGeneration,
 				});
 				return true;
 			} catch {}
@@ -1377,6 +1396,18 @@ function _hookWorkerFetch() {
 			}
 
 			let url = requestUrl.trimEnd();
+			const playbackRequestOwner = {
+				pageMediaKey: _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey),
+				pageContextGeneration: Math.max(
+					0,
+					Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+				),
+				signal:
+					opts?.signal ||
+					(typeof Request !== "undefined" && resource instanceof Request
+						? resource.signal
+						: null),
+			};
 
 			const shouldBlockAdSegments =
 				__TTVAB_STATE__.IsAdStrippingEnabled === true;
@@ -1453,7 +1484,12 @@ function _hookWorkerFetch() {
 				) {
 					const response = await realFetch(_EMPTY_SEGMENT_URL);
 					if (response?.ok && segmentInfo?.MediaKey) {
-						reportPlaybackWorkerObserved(segmentInfo);
+						reportPlaybackWorkerObserved(
+							segmentInfo,
+							null,
+							null,
+							playbackRequestOwner,
+						);
 					}
 					return response;
 				}
@@ -1609,7 +1645,10 @@ function _hookWorkerFetch() {
 										`[Trace] Exact Previews master recovered with validated clean ${fallback.type}`,
 										"success",
 									);
-									reportPlaybackWorkerBootstrapObserved(playbackContext);
+									reportPlaybackWorkerBootstrapObserved(
+										playbackContext,
+										playbackRequestOwner,
+									);
 									return new Response(fallback.master, {
 										status: 200,
 										headers: {
@@ -1659,7 +1698,10 @@ function _hookWorkerFetch() {
 						"[Trace] Reusing verified native playlist session for post-ad decoder rebuild",
 						"success",
 					);
-					reportPlaybackWorkerBootstrapObserved(playbackContext);
+					reportPlaybackWorkerBootstrapObserved(
+						playbackContext,
+						playbackRequestOwner,
+					);
 					return new Response(
 						_replaceServerTime(pendingPostAdNativeMaster, serverTime),
 						getResponseInit(response),
@@ -1705,7 +1747,10 @@ function _hookWorkerFetch() {
 						info.IsUsingModifiedM3U8 || keepExactPreviewOnAvc
 							? info.ModifiedM3U8
 							: info.EncodingsM3U8;
-					reportPlaybackWorkerBootstrapObserved(playbackContext);
+					reportPlaybackWorkerBootstrapObserved(
+						playbackContext,
+						playbackRequestOwner,
+					);
 					return new Response(
 						_replaceServerTime(playlist, serverTime),
 						getResponseInit(response),
@@ -1732,7 +1777,10 @@ function _hookWorkerFetch() {
 							filteredMaster !== encodings &&
 							filteredMaster.includes("#EXT-X-STREAM-INF")
 						) {
-							reportPlaybackWorkerBootstrapObserved(playbackContext);
+							reportPlaybackWorkerBootstrapObserved(
+								playbackContext,
+								playbackRequestOwner,
+							);
 							return new Response(
 								_replaceServerTime(filteredMaster, serverTime),
 								getResponseInit(response),
@@ -1745,7 +1793,10 @@ function _hookWorkerFetch() {
 								: null);
 						throw _createCodecHandoffAbortError(masterRequestSignal);
 					}
-					reportPlaybackWorkerBootstrapObserved(playbackContext);
+					reportPlaybackWorkerBootstrapObserved(
+						playbackContext,
+						playbackRequestOwner,
+					);
 					return new Response(encodings, getResponseInit(response));
 				}
 			}
@@ -1830,6 +1881,14 @@ function _hookWorkerFetch() {
 					),
 				);
 				if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
+					if (response.status === 200 && requestStartInfo) {
+						reportPlaybackWorkerObserved(
+							requestStartInfo,
+							url,
+							requestStartCodecs,
+							playbackRequestOwner,
+						);
+					}
 					return response;
 				}
 				if (response.status === 200) {
@@ -1847,6 +1906,7 @@ function _hookWorkerFetch() {
 								successfulInfo,
 								url,
 								successfulCodecs,
+								playbackRequestOwner,
 							);
 						}
 					};
@@ -2046,7 +2106,12 @@ function _hookWorkerFetch() {
 
 			const response = await realFetch.apply(this, args);
 			if (response?.ok && segmentInfo?.MediaKey) {
-				reportPlaybackWorkerObserved(segmentInfo);
+				reportPlaybackWorkerObserved(
+					segmentInfo,
+					null,
+					null,
+					playbackRequestOwner,
+				);
 			}
 			return response;
 		} catch (e) {
@@ -2206,6 +2271,55 @@ function _getWorkerRecoveryContextKey(context) {
 	return "unknown";
 }
 
+function _isWorkerCurrentPlayerMedia(worker, mediaKey) {
+	if (
+		typeof _getPlayerAndState !== "function" ||
+		typeof _getPlayerCore !== "function"
+	)
+		return false;
+	try {
+		const { player, state } = _getPlayerAndState();
+		if (_getPlayerCore(player)?.worker !== worker) return false;
+		const content = state?.props?.content;
+		const context = _normalizePlaybackContext({
+			MediaType: content?.type,
+			ChannelName: content?.channelLogin,
+			VodID: content?.vodID,
+		});
+		return Boolean(mediaKey && context.MediaKey === mediaKey);
+	} catch {
+		return false;
+	}
+}
+
+function _getWorkerObservedPageContext(
+	worker,
+	data,
+	observedContext,
+	workerContext,
+) {
+	const pageMediaKey = _normalizeMediaKey(data?.pageMediaKey);
+	const pageContextGeneration = Number(data?.pageContextGeneration);
+	if (
+		!observedContext.MediaKey ||
+		!pageMediaKey ||
+		pageMediaKey !== workerContext.MediaKey ||
+		pageMediaKey !== _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
+		pageMediaKey !==
+			_getPlaybackContextFromUrl(window.location.href).MediaKey ||
+		!Number.isFinite(pageContextGeneration) ||
+		pageContextGeneration !==
+			Math.max(0, Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) ||
+		!_isWorkerCurrentPlayerMedia(worker, observedContext.MediaKey)
+	)
+		return null;
+	return {
+		pageMediaKey,
+		pageContextGeneration,
+		mediaKey: observedContext.MediaKey,
+	};
+}
+
 function _rememberWorkerPageContext(worker, context) {
 	if (!worker) return _normalizePlaybackContext(context);
 	const normalizedContext = _normalizePlaybackContext(context);
@@ -2214,6 +2328,7 @@ function _rememberWorkerPageContext(worker, context) {
 		previousMediaKey &&
 		previousMediaKey !== _normalizeMediaKey(normalizedContext.MediaKey)
 	) {
+		worker.__TTVABPlaybackPageContext = null;
 		worker.__TTVABPlaybackObservedAtByMediaKey?.delete?.(previousMediaKey);
 		worker.__TTVABPlaybackBootstrapObservedAtByMediaKey?.delete?.(
 			previousMediaKey,
@@ -2331,15 +2446,32 @@ function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
 	state.phase = "idle";
 }
 
-function _getWorkerPlaybackObservationAt(worker, context) {
-	const mediaKey = _normalizeMediaKey(
+function _getWorkerPlaybackObservationAt(worker, context, bootstrap = false) {
+	let mediaKey = _normalizeMediaKey(
 		_normalizePlaybackContext(context).MediaKey,
 	);
 	if (!mediaKey) return 0;
-	return Math.max(
-		0,
-		Number(worker?.__TTVABPlaybackObservedAtByMediaKey?.get?.(mediaKey)) || 0,
-	);
+	const pageContext = worker?.__TTVABPlaybackPageContext;
+	if (pageContext?.pageMediaKey === mediaKey) {
+		if (
+			pageContext.pageMediaKey !==
+				_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) ||
+			pageContext.pageMediaKey !==
+				_getPlaybackContextFromUrl(window.location.href).MediaKey ||
+			pageContext.pageContextGeneration !==
+				Math.max(
+					0,
+					Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+				) ||
+			!_isWorkerCurrentPlayerMedia(worker, pageContext.mediaKey)
+		)
+			return 0;
+		mediaKey = pageContext.mediaKey;
+	}
+	const observations = bootstrap
+		? worker?.__TTVABPlaybackBootstrapObservedAtByMediaKey
+		: worker?.__TTVABPlaybackObservedAtByMediaKey;
+	return Math.max(0, Number(observations?.get?.(mediaKey)) || 0);
 }
 
 function _isWorkerHeartbeatHealthy(
@@ -2883,14 +3015,7 @@ function _scheduleTerminatedPlaybackWorkerRecovery(
 	const terminatedWorkerObservedPlayback =
 		_getWorkerPlaybackObservationAt(worker, recoveryContext) > 0;
 	const terminatedWorkerObservedBootstrap =
-		Math.max(
-			0,
-			Number(
-				worker?.__TTVABPlaybackBootstrapObservedAtByMediaKey?.get?.(
-					recoveryContext.MediaKey,
-				),
-			) || 0,
-		) > 0;
+		_getWorkerPlaybackObservationAt(worker, recoveryContext, true) > 0;
 	if (!recoveryContext.MediaKey) return false;
 	const currentContext = _getPlaybackContextFromUrl(window.location.href);
 	const contextIsCurrent = !_isPlaybackContextMismatch(
@@ -3207,14 +3332,7 @@ function _recoverCrashedWorker(
 	const crashedWorkerObservedPlayback =
 		_getWorkerPlaybackObservationAt(worker, recoveryContext) > 0;
 	const crashedWorkerObservedBootstrap =
-		Math.max(
-			0,
-			Number(
-				worker?.__TTVABPlaybackBootstrapObservedAtByMediaKey?.get?.(
-					recoveryContext.MediaKey,
-				),
-			) || 0,
-		) > 0;
+		_getWorkerPlaybackObservationAt(worker, recoveryContext, true) > 0;
 	const crashedWorkerMayOwnPlayback = Boolean(
 		crashedWorkerObservedPlayback || crashedWorkerObservedBootstrap,
 	);
@@ -5716,6 +5834,28 @@ function _hookWorker() {
 						}
 					}
 
+					if (
+						(data.key === "PlaybackWorkerObserved" ||
+							data.key === "PlaybackWorkerBootstrapObserved") &&
+						data.pageContextGeneration !== undefined &&
+						!(
+							typeof _isActivePictureInPicturePlaybackContext === "function" &&
+							_isActivePictureInPicturePlaybackContext(
+								normalizeMessagePlaybackContext(data),
+							)
+						) &&
+						(data.pageContextGeneration !==
+							Math.max(
+								0,
+								Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+							) ||
+							_normalizeMediaKey(data.pageMediaKey) !==
+								getCurrentPageContext().MediaKey ||
+							_normalizeMediaKey(data.pageMediaKey) !==
+								_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey))
+					)
+						return;
+
 					switch (data.key) {
 						case "CancelFetchRequest": {
 							const requestValue = data.value as PlainObject | null;
@@ -5757,11 +5897,24 @@ function _hookWorker() {
 										"function" &&
 									_isActivePictureInPicturePlaybackContext(observedContext),
 							);
+							const observedPageContext =
+								!observationMatchesWorkerContext && !observationMatchesActivePip
+									? _getWorkerObservedPageContext(
+											this,
+											data,
+											observedContext,
+											workerContext,
+										)
+									: null;
 							if (
 								!observationMatchesWorkerContext &&
-								!observationMatchesActivePip
+								!observationMatchesActivePip &&
+								!observedPageContext
 							) {
 								break;
+							}
+							if (observedPageContext || observationMatchesWorkerContext) {
+								this.__TTVABPlaybackPageContext = observedPageContext;
 							}
 							_promoteTrackedWorker(this);
 							_rememberPageSidePlaybackOwner(
@@ -5808,6 +5961,10 @@ function _hookWorker() {
 							}
 							_promoteWorkerPlaybackOwner(this, Date.now(), observedContext);
 							_beginExhaustedWorkerRecoveryStabilization(this, observedContext);
+							if (observedPageContext) {
+								_promoteWorkerPlaybackOwner(this, Date.now(), workerContext);
+								_beginExhaustedWorkerRecoveryStabilization(this, workerContext);
+							}
 							break;
 						}
 						case "PostAdNativeReloadReady": {
@@ -5851,10 +6008,19 @@ function _hookWorker() {
 								this,
 								pagePlaybackContext,
 							);
-							if (
-								!observedContext.MediaKey ||
-								_isPlaybackContextMismatch(workerContext, observedContext)
-							) {
+							const observationMatchesWorkerContext = Boolean(
+								observedContext.MediaKey &&
+									!_isPlaybackContextMismatch(workerContext, observedContext),
+							);
+							const observedPageContext = !observationMatchesWorkerContext
+								? _getWorkerObservedPageContext(
+										this,
+										data,
+										observedContext,
+										workerContext,
+									)
+								: null;
+							if (!observationMatchesWorkerContext && !observedPageContext) {
 								break;
 							}
 							if (
@@ -5884,7 +6050,10 @@ function _hookWorker() {
 									oldestMediaKey,
 								);
 							}
-							_rememberWorkerPageContext(this, observedContext);
+							this.__TTVABPlaybackPageContext = observedPageContext;
+							if (observationMatchesWorkerContext) {
+								_rememberWorkerPageContext(this, observedContext);
+							}
 							break;
 						}
 						case "FetchRequest":

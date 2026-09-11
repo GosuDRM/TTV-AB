@@ -1996,6 +1996,30 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 		vi.useRealTimers();
 	});
 
+	it.each([false, true])(
+		"leaves a known dead worker to bounded worker recovery (hidden=%s)",
+		(isHidden) => {
+			hidden = isHidden;
+			T<() => void>("_resetPostAdRecoveryTransaction")();
+			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd =
+				false;
+			g._getPlayerCore = () => ({ worker: { __TTVABCrashed: true } });
+			T<() => void>("_monitorPlayerBuffering")();
+			vi.advanceTimersByTime(180000);
+			expect(tasks).toEqual([]);
+			if (!isHidden) {
+				g._getPlayerCore = () => ({ worker: { __TTVABGeneration: 2 } });
+				vi.advanceTimersByTime(10000);
+				expect(tasks).toContainEqual(
+					expect.objectContaining({
+						reason: "buffer-recovery",
+						isReload: true,
+					}),
+				);
+			}
+		},
+	);
+
 	it("keeps an ended all-zero replacement in bounded ad recovery", () => {
 		T<() => void>("_monitorPlayerBuffering")();
 		vi.advanceTimersByTime(10800);

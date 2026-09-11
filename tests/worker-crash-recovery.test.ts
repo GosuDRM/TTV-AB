@@ -52,6 +52,10 @@ describe("crashed worker recovery with the real player task", () => {
 	};
 	let worker: Record<string, unknown>;
 	let setSrc: ReturnType<typeof vi.fn>;
+	let player: {
+		core: { worker: Record<string, unknown> };
+		getHTMLVideoElement: () => null;
+	};
 	let refresh: ReturnType<typeof vi.spyOn>;
 
 	beforeEach(() => {
@@ -90,7 +94,7 @@ describe("crashed worker recovery with the real player task", () => {
 		T<() => void>("_clearActivePictureInPicturePlaybackContext")();
 		T<() => void>("_resetPostAdRecoveryTransaction")();
 		setSrc = vi.fn(async () => "success");
-		const player = { core: { worker }, getHTMLVideoElement: () => null };
+		player = { core: { worker }, getHTMLVideoElement: () => null };
 		vi.spyOn(g, "_getPlayerAndState").mockReturnValue({
 			player,
 			state: { props: { mediaPlayerInstance: player }, setSrc },
@@ -139,6 +143,63 @@ describe("crashed worker recovery with the real player task", () => {
 		vi.advanceTimersByTime(120000);
 		expect(setSrc).not.toHaveBeenCalled();
 		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it.each(["buffer-recovery", "ad-recovery", "manual"])(
+		"rejects %s source loads after worker recovery exhausts",
+		(reason) => {
+			exhaust();
+			for (let attempt = 0; attempt < 12; attempt++) {
+				expect(
+					T<(pause: boolean, reload: boolean, options: unknown) => boolean>(
+						"_doPlayerTask",
+					)(false, true, { reason }),
+				).toBe(false);
+				vi.advanceTimersByTime(15000);
+			}
+			expect(setSrc).not.toHaveBeenCalled();
+			expect(refresh).not.toHaveBeenCalled();
+			expect(
+				T<(key: string) => number>("_getPlayerReloadAtForMediaKey")(
+					context.MediaKey,
+				),
+			).toBe(0);
+		},
+	);
+
+	it("rejects buffer recovery during the terminated-worker replacement grace period", () => {
+		worker.__TTVABIntentionallyTerminated = true;
+		expect(
+			T<(pause: boolean, reload: boolean, options: unknown) => boolean>(
+				"_doPlayerTask",
+			)(false, true, { reason: "buffer-recovery" }),
+		).toBe(false);
+		expect(setSrc).not.toHaveBeenCalled();
+	});
+
+	it("does not pause and resume a dead core as an alternative recovery", () => {
+		worker.__TTVABCrashed = true;
+		const pause = vi.spyOn(g, "_pausePlaybackTarget").mockReturnValue(true);
+		const play = vi.spyOn(g, "_playPlaybackTarget").mockReturnValue(true);
+		expect(
+			T<(pause: boolean, reload: boolean, options: unknown) => boolean>(
+				"_doPlayerTask",
+			)(true, false, { reason: "buffer-recovery" }),
+		).toBe(false);
+		vi.advanceTimersByTime(1000);
+		expect(pause).not.toHaveBeenCalled();
+		expect(play).not.toHaveBeenCalled();
+	});
+
+	it("allows buffer repair on a replacement core even after the old worker exhausted recovery", () => {
+		exhaust();
+		player.core.worker = { __TTVABGeneration: 2 };
+		expect(
+			T<(pause: boolean, reload: boolean, options: unknown) => boolean>(
+				"_doPlayerTask",
+			)(false, true, { reason: "buffer-recovery" }),
+		).toBe(true);
+		expect(setSrc).toHaveBeenCalledOnce();
 	});
 
 	it("refreshes only after an explicit click for the still-exhausted current page", () => {
