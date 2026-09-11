@@ -4301,6 +4301,211 @@ describe("worker recovery lifecycle", () => {
 		expect(getHealthyOwner(context, null, 200000, 0, false)).toBe(newerOwner);
 	});
 
+	it.each([
+		["VOD", "vod:123456789", { type: "vod", vodID: "123456789" }],
+		[
+			"recommended live stream",
+			"live:featuredchannel",
+			{ type: "live", channelLogin: "featuredchannel" },
+		],
+	])(
+		"keeps a channel-banner %s worker healthy when an auxiliary worker crashes",
+		(_label, mediaKey, content) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.PagePlaybackContextGeneration = 7;
+			const harness = installWorkerMessageHarness();
+			const player = { core: { worker: harness.worker } };
+			vi.stubGlobal("_getPlayerAndState", () => ({
+				player,
+				state: { props: { content } },
+			}));
+			vi.stubGlobal("_getPlayerCore", (value: typeof player) => value?.core);
+			const playerTask = vi.fn(() => false);
+			g._doPlayerTask = playerTask;
+			try {
+				emitHarnessWorkerPong(harness.worker);
+				for (const key of [
+					"PlaybackWorkerBootstrapObserved",
+					"PlaybackWorkerObserved",
+				]) {
+					harness.worker.emitMessage({
+						key,
+						mediaKey,
+						pageMediaKey: "live:testchannel",
+						pageContextGeneration: 7,
+					});
+				}
+				const observedWorker = harness.worker as unknown as Record<
+					string,
+					unknown
+				>;
+				expect(
+					(
+						observedWorker.__TTVABPlaybackObservedAtByMediaKey as Map<
+							string,
+							number
+						>
+					)?.has(mediaKey as string),
+				).toBe(true);
+				expect(
+					(
+						observedWorker.__TTVABPlaybackBootstrapObservedAtByMediaKey as Map<
+							string,
+							number
+						>
+					)?.has(mediaKey as string),
+				).toBe(true);
+				expect(observedWorker.__TTVABPageMediaKey).toBe("live:testchannel");
+				const auxiliary = harness.createWorker();
+				expect(
+					T<(worker: unknown, context: unknown, message: string) => boolean>(
+						"_recoverCrashedWorker",
+					)(auxiliary, {}, "Auxiliary worker crashed"),
+				).toBe(true);
+				vi.advanceTimersByTime(10000);
+				expect(playerTask).not.toHaveBeenCalled();
+				expect((g._WorkerRecoveryStates as Map<string, unknown>).size).toBe(0);
+				expect(
+					(
+						g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>
+					).get("live:testchannel"),
+				).toBe(observedWorker.__TTVABGeneration);
+			} finally {
+				harness.restore();
+				vi.unstubAllGlobals();
+			}
+		},
+	);
+
+	it.each([
+		"missing page owner",
+		"stale page owner",
+		"old generation",
+		"different player",
+		"different media",
+	])("rejects channel-banner worker observations with %s", (failure) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PagePlaybackContextGeneration = 7;
+		const harness = installWorkerMessageHarness();
+		const player = {
+			core: { worker: failure === "different player" ? {} : harness.worker },
+		};
+		vi.stubGlobal("_getPlayerAndState", () => ({
+			player,
+			state: {
+				props: {
+					content: {
+						type: "vod",
+						vodID: failure === "different media" ? "987654321" : "123456789",
+					},
+				},
+			},
+		}));
+		vi.stubGlobal("_getPlayerCore", (value: typeof player) => value?.core);
+		try {
+			for (const key of [
+				"PlaybackWorkerBootstrapObserved",
+				"PlaybackWorkerObserved",
+			]) {
+				harness.worker.emitMessage({
+					key,
+					mediaKey: "vod:123456789",
+					pageMediaKey:
+						failure === "missing page owner"
+							? undefined
+							: failure === "stale page owner"
+								? "live:otherchannel"
+								: "live:testchannel",
+					pageContextGeneration: failure === "old generation" ? 6 : 7,
+				});
+			}
+			const worker = harness.worker as unknown as Record<string, unknown>;
+			expect(
+				(
+					worker.__TTVABPlaybackObservedAtByMediaKey as Map<string, number>
+				)?.has("vod:123456789"),
+			).not.toBe(true);
+			expect(
+				(
+					worker.__TTVABPlaybackBootstrapObservedAtByMediaKey as Map<
+						string,
+						number
+					>
+				)?.has("vod:123456789"),
+			).not.toBe(true);
+			expect(
+				(g._WorkerPlaybackOwnerGenerationByContext as Map<string, number>).size,
+			).toBe(0);
+		} finally {
+			harness.restore();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("fences queued observations across page generations while retaining exact PiP playback", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PagePlaybackContextGeneration = 7;
+		const harness = installWorkerMessageHarness();
+		const message = {
+			mediaKey: "live:testchannel",
+			pageMediaKey: "live:testchannel",
+			pageContextGeneration: 6,
+		};
+		try {
+			for (const key of [
+				"PlaybackWorkerBootstrapObserved",
+				"PlaybackWorkerObserved",
+			])
+				harness.worker.emitMessage({ key, ...message });
+			const worker = harness.worker as unknown as Record<string, unknown>;
+			expect(worker.__TTVABPlaybackObservedAtByMediaKey).toBeUndefined();
+			expect(
+				worker.__TTVABPlaybackBootstrapObservedAtByMediaKey,
+			).toBeUndefined();
+			harness.worker.emitMessage({
+				...message,
+				key: "PlaybackWorkerObserved",
+				pageContextGeneration: 7,
+			});
+			expect(
+				T<(worker: unknown, context: unknown) => number>(
+					"_getWorkerPlaybackObservationAt",
+				)(worker, { MediaKey: "live:testchannel" }),
+			).toBe(100000);
+			window.history.replaceState(null, "", "/otherchannel");
+			Object.assign(state, {
+				PageChannel: "otherchannel",
+				PageMediaKey: "live:otherchannel",
+				PagePlaybackContextGeneration: 8,
+			});
+			vi.stubGlobal(
+				"_isActivePictureInPicturePlaybackContext",
+				(context: { MediaKey: string }) =>
+					context.MediaKey === "live:testchannel",
+			);
+			vi.advanceTimersByTime(1000);
+			harness.worker.emitMessage({
+				...message,
+				key: "PlaybackWorkerObserved",
+				pageContextGeneration: 7,
+			});
+			expect(
+				T<(worker: unknown, context: unknown) => number>(
+					"_getWorkerPlaybackObservationAt",
+				)(worker, { MediaKey: "live:testchannel" }),
+			).toBe(101000);
+		} finally {
+			harness.restore();
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it("ignores an unobserved auxiliary crash while a paused VOD owner is healthy", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(200000);
@@ -8538,6 +8743,180 @@ describe("worker mixed-codec master selection", () => {
 				expect(nativeFetch).toHaveBeenCalledOnce();
 			} finally {
 				harness.restore();
+			}
+		},
+	);
+
+	it.each([
+		[
+			"VOD",
+			true,
+			"vod:123456789",
+			"https://usher.ttvnw.net/vod/v2/123456789.m3u8",
+			{ type: "vod", vodID: "123456789" },
+		],
+		[
+			"VOD",
+			false,
+			"vod:123456789",
+			"https://usher.ttvnw.net/vod/v2/123456789.m3u8",
+			{ type: "vod", vodID: "123456789" },
+		],
+		[
+			"live",
+			true,
+			"live:featuredchannel",
+			"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8",
+			{ type: "live", channelLogin: "featuredchannel" },
+		],
+		[
+			"live",
+			false,
+			"live:featuredchannel",
+			"https://usher.ttvnw.net/api/channel/hls/featuredchannel.m3u8",
+			{ type: "live", channelLogin: "featuredchannel" },
+		],
+	])(
+		"carries actual banner %s ownership through the serialized worker (blocking=%s)",
+		async (_label, enabled, mediaKey, masterUrl, content) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.PagePlaybackContextGeneration = 7;
+			state.IsAdStrippingEnabled = enabled;
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const player = { core: { worker: harness.worker } };
+			vi.stubGlobal("_getPlayerAndState", () => ({
+				player,
+				state: { props: { content } },
+			}));
+			vi.stubGlobal("_getPlayerCore", (value: typeof player) => value?.core);
+			const mediaUrl = "https://edge.example/banner/index.m3u8";
+			const master = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1280x720,CODECS="avc1.4D401F,mp4a.40.2"',
+				mediaUrl,
+			].join("\n");
+			const media = [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				"#EXT-X-MEDIA-SEQUENCE:100",
+				"#EXTINF:2,",
+				"https://edge.example/banner/100.ts",
+			].join("\n");
+			const nativeFetch = vi.fn(
+				async (url: unknown) =>
+					new Response(String(url) === masterUrl ? master : media),
+			);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+				runtime.deliverBootstrap();
+				const workerFetch = runtime.scope.fetch as typeof fetch;
+				await workerFetch(masterUrl as string);
+				await workerFetch(mediaUrl);
+				const decode = T<(message: unknown) => Record<string, unknown>>(
+					"_getWorkerBridgeMessage",
+				);
+				const observations = (
+					runtime.scope.postMessage as ReturnType<typeof vi.fn>
+				).mock.calls
+					.map(([message]) => decode(message))
+					.filter(
+						(message) =>
+							message?.key === "PlaybackWorkerObserved" ||
+							message?.key === "PlaybackWorkerBootstrapObserved",
+					);
+				expect(observations.map(({ key }) => key)).toEqual([
+					"PlaybackWorkerBootstrapObserved",
+					"PlaybackWorkerObserved",
+				]);
+				emitHarnessWorkerPong(harness.worker);
+				for (const message of observations) {
+					expect(message).toMatchObject({
+						mediaKey,
+						pageMediaKey: "live:testchannel",
+						pageContextGeneration: state.PagePlaybackContextGeneration,
+					});
+					harness.worker.emitMessage(message);
+				}
+				expect(
+					T<(worker: unknown, context: unknown) => number>(
+						"_getWorkerPlaybackObservationAt",
+					)(harness.worker, { MediaKey: "live:testchannel" }),
+				).toBe(100000);
+				expect(nativeFetch).toHaveBeenCalledTimes(2);
+				state.PagePlaybackContextGeneration =
+					Number(state.PagePlaybackContextGeneration) + 1;
+				expect(
+					T<(worker: unknown, context: unknown) => number>(
+						"_getWorkerPlaybackObservationAt",
+					)(harness.worker, { MediaKey: "live:testchannel" }),
+				).toBe(0);
+			} finally {
+				harness.restore();
+				vi.unstubAllGlobals();
+			}
+		},
+	);
+
+	it.each(["navigation", "generation", "abort"])(
+		"does not rebind a delayed segment observation after %s",
+		async (change) => {
+			const originalFetch = g.fetch;
+			const originalReport = g._postWorkerBridgeMessage;
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			const url = "https://edge.example/native/100.ts";
+			Object.assign(state, {
+				PageMediaKey: "live:testchannel",
+				PagePlaybackContextGeneration: 7,
+				StreamInfos: {
+					"live:testchannel": {
+						MediaKey: "live:testchannel",
+						MediaType: "live",
+						ChannelName: "testchannel",
+					},
+				},
+				SegmentCodecOwners: new Map([
+					[url, { mediaKey: "live:testchannel", codecFamily: "avc" }],
+				]),
+			});
+			let resolveResponse: (response: Response) => void = () => {};
+			const nativeFetch = vi.fn(
+				() =>
+					new Promise<Response>((resolve) => {
+						resolveResponse = resolve;
+					}),
+			);
+			const report = vi.fn();
+			g.fetch = nativeFetch;
+			g._postWorkerBridgeMessage = report;
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				const controller = new AbortController();
+				const pending = (g.fetch as typeof fetch)(
+					new Request(url, { signal: controller.signal }),
+				);
+				if (change === "navigation") state.PageMediaKey = "live:otherchannel";
+				if (change === "generation") state.PagePlaybackContextGeneration = 8;
+				if (change === "abort") controller.abort();
+				resolveResponse(new Response("native-segment"));
+				expect(await (await pending).text()).toBe("native-segment");
+				expect(report).not.toHaveBeenCalled();
+				nativeFetch.mockResolvedValueOnce(new Response("current-segment"));
+				await (g.fetch as typeof fetch)(url);
+				expect(report).toHaveBeenCalledOnce();
+				expect(report.mock.calls[0]?.[1]).toMatchObject({
+					key: "PlaybackWorkerObserved",
+					pageMediaKey: state.PageMediaKey,
+					pageContextGeneration: state.PagePlaybackContextGeneration,
+				});
+			} finally {
+				g.fetch = originalFetch;
+				g._postWorkerBridgeMessage = originalReport;
 			}
 		},
 	);

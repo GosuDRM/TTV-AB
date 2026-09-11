@@ -651,6 +651,14 @@ function _getPlayerCore(player) {
 	return player?.playerInstance?.core || player?.core || null;
 }
 
+function _isPlayerWorkerUnavailable(player) {
+	const worker = _getPlayerCore(player)?.worker;
+	return Boolean(
+		worker?.__TTVABCrashed === true ||
+			worker?.__TTVABIntentionallyTerminated === true,
+	);
+}
+
 let _loggedReactRootSearchFailure = false;
 
 function _findReactRoot() {
@@ -5324,6 +5332,19 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 	}
 
 	const playerCore = _getPlayerCore(player);
+	if (
+		!isPipTask &&
+		(isPausePlay || isReload) &&
+		_isPlayerWorkerUnavailable(player)
+	) {
+		if (reason === "worker-recovery") {
+			_log(
+				"Cannot restart the crashed player worker with a source reload; a tab refresh is required",
+				"warning",
+			);
+		}
+		return false;
+	}
 	const handoffId =
 		reason === "codec-handoff" &&
 		typeof options.handoffId === "string" &&
@@ -5517,16 +5538,6 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 
 	if (isReload) {
 		const isAdRecoveryReload = reason === "ad-recovery";
-		if (
-			reason === "worker-recovery" &&
-			playerCore?.worker?.__TTVABCrashed === true
-		) {
-			_log(
-				"Cannot restart the crashed player worker with a source reload; a tab refresh is required",
-				"warning",
-			);
-			return false;
-		}
 		const isPlaybackRecoveryReload =
 			isAdRecoveryReload || reason === "buffer-recovery";
 		const now = Date.now();
@@ -6787,6 +6798,13 @@ function _monitorPlayerBuffering() {
 				};
 			}
 			_suppressCompetingMediaDuringAd(activeAdChannel, activeAdMediaKey);
+			if (_isPlayerWorkerUnavailable(pinPlayer)) {
+				_resetFatalAdMediaRecoveryState();
+				_resetPinnedBackupStallState();
+				_resetInAdFreezeState();
+				_clearCachedPlayerRef();
+				return idleDelay;
+			}
 			if (fatalRecoveryTargetsPage) {
 				_checkFatalAdMediaRecovery(pinPlayer);
 			} else {
@@ -6846,7 +6864,7 @@ function _monitorPlayerBuffering() {
 					hiddenPlayer = fresh.player;
 				}
 			}
-			if (hiddenPlayer) {
+			if (hiddenPlayer && !_isPlayerWorkerUnavailable(hiddenPlayer)) {
 				_checkHiddenCleanLiveStall(
 					hiddenPlayer,
 					__TTVAB_STATE__.PageChannel,
@@ -6869,6 +6887,10 @@ function _monitorPlayerBuffering() {
 				const player = _cachedPlayerRef.player;
 				const state = _cachedPlayerRef.state;
 				const playerCore = _getPlayerCore(player);
+				if (_isPlayerWorkerUnavailable(player)) {
+					_clearCachedPlayerRef();
+					return idleDelay;
+				}
 				_syncPreferredQualityGroupThrottled();
 				const playerContentType =
 					typeof state?.props?.content?.type === "string"

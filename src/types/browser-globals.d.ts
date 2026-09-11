@@ -82,6 +82,11 @@ interface Worker {
 	__TTVABInitialHeartbeatTimer?: ReturnType<typeof setTimeout> | null;
 	__TTVABGeneration?: number;
 	__TTVABPlaybackBootstrapObservedAtByMediaKey?: Map<string, number>;
+	__TTVABPlaybackPageContext?: {
+		pageMediaKey: string;
+		pageContextGeneration: number;
+		mediaKey: string;
+	} | null;
 	__TTVABPlaybackObservedAtByMediaKey?: Map<string, number>;
 	__TTVABRecoveryEpoch?: number;
 	__TTVABTerminatedAt?: number;
