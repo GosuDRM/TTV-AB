@@ -2376,6 +2376,7 @@ function _getWorkerRecoveryState(context, create = true) {
 			attempts: 0,
 			lastAttemptAt: 0,
 			limitLogged: false,
+			noticeShownAt: 0,
 			activeEpoch: 0,
 			failedGeneration: 0,
 			crashedAt: 0,
@@ -2439,6 +2440,7 @@ function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
 	state.lastAttemptAt = 0;
 	state.lastReloadAt = 0;
 	state.limitLogged = false;
+	state.noticeShownAt = 0;
 	state.stableGeneration = 0;
 	state.stableSince = 0;
 	state.terminalRearmCycleStartedAt = 0;
@@ -4291,6 +4293,9 @@ function _completePageSideFallbackAdRecovery(mediaKey) {
 		_restoreSuppressedMediaAfterAd(channel, normalizedMediaKey);
 	}
 	_schedulePostAdArtifactCleanup(channel, normalizedMediaKey, cycleStartedAt);
+	if (typeof _clearWorkerRecoveryNotice === "function") {
+		_clearWorkerRecoveryNotice(normalizedMediaKey);
+	}
 	_log(
 		"Page-side fallback verified sustained clean native playback after worker recovery exhausted",
 		"success",
@@ -5037,7 +5042,7 @@ function _hookWorker() {
                 ${_shouldTryAutoplayFirst.toString()}
                 ${_shouldHoldAutoplayBackupDuringAd.toString()}
                 ${_shouldBridgeHeldAutoplayDuringSearch.toString()}
-                ${_getBackupBridgeMaxVariantHeight.toString()}
+                ${_getServedBackupBridgeHeight.toString()}
                 ${_shouldHoldBridgeInsteadOfRotating.toString()}
                 ${_refreshHeldAutoplayBackupPlaylist.toString()}
                 ${_refreshActiveBackupMediaPlaylist.toString()}

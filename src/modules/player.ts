@@ -142,6 +142,7 @@ const _PostAdRecoveryTransactionState = {
 	video: null as HTMLMediaElement | null,
 	observedAt: 0,
 	lastCurrentTime: 0,
+	lastTotalFrames: -1,
 	stallTicks: 0,
 	reloadRequestCount: 0,
 	acceptedReloadCount: 0,
@@ -4340,6 +4341,7 @@ function _resetPostAdRecoveryTransaction() {
 	_PostAdRecoveryTransactionState.video = null;
 	_PostAdRecoveryTransactionState.observedAt = 0;
 	_PostAdRecoveryTransactionState.lastCurrentTime = 0;
+	_PostAdRecoveryTransactionState.lastTotalFrames = -1;
 	_PostAdRecoveryTransactionState.stallTicks = 0;
 	_PostAdRecoveryTransactionState.reloadRequestCount = 0;
 	_PostAdRecoveryTransactionState.acceptedReloadCount = 0;
@@ -4794,6 +4796,13 @@ function _handlePendingPostAdRecovery(
 		return false;
 	}
 	const liveCurrentTime = Number(liveVideo.currentTime) || 0;
+	let totalFrames = -1;
+	try {
+		const sample = Number(
+			liveVideo.getVideoPlaybackQuality?.()?.totalVideoFrames,
+		);
+		if (Number.isFinite(sample) && sample >= 0) totalFrames = sample;
+	} catch {}
 	const isNewObservation =
 		_PostAdRecoveryTransactionState.video !== liveVideo ||
 		!_PostAdRecoveryTransactionState.observedAt;
@@ -4801,6 +4810,7 @@ function _handlePendingPostAdRecovery(
 		_PostAdRecoveryTransactionState.video = liveVideo;
 		_PostAdRecoveryTransactionState.observedAt = now;
 		_PostAdRecoveryTransactionState.lastCurrentTime = liveCurrentTime;
+		_PostAdRecoveryTransactionState.lastTotalFrames = totalFrames;
 		_PostAdRecoveryTransactionState.stallTicks = 0;
 	}
 	const recoveryAge = now - _PostAdRecoveryTransactionState.observedAt;
@@ -4810,12 +4820,17 @@ function _handlePendingPostAdRecovery(
 	const advanced =
 		!isNewObservation &&
 		liveCurrentTime > _PostAdRecoveryTransactionState.lastCurrentTime + 0.05;
-	if (!isLivePaused && !isNewObservation && !advanced) {
+	const framesAdvanced =
+		totalFrames < 0 ||
+		_PostAdRecoveryTransactionState.lastTotalFrames < 0 ||
+		totalFrames > _PostAdRecoveryTransactionState.lastTotalFrames;
+	if (!isLivePaused && !isNewObservation && (!advanced || !framesAdvanced)) {
 		_PostAdRecoveryTransactionState.stallTicks++;
-	} else if (advanced) {
+	} else if (advanced && framesAdvanced) {
 		_PostAdRecoveryTransactionState.stallTicks = 0;
 	}
 	_PostAdRecoveryTransactionState.lastCurrentTime = liveCurrentTime;
+	_PostAdRecoveryTransactionState.lastTotalFrames = totalFrames;
 	_PlayerBufferState.postAdRecoveryStartedAt =
 		_PostAdRecoveryTransactionState.observedAt;
 	_PlayerBufferState.postAdLastCurrentTime = liveCurrentTime;
@@ -4829,6 +4844,7 @@ function _handlePendingPostAdRecovery(
 
 	const hasAdvancingFrames = Boolean(
 		advanced &&
+			framesAdvanced &&
 			!isLivePaused &&
 			!liveVideo.ended &&
 			Number(liveVideo.readyState) >= 2 &&
