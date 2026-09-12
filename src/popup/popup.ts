@@ -20,6 +20,7 @@ type LogCollectionResult = {
 	context: PlainObject | null;
 	error: string | null;
 	truncatedEntries: number;
+	cachedAt?: number;
 };
 
 type LogExportWritable = {
@@ -152,6 +153,9 @@ function _formatLogContextLines(value): string[] {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return [];
 	const context = value as PlainObject;
 	const pageState = {
+		pageVersion: _sanitizeLogExportText(context.pageVersion, 32),
+		pageGeneration: Number(context.pageGeneration) || 0,
+		unhookedPlayer: context.unhookedPlayer === true,
 		mediaKey:
 			typeof context.pageMediaKey === "string"
 				? _sanitizeLogExportText(context.pageMediaKey, 160).replace(/\n/g, "")
@@ -207,6 +211,14 @@ function _formatLogContextLines(value): string[] {
 	if (Array.isArray(context.workers)) {
 		lines.push(`Workers: ${_stringifyLogExportValue(context.workers)}`);
 	}
+	if (
+		Array.isArray(context.workerFailures) &&
+		context.workerFailures.length > 0
+	) {
+		lines.push(
+			`Worker failures: ${_stringifyLogExportValue(context.workerFailures, 32000)}`,
+		);
+	}
 	if (context.media && typeof context.media === "object") {
 		lines.push(`Media state: ${_stringifyLogExportValue(context.media)}`);
 	}
@@ -256,9 +268,52 @@ function _queryTwitchTabs(
 	});
 }
 
+function _getTabDiagnosticCheckpoint(
+	tabId,
+	pageUrl,
+): Promise<PlainObject | null> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const finish = (value) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve(value);
+		};
+		const timer = setTimeout(() => finish(null), 1500);
+		try {
+			chrome.runtime.sendMessage(
+				{ type: "ttvab-get-diagnostic-checkpoint", detail: { tabId, pageUrl } },
+				(response) => {
+					const checkpoint = response?.checkpoint;
+					if (
+						chrome.runtime.lastError ||
+						response?.ok !== true ||
+						!checkpoint ||
+						typeof checkpoint !== "object" ||
+						!Number.isFinite(checkpoint.capturedAt) ||
+						checkpoint.capturedAt <= 0 ||
+						checkpoint.capturedAt > Date.now() ||
+						Date.now() - checkpoint.capturedAt > 30 * 60 * 1000 ||
+						_sanitizeLogExportTabUrl(checkpoint.context?.pageUrl) !==
+							_sanitizeLogExportTabUrl(pageUrl)
+					) {
+						finish(null);
+						return;
+					}
+					finish(checkpoint);
+				},
+			);
+		} catch {
+			finish(null);
+		}
+	});
+}
+
 function _collectTabLogEntries(
 	tabId: number,
 	timeoutMs = _LOG_COLLECT_TAB_TIMEOUT_MS,
+	pageUrl = null,
 ): Promise<LogCollectionResult> {
 	return new Promise((resolve) => {
 		let settled = false;
@@ -268,8 +323,27 @@ function _collectTabLogEntries(
 			clearTimeout(timer);
 			resolve(result);
 		};
-		const fail = (error: string) =>
-			finish({ entries: [], context: null, error, truncatedEntries: 0 });
+		const fail = async (error: string) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			const checkpoint = pageUrl
+				? await _getTabDiagnosticCheckpoint(tabId, pageUrl)
+				: null;
+			resolve(
+				checkpoint
+					? {
+							entries: Array.isArray(checkpoint.entries)
+								? checkpoint.entries.slice(-64)
+								: [],
+							context: checkpoint.context as PlainObject,
+							error,
+							truncatedEntries: Number(checkpoint.truncatedEntries) || 0,
+							cachedAt: Number(checkpoint.capturedAt),
+						}
+					: { entries: [], context: null, error, truncatedEntries: 0 },
+			);
+		};
 		const timer = setTimeout(
 			() => fail("extension-response-timeout"),
 			Math.max(0, timeoutMs),
@@ -344,6 +418,11 @@ function _buildTabLogSection(
 			: tab.url;
 	const lines = [
 		`==== Tab ${index + 1}: ${_sanitizeLogExportTabUrl(collectedPageUrl)} ====`,
+		...(result.cachedAt
+			? [
+					`Last recorded snapshot: ${_formatLogExportTimestamp(result.cachedAt)} (cached before collection; not live state)`,
+				]
+			: []),
 		..._formatLogContextLines(result.context),
 	];
 	if (!result.context && !result.error) {
@@ -353,7 +432,8 @@ function _buildTabLogSection(
 		lines.push(
 			`(collection failed: ${_describeLogCollectionError(result.error)})`,
 		);
-	} else if (result.entries.length === 0) {
+	}
+	if (result.entries.length === 0 && !result.error) {
 		lines.push("(no TTV AB log entries captured in this tab)");
 	} else {
 		for (const entry of result.entries) {
@@ -426,7 +506,13 @@ async function _buildLogExport(
 			batchStart + _LOG_EXPORT_BATCH_SIZE,
 		);
 		const results = await Promise.all(
-			batch.map((tab) => _collectTabLogEntries(tab.id as number)),
+			batch.map((tab) =>
+				_collectTabLogEntries(
+					tab.id as number,
+					_LOG_COLLECT_TAB_TIMEOUT_MS,
+					tab.url,
+				),
+			),
 		);
 		if (isCancelled()) break;
 		for (let offset = 0; offset < batch.length; offset += 1) {

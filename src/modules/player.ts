@@ -660,6 +660,94 @@ function _isPlayerWorkerUnavailable(player) {
 	);
 }
 
+const _UnhookedPlayerState = {
+	workerRef: null as WeakRef<Worker> | null,
+	mediaKey: null as string | null,
+	pageGeneration: 0,
+	firstSeenAt: 0,
+	noticeShownAt: 0,
+};
+
+function _getUnhookedPlayerWorker() {
+	if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) return null;
+	const { player } = _getPlayerAndState();
+	const worker = _getPlayerCore(player)?.worker;
+	const media = player?.getHTMLVideoElement?.();
+	if (
+		!worker ||
+		typeof worker.postMessage !== "function" ||
+		Number(worker.__TTVABGeneration) > 0 ||
+		_isPlayerWorkerUnavailable(player) ||
+		!(media instanceof HTMLVideoElement) ||
+		!media.isConnected ||
+		media.readyState < 1 ||
+		media !== _getPrimaryMediaElement() ||
+		media === _getPictureInPictureVideo() ||
+		media === _getActivePictureInPicturePlaybackContext()?.element
+	) {
+		return null;
+	}
+	return worker;
+}
+
+function _canRefreshUnhookedPlayer(mediaKey) {
+	try {
+		return Boolean(
+			mediaKey &&
+				_UnhookedPlayerState.mediaKey === mediaKey &&
+				_getPlaybackContextFromUrl(window.location.href).MediaKey ===
+					mediaKey &&
+				_UnhookedPlayerState.pageGeneration ===
+					(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) &&
+				_UnhookedPlayerState.workerRef?.deref() &&
+				_UnhookedPlayerState.workerRef.deref() === _getUnhookedPlayerWorker(),
+		);
+	} catch {
+		return false;
+	}
+}
+
+function _checkUnhookedPlayer() {
+	try {
+		const mediaKey = _getPlaybackContextFromUrl(window.location.href).MediaKey;
+		const pageGeneration =
+			Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0;
+		const worker = mediaKey ? _getUnhookedPlayerWorker() : null;
+		if (
+			!worker ||
+			mediaKey !== _UnhookedPlayerState.mediaKey ||
+			pageGeneration !== _UnhookedPlayerState.pageGeneration ||
+			worker !== _UnhookedPlayerState.workerRef?.deref()
+		) {
+			if (_UnhookedPlayerState.mediaKey) {
+				_clearWorkerRecoveryNotice(_UnhookedPlayerState.mediaKey);
+			}
+			_UnhookedPlayerState.workerRef = worker ? new WeakRef(worker) : null;
+			_UnhookedPlayerState.mediaKey = worker ? mediaKey : null;
+			_UnhookedPlayerState.pageGeneration = pageGeneration;
+			_UnhookedPlayerState.firstSeenAt = Date.now();
+			_UnhookedPlayerState.noticeShownAt = 0;
+			return;
+		}
+		if (
+			_UnhookedPlayerState.noticeShownAt > 0 ||
+			Date.now() - _UnhookedPlayerState.firstSeenAt < 5000
+		) {
+			return;
+		}
+		_showWorkerRecoveryNotice(mediaKey, "unhooked");
+		if (_UnhookedPlayerState.noticeShownAt > 0) {
+			_log(
+				"Current player worker has no TTV AB hooks; refresh this tab to start ad blocking",
+				"warning",
+			);
+			if (typeof _checkpointPageDiagnostics === "function") {
+				_checkpointPageDiagnostics(true);
+			}
+		}
+	} catch {}
+}
+
 let _loggedReactRootSearchFailure = false;
 
 function _findReactRoot() {

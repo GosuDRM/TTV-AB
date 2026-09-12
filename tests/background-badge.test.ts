@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -1022,5 +1030,173 @@ describe("measured ad duration persistence", () => {
 		});
 
 		expect(stats().adMillisecondsSaved).toBe(15050);
+	});
+});
+
+describe("diagnostic checkpoints outside Twitch tabs", () => {
+	let sessionData: Record<string, unknown>;
+	let removed: (tabId: number) => void;
+	let updated: (tabId: number, change: Record<string, unknown>) => void;
+	const pageUrl = "https://www.twitch.tv/testchannel";
+	const sender = { id: "ttvab-test", frameId: 0, url: pageUrl, tab: { id: 1 } };
+	const checkpoint = (time = Date.now()) => ({
+		capturedAt: time,
+		entries: [{ t: time, l: "error", m: "worker error" }],
+		context: { pageUrl, pageVersion: "17.5.8" },
+		truncatedEntries: 0,
+	});
+	const chromeState = () => g.chrome as Record<string, Record<string, unknown>>;
+	function send(
+		type: string,
+		detail: unknown,
+		source: Record<string, unknown> = sender,
+	) {
+		return new Promise<Record<string, unknown>>((resolveResponse) => {
+			if (!runtimeMessageListener) throw new Error("Missing runtime listener");
+			runtimeMessageListener({ type, detail }, source, resolveResponse);
+		});
+	}
+	const retain = (value = checkpoint(), source = sender) =>
+		send("ttvab-diagnostic-checkpoint", value, source);
+	const read = (tabId = 1, url = pageUrl) =>
+		send(
+			"ttvab-get-diagnostic-checkpoint",
+			{ tabId, pageUrl: url },
+			{
+				id: "ttvab-test",
+				url: "moz-extension://ttvab-test/src/popup/popup.html?ttvab-log-export=1",
+				tab: { id: 42 },
+			},
+		);
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		sessionData = {};
+		chromeState().runtime.getURL = (path: string) =>
+			`moz-extension://ttvab-test/${path}`;
+		chromeState().storage.session = {
+			get: (_keys: unknown, callback: (value: unknown) => void) =>
+				callback(structuredClone(sessionData)),
+			set: (value: Record<string, unknown>, callback: () => void) => {
+				sessionData = structuredClone({ ...sessionData, ...value });
+				callback();
+			},
+		};
+		chromeState().tabs.onRemoved = {
+			addListener: (listener: typeof removed) => {
+				removed = listener;
+			},
+		};
+		chromeState().tabs.onUpdated = {
+			addListener: (listener: typeof updated) => {
+				updated = listener;
+			},
+		};
+		loadBackground();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it("survives background suspension and reads without contacting the frozen tab", async () => {
+		expect(await retain()).toEqual({ ok: true });
+		loadBackground();
+		const result = await read();
+		expect(result.ok).toBe(true);
+		expect(result.checkpoint).toEqual(checkpoint());
+		expect(tabMessages).toEqual([]);
+		expect(storageData).not.toHaveProperty("ttvDiagnosticCheckpoints");
+	});
+
+	it("serializes simultaneous tab writes and ignores an older checkpoint", async () => {
+		await Promise.all([
+			retain(),
+			retain(checkpoint(), { ...sender, tab: { id: 2 } }),
+		]);
+		await retain(checkpoint(90000));
+		expect((await read()).checkpoint).toEqual(checkpoint());
+		expect((await read(2)).ok).toBe(true);
+	});
+
+	it("caps storage at sixteen recent tabs", async () => {
+		for (let id = 1; id <= 20; id++) {
+			vi.setSystemTime(100000 + id);
+			await retain(checkpoint(), { ...sender, tab: { id } });
+		}
+		expect(
+			Object.keys(sessionData.ttvDiagnosticCheckpoints as object),
+		).toHaveLength(16);
+		expect((await read(1)).ok).toBe(false);
+		expect((await read(20)).ok).toBe(true);
+	});
+
+	it("rejects old snapshots and snapshots from a different page", async () => {
+		await retain();
+		expect((await read(1, "https://www.twitch.tv/otherchannel")).ok).toBe(
+			false,
+		);
+		vi.advanceTimersByTime(30 * 60 * 1000 + 1);
+		expect((await read()).ok).toBe(false);
+	});
+
+	it.each(["close", "reload", "navigate"])(
+		"clears the checkpoint on %s",
+		async (event) => {
+			await retain();
+			if (event === "close") removed(1);
+			else
+				updated(
+					1,
+					event === "reload"
+						? { status: "loading" }
+						: { url: "https://www.twitch.tv/otherchannel" },
+				);
+			expect((await read()).ok).toBe(false);
+		},
+	);
+
+	it.each(["subframe", "outside Twitch", "wrong page", "oversize"])(
+		"rejects %s writes",
+		async (condition) => {
+			const value = checkpoint();
+			const source = { ...sender };
+			if (condition === "subframe") source.frameId = 1;
+			if (condition === "outside Twitch")
+				source.url = "https://not-twitch.tv/testchannel";
+			if (condition === "wrong page")
+				value.context.pageUrl = "https://www.twitch.tv/otherchannel";
+			if (condition === "oversize") value.entries[0].m = "あ".repeat(64 * 1024);
+			expect(await retain(value, source)).toEqual({ ok: false });
+			expect((await read()).ok).toBe(false);
+		},
+	);
+
+	it("does not let a content script read another tab's diagnostics", async () => {
+		await retain();
+		const response = vi.fn();
+		expect(
+			runtimeMessageListener?.(
+				{
+					type: "ttvab-get-diagnostic-checkpoint",
+					detail: { tabId: 1, pageUrl },
+				},
+				sender,
+				response,
+			),
+		).toBeUndefined();
+		expect(response).not.toHaveBeenCalled();
+	});
+
+	it("contains storage failure without blocking counter persistence", async () => {
+		chromeState().storage.session = {
+			get: () => {
+				throw new Error("unavailable");
+			},
+		};
+		expect(await retain()).toEqual({ ok: false });
+		const result = await send("ttvab-persist-counters", { adsDelta: 1 });
+		expect(result.ok).toBe(true);
 	});
 });

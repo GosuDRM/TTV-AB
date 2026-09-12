@@ -48,6 +48,10 @@ beforeAll(() => {
 beforeEach(() => {
 	const chromeState = g.chrome as Record<string, Record<string, unknown>>;
 	chromeState.runtime.lastError = null;
+	chromeState.runtime.sendMessage = (
+		_message: unknown,
+		callback: (response: unknown) => void,
+	) => callback({ ok: false });
 	chromeState.runtime.getURL = (path: string) =>
 		`moz-extension://ttv-ab/${path}`;
 	chromeState.tabs.create = () => {};
@@ -214,6 +218,123 @@ describe("popup log formatting", () => {
 			1000,
 		);
 		expect(missingContext.text).toContain("page state snapshot unavailable");
+	});
+});
+
+describe("cached evidence when live tab collection fails", () => {
+	const pageUrl = "https://www.twitch.tv/example";
+	const collect = () =>
+		T<
+			(
+				tabId: number,
+				timeoutMs: number,
+				pageUrl: string,
+			) => Promise<Record<string, unknown>>
+		>("_collectTabLogEntries")(7, 100, pageUrl);
+	it("exports the retained snapshot with its timestamp while preserving the timeout failure", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+		chromeState.runtime.sendMessage = vi.fn(
+			(_message: unknown, callback: (response: unknown) => void) =>
+				callback({
+					ok: true,
+					checkpoint: {
+						capturedAt: 90000,
+						context: {
+							pageUrl,
+							pageVersion: "17.5.8",
+							workerFailures: [
+								{ generation: 7, message: "index out of bounds" },
+							],
+						},
+						entries: [{ t: 90000, l: "error", m: "Worker error before hang" }],
+						truncatedEntries: 3,
+					},
+				}),
+		);
+		const pending = collect();
+		await vi.advanceTimersByTimeAsync(100);
+		const result = await pending;
+		expect(result.error).toBe("extension-response-timeout");
+		expect(result.cachedAt).toBe(90000);
+		const section = T<
+			(
+				tab: unknown,
+				index: number,
+				result: unknown,
+				max: number,
+			) => { text: string }
+		>("_buildTabLogSection")({ id: 7, url: pageUrl }, 0, result, 10000);
+		expect(section.text).toContain(
+			"Last recorded snapshot: 1970-01-01T00:01:30.000Z",
+		);
+		expect(section.text).toContain("not live state");
+		expect(section.text).toContain("extension response timed out");
+		expect(section.text).toContain("Worker error before hang");
+		expect(section.text).toContain("Worker failures:");
+	});
+
+	it.each(["different page", "expired", "future"])(
+		"rejects a %s snapshot",
+		async (condition) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(3000000);
+			const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+			chromeState.runtime.sendMessage = (
+				_message: unknown,
+				callback: (response: unknown) => void,
+			) =>
+				callback({
+					ok: true,
+					checkpoint: {
+						capturedAt:
+							condition === "expired"
+								? 1
+								: condition === "future"
+									? 4000000
+									: Date.now(),
+						context: {
+							pageUrl:
+								condition === "different page"
+									? "https://www.twitch.tv/other"
+									: pageUrl,
+						},
+						entries: [{ m: "stale" }],
+					},
+				});
+			const pending = collect();
+			await vi.advanceTimersByTimeAsync(100);
+			expect(await pending).toEqual({
+				entries: [],
+				context: null,
+				error: "extension-response-timeout",
+				truncatedEntries: 0,
+			});
+		},
+	);
+
+	it("bounds an unresponsive background lookup as well as an unresponsive Twitch tab", async () => {
+		vi.useFakeTimers();
+		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+		chromeState.runtime.sendMessage = () => {};
+		const pending = collect();
+		await vi.advanceTimersByTimeAsync(1600);
+		expect((await pending).error).toBe("extension-response-timeout");
+	});
+
+	it("uses fresh results without fetching cached state", async () => {
+		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+		chromeState.tabs.sendMessage = (
+			_id: number,
+			_message: unknown,
+			_options: unknown,
+			callback: (response: unknown) => void,
+		) => callback({ ok: true, entries: [], context: { pageUrl } });
+		const cached = vi.fn();
+		chromeState.runtime.sendMessage = cached;
+		expect((await collect()).error).toBeNull();
+		expect(cached).not.toHaveBeenCalled();
 	});
 });
 

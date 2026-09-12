@@ -158,6 +158,102 @@ function handlePageMessage(message: Record<string, unknown>) {
 	)(message);
 }
 
+describe("pre-freeze diagnostic forwarding", () => {
+	it("redacts crash stacks and URLs before sending a checkpoint outside the tab", () => {
+		handlePageMessage({
+			type: "ttvab-diagnostic-checkpoint",
+			detail: {
+				capturedAt: Date.now(),
+				entries: [
+					{
+						t: Date.now(),
+						l: "error",
+						m: "Authorization: Bearer private-value",
+					},
+				],
+				context: {
+					pageUrl: "https://www.twitch.tv/example?token=page-secret",
+					pageVersion: "17.5.8",
+					pageGeneration: 4,
+					workerFailures: [
+						{
+							generation: 7,
+							mediaKey: "live:example",
+							observedMediaKey: "vod:123",
+							pageMediaKey: "live:example",
+							pageGeneration: 4,
+							failedAt: Date.now(),
+							source: "blob:https://www.twitch.tv/worker-secret",
+							line: 48,
+							stack:
+								"error at https://example.com/worker.js?token=stack-secret",
+						},
+					],
+				},
+			},
+		});
+		const message = runtimeMessages.at(-1);
+		expect(message?.type).toBe("ttvab-diagnostic-checkpoint");
+		const text = JSON.stringify(message);
+		for (const secret of [
+			"private-value",
+			"page-secret",
+			"worker-secret",
+			"stack-secret",
+		])
+			expect(text).not.toContain(secret);
+		expect(text).toContain('"observedMediaKey":"vod:123"');
+		expect(text).toContain('"line":48');
+	});
+
+	it("bounds both entries and failure history by bytes before forwarding", () => {
+		handlePageMessage({
+			type: "ttvab-diagnostic-checkpoint",
+			detail: {
+				capturedAt: Date.now(),
+				entries: Array.from({ length: 500 }, () => ({
+					t: Date.now(),
+					l: "info",
+					m: "あ".repeat(4000),
+				})),
+				context: {
+					pageUrl: "https://www.twitch.tv/example",
+					workerFailures: Array.from({ length: 100 }, () => ({
+						stack: "あ".repeat(4000),
+					})),
+				},
+			},
+		});
+		const message = runtimeMessages.at(-1);
+		expect(message?.type).toBe("ttvab-diagnostic-checkpoint");
+		expect(
+			new TextEncoder().encode(JSON.stringify(message?.detail)).byteLength,
+		).toBeLessThanOrEqual(60 * 1024);
+	});
+
+	it("does not forward an unusable context or turn diagnostic transport failure into a page error", () => {
+		handlePageMessage({
+			type: "ttvab-diagnostic-checkpoint",
+			detail: { entries: [] },
+		});
+		expect(runtimeMessages).toHaveLength(0);
+		const runtime = (g.chrome as { runtime: { sendMessage: () => void } })
+			.runtime;
+		vi.spyOn(runtime, "sendMessage").mockImplementation(() => {
+			throw new Error("extension reloaded");
+		});
+		expect(() =>
+			handlePageMessage({
+				type: "ttvab-diagnostic-checkpoint",
+				detail: {
+					capturedAt: Date.now(),
+					context: { pageUrl: "https://www.twitch.tv/example" },
+				},
+			}),
+		).not.toThrow();
+	});
+});
+
 function requestRuntimeLogs(sendResponse: (response: unknown) => void) {
 	if (!runtimeLogListener)
 		throw new Error("runtime listener was not installed");
