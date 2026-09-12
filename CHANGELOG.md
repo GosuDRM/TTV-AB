@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.5.8] - 2026-09-12
+
+Fixed
+
+- **Player Recovery Warning** - Added automatic dismissal after 3 seconds, cleared stale warnings after playback recovery, and prevented repeated prompts during the same recovery episode ([#76](https://github.com/GosuDRM/TTV-AB/issues/76)).
+- **Ad Recovery Quality** - Fixed playback sometimes staying at 360p after a blocked ad when the advertised high-quality variant was not the stream actually being served. Recovery now follows the validated backup quality, preserves timeline continuity for delayed backups, and waits for decoded video frames before finishing ([#75](https://github.com/GosuDRM/TTV-AB/issues/75)).
+
 ## [17.5.7] - 2026-09-11
 
 Fixed
