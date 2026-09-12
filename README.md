@@ -72,6 +72,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.5.8 - 2026-09-12
+
+- **Player Recovery Warning** - Added automatic dismissal after 3 seconds, cleared stale warnings after playback recovery, and prevented repeated prompts during the same recovery episode ([#76](https://github.com/GosuDRM/TTV-AB/issues/76)).
+- **Ad Recovery Quality** - Fixed playback sometimes staying at 360p after a blocked ad when the advertised high-quality variant was not the stream actually being served. Recovery now follows the validated backup quality, preserves timeline continuity for delayed backups, and waits for decoded video frames before finishing ([#75](https://github.com/GosuDRM/TTV-AB/issues/75)).
+
 ### v17.5.7 - 2026-09-11
 
 - **Worker Recovery Loops** - Stopped repeated player reloads after Twitch's playback worker crashes or stops. The existing Refresh tab prompt remains available when recovery cannot restart playback ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
@@ -82,10 +87,6 @@ The reported full-tab freeze remains under investigation.
 ### v17.5.6 - 2026-09-10
 
 - **360p Recovery Follow-Up** - Fixed a remaining recovery loop after switching to the temporary low-quality stream during ads ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)). The separate full-tab freeze remains under investigation.
-
-### v17.5.5 - 2026-09-10
-
-- **Post-Ad Quality Recovery** - Improved recovery from streams staying at 360p after ads or losing the 1440p option, while preserving the selected quality when Twitch still offers it ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
