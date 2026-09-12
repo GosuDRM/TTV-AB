@@ -4964,6 +4964,60 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(reloadCalls()).toHaveLength(1);
 	});
 
+	it("keeps post-ad recovery active when the playhead advances without video frames", () => {
+		const playback = makePlayback({
+			currentTime: 10,
+			bufferedEnd: 20,
+			readyState: 4,
+			videoWidth: 1920,
+		});
+		Object.defineProperty(playback.video, "getVideoPlaybackQuality", {
+			value: () => ({ totalVideoFrames: 500 }),
+		});
+		reloadOutcomes.push(true);
+		arm(playback);
+		transaction().acceptedReloadCount = 1;
+		transaction().initialOperationCompleted = true;
+
+		expect(sample(500000)).toBe(false);
+		playback.setCurrentTime(10.8);
+		expect(sample(500800)).toBe(false);
+		expect(transaction().mediaKey).toBe("live:chan");
+		playback.setCurrentTime(12);
+		expect(sample(502000)).toBe(true);
+		expect(reloadCalls()).toHaveLength(1);
+		expect(transaction().acceptedReloadCount).toBe(2);
+		playback.setCurrentTime(14);
+		sample(504000);
+		playback.setCurrentTime(16);
+		sample(506000);
+		expect(transaction().mediaKey).toBe("live:chan");
+		expect(reloadCalls()).toHaveLength(1);
+	});
+
+	it("finishes post-ad recovery after both the playhead and video frames advance", () => {
+		const playback = makePlayback({
+			currentTime: 10,
+			bufferedEnd: 20,
+			readyState: 4,
+			videoWidth: 1920,
+		});
+		let frames = 500;
+		Object.defineProperty(playback.video, "getVideoPlaybackQuality", {
+			value: () => ({ totalVideoFrames: frames }),
+		});
+		arm(playback);
+
+		expect(sample(500000)).toBe(false);
+		playback.setCurrentTime(10.8);
+		expect(sample(500800)).toBe(false);
+		frames += 30;
+		playback.setCurrentTime(11.6);
+		expect(sample(501600)).toBe(true);
+		expect(transaction().mediaKey).toBeNull();
+		expect(reloadCalls()).toEqual([]);
+	});
+
 	it("disarms only after the exact replacement is healthy and advancing", () => {
 		const firstPlayback = makePlayback();
 		reloadOutcomes.push(true);

@@ -622,7 +622,7 @@ function _getPendingForegroundQualityProbeAt(info) {
 		Number(preferredQualityGroup.match(/^(\d+)p/)?.[1]) || 0;
 	if (
 		explicitHeight > 0 &&
-		explicitHeight <= _getBackupBridgeMaxVariantHeight(info)
+		explicitHeight <= _getServedBackupBridgeHeight(info)
 	) {
 		return 0;
 	}
@@ -3980,7 +3980,20 @@ async function _processM3U8(
 					retiringCodecIdentity,
 		);
 		if (sameCodecBackupReady) {
-			return info.LastCleanBackupM3U8;
+			info.IsUsingBackupStream = true;
+			return (
+				_applyEmptyHoldPlaylistContinuity(
+					info,
+					url,
+					info.LastCleanBackupM3U8,
+					cleanBackupMetadata,
+				) ??
+				_applyBackupSpliceBridge(
+					info,
+					info.LastCleanBackupM3U8,
+					cleanBackupMetadata,
+				)
+			);
 		}
 		const cleanBackupReady = Boolean(
 			cleanBackupIsFreshAndSafe &&
@@ -6022,19 +6035,11 @@ function _shouldBridgeHeldAutoplayDuringSearch(info) {
 	);
 }
 
-function _getBackupBridgeMaxVariantHeight(info) {
-	const encCache = info?.BackupEncodingsM3U8Cache?.autoplay;
-	const enc = typeof encCache === "string" ? encCache : encCache?.m3u8 || null;
-	if (typeof enc !== "string" || !enc) return 0;
-	let maxHeight = 0;
-	const re = /RESOLUTION=\d+x(\d+)/g;
-	let match = re.exec(enc);
-	while (match !== null) {
-		const h = Number(match[1]);
-		if (Number.isFinite(h) && h > maxHeight) maxHeight = h;
-		match = re.exec(enc);
-	}
-	return maxHeight;
+function _getServedBackupBridgeHeight(info) {
+	const [, height] = String(info?.LastCleanBackupResolution || "0x0")
+		.split("x")
+		.map(Number);
+	return Number.isFinite(height) && height > 0 ? height : 0;
 }
 
 function _shouldHoldBridgeInsteadOfRotating(info, targetRes) {
@@ -6066,9 +6071,9 @@ function _shouldHoldBridgeInsteadOfRotating(info, targetRes) {
 		.split("x")
 		.map(Number);
 	if (!Number.isFinite(targetHeight) || targetHeight <= 0) return false;
-	const bridgeCeiling = _getBackupBridgeMaxVariantHeight(info);
-	if (bridgeCeiling <= 0) return false;
-	return targetHeight <= bridgeCeiling;
+	const bridgeHeight = _getServedBackupBridgeHeight(info);
+	if (bridgeHeight <= 0) return false;
+	return targetHeight <= bridgeHeight;
 }
 
 async function _refreshHeldAutoplayBackupPlaylist(

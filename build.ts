@@ -1412,7 +1412,7 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_getPendingForegroundQualityProbeAt",
-			helper: "_getBackupBridgeMaxVariantHeight",
+			helper: "_getServedBackupBridgeHeight",
 			source: processorSource,
 		},
 		{
@@ -2123,7 +2123,7 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_shouldHoldBridgeInsteadOfRotating",
-			helper: "_getBackupBridgeMaxVariantHeight",
+			helper: "_getServedBackupBridgeHeight",
 			source: processorSource,
 		},
 		{

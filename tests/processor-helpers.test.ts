@@ -2249,6 +2249,7 @@ describe("_findBackupStream fresh-session probation", () => {
 		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
 		try {
 			const info = makeHoldInfo();
+			info.LastCleanBackupResolution = "640x360";
 			info.SustainedNativeResolutionStartedAt = 970_000;
 			const result = await findBackupStream()(info, realFetch, 0, {
 				Name: "360p",
@@ -2484,6 +2485,7 @@ describe("_getPendingForegroundQualityProbeAt", () => {
 			ActiveBackupPlayerType: "autoplay",
 			LastCleanBackupPlayerType: "autoplay",
 			LastCleanBackupM3U8: "#EXTM3U\n#EXTINF:2,\nbridge.ts",
+			LastCleanBackupResolution: "640x360",
 			LastCleanBackupAt: 999_000,
 			BackupEncodingsM3U8Cache: {
 				autoplay: [
@@ -2513,6 +2515,10 @@ describe("_getPendingForegroundQualityProbeAt", () => {
 			info._ForegroundQualityProbeAppliedAt = 0;
 			state.PreferredQualityGroup = "360p";
 			expect(pending()(info)).toBe(0);
+			info.BackupEncodingsM3U8Cache.autoplay +=
+				"\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080\nhttps://cdn.example/1080.m3u8";
+			state.PreferredQualityGroup = "1080p60";
+			expect(pending()(info)).toBe(visibleSinceAt);
 			state.PreferredQualityGroup = null;
 			info.VisibleAdStartedAt = visibleSinceAt;
 			expect(pending()(info)).toBe(0);
@@ -2614,6 +2620,7 @@ describe("_shouldHoldBridgeInsteadOfRotating", () => {
 			ActiveBackupPlayerType: "autoplay",
 			LastCleanBackupPlayerType: "autoplay",
 			LastCleanBackupM3U8: "#EXTM3U",
+			LastCleanBackupResolution: "640x360",
 			LastCleanBackupAt: 999_000,
 			BackupEncodingsM3U8Cache: { autoplay: autoplayMaster360 },
 			...overrides,
@@ -2697,6 +2704,21 @@ describe("_shouldHoldBridgeInsteadOfRotating", () => {
 		}
 	});
 
+	it("does not treat an advertised high variant as the quality of the served 360p bridge", () => {
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeBridgeInfo({
+				LastCleanBackupResolution: "640x360",
+				BackupEncodingsM3U8Cache: {
+					autoplay: `${autoplayMaster360}\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080\nhttps://cdn.example/autoplay/1080.m3u8`,
+				},
+			});
+			expect(guard()(info, { Resolution: "1920x1080" })).toBe(false);
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
 	it("never suppresses the normal-quality search for a preview emergency source", () => {
 		const state = getState();
 		const previousDisable = state.DisableAutoplayBackup;
@@ -2725,11 +2747,11 @@ describe("_shouldHoldBridgeInsteadOfRotating", () => {
 		}
 	});
 
-	it("rotates when the bridge master has no parseable variants", () => {
+	it("rotates when the served bridge quality is unknown", () => {
 		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
 		try {
 			const info = makeBridgeInfo({
-				BackupEncodingsM3U8Cache: { autoplay: "#EXTM3U" },
+				LastCleanBackupResolution: null,
 			});
 			expect(guard()(info, { Resolution: "640x360" })).toBe(false);
 		} finally {
@@ -10435,6 +10457,82 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 		}
 	});
 
+	it("rebuilds the decoder when a pinned 1440p backup flips into a clean 360p bridge", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const state = getState();
+		const previousTypes = state.BackupPlayerTypes;
+		const previousToken = g._getToken;
+		const previousQuality = state.PreferredQualityGroup;
+		state.BackupPlayerTypes = ["site", "autoplay"];
+		state.PreferredQualityGroup = "1440p60";
+		g._getToken = async () => new Response(null, { status: 403 });
+		g._findBackupStream = g.__realFindBackupStream;
+		const siteUrl = "https://edge.example/site/hevc.m3u8";
+		const autoplayUrl = "https://edge.example/autoplay/avc.m3u8";
+		const cleanEnhanced = cleanBackup.replace("avc-backup", "hevc-backup");
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 299000,
+			SustainedNativeResolution: hevcSource,
+			BackupEncodingsM3U8Cache: {
+				site: {
+					m3u8: `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=2560x1440,CODECS="${hevcSource.Codecs}"\n${siteUrl}`,
+					baseUrl: "https://usher.example/site.m3u8",
+				},
+				autoplay: {
+					m3u8: `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="${avcSource.Codecs}"\n${autoplayUrl}`,
+					baseUrl: "https://usher.example/autoplay.m3u8",
+				},
+			},
+		});
+		activateAdContext(info, 299000);
+		g._getStreamInfoForPlaylist = () => info;
+		let contaminated = false;
+		const fetchMedia = async (url: string) =>
+			new Response(
+				url === siteUrl
+					? contaminated
+						? allAdNative
+						: cleanEnhanced
+					: cleanBackup,
+			);
+		const controller = new AbortController();
+
+		try {
+			const first = await process()(bridgeUrl, allAdNative, fetchMedia);
+			expect(first).toContain("hevc-backup");
+			expect(info.ActiveBackupPlayerType).toBe("site");
+			expect(reloadMessages()).toHaveLength(0);
+			contaminated = true;
+			await vi.advanceTimersByTimeAsync(3000);
+			abortRetiringRequestOnReload(info, controller);
+			const pending = process()(
+				bridgeUrl,
+				allAdNative,
+				fetchMedia,
+				controller.signal,
+			);
+			const rejection = expect(pending).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			await vi.advanceTimersByTimeAsync(10000);
+			await rejection;
+			expect(info.LastCleanBackupPlayerType).toBe("autoplay");
+			expect(info.LastCleanBackupResolution).toBe("640x360");
+			expect(reloadMessages()).toHaveLength(1);
+			expect(reloadMessages()[0][1]).toMatchObject({
+				reason: "codec-handoff",
+				cycleStartedAt: 299000,
+			});
+		} finally {
+			state.BackupPlayerTypes = previousTypes;
+			state.PreferredQualityGroup = previousQuality;
+			g._getToken = previousToken;
+			vi.useRealTimers();
+		}
+	});
+
 	it("enforces the enhanced ad-strip invariant after every core return path", async () => {
 		const realCore = g._processM3U8Core;
 		const info = makeEnhancedInfo();
@@ -11914,6 +12012,58 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 			expect(g._findBackupStream).not.toHaveBeenCalled();
 		} finally {
 			g._processM3U8Core = realCore;
+		}
+	});
+
+	it("keeps the first delayed 1440p backup on the same discontinuity timeline as its refresh", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(300000);
+		const info = makeEnhancedInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 299000,
+			SustainedNativeResolution: hevcSource,
+		});
+		const cleanEnhanced = cleanBackup.replace("avc-backup", "hevc-backup");
+		g._getStreamInfoForPlaylist = () => info;
+		activateAdContext(info, 299000);
+		g._findBackupStream = vi.fn(async () => {
+			if (!info.LastCleanBackupM3U8) {
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+			info.LastCleanBackupM3U8 = cleanEnhanced;
+			info.LastCleanBackupPlayerType = "site";
+			info.LastCleanBackupResolution = hevcSource.Resolution;
+			info.LastCleanBackupCodecFamily = "hevc";
+			info.LastCleanBackupCodec = hevcSource.Codecs.toLowerCase();
+			info.LastCleanBackupAt = Date.now();
+			T<(...args: unknown[]) => string>("_rememberBackupPlaylistMetadata")(
+				info,
+				cleanEnhanced,
+				"hevc",
+				hevcSource.Codecs,
+				{
+					playerType: "site",
+					resolution: hevcSource.Resolution,
+					playlistUrl: "https://edge.example/backup.m3u8",
+					sessionUrl: "https://usher.example/master.m3u8",
+				},
+			);
+			return { type: "site", m3u8: cleanEnhanced };
+		});
+		try {
+			const pending = process()(
+				bridgeUrl,
+				allAdNative.replace("#EXTINF:2.000,", "#EXTINF:2.000,live"),
+				fetchStub,
+			);
+			await vi.advanceTimersByTimeAsync(500);
+			const first = await pending;
+			const refreshed = await process()(bridgeUrl, allAdNative, fetchStub);
+			expect(first).toContain("#EXT-X-DISCONTINUITY\n");
+			expect(first).toBe(refreshed);
+			expect(reloadMessages()).toHaveLength(0);
+		} finally {
+			vi.useRealTimers();
 		}
 	});
 

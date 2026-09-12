@@ -122,7 +122,7 @@ describe("crashed worker recovery with the real player task", () => {
 
 	function exhaust() {
 		crash();
-		vi.advanceTimersByTime(10000);
+		vi.advanceTimersByTime(7000);
 	}
 
 	it("does not treat setSrc success on the cached dead worker as a restart", () => {
@@ -258,5 +258,234 @@ describe("crashed worker recovery with the real player task", () => {
 		expect(setSrc).not.toHaveBeenCalled();
 		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
 		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("expires the warning after 3 seconds without authorizing more recovery", () => {
+		exhaust();
+		const recovery = T<(context: unknown) => Record<string, unknown>>(
+			"_getWorkerRecoveryState",
+		)(context);
+		vi.advanceTimersByTime(2999);
+		expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
+		vi.advanceTimersByTime(1);
+		expect(recovery.phase).toBe("exhausted");
+		expect(recovery.attempts).toBe(3);
+		expect(setSrc).not.toHaveBeenCalled();
+		expect(refresh).not.toHaveBeenCalled();
+		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
+	});
+
+	it("keeps dismissal through a failed successor in the same exhausted recovery", () => {
+		exhaust();
+		const recovery = T<(context: unknown) => Record<string, unknown>>(
+			"_getWorkerRecoveryState",
+		)(context);
+		const lastAttempt = recovery.lastAttemptAt;
+		document
+			.querySelectorAll<HTMLButtonElement>("#ttvab-worker-recovery button")[1]
+			.click();
+		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
+		const failedSuccessor = {
+			__TTVABGeneration: 2,
+			__TTVABCreatedAt: Date.now(),
+			__TTVABPageMediaKey: context.MediaKey,
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				[context.MediaKey, Date.now()],
+			]),
+		};
+		player.core.worker = failedSuccessor;
+		(g._S as { workers: unknown[] }).workers = [failedSuccessor];
+		T<(worker: unknown, context: unknown, message: string) => void>(
+			"_recoverCrashedWorker",
+		)(failedSuccessor, context, "Successor failed before recovery stabilized");
+		expect(recovery.attempts).toBe(3);
+		expect(recovery.lastAttemptAt).toBe(lastAttempt);
+		expect(setSrc).not.toHaveBeenCalled();
+		expect(refresh).not.toHaveBeenCalled();
+		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
+	});
+
+	it("clears the warning on verified fallback recovery before its expiry callback runs", async () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const cycleStartedAt = 90000;
+		const mediaUrl =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/issue76-native.m3u8";
+		Object.assign(state, {
+			IsAdStrippingEnabled: true,
+			CurrentAdChannel: context.ChannelName,
+			CurrentAdMediaKey: context.MediaKey,
+			AdPodProgressByMediaKey: { [context.MediaKey]: { cycleStartedAt } },
+			AdEndMinCleanPlaylists: 3,
+			AdEndGraceMs: 500,
+			AdSegmentCache: new Map(),
+		});
+		for (const key of [
+			"_pageSidePlaybackOwnerByUrl",
+			"_pageSideEmptyHoldInfoByUrl",
+			"_pageSideVariantCodecByUrl",
+		]) {
+			T<Map<string, unknown>>(key).clear();
+		}
+		worker.__TTVABFirstPongAt = Date.now();
+		worker.__TTVABLastPongAt = Date.now();
+		expect(
+			T<(worker: unknown, now: number, context: unknown) => boolean>(
+				"_promoteWorkerPlaybackOwner",
+			)(worker, Date.now(), context),
+		).toBe(true);
+		expect(
+			T<(...args: unknown[]) => boolean>("_rememberPageSidePlaybackOwner")(
+				context.MediaKey,
+				mediaUrl,
+				"hev1.1.6.L153.B0",
+				cycleStartedAt,
+				{
+					confirmedPlayback: true,
+					workerGeneration: 1,
+					decoderCodec: "hev1.1.6.L153.B0",
+					handoffId: null,
+				},
+			),
+		).toBe(true);
+		for (const key of [
+			"_clearPlaybackRecoveryTimeoutsForContext",
+			"_resetPlayerBufferMonitorState",
+			"_clearAdResumeIntent",
+			"_restoreSuppressedMediaAfterAd",
+			"_schedulePostAdArtifactCleanup",
+		]) {
+			vi.spyOn(g, key).mockReturnValue(undefined);
+		}
+		vi.mocked(g._installPageSideM3U8Override as () => void).mockRestore();
+		const savedFetch = window.fetch;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const savedRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const savedActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+		let mediaSequence = 600;
+		const rawFetch = vi.fn(
+			async () =>
+				new Response(
+					[
+						"#EXTM3U",
+						"#EXT-X-TARGETDURATION:2",
+						`#EXT-X-MEDIA-SEQUENCE:${mediaSequence++}`,
+						"#EXTINF:2.000,",
+						"https://edge.example/native.ts",
+					].join("\n"),
+					{ status: 200 },
+				),
+		);
+		window.fetch = rawFetch as typeof fetch;
+		scopedWindow.__TTVAB_REAL_FETCH__ = null;
+		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+		try {
+			crash();
+			vi.advanceTimersByTime(7000);
+			expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
+			for (let index = 0; index < 6; index++) {
+				await expect(window.fetch(mediaUrl)).rejects.toMatchObject({
+					name: "AbortError",
+				});
+				vi.setSystemTime(Date.now() + 2000);
+			}
+			expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
+			const restored = await (await window.fetch(mediaUrl)).text();
+			expect(restored).toContain("native.ts");
+			expect(state.CurrentAdMediaKey).toBeNull();
+			expect(state.LastAdEndedCycleStartedAt).toBe(cycleStartedAt);
+			const recovery = T<(context: unknown) => Record<string, unknown>>(
+				"_getWorkerRecoveryState",
+			)(context);
+			expect(recovery.phase).toBe("exhausted");
+			expect(recovery.attempts).toBe(3);
+			expect(rawFetch).toHaveBeenCalledTimes(7);
+			expect(setSrc).not.toHaveBeenCalled();
+			expect(refresh).not.toHaveBeenCalled();
+			expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
+		} finally {
+			window.fetch = savedFetch;
+			scopedWindow.__TTVAB_REAL_FETCH__ = savedRealFetch;
+			scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = savedActive;
+		}
+	});
+
+	it("allows a later warning only after healthy playback rearms the recovery budget", () => {
+		exhaust();
+		document
+			.querySelectorAll<HTMLButtonElement>("#ttvab-worker-recovery button")[1]
+			.click();
+		const recovery = T<(context: unknown) => Record<string, unknown>>(
+			"_getWorkerRecoveryState",
+		)(context);
+		const successor = {
+			__TTVABGeneration: 2,
+			__TTVABCreatedAt: Date.now(),
+			__TTVABPageMediaKey: context.MediaKey,
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				[context.MediaKey, Date.now()],
+			]),
+		};
+		player.core.worker = successor;
+		(g._S as { workers: unknown[] }).workers = [successor];
+		const markPong =
+			T<(worker: unknown, now: number) => void>("_markWorkerPong");
+		markPong(successor, Date.now());
+		expect(recovery.phase).toBe("stabilizing");
+		vi.advanceTimersByTime(60000);
+		successor.__TTVABPlaybackObservedAtByMediaKey.set(
+			context.MediaKey,
+			Date.now(),
+		);
+		markPong(successor, Date.now());
+		expect(recovery.attempts).toBe(0);
+		expect(recovery.phase).toBe("idle");
+		T<(worker: unknown, context: unknown, message: string) => void>(
+			"_recoverCrashedWorker",
+		)(successor, context, "Later independent failure");
+		vi.advanceTimersByTime(7000);
+		expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
+		expect(recovery.attempts).toBe(3);
+	});
+
+	it("does not let an earlier notice expiry clear the next notice", () => {
+		exhaust();
+		vi.advanceTimersByTime(1000);
+		T<(context: unknown) => boolean>("_releasePlaybackContext")(context);
+		const otherContext = {
+			MediaType: "live",
+			ChannelName: "otherchannel",
+			MediaKey: "live:otherchannel",
+		};
+		window.history.replaceState(null, "", "/otherchannel");
+		Object.assign(g.__TTVAB_STATE__ as Record<string, unknown>, {
+			PageChannel: otherContext.ChannelName,
+			PageMediaKey: otherContext.MediaKey,
+			PagePlaybackContextGeneration: 1,
+		});
+		const otherWorker = {
+			__TTVABGeneration: 2,
+			__TTVABPageMediaKey: otherContext.MediaKey,
+			__TTVABCreatedAt: Date.now(),
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				[otherContext.MediaKey, Date.now()],
+			]),
+		};
+		player.core.worker = otherWorker;
+		(g._S as { workers: unknown[] }).workers = [otherWorker];
+		for (let attempt = 0; attempt < 3; attempt++) {
+			T<(context: unknown) => boolean>("_recordWorkerRecoveryAttempt")(
+				otherContext,
+			);
+		}
+		T<(worker: unknown, context: unknown, message: string) => void>(
+			"_recoverCrashedWorker",
+		)(otherWorker, otherContext, "Another channel failed");
+		expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
+		vi.advanceTimersByTime(2000);
+		expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
+		vi.advanceTimersByTime(999);
+		expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
+		vi.advanceTimersByTime(1);
+		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
 	});
 });
