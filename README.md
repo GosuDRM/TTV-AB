@@ -72,6 +72,14 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.5.9 - 2026-09-13
+
+- **Startup Recovery** - Added a Refresh tab prompt when playback started before ad blocking could attach, with checks to prevent stale prompts from refreshing another stream ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Freeze Diagnostics** - Generate Log can now include the last saved diagnostics when a Twitch tab stops responding, clearly labelled with their capture time ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Crash Reports** - Preserved more crash details after player cleanup and clarified startup messages to help diagnose playback failures ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+
+The cause of the reported full-tab freeze remains under investigation.
+
 ### v17.5.8 - 2026-09-12
 
 - **Player Recovery Warning** - Added automatic dismissal after 3 seconds, cleared stale warnings after playback recovery, and prevented repeated prompts during the same recovery episode ([#76](https://github.com/GosuDRM/TTV-AB/issues/76)).
@@ -83,10 +91,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Channel Banner Recovery** - Prevented unrelated worker failures from restarting healthy banner VODs or recommended live streams ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
 
 The reported full-tab freeze remains under investigation.
-
-### v17.5.6 - 2026-09-10
-
-- **360p Recovery Follow-Up** - Fixed a remaining recovery loop after switching to the temporary low-quality stream during ads ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)). The separate full-tab freeze remains under investigation.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

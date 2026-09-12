@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.5.9] - 2026-09-13
+
+Changed
+
+- **Startup Recovery** - Added a Refresh tab prompt when playback started before ad blocking could attach, with checks to prevent stale prompts from refreshing another stream ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Freeze Diagnostics** - Generate Log can now include the last saved diagnostics when a Twitch tab stops responding, clearly labelled with their capture time ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Crash Reports** - Preserved more crash details after player cleanup and clarified startup messages to help diagnose playback failures ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+
+The cause of the reported full-tab freeze remains under investigation.
+
 ## [17.5.8] - 2026-09-12
 
 Fixed
