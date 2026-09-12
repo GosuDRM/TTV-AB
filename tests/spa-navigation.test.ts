@@ -65,6 +65,61 @@ describe("_hookSpaNavigation", () => {
 	});
 });
 
+describe("bounded diagnostic checkpoints", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		g._bridgePort = {};
+		g._lastDiagnosticCheckpointAt = 0;
+		g._sendBridgeMessage = vi.fn(() => true);
+		vi.spyOn(g, "_collectPageLogContext").mockReturnValue({
+			pageMediaKey: "live:test",
+		});
+		g.__TTVAB_LOGS__ = Array.from({ length: 1000 }, (_, index) => ({
+			t: 1 + index,
+			l: "info",
+			m: "message".repeat(500),
+		}));
+	});
+	afterEach(() => {
+		g._bridgePort = null;
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it("uses a bounded recent tail and throttles ordinary watchdog checkpoints", () => {
+		const checkpoint = T<(force?: boolean) => boolean>(
+			"_checkpointPageDiagnostics",
+		);
+		expect(checkpoint()).toBe(true);
+		expect(checkpoint()).toBe(false);
+		const send = g._sendBridgeMessage as ReturnType<typeof vi.fn>;
+		const detail = send.mock.calls[0][1];
+		expect(detail.entries.length).toBeLessThanOrEqual(64);
+		expect(
+			new TextEncoder().encode(JSON.stringify(detail.entries)).byteLength,
+		).toBeLessThanOrEqual(24 * 1024);
+		expect(detail.entries.at(-1).t).toBe(1000);
+		vi.advanceTimersByTime(15000);
+		expect(checkpoint()).toBe(true);
+	});
+
+	it("flushes a failure immediately after an ordinary checkpoint", () => {
+		const checkpoint = T<(force?: boolean) => boolean>(
+			"_checkpointPageDiagnostics",
+		);
+		checkpoint();
+		expect(checkpoint(true)).toBe(true);
+		expect(g._sendBridgeMessage).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not fill the bridge queue while the extension bridge is disconnected", () => {
+		g._bridgePort = null;
+		expect(T<() => boolean>("_checkpointPageDiagnostics")()).toBe(false);
+		expect(g._sendBridgeMessage).not.toHaveBeenCalled();
+	});
+});
+
 describe("_collectPageLogEntries", () => {
 	let savedCapture: unknown;
 	let savedLog: unknown;

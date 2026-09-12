@@ -984,11 +984,182 @@ function forwardPreviewFailureDiagnostic(detail, sender) {
 	}
 }
 
+const DIAGNOSTIC_CHECKPOINT_STORAGE_KEY = "ttvDiagnosticCheckpoints";
+const DIAGNOSTIC_CHECKPOINT_TTL_MS = 30 * 60 * 1000;
+let diagnosticStoreWork = Promise.resolve();
+let pendingDiagnosticStoreWork = 0;
+
+type DiagnosticCheckpointRecord = {
+	pageUrl: string;
+	capturedAt: number;
+	payload: string;
+};
+
+function diagnosticPageUrl(value) {
+	try {
+		const url = new URL(String(value || ""));
+		if (
+			(url.protocol !== "https:" && url.protocol !== "http:") ||
+			(url.hostname !== "twitch.tv" && !url.hostname.endsWith(".twitch.tv"))
+		)
+			return null;
+		return `${url.origin}${url.pathname}`.slice(0, 2048);
+	} catch {
+		return null;
+	}
+}
+
+function accessDiagnosticSession(method, value): Promise<PlainObject> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(
+			() => reject(new Error("Diagnostic storage timeout")),
+			2000,
+		);
+		try {
+			chrome.storage.session[method](value, (result) => {
+				clearTimeout(timer);
+				if (chrome.runtime.lastError) {
+					reject(new Error(chrome.runtime.lastError.message));
+				} else {
+					resolve(result || {});
+				}
+			});
+		} catch (error) {
+			clearTimeout(timer);
+			reject(error);
+		}
+	});
+}
+
+function queueDiagnosticStoreWork(
+	operation: (records: Record<string, DiagnosticCheckpointRecord>) => unknown,
+	write = false,
+) {
+	if (pendingDiagnosticStoreWork >= 32) return Promise.resolve(null);
+	pendingDiagnosticStoreWork += 1;
+	const work = diagnosticStoreWork
+		.then(async () => {
+			const stored = await accessDiagnosticSession(
+				"get",
+				DIAGNOSTIC_CHECKPOINT_STORAGE_KEY,
+			);
+			const records: Record<string, DiagnosticCheckpointRecord> =
+				Object.create(null);
+			const rawRecords = getMessageDetail(
+				stored[DIAGNOSTIC_CHECKPOINT_STORAGE_KEY],
+			);
+			const now = Date.now();
+			for (const [key, value] of Object.entries(rawRecords || {}).slice(-16)) {
+				const record = value as DiagnosticCheckpointRecord;
+				if (
+					/^\d+$/.test(key) &&
+					record &&
+					typeof record.payload === "string" &&
+					record.payload.length <= 64 * 1024 &&
+					Number.isFinite(record.capturedAt) &&
+					record.capturedAt <= now &&
+					now - record.capturedAt <= DIAGNOSTIC_CHECKPOINT_TTL_MS
+				)
+					records[key] = record;
+			}
+			const result = operation(records);
+			if (write && result !== false) {
+				const oldestKeys = Object.keys(records).sort(
+					(a, b) => records[a].capturedAt - records[b].capturedAt,
+				);
+				for (const key of oldestKeys.slice(
+					0,
+					Math.max(0, oldestKeys.length - 16),
+				)) {
+					delete records[key];
+				}
+				await accessDiagnosticSession("set", {
+					[DIAGNOSTIC_CHECKPOINT_STORAGE_KEY]: records,
+				});
+			}
+			return result;
+		})
+		.catch(() => null)
+		.finally(() => {
+			pendingDiagnosticStoreWork -= 1;
+		});
+	diagnosticStoreWork = work.then(() => {});
+	return work;
+}
+
+function retainDiagnosticCheckpoint(detail, sender) {
+	const tabId = sender?.tab?.id;
+	const pageUrl = diagnosticPageUrl(sender?.url);
+	const capturedAt = detail?.capturedAt;
+	const context = getMessageDetail(detail?.context);
+	if (
+		sender?.frameId !== 0 ||
+		!Number.isInteger(tabId) ||
+		tabId < 0 ||
+		!pageUrl ||
+		!isPlainObject(detail) ||
+		diagnosticPageUrl(context?.pageUrl) !== pageUrl ||
+		typeof capturedAt !== "number" ||
+		!Number.isFinite(capturedAt) ||
+		capturedAt <= 0 ||
+		capturedAt > Date.now() ||
+		Date.now() - capturedAt > DIAGNOSTIC_CHECKPOINT_TTL_MS
+	)
+		return Promise.resolve(null);
+	const payload = JSON.stringify(detail);
+	if (new TextEncoder().encode(payload).byteLength > 64 * 1024)
+		return Promise.resolve(null);
+	return queueDiagnosticStoreWork((records) => {
+		if ((records[tabId]?.capturedAt || 0) > capturedAt) return false;
+		records[tabId] = { pageUrl, capturedAt, payload };
+		return true;
+	}, true);
+}
+
+function clearDiagnosticCheckpoint(tabId) {
+	void queueDiagnosticStoreWork((records) => {
+		if (!records[tabId]) return false;
+		delete records[tabId];
+		return true;
+	}, true);
+}
+
+chrome.tabs?.onRemoved?.addListener(clearDiagnosticCheckpoint);
+chrome.tabs?.onUpdated?.addListener((tabId, change) => {
+	if (change.status === "loading" || change.url)
+		clearDiagnosticCheckpoint(tabId);
+});
+
 chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 	if (sender?.id !== chrome.runtime.id) {
 		return undefined;
 	}
 	const message = getMessageData(rawMessage);
+	if (message?.type === "ttvab-diagnostic-checkpoint") {
+		void retainDiagnosticCheckpoint(message.detail, sender).then((retained) => {
+			sendResponse({ ok: retained === true });
+		});
+		return true;
+	}
+	if (
+		message?.type === "ttvab-get-diagnostic-checkpoint" &&
+		typeof sender?.url === "string" &&
+		sender.url.split(/[?#]/, 1)[0] ===
+			chrome.runtime.getURL("src/popup/popup.html")
+	) {
+		const detail = getMessageDetail(message.detail);
+		const tabId = detail?.tabId;
+		const pageUrl = diagnosticPageUrl(detail?.pageUrl);
+		if (typeof tabId !== "number" || !Number.isInteger(tabId) || !pageUrl)
+			return undefined;
+		void queueDiagnosticStoreWork((records) => {
+			const record = records[tabId];
+			return record?.pageUrl === pageUrl ? JSON.parse(record.payload) : null;
+		}).then((checkpoint) => {
+			sendResponse({ ok: Boolean(checkpoint), checkpoint });
+		});
+		return true;
+	}
 	if (message?.type === "ttvab-preview-failure-diagnostic") {
 		forwardPreviewFailureDiagnostic(message.detail, sender);
 		return undefined;

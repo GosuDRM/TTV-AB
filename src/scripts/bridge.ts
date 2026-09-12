@@ -1589,6 +1589,10 @@ function handlePageBridgeMessage(rawMessage) {
 		scheduleFlush(WATCH_FLUSH_DELAY_MS);
 		return;
 	}
+	if (message.type === "ttvab-diagnostic-checkpoint") {
+		forwardDiagnosticCheckpoint(detail);
+		return;
+	}
 	if (message.type === "ttvab-logs") {
 		const requestId =
 			typeof detail?.requestId === "string" ? detail.requestId : null;
@@ -1836,6 +1840,40 @@ function sanitizeLogContextWorker(value) {
 	};
 }
 
+function sanitizeWorkerFailureDiagnostic(value) {
+	if (!isPlainObject(value)) return null;
+	return {
+		generation: sanitizeLogGeneration(value.generation),
+		mediaKey: normalizeMediaKey(value.mediaKey),
+		observedMediaKey: normalizeMediaKey(value.observedMediaKey),
+		pageMediaKey: normalizeMediaKey(value.pageMediaKey),
+		pageGeneration: sanitizeLogGeneration(value.pageGeneration),
+		observedPageMediaKey: normalizeMediaKey(value.observedPageMediaKey),
+		observedPageGeneration: sanitizeLogGeneration(value.observedPageGeneration),
+		cycleStartedAt: sanitizeLogTimestamp(value.cycleStartedAt),
+		isCurrentPlayerWorker:
+			typeof value.isCurrentPlayerWorker === "boolean"
+				? value.isCurrentPlayerWorker
+				: null,
+		failedAt: sanitizeLogTimestamp(value.failedAt),
+		lastPongAt: sanitizeLogTimestamp(value.lastPongAt),
+		message: sanitizeLogMessage(value.message).slice(0, 1000),
+		source: value.source ? redactLogUrl(value.source) : "",
+		line: sanitizeLogGeneration(value.line),
+		column: sanitizeLogGeneration(value.column),
+		stack: sanitizeLogMessage(value.stack).slice(0, 2000),
+		wasmFrames: Array.isArray(value.wasmFrames)
+			? value.wasmFrames
+					.slice(0, 16)
+					.filter(
+						(frame) =>
+							typeof frame === "string" &&
+							/^wasm-function\[\d{1,10}\](?::0x[0-9a-f]{1,16})?$/i.test(frame),
+					)
+			: [],
+	};
+}
+
 function sanitizeLogContextMedia(value) {
 	if (!isPlainObject(value)) return null;
 	const buffered = [];
@@ -1895,6 +1933,15 @@ function sanitizeLogContext(value) {
 			: "unknown";
 	return {
 		pageUrl: sanitizeLogContextUrl(context.pageUrl),
+		pageVersion: sanitizeLogString(context.pageVersion, 32),
+		pageGeneration: sanitizeLogGeneration(context.pageGeneration),
+		unhookedPlayer: context.unhookedPlayer === true,
+		workerFailures: Array.isArray(context.workerFailures)
+			? context.workerFailures
+					.slice(-8)
+					.map(sanitizeWorkerFailureDiagnostic)
+					.filter(Boolean)
+			: [],
 		pageMediaKey: normalizeMediaKey(context.pageMediaKey),
 		pageChannel: normalizeChannelName(context.pageChannel),
 		visibility,
@@ -1912,6 +1959,45 @@ function sanitizeLogContext(value) {
 		workers,
 		media: sanitizeLogContextMedia(context.media),
 	};
+}
+
+function forwardDiagnosticCheckpoint(detail) {
+	try {
+		if (window.top !== window || !isPlainObject(detail)) return false;
+		const context = sanitizeLogContext(detail.context);
+		if (!context?.pageUrl) return false;
+		const sanitized = sanitizeLogEntries(
+			Array.isArray(detail.entries) ? detail.entries.slice(-64) : [],
+		);
+		const checkpoint = {
+			capturedAt: Math.min(Date.now(), sanitizeLogTimestamp(detail.capturedAt)),
+			context,
+			entries: sanitized.entries,
+			truncatedEntries: addTruncatedLogEntryCounts(
+				detail.truncatedEntries,
+				sanitized.truncatedEntries,
+			),
+		};
+		while (getLogEntryByteLength(checkpoint) > 60 * 1024) {
+			if (checkpoint.entries.length > 0) {
+				checkpoint.entries.shift();
+				checkpoint.truncatedEntries += 1;
+			} else if (context.workerFailures.length > 1) {
+				context.workerFailures.shift();
+			} else {
+				return false;
+			}
+		}
+		chrome.runtime.sendMessage(
+			{ type: "ttvab-diagnostic-checkpoint", detail: checkpoint },
+			() => {
+				void chrome.runtime.lastError;
+			},
+		);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function sanitizePreviewFailureDiagnostic(value, frameContext) {

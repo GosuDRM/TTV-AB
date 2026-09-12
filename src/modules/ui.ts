@@ -89,14 +89,19 @@ function _clearWorkerRecoveryNotice(mediaKey = null) {
 	_workerRecoveryNoticeMediaKey = null;
 }
 
-function _showWorkerRecoveryNotice(mediaKey) {
+function _showWorkerRecoveryNotice(mediaKey, reason = "crash") {
 	const currentContext = _getPlaybackContextFromUrl(window.location.href);
-	const recoveryState = _getWorkerRecoveryState(currentContext, false);
+	const isUnhooked = reason === "unhooked";
+	const recoveryState = isUnhooked
+		? _UnhookedPlayerState
+		: _getWorkerRecoveryState(currentContext, false);
 	if (
 		!document.body ||
 		!mediaKey ||
 		currentContext.MediaKey !== mediaKey ||
-		recoveryState?.phase !== "exhausted" ||
+		(isUnhooked
+			? !_canRefreshUnhookedPlayer(mediaKey)
+			: recoveryState?.phase !== "exhausted") ||
 		Number(recoveryState.noticeShownAt) > 0
 	)
 		return;
@@ -105,13 +110,17 @@ function _showWorkerRecoveryNotice(mediaKey) {
 		Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0;
 	const canRefresh = () => {
 		const context = _getPlaybackContextFromUrl(window.location.href);
-		const currentRecovery = _getWorkerRecoveryState(context, false);
+		const currentRecovery = isUnhooked
+			? _UnhookedPlayerState
+			: _getWorkerRecoveryState(context, false);
 		return Boolean(
 			mediaKey &&
 				context.MediaKey === mediaKey &&
 				(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) ===
 					pageGeneration &&
-				currentRecovery?.phase === "exhausted" &&
+				(isUnhooked
+					? _canRefreshUnhookedPlayer(mediaKey)
+					: currentRecovery?.phase === "exhausted") &&
 				currentRecovery.noticeShownAt === noticeShownAt,
 		);
 	};
@@ -125,8 +134,9 @@ function _showWorkerRecoveryNotice(mediaKey) {
 	notice.style.cssText =
 		"position:fixed;bottom:20px;right:20px;z-index:2147483647;max-width:360px;padding:16px;border:1px solid #9146ff;border-radius:8px;background:#18181b;color:#efeff1;font:14px/1.5 sans-serif;box-shadow:0 4px 16px #0008";
 	const message = document.createElement("p");
-	message.textContent =
-		"TTV AB could not restart Twitch's player worker. If playback remains stuck, refresh this tab. Chat will reconnect and picture-in-picture will close.";
+	message.textContent = isUnhooked
+		? "Refresh this tab to start ad blocking on the current player. Chat will reconnect and picture-in-picture will close."
+		: "TTV AB could not restart Twitch's player worker. If playback remains stuck, refresh this tab. Chat will reconnect and picture-in-picture will close.";
 	message.style.margin = "0 0 12px";
 	const refresh = document.createElement("button");
 	refresh.type = "button";
@@ -150,6 +160,7 @@ function _showWorkerRecoveryNotice(mediaKey) {
 	document.body.appendChild(notice);
 	_workerRecoveryNoticeMediaKey = mediaKey;
 	recoveryState.noticeShownAt = noticeShownAt;
+	if (isUnhooked) return;
 	const timerID = setTimeout(() => {
 		if (_workerRecoveryNoticeDismissTimer !== timerID) return;
 		_clearWorkerRecoveryNotice(mediaKey);

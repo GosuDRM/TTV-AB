@@ -677,6 +677,29 @@ function _isPageLifecycleCycleCurrent(mediaKey, cycleStartedAt) {
 	);
 }
 
+function _hookWorkerErrorDiagnostics() {
+	let reported = 0;
+	self.addEventListener("error", (event) => {
+		if (reported >= 4) return;
+		reported += 1;
+		try {
+			self.postMessage({
+				__ttvabWorkerBridge: true,
+				message: {
+					key: "WorkerErrorDiagnostic",
+					value: {
+						message: _formatLogText(event.message || "Unknown worker error"),
+						filename: String(event.filename || "").slice(0, 512),
+						lineno: event.lineno,
+						colno: event.colno,
+						stack: _formatLogText(event.error?.stack || ""),
+					},
+				},
+			});
+		} catch {}
+	});
+}
+
 function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
 	const realFetch = fetch;
@@ -3366,6 +3389,9 @@ function _recoverCrashedWorker(
 		crashedAt,
 	);
 	_log(message, level);
+	if (typeof _recordWorkerFailureDiagnostic === "function") {
+		_recordWorkerFailureDiagnostic(worker, recoveryContext, message);
+	}
 	pruneTrackedWorkers([worker]);
 	if (!recoveryContext.MediaKey) {
 		_installPageSideM3U8Override();
@@ -3779,6 +3805,10 @@ function _startWorkerWatchdog() {
 	if (_workerWatchdogID !== null) return;
 	_workerWatchdogID = setInterval(() => {
 		const now = Date.now();
+		if (typeof _checkUnhookedPlayer === "function") _checkUnhookedPlayer();
+		if (typeof _checkpointPageDiagnostics === "function") {
+			_checkpointPageDiagnostics();
+		}
 		for (const worker of _S.workers) {
 			if (!worker || worker.__TTVABIntentionallyTerminated) continue;
 			if (worker.__TTVABCrashed) continue;
@@ -4885,6 +4915,7 @@ function _hookWorker() {
                 const _RESERVED_ROUTE_SEGMENTS = new Set(${JSON.stringify(Array.from(_RESERVED_ROUTE_SEGMENTS))});
                 const _pageSideVariantCodecByUrl = new Map(${JSON.stringify(seedPlaybackCodecEntries)});
 				${_formatLogText.toString()}
+				${_hookWorkerErrorDiagnostics.toString()}
                 ${_log.toString()}
                 ${_createWorkerBridgeMessage.toString()}
                 ${_getWorkerBridgeMessage.toString()}
@@ -5667,6 +5698,7 @@ function _hookWorker() {
                     }
                 });
                 
+                _hookWorkerErrorDiagnostics();
                 _hookWorkerFetch();
             })();
 
@@ -5789,6 +5821,18 @@ function _hookWorker() {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (!data) return;
 					e.stopImmediatePropagation?.();
+					if (data.key === "WorkerErrorDiagnostic") {
+						const diagnostic = _getStructuredMessageData(data.value);
+						if (typeof _recordWorkerFailureDiagnostic === "function") {
+							_recordWorkerFailureDiagnostic(
+								this,
+								_getWorkerPlaybackContext(this, pagePlaybackContext),
+								diagnostic?.message,
+								diagnostic,
+							);
+						}
+						return;
+					}
 					if (this.__TTVABIntentionallyTerminated && !this.__TTVABCrashed) {
 						return;
 					}
@@ -7215,10 +7259,18 @@ function _hookWorker() {
 				this.__TTVABWorkerOpts = workerOpts;
 
 				this.addEventListener("error", (e) => {
+					if (typeof _recordWorkerFailureDiagnostic === "function") {
+						_recordWorkerFailureDiagnostic(
+							this,
+							_getWorkerPlaybackContext(this, pagePlaybackContext),
+							e.message || "Unknown worker error",
+							e,
+						);
+					}
 					_recoverCrashedWorker(
 						this,
 						pagePlaybackContext,
-						`Worker crashed loading ${workerSourceUrl}: ${e.message || "Unknown error"}`,
+						`Worker #g${this.__TTVABGeneration} error: ${e.message || "Unknown error"}`,
 						"error",
 					);
 				});

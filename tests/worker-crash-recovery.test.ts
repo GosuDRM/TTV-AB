@@ -40,8 +40,282 @@ beforeAll(() => {
 		"worker",
 		"player",
 		"ui",
+		"init",
 	])
 		loadModule(name);
+});
+
+describe("refresh recovery for a player created before interception", () => {
+	let video: HTMLVideoElement;
+	let worker: Record<string, unknown>;
+	let refresh: ReturnType<typeof vi.spyOn>;
+	const check = () => T<() => void>("_checkUnhookedPlayer")();
+	const notice = () => document.getElementById("ttvab-worker-recovery");
+	const state = () => g.__TTVAB_STATE__ as Record<string, unknown>;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		history.replaceState(null, "", "/testchannel");
+		g.__TTVAB_STATE__ = {
+			IsAdStrippingEnabled: true,
+			PageMediaKey: "live:testchannel",
+			PagePlaybackContextGeneration: 2,
+		};
+		Object.assign(g._UnhookedPlayerState as Record<string, unknown>, {
+			workerRef: null,
+			mediaKey: null,
+			pageGeneration: 0,
+			firstSeenAt: 0,
+			noticeShownAt: 0,
+		});
+		video = document.createElement("video");
+		document.body.append(video);
+		Object.defineProperty(video, "readyState", {
+			configurable: true,
+			value: 4,
+		});
+		worker = { postMessage: vi.fn() };
+		vi.spyOn(g, "_getPlayerAndState").mockImplementation(() => ({
+			player: { core: { worker }, getHTMLVideoElement: () => video },
+		}));
+		vi.spyOn(g, "_getPrimaryMediaElement").mockImplementation(() => video);
+		vi.spyOn(g, "_checkpointPageDiagnostics").mockReturnValue(true);
+		refresh = vi.spyOn(window.location, "reload").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		T<() => void>("_clearWorkerRecoveryNotice")();
+		video.remove();
+		vi.clearAllTimers();
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	function show() {
+		check();
+		expect(notice()).toBeNull();
+		vi.advanceTimersByTime(5000);
+		check();
+	}
+
+	it("requires stable evidence from the actual unhooked player and an explicit refresh click", () => {
+		g._S = { workers: [{ __TTVABGeneration: 9 }] };
+		show();
+		expect(notice()?.textContent).toContain("start ad blocking");
+		vi.advanceTimersByTime(30000);
+		check();
+		expect(notice()).not.toBeNull();
+		expect(refresh).not.toHaveBeenCalled();
+		notice()?.querySelector("button")?.click();
+		expect(refresh).toHaveBeenCalledOnce();
+		expect(worker.postMessage).not.toHaveBeenCalled();
+	});
+
+	it.each(["navigate", "generation", "replacement", "disable", "detach"])(
+		"rejects a stale refresh after %s even before the next watchdog tick",
+		(change) => {
+			show();
+			if (change === "navigate")
+				history.replaceState(null, "", "/otherchannel");
+			if (change === "generation") state().PagePlaybackContextGeneration = 3;
+			if (change === "replacement")
+				worker = { postMessage: vi.fn(), __TTVABGeneration: 3 };
+			if (change === "disable") state().IsAdStrippingEnabled = false;
+			if (change === "detach") video.remove();
+			notice()?.querySelector("button")?.click();
+			expect(refresh).not.toHaveBeenCalled();
+			expect(notice()).toBeNull();
+		},
+	);
+
+	it.each(["hooked", "crashed", "disabled", "pip", "auxiliary", "loading"])(
+		"does not label %s playback as a late installation",
+		(condition) => {
+			if (condition === "hooked") worker.__TTVABGeneration = 2;
+			if (condition === "crashed") worker.__TTVABCrashed = true;
+			if (condition === "disabled") state().IsAdStrippingEnabled = false;
+			if (condition === "pip")
+				vi.spyOn(g, "_getPictureInPictureVideo").mockReturnValue(video);
+			if (condition === "auxiliary")
+				vi.spyOn(g, "_getPrimaryMediaElement").mockReturnValue(
+					document.createElement("video"),
+				);
+			if (condition === "loading")
+				Object.defineProperty(video, "readyState", { value: 0 });
+			show();
+			expect(notice()).toBeNull();
+			expect(refresh).not.toHaveBeenCalled();
+		},
+	);
+
+	it("respects dismissal without repeating the prompt for the same player", () => {
+		show();
+		notice()?.querySelectorAll("button")[1]?.click();
+		vi.advanceTimersByTime(60000);
+		check();
+		expect(notice()).toBeNull();
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("rejects refresh safely when Twitch's player getter stops working", () => {
+		show();
+		vi.spyOn(g, "_getPlayerAndState").mockImplementation(() => {
+			throw new Error("player unavailable");
+		});
+		expect(() => notice()?.querySelector("button")?.click()).not.toThrow();
+		expect(refresh).not.toHaveBeenCalled();
+		expect(notice()).toBeNull();
+	});
+
+	it("removes the prompt after a hooked player replaces the old one", () => {
+		show();
+		worker = { postMessage: vi.fn(), __TTVABGeneration: 2 };
+		check();
+		expect(notice()).toBeNull();
+	});
+});
+
+describe("worker failure evidence survives retirement", () => {
+	beforeEach(() => {
+		(g._workerFailureDiagnostics as unknown[]).length = 0;
+		g.__TTVAB_STATE__ = {
+			PageMediaKey: "live:route",
+			PagePlaybackContextGeneration: 4,
+		};
+		g._S = { workers: [] };
+		vi.spyOn(g, "_checkpointPageDiagnostics").mockReturnValue(true);
+	});
+	afterEach(() => vi.restoreAllMocks());
+
+	it("retains exact failed generation, actual banner ownership and the first failure time without a worker reference", () => {
+		const worker = {
+			__TTVABGeneration: 7,
+			__TTVABLastPongAt: 1000,
+			__TTVABPlaybackPageContext: { mediaKey: "vod:123" },
+		};
+		const record = T<
+			(
+				worker: unknown,
+				context: unknown,
+				message: string,
+				error?: unknown,
+			) => void
+		>("_recordWorkerFailureDiagnostic");
+		record(worker, { MediaKey: "live:route" }, "index out of bounds", {
+			filename: "https://example.com/worker.js?token=secret",
+			lineno: 8,
+			colno: 2,
+			error: { stack: "RuntimeError at wasm:123" },
+		});
+		const first = (g._workerFailureDiagnostics as Record<string, unknown>[])[0];
+		record(worker, { MediaKey: "live:route" }, "Worker error");
+		const snapshot = T<() => Record<string, unknown>>(
+			"_collectPageLogContext",
+		)();
+		expect(snapshot.workers).toEqual([]);
+		expect(snapshot.workerFailures).toEqual([
+			expect.objectContaining({
+				generation: 7,
+				observedMediaKey: "vod:123",
+				pageMediaKey: "live:route",
+				pageGeneration: 4,
+				failedAt: first.failedAt,
+				line: 8,
+				column: 2,
+				stack: "RuntimeError at wasm:123",
+			}),
+		]);
+		expect(JSON.stringify(snapshot.workerFailures)).not.toContain("secret");
+		expect(g._checkpointPageDiagnostics).toHaveBeenCalledWith(true);
+	});
+
+	it("bounds retained failures after many retired workers", () => {
+		const record = T<
+			(worker: unknown, context: unknown, message: string) => void
+		>("_recordWorkerFailureDiagnostic");
+		for (let generation = 1; generation <= 30; generation++)
+			record(
+				{ __TTVABGeneration: generation },
+				{ MediaKey: "live:route" },
+				"error",
+			);
+		const failures = g._workerFailureDiagnostics as Record<string, unknown>[];
+		expect(failures).toHaveLength(8);
+		expect(failures[0].generation).toBe(23);
+	});
+
+	it("retains the failure when the crashed page's player state cannot be read", () => {
+		vi.spyOn(g, "_getPlayerAndState").mockImplementation(() => {
+			throw new Error("broken React state");
+		});
+		T<(worker: unknown, context: unknown, message: string) => void>(
+			"_recordWorkerFailureDiagnostic",
+		)(
+			{ __TTVABGeneration: 9 },
+			{ MediaKey: "live:route" },
+			"original worker error",
+		);
+		expect(g._workerFailureDiagnostics).toEqual([
+			expect.objectContaining({
+				generation: 9,
+				message: "original worker error",
+				isCurrentPlayerWorker: null,
+			}),
+		]);
+	});
+
+	it("keeps a later failure in a different page generation separate", () => {
+		const record = T<
+			(worker: unknown, context: unknown, message: string) => void
+		>("_recordWorkerFailureDiagnostic");
+		const worker = { __TTVABGeneration: 7 };
+		record(worker, { MediaKey: "live:route" }, "first error");
+		(
+			g.__TTVAB_STATE__ as Record<string, unknown>
+		).PagePlaybackContextGeneration = 5;
+		record(worker, { MediaKey: "live:other" }, "later error");
+		const failures = g._workerFailureDiagnostics as Record<string, unknown>[];
+		expect(failures).toHaveLength(2);
+		expect(failures[0]).toMatchObject({
+			pageGeneration: 4,
+			mediaKey: "live:route",
+			message: "first error",
+		});
+	});
+
+	it("captures the worker-side stack without swallowing its error or sending unlimited reports", () => {
+		let handleError: (event: unknown) => void = () => {};
+		const postMessage = vi.fn();
+		new Function(
+			"self",
+			"_formatLogText",
+			`(${T<() => void>("_hookWorkerErrorDiagnostics").toString()})();`,
+		)(
+			{
+				addEventListener: (_type: string, handler: typeof handleError) => {
+					handleError = handler;
+				},
+				postMessage,
+			},
+			T<(text: string) => string>("_formatLogText"),
+		);
+		const event = {
+			message: "index out of bounds",
+			filename: "https://example.com/worker.js",
+			lineno: 42,
+			colno: 7,
+			error: { stack: "run@wasm-function[102]:0xa5" },
+			preventDefault: vi.fn(),
+		};
+		for (let index = 0; index < 20; index++) handleError(event);
+		expect(postMessage).toHaveBeenCalledTimes(4);
+		expect(postMessage.mock.calls[0][0].message).toMatchObject({
+			key: "WorkerErrorDiagnostic",
+			value: { stack: event.error.stack, lineno: 42, colno: 7 },
+		});
+		expect(event.preventDefault).not.toHaveBeenCalled();
+	});
 });
 
 describe("crashed worker recovery with the real player task", () => {

@@ -1254,6 +1254,11 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_hookWorkerErrorDiagnostics",
+			helper: "_formatLogText",
+			source: hooksSource,
+		},
+		{
 			consumer: "_processM3U8",
 			helper: "_applyEmptyHoldPlaylistContinuity",
 			source: processorSource,
