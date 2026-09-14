@@ -72,6 +72,14 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.6.0 - 2026-09-14
+
+- **Post-Ad Recovery** - Kept the verified stream session through post-ad player rebuilds and the bounded recovery retry ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Recovery Status** - Playback is reported as restored only after video advances. Added a Refresh tab prompt when bounded post-ad recovery ends while playback remains stuck ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Freeze Diagnostics** - Generate Log records more recovery details, including source-load results, native quality, decoded-frame counts, and current-worker identity, and preserves key events when repeated messages fill the saved log ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+
+The cause of the reported full-tab freeze remains under investigation.
+
 ### v17.5.9 - 2026-09-13
 
 - **Startup Recovery** - Added a Refresh tab prompt when playback started before ad blocking could attach, with checks to prevent stale prompts from refreshing another stream ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
@@ -84,13 +92,6 @@ The cause of the reported full-tab freeze remains under investigation.
 
 - **Player Recovery Warning** - Added automatic dismissal after 3 seconds, cleared stale warnings after playback recovery, and prevented repeated prompts during the same recovery episode ([#76](https://github.com/GosuDRM/TTV-AB/issues/76)).
 - **Ad Recovery Quality** - Fixed playback sometimes staying at 360p after a blocked ad when the advertised high-quality variant was not the stream actually being served. Recovery now follows the validated backup quality, preserves timeline continuity for delayed backups, and waits for decoded video frames before finishing ([#75](https://github.com/GosuDRM/TTV-AB/issues/75)).
-
-### v17.5.7 - 2026-09-11
-
-- **Worker Recovery Loops** - Stopped repeated player reloads after Twitch's playback worker crashes or stops. The existing Refresh tab prompt remains available when recovery cannot restart playback ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
-- **Channel Banner Recovery** - Prevented unrelated worker failures from restarting healthy banner VODs or recommended live streams ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
-
-The reported full-tab freeze remains under investigation.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

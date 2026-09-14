@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.6.0] - 2026-09-14
+
+Fixed
+
+- **Post-Ad Recovery** - Kept the verified stream session through post-ad player rebuilds and the bounded recovery retry ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Recovery Status** - Playback is reported as restored only after video advances. Added a Refresh tab prompt when bounded post-ad recovery ends while playback remains stuck ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+- **Freeze Diagnostics** - Generate Log records more recovery details, including source-load results, native quality, decoded-frame counts, and current-worker identity, and preserves key events when repeated messages fill the saved log ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
+
+The cause of the reported full-tab freeze remains under investigation.
+
 ## [17.5.9] - 2026-09-13
 
 Changed
