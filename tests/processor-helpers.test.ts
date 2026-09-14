@@ -222,6 +222,8 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_NoBackupRecoveryCandidates: new Map(),
 		_BackupSearchKey: null,
 		_BackupSearchPromises: new Map<string, Promise<unknown>>(),
+		_BackupSelectionSequence: 0,
+		_BackupSelection: null,
 		BackupSearchEpoch: 0,
 		_ForegroundQualityProbeAppliedAt: 0,
 		_BackupProbation: null,
@@ -901,9 +903,13 @@ describe("_resetStreamAdState", () => {
 			_SpliceLastDiscontinuitySequence: 5,
 			_BackupProbation: { type: "site", at: 123 },
 			_ForegroundQualityProbeAppliedAt: 456,
+			_BackupSelectionSequence: 7,
+			_BackupSelection: { sequence: 7, identity: "old", refreshedSequence: 7 },
 			LastSessionNeutralBackupProbeCycleStartedAt: 100,
 		});
 		fn(info);
+		expect(info._BackupSelectionSequence).toBe(0);
+		expect(info._BackupSelection).toBe(null);
 		expect(info.IsShowingAd).toBe(false);
 		expect(info.IsUsingModifiedM3U8).toBe(false);
 		expect(info.IsUsingFallbackStream).toBe(false);

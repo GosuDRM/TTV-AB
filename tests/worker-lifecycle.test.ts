@@ -9699,73 +9699,85 @@ describe("worker mixed-codec master selection", () => {
 		}
 	});
 
-	it("keeps 1440p HEVC/AV1 selectable normally and filters only for an exact current handoff", async () => {
-		const originalFetch = g.fetch;
-		const master = [
-			"#EXTM3U",
-			'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60-hevc"',
-			"https://edge.example/1440-hevc/index.m3u8",
-			'#EXT-X-STREAM-INF:BANDWIDTH=14000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="av01.0.13M.08,mp4a.40.2",VIDEO="1440p60-av1"',
-			"https://edge.example/1440-av1/index.m3u8",
-			'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.64002A,mp4a.40.2",VIDEO="1080p60"',
-			"https://edge.example/1080-avc/index.m3u8",
-		].join("\n");
-		const rawFetch = vi.fn(async () => new Response(master, { status: 200 }));
-		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		state.PageMediaType = "live";
-		state.PageChannel = "testchannel";
-		state.PageMediaKey = "live:testchannel";
-		state.IsAdStrippingEnabled = true;
-		g.fetch = rawFetch;
-		const usherUrl =
-			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=test&token=test";
+	it.each([false, true])(
+		"keeps 1440p HEVC/AV1 selectable and filters only an exact handoff (audio first: %s)",
+		async (audioFirst) => {
+			const originalFetch = g.fetch;
+			const master = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:BANDWIDTH=15000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="hev1.1.6.L153.B0,mp4a.40.2",VIDEO="1440p60-hevc"',
+				"https://edge.example/1440-hevc/index.m3u8",
+				'#EXT-X-STREAM-INF:BANDWIDTH=14000000,RESOLUTION=2560x1440,FRAME-RATE=60.000,CODECS="av01.0.13M.08,mp4a.40.2",VIDEO="1440p60-av1"',
+				"https://edge.example/1440-av1/index.m3u8",
+				'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,FRAME-RATE=60.000,CODECS="avc1.64002A,mp4a.40.2",VIDEO="1080p60"',
+				"https://edge.example/1080-avc/index.m3u8",
+			]
+				.map((line) =>
+					audioFirst
+						? line.replace(
+								/CODECS="([^,]+),mp4a\.40\.2"/,
+								'CODECS="mp4a.40.2, $1"',
+							)
+						: line,
+				)
+				.join("\n");
+			const rawFetch = vi.fn(async () => new Response(master, { status: 200 }));
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.PageMediaType = "live";
+			state.PageChannel = "testchannel";
+			state.PageMediaKey = "live:testchannel";
+			state.IsAdStrippingEnabled = true;
+			g.fetch = rawFetch;
+			const usherUrl =
+				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=test&token=test";
 
-		try {
-			T<() => void>("_hookWorkerFetch")();
-			const normalMaster = await (
-				await (g.fetch as typeof fetch)(usherUrl)
-			).text();
-			const info = (
-				state.StreamInfos as Record<string, Record<string, unknown>>
-			)["live:testchannel"];
+			try {
+				T<() => void>("_hookWorkerFetch")();
+				const normalMaster = await (
+					await (g.fetch as typeof fetch)(usherUrl)
+				).text();
+				const info = (
+					state.StreamInfos as Record<string, Record<string, unknown>>
+				)["live:testchannel"];
 
-			expect(normalMaster).toContain("2560x1440");
-			expect(normalMaster).toContain("1440-hevc/index.m3u8");
-			expect(normalMaster).toContain("1440-av1/index.m3u8");
-			expect(info.ModifiedM3U8).not.toContain("2560x1440");
-			expect(info.IsUsingModifiedM3U8).toBe(false);
-			info.EnhancedDecoderCodecFamily = "hevc";
-			info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
+				expect(normalMaster).toContain("2560x1440");
+				expect(normalMaster).toContain("1440-hevc/index.m3u8");
+				expect(normalMaster).toContain("1440-av1/index.m3u8");
+				expect(info.ModifiedM3U8).not.toContain("2560x1440");
+				expect(info.IsUsingModifiedM3U8).toBe(false);
+				info.EnhancedDecoderCodecFamily = "hevc";
+				info.EnhancedDecoderCodec = "hev1.1.6.L153.B0";
 
-			const cycleStartedAt = 100;
-			const handoffId = "live:testchannel:100:1000:1:exact-current-handoff";
-			info.IsShowingAd = true;
-			info.VisibleAdStartedAt = cycleStartedAt;
-			info._CodecHandoffPendingId = handoffId;
-			state.CurrentAdChannel = "testchannel";
-			state.CurrentAdMediaKey = "live:testchannel";
-			state.AdPodProgressByMediaKey = {
-				"live:testchannel": { cycleStartedAt },
-			};
-			state.ActiveCodecHandoffId = handoffId;
-			state.ActiveCodecHandoffChannel = "testchannel";
-			state.ActiveCodecHandoffMediaKey = "live:testchannel";
+				const cycleStartedAt = 100;
+				const handoffId = "live:testchannel:100:1000:1:exact-current-handoff";
+				info.IsShowingAd = true;
+				info.VisibleAdStartedAt = cycleStartedAt;
+				info._CodecHandoffPendingId = handoffId;
+				state.CurrentAdChannel = "testchannel";
+				state.CurrentAdMediaKey = "live:testchannel";
+				state.AdPodProgressByMediaKey = {
+					"live:testchannel": { cycleStartedAt },
+				};
+				state.ActiveCodecHandoffId = handoffId;
+				state.ActiveCodecHandoffChannel = "testchannel";
+				state.ActiveCodecHandoffMediaKey = "live:testchannel";
 
-			const handoffMaster = await (
-				await (g.fetch as typeof fetch)(usherUrl)
-			).text();
-			expect(handoffMaster).not.toContain("2560x1440");
-			expect(handoffMaster).not.toContain("1440-hevc/index.m3u8");
-			expect(handoffMaster).not.toContain("1440-av1/index.m3u8");
-			expect(handoffMaster).toContain("1080-avc/index.m3u8");
-			expect(info.IsUsingModifiedM3U8).toBe(true);
-			expect(info.EnhancedDecoderCodecFamily).toBe(null);
-			expect(info.EnhancedDecoderCodec).toBe(null);
-		} finally {
-			g.fetch = originalFetch;
-		}
-	});
+				const handoffMaster = await (
+					await (g.fetch as typeof fetch)(usherUrl)
+				).text();
+				expect(handoffMaster).not.toContain("2560x1440");
+				expect(handoffMaster).not.toContain("1440-hevc/index.m3u8");
+				expect(handoffMaster).not.toContain("1440-av1/index.m3u8");
+				expect(handoffMaster).toContain("1080-avc/index.m3u8");
+				expect(info.IsUsingModifiedM3U8).toBe(true);
+				expect(info.EnhancedDecoderCodecFamily).toBe(null);
+				expect(info.EnhancedDecoderCodec).toBe(null);
+			} finally {
+				g.fetch = originalFetch;
+			}
+		},
+	);
 
 	it("keeps an exact Previews player on AVC before a preroll can force a decoder reload", async () => {
 		const originalFetch = g.fetch;

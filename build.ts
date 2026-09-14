@@ -2929,6 +2929,51 @@ function validateSharedDefinitions() {
 			helper: "_awaitBackupProbeBeforeDeadline",
 			source: processorSource,
 		},
+		{
+			consumer: "_getVideoCodecFamily",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_isHevcCodecString",
+			helper: "_getVideoCodecIdentity",
+			source: parserSource,
+		},
+		{
+			consumer: "_isEnhancedCodecString",
+			helper: "_getVideoCodecIdentity",
+			source: parserSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_commitBackupPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshHeldAutoplayBackupPlaylist",
+			helper: "_commitBackupPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_commitBackupPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_commitBackupPlaylist",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_commitBackupPlaylist",
+			helper: "_rememberBackupPlaylistMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_commitBackupPlaylist",
+			helper: "_setBackupVariantResolution",
+			source: processorSource,
+		},
 	];
 	for (const { consumer, helper, source } of requiredInjectedPairs) {
 		const consumerBody = extractLiteral(

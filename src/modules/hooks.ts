@@ -1357,8 +1357,8 @@ function _hookWorkerFetch() {
 			__TTVAB_STATE__.StreamInfosByUrl[enhancedVariantUrl] = info;
 		}
 
-		const avcList = info.ResolutionList.filter((r) =>
-			r.Codecs?.startsWith("avc"),
+		const avcList = info.ResolutionList.filter(
+			(r) => _getVideoCodecFamily(r.Codecs) === "avc",
 		);
 		const hasEnhanced = info.ResolutionList.some((r) =>
 			_isEnhancedCodecString(r.Codecs),
@@ -5000,6 +5000,7 @@ function _hookWorker() {
                 ${_getBackupVariantCodecIdentity.toString()}
                 ${_getBackupVariantResolution.toString()}
                 ${_setBackupVariantResolution.toString()}
+                ${_commitBackupPlaylist.toString()}
                 ${_rememberBackupPlaylistMetadata.toString()}
                 ${_rememberSegmentCodecOwnership.toString()}
                 ${_isLastCleanNativeForRequest.toString()}

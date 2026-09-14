@@ -1221,12 +1221,12 @@ function _applyBackupResolutionFloor(res, resolutionList, floorHeight = 360) {
 }
 
 function _isHevcCodecString(codecs) {
-	const c = typeof codecs === "string" ? codecs : "";
+	const c = _getVideoCodecIdentity(codecs) || "";
 	return c.startsWith("hev") || c.startsWith("hvc");
 }
 
 function _isEnhancedCodecString(codecs) {
-	const c = typeof codecs === "string" ? codecs : "";
+	const c = _getVideoCodecIdentity(codecs) || "";
 	return _isHevcCodecString(c) || c.startsWith("av0");
 }
 
