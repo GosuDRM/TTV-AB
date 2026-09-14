@@ -166,6 +166,8 @@ function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
 	info._BackupSearchPromises?.clear?.();
 	info._BackupSearchPromise = null;
 	info._BackupSearchKey = null;
+	info._BackupSelectionSequence = 0;
+	info._BackupSelection = null;
 	info.BackupPlaylistMetadata?.clear?.();
 	info._LoggedOfflineTransition = false;
 	info._LqHoldStartAt = 0;
@@ -2774,6 +2776,8 @@ function _createStreamInfo(context) {
 		_BackupSearchPromise: null,
 		_BackupSearchKey: null,
 		_BackupSearchPromises: new Map(),
+		_BackupSelectionSequence: 0,
+		_BackupSelection: null,
 		_LastNoBackupProbeAt: 0,
 		_NoBackupRecoveryCandidates: new Map(),
 		_PreviewMasterFallbackRetryAt: 0,
@@ -3132,7 +3136,9 @@ function _getDirectPlaybackResolutionForUrl(info, url = "") {
 }
 
 function _getVideoCodecFamily(codecs) {
-	const value = typeof codecs === "string" ? codecs.toLowerCase() : "";
+	const value =
+		_getVideoCodecIdentity(codecs) ||
+		(typeof codecs === "string" ? codecs.trim().toLowerCase() : "");
 	if (value === "hevc" || _isHevcCodecString(value)) return "hevc";
 	if (value === "av1" || value.startsWith("av0")) return "av1";
 	if (value.startsWith("avc") || value.startsWith("avc1")) return "avc";
@@ -3228,6 +3234,57 @@ function _setBackupVariantResolution(info, resolution, activate = false) {
 	const selectedResolution = resolution || null;
 	info.LastCleanBackupResolution = selectedResolution;
 	if (activate) info.ActiveBackupResolution = selectedResolution;
+}
+
+function _commitBackupPlaylist(
+	info,
+	m3u8,
+	sequence,
+	metadata,
+	activate = false,
+) {
+	const identity = JSON.stringify([
+		metadata.playerType,
+		_getExactPlaylistUrlKey(metadata.playlistUrl),
+		_getExactPlaylistUrlKey(metadata.sessionUrl),
+		metadata.resolution,
+		metadata.codecFamily,
+		metadata.codec,
+	]);
+	const previous = info._BackupSelection;
+	if (
+		previous &&
+		(sequence < previous.sequence ||
+			(identity === previous.identity && sequence < previous.refreshedSequence))
+	) {
+		return null;
+	}
+	info._BackupSelection = {
+		identity,
+		sequence:
+			identity === previous?.identity
+				? previous.sequence
+				: !previous &&
+						activate &&
+						info.ActiveBackupPlayerType === metadata.playerType
+					? 0
+					: sequence,
+		refreshedSequence: sequence,
+	};
+	info.LastCleanBackupM3U8 = m3u8;
+	info.LastCleanBackupPlayerType = metadata.playerType;
+	info.LastCleanBackupCodecFamily = metadata.codecFamily;
+	info.LastCleanBackupCodec = metadata.codec;
+	_rememberBackupPlaylistMetadata(
+		info,
+		m3u8,
+		metadata.codecFamily,
+		metadata.codec,
+		metadata,
+	);
+	info.LastCleanBackupAt = Date.now();
+	_setBackupVariantResolution(info, metadata.resolution, activate);
+	return m3u8;
 }
 
 function _rememberBackupPlaylistMetadata(
@@ -5564,6 +5621,7 @@ async function _processM3U8Core(
 		}
 
 		const backupTargetRes = _resolveAdBackupTargetResolution(info, url) || res;
+		const previousSelectionSequence = info._BackupSelection?.sequence || 0;
 		let { type: backupType, m3u8: backupM3u8 } = await _awaitM3U8RequestContext(
 			_findBackupStream(info, realFetch, startIdx, backupTargetRes),
 			info,
@@ -5571,6 +5629,20 @@ async function _processM3U8Core(
 			requestSignal,
 		);
 		let isFallback = false;
+		if (
+			!backupM3u8 &&
+			(info._BackupSelection?.sequence || 0) > previousSelectionSequence &&
+			Date.now() - (Number(info.LastCleanBackupAt) || 0) >= 900
+		) {
+			backupM3u8 = await _awaitM3U8RequestContext(
+				_refreshActiveBackupMediaPlaylist(info, realFetch),
+				info,
+				requestAdContext,
+				requestSignal,
+			);
+			if (!backupM3u8) throw _createCodecHandoffAbortError(requestSignal);
+			backupType = info.LastCleanBackupPlayerType;
+		}
 
 		if (!backupM3u8) {
 			const cachedBackupAgeMs =
@@ -5594,11 +5666,7 @@ async function _processM3U8Core(
 				backupM3u8 = info.LastCleanBackupM3U8;
 				backupType =
 					info.LastCleanBackupPlayerType || __TTVAB_STATE__.FallbackPlayerType;
-				isFallback = true;
-				_log(
-					"[Trace] Using cached clean backup as emergency fallback",
-					"warning",
-				);
+				_log("[Trace] Continuing the fresh cached clean backup", "info");
 			} else if (recentSameRequestNative) {
 				backupM3u8 = recentSameRequestNative;
 				backupType = __TTVAB_STATE__.FallbackPlayerType;
@@ -6207,6 +6275,9 @@ async function _refreshHeldAutoplayBackupPlaylist(
 	codecOverride = null,
 	commitDeadlineAt = 0,
 ) {
+	const selectionSequence =
+		Math.max(0, Number(info._BackupSelectionSequence) || 0) + 1;
+	info._BackupSelectionSequence = selectionSequence;
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	const canRefresh = () =>
@@ -6287,25 +6358,21 @@ async function _refreshHeldAutoplayBackupPlaylist(
 			_hasPlaylistAdMarkers(m3u8) ||
 			_playlistHasKnownAdSegments(m3u8, { includeCached: false });
 		if (hasAds) return null;
-		info.LastCleanBackupM3U8 = m3u8;
-		info.LastCleanBackupPlayerType = "autoplay";
-		info.LastCleanBackupCodecFamily = selectedCodecFamily;
-		info.LastCleanBackupCodec = selectedCodecIdentity;
-		_rememberBackupPlaylistMetadata(
+		if (info.BackupEncodingsM3U8Cache?.autoplay !== encCache) return null;
+		return _commitBackupPlaylist(
 			info,
 			m3u8,
-			selectedCodecFamily,
-			selectedCodecIdentity,
+			selectionSequence,
 			{
 				playlistUrl: streamUrl,
 				sessionUrl: encBaseUrl,
 				playerType: "autoplay",
 				resolution: selectedResolution,
+				codecFamily: selectedCodecFamily,
+				codec: selectedCodecIdentity,
 			},
+			true,
 		);
-		info.LastCleanBackupAt = Date.now();
-		_setBackupVariantResolution(info, selectedResolution, true);
-		return m3u8;
 	} catch {
 		return null;
 	}
@@ -6316,6 +6383,9 @@ async function _refreshActiveBackupMediaPlaylist(
 	realFetch,
 	codecOverride = null,
 ) {
+	const selectionSequence =
+		Math.max(0, Number(info._BackupSelectionSequence) || 0) + 1;
+	info._BackupSelectionSequence = selectionSequence;
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	const pt =
@@ -6398,25 +6468,21 @@ async function _refreshActiveBackupMediaPlaylist(
 			_hasPlaylistAdMarkers(m3u8) ||
 			_playlistHasKnownAdSegments(m3u8, { includeCached: false });
 		if (hasAds) return null;
-		info.LastCleanBackupM3U8 = m3u8;
-		info.LastCleanBackupPlayerType = pt;
-		info.LastCleanBackupCodecFamily = selectedCodecFamily;
-		info.LastCleanBackupCodec = selectedCodecIdentity;
-		_rememberBackupPlaylistMetadata(
+		if (info.BackupEncodingsM3U8Cache?.[pt] !== encCache) return null;
+		return _commitBackupPlaylist(
 			info,
 			m3u8,
-			selectedCodecFamily,
-			selectedCodecIdentity,
+			selectionSequence,
 			{
 				playlistUrl: streamUrl,
 				sessionUrl: encBaseUrl,
 				playerType: pt,
 				resolution: selectedResolution,
+				codecFamily: selectedCodecFamily,
+				codec: selectedCodecIdentity,
 			},
+			true,
 		);
-		info.LastCleanBackupAt = Date.now();
-		_setBackupVariantResolution(info, selectedResolution, true);
-		return m3u8;
 	} catch {
 		return null;
 	}
@@ -6752,6 +6818,9 @@ async function _searchBackupStream(
 ) {
 	let backupType = null;
 	let backupM3u8 = null;
+	const selectionSequence =
+		Math.max(0, Number(info._BackupSelectionSequence) || 0) + 1;
+	info._BackupSelectionSequence = selectionSequence;
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	const requestSignal =
@@ -6760,6 +6829,7 @@ async function _searchBackupStream(
 	const searchDeadlineExceeded = () =>
 		resolvedSearchDeadlineAt > 0 && Date.now() >= resolvedSearchDeadlineAt;
 	const searchIsCurrent = () =>
+		selectionSequence >= (info._BackupSelection?.sequence || 0) &&
 		!searchDeadlineExceeded() &&
 		!requestSignal?.aborted &&
 		(!earlyRetry ||
@@ -7514,24 +7584,18 @@ async function _searchBackupStream(
 										_clearBackupPlayerRetryCooldown(info, pt);
 										backupType = pt;
 										backupM3u8 = m3u8;
-										info.LastCleanBackupM3U8 = m3u8;
-										info.LastCleanBackupPlayerType = pt;
-										info.LastCleanBackupCodecFamily = selectedCodecFamily;
-										info.LastCleanBackupCodec = selectedCodecIdentity;
-										_rememberBackupPlaylistMetadata(
-											info,
-											m3u8,
-											selectedCodecFamily,
-											selectedCodecIdentity,
-											{
+										if (
+											!_commitBackupPlaylist(info, m3u8, selectionSequence, {
 												playlistUrl: streamUrl,
 												sessionUrl: encBaseUrl,
 												playerType: pt,
 												resolution: selectedResolution,
-											},
-										);
-										info.LastCleanBackupAt = Date.now();
-										_setBackupVariantResolution(info, selectedResolution);
+												codecFamily: selectedCodecFamily,
+												codec: selectedCodecIdentity,
+											})
+										) {
+											return { type: null, m3u8: null };
+										}
 										_log(
 											`[Trace] Selected: ${pt} @ ${selectedResolution || "unknown"}`,
 											"success",
@@ -7554,24 +7618,18 @@ async function _searchBackupStream(
 										_clearBackupPlayerRetryCooldown(info, pt);
 										backupType = pt;
 										backupM3u8 = m3u8;
-										info.LastCleanBackupM3U8 = m3u8;
-										info.LastCleanBackupPlayerType = pt;
-										info.LastCleanBackupCodecFamily = selectedCodecFamily;
-										info.LastCleanBackupCodec = selectedCodecIdentity;
-										_rememberBackupPlaylistMetadata(
-											info,
-											m3u8,
-											selectedCodecFamily,
-											selectedCodecIdentity,
-											{
+										if (
+											!_commitBackupPlaylist(info, m3u8, selectionSequence, {
 												playlistUrl: streamUrl,
 												sessionUrl: encBaseUrl,
 												playerType: pt,
 												resolution: selectedResolution,
-											},
-										);
-										info.LastCleanBackupAt = Date.now();
-										_setBackupVariantResolution(info, selectedResolution);
+												codecFamily: selectedCodecFamily,
+												codec: selectedCodecIdentity,
+											})
+										) {
+											return { type: null, m3u8: null };
+										}
 										_log(
 											`[Trace] Selected (minimal): ${pt} @ ${selectedResolution || "unknown"}`,
 											"success",
