@@ -175,6 +175,25 @@ describe("pre-freeze diagnostic forwarding", () => {
 					pageUrl: "https://www.twitch.tv/example?token=page-secret",
 					pageVersion: "17.5.8",
 					pageGeneration: 4,
+					lastEndedCycleStartedAt: 1000,
+					preferredQuality: "chunked",
+					media: { totalVideoFrames: 500 },
+					workers: [{ generation: 7, isCurrentPlayerWorker: true }],
+					recovery: {
+						mediaKey: "live:example",
+						cycleStartedAt: 1000,
+						phase: "exhausted",
+						acceptedReloadCount: 2,
+						reloadResult: "failure",
+						totalVideoFrames: 500,
+						nativeSessionPhase: "rearmed",
+						nativeSessionWorkerGeneration: 7,
+						nativeSessionCodec: "hev1.1.2.L150.90,mp4a.40.2",
+						nativeSessionResolution: "2560x1440",
+						masterUrl:
+							"https://usher.ttvnw.net/live.m3u8?token=recovery-secret",
+						player: { accessToken: "player-secret" },
+					},
 					workerFailures: [
 						{
 							generation: 7,
@@ -200,10 +219,17 @@ describe("pre-freeze diagnostic forwarding", () => {
 			"page-secret",
 			"worker-secret",
 			"stack-secret",
+			"recovery-secret",
+			"player-secret",
 		])
 			expect(text).not.toContain(secret);
 		expect(text).toContain('"observedMediaKey":"vod:123"');
 		expect(text).toContain('"line":48');
+		expect(text).toContain('"phase":"exhausted"');
+		expect(text).toContain('"acceptedReloadCount":2');
+		expect(text).toContain('"totalVideoFrames":500');
+		expect(text).toContain('"isCurrentPlayerWorker":true');
+		expect(text).toContain('"nativeSessionResolution":"2560x1440"');
 	});
 
 	it("bounds both entries and failure history by bytes before forwarding", () => {

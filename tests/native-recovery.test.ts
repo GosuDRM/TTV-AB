@@ -589,3 +589,192 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 });
+
+describe("bounded native session preservation", () => {
+	it("discards a consumed native session when a later live refresh becomes ad-marked", async () => {
+		const { context, info, state, fetch, target, serve, restored } = setup();
+		state.PreferredQualityGroup = "1080p60";
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		await context.fetch(masterUrl.replaceAll("owned", "fresh"));
+		await context.fetch(nativeUrl);
+		expect(info._PendingPostAdNativeMaster).toMatchObject({ consumed: true });
+		target.mockImplementationOnce(
+			async () => new Response(playlist(2000, "advertisement", true)),
+		);
+		const output = await (await context.fetch(nativeUrl)).text();
+		expect(info._PendingPostAdNativeMaster).toBeNull();
+		expect(output).not.toContain("advertisement-");
+		expect(output).not.toContain("twitch-stitched-ad");
+	});
+
+	it.each([
+		[0, false],
+		[10, false],
+		[0, true],
+	])(
+		"does not let an earlier media request consume a rebuild master served %i ms later (retry: %s)",
+		async (delay, retry) => {
+			const { context, info, state, fetch, target, serve, restored } = setup();
+			state.PreferredQualityGroup = "1080p60";
+			for (let index = 0; index < 30 && !restored(); index++) await serve();
+			context.fetch = fetch;
+			context._hookWorkerFetch();
+			if (retry) {
+				await context.fetch(masterUrl.replaceAll("owned", "fresh"));
+				await context.fetch(nativeUrl);
+				expect(info._PendingPostAdNativeMaster).toMatchObject({
+					consumed: true,
+				});
+				vi.spyOn(Date, "now").mockReturnValue(Date.now() + 11000);
+			}
+			let release!: (value: Response) => void;
+			let entered!: () => void;
+			const started = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
+			target.mockImplementationOnce(
+				() =>
+					new Promise<Response>((resolve) => {
+						release = resolve;
+						entered();
+					}),
+			);
+			const oldRequest = context.fetch(nativeUrl);
+			await started;
+			vi.spyOn(Date, "now").mockReturnValue(Date.now() + delay);
+			if (retry) {
+				context._updatePostAdNativeMasterReload(
+					info,
+					{
+						mediaKey: info.MediaKey,
+						cycleStartedAt: 100000,
+						reloadAt: Date.now(),
+						reason: "ad-recovery",
+						preserveNativeSession: true,
+					},
+					true,
+				);
+			}
+			await context.fetch(masterUrl.replaceAll("owned", "fresh"));
+			release(new Response(playlist(2000, "old-loader")));
+			await oldRequest;
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
+				consumed: false,
+			});
+			await context.fetch(nativeUrl);
+			expect(info._PendingPostAdNativeMaster).toMatchObject({ consumed: true });
+		},
+	);
+
+	it.each([
+		"expired",
+		"generation",
+		"cycle",
+		"route",
+		"new ad",
+		"manual",
+		"fresh token",
+		"third reload",
+	])(
+		"releases the verified session for an ineligible %s rebuild",
+		async (condition) => {
+			const { context, info, state, serve, restored } = setup();
+			for (let index = 0; index < 30 && !restored(); index++) await serve();
+			const session = info._PendingPostAdNativeMaster;
+			if (condition === "expired")
+				vi.spyOn(Date, "now").mockReturnValue(session.expiresAt);
+			if (condition === "generation") state.PagePlaybackContextGeneration++;
+			if (condition === "cycle") state.LastAdEndedCycleStartedAt++;
+			if (condition === "route") state.PageMediaKey = "live:other";
+			if (condition === "new ad") state.CurrentAdMediaKey = info.MediaKey;
+			if (condition === "third reload") session.reloadCount = 2;
+			context._updatePostAdNativeMasterReload(info, {
+				mediaKey: info.MediaKey,
+				cycleStartedAt: 100000,
+				reloadAt: Date.now(),
+				reason: condition === "manual" ? "manual" : "ad-recovery",
+				preserveNativeSession: condition !== "fresh token",
+			});
+			expect(info._PendingPostAdNativeMaster).toBeNull();
+		},
+	);
+
+	it("retains the verified session when the old loader polls before the rebuild master", async () => {
+		const { context, info, state, fetch, serve, restored } = setup();
+		state.PreferredQualityGroup = "1080p60";
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		expect(restored()).toMatchObject({
+			requiresReload: true,
+			refreshAccessToken: false,
+		});
+		expect(info._PendingPostAdNativeMaster.playlistUrl).toBe(nativeUrl);
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		await context.fetch(nativeUrl);
+		expect(info._PendingPostAdNativeMaster).toMatchObject({
+			consumed: false,
+			masterServedAt: 0,
+		});
+		const rebuiltMaster = await (
+			await context.fetch(masterUrl.replaceAll("owned", "fresh"))
+		).text();
+		expect(rebuiltMaster).toContain(nativeUrl);
+		expect(rebuiltMaster).not.toContain("token=fresh");
+	});
+
+	it("retains the verified session for a second bounded rebuild after native media was fetched", async () => {
+		const { context, info, state, fetch, serve, restored } = setup();
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		expect(restored()).toMatchObject({
+			requiresReload: true,
+			refreshAccessToken: false,
+		});
+		const reloadAt = Date.now();
+		const markReload = (at: number) => {
+			context._invalidateNativeRecoveryAfterPlayerReload(info, true);
+			context._updatePostAdNativeMasterReload(info, {
+				mediaKey: info.MediaKey,
+				cycleStartedAt: 100000,
+				reloadAt: at,
+				reason: "ad-recovery",
+				preserveNativeSession: true,
+			});
+			Object.assign(state, {
+				HasTriggeredPlayerReload: true,
+				PendingTriggeredPlayerReloadMediaKey: info.MediaKey,
+				PendingTriggeredPlayerReloadChannel: info.ChannelName,
+				PendingTriggeredPlayerReloadCycleStartedAt: 100000,
+				PendingTriggeredPlayerReloadAt: at,
+			});
+		};
+		markReload(reloadAt);
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		const firstMaster = await (
+			await context.fetch(masterUrl.replaceAll("owned", "fresh"))
+		).text();
+		expect(firstMaster).toContain(enhancedUrl);
+		await context.fetch(enhancedUrl);
+		expect(info._PendingPostAdNativeMaster).toMatchObject({ consumed: true });
+		context._updatePostAdNativeMasterReload(info, {
+			mediaKey: info.MediaKey,
+			cycleStartedAt: 100000,
+			reloadAt,
+			reason: "ad-recovery",
+			preserveNativeSession: true,
+		});
+		expect(info._PendingPostAdNativeMaster).toMatchObject({
+			consumed: true,
+			reloadCount: 1,
+		});
+		vi.spyOn(Date, "now").mockReturnValue(reloadAt + 11000);
+		markReload(reloadAt + 11000);
+		const retryMaster = await (
+			await context.fetch(masterUrl.replaceAll("owned", "fresh"))
+		).text();
+		expect(retryMaster).toContain(enhancedUrl);
+		expect(retryMaster).not.toContain("token=fresh");
+	});
+});

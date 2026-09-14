@@ -3172,75 +3172,99 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(setSrcCalls).toHaveLength(3);
 	});
 
-	it("rebuilds post-ad playback without replacing the verified token session", () => {
-		pipElement = null;
-		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		state.CurrentAdMediaKey = null;
-		state.CurrentAdChannel = null;
-		const baselineVideo = document.createElement("video");
-		const playerAndState = (
-			g._getPlayerAndState as () => {
-				player: { getHTMLVideoElement: () => HTMLVideoElement | null };
-				state: unknown;
-			}
-		)();
-		playerAndState.player.getHTMLVideoElement = () => baselineVideo;
-		const capturePreference = vi.fn(() => null);
-		g._capturePlayerPreferenceSnapshot = capturePreference;
-
-		const result = task()(false, true, {
-			reason: "post-ad-native-restore",
-			refreshAccessToken: false,
-			newMediaPlayerInstance: true,
-			channel: "testchannel",
-			mediaKey: "live:testchannel",
-			cycleStartedAt: 100,
-		});
-
-		expect(result).toBe(true);
-		expect(setSrcCalls).toEqual([
-			{
-				isNewMediaPlayerInstance: true,
-				refreshAccessToken: false,
-			},
-		]);
-		expect(capturePreference).toHaveBeenCalledWith(
-			expect.anything(),
-			baselineVideo,
-			expect.objectContaining({ preserveConfiguredQuality: true }),
-		);
-		expect(
-			(
-				g._PostAdRecoveryTransactionState as {
-					requiredReplacementVideo: WeakRef<HTMLMediaElement> | null;
-					requiredNativeReloadAt: number;
+	it.each(["sync", "success", "failure"])(
+		"prepares the verified session before a post-ad source load with %s completion",
+		async (outcome) => {
+			pipElement = null;
+			T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.CurrentAdMediaKey = null;
+			state.CurrentAdChannel = null;
+			const baselineVideo = document.createElement("video");
+			const playerAndState = (
+				g._getPlayerAndState as () => {
+					player: { getHTMLVideoElement: () => HTMLVideoElement | null };
+					state: unknown;
 				}
-			).requiredReplacementVideo?.deref(),
-		).toBe(baselineVideo);
-		const recoveryTransaction = g._PostAdRecoveryTransactionState as {
-			requiredNativeReloadAt: number;
-		};
-		expect(recoveryTransaction.requiredNativeReloadAt).toBeGreaterThan(0);
-		expect(workerMessages.at(-1)).toMatchObject({
-			key: "TriggeredPlayerReload",
-			value: {
+			)();
+			playerAndState.player.getHTMLVideoElement = () => baselineVideo;
+			const sourceState = playerAndState.state as {
+				setSrc: (options: unknown) => unknown;
+			};
+			const originalSetSrc = sourceState.setSrc;
+			sourceState.setSrc = (options) => {
+				expect(workerMessages.at(-1)).toMatchObject({
+					key: "PreparePostAdNativeReload",
+					value: { preserveNativeSession: true, cycleStartedAt: 100 },
+				});
+				expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+					phase: "loading",
+					reloadResult: "pending",
+				});
+				originalSetSrc(options);
+				return outcome === "sync" ? undefined : Promise.resolve(outcome);
+			};
+			const capturePreference = vi.fn(() => null);
+			g._capturePlayerPreferenceSnapshot = capturePreference;
+
+			const result = task()(false, true, {
 				reason: "post-ad-native-restore",
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+			});
+
+			expect(result).toBe(true);
+			await Promise.resolve();
+			expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+				phase: outcome === "failure" ? "source-failed" : "source-ready",
+				reloadResult: outcome === "failure" ? "failure" : "success",
+			});
+			expect(setSrcCalls).toEqual([
+				{
+					isNewMediaPlayerInstance: true,
+					refreshAccessToken: false,
+				},
+			]);
+			expect(capturePreference).toHaveBeenCalledWith(
+				expect.anything(),
+				baselineVideo,
+				expect.objectContaining({ preserveConfiguredQuality: true }),
+			);
+			expect(
+				(
+					g._PostAdRecoveryTransactionState as {
+						requiredReplacementVideo: WeakRef<HTMLMediaElement> | null;
+						requiredNativeReloadAt: number;
+					}
+				).requiredReplacementVideo?.deref(),
+			).toBe(baselineVideo);
+			const recoveryTransaction = g._PostAdRecoveryTransactionState as {
+				requiredNativeReloadAt: number;
+			};
+			expect(recoveryTransaction.requiredNativeReloadAt).toBeGreaterThan(0);
+			expect(workerMessages.at(-1)).toMatchObject({
+				key: "TriggeredPlayerReload",
+				value: {
+					reason: "post-ad-native-restore",
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 100,
+					reloadAt: recoveryTransaction.requiredNativeReloadAt,
+				},
+			});
+			expect(
+				T<(mediaKey: string) => Record<string, unknown> | null>(
+					"_getPendingPostAdNativeReloadContext",
+				)("live:testchannel"),
+			).toMatchObject({
 				mediaKey: "live:testchannel",
 				cycleStartedAt: 100,
 				reloadAt: recoveryTransaction.requiredNativeReloadAt,
-			},
-		});
-		expect(
-			T<(mediaKey: string) => Record<string, unknown> | null>(
-				"_getPendingPostAdNativeReloadContext",
-			)("live:testchannel"),
-		).toMatchObject({
-			mediaKey: "live:testchannel",
-			cycleStartedAt: 100,
-			reloadAt: recoveryTransaction.requiredNativeReloadAt,
-		});
-	});
+			});
+		},
+	);
 
 	it("keeps an exact-session post-ad soft reload under bounded ownership", () => {
 		pipElement = null;
@@ -4965,6 +4989,7 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 	});
 
 	it("keeps post-ad recovery active when the playhead advances without video frames", () => {
+		const log = vi.spyOn(g, "_log");
 		const playback = makePlayback({
 			currentTime: 10,
 			bufferedEnd: 20,
@@ -4993,9 +5018,14 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		sample(506000);
 		expect(transaction().mediaKey).toBe("live:chan");
 		expect(reloadCalls()).toHaveLength(1);
+		expect(log).not.toHaveBeenCalledWith(
+			"Native playback restored; video is advancing",
+			"success",
+		);
 	});
 
 	it("finishes post-ad recovery after both the playhead and video frames advance", () => {
+		const log = vi.spyOn(g, "_log");
 		const playback = makePlayback({
 			currentTime: 10,
 			bufferedEnd: 20,
@@ -5016,6 +5046,14 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(sample(501600)).toBe(true);
 		expect(transaction().mediaKey).toBeNull();
 		expect(reloadCalls()).toEqual([]);
+		expect(log).toHaveBeenCalledWith(
+			"Native playback restored; video is advancing",
+			"success",
+		);
+		expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+			phase: "recovered",
+			totalVideoFrames: 530,
+		});
 	});
 
 	it("disarms only after the exact replacement is healthy and advancing", () => {

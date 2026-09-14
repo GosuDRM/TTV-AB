@@ -74,7 +74,12 @@ let _workerRecoveryNoticeMediaKey: string | null = null;
 let _workerRecoveryNoticeDismissTimer: ReturnType<typeof setTimeout> | null =
 	null;
 
-function _clearWorkerRecoveryNotice(mediaKey = null) {
+function _clearWorkerRecoveryNotice(mediaKey = null, reason = null) {
+	if (
+		reason &&
+		document.getElementById("ttvab-worker-recovery")?.dataset.reason !== reason
+	)
+		return;
 	if (
 		!_workerRecoveryNoticeMediaKey ||
 		(mediaKey && _workerRecoveryNoticeMediaKey !== mediaKey)
@@ -92,16 +97,21 @@ function _clearWorkerRecoveryNotice(mediaKey = null) {
 function _showWorkerRecoveryNotice(mediaKey, reason = "crash") {
 	const currentContext = _getPlaybackContextFromUrl(window.location.href);
 	const isUnhooked = reason === "unhooked";
+	const isPostAd = reason === "post-ad";
 	const recoveryState = isUnhooked
 		? _UnhookedPlayerState
-		: _getWorkerRecoveryState(currentContext, false);
+		: isPostAd
+			? _PostAdRecoveryNoticeState
+			: _getWorkerRecoveryState(currentContext, false);
 	if (
 		!document.body ||
 		!mediaKey ||
 		currentContext.MediaKey !== mediaKey ||
 		(isUnhooked
 			? !_canRefreshUnhookedPlayer(mediaKey)
-			: recoveryState?.phase !== "exhausted") ||
+			: isPostAd
+				? !_canRefreshPostAdPlayer(mediaKey)
+				: recoveryState?.phase !== "exhausted") ||
 		Number(recoveryState.noticeShownAt) > 0
 	)
 		return;
@@ -112,7 +122,9 @@ function _showWorkerRecoveryNotice(mediaKey, reason = "crash") {
 		const context = _getPlaybackContextFromUrl(window.location.href);
 		const currentRecovery = isUnhooked
 			? _UnhookedPlayerState
-			: _getWorkerRecoveryState(context, false);
+			: isPostAd
+				? _PostAdRecoveryNoticeState
+				: _getWorkerRecoveryState(context, false);
 		return Boolean(
 			mediaKey &&
 				context.MediaKey === mediaKey &&
@@ -120,7 +132,9 @@ function _showWorkerRecoveryNotice(mediaKey, reason = "crash") {
 					pageGeneration &&
 				(isUnhooked
 					? _canRefreshUnhookedPlayer(mediaKey)
-					: currentRecovery?.phase === "exhausted") &&
+					: isPostAd
+						? _canRefreshPostAdPlayer(mediaKey)
+						: currentRecovery?.phase === "exhausted") &&
 				currentRecovery.noticeShownAt === noticeShownAt,
 		);
 	};
@@ -130,13 +144,16 @@ function _showWorkerRecoveryNotice(mediaKey, reason = "crash") {
 	const notice = document.createElement("div");
 	notice.id = "ttvab-worker-recovery";
 	notice.dataset.mediaKey = mediaKey;
+	notice.dataset.reason = reason;
 	notice.setAttribute("role", "status");
 	notice.style.cssText =
 		"position:fixed;bottom:20px;right:20px;z-index:2147483647;max-width:360px;padding:16px;border:1px solid #9146ff;border-radius:8px;background:#18181b;color:#efeff1;font:14px/1.5 sans-serif;box-shadow:0 4px 16px #0008";
 	const message = document.createElement("p");
 	message.textContent = isUnhooked
 		? "Refresh this tab to start ad blocking on the current player. Chat will reconnect and picture-in-picture will close."
-		: "TTV AB could not restart Twitch's player worker. If playback remains stuck, refresh this tab. Chat will reconnect and picture-in-picture will close.";
+		: isPostAd
+			? "Playback did not recover after ads. Refresh this tab to restart the stream. Chat will reconnect and picture-in-picture will close."
+			: "TTV AB could not restart Twitch's player worker. If playback remains stuck, refresh this tab. Chat will reconnect and picture-in-picture will close.";
 	message.style.margin = "0 0 12px";
 	const refresh = document.createElement("button");
 	refresh.type = "button";

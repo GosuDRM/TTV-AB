@@ -5594,7 +5594,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 				requiresReload: true,
 				refreshAccessToken: false,
 			});
-			expect(info._PendingPostAdNativeMaster).toEqual({
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
 				master: nativeMaster,
 				masterUrl: nativeMasterUrl,
 				playlistUrl: NATIVE_URL,
@@ -5603,6 +5603,10 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 				expiresAt: 660000,
 			});
 			const rebuiltSessionPlaylist = makePlaylist(300, 3);
+			Object.assign(info._PendingPostAdNativeMaster, {
+				masterServedAt: Date.now(),
+				loaderEpoch: info.NativeRecoveryLoaderEpoch,
+			});
 			const rebuiltSessionOutput = await processM3U8()(
 				NATIVE_URL,
 				rebuiltSessionPlaylist,
@@ -5610,7 +5614,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			);
 			expect(rebuiltSessionOutput).toContain("seg300.ts");
 			expect(rebuiltSessionOutput).toContain("seg302.ts");
-			expect(info._PendingPostAdNativeMaster).toBe(null);
+			expect(info._PendingPostAdNativeMaster).toMatchObject({ consumed: true });
 		} finally {
 			g._getToken = previousToken;
 			g._notifyAdComplete = previousNotifyAdComplete;

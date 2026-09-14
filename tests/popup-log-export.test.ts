@@ -244,6 +244,12 @@ describe("cached evidence when live tab collection fails", () => {
 						context: {
 							pageUrl,
 							pageVersion: "17.5.8",
+							recovery: {
+								phase: "exhausted",
+								acceptedReloadCount: 2,
+								totalVideoFrames: 500,
+								nativeSessionPhase: "consumed",
+							},
 							workerFailures: [
 								{ generation: 7, message: "index out of bounds" },
 							],
@@ -273,6 +279,9 @@ describe("cached evidence when live tab collection fails", () => {
 		expect(section.text).toContain("extension response timed out");
 		expect(section.text).toContain("Worker error before hang");
 		expect(section.text).toContain("Worker failures:");
+		expect(section.text).toContain("Post-ad recovery:");
+		expect(section.text).toContain('"phase":"exhausted"');
+		expect(section.text).toContain('"totalVideoFrames":500');
 	});
 
 	it.each(["different page", "expired", "future"])(

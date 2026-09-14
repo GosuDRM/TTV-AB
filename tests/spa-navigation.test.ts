@@ -113,6 +113,56 @@ describe("bounded diagnostic checkpoints", () => {
 		expect(g._sendBridgeMessage).toHaveBeenCalledTimes(2);
 	});
 
+	it("keeps recovery milestones when repetitive resume messages fill the recent tail", () => {
+		const milestones = [
+			"Ad blocked! Total: 5",
+			"Using backup: autoplay",
+			"Native playlist ready after backup hold",
+			"Post-ad recovery reached its automation limit",
+		];
+		g.__TTVAB_LOGS__ = [
+			...milestones.map((m, i) => ({ t: i + 1, l: "info", m })),
+			...Array.from({ length: 100 }, (_, i) => ({
+				t: i + 5,
+				l: "info",
+				m: "Resuming paused player after ad",
+			})),
+		];
+		T<(force?: boolean) => boolean>("_checkpointPageDiagnostics")(true);
+		const detail = (g._sendBridgeMessage as ReturnType<typeof vi.fn>).mock
+			.calls[0][1];
+		expect(detail.entries).toHaveLength(64);
+		expect(detail.entries.map((entry: { m: string }) => entry.m)).toEqual(
+			expect.arrayContaining(milestones),
+		);
+		expect(detail.entries.at(-1).t).toBe(104);
+		expect(
+			new TextEncoder().encode(JSON.stringify(detail.entries)).byteLength,
+		).toBeLessThanOrEqual(24 * 1024);
+	});
+
+	it("keeps the newest sample and honors small byte and entry limits with oversized milestones", () => {
+		g.__TTVAB_LOGS__ = [
+			{ t: 1, l: "info", m: `Native playback restored ${"界".repeat(4000)}` },
+			{ t: 2, l: "info", m: "Ad blocked! Total: 1" },
+			{ t: 3, l: "info", m: "Using backup: autoplay" },
+			{ t: 4, l: "info", m: "newest" },
+		];
+		const result = T<
+			(
+				count: number,
+				bytes: number,
+				capture: boolean,
+				retain: boolean,
+			) => { entries: { t: number }[] }
+		>("_collectPageLogEntries")(2, 200, false, true);
+		expect(result.entries).toHaveLength(2);
+		expect(result.entries.at(-1).t).toBe(4);
+		expect(
+			new TextEncoder().encode(JSON.stringify(result.entries)).byteLength,
+		).toBeLessThanOrEqual(200);
+	});
+
 	it("does not fill the bridge queue while the extension bridge is disconnected", () => {
 		g._bridgePort = null;
 		expect(T<() => boolean>("_checkpointPageDiagnostics")()).toBe(false);
@@ -317,6 +367,7 @@ describe("_collectPageLogContext", () => {
 			volume: 0.5,
 			videoWidth: 1920,
 			videoHeight: 1080,
+			getVideoPlaybackQuality: () => ({ totalVideoFrames: 1200 }),
 			buffered: {
 				length: 5,
 				start: (index: number) => index,
@@ -366,6 +417,7 @@ describe("_collectPageLogContext", () => {
 				errorCode: 3,
 				width: 1920,
 				height: 1080,
+				totalVideoFrames: 1200,
 				buffered: [
 					{ start: 0, end: 0.5 },
 					{ start: 1, end: 1.5 },

@@ -736,6 +736,7 @@ function _hookWorkerFetch() {
 		const pending = info?._PendingPostAdNativeMaster;
 		if (!pending) return null;
 		const rejectPending = () => {
+			_reportPostAdNativeSession(info, "released");
 			info._PendingPostAdNativeMaster = null;
 			return null;
 		};
@@ -750,7 +751,11 @@ function _hookWorkerFetch() {
 			_normalizeMediaKey(__TTVAB_STATE__.LastAdEndedMediaKey) !== mediaKey ||
 			Math.max(0, Number(__TTVAB_STATE__.LastAdEndedCycleStartedAt) || 0) !==
 				cycleStartedAt ||
-			Date.now() > Math.max(0, Number(pending.expiresAt) || 0) ||
+			Date.now() >= Math.max(0, Number(pending.expiresAt) || 0) ||
+			Math.max(
+				0,
+				Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+			) !== Math.max(0, Number(pending.pageGeneration) || 0) ||
 			typeof pending.master !== "string" ||
 			!pending.master ||
 			typeof pending.masterUrl !== "string" ||
@@ -760,6 +765,7 @@ function _hookWorkerFetch() {
 		) {
 			return rejectPending();
 		}
+		if (pending.consumed === true) return null;
 
 		const exactPlaylistUrl = _getExactPlaylistUrlKey(pending.playlistUrl);
 		const masterLines = pending.master.split(/\r?\n/);
@@ -834,6 +840,12 @@ function _hookWorkerFetch() {
 		) {
 			return rejectPending();
 		}
+		pending.masterServedAt = Date.now();
+		pending.loaderEpoch = Math.max(
+			0,
+			Number(info.NativeRecoveryLoaderEpoch) || 0,
+		);
+		_reportPostAdNativeSession(info, "master-served");
 		return master;
 	};
 	const observedPlaybackMediaKeys = new Map();
@@ -1263,6 +1275,10 @@ function _hookWorkerFetch() {
 	}
 
 	function _syncStreamInfo(info, encodings, usherUrl) {
+		if (info._PendingPostAdNativeMaster) {
+			_reportPostAdNativeSession(info, "released");
+			info._PendingPostAdNativeMaster = null;
+		}
 		const wasUsingModifiedM3U8 = Boolean(info.IsUsingModifiedM3U8);
 		const previousUsherUrl = _getExactPlaylistUrlKey(info.UsherBaseUrl);
 		const nextUsherUrl = _getExactPlaylistUrlKey(usherUrl);
@@ -1871,6 +1887,13 @@ function _hookWorkerFetch() {
 						)
 					: 0;
 				const requestStartContext = {
+					requestStartedAt: Date.now(),
+					postAdNativeMasterServedAt: Math.max(
+						0,
+						Number(
+							requestStartInfo?._PendingPostAdNativeMaster?.masterServedAt,
+						) || 0,
+					),
 					mediaKey: requestStartMediaKey,
 					loaderEpoch: Math.max(
 						0,
@@ -3806,6 +3829,8 @@ function _startWorkerWatchdog() {
 	_workerWatchdogID = setInterval(() => {
 		const now = Date.now();
 		if (typeof _checkUnhookedPlayer === "function") _checkUnhookedPlayer();
+		if (typeof _checkPostAdRecoveryNotice === "function")
+			_checkPostAdRecoveryNotice();
 		if (typeof _checkpointPageDiagnostics === "function") {
 			_checkpointPageDiagnostics();
 		}
@@ -5068,6 +5093,8 @@ function _hookWorker() {
                 ${_awaitBackupProbeBeforeDeadline.toString()}
                 ${_isBackupSearchContextCurrent.toString()}
                 ${_processM3U8Core.toString()}
+				${_reportPostAdNativeSession.toString()}
+				${_updatePostAdNativeMasterReload.toString()}
                 ${_processM3U8.toString()}
                 ${_getResolvedLqHqHoldMinMs.toString()}
                 ${_shouldTryAutoplayFirst.toString()}
@@ -5578,6 +5605,27 @@ function _hookWorker() {
                                 }
                             }
                             break;
+						case 'PreparePostAdNativeReload':
+							_updatePostAdNativeMasterReload(
+								__TTVAB_STATE__.StreamInfos[data.value?.mediaKey],
+								data.value,
+								true,
+							);
+							break;
+						case 'ReleasePostAdNativeSession':
+							{
+								const info = __TTVAB_STATE__.StreamInfos[data.value?.mediaKey];
+								const session = info?._PendingPostAdNativeMaster;
+								if (
+									session &&
+									session.cycleStartedAt === Number(data.value?.cycleStartedAt) &&
+									(Number(session.reloadAt) || 0) <= Number(data.value?.reloadAt)
+								) {
+									_reportPostAdNativeSession(info, "released");
+									info._PendingPostAdNativeMaster = null;
+								}
+							}
+							break;
 						case 'TriggeredPlayerReload':
 							{
                                 const reloadContext = _normalizePlaybackContext(
@@ -5681,6 +5729,7 @@ function _hookWorker() {
 											handoffInfo,
 											true,
 										);
+										_updatePostAdNativeMasterReload(handoffInfo, data.value);
 									}
 									__TTVAB_STATE__.HasTriggeredPlayerReload = true;
                                 __TTVAB_STATE__.PendingTriggeredPlayerReloadChannel =
@@ -6862,6 +6911,48 @@ function _hookWorker() {
 								);
 							}
 							break;
+						case "PostAdNativeSession":
+							if (
+								!isStalePlaybackEvent(data) &&
+								Number(data.pageGeneration) ===
+									Number(__TTVAB_STATE__.PagePlaybackContextGeneration || 0) &&
+								_isPageLifecycleCycleCurrent(
+									data.mediaKey,
+									data.cycleStartedAt,
+								) &&
+								typeof _PostAdRecoveryDiagnostics !== "undefined"
+							) {
+								if (
+									_PostAdRecoveryDiagnostics.mediaKey !== data.mediaKey ||
+									_PostAdRecoveryDiagnostics.cycleStartedAt !==
+										data.cycleStartedAt
+								) {
+									for (const key of Object.keys(_PostAdRecoveryDiagnostics))
+										delete _PostAdRecoveryDiagnostics[key];
+								}
+								if (
+									Number(data.reloadAt) <
+									Number(_PostAdRecoveryDiagnostics.nativeSessionReloadAt || 0)
+								)
+									break;
+								Object.assign(_PostAdRecoveryDiagnostics, {
+									mediaKey: data.mediaKey,
+									cycleStartedAt: data.cycleStartedAt,
+									pageGeneration:
+										Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+									nativeSessionPhase: data.phase,
+									nativeSessionUpdatedAt: Date.now(),
+									nativeSessionCodec: data.codec || null,
+									nativeSessionResolution: data.resolution || null,
+									nativeSessionReloadAt: Number(data.reloadAt) || 0,
+									nativeSessionExpiresAt: Number(data.expiresAt) || 0,
+									nativeSessionWorkerGeneration:
+										Number(this.__TTVABGeneration) || 0,
+								});
+								if (typeof _checkpointPageDiagnostics === "function")
+									_checkpointPageDiagnostics(true);
+							}
+							break;
 						case "NativePlaybackRestored":
 							if (isStalePlaybackEvent(data)) {
 								_log(
@@ -7024,9 +7115,9 @@ function _hookWorker() {
 								}
 								_log(
 									requiresReload
-										? "Native playback restored after backup hold; reloading player"
-										: "Native playback restored after backup hold",
-									"success",
+										? "Native playlist ready after backup hold; requesting player rebuild"
+										: "Native playlist ready after backup hold; checking playback recovery",
+									"info",
 								);
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
