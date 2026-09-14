@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.6.1] - 2026-09-15
+
+Fixed
+
+- **Ad Recovery Quality** - Prevented delayed backup responses from undoing a newer quality selection or interrupting a clean backup during an ad break.
+- **Stream Compatibility** - Fixed ad recovery for playlists that list audio before video in their codec information, including 1080p and 1440p streams.
+
 ## [17.6.0] - 2026-09-14
 
 Fixed
