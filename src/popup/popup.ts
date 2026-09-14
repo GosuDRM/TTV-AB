@@ -156,6 +156,8 @@ function _formatLogContextLines(value): string[] {
 		pageVersion: _sanitizeLogExportText(context.pageVersion, 32),
 		pageGeneration: Number(context.pageGeneration) || 0,
 		unhookedPlayer: context.unhookedPlayer === true,
+		lastEndedCycleStartedAt: Number(context.lastEndedCycleStartedAt) || 0,
+		preferredQuality: _sanitizeLogExportText(context.preferredQuality, 64),
 		mediaKey:
 			typeof context.pageMediaKey === "string"
 				? _sanitizeLogExportText(context.pageMediaKey, 160).replace(/\n/g, "")
@@ -221,6 +223,11 @@ function _formatLogContextLines(value): string[] {
 	}
 	if (context.media && typeof context.media === "object") {
 		lines.push(`Media state: ${_stringifyLogExportValue(context.media)}`);
+	}
+	if (context.recovery && typeof context.recovery === "object") {
+		lines.push(
+			`Post-ad recovery: ${_stringifyLogExportValue(context.recovery)}`,
+		);
 	}
 	return lines;
 }

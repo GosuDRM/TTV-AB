@@ -176,6 +176,204 @@ describe("refresh recovery for a player created before interception", () => {
 	});
 });
 
+describe("manual refresh after bounded post-ad recovery", () => {
+	let video: HTMLVideoElement;
+	let player: {
+		core: Record<string, unknown>;
+		getHTMLVideoElement: () => HTMLVideoElement;
+	};
+	let frames: number;
+	let refresh: ReturnType<typeof vi.spyOn>;
+	const notice = () => document.getElementById("ttvab-worker-recovery");
+	const state = () => g.__TTVAB_STATE__ as Record<string, unknown>;
+	const expire = () =>
+		T<() => boolean>("_maintainPostAdRecoveryTransactionLifetime")();
+	const check = () => T<() => void>("_checkPostAdRecoveryNotice")();
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		history.replaceState(null, "", "/testchannel");
+		g.__TTVAB_STATE__ = {
+			IsAdStrippingEnabled: true,
+			PageMediaKey: "live:testchannel",
+			PagePlaybackContextGeneration: 2,
+			LastAdEndedMediaKey: "live:testchannel",
+			LastAdEndedCycleStartedAt: 50000,
+		};
+		g._S = { workers: [] };
+		frames = 500;
+		video = document.createElement("video");
+		document.body.append(video);
+		Object.defineProperties(video, {
+			paused: { configurable: true, value: false },
+			readyState: { configurable: true, value: 4 },
+			videoWidth: { configurable: true, value: 2560 },
+			buffered: { value: { length: 1, start: () => 0, end: () => 40 } },
+			getVideoPlaybackQuality: { value: () => ({ totalVideoFrames: frames }) },
+		});
+		video.currentTime = 10;
+		player = {
+			core: { state: { bufferDuration: 30 } },
+			getHTMLVideoElement: () => video,
+		};
+		vi.spyOn(g, "_getPlayerAndState").mockImplementation(() => ({ player }));
+		vi.spyOn(g, "_getPrimaryMediaElement").mockImplementation(() => video);
+		vi.spyOn(g, "_isNativeDocumentHidden").mockReturnValue(false);
+		vi.spyOn(g, "_isActivePictureInPicturePlaybackContext").mockReturnValue(
+			false,
+		);
+		vi.spyOn(g, "_hasUserPauseIntent").mockReturnValue(false);
+		vi.spyOn(g, "_broadcastWorkers").mockReturnValue(undefined);
+		vi.spyOn(g, "_checkpointPageDiagnostics").mockReturnValue(true);
+		vi.spyOn(g, "_log").mockReturnValue(undefined);
+		T<() => void>("_resetPostAdRecoveryTransaction")();
+		Object.assign(g._PostAdRecoveryNoticeState as object, {
+			mediaKey: null,
+			cycleStartedAt: 0,
+			playerRef: null,
+			videoRef: null,
+			noticeShownAt: 0,
+		});
+		Object.assign(g._PostAdRecoveryTransactionState as object, {
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 50000,
+			expiresAt: 100000,
+			reloadRequestCount: 2,
+			acceptedReloadCount: 2,
+			requiredNativeReloadAt: 90000,
+			video,
+			lastCurrentTime: 10,
+			lastTotalFrames: 500,
+		});
+		refresh = vi.spyOn(window.location, "reload").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		T<() => void>("_clearWorkerRecoveryNotice")();
+		T<() => void>("_resetPostAdRecoveryTransaction")();
+		video.remove();
+		vi.clearAllTimers();
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it("retains exhausted counters and requires a click even when time advances without frames", () => {
+		video.currentTime = 12;
+		expect(expire()).toBe(false);
+		expect(g._PostAdRecoveryTransactionState).toMatchObject({ mediaKey: null });
+		expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+			phase: "exhausted",
+			acceptedReloadCount: 2,
+			totalVideoFrames: 500,
+		});
+		expect(notice()?.textContent).toContain(
+			"Playback did not recover after ads",
+		);
+		expect(refresh).not.toHaveBeenCalled();
+		notice()?.querySelector("button")?.click();
+		expect(refresh).toHaveBeenCalledOnce();
+		expect(g._broadcastWorkers).toHaveBeenCalledWith(
+			expect.objectContaining({ key: "ReleasePostAdNativeSession" }),
+		);
+	});
+
+	it.each([
+		"navigate",
+		"generation",
+		"cycle",
+		"new ad",
+		"pause",
+		"disable",
+		"detach",
+		"replacement",
+		"getter failure",
+	])("rejects a stale post-ad refresh after %s", (change) => {
+		expire();
+		expect(notice()).not.toBeNull();
+		if (change === "navigate") history.replaceState(null, "", "/otherchannel");
+		if (change === "generation") state().PagePlaybackContextGeneration = 3;
+		if (change === "cycle") state().LastAdEndedCycleStartedAt = 60000;
+		if (change === "new ad") state().CurrentAdMediaKey = "live:testchannel";
+		if (change === "pause")
+			vi.spyOn(g, "_hasUserPauseIntent").mockReturnValue(true);
+		if (change === "disable") state().IsAdStrippingEnabled = false;
+		if (change === "detach") video.remove();
+		if (change === "replacement") player = { ...player };
+		if (change === "getter failure")
+			vi.spyOn(g, "_getPlayerAndState").mockImplementation(() => {
+				throw new Error("unavailable");
+			});
+		expect(() => notice()?.querySelector("button")?.click()).not.toThrow();
+		expect(refresh).not.toHaveBeenCalled();
+		expect(notice()).toBeNull();
+	});
+
+	it("clears the notice only when current playback and frames advance", () => {
+		expire();
+		video.currentTime = 12;
+		check();
+		expect(notice()).not.toBeNull();
+		frames += 60;
+		check();
+		expect(notice()).toBeNull();
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it.each(["dismiss", "expire"])(
+		"suppresses repeats after %s without replenishing automation",
+		(action) => {
+			expire();
+			if (action === "dismiss")
+				notice()?.querySelectorAll("button")[1]?.click();
+			else vi.advanceTimersByTime(3000);
+			T<(key: string, reason: string) => void>("_showWorkerRecoveryNotice")(
+				"live:testchannel",
+				"post-ad",
+			);
+			expect(notice()).toBeNull();
+			expect(expire()).toBe(false);
+			expect(refresh).not.toHaveBeenCalled();
+		},
+	);
+
+	it("does not authorize a refresh from a historical diagnostic record", () => {
+		Object.assign(g._PostAdRecoveryDiagnostics as object, {
+			mediaKey: "live:testchannel",
+			phase: "exhausted",
+		});
+		T<(key: string, reason: string) => void>("_showWorkerRecoveryNotice")(
+			"live:testchannel",
+			"post-ad",
+		);
+		expect(notice()).toBeNull();
+	});
+
+	it("exports the exhausted cycle and exact current worker without retaining live ownership in diagnostics", () => {
+		const worker = { __TTVABGeneration: 7 };
+		player.core.worker = worker;
+		g._S = { workers: [{ __TTVABGeneration: 6 }, worker] };
+		expire();
+		const context = T<() => Record<string, unknown>>(
+			"_collectPageLogContext",
+		)();
+		expect(context.recovery).toMatchObject({
+			phase: "exhausted",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 50000,
+			acceptedReloadCount: 2,
+		});
+		expect(context.workers).toEqual([
+			expect.objectContaining({ generation: 6, isCurrentPlayerWorker: false }),
+			expect.objectContaining({ generation: 7, isCurrentPlayerWorker: true }),
+		]);
+		expect(JSON.stringify(context.recovery)).not.toContain("playerRef");
+		state().PagePlaybackContextGeneration = 3;
+		expect(T<() => unknown>("_collectPostAdRecoveryDiagnostics")()).toBeNull();
+	});
+});
+
 describe("worker failure evidence survives retirement", () => {
 	beforeEach(() => {
 		(g._workerFailureDiagnostics as unknown[]).length = 0;

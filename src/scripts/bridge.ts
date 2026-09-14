@@ -1837,6 +1837,10 @@ function sanitizeLogContextWorker(value) {
 		crashed: value.crashed === true,
 		terminated: value.terminated === true,
 		lastPongAt: sanitizeLogTimestamp(value.lastPongAt),
+		isCurrentPlayerWorker:
+			typeof value.isCurrentPlayerWorker === "boolean"
+				? value.isCurrentPlayerWorker
+				: null,
 	};
 }
 
@@ -1909,6 +1913,49 @@ function sanitizeLogContextMedia(value) {
 		width: Math.trunc(sanitizeLogContextNumber(value.width, 0, 16384)),
 		height: Math.trunc(sanitizeLogContextNumber(value.height, 0, 16384)),
 		buffered,
+		totalVideoFrames: sanitizeLogContextNumber(
+			value.totalVideoFrames,
+			-1,
+			Number.MAX_SAFE_INTEGER,
+			-1,
+		),
+	};
+}
+
+function sanitizePostAdRecoveryDiagnostics(value) {
+	if (!isPlainObject(value)) return null;
+	return {
+		mediaKey: normalizeMediaKey(value.mediaKey),
+		cycleStartedAt: sanitizeLogTimestamp(value.cycleStartedAt),
+		pageGeneration: sanitizeLogGeneration(value.pageGeneration),
+		phase: sanitizeLogContextString(value.phase, 32),
+		updatedAt: sanitizeLogTimestamp(value.updatedAt),
+		reloadRequestCount: sanitizeLogGeneration(value.reloadRequestCount),
+		acceptedReloadCount: sanitizeLogGeneration(value.acceptedReloadCount),
+		reloadAt: sanitizeLogTimestamp(value.reloadAt),
+		nativeReadyAt: sanitizeLogTimestamp(value.nativeReadyAt),
+		expiresAt: sanitizeLogTimestamp(value.expiresAt),
+		currentTime: sanitizeLogContextNumber(value.currentTime, 0, 1000000000),
+		totalVideoFrames: sanitizeLogContextNumber(
+			value.totalVideoFrames,
+			-1,
+			Number.MAX_SAFE_INTEGER,
+			-1,
+		),
+		suspended: value.suspended === true,
+		reloadResult: sanitizeLogContextString(value.reloadResult, 32),
+		nativeSessionPhase: sanitizeLogContextString(value.nativeSessionPhase, 32),
+		nativeSessionUpdatedAt: sanitizeLogTimestamp(value.nativeSessionUpdatedAt),
+		nativeSessionCodec: sanitizeLogContextString(value.nativeSessionCodec, 96),
+		nativeSessionResolution: sanitizeLogContextString(
+			value.nativeSessionResolution,
+			32,
+		),
+		nativeSessionReloadAt: sanitizeLogTimestamp(value.nativeSessionReloadAt),
+		nativeSessionExpiresAt: sanitizeLogTimestamp(value.nativeSessionExpiresAt),
+		nativeSessionWorkerGeneration: sanitizeLogGeneration(
+			value.nativeSessionWorkerGeneration,
+		),
 	};
 }
 
@@ -1951,6 +1998,11 @@ function sanitizeLogContext(value) {
 		autoplayBackupEnabled: context.autoplayBackupEnabled === true,
 		currentAdMediaKey: normalizeMediaKey(context.currentAdMediaKey),
 		activeCycleStartedAt: sanitizeLogTimestamp(context.activeCycleStartedAt),
+		lastEndedCycleStartedAt: sanitizeLogTimestamp(
+			context.lastEndedCycleStartedAt,
+		),
+		preferredQuality: sanitizeLogContextString(context.preferredQuality, 64),
+		recovery: sanitizePostAdRecoveryDiagnostics(context.recovery),
 		pinnedBackupPlayerType: sanitizeLogContextString(
 			context.pinnedBackupPlayerType,
 			32,

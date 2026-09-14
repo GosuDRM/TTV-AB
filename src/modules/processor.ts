@@ -11,6 +11,82 @@ function _resetNativeRecoveryCandidateState(info) {
 	info.NativeRecoveryCandidateLastMediaSequence = null;
 }
 
+function _reportPostAdNativeSession(info, phase) {
+	try {
+		const session = info?._PendingPostAdNativeMaster;
+		if (!session || session.phase === phase) return;
+		session.phase = phase;
+		if (typeof self !== "undefined" && self.postMessage) {
+			_postWorkerBridgeMessage(
+				self,
+				_createPageScopedWorkerEvent({
+					key: "PostAdNativeSession",
+					mediaKey: session.mediaKey,
+					channel: info.ChannelName,
+					cycleStartedAt: session.cycleStartedAt,
+					pageGeneration: session.pageGeneration,
+					phase,
+					codec: session.codec,
+					resolution: session.resolution,
+					reloadAt: Number(session.reloadAt) || 0,
+					expiresAt: session.expiresAt,
+				}),
+			);
+		}
+	} catch {}
+}
+
+function _updatePostAdNativeMasterReload(info, reload, preparing = false) {
+	const session = info?._PendingPostAdNativeMaster;
+	if (!session) return;
+	const reloadAt = Math.max(0, Number(reload?.reloadAt) || 0);
+	const repeatedReload = reloadAt > 0 && reloadAt === session.reloadAt;
+	const countedReload = reloadAt > 0 && reloadAt === session.countedReloadAt;
+	if (
+		reload?.preserveNativeSession !== true ||
+		(reload.reason !== "post-ad-native-restore" &&
+			reload.reason !== "ad-recovery") ||
+		reloadAt <= 0 ||
+		reloadAt < (Number(session.reloadAt) || 0) ||
+		reloadAt > Date.now() ||
+		Date.now() >= session.expiresAt ||
+		(!countedReload && (Number(session.reloadCount) || 0) >= 2) ||
+		_normalizeMediaKey(reload.mediaKey) !== session.mediaKey ||
+		_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) !== session.mediaKey ||
+		__TTVAB_STATE__.CurrentAdMediaKey ||
+		_normalizeMediaKey(__TTVAB_STATE__.LastAdEndedMediaKey) !==
+			session.mediaKey ||
+		Number(reload.cycleStartedAt) !== session.cycleStartedAt ||
+		Number(__TTVAB_STATE__.LastAdEndedCycleStartedAt) !==
+			session.cycleStartedAt ||
+		Number(__TTVAB_STATE__.PagePlaybackContextGeneration || 0) !==
+			Number(session.pageGeneration || 0)
+	) {
+		_reportPostAdNativeSession(info, "released");
+		info._PendingPostAdNativeMaster = null;
+		return;
+	}
+	const firstReload = !session.reloadAt;
+	session.reloadAt = reloadAt;
+	if (!preparing && !countedReload) {
+		session.reloadCount = (Number(session.reloadCount) || 0) + 1;
+		session.countedReloadAt = reloadAt;
+	}
+	if (!repeatedReload) {
+		session.consumed = false;
+		if (!firstReload || Number(session.masterServedAt) < reloadAt) {
+			session.masterServedAt = 0;
+		}
+	}
+	session.loaderEpoch = Math.max(
+		0,
+		Number(info.NativeRecoveryLoaderEpoch) || 0,
+	);
+	if (!repeatedReload) {
+		_reportPostAdNativeSession(info, firstReload ? "armed" : "rearmed");
+	}
+}
+
 function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
 	const wasUsingFallbackStream = Boolean(info?.IsUsingFallbackStream);
@@ -3657,6 +3733,18 @@ async function _processM3U8(
 	}
 
 	const requestAdContext = {
+		postAdNativeMasterServedAt: Math.max(
+			0,
+			Number(
+				hasRequestStartContext
+					? requestStartContext.postAdNativeMasterServedAt
+					: initialInfo?._PendingPostAdNativeMaster?.masterServedAt,
+			) || 0,
+		),
+		requestStartedAt: Math.max(
+			0,
+			Number(requestStartContext?.requestStartedAt) || Date.now(),
+		),
 		requestStartMediaKey: hasRequestStartContext
 			? requestStartMediaKey
 			: initialMediaKey,
@@ -4390,9 +4478,28 @@ async function _processM3U8Core(
 			_normalizeMediaKey(info.MediaKey) &&
 		_getExactPlaylistUrlKey(pendingPostAdNativeMaster.playlistUrl) ===
 			exactRequestUrl &&
-		(hasAds || hasMediaSegments)
+		(hasAds ||
+			(hasMediaSegments &&
+				Number(pendingPostAdNativeMaster.masterServedAt) > 0 &&
+				Number(requestAdContext?.postAdNativeMasterServedAt) ===
+					Number(pendingPostAdNativeMaster.masterServedAt) &&
+				Number(requestAdContext?.requestStartedAt || Date.now()) >=
+					Number(pendingPostAdNativeMaster.masterServedAt) &&
+				Number(pendingPostAdNativeMaster.loaderEpoch) ===
+					Math.max(
+						0,
+						Number(
+							requestAdContext?.loaderEpoch ?? info.NativeRecoveryLoaderEpoch,
+						) || 0,
+					)))
 	) {
-		info._PendingPostAdNativeMaster = null;
+		if (hasAds) {
+			_reportPostAdNativeSession(info, "ad-rejected");
+			info._PendingPostAdNativeMaster = null;
+		} else if (!pendingPostAdNativeMaster.consumed) {
+			pendingPostAdNativeMaster.consumed = true;
+			_reportPostAdNativeSession(info, "consumed");
+		}
 	}
 	const ensureVisibleAdCycle = () => {
 		if (info.IsShowingAd) return;
@@ -4720,7 +4827,7 @@ async function _processM3U8Core(
 						}),
 					);
 					_log(
-						"[Trace] Exact native playback confirmed after player rebuild",
+						"[Trace] Exact native playlist ready after player rebuild",
 						"info",
 					);
 				} catch {}
@@ -4794,9 +4901,25 @@ async function _processM3U8Core(
 									verifiedNativeRecoveryTarget?.masterUrl || info.UsherBaseUrl,
 								playlistUrl:
 									verifiedNativeRecoveryTarget?.playlistUrl || exactRequestUrl,
+								codec:
+									info.Urls?.[
+										verifiedNativeRecoveryTarget?.playlistUrl || exactRequestUrl
+									]?.Codecs || null,
+								resolution:
+									info.Urls?.[
+										verifiedNativeRecoveryTarget?.playlistUrl || exactRequestUrl
+									]?.Resolution || null,
 								mediaKey: info.MediaKey,
 								cycleStartedAt: restoredCycleStartedAt,
 								expiresAt: restoredAt + 30000,
+								pageGeneration: Math.max(
+									0,
+									Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+								),
+								masterServedAt: 0,
+								reloadAt: 0,
+								reloadCount: 0,
+								consumed: false,
 							}
 						: null;
 				if (exactNativeRecoveryReady) {
@@ -4818,6 +4941,7 @@ async function _processM3U8Core(
 				__TTVAB_STATE__.PinnedBackupPlayerChannel = null;
 				__TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
 				_rememberLastAdEnd(info, restoredAt, restoredCycleStartedAt);
+				_reportPostAdNativeSession(info, "prepared");
 				_log(
 					requiresReload
 						? "[Trace] Native playlist verified clean after silent backup hold; reloading player after backup hold"

@@ -974,6 +974,58 @@ describe("worker fetch relay ownership", () => {
 });
 
 describe("post-ad native reload acknowledgement", () => {
+	it("records session provenance only for the current page, cycle and latest reload", () => {
+		const previousDiagnostics = g._PostAdRecoveryDiagnostics;
+		const previousCheckpoint = g._checkpointPageDiagnostics;
+		g._PostAdRecoveryDiagnostics = {};
+		g._checkpointPageDiagnostics = vi.fn();
+		const { worker, restore } = installWorkerMessageHarness();
+		try {
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				CurrentAdMediaKey: null,
+				LastAdEndedMediaKey: "live:testchannel",
+				LastAdEndedCycleStartedAt: 90000,
+				LastAdEndedAt: Date.now(),
+			});
+			const event = {
+				key: "PostAdNativeSession",
+				mediaKey: "live:testchannel",
+				channel: "testchannel",
+				pageMediaKey: "live:testchannel",
+				pageGeneration: Number(state.PagePlaybackContextGeneration) || 0,
+				cycleStartedAt: 90000,
+				reloadAt: 100000,
+				phase: "rearmed",
+				codec: "hev1.1.2.L150.90",
+				resolution: "2560x1440",
+			};
+			worker.emitMessage(event);
+			expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+				nativeSessionPhase: "rearmed",
+				nativeSessionReloadAt: 100000,
+				nativeSessionCodec: "hev1.1.2.L150.90",
+				nativeSessionResolution: "2560x1440",
+			});
+			for (const patch of [
+				{ pageGeneration: event.pageGeneration + 1 },
+				{ cycleStartedAt: 80000 },
+				{ mediaKey: "live:other" },
+				{ reloadAt: 99999 },
+			]) {
+				worker.emitMessage({ ...event, phase: "released", ...patch });
+			}
+			expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+				nativeSessionPhase: "rearmed",
+			});
+			expect(g._checkpointPageDiagnostics).toHaveBeenCalledOnce();
+		} finally {
+			restore();
+			g._PostAdRecoveryDiagnostics = previousDiagnostics;
+			g._checkpointPageDiagnostics = previousCheckpoint;
+		}
+	});
+
 	it("forwards exact current-worker proof and ignores stale playback context", () => {
 		const confirm = vi.fn(() => true);
 		g._confirmPostAdNativeReload = confirm;
@@ -8442,6 +8494,57 @@ describe("worker mixed-codec master selection", () => {
 			).text();
 			expect(rebuiltMaster).toContain(hevcUrl);
 			expect(rebuiltMaster).not.toContain(avcUrl);
+			const initialReloadAt = Date.now();
+			send("TriggeredPlayerReload", {
+				mediaKey,
+				channelName: "testchannel",
+				cycleStartedAt: 100000,
+				reason: "post-ad-native-restore",
+				reloadAt: initialReloadAt,
+				preserveNativeSession: true,
+			});
+			await workerFetch(hevcUrl);
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
+				consumed: true,
+				reloadCount: 1,
+			});
+			vi.setSystemTime(Date.now() + 11000);
+			const retry = {
+				mediaKey,
+				channelName: "testchannel",
+				cycleStartedAt: 100000,
+				reason: "ad-recovery",
+				reloadAt: Date.now(),
+				preserveNativeSession: true,
+			};
+			send("PreparePostAdNativeReload", retry);
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
+				consumed: false,
+				reloadCount: 1,
+			});
+			const retryMaster = await (
+				await workerFetch(`${masterUrl}&rebuild=2`)
+			).text();
+			expect(retryMaster).toContain(hevcUrl);
+			expect(retryMaster).not.toContain(avcUrl);
+			send("TriggeredPlayerReload", retry);
+			await workerFetch(hevcUrl);
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
+				consumed: true,
+				reloadCount: 2,
+			});
+			send("ReleasePostAdNativeSession", {
+				mediaKey,
+				cycleStartedAt: 100000,
+				reloadAt: initialReloadAt,
+			});
+			expect(info._PendingPostAdNativeMaster).toMatchObject({ reloadCount: 2 });
+			send("ReleasePostAdNativeSession", {
+				mediaKey,
+				cycleStartedAt: 100000,
+				reloadAt: Date.now(),
+			});
+			expect(info._PendingPostAdNativeMaster).toBeNull();
 		} finally {
 			harness.restore();
 		}

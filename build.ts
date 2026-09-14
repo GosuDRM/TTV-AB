@@ -1254,6 +1254,41 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_processM3U8Core",
+			helper: "_reportPostAdNativeSession",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_reportPostAdNativeSession",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorker",
+			helper: "_updatePostAdNativeMasterReload",
+			source: hooksSource,
+		},
+		{
+			consumer: "_updatePostAdNativeMasterReload",
+			helper: "_reportPostAdNativeSession",
+			source: processorSource,
+		},
+		{
+			consumer: "_updatePostAdNativeMasterReload",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_reportPostAdNativeSession",
+			helper: "_postWorkerBridgeMessage",
+			source: processorSource,
+		},
+		{
+			consumer: "_reportPostAdNativeSession",
+			helper: "_createPageScopedWorkerEvent",
+			source: processorSource,
+		},
+		{
 			consumer: "_hookWorkerErrorDiagnostics",
 			helper: "_formatLogText",
 			source: hooksSource,

@@ -162,6 +162,17 @@ const _PostAdRecoveryTransactionState = {
 	pendingOperationReadyAt: 0,
 	initialOperationCompleted: false,
 };
+const _PostAdRecoveryDiagnostics: PlainObject = {};
+const _PostAdRecoveryNoticeState = {
+	mediaKey: null as string | null,
+	cycleStartedAt: 0,
+	pageGeneration: 0,
+	playerRef: null as WeakRef<object> | null,
+	videoRef: null as WeakRef<HTMLVideoElement> | null,
+	currentTime: 0,
+	totalVideoFrames: -1,
+	noticeShownAt: 0,
+};
 const _PinnedBackupTimelineRestoreState = {
 	mediaKey: null as string | null,
 	cycleStartedAt: 0,
@@ -4422,7 +4433,104 @@ function _handlePostAdGraceWatch(
 	return true;
 }
 
+function _recordPostAdRecoveryTransition(phase, reloadResult = null) {
+	try {
+		const transaction = _PostAdRecoveryTransactionState;
+		if (!transaction.mediaKey) return;
+		if (
+			_PostAdRecoveryDiagnostics.mediaKey !== transaction.mediaKey ||
+			_PostAdRecoveryDiagnostics.cycleStartedAt !== transaction.cycleStartedAt
+		) {
+			for (const key of Object.keys(_PostAdRecoveryDiagnostics)) {
+				delete _PostAdRecoveryDiagnostics[key];
+			}
+		}
+		Object.assign(_PostAdRecoveryDiagnostics, {
+			mediaKey: transaction.mediaKey,
+			cycleStartedAt: transaction.cycleStartedAt,
+			pageGeneration:
+				Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+			phase,
+			updatedAt: Date.now(),
+			reloadRequestCount: transaction.reloadRequestCount,
+			acceptedReloadCount: transaction.acceptedReloadCount,
+			reloadAt: transaction.requiredNativeReloadAt,
+			nativeReadyAt: transaction.nativeReloadConfirmedAt,
+			expiresAt: transaction.expiresAt,
+			currentTime: transaction.lastCurrentTime,
+			totalVideoFrames: transaction.lastTotalFrames,
+			...(reloadResult ? { reloadResult } : {}),
+		});
+		if (typeof _checkpointPageDiagnostics === "function") {
+			_checkpointPageDiagnostics(true);
+		}
+	} catch {}
+}
+
+function _canRefreshPostAdPlayer(mediaKey) {
+	try {
+		const notice = _PostAdRecoveryNoticeState;
+		if (
+			!mediaKey ||
+			notice.mediaKey !== mediaKey ||
+			notice.pageGeneration !==
+				Number(__TTVAB_STATE__.PagePlaybackContextGeneration || 0) ||
+			!_isPostAdRecoveryCycleCurrent(mediaKey, notice.cycleStartedAt) ||
+			_hasUserPauseIntent(null, mediaKey) ||
+			__TTVAB_STATE__.IsAdStrippingEnabled === false
+		)
+			return false;
+		const { player } = _getPlayerAndState();
+		const video = player?.getHTMLVideoElement?.();
+		let totalVideoFrames = -1;
+		try {
+			const sample = Number(
+				video?.getVideoPlaybackQuality?.()?.totalVideoFrames,
+			);
+			if (Number.isFinite(sample) && sample >= 0) totalVideoFrames = sample;
+		} catch {}
+		const playbackAdvanced = Boolean(
+			Number(video?.currentTime) > notice.currentTime + 0.05 &&
+				(totalVideoFrames < 0 ||
+					notice.totalVideoFrames < 0 ||
+					totalVideoFrames > notice.totalVideoFrames) &&
+				_isPlaybackHealthyAfterAd(player, _getPlayerCore(player), video),
+		);
+		return Boolean(
+			player &&
+				notice.playerRef?.deref() === player &&
+				notice.videoRef?.deref() === video &&
+				video?.isConnected &&
+				!playbackAdvanced,
+		);
+	} catch {
+		return false;
+	}
+}
+
+function _checkPostAdRecoveryNotice() {
+	const mediaKey = _PostAdRecoveryNoticeState.mediaKey;
+	if (!mediaKey || _canRefreshPostAdPlayer(mediaKey)) return;
+	_PostAdRecoveryNoticeState.mediaKey = null;
+	_PostAdRecoveryNoticeState.playerRef = null;
+	_PostAdRecoveryNoticeState.videoRef = null;
+	if (typeof _clearWorkerRecoveryNotice === "function") {
+		_clearWorkerRecoveryNotice(mediaKey, "post-ad");
+	}
+}
+
 function _resetPostAdRecoveryTransaction() {
+	if (_PostAdRecoveryTransactionState.mediaKey) {
+		_broadcastWorkers({
+			key: "ReleasePostAdNativeSession",
+			targetMediaKey: _PostAdRecoveryTransactionState.mediaKey,
+			value: {
+				mediaKey: _PostAdRecoveryTransactionState.mediaKey,
+				cycleStartedAt: _PostAdRecoveryTransactionState.cycleStartedAt,
+				reloadAt: _PostAdRecoveryTransactionState.requiredNativeReloadAt,
+			},
+		});
+	}
 	_PostAdRecoveryTransactionState.channel = null;
 	_PostAdRecoveryTransactionState.mediaKey = null;
 	_PostAdRecoveryTransactionState.cycleStartedAt = 0;
@@ -4553,6 +4661,7 @@ function _confirmPostAdNativeReload(data = null) {
 	_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 	_PostAdRecoveryTransactionState.stallTicks = 0;
 	_PlayerBufferState.postAdUnhealthyCount = 0;
+	_recordPostAdRecoveryTransition("native-ready");
 	return true;
 }
 
@@ -4601,10 +4710,13 @@ function _startPostAdRecoveryTransaction(
 	) {
 		_PostAdRecoveryTransactionState.suspendedAt = startedAt;
 	}
+	_recordPostAdRecoveryTransition("started");
 	return true;
 }
 
 function _finishPostAdRecoveryTransaction(currentTime = 0) {
+	_log("Native playback restored; video is advancing", "success");
+	_recordPostAdRecoveryTransition("recovered");
 	_resetPostAdRecoveryTransaction();
 	_resetPostAdRecoveryMonitorSamples();
 	_armPostAdGraceWindow(currentTime);
@@ -4613,6 +4725,7 @@ function _finishPostAdRecoveryTransaction(currentTime = 0) {
 }
 
 function _cancelPostAdRecoveryTransaction(clearResumeIntent = true) {
+	_recordPostAdRecoveryTransition("cancelled");
 	_resetPostAdRecoveryTransaction();
 	_resetPostAdRecoveryMonitorSamples();
 	if (clearResumeIntent) {
@@ -4831,7 +4944,43 @@ function _maintainPostAdRecoveryTransactionLifetime() {
 		"Post-ad recovery reached its automation limit; ending bounded recovery",
 		"warning",
 	);
-	_cancelPostAdRecoveryTransaction(true);
+	_recordPostAdRecoveryTransition("exhausted");
+	const notice = _PostAdRecoveryNoticeState;
+	try {
+		const { player } = _getPlayerAndState();
+		const video = player?.getHTMLVideoElement?.();
+		if (
+			player &&
+			video instanceof HTMLVideoElement &&
+			(notice.mediaKey !== _PostAdRecoveryTransactionState.mediaKey ||
+				notice.cycleStartedAt !==
+					_PostAdRecoveryTransactionState.cycleStartedAt)
+		) {
+			Object.assign(notice, {
+				mediaKey: _PostAdRecoveryTransactionState.mediaKey,
+				cycleStartedAt: _PostAdRecoveryTransactionState.cycleStartedAt,
+				pageGeneration:
+					Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+				playerRef: new WeakRef(player),
+				videoRef: new WeakRef(video),
+				currentTime:
+					_PostAdRecoveryTransactionState.video === video
+						? _PostAdRecoveryTransactionState.lastCurrentTime
+						: Number(video.currentTime) || 0,
+				totalVideoFrames:
+					_PostAdRecoveryTransactionState.video === video
+						? _PostAdRecoveryTransactionState.lastTotalFrames
+						: -1,
+				noticeShownAt: 0,
+			});
+		}
+	} catch {}
+	_resetPostAdRecoveryTransaction();
+	_resetPostAdRecoveryMonitorSamples();
+	_clearAdResumeIntent();
+	if (typeof _showWorkerRecoveryNotice === "function") {
+		_showWorkerRecoveryNotice(notice.mediaKey, "post-ad");
+	}
 	return false;
 }
 
@@ -5769,6 +5918,9 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 				"warning",
 			);
 			if (!isReloadCurrent()) return;
+			if (isTerminalPostAdTask) {
+				_recordPostAdRecoveryTransition("source-failed", "failure");
+			}
 			if (handoffId) {
 				if (
 					__TTVAB_STATE__.ActiveCodecHandoffId === handoffId &&
@@ -5842,6 +5994,26 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 			}
 		};
 		let sourceLoadResult = null;
+		if (isTerminalPostAdTask) {
+			_recordPostAdRecoveryTransition("loading", "pending");
+		}
+		if (
+			isTerminalPostAdTask &&
+			options.refreshAccessToken === false &&
+			options.newMediaPlayerInstance !== false
+		) {
+			_broadcastWorkers({
+				key: "PreparePostAdNativeReload",
+				targetMediaKey: taskMediaKey,
+				value: {
+					mediaKey: taskMediaKey,
+					cycleStartedAt: requestedCycleStartedAt,
+					reloadAt: now,
+					reason,
+					preserveNativeSession: true,
+				},
+			});
+		}
 		try {
 			sourceLoadResult = playerState.setSrc({
 				isNewMediaPlayerInstance: options.newMediaPlayerInstance !== false,
@@ -5861,6 +6033,7 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 		}
 		if (isTerminalPostAdTask) {
 			_completePendingPostAdRecoveryOperation();
+			_recordPostAdRecoveryTransition("loading", "pending");
 		}
 
 		_broadcastWorkers({
@@ -5874,6 +6047,11 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 				handoffId,
 				cycleStartedAt: requestedCycleStartedAt,
 				reloadAt: now,
+				preserveNativeSession: Boolean(
+					isTerminalPostAdTask &&
+						options.refreshAccessToken === false &&
+						options.newMediaPlayerInstance !== false,
+				),
 			},
 		});
 
@@ -5994,6 +6172,9 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 				return false;
 			}
 			finishReload();
+			if (isTerminalPostAdTask) {
+				_recordPostAdRecoveryTransition("source-ready", "success");
+			}
 			return true;
 		};
 		if (sourceLoadResult && typeof sourceLoadResult.then === "function") {

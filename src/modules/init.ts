@@ -162,7 +162,7 @@ function _checkpointPageDiagnostics(force = false) {
 		const now = Date.now();
 		if (!force && now - _lastDiagnosticCheckpointAt < 15000) return false;
 		_lastDiagnosticCheckpointAt = now;
-		const collected = _collectPageLogEntries(64, 24 * 1024, false);
+		const collected = _collectPageLogEntries(64, 24 * 1024, false, true);
 		return _sendBridgeMessage("ttvab-diagnostic-checkpoint", {
 			capturedAt: now,
 			entries: collected.entries,
@@ -217,6 +217,7 @@ function _collectPageLogEntries(
 	maxEntries = _PAGE_LOG_EXPORT_MAX_ENTRIES,
 	maxBytes = _PAGE_LOG_EXPORT_MAX_BYTES,
 	captureMediaDiagnostics = true,
+	retainRecoveryMilestones = false,
 ) {
 	try {
 		if (
@@ -248,15 +249,25 @@ function _collectPageLogEntries(
 		}
 	} catch {}
 	const entries: PlainObject[] = [];
+	const milestones = new Set<PlainObject>();
 	let usedBytes = 2;
 	const oldestIndex = Math.max(0, length - 1200);
 	for (let index = length - 1; index >= oldestIndex; index -= 1) {
-		if (entries.length >= maxEntries) break;
+		if (entries.length >= maxEntries && !retainRecoveryMilestones) break;
 		try {
 			const source = buffer[index];
 			if (!source || typeof source !== "object" || Array.isArray(source)) {
 				continue;
 			}
+			const isMilestone = Boolean(
+				retainRecoveryMilestones &&
+					milestones.size < 12 &&
+					typeof source.m === "string" &&
+					/Ad blocked!|Ad detected, blocking|Using backup:|Native playlist (?:verified clean|ready)|Native playback restored|Post-ad recovery reached|Player still stalling after ad|Player source reload failed/.test(
+						source.m.slice(0, 4000),
+					),
+			);
+			if (entries.length >= maxEntries && !isMilestone) continue;
 			const rawTimestamp = _getSafePageLogNumber(source.t, 0);
 			const timestamp =
 				rawTimestamp >= 0 && rawTimestamp <= 8640000000000000
@@ -290,10 +301,31 @@ function _collectPageLogEntries(
 				if (mediaKey) entry.k = mediaKey;
 			}
 			const entryBytes = _getPageLogEntryByteLength(entry);
+			if (retainRecoveryMilestones && entryBytes + 2 > maxBytes) continue;
+			if (retainRecoveryMilestones && isMilestone) {
+				while (
+					entries.length >= maxEntries ||
+					usedBytes + entryBytes > maxBytes
+				) {
+					let removableIndex = entries.length - 1;
+					while (removableIndex > 0 && milestones.has(entries[removableIndex]))
+						removableIndex--;
+					if (removableIndex <= 0) break;
+					const [removed] = entries.splice(removableIndex, 1);
+					usedBytes -= _getPageLogEntryByteLength(removed);
+				}
+			}
 			if (entries.length > 0 && usedBytes + entryBytes > maxBytes) {
+				if (retainRecoveryMilestones) continue;
 				break;
 			}
+			if (
+				retainRecoveryMilestones &&
+				(entries.length >= maxEntries || usedBytes + entryBytes > maxBytes)
+			)
+				continue;
 			entries.push(entry);
+			if (isMilestone) milestones.add(entry);
 			usedBytes += entryBytes;
 		} catch {}
 	}
@@ -361,6 +393,13 @@ function _collectPageLogMediaState(state) {
 			} catch {}
 		}
 		const duration = _getSafePageLogNumber(media.duration, -1);
+		let totalVideoFrames = -1;
+		try {
+			totalVideoFrames = _getSafePageLogNumber(
+				media.getVideoPlaybackQuality?.()?.totalVideoFrames,
+				-1,
+			);
+		} catch {}
 		return {
 			tag: _getSafePageLogString(media.localName || "media", 16).replace(
 				/\n/g,
@@ -398,6 +437,7 @@ function _collectPageLogMediaState(state) {
 				),
 			),
 			buffered,
+			totalVideoFrames,
 		};
 	} catch {
 		return null;
@@ -418,6 +458,11 @@ function _collectPageLogContext() {
 			? state?.AdPodProgressByMediaKey?.[currentAdMediaKey]
 			: null;
 		const workers = [];
+		let currentWorker = null;
+		try {
+			currentWorker =
+				_getPlayerCore(_getPlayerAndState().player)?.worker || null;
+		} catch {}
 		const workerList = Array.isArray(_S?.workers) ? _S.workers : [];
 		for (
 			let index = Math.max(0, workerList.length - 12);
@@ -445,6 +490,9 @@ function _collectPageLogContext() {
 						0,
 						Math.trunc(_getSafePageLogNumber(worker?.__TTVABLastPongAt, 0)),
 					),
+					isCurrentPlayerWorker: currentWorker
+						? worker === currentWorker
+						: null,
 				});
 			} catch {}
 		}
@@ -483,6 +531,11 @@ function _collectPageLogContext() {
 				0,
 				Math.trunc(_getSafePageLogNumber(progress?.cycleStartedAt, 0)),
 			),
+			lastEndedCycleStartedAt: _getSafePageLogNumber(
+				state?.LastAdEndedCycleStartedAt,
+			),
+			preferredQuality: _getSafePageLogString(state?.PreferredQualityGroup, 64),
+			recovery: _collectPostAdRecoveryDiagnostics(),
 			pinnedBackupPlayerType:
 				_getSafePageLogString(state?.PinnedBackupPlayerType, 40).replace(
 					/\n/g,
@@ -499,6 +552,33 @@ function _collectPageLogContext() {
 	} catch {
 		return null;
 	}
+}
+
+function _collectPostAdRecoveryDiagnostics() {
+	if (
+		typeof _PostAdRecoveryDiagnostics === "undefined" ||
+		_PostAdRecoveryDiagnostics.mediaKey !== __TTVAB_STATE__?.PageMediaKey ||
+		_PostAdRecoveryDiagnostics.pageGeneration !==
+			Number(__TTVAB_STATE__.PagePlaybackContextGeneration || 0)
+	)
+		return null;
+	const transaction = _PostAdRecoveryTransactionState;
+	return {
+		..._PostAdRecoveryDiagnostics,
+		...(transaction.mediaKey === _PostAdRecoveryDiagnostics.mediaKey &&
+		transaction.cycleStartedAt === _PostAdRecoveryDiagnostics.cycleStartedAt
+			? {
+					reloadRequestCount: transaction.reloadRequestCount,
+					acceptedReloadCount: transaction.acceptedReloadCount,
+					reloadAt: transaction.requiredNativeReloadAt,
+					nativeReadyAt: transaction.nativeReloadConfirmedAt,
+					expiresAt: transaction.expiresAt,
+					currentTime: transaction.lastCurrentTime,
+					totalVideoFrames: transaction.lastTotalFrames,
+					suspended: transaction.suspendedAt > 0,
+				}
+			: {}),
+	};
 }
 
 function _forwardPreviewFailureDiagnostics(value) {
