@@ -72,6 +72,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.6.2 - 2026-09-15
+
+- **Player Recovery** - Fixed a critical bug that could prevent playback from recovering after Twitch replaces its player during an ad break.
+- **Recovery Audio** - Prevented the replacement video from being muted while keeping the old player silent.
+
 ### v17.6.1 - 2026-09-15
 
 - **Ad Recovery Quality** - Prevented delayed backup responses from undoing a newer quality selection or interrupting a clean backup during an ad break.
@@ -82,14 +87,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Post-Ad Recovery** - Kept the verified stream session through post-ad player rebuilds and the bounded recovery retry ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
 - **Recovery Status** - Playback is reported as restored only after video advances. Added a Refresh tab prompt when bounded post-ad recovery ends while playback remains stuck.
 - **Freeze Diagnostics** - Generate Log records more recovery details, including source-load results, native quality, decoded-frame counts, and current-worker identity, and preserves key events when repeated messages fill the saved log.
-
-The cause of the reported full-tab freeze remains under investigation.
-
-### v17.5.9 - 2026-09-13
-
-- **Startup Recovery** - Added a Refresh tab prompt when playback started before ad blocking could attach, with checks to prevent stale prompts from refreshing another stream ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
-- **Freeze Diagnostics** - Generate Log can now include the last saved diagnostics when a Twitch tab stops responding, clearly labelled with their capture time ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
-- **Crash Reports** - Preserved more crash details after player cleanup and clarified startup messages to help diagnose playback failures ([#74](https://github.com/GosuDRM/TTV-AB/issues/74)).
 
 The cause of the reported full-tab freeze remains under investigation.
 

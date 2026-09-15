@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.6.2] - 2026-09-15
+
+Fixed
+
+- **Player Recovery** - Fixed a critical bug that could prevent playback from recovering after Twitch replaces its player during an ad break.
+- **Recovery Audio** - Prevented the replacement video from being muted while keeping the old player silent.
+
 ## [17.6.1] - 2026-09-15
 
 Fixed
