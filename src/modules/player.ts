@@ -7061,18 +7061,24 @@ function _monitorPlayerBuffering() {
 			let pinPlayer = null;
 			let fatalRecoveryTargetsPage = false;
 			if (targetsPage) {
-				if (_cachedPlayerRef && _cachedPlayerRefMediaKey !== currentMediaKey) {
-					_clearCachedPlayerRef();
+				const fresh = _getPlayerAndState();
+				pinPlayer = fresh.player && fresh.state ? fresh.player : null;
+				if (
+					_cachedPlayerRef &&
+					(_cachedPlayerRefMediaKey !== currentMediaKey ||
+						_cachedPlayerRef.player !== pinPlayer)
+				) {
+					_resetPinnedBackupStallState();
+					_resetInAdFreezeState();
 				}
-				pinPlayer = _cachedPlayerRef?.player || null;
-				if (!pinPlayer) {
-					const fresh = _getPlayerAndState();
-					if (fresh.player && fresh.state) {
-						pinPlayer = fresh.player;
-						_cachedPlayerRef = fresh;
-						_cachedPlayerRefMediaKey = currentMediaKey;
-					}
+				if (
+					_cachedPrimaryMediaElement !==
+					(pinPlayer?.getHTMLVideoElement?.() || null)
+				) {
+					_clearCachedPrimaryMediaElement();
 				}
+				_cachedPlayerRef = pinPlayer ? fresh : null;
+				_cachedPlayerRefMediaKey = pinPlayer ? currentMediaKey : null;
 				fatalRecoveryTargetsPage = Boolean(pinPlayer);
 			} else if (
 				targetsPictureInPicture &&

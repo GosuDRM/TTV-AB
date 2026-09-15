@@ -1777,7 +1777,7 @@ describe("fatal enhanced-media recovery during ads", () => {
 	});
 });
 
-describe("_monitorPlayerBuffering in-route PiP ad recovery", () => {
+describe("_monitorPlayerBuffering active-ad player ownership", () => {
 	const replacedGlobals = [
 		"_getPlayerAndState",
 		"_hasPendingAdResumeIntent",
@@ -1788,6 +1788,9 @@ describe("_monitorPlayerBuffering in-route PiP ad recovery", () => {
 		"_suppressCompetingMediaDuringAd",
 		"_checkFatalAdMediaRecovery",
 		"_checkInAdPlayheadFreeze",
+		"_doPlayerTask",
+		"_getCurrentAdBreakStartedAt",
+		"_getCodecHandoffCycleStartedAt",
 	] as const;
 	let savedState: unknown;
 	let savedGlobals: Record<string, unknown>;
@@ -1834,6 +1837,143 @@ describe("_monitorPlayerBuffering in-route PiP ad recovery", () => {
 	it("keeps page-owned fatal recovery enabled when PiP has the same key", () => {
 		T<() => void>("_monitorPlayerBuffering")();
 		expect(g._checkFatalAdMediaRecovery).toHaveBeenCalledWith(pagePlayer);
+	});
+
+	it("checks the replacement player when Twitch remounts during the same ad", () => {
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const checkFatal = g._checkFatalAdMediaRecovery as ReturnType<typeof vi.fn>;
+		T<() => void>("_monitorPlayerBuffering")();
+		expect(checkFatal).toHaveBeenLastCalledWith(pagePlayer);
+		const replacement = {
+			getHTMLVideoElement: () => document.createElement("video"),
+		};
+		g._getPlayerAndState = () => ({ player: replacement, state: {} });
+		checkFatal.mockClear();
+
+		vi.advanceTimersByTime(600);
+
+		expect(checkFatal).toHaveBeenCalledTimes(1);
+		expect(checkFatal).toHaveBeenCalledWith(replacement);
+	});
+
+	it("stops checking the retired player while the same-channel player is unmounted", () => {
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		const checkFatal = g._checkFatalAdMediaRecovery as ReturnType<typeof vi.fn>;
+		T<() => void>("_monitorPlayerBuffering")();
+		g._getPlayerAndState = () => ({ player: null, state: null });
+		checkFatal.mockClear();
+
+		vi.advanceTimersByTime(1800);
+
+		expect(checkFatal).not.toHaveBeenCalled();
+	});
+
+	it.each(["media-error", "unready"])(
+		"verifies a replacement %s failure once without rearming it when the player cache clears",
+		(recoveryKind) => {
+			T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+			g._checkFatalAdMediaRecovery = savedGlobals._checkFatalAdMediaRecovery;
+			g._broadcastWorkers = vi.fn();
+			g._doPlayerTask = vi.fn();
+			g._hasPendingAdResumeIntent = () => true;
+			Object.assign(g.__TTVAB_STATE__ as object, {
+				PinnedBackupPlayerType: "site",
+				PinnedBackupPlayerMediaKey: "live:testchannel",
+				PlayerHasPlayedOnce: true,
+			});
+			g._getCurrentAdBreakStartedAt = (mediaKey: string) =>
+				mediaKey === "live:testchannel" ? 100 : 0;
+			g._getCodecHandoffCycleStartedAt = (id: string) =>
+				Number(id.split(":")[2]);
+			T<() => void>("_monitorPlayerBuffering")();
+			const replacementVideo = document.createElement("video");
+			Object.defineProperty(replacementVideo, "error", {
+				value: recoveryKind === "media-error" ? { code: 3 } : null,
+			});
+			const replacement = { getHTMLVideoElement: () => replacementVideo };
+			g._getPlayerAndState = () => ({ player: replacement, state: {} });
+			document.body.append(replacementVideo);
+			try {
+				vi.advanceTimersByTime(600);
+				if (recoveryKind === "unready") {
+					vi.advanceTimersByTime(11400);
+					expect(g._broadcastWorkers).not.toHaveBeenCalled();
+					vi.advanceTimersByTime(600);
+				}
+
+				expect(g._broadcastWorkers).toHaveBeenCalledExactlyOnceWith({
+					key: "PrepareFatalMediaRecovery",
+					targetMediaKey: "live:testchannel",
+					value: expect.objectContaining({
+						recoveryKind,
+						cycleStartedAt: 100,
+						mediaKey: "live:testchannel",
+					}),
+				});
+				T<() => void>("_clearCachedPlayerRef")();
+				vi.advanceTimersByTime(1800);
+				expect(g._broadcastWorkers).toHaveBeenCalledTimes(1);
+				expect(g._doPlayerTask).not.toHaveBeenCalled();
+			} finally {
+				replacementVideo.remove();
+			}
+		},
+	);
+
+	it("requires new frozen-playhead evidence after a same-channel player replacement", () => {
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		g._checkInAdPlayheadFreeze = savedGlobals._checkInAdPlayheadFreeze;
+		g._doPlayerTask = vi.fn();
+		const retired = makeRangesVideo([[0, 30]], 20);
+		const replacement = makeRangesVideo([[0, 15]], 10);
+		pagePlayer = { getHTMLVideoElement: () => retired.video };
+		T<() => void>("_monitorPlayerBuffering")();
+		vi.advanceTimersByTime(4800);
+		pagePlayer = { getHTMLVideoElement: () => replacement.video };
+
+		vi.advanceTimersByTime(600);
+		expect(g._doPlayerTask).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(5400);
+		expect(g._doPlayerTask).toHaveBeenCalledExactlyOnceWith(true, false, {
+			reason: "buffer-recovery",
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+		});
+		expect(retired.seeks).toEqual([]);
+		expect(replacement.seeks).toEqual([]);
+	});
+
+	it("keeps the replacement audible while silencing the still-connected retired player", () => {
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		T<() => void>("_clearCachedPrimaryMediaElement")();
+		g._suppressCompetingMediaDuringAd =
+			savedGlobals._suppressCompetingMediaDuringAd;
+		const retiredVideo = pagePlayer.getHTMLVideoElement();
+		const replacementVideo = document.createElement("video");
+		document.body.append(retiredVideo);
+		try {
+			expect(T<() => HTMLMediaElement>("_getPrimaryMediaElement")()).toBe(
+				retiredVideo,
+			);
+			T<() => void>("_monitorPlayerBuffering")();
+			document.body.append(replacementVideo);
+			g._getPlayerAndState = () => ({
+				player: { getHTMLVideoElement: () => replacementVideo },
+				state: {},
+			});
+
+			vi.advanceTimersByTime(600);
+
+			expect(retiredVideo.muted).toBe(true);
+			expect(retiredVideo.volume).toBe(0);
+			expect(replacementVideo.muted).toBe(false);
+			expect(replacementVideo.volume).toBe(1);
+		} finally {
+			retiredVideo.remove();
+			replacementVideo.remove();
+			T<() => unknown>("_clearSuppressedMediaTracking")();
+			T<() => void>("_clearCachedPrimaryMediaElement")();
+		}
 	});
 
 	afterEach(() => {
