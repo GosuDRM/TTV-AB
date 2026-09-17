@@ -560,10 +560,34 @@ function _createEmptyAdHoldPlaylist(text, info) {
 		0,
 		Number(info?._EmptyAdHoldMediaSequence) || 0,
 	);
-	const nextHoldSequence =
-		previousHoldSequence > sourceMediaSequence
-			? previousHoldSequence + 1
-			: sourceMediaSequence + 1;
+	let sourceNextMediaSequence = sourceMediaSequence;
+	let hasPendingPart = false;
+	let sourceDiscontinuitySequence =
+		Number(text?.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/)?.[1]) || 0;
+	for (const line of text.split(/\r?\n/)) {
+		if (line.startsWith("#EXTINF:")) {
+			sourceNextMediaSequence++;
+			hasPendingPart = false;
+		} else if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+			sourceNextMediaSequence++;
+			hasPendingPart = false;
+		} else if (
+			line.startsWith("#EXT-X-PART:") ||
+			_isPartPreloadHintLine(line)
+		) {
+			hasPendingPart = true;
+		} else if (line.startsWith("#EXT-X-SKIP:")) {
+			sourceNextMediaSequence +=
+				Number(line.match(/\bSKIPPED-SEGMENTS=(\d+)/)?.[1]) || 0;
+		} else if (line === "#EXT-X-DISCONTINUITY") {
+			sourceDiscontinuitySequence++;
+		}
+	}
+	const nextHoldSequence = Math.max(
+		previousHoldSequence + 1,
+		sourceMediaSequence + 1,
+		sourceNextMediaSequence + Number(hasPendingPart),
+	);
 	if (info) {
 		info._EmptyAdHoldMediaSequence = nextHoldSequence;
 	}
@@ -575,8 +599,6 @@ function _createEmptyAdHoldPlaylist(text, info) {
 		headerLines.push(mediaSequenceLine);
 	}
 
-	const sourceDiscontinuitySequence =
-		Number(text?.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/)?.[1]) || 0;
 	const discontinuitySequence = Math.max(
 		sourceDiscontinuitySequence,
 		Number(info?._EmptyAdHoldDiscontinuitySequence) || 0,

@@ -6556,8 +6556,8 @@ describe("page-side M3U8 fallback", () => {
 		expect(first).not.toContain("ad-70.ts");
 		expect(first).not.toContain("ad-71.ts");
 		expect(first).toContain("__ttvab_empty_hold_segment.ts");
-		expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:71");
-		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:72");
+		expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:72");
+		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:73");
 	});
 
 	it("does not inherit codec ownership when another media context reuses the URL", () => {
@@ -8169,8 +8169,8 @@ describe("page-side M3U8 fallback", () => {
 				}
 			}
 			expect(first).toContain("__ttvab_empty_hold_segment.ts");
-			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:301");
-			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:302");
+			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:302");
+			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:303");
 			expect(rawFetch).toHaveBeenCalledTimes(2);
 		} finally {
 			window.fetch = originalFetch;

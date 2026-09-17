@@ -204,10 +204,10 @@ describe("_stripAds (empty-playlist recovery)", () => {
 			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 		);
 		expect(result).not.toContain("data:video/mp4;base64,");
-		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:1");
+		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:3");
 
 		const nextResult = fn()(adPlaylist, true, info, false);
-		expect(nextResult).toContain("#EXT-X-MEDIA-SEQUENCE:2");
+		expect(nextResult).toContain("#EXT-X-MEDIA-SEQUENCE:4");
 
 		st.SimulatedAdsDepth = originalSimulated;
 		st.AllSegmentsAreAdSegments = originalAllSegments;
@@ -226,6 +226,43 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(second).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:5");
 		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:102");
 	});
+
+	it.each([
+		["#EXTINF:2,live\nfull.ts", 101],
+		['#EXT-X-PART:DURATION=0.5,URI="part.ts"\n#EXTINF:2,live\nfull.ts', 101],
+		['#EXTINF:2,live\nfull.ts\n#EXT-X-PART:DURATION=0.5,URI="part.ts"', 102],
+		[
+			'#EXTINF:2,live\nfull.ts\n#EXT-X-PRELOAD-HINT:TYPE=PART,URI="part.ts"',
+			102,
+		],
+		[
+			'#EXTINF:2,live\nfull.ts\n#EXT-X-PRELOAD-HINT:TYPE=MAP,URI="init.mp4"',
+			101,
+		],
+		[
+			"#EXTINF:2,live\nfull.ts\n#EXT-X-TWITCH-PREFETCH:next.ts\n#EXT-X-TWITCH-PREFETCH:later.ts",
+			103,
+		],
+		["#EXT-X-SKIP:SKIPPED-SEGMENTS=5\n#EXTINF:2,live\nfull.ts", 106],
+	])(
+		"places hold media after the complete low-latency window: %s",
+		(media, expected) => {
+			const create = T<(text: string, info: Record<string, unknown>) => string>(
+				"_createEmptyAdHoldPlaylist",
+			);
+			const info = makeInfo();
+			const input = `#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100\n${media}`;
+			const first = create(input, info);
+			const second = create(input, info);
+			expect(first).toContain(`#EXT-X-MEDIA-SEQUENCE:${expected}\n`);
+			expect(first).toContain(`?seq=${expected}&`);
+			expect(second).toContain(
+				`#EXT-X-MEDIA-SEQUENCE:${Number(expected) + 1}\n`,
+			);
+			expect(first).not.toContain("full.ts");
+			expect(first).not.toContain("part.ts");
+		},
+	);
 
 	it("uses self-contained transport media without native initialization, encryption or byte ranges", () => {
 		const create = T<(text: string, info: Record<string, unknown>) => string>(
@@ -469,7 +506,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(result).toContain(
 			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 		);
-		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:71");
+		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:72");
 	});
 
 	it("still removes explicit known ad segments when auto-force stripping is skipped", () => {

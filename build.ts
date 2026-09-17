@@ -1536,6 +1536,11 @@ function validateSharedDefinitions() {
 			source: parserSource,
 		},
 		{
+			consumer: "_createEmptyAdHoldPlaylist",
+			helper: "_isPartPreloadHintLine",
+			source: parserSource,
+		},
+		{
 			consumer: "_processM3U8",
 			helper: "_createCodecHandoffAbortError",
 			source: processorSource,
