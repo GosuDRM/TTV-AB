@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.6.3] - 2026-09-18
+
+Fixed
+
+- **Ad Recovery Timing** - Fixed a timing conflict when switching into temporary ad-blocking playback that could cause skipped video or audio desync.
+
 ## [17.6.2] - 2026-09-15
 
 Fixed
