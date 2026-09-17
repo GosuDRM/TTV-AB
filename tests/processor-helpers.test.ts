@@ -5827,8 +5827,8 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			);
 
 			expect(first).toContain("__ttvab_empty_hold_segment.ts");
-			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:101");
-			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:102");
+			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:103");
+			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:104");
 			expect(first).not.toContain("seg50.ts");
 			expect(info.IsUsingBackupStream).toBe(false);
 			expect(activeRefresh).toHaveBeenCalledTimes(2);

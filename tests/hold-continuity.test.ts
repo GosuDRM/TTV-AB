@@ -111,6 +111,57 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it("keeps the first CSAI hold beyond the native window already offered to the player", async () => {
+		const { context, info, serve } = setup();
+		info.IsShowingAd = false;
+		info.VisibleAdStartedAt = 0;
+		context.state.CurrentAdMediaKey = null;
+		context.state.CurrentAdChannel = null;
+		const native = playlist(400);
+		const before = segments(
+			await context._processM3U8(nativeUrl, native, vi.fn()),
+		);
+		info.LastCleanNativePlaylistAt = Date.now() - 3000;
+		context._findBackupStream = vi.fn(() => new Promise(() => {}));
+		const ad = playlist(401).replace("#EXTINF:", "#EXT-X-CUE-OUT:30\n#EXTINF:");
+		const output = await context._processM3U8(nativeUrl, ad, vi.fn());
+		const hold = segments(output)[0];
+		expect(info.CsaiOnlyThisBreak).toBe(true);
+		expect(hold.url).toContain("__ttvab_empty_hold_segment.ts");
+		expect(hold.sequence).toBeGreaterThan(before.at(-1).sequence);
+		expect(output).not.toContain("https://edge.example/clean-");
+		expect(context._findBackupStream).toHaveBeenCalledOnce();
+		const backup = segments(await serve(playlist(100), "autoplay"));
+		expect(backup[0].sequence).toBeGreaterThan(hold.sequence);
+		expect(backup[0].discontinuity).toBeGreaterThan(hold.discontinuity);
+		const refreshed = segments(await serve(playlist(101), "autoplay"));
+		expect(refreshed.slice(0, 2)).toEqual(backup.slice(1));
+		context._resetStreamAdState(info, true);
+		const restored = segments(await serve(playlist(450)));
+		expect(restored[0].sequence).toBeGreaterThan(refreshed.at(-1).sequence);
+		expect(restored[0].discontinuity).toBeGreaterThan(
+			refreshed.at(-1).discontinuity,
+		);
+	});
+
+	it("starts the hold after every discontinuity in the native window", () => {
+		const { context, info } = setup();
+		const native = playlist(400)
+			.replace("DISCONTINUITY-SEQUENCE:0", "DISCONTINUITY-SEQUENCE:6")
+			.replaceAll("#EXTINF:", "#EXT-X-DISCONTINUITY\n#EXTINF:")
+			.replaceAll("\n", "\r\n");
+		const hold = segments(
+			context._applyEmptyHoldPlaylistContinuity(
+				info,
+				nativeUrl,
+				context._createEmptyAdHoldPlaylist(native, info),
+			),
+		)[0];
+		expect(hold.discontinuity).toBeGreaterThan(
+			segments(native).at(-1).discontinuity,
+		);
+	});
+
 	it.each([
 		["site", true],
 		["autoplay", true],
