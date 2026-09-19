@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.6.6] - 2026-09-20
+
+Fixed
+
+- **Ad Detection** - Blocks ad segments in low-latency prefetch entries and recognizes ad metadata regardless of attribute order.
+- **Playlist Handling** - Handles additional playlist layouts without leaving ad media behind or losing track of the stream codec.
+- **Backup Validation** - Rejects incomplete or gap-only backup playlists before they can be selected for playback.
+
 ## [17.6.5] - 2026-09-19
 
 Fixed
