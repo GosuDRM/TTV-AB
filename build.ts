@@ -1231,6 +1231,41 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_playlistLinesHaveKnownAdSegments",
+			helper: "_getMediaSegmentUriIndex",
+			source: parserSource,
+		},
+		{
+			consumer: "_stripAds",
+			helper: "_getMediaSegmentUriIndex",
+			source: parserSource,
+		},
+		{
+			consumer: "_absolutizeMediaPlaylistUrls",
+			helper: "_getMediaSegmentUriIndex",
+			source: parserSource,
+		},
+		{
+			consumer: "_playlistHasMediaSegments",
+			helper: "_getMediaSegmentUriIndex",
+			source: processorSource,
+		},
+		{
+			consumer: "_playlistHasMediaSegments",
+			helper: "_isMediaPartLine",
+			source: processorSource,
+		},
+		{
+			consumer: "_playlistHasMediaSegments",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
+			consumer: "_rememberSegmentCodecOwnership",
+			helper: "_getMediaSegmentUriIndex",
+			source: processorSource,
+		},
+		{
 			consumer: "_processM3U8Core",
 			helper: "_reportPostAdNativeSession",
 			source: processorSource,

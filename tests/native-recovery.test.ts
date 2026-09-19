@@ -26,6 +26,9 @@ const master = [
 const playlist = (sequence: number, prefix: string, adMarked = false) =>
 	[
 		"#EXTM3U",
+		'#EXT-X-DATERANGE:ID="session",CLASS="twitch-session",X-TV-TWITCH-SESSIONID="test-session"',
+		'#EXT-X-DATERANGE:ID="source",CLASS="twitch-stream-source",X-TV-TWITCH-STREAM-SOURCE="live"',
+		'#EXT-X-DATERANGE:ID="trigger",CLASS="twitch-trigger",X-TV-TWITCH-TRIGGER-URL="https://edge.example/trigger/test"',
 		"#EXT-X-TARGETDURATION:2",
 		`#EXT-X-MEDIA-SEQUENCE:${sequence}`,
 		...(adMarked

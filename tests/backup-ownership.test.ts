@@ -9,6 +9,10 @@ const source = ["constants", "state", "parser", "api", "processor", "hooks"]
 	)
 	.join("\n");
 const nativeUrl = "https://cdn.example/native/index.m3u8";
+const cleanTwitchPlaylist = readFileSync(
+	resolve(__dirname, "fixtures/twitch-clean-media.m3u8"),
+	"utf8",
+).trimEnd();
 const master = (type: string, session: string) =>
 	[
 		"#EXTM3U",
@@ -88,6 +92,132 @@ function setup() {
 }
 
 describe("backup session and fallback ownership through the processor", () => {
+	it.each(["site", "autoplay"])(
+		"selects and live-refreshes %s with ordinary Twitch metadata",
+		async (type) => {
+			const { context, info, state } = setup();
+			state.DisableAutoplayBackup = type !== "autoplay";
+			state.BackupPlayerTypes = [type];
+			info.IsShowingAd = true;
+			info.VisibleAdStartedAt = Date.now() - 1000;
+			state.CurrentAdMediaKey = info.MediaKey;
+			info.BackupEncodingsM3U8Cache[type] = {
+				m3u8: master(type, "clean"),
+				baseUrl: info.UsherBaseUrl,
+			};
+			let playlist = cleanTwitchPlaylist;
+			const fetch = vi.fn(
+				async (url: string) =>
+					new Response(
+						url.includes("usher.ttvnw.net") ? master(type, "clean") : playlist,
+					),
+			);
+			const result = await context._findBackupStream(info, fetch);
+			expect(result.type).toBe(type);
+			expect(result.m3u8).toBe(cleanTwitchPlaylist);
+			playlist = cleanTwitchPlaylist.replace(
+				"MEDIA-SEQUENCE:481",
+				"MEDIA-SEQUENCE:482",
+			);
+			expect(await context._refreshActiveBackupMediaPlaylist(info, fetch)).toBe(
+				playlist,
+			);
+			expect(info.LastCleanBackupM3U8).toBe(playlist);
+			playlist += '\n#EXT-X-DATERANGE:ID="opaque",CLASS="twitch-ad-quartile"';
+			expect(
+				await context._refreshActiveBackupMediaPlaylist(info, fetch),
+			).toBeNull();
+			expect(info.LastCleanBackupM3U8).not.toContain("twitch-ad-quartile");
+		},
+	);
+	it.each([
+		"#EXTM3U\n#EXTINF:2,live",
+		"#EXTM3U\n#EXT-X-PART:DURATION=0.5",
+		'#EXTM3U\n#EXT-X-PART:DURATION=0.5,URI="missing.ts",GAP=YES',
+		"#EXTM3U\n#EXTINF:2,live\n#EXT-X-GAP\nmissing.ts",
+		"#EXTM3U\n#EXTINF:0,live\nempty.ts",
+		`${media("site", "unsafe", 100)}\n#EXTINF:2,live`,
+		`${media("site", "unsafe", 100)}\n#EXT-X-PART:DURATION=0.5`,
+		'#EXTM3U\n#EXT-X-DATERANGE:ID="opaque",CLASS="twitch-ad"\n#EXTINF:2,live\nhttps://cdn.example/opaque.ts',
+		`${media("site", "unsafe", 100)}\n#EXT-X-TWITCH-PREFETCH:https://cdn.example/_404/ad.ts`,
+	])(
+		"rejects unusable or ad-prefetch backups in both search and refresh: %s",
+		async (candidate) => {
+			for (const type of ["site", "autoplay"]) {
+				const { context, info, state } = setup();
+				state.DisableAutoplayBackup = false;
+				state.BackupPlayerTypes = [type];
+				info.IsShowingAd = true;
+				info.VisibleAdStartedAt = Date.now() - 1000;
+				state.CurrentAdMediaKey = info.MediaKey;
+				const cache = {
+					m3u8: master(type, "unsafe"),
+					baseUrl: info.UsherBaseUrl,
+				};
+				info.BackupEncodingsM3U8Cache[type] = cache;
+				const fetch = vi.fn(
+					async (url: string) =>
+						new Response(
+							url.includes("usher.ttvnw.net")
+								? master(type, "unsafe")
+								: candidate,
+						),
+				);
+				const result = await context._findBackupStream(info, fetch);
+				expect(result.m3u8).toBeNull();
+				expect(info.LastCleanBackupM3U8).toBeNull();
+				info.FailedBackupPlayerTypes.clear();
+				info.BackupEncodingsM3U8Cache[type] = cache;
+				info.ActiveBackupPlayerType = type;
+				expect(
+					await context._refreshActiveBackupMediaPlaylist(info, fetch),
+				).toBeNull();
+				expect(info.LastCleanBackupM3U8).toBeNull();
+			}
+		},
+	);
+
+	it("keeps byte-range segment ownership and accepts playable parts without accepting hints alone", () => {
+		const { context } = setup();
+		const playlist =
+			"#EXTM3U\n#EXTINF:2,live\n#EXT-X-BYTERANGE:1024@0\nsegment.ts";
+		const collection = { urls: [], isComplete: true };
+		const normalized = context._absolutizeMediaPlaylistUrls(
+			playlist,
+			nativeUrl,
+			collection,
+		);
+		expect(collection).toEqual({
+			urls: ["https://cdn.example/native/segment.ts"],
+			isComplete: true,
+		});
+		expect(context._playlistHasMediaSegments(normalized)).toBe(true);
+		expect(
+			context._playlistHasMediaSegments(
+				'#EXTM3U\n#EXT-X-PART:DURATION=0.5,URI="part.ts"',
+			),
+		).toBe(true);
+		expect(
+			context._playlistHasMediaSegments(
+				'#EXTM3U\n#EXT-X-PRELOAD-HINT:TYPE=PART,URI="part.ts"',
+			),
+		).toBe(false);
+	});
+
+	it("does not consume verified native recovery on a truncated media response", async () => {
+		const { context, info } = setup();
+		const pending = {
+			mediaKey: info.MediaKey,
+			playlistUrl: nativeUrl,
+			masterServedAt: Date.now() - 10,
+			loaderEpoch: 0,
+			consumed: false,
+		};
+		info._PendingPostAdNativeMaster = pending;
+		await context._processM3U8(nativeUrl, "#EXTM3U\n#EXTINF:2,live", vi.fn());
+		expect(pending.consumed).toBe(false);
+	});
+
 	it("carries the empty hold's discontinuity ownership into a clean backup and its live refresh", async () => {
 		const { context, info } = setup();
 		const held = context._createEmptyAdHoldPlaylist(

@@ -4969,6 +4969,7 @@ function _hookWorker() {
                 ${_getTaggedPlaylistUri.toString()}
                 ${_isMediaPartLine.toString()}
                 ${_isPartPreloadHintLine.toString()}
+                ${_getMediaSegmentUriIndex.toString()}
                 ${_playlistLinesHaveKnownAdSegments.toString()}
                 ${_playlistHasKnownAdSegments.toString()}
                 ${_absolutizePlaylistUrl.toString()}
