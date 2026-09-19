@@ -335,7 +335,7 @@ describe("worker message handler hardening", () => {
 			/shouldReuseCanonicalCycle\s*=\s*Boolean\([\s\S]*?activeCycleStartedAt\s*===\s*detectedCycleStartedAt[\s\S]*?isRapidSameEndedCycleContinuation/,
 		);
 		expect(block).toMatch(
-			/if \(shouldStartNewCycle\) \{\s*if \(!shouldReuseCanonicalCycle\) \{[\s\S]*?_clearAdPodProgress\(mediaKey\)/,
+			/if \(shouldStartNewCycle\) \{\s*if \(!shouldReuseCanonicalCycle\) \{[\s\S]*?_clearAdPodProgress\(mediaKey, detectedCycleStartedAt\)/,
 		);
 		const reuseGuardAt = block.indexOf("if (!shouldReuseCanonicalCycle)");
 		const lifecycleCleanupAt = block.indexOf(

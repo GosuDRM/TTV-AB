@@ -8479,6 +8479,123 @@ describe("injected worker ad playlist validation", () => {
 });
 
 describe("worker mixed-codec master selection", () => {
+	type CycleInfo = {
+		MediaKey: string;
+		VisibleAdStartedAt: number;
+		LastCleanBackupM3U8: string | null;
+		_AdCycleRequestController: AbortController;
+		ObservedAdPodIds: Set<string>;
+	};
+	type CycleState = {
+		StreamInfos: Record<string, CycleInfo>;
+		AdPodProgressByMediaKey: Record<string, { cycleStartedAt: number }>;
+	};
+	it.each([
+		{ cycle: 199000, boundary: 200000, clears: true },
+		{ cycle: 200000, boundary: 200000, clears: false },
+		{ cycle: 201000, boundary: 200000, clears: false },
+		{ cycle: 200000, boundary: undefined, clears: true },
+	])(
+		"fences page cleanup of cycle $cycle before $boundary",
+		async ({ cycle, boundary, clears }) => {
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			try {
+				const runtime = startHarnessWorkerRuntime(
+					harness.worker,
+					vi.fn(
+						async () =>
+							new Response(
+								'#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="avc1.64002a"\nhttps://edge.example/live.m3u8',
+							),
+					),
+				);
+				runtime.deliverBootstrap();
+				const state = runtime.scope.__TTVAB_STATE__ as CycleState;
+				await (runtime.scope.fetch as typeof fetch)(
+					"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+				);
+				await (runtime.scope.fetch as typeof fetch)(
+					"https://usher.ttvnw.net/api/channel/hls/otherchannel.m3u8",
+				);
+				const info = state.StreamInfos["live:testchannel"];
+				const other = state.StreamInfos["live:otherchannel"];
+				other.VisibleAdStartedAt = 100000;
+				info.VisibleAdStartedAt = cycle;
+				info.LastCleanBackupM3U8 = "clean-backup";
+				info._AdCycleRequestController = new AbortController();
+				const controller = info._AdCycleRequestController;
+				state.AdPodProgressByMediaKey[info.MediaKey] = {
+					cycleStartedAt: cycle,
+				};
+				runtime.deliver(
+					T<(value: Record<string, unknown>) => unknown>(
+						"_createWorkerBridgeMessage",
+					)({
+						key: "ClearAdPodProgress",
+						value: { mediaKey: info.MediaKey, beforeCycleStartedAt: boundary },
+					}),
+				);
+				expect(info.VisibleAdStartedAt).toBe(clears ? 0 : cycle);
+				expect(info.LastCleanBackupM3U8).toBe(clears ? null : "clean-backup");
+				expect(controller.signal.aborted).toBe(clears);
+				expect(
+					state.AdPodProgressByMediaKey[info.MediaKey]?.cycleStartedAt,
+				).toBe(clears ? undefined : cycle);
+				expect(other.VisibleAdStartedAt).toBe(100000);
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
+	it("ignores delayed pod progress from before the worker's current cycle", async () => {
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		try {
+			const runtime = startHarnessWorkerRuntime(
+				harness.worker,
+				vi.fn(
+					async () =>
+						new Response(
+							'#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="avc1.64002a"\nhttps://edge.example/live.m3u8',
+						),
+				),
+			);
+			runtime.deliverBootstrap();
+			const state = runtime.scope.__TTVAB_STATE__ as CycleState;
+			await (runtime.scope.fetch as typeof fetch)(
+				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+			);
+			const info = state.StreamInfos["live:testchannel"];
+			info.VisibleAdStartedAt = 200000;
+			info.LastCleanBackupM3U8 = "current-clean-backup";
+			info._AdCycleRequestController = new AbortController();
+			const controller = info._AdCycleRequestController;
+			runtime.deliver(
+				T<(value: Record<string, unknown>) => unknown>(
+					"_createWorkerBridgeMessage",
+				)({
+					key: "UpdateAdPodProgress",
+					value: {
+						mediaKey: info.MediaKey,
+						cycleStartedAt: 190000,
+						adIds: ["old-ad"],
+					},
+				}),
+			);
+			expect(info.VisibleAdStartedAt).toBe(200000);
+			expect(info.LastCleanBackupM3U8).toBe("current-clean-backup");
+			expect(controller.signal.aborted).toBe(false);
+			expect(info.ObservedAdPodIds.has("old-ad")).toBe(false);
+			expect(state.AdPodProgressByMediaKey[info.MediaKey]).toBeUndefined();
+		} finally {
+			harness.restore();
+		}
+	});
+
 	it("recovers native quality after the injected worker acknowledges the AVC handoff", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(200000);
@@ -8498,11 +8615,20 @@ describe("worker mixed-codec master selection", () => {
 			avcUrl,
 		].join("\n");
 		let sequence = 500;
+		let nextBreak = false;
 		const playlist = (prefix: string) =>
 			`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${++sequence}\n#EXTINF:2.000,live\nhttps://edge.example/${prefix}-${sequence}.ts`;
 		const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
 			const url = String(input);
 			if (url.startsWith(masterUrl)) return new Response(master);
+			if (nextBreak && url.startsWith(hevcUrl)) {
+				return new Response(
+					playlist("stitched-ad-midroll").replace(
+						"#EXTM3U",
+						'#EXTM3U\n#EXT-X-DATERANGE:ID="stitched-ad-midroll",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL",X-TV-TWITCH-AD-POD-LENGTH="10",X-TV-TWITCH-AD-POD-POSITION="1"',
+					),
+				);
+			}
 			if (url === avcUrl || url.startsWith(`${avcUrl}&_HLS_msn=`))
 				return new Response(playlist("avc"));
 			if (url === hevcUrl || url.startsWith(`${hevcUrl}&_HLS_msn=`))
@@ -8664,6 +8790,47 @@ describe("worker mixed-codec master selection", () => {
 				reloadAt: Date.now(),
 			});
 			expect(info._PendingPostAdNativeMaster).toBeNull();
+			vi.setSystemTime(Date.now() + 180000);
+			await workerFetch(hevcUrl);
+			vi.setSystemTime(Date.now() + 3000);
+			nextBreak = true;
+			workerState.BackupPlayerTypes = ["autoplay"];
+			const nextPoll = workerFetch(hevcUrl).then(
+				(response) => response.text(),
+				(error) => error,
+			);
+			await vi.advanceTimersByTimeAsync(11000);
+			await nextPoll;
+			const adController = info._AdCycleRequestController;
+			const backupEpoch = info.BackupSearchEpoch;
+			const messageStart = harness.worker.messages.length;
+			const detected = (
+				runtime.scope.postMessage as ReturnType<typeof vi.fn>
+			).mock.calls
+				.map(([message]) => message.message)
+				.findLast((message) => message?.key === "AdDetected");
+			expect(detected).toBeDefined();
+			harness.worker.emitMessage(detected);
+			runtime.deliverBootstrap(messageStart);
+			expect(info.BackupSearchEpoch).toBe(backupEpoch);
+			expect(info._AdCycleRequestController).toBe(adController);
+			const finalPoll = workerFetch(hevcUrl).then(
+				(response) => response.text(),
+				(error) => error,
+			);
+			await vi.advanceTimersByTimeAsync(11000);
+			await finalPoll;
+			const handoffs = (
+				runtime.scope.postMessage as ReturnType<typeof vi.fn>
+			).mock.calls
+				.map(([message]) => message.message)
+				.filter((message) => message?.reason === "codec-handoff");
+			expect(handoffs).toContainEqual(
+				expect.objectContaining({
+					key: "ReloadPlayer",
+					cycleStartedAt: info.VisibleAdStartedAt,
+				}),
+			);
 		} finally {
 			harness.restore();
 		}

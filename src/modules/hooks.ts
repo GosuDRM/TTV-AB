@@ -5305,7 +5305,7 @@ function _hookWorker() {
                             }
                             break;
                         case 'ClearAdPodProgress':
-                            _clearAdPodProgress(data.value?.mediaKey);
+                            _clearAdPodProgress(data.value?.mediaKey, data.value?.beforeCycleStartedAt);
                             break;
 						case 'ResetAdCycleState':
 							_resetWorkerAdCycleState(data.value);
@@ -6466,7 +6466,7 @@ function _hookWorker() {
 								);
 								if (shouldStartNewCycle) {
 									if (!shouldReuseCanonicalCycle) {
-										_clearAdPodProgress(mediaKey);
+										_clearAdPodProgress(mediaKey, detectedCycleStartedAt);
 										_mergeAdPodProgress({
 											mediaType: detectedContext.MediaType,
 											channelName: channel,
@@ -6479,7 +6479,10 @@ function _hookWorker() {
 										_broadcastWorkers({
 											key: "ClearAdPodProgress",
 											targetMediaKey: mediaKey,
-											value: { mediaKey },
+											value: {
+												mediaKey,
+												beforeCycleStartedAt: detectedCycleStartedAt,
+											},
 										});
 									}
 									if (

@@ -1101,8 +1101,7 @@ async function _isAdEndStable(
 		typeof info.EncodingsM3U8 === "string" &&
 		info.EncodingsM3U8 &&
 		typeof info.UsherBaseUrl === "string" &&
-		info.UsherBaseUrl &&
-		Object.hasOwn(info.Urls || {}, _getMediaPlaylistSessionKey(candidateUrl))
+		info.UsherBaseUrl
 	) {
 		const targetResolution =
 			_getResolutionByQualityGroup(
