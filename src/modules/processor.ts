@@ -1684,10 +1684,38 @@ function _hasPlaylistAdMarkers(text) {
 }
 
 function _playlistHasMediaSegments(text) {
-	return (
-		typeof text === "string" &&
-		(text.includes("#EXTINF") || text.includes("#EXT-X-PART:"))
-	);
+	if (typeof text !== "string") return false;
+	const lines = text.split(/\r?\n/);
+	if (lines[0]?.trim() !== "#EXTM3U") return false;
+	let hasPlayableMedia = false;
+	let isGap = false;
+	for (let index = 1; index < lines.length; index++) {
+		const line = lines[index].trim();
+		if (!line) continue;
+		if (line.startsWith("#EXT-X-STREAM-INF:")) return false;
+		if (line === "#EXT-X-GAP") isGap = true;
+		if (line.startsWith("#EXTINF:")) {
+			const duration = Number(line.substring("#EXTINF:".length).split(",")[0]);
+			const uriIndex = _getMediaSegmentUriIndex(lines, index);
+			if (!Number.isFinite(duration) || duration <= 0 || uriIndex < 0)
+				return false;
+			for (let tagIndex = index + 1; tagIndex < uriIndex; tagIndex++) {
+				if (lines[tagIndex].trim() === "#EXT-X-GAP") isGap = true;
+			}
+			if (!isGap) hasPlayableMedia = true;
+			isGap = false;
+			index = uriIndex;
+		} else if (_isMediaPartLine(line)) {
+			const attrs = _parseAttrs(line);
+			const duration = Number(attrs.DURATION);
+			if (!attrs.URI?.trim() || !Number.isFinite(duration) || duration <= 0)
+				return false;
+			if (attrs.GAP !== "YES") hasPlayableMedia = true;
+		} else if (!line.startsWith("#")) {
+			return false;
+		}
+	}
+	return hasPlayableMedia;
 }
 
 function _parsePlaylistFirstMediaSequence(text) {
@@ -3401,8 +3429,7 @@ function _rememberSegmentCodecOwnership(
 		for (let index = 0; index < lines.length; index++) {
 			const line = lines[index];
 			if (line?.startsWith("#EXTINF")) {
-				rememberUrl(lines[index + 1]);
-				index++;
+				rememberUrl(lines[_getMediaSegmentUriIndex(lines, index)]);
 				continue;
 			}
 			if (_isMediaPartLine(line) || _isPartPreloadHintLine(line)) {

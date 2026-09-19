@@ -8363,6 +8363,121 @@ describe("page-side M3U8 fallback", () => {
 	});
 });
 
+describe("injected worker ad playlist validation", () => {
+	it.each(["avc1.64002a", "hev1.1.2.L150.90", "av01.0.12M.08"])(
+		"passes clean %s Twitch metadata through without starting ad recovery",
+		async (codec) => {
+			vi.useFakeTimers();
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const masterUrl =
+				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=native";
+			const variantUrl =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/testchannel.m3u8";
+			const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=2560x1440,CODECS="${codec},mp4a.40.2"\n${variantUrl}`;
+			const playlist = readFileSync(
+				resolve(__dirname, "fixtures/twitch-clean-media.m3u8"),
+				"utf8",
+			);
+			const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
+				if (String(input) === masterUrl) return new Response(master);
+				if (String(input) === variantUrl) return new Response(playlist);
+				return new Response("unavailable", { status: 503 });
+			});
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+				runtime.scope.Date = Date;
+				runtime.deliverBootstrap();
+				const workerFetch = runtime.scope.fetch as typeof fetch;
+				await workerFetch(masterUrl);
+				const response = workerFetch(variantUrl)
+					.then((result) => result.text())
+					.then(
+						(text) => ({ text }),
+						(error) => ({ error }),
+					);
+				await vi.advanceTimersByTimeAsync(11000);
+				expect(await response).toEqual({ text: playlist });
+				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+				const info = (
+					state.StreamInfos as Record<string, Record<string, unknown>>
+				)["live:testchannel"];
+				expect(info.IsShowingAd).toBe(false);
+				expect(info.IsUsingBackupStream).toBe(false);
+				expect(state.CurrentAdMediaKey).toBeNull();
+				expect(nativeFetch).toHaveBeenCalledTimes(2);
+			} finally {
+				harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
+	it.each([
+		"#EXT-X-TWITCH-PREFETCH:https://edge.example/_404/ad.ts",
+		"#EXTINF:2,live\n#EXT-X-BYTERANGE:1024@0\nhttps://edge.example/_404/ad.ts",
+		'#EXT-X-DATERANGE:ID="opaque",CLASS="twitch-ad"\n#EXTINF:2,live\nhttps://edge.example/opaque-ad.ts',
+	])(
+		"blocks ad media across parser boundaries in the actual injected worker: %s",
+		async (entries) => {
+			for (const mode of ["avc", "hevc", "disabled"]) {
+				vi.useFakeTimers();
+				T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+				const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+				state.DisableAdSpoofing = true;
+				state.DisableAutoplayBackup = true;
+				state.IsAdStrippingEnabled = mode !== "disabled";
+				const harness = installWorkerMessageHarness({
+					preserveBlobSources: true,
+				});
+				const masterUrl =
+					"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=native";
+				const variantUrl =
+					"https://video-weaver.example.ttvnw.net/v1/playlist/testchannel.m3u8";
+				const codec = mode === "hevc" ? "hev1.1.2.L150.90" : "avc1.64002a";
+				const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="${codec},mp4a.40.2"\n${variantUrl}`;
+				const playlist = `#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:50\n${entries}`;
+				const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
+					if (String(input) === masterUrl) return new Response(master);
+					if (String(input) === variantUrl) return new Response(playlist);
+					return new Response("unavailable", { status: 503 });
+				});
+				try {
+					const runtime = startHarnessWorkerRuntime(
+						harness.worker,
+						nativeFetch,
+					);
+					runtime.deliverBootstrap();
+					const workerFetch = runtime.scope.fetch as typeof fetch;
+					await workerFetch(masterUrl);
+					if (mode === "hevc") {
+						runtime.scope.Date = Date;
+						const blocked = expect(
+							workerFetch(variantUrl),
+						).rejects.toMatchObject({
+							name: "AbortError",
+						});
+						await vi.advanceTimersByTimeAsync(11000);
+						await blocked;
+					} else {
+						const output = await (await workerFetch(variantUrl)).text();
+						if (mode === "disabled") expect(output).toBe(playlist);
+						else {
+							expect(output).not.toContain("/_404/");
+							expect(output).not.toContain("opaque-ad.ts");
+							expect(output).toContain("/__ttvab_empty_hold_segment.ts");
+						}
+					}
+				} finally {
+					harness.restore();
+					vi.clearAllTimers();
+				}
+			}
+		},
+	);
+});
+
 describe("worker mixed-codec master selection", () => {
 	it("recovers native quality after the injected worker acknowledges the AVC handoff", async () => {
 		vi.useFakeTimers();

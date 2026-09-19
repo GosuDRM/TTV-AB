@@ -2,7 +2,7 @@
 
 const _ATTR_REGEX = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 const _AD_METADATA_RE =
-	/stitched-ad|X-TV-TWITCH-AD|\/adsquared\/|SCTE35-OUT|EXT-X-CUE-OUT|EXT-X-DATERANGE:CLASS="twitch-|"(?:MIDROLL|midroll)"/;
+	/stitched-ad|X-TV-TWITCH-AD|\/adsquared\/|SCTE35-OUT|EXT-X-CUE-OUT|EXT-X-DATERANGE:(?:[^\r\n]*,)?CLASS="twitch-(?:stitched-)?ad(?:-|")|"(?:MIDROLL|midroll)"/;
 const _EMPTY_SEGMENT_URL =
 	"data:video/mp4;base64,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XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXgNwATGF2YzYzLjEuMTAxAEIgCMEYOCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHCEQBGCMHAAAAG5tZnJhAAAAK3RmcmEBAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAE4wEBAQAAACt0ZnJhAQAAAAAAAAIAAAAAAAAAAQAAAAAAAAAAAAAAAAAABOMBAQEAAAAQbWZybwAAAAAAAABu";
 const _RESERVED_ROUTE_SEGMENTS = new Set([
@@ -348,7 +348,7 @@ function _hasExplicitAdMetadata(text) {
 }
 
 function _isExplicitKnownAdSegmentUrl(segmentUrl) {
-	const url = String(segmentUrl || "");
+	const url = String(segmentUrl || "").trim();
 	if (!url) return false;
 	if (/\.m3u8(?:$|\?)/.test(url)) return false;
 	return (
@@ -363,7 +363,7 @@ function _isKnownAdSegmentUrl(
 	segmentUrl,
 	options: { includeCached?: boolean } = {},
 ) {
-	const url = String(segmentUrl || "");
+	const url = String(segmentUrl || "").trim();
 	if (!url) return false;
 	const includeCached = options.includeCached !== false;
 	return (
@@ -390,6 +390,21 @@ function _isPartPreloadHintLine(line) {
 	);
 }
 
+function _getMediaSegmentUriIndex(lines, durationIndex) {
+	for (let index = durationIndex + 1; index < lines.length; index++) {
+		const line = lines[index]?.trim();
+		if (!line) continue;
+		if (
+			line.startsWith("#EXTINF:") ||
+			line.startsWith("#EXT-X-STREAM-INF:") ||
+			line === "#EXT-X-ENDLIST"
+		)
+			return -1;
+		if (!line.startsWith("#")) return index;
+	}
+	return -1;
+}
+
 function _playlistLinesHaveKnownAdSegments(
 	lines,
 	options: { includeCached?: boolean } = {},
@@ -398,11 +413,21 @@ function _playlistLinesHaveKnownAdSegments(
 		const line = lines[index];
 		if (
 			line?.startsWith("#EXTINF") &&
-			index + 1 < lines.length &&
-			_isKnownAdSegmentUrl(lines[index + 1], options)
+			_isKnownAdSegmentUrl(
+				lines[_getMediaSegmentUriIndex(lines, index)],
+				options,
+			)
 		) {
 			return true;
 		}
+		if (
+			line?.startsWith("#EXT-X-TWITCH-PREFETCH:") &&
+			_isKnownAdSegmentUrl(
+				line.substring("#EXT-X-TWITCH-PREFETCH:".length),
+				options,
+			)
+		)
+			return true;
 		if (_isMediaPartLine(line) || _isPartPreloadHintLine(line)) {
 			const taggedUri = _getTaggedPlaylistUri(line);
 			if (_isKnownAdSegmentUrl(taggedUri, options)) {
@@ -464,6 +489,7 @@ function _absolutizeMediaPlaylistUrls(
 		!text ||
 		!baseUrl ||
 		(!text.includes("#EXTINF") &&
+			!text.includes("#EXT-X-TWITCH-PREFETCH:") &&
 			!text.includes("#EXT-X-MAP:") &&
 			!text.includes("#EXT-X-KEY:") &&
 			!text.includes('URI="'))
@@ -472,22 +498,20 @@ function _absolutizeMediaPlaylistUrls(
 	}
 
 	const lines = text.split("\n");
+	let pendingMediaUriIndex = -1;
 	return lines
 		.map((line, index) => {
-			const followsMediaDuration = lines[index - 1]?.startsWith("#EXTINF");
-			if (
-				followsMediaDuration &&
-				segmentUrlCollection &&
-				(typeof line !== "string" || !line || line.startsWith("#"))
-			) {
-				segmentUrlCollection.isComplete = false;
+			if (line?.startsWith("#EXTINF:")) {
+				pendingMediaUriIndex = _getMediaSegmentUriIndex(lines, index);
+				if (segmentUrlCollection && pendingMediaUriIndex < 0)
+					segmentUrlCollection.isComplete = false;
 			}
 			if (typeof line !== "string" || !line) return line;
 			if (!line.startsWith("#")) {
 				return _absolutizePlaylistUrl(
 					line,
 					baseUrl,
-					followsMediaDuration ? segmentUrlCollection : null,
+					index === pendingMediaUriIndex ? segmentUrlCollection : null,
 				);
 			}
 			if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
@@ -757,7 +781,7 @@ function _stripAds(
 	for (i = 0; i < len; i++) {
 		const line = lines[i];
 		if (line?.startsWith("#EXTINF")) {
-			const segmentUrl = lines[i + 1];
+			const segmentUrl = lines[_getMediaSegmentUriIndex(lines, i)]?.trim();
 			const isKnownAdSegment = _isKnownAdSegmentUrl(segmentUrl);
 			const isAdSegment =
 				isKnownAdSegment ||
@@ -769,8 +793,14 @@ function _stripAds(
 				_liveSegmentCount++;
 			}
 		}
-		if (_isMediaPartLine(line) || _isPartPreloadHintLine(line)) {
-			const partUrl = _getTaggedPlaylistUri(line);
+		if (
+			_isMediaPartLine(line) ||
+			_isPartPreloadHintLine(line) ||
+			line?.startsWith("#EXT-X-TWITCH-PREFETCH:")
+		) {
+			const partUrl = line.startsWith("#EXT-X-TWITCH-PREFETCH:")
+				? line.substring("#EXT-X-TWITCH-PREFETCH:".length).trim()
+				: _getTaggedPlaylistUri(line);
 			const isAdSegment =
 				forceStripAllSegments || _isKnownAdSegmentUrl(partUrl);
 			if (isAdSegment) {
@@ -787,6 +817,7 @@ function _stripAds(
 			stripAll ||
 			__TTVAB_STATE__.AllSegmentsAreAdSegments) &&
 		(adSegmentCount > 0 || forceStripAllSegments);
+	let previousSegmentEndIndex = -1;
 
 	for (i = 0; i < len; i++) {
 		const line = lines[i];
@@ -796,36 +827,53 @@ function _stripAds(
 				.substring("#EXT-X-TWITCH-PREFETCH:".length)
 				.trim();
 			if (forceStripAllSegments || _isKnownAdSegmentUrl(prefetchUrl)) {
+				stripped = true;
+				strippedMediaEntryCount++;
 				lines[i] = "";
 			}
 			continue;
 		}
 
-		if (shouldStrip && i < len - 1 && line?.startsWith("#EXTINF")) {
-			const isKnownAdSegment = _isKnownAdSegmentUrl(lines[i + 1]);
+		if (shouldStrip && line?.startsWith("#EXTINF")) {
+			const uriIndex = _getMediaSegmentUriIndex(lines, i);
+			const segmentTagStartIndex = previousSegmentEndIndex + 1;
+			previousSegmentEndIndex = uriIndex >= 0 ? uriIndex : i;
+			const segmentUrl = lines[uriIndex]?.trim();
+			const isKnownAdSegment = _isKnownAdSegmentUrl(segmentUrl);
 			const isAdSegment =
 				isKnownAdSegment ||
 				(forceStripAllSegments &&
 					(!canPreserveLiveSegments || !line.includes(",live")));
 
 			if (isAdSegment) {
-				const segmentUrl = lines[i + 1];
-
 				if (!__TTVAB_STATE__.AdSegmentCache.has(segmentUrl))
 					info.NumStrippedAdSegments++;
 				strippedMediaEntryCount++;
 
 				if (
-					!forceStripAllSegments ||
-					_isExplicitKnownAdSegmentUrl(segmentUrl)
+					segmentUrl &&
+					(!forceStripAllSegments || _isExplicitKnownAdSegmentUrl(segmentUrl))
 				) {
 					__TTVAB_STATE__.AdSegmentCache.set(segmentUrl, Date.now());
 				}
 
 				stripped = true;
 				lines[i] = "";
-				lines[i + 1] = "";
-				i++;
+				if (uriIndex >= 0) {
+					lines[uriIndex] = "";
+					for (
+						let tagIndex = segmentTagStartIndex;
+						tagIndex < uriIndex;
+						tagIndex++
+					) {
+						if (
+							/^#EXT-X-(?:BYTERANGE:|GAP\b|PROGRAM-DATE-TIME:)/.test(
+								lines[tagIndex],
+							)
+						)
+							lines[tagIndex] = "";
+					}
+				}
 			}
 		}
 

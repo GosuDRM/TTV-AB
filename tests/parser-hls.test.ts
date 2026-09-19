@@ -1,7 +1,13 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { T } from "./setup";
 
 const g = globalThis as Record<string, unknown>;
+const cleanTwitchPlaylist = readFileSync(
+	resolve(__dirname, "fixtures/twitch-clean-media.m3u8"),
+	"utf8",
+).trimEnd();
 
 describe("_parseAttrs", () => {
 	const fn = () => T<(s: string) => Record<string, string>>("_parseAttrs");
@@ -48,6 +54,58 @@ describe("_hasExplicitAdMetadata", () => {
 	it("non-string", () => {
 		expect(fn()(null)).toBe(false);
 	});
+	it("recognizes Twitch ad classes regardless of attribute order", () => {
+		for (const attributes of [
+			'CLASS="twitch-ad",ID="opaque"',
+			'ID="opaque",CLASS="twitch-ad"',
+		]) {
+			expect(fn()(`#EXT-X-DATERANGE:${attributes}`)).toBe(true);
+		}
+		expect(fn()('#EXT-X-DATERANGE:ID="opaque",CLASS="chapter"')).toBe(false);
+	});
+	it.each([
+		"timestamp",
+		"twitch-session",
+		"twitch-stream-source",
+		"twitch-trigger",
+		"twitch-admin",
+	])(
+		"does not classify %s metadata as an ad in any attribute order",
+		(klass) => {
+			for (const attrs of [
+				`ID="opaque",CLASS="${klass}"`,
+				`CLASS="${klass}",ID="opaque"`,
+			]) {
+				expect(fn()(`#EXT-X-DATERANGE:${attrs}`)).toBe(false);
+			}
+		},
+	);
+	it.each(["twitch-ad", "twitch-stitched-ad", "twitch-ad-quartile"])(
+		"still blocks %s metadata alongside ordinary Twitch tags",
+		(klass) => {
+			for (const attrs of [
+				`ID="opaque",CLASS="${klass}"`,
+				`CLASS="${klass}",ID="opaque"`,
+			]) {
+				expect(fn()(`${cleanTwitchPlaylist}\n#EXT-X-DATERANGE:${attrs}`)).toBe(
+					true,
+				);
+			}
+		},
+	);
+	it("preserves a clean Twitch playlist with session, source, trigger and prefetch metadata", () => {
+		expect(fn()(cleanTwitchPlaylist)).toBe(false);
+		const info = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false };
+		expect(
+			T<(text: string, all: boolean, info: object) => string>("_stripAds")(
+				cleanTwitchPlaylist,
+				false,
+				info,
+			),
+		).toBe(cleanTwitchPlaylist);
+		expect(info.IsStrippingAdSegments).toBe(false);
+		expect(info.NumStrippedAdSegments).toBe(0);
+	});
 });
 
 describe("_isKnownAdSegmentUrl", () => {
@@ -88,6 +146,114 @@ describe("_isKnownAdSegmentUrl", () => {
 		expect(
 			fn()("https://video-edge.ttvnw.net/v1/segment/stitched-ad-123.ts"),
 		).toBe(true);
+	});
+});
+
+describe("ad media URI coverage", () => {
+	it.each(["\n", "\r\n"])(
+		"detects and removes ad prefetches with %j line endings",
+		(newline) => {
+			const playlist = [
+				"#EXTM3U",
+				"#EXTINF:2,live",
+				"https://edge/clean.ts",
+				"#EXT-X-TWITCH-PREFETCH:https://edge/_404/ad.ts",
+			].join(newline);
+			expect(
+				T<(text: string) => boolean>("_playlistHasKnownAdSegments")(playlist),
+			).toBe(true);
+			const info = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false };
+			const output = T<(text: string, all: boolean, info: object) => string>(
+				"_stripAds",
+			)(playlist, false, info);
+			expect(output).toContain("https://edge/clean.ts");
+			expect(output).not.toContain("/_404/");
+			expect(info.IsStrippingAdSegments).toBe(true);
+		},
+	);
+
+	it("serves advancing hold media when an ad prefetch is the only media entry", () => {
+		const output = T<(text: string, all: boolean, info: object) => string>(
+			"_stripAds",
+		)(
+			"#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:8\n#EXT-X-TWITCH-PREFETCH:https://edge/_404/ad.ts",
+			false,
+			{ NumStrippedAdSegments: 0 },
+		);
+		expect(output).not.toContain("/_404/");
+		expect(output).toContain("__ttvab_empty_hold_segment.ts");
+		expect(output).toContain("#EXT-X-MEDIA-SEQUENCE:9");
+	});
+
+	it.each(["#EXT-X-BYTERANGE:1024@0", "#EXT-X-GAP", "#segment metadata\n"])(
+		"removes the ad URL across intervening tags: %s",
+		(tag) => {
+			const playlist = `#EXTM3U\n#EXTINF:2,live\n${tag}\nhttps://edge/_404/ad.ts\n#EXTINF:2,live\nhttps://edge/clean.ts`;
+			expect(
+				T<(text: string) => boolean>("_playlistHasKnownAdSegments")(playlist),
+			).toBe(true);
+			const output = T<(text: string, all: boolean, info: object) => string>(
+				"_stripAds",
+			)(playlist, false, { NumStrippedAdSegments: 0 });
+			expect(output).not.toContain("/_404/");
+			expect(output).not.toContain("#EXT-X-BYTERANGE");
+			expect(output).not.toContain("#EXT-X-GAP");
+			expect(output).toContain("#EXTINF:2,live\nhttps://edge/clean.ts");
+		},
+	);
+
+	it("retains clean prefetches and playlist URLs containing the signifier", () => {
+		const playlist =
+			"#EXTM3U\n#EXTINF:2,live\nhttps://edge/clean.ts\n#EXT-X-TWITCH-PREFETCH:https://edge/next.ts";
+		expect(
+			T<(text: string) => boolean>("_playlistHasKnownAdSegments")(playlist),
+		).toBe(false);
+		expect(
+			T<(text: string, all: boolean, info: object) => string>("_stripAds")(
+				playlist,
+				false,
+				{ NumStrippedAdSegments: 0 },
+			),
+		).toBe(playlist);
+		expect(
+			T<(text: string) => boolean>("_playlistHasKnownAdSegments")(
+				"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nhttps://edge/stitched.m3u8",
+			),
+		).toBe(false);
+	});
+
+	it("does not transfer a stripped segment's leading byte range or gap to clean playback", () => {
+		const playlist =
+			"#EXTM3U\n#EXT-X-BYTERANGE:1024@0\n#EXT-X-GAP\n#EXTINF:2,live\nhttps://edge/_404/ad.ts\n#EXT-X-KEY:METHOD=NONE\n#EXTINF:2,live\nhttps://edge/clean.ts";
+		const output = T<(text: string, all: boolean, info: object) => string>(
+			"_stripAds",
+		)(playlist, false, { NumStrippedAdSegments: 0 });
+		expect(output).not.toContain("/_404/");
+		expect(output).not.toContain("#EXT-X-BYTERANGE");
+		expect(output).not.toContain("#EXT-X-GAP");
+		expect(output).toContain("#EXT-X-KEY:METHOD=NONE");
+		expect(output).toContain("https://edge/clean.ts");
+	});
+
+	it("keeps cached ad lookups opt-in for opaque CRLF prefetch and tagged segments", () => {
+		const state = g.__TTVAB_STATE__ as { AdSegmentCache: Map<string, number> };
+		state.AdSegmentCache.set("https://edge/opaque-ad.ts", Date.now());
+		try {
+			for (const entries of [
+				"#EXTINF:2,live\r\n#EXT-X-BYTERANGE:1024@0\r\nhttps://edge/opaque-ad.ts\r\n",
+				"#EXT-X-TWITCH-PREFETCH:https://edge/opaque-ad.ts\r\n",
+			]) {
+				const hasAds = T<
+					(text: string, options?: { includeCached: boolean }) => boolean
+				>("_playlistHasKnownAdSegments");
+				expect(hasAds(`#EXTM3U\r\n${entries}`)).toBe(true);
+				expect(hasAds(`#EXTM3U\r\n${entries}`, { includeCached: false })).toBe(
+					false,
+				);
+			}
+		} finally {
+			state.AdSegmentCache.delete("https://edge/opaque-ad.ts");
+		}
 	});
 });
 
