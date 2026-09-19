@@ -189,6 +189,7 @@ const _PinnedBackupStallState = {
 };
 const _InAdFreezeState = {
 	mediaKey: null as string | null,
+	video: null as HTMLMediaElement | null,
 	firstFrozenAt: 0,
 	lastCurrentTime: -1,
 	lastActionAt: 0,
@@ -214,6 +215,7 @@ const _FatalAdMediaRecoveryState = {
 };
 function _resetInAdFreezeState(mediaKey = null) {
 	_InAdFreezeState.mediaKey = _normalizeMediaKey(mediaKey);
+	_InAdFreezeState.video = null;
 	_InAdFreezeState.firstFrozenAt = 0;
 	_InAdFreezeState.lastCurrentTime = -1;
 	_InAdFreezeState.lastActionAt = 0;
@@ -6230,6 +6232,12 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 		video.buffered && video.buffered.length > 0
 			? video.buffered.end(video.buffered.length - 1)
 			: 0;
+	if (currentTime < _PinnedBackupStallState.lastCurrentTime - 0.25) {
+		_PinnedBackupStallState.firstObservedAt = 0;
+		_PinnedBackupStallState.lastCurrentTime = currentTime;
+		_PinnedBackupStallState.lastBufferedEnd = bufferedEnd;
+		return;
+	}
 	let bufferedStart = 0;
 	try {
 		bufferedStart =
@@ -6413,6 +6421,14 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 		return;
 	}
 	const currentTime = Number(video.currentTime) || 0;
+	if (
+		_InAdFreezeState.video !== video ||
+		(_InAdFreezeState.lastCurrentTime >= 0 &&
+			currentTime < _InAdFreezeState.lastCurrentTime - 0.25)
+	) {
+		_resetInAdFreezeState(safeMediaKey);
+		_InAdFreezeState.video = video;
+	}
 	const bufferedEnd =
 		video.buffered && video.buffered.length > 0
 			? video.buffered.end(video.buffered.length - 1)
@@ -6423,6 +6439,7 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 		currentTime > _InAdFreezeState.lastCurrentTime + 0.25;
 	if (!playbackHasStarted || video.paused || advanced) {
 		_resetInAdFreezeState(safeMediaKey);
+		_InAdFreezeState.video = video;
 		_InAdFreezeState.lastCurrentTime = currentTime;
 		return;
 	}

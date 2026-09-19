@@ -41,6 +41,13 @@ function segments(text: string) {
 				url: lines[index + 1],
 			});
 		}
+		if (lines[index].startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+			entries.push({
+				sequence: sequence++,
+				discontinuity,
+				url: lines[index].slice("#EXT-X-TWITCH-PREFETCH:".length),
+			});
+		}
 	}
 	return entries;
 }
@@ -111,6 +118,62 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it.each(["backup", "native", "hold"])(
+		"does not reuse prefetched segment numbers when switching to %s",
+		async (destination) => {
+			const { context, info, hold, serve } = setup();
+			await hold();
+			const text = `${playlist(100)}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-103.ts\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-104.ts`;
+			const previous = segments(await serve(text, "autoplay"));
+			const replacement =
+				destination === "backup"
+					? await serve(playlist(200), "site")
+					: destination === "native"
+						? await serve(playlist(200))
+						: await serve(
+								context._createEmptyAdHoldPlaylist(playlist(400), info),
+							);
+			const next = segments(replacement);
+			expect(next[0].sequence).toBeGreaterThan(previous.at(-1).sequence);
+			expect(next[0].discontinuity).toBeGreaterThan(
+				previous.at(-1).discontinuity,
+			);
+			expect(next[0].url).not.toBe(previous.at(-1).url);
+		},
+	);
+
+	it("retains prefetched media identity when it becomes a complete segment", async () => {
+		const { hold, serve } = setup();
+		await hold();
+		const text = `${playlist(100)}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-103.ts\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-104.ts`;
+		const previous = segments(await serve(text, "site"));
+		const refreshed = segments(await serve(playlist(102), "site"));
+		expect(refreshed).toEqual(previous.slice(2));
+	});
+
+	it("preserves implicit encryption IVs for every prefetched segment", async () => {
+		const { hold, serve } = setup();
+		await hold();
+		const text = `${playlist(10, 1).replace("#EXTINF:", '#EXT-X-KEY:METHOD=AES-128,URI="https://edge.example/key"\n#EXTINF:')}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-11.ts\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-12.ts`;
+		const output = await serve(text, "site");
+		const key = Buffer.alloc(16, 7);
+		const clear = Buffer.from("prefetched audio and video");
+		const ivs = [...output.matchAll(/IV=0x([0-9a-fA-F]{32})/g)].map((match) =>
+			Buffer.from(match[1], "hex"),
+		);
+		expect(ivs).toHaveLength(3);
+		for (const [index, iv] of ivs.entries()) {
+			const originalIv = Buffer.alloc(16);
+			originalIv.writeUInt32BE(10 + index, 12);
+			const cipher = createCipheriv("aes-128-cbc", key, originalIv);
+			const encrypted = Buffer.concat([cipher.update(clear), cipher.final()]);
+			const decipher = createDecipheriv("aes-128-cbc", key, iv);
+			expect(
+				Buffer.concat([decipher.update(encrypted), decipher.final()]),
+			).toEqual(clear);
+		}
+	});
+
 	it("keeps the first CSAI hold beyond the native window already offered to the player", async () => {
 		const { context, info, serve } = setup();
 		info.IsShowingAd = false;
