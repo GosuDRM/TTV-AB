@@ -1310,7 +1310,7 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_installPageSideM3U8Override",
-			helper: "_getEmptyHoldPlaylistKey",
+			helper: "_getMediaPlaylistSessionKey",
 			source: hooksSource,
 		},
 		{
@@ -1324,18 +1324,48 @@ function validateSharedDefinitions() {
 			source: hooksSource,
 		},
 		{
-			consumer: "_getEmptyHoldPlaylistKey",
+			consumer: "_getPlaylistUrlAliases",
+			helper: "_getMediaPlaylistSessionKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isExactNativeRecoveryCandidateOwned",
+			helper: "_getMediaPlaylistSessionKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_advanceExactNativeRecoveryCandidate",
+			helper: "_getMediaPlaylistSessionKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isNativeRecoveryCodecHandoffReady",
+			helper: "_getMediaPlaylistSessionKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAdEndStable",
+			helper: "_getMediaPlaylistSessionKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_getMediaPlaylistSessionKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getMediaPlaylistSessionKey",
 			helper: "_getExactPlaylistUrlKey",
 			source: processorSource,
 		},
 		{
 			consumer: "_getEmptyHoldUpstreamUrl",
-			helper: "_getEmptyHoldPlaylistKey",
+			helper: "_getMediaPlaylistSessionKey",
 			source: processorSource,
 		},
 		{
 			consumer: "_applyEmptyHoldPlaylistContinuity",
-			helper: "_getEmptyHoldPlaylistKey",
+			helper: "_getMediaPlaylistSessionKey",
 			source: processorSource,
 		},
 		{
