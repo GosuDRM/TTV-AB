@@ -5208,6 +5208,59 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(reloadCalls()).toHaveLength(1);
 	});
 
+	it("keeps bounded rebuild authorization after a buffered resume decodes no frames", () => {
+		const playback = makePlayback({
+			currentTime: 10,
+			bufferedEnd: 20,
+			readyState: 4,
+			videoWidth: 1920,
+		});
+		let paused = true;
+		Object.defineProperty(playback.video, "paused", {
+			get: () => paused,
+			configurable: true,
+		});
+		playback.player.isPaused = () => paused;
+		Object.defineProperty(playback.video, "getVideoPlaybackQuality", {
+			value: () => ({ totalVideoFrames: 500 }),
+		});
+		const callbacks: Array<() => void> = [];
+		const schedule = vi
+			.spyOn(g, "_schedulePlaybackRecoveryTimeout")
+			.mockImplementation((callback: () => void) => {
+				callbacks.push(callback);
+			});
+		const play = vi.spyOn(g, "_playPlaybackTarget").mockImplementation(() => {
+			paused = false;
+			return true;
+		});
+		try {
+			arm(playback);
+			transaction().acceptedReloadCount = 1;
+			transaction().initialOperationCompleted = true;
+			expect(
+				T<(channel: string, mediaKey: string) => boolean>(
+					"_resumePlayerAfterAdIfNeeded",
+				)("chan", "live:chan"),
+			).toBe(true);
+			expect(sample(500000)).toBe(false);
+			playback.setCurrentTime(10.9);
+			nowSpy.mockReturnValue(500900);
+			for (const callback of callbacks) callback();
+			expect(startTransaction()("chan", "live:chan", 440000)).toBe(true);
+			expect(transaction().acceptedReloadCount).toBe(1);
+			reloadOutcomes.push(true);
+			sample(500900);
+			playback.setCurrentTime(12);
+			sample(502000);
+			expect(reloadCalls()).toHaveLength(1);
+			expect(transaction().acceptedReloadCount).toBe(2);
+		} finally {
+			schedule.mockRestore();
+			play.mockRestore();
+		}
+	});
+
 	it("keeps post-ad recovery active when the playhead advances without video frames", () => {
 		const log = vi.spyOn(g, "_log");
 		const playback = makePlayback({

@@ -8388,8 +8388,10 @@ describe("worker mixed-codec master selection", () => {
 		const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
 			const url = String(input);
 			if (url.startsWith(masterUrl)) return new Response(master);
-			if (url === avcUrl) return new Response(playlist("avc"));
-			if (url === hevcUrl) return new Response(playlist("hevc"));
+			if (url === avcUrl || url.startsWith(`${avcUrl}&_HLS_msn=`))
+				return new Response(playlist("avc"));
+			if (url === hevcUrl || url.startsWith(`${hevcUrl}&_HLS_msn=`))
+				return new Response(playlist("hevc"));
 			if (url === backupUrl) return new Response(playlist("backup"));
 			throw new Error(`Unexpected recovery fetch: ${url}`);
 		});
@@ -8467,7 +8469,9 @@ describe("worker mixed-codec master selection", () => {
 			expect(fallbackMaster).not.toContain(hevcUrl);
 			for (let index = 0; index < 30 && info.IsHoldingBackupAfterAd; index++) {
 				vi.setSystemTime(Date.now() + 2000);
-				const output = await (await workerFetch(avcUrl)).text();
+				const output = await (
+					await workerFetch(`${avcUrl}&_HLS_msn=${sequence}&_HLS_part=0`)
+				).text();
 				expect(output).not.toContain("hevc-");
 				if (info.IsHoldingBackupAfterAd) expect(output).toContain("backup-");
 			}
@@ -8503,7 +8507,7 @@ describe("worker mixed-codec master selection", () => {
 				reloadAt: initialReloadAt,
 				preserveNativeSession: true,
 			});
-			await workerFetch(hevcUrl);
+			await workerFetch(`${hevcUrl}&_HLS_msn=${sequence}&_HLS_part=1`);
 			expect(info._PendingPostAdNativeMaster).toMatchObject({
 				consumed: true,
 				reloadCount: 1,
@@ -8528,7 +8532,7 @@ describe("worker mixed-codec master selection", () => {
 			expect(retryMaster).toContain(hevcUrl);
 			expect(retryMaster).not.toContain(avcUrl);
 			send("TriggeredPlayerReload", retry);
-			await workerFetch(hevcUrl);
+			await workerFetch(`${hevcUrl}&_HLS_msn=${sequence}&_HLS_part=1`);
 			expect(info._PendingPostAdNativeMaster).toMatchObject({
 				consumed: true,
 				reloadCount: 2,

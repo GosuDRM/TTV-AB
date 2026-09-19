@@ -231,6 +231,100 @@ function setup(withCodecHandoff = true) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("owned native recovery after a codec fallback", () => {
+	it.each([
+		{ quality: "1080p60", disabled: false, expectedUrl: nativeUrl },
+		{ quality: "1080p60", disabled: true, expectedUrl: nativeUrl },
+		{ quality: "chunked", disabled: false, expectedUrl: enhancedUrl },
+		{ quality: "chunked", disabled: true, expectedUrl: enhancedUrl },
+	])(
+		"verifies $quality after a complete pod on an AVC bridge (fallback disabled: $disabled)",
+		async ({ quality, disabled, expectedUrl }) => {
+			const { info, state, target, serve, restored } = setup(false);
+			const lowUrl = "https://edge.example/native360.m3u8?token=owned";
+			const lowResolution = {
+				Resolution: "640x360",
+				Name: "360p",
+				Codecs: avc,
+				Url: lowUrl,
+			};
+			info.IsUsingModifiedM3U8 = false;
+			info.ExpectedAdPodLength = 2;
+			info.ResolutionList.push(lowResolution);
+			info.Urls[lowUrl] = lowResolution;
+			state.StreamInfosByUrl[lowUrl] = info;
+			info.EncodingsM3U8 += `\n#EXT-X-STREAM-INF:RESOLUTION=640x360,VIDEO="360p",CODECS="${avc}"\n${lowUrl}`;
+			state.PreferredQualityGroup = quality;
+			state.DisableAutoplayBackup = disabled;
+			for (let index = 0; index < 30 && !restored(); index++)
+				await serve(false, lowUrl);
+			expect(restored()).toMatchObject({
+				requiresReload: true,
+				refreshAccessToken: false,
+			});
+			expect(target).toHaveBeenCalledWith(expectedUrl);
+			expect(info._PendingPostAdNativeMaster.playlistUrl).toBe(expectedUrl);
+		},
+	);
+
+	it("preserves the native session when low-latency delivery directives change", async () => {
+		const { context, info, state, fetch, token, serve, restored } =
+			setup(false);
+		info.IsUsingModifiedM3U8 = false;
+		info.ExpectedAdPodLength = 2;
+		state.PreferredQualityGroup = "1080p60";
+		for (let index = 0; index < 30 && !restored(); index++) {
+			await serve(
+				false,
+				`${nativeUrl}&_HLS_msn=${500 + index}&_HLS_part=0&_HLS_skip=YES`,
+			);
+		}
+		expect(restored()).toMatchObject({
+			requiresReload: true,
+			refreshAccessToken: false,
+		});
+		expect(info._PendingPostAdNativeMaster.playlistUrl).toBe(nativeUrl);
+		expect(token).not.toHaveBeenCalled();
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		const rebuiltMaster = await (
+			await context.fetch(masterUrl.replaceAll("owned", "fresh"))
+		).text();
+		expect(rebuiltMaster).toContain(nativeUrl);
+		expect(rebuiltMaster).not.toContain("token=fresh");
+	});
+
+	it.each(["token=fresh", "token=owned&session=fresh"])(
+		"does not merge %s into native ownership while delivery directives change",
+		async (query) => {
+			const { info, target, serve, restored } = setup(false);
+			info.IsUsingModifiedM3U8 = false;
+			info.ExpectedAdPodLength = 2;
+			for (let index = 0; index < 30; index++) {
+				await serve(
+					false,
+					`https://edge.example/1080p.m3u8?${query}&_HLS_msn=${500 + index}`,
+				);
+			}
+			expect(restored()).toBeUndefined();
+			expect(target).not.toHaveBeenCalled();
+			expect(info._PendingPostAdNativeMaster).toBeNull();
+		},
+	);
+
+	it("resets native clean proof when ads return on a low-latency refresh", async () => {
+		const { info, serve, restored } = setup(false);
+		info.IsUsingModifiedM3U8 = false;
+		info.ExpectedAdPodLength = 2;
+		for (let index = 0; index < 5; index++) {
+			await serve(false, `${nativeUrl}&_HLS_msn=${500 + index}`);
+		}
+		expect(info.NativeRecoveryCandidateCleanCount).toBeGreaterThan(0);
+		const output = await serve(true, `${nativeUrl}&_HLS_msn=505`);
+		expect(output).not.toContain("stitched-ad");
+		expect(info.NativeRecoveryCandidateCleanCount).toBe(0);
+		expect(restored()).toBeUndefined();
+	});
+
 	it("retains owned recovery when no codec handoff was required", async () => {
 		const { serve, restored, token } = setup(false);
 		for (let index = 0; index < 30 && !restored(); index++) await serve();

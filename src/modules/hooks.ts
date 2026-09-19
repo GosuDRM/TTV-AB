@@ -4587,7 +4587,7 @@ function _installPageSideM3U8Override() {
 		}
 
 		try {
-			const timelineKey = _getEmptyHoldPlaylistKey(urlStr);
+			const timelineKey = _getMediaPlaylistSessionKey(urlStr);
 			const upstreamUrl = _getEmptyHoldUpstreamUrl(
 				_pageSideEmptyHoldInfoByUrl.get(timelineKey),
 				urlStr,
@@ -5084,7 +5084,7 @@ function _hookWorker() {
                 ${_setPlaylistDiscontinuitySequence.toString()}
                 ${_insertBoundaryDiscontinuity.toString()}
                 ${_applyBackupSpliceBridge.toString()}
-                ${_getEmptyHoldPlaylistKey.toString()}
+                ${_getMediaPlaylistSessionKey.toString()}
                 ${_getEmptyHoldUpstreamUrl.toString()}
                 ${_applyEmptyHoldPlaylistContinuity.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}

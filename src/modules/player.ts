@@ -4158,7 +4158,10 @@ function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 		return false;
 	}
 
-	if (_isPlaybackHealthyAfterAd(player, playerCore, video)) {
+	if (
+		!_isPostAdRecoveryTransactionCurrent(safeChannel, safeMediaKey) &&
+		_isPlaybackHealthyAfterAd(player, playerCore, video)
+	) {
 		_armPostAdGraceWindow(Number(video?.currentTime) || 0);
 		_clearAdResumeIntent();
 		return false;
@@ -4194,7 +4197,10 @@ function _resumePlayerAfterAdIfNeeded(channel = null, mediaKey = null) {
 			const { player: confirmPlayer } = _getPlayerAndState();
 			const confirmCore = _getPlayerCore(confirmPlayer);
 			const confirmVideo = confirmPlayer?.getHTMLVideoElement?.() || null;
-			if (_isPlaybackHealthyAfterAd(confirmPlayer, confirmCore, confirmVideo)) {
+			if (
+				!_isPostAdRecoveryTransactionCurrent(safeChannel, safeMediaKey) &&
+				_isPlaybackHealthyAfterAd(confirmPlayer, confirmCore, confirmVideo)
+			) {
 				_armPostAdGraceWindow(Number(confirmVideo?.currentTime) || 0);
 				_clearAdResumeIntent();
 			}

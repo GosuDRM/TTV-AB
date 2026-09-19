@@ -825,7 +825,7 @@ function _isExactNativeRecoveryCandidateOwned(
 		: info?.IsShowingAd
 			? "visible"
 			: null;
-	const exactCandidateUrl = _getExactPlaylistUrlKey(candidateUrl);
+	const exactCandidateUrl = _getMediaPlaylistSessionKey(candidateUrl);
 	const preAdNativeText =
 		typeof info?.LastCleanNativeM3U8 === "string"
 			? info.LastCleanNativeM3U8
@@ -844,7 +844,8 @@ function _isExactNativeRecoveryCandidateOwned(
 	);
 	const ownsExactPreAdNativeUrl = Boolean(
 		exactCandidateUrl &&
-			_getExactPlaylistUrlKey(info?.LastCleanNativeUrl) === exactCandidateUrl &&
+			_getMediaPlaylistSessionKey(info?.LastCleanNativeUrl) ===
+				exactCandidateUrl &&
 			preAdNativeText &&
 			preAdNativePlaylistAt > 0 &&
 			preAdNativePlaylistAt <= cycleStartedAt &&
@@ -898,7 +899,7 @@ function _advanceExactNativeRecoveryCandidate(
 		: info?.IsShowingAd
 			? "visible"
 			: null;
-	const exactCandidateUrl = _getExactPlaylistUrlKey(candidateUrl);
+	const exactCandidateUrl = _getMediaPlaylistSessionKey(candidateUrl);
 	const candidateHasAds = Boolean(
 		typeof candidateText === "string" &&
 			(_hasPlaylistAdMarkers(candidateText) ||
@@ -1008,7 +1009,7 @@ function _isNativeRecoveryCodecHandoffReady(info, candidateUrl) {
 			!info.EnhancedDecoderCodecFamily &&
 			!info.EnhancedDecoderCodec &&
 			_getVideoCodecFamily(
-				info.Urls?.[_getExactPlaylistUrlKey(candidateUrl)]?.Codecs,
+				info.Urls?.[_getMediaPlaylistSessionKey(candidateUrl)]?.Codecs,
 			) === "avc",
 	);
 }
@@ -1090,7 +1091,9 @@ async function _isAdEndStable(
 	let ownedNativeRecoveryTarget = null;
 	if (
 		info.IsHoldingBackupAfterAd &&
-		(info.IsUsingModifiedM3U8 || !declaredPodComplete) &&
+		(info.IsUsingModifiedM3U8 ||
+			info.HevcReloadPendingAfterHold ||
+			!declaredPodComplete) &&
 		exactNativeRecoveryOwned &&
 		_isNativeRecoveryCodecHandoffReady(info, candidateUrl) &&
 		info.LastCleanBackupM3U8 &&
@@ -1099,7 +1102,7 @@ async function _isAdEndStable(
 		info.EncodingsM3U8 &&
 		typeof info.UsherBaseUrl === "string" &&
 		info.UsherBaseUrl &&
-		Object.hasOwn(info.Urls || {}, _getExactPlaylistUrlKey(candidateUrl))
+		Object.hasOwn(info.Urls || {}, _getMediaPlaylistSessionKey(candidateUrl))
 	) {
 		const targetResolution =
 			_getResolutionByQualityGroup(
@@ -1120,7 +1123,7 @@ async function _isAdEndStable(
 				master: info.EncodingsM3U8,
 				masterUrl: info.UsherBaseUrl,
 				playlistUrl,
-				requestUrl: _getExactPlaylistUrlKey(candidateUrl),
+				requestUrl: _getMediaPlaylistSessionKey(candidateUrl),
 				handoffId: info._CodecHandoffPendingId || null,
 			};
 		}
@@ -1182,7 +1185,7 @@ async function _isAdEndStable(
 			Number(info.LastAdPodProgressAt) || 0,
 			Number(info.VisibleAdStartedAt) || 0,
 		);
-		const exactCandidateUrl = _getExactPlaylistUrlKey(candidateUrl);
+		const exactCandidateUrl = _getMediaPlaylistSessionKey(candidateUrl);
 		const sameCandidateUrl = Boolean(
 			exactCandidateUrl &&
 				info._IncompletePodCandidateUrl === exactCandidateUrl,
@@ -1556,6 +1559,7 @@ function _getPlaylistUrlAliases(url, baseUrl = null) {
 		);
 		parsed.hash = "";
 		pushAlias(parsed.toString());
+		pushAlias(_getMediaPlaylistSessionKey(parsed.toString()));
 		pushAlias(`${parsed.origin}${parsed.pathname}`);
 		pushAlias(parsed.pathname);
 	} catch {}
@@ -1848,7 +1852,7 @@ function _applyBackupSpliceBridge(info, text, backupMetadata = null) {
 	return output;
 }
 
-function _getEmptyHoldPlaylistKey(url) {
+function _getMediaPlaylistSessionKey(url) {
 	const exactUrl = _getExactPlaylistUrlKey(url);
 	if (!/[?&]_HLS_(?:msn|part|skip)(?:=|&|$)/.test(exactUrl)) return exactUrl;
 	try {
@@ -1872,7 +1876,7 @@ function _getEmptyHoldUpstreamUrl(info, url) {
 		return url;
 	}
 	const timeline = info._EmptyHoldTimelineByUrl.get(
-		_getEmptyHoldPlaylistKey(url),
+		_getMediaPlaylistSessionKey(url),
 	);
 	if (!timeline) return url;
 	try {
@@ -1918,7 +1922,7 @@ function _applyEmptyHoldPlaylistContinuity(
 		"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 	);
 	if (!isHold && !info._EmptyHoldTimelineByUrl?.size) return null;
-	const key = _getEmptyHoldPlaylistKey(url);
+	const key = _getMediaPlaylistSessionKey(url);
 	if (!key || text.includes("#EXT-X-STREAM-INF")) return null;
 	const previous = info._EmptyHoldTimelineByUrl?.get?.(key) || null;
 	const isOwnedNativeVariant = Boolean(
@@ -2110,7 +2114,7 @@ function _applyEmptyHoldPlaylistContinuity(
 		if (kind === "native" && line.startsWith("#EXT-X-RENDITION-REPORT:")) {
 			const attributes = _parseAttrs(line);
 			try {
-				const reportKey = _getEmptyHoldPlaylistKey(
+				const reportKey = _getMediaPlaylistSessionKey(
 					new URL(attributes.URI, key).href,
 				);
 				const reportTimeline = info._EmptyHoldTimelineByUrl?.get?.(reportKey);
@@ -4271,7 +4275,7 @@ async function _processM3U8Core(
 	info.LastActivityAt = Date.now();
 
 	const currentAliases = _getPlaylistUrlAliases(url);
-	const exactRequestUrl = _getExactPlaylistUrlKey(url);
+	const exactRequestUrl = _getMediaPlaylistSessionKey(url);
 	const isExactCurrentMasterVariant = Boolean(
 		exactRequestUrl && info?.Urls && Object.hasOwn(info.Urls, exactRequestUrl),
 	);
@@ -4515,7 +4519,7 @@ async function _processM3U8Core(
 			requestCodecIdentity &&
 		previousSustainedNativeResolution?.Resolution ===
 			directResolution.Resolution &&
-		_getExactPlaylistUrlKey(info.LastCleanNativeUrl) === exactRequestUrl &&
+		_getMediaPlaylistSessionKey(info.LastCleanNativeUrl) === exactRequestUrl &&
 		_getVideoCodecIdentity(info.LastCleanNativeCodec) ===
 			requestCodecIdentity &&
 		(Number(info.LastCleanNativePlaylistAt) || 0) > 0 &&
@@ -4867,7 +4871,8 @@ async function _processM3U8Core(
 			!info.IsUsingModifiedM3U8 &&
 			!info.IsUsingFallbackStream &&
 			!info.IsUsingBackupStream &&
-			_getExactPlaylistUrlKey(info.LastCleanNativeUrl) === exactRequestUrl &&
+			_getMediaPlaylistSessionKey(info.LastCleanNativeUrl) ===
+				exactRequestUrl &&
 			Math.max(0, Number(info.LastCleanNativeLoaderEpoch) || 0) ===
 				currentLoaderEpoch &&
 			(!requestAdContext ||
