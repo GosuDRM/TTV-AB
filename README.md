@@ -72,6 +72,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.6.7 - 2026-09-20
+
+- **Ad Recovery** - Prevents new ad breaks from canceling their own backup recovery when page and worker state synchronize.
+- **Native Playback** - Verifies native quality before rebuilding from an ad-session playlist, reducing repeat prerolls after recovery.
+
 ### v17.6.6 - 2026-09-20
 
 - **Ad Detection** - Blocks ad segments in low-latency prefetch entries and recognizes ad metadata regardless of attribute order.
@@ -83,11 +88,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Post-Ad Freeze Recovery** - Fixed recovery retries being rejected while playback had buffer but no advancing video ([#75](https://github.com/GosuDRM/TTV-AB/issues/75)).
 - **Native Quality Restoration** - Restores the configured stream quality after a completed ad break instead of rebuilding onto a temporary low rendition.
 - **Low-Latency Recovery** - Preserves the verified stream session as low-latency playlist requests advance, preventing recovery from getting stuck or losing its session during a rebuild.
-
-### v17.6.4 - 2026-09-19
-
-- **Ad Recovery Timing** - Kept pending video and audio from being skipped when temporary ad-blocking playback changes streams.
-- **Recovery Stability** - Prevented unnecessary pauses, backup switches, and reloads after playback restarts during an ad break.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

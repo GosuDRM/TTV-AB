@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.6.7] - 2026-09-20
+
+Fixed
+
+- **Ad Recovery** - Prevents new ad breaks from canceling their own backup recovery when page and worker state synchronize.
+- **Native Playback** - Verifies native quality before rebuilding from an ad-session playlist, reducing repeat prerolls after recovery.
+
 ## [17.6.6] - 2026-09-20
 
 Fixed
