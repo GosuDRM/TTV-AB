@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [17.6.4] - 2026-09-19
+
+Fixed
+
+- **Ad Recovery Timing** - Kept pending video and audio from being skipped when temporary ad-blocking playback changes streams.
+- **Recovery Stability** - Prevented unnecessary pauses, backup switches, and reloads after playback restarts during an ad break.
+
 ## [17.6.3] - 2026-09-18
 
 Fixed

@@ -72,6 +72,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v17.6.4 - 2026-09-19
+
+- **Ad Recovery Timing** - Kept pending video and audio from being skipped when temporary ad-blocking playback changes streams.
+- **Recovery Stability** - Prevented unnecessary pauses, backup switches, and reloads after playback restarts during an ad break.
+
 ### v17.6.3 - 2026-09-18
 
 - **Ad Recovery Timing** - Fixed a timing conflict when switching into temporary ad-blocking playback that could cause skipped video or audio desync.
@@ -80,11 +85,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 - **Player Recovery** - Fixed a critical bug that could prevent playback from recovering after Twitch replaces its player during an ad break.
 - **Recovery Audio** - Prevented the replacement video from being muted while keeping the old player silent.
-
-### v17.6.1 - 2026-09-15
-
-- **Ad Recovery Quality** - Prevented delayed backup responses from undoing a newer quality selection or interrupting a clean backup during an ad break.
-- **Stream Compatibility** - Fixed ad recovery for playlists that list audio before video in their codec information, including 1080p and 1440p streams.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
