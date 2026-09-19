@@ -1942,6 +1942,7 @@ function _applyEmptyHoldPlaylistContinuity(
 		if (line === "#EXT-X-DISCONTINUITY") discontinuity++;
 		if (
 			line.startsWith("#EXTINF:") ||
+			line.startsWith("#EXT-X-TWITCH-PREFETCH:") ||
 			line.startsWith("#EXT-X-PART:") ||
 			(line.startsWith("#EXT-X-PRELOAD-HINT:") &&
 				_parseAttrs(line).TYPE === "PART")
@@ -1949,7 +1950,11 @@ function _applyEmptyHoldPlaylistContinuity(
 			firstDiscontinuity ??= discontinuity;
 			lastSequence = sequence;
 		}
-		if (line.startsWith("#EXTINF:")) sequence++;
+		if (
+			line.startsWith("#EXTINF:") ||
+			line.startsWith("#EXT-X-TWITCH-PREFETCH:")
+		)
+			sequence++;
 	}
 	if (lastSequence == null) return null;
 	const metadata = backupMetadata || info.BackupPlaylistMetadata?.get?.(text);
@@ -2060,7 +2065,7 @@ function _applyEmptyHoldPlaylistContinuity(
 	else lines[mediaSequenceIndex] = mediaSequenceLine;
 	if (timeline.addBoundary && !boundaryScrolledOut) {
 		const boundaryIndex = lines.findIndex((line) =>
-			/^#EXT(?:INF:|-X-(?:MAP|KEY|PART|PRELOAD-HINT|PROGRAM-DATE-TIME):)/.test(
+			/^#EXT(?:INF:|-X-(?:MAP|KEY|PART|PRELOAD-HINT|PROGRAM-DATE-TIME|TWITCH-PREFETCH):)/.test(
 				line,
 			),
 		);
@@ -2090,6 +2095,7 @@ function _applyEmptyHoldPlaylistContinuity(
 			implicitKey &&
 			keySequence !== sequence &&
 			(line.startsWith("#EXTINF:") ||
+				line.startsWith("#EXT-X-TWITCH-PREFETCH:") ||
 				line.startsWith("#EXT-X-PART:") ||
 				(line.startsWith("#EXT-X-PRELOAD-HINT:") &&
 					_parseAttrs(line).TYPE === "PART"))
@@ -2122,7 +2128,11 @@ function _applyEmptyHoldPlaylistContinuity(
 			} catch {}
 		}
 		output.push(outputLine);
-		if (line.startsWith("#EXTINF:")) sequence++;
+		if (
+			line.startsWith("#EXTINF:") ||
+			line.startsWith("#EXT-X-TWITCH-PREFETCH:")
+		)
+			sequence++;
 	}
 	if (addedIv) {
 		const versionIndex = output.findIndex((line) =>

@@ -183,6 +183,33 @@ function makePinnedTimelineHarness(
 }
 
 describe("_checkPinnedBackupStall", () => {
+	it("does not rotate an advancing backup after its playhead restarts near zero", () => {
+		const check = T<
+			(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void
+		>("_checkPinnedBackupStall");
+		const messages: unknown[] = [];
+		let currentTime = 683.97;
+		const player = makePlayer(
+			() => currentTime,
+			() => currentTime + 0.5,
+		);
+		g._broadcastWorkers = (message: unknown) => messages.push(message);
+		const nowSpy = vi.spyOn(Date, "now");
+		nowSpy.mockReturnValue(100000);
+		check(player);
+		for (let tick = 0; tick < 20; tick++) {
+			currentTime = 0.5 + tick * 0.6;
+			nowSpy.mockReturnValue(104000 + tick * 600);
+			check(player);
+		}
+		expect(messages).toEqual([]);
+		nowSpy.mockReturnValue(120000);
+		check(player);
+		nowSpy.mockReturnValue(124000);
+		check(player);
+		expect(messages).toHaveLength(1);
+	});
+
 	it("does not force backup re-search while playback advances with safe buffer", () => {
 		const check = T<
 			(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void
@@ -1190,6 +1217,59 @@ describe("_checkInAdPlayheadFreeze", () => {
 				mediaKey: "live:pipchannel",
 			},
 		]);
+	});
+
+	it.each([false, true])(
+		"stops freeze recovery after playback restarts on a new timeline (new element: %s)",
+		(replaceElement) => {
+			let { video } = makeRangesVideo([[0, 684.03]], 683.97);
+			const player = { getHTMLVideoElement: () => video };
+			const nowSpy = vi.spyOn(Date, "now");
+			nowSpy.mockReturnValue(100000);
+			check()(player, "testchannel", "live:testchannel");
+			nowSpy.mockReturnValue(105500);
+			check()(player, "testchannel", "live:testchannel");
+			expect(playerTaskCalls).toEqual([[true, false]]);
+			if (replaceElement) {
+				video = makeRangesVideo([[0, 20]], 0).video;
+			}
+			for (let tick = 0; tick < 20; tick++) {
+				video.currentTime = 0.5 + tick * 0.6;
+				nowSpy.mockReturnValue(106000 + tick * 600);
+				check()(player, "testchannel", "live:testchannel");
+			}
+			expect(playerTaskCalls).toEqual([[true, false]]);
+		},
+	);
+
+	it("observes a replacement element before spending the previous element's freeze recovery", () => {
+		let { video } = makeRangesVideo([[0, 20]], 10);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+		nowSpy.mockReturnValue(100000);
+		check()(player);
+		video = makeRangesVideo([[0, 20]], 10).video;
+		nowSpy.mockReturnValue(105500);
+		check()(player);
+		expect(playerTaskCalls).toEqual([]);
+		nowSpy.mockReturnValue(111000);
+		check()(player);
+		expect(playerTaskCalls).toEqual([[true, false]]);
+	});
+
+	it("still recovers a real freeze after a backward timeline restart", () => {
+		const { video } = makeRangesVideo([[0, 20]], 10);
+		const player = { getHTMLVideoElement: () => video };
+		const nowSpy = vi.spyOn(Date, "now");
+		nowSpy.mockReturnValue(100000);
+		check()(player);
+		video.currentTime = 2;
+		nowSpy.mockReturnValue(105500);
+		check()(player);
+		expect(playerTaskCalls).toEqual([]);
+		nowSpy.mockReturnValue(111000);
+		check()(player);
+		expect(playerTaskCalls).toEqual([[true, false]]);
 	});
 
 	it("nudges a playhead frozen mid-range with safe headroom instead of jumping the gap (decoder wedge, issue #39)", () => {
