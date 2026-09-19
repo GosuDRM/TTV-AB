@@ -338,6 +338,56 @@ describe("owned native recovery after a codec fallback", () => {
 		expect(token).not.toHaveBeenCalled();
 	});
 
+	it("verifies a master variant before rebuilding from an owned ad-session URL outside that master", async () => {
+		const { context, info, state, target, serve, restored, fetch } =
+			setup(false);
+		const adSessionUrl = nativeUrl.replace("token=owned", "token=ad-session");
+		info.IsUsingModifiedM3U8 = false;
+		info.ExpectedAdPodLength = 2;
+		info.NativeRecoveryAdPlaylistUrls.add(adSessionUrl);
+		info.NativeRecoveryAdMediaKey = info.MediaKey;
+		info.NativeRecoveryAdStartedAt = info.VisibleAdStartedAt;
+		state.StreamInfosByUrl[adSessionUrl] = info;
+		for (let index = 0; index < 30 && !restored(); index++) {
+			await serve(false, adSessionUrl);
+		}
+		expect(restored()).toMatchObject({
+			requiresReload: true,
+			refreshAccessToken: false,
+		});
+		expect(target).toHaveBeenCalledWith(enhancedUrl);
+		expect(info._PendingPostAdNativeMaster).toMatchObject({
+			playlistUrl: enhancedUrl,
+		});
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		const rebuiltMaster = await (
+			await context.fetch(masterUrl.replaceAll("owned", "fresh"))
+		).text();
+		expect(rebuiltMaster).toContain(enhancedUrl);
+		expect(rebuiltMaster).not.toContain("token=fresh");
+	});
+
+	it("keeps the backup when an owned ad-session URL is clean but the master recovery target still contains ads", async () => {
+		const { info, state, target, serve, restored } = setup(false);
+		const adSessionUrl = nativeUrl.replace("token=owned", "token=ad-session");
+		info.IsUsingModifiedM3U8 = false;
+		info.ExpectedAdPodLength = 2;
+		info.NativeRecoveryAdPlaylistUrls.add(adSessionUrl);
+		info.NativeRecoveryAdMediaKey = info.MediaKey;
+		info.NativeRecoveryAdStartedAt = info.VisibleAdStartedAt;
+		state.StreamInfosByUrl[adSessionUrl] = info;
+		target.mockImplementation(
+			async () => new Response(playlist(2000, "target-ad", true)),
+		);
+		for (let index = 0; index < 30; index++) {
+			expect(await serve(false, adSessionUrl)).toContain("backup-");
+		}
+		expect(target).toHaveBeenCalledWith(enhancedUrl);
+		expect(restored()).toBeUndefined();
+		expect(info._PendingPostAdNativeMaster).toBeNull();
+	});
+
 	it.each([
 		"unacknowledged",
 		"wrong-acknowledgment",

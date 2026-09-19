@@ -1050,6 +1050,16 @@ function _mergeAdPodProgress(value) {
 
 function _applyAdPodProgressToInfo(info, value) {
 	if (!info) return null;
+	const incomingCycleStartedAt = Math.max(
+		0,
+		Number(value?.cycleStartedAt) || 0,
+	);
+	if (
+		incomingCycleStartedAt > 0 &&
+		incomingCycleStartedAt < Math.max(0, Number(info.VisibleAdStartedAt) || 0)
+	) {
+		return __TTVAB_STATE__.AdPodProgressByMediaKey?.[info.MediaKey] || null;
+	}
 	const entry = _mergeAdPodProgress({
 		...value,
 		mediaType: info.MediaType,
@@ -1109,11 +1119,18 @@ function _applyAdPodProgressToInfo(info, value) {
 	return entry;
 }
 
-function _clearAdPodProgress(mediaKey) {
+function _clearAdPodProgress(mediaKey, beforeCycleStartedAt = 0) {
 	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
 	if (!normalizedMediaKey) return false;
+	const cycleBoundary = Math.max(0, Number(beforeCycleStartedAt) || 0);
 	let didClear = false;
-	if (__TTVAB_STATE__.AdPodProgressByMediaKey?.[normalizedMediaKey]) {
+	const progress =
+		__TTVAB_STATE__.AdPodProgressByMediaKey?.[normalizedMediaKey];
+	if (
+		progress &&
+		(!cycleBoundary ||
+			Math.max(0, Number(progress.cycleStartedAt) || 0) < cycleBoundary)
+	) {
 		delete __TTVAB_STATE__.AdPodProgressByMediaKey[normalizedMediaKey];
 		didClear = true;
 	}
@@ -1144,6 +1161,12 @@ function _clearAdPodProgress(mediaKey) {
 	}>;
 	for (const info of streamInfos) {
 		if (_normalizeMediaKey(info?.MediaKey) !== normalizedMediaKey) continue;
+		if (
+			cycleBoundary &&
+			Math.max(0, Number(info.VisibleAdStartedAt) || 0) >= cycleBoundary
+		) {
+			continue;
+		}
 		if (Math.max(0, Number(info.VisibleAdStartedAt) || 0) > 0) {
 			_invalidateAdCycleAsyncWork(info);
 		}
