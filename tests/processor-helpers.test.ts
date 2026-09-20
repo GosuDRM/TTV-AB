@@ -1651,12 +1651,13 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(info.LastCleanBackupM3U8).toBe(sitePlaylist);
 
 			const nextCycle = 1_010_000;
-			nowSpy.mockReturnValue(nextCycle);
+			nowSpy.mockReturnValue(nextCycle + 10000);
 			info.IsShowingAd = true;
 			info.ActiveBackupPlayerType = "autoplay";
 			info.LastCleanBackupPlayerType = "autoplay";
 			info.LastCleanBackupM3U8 = bridgePlaylist;
-			info.LastCleanBackupAt = nextCycle;
+			info.LastCleanBackupAt = nextCycle + 10000;
+			info._LqHoldStartAt = nextCycle;
 			activateExactAdCycle(info, nextCycle);
 			const nextBreak = await findBackupStream()(
 				info,
