@@ -2,10 +2,11 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [18.0.1] - 2026-09-20
+## [18.0.2] - 2026-09-20
 
 Fixed
 
+- **Background Recovery** - Continue post-ad recovery for live streams and VODs while Twitch is hidden or unfocused, respecting manual pauses and retry limits.
 - **VOD Reloads** - Preserve playback position without undoing seeking or applying an older reload's restore.
 - **VOD Ad Requests** - Block recognized ad requests from VOD workers and channel-page VOD players.
 - **VOD Statistics** - Keep canceled and duplicate ad requests from inflating blocked totals.
