@@ -72,6 +72,19 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.0.0 - 2026-09-20
+
+- **VOD Reloads** - Preserve playback position without undoing seeking or applying an older reload's restore.
+- **VOD Ad Requests** - Block recognized ad requests from VOD workers and channel-page VOD players.
+- **VOD Statistics** - Keep canceled and duplicate ad requests from inflating blocked totals.
+- **PiP Ad Blocking** - Keep live and VOD ad blocking and blocked counts attached to the correct player across page navigation.
+- **PiP Recovery** - Respect manual pauses, cancel outdated reloads, and avoid reloading a different player or attempting recovery through a stopped playback worker.
+- **PiP Playlists** - Reject late playlists after PiP closes and clear released ad state.
+- **Rapid Channel Switching** - Reject delayed playlists from an earlier visit when rapidly switching from channel A to B and back to A.
+- **Navigation Ad State** - Ignore old ad and reload messages so returning to a channel does not revive earlier ad state or inflate blocked totals.
+- **Navigation Recovery** - Cancel pending pause/resume actions and delayed volume or quality restores from the previous visit while preserving active PiP playback.
+- **PiP Diagnostics** - Add console messages for PiP ad blocking without repeating them for the same ad cycle or VOD ad request.
+
 ### v17.6.7 - 2026-09-20
 
 - **Ad Recovery** - Prevents new ad breaks from canceling their own backup recovery when page and worker state synchronize.
@@ -82,12 +95,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Ad Detection** - Blocks ad segments in low-latency prefetch entries and recognizes ad metadata regardless of attribute order.
 - **Playlist Handling** - Handles additional playlist layouts without leaving ad media behind or losing track of the stream codec.
 - **Backup Validation** - Rejects incomplete or gap-only backup playlists before they can be selected for playback.
-
-### v17.6.5 - 2026-09-19
-
-- **Post-Ad Freeze Recovery** - Fixed recovery retries being rejected while playback had buffer but no advancing video ([#75](https://github.com/GosuDRM/TTV-AB/issues/75)).
-- **Native Quality Restoration** - Restores the configured stream quality after a completed ad break instead of rebuilding onto a temporary low rendition.
-- **Low-Latency Recovery** - Preserves the verified stream session as low-latency playlist requests advance, preventing recovery from getting stuck or losing its session during a rebuild.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
