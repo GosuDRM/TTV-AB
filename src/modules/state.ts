@@ -518,7 +518,15 @@ function _broadcastWorkers(messages) {
 					const workerMediaKey = _normalizeMediaKey(
 						worker?.__TTVABPageMediaKey,
 					);
-					if (preservedMediaKey && workerMediaKey === preservedMediaKey) {
+					if (
+						preservedMediaKey &&
+						(workerMediaKey === preservedMediaKey ||
+							(typeof _getActivePictureInPictureWorkerContext === "function" &&
+								_getActivePictureInPictureWorkerContext(
+									worker,
+									preservedMediaKey,
+								)))
+					) {
 						continue;
 					}
 					if (
@@ -1308,6 +1316,7 @@ function _getPageScopedPlaybackEventContext() {
 		return {
 			pageChannel: null,
 			pageMediaKey: null,
+			pageContextGeneration: 0,
 		};
 	}
 
@@ -1321,6 +1330,10 @@ function _getPageScopedPlaybackEventContext() {
 	return {
 		pageChannel: pageContext.ChannelName,
 		pageMediaKey: pageContext.MediaKey,
+		pageContextGeneration: Math.max(
+			0,
+			Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+		),
 	};
 }
 
@@ -1368,6 +1381,7 @@ function _incrementAdsBlocked(channel, mediaKey = null) {
 			mediaKey: safeMediaKey,
 			pageChannel: pageEventContext.pageChannel,
 			pageMediaKey: pageEventContext.pageMediaKey,
+			pageContextGeneration: pageEventContext.pageContextGeneration,
 		});
 	}
 }
@@ -1378,5 +1392,6 @@ function _createPageScopedWorkerEvent(value = null) {
 		...(value && typeof value === "object" ? value : {}),
 		pageChannel: pageEventContext.pageChannel,
 		pageMediaKey: pageEventContext.pageMediaKey,
+		pageContextGeneration: pageEventContext.pageContextGeneration,
 	};
 }

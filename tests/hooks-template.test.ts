@@ -61,7 +61,7 @@ describe("worker message handler hardening", () => {
 
 	it("keeps active pip worker events current across SPA navigation", () => {
 		expect(hooksJs()).toContain(
-			"_isActivePictureInPicturePlaybackContext(messageContext)",
+			"_getActivePictureInPictureWorkerContext(this, messageContext.MediaKey)",
 		);
 		expect(hooksJs()).toContain("preservedMediaKey");
 		expect(hooksJs()).toContain("case 'ReleasePlaybackContext'");

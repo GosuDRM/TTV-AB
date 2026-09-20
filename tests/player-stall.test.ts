@@ -887,6 +887,85 @@ describe("_doPlayerTask ad-recovery reload backoff", () => {
 
 		expect(playCalls).toEqual([player]);
 	});
+
+	it("does not resume a replacement visit after a queued hidden pause nudge", async () => {
+		setupReloadContext(50000);
+		const play = vi.fn();
+		g._playPlaybackTarget = play;
+		g._isNativeDocumentHidden = () => true;
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PagePlaybackContextGeneration = 1;
+		expect(
+			T<(pause: boolean, reload: boolean, options: object) => boolean>(
+				"_doPlayerTask",
+			)(true, false, { reason: "buffer-recovery" }),
+		).toBe(true);
+		Object.assign(state, {
+			PageChannel: "beta",
+			PageMediaKey: "live:beta",
+			PagePlaybackContextGeneration: 2,
+		});
+		Object.assign(state, {
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			PagePlaybackContextGeneration: 3,
+		});
+		await Promise.resolve();
+		expect(play).not.toHaveBeenCalled();
+	});
+});
+
+describe("pending preferences across rapid navigation", () => {
+	it.each(["revisit", "same visit", "PiP"])(
+		"keeps a pending preference restore owned by its %s",
+		async (mode) => {
+			vi.useFakeTimers();
+			const previousRestore = g._restorePlayerPreferenceSnapshot;
+			const previousPip = g._getActivePictureInPicturePlaybackContext;
+			const restore = vi.fn();
+			g._restorePlayerPreferenceSnapshot = restore;
+			try {
+				T<(scope: object) => void>("_declareState")(g);
+				window.history.replaceState(null, "", "/testchannel");
+				T<() => void>("_syncPagePlaybackContext")();
+				if (mode === "PiP")
+					g._getActivePictureInPicturePlaybackContext = () => ({
+						MediaKey: "live:testchannel",
+					});
+				T<
+					(
+						snapshot: object,
+						channel: string,
+						mediaKey: string,
+						delay: number,
+					) => boolean
+				>("_schedulePlayerPreferenceRestore")(
+					{ volume: "0.2" },
+					"testchannel",
+					"live:testchannel",
+					100,
+				);
+				for (const channel of mode === "same visit"
+					? []
+					: ["beta", "testchannel"]) {
+					window.history.replaceState(null, "", `/${channel}`);
+					T<() => void>("_syncPagePlaybackContext")();
+				}
+				await vi.advanceTimersByTimeAsync(100);
+				if (mode === "revisit") expect(restore).not.toHaveBeenCalled();
+				else
+					expect(restore).toHaveBeenCalledExactlyOnceWith(
+						{ volume: "0.2" },
+						{ channel: "testchannel", mediaKey: "live:testchannel" },
+					);
+			} finally {
+				T<() => void>("_clearPendingPlayerPreferenceRestore")();
+				g._restorePlayerPreferenceSnapshot = previousRestore;
+				g._getActivePictureInPicturePlaybackContext = previousPip;
+				vi.useRealTimers();
+			}
+		},
+	);
 });
 
 describe("_trySeekPastFrozenBufferGap", () => {
@@ -1914,6 +1993,25 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 		g._checkInAdPlayheadFreeze = () => {};
 	});
 
+	it("does not sample or rotate a dead off-route PiP worker", () => {
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PageChannel: "otherchannel",
+			PageMediaKey: "live:otherchannel",
+			PinnedBackupPlayerType: "site",
+			PinnedBackupStallPollMs: 100,
+		});
+		const worker = { __TTVABCrashed: true };
+		(
+			g._PlaybackIntentState as Record<string, unknown>
+		).pictureInPictureWorkerRef = new WeakRef(worker);
+		const freeze = vi.fn();
+		g._checkInAdPlayheadFreeze = freeze;
+		const pinned = vi.spyOn(g, "_checkPinnedBackupStall");
+		T<() => void>("_monitorPlayerBuffering")();
+		expect(freeze).not.toHaveBeenCalled();
+		expect(pinned).not.toHaveBeenCalled();
+	});
+
 	it("keeps page-owned fatal recovery enabled when PiP has the same key", () => {
 		T<() => void>("_monitorPlayerBuffering")();
 		expect(g._checkFatalAdMediaRecovery).toHaveBeenCalledWith(pagePlayer);
@@ -2470,8 +2568,11 @@ describe("_doPlayerTask (vod position restore after reload)", () => {
 	];
 	let saved: Record<string, unknown> = {};
 	let scheduled: Array<{ delay: number; run: () => void }>;
+	let previousUrl: string;
 
 	beforeEach(() => {
+		previousUrl = window.location.href;
+		window.history.replaceState(null, "", "/videos/12345");
 		saved = {};
 		for (const name of stubbed) saved[name] = g[name];
 		scheduled = [];
@@ -2489,6 +2590,7 @@ describe("_doPlayerTask (vod position restore after reload)", () => {
 	});
 
 	afterEach(() => {
+		window.history.replaceState(null, "", previousUrl);
 		for (const name of stubbed) g[name] = saved[name];
 	});
 
@@ -2571,6 +2673,109 @@ describe("_doPlayerTask (vod position restore after reload)", () => {
 		runScheduled(3000);
 		expect(video.currentTime).toBe(499.2);
 	});
+
+	it("does not rewind playback that advances after an already-preserved reload", () => {
+		const { video } = makeReloadHarness("vod", 500);
+		task()(false, true, { reason: "manual" });
+		video.currentTime = 501.2;
+		scheduled.find((entry) => entry.delay === 1200)?.run();
+		video.currentTime = 503;
+		scheduled.find((entry) => entry.delay === 3000)?.run();
+		expect(video.currentTime).toBe(503);
+	});
+
+	it("does not undo a seek after successfully restoring the VOD position", () => {
+		const { video } = makeReloadHarness("vod", 500);
+		task()(false, true, { reason: "manual" });
+		scheduled.find((entry) => entry.delay === 1200)?.run();
+		video.currentTime = 900;
+		scheduled.find((entry) => entry.delay === 3000)?.run();
+		expect(video.currentTime).toBe(900);
+	});
+
+	it("does not replace a user-selected position before the first restore", () => {
+		const { video } = makeReloadHarness("vod", 500);
+		task()(false, true, { reason: "manual" });
+		video.currentTime = 100;
+		runScheduled(3000);
+		expect(video.currentTime).toBe(100);
+	});
+
+	it("retires a previous reload's restore after a newer reload is accepted", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		try {
+			const { video } = makeReloadHarness("vod", 500);
+			task()(false, true, { reason: "manual" });
+			const olderRestore = scheduled.find((entry) => entry.delay === 3000);
+			vi.setSystemTime(101600);
+			video.currentTime = 900;
+			task()(false, true, { reason: "manual" });
+			scheduled
+				.filter((entry) => entry.delay === 1200)
+				.at(-1)
+				?.run();
+			expect(video.currentTime).toBe(900);
+			olderRestore?.run();
+			expect(video.currentTime).toBe(900);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		"generation",
+		"route",
+		"player",
+		"content",
+		"detached",
+		"interaction",
+		"pause",
+		"cycle",
+	])(
+		"cancels delayed VOD restoration after a %s change through the real timer gate",
+		(change) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			const intent = g._PlaybackIntentState as Record<string, unknown>;
+			const savedIntent = { ...intent };
+			try {
+				g._schedulePlaybackRecoveryTimeout =
+					saved._schedulePlaybackRecoveryTimeout;
+				const { video, player, playerState } = makeReloadHarness("vod", 500);
+				task()(false, true, { reason: "manual" });
+				const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+				if (change === "generation") state.PagePlaybackContextGeneration = 1;
+				if (change === "route")
+					window.history.replaceState(null, "", "/videos/98765");
+				if (change === "player")
+					g._getPlayerAndState = () => ({
+						player: { ...player },
+						state: playerState,
+					});
+				if (change === "content") playerState.props.content.type = "live";
+				if (change === "detached") Object.assign(video, { isConnected: false });
+				if (change === "interaction")
+					intent.lastPlaybackControlInteractionAt = 100001;
+				if (change === "pause") {
+					intent.userPausedMediaKey = "vod:12345";
+					intent.userPausedAt = 100001;
+				}
+				if (change === "cycle") {
+					state.CurrentAdMediaKey = "vod:12345";
+					state.AdPodProgressByMediaKey = {
+						"vod:12345": { cycleStartedAt: 100001 },
+					};
+				}
+				vi.advanceTimersByTime(3000);
+				expect(video.currentTime).toBe(0);
+			} finally {
+				Object.assign(intent, savedIntent);
+				vi.clearAllTimers();
+				vi.useRealTimers();
+			}
+		},
+	);
 
 	it("does not schedule a position restore for live content", () => {
 		const { video } = makeReloadHarness("live", 4321);
@@ -3050,6 +3255,194 @@ describe("_isPlaybackRecoveryContextCurrent (pip navigation)", () => {
 	});
 });
 
+describe("PiP entry and exit ownership", () => {
+	const setContext = (video: HTMLVideoElement) =>
+		T<(video: HTMLVideoElement) => Record<string, unknown> | null>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(video);
+	const active = () =>
+		T<() => Record<string, unknown> | null>(
+			"_getActivePictureInPicturePlaybackContext",
+		)();
+	let video: HTMLVideoElement;
+	let pipElement: HTMLVideoElement | null;
+	let resolveRequest: (value: unknown) => void;
+	let listeners: Array<[string, EventListenerOrEventListenerObject, unknown]>;
+
+	beforeEach(() => {
+		video = document.createElement("video");
+		pipElement = video;
+		listeners = [];
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			PagePlaybackContextGeneration: 7,
+		});
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue({
+			player: { getHTMLVideoElement: () => video },
+			state: { props: { content: { type: "vod", vodID: "12345" } } },
+		});
+		vi.spyOn(g, "_getPlayerCore").mockReturnValue({ worker: {} });
+		vi.spyOn(g, "_releasePlaybackContext").mockReturnValue(true);
+		vi.spyOn(g, "_beginSecondaryPlayerHandoff").mockReturnValue(true);
+		vi.spyOn(g, "_isPrimaryPlaybackCurrentlyActive").mockReturnValue(true);
+		vi.spyOn(document, "addEventListener").mockImplementation(
+			(type, listener, options) => {
+				listeners.push([type, listener, options]);
+				EventTarget.prototype.addEventListener.call(
+					document,
+					type,
+					listener,
+					options,
+				);
+			},
+		);
+		Object.defineProperty(document, "pictureInPictureElement", {
+			configurable: true,
+			get: () => pipElement,
+		});
+		Object.defineProperty(
+			HTMLVideoElement.prototype,
+			"requestPictureInPicture",
+			{
+				configurable: true,
+				writable: true,
+				value: () =>
+					new Promise((resolve) => {
+						resolveRequest = resolve;
+					}),
+			},
+		);
+		window.__TTVAB_REQUEST_PIP_PATCHED__ = false;
+		window.__TTVAB_WINDOW_OPEN_PATCHED__ = true;
+		(
+			g._PlaybackIntentState as Record<string, unknown>
+		).secondaryPlayerLaunchMonitorInitialized = false;
+	});
+
+	afterEach(() => {
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		for (const [type, listener, options] of listeners)
+			document.removeEventListener(
+				type,
+				listener,
+				options as EventListenerOptions,
+			);
+		window.removeEventListener(
+			"pagehide",
+			g._clearSecondaryPlayerHandoff as EventListener,
+		);
+		delete (HTMLVideoElement.prototype as unknown as Record<string, unknown>)
+			.requestPictureInPicture;
+		Object.defineProperty(document, "pictureInPictureElement", {
+			configurable: true,
+			value: null,
+		});
+		window.__TTVAB_REQUEST_PIP_PATCHED__ = false;
+		window.__TTVAB_WINDOW_OPEN_PATCHED__ = false;
+		(
+			g._PlaybackIntentState as Record<string, unknown>
+		).secondaryPlayerLaunchMonitorInitialized = false;
+	});
+
+	it("captures banner media instead of the surrounding channel for ad ownership", () => {
+		expect(setContext(video)?.MediaKey).toBe("vod:12345");
+	});
+
+	it("does not give a competing video the page player's ad ownership", () => {
+		expect(setContext(document.createElement("video"))).toBeNull();
+	});
+
+	it("keeps the requested media when navigation precedes PiP promise completion", async () => {
+		pipElement = null;
+		T<() => void>("_hookSecondaryPlayerHandoffDetection")();
+		const pending = video.requestPictureInPicture();
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PageChannel: "otherchannel",
+			PageMediaKey: "live:otherchannel",
+		});
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue({
+			player: null,
+			state: null,
+		});
+		pipElement = video;
+		resolveRequest({});
+		await pending;
+		expect(active()?.MediaKey).toBe("vod:12345");
+		expect(g._beginSecondaryPlayerHandoff).toHaveBeenLastCalledWith(
+			expect.objectContaining({ mediaKey: "vod:12345" }),
+			expect.anything(),
+		);
+	});
+
+	it("does not revive a PiP session that closed before its promise completes", async () => {
+		pipElement = null;
+		T<() => void>("_hookSecondaryPlayerHandoffDetection")();
+		const pending = video.requestPictureInPicture();
+		resolveRequest({});
+		await pending;
+		expect(active()).toBeNull();
+		expect(g._beginSecondaryPlayerHandoff).not.toHaveBeenCalled();
+	});
+
+	it.each([false, true])(
+		"keeps connected banner ad ownership only while its media still matches (replaced: %s)",
+		(replaced) => {
+			setContext(video);
+			document.body.append(video);
+			if (replaced) {
+				vi.spyOn(g, "_getPlayerAndState").mockReturnValue({
+					player: { getHTMLVideoElement: () => video },
+					state: {
+						props: { content: { type: "live", channelLogin: "otherchannel" } },
+					},
+				});
+			}
+			try {
+				pipElement = null;
+				video.dispatchEvent(new Event("leavepictureinpicture"));
+				expect(active()).toBeNull();
+				expect(g._releasePlaybackContext).toHaveBeenCalledTimes(
+					replaced ? 1 : 0,
+				);
+			} finally {
+				video.remove();
+			}
+		},
+	);
+
+	it("releases detached PiP ownership when its exit cannot reach document", () => {
+		setContext(video);
+		pipElement = null;
+		video.dispatchEvent(new Event("leavepictureinpicture"));
+		expect(active()).toBeNull();
+		expect(g._releasePlaybackContext).toHaveBeenCalledOnce();
+	});
+
+	it("ignores an old element's exit after a replacement enters PiP", () => {
+		T<() => void>("_hookSecondaryPlayerHandoffDetection")();
+		const newer = document.createElement("video");
+		T<(video: HTMLVideoElement, context: object) => unknown>(
+			"_setActivePictureInPicturePlaybackContext",
+		)(newer, { MediaKey: "live:otherchannel" });
+		const clear = vi.spyOn(g, "_clearSecondaryPlayerHandoff");
+		(
+			g._PlaybackIntentState as Record<string, unknown>
+		).secondaryPlayerHandoffKind = "pip";
+		document.body.append(video);
+		try {
+			video.dispatchEvent(
+				new Event("leavepictureinpicture", { bubbles: true }),
+			);
+			expect(active()?.element).toBe(newer);
+			expect(clear).not.toHaveBeenCalled();
+		} finally {
+			video.remove();
+		}
+	});
+});
+
 describe("_doPlayerTask (pip reload policy)", () => {
 	const cycleStartedAt = 100;
 	const handoffId = (label: string) =>
@@ -3087,6 +3480,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 	let workerMessages: unknown[];
 
 	beforeEach(() => {
+		window.history.replaceState(null, "", "/testchannel");
 		saved = {};
 		for (const name of stubbed) saved[name] = g[name];
 		pipElement = document.createElement("video");
@@ -3099,11 +3493,11 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		resumeRetryCalls = [];
 		workerMessages = [];
 		const player = {
-			getHTMLVideoElement: () => null,
+			getHTMLVideoElement: () => pipElement,
 			play: () => undefined,
 		};
 		const playerState = {
-			props: { content: { type: "live" } },
+			props: { content: { type: "live", channelLogin: "testchannel" } },
 			setSrc: (arg: unknown) => {
 				setSrcCalls.push(arg);
 			},
@@ -3740,6 +4134,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 
 	it("bypasses the generic reload debounce for an exact codec handoff", () => {
 		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt =
 			Date.now();
 
@@ -3803,6 +4198,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 
 	it("pre-arms workers with the exact codec handoff before setSrc", () => {
 		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		const codecHandoffId = handoffId("pre-arm");
 		const sequence: string[] = [];
 		g._broadcastWorkers = (message: unknown) => {
@@ -3850,6 +4246,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 
 	it("coalesces distinct same-cycle worker handoff ids onto one player transaction", () => {
 		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		const firstHandoffId = handoffId("worker-a");
 		const secondHandoffId = handoffId("worker-b");
 
@@ -3900,6 +4297,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 
 	it("rejects cycle A after same-media cycle B starts and gives cycle B fresh ownership", () => {
 		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		const cycleA = 100;
 		const cycleB = 200;
 		const handoffA = `live:testchannel:${cycleA}:1000:1:cycle-a`;
@@ -3975,6 +4373,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 
 	it("supersedes an active handoff when fatal media recovery requires a real retry", () => {
 		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		const firstHandoffId = handoffId("first");
 		const fatalHandoffId = handoffId("fatal");
 
@@ -4017,6 +4416,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 
 	it("rolls back main-thread codec ownership when setSrc throws", () => {
 		pipElement = null;
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		const codecHandoffId = handoffId("set-src-failure");
 		g._getPlayerAndState = () => ({
 			player: {
@@ -4094,6 +4494,189 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		} finally {
 			window.history.replaceState(null, "", "/testchannel");
 		}
+	});
+
+	it("does not manually reload another page player for an off-route PiP", () => {
+		window.history.replaceState(null, "", "/otherchannel");
+		try {
+			expect(
+				task()(false, true, {
+					reason: "manual",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					refreshAccessToken: true,
+					newMediaPlayerInstance: true,
+				}),
+			).toBe(false);
+			expect(setSrcCalls).toEqual([]);
+		} finally {
+			window.history.replaceState(null, "", "/testchannel");
+		}
+	});
+
+	it.each(["__TTVABCrashed", "__TTVABIntentionallyTerminated"])(
+		"does not pause or reload PiP with a %s worker",
+		(flag) => {
+			const worker = { [flag]: true };
+			(
+				g._PlaybackIntentState as Record<string, unknown>
+			).pictureInPictureWorkerRef = new WeakRef(worker);
+			for (const [pause, reload] of [
+				[true, false],
+				[false, true],
+			]) {
+				expect(
+					task()(pause, reload, {
+						reason: "ad-recovery",
+						channel: "testchannel",
+						mediaKey: "live:testchannel",
+						newMediaPlayerInstance: true,
+					}),
+				).toBe(false);
+			}
+			expect(pauseCalls).toBe(0);
+			expect(setSrcCalls).toEqual([]);
+			expect(resumeRetryCalls).toEqual([]);
+		},
+	);
+
+	it.each(["element", "media"])(
+		"cancels the old deferred reload when PiP changes %s",
+		(change) => {
+			Object.assign(g.__TTVAB_STATE__ as object, {
+				StreamInfos: Object.create(null),
+				StreamInfosByUrl: Object.create(null),
+			});
+			const oldPip = pipElement as HTMLVideoElement;
+			task()(false, true, {
+				reason: "ad-recovery",
+				newMediaPlayerInstance: true,
+			});
+			expect(g._PipDeferredReloadEntry).not.toBeNull();
+			if (change === "element") pipElement = document.createElement("video");
+			T<(element: HTMLVideoElement, context: object) => unknown>(
+				"_setActivePictureInPicturePlaybackContext",
+			)(pipElement, {
+				MediaKey: change === "media" ? "live:otherchannel" : "live:testchannel",
+			});
+			expect(g._PipDeferredReloadEntry).toBeNull();
+			oldPip.dispatchEvent(new Event("leavepictureinpicture"));
+			expect(g._PipDeferredReloadEntry).toBeNull();
+			expect(setSrcCalls).toEqual([]);
+		},
+	);
+
+	it("queues the default hard reload until PiP exits", () => {
+		task()(false, true, { reason: "ad-recovery" });
+		expect(g._PipDeferredReloadEntry).toMatchObject({
+			mediaKey: "live:testchannel",
+		});
+	});
+
+	it.each(["pause", "suppressed"])(
+		"does not queue or nudge a PiP reload vetoed by %s",
+		(veto) => {
+			g._PipDeferredReloadEntry = null;
+			if (veto === "pause")
+				vi.spyOn(g, "_hasUserPauseIntent").mockReturnValue(true);
+			else
+				vi.spyOn(g, "_shouldSuppressAutomaticPlaybackResume").mockReturnValue(
+					true,
+				);
+			expect(
+				task()(false, true, {
+					reason: "buffer-recovery",
+					newMediaPlayerInstance: true,
+				}),
+			).toBe(false);
+			expect(g._PipDeferredReloadEntry).toBeNull();
+			expect(pauseCalls).toBe(0);
+			expect(resumeRetryCalls).toEqual([]);
+		},
+	);
+
+	it.each(["/directory", "/"])(
+		"does not reload an unrelated page player from PiP on %s",
+		(route) => {
+			window.history.replaceState(null, "", route);
+			try {
+				expect(
+					task()(false, true, {
+						reason: "manual",
+						channel: "testchannel",
+						mediaKey: "live:testchannel",
+					}),
+				).toBe(false);
+				expect(setSrcCalls).toEqual([]);
+			} finally {
+				window.history.replaceState(null, "", "/testchannel");
+			}
+		},
+	);
+
+	it("does not force a codec reload through a different same-channel video", () => {
+		const { player } =
+			T<() => { player: { getHTMLVideoElement: () => unknown } }>(
+				"_getPlayerAndState",
+			)();
+		player.getHTMLVideoElement = () => document.createElement("video");
+		expect(
+			task()(false, true, {
+				reason: "codec-handoff",
+				handoffId: handoffId("different-video"),
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(false);
+		expect(setSrcCalls).toEqual([]);
+	});
+
+	it("does not force a reload after the same PiP element switches content", () => {
+		const { state } =
+			T<() => { state: { props: { content: object } } }>(
+				"_getPlayerAndState",
+			)();
+		state.props.content = { type: "vod", vodID: "12345" };
+		expect(
+			task()(false, true, {
+				reason: "manual",
+				channel: "testchannel",
+				mediaKey: "live:testchannel",
+			}),
+		).toBe(false);
+		expect(setSrcCalls).toEqual([]);
+	});
+
+	it("does not bind a deferred reload to a different native PiP element", () => {
+		pipElement = document.createElement("video");
+		g._PipDeferredReloadEntry = null;
+		expect(
+			task()(false, true, {
+				reason: "ad-recovery",
+				newMediaPlayerInstance: true,
+			}),
+		).toBe(false);
+		expect(g._PipDeferredReloadEntry).toBeNull();
+		expect(pauseCalls).toBe(0);
+	});
+
+	it("drops a buffer-recovery reload from an earlier PiP ad cycle", () => {
+		const pip = pipElement as HTMLVideoElement;
+		task()(false, true, {
+			reason: "buffer-recovery",
+			newMediaPlayerInstance: true,
+		});
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			CurrentAdMediaKey: null,
+			CurrentAdChannel: null,
+			LastAdEndedCycleStartedAt: 200,
+			AdPodProgressByMediaKey: { "live:testchannel": { cycleStartedAt: 200 } },
+		});
+		pipElement = null;
+		pip.dispatchEvent(new Event("leavepictureinpicture"));
+		expect(setSrcCalls).toEqual([]);
 	});
 
 	it("runs the deferred hard reload once pip exits", () => {

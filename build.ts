@@ -1254,6 +1254,16 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getVodAdRequest",
+			source: hooksSource,
+		},
+		{
+			consumer: "_getVodAdRequest",
+			helper: "_normalizeMediaKey",
+			source: hooksSource,
+		},
+		{
 			consumer: "_playlistLinesHaveKnownAdSegments",
 			helper: "_getMediaSegmentUriIndex",
 			source: parserSource,
