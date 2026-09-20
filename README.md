@@ -72,7 +72,7 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
-### v18.0.0 - 2026-09-20
+### v18.0.1 - 2026-09-20
 
 - **VOD Reloads** - Preserve playback position without undoing seeking or applying an older reload's restore.
 - **VOD Ad Requests** - Block recognized ad requests from VOD workers and channel-page VOD players.
