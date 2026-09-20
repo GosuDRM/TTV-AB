@@ -129,6 +129,81 @@ function setup(codec: string) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("codec ordering and backup quality ownership", () => {
+	it("bounds autoplay dwell after a clean native poll replaces an ad-marked backup", async () => {
+		let now = 1_000_000;
+		vi.spyOn(Date, "now").mockImplementation(() => now);
+		const { context, info, state, fetch } = setup("avc1.640033,mp4a.40.2");
+		const first = await context._processM3U8(
+			nativeUrl(1080),
+			media("native", 1080, 400, true),
+			fetch,
+		);
+		expect(first).toContain("/site/1080/");
+		now += 2000;
+		await context._refreshActiveBackupMediaPlaylist(info, fetch);
+		state.DisableAutoplayBackup = false;
+		state.BackupPlayerTypes = ["site", "embed", "autoplay"];
+		let siteHasAds = true;
+		const recoveringFetch = vi.fn(
+			async (url: string, options?: RequestInit) => {
+				if (url.includes("cdn.example/embed/")) {
+					return siteHasAds
+						? new Response(null, { status: 503 })
+						: new Response(media("embed", 1080, now / 2000));
+				}
+				if (url.includes("cdn.example/site/")) {
+					return new Response(media("site", 1080, now / 2000, siteHasAds));
+				}
+				if (url.includes("cdn.example/autoplay/")) {
+					return new Response(media("autoplay", 360, now / 2000));
+				}
+				return fetch(url, options);
+			},
+		);
+		now += 2000;
+		const replacement = await context._processM3U8(
+			nativeUrl(1080),
+			media("native", 1080, 401),
+			recoveringFetch,
+		);
+		expect(replacement).toContain("/autoplay/360/");
+		expect(context._hasPlaylistAdMarkers(replacement)).toBe(false);
+		expect(info.ActiveBackupPlayerType).toBe("autoplay");
+		const dwellStartedAt = now;
+		for (let index = 0; index < 10; index++) {
+			now += 2000;
+			const output = await context._processM3U8(
+				nativeUrl(1080),
+				media("native", 1080, 402 + index, true),
+				recoveringFetch,
+			);
+			expect(output).toContain("/autoplay/360/");
+			expect(context._hasPlaylistAdMarkers(output)).toBe(false);
+			if (index === 2) {
+				expect(context._shouldHoldAutoplayBackupDuringAd(info)).toBe(true);
+			}
+		}
+		expect(info.LastCleanBackupAt).toBe(now);
+		expect(context._shouldHoldAutoplayBackupDuringAd(info)).toBe(false);
+		expect(info._LqHoldStartAt).toBe(dwellStartedAt);
+		siteHasAds = false;
+		for (
+			let index = 0;
+			index < 3 && info.ActiveBackupPlayerType !== "embed";
+			index++
+		) {
+			now += 16000;
+			await context._processM3U8(
+				nativeUrl(1080),
+				media("native", 1080, 420 + index, true),
+				recoveringFetch,
+			);
+		}
+		expect(info.ActiveBackupPlayerType).toBe("embed");
+		expect(info.LastCleanBackupResolution).toBe("1920x1080");
+		expect(info._LqHoldStartAt).toBe(0);
+	});
+
 	it.each(
 		codecs.flatMap(([family, codec]) =>
 			[1080, 1440].flatMap((height) =>

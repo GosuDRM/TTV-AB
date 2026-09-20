@@ -3312,6 +3312,15 @@ function _commitBackupPlaylist(
 					: sequence,
 		refreshedSequence: sequence,
 	};
+	const committedAt = Date.now();
+	if (metadata.playerType !== "autoplay") {
+		info._LqHoldStartAt = 0;
+	} else if (
+		info.LastCleanBackupPlayerType !== "autoplay" ||
+		!info._LqHoldStartAt
+	) {
+		info._LqHoldStartAt = committedAt;
+	}
 	info.LastCleanBackupM3U8 = m3u8;
 	info.LastCleanBackupPlayerType = metadata.playerType;
 	info.LastCleanBackupCodecFamily = metadata.codecFamily;
@@ -3323,7 +3332,7 @@ function _commitBackupPlaylist(
 		metadata.codec,
 		metadata,
 	);
-	info.LastCleanBackupAt = Date.now();
+	info.LastCleanBackupAt = committedAt;
 	_setBackupVariantResolution(info, metadata.resolution, activate);
 	return m3u8;
 }
@@ -5753,13 +5762,6 @@ async function _processM3U8Core(
 		}
 		if (info.ActiveBackupPlayerType !== backupType) {
 			info.ActiveBackupPlayerType = backupType;
-			if (backupType === "autoplay") {
-				if (!info._LqHoldStartAt) {
-					info._LqHoldStartAt = Date.now();
-				}
-			} else if (info._LqHoldStartAt) {
-				info._LqHoldStartAt = 0;
-			}
 			_log(`Using backup: ${backupType}`, "info");
 			if (backupType && typeof self !== "undefined" && self.postMessage) {
 				_postWorkerBridgeMessage(
