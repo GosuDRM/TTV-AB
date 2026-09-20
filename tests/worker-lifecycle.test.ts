@@ -426,6 +426,291 @@ function confirmHarnessWorkerPlayback(
 	});
 }
 
+describe("rapid channel revisit ownership", () => {
+	it.each(["ReloadPlayer", "PauseResumePlayer"])(
+		"rejects queued %s from an earlier visit even when the cycle timestamp matches",
+		(key) => {
+			vi.useFakeTimers();
+			T<(scope: object) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness();
+			const task = vi.fn(() => true);
+			g._doPlayerTask = task;
+			try {
+				const event = T<(value: object) => Record<string, unknown>>(
+					"_createPageScopedWorkerEvent",
+				)({
+					key,
+					mediaKey: "live:testchannel",
+					channel: "testchannel",
+					cycleStartedAt: 100,
+					reason: "ad-recovery",
+				});
+				for (const channel of ["beta", "testchannel"]) {
+					window.history.replaceState(null, "", `/${channel}`);
+					T<() => void>("_syncPagePlaybackContext")();
+				}
+				const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+				Object.assign(state, {
+					CurrentAdChannel: "testchannel",
+					CurrentAdMediaKey: "live:testchannel",
+					AdPodProgressByMediaKey: {
+						"live:testchannel": { cycleStartedAt: 100 },
+					},
+				});
+				harness.worker.emitMessage(event);
+				expect(task).not.toHaveBeenCalled();
+				harness.worker.emitMessage({
+					...event,
+					pageContextGeneration: state.PagePlaybackContextGeneration,
+				});
+				expect(task).toHaveBeenCalledOnce();
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
+	it("does not grant the PiP navigation exception to another worker for the same channel", () => {
+		vi.useFakeTimers();
+		T<(scope: object) => void>("_declareState")(g);
+		const previousPip = g._getActivePictureInPicturePlaybackContext;
+		const harness = installWorkerMessageHarness();
+		try {
+			const auxiliary = harness.createWorker();
+			const event = T<(value: object) => Record<string, unknown>>(
+				"_createPageScopedWorkerEvent",
+			)({
+				key: "AdBlocked",
+				mediaKey: "live:testchannel",
+				channel: "testchannel",
+				count: 1,
+				delta: 1,
+			});
+			g._getActivePictureInPicturePlaybackContext = () => ({
+				MediaKey: "live:testchannel",
+				pageMediaKey: event.pageMediaKey,
+				pageContextGeneration: event.pageContextGeneration,
+				workerRef: new WeakRef(harness.worker),
+			});
+			window.history.replaceState(null, "", "/beta");
+			T<() => void>("_syncPagePlaybackContext")();
+			auxiliary.emitMessage(event);
+			expect((g._S as Record<string, unknown>).adsBlocked).toBe(0);
+			harness.worker.emitMessage(event);
+			expect((g._S as Record<string, unknown>).adsBlocked).toBe(1);
+		} finally {
+			g._getActivePictureInPicturePlaybackContext = previousPip;
+			harness.restore();
+		}
+	});
+
+	it("retires an in-flight backup search before the channel is visited again", async () => {
+		vi.useFakeTimers();
+		T<(scope: object) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+		const mediaUrl = "https://edge.example/native/index.m3u8";
+		const backupUrl = "https://edge.example/backup/index.m3u8";
+		const master = (url: string) =>
+			`#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002a,mp4a.40.2"\n${url}`;
+		let release!: (response: Response) => void;
+		let started!: () => void;
+		const searching = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const rawFetch = vi.fn((input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.includes("gql.twitch.tv"))
+				return new Promise<Response>((resolve) => {
+					release = resolve;
+					started();
+				});
+			if (url === masterUrl)
+				return Promise.resolve(new Response(master(mediaUrl)));
+			if (url.includes("usher.ttvnw.net"))
+				return Promise.resolve(new Response(master(backupUrl)));
+			return Promise.resolve(
+				new Response(
+					url === mediaUrl
+						? "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-CUE-OUT:30\n#EXTINF:2,\nhttps://edge.example/stitched-ad-1.ts"
+						: "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nhttps://edge.example/clean.ts",
+				),
+			);
+		});
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+			runtime.scope.navigator = { languages: ["en-US"] };
+			runtime.deliverBootstrap();
+			const state = runtime.scope.__TTVAB_STATE__ as {
+				StreamInfos: Record<
+					string,
+					{
+						BackupSearchEpoch: number;
+						VisibleAdStartedAt: number;
+						LastCleanBackupM3U8: string | null;
+					}
+				>;
+				CurrentAdMediaKey: string | null;
+			};
+			Object.assign(state, {
+				DisableAdSpoofing: true,
+				DisableAutoplayBackup: true,
+				BackupPlayerTypes: ["site"],
+			});
+			const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+			await fetch(masterUrl);
+			const oldInfo = state.StreamInfos["live:testchannel"];
+			const pending = fetch(mediaUrl).catch((error: Error) => error);
+			await searching;
+			const oldEpoch = oldInfo.BackupSearchEpoch;
+			let delivered = harness.worker.messages.length;
+			for (const channel of ["beta", "testchannel"]) {
+				window.history.replaceState(null, "", `/${channel}`);
+				T<() => void>("_syncPagePlaybackContext")();
+				runtime.deliverBootstrap(delivered);
+				delivered = harness.worker.messages.length;
+			}
+			await fetch(masterUrl);
+			state.CurrentAdMediaKey = "live:testchannel";
+			state.StreamInfos["live:testchannel"].VisibleAdStartedAt =
+				oldInfo.VisibleAdStartedAt + 1000;
+			release(
+				Response.json({
+					data: {
+						streamPlaybackAccessToken: { signature: "test", value: "backup" },
+					},
+				}),
+			);
+			expect(await pending).toMatchObject({ name: "AbortError" });
+			expect(oldInfo.BackupSearchEpoch).toBeGreaterThan(oldEpoch);
+			expect(oldInfo.LastCleanBackupM3U8).toBeNull();
+			expect(
+				state.StreamInfos["live:testchannel"].LastCleanBackupM3U8,
+			).toBeNull();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it.each(["AdBlocked", "AdDetected"])(
+		"rejects a queued %s from the previous visit to the same channel",
+		(key) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			T<(scope: object) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			try {
+				const createEvent = T<(value: object) => Record<string, unknown>>(
+					"_createPageScopedWorkerEvent",
+				);
+				const event = createEvent({
+					key,
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					count: 1,
+					delta: 1,
+					cycleStartedAt: 99000,
+					detectedAt: 100000,
+				});
+				for (const channel of ["beta", "testchannel"]) {
+					window.history.replaceState(null, "", `/${channel}`);
+					T<() => void>("_syncPagePlaybackContext")();
+				}
+				harness.worker.emitMessage(event);
+				expect((g._S as Record<string, unknown>).adsBlocked).toBe(0);
+				expect(
+					(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey,
+				).toBeNull();
+				expect(event.pageContextGeneration).toEqual(expect.any(Number));
+				harness.worker.emitMessage({
+					...event,
+					pageContextGeneration: (g.__TTVAB_STATE__ as Record<string, unknown>)
+						.PagePlaybackContextGeneration,
+				});
+				if (key === "AdBlocked") {
+					expect((g._S as Record<string, unknown>).adsBlocked).toBe(1);
+				} else {
+					expect(
+						(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey,
+					).toBe("live:testchannel");
+				}
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
+	it.each(
+		["avc1.64002a", "hev1.1.2.L150.90", "av01.0.12M.08"].flatMap((codec) =>
+			["clean", "ad", "disabled"].map((kind) => ({ codec, kind })),
+		),
+	)(
+		"fences a delayed $kind $codec playlist when a revisit reuses the same URL",
+		async ({ codec, kind }) => {
+			vi.useFakeTimers();
+			T<(scope: object) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const masterUrl =
+				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+			const mediaUrl = "https://edge.example/testchannel/index.m3u8";
+			const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="mp4a.40.2,${codec}"\n${mediaUrl}`;
+			const clean =
+				"#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nhttps://edge.example/clean.ts";
+			let release!: (response: Response) => void;
+			const rawFetch = vi.fn((url: RequestInfo | URL) =>
+				String(url) === masterUrl
+					? Promise.resolve(new Response(master))
+					: new Promise<Response>((resolve) => {
+							release = resolve;
+						}),
+			);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+				runtime.deliverBootstrap();
+				const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+				await fetch(masterUrl);
+				const state = runtime.scope.__TTVAB_STATE__ as {
+					StreamInfos: Record<string, Record<string, unknown>>;
+				};
+				const oldInfo = state.StreamInfos["live:testchannel"];
+				const pending = fetch(mediaUrl).catch((error: Error) => error);
+				let delivered = harness.worker.messages.length;
+				for (const channel of ["beta", "testchannel"]) {
+					window.history.replaceState(null, "", `/${channel}`);
+					T<() => void>("_syncPagePlaybackContext")();
+					runtime.deliverBootstrap(delivered);
+					delivered = harness.worker.messages.length;
+				}
+				await fetch(masterUrl);
+				expect(state.StreamInfos["live:testchannel"]).not.toBe(oldInfo);
+				const delayedText =
+					kind === "clean"
+						? clean
+						: clean.replace("clean.ts", "stitched-ad-1.ts");
+				if (kind === "disabled")
+					Object.assign(state, { IsAdStrippingEnabled: false });
+				release(new Response(delayedText));
+				if (kind === "disabled")
+					expect(await ((await pending) as Response).text()).toBe(delayedText);
+				else expect(await pending).toMatchObject({ name: "AbortError" });
+				expect((state as Record<string, unknown>).CurrentAdMediaKey).toBeNull();
+				rawFetch.mockImplementation(
+					async (url) =>
+						new Response(String(url) === masterUrl ? master : clean),
+				);
+				expect(await (await fetch(mediaUrl)).text()).toBe(clean);
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+});
+
 function setProvisionalTerminalState(lastEndedAt: number) {
 	const state = g.__TTVAB_STATE__ as Record<string, unknown>;
 	Object.assign(state, {
@@ -1640,6 +1925,54 @@ describe("worker recovery lifecycle", () => {
 		broadcast({ key: "UpdateAutoplayBackupState", value: true });
 		expect(pipWorker.postMessage).toHaveBeenCalledOnce();
 		expect(pageWorker.postMessage).toHaveBeenCalledTimes(2);
+	});
+
+	it("preserves the exact banner PiP worker without preserving route-matched auxiliaries", () => {
+		const worker = {
+			postMessage: vi.fn(),
+			__TTVABPageMediaKey: "live:testchannel",
+		};
+		const auxiliary = {
+			postMessage: vi.fn(),
+			__TTVABPageMediaKey: "live:testchannel",
+		};
+		const previous = g._getActivePictureInPicturePlaybackContext;
+		g._getActivePictureInPicturePlaybackContext = () => ({
+			MediaKey: "vod:12345",
+			workerRef: new WeakRef(worker),
+			pageMediaKey: "live:testchannel",
+			pageContextGeneration: 7,
+		});
+		(g._S as { workers: unknown[] }).workers = [worker, auxiliary];
+		try {
+			for (const key of ["UpdatePageContext", "ResetPlaybackRecoveryState"]) {
+				T<(message: object) => void>("_broadcastWorkers")({
+					key,
+					value: {
+						mediaType: "live",
+						channelName: "otherchannel",
+						mediaKey: "live:otherchannel",
+						preservedMediaKey: "vod:12345",
+					},
+				});
+			}
+			expect(worker.postMessage).not.toHaveBeenCalled();
+			expect(auxiliary.postMessage).toHaveBeenCalledTimes(2);
+			expect(
+				T<(worker: object) => { MediaKey: string }>(
+					"_getWorkerPlaybackContext",
+				)(worker).MediaKey,
+			).toBe("vod:12345");
+			T<(message: object) => void>("_broadcastWorkers")({
+				key: "UpdatePagePlaybackVisibleSinceAt",
+				targetMediaKey: "vod:12345",
+				value: 100,
+			});
+			expect(worker.postMessage).toHaveBeenCalledOnce();
+			expect(auxiliary.postMessage).toHaveBeenCalledTimes(2);
+		} finally {
+			g._getActivePictureInPicturePlaybackContext = previous;
+		}
 	});
 
 	it("does not grant an unknown worker PiP ownership from the surrounding page", () => {
@@ -4541,6 +4874,12 @@ describe("worker recovery lifecycle", () => {
 				(context: { MediaKey: string }) =>
 					context.MediaKey === "live:testchannel",
 			);
+			vi.stubGlobal("_getActivePictureInPicturePlaybackContext", () => ({
+				MediaKey: "live:testchannel",
+				pageMediaKey: "live:testchannel",
+				pageContextGeneration: 7,
+				workerRef: new WeakRef(harness.worker),
+			}));
 			vi.advanceTimersByTime(1000);
 			harness.worker.emitMessage({
 				...message,
@@ -6105,6 +6444,11 @@ describe("bounded long-session registries", () => {
 });
 
 describe("MAIN VOD ad request guard", () => {
+	beforeEach(() => {
+		window.history.replaceState(null, "", "/videos/2827992810");
+		(g._blockedVodAdCountExpirations as Map<string, number>).clear();
+	});
+
 	it("rewrites standard-video VOD XHR to a local empty VAST", async () => {
 		const originalFetch = window.fetch;
 		const scopedWindow = window as unknown as Record<string, unknown>;
@@ -6313,6 +6657,309 @@ describe("MAIN VOD ad request guard", () => {
 				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
 			}
 		}
+	});
+});
+
+describe("VOD request ownership and cancellation", () => {
+	const adUrl = "https://edge.ads.twitch.tv/ads?sid=vod-guard";
+	let originalFetch: typeof fetch;
+	let originalOpen: typeof XMLHttpRequest.prototype.open;
+	let originalRealFetch: unknown;
+	let originalPlayer: unknown;
+	let originalCore: unknown;
+	let originalIncrement: unknown;
+	let nativeFetch: ReturnType<typeof vi.fn>;
+	let increment: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		originalFetch = window.fetch;
+		originalOpen = window.XMLHttpRequest.prototype.open;
+		originalRealFetch = window.__TTVAB_REAL_FETCH__;
+		originalPlayer = g._getPlayerAndState;
+		originalCore = g._getPlayerCore;
+		originalIncrement = g._incrementAdsBlocked;
+		nativeFetch = vi.fn(async () => new Response("native"));
+		increment = vi.fn();
+		window.fetch = nativeFetch as typeof fetch;
+		g._getPlayerAndState = () => ({ player: null, state: null });
+		g._incrementAdsBlocked = increment;
+		(g._blockedVodAdCountExpirations as Map<string, number>).clear();
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PageMediaType: "vod",
+			PageVodID: "2827992810",
+			PageChannel: null,
+			PageMediaKey: "vod:2827992810",
+			PagePlaybackContextGeneration: 7,
+		});
+		window.history.replaceState(null, "", "/videos/2827992810");
+		T<() => void>("_hookMainFetch")();
+	});
+
+	afterEach(() => {
+		window.fetch = originalFetch;
+		window.XMLHttpRequest.prototype.open = originalOpen;
+		window.__TTVAB_REAL_FETCH__ = originalRealFetch as typeof fetch;
+		g._getPlayerAndState = originalPlayer;
+		g._getPlayerCore = originalCore;
+		g._incrementAdsBlocked = originalIncrement;
+	});
+
+	it("rejects aborted string and Request fetches without recording a block", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		await expect(
+			window.fetch(adUrl, { signal: controller.signal }),
+		).rejects.toBe(controller.signal.reason);
+		await expect(
+			window.fetch(new Request(adUrl, { signal: controller.signal })),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(increment).not.toHaveBeenCalled();
+		expect(nativeFetch).not.toHaveBeenCalled();
+		const replacement = new AbortController();
+		expect(
+			(
+				await window.fetch(new Request(adUrl, { signal: controller.signal }), {
+					signal: replacement.signal,
+				})
+			).status,
+		).toBe(204);
+		expect(increment).toHaveBeenCalledOnce();
+	});
+
+	it("uses the connected banner VOD and leaves a live replacement untouched", async () => {
+		window.history.replaceState(null, "", "/testchannel");
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PageMediaType: "live",
+			PageVodID: null,
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+		});
+		const video = document.createElement("video");
+		document.body.append(video);
+		const content = { type: "vod", vodID: "12345", channelLogin: "" };
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => video },
+			state: { props: { content } },
+		});
+		try {
+			expect((await window.fetch(adUrl)).status).toBe(204);
+			expect(increment).toHaveBeenLastCalledWith(null, "vod:12345");
+			video.remove();
+			expect(await (await window.fetch(adUrl)).text()).toBe("native");
+			document.body.append(video);
+			content.type = "live";
+			content.vodID = "";
+			content.channelLogin = "testchannel";
+			expect(await (await window.fetch(adUrl)).text()).toBe("native");
+			expect(increment).toHaveBeenCalledOnce();
+		} finally {
+			video.remove();
+		}
+	});
+
+	it("retains exact-route VOD preroll protection before its video is mounted", async () => {
+		g._getPlayerAndState = () => ({
+			player: null,
+			state: { props: { content: { type: "vod", vodID: "2827992810" } } },
+		});
+		expect((await window.fetch(adUrl)).status).toBe(204);
+		expect(increment).toHaveBeenLastCalledWith(null, "vod:2827992810");
+	});
+
+	it("does not carry VOD request blocking across an uncommitted route change", async () => {
+		window.history.replaceState(null, "", "/otherchannel");
+		expect(await (await window.fetch(adUrl)).text()).toBe("native");
+		expect(increment).not.toHaveBeenCalled();
+	});
+
+	it.each(["vod", "banner"])(
+		"deduplicates MAIN and current %s worker counts and rejects stale owners",
+		async (ownerType) => {
+			vi.useFakeTimers();
+			if (ownerType === "banner") {
+				window.history.replaceState(null, "", "/testchannel");
+				Object.assign(g.__TTVAB_STATE__ as object, {
+					PageMediaType: "live",
+					PageChannel: "testchannel",
+					PageVodID: null,
+					PageMediaKey: "live:testchannel",
+				});
+			}
+			const harness = installWorkerMessageHarness();
+			const video = document.createElement("video");
+			document.body.append(video);
+			const player = { getHTMLVideoElement: () => video };
+			const content = { type: "vod", vodID: "2827992810" };
+			g._getPlayerAndState = () => ({ player, state: { props: { content } } });
+			g._getPlayerCore = () => ({ worker: harness.worker });
+			const message = {
+				key: "VodAdRequestBlocked",
+				mediaKey: "vod:2827992810",
+				sessionID: "vod-guard",
+				pageMediaKey:
+					ownerType === "banner" ? "live:testchannel" : "vod:2827992810",
+				pageContextGeneration: 7,
+			};
+			try {
+				harness.worker.emitMessage(message);
+				expect(increment).toHaveBeenCalledOnce();
+				await window.fetch(adUrl);
+				expect(increment).toHaveBeenCalledOnce();
+				const auxiliary = harness.createWorker();
+				auxiliary.emitMessage({ ...message, sessionID: "auxiliary" });
+				harness.worker.emitMessage({
+					...message,
+					sessionID: "old",
+					pageContextGeneration: 6,
+				});
+				harness.worker.emitMessage({
+					...message,
+					sessionID: "route",
+					pageMediaKey: "live:otherchannel",
+				});
+				(g.__TTVAB_STATE__ as Record<string, unknown>).IsAdStrippingEnabled =
+					false;
+				harness.worker.emitMessage({ ...message, sessionID: "disabled" });
+				expect(increment).toHaveBeenCalledOnce();
+			} finally {
+				video.remove();
+				harness.restore();
+			}
+		},
+	);
+
+	it("counts only the exact preserved VOD PiP worker after navigation", () => {
+		vi.useFakeTimers();
+		const log = vi.spyOn(g, "_log");
+		const harness = installWorkerMessageHarness();
+		const previous = g._getActivePictureInPicturePlaybackContext;
+		g._getActivePictureInPicturePlaybackContext = () => ({
+			MediaKey: "vod:2827992810",
+			workerRef: new WeakRef(harness.worker),
+			pageMediaKey: "vod:2827992810",
+			pageContextGeneration: 7,
+		});
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PageMediaType: "live",
+			PageChannel: "otherchannel",
+			PageMediaKey: "live:otherchannel",
+			PagePlaybackContextGeneration: 8,
+		});
+		window.history.replaceState(null, "", "/otherchannel");
+		g._getPlayerAndState = () => ({ player: null, state: null });
+		const message = {
+			key: "VodAdRequestBlocked",
+			mediaKey: "vod:2827992810",
+			sessionID: "pip-ad",
+			pageMediaKey: "vod:2827992810",
+			pageContextGeneration: 7,
+		};
+		try {
+			harness.worker.emitMessage(message);
+			harness.worker.emitMessage(message);
+			expect(increment).toHaveBeenCalledOnce();
+			harness
+				.createWorker()
+				.emitMessage({ ...message, sessionID: "auxiliary" });
+			harness.worker.emitMessage({
+				...message,
+				sessionID: "stale",
+				pageContextGeneration: 6,
+			});
+			harness.worker.emitMessage({
+				...message,
+				sessionID: "wrong-route",
+				pageMediaKey: "live:otherchannel",
+			});
+			g._getActivePictureInPicturePlaybackContext = () => null;
+			harness.worker.emitMessage({ ...message, sessionID: "closed" });
+			expect(increment).toHaveBeenCalledOnce();
+			expect(
+				log.mock.calls.filter(([message]) =>
+					String(message).startsWith("PiP ad blocked"),
+				),
+			).toEqual([
+				["PiP ad blocked for vod:2827992810 (VOD request)", "success"],
+			]);
+		} finally {
+			g._getActivePictureInPicturePlaybackContext = previous;
+			harness.restore();
+		}
+	});
+
+	it("logs one PiP playlist blocking message per accepted ad cycle", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const harness = installWorkerMessageHarness();
+		const saved = g._getActivePictureInPicturePlaybackContext;
+		g._getActivePictureInPicturePlaybackContext = () => ({
+			MediaKey: "live:testchannel",
+			workerRef: new WeakRef(harness.worker),
+		});
+		const log = vi.spyOn(g, "_log");
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaType: "live",
+			PageMediaKey: "live:testchannel",
+			PageChannel: "testchannel",
+			AdPodProgressByMediaKey: Object.create(null),
+			StreamInfos: Object.create(null),
+			StreamInfosByUrl: Object.create(null),
+		});
+		window.history.replaceState(null, "", "/testchannel");
+		const message = {
+			key: "AdDetected",
+			mediaKey: "live:testchannel",
+			channel: "testchannel",
+			cycleStartedAt: 100000,
+			detectedAt: 100000,
+		};
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": { cycleStartedAt: 100000 },
+		};
+		try {
+			harness.worker.emitMessage(message);
+			harness.worker.emitMessage(message);
+			harness.worker.emitMessage({ ...message, cycleStartedAt: 99999 });
+			expect(
+				log.mock.calls.filter(([text]) =>
+					String(text).startsWith("PiP ad blocking active"),
+				),
+			).toEqual([
+				["PiP ad blocking active for live:testchannel (cycle 100000)", "info"],
+			]);
+			state.IsAdStrippingEnabled = false;
+			harness.worker.emitMessage({ ...message, cycleStartedAt: 100001 });
+			expect(
+				log.mock.calls.filter(([text]) =>
+					String(text).startsWith("PiP ad blocking active"),
+				),
+			).toHaveLength(1);
+		} finally {
+			g._getActivePictureInPicturePlaybackContext = saved;
+			harness.restore();
+		}
+	});
+
+	it("bounds and expires the shared count deduplication cache", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const record = T<(request: Record<string, unknown>) => void>(
+			"_recordBlockedVodAdRequest",
+		);
+		for (let i = 0; i < 105; i++)
+			record({ mediaKey: "vod:12345", sessionID: String(i) });
+		expect((g._blockedVodAdCountExpirations as Map<string, number>).size).toBe(
+			100,
+		);
+		record({ mediaKey: "vod:12345", sessionID: "104" });
+		expect(increment).toHaveBeenCalledTimes(105);
+		vi.setSystemTime(1900001);
+		record({ mediaKey: "vod:12345", sessionID: "104" });
+		expect(increment).toHaveBeenCalledTimes(106);
+		expect((g._blockedVodAdCountExpirations as Map<string, number>).size).toBe(
+			1,
+		);
 	});
 });
 
@@ -8359,6 +9006,347 @@ describe("page-side M3U8 fallback", () => {
 			} else {
 				g._isCodecHandoffCycleCurrent = previousCycleCurrent;
 			}
+		}
+	});
+});
+
+describe("injected worker VOD ad requests", () => {
+	const adUrl = "https://edge.ads.twitch.tv/ads?sid=injected-vod";
+	const mediaUrl = "https://vod-secure.twitch.tv/archive/12345/index.m3u8";
+	const vodMaster = "https://usher.ttvnw.net/vod/v2/12345.m3u8";
+
+	it.each(["avc1.64002a", "hev1.1.2.L150.90", "av01.0.12M.08"])(
+		"blocks narrow VOD ad requests while preserving clean %s archives",
+		async (codec) => {
+			vi.useFakeTimers();
+			window.history.replaceState(null, "", "/videos/12345");
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="${codec},mp4a.40.2"\n${mediaUrl}`;
+			const media =
+				"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttps://vod-secure.twitch.tv/archive/12345/0.ts\n#EXT-X-ENDLIST";
+			const rawFetch = vi.fn(
+				async (url: RequestInfo | URL) =>
+					new Response(
+						String(url) === vodMaster
+							? master
+							: String(url) === mediaUrl
+								? media
+								: "native",
+					),
+			);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+				runtime.deliverBootstrap();
+				const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+				expect((await fetch(adUrl)).status).toBe(204);
+				expect(rawFetch).not.toHaveBeenCalled();
+				await fetch(vodMaster);
+				expect(await (await fetch(mediaUrl)).text()).toBe(media);
+				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+				expect(state.CurrentAdMediaKey).toBeNull();
+				const postMessage = runtime.scope.postMessage as ReturnType<
+					typeof vi.fn
+				>;
+				const messages = () =>
+					postMessage.mock.calls
+						.map(([message]) =>
+							T<(value: unknown) => Record<string, unknown> | null>(
+								"_getWorkerBridgeMessage",
+							)(message),
+						)
+						.filter(Boolean);
+				expect(
+					messages().filter(
+						(message) => message?.key === "VodAdRequestBlocked",
+					),
+				).toHaveLength(1);
+				const controller = new AbortController();
+				controller.abort();
+				await expect(
+					fetch(new Request(adUrl, { signal: controller.signal })),
+				).rejects.toMatchObject({ name: "AbortError" });
+				expect(
+					messages().filter(
+						(message) => message?.key === "VodAdRequestBlocked",
+					),
+				).toHaveLength(1);
+				for (const url of [
+					"https://edge.ads.twitch.tv:8443/ads",
+					"https://edge.ads.twitch.tv/ads/extra",
+					"https://edge.ads.twitch.tv.example/ads",
+					"http://edge.ads.twitch.tv/ads",
+				]) {
+					expect(await (await fetch(url)).text()).toBe("native");
+				}
+				expect(
+					await (await fetch(new Request(adUrl), { method: "POST" })).text(),
+				).toBe("native");
+				state.IsAdStrippingEnabled = false;
+				expect(await (await fetch(adUrl)).text()).toBe("native");
+				expect(
+					messages().filter(
+						(message) => message?.key === "VodAdRequestBlocked",
+					),
+				).toHaveLength(1);
+			} finally {
+				harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
+
+	it.each(["live", "vod"])(
+		"keeps banner %s PiP ad blocking across navigation and releases its ad state",
+		async (type) => {
+			vi.useFakeTimers();
+			T<(scope: object) => void>("_declareState")(g);
+			Object.assign(g.__TTVAB_STATE__ as object, {
+				DisableAdSpoofing: true,
+				DisableAutoplayBackup: true,
+			});
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const previous = g._getActivePictureInPicturePlaybackContext;
+			const mediaKey = type === "vod" ? "vod:12345" : "live:bannerchannel";
+			const masterUrl =
+				type === "vod"
+					? vodMaster
+					: "https://usher.ttvnw.net/api/channel/hls/bannerchannel.m3u8";
+			const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002a,mp4a.40.2"\n${mediaUrl}`;
+			const adPlaylist =
+				"#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-CUE-OUT:30\n#EXTINF:2.000,\nhttps://edge.example/stitched-ad-1.ts";
+			const rawFetch = vi.fn(
+				async (url: RequestInfo | URL) =>
+					new Response(
+						String(url) === masterUrl
+							? master
+							: String(url) === mediaUrl
+								? adPlaylist
+								: "unavailable",
+						{
+							status:
+								String(url) === masterUrl || String(url) === mediaUrl
+									? 200
+									: 503,
+						},
+					),
+			);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+				runtime.deliverBootstrap();
+				const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+				await fetch(masterUrl);
+				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+				const context = {
+					MediaKey: mediaKey,
+					workerRef: new WeakRef(harness.worker),
+					pageMediaKey: state.PageMediaKey,
+					pageContextGeneration: state.PagePlaybackContextGeneration,
+				};
+				g._getActivePictureInPicturePlaybackContext = () => context;
+				let delivered = harness.worker.messages.length;
+				window.history.replaceState(null, "", "/otherchannel");
+				T<(options: object) => unknown>("_syncPagePlaybackContext")({
+					broadcast: true,
+				});
+				runtime.deliverBootstrap(delivered);
+				expect(state.PageMediaKey).toBe(context.pageMediaKey);
+				expect(state.PagePlaybackContextGeneration).toBe(
+					context.pageContextGeneration,
+				);
+				await expect(fetch(masterUrl)).resolves.toHaveProperty("status", 200);
+				if (type === "vod") expect((await fetch(adUrl)).status).toBe(204);
+				else {
+					const output = await (await fetch(mediaUrl)).text();
+					expect(output).not.toContain("stitched-ad-1.ts");
+					expect(output).toContain("/__ttvab_empty_hold_segment.ts");
+					const events = (
+						runtime.scope.postMessage as ReturnType<typeof vi.fn>
+					).mock.calls
+						.map(([envelope]) =>
+							T<(value: unknown) => Record<string, unknown>>(
+								"_getWorkerBridgeMessage",
+							)(envelope),
+						)
+						.filter(
+							(event) =>
+								event?.key === "AdDetected" || event?.key === "AdBlocked",
+						);
+					expect(events.map((event) => event.key)).toEqual(
+						expect.arrayContaining(["AdBlocked", "AdDetected"]),
+					);
+					for (const event of events) {
+						expect(event.pageContextGeneration).toBe(
+							context.pageContextGeneration,
+						);
+						harness.worker.emitMessage(event);
+					}
+					expect((g._S as Record<string, unknown>).adsBlocked).toBe(1);
+				}
+				Object.assign(state, {
+					CurrentAdMediaKey: mediaKey,
+					CurrentAdChannel: "bannerchannel",
+					PinnedBackupPlayerMediaKey: mediaKey,
+					PinnedBackupPlayerType: "autoplay",
+					ShouldResumeAfterAd: true,
+					ShouldResumeAfterAdMediaKey: mediaKey,
+				});
+				delivered = harness.worker.messages.length;
+				T<(context: object) => void>("_releasePlaybackContext")(context);
+				runtime.deliverBootstrap(delivered);
+				expect(state.CurrentAdMediaKey).toBeNull();
+				expect(state.PinnedBackupPlayerMediaKey).toBeNull();
+				expect(state.ShouldResumeAfterAd).toBe(false);
+				expect(state.PageMediaKey).toBe(context.pageMediaKey);
+			} finally {
+				g._getActivePictureInPicturePlaybackContext = previous;
+				harness.restore();
+			}
+		},
+	);
+
+	it("aborts a pending banner PiP master when its context is released", async () => {
+		vi.useFakeTimers();
+		T<(scope: object) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		let release!: (response: Response) => void;
+		const rawFetch = vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					release = resolve;
+				}),
+		);
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+			runtime.deliverBootstrap();
+			const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+			const pending = fetch(vodMaster).catch((error: Error) => error);
+			runtime.deliver(
+				T<(value: object) => unknown>("_createWorkerBridgeMessage")({
+					key: "ReleasePlaybackContext",
+					value: { mediaKey: "vod:12345" },
+				}),
+			);
+			release(
+				new Response(
+					`#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="avc1.64002a"\n${mediaUrl}`,
+				),
+			);
+			expect(await pending).toMatchObject({ name: "AbortError" });
+			const state = runtime.scope.__TTVAB_STATE__ as {
+				StreamInfos: Record<string, unknown>;
+			};
+			expect(state.StreamInfos["vod:12345"]).toBeUndefined();
+		} finally {
+			harness.restore();
+		}
+	});
+
+	it.each(["avc1.64002a", "hev1.1.2.L150.90", "av01.0.12M.08"])(
+		"rejects a retiring PiP %s media response after release",
+		async (codec) => {
+			vi.useFakeTimers();
+			T<(scope: object) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			let release!: (response: Response) => void;
+			const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="mp4a.40.2,${codec}"\n${mediaUrl}`;
+			const rawFetch = vi.fn((url: RequestInfo | URL) =>
+				String(url) === vodMaster
+					? Promise.resolve(new Response(master))
+					: new Promise<Response>((resolve) => {
+							release = resolve;
+						}),
+			);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+				runtime.deliverBootstrap();
+				const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+				await fetch(vodMaster);
+				const pending = fetch(mediaUrl).catch((error: Error) => error);
+				runtime.deliver(
+					T<(value: object) => unknown>("_createWorkerBridgeMessage")({
+						key: "ReleasePlaybackContext",
+						value: { mediaKey: "vod:12345" },
+					}),
+				);
+				release(
+					new Response(
+						"#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nhttps://edge.example/clean.ts",
+					),
+				);
+				expect(await pending).toMatchObject({ name: "AbortError" });
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
+	it("tracks banner media without transferring an old VOD owner to a new route or live master", async () => {
+		vi.useFakeTimers();
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002a,mp4a.40.2"\n${mediaUrl}`;
+		const rawFetch = vi.fn(
+			async (url: RequestInfo | URL) =>
+				new Response(
+					String(url).includes("usher.ttvnw.net") ? master : "native",
+				),
+		);
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+			runtime.deliverBootstrap();
+			const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+			const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+			expect(await (await fetch(adUrl)).text()).toBe("native");
+			await fetch(vodMaster);
+			expect((await fetch(adUrl)).status).toBe(204);
+			state.PagePlaybackContextGeneration =
+				Number(state.PagePlaybackContextGeneration) + 1;
+			expect(await (await fetch(adUrl)).text()).toBe("native");
+			await fetch(vodMaster);
+			expect((await fetch(adUrl)).status).toBe(204);
+			await fetch("https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8");
+			expect(await (await fetch(adUrl)).text()).toBe("native");
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
+		}
+	});
+	it("does not restore an older VOD request owner after a newer live master commits", async () => {
+		vi.useFakeTimers();
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002a,mp4a.40.2"\n${mediaUrl}`;
+		let releaseVod: ((response: Response) => void) | null = null;
+		const rawFetch = vi.fn((url: RequestInfo | URL) =>
+			String(url) === vodMaster
+				? new Promise<Response>((resolve) => {
+						releaseVod = resolve;
+					})
+				: Promise.resolve(
+						new Response(
+							String(url).includes("usher.ttvnw.net") ? master : "native",
+						),
+					),
+		);
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+			runtime.deliverBootstrap();
+			const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+			const pendingVod = fetch(vodMaster);
+			await fetch("https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8");
+			releaseVod?.(new Response(master));
+			await pendingVod;
+			expect(await (await fetch(adUrl)).text()).toBe("native");
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
 		}
 	});
 });

@@ -704,8 +704,23 @@ function _hookWorkerFetch() {
 	_log("Worker fetch hooked", "info");
 	const realFetch = fetch;
 	let masterRequestSequence = 0;
+	let adRequestPlaybackContext = null;
 	const committedMasterRequestByMediaKey = new Map();
 	const commitMasterRequest = (mediaKey, requestSequence) => {
+		if (
+			!adRequestPlaybackContext ||
+			requestSequence > adRequestPlaybackContext.requestSequence
+		) {
+			adRequestPlaybackContext = {
+				mediaKey,
+				requestSequence,
+				pageMediaKey: _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey),
+				pageContextGeneration: Math.max(
+					0,
+					Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+				),
+			};
+		}
 		committedMasterRequestByMediaKey.delete(mediaKey);
 		committedMasterRequestByMediaKey.set(mediaKey, requestSequence);
 		while (committedMasterRequestByMediaKey.size > 16) {
@@ -1448,6 +1463,40 @@ function _hookWorkerFetch() {
 						: null),
 			};
 
+			const adRequestMediaKey = adRequestPlaybackContext
+				? isPlaybackObservationCurrent(adRequestPlaybackContext)
+					? adRequestPlaybackContext.mediaKey
+					: null
+				: __TTVAB_STATE__.PageMediaType === "vod"
+					? playbackRequestOwner.pageMediaKey
+					: null;
+			const requestMethod =
+				opts?.method || (resource instanceof Request ? resource.method : "GET");
+			const blockedVodAdRequest =
+				String(requestMethod).toUpperCase() === "GET"
+					? _getVodAdRequest(url, adRequestMediaKey)
+					: null;
+			if (blockedVodAdRequest) {
+				const signal =
+					opts?.signal !== undefined
+						? opts.signal
+						: resource instanceof Request
+							? resource.signal
+							: null;
+				if (signal?.aborted)
+					throw (
+						signal.reason ??
+						new DOMException("The operation was aborted", "AbortError")
+					);
+				_postWorkerBridgeMessage(self, {
+					key: "VodAdRequestBlocked",
+					...blockedVodAdRequest,
+					pageMediaKey: playbackRequestOwner.pageMediaKey,
+					pageContextGeneration: playbackRequestOwner.pageContextGeneration,
+				});
+				return new Response(null, { status: 204, statusText: "No Content" });
+			}
+
 			const shouldBlockAdSegments =
 				__TTVAB_STATE__.IsAdStrippingEnabled === true;
 			const shouldBlockCachedAdSegments = Boolean(
@@ -1963,6 +2012,9 @@ function _hookWorkerFetch() {
 					if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
 						return returnNativeMediaResponse();
 					}
+					if (!isPlaybackObservationCurrent(playbackRequestOwner)) {
+						throw _createCodecHandoffAbortError(mediaRequestSignal);
+					}
 					const responseMediaKey = _normalizeMediaKey(responseInfo?.MediaKey);
 					const responseHasExactActiveAdContext = Boolean(
 						responseInfo &&
@@ -2018,6 +2070,9 @@ function _hookWorkerFetch() {
 						);
 						if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
 							return returnNativeMediaResponse();
+						}
+						if (!isPlaybackObservationCurrent(playbackRequestOwner)) {
+							throw _createCodecHandoffAbortError(mediaRequestSignal);
 						}
 						reportSuccessfulMediaResponse();
 						return new Response(processedText, getResponseInit(response));
@@ -2317,6 +2372,39 @@ function _getWorkerRecoveryContextKey(context) {
 	return "unknown";
 }
 
+function _getActivePictureInPictureWorkerContext(worker, mediaKey = null) {
+	if (
+		!worker ||
+		typeof _getActivePictureInPicturePlaybackContext !== "function"
+	)
+		return null;
+	const context = _getActivePictureInPicturePlaybackContext();
+	if (!context?.MediaKey || context.workerRef?.deref?.() !== worker)
+		return null;
+	if (mediaKey && _normalizeMediaKey(mediaKey) !== context.MediaKey)
+		return null;
+	return context;
+}
+
+function _logPictureInPictureAdBlocking(worker, mediaKey, cycleStartedAt) {
+	const cycle = Math.max(0, Number(cycleStartedAt) || 0);
+	if (
+		__TTVAB_STATE__.IsAdStrippingEnabled !== true ||
+		!Number.isFinite(cycle) ||
+		cycle <= 0 ||
+		!_getActivePictureInPictureWorkerContext(worker, mediaKey)
+	)
+		return;
+	if (
+		worker.__TTVABLastPipAdMediaKey === mediaKey &&
+		worker.__TTVABLastPipAdCycleStartedAt === cycle
+	)
+		return;
+	worker.__TTVABLastPipAdMediaKey = mediaKey;
+	worker.__TTVABLastPipAdCycleStartedAt = cycle;
+	_log(`PiP ad blocking active for ${mediaKey} (cycle ${cycle})`, "info");
+}
+
 function _isWorkerCurrentPlayerMedia(worker, mediaKey) {
 	if (
 		typeof _getPlayerAndState !== "function" ||
@@ -2388,6 +2476,8 @@ function _rememberWorkerPageContext(worker, context) {
 }
 
 function _getWorkerPlaybackContext(worker, fallbackContext = null) {
+	const pipContext = _getActivePictureInPictureWorkerContext(worker);
+	if (pipContext) return _normalizePlaybackContext(pipContext);
 	return _normalizePlaybackContext({
 		MediaType:
 			worker?.__TTVABPageMediaType ||
@@ -2500,7 +2590,10 @@ function _getWorkerPlaybackObservationAt(worker, context, bootstrap = false) {
 	);
 	if (!mediaKey) return 0;
 	const pageContext = worker?.__TTVABPlaybackPageContext;
-	if (pageContext?.pageMediaKey === mediaKey) {
+	if (
+		pageContext?.pageMediaKey === mediaKey &&
+		!_getActivePictureInPictureWorkerContext(worker, mediaKey)
+	) {
 		if (
 			pageContext.pageMediaKey !==
 				_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) ||
@@ -5108,6 +5201,7 @@ function _hookWorker() {
                 ${_refreshActiveBackupMediaPlaylist.toString()}
                 ${_searchBackupStream.toString()}
                 ${_findBackupStream.toString()}
+                ${_getVodAdRequest.toString()}
                 ${_hookWorkerFetch.toString()}
                 
                 const _GQL_URL = '${_GQL_URL}';
@@ -5561,6 +5655,8 @@ function _hookWorker() {
                             {
                                 const releasedContext = _normalizePlaybackContext(data.value);
                                 const releasedMediaKey = releasedContext.MediaKey;
+                                if (!releasedMediaKey) break;
+                                __TTVAB_STATE__.PagePlaybackContextGeneration = Math.max(0, Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) + 1;
                                 _clearAdPodProgress(releasedMediaKey);
                                 if (releasedMediaKey && typeof __TTVAB_STATE__.StreamInfos === "object") {
                                     delete __TTVAB_STATE__.StreamInfos[releasedMediaKey];
@@ -5577,14 +5673,22 @@ function _hookWorker() {
                                     __TTVAB_STATE__.PageChannel = null;
                                     __TTVAB_STATE__.PageVodID = null;
                                     __TTVAB_STATE__.PageMediaKey = null;
+                                }
+                                if (__TTVAB_STATE__.CurrentAdMediaKey === releasedMediaKey) {
                                     __TTVAB_STATE__.CurrentAdChannel = null;
                                     __TTVAB_STATE__.CurrentAdMediaKey = null;
+                                }
+                                if (__TTVAB_STATE__.PinnedBackupPlayerMediaKey === releasedMediaKey) {
                                     __TTVAB_STATE__.PinnedBackupPlayerType = null;
                                     __TTVAB_STATE__.PinnedBackupPlayerChannel = null;
                                     __TTVAB_STATE__.PinnedBackupPlayerMediaKey = null;
+                                }
+                                if (__TTVAB_STATE__.ActiveCodecHandoffMediaKey === releasedMediaKey) {
                                     __TTVAB_STATE__.ActiveCodecHandoffId = null;
                                     __TTVAB_STATE__.ActiveCodecHandoffChannel = null;
                                     __TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
+                                }
+                                if (__TTVAB_STATE__.ShouldResumeAfterAdMediaKey === releasedMediaKey) {
                                     __TTVAB_STATE__.ShouldResumeAfterAd = false;
                                     __TTVAB_STATE__.ShouldResumeAfterAdChannel = null;
                                     __TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
@@ -5810,11 +5914,38 @@ function _hookWorker() {
 					}
 					return false;
 				};
+				const isStalePageContextEvent = (message) => {
+					if (message.pageContextGeneration === undefined) return false;
+					const pipContext = _getActivePictureInPictureWorkerContext(
+						this,
+						normalizeMessagePlaybackContext(message).MediaKey,
+					);
+					const pageMediaKey = _normalizeMediaKey(message.pageMediaKey);
+					if (
+						pipContext?.pageContextGeneration ===
+							message.pageContextGeneration &&
+						pipContext?.pageMediaKey === pageMediaKey
+					)
+						return false;
+					return (
+						message.pageContextGeneration !==
+							Math.max(
+								0,
+								Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+							) ||
+						pageMediaKey !== getCurrentPageContext().MediaKey ||
+						pageMediaKey !== _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey)
+					);
+				};
 				const isStalePlaybackEvent = (message) => {
+					if (isStalePageContextEvent(message)) return true;
 					const messageContext = normalizeMessagePlaybackContext(message);
 					if (
-						typeof _isActivePictureInPicturePlaybackContext === "function" &&
-						_isActivePictureInPicturePlaybackContext(messageContext)
+						messageContext.MediaKey &&
+						_getActivePictureInPictureWorkerContext(
+							this,
+							messageContext.MediaKey,
+						)
 					) {
 						return false;
 					}
@@ -5901,6 +6032,7 @@ function _hookWorker() {
 					) {
 						return;
 					}
+					if (isStalePageContextEvent(data)) return;
 					if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) {
 						if (
 							data.key === "AdEnded" ||
@@ -5933,28 +6065,6 @@ function _hookWorker() {
 							return;
 						}
 					}
-
-					if (
-						(data.key === "PlaybackWorkerObserved" ||
-							data.key === "PlaybackWorkerBootstrapObserved") &&
-						data.pageContextGeneration !== undefined &&
-						!(
-							typeof _isActivePictureInPicturePlaybackContext === "function" &&
-							_isActivePictureInPicturePlaybackContext(
-								normalizeMessagePlaybackContext(data),
-							)
-						) &&
-						(data.pageContextGeneration !==
-							Math.max(
-								0,
-								Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
-							) ||
-							_normalizeMediaKey(data.pageMediaKey) !==
-								getCurrentPageContext().MediaKey ||
-							_normalizeMediaKey(data.pageMediaKey) !==
-								_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey))
-					)
-						return;
 
 					switch (data.key) {
 						case "CancelFetchRequest": {
@@ -6223,6 +6333,41 @@ function _hookWorker() {
 							} catch {}
 							break;
 						}
+						case "VodAdRequestBlocked": {
+							const mediaKey = _normalizeMediaKey(data.mediaKey);
+							if (
+								__TTVAB_STATE__.IsAdStrippingEnabled !== true ||
+								!mediaKey?.startsWith("vod:")
+							)
+								break;
+							const pipContext = _getActivePictureInPictureWorkerContext(
+								this,
+								mediaKey,
+							);
+							const isCurrentPip = Boolean(
+								pipContext &&
+									data.pageMediaKey === pipContext.pageMediaKey &&
+									data.pageContextGeneration ===
+										pipContext.pageContextGeneration,
+							);
+							const isCurrentPage = Boolean(
+								mediaKey === _getPageVodAdMediaKey() &&
+									_isWorkerCurrentPlayerMedia(this, mediaKey) &&
+									data.pageMediaKey ===
+										_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) &&
+									data.pageContextGeneration ===
+										Math.max(
+											0,
+											Number(__TTVAB_STATE__.PagePlaybackContextGeneration) ||
+												0,
+										),
+							);
+							if (!isCurrentPip && !isCurrentPage) break;
+							if (_recordBlockedVodAdRequest(data) && isCurrentPip) {
+								_log(`PiP ad blocked for ${mediaKey} (VOD request)`, "success");
+							}
+							break;
+						}
 						case "AdBlocked":
 							if (isStalePlaybackEvent(data)) {
 								_log(
@@ -6442,6 +6587,11 @@ function _hookWorker() {
 									);
 									break;
 								}
+								_logPictureInPictureAdBlocking(
+									this,
+									mediaKey,
+									detectedCycleStartedAt,
+								);
 								_rememberPageSidePlaybackOwner(
 									mediaKey,
 									data.playlistUrl,
@@ -7511,6 +7661,97 @@ function _hookWorker() {
 	_startWorkerWatchdog();
 }
 
+const _blockedVodAdCountExpirations = new Map();
+
+function _getVodAdRequest(urlStr, mediaKey) {
+	if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) return null;
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	if (!normalizedMediaKey?.startsWith("vod:")) return null;
+	try {
+		const parsedUrl = new URL(urlStr);
+		const isKnownAdOrigin =
+			parsedUrl.origin === "https://edge.ads.twitch.tv" ||
+			parsedUrl.origin === "https://vaes.amazon-adsystem.com";
+		const isKnownAdPath =
+			parsedUrl.pathname === "/2018-01-01/3p/ads" ||
+			parsedUrl.pathname === "/ads" ||
+			parsedUrl.pathname === "/ads/format";
+		if (!isKnownAdOrigin || !isKnownAdPath) return null;
+		const sessionID = parsedUrl.searchParams.get("sid") || null;
+		return {
+			mediaKey: normalizedMediaKey,
+			sessionID: sessionID && sessionID.length <= 512 ? sessionID : null,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function _getPageVodAdMediaKey() {
+	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
+	if (
+		_getPlaybackContextFromUrl(window.location.href).MediaKey !== pageMediaKey
+	)
+		return null;
+	if (typeof _getPlayerAndState === "function") {
+		try {
+			const { player, state } = _getPlayerAndState();
+			const video = player?.getHTMLVideoElement?.();
+			const content = state?.props?.content;
+			if (content) {
+				const context = _normalizePlaybackContext({
+					MediaType: content.type,
+					ChannelName: content.channelLogin,
+					VodID: content.vodID,
+				});
+				if (context.MediaKey) {
+					return context.MediaType === "vod" &&
+						(video?.isConnected || context.MediaKey === pageMediaKey)
+						? context.MediaKey
+						: null;
+				}
+			}
+			if ((player || state) && __TTVAB_STATE__.PageMediaType !== "vod")
+				return null;
+		} catch {
+			return null;
+		}
+	}
+	return __TTVAB_STATE__.PageMediaType === "vod" ? pageMediaKey : null;
+}
+
+function _recordBlockedVodAdRequest(request) {
+	const mediaKey = _normalizeMediaKey(request?.mediaKey);
+	if (
+		__TTVAB_STATE__.IsAdStrippingEnabled !== true ||
+		!mediaKey?.startsWith("vod:")
+	)
+		return;
+	const sessionID =
+		typeof request.sessionID === "string" && request.sessionID.length <= 512
+			? request.sessionID
+			: null;
+	const countKey = `${mediaKey}\n${sessionID || "no-session"}`;
+	const now = Date.now();
+	for (const [key, expiresAt] of _blockedVodAdCountExpirations) {
+		if (expiresAt <= now) _blockedVodAdCountExpirations.delete(key);
+	}
+	const shouldIncrement = !_blockedVodAdCountExpirations.has(countKey);
+	_blockedVodAdCountExpirations.delete(countKey);
+	_blockedVodAdCountExpirations.set(
+		countKey,
+		now + (sessionID ? 1800000 : 120000),
+	);
+	while (_blockedVodAdCountExpirations.size > 100) {
+		const oldestKey = _blockedVodAdCountExpirations.keys().next().value;
+		if (oldestKey === undefined) break;
+		_blockedVodAdCountExpirations.delete(oldestKey);
+	}
+	if (shouldIncrement) _incrementAdsBlocked(null, mediaKey);
+	_log("Blocked client-side VOD ad request", "success");
+	return shouldIncrement;
+}
+
 function _hookMainFetch() {
 	const realFetch = window.fetch;
 	window.__TTVAB_REAL_FETCH__ = realFetch;
@@ -7527,59 +7768,6 @@ function _hookMainFetch() {
 			return false;
 		}
 	};
-	const getBlockedVodAdRequest = (urlStr) => {
-		if (
-			__TTVAB_STATE__.IsAdStrippingEnabled !== true ||
-			__TTVAB_STATE__.PageMediaType !== "vod"
-		) {
-			return null;
-		}
-		const mediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
-		if (!mediaKey?.startsWith("vod:")) return null;
-		try {
-			const parsedUrl = new URL(urlStr);
-			const isKnownAdOrigin =
-				parsedUrl.origin === "https://edge.ads.twitch.tv" ||
-				parsedUrl.origin === "https://vaes.amazon-adsystem.com";
-			const isKnownAdPath =
-				parsedUrl.pathname === "/2018-01-01/3p/ads" ||
-				parsedUrl.pathname === "/ads" ||
-				parsedUrl.pathname === "/ads/format";
-			if (!isKnownAdOrigin || !isKnownAdPath) {
-				return null;
-			}
-			const sessionID = parsedUrl.searchParams.get("sid") || null;
-			return {
-				mediaKey,
-				countKey: `${mediaKey}\n${sessionID || "no-session"}`,
-				countTtlMs: sessionID ? 1800000 : 120000,
-			};
-		} catch {
-			return null;
-		}
-	};
-	const blockedVodAdCountExpirations = new Map();
-	const recordBlockedVodAdRequest = (request) => {
-		const now = Date.now();
-		for (const [key, expiresAt] of blockedVodAdCountExpirations) {
-			if (expiresAt <= now) blockedVodAdCountExpirations.delete(key);
-		}
-		const shouldIncrement = !blockedVodAdCountExpirations.has(request.countKey);
-		blockedVodAdCountExpirations.delete(request.countKey);
-		blockedVodAdCountExpirations.set(
-			request.countKey,
-			now + request.countTtlMs,
-		);
-		while (blockedVodAdCountExpirations.size > 100) {
-			const oldestKey = blockedVodAdCountExpirations.keys().next().value;
-			if (oldestKey === undefined) break;
-			blockedVodAdCountExpirations.delete(oldestKey);
-		}
-		if (shouldIncrement && typeof _incrementAdsBlocked === "function") {
-			_incrementAdsBlocked(null, request.mediaKey);
-		}
-		_log("Blocked client-side VOD ad request", "success");
-	};
 	if (typeof window.XMLHttpRequest === "function") {
 		const realXhrOpen = window.XMLHttpRequest.prototype.open;
 		const emptyVastResponseUrl =
@@ -7589,10 +7777,10 @@ function _hookMainFetch() {
 				String(method || "")
 					.trim()
 					.toUpperCase() === "GET"
-					? getBlockedVodAdRequest(url)
+					? _getVodAdRequest(url, _getPageVodAdMediaKey())
 					: null;
 			if (blockedRequest) {
-				recordBlockedVodAdRequest(blockedRequest);
+				_recordBlockedVodAdRequest(blockedRequest);
 				return realXhrOpen.call(this, method, emptyVastResponseUrl, ...rest);
 			}
 			return realXhrOpen.call(this, method, url, ...rest);
@@ -7754,10 +7942,7 @@ function _hookMainFetch() {
 		if (url) {
 			const urlStr = url instanceof Request ? url.url : url.toString();
 			let blockedVodAdRequest = null;
-			if (
-				__TTVAB_STATE__.IsAdStrippingEnabled === true &&
-				__TTVAB_STATE__.PageMediaType === "vod"
-			) {
+			if (__TTVAB_STATE__.IsAdStrippingEnabled === true) {
 				const requestMethod =
 					typeof opts?.method === "string" && opts.method
 						? opts.method
@@ -7765,11 +7950,25 @@ function _hookMainFetch() {
 							? url.method
 							: "GET";
 				if (requestMethod.trim().toUpperCase() === "GET") {
-					blockedVodAdRequest = getBlockedVodAdRequest(urlStr);
+					blockedVodAdRequest = _getVodAdRequest(
+						urlStr,
+						_getPageVodAdMediaKey(),
+					);
 				}
 			}
 			if (blockedVodAdRequest) {
-				recordBlockedVodAdRequest(blockedVodAdRequest);
+				const signal =
+					opts?.signal !== undefined
+						? opts.signal
+						: url instanceof Request
+							? url.signal
+							: null;
+				if (signal?.aborted)
+					throw (
+						signal.reason ??
+						new DOMException("The operation was aborted", "AbortError")
+					);
+				_recordBlockedVodAdRequest(blockedVodAdRequest);
 				return new Response(null, {
 					status: 204,
 					statusText: "No Content",

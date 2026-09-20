@@ -67,6 +67,9 @@ const _PlaybackIntentState = {
 	pictureInPictureChannel: null as string | null,
 	pictureInPictureVodID: null as string | null,
 	pictureInPictureMediaKey: null as string | null,
+	pictureInPictureWorkerRef: null as WeakRef<Worker> | null,
+	pictureInPicturePageMediaKey: null as string | null,
+	pictureInPicturePageContextGeneration: 0,
 	pictureInPictureVisibleSinceAt: 0,
 	pictureInPictureVisibilityMediaKey: null as string | null,
 	pagePlaybackVisibilityMediaKey: null as string | null,
@@ -1215,27 +1218,103 @@ function _getCurrentPlaybackRecoveryContext() {
 	};
 }
 
+function _getPictureInPicturePlaybackContext(element) {
+	if (!(element instanceof HTMLVideoElement)) return null;
+	const activeContext = _getActivePictureInPicturePlaybackContext();
+	if (activeContext?.element === element) return activeContext;
+	try {
+		const { player, state } = _getPlayerAndState();
+		if (player?.getHTMLVideoElement?.() !== element) return null;
+		const content = state?.props?.content;
+		const context = _normalizePlaybackContext({
+			MediaType: content?.type,
+			ChannelName: content?.channelLogin,
+			VodID: content?.vodID,
+		});
+		if (!context.MediaKey) return null;
+		const worker = _getPlayerCore(player)?.worker;
+		return {
+			...context,
+			workerRef:
+				worker && typeof worker === "object" ? new WeakRef(worker) : null,
+			pageMediaKey: _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey),
+			pageContextGeneration: Math.max(
+				0,
+				Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+			),
+		};
+	} catch {
+		return null;
+	}
+}
+
+function _handlePictureInPictureExit(event) {
+	const activeContext = _getActivePictureInPicturePlaybackContext();
+	if (!activeContext || activeContext.element !== event.target) return;
+	try {
+		if (_PlaybackIntentState.secondaryPlayerHandoffKind === "pip") {
+			_clearSecondaryPlayerHandoff();
+		}
+		if (
+			activeContext.MediaKey !==
+			_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey)
+		) {
+			try {
+				const { player, state } = _getPlayerAndState();
+				const content = state?.props?.content;
+				const currentContext = _normalizePlaybackContext({
+					MediaType: content?.type,
+					ChannelName: content?.channelLogin,
+					VodID: content?.vodID,
+				});
+				if (
+					activeContext.element.isConnected &&
+					player?.getHTMLVideoElement?.() === activeContext.element &&
+					currentContext.MediaKey === activeContext.MediaKey
+				)
+					return;
+			} catch {}
+			_releasePlaybackContext(activeContext);
+		}
+	} finally {
+		_clearActivePictureInPicturePlaybackContext(event.target);
+	}
+}
+
 function _setActivePictureInPicturePlaybackContext(
 	element = null,
 	context = null,
 ) {
 	if (!(element instanceof HTMLVideoElement)) return null;
-	const normalizedContext = _normalizePlaybackContext(
-		context || {
-			MediaType: __TTVAB_STATE__?.PageMediaType,
-			ChannelName: __TTVAB_STATE__?.PageChannel,
-			VodID: __TTVAB_STATE__?.PageVodID,
-			MediaKey: __TTVAB_STATE__?.PageMediaKey,
-		},
-	);
+	const capturedContext =
+		context || _getPictureInPicturePlaybackContext(element);
+	if (!capturedContext) return null;
+	const normalizedContext = _normalizePlaybackContext(capturedContext);
 	if (!normalizedContext.MediaKey && !normalizedContext.ChannelName)
 		return null;
+	if (
+		_PipDeferredReloadEntry &&
+		(_PipDeferredReloadEntry.element !== element ||
+			_PipDeferredReloadEntry.mediaKey !== normalizedContext.MediaKey)
+	) {
+		_PipDeferredReloadEntry.element.removeEventListener(
+			"leavepictureinpicture",
+			_PipDeferredReloadEntry.listener,
+		);
+		_PipDeferredReloadEntry = null;
+	}
 	_clearActivePictureInPicturePlaybackListeners();
 	_PlaybackIntentState.pictureInPictureElement = element;
 	_PlaybackIntentState.pictureInPictureMediaType = normalizedContext.MediaType;
 	_PlaybackIntentState.pictureInPictureChannel = normalizedContext.ChannelName;
 	_PlaybackIntentState.pictureInPictureVodID = normalizedContext.VodID;
 	_PlaybackIntentState.pictureInPictureMediaKey = normalizedContext.MediaKey;
+	_PlaybackIntentState.pictureInPictureWorkerRef =
+		capturedContext.workerRef || null;
+	_PlaybackIntentState.pictureInPicturePageMediaKey =
+		capturedContext.pageMediaKey || null;
+	_PlaybackIntentState.pictureInPicturePageContextGeneration =
+		capturedContext.pageContextGeneration || 0;
 	const handlePause = () => {
 		if (_wasRecentProgrammaticPlaybackAction("pause") || element.ended) return;
 		if (_PlaybackIntentState.pictureInPictureElement !== element) return;
@@ -1263,10 +1342,26 @@ function _setActivePictureInPicturePlaybackContext(
 			normalizedContext.MediaKey,
 		);
 	};
+	element.addEventListener(
+		"leavepictureinpicture",
+		_handlePictureInPictureExit,
+		true,
+	);
 	element.addEventListener("pause", handlePause, true);
 	element.addEventListener("play", handlePlay, true);
 	_PlaybackIntentState.pictureInPicturePauseListener = handlePause;
 	_PlaybackIntentState.pictureInPicturePlayListener = handlePlay;
+	if (
+		normalizedContext.MediaKey ===
+			_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) &&
+		typeof _logPictureInPictureAdBlocking === "function"
+	) {
+		_logPictureInPictureAdBlocking(
+			_PlaybackIntentState.pictureInPictureWorkerRef?.deref?.(),
+			normalizedContext.MediaKey,
+			_getPlayerLifecycleCycleStartedAt(normalizedContext.MediaKey),
+		);
+	}
 	_syncPagePlaybackVisibilityState();
 	return { ...normalizedContext, element };
 }
@@ -1274,6 +1369,11 @@ function _setActivePictureInPicturePlaybackContext(
 function _clearActivePictureInPicturePlaybackListeners() {
 	const element = _PlaybackIntentState.pictureInPictureElement;
 	if (element instanceof HTMLVideoElement) {
+		element.removeEventListener(
+			"leavepictureinpicture",
+			_handlePictureInPictureExit,
+			true,
+		);
 		if (_PlaybackIntentState.pictureInPicturePauseListener) {
 			element.removeEventListener(
 				"pause",
@@ -1304,7 +1404,14 @@ function _getActivePictureInPicturePlaybackContext() {
 	});
 	if (!normalizedContext.MediaKey && !normalizedContext.ChannelName)
 		return null;
-	return { ...normalizedContext, element };
+	return {
+		...normalizedContext,
+		element,
+		workerRef: _PlaybackIntentState.pictureInPictureWorkerRef,
+		pageMediaKey: _PlaybackIntentState.pictureInPicturePageMediaKey,
+		pageContextGeneration:
+			_PlaybackIntentState.pictureInPicturePageContextGeneration,
+	};
 }
 
 function _isActivePictureInPicturePlaybackContext(context) {
@@ -1334,6 +1441,9 @@ function _clearActivePictureInPicturePlaybackContext(element = null) {
 	_PlaybackIntentState.pictureInPictureChannel = null;
 	_PlaybackIntentState.pictureInPictureVodID = null;
 	_PlaybackIntentState.pictureInPictureMediaKey = null;
+	_PlaybackIntentState.pictureInPictureWorkerRef = null;
+	_PlaybackIntentState.pictureInPicturePageMediaKey = null;
+	_PlaybackIntentState.pictureInPicturePageContextGeneration = 0;
 	_syncPagePlaybackVisibilityState();
 	return activeContext;
 }
@@ -1642,6 +1752,13 @@ function _resetPlaybackIntentForNavigation(
 	preservedMediaKey = null,
 ) {
 	const safePreservedMediaKey = _normalizeMediaKey(preservedMediaKey);
+	if (
+		!safePreservedMediaKey ||
+		_normalizeMediaKey(_PlayerPreferenceRestoreState.mediaKey) !==
+			safePreservedMediaKey
+	) {
+		_clearPendingPlayerPreferenceRestore();
+	}
 	if (
 		!safePreservedMediaKey ||
 		_normalizeMediaKey(_PlaybackIntentState.userPausedMediaKey) !==
@@ -3412,19 +3529,26 @@ function _hookSecondaryPlayerHandoffDetection() {
 			try {
 				HTMLVideoElement.prototype.requestPictureInPicture =
 					function patchedRequestPictureInPicture(...args) {
+						const requestedContext = _getPictureInPicturePlaybackContext(this);
 						const result = nativeRequestPictureInPicture.apply(this, args);
 						if (typeof result?.then === "function") {
 							return result.then((value) => {
 								try {
-									_setActivePictureInPicturePlaybackContext(this);
+									if (
+										!requestedContext ||
+										document.pictureInPictureElement !== this
+									)
+										return value;
+									const activeContext =
+										_setActivePictureInPicturePlaybackContext(
+											this,
+											requestedContext,
+										);
+									if (!activeContext) return value;
 									const descriptor = {
 										kind: "pip",
-										channel:
-											_normalizePlayerChannel(__TTVAB_STATE__.PageChannel) ||
-											null,
-										mediaKey:
-											_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
-											_resolvePlayerMediaKey(__TTVAB_STATE__.PageChannel, null),
+										channel: activeContext.ChannelName,
+										mediaKey: activeContext.MediaKey,
 									};
 									_beginSecondaryPlayerHandoff(descriptor, {
 										pauseSource: false,
@@ -3444,40 +3568,21 @@ function _hookSecondaryPlayerHandoffDetection() {
 	document.addEventListener(
 		"enterpictureinpicture",
 		(event) => {
-			_setActivePictureInPicturePlaybackContext(event.target);
+			const activeContext = _setActivePictureInPicturePlaybackContext(
+				event.target,
+			);
+			if (!activeContext) return;
 			_beginSecondaryPlayerHandoff(
 				{
 					kind: "pip",
-					channel: _normalizePlayerChannel(__TTVAB_STATE__.PageChannel) || null,
-					mediaKey:
-						_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
-						_resolvePlayerMediaKey(__TTVAB_STATE__.PageChannel, null),
+					channel: activeContext.ChannelName,
+					mediaKey: activeContext.MediaKey,
 				},
 				{
 					pauseSource: false,
 					sourceWasPlaying: _isPrimaryPlaybackCurrentlyActive(),
 				},
 			);
-		},
-		true,
-	);
-	document.addEventListener(
-		"leavepictureinpicture",
-		(event) => {
-			const releasedContext = _clearActivePictureInPicturePlaybackContext(
-				event.target,
-			);
-			if (_PlaybackIntentState.secondaryPlayerHandoffKind === "pip") {
-				_clearSecondaryPlayerHandoff();
-			}
-			if (
-				releasedContext?.MediaKey &&
-				releasedContext.MediaKey !==
-					_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) &&
-				typeof _releasePlaybackContext === "function"
-			) {
-				_releasePlaybackContext(releasedContext);
-			}
 		},
 		true,
 	);
@@ -3504,6 +3609,12 @@ function _resumeActivePlayerIfPaused(channel = null, mediaKey = null) {
 			MediaKey: safeMediaKey,
 		})
 	) {
+		const pipWorker = pipContext.workerRef?.deref?.();
+		if (
+			pipWorker?.__TTVABCrashed === true ||
+			pipWorker?.__TTVABIntentionallyTerminated === true
+		)
+			return false;
 		if (pipContext.element.ended || !pipContext.element.paused) return false;
 		return _playPlaybackTarget(
 			pipContext.element,
@@ -5445,7 +5556,16 @@ function _registerPipDeferredReload(
 	} = {},
 ) {
 	const pipElement = document.pictureInPictureElement;
-	if (!(pipElement instanceof HTMLMediaElement)) return false;
+	const activeContext = _getActivePictureInPicturePlaybackContext();
+	const mediaKey =
+		_normalizeMediaKey(options.mediaKey) || activeContext?.MediaKey;
+	if (
+		!(pipElement instanceof HTMLMediaElement) ||
+		activeContext?.element !== pipElement ||
+		!mediaKey ||
+		activeContext.MediaKey !== mediaKey
+	)
+		return false;
 	const previousEntry = _PipDeferredReloadEntry;
 	if (previousEntry?.element && previousEntry.listener) {
 		try {
@@ -5456,13 +5576,17 @@ function _registerPipDeferredReload(
 		} catch {}
 	}
 	const entry = {
-		options: { ...options },
+		options: {
+			...options,
+			cycleStartedAt: Math.max(
+				0,
+				Number(options.cycleStartedAt) ||
+					_getPlayerLifecycleCycleStartedAt(mediaKey),
+			),
+		},
 		channel:
-			_normalizePlayerChannel(options.channel) ||
-			_normalizePlayerChannel(__TTVAB_STATE__.PageChannel),
-		mediaKey:
-			_normalizeMediaKey(options.mediaKey) ||
-			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey),
+			_normalizePlayerChannel(options.channel) || activeContext.ChannelName,
+		mediaKey,
 		element: pipElement,
 		listener: null,
 	};
@@ -5525,6 +5649,13 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 			ChannelName: taskChannel,
 			MediaKey: taskMediaKey,
 		});
+	const pipWorker = isPipTask ? pipContext.workerRef?.deref?.() : null;
+	if (
+		(isPausePlay || isReload) &&
+		(pipWorker?.__TTVABCrashed === true ||
+			pipWorker?.__TTVABIntentionallyTerminated === true)
+	)
+		return false;
 	const reason = options.reason || "manual";
 	const isExactNativePostAdSoftReload = Boolean(
 		reason === "post-ad" &&
@@ -5683,54 +5814,6 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 		return true;
 	}
 
-	if (isReload) {
-		const needsRealReload =
-			options.refreshAccessToken === true ||
-			options.newMediaPlayerInstance === true;
-		if (isPipTask && pipContext) {
-			const currentContext = _getCurrentPlaybackRecoveryContext();
-			const isTaskRouteCurrent = _matchesPlaybackTargetContext(
-				currentContext.channel,
-				currentContext.mediaKey,
-				taskChannel,
-				taskMediaKey,
-			);
-			const allowPipBreakingReload =
-				reason === "manual" ||
-				(reason === "codec-handoff" &&
-					isTaskRouteCurrent &&
-					Boolean(playerState)) ||
-				(reason === "worker-recovery" && isTaskRouteCurrent);
-			if (allowPipBreakingReload) {
-				_log(`Forcing real reload despite PiP (${reason})`, "info");
-			} else {
-				if (needsRealReload && reason !== "codec-handoff") {
-					_registerPipDeferredReload({
-						...options,
-						channel: taskChannel,
-						mediaKey: taskMediaKey,
-						cycleStartedAt: requestedCycleStartedAt,
-					});
-				}
-				if (_hasUserPauseIntent(taskChannel, taskMediaKey)) return false;
-				_pausePlaybackTarget(pipContext.element);
-				_scheduleResumeRetries(
-					taskChannel,
-					taskMediaKey,
-					[50, 180, 500, 1100],
-					{ cycleStartedAt: requestedCycleStartedAt },
-				);
-				_log(
-					needsRealReload
-						? "Downgraded reload to pause/play to preserve PiP; real reload deferred to PiP exit"
-						: "Downgraded reload to pause/play to preserve PiP",
-					"info",
-				);
-				return reason !== "codec-handoff";
-			}
-		}
-	}
-
 	const shouldSuppressAutomaticTask =
 		reason !== "manual" &&
 		reason !== "codec-handoff" &&
@@ -5740,6 +5823,66 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 			_clearAdResumeIntent();
 		}
 		return false;
+	}
+
+	if (isReload) {
+		const needsRealReload =
+			options.refreshAccessToken !== false ||
+			options.newMediaPlayerInstance !== false;
+		if (isPipTask && pipContext) {
+			const currentContext = _getCurrentPlaybackRecoveryContext();
+			const isTaskRouteCurrent = Boolean(
+				taskMediaKey && currentContext.mediaKey === taskMediaKey,
+			);
+			const content = playerState?.props?.content;
+			const playerContext = _normalizePlaybackContext({
+				MediaType: content?.type,
+				ChannelName: content?.channelLogin,
+				VodID: content?.vodID,
+			});
+			const isPipPlayerCurrent = Boolean(
+				playerState &&
+					player?.getHTMLVideoElement?.() === pipContext.element &&
+					playerContext.MediaKey === taskMediaKey,
+			);
+			if (reason === "manual" && (!isTaskRouteCurrent || !isPipPlayerCurrent))
+				return false;
+			if (_hasUserPauseIntent(taskChannel, taskMediaKey)) return false;
+			const allowPipBreakingReload =
+				isTaskRouteCurrent &&
+				isPipPlayerCurrent &&
+				(reason === "manual" ||
+					reason === "codec-handoff" ||
+					reason === "worker-recovery");
+			if (allowPipBreakingReload) {
+				_log(`Forcing real reload despite PiP (${reason})`, "info");
+			} else {
+				const deferredReload =
+					needsRealReload &&
+					reason !== "codec-handoff" &&
+					_registerPipDeferredReload({
+						...options,
+						channel: taskChannel,
+						mediaKey: taskMediaKey,
+						cycleStartedAt: requestedCycleStartedAt,
+					});
+				if (needsRealReload && !deferredReload) return false;
+				_pausePlaybackTarget(pipContext.element);
+				_scheduleResumeRetries(
+					taskChannel,
+					taskMediaKey,
+					[50, 180, 500, 1100],
+					{ cycleStartedAt: requestedCycleStartedAt },
+				);
+				_log(
+					deferredReload
+						? "Downgraded reload to pause/play to preserve PiP; real reload deferred to PiP exit"
+						: "Downgraded reload to pause/play to preserve PiP",
+					"info",
+				);
+				return reason !== "codec-handoff";
+			}
+		}
 	}
 
 	if (isPausePlay) {
@@ -5757,9 +5900,15 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 		if (_isPlayerPaused(player, playerCore)) {
 			return false;
 		}
+		const pauseState = __TTVAB_STATE__;
+		const pauseContextGeneration = pauseState.PagePlaybackContextGeneration;
 		_pausePlaybackTarget(player);
 		const resumePausedPlayer = () => {
-			if (!_isPlaybackRecoveryContextCurrent(taskChannel, taskMediaKey)) {
+			if (
+				__TTVAB_STATE__ !== pauseState ||
+				pauseState.PagePlaybackContextGeneration !== pauseContextGeneration ||
+				!_isPlaybackRecoveryContextCurrent(taskChannel, taskMediaKey)
+			) {
 				return;
 			}
 			if (
@@ -5863,6 +6012,9 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 			Number(reloadVideo.currentTime) > 1
 				? Number(reloadVideo.currentTime)
 				: null;
+		const reloadInteractionAt =
+			_PlaybackIntentState.lastPlaybackControlInteractionAt;
+		const reloadVodID = _normalizeVodID(playerState?.props?.content?.vodID);
 		const preferenceSnapshot = _capturePlayerPreferenceSnapshot(
 			playerCore,
 			reloadVideo,
@@ -6070,20 +6222,66 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 			});
 
 			if (vodResumePosition !== null) {
+				let positionRestored = false;
 				for (const restoreDelay of [1200, 3000]) {
 					_schedulePlaybackRecoveryTimeout(
 						() => {
 							try {
-								const { player: vodPlayer } = _getPlayerAndState();
+								if (positionRestored) return;
+								if (
+									!isReloadCurrent() ||
+									_hasUserPauseIntent(taskChannel, taskMediaKey) ||
+									_PlaybackIntentState.lastPlaybackControlInteractionAt !==
+										reloadInteractionAt ||
+									(reason !== "manual" &&
+										_shouldSuppressAutomaticPlaybackResume(
+											taskChannel,
+											taskMediaKey,
+										)) ||
+									(isTerminalPostAdTask &&
+										!_maintainPostAdRecoveryTransactionLifetime())
+								) {
+									positionRestored = true;
+									return;
+								}
+								const { player: vodPlayer, state: vodState } =
+									_getPlayerAndState();
 								const vodVideo = vodPlayer?.getHTMLVideoElement?.() || null;
-								if (!vodVideo || vodVideo.ended) return;
-								const currentPos = Number(vodVideo.currentTime) || 0;
-								if (Math.abs(currentPos - vodResumePosition) <= 2) return;
+								if (!vodPlayer || !vodState || !vodVideo) return;
+								if (
+									vodPlayer !== player ||
+									vodState !== playerState ||
+									vodState.props?.content?.type !== "vod" ||
+									_normalizeVodID(vodState.props?.content?.vodID) !==
+										reloadVodID ||
+									vodVideo.ended ||
+									vodVideo.isConnected === false
+								) {
+									positionRestored = true;
+									return;
+								}
+								const currentPos = Number(vodVideo.currentTime);
+								if (!Number.isFinite(currentPos) || vodVideo.readyState === 0)
+									return;
+								const resetPlaybackLimit =
+									(Math.max(0, Date.now() - now) / 1000) *
+										Math.max(1, Number(vodVideo.playbackRate) || 1) +
+									2;
+								if (
+									currentPos >= vodResumePosition - 2 ||
+									currentPos > resetPlaybackLimit
+								) {
+									positionRestored = true;
+									return;
+								}
 								if (typeof vodPlayer?.seekTo === "function") {
 									vodPlayer.seekTo(vodResumePosition);
 								} else {
 									vodVideo.currentTime = vodResumePosition;
 								}
+								positionRestored =
+									Math.abs(Number(vodVideo.currentTime) - vodResumePosition) <=
+									2;
 								_log(
 									`Restored VOD position to ${Math.round(vodResumePosition)}s after reload`,
 									"info",
@@ -7108,6 +7306,7 @@ function _monitorPlayerBuffering() {
 				pipContext?.element instanceof HTMLMediaElement
 			) {
 				pinPlayer = {
+					core: { worker: pipContext.workerRef?.deref?.() || null },
 					getHTMLVideoElement: () => pipContext.element,
 				};
 			}
