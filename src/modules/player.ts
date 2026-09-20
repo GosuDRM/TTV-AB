@@ -4906,15 +4906,6 @@ function _tryRunPendingPostAdRecoveryOperation(
 		})
 	)
 		return false;
-	if (
-		_isNativeDocumentHidden({
-			ChannelName: safeChannel,
-			MediaKey: safeMediaKey,
-		}) &&
-		pendingOperation.options.reason !== "post-ad-native-restore"
-	) {
-		return false;
-	}
 	const now = Date.now();
 	if (now < _PostAdRecoveryTransactionState.pendingOperationReadyAt) {
 		return false;
@@ -5022,10 +5013,10 @@ function _maintainPostAdRecoveryTransactionLifetime() {
 		ChannelName: _PostAdRecoveryTransactionState.channel,
 		MediaKey: _PostAdRecoveryTransactionState.mediaKey,
 	};
-	const isSuspended = Boolean(
-		_isNativeDocumentHidden(transactionContext) ||
-			_isActivePictureInPicturePlaybackContext(transactionContext),
-	);
+	const isPictureInPicture =
+		_isActivePictureInPicturePlaybackContext(transactionContext);
+	const isSuspended =
+		_isNativeDocumentHidden(transactionContext) || isPictureInPicture;
 	if (isSuspended) {
 		if (
 			!_PostAdRecoveryTransactionState.suspendedAt &&
@@ -5038,10 +5029,13 @@ function _maintainPostAdRecoveryTransactionLifetime() {
 		if (!_PostAdRecoveryTransactionState.suspendedAt) {
 			_PostAdRecoveryTransactionState.suspendedAt = now;
 		}
-		_PostAdRecoveryTransactionState.video = null;
-		_PostAdRecoveryTransactionState.observedAt = 0;
-		_PostAdRecoveryTransactionState.lastCurrentTime = 0;
-		_PostAdRecoveryTransactionState.stallTicks = 0;
+		if (isPictureInPicture) {
+			_PostAdRecoveryTransactionState.video = null;
+			_PostAdRecoveryTransactionState.observedAt = 0;
+			_PostAdRecoveryTransactionState.lastCurrentTime = 0;
+			_PostAdRecoveryTransactionState.lastTotalFrames = -1;
+			_PostAdRecoveryTransactionState.stallTicks = 0;
+		}
 		_PostAdRecoveryTransactionState.lastCheckedAt = now;
 		return true;
 	}
@@ -5051,6 +5045,11 @@ function _maintainPostAdRecoveryTransactionLifetime() {
 			now - _PostAdRecoveryTransactionState.suspendedAt,
 		);
 		_PostAdRecoveryTransactionState.suspendedAt = 0;
+		_PostAdRecoveryTransactionState.video = null;
+		_PostAdRecoveryTransactionState.observedAt = 0;
+		_PostAdRecoveryTransactionState.lastCurrentTime = 0;
+		_PostAdRecoveryTransactionState.lastTotalFrames = -1;
+		_PostAdRecoveryTransactionState.stallTicks = 0;
 	}
 	_PostAdRecoveryTransactionState.lastCheckedAt = now;
 	if (
@@ -5129,10 +5128,6 @@ function _handlePendingPostAdRecovery(
 		return true;
 	}
 	if (
-		_isNativeDocumentHidden({
-			ChannelName: safeChannel,
-			MediaKey: safeMediaKey,
-		}) ||
 		_isActivePictureInPicturePlaybackContext({
 			ChannelName: safeChannel,
 			MediaKey: safeMediaKey,
@@ -5223,6 +5218,20 @@ function _handlePendingPostAdRecovery(
 		return true;
 	}
 	if (hasAdvancingFrames) {
+		_PlayerBufferState.postAdUnhealthyCount = 0;
+		return false;
+	}
+	if (
+		_isNativeDocumentHidden({
+			ChannelName: safeChannel,
+			MediaKey: safeMediaKey,
+		}) &&
+		advanced &&
+		!isLivePaused &&
+		!liveVideo.ended &&
+		Number(liveVideo.readyState) >= 2
+	) {
+		_PostAdRecoveryTransactionState.stallTicks = 0;
 		_PlayerBufferState.postAdUnhealthyCount = 0;
 		return false;
 	}
@@ -7344,6 +7353,37 @@ function _monitorPlayerBuffering() {
 		_resetPinnedBackupStallState();
 		_resetFatalAdMediaRecoveryState();
 		_resetInAdFreezeState();
+
+		if (
+			hasPendingPostAdRecovery &&
+			_PostAdRecoveryTransactionState.mediaKey &&
+			(isHidden || !hasLivePlaybackContext)
+		) {
+			const { player, state } = _getPlayerAndState();
+			if (
+				_maintainPostAdRecoveryTransactionLifetime() &&
+				player &&
+				state &&
+				!_isPlayerWorkerUnavailable(player)
+			) {
+				_handlePendingPostAdRecovery(
+					player,
+					_getPlayerCore(player),
+					player.getHTMLVideoElement?.() || null,
+					__TTVAB_STATE__.PageChannel,
+					currentMediaKey,
+					state.props?.content?.type || null,
+				);
+			} else {
+				_PostAdRecoveryTransactionState.video = null;
+				_PostAdRecoveryTransactionState.observedAt = 0;
+				_PostAdRecoveryTransactionState.lastCurrentTime = 0;
+				_PostAdRecoveryTransactionState.lastTotalFrames = -1;
+				_PostAdRecoveryTransactionState.stallTicks = 0;
+			}
+			_clearCachedPlayerRef(false);
+			return nextDelay;
+		}
 
 		if (!hasLivePlaybackContext) {
 			_resetPlayerBufferMonitorState();
