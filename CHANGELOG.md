@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.0.4] - 2026-09-22
+
+Fixed
+
+- **Startup Ad Recovery** - Restore missing quality options after startup ads, including when Twitch is in the background.
+
 ## [18.0.3] - 2026-09-21
 
 Fixed
