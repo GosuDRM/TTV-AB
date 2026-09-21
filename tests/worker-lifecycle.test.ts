@@ -9597,7 +9597,19 @@ describe("worker mixed-codec master selection", () => {
 		const low = "https://edge.example/360p.m3u8?token=reduced";
 		const backup = "https://edge.example/360p.m3u8?token=backup";
 		const codec = "avc1.64002a,mp4a.40.2";
-		const fullMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,VIDEO="1080p60",CODECS="${codec}"\n${high}`;
+
+		const extra = [720, 480, 360, 160].map((height) => ({
+			height,
+			url: `https://edge.example/${height}p.m3u8?token=owned`,
+		}));
+		const fullMaster =
+			`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,VIDEO="1080p60",CODECS="${codec}"\n${high}` +
+			extra
+				.map(
+					({ height, url }) =>
+						`\n#EXT-X-STREAM-INF:RESOLUTION=${height * 2}x${height},CODECS="${codec}"\n${url}`,
+				)
+				.join("");
 		const lowMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,VIDEO="360p",CODECS="${codec}"\n${low}`;
 		let sequence = 500;
 		const playlist = (name: string) =>
@@ -9607,6 +9619,11 @@ describe("worker mixed-codec master selection", () => {
 			if (url === masterUrl) return new Response(fullMaster);
 			if (url === reducedUrl) return new Response(lowMaster);
 			if (url === high) return new Response(playlist("native"));
+			if (extra.some((entry) => entry.url === url)) {
+				return new Promise<Response>((resolve) =>
+					setTimeout(() => resolve(new Response(playlist("quality"))), 500),
+				);
+			}
 			if (url === low) return new Response(playlist("low"));
 			if (url === backup) return new Response(playlist("backup"));
 			throw new Error(`Unexpected fetch: ${url}`);
@@ -9661,7 +9678,10 @@ describe("worker mixed-codec master selection", () => {
 				playlistUrl: high,
 				resolution: "1920x1080",
 			});
-			const rebuilt = await (await workerFetch(reducedUrl)).text();
+			const rebuild = workerFetch(reducedUrl);
+			await vi.advanceTimersByTimeAsync(2001);
+			const rebuilt = await (await rebuild).text();
+			for (const { url } of extra) expect(rebuilt).toContain(url);
 			expect(rebuilt).toContain(high);
 			expect(rebuilt).not.toContain(low);
 			await workerFetch(high);

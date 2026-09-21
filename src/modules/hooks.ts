@@ -872,87 +872,105 @@ function _hookWorkerFetch() {
 				(Number(right.attrs["FRAME-RATE"]) || 0) -
 					(Number(left.attrs["FRAME-RATE"]) || 0),
 		);
-		const qualityResults = [];
-		let deadlineReached = false;
-		for (const candidate of candidates.slice(0, 12)) {
-			if (deadlineReached || Date.now() >= deadlineAt) break;
-			const { index, attrs, height, url: candidateUrl } = candidate;
-			const recordResult = (reason) =>
-				qualityResults.push(`${height}p:${reason}`);
-			if (!_getVideoCodecIdentity(attrs.CODECS)) {
-				recordResult("unknown-codec");
-				continue;
-			}
-			const groups = [
-				attrs.AUDIO,
-				attrs.VIDEO,
-				attrs.SUBTITLES,
-				attrs["CLOSED-CAPTIONS"],
-			];
-			if (
-				masterLines.some(
-					(entry) =>
-						entry.startsWith("#EXT-X-MEDIA:") &&
-						groups.includes(_parseAttrs(entry)["GROUP-ID"]) &&
-						_parseAttrs(entry).URI,
-				)
+		const qualityResults = new Map();
+		const qualityCandidates = candidates.slice(0, 12);
+		let nextCandidate = 0;
+		const validateQualities = async () => {
+			while (
+				nextCandidate < qualityCandidates.length &&
+				Date.now() < deadlineAt
 			) {
-				recordResult("external-media");
-				continue;
-			}
-			let result = "clean";
-			let previousSequence = null;
-			try {
-				for (let look = 0; look < 2; look++) {
-					assertPendingCurrent();
-					if (Date.now() >= deadlineAt) {
-						result = "deadline";
-						break;
-					}
-					const probe = await _awaitBackupProbeBeforeDeadline(
-						_fetchWithTimeout(
-							realFetch,
-							candidateUrl,
-							{ signal: requestSignal },
-							Math.max(1, deadlineAt - Date.now()),
-						),
-						deadlineAt,
-					);
-					assertPendingCurrent();
-					deadlineReached = !probe.completed;
-					if (!probe.completed || probe.value.status !== 200) {
-						result = !probe.completed
-							? "deadline"
-							: `http-${probe.value.status}`;
-						break;
-					}
-					const text = await probe.value.text();
-					assertPendingCurrent();
-					const sequence = _parsePlaylistFirstMediaSequence(text);
-					if (
-						_hasPlaylistAdMarkers(text) ||
-						_hasExplicitAdMetadata(text) ||
-						_playlistHasKnownAdSegments(text)
-					)
-						result = "ad-marked";
-					else if (
-						!_playlistHasMediaSegments(text) ||
-						text.includes("#EXT-X-SKIP:") ||
-						sequence == null
-					)
-						result = "unplayable";
-					else if (previousSequence != null && sequence < previousSequence)
-						result = "rewound";
-					if (result !== "clean") break;
-					previousSequence = sequence;
+				const candidate = qualityCandidates[nextCandidate++];
+				const { index, attrs, height, url: candidateUrl } = candidate;
+				const recordResult = (reason) =>
+					qualityResults.set(index, `${height}p:${reason}`);
+				if (!_getVideoCodecIdentity(attrs.CODECS)) {
+					recordResult("unknown-codec");
+					continue;
 				}
-			} catch {
-				assertPendingCurrent();
-				result = Date.now() >= deadlineAt ? "deadline" : "fetch-error";
+				const groups = [
+					attrs.AUDIO,
+					attrs.VIDEO,
+					attrs.SUBTITLES,
+					attrs["CLOSED-CAPTIONS"],
+				];
+				if (
+					masterLines.some(
+						(entry) =>
+							entry.startsWith("#EXT-X-MEDIA:") &&
+							groups.includes(_parseAttrs(entry)["GROUP-ID"]) &&
+							_parseAttrs(entry).URI,
+					)
+				) {
+					recordResult("external-media");
+					continue;
+				}
+				let result = "clean";
+				let previousSequence = null;
+				try {
+					for (let look = 0; look < 2; look++) {
+						assertPendingCurrent();
+						if (Date.now() >= deadlineAt) {
+							result = "deadline";
+							break;
+						}
+						const probe = await _awaitBackupProbeBeforeDeadline(
+							_fetchWithTimeout(
+								realFetch,
+								candidateUrl,
+								{ signal: requestSignal },
+								Math.max(1, deadlineAt - Date.now()),
+							),
+							deadlineAt,
+						);
+						assertPendingCurrent();
+						if (
+							!probe.completed ||
+							Date.now() >= deadlineAt ||
+							probe.value.status !== 200
+						) {
+							result =
+								!probe.completed || Date.now() >= deadlineAt
+									? "deadline"
+									: `http-${probe.value.status}`;
+							break;
+						}
+						const text = await probe.value.text();
+						assertPendingCurrent();
+						const sequence = _parsePlaylistFirstMediaSequence(text);
+						if (
+							_hasPlaylistAdMarkers(text) ||
+							_hasExplicitAdMetadata(text) ||
+							_playlistHasKnownAdSegments(text)
+						)
+							result = "ad-marked";
+						else if (
+							!_playlistHasMediaSegments(text) ||
+							text.includes("#EXT-X-SKIP:") ||
+							sequence == null
+						)
+							result = "unplayable";
+						else if (previousSequence != null && sequence < previousSequence)
+							result = "rewound";
+						if (result !== "clean") break;
+						previousSequence = sequence;
+					}
+				} catch {
+					assertPendingCurrent();
+					result = Date.now() >= deadlineAt ? "deadline" : "fetch-error";
+				}
+				recordResult(result);
+				if (result === "clean") selectedVariants.set(index, candidateUrl);
 			}
-			recordResult(result);
-			if (result === "clean") selectedVariants.set(index, candidateUrl);
-		}
+		};
+		await Promise.all(
+			Array.from({ length: Math.min(3, qualityCandidates.length) }, () =>
+				validateQualities(),
+			),
+		);
+		const qualityOutcomes = qualityCandidates
+			.map(({ index }) => qualityResults.get(index))
+			.filter(Boolean);
 		const configuredQuality =
 			/^(?:auto|chunked|audio_only|\d{2,4}p(?:\d{2})?)$/i.test(
 				__TTVAB_STATE__.PreferredQualityGroup || "",
@@ -964,7 +982,7 @@ function _hookWorkerFetch() {
 				String(info.SustainedNativeResolution?.Resolution || "").split("x")[1],
 			) || 0;
 		_log(
-			`[Recovery] Native quality checks: configured ${configuredQuality}, target ${targetHeight}p, sustained ${sustainedHeight}p; ${qualityResults.join(", ") || "no additional variants"}; checked ${qualityResults.length}/${candidates.length}`,
+			`[Recovery] Native quality checks: configured ${configuredQuality}, target ${targetHeight}p, sustained ${sustainedHeight}p; ${qualityOutcomes.join(", ") || "no additional variants"}; checked ${qualityResults.size}/${candidates.length}`,
 			"info",
 		);
 		assertPendingCurrent();
@@ -1020,7 +1038,12 @@ function _hookWorkerFetch() {
 			return rejectPending();
 		}
 		pending.masterServedAt = Date.now();
-		pending.verifiedPlaylistUrls = [...selectedVariants.values()];
+		pending.verifiedPlaylistUrls = [
+			exactPlaylistUrl,
+			...qualityCandidates
+				.filter(({ index }) => selectedVariants.has(index))
+				.map(({ url }) => url),
+		];
 		pending.loaderEpoch = Math.max(
 			0,
 			Number(info.NativeRecoveryLoaderEpoch) || 0,

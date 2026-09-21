@@ -918,6 +918,72 @@ describe("owned native recovery after a codec fallback", () => {
 });
 
 describe("bounded native session preservation", () => {
+	it.each(["none", "stall", "ad"])(
+		"validates responsive quality options within the deadline with a %s failure",
+		async (failure) => {
+			const stalled = failure === "stall";
+			const rejected = failure !== "none";
+			const { context, info, state, fetch, serve, restored } = setup();
+			state.PreferredQualityGroup = "1080p60";
+			for (let index = 0; index < 30 && !restored(); index++) await serve();
+			const pending = info._PendingPostAdNativeMaster;
+			const extras = [720, 480, 360, 160].map((height) => ({
+				height,
+				url: `https://edge.example/native-${height}.m3u8?token=owned`,
+			}));
+			pending.master = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="${avc}"\n${nativeUrl}`;
+			for (const { height, url } of extras)
+				pending.master += `\n#EXT-X-STREAM-INF:RESOLUTION=${Math.round((height * 16) / 9)}x${height},CODECS="${avc}"\n${url}`;
+			const now = Date.now();
+			vi.useFakeTimers();
+			vi.setSystemTime(now);
+			let active = 0;
+			let peak = 0;
+			let sequence = 2000;
+			const checks = vi.fn((input: string) => {
+				active++;
+				peak = Math.max(peak, active);
+				if (stalled && input === extras[0].url)
+					return new Promise<Response>(() => {});
+				return new Promise<Response>((resolve) =>
+					setTimeout(() => {
+						active--;
+						resolve(
+							new Response(
+								playlist(
+									++sequence,
+									"quality",
+									failure === "ad" &&
+										input === extras[0].url &&
+										checks.mock.calls.filter(([url]) => url === input)
+											.length === 2,
+								),
+							),
+						);
+					}, 500),
+				);
+			});
+			context.fetch = (input) =>
+				extras.some(({ url }) => url === String(input))
+					? checks(String(input))
+					: fetch(input);
+			context._hookWorkerFetch();
+			const request = context.fetch(masterUrl.replaceAll("owned", "fresh"));
+			await vi.advanceTimersByTimeAsync(2501);
+			const rebuilt = await (await request).text();
+			expect(rebuilt).toContain(nativeUrl);
+			for (const { url } of extras.slice(rejected ? 1 : 0)) {
+				expect(rebuilt).toContain(url);
+				expect(
+					checks.mock.calls.filter(([input]) => input === url),
+				).toHaveLength(2);
+			}
+			if (rejected) expect(rebuilt).not.toContain(extras[0].url);
+			expect(peak).toBeLessThanOrEqual(3);
+			expect(pending.verifiedPlaylistUrls).toHaveLength(rejected ? 4 : 5);
+		},
+	);
+
 	it("verifies the earlier native quality before slow low qualities can exhaust the master budget", async () => {
 		const { context, info, state, fetch, target, serve, restored } = setup();
 		state.PreferredQualityGroup = "1080p60";
