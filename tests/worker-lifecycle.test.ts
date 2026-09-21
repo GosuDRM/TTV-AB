@@ -9584,115 +9584,141 @@ describe("worker mixed-codec master selection", () => {
 		}
 	});
 
-	it("restores the observed native catalog after a reduced master in the injected worker", async () => {
-		vi.useFakeTimers();
-		vi.setSystemTime(200000);
-		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
-		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
-		const mediaKey = "live:testchannel";
-		const masterUrl =
-			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=owned";
-		const reducedUrl = masterUrl.replace("owned", "reduced");
-		const high = "https://edge.example/1080p.m3u8?token=owned";
-		const low = "https://edge.example/360p.m3u8?token=reduced";
-		const backup = "https://edge.example/360p.m3u8?token=backup";
-		const codec = "avc1.64002a,mp4a.40.2";
+	it.each([false, true])(
+		"restores the native catalog after a reduced master in the injected worker with hidden preroll=%s",
+		async (preroll) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(200000);
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const mediaKey = "live:testchannel";
+			const masterUrl =
+				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=owned";
+			const reducedUrl = masterUrl.replace("owned", "reduced");
+			const high = "https://edge.example/1080p.m3u8?token=owned";
+			const low = "https://edge.example/360p.m3u8?token=reduced";
+			const backup = "https://edge.example/360p.m3u8?token=backup";
+			const codec = "avc1.64002a,mp4a.40.2";
 
-		const extra = [720, 480, 360, 160].map((height) => ({
-			height,
-			url: `https://edge.example/${height}p.m3u8?token=owned`,
-		}));
-		const fullMaster =
-			`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,VIDEO="1080p60",CODECS="${codec}"\n${high}` +
-			extra
-				.map(
-					({ height, url }) =>
-						`\n#EXT-X-STREAM-INF:RESOLUTION=${height * 2}x${height},CODECS="${codec}"\n${url}`,
-				)
-				.join("");
-		const lowMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,VIDEO="360p",CODECS="${codec}"\n${low}`;
-		let sequence = 500;
-		const playlist = (name: string) =>
-			`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${++sequence}\n#EXTINF:2.000,live\nhttps://edge.example/${name}-${sequence}.ts`;
-		const fetch = vi.fn(async (input: RequestInfo | URL) => {
-			const url = String(input);
-			if (url === masterUrl) return new Response(fullMaster);
-			if (url === reducedUrl) return new Response(lowMaster);
-			if (url === high) return new Response(playlist("native"));
-			if (extra.some((entry) => entry.url === url)) {
-				return new Promise<Response>((resolve) =>
-					setTimeout(() => resolve(new Response(playlist("quality"))), 500),
-				);
+			const extra = [720, 480, 360, 160].map((height) => ({
+				height,
+				url: `https://edge.example/${height}p.m3u8?token=owned`,
+			}));
+			const fullMaster =
+				`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,VIDEO="1080p60",CODECS="${codec}"\n${high}` +
+				extra
+					.map(
+						({ height, url }) =>
+							`\n#EXT-X-STREAM-INF:RESOLUTION=${height * 2}x${height},CODECS="${codec}"\n${url}`,
+					)
+					.join("");
+			const lowMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,VIDEO="360p",CODECS="${codec}"\n${low}`;
+			let sequence = 500;
+			const playlist = (name: string) =>
+				`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${++sequence}\n#EXTINF:2.000,live\nhttps://edge.example/${name}-${sequence}.ts`;
+			const fetch = vi.fn(async (input: RequestInfo | URL) => {
+				const url = String(input);
+				if (url === masterUrl) return new Response(fullMaster);
+				if (url === reducedUrl) return new Response(lowMaster);
+				if (url === high) return new Response(playlist("native"));
+				if (extra.some((entry) => entry.url === url)) {
+					return new Promise<Response>((resolve) =>
+						setTimeout(() => resolve(new Response(playlist("quality"))), 500),
+					);
+				}
+				if (url === low) return new Response(playlist("low"));
+				if (url === backup) return new Response(playlist("backup"));
+				throw new Error(`Unexpected fetch: ${url}`);
+			});
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, fetch);
+				runtime.scope.Date = Date;
+				runtime.deliverBootstrap();
+				const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
+				const state = runtime.scope.__TTVAB_STATE__ as CycleState;
+				Object.assign(state, {
+					PageMediaKey: mediaKey,
+					PreferredQualityGroup: "1440p60",
+				});
+				Object.assign(state, {
+					PagePlaybackVisibleSinceAt: preroll ? 0 : 100000,
+				});
+				await workerFetch(masterUrl);
+				if (!preroll) await workerFetch(high);
+				const info = state.StreamInfos[mediaKey];
+				if (preroll) {
+					expect(info.LastCleanNativeM3U8).toBeNull();
+					info.IsShowingAd = true;
+				} else {
+					expect(info._NativePlaybackMaster).toMatchObject({
+						master: fullMaster,
+					});
+				}
+				await workerFetch(reducedUrl);
+				if (preroll)
+					info.SustainedNativeResolution = (
+						info.Urls as Record<string, unknown>
+					)[low];
+				Object.assign(info, {
+					IsShowingAd: false,
+					IsHoldingBackupAfterAd: true,
+					IsUsingBackupStream: true,
+					HevcReloadPendingAfterHold: true,
+					VisibleAdStartedAt: 201000,
+					SilentBackupHoldStartedAt: 201000,
+					ExpectedAdPodLength: 1,
+					MaxObservedAdPodPosition: 1,
+					ActiveBackupPlayerType: "autoplay",
+					ActiveBackupResolution: "640x360",
+					LastCleanBackupM3U8: playlist("backup"),
+					LastCleanBackupPlayerType: "autoplay",
+					LastCleanBackupResolution: "640x360",
+					LastCleanBackupCodecFamily: "avc",
+					LastCleanBackupCodec: codec,
+					LastCleanBackupAt: Date.now(),
+				});
+				Object.assign(state, {
+					CurrentAdMediaKey: mediaKey,
+					CurrentAdChannel: "testchannel",
+				});
+				(info.BackupEncodingsM3U8Cache as Record<string, unknown>).autoplay = {
+					m3u8: lowMaster.replace(low, backup),
+					baseUrl: masterUrl.replace("owned", "backup"),
+				};
+				for (
+					let index = 0;
+					index < 24 && info.IsHoldingBackupAfterAd;
+					index++
+				) {
+					vi.setSystemTime(Date.now() + 2000);
+					const output = await (await workerFetch(low)).text();
+					if (info.IsHoldingBackupAfterAd) expect(output).toContain("backup-");
+				}
+				expect(info.IsHoldingBackupAfterAd).toBe(false);
+				expect(info._PendingPostAdNativeMaster).toMatchObject({
+					playlistUrl: high,
+					resolution: "1920x1080",
+				});
+				const rebuild = workerFetch(reducedUrl);
+				await vi.advanceTimersByTimeAsync(2001);
+				const rebuilt = await (await rebuild).text();
+				for (const { url } of extra) expect(rebuilt).toContain(url);
+				expect(rebuilt).toContain(high);
+				expect(rebuilt).not.toContain(low);
+				await workerFetch(high);
+				expect(info._PendingPostAdNativeMaster).toMatchObject({
+					consumed: true,
+				});
+				expect((info.Urls as Record<string, unknown>)[high]).toMatchObject({
+					Resolution: "1920x1080",
+				});
+			} finally {
+				harness.restore();
 			}
-			if (url === low) return new Response(playlist("low"));
-			if (url === backup) return new Response(playlist("backup"));
-			throw new Error(`Unexpected fetch: ${url}`);
-		});
-		try {
-			const runtime = startHarnessWorkerRuntime(harness.worker, fetch);
-			runtime.scope.Date = Date;
-			runtime.deliverBootstrap();
-			const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
-			const state = runtime.scope.__TTVAB_STATE__ as CycleState;
-			Object.assign(state, {
-				PageMediaKey: mediaKey,
-				PreferredQualityGroup: "1440p60",
-			});
-			await workerFetch(masterUrl);
-			await workerFetch(high);
-			const info = state.StreamInfos[mediaKey];
-			expect(info._NativePlaybackMaster).toMatchObject({ master: fullMaster });
-			await workerFetch(reducedUrl);
-			Object.assign(info, {
-				IsHoldingBackupAfterAd: true,
-				IsUsingBackupStream: true,
-				HevcReloadPendingAfterHold: true,
-				VisibleAdStartedAt: 201000,
-				SilentBackupHoldStartedAt: 201000,
-				ExpectedAdPodLength: 1,
-				MaxObservedAdPodPosition: 1,
-				ActiveBackupPlayerType: "autoplay",
-				ActiveBackupResolution: "640x360",
-				LastCleanBackupM3U8: playlist("backup"),
-				LastCleanBackupPlayerType: "autoplay",
-				LastCleanBackupResolution: "640x360",
-				LastCleanBackupCodecFamily: "avc",
-				LastCleanBackupCodec: codec,
-				LastCleanBackupAt: Date.now(),
-			});
-			Object.assign(state, {
-				CurrentAdMediaKey: mediaKey,
-				CurrentAdChannel: "testchannel",
-			});
-			(info.BackupEncodingsM3U8Cache as Record<string, unknown>).autoplay = {
-				m3u8: lowMaster.replace(low, backup),
-				baseUrl: masterUrl.replace("owned", "backup"),
-			};
-			for (let index = 0; index < 24 && info.IsHoldingBackupAfterAd; index++) {
-				vi.setSystemTime(Date.now() + 2000);
-				const output = await (await workerFetch(low)).text();
-				if (info.IsHoldingBackupAfterAd) expect(output).toContain("backup-");
-			}
-			expect(info.IsHoldingBackupAfterAd).toBe(false);
-			expect(info._PendingPostAdNativeMaster).toMatchObject({
-				playlistUrl: high,
-				resolution: "1920x1080",
-			});
-			const rebuild = workerFetch(reducedUrl);
-			await vi.advanceTimersByTimeAsync(2001);
-			const rebuilt = await (await rebuild).text();
-			for (const { url } of extra) expect(rebuilt).toContain(url);
-			expect(rebuilt).toContain(high);
-			expect(rebuilt).not.toContain(low);
-			await workerFetch(high);
-			expect(info._PendingPostAdNativeMaster).toMatchObject({ consumed: true });
-			expect((info.Urls as Record<string, unknown>)[high]).toMatchObject({
-				Resolution: "1920x1080",
-			});
-		} finally {
-			harness.restore();
-		}
-	});
+		},
+	);
 
 	it("recovers native quality after the injected worker acknowledges the AVC handoff", async () => {
 		vi.useFakeTimers();
