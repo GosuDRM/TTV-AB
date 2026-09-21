@@ -747,7 +747,12 @@ function _hookWorkerFetch() {
 		statusText: response.statusText,
 		headers: response.headers,
 	});
-	const getPendingPostAdNativeMaster = (info, playbackContext) => {
+	const getPendingPostAdNativeMaster = async (
+		info,
+		playbackContext,
+		requestSignal,
+		assertRequestCurrent,
+	) => {
 		const pending = info?._PendingPostAdNativeMaster;
 		if (!pending) return null;
 		const rejectPending = () => {
@@ -807,22 +812,181 @@ function _hookWorkerFetch() {
 			return rejectPending();
 		}
 
-		const selectedVariantAttrs = _parseAttrs(selectedVariantLine);
-		const selectedMediaGroups = new Set(
-			[
-				selectedVariantAttrs.AUDIO,
-				selectedVariantAttrs.VIDEO,
-				selectedVariantAttrs.SUBTITLES,
-				selectedVariantAttrs["CLOSED-CAPTIONS"],
-			].filter((value) => value && value !== "NONE"),
+		const loaderEpoch = Math.max(
+			0,
+			Number(info.NativeRecoveryLoaderEpoch) || 0,
 		);
+		const assertPendingCurrent = () => {
+			assertRequestCurrent();
+			if (
+				requestSignal?.aborted ||
+				info._PendingPostAdNativeMaster !== pending ||
+				pending.consumed === true ||
+				__TTVAB_STATE__.StreamInfos[mediaKey] !== info ||
+				Date.now() >= pending.expiresAt ||
+				Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) !==
+					loaderEpoch ||
+				_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ||
+				Number(__TTVAB_STATE__.LastAdEndedCycleStartedAt) !== cycleStartedAt
+			)
+				throw _createCodecHandoffAbortError(requestSignal);
+		};
+		const selectedVariants = new Map([
+			[selectedVariantIndex, exactPlaylistUrl],
+		]);
+		const deadlineAt = Math.min(pending.expiresAt, Date.now() + 2500);
+		const recoveryResolutions =
+			info._NativePlaybackMaster?.master === pending.master &&
+			info._NativePlaybackMaster?.masterUrl === pending.masterUrl
+				? info._NativePlaybackMaster.resolutionList
+				: info.ResolutionList || [];
+		const recoveryTarget =
+			_getResolutionByQualityGroup(
+				recoveryResolutions,
+				__TTVAB_STATE__.PreferredQualityGroup,
+			) || info.SustainedNativeResolution;
+		const targetHeight =
+			Number(String(recoveryTarget?.Resolution || "").split("x")[1]) || 0;
+		const candidates = [];
+		for (let index = 0; index < masterLines.length - 1; index++) {
+			const line = masterLines[index];
+			const uri = masterLines[index + 1]?.trim();
+			if (
+				!line.startsWith("#EXT-X-STREAM-INF:") ||
+				!uri ||
+				uri.startsWith("#") ||
+				index === selectedVariantIndex
+			)
+				continue;
+			const attrs = _parseAttrs(line);
+			const height = Number(String(attrs.RESOLUTION || "").split("x")[1]) || 0;
+			const url = _getExactPlaylistUrlKey(uri, pending.masterUrl);
+			const priority =
+				url === recoveryTarget?.Url ? 2 : height === targetHeight ? 1 : 0;
+			candidates.push({ index, attrs, height, url, priority });
+		}
+		candidates.sort(
+			(left, right) =>
+				right.priority - left.priority ||
+				right.height - left.height ||
+				(Number(right.attrs["FRAME-RATE"]) || 0) -
+					(Number(left.attrs["FRAME-RATE"]) || 0),
+		);
+		const qualityResults = [];
+		let deadlineReached = false;
+		for (const candidate of candidates.slice(0, 12)) {
+			if (deadlineReached || Date.now() >= deadlineAt) break;
+			const { index, attrs, height, url: candidateUrl } = candidate;
+			const recordResult = (reason) =>
+				qualityResults.push(`${height}p:${reason}`);
+			if (!_getVideoCodecIdentity(attrs.CODECS)) {
+				recordResult("unknown-codec");
+				continue;
+			}
+			const groups = [
+				attrs.AUDIO,
+				attrs.VIDEO,
+				attrs.SUBTITLES,
+				attrs["CLOSED-CAPTIONS"],
+			];
+			if (
+				masterLines.some(
+					(entry) =>
+						entry.startsWith("#EXT-X-MEDIA:") &&
+						groups.includes(_parseAttrs(entry)["GROUP-ID"]) &&
+						_parseAttrs(entry).URI,
+				)
+			) {
+				recordResult("external-media");
+				continue;
+			}
+			let result = "clean";
+			let previousSequence = null;
+			try {
+				for (let look = 0; look < 2; look++) {
+					assertPendingCurrent();
+					if (Date.now() >= deadlineAt) {
+						result = "deadline";
+						break;
+					}
+					const probe = await _awaitBackupProbeBeforeDeadline(
+						_fetchWithTimeout(
+							realFetch,
+							candidateUrl,
+							{ signal: requestSignal },
+							Math.max(1, deadlineAt - Date.now()),
+						),
+						deadlineAt,
+					);
+					assertPendingCurrent();
+					deadlineReached = !probe.completed;
+					if (!probe.completed || probe.value.status !== 200) {
+						result = !probe.completed
+							? "deadline"
+							: `http-${probe.value.status}`;
+						break;
+					}
+					const text = await probe.value.text();
+					assertPendingCurrent();
+					const sequence = _parsePlaylistFirstMediaSequence(text);
+					if (
+						_hasPlaylistAdMarkers(text) ||
+						_hasExplicitAdMetadata(text) ||
+						_playlistHasKnownAdSegments(text)
+					)
+						result = "ad-marked";
+					else if (
+						!_playlistHasMediaSegments(text) ||
+						text.includes("#EXT-X-SKIP:") ||
+						sequence == null
+					)
+						result = "unplayable";
+					else if (previousSequence != null && sequence < previousSequence)
+						result = "rewound";
+					if (result !== "clean") break;
+					previousSequence = sequence;
+				}
+			} catch {
+				assertPendingCurrent();
+				result = Date.now() >= deadlineAt ? "deadline" : "fetch-error";
+			}
+			recordResult(result);
+			if (result === "clean") selectedVariants.set(index, candidateUrl);
+		}
+		const configuredQuality =
+			/^(?:auto|chunked|audio_only|\d{2,4}p(?:\d{2})?)$/i.test(
+				__TTVAB_STATE__.PreferredQualityGroup || "",
+			)
+				? __TTVAB_STATE__.PreferredQualityGroup
+				: "unknown";
+		const sustainedHeight =
+			Number(
+				String(info.SustainedNativeResolution?.Resolution || "").split("x")[1],
+			) || 0;
+		_log(
+			`[Recovery] Native quality checks: configured ${configuredQuality}, target ${targetHeight}p, sustained ${sustainedHeight}p; ${qualityResults.join(", ") || "no additional variants"}; checked ${qualityResults.length}/${candidates.length}`,
+			"info",
+		);
+		assertPendingCurrent();
+		const selectedMediaGroups = new Set();
+		for (const index of selectedVariants.keys()) {
+			const attrs = _parseAttrs(masterLines[index]);
+			for (const group of [
+				attrs.AUDIO,
+				attrs.VIDEO,
+				attrs.SUBTITLES,
+				attrs["CLOSED-CAPTIONS"],
+			]) {
+				if (group && group !== "NONE") selectedMediaGroups.add(group);
+			}
+		}
 		const selectedMasterLines = [];
 		for (let index = 0; index < masterLines.length; index++) {
 			const line = masterLines[index];
 			const trimmedLine = line?.trim();
 			if (line?.startsWith("#EXT-X-STREAM-INF")) {
 				const uri = masterLines[index + 1]?.trim();
-				if (index === selectedVariantIndex && uri === selectedVariantUri) {
+				if (selectedVariants.has(index)) {
 					selectedMasterLines.push(
 						line,
 						_absolutizePlaylistUrl(uri, pending.masterUrl),
@@ -856,6 +1020,7 @@ function _hookWorkerFetch() {
 			return rejectPending();
 		}
 		pending.masterServedAt = Date.now();
+		pending.verifiedPlaylistUrls = [...selectedVariants.values()];
 		pending.loaderEpoch = Math.max(
 			0,
 			Number(info.NativeRecoveryLoaderEpoch) || 0,
@@ -1289,15 +1454,33 @@ function _hookWorkerFetch() {
 		return { type: fallbackType, master };
 	}
 
-	function _syncStreamInfo(info, encodings, usherUrl) {
-		if (info._PendingPostAdNativeMaster) {
+	function _syncStreamInfo(
+		info,
+		encodings,
+		usherUrl,
+		preserveNativeSession = false,
+	) {
+		if (info._PendingPostAdNativeMaster && !preserveNativeSession) {
 			_reportPostAdNativeSession(info, "released");
 			info._PendingPostAdNativeMaster = null;
 		}
 		const wasUsingModifiedM3U8 = Boolean(info.IsUsingModifiedM3U8);
+		const previousHeight = (info.ResolutionList || []).reduce(
+			(height, entry) =>
+				Math.max(
+					height,
+					Number(String(entry?.Resolution || "").split("x")[1]) || 0,
+				),
+			0,
+		);
 		const previousUsherUrl = _getExactPlaylistUrlKey(info.UsherBaseUrl);
 		const nextUsherUrl = _getExactPlaylistUrlKey(usherUrl);
-		if (previousUsherUrl && nextUsherUrl && previousUsherUrl !== nextUsherUrl) {
+		if (
+			!preserveNativeSession &&
+			previousUsherUrl &&
+			nextUsherUrl &&
+			previousUsherUrl !== nextUsherUrl
+		) {
 			_invalidateNativeRecoveryAfterPlayerReload(info, true);
 		}
 		info.EncodingsM3U8 = encodings;
@@ -1362,6 +1545,20 @@ function _hookWorkerFetch() {
 					__TTVAB_STATE__.StreamInfosByUrl[alias] = info;
 				}
 			}
+		}
+		const nextHeight = info.ResolutionList.reduce(
+			(height, entry) =>
+				Math.max(
+					height,
+					Number(String(entry?.Resolution || "").split("x")[1]) || 0,
+				),
+			0,
+		);
+		if (previousHeight > nextHeight && nextHeight > 0) {
+			_log(
+				`[Recovery] Native master quality catalog reduced: ${previousHeight}p -> ${nextHeight}p; recent native catalog ${info._NativePlaybackMaster ? "retained for validation" : "unavailable"}`,
+				"info",
+			);
 		}
 		while (info.EnhancedVariantUrls.size > 100) {
 			const oldest = info.EnhancedVariantUrls.values().next().value;
@@ -1775,15 +1972,29 @@ function _hookWorkerFetch() {
 				assertMasterRequestCurrent();
 				const serverTime = _getServerTime(encodings);
 				let info = __TTVAB_STATE__.StreamInfos[playbackContext.MediaKey];
-				const pendingPostAdNativeMaster = getPendingPostAdNativeMaster(
+				const pendingPostAdNativeMaster = await getPendingPostAdNativeMaster(
 					info,
 					playbackContext,
+					requestSignal,
+					assertMasterRequestCurrent,
 				);
+				assertMasterRequestCurrent();
 				if (pendingPostAdNativeMaster) {
+					const pending = info._PendingPostAdNativeMaster;
+					if (
+						info.EncodingsM3U8 !== pending.master ||
+						info.UsherBaseUrl !== pending.masterUrl
+					) {
+						_syncStreamInfo(info, pending.master, pending.masterUrl, true);
+						_log(
+							"[Recovery] Restored verified native quality catalog after a reduced master",
+							"success",
+						);
+					}
 					commitMasterRequest(requestMediaKey, requestSequence);
 					info.LastActivityAt = Date.now();
 					_log(
-						"[Trace] Reusing verified native playlist session for post-ad decoder rebuild",
+						`[Trace] Reusing verified native playlist session for post-ad decoder rebuild (${info._PendingPostAdNativeMaster?.verifiedPlaylistUrls?.length || 1} verified qualities)`,
 						"success",
 					);
 					reportPlaybackWorkerBootstrapObserved(
@@ -5132,6 +5343,7 @@ function _hookWorker() {
 				${_isAutoplayBackupAvailableForSearch.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
+                ${_getNativeRecoveryMaster.toString()}
                 ${_resolveAdBackupTargetResolution.toString()}
 				${_getPendingForegroundQualityProbeAt.toString()}
 				${_startForegroundQualityProbe.toString()}
@@ -5181,6 +5393,8 @@ function _hookWorker() {
                 ${_getMediaPlaylistSessionKey.toString()}
                 ${_getEmptyHoldUpstreamUrl.toString()}
                 ${_applyEmptyHoldPlaylistContinuity.toString()}
+                ${_alignLivePlaylist.toString()}
+                ${_applyPlaylistContinuity.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
                 ${_getFallbackPromotionPolicy.toString()}
