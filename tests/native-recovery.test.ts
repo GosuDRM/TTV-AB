@@ -241,13 +241,17 @@ const reducedMaster = [
 	"https://edge.example/160p.m3u8?token=reduced",
 ].join("\n");
 
-async function setupReducedNativeMaster(enhancedCodec: string | null = null) {
+async function setupReducedNativeMaster(
+	enhancedCodec: string | null = null,
+	cleanBeforeBreak = true,
+) {
 	const fixture = setup(false);
 	const { context, info, state, fetch, serve } = fixture;
 	context._resetStreamAdState(info);
 	state.CurrentAdMediaKey = null;
 	state.CurrentAdChannel = null;
 	state.PreferredQualityGroup = "1440p60";
+	if (!cleanBeforeBreak) state.PagePlaybackVisibleSinceAt = 0;
 	const originalFetch = fetch.getMockImplementation();
 	if (!originalFetch) throw new Error("Missing native fetch fixture");
 	const fullMaster = enhancedCodec
@@ -267,10 +271,15 @@ async function setupReducedNativeMaster(enhancedCodec: string | null = null) {
 	context._hookWorkerFetch();
 	await context.fetch(masterUrl);
 	info.SustainedNativeResolution = null;
-	await serve(false, enhancedCodec ? enhancedUrl : nativeUrl);
-	expect(info.SustainedNativeResolution.Resolution).toBe(
-		enhancedCodec ? "2560x1440" : "1920x1080",
-	);
+	if (cleanBeforeBreak) {
+		await serve(false, enhancedCodec ? enhancedUrl : nativeUrl);
+		expect(info.SustainedNativeResolution.Resolution).toBe(
+			enhancedCodec ? "2560x1440" : "1920x1080",
+		);
+	} else {
+		info.IsShowingAd = true;
+		expect(info.LastCleanNativeM3U8).toBeNull();
+	}
 	await context.fetch(reducedMasterUrl);
 	expect(
 		info.ResolutionList.map(
@@ -278,6 +287,7 @@ async function setupReducedNativeMaster(enhancedCodec: string | null = null) {
 		),
 	).toEqual(["640x360", "284x160"]);
 	Object.assign(info, {
+		IsShowingAd: false,
 		IsHoldingBackupAfterAd: true,
 		IsUsingBackupStream: true,
 		HevcReloadPendingAfterHold: true,
@@ -290,6 +300,8 @@ async function setupReducedNativeMaster(enhancedCodec: string | null = null) {
 	});
 	state.CurrentAdMediaKey = info.MediaKey;
 	state.CurrentAdChannel = info.ChannelName;
+	if (!cleanBeforeBreak)
+		info.SustainedNativeResolution = info.ResolutionList[0];
 	if (enhancedCodec) {
 		const handoffId = context._requestCodecHandoffReload(
 			info,
@@ -311,6 +323,50 @@ afterEach(() => {
 });
 
 describe("owned native recovery after a codec fallback", () => {
+	it.each(["vod", "disabled", "auxiliary", "ad", "hold", "backup", "fallback"])(
+		"does not seed the initial native catalog from %s playback",
+		async (reason) => {
+			const { context, info, state } = setup(false);
+			context._resetStreamAdState(info);
+			state.CurrentAdMediaKey = null;
+			state.CurrentAdChannel = null;
+			if (reason === "disabled") state.IsAdStrippingEnabled = false;
+			if (reason === "auxiliary") state.PageMediaKey = "live:other";
+			if (reason === "ad") info.IsShowingAd = true;
+			if (reason === "hold") info.IsHoldingBackupAfterAd = true;
+			if (reason === "backup") info.IsUsingBackupStream = true;
+			if (reason === "fallback") info.IsUsingFallbackStream = true;
+			const url =
+				reason === "vod"
+					? "https://usher.ttvnw.net/vod/123456.m3u8?sig=owned"
+					: masterUrl;
+			if (reason === "vod") state.PageMediaKey = "vod:123456";
+			context.fetch = async () => new Response(master);
+			context._hookWorkerFetch();
+			await context.fetch(url);
+			const observed =
+				reason === "vod" ? state.StreamInfos["vod:123456"] : info;
+			expect(observed._NativePlaybackMaster).toBeNull();
+			expect(observed._PendingPostAdNativeMaster).toBeNull();
+		},
+	);
+
+	it("recovers configured quality after a hidden preroll with no prior clean native playback", async () => {
+		const { context, info, state, serve, restored } =
+			await setupReducedNativeMaster(null, false);
+		state.PreferredQualityGroup = "1080p60";
+		expect(info.LastCleanNativeM3U8).toBeNull();
+		expect(info._PendingPostAdNativeMaster).toBeNull();
+		for (let index = 0; index < 24 && !restored(); index++)
+			await serve(false, reducedNativeUrl);
+		expect(restored()?.requiresReload).toBe(true);
+		expect(info._PendingPostAdNativeMaster?.playlistUrl).toBe(nativeUrl);
+		const rebuilt = await (await context.fetch(reducedMasterUrl)).text();
+		expect(rebuilt).toContain(nativeUrl);
+		expect(rebuilt).not.toContain(reducedNativeUrl);
+		expect(state.PagePlaybackVisibleSinceAt).toBe(0);
+	});
+
 	it("recovers the observed native quality after a later master removes higher renditions", async () => {
 		const { context, info, serve, restored } = await setupReducedNativeMaster();
 		for (let index = 0; index < 24 && !restored(); index++) {
@@ -352,11 +408,20 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 
-	it.each(["ad", "stopped", "http-error"])(
-		"keeps the backup when the retained native session is %s",
-		async (failure) => {
-			const { info, target, serve, restored } =
-				await setupReducedNativeMaster();
+	it.each([
+		{ failure: "ad", cleanBeforeBreak: true },
+		{ failure: "stopped", cleanBeforeBreak: true },
+		{ failure: "http-error", cleanBeforeBreak: true },
+		{ failure: "ad", cleanBeforeBreak: false },
+		{ failure: "stopped", cleanBeforeBreak: false },
+		{ failure: "http-error", cleanBeforeBreak: false },
+	])(
+		"keeps the backup when the retained native session is $failure with prior clean playback=$cleanBeforeBreak",
+		async ({ failure, cleanBeforeBreak }) => {
+			const { info, target, serve, restored } = await setupReducedNativeMaster(
+				null,
+				cleanBeforeBreak,
+			);
 			target.mockImplementation(async () =>
 				failure === "http-error"
 					? new Response(null, { status: 403 })
@@ -370,31 +435,41 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 
-	it.each([
-		"route",
-		"generation",
-		"expired-before-break",
-		"future-observation",
-		"cycle-owner",
-		"vod",
-		"disabled",
-		"explicit-360",
-		"audio-only",
-	])("does not use a retained quality catalog after %s", async (reason) => {
-		const { context, info, state } = await setupReducedNativeMaster();
-		if (reason === "route") state.PageMediaKey = "live:other";
-		if (reason === "generation") state.PagePlaybackContextGeneration++;
-		if (reason === "expired-before-break")
-			info._NativePlaybackMaster.observedAt -= 60001;
-		if (reason === "future-observation")
-			info._NativePlaybackMaster.observedAt = info.VisibleAdStartedAt + 1;
-		if (reason === "cycle-owner") state.CurrentAdMediaKey = "live:other";
-		if (reason === "vod") info.MediaType = "vod";
-		if (reason === "disabled") state.IsAdStrippingEnabled = false;
-		if (reason === "explicit-360") state.PreferredQualityGroup = "360p";
-		if (reason === "audio-only") state.PreferredQualityGroup = "audio_only";
-		expect(context._getNativeRecoveryMaster(info).master).toBe(reducedMaster);
-	});
+	it.each(
+		[
+			"route",
+			"generation",
+			"expired-before-break",
+			"future-observation",
+			"cycle-owner",
+			"vod",
+			"disabled",
+			"explicit-360",
+			"audio-only",
+		].flatMap((reason) =>
+			[true, false].map((cleanBeforeBreak) => ({ reason, cleanBeforeBreak })),
+		),
+	)(
+		"does not use a retained catalog after $reason with prior clean playback=$cleanBeforeBreak",
+		async ({ reason, cleanBeforeBreak }) => {
+			const { context, info, state } = await setupReducedNativeMaster(
+				null,
+				cleanBeforeBreak,
+			);
+			if (reason === "route") state.PageMediaKey = "live:other";
+			if (reason === "generation") state.PagePlaybackContextGeneration++;
+			if (reason === "expired-before-break")
+				info._NativePlaybackMaster.observedAt -= 60001;
+			if (reason === "future-observation")
+				info._NativePlaybackMaster.observedAt = info.VisibleAdStartedAt + 1;
+			if (reason === "cycle-owner") state.CurrentAdMediaKey = "live:other";
+			if (reason === "vod") info.MediaType = "vod";
+			if (reason === "disabled") state.IsAdStrippingEnabled = false;
+			if (reason === "explicit-360") state.PreferredQualityGroup = "360p";
+			if (reason === "audio-only") state.PreferredQualityGroup = "audio_only";
+			expect(context._getNativeRecoveryMaster(info).master).toBe(reducedMaster);
+		},
+	);
 
 	it("retains the normal backup target when a reduced master advertises only the bridge height", async () => {
 		const { context, info } = await setupReducedNativeMaster();

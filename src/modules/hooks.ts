@@ -1577,6 +1577,29 @@ function _hookWorkerFetch() {
 				),
 			0,
 		);
+		if (
+			!info._NativePlaybackMaster &&
+			!preserveNativeSession &&
+			info.MediaType === "live" &&
+			__TTVAB_STATE__.IsAdStrippingEnabled === true &&
+			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) === info.MediaKey &&
+			!info.IsShowingAd &&
+			!info.IsHoldingBackupAfterAd &&
+			!info.IsUsingBackupStream &&
+			!info.IsUsingFallbackStream &&
+			nextHeight > 0 &&
+			encodings.trimStart().startsWith("#EXTM3U")
+		) {
+			info._NativePlaybackMaster = {
+				master: encodings,
+				masterUrl: usherUrl,
+				resolutionList: info.ResolutionList.slice(),
+				mediaKey: info.MediaKey,
+				pageGeneration:
+					Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+				observedAt: Date.now(),
+			};
+		}
 		if (previousHeight > nextHeight && nextHeight > 0) {
 			_log(
 				`[Recovery] Native master quality catalog reduced: ${previousHeight}p -> ${nextHeight}p; recent native catalog ${info._NativePlaybackMaster ? "retained for validation" : "unavailable"}`,
