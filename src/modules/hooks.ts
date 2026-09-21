@@ -5390,6 +5390,7 @@ function _hookWorker() {
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
                 ${_getNativeRecoveryMaster.toString()}
+                ${_refreshNativeRecoveryMaster.toString()}
                 ${_resolveAdBackupTargetResolution.toString()}
 				${_getPendingForegroundQualityProbeAt.toString()}
 				${_startForegroundQualityProbe.toString()}

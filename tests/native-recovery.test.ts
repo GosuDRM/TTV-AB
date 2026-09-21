@@ -228,6 +228,9 @@ function setup(withCodecHandoff = true) {
 		serve,
 		checkRecovery,
 		restored,
+		advance: (ms: number) => {
+			now += ms;
+		},
 	};
 }
 
@@ -244,6 +247,7 @@ const reducedMaster = [
 async function setupReducedNativeMaster(
 	enhancedCodec: string | null = null,
 	cleanBeforeBreak = true,
+	lowPlaybackMs = 0,
 ) {
 	const fixture = setup(false);
 	const { context, info, state, fetch, serve } = fixture;
@@ -281,6 +285,11 @@ async function setupReducedNativeMaster(
 		expect(info.LastCleanNativeM3U8).toBeNull();
 	}
 	await context.fetch(reducedMasterUrl);
+	if (lowPlaybackMs) {
+		state.PagePlaybackVisibleSinceAt = 1;
+		fixture.advance(lowPlaybackMs);
+		await serve(false, reducedNativeUrl);
+	}
 	expect(
 		info.ResolutionList.map(
 			(entry: { Resolution: string }) => entry.Resolution,
@@ -367,6 +376,224 @@ describe("owned native recovery after a codec fallback", () => {
 		expect(state.PagePlaybackVisibleSinceAt).toBe(0);
 	});
 
+	it.each(
+		[false, true].flatMap((hidden) =>
+			["1080p60", "auto"].map((quality) => ({ hidden, quality })),
+		),
+	)(
+		"restores the full catalog after 38 minutes of reduced native playback with hidden=$hidden and quality=$quality",
+		async ({ hidden, quality }) => {
+			const { context, info, state, fetch, serve, restored } =
+				await setupReducedNativeMaster(null, true, 38 * 60000);
+			state.PreferredQualityGroup = quality;
+			if (hidden) state.PagePlaybackVisibleSinceAt = 0;
+			expect(info.SustainedNativeResolution.Resolution).toBe("640x360");
+			for (let index = 0; index < 24 && !restored(); index++)
+				await serve(false, reducedNativeUrl);
+			expect(info._PendingPostAdNativeMaster?.playlistUrl).toBe(nativeUrl);
+			const rebuilt = await (await context.fetch(reducedMasterUrl)).text();
+			expect(rebuilt).toContain(nativeUrl);
+			expect(rebuilt).not.toContain(reducedNativeUrl);
+			expect(
+				fetch.mock.calls.filter(([url]) => String(url) === masterUrl),
+			).toHaveLength(2);
+		},
+	);
+
+	it.each(["ad", "stopped", "http-error"])(
+		"keeps the clean backup when refreshed long-session native media is %s",
+		async (failure) => {
+			const { context, info, target, serve, restored } =
+				await setupReducedNativeMaster(null, true, 38 * 60000);
+			target.mockImplementation(async () =>
+				failure === "http-error"
+					? new Response(null, { status: 403 })
+					: new Response(playlist(1000, "retained", failure === "ad")),
+			);
+			for (let index = 0; index < 24; index++)
+				await serve(false, reducedNativeUrl);
+			expect(restored()).toBeUndefined();
+			expect(info.IsHoldingBackupAfterAd).toBe(true);
+			expect(info._PendingPostAdNativeMaster).toBeNull();
+			expect(context._getNativeRecoveryMaster(info).master).toContain(
+				nativeUrl,
+			);
+		},
+	);
+
+	it.each(["http-error", "changed-session", "changed-codec", "invalid", "ad"])(
+		"rejects a retained master refresh with %s without adopting its URLs",
+		async (failure) => {
+			const { context, info, fetch } = await setupReducedNativeMaster(
+				null,
+				true,
+				38 * 60000,
+			);
+			const saved = info._NativePlaybackMaster;
+			const originalFetch = fetch.getMockImplementation();
+			if (!originalFetch) throw new Error("Missing native fetch fixture");
+			fetch.mockImplementation(async (input: string | URL) => {
+				if (String(input) !== masterUrl) return originalFetch(input);
+				if (failure === "http-error")
+					return new Response(null, { status: 403 });
+				return new Response(
+					failure === "changed-session"
+						? saved.master.replaceAll("token=owned", "token=new")
+						: failure === "changed-codec"
+							? saved.master.replaceAll(avc, hevc)
+							: failure === "invalid"
+								? "not a playlist"
+								: `${saved.master}\n#EXT-X-DATERANGE:ID="stitched-ad-2",CLASS="twitch-stitched-ad"`,
+				);
+			});
+			await context._refreshNativeRecoveryMaster(info, fetch);
+			await context._refreshNativeRecoveryMaster(info, fetch);
+			expect(context._getNativeRecoveryMaster(info).master).toBe(reducedMaster);
+			expect(info._NativePlaybackMaster).toBe(saved);
+			expect(info.EncodingsM3U8).toBe(reducedMaster);
+			expect(
+				fetch.mock.calls.filter(([url]) => String(url) === masterUrl),
+			).toHaveLength(2);
+		},
+	);
+
+	it.each([
+		"route",
+		"generation",
+		"cycle",
+		"cycle-owner",
+		"master",
+		"loader",
+		"disabled",
+		"quality",
+		"abort",
+		"reset",
+	])(
+		"discards a catalog refresh after %s changes during its fetch",
+		async (reason) => {
+			const { context, info, state } = await setupReducedNativeMaster(
+				null,
+				true,
+				38 * 60000,
+			);
+			const saved = info._NativePlaybackMaster;
+			const controller = new AbortController();
+			let resolveFetch!: (response: Response) => void;
+			const fetch = vi.fn(
+				() =>
+					new Promise<Response>((resolve) => {
+						resolveFetch = resolve;
+					}),
+			);
+			const refresh = context._refreshNativeRecoveryMaster(
+				info,
+				fetch,
+				controller.signal,
+			);
+			const duplicate = context._refreshNativeRecoveryMaster(
+				info,
+				fetch,
+				controller.signal,
+			);
+			expect(fetch).toHaveBeenCalledTimes(1);
+			if (reason === "route") state.PageMediaKey = "live:other";
+			if (reason === "generation") state.PagePlaybackContextGeneration++;
+			if (reason === "cycle") info.VisibleAdStartedAt++;
+			if (reason === "cycle-owner") state.CurrentAdMediaKey = "live:other";
+			if (reason === "master") info.UsherBaseUrl += "&changed=1";
+			if (reason === "loader") info.NativeRecoveryLoaderEpoch++;
+			if (reason === "disabled") state.IsAdStrippingEnabled = false;
+			if (reason === "quality") state.PreferredQualityGroup = "360p";
+			if (reason === "abort") controller.abort();
+			if (reason === "reset") context._resetStreamAdState(info);
+			resolveFetch(new Response(saved.master));
+			await Promise.all([refresh, duplicate]);
+			expect(saved.refreshedAt).toBeUndefined();
+			expect(info._NativePlaybackMaster).toBe(
+				reason === "reset" ? null : saved,
+			);
+			expect(info.EncodingsM3U8).toBe(reducedMaster);
+		},
+	);
+
+	it("does not let an earlier cycle clear the next cycle's catalog refresh", async () => {
+		const { context, info, advance } = await setupReducedNativeMaster(
+			null,
+			true,
+			38 * 60000,
+		);
+		advance(2);
+		const saved = info._NativePlaybackMaster;
+		const responses: ((response: Response) => void)[] = [];
+		const fetch = vi.fn(
+			() => new Promise<Response>((resolve) => responses.push(resolve)),
+		);
+		const oldRefresh = context._refreshNativeRecoveryMaster(info, fetch);
+		advance(10);
+		info.VisibleAdStartedAt = Date.now();
+		const nextRefresh = context._refreshNativeRecoveryMaster(info, fetch);
+		const nextPromise = saved.refreshPromise;
+		responses[0](new Response(saved.master));
+		await oldRefresh;
+		expect(saved.refreshPromise).toBe(nextPromise);
+		responses[1](new Response(saved.master));
+		await nextRefresh;
+		expect(context._getNativeRecoveryMaster(info).master).toContain(nativeUrl);
+		expect(info._NativePlaybackMaster.refreshedCycleStartedAt).toBe(
+			info.VisibleAdStartedAt,
+		);
+		expect(fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not reuse refreshed catalog proof in a later cycle or after expiry", async () => {
+		const { context, info, fetch, advance } = await setupReducedNativeMaster(
+			null,
+			true,
+			38 * 60000,
+		);
+		advance(2);
+		await context._refreshNativeRecoveryMaster(info, fetch);
+		expect(context._getNativeRecoveryMaster(info).master).toContain(nativeUrl);
+		const cycle = info.VisibleAdStartedAt;
+		info.VisibleAdStartedAt++;
+		expect(context._getNativeRecoveryMaster(info).master).toBe(reducedMaster);
+		info.VisibleAdStartedAt = cycle;
+		advance(600001);
+		expect(context._getNativeRecoveryMaster(info).master).toBe(reducedMaster);
+		await context._refreshNativeRecoveryMaster(info, fetch);
+		expect(
+			fetch.mock.calls.filter(([url]) => String(url) === masterUrl),
+		).toHaveLength(2);
+	});
+
+	it("bounds retained catalog refresh to 2500 ms and ignores a late response", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		const { context, info, advance } = await setupReducedNativeMaster(
+			null,
+			true,
+			38 * 60000,
+		);
+		const saved = info._NativePlaybackMaster;
+		let resolveFetch!: (response: Response) => void;
+		const fetch = vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					resolveFetch = resolve;
+				}),
+		);
+		const refresh = context._refreshNativeRecoveryMaster(info, fetch);
+		advance(2501);
+		await vi.advanceTimersByTimeAsync(2501);
+		await refresh;
+		expect(context._getNativeRecoveryMaster(info).master).toBe(reducedMaster);
+		resolveFetch(new Response(saved.master));
+		await vi.advanceTimersByTimeAsync(1);
+		await context._refreshNativeRecoveryMaster(info, fetch);
+		expect(info._NativePlaybackMaster).toBe(saved);
+		expect(saved.refreshPromise).toBeNull();
+		expect(fetch).toHaveBeenCalledTimes(1);
+	});
+
 	it("recovers the observed native quality after a later master removes higher renditions", async () => {
 		const { context, info, serve, restored } = await setupReducedNativeMaster();
 		for (let index = 0; index < 24 && !restored(); index++) {
@@ -383,16 +610,20 @@ describe("owned native recovery after a codec fallback", () => {
 		expect(info._PendingPostAdNativeMaster?.consumed).toBe(true);
 	});
 
-	it.each([
-		{ codec: hevc, disabled: false },
-		{ codec: hevc, disabled: true },
-		{ codec: "av01.0.12M.08,mp4a.40.2", disabled: false },
-		{ codec: "av01.0.12M.08,mp4a.40.2", disabled: true },
-	])(
-		"restores retained 1440p $codec after a reduced master with fallback disabled=$disabled",
-		async ({ codec, disabled }) => {
+	it.each(
+		[
+			{ codec: hevc, disabled: false },
+			{ codec: hevc, disabled: true },
+			{ codec: "av01.0.12M.08,mp4a.40.2", disabled: false },
+			{ codec: "av01.0.12M.08,mp4a.40.2", disabled: true },
+		].flatMap((entry) =>
+			[0, 38 * 60000].map((lowPlaybackMs) => ({ ...entry, lowPlaybackMs })),
+		),
+	)(
+		"restores retained 1440p $codec with fallback disabled=$disabled after low playback for $lowPlaybackMs ms",
+		async ({ codec, disabled, lowPlaybackMs }) => {
 			const { context, state, info, serve, restored } =
-				await setupReducedNativeMaster(codec);
+				await setupReducedNativeMaster(codec, true, lowPlaybackMs);
 			state.DisableAutoplayBackup = disabled;
 			for (let index = 0; index < 24 && !restored(); index++)
 				await serve(false, reducedNativeUrl);

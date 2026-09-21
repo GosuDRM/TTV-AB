@@ -1617,6 +1617,71 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_isAdEndStable",
+			helper: "_refreshNativeRecoveryMaster",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_getNativeRecoveryMaster",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_getResolutionByQualityGroup",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_awaitBackupProbeBeforeDeadline",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_fetchWithTimeout",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_hasPlaylistAdMarkers",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_hasExplicitAdMetadata",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_getStreamVariantInfo",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_getExactPlaylistUrlKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_log",
+			source: processorSource,
+		},
+		{
 			consumer: "_canReloadNativePlayerAfterAd",
 			helper: "_getNativeRecoveryMaster",
 			source: processorSource,
