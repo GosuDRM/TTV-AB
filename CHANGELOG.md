@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.0.5] - 2026-09-22
+
+Fixed
+
+- **Ad Recovery Quality** - Restore missing quality options after later ad breaks during long viewing sessions, including background playback.
+
 ## [18.0.4] - 2026-09-22
 
 Fixed
