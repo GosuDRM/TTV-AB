@@ -118,6 +118,295 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it.each(["site", "vod", "disabled", "inactive", "ambiguous"])(
+		"does not arm autoplay rebuild intent for %s output",
+		(mode) => {
+			const { context, info } = setup();
+			if (mode === "vod") info.MediaType = "vod";
+			if (mode === "disabled") context.state.IsAdStrippingEnabled = false;
+			if (mode === "inactive") info.IsShowingAd = false;
+			context._applyPlaylistContinuity(info, nativeUrl, playlist(100), {
+				playerType: mode === "site" ? "site" : "autoplay",
+				playlistUrl: "https://edge.example/backup.m3u8",
+				ambiguous: mode === "ambiguous",
+			});
+			expect(info.HevcReloadPendingAfterHold).toBe(false);
+		},
+	);
+
+	it("retains native rebuild intent when an early-return autoplay bridge later rotates to site", async () => {
+		const { info, hold, serve } = setup();
+		await hold();
+		expect(info.HevcReloadPendingAfterHold).toBe(false);
+		await serve(playlist(100), "autoplay");
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
+		await serve(playlist(200), "site");
+		expect(info.HevcReloadPendingAfterHold).toBe(true);
+	});
+
+	it("shares the new backup generation after only one native request URL reenters a hold", async () => {
+		const { context, info, hold, serve } = setup();
+		await hold();
+		const otherUrl = nativeUrl.replace("native", "360p");
+		info.Urls[otherUrl] = { Resolution: "640x360", Codecs: codec };
+		const first = segments(await serve(playlist(100), "autoplay"));
+		const metadata = info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8);
+		context._applyEmptyHoldPlaylistContinuity(
+			info,
+			otherUrl,
+			playlist(100),
+			metadata,
+		);
+		const held = segments(await hold());
+		const next = segments(await serve(playlist(101), "autoplay"));
+		const other = segments(
+			context._applyEmptyHoldPlaylistContinuity(
+				info,
+				otherUrl,
+				playlist(101),
+				metadata,
+			),
+		);
+		expect(next[0].sequence).toBeGreaterThan(held.at(-1).sequence);
+		expect(next[0].discontinuity).toBeGreaterThan(first[0].discontinuity);
+		expect(other).toEqual(next);
+		expect(() =>
+			context._applyEmptyHoldPlaylistContinuity(
+				info,
+				otherUrl,
+				playlist(100),
+				metadata,
+			),
+		).toThrow("Retired empty hold recovery playlist");
+	});
+
+	it("presents the same backup segments with the same numbers across native request URLs", async () => {
+		const { context, info, hold, serve } = setup();
+		await hold();
+		const otherUrl = nativeUrl.replace("native", "360p");
+		info.Urls[otherUrl] = { Resolution: "640x360", Codecs: codec };
+		context._applyEmptyHoldPlaylistContinuity(
+			info,
+			otherUrl,
+			context._createEmptyAdHoldPlaylist(playlist(405), info),
+		);
+		const first = segments(await serve(playlist(100), "autoplay"));
+		const metadata = info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8);
+		const other = segments(
+			context._applyEmptyHoldPlaylistContinuity(
+				info,
+				otherUrl,
+				playlist(100),
+				metadata,
+			),
+		);
+		expect(other).toEqual(first);
+		const refreshed = segments(await serve(playlist(101), "autoplay"));
+		const otherRefresh = segments(
+			context._applyEmptyHoldPlaylistContinuity(
+				info,
+				otherUrl,
+				playlist(101),
+				metadata,
+			),
+		);
+		expect(otherRefresh).toEqual(refreshed);
+		expect(refreshed.slice(0, 2)).toEqual(first.slice(1));
+	});
+
+	it("aligns the native return directly after a hold without retiming ordinary master refreshes", async () => {
+		const { info, serve, hold } = setup();
+		const text = playlist(400).replace(
+			"#EXTINF:",
+			"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:20Z\n#EXTINF:",
+		);
+		await serve(text);
+		info.UsherBaseUrl += "?session=new";
+		expect(await serve(text)).toBe(text);
+		await hold();
+		await expect(serve(text)).rejects.toMatchObject({ name: "AbortError" });
+		expect(await serve(text.replace("18:09:20Z", "18:09:26Z"))).toContain(
+			"clean-400.ts",
+		);
+	});
+
+	it("keeps trimmed encrypted byte ranges, initialization data, and future prefetch media usable", async () => {
+		const { serve, hold } = setup();
+		const dated = (sequence: number, seconds: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:${seconds}.000Z\n#EXTINF:`,
+			);
+		await serve(dated(400, 20));
+		await hold();
+		const source = dated(100, 24)
+			.replace(
+				"#EXTINF:",
+				'#EXT-X-MAP:URI="https://edge.example/init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="https://edge.example/key"\n#EXTINF:',
+			)
+			.replaceAll(
+				/https:\/\/edge.example\/clean-10[0-2]\.ts/g,
+				"#EXT-X-BYTERANGE:100\nhttps://edge.example/media.ts",
+			)
+			.replace("#EXT-X-BYTERANGE:100", "#EXT-X-BYTERANGE:100@0")
+			.concat("\n#EXT-X-TWITCH-PREFETCH:https://edge.example/future.ts")
+			.replaceAll("\n", "\r\n");
+		const output = await serve(source, "site");
+		expect(output).toContain('#EXT-X-MAP:URI="https://edge.example/init.mp4"');
+		expect(output).toContain("#EXT-X-BYTERANGE:100@100");
+		expect(output).not.toContain("#EXT-X-BYTERANGE:100@0");
+		expect(output).toContain(
+			"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:26.000Z",
+		);
+		expect(output).toContain(
+			"#EXT-X-TWITCH-PREFETCH:https://edge.example/future.ts",
+		);
+		const key = Buffer.alloc(16, 7);
+		const iv = Buffer.alloc(16);
+		iv.writeUInt32BE(101, 12);
+		const cipher = createCipheriv("aes-128-cbc", key, iv);
+		const clear = Buffer.from("retained live audio and video");
+		const encrypted = Buffer.concat([cipher.update(clear), cipher.final()]);
+		const returnedIv = Buffer.from(
+			output.match(/IV=0x([a-f0-9]{32})/i)[1],
+			"hex",
+		);
+		const decipher = createDecipheriv("aes-128-cbc", key, returnedIv);
+		expect(
+			Buffer.concat([decipher.update(encrypted), decipher.final()]),
+		).toEqual(clear);
+	});
+
+	it.each([false, true])(
+		"retains source discontinuities and dated segments with an earlier timestamp: %s",
+		async (earlierTimestamp) => {
+			const { context, info } = setup();
+			const start = Date.parse("2026-09-20T18:09:20Z");
+			const dated = (sequence: number, time: number) =>
+				playlist(sequence).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(time).toISOString()}\n#EXTINF:`,
+				);
+			context._alignLivePlaylist(info, dated(400, start));
+			const text = dated(100, start + 4000).replace(
+				"#EXTINF:2.000,live\nhttps://edge.example/clean-101.ts",
+				"#EXT-X-DISCONTINUITY\n#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:26Z\n#EXTINF:2.000,live\nhttps://edge.example/clean-101.ts",
+			);
+			const ordered = earlierTimestamp
+				? text.replace(
+						"#EXT-X-DISCONTINUITY\n#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:26Z",
+						"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:26Z\n#EXT-X-DISCONTINUITY",
+					)
+				: text;
+			const output = context._alignLivePlaylist(info, ordered, {
+				playerType: "site",
+				sessionUrl: "owned",
+			});
+			expect(context._parsePlaylistDiscontinuitySequence(output)).toBe(0);
+			expect(output).toContain("#EXT-X-DISCONTINUITY\n");
+			expect(output).not.toContain("clean-100.ts");
+			expect(output).toContain("clean-101.ts");
+		},
+	);
+
+	it.each(["unknown timestamp", "delta", "implicit range"])(
+		"does not reinterpret ambiguous %s handoff data",
+		async (failure) => {
+			const { context, info, serve } = setup();
+			await serve(
+				playlist(400).replace(
+					"#EXTINF:",
+					"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:20Z\n#EXTINF:",
+				),
+			);
+			const previous = info._LivePlaylistTimeline;
+			let text = playlist(100).replace(
+				"#EXTINF:",
+				"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:24Z\n#EXTINF:",
+			);
+			if (failure === "unknown timestamp")
+				text = text.replace(
+					"#EXTINF:2.000,live\nhttps://edge.example/clean-101.ts",
+					"#EXT-X-DISCONTINUITY\n#EXTINF:2.000,live\nhttps://edge.example/clean-101.ts",
+				);
+			if (failure === "delta")
+				text = text.replace(
+					"#EXTM3U",
+					"#EXTM3U\n#EXT-X-SKIP:SKIPPED-SEGMENTS=10",
+				);
+			if (failure === "implicit range")
+				text = text.replaceAll("#EXTINF:", "#EXT-X-BYTERANGE:100\n#EXTINF:");
+			await expect(serve(text, "site")).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(info._LivePlaylistTimeline).toBe(previous);
+			expect(context._playlistHasMediaSegments(text)).toBe(true);
+		},
+	);
+
+	it.each(["vod", "disabled", "undated"])(
+		"preserves %s playlist timing",
+		async (mode) => {
+			const { context, info } = setup();
+			info._LivePlaylistTimeline = {
+				identity: "prior",
+				minimumTime: 0,
+				lastEndTime: Date.parse("2026-09-20T18:10:00Z"),
+			};
+			if (mode === "vod") info.MediaType = "vod";
+			if (mode === "disabled") context.state.IsAdStrippingEnabled = false;
+			const text =
+				mode === "undated"
+					? playlist(100)
+					: playlist(100).replace(
+							"#EXTINF:",
+							"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:24Z\n#EXTINF:",
+						);
+			expect(context._alignLivePlaylist(info, text)).toBe(text);
+			expect(info._LivePlaylistTimeline.identity).toBe("prior");
+		},
+	);
+
+	it("does not replay dated content when a backup follows an empty hold", async () => {
+		const { context, info, serve, hold } = setup();
+		const dated = (sequence: number, start: number, count = 3) =>
+			playlist(sequence, count).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`,
+			);
+		const start = Date.parse("2026-09-20T18:09:48Z");
+		await serve(dated(400, start));
+		await hold();
+		await expect(
+			serve(dated(100, start - 20000), "autoplay"),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(info.HevcReloadPendingAfterHold).toBe(false);
+		const output = await serve(dated(110, start + 2000, 4), "autoplay");
+		expect(output).not.toContain("clean-110.ts");
+		expect(output).not.toContain("clean-111.ts");
+		expect(output).toContain("clean-112.ts");
+		expect(context._playlistHasMediaSegments(output)).toBe(true);
+		const refreshed = await serve(dated(111, start + 4000, 4), "autoplay");
+		expect(refreshed).not.toContain("clean-111.ts");
+		expect(segments(refreshed)[0]).toEqual(segments(output)[0]);
+	});
+
+	it("aligns dated native returns and backup promotions without requiring an empty hold", async () => {
+		const { serve } = setup();
+		const dated = (sequence: number, seconds: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:${seconds}.000Z\n#EXTINF:`,
+			);
+		await serve(dated(400, 20));
+		const backup = await serve(dated(100, 24), "autoplay");
+		expect(backup).not.toContain("clean-100.ts");
+		const promoted = await serve(dated(200, 28), "site");
+		expect(promoted).not.toContain("clean-200.ts");
+		const native = await serve(dated(500, 32));
+		expect(native).not.toContain("clean-500.ts");
+	});
+
 	it.each(["backup", "native", "hold"])(
 		"does not reuse prefetched segment numbers when switching to %s",
 		async (destination) => {

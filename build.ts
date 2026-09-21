@@ -1231,6 +1231,97 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_playlistHasMediaSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_log",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getResolutionByQualityGroup",
+			source: hooksSource,
+		},
+		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_applyBackupSpliceBridge",
+			source: processorSource,
+		},
+		{ consumer: "_alignLivePlaylist", helper: "_log", source: processorSource },
+		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_reportPostAdNativeSession",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_getMediaPlaylistSessionKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_getVideoCodecIdentity",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_applyPlaylistContinuity",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_alignLivePlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_alignLivePlaylist",
+			helper: "_parsePlaylistDiscontinuitySequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_alignLivePlaylist",
+			helper: "_getMediaSegmentUriIndex",
+			source: processorSource,
+		},
+		{
+			consumer: "_alignLivePlaylist",
+			helper: "_setPlaylistDiscontinuitySequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_alignLivePlaylist",
+			helper: "_parsePlaylistFirstMediaSequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_getVideoCodecIdentity",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_fetchWithTimeout",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_awaitBackupProbeBeforeDeadline",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_parsePlaylistFirstMediaSequence",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_hasExplicitAdMetadata",
+			source: hooksSource,
+		},
+		{
 			consumer: "_hookWorkerFetch",
 			helper: "_getVodAdRequest",
 			source: hooksSource,
@@ -1316,7 +1407,7 @@ function validateSharedDefinitions() {
 			source: hooksSource,
 		},
 		{
-			consumer: "_processM3U8",
+			consumer: "_applyPlaylistContinuity",
 			helper: "_applyEmptyHoldPlaylistContinuity",
 			source: processorSource,
 		},
@@ -1514,6 +1605,31 @@ function validateSharedDefinitions() {
 			consumer: "_resolvePreferredBackupResolution",
 			helper: "_degradeToDecodableResolution",
 			source: parserSource,
+		},
+		{
+			consumer: "_resolveAdBackupTargetResolution",
+			helper: "_getNativeRecoveryMaster",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAdEndStable",
+			helper: "_getNativeRecoveryMaster",
+			source: processorSource,
+		},
+		{
+			consumer: "_canReloadNativePlayerAfterAd",
+			helper: "_getNativeRecoveryMaster",
+			source: processorSource,
+		},
+		{
+			consumer: "_getNativeRecoveryMaster",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_getNativeRecoveryMaster",
+			helper: "_getResolutionByQualityGroup",
+			source: processorSource,
 		},
 		{
 			consumer: "_resolveAdBackupTargetResolution",

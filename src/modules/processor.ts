@@ -174,7 +174,11 @@ function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
 	info._BackupProbation = null;
 	info._EmptyAdHoldMediaSequence = 0;
 	info._EmptyAdHoldDiscontinuitySequence = 0;
-	if (!preserveEmptyHoldTimelines) info._EmptyHoldTimelineByUrl?.clear?.();
+	if (!preserveEmptyHoldTimelines) {
+		info._EmptyHoldTimelineByUrl?.clear?.();
+		info._LivePlaylistTimeline = null;
+		info._NativePlaybackMaster = null;
+	}
 	info._FatalMediaRecoveryRequestId = null;
 	_clearCodecHandoffState(info, null, completedCodecHandoff);
 	info._SpliceStreamId = null;
@@ -628,14 +632,68 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 	return resolution;
 }
 
+function _getNativeRecoveryMaster(info) {
+	const current = {
+		master: info?.EncodingsM3U8,
+		masterUrl: info?.UsherBaseUrl,
+		resolutionList: Array.isArray(info?.ResolutionList)
+			? info.ResolutionList
+			: [],
+	};
+	const saved = info?._NativePlaybackMaster;
+	const mediaKey = _normalizeMediaKey(info?.MediaKey);
+	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	const quality = __TTVAB_STATE__?.PreferredQualityGroup;
+	const requestedHeight =
+		Number(String(quality || "").match(/^(\d+)p/)?.[1]) || 0;
+	const currentTarget = _getResolutionByQualityGroup(
+		current.resolutionList,
+		quality,
+	);
+	const currentHeight =
+		Number(String(currentTarget?.Resolution || "").split("x")[1]) || 0;
+	if (
+		!saved ||
+		info.MediaType === "vod" ||
+		__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+		!mediaKey ||
+		saved.mediaKey !== mediaKey ||
+		_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) !== mediaKey ||
+		saved.pageGeneration !==
+			(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0) ||
+		saved.observedAt <= 0 ||
+		saved.observedAt > (cycleStartedAt || Date.now()) ||
+		(cycleStartedAt || Date.now()) - saved.observedAt > 60000 ||
+		Date.now() - saved.observedAt > 600000 ||
+		quality === "audio_only" ||
+		(requestedHeight > 0 && requestedHeight <= currentHeight) ||
+		(cycleStartedAt > 0 &&
+			_normalizeMediaKey(__TTVAB_STATE__?.CurrentAdMediaKey) !== mediaKey)
+	)
+		return current;
+	const savedTarget =
+		_getResolutionByQualityGroup(saved.resolutionList, quality) ||
+		info.SustainedNativeResolution;
+	const savedHeight =
+		Number(String(savedTarget?.Resolution || "").split("x")[1]) || 0;
+	const availableHeight = current.resolutionList.reduce(
+		(height, entry) =>
+			Math.max(
+				height,
+				Number(String(entry?.Resolution || "").split("x")[1]) || 0,
+			),
+		0,
+	);
+	return savedHeight > (currentHeight || availableHeight) ? saved : current;
+}
+
 function _resolveAdBackupTargetResolution(
 	info,
 	url = "",
 	requestedResolution = null,
 ) {
-	const resolutionList = Array.isArray(info?.ResolutionList)
-		? info.ResolutionList.filter(Boolean)
-		: [];
+	const recoveryMaster = _getNativeRecoveryMaster(info);
+	const resolutionList = recoveryMaster.resolutionList.filter(Boolean);
 	const urlResolution = _degradeToDecodableResolution(
 		info,
 		_resolvePlaybackResolutionForUrl(info, url),
@@ -646,7 +704,10 @@ function _resolveAdBackupTargetResolution(
 		requestedResolution,
 		resolutionList,
 	);
-	const preferredResolution = _resolvePreferredBackupResolution(info);
+	const preferredResolution = _resolvePreferredBackupResolution({
+		...info,
+		ResolutionList: resolutionList,
+	});
 	const heightOf = (entry) => {
 		const [, h] = String(entry?.Resolution || "0x0")
 			.split("x")
@@ -1103,24 +1164,30 @@ async function _isAdEndStable(
 		typeof info.UsherBaseUrl === "string" &&
 		info.UsherBaseUrl
 	) {
+		const recoveryMaster = _getNativeRecoveryMaster(info);
 		const targetResolution =
 			_getResolutionByQualityGroup(
-				info.ResolutionList || [],
+				recoveryMaster.resolutionList,
 				__TTVAB_STATE__?.PreferredQualityGroup,
 			) ||
 			info.SustainedNativeResolution ||
 			resolution;
 		const playlistUrl = _getExactPlaylistUrlKey(
-			_getStreamUrl(info.EncodingsM3U8, targetResolution, info.UsherBaseUrl),
+			_getStreamUrl(
+				recoveryMaster.master,
+				targetResolution,
+				recoveryMaster.masterUrl,
+			),
 		);
-		if (
-			playlistUrl &&
-			Object.hasOwn(info.Urls || {}, playlistUrl) &&
-			_getVideoCodecFamily(info.Urls[playlistUrl]?.Codecs)
-		) {
+		const variant = recoveryMaster.resolutionList.find(
+			(entry) => entry.Url === playlistUrl,
+		);
+		if (playlistUrl && variant && _getVideoCodecFamily(variant.Codecs)) {
 			ownedNativeRecoveryTarget = {
-				master: info.EncodingsM3U8,
-				masterUrl: info.UsherBaseUrl,
+				master: recoveryMaster.master,
+				masterUrl: recoveryMaster.masterUrl,
+				codec: variant.Codecs,
+				resolution: variant.Resolution,
 				playlistUrl,
 				requestUrl: _getMediaPlaylistSessionKey(candidateUrl),
 				handoffId: info._CodecHandoffPendingId || null,
@@ -1799,6 +1866,256 @@ function _insertBoundaryDiscontinuity(
 	return lines.join("\n");
 }
 
+function _alignLivePlaylist(info, text, backupMetadata = null) {
+	if (
+		!info ||
+		info.MediaType === "vod" ||
+		__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+		typeof text !== "string" ||
+		text.includes("#EXT-X-STREAM-INF")
+	)
+		return text;
+	const previous = info._LivePlaylistTimeline;
+	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.ts")) {
+		if (previous && !previous.afterHold)
+			info._LivePlaylistTimeline = { ...previous, afterHold: true };
+		return text;
+	}
+	const identity = backupMetadata
+		? JSON.stringify([
+				"backup",
+				backupMetadata.playerType,
+				backupMetadata.resolution,
+				backupMetadata.codec,
+				backupMetadata.sessionUrl,
+				backupMetadata.playlistUrl,
+			])
+		: `native|${info.UsherBaseUrl || info.MediaKey}`;
+	const changedSource = previous?.identity !== identity || previous?.afterHold;
+	const minimumTime = changedSource
+		? backupMetadata || previous?.backup || previous?.afterHold
+			? previous?.lastEndTime || 0
+			: 0
+		: previous.minimumTime;
+	const lines = text.split(/\r?\n/);
+	const entries = [];
+	let nextTime = Number.NaN;
+	let hasExplicitTime = false;
+	let blockStart = 0;
+	let range = null;
+	let previousRange = null;
+	let discontinuity = _parsePlaylistDiscontinuitySequence(text);
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index];
+		if (line === "#EXT-X-DISCONTINUITY") {
+			discontinuity++;
+			if (!hasExplicitTime) nextTime = Number.NaN;
+		}
+		if (line.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
+			nextTime = Date.parse(line.slice(25));
+			hasExplicitTime = true;
+		}
+		if (!line.startsWith("#EXTINF:")) continue;
+		const duration = Number.parseFloat(line.slice(8)) * 1000;
+		const uriIndex = _getMediaSegmentUriIndex(lines, index);
+		if (uriIndex < 0 || !Number.isFinite(duration) || duration <= 0)
+			return text;
+		range = null;
+		for (let tag = blockStart; tag < uriIndex; tag++) {
+			if (lines[tag].startsWith("#EXT-X-BYTERANGE:")) {
+				const match = lines[tag].match(/^#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?$/);
+				const length = Number(match?.[1]);
+				const offset =
+					match?.[2] != null
+						? Number(match[2])
+						: previousRange?.uri === lines[uriIndex]
+							? previousRange.end
+							: Number.NaN;
+				range = {
+					index: tag,
+					length,
+					offset,
+					uri: lines[uriIndex],
+					end: offset + length,
+				};
+			}
+			if (tag > index && lines[tag] === "#EXT-X-DISCONTINUITY") {
+				discontinuity++;
+				if (!hasExplicitTime) nextTime = Number.NaN;
+			}
+			if (tag > index && lines[tag].startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
+				nextTime = Date.parse(lines[tag].slice(25));
+				hasExplicitTime = true;
+			}
+		}
+		entries.push({
+			start: blockStart,
+			uriIndex,
+			time: nextTime,
+			end: nextTime + duration,
+			discontinuity,
+			range,
+		});
+		nextTime += duration;
+		hasExplicitTime = false;
+		previousRange = range;
+		blockStart = uriIndex + 1;
+		index = uriIndex;
+	}
+	if (!entries.length) return text;
+	if (
+		entries.some(
+			(entry, index) =>
+				!Number.isFinite(entry.time) ||
+				(index > 0 && entry.time < entries[index - 1].time),
+		)
+	) {
+		if (minimumTime && text.includes("#EXT-X-PROGRAM-DATE-TIME:"))
+			throw new DOMException(
+				"Live handoff requires unambiguous broadcast timestamps",
+				"AbortError",
+			);
+		return text;
+	}
+	if (text.includes("#EXT-X-SKIP:")) {
+		if (minimumTime)
+			throw new DOMException(
+				"Live handoff requires a full dated playlist",
+				"AbortError",
+			);
+		return text;
+	}
+	const retainedIndex = entries.findIndex((entry) => entry.time >= minimumTime);
+	if (retainedIndex < 0)
+		throw new DOMException(
+			"Live handoff playlist is behind the served broadcast time",
+			"AbortError",
+		);
+	let output = text;
+	if (retainedIndex > 0) {
+		const retained = entries[retainedIndex];
+		const firstSequence = _parsePlaylistFirstMediaSequence(text) ?? 0;
+		const prefix = lines
+			.slice(0, retained.start)
+			.filter(
+				(line) =>
+					line.startsWith("#") &&
+					!/^#EXT(?:INF:|-X-(?:PROGRAM-DATE-TIME:|BYTERANGE:|GAP(?:$|:)|DISCONTINUITY(?:$|:)|PART:|PRELOAD-HINT:|TWITCH-PREFETCH(?:-DISCONTINUITY)?[:]?))/.test(
+						line,
+					),
+			);
+		const tail = lines.slice(retained.start);
+		const priorDiscontinuities = tail
+			.slice(0, retained.uriIndex - retained.start)
+			.filter((line) => line === "#EXT-X-DISCONTINUITY").length;
+		_setPlaylistDiscontinuitySequence(
+			prefix,
+			retained.discontinuity - priorDiscontinuities,
+		);
+		const sequenceIndex = prefix.findIndex((line) =>
+			line.startsWith("#EXT-X-MEDIA-SEQUENCE:"),
+		);
+		const sequenceLine = `#EXT-X-MEDIA-SEQUENCE:${firstSequence + retainedIndex}`;
+		if (sequenceIndex < 0) prefix.splice(1, 0, sequenceLine);
+		else prefix[sequenceIndex] = sequenceLine;
+		if (retained.range) {
+			if (
+				!Number.isSafeInteger(retained.range.offset) ||
+				retained.range.offset < 0 ||
+				!Number.isSafeInteger(retained.range.length) ||
+				retained.range.length <= 0
+			) {
+				throw new DOMException(
+					"Live handoff requires an explicit byte range",
+					"AbortError",
+				);
+			}
+			tail[retained.range.index - retained.start] =
+				`#EXT-X-BYTERANGE:${retained.range.length}@${retained.range.offset}`;
+		}
+		const dated = tail
+			.slice(0, retained.uriIndex - retained.start)
+			.some((line) => line.startsWith("#EXT-X-PROGRAM-DATE-TIME:"));
+		if (!dated)
+			tail.splice(
+				tail.findIndex((line) => line.startsWith("#EXTINF:")),
+				0,
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(retained.time).toISOString()}`,
+			);
+		output = [...prefix, ...tail].join("\n");
+		if (changedSource)
+			_log(
+				`[Recovery] Live playlist handoff skipped ${retainedIndex} older segments`,
+				"info",
+			);
+	}
+	info._LivePlaylistTimeline = {
+		identity,
+		backup: Boolean(backupMetadata),
+		afterHold: false,
+		minimumTime,
+		lastEndTime: entries.reduce(
+			(end, entry) => Math.max(end, entry.end),
+			previous?.lastEndTime || 0,
+		),
+	};
+	return output;
+}
+
+function _applyPlaylistContinuity(
+	info,
+	url,
+	text,
+	backupMetadata = null,
+	requestContext = null,
+) {
+	const previous = info?._LivePlaylistTimeline;
+	try {
+		const aligned = _alignLivePlaylist(info, text, backupMetadata);
+		const output =
+			_applyEmptyHoldPlaylistContinuity(info, url, aligned, backupMetadata) ??
+			_applyBackupSpliceBridge(info, aligned, backupMetadata);
+		if (
+			info &&
+			info.MediaType !== "vod" &&
+			__TTVAB_STATE__?.IsAdStrippingEnabled === true &&
+			(info.IsShowingAd || info.IsHoldingBackupAfterAd) &&
+			backupMetadata?.playerType === "autoplay" &&
+			backupMetadata.ambiguous !== true &&
+			backupMetadata.playlistUrl &&
+			!info.HevcReloadPendingAfterHold &&
+			_playlistHasMediaSegments(output)
+		) {
+			info.HevcReloadPendingAfterHold = true;
+			_log(
+				"[Recovery] Autoplay bridge served; retaining native rebuild requirement",
+				"info",
+			);
+		}
+		const candidate = requestContext?.nativeSessionToConsume;
+		const pending = info?._PendingPostAdNativeMaster;
+		if (
+			pending &&
+			candidate?.session === pending &&
+			candidate.playlist === text &&
+			!backupMetadata &&
+			!pending.consumed
+		) {
+			const selected = info.Urls?.[_getMediaPlaylistSessionKey(url)];
+			if (selected) {
+				pending.codec = _getVideoCodecIdentity(selected.Codecs);
+				pending.resolution = selected.Resolution;
+			}
+			pending.consumed = true;
+			_reportPostAdNativeSession(info, "consumed");
+		}
+		return output;
+	} catch (error) {
+		if (info) info._LivePlaylistTimeline = previous;
+		throw error;
+	}
+}
+
 function _applyBackupSpliceBridge(info, text, backupMetadata = null) {
 	if (!info || typeof text !== "string" || !text) return text;
 	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.ts")) {
@@ -2021,55 +2338,77 @@ function _applyEmptyHoldPlaylistContinuity(
 							: key,
 					],
 	);
-	const changedSource = previous?.identity !== identity;
+	let changedSource = previous?.identity !== identity;
 	let sharedTimeline = null;
 	let lastDiscontinuity = -1;
-	if (changedSource && !isHold) {
+	let lastPresentedSequence = -1;
+	if ((changedSource && !isHold) || kind === "backup") {
 		for (const candidate of info._EmptyHoldTimelineByUrl.values()) {
 			lastDiscontinuity = Math.max(
 				lastDiscontinuity,
 				candidate.lastDiscontinuity,
 			);
+			lastPresentedSequence = Math.max(
+				lastPresentedSequence,
+				candidate.lastSequence,
+			);
 			if (
 				candidate.identity === identity &&
 				(!sharedTimeline ||
-					candidate.discontinuityOffset > sharedTimeline.discontinuityOffset)
-			) {
+					candidate.discontinuityOffset > sharedTimeline.discontinuityOffset ||
+					(candidate.discontinuityOffset ===
+						sharedTimeline.discontinuityOffset &&
+						candidate.lastRawFirstSequence >
+							sharedTimeline.lastRawFirstSequence))
+			)
 				sharedTimeline = candidate;
-			}
 		}
 		if (
 			previous &&
 			sharedTimeline &&
+			sharedTimeline.discontinuityOffset > previous.discontinuityOffset
+		)
+			changedSource = true;
+		if (
+			changedSource &&
+			previous &&
+			sharedTimeline &&
 			firstDiscontinuity + sharedTimeline.discontinuityOffset <=
 				previous.lastDiscontinuity
-		) {
+		)
 			sharedTimeline = null;
-		}
 	}
-	const addBoundary = changedSource
-		? Boolean(!isHold && firstDiscontinuity === baseDiscontinuity)
-		: previous.addBoundary;
-	const timeline = changedSource
-		? {
-				kind,
-				identity,
-				boundarySequence: firstSequence,
-				addBoundary,
-				mediaOffset: previous
-					? Math.max(0, previous.lastSequence + 1 - firstSequence)
-					: 0,
-				discontinuityOffset: isHold
-					? Math.max(
-							0,
-							(previous?.lastDiscontinuity ?? -1) + 1 - firstDiscontinuity,
-						)
-					: (sharedTimeline?.discontinuityOffset ?? lastDiscontinuity + 1),
-				lastSequence: 0,
-				lastDiscontinuity: 0,
-				lastRawFirstSequence: firstSequence,
-			}
-		: { ...previous };
+	const sharedBackup = kind === "backup" ? sharedTimeline : null;
+	const addBoundary =
+		sharedBackup?.addBoundary ??
+		(changedSource
+			? Boolean(!isHold && firstDiscontinuity === baseDiscontinuity)
+			: previous.addBoundary);
+	const timeline = sharedBackup
+		? { ...sharedBackup }
+		: changedSource
+			? {
+					kind,
+					identity,
+					boundarySequence: firstSequence,
+					addBoundary,
+					mediaOffset:
+						kind === "backup"
+							? Math.max(0, lastPresentedSequence + 1 - firstSequence)
+							: previous
+								? Math.max(0, previous.lastSequence + 1 - firstSequence)
+								: 0,
+					discontinuityOffset: isHold
+						? Math.max(
+								0,
+								(previous?.lastDiscontinuity ?? -1) + 1 - firstDiscontinuity,
+							)
+						: (sharedTimeline?.discontinuityOffset ?? lastDiscontinuity + 1),
+					lastSequence: 0,
+					lastDiscontinuity: 0,
+					lastRawFirstSequence: firstSequence,
+				}
+			: { ...previous };
 	if (
 		firstSequence < timeline.lastRawFirstSequence ||
 		!Number.isSafeInteger(lastSequence + timeline.mediaOffset)
@@ -2451,15 +2790,19 @@ async function _canReloadNativePlayerAfterAd(
 		(ownedNativeRecoveryTarget &&
 			(!probeIsLive ||
 				!probeStreamUrl ||
-				info.EncodingsM3U8 !== ownedNativeRecoveryTarget.master ||
-				info.UsherBaseUrl !== ownedNativeRecoveryTarget.masterUrl ||
+				_getNativeRecoveryMaster(info).master !==
+					ownedNativeRecoveryTarget.master ||
+				_getNativeRecoveryMaster(info).masterUrl !==
+					ownedNativeRecoveryTarget.masterUrl ||
 				(info._CodecHandoffPendingId || null) !==
 					(ownedNativeRecoveryTarget.handoffId || null) ||
 				!_isNativeRecoveryCodecHandoffReady(
 					info,
 					ownedNativeRecoveryTarget.requestUrl || probeStreamUrl,
 				) ||
-				!Object.hasOwn(info.Urls || {}, probeStreamUrl) ||
+				!_getNativeRecoveryMaster(info).resolutionList.some(
+					(entry) => entry.Url === probeStreamUrl,
+				) ||
 				Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) !==
 					probeLoaderEpoch ||
 				__TTVAB_STATE__?.StreamInfos?.[probeMediaKey] !== info ||
@@ -2763,6 +3106,7 @@ function _createStreamInfo(context) {
 		SustainedNativeResolution: null,
 		SustainedNativeResolutionAt: 0,
 		SustainedNativeResolutionStartedAt: 0,
+		_NativePlaybackMaster: null,
 		LastCleanNativeM3U8: null,
 		LastCleanNativeUrl: null,
 		LastCleanNativeCodec: null,
@@ -2840,6 +3184,7 @@ function _createStreamInfo(context) {
 		_EmptyAdHoldMediaSequence: 0,
 		_EmptyAdHoldDiscontinuitySequence: 0,
 		_EmptyHoldTimelineByUrl: new Map(),
+		_LivePlaylistTimeline: null,
 		_FatalMediaRecoveryRequestId: null,
 		_AdCycleRequestController:
 			ownsCurrentAdCycle && typeof AbortController === "function"
@@ -4054,9 +4399,12 @@ async function _processM3U8(
 			null,
 		);
 		if (sameRequestCleanNative) {
-			return (
-				_applyEmptyHoldPlaylistContinuity(info, url, sameRequestCleanNative) ??
-				sameRequestCleanNative
+			return _applyPlaylistContinuity(
+				info,
+				url,
+				sameRequestCleanNative,
+				null,
+				requestAdContext,
 			);
 		}
 		if (codecHandoffAdRecoveryActive) {
@@ -4074,9 +4422,12 @@ async function _processM3U8(
 		const compatibleResult = requestWasAdMarked
 			? _stripAds(text, false, info, false, true)
 			: text;
-		return (
-			_applyEmptyHoldPlaylistContinuity(info, url, compatibleResult) ??
-			compatibleResult
+		return _applyPlaylistContinuity(
+			info,
+			url,
+			compatibleResult,
+			null,
+			requestAdContext,
 		);
 	}
 	const unsafeEnhancedResponse = Boolean(
@@ -4097,13 +4448,12 @@ async function _processM3U8(
 				responseCodecConflictsWithRetiringOwner),
 	);
 	if (!unsafeEnhancedResponse) {
-		return (
-			_applyEmptyHoldPlaylistContinuity(
-				info,
-				url,
-				result,
-				resultBackupMetadata,
-			) ?? _applyBackupSpliceBridge(info, result, resultBackupMetadata)
+		return _applyPlaylistContinuity(
+			info,
+			url,
+			result,
+			resultBackupMetadata,
+			requestAdContext,
 		);
 	}
 
@@ -4139,7 +4489,14 @@ async function _processM3U8(
 				requestAdContext.cycleStartedAt,
 			)
 		) {
-			if (sameRequestCleanNative) return sameRequestCleanNative;
+			if (sameRequestCleanNative)
+				return _applyPlaylistContinuity(
+					info,
+					url,
+					sameRequestCleanNative,
+					null,
+					requestAdContext,
+				);
 			throw _createCodecHandoffAbortError(requestSignal);
 		}
 		const now = Date.now();
@@ -4175,18 +4532,12 @@ async function _processM3U8(
 		);
 		if (sameCodecBackupReady) {
 			info.IsUsingBackupStream = true;
-			return (
-				_applyEmptyHoldPlaylistContinuity(
-					info,
-					url,
-					info.LastCleanBackupM3U8,
-					cleanBackupMetadata,
-				) ??
-				_applyBackupSpliceBridge(
-					info,
-					info.LastCleanBackupM3U8,
-					cleanBackupMetadata,
-				)
+			return _applyPlaylistContinuity(
+				info,
+				url,
+				info.LastCleanBackupM3U8,
+				cleanBackupMetadata,
+				requestAdContext,
 			);
 		}
 		const cleanBackupReady = Boolean(
@@ -4196,7 +4547,14 @@ async function _processM3U8(
 				_getVideoCodecFamily(cleanBackupMetadata.codecFamily) === "avc",
 		);
 		if (!cleanBackupReady) {
-			if (sameRequestCleanNative) return sameRequestCleanNative;
+			if (sameRequestCleanNative)
+				return _applyPlaylistContinuity(
+					info,
+					url,
+					sameRequestCleanNative,
+					null,
+					requestAdContext,
+				);
 			const backupSearchIsInFlight = Boolean(
 				info._BackupSearchPromise ||
 					(info._BackupSearchPromises instanceof Map &&
@@ -4242,7 +4600,14 @@ async function _processM3U8(
 			);
 		}
 		if (!handoffId) {
-			if (sameRequestCleanNative) return sameRequestCleanNative;
+			if (sameRequestCleanNative)
+				return _applyPlaylistContinuity(
+					info,
+					url,
+					sameRequestCleanNative,
+					null,
+					requestAdContext,
+				);
 			throw _createCodecHandoffAbortError(requestSignal);
 		}
 		return _holdRetiringCodecRequest(
@@ -4582,8 +4947,11 @@ async function _processM3U8Core(
 		pendingPostAdNativeMaster &&
 		_normalizeMediaKey(pendingPostAdNativeMaster.mediaKey) ===
 			_normalizeMediaKey(info.MediaKey) &&
-		_getExactPlaylistUrlKey(pendingPostAdNativeMaster.playlistUrl) ===
-			exactRequestUrl &&
+		(_getExactPlaylistUrlKey(pendingPostAdNativeMaster.playlistUrl) ===
+			exactRequestUrl ||
+			pendingPostAdNativeMaster.verifiedPlaylistUrls?.includes(
+				exactRequestUrl,
+			)) &&
 		(hasAds ||
 			(hasMediaSegments &&
 				Number(pendingPostAdNativeMaster.masterServedAt) > 0 &&
@@ -4602,9 +4970,11 @@ async function _processM3U8Core(
 		if (hasAds) {
 			_reportPostAdNativeSession(info, "ad-rejected");
 			info._PendingPostAdNativeMaster = null;
-		} else if (!pendingPostAdNativeMaster.consumed) {
-			pendingPostAdNativeMaster.consumed = true;
-			_reportPostAdNativeSession(info, "consumed");
+		} else if (requestAdContext && !pendingPostAdNativeMaster.consumed) {
+			requestAdContext.nativeSessionToConsume = {
+				session: pendingPostAdNativeMaster,
+				playlist: text,
+			};
 		}
 	}
 	const ensureVisibleAdCycle = () => {
@@ -4891,6 +5261,27 @@ async function _processM3U8Core(
 				0,
 				Number(info.NativeRecoveryLoaderEpoch) || 0,
 			);
+			if (
+				info.MediaType !== "vod" &&
+				!isBackupUrl &&
+				!info.IsUsingBackupStream &&
+				directResolution?.Url === _getMediaPlaylistSessionKey(url) &&
+				directResolution.Resolution ===
+					info.SustainedNativeResolution?.Resolution &&
+				info.EncodingsM3U8 &&
+				info.UsherBaseUrl &&
+				_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) === info.MediaKey
+			) {
+				info._NativePlaybackMaster = {
+					master: info.EncodingsM3U8,
+					masterUrl: info.UsherBaseUrl,
+					resolutionList: info.ResolutionList.slice(),
+					mediaKey: info.MediaKey,
+					pageGeneration:
+						Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+					observedAt: Date.now(),
+				};
+			}
 		}
 		const currentLoaderEpoch = Math.max(
 			0,
@@ -5009,13 +5400,17 @@ async function _processM3U8Core(
 								playlistUrl:
 									verifiedNativeRecoveryTarget?.playlistUrl || exactRequestUrl,
 								codec:
+									verifiedNativeRecoveryTarget?.codec ||
 									info.Urls?.[
 										verifiedNativeRecoveryTarget?.playlistUrl || exactRequestUrl
-									]?.Codecs || null,
+									]?.Codecs ||
+									null,
 								resolution:
+									verifiedNativeRecoveryTarget?.resolution ||
 									info.Urls?.[
 										verifiedNativeRecoveryTarget?.playlistUrl || exactRequestUrl
-									]?.Resolution || null,
+									]?.Resolution ||
+									null,
 								mediaKey: info.MediaKey,
 								cycleStartedAt: restoredCycleStartedAt,
 								expiresAt: restoredAt + 30000,

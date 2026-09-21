@@ -231,9 +231,188 @@ function setup(withCodecHandoff = true) {
 	};
 }
 
-afterEach(() => vi.restoreAllMocks());
+const reducedNativeUrl = "https://edge.example/360p.m3u8?token=reduced";
+const reducedMasterUrl = masterUrl.replaceAll("owned", "reduced");
+const reducedMaster = [
+	"#EXTM3U",
+	`#EXT-X-STREAM-INF:RESOLUTION=640x360,VIDEO="360p",CODECS="${avc}"`,
+	reducedNativeUrl,
+	`#EXT-X-STREAM-INF:RESOLUTION=284x160,VIDEO="160p",CODECS="${avc}"`,
+	"https://edge.example/160p.m3u8?token=reduced",
+].join("\n");
+
+async function setupReducedNativeMaster(enhancedCodec: string | null = null) {
+	const fixture = setup(false);
+	const { context, info, state, fetch, serve } = fixture;
+	context._resetStreamAdState(info);
+	state.CurrentAdMediaKey = null;
+	state.CurrentAdChannel = null;
+	state.PreferredQualityGroup = "1440p60";
+	const originalFetch = fetch.getMockImplementation();
+	if (!originalFetch) throw new Error("Missing native fetch fixture");
+	const fullMaster = enhancedCodec
+		? master.replace(hevc, enhancedCodec)
+		: master
+				.split("\n")
+				.filter((line) => !line.includes("1440") && !line.includes(hevc))
+				.join("\n");
+	fetch.mockImplementation(async (input: string | URL) => {
+		const url = String(input);
+		if (url === masterUrl) return new Response(fullMaster);
+		if (url === reducedMasterUrl) return new Response(reducedMaster);
+		if (url.includes("token=reduced")) return fixture.target(url);
+		return originalFetch(input);
+	});
+	context.fetch = fetch;
+	context._hookWorkerFetch();
+	await context.fetch(masterUrl);
+	info.SustainedNativeResolution = null;
+	await serve(false, enhancedCodec ? enhancedUrl : nativeUrl);
+	expect(info.SustainedNativeResolution.Resolution).toBe(
+		enhancedCodec ? "2560x1440" : "1920x1080",
+	);
+	await context.fetch(reducedMasterUrl);
+	expect(
+		info.ResolutionList.map(
+			(entry: { Resolution: string }) => entry.Resolution,
+		),
+	).toEqual(["640x360", "284x160"]);
+	Object.assign(info, {
+		IsHoldingBackupAfterAd: true,
+		IsUsingBackupStream: true,
+		HevcReloadPendingAfterHold: true,
+		VisibleAdStartedAt: Date.now() + 1,
+		SilentBackupHoldStartedAt: Date.now() + 1,
+		ExpectedAdPodLength: 1,
+		MaxObservedAdPodPosition: 1,
+		ActiveBackupPlayerType: "autoplay",
+		LastCleanBackupAt: Date.now(),
+	});
+	state.CurrentAdMediaKey = info.MediaKey;
+	state.CurrentAdChannel = info.ChannelName;
+	if (enhancedCodec) {
+		const handoffId = context._requestCodecHandoffReload(
+			info,
+			info.VisibleAdStartedAt,
+		);
+		info._CodecHandoffAcknowledgedId = handoffId;
+		info.EnhancedDecoderCodec = null;
+		info.EnhancedDecoderCodecFamily = null;
+		state.ActiveCodecHandoffId = handoffId;
+		state.ActiveCodecHandoffMediaKey = info.MediaKey;
+		state.ActiveCodecHandoffChannel = info.ChannelName;
+	}
+	return fixture;
+}
+
+afterEach(() => {
+	vi.useRealTimers();
+	vi.restoreAllMocks();
+});
 
 describe("owned native recovery after a codec fallback", () => {
+	it("recovers the observed native quality after a later master removes higher renditions", async () => {
+		const { context, info, serve, restored } = await setupReducedNativeMaster();
+		for (let index = 0; index < 24 && !restored(); index++) {
+			await serve(false, reducedNativeUrl);
+		}
+		expect(restored()?.requiresReload).toBe(true);
+		expect(info._PendingPostAdNativeMaster?.playlistUrl).toBe(nativeUrl);
+		expect(info._PendingPostAdNativeMaster?.master).toContain("1920x1080");
+		const rebuilt = await (await context.fetch(reducedMasterUrl)).text();
+		expect(rebuilt).toContain(nativeUrl);
+		expect(rebuilt).not.toContain(reducedNativeUrl);
+		expect(info.Urls[nativeUrl]?.Resolution).toBe("1920x1080");
+		await context.fetch(nativeUrl);
+		expect(info._PendingPostAdNativeMaster?.consumed).toBe(true);
+	});
+
+	it.each([
+		{ codec: hevc, disabled: false },
+		{ codec: hevc, disabled: true },
+		{ codec: "av01.0.12M.08,mp4a.40.2", disabled: false },
+		{ codec: "av01.0.12M.08,mp4a.40.2", disabled: true },
+	])(
+		"restores retained 1440p $codec after a reduced master with fallback disabled=$disabled",
+		async ({ codec, disabled }) => {
+			const { context, state, info, serve, restored } =
+				await setupReducedNativeMaster(codec);
+			state.DisableAutoplayBackup = disabled;
+			for (let index = 0; index < 24 && !restored(); index++)
+				await serve(false, reducedNativeUrl);
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
+				playlistUrl: enhancedUrl,
+				codec,
+				resolution: "2560x1440",
+			});
+			const rebuilt = await (await context.fetch(reducedMasterUrl)).text();
+			expect(rebuilt).toContain(enhancedUrl);
+			expect(rebuilt).toContain(nativeUrl);
+			expect(info.Urls[enhancedUrl]?.Codecs).toBe(codec);
+		},
+	);
+
+	it.each(["ad", "stopped", "http-error"])(
+		"keeps the backup when the retained native session is %s",
+		async (failure) => {
+			const { info, target, serve, restored } =
+				await setupReducedNativeMaster();
+			target.mockImplementation(async () =>
+				failure === "http-error"
+					? new Response(null, { status: 403 })
+					: new Response(playlist(1000, "retained", failure === "ad")),
+			);
+			for (let index = 0; index < 24; index++)
+				await serve(false, reducedNativeUrl);
+			expect(restored()).toBeUndefined();
+			expect(info.IsHoldingBackupAfterAd).toBe(true);
+			expect(info._PendingPostAdNativeMaster).toBeNull();
+		},
+	);
+
+	it.each([
+		"route",
+		"generation",
+		"expired-before-break",
+		"future-observation",
+		"cycle-owner",
+		"vod",
+		"disabled",
+		"explicit-360",
+		"audio-only",
+	])("does not use a retained quality catalog after %s", async (reason) => {
+		const { context, info, state } = await setupReducedNativeMaster();
+		if (reason === "route") state.PageMediaKey = "live:other";
+		if (reason === "generation") state.PagePlaybackContextGeneration++;
+		if (reason === "expired-before-break")
+			info._NativePlaybackMaster.observedAt -= 60001;
+		if (reason === "future-observation")
+			info._NativePlaybackMaster.observedAt = info.VisibleAdStartedAt + 1;
+		if (reason === "cycle-owner") state.CurrentAdMediaKey = "live:other";
+		if (reason === "vod") info.MediaType = "vod";
+		if (reason === "disabled") state.IsAdStrippingEnabled = false;
+		if (reason === "explicit-360") state.PreferredQualityGroup = "360p";
+		if (reason === "audio-only") state.PreferredQualityGroup = "audio_only";
+		expect(context._getNativeRecoveryMaster(info).master).toBe(reducedMaster);
+	});
+
+	it("retains the normal backup target when a reduced master advertises only the bridge height", async () => {
+		const { context, info } = await setupReducedNativeMaster();
+		expect(
+			context._resolveAdBackupTargetResolution(info, reducedNativeUrl)
+				?.Resolution,
+		).toBe("1920x1080");
+	});
+
+	it("keeps the retained native session through ad completion and clears it on context reset", async () => {
+		const { context, info } = await setupReducedNativeMaster();
+		const saved = info._NativePlaybackMaster;
+		context._resetStreamAdState(info, true);
+		expect(info._NativePlaybackMaster).toBe(saved);
+		context._resetStreamAdState(info);
+		expect(info._NativePlaybackMaster).toBeNull();
+	});
+
 	it.each([
 		{ quality: "1080p60", disabled: false, expectedUrl: nativeUrl },
 		{ quality: "1080p60", disabled: true, expectedUrl: nativeUrl },
@@ -251,6 +430,7 @@ describe("owned native recovery after a codec fallback", () => {
 				Url: lowUrl,
 			};
 			info.IsUsingModifiedM3U8 = false;
+			info.HevcReloadPendingAfterHold = false;
 			info.ExpectedAdPodLength = 2;
 			info.ResolutionList.push(lowResolution);
 			info.Urls[lowUrl] = lowResolution;
@@ -472,7 +652,7 @@ describe("owned native recovery after a codec fallback", () => {
 				await context.fetch(masterUrl.replaceAll("owned", "fresh"))
 			).text();
 			expect(rebuiltMaster).toContain(enhancedUrl);
-			expect(rebuiltMaster).not.toContain(nativeUrl);
+			expect(rebuiltMaster).toContain(nativeUrl);
 			expect(rebuiltMaster).not.toContain("token=fresh");
 			expect(info.IsUsingModifiedM3U8).toBe(false);
 			expect(info.EnhancedDecoderCodecFamily).not.toBe("hevc");
@@ -738,6 +918,226 @@ describe("owned native recovery after a codec fallback", () => {
 });
 
 describe("bounded native session preservation", () => {
+	it("verifies the earlier native quality before slow low qualities can exhaust the master budget", async () => {
+		const { context, info, state, fetch, target, serve, restored } = setup();
+		state.PreferredQualityGroup = "1080p60";
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		const pending = info._PendingPostAdNativeMaster;
+		const lowUrl = "https://edge.example/360p.m3u8?token=owned";
+		const lowerUrl = "https://edge.example/160p.m3u8?token=owned";
+		pending.playlistUrl = lowUrl;
+		pending.resolution = "640x360";
+		pending.codec = avc;
+		pending.master = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=284x160,CODECS="${avc}"\n${lowerUrl}\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="${avc}"\n${lowUrl}\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="${avc}"\n${nativeUrl}`;
+		const now = Date.now();
+		vi.useFakeTimers();
+		vi.setSystemTime(now);
+		context.fetch = (input) =>
+			String(input) === lowerUrl
+				? new Promise<Response>(() => {})
+				: fetch(input);
+		target.mockClear();
+		context._hookWorkerFetch();
+		const request = context.fetch(masterUrl.replaceAll("owned", "fresh"));
+		await vi.advanceTimersByTimeAsync(2501);
+		const rebuilt = await (await request).text();
+		expect(rebuilt).toContain(nativeUrl);
+		expect(rebuilt).toContain(lowUrl);
+		expect(rebuilt).not.toContain(lowerUrl);
+		expect(target.mock.calls.filter(([url]) => url === nativeUrl)).toHaveLength(
+			2,
+		);
+	});
+
+	it("caps extra native-quality candidates and never offers unverified media groups", async () => {
+		const { context, info, state, fetch, target, serve, restored } = setup();
+		state.PreferredQualityGroup = "1080p60";
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		const pending = info._PendingPostAdNativeMaster;
+		pending.master = pending.master.replace(
+			`VIDEO="chunked"`,
+			`VIDEO="chunked",AUDIO="external"`,
+		);
+		pending.master +=
+			'\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="external",URI="https://edge.example/unverified.m3u8"';
+		const extra = Array.from(
+			{ length: 20 },
+			(_, index) => `https://edge.example/extra-${index}.m3u8?token=owned`,
+		);
+		for (const url of extra)
+			pending.master += `\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="mp4a.40.2,avc1.64002a"\n${url}`;
+		const extraFetch = vi.fn(async () => new Response(playlist(3000, "extra")));
+		context.fetch = (input) =>
+			extra.includes(String(input)) ? extraFetch() : fetch(input);
+		target.mockClear();
+		context._hookWorkerFetch();
+		const rebuilt = await (
+			await context.fetch(masterUrl.replaceAll("owned", "fresh"))
+		).text();
+		expect(rebuilt).toContain(nativeUrl);
+		expect(rebuilt).not.toContain(enhancedUrl);
+		expect(rebuilt).not.toContain("unverified.m3u8");
+		expect(target).not.toHaveBeenCalled();
+		expect(extraFetch).toHaveBeenCalledTimes(22);
+		expect(pending.verifiedPlaylistUrls).toHaveLength(12);
+		expect(rebuilt).toContain(extra[10]);
+		expect(rebuilt).not.toContain(extra[11]);
+	});
+
+	it("does not consume native-session proof when broadcast alignment rejects the returned window", async () => {
+		const { context, info, state, fetch, serve, restored } = setup();
+		state.PreferredQualityGroup = "1080p60";
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		await context.fetch(masterUrl.replaceAll("owned", "fresh"));
+		const pending = info._PendingPostAdNativeMaster;
+		info._LivePlaylistTimeline = {
+			identity: "backup",
+			backup: true,
+			minimumTime: 0,
+			lastEndTime: Date.parse("2026-09-20T18:11:20Z"),
+		};
+		const text = playlist(2000, "old").replace(
+			"#EXTINF:",
+			"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:10:00Z\n#EXTINF:",
+		);
+		await expect(
+			context._processM3U8(nativeUrl, text, fetch),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(pending.consumed).not.toBe(true);
+		expect(info._PendingPostAdNativeMaster).toBe(pending);
+		const current = text.replace("18:10:00Z", "18:11:20Z");
+		await context._processM3U8(nativeUrl, current, fetch);
+		expect(pending.consumed).toBe(true);
+	});
+
+	it.each(["ad", "late ad", "empty", "gap", "http", "rewind", "error"])(
+		"does not expose an additional native quality with %s evidence",
+		async (failure) => {
+			const { context, info, state, fetch, target, serve, restored } = setup();
+			state.PreferredQualityGroup = "1080p60";
+			for (let index = 0; index < 30 && !restored(); index++) await serve();
+			let looks = 0;
+			target.mockImplementation(async () => {
+				looks++;
+				if (failure === "error") throw new Error("offline");
+				if (failure === "http") return new Response("offline", { status: 503 });
+				if (failure === "empty")
+					return new Response("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100");
+				let text = playlist(
+					failure === "rewind" ? 100 - looks : 100 + looks,
+					"candidate",
+					failure === "ad" || (failure === "late ad" && looks === 2),
+				);
+				if (failure === "gap")
+					text = text.replaceAll("#EXTINF:", "#EXT-X-GAP\n#EXTINF:");
+				return new Response(text);
+			});
+			context.fetch = fetch;
+			context._hookWorkerFetch();
+			const rebuilt = await (
+				await context.fetch(masterUrl.replaceAll("owned", "fresh"))
+			).text();
+			expect(rebuilt).toContain(nativeUrl);
+			expect(rebuilt).not.toContain(enhancedUrl);
+			expect(info._PendingPostAdNativeMaster.verifiedPlaylistUrls).toEqual([
+				nativeUrl,
+			]);
+		},
+	);
+
+	it.each(["navigation", "cycle", "loader", "replacement", "expiry", "abort"])(
+		"rejects a native quality probe superseded by %s",
+		async (change) => {
+			const { context, info, state, fetch, target, serve, restored } = setup();
+			state.PreferredQualityGroup = "1080p60";
+			for (let index = 0; index < 30 && !restored(); index++) await serve();
+			const pending = info._PendingPostAdNativeMaster;
+			const controller = new AbortController();
+			target.mockImplementationOnce(async () => {
+				if (change === "navigation") state.PagePlaybackContextGeneration++;
+				if (change === "cycle") state.CurrentAdMediaKey = info.MediaKey;
+				if (change === "loader") info.NativeRecoveryLoaderEpoch++;
+				if (change === "replacement")
+					info._PendingPostAdNativeMaster = { ...pending, reloadAt: 9999 };
+				if (change === "expiry") pending.expiresAt = Date.now();
+				if (change === "abort") controller.abort();
+				return new Response(playlist(2000, "candidate"));
+			});
+			context.fetch = fetch;
+			context._hookWorkerFetch();
+			await expect(
+				context.fetch(masterUrl.replaceAll("owned", "fresh"), {
+					signal: controller.signal,
+				}),
+			).rejects.toMatchObject({ name: "AbortError" });
+			expect(pending.masterServedAt || 0).toBe(0);
+			if (change === "replacement")
+				expect(info._PendingPostAdNativeMaster.reloadAt).toBe(9999);
+		},
+	);
+
+	it("bounds additional quality checks while retaining the already verified target", async () => {
+		const { context, info, state, fetch, target, serve, restored } = setup();
+		state.PreferredQualityGroup = "1080p60";
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		const now = Date.now();
+		vi.useFakeTimers();
+		vi.setSystemTime(now);
+		target.mockImplementation(() => new Promise<Response>(() => {}));
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		const request = context.fetch(masterUrl.replaceAll("owned", "fresh"));
+		await vi.advanceTimersByTimeAsync(2501);
+		const rebuilt = await (await request).text();
+		expect(rebuilt).toContain(nativeUrl);
+		expect(rebuilt).not.toContain(enhancedUrl);
+		expect(info._PendingPostAdNativeMaster.verifiedPlaylistUrls).toEqual([
+			nativeUrl,
+		]);
+		vi.useRealTimers();
+	});
+
+	it("retains independently verified native qualities when rebuilding from a low rendition", async () => {
+		const { context, info, state, fetch, target, serve, restored } = setup();
+		const lowUrl = "https://edge.example/360p.m3u8?token=owned";
+		const low = {
+			Resolution: "640x360",
+			FrameRate: "30",
+			Name: "360p30",
+			Codecs: avc,
+			Url: lowUrl,
+		};
+		info.Urls[lowUrl] = low;
+		info.ResolutionList.push(low);
+		state.StreamInfosByUrl[lowUrl] = info;
+		info.EncodingsM3U8 += `\n#EXT-X-STREAM-INF:RESOLUTION=640x360,VIDEO="360p30",CODECS="${avc}"\n${lowUrl}`;
+		const originalFetch = fetch.getMockImplementation();
+		fetch.mockImplementation(async (input) =>
+			String(input) === lowUrl ? target(lowUrl) : originalFetch(input),
+		);
+		state.PreferredQualityGroup = "360p30";
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		expect(info._PendingPostAdNativeMaster.playlistUrl).toBe(lowUrl);
+		target.mockClear();
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		const rebuilt = await (
+			await context.fetch(masterUrl.replaceAll("owned", "fresh"))
+		).text();
+		expect(rebuilt).toContain(nativeUrl);
+		expect(rebuilt).toContain(lowUrl);
+		expect(state.PreferredQualityGroup).toBe("360p30");
+		expect(rebuilt).toContain(enhancedUrl);
+		expect(rebuilt).not.toContain("token=fresh");
+		expect(
+			target.mock.calls.filter(([url]) => url === enhancedUrl),
+		).toHaveLength(2);
+		await context.fetch(enhancedUrl);
+		expect(info._PendingPostAdNativeMaster).toMatchObject({ consumed: true });
+	});
+
 	it("discards a consumed native session when a later live refresh becomes ad-marked", async () => {
 		const { context, info, state, fetch, target, serve, restored } = setup();
 		state.PreferredQualityGroup = "1080p60";

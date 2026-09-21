@@ -201,6 +201,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		LastCleanBackupCodecFamily: null,
 		LastCleanBackupCodec: null,
 		LastCleanBackupAt: 0,
+		_NativePlaybackMaster: null,
 		LastCleanNativeM3U8: null,
 		LastCleanNativeUrl: null,
 		LastCleanNativeCodec: null,
@@ -233,6 +234,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_EmptyAdHoldMediaSequence: 0,
 		_EmptyAdHoldDiscontinuitySequence: 0,
 		_EmptyHoldTimelineByUrl: new Map(),
+		_LivePlaylistTimeline: null,
 		_FatalMediaRecoveryRequestId: null,
 		_CodecHandoffSequence: 0,
 		_CodecHandoffPendingId: null,
@@ -861,6 +863,7 @@ describe("_resetStreamAdState", () => {
 				cycleStartedAt: 100,
 				expiresAt: 5000,
 			},
+			_NativePlaybackMaster: { master: "retained-native" },
 			NativeRecoveryLoaderEpoch: 3,
 			NativeRecoveryCandidateUrl: "https://edge.example/native.m3u8",
 			NativeRecoveryCandidateMediaKey: "live:testchannel",
@@ -886,6 +889,11 @@ describe("_resetStreamAdState", () => {
 			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 			_EmptyAdHoldMediaSequence: 12,
 			_EmptyAdHoldDiscontinuitySequence: 5,
+			_LivePlaylistTimeline: {
+				identity: "backup",
+				minimumTime: 1000,
+				lastEndTime: 2000,
+			},
 			_EmptyHoldTimelineByUrl: new Map([
 				["https://test/stream.m3u8", { lastSequence: 12 }],
 			]),
@@ -932,6 +940,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.NativeRecoveryAdStartedAt).toBe(0);
 		expect(info._PendingPostAdNativeMaster).toBe(null);
 		expect(info.NativeRecoveryLoaderEpoch).toBe(3);
+		expect(info._NativePlaybackMaster).toBeNull();
 		expect(info.NativeRecoveryCandidateUrl).toBe(null);
 		expect(info.NativeRecoveryCandidateMediaKey).toBe(null);
 		expect(info.NativeRecoveryCandidateCycleStartedAt).toBe(0);
@@ -955,6 +964,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
 		expect(info._EmptyAdHoldDiscontinuitySequence).toBe(0);
 		expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
+		expect(info._LivePlaylistTimeline).toBeNull();
 		expect(info._LastNoBackupProbeAt).toBe(0);
 		expect(info._NoBackupRecoveryCandidates.size).toBe(0);
 		expect(info._FatalMediaRecoveryRequestId).toBe(null);
