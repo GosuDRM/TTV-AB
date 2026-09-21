@@ -72,6 +72,10 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.0.4 - 2026-09-22
+
+- **Startup Ad Recovery** - Restore missing quality options after startup ads, including when Twitch is in the background.
+
 ### v18.0.3 - 2026-09-21
 
 - **Background Recovery** - Continue post-ad recovery for live streams and VODs while Twitch is hidden or unfocused, respecting manual pauses and retry limits.
@@ -90,12 +94,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 - **Ad Recovery** - Prevents new ad breaks from canceling their own backup recovery when page and worker state synchronize.
 - **Native Playback** - Verifies native quality before rebuilding from an ad-session playlist, reducing repeat prerolls after recovery.
-
-### v17.6.6 - 2026-09-20
-
-- **Ad Detection** - Blocks ad segments in low-latency prefetch entries and recognizes ad metadata regardless of attribute order.
-- **Playlist Handling** - Handles additional playlist layouts without leaving ad media behind or losing track of the stream codec.
-- **Backup Validation** - Rejects incomplete or gap-only backup playlists before they can be selected for playback.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
