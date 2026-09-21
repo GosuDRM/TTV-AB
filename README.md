@@ -72,6 +72,10 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.0.5 - 2026-09-22
+
+- **Ad Recovery Quality** - Restore missing quality options after later ad breaks during long viewing sessions, including background playback.
+
 ### v18.0.4 - 2026-09-22
 
 - **Startup Ad Recovery** - Restore missing quality options after startup ads, including when Twitch is in the background.
@@ -89,11 +93,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Navigation Ad State** - Ignore old ad and reload messages so returning to a channel does not revive earlier ad state or inflate blocked totals.
 - **Navigation Recovery** - Cancel pending pause/resume actions and delayed volume or quality restores from the previous visit while preserving active PiP playback.
 - **PiP Diagnostics** - Add console messages for PiP ad blocking without repeating them for the same ad cycle or VOD ad request.
-
-### v17.6.7 - 2026-09-20
-
-- **Ad Recovery** - Prevents new ad breaks from canceling their own backup recovery when page and worker state synchronize.
-- **Native Playback** - Verifies native quality before rebuilding from an ad-session playlist, reducing repeat prerolls after recovery.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
