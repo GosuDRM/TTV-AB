@@ -9584,9 +9584,13 @@ describe("worker mixed-codec master selection", () => {
 		}
 	});
 
-	it.each([false, true])(
-		"restores the native catalog after a reduced master in the injected worker with hidden preroll=%s",
-		async (preroll) => {
+	it.each([
+		{ preroll: false, longSession: false },
+		{ preroll: true, longSession: false },
+		{ preroll: false, longSession: true },
+	])(
+		"restores the native catalog in the injected worker with hidden preroll=$preroll and long session=$longSession",
+		async ({ preroll, longSession }) => {
 			vi.useFakeTimers();
 			vi.setSystemTime(200000);
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
@@ -9656,64 +9660,76 @@ describe("worker mixed-codec master selection", () => {
 						master: fullMaster,
 					});
 				}
-				await workerFetch(reducedUrl);
-				if (preroll)
-					info.SustainedNativeResolution = (
-						info.Urls as Record<string, unknown>
-					)[low];
-				Object.assign(info, {
-					IsShowingAd: false,
-					IsHoldingBackupAfterAd: true,
-					IsUsingBackupStream: true,
-					HevcReloadPendingAfterHold: true,
-					VisibleAdStartedAt: 201000,
-					SilentBackupHoldStartedAt: 201000,
-					ExpectedAdPodLength: 1,
-					MaxObservedAdPodPosition: 1,
-					ActiveBackupPlayerType: "autoplay",
-					ActiveBackupResolution: "640x360",
-					LastCleanBackupM3U8: playlist("backup"),
-					LastCleanBackupPlayerType: "autoplay",
-					LastCleanBackupResolution: "640x360",
-					LastCleanBackupCodecFamily: "avc",
-					LastCleanBackupCodec: codec,
-					LastCleanBackupAt: Date.now(),
-				});
-				Object.assign(state, {
-					CurrentAdMediaKey: mediaKey,
-					CurrentAdChannel: "testchannel",
-				});
-				(info.BackupEncodingsM3U8Cache as Record<string, unknown>).autoplay = {
-					m3u8: lowMaster.replace(low, backup),
-					baseUrl: masterUrl.replace("owned", "backup"),
-				};
-				for (
-					let index = 0;
-					index < 24 && info.IsHoldingBackupAfterAd;
-					index++
-				) {
-					vi.setSystemTime(Date.now() + 2000);
-					const output = await (await workerFetch(low)).text();
-					if (info.IsHoldingBackupAfterAd) expect(output).toContain("backup-");
+				for (let cycle = 0; cycle < (longSession ? 2 : 1); cycle++) {
+					await workerFetch(reducedUrl);
+					if (cycle > 0) {
+						vi.setSystemTime(Date.now() + 38 * 60000);
+						await workerFetch(low);
+					}
+					if (preroll)
+						info.SustainedNativeResolution = (
+							info.Urls as Record<string, unknown>
+						)[low];
+					Object.assign(info, {
+						IsShowingAd: false,
+						IsHoldingBackupAfterAd: true,
+						IsUsingBackupStream: true,
+						HevcReloadPendingAfterHold: true,
+						VisibleAdStartedAt: Date.now() + 1000,
+						SilentBackupHoldStartedAt: Date.now() + 1000,
+						ExpectedAdPodLength: 1,
+						MaxObservedAdPodPosition: 1,
+						ActiveBackupPlayerType: "autoplay",
+						ActiveBackupResolution: "640x360",
+						LastCleanBackupM3U8: playlist("backup"),
+						LastCleanBackupPlayerType: "autoplay",
+						LastCleanBackupResolution: "640x360",
+						LastCleanBackupCodecFamily: "avc",
+						LastCleanBackupCodec: codec,
+						LastCleanBackupAt: Date.now(),
+					});
+					Object.assign(state, {
+						CurrentAdMediaKey: mediaKey,
+						CurrentAdChannel: "testchannel",
+					});
+					(info.BackupEncodingsM3U8Cache as Record<string, unknown>).autoplay =
+						{
+							m3u8: lowMaster.replace(low, backup),
+							baseUrl: masterUrl.replace("owned", "backup"),
+						};
+					for (
+						let index = 0;
+						index < 24 && info.IsHoldingBackupAfterAd;
+						index++
+					) {
+						vi.setSystemTime(Date.now() + 2000);
+						const output = await (await workerFetch(low)).text();
+						if (info.IsHoldingBackupAfterAd)
+							expect(output).toContain("backup-");
+					}
+					expect(info.IsHoldingBackupAfterAd).toBe(false);
+					expect(info._PendingPostAdNativeMaster).toMatchObject({
+						playlistUrl: high,
+						resolution: "1920x1080",
+					});
+					const rebuild = workerFetch(reducedUrl);
+					await vi.advanceTimersByTimeAsync(2001);
+					const rebuilt = await (await rebuild).text();
+					for (const { url } of extra) expect(rebuilt).toContain(url);
+					expect(rebuilt).toContain(high);
+					expect(rebuilt).not.toContain(low);
+					await workerFetch(high);
+					expect(info._PendingPostAdNativeMaster).toMatchObject({
+						consumed: true,
+					});
+					expect((info.Urls as Record<string, unknown>)[high]).toMatchObject({
+						Resolution: "1920x1080",
+					});
 				}
-				expect(info.IsHoldingBackupAfterAd).toBe(false);
-				expect(info._PendingPostAdNativeMaster).toMatchObject({
-					playlistUrl: high,
-					resolution: "1920x1080",
-				});
-				const rebuild = workerFetch(reducedUrl);
-				await vi.advanceTimersByTimeAsync(2001);
-				const rebuilt = await (await rebuild).text();
-				for (const { url } of extra) expect(rebuilt).toContain(url);
-				expect(rebuilt).toContain(high);
-				expect(rebuilt).not.toContain(low);
-				await workerFetch(high);
-				expect(info._PendingPostAdNativeMaster).toMatchObject({
-					consumed: true,
-				});
-				expect((info.Urls as Record<string, unknown>)[high]).toMatchObject({
-					Resolution: "1920x1080",
-				});
+				if (longSession)
+					expect(
+						fetch.mock.calls.filter(([url]) => String(url) === masterUrl),
+					).toHaveLength(2);
 			} finally {
 				harness.restore();
 			}

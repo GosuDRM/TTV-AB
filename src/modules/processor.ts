@@ -632,7 +632,7 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 	return resolution;
 }
 
-function _getNativeRecoveryMaster(info) {
+function _getNativeRecoveryMaster(info, forRefresh = false) {
 	const current = {
 		master: info?.EncodingsM3U8,
 		masterUrl: info?.UsherBaseUrl,
@@ -663,8 +663,16 @@ function _getNativeRecoveryMaster(info) {
 			(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0) ||
 		saved.observedAt <= 0 ||
 		saved.observedAt > (cycleStartedAt || Date.now()) ||
-		(cycleStartedAt || Date.now()) - saved.observedAt > 60000 ||
-		Date.now() - saved.observedAt > 600000 ||
+		(!forRefresh &&
+			!(
+				cycleStartedAt > 0 &&
+				saved.refreshedCycleStartedAt === cycleStartedAt &&
+				saved.refreshedAt >= cycleStartedAt &&
+				saved.refreshedAt <= Date.now() &&
+				Date.now() - saved.refreshedAt <= 600000
+			) &&
+			((cycleStartedAt || Date.now()) - saved.observedAt > 60000 ||
+				Date.now() - saved.observedAt > 600000)) ||
 		quality === "audio_only" ||
 		(requestedHeight > 0 && requestedHeight <= currentHeight) ||
 		(cycleStartedAt > 0 &&
@@ -673,6 +681,7 @@ function _getNativeRecoveryMaster(info) {
 		return current;
 	const savedTarget =
 		_getResolutionByQualityGroup(saved.resolutionList, quality) ||
+		_getResolutionByQualityGroup(saved.resolutionList, "chunked") ||
 		info.SustainedNativeResolution;
 	const savedHeight =
 		Number(String(savedTarget?.Resolution || "").split("x")[1]) || 0;
@@ -685,6 +694,122 @@ function _getNativeRecoveryMaster(info) {
 		0,
 	);
 	return savedHeight > (currentHeight || availableHeight) ? saved : current;
+}
+
+async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
+	const saved = _getNativeRecoveryMaster(info, true);
+	const cycleStartedAt = Number(info.VisibleAdStartedAt) || 0;
+	if (
+		saved !== info._NativePlaybackMaster ||
+		_getNativeRecoveryMaster(info) === saved ||
+		!info.IsHoldingBackupAfterAd ||
+		cycleStartedAt <= 0
+	)
+		return;
+	if (saved.refreshAttemptCycleStartedAt === cycleStartedAt)
+		return saved.refreshPromise;
+	const currentMaster = info.EncodingsM3U8;
+	const currentMasterUrl = info.UsherBaseUrl;
+	const loaderEpoch = Number(info.NativeRecoveryLoaderEpoch) || 0;
+	const quality = __TTVAB_STATE__.PreferredQualityGroup;
+	const target =
+		_getResolutionByQualityGroup(saved.resolutionList, quality) ||
+		_getResolutionByQualityGroup(saved.resolutionList, "chunked") ||
+		info.SustainedNativeResolution;
+	if (!target?.Url || !saved.masterUrl) return;
+	const deadlineAt = Date.now() + 2500;
+	const isCurrent = () =>
+		Boolean(
+			!requestSignal?.aborted &&
+				Date.now() < deadlineAt &&
+				__TTVAB_STATE__.IsAdStrippingEnabled === true &&
+				__TTVAB_STATE__.StreamInfos[info.MediaKey] === info &&
+				_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) === saved.mediaKey &&
+				_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+					saved.mediaKey &&
+				(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) ===
+					saved.pageGeneration &&
+				__TTVAB_STATE__.PreferredQualityGroup === quality &&
+				info._NativePlaybackMaster === saved &&
+				info.VisibleAdStartedAt === cycleStartedAt &&
+				info.IsHoldingBackupAfterAd &&
+				info.EncodingsM3U8 === currentMaster &&
+				info.UsherBaseUrl === currentMasterUrl &&
+				(Number(info.NativeRecoveryLoaderEpoch) || 0) === loaderEpoch,
+		);
+	if (!isCurrent()) return;
+	saved.refreshAttemptCycleStartedAt = cycleStartedAt;
+	saved.refreshPromise = (async () => {
+		try {
+			const probe = await _awaitBackupProbeBeforeDeadline(
+				_fetchWithTimeout(
+					realFetch,
+					saved.masterUrl,
+					{ signal: requestSignal, cache: "no-store" },
+					2500,
+				),
+				deadlineAt,
+			);
+			if (!probe.completed || !isCurrent() || probe.value.status !== 200)
+				return;
+			const master = await probe.value.text();
+			if (
+				!isCurrent() ||
+				!master.trimStart().startsWith("#EXTM3U") ||
+				_hasPlaylistAdMarkers(master) ||
+				_hasExplicitAdMetadata(master)
+			)
+				return;
+			const resolutions = [];
+			const lines = master.split(/\r?\n/);
+			for (let index = 0; index < lines.length - 1; index++) {
+				const uri = lines[index + 1]?.trim();
+				if (
+					!lines[index].startsWith("#EXT-X-STREAM-INF:") ||
+					!uri ||
+					uri.startsWith("#")
+				)
+					continue;
+				const attrs = _parseAttrs(lines[index]);
+				if (!attrs.RESOLUTION || !_getVideoCodecIdentity(attrs.CODECS))
+					continue;
+				resolutions.push(
+					_getStreamVariantInfo(
+						attrs,
+						uri,
+						_getExactPlaylistUrlKey(uri, saved.masterUrl),
+					),
+				);
+			}
+			if (
+				!resolutions.some(
+					(entry) =>
+						entry.Url === target.Url &&
+						entry.Resolution === target.Resolution &&
+						_getVideoCodecIdentity(entry.Codecs) ===
+							_getVideoCodecIdentity(target.Codecs),
+				)
+			)
+				return;
+			info._NativePlaybackMaster = {
+				...saved,
+				master,
+				resolutionList: resolutions,
+				refreshedAt: Date.now(),
+				refreshedCycleStartedAt: cycleStartedAt,
+				refreshPromise: null,
+			};
+			_log(
+				"[Recovery] Refreshed retained native catalog; verifying current-cycle media before recovery",
+				"info",
+			);
+		} catch {
+		} finally {
+			if (saved.refreshAttemptCycleStartedAt === cycleStartedAt)
+				saved.refreshPromise = null;
+		}
+	})();
+	return saved.refreshPromise;
 }
 
 function _resolveAdBackupTargetResolution(
@@ -1164,6 +1289,12 @@ async function _isAdEndStable(
 		typeof info.UsherBaseUrl === "string" &&
 		info.UsherBaseUrl
 	) {
+		await _awaitM3U8RequestContext(
+			_refreshNativeRecoveryMaster(info, realFetch, requestSignal),
+			info,
+			requestAdContext,
+			requestSignal,
+		);
 		const recoveryMaster = _getNativeRecoveryMaster(info);
 		const targetResolution =
 			_getResolutionByQualityGroup(
@@ -5272,15 +5403,40 @@ async function _processM3U8Core(
 				info.UsherBaseUrl &&
 				_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) === info.MediaKey
 			) {
-				info._NativePlaybackMaster = {
-					master: info.EncodingsM3U8,
-					masterUrl: info.UsherBaseUrl,
-					resolutionList: info.ResolutionList.slice(),
-					mediaKey: info.MediaKey,
-					pageGeneration:
-						Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
-					observedAt: Date.now(),
-				};
+				const saved = info._NativePlaybackMaster;
+				const savedHeight = Math.max(
+					0,
+					...(saved?.resolutionList || []).map(
+						(entry) =>
+							Number(String(entry.Resolution || "").split("x")[1]) || 0,
+					),
+				);
+				const currentHeight = Math.max(
+					0,
+					...info.ResolutionList.map(
+						(entry) =>
+							Number(String(entry.Resolution || "").split("x")[1]) || 0,
+					),
+				);
+				if (
+					!saved ||
+					saved.mediaKey !== info.MediaKey ||
+					saved.pageGeneration !==
+						(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) ||
+					currentHeight > savedHeight ||
+					(currentHeight === savedHeight &&
+						info.ResolutionList.length >= saved.resolutionList.length)
+				) {
+					info._NativePlaybackMaster = {
+						master: info.EncodingsM3U8,
+						masterUrl: info.UsherBaseUrl,
+						resolutionList: info.ResolutionList.slice(),
+						mediaKey: info.MediaKey,
+						pageGeneration:
+							Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+						observedAt: Date.now(),
+					};
+				}
 			}
 		}
 		const currentLoaderEpoch = Math.max(
