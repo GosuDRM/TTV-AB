@@ -72,6 +72,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.0.8 - 2026-09-23
+
+- **Navigation Recovery** - Cancel outdated recovery after channel or VOD navigation, including returning to the same stream, while preserving active Picture-in-Picture playback.
+- **Background Playback** - Avoid unnecessary recovery when the video restarts or seeks backward, while still recovering genuine stalls.
+
 ### v18.0.7 - 2026-09-23
 
 - **Backup Diagnostics** - Report backup quality and session changes without repeating unchanged playlist polls.
@@ -84,10 +89,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Playback Continuity** - Prevent backward playlist jumps when temporary ad-blocking playback changes quality.
 - **Ad-Time Quality** - Keep upgraded backup playback from dropping back to 360p during playlist refreshes.
 - **Post-Ad Recovery** - Prevent early or unusable playlist responses from causing recovery to time out.
-
-### v18.0.5 - 2026-09-22
-
-- **Ad Recovery Quality** - Restore missing quality options after later ad breaks during long viewing sessions, including background playback.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
