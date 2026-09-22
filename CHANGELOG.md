@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.0.6] - 2026-09-23
+
+Fixed
+
+- **Playback Continuity** - Prevent backward playlist jumps when temporary ad-blocking playback changes quality.
+- **Ad-Time Quality** - Keep upgraded backup playback from dropping back to 360p during playlist refreshes.
+- **Post-Ad Recovery** - Prevent early or unusable playlist responses from causing recovery to time out.
+
 ## [18.0.5] - 2026-09-22
 
 Fixed

@@ -72,6 +72,12 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.0.6 - 2026-09-23
+
+- **Playback Continuity** - Prevent backward playlist jumps when temporary ad-blocking playback changes quality.
+- **Ad-Time Quality** - Keep upgraded backup playback from dropping back to 360p during playlist refreshes.
+- **Post-Ad Recovery** - Prevent early or unusable playlist responses from causing recovery to time out.
+
 ### v18.0.5 - 2026-09-22
 
 - **Ad Recovery Quality** - Restore missing quality options after later ad breaks during long viewing sessions, including background playback.
@@ -79,20 +85,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 ### v18.0.4 - 2026-09-22
 
 - **Startup Ad Recovery** - Restore missing quality options after startup ads, including when Twitch is in the background.
-
-### v18.0.3 - 2026-09-21
-
-- **Background Recovery** - Continue post-ad recovery for live streams and VODs while Twitch is hidden or unfocused, respecting manual pauses and retry limits.
-- **VOD Reloads** - Preserve playback position without undoing seeking or applying an older reload's restore.
-- **VOD Ad Requests** - Block recognized ad requests from VOD workers and channel-page VOD players.
-- **VOD Statistics** - Keep canceled and duplicate ad requests from inflating blocked totals.
-- **PiP Ad Blocking** - Keep live and VOD ad blocking and blocked counts attached to the correct player across page navigation.
-- **PiP Recovery** - Respect manual pauses, cancel outdated reloads, and avoid reloading a different player or attempting recovery through a stopped playback worker.
-- **PiP Playlists** - Reject late playlists after PiP closes and clear released ad state.
-- **Rapid Channel Switching** - Reject delayed playlists from an earlier visit when rapidly switching from channel A to B and back to A.
-- **Navigation Ad State** - Ignore old ad and reload messages so returning to a channel does not revive earlier ad state or inflate blocked totals.
-- **Navigation Recovery** - Cancel pending pause/resume actions and delayed volume or quality restores from the previous visit while preserving active PiP playback.
-- **PiP Diagnostics** - Add console messages for PiP ad blocking without repeating them for the same ad cycle or VOD ad request.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
