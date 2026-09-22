@@ -72,6 +72,13 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.0.7 - 2026-09-23
+
+- **Backup Diagnostics** - Report backup quality and session changes without repeating unchanged playlist polls.
+- **Recovery Diagnostics** - Include recovery stages, stream ownership, and retry counts in console logs.
+- **Recovery Confirmation** - Distinguish verified video advancement from recovery confirmed only by playhead progress.
+- **Worker Diagnostics** - Report successful playback interception only after the worker hook is installed.
+
 ### v18.0.6 - 2026-09-23
 
 - **Playback Continuity** - Prevent backward playlist jumps when temporary ad-blocking playback changes quality.
@@ -81,10 +88,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 ### v18.0.5 - 2026-09-22
 
 - **Ad Recovery Quality** - Restore missing quality options after later ad breaks during long viewing sessions, including background playback.
-
-### v18.0.4 - 2026-09-22
-
-- **Startup Ad Recovery** - Restore missing quality options after startup ads, including when Twitch is in the background.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

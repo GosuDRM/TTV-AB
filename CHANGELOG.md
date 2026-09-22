@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.0.7] - 2026-09-23
+
+Fixed
+
+- **Backup Diagnostics** - Report backup quality and session changes without repeating unchanged playlist polls.
+- **Recovery Diagnostics** - Include recovery stages, stream ownership, and retry counts in console logs.
+- **Recovery Confirmation** - Distinguish verified video advancement from recovery confirmed only by playhead progress.
+- **Worker Diagnostics** - Report successful playback interception only after the worker hook is installed.
+
 ## [18.0.6] - 2026-09-23
 
 Fixed
