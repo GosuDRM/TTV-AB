@@ -152,6 +152,7 @@ function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
 	info.NativeRecoveryAdStartedAt = 0;
 	info._PendingPostAdNativeMaster = null;
 	_resetNativeRecoveryCandidateState(info);
+	info._PendingNativeReloadConfirmation = null;
 	info.HevcReloadPendingAfterHold = false;
 	info.LastAdEndBounceAt = 0;
 	info.LoggedBackupAdsByType = null;
@@ -1622,6 +1623,7 @@ function _invalidateNativeRecoveryAfterPlayerReload(
 	advanceLoaderEpoch = false,
 ) {
 	if (!info) return 0;
+	info._PendingNativeReloadConfirmation = null;
 	if (advanceLoaderEpoch) {
 		info.NativeRecoveryLoaderEpoch =
 			Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) + 1;
@@ -2240,6 +2242,52 @@ function _applyPlaylistContinuity(
 			pending.consumed = true;
 			_reportPostAdNativeSession(info, "consumed");
 		}
+		const confirmation = info?._PendingNativeReloadConfirmation;
+		if (confirmation) {
+			const current =
+				Date.now() >= confirmation.reloadAt &&
+				Date.now() - confirmation.reloadAt < 30000 &&
+				confirmation.mediaKey === info.MediaKey &&
+				confirmation.pageMediaKey === __TTVAB_STATE__.PageMediaKey &&
+				confirmation.pageGeneration ===
+					(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) &&
+				confirmation.loaderEpoch ===
+					Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) &&
+				_isPageLifecycleCycleCurrent(
+					info.MediaKey,
+					confirmation.cycleStartedAt,
+				);
+			if (!current) info._PendingNativeReloadConfirmation = null;
+			else if (
+				!confirmation.confirmed &&
+				requestContext?.nativeReloadToConfirm?.confirmation === confirmation &&
+				requestContext.nativeReloadToConfirm.playlist === text &&
+				!backupMetadata &&
+				_playlistHasMediaSegments(output) &&
+				typeof self !== "undefined" &&
+				self.postMessage
+			) {
+				try {
+					_postWorkerBridgeMessage(
+						self,
+						_createPageScopedWorkerEvent({
+							key: "PostAdNativeReloadReady",
+							channel: info.ChannelName,
+							mediaKey: info.MediaKey,
+							cycleStartedAt: confirmation.cycleStartedAt,
+							reloadAt: confirmation.reloadAt,
+							confirmedAt: Date.now(),
+							loaderEpoch: confirmation.loaderEpoch,
+						}),
+					);
+					confirmation.confirmed = true;
+					_log(
+						"[Trace] Exact native playlist ready after player rebuild",
+						"info",
+					);
+				} catch {}
+			}
+		}
 		return output;
 	} catch (error) {
 		if (info) info._LivePlaylistTimeline = previous;
@@ -2473,8 +2521,8 @@ function _applyEmptyHoldPlaylistContinuity(
 	let sharedTimeline = null;
 	let lastDiscontinuity = -1;
 	let lastPresentedSequence = -1;
-	if ((changedSource && !isHold) || kind === "backup") {
-		for (const candidate of info._EmptyHoldTimelineByUrl.values()) {
+	if (changedSource || kind === "backup" || isHold) {
+		for (const candidate of info._EmptyHoldTimelineByUrl?.values?.() || []) {
 			lastDiscontinuity = Math.max(
 				lastDiscontinuity,
 				candidate.lastDiscontinuity,
@@ -2486,9 +2534,14 @@ function _applyEmptyHoldPlaylistContinuity(
 			if (
 				candidate.identity === identity &&
 				(!sharedTimeline ||
-					candidate.discontinuityOffset > sharedTimeline.discontinuityOffset ||
-					(candidate.discontinuityOffset ===
-						sharedTimeline.discontinuityOffset &&
+					(isHold
+						? candidate.lastDiscontinuity > sharedTimeline.lastDiscontinuity
+						: candidate.discontinuityOffset >
+							sharedTimeline.discontinuityOffset) ||
+					((isHold
+						? candidate.lastDiscontinuity === sharedTimeline.lastDiscontinuity
+						: candidate.discontinuityOffset ===
+							sharedTimeline.discontinuityOffset) &&
 						candidate.lastRawFirstSequence >
 							sharedTimeline.lastRawFirstSequence))
 			)
@@ -2508,8 +2561,15 @@ function _applyEmptyHoldPlaylistContinuity(
 				previous.lastDiscontinuity
 		)
 			sharedTimeline = null;
+		if (
+			isHold &&
+			(!sharedTimeline || sharedTimeline.lastDiscontinuity < lastDiscontinuity)
+		) {
+			sharedTimeline = null;
+			changedSource = true;
+		}
 	}
-	const sharedBackup = kind === "backup" ? sharedTimeline : null;
+	const sharedBackup = kind === "backup" || isHold ? sharedTimeline : null;
 	const addBoundary =
 		sharedBackup?.addBoundary ??
 		(changedSource
@@ -2524,16 +2584,13 @@ function _applyEmptyHoldPlaylistContinuity(
 					boundarySequence: firstSequence,
 					addBoundary,
 					mediaOffset:
-						kind === "backup"
+						kind === "backup" || isHold
 							? Math.max(0, lastPresentedSequence + 1 - firstSequence)
 							: previous
 								? Math.max(0, previous.lastSequence + 1 - firstSequence)
 								: 0,
 					discontinuityOffset: isHold
-						? Math.max(
-								0,
-								(previous?.lastDiscontinuity ?? -1) + 1 - firstDiscontinuity,
-							)
+						? Math.max(0, lastDiscontinuity + 1 - firstDiscontinuity)
 						: (sharedTimeline?.discontinuityOffset ?? lastDiscontinuity + 1),
 					lastSequence: 0,
 					lastDiscontinuity: 0,
@@ -3281,6 +3338,7 @@ function _createStreamInfo(context) {
 		NativeRecoveryAdMediaKey: null,
 		NativeRecoveryAdStartedAt: 0,
 		_PendingPostAdNativeMaster: null,
+		_PendingNativeReloadConfirmation: null,
 		NativeRecoveryLoaderEpoch: 0,
 		NativeRecoveryCandidateUrl: null,
 		NativeRecoveryCandidateMediaKey: null,
@@ -4936,8 +4994,6 @@ async function _processM3U8Core(
 		return text;
 	}
 
-	let matchedPlayerReloadAt = 0;
-	let matchedPlayerReloadCycleStartedAt = 0;
 	if (__TTVAB_STATE__.HasTriggeredPlayerReload) {
 		const pendingReloadMediaKey = _normalizeMediaKey(
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey,
@@ -4973,10 +5029,22 @@ async function _processM3U8Core(
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
 			__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
 			if (pendingCycleIsCurrent) {
-				matchedPlayerReloadAt = pendingReloadAt;
-				matchedPlayerReloadCycleStartedAt = pendingReloadCycleStartedAt;
 				info.LastPlayerReload = Date.now();
 				_invalidateNativeRecoveryAfterPlayerReload(info);
+				if (pendingReloadAt > 0 && pendingReloadCycleStartedAt > 0) {
+					info._PendingNativeReloadConfirmation = {
+						mediaKey: info.MediaKey,
+						pageMediaKey: __TTVAB_STATE__.PageMediaKey,
+						pageGeneration:
+							Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+						cycleStartedAt: pendingReloadCycleStartedAt,
+						reloadAt: pendingReloadAt,
+						loaderEpoch: Math.max(
+							0,
+							Number(info.NativeRecoveryLoaderEpoch) || 0,
+						),
+					};
+				}
 			}
 		}
 	}
@@ -5439,13 +5507,16 @@ async function _processM3U8Core(
 				}
 			}
 		}
+		const confirmation = info._PendingNativeReloadConfirmation;
 		const currentLoaderEpoch = Math.max(
 			0,
 			Number(info.NativeRecoveryLoaderEpoch) || 0,
 		);
 		if (
-			matchedPlayerReloadAt > 0 &&
-			matchedPlayerReloadCycleStartedAt > 0 &&
+			confirmation &&
+			!confirmation.confirmed &&
+			requestAdContext &&
+			Number(requestAdContext.requestStartedAt) >= confirmation.reloadAt &&
 			!isBackupUrl &&
 			isExactCurrentNativeVariant &&
 			directResolution &&
@@ -5457,35 +5528,10 @@ async function _processM3U8Core(
 				exactRequestUrl &&
 			Math.max(0, Number(info.LastCleanNativeLoaderEpoch) || 0) ===
 				currentLoaderEpoch &&
-			(!requestAdContext ||
-				Math.max(0, Number(requestAdContext.loaderEpoch) || 0) ===
-					currentLoaderEpoch)
+			Math.max(0, Number(requestAdContext.loaderEpoch) || 0) ===
+				currentLoaderEpoch
 		) {
-			const confirmedAt = Date.now();
-			if (
-				confirmedAt >= matchedPlayerReloadAt &&
-				typeof self !== "undefined" &&
-				self.postMessage
-			) {
-				try {
-					_postWorkerBridgeMessage(
-						self,
-						_createPageScopedWorkerEvent({
-							key: "PostAdNativeReloadReady",
-							channel: info.ChannelName,
-							mediaKey: info.MediaKey,
-							cycleStartedAt: matchedPlayerReloadCycleStartedAt,
-							reloadAt: matchedPlayerReloadAt,
-							confirmedAt,
-							loaderEpoch: currentLoaderEpoch,
-						}),
-					);
-					_log(
-						"[Trace] Exact native playlist ready after player rebuild",
-						"info",
-					);
-				} catch {}
-			}
+			requestAdContext.nativeReloadToConfirm = { confirmation, playlist: text };
 		}
 		if (info.IsHoldingBackupAfterAd) {
 			let adEndState = "wait";
@@ -7007,7 +7053,10 @@ async function _refreshActiveBackupMediaPlaylist(
 			: info.UsherBaseUrl;
 	if (!enc) return null;
 
-	const preferredRefreshResolution = _resolvePreferredBackupResolution(info);
+	const preferredRefreshResolution = _resolvePreferredBackupResolution({
+		...info,
+		ResolutionList: _getNativeRecoveryMaster(info).resolutionList,
+	});
 	const targetRes = _applyBackupResolutionFloor(
 		preferredRefreshResolution ||
 			_getFallbackResolution(info, "") ||

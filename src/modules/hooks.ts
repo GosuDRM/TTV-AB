@@ -5983,6 +5983,12 @@ function _hookWorker() {
 							{
 								const info = __TTVAB_STATE__.StreamInfos[data.value?.mediaKey];
 								const session = info?._PendingPostAdNativeMaster;
+								const confirmation = info?._PendingNativeReloadConfirmation;
+								if (
+									confirmation &&
+									confirmation.cycleStartedAt === Number(data.value?.cycleStartedAt) &&
+									confirmation.reloadAt <= Number(data.value?.reloadAt)
+								) info._PendingNativeReloadConfirmation = null;
 								if (
 									session &&
 									session.cycleStartedAt === Number(data.value?.cycleStartedAt) &&
@@ -6072,6 +6078,15 @@ function _hookWorker() {
 								) {
 										handoffInfo._CodecHandoffAcknowledgedId = handoffId;
 									}
+									const confirmation = handoffInfo?._PendingNativeReloadConfirmation;
+									if (
+										confirmation?.reloadAt === reloadAt &&
+										confirmation.cycleStartedAt === handoffCycleStartedAt &&
+										confirmation.mediaKey === reloadContext.MediaKey &&
+										confirmation.pageGeneration === (Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) &&
+										confirmation.loaderEpoch === (Number(handoffInfo.NativeRecoveryLoaderEpoch) || 0) &&
+										Date.now() - reloadAt < 30000
+									) break;
 									const repeatsPendingReload = Boolean(
 										reloadAt > 0 &&
 											_normalizeMediaKey(

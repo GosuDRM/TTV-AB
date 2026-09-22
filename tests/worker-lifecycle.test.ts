@@ -426,6 +426,90 @@ function confirmHarnessWorkerPlayback(
 	});
 }
 
+describe("native reload confirmation in the injected worker", () => {
+	it("keeps native reload confirmation through an empty poll and duplicate worker acknowledgments", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const mediaKey = "live:testchannel";
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=owned";
+		const mediaUrl = "https://edge.example/native.m3u8?token=owned";
+		const master = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="avc1.64002a,mp4a.40.2"\n${mediaUrl}`;
+		let empty = true;
+		const fetch = vi.fn(
+			async (input: RequestInfo | URL) =>
+				new Response(
+					String(input) === masterUrl
+						? master
+						: empty
+							? "#EXTM3U\n#EXT-X-TARGETDURATION:2"
+							: "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:400\n#EXTINF:2.000,live\nhttps://edge.example/live-400.ts",
+				),
+		);
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, fetch);
+			runtime.scope.Date = Date;
+			runtime.deliverBootstrap();
+			const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
+			await workerFetch(masterUrl);
+			const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)[mediaKey];
+			Object.assign(state, {
+				LastAdEndedMediaKey: mediaKey,
+				LastAdEndedCycleStartedAt: 100000,
+				LastAdEndedAt: Date.now(),
+			});
+			const reload = {
+				mediaKey,
+				channelName: "testchannel",
+				cycleStartedAt: 100000,
+				reason: "post-ad-native-restore",
+				reloadAt: Date.now(),
+			};
+			const send = (key: string, value = reload) =>
+				runtime.deliver(
+					T<(message: Record<string, unknown>) => unknown>(
+						"_createWorkerBridgeMessage",
+					)({ key, value }),
+				);
+			const confirmations = () =>
+				(
+					runtime.scope.postMessage as ReturnType<typeof vi.fn>
+				).mock.calls.filter(
+					([value]) => value.message?.key === "PostAdNativeReloadReady",
+				);
+			send("TriggeredPlayerReload");
+			const epoch = info.NativeRecoveryLoaderEpoch;
+			await workerFetch(mediaUrl);
+			expect(confirmations()).toHaveLength(0);
+			send("TriggeredPlayerReload");
+			expect(info.NativeRecoveryLoaderEpoch).toBe(epoch);
+			empty = false;
+			expect(await (await workerFetch(mediaUrl)).text()).toContain(
+				"live-400.ts",
+			);
+			expect(confirmations()).toHaveLength(1);
+			send("TriggeredPlayerReload");
+			await workerFetch(mediaUrl);
+			expect(info.NativeRecoveryLoaderEpoch).toBe(epoch);
+			expect(confirmations()).toHaveLength(1);
+			send("ReleasePostAdNativeSession", {
+				...reload,
+				reloadAt: reload.reloadAt - 1,
+			});
+			expect(info._PendingNativeReloadConfirmation).not.toBeNull();
+			send("ReleasePostAdNativeSession");
+			expect(info._PendingNativeReloadConfirmation).toBeNull();
+		} finally {
+			harness.restore();
+		}
+	});
+});
+
 describe("rapid channel revisit ownership", () => {
 	it.each(["ReloadPlayer", "PauseResumePlayer"])(
 		"rejects queued %s from an earlier visit even when the cycle timestamp matches",

@@ -118,6 +118,35 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it("keeps holds beyond the presented live window across native request URLs", async () => {
+		const { context, info, hold, serve } = setup();
+		await hold();
+		await serve(playlist(100), "site");
+		info.IsUsingBackupStream = false;
+		const native = await serve(playlist(20));
+		const otherUrl = nativeUrl.replace("native", "360p");
+		info.Urls[otherUrl] = { Resolution: "640x360", Codecs: codec };
+		const firstHold = context._createEmptyAdHoldPlaylist(playlist(25), info);
+		const first = context._applyPlaylistContinuity(info, nativeUrl, firstHold);
+		const secondHold = context._createEmptyAdHoldPlaylist(playlist(26), info);
+		const second = context._applyPlaylistContinuity(info, otherUrl, secondHold);
+		expect(segments(first)[0].sequence).toBeGreaterThan(
+			segments(native).at(-1)?.sequence || 0,
+		);
+		expect(segments(second)[0].sequence).toBeGreaterThan(
+			segments(first)[0].sequence,
+		);
+		expect(segments(second)[0].discontinuity).toBeGreaterThanOrEqual(
+			segments(first)[0].discontinuity,
+		);
+		expect(context._applyPlaylistContinuity(info, nativeUrl, secondHold)).toBe(
+			second,
+		);
+		expect(() =>
+			context._applyPlaylistContinuity(info, otherUrl, firstHold),
+		).toThrow("Retired empty hold recovery playlist");
+	});
+
 	it.each(["site", "vod", "disabled", "inactive", "ambiguous"])(
 		"does not arm autoplay rebuild intent for %s output",
 		(mode) => {
