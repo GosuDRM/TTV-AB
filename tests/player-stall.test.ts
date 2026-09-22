@@ -5932,6 +5932,79 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		}
 	});
 
+	it("logs recovery transitions with ownership and attempt counts without repeating identical milestones", () => {
+		const log = vi.spyOn(g, "_log");
+		for (const key of Object.keys(g._PostAdRecoveryDiagnostics as object)) {
+			delete (g._PostAdRecoveryDiagnostics as Record<string, unknown>)[key];
+		}
+		arm(makePlayback());
+		const record = T<(phase: string, result?: string) => void>(
+			"_recordPostAdRecoveryTransition",
+		);
+		for (let poll = 0; poll < 10; poll++) record("started");
+		const transitions = () =>
+			log.mock.calls.filter(([message]) =>
+				String(message).startsWith("[Recovery] Post-ad "),
+			);
+		expect(transitions()).toHaveLength(1);
+		expect(transitions()[0]?.[0]).toContain(
+			"started: live:chan; cycle 440000; page 0",
+		);
+		transaction().reloadRequestCount = 1;
+		transaction().acceptedReloadCount = 1;
+		transaction().requiredNativeReloadAt = 500000;
+		record("loading", "pending");
+		record("loading", "pending");
+		expect(transitions()).toHaveLength(2);
+		expect(transitions()[1]?.[0]).toContain(
+			"requests 1; accepted 1; reload 500000",
+		);
+		record("source-failed", "failure");
+		expect(transitions().at(-1)).toEqual([
+			expect.stringContaining("source-failed: live:chan"),
+			"warning",
+		]);
+		expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+			phase: "source-failed",
+			reloadResult: "failure",
+		});
+		expect(transaction().mediaKey).toBe("live:chan");
+		expect(reloadCalls()).toEqual([]);
+	});
+
+	it.each(["unavailable", "appears later", "disappears"])(
+		"labels playhead-only recovery when the frame counter is %s",
+		(availability) => {
+			const log = vi.spyOn(g, "_log");
+			const playback = makePlayback({
+				currentTime: 10,
+				bufferedEnd: 20,
+				readyState: 4,
+				videoWidth: 1920,
+			});
+			let frames: number | undefined =
+				availability === "disappears" ? 500 : undefined;
+			Object.defineProperty(playback.video, "getVideoPlaybackQuality", {
+				value: () => ({ totalVideoFrames: frames }),
+			});
+			arm(playback);
+			expect(sample(500000)).toBe(false);
+			frames = availability === "appears later" ? 530 : undefined;
+			playback.setCurrentTime(10.8);
+			expect(sample(500800)).toBe(true);
+			expect(transaction().mediaKey).toBeNull();
+			expect(log).toHaveBeenCalledWith(
+				"Native playback resumed; playhead is advancing (video-frame proof unavailable)",
+				"success",
+			);
+			expect(log).not.toHaveBeenCalledWith(
+				"Native playback restored; video is advancing",
+				"success",
+			);
+			expect(reloadCalls()).toEqual([]);
+		},
+	);
+
 	it("keeps post-ad recovery active when the playhead advances without video frames", () => {
 		const log = vi.spyOn(g, "_log");
 		const playback = makePlayback({

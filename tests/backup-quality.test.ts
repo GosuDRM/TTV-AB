@@ -129,6 +129,69 @@ function setup(codec: string) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("codec ordering and backup quality ownership", () => {
+	it("logs committed quality changes during backup refresh without logging unchanged polls", async () => {
+		let now = 1_000_000;
+		vi.spyOn(Date, "now").mockImplementation(() => now);
+		const { context, info, state, fetch } = setup("avc1.640033");
+		const log = vi.fn();
+		context._log = log;
+		await context._processM3U8(
+			nativeUrl(1080),
+			media("native", 1080, 400, true),
+			fetch,
+		);
+		log.mockClear();
+		state.PreferredQualityGroup = "1440p60";
+		now += 2000;
+		expect(
+			await context._refreshActiveBackupMediaPlaylist(info, fetch),
+		).toContain("/site/1440/");
+		const changes = () =>
+			log.mock.calls.filter(([message]) =>
+				String(message).startsWith("[Recovery] Backup selection committed:"),
+			);
+		expect(changes()).toHaveLength(1);
+		expect(changes()[0]?.[0]).toContain("site@1920x1080 -> site@2560x1440");
+		expect(changes()[0]?.[0]).toContain("live:testchannel; cycle 1000000");
+		for (let poll = 0; poll < 5; poll++) {
+			now += 2000;
+			await context._refreshActiveBackupMediaPlaylist(info, fetch);
+		}
+		expect(changes()).toHaveLength(1);
+	});
+
+	it("logs accepted session changes without signed URLs or rejected stale selections", () => {
+		const { context, info } = setup("avc1.640033");
+		const log = vi.fn();
+		context._log = log;
+		info.VisibleAdStartedAt = 1000;
+		const metadata = {
+			playerType: "site",
+			playlistUrl: "https://cdn.example/1080.m3u8?token=private-media",
+			sessionUrl: "https://usher.ttvnw.net/test.m3u8?sig=private-session",
+			resolution: "1920x1080",
+			codecFamily: "avc",
+			codec: "avc1.640033",
+		};
+		const playlist = media("site", 1080);
+		context._commitBackupPlaylist(info, playlist, 1, metadata);
+		log.mockClear();
+		const next = { ...metadata, sessionUrl: `${metadata.sessionUrl}-new` };
+		expect(context._commitBackupPlaylist(info, playlist, 3, next)).toBe(
+			playlist,
+		);
+		expect(log).toHaveBeenCalledOnce();
+		expect(
+			context._commitBackupPlaylist(info, playlist, 2, metadata),
+		).toBeNull();
+		context._commitBackupPlaylist(info, playlist, 4, next);
+		expect(log).toHaveBeenCalledOnce();
+		expect(log.mock.calls[0]?.[0]).toContain("request 3");
+		expect(JSON.stringify(log.mock.calls)).not.toMatch(
+			/https:|private-media|private-session/,
+		);
+	});
+
 	it("bounds autoplay dwell after a clean native poll replaces an ad-marked backup", async () => {
 		let now = 1_000_000;
 		vi.spyOn(Date, "now").mockImplementation(() => now);

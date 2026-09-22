@@ -97,6 +97,56 @@ function recordTestPlayerReload(mediaKey: string, at = Date.now()) {
 	)(mediaKey, at);
 }
 
+describe("worker fetch installation logging", () => {
+	it("reports a hooked fetch only after the wrapper is installed", () => {
+		const originalFetch = g.fetch;
+		const nativeFetch = vi.fn();
+		const installedAtLog: boolean[] = [];
+		g.fetch = nativeFetch;
+		vi.spyOn(g, "_log").mockImplementation((message) => {
+			if (message === "Worker fetch hooked")
+				installedAtLog.push(g.fetch !== nativeFetch);
+		});
+		try {
+			T<() => void>("_hookWorkerFetch")();
+			expect(installedAtLog).toEqual([true]);
+		} finally {
+			g.fetch = originalFetch;
+		}
+	});
+
+	it.each(["read", "write"])(
+		"does not report successful installation after a fetch %s failure",
+		(failure) => {
+			const descriptor = Object.getOwnPropertyDescriptor(g, "fetch");
+			const log = vi.spyOn(g, "_log");
+			Object.defineProperty(g, "fetch", {
+				configurable: true,
+				get() {
+					if (failure === "read") throw new Error("fetch read failed");
+					return vi.fn();
+				},
+				set() {
+					throw new Error("fetch write failed");
+				},
+			});
+			try {
+				expect(() => T<() => void>("_hookWorkerFetch")()).toThrow(
+					`fetch ${failure} failed`,
+				);
+				expect(log).toHaveBeenCalledWith(
+					"Installing worker fetch hook",
+					"info",
+				);
+				expect(log).not.toHaveBeenCalledWith("Worker fetch hooked", "info");
+			} finally {
+				if (descriptor) Object.defineProperty(g, "fetch", descriptor);
+				else delete g.fetch;
+			}
+		},
+	);
+});
+
 function installCycleFencedRecoveryScheduler() {
 	const schedule = vi.fn(
 		(

@@ -3219,6 +3219,11 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_commitBackupPlaylist",
+			helper: "_log",
+			source: processorSource,
+		},
+		{
+			consumer: "_commitBackupPlaylist",
 			helper: "_getExactPlaylistUrlKey",
 			source: processorSource,
 		},
