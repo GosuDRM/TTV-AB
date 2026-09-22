@@ -183,6 +183,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		NativeRecoveryAdMediaKey: null,
 		NativeRecoveryAdStartedAt: 0,
 		_PendingPostAdNativeMaster: null,
+		_PendingNativeReloadConfirmation: null,
 		NativeRecoveryLoaderEpoch: 0,
 		NativeRecoveryCandidateUrl: null,
 		NativeRecoveryCandidateMediaKey: null,
@@ -855,6 +856,7 @@ describe("_resetStreamAdState", () => {
 			]),
 			NativeRecoveryAdMediaKey: "live:testchannel",
 			NativeRecoveryAdStartedAt: 100,
+			_PendingNativeReloadConfirmation: { reloadAt: 1000 },
 			_PendingPostAdNativeMaster: {
 				master: "#EXTM3U",
 				masterUrl: "https://usher.example/native.m3u8",
@@ -939,6 +941,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.NativeRecoveryAdMediaKey).toBe(null);
 		expect(info.NativeRecoveryAdStartedAt).toBe(0);
 		expect(info._PendingPostAdNativeMaster).toBe(null);
+		expect(info._PendingNativeReloadConfirmation).toBe(null);
 		expect(info.NativeRecoveryLoaderEpoch).toBe(3);
 		expect(info._NativePlaybackMaster).toBeNull();
 		expect(info.NativeRecoveryCandidateUrl).toBe(null);
@@ -6152,6 +6155,8 @@ describe("_processM3U8 triggered-reload consumption (context-scoped)", () => {
 		const cycleCurrent = vi.fn(() => true);
 		g._isPageLifecycleCycleCurrent = cycleCurrent;
 		armPendingReload("live:chana", "chana", 100);
+		const reloadAt = Date.now();
+		getState().PendingTriggeredPlayerReloadAt = reloadAt;
 		info.NativeRecoveryLoaderEpoch = 4;
 		info.NativeRecoveryAdPlaylistUrls = new Set([URL_A]);
 		info.NativeRecoveryAdMediaKey = "live:chana";
@@ -6193,7 +6198,7 @@ describe("_processM3U8 triggered-reload consumption (context-scoped)", () => {
 				key: "PostAdNativeReloadReady",
 				mediaKey: "live:chana",
 				cycleStartedAt: 100,
-				reloadAt: 1000,
+				reloadAt,
 				loaderEpoch: 4,
 			}),
 		);

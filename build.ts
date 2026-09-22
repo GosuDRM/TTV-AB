@@ -1232,6 +1232,26 @@ function validateSharedDefinitions() {
 	const requiredInjectedPairs = [
 		{
 			consumer: "_applyPlaylistContinuity",
+			helper: "_isPageLifecycleCycleCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_postWorkerBridgeMessage",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyPlaylistContinuity",
+			helper: "_createPageScopedWorkerEvent",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshActiveBackupMediaPlaylist",
+			helper: "_getNativeRecoveryMaster",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyPlaylistContinuity",
 			helper: "_playlistHasMediaSegments",
 			source: processorSource,
 		},

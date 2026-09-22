@@ -710,6 +710,164 @@ describe("owned native recovery after a codec fallback", () => {
 		).toBe("1920x1080");
 	});
 
+	it.each([false, true])(
+		"keeps a promoted backup through reduced native catalogs with explicit low choice=%s",
+		async (explicitLow) => {
+			const { context, info, state, advance } =
+				await setupReducedNativeMaster();
+			const high = "https://edge.example/site/1080p.m3u8";
+			const low = "https://edge.example/site/360p.m3u8";
+			const backupMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,VIDEO="1080p60",CODECS="${avc}"\n${high}\n#EXT-X-STREAM-INF:RESOLUTION=640x360,VIDEO="360p",CODECS="${avc}"\n${low}`;
+			info.BackupEncodingsM3U8Cache.site = {
+				m3u8: backupMaster,
+				baseUrl: masterUrl,
+			};
+			info.ActiveBackupPlayerType = "site";
+			info.LastCleanBackupPlayerType = "site";
+			info.ActiveBackupResolution = "1920x1080";
+			info.LastCleanBackupResolution = "1920x1080";
+			if (explicitLow) state.PreferredQualityGroup = "360p";
+			const fetch = vi.fn(
+				async (url: string) =>
+					new Response(playlist(600, url === high ? "high" : "low")),
+			);
+			for (let index = 0; index < 3; index++) {
+				advance(2000);
+				const output = await context._refreshActiveBackupMediaPlaylist(
+					info,
+					fetch,
+				);
+				expect(output).toContain(explicitLow ? "/low-" : "/high-");
+				expect(info.ActiveBackupResolution).toBe(
+					explicitLow ? "640x360" : "1920x1080",
+				);
+			}
+			expect(
+				fetch.mock.calls.every(([url]) => url === (explicitLow ? low : high)),
+			).toBe(true);
+		},
+	);
+
+	it.each(["empty", "alias", "retired-timeline"])(
+		"confirms native reload only after usable output following %s media",
+		async (first) => {
+			const { context, info, state, fetch } = setup(false);
+			context._resetStreamAdState(info);
+			Object.assign(state, {
+				CurrentAdMediaKey: null,
+				CurrentAdChannel: null,
+				LastAdEndedMediaKey: info.MediaKey,
+				LastAdEndedCycleStartedAt: 100000,
+				LastAdEndedAt: Date.now(),
+				HasTriggeredPlayerReload: true,
+				PendingTriggeredPlayerReloadMediaKey: info.MediaKey,
+				PendingTriggeredPlayerReloadChannel: info.ChannelName,
+				PendingTriggeredPlayerReloadCycleStartedAt: 100000,
+				PendingTriggeredPlayerReloadAt: Date.now(),
+			});
+			const report = vi.fn();
+			context._postWorkerBridgeMessage = report;
+			const earlyUrl =
+				first === "alias" ? nativeUrl.replace("owned", "unowned") : nativeUrl;
+			state.StreamInfosByUrl[earlyUrl] = info;
+			if (first === "retired-timeline") {
+				context._applyPlaylistContinuity(
+					info,
+					nativeUrl,
+					context._createEmptyAdHoldPlaylist(playlist(400, "native"), info),
+				);
+				context._applyPlaylistContinuity(
+					info,
+					nativeUrl,
+					playlist(500, "native"),
+				);
+			}
+			const early = context._processM3U8(
+				earlyUrl,
+				first === "empty"
+					? "#EXTM3U\n#EXT-X-TARGETDURATION:2"
+					: playlist(400, "native"),
+				fetch,
+			);
+			if (first === "retired-timeline")
+				await expect(early).rejects.toMatchObject({ name: "AbortError" });
+			else await early;
+			const confirmations = () =>
+				report.mock.calls.filter(
+					([, message]) => message.key === "PostAdNativeReloadReady",
+				);
+			expect(confirmations()).toHaveLength(0);
+			await Promise.all([
+				context._processM3U8(nativeUrl, playlist(501, "native"), fetch),
+				context._processM3U8(nativeUrl, playlist(502, "native"), fetch),
+			]);
+			expect(confirmations()).toHaveLength(1);
+			expect(confirmations()[0][1]).toMatchObject({
+				mediaKey: info.MediaKey,
+				cycleStartedAt: 100000,
+				reloadAt: Date.now(),
+			});
+			await context._processM3U8(nativeUrl, playlist(503, "native"), fetch);
+			expect(confirmations()).toHaveLength(1);
+		},
+	);
+
+	it.each([
+		"expired",
+		"route",
+		"generation",
+		"cycle",
+		"loader",
+		"pre-reload-request",
+	])("does not confirm a pending rebuild from %s output", async (reason) => {
+		const { context, info, state, fetch, advance } = setup(false);
+		context._resetStreamAdState(info);
+		Object.assign(state, {
+			CurrentAdMediaKey: null,
+			CurrentAdChannel: null,
+			LastAdEndedMediaKey: info.MediaKey,
+			LastAdEndedCycleStartedAt: 100000,
+			LastAdEndedAt: Date.now(),
+			HasTriggeredPlayerReload: true,
+			PendingTriggeredPlayerReloadMediaKey: info.MediaKey,
+			PendingTriggeredPlayerReloadChannel: info.ChannelName,
+			PendingTriggeredPlayerReloadCycleStartedAt: 100000,
+			PendingTriggeredPlayerReloadAt: Date.now(),
+		});
+		const report = vi.fn();
+		context._postWorkerBridgeMessage = report;
+		await context._processM3U8(
+			nativeUrl,
+			"#EXTM3U\n#EXT-X-TARGETDURATION:2",
+			fetch,
+		);
+		if (reason === "expired") advance(30001);
+		if (reason === "route") state.PageMediaKey = "live:other";
+		if (reason === "generation") state.PagePlaybackContextGeneration++;
+		if (reason === "cycle") state.LastAdEndedCycleStartedAt++;
+		if (reason === "loader") info.NativeRecoveryLoaderEpoch++;
+		const request =
+			reason === "pre-reload-request"
+				? {
+						mediaKey: info.MediaKey,
+						requestStartedAt: Date.now() - 1,
+						loaderEpoch: info.NativeRecoveryLoaderEpoch,
+						backupSearchEpoch: info.BackupSearchEpoch,
+						cycleStartedAt: 0,
+					}
+				: null;
+		await context
+			._processM3U8(nativeUrl, playlist(501, "native"), fetch, null, request)
+			.catch((error: Error) => {
+				expect(error.name).toBe("AbortError");
+			});
+		expect(
+			report.mock.calls.filter(
+				([, message]) => message.key === "PostAdNativeReloadReady",
+			),
+		).toHaveLength(0);
+	});
+
 	it("keeps the retained native session through ad completion and clears it on context reset", async () => {
 		const { context, info } = await setupReducedNativeMaster();
 		const saved = info._NativePlaybackMaster;
