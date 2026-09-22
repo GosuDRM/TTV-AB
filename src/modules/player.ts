@@ -4556,6 +4556,24 @@ function _recordPostAdRecoveryTransition(phase, reloadResult = null) {
 	try {
 		const transaction = _PostAdRecoveryTransactionState;
 		if (!transaction.mediaKey) return;
+		const pageGeneration =
+			Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0;
+		const transitionChanged =
+			_PostAdRecoveryDiagnostics.mediaKey !== transaction.mediaKey ||
+			_PostAdRecoveryDiagnostics.cycleStartedAt !==
+				transaction.cycleStartedAt ||
+			_PostAdRecoveryDiagnostics.pageGeneration !== pageGeneration ||
+			_PostAdRecoveryDiagnostics.phase !== phase ||
+			_PostAdRecoveryDiagnostics.reloadAt !==
+				transaction.requiredNativeReloadAt ||
+			_PostAdRecoveryDiagnostics.nativeReadyAt !==
+				transaction.nativeReloadConfirmedAt ||
+			_PostAdRecoveryDiagnostics.reloadRequestCount !==
+				transaction.reloadRequestCount ||
+			_PostAdRecoveryDiagnostics.acceptedReloadCount !==
+				transaction.acceptedReloadCount ||
+			(reloadResult &&
+				_PostAdRecoveryDiagnostics.reloadResult !== reloadResult);
 		if (
 			_PostAdRecoveryDiagnostics.mediaKey !== transaction.mediaKey ||
 			_PostAdRecoveryDiagnostics.cycleStartedAt !== transaction.cycleStartedAt
@@ -4567,8 +4585,7 @@ function _recordPostAdRecoveryTransition(phase, reloadResult = null) {
 		Object.assign(_PostAdRecoveryDiagnostics, {
 			mediaKey: transaction.mediaKey,
 			cycleStartedAt: transaction.cycleStartedAt,
-			pageGeneration:
-				Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
+			pageGeneration,
 			phase,
 			updatedAt: Date.now(),
 			reloadRequestCount: transaction.reloadRequestCount,
@@ -4582,6 +4599,12 @@ function _recordPostAdRecoveryTransition(phase, reloadResult = null) {
 		});
 		if (typeof _checkpointPageDiagnostics === "function") {
 			_checkpointPageDiagnostics(true);
+		}
+		if (transitionChanged) {
+			_log(
+				`[Recovery] Post-ad ${phase}: ${transaction.mediaKey}; cycle ${transaction.cycleStartedAt}; page ${pageGeneration}; requests ${transaction.reloadRequestCount}; accepted ${transaction.acceptedReloadCount}; reload ${transaction.requiredNativeReloadAt}; native-ready ${transaction.nativeReloadConfirmedAt}; time ${transaction.lastCurrentTime}; frames ${transaction.lastTotalFrames}; suspended ${transaction.suspendedAt > 0}; result ${reloadResult || "none"}`,
+				phase === "source-failed" || phase === "exhausted" ? "warning" : "info",
+			);
 		}
 	} catch {}
 }
@@ -4833,8 +4856,16 @@ function _startPostAdRecoveryTransaction(
 	return true;
 }
 
-function _finishPostAdRecoveryTransaction(currentTime = 0) {
-	_log("Native playback restored; video is advancing", "success");
+function _finishPostAdRecoveryTransaction(
+	currentTime = 0,
+	framesVerified = false,
+) {
+	_log(
+		framesVerified
+			? "Native playback restored; video is advancing"
+			: "Native playback resumed; playhead is advancing (video-frame proof unavailable)",
+		"success",
+	);
 	_recordPostAdRecoveryTransition("recovered");
 	_resetPostAdRecoveryTransaction();
 	_resetPostAdRecoveryMonitorSamples();
@@ -5175,6 +5206,11 @@ function _handlePendingPostAdRecovery(
 		totalFrames < 0 ||
 		_PostAdRecoveryTransactionState.lastTotalFrames < 0 ||
 		totalFrames > _PostAdRecoveryTransactionState.lastTotalFrames;
+	const framesVerified =
+		!isNewObservation &&
+		totalFrames >= 0 &&
+		_PostAdRecoveryTransactionState.lastTotalFrames >= 0 &&
+		totalFrames > _PostAdRecoveryTransactionState.lastTotalFrames;
 	if (!isLivePaused && !isNewObservation && (!advanced || !framesAdvanced)) {
 		_PostAdRecoveryTransactionState.stallTicks++;
 	} else if (advanced && framesAdvanced) {
@@ -5214,7 +5250,7 @@ function _handlePendingPostAdRecovery(
 					exactNativeReloadIsReady)),
 	);
 	if (hasAdvancingFrames && replacementIsReady) {
-		_finishPostAdRecoveryTransaction(liveCurrentTime);
+		_finishPostAdRecoveryTransaction(liveCurrentTime, framesVerified);
 		return true;
 	}
 	if (hasAdvancingFrames) {

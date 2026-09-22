@@ -701,7 +701,7 @@ function _hookWorkerErrorDiagnostics() {
 }
 
 function _hookWorkerFetch() {
-	_log("Worker fetch hooked", "info");
+	_log("Installing worker fetch hook", "info");
 	const realFetch = fetch;
 	let masterRequestSequence = 0;
 	let adRequestPlaybackContext = null;
@@ -2493,6 +2493,7 @@ function _hookWorkerFetch() {
 			throw e;
 		}
 	};
+	_log("Worker fetch hooked", "info");
 }
 
 function _syncStoredDeviceId() {

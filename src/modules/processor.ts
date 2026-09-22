@@ -3834,6 +3834,7 @@ function _commitBackupPlaylist(
 	) {
 		return null;
 	}
+	const previousDescription = `${info.LastCleanBackupPlayerType || "none"}@${info.LastCleanBackupResolution || "unknown"}`;
 	info._BackupSelection = {
 		identity,
 		sequence:
@@ -3868,6 +3869,12 @@ function _commitBackupPlaylist(
 	);
 	info.LastCleanBackupAt = committedAt;
 	_setBackupVariantResolution(info, metadata.resolution, activate);
+	if (identity !== previous?.identity) {
+		_log(
+			`[Recovery] Backup selection committed: ${previousDescription} -> ${metadata.playerType}@${metadata.resolution || "unknown"}; codec ${metadata.codec || metadata.codecFamily || "unknown"}; ${info.MediaKey}; cycle ${info.VisibleAdStartedAt || 0}; request ${sequence}`,
+			"info",
+		);
+	}
 	return m3u8;
 }
 
