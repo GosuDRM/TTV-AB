@@ -6466,6 +6466,178 @@ describe("worker recovery lifecycle", () => {
 	});
 });
 
+describe("worker recovery navigation ownership", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PagePlaybackContextGeneration: 1,
+			StreamInfos: {},
+			StreamInfosByUrl: {},
+		});
+		vi.spyOn(g, "_installPageSideM3U8Override").mockImplementation(() => {});
+		g._doPlayerTask = vi.fn(() => false);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	function navigate(path: string) {
+		window.history.replaceState(null, "", path);
+		T<(options: { broadcast: boolean }) => unknown>("_syncPagePlaybackContext")(
+			{ broadcast: true },
+		);
+	}
+
+	it.each([
+		"crash",
+		"initial heartbeat",
+		"observed termination",
+		"early termination",
+	])(
+		"cancels pending %s after returning to the same channel in a new page generation",
+		(kind) => {
+			const worker: Record<string, unknown> = {
+				__TTVABGeneration: 1,
+				__TTVABCreatedAt: 90000,
+				__TTVABPageMediaKey: "live:testchannel",
+			};
+			const context = { MediaKey: "live:testchannel" };
+			const recoveryState = T<(context: object) => Record<string, unknown>>(
+				"_getWorkerRecoveryState",
+			)(context);
+			recoveryState.attempts = 1;
+			if (kind === "crash") {
+				T<(worker: object, context: object, message: string) => boolean>(
+					"_recoverCrashedWorker",
+				)(worker, context, "Worker crashed");
+			} else if (kind === "initial heartbeat") {
+				T<(worker: object, context: object) => void>(
+					"_scheduleWorkerInitialHeartbeat",
+				)(worker, context);
+			} else {
+				worker.__TTVABIntentionallyTerminated = true;
+				if (kind === "observed termination") {
+					worker.__TTVABPlaybackObservedAtByMediaKey = new Map([
+						["live:testchannel", 100000],
+					]);
+				}
+				T<(worker: object, context: object) => boolean>(
+					"_scheduleTerminatedPlaybackWorkerRecovery",
+				)(worker, context);
+			}
+			navigate("/otherchannel");
+			navigate("/testchannel");
+			expect(
+				(g.__TTVAB_STATE__ as Record<string, unknown>)
+					.PagePlaybackContextGeneration,
+			).toBe(3);
+			vi.advanceTimersByTime(200000);
+			expect(g._doPlayerTask).not.toHaveBeenCalled();
+			expect(recoveryState.attempts).toBe(1);
+			expect(recoveryState.activeEpoch).toBe(0);
+			expect(recoveryState.timerID).toBeNull();
+			expect(
+				(g._WorkerTerminationRecoveryByContext as Map<string, unknown>).size,
+			).toBe(0);
+		},
+	);
+
+	it.each(["live:testchannel", "vod:123456"])(
+		"cancels %s replacement confirmation after leaving and returning",
+		(mediaKey) => {
+			const path = mediaKey.startsWith("vod:")
+				? "/videos/123456"
+				: "/testchannel";
+			navigate(path);
+			g._doPlayerTask = vi.fn(() => {
+				recordTestPlayerReload(mediaKey);
+				return true;
+			});
+			const worker = { __TTVABGeneration: 1, __TTVABPageMediaKey: mediaKey };
+			T<(worker: object, context: object, message: string) => boolean>(
+				"_recoverCrashedWorker",
+			)(worker, { MediaKey: mediaKey }, "Worker crashed");
+			vi.advanceTimersByTime(1000);
+			const recoveryState = T<(context: object) => Record<string, unknown>>(
+				"_getWorkerRecoveryState",
+			)({ MediaKey: mediaKey });
+			expect(recoveryState.phase).toBe("awaiting-successor");
+			navigate("/otherchannel");
+			navigate(path);
+			vi.advanceTimersByTime(120000);
+			expect(g._doPlayerTask).toHaveBeenCalledOnce();
+			expect(recoveryState.attempts).toBe(1);
+			expect(recoveryState.phase).toBe("cancelled");
+			expect(recoveryState.timerID).toBeNull();
+		},
+	);
+
+	it.each([true, false])(
+		"preserves navigation recovery only for the exact PiP worker (matching: %s)",
+		(matches) => {
+			const worker = {
+				__TTVABGeneration: 1,
+				__TTVABPageMediaKey: "live:testchannel",
+			};
+			const context = { MediaKey: "live:testchannel" };
+			vi.stubGlobal("_getActivePictureInPicturePlaybackContext", () => ({
+				...context,
+				workerRef: new WeakRef(matches ? worker : {}),
+			}));
+			vi.stubGlobal(
+				"_isActivePictureInPicturePlaybackContext",
+				(candidate: { MediaKey: string }) =>
+					candidate.MediaKey === context.MediaKey,
+			);
+			T<(worker: object, context: object, message: string) => boolean>(
+				"_recoverCrashedWorker",
+			)(worker, context, "Worker crashed");
+			navigate("/otherchannel");
+			vi.advanceTimersByTime(1000);
+			const recoveryState = T<(context: object) => Record<string, unknown>>(
+				"_getWorkerRecoveryState",
+			)(context);
+			expect(recoveryState.phase).toBe(matches ? "waiting-pip" : "cancelled");
+			expect(g._doPlayerTask).not.toHaveBeenCalled();
+			expect(recoveryState.attempts).toBe(0);
+			vi.stubGlobal("_getActivePictureInPicturePlaybackContext", () => null);
+			vi.stubGlobal("_isActivePictureInPicturePlaybackContext", () => false);
+			vi.advanceTimersByTime(5000);
+			expect(recoveryState.phase).toBe("cancelled");
+			expect(recoveryState.timerID).toBeNull();
+		},
+	);
+
+	it.each(["replacement", "rewind"])(
+		"does not spend a hidden recovery attempt on a media %s",
+		(change) => {
+			vi.spyOn(g, "_isWorkerLifecycleThrottled").mockReturnValue(true);
+			let media = document.createElement("video");
+			media.currentTime = 100;
+			vi.stubGlobal("_getPrimaryMediaElement", () => media);
+			T<(worker: object, context: object, message: string) => boolean>(
+				"_recoverCrashedWorker",
+			)(
+				{ __TTVABGeneration: 1 },
+				{ MediaKey: "live:testchannel" },
+				"Worker crashed",
+			);
+			vi.advanceTimersByTime(1000);
+			if (change === "replacement") media = document.createElement("video");
+			media.currentTime = 10;
+			vi.advanceTimersByTime(5000);
+			expect(g._doPlayerTask).not.toHaveBeenCalled();
+			media.currentTime = 15;
+			vi.advanceTimersByTime(5000);
+			expect(g._doPlayerTask).not.toHaveBeenCalled();
+			vi.advanceTimersByTime(5000);
+			expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		},
+	);
+});
+
 describe("bounded long-session registries", () => {
 	it("delivers playback visibility only to the exact media worker", () => {
 		const pageWorker = {
@@ -13074,6 +13246,33 @@ describe("worker watchdog visibility awareness", () => {
 		expect(worker.__TTVABCrashed).toBe(true);
 		expect(installFallback).toHaveBeenCalledOnce();
 	});
+
+	it.each(["replacement", "rewind"])(
+		"does not treat a media %s as a hidden-worker stall",
+		(change) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			g._isNativeDocumentHidden = () => true;
+			let media = document.createElement("video");
+			media.currentTime = 100;
+			g._getPrimaryMediaElement = () => media;
+			g._installPageSideM3U8Override = vi.fn();
+			g._doPlayerTask = vi.fn(() => false);
+			const worker = makeTrackedWorker();
+
+			startWatchdog();
+			vi.advanceTimersByTime(15000);
+			if (change === "replacement") media = document.createElement("video");
+			media.currentTime = 10;
+			vi.advanceTimersByTime(5000);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+			media.currentTime = 15;
+			vi.advanceTimersByTime(5000);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+			vi.advanceTimersByTime(5000);
+			expect(worker.__TTVABCrashed).toBe(true);
+		},
+	);
 
 	it("does not retire a throttled hidden worker during explicit user pause", () => {
 		vi.useFakeTimers();
