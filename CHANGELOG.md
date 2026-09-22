@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.0.8] - 2026-09-23
+
+Fixed
+
+- **Navigation Recovery** - Cancel outdated recovery after channel or VOD navigation, including returning to the same stream, while preserving active Picture-in-Picture playback.
+- **Background Playback** - Avoid unnecessary recovery when the video restarts or seeks backward, while still recovering genuine stalls.
+
 ## [18.0.7] - 2026-09-23
 
 Fixed
