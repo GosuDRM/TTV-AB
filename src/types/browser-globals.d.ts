@@ -95,6 +95,7 @@ interface Worker {
 	__TTVABMissedPongs?: number;
 	__TTVABLastPingSentAt?: number;
 	__TTVABHiddenHeartbeatMediaTime?: number;
+	__TTVABHiddenHeartbeatMediaRef?: WeakRef<HTMLMediaElement> | null;
 	__TTVABHiddenHeartbeatMissingSamples?: number;
 	__TTVABPageMediaType?: string | null;
 	__TTVABPageChannel?: string | null;

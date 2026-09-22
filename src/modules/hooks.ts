@@ -2578,6 +2578,10 @@ function _clearWorkerInitialHeartbeat(worker) {
 
 function _scheduleWorkerInitialHeartbeat(worker, pagePlaybackContext) {
 	_clearWorkerInitialHeartbeat(worker);
+	const pageContextGeneration = Math.max(
+		0,
+		Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+	);
 	const workerRef = new WeakRef<Worker>(worker);
 	const checkHeartbeat = () => {
 		const currentWorker = workerRef.deref();
@@ -2586,7 +2590,12 @@ function _scheduleWorkerInitialHeartbeat(worker, pagePlaybackContext) {
 		if (
 			currentWorker.__TTVABCrashed ||
 			currentWorker.__TTVABIntentionallyTerminated ||
-			currentWorker.__TTVABFirstPongAt
+			currentWorker.__TTVABFirstPongAt ||
+			!_isWorkerRecoveryPageCurrent(
+				currentWorker,
+				pagePlaybackContext?.MediaKey,
+				pageContextGeneration,
+			)
 		) {
 			return;
 		}
@@ -2642,6 +2651,16 @@ function _getActivePictureInPictureWorkerContext(worker, mediaKey = null) {
 	if (mediaKey && _normalizeMediaKey(mediaKey) !== context.MediaKey)
 		return null;
 	return context;
+}
+
+function _isWorkerRecoveryPageCurrent(worker, mediaKey, pageContextGeneration) {
+	return (
+		pageContextGeneration ===
+			Math.max(
+				0,
+				Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+			) || Boolean(_getActivePictureInPictureWorkerContext(worker, mediaKey))
+	);
 }
 
 function _logPictureInPictureAdBlocking(worker, mediaKey, cycleStartedAt) {
@@ -2772,6 +2791,7 @@ function _getWorkerRecoveryState(context, create = true) {
 			limitLogged: false,
 			noticeShownAt: 0,
 			activeEpoch: 0,
+			pageContextGeneration: 0,
 			failedGeneration: 0,
 			crashedAt: 0,
 			bootstrapDeadlineAt: 0,
@@ -2786,6 +2806,7 @@ function _getWorkerRecoveryState(context, create = true) {
 			terminalRearmCycleStartedAt: 0,
 			terminalRearmAttemptedAt: 0,
 			hiddenLastMediaTime: -1,
+			hiddenLastMediaRef: null,
 			timerID: null,
 			phase: "idle",
 		};
@@ -3476,11 +3497,28 @@ function _scheduleTerminatedPlaybackWorkerRecovery(
 		}
 		_clearWorkerTerminationRecovery(recoveryContext.MediaKey);
 	}
+	const pageContextGeneration = Math.max(
+		0,
+		Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+	);
 	const scheduleMonitor = (callback, delayMs) => {
 		const timerID = setTimeout(() => {
 			if (worker.__TTVABTerminationRecoveryTimer !== timerID) return;
 			worker.__TTVABTerminationRecoveryTimer = null;
 			try {
+				if (
+					!_isWorkerRecoveryPageCurrent(
+						worker,
+						recoveryContext.MediaKey,
+						pageContextGeneration,
+					)
+				) {
+					_log(
+						"Skipping stale worker termination recovery after navigation",
+						"info",
+					);
+					return;
+				}
 				callback();
 			} finally {
 				if (
@@ -3798,6 +3836,10 @@ function _recoverCrashedWorker(
 	}
 	recoveryState.context = recoveryContext;
 	recoveryState.activeEpoch = ++_workerRecoveryEpoch;
+	recoveryState.pageContextGeneration = Math.max(
+		0,
+		Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+	);
 	recoveryState.failedGeneration = Math.max(
 		0,
 		Number(recoveryState.failedGeneration) || 0,
@@ -3810,6 +3852,7 @@ function _recoverCrashedWorker(
 	recoveryState.reloadDispatchedAt = 0;
 	recoveryState.successorDeadlineAt = 0;
 	recoveryState.hiddenLastMediaTime = -1;
+	recoveryState.hiddenLastMediaRef = null;
 	recoveryState.phase = "scheduled";
 	worker.__TTVABRecoveryEpoch = recoveryState.activeEpoch;
 	if (recoveryContextIsCurrent) {
@@ -3833,6 +3876,10 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	const recoveryState = _getWorkerRecoveryState(recoveryContext);
 	if (!worker.__TTVABRecoveryEpoch) {
 		recoveryState.activeEpoch = ++_workerRecoveryEpoch;
+		recoveryState.pageContextGeneration = Math.max(
+			0,
+			Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+		);
 		recoveryState.failedGeneration = Math.max(
 			0,
 			Number(recoveryState.failedGeneration) || 0,
@@ -3846,6 +3893,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			recoveryState.crashedAt + HW_HIDDEN_STALE_MIN_MS;
 		recoveryState.expectedAfterGeneration = recoveryState.failedGeneration;
 		recoveryState.hiddenLastMediaTime = -1;
+		recoveryState.hiddenLastMediaRef = null;
 		recoveryState.phase = "scheduled";
 		worker.__TTVABRecoveryEpoch = recoveryState.activeEpoch;
 	}
@@ -3887,9 +3935,25 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		"warning",
 	);
 
-	const recoveryIsCurrent = () =>
-		recoveryState.activeEpoch === recoveryEpoch &&
-		worker.__TTVABRecoveryEpoch === recoveryEpoch;
+	const recoveryIsCurrent = () => {
+		if (
+			recoveryState.activeEpoch !== recoveryEpoch ||
+			worker.__TTVABRecoveryEpoch !== recoveryEpoch
+		)
+			return false;
+		if (
+			_isWorkerRecoveryPageCurrent(
+				worker,
+				recoveryContext.MediaKey,
+				recoveryState.pageContextGeneration,
+			)
+		)
+			return true;
+		recoveryState.activeEpoch = 0;
+		recoveryState.phase = "cancelled";
+		_log("Skipping stale worker recovery after navigation", "info");
+		return false;
+	};
 	const scheduleRecovery = (callback, waitMs) => {
 		if (!recoveryIsCurrent() || recoveryState.timerID !== null) return false;
 		const timerID = setTimeout(
@@ -4069,10 +4133,15 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				? Number(hiddenMedia.currentTime) || 0
 				: -1;
 			playbackDead = hasHiddenMedia
-				? recoveryState.hiddenLastMediaTime >= 0 &&
+				? recoveryState.hiddenLastMediaRef?.deref?.() === hiddenMedia &&
+					recoveryState.hiddenLastMediaTime >= 0 &&
+					hiddenMediaTime >= recoveryState.hiddenLastMediaTime &&
 					hiddenMediaTime <= recoveryState.hiddenLastMediaTime + 0.2
 				: recoveryState.hiddenLastMediaTime === -2;
 			recoveryState.hiddenLastMediaTime = hasHiddenMedia ? hiddenMediaTime : -2;
+			recoveryState.hiddenLastMediaRef = hasHiddenMedia
+				? new WeakRef(hiddenMedia)
+				: null;
 			if (!playbackDead) {
 				_log("Deferring worker recovery reload until tab is visible", "info");
 				scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
@@ -4239,13 +4308,17 @@ function _startWorkerWatchdog() {
 				if (hiddenMedia instanceof HTMLMediaElement) {
 					const mediaTime = Number(hiddenMedia.currentTime) || 0;
 					hiddenPlaybackStopped = Boolean(
-						worker.__TTVABHiddenHeartbeatMediaTime >= 0 &&
+						worker.__TTVABHiddenHeartbeatMediaRef?.deref?.() === hiddenMedia &&
+							worker.__TTVABHiddenHeartbeatMediaTime >= 0 &&
+							mediaTime >= worker.__TTVABHiddenHeartbeatMediaTime &&
 							mediaTime <= worker.__TTVABHiddenHeartbeatMediaTime + 0.2,
 					);
 					worker.__TTVABHiddenHeartbeatMediaTime = mediaTime;
+					worker.__TTVABHiddenHeartbeatMediaRef = new WeakRef(hiddenMedia);
 					worker.__TTVABHiddenHeartbeatMissingSamples = 0;
 				} else {
 					worker.__TTVABHiddenHeartbeatMediaTime = -1;
+					worker.__TTVABHiddenHeartbeatMediaRef = null;
 					worker.__TTVABHiddenHeartbeatMissingSamples =
 						Math.max(
 							0,
@@ -4256,6 +4329,7 @@ function _startWorkerWatchdog() {
 				}
 			} else {
 				worker.__TTVABHiddenHeartbeatMediaTime = -1;
+				worker.__TTVABHiddenHeartbeatMediaRef = null;
 				worker.__TTVABHiddenHeartbeatMissingSamples = 0;
 			}
 			if (hiddenPlaybackStopped) {
