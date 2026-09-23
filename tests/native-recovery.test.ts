@@ -248,6 +248,7 @@ async function setupReducedNativeMaster(
 	enhancedCodec: string | null = null,
 	cleanBeforeBreak = true,
 	lowPlaybackMs = 0,
+	fullQualityLadder = false,
 ) {
 	const fixture = setup(false);
 	const { context, info, state, fetch, serve } = fixture;
@@ -258,17 +259,22 @@ async function setupReducedNativeMaster(
 	if (!cleanBeforeBreak) state.PagePlaybackVisibleSinceAt = 0;
 	const originalFetch = fetch.getMockImplementation();
 	if (!originalFetch) throw new Error("Missing native fetch fixture");
-	const fullMaster = enhancedCodec
+	let fullMaster = enhancedCodec
 		? master.replace(hevc, enhancedCodec)
 		: master
 				.split("\n")
 				.filter((line) => !line.includes("1440") && !line.includes(hevc))
 				.join("\n");
+	if (fullQualityLadder) {
+		fullMaster += `\n${reducedMaster.split("\n").slice(1).join("\n").replaceAll("token=reduced", "token=owned")}`;
+	}
 	fetch.mockImplementation(async (input: string | URL) => {
 		const url = String(input);
 		if (url === masterUrl) return new Response(fullMaster);
 		if (url === reducedMasterUrl) return new Response(reducedMaster);
 		if (url.includes("token=reduced")) return fixture.target(url);
+		if (fullQualityLadder && url.includes("token=owned"))
+			return fixture.target(url);
 		return originalFetch(input);
 	});
 	context.fetch = fetch;
@@ -400,16 +406,61 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 
-	it.each(["ad", "stopped", "http-error"])(
-		"keeps the clean backup when refreshed long-session native media is %s",
-		async (failure) => {
-			const { context, info, target, serve, restored } =
-				await setupReducedNativeMaster(null, true, 38 * 60000);
-			target.mockImplementation(async () =>
-				failure === "http-error"
-					? new Response(null, { status: 403 })
-					: new Response(playlist(1000, "retained", failure === "ad")),
+	it.each(["auto", null])(
+		"keeps HD in the recovered catalog after reduced playback with quality %s and slow HD checks",
+		async (quality) => {
+			const { context, info, state, target, serve, restored } =
+				await setupReducedNativeMaster(null, true, 38 * 60000, true);
+			state.PreferredQualityGroup = quality;
+			for (let index = 0; index < 24 && !restored(); index++)
+				await serve(false, reducedNativeUrl);
+			expect(restored()).toMatchObject({
+				requiresReload: true,
+				refreshAccessToken: false,
+			});
+			const now = Date.now();
+			vi.useFakeTimers();
+			vi.setSystemTime(now);
+			let sequence = 3000;
+			target.mockImplementation(
+				(url: string) =>
+					new Promise<Response>((resolve) =>
+						setTimeout(
+							() => resolve(new Response(playlist(++sequence, "recovered"))),
+							url === nativeUrl ? 1400 : 500,
+						),
+					),
 			);
+			const rebuild = context.fetch(reducedMasterUrl);
+			await vi.advanceTimersByTimeAsync(2501);
+			const rebuilt = await (await rebuild).text();
+			expect(rebuilt).toContain(nativeUrl);
+			expect(rebuilt).toContain("360p.m3u8?token=owned");
+			expect(rebuilt).toContain("160p.m3u8?token=owned");
+			expect(rebuilt).not.toContain("token=reduced");
+			expect(info._PendingPostAdNativeMaster.playlistUrl).toBe(nativeUrl);
+			expect(state.PreferredQualityGroup).toBe(quality);
+		},
+	);
+
+	it.each(
+		["ad", "stopped", "http-error"].flatMap((failure) =>
+			["1440p60", "auto"].map((quality) => ({ failure, quality })),
+		),
+	)(
+		"keeps the clean backup when refreshed long-session native media is $failure with quality $quality",
+		async ({ failure, quality }) => {
+			const { context, info, state, target, serve, restored } =
+				await setupReducedNativeMaster(null, true, 38 * 60000, true);
+			state.PreferredQualityGroup = quality;
+			let lowSequence = 3000;
+			target.mockImplementation(async (url: string) => {
+				if (url !== nativeUrl)
+					return new Response(playlist(++lowSequence, "low"));
+				return failure === "http-error"
+					? new Response(null, { status: 403 })
+					: new Response(playlist(1000, "retained", failure === "ad"));
+			});
 			for (let index = 0; index < 24; index++)
 				await serve(false, reducedNativeUrl);
 			expect(restored()).toBeUndefined();

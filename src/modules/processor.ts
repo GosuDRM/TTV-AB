@@ -1302,6 +1302,9 @@ async function _isAdEndStable(
 				recoveryMaster.resolutionList,
 				__TTVAB_STATE__?.PreferredQualityGroup,
 			) ||
+			(recoveryMaster === info._NativePlaybackMaster
+				? _getResolutionByQualityGroup(recoveryMaster.resolutionList, "chunked")
+				: null) ||
 			info.SustainedNativeResolution ||
 			resolution;
 		const playlistUrl = _getExactPlaylistUrlKey(

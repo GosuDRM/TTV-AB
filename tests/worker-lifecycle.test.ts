@@ -9891,12 +9891,13 @@ describe("worker mixed-codec master selection", () => {
 	});
 
 	it.each([
-		{ preroll: false, longSession: false },
-		{ preroll: true, longSession: false },
-		{ preroll: false, longSession: true },
+		{ preroll: false, longSession: false, quality: "1440p60" },
+		{ preroll: true, longSession: false, quality: "1440p60" },
+		{ preroll: false, longSession: true, quality: "1440p60" },
+		{ preroll: false, longSession: true, quality: "auto" },
 	])(
-		"restores the native catalog in the injected worker with hidden preroll=$preroll and long session=$longSession",
-		async ({ preroll, longSession }) => {
+		"restores the native catalog in the injected worker with hidden preroll=$preroll, long session=$longSession and quality=$quality",
+		async ({ preroll, longSession, quality }) => {
 			vi.useFakeTimers();
 			vi.setSystemTime(200000);
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
@@ -9950,7 +9951,7 @@ describe("worker mixed-codec master selection", () => {
 				const state = runtime.scope.__TTVAB_STATE__ as CycleState;
 				Object.assign(state, {
 					PageMediaKey: mediaKey,
-					PreferredQualityGroup: "1440p60",
+					PreferredQualityGroup: quality,
 				});
 				Object.assign(state, {
 					PagePlaybackVisibleSinceAt: preroll ? 0 : 100000,
