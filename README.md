@@ -35,6 +35,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Independent, live-updating controls for Ad Blocking, Ad Spoofing, and Low Quality Fallback
 - ✅ Optional Ad Spoofing to reduce anti-adblock detection
 - ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, but lower quality may still be used as a last resort
+- ✅ Optional Ad Break Timer showing elapsed time in the stream's top-right corner, disabled by default
 - ✅ Optional Turbo Mode that pauses new statistics and achievements while preserving existing history and all ad-blocking controls
 - ✅ Persistent, live-updating Ads Blocked and Time Saved totals
 - ✅ Statistics dashboard with weekly charts, detailed per-channel history, and **12 Achievement Badges**
@@ -48,7 +49,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 1. Install the extension from your browser's add-on store
 2. Navigate to [twitch.tv](https://twitch.tv) and open any live stream or VOD
 3. Ads are blocked automatically, no configuration needed
-4. Click the extension icon to view stats or toggle Ad Blocking, Ad Spoofing, and Low Quality Fallback
+4. Click the extension icon to view stats or toggle Ad Blocking, Ad Spoofing, Low Quality Fallback, and Ad Break Timer
 5. Change language via the dropdown in the popup footer
 
 ## ⚙️ How It Works
@@ -70,7 +71,13 @@ With **Low Quality Fallback** enabled, a clean 360p autoplay source can start so
 
 When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and completion signals expected for the blocked break. This setting is separate from playlist blocking and can be turned off without disabling core ad blocking.
 
+**Ad Break Timer** is off by default. Enable it in the popup to show elapsed time during a detected ad break. It hides when the active ad cycle ends. It does not predict when your selected quality will return.
+
 ## 🔔 What's New
+
+### v18.1.0 - 2026-09-23
+
+- **Ad Break Timer** - Add an optional, unobtrusive timer in the stream's top-right corner showing elapsed ad-break time. Disabled by default; enable it in the popup.
 
 ### v18.0.8 - 2026-09-23
 
@@ -83,12 +90,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Recovery Diagnostics** - Include recovery stages, stream ownership, and retry counts in console logs.
 - **Recovery Confirmation** - Distinguish verified video advancement from recovery confirmed only by playhead progress.
 - **Worker Diagnostics** - Report successful playback interception only after the worker hook is installed.
-
-### v18.0.6 - 2026-09-23
-
-- **Playback Continuity** - Prevent backward playlist jumps when temporary ad-blocking playback changes quality.
-- **Ad-Time Quality** - Keep upgraded backup playback from dropping back to 360p during playlist refreshes.
-- **Post-Ad Recovery** - Prevent early or unusable playlist responses from causing recovery to time out.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
