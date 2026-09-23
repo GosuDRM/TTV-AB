@@ -77,7 +77,7 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ### v18.1.2 - 2026-09-24
 
-- **Playback Recovery** - Follow Twitch's current player after replacements on the same channel, avoiding unnecessary reloads and missed stalls. Found while investigating [#79](https://github.com/GosuDRM/TTV-AB/issues/79); live confirmation of the reported buffering remains pending.
+- **Playback Recovery** - Follow Twitch's current player after replacements on the same channel, avoiding unnecessary reloads and missed stalls.
 
 ### v18.1.1 - 2026-09-23
 
