@@ -2182,6 +2182,235 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 	});
 });
 
+describe("_monitorPlayerBuffering clean-live player ownership", () => {
+	const replacedGlobals = [
+		"_getPlayerAndState",
+		"_doPlayerTask",
+		"_hasPendingAdResumeIntent",
+		"_isNativeDocumentHidden",
+		"_trackChannelWatchTime",
+		"_hasPlayerBufferMonitorRelevantContext",
+		"_shouldSuppressAutomaticPlaybackResume",
+		"_restoreReattachedSuppressedPrimaryMedia",
+		"_syncPreferredQualityGroupThrottled",
+	] as const;
+	let savedGlobals: Record<string, unknown>;
+	let currentPlayback: ReturnType<typeof makePlayback> | null;
+	const videos: HTMLVideoElement[] = [];
+
+	function makePlayback(advancing: boolean, position = 100) {
+		const startedAt = Date.now();
+		const video = document.createElement("video");
+		const time = () =>
+			position + (advancing ? (Date.now() - startedAt) / 1000 : 0);
+		Object.defineProperties(video, {
+			currentTime: { get: time, configurable: true },
+			paused: { value: false, configurable: true },
+			ended: { value: false, configurable: true },
+			readyState: { value: advancing ? 4 : 2, configurable: true },
+			videoWidth: { value: 1920, configurable: true },
+			buffered: {
+				value: {
+					length: 1,
+					start: () => Math.max(0, time() - 20),
+					end: () => time() + (advancing ? 2 : 0.05),
+				},
+				configurable: true,
+			},
+		});
+		document.body.append(video);
+		videos.push(video);
+		return {
+			video,
+			player: {
+				core: {
+					state: {
+						get position() {
+							return time();
+						},
+						get bufferedPosition() {
+							return video.buffered.end(0);
+						},
+					},
+				},
+				getHTMLVideoElement: () => video,
+				getBufferDuration: () => (advancing ? 2 : 0.05),
+				isPaused: () => video.paused,
+			},
+			state: { props: { content: { type: "live" } } },
+		};
+	}
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(500000);
+		savedGlobals = Object.fromEntries(
+			replacedGlobals.map((name) => [name, g[name]]),
+		);
+		T<() => void>("_stopPlayerBufferMonitor")();
+		T<() => void>("_clearActivePictureInPicturePlaybackContext")();
+		T<() => void>("_clearCachedPrimaryMediaElement")();
+		T<() => void>("_disarmPostBreakWedgeWatch")();
+		Object.assign(g._PostBreakWedgeState as object, {
+			prevAdContext: false,
+			prevAdMediaKey: null,
+		});
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+			CurrentAdChannel: null,
+			CurrentAdMediaKey: null,
+			PinnedBackupPlayerType: null,
+			IsBufferFixEnabled: true,
+			PlayerBufferingDelay: 600,
+			PlayerBufferingSameStateCount: 5,
+			PlayerBufferingMinRepeatDelay: 8000,
+			PlayerBufferingPrerollCheckEnabled: false,
+			PlayerBufferingDoPlayerReload: false,
+		};
+		g._getPlayerAndState = () =>
+			currentPlayback || { player: null, state: null };
+		g._doPlayerTask = vi.fn(() => true);
+		g._hasPendingAdResumeIntent = () => false;
+		g._isNativeDocumentHidden = () => false;
+		g._trackChannelWatchTime = () => {};
+		g._hasPlayerBufferMonitorRelevantContext = () => true;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._restoreReattachedSuppressedPrimaryMedia = () => {};
+		g._syncPreferredQualityGroupThrottled = () => {};
+	});
+
+	afterEach(() => {
+		T<() => void>("_stopPlayerBufferMonitor")();
+		T<() => void>("_clearCachedPrimaryMediaElement")();
+		window.removeEventListener(
+			"pagehide",
+			g._flushWatchTimeOnPageExit as EventListener,
+		);
+		for (const video of videos.splice(0)) video.remove();
+		for (const name of replacedGlobals) g[name] = savedGlobals[name];
+		vi.useRealTimers();
+	});
+
+	it("does not reload healthy replacement playback because the retired player stalled", () => {
+		currentPlayback = makePlayback(false);
+		expect(T<() => HTMLVideoElement>("_getPrimaryMediaElement")()).toBe(
+			currentPlayback.video,
+		);
+		T<() => void>("_monitorPlayerBuffering")();
+		vi.advanceTimersByTime(900);
+		currentPlayback = makePlayback(true);
+
+		vi.advanceTimersByTime(15000);
+
+		expect(g._doPlayerTask).not.toHaveBeenCalled();
+		expect(T<() => HTMLVideoElement>("_getPrimaryMediaElement")()).toBe(
+			currentPlayback.video,
+		);
+	});
+
+	it("detects a sustained replacement stall even while the retired player advances", () => {
+		currentPlayback = makePlayback(true);
+		T<() => void>("_monitorPlayerBuffering")();
+		vi.advanceTimersByTime(1800);
+		currentPlayback = makePlayback(false);
+
+		vi.advanceTimersByTime(15000);
+
+		expect(g._doPlayerTask).toHaveBeenCalledWith(false, true, {
+			reason: "buffer-recovery",
+		});
+	});
+
+	it("requires fresh stall evidence when the same player replaces its video element", () => {
+		currentPlayback = makePlayback(false);
+		T<() => void>("_monitorPlayerBuffering")();
+		vi.advanceTimersByTime(7200);
+		expect(g._doPlayerTask).not.toHaveBeenCalled();
+		const replacement = makePlayback(false);
+		currentPlayback.player.getHTMLVideoElement = () => replacement.video;
+
+		vi.advanceTimersByTime(1200);
+
+		expect(g._doPlayerTask).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(15000);
+		expect(g._doPlayerTask).toHaveBeenCalledWith(false, true, {
+			reason: "buffer-recovery",
+		});
+	});
+
+	it.each(["player", "state"])(
+		"stops sampling the retired player while the current %s is unavailable",
+		(missing) => {
+			currentPlayback = makePlayback(false);
+			T<() => void>("_monitorPlayerBuffering")();
+			vi.advanceTimersByTime(900);
+			const retired = currentPlayback;
+			g._getPlayerAndState = () => ({
+				player: missing === "player" ? null : retired.player,
+				state: null,
+			});
+
+			vi.advanceTimersByTime(15000);
+
+			expect(g._doPlayerTask).not.toHaveBeenCalled();
+			currentPlayback = makePlayback(false);
+			g._getPlayerAndState = () => currentPlayback;
+			vi.advanceTimersByTime(15000);
+			expect(g._doPlayerTask).toHaveBeenCalledWith(false, true, {
+				reason: "buffer-recovery",
+			});
+		},
+	);
+
+	it.each(["paused", "dead worker", "disabled", "secondary handoff"])(
+		"does not recover a replacement during %s",
+		(guard) => {
+			currentPlayback = makePlayback(false);
+			T<() => void>("_monitorPlayerBuffering")();
+			vi.advanceTimersByTime(900);
+			currentPlayback = makePlayback(false);
+			if (guard === "paused") {
+				Object.defineProperty(currentPlayback.video, "paused", { value: true });
+			} else if (guard === "dead worker") {
+				Object.assign(currentPlayback.player.core, {
+					worker: { __TTVABCrashed: true },
+				});
+			} else if (guard === "disabled") {
+				(g.__TTVAB_STATE__ as Record<string, unknown>).IsBufferFixEnabled =
+					false;
+			} else {
+				g._shouldSuppressAutomaticPlaybackResume = () => true;
+			}
+
+			vi.advanceTimersByTime(15000);
+
+			expect(g._doPlayerTask).not.toHaveBeenCalled();
+		},
+	);
+
+	it("samples the current player immediately when a replacement tab becomes hidden", () => {
+		currentPlayback = makePlayback(false);
+		T<() => void>("_monitorPlayerBuffering")();
+		vi.advanceTimersByTime(900);
+		currentPlayback = makePlayback(true);
+		g._isNativeDocumentHidden = () => true;
+		const checkHidden = vi
+			.spyOn(g, "_checkHiddenCleanLiveStall")
+			.mockReturnValue(false);
+
+		vi.advanceTimersByTime(900);
+
+		expect(checkHidden).toHaveBeenCalledExactlyOnceWith(
+			currentPlayback.player,
+			"testchannel",
+			"live:testchannel",
+		);
+		expect(g._doPlayerTask).not.toHaveBeenCalled();
+	});
+});
+
 describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 	const replacedGlobals = [
 		"_getPlayerAndState",
