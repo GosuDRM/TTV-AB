@@ -290,6 +290,7 @@ async function setupReducedNativeMaster(
 		info.IsShowingAd = true;
 		expect(info.LastCleanNativeM3U8).toBeNull();
 	}
+	info.LastCleanNativePlaylistAt = Date.now() - 10001;
 	await context.fetch(reducedMasterUrl);
 	if (lowPlaybackMs) {
 		state.PagePlaybackVisibleSinceAt = 1;

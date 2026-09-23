@@ -617,6 +617,25 @@ describe("crashed worker recovery with the real player task", () => {
 		expect(refresh).not.toHaveBeenCalled();
 	});
 
+	it("offers bounded crash recovery on a visible unfocused page even while its playhead advances", () => {
+		vi.spyOn(g, "_isPlaybackPageUnfocused").mockReturnValue(true);
+		vi.spyOn(g, "_isNativeDocumentHidden").mockReturnValue(false);
+		const video = document.createElement("video");
+		Object.defineProperty(video, "currentTime", {
+			get: () => Date.now() / 1000,
+		});
+		vi.spyOn(g, "_getPrimaryMediaElement").mockReturnValue(video);
+		exhaust();
+		expect(setSrc).not.toHaveBeenCalled();
+		expect(refresh).not.toHaveBeenCalled();
+		expect(document.querySelectorAll("#ttvab-worker-recovery")).toHaveLength(1);
+		expect(
+			T<(context: unknown) => Record<string, unknown>>(
+				"_getWorkerRecoveryState",
+			)(context).attempts,
+		).toBe(3);
+	});
+
 	it.each(["buffer-recovery", "ad-recovery", "manual"])(
 		"rejects %s source loads after worker recovery exhausts",
 		(reason) => {

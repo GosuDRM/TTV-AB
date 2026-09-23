@@ -6613,7 +6613,7 @@ describe("worker recovery navigation ownership", () => {
 	it.each(["replacement", "rewind"])(
 		"does not spend a hidden recovery attempt on a media %s",
 		(change) => {
-			vi.spyOn(g, "_isWorkerLifecycleThrottled").mockReturnValue(true);
+			vi.stubGlobal("_isNativeDocumentHidden", () => true);
 			let media = document.createElement("video");
 			media.currentTime = 100;
 			vi.stubGlobal("_getPrimaryMediaElement", () => media);
@@ -9772,6 +9772,322 @@ describe("injected worker ad playlist validation", () => {
 	);
 });
 
+describe("clean-playback reduced master recovery", () => {
+	type NativeState = Record<string, unknown> & {
+		StreamInfos: Record<string, Record<string, unknown>>;
+	};
+	const mediaKey = "live:testchannel";
+	const masterUrl =
+		"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=owned";
+	const reducedUrl = masterUrl.replace("owned", "reduced");
+	const newerUrl = masterUrl.replace("owned", "newer");
+	const playlist = (sequence: number, ad = false) =>
+		`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${sequence}\n${ad ? '#EXT-X-DATERANGE:ID="ad",CLASS="twitch-stitched-ad"\n' : ""}#EXTINF:2,live\nhttps://edge.example/segment-${sequence}.ts`;
+
+	async function setup(
+		quality = "1080p60",
+		codec = "avc1.64002a",
+		heights = [1080, 720, 480, 360, 160],
+	) {
+		vi.useFakeTimers();
+		vi.setSystemTime(200000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const variants = heights.map((height) => ({
+			height,
+			url: `https://edge.example/${height}.m3u8?token=owned`,
+		}));
+		const fullMaster =
+			"#EXTM3U\n" +
+			variants
+				.map(
+					({ height, url }) =>
+						`#EXT-X-STREAM-INF:RESOLUTION=${height * 2}x${height},VIDEO="${height}p60",CODECS="mp4a.40.2,${codec}"\n${url}`,
+				)
+				.join("\n");
+		const lowMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="mp4a.40.2,${codec}"\nhttps://edge.example/360.m3u8?token=reduced`;
+		const control = {
+			probing: false,
+			delayMs: 500,
+			inFlight: 0,
+			maxInFlight: 0,
+			sequence: 500,
+			probe: null as ((url: string, look: number) => Response | null) | null,
+			looks: new Map<string, number>(),
+		};
+		const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === masterUrl) return new Response(fullMaster);
+			if (url === reducedUrl) return new Response(lowMaster);
+			if (url === newerUrl)
+				return new Response(
+					fullMaster.replaceAll("token=owned", "token=newer"),
+				);
+			if (!variants.some((variant) => variant.url === url))
+				throw new Error("Unexpected request");
+			if (control.probing) {
+				control.inFlight++;
+				control.maxInFlight = Math.max(control.maxInFlight, control.inFlight);
+				await new Promise((resolve) => setTimeout(resolve, control.delayMs));
+				control.inFlight--;
+				const look = (control.looks.get(url) || 0) + 1;
+				control.looks.set(url, look);
+				const override = control.probe?.(url, look);
+				if (override) return override;
+			}
+			return new Response(playlist(++control.sequence));
+		});
+		const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+		runtime.scope.Date = Date;
+		runtime.deliverBootstrap();
+		const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+		const state = runtime.scope.__TTVAB_STATE__ as NativeState;
+		state.PreferredQualityGroup = quality;
+		state.PageMediaKey = mediaKey;
+		await fetch(masterUrl);
+		await fetch(variants[0].url);
+		control.probing = true;
+		rawFetch.mockClear();
+		return {
+			fetch,
+			state,
+			info: state.StreamInfos[mediaKey],
+			rawFetch,
+			variants,
+			control,
+			lowMaster,
+			fullMaster,
+			restore: () => {
+				harness.restore();
+				vi.clearAllTimers();
+			},
+		};
+	}
+
+	it.each([
+		["1080p60", "avc1.64002a"],
+		["auto", "avc1.64002a"],
+		["1440p60", "hev1.1.2.L150.90"],
+		["1440p60", "av01.0.12M.08"],
+	])(
+		"keeps live-validated native qualities after a later reduced master with %s and %s",
+		async (quality, codec) => {
+			const session = await setup(
+				quality,
+				codec,
+				quality === "1440p60" ? [1440, 1080, 720, 480, 360] : undefined,
+			);
+			try {
+				const response = session
+					.fetch(reducedUrl)
+					.then((result) => result.text());
+				await vi.advanceTimersByTimeAsync(2500);
+				const output = await response;
+				for (const { url } of session.variants) expect(output).toContain(url);
+				expect(output).not.toContain("token=reduced");
+				expect(session.control.maxInFlight).toBeLessThanOrEqual(3);
+				expect(session.rawFetch).toHaveBeenCalledTimes(11);
+				expect(session.info.UsherBaseUrl).toBe(masterUrl);
+				expect(session.info.IsShowingAd).toBe(false);
+				expect(session.info._PendingPostAdNativeMaster).toBeNull();
+			} finally {
+				session.restore();
+			}
+		},
+	);
+
+	it.each([
+		"disabled",
+		"explicit-low-quality",
+		"no-clean-proof",
+		"old-clean-proof",
+		"stale-catalog",
+		"future-catalog",
+		"other-generation",
+		"other-media",
+		"ad-cycle",
+		"backup",
+		"handoff",
+		"codec-change",
+		"vod",
+	])("leaves the incoming native master alone with %s", async (condition) => {
+		const session = await setup();
+		try {
+			const { state, info } = session;
+			const saved = info._NativePlaybackMaster as Record<string, unknown>;
+			if (condition === "disabled") state.IsAdStrippingEnabled = false;
+			if (condition === "explicit-low-quality")
+				state.PreferredQualityGroup = "360p";
+			if (condition === "no-clean-proof") info.LastCleanNativePlaylistAt = 0;
+			if (condition === "old-clean-proof")
+				info.LastCleanNativePlaylistAt = Date.now() - 10001;
+			if (condition === "stale-catalog") saved.observedAt = Date.now() - 60001;
+			if (condition === "future-catalog") saved.observedAt = Date.now() + 1;
+			if (condition === "other-generation") saved.pageGeneration = 99;
+			if (condition === "other-media") saved.mediaKey = "live:otherchannel";
+			if (condition === "ad-cycle") state.CurrentAdMediaKey = mediaKey;
+			if (condition === "backup") info.IsUsingBackupStream = true;
+			if (condition === "handoff") info.IsUsingModifiedM3U8 = true;
+			if (condition === "codec-change")
+				info.LastCleanNativeCodec = "hev1.1.2.L150.90";
+			if (condition === "vod") info.MediaType = "vod";
+			expect(await (await session.fetch(reducedUrl)).text()).toBe(
+				session.lowMaster,
+			);
+			expect(session.rawFetch).toHaveBeenCalledTimes(1);
+		} finally {
+			session.restore();
+		}
+	});
+
+	it.each(["ad-second-look", "rewound", "empty", "http-error", "stalled-body"])(
+		"does not reuse the retained session when its desired quality is %s",
+		async (condition) => {
+			const session = await setup();
+			try {
+				session.control.probe = (url, look) => {
+					if (url !== session.variants[0].url) return null;
+					if (condition === "ad-second-look")
+						return new Response(playlist(600 + look, look === 2));
+					if (condition === "rewound")
+						return new Response(playlist(600 - look));
+					if (condition === "empty")
+						return new Response("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:600");
+					if (condition === "http-error")
+						return new Response("unavailable", { status: 503 });
+					const response = new Response(playlist(600));
+					vi.spyOn(response, "arrayBuffer").mockImplementation(
+						() => new Promise(() => {}),
+					);
+					return response;
+				};
+				let settledAt = 0;
+				const response = session.fetch(reducedUrl).then(async (result) => {
+					settledAt = Date.now();
+					return result.text();
+				});
+				await vi.advanceTimersByTimeAsync(2500);
+				expect(await response).toBe(session.lowMaster);
+				expect(settledAt).toBeLessThanOrEqual(202500);
+				expect(session.info.UsherBaseUrl).toBe(reducedUrl);
+			} finally {
+				session.restore();
+			}
+		},
+	);
+
+	it("omits ad-marked optional qualities and keeps the responsive clean choices within the deadline", async () => {
+		const session = await setup();
+		try {
+			session.control.probe = (url, look) =>
+				url === session.variants[1].url
+					? new Response(playlist(600 + look, look === 2))
+					: null;
+			const response = session
+				.fetch(reducedUrl)
+				.then((result) => result.text());
+			await vi.advanceTimersByTimeAsync(2500);
+			const output = await response;
+			expect(output).not.toContain(session.variants[1].url);
+			for (const { url } of session.variants.filter((_, index) => index !== 1))
+				expect(output).toContain(url);
+		} finally {
+			session.restore();
+		}
+	});
+
+	it("keeps quality validation current while native playlist polling refreshes the same catalog", async () => {
+		const session = await setup();
+		try {
+			const response = session
+				.fetch(reducedUrl)
+				.then((result) => result.text());
+			await vi.advanceTimersByTimeAsync(500);
+			const poll = session.fetch(session.variants[0].url);
+			await vi.advanceTimersByTimeAsync(500);
+			await poll;
+			await vi.advanceTimersByTimeAsync(1500);
+			expect(await response).toContain(session.variants[0].url);
+			expect(session.info.UsherBaseUrl).toBe(masterUrl);
+		} finally {
+			session.restore();
+		}
+	});
+
+	it("caps validation at twelve variants even when the retained catalog is larger", async () => {
+		const session = await setup(
+			"auto",
+			"avc1.64002a",
+			Array.from({ length: 16 }, (_, index) => 3000 - index * 100),
+		);
+		try {
+			session.control.delayMs = 0;
+			const response = session
+				.fetch(reducedUrl)
+				.then((result) => result.text());
+			await vi.advanceTimersByTimeAsync(100);
+			const output = await response;
+			expect(session.rawFetch).toHaveBeenCalledTimes(25);
+			for (const { url } of session.variants.slice(0, 12))
+				expect(output).toContain(url);
+			for (const { url } of session.variants.slice(12))
+				expect(output).not.toContain(url);
+		} finally {
+			session.restore();
+		}
+	});
+
+	it.each(["abort", "navigate", "generation", "newer-master"])(
+		"rejects delayed quality results after %s",
+		async (condition) => {
+			const session = await setup();
+			try {
+				const controller = new AbortController();
+				const response = session
+					.fetch(reducedUrl, { signal: controller.signal })
+					.catch((error: Error) => error);
+				await vi.advanceTimersByTimeAsync(500);
+				if (condition === "abort") controller.abort();
+				if (condition === "navigate")
+					session.state.PageMediaKey = "live:otherchannel";
+				if (condition === "generation")
+					session.state.PagePlaybackContextGeneration = 99;
+				if (condition === "newer-master") await session.fetch(newerUrl);
+				await vi.advanceTimersByTimeAsync(2500);
+				expect(await response).toMatchObject({ name: "AbortError" });
+				expect(session.info.UsherBaseUrl).toBe(
+					condition === "newer-master" ? newerUrl : masterUrl,
+				);
+			} finally {
+				session.restore();
+			}
+		},
+	);
+
+	it.each(["quality", "ad-cycle", "disabled"])(
+		"does not promote a retained session after %s changes during validation",
+		async (condition) => {
+			const session = await setup();
+			try {
+				const response = session
+					.fetch(reducedUrl)
+					.then((result) => result.text());
+				await vi.advanceTimersByTimeAsync(500);
+				if (condition === "quality")
+					session.state.PreferredQualityGroup = "360p";
+				if (condition === "ad-cycle")
+					session.state.CurrentAdMediaKey = mediaKey;
+				if (condition === "disabled")
+					session.state.IsAdStrippingEnabled = false;
+				await vi.advanceTimersByTimeAsync(2500);
+				expect(await response).toBe(session.lowMaster);
+			} finally {
+				session.restore();
+			}
+		},
+	);
+});
+
 describe("worker mixed-codec master selection", () => {
 	type CycleInfo = {
 		MediaKey: string;
@@ -9968,6 +10284,7 @@ describe("worker mixed-codec master selection", () => {
 					});
 				}
 				for (let cycle = 0; cycle < (longSession ? 2 : 1); cycle++) {
+					info.LastCleanNativePlaylistAt = Date.now() - 10001;
 					await workerFetch(reducedUrl);
 					if (cycle > 0) {
 						vi.setSystemTime(Date.now() + 38 * 60000);
@@ -13585,7 +13902,7 @@ describe("worker watchdog visibility awareness", () => {
 		}
 	});
 
-	it("defers an unfocused visible reload while playback advances, then recovers when it stops", () => {
+	it("does not defer a visible worker recovery merely because the page is unfocused", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
 		g._isNativeDocumentHidden = () => false;
@@ -13616,11 +13933,11 @@ describe("worker watchdog visibility awareness", () => {
 				{ MediaType: "live", ChannelName: "testchannel" },
 			);
 			vi.advanceTimersByTime(1000);
-			expect(playerTask).not.toHaveBeenCalled();
+			expect(playerTask).toHaveBeenCalledOnce();
 
 			media.currentTime = 15;
 			vi.advanceTimersByTime(5000);
-			expect(playerTask).not.toHaveBeenCalled();
+			expect(playerTask).toHaveBeenCalledOnce();
 
 			vi.advanceTimersByTime(5000);
 			expect(playerTask).toHaveBeenCalledOnce();
