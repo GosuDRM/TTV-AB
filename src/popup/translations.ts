@@ -23,6 +23,14 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"This sends extra requests to Twitch and does not block ads by itself. If you turn it off, only these signals stop; ad blocking keeps working normally.",
 		adSpoofingGotIt: "Got it",
+		adTimer: "Ad Break Timer",
+		adTimerDesc: "Shows elapsed ad-break time over the stream.",
+		adTimerInfoLabel: "About Ad Break Timer",
+		adTimerDetails:
+			"Off by default. Turn it on to show a small timer in the top-right corner of the stream during an ad break. It shows how long the break has been running and disappears when the break ends.",
+		adTimerFootnote:
+			"The timer shows elapsed time only. It does not predict when higher video quality will return. Ad blocking and playback work the same with the timer on or off.",
+		adTimerGotIt: "Got it",
 		autoplayBackup: "Low Quality Fallback",
 		autoplayBackupDesc:
 			"Enabled by default. Can start with a fast, ad-free autoplay stream, usually at 360p, then check for a verified higher-quality backup without reloading the player.",
@@ -116,6 +124,15 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"Esto genera solicitudes adicionales a Twitch y no bloquea anuncios por sí solo. Si desactivas esta opción, solo se dejan de enviar esas señales; el bloqueo de anuncios sigue funcionando con normalidad.",
 		adSpoofingGotIt: "Entendido",
+		adTimer: "Temporizador de anuncios",
+		adTimerDesc:
+			"Muestra el tiempo transcurrido de la pausa publicitaria sobre el directo.",
+		adTimerInfoLabel: "Acerca del temporizador de anuncios",
+		adTimerDetails:
+			"Desactivado de forma predeterminada. Actívalo para mostrar un pequeño temporizador en la esquina superior derecha del directo durante las pausas publicitarias. Indica cuánto tiempo ha pasado desde que empezó la pausa y desaparece cuando termina.",
+		adTimerFootnote:
+			"El temporizador solo muestra el tiempo transcurrido. No indica cuándo volverá una mayor calidad de vídeo. Activarlo o desactivarlo no cambia el bloqueo de anuncios ni la reproducción.",
+		adTimerGotIt: "Entendido",
 		autoplayBackup: "Respaldo de baja calidad",
 		autoplayBackupDesc:
 			"Activado por defecto. Puede empezar con un flujo de reproducción automática rápido y sin anuncios, normalmente a 360p, y después buscar un respaldo verificado de mayor calidad sin recargar el reproductor.",
@@ -221,6 +238,15 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"Cette option envoie des requêtes supplémentaires à Twitch et ne bloque pas les publicités à elle seule. Si vous la désactivez, seul l’envoi de ces signaux s’arrête ; le blocage des publicités continue de fonctionner normalement.",
 		adSpoofingGotIt: "Compris",
+		adTimer: "Chronomètre publicitaire",
+		adTimerDesc:
+			"Affiche le temps écoulé de la pause publicitaire sur le stream.",
+		adTimerInfoLabel: "À propos du chronomètre publicitaire",
+		adTimerDetails:
+			"Désactivé par défaut. Activez cette option pour afficher un petit chronomètre en haut à droite du stream pendant les pauses publicitaires. Il indique le temps écoulé depuis le début de la pause et disparaît à la fin de celle-ci.",
+		adTimerFootnote:
+			"Le chronomètre indique uniquement le temps écoulé. Il ne permet pas de savoir quand la qualité vidéo augmentera. Le blocage des publicités et la lecture fonctionnent de la même façon, que le chronomètre soit activé ou non.",
+		adTimerGotIt: "Compris",
 		autoplayBackup: "Secours basse qualité",
 		autoplayBackupDesc:
 			"Activée par défaut. TTV AB peut commencer par un flux de lecture automatique rapide et sans publicité, généralement en 360p, puis chercher un secours vérifié de meilleure qualité sans recharger le lecteur.",
@@ -333,6 +359,14 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"Dabei werden zusätzliche Anfragen an Twitch gesendet; die Funktion selbst blockiert keine Werbung. Wenn du sie deaktivierst, sendet TTV AB lediglich diese Meldungen nicht mehr. Die Werbeblockierung funktioniert wie gewohnt weiter.",
 		adSpoofingGotIt: "Verstanden",
+		adTimer: "Werbepausen-Timer",
+		adTimerDesc: "Zeigt die verstrichene Werbepausenzeit über dem Stream an.",
+		adTimerInfoLabel: "Über den Werbepausen-Timer",
+		adTimerDetails:
+			"Standardmäßig ausgeschaltet. Wenn du diese Option aktivierst, erscheint während einer Werbepause ein kleiner Timer oben rechts im Stream. Er zeigt, wie lange die Werbepause bereits läuft, und verschwindet, sobald sie endet.",
+		adTimerFootnote:
+			"Der Timer zeigt nur die verstrichene Zeit an. Er sagt nicht voraus, wann die Videoqualität wieder steigt. Werbeblockierung und Wiedergabe funktionieren gleich, egal ob der Timer ein- oder ausgeschaltet ist.",
+		adTimerGotIt: "Verstanden",
 		autoplayBackup: "Fallback geringer Qualität",
 		autoplayBackupDesc:
 			"Standardmäßig aktiviert. TTV AB kann zuerst einen schnellen, werbefreien Autoplay-Stream verwenden, meist in 360p, und danach ohne Neuladen des Players nach einem geprüften Backup mit besserer Qualität suchen.",
@@ -453,6 +487,15 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"Isso gera solicitações extras à Twitch e não bloqueia anúncios por conta própria. Ao desativar a opção, apenas esses sinais deixam de ser enviados; o bloqueio de anúncios continua funcionando normalmente.",
 		adSpoofingGotIt: "Entendi",
+		adTimer: "Temporizador de anúncios",
+		adTimerDesc:
+			"Mostra o tempo decorrido do intervalo de anúncios sobre a transmissão.",
+		adTimerInfoLabel: "Sobre o temporizador de anúncios",
+		adTimerDetails:
+			"Desativado por padrão. Ative esta opção para mostrar um pequeno temporizador no canto superior direito da transmissão durante os intervalos comerciais. Ele mostra quanto tempo passou desde o início do intervalo e desaparece quando ele termina.",
+		adTimerFootnote:
+			"O temporizador mostra apenas o tempo decorrido. Ele não indica quando a qualidade do vídeo vai melhorar. Ativá-lo ou desativá-lo não altera o bloqueio de anúncios nem a reprodução.",
+		adTimerGotIt: "Entendi",
 		autoplayBackup: "Reserva de baixa qualidade",
 		autoplayBackupDesc:
 			"Ativado por padrão. O TTV AB pode começar com um fluxo de reprodução automática rápido e sem anúncios, geralmente em 360p, e depois procurar uma fonte de reserva verificada e com melhor qualidade sem recarregar o player.",
@@ -558,6 +601,15 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"Questa opzione invia richieste aggiuntive a Twitch e non blocca gli annunci da sola. Se la disattivi, TTV AB smette soltanto di inviare questi segnali; il blocco degli annunci continua a funzionare normalmente.",
 		adSpoofingGotIt: "Capito",
+		adTimer: "Timer pubblicità",
+		adTimerDesc:
+			"Mostra il tempo trascorso della pausa pubblicitaria sullo stream.",
+		adTimerInfoLabel: "Informazioni sul timer pubblicità",
+		adTimerDetails:
+			"Disattivato per impostazione predefinita. Attiva questa opzione per mostrare un piccolo timer nell’angolo in alto a destra della diretta durante le pause pubblicitarie. Indica quanto tempo è trascorso dall’inizio della pausa e scompare quando finisce.",
+		adTimerFootnote:
+			"Il timer mostra solo il tempo trascorso. Non indica quando tornerà una qualità video più alta. Attivarlo o disattivarlo non cambia il blocco degli annunci né la riproduzione.",
+		adTimerGotIt: "Ho capito",
 		autoplayBackup: "Riserva a bassa qualità",
 		autoplayBackupDesc:
 			"Attivata per impostazione predefinita. TTV AB può iniziare con un rapido flusso autoplay senza pubblicità, di solito a 360p, e poi cercare una riserva verificata di qualità superiore senza ricaricare il player.",
@@ -663,6 +715,14 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"この機能により Twitch への追加リクエストが発生しますが、広告をブロックする機能ではありません。無効にしても停止するのはこれらの信号だけで、広告ブロックは通常どおり機能します。",
 		adSpoofingGotIt: "了解",
+		adTimer: "広告タイマー",
+		adTimerDesc: "配信上に広告休憩の経過時間を表示します。",
+		adTimerInfoLabel: "広告タイマーについて",
+		adTimerDetails:
+			"初期設定ではオフです。オンにすると、広告中は配信画面の右上に小さなタイマーが表示されます。広告が始まってからの経過時間を表示し、広告が終わると消えます。",
+		adTimerFootnote:
+			"表示されるのは経過時間だけで、画質が元に戻るまでの時間ではありません。タイマーのオン・オフは、広告ブロックや再生には影響しません。",
+		adTimerGotIt: "わかりました",
 		autoplayBackup: "低画質フォールバック",
 		autoplayBackupDesc:
 			"既定で有効です。広告のない高速な自動再生ストリーム（通常は 360p）から始め、プレーヤーを再読み込みせずに、確認済みのより高画質なバックアップを探します。",
@@ -779,6 +839,14 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"이 기능은 Twitch에 추가 요청을 보내지만 자체적으로 광고를 차단하지는 않습니다. 꺼도 이러한 신호만 중단되며 광고 차단은 계속 정상적으로 작동합니다.",
 		adSpoofingGotIt: "확인",
+		adTimer: "광고 타이머",
+		adTimerDesc: "방송 화면에 광고가 시작된 후 지난 시간을 표시합니다.",
+		adTimerInfoLabel: "광고 타이머 안내",
+		adTimerDetails:
+			"기본 설정은 꺼짐입니다. 켜면 광고가 나오는 동안 방송 화면 오른쪽 위에 작은 타이머가 표시됩니다. 광고가 시작된 후 얼마나 지났는지 보여 주며, 광고 시간이 끝나면 사라집니다.",
+		adTimerFootnote:
+			"타이머는 지난 시간만 표시하며, 화질이 언제 다시 좋아질지는 알려 주지 않습니다. 타이머를 켜거나 꺼도 광고 차단과 재생에는 영향을 주지 않습니다.",
+		adTimerGotIt: "확인",
 		autoplayBackup: "저화질 폴백",
 		autoplayBackupDesc:
 			"기본적으로 켜져 있습니다. 광고가 없는 빠른 자동 재생 스트림(보통 360p)으로 시작한 뒤, 플레이어를 새로고침하지 않고 검증된 더 높은 화질의 백업을 찾습니다.",
@@ -874,6 +942,14 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"此功能会向 Twitch 发出额外请求，本身并不负责拦截广告。关闭后只会停止发送这些信号，广告拦截仍会正常工作。",
 		adSpoofingGotIt: "知道了",
+		adTimer: "广告计时器",
+		adTimerDesc: "在直播画面上显示广告时段已持续的时间。",
+		adTimerInfoLabel: "关于广告计时器",
+		adTimerDetails:
+			"默认关闭。开启后，广告时段内会在直播画面右上角显示一个小计时器，告诉你广告已经持续了多久，并在广告时段结束后自动消失。",
+		adTimerFootnote:
+			"计时器只显示已经过去的时间，无法预测何时恢复较高画质。开启或关闭计时器都不会影响广告拦截和播放。",
+		adTimerGotIt: "知道了",
 		autoplayBackup: "低画质备选流",
 		autoplayBackupDesc:
 			"默认开启。可以先使用快速、无广告的自动播放流（通常为 360p），再寻找经过验证的更高画质备选流，无需重新加载播放器。",
@@ -957,6 +1033,14 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"此功能會向 Twitch 發出額外請求，本身並不負責攔截廣告。停用後只會停止傳送這些訊號，廣告攔截仍會正常運作。",
 		adSpoofingGotIt: "知道了",
+		adTimer: "廣告計時器",
+		adTimerDesc: "在直播畫面上顯示廣告時段已持續的時間。",
+		adTimerInfoLabel: "關於廣告計時器",
+		adTimerDetails:
+			"預設為關閉。開啟後，廣告時段內會在直播畫面右上角顯示一個小計時器，讓你知道廣告已經持續多久，並在廣告時段結束後自動消失。",
+		adTimerFootnote:
+			"計時器只顯示已經過的時間，無法預測何時恢復較高畫質。開啟或關閉計時器都不會影響廣告封鎖和播放。",
+		adTimerGotIt: "知道了",
 		autoplayBackup: "低畫質備選串流",
 		autoplayBackupDesc:
 			"預設開啟。可以先使用快速且無廣告的自動播放串流（通常為 360p），再尋找經過驗證的較高畫質備選串流，無須重新載入播放器。",
@@ -1040,6 +1124,15 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"При этом отправляются дополнительные запросы к Twitch; сама функция рекламу не блокирует. Если её отключить, перестанут отправляться только эти сигналы, а блокировка рекламы продолжит работать как обычно.",
 		adSpoofingGotIt: "Понятно",
+		adTimer: "Таймер рекламы",
+		adTimerDesc:
+			"Показывает прошедшее время рекламной паузы поверх трансляции.",
+		adTimerInfoLabel: "О таймере рекламы",
+		adTimerDetails:
+			"По умолчанию выключен. Включите эту опцию, чтобы во время рекламной паузы в правом верхнем углу трансляции появлялся небольшой таймер. Он показывает, сколько времени прошло с начала паузы, и исчезает, когда она заканчивается.",
+		adTimerFootnote:
+			"Таймер показывает только прошедшее время. Он не позволяет узнать, когда качество видео снова повысится. Эта опция не влияет на блокировку рекламы и воспроизведение.",
+		adTimerGotIt: "Понятно",
 		autoplayBackup: "Резерв низкого качества",
 		autoplayBackupDesc:
 			"По умолчанию включено. Сначала может использоваться быстрый поток без рекламы с автозапуском, обычно с качеством 360p, а затем без перезагрузки плеера ищется проверенный резерв лучшего качества.",
@@ -1160,6 +1253,15 @@ const TRANSLATIONS = {
 		adSpoofingFootnote:
 			"При цьому надсилаються додаткові запити до Twitch; сама функція рекламу не блокує. Якщо її вимкнути, припиниться лише надсилання цих сигналів, а блокування реклами продовжить працювати як завжди.",
 		adSpoofingGotIt: "Зрозуміло",
+		adTimer: "Таймер реклами",
+		adTimerDesc:
+			"Показує час, що минув від початку рекламної паузи, поверх трансляції.",
+		adTimerInfoLabel: "Про таймер реклами",
+		adTimerDetails:
+			"За замовчуванням вимкнено. Увімкніть цю опцію, щоб під час рекламної паузи у верхньому правому куті трансляції з’являвся невеликий таймер. Він показує, скільки часу минуло від початку паузи, і зникає, коли вона закінчується.",
+		adTimerFootnote:
+			"Таймер показує лише час, що минув. Він не дає змоги дізнатися, коли якість відео знову підвищиться. Ця опція не впливає на блокування реклами й відтворення.",
+		adTimerGotIt: "Зрозуміло",
 		autoplayBackup: "Резерв низької якості",
 		autoplayBackupDesc:
 			"За замовчуванням увімкнено. Спочатку може використовуватися швидкий потік без реклами з автовідтворенням, зазвичай із якістю 360p, а потім без перезавантаження програвача шукається перевірений резерв кращої якості.",

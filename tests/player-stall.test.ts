@@ -1938,6 +1938,7 @@ describe("fatal enhanced-media recovery during ads", () => {
 
 describe("_monitorPlayerBuffering active-ad player ownership", () => {
 	const replacedGlobals = [
+		"_updateAdTimerOverlay",
 		"_getPlayerAndState",
 		"_hasPendingAdResumeIntent",
 		"_isNativeDocumentHidden",
@@ -1991,6 +1992,18 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 		g._suppressCompetingMediaDuringAd = () => 0;
 		g._checkFatalAdMediaRecovery = vi.fn();
 		g._checkInAdPlayheadFreeze = () => {};
+	});
+
+	it("continues playback recovery and scheduling after an optional timer UI failure", () => {
+		g._updateAdTimerOverlay = () => {
+			throw new Error("overlay failed");
+		};
+		const checkFatal = g._checkFatalAdMediaRecovery as ReturnType<typeof vi.fn>;
+		expect(() => T<() => void>("_monitorPlayerBuffering")()).not.toThrow();
+		expect(checkFatal).toHaveBeenCalledWith(pagePlayer);
+		checkFatal.mockClear();
+		vi.advanceTimersByTime(600);
+		expect(checkFatal).toHaveBeenCalledWith(pagePlayer);
 	});
 
 	it("does not sample or rotate a dead off-route PiP worker", () => {

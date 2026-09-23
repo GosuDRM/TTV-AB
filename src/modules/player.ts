@@ -7203,6 +7203,9 @@ function _trackChannelWatchTime(isHidden) {
 function _monitorPlayerBuffering() {
 	function check() {
 		_playerBufferMonitorTimer = null;
+		try {
+			if (typeof _updateAdTimerOverlay === "function") _updateAdTimerOverlay();
+		} catch {}
 		let scheduledDelay = Number(__TTVAB_STATE__?.PlayerBufferingDelay) || 600;
 		try {
 			scheduledDelay = runCheck();

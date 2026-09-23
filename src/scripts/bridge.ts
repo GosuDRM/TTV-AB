@@ -442,6 +442,7 @@ const bridgeState = {
 	enabled: true,
 	adSpoofingEnabled: true,
 	autoplayBackupEnabled: true,
+	adTimerEnabled: false,
 	turboMode: false,
 	storedAdsCount: 0,
 };
@@ -449,6 +450,7 @@ const storageChangeVersions = {
 	ttvAdblockEnabled: 0,
 	ttvAdSpoofingEnabled: 0,
 	ttvAutoplayBackupEnabled: 0,
+	ttvAdTimerEnabled: 0,
 	ttvTurboMode: 0,
 	ttvAdsBlocked: 0,
 };
@@ -456,6 +458,7 @@ const INITIAL_STORAGE_KEYS = [
 	"ttvAdblockEnabled",
 	"ttvAdSpoofingEnabled",
 	"ttvAutoplayBackupEnabled",
+	"ttvAdTimerEnabled",
 	"ttvTurboMode",
 	"ttvAdsBlocked",
 ];
@@ -1095,6 +1098,9 @@ function broadcastState() {
 	sendToPage("ttvab-toggle-autoplay-backup", {
 		enabled: Boolean(bridgeState.autoplayBackupEnabled),
 	});
+	sendToPage("ttvab-toggle-ad-timer", {
+		enabled: bridgeState.adTimerEnabled === true,
+	});
 	sendToPage("ttvab-init-count", {
 		count: normalizeCount(bridgeState.storedAdsCount),
 	});
@@ -1274,6 +1280,16 @@ function handleStorageChanges(changes, namespace) {
 			});
 		}
 	}
+	if (changes.ttvAdTimerEnabled) {
+		storageChangeVersions.ttvAdTimerEnabled += 1;
+		const wasAdTimerEnabled = bridgeState.adTimerEnabled;
+		bridgeState.adTimerEnabled = changes.ttvAdTimerEnabled.newValue === true;
+		if (bridgeStateReady && bridgeState.adTimerEnabled !== wasAdTimerEnabled) {
+			sendToPage("ttvab-toggle-ad-timer", {
+				enabled: bridgeState.adTimerEnabled,
+			});
+		}
+	}
 	if (changes.ttvTurboMode) {
 		storageChangeVersions.ttvTurboMode += 1;
 		const wasTurboMode = bridgeState.turboMode;
@@ -1403,6 +1419,12 @@ function readInitialStorageState() {
 				bridgeState.autoplayBackupEnabled = normalizeDefaultEnabled(
 					result.ttvAutoplayBackupEnabled,
 				);
+			}
+			if (
+				storageChangeVersions.ttvAdTimerEnabled ===
+				readVersions.ttvAdTimerEnabled
+			) {
+				bridgeState.adTimerEnabled = result.ttvAdTimerEnabled === true;
 			}
 			if (storageChangeVersions.ttvTurboMode === readVersions.ttvTurboMode) {
 				bridgeState.turboMode = result.ttvTurboMode === true;
