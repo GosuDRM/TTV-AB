@@ -1,6 +1,7 @@
 // TTV AB - Player
 
 const _PlayerBufferState = {
+	videoRef: null as WeakRef<HTMLMediaElement> | null,
 	position: 0,
 	bufferedPosition: 0,
 	bufferDuration: 0,
@@ -876,6 +877,7 @@ function _resetPlayerBufferMonitorState(cooldownMs = 0) {
 			? Math.min(requestedCooldownMs, minRepeatDelay)
 			: requestedCooldownMs;
 
+	_PlayerBufferState.videoRef = null;
 	_PlayerBufferState.position = 0;
 	_PlayerBufferState.bufferedPosition = 0;
 	_PlayerBufferState.bufferDuration = 0;
@@ -7435,6 +7437,11 @@ function _monitorPlayerBuffering() {
 			hasPendingPostAdRecovery = false;
 		}
 
+		const playerAndState = _getPlayerAndState();
+		const currentPlayer =
+			playerAndState.player && playerAndState.state
+				? playerAndState.player
+				: null;
 		if (isHidden) {
 			if (
 				_PostAdRecoveryTransactionState.mediaKey &&
@@ -7446,19 +7453,9 @@ function _monitorPlayerBuffering() {
 				_clearCachedPlayerRef(false);
 				return nextDelay;
 			}
-			if (_cachedPlayerRefMediaKey !== currentMediaKey) {
-				_clearCachedPlayerRef(false);
-			}
-			let hiddenPlayer = _cachedPlayerRef?.player || null;
-			if (!hiddenPlayer) {
-				const fresh = _getPlayerAndState();
-				if (fresh.player && fresh.state) {
-					hiddenPlayer = fresh.player;
-				}
-			}
-			if (hiddenPlayer && !_isPlayerWorkerUnavailable(hiddenPlayer)) {
+			if (currentPlayer && !_isPlayerWorkerUnavailable(currentPlayer)) {
 				_checkHiddenCleanLiveStall(
-					hiddenPlayer,
+					currentPlayer,
 					__TTVAB_STATE__.PageChannel,
 					currentMediaKey,
 				);
@@ -7470,11 +7467,20 @@ function _monitorPlayerBuffering() {
 		}
 		_resetHiddenCleanLiveStallState();
 
-		if (_cachedPlayerRefMediaKey !== currentMediaKey) {
+		const currentVideo = currentPlayer?.getHTMLVideoElement?.() || null;
+		if (
+			_cachedPlayerRefMediaKey !== currentMediaKey ||
+			_cachedPlayerRef?.player !== currentPlayer ||
+			(_PlayerBufferState.videoRef?.deref() || null) !== currentVideo
+		) {
 			_clearCachedPlayerRef();
+			if (_cachedPrimaryMediaElement !== currentVideo) {
+				_clearCachedPrimaryMediaElement();
+			}
 		}
 
 		if (_cachedPlayerRef) {
+			_cachedPlayerRef = playerAndState;
 			try {
 				const player = _cachedPlayerRef.player;
 				const state = _cachedPlayerRef.state;
@@ -7708,11 +7714,14 @@ function _monitorPlayerBuffering() {
 		}
 
 		if (!_cachedPlayerRef) {
-			const playerAndState = _getPlayerAndState();
 			if (playerAndState.player && playerAndState.state) {
 				_syncPreferredQualityGroupThrottled();
 				_cachedPlayerRef = playerAndState;
 				_cachedPlayerRefMediaKey = currentMediaKey;
+				_PlayerBufferState.videoRef =
+					currentVideo instanceof HTMLMediaElement
+						? new WeakRef(currentVideo)
+						: null;
 				if (_PostAdRecoveryTransactionState.mediaKey) {
 					_tryRunPendingPostAdRecoveryOperation(
 						__TTVAB_STATE__.PageChannel,
