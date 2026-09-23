@@ -1323,6 +1323,41 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_hookWorkerFetch",
+			helper: "_getMediaPlaylistSessionKey",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_hasPlaylistAdMarkers",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_createRequestAbortError",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_parseAttrs",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_playlistHasKnownAdSegments",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_playlistHasMediaSegments",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
+			helper: "_absolutizePlaylistUrl",
+			source: hooksSource,
+		},
+		{
+			consumer: "_hookWorkerFetch",
 			helper: "_fetchWithTimeout",
 			source: hooksSource,
 		},
