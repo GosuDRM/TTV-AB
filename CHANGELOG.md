@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.1.3] - 2026-09-24
+
+Fixed
+
+- **HD Quality Options** - Retain HD options after Twitch returns a reduced quality list when the original streams still pass playback checks.
+- **Worker Recovery Prompt** - Avoid delaying the Refresh tab prompt after a worker crash just because a visible Twitch tab is unfocused. The underlying Twitch worker crash remains unresolved.
+
 ## [18.1.2] - 2026-09-24
 
 Fixed

@@ -75,6 +75,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.1.3 - 2026-09-24
+
+- **HD Quality Options** - Retain HD options after Twitch returns a reduced quality list when the original streams still pass playback checks.
+- **Worker Recovery Prompt** - Avoid delaying the Refresh tab prompt after a worker crash just because a visible Twitch tab is unfocused. The underlying Twitch worker crash remains unresolved.
+
 ### v18.1.2 - 2026-09-24
 
 - **Playback Recovery** - Follow Twitch's current player after replacements on the same channel, avoiding unnecessary reloads and missed stalls.
@@ -82,10 +87,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 ### v18.1.1 - 2026-09-23
 
 - **HD Quality Recovery** - Prevent Auto recovery from retaining only low-quality options after prolonged reduced-quality playback and slow HD checks.
-
-### v18.1.0 - 2026-09-23
-
-- **Ad Break Timer** - Add an optional, unobtrusive timer in the stream's top-right corner showing elapsed ad-break time. Disabled by default; enable it in the popup.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
