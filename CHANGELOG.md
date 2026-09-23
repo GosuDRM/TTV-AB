@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.1.0] - 2026-09-23
+
+Added
+
+- **Ad Break Timer** - Add an optional, unobtrusive timer in the stream's top-right corner showing elapsed ad-break time. Disabled by default; enable it in the popup.
+
 ## [18.0.8] - 2026-09-23
 
 Fixed
