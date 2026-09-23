@@ -644,6 +644,7 @@ function _initToggleListener() {
 			return;
 		}
 		__TTVAB_STATE__.IsAdStrippingEnabled = enabled;
+		if (!enabled) _clearAdTimerOverlay();
 		if (typeof _setIndependentVideoAdGuardEnabled === "function") {
 			_setIndependentVideoAdGuardEnabled(enabled);
 		}
@@ -765,6 +766,12 @@ function _initToggleListener() {
 		);
 	});
 
+	_onInternalMessage("ttvab-toggle-ad-timer", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (typeof safeDetail?.enabled !== "boolean") return;
+		_setAdTimerEnabled(safeDetail.enabled);
+	});
+
 	_onInternalMessage("ttvab-toggle-debug", (detail) => {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
@@ -789,7 +796,10 @@ function _initToggleListener() {
 }
 
 function _hookSpaNavigation() {
-	const sync = () => _syncPagePlaybackContext({ broadcast: true });
+	const sync = () => {
+		_syncPagePlaybackContext({ broadcast: true });
+		_clearAdTimerOverlay();
+	};
 	const originalPushState = history.pushState;
 	const hookedPushState = function (...args) {
 		const result = originalPushState.apply(this, args);
@@ -812,6 +822,7 @@ function _hookSpaNavigation() {
 	};
 	const uninstall = () => {
 		if (!isHooked) return;
+		_clearAdTimerOverlay();
 		window.removeEventListener("popstate", sync);
 		history.pushState = originalPushState;
 		history.replaceState = originalReplaceState;

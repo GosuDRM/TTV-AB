@@ -509,12 +509,14 @@ const _POPUP_TOGGLE_NAMES = [
     "adblock",
     "adSpoofing",
     "autoplayBackup",
+    "adTimer",
     "turbo",
 ];
 const _POPUP_TOGGLE_STORAGE_KEYS = {
     adblock: "ttvAdblockEnabled",
     adSpoofing: "ttvAdSpoofingEnabled",
     autoplayBackup: "ttvAutoplayBackupEnabled",
+    adTimer: "ttvAdTimerEnabled",
     turbo: "ttvTurboMode",
 };
 const _POPUP_TOGGLE_READ_RETRY_DELAYS = [100, 300, 1000];
@@ -526,30 +528,35 @@ function _createPopupToggleController(options) {
         adblock: true,
         adSpoofing: true,
         autoplayBackup: true,
+        adTimer: false,
         turbo: false,
     };
     const revisions = {
         adblock: 0,
         adSpoofing: 0,
         autoplayBackup: 0,
+        adTimer: 0,
         turbo: 0,
     };
     const writeSequences = {
         adblock: 0,
         adSpoofing: 0,
         autoplayBackup: 0,
+        adTimer: 0,
         turbo: 0,
     };
     const pending = {
         adblock: false,
         adSpoofing: false,
         autoplayBackup: false,
+        adTimer: false,
         turbo: false,
     };
     const writeTimeoutTimers = {
         adblock: null,
         adSpoofing: null,
         autoplayBackup: null,
+        adTimer: null,
         turbo: null,
     };
     const schedule = options.schedule || setTimeout;
@@ -573,12 +580,15 @@ function _createPopupToggleController(options) {
                     values.adblock &&
                     !pending.adblock &&
                     !pending.autoplayBackup,
+                adTimer: ready && values.adblock && !pending.adblock && !pending.adTimer,
                 turbo: ready && !pending.turbo,
             },
         };
     }
     function normalizeValue(name, value) {
-        return name === "turbo" ? value === true : value !== false;
+        return name === "turbo" || name === "adTimer"
+            ? value === true
+            : value !== false;
     }
     function render() {
         options.render(snapshot());
@@ -682,7 +692,7 @@ function _createPopupToggleController(options) {
     function write(name, enabled) {
         if (!_POPUP_TOGGLE_NAMES.includes(name))
             return false;
-        const requiresAdblock = name === "adSpoofing" || name === "autoplayBackup";
+        const requiresAdblock = name === "adSpoofing" || name === "autoplayBackup" || name === "adTimer";
         if (!ready || pending[name] || (requiresAdblock && !values.adblock)) {
             render();
             return false;
@@ -782,6 +792,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const infoText = document.getElementById("infoText");
     const adSpoofingToggle = document.getElementById("adSpoofingToggle");
     const autoplayBackupToggle = document.getElementById("autoplayBackupToggle");
+    const adTimerToggle = document.getElementById("adTimerToggle");
+    const adTimerInfoIcon = document.getElementById("adTimerInfoIcon");
+    const adTimerTooltip = document.getElementById("adTimerTooltip");
+    const adTimerModalClose = document.getElementById("adTimerModalClose");
     const turboModeToggle = document.getElementById("turboModeToggle");
     const turboModeDescription = document.getElementById("turboModeDescription");
     const statusCounters = document.getElementById("statusCounters");
@@ -837,6 +851,10 @@ document.addEventListener("DOMContentLoaded", () => {
         infoText,
         adSpoofingToggle,
         autoplayBackupToggle,
+        adTimerToggle,
+        adTimerInfoIcon,
+        adTimerTooltip,
+        adTimerModalClose,
         turboModeToggle,
         turboModeDescription,
         statusCounters,
@@ -1084,6 +1102,11 @@ document.addEventListener("DOMContentLoaded", () => {
         toggle.setAttribute("aria-label", String(t.adBlocking ?? "Ad Blocking"));
         adSpoofingToggle.setAttribute("aria-label", String(t.adSpoofing ?? "Ad Spoofing"));
         autoplayBackupToggle.setAttribute("aria-label", String(t.autoplayBackup ?? "Low Quality Fallback"));
+        adTimerToggle.setAttribute("aria-label", String(t.adTimer ?? "Ad Break Timer"));
+        adTimerToggle.title = String(t.adTimerDesc ?? "Shows elapsed ad-break time over the stream.");
+        const adTimerInfoLabel = String(t.adTimerInfoLabel ?? "About Ad Break Timer");
+        adTimerInfoIcon.title = adTimerInfoLabel;
+        adTimerInfoIcon.setAttribute("aria-label", adTimerInfoLabel);
         achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
         footerText.textContent = String(t.footerBy ?? " — by ");
         const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
@@ -1246,6 +1269,9 @@ document.addEventListener("DOMContentLoaded", () => {
     window.addEventListener("keydown", (event) => {
         if (event.key !== "Escape")
             return;
+        if (!adTimerTooltip.hidden) {
+            setAdTimerModalVisible(false);
+        }
         if (!isLogExportPage && !logDialogOverlay.hidden) {
             hideLogDialog(true);
         }
@@ -2190,12 +2216,15 @@ document.addEventListener("DOMContentLoaded", () => {
         toggle.checked = snapshot.values.adblock;
         adSpoofingToggle.checked = snapshot.values.adSpoofing;
         autoplayBackupToggle.checked = snapshot.values.autoplayBackup;
+        adTimerToggle.checked = snapshot.values.adTimer;
         turboModeToggle.checked = snapshot.values.turbo;
         toggle.disabled = !snapshot.available.adblock;
         adSpoofingToggle.disabled = !snapshot.available.adSpoofing;
         autoplayBackupToggle.disabled = !snapshot.available.autoplayBackup;
+        adTimerToggle.disabled = !snapshot.available.adTimer;
         turboModeToggle.disabled = !snapshot.available.turbo;
         setToggleRowOpacity(adSpoofingToggle, snapshot.available.adSpoofing);
+        setToggleRowOpacity(adTimerToggle, snapshot.available.adTimer);
         setToggleRowOpacity(autoplayBackupToggle, snapshot.available.autoplayBackup);
         if (snapshot.ready && toggleStatusReady) {
             updateStatus(snapshot.values.adblock, false);
@@ -2246,6 +2275,34 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     turboModeToggle.addEventListener("change", () => {
         popupToggleController.write("turbo", turboModeToggle.checked);
+    });
+    adTimerToggle.addEventListener("change", () => {
+        popupToggleController.write("adTimer", adTimerToggle.checked);
+    });
+    function setAdTimerModalVisible(visible) {
+        adTimerTooltip.hidden = !visible;
+        adTimerTooltip.classList.toggle("visible", visible);
+        adTimerInfoIcon.setAttribute("aria-expanded", String(visible));
+        if (visible)
+            adTimerModalClose.focus();
+        else
+            adTimerInfoIcon.focus();
+    }
+    adTimerInfoIcon.addEventListener("click", () => {
+        setAdTimerModalVisible(adTimerTooltip.hidden);
+    });
+    adTimerModalClose.addEventListener("click", () => {
+        setAdTimerModalVisible(false);
+    });
+    adTimerTooltip.addEventListener("click", (event) => {
+        if (event.target === adTimerTooltip)
+            setAdTimerModalVisible(false);
+    });
+    adTimerTooltip.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab")
+            return;
+        event.preventDefault();
+        adTimerModalClose.focus();
     });
     const adSpoofingInfoIcon = document.getElementById("adSpoofingInfoIcon");
     const adSpoofingTooltip = document.getElementById("adSpoofingTooltip");
@@ -2462,6 +2519,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         else if (transientStatusType === "autoplayBackup") {
             label = translations.autoplayBackup;
+        }
+        else if (transientStatusType === "adTimer") {
+            label = translations.adTimer;
         }
         else {
             label = translations.adBlocking;

@@ -743,6 +743,18 @@
             background: rgba(145, 70, 255, 0.35);
         }
 
+        #adTimerInfoIcon {
+            border: none;
+            padding: 0;
+            font-family: inherit;
+            vertical-align: middle;
+        }
+
+        #adTimerInfoIcon:focus-visible {
+            outline: 2px solid currentColor;
+            outline-offset: 2px;
+        }
+
         /* Modal overlay */
         .modal-overlay {
             display: none;
@@ -772,6 +784,11 @@
             line-height: 1.5;
             box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
             text-align: center;
+        }
+
+        :where(#adTimerTooltip) .modal-box {
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
         }
 
         .modal-box p {
@@ -2388,6 +2405,10 @@
                 margin-top: 10px;
             }
 
+            .toggle-row {
+                padding-block: 3px;
+            }
+
             .report-bug {
                 margin-top: 10px;
             }
@@ -2647,6 +2668,18 @@
                 <span class="slider"></span>
             </label>
         </div>
+        <div class="toggle-row">
+            <div class="toggle-label-row">
+                <label class="toggle-label" for="adTimerToggle" data-i18n="adTimer">Ad Break Timer</label>
+                <button type="button" class="info-icon" id="adTimerInfoIcon" aria-label="About Ad Break Timer"
+                    aria-haspopup="dialog" aria-controls="adTimerTooltip" aria-expanded="false">i</button>
+            </div>
+            <label class="toggle">
+                <input type="checkbox" id="adTimerToggle" disabled aria-label="Ad Break Timer"
+                    title="Shows elapsed ad-break time over the stream.">
+                <span class="slider"></span>
+            </label>
+        </div>
     </div>
 
     <div class="info" id="infoText">
@@ -2784,6 +2817,15 @@
             <p data-i18n="autoplayBackupDesc">Enabled by default. Can start with a fast, ad-free autoplay stream, usually at 360p, then check for a verified higher-quality backup without reloading the player.</p>
             <p data-i18n="autoplayBackupWarning">Turning it off skips new autoplay backups during normal Twitch playback, so ad transitions may take longer or briefly interrupt playback. Other backups may still be lower quality.</p>
             <button type="button" class="modal-close" id="autoplayBackupModalClose" data-i18n="autoplayBackupGotIt">Got it</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="adTimerTooltip" hidden>
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="adTimerModalTitle">
+            <p><strong id="adTimerModalTitle" data-i18n="adTimer">Ad Break Timer</strong></p>
+            <p data-i18n="adTimerDetails">Off by default. Turn it on to show a small timer in the top-right corner of the stream during an ad break. It shows how long the break has been running and disappears when the break ends.</p>
+            <p data-i18n="adTimerFootnote">The timer shows elapsed time only. It does not predict when higher video quality will return. Ad blocking and playback work the same with the timer on or off.</p>
+            <button type="button" class="modal-close" id="adTimerModalClose" data-i18n="adTimerGotIt">Got it</button>
         </div>
     </div>
 

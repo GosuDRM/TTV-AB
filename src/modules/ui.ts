@@ -21,6 +21,96 @@ type UiFlags = {
 	achievementRemoveTimer: ReturnType<typeof setTimeout> | null;
 };
 
+let _adTimerEnabled = false;
+
+function _setAdTimerEnabled(enabled) {
+	_adTimerEnabled = enabled === true;
+	_updateAdTimerOverlay();
+}
+
+function _clearAdTimerOverlay() {
+	try {
+		document.getElementById("ttvab-ad-timer")?.remove();
+	} catch {}
+}
+
+function _updateAdTimerOverlay() {
+	try {
+		const state = __TTVAB_STATE__;
+		const mediaKey = _normalizeMediaKey(state?.CurrentAdMediaKey);
+		const cycleStartedAt = Number(
+			state?.AdPodProgressByMediaKey?.[mediaKey]?.cycleStartedAt,
+		);
+		const now = Date.now();
+		if (
+			!_adTimerEnabled ||
+			state?.IsAdStrippingEnabled !== true ||
+			!mediaKey ||
+			mediaKey !== _normalizeMediaKey(state.PageMediaKey) ||
+			!Number.isFinite(cycleStartedAt) ||
+			cycleStartedAt <= 0 ||
+			cycleStartedAt > now ||
+			!document.body
+		) {
+			_clearAdTimerOverlay();
+			return;
+		}
+		const { player, state: playerState } = _getPlayerAndState();
+		const content = playerState?.props?.content;
+		const playerContext = _normalizePlaybackContext({
+			MediaType: content?.type,
+			ChannelName: content?.channelLogin,
+			VodID: content?.vodID,
+		});
+		const video = player?.getHTMLVideoElement?.();
+		const fullscreen = document.fullscreenElement;
+		if (
+			playerContext.MediaKey !== mediaKey ||
+			!(video instanceof HTMLVideoElement) ||
+			!video.isConnected ||
+			document.pictureInPictureElement === video ||
+			(fullscreen && (fullscreen === video || !fullscreen.contains(video)))
+		) {
+			_clearAdTimerOverlay();
+			return;
+		}
+		const rect = video.getBoundingClientRect();
+		const visibility = window.getComputedStyle(video).visibility;
+		if (
+			visibility === "hidden" ||
+			visibility === "collapse" ||
+			rect.width < 220 ||
+			rect.height < 80 ||
+			rect.top < 0 ||
+			rect.top + 40 > window.innerHeight ||
+			rect.right <= 0 ||
+			rect.left >= window.innerWidth
+		) {
+			_clearAdTimerOverlay();
+			return;
+		}
+		let overlay = document.getElementById("ttvab-ad-timer");
+		if (!overlay) {
+			overlay = document.createElement("div");
+			overlay.id = "ttvab-ad-timer";
+			overlay.setAttribute("role", "timer");
+			overlay.setAttribute("aria-live", "off");
+			overlay.style.cssText =
+				"position:fixed;z-index:2147483646;pointer-events:none;user-select:none;padding:5px 9px;border-radius:5px;background:rgba(14,14,16,.72);color:#efeff1;font:12px/1.4 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;max-width:calc(100vw - 24px);overflow:hidden";
+		}
+		const host = fullscreen || document.body;
+		if (overlay.parentElement !== host) host.appendChild(overlay);
+		overlay.style.top = `${rect.top + 12}px`;
+		overlay.style.right = `${Math.max(0, window.innerWidth - rect.right) + 12}px`;
+		const seconds = Math.floor((now - cycleStartedAt) / 1000);
+		const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+		const text = `Ad break · ${elapsed} elapsed`;
+		if (overlay.textContent !== text) overlay.textContent = text;
+	} catch {
+		_clearAdTimerOverlay();
+	}
+}
+
 function _getUiStorageItem(key) {
 	try {
 		return localStorage.getItem(key);

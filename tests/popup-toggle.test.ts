@@ -145,6 +145,63 @@ afterEach(() => {
 });
 
 describe("popup toggle authority", () => {
+	it("keeps the timer opt-in, saves its setting, and preserves newer changes", () => {
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({});
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
+		expect(harness.controller.write("adTimer", true)).toBe(true);
+		expect(harness.writes[0]).toEqual(
+			expect.objectContaining({
+				storageKey: "ttvAdTimerEnabled",
+				enabled: true,
+			}),
+		);
+		harness.controller.applyStorageChanges({
+			ttvAdTimerEnabled: { newValue: false },
+		});
+		harness.writes[0].finish(null);
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
+		harness.controller.applyStorageChanges({
+			ttvAdTimerEnabled: { newValue: true },
+			ttvAdblockEnabled: { newValue: false },
+		});
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(true);
+		expect(harness.controller.getSnapshot().available.adTimer).toBe(false);
+		expect(harness.controller.write("adTimer", false)).toBe(false);
+		harness.controller.applyStorageChanges({
+			ttvAdblockEnabled: { newValue: true },
+		});
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(true);
+		expect(harness.controller.getSnapshot().available.adTimer).toBe(true);
+		harness.controller.applyStorageChanges({
+			ttvAdTimerEnabled: { newValue: undefined },
+		});
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
+	});
+
+	it("serializes timer writes and ignores an older completion after the next toggle", () => {
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({});
+		expect(harness.controller.write("adTimer", true)).toBe(true);
+		expect(harness.controller.getSnapshot().available.adTimer).toBe(false);
+		expect(harness.controller.write("adTimer", false)).toBe(false);
+		expect(harness.writes).toHaveLength(1);
+		harness.controller.applyStorageChanges({
+			ttvAdTimerEnabled: { newValue: true },
+		});
+		expect(harness.controller.write("adTimer", false)).toBe(true);
+		harness.writes[0].finish("late failure");
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
+		expect(harness.controller.getSnapshot().pending.adTimer).toBe(true);
+		expect(harness.writeErrors).toEqual([]);
+		harness.writes[1].finish(null);
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
+		expect(harness.controller.getSnapshot().available.adTimer).toBe(true);
+		expect(harness.successes).toEqual([{ name: "adTimer", enabled: false }]);
+	});
+
 	it("keeps controls unavailable and preserves events newer than the initial read", () => {
 		const harness = makeHarness();
 
@@ -156,6 +213,7 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: false,
+					adTimer: false,
 					turbo: false,
 				},
 			}),
@@ -176,12 +234,14 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: true,
+					adTimer: false,
 					turbo: false,
 				},
 				available: {
 					adblock: true,
 					adSpoofing: false,
 					autoplayBackup: false,
+					adTimer: false,
 					turbo: true,
 				},
 			}),
@@ -209,6 +269,7 @@ describe("popup toggle authority", () => {
 			adblock: true,
 			adSpoofing: true,
 			autoplayBackup: true,
+			adTimer: false,
 			turbo: false,
 		});
 	});
@@ -225,6 +286,7 @@ describe("popup toggle authority", () => {
 					adblock: true,
 					adSpoofing: false,
 					autoplayBackup: false,
+					adTimer: false,
 					turbo: true,
 				}),
 			}),
@@ -262,6 +324,7 @@ describe("popup toggle authority", () => {
 			adblock: false,
 			adSpoofing: true,
 			autoplayBackup: true,
+			adTimer: false,
 			turbo: false,
 		});
 		expect(snapshot.available.autoplayBackup).toBe(false);
@@ -335,6 +398,7 @@ describe("popup toggle authority", () => {
 			adblock: false,
 			adSpoofing: false,
 			autoplayBackup: false,
+			adTimer: false,
 			turbo: true,
 		});
 
@@ -343,6 +407,7 @@ describe("popup toggle authority", () => {
 			adblock: true,
 			adSpoofing: true,
 			autoplayBackup: true,
+			adTimer: true,
 			turbo: true,
 		});
 	});
@@ -360,6 +425,7 @@ describe("popup toggle authority", () => {
 			adblock: false,
 			adSpoofing: false,
 			autoplayBackup: false,
+			adTimer: false,
 			turbo: false,
 		});
 		expect(harness.writeErrors).toEqual([
@@ -394,6 +460,7 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: false,
+					adTimer: false,
 					turbo: false,
 				},
 			}),
@@ -490,6 +557,7 @@ describe("popup toggle authority", () => {
 			"enableToggle",
 			"adSpoofingToggle",
 			"autoplayBackupToggle",
+			"adTimerToggle",
 			"turboModeToggle",
 		]) {
 			expect(html).toMatch(

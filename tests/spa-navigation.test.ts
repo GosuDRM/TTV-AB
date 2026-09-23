@@ -24,6 +24,7 @@ function loadModule(modulePath: string) {
 beforeAll(() => {
 	loadModule("../dist/src/modules/logger.js");
 	loadModule("../dist/src/modules/init.js");
+	loadModule("../dist/src/modules/ui.js");
 });
 
 beforeEach(() => {
