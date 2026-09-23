@@ -75,6 +75,10 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.1.1 - 2026-09-23
+
+- **HD Quality Recovery** - Prevent Auto recovery from retaining only low-quality options after prolonged reduced-quality playback and slow HD checks.
+
 ### v18.1.0 - 2026-09-23
 
 - **Ad Break Timer** - Add an optional, unobtrusive timer in the stream's top-right corner showing elapsed ad-break time. Disabled by default; enable it in the popup.
@@ -83,13 +87,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 - **Navigation Recovery** - Cancel outdated recovery after channel or VOD navigation, including returning to the same stream, while preserving active Picture-in-Picture playback.
 - **Background Playback** - Avoid unnecessary recovery when the video restarts or seeks backward, while still recovering genuine stalls.
-
-### v18.0.7 - 2026-09-23
-
-- **Backup Diagnostics** - Report backup quality and session changes without repeating unchanged playlist polls.
-- **Recovery Diagnostics** - Include recovery stages, stream ownership, and retry counts in console logs.
-- **Recovery Confirmation** - Distinguish verified video advancement from recovery confirmed only by playhead progress.
-- **Worker Diagnostics** - Report successful playback interception only after the worker hook is installed.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

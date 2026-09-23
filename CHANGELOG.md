@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.1.1] - 2026-09-23
+
+Fixed
+
+- **HD Quality Recovery** - Prevent Auto recovery from retaining only low-quality options after prolonged reduced-quality playback and slow HD checks.
+
 ## [18.1.0] - 2026-09-23
 
 Added
