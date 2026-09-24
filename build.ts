@@ -1772,6 +1772,46 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_isBackupProbationCurrent",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isBackupProbationCurrent",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_isBackupProbationDue",
+			helper: "_isBackupProbationCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_isBackupProbationDue",
+			helper: "_isBackupPlayerRetryCoolingDown",
+			source: processorSource,
+		},
+		{
+			consumer: "_getPendingForegroundQualityProbeAt",
+			helper: "_isBackupProbationDue",
+			source: processorSource,
+		},
+		{
+			consumer: "_startPendingBackupQualityProbe",
+			helper: "_isBackupProbationDue",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_isBackupProbationDue",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_isBackupProbationCurrent",
+			source: processorSource,
+		},
+		{
 			consumer: "_getPendingForegroundQualityProbeAt",
 			helper: "_normalizeMediaKey",
 			source: processorSource,
@@ -1782,23 +1822,28 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
-			consumer: "_startForegroundQualityProbe",
+			consumer: "_startPendingBackupQualityProbe",
 			helper: "_getPendingForegroundQualityProbeAt",
 			source: processorSource,
 		},
 		{
-			consumer: "_startForegroundQualityProbe",
+			consumer: "_startPendingBackupQualityProbe",
 			helper: "_findBackupStream",
 			source: processorSource,
 		},
 		{
+			consumer: "_startPendingBackupQualityProbe",
+			helper: "_log",
+			source: processorSource,
+		},
+		{
 			consumer: "_processM3U8Core",
 			helper: "_getPendingForegroundQualityProbeAt",
 			source: processorSource,
 		},
 		{
 			consumer: "_processM3U8Core",
-			helper: "_startForegroundQualityProbe",
+			helper: "_startPendingBackupQualityProbe",
 			source: processorSource,
 		},
 		{
