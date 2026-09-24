@@ -5642,8 +5642,10 @@ function _hookWorker() {
                 ${_getNativeRecoveryMaster.toString()}
                 ${_refreshNativeRecoveryMaster.toString()}
                 ${_resolveAdBackupTargetResolution.toString()}
+				${_isBackupProbationCurrent.toString()}
+				${_isBackupProbationDue.toString()}
 				${_getPendingForegroundQualityProbeAt.toString()}
-				${_startForegroundQualityProbe.toString()}
+				${_startPendingBackupQualityProbe.toString()}
 				${_recordSustainedNativeResolution.toString()}
 					${_resetNativeRecoveryCandidateState.toString()}
 					${_isExactNativeRecoveryCandidateOwned.toString()}

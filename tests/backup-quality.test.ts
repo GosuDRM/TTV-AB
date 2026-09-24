@@ -126,7 +126,269 @@ function setup(codec: string) {
 	return { context, info, state, fetch, tokens };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+	vi.restoreAllMocks();
+	vi.useRealTimers();
+});
+
+function setupProbation() {
+	let now = 1_000_000;
+	vi.spyOn(Date, "now").mockImplementation(() => now);
+	const fixture = setup("avc1.640033");
+	const { info, state } = fixture;
+	Object.assign(state, {
+		CurrentAdMediaKey: info.MediaKey,
+		CurrentAdChannel: info.ChannelName,
+		DisableAutoplayBackup: false,
+		BackupPlayerTypes: ["site", "autoplay"],
+	});
+	Object.assign(info, {
+		IsShowingAd: true,
+		IsUsingBackupStream: true,
+		VisibleAdStartedAt: 991_000,
+		ActiveBackupPlayerType: "autoplay",
+		ActiveBackupResolution: "640x360",
+		LastCleanBackupPlayerType: "autoplay",
+		LastCleanBackupResolution: "640x360",
+		LastCleanBackupCodec: "avc1.640033",
+		LastCleanBackupCodecFamily: "avc",
+		LastCleanBackupM3U8: media("autoplay", 360),
+		LastCleanBackupAt: 999_000,
+		_LqHoldStartAt: 940_000,
+	});
+	info.BackupEncodingsM3U8Cache.autoplay = {
+		m3u8: master("autoplay", "avc1.640033"),
+		baseUrl: info.UsherBaseUrl,
+	};
+	const poll = (ad = true) =>
+		fixture.context._processM3U8(
+			nativeUrl(1080),
+			media("native", 1080, 500, ad),
+			fixture.fetch,
+		);
+	const siteRequests = () =>
+		fixture.fetch.mock.calls.filter(([url]) => String(url).includes("/site/"));
+	return {
+		...fixture,
+		poll,
+		siteRequests,
+		advance: (ms: number) => {
+			now += ms;
+		},
+	};
+}
+
+describe("HD backup probation through playlist polling", () => {
+	it.each([false, true])(
+		"completes the second HD check after 1.5 seconds with fallback disabled=%s",
+		async (disabled) => {
+			const f = setupProbation();
+			await f.poll();
+			expect(f.info._BackupProbation).toMatchObject({
+				type: "site",
+				cleanChecks: 1,
+			});
+			expect(f.siteRequests()).toHaveLength(1);
+			f.state.DisableAutoplayBackup = disabled;
+			f.advance(1_499);
+			await f.poll();
+			expect(f.siteRequests()).toHaveLength(1);
+			f.advance(1);
+			expect(await f.poll()).toContain("/site/1080/");
+			expect(f.siteRequests()).toHaveLength(2);
+			expect(f.info.ActiveBackupPlayerType).toBe("site");
+		},
+	);
+
+	it("continues probation while clean native polls still wait for ad-end proof", async () => {
+		const f = setupProbation();
+		await f.poll();
+		f.advance(1_600);
+		const held = await f.poll(false);
+		expect(held).toContain("/autoplay/360/");
+		await f.info._BackupSearchPromise;
+		expect(f.siteRequests()).toHaveLength(2);
+		expect(f.info.LastCleanBackupPlayerType).toBe("site");
+	});
+
+	it("requires a new first check when the selected HD variant changes", async () => {
+		const f = setupProbation();
+		await f.poll();
+		f.advance(1_600);
+		f.state.PreferredQualityGroup = "1440p60";
+		const result = await f.context._findBackupStream(
+			f.info,
+			f.fetch,
+			0,
+			f.info.ResolutionList[0],
+		);
+		expect(result.type).toBe("autoplay");
+		expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+		expect(f.info._BackupProbation.at).toBe(1_001_600);
+	});
+
+	it.each(["cycle", "epoch", "page generation", "page media", "cache"])(
+		"discards the first check after a change of %s",
+		async (change) => {
+			const f = setupProbation();
+			await f.poll();
+			f.advance(1_600);
+			if (change === "cycle") f.info.VisibleAdStartedAt++;
+			if (change === "epoch") f.info.BackupSearchEpoch++;
+			if (change === "page generation") f.state.PagePlaybackContextGeneration++;
+			if (change === "page media") f.state.PageMediaKey = "live:other";
+			if (change === "cache") {
+				f.info.BackupEncodingsM3U8Cache.site = {
+					...f.info.BackupEncodingsM3U8Cache.site,
+				};
+			}
+			expect(f.context._isBackupProbationDue(f.info)).toBe(false);
+			const result = await f.context._findBackupStream(f.info, f.fetch);
+			expect(result.type).toBe("autoplay");
+			expect(f.info._BackupProbation).toMatchObject({
+				at: 1_001_600,
+				cleanChecks: 1,
+			});
+		},
+	);
+
+	it.each(["ad", "gap", "HTTP error", "network error"])(
+		"rejects a %s on the second check and retains the search cooldown",
+		async (failure) => {
+			const f = setupProbation();
+			await f.poll();
+			f.advance(1_600);
+			const originalFetch = f.fetch.getMockImplementation();
+			if (!originalFetch) throw new Error("Missing network fixture");
+			f.fetch.mockImplementation(async (url, options) => {
+				if (!String(url).includes("/site/")) return originalFetch(url, options);
+				if (failure === "network error") throw new Error("offline");
+				if (failure === "HTTP error")
+					return new Response("unavailable", { status: 503 });
+				return new Response(
+					failure === "ad"
+						? media("site", 1080, 401, true)
+						: media("site", 1080, 401).replace(
+								"#EXTINF",
+								"#EXT-X-GAP\n#EXTINF",
+							),
+				);
+			});
+			expect(await f.poll()).toContain("/autoplay/360/");
+			expect(f.info._BackupProbation).toBeNull();
+			const requests = f.siteRequests().length;
+			f.advance(2_100);
+			await f.poll();
+			expect(f.siteRequests()).toHaveLength(requests);
+			expect(f.info.ActiveBackupPlayerType).toBe("autoplay");
+		},
+	);
+
+	it("coalesces overlapping second checks while refreshing the bridge", async () => {
+		const f = setupProbation();
+		await f.poll();
+		f.advance(1_600);
+		const entered = deferred();
+		const release = deferred();
+		const originalFetch = f.fetch.getMockImplementation();
+		if (!originalFetch) throw new Error("Missing network fixture");
+		f.fetch.mockImplementation(async (url, options) => {
+			if (String(url).includes("/site/")) {
+				entered.resolve();
+				await release.promise;
+			}
+			return originalFetch(url, options);
+		});
+		const pending = f.poll();
+		await entered.promise;
+		expect(await f.poll()).toContain("/autoplay/360/");
+		expect(f.siteRequests()).toHaveLength(2);
+		release.resolve();
+		expect(await pending).toContain("/site/1080/");
+		expect(f.info._BackupSearchPromises.size).toBe(0);
+	});
+
+	it("does not count rapid repeat checks toward the extra probation after a flip", async () => {
+		const f = setupProbation();
+		f.info._BackupPinFlipCount = 1;
+		await f.poll();
+		for (let i = 0; i < 3; i++) {
+			f.advance(100);
+			await f.context._findBackupStream(f.info, f.fetch);
+		}
+		expect(f.info._BackupProbation.cleanChecks).toBe(1);
+		f.advance(1_200);
+		await f.poll();
+		expect(f.info._BackupProbation).toMatchObject({
+			at: 1_001_500,
+			cleanChecks: 2,
+		});
+		await f.context._findBackupStream(f.info, f.fetch);
+		expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+		f.advance(1_500);
+		expect(await f.poll()).toContain("/site/1080/");
+	});
+
+	it.each(["cycle", "epoch", "page generation", "abort"])(
+		"rejects a delayed second check after %s changes",
+		async (change) => {
+			const f = setupProbation();
+			await f.poll();
+			f.advance(1_600);
+			const entered = deferred();
+			const release = deferred();
+			const originalFetch = f.fetch.getMockImplementation();
+			if (!originalFetch) throw new Error("Missing network fixture");
+			f.info._AdCycleRequestController = new AbortController();
+			f.fetch.mockImplementation(async (url, options) => {
+				if (String(url).includes("/site/")) {
+					entered.resolve();
+					await release.promise;
+				}
+				return originalFetch(url, options);
+			});
+			const pending = f.context._findBackupStream(f.info, f.fetch);
+			await entered.promise;
+			if (change === "cycle") f.info.VisibleAdStartedAt++;
+			if (change === "epoch") f.info.BackupSearchEpoch++;
+			if (change === "page generation") f.state.PagePlaybackContextGeneration++;
+			if (change === "abort") f.info._AdCycleRequestController.abort();
+			release.resolve();
+			const result = await pending;
+			expect(result.type).not.toBe("site");
+			expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+		},
+	);
+
+	it("continues probation after a slow first search returns its bridge in the background", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		const timerNow = Date.now;
+		const f = setupProbation();
+		vi.mocked(Date.now).mockImplementation(timerNow);
+		const originalFetch = f.fetch.getMockImplementation();
+		if (!originalFetch) throw new Error("Missing network fixture");
+		const siteRequestTimes: number[] = [];
+		f.fetch.mockImplementation(async (url, options) => {
+			if (String(url).includes("/site/")) siteRequestTimes.push(Date.now());
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			return originalFetch(url, options);
+		});
+		const first = f.poll();
+		await vi.advanceTimersByTimeAsync(1_600);
+		expect(await first).toContain("/autoplay/360/");
+		expect(f.info._BackupSearchPromise).not.toBeNull();
+		await vi.advanceTimersByTimeAsync(2_000);
+		const probationAt = f.info._BackupProbation.at;
+		const second = f.poll();
+		await vi.advanceTimersByTimeAsync(2_000);
+		expect(await second).toContain("/site/1080/");
+		expect(siteRequestTimes).toHaveLength(2);
+		expect(siteRequestTimes[1] - probationAt).toBeGreaterThanOrEqual(1_500);
+		expect(siteRequestTimes[1] - probationAt).toBeLessThan(4_000);
+		expect(f.tokens).toEqual(["site"]);
+	});
+});
 
 describe("codec ordering and backup quality ownership", () => {
 	it("logs committed quality changes during backup refresh without logging unchanged polls", async () => {

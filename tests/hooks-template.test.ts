@@ -102,7 +102,7 @@ describe("worker message handler hardening", () => {
 		expect(source).toContain(
 			"${_getPendingForegroundQualityProbeAt.toString()}",
 		);
-		expect(source).toContain("${_startForegroundQualityProbe.toString()}");
+		expect(source).toContain("${_startPendingBackupQualityProbe.toString()}");
 		const visibilityAt = initSource.indexOf(
 			"_syncPagePlaybackVisibilityState();",
 		);

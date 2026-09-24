@@ -1644,7 +1644,7 @@ describe("_findBackupStream fresh-session probation", () => {
 			]);
 			expect(sweep.getAutoplayRefreshes()).toBeGreaterThan(0);
 			expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(991_000);
-			expect(info._BackupProbation).toEqual({
+			expect(info._BackupProbation).toMatchObject({
 				type: "site",
 				at: 1_000_000,
 				cleanChecks: 1,
@@ -1907,7 +1907,7 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(first).toEqual({ type: null, m3u8: null });
 			expect(info.LastCleanBackupPlayerType).toBe("autoplay");
 			expect(info.LastCleanBackupM3U8).toBe(bridgePlaylist);
-			expect(info._BackupProbation).toEqual({
+			expect(info._BackupProbation).toMatchObject({
 				type: "site",
 				at: 1_000_000,
 				cleanChecks: 1,
@@ -2147,7 +2147,7 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(first.type).toBe("autoplay");
 			expect(first.m3u8).toBe(bridgePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
-			expect(info._BackupProbation).toEqual({
+			expect(info._BackupProbation).toMatchObject({
 				type: "site",
 				at: 1_000_000,
 				cleanChecks: 1,
@@ -2163,7 +2163,7 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(second.type).toBe("site");
 			expect(second.m3u8).toBe(sitePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
-			expect(info._BackupProbation).toEqual({
+			expect(info._BackupProbation).toMatchObject({
 				type: "site",
 				at: 0,
 				cleanChecks: 1,
@@ -2233,7 +2233,7 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(result.type).toBe("site");
 			expect(result.m3u8).toBe(sitePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
-			expect(info._BackupProbation).toEqual({
+			expect(info._BackupProbation).toMatchObject({
 				type: "site",
 				at: 0,
 				cleanChecks: 1,
@@ -2415,7 +2415,7 @@ describe("_findBackupStream fresh-session probation", () => {
 			);
 			expect(first.type).toBe("autoplay");
 			expect(info._LastBackupSearchCompletedAt).toBe(0);
-			expect(info._BackupProbation).toEqual({
+			expect(info._BackupProbation).toMatchObject({
 				type: "site",
 				at: 1_000_000,
 				cleanChecks: 1,
@@ -2430,9 +2430,9 @@ describe("_findBackupStream fresh-session probation", () => {
 			);
 			expect(second.type).toBe("autoplay");
 			expect(second.m3u8).toBe(bridgePlaylist);
-			expect(info._BackupProbation).toEqual({
+			expect(info._BackupProbation).toMatchObject({
 				type: "site",
-				at: 1_000_000,
+				at: 1_001_600,
 				cleanChecks: 2,
 			});
 
@@ -2446,7 +2446,7 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(third.type).toBe("site");
 			expect(third.m3u8).toBe(sitePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
-			expect(info._BackupProbation).toEqual({
+			expect(info._BackupProbation).toMatchObject({
 				type: "site",
 				at: 0,
 				cleanChecks: 2,
@@ -2529,7 +2529,17 @@ describe("_getPendingForegroundQualityProbeAt", () => {
 			state.PageMediaKey = "live:testchannel";
 			info._ForegroundQualityProbeAppliedAt = visibleSinceAt;
 			expect(pending()(info)).toBe(0);
-			info._BackupProbation = { type: "site", at: visibleSinceAt };
+			info.BackupEncodingsM3U8Cache.site = { m3u8: "pending" };
+			info._BackupProbation = {
+				type: "site",
+				at: visibleSinceAt,
+				cache: info.BackupEncodingsM3U8Cache.site,
+				cycleStartedAt: info.VisibleAdStartedAt,
+				backupSearchEpoch: info.BackupSearchEpoch,
+				mediaKey: info.MediaKey,
+				pageMediaKey: state.PageMediaKey,
+				pageGeneration: Number(state.PagePlaybackContextGeneration) || 0,
+			};
 			expect(pending()(info)).toBe(visibleSinceAt);
 			info._BackupProbation = null;
 			info._ForegroundQualityProbeAppliedAt = 0;
@@ -2551,7 +2561,7 @@ describe("_getPendingForegroundQualityProbeAt", () => {
 	});
 });
 
-describe("_startForegroundQualityProbe", () => {
+describe("_startPendingBackupQualityProbe", () => {
 	const start = () =>
 		T<
 			(
@@ -2560,7 +2570,7 @@ describe("_startForegroundQualityProbe", () => {
 				currentResolution?: unknown,
 				codecOverride?: string | null,
 			) => boolean
-		>("_startForegroundQualityProbe");
+		>("_startPendingBackupQualityProbe");
 
 	it("starts one sequential search for the exact foreground edge", async () => {
 		const state = getState();
@@ -6709,11 +6719,11 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 			pageMediaKey: state.PageMediaKey,
 			visibleSinceAt: state.PagePlaybackVisibleSinceAt,
 			preferredQualityGroup: state.PreferredQualityGroup,
-			startForegroundProbe: g._startForegroundQualityProbe,
+			startForegroundProbe: g._startPendingBackupQualityProbe,
 		};
 		const now = Date.now();
 		const startForegroundProbe = vi.fn(() => true);
-		g._startForegroundQualityProbe = startForegroundProbe;
+		g._startPendingBackupQualityProbe = startForegroundProbe;
 		const info = setupHold({
 			VisibleAdStartedAt: now - 10000,
 			ActiveBackupPlayerType: "autoplay",
@@ -6762,7 +6772,7 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 			state.PageMediaKey = saved.pageMediaKey;
 			state.PagePlaybackVisibleSinceAt = saved.visibleSinceAt;
 			state.PreferredQualityGroup = saved.preferredQualityGroup;
-			g._startForegroundQualityProbe = saved.startForegroundProbe;
+			g._startPendingBackupQualityProbe = saved.startForegroundProbe;
 		}
 	});
 

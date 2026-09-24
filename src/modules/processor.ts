@@ -894,6 +894,41 @@ function _resolveAdBackupTargetResolution(
 	return targetResolution;
 }
 
+function _isBackupProbationCurrent(info, probation = info?._BackupProbation) {
+	return Boolean(
+		probation?.type &&
+			probation.type !== "autoplay" &&
+			probation.mediaKey === _normalizeMediaKey(info?.MediaKey) &&
+			probation.pageMediaKey ===
+				_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) &&
+			probation.pageGeneration ===
+				(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0) &&
+			probation.cycleStartedAt > 0 &&
+			_isBackupSearchContextCurrent(
+				info,
+				probation.backupSearchEpoch,
+				probation.cycleStartedAt,
+			) &&
+			!info._AdCycleRequestController?.signal?.aborted &&
+			probation.cache &&
+			info.BackupEncodingsM3U8Cache?.[probation.type] === probation.cache,
+	);
+}
+
+function _isBackupProbationDue(info) {
+	const probation = info?._BackupProbation;
+	return Boolean(
+		_isBackupProbationCurrent(info, probation) &&
+			probation.at >= probation.cycleStartedAt &&
+			Date.now() - probation.at >= 1500 &&
+			(info.ActiveBackupPlayerType === "autoplay" ||
+				info.LastCleanBackupPlayerType === "autoplay") &&
+			!_isBackupPlayerRetryCoolingDown(info, probation.type) &&
+			!info._BackupSearchPromise &&
+			!(info._BackupSearchPromises?.size > 0),
+	);
+}
+
 function _getPendingForegroundQualityProbeAt(info) {
 	const visibleSinceAt = Math.max(
 		0,
@@ -933,18 +968,15 @@ function _getPendingForegroundQualityProbeAt(info) {
 		0,
 		Number(info._ForegroundQualityProbeAppliedAt) || 0,
 	);
-	const probationType = info?._BackupProbation?.type;
 	const probationNeedsCompletion = Boolean(
-		probationType &&
-			probationType !== "autoplay" &&
-			appliedAt === visibleSinceAt,
+		appliedAt === visibleSinceAt && _isBackupProbationDue(info),
 	);
 	return appliedAt < visibleSinceAt || probationNeedsCompletion
 		? visibleSinceAt
 		: 0;
 }
 
-function _startForegroundQualityProbe(
+function _startPendingBackupQualityProbe(
 	info,
 	realFetch,
 	currentResolution = null,
@@ -952,14 +984,16 @@ function _startForegroundQualityProbe(
 ) {
 	const foregroundQualityProbeAt = _getPendingForegroundQualityProbeAt(info);
 	if (
-		!foregroundQualityProbeAt ||
+		(!foregroundQualityProbeAt && !_isBackupProbationDue(info)) ||
 		info?._BackupSearchPromise ||
 		(Number(info?._BackupSearchPromises?.size) || 0) > 0
 	) {
 		return false;
 	}
 	_log(
-		"[Trace] Playback returned to foreground; probing normal-quality backup while the clean bridge keeps refreshing",
+		foregroundQualityProbeAt
+			? "[Trace] Playback returned to foreground; probing normal-quality backup while the clean bridge keeps refreshing"
+			: "[Trace] Continuing the pending clean backup check while the bridge keeps refreshing",
 		"info",
 	);
 	void _findBackupStream(
@@ -5781,9 +5815,10 @@ async function _processM3U8Core(
 			const now = Date.now();
 			const foregroundQualityProbeAt =
 				_getPendingForegroundQualityProbeAt(info);
-			const foregroundQualityTarget = foregroundQualityProbeAt
-				? _resolveAdBackupTargetResolution(info, url) || res
-				: null;
+			const foregroundQualityTarget =
+				foregroundQualityProbeAt || _isBackupProbationDue(info)
+					? _resolveAdBackupTargetResolution(info, url) || res
+					: null;
 			const hadNativeRecoveryEvidence =
 				Boolean(info.PendingAdEndAt) ||
 				Math.max(0, Number(info.CleanPlaylistCount) || 0) > 0 ||
@@ -5851,8 +5886,8 @@ async function _processM3U8Core(
 				Number(info.LastCleanBackupAt) >=
 					Math.max(0, Number(info.VisibleAdStartedAt) || 0)
 			) {
-				if (foregroundQualityProbeAt) {
-					_startForegroundQualityProbe(
+				if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
+					_startPendingBackupQualityProbe(
 						info,
 						realFetch,
 						foregroundQualityTarget,
@@ -5871,8 +5906,8 @@ async function _processM3U8Core(
 							requestSignal,
 						);
 				if (refreshed) {
-					if (foregroundQualityProbeAt) {
-						_startForegroundQualityProbe(
+					if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
+						_startPendingBackupQualityProbe(
 							info,
 							realFetch,
 							foregroundQualityTarget,
@@ -6209,7 +6244,8 @@ async function _processM3U8Core(
 			info._LastBackupSearchCompletedAt &&
 			Date.now() - info._LastBackupSearchCompletedAt < 15000 &&
 			!_isRecentPostAdReentry(info) &&
-			!_getPendingForegroundQualityProbeAt(info)
+			!_getPendingForegroundQualityProbeAt(info) &&
+			!_isBackupProbationDue(info)
 		) {
 			const forceRefreshAt =
 				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
@@ -6422,17 +6458,7 @@ async function _processM3U8Core(
 			}
 		}
 
-		const higherQualityProbationInProgress = Boolean(
-			__TTVAB_STATE__.DisableAutoplayBackup &&
-				backupType === "autoplay" &&
-				((info._BackupProbation?.type &&
-					info._BackupProbation.type !== "autoplay") ||
-					info._BackupSearchPromise ||
-					(Number(info._BackupSearchPromises?.size) || 0) > 0),
-		);
-		info._LastBackupSearchCompletedAt = higherQualityProbationInProgress
-			? 0
-			: Date.now();
+		info._LastBackupSearchCompletedAt = Date.now();
 
 		if (backupM3u8) {
 			if (__TTVAB_STATE__.IsAdStrippingEnabled) {
@@ -6520,8 +6546,8 @@ async function _processM3U8Core(
 					requestSignal,
 				);
 				if (refreshed) {
-					if (foregroundQualityProbeAt) {
-						_startForegroundQualityProbe(
+					if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
+						_startPendingBackupQualityProbe(
 							info,
 							realFetch,
 							res,
@@ -6565,8 +6591,8 @@ async function _processM3U8Core(
 				backupAgeMs >= 0 &&
 				backupAgeMs < 900
 			) {
-				if (foregroundQualityProbeAt) {
-					_startForegroundQualityProbe(
+				if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
+					_startPendingBackupQualityProbe(
 						info,
 						realFetch,
 						res,
@@ -6606,6 +6632,7 @@ async function _processM3U8Core(
 			} else if (
 				!backupSearchIsInFlight &&
 				(foregroundQualityProbeAt > 0 ||
+					_isBackupProbationDue(info) ||
 					lastBackupSearchCompletedAt <= 0 ||
 					now - lastBackupSearchCompletedAt >= 15000 ||
 					forceRefreshAt > lastBackupSearchCompletedAt)
@@ -7519,8 +7546,14 @@ async function _searchBackupStream(
 	const resolvedSearchDeadlineAt = Math.max(0, Number(searchDeadlineAt) || 0);
 	const searchDeadlineExceeded = () =>
 		resolvedSearchDeadlineAt > 0 && Date.now() >= resolvedSearchDeadlineAt;
+	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+	const pageGeneration =
+		Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0;
 	const searchIsCurrent = () =>
 		selectionSequence >= (info._BackupSelection?.sequence || 0) &&
+		pageMediaKey === _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) &&
+		pageGeneration ===
+			(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0) &&
 		!searchDeadlineExceeded() &&
 		!requestSignal?.aborted &&
 		(!earlyRetry ||
@@ -8196,17 +8229,45 @@ async function _searchBackupStream(
 										!autoplayWasUnavailableDuringSearch
 									) {
 										const probation = info._BackupProbation;
+										const sameCandidate = Boolean(
+											_isBackupProbationCurrent(info, probation) &&
+												probation.type === pt &&
+												probation.cache === activeCacheEntry &&
+												probation.playlistUrl === streamUrl &&
+												probation.codec === selectedCodecIdentity &&
+												probation.resolution === selectedResolution,
+										);
 										const requiredCleanHolds =
 											(Number(info._BackupPinFlipCount) || 0) > 0 ? 2 : 1;
-										const priorCleanHolds =
-											probation?.type === pt
-												? Number(probation.cleanChecks) || 1
-												: 0;
+										const priorCleanHolds = sameCandidate
+											? Number(probation.cleanChecks) || 1
+											: 0;
+										const checkedTooSoon = Boolean(
+											sameCandidate &&
+												probation.at > 0 &&
+												Date.now() - probation.at < 1500,
+										);
+										const nextProbation = {
+											type: pt,
+											at: checkedTooSoon ? probation.at : Date.now(),
+											cleanChecks: checkedTooSoon
+												? priorCleanHolds
+												: priorCleanHolds + 1,
+											cache: activeCacheEntry,
+											playlistUrl: streamUrl,
+											codec: selectedCodecIdentity,
+											resolution: selectedResolution,
+											mediaKey: _normalizeMediaKey(info.MediaKey),
+											pageMediaKey,
+											pageGeneration,
+											cycleStartedAt,
+											backupSearchEpoch,
+										};
 										const needsSecondLook =
 											pt !== "autoplay" &&
 											(isFreshM3u8 ||
-												(probation?.type === pt &&
-													Date.now() - probation.at < 1500) ||
+												!sameCandidate ||
+												checkedTooSoon ||
 												priorCleanHolds < requiredCleanHolds);
 										if (needsSecondLook) {
 											const bridgedProbe =
@@ -8228,17 +8289,7 @@ async function _searchBackupStream(
 											}
 											const bridged = bridgedProbe.value;
 											if (bridged) {
-												info._BackupProbation = {
-													type: pt,
-													at:
-														isFreshM3u8 || probation?.type !== pt
-															? Date.now()
-															: probation.at,
-													cleanChecks: isFreshM3u8 ? 1 : priorCleanHolds + 1,
-												};
-												if (__TTVAB_STATE__.DisableAutoplayBackup) {
-													info._LastBackupSearchCompletedAt = 0;
-												}
+												info._BackupProbation = nextProbation;
 												_log(
 													`[Trace] Fresh ${pt} session held for a second clean check; continuing clean autoplay bridge`,
 													"info",
@@ -8248,14 +8299,7 @@ async function _searchBackupStream(
 												break;
 											}
 											if (isSessionNeutralCandidate) {
-												info._BackupProbation = {
-													type: pt,
-													at:
-														isFreshM3u8 || probation?.type !== pt
-															? Date.now()
-															: probation.at,
-													cleanChecks: isFreshM3u8 ? 1 : priorCleanHolds + 1,
-												};
+												info._BackupProbation = nextProbation;
 												break;
 											}
 										}
@@ -8271,7 +8315,11 @@ async function _searchBackupStream(
 										info._BackupProbation =
 											pt === "autoplay"
 												? null
-												: { type: pt, at: 0, cleanChecks: requiredCleanHolds };
+												: {
+														...nextProbation,
+														at: 0,
+														cleanChecks: requiredCleanHolds,
+													};
 										_clearBackupPlayerRetryCooldown(info, pt);
 										backupType = pt;
 										backupM3u8 = m3u8;
@@ -8423,6 +8471,12 @@ async function _searchBackupStream(
 				if (invalidateCache) {
 					if (!searchIsCurrent()) {
 						return { type: null, m3u8: null };
+					}
+					if (
+						info._BackupProbation?.cache === activeCacheEntry &&
+						info._BackupProbation?.type === pt
+					) {
+						info._BackupProbation = null;
 					}
 					if (info.BackupEncodingsM3U8Cache[pt] === activeCacheEntry) {
 						info.BackupEncodingsM3U8Cache[pt] = null;
