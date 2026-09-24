@@ -75,6 +75,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.1.5 - 2026-09-24
+
+- **Faster HD During Ads** - Complete the next clean HD check without the extra 15-second wait, while keeping the fallback stream playing.
+- **Backup Validation** - Keep clean checks tied to the same stream and ad cycle, and keep checks spaced apart when a backup needs extra validation.
+
 ### v18.1.4 - 2026-09-24
 
 - **HD Recovery After Ads** - Restore HD options after long sessions when refreshed Twitch stream links change, provided the original HD stream still passes live playback checks.
@@ -83,10 +88,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 - **HD Quality Options** - Retain HD options after Twitch returns a reduced quality list when the original streams still pass playback checks.
 - **Worker Recovery Prompt** - Avoid delaying the Refresh tab prompt after a worker crash just because a visible Twitch tab is unfocused. The underlying Twitch worker crash remains unresolved.
-
-### v18.1.2 - 2026-09-24
-
-- **Playback Recovery** - Follow Twitch's current player after replacements on the same channel, avoiding unnecessary reloads and missed stalls.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
