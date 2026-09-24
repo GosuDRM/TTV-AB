@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.1.7] - 2026-09-24
+
+Fixed
+
+- **HD Recovery Across Ad Breaks** - Recheck the original HD streams when a later catalog refresh offers only low qualities, restoring options that still pass live playback checks.
+- **HD Backup Target** - Preserve the requested backup quality through an aging native catalog, avoiding skipped HD searches and unnecessary drops to 360p.
+- **Recovery Diagnostics** - Improve logs to help troubleshoot missing HD quality options after ads, without exposing private stream links.
+
 ## [18.1.6] - 2026-09-24
 
 Fixed
