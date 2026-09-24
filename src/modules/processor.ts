@@ -741,6 +741,8 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 	if (!isCurrent()) return;
 	saved.refreshAttemptCycleStartedAt = cycleStartedAt;
 	saved.refreshPromise = (async () => {
+		let stage = "master-fetch";
+		let refreshed = false;
 		try {
 			const probe = await _awaitBackupProbeBeforeDeadline(
 				_fetchWithTimeout(
@@ -753,6 +755,7 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 			);
 			if (!probe.completed || !isCurrent() || probe.value.status !== 200)
 				return;
+			stage = "master-validation";
 			const master = await probe.value.text();
 			if (
 				!isCurrent() ||
@@ -762,6 +765,7 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 			)
 				return;
 			const resolutions = [];
+			let hasUnknownVideoCodec = false;
 			const lines = master.split(/\r?\n/);
 			for (let index = 0; index < lines.length - 1; index++) {
 				const uri = lines[index + 1]?.trim();
@@ -772,8 +776,11 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 				)
 					continue;
 				const attrs = _parseAttrs(lines[index]);
-				if (!attrs.RESOLUTION || !_getVideoCodecIdentity(attrs.CODECS))
+				if (!attrs.RESOLUTION) continue;
+				if (!_getVideoCodecIdentity(attrs.CODECS)) {
+					hasUnknownVideoCodec = true;
 					continue;
+				}
 				resolutions.push(
 					_getStreamVariantInfo(
 						attrs,
@@ -782,19 +789,32 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 					),
 				);
 			}
+			stage = "master-target";
 			const compatibleTargets = resolutions.filter(
 				(entry) =>
 					entry.Resolution === target.Resolution &&
 					_getVideoCodecIdentity(entry.Codecs) ===
 						_getVideoCodecIdentity(target.Codecs),
 			);
-			if (!compatibleTargets.length) return;
+			const targetHeight =
+				Number(String(target.Resolution || "").split("x")[1]) || 0;
+			const reducedCatalog =
+				resolutions.length > 0 &&
+				!hasUnknownVideoCodec &&
+				Boolean(_getVideoCodecIdentity(target.Codecs)) &&
+				resolutions.every((entry) => {
+					const height =
+						Number(String(entry.Resolution || "").split("x")[1]) || 0;
+					return height > 0 && height < targetHeight;
+				});
+			if (!compatibleTargets.length && !reducedCatalog) return;
 			const retainedSession = !compatibleTargets.some(
 				(entry) => entry.Url === target.Url,
 			);
 			if (retainedSession) {
 				let previousSequence = null;
 				for (let look = 0; look < 2; look++) {
+					stage = `media-fetch-${look + 1}`;
 					if (!isCurrent()) return;
 					const mediaProbe = await _awaitBackupProbeBeforeDeadline(
 						_fetchWithTimeout(
@@ -811,6 +831,7 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 						mediaProbe.value.status !== 200
 					)
 						return;
+					stage = `media-validation-${look + 1}`;
 					const media = await mediaProbe.value.text();
 					if (!isCurrent()) return;
 					const sequence = _parsePlaylistFirstMediaSequence(media);
@@ -836,14 +857,27 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 				refreshedCycleStartedAt: cycleStartedAt,
 				refreshPromise: null,
 			};
+			refreshed = true;
 			_log(
 				retainedSession
-					? "[Recovery] Revalidated retained native session after master URL rotation; verifying current-cycle media before recovery"
+					? `[Recovery] Revalidated retained native session after ${reducedCatalog ? "master quality reduction" : "master URL rotation"}; verifying current-cycle media before recovery`
 					: "[Recovery] Refreshed retained native catalog; verifying current-cycle media before recovery",
 				"info",
 			);
 		} catch {
 		} finally {
+			if (!refreshed) {
+				const outcome =
+					Date.now() >= deadlineAt
+						? "deadline"
+						: isCurrent()
+							? "rejected"
+							: "stale-context";
+				_log(
+					`[Recovery] Retained native catalog refresh ${outcome} at ${stage}; cycle ${cycleStartedAt}`,
+					"info",
+				);
+			}
 			if (saved.refreshAttemptCycleStartedAt === cycleStartedAt)
 				saved.refreshPromise = null;
 		}
@@ -856,7 +890,7 @@ function _resolveAdBackupTargetResolution(
 	url = "",
 	requestedResolution = null,
 ) {
-	const recoveryMaster = _getNativeRecoveryMaster(info);
+	const recoveryMaster = _getNativeRecoveryMaster(info, true);
 	const resolutionList = recoveryMaster.resolutionList.filter(Boolean);
 	const urlResolution = _degradeToDecodableResolution(
 		info,
@@ -7130,7 +7164,7 @@ async function _refreshActiveBackupMediaPlaylist(
 
 	const preferredRefreshResolution = _resolvePreferredBackupResolution({
 		...info,
-		ResolutionList: _getNativeRecoveryMaster(info).resolutionList,
+		ResolutionList: _getNativeRecoveryMaster(info, true).resolutionList,
 	});
 	const targetRes = _applyBackupResolutionFloor(
 		preferredRefreshResolution ||
