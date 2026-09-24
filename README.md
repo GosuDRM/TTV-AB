@@ -75,6 +75,12 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.1.7 - 2026-09-24
+
+- **HD Recovery Across Ad Breaks** - Recheck the original HD streams when a later catalog refresh offers only low qualities, restoring options that still pass live playback checks.
+- **HD Backup Target** - Preserve the requested backup quality through an aging native catalog, avoiding skipped HD searches and unnecessary drops to 360p.
+- **Recovery Diagnostics** - Improve logs to help troubleshoot missing HD quality options after ads, without exposing private stream links.
+
 ### v18.1.6 - 2026-09-24
 
 - **Playback Buffer** - Avoid unnecessary jumps toward the live edge after recovery and while video is advancing, with Low Latency on or off.
@@ -85,10 +91,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 - **Faster HD During Ads** - Complete the next clean HD check without the extra 15-second wait, while keeping the fallback stream playing.
 - **Backup Validation** - Keep clean checks tied to the same stream and ad cycle, and keep checks spaced apart when a backup needs extra validation.
-
-### v18.1.4 - 2026-09-24
-
-- **HD Recovery After Ads** - Restore HD options after long sessions when refreshed Twitch stream links change, provided the original HD stream still passes live playback checks.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
