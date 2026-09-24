@@ -75,6 +75,10 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.1.4 - 2026-09-24
+
+- **HD Recovery After Ads** - Restore HD options after long sessions when refreshed Twitch stream links change, provided the original HD stream still passes live playback checks.
+
 ### v18.1.3 - 2026-09-24
 
 - **HD Quality Options** - Retain HD options after Twitch returns a reduced quality list when the original streams still pass playback checks.
@@ -83,10 +87,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 ### v18.1.2 - 2026-09-24
 
 - **Playback Recovery** - Follow Twitch's current player after replacements on the same channel, avoiding unnecessary reloads and missed stalls.
-
-### v18.1.1 - 2026-09-23
-
-- **HD Quality Recovery** - Prevent Auto recovery from retaining only low-quality options after prolonged reduced-quality playback and slow HD checks.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
