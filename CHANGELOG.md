@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.1.6] - 2026-09-24
+
+Fixed
+
+- **Playback Buffer** - Avoid unnecessary jumps toward the live edge after recovery and while video is advancing, with Low Latency on or off.
+- **Low Latency Recovery** - Use the current player's latency mode for buffer and recovery checks, and clear the recovery prompt when low-latency video resumes.
+- **Latency Preference** - Preserve changes to Twitch's Low Latency setting made during player recovery.
+
 ## [18.1.5] - 2026-09-24
 
 Fixed
