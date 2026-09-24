@@ -5677,7 +5677,7 @@ describe("_restorePlayerPreferenceSnapshot (multi-tab preference ownership)", ()
 
 		expect(restore()(snapshot as Record<string, unknown>)).toBe(true);
 		expect(localStorage.getItem("video-quality")).toBe(newerQuality);
-		expect(localStorage.getItem("lowLatencyModeEnabled")).toBe("true");
+		expect(localStorage.getItem("lowLatencyModeEnabled")).toBe("false");
 	});
 
 	it("protects every captured key when another tab clears shared preferences", () => {

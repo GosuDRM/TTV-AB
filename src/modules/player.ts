@@ -2,7 +2,8 @@
 
 const _PlayerBufferState = {
 	videoRef: null as WeakRef<HTMLMediaElement> | null,
-	position: 0,
+	currentTime: -1,
+	totalVideoFrames: -1,
 	bufferedPosition: 0,
 	bufferDuration: 0,
 	numSame: 0,
@@ -586,11 +587,7 @@ const _PLAYER_CONTROL_INTERACTION_SELECTOR = [
 	'[data-a-target="video-player"]',
 	"video",
 ].join(", ");
-const _PLAYER_PREFERENCE_KEYS = [
-	"video-quality",
-	"lowLatencyModeEnabled",
-	"persistenceEnabled",
-];
+const _PLAYER_PREFERENCE_KEYS = ["video-quality", "persistenceEnabled"];
 
 function _readConfiguredQualityGroup() {
 	try {
@@ -649,18 +646,20 @@ function _isLowLatencyEnabled(playerCore = null) {
 	return false;
 }
 
-function _getLowLatencySafeEpsilon() {
-	return _isLowLatencyEnabled() ? 0.08 : _PLAYER_BUFFER_LIVE_EDGE_EPSILON;
+function _getLowLatencySafeEpsilon(playerCore = null) {
+	return _isLowLatencyEnabled(playerCore)
+		? 0.08
+		: _PLAYER_BUFFER_LIVE_EDGE_EPSILON;
 }
 
-function _getLowLatencyDangerZone() {
-	return _isLowLatencyEnabled()
+function _getLowLatencyDangerZone(playerCore = null) {
+	return _isLowLatencyEnabled(playerCore)
 		? 0.3
 		: Number(__TTVAB_STATE__?.PlayerBufferingDangerZone) || 1;
 }
 
-function _getLowLatencyMinRepeatDelay() {
-	return _isLowLatencyEnabled()
+function _getLowLatencyMinRepeatDelay(playerCore = null) {
+	return _isLowLatencyEnabled(playerCore)
 		? 2000
 		: Number(__TTVAB_STATE__?.PlayerBufferingMinRepeatDelay) || 8000;
 }
@@ -867,7 +866,11 @@ function _getPlayerAndState() {
 function _resetPlayerBufferMonitorState(cooldownMs = 0) {
 	const minRepeatDelay =
 		typeof __TTVAB_STATE__ !== "undefined" && __TTVAB_STATE__
-			? Number(_getLowLatencyMinRepeatDelay()) || 0
+			? Number(
+					_getLowLatencyMinRepeatDelay(
+						_getPlayerCore(_getPlayerAndState().player),
+					),
+				) || 0
 			: 0;
 	const requestedCooldownMs = Number.isFinite(cooldownMs)
 		? Math.max(0, cooldownMs)
@@ -878,7 +881,8 @@ function _resetPlayerBufferMonitorState(cooldownMs = 0) {
 			: requestedCooldownMs;
 
 	_PlayerBufferState.videoRef = null;
-	_PlayerBufferState.position = 0;
+	_PlayerBufferState.currentTime = -1;
+	_PlayerBufferState.totalVideoFrames = -1;
 	_PlayerBufferState.bufferedPosition = 0;
 	_PlayerBufferState.bufferDuration = 0;
 	_PlayerBufferState.numSame = 0;
@@ -908,6 +912,7 @@ function _clearCachedPlayerRef(resetBufferState = true, cooldownMs = 0) {
 }
 
 function _readPlayerBufferTelemetry(player, playerCore = null) {
+	playerCore = playerCore || _getPlayerCore(player);
 	const video = player?.getHTMLVideoElement?.() || null;
 	const position = Number(playerCore?.state?.position) || 0;
 	const bufferedPosition = Number(playerCore?.state?.bufferedPosition) || 0;
@@ -927,8 +932,8 @@ function _readPlayerBufferTelemetry(player, playerCore = null) {
 	const liveEdgeDistance = Math.max(0, liveEdge - currentTime);
 	const readyState = Number(video?.readyState) || 0;
 	const hasFutureData =
-		bufferDuration > _getLowLatencySafeEpsilon() ||
-		liveEdgeDistance > _getLowLatencySafeEpsilon() ||
+		bufferDuration > _getLowLatencySafeEpsilon(playerCore) ||
+		liveEdgeDistance > _getLowLatencySafeEpsilon(playerCore) ||
 		readyState >= 3;
 
 	return {
@@ -970,9 +975,12 @@ function _isPlaybackHealthyAfterAd(player, playerCore = null, video = null) {
 	}
 
 	const telemetry = _readPlayerBufferTelemetry(player, playerCore);
+	const safeEpsilon = _getLowLatencySafeEpsilon(
+		playerCore || _getPlayerCore(player),
+	);
 	return (
-		telemetry.bufferDuration > _PLAYER_BUFFER_LIVE_EDGE_EPSILON ||
-		telemetry.liveEdgeDistance > _PLAYER_BUFFER_LIVE_EDGE_EPSILON
+		telemetry.bufferDuration > safeEpsilon ||
+		telemetry.liveEdgeDistance > safeEpsilon
 	);
 }
 
@@ -5995,8 +6003,6 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 
 	if (isReload) {
 		const isAdRecoveryReload = reason === "ad-recovery";
-		const isPlaybackRecoveryReload =
-			isAdRecoveryReload || reason === "buffer-recovery";
 		const now = Date.now();
 		const lastPlayerReloadAt = __TTVAB_STATE__?.LastPlayerReloadAt || 0;
 		if (
@@ -6343,49 +6349,6 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 				}
 			}
 
-			if (isPlaybackRecoveryReload) {
-				_schedulePlaybackRecoveryTimeout(
-					() => {
-						try {
-							const { player: livePlayer, state: liveState } =
-								_getPlayerAndState();
-							const confirmType = liveState?.props?.content?.type;
-							if (
-								(confirmType === "live" || confirmType === "rerun") &&
-								livePlayer
-							) {
-								const liveCore = _getPlayerCore(livePlayer);
-								const liveVideo = livePlayer.getHTMLVideoElement?.();
-								if (
-									liveVideo &&
-									!liveVideo.ended &&
-									liveVideo.buffered?.length > 0
-								) {
-									const liveEdge = liveVideo.buffered.end(
-										liveVideo.buffered.length - 1,
-									);
-									const videoCurrentPos = Number(liveVideo.currentTime);
-									const currentPos = Number.isFinite(videoCurrentPos)
-										? videoCurrentPos
-										: Number(liveCore?.state?.position) || 0;
-									if (liveEdge - currentPos > 2) {
-										liveVideo.currentTime = Math.max(0, liveEdge - 0.5);
-										_log(
-											`Post-ad live edge seek (drift=${(liveEdge - currentPos).toFixed(1)}s)`,
-											"info",
-										);
-									}
-								}
-							}
-						} catch {}
-					},
-					1500,
-					taskChannel,
-					taskMediaKey,
-					requestedCycleStartedAt,
-				);
-			}
-
 			if (preferenceSnapshot) {
 				_schedulePlayerMediaPreferenceRestores(
 					preferenceSnapshot,
@@ -6513,12 +6476,12 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 		_PinnedBackupStallState.lastCurrentTime > 0 &&
 		currentTime > _PinnedBackupStallState.lastCurrentTime + 0.25;
 	const bufferHeadroom = bufferedEnd - currentTime;
-	const bufferSafe = bufferHeadroom > _getLowLatencyDangerZone();
+	const dangerZone = _getLowLatencyDangerZone(_getPlayerCore(player));
+	const bufferSafe = bufferHeadroom > dangerZone;
 	const playbackHasStarted = currentTime > 0 || bufferedEnd > 0;
 	const playheadOutsidePinnedTimeline = Boolean(
-		currentTime > bufferedEnd + _getLowLatencyDangerZone() ||
-			(bufferedStart > 0 &&
-				currentTime < bufferedStart - _getLowLatencyDangerZone()),
+		currentTime > bufferedEnd + dangerZone ||
+			(bufferedStart > 0 && currentTime < bufferedStart - dangerZone),
 	);
 	const canRealignPinnedLiveBackup = Boolean(
 		safeMediaKey?.startsWith("live:") &&
@@ -6712,7 +6675,8 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 		Math.round((now - _InAdFreezeState.firstFrozenAt) / 100) / 10;
 	const contiguousEnd = _getContiguousBufferedEnd(video, currentTime);
 	const bufferDrained =
-		contiguousEnd - currentTime < _getLowLatencyDangerZone();
+		contiguousEnd - currentTime <
+		_getLowLatencyDangerZone(_getPlayerCore(player));
 	const gapJumped = bufferDrained
 		? _seekPastBufferedGap(video, currentTime)
 		: 0;
@@ -7544,7 +7508,7 @@ function _monitorPlayerBuffering() {
 					!_isPlayerPaused(player, playerCore) &&
 					!player.getHTMLVideoElement()?.ended &&
 					_PlayerBufferState.lastFixTime <=
-						Date.now() - _getLowLatencyMinRepeatDelay()
+						Date.now() - _getLowLatencyMinRepeatDelay(playerCore)
 				) {
 					const {
 						video,
@@ -7556,6 +7520,21 @@ function _monitorPlayerBuffering() {
 						readyState,
 						hasFutureData,
 					} = _readPlayerBufferTelemetry(player, playerCore);
+					let totalVideoFrames = -1;
+					try {
+						const frames = Number(
+							video?.getVideoPlaybackQuality?.()?.totalVideoFrames,
+						);
+						if (Number.isFinite(frames) && frames >= 0)
+							totalVideoFrames = frames;
+					} catch {}
+					const isStablePosition =
+						_PlayerBufferState.currentTime === currentTime &&
+						(totalVideoFrames < 0 ||
+							_PlayerBufferState.totalVideoFrames < 0 ||
+							totalVideoFrames === _PlayerBufferState.totalVideoFrames);
+					_PlayerBufferState.currentTime = currentTime;
+					_PlayerBufferState.totalVideoFrames = totalVideoFrames;
 					if (
 						_checkPostBreakWedge(
 							video,
@@ -7564,18 +7543,15 @@ function _monitorPlayerBuffering() {
 							currentMediaKey,
 						)
 					) {
-						_PlayerBufferState.position = position;
 						_PlayerBufferState.bufferedPosition = bufferedPosition;
 						_PlayerBufferState.bufferDuration = bufferDuration;
 						return nextDelay;
 					}
 					if (_trySeekPastFrozenBufferGap(video, currentTime, readyState)) {
-						_PlayerBufferState.position = position;
 						_PlayerBufferState.bufferedPosition = bufferedPosition;
 						_PlayerBufferState.bufferDuration = bufferDuration;
 						return nextDelay;
 					}
-					const isStablePosition = _PlayerBufferState.position === position;
 					const isStableBufferedPosition =
 						_PlayerBufferState.bufferedPosition === bufferedPosition;
 					const isBufferRegressing =
@@ -7584,7 +7560,7 @@ function _monitorPlayerBuffering() {
 						position !== 0 || bufferedPosition !== 0 || bufferDuration !== 0;
 					const isLikelyLiveEdgeStarvation =
 						hasPlaybackState &&
-						bufferDuration < _getLowLatencyDangerZone() &&
+						bufferDuration < _getLowLatencyDangerZone(playerCore) &&
 						isStablePosition &&
 						isStableBufferedPosition &&
 						isBufferRegressing &&
@@ -7627,9 +7603,7 @@ function _monitorPlayerBuffering() {
 						(!__TTVAB_STATE__.PlayerBufferingPrerollCheckEnabled ||
 							position > __TTVAB_STATE__.PlayerBufferingPrerollCheckOffset) &&
 						hasPlaybackState &&
-						isStablePosition &&
-						isStableBufferedPosition &&
-						isBufferRegressing
+						isStablePosition
 					) {
 						_PlayerBufferState.liveEdgeStarveCount = 0;
 						_PlayerBufferState.numSame++;
@@ -7678,34 +7652,8 @@ function _monitorPlayerBuffering() {
 						_PlayerBufferState.fixAttempts = 0;
 					}
 
-					_PlayerBufferState.position = position;
 					_PlayerBufferState.bufferedPosition = bufferedPosition;
 					_PlayerBufferState.bufferDuration = bufferDuration;
-
-					const driftVideo = video;
-					if (
-						driftVideo &&
-						!driftVideo.ended &&
-						driftVideo.buffered?.length > 0
-					) {
-						const driftLiveEdge = driftVideo.buffered.end(
-							driftVideo.buffered.length - 1,
-						);
-						const driftAmount = driftLiveEdge - currentTime;
-						if (
-							driftAmount > 4 &&
-							isStablePosition &&
-							hasFutureData &&
-							readyState >= 3
-						) {
-							driftVideo.currentTime = Math.max(0, driftLiveEdge - 0.5);
-							_log(
-								`A/V desync corrected (drift=${driftAmount.toFixed(1)}s)`,
-								"warning",
-							);
-							_PlayerBufferState.lastFixTime = Date.now();
-						}
-					}
 				}
 			} catch (err) {
 				_log(`Buffer monitor error: ${err.message}`, "error");
