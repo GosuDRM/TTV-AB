@@ -10325,9 +10325,42 @@ describe("worker mixed-codec master selection", () => {
 			quality: "auto",
 			rotatedRefresh: true,
 		},
+		{
+			preroll: false,
+			longSession: true,
+			quality: "1080p60",
+			reducedRefresh: true,
+		},
+		{
+			preroll: false,
+			longSession: true,
+			quality: "auto",
+			reducedRefresh: true,
+		},
+		{
+			preroll: false,
+			longSession: true,
+			quality: "1080p60",
+			reducedRefresh: true,
+			catalogAgeMs: 9 * 60000,
+		},
+		{
+			preroll: false,
+			longSession: true,
+			quality: "auto",
+			reducedRefresh: true,
+			catalogAgeMs: 9 * 60000,
+		},
 	])(
-		"restores the native catalog in the injected worker with hidden preroll=$preroll, long session=$longSession, quality=$quality and rotated refresh=$rotatedRefresh",
-		async ({ preroll, longSession, quality, rotatedRefresh }) => {
+		"restores the native catalog in the injected worker with hidden preroll=$preroll, long session=$longSession, quality=$quality, rotated refresh=$rotatedRefresh and reduced refresh=$reducedRefresh after $catalogAgeMs ms",
+		async ({
+			preroll,
+			longSession,
+			quality,
+			rotatedRefresh,
+			reducedRefresh,
+			catalogAgeMs = 38 * 60000,
+		}) => {
 			vi.useFakeTimers();
 			vi.setSystemTime(200000);
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
@@ -10364,6 +10397,8 @@ describe("worker mixed-codec master selection", () => {
 				const url = String(input);
 				if (url === masterUrl) {
 					masterRequests++;
+					if (reducedRefresh && masterRequests > 1)
+						return new Response(lowMaster);
 					return new Response(
 						rotatedRefresh && masterRequests > 1
 							? fullMaster.replaceAll("token=owned", "token=rotated")
@@ -10409,7 +10444,7 @@ describe("worker mixed-codec master selection", () => {
 					info.LastCleanNativePlaylistAt = Date.now() - 10001;
 					await workerFetch(reducedUrl);
 					if (cycle > 0) {
-						vi.setSystemTime(Date.now() + 38 * 60000);
+						vi.setSystemTime(Date.now() + catalogAgeMs);
 						await workerFetch(low);
 					}
 					if (preroll)
