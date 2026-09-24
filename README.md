@@ -75,6 +75,12 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.1.6 - 2026-09-24
+
+- **Playback Buffer** - Avoid unnecessary jumps toward the live edge after recovery and while video is advancing, with Low Latency on or off.
+- **Low Latency Recovery** - Use the current player's latency mode for buffer and recovery checks, and clear the recovery prompt when low-latency video resumes.
+- **Latency Preference** - Preserve changes to Twitch's Low Latency setting made during player recovery.
+
 ### v18.1.5 - 2026-09-24
 
 - **Faster HD During Ads** - Complete the next clean HD check without the extra 15-second wait, while keeping the fallback stream playing.
@@ -83,11 +89,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 ### v18.1.4 - 2026-09-24
 
 - **HD Recovery After Ads** - Restore HD options after long sessions when refreshed Twitch stream links change, provided the original HD stream still passes live playback checks.
-
-### v18.1.3 - 2026-09-24
-
-- **HD Quality Options** - Retain HD options after Twitch returns a reduced quality list when the original streams still pass playback checks.
-- **Worker Recovery Prompt** - Avoid delaying the Refresh tab prompt after a worker crash just because a visible Twitch tab is unfocused. The underlying Twitch worker crash remains unresolved.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
