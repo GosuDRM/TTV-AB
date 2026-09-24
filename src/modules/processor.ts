@@ -782,26 +782,64 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 					),
 				);
 			}
-			if (
-				!resolutions.some(
-					(entry) =>
-						entry.Url === target.Url &&
-						entry.Resolution === target.Resolution &&
-						_getVideoCodecIdentity(entry.Codecs) ===
-							_getVideoCodecIdentity(target.Codecs),
-				)
-			)
-				return;
+			const compatibleTargets = resolutions.filter(
+				(entry) =>
+					entry.Resolution === target.Resolution &&
+					_getVideoCodecIdentity(entry.Codecs) ===
+						_getVideoCodecIdentity(target.Codecs),
+			);
+			if (!compatibleTargets.length) return;
+			const retainedSession = !compatibleTargets.some(
+				(entry) => entry.Url === target.Url,
+			);
+			if (retainedSession) {
+				let previousSequence = null;
+				for (let look = 0; look < 2; look++) {
+					if (!isCurrent()) return;
+					const mediaProbe = await _awaitBackupProbeBeforeDeadline(
+						_fetchWithTimeout(
+							realFetch,
+							target.Url,
+							{ signal: requestSignal, cache: "no-store" },
+							Math.max(1, deadlineAt - Date.now()),
+						),
+						deadlineAt,
+					);
+					if (
+						!mediaProbe.completed ||
+						!isCurrent() ||
+						mediaProbe.value.status !== 200
+					)
+						return;
+					const media = await mediaProbe.value.text();
+					if (!isCurrent()) return;
+					const sequence = _parsePlaylistFirstMediaSequence(media);
+					if (
+						_hasPlaylistAdMarkers(media) ||
+						_hasExplicitAdMetadata(media) ||
+						_playlistHasKnownAdSegments(media) ||
+						!_playlistHasMediaSegments(media) ||
+						media.includes("#EXT-X-SKIP:") ||
+						media.includes("#EXT-X-ENDLIST") ||
+						sequence == null ||
+						(previousSequence != null && sequence < previousSequence)
+					)
+						return;
+					previousSequence = sequence;
+				}
+			}
 			info._NativePlaybackMaster = {
 				...saved,
-				master,
-				resolutionList: resolutions,
+				master: retainedSession ? saved.master : master,
+				resolutionList: retainedSession ? saved.resolutionList : resolutions,
 				refreshedAt: Date.now(),
 				refreshedCycleStartedAt: cycleStartedAt,
 				refreshPromise: null,
 			};
 			_log(
-				"[Recovery] Refreshed retained native catalog; verifying current-cycle media before recovery",
+				retainedSession
+					? "[Recovery] Revalidated retained native session after master URL rotation; verifying current-cycle media before recovery"
+					: "[Recovery] Refreshed retained native catalog; verifying current-cycle media before recovery",
 				"info",
 			);
 		} catch {
