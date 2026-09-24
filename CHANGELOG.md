@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.1.4] - 2026-09-24
+
+Fixed
+
+- **HD Recovery After Ads** - Restore HD options after long sessions when refreshed Twitch stream links change, provided the original HD stream still passes live playback checks.
+
 ## [18.1.3] - 2026-09-24
 
 Fixed
