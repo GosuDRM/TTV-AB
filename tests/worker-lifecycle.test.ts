@@ -10211,9 +10211,21 @@ describe("worker mixed-codec master selection", () => {
 		{ preroll: true, longSession: false, quality: "1440p60" },
 		{ preroll: false, longSession: true, quality: "1440p60" },
 		{ preroll: false, longSession: true, quality: "auto" },
+		{
+			preroll: false,
+			longSession: true,
+			quality: "1080p60",
+			rotatedRefresh: true,
+		},
+		{
+			preroll: false,
+			longSession: true,
+			quality: "auto",
+			rotatedRefresh: true,
+		},
 	])(
-		"restores the native catalog in the injected worker with hidden preroll=$preroll, long session=$longSession and quality=$quality",
-		async ({ preroll, longSession, quality }) => {
+		"restores the native catalog in the injected worker with hidden preroll=$preroll, long session=$longSession, quality=$quality and rotated refresh=$rotatedRefresh",
+		async ({ preroll, longSession, quality, rotatedRefresh }) => {
 			vi.useFakeTimers();
 			vi.setSystemTime(200000);
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
@@ -10245,9 +10257,17 @@ describe("worker mixed-codec master selection", () => {
 			let sequence = 500;
 			const playlist = (name: string) =>
 				`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${++sequence}\n#EXTINF:2.000,live\nhttps://edge.example/${name}-${sequence}.ts`;
+			let masterRequests = 0;
 			const fetch = vi.fn(async (input: RequestInfo | URL) => {
 				const url = String(input);
-				if (url === masterUrl) return new Response(fullMaster);
+				if (url === masterUrl) {
+					masterRequests++;
+					return new Response(
+						rotatedRefresh && masterRequests > 1
+							? fullMaster.replaceAll("token=owned", "token=rotated")
+							: fullMaster,
+					);
+				}
 				if (url === reducedUrl) return new Response(lowMaster);
 				if (url === high) return new Response(playlist("native"));
 				if (extra.some((entry) => entry.url === url)) {

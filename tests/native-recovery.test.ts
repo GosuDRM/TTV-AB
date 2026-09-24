@@ -333,6 +333,30 @@ async function setupReducedNativeMaster(
 	return fixture;
 }
 
+async function setupRotatedNativeMaster(enhancedCodec: string | null = null) {
+	const fixture = await setupReducedNativeMaster(
+		enhancedCodec,
+		true,
+		38 * 60000,
+		true,
+	);
+	fixture.advance(2);
+	const { info, fetch } = fixture;
+	const originalFetch = fetch.getMockImplementation();
+	if (!originalFetch) throw new Error("Missing native fetch fixture");
+	fetch.mockImplementation(async (input: string | URL) =>
+		String(input) === masterUrl
+			? new Response(
+					info._NativePlaybackMaster.master.replaceAll(
+						"token=owned",
+						"token=rotated",
+					),
+				)
+			: originalFetch(input),
+	);
+	return fixture;
+}
+
 afterEach(() => {
 	vi.useRealTimers();
 	vi.restoreAllMocks();
@@ -473,7 +497,216 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 
-	it.each(["http-error", "changed-session", "changed-codec", "invalid", "ad"])(
+	it.each([null, hevc, "av01.0.12M.08,mp4a.40.2"])(
+		"recovers the exact retained session after signed master URLs rotate with codec %s",
+		async (codec) => {
+			const { context, info, state, fetch, target, serve, restored } =
+				await setupRotatedNativeMaster(codec);
+			state.PreferredQualityGroup = codec ? "1440p60" : "1080p60";
+			const saved = info._NativePlaybackMaster;
+			await context._refreshNativeRecoveryMaster(info, fetch);
+			expect(info._NativePlaybackMaster).toMatchObject({
+				master: saved.master,
+				masterUrl: saved.masterUrl,
+				refreshedCycleStartedAt: info.VisibleAdStartedAt,
+			});
+			expect(target).toHaveBeenCalledTimes(2);
+			expect(
+				target.mock.calls.every(
+					([url]) => url === (codec ? enhancedUrl : nativeUrl),
+				),
+			).toBe(true);
+			expect(info.EncodingsM3U8).toBe(reducedMaster);
+			for (let index = 0; index < 24 && !restored(); index++)
+				await serve(false, reducedNativeUrl);
+			expect(info._PendingPostAdNativeMaster?.playlistUrl).toBe(
+				codec ? enhancedUrl : nativeUrl,
+			);
+			const rebuilt = await (await context.fetch(reducedMasterUrl)).text();
+			expect(rebuilt).toContain(nativeUrl);
+			expect(rebuilt).not.toContain("token=rotated");
+			expect(
+				fetch.mock.calls.some(([url]) => String(url).includes("token=rotated")),
+			).toBe(false);
+		},
+	);
+
+	it.each([
+		"ad-first",
+		"ad-second",
+		"ad-segment",
+		"empty",
+		"gap",
+		"skip",
+		"ended",
+		"missing-sequence",
+		"rewound",
+		"http-error",
+	])(
+		"rejects rotated-master recovery when the retained media is %s",
+		async (failure) => {
+			const { context, info, fetch, target } = await setupRotatedNativeMaster();
+			const saved = info._NativePlaybackMaster;
+			let look = 0;
+			target.mockImplementation(async () => {
+				look++;
+				if (failure === "http-error")
+					return new Response(null, { status: 403 });
+				let text = playlist(
+					failure === "rewound" ? 900 - look : 900 + look,
+					"retained",
+					failure === "ad-first" || (failure === "ad-second" && look === 2),
+				);
+				if (failure === "ad-segment")
+					text = text.replaceAll("/retained-", "/stitched-ad-");
+				if (failure === "empty") text = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:900";
+				if (failure === "gap")
+					text = text.replaceAll("#EXTINF:", "#EXT-X-GAP\n#EXTINF:");
+				if (failure === "skip") text += "\n#EXT-X-SKIP:SKIPPED-SEGMENTS=3";
+				if (failure === "ended") text += "\n#EXT-X-ENDLIST";
+				if (failure === "missing-sequence")
+					text = text.replace(/#EXT-X-MEDIA-SEQUENCE:\d+\n/, "");
+				return new Response(text);
+			});
+			await context._refreshNativeRecoveryMaster(info, fetch);
+			await context._refreshNativeRecoveryMaster(info, fetch);
+			expect(info._NativePlaybackMaster).toBe(saved);
+			expect(context._getNativeRecoveryMaster(info).master).toBe(reducedMaster);
+			expect(target.mock.calls.length).toBe(
+				failure === "ad-second" || failure === "rewound" ? 2 : 1,
+			);
+			expect(
+				fetch.mock.calls.filter(([url]) => String(url) === masterUrl),
+			).toHaveLength(2);
+		},
+	);
+
+	it("keeps the backup when revalidated retained HD stops advancing", async () => {
+		const { context, info, fetch, target, serve, restored } =
+			await setupRotatedNativeMaster();
+		target.mockImplementation(
+			async () => new Response(playlist(900, "retained")),
+		);
+		await context._refreshNativeRecoveryMaster(info, fetch);
+		expect(context._getNativeRecoveryMaster(info).master).toContain(nativeUrl);
+		for (let index = 0; index < 24; index++)
+			await serve(false, reducedNativeUrl);
+		expect(restored()).toBeUndefined();
+		expect(info.IsHoldingBackupAfterAd).toBe(true);
+		expect(info._PendingPostAdNativeMaster).toBeNull();
+	});
+
+	it.each([
+		"route",
+		"generation",
+		"cycle",
+		"cycle-owner",
+		"master",
+		"loader",
+		"disabled",
+		"quality",
+		"abort",
+		"reset",
+	])(
+		"discards retained media validation after %s changes during the second look",
+		async (reason) => {
+			const { context, info, state, fetch, target } =
+				await setupRotatedNativeMaster();
+			const saved = info._NativePlaybackMaster;
+			const controller = new AbortController();
+			let release!: (response: Response) => void;
+			let reached!: () => void;
+			const secondLook = new Promise<void>((resolve) => {
+				reached = resolve;
+			});
+			target.mockResolvedValueOnce(new Response(playlist(900, "retained")));
+			target.mockImplementationOnce(
+				() =>
+					new Promise<Response>((resolve) => {
+						release = resolve;
+						reached();
+					}),
+			);
+			const refresh = context._refreshNativeRecoveryMaster(
+				info,
+				fetch,
+				controller.signal,
+			);
+			await secondLook;
+			if (reason === "route") state.PageMediaKey = "live:other";
+			if (reason === "generation") state.PagePlaybackContextGeneration++;
+			if (reason === "cycle") info.VisibleAdStartedAt++;
+			if (reason === "cycle-owner") state.CurrentAdMediaKey = "live:other";
+			if (reason === "master") info.UsherBaseUrl += "&changed=1";
+			if (reason === "loader") info.NativeRecoveryLoaderEpoch++;
+			if (reason === "disabled") state.IsAdStrippingEnabled = false;
+			if (reason === "quality") state.PreferredQualityGroup = "360p";
+			if (reason === "abort") controller.abort();
+			if (reason === "reset") context._resetStreamAdState(info);
+			release(new Response(playlist(901, "retained")));
+			await refresh;
+			expect(info._NativePlaybackMaster).toBe(
+				reason === "reset" ? null : saved,
+			);
+			expect(saved.refreshedAt).toBeUndefined();
+		},
+	);
+
+	it.each([500, 900])(
+		"bounds the master and both retained media checks to one deadline with %s ms requests",
+		async (latency) => {
+			const { context, info, fetch, target } = await setupRotatedNativeMaster();
+			const saved = info._NativePlaybackMaster;
+			const now = Date.now() + 2;
+			vi.useFakeTimers();
+			vi.setSystemTime(now);
+			const originalFetch = fetch.getMockImplementation();
+			if (!originalFetch) throw new Error("Missing native fetch fixture");
+			fetch.mockImplementation(async (url: string | URL) => {
+				await new Promise((resolve) => setTimeout(resolve, latency));
+				return originalFetch(url);
+			});
+			let settledAt = 0;
+			const refresh = context
+				._refreshNativeRecoveryMaster(info, fetch)
+				.then(() => {
+					settledAt = Date.now();
+				});
+			await vi.advanceTimersByTimeAsync(2500);
+			await refresh;
+			expect(settledAt - now).toBeLessThanOrEqual(2500);
+			if (latency === 500) {
+				expect(info._NativePlaybackMaster.refreshedCycleStartedAt).toBe(
+					info.VisibleAdStartedAt,
+				);
+				expect(target).toHaveBeenCalledTimes(2);
+			} else expect(info._NativePlaybackMaster).toBe(saved);
+			await vi.advanceTimersByTimeAsync(1000);
+			if (latency === 900) expect(info._NativePlaybackMaster).toBe(saved);
+		},
+	);
+
+	it("expires retained media validation when the second response body stalls", async () => {
+		const { context, info, fetch, target } = await setupRotatedNativeMaster();
+		const saved = info._NativePlaybackMaster;
+		const now = Date.now();
+		vi.useFakeTimers();
+		vi.setSystemTime(now);
+		target.mockResolvedValueOnce(new Response(playlist(900, "retained")));
+		const response = new Response(playlist(901, "retained"));
+		vi.spyOn(response, "arrayBuffer").mockImplementation(
+			() => new Promise(() => {}),
+		);
+		target.mockResolvedValueOnce(response);
+		const refresh = context._refreshNativeRecoveryMaster(info, fetch);
+		await vi.advanceTimersByTimeAsync(2500);
+		await refresh;
+		expect(info._NativePlaybackMaster).toBe(saved);
+		expect(saved.refreshPromise).toBeNull();
+		expect(target).toHaveBeenCalledTimes(2);
+	});
+
+	it.each(["http-error", "missing-quality", "changed-codec", "invalid", "ad"])(
 		"rejects a retained master refresh with %s without adopting its URLs",
 		async (failure) => {
 			const { context, info, fetch } = await setupReducedNativeMaster(
@@ -489,8 +722,8 @@ describe("owned native recovery after a codec fallback", () => {
 				if (failure === "http-error")
 					return new Response(null, { status: 403 });
 				return new Response(
-					failure === "changed-session"
-						? saved.master.replaceAll("token=owned", "token=new")
+					failure === "missing-quality"
+						? reducedMaster
 						: failure === "changed-codec"
 							? saved.master.replaceAll(avc, hevc)
 							: failure === "invalid"

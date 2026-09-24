@@ -1733,6 +1733,21 @@ function validateSharedDefinitions() {
 		},
 		{
 			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_parsePlaylistFirstMediaSequence",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_playlistHasKnownAdSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
+			helper: "_playlistHasMediaSegments",
+			source: processorSource,
+		},
+		{
+			consumer: "_refreshNativeRecoveryMaster",
 			helper: "_log",
 			source: processorSource,
 		},
