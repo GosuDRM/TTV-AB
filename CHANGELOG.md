@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.1.5] - 2026-09-24
+
+Fixed
+
+- **Faster HD During Ads** - Complete the next clean HD check without the extra 15-second wait, while keeping the fallback stream playing.
+- **Backup Validation** - Keep clean checks tied to the same stream and ad cycle, and keep checks spaced apart when a backup needs extra validation.
+
 ## [18.1.4] - 2026-09-24
 
 Fixed
