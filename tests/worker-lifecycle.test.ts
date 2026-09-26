@@ -1039,6 +1039,39 @@ describe("worker resource cleanup", () => {
 		}
 	});
 
+	it.each(["pong", "silence"])(
+		"rechecks worker startup after suspended page timers, then handles %s",
+		(reply) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			vi.spyOn(g, "_installPageSideM3U8Override").mockImplementation(() => {});
+			vi.spyOn(g, "_isWorkerLifecycleThrottled").mockReturnValue(false);
+			const recover = vi
+				.spyOn(g, "_recoverCrashedWorker")
+				.mockReturnValue(true);
+			const worker = {
+				__TTVABGeneration: 1,
+				__TTVABPageMediaKey: "live:testchannel",
+				__TTVABInitialHeartbeatTimer: null,
+				postMessage: vi.fn(),
+			};
+			T<(worker: object, context: object) => void>(
+				"_scheduleWorkerInitialHeartbeat",
+			)(worker, { MediaKey: "live:testchannel" });
+			vi.setSystemTime(700000);
+			vi.advanceTimersByTime(15000);
+			expect(recover).not.toHaveBeenCalled();
+			expect(worker.postMessage).toHaveBeenCalledOnce();
+			if (reply === "pong") {
+				T<(worker: object) => void>("_markWorkerPong")(worker);
+			}
+			vi.advanceTimersByTime(15000);
+			expect(recover).toHaveBeenCalledTimes(reply === "pong" ? 0 : 1);
+			expect(worker.__TTVABInitialHeartbeatTimer).toBeNull();
+			expect(vi.getTimerCount()).toBe(0);
+		},
+	);
+
 	it("deduplicates paused termination monitors without resuming playback", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
@@ -1321,6 +1354,184 @@ describe("worker log ingestion", () => {
 });
 
 describe("worker fetch relay ownership", () => {
+	it.each(["retired generation", "stale page"])(
+		"cleans up only the requesting worker's fetch after %s",
+		async (retirement) => {
+			vi.useFakeTimers();
+			const scopedWindow = window as unknown as Record<string, unknown>;
+			const previousRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+			const signals: AbortSignal[] = [];
+			scopedWindow.__TTVAB_REAL_FETCH__ = vi.fn(
+				(_url: string, options: RequestInit) =>
+					new Promise<Response>((_resolve, reject) => {
+						const signal = options.signal as AbortSignal;
+						signals.push(signal);
+						signal.addEventListener("abort", () => reject(signal.reason), {
+							once: true,
+						});
+					}),
+			);
+			const { worker, createWorker, restore } = installWorkerMessageHarness();
+			const successor = createWorker();
+			const request = {
+				key: "FetchRequest",
+				pageMediaKey: "live:testchannel",
+				pageContextGeneration: 0,
+				value: { id: "shared-id", url: "https://gql.twitch.tv/gql" },
+			};
+
+			try {
+				worker.emitMessage(request);
+				successor.emitMessage(request);
+				if (retirement === "retired generation") {
+					confirmHarnessWorkerPlayback(successor);
+				} else {
+					(
+						g.__TTVAB_STATE__ as Record<string, unknown>
+					).PagePlaybackContextGeneration = 1;
+				}
+				worker.emitMessage({ ...request, key: "CancelFetchRequest" });
+				expect(signals).toHaveLength(2);
+				expect(signals[0].aborted).toBe(true);
+				expect(signals[1].aborted).toBe(false);
+				worker.emitMessage(request);
+				expect(signals).toHaveLength(2);
+				await vi.advanceTimersByTimeAsync(0);
+			} finally {
+				worker.terminate();
+				successor.terminate();
+				await vi.advanceTimersByTimeAsync(0);
+				restore();
+				scopedWindow.__TTVAB_REAL_FETCH__ = previousRealFetch;
+			}
+		},
+	);
+
+	it.each(["cancellation", "termination", "duplicate request"])(
+		"does not deliver a late fetch result after %s",
+		async (retirement) => {
+			vi.useFakeTimers();
+			const scopedWindow = window as unknown as Record<string, unknown>;
+			const previousRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+			const replies: Array<(response: Response) => void> = [];
+			scopedWindow.__TTVAB_REAL_FETCH__ = vi.fn(
+				() => new Promise<Response>((resolve) => replies.push(resolve)),
+			);
+			const { worker, restore } = installWorkerMessageHarness();
+			const request = {
+				key: "FetchRequest",
+				value: { id: "retiring-fetch", url: "https://gql.twitch.tv/gql" },
+			};
+			const decode = T<(message: unknown) => Record<string, unknown> | null>(
+				"_getWorkerBridgeMessage",
+			);
+			const responses = () =>
+				worker.messages
+					.map(decode)
+					.filter((data) => data?.key === "FetchResponse");
+			try {
+				worker.emitMessage(request);
+				if (retirement === "termination") worker.terminate();
+				else if (retirement === "duplicate request")
+					worker.emitMessage(request);
+				else worker.emitMessage({ ...request, key: "CancelFetchRequest" });
+				replies[0](new Response("stale body"));
+				await vi.advanceTimersByTimeAsync(0);
+				expect(responses()).toEqual([]);
+				if (retirement === "duplicate request") {
+					replies[1](new Response("current body"));
+					await vi.advanceTimersByTimeAsync(0);
+					expect(responses()).toMatchObject([
+						{ value: { id: "retiring-fetch", body: "current body" } },
+					]);
+				}
+			} finally {
+				worker.terminate();
+				restore();
+				scopedWindow.__TTVAB_REAL_FETCH__ = previousRealFetch;
+			}
+		},
+	);
+
+	it.each(["throw", "unavailable"])(
+		"cleans up a worker fetch immediately when bridge send is %s",
+		async (failure) => {
+			vi.useFakeTimers();
+			vi.spyOn(g, "_isWorkerContext").mockReturnValue(true);
+			const error = new Error("bridge send failed");
+			const post = vi
+				.spyOn(g, "_postWorkerBridgeMessage")
+				.mockImplementation(() => {
+					if (failure === "throw") throw error;
+					return false;
+				});
+			const controller = new AbortController();
+			const removeListener = vi.spyOn(controller.signal, "removeEventListener");
+			const rejected = vi.fn();
+			void T<(...args: unknown[]) => Promise<unknown>>("_fetchViaWorkerBridge")(
+				"https://gql.twitch.tv/gql",
+				{},
+				5000,
+				controller.signal,
+			).catch(rejected);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(rejected).toHaveBeenCalledOnce();
+			expect(rejected.mock.calls[0][0]).toBeInstanceOf(Error);
+			const pending = (
+				g.__TTVAB_STATE__ as { PendingFetchRequests: Map<string, unknown> }
+			).PendingFetchRequests;
+			expect(pending.size).toBe(0);
+			expect(vi.getTimerCount()).toBe(0);
+			expect(removeListener).toHaveBeenCalledWith(
+				"abort",
+				expect.any(Function),
+			);
+			controller.abort();
+			await vi.advanceTimersByTimeAsync(10000);
+			expect(post).toHaveBeenCalledOnce();
+		},
+	);
+
+	it("reports a current fetch timeout while releasing its controller", async () => {
+		vi.useFakeTimers();
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const previousRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		scopedWindow.__TTVAB_REAL_FETCH__ = vi.fn(
+			(_url: string, options: RequestInit) =>
+				new Promise<Response>((_resolve, reject) => {
+					const signal = options.signal as AbortSignal;
+					signal.addEventListener("abort", () => reject(signal.reason), {
+						once: true,
+					});
+				}),
+		);
+		const { worker, restore } = installWorkerMessageHarness();
+		try {
+			emitHarnessWorkerPong(worker);
+			worker.emitMessage({
+				key: "FetchRequest",
+				value: { id: "timeout-fetch", url: "https://gql.twitch.tv/gql" },
+			});
+			await vi.advanceTimersByTimeAsync(10000);
+			const decode = T<(message: unknown) => Record<string, unknown> | null>(
+				"_getWorkerBridgeMessage",
+			);
+			expect(
+				worker.messages
+					.map(decode)
+					.filter((data) => data?.key === "FetchResponse"),
+			).toMatchObject([
+				{ value: { id: "timeout-fetch", error: "fetch relay timeout" } },
+			]);
+			expect((worker as unknown as Worker).__TTVABFetchControllers.size).toBe(
+				0,
+			);
+		} finally {
+			restore();
+			scopedWindow.__TTVAB_REAL_FETCH__ = previousRealFetch;
+		}
+	});
+
 	it("aborts the exact page fetch when the worker retires its request", async () => {
 		const scopedWindow = window as unknown as Record<string, unknown>;
 		const previousRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
@@ -1354,6 +1565,12 @@ describe("worker fetch relay ownership", () => {
 				true,
 			);
 
+			worker.dispatchEvent(
+				new MessageEvent("message", {
+					data: { key: "CancelFetchRequest", value: { id: "fetch-route-a" } },
+				}),
+			);
+			expect(relaySignal?.aborted).toBe(false);
 			worker.emitMessage({
 				key: "CancelFetchRequest",
 				value: { id: "fetch-route-a" },
@@ -1662,6 +1879,103 @@ describe("worker recovery lifecycle", () => {
 		expect(recoveryState.phase).toBe("idle");
 	});
 
+	it.each([
+		{ hidden: false, gap: 60000 },
+		{ hidden: true, gap: 120000 },
+	])(
+		"does not rearm exhausted recovery after a $gap ms heartbeat gap with hidden=$hidden",
+		({ hidden, gap }) => {
+			vi.spyOn(g, "_isWorkerLifecycleThrottled").mockReturnValue(hidden);
+			const resumedAt = 100000 + gap;
+			const context = { MediaKey: "live:testchannel" };
+			const recovery = T<(context: unknown) => Record<string, unknown>>(
+				"_getWorkerRecoveryState",
+			)(context);
+			Object.assign(recovery, {
+				attempts: 3,
+				phase: "stabilizing",
+				stableGeneration: 2,
+				stableSince: 100000,
+			});
+			const worker = {
+				__TTVABGeneration: 2,
+				__TTVABPageMediaKey: "live:testchannel",
+				__TTVABFirstPongAt: 100000,
+				__TTVABLastPongAt: 100000,
+				__TTVABPlaybackObservedAtByMediaKey: new Map([
+					["live:testchannel", resumedAt],
+				]),
+			};
+			const markPong =
+				T<(worker: unknown, now: number) => void>("_markWorkerPong");
+			markPong(worker, resumedAt);
+			expect(recovery.attempts).toBe(3);
+			expect(recovery.phase).toBe("stabilizing");
+			for (
+				let now = resumedAt + 10000;
+				now <= resumedAt + 60000;
+				now += 10000
+			) {
+				worker.__TTVABPlaybackObservedAtByMediaKey.set("live:testchannel", now);
+				markPong(worker, now);
+			}
+			expect(recovery.attempts).toBe(0);
+			expect(recovery.phase).toBe("idle");
+		},
+	);
+
+	it("allows normal throttled heartbeats to confirm sustained recovery", () => {
+		vi.spyOn(g, "_isWorkerLifecycleThrottled").mockReturnValue(true);
+		const recovery = T<(context: unknown) => Record<string, unknown>>(
+			"_getWorkerRecoveryState",
+		)({ MediaKey: "live:testchannel" });
+		Object.assign(recovery, {
+			attempts: 3,
+			phase: "stabilizing",
+			stableGeneration: 2,
+			stableSince: 100000,
+		});
+		T<(worker: unknown, now: number) => void>("_markWorkerPong")(
+			{
+				__TTVABGeneration: 2,
+				__TTVABPageMediaKey: "live:testchannel",
+				__TTVABFirstPongAt: 100000,
+				__TTVABLastPongAt: 100000,
+				__TTVABPlaybackObservedAtByMediaKey: new Map([
+					["live:testchannel", 160000],
+				]),
+			},
+			160000,
+		);
+		expect(recovery.attempts).toBe(0);
+		expect(recovery.phase).toBe("idle");
+	});
+
+	it("does not let a fresh pong promote stale playback over the current worker", () => {
+		const owners = g._WorkerPlaybackOwnerGenerationByContext as Map<
+			string,
+			number
+		>;
+		owners.set("live:testchannel", 1);
+		const candidate = {
+			__TTVABGeneration: 2,
+			__TTVABPageMediaKey: "live:testchannel",
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				["live:testchannel", 100000],
+			]),
+		};
+		const markPong =
+			T<(worker: unknown, now: number) => void>("_markWorkerPong");
+		markPong(candidate, 160000);
+		expect(owners.get("live:testchannel")).toBe(1);
+		candidate.__TTVABPlaybackObservedAtByMediaKey.set(
+			"live:testchannel",
+			160001,
+		);
+		markPong(candidate, 160001);
+		expect(owners.get("live:testchannel")).toBe(2);
+	});
+
 	it("rearms an exhausted context only for exact post-crash playback proof", () => {
 		const context = {
 			MediaType: "live",
@@ -1727,6 +2041,9 @@ describe("worker recovery lifecycle", () => {
 		expect(recoveryState.stableGeneration).toBe(2);
 		expect(recoveryState.retiredThroughGeneration).toBe(1);
 
+		for (let now = 12000; now < 62000; now += 10000) {
+			markPong(replacement, now);
+		}
 		markPong(replacement, 62000);
 		expect(recoveryState.attempts).toBe(3);
 		replacement.__TTVABPlaybackObservedAtByMediaKey.set(
@@ -1796,6 +2113,11 @@ describe("worker recovery lifecycle", () => {
 			expect(recoveryState.phase).toBe("stabilizing");
 			expect(recoveryState.attempts).toBe(2);
 
+			for (let now = 12000; now < 62000; now += 10000) {
+				T<(worker: Record<string, unknown>, now: number) => void>(
+					"_markWorkerPong",
+				)(replacement, now);
+			}
 			replacement.__TTVABPlaybackObservedAtByMediaKey.set(
 				"live:testchannel",
 				62000,
@@ -4571,13 +4893,15 @@ describe("worker recovery lifecycle", () => {
 					},
 					{ MediaType: "live", ChannelName: "testchannel" },
 				);
-				vi.advanceTimersByTime(2999);
+				vi.advanceTimersByTime(5999);
 				expect(playerTask).toHaveBeenCalledOnce();
 				expect(recoveryState.lastReloadAt).toBe(0);
+				expect(recoveryState.attempts).toBe(0);
 
 				vi.advanceTimersByTime(1);
 				expect(playerTask).toHaveBeenCalledTimes(2);
-				expect(recoveryState.lastReloadAt).toBe(103000);
+				expect(recoveryState.lastReloadAt).toBe(106000);
+				expect(recoveryState.attempts).toBe(1);
 			} finally {
 				if (previousGetPlaybackContext === undefined) {
 					delete g._getPlaybackContextFromUrl;
@@ -6003,6 +6327,11 @@ describe("worker recovery lifecycle", () => {
 
 		try {
 			expect(
+				T<(worker: unknown, now: number) => boolean>(
+					"_promoteWorkerPlaybackOwner",
+				)(mediaOwner, 90000),
+			).toBe(true);
+			expect(
 				T<
 					(
 						worker: Record<string, unknown>,
@@ -6058,7 +6387,7 @@ describe("worker recovery lifecycle", () => {
 				{ MediaType: "live", ChannelName: "testchannel" },
 			);
 
-			vi.advanceTimersByTime(31000);
+			vi.advanceTimersByTime(33000);
 			expect(playerTask).toHaveBeenCalledTimes(2);
 			expect(
 				T<(context: Record<string, unknown>) => Record<string, unknown>>(
@@ -6067,7 +6396,7 @@ describe("worker recovery lifecycle", () => {
 					MediaType: "live",
 					ChannelName: "testchannel",
 				}).attempts,
-			).toBe(2);
+			).toBe(1);
 		} finally {
 			if (previousGetPlaybackContext === undefined) {
 				delete g._getPlaybackContextFromUrl;
@@ -6417,7 +6746,7 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
-	it("stops after the bounded recovery cap when the player never reloads", () => {
+	it("stops after the bounded player wait when no reload can start", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);
 		const previousGetPlaybackContext = g._getPlaybackContextFromUrl;
@@ -6446,11 +6775,11 @@ describe("worker recovery lifecycle", () => {
 				{ MediaType: "live", ChannelName: "testchannel" },
 			);
 
-			vi.advanceTimersByTime(7000);
-			expect(playerTask).toHaveBeenCalledTimes(3);
+			vi.advanceTimersByTime(31000);
+			expect(playerTask).toHaveBeenCalledTimes(6);
 			expect(installFallback).toHaveBeenCalledOnce();
 			vi.advanceTimersByTime(30000);
-			expect(playerTask).toHaveBeenCalledTimes(3);
+			expect(playerTask).toHaveBeenCalledTimes(6);
 		} finally {
 			if (previousGetPlaybackContext === undefined) {
 				delete g._getPlaybackContextFromUrl;
@@ -6463,6 +6792,256 @@ describe("worker recovery lifecycle", () => {
 				g._installPageSideM3U8Override = previousInstallFallback;
 			}
 		}
+	});
+});
+
+describe("worker recovery readiness and replacement races", () => {
+	const context = { MediaKey: "live:testchannel" };
+	const recovery = () =>
+		T<(context: object) => Record<string, unknown>>("_getWorkerRecoveryState")(
+			context,
+		);
+	const crash = (worker = { __TTVABGeneration: 1 }) =>
+		T<(worker: object, context: object, message: string) => boolean>(
+			"_recoverCrashedWorker",
+		)(worker, context, "Worker crashed");
+	const replacement = (observedAt = Date.now()) => {
+		const worker = {
+			__TTVABGeneration: 2,
+			__TTVABCreatedAt: Date.now(),
+			__TTVABPageMediaKey: context.MediaKey,
+			__TTVABFirstPongAt: Date.now(),
+			__TTVABLastPongAt: Date.now(),
+			__TTVABPlaybackObservedAtByMediaKey: new Map([
+				[context.MediaKey, observedAt],
+			]),
+		};
+		(g._S as { workers: unknown[] }).workers.push(worker);
+		return worker;
+	};
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		vi.spyOn(g, "_installPageSideM3U8Override").mockReturnValue(undefined);
+		vi.stubGlobal("_showWorkerRecoveryNotice", vi.fn());
+		vi.stubGlobal("_hasUserPauseIntent", () => false);
+		vi.stubGlobal("_isNativeDocumentHidden", () => false);
+		g._doPlayerTask = vi.fn(() => false);
+	});
+
+	afterEach(() => {
+		vi.clearAllTimers();
+		vi.unstubAllGlobals();
+	});
+
+	it("keeps the reload budget available while Twitch temporarily has no usable player", () => {
+		const task = vi.fn(() => {
+			if (Date.now() < 112000) return false;
+			recordTestPlayerReload(context.MediaKey);
+			return true;
+		});
+		g._doPlayerTask = task;
+		crash();
+		vi.advanceTimersByTime(11000);
+		expect(recovery().attempts).toBe(0);
+		expect(recovery().phase).toBe("waiting-player");
+		expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(5000);
+		expect(recovery().attempts).toBe(1);
+		expect(recovery().phase).toBe("awaiting-successor");
+		replacement();
+		vi.advanceTimersByTime(1000);
+		expect(recovery().phase).toBe("stabilizing");
+		expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
+	});
+
+	it("bounds unavailable-player waiting without reporting three reloads that never happened", () => {
+		crash();
+		vi.advanceTimersByTime(30000);
+		expect(recovery().attempts).toBe(0);
+		expect(recovery().phase).toBe("waiting-player");
+		expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1000);
+		expect(recovery().phase).toBe("exhausted");
+		expect(recovery().attempts).toBe(0);
+		expect(g._showWorkerRecoveryNotice).toHaveBeenCalledOnce();
+		const calls = (g._doPlayerTask as ReturnType<typeof vi.fn>).mock.calls
+			.length;
+		vi.advanceTimersByTime(120000);
+		expect(g._doPlayerTask).toHaveBeenCalledTimes(calls);
+		expect(recovery().timerID).toBeNull();
+	});
+
+	it("allows a slow replacement to prove playback before retrying the reload", () => {
+		g._doPlayerTask = vi.fn(() => {
+			recordTestPlayerReload(context.MediaKey);
+			return true;
+		});
+		crash();
+		vi.advanceTimersByTime(25000);
+		expect(recovery().phase).toBe("awaiting-successor");
+		expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		replacement();
+		vi.advanceTimersByTime(1000);
+		expect(recovery().phase).toBe("stabilizing");
+		expect(recovery().attempts).toBe(1);
+		expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
+	});
+
+	it.each(["false", "throw"])(
+		"counts and spaces source reloads that actually started before returning %s",
+		(outcome) => {
+			const dispatches: number[] = [];
+			g._doPlayerTask = vi.fn(() => {
+				dispatches.push(Date.now());
+				recordTestPlayerReload(context.MediaKey);
+				if (outcome === "throw") throw new Error("source load failed");
+				return false;
+			});
+			crash();
+			vi.advanceTimersByTime(120000);
+			expect(dispatches).toEqual([101000, 131000, 161000]);
+			expect(recovery().attempts).toBe(3);
+			expect(recovery().phase).toBe("exhausted");
+			expect(g._showWorkerRecoveryNotice).toHaveBeenCalledOnce();
+		},
+	);
+
+	it("does not renew the unavailable-player deadline when a successor also crashes", () => {
+		crash();
+		vi.advanceTimersByTime(25000);
+		const deadline = recovery().playerWaitDeadlineAt;
+		crash({ __TTVABGeneration: 2 });
+		expect(recovery().playerWaitDeadlineAt).toBe(deadline);
+		vi.advanceTimersByTime(6000);
+		expect(recovery().phase).toBe("exhausted");
+		expect(recovery().attempts).toBe(0);
+		expect(g._showWorkerRecoveryNotice).toHaveBeenCalledOnce();
+	});
+
+	it("does not extend an expired player wait for another unproven starting worker", () => {
+		crash();
+		vi.advanceTimersByTime(25000);
+		crash({ __TTVABGeneration: 2 });
+		vi.advanceTimersByTime(5000);
+		(g._S as { workers: unknown[] }).workers.push({
+			__TTVABGeneration: 3,
+			__TTVABCreatedAt: Date.now(),
+			__TTVABPageMediaKey: context.MediaKey,
+		});
+		vi.advanceTimersByTime(1000);
+		expect(recovery().phase).toBe("exhausted");
+		expect(recovery().timerID).toBeNull();
+		expect(g._showWorkerRecoveryNotice).toHaveBeenCalledOnce();
+	});
+
+	it("keeps three dispatched reloads as the hard limit when no replacement proves playback", () => {
+		const dispatches: number[] = [];
+		g._doPlayerTask = vi.fn(() => {
+			dispatches.push(Date.now());
+			recordTestPlayerReload(context.MediaKey);
+			return true;
+		});
+		crash();
+		vi.advanceTimersByTime(120000);
+		expect(dispatches).toEqual([101000, 133000, 167000]);
+		expect(recovery().phase).toBe("exhausted");
+		expect(recovery().attempts).toBe(3);
+		expect(recovery().timerID).toBeNull();
+		expect(g._showWorkerRecoveryNotice).toHaveBeenCalledOnce();
+	});
+
+	it("checks a healthy automatic successor before declaring the final reload exhausted", () => {
+		let calls = 0;
+		g._doPlayerTask = vi.fn(() => {
+			calls++;
+			recordTestPlayerReload(context.MediaKey);
+			if (calls === 3) replacement();
+			return false;
+		});
+		crash();
+		vi.advanceTimersByTime(61000);
+		expect(recovery().phase).toBe("stabilizing");
+		expect(recovery().attempts).toBe(3);
+		expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
+	});
+
+	it("suspends the player wait during an explicit pause without authorizing a reload", () => {
+		crash();
+		vi.advanceTimersByTime(11000);
+		vi.stubGlobal("_hasUserPauseIntent", () => true);
+		vi.advanceTimersByTime(60000);
+		expect(recovery().phase).toBe("waiting-user-pause");
+		expect(recovery().attempts).toBe(0);
+		expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
+		vi.stubGlobal("_hasUserPauseIntent", () => false);
+		replacement();
+		vi.advanceTimersByTime(5000);
+		expect(recovery().phase).toBe("stabilizing");
+		expect(recovery().attempts).toBe(0);
+	});
+
+	it.each(["pause", "advancing hidden video"])(
+		"retains only the unused player wait after %s ends",
+		(reason) => {
+			crash();
+			vi.advanceTimersByTime(11000);
+			const video = document.createElement("video");
+			Object.defineProperty(video, "currentTime", {
+				get: () => Date.now() / 1000,
+			});
+			vi.stubGlobal("_getPrimaryMediaElement", () => video);
+			vi.stubGlobal("_hasUserPauseIntent", () => reason === "pause");
+			vi.stubGlobal("_isNativeDocumentHidden", () => reason !== "pause");
+			vi.advanceTimersByTime(60000);
+			expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
+			vi.stubGlobal("_hasUserPauseIntent", () => false);
+			vi.stubGlobal("_isNativeDocumentHidden", () => false);
+			vi.advanceTimersByTime(5000);
+			const remaining = Number(recovery().playerWaitDeadlineAt) - Date.now();
+			expect(remaining).toBeGreaterThan(0);
+			expect(remaining).toBeLessThan(30000);
+			vi.advanceTimersByTime(remaining);
+			expect(recovery().phase).toBe("exhausted");
+			expect(recovery().attempts).toBe(0);
+			expect(g._showWorkerRecoveryNotice).toHaveBeenCalledOnce();
+		},
+	);
+
+	it("rejects stale media evidence even when the replacement keeps answering heartbeat pings", () => {
+		vi.setSystemTime(140000);
+		const candidate = replacement(110000);
+		const getReplacement = T<
+			(
+				worker: object,
+				context: object,
+				boundary: number,
+				generation: number,
+			) => unknown
+		>("_getQualifiedReplacementWorker");
+		expect(getReplacement({}, context, 100000, 1)).toBeNull();
+		candidate.__TTVABPlaybackObservedAtByMediaKey.set(
+			context.MediaKey,
+			Date.now(),
+		);
+		expect(getReplacement({}, context, 100000, 1)).toBe(candidate);
+	});
+
+	it("cannot restart the previous recovery timer after a reload synchronously changes page generation", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PagePlaybackContextGeneration = 1;
+		g._doPlayerTask = vi.fn(() => {
+			recordTestPlayerReload(context.MediaKey);
+			state.PagePlaybackContextGeneration = 3;
+			return true;
+		});
+		crash();
+		vi.advanceTimersByTime(120000);
+		expect(recovery().phase).toBe("cancelled");
+		expect(recovery().timerID).toBeNull();
+		expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		expect(g._showWorkerRecoveryNotice).not.toHaveBeenCalled();
 	});
 });
 
@@ -13715,7 +14294,7 @@ describe("worker watchdog visibility awareness", () => {
 		const worker = makeTrackedWorker();
 
 		startWatchdog();
-		vi.advanceTimersByTime(19999);
+		vi.advanceTimersByTime(24999);
 		expect(worker.__TTVABCrashed).toBeUndefined();
 		vi.advanceTimersByTime(1);
 		expect(worker.__TTVABCrashed).toBe(true);
@@ -13933,6 +14512,80 @@ describe("worker watchdog visibility awareness", () => {
 		vi.advanceTimersByTime(30000);
 		expect(worker.__TTVABMissedPongs).toBe(0);
 		expect(worker.__TTVABCrashed).toBeUndefined();
+	});
+
+	it.each(["visible", "hidden video", "hidden missing video"])(
+		"rechecks an unanswered ping after page timers resume with %s",
+		(mode) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100000);
+			const hidden = mode !== "visible";
+			g._isNativeDocumentHidden = () => hidden;
+			const media = document.createElement("video");
+			media.currentTime = 10;
+			g._getPrimaryMediaElement = () =>
+				mode === "hidden missing video" ? null : media;
+			g._installPageSideM3U8Override = vi.fn();
+			g._doPlayerTask = vi.fn(() => false);
+			const worker = makeTrackedWorker();
+			startWatchdog();
+			vi.advanceTimersByTime(hidden ? 15000 : 25000);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+			vi.setSystemTime(Date.now() + 600000);
+			vi.advanceTimersByTime(5000);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+			expect(worker.__TTVABMissedPongs).toBe(0);
+			expect(worker.__TTVABLastPingSentAt).toBe(Date.now());
+			vi.advanceTimersByTime(10000);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+			vi.advanceTimersByTime(15000);
+			expect(worker.__TTVABCrashed).toBe(true);
+		},
+	);
+
+	it("still recovers a silent hidden worker with minute-spaced timer callbacks", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		g._isNativeDocumentHidden = () => true;
+		g._getPrimaryMediaElement = () => null;
+		g._installPageSideM3U8Override = vi.fn();
+		g._doPlayerTask = vi.fn(() => false);
+		const worker = makeTrackedWorker();
+		startWatchdog();
+		for (let tick = 0; tick < 3; tick++) {
+			vi.setSystemTime(Date.now() + 55000);
+			vi.advanceTimersByTime(5000);
+		}
+		expect(worker.__TTVABCrashed).toBe(true);
+	});
+
+	it("discards hidden freeze evidence while the user has paused playback", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		g._isNativeDocumentHidden = () => true;
+		let paused = true;
+		g._hasUserPauseIntent = () => paused;
+		const media = document.createElement("video");
+		media.currentTime = 10;
+		g._getPrimaryMediaElement = () => media;
+		g._installPageSideM3U8Override = vi.fn();
+		g._doPlayerTask = vi.fn(() => false);
+		const worker = makeTrackedWorker({
+			__TTVABLastPongAt: 50000,
+			__TTVABLastPingSentAt: 60000,
+			__TTVABHiddenHeartbeatMediaRef: new WeakRef(media),
+			__TTVABHiddenHeartbeatMediaTime: 10,
+		});
+		startWatchdog();
+		vi.advanceTimersByTime(5000);
+		paused = false;
+		vi.advanceTimersByTime(5000);
+		expect(worker.__TTVABCrashed).toBeUndefined();
+		media.currentTime = 15;
+		vi.advanceTimersByTime(5000);
+		expect(worker.__TTVABCrashed).toBeUndefined();
+		vi.advanceTimersByTime(5000);
+		expect(worker.__TTVABCrashed).toBe(true);
 	});
 
 	it("still declares a visible worker crashed after sustained unanswered pings", () => {

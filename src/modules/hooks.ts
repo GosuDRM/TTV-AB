@@ -2733,6 +2733,8 @@ const HW_MAX_MISSED_PONGS = 2;
 const HW_MAX_MISSED_PONGS_HIDDEN = 6;
 const HW_HIDDEN_STALE_MIN_MS = 90000;
 const HW_RECOVERY_COOLDOWN_MS = 30000;
+const HW_RECOVERY_PLAYER_WAIT_MS = 30000;
+const HW_RECOVERY_SUCCESSOR_TIMEOUT_MS = 30000;
 const HW_RECOVERY_STABLE_MS = 60000;
 const HW_MAX_TRACKED_WORKERS = 40;
 let _workerGeneration = 0;
@@ -2755,6 +2757,7 @@ function _scheduleWorkerInitialHeartbeat(worker, pagePlaybackContext) {
 		Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
 	);
 	const workerRef = new WeakRef<Worker>(worker);
+	let lastCheckedAt = Date.now();
 	const checkHeartbeat = () => {
 		const currentWorker = workerRef.deref();
 		if (!currentWorker) return;
@@ -2772,7 +2775,22 @@ function _scheduleWorkerInitialHeartbeat(worker, pagePlaybackContext) {
 			return;
 		}
 		_installPageSideM3U8Override();
-		if (_isWorkerLifecycleThrottled(pagePlaybackContext)) {
+		const now = Date.now();
+		const elapsed = now - lastCheckedAt;
+		lastCheckedAt = now;
+		const isThrottled = _isWorkerLifecycleThrottled(pagePlaybackContext);
+		const schedulingGraceMs = isThrottled
+			? HW_HIDDEN_STALE_MIN_MS
+			: HW_INITIAL_PONG_TIMEOUT_MS + HW_PONG_TIMEOUT_MS;
+		const timerWasSuspended = elapsed < 0 || elapsed > schedulingGraceMs;
+		if (timerWasSuspended) {
+			currentWorker.__TTVABMissedPongs = 0;
+			currentWorker.__TTVABLastPingSentAt = now;
+			try {
+				_postWorkerBridgeMessage(currentWorker, { key: "Ping", value: null });
+			} catch {}
+		}
+		if (isThrottled || timerWasSuspended) {
 			currentWorker.__TTVABInitialHeartbeatTimer = setTimeout(
 				checkHeartbeat,
 				HW_INITIAL_PONG_TIMEOUT_MS,
@@ -2782,7 +2800,7 @@ function _scheduleWorkerInitialHeartbeat(worker, pagePlaybackContext) {
 		_recoverCrashedWorker(
 			currentWorker,
 			pagePlaybackContext,
-			"Worker heartbeat missed — blob: injection likely failed; installing page-side M3U8 fallback",
+			"Worker startup heartbeat timed out; checking playback recovery",
 			"warning",
 		);
 	};
@@ -2972,6 +2990,8 @@ function _getWorkerRecoveryState(context, create = true) {
 			expectedAfterGeneration: 0,
 			reloadDispatchedAt: 0,
 			lastReloadAt: 0,
+			playerWaitDeadlineAt: 0,
+			playerWaitSuspendedAt: 0,
 			successorDeadlineAt: 0,
 			stableGeneration: 0,
 			stableSince: 0,
@@ -3012,7 +3032,6 @@ function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
 		? HW_HIDDEN_STALE_MIN_MS
 		: HW_PONG_TIMEOUT_MS;
 	if (
-		state.attempts <= 0 ||
 		state.phase !== "stabilizing" ||
 		state.stableGeneration !== workerGeneration ||
 		state.stableSince <= 0 ||
@@ -3026,6 +3045,8 @@ function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
 	state.attempts = 0;
 	state.lastAttemptAt = 0;
 	state.lastReloadAt = 0;
+	state.playerWaitDeadlineAt = 0;
+	state.playerWaitSuspendedAt = 0;
 	state.limitLogged = false;
 	state.noticeShownAt = 0;
 	state.stableGeneration = 0;
@@ -3102,7 +3123,8 @@ function _promoteWorkerPlaybackOwner(
 	const generation = Math.max(0, Number(worker.__TTVABGeneration) || 0);
 	if (generation <= 0) return false;
 	const mediaKey = _normalizeMediaKey(context.MediaKey);
-	if (!mediaKey || _getWorkerPlaybackObservationAt(worker, context) <= 0) {
+	const observationAt = _getWorkerPlaybackObservationAt(worker, context);
+	if (!mediaKey || observationAt <= 0) {
 		return false;
 	}
 	const contextKey = _getWorkerRecoveryContextKey(context);
@@ -3110,11 +3132,28 @@ function _promoteWorkerPlaybackOwner(
 		0,
 		Number(_WorkerPlaybackOwnerGenerationByContext.get(contextKey)) || 0,
 	);
+	const observationFreshnessMs = _isWorkerLifecycleThrottled(context)
+		? HW_HIDDEN_STALE_MIN_MS
+		: HW_PONG_TIMEOUT_MS;
+	if (
+		generation > currentGeneration &&
+		now - observationAt > observationFreshnessMs
+	) {
+		return false;
+	}
 	const didPromote = generation >= currentGeneration;
 	if (didPromote) {
 		_WorkerPlaybackOwnerGenerationByContext.delete(contextKey);
 		_WorkerPlaybackOwnerGenerationByContext.set(contextKey, generation);
-		if (typeof _clearWorkerRecoveryNotice === "function") {
+		const recoveryState = _getWorkerRecoveryState(context, false);
+		if (
+			typeof _clearWorkerRecoveryNotice === "function" &&
+			(!recoveryState ||
+				recoveryState.phase === "idle" ||
+				(generation > recoveryState.failedGeneration &&
+					observationAt > recoveryState.crashedAt &&
+					now - observationAt <= observationFreshnessMs))
+		) {
 			_clearWorkerRecoveryNotice(mediaKey);
 		}
 	}
@@ -3147,6 +3186,9 @@ function _beginExhaustedWorkerRecoveryStabilization(
 	if (_isPlaybackContextMismatch(workerContext, context)) return false;
 	const workerGeneration = Math.max(0, Number(worker?.__TTVABGeneration) || 0);
 	const observationAt = _getWorkerPlaybackObservationAt(worker, context);
+	const observationFreshnessMs = _isWorkerLifecycleThrottled(context)
+		? HW_HIDDEN_STALE_MIN_MS
+		: HW_PONG_TIMEOUT_MS;
 	const playbackOwnerGeneration = Math.max(
 		0,
 		Number(
@@ -3159,6 +3201,7 @@ function _beginExhaustedWorkerRecoveryStabilization(
 		workerGeneration <=
 			Math.max(0, Number(recoveryState.failedGeneration) || 0) ||
 		observationAt <= Math.max(0, Number(recoveryState.crashedAt) || 0) ||
+		now - observationAt > observationFreshnessMs ||
 		workerGeneration < playbackOwnerGeneration ||
 		!_isWorkerHeartbeatHealthy(worker, now, context)
 	) {
@@ -3192,10 +3235,18 @@ function _markWorkerPong(worker, now = Date.now()) {
 		return;
 	}
 	_clearWorkerInitialHeartbeat(worker);
+	const workerContext = _getWorkerPlaybackContext(worker);
+	const recoveryState = _getWorkerRecoveryState(workerContext, false);
+	if (
+		recoveryState?.phase === "stabilizing" &&
+		recoveryState.stableGeneration === worker.__TTVABGeneration &&
+		!_isWorkerHeartbeatHealthy(worker, now, workerContext)
+	) {
+		recoveryState.stableSince = now;
+	}
 	worker.__TTVABLastPongAt = now;
 	if (!worker.__TTVABFirstPongAt) worker.__TTVABFirstPongAt = now;
 	worker.__TTVABMissedPongs = 0;
-	const workerContext = _getWorkerPlaybackContext(worker);
 	if (
 		_promoteWorkerPlaybackOwner(worker, now) &&
 		_getWorkerPlaybackObservationAt(worker, workerContext) > 0
@@ -3348,6 +3399,9 @@ function _getQualifiedReplacementWorker(
 		0,
 		Number(minimumGeneration) || 0,
 	);
+	const observationFreshnessMs = _isWorkerLifecycleThrottled(playbackContext)
+		? HW_HIDDEN_STALE_MIN_MS
+		: HW_PONG_TIMEOUT_MS;
 	let replacement = null;
 	let replacementGeneration = 0;
 	for (const candidate of _S.workers) {
@@ -3379,6 +3433,7 @@ function _getQualifiedReplacementWorker(
 				candidateCreatedAt < normalizedBoundaryAt) ||
 			observedAt <= 0 ||
 			observedAt < normalizedBoundaryAt ||
+			now - observedAt > observationFreshnessMs ||
 			candidateGeneration <= replacementGeneration
 		) {
 			continue;
@@ -4077,35 +4132,27 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 	) {
 		return;
 	}
-	if (recoveryState.attempts >= HW_MAX_RESTART) {
+	const exhaustRecovery = (message) => {
 		recoveryState.activeEpoch = 0;
 		recoveryState.phase = "exhausted";
 		worker.__TTVABRecoveryEpoch = 0;
 		if (!recoveryState.limitLogged) {
 			recoveryState.limitLogged = true;
-			_log(
-				"Worker restart limit reached; using degraded page-side M3U8 fallback",
-				"error",
-			);
+			_log(message, "error");
 		}
 		_installPageSideM3U8Override();
 		if (typeof _showWorkerRecoveryNotice === "function") {
 			_showWorkerRecoveryNotice(recoveryContext.MediaKey);
 		}
-		return;
-	}
+	};
 	const attemptNumber = recoveryState.attempts + 1;
-	const delay = 2 ** attemptNumber * 500;
-	_log(
-		"Recovering worker in " +
-			delay / 1000 +
-			"s (attempt " +
-			attemptNumber +
-			"/" +
-			HW_MAX_RESTART +
-			")",
-		"warning",
-	);
+	const delay = 2 ** Math.min(attemptNumber, HW_MAX_RESTART) * 500;
+	if (recoveryState.attempts < HW_MAX_RESTART) {
+		_log(
+			`Checking worker recovery in ${delay / 1000}s (${recoveryState.attempts}/${HW_MAX_RESTART} reloads used)`,
+			"info",
+		);
+	}
 
 	const recoveryIsCurrent = () => {
 		if (
@@ -4144,6 +4191,14 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		if (!recoveryIsCurrent()) return;
 		recoveryState.phase = "scheduled";
 		_attemptWorkerRestart(worker, recoveryContext);
+	};
+	const suspendPlayerWait = () => {
+		if (
+			recoveryState.playerWaitDeadlineAt > 0 &&
+			recoveryState.playerWaitSuspendedAt <= 0
+		) {
+			recoveryState.playerWaitSuspendedAt = Date.now();
+		}
 	};
 	const confirmReplacement = () => {
 		const currentContext = _getPlaybackContextFromUrl(window.location.href);
@@ -4195,6 +4250,15 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		scheduleRecovery(confirmReplacement, 1000);
 	};
 	const runRecovery = () => {
+		if (!recoveryIsCurrent()) return;
+		const now = Date.now();
+		if (recoveryState.playerWaitSuspendedAt > 0) {
+			recoveryState.playerWaitDeadlineAt += Math.max(
+				0,
+				now - recoveryState.playerWaitSuspendedAt,
+			);
+			recoveryState.playerWaitSuspendedAt = 0;
+		}
 		if (worker.__TTVABIntentionallyTerminated && !worker.__TTVABCrashed) {
 			recoveryState.activeEpoch = 0;
 			recoveryState.phase = "cancelled";
@@ -4259,6 +4323,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			typeof _hasUserPauseIntent === "function" &&
 			_hasUserPauseIntent(recoveryContext.ChannelName, recoveryContext.MediaKey)
 		) {
+			suspendPlayerWait();
 			recoveryState.pipWaitDeadlineAt = Math.max(
 				Number(recoveryState.pipWaitDeadlineAt) || 0,
 				Date.now() + HW_HIDDEN_STALE_MIN_MS,
@@ -4272,6 +4337,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			return;
 		}
 		if (!contextIsCurrent && contextIsPip) {
+			suspendPlayerWait();
 			if (Date.now() >= recoveryState.pipWaitDeadlineAt) {
 				const wasDegradedPip = recoveryState.phase === "degraded-pip";
 				recoveryState.phase = "degraded-pip";
@@ -4318,6 +4384,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				? new WeakRef(hiddenMedia)
 				: null;
 			if (!playbackDead) {
+				suspendPlayerWait();
 				_log("Deferring worker recovery reload until tab is visible", "info");
 				scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
 				return;
@@ -4326,6 +4393,21 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				"Proceeding with worker recovery while hidden — playback is not advancing",
 				"warning",
 			);
+		}
+		if (recoveryState.attempts >= HW_MAX_RESTART) {
+			exhaustRecovery(
+				"Worker restart limit reached after three source reloads; using degraded page-side M3U8 fallback",
+			);
+			return;
+		}
+		if (
+			recoveryState.playerWaitDeadlineAt > 0 &&
+			now >= recoveryState.playerWaitDeadlineAt
+		) {
+			exhaustRecovery(
+				"Worker recovery timed out waiting for a usable player; using degraded page-side M3U8 fallback",
+			);
+			return;
 		}
 		if (
 			!playbackDead &&
@@ -4341,7 +4423,6 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
 			return;
 		}
-		const now = Date.now();
 		const lastRecoveryReloadAt = Math.max(
 			0,
 			Number(recoveryState.lastReloadAt) || 0,
@@ -4355,12 +4436,6 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			scheduleRecovery(runRecovery, remainingCooldown);
 			return;
 		}
-		if (!_recordWorkerRecoveryAttempt(recoveryContext, now)) {
-			retryRecovery();
-			return;
-		}
-		worker.__TTVABRestartAttempts = recoveryState.attempts;
-		recoveryState.phase = "dispatching";
 		const generationBeforeReload = Math.max(
 			recoveryState.failedGeneration,
 			_getHighestWorkerGenerationForPlaybackContext(recoveryContext),
@@ -4369,8 +4444,9 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			recoveryContext.MediaKey,
 		);
 		const dispatchStartedAt = Date.now();
+		let accepted = false;
 		try {
-			const accepted =
+			accepted =
 				typeof _doPlayerTask === "function" &&
 				_doPlayerTask(false, true, {
 					reason: "worker-recovery",
@@ -4379,50 +4455,79 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 					channel: recoveryContext.ChannelName,
 					mediaKey: recoveryContext.MediaKey,
 				}) === true;
-			const reloadDispatchedAt = _getPlayerReloadAtForMediaKey(
-				recoveryContext.MediaKey,
-			);
-			const didDispatchReload = Boolean(
-				accepted &&
-					reloadDispatchedAt > reloadMarkerBefore &&
-					reloadDispatchedAt >= dispatchStartedAt,
-			);
-			if (!didDispatchReload) {
-				_log("Worker recovery did not reload the player; retrying", "warning");
-				retryRecovery();
-				return;
-			}
-			recoveryState.lastReloadAt = reloadDispatchedAt;
-			recoveryState.retiredThroughGeneration = Math.max(
-				0,
-				Number(recoveryState.retiredThroughGeneration) || 0,
-				generationBeforeReload,
-			);
-			recoveryState.expectedAfterGeneration = generationBeforeReload;
-			recoveryState.reloadDispatchedAt = reloadDispatchedAt;
-			recoveryState.successorDeadlineAt =
-				reloadDispatchedAt + HW_INITIAL_PONG_TIMEOUT_MS;
-			recoveryState.phase = "awaiting-successor";
-			_log("Player reload requested for crashed worker recovery", "info");
-			scheduleRecovery(confirmReplacement, 1000);
 		} catch (recoveryErr) {
 			_log(
 				`Worker recovery failed: ${recoveryErr?.message ?? String(recoveryErr)}`,
 				"error",
 			);
-			retryRecovery();
 		}
+		const reloadDispatchedAt = _getPlayerReloadAtForMediaKey(
+			recoveryContext.MediaKey,
+		);
+		const didDispatchReload = Boolean(
+			reloadDispatchedAt > reloadMarkerBefore &&
+				reloadDispatchedAt >= dispatchStartedAt,
+		);
+		if (didDispatchReload) {
+			_recordWorkerRecoveryAttempt(recoveryContext, reloadDispatchedAt);
+			recoveryState.lastReloadAt = reloadDispatchedAt;
+			worker.__TTVABRestartAttempts = recoveryState.attempts;
+		}
+		if (!recoveryIsCurrent()) return;
+		if (!didDispatchReload) {
+			if (recoveryState.playerWaitDeadlineAt <= 0) {
+				recoveryState.playerWaitDeadlineAt = now + HW_RECOVERY_PLAYER_WAIT_MS;
+				_log(
+					"Waiting for Twitch to provide a usable player for worker recovery",
+					"info",
+				);
+			}
+			recoveryState.phase = "waiting-player";
+			scheduleRecovery(
+				runRecovery,
+				Math.min(
+					HW_WATCHDOG_INTERVAL_MS,
+					recoveryState.playerWaitDeadlineAt - now,
+				),
+			);
+			return;
+		}
+		recoveryState.playerWaitDeadlineAt = 0;
+		recoveryState.playerWaitSuspendedAt = 0;
+		if (!accepted) {
+			retryRecovery();
+			return;
+		}
+		recoveryState.retiredThroughGeneration = Math.max(
+			0,
+			Number(recoveryState.retiredThroughGeneration) || 0,
+			generationBeforeReload,
+		);
+		recoveryState.expectedAfterGeneration = generationBeforeReload;
+		recoveryState.reloadDispatchedAt = reloadDispatchedAt;
+		recoveryState.successorDeadlineAt =
+			reloadDispatchedAt + HW_RECOVERY_SUCCESSOR_TIMEOUT_MS;
+		recoveryState.phase = "awaiting-successor";
+		_log("Player reload requested for crashed worker recovery", "info");
+		scheduleRecovery(confirmReplacement, 1000);
 	};
 
-	scheduleRecovery(runRecovery, delay);
+	if (recoveryState.attempts >= HW_MAX_RESTART) {
+		runRecovery();
+	} else {
+		scheduleRecovery(runRecovery, delay);
+	}
 }
 
 let _workerWatchdogID: ReturnType<typeof setInterval> | null = null;
 
 function _startWorkerWatchdog() {
 	if (_workerWatchdogID !== null) return;
+	let lastCheckedAt = Date.now();
 	_workerWatchdogID = setInterval(() => {
 		const now = Date.now();
+		const elapsed = now - lastCheckedAt;
+		lastCheckedAt = now;
 		if (typeof _checkUnhookedPlayer === "function") _checkUnhookedPlayer();
 		if (typeof _checkPostAdRecoveryNotice === "function")
 			_checkPostAdRecoveryNotice();
@@ -4439,6 +4544,20 @@ function _startWorkerWatchdog() {
 				MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
 			});
 			const isHidden = _isWorkerLifecycleThrottled(workerContext);
+			const schedulingGraceMs = isHidden
+				? HW_HIDDEN_STALE_MIN_MS
+				: HW_PONG_TIMEOUT_MS;
+			if (elapsed < 0 || elapsed > schedulingGraceMs) {
+				worker.__TTVABMissedPongs = 0;
+				worker.__TTVABLastPingSentAt = now;
+				worker.__TTVABHiddenHeartbeatMediaTime = -1;
+				worker.__TTVABHiddenHeartbeatMediaRef = null;
+				worker.__TTVABHiddenHeartbeatMissingSamples = 0;
+				try {
+					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+				} catch {}
+				continue;
+			}
 			const lastSeen =
 				worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
 			const lastPingSentAt = Math.max(
@@ -4462,6 +4581,7 @@ function _startWorkerWatchdog() {
 				isHidden &&
 					hasUnansweredPing &&
 					now - lastSeen >= HW_PONG_TIMEOUT_MS &&
+					now - lastPingSentAt >= HW_PONG_TIMEOUT_MS &&
 					(workerContextIsCurrent || workerContextIsActivePip),
 			);
 			const hasUserPauseIntent =
@@ -4470,6 +4590,9 @@ function _startWorkerWatchdog() {
 				_hasUserPauseIntent(workerContext.ChannelName, workerContext.MediaKey);
 			if (hiddenHeartbeatIsStale && hasUserPauseIntent) {
 				worker.__TTVABMissedPongs = 0;
+				worker.__TTVABHiddenHeartbeatMediaTime = -1;
+				worker.__TTVABHiddenHeartbeatMediaRef = null;
+				worker.__TTVABHiddenHeartbeatMissingSamples = 0;
 				try {
 					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
 				} catch {}
@@ -5126,7 +5249,7 @@ function _ensurePageSideFallbackAdCycle(url, _codec = null, playlistText = "") {
 function _installPageSideM3U8Override() {
 	if (window.__TTVAB_M3U8_FALLBACK_ACTIVE) return;
 	window.__TTVAB_M3U8_FALLBACK_ACTIVE = true;
-	_log("Installing page-side M3U8 fetch override (degraded mode)", "warning");
+	_log("Installing page-side M3U8 protection during worker recovery", "info");
 
 	const realFetch = window.fetch;
 	if (!window.__TTVAB_REAL_FETCH__) {
@@ -6491,13 +6614,16 @@ function _hookWorker() {
 						this.__TTVABFetchControllers.set(requestId, controller);
 					}
 					const timeoutId = setTimeout(() => controller.abort(), 10000);
+					let responseData = null;
 					try {
 						const response = await rawFetch(fetchRequest?.url, {
 							...(fetchRequest?.options || {}),
 							signal: controller.signal,
 						});
 						const body = await response.text();
-						return {
+						if (controller.signal.aborted)
+							throw new Error("fetch relay timeout");
+						responseData = {
 							id: requestId,
 							status: response.status,
 							statusText: response.statusText,
@@ -6509,7 +6635,7 @@ function _hookWorker() {
 							body,
 						};
 					} catch (error) {
-						return {
+						responseData = {
 							id: requestId,
 							error:
 								error?.name === "AbortError"
@@ -6518,19 +6644,32 @@ function _hookWorker() {
 						};
 					} finally {
 						clearTimeout(timeoutId);
-						if (
-							requestId &&
-							this.__TTVABFetchControllers.get(requestId) === controller
-						) {
-							this.__TTVABFetchControllers.delete(requestId);
-						}
 					}
+					if (
+						requestId &&
+						this.__TTVABFetchControllers.get(requestId) !== controller
+					) {
+						return null;
+					}
+					if (requestId) this.__TTVABFetchControllers.delete(requestId);
+					return this.__TTVABIntentionallyTerminated ? null : responseData;
 				};
 
 				this.addEventListener("message", (e) => {
 					const data = _getWorkerBridgeMessage(e.data);
 					if (!data) return;
 					e.stopImmediatePropagation?.();
+					if (data.key === "CancelFetchRequest") {
+						const requestValue = data.value as PlainObject | null;
+						const requestId =
+							typeof requestValue?.id === "string" ? requestValue.id : null;
+						const controller = requestId
+							? this.__TTVABFetchControllers.get(requestId)
+							: null;
+						if (requestId) this.__TTVABFetchControllers.delete(requestId);
+						controller?.abort?.();
+						return;
+					}
 					if (data.key === "WorkerErrorDiagnostic") {
 						const diagnostic = _getStructuredMessageData(data.value);
 						if (typeof _recordWorkerFailureDiagnostic === "function") {
@@ -6595,17 +6734,6 @@ function _hookWorker() {
 					}
 
 					switch (data.key) {
-						case "CancelFetchRequest": {
-							const requestValue = data.value as PlainObject | null;
-							const requestId =
-								typeof requestValue?.id === "string" ? requestValue.id : null;
-							const controller = requestId
-								? this.__TTVABFetchControllers.get(requestId)
-								: null;
-							if (requestId) this.__TTVABFetchControllers.delete(requestId);
-							controller?.abort?.();
-							break;
-						}
 						case "MediaBootstrapRecoveryNeeded":
 							_handleMediaBootstrapRecoveryRequest(
 								this,
@@ -6796,6 +6924,8 @@ function _hookWorker() {
 						}
 						case "FetchRequest":
 							void handleWorkerFetchRequest(data.value).then((responseData) => {
+								if (!responseData || this.__TTVABIntentionallyTerminated)
+									return;
 								try {
 									_postWorkerBridgeMessage(this, {
 										key: "FetchResponse",
