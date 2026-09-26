@@ -504,7 +504,7 @@ describe("worker message handler hardening", () => {
 		expect(source).toContain("codec: observedCodec");
 	});
 
-	it("installs degraded ad blocking on the first heartbeat miss while reload stays throttled", () => {
+	it("installs page-side ad protection on the first heartbeat miss while reload stays throttled", () => {
 		const source = hooksJs();
 		const checkStart = source.indexOf(
 			"function _scheduleWorkerInitialHeartbeat(",
@@ -515,9 +515,7 @@ describe("worker message handler hardening", () => {
 		);
 		const block = source.slice(checkStart, checkEnd);
 		const fallbackAt = block.indexOf("_installPageSideM3U8Override();");
-		const throttleAt = block.indexOf(
-			"if (_isWorkerLifecycleThrottled(pagePlaybackContext))",
-		);
+		const throttleAt = block.indexOf("if (isThrottled || timerWasSuspended)");
 		const recoveryAt = block.indexOf("_recoverCrashedWorker(");
 
 		expect(checkStart).toBeGreaterThan(-1);

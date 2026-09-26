@@ -5784,12 +5784,6 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 		(isPausePlay || isReload) &&
 		_isPlayerWorkerUnavailable(player)
 	) {
-		if (reason === "worker-recovery") {
-			_log(
-				"Cannot restart the crashed player worker with a source reload; a tab refresh is required",
-				"warning",
-			);
-		}
 		return false;
 	}
 	const handoffId =

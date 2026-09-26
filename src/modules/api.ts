@@ -263,14 +263,19 @@ async function _fetchViaWorkerBridge(
 			},
 		});
 
-		_postWorkerBridgeMessage(self, {
-			key: "FetchRequest",
-			value: {
-				id: requestId,
-				url,
-				options: relayOptions,
-			},
-		});
+		try {
+			const dispatched = _postWorkerBridgeMessage(self, {
+				key: "FetchRequest",
+				value: {
+					id: requestId,
+					url,
+					options: relayOptions,
+				},
+			});
+			if (!dispatched) finish(reject, new Error("fetch relay unavailable"));
+		} catch (error) {
+			finish(reject, error);
+		}
 	});
 }
 
