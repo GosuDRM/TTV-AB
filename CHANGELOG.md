@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [18.1.8] - 2026-09-27
+
+Fixed
+
+- **Worker Recovery** - Wait for a usable player without spending restart attempts, allow up to 30 seconds for replacement confirmation, and keep failed reloads spaced apart.
+- **Recovery Warnings** - Require fresh playback evidence before accepting a recovered worker, and distinguish temporary ad protection from exhausted recovery.
+- **Worker Lifecycle** - Recheck workers after suspended page timers, discard old pause evidence, and require sustained healthy heartbeats before restoring recovery attempts.
+- **Worker Cleanup** - Clean up cancelled requests after worker replacement, discard late responses, and release failed bridge requests immediately.
+
 ## [18.1.7] - 2026-09-24
 
 Fixed

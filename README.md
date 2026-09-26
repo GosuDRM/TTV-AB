@@ -75,6 +75,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v18.1.8 - 2026-09-27
+
+- **Worker Recovery** - Wait for a usable player without spending restart attempts, allow up to 30 seconds for replacement confirmation, and keep failed reloads spaced apart.
+- **Recovery Warnings** - Require fresh playback evidence before accepting a recovered worker, and distinguish temporary ad protection from exhausted recovery.
+
 ### v18.1.7 - 2026-09-24
 
 - **HD Recovery Across Ad Breaks** - Recheck the original HD streams when a later catalog refresh offers only low qualities, restoring options that still pass live playback checks.
@@ -86,11 +91,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Playback Buffer** - Avoid unnecessary jumps toward the live edge after recovery and while video is advancing, with Low Latency on or off.
 - **Low Latency Recovery** - Use the current player's latency mode for buffer and recovery checks, and clear the recovery prompt when low-latency video resumes.
 - **Latency Preference** - Preserve changes to Twitch's Low Latency setting made during player recovery.
-
-### v18.1.5 - 2026-09-24
-
-- **Faster HD During Ads** - Complete the next clean HD check without the extra 15-second wait, while keeping the fallback stream playing.
-- **Backup Validation** - Keep clean checks tied to the same stream and ad cycle, and keep checks spaced apart when a backup needs extra validation.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
