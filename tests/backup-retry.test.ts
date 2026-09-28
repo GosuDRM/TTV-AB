@@ -94,6 +94,7 @@ function setup(
 		clean: false,
 		cleanType: "site",
 		hang: "",
+		hangType: "",
 		status: 200,
 		advance: true,
 		payload: null as string | null,
@@ -144,7 +145,10 @@ function setup(
 		}
 		maxInFlight = Math.max(maxInFlight, ++inFlight);
 		try {
-			if (controls.hang === stage) {
+			if (
+				controls.hang === stage &&
+				(!controls.hangType || controls.hangType === type)
+			) {
 				await new Promise<void>((_resolve, reject) => {
 					options.signal?.addEventListener(
 						"abort",
@@ -237,32 +241,247 @@ function setup(
 }
 
 describe("bounded recovery with low quality fallback disabled", () => {
-	it("rechecks existing sessions sequentially without delaying the token sweep", async () => {
+	it.each(["hev1.1.6.L153.B0", "av01.0.13M.08"])(
+		"rechecks retained AVC media promptly when the preferred target advertises %s",
+		async (enhancedCodec) => {
+			const fixture = setup(loggedSweepDurations);
+			await fixture.firstFailure();
+			fixture.state.PreferredQualityGroup = "1440p60";
+			fixture.info.ResolutionList.unshift({
+				Name: "1440p60",
+				Resolution: "2560x1440",
+				FrameRate: 60,
+				Codecs: enhancedCodec,
+			});
+			const completedAt = fixture.info._LastBackupSearchCompletedAt;
+			fixture.controls.clean = true;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				vi.setSystemTime(completedAt + 1000 + attempt * 2000);
+				expect(await fixture.process()).toContain(
+					"__ttvab_empty_hold_segment.ts",
+				);
+				await vi.advanceTimersByTimeAsync(500);
+				if (attempt === 0) expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+			}
+			expect(fixture.info.LastCleanBackupM3U8).toContain("/content-");
+			expect(fixture.info.LastCleanBackupCodecFamily).toBe("avc");
+			expect(fixture.tokens).toHaveLength(4);
+			expect(fixture.mediaRequests.slice(4).map(({ type }) => type)).toEqual([
+				"site",
+				"site",
+			]);
+			expect(Date.now() - completedAt).toBe(3500);
+			expect(fixture.concurrency()).toBe(1);
+		},
+	);
+
+	it("keeps hold playlists advancing while a full token sweep takes six seconds", async () => {
 		const fixture = setup(loggedSweepDurations);
 		await fixture.firstFailure();
 		const completedAt = fixture.info._LastBackupSearchCompletedAt;
-		const cooldowns = [...fixture.info.FailedBackupPlayerTypes];
-		let previousHold = "";
-		for (let attempt = 0; attempt < 6; attempt++) {
-			vi.setSystemTime(completedAt + 1000 + attempt * 2000);
-			const hold = await fixture.process();
-			expect(hold).toContain("__ttvab_empty_hold_segment.ts");
-			expect(hold).not.toBe(previousHold);
-			expect(hold).not.toContain("stitched-ad");
-			previousHold = hold;
-			await vi.advanceTimersByTimeAsync(500);
-			expect(fixture.info.LastCleanBackupM3U8).toBeNull();
-			expect(fixture.info._LastBackupSearchCompletedAt).toBe(completedAt);
-			expect([...fixture.info.FailedBackupPlayerTypes]).toEqual(cooldowns);
+		vi.setSystemTime(completedAt + 15000);
+		let lastSequence = fixture.info._EmptyAdHoldMediaSequence;
+		for (let poll = 0; poll < 6; poll++) {
+			let output: string | null = null;
+			const pending = fixture.process().then((text) => {
+				output = text;
+			});
+			await vi.advanceTimersByTimeAsync(0);
+			expect(output).not.toBeNull();
+			await pending;
+			expect(output).toContain("__ttvab_empty_hold_segment.ts");
+			const sequence = Number(output.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]);
+			expect(sequence).toBeGreaterThan(lastSequence);
+			lastSequence = sequence;
+			expect(fixture.info._BackupSearchPromises.size).toBe(1);
+			await vi.advanceTimersByTimeAsync(1000);
 		}
-		expect(fixture.mediaRequests.slice(4).map(({ type }) => type)).toEqual([
+		expect(fixture.info._LastBackupSearchCompletedAt).toBe(completedAt + 21000);
+		expect(fixture.info._BackupSearchPromises.size).toBe(0);
+		expect(fixture.info._BackupSearchStartedAt).toBe(0);
+		expect(fixture.tokens).toEqual([
 			"site",
 			"embed",
 			"popout",
 			"mobile_web",
 			"site",
 			"embed",
+			"popout",
+			"mobile_web",
 		]);
+		expect(fixture.concurrency()).toBe(1);
+	});
+
+	it("hands a background token search to live-refreshing 1080p without rewinding the hold timeline", async () => {
+		const fixture = setup(loggedSweepDurations);
+		await fixture.firstFailure();
+		const completedAt = fixture.info._LastBackupSearchCompletedAt;
+		vi.setSystemTime(completedAt + 15000);
+		fixture.controls.clean = true;
+		let polls: string[] | null = null;
+		const pending = Promise.all([fixture.process(), fixture.process()]).then(
+			(texts) => {
+				polls = texts;
+			},
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(polls).not.toBeNull();
+		await pending;
+		const lastHoldSequence = Math.max(
+			...polls.map((text) =>
+				Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]),
+			),
+		);
+		const lastHoldDiscontinuity = Math.max(
+			...polls.map((text) =>
+				Number(text.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/)[1]),
+			),
+		);
+		expect(fixture.info._BackupSearchPromises.size).toBe(1);
+		expect(fixture.tokens).toHaveLength(5);
+		await vi.advanceTimersByTimeAsync(1500);
+		expect(fixture.info._LastBackupSearchCompletedAt).toBe(0);
+		expect(fixture.info.LastCleanBackupPlayerType).toBe("site");
+		expect(fixture.info._BackupSearchStartedAt).toBe(0);
+		const selected = fixture.process();
+		await vi.advanceTimersByTimeAsync(500);
+		const output = await selected;
+		expect(output).toContain("/content-");
+		expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
+		expect(
+			Number(output.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]),
+		).toBeGreaterThan(lastHoldSequence);
+		expect(
+			Number(output.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/)[1]),
+		).toBeGreaterThanOrEqual(lastHoldDiscontinuity);
+		expect(fixture.info.ActiveBackupPlayerType).toBe("site");
+		expect(fixture.info.ActiveBackupResolution).toBe("1920x1080");
+		expect(fixture.info.HevcReloadPendingAfterHold).toBe(false);
+		await vi.advanceTimersByTimeAsync(1000);
+		const refreshing = fixture.process();
+		await vi.advanceTimersByTimeAsync(500);
+		const refreshed = await refreshing;
+		expect(refreshed).toContain("/content-");
+		expect(refreshed).not.toBe(output);
+		expect(
+			Number(refreshed.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]),
+		).toBeGreaterThan(Number(output.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]));
+		expect(fixture.tokens).toHaveLength(5);
+		expect(fixture.concurrency()).toBe(1);
+	});
+
+	it.each([
+		"route",
+		"generation",
+		"cycle",
+		"reset",
+		"blocking",
+		"toggle",
+		"newer-completion",
+		"newer-owner",
+	])(
+		"does not overwrite background-search bookkeeping after %s changes",
+		async (change) => {
+			const fixture = setup(loggedSweepDurations);
+			await fixture.firstFailure();
+			vi.setSystemTime(fixture.info._LastBackupSearchCompletedAt + 15000);
+			const pending = fixture.process();
+			await vi.advanceTimersByTimeAsync(100);
+			if (change === "route") fixture.state.PageMediaKey = "live:other";
+			if (change === "generation")
+				fixture.state.PagePlaybackContextGeneration += 2;
+			if (change === "cycle") {
+				fixture.info.VisibleAdStartedAt = Date.now();
+				fixture.info.BackupSearchEpoch++;
+			}
+			if (change === "reset" || change === "blocking")
+				fixture.context._resetStreamAdState(fixture.info);
+			if (change === "blocking") fixture.state.IsAdStrippingEnabled = false;
+			if (change === "toggle") fixture.state.DisableAutoplayBackup = false;
+			if (change === "newer-completion")
+				fixture.info._LastBackupSearchCompletedAt = Date.now();
+			const newerOwner = {};
+			if (change === "newer-owner") {
+				fixture.info._BackupSearchStartToken = newerOwner;
+				fixture.info._BackupSearchStartedAt = Date.now();
+			}
+			const completedAt = fixture.info._LastBackupSearchCompletedAt;
+			const newerStartedAt = fixture.info._BackupSearchStartedAt;
+			await vi.advanceTimersByTimeAsync(12000);
+			expect(await pending).toContain("__ttvab_empty_hold_segment.ts");
+			expect(fixture.info._LastBackupSearchCompletedAt).toBe(completedAt);
+			if (change === "newer-owner") {
+				expect(fixture.info._BackupSearchStartToken).toBe(newerOwner);
+				expect(fixture.info._BackupSearchStartedAt).toBe(newerStartedAt);
+			} else {
+				expect(fixture.info._BackupSearchStartToken).toBeNull();
+				expect(fixture.info._BackupSearchStartedAt).toBe(0);
+			}
+			expect(fixture.info._BackupSearchPromises.size).toBe(0);
+		},
+	);
+
+	it("finds a clean fourth source in one bounded sequential scan and confirms it before serving", async () => {
+		const fixture = setup(loggedSweepDurations);
+		await fixture.firstFailure();
+		const completedAt = fixture.info._LastBackupSearchCompletedAt;
+		fixture.controls.clean = true;
+		fixture.controls.cleanType = "mobile_web";
+		vi.setSystemTime(completedAt + 1000);
+		expect(await fixture.process()).toContain("__ttvab_empty_hold_segment.ts");
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(fixture.mediaRequests.slice(4).map(({ type }) => type)).toEqual([
+			"site",
+			"embed",
+			"popout",
+			"mobile_web",
+		]);
+		expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+		expect(
+			fixture.info._NoBackupRecoveryCandidates.get("mobile_web").cleanStartedAt,
+		).toBe(completedAt + 3000);
+		vi.setSystemTime(completedAt + 4500);
+		expect(await fixture.process()).toContain("__ttvab_empty_hold_segment.ts");
+		await vi.advanceTimersByTimeAsync(500);
+		expect(fixture.info.LastCleanBackupM3U8).toContain("/content-");
+		const selected = fixture.process();
+		await vi.advanceTimersByTimeAsync(500);
+		const output = await selected;
+		expect(output).toContain("/content-");
+		expect(output).not.toContain("stitched-ad");
+		expect(fixture.info.ActiveBackupResolution).toBe("1920x1080");
+		expect(fixture.info.HevcReloadPendingAfterHold).toBe(false);
+		expect(fixture.tokens).toHaveLength(4);
+		expect(fixture.concurrency()).toBe(1);
+		expect(Date.now() - completedAt).toBe(5500);
+	});
+
+	it("rechecks existing sessions sequentially without delaying the token sweep", async () => {
+		const fixture = setup(loggedSweepDurations);
+		await fixture.firstFailure();
+		const completedAt = fixture.info._LastBackupSearchCompletedAt;
+		const cooldowns = [...fixture.info.FailedBackupPlayerTypes];
+		let previousHold = "";
+		for (let attempt = 0; attempt < 4; attempt++) {
+			vi.setSystemTime(completedAt + 1000 + attempt * 3000);
+			const hold = await fixture.process();
+			expect(hold).toContain("__ttvab_empty_hold_segment.ts");
+			expect(hold).not.toBe(previousHold);
+			expect(hold).not.toContain("stitched-ad");
+			previousHold = hold;
+			await vi.advanceTimersByTimeAsync(2000);
+			expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+			expect(fixture.info._LastBackupSearchCompletedAt).toBe(completedAt);
+			expect([...fixture.info.FailedBackupPlayerTypes]).toEqual(cooldowns);
+		}
+		expect(fixture.mediaRequests.slice(4).map(({ type }) => type)).toEqual(
+			Array.from({ length: 4 }, () => [
+				"site",
+				"embed",
+				"popout",
+				"mobile_web",
+			]).flat(),
+		);
 		expect(fixture.tokens).toHaveLength(4);
 		expect(fixture.info._NoBackupRecoveryCandidates.size).toBe(4);
 		vi.setSystemTime(completedAt + 15000);
@@ -288,7 +507,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		const firstCompletedAt = fixture.info._LastBackupSearchCompletedAt;
 		vi.setSystemTime(firstCompletedAt + 1000);
 		await fixture.process();
-		await vi.advanceTimersByTimeAsync(500);
+		await vi.advanceTimersByTimeAsync(2000);
 		const originalCandidate =
 			fixture.info._NoBackupRecoveryCandidates.get("site");
 		vi.setSystemTime(firstCompletedAt + 15000);
@@ -301,18 +520,18 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		);
 		fixture.controls.clean = true;
 		fixture.controls.cleanType = "embed";
-		for (let attempt = 0; attempt < 3; attempt++) {
+		for (let attempt = 0; attempt < 2; attempt++) {
 			vi.setSystemTime(completedAt + 2000 + attempt * 2000);
 			expect(await fixture.process()).toContain(
 				"__ttvab_empty_hold_segment.ts",
 			);
-			await vi.advanceTimersByTimeAsync(500);
-			if (attempt < 2) expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+			await vi.advanceTimersByTimeAsync(attempt === 0 ? 1000 : 500);
+			if (attempt === 0) expect(fixture.info.LastCleanBackupM3U8).toBeNull();
 		}
 		expect(fixture.info.LastCleanBackupM3U8).toContain("/content-");
 		expect(fixture.info._LastBackupSearchCompletedAt).toBe(0);
 		expect(fixture.info._NoBackupRecoveryCandidates.size).toBe(0);
-		expect(Date.now() - completedAt).toBe(6500);
+		expect(Date.now() - completedAt).toBe(4500);
 		const selected = fixture.process();
 		await vi.advanceTimersByTimeAsync(500);
 		expect(await selected).toContain("/content-");
@@ -327,6 +546,104 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		expect(fixture.info.LastCleanBackupM3U8).not.toBe(clean);
 		expect(fixture.tokens).toHaveLength(8);
 		expect(fixture.concurrency()).toBe(1);
+	});
+
+	it("keeps simultaneous native polls on one scan and stops after the first clean candidate", async () => {
+		const fixture = setup(loggedSweepDurations);
+		await fixture.firstFailure();
+		fixture.controls.clean = true;
+		fixture.controls.cleanType = "embed";
+		await vi.advanceTimersByTimeAsync(1000);
+		const holds = await Promise.all([fixture.process(), fixture.process()]);
+		for (const hold of holds) {
+			expect(hold).toContain("__ttvab_empty_hold_segment.ts");
+			expect(hold).not.toContain("stitched-ad");
+		}
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(fixture.mediaRequests.slice(4).map(({ type }) => type)).toEqual([
+			"site",
+			"embed",
+		]);
+		expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+		expect(fixture.tokens).toHaveLength(4);
+		expect(fixture.concurrency()).toBe(1);
+	});
+
+	it("bounds the entire scan when a later source hangs and checks unvisited sources next", async () => {
+		const fixture = setup(loggedSweepDurations);
+		await fixture.firstFailure();
+		fixture.controls.hang = "media";
+		fixture.controls.hangType = "embed";
+		await vi.advanceTimersByTimeAsync(1000);
+		const scanStartedAt = Date.now();
+		await fixture.process();
+		await vi.advanceTimersByTimeAsync(2500);
+		expect(fixture.aborted).toEqual(["media"]);
+		expect(fixture.mediaRequests.slice(4).map(({ type }) => type)).toEqual([
+			"site",
+			"embed",
+		]);
+		expect(fixture.info._BackupSearchPromises.size).toBe(0);
+		expect(fixture.info._AdCycleRequestController.signal.aborted).toBe(false);
+		expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+		fixture.controls.hang = "";
+		await fixture.process();
+		expect(fixture.mediaRequests.at(-1)).toEqual({
+			type: "popout",
+			at: scanStartedAt + 2500,
+		});
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(fixture.tokens).toHaveLength(4);
+		expect(fixture.concurrency()).toBe(1);
+	});
+
+	it("stops a partially completed scan when the page returns to the same route in a new generation", async () => {
+		const fixture = setup(loggedSweepDurations);
+		await fixture.firstFailure();
+		await vi.advanceTimersByTimeAsync(1000);
+		await fixture.process();
+		await vi.advanceTimersByTimeAsync(750);
+		fixture.state.PagePlaybackContextGeneration += 2;
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(fixture.mediaRequests.slice(4).map(({ type }) => type)).toEqual([
+			"site",
+			"embed",
+		]);
+		expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+		expect(fixture.info._BackupSearchPromises.size).toBe(0);
+		expect(fixture.tokens).toHaveLength(4);
+	});
+
+	it("does not continue an older scan after a newer quality search selects a clean source", async () => {
+		const fixture = setup(loggedSweepDurations);
+		await fixture.firstFailure();
+		await vi.advanceTimersByTimeAsync(1000);
+		await fixture.process();
+		await vi.advanceTimersByTimeAsync(250);
+		const newer = media(false, 900);
+		expect(
+			fixture.context._commitBackupPlaylist(
+				fixture.info,
+				newer,
+				fixture.info._BackupSelectionSequence + 1,
+				{
+					playlistUrl: "https://cdn.example/embed/new.m3u8",
+					sessionUrl: "https://usher.ttvnw.net/master.m3u8?token=new",
+					playerType: "embed",
+					resolution: "1920x1080",
+					codecFamily: "avc",
+					codec: "avc1.64002a",
+				},
+			),
+		).toBe(newer);
+		fixture.controls.clean = true;
+		fixture.controls.cleanType = "mobile_web";
+		await vi.advanceTimersByTimeAsync(2250);
+		expect(fixture.mediaRequests.slice(4).map(({ type }) => type)).toEqual([
+			"site",
+		]);
+		expect(fixture.info.LastCleanBackupM3U8).toBe(newer);
+		expect(fixture.info._BackupSearchPromises.size).toBe(0);
 	});
 
 	it("rejects repeated and expired clean samples without media-sequence advancement", async () => {
@@ -345,10 +662,15 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		fixture.controls.advance = true;
 		vi.setSystemTime(startedAt + 15000);
 		await fixture.process();
-		await vi.advanceTimersByTimeAsync(500);
+		await vi.advanceTimersByTimeAsync(2000);
 		expect(fixture.info.LastCleanBackupM3U8).toBeNull();
 		expect(fixture.tokens).toHaveLength(4);
-		expect(fixture.mediaRequests.at(-1).type).toBe("embed");
+		expect(fixture.mediaRequests.slice(-4).map(({ type }) => type)).toEqual([
+			"embed",
+			"popout",
+			"mobile_web",
+			"site",
+		]);
 	});
 
 	it("promotes a rechecked backup while native playback still needs ad-end confirmation", async () => {
@@ -424,12 +746,108 @@ describe("bounded recovery with low quality fallback disabled", () => {
 			expect(await fixture.process()).toContain(
 				"__ttvab_empty_hold_segment.ts",
 			);
-			await vi.advanceTimersByTimeAsync(500);
+			await vi.advanceTimersByTimeAsync(2000);
 			expect(fixture.info.LastCleanBackupM3U8).toBeNull();
 			expect(fixture.tokens).toHaveLength(4);
-			expect(fixture.mediaRequests).toHaveLength(
-				change === "missing-master" ? 5 : 6,
+			expect(fixture.mediaRequests.slice(5).map(({ type }) => type)).toEqual([
+				...(change === "changed-media-url" ? ["different-session"] : []),
+				"embed",
+				"popout",
+				"mobile_web",
+			]);
+		},
+	);
+
+	it.each([
+		{
+			kind: "reordered metadata with CRLF",
+			playlist: media(false, 900)
+				.replace(
+					"#EXTINF:",
+					'#EXT-X-DATERANGE:START-DATE="2026-09-28T12:00:00Z",ID="renewed-break",CLASS="twitch-stitched-ad"\n#EXTINF:',
+				)
+				.replaceAll("\n", "\r\n"),
+		},
+		{
+			kind: "ad segment without metadata",
+			playlist: media(false, 900).replace("/content-", "/adsquared/content-"),
+		},
+		{
+			kind: "ad prefetch after clean segments",
+			playlist:
+				media(false, 900) +
+				"\n#EXT-X-TWITCH-PREFETCH:https://cdn.example/adsquared/prefetch.ts",
+		},
+		{
+			kind: "ad part after clean segments",
+			playlist:
+				media(false, 900) +
+				'\n#EXT-X-PART:DURATION=0.333,URI="https://cdn.example/adsquared/part.ts"',
+		},
+		{
+			kind: "ad preload hint after clean segments",
+			playlist:
+				media(false, 900) +
+				'\n#EXT-X-PRELOAD-HINT:TYPE=PART,URI="https://cdn.example/adsquared/next.ts"',
+		},
+	])(
+		"rejects $kind on the fourth source and restarts its two clean checks",
+		async ({ playlist }) => {
+			const fixture = setup(loggedSweepDurations);
+			await fixture.firstFailure();
+			const completedAt = fixture.info._LastBackupSearchCompletedAt;
+			fixture.controls.clean = true;
+			fixture.controls.cleanType = "mobile_web";
+			vi.setSystemTime(completedAt + 1000);
+			expect(await fixture.process()).toContain(
+				"__ttvab_empty_hold_segment.ts",
 			);
+			await vi.advanceTimersByTimeAsync(2000);
+			const candidate =
+				fixture.info._NoBackupRecoveryCandidates.get("mobile_web");
+			expect(candidate.cleanStartedAt).toBe(completedAt + 3000);
+			expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+			const fetch = fixture.fetch.getMockImplementation();
+			let renewedAds = true;
+			fixture.fetch.mockImplementation(async (...args) => {
+				const response = await fetch(...args);
+				return renewedAds &&
+					args[0] === "https://cdn.example/mobile_web/index.m3u8"
+					? new Response(playlist)
+					: response;
+			});
+			vi.setSystemTime(completedAt + 4500);
+			const hold = await fixture.process();
+			expect(hold).toContain("__ttvab_empty_hold_segment.ts");
+			expect(hold).not.toContain("stitched-ad");
+			expect(hold).not.toContain("/adsquared/");
+			await vi.advanceTimersByTimeAsync(2000);
+			expect(candidate.cleanStartedAt).toBe(0);
+			expect(candidate.cleanMediaSequence).toBeNull();
+			expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+			expect(fixture.info.IsUsingBackupStream).toBe(false);
+			renewedAds = false;
+			vi.setSystemTime(completedAt + 8000);
+			expect(await fixture.process()).toContain(
+				"__ttvab_empty_hold_segment.ts",
+			);
+			await vi.advanceTimersByTimeAsync(2000);
+			expect(fixture.info.LastCleanBackupM3U8).toBeNull();
+			expect(candidate.cleanStartedAt).toBeGreaterThan(completedAt + 8000);
+			expect(await fixture.process()).toContain(
+				"__ttvab_empty_hold_segment.ts",
+			);
+			await vi.advanceTimersByTimeAsync(500);
+			expect(fixture.info.LastCleanBackupPlayerType).toBe("mobile_web");
+			const selected = fixture.process();
+			await vi.advanceTimersByTimeAsync(500);
+			const output = await selected;
+			expect(output).toContain("/content-");
+			expect(output).not.toContain("content-900.ts");
+			expect(output).not.toContain("stitched-ad");
+			expect(output).not.toContain("/adsquared/");
+			expect(fixture.tokens).toHaveLength(4);
+			expect(fixture.concurrency()).toBe(1);
 		},
 	);
 
@@ -508,13 +926,26 @@ describe("bounded recovery with low quality fallback disabled", () => {
 			vi.setSystemTime(regularRetryAt);
 			const recovered = fixture.process();
 			await vi.advanceTimersByTimeAsync(1500);
-			expect(await recovered).toContain("/content-");
+			expect(await recovered).toContain("__ttvab_empty_hold_segment.ts");
+			expect(fixture.info.LastCleanBackupM3U8).toContain("/content-");
+			const selected = fixture.process();
+			await vi.advanceTimersByTimeAsync(500);
+			expect(await selected).toContain("/content-");
 			expect(fixture.tokens).toHaveLength(5);
 			expect(fixture.concurrency()).toBe(1);
 		},
 	);
 
-	it.each(["route", "cycle", "reset", "codec", "toggle", "replacement"])(
+	it.each([
+		"route",
+		"generation",
+		"cycle",
+		"reset",
+		"codec",
+		"blocking",
+		"toggle",
+		"replacement",
+	])(
 		"rejects a delayed second clean sample after a %s change",
 		async (change) => {
 			const fixture = setup();
@@ -527,7 +958,10 @@ describe("bounded recovery with low quality fallback disabled", () => {
 			await fixture.process();
 			await vi.advanceTimersByTimeAsync(100);
 			if (change === "route") fixture.state.PageMediaKey = "live:other";
+			if (change === "generation")
+				fixture.state.PagePlaybackContextGeneration += 2;
 			if (change === "codec") fixture.info.EnhancedDecoderCodecFamily = "hevc";
+			if (change === "blocking") fixture.state.IsAdStrippingEnabled = false;
 			if (change === "toggle") fixture.state.DisableAutoplayBackup = false;
 			if (change === "cycle") {
 				fixture.info.VisibleAdStartedAt = Date.now();
@@ -578,6 +1012,7 @@ describe("bounded recovery with low quality fallback disabled", () => {
 
 	it.each([
 		"enabled",
+		"blocking-disabled",
 		"held",
 		"hevc",
 		"av1",
@@ -595,6 +1030,8 @@ describe("bounded recovery with low quality fallback disabled", () => {
 		vi.setSystemTime(startedAt + 10000);
 		let requestCodecs = codecs;
 		if (mode === "enabled") fixture.state.DisableAutoplayBackup = false;
+		if (mode === "blocking-disabled")
+			fixture.state.IsAdStrippingEnabled = false;
 		if (mode === "held") fixture.info.LastCleanBackupAt = Date.now();
 		if (mode === "hevc") fixture.info.EnhancedDecoderCodecFamily = "hevc";
 		if (mode === "av1") requestCodecs = "av01.0.08M.08,mp4a.40.2";

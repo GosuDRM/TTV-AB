@@ -1254,6 +1254,31 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_getBackupPlaybackCodec",
+			helper: "_getVideoCodecIdentity",
+			source: parserSource,
+		},
+		{
+			consumer: "_getBackupPlaybackCodec",
+			helper: "_getVideoCodecFamily",
+			source: parserSource,
+		},
+		{
+			consumer: "_stripHevcBackupVariants",
+			helper: "_getBackupPlaybackCodec",
+			source: parserSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_getBackupPlaybackCodec",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_getBackupPlaybackCodec",
+			source: processorSource,
+		},
+		{
 			consumer: "_applyPlaylistContinuity",
 			helper: "_isPageLifecycleCycleCurrent",
 			source: processorSource,
@@ -1630,8 +1655,18 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_processM3U8Core",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
 			consumer: "_findBackupStream",
 			helper: "_getEarlyNoBackupRetry",
+			source: processorSource,
+		},
+		{
+			consumer: "_findBackupStream",
+			helper: "_isBackupSearchContextCurrent",
 			source: processorSource,
 		},
 		{
@@ -2568,6 +2603,46 @@ function validateSharedDefinitions() {
 		{
 			consumer: "_shouldHoldBridgeInsteadOfRotating",
 			helper: "_shouldBridgeHeldAutoplayDuringSearch",
+			source: processorSource,
+		},
+		{
+			consumer: "_recordNativeAdRollType",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_recordNativeAdRollType",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
+			consumer: "_isPrerollAutoplayBackupAllowed",
+			helper: "_normalizeMediaKey",
+			source: processorSource,
+		},
+		{
+			consumer: "_isPrerollAutoplayBackupAllowed",
+			helper: "_isBackupSearchContextCurrent",
+			source: processorSource,
+		},
+		{
+			consumer: "_isAutoplayBackupAvailableForSearch",
+			helper: "_isPrerollAutoplayBackupAllowed",
+			source: processorSource,
+		},
+		{
+			consumer: "_getOrderedBackupPlayerTypes",
+			helper: "_isPrerollAutoplayBackupAllowed",
+			source: processorSource,
+		},
+		{
+			consumer: "_searchBackupStream",
+			helper: "_isPrerollAutoplayBackupAllowed",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8Core",
+			helper: "_recordNativeAdRollType",
 			source: processorSource,
 		},
 		{
