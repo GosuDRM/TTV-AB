@@ -2,6 +2,23 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.0] - 2026-09-29
+
+Fixed
+
+- **Faster Preroll Checks** - Recheck normal-quality sources sooner when Low Quality Fallback is disabled, while requiring two clean, advancing checks before switching.
+- **Preroll Search Continuity** - Keep temporary hold playlists advancing during full backup searches with Low Quality Fallback disabled, preventing slow searches from blocking playlist updates.
+- **Preroll Playback Handoff** - Keep segment numbering continuous when switching from temporary holds to clean streams, including backup rotation and native return, to avoid playback freezes from large sequence jumps.
+- **Preroll Codec Stability** - Keep backup searches, refreshes, and early retries compatible with the active video codec, avoiding repeated black holds and timeline errors when 1440p and 1080p use different codecs.
+- **Preroll Video Bridge** - When Low Quality Fallback is disabled and normal-quality sources fail, use a verified clean low-quality stream during prerolls, then switch to a verified higher-quality backup without reloading. Midroll behavior is unchanged.
+- **Backup Search Safety** - Stop outdated searches after navigation, setting changes, or selection of a newer clean stream.
+
+## [18.1.9] - 2026-09-27
+
+Fixed
+
+- **Quality Changes After Ads** - Keep playback timing consistent when switching qualities after repeated ad breaks.
+
 ## [18.1.8] - 2026-09-27
 
 Fixed
