@@ -738,13 +738,16 @@ describe("popup setting explanations", () => {
 			"without reloading the player",
 		);
 		expect(english.autoplayBackupWarning).toContain(
-			"skips new autoplay backups during normal Twitch playback",
+			"normal-quality sources are tried first",
 		);
 		expect(english.autoplayBackupWarning).toContain(
-			"may take longer or briefly interrupt playback",
+			"If none is clean during a preroll",
 		);
 		expect(english.autoplayBackupWarning).toContain(
-			"may still be lower quality",
+			"temporary clean low-quality stream",
+		);
+		expect(english.autoplayBackupWarning).toContain(
+			"Midrolls still skip new autoplay backups",
 		);
 		expect(english.autoplayBackupWarning).not.toMatch(/preview/i);
 		expect(html).toContain(

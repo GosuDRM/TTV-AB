@@ -131,6 +131,248 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+function setupPrerollBridge() {
+	vi.useFakeTimers();
+	vi.setSystemTime(1_000_000);
+	const fixture = setup("avc1.640033");
+	const { info, state, tokens } = fixture;
+	fixture.context._postWorkerBridgeMessage = vi.fn();
+	state.BackupPlayerTypes = [
+		"site",
+		"embed",
+		"popout",
+		"mobile_web",
+		"autoplay",
+	];
+	const control = {
+		roll: "preroll",
+		normalClean: false,
+		autoplayClean: true,
+		autoplayCodec: "avc1.640033",
+	};
+	const requests: string[] = [];
+	let inFlight = 0;
+	let maxInFlight = 0;
+	const fetch = vi.fn(async (input: string, options?: RequestInit) => {
+		const url = new URL(String(input));
+		if (url.pathname.endsWith(".ts")) return new Response("");
+		requests.push(String(input));
+		maxInFlight = Math.max(maxInFlight, ++inFlight);
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		inFlight--;
+		if (url.hostname === "gql.twitch.tv") {
+			const type = JSON.parse(String(options?.body)).variables.playerType;
+			tokens.push(type);
+			return Response.json({
+				data: { streamPlaybackAccessToken: { signature: "test", value: type } },
+			});
+		}
+		if (url.hostname === "usher.ttvnw.net") {
+			const type = url.searchParams.get("token") || "site";
+			return new Response(
+				master(
+					type,
+					type === "autoplay" ? control.autoplayCodec : "avc1.640033",
+				),
+			);
+		}
+		const type = url.pathname.split("/")[1];
+		const height = Number(url.pathname.split("/")[2].replace(".m3u8", ""));
+		return new Response(
+			media(
+				type,
+				height,
+				400 + Math.floor((Date.now() - 1_000_000) / 2000),
+				type === "autoplay" ? !control.autoplayClean : !control.normalClean,
+			),
+		);
+	});
+	const native = () => {
+		const body = media("native", 1080, 700, true);
+		return control.roll
+			? body.replace(
+					"#EXT-X-TARGETDURATION:2",
+					`#EXT-X-TARGETDURATION:2\r\n#EXT-X-DATERANGE:X-TV-TWITCH-AD-ROLL-TYPE="${control.roll}",CLASS="twitch-stitched-ad",ID="stitched-ad-preroll"`,
+				)
+			: body;
+	};
+	return {
+		...fixture,
+		fetch,
+		control,
+		requests,
+		native,
+		poll: () => fixture.context._processM3U8(nativeUrl(1080), native(), fetch),
+		maxInFlight: () => maxInFlight,
+	};
+}
+
+describe("preroll emergency bridge with fallback disabled", () => {
+	it("tries normal sources sequentially, then serves clean 360p instead of a black hold", async () => {
+		const f = setupPrerollBridge();
+		const response = f.poll();
+		await vi.advanceTimersByTimeAsync(7500);
+		const output = await response;
+		expect(output).toContain("/autoplay/360/");
+		expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
+		expect(output).not.toContain("stitched-ad");
+		expect(f.tokens).toEqual([
+			"site",
+			"embed",
+			"popout",
+			"mobile_web",
+			"autoplay",
+		]);
+		expect(f.maxInFlight()).toBe(1);
+		expect(f.info.HevcReloadPendingAfterHold).toBe(true);
+		expect(f.context._postWorkerBridgeMessage).not.toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ key: "ReloadPlayer" }),
+		);
+	});
+
+	it.each(["midroll", "", "unknown"])(
+		"does not acquire autoplay for a %s break",
+		async (roll) => {
+			const f = setupPrerollBridge();
+			f.control.roll = roll;
+			const response = f.poll();
+			await vi.advanceTimersByTimeAsync(7500);
+			expect(await response).toContain("__ttvab_empty_hold_segment.ts");
+			expect(f.tokens).toEqual(["site", "embed", "popout", "mobile_web"]);
+		},
+	);
+
+	it("uses an available normal-quality source without acquiring autoplay", async () => {
+		const f = setupPrerollBridge();
+		f.control.normalClean = true;
+		const response = f.poll();
+		await vi.advanceTimersByTimeAsync(1500);
+		expect(await response).toContain("/site/1080/");
+		expect(f.tokens).toEqual(["site"]);
+	});
+
+	it("refreshes the 360p bridge through two clean HD checks and promotes without reloading", async () => {
+		const f = setupPrerollBridge();
+		const initial = f.poll();
+		await vi.advanceTimersByTimeAsync(7500);
+		expect(await initial).toContain("/autoplay/360/");
+		await vi.advanceTimersByTimeAsync(2000);
+		const refresh = f.poll();
+		await vi.advanceTimersByTimeAsync(500);
+		expect(await refresh).toContain("/autoplay/360/");
+		expect(f.info.LastCleanBackupAt).toBe(Date.now());
+		await vi.advanceTimersByTimeAsync(12500);
+		f.control.normalClean = true;
+		const firstCheck = f.poll();
+		await vi.advanceTimersByTimeAsync(2500);
+		expect(await firstCheck).toContain("/autoplay/360/");
+		await f.info._BackupSearchPromise;
+		expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+		expect(f.info._BackupProbation).toMatchObject({
+			type: "site",
+			cleanChecks: 1,
+		});
+		await vi.advanceTimersByTimeAsync(1500);
+		const secondCheck = f.poll();
+		await vi.advanceTimersByTimeAsync(1000);
+		const promoted = await secondCheck;
+		expect(promoted).toContain("/site/1080/");
+		expect(promoted).toContain("#EXT-X-DISCONTINUITY");
+		expect(promoted).not.toContain("stitched-ad");
+		expect(f.info.ActiveBackupResolution).toBe("1920x1080");
+		expect(f.info.HevcReloadPendingAfterHold).toBe(true);
+		expect(f.context._postWorkerBridgeMessage).not.toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ key: "ReloadPlayer" }),
+		);
+	});
+
+	it.each(["ad-marked", "incompatible-codec"])(
+		"rejects an %s autoplay source instead of serving unsafe media",
+		async (condition) => {
+			const f = setupPrerollBridge();
+			if (condition === "ad-marked") f.control.autoplayClean = false;
+			else f.control.autoplayCodec = "hev1.1.6.L153.B0";
+			const response = f.poll();
+			await vi.advanceTimersByTimeAsync(10000);
+			expect(await response).toContain("__ttvab_empty_hold_segment.ts");
+			expect(f.info.LastCleanBackupM3U8).toBeNull();
+		},
+	);
+
+	it.each(["page", "generation", "cycle", "midroll", "blocking"])(
+		"discards delayed preroll autoplay after a change of %s",
+		async (change) => {
+			const f = setupPrerollBridge();
+			const response = f.poll().catch((error: Error) => error);
+			await vi.advanceTimersByTimeAsync(7000);
+			expect(f.requests.at(-1)).toContain("/autoplay/360.m3u8");
+			if (change === "page") f.state.PageMediaKey = "live:other";
+			if (change === "generation") f.state.PagePlaybackContextGeneration++;
+			if (change === "cycle") f.info.VisibleAdStartedAt++;
+			if (change === "blocking") f.state.IsAdStrippingEnabled = false;
+			if (change === "midroll") {
+				f.control.roll = "midroll";
+				f.context._recordNativeAdRollType(f.info, f.native());
+			}
+			await vi.advanceTimersByTimeAsync(1000);
+			await response;
+			expect(f.info.LastCleanBackupM3U8).toBeNull();
+			expect(f.info._BackupSelection).toBeNull();
+		},
+	);
+
+	it("does not promote an autoplay-first search when fallback is switched off in flight", async () => {
+		const f = setupPrerollBridge();
+		f.state.DisableAutoplayBackup = false;
+		const response = f.poll();
+		await vi.advanceTimersByTimeAsync(1000);
+		f.state.DisableAutoplayBackup = true;
+		await vi.advanceTimersByTimeAsync(8000);
+		expect(await response).toContain("__ttvab_empty_hold_segment.ts");
+		expect(f.info.LastCleanBackupM3U8).toBeNull();
+	});
+
+	it("does not let minimal-request offsets skip normal sources before emergency autoplay", async () => {
+		const f = setupPrerollBridge();
+		f.info.LastPlayerReload = Date.now();
+		f.state.PlayerReloadMinimalRequestsPlayerIndex = 4;
+		const response = f.poll();
+		await vi.advanceTimersByTimeAsync(7500);
+		expect(await response).toContain("/autoplay/360/");
+		expect(f.tokens).toEqual([
+			"site",
+			"embed",
+			"popout",
+			"mobile_web",
+			"autoplay",
+		]);
+	});
+
+	it("does not carry preroll permission into a midroll or rearm it from conflicting metadata", async () => {
+		const f = setupPrerollBridge();
+		const initial = f.poll();
+		await vi.advanceTimersByTimeAsync(7500);
+		await initial;
+		f.control.roll = "MIDROLL";
+		await f.poll();
+		expect(f.context._isPrerollAutoplayBackupAllowed(f.info)).toBe(false);
+		f.control.roll = "preroll";
+		await f.poll();
+		expect(f.context._isPrerollAutoplayBackupAllowed(f.info)).toBe(false);
+	});
+
+	it("does not grant the preroll exception to VOD playback", async () => {
+		const f = setupPrerollBridge();
+		f.info.MediaType = "vod";
+		const response = f.poll();
+		await vi.advanceTimersByTimeAsync(7500);
+		expect(await response).not.toContain("/autoplay/360/");
+		expect(f.tokens).not.toContain("autoplay");
+	});
+});
+
 function setupProbation() {
 	let now = 1_000_000;
 	vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -388,6 +630,196 @@ describe("HD backup probation through playlist polling", () => {
 		expect(siteRequestTimes[1] - probationAt).toBeLessThan(4_000);
 		expect(f.tokens).toEqual(["site"]);
 	});
+});
+
+describe("mixed-codec preroll playback", () => {
+	function mixedFixture(enhancedCodec: string) {
+		const fixture = setup("mp4a.40.2,avc1.640033");
+		const { info, state, fetch } = fixture;
+		state.PreferredQualityGroup = "1440p60";
+		info.ResolutionList[0].Codecs = `mp4a.40.2,${enhancedCodec}`;
+		const mixedMaster = (type: string) =>
+			master(type, "mp4a.40.2,avc1.640033").replace(
+				'CODECS="mp4a.40.2,avc1.640033"',
+				`CODECS="mp4a.40.2,${enhancedCodec}"`,
+			);
+		info.EncodingsM3U8 = mixedMaster("native");
+		info.ModifiedM3U8 = master("native", "avc1.640033");
+		const originalFetch = fetch.getMockImplementation();
+		fetch.mockImplementation(async (input, options) => {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			if (String(input).includes("usher.ttvnw.net"))
+				return new Response(mixedMaster("site"));
+			if (String(input).includes("/site/")) {
+				const sequence = Math.floor(Date.now() / 2000);
+				return new Response(
+					media(
+						"site",
+						String(input).includes("1440") ? 1440 : 1080,
+						sequence,
+					).replace(
+						"#EXTINF:",
+						`#EXT-X-PROGRAM-DATE-TIME:${new Date(sequence * 2000).toISOString()}\n#EXTINF:`,
+					),
+				);
+			}
+			return originalFetch(input, options);
+		});
+		return fixture;
+	}
+
+	it.each(["hev1.1.6.L153.B0", "av01.0.13M.08"])(
+		"serves and refreshes AVC without selecting the advertised %s variant",
+		async (enhancedCodec) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(1_000_000);
+			const { context, info, fetch } = mixedFixture(enhancedCodec);
+			for (let poll = 0; poll < 4; poll++) {
+				const pending = context._processM3U8(
+					nativeUrl(1080),
+					media("native", 1080, 400 + poll, true),
+					fetch,
+				);
+				await vi.advanceTimersByTimeAsync(500);
+				const output = await pending;
+				expect(output).toContain("/site/1080/");
+				expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
+				expect(info.LastCleanBackupCodecFamily).toBe("avc");
+				await vi.advanceTimersByTimeAsync(1000);
+			}
+			expect(
+				fetch.mock.calls.some(([url]) => String(url).includes("/site/1440")),
+			).toBe(false);
+			expect(info.IsUsingModifiedM3U8).toBe(false);
+		},
+	);
+
+	it.each(["hev1.1.6.L153.B0", "av01.0.13M.08"])(
+		"retains exact %s decoder ownership through lower AVC quality requests",
+		async (enhancedCodec) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(1_000_000);
+			const { context, info, state, fetch } = mixedFixture(enhancedCodec);
+			info.SustainedNativeResolution = info.ResolutionList[1];
+			info.EnhancedDecoderCodec = enhancedCodec;
+			info.EnhancedDecoderCodecFamily =
+				context._getVideoCodecFamily(enhancedCodec);
+			state.PreferredQualityGroup = "1080p60";
+			const acquire = context._findBackupStream(
+				info,
+				fetch,
+				0,
+				info.ResolutionList[1],
+			);
+			await vi.advanceTimersByTimeAsync(500);
+			expect((await acquire).m3u8).toContain("/site/1440/");
+			expect(info.LastCleanBackupCodec).toBe(enhancedCodec.toLowerCase());
+			info.ActiveBackupPlayerType = "site";
+			const refresh = context._refreshActiveBackupMediaPlaylist(info, fetch);
+			await vi.advanceTimersByTimeAsync(100);
+			expect(await refresh).toContain("/site/1440/");
+			expect(info.LastCleanBackupCodec).toBe(enhancedCodec.toLowerCase());
+			const familyRefresh = context._refreshActiveBackupMediaPlaylist(
+				info,
+				fetch,
+				info.EnhancedDecoderCodecFamily,
+			);
+			await vi.advanceTimersByTimeAsync(100);
+			expect(await familyRefresh).toContain("/site/1440/");
+		},
+	);
+
+	it("coalesces ordinary and exact AVC searches under an advertised enhanced target", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		const { context, info, fetch } = mixedFixture("hev1.1.6.L153.B0");
+		info.SustainedNativeResolution = info.ResolutionList[1];
+		const ordinary = context._findBackupStream(
+			info,
+			fetch,
+			0,
+			info.ResolutionList[0],
+		);
+		const matching = context._findBackupStream(
+			info,
+			fetch,
+			0,
+			info.ResolutionList[1],
+			info.SustainedNativeResolution.Codecs,
+		);
+		expect(info._BackupSearchPromises.size).toBe(1);
+		await vi.advanceTimersByTimeAsync(500);
+		expect(await ordinary).toEqual(await matching);
+		expect(
+			fetch.mock.calls.filter(([url]) => String(url).includes("/site/")),
+		).toHaveLength(1);
+	});
+
+	it.each(["hev1.1.6.L153.B0", "av01.0.13M.08"])(
+		"keeps the dated AVC backup flowing when native media is behind and %s is advertised",
+		async (enhancedCodec) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(1_000_000);
+			const { context, info, state, fetch } = mixedFixture(enhancedCodec);
+			Object.assign(info, {
+				IsShowingAd: true,
+				VisibleAdStartedAt: 990_000,
+				SustainedNativeResolution: info.ResolutionList[1],
+				ActiveBackupPlayerType: "site",
+				IsUsingBackupStream: true,
+			});
+			state.CurrentAdMediaKey = info.MediaKey;
+			state.CurrentAdChannel = info.ChannelName;
+			const acquire = context._findBackupStream(
+				info,
+				fetch,
+				0,
+				info.ResolutionList[1],
+				"avc",
+			);
+			await vi.advanceTimersByTimeAsync(500);
+			await acquire;
+			const metadata = info.BackupPlaylistMetadata.get(
+				info.LastCleanBackupM3U8,
+			);
+			context._applyPlaylistContinuity(
+				info,
+				nativeUrl(1080),
+				info.LastCleanBackupM3U8,
+				metadata,
+			);
+			await vi.advanceTimersByTimeAsync(2000);
+			const behindNative = media("native", 1080, 400).replace(
+				"#EXTINF:",
+				"#EXT-X-PROGRAM-DATE-TIME:1970-01-01T00:16:20.000Z\n#EXTINF:",
+			);
+			const pending = context._processM3U8(
+				nativeUrl(1080),
+				behindNative,
+				fetch,
+			);
+			const outcome = pending.then(
+				(output: string) => ({ output }),
+				(error: Error) => ({ error }),
+			);
+			await vi.advanceTimersByTimeAsync(500);
+			expect(await outcome).toMatchObject({
+				output: expect.stringContaining("/site/1080/"),
+			});
+			expect(info._LivePlaylistTimeline.identity).toBe(
+				JSON.stringify([
+					"backup",
+					metadata.playerType,
+					metadata.resolution,
+					metadata.codec,
+					metadata.sessionUrl,
+					metadata.playlistUrl,
+				]),
+			);
+			expect(info.IsShowingAd).toBe(true);
+			expect(info.LastCleanBackupCodecFamily).toBe("avc");
+		},
+	);
 });
 
 describe("codec ordering and backup quality ownership", () => {

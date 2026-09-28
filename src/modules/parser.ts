@@ -1347,6 +1347,35 @@ function _dropEnhancedVariantLines(lines) {
 	return { kept, removed, remaining };
 }
 
+function _getBackupPlaybackCodec(
+	info,
+	targetResolution = null,
+	codecOverride = null,
+) {
+	if (info?.IsUsingModifiedM3U8) return "avc";
+	const explicitCodec = _getVideoCodecIdentity(codecOverride);
+	if (explicitCodec) return explicitCodec;
+	const explicitFamily = _getVideoCodecFamily(codecOverride);
+	if (explicitFamily === "avc") return explicitFamily;
+	const enhancedFamily =
+		explicitFamily ||
+		_getVideoCodecFamily(info?.EnhancedDecoderCodec) ||
+		_getVideoCodecFamily(info?.EnhancedDecoderCodecFamily);
+	for (const codec of [
+		info?.EnhancedDecoderCodec,
+		info?.SustainedNativeResolution?.Codecs,
+		targetResolution?.Codecs,
+	]) {
+		const identity = _getVideoCodecIdentity(codec);
+		if (
+			identity &&
+			(!enhancedFamily || _getVideoCodecFamily(identity) === enhancedFamily)
+		)
+			return identity;
+	}
+	return enhancedFamily || null;
+}
+
 function _stripHevcBackupVariants(
 	info,
 	m3u8,
@@ -1357,26 +1386,21 @@ function _stripHevcBackupVariants(
 		return m3u8;
 	}
 	const explicitCodecFamily = _getVideoCodecFamily(codecFamilyOverride);
-	const explicitCodecIdentity = _getVideoCodecIdentity(codecFamilyOverride);
-	let requestedCodecFamily = info?.IsUsingModifiedM3U8
-		? "avc"
-		: explicitCodecFamily ||
-			_getVideoCodecFamily(info?.EnhancedDecoderCodecFamily) ||
-			_getVideoCodecFamily(targetResolution?.Codecs) ||
-			_getVideoCodecFamily(info?.SustainedNativeResolution?.Codecs);
+	const playbackCodec = _getBackupPlaybackCodec(
+		info,
+		targetResolution,
+		codecFamilyOverride,
+	);
+	let requestedCodecFamily = _getVideoCodecFamily(playbackCodec);
 	if (!requestedCodecFamily) {
 		if (!_shouldAvoidHevcBackupVariants(info)) return m3u8;
 		requestedCodecFamily = "avc";
 	}
 	const requiresExactCodecIdentity =
 		requestedCodecFamily === "hevc" || requestedCodecFamily === "av1";
-	const requestedCodecIdentity =
-		!info?.IsUsingModifiedM3U8 && requiresExactCodecIdentity
-			? explicitCodecIdentity ||
-				_getVideoCodecIdentity(info?.EnhancedDecoderCodec) ||
-				_getVideoCodecIdentity(targetResolution?.Codecs) ||
-				_getVideoCodecIdentity(info?.SustainedNativeResolution?.Codecs)
-			: null;
+	const requestedCodecIdentity = requiresExactCodecIdentity
+		? _getVideoCodecIdentity(playbackCodec)
+		: null;
 	const requireExplicitCodecFamily = Boolean(
 		explicitCodecFamily ||
 			info?.IsUsingModifiedM3U8 ||

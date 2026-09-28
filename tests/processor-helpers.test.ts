@@ -155,6 +155,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		SustainedNativeResolutionAt: 0,
 		SustainedNativeResolutionStartedAt: 0,
 		IsMidroll: false,
+		AdRollContext: null,
 		IsStrippingAdSegments: false,
 		CsaiOnlyThisBreak: false,
 		NumStrippedAdSegments: 0,
@@ -841,6 +842,12 @@ describe("_resetStreamAdState", () => {
 			IsUsingBackupStream: true,
 			NumStrippedAdSegments: 5,
 			IsMidroll: true,
+			AdRollContext: {
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 100,
+				pageGeneration: 1,
+				rollType: "preroll",
+			},
 			CsaiOnlyThisBreak: true,
 			IsHoldingBackupAfterAd: true,
 			HevcReloadPendingAfterHold: true,
@@ -926,6 +933,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.IsUsingBackupStream).toBe(false);
 		expect(info.NumStrippedAdSegments).toBe(0);
 		expect(info.IsMidroll).toBe(false);
+		expect(info.AdRollContext).toBe(null);
 		expect(info.CsaiOnlyThisBreak).toBe(false);
 		expect(info.IsHoldingBackupAfterAd).toBe(false);
 		expect(info.HevcReloadPendingAfterHold).toBe(false);

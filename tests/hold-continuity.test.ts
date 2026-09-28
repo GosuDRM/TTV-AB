@@ -118,6 +118,44 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it.each([10, 8990, 250000])(
+		"hands a long preroll hold to backup sequence %s without advertising missing segments",
+		async (sourceSequence) => {
+			const { context, info, hold, serve } = setup();
+			let lastHold = "";
+			for (let poll = 0; poll < 40; poll++) lastHold = await hold();
+			const nextSequence = segments(lastHold).at(-1).sequence + 1;
+			const first = segments(await serve(playlist(sourceSequence), "site"));
+			expect(first[0].sequence).toBe(nextSequence);
+			expect(first[0].discontinuity).toBeGreaterThan(
+				segments(lastHold).at(-1).discontinuity,
+			);
+			const otherUrl = nativeUrl.replace("native", "720p");
+			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+			const other = segments(
+				context._applyPlaylistContinuity(
+					info,
+					otherUrl,
+					playlist(sourceSequence),
+					info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8),
+				),
+			);
+			expect(other).toEqual(first);
+			const refreshed = segments(
+				await serve(playlist(sourceSequence + 1), "site"),
+			);
+			expect(refreshed.slice(0, 2)).toEqual(first.slice(1));
+			const rotated = segments(
+				await serve(playlist(sourceSequence + 9000), "embed"),
+			);
+			expect(rotated[0].sequence).toBe(refreshed.at(-1).sequence + 1);
+			context._resetStreamAdState(info, true);
+			const native = segments(await serve(playlist(sourceSequence + 20000)));
+			expect(native[0].sequence).toBe(rotated.at(-1).sequence + 1);
+			expect(info.HevcReloadPendingAfterHold).toBe(false);
+		},
+	);
+
 	it("keeps holds beyond the presented live window across native request URLs", async () => {
 		const { context, info, hold, serve } = setup();
 		await hold();
@@ -727,6 +765,71 @@ describe("empty hold playlist continuity", () => {
 		expect(replacement[0].discontinuity).toBeGreaterThan(previousLast);
 	});
 
+	it.each([false, true])(
+		"keeps an idle native rendition on the current timeline after another break (fallback disabled: %s)",
+		async (disabled) => {
+			const { context, info, hold, serve } = setup();
+			context.state.DisableAutoplayBackup = disabled;
+			const otherUrl = nativeUrl.replace("native", "720p");
+			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+			const apply = (
+				url: string,
+				text: string,
+				metadata: Record<string, unknown> | null = null,
+			) => context._applyPlaylistContinuity(info, url, text, metadata);
+			await hold();
+			apply(otherUrl, context._createEmptyAdHoldPlaylist(playlist(400), info));
+			await serve(playlist(100), "site");
+			const metadata = info.BackupPlaylistMetadata.get(
+				info.LastCleanBackupM3U8,
+			);
+			apply(otherUrl, playlist(100), metadata);
+			context._resetStreamAdState(info, true);
+			const firstNative = segments(await serve(playlist(200, 3, "native")));
+			const otherNative = segments(apply(otherUrl, playlist(300, 3, "other")));
+			expect(otherNative[0].discontinuity).toBe(firstNative[0].discontinuity);
+			const nativeOffset =
+				info._EmptyHoldTimelineByUrl.get(nativeUrl).mediaOffset;
+			expect(nativeOffset).not.toBe(
+				info._EmptyHoldTimelineByUrl.get(otherUrl).mediaOffset,
+			);
+
+			info.IsShowingAd = true;
+			info.VisibleAdStartedAt = Date.now();
+			apply(otherUrl, context._createEmptyAdHoldPlaylist(playlist(305), info));
+			apply(otherUrl, playlist(306, 3, "second-backup"), {
+				...metadata,
+				playlistUrl: "https://edge.example/site.m3u8?session=two",
+				sessionUrl: "https://usher.ttvnw.net/master.m3u8?session=two",
+			});
+			context._resetStreamAdState(info, true);
+			const current = segments(apply(otherUrl, playlist(310, 3, "other")));
+			expect(current[0].discontinuity).toBeGreaterThan(
+				firstNative[0].discontinuity,
+			);
+			const before = JSON.stringify([...info._EmptyHoldTimelineByUrl]);
+			expect(() => apply(nativeUrl, playlist(199, 3, "native"))).toThrow(
+				"Retired empty hold recovery playlist",
+			);
+			expect(JSON.stringify([...info._EmptyHoldTimelineByUrl])).toBe(before);
+
+			const rejoinedText = await serve(playlist(211, 3, "native"));
+			const rejoined = segments(rejoinedText);
+			expect(rejoined[0].discontinuity).toBe(current[0].discontinuity);
+			expect(rejoined[0].sequence).toBe(211 + nativeOffset);
+			expect(rejoinedText.split("\n")).not.toContain("#EXT-X-DISCONTINUITY");
+			expect(
+				context._getEmptyHoldUpstreamUrl(
+					info,
+					`${nativeUrl}&_HLS_msn=${212 + nativeOffset}&_HLS_part=1`,
+				),
+			).toBe(`${nativeUrl}&_HLS_msn=212&_HLS_part=1`);
+			const refreshed = segments(await serve(playlist(212, 3, "native")));
+			expect(refreshed.slice(0, 2)).toEqual(rejoined.slice(1));
+			expect(info.HevcReloadPendingAfterHold).toBe(false);
+		},
+	);
+
 	it("makes clean segments downloadable immediately after a long hold", async () => {
 		const { hold, serve, fetch } = setup();
 		let lastHold = "";
@@ -908,6 +1011,66 @@ describe("empty hold playlist continuity", () => {
 		}
 	});
 
+	it("translates native requests after a high-numbered source joins the hold timeline", async () => {
+		const { context, info, hold, serve } = setup();
+		await hold();
+		context._resetStreamAdState(info, true);
+		const native = segments(await serve(playlist(250000)));
+		const nextSequence = native.at(-1).sequence + 1;
+		expect(nextSequence).toBeLessThan(250000);
+		expect(
+			context._getEmptyHoldUpstreamUrl(
+				info,
+				`${nativeUrl}&_HLS_msn=${nextSequence}&_HLS_part=2&_HLS_skip=YES`,
+			),
+		).toBe(`${nativeUrl}&_HLS_msn=250003&_HLS_part=2`);
+		const refreshed = segments(await serve(playlist(250001)));
+		expect(refreshed.slice(0, 2)).toEqual(native.slice(1));
+		await expect(serve(playlist(250000))).rejects.toMatchObject({
+			name: "AbortError",
+		});
+	});
+
+	it("decrypts a high-numbered backup with its original IV after contiguous handoff", async () => {
+		const { hold, serve } = setup();
+		const held = segments(await hold());
+		const sourceSequence = 8990;
+		const source = playlist(sourceSequence).replace(
+			"#EXTINF:",
+			'#EXT-X-KEY:METHOD=AES-128,URI="https://edge.example/key"\n#EXTINF:',
+		);
+		const output = await serve(source, "site");
+		expect(segments(output)[0].sequence).toBe(held.at(-1).sequence + 1);
+		const key = Buffer.alloc(16, 7);
+		const originalIv = Buffer.alloc(16);
+		originalIv.writeUInt32BE(sourceSequence, 12);
+		const plaintext = Buffer.from(
+			"original audio and video encryption sequence",
+		);
+		const cipher = createCipheriv("aes-128-cbc", key, originalIv);
+		const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+		const returnedIv = Buffer.from(
+			output.match(/IV=0x([a-f0-9]{32})/i)[1],
+			"hex",
+		);
+		const decipher = createDecipheriv("aes-128-cbc", key, returnedIv);
+		expect(
+			Buffer.concat([decipher.update(encrypted), decipher.final()]),
+		).toEqual(plaintext);
+		const refreshed = await serve(
+			playlist(sourceSequence + 1).replace(
+				"#EXTINF:",
+				'#EXT-X-KEY:METHOD=AES-128,URI="https://edge.example/key"\n#EXTINF:',
+			),
+			"site",
+		);
+		expect(
+			[...refreshed.matchAll(/IV=0x([a-f0-9]{32})/gi)].map((match) =>
+				parseInt(match[1], 16),
+			),
+		).toEqual([8991, 8992, 8993]);
+	});
+
 	it("preserves the request options, signal, and token bytes in the worker fetch", async () => {
 		const { context, info, hold } = setup();
 		await hold();
@@ -1054,24 +1217,31 @@ describe("empty hold playlist continuity", () => {
 		expect(JSON.stringify([...info._EmptyHoldTimelineByUrl])).toBe(before);
 	});
 
-	it("keeps rendition reports in the presented native numbering", async () => {
-		const { context, info, hold, serve } = setup();
-		await hold();
-		const otherUrl = nativeUrl.replace("native", "720p");
-		context._applyEmptyHoldPlaylistContinuity(
-			info,
-			otherUrl,
-			context._createEmptyAdHoldPlaylist(playlist(400), info),
-		);
-		const other = segments(
-			context._applyEmptyHoldPlaylistContinuity(info, otherUrl, playlist(20)),
-		);
-		const report = `#EXT-X-RENDITION-REPORT:URI="${otherUrl}",LAST-MSN=22,LAST-PART=1`;
-		const output = await serve(`${playlist(10)}\n${report}`);
-		expect(output).toContain(
-			`URI="${otherUrl}",LAST-MSN=${other.at(-1).sequence},LAST-PART=1`,
-		);
-	});
+	it.each([0, 250000])(
+		"keeps rendition reports in the presented native numbering with source offset %s",
+		async (sourceOffset) => {
+			const { context, info, hold, serve } = setup();
+			await hold();
+			const otherUrl = nativeUrl.replace("native", "720p");
+			context._applyEmptyHoldPlaylistContinuity(
+				info,
+				otherUrl,
+				context._createEmptyAdHoldPlaylist(playlist(400), info),
+			);
+			const other = segments(
+				context._applyEmptyHoldPlaylistContinuity(
+					info,
+					otherUrl,
+					playlist(20 + sourceOffset),
+				),
+			);
+			const report = `#EXT-X-RENDITION-REPORT:URI="${otherUrl}",LAST-MSN=${22 + sourceOffset},LAST-PART=1`;
+			const output = await serve(`${playlist(10 + sourceOffset)}\n${report}`);
+			expect(output).toContain(
+				`URI="${otherUrl}",LAST-MSN=${other.at(-1).sequence},LAST-PART=1`,
+			);
+		},
+	);
 
 	it("does not commit continuity from a cancelled response", async () => {
 		const { context, info, hold } = setup();

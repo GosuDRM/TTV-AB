@@ -5713,6 +5713,7 @@ function _hookWorker() {
                 ${_degradeToDecodableResolution.toString()}
                 ${_shouldAvoidHevcBackupVariants.toString()}
                 ${_dropEnhancedVariantLines.toString()}
+                ${_getBackupPlaybackCodec.toString()}
                 ${_stripHevcBackupVariants.toString()}
                 ${_resolvePreferredBackupResolution.toString()}
                 ${_getPlaylistUrlAliases.toString()}
@@ -5759,6 +5760,8 @@ function _hookWorker() {
                 ${_isBackupPlayerRetryCoolingDown.toString()}
                 ${_getPinnedBackupPlayerTypeForInfo.toString()}
                 ${_getRecentCleanBackupPlayerTypeForInfo.toString()}
+				${_recordNativeAdRollType.toString()}
+				${_isPrerollAutoplayBackupAllowed.toString()}
 				${_isAutoplayBackupAvailableForSearch.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
