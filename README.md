@@ -34,7 +34,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Removes stale Twitch ad overlays after playback returns
 - ✅ Independent, live-updating controls for Ad Blocking, Ad Spoofing, and Low Quality Fallback
 - ✅ Optional Ad Spoofing to reduce anti-adblock detection
-- ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, but lower quality may still be used as a last resort
+- ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, with a temporary low-quality bridge available during prerolls
 - ✅ Optional Ad Break Timer showing elapsed time in the stream's top-right corner, disabled by default
 - ✅ Optional Turbo Mode that pauses new statistics and achievements while preserving existing history and all ad-blocking controls
 - ✅ Persistent, live-updating Ads Blocked and Time Saved totals
@@ -67,7 +67,7 @@ TTV AB inspects Twitch's HLS playlists inside the browser before the video playe
 - Keeps recovery tied to the current player across background tabs and Picture-in-Picture while respecting explicit pauses
 - Returns to native playback only after repeated clean checks for the same stream and ad cycle, then restores the saved quality and audio state
 
-With **Low Quality Fallback** enabled, a clean 360p autoplay source can start sooner while normal-quality backups are checked. With it disabled, new autoplay backups are skipped and normal-quality sources are tried first. The transition can take longer, and a lower-quality rendition may still be used as a last resort when necessary to keep the ad blocked.
+With **Low Quality Fallback** enabled, a clean 360p autoplay source can start sooner while normal-quality backups are checked. With it disabled, normal-quality sources are tried first. During prerolls, if none is clean, a temporary clean low-quality stream can play while higher-quality sources are checked, then switch to a verified higher-quality backup without reloading the player. Midrolls still skip new autoplay backups, so recovery can take longer. Other backup sources may also offer lower-quality renditions.
 
 When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and completion signals expected for the blocked break. This setting is separate from playlist blocking and can be turned off without disabling core ad blocking.
 
@@ -75,22 +75,22 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v19.0.0 - 2026-09-29
+
+- **Faster Preroll Checks** - Recheck normal-quality sources sooner when Low Quality Fallback is disabled, while requiring two clean, advancing checks before switching.
+- **Preroll Video Bridge** - When normal-quality sources fail with Low Quality Fallback disabled, use a temporary clean low-quality stream, then switch to a verified higher-quality backup without reloading. Midroll behavior is unchanged.
+- **Backup Search Safety** - Stop outdated searches after navigation, setting changes, or selection of a newer clean stream.
+
+Live confirmation of the reported playback stall is still pending.
+
+### v18.1.9 - 2026-09-27
+
+- **Quality Changes After Ads** - Keep playback timing consistent when switching qualities after repeated ad breaks.
+
 ### v18.1.8 - 2026-09-27
 
 - **Worker Recovery** - Wait for a usable player without spending restart attempts, allow up to 30 seconds for replacement confirmation, and keep failed reloads spaced apart.
 - **Recovery Warnings** - Require fresh playback evidence before accepting a recovered worker, and distinguish temporary ad protection from exhausted recovery.
-
-### v18.1.7 - 2026-09-24
-
-- **HD Recovery Across Ad Breaks** - Recheck the original HD streams when a later catalog refresh offers only low qualities, restoring options that still pass live playback checks.
-- **HD Backup Target** - Preserve the requested backup quality through an aging native catalog, avoiding skipped HD searches and unnecessary drops to 360p.
-- **Recovery Diagnostics** - Improve logs to help troubleshoot missing HD quality options after ads, without exposing private stream links.
-
-### v18.1.6 - 2026-09-24
-
-- **Playback Buffer** - Avoid unnecessary jumps toward the live edge after recovery and while video is advancing, with Low Latency on or off.
-- **Low Latency Recovery** - Use the current player's latency mode for buffer and recovery checks, and clear the recovery prompt when low-latency video resumes.
-- **Latency Preference** - Preserve changes to Twitch's Low Latency setting made during player recovery.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
