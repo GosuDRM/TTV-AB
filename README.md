@@ -85,8 +85,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Preroll Video Bridge** - When normal-quality sources fail with Low Quality Fallback disabled, use a temporary clean low-quality stream, then switch to a verified higher-quality backup without reloading. Midroll behavior is unchanged.
 - **Backup Search Safety** - Stop outdated searches after navigation, setting changes, or selection of a newer clean stream.
 
-Live confirmation of the reported playback stall is still pending.
-
 ### v18.1.9 - 2026-09-27
 
 - **Quality Changes After Ads** - Keep playback timing consistent when switching qualities after repeated ad breaks.
