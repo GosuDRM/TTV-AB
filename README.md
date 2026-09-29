@@ -75,6 +75,10 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v19.0.1 - 2026-09-29
+
+- **Backup Stall Detection** - Require fresh stall evidence when Twitch replaces the video element, avoiding premature backup switches and keeping recovery attempts bounded.
+
 ### v19.0.0 - 2026-09-29
 
 - **Faster Preroll Checks** - Recheck normal-quality sources sooner when Low Quality Fallback is disabled, while requiring two clean, advancing checks before switching.
@@ -86,11 +90,6 @@ Live confirmation of the reported playback stall is still pending.
 ### v18.1.9 - 2026-09-27
 
 - **Quality Changes After Ads** - Keep playback timing consistent when switching qualities after repeated ad breaks.
-
-### v18.1.8 - 2026-09-27
-
-- **Worker Recovery** - Wait for a usable player without spending restart attempts, allow up to 30 seconds for replacement confirmation, and keep failed reloads spaced apart.
-- **Recovery Warnings** - Require fresh playback evidence before accepting a recovered worker, and distinguish temporary ad protection from exhausted recovery.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

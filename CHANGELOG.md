@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.1] - 2026-09-29
+
+Fixed
+
+- **Backup Stall Detection** - Require fresh stall evidence when Twitch replaces the video element, avoiding premature backup switches and keeping recovery attempts bounded.
+
 ## [19.0.0] - 2026-09-29
 
 Fixed
