@@ -57,6 +57,7 @@ function T<T>(name: string): T {
 function resetPinnedState() {
 	const state = g._PinnedBackupStallState as Record<string, unknown>;
 	state.mediaKey = null;
+	state.videoRef = null;
 	state.firstObservedAt = 0;
 	state.lastCurrentTime = 0;
 	state.lastBufferedEnd = 0;
@@ -623,6 +624,44 @@ describe("_checkPinnedBackupStall", () => {
 		expect(state.forceRefreshCount).toBe(0);
 		expect(state.exhaustedLogged).toBe(false);
 		expect(state.lastForceRefreshAt).toBe(0);
+	});
+
+	it("does not replenish exhausted backup searches from a replacement element's different clock", () => {
+		const check = T<
+			(player: { getHTMLVideoElement: () => HTMLVideoElement }) => void
+		>("_checkPinnedBackupStall");
+		const messages = vi.fn();
+		g._broadcastWorkers = messages;
+		let currentTime = 10;
+		const original = makePlayer(
+			() => 10,
+			() => 10.05,
+		);
+		const replacement = makePlayer(
+			() => currentTime,
+			() => currentTime + 0.05,
+		);
+		let video = original.getHTMLVideoElement();
+		const player = { getHTMLVideoElement: () => video };
+		const now = vi.spyOn(Date, "now").mockReturnValue(100000);
+		check(player);
+		const state = g._PinnedBackupStallState as Record<string, unknown>;
+		state.forceRefreshCount = 3;
+		state.exhaustedLogged = true;
+		state.lastForceRefreshAt = 99000;
+		currentTime = 110;
+		video = replacement.getHTMLVideoElement();
+		now.mockReturnValue(104000);
+		check(player);
+		expect(state.forceRefreshCount).toBe(3);
+		expect(state.lastForceRefreshAt).toBe(99000);
+		expect(state.exhaustedLogged).toBe(true);
+		expect(messages).not.toHaveBeenCalled();
+		currentTime += 0.6;
+		now.mockReturnValue(104600);
+		check(player);
+		expect(state.forceRefreshCount).toBe(0);
+		expect(state.exhaustedLogged).toBe(false);
 	});
 });
 
@@ -2133,6 +2172,44 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 		expect(retired.seeks).toEqual([]);
 		expect(replacement.seeks).toEqual([]);
 	});
+
+	it.each([10, 110])(
+		"observes a replaced video at %ss inside the same player before rotating its pinned backup",
+		(currentTime) => {
+			T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+			vi.setSystemTime(100000);
+			Object.assign(g.__TTVAB_STATE__ as object, {
+				PinnedBackupPlayerType: "site",
+				PinnedBackupPlayerMediaKey: "live:testchannel",
+				PinnedBackupStallPollMs: 100,
+				PlayerBufferingDangerZone: 1,
+			});
+			const original = makePlayer(
+				() => 10,
+				() => 10.05,
+			);
+			const replacement = makePlayer(
+				() => currentTime,
+				() => currentTime + 0.05,
+			);
+			let video = original.getHTMLVideoElement();
+			pagePlayer = { getHTMLVideoElement: () => video };
+			const broadcast = vi.spyOn(g, "_broadcastWorkers");
+			T<() => void>("_monitorPlayerBuffering")();
+			vi.advanceTimersByTime(2400);
+			video = replacement.getHTMLVideoElement();
+			vi.advanceTimersByTime(600);
+			expect(broadcast).not.toHaveBeenCalled();
+			vi.advanceTimersByTime(2999);
+			expect(broadcast).not.toHaveBeenCalled();
+			vi.advanceTimersByTime(1);
+			expect(broadcast).toHaveBeenCalledExactlyOnceWith({
+				key: "UpdateBackupSearchForceRefresh",
+				targetMediaKey: "live:testchannel",
+				value: 106000,
+			});
+		},
+	);
 
 	it("keeps the replacement audible while silencing the still-connected retired player", () => {
 		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
