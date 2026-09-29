@@ -135,7 +135,7 @@ function setupPrerollBridge() {
 	vi.useFakeTimers();
 	vi.setSystemTime(1_000_000);
 	const fixture = setup("avc1.640033");
-	const { info, state, tokens } = fixture;
+	const { state, tokens } = fixture;
 	fixture.context._postWorkerBridgeMessage = vi.fn();
 	state.BackupPlayerTypes = [
 		"site",

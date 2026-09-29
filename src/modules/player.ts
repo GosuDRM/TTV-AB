@@ -184,6 +184,7 @@ const _PinnedBackupTimelineRestoreState = {
 };
 const _PinnedBackupStallState = {
 	mediaKey: null as string | null,
+	videoRef: null as WeakRef<HTMLMediaElement> | null,
 	firstObservedAt: 0,
 	lastCurrentTime: 0,
 	lastBufferedEnd: 0,
@@ -571,6 +572,7 @@ function _consumePinnedBackupTimelineRestore(mediaKey, cycleStartedAt) {
 }
 function _resetPinnedBackupStallState() {
 	_PinnedBackupStallState.mediaKey = null;
+	_PinnedBackupStallState.videoRef = null;
 	_PinnedBackupStallState.firstObservedAt = 0;
 	_PinnedBackupStallState.lastCurrentTime = 0;
 	_PinnedBackupStallState.lastBufferedEnd = 0;
@@ -6430,10 +6432,17 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 		video.ended ||
 		Number(video.readyState) < 1
 	) {
+		_PinnedBackupStallState.videoRef = null;
 		_PinnedBackupStallState.firstObservedAt = 0;
 		_PinnedBackupStallState.lastCurrentTime = 0;
 		_PinnedBackupStallState.lastBufferedEnd = 0;
 		return;
+	}
+	if (_PinnedBackupStallState.videoRef?.deref() !== video) {
+		_PinnedBackupStallState.videoRef = new WeakRef(video);
+		_PinnedBackupStallState.firstObservedAt = 0;
+		_PinnedBackupStallState.lastCurrentTime = 0;
+		_PinnedBackupStallState.lastBufferedEnd = 0;
 	}
 	const currentTime = Number(video.currentTime) || 0;
 	const bufferedEnd =
