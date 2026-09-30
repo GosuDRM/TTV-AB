@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.2] - 2026-10-01
+
+Fixed
+
+- **Empty Player Recovery** - Attempt one player rebuild when previously advancing live playback stays empty, while respecting user pauses and current playback ownership.
+- **Playback Controls After Player Replacement** - Follow the current video when Twitch replaces the player, preventing events from retired videos from changing pause or resume intent.
+
 ## [19.0.1] - 2026-09-29
 
 Fixed
