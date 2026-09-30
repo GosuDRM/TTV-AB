@@ -75,6 +75,11 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v19.0.2 - 2026-10-01
+
+- **Empty Player Recovery** - Attempt one player rebuild when previously advancing live playback stays empty, while respecting user pauses and current playback ownership.
+- **Playback Controls After Player Replacement** - Follow the current video when Twitch replaces the player, preventing events from retired videos from changing pause or resume intent.
+
 ### v19.0.1 - 2026-09-29
 
 - **Backup Stall Detection** - Require fresh stall evidence when Twitch replaces the video element, avoiding premature backup switches and keeping recovery attempts bounded.
@@ -84,10 +89,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 - **Faster Preroll Checks** - Recheck normal-quality sources sooner when Low Quality Fallback is disabled, while requiring two clean, advancing checks before switching.
 - **Preroll Video Bridge** - When normal-quality sources fail with Low Quality Fallback disabled, use a temporary clean low-quality stream, then switch to a verified higher-quality backup without reloading. Midroll behavior is unchanged.
 - **Backup Search Safety** - Stop outdated searches after navigation, setting changes, or selection of a newer clean stream.
-
-### v18.1.9 - 2026-09-27
-
-- **Quality Changes After Ads** - Keep playback timing consistent when switching qualities after repeated ad breaks.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
