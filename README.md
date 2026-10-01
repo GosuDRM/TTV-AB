@@ -95,7 +95,7 @@ _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
 ## 🛠️ Development
 
-Use Node.js 22 and Python 3, plus `zip` for Firefox source archives. Name the Firefox checkout `TTV-AB-firefox` for Firefox packaging.
+Use Node.js 22 and Python 3, plus `zip` for Firefox source archives.
 
 ```sh
 npm ci
