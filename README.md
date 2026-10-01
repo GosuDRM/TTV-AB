@@ -95,7 +95,7 @@ _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
 ## 🛠️ Development
 
-Use Node.js 22 and Python 3, plus `zip` for Firefox source archives.
+Use Node.js 22 and Python 3.
 
 ```sh
 npm ci
