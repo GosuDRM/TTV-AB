@@ -4444,7 +4444,7 @@ function _seekPastBufferedGap(video, currentTime) {
 		} catch {
 			continue;
 		}
-		if (gapStart > currentTime + 0.25) {
+		if (gapStart > currentTime) {
 			try {
 				video.currentTime = gapStart + 0.05;
 			} catch {
@@ -6649,8 +6649,6 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 	}
 
 	_PinnedBackupStallState.lastForceRefreshAt = now;
-	_PinnedBackupStallState.forceRefreshCount =
-		(_PinnedBackupStallState.forceRefreshCount || 0) + 1;
 	if (_PinnedBackupStallState.forceRefreshCount >= 3) {
 		if (!_PinnedBackupStallState.exhaustedLogged) {
 			_PinnedBackupStallState.exhaustedLogged = true;
@@ -6661,6 +6659,8 @@ function _checkPinnedBackupStall(player, channel = null, mediaKey = null) {
 		}
 		return;
 	}
+	_PinnedBackupStallState.forceRefreshCount =
+		(_PinnedBackupStallState.forceRefreshCount || 0) + 1;
 	__TTVAB_STATE__.BackupSearchForceRefreshAt = now;
 	__TTVAB_STATE__.LastPinnedBackupStallDetectedAt = now;
 	_broadcastWorkers({

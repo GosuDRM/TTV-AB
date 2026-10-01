@@ -21,7 +21,7 @@ type UiFlags = {
 	achievementRemoveTimer: ReturnType<typeof setTimeout> | null;
 };
 
-let _adTimerEnabled = false;
+let _adTimerEnabled = true;
 
 function _setAdTimerEnabled(enabled) {
 	_adTimerEnabled = enabled === true;
@@ -104,7 +104,7 @@ function _updateAdTimerOverlay() {
 		overlay.style.right = `${Math.max(0, window.innerWidth - rect.right) + 12}px`;
 		const seconds = Math.floor((now - cycleStartedAt) / 1000);
 		const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-		const text = `Ad break · ${elapsed} elapsed`;
+		const text = `Ad break · ${elapsed}`;
 		if (overlay.textContent !== text) overlay.textContent = text;
 	} catch {
 		_clearAdTimerOverlay();

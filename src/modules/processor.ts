@@ -2298,7 +2298,11 @@ function _alignLivePlaylist(info, text, backupMetadata = null) {
 			);
 		return text;
 	}
-	const retainedIndex = entries.findIndex((entry) => entry.time >= minimumTime);
+	const handoffToleranceMs = 50;
+	const retainedIndex = entries.findIndex(
+		(entry) =>
+			entry.end > minimumTime && entry.time >= minimumTime - handoffToleranceMs,
+	);
 	if (retainedIndex < 0)
 		throw new DOMException(
 			"Live handoff playlist is behind the served broadcast time",
@@ -2356,12 +2360,12 @@ function _alignLivePlaylist(info, text, backupMetadata = null) {
 				`#EXT-X-PROGRAM-DATE-TIME:${new Date(retained.time).toISOString()}`,
 			);
 		output = [...prefix, ...tail].join("\n");
-		if (changedSource)
-			_log(
-				`[Recovery] Live playlist handoff skipped ${retainedIndex} older segments`,
-				"info",
-			);
 	}
+	if (changedSource && minimumTime > 0)
+		_log(
+			`[Recovery] Live playlist handoff skipped ${retainedIndex} older segments; boundary ${Math.round(entries[retainedIndex].time - minimumTime)}ms; retained ${entries.length - retainedIndex} segments`,
+			"info",
+		);
 	info._LivePlaylistTimeline = {
 		identity,
 		backup: Boolean(backupMetadata),

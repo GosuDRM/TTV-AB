@@ -149,6 +149,55 @@ function _formatLogEntryLine(entry: PlainObject): string {
 		.join("\n");
 }
 
+function _getLogExportBrowser(
+	navigatorInfo: {
+		userAgent?: string;
+		userAgentData?: { brands?: { brand: string; version: string }[] };
+	} = navigator,
+) {
+	try {
+		const userAgent = _sanitizeLogExportText(navigatorInfo.userAgent, 1024);
+		const browsers: [string, RegExp][] = [
+			["Microsoft Edge", /(?:Edg|Edge)\/([\d.]+)/],
+			["Opera", /OPR\/([\d.]+)/],
+			["Vivaldi", /Vivaldi\/([\d.]+)/],
+			["Brave", /Brave\/([\d.]+)/],
+			["Firefox", /Firefox\/([\d.]+)/],
+		];
+		for (const [name, pattern] of browsers) {
+			const match = userAgent.match(pattern);
+			if (match) return `${name} ${match[1].slice(0, 64)}`;
+		}
+		const chromiumVersion = userAgent.match(
+			/(?:Chrome|Chromium)\/([\d.]+)/,
+		)?.[1];
+		const brands = navigatorInfo.userAgentData?.brands;
+		if (Array.isArray(brands)) {
+			for (const name of [
+				"Microsoft Edge",
+				"Opera",
+				"Vivaldi",
+				"Brave",
+				"Google Chrome",
+				"Chromium",
+			]) {
+				const brand = brands
+					.slice(0, 16)
+					.find((entry) => entry?.brand === name);
+				if (!brand || !/^\d+(?:\.\d+){0,5}$/.test(brand.version)) continue;
+				const version =
+					(name === "Google Chrome" || name === "Chromium") && chromiumVersion
+						? chromiumVersion
+						: brand.version;
+				return `${name} ${version.slice(0, 64)}`;
+			}
+		}
+		if (chromiumVersion)
+			return `Chrome/Chromium ${chromiumVersion.slice(0, 64)}`;
+	} catch {}
+	return "unknown";
+}
+
 function _formatLogContextLines(value): string[] {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return [];
 	const context = value as PlainObject;
@@ -210,6 +259,45 @@ function _formatLogContextLines(value): string[] {
 		`Settings: ${settings}`,
 		`Page state: ${_stringifyLogExportValue(pageState)}`,
 	];
+	const media = context.media as PlainObject | null;
+	const selectedQuality =
+		_sanitizeLogExportText(media?.selectedQuality, 96).replace(/\n/g, " ") ||
+		"unknown";
+	const qualitySource =
+		media?.qualitySource === "player" ||
+		media?.qualitySource === "saved preference"
+			? ` (${media.qualitySource})`
+			: "";
+	const currentQuality =
+		_sanitizeLogExportText(media?.currentQuality, 96).replace(/\n/g, " ") ||
+		"unknown";
+	const width = Number(media?.width);
+	const height = Number(media?.height);
+	const resolution =
+		Number.isInteger(width) &&
+		width > 0 &&
+		width <= 16384 &&
+		Number.isInteger(height) &&
+		height > 0 &&
+		height <= 16384
+			? `${width}x${height}`
+			: "unknown";
+	const lowLatency =
+		media?.lowLatencyEnabled === true
+			? "enabled"
+			: media?.lowLatencyEnabled === false
+				? "disabled"
+				: "unknown";
+	const lowLatencySource =
+		media?.lowLatencySource === "player" ||
+		media?.lowLatencySource === "saved preference"
+			? ` (${media.lowLatencySource})`
+			: "";
+	lines.push(
+		`Selected video quality: ${selectedQuality}${qualitySource}`,
+		`Playing video quality: ${currentQuality} | Resolution: ${resolution}`,
+		`Twitch Low Latency: ${lowLatency}${lowLatencySource}`,
+	);
 	if (Array.isArray(context.workers)) {
 		lines.push(`Workers: ${_stringifyLogExportValue(context.workers)}`);
 	}
@@ -473,6 +561,7 @@ async function _buildLogExport(
 	const headerLines = [
 		"TTV AB debug log",
 		`Version: ${manifestVersion}`,
+		`Browser: ${_getLogExportBrowser()}`,
 		`Exported: ${new Date().toISOString()}`,
 		"",
 	];
@@ -651,8 +740,8 @@ function _createPopupToggleController(options) {
 	const values = {
 		adblock: true,
 		adSpoofing: true,
-		autoplayBackup: true,
-		adTimer: false,
+		autoplayBackup: false,
+		adTimer: true,
 		turbo: false,
 	};
 	const revisions = {
@@ -715,7 +804,7 @@ function _createPopupToggleController(options) {
 	}
 
 	function normalizeValue(name, value) {
-		return name === "turbo" || name === "adTimer"
+		return name === "turbo" || name === "autoplayBackup"
 			? value === true
 			: value !== false;
 	}
@@ -1400,7 +1489,8 @@ document.addEventListener("DOMContentLoaded", () => {
 			String(t.adTimer ?? "Ad Break Timer"),
 		);
 		adTimerToggle.title = String(
-			t.adTimerDesc ?? "Shows elapsed ad-break time over the stream.",
+			t.adTimerDesc ??
+				"Shows how long the ad break has been running over the stream.",
 		);
 		const adTimerInfoLabel = String(
 			t.adTimerInfoLabel ?? "About Ad Break Timer",

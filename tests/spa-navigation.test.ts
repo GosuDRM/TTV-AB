@@ -323,6 +323,9 @@ describe("_collectPageLogContext", () => {
 	let savedResolver: unknown;
 	let savedPrimaryResolver: unknown;
 	let savedFallbackResolver: unknown;
+	let savedPlayerResolver: unknown;
+	let savedCoreResolver: unknown;
+	let savedQualityReader: unknown;
 
 	beforeEach(() => {
 		savedState = g.__TTVAB_STATE__;
@@ -330,6 +333,13 @@ describe("_collectPageLogContext", () => {
 		savedResolver = g._getPlaybackMediaElementForContext;
 		savedPrimaryResolver = g._getPrimaryMediaElement;
 		savedFallbackResolver = g._getFallbackPrimaryVideoElement;
+		savedPlayerResolver = g._getPlayerAndState;
+		savedCoreResolver = g._getPlayerCore;
+		savedQualityReader = g._readConfiguredQualityGroup;
+		g._getPlayerAndState = () => ({ player: null });
+		g._getPlayerCore = (player: { core?: unknown }) => player?.core;
+		g._readConfiguredQualityGroup = () => null;
+		localStorage.removeItem("lowLatencyModeEnabled");
 		history.replaceState(null, "", "/some_channel?token=secret#chat");
 		g.__TTVAB_STATE__ = {
 			PageMediaKey: "live:some_channel",
@@ -383,7 +393,132 @@ describe("_collectPageLogContext", () => {
 		g._getPlaybackMediaElementForContext = savedResolver;
 		g._getPrimaryMediaElement = savedPrimaryResolver;
 		g._getFallbackPrimaryVideoElement = savedFallbackResolver;
+		g._getPlayerAndState = savedPlayerResolver;
+		g._getPlayerCore = savedCoreResolver;
+		g._readConfiguredQualityGroup = savedQualityReader;
+		localStorage.removeItem("lowLatencyModeEnabled");
 		history.replaceState(null, "", "/");
+	});
+
+	it.each([true, false])(
+		"collects live quality and Low Latency=%s from the matching player",
+		(enabled) => {
+			const media = (g._getPlaybackMediaElementForContext as () => object)();
+			g._getPlaybackMediaElementForContext = () => media;
+			g._readConfiguredQualityGroup = () => "720p60";
+			localStorage.setItem("lowLatencyModeEnabled", String(!enabled));
+			g._getPlayerAndState = () => ({
+				player: {
+					getHTMLVideoElement: () => media,
+					getQuality: () => ({
+						name: "1080p60",
+						group: "chunked",
+						url: "https://secret.example/token",
+					}),
+					isAutoQualityMode: () => enabled,
+					core: { state: { lowLatencyModeEnabled: enabled } },
+				},
+			});
+			const context = T<() => Record<string, unknown>>(
+				"_collectPageLogContext",
+			)();
+			expect(context.media).toMatchObject({
+				selectedQuality: enabled ? "auto" : "1080p60",
+				currentQuality: "1080p60",
+				qualitySource: "player",
+				lowLatencyEnabled: enabled,
+				lowLatencySource: "player",
+				width: 1920,
+				height: 1080,
+			});
+			expect(JSON.stringify(context)).not.toContain("secret.example");
+		},
+	);
+
+	it("labels saved preferences when live APIs throw and preserves current rendition", () => {
+		const media = (g._getPlaybackMediaElementForContext as () => object)();
+		g._getPlaybackMediaElementForContext = () => media;
+		g._readConfiguredQualityGroup = () => "1440p60";
+		localStorage.setItem("lowLatencyModeEnabled", "true");
+		const fail = () => {
+			throw new Error("unavailable");
+		};
+		g._getPlayerAndState = () => ({
+			player: {
+				getHTMLVideoElement: () => media,
+				getQuality: fail,
+				isAutoQualityMode: fail,
+				isLiveLowLatency: fail,
+				core: { state: { quality: { group: "360p" } } },
+			},
+		});
+		const context = T<() => Record<string, unknown>>(
+			"_collectPageLogContext",
+		)();
+		expect(context.media).toMatchObject({
+			selectedQuality: "1440p60",
+			qualitySource: "saved preference",
+			currentQuality: "360p",
+			lowLatencyEnabled: true,
+			lowLatencySource: "saved preference",
+		});
+	});
+
+	it("uses the live latency API when the internal state field is unavailable", () => {
+		const media = (g._getPlaybackMediaElementForContext as () => object)();
+		g._getPlaybackMediaElementForContext = () => media;
+		g._getPlayerAndState = () => ({
+			player: {
+				getHTMLVideoElement: () => media,
+				isLiveLowLatency: () => false,
+			},
+		});
+		expect(
+			T<() => Record<string, unknown>>("_collectPageLogContext")().media,
+		).toMatchObject({ lowLatencyEnabled: false, lowLatencySource: "player" });
+	});
+
+	it("does not borrow settings from a different player for off-route PiP media", () => {
+		(g.__TTVAB_STATE__ as Record<string, unknown>).CurrentAdMediaKey =
+			"live:off_route";
+		g._readConfiguredQualityGroup = () => "1440p60";
+		localStorage.setItem("lowLatencyModeEnabled", "true");
+		g._getPlayerAndState = () => ({
+			player: {
+				getHTMLVideoElement: () => ({}),
+				getQuality: () => ({ name: "1080p60" }),
+				isAutoQualityMode: () => false,
+				core: { state: { lowLatencyModeEnabled: true } },
+			},
+		});
+		expect(
+			T<() => Record<string, unknown>>("_collectPageLogContext")().media,
+		).toMatchObject({
+			selectedQuality: null,
+			currentQuality: null,
+			qualitySource: null,
+			lowLatencyEnabled: null,
+			lowLatencySource: null,
+		});
+	});
+
+	it("keeps unavailable settings unknown and never treats element layout as video resolution", () => {
+		g._getPlaybackMediaElementForContext = () => ({
+			localName: "video",
+			videoWidth: 0,
+			videoHeight: 0,
+			clientWidth: 1920,
+			clientHeight: 1080,
+		});
+		localStorage.setItem("lowLatencyModeEnabled", "invalid");
+		expect(
+			T<() => Record<string, unknown>>("_collectPageLogContext")().media,
+		).toMatchObject({
+			selectedQuality: null,
+			lowLatencyEnabled: null,
+			width: 0,
+			height: 0,
+		});
 	});
 
 	it("returns a bounded current ownership and playback snapshot", () => {

@@ -279,6 +279,51 @@ describe("_checkPinnedBackupStall", () => {
 		).toBe(104000);
 	});
 
+	it("dispatches exactly three stalled-backup searches before exhausting the episode", () => {
+		const check = T<
+			(
+				player: { getHTMLVideoElement: () => HTMLVideoElement },
+				channel: string,
+				mediaKey: string,
+			) => void
+		>("_checkPinnedBackupStall");
+		const messages = vi.fn();
+		const log = vi.fn();
+		g._broadcastWorkers = messages;
+		g._log = log;
+		const player = makePlayer(
+			() => 10,
+			() => 10.1,
+		);
+		const now = vi.spyOn(Date, "now");
+		for (const at of [100000, 103000, 109000, 115000]) {
+			now.mockReturnValue(at);
+			check(player, "testchannel", "live:testchannel");
+		}
+		expect(messages.mock.calls.map(([message]) => message)).toEqual(
+			[103000, 109000, 115000].map((value) => ({
+				key: "UpdateBackupSearchForceRefresh",
+				targetMediaKey: "live:testchannel",
+				value,
+			})),
+		);
+		expect(
+			log.mock.calls.some(([message]) => message.includes("exhausted")),
+		).toBe(false);
+		for (let at = 116500; at <= 140500; at += 1500) {
+			now.mockReturnValue(at);
+			check(player, "testchannel", "live:testchannel");
+		}
+		expect(messages).toHaveBeenCalledTimes(3);
+		expect(g._PinnedBackupStallState).toMatchObject({
+			forceRefreshCount: 3,
+			exhaustedLogged: true,
+		});
+		expect(
+			log.mock.calls.filter(([message]) => message.includes("exhausted")),
+		).toHaveLength(1);
+	});
+
 	it("realigns an advancing pinned live backup whose timeline restarted behind the playhead", () => {
 		const harness = makePinnedTimelineHarness();
 
@@ -1288,6 +1333,33 @@ describe("_checkInAdPlayheadFreeze", () => {
 		expect(seeks[0]).toBeCloseTo(1464.45, 2);
 		expect(playerTaskCalls).toEqual([]);
 	});
+
+	it.each([1272.892125, 1273.024, 1273.06])(
+		"crosses the logged small buffer gap after a sustained freeze at %s without reloading",
+		(currentTime) => {
+			const { video, seeks } = makeRangesVideo(
+				[
+					[1242.034, 1273.023999],
+					[1273.063312, 1282.876645],
+				],
+				currentTime,
+			);
+			const player = { getHTMLVideoElement: () => video };
+			const now = vi.spyOn(Date, "now").mockReturnValue(100000);
+			check()(player, "testchannel", "live:testchannel");
+			now.mockReturnValue(104999);
+			check()(player, "testchannel", "live:testchannel");
+			expect(seeks).toEqual([]);
+			now.mockReturnValue(105500);
+			check()(player, "testchannel", "live:testchannel");
+			expect(seeks).toEqual([expect.closeTo(1273.113312, 6)]);
+			expect(playerTaskCalls).toEqual([]);
+			video.currentTime += 0.6;
+			now.mockReturnValue(106100);
+			check()(player, "testchannel", "live:testchannel");
+			expect(playerTaskCalls).toEqual([]);
+		},
+	);
 
 	it("nudges then reloads when frozen with no gap to seek past", () => {
 		const { video, seeks } = makeRangesVideo([[1400, 1463.966]], 1463.93);

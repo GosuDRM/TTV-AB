@@ -88,6 +88,7 @@ function setup(turboMode = true) {
 			runtime: {
 				id: "test-extension",
 				lastError: null,
+				onInstalled: { addListener() {} },
 				onMessage: {
 					addListener: (listener: typeof backgroundListener) => {
 						backgroundListener = listener;

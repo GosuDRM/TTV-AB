@@ -474,6 +474,99 @@ describe("empty hold playlist continuity", () => {
 		expect(native).not.toContain("clean-500.ts");
 	});
 
+	it.each(
+		[-50, -40, -1, 0, 1, 40, 50].flatMap((skewMs) =>
+			[false, true].map((withHold) => ({ skewMs, withHold })),
+		),
+	)(
+		"keeps the clean boundary segment with $skewMs ms timestamp skew and hold=$withHold",
+		async ({ skewMs, withHold }) => {
+			const { context, info, serve, hold } = setup();
+			const start = Date.parse("2026-09-20T18:09:20Z");
+			const dated = (sequence: number, offsetMs: number) =>
+				playlist(sequence).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offsetMs).toISOString()}\n#EXTINF:`,
+				);
+			await serve(dated(400, 0));
+			if (withHold) await hold();
+			const backup = await serve(dated(100, 4000 + skewMs), "site");
+			expect(backup).not.toContain("clean-100.ts");
+			expect(backup).toContain("clean-101.ts");
+			expect(segments(backup)).toHaveLength(2);
+			expect(backup).toContain(
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 6000 + skewMs).toISOString()}`,
+			);
+			const refreshed = await serve(dated(101, 6000 + skewMs), "site");
+			expect(segments(refreshed).slice(0, 2)).toEqual(segments(backup));
+			const promoted = await serve(dated(200, 10000), "embed");
+			expect(promoted).not.toContain("clean-200.ts");
+			expect(promoted).toContain("clean-201.ts");
+			context._resetStreamAdState(info, true);
+			const native = await serve(dated(500, 14000 + skewMs));
+			expect(native).not.toContain("clean-500.ts");
+			expect(native).toContain("clean-501.ts");
+		},
+	);
+
+	it("reports handoff timing once without exposing signed playlist URLs", async () => {
+		const { context, serve } = setup();
+		const log = vi.fn();
+		context._log = log;
+		const dated = (sequence: number, time: string) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:${time}Z\n#EXTINF:`,
+			);
+		await serve(dated(400, "20.000"));
+		await serve(dated(100, "23.999"), "site", "private-token");
+		await serve(dated(101, "25.999"), "site", "private-token");
+		expect(log.mock.calls).toEqual([
+			[
+				"[Recovery] Live playlist handoff skipped 1 older segments; boundary -1ms; retained 2 segments",
+				"info",
+			],
+		]);
+	});
+
+	it.each([-51, -500, -1999])(
+		"still trims a handoff segment overlapping the previous window by %s ms",
+		async (skewMs) => {
+			const { serve } = setup();
+			const start = Date.parse("2026-09-20T18:09:20Z");
+			const dated = (sequence: number, offsetMs: number) =>
+				playlist(sequence).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offsetMs).toISOString()}\n#EXTINF:`,
+				);
+			await serve(dated(400, 0));
+			const backup = await serve(dated(100, 4000 + skewMs), "site");
+			expect(backup).not.toContain("clean-100.ts");
+			expect(backup).not.toContain("clean-101.ts");
+			expect(segments(backup)).toHaveLength(1);
+			expect(backup).toContain("clean-102.ts");
+		},
+	);
+
+	it("rejects a completed short segment within the handoff tolerance", async () => {
+		const { serve } = setup();
+		await serve(
+			playlist(400).replace(
+				"#EXTINF:",
+				"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:20Z\n#EXTINF:",
+			),
+		);
+		const stale = playlist(100, 1)
+			.replace("2.000,live", "0.010,live")
+			.replace(
+				"#EXTINF:",
+				"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:25.980Z\n#EXTINF:",
+			);
+		await expect(serve(stale, "site")).rejects.toMatchObject({
+			name: "AbortError",
+		});
+	});
+
 	it.each(["backup", "native", "hold"])(
 		"does not reuse prefetched segment numbers when switching to %s",
 		async (destination) => {
