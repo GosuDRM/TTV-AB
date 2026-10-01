@@ -75,6 +75,15 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 
 ## 🔔 What's New
 
+### v19.0.3 - 2026-10-02
+
+- **Playback Handoffs** - Keep clean segments when stream timestamps overlap by up to 50 ms, avoiding unnecessary skips when switching backups or returning to native playback.
+- **Small Buffer Gaps** - Recover across small gaps after playback freezes, avoiding unnecessary pause/play nudges or player reloads.
+- **Backup Recovery Attempts** - Allow all three backup searches before reporting that recovery attempts are exhausted.
+- **Playback Diagnostics** - Include browser details, selected and playing video quality, Twitch Low Latency status, handoff timing, and retained segment counts in Generate Log without exposing private stream links.
+- **Default Settings** - Start with Low Quality Fallback off and Ad Break Timer on. Apply these settings once when updating, then preserve later user choices.
+- **Ad Break Timer** - Show a simpler timer label, such as "Ad break · 1:23".
+
 ### v19.0.2 - 2026-10-01
 
 - **Empty Player Recovery** - Attempt one player rebuild when previously advancing live playback stays empty, while respecting user pauses and current playback ownership.
@@ -83,12 +92,6 @@ When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and 
 ### v19.0.1 - 2026-09-29
 
 - **Backup Stall Detection** - Require fresh stall evidence when Twitch replaces the video element, avoiding premature backup switches and keeping recovery attempts bounded.
-
-### v19.0.0 - 2026-09-29
-
-- **Faster Preroll Checks** - Recheck normal-quality sources sooner when Low Quality Fallback is disabled, while requiring two clean, advancing checks before switching.
-- **Preroll Video Bridge** - When normal-quality sources fail with Low Quality Fallback disabled, use a temporary clean low-quality stream, then switch to a verified higher-quality backup without reloading. Midroll behavior is unchanged.
-- **Backup Search Safety** - Stop outdated searches after navigation, setting changes, or selection of a newer clean stream.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
