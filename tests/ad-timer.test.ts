@@ -39,6 +39,7 @@ const g = globalThis as unknown as {
 };
 const handlers = new Map<string, (detail: unknown) => void>();
 let video: HTMLVideoElement;
+let defaultTimerEnabled: boolean;
 const now = 1800000000000;
 
 function loadModule(modulePath: string) {
@@ -55,6 +56,7 @@ beforeAll(() => {
 	loadModule("../dist/src/modules/state.js");
 	loadModule("../dist/src/modules/hooks.js");
 	loadModule("../dist/src/modules/ui.js");
+	defaultTimerEnabled = g._adTimerEnabled;
 	loadModule("../dist/src/modules/init.js");
 	g._onInternalMessage = (type: string, handler: (detail: unknown) => void) => {
 		handlers.set(type, handler);
@@ -65,7 +67,7 @@ beforeAll(() => {
 beforeEach(() => {
 	vi.useFakeTimers({ now });
 	document.body.replaceChildren();
-	g._adTimerEnabled = false;
+	g._adTimerEnabled = defaultTimerEnabled;
 	g.__TTVAB_STATE__ = {
 		IsAdStrippingEnabled: true,
 		PageMediaKey: "live:example",
@@ -117,7 +119,7 @@ function overlay() {
 	return document.getElementById("ttvab-ad-timer");
 }
 
-describe("opt-in ad break timer", () => {
+describe("ad break timer", () => {
 	it("does not put the current break timer over a replacement playing another stream", () => {
 		toggle(true);
 		g._getPlayerAndState = () => ({
@@ -152,7 +154,7 @@ describe("opt-in ad break timer", () => {
 			},
 		});
 		toggle(true);
-		expect(overlay()?.textContent).toBe("Ad break · 1:23 elapsed");
+		expect(overlay()?.textContent).toBe("Ad break · 1:23");
 		g._getPlayerAndState = () => ({
 			player: { getHTMLVideoElement: () => video },
 			state: {
@@ -189,11 +191,10 @@ describe("opt-in ad break timer", () => {
 		expect(overlay()).toBeNull();
 	});
 
-	it("defaults off and toggles during a break without playback messages or timers", () => {
+	it("defaults on and toggles during a break without playback messages or timers", () => {
+		expect(g._adTimerEnabled).toBe(true);
 		g._updateAdTimerOverlay();
-		expect(overlay()).toBeNull();
-		toggle(true);
-		expect(overlay()?.textContent).toBe("Ad break · 1:23 elapsed");
+		expect(overlay()?.textContent).toBe("Ad break · 1:23");
 		expect(overlay()?.style.pointerEvents).toBe("none");
 		expect(overlay()?.getAttribute("aria-live")).toBe("off");
 		expect(overlay()?.style.top).toBe("62px");
@@ -205,6 +206,7 @@ describe("opt-in ad break timer", () => {
 	});
 
 	it("ignores non-boolean settings", () => {
+		toggle(false);
 		for (const enabled of ["true", 1, null, {}, undefined]) toggle(enabled);
 		expect(overlay()).toBeNull();
 	});
@@ -213,7 +215,7 @@ describe("opt-in ad break timer", () => {
 		const originalState = structuredClone(g.__TTVAB_STATE__);
 		vi.advanceTimersByTime(17000);
 		toggle(true);
-		expect(overlay()?.textContent).toBe("Ad break · 1:40 elapsed");
+		expect(overlay()?.textContent).toBe("Ad break · 1:40");
 		toggle(false);
 		vi.advanceTimersByTime(21000);
 		g._updateAdTimerOverlay();
@@ -223,8 +225,7 @@ describe("opt-in ad break timer", () => {
 			expect(document.querySelectorAll("#ttvab-ad-timer")).toHaveLength(
 				enabled ? 1 : 0,
 			);
-			if (enabled)
-				expect(overlay()?.textContent).toBe("Ad break · 2:01 elapsed");
+			if (enabled) expect(overlay()?.textContent).toBe("Ad break · 2:01");
 		}
 		expect(g.__TTVAB_STATE__).toEqual(originalState);
 		expect(g._broadcastWorkers).not.toHaveBeenCalled();
@@ -243,7 +244,7 @@ describe("opt-in ad break timer", () => {
 			Date.now();
 		vi.advanceTimersByTime(4000);
 		g._updateAdTimerOverlay();
-		expect(overlay()?.textContent).toBe("Ad break · 0:04 elapsed");
+		expect(overlay()?.textContent).toBe("Ad break · 0:04");
 		expect(g._broadcastWorkers).not.toHaveBeenCalled();
 	});
 
@@ -263,7 +264,7 @@ describe("opt-in ad break timer", () => {
 			cycleStartedAt: Date.now(),
 		};
 		g._updateAdTimerOverlay();
-		expect(overlay()?.textContent).toBe("Ad break · 0:00 elapsed");
+		expect(overlay()?.textContent).toBe("Ad break · 0:00");
 	});
 
 	it("counts from the owned cycle across repeated detections and worker replacement", () => {
@@ -277,11 +278,11 @@ describe("opt-in ad break timer", () => {
 		});
 		g._updateAdTimerOverlay();
 		expect(overlay()).toBe(original);
-		expect(overlay()?.textContent).toBe("Ad break · 2:00 elapsed");
+		expect(overlay()?.textContent).toBe("Ad break · 2:00");
 		g.__TTVAB_STATE__.AdPodProgressByMediaKey["live:example"].cycleStartedAt =
 			Date.now();
 		g._updateAdTimerOverlay();
-		expect(overlay()?.textContent).toBe("Ad break · 0:00 elapsed");
+		expect(overlay()?.textContent).toBe("Ad break · 0:00");
 		expect(document.querySelectorAll("#ttvab-ad-timer")).toHaveLength(1);
 	});
 
@@ -322,7 +323,7 @@ describe("opt-in ad break timer", () => {
 			state: { props: { content: { type: "live", channelLogin: "example" } } },
 		});
 		g._updateAdTimerOverlay();
-		expect(overlay()?.textContent).toBe("Ad break · 1:23 elapsed");
+		expect(overlay()?.textContent).toBe("Ad break · 1:23");
 		g._getPlayerAndState = () => ({ player: null });
 		g._updateAdTimerOverlay();
 		expect(overlay()).toBeNull();

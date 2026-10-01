@@ -78,6 +78,9 @@ function loadPopupExplanations() {
 		{
 			adSpoofingDesc: string;
 			adSpoofingFootnote: string;
+			adTimerDesc: string;
+			adTimerDetails: string;
+			adTimerFootnote: string;
 			autoplayBackupDesc: string;
 			autoplayBackupWarning: string;
 			turboMode: string;
@@ -145,11 +148,40 @@ afterEach(() => {
 });
 
 describe("popup toggle authority", () => {
-	it("keeps the timer opt-in, saves its setting, and preserves newer changes", () => {
+	it.each([undefined, false, null, "true", 1])(
+		"keeps fallback off unless explicitly enabled, including stored value %s",
+		(value) => {
+			const harness = makeHarness();
+			harness.controller.start();
+			harness.reads[0].finish({ ttvAutoplayBackupEnabled: value });
+			expect(harness.controller.getSnapshot().values.autoplayBackup).toBe(
+				false,
+			);
+			expect(harness.controller.write("autoplayBackup", true)).toBe(true);
+			harness.writes[0].finish(null);
+			expect(harness.controller.getSnapshot().values.autoplayBackup).toBe(true);
+		},
+	);
+
+	it("preserves saved choices that differ from the new defaults", () => {
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({
+			ttvAutoplayBackupEnabled: true,
+			ttvAdTimerEnabled: false,
+		});
+		expect(harness.controller.getSnapshot().values).toMatchObject({
+			autoplayBackup: true,
+			adTimer: false,
+		});
+		expect(harness.writes).toEqual([]);
+	});
+
+	it("enables the timer by default, saves its setting, and preserves newer changes", () => {
 		const harness = makeHarness();
 		harness.controller.start();
 		harness.reads[0].finish({});
-		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(true);
 		expect(harness.controller.write("adTimer", true)).toBe(true);
 		expect(harness.writes[0]).toEqual(
 			expect.objectContaining({
@@ -177,7 +209,7 @@ describe("popup toggle authority", () => {
 		harness.controller.applyStorageChanges({
 			ttvAdTimerEnabled: { newValue: undefined },
 		});
-		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(true);
 	});
 
 	it("serializes timer writes and ignores an older completion after the next toggle", () => {
@@ -233,8 +265,8 @@ describe("popup toggle authority", () => {
 				values: {
 					adblock: false,
 					adSpoofing: false,
-					autoplayBackup: true,
-					adTimer: false,
+					autoplayBackup: false,
+					adTimer: true,
 					turbo: false,
 				},
 				available: {
@@ -248,28 +280,30 @@ describe("popup toggle authority", () => {
 		);
 	});
 
-	it("restores playback toggles by default while Turbo remains opt-in", () => {
+	it("restores fallback off and timer on when their settings are removed", () => {
 		const harness = makeHarness();
 		harness.controller.start();
 		harness.reads[0].finish({
 			ttvAdblockEnabled: false,
 			ttvAdSpoofingEnabled: false,
-			ttvAutoplayBackupEnabled: false,
+			ttvAutoplayBackupEnabled: true,
+			ttvAdTimerEnabled: false,
 			ttvTurboMode: true,
 		});
 
 		harness.controller.applyStorageChanges({
 			ttvAdblockEnabled: { oldValue: false, newValue: undefined },
 			ttvAdSpoofingEnabled: { oldValue: false, newValue: undefined },
-			ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
+			ttvAutoplayBackupEnabled: { oldValue: true, newValue: undefined },
+			ttvAdTimerEnabled: { oldValue: false, newValue: undefined },
 			ttvTurboMode: { oldValue: true, newValue: undefined },
 		});
 
 		expect(harness.controller.getSnapshot().values).toEqual({
 			adblock: true,
 			adSpoofing: true,
-			autoplayBackup: true,
-			adTimer: false,
+			autoplayBackup: false,
+			adTimer: true,
 			turbo: false,
 		});
 	});
@@ -324,7 +358,7 @@ describe("popup toggle authority", () => {
 			adblock: false,
 			adSpoofing: true,
 			autoplayBackup: true,
-			adTimer: false,
+			adTimer: true,
 			turbo: false,
 		});
 		expect(snapshot.available.autoplayBackup).toBe(false);
@@ -460,7 +494,7 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: false,
-					adTimer: false,
+					adTimer: true,
 					turbo: false,
 				},
 			}),
@@ -564,6 +598,12 @@ describe("popup toggle authority", () => {
 				new RegExp(`<input[^>]+id="${id}"[^>]+disabled[^>]*>`),
 			);
 		}
+		expect(
+			html.match(/<input[^>]+id="autoplayBackupToggle"[^>]*>/)?.[0],
+		).not.toMatch(/\bchecked\b/);
+		expect(html.match(/<input[^>]+id="adTimerToggle"[^>]*>/)?.[0]).toMatch(
+			/\bchecked\b/,
+		);
 		expect(source).toMatch(
 			/autoplayBackupToggle\.setAttribute\([\s\S]*?String\(t\.autoplayBackup \?\? "Low Quality Fallback"\)/,
 		);
@@ -688,6 +728,20 @@ describe("popup toggle authority", () => {
 });
 
 describe("popup setting explanations", () => {
+	it("describes the enabled timer without an elapsed label", () => {
+		const { html, translations } = loadPopupExplanations();
+		const english = translations.en;
+		expect(english.adTimerDetails).toContain("On by default.");
+		for (const text of [
+			english.adTimerDesc,
+			english.adTimerDetails,
+			english.adTimerFootnote,
+		]) {
+			expect(text).not.toMatch(/elapsed?/i);
+			expect(html).toContain(text);
+		}
+	});
+
 	it("localizes Turbo state in every supported locale", () => {
 		const { translations } = loadPopupExplanations();
 
@@ -727,6 +781,7 @@ describe("popup setting explanations", () => {
 		const { html, translations } = loadPopupExplanations();
 		const english = translations.en;
 
+		expect(english.autoplayBackupDesc).toContain("Disabled by default.");
 		expect(english.autoplayBackupDesc).toContain(
 			"fast, ad-free autoplay stream",
 		);

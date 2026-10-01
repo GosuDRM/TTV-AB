@@ -11508,6 +11508,35 @@ describe("clean-playback reduced master recovery", () => {
 });
 
 describe("worker mixed-codec master selection", () => {
+	it.each([undefined, true, false])(
+		"seeds the fallback default and saved choice %s into the real injected worker",
+		(disabled) => {
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const pageState = g.__TTVAB_STATE__ as Record<string, unknown>;
+			if (disabled !== undefined) pageState.DisableAutoplayBackup = disabled;
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			try {
+				const runtime = startHarnessWorkerRuntime(
+					harness.worker,
+					vi.fn(async () => new Response("")),
+				);
+				runtime.deliverBootstrap();
+				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+				expect(state.DisableAutoplayBackup).toBe(disabled ?? true);
+				runtime.deliver(
+					T<(value: Record<string, unknown>) => unknown>(
+						"_createWorkerBridgeMessage",
+					)({ key: "UpdateAutoplayBackupState", value: !(disabled ?? true) }),
+				);
+				expect(state.DisableAutoplayBackup).toBe(!(disabled ?? true));
+			} finally {
+				harness.restore();
+			}
+		},
+	);
+
 	type CycleInfo = {
 		MediaKey: string;
 		VisibleAdStartedAt: number;
@@ -11681,6 +11710,8 @@ describe("worker mixed-codec master selection", () => {
 			vi.useFakeTimers();
 			vi.setSystemTime(200000);
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			(g.__TTVAB_STATE__ as Record<string, unknown>).DisableAutoplayBackup =
+				false;
 			const harness = installWorkerMessageHarness({
 				preserveBlobSources: true,
 			});
@@ -11838,6 +11869,8 @@ describe("worker mixed-codec master selection", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(200000);
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		(g.__TTVAB_STATE__ as Record<string, unknown>).DisableAutoplayBackup =
+			false;
 		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
 		const mediaKey = "live:testchannel";
 		const masterUrl =

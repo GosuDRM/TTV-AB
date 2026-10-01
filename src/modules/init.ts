@@ -379,6 +379,76 @@ function _collectPageLogMediaState(state) {
 	}
 	if (!media || typeof media !== "object") return null;
 
+	let selectedQuality = null;
+	let currentQuality = null;
+	let qualitySource = null;
+	let lowLatencyEnabled = null;
+	let lowLatencySource = null;
+	let player = null;
+	let playerCore = null;
+	try {
+		const candidate = _getPlayerAndState().player;
+		if (candidate?.getHTMLVideoElement?.() === media) {
+			player = candidate;
+			playerCore = _getPlayerCore(player);
+		}
+	} catch {}
+	if (player) {
+		let quality = null;
+		let autoQuality = null;
+		try {
+			quality = player.getQuality?.();
+		} catch {}
+		try {
+			quality ||= playerCore?.state?.quality;
+		} catch {}
+		try {
+			currentQuality =
+				_getSafePageLogString(quality?.name || quality?.group, 96).replace(
+					/\n/g,
+					" ",
+				) || null;
+		} catch {}
+		try {
+			autoQuality = player.isAutoQualityMode?.();
+		} catch {}
+		if (autoQuality === true) selectedQuality = "auto";
+		else if (autoQuality === false) selectedQuality = currentQuality;
+		if (selectedQuality) qualitySource = "player";
+		try {
+			if (typeof playerCore?.state?.lowLatencyModeEnabled === "boolean") {
+				lowLatencyEnabled = playerCore.state.lowLatencyModeEnabled;
+			}
+		} catch {}
+		if (lowLatencyEnabled === null) {
+			try {
+				const active = player.isLiveLowLatency?.();
+				if (typeof active === "boolean") lowLatencyEnabled = active;
+			} catch {}
+		}
+		if (lowLatencyEnabled !== null) lowLatencySource = "player";
+	}
+	if (canUsePageFallback) {
+		if (!selectedQuality) {
+			try {
+				selectedQuality =
+					_getSafePageLogString(_readConfiguredQualityGroup(), 96).replace(
+						/\n/g,
+						" ",
+					) || null;
+				if (selectedQuality) qualitySource = "saved preference";
+			} catch {}
+		}
+		if (lowLatencyEnabled === null) {
+			try {
+				const stored = localStorage.getItem("lowLatencyModeEnabled");
+				if (stored === "true" || stored === "false") {
+					lowLatencyEnabled = stored === "true";
+					lowLatencySource = "saved preference";
+				}
+			} catch {}
+		}
+	}
 	try {
 		const buffered = [];
 		const rangeCount = Math.min(
@@ -401,6 +471,11 @@ function _collectPageLogMediaState(state) {
 			);
 		} catch {}
 		return {
+			selectedQuality,
+			currentQuality,
+			qualitySource,
+			lowLatencyEnabled,
+			lowLatencySource,
 			tag: _getSafePageLogString(media.localName || "media", 16).replace(
 				/\n/g,
 				"",
@@ -426,15 +501,11 @@ function _collectPageLogMediaState(state) {
 			volume: Math.min(1, Math.max(0, _getSafePageLogNumber(media.volume, 0))),
 			width: Math.max(
 				0,
-				Math.trunc(
-					_getSafePageLogNumber(media.videoWidth || media.clientWidth, 0),
-				),
+				Math.trunc(_getSafePageLogNumber(media.videoWidth, 0)),
 			),
 			height: Math.max(
 				0,
-				Math.trunc(
-					_getSafePageLogNumber(media.videoHeight || media.clientHeight, 0),
-				),
+				Math.trunc(_getSafePageLogNumber(media.videoHeight, 0)),
 			),
 			buffered,
 			totalVideoFrames,

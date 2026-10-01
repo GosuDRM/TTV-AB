@@ -441,8 +441,8 @@ function postAchievementUnlock(id) {
 const bridgeState = {
 	enabled: true,
 	adSpoofingEnabled: true,
-	autoplayBackupEnabled: true,
-	adTimerEnabled: false,
+	autoplayBackupEnabled: false,
+	adTimerEnabled: true,
 	turboMode: false,
 	storedAdsCount: 0,
 };
@@ -1268,9 +1268,8 @@ function handleStorageChanges(changes, namespace) {
 	if (changes.ttvAutoplayBackupEnabled) {
 		storageChangeVersions.ttvAutoplayBackupEnabled += 1;
 		const wasAutoplayBackupEnabled = bridgeState.autoplayBackupEnabled;
-		bridgeState.autoplayBackupEnabled = normalizeDefaultEnabled(
-			changes.ttvAutoplayBackupEnabled.newValue,
-		);
+		bridgeState.autoplayBackupEnabled =
+			changes.ttvAutoplayBackupEnabled.newValue === true;
 		if (
 			bridgeStateReady &&
 			bridgeState.autoplayBackupEnabled !== wasAutoplayBackupEnabled
@@ -1283,7 +1282,9 @@ function handleStorageChanges(changes, namespace) {
 	if (changes.ttvAdTimerEnabled) {
 		storageChangeVersions.ttvAdTimerEnabled += 1;
 		const wasAdTimerEnabled = bridgeState.adTimerEnabled;
-		bridgeState.adTimerEnabled = changes.ttvAdTimerEnabled.newValue === true;
+		bridgeState.adTimerEnabled = normalizeDefaultEnabled(
+			changes.ttvAdTimerEnabled.newValue,
+		);
 		if (bridgeStateReady && bridgeState.adTimerEnabled !== wasAdTimerEnabled) {
 			sendToPage("ttvab-toggle-ad-timer", {
 				enabled: bridgeState.adTimerEnabled,
@@ -1416,15 +1417,16 @@ function readInitialStorageState() {
 				storageChangeVersions.ttvAutoplayBackupEnabled ===
 				readVersions.ttvAutoplayBackupEnabled
 			) {
-				bridgeState.autoplayBackupEnabled = normalizeDefaultEnabled(
-					result.ttvAutoplayBackupEnabled,
-				);
+				bridgeState.autoplayBackupEnabled =
+					result.ttvAutoplayBackupEnabled === true;
 			}
 			if (
 				storageChangeVersions.ttvAdTimerEnabled ===
 				readVersions.ttvAdTimerEnabled
 			) {
-				bridgeState.adTimerEnabled = result.ttvAdTimerEnabled === true;
+				bridgeState.adTimerEnabled = normalizeDefaultEnabled(
+					result.ttvAdTimerEnabled,
+				);
 			}
 			if (storageChangeVersions.ttvTurboMode === readVersions.ttvTurboMode) {
 				bridgeState.turboMode = result.ttvTurboMode === true;
@@ -1919,6 +1921,22 @@ function sanitizeLogContextMedia(value) {
 	}
 	const duration = sanitizeLogContextNumber(value.duration, 0, 1000000000, -1);
 	return {
+		selectedQuality: sanitizeLogContextString(value.selectedQuality, 96),
+		currentQuality: sanitizeLogContextString(value.currentQuality, 96),
+		qualitySource:
+			value.qualitySource === "player" ||
+			value.qualitySource === "saved preference"
+				? value.qualitySource
+				: null,
+		lowLatencyEnabled:
+			typeof value.lowLatencyEnabled === "boolean"
+				? value.lowLatencyEnabled
+				: null,
+		lowLatencySource:
+			value.lowLatencySource === "player" ||
+			value.lowLatencySource === "saved preference"
+				? value.lowLatencySource
+				: null,
 		tag: sanitizeLogString(value.tag, 16).toLowerCase(),
 		currentTime: sanitizeLogContextNumber(value.currentTime, 0, 1000000000),
 		duration: duration >= 0 ? duration : null,

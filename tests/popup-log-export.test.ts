@@ -67,6 +67,97 @@ afterEach(() => {
 });
 
 describe("popup log formatting", () => {
+	it.each([
+		["Mozilla/5.0 Firefox/144.0", "Firefox 144.0"],
+		["Mozilla/5.0 Chrome/140.0.0.0", "Chrome/Chromium 140.0.0.0"],
+		[
+			"Mozilla/5.0 Chrome/140.0.0.0 Edg/140.0.3485.54",
+			"Microsoft Edge 140.0.3485.54",
+		],
+		["Mozilla/5.0 Chrome/140.0.0.0 OPR/122.0.0.0", "Opera 122.0.0.0"],
+		["Mozilla/5.0 Chrome/140.0.0.0 Vivaldi/7.6.0.0", "Vivaldi 7.6.0.0"],
+		["unrecognized browser", "unknown"],
+	])("identifies the reported browser from %s", (userAgent, expected) => {
+		expect(
+			T<(value: unknown) => string>("_getLogExportBrowser")({ userAgent }),
+		).toBe(expected);
+	});
+
+	it("uses branded client hints without mistaking Brave for Chrome", () => {
+		const browser = T<(value: unknown) => string>("_getLogExportBrowser");
+		const userAgent = "Mozilla/5.0 Chrome/140.0.7339.80";
+		expect(
+			browser({
+				userAgent,
+				userAgentData: {
+					brands: [
+						{ brand: "Not_A Brand", version: "99" },
+						{ brand: "Chromium", version: "140" },
+						{ brand: "Brave", version: "140" },
+					],
+				},
+			}),
+		).toBe("Brave 140");
+		expect(
+			browser({
+				userAgent,
+				userAgentData: {
+					brands: [
+						{ brand: "Chromium", version: "140" },
+						{ brand: "Google Chrome", version: "140" },
+					],
+				},
+			}),
+		).toBe("Google Chrome 140.0.7339.80");
+		expect(
+			browser({
+				userAgentData: {
+					brands: [{ brand: "Brave", version: "140\nprivate-value" }],
+				},
+			}),
+		).toBe("unknown");
+	});
+
+	it("keeps browser metadata when no Twitch tab can be collected", async () => {
+		vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+			"Mozilla/5.0 Firefox/144.0",
+		);
+		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+		chromeState.tabs.query = vi.fn((_query, callback) => callback([]));
+		const output = await T<() => Promise<string>>("_buildLogExport")();
+		expect(output).toContain("Browser: Firefox 144.0");
+		expect(output).toContain("No open Twitch tabs");
+	});
+
+	it.each([true, false, null])(
+		"labels selected quality, decoded resolution, and Low Latency=%s",
+		(lowLatencyEnabled) => {
+			const format = T<(value: unknown) => string[]>("_formatLogContextLines");
+			const output = format({
+				media: {
+					selectedQuality: "auto",
+					qualitySource: "player",
+					currentQuality: "1080p60",
+					width: 1920,
+					height: 1080,
+					lowLatencyEnabled,
+					lowLatencySource: lowLatencyEnabled === null ? null : "player",
+				},
+			}).join("\n");
+			expect(output).toContain("Selected video quality: auto (player)");
+			expect(output).toContain(
+				"Playing video quality: 1080p60 | Resolution: 1920x1080",
+			);
+			expect(output).toContain(
+				`Twitch Low Latency: ${lowLatencyEnabled === null ? "unknown" : lowLatencyEnabled ? "enabled (player)" : "disabled (player)"}`,
+			);
+			expect(format({}).join("\n")).toContain(
+				"Selected video quality: unknown",
+			);
+			expect(format({}).join("\n")).toContain("Twitch Low Latency: unknown");
+		},
+	);
+
 	it("moves collection into a durable extension tab before the action popup unloads", () => {
 		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
 		chromeState.tabs.create = vi.fn();
@@ -244,6 +335,12 @@ describe("cached evidence when live tab collection fails", () => {
 						context: {
 							pageUrl,
 							pageVersion: "17.5.8",
+							media: {
+								selectedQuality: "1440p60",
+								qualitySource: "saved preference",
+								lowLatencyEnabled: false,
+								lowLatencySource: "saved preference",
+							},
 							recovery: {
 								phase: "exhausted",
 								acceptedReloadCount: 2,
@@ -276,6 +373,12 @@ describe("cached evidence when live tab collection fails", () => {
 			"Last recorded snapshot: 1970-01-01T00:01:30.000Z",
 		);
 		expect(section.text).toContain("not live state");
+		expect(section.text).toContain(
+			"Selected video quality: 1440p60 (saved preference)",
+		);
+		expect(section.text).toContain(
+			"Twitch Low Latency: disabled (saved preference)",
+		);
 		expect(section.text).toContain("extension response timed out");
 		expect(section.text).toContain("Worker error before hang");
 		expect(section.text).toContain("Worker failures:");
