@@ -35,7 +35,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Independent, live-updating controls for Ad Blocking, Ad Spoofing, and Low Quality Fallback
 - ✅ Optional Ad Spoofing to reduce anti-adblock detection
 - ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, with a temporary low-quality bridge available during prerolls
-- ✅ Optional Ad Break Timer showing elapsed time in the stream's top-right corner, disabled by default
+- ✅ Optional Ad Break Timer in the stream's top-right corner, enabled by default
 - ✅ Optional Turbo Mode that pauses new statistics and achievements while preserving existing history and all ad-blocking controls
 - ✅ Persistent, live-updating Ads Blocked and Time Saved totals
 - ✅ Statistics dashboard with weekly charts, detailed per-channel history, and **12 Achievement Badges**
@@ -54,24 +54,22 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 
 ## ⚙️ How It Works
 
-TTV AB inspects Twitch's HLS playlists inside the browser before the video player uses them. Clean playlists pass through unchanged. On VOD pages, it also blocks the narrowly scoped client-side ad requests used by Twitch.
+TTV AB checks Twitch's HLS playlists before playback and blocks recognized client-side ad requests on VODs.
 
 <p align="center">
   <img src="assets/pipeline.svg" alt="Animated ad-blocking pipeline: the Twitch player worker passes clean playlists through unchanged, rejects ad-marked media, keeps a verified clean backup live, and restores native playback only after repeated clean checks." width="860">
 </p>
 
-- Keeps the last clean native playlist flowing, when available, while checking alternative Twitch player sources one at a time
-- Accepts only playable, ad-free backups and refreshes the active backup at the live edge so it does not freeze
-- Uses a small local hold segment only when removing ads would otherwise leave the decoder with no media
-- Monitors backup health and rotates to another verified source if the active backup stalls
-- Keeps recovery tied to the current player across background tabs and Picture-in-Picture while respecting explicit pauses
-- Returns to native playback only after repeated clean checks for the same stream and ad cycle, then restores the saved quality and audio state
+- Checks alternative Twitch sources one at a time, using a fresh clean native playlist or a compatible silent hold while searching
+- Plays only verified, playable, ad-free backups, refreshes them during the break, and rotates stalled sources
+- Returns to native playback after repeated clean checks for the same stream and break, then restores quality and audio settings
+- Keeps recovery tied to the current player across background tabs and Picture-in-Picture, respecting explicit pauses
 
-With **Low Quality Fallback** enabled, a clean 360p autoplay source can start sooner while normal-quality backups are checked. With it disabled, normal-quality sources are tried first. During prerolls, if none is clean, a temporary clean low-quality stream can play while higher-quality sources are checked, then switch to a verified higher-quality backup without reloading the player. Midrolls still skip new autoplay backups, so recovery can take longer. Other backup sources may also offer lower-quality renditions.
+**Low Quality Fallback** is off by default, prioritizing normal-quality sources. Prerolls may still use a temporary clean low-quality bridge if those sources fail. Midrolls skip new autoplay backups and may recover more slowly. Enabling the setting allows a clean 360p bridge sooner while higher-quality sources are checked. Other sources may still offer lower qualities.
 
-When **Ad Spoofing** is enabled, the extension sends Twitch the ad-progress and completion signals expected for the blocked break. This setting is separate from playlist blocking and can be turned off without disabling core ad blocking.
+**Ad Spoofing** sends Twitch progress and completion signals for blocked ads. Turning it off leaves ad blocking active.
 
-**Ad Break Timer** is off by default. Enable it in the popup to show elapsed time during a detected ad break. It hides when the active ad cycle ends. It does not predict when your selected quality will return.
+The optional **Ad Break Timer** is on by default and can be switched off in the popup. It tracks the current break until it ends; it does not predict when your selected quality will return.
 
 ## 🔔 What's New
 
@@ -97,19 +95,23 @@ _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
 ## 🛠️ Development
 
+Use Node.js 22 and Python 3, plus `zip` for Firefox source archives. Clone `main` for Chrome or `firefox` for Firefox; name the Firefox checkout `TTV-AB-firefox` for Firefox packaging.
+
 ```sh
-git clone https://github.com/GosuDRM/TTV-AB.git
-cd TTV-AB
-npm install
-npm run build          # compiles TypeScript, minifies, and bundles
-npm run package:chrome # creates Chrome Web Store upload archive
-npm run lint           # runs Biome linter
-npm run knip           # checks for unused exports
+npm ci
+npm run build
+npm test
+npm run lint
+npm run typecheck
+npm run knip
 ```
 
-The build outputs to `dist/`. Load the unpacked extension from `dist/manifest.json` in your browser's developer mode after building.
+The build creates `dist/` and versioned archives. Tests read `dist/`, so rebuild after source edits.
 
-The source tree under `src/` is organized by concern: `modules/` for core ad-blocking logic (processor, parser, player, hooks, worker, state, API), `scripts/` for the bridge and background service worker, and `popup/` for the extension UI.
+- **Chrome:** Open `chrome://extensions`, enable Developer mode, then [Load unpacked](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked) and select `dist/`.
+- **Firefox:** Open `about:debugging`, select This Firefox, then [Load Temporary Add-on](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/) and select `dist/manifest.json`.
+
+After Firefox popup edits, if the build reports stale generated files, copy `popup.js` and `translations.js` from `dist/src/popup/` into `src/popup/` and rebuild.
 
 ## 💬 Support
 
