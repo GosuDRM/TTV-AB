@@ -2,6 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.3] - 2026-10-02
+
+Fixed
+
+- **Playback Handoffs** - Keep clean segments when stream timestamps overlap by up to 50 ms, avoiding unnecessary skips when switching backups or returning to native playback.
+- **Small Buffer Gaps** - Recover across small gaps after playback freezes, avoiding unnecessary pause/play nudges or player reloads.
+- **Backup Recovery Attempts** - Allow all three backup searches before reporting that recovery attempts are exhausted.
+
+Changed
+
+- **Playback Diagnostics** - Include browser details, selected and playing video quality, Twitch Low Latency status, handoff timing, and retained segment counts in Generate Log without exposing private stream links.
+- **Default Settings** - Start with Low Quality Fallback off and Ad Break Timer on. Apply these settings once when updating, then preserve later user choices.
+- **Ad Break Timer** - Show a simpler timer label, such as "Ad break · 1:23".
+
 ## [19.0.2] - 2026-10-01
 
 Fixed
