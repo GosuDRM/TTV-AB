@@ -10313,6 +10313,9 @@ describe("injected worker ad playlist validation", () => {
 		{ roll: "preroll", disabled: true, enhanced: "hev1.1.6.L153.B0" },
 		{ roll: "preroll", disabled: true, enhanced: "av01.0.13M.08" },
 		{ roll: "midroll", disabled: true, enhanced: "" },
+		{ roll: "midroll", disabled: true, enhanced: "hev1.1.6.L153.B0" },
+		{ roll: "midroll", disabled: true, enhanced: "av01.0.13M.08" },
+		{ roll: "midroll", disabled: false, enhanced: "" },
 		{ roll: "preroll", disabled: false, enhanced: "" },
 	])(
 		"serves the owned $roll bridge with fallback disabled=$disabled and advertised codec $enhanced",
@@ -10410,11 +10413,6 @@ describe("injected worker ad playlist validation", () => {
 				const info = (
 					state.StreamInfos as Record<string, Record<string, unknown>>
 				)["live:testchannel"];
-				if (roll === "midroll") {
-					expect(output).toContain("__ttvab_empty_hold_segment.ts");
-					expect(tokens).not.toContain("autoplay");
-					return;
-				}
 				expect(output).toContain("/autoplay/segment-");
 				expect(output).not.toContain("stitched-ad");
 				expect(tokens).toEqual(
@@ -11595,13 +11593,13 @@ describe("worker mixed-codec master selection", () => {
 				);
 				runtime.deliverBootstrap();
 				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
-				expect(state.DisableAutoplayBackup).toBe(disabled ?? true);
+				expect(state.DisableAutoplayBackup).toBe(disabled ?? false);
 				runtime.deliver(
 					T<(value: Record<string, unknown>) => unknown>(
 						"_createWorkerBridgeMessage",
-					)({ key: "UpdateAutoplayBackupState", value: !(disabled ?? true) }),
+					)({ key: "UpdateAutoplayBackupState", value: !(disabled ?? false) }),
 				);
-				expect(state.DisableAutoplayBackup).toBe(!(disabled ?? true));
+				expect(state.DisableAutoplayBackup).toBe(!(disabled ?? false));
 			} finally {
 				harness.restore();
 			}

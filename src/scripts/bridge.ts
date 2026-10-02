@@ -441,7 +441,7 @@ function postAchievementUnlock(id) {
 const bridgeState = {
 	enabled: true,
 	adSpoofingEnabled: true,
-	autoplayBackupEnabled: false,
+	autoplayBackupEnabled: true,
 	adTimerEnabled: true,
 	turboMode: false,
 	storedAdsCount: 0,
@@ -1268,8 +1268,9 @@ function handleStorageChanges(changes, namespace) {
 	if (changes.ttvAutoplayBackupEnabled) {
 		storageChangeVersions.ttvAutoplayBackupEnabled += 1;
 		const wasAutoplayBackupEnabled = bridgeState.autoplayBackupEnabled;
-		bridgeState.autoplayBackupEnabled =
-			changes.ttvAutoplayBackupEnabled.newValue === true;
+		bridgeState.autoplayBackupEnabled = normalizeDefaultEnabled(
+			changes.ttvAutoplayBackupEnabled.newValue,
+		);
 		if (
 			bridgeStateReady &&
 			bridgeState.autoplayBackupEnabled !== wasAutoplayBackupEnabled
@@ -1417,8 +1418,9 @@ function readInitialStorageState() {
 				storageChangeVersions.ttvAutoplayBackupEnabled ===
 				readVersions.ttvAutoplayBackupEnabled
 			) {
-				bridgeState.autoplayBackupEnabled =
-					result.ttvAutoplayBackupEnabled === true;
+				bridgeState.autoplayBackupEnabled = normalizeDefaultEnabled(
+					result.ttvAutoplayBackupEnabled,
+				);
 			}
 			if (
 				storageChangeVersions.ttvAdTimerEnabled ===

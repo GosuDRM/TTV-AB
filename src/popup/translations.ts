@@ -34,9 +34,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "Got it",
 		autoplayBackup: "Low Quality Fallback",
 		autoplayBackupDesc:
-			"Disabled by default. When enabled, can start with a fast, ad-free autoplay stream, usually at 360p, then check for a verified higher-quality backup without reloading the player.",
+			"Enabled by default. When enabled, can start with a fast, ad-free autoplay stream, usually at 360p, then check for a verified higher-quality backup without reloading the player.",
 		autoplayBackupWarning:
-			"When off, normal-quality sources are tried first. If none is clean during a preroll, a temporary clean low-quality stream can play while higher quality is checked. Midrolls still skip new autoplay backups and may take longer to recover.",
+			"When off, normal-quality sources are tried first. If none is clean during a preroll or midroll, a temporary clean low-quality stream can play while higher quality is checked.",
 		autoplayBackupGotIt: "Got it",
 		stable: "Stable",
 		changesInstantly: "Changes take effect instantly",
@@ -136,9 +136,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "Entendido",
 		autoplayBackup: "Respaldo de baja calidad",
 		autoplayBackupDesc:
-			"Desactivado por defecto. Al activarlo, puede empezar con un flujo de reproducción automática rápido y sin anuncios, normalmente a 360p, y después buscar un respaldo verificado de mayor calidad sin recargar el reproductor.",
+			"Activado por defecto. Al activarlo, puede empezar con un flujo de reproducción automática rápido y sin anuncios, normalmente a 360p, y después buscar un respaldo verificado de mayor calidad sin recargar el reproductor.",
 		autoplayBackupWarning:
-			"Al desactivarla, se prueban primero las fuentes de calidad normal. Si ninguna está libre de anuncios al iniciar el directo, puede usarse temporalmente un flujo limpio de baja calidad mientras se comprueba una calidad superior. Los anuncios durante el directo siguen sin usar nuevos respaldos autoplay y la recuperación puede tardar más.",
+			"Al desactivarla, se prueban primero las fuentes de calidad normal. Si ninguna está libre de anuncios antes o durante el directo, puede usarse temporalmente un flujo sin anuncios de baja calidad mientras se comprueba una calidad superior.",
 		autoplayBackupGotIt: "Entendido",
 		stable: "Estable",
 		changesInstantly: "Los cambios se aplican al instante",
@@ -250,9 +250,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "Compris",
 		autoplayBackup: "Secours basse qualité",
 		autoplayBackupDesc:
-			"Désactivée par défaut. Une fois activée, cette option permet de commencer par un flux de lecture automatique rapide et sans publicité, généralement en 360p, puis chercher un secours vérifié de meilleure qualité sans recharger le lecteur.",
+			"Activée par défaut. Une fois activée, cette option permet de commencer par un flux de lecture automatique rapide et sans publicité, généralement en 360p, puis chercher un secours vérifié de meilleure qualité sans recharger le lecteur.",
 		autoplayBackupWarning:
-			"Désactivée, cette option privilégie les sources de qualité normale. Si aucune n’est sans publicité au démarrage du direct, un flux propre de faible qualité peut être utilisé temporairement pendant la vérification d’une qualité supérieure. Les coupures en cours de direct continuent d’exclure les nouveaux flux autoplay et la reprise peut être plus lente.",
+			"Désactivée, cette option privilégie les sources de qualité normale. Si aucune n’est sans publicité au début ou pendant le direct, un flux sans publicité de faible qualité peut être utilisé temporairement pendant la vérification d’une qualité supérieure.",
 		autoplayBackupGotIt: "Compris",
 		stable: "Stable",
 		changesInstantly: "Les changements s'appliquent instantanément",
@@ -370,9 +370,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "Verstanden",
 		autoplayBackup: "Fallback geringer Qualität",
 		autoplayBackupDesc:
-			"Standardmäßig deaktiviert. Wenn aktiviert, kann TTV AB zuerst einen schnellen, werbefreien Autoplay-Stream verwenden, meist in 360p, und danach ohne Neuladen des Players nach einem geprüften Backup mit besserer Qualität suchen.",
+			"Standardmäßig aktiviert. Wenn aktiviert, kann TTV AB zuerst einen schnellen, werbefreien Autoplay-Stream verwenden, meist in 360p, und danach ohne Neuladen des Players nach einem geprüften Backup mit besserer Qualität suchen.",
 		autoplayBackupWarning:
-			"Wenn die Option aus ist, werden zuerst Quellen mit normaler Qualität geprüft. Ist beim Start keine davon werbefrei, kann vorübergehend ein werbefreier Stream mit niedriger Qualität laufen, während höhere Qualität geprüft wird. Bei Werbung im laufenden Stream bleiben neue Autoplay-Backups ausgeschlossen; die Wiedergabe kann später zurückkehren.",
+			"Wenn die Option aus ist, werden zuerst Quellen mit normaler Qualität geprüft. Ist bei Werbung am Anfang oder während des Streams keine davon werbefrei, kann vorübergehend ein werbefreier Stream mit niedriger Qualität laufen, während höhere Qualität geprüft wird.",
 		autoplayBackupGotIt: "Verstanden",
 		stable: "Stabil",
 		changesInstantly: "Änderungen werden sofort übernommen",
@@ -499,9 +499,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "Entendi",
 		autoplayBackup: "Reserva de baixa qualidade",
 		autoplayBackupDesc:
-			"Desativado por padrão. Quando ativado, o TTV AB pode começar com um fluxo de reprodução automática rápido e sem anúncios, geralmente em 360p, e depois procurar uma fonte de reserva verificada e com melhor qualidade sem recarregar o player.",
+			"Ativado por padrão. Quando ativado, o TTV AB pode começar com um fluxo de reprodução automática rápido e sem anúncios, geralmente em 360p, e depois procurar uma fonte de reserva verificada e com melhor qualidade sem recarregar o player.",
 		autoplayBackupWarning:
-			"Quando desativada, as fontes de qualidade normal são testadas primeiro. Se nenhuma estiver livre de anúncios ao iniciar a transmissão, um fluxo limpo de baixa qualidade pode ser usado temporariamente enquanto uma qualidade superior é verificada. Anúncios durante a transmissão continuam sem novos fluxos autoplay e a recuperação pode demorar mais.",
+			"Quando desativada, as fontes de qualidade normal são testadas primeiro. Se nenhuma estiver livre de anúncios no início ou durante a transmissão, um fluxo sem anúncios de baixa qualidade pode ser usado temporariamente enquanto uma qualidade superior é verificada.",
 		autoplayBackupGotIt: "Entendi",
 		stable: "Estável",
 		changesInstantly: "As alterações entram em vigor imediatamente",
@@ -613,9 +613,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "Ho capito",
 		autoplayBackup: "Riserva a bassa qualità",
 		autoplayBackupDesc:
-			"Disattivata per impostazione predefinita. Quando è attivata, TTV AB può iniziare con un rapido flusso autoplay senza pubblicità, di solito a 360p, e poi cercare una riserva verificata di qualità superiore senza ricaricare il player.",
+			"Attivata per impostazione predefinita. Quando è attivata, TTV AB può iniziare con un rapido flusso autoplay senza pubblicità, di solito a 360p, e poi cercare una riserva verificata di qualità superiore senza ricaricare il player.",
 		autoplayBackupWarning:
-			"Quando è disattivata, vengono provate prima le fonti di qualità normale. Se nessuna è priva di annunci all’avvio della diretta, può essere usato temporaneamente un flusso pulito di bassa qualità mentre si verifica una qualità superiore. Durante gli annunci a diretta iniziata, i nuovi flussi autoplay restano esclusi e il recupero può richiedere più tempo.",
+			"Quando è disattivata, vengono provate prima le fonti di qualità normale. Se nessuna è priva di annunci all’inizio o durante la diretta, può essere usato temporaneamente un flusso senza pubblicità di bassa qualità mentre si verifica una qualità superiore.",
 		autoplayBackupGotIt: "Capito",
 		stable: "Stabile",
 		changesInstantly: "Le modifiche hanno effetto immediato",
@@ -726,9 +726,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "わかりました",
 		autoplayBackup: "低画質フォールバック",
 		autoplayBackupDesc:
-			"既定では無効です。有効にすると、広告のない高速な自動再生ストリーム（通常は 360p）から始め、プレーヤーを再読み込みせずに、確認済みのより高画質なバックアップを探します。",
+			"既定では有効です。有効にすると、広告のない高速な自動再生ストリーム（通常は 360p）から始め、プレーヤーを再読み込みせずに、確認済みのより高画質なバックアップを探します。",
 		autoplayBackupWarning:
-			"オフの場合は通常画質の配信を先に確認します。配信開始時の広告中に広告のない配信が見つからなければ、一時的に広告のない低画質配信を再生しながら高画質配信を確認します。視聴途中の広告では新しい自動再生バックアップを使わないため、復帰に時間がかかる場合があります。",
+			"オフの場合は通常画質の配信を先に確認します。配信開始時や視聴途中の広告中に広告のない配信が見つからなければ、一時的に広告のない低画質配信を再生しながら高画質配信を確認します。",
 		autoplayBackupGotIt: "了解",
 		stable: "安定版",
 		changesInstantly: "変更はすぐに反映されます",
@@ -850,9 +850,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "확인",
 		autoplayBackup: "저화질 폴백",
 		autoplayBackupDesc:
-			"기본적으로 꺼져 있습니다. 켜면 광고가 없는 빠른 자동 재생 스트림(보통 360p)으로 시작한 뒤, 플레이어를 새로고침하지 않고 검증된 더 높은 화질의 백업을 찾습니다.",
+			"기본적으로 켜져 있습니다. 켜면 광고가 없는 빠른 자동 재생 스트림(보통 360p)으로 시작한 뒤, 플레이어를 새로고침하지 않고 검증된 더 높은 화질의 백업을 찾습니다.",
 		autoplayBackupWarning:
-			"끄면 일반 화질 소스를 먼저 확인합니다. 방송 시작 광고 중 광고 없는 소스를 찾지 못하면, 고화질 소스를 확인하는 동안 광고 없는 저화질 방송을 임시로 재생할 수 있습니다. 시청 중 광고에서는 새로운 자동 재생 백업을 사용하지 않으므로 복구가 더 오래 걸릴 수 있습니다.",
+			"끄면 일반 화질 소스를 먼저 확인합니다. 방송 시작이나 시청 중 광고에서 광고 없는 소스를 찾지 못하면, 고화질 소스를 확인하는 동안 광고 없는 저화질 방송을 임시로 재생할 수 있습니다.",
 		autoplayBackupGotIt: "확인",
 		stable: "안정판",
 		changesInstantly: "변경 사항이 즉시 적용됩니다",
@@ -953,9 +953,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "知道了",
 		autoplayBackup: "低画质备选流",
 		autoplayBackupDesc:
-			"默认关闭。开启后，可以先使用快速、无广告的自动播放流（通常为 360p），再寻找经过验证的更高画质备选流，无需重新加载播放器。",
+			"默认开启。开启后，可以先使用快速、无广告的自动播放流（通常为 360p），再寻找经过验证的更高画质备选流，无需重新加载播放器。",
 		autoplayBackupWarning:
-			"关闭时会优先尝试正常画质的来源。如果开播前广告期间没有无广告来源，可以临时播放无广告的低画质直播，同时检查更高画质。观看途中出现广告时仍会跳过新的自动播放备用流，因此恢复可能需要更长时间。",
+			"关闭时会优先尝试正常画质的来源。如果开播前或观看途中出现广告时没有无广告来源，可以临时播放无广告的低画质直播，同时检查更高画质。",
 		autoplayBackupGotIt: "知道了",
 		stable: "稳定版",
 		changesInstantly: "更改会立即生效",
@@ -1044,9 +1044,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "知道了",
 		autoplayBackup: "低畫質備選串流",
 		autoplayBackupDesc:
-			"預設關閉。開啟後，可以先使用快速且無廣告的自動播放串流（通常為 360p），再尋找經過驗證的較高畫質備選串流，無須重新載入播放器。",
+			"預設開啟。開啟後，可以先使用快速且無廣告的自動播放串流（通常為 360p），再尋找經過驗證的較高畫質備選串流，無須重新載入播放器。",
 		autoplayBackupWarning:
-			"關閉時會優先嘗試正常畫質的來源。如果開播前廣告期間沒有無廣告來源，可以暫時播放無廣告的低畫質直播，同時檢查更高畫質。觀看途中出現廣告時仍會略過新的自動播放備用串流，因此恢復可能需要更長時間。",
+			"關閉時會優先嘗試正常畫質的來源。如果開播前或觀看途中出現廣告時沒有無廣告來源，可以暫時播放無廣告的低畫質直播，同時檢查更高畫質。",
 		autoplayBackupGotIt: "知道了",
 		stable: "穩定版",
 		changesInstantly: "變更會立即生效",
@@ -1136,9 +1136,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "Понятно",
 		autoplayBackup: "Резерв низкого качества",
 		autoplayBackupDesc:
-			"По умолчанию выключено. При включении сначала может использоваться быстрый поток без рекламы с автозапуском, обычно с качеством 360p, а затем без перезагрузки плеера ищется проверенный резерв лучшего качества.",
+			"По умолчанию включено. При включении сначала может использоваться быстрый поток без рекламы с автозапуском, обычно с качеством 360p, а затем без перезагрузки плеера ищется проверенный резерв лучшего качества.",
 		autoplayBackupWarning:
-			"При отключённой настройке сначала проверяются источники обычного качества. Если перед началом просмотра среди них нет потока без рекламы, временно может воспроизводиться чистый поток низкого качества, пока проверяется более высокое. При рекламе во время просмотра новые потоки autoplay по-прежнему исключены, поэтому восстановление может занять больше времени.",
+			"При отключённой настройке сначала проверяются источники обычного качества. Если при рекламе в начале или во время просмотра среди них нет потока без рекламы, временно может воспроизводиться поток низкого качества без рекламы, пока проверяется более высокое.",
 		autoplayBackupGotIt: "Понятно",
 		stable: "Стабильная",
 		changesInstantly: "Изменения применяются мгновенно",
@@ -1265,9 +1265,9 @@ const TRANSLATIONS = {
 		adTimerGotIt: "Зрозуміло",
 		autoplayBackup: "Резерв низької якості",
 		autoplayBackupDesc:
-			"За замовчуванням вимкнено. Після ввімкнення спочатку може використовуватися швидкий потік без реклами з автовідтворенням, зазвичай із якістю 360p, а потім без перезавантаження програвача шукається перевірений резерв кращої якості.",
+			"За замовчуванням увімкнено. Після ввімкнення спочатку може використовуватися швидкий потік без реклами з автовідтворенням, зазвичай із якістю 360p, а потім без перезавантаження програвача шукається перевірений резерв кращої якості.",
 		autoplayBackupWarning:
-			"Коли налаштування вимкнено, спочатку перевіряються джерела звичайної якості. Якщо перед початком перегляду серед них немає потоку без реклами, тимчасово може відтворюватися чистий потік низької якості, поки перевіряється вища. Під час реклами протягом перегляду нові потоки autoplay і далі не використовуються, тому відновлення може тривати довше.",
+			"Коли налаштування вимкнено, спочатку перевіряються джерела звичайної якості. Якщо під час реклами на початку або протягом перегляду серед них немає потоку без реклами, тимчасово може відтворюватися потік низької якості без реклами, поки перевіряється вища.",
 		autoplayBackupGotIt: "Зрозуміло",
 		stable: "Стабільна",
 		changesInstantly: "Зміни застосовуються миттєво",

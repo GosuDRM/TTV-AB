@@ -47,7 +47,11 @@ function loadBackground() {
 }
 
 beforeAll(async () => {
-	storageData = { ttvAutoplayBackupEnabled: true, ttvAdTimerEnabled: false };
+	storageData = {
+		ttvAutoplayBackupEnabled: false,
+		ttvAdTimerEnabled: false,
+		ttvPlaybackDefaultsV1Applied: true,
+	};
 	g.chrome = {
 		runtime: {
 			id: "ttvab-test",
@@ -138,9 +142,10 @@ describe("playback defaults migration", () => {
 
 	it("applies the new defaults on background startup before a later install event", () => {
 		expect(startupStorageData).toEqual({
-			ttvAutoplayBackupEnabled: false,
-			ttvAdTimerEnabled: true,
+			ttvAutoplayBackupEnabled: true,
+			ttvAdTimerEnabled: false,
 			ttvPlaybackDefaultsV1Applied: true,
+			ttvPlaybackDefaultsV2Applied: true,
 		});
 	});
 
@@ -158,7 +163,11 @@ describe("playback defaults migration", () => {
 			storageData = {
 				...unrelated,
 				...(reason === "update"
-					? { ttvAutoplayBackupEnabled: true, ttvAdTimerEnabled: false }
+					? {
+							ttvAutoplayBackupEnabled: false,
+							ttvAdTimerEnabled: false,
+							ttvPlaybackDefaultsV1Applied: true,
+						}
 					: {}),
 			};
 			const write = vi.spyOn(api().storage.local, "set");
@@ -168,16 +177,17 @@ describe("playback defaults migration", () => {
 			expect(write).toHaveBeenCalledTimes(1);
 			expect(storageData).toEqual({
 				...unrelated,
-				ttvAutoplayBackupEnabled: false,
-				ttvAdTimerEnabled: true,
-				ttvPlaybackDefaultsV1Applied: true,
+				...(reason === "update" ? { ttvPlaybackDefaultsV1Applied: true } : {}),
+				ttvAutoplayBackupEnabled: true,
+				ttvAdTimerEnabled: reason === "install",
+				ttvPlaybackDefaultsV2Applied: true,
 			});
 		},
 	);
 
 	it("preserves later user choices across restarts and subsequent updates", async () => {
 		await migrate();
-		storageData.ttvAutoplayBackupEnabled = true;
+		storageData.ttvAutoplayBackupEnabled = false;
 		storageData.ttvAdTimerEnabled = false;
 		const write = vi.spyOn(api().storage.local, "set");
 		await migrate();
@@ -185,9 +195,9 @@ describe("playback defaults migration", () => {
 		await g.playbackDefaultsMigration;
 		expect(write).not.toHaveBeenCalled();
 		expect(storageData).toEqual({
-			ttvAutoplayBackupEnabled: true,
+			ttvAutoplayBackupEnabled: false,
 			ttvAdTimerEnabled: false,
-			ttvPlaybackDefaultsV1Applied: true,
+			ttvPlaybackDefaultsV2Applied: true,
 		});
 	});
 
@@ -223,7 +233,7 @@ describe("playback defaults migration", () => {
 		"reports a failed storage %s and retries without falsely recording completion",
 		async (operation) => {
 			storageData = {
-				ttvAutoplayBackupEnabled: true,
+				ttvAutoplayBackupEnabled: false,
 				ttvAdTimerEnabled: false,
 			};
 			const browser = api();
@@ -257,15 +267,15 @@ describe("playback defaults migration", () => {
 				expect.any(Error),
 			);
 			expect(storageData).toEqual({
-				ttvAutoplayBackupEnabled: true,
+				ttvAutoplayBackupEnabled: false,
 				ttvAdTimerEnabled: false,
 			});
 			expect(g.playbackDefaultsMigration).toBeNull();
 			await migrate();
 			expect(storageData).toEqual({
-				ttvAutoplayBackupEnabled: false,
-				ttvAdTimerEnabled: true,
-				ttvPlaybackDefaultsV1Applied: true,
+				ttvAutoplayBackupEnabled: true,
+				ttvAdTimerEnabled: false,
+				ttvPlaybackDefaultsV2Applied: true,
 			});
 		},
 	);

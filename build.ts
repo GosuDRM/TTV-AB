@@ -2598,28 +2598,28 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
-			consumer: "_isPrerollAutoplayBackupAllowed",
+			consumer: "_isLiveAdAutoplayBackupAllowed",
 			helper: "_normalizeMediaKey",
 			source: processorSource,
 		},
 		{
-			consumer: "_isPrerollAutoplayBackupAllowed",
+			consumer: "_isLiveAdAutoplayBackupAllowed",
 			helper: "_isBackupSearchContextCurrent",
 			source: processorSource,
 		},
 		{
 			consumer: "_isAutoplayBackupAvailableForSearch",
-			helper: "_isPrerollAutoplayBackupAllowed",
+			helper: "_isLiveAdAutoplayBackupAllowed",
 			source: processorSource,
 		},
 		{
 			consumer: "_getOrderedBackupPlayerTypes",
-			helper: "_isPrerollAutoplayBackupAllowed",
+			helper: "_isLiveAdAutoplayBackupAllowed",
 			source: processorSource,
 		},
 		{
 			consumer: "_searchBackupStream",
-			helper: "_isPrerollAutoplayBackupAllowed",
+			helper: "_isLiveAdAutoplayBackupAllowed",
 			source: processorSource,
 		},
 		{

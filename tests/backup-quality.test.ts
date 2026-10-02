@@ -131,7 +131,7 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-function setupPrerollBridge() {
+function setupEmergencyBridge(roll = "preroll") {
 	vi.useFakeTimers();
 	vi.setSystemTime(1_000_000);
 	const fixture = setup("avc1.640033");
@@ -145,7 +145,9 @@ function setupPrerollBridge() {
 		"autoplay",
 	];
 	const control = {
-		roll: "preroll",
+		roll,
+		csai: false,
+		normalPlayerType: "",
 		normalClean: false,
 		autoplayClean: true,
 		autoplayCodec: "avc1.640033",
@@ -183,16 +185,24 @@ function setupPrerollBridge() {
 				type,
 				height,
 				400 + Math.floor((Date.now() - 1_000_000) / 2000),
-				type === "autoplay" ? !control.autoplayClean : !control.normalClean,
+				type === "autoplay"
+					? !control.autoplayClean
+					: !control.normalClean ||
+							Boolean(
+								control.normalPlayerType && control.normalPlayerType !== type,
+							),
 			),
 		);
 	});
 	const native = () => {
-		const body = media("native", 1080, 700, true);
+		const body = media("native", 1080, 700, true).replace(
+			"2.000,stitched-ad",
+			control.csai ? "2.000,live" : "2.000,stitched-ad",
+		);
 		return control.roll
 			? body.replace(
 					"#EXT-X-TARGETDURATION:2",
-					`#EXT-X-TARGETDURATION:2\r\n#EXT-X-DATERANGE:X-TV-TWITCH-AD-ROLL-TYPE="${control.roll}",CLASS="twitch-stitched-ad",ID="stitched-ad-preroll"`,
+					`#EXT-X-TARGETDURATION:2\r\n#EXT-X-DATERANGE:X-TV-TWITCH-AD-ROLL-TYPE="${control.roll}",CLASS="twitch-stitched-ad",ID="stitched-ad-test"`,
 				)
 			: body;
 	};
@@ -207,171 +217,221 @@ function setupPrerollBridge() {
 	};
 }
 
-describe("preroll emergency bridge with fallback disabled", () => {
-	it("tries normal sources sequentially, then serves clean 360p instead of a black hold", async () => {
-		const f = setupPrerollBridge();
-		const response = f.poll();
-		await vi.advanceTimersByTimeAsync(7500);
-		const output = await response;
-		expect(output).toContain("/autoplay/360/");
-		expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
-		expect(output).not.toContain("stitched-ad");
-		expect(f.tokens).toEqual([
-			"site",
-			"embed",
-			"popout",
-			"mobile_web",
-			"autoplay",
-		]);
-		expect(f.maxInFlight()).toBe(1);
-		expect(f.info.HevcReloadPendingAfterHold).toBe(true);
-		expect(f.context._postWorkerBridgeMessage).not.toHaveBeenCalledWith(
-			expect.anything(),
-			expect.objectContaining({ key: "ReloadPlayer" }),
-		);
-	});
-
-	it.each(["midroll", "", "unknown"])(
-		"does not acquire autoplay for a %s break",
-		async (roll) => {
-			const f = setupPrerollBridge();
-			f.control.roll = roll;
+describe.each(["preroll", "midroll"])(
+	"%s emergency bridge with fallback disabled",
+	(roll) => {
+		it("tries normal sources sequentially, then serves clean 360p instead of a black hold", async () => {
+			const f = setupEmergencyBridge(roll);
 			const response = f.poll();
 			await vi.advanceTimersByTimeAsync(7500);
-			expect(await response).toContain("__ttvab_empty_hold_segment.ts");
-			expect(f.tokens).toEqual(["site", "embed", "popout", "mobile_web"]);
-		},
-	);
-
-	it("uses an available normal-quality source without acquiring autoplay", async () => {
-		const f = setupPrerollBridge();
-		f.control.normalClean = true;
-		const response = f.poll();
-		await vi.advanceTimersByTimeAsync(1500);
-		expect(await response).toContain("/site/1080/");
-		expect(f.tokens).toEqual(["site"]);
-	});
-
-	it("refreshes the 360p bridge through two clean HD checks and promotes without reloading", async () => {
-		const f = setupPrerollBridge();
-		const initial = f.poll();
-		await vi.advanceTimersByTimeAsync(7500);
-		expect(await initial).toContain("/autoplay/360/");
-		await vi.advanceTimersByTimeAsync(2000);
-		const refresh = f.poll();
-		await vi.advanceTimersByTimeAsync(500);
-		expect(await refresh).toContain("/autoplay/360/");
-		expect(f.info.LastCleanBackupAt).toBe(Date.now());
-		await vi.advanceTimersByTimeAsync(12500);
-		f.control.normalClean = true;
-		const firstCheck = f.poll();
-		await vi.advanceTimersByTimeAsync(2500);
-		expect(await firstCheck).toContain("/autoplay/360/");
-		await f.info._BackupSearchPromise;
-		expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
-		expect(f.info._BackupProbation).toMatchObject({
-			type: "site",
-			cleanChecks: 1,
+			const output = await response;
+			expect(output).toContain("/autoplay/360/");
+			expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
+			expect(output).not.toContain("stitched-ad");
+			expect(f.tokens).toEqual([
+				"site",
+				"embed",
+				"popout",
+				"mobile_web",
+				"autoplay",
+			]);
+			expect(f.maxInFlight()).toBe(1);
+			expect(f.info.HevcReloadPendingAfterHold).toBe(true);
+			expect(f.context._postWorkerBridgeMessage).not.toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ key: "ReloadPlayer" }),
+			);
 		});
-		await vi.advanceTimersByTimeAsync(1500);
-		const secondCheck = f.poll();
-		await vi.advanceTimersByTimeAsync(1000);
-		const promoted = await secondCheck;
-		expect(promoted).toContain("/site/1080/");
-		expect(promoted).toContain("#EXT-X-DISCONTINUITY");
-		expect(promoted).not.toContain("stitched-ad");
-		expect(f.info.ActiveBackupResolution).toBe("1920x1080");
-		expect(f.info.HevcReloadPendingAfterHold).toBe(true);
-		expect(f.context._postWorkerBridgeMessage).not.toHaveBeenCalledWith(
-			expect.anything(),
-			expect.objectContaining({ key: "ReloadPlayer" }),
-		);
-	});
 
-	it.each(["ad-marked", "incompatible-codec"])(
-		"rejects an %s autoplay source instead of serving unsafe media",
-		async (condition) => {
-			const f = setupPrerollBridge();
-			if (condition === "ad-marked") f.control.autoplayClean = false;
-			else f.control.autoplayCodec = "hev1.1.6.L153.B0";
+		it.each(["", "unknown"])(
+			"does not acquire autoplay for a %s break",
+			async (roll) => {
+				const f = setupEmergencyBridge(roll);
+				f.control.roll = roll;
+				const response = f.poll();
+				await vi.advanceTimersByTimeAsync(7500);
+				expect(await response).toContain("__ttvab_empty_hold_segment.ts");
+				expect(f.tokens).toEqual(["site", "embed", "popout", "mobile_web"]);
+			},
+		);
+
+		it("uses an available normal-quality source without acquiring autoplay", async () => {
+			const f = setupEmergencyBridge(roll);
+			f.control.normalClean = true;
 			const response = f.poll();
+			await vi.advanceTimersByTimeAsync(1500);
+			expect(await response).toContain("/site/1080/");
+			expect(f.tokens).toEqual(["site"]);
+		});
+
+		it.each(["visible", "silent"])(
+			"replaces a stalled normal-quality backup during the %s hold without replaying it",
+			async (phase) => {
+				const f = setupEmergencyBridge(roll);
+				f.control.csai = true;
+				f.control.normalClean = true;
+				f.control.normalPlayerType = "mobile_web";
+				expect(await f.poll()).toContain("__ttvab_empty_hold_segment.ts");
+				await vi.advanceTimersByTimeAsync(6500);
+				const normal = f.poll();
+				await vi.advanceTimersByTimeAsync(500);
+				expect(await normal).toContain("/mobile_web/1080/");
+				expect(f.tokens).not.toContain("autoplay");
+				f.control.normalClean = false;
+				await vi.advanceTimersByTimeAsync(4000);
+				if (phase === "silent") {
+					f.info.IsShowingAd = false;
+					f.info.IsHoldingBackupAfterAd = true;
+					f.info.SilentBackupHoldStartedAt = Date.now();
+				}
+				f.state.BackupSearchForceRefreshAt = Date.now();
+				const recovery = f.poll();
+				await vi.advanceTimersByTimeAsync(8000);
+				const output = await recovery;
+				expect(output).toContain("/autoplay/360/");
+				expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
+				expect(output).not.toContain("stitched-ad");
+				expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+				expect(f.info.HevcReloadPendingAfterHold).toBe(true);
+				expect(f.maxInFlight()).toBe(1);
+			},
+		);
+
+		it("rejects renewed ads on the emergency bridge instead of replaying an expired clean snapshot", async () => {
+			const f = setupEmergencyBridge(roll);
+			const initial = f.poll();
+			await vi.advanceTimersByTimeAsync(7500);
+			expect(await initial).toContain("/autoplay/360/");
+			f.control.autoplayClean = false;
+			await vi.advanceTimersByTimeAsync(2000);
+			const refresh = f.poll();
 			await vi.advanceTimersByTimeAsync(10000);
+			const output = await refresh;
+			expect(output).not.toContain("/autoplay/360/");
+			expect(output).not.toContain("stitched-ad");
+			expect(output).toContain("__ttvab_empty_hold_segment.ts");
+		});
+
+		it("refreshes the 360p bridge through two clean HD checks and promotes without reloading", async () => {
+			const f = setupEmergencyBridge(roll);
+			const initial = f.poll();
+			await vi.advanceTimersByTimeAsync(7500);
+			expect(await initial).toContain("/autoplay/360/");
+			await vi.advanceTimersByTimeAsync(2000);
+			const refresh = f.poll();
+			await vi.advanceTimersByTimeAsync(500);
+			expect(await refresh).toContain("/autoplay/360/");
+			expect(f.info.LastCleanBackupAt).toBe(Date.now());
+			await vi.advanceTimersByTimeAsync(12500);
+			f.control.normalClean = true;
+			const firstCheck = f.poll();
+			await vi.advanceTimersByTimeAsync(2500);
+			expect(await firstCheck).toContain("/autoplay/360/");
+			await f.info._BackupSearchPromise;
+			expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+			expect(f.info._BackupProbation).toMatchObject({
+				type: "site",
+				cleanChecks: 1,
+			});
+			await vi.advanceTimersByTimeAsync(1500);
+			const secondCheck = f.poll();
+			await vi.advanceTimersByTimeAsync(1000);
+			const promoted = await secondCheck;
+			expect(promoted).toContain("/site/1080/");
+			expect(promoted).toContain("#EXT-X-DISCONTINUITY");
+			expect(promoted).not.toContain("stitched-ad");
+			expect(f.info.ActiveBackupResolution).toBe("1920x1080");
+			expect(f.info.HevcReloadPendingAfterHold).toBe(true);
+			expect(f.context._postWorkerBridgeMessage).not.toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ key: "ReloadPlayer" }),
+			);
+		});
+
+		it.each(["ad-marked", "incompatible-codec"])(
+			"rejects an %s autoplay source instead of serving unsafe media",
+			async (condition) => {
+				const f = setupEmergencyBridge(roll);
+				if (condition === "ad-marked") f.control.autoplayClean = false;
+				else f.control.autoplayCodec = "hev1.1.6.L153.B0";
+				const response = f.poll();
+				await vi.advanceTimersByTimeAsync(10000);
+				expect(await response).toContain("__ttvab_empty_hold_segment.ts");
+				expect(f.info.LastCleanBackupM3U8).toBeNull();
+			},
+		);
+
+		it.each(["page", "generation", "cycle", "roll-context", "blocking"])(
+			"discards delayed emergency autoplay after a change of %s",
+			async (change) => {
+				const f = setupEmergencyBridge(roll);
+				const response = f.poll().catch((error: Error) => error);
+				await vi.advanceTimersByTimeAsync(7000);
+				expect(f.requests.at(-1)).toContain("/autoplay/360.m3u8");
+				if (change === "page") f.state.PageMediaKey = "live:other";
+				if (change === "generation") f.state.PagePlaybackContextGeneration++;
+				if (change === "cycle") f.info.VisibleAdStartedAt++;
+				if (change === "blocking") f.state.IsAdStrippingEnabled = false;
+				if (change === "roll-context") f.info.AdRollContext = null;
+				await vi.advanceTimersByTimeAsync(1000);
+				await response;
+				expect(f.info.LastCleanBackupM3U8).toBeNull();
+				expect(f.info._BackupSelection).toBeNull();
+			},
+		);
+
+		it("does not promote an autoplay-first search when fallback is switched off in flight", async () => {
+			const f = setupEmergencyBridge(roll);
+			f.state.DisableAutoplayBackup = false;
+			const response = f.poll();
+			await vi.advanceTimersByTimeAsync(1000);
+			f.state.DisableAutoplayBackup = true;
+			await vi.advanceTimersByTimeAsync(8000);
 			expect(await response).toContain("__ttvab_empty_hold_segment.ts");
 			expect(f.info.LastCleanBackupM3U8).toBeNull();
-		},
-	);
+		});
 
-	it.each(["page", "generation", "cycle", "midroll", "blocking"])(
-		"discards delayed preroll autoplay after a change of %s",
-		async (change) => {
-			const f = setupPrerollBridge();
-			const response = f.poll().catch((error: Error) => error);
-			await vi.advanceTimersByTimeAsync(7000);
-			expect(f.requests.at(-1)).toContain("/autoplay/360.m3u8");
-			if (change === "page") f.state.PageMediaKey = "live:other";
-			if (change === "generation") f.state.PagePlaybackContextGeneration++;
-			if (change === "cycle") f.info.VisibleAdStartedAt++;
-			if (change === "blocking") f.state.IsAdStrippingEnabled = false;
-			if (change === "midroll") {
-				f.control.roll = "midroll";
-				f.context._recordNativeAdRollType(f.info, f.native());
-			}
-			await vi.advanceTimersByTimeAsync(1000);
-			await response;
-			expect(f.info.LastCleanBackupM3U8).toBeNull();
-			expect(f.info._BackupSelection).toBeNull();
-		},
-	);
+		it("does not let minimal-request offsets skip normal sources before emergency autoplay", async () => {
+			const f = setupEmergencyBridge(roll);
+			f.info.LastPlayerReload = Date.now();
+			f.state.PlayerReloadMinimalRequestsPlayerIndex = 4;
+			const response = f.poll();
+			await vi.advanceTimersByTimeAsync(7500);
+			expect(await response).toContain("/autoplay/360/");
+			expect(f.tokens).toEqual([
+				"site",
+				"embed",
+				"popout",
+				"mobile_web",
+				"autoplay",
+			]);
+		});
 
-	it("does not promote an autoplay-first search when fallback is switched off in flight", async () => {
-		const f = setupPrerollBridge();
-		f.state.DisableAutoplayBackup = false;
-		const response = f.poll();
-		await vi.advanceTimersByTimeAsync(1000);
-		f.state.DisableAutoplayBackup = true;
-		await vi.advanceTimersByTimeAsync(8000);
-		expect(await response).toContain("__ttvab_empty_hold_segment.ts");
-		expect(f.info.LastCleanBackupM3U8).toBeNull();
-	});
+		it("retains midroll identity over conflicting preroll metadata within the same owned cycle", async () => {
+			const f = setupEmergencyBridge(roll);
+			const initial = f.poll();
+			await vi.advanceTimersByTimeAsync(7500);
+			await initial;
+			f.control.roll = "MIDROLL";
+			await f.poll();
+			expect(f.info.AdRollContext.rollType).toBe("midroll");
+			expect(f.context._isLiveAdAutoplayBackupAllowed(f.info)).toBe(true);
+			f.control.roll = "preroll";
+			await f.poll();
+			expect(f.info.AdRollContext.rollType).toBe("midroll");
+			expect(f.context._isLiveAdAutoplayBackupAllowed(f.info)).toBe(true);
+		});
 
-	it("does not let minimal-request offsets skip normal sources before emergency autoplay", async () => {
-		const f = setupPrerollBridge();
-		f.info.LastPlayerReload = Date.now();
-		f.state.PlayerReloadMinimalRequestsPlayerIndex = 4;
-		const response = f.poll();
-		await vi.advanceTimersByTimeAsync(7500);
-		expect(await response).toContain("/autoplay/360/");
-		expect(f.tokens).toEqual([
-			"site",
-			"embed",
-			"popout",
-			"mobile_web",
-			"autoplay",
-		]);
-	});
-
-	it("does not carry preroll permission into a midroll or rearm it from conflicting metadata", async () => {
-		const f = setupPrerollBridge();
-		const initial = f.poll();
-		await vi.advanceTimersByTimeAsync(7500);
-		await initial;
-		f.control.roll = "MIDROLL";
-		await f.poll();
-		expect(f.context._isPrerollAutoplayBackupAllowed(f.info)).toBe(false);
-		f.control.roll = "preroll";
-		await f.poll();
-		expect(f.context._isPrerollAutoplayBackupAllowed(f.info)).toBe(false);
-	});
-
-	it("does not grant the preroll exception to VOD playback", async () => {
-		const f = setupPrerollBridge();
-		f.info.MediaType = "vod";
-		const response = f.poll();
-		await vi.advanceTimersByTimeAsync(7500);
-		expect(await response).not.toContain("/autoplay/360/");
-		expect(f.tokens).not.toContain("autoplay");
-	});
-});
+		it("does not grant the live-ad exception to VOD playback", async () => {
+			const f = setupEmergencyBridge(roll);
+			f.info.MediaType = "vod";
+			const response = f.poll();
+			await vi.advanceTimersByTimeAsync(7500);
+			expect(await response).not.toContain("/autoplay/360/");
+			expect(f.tokens).not.toContain("autoplay");
+		});
+	},
+);
 
 function setupProbation() {
 	let now = 1_000_000;

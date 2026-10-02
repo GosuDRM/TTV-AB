@@ -594,12 +594,12 @@ function _recordNativeAdRollType(info, text) {
 	}
 }
 
-function _isPrerollAutoplayBackupAllowed(info) {
+function _isLiveAdAutoplayBackupAllowed(info) {
 	const context = info?.AdRollContext;
 	return Boolean(
 		__TTVAB_STATE__?.IsAdStrippingEnabled === true &&
 			info?.MediaType === "live" &&
-			context?.rollType === "preroll" &&
+			(context?.rollType === "preroll" || context?.rollType === "midroll") &&
 			context.cycleStartedAt > 0 &&
 			context.mediaKey === _normalizeMediaKey(info.MediaKey) &&
 			context.mediaKey === _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) &&
@@ -617,14 +617,14 @@ function _isAutoplayBackupAvailableForSearch(info = null) {
 	return Boolean(
 		__TTVAB_STATE__?.DisableAutoplayBackup !== true ||
 			__TTVAB_STATE__?.AllowPreviewEmergencyAutoplayBackup === true ||
-			_isPrerollAutoplayBackupAllowed(info),
+			_isLiveAdAutoplayBackupAllowed(info),
 	);
 }
 
 function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
-	const prerollEmergency =
+	const liveAdEmergency =
 		__TTVAB_STATE__?.DisableAutoplayBackup === true &&
-		_isPrerollAutoplayBackupAllowed(info);
+		_isLiveAdAutoplayBackupAllowed(info);
 	const configuredPlayerTypes = [
 		...(__TTVAB_STATE__?.BackupPlayerTypes || []),
 	].filter(
@@ -654,7 +654,7 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 	const shouldTryAutoplayFirst = _shouldTryAutoplayFirst(info);
 	const shouldHoldAutoplayBackup = _shouldHoldAutoplayBackupDuringAd(info);
 	const effectiveStartIdx =
-		prerollEmergency ||
+		liveAdEmergency ||
 		(activePlayerType === "autoplay" &&
 			!shouldTryAutoplayFirst &&
 			!shouldHoldAutoplayBackup)
@@ -684,7 +684,7 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 		pushUnique(playerType);
 	}
 
-	return prerollEmergency
+	return liveAdEmergency
 		? [
 				...orderedPlayerTypes.filter((pt) => pt !== "autoplay"),
 				...orderedPlayerTypes.filter((pt) => pt === "autoplay"),
@@ -7970,7 +7970,7 @@ async function _searchBackupStream(
 		}
 		if (
 			__TTVAB_STATE__?.DisableAutoplayBackup === true &&
-			_isPrerollAutoplayBackupAllowed(autoplaySearchInfo)
+			_isLiveAdAutoplayBackupAllowed(autoplaySearchInfo)
 		) {
 			passPlayerTypes = [
 				...passPlayerTypes.filter((pt) => pt !== "autoplay"),

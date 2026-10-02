@@ -5761,7 +5761,7 @@ function _hookWorker() {
                 ${_getPinnedBackupPlayerTypeForInfo.toString()}
                 ${_getRecentCleanBackupPlayerTypeForInfo.toString()}
 				${_recordNativeAdRollType.toString()}
-				${_isPrerollAutoplayBackupAllowed.toString()}
+				${_isLiveAdAutoplayBackupAllowed.toString()}
 				${_isAutoplayBackupAvailableForSearch.toString()}
                 ${_getOrderedBackupPlayerTypes.toString()}
                 ${_resolvePlaybackResolutionForUrl.toString()}
