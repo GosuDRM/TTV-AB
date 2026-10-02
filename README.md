@@ -99,10 +99,23 @@ _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
 ## 🛠️ Development
 
-Use Node.js 22 and Python 3.
+Clone the repository or your fork, using `main` for Chrome or `firefox` for Firefox. Install Node.js 22 and Python 3, then run these commands from the repository folder:
 
 ```sh
 npm ci
+npm run build
+```
+
+Make changes in the TypeScript source:
+
+- `src/modules/`: stream handling, ad blocking, and playback recovery
+- `src/scripts/`: background tasks and communication with the page
+- `src/popup/`: popup controls, themes, and translations
+- `tests/`: regression tests
+
+Keep changes focused and add a regression test when fixing a bug. The build generates `dist/`; edit the source files rather than the compiled output. After source edits, run the checks in this order because tests read `dist/`:
+
+```sh
 npm run build
 npm test
 npm run lint
@@ -110,14 +123,21 @@ npm run typecheck
 npm run knip
 ```
 
-The build creates `dist/` and versioned archives for the browser identified by the manifest. Packaging failures fail the build. Tests read `dist/`, so rebuild after source edits.
+Load your build to try it locally:
 
 - **Chrome:** Open `chrome://extensions`, enable Developer mode, then [Load unpacked](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked) and select `dist/`.
 - **Firefox:** Open `about:debugging`, select This Firefox, then [Load Temporary Add-on](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/) and select `dist/manifest.json`.
 
-After Firefox popup edits, if the build reports stale generated files, copy `popup.js` and `translations.js` from `dist/src/popup/` into `src/popup/` and rebuild.
+After rebuilding, reload the extension from that page and refresh your Twitch tab. For playback changes, check the affected scenario on Twitch too. In your pull request, explain the change, the checks you ran, and anything you could not verify.
 
-Annotated release tags must include `Firefox-Commit: <full SHA>` for the validated Firefox commit. The release workflow uses that exact commit for repeatable packages.
+<details>
+<summary>Build and release notes</summary>
+
+- **Firefox popup files:** If the build reports that tracked popup files are out of sync, copy `popup.js` and `translations.js` from `dist/src/popup/` into `src/popup/`, then rerun the build and checks.
+- **Packages:** The manifest determines which browser archives the build creates alongside `dist/`. Packaging errors stop the build.
+- **Releases:** Annotated release tags must include `Firefox-Commit: <full SHA>` for the validated Firefox commit. The release workflow builds Firefox from that exact commit.
+
+</details>
 
 ## 💬 Support
 
