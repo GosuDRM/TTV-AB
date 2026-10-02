@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 ## 🔔 What's New
 
+### v19.0.5 - 2026-10-03
+
+- **Midroll Fallback** - Use a temporary clean low-quality stream when normal-quality backups fail during midrolls, even with Low Quality Fallback off.
+- **Default Settings** - Enable Low Quality Fallback for new installs and once on update, then preserve later user choices.
+
 ### v19.0.4 - 2026-10-03
 
 - **Playback Preferences** - Preserve newer mute, volume, and quality choices during recovery, and restore PiP audio only to its own stream.
@@ -89,11 +94,6 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 - **Playback Diagnostics** - Include browser details, selected and playing video quality, Twitch Low Latency status, handoff timing, and retained segment counts in Generate Log without exposing private stream links.
 - **Default Settings** - Start with Low Quality Fallback off and Ad Break Timer on. Apply these settings once when updating, then preserve later user choices.
 - **Ad Break Timer** - Show a simpler timer label, such as "Ad break · 1:23".
-
-### v19.0.2 - 2026-10-01
-
-- **Empty Player Recovery** - Attempt one player rebuild when previously advancing live playback stays empty, while respecting user pauses and current playback ownership.
-- **Playback Controls After Player Replacement** - Follow the current video when Twitch replaces the player, preventing events from retired videos from changing pause or resume intent.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

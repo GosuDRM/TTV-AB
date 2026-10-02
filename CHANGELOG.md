@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.5] - 2026-10-03
+
+Fixed
+
+- **Midroll Fallback** - Use a temporary clean low-quality stream when normal-quality backups fail during midrolls, even with Low Quality Fallback off.
+- **Default Settings** - Enable Low Quality Fallback for new installs and once on update, then preserve later user choices.
+
 ## [19.0.4] - 2026-10-03
 
 Fixed
