@@ -777,9 +777,49 @@ function _stripAds(
 
 	let adSegmentCount = 0;
 	let _liveSegmentCount = 0;
+	let mediaSequence = BigInt(
+		text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1] || "0",
+	);
+	let implicitKey = null;
+	let pendingMediaUriIndex = -1;
+	const originalEncryptionKeys = new Map<number, string>();
 
 	for (i = 0; i < len; i++) {
 		const line = lines[i];
+		if (line?.startsWith("#EXT-X-KEY:")) {
+			const attributes = _parseAttrs(line);
+			if (
+				!attributes.KEYFORMAT ||
+				attributes.KEYFORMAT === "identity" ||
+				attributes.METHOD === "NONE"
+			) {
+				implicitKey =
+					attributes.METHOD !== "NONE" && !attributes.IV
+						? line.trimEnd()
+						: null;
+			}
+		}
+		if (line?.startsWith("#EXT-X-SKIP:")) {
+			const skipped = _parseAttrs(line)["SKIPPED-SEGMENTS"];
+			if (/^\d+$/.test(skipped || "")) mediaSequence += BigInt(skipped);
+		}
+		if (line?.startsWith("#EXTINF:")) {
+			pendingMediaUriIndex = _getMediaSegmentUriIndex(lines, i);
+		}
+		const completeSegment =
+			i === pendingMediaUriIndex || line?.startsWith("#EXT-X-TWITCH-PREFETCH:");
+		if (
+			implicitKey &&
+			(completeSegment ||
+				_isMediaPartLine(line) ||
+				_isPartPreloadHintLine(line))
+		) {
+			originalEncryptionKeys.set(
+				i,
+				`${implicitKey},IV=0x${mediaSequence.toString(16).padStart(32, "0")}`,
+			);
+		}
+		if (completeSegment) mediaSequence++;
 		if (line?.startsWith("#EXTINF")) {
 			const segmentUrl = lines[_getMediaSegmentUriIndex(lines, i)]?.trim();
 			const isKnownAdSegment = _isKnownAdSegmentUrl(segmentUrl);
@@ -958,9 +998,15 @@ function _stripAds(
 
 	const result = [];
 	let hasRemainingSegments = false;
+	let addedIv = false;
 	for (let ri = 0; ri < len; ri++) {
 		const l = lines[ri];
 		if (l === "") continue;
+		const originalKey = originalEncryptionKeys.get(ri);
+		if (strippedMediaEntryCount > 0 && originalKey) {
+			result.push(`${originalKey}${l.endsWith("\r") ? "\r" : ""}`);
+			addedIv = true;
+		}
 		result.push(l);
 		if (
 			!hasRemainingSegments &&
@@ -976,6 +1022,14 @@ function _stripAds(
 			"warning",
 		);
 		return _createEmptyAdHoldPlaylist(text, info);
+	}
+	if (addedIv) {
+		const versionIndex = result.findIndex((line) =>
+			line.startsWith("#EXT-X-VERSION:"),
+		);
+		if (versionIndex < 0) result.splice(1, 0, "#EXT-X-VERSION:2");
+		else if (Number(result[versionIndex].split(":")[1]) < 2)
+			result[versionIndex] = "#EXT-X-VERSION:2";
 	}
 
 	return result.join("\n");

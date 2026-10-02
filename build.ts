@@ -1231,6 +1231,11 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_stripAds",
+			helper: "_parseAttrs",
+			source: parserSource,
+		},
+		{
 			consumer: "_getBackupPlaybackCodec",
 			helper: "_getVideoCodecIdentity",
 			source: parserSource,
@@ -3542,29 +3547,35 @@ ${bootstrapCall}();
 		console.log(`  Size: ${(stats.size / 1024).toFixed(2)} KB`);
 
 		console.log("\nPackaging...");
-		const isFirefox = SOURCE_ROOT.includes("firefox");
-		if (isFirefox) {
-			const xpiFile = path.join(SOURCE_ROOT, `ttv-ab-${version}.xpi`);
-			const sourceZip = path.join(SOURCE_ROOT, `ttv-ab-${version}-source.zip`);
-
-			// Package XPI
-			try {
-				const chromeZipName = `ttv-ab-${version}-chrome-store.zip`;
-				execFileSync("python3", ["tools/package_chrome.py"], {
-					cwd: SOURCE_ROOT,
-					stdio: "inherit",
-				});
-				const chromeZip = path.join(SOURCE_ROOT, chromeZipName);
-				if (fs.existsSync(chromeZip)) {
-					fs.renameSync(chromeZip, xpiFile);
-					console.log(`  Created ${path.basename(xpiFile)}`);
-				}
-			} catch (err) {
-				console.error(`  XPI packaging failed: ${err.message}`);
+		const manifest = JSON.parse(
+			fs.readFileSync(path.join(DIST_DIR, "manifest.json"), "utf8"),
+		);
+		const isFirefox = Array.isArray(manifest.background?.scripts);
+		if (
+			isFirefox ===
+			(typeof manifest.background?.service_worker === "string")
+		) {
+			throw new Error("Manifest must identify exactly one browser background");
+		}
+		const chromeZip = path.join(
+			SOURCE_ROOT,
+			`ttv-ab-${version}-chrome-store.zip`,
+		);
+		const xpiFile = path.join(SOURCE_ROOT, `ttv-ab-${version}.xpi`);
+		const sourceZip = path.join(SOURCE_ROOT, `ttv-ab-${version}-source.zip`);
+		const outputs = isFirefox ? [chromeZip, xpiFile, sourceZip] : [chromeZip];
+		for (const output of outputs) fs.rmSync(output, { force: true });
+		try {
+			execFileSync("python3", ["tools/package_chrome.py"], {
+				cwd: SOURCE_ROOT,
+				stdio: "inherit",
+			});
+			if (!fs.existsSync(chromeZip) || fs.statSync(chromeZip).size === 0) {
+				throw new Error("Extension packaging did not create an archive");
 			}
-
-			// Package Source ZIP
-			try {
+			if (isFirefox) {
+				fs.renameSync(chromeZip, xpiFile);
+				console.log(`  Created ${path.basename(xpiFile)}`);
 				const sourceFiles = [
 					...STATIC_ROOT_FILES,
 					...STATIC_ROOT_DIRECTORIES,
@@ -3580,29 +3591,34 @@ ${bootstrapCall}();
 					"tsconfig.runtime.json",
 					"build.ts",
 					"biome.json",
-					"vitest.config.ts",
+					"vitest.config.mts",
 					"knip.json",
 					".gitignore",
 					".editorconfig",
 				];
-				const zipCmd = `zip -r "${sourceZip}" ${sourceFiles.map((f) => `"${f}"`).join(" ")} -x "node_modules/*" "dist/*" ".git/*" "*.xpi" "*.zip"`;
-				const { execSync } = require("node:child_process");
-				fs.rmSync(sourceZip, { force: true });
-				execSync(zipCmd, { cwd: SOURCE_ROOT });
+				execFileSync(
+					"zip",
+					[
+						"-r",
+						sourceZip,
+						...sourceFiles,
+						"-x",
+						"node_modules/*",
+						"dist/*",
+						".git/*",
+						"*.xpi",
+						"*.zip",
+					],
+					{ cwd: SOURCE_ROOT, stdio: "pipe" },
+				);
+				if (!fs.existsSync(sourceZip) || fs.statSync(sourceZip).size === 0) {
+					throw new Error("Source packaging did not create an archive");
+				}
 				console.log(`  Created ${path.basename(sourceZip)}`);
-			} catch (err) {
-				console.error(`  Source packaging failed: ${err.message}`);
 			}
-		} else {
-			// Package Chrome Store ZIP
-			try {
-				execFileSync("python3", ["tools/package_chrome.py"], {
-					cwd: SOURCE_ROOT,
-					stdio: "inherit",
-				});
-			} catch (err) {
-				console.error(`  Chrome packaging failed: ${err.message}`);
-			}
+		} catch (err) {
+			for (const output of outputs) fs.rmSync(output, { force: true });
+			throw err;
 		}
 	} catch (err) {
 		console.error("\nBuild failed:");

@@ -24,10 +24,17 @@ jobs:
           path: chrome
           fetch-depth: 0
 
+      - name: Resolve Firefox release commit
+        id: firefox
+        working-directory: chrome
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node tools/resolve_firefox_release.cjs >> "$GITHUB_OUTPUT"
+
       - name: Checkout Firefox
         uses: actions/checkout@v4
         with:
-          ref: firefox
+          ref: ${{ steps.firefox.outputs.commit }}
           path: firefox
 
       - name: Setup Node
