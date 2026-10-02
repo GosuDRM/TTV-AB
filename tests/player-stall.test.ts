@@ -1642,7 +1642,7 @@ describe("_checkHiddenCleanLiveStall", () => {
 		expect(tasks).toEqual([]);
 	});
 
-	it("keeps the same-media deadline across alternating paused player elements", () => {
+	it("requires a continuous freeze on the current element after alternating players", () => {
 		const { video: pausedVideo } = makeRangesVideo([[0, 40]], 30);
 		const { video: stalledVideo } = makeRangesVideo([[0, 40]], 30);
 		Object.defineProperty(pausedVideo, "paused", {
@@ -1676,10 +1676,41 @@ describe("_checkHiddenCleanLiveStall", () => {
 				"testchannel",
 				"live:testchannel",
 			),
+		).toBe(false);
+		expect(tasks).toHaveLength(0);
+		nowSpy.mockReturnValue(131001);
+		expect(
+			check()(
+				{ getHTMLVideoElement: () => stalledVideo },
+				"testchannel",
+				"live:testchannel",
+			),
 		).toBe(true);
 		expect(tasks).toHaveLength(1);
 		expect(tasks[0][0]).toBe(true);
 		expect(tasks[0][1]).toBe(false);
+	});
+
+	it("restarts evidence after rewind without replenishing the recovery cooldown", () => {
+		const { video } = makeRangesVideo([[0, 100]], 50);
+		let time = 50;
+		Object.defineProperty(video, "currentTime", { get: () => time });
+		const player = { getHTMLVideoElement: () => video };
+		const now = vi.spyOn(Date, "now");
+		now.mockReturnValue(100000);
+		check()(player, "testchannel", "live:testchannel");
+		now.mockReturnValue(116000);
+		time = 1;
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(false);
+		now.mockReturnValue(131001);
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(true);
+		now.mockReturnValue(132000);
+		time = 0.5;
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(false);
+		now.mockReturnValue(148000);
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(false);
+		now.mockReturnValue(162000);
+		expect(check()(player, "testchannel", "live:testchannel")).toBe(true);
 	});
 });
 

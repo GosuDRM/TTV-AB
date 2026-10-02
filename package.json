@@ -18,7 +18,7 @@
 		"happy-dom": "^20.9.0",
 		"knip": "^6.32.2",
 		"typescript": "^6.0.2",
-		"vitest": "^4.1.5"
+		"vitest": "^4.1.11"
 	},
 	"scripts": {
 		"knip": "knip",

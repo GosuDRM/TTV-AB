@@ -36,6 +36,7 @@ temp/
 .planning/
 tools/*
 !tools/package_chrome.py
+!tools/resolve_firefox_release.cjs
 .openclaw/
 .codex
 AGENTS.md

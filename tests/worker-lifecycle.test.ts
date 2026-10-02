@@ -1,3 +1,4 @@
+import { createCipheriv, createDecipheriv } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
@@ -460,6 +461,76 @@ function startHarnessWorkerRuntime(
 		},
 	};
 }
+
+it.each([false, true])(
+	"preserves encrypted segment bytes in the injected worker (blocking=%s)",
+	async (enabled) => {
+		vi.useFakeTimers();
+		T<(scope: object) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+		const mediaUrl = "https://edge.example/native/index.m3u8";
+		const master = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.64002a,mp4a.40.2"\n${mediaUrl}`;
+		const media = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:100",
+			'#EXT-X-KEY:METHOD=AES-128,URI="https://edge.example/key"',
+			"#EXTINF:2.000,live",
+			"https://edge.example/clean-100.ts",
+			"#EXTINF:2.000,stitched-ad",
+			"https://edge.example/stitched-ad-101.ts",
+			"#EXTINF:2.000,live",
+			"https://edge.example/clean-102.ts",
+		].join("\n");
+		const rawFetch = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === masterUrl) return new Response(master);
+			if (url === mediaUrl) return new Response(media);
+			return new Response("unavailable", { status: 503 });
+		});
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, rawFetch);
+			runtime.deliverBootstrap();
+			Object.assign(runtime.scope.__TTVAB_STATE__ as object, {
+				IsAdStrippingEnabled: enabled,
+				DisableAdSpoofing: true,
+				DisableAutoplayBackup: true,
+				BackupPlayerTypes: [],
+			});
+			const fetch = runtime.scope.fetch as typeof globalThis.fetch;
+			await fetch(masterUrl);
+			const output = await (await fetch(mediaUrl)).text();
+			if (!enabled) {
+				expect(output).toBe(media);
+				return;
+			}
+			expect(output).not.toContain("stitched-ad-101.ts");
+			const ivs = [...output.matchAll(/IV=0x([0-9a-f]{32})/g)];
+			expect(ivs).toHaveLength(2);
+			const key = Buffer.alloc(16, 7);
+			const clear = Buffer.from("worker clean media must remain decryptable");
+			for (const [index, sequence] of [100, 102].entries()) {
+				const iv = Buffer.alloc(16);
+				iv.writeUInt32BE(sequence, 12);
+				const cipher = createCipheriv("aes-128-cbc", key, iv);
+				const encrypted = Buffer.concat([cipher.update(clear), cipher.final()]);
+				const decipher = createDecipheriv(
+					"aes-128-cbc",
+					key,
+					Buffer.from(ivs[index][1], "hex"),
+				);
+				expect(
+					Buffer.concat([decipher.update(encrypted), decipher.final()]),
+				).toEqual(clear);
+			}
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
+		}
+	},
+);
 
 function confirmHarnessWorkerPlayback(
 	worker: { emitMessage: (message: Record<string, unknown>) => void },

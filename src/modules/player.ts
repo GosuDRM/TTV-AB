@@ -218,7 +218,7 @@ const _InAdFreezeState = {
 };
 const _HiddenCleanLiveStallState = {
 	mediaKey: null as string | null,
-	video: null as HTMLMediaElement | null,
+	videoRef: null as WeakRef<HTMLMediaElement> | null,
 	firstFrozenAt: 0,
 	lastCurrentTime: -1,
 	lastActionAt: 0,
@@ -244,7 +244,7 @@ function _resetInAdFreezeState(mediaKey = null) {
 }
 function _resetHiddenCleanLiveStallState(mediaKey = null) {
 	_HiddenCleanLiveStallState.mediaKey = _normalizeMediaKey(mediaKey);
-	_HiddenCleanLiveStallState.video = null;
+	_HiddenCleanLiveStallState.videoRef = null;
 	_HiddenCleanLiveStallState.firstFrozenAt = 0;
 	_HiddenCleanLiveStallState.lastCurrentTime = -1;
 	_HiddenCleanLiveStallState.lastActionAt = 0;
@@ -5441,8 +5441,10 @@ function _capturePlayerPreferenceSnapshot(
 	try {
 		_ensurePlayerPreferenceStorageMonitor();
 		snapshot.__storageVersions = Object.create(null);
+		snapshot.__storageValues = Object.create(null);
 		for (const key of _PLAYER_PREFERENCE_KEYS) {
 			snapshot[key] = localStorage.getItem(key);
+			snapshot.__storageValues[key] = snapshot[key];
 			snapshot.__storageVersions[key] =
 				_PlayerPreferenceStorageState.versions.get(key) || 0;
 		}
@@ -5466,6 +5468,14 @@ function _capturePlayerPreferenceSnapshot(
 			defaultMuted: Boolean(sourceMedia?.defaultMuted),
 			muted: Boolean(sourceMedia?.muted ?? playerCore?.state?.muted),
 			volume: Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : null,
+			videoRef:
+				sourceMedia instanceof HTMLMediaElement
+					? new WeakRef(sourceMedia)
+					: null,
+		};
+		snapshot.__mediaState.lastApplied = {
+			muted: snapshot.__mediaState.muted,
+			volume: snapshot.__mediaState.volume,
 		};
 		snapshot.__playbackContext = {
 			channel: _normalizePlayerChannel(context.channel),
@@ -5508,6 +5518,7 @@ function _restorePlayerMediaPreferenceSnapshot(
 	options: { channel?: string | null; mediaKey?: string | null } = {},
 ) {
 	if (!mediaState || typeof mediaState !== "object") return false;
+	if (mediaState.isCurrent && !mediaState.isCurrent()) return false;
 
 	const safeChannel = _normalizePlayerChannel(options.channel);
 	const safeMediaKey = _normalizeMediaKey(options.mediaKey);
@@ -5518,18 +5529,32 @@ function _restorePlayerMediaPreferenceSnapshot(
 		return false;
 	}
 
-	const { player } = _getPlayerAndState();
-	const media = player?.getHTMLVideoElement?.() || _getPrimaryMediaElement();
+	const media =
+		safeChannel || safeMediaKey
+			? _getPlaybackMediaElementForContext(safeChannel, safeMediaKey)
+			: _getPlayerAndState().player?.getHTMLVideoElement?.() ||
+				_getPrimaryMediaElement();
 	if (!(media instanceof HTMLMediaElement) || !media.isConnected) {
 		return false;
 	}
 
 	try {
+		if (mediaState.videoRef?.deref() === media && mediaState.lastApplied) {
+			if (media.muted !== mediaState.lastApplied.muted) {
+				mediaState.muted = media.muted;
+				mediaState.defaultMuted = media.defaultMuted;
+			}
+			if (media.volume !== mediaState.lastApplied.volume) {
+				mediaState.volume = media.volume;
+			}
+		}
 		media.defaultMuted = Boolean(mediaState.defaultMuted);
 		media.muted = Boolean(mediaState.muted);
 		if (Number.isFinite(mediaState.volume)) {
 			media.volume = Math.min(1, Math.max(0, Number(mediaState.volume)));
 		}
+		mediaState.videoRef = new WeakRef(media);
+		mediaState.lastApplied = { muted: media.muted, volume: media.volume };
 		return true;
 	} catch {
 		return false;
@@ -5541,6 +5566,7 @@ function _restorePlayerPreferenceSnapshot(
 	options: { channel?: string | null; mediaKey?: string | null } = {},
 ) {
 	if (!snapshot || typeof snapshot !== "object") return false;
+	if (snapshot.__isCurrent && !snapshot.__isCurrent()) return false;
 
 	const safeChannel = _normalizePlayerChannel(options.channel);
 	const safeMediaKey = _normalizeMediaKey(options.mediaKey);
@@ -5554,6 +5580,13 @@ function _restorePlayerPreferenceSnapshot(
 	try {
 		for (const key of _PLAYER_PREFERENCE_KEYS) {
 			if (!Object.hasOwn(snapshot, key)) continue;
+			if (
+				snapshot.__storageValues &&
+				Object.hasOwn(snapshot.__storageValues, key) &&
+				localStorage.getItem(key) !== snapshot.__storageValues[key]
+			) {
+				continue;
+			}
 			if (
 				snapshot.__storageVersions &&
 				Object.hasOwn(snapshot.__storageVersions, key) &&
@@ -6173,6 +6206,12 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 				_isActivePictureInPicturePlaybackContext({ MediaKey: taskMediaKey })) &&
 			_isPlaybackRecoveryContextCurrent(taskChannel, taskMediaKey) &&
 			_getPlayerLifecycleCycleStartedAt(taskMediaKey) === reloadCycleStartedAt;
+		if (preferenceSnapshot) {
+			preferenceSnapshot.__isCurrent = isReloadCurrent;
+			if (preferenceSnapshot.__mediaState) {
+				preferenceSnapshot.__mediaState.isCurrent = isReloadCurrent;
+			}
+		}
 		const handleReloadFailure = (error) => {
 			_log(
 				`Player source reload failed (${reason}): ${error?.message ?? String(error)}`,
@@ -6805,13 +6844,15 @@ function _checkHiddenCleanLiveStall(player, channel = null, mediaKey = null) {
 
 	const currentTime = Number(video.currentTime) || 0;
 	const now = Date.now();
-	const videoChanged = _HiddenCleanLiveStallState.video !== video;
-	if (videoChanged) {
-		_HiddenCleanLiveStallState.video = video;
+	const videoChanged = _HiddenCleanLiveStallState.videoRef?.deref() !== video;
+	if (
+		videoChanged ||
+		currentTime < _HiddenCleanLiveStallState.lastCurrentTime
+	) {
+		_HiddenCleanLiveStallState.videoRef = new WeakRef(video);
 		_HiddenCleanLiveStallState.lastCurrentTime = currentTime;
-		if (_HiddenCleanLiveStallState.firstFrozenAt === 0) {
-			_HiddenCleanLiveStallState.firstFrozenAt = now;
-		}
+		_HiddenCleanLiveStallState.firstFrozenAt = now;
+		return false;
 	}
 	if (_isPlayerPaused(player, playerCore, video)) {
 		return false;

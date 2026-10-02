@@ -2960,11 +2960,16 @@ async function _fetchWithTimeout(
 			response.status === 204 ||
 			response.status === 205 ||
 			response.status === 304;
-		return new Response(nullBodyStatus ? null : body, {
+		const bufferedResponse = new Response(nullBodyStatus ? null : body, {
 			status: response.status,
 			statusText: response.statusText,
 			headers: response.headers,
 		});
+		Object.defineProperties(bufferedResponse, {
+			url: { value: response.url },
+			redirected: { value: response.redirected },
+		});
+		return bufferedResponse;
 	} finally {
 		clearTimeout(id);
 		externalSignal?.removeEventListener?.("abort", abortFromExternalSignal);
@@ -3268,7 +3273,11 @@ async function _canReloadNativePlayerAfterAd(
 				_getFallbackResolution(info, "") ||
 				info?.ResolutionList?.[0] ||
 				null;
-			const streamUrl = _getStreamUrl(encM3u8, targetResolution, usherUrl.href);
+			const streamUrl = _getStreamUrl(
+				encM3u8,
+				targetResolution,
+				encRes.url || usherUrl.href,
+			);
 			if (!streamUrl) {
 				_resetNativeRecoveryReadyState(info, true);
 				_markNativeRecoveryProbeFailed(info);
@@ -7243,7 +7252,7 @@ async function _refreshHeldAutoplayBackupPlaylist(
 		if (streamRes.status !== 200) return null;
 		const m3u8 = _absolutizeMediaPlaylistUrls(
 			await streamRes.text(),
-			streamUrl,
+			streamRes.url || streamUrl,
 		);
 		if (
 			!_isBackupSearchContextCurrent(info, backupSearchEpoch, cycleStartedAt) ||
@@ -7363,7 +7372,7 @@ async function _refreshActiveBackupMediaPlaylist(
 		if (streamRes.status !== 200) return null;
 		const m3u8 = _absolutizeMediaPlaylistUrls(
 			await streamRes.text(),
-			streamUrl,
+			streamRes.url || streamUrl,
 		);
 		if (
 			!_isBackupSearchContextCurrent(info, backupSearchEpoch, cycleStartedAt)
@@ -8155,7 +8164,7 @@ async function _searchBackupStream(
 										isFreshM3u8 = false;
 									} else {
 										enc = masterBodyProbe.value;
-										encBaseUrl = usherUrl.href;
+										encBaseUrl = encRes.url || usherUrl.href;
 										activeCacheEntry = {
 											m3u8: enc,
 											baseUrl: encBaseUrl,
@@ -8365,7 +8374,7 @@ async function _searchBackupStream(
 								}
 								const m3u8 = _absolutizeMediaPlaylistUrls(
 									streamBodyProbe.value,
-									streamUrl,
+									streamRes.url || streamUrl,
 								);
 								if (!searchIsCurrent()) {
 									return { type: null, m3u8: null };
