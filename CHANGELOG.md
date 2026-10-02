@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.4] - 2026-10-03
+
+Fixed
+
+- **Playback Preferences** - Preserve newer mute, volume, and quality choices during recovery, and restore PiP audio only to its own stream.
+- **Hidden Playback Recovery** - Require fresh freeze evidence after video replacement or a playback timeline reset.
+- **Playlist Compatibility** - Preserve encrypted clean segments when removing ads and resolve redirected backup playlists correctly.
+- **Build and Release Checks** - Fail builds when packaging fails, select browser packages from the manifest, run the full test suite in CI, and pin Firefox releases to an exact commit.
+- **Development Dependencies** - Update affected development packages to patched versions.
+
 ## [19.0.3] - 2026-10-02
 
 Fixed

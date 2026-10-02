@@ -73,6 +73,14 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 ## 🔔 What's New
 
+### v19.0.4 - 2026-10-03
+
+- **Playback Preferences** - Preserve newer mute, volume, and quality choices during recovery, and restore PiP audio only to its own stream.
+- **Hidden Playback Recovery** - Require fresh freeze evidence after video replacement or a playback timeline reset.
+- **Playlist Compatibility** - Preserve encrypted clean segments when removing ads and resolve redirected backup playlists correctly.
+- **Build and Release Checks** - Fail builds when packaging fails, select browser packages from the manifest, run the full test suite in CI, and pin Firefox releases to an exact commit.
+- **Development Dependencies** - Update affected development packages to patched versions.
+
 ### v19.0.3 - 2026-10-02
 
 - **Playback Handoffs** - Keep clean segments when stream timestamps overlap by up to 50 ms, avoiding unnecessary skips when switching backups or returning to native playback.
@@ -86,10 +94,6 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 - **Empty Player Recovery** - Attempt one player rebuild when previously advancing live playback stays empty, while respecting user pauses and current playback ownership.
 - **Playback Controls After Player Replacement** - Follow the current video when Twitch replaces the player, preventing events from retired videos from changing pause or resume intent.
-
-### v19.0.1 - 2026-09-29
-
-- **Backup Stall Detection** - Require fresh stall evidence when Twitch replaces the video element, avoiding premature backup switches and keeping recovery attempts bounded.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
