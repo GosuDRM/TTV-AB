@@ -149,17 +149,20 @@ afterEach(() => {
 
 describe("popup toggle authority", () => {
 	it.each([undefined, false, null, "true", 1])(
-		"keeps fallback off unless explicitly enabled, including stored value %s",
+		"enables fallback by default while respecting an explicit false value: %s",
 		(value) => {
 			const harness = makeHarness();
 			harness.controller.start();
 			harness.reads[0].finish({ ttvAutoplayBackupEnabled: value });
+			const enabled = value !== false;
 			expect(harness.controller.getSnapshot().values.autoplayBackup).toBe(
-				false,
+				enabled,
 			);
-			expect(harness.controller.write("autoplayBackup", true)).toBe(true);
+			expect(harness.controller.write("autoplayBackup", !enabled)).toBe(true);
 			harness.writes[0].finish(null);
-			expect(harness.controller.getSnapshot().values.autoplayBackup).toBe(true);
+			expect(harness.controller.getSnapshot().values.autoplayBackup).toBe(
+				!enabled,
+			);
 		},
 	);
 
@@ -167,11 +170,11 @@ describe("popup toggle authority", () => {
 		const harness = makeHarness();
 		harness.controller.start();
 		harness.reads[0].finish({
-			ttvAutoplayBackupEnabled: true,
+			ttvAutoplayBackupEnabled: false,
 			ttvAdTimerEnabled: false,
 		});
 		expect(harness.controller.getSnapshot().values).toMatchObject({
-			autoplayBackup: true,
+			autoplayBackup: false,
 			adTimer: false,
 		});
 		expect(harness.writes).toEqual([]);
@@ -265,7 +268,7 @@ describe("popup toggle authority", () => {
 				values: {
 					adblock: false,
 					adSpoofing: false,
-					autoplayBackup: false,
+					autoplayBackup: true,
 					adTimer: true,
 					turbo: false,
 				},
@@ -280,13 +283,13 @@ describe("popup toggle authority", () => {
 		);
 	});
 
-	it("restores fallback off and timer on when their settings are removed", () => {
+	it("restores fallback and timer on when their settings are removed", () => {
 		const harness = makeHarness();
 		harness.controller.start();
 		harness.reads[0].finish({
 			ttvAdblockEnabled: false,
 			ttvAdSpoofingEnabled: false,
-			ttvAutoplayBackupEnabled: true,
+			ttvAutoplayBackupEnabled: false,
 			ttvAdTimerEnabled: false,
 			ttvTurboMode: true,
 		});
@@ -294,7 +297,7 @@ describe("popup toggle authority", () => {
 		harness.controller.applyStorageChanges({
 			ttvAdblockEnabled: { oldValue: false, newValue: undefined },
 			ttvAdSpoofingEnabled: { oldValue: false, newValue: undefined },
-			ttvAutoplayBackupEnabled: { oldValue: true, newValue: undefined },
+			ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
 			ttvAdTimerEnabled: { oldValue: false, newValue: undefined },
 			ttvTurboMode: { oldValue: true, newValue: undefined },
 		});
@@ -302,7 +305,7 @@ describe("popup toggle authority", () => {
 		expect(harness.controller.getSnapshot().values).toEqual({
 			adblock: true,
 			adSpoofing: true,
-			autoplayBackup: false,
+			autoplayBackup: true,
 			adTimer: true,
 			turbo: false,
 		});
@@ -600,7 +603,7 @@ describe("popup toggle authority", () => {
 		}
 		expect(
 			html.match(/<input[^>]+id="autoplayBackupToggle"[^>]*>/)?.[0],
-		).not.toMatch(/\bchecked\b/);
+		).toMatch(/\bchecked\b/);
 		expect(html.match(/<input[^>]+id="adTimerToggle"[^>]*>/)?.[0]).toMatch(
 			/\bchecked\b/,
 		);
@@ -781,7 +784,7 @@ describe("popup setting explanations", () => {
 		const { html, translations } = loadPopupExplanations();
 		const english = translations.en;
 
-		expect(english.autoplayBackupDesc).toContain("Disabled by default.");
+		expect(english.autoplayBackupDesc).toContain("Enabled by default.");
 		expect(english.autoplayBackupDesc).toContain(
 			"fast, ad-free autoplay stream",
 		);
@@ -796,13 +799,13 @@ describe("popup setting explanations", () => {
 			"normal-quality sources are tried first",
 		);
 		expect(english.autoplayBackupWarning).toContain(
-			"If none is clean during a preroll",
+			"If none is clean during a preroll or midroll",
 		);
 		expect(english.autoplayBackupWarning).toContain(
 			"temporary clean low-quality stream",
 		);
 		expect(english.autoplayBackupWarning).toContain(
-			"Midrolls still skip new autoplay backups",
+			"while higher quality is checked",
 		);
 		expect(english.autoplayBackupWarning).not.toMatch(/preview/i);
 		expect(html).toContain(

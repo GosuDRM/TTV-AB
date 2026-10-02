@@ -24,7 +24,7 @@ const BADGE_BACKGROUND_COLOR = "#E0245E";
 const BADGE_TEXT_COLOR = "#FFFFFF";
 const TURBO_MODE_STORAGE_KEY = "ttvTurboMode";
 const WATCH_STATS_SINCE_STORAGE_KEY = "ttvWatchStatsSinceAt";
-const PLAYBACK_DEFAULTS_MIGRATION_KEY = "ttvPlaybackDefaultsV1Applied";
+const PLAYBACK_DEFAULTS_MIGRATION_KEY = "ttvPlaybackDefaultsV2Applied";
 let playbackDefaultsMigration: Promise<void> | null = null;
 let turboModeEnabled = false;
 let turboModeRevision = 0;
@@ -429,11 +429,16 @@ function storageLocalSet(value): Promise<void> {
 function migratePlaybackDefaults() {
 	if (playbackDefaultsMigration) return playbackDefaultsMigration;
 	playbackDefaultsMigration = (async () => {
-		const stored = await storageLocalGet([PLAYBACK_DEFAULTS_MIGRATION_KEY]);
+		const stored = await storageLocalGet([
+			PLAYBACK_DEFAULTS_MIGRATION_KEY,
+			"ttvAdTimerEnabled",
+		]);
 		if (stored[PLAYBACK_DEFAULTS_MIGRATION_KEY] === true) return;
 		await storageLocalSet({
-			ttvAutoplayBackupEnabled: false,
-			ttvAdTimerEnabled: true,
+			ttvAutoplayBackupEnabled: true,
+			...(typeof stored.ttvAdTimerEnabled === "boolean"
+				? {}
+				: { ttvAdTimerEnabled: true }),
 			[PLAYBACK_DEFAULTS_MIGRATION_KEY]: true,
 		});
 	})()

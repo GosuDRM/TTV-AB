@@ -412,9 +412,10 @@ function finishStorageRead(
 
 describe("settings initialization lifecycle", () => {
 	it.each([
-		[{}, false, true],
+		[{}, true, true],
 		[{ ttvAutoplayBackupEnabled: true, ttvAdTimerEnabled: false }, true, false],
-		[{ ttvAutoplayBackupEnabled: "true" }, false, true],
+		[{ ttvAutoplayBackupEnabled: "true" }, true, true],
+		[{ ttvAutoplayBackupEnabled: false }, false, true],
 	])(
 		"seeds defaults or explicit saved choices into the authenticated page bridge: %s",
 		(stored, fallback, timer) => {
@@ -482,7 +483,7 @@ describe("settings initialization lifecycle", () => {
 		Object.assign(g.bridgeState as Record<string, unknown>, {
 			enabled: false,
 			adSpoofingEnabled: false,
-			autoplayBackupEnabled: true,
+			autoplayBackupEnabled: false,
 			adTimerEnabled: false,
 		});
 		const port = makePagePort();
@@ -493,7 +494,7 @@ describe("settings initialization lifecycle", () => {
 			{
 				ttvAdblockEnabled: { oldValue: false, newValue: undefined },
 				ttvAdSpoofingEnabled: { oldValue: false, newValue: undefined },
-				ttvAutoplayBackupEnabled: { oldValue: true, newValue: undefined },
+				ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
 				ttvAdTimerEnabled: { oldValue: false, newValue: undefined },
 			},
 			"local",
@@ -502,13 +503,13 @@ describe("settings initialization lifecycle", () => {
 		expect(g.bridgeState).toMatchObject({
 			enabled: true,
 			adSpoofingEnabled: true,
-			autoplayBackupEnabled: false,
+			autoplayBackupEnabled: true,
 			adTimerEnabled: true,
 		});
 		expect(port.messages).toEqual([
 			{ type: "ttvab-toggle", detail: { enabled: true } },
 			{ type: "ttvab-toggle-ad-spoofing", detail: { enabled: true } },
-			{ type: "ttvab-toggle-autoplay-backup", detail: { enabled: false } },
+			{ type: "ttvab-toggle-autoplay-backup", detail: { enabled: true } },
 			{ type: "ttvab-toggle-ad-timer", detail: { enabled: true } },
 		]);
 	});

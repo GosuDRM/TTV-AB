@@ -740,7 +740,7 @@ function _createPopupToggleController(options) {
 	const values = {
 		adblock: true,
 		adSpoofing: true,
-		autoplayBackup: false,
+		autoplayBackup: true,
 		adTimer: true,
 		turbo: false,
 	};
@@ -804,9 +804,7 @@ function _createPopupToggleController(options) {
 	}
 
 	function normalizeValue(name, value) {
-		return name === "turbo" || name === "autoplayBackup"
-			? value === true
-			: value !== false;
+		return name === "turbo" ? value === true : value !== false;
 	}
 
 	function render() {
