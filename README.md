@@ -34,7 +34,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Removes stale Twitch ad overlays after playback returns
 - ✅ Independent, live-updating controls for Ad Blocking, Ad Spoofing, and Low Quality Fallback
 - ✅ Optional Ad Spoofing to reduce anti-adblock detection
-- ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, with a temporary low-quality bridge available during prerolls
+- ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, with a temporary clean low-quality bridge available during prerolls and midrolls
 - ✅ Optional Ad Break Timer in the stream's top-right corner, enabled by default
 - ✅ Optional Turbo Mode that pauses new statistics and achievements while preserving existing history and all ad-blocking controls
 - ✅ Persistent, live-updating Ads Blocked and Time Saved totals
@@ -65,7 +65,7 @@ TTV AB checks Twitch's HLS playlists before playback and blocks recognized clien
 - Returns to native playback after repeated clean checks for the same stream and break, then restores quality and audio settings
 - Keeps recovery tied to the current player across background tabs and Picture-in-Picture, respecting explicit pauses
 
-**Low Quality Fallback** is off by default, prioritizing normal-quality sources. Prerolls may still use a temporary clean low-quality bridge if those sources fail. Midrolls skip new autoplay backups and may recover more slowly. Enabling the setting allows a clean 360p bridge sooner while higher-quality sources are checked. Other sources may still offer lower qualities.
+**Low Quality Fallback** is on by default, allowing a clean 360p bridge sooner while higher-quality sources are checked. Turning it off prioritizes normal-quality sources; prerolls and midrolls may still use a temporary clean low-quality bridge if those sources fail. Other sources may still offer lower qualities.
 
 **Ad Spoofing** sends Twitch progress and completion signals for blocked ads. Turning it off leaves ad blocking active.
 
