@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 ## 🔔 What's New
 
+### v19.0.6 - 2026-10-03
+
+- **Backup Stall Recovery** - Rotate stalled backups while waiting for ad-end confirmation, instead of continuing to serve the frozen source.
+- **HD Quality Recovery** - Keep verified HD options when a higher quality times out, and retain the full catalog for later checks.
+
 ### v19.0.5 - 2026-10-03
 
 - **Midroll Fallback** - Use a temporary clean low-quality stream when normal-quality backups fail during midrolls, even with Low Quality Fallback off.
@@ -85,15 +90,6 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 - **Playlist Compatibility** - Preserve encrypted clean segments when removing ads and resolve redirected backup playlists correctly.
 - **Build and Release Checks** - Fail builds when packaging fails, select browser packages from the manifest, run the full test suite in CI, and pin Firefox releases to an exact commit.
 - **Development Dependencies** - Update affected development packages to patched versions.
-
-### v19.0.3 - 2026-10-02
-
-- **Playback Handoffs** - Keep clean segments when stream timestamps overlap by up to 50 ms, avoiding unnecessary skips when switching backups or returning to native playback.
-- **Small Buffer Gaps** - Recover across small gaps after playback freezes, avoiding unnecessary pause/play nudges or player reloads.
-- **Backup Recovery Attempts** - Allow all three backup searches before reporting that recovery attempts are exhausted.
-- **Playback Diagnostics** - Include browser details, selected and playing video quality, Twitch Low Latency status, handoff timing, and retained segment counts in Generate Log without exposing private stream links.
-- **Default Settings** - Start with Low Quality Fallback off and Ad Break Timer on. Apply these settings once when updating, then preserve later user choices.
-- **Ad Break Timer** - Show a simpler timer label, such as "Ad break · 1:23".
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
