@@ -11429,7 +11429,7 @@ describe("clean-playback reduced master recovery", () => {
 	});
 
 	it.each(["ad-second-look", "rewound", "empty", "http-error", "stalled-body"])(
-		"does not reuse the retained session when its desired quality is %s",
+		"keeps only independently validated qualities when its desired quality is %s",
 		async (condition) => {
 			const session = await setup();
 			try {
@@ -11455,14 +11455,82 @@ describe("clean-playback reduced master recovery", () => {
 					return result.text();
 				});
 				await vi.advanceTimersByTimeAsync(2500);
-				expect(await response).toBe(session.lowMaster);
+				const output = await response;
+				expect(output).not.toContain(session.variants[0].url);
+				for (const { url } of session.variants.slice(1))
+					expect(output).toContain(url);
 				expect(settledAt).toBeLessThanOrEqual(202500);
-				expect(session.info.UsherBaseUrl).toBe(reducedUrl);
+				expect(session.info.UsherBaseUrl).toBe(masterUrl);
+				expect(session.state.PreferredQualityGroup).toBe("1080p60");
+				expect(session.info._NativePlaybackMaster).toMatchObject({
+					master: session.fullMaster,
+				});
 			} finally {
 				session.restore();
 			}
 		},
 	);
+
+	it.each([
+		["1080p60", "avc1.64002a"],
+		["auto", "avc1.64002a"],
+		["1440p60", "hev1.1.2.L150.90"],
+		["1440p60", "av01.0.12M.08"],
+	])(
+		"keeps validated HD after a timeout and revalidates %s %s on a later master request",
+		async (quality, codec) => {
+			const session = await setup(
+				quality,
+				codec,
+				quality === "1440p60" ? [1440, 1080, 720, 480, 360] : undefined,
+			);
+			try {
+				session.control.probe = (url) => {
+					if (url !== session.variants[0].url) return null;
+					const response = new Response(playlist(600));
+					vi.spyOn(response, "arrayBuffer").mockImplementation(
+						() => new Promise(() => {}),
+					);
+					return response;
+				};
+				const first = session.fetch(reducedUrl).then((result) => result.text());
+				await vi.advanceTimersByTimeAsync(2500);
+				const output = await first;
+				expect(output).toContain(session.variants[1].url);
+				expect(output).not.toContain(session.variants[0].url);
+				session.control.probing = false;
+				await session.fetch(session.variants[1].url);
+				session.control.probing = true;
+				session.control.probe = null;
+				const next = session.fetch(reducedUrl).then((result) => result.text());
+				await vi.advanceTimersByTimeAsync(2500);
+				const restored = await next;
+				for (const { url } of session.variants) expect(restored).toContain(url);
+				expect(session.state.PreferredQualityGroup).toBe(quality);
+				expect(session.control.maxInFlight).toBeLessThanOrEqual(3);
+			} finally {
+				session.restore();
+			}
+		},
+	);
+
+	it("retains the incoming master when no verified quality improves its options", async () => {
+		const session = await setup();
+		try {
+			session.control.probe = (url) =>
+				session.variants.slice(0, 3).some((variant) => variant.url === url)
+					? new Response(playlist(600, true))
+					: null;
+			const response = session
+				.fetch(reducedUrl)
+				.then((result) => result.text());
+			await vi.advanceTimersByTimeAsync(2500);
+			expect(await response).toBe(session.lowMaster);
+			expect(session.info.UsherBaseUrl).toBe(reducedUrl);
+		} finally {
+			session.restore();
+		}
+	});
 
 	it("omits ad-marked optional qualities and keeps the responsive clean choices within the deadline", async () => {
 		const session = await setup();
