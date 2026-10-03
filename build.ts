@@ -1231,6 +1231,11 @@ function validateSharedDefinitions() {
 
 	const requiredInjectedPairs = [
 		{
+			consumer: "_processM3U8Core",
+			helper: "_isBackupPlayerRetryCoolingDown",
+			source: processorSource,
+		},
+		{
 			consumer: "_stripAds",
 			helper: "_parseAttrs",
 			source: parserSource,

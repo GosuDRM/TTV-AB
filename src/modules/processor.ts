@@ -6727,15 +6727,47 @@ async function _processM3U8Core(
 			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
 			const backupIsFromCurrentCycle =
 				Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
+			const stallRequestedAt =
+				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
+			const stalledDuringWait = Boolean(
+				stallRequestedAt > 0 &&
+					stallRequestedAt <= Date.now() &&
+					stallRequestedAt >=
+						Math.max(
+							Number(info.VisibleAdStartedAt) || 0,
+							Number(info._LastBackupSearchCompletedAt) || 0,
+						) &&
+					_normalizeMediaKey(__TTVAB_STATE__.CurrentAdMediaKey) ===
+						info.MediaKey &&
+					_normalizeMediaKey(__TTVAB_STATE__.PinnedBackupPlayerMediaKey) ===
+						info.MediaKey,
+			);
+			if (stalledDuringWait) {
+				__TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
+				const stalledType =
+					info.ActiveBackupPlayerType || info.LastCleanBackupPlayerType || null;
+				if (stalledType) {
+					_markBackupPlayerRetryCooldown(info, stalledType, "stalled");
+					_log(
+						`[Trace] Ad-end wait backup ${stalledType} stalled; cooling down and rotating to next type`,
+						"warning",
+					);
+				}
+			}
 			const foregroundQualityProbeAt =
 				_getPendingForegroundQualityProbeAt(info);
-			if (info.LastCleanBackupM3U8 && backupAgeMs >= 900) {
-				const refreshed = await _awaitM3U8RequestContext(
-					_refreshActiveBackupMediaPlaylist(info, realFetch),
-					info,
-					requestAdContext,
-					requestSignal,
-				);
+			if (
+				info.LastCleanBackupM3U8 &&
+				(stalledDuringWait || backupAgeMs >= 900)
+			) {
+				const refreshed = stalledDuringWait
+					? null
+					: await _awaitM3U8RequestContext(
+							_refreshActiveBackupMediaPlaylist(info, realFetch),
+							info,
+							requestAdContext,
+							requestSignal,
+						);
 				if (refreshed) {
 					if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
 						_startPendingBackupQualityProbe(
@@ -6748,7 +6780,7 @@ async function _processM3U8Core(
 					info.IsUsingBackupStream = true;
 					return refreshed;
 				}
-				if (backupIsFromCurrentCycle) {
+				if (stalledDuringWait || backupIsFromCurrentCycle) {
 					try {
 						const refreshedBackup = await _awaitM3U8RequestContext(
 							_findBackupStream(info, realFetch, 0, res),
@@ -6756,6 +6788,8 @@ async function _processM3U8Core(
 							requestAdContext,
 							requestSignal,
 						);
+						if (stalledDuringWait)
+							info._LastBackupSearchCompletedAt = Date.now();
 						if (refreshedBackup?.m3u8) {
 							info.IsUsingBackupStream = true;
 							if (refreshedBackup.type) {
@@ -6777,8 +6811,13 @@ async function _processM3U8Core(
 				}
 			}
 			if (
+				!stalledDuringWait &&
 				info.LastCleanBackupM3U8 &&
 				backupIsFromCurrentCycle &&
+				!_isBackupPlayerRetryCoolingDown(
+					info,
+					info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType,
+				) &&
 				backupAgeMs >= 0 &&
 				backupAgeMs < 900
 			) {

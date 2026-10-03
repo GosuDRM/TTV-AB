@@ -1123,7 +1123,6 @@ function _hookWorkerFetch() {
 					saved.mediaKey === mediaKey &&
 					saved.pageGeneration ===
 						(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) &&
-					saved.master === info.EncodingsM3U8 &&
 					saved.masterUrl === info.UsherBaseUrl &&
 					saved.observedAt > 0 &&
 					saved.observedAt <= Date.now() &&
@@ -1188,7 +1187,17 @@ function _hookWorkerFetch() {
 				codecFamily,
 			);
 			assertRequestCurrent();
-			if (!isCurrent() || !validated?.playlistUrls.includes(target.Url))
+			if (
+				!isCurrent() ||
+				!validated?.playlistUrls.some((url) =>
+					saved.resolutionList.some(
+						(entry) =>
+							entry.Url === url &&
+							Number(String(entry.Resolution || "").split("x")[1]) >
+								reducedHeight,
+					),
+				)
+			)
 				return null;
 			return { master: validated.master, masterUrl: saved.masterUrl };
 		} catch {
@@ -2234,14 +2243,6 @@ function _hookWorkerFetch() {
 						encodings,
 						recoveredNativeMaster?.masterUrl || url,
 					);
-					if (recoveredNativeMaster) {
-						info._NativePlaybackMaster = {
-							...info._NativePlaybackMaster,
-							master: info.EncodingsM3U8,
-							masterUrl: info.UsherBaseUrl,
-							resolutionList: info.ResolutionList.slice(),
-						};
-					}
 					commitMasterRequest(requestMediaKey, requestSequence);
 					info.LastActivityAt = Date.now();
 

@@ -146,6 +146,7 @@ function setupEmergencyBridge(roll = "preroll") {
 	];
 	const control = {
 		roll,
+		delayMs: 500,
 		csai: false,
 		normalPlayerType: "",
 		normalClean: false,
@@ -160,7 +161,7 @@ function setupEmergencyBridge(roll = "preroll") {
 		if (url.pathname.endsWith(".ts")) return new Response("");
 		requests.push(String(input));
 		maxInFlight = Math.max(maxInFlight, ++inFlight);
-		await new Promise((resolve) => setTimeout(resolve, 500));
+		await new Promise((resolve) => setTimeout(resolve, control.delayMs));
 		inFlight--;
 		if (url.hostname === "gql.twitch.tv") {
 			const type = JSON.parse(String(options?.body)).variables.playerType;
@@ -310,6 +311,164 @@ describe.each(["preroll", "midroll"])(
 			expect(output).not.toContain("/autoplay/360/");
 			expect(output).not.toContain("stitched-ad");
 			expect(output).toContain("__ttvab_empty_hold_segment.ts");
+		});
+
+		it.each([100, 2000])(
+			"rotates a stalled backup during ad-end confirmation with a %s ms cache",
+			async (cacheAge) => {
+				const f = setupEmergencyBridge(roll);
+				f.control.normalClean = true;
+				const initial = f.poll();
+				await vi.advanceTimersByTimeAsync(1500);
+				expect(await initial).toContain("/site/1080/");
+				await vi.advanceTimersByTimeAsync(cacheAge);
+				f.state.BackupSearchForceRefreshAt = Date.now();
+				const recovery = f.context._processM3U8(
+					nativeUrl(1080),
+					media("native", 1080, 701),
+					f.fetch,
+				);
+				await vi.advanceTimersByTimeAsync(2000);
+				const output = await recovery;
+				expect(output).toContain("/embed/1080/");
+				expect(output).not.toContain("/site/1080/");
+				expect(output).not.toContain("stitched-ad");
+				expect(f.tokens).toEqual(["site", "embed"]);
+				expect(f.state.BackupSearchForceRefreshAt).toBe(0);
+				expect(f.info.FailedBackupPlayerTypes.has("site")).toBe(true);
+				expect(f.info.IsShowingAd).toBe(true);
+				expect(f.maxInFlight()).toBe(1);
+			},
+		);
+
+		it.each(["none", "old-cycle", "newer-selection", "other-media", "future"])(
+			"keeps a healthy backup during ad-end confirmation with a %s rotation request",
+			async (condition) => {
+				const f = setupEmergencyBridge(roll);
+				f.control.normalClean = true;
+				const initial = f.poll();
+				await vi.advanceTimersByTimeAsync(1500);
+				expect(await initial).toContain("/site/1080/");
+				await vi.advanceTimersByTimeAsync(2000);
+				f.state.BackupSearchForceRefreshAt = Date.now();
+				if (condition === "none") f.state.BackupSearchForceRefreshAt = 0;
+				if (condition === "old-cycle")
+					f.state.BackupSearchForceRefreshAt = f.info.VisibleAdStartedAt - 1;
+				if (condition === "newer-selection")
+					f.state.BackupSearchForceRefreshAt =
+						f.info._LastBackupSearchCompletedAt - 1;
+				if (condition === "other-media")
+					f.state.PinnedBackupPlayerMediaKey = "live:otherchannel";
+				if (condition === "future")
+					f.state.BackupSearchForceRefreshAt = Date.now() + 10000;
+				const response = f.context._processM3U8(
+					nativeUrl(1080),
+					media("native", 1080, 701),
+					f.fetch,
+				);
+				await vi.advanceTimersByTimeAsync(2000);
+				expect(await response).toContain("/site/1080/");
+				expect(f.tokens).toEqual(["site"]);
+				expect(f.info.FailedBackupPlayerTypes.has("site")).toBe(false);
+			},
+		);
+
+		it.each([true, false])(
+			"uses only clean replacement media during ad-end stall rotation with autoplay clean: %s",
+			async (autoplayClean) => {
+				const f = setupEmergencyBridge(roll);
+				f.control.normalClean = true;
+				const initial = f.poll();
+				await vi.advanceTimersByTimeAsync(1500);
+				expect(await initial).toContain("/site/1080/");
+				await vi.advanceTimersByTimeAsync(100);
+				f.control.normalClean = false;
+				f.control.autoplayClean = autoplayClean;
+				f.state.BackupSearchForceRefreshAt = Date.now();
+				const response = f.context._processM3U8(
+					nativeUrl(1080),
+					media("native", 1080, 701),
+					f.fetch,
+				);
+				await vi.advanceTimersByTimeAsync(10000);
+				const output = await response;
+				expect(output).not.toContain("/site/1080/");
+				expect(output).not.toContain("stitched-ad");
+				expect(output).toContain(
+					autoplayClean ? "/autoplay/360/" : "__ttvab_empty_hold_segment.ts",
+				);
+				if (autoplayClean) expect(f.info.HevcReloadPendingAfterHold).toBe(true);
+				expect(f.state.BackupSearchForceRefreshAt).toBe(0);
+				expect(f.maxInFlight()).toBe(1);
+			},
+		);
+
+		it.each(["abort", "navigation", "new-cycle"])(
+			"does not serve a delayed ad-end stall replacement after %s",
+			async (condition) => {
+				const f = setupEmergencyBridge(roll);
+				f.control.normalClean = true;
+				const initial = f.poll();
+				await vi.advanceTimersByTimeAsync(1500);
+				expect(await initial).toContain("/site/1080/");
+				await vi.advanceTimersByTimeAsync(100);
+				f.state.BackupSearchForceRefreshAt = Date.now();
+				const controller = new AbortController();
+				const response = f.context
+					._processM3U8(
+						nativeUrl(1080),
+						media("native", 1080, 701),
+						f.fetch,
+						controller.signal,
+					)
+					.catch((error: Error) => error);
+				await vi.advanceTimersByTimeAsync(500);
+				if (condition === "abort") controller.abort();
+				if (condition === "navigation") {
+					f.state.PageMediaKey = "live:otherchannel";
+					f.state.PagePlaybackContextGeneration++;
+				}
+				if (condition === "new-cycle") {
+					f.context._resetStreamAdState(f.info);
+					f.info.VisibleAdStartedAt = Date.now();
+				}
+				await vi.advanceTimersByTimeAsync(2000);
+				if (condition === "navigation") {
+					expect(await response).toContain("__ttvab_empty_hold_segment.ts");
+					expect(f.info.LastCleanBackupPlayerType).toBe("site");
+				} else {
+					expect(await response).toMatchObject({ name: "AbortError" });
+				}
+			},
+		);
+
+		it("does not replay the stalled backup on the next clean poll after replacements fail quickly", async () => {
+			const f = setupEmergencyBridge(roll);
+			f.control.normalClean = true;
+			const initial = f.poll();
+			await vi.advanceTimersByTimeAsync(1500);
+			expect(await initial).toContain("/site/1080/");
+			await vi.advanceTimersByTimeAsync(100);
+			f.control.normalClean = false;
+			f.control.autoplayClean = false;
+			f.control.delayMs = 0;
+			f.state.BackupSearchForceRefreshAt = Date.now();
+			const poll = () =>
+				f.context._processM3U8(
+					nativeUrl(1080),
+					media("native", 1080, 701),
+					f.fetch,
+				);
+			const first = poll();
+			await vi.advanceTimersByTimeAsync(50);
+			expect(await first).toContain("__ttvab_empty_hold_segment.ts");
+			const next = poll();
+			await vi.advanceTimersByTimeAsync(50);
+			const output = await next;
+			expect(output).not.toContain("/site/1080/");
+			expect(output).not.toContain("stitched-ad");
+			expect(output).toContain("__ttvab_empty_hold_segment.ts");
+			expect(f.maxInFlight()).toBe(1);
 		});
 
 		it("refreshes the 360p bridge through two clean HD checks and promotes without reloading", async () => {
