@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.6] - 2026-10-03
+
+Fixed
+
+- **Backup Stall Recovery** - Rotate stalled backups while waiting for ad-end confirmation, instead of continuing to serve the frozen source.
+- **HD Quality Recovery** - Keep verified HD options when a higher quality times out, and retain the full catalog for later checks.
+
 ## [19.0.5] - 2026-10-03
 
 Fixed
