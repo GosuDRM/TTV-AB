@@ -73,6 +73,13 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 ## 🔔 What's New
 
+### v19.0.7 - 2026-10-05
+
+- **HD Quality Recovery** - Fix a recovery path that could leave only low-quality options after later ad breaks.
+- **Player Lookup** - Stop searching once the player and playback state are found, while preserving fallback state and player replacement handling.
+- **Default Settings** - Disable Low Quality Fallback on every install and update, then preserve later user choices.
+- **Support Button** - Center the Support the Developer button label.
+
 ### v19.0.6 - 2026-10-03
 
 - **Backup Stall Recovery** - Rotate stalled backups while waiting for ad-end confirmation, instead of continuing to serve the frozen source.
@@ -82,14 +89,6 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 - **Midroll Fallback** - Use a temporary clean low-quality stream when normal-quality backups fail during midrolls, even with Low Quality Fallback off.
 - **Default Settings** - Enable Low Quality Fallback for new installs and once on update, then preserve later user choices.
-
-### v19.0.4 - 2026-10-03
-
-- **Playback Preferences** - Preserve newer mute, volume, and quality choices during recovery, and restore PiP audio only to its own stream.
-- **Hidden Playback Recovery** - Require fresh freeze evidence after video replacement or a playback timeline reset.
-- **Playlist Compatibility** - Preserve encrypted clean segments when removing ads and resolve redirected backup playlists correctly.
-- **Build and Release Checks** - Fail builds when packaging fails, select browser packages from the manifest, run the full test suite in CI, and pin Firefox releases to an exact commit.
-- **Development Dependencies** - Update affected development packages to patched versions.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
