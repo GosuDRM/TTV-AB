@@ -8325,10 +8325,14 @@ function _hookWorker() {
 
 const _blockedVodAdCountExpirations = new Map();
 
-function _getVodAdRequest(urlStr, mediaKey) {
+function _getVodAdRequest(urlStr, mediaKeyOrResolver) {
 	if (__TTVAB_STATE__.IsAdStrippingEnabled !== true) return null;
-	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
-	if (!normalizedMediaKey?.startsWith("vod:")) return null;
+	const resolveMediaKey =
+		typeof mediaKeyOrResolver === "function" ? mediaKeyOrResolver : null;
+	let normalizedMediaKey = resolveMediaKey
+		? null
+		: _normalizeMediaKey(mediaKeyOrResolver);
+	if (!resolveMediaKey && !normalizedMediaKey?.startsWith("vod:")) return null;
 	try {
 		const parsedUrl = new URL(urlStr);
 		const isKnownAdOrigin =
@@ -8339,6 +8343,10 @@ function _getVodAdRequest(urlStr, mediaKey) {
 			parsedUrl.pathname === "/ads" ||
 			parsedUrl.pathname === "/ads/format";
 		if (!isKnownAdOrigin || !isKnownAdPath) return null;
+		if (resolveMediaKey) {
+			normalizedMediaKey = _normalizeMediaKey(resolveMediaKey());
+			if (!normalizedMediaKey?.startsWith("vod:")) return null;
+		}
 		const sessionID = parsedUrl.searchParams.get("sid") || null;
 		return {
 			mediaKey: normalizedMediaKey,
@@ -8439,7 +8447,7 @@ function _hookMainFetch() {
 				String(method || "")
 					.trim()
 					.toUpperCase() === "GET"
-					? _getVodAdRequest(url, _getPageVodAdMediaKey())
+					? _getVodAdRequest(url, _getPageVodAdMediaKey)
 					: null;
 			if (blockedRequest) {
 				_recordBlockedVodAdRequest(blockedRequest);
@@ -8612,10 +8620,7 @@ function _hookMainFetch() {
 							? url.method
 							: "GET";
 				if (requestMethod.trim().toUpperCase() === "GET") {
-					blockedVodAdRequest = _getVodAdRequest(
-						urlStr,
-						_getPageVodAdMediaKey(),
-					);
+					blockedVodAdRequest = _getVodAdRequest(urlStr, _getPageVodAdMediaKey);
 				}
 			}
 			if (blockedVodAdRequest) {

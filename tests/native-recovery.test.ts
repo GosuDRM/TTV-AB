@@ -335,7 +335,7 @@ async function setupReducedNativeMaster(
 
 async function setupRefreshedNativeMaster(
 	enhancedCodec: string | null = null,
-	reducedRefresh = false,
+	reducedRefresh: boolean | "unavailable" = false,
 ) {
 	const fixture = await setupReducedNativeMaster(
 		enhancedCodec,
@@ -347,18 +347,19 @@ async function setupRefreshedNativeMaster(
 	const { info, fetch } = fixture;
 	const originalFetch = fetch.getMockImplementation();
 	if (!originalFetch) throw new Error("Missing native fetch fixture");
-	fetch.mockImplementation(async (input: string | URL) =>
-		String(input) === masterUrl
-			? new Response(
-					reducedRefresh
-						? reducedMaster
-						: info._NativePlaybackMaster.master.replaceAll(
-								"token=owned",
-								"token=rotated",
-							),
-				)
-			: originalFetch(input),
-	);
+	fetch.mockImplementation(async (input: string | URL) => {
+		if (String(input) !== masterUrl) return originalFetch(input);
+		if (reducedRefresh === "unavailable")
+			return new Response(null, { status: 403 });
+		return new Response(
+			reducedRefresh
+				? reducedMaster
+				: info._NativePlaybackMaster.master.replaceAll(
+						"token=owned",
+						"token=rotated",
+					),
+		);
+	});
 	return fixture;
 }
 
@@ -474,6 +475,49 @@ describe("owned native recovery after a codec fallback", () => {
 	);
 
 	it.each(
+		[null, hevc, "av01.0.12M.08,mp4a.40.2"].flatMap((codec) =>
+			["http-error", "network-error"].map((failure) => ({ codec, failure })),
+		),
+	)(
+		"restores live-validated HD after the old master has $failure with codec=$codec",
+		async ({ codec, failure }) => {
+			const { context, info, state, fetch, target, serve, restored } =
+				await setupRefreshedNativeMaster(codec);
+			state.DisableAutoplayBackup = true;
+			state.PreferredQualityGroup = codec ? "1440p60" : "1080p60";
+			const saved = info._NativePlaybackMaster;
+			const originalFetch = fetch.getMockImplementation();
+			if (!originalFetch) throw new Error("Missing native fetch fixture");
+			fetch.mockImplementation(async (input: string | URL) => {
+				if (String(input) !== masterUrl) return originalFetch(input);
+				if (failure === "network-error") throw new TypeError("Failed to fetch");
+				return new Response(null, { status: 403 });
+			});
+			for (let index = 0; index < 24 && !restored(); index++)
+				await serve(false, reducedNativeUrl);
+			expect(info._PendingPostAdNativeMaster?.playlistUrl).toBe(
+				codec ? enhancedUrl : nativeUrl,
+			);
+			expect(
+				target.mock.calls.some(
+					([url]) => url === (codec ? enhancedUrl : nativeUrl),
+				),
+			).toBe(true);
+			const rebuilt = await (await context.fetch(reducedMasterUrl)).text();
+			for (const entry of saved.resolutionList)
+				expect(rebuilt).toContain(entry.Url);
+			expect(rebuilt).not.toContain("token=reduced");
+			expect(restored()).toMatchObject({
+				requiresReload: true,
+				refreshAccessToken: false,
+			});
+			expect(
+				fetch.mock.calls.filter(([url]) => String(url) === masterUrl),
+			).toHaveLength(2);
+		},
+	);
+
+	it.each(
 		["ad", "stopped", "http-error"].flatMap((failure) =>
 			["1440p60", "auto"].map((quality) => ({ failure, quality })),
 		),
@@ -561,7 +605,10 @@ describe("owned native recovery after a codec fallback", () => {
 			"rewound",
 			"http-error",
 		].flatMap((failure) =>
-			[false, true].map((reducedRefresh) => ({ failure, reducedRefresh })),
+			([false, true, "unavailable"] as const).map((reducedRefresh) => ({
+				failure,
+				reducedRefresh,
+			})),
 		),
 	)(
 		"rejects retained media $failure with reduced refresh=$reducedRefresh",
@@ -613,7 +660,7 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 
-	it.each([false, true])(
+	it.each([false, true, "unavailable"] as const)(
 		"keeps the backup when revalidated HD stops advancing with reduced refresh=%s",
 		async (reducedRefresh) => {
 			const { context, info, fetch, target, serve, restored } =
@@ -646,7 +693,10 @@ describe("owned native recovery after a codec fallback", () => {
 			"abort",
 			"reset",
 		].flatMap((reason) =>
-			[false, true].map((reducedRefresh) => ({ reason, reducedRefresh })),
+			([false, true, "unavailable"] as const).map((reducedRefresh) => ({
+				reason,
+				reducedRefresh,
+			})),
 		),
 	)(
 		"discards retained media after $reason changes with reduced refresh=$reducedRefresh",
@@ -693,6 +743,83 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 
+	it.each([
+		{ failure: "timeout", latency: 500, recovers: true },
+		{ failure: "stalled-body", latency: 500, recovers: true },
+		{ failure: "timeout", latency: 800, recovers: false },
+	])(
+		"reserves time for both HD checks after master $failure with $latency ms media requests",
+		async ({ failure, latency, recovers }) => {
+			const { context, info, fetch, target } =
+				await setupRefreshedNativeMaster();
+			const saved = info._NativePlaybackMaster;
+			const now = Date.now();
+			vi.useFakeTimers();
+			vi.setSystemTime(now);
+			context.Date = Date;
+			context.setTimeout = setTimeout;
+			context.clearTimeout = clearTimeout;
+			const originalFetch = fetch.getMockImplementation();
+			if (!originalFetch) throw new Error("Missing native fetch fixture");
+			let masterSignal: AbortSignal | undefined;
+			let releaseMaster!: () => void;
+			fetch.mockImplementation(
+				async (input: string | URL, options?: RequestInit) => {
+					if (String(input) !== masterUrl) return originalFetch(input);
+					masterSignal = options?.signal || undefined;
+					if (failure === "stalled-body") {
+						const response = new Response(saved.master);
+						vi.spyOn(response, "arrayBuffer").mockImplementation(
+							() =>
+								new Promise<ArrayBuffer>((resolve) => {
+									releaseMaster = () => resolve(new ArrayBuffer(0));
+								}),
+						);
+						return response;
+					}
+					return new Promise<Response>((resolve) => {
+						releaseMaster = () => resolve(new Response(saved.master));
+					});
+				},
+			);
+			let sequence = 3000;
+			target.mockImplementation(
+				() =>
+					new Promise<Response>((resolve) =>
+						setTimeout(
+							() => resolve(new Response(playlist(++sequence, "native"))),
+							latency,
+						),
+					),
+			);
+			let settledAt = 0;
+			const refresh = context
+				._refreshNativeRecoveryMaster(info, fetch)
+				.then(() => {
+					settledAt = Date.now();
+				});
+			await vi.advanceTimersByTimeAsync(2500);
+			await refresh;
+			expect(masterSignal?.aborted).toBe(true);
+			expect(settledAt - now).toBeLessThanOrEqual(2500);
+			expect(target).toHaveBeenCalledTimes(2);
+			if (recovers) {
+				expect(info._NativePlaybackMaster).toMatchObject({
+					master: saved.master,
+					refreshedCycleStartedAt: info.VisibleAdStartedAt,
+				});
+			} else expect(info._NativePlaybackMaster).toBe(saved);
+			const result = info._NativePlaybackMaster;
+			releaseMaster();
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(info._NativePlaybackMaster).toBe(result);
+			await context._refreshNativeRecoveryMaster(info, fetch);
+			expect(
+				fetch.mock.calls.filter(([url]) => String(url) === masterUrl),
+			).toHaveLength(2);
+		},
+	);
+
 	it.each([500, 900])(
 		"bounds the master and both retained media checks to one deadline with %s ms requests",
 		async (latency) => {
@@ -702,6 +829,9 @@ describe("owned native recovery after a codec fallback", () => {
 			const now = Date.now() + 2;
 			vi.useFakeTimers();
 			vi.setSystemTime(now);
+			context.Date = Date;
+			context.setTimeout = setTimeout;
+			context.clearTimeout = clearTimeout;
 			const originalFetch = fetch.getMockImplementation();
 			if (!originalFetch) throw new Error("Missing native fetch fixture");
 			fetch.mockImplementation(async (url: string | URL) => {
@@ -728,7 +858,7 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 
-	it.each([false, true])(
+	it.each([false, true, "unavailable"] as const)(
 		"expires retained media validation when the second body stalls with reduced refresh=%s",
 		async (reducedRefresh) => {
 			const { context, info, fetch, target } = await setupRefreshedNativeMaster(
@@ -754,14 +884,7 @@ describe("owned native recovery after a codec fallback", () => {
 		},
 	);
 
-	it.each([
-		"http-error",
-		"empty-catalog",
-		"changed-codec",
-		"unknown-codec",
-		"invalid",
-		"ad",
-	])(
+	it.each(["empty-catalog", "changed-codec", "unknown-codec", "invalid", "ad"])(
 		"rejects a retained master refresh with %s without adopting its URLs",
 		async (failure) => {
 			const { context, info, fetch } = await setupReducedNativeMaster(
@@ -774,8 +897,6 @@ describe("owned native recovery after a codec fallback", () => {
 			if (!originalFetch) throw new Error("Missing native fetch fixture");
 			fetch.mockImplementation(async (input: string | URL) => {
 				if (String(input) !== masterUrl) return originalFetch(input);
-				if (failure === "http-error")
-					return new Response(null, { status: 403 });
 				return new Response(
 					failure === "empty-catalog"
 						? "#EXTM3U"

@@ -435,7 +435,7 @@ function migratePlaybackDefaults() {
 		]);
 		if (stored[PLAYBACK_DEFAULTS_MIGRATION_KEY] === true) return;
 		await storageLocalSet({
-			ttvAutoplayBackupEnabled: true,
+			ttvAutoplayBackupEnabled: false,
 			...(typeof stored.ttvAdTimerEnabled === "boolean"
 				? {}
 				: { ttvAdTimerEnabled: true }),
@@ -1273,6 +1273,9 @@ if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
 chrome.runtime.onInstalled.addListener((details) => {
 	if (details.reason === "install" || details.reason === "update") {
 		void migratePlaybackDefaults();
+		void storageLocalSet({ ttvAutoplayBackupEnabled: false }).catch((error) => {
+			console.error("[TTV AB] Install/update fallback disable failed:", error);
+		});
 	}
 });
 

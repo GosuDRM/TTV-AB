@@ -830,10 +830,14 @@ function _findReactRoot() {
 	return null;
 }
 
-function _findReactNodesByConstraints(root, constraints) {
+function _findReactNodesByConstraints(
+	root,
+	constraints,
+	requiredCount = constraints.length,
+) {
 	const found = new Array(constraints.length).fill(null);
 	if (!root) return found;
-	let remaining = constraints.length;
+	let remaining = requiredCount;
 
 	function visit(node) {
 		const stateNode = node.stateNode;
@@ -841,7 +845,7 @@ function _findReactNodesByConstraints(root, constraints) {
 			for (let i = 0; i < constraints.length; i++) {
 				if (found[i] === null && constraints[i](stateNode)) {
 					found[i] = stateNode;
-					remaining--;
+					if (i < requiredCount) remaining--;
 					if (remaining === 0) return true;
 				}
 			}
@@ -863,13 +867,17 @@ function _getPlayerAndState() {
 	if (!reactRoot) return { player: null, state: null };
 
 	const [playerWrapper, directState, fallbackStateWrapper] =
-		_findReactNodesByConstraints(reactRoot, [
-			(node) => node.setPlayerActive && node.props?.mediaPlayerInstance,
-			(node) => node.setSrc && node.setInitialPlaybackSettings,
-			(node) =>
-				node.state?.videoPlayerInstance &&
-				node.state.videoPlayerInstance.playerMode !== undefined,
-		]);
+		_findReactNodesByConstraints(
+			reactRoot,
+			[
+				(node) => node.setPlayerActive && node.props?.mediaPlayerInstance,
+				(node) => node.setSrc && node.setInitialPlaybackSettings,
+				(node) =>
+					node.state?.videoPlayerInstance &&
+					node.state.videoPlayerInstance.playerMode !== undefined,
+			],
+			2,
+		);
 
 	const player = playerWrapper?.props?.mediaPlayerInstance || null;
 	let playerState = directState;

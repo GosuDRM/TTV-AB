@@ -7405,6 +7405,84 @@ describe("MAIN VOD ad request guard", () => {
 		(g._blockedVodAdCountExpirations as Map<string, number>).clear();
 	});
 
+	it.each(["live", "vod"])(
+		"avoids player lookup for unrelated, disabled, and non-GET requests during %s playback",
+		async (mediaType) => {
+			const originalFetch = window.fetch;
+			const originalRealFetch = window.__TTVAB_REAL_FETCH__;
+			const originalOpen = window.XMLHttpRequest.prototype.open;
+			const originalPlayer = g._getPlayerAndState;
+			const originalIncrement = g._incrementAdsBlocked;
+			const nativeFetch = vi.fn(async () => new Response("native"));
+			const nativeOpen = vi.fn();
+			const getPlayer = vi.fn(() => ({ player: null, state: null }));
+			const increment = vi.fn();
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaType: mediaType,
+				PageMediaKey:
+					mediaType === "vod" ? "vod:2827992810" : "live:testchannel",
+				PageVodID: mediaType === "vod" ? "2827992810" : null,
+				PageChannel: mediaType === "live" ? "testchannel" : null,
+			});
+			window.history.replaceState(
+				null,
+				"",
+				mediaType === "vod" ? "/videos/2827992810" : "/testchannel",
+			);
+			window.fetch = nativeFetch as typeof fetch;
+			window.XMLHttpRequest.prototype.open = nativeOpen;
+			g._getPlayerAndState = getPlayer;
+			g._incrementAdsBlocked = increment;
+
+			try {
+				T<() => void>("_hookMainFetch")();
+				const unrelatedUrls = [
+					"https://example.invalid/segment.ts",
+					"https://edge.ads.twitch.tv.example/ads",
+					"https://edge.ads.twitch.tv:8443/ads",
+					"http://edge.ads.twitch.tv/ads",
+					"https://edge.ads.twitch.tv/ads/extra",
+				];
+				for (let index = 0; index < 100; index++) {
+					const url = unrelatedUrls[index % unrelatedUrls.length];
+					expect(await (await window.fetch(url)).text()).toBe("native");
+					new window.XMLHttpRequest().open("GET", url);
+					expect(nativeOpen).toHaveBeenLastCalledWith("GET", url);
+				}
+				expect(getPlayer).not.toHaveBeenCalled();
+
+				const adUrl = "https://edge.ads.twitch.tv/ads?sid=lookup-guard";
+				state.IsAdStrippingEnabled = false;
+				expect(await (await window.fetch(adUrl)).text()).toBe("native");
+				new window.XMLHttpRequest().open("GET", adUrl);
+				expect(nativeOpen).toHaveBeenLastCalledWith("GET", adUrl);
+				expect(getPlayer).not.toHaveBeenCalled();
+
+				state.IsAdStrippingEnabled = true;
+				await window.fetch(new Request(adUrl, { method: "POST" }));
+				await window.fetch(new Request(adUrl), { method: "POST" });
+				new window.XMLHttpRequest().open("POST", adUrl);
+				expect(nativeOpen).toHaveBeenLastCalledWith("POST", adUrl);
+				expect(getPlayer).not.toHaveBeenCalled();
+				expect(increment).not.toHaveBeenCalled();
+				expect(nativeFetch).toHaveBeenCalledTimes(103);
+
+				const response = await window.fetch(adUrl);
+				new window.XMLHttpRequest().open("GET", adUrl);
+				expect(getPlayer).toHaveBeenCalledTimes(2);
+				expect(response.status).toBe(mediaType === "vod" ? 204 : 200);
+				expect(increment).toHaveBeenCalledTimes(mediaType === "vod" ? 1 : 0);
+			} finally {
+				window.fetch = originalFetch;
+				window.__TTVAB_REAL_FETCH__ = originalRealFetch;
+				window.XMLHttpRequest.prototype.open = originalOpen;
+				g._getPlayerAndState = originalPlayer;
+				g._incrementAdsBlocked = originalIncrement;
+			}
+		},
+	);
+
 	it("rewrites standard-video VOD XHR to a local empty VAST", async () => {
 		const originalFetch = window.fetch;
 		const scopedWindow = window as unknown as Record<string, unknown>;
@@ -11834,21 +11912,34 @@ describe("worker mixed-codec master selection", () => {
 			reducedRefresh: true,
 			catalogAgeMs: 9 * 60000,
 		},
+		{
+			preroll: false,
+			longSession: true,
+			quality: "1080p60",
+			failedRefresh: true,
+		},
+		{
+			preroll: false,
+			longSession: true,
+			quality: "auto",
+			failedRefresh: true,
+		},
 	])(
-		"restores the native catalog in the injected worker with hidden preroll=$preroll, long session=$longSession, quality=$quality, rotated refresh=$rotatedRefresh and reduced refresh=$reducedRefresh after $catalogAgeMs ms",
+		"restores the native catalog in the injected worker with hidden preroll=$preroll, long session=$longSession, quality=$quality, rotated refresh=$rotatedRefresh, reduced refresh=$reducedRefresh and failed refresh=$failedRefresh after $catalogAgeMs ms",
 		async ({
 			preroll,
 			longSession,
 			quality,
 			rotatedRefresh,
 			reducedRefresh,
+			failedRefresh = false,
 			catalogAgeMs = 38 * 60000,
 		}) => {
 			vi.useFakeTimers();
 			vi.setSystemTime(200000);
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 			(g.__TTVAB_STATE__ as Record<string, unknown>).DisableAutoplayBackup =
-				false;
+				failedRefresh;
 			const harness = installWorkerMessageHarness({
 				preserveBlobSources: true,
 			});
@@ -11858,7 +11949,9 @@ describe("worker mixed-codec master selection", () => {
 			const reducedUrl = masterUrl.replace("owned", "reduced");
 			const high = "https://edge.example/1080p.m3u8?token=owned";
 			const low = "https://edge.example/360p.m3u8?token=reduced";
-			const backup = "https://edge.example/360p.m3u8?token=backup";
+			const backup = `https://edge.example/${failedRefresh ? 1080 : 360}p.m3u8?token=backup`;
+			const backupType = failedRefresh ? "site" : "autoplay";
+			const backupResolution = failedRefresh ? "1920x1080" : "640x360";
 			const codec = "avc1.64002a,mp4a.40.2";
 
 			const extra = [720, 480, 360, 160].map((height) => ({
@@ -11882,6 +11975,8 @@ describe("worker mixed-codec master selection", () => {
 				const url = String(input);
 				if (url === masterUrl) {
 					masterRequests++;
+					if (failedRefresh && masterRequests > 1)
+						return new Response(null, { status: 403 });
 					if (reducedRefresh && masterRequests > 1)
 						return new Response(lowMaster);
 					return new Response(
@@ -11945,11 +12040,11 @@ describe("worker mixed-codec master selection", () => {
 						SilentBackupHoldStartedAt: Date.now() + 1000,
 						ExpectedAdPodLength: 1,
 						MaxObservedAdPodPosition: 1,
-						ActiveBackupPlayerType: "autoplay",
-						ActiveBackupResolution: "640x360",
+						ActiveBackupPlayerType: backupType,
+						ActiveBackupResolution: backupResolution,
 						LastCleanBackupM3U8: playlist("backup"),
-						LastCleanBackupPlayerType: "autoplay",
-						LastCleanBackupResolution: "640x360",
+						LastCleanBackupPlayerType: backupType,
+						LastCleanBackupResolution: backupResolution,
 						LastCleanBackupCodecFamily: "avc",
 						LastCleanBackupCodec: codec,
 						LastCleanBackupAt: Date.now(),
@@ -11958,18 +12053,27 @@ describe("worker mixed-codec master selection", () => {
 						CurrentAdMediaKey: mediaKey,
 						CurrentAdChannel: "testchannel",
 					});
-					(info.BackupEncodingsM3U8Cache as Record<string, unknown>).autoplay =
-						{
-							m3u8: lowMaster.replace(low, backup),
-							baseUrl: masterUrl.replace("owned", "backup"),
-						};
+					(info.BackupEncodingsM3U8Cache as Record<string, unknown>)[
+						backupType
+					] = {
+						m3u8: failedRefresh
+							? fullMaster
+									.split("\n")
+									.slice(0, 3)
+									.join("\n")
+									.replace(high, backup)
+							: lowMaster.replace(low, backup),
+						baseUrl: masterUrl.replace("owned", "backup"),
+					};
 					for (
 						let index = 0;
 						index < 24 && info.IsHoldingBackupAfterAd;
 						index++
 					) {
 						vi.setSystemTime(Date.now() + 2000);
-						const output = await (await workerFetch(low)).text();
+						const response = workerFetch(low);
+						if (failedRefresh) await vi.advanceTimersByTimeAsync(2500);
+						const output = await (await response).text();
 						if (info.IsHoldingBackupAfterAd)
 							expect(output).toContain("backup-");
 					}

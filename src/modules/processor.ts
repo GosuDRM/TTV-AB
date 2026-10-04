@@ -813,21 +813,28 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 	saved.refreshAttemptCycleStartedAt = cycleStartedAt;
 	saved.refreshPromise = (async () => {
 		let stage = "master-fetch";
+		let masterOutcome = "pending";
 		let refreshed = false;
 		try {
+			const masterDeadlineAt = Math.min(deadlineAt, Date.now() + 1000);
 			const probe = await _awaitBackupProbeBeforeDeadline(
 				_fetchWithTimeout(
 					realFetch,
 					saved.masterUrl,
 					{ signal: requestSignal, cache: "no-store" },
-					2500,
+					Math.max(1, masterDeadlineAt - Date.now()),
 				),
-				deadlineAt,
-			);
-			if (!probe.completed || !isCurrent() || probe.value.status !== 200)
-				return;
+				masterDeadlineAt,
+			).catch(() => null);
+			masterOutcome = probe?.completed
+				? `http-${probe.value.status}`
+				: Date.now() >= masterDeadlineAt
+					? "deadline"
+					: "fetch-error";
+			if (!isCurrent()) return;
+			const masterAvailable = probe?.completed && probe.value.status === 200;
 			stage = "master-validation";
-			const master = await probe.value.text();
+			const master = masterAvailable ? await probe.value.text() : saved.master;
 			if (
 				!isCurrent() ||
 				!master.trimStart().startsWith("#EXTM3U") ||
@@ -879,9 +886,9 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 					return height > 0 && height < targetHeight;
 				});
 			if (!compatibleTargets.length && !reducedCatalog) return;
-			const retainedSession = !compatibleTargets.some(
-				(entry) => entry.Url === target.Url,
-			);
+			const retainedSession =
+				!masterAvailable ||
+				!compatibleTargets.some((entry) => entry.Url === target.Url);
 			if (retainedSession) {
 				let previousSequence = null;
 				for (let look = 0; look < 2; look++) {
@@ -930,9 +937,11 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 			};
 			refreshed = true;
 			_log(
-				retainedSession
-					? `[Recovery] Revalidated retained native session after ${reducedCatalog ? "master quality reduction" : "master URL rotation"}; verifying current-cycle media before recovery`
-					: "[Recovery] Refreshed retained native catalog; verifying current-cycle media before recovery",
+				!masterAvailable
+					? `[Recovery] Revalidated retained native media after master ${masterOutcome}; verifying current-cycle media before recovery`
+					: retainedSession
+						? `[Recovery] Revalidated retained native session after ${reducedCatalog ? "master quality reduction" : "master URL rotation"}; verifying current-cycle media before recovery`
+						: "[Recovery] Refreshed retained native catalog; verifying current-cycle media before recovery",
 				"info",
 			);
 		} catch {
@@ -945,7 +954,7 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 							? "rejected"
 							: "stale-context";
 				_log(
-					`[Recovery] Retained native catalog refresh ${outcome} at ${stage}; cycle ${cycleStartedAt}`,
+					`[Recovery] Retained native catalog refresh ${outcome} at ${stage}; master ${masterOutcome}; cycle ${cycleStartedAt}`,
 					"info",
 				);
 			}
