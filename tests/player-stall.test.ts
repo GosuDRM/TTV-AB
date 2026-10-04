@@ -54,6 +54,89 @@ function T<T>(name: string): T {
 	return fn as T;
 }
 
+describe("current player lookup", () => {
+	function setReactTree(states: object[]) {
+		type ReactNode = { stateNode: object; sibling: ReactNode | null };
+		const readNode = vi.fn();
+		let child: ReactNode | null = null;
+		for (let index = states.length - 1; index >= 0; index--) {
+			const stateNode = states[index];
+			child = {
+				get stateNode() {
+					readNode(stateNode);
+					return stateNode;
+				},
+				sibling: child,
+			};
+		}
+		vi.spyOn(g, "_findReactRoot").mockReturnValue({ child });
+		return readNode;
+	}
+
+	it.each(["player first", "state first"])(
+		"stops before unrelated nodes once the player and direct state are found (%s)",
+		(order) => {
+			const player = {};
+			const wrapper = {
+				setPlayerActive: vi.fn(),
+				props: { mediaPlayerInstance: player },
+			};
+			const state = { setSrc: vi.fn(), setInitialPlaybackSettings: vi.fn() };
+			const readNode = setReactTree([
+				...(order === "player first" ? [wrapper, state] : [state, wrapper]),
+				...Array.from({ length: 10000 }, () => ({})),
+			]);
+
+			expect(T<() => unknown>("_getPlayerAndState")()).toEqual({
+				player,
+				state,
+			});
+			expect(readNode).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it("prefers a later direct state over an earlier fallback", () => {
+		const player = {};
+		const fallback = { playerMode: "live" };
+		const state = { setSrc: vi.fn(), setInitialPlaybackSettings: vi.fn() };
+		setReactTree([
+			{ setPlayerActive: vi.fn(), props: { mediaPlayerInstance: player } },
+			{ state: { videoPlayerInstance: fallback } },
+			state,
+		]);
+
+		expect(T<() => unknown>("_getPlayerAndState")()).toEqual({ player, state });
+	});
+
+	it("retains the first valid fallback when no direct state exists", () => {
+		const player = {};
+		const state = { playerMode: "live" };
+		setReactTree([
+			{ state: { videoPlayerInstance: {} } },
+			{ state: { videoPlayerInstance: state } },
+			{ setPlayerActive: vi.fn(), props: { mediaPlayerInstance: player } },
+			{ state: { videoPlayerInstance: { playerMode: "vod" } } },
+		]);
+
+		expect(T<() => unknown>("_getPlayerAndState")()).toEqual({ player, state });
+	});
+
+	it("resolves a replacement player and state on the next lookup", () => {
+		for (let index = 0; index < 2; index++) {
+			const player = { index };
+			const state = { setSrc: vi.fn(), setInitialPlaybackSettings: vi.fn() };
+			setReactTree([
+				{ setPlayerActive: vi.fn(), props: { mediaPlayerInstance: player } },
+				state,
+			]);
+			const resolved =
+				T<() => { player: unknown; state: unknown }>("_getPlayerAndState")();
+			expect(resolved.player).toBe(player);
+			expect(resolved.state).toBe(state);
+		}
+	});
+});
+
 function resetPinnedState() {
 	const state = g._PinnedBackupStallState as Record<string, unknown>;
 	state.mediaKey = null;

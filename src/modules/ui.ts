@@ -330,7 +330,7 @@ function _showDonation() {
                     #ttvab-reminder-close:hover{color:#fff}
                     #ttvab-reminder .title{margin:0 0 4px;font-size:16px;font-weight:700;color:#fff}
                     #ttvab-reminder .sub{margin:0 0 14px;color:#b7a6e6;font-size:13px}
-                    #ttvab-reminder-btn{display:block;width:100%;padding:10px 16px;background:linear-gradient(120deg,#ff3db4 0%,#9146FF 60%,#772CE8 100%);color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:.02em;box-shadow:0 4px 16px rgba(145,70,255,.4);transition:transform .15s ease,box-shadow .15s ease}
+                    #ttvab-reminder-btn{display:block;width:100%;text-align:center;padding:10px 16px;background:linear-gradient(120deg,#ff3db4 0%,#9146FF 60%,#772CE8 100%);color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:.02em;box-shadow:0 4px 16px rgba(145,70,255,.4);transition:transform .15s ease,box-shadow .15s ease}
                     #ttvab-reminder-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(255,61,180,.45)}
                     #ttvab-reminder .progress{position:absolute;left:0;right:0;bottom:0;height:2px;transform-origin:left;background:linear-gradient(90deg,#ff3db4,#9146FF,#2ff0e6);animation:ttvab-reminder-bar 15s linear forwards}
                     @keyframes ttvab-reminder-bar{from{transform:scaleX(1)}to{transform:scaleX(0)}}

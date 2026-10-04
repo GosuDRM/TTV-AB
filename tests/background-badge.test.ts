@@ -142,7 +142,7 @@ describe("playback defaults migration", () => {
 
 	it("applies the new defaults on background startup before a later install event", () => {
 		expect(startupStorageData).toEqual({
-			ttvAutoplayBackupEnabled: true,
+			ttvAutoplayBackupEnabled: false,
 			ttvAdTimerEnabled: false,
 			ttvPlaybackDefaultsV1Applied: true,
 			ttvPlaybackDefaultsV2Applied: true,
@@ -174,26 +174,35 @@ describe("playback defaults migration", () => {
 			expect(runtimeInstalledListener).toBeTypeOf("function");
 			runtimeInstalledListener?.({ reason });
 			await g.playbackDefaultsMigration;
-			expect(write).toHaveBeenCalledTimes(1);
+			expect(write).toHaveBeenCalledTimes(2);
+			expect(write).toHaveBeenCalledWith(
+				{ ttvAutoplayBackupEnabled: false },
+				expect.any(Function),
+			);
 			expect(storageData).toEqual({
 				...unrelated,
 				...(reason === "update" ? { ttvPlaybackDefaultsV1Applied: true } : {}),
-				ttvAutoplayBackupEnabled: true,
+				ttvAutoplayBackupEnabled: false,
 				ttvAdTimerEnabled: reason === "install",
 				ttvPlaybackDefaultsV2Applied: true,
 			});
 		},
 	);
 
-	it("preserves later user choices across restarts and subsequent updates", async () => {
+	it("preserves later user choices across restarts but re-disables the fallback on update", async () => {
 		await migrate();
-		storageData.ttvAutoplayBackupEnabled = false;
+		storageData.ttvAutoplayBackupEnabled = true;
 		storageData.ttvAdTimerEnabled = false;
 		const write = vi.spyOn(api().storage.local, "set");
 		await migrate();
+		expect(write).not.toHaveBeenCalled();
 		runtimeInstalledListener?.({ reason: "update" });
 		await g.playbackDefaultsMigration;
-		expect(write).not.toHaveBeenCalled();
+		expect(write).toHaveBeenCalledTimes(1);
+		expect(write).toHaveBeenCalledWith(
+			{ ttvAutoplayBackupEnabled: false },
+			expect.any(Function),
+		);
 		expect(storageData).toEqual({
 			ttvAutoplayBackupEnabled: false,
 			ttvAdTimerEnabled: false,
@@ -201,7 +210,7 @@ describe("playback defaults migration", () => {
 		});
 	});
 
-	it("coalesces startup and update work so a second migration cannot undo a later choice", async () => {
+	it("coalesces startup and update work while still disabling the fallback on update", async () => {
 		let finish: (data: Record<string, unknown>) => void = () => {};
 		const read = vi
 			.spyOn(api().storage.local, "get")
@@ -215,7 +224,7 @@ describe("playback defaults migration", () => {
 		expect(read).toHaveBeenCalledTimes(1);
 		finish({});
 		await first;
-		expect(write).toHaveBeenCalledTimes(1);
+		expect(write).toHaveBeenCalledTimes(2);
 		expect(g.playbackDefaultsMigration).toBeNull();
 	});
 
@@ -273,7 +282,7 @@ describe("playback defaults migration", () => {
 			expect(g.playbackDefaultsMigration).toBeNull();
 			await migrate();
 			expect(storageData).toEqual({
-				ttvAutoplayBackupEnabled: true,
+				ttvAutoplayBackupEnabled: false,
 				ttvAdTimerEnabled: false,
 				ttvPlaybackDefaultsV2Applied: true,
 			});
