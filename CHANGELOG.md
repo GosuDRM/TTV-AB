@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.7] - 2026-10-05
+
+Fixed
+
+- **HD Quality Recovery** - Fix a recovery path that could leave only low-quality options after later ad breaks.
+- **Player Lookup** - Stop searching once the player and playback state are found, while preserving fallback state and player replacement handling.
+- **Default Settings** - Disable Low Quality Fallback on every install and update, then preserve later user choices.
+
 ## [19.0.6] - 2026-10-03
 
 Fixed
