@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.9] - 2026-10-06
+
+Fixed
+
+- **Quality Transitions** - Keep playback aligned when returning to a previously idle quality after ads.
+- **Stall Recovery** - Ignore detached players so old freeze reports cannot interrupt current playback.
+
 ## [19.0.8] - 2026-10-06
 
 Fixed
