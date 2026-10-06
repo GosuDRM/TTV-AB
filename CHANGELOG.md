@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.1.1] - 2026-10-06
+
+Fixed
+
+- **Backup Quality Stability** - Prevent late playlist refreshes from undoing an HD upgrade or switching playback back to a replaced backup.
+
 ## [19.1.0] - 2026-10-06
 
 Fixed
