@@ -11171,9 +11171,16 @@ describe("injected worker ad playlist validation", () => {
 		},
 	);
 
-	it.each([false, true])(
-		"joins a late rendition to advancing native playback in the injected worker with fallback disabled=%s",
-		async (disabled) => {
+	it.each(
+		[false, true].flatMap((disabled) =>
+			["same window", "shorter window", "advanced window"].map((window) => ({
+				disabled,
+				window,
+			})),
+		),
+	)(
+		"joins a late rendition to advancing native playback in the injected worker with fallback disabled=$disabled and $window",
+		async ({ disabled, window }) => {
 			vi.useFakeTimers();
 			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
 			const harness = installWorkerMessageHarness({
@@ -11203,10 +11210,13 @@ describe("injected worker ad playlist validation", () => {
 						`#EXT-X-MEDIA-SEQUENCE:${sequence}`,
 						"#EXT-X-DISCONTINUITY-SEQUENCE:0",
 						`#EXT-X-PROGRAM-DATE-TIME:${new Date(Date.parse("2026-10-06T09:06:20Z") + offset * 2000).toISOString()}`,
-						...Array.from({ length: 3 }, (_, index) => [
-							"#EXTINF:2.000,live",
-							`https://edge.example/clean-${sequence + index}.ts`,
-						]).flat(),
+						...Array.from(
+							{ length: other && window === "shorter window" ? 1 : 3 },
+							(_, index) => [
+								"#EXTINF:2.000,live",
+								`https://edge.example/clean-${sequence + index}.ts`,
+							],
+						).flat(),
 					].join("\r\n"),
 				);
 			});
@@ -11236,14 +11246,25 @@ describe("injected worker ad playlist validation", () => {
 				await workerFetch(mediaUrl);
 				offset = 68;
 				const current = await (await workerFetch(mediaUrl)).text();
-				offset++;
+				offset += window === "advanced window" ? 4 : 1;
 				const joined = await (await workerFetch(otherUrl)).text();
 				const sequence = (text: string) =>
 					Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
-				expect(sequence(joined)).toBe(sequence(current) + 1);
+				expect(sequence(joined)).toBe(
+					sequence(current) + (window === "advanced window" ? 3 : 1),
+				);
 				expect(joined).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:12");
-				expect(joined.split("\n")).not.toContain("#EXT-X-DISCONTINUITY");
+				if (window !== "advanced window")
+					expect(joined.split("\n")).not.toContain("#EXT-X-DISCONTINUITY");
 				expect(joined).not.toContain("__ttvab_empty_hold_segment.ts");
+				if (window === "advanced window") {
+					offset--;
+					const returned = await (await workerFetch(mediaUrl)).text();
+					expect(sequence(returned)).toBe(sequence(joined));
+					expect(returned).not.toContain(`clean-${5599 + offset}.ts`);
+					expect(returned).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:12");
+					offset++;
+				}
 				offset++;
 				await workerFetch(
 					`${otherUrl}&_HLS_msn=${sequence(joined) + 1}&_HLS_part=1`,
@@ -11257,6 +11278,67 @@ describe("injected worker ad playlist validation", () => {
 				expect(messages).not.toContain("ReloadPlayer");
 				expect(messages).not.toContain("AdDetected");
 				expect(info.IsUsingBackupStream).toBe(false);
+			} finally {
+				harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
+
+	it.each([false, true])(
+		"does not send transport hold bytes to mapped native media in the injected worker with fallback disabled=%s",
+		async (disabled) => {
+			vi.useFakeTimers();
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const masterUrl =
+				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?token=owned";
+			const mediaUrl = "https://edge.example/native.m3u8?token=owned";
+			const master = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="avc1.64002a,mp4a.40.2"\n${mediaUrl}`;
+			const clean =
+				'#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:400\n#EXT-X-MAP:URI="https://edge.example/init.mp4"\n#EXTINF:2.000,live\nhttps://edge.example/clean.m4s';
+			let ad = false;
+			const fetch = vi.fn(async (input: RequestInfo | URL) => {
+				if (String(input) === masterUrl) return new Response(master);
+				if (String(input) !== mediaUrl)
+					return new Response(null, { status: 503 });
+				return new Response(
+					ad
+						? clean
+								.replaceAll("live", "stitched-ad")
+								.replace("clean.m4s", "stitched-ad.m4s")
+						: clean,
+				);
+			});
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, fetch);
+				runtime.scope.Date = Date;
+				runtime.deliverBootstrap();
+				const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
+				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+				state.DisableAutoplayBackup = disabled;
+				await workerFetch(masterUrl);
+				expect(await (await workerFetch(mediaUrl)).text()).toBe(clean);
+				await vi.advanceTimersByTimeAsync(3000);
+				ad = true;
+				await expect(workerFetch(mediaUrl)).rejects.toMatchObject({
+					name: "AbortError",
+					message: expect.stringContaining("initialization map"),
+				});
+				const info = (
+					state.StreamInfos as Record<string, Record<string, unknown>>
+				)["live:testchannel"];
+				expect(info.IsShowingAd).toBe(true);
+				expect(info._EmptyAdHoldMediaSequence).toBe(0);
+				expect(
+					(info._EmptyHoldTimelineByUrl as Map<string, unknown>).size,
+				).toBe(0);
+				state.IsAdStrippingEnabled = false;
+				expect(await (await workerFetch(mediaUrl)).text()).toContain(
+					"stitched-ad.m4s",
+				);
 			} finally {
 				harness.restore();
 				vi.clearAllTimers();

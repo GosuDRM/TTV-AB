@@ -2221,7 +2221,10 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(second.type).toBe("autoplay");
 			expect(second.m3u8).toBe(bridgePlaylist);
 			expect(String(second.m3u8)).not.toContain("stitched-ad");
-			expect(tokenCalls).toEqual(["site", "site"]);
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info.FailedBackupPlayerTypes.get("site")).toBeGreaterThan(
+				Date.now(),
+			);
 			expect(info._BackupProbation).toBe(null);
 		} finally {
 			nowSpy.mockRestore();

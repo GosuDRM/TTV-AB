@@ -1136,6 +1136,60 @@ describe("empty hold playlist continuity", () => {
 		},
 	);
 
+	it.each(["overlapping window", "advanced window"])(
+		"does not rewind an idle rendition when its native anchor is outside the %s",
+		async (mode) => {
+			const { context, info, hold, serve } = setup();
+			const otherUrl = nativeUrl.replace("native", "720p");
+			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+			const start = Date.parse("2026-10-06T13:12:16Z");
+			const dated = (sequence: number, count: number, time: number) =>
+				playlist(sequence, count, "native").replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(time).toISOString()}\n#EXTINF:`,
+				);
+			await hold();
+			await serve(playlist(5500), "site");
+			context._applyPlaylistContinuity(
+				info,
+				otherUrl,
+				info.LastCleanBackupM3U8,
+				info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8),
+			);
+			context._resetStreamAdState(info, true);
+			await serve(dated(5600, 3, start));
+			const current = segments(await serve(dated(5668, 5, start + 136000)));
+			const overlaps = mode === "overlapping window";
+			const incoming = dated(
+				overlaps ? 6669 : 6674,
+				2,
+				start + (overlaps ? 138000 : 148000),
+			);
+			const joined = segments(
+				context._applyPlaylistContinuity(info, otherUrl, incoming),
+			);
+			if (overlaps) {
+				expect(joined[0].sequence).toBe(current[1].sequence);
+				expect(joined[0].discontinuity).toBe(current[1].discontinuity);
+			} else {
+				expect(joined[0].sequence).toBeGreaterThan(current.at(-1).sequence);
+				expect(joined[0].discontinuity).toBeGreaterThan(
+					current.at(-1).discontinuity,
+				);
+				const returned = segments(await serve(dated(5672, 5, start + 144000)));
+				expect(returned[0].url).toContain("native-5674.ts");
+				expect(returned[0].sequence).toBe(joined[0].sequence);
+				expect(returned[0].discontinuity).toBe(joined[0].discontinuity);
+				expect(
+					context._getEmptyHoldUpstreamUrl(
+						info,
+						`${nativeUrl}&_HLS_msn=${returned.at(-1).sequence + 1}`,
+					),
+				).toBe(`${nativeUrl}&_HLS_msn=5677`);
+			}
+		},
+	);
+
 	it.each([
 		"undated",
 		"different master",

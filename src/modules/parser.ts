@@ -547,6 +547,12 @@ function _absolutizeMediaPlaylistUrls(
 }
 
 function _createEmptyAdHoldPlaylist(text, info) {
+	if (/(?:^|\n)\s*#EXT-X-MAP:/.test(text)) {
+		throw new DOMException(
+			"Transport hold cannot replace media with an initialization map",
+			"AbortError",
+		);
+	}
 	const headerLines = (_extractPlaylistHeaders(text) || "#EXTM3U")
 		.split("\n")
 		.map((line) => line.trim())
@@ -1017,11 +1023,12 @@ function _stripAds(
 	}
 
 	if (!hasRemainingSegments && strippedMediaEntryCount > 0) {
+		const hold = _createEmptyAdHoldPlaylist(text, info);
 		_log(
 			"[Recovery] Empty playlist after stripping ads; serving advancing empty hold segment",
 			"warning",
 		);
-		return _createEmptyAdHoldPlaylist(text, info);
+		return hold;
 	}
 	if (addedIv) {
 		const versionIndex = result.findIndex((line) =>
