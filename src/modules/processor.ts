@@ -7357,6 +7357,7 @@ async function _refreshHeldAutoplayBackupPlaylist(
 	codecOverride = null,
 	commitDeadlineAt = 0,
 ) {
+	const selectedBackupSequence = info._BackupSelection?.sequence;
 	const selectionSequence =
 		Math.max(0, Number(info._BackupSelectionSequence) || 0) + 1;
 	info._BackupSelectionSequence = selectionSequence;
@@ -7432,6 +7433,7 @@ async function _refreshHeldAutoplayBackupPlaylist(
 		);
 		if (
 			!_isBackupSearchContextCurrent(info, backupSearchEpoch, cycleStartedAt) ||
+			info._BackupSelection?.sequence !== selectedBackupSequence ||
 			!canRefresh()
 		) {
 			return null;
@@ -7472,6 +7474,7 @@ async function _refreshActiveBackupMediaPlaylist(
 	realFetch,
 	codecOverride = null,
 ) {
+	const selectedBackupSequence = info._BackupSelection?.sequence;
 	const selectionSequence =
 		Math.max(0, Number(info._BackupSelectionSequence) || 0) + 1;
 	info._BackupSelectionSequence = selectionSequence;
@@ -7551,7 +7554,8 @@ async function _refreshActiveBackupMediaPlaylist(
 			streamRes.url || streamUrl,
 		);
 		if (
-			!_isBackupSearchContextCurrent(info, backupSearchEpoch, cycleStartedAt)
+			!_isBackupSearchContextCurrent(info, backupSearchEpoch, cycleStartedAt) ||
+			info._BackupSelection?.sequence !== selectedBackupSequence
 		) {
 			return null;
 		}

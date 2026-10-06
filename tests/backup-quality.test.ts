@@ -1475,6 +1475,153 @@ describe("codec ordering and backup quality ownership", () => {
 		},
 	);
 
+	it.each(
+		[1080, 1440].flatMap((height) =>
+			[false, true].flatMap((disableAfterServing) =>
+				["refresh", "coalesced search"].map((path) => ({
+					height,
+					disableAfterServing,
+					path,
+				})),
+			),
+		),
+	)(
+		"keeps a $height promotion when a later-numbered autoplay $path finishes last (disabled: $disableAfterServing)",
+		async ({ height, disableAfterServing, path }) => {
+			let now = 1000000;
+			vi.spyOn(Date, "now").mockImplementation(() => now);
+			const { context, info, state, fetch } = setup("avc1.640033");
+			state.DisableAutoplayBackup = false;
+			state.BackupPlayerTypes = ["site", "autoplay"];
+			state.PreferredQualityGroup = `${height}p60`;
+			const target = info.ResolutionList.find(
+				(entry) => entry.Resolution === resolution(height),
+			);
+			expect(
+				await context._processM3U8(
+					nativeUrl(height),
+					media("native", height, 400, true),
+					fetch,
+				),
+			).toContain("/autoplay/360/");
+			state.DisableAutoplayBackup = disableAfterServing;
+			now += 9000;
+			await context._findBackupStream(info, fetch, 0, target);
+			expect(info.LastCleanBackupPlayerType).toBe("autoplay");
+			now += 2000;
+			const started = deferred();
+			const gate = deferred();
+			const high = context._processM3U8(
+				nativeUrl(height),
+				media("native", height, 401, true),
+				async (url: string, options?: RequestInit) => {
+					if (url.includes(`/site/${height}.m3u8`)) {
+						started.resolve();
+						await gate.promise;
+					}
+					return fetch(url, options);
+				},
+			);
+			await started.promise;
+			const lateStarted = deferred();
+			const lateGate = deferred();
+			const lateFetch = async (url: string, options?: RequestInit) => {
+				lateStarted.resolve();
+				await lateGate.promise;
+				return fetch(url, options);
+			};
+			const lateBridge =
+				path === "refresh"
+					? context._refreshHeldAutoplayBackupPlaylist(info, lateFetch)
+					: context._findBackupStream(info, lateFetch, 0, target);
+			try {
+				await lateStarted.promise;
+				gate.resolve();
+				const promoted = await high;
+				expect(promoted).toContain(`/site/${height}/`);
+				expect(info.ActiveBackupPlayerType).toBe("site");
+				const selection = info._BackupSelection;
+				const cleanAt = info.LastCleanBackupAt;
+				lateGate.resolve();
+				if (path === "refresh") {
+					expect(await lateBridge).toBeNull();
+				} else {
+					expect(await lateBridge).toMatchObject({
+						type: "site",
+						m3u8: expect.stringContaining(`/site/${height}/`),
+					});
+				}
+				expect(info._BackupSelection).toEqual(selection);
+				expect(info.LastCleanBackupAt).toBe(cleanAt);
+				expect(info.LastCleanBackupPlayerType).toBe("site");
+				expect(info.LastCleanBackupResolution).toBe(resolution(height));
+				expect(info.ActiveBackupResolution).toBe(resolution(height));
+				expect(info._LqHoldStartAt).toBe(0);
+				expect(info.HevcReloadPendingAfterHold).toBe(true);
+				const next = await context._processM3U8(
+					nativeUrl(height),
+					media("native", height, 402, true),
+					fetch,
+				);
+				expect(next).toContain(`/site/${height}/`);
+				expect(context._hasPlaylistAdMarkers(next)).toBe(false);
+			} finally {
+				gate.resolve();
+				lateGate.resolve();
+			}
+		},
+	);
+
+	it("keeps a source replacement when a later-numbered active refresh finishes last", async () => {
+		const { context, info, state, fetch } = setup("avc1.640033");
+		await context._processM3U8(
+			nativeUrl(1080),
+			media("native", 1080, 400, true),
+			fetch,
+		);
+		state.BackupPlayerTypes = ["embed"];
+		const started = deferred();
+		const gate = deferred();
+		const replacement = context._findBackupStream(
+			info,
+			async (url: string, options?: RequestInit) => {
+				if (url.includes("/embed/1080.m3u8")) {
+					started.resolve();
+					await gate.promise;
+					return new Response(media("embed", 1080));
+				}
+				return fetch(url, options);
+			},
+			0,
+			info.ResolutionList[1],
+		);
+		await started.promise;
+		const lateStarted = deferred();
+		const lateGate = deferred();
+		const lateRefresh = context._refreshActiveBackupMediaPlaylist(
+			info,
+			async (url: string, options?: RequestInit) => {
+				lateStarted.resolve();
+				await lateGate.promise;
+				return fetch(url, options);
+			},
+		);
+		try {
+			await lateStarted.promise;
+			gate.resolve();
+			expect((await replacement).type).toBe("embed");
+			const selection = info._BackupSelection;
+			lateGate.resolve();
+			expect(await lateRefresh).toBeNull();
+			expect(info._BackupSelection).toEqual(selection);
+			expect(info.LastCleanBackupPlayerType).toBe("embed");
+			expect(info.LastCleanBackupM3U8).toContain("/embed/1080/");
+		} finally {
+			gate.resolve();
+			lateGate.resolve();
+		}
+	});
+
 	it("does not rewind the live window when an earlier same-quality refresh finishes last", async () => {
 		const { context, info, fetch } = setup("avc1.640033");
 		await context._processM3U8(
