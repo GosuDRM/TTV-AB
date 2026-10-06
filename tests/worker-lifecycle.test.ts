@@ -11171,6 +11171,99 @@ describe("injected worker ad playlist validation", () => {
 		},
 	);
 
+	it.each([false, true])(
+		"joins a late rendition to advancing native playback in the injected worker with fallback disabled=%s",
+		async (disabled) => {
+			vi.useFakeTimers();
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const masterUrl =
+				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?token=owned";
+			const mediaUrl = "https://edge.example/native.m3u8?token=owned";
+			const otherUrl = "https://edge.example/720p.m3u8?token=owned";
+			const master = [
+				"#EXTM3U",
+				'#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="mp4a.40.2,avc1.64002a"',
+				mediaUrl,
+				'#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS="mp4a.40.2,avc1.64002a"',
+				otherUrl,
+			].join("\n");
+			let offset = 0;
+			const fetch = vi.fn(async (input: RequestInfo | URL) => {
+				const url = String(input);
+				if (url === masterUrl) return new Response(master);
+				const other = url.startsWith(otherUrl);
+				const sequence = 5599 + offset + (other ? 1000 : 0);
+				return new Response(
+					[
+						"#EXTM3U",
+						"#EXT-X-TARGETDURATION:2",
+						`#EXT-X-MEDIA-SEQUENCE:${sequence}`,
+						"#EXT-X-DISCONTINUITY-SEQUENCE:0",
+						`#EXT-X-PROGRAM-DATE-TIME:${new Date(Date.parse("2026-10-06T09:06:20Z") + offset * 2000).toISOString()}`,
+						...Array.from({ length: 3 }, (_, index) => [
+							"#EXTINF:2.000,live",
+							`https://edge.example/clean-${sequence + index}.ts`,
+						]).flat(),
+					].join("\r\n"),
+				);
+			});
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, fetch);
+				runtime.deliverBootstrap();
+				const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
+				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+				state.DisableAutoplayBackup = disabled;
+				await workerFetch(masterUrl);
+				const info = (
+					state.StreamInfos as Record<string, Record<string, unknown>>
+				)["live:testchannel"];
+				const timelines = info._EmptyHoldTimelineByUrl as Map<string, unknown>;
+				for (const url of [mediaUrl, otherUrl])
+					timelines.set(url, {
+						kind: "backup",
+						identity: "retired-backup",
+						boundarySequence: 5500,
+						addBoundary: true,
+						mediaOffset: 15,
+						discontinuityOffset: 11,
+						lastSequence: url === mediaUrl ? 5613 : 5595,
+						lastDiscontinuity: 11,
+						lastRawFirstSequence: 5580,
+					});
+				await workerFetch(mediaUrl);
+				offset = 68;
+				const current = await (await workerFetch(mediaUrl)).text();
+				offset++;
+				const joined = await (await workerFetch(otherUrl)).text();
+				const sequence = (text: string) =>
+					Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
+				expect(sequence(joined)).toBe(sequence(current) + 1);
+				expect(joined).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:12");
+				expect(joined.split("\n")).not.toContain("#EXT-X-DISCONTINUITY");
+				expect(joined).not.toContain("__ttvab_empty_hold_segment.ts");
+				offset++;
+				await workerFetch(
+					`${otherUrl}&_HLS_msn=${sequence(joined) + 1}&_HLS_part=1`,
+				);
+				expect(String(fetch.mock.calls.at(-1)[0])).toBe(
+					`${otherUrl}&_HLS_msn=${6599 + offset}&_HLS_part=1`,
+				);
+				const messages = (
+					runtime.scope.postMessage as ReturnType<typeof vi.fn>
+				).mock.calls.map(([value]) => value.message?.key);
+				expect(messages).not.toContain("ReloadPlayer");
+				expect(messages).not.toContain("AdDetected");
+				expect(info.IsUsingBackupStream).toBe(false);
+			} finally {
+				harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
+
 	it("completes HD probation on the next eligible poll in the injected worker", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(1_000_000);

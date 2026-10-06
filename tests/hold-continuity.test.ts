@@ -38,7 +38,9 @@ function segments(text: string) {
 			entries.push({
 				sequence: sequence++,
 				discontinuity,
-				url: lines[index + 1],
+				url: lines
+					.slice(index + 1)
+					.find((line) => line && !line.startsWith("#")),
 			});
 		}
 		if (lines[index].startsWith("#EXT-X-TWITCH-PREFETCH:")) {
@@ -1045,6 +1047,148 @@ describe("empty hold playlist continuity", () => {
 			const refreshed = segments(await serve(playlist(212, 3, "native")));
 			expect(refreshed.slice(0, 2)).toEqual(rejoined.slice(1));
 			expect(info.HevcReloadPendingAfterHold).toBe(false);
+		},
+	);
+
+	it.each(
+		[0, 1000].flatMap((rawOffset) =>
+			["LF", "CRLF", "date after EXTINF"].map((format) => ({
+				rawOffset,
+				format,
+			})),
+		),
+	)(
+		"joins a late native rendition without another boundary (raw offset: $rawOffset, $format)",
+		async ({ rawOffset, format }) => {
+			const { context, info, hold, serve } = setup();
+			const otherUrl = nativeUrl.replace("native", "720p");
+			const thirdUrl = nativeUrl.replace("native", "480p");
+			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+			info.Urls[thirdUrl] = { Resolution: "852x480", Codecs: codec };
+			const dated = (sequence: number, time: number, prefix = "native") => {
+				let text = playlist(sequence, 3, prefix).replace(
+					"#EXTINF:",
+					`#EXT-X-KEY:METHOD=AES-128,URI="https://edge.example/key"\n#EXTINF:`,
+				);
+				const date = `#EXT-X-PROGRAM-DATE-TIME:${new Date(time).toISOString()}`;
+				text = text.replace(
+					"#EXTINF:2.000,live",
+					format === "date after EXTINF"
+						? `#EXTINF:2.000,live\n${date}`
+						: `${date}\n#EXTINF:2.000,live`,
+				);
+				return format === "CRLF" ? text.replaceAll("\n", "\r\n") : text;
+			};
+			const start = Date.parse("2026-10-06T09:06:20Z");
+			await hold();
+			await serve(playlist(5500), "site");
+			context._applyPlaylistContinuity(
+				info,
+				otherUrl,
+				info.LastCleanBackupM3U8,
+				info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8),
+			);
+			context._applyPlaylistContinuity(
+				info,
+				thirdUrl,
+				info.LastCleanBackupM3U8,
+				info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8),
+			);
+			context._resetStreamAdState(info, true);
+			await serve(dated(5600, start));
+			const current = segments(await serve(dated(5668, start + 136000)));
+			const joined = context._applyPlaylistContinuity(
+				info,
+				otherUrl,
+				dated(5669 + rawOffset, start + 138000, "other"),
+			);
+			expect(segments(joined)[0].sequence).toBe(current[1].sequence);
+			expect(segments(joined)[0].discontinuity).toBe(current[1].discontinuity);
+			expect(joined.split("\n")).not.toContain("#EXT-X-DISCONTINUITY");
+			expect(
+				[...joined.matchAll(/IV=0x([a-f0-9]{32})/gi)].map((match) =>
+					parseInt(match[1], 16),
+				),
+			).toEqual([5669, 5670, 5671].map((sequence) => sequence + rawOffset));
+			const refreshed = context._applyPlaylistContinuity(
+				info,
+				otherUrl,
+				dated(5670 + rawOffset, start + 140000, "other"),
+			);
+			expect(segments(refreshed).slice(0, 2)).toEqual(
+				segments(joined).slice(1),
+			);
+			expect(
+				context._getEmptyHoldUpstreamUrl(
+					info,
+					`${otherUrl}&_HLS_msn=${segments(joined).at(-1).sequence + 1}`,
+				),
+			).toBe(`${otherUrl}&_HLS_msn=${5672 + rawOffset}`);
+			const latest = segments(await serve(dated(5700, start + 200000)));
+			const third = context._applyPlaylistContinuity(
+				info,
+				thirdUrl,
+				dated(5701 + rawOffset * 2 + 37, start + 202000, "third"),
+			);
+			expect(segments(third)[0].sequence).toBe(latest[1].sequence);
+			expect(segments(third)[0].discontinuity).toBe(latest[1].discontinuity);
+			expect(third.split("\n")).not.toContain("#EXT-X-DISCONTINUITY");
+		},
+	);
+
+	it.each([
+		"undated",
+		"different master",
+		"different time",
+		"different duration",
+		"different discontinuity",
+		"vod",
+		"blocking disabled",
+	])(
+		"does not borrow native numbering without matching live broadcast ownership: %s",
+		async (mode) => {
+			const { context, info, hold, serve } = setup();
+			const otherUrl = nativeUrl.replace("native", "720p");
+			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+			await hold();
+			await serve(playlist(5500), "site");
+			context._applyPlaylistContinuity(
+				info,
+				otherUrl,
+				info.LastCleanBackupM3U8,
+				info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8),
+			);
+			context._resetStreamAdState(info, true);
+			const date = "#EXT-X-PROGRAM-DATE-TIME:2026-10-06T09:06:20Z";
+			const text = playlist(5600, 3, "native").replace(
+				"#EXTINF:",
+				`${date}\n#EXTINF:`,
+			);
+			const current = segments(await serve(text));
+			let incoming = text;
+			if (mode === "undated") incoming = text.replace(`${date}\n`, "");
+			if (mode === "different master") info.UsherBaseUrl += "?token=other";
+			if (mode === "different time")
+				incoming = text.replace("09:06:20Z", "09:06:21Z");
+			if (mode === "different duration")
+				incoming = text.replaceAll("2.000", "2.100");
+			if (mode === "different discontinuity")
+				incoming = text.replace(
+					"DISCONTINUITY-SEQUENCE:0",
+					"DISCONTINUITY-SEQUENCE:1",
+				);
+			if (mode === "vod") info.MediaType = "vod";
+			if (mode === "blocking disabled")
+				context.state.IsAdStrippingEnabled = false;
+			const joined = context._applyPlaylistContinuity(info, otherUrl, incoming);
+			if (mode === "blocking disabled") {
+				expect(joined).toBe(incoming);
+				return;
+			}
+			expect(joined.split("\n")).toContain("#EXT-X-DISCONTINUITY");
+			expect(segments(joined)[0].discontinuity).toBeGreaterThanOrEqual(
+				current[0].discontinuity,
+			);
 		},
 	);
 

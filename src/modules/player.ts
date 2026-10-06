@@ -7559,6 +7559,14 @@ function _monitorPlayerBuffering() {
 			if (targetsPage) {
 				const fresh = _getPlayerAndState();
 				pinPlayer = fresh.player && fresh.state ? fresh.player : null;
+				const video = pinPlayer?.getHTMLVideoElement?.() || null;
+				if (
+					video instanceof HTMLMediaElement &&
+					!video.isConnected &&
+					(!targetsPictureInPicture || video !== pipContext?.element)
+				) {
+					pinPlayer = null;
+				}
 				if (
 					_cachedPlayerRef &&
 					(_cachedPlayerRefMediaKey !== currentMediaKey ||
