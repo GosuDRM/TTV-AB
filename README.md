@@ -73,6 +73,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v19.1.1 - 2026-10-06
+
+- **Backup Quality Stability** - Prevent late playlist refreshes from undoing an HD upgrade or switching playback back to a replaced backup.
+
 ### v19.1.0 - 2026-10-06
 
 - **Backup Rotation** - Respect cooldowns when a clean backup turns ad-marked, reducing repeated session changes during a break ([#81](https://github.com/GosuDRM/TTV-AB/issues/81)).
@@ -84,11 +88,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 - **Quality Transitions** - Keep playback aligned when returning to a previously idle quality after ads.
 - **Stall Recovery** - Ignore detached players so old freeze reports cannot interrupt current playback.
-
-### v19.0.8 - 2026-10-06
-
-- **Ad Transitions** - Prevent stalled playlist updates and replay of old native segments during ad transitions.
-- **Recovery Diagnostics** - Report why post-ad recovery was skipped, including pauses and missing resume intent.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
