@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.1.0] - 2026-10-06
+
+Fixed
+
+- **Backup Rotation** - Respect cooldowns when a clean backup turns ad-marked, reducing repeated session changes during a break ([#81](https://github.com/GosuDRM/TTV-AB/issues/81)).
+- **Quality Continuity** - Keep returning qualities aligned across different playlist windows and prevent stale numbering after ads.
+- **Hold Compatibility** - Reject incompatible temporary media when a stream requires an initialization map, guarding a possible decoder-failure path reported in [#82](https://github.com/GosuDRM/TTV-AB/issues/82).
+
+Changed
+
+- **Playback Defaults** - Enable Low Quality Fallback and disable Ad Break Timer on installation and every extension update. Later choices are preserved across ordinary restarts.
+
 ## [19.0.9] - 2026-10-06
 
 Fixed
