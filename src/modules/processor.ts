@@ -2781,7 +2781,7 @@ function _applyEmptyHoldPlaylistContinuity(
 				sharedTimeline = candidate;
 		}
 		if (
-			kind !== "native" &&
+			(kind !== "native" || nativeAnchors.length > 0) &&
 			previous &&
 			sharedTimeline &&
 			sharedTimeline.discontinuityOffset > previous.discontinuityOffset
@@ -2803,31 +2803,38 @@ function _applyEmptyHoldPlaylistContinuity(
 			changedSource = true;
 		}
 	}
-	const matchingNativeAnchor =
+	let matchingNativeAnchor = null;
+	const sharedNativeAnchor =
 		changedSource &&
 		kind === "native" &&
 		info.MediaType === "live" &&
 		isOwnedNativeVariant
-			? nativeAnchors.find(
-					(anchor) =>
-						anchor.time === sharedTimeline?.nativeAnchor?.time &&
-						anchor.duration === sharedTimeline.nativeAnchor.duration &&
-						anchor.discontinuity === sharedTimeline.nativeAnchor.discontinuity,
+			? (sharedTimeline?.nativeAnchors || [sharedTimeline?.nativeAnchor]).find(
+					(shared) => {
+						if (!shared) return false;
+						matchingNativeAnchor = nativeAnchors.find(
+							(anchor) =>
+								anchor.time === shared.time &&
+								anchor.duration === shared.duration &&
+								anchor.discontinuity === shared.discontinuity,
+						);
+						return Boolean(matchingNativeAnchor);
+					},
 				)
 			: null;
 	const sharedSource =
 		kind === "backup" || isHold
 			? sharedTimeline
-			: matchingNativeAnchor
+			: sharedNativeAnchor
 				? {
 						...sharedTimeline,
 						mediaOffset:
 							sharedTimeline.mediaOffset +
-							sharedTimeline.nativeAnchor.sequence -
+							sharedNativeAnchor.sequence -
 							matchingNativeAnchor.sequence,
 						boundarySequence:
 							sharedTimeline.boundarySequence -
-							sharedTimeline.nativeAnchor.sequence +
+							sharedNativeAnchor.sequence +
 							matchingNativeAnchor.sequence,
 						lastRawFirstSequence: firstSequence,
 					}
@@ -2846,16 +2853,13 @@ function _applyEmptyHoldPlaylistContinuity(
 					boundarySequence: firstSequence,
 					addBoundary,
 					mediaOffset:
-						kind === "backup" || isHold
-							? lastPresentedSequence >= 0
-								? lastPresentedSequence + 1 - firstSequence
-								: 0
-							: previous
-								? previous.lastSequence + 1 - firstSequence
-								: 0,
-					discontinuityOffset: isHold
-						? Math.max(0, lastDiscontinuity + 1 - firstDiscontinuity)
-						: (sharedTimeline?.discontinuityOffset ?? lastDiscontinuity + 1),
+						lastPresentedSequence >= 0
+							? lastPresentedSequence + 1 - firstSequence
+							: 0,
+					discontinuityOffset:
+						isHold || (kind === "native" && nativeAnchors.length > 0)
+							? Math.max(0, lastDiscontinuity + 1 - firstDiscontinuity)
+							: (sharedTimeline?.discontinuityOffset ?? lastDiscontinuity + 1),
 					lastSequence: 0,
 					lastDiscontinuity: 0,
 					lastRawFirstSequence: firstSequence,
@@ -2971,6 +2975,23 @@ function _applyEmptyHoldPlaylistContinuity(
 	timeline.lastRawFirstSequence = firstSequence;
 	timeline.nativeAnchor =
 		kind === "native" ? nativeAnchors.at(-1) || null : null;
+	timeline.nativeAnchors = kind === "native" ? nativeAnchors.slice(-32) : null;
+	if (
+		changedSource &&
+		kind === "native" &&
+		info.MediaType === "live" &&
+		!sharedSource &&
+		nativeAnchors.length > 0 &&
+		info._LivePlaylistTimeline?.backup === false
+	) {
+		info._LivePlaylistTimeline = {
+			...info._LivePlaylistTimeline,
+			minimumTime: Math.max(
+				info._LivePlaylistTimeline.minimumTime || 0,
+				nativeAnchors[0].time,
+			),
+		};
+	}
 	timeline.lastSequence = Math.max(
 		timeline.lastSequence,
 		lastSequence + timeline.mediaOffset,
@@ -8201,6 +8222,7 @@ async function _searchBackupStream(
 				}
 				let isFreshM3u8 = false;
 				let invalidateCache = false;
+				let rejectedActiveAdSession = false;
 				let encCache = earlyRetry
 					? earlyRetry.candidate.cache
 					: info.BackupEncodingsM3U8Cache[pt];
@@ -8783,6 +8805,7 @@ async function _searchBackupStream(
 									}
 									if (promotionPolicy.reason === "ad-marked") {
 										if (wasCleanCandidate) {
+											rejectedActiveAdSession = true;
 											info._BackupPinFlipCount =
 												(Number(info._BackupPinFlipCount) || 0) + 1;
 										}
@@ -8873,7 +8896,12 @@ async function _searchBackupStream(
 						info.BackupEncodingsM3U8Cache[pt] = null;
 					}
 				}
-				if (earlyRetry || (isFreshM3u8 && !retryWithoutViewerHeaders)) break;
+				if (
+					earlyRetry ||
+					rejectedActiveAdSession ||
+					(isFreshM3u8 && !retryWithoutViewerHeaders)
+				)
+					break;
 			}
 		}
 	}

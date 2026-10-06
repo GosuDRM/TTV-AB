@@ -430,7 +430,18 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		},
 	);
 
-	it("uses self-contained transport media without native initialization, encryption or byte ranges", () => {
+	it("rejects a transport hold for a playlist with a native initialization map", () => {
+		const create = T<(text: string, info: Record<string, unknown>) => string>(
+			"_createEmptyAdHoldPlaylist",
+		);
+		const info = makeInfo();
+		const input =
+			'#EXTM3U\r\n#EXT-X-MEDIA-SEQUENCE:100\r\n#EXT-X-MAP:URI="init.mp4"\r\n#EXTINF:2,stitched-ad\r\nad.m4s';
+		expect(() => create(input, info)).toThrow(/initialization map/);
+		expect(info._EmptyAdHoldMediaSequence || 0).toBe(0);
+	});
+
+	it("uses self-contained transport media without native encryption or byte ranges", () => {
 		const create = T<(text: string, info: Record<string, unknown>) => string>(
 			"_createEmptyAdHoldPlaylist",
 		);
@@ -439,12 +450,11 @@ describe("_stripAds (empty-playlist recovery)", () => {
 			"#EXT-X-VERSION:3",
 			"#EXT-X-TARGETDURATION:2",
 			"#EXT-X-MEDIA-SEQUENCE:100",
-			'#EXT-X-MAP:URI="native-init.mp4"',
 			'#EXT-X-KEY:METHOD=AES-128,URI="native.key"',
 			"#EXT-X-BYTERANGE:4096@100",
 			"#EXT-X-DISCONTINUITY",
 			"#EXTINF:2,stitched-ad",
-			"ad.mp4",
+			"ad.ts",
 		].join("\n");
 		const output = create(input, makeInfo());
 		expect(output).toContain("#EXT-X-VERSION:3");

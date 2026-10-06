@@ -131,6 +131,58 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+it.each(
+	[false, true].flatMap((disabled) =>
+		["site", "embed", "popout", "mobile_web"].map((type) => ({
+			disabled,
+			type,
+		})),
+	),
+)(
+	"keeps an ad-marked active $type session cooling down during the same search with fallback disabled=$disabled",
+	async ({ disabled, type }) => {
+		const f = setup("avc1.640033");
+		f.state.DisableAutoplayBackup = disabled;
+		f.state.BackupPlayerTypes = [
+			"site",
+			"embed",
+			"popout",
+			"mobile_web",
+			"autoplay",
+		];
+		f.info.VisibleAdStartedAt = Date.now() - 1000;
+		f.info.IsShowingAd = true;
+		f.state.CurrentAdMediaKey = f.info.MediaKey;
+		f.info.AdRollContext = {
+			rollType: "midroll",
+			mediaKey: f.info.MediaKey,
+			pageGeneration: f.state.PagePlaybackContextGeneration || 0,
+			cycleStartedAt: f.info.VisibleAdStartedAt,
+		};
+		f.info.ActiveBackupPlayerType = type;
+		f.info.IsUsingBackupStream = true;
+		f.info.LastCleanBackupPlayerType = type;
+		f.info.LastCleanBackupM3U8 = media(type, 1080);
+		f.info.LastCleanBackupAt = Date.now() - 1000;
+		f.info.BackupEncodingsM3U8Cache[type] = {
+			m3u8: master(type, "avc1.640033").replaceAll(`/${type}/`, "/retired/"),
+			timestamp: Date.now(),
+			baseUrl: `${f.info.UsherBaseUrl}?token=retired`,
+		};
+		const originalFetch = f.fetch.getMockImplementation();
+		f.fetch.mockImplementation(async (url, options) =>
+			String(url).includes("/retired/")
+				? new Response(media(type, 1080, 401, true))
+				: originalFetch(url, options),
+		);
+		const selected = await f.context._findBackupStream(f.info, f.fetch);
+		expect(selected.type).not.toBe(type);
+		expect(selected.m3u8).not.toContain("stitched-ad");
+		expect(f.tokens).not.toContain(type);
+		expect(f.context._isBackupPlayerRetryCoolingDown(f.info, type)).toBe(true);
+	},
+);
+
 function setupEmergencyBridge(roll = "preroll") {
 	vi.useFakeTimers();
 	vi.setSystemTime(1_000_000);
