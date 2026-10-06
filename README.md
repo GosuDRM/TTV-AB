@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 ## 🔔 What's New
 
+### v19.0.9 - 2026-10-06
+
+- **Quality Transitions** - Keep playback aligned when returning to a previously idle quality after ads.
+- **Stall Recovery** - Ignore detached players so old freeze reports cannot interrupt current playback.
+
 ### v19.0.8 - 2026-10-06
 
 - **Ad Transitions** - Prevent stalled playlist updates and replay of old native segments during ad transitions.
@@ -84,11 +89,6 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 - **Player Lookup** - Stop searching once the player and playback state are found, while preserving fallback state and player replacement handling.
 - **Default Settings** - Disable Low Quality Fallback on every install and update, then preserve later user choices.
 - **Support Button** - Center the Support the Developer button label.
-
-### v19.0.6 - 2026-10-03
-
-- **Backup Stall Recovery** - Rotate stalled backups while waiting for ad-end confirmation, instead of continuing to serve the frozen source.
-- **HD Quality Recovery** - Keep verified HD options when a higher quality times out, and retain the full catalog for later checks.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
