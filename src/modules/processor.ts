@@ -179,6 +179,7 @@ function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
 	if (!preserveEmptyHoldTimelines) {
 		info._EmptyHoldTimelineByUrl?.clear?.();
 		info._LivePlaylistTimeline = null;
+		info._LastServedPlaylistKind = null;
 		info._NativePlaybackMaster = null;
 	}
 	info._FatalMediaRecoveryRequestId = null;
@@ -2481,6 +2482,14 @@ function _applyPlaylistContinuity(
 				} catch {}
 			}
 		}
+		if (info && __TTVAB_STATE__?.IsAdStrippingEnabled === true)
+			info._LastServedPlaylistKind = output.includes(
+				"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+			)
+				? "hold"
+				: backupMetadata
+					? "backup"
+					: "native";
 		return output;
 	} catch (error) {
 		if (info) info._LivePlaylistTimeline = previous;
@@ -3584,6 +3593,7 @@ function _createStreamInfo(context) {
 		_EmptyAdHoldDiscontinuitySequence: 0,
 		_EmptyHoldTimelineByUrl: new Map(),
 		_LivePlaylistTimeline: null,
+		_LastServedPlaylistKind: null,
 		_FatalMediaRecoveryRequestId: null,
 		_AdCycleRequestController:
 			ownsCurrentAdCycle && typeof AbortController === "function"
@@ -4240,6 +4250,9 @@ function _getSameRequestCleanNative(
 ) {
 	const ageMs = Date.now() - (Number(info?.LastCleanNativePlaylistAt) || 0);
 	if (
+		(info?.MediaType !== "vod" &&
+			(info?._LastServedPlaylistKind === "hold" ||
+				info?._LastServedPlaylistKind === "backup")) ||
 		!_isLastCleanNativeForRequest(
 			info,
 			url,
@@ -4854,13 +4867,36 @@ async function _processM3U8(
 				responseCodecConflictsWithRetiringOwner),
 	);
 	if (!unsafeEnhancedResponse) {
-		return _applyPlaylistContinuity(
+		if (
+			returnedCachedNative &&
+			!returnedCachedBackup &&
+			requestWasAdMarked &&
+			requestCodecFamily === "avc" &&
+			!responseHasEnhancedDecoderOwner &&
+			info.MediaType === "live" &&
+			info._LastServedPlaylistKind === "hold" &&
+			(info.IsShowingAd || info.IsHoldingBackupAfterAd)
+		) {
+			_assertM3U8RequestContextCurrent(info, requestAdContext, requestSignal);
+			result = _createEmptyAdHoldPlaylist(text, info);
+		}
+		const output = _applyPlaylistContinuity(
 			info,
 			url,
 			result,
 			resultBackupMetadata,
 			requestAdContext,
 		);
+		if (
+			returnedCachedNative &&
+			requestWasAdMarked &&
+			result === info.LastCleanNativeM3U8
+		)
+			_log(
+				"[Trace] Returning native playlist to prevent buffer drain during backup search",
+				"info",
+			);
+		return output;
 	}
 
 	let backupSearchRetryCount = 0;
@@ -6288,10 +6324,6 @@ async function _processM3U8Core(
 							2000,
 						);
 				if (cleanNativeBridge) {
-					_log(
-						"[Trace] Returning native playlist to prevent buffer drain during backup search",
-						"info",
-					);
 					return cleanNativeBridge;
 				}
 				return _stripAds(text, false, info);
@@ -6337,10 +6369,6 @@ async function _processM3U8Core(
 				Number(info.LastCleanBackupAt) >=
 					Math.max(0, Number(info.VisibleAdStartedAt) || 0);
 			if (!prewarmedBackupReady) {
-				_log(
-					"[Trace] Returning native playlist to prevent buffer drain during backup search",
-					"info",
-				);
 				return info.LastCleanNativeM3U8;
 			}
 			_log(
@@ -6351,6 +6379,24 @@ async function _processM3U8Core(
 					: "[Trace] Pre-warmed codec-compatible backup ready during native bridge; serving backup early",
 				"info",
 			);
+		}
+
+		if (
+			info.CsaiOnlyThisBreak &&
+			info._BackupSearchStartedAt > 0 &&
+			info.MediaType === "live" &&
+			!isEnhancedCodec &&
+			!info.EnhancedDecoderCodecFamily &&
+			!info.EnhancedDecoderCodec &&
+			_getVideoCodecFamily(directResolution?.Codecs || res?.Codecs) === "avc" &&
+			!(
+				info.LastCleanBackupM3U8 &&
+				Number(info.LastCleanBackupAt) >= Number(info.VisibleAdStartedAt) &&
+				Date.now() - Number(info.LastCleanBackupAt) >= 0 &&
+				Date.now() - Number(info.LastCleanBackupAt) < 900
+			)
+		) {
+			return _stripAds(text, false, info);
 		}
 
 		let startIdx = 0;

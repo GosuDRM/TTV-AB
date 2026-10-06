@@ -118,6 +118,131 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it("allows a fresh native bridge again after an undated hold finishes", async () => {
+		const { context, info, serve, hold } = setup();
+		await hold();
+		context._resetStreamAdState(info, true);
+		const clean = playlist(500);
+		await serve(clean);
+		info.LastCleanNativeM3U8 = clean;
+		info.LastCleanNativeUrl = nativeUrl;
+		info.LastCleanNativeCodec = codec;
+		info.LastCleanNativePlaylistAt = Date.now();
+		expect(
+			context._getSameRequestCleanNative(info, nativeUrl, codec, false, 2000),
+		).toBe(clean);
+	});
+
+	it.each(
+		[false, true].flatMap((disabled) =>
+			[false, true].map((dated) => ({ disabled, dated })),
+		),
+	)(
+		"keeps the hold flowing after another rendition retires the native bridge with disabled=$disabled and dated=$dated",
+		async ({ disabled, dated }) => {
+			const { context, info, fetch } = setup();
+			let now = Date.now();
+			context.Date = class extends Date {
+				static now() {
+					return now;
+				}
+			};
+			context.state.DisableAutoplayBackup = disabled;
+			context.state.CurrentAdMediaKey = null;
+			context.state.CurrentAdChannel = null;
+			info.IsShowingAd = false;
+			info.VisibleAdStartedAt = 0;
+			const otherUrl = nativeUrl.replace("native", "360p");
+			info.Urls[otherUrl] = { Resolution: "640x360", Codecs: codec };
+			context.state.StreamInfosByUrl[otherUrl] = info;
+			const clean = dated
+				? playlist(400).replace(
+						"#EXTINF:",
+						"#EXT-X-PROGRAM-DATE-TIME:2026-10-06T07:05:04Z\n#EXTINF:",
+					)
+				: playlist(400);
+			await context._processM3U8(nativeUrl, clean, fetch);
+			const search = vi.fn(() => new Promise(() => {}));
+			context._findBackupStream = search;
+			const log = vi.fn();
+			context._log = log;
+			const ad = clean.replace("#EXTINF:", "#EXT-X-CUE-OUT:30\n#EXTINF:");
+			const first = await context._processM3U8(otherUrl, ad, fetch);
+			now += 1000;
+			const next = await context._processM3U8(nativeUrl, ad, fetch);
+			expect(next).toContain("__ttvab_empty_hold_segment.ts");
+			expect(next).not.toContain("clean-400.ts");
+			expect(segments(next)[0].sequence).toBeGreaterThan(
+				segments(first).at(-1).sequence,
+			);
+			expect(search).toHaveBeenCalledOnce();
+			expect(log.mock.calls.flat().join("\n")).not.toContain(
+				"Returning native playlist to prevent buffer drain",
+			);
+		},
+	);
+
+	it.each(["current", "aborted", "new cycle", "new loader"])(
+		"rechecks a cached native response after a concurrent rendition starts a hold: %s",
+		async (owner) => {
+			const { context, info, fetch } = setup();
+			context.state.CurrentAdMediaKey = null;
+			context.state.CurrentAdChannel = null;
+			info.IsShowingAd = false;
+			info.VisibleAdStartedAt = 0;
+			const otherUrl = nativeUrl.replace("native", "360p");
+			info.Urls[otherUrl] = { Resolution: "640x360", Codecs: codec };
+			context.state.StreamInfosByUrl[otherUrl] = info;
+			const clean = playlist(400).replace(
+				"#EXTINF:",
+				"#EXT-X-PROGRAM-DATE-TIME:2026-10-06T07:05:04Z\n#EXTINF:",
+			);
+			await context._processM3U8(nativeUrl, clean, fetch);
+			context._findBackupStream = vi.fn(() => new Promise(() => {}));
+			const core = context._processM3U8Core;
+			let release: () => void;
+			let selected: () => void;
+			const paused = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const ready = new Promise<void>((resolve) => {
+				selected = resolve;
+			});
+			context._processM3U8Core = async (...args: unknown[]) => {
+				const text = await core(...args);
+				if (args[0] === nativeUrl) {
+					selected();
+					await paused;
+				}
+				return text;
+			};
+			const ad = clean.replace("#EXTINF:", "#EXT-X-CUE-OUT:30\n#EXTINF:");
+			const controller = new AbortController();
+			const pending = context._processM3U8(
+				nativeUrl,
+				ad,
+				fetch,
+				controller.signal,
+			);
+			await ready;
+			const held = await context._processM3U8(otherUrl, ad, fetch);
+			if (owner === "aborted") controller.abort();
+			if (owner === "new cycle") info.BackupSearchEpoch++;
+			if (owner === "new loader") info.NativeRecoveryLoaderEpoch++;
+			release();
+			if (owner !== "current") {
+				await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+				return;
+			}
+			const output = await pending;
+			expect(output).toContain("__ttvab_empty_hold_segment.ts");
+			expect(output).not.toContain("clean-400.ts");
+			expect(segments(output)[0].sequence).toBeGreaterThanOrEqual(
+				segments(held).at(-1).sequence,
+			);
+		},
+	);
+
 	it.each([10, 8990, 250000])(
 		"hands a long preroll hold to backup sequence %s without advertising missing segments",
 		async (sourceSequence) => {
@@ -529,7 +654,7 @@ describe("empty hold playlist continuity", () => {
 		]);
 	});
 
-	it.each([-51, -500, -1999])(
+	it.each([-51, -235, -500, -1999])(
 		"still trims a handoff segment overlapping the previous window by %s ms",
 		async (skewMs) => {
 			const { serve } = setup();
@@ -1025,15 +1150,19 @@ describe("empty hold playlist continuity", () => {
 	it("retains numbering after an exact worker ad reset and releases it on full reset", async () => {
 		const { context, info, hold, serve } = setup();
 		const lastHold = segments(await hold())[0];
+		expect(info._LastServedPlaylistKind).toBe("hold");
 		expect(
 			context._resetWorkerAdCycleState({
 				mediaKey: info.MediaKey,
 				cycleStartedAt: info.VisibleAdStartedAt,
 			}),
 		).toBe(true);
+		expect(info._LastServedPlaylistKind).toBe("hold");
 		const native = segments(await serve(playlist(10)));
+		expect(info._LastServedPlaylistKind).toBe("native");
 		expect(native[0].sequence).toBeGreaterThan(lastHold.sequence);
 		context._resetStreamAdState(info);
+		expect(info._LastServedPlaylistKind).toBeNull();
 		expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
 		expect(await serve(playlist(11))).toBe(playlist(11));
 	});

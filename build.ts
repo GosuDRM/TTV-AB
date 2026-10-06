@@ -1327,6 +1327,16 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_processM3U8",
+			helper: "_createEmptyAdHoldPlaylist",
+			source: processorSource,
+		},
+		{
+			consumer: "_processM3U8",
+			helper: "_assertM3U8RequestContextCurrent",
+			source: processorSource,
+		},
+		{
 			consumer: "_applyPlaylistContinuity",
 			helper: "_alignLivePlaylist",
 			source: processorSource,
