@@ -155,7 +155,7 @@ afterEach(() => {
 });
 
 describe("ad timer setting transport", () => {
-	it("preserves a newer timer opt-out over the initial read and enables a removed setting", () => {
+	it("preserves a newer timer opt-out over the initial read and keeps a removed setting off", () => {
 		let finish: StorageGetCallback | null = null;
 		storageGetImplementation = (_keys, callback) => {
 			finish = callback;
@@ -176,9 +176,8 @@ describe("ad timer setting transport", () => {
 			{ ttvAdTimerEnabled: { newValue: undefined } },
 			"local",
 		);
-		expect(port.messages).toEqual([
-			{ type: "ttvab-toggle-ad-timer", detail: { enabled: true } },
-		]);
+		expect(port.messages).toEqual([]);
+		expect(g.bridgeState).toMatchObject({ adTimerEnabled: false });
 	});
 });
 
@@ -412,10 +411,14 @@ function finishStorageRead(
 
 describe("settings initialization lifecycle", () => {
 	it.each([
-		[{}, true, true],
+		[{}, true, false],
 		[{ ttvAutoplayBackupEnabled: true, ttvAdTimerEnabled: false }, true, false],
-		[{ ttvAutoplayBackupEnabled: "true" }, true, true],
-		[{ ttvAutoplayBackupEnabled: false }, false, true],
+		[
+			{ ttvAutoplayBackupEnabled: "true", ttvAdTimerEnabled: "true" },
+			true,
+			false,
+		],
+		[{ ttvAutoplayBackupEnabled: false, ttvAdTimerEnabled: true }, false, true],
 	])(
 		"seeds defaults or explicit saved choices into the authenticated page bridge: %s",
 		(stored, fallback, timer) => {
@@ -484,7 +487,7 @@ describe("settings initialization lifecycle", () => {
 			enabled: false,
 			adSpoofingEnabled: false,
 			autoplayBackupEnabled: false,
-			adTimerEnabled: false,
+			adTimerEnabled: true,
 		});
 		const port = makePagePort();
 		g.pageBridgePort = port;
@@ -495,7 +498,7 @@ describe("settings initialization lifecycle", () => {
 				ttvAdblockEnabled: { oldValue: false, newValue: undefined },
 				ttvAdSpoofingEnabled: { oldValue: false, newValue: undefined },
 				ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
-				ttvAdTimerEnabled: { oldValue: false, newValue: undefined },
+				ttvAdTimerEnabled: { oldValue: true, newValue: undefined },
 			},
 			"local",
 		);
@@ -504,13 +507,13 @@ describe("settings initialization lifecycle", () => {
 			enabled: true,
 			adSpoofingEnabled: true,
 			autoplayBackupEnabled: true,
-			adTimerEnabled: true,
+			adTimerEnabled: false,
 		});
 		expect(port.messages).toEqual([
 			{ type: "ttvab-toggle", detail: { enabled: true } },
 			{ type: "ttvab-toggle-ad-spoofing", detail: { enabled: true } },
 			{ type: "ttvab-toggle-autoplay-backup", detail: { enabled: true } },
-			{ type: "ttvab-toggle-ad-timer", detail: { enabled: true } },
+			{ type: "ttvab-toggle-ad-timer", detail: { enabled: false } },
 		]);
 	});
 

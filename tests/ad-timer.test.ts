@@ -191,9 +191,11 @@ describe("ad break timer", () => {
 		expect(overlay()).toBeNull();
 	});
 
-	it("defaults on and toggles during a break without playback messages or timers", () => {
-		expect(g._adTimerEnabled).toBe(true);
+	it("defaults off and toggles during a break without playback messages or timers", () => {
+		expect(g._adTimerEnabled).toBe(false);
 		g._updateAdTimerOverlay();
+		expect(overlay()).toBeNull();
+		toggle(true);
 		expect(overlay()?.textContent).toBe("Ad break · 1:23");
 		expect(overlay()?.style.pointerEvents).toBe("none");
 		expect(overlay()?.getAttribute("aria-live")).toBe("off");

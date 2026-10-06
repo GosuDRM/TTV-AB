@@ -49,7 +49,7 @@ function loadBackground() {
 beforeAll(async () => {
 	storageData = {
 		ttvAutoplayBackupEnabled: false,
-		ttvAdTimerEnabled: false,
+		ttvAdTimerEnabled: true,
 		ttvPlaybackDefaultsV1Applied: true,
 	};
 	g.chrome = {
@@ -142,7 +142,7 @@ describe("playback defaults migration", () => {
 
 	it("applies the new defaults on background startup before a later install event", () => {
 		expect(startupStorageData).toEqual({
-			ttvAutoplayBackupEnabled: false,
+			ttvAutoplayBackupEnabled: true,
 			ttvAdTimerEnabled: false,
 			ttvPlaybackDefaultsV1Applied: true,
 			ttvPlaybackDefaultsV2Applied: true,
@@ -165,8 +165,9 @@ describe("playback defaults migration", () => {
 				...(reason === "update"
 					? {
 							ttvAutoplayBackupEnabled: false,
-							ttvAdTimerEnabled: false,
+							ttvAdTimerEnabled: true,
 							ttvPlaybackDefaultsV1Applied: true,
+							ttvPlaybackDefaultsV2Applied: true,
 						}
 					: {}),
 			};
@@ -174,59 +175,69 @@ describe("playback defaults migration", () => {
 			expect(runtimeInstalledListener).toBeTypeOf("function");
 			runtimeInstalledListener?.({ reason });
 			await g.playbackDefaultsMigration;
-			expect(write).toHaveBeenCalledTimes(2);
+			expect(write).toHaveBeenCalledTimes(1);
 			expect(write).toHaveBeenCalledWith(
-				{ ttvAutoplayBackupEnabled: false },
+				{
+					ttvAutoplayBackupEnabled: true,
+					ttvAdTimerEnabled: false,
+					ttvPlaybackDefaultsV2Applied: true,
+				},
 				expect.any(Function),
 			);
 			expect(storageData).toEqual({
 				...unrelated,
 				...(reason === "update" ? { ttvPlaybackDefaultsV1Applied: true } : {}),
-				ttvAutoplayBackupEnabled: false,
-				ttvAdTimerEnabled: reason === "install",
+				ttvAutoplayBackupEnabled: true,
+				ttvAdTimerEnabled: false,
 				ttvPlaybackDefaultsV2Applied: true,
 			});
 		},
 	);
 
-	it("preserves later user choices across restarts but re-disables the fallback on update", async () => {
+	it("preserves later user choices across restarts and resets both defaults on every update", async () => {
 		await migrate();
-		storageData.ttvAutoplayBackupEnabled = true;
-		storageData.ttvAdTimerEnabled = false;
 		const write = vi.spyOn(api().storage.local, "set");
-		await migrate();
-		expect(write).not.toHaveBeenCalled();
-		runtimeInstalledListener?.({ reason: "update" });
-		await g.playbackDefaultsMigration;
-		expect(write).toHaveBeenCalledTimes(1);
-		expect(write).toHaveBeenCalledWith(
-			{ ttvAutoplayBackupEnabled: false },
-			expect.any(Function),
-		);
-		expect(storageData).toEqual({
-			ttvAutoplayBackupEnabled: false,
-			ttvAdTimerEnabled: false,
-			ttvPlaybackDefaultsV2Applied: true,
-		});
+		for (let updates = 0; updates < 2; updates++) {
+			storageData.ttvAutoplayBackupEnabled = false;
+			storageData.ttvAdTimerEnabled = true;
+			await migrate();
+			expect(write).toHaveBeenCalledTimes(updates);
+			runtimeInstalledListener?.({ reason: "update" });
+			await g.playbackDefaultsMigration;
+			expect(write).toHaveBeenCalledTimes(updates + 1);
+			expect(storageData).toEqual({
+				ttvAutoplayBackupEnabled: true,
+				ttvAdTimerEnabled: false,
+				ttvPlaybackDefaultsV2Applied: true,
+			});
+		}
 	});
 
-	it("coalesces startup and update work while still disabling the fallback on update", async () => {
-		let finish: (data: Record<string, unknown>) => void = () => {};
-		const read = vi
-			.spyOn(api().storage.local, "get")
-			.mockImplementationOnce((_keys, callback) => {
-				finish = callback;
+	it.each([false, true])(
+		"coalesces startup and update into one defaults write with prior migration %s",
+		async (alreadyMigrated) => {
+			let finish: (data: Record<string, unknown>) => void = () => {};
+			const read = vi
+				.spyOn(api().storage.local, "get")
+				.mockImplementationOnce((_keys, callback) => {
+					finish = callback;
+				});
+			const write = vi.spyOn(api().storage.local, "set");
+			const first = migrate();
+			runtimeInstalledListener?.({ reason: "update" });
+			expect(migrate()).toBe(first);
+			expect(read).toHaveBeenCalledTimes(1);
+			finish({ ttvPlaybackDefaultsV2Applied: alreadyMigrated });
+			await first;
+			expect(write).toHaveBeenCalledTimes(1);
+			expect(storageData).toEqual({
+				ttvAutoplayBackupEnabled: true,
+				ttvAdTimerEnabled: false,
+				ttvPlaybackDefaultsV2Applied: true,
 			});
-		const write = vi.spyOn(api().storage.local, "set");
-		const first = migrate();
-		runtimeInstalledListener?.({ reason: "update" });
-		expect(migrate()).toBe(first);
-		expect(read).toHaveBeenCalledTimes(1);
-		finish({});
-		await first;
-		expect(write).toHaveBeenCalledTimes(2);
-		expect(g.playbackDefaultsMigration).toBeNull();
-	});
+			expect(g.playbackDefaultsMigration).toBeNull();
+		},
+	);
 
 	it.each(["chrome_update", "browser_update", "shared_module_update"])(
 		"does not reset preferences for %s events",
@@ -243,7 +254,7 @@ describe("playback defaults migration", () => {
 		async (operation) => {
 			storageData = {
 				ttvAutoplayBackupEnabled: false,
-				ttvAdTimerEnabled: false,
+				ttvAdTimerEnabled: true,
 			};
 			const browser = api();
 			const error = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -277,12 +288,12 @@ describe("playback defaults migration", () => {
 			);
 			expect(storageData).toEqual({
 				ttvAutoplayBackupEnabled: false,
-				ttvAdTimerEnabled: false,
+				ttvAdTimerEnabled: true,
 			});
 			expect(g.playbackDefaultsMigration).toBeNull();
 			await migrate();
 			expect(storageData).toEqual({
-				ttvAutoplayBackupEnabled: false,
+				ttvAutoplayBackupEnabled: true,
 				ttvAdTimerEnabled: false,
 				ttvPlaybackDefaultsV2Applied: true,
 			});

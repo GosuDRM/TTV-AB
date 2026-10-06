@@ -180,11 +180,11 @@ describe("popup toggle authority", () => {
 		expect(harness.writes).toEqual([]);
 	});
 
-	it("enables the timer by default, saves its setting, and preserves newer changes", () => {
+	it("disables the timer by default, saves its setting, and preserves newer changes", () => {
 		const harness = makeHarness();
 		harness.controller.start();
 		harness.reads[0].finish({});
-		expect(harness.controller.getSnapshot().values.adTimer).toBe(true);
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
 		expect(harness.controller.write("adTimer", true)).toBe(true);
 		expect(harness.writes[0]).toEqual(
 			expect.objectContaining({
@@ -212,7 +212,7 @@ describe("popup toggle authority", () => {
 		harness.controller.applyStorageChanges({
 			ttvAdTimerEnabled: { newValue: undefined },
 		});
-		expect(harness.controller.getSnapshot().values.adTimer).toBe(true);
+		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
 	});
 
 	it("serializes timer writes and ignores an older completion after the next toggle", () => {
@@ -269,7 +269,7 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: true,
-					adTimer: true,
+					adTimer: false,
 					turbo: false,
 				},
 				available: {
@@ -283,14 +283,14 @@ describe("popup toggle authority", () => {
 		);
 	});
 
-	it("restores fallback and timer on when their settings are removed", () => {
+	it("restores fallback on and timer off when their settings are removed", () => {
 		const harness = makeHarness();
 		harness.controller.start();
 		harness.reads[0].finish({
 			ttvAdblockEnabled: false,
 			ttvAdSpoofingEnabled: false,
 			ttvAutoplayBackupEnabled: false,
-			ttvAdTimerEnabled: false,
+			ttvAdTimerEnabled: true,
 			ttvTurboMode: true,
 		});
 
@@ -298,7 +298,7 @@ describe("popup toggle authority", () => {
 			ttvAdblockEnabled: { oldValue: false, newValue: undefined },
 			ttvAdSpoofingEnabled: { oldValue: false, newValue: undefined },
 			ttvAutoplayBackupEnabled: { oldValue: false, newValue: undefined },
-			ttvAdTimerEnabled: { oldValue: false, newValue: undefined },
+			ttvAdTimerEnabled: { oldValue: true, newValue: undefined },
 			ttvTurboMode: { oldValue: true, newValue: undefined },
 		});
 
@@ -306,7 +306,7 @@ describe("popup toggle authority", () => {
 			adblock: true,
 			adSpoofing: true,
 			autoplayBackup: true,
-			adTimer: true,
+			adTimer: false,
 			turbo: false,
 		});
 	});
@@ -361,7 +361,7 @@ describe("popup toggle authority", () => {
 			adblock: false,
 			adSpoofing: true,
 			autoplayBackup: true,
-			adTimer: true,
+			adTimer: false,
 			turbo: false,
 		});
 		expect(snapshot.available.autoplayBackup).toBe(false);
@@ -497,7 +497,7 @@ describe("popup toggle authority", () => {
 					adblock: false,
 					adSpoofing: false,
 					autoplayBackup: false,
-					adTimer: true,
+					adTimer: false,
 					turbo: false,
 				},
 			}),
@@ -604,7 +604,7 @@ describe("popup toggle authority", () => {
 		expect(
 			html.match(/<input[^>]+id="autoplayBackupToggle"[^>]*>/)?.[0],
 		).toMatch(/\bchecked\b/);
-		expect(html.match(/<input[^>]+id="adTimerToggle"[^>]*>/)?.[0]).toMatch(
+		expect(html.match(/<input[^>]+id="adTimerToggle"[^>]*>/)?.[0]).not.toMatch(
 			/\bchecked\b/,
 		);
 		expect(source).toMatch(
@@ -731,10 +731,10 @@ describe("popup toggle authority", () => {
 });
 
 describe("popup setting explanations", () => {
-	it("describes the enabled timer without an elapsed label", () => {
+	it("describes the optional timer as off by default without an elapsed label", () => {
 		const { html, translations } = loadPopupExplanations();
 		const english = translations.en;
-		expect(english.adTimerDetails).toContain("On by default.");
+		expect(english.adTimerDetails).toContain("Off by default.");
 		for (const text of [
 			english.adTimerDesc,
 			english.adTimerDetails,
