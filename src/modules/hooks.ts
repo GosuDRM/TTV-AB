@@ -575,17 +575,29 @@ function _runPostAdArtifactCleanup() {
 }
 
 function _runPostAdPlayerTask(isPausePlay, isReload, options, attempt = 0) {
-	if (typeof _doPlayerTask !== "function") return false;
 	const channel = options?.channel || null;
 	const mediaKey = options?.mediaKey || null;
-	if (
-		(typeof _hasPendingAdResumeIntent === "function" &&
-			!_hasPendingAdResumeIntent(channel, mediaKey)) ||
-		(typeof _hasUserPauseIntent === "function" &&
-			_hasUserPauseIntent(channel, mediaKey)) ||
-		(typeof _shouldSuppressAutomaticPlaybackResume === "function" &&
-			_shouldSuppressAutomaticPlaybackResume(channel, mediaKey))
-	) {
+	const hasPendingIntent =
+		typeof _doPlayerTask === "function" &&
+		(typeof _hasPendingAdResumeIntent !== "function" ||
+			_hasPendingAdResumeIntent(channel, mediaKey));
+	const skippedReason =
+		typeof _doPlayerTask !== "function"
+			? "player-task-unavailable"
+			: typeof _hasUserPauseIntent === "function" &&
+					_hasUserPauseIntent(channel, mediaKey)
+				? "user-paused"
+				: typeof _shouldSuppressAutomaticPlaybackResume === "function" &&
+						_shouldSuppressAutomaticPlaybackResume(channel, mediaKey)
+					? "secondary-player"
+					: !hasPendingIntent
+						? "no-resume-intent"
+						: null;
+	if (skippedReason) {
+		_log(
+			`[Recovery] Post-ad task skipped: ${skippedReason}; ${_normalizeMediaKey(mediaKey) || "unknown"}; cycle ${Math.max(0, Number(options?.cycleStartedAt) || 0)}; page ${Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0}`,
+			"info",
+		);
 		return false;
 	}
 	let didRun = false;

@@ -3884,45 +3884,67 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
-	it("does not start a post-ad task after explicit user pause", () => {
-		const previousPlayerTask = g._doPlayerTask;
-		const previousPendingIntent = g._hasPendingAdResumeIntent;
-		const previousUserPause = g._hasUserPauseIntent;
-		const previousSuppress = g._shouldSuppressAutomaticPlaybackResume;
-		const previousSchedule = g._schedulePlaybackRecoveryTimeout;
-		const playerTask = vi.fn(() => true);
-		const schedule = vi.fn();
-		g._doPlayerTask = playerTask;
-		g._hasPendingAdResumeIntent = () => true;
-		g._hasUserPauseIntent = () => true;
-		g._shouldSuppressAutomaticPlaybackResume = () => false;
-		g._schedulePlaybackRecoveryTimeout = schedule;
+	it.each([
+		{ pending: true, paused: true, suppressed: false, reason: "user-paused" },
+		{
+			pending: false,
+			paused: false,
+			suppressed: false,
+			reason: "no-resume-intent",
+		},
+		{
+			pending: true,
+			paused: false,
+			suppressed: true,
+			reason: "secondary-player",
+		},
+	])(
+		"reports why a post-ad task was skipped: $reason",
+		({ pending, paused, suppressed, reason }) => {
+			const previousPlayerTask = g._doPlayerTask;
+			const previousPendingIntent = g._hasPendingAdResumeIntent;
+			const previousUserPause = g._hasUserPauseIntent;
+			const previousSuppress = g._shouldSuppressAutomaticPlaybackResume;
+			const previousSchedule = g._schedulePlaybackRecoveryTimeout;
+			const playerTask = vi.fn(() => true);
+			const schedule = vi.fn();
+			const log = vi.spyOn(g, "_log");
+			g._doPlayerTask = playerTask;
+			g._hasPendingAdResumeIntent = () => pending;
+			g._hasUserPauseIntent = () => paused;
+			g._shouldSuppressAutomaticPlaybackResume = () => suppressed;
+			g._schedulePlaybackRecoveryTimeout = schedule;
 
-		try {
-			expect(
-				T<
-					(
-						isPausePlay: boolean,
-						isReload: boolean,
-						options: Record<string, unknown>,
-					) => boolean
-				>("_runPostAdPlayerTask")(false, true, {
-					reason: "post-ad-native-restore",
-					channel: "testchannel",
-					mediaKey: "live:testchannel",
-					cycleStartedAt: 90000,
-				}),
-			).toBe(false);
-			expect(playerTask).not.toHaveBeenCalled();
-			expect(schedule).not.toHaveBeenCalled();
-		} finally {
-			g._doPlayerTask = previousPlayerTask;
-			g._hasPendingAdResumeIntent = previousPendingIntent;
-			g._hasUserPauseIntent = previousUserPause;
-			g._shouldSuppressAutomaticPlaybackResume = previousSuppress;
-			g._schedulePlaybackRecoveryTimeout = previousSchedule;
-		}
-	});
+			try {
+				expect(
+					T<
+						(
+							isPausePlay: boolean,
+							isReload: boolean,
+							options: Record<string, unknown>,
+						) => boolean
+					>("_runPostAdPlayerTask")(false, true, {
+						reason: "post-ad-native-restore",
+						channel: "testchannel",
+						mediaKey: "live:testchannel",
+						cycleStartedAt: 90000,
+					}),
+				).toBe(false);
+				expect(playerTask).not.toHaveBeenCalled();
+				expect(schedule).not.toHaveBeenCalled();
+				expect(log).toHaveBeenCalledWith(
+					`[Recovery] Post-ad task skipped: ${reason}; live:testchannel; cycle 90000; page 0`,
+					"info",
+				);
+			} finally {
+				g._doPlayerTask = previousPlayerTask;
+				g._hasPendingAdResumeIntent = previousPendingIntent;
+				g._hasUserPauseIntent = previousUserPause;
+				g._shouldSuppressAutomaticPlaybackResume = previousSuppress;
+				g._schedulePlaybackRecoveryTimeout = previousSchedule;
+			}
+		},
+	);
 
 	it.each(["resume intent completed", "user paused"])(
 		"drops a queued post-ad retry when %s",
@@ -10386,6 +10408,116 @@ describe("injected worker VOD ad requests", () => {
 });
 
 describe("injected worker ad playlist validation", () => {
+	it.each([false, true])(
+		"keeps concurrent rendition polls advancing until the clean backup is ready with fallback disabled=%s",
+		async (disabled) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(1_000_000);
+			T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+			const harness = installWorkerMessageHarness({
+				preserveBlobSources: true,
+			});
+			const masterUrl =
+				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+			const highUrl = "https://edge.example/native.m3u8?token=owned";
+			const lowUrl = "https://edge.example/360p.m3u8?token=owned";
+			const backupUrl = "https://edge.example/site.m3u8?token=backup";
+			const codec = "mp4a.40.2,avc1.64002a";
+			const master = [
+				"#EXTM3U",
+				`#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="${codec}"`,
+				highUrl,
+				`#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="${codec}"`,
+				lowUrl,
+			].join("\n");
+			const backupMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="${codec}"\n${backupUrl}`;
+			let ads = false;
+			const tokens: string[] = [];
+			const nativeFetch = vi.fn(
+				async (input: RequestInfo | URL, options?: RequestInit) => {
+					const url = String(input);
+					if (url === masterUrl) return new Response(master);
+					if (url !== highUrl && url !== lowUrl)
+						await new Promise((resolve) => setTimeout(resolve, 500));
+					if (url.includes("gql.twitch.tv")) {
+						const type = JSON.parse(String(options?.body)).variables.playerType;
+						tokens.push(type);
+						return Response.json({
+							data: {
+								streamPlaybackAccessToken: { signature: "test", value: type },
+							},
+						});
+					}
+					if (url.includes("usher.ttvnw.net"))
+						return new Response(backupMaster);
+					const backup = url === backupUrl;
+					const offset = backup
+						? Math.floor((Date.now() - 1_000_000) / 2000)
+						: 0;
+					const sequence = (backup ? 100 : 400) + offset;
+					return new Response(
+						[
+							"#EXTM3U",
+							"#EXT-X-TARGETDURATION:2",
+							`#EXT-X-MEDIA-SEQUENCE:${sequence}`,
+							`#EXT-X-PROGRAM-DATE-TIME:${new Date(Date.parse("2026-10-06T07:05:04Z") + (backup ? 4000 + offset * 2000 : 0)).toISOString()}`,
+							...(!backup && ads ? ["#EXT-X-CUE-OUT:30"] : []),
+							...Array.from({ length: 3 }, (_, index) => [
+								"#EXTINF:2.000,live",
+								`https://edge.example/${backup ? "backup" : "native"}-${sequence + index}.ts`,
+							]).flat(),
+						].join("\n"),
+					);
+				},
+			);
+			try {
+				const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+				runtime.scope.Date = Date;
+				runtime.scope.navigator = { languages: ["en-US"], language: "en-US" };
+				runtime.deliverBootstrap();
+				const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+				Object.assign(state, {
+					PageMediaKey: "live:testchannel",
+					PreferredQualityGroup: "1080p60",
+					BackupPlayerTypes: ["site"],
+					DisableAutoplayBackup: disabled,
+					DisableAdSpoofing: true,
+				});
+				const workerFetch = runtime.scope.fetch as typeof fetch;
+				await workerFetch(masterUrl);
+				await workerFetch(highUrl);
+				ads = true;
+				const held = await (await workerFetch(lowUrl)).text();
+				await vi.advanceTimersByTimeAsync(1000);
+				const nextHold = await (await workerFetch(highUrl)).text();
+				expect(nextHold).toContain("__ttvab_empty_hold_segment.ts");
+				expect(nextHold).not.toContain("/native-");
+				const sequence = (text: string) =>
+					Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
+				expect(sequence(nextHold)).toBeGreaterThan(sequence(held));
+				await vi.advanceTimersByTimeAsync(1500);
+				const pending = workerFetch(highUrl).then((response) =>
+					response.text(),
+				);
+				await vi.advanceTimersByTimeAsync(600);
+				const backup = await pending;
+				expect(backup).toContain("/backup-");
+				expect(backup).not.toContain("/native-");
+				expect(backup).not.toContain("__ttvab_empty_hold_segment.ts");
+				expect(sequence(backup)).toBeGreaterThan(sequence(nextHold));
+				expect(tokens).toEqual(["site"]);
+				const messages = (
+					runtime.scope.postMessage as ReturnType<typeof vi.fn>
+				).mock.calls.map(([value]) => value.message?.key);
+				expect(messages.filter((key) => key === "AdBlocked")).toHaveLength(1);
+				expect(messages).not.toContain("ReloadPlayer");
+			} finally {
+				harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
+
 	it.each([
 		{ roll: "preroll", disabled: true, enhanced: "" },
 		{ roll: "preroll", disabled: true, enhanced: "hev1.1.6.L153.B0" },
