@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.0.8] - 2026-10-06
+
+Fixed
+
+- **Ad Transitions** - Prevent stalled playlist updates and replay of old native segments during ad transitions.
+
+Changed
+
+- **Recovery Diagnostics** - Report why post-ad recovery was skipped, including pauses and missing resume intent.
+
 ## [19.0.7] - 2026-10-05
 
 Fixed

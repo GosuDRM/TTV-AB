@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 ## 🔔 What's New
 
+### v19.0.8 - 2026-10-06
+
+- **Ad Transitions** - Prevent stalled playlist updates and replay of old native segments during ad transitions.
+- **Recovery Diagnostics** - Report why post-ad recovery was skipped, including pauses and missing resume intent.
+
 ### v19.0.7 - 2026-10-05
 
 - **HD Quality Recovery** - Fix a recovery path that could leave only low-quality options after later ad breaks.
@@ -84,11 +89,6 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 - **Backup Stall Recovery** - Rotate stalled backups while waiting for ad-end confirmation, instead of continuing to serve the frozen source.
 - **HD Quality Recovery** - Keep verified HD options when a higher quality times out, and retain the full catalog for later checks.
-
-### v19.0.5 - 2026-10-03
-
-- **Midroll Fallback** - Use a temporary clean low-quality stream when normal-quality backups fail during midrolls, even with Low Quality Fallback off.
-- **Default Settings** - Enable Low Quality Fallback for new installs and once on update, then preserve later user choices.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
