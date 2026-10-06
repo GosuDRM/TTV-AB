@@ -2162,6 +2162,12 @@ describe("fatal enhanced-media recovery during ads", () => {
 });
 
 describe("_monitorPlayerBuffering active-ad player ownership", () => {
+	const mountedVideos: HTMLVideoElement[] = [];
+	function mountVideo(video: HTMLVideoElement) {
+		document.body.append(video);
+		mountedVideos.push(video);
+		return video;
+	}
 	const replacedGlobals = [
 		"_updateAdTimerOverlay",
 		"_getPlayerAndState",
@@ -2188,7 +2194,7 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 			replacedGlobals.map((name) => [name, g[name]]),
 		);
 		T<() => void>("_clearCachedPlayerRef")();
-		const video = document.createElement("video");
+		const video = mountVideo(document.createElement("video"));
 		pagePlayer = { getHTMLVideoElement: () => video };
 		g.__TTVAB_STATE__ = {
 			PageMediaType: "live",
@@ -2260,9 +2266,8 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 		const checkFatal = g._checkFatalAdMediaRecovery as ReturnType<typeof vi.fn>;
 		T<() => void>("_monitorPlayerBuffering")();
 		expect(checkFatal).toHaveBeenLastCalledWith(pagePlayer);
-		const replacement = {
-			getHTMLVideoElement: () => document.createElement("video"),
-		};
+		const replacementVideo = mountVideo(document.createElement("video"));
+		const replacement = { getHTMLVideoElement: () => replacementVideo };
 		g._getPlayerAndState = () => ({ player: replacement, state: {} });
 		checkFatal.mockClear();
 
@@ -2283,6 +2288,54 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 
 		expect(checkFatal).not.toHaveBeenCalled();
 	});
+
+	it("does not rotate or nudge a backup from a detached player while React still exposes it", () => {
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PinnedBackupPlayerType: "site",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			PinnedBackupStallPollMs: 100,
+		});
+		pagePlayer = makePlayer(
+			() => 1722.13,
+			() => 1722.13,
+		);
+		const video = pagePlayer.getHTMLVideoElement();
+		Object.defineProperty(video, "paused", { value: false });
+		mountVideo(video);
+		g._checkInAdPlayheadFreeze = savedGlobals._checkInAdPlayheadFreeze;
+		const task = vi.fn();
+		g._doPlayerTask = task;
+		T<() => void>("_monitorPlayerBuffering")();
+		vi.advanceTimersByTime(1200);
+		video.remove();
+		vi.advanceTimersByTime(6000);
+		expect(task).not.toHaveBeenCalled();
+		expect(g.__TTVAB_STATE__).not.toHaveProperty("BackupSearchForceRefreshAt");
+		expect(g._PinnedBackupStallState).toMatchObject({
+			videoRef: null,
+			firstObservedAt: 0,
+		});
+	});
+
+	it.each(["testchannel", "otherchannel"])(
+		"retains detached PiP recovery only for the exact ad media: %s",
+		(channel) => {
+			const video = pagePlayer.getHTMLVideoElement();
+			video.remove();
+			T<
+				(element: HTMLVideoElement, context: Record<string, unknown>) => unknown
+			>("_setActivePictureInPicturePlaybackContext")(video, {
+				MediaType: "live",
+				ChannelName: channel,
+				MediaKey: `live:${channel}`,
+			});
+			T<() => void>("_monitorPlayerBuffering")();
+			if (channel === "testchannel")
+				expect(g._checkFatalAdMediaRecovery).toHaveBeenCalledWith(pagePlayer);
+			else expect(g._checkFatalAdMediaRecovery).not.toHaveBeenCalled();
+		},
+	);
 
 	it.each(["media-error", "unready"])(
 		"verifies a replacement %s failure once without rearming it when the player cache clears",
@@ -2342,6 +2395,8 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 		g._doPlayerTask = vi.fn();
 		const retired = makeRangesVideo([[0, 30]], 20);
 		const replacement = makeRangesVideo([[0, 15]], 10);
+		mountVideo(retired.video);
+		mountVideo(replacement.video);
 		pagePlayer = { getHTMLVideoElement: () => retired.video };
 		T<() => void>("_monitorPlayerBuffering")();
 		vi.advanceTimersByTime(4800);
@@ -2379,11 +2434,13 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 				() => currentTime + 0.05,
 			);
 			let video = original.getHTMLVideoElement();
+			mountVideo(video);
 			pagePlayer = { getHTMLVideoElement: () => video };
 			const broadcast = vi.spyOn(g, "_broadcastWorkers");
 			T<() => void>("_monitorPlayerBuffering")();
 			vi.advanceTimersByTime(2400);
 			video = replacement.getHTMLVideoElement();
+			mountVideo(video);
 			vi.advanceTimersByTime(600);
 			expect(broadcast).not.toHaveBeenCalled();
 			vi.advanceTimersByTime(2999);
@@ -2432,6 +2489,8 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 
 	afterEach(() => {
 		T<(resetBufferState?: boolean) => void>("_stopPlayerBufferMonitor")(false);
+		for (const video of mountedVideos) video.remove();
+		mountedVideos.length = 0;
 		window.removeEventListener(
 			"pagehide",
 			g._flushWatchTimeOnPageExit as EventListener,

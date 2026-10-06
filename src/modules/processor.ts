@@ -2667,8 +2667,35 @@ function _applyEmptyHoldPlaylistContinuity(
 	let lastSequence = null;
 	let discontinuity = _parsePlaylistDiscontinuitySequence(text);
 	const baseDiscontinuity = discontinuity;
+	const nativeAnchors = [];
+	let segmentTime = Number.NaN;
+	let segmentDuration = 0;
+	let segmentSequence = null;
+	let hasExplicitTime = false;
 	for (const line of lines) {
-		if (line === "#EXT-X-DISCONTINUITY") discontinuity++;
+		if (line === "#EXT-X-DISCONTINUITY") {
+			discontinuity++;
+			if (!hasExplicitTime) segmentTime = Number.NaN;
+		}
+		if (line.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
+			segmentTime = Date.parse(line.slice(25));
+			hasExplicitTime = true;
+		}
+		if (line.startsWith("#EXTINF:")) {
+			segmentDuration = Number.parseFloat(line.slice(8)) * 1000;
+			segmentSequence = sequence;
+		} else if (line && !line.startsWith("#") && segmentSequence !== null) {
+			if (Number.isFinite(segmentTime) && segmentDuration > 0)
+				nativeAnchors.push({
+					time: segmentTime,
+					duration: segmentDuration,
+					sequence: segmentSequence,
+					discontinuity,
+				});
+			segmentTime += segmentDuration;
+			segmentSequence = null;
+			hasExplicitTime = false;
+		}
 		if (
 			line.startsWith("#EXTINF:") ||
 			line.startsWith("#EXT-X-TWITCH-PREFETCH:") ||
@@ -2744,8 +2771,12 @@ function _applyEmptyHoldPlaylistContinuity(
 						? candidate.lastDiscontinuity === sharedTimeline.lastDiscontinuity
 						: candidate.discontinuityOffset ===
 							sharedTimeline.discontinuityOffset) &&
-						candidate.lastRawFirstSequence >
-							sharedTimeline.lastRawFirstSequence))
+						(kind === "native" &&
+						candidate.nativeAnchor &&
+						sharedTimeline.nativeAnchor
+							? candidate.nativeAnchor.time > sharedTimeline.nativeAnchor.time
+							: candidate.lastRawFirstSequence >
+								sharedTimeline.lastRawFirstSequence)))
 			)
 				sharedTimeline = candidate;
 		}
@@ -2772,14 +2803,42 @@ function _applyEmptyHoldPlaylistContinuity(
 			changedSource = true;
 		}
 	}
-	const sharedBackup = kind === "backup" || isHold ? sharedTimeline : null;
+	const matchingNativeAnchor =
+		changedSource &&
+		kind === "native" &&
+		info.MediaType === "live" &&
+		isOwnedNativeVariant
+			? nativeAnchors.find(
+					(anchor) =>
+						anchor.time === sharedTimeline?.nativeAnchor?.time &&
+						anchor.duration === sharedTimeline.nativeAnchor.duration &&
+						anchor.discontinuity === sharedTimeline.nativeAnchor.discontinuity,
+				)
+			: null;
+	const sharedSource =
+		kind === "backup" || isHold
+			? sharedTimeline
+			: matchingNativeAnchor
+				? {
+						...sharedTimeline,
+						mediaOffset:
+							sharedTimeline.mediaOffset +
+							sharedTimeline.nativeAnchor.sequence -
+							matchingNativeAnchor.sequence,
+						boundarySequence:
+							sharedTimeline.boundarySequence -
+							sharedTimeline.nativeAnchor.sequence +
+							matchingNativeAnchor.sequence,
+						lastRawFirstSequence: firstSequence,
+					}
+				: null;
 	const addBoundary =
-		sharedBackup?.addBoundary ??
+		sharedSource?.addBoundary ??
 		(changedSource
 			? Boolean(!isHold && firstDiscontinuity === baseDiscontinuity)
 			: previous.addBoundary);
-	const timeline = sharedBackup
-		? { ...sharedBackup }
+	const timeline = sharedSource
+		? { ...sharedSource }
 		: changedSource
 			? {
 					kind,
@@ -2910,6 +2969,8 @@ function _applyEmptyHoldPlaylistContinuity(
 			output[versionIndex] = "#EXT-X-VERSION:2";
 	}
 	timeline.lastRawFirstSequence = firstSequence;
+	timeline.nativeAnchor =
+		kind === "native" ? nativeAnchors.at(-1) || null : null;
 	timeline.lastSequence = Math.max(
 		timeline.lastSequence,
 		lastSequence + timeline.mediaOffset,
