@@ -442,7 +442,7 @@ const bridgeState = {
 	enabled: true,
 	adSpoofingEnabled: true,
 	autoplayBackupEnabled: true,
-	adTimerEnabled: true,
+	adTimerEnabled: false,
 	turboMode: false,
 	storedAdsCount: 0,
 };
@@ -1283,9 +1283,7 @@ function handleStorageChanges(changes, namespace) {
 	if (changes.ttvAdTimerEnabled) {
 		storageChangeVersions.ttvAdTimerEnabled += 1;
 		const wasAdTimerEnabled = bridgeState.adTimerEnabled;
-		bridgeState.adTimerEnabled = normalizeDefaultEnabled(
-			changes.ttvAdTimerEnabled.newValue,
-		);
+		bridgeState.adTimerEnabled = changes.ttvAdTimerEnabled.newValue === true;
 		if (bridgeStateReady && bridgeState.adTimerEnabled !== wasAdTimerEnabled) {
 			sendToPage("ttvab-toggle-ad-timer", {
 				enabled: bridgeState.adTimerEnabled,
@@ -1426,9 +1424,7 @@ function readInitialStorageState() {
 				storageChangeVersions.ttvAdTimerEnabled ===
 				readVersions.ttvAdTimerEnabled
 			) {
-				bridgeState.adTimerEnabled = normalizeDefaultEnabled(
-					result.ttvAdTimerEnabled,
-				);
+				bridgeState.adTimerEnabled = result.ttvAdTimerEnabled === true;
 			}
 			if (storageChangeVersions.ttvTurboMode === readVersions.ttvTurboMode) {
 				bridgeState.turboMode = result.ttvTurboMode === true;

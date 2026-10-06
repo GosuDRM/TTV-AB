@@ -21,7 +21,7 @@ type UiFlags = {
 	achievementRemoveTimer: ReturnType<typeof setTimeout> | null;
 };
 
-let _adTimerEnabled = true;
+let _adTimerEnabled = false;
 
 function _setAdTimerEnabled(enabled) {
 	_adTimerEnabled = enabled === true;

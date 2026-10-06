@@ -741,7 +741,7 @@ function _createPopupToggleController(options) {
 		adblock: true,
 		adSpoofing: true,
 		autoplayBackup: true,
-		adTimer: true,
+		adTimer: false,
 		turbo: false,
 	};
 	const revisions = {
@@ -804,7 +804,9 @@ function _createPopupToggleController(options) {
 	}
 
 	function normalizeValue(name, value) {
-		return name === "turbo" ? value === true : value !== false;
+		return name === "turbo" || name === "adTimer"
+			? value === true
+			: value !== false;
 	}
 
 	function render() {

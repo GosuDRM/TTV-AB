@@ -26,6 +26,7 @@ const TURBO_MODE_STORAGE_KEY = "ttvTurboMode";
 const WATCH_STATS_SINCE_STORAGE_KEY = "ttvWatchStatsSinceAt";
 const PLAYBACK_DEFAULTS_MIGRATION_KEY = "ttvPlaybackDefaultsV2Applied";
 let playbackDefaultsMigration: Promise<void> | null = null;
+let playbackDefaultsResetRequested = false;
 let turboModeEnabled = false;
 let turboModeRevision = 0;
 let watchStatsSinceAt = 0;
@@ -426,28 +427,30 @@ function storageLocalSet(value): Promise<void> {
 	});
 }
 
-function migratePlaybackDefaults() {
+function migratePlaybackDefaults(resetDefaults = false) {
+	playbackDefaultsResetRequested ||= resetDefaults;
 	if (playbackDefaultsMigration) return playbackDefaultsMigration;
 	playbackDefaultsMigration = (async () => {
-		const stored = await storageLocalGet([
-			PLAYBACK_DEFAULTS_MIGRATION_KEY,
-			"ttvAdTimerEnabled",
-		]);
-		if (stored[PLAYBACK_DEFAULTS_MIGRATION_KEY] === true) return;
-		await storageLocalSet({
-			ttvAutoplayBackupEnabled: false,
-			...(typeof stored.ttvAdTimerEnabled === "boolean"
-				? {}
-				: { ttvAdTimerEnabled: true }),
-			[PLAYBACK_DEFAULTS_MIGRATION_KEY]: true,
-		});
-	})()
-		.catch((error) => {
+		try {
+			const stored = await storageLocalGet([PLAYBACK_DEFAULTS_MIGRATION_KEY]);
+			if (
+				stored[PLAYBACK_DEFAULTS_MIGRATION_KEY] === true &&
+				!playbackDefaultsResetRequested
+			) {
+				return;
+			}
+			await storageLocalSet({
+				ttvAutoplayBackupEnabled: true,
+				ttvAdTimerEnabled: false,
+				[PLAYBACK_DEFAULTS_MIGRATION_KEY]: true,
+			});
+		} catch (error) {
 			console.error("[TTV AB] Playback defaults migration failed:", error);
-		})
-		.finally(() => {
+		} finally {
 			playbackDefaultsMigration = null;
-		});
+			playbackDefaultsResetRequested = false;
+		}
+	})();
 	return playbackDefaultsMigration;
 }
 
@@ -1272,10 +1275,7 @@ if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
 
 chrome.runtime.onInstalled.addListener((details) => {
 	if (details.reason === "install" || details.reason === "update") {
-		void migratePlaybackDefaults();
-		void storageLocalSet({ ttvAutoplayBackupEnabled: false }).catch((error) => {
-			console.error("[TTV AB] Install/update fallback disable failed:", error);
-		});
+		void migratePlaybackDefaults(true);
 	}
 });
 
