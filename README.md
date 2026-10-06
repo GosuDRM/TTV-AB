@@ -35,7 +35,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Independent, live-updating controls for Ad Blocking, Ad Spoofing, and Low Quality Fallback
 - ✅ Optional Ad Spoofing to reduce anti-adblock detection
 - ✅ Optional Low Quality Fallback for faster recovery; disabling it prioritizes normal-quality sources, with a temporary clean low-quality bridge available during prerolls and midrolls
-- ✅ Optional Ad Break Timer in the stream's top-right corner, enabled by default
+- ✅ Optional Ad Break Timer in the stream's top-right corner, disabled by default
 - ✅ Optional Turbo Mode that pauses new statistics and achievements while preserving existing history and all ad-blocking controls
 - ✅ Persistent, live-updating Ads Blocked and Time Saved totals
 - ✅ Statistics dashboard with weekly charts, detailed per-channel history, and **12 Achievement Badges**
@@ -69,9 +69,16 @@ TTV AB checks Twitch's HLS playlists before playback and blocks recognized clien
 
 **Ad Spoofing** sends Twitch progress and completion signals for blocked ads. Turning it off leaves ad blocking active.
 
-The optional **Ad Break Timer** is on by default and can be switched off in the popup. It tracks the current break until it ends; it does not predict when your selected quality will return.
+The optional **Ad Break Timer** is off by default and can be switched on in the popup. It tracks the current break until it ends; it does not predict when your selected quality will return.
 
 ## 🔔 What's New
+
+### v19.1.0 - 2026-10-06
+
+- **Backup Rotation** - Respect cooldowns when a clean backup turns ad-marked, reducing repeated session changes during a break ([#81](https://github.com/GosuDRM/TTV-AB/issues/81)).
+- **Quality Continuity** - Keep returning qualities aligned across different playlist windows and prevent stale numbering after ads.
+- **Hold Compatibility** - Reject incompatible temporary media when a stream requires an initialization map, guarding a possible decoder-failure path reported in [#82](https://github.com/GosuDRM/TTV-AB/issues/82).
+- **Playback Defaults** - Enable Low Quality Fallback and disable Ad Break Timer on installation and every extension update. Later choices are preserved across ordinary restarts.
 
 ### v19.0.9 - 2026-10-06
 
@@ -82,13 +89,6 @@ The optional **Ad Break Timer** is on by default and can be switched off in the 
 
 - **Ad Transitions** - Prevent stalled playlist updates and replay of old native segments during ad transitions.
 - **Recovery Diagnostics** - Report why post-ad recovery was skipped, including pauses and missing resume intent.
-
-### v19.0.7 - 2026-10-05
-
-- **HD Quality Recovery** - Fix a recovery path that could leave only low-quality options after later ad breaks.
-- **Player Lookup** - Stop searching once the player and playback state are found, while preserving fallback state and player replacement handling.
-- **Default Settings** - Disable Low Quality Fallback on every install and update, then preserve later user choices.
-- **Support Button** - Center the Support the Developer button label.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
