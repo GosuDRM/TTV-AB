@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.1.3] - 2026-10-07
+
+Fixed
+
+- **Post-Ad Playback** - Return from a compatible HD backup without pausing or restarting playback, while keeping recovery available if playback stalls.
+
 ## [19.1.2] - 2026-10-07
 
 Fixed
