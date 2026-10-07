@@ -5295,6 +5295,18 @@ function _installPageSideM3U8Override() {
 		const fallbackRequestSignal =
 			args[1]?.signal ||
 			(urlOrRequest instanceof Request ? urlOrRequest.signal : null);
+		const requestMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+		const requestGeneration =
+			Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0;
+		const assertCurrent = () => {
+			if (
+				fallbackRequestSignal?.aborted ||
+				requestMediaKey !== _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) ||
+				requestGeneration !==
+					(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0)
+			)
+				throw _createCodecHandoffAbortError(fallbackRequestSignal);
+		};
 		const shouldBlockCachedAdSegments = Boolean(
 			__TTVAB_STATE__?.CurrentAdMediaKey ||
 				__TTVAB_STATE__?.CurrentAdChannel ||
@@ -5324,8 +5336,12 @@ function _installPageSideM3U8Override() {
 
 		try {
 			const timelineKey = _getMediaPlaylistSessionKey(urlStr);
+			const previousTimeline = _pageSideEmptyHoldInfoByUrl.get(timelineKey);
 			const upstreamUrl = _getEmptyHoldUpstreamUrl(
-				_pageSideEmptyHoldInfoByUrl.get(timelineKey),
+				previousTimeline?.MediaKey === (requestMediaKey || urlStr) &&
+					previousTimeline?.PageContextGeneration === requestGeneration
+					? previousTimeline
+					: null,
 				urlStr,
 			);
 			const fetchArgs =
@@ -5344,14 +5360,17 @@ function _installPageSideM3U8Override() {
 			const cloned = response.clone();
 			const text = await cloned.text();
 			if (shouldPassThrough()) return response;
+			assertCurrent();
 			_rememberPageSideVariantCodecs(text, urlStr);
 			const getContinuousResponse = (playlist) => {
-				const mapped = _applyEmptyHoldPlaylistContinuity(
-					_pageSideEmptyHoldInfoByUrl.get(timelineKey),
+				assertCurrent();
+				if (playlist.includes("#EXT-X-STREAM-INF")) return response;
+				const mapped = _applyPlaylistContinuity(
+					getEmptyHoldInfo(),
 					urlStr,
 					playlist,
 				);
-				if (mapped == null && playlist === text) return response;
+				if (mapped === text && playlist === text) return response;
 				return new Response(mapped ?? playlist, {
 					status: response.status,
 					statusText: response.statusText,
@@ -5361,12 +5380,24 @@ function _installPageSideM3U8Override() {
 			const getEmptyHoldInfo = () => {
 				let emptyHoldInfo =
 					_pageSideEmptyHoldInfoByUrl.get(timelineKey) || null;
+				if (
+					emptyHoldInfo &&
+					(emptyHoldInfo.MediaKey !== (requestMediaKey || urlStr) ||
+						emptyHoldInfo.PageContextGeneration !== requestGeneration)
+				)
+					emptyHoldInfo = null;
 				if (!emptyHoldInfo) {
 					emptyHoldInfo = {
-						MediaKey: __TTVAB_STATE__?.PageMediaKey || urlStr,
+						MediaKey: requestMediaKey || urlStr,
+						MediaType: requestMediaKey?.startsWith("live:") ? "live" : "vod",
+						PageContextGeneration: requestGeneration,
+						UsherBaseUrl: timelineKey,
 						_EmptyAdHoldMediaSequence: 0,
 						_EmptyAdHoldDiscontinuitySequence: 0,
+						_EmptyAdHoldProgramDateTime: 0,
+						_EmptyAdHoldWindow: null,
 						_EmptyHoldTimelineByUrl: new Map(),
+						_LivePlaylistTimeline: null,
 						NumStrippedAdSegments: 0,
 						IsStrippingAdSegments: false,
 					};

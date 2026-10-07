@@ -3114,6 +3114,21 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_applyBackupSpliceBridge",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
+			consumer: "_applyBackupSpliceBridge",
+			helper: "_isPartPreloadHintLine",
+			source: processorSource,
+		},
+		{
+			consumer: "_alignLivePlaylist",
+			helper: "_parseAttrs",
+			source: processorSource,
+		},
+		{
 			consumer: "_processM3U8Core",
 			helper: "_hasExplicitAdMetadata",
 			source: processorSource,

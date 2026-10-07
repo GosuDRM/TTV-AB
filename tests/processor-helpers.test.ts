@@ -236,6 +236,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_EmptyAdHoldMediaSequence: 0,
 		_EmptyAdHoldDiscontinuitySequence: 0,
 		_EmptyAdHoldProgramDateTime: 0,
+		_EmptyAdHoldWindow: null,
 		_EmptyHoldTimelineByUrl: new Map(),
 		_LivePlaylistTimeline: null,
 		_LastServedPlaylistKind: null,
@@ -249,6 +250,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_SpliceBoundarySeq: null,
 		_SpliceDiscontinuityOffset: 0,
 		_SpliceLastDiscontinuitySequence: null,
+		_SpliceLastMediaSequence: null,
 		_NativeSpliceBoundaries: new Map(),
 		...overrides,
 	};
@@ -902,6 +904,7 @@ describe("_resetStreamAdState", () => {
 			_EmptyAdHoldMediaSequence: 12,
 			_EmptyAdHoldDiscontinuitySequence: 5,
 			_EmptyAdHoldProgramDateTime: 5000,
+			_EmptyAdHoldWindow: { startedAt: 1000, firstSequence: 10 },
 			_LastServedPlaylistKind: "backup",
 			_LivePlaylistTimeline: {
 				identity: "backup",
@@ -923,6 +926,7 @@ describe("_resetStreamAdState", () => {
 			_SpliceBoundarySeq: 400,
 			_SpliceDiscontinuityOffset: 3,
 			_SpliceLastDiscontinuitySequence: 5,
+			_SpliceLastMediaSequence: 100,
 			_NativeSpliceBoundaries: new Map([
 				["https://edge.example/native.m3u8", 400],
 			]),
@@ -983,6 +987,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
 		expect(info._EmptyAdHoldDiscontinuitySequence).toBe(0);
 		expect(info._EmptyAdHoldProgramDateTime).toBe(0);
+		expect(info._EmptyAdHoldWindow).toBeNull();
 		expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
 		expect(info._LivePlaylistTimeline).toBeNull();
 		expect(info._LastServedPlaylistKind).toBeNull();
@@ -998,6 +1003,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._SpliceBoundarySeq).toBe(null);
 		expect(info._SpliceDiscontinuityOffset).toBe(0);
 		expect(info._SpliceLastDiscontinuitySequence).toBe(null);
+		expect(info._SpliceLastMediaSequence).toBeNull();
 		expect(info._NativeSpliceBoundaries.size).toBe(0);
 		expect(info._BackupProbation).toBe(null);
 		expect(info._ForegroundQualityProbeAppliedAt).toBe(0);
@@ -5192,7 +5198,7 @@ describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
 			"_applyBackupSpliceBridge",
 		);
 
-	it("no-ops and clears splice state when not serving a backup", () => {
+	it("keeps native bytes unchanged while retaining the last native media and discontinuity", () => {
 		const info = makeInfo({
 			IsUsingBackupStream: false,
 			_SpliceStreamId: "site|1080p60",
@@ -5203,7 +5209,8 @@ describe("_applyBackupSpliceBridge (per-stream boundary tracking)", () => {
 		expect(info._SpliceStreamId).toBe(null);
 		expect(info._SpliceBoundarySeq).toBe(null);
 		expect(info._SpliceDiscontinuityOffset).toBe(0);
-		expect(info._SpliceLastDiscontinuitySequence).toBe(null);
+		expect(info._SpliceLastDiscontinuitySequence).toBe(0);
+		expect(info._SpliceLastMediaSequence).toBe(102);
 	});
 
 	it("bridges the first backup playlist exactly once and records the boundary", () => {
@@ -5874,7 +5881,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 
 			expect(first).toContain("__ttvab_empty_hold_segment.ts");
 			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:103");
-			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:104");
+			expect(second).toBe(first);
 			expect(first).not.toContain("seg50.ts");
 			expect(info.IsUsingBackupStream).toBe(false);
 			expect(activeRefresh).toHaveBeenCalledTimes(2);

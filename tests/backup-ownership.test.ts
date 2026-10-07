@@ -305,16 +305,26 @@ describe("backup session and fallback ownership through the processor", () => {
 		expect(tokens).toEqual(["site"]);
 		expect(output).toContain("/site/new/");
 		expect(output).toContain("\n#EXT-X-DISCONTINUITY\n");
-		expect(info._SpliceLastDiscontinuitySequence).toBe(7);
+		expect(info._EmptyHoldTimelineByUrl.get(nativeUrl).lastDiscontinuity).toBe(
+			7,
+		);
+		expect(output).toContain("#EXT-X-MEDIA-SEQUENCE:501");
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 		const refreshed = await context._refreshActiveBackupMediaPlaylist(
 			info,
 			async () =>
 				new Response(media("site", "new", 101).replace(/\n/g, "\r\n")),
 		);
-		const nextOutput = context._applyBackupSpliceBridge(info, refreshed);
+		const nextOutput = context._applyPlaylistContinuity(
+			info,
+			nativeUrl,
+			refreshed,
+			info.BackupPlaylistMetadata.get(refreshed),
+		);
 		expect(nextOutput).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:7");
-		expect(info._SpliceLastDiscontinuitySequence).toBe(7);
+		expect(info._EmptyHoldTimelineByUrl.get(nativeUrl).lastDiscontinuity).toBe(
+			7,
+		);
 		expect(nextOutput).not.toContain("\n#EXT-X-DISCONTINUITY\n");
 	});
 

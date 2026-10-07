@@ -613,63 +613,89 @@ function _createEmptyAdHoldPlaylist(text, info) {
 			sourceDiscontinuitySequence++;
 		}
 	}
-	const nextHoldSequence = Math.max(
-		previousHoldSequence + 1,
-		sourceMediaSequence + 1,
-		sourceNextMediaSequence + Number(hasPendingPart),
-	);
+	const now = Date.now();
+	const cycleStartedAt =
+		info?.VisibleAdStartedAt || info?._PageFallbackCycleStartedAt || 0;
+	let holdWindow = info?._EmptyAdHoldWindow;
+	if (
+		!holdWindow ||
+		holdWindow.cycleStartedAt !== cycleStartedAt ||
+		now < holdWindow.startedAt
+	) {
+		const servedEndTime = Number(info?._LivePlaylistTimeline?.lastEndTime) || 0;
+		const previousHoldTime = Number(info?._EmptyAdHoldProgramDateTime) || 0;
+		holdWindow = {
+			cycleStartedAt,
+			startedAt: now,
+			firstSequence: Math.max(
+				previousHoldSequence + 1,
+				sourceMediaSequence + 1,
+				sourceNextMediaSequence + Number(hasPendingPart),
+			),
+			discontinuity: Math.max(
+				sourceDiscontinuitySequence,
+				Number(info?._EmptyAdHoldDiscontinuitySequence) || 0,
+				Number(info?._SpliceLastDiscontinuitySequence) || 0,
+			),
+			programDateTime:
+				info?.MediaType === "live" &&
+				Number.isFinite(servedEndTime) &&
+				servedEndTime > 0
+					? Math.max(
+							servedEndTime,
+							previousHoldTime > 0 ? previousHoldTime + 1024 : 0,
+						)
+					: 0,
+		};
+		if (info) info._EmptyAdHoldWindow = holdWindow;
+	}
+	const lastSlot = Math.floor((now - holdWindow.startedAt) / 1024);
+	const firstSlot = Math.max(0, lastSlot - 2);
+	const firstSequence = holdWindow.firstSequence + firstSlot;
+	const nextHoldSequence = holdWindow.firstSequence + lastSlot;
 	if (info) {
 		info._EmptyAdHoldMediaSequence = nextHoldSequence;
+		info._EmptyAdHoldDiscontinuitySequence = holdWindow.discontinuity + 1;
+		info._EmptyAdHoldProgramDateTime = holdWindow.programDateTime
+			? holdWindow.programDateTime + lastSlot * 1024
+			: 0;
 	}
-
-	const mediaSequenceLine = `#EXT-X-MEDIA-SEQUENCE:${nextHoldSequence}`;
+	const mediaSequenceLine = `#EXT-X-MEDIA-SEQUENCE:${firstSequence}`;
 	if (mediaSequenceIndex >= 0) {
 		headerLines[mediaSequenceIndex] = mediaSequenceLine;
 	} else {
 		headerLines.push(mediaSequenceLine);
 	}
 
-	const discontinuitySequence = Math.max(
-		sourceDiscontinuitySequence,
-		Number(info?._EmptyAdHoldDiscontinuitySequence) || 0,
-		Number(info?._SpliceLastDiscontinuitySequence) || 0,
+	headerLines.push(
+		`#EXT-X-DISCONTINUITY-SEQUENCE:${holdWindow.discontinuity + Number(firstSlot > 0)}`,
 	);
-	if (info) info._EmptyAdHoldDiscontinuitySequence = discontinuitySequence + 1;
-	headerLines.push(`#EXT-X-DISCONTINUITY-SEQUENCE:${discontinuitySequence}`);
-	const servedEndTime = Number(info?._LivePlaylistTimeline?.lastEndTime) || 0;
-	const previousHoldTime = Number(info?._EmptyAdHoldProgramDateTime) || 0;
-	const holdTime =
-		info?.MediaType === "live" &&
-		Number.isFinite(servedEndTime) &&
-		servedEndTime > 0
-			? Math.max(
-					servedEndTime,
-					previousHoldTime > 0 ? previousHoldTime + 1024 : 0,
-				)
-			: 0;
-	if (info) info._EmptyAdHoldProgramDateTime = holdTime;
-
-	const emptySegmentUrl = new URL(
-		"/__ttvab_empty_hold_segment.ts",
-		"https://www.twitch.tv",
-	);
-	emptySegmentUrl.searchParams.set("seq", String(nextHoldSequence));
 	const mediaKey =
 		typeof info?.MediaKey === "string" && info.MediaKey
 			? info.MediaKey
 			: "unknown";
-	emptySegmentUrl.searchParams.set("media", mediaKey);
-
-	return [
+	const output = [
 		...headerLines,
-		"#EXT-X-DISCONTINUITY",
+		...(firstSlot === 0 ? ["#EXT-X-DISCONTINUITY"] : []),
 		"#EXT-X-KEY:METHOD=NONE",
-		...(holdTime > 0
-			? [`#EXT-X-PROGRAM-DATE-TIME:${new Date(holdTime).toISOString()}`]
-			: []),
-		"#EXTINF:1.024,live",
-		emptySegmentUrl.href,
-	].join("\n");
+	];
+	for (let slot = firstSlot; slot <= lastSlot; slot++) {
+		const emptySegmentUrl = new URL(
+			"/__ttvab_empty_hold_segment.ts",
+			"https://www.twitch.tv",
+		);
+		emptySegmentUrl.searchParams.set(
+			"seq",
+			String(holdWindow.firstSequence + slot),
+		);
+		emptySegmentUrl.searchParams.set("media", mediaKey);
+		if (holdWindow.programDateTime > 0)
+			output.push(
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(holdWindow.programDateTime + slot * 1024).toISOString()}`,
+			);
+		output.push("#EXTINF:1.024,live", emptySegmentUrl.href);
+	}
+	return output.join("\n");
 }
 
 async function _getEmptyAdHoldResponse(url, realFetch, signal = null) {
