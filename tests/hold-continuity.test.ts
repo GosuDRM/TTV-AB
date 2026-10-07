@@ -120,6 +120,84 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it("keeps enough silent media available through the observed early poll and backup delay", async () => {
+		const { context, info, serve } = setup();
+		let now = Date.now();
+		const startedAt = now;
+		context.Date = class extends Date {
+			static now() {
+				return now;
+			}
+		};
+		const start = Date.parse("2026-10-07T15:09:00Z");
+		await serve(
+			playlist(400).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`,
+			),
+		);
+		let first = "";
+		let availableUntil = 0;
+		for (const elapsed of [0, 15, 969]) {
+			now = startedAt + elapsed;
+			const output = await serve(
+				context._createEmptyAdHoldPlaylist(playlist(403), info),
+			);
+			first ||= output;
+			expect(output).toBe(first);
+			availableUntil =
+				Math.max(
+					...Array.from(output.matchAll(/#EXT-X-PROGRAM-DATE-TIME:(.+)/g)).map(
+						(match) => Date.parse(match[1]),
+					),
+				) + 1024;
+		}
+		expect(availableUntil - (start + 6000)).toBeGreaterThanOrEqual(2197);
+		now = startedAt + 2197;
+		const backup = playlist(100).replace(
+			"#EXTINF:",
+			`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 6000).toISOString()}\n#EXTINF:`,
+		);
+		const switched = await serve(backup, "autoplay");
+		expect(switched).not.toContain("__ttvab_empty_hold_segment.ts");
+		expect(segments(switched)[0].sequence).toBe(
+			segments(first).at(-1).sequence + 1,
+		);
+		expect(info._EmptyAdHoldWindow).toBeNull();
+	});
+
+	it.each([-126, -238])(
+		"preserves new broadcast content in a boundary segment overlapping by %s ms",
+		async (skewMs) => {
+			const { context, info, serve } = setup();
+			const start = Date.parse("2026-10-07T15:09:00Z");
+			const dated = (sequence: number, offset: number) =>
+				playlist(sequence).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+				);
+			const before = segments(await serve(dated(400, 0)));
+			const backup = await serve(dated(100, 4000 + skewMs), "autoplay");
+			expect(backup).not.toContain("clean-100.ts");
+			expect(backup).toContain("clean-101.ts");
+			expect(backup).toContain(
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 6000 + skewMs).toISOString()}`,
+			);
+			const entries = segments(backup);
+			expect(entries[0].sequence).toBe(before.at(-1).sequence + 1);
+			expect(entries[0].discontinuity).toBeGreaterThan(
+				before.at(-1).discontinuity,
+			);
+			const refreshed = await serve(dated(101, 6000 + skewMs), "autoplay");
+			expect(segments(refreshed).slice(0, 2)).toEqual(entries);
+			context._resetStreamAdState(info, true);
+			const returned = await serve(dated(500, 8000 + 2 * skewMs));
+			expect(returned).toContain("clean-502.ts");
+			expect(returned).not.toContain("clean-500.ts");
+			expect(returned).not.toContain("clean-501.ts");
+		},
+	);
+
 	it("shares contiguous silent hold media across simultaneous rendition requests", async () => {
 		const { context, info, serve } = setup();
 		const start = Date.parse("2026-10-07T02:30:10Z");
@@ -145,7 +223,7 @@ describe("empty hold playlist continuity", () => {
 		const advanced = context._createEmptyAdHoldPlaylist(playlist(405), info);
 		const entries = segments(advanced);
 		expect(entries).toHaveLength(3);
-		expect(entries[0]).toEqual(segments(first)[0]);
+		expect(entries[0]).toEqual(segments(first)[2]);
 		expect(entries[2].sequence).toBe(entries[0].sequence + 2);
 		expect(entries[2].discontinuity).toBe(entries[0].discontinuity);
 		expect(advanced).toContain(new Date(start + 8048).toISOString());
@@ -246,11 +324,11 @@ describe("empty hold playlist continuity", () => {
 		info._EmptyAdHoldWindow.startedAt -= 30720;
 		const later = context._createEmptyAdHoldPlaylist(playlist(400), info);
 		expect(segments(later)).toHaveLength(3);
-		expect(segments(later)[0].sequence).toBe(first[0].sequence + 28);
+		expect(segments(later)[0].sequence).toBe(first[0].sequence + 30);
 		expect(segments(later)[0].discontinuity).toBe(first[0].discontinuity);
 		info.VisibleAdStartedAt++;
 		const nextCycle = context._createEmptyAdHoldPlaylist(playlist(400), info);
-		expect(segments(nextCycle)).toHaveLength(1);
+		expect(segments(nextCycle)).toHaveLength(3);
 		expect(segments(nextCycle)[0].sequence).toBeGreaterThan(
 			segments(later).at(-1).sequence,
 		);
@@ -487,9 +565,7 @@ describe("empty hold playlist continuity", () => {
 			const output = await pending;
 			expect(output).toContain("__ttvab_empty_hold_segment.ts");
 			expect(output).not.toContain("clean-400.ts");
-			expect(segments(output)[0].sequence).toBeGreaterThanOrEqual(
-				segments(held).at(-1).sequence,
-			);
+			expect(segments(output)).toEqual(segments(held));
 		},
 	);
 
@@ -934,8 +1010,8 @@ describe("empty hold playlist continuity", () => {
 		]);
 	});
 
-	it.each([-51, -235, -500, -1999])(
-		"still trims a handoff segment overlapping the previous window by %s ms",
+	it.each([-51, -126, -235, -238, -500, -999])(
+		"keeps only the crossing segment when the incoming window overlaps by %s ms",
 		async (skewMs) => {
 			const { serve } = setup();
 			const start = Date.parse("2026-09-20T18:09:20Z");
@@ -947,9 +1023,30 @@ describe("empty hold playlist continuity", () => {
 			await serve(dated(400, 0));
 			const backup = await serve(dated(100, 4000 + skewMs), "site");
 			expect(backup).not.toContain("clean-100.ts");
-			expect(backup).not.toContain("clean-101.ts");
-			expect(segments(backup)).toHaveLength(1);
+			expect(backup).toContain("clean-101.ts");
+			expect(segments(backup)).toHaveLength(2);
 			expect(backup).toContain("clean-102.ts");
+		},
+	);
+
+	it.each([1, 25, 50, 500, 1000])(
+		"does not replay most of a boundary segment for %s ms of new content",
+		async (remainingMs) => {
+			const { serve } = setup();
+			const start = Date.parse("2026-09-20T18:09:20Z");
+			const dated = (sequence: number, offset: number) =>
+				playlist(sequence).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+				);
+			await serve(dated(400, 0));
+			const backup = await serve(dated(100, 2000 + remainingMs), "site");
+			expect(backup).not.toContain("clean-100.ts");
+			expect(backup).not.toContain("clean-101.ts");
+			expect(backup).toContain("clean-102.ts");
+			expect(backup).toContain(
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 6000 + remainingMs).toISOString()}`,
+			);
 		},
 	);
 

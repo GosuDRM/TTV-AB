@@ -649,8 +649,8 @@ function _createEmptyAdHoldPlaylist(text, info) {
 		};
 		if (info) info._EmptyAdHoldWindow = holdWindow;
 	}
-	const lastSlot = Math.floor((now - holdWindow.startedAt) / 1024);
-	const firstSlot = Math.max(0, lastSlot - 2);
+	const firstSlot = Math.floor((now - holdWindow.startedAt) / 1024);
+	const lastSlot = firstSlot + 2;
 	const firstSequence = holdWindow.firstSequence + firstSlot;
 	const nextHoldSequence = holdWindow.firstSequence + lastSlot;
 	if (info) {

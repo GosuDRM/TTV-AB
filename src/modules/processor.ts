@@ -2357,7 +2357,9 @@ function _alignLivePlaylist(
 	const handoffToleranceMs = 50;
 	const retainedIndex = entries.findIndex(
 		(entry) =>
-			entry.end > minimumTime && entry.time >= minimumTime - handoffToleranceMs,
+			entry.end > minimumTime &&
+			(entry.time >= minimumTime - handoffToleranceMs ||
+				minimumTime - entry.time < entry.end - minimumTime),
 	);
 	if (retainedIndex < 0)
 		throw new DOMException(
