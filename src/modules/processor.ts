@@ -2189,7 +2189,12 @@ function _insertBoundaryDiscontinuity(
 	return lines.join("\n");
 }
 
-function _alignLivePlaylist(info, text, backupMetadata = null) {
+function _alignLivePlaylist(
+	info,
+	text,
+	backupMetadata = null,
+	commitTimeline = true,
+) {
 	if (
 		!info ||
 		info.MediaType === "vod" ||
@@ -2200,7 +2205,7 @@ function _alignLivePlaylist(info, text, backupMetadata = null) {
 		return text;
 	const previous = info._LivePlaylistTimeline;
 	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.ts")) {
-		if (previous && !previous.afterHold)
+		if (commitTimeline && previous && !previous.afterHold)
 			info._LivePlaylistTimeline = { ...previous, afterHold: true };
 		return text;
 	}
@@ -2371,6 +2376,7 @@ function _alignLivePlaylist(info, text, backupMetadata = null) {
 			);
 		output = [...prefix, ...tail].join("\n");
 	}
+	if (!commitTimeline) return output;
 	if (changedSource && minimumTime > 0)
 		_log(
 			`[Recovery] Live playlist handoff skipped ${retainedIndex} older segments; boundary ${Math.round(entries[retainedIndex].time - minimumTime)}ms; retained ${entries.length - retainedIndex} segments`,
@@ -7940,6 +7946,7 @@ async function _searchBackupStream(
 ) {
 	let backupType = null;
 	let backupM3u8 = null;
+	let timelineProbation = null;
 	const autoplaySearchInfo =
 		__TTVAB_STATE__?.DisableAutoplayBackup === true ? info : null;
 	const selectionSequence =
@@ -8680,6 +8687,34 @@ async function _searchBackupStream(
 											cycleStartedAt,
 											backupSearchEpoch,
 										};
+										if (
+											pt !== "autoplay" &&
+											_shouldBridgeHeldAutoplayDuringSearch(info)
+										) {
+											try {
+												_alignLivePlaylist(
+													info,
+													m3u8,
+													{
+														playlistUrl: streamUrl,
+														sessionUrl: encBaseUrl,
+														playerType: pt,
+														resolution: selectedResolution,
+														codecFamily: selectedCodecFamily,
+														codec: selectedCodecIdentity,
+													},
+													false,
+												);
+											} catch (error) {
+												if (error?.name !== "AbortError") throw error;
+												timelineProbation ||= nextProbation;
+												_log(
+													`[Trace] ${pt} playlist cannot join the served timeline yet; retaining clean autoplay bridge`,
+													"info",
+												);
+												break;
+											}
+										}
 										const needsSecondLook =
 											pt !== "autoplay" &&
 											(isFreshM3u8 ||
@@ -8731,7 +8766,9 @@ async function _searchBackupStream(
 										}
 										info._BackupProbation =
 											pt === "autoplay"
-												? null
+												? _isBackupProbationCurrent(info, timelineProbation)
+													? timelineProbation
+													: null
 												: {
 														...nextProbation,
 														at: 0,

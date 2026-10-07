@@ -408,6 +408,35 @@ describe("empty hold playlist continuity", () => {
 		expect(refreshed.slice(0, 2)).toEqual(first.slice(1));
 	});
 
+	it("checks a proposed backup handoff without claiming its unserved timeline", async () => {
+		const { context, info, serve } = setup();
+		const dated = (sequence: number, seconds: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-10-06T00:05:${seconds}.000Z\n#EXTINF:`,
+			);
+		await serve(dated(400, 20));
+		const previous = info._LivePlaylistTimeline;
+		const log = vi.fn();
+		context._log = log;
+		const metadata = { playerType: "site", sessionUrl: "owned" };
+		const checked = context._alignLivePlaylist(
+			info,
+			dated(100, 24),
+			metadata,
+			false,
+		);
+		expect(checked).toContain("clean-101.ts");
+		expect(checked).not.toContain("clean-100.ts");
+		expect(info._LivePlaylistTimeline).toBe(previous);
+		expect(log).not.toHaveBeenCalled();
+		expect(() =>
+			context._alignLivePlaylist(info, dated(100, 20), metadata, false),
+		).toThrow("Live handoff playlist is behind the served broadcast time");
+		expect(info._LivePlaylistTimeline).toBe(previous);
+		expect(await serve(dated(401, 22))).toContain("clean-401.ts");
+	});
+
 	it("aligns the native return directly after a hold without retiming ordinary master refreshes", async () => {
 		const { info, serve, hold } = setup();
 		const text = playlist(400).replace(

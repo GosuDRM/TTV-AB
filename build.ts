@@ -1342,6 +1342,11 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_searchBackupStream",
+			helper: "_alignLivePlaylist",
+			source: processorSource,
+		},
+		{
 			consumer: "_alignLivePlaylist",
 			helper: "_parsePlaylistDiscontinuitySequence",
 			source: processorSource,

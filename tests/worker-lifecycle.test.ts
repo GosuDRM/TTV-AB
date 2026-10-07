@@ -11346,7 +11346,7 @@ describe("injected worker ad playlist validation", () => {
 		},
 	);
 
-	it("completes HD probation on the next eligible poll in the injected worker", async () => {
+	it("keeps an advancing bridge until the HD timeline is ready in the injected worker", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(1_000_000);
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
@@ -11356,8 +11356,14 @@ describe("injected worker ad playlist validation", () => {
 		const variantUrl = "https://video-weaver.example.ttvnw.net/native.m3u8";
 		const master = (type: string) =>
 			`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=${type === "autoplay" ? "640x360" : "1920x1080"},VIDEO="${type === "autoplay" ? "360p" : "1080p60"}",CODECS="avc1.64002a,mp4a.40.2"\n${type === "native" ? variantUrl : `https://edge.example/${type}/index.m3u8`}`;
-		const media = (type: string) =>
-			`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:500\n#EXTINF:2,live\nhttps://edge.example/${type}/segment.ts`;
+		let bridgeOffset = 0;
+		let siteOffset = 0;
+		const start = Date.parse("2026-10-06T00:05:30Z");
+		const media = (type: string) => {
+			const offset = type === "site" ? siteOffset : bridgeOffset;
+			const sequence = 500 + offset / 2000;
+			return `#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${sequence}\n#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:2,live\nhttps://edge.example/${type}/segment-${sequence}.ts`;
+		};
 		const nativeFetch = vi.fn(
 			async (input: RequestInfo | URL, options?: RequestInit) => {
 				const url = String(input);
@@ -11435,13 +11441,21 @@ describe("injected worker ad playlist validation", () => {
 				"/autoplay/",
 			);
 			await vi.advanceTimersByTimeAsync(1);
+			bridgeOffset = 2000;
+			const waiting = await (await workerFetch(variantUrl)).text();
+			expect(waiting).toContain("/autoplay/segment-501.ts");
+			expect(waiting).not.toContain("stitched-ad");
+			expect(info.ActiveBackupPlayerType).toBe("autoplay");
+			await vi.advanceTimersByTimeAsync(1500);
+			bridgeOffset = 4000;
+			siteOffset = 4000;
 			expect(await (await workerFetch(variantUrl)).text()).toContain("/site/");
 			expect(info.ActiveBackupPlayerType).toBe("site");
 			expect(
 				nativeFetch.mock.calls.filter(([url]) =>
 					String(url).includes("/site/"),
 				),
-			).toHaveLength(2);
+			).toHaveLength(3);
 		} finally {
 			harness.restore();
 			vi.clearAllTimers();
