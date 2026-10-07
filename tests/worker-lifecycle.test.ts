@@ -11478,12 +11478,20 @@ describe("injected worker ad playlist validation", () => {
 					)
 					.find((message) => message?.key === "NativePlaybackRestored");
 			let output = "";
+			let previousDiscontinuity = 0;
 			for (let index = 0; index < 60 && !restored(); index++) {
 				vi.setSystemTime(Date.now() + 2000);
 				bridgeOffset += 2000;
 				siteOffset += 2000;
 				output = await (await workerFetch(variantUrl)).text();
 				expect(output).not.toContain("stitched-ad");
+				const discontinuity =
+					Number(
+						output.match(/#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/)?.[1] || 0,
+					) + (output.match(/^#EXT-X-DISCONTINUITY$/gm)?.length || 0);
+				if (restored())
+					expect(discontinuity).toBeGreaterThan(previousDiscontinuity);
+				previousDiscontinuity = discontinuity;
 			}
 			expect(output).toContain("/native/");
 			expect(restored()).toMatchObject({
