@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.2.0] - 2026-10-07
+
+Fixed
+
+- **Quality Transitions** - Prevent playback from freezing when clean backup sessions use different segment numbers, including low-to-high switches without a silent hold.
+- **Concurrent Quality Requests** - Share continuous silent hold media across quality requests to prevent gaps and repeated buffering.
+- **Live Timeline** - Preserve source boundaries and account for published partial and prefetched media when switching streams.
+- **Recovery Timing** - Preserve playback timestamps during worker recovery and accept usable playlists whose first timestamp appears after the first segment.
+
 ## [19.1.4] - 2026-10-07
 
 Fixed
