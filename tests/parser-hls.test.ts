@@ -373,7 +373,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(result).toContain("#EXT-X-MEDIA-SEQUENCE:3");
 
 		const nextResult = fn()(adPlaylist, true, info, false);
-		expect(nextResult).toContain("#EXT-X-MEDIA-SEQUENCE:4");
+		expect(nextResult).toBe(result);
 
 		st.SimulatedAdsDepth = originalSimulated;
 		st.AllSegmentsAreAdSegments = originalAllSegments;
@@ -387,6 +387,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		const input =
 			"#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100\n#EXT-X-DISCONTINUITY-SEQUENCE:4\n#EXTINF:2,stitched-ad\nad.ts";
 		const first = create(input, info);
+		(info._EmptyAdHoldWindow as { startedAt: number }).startedAt -= 3072;
 		const second = create(input, info);
 		expect(first).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:4");
 		expect(second).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:5");
@@ -422,9 +423,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 			const second = create(input, info);
 			expect(first).toContain(`#EXT-X-MEDIA-SEQUENCE:${expected}\n`);
 			expect(first).toContain(`?seq=${expected}&`);
-			expect(second).toContain(
-				`#EXT-X-MEDIA-SEQUENCE:${Number(expected) + 1}\n`,
-			);
+			expect(second).toBe(first);
 			expect(first).not.toContain("full.ts");
 			expect(first).not.toContain("part.ts");
 		},

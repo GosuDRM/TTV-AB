@@ -2362,6 +2362,7 @@ describe("bounded native session preservation", () => {
 			expect(info._PendingPostAdNativeMaster).toMatchObject({
 				consumed: false,
 			});
+			target.mockResolvedValueOnce(new Response(playlist(2001, "new-loader")));
 			await context.fetch(nativeUrl);
 			expect(info._PendingPostAdNativeMaster).toMatchObject({ consumed: true });
 		},

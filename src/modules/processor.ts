@@ -177,6 +177,7 @@ function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
 	info._EmptyAdHoldMediaSequence = 0;
 	info._EmptyAdHoldDiscontinuitySequence = 0;
 	info._EmptyAdHoldProgramDateTime = 0;
+	info._EmptyAdHoldWindow = null;
 	if (!preserveEmptyHoldTimelines) {
 		info._EmptyHoldTimelineByUrl?.clear?.();
 		info._LivePlaylistTimeline = null;
@@ -186,6 +187,7 @@ function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
 		info._SpliceBoundarySeq = null;
 		info._SpliceDiscontinuityOffset = 0;
 		info._SpliceLastDiscontinuitySequence = null;
+		info._SpliceLastMediaSequence = null;
 		info._NativeSpliceBoundaries?.clear?.();
 	}
 	info._FatalMediaRecoveryRequestId = null;
@@ -2283,8 +2285,10 @@ function _alignLivePlaylist(
 			uriIndex,
 			time: nextTime,
 			end: nextTime + duration,
+			duration,
 			discontinuity,
 			range,
+			derived: false,
 		});
 		nextTime += duration;
 		hasExplicitTime = false;
@@ -2293,6 +2297,19 @@ function _alignLivePlaylist(
 		index = uriIndex;
 	}
 	if (!entries.length) return text;
+	for (let index = entries.length - 2; index >= 0; index--) {
+		const entry = entries[index];
+		const next = entries[index + 1];
+		if (
+			!Number.isFinite(entry.time) &&
+			Number.isFinite(next.time) &&
+			entry.discontinuity === next.discontinuity
+		) {
+			entry.end = next.time;
+			entry.time = next.time - entry.duration;
+			entry.derived = true;
+		}
+	}
 	if (
 		entries.some(
 			(entry, index) =>
@@ -2306,6 +2323,28 @@ function _alignLivePlaylist(
 				"AbortError",
 			);
 		return text;
+	}
+	let pendingTime = entries.at(-1).end;
+	let offeredEndTime = pendingTime;
+	let pendingHasExplicitTime = false;
+	for (const line of lines.slice(blockStart)) {
+		if (line.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
+			pendingTime = Date.parse(line.slice(25));
+			pendingHasExplicitTime = true;
+		} else if (line === "#EXT-X-DISCONTINUITY") {
+			if (!pendingHasExplicitTime) pendingTime = Number.NaN;
+		} else if (line.startsWith("#EXT-X-PART:")) {
+			const attributes = _parseAttrs(line);
+			const duration = Number(attributes.DURATION) * 1000;
+			if (attributes.URI && duration > 0 && Number.isFinite(pendingTime)) {
+				pendingTime += duration;
+				offeredEndTime = Math.max(offeredEndTime, pendingTime);
+			}
+			pendingHasExplicitTime = false;
+		} else if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+			pendingTime = Number.NaN;
+			pendingHasExplicitTime = false;
+		}
 	}
 	if (text.includes("#EXT-X-SKIP:")) {
 		if (minimumTime)
@@ -2377,6 +2416,16 @@ function _alignLivePlaylist(
 				`#EXT-X-PROGRAM-DATE-TIME:${new Date(retained.time).toISOString()}`,
 			);
 		output = [...prefix, ...tail].join("\n");
+	} else if (entries[0].derived) {
+		const firstMediaIndex = lines.findIndex((line) =>
+			/^#EXT(?:INF:|-X-PART:)/.test(line),
+		);
+		lines.splice(
+			firstMediaIndex,
+			0,
+			`#EXT-X-PROGRAM-DATE-TIME:${new Date(entries[0].time).toISOString()}`,
+		);
+		output = lines.join("\n");
 	}
 	if (!commitTimeline) return output;
 	if (changedSource && minimumTime > 0)
@@ -2391,7 +2440,7 @@ function _alignLivePlaylist(
 		minimumTime,
 		lastEndTime: entries.reduce(
 			(end, entry) => Math.max(end, entry.end),
-			previous?.lastEndTime || 0,
+			Math.max(previous?.lastEndTime || 0, offeredEndTime),
 		),
 	};
 	return output;
@@ -2556,6 +2605,8 @@ function _applyPlaylistContinuity(
 				: backupMetadata
 					? "backup"
 					: "native";
+		if (info && info._LastServedPlaylistKind !== "hold")
+			info._EmptyAdHoldWindow = null;
 		return output;
 	} catch (error) {
 		if (info) info._LivePlaylistTimeline = previous;
@@ -2565,6 +2616,35 @@ function _applyPlaylistContinuity(
 
 function _applyBackupSpliceBridge(info, text, backupMetadata = null, url = "") {
 	if (!info || typeof text !== "string" || !text) return text;
+	const getDiscontinuityRange = (playlist) => {
+		let current = _parsePlaylistDiscontinuitySequence(playlist);
+		let sequence = _parsePlaylistFirstMediaSequence(playlist) ?? 0;
+		let first = null;
+		let last = null;
+		let lastSequence = null;
+		for (const line of playlist.split(/\r?\n/)) {
+			const trimmed = line.trim();
+			if (trimmed === "#EXT-X-DISCONTINUITY") current++;
+			else if (trimmed.startsWith("#EXT-X-SKIP:"))
+				sequence += Number(_parseAttrs(trimmed)["SKIPPED-SEGMENTS"]) || 0;
+			else if (
+				trimmed.startsWith("#EXTINF:") ||
+				trimmed.startsWith("#EXT-X-TWITCH-PREFETCH:") ||
+				trimmed.startsWith("#EXT-X-PART:") ||
+				_isPartPreloadHintLine(trimmed)
+			) {
+				first ??= current;
+				last = current;
+				lastSequence = sequence;
+				if (
+					trimmed.startsWith("#EXTINF:") ||
+					trimmed.startsWith("#EXT-X-TWITCH-PREFETCH:")
+				)
+					sequence++;
+			}
+		}
+		return { first, last, lastSequence };
+	};
 	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.ts")) {
 		info._SpliceStreamId = "empty-hold";
 		info._SpliceBoundarySeq = null;
@@ -2584,7 +2664,16 @@ function _applyBackupSpliceBridge(info, text, backupMetadata = null, url = "") {
 		info._SpliceStreamId = null;
 		info._SpliceBoundarySeq = null;
 		info._SpliceDiscontinuityOffset = 0;
-		info._SpliceLastDiscontinuitySequence = null;
+		const native = getDiscontinuityRange(text);
+		const retainNative =
+			info.MediaType === "live" &&
+			__TTVAB_STATE__?.IsAdStrippingEnabled === true;
+		info._SpliceLastDiscontinuitySequence = retainNative
+			? Math.max(info._SpliceLastDiscontinuitySequence ?? 0, native.last ?? 0)
+			: null;
+		info._SpliceLastMediaSequence = retainNative
+			? Math.max(info._SpliceLastMediaSequence ?? 0, native.lastSequence ?? 0)
+			: null;
 		info._NativeSpliceBoundaries?.clear?.();
 		return text;
 	}
@@ -2606,33 +2695,13 @@ function _applyBackupSpliceBridge(info, text, backupMetadata = null, url = "") {
 	const firstSeq = _parsePlaylistFirstMediaSequence(text);
 	if (firstSeq == null) return text;
 
-	const getDiscontinuityRange = (playlist) => {
-		let current = _parsePlaylistDiscontinuitySequence(playlist);
-		let first = null;
-		let last = null;
-		for (const line of playlist.split("\n")) {
-			const trimmed = line.trim();
-			if (trimmed === "#EXT-X-DISCONTINUITY") {
-				current += 1;
-			} else if (
-				trimmed.startsWith("#EXTINF") ||
-				trimmed.startsWith("#EXT-X-PART:")
-			) {
-				if (first == null) first = current;
-				last = current;
-			}
-		}
-		return { first, last };
-	};
-
 	if (info._SpliceStreamId !== identity) {
-		const hadPreviousIdentity = Boolean(info._SpliceStreamId);
-		const previousLast = Number(info._SpliceLastDiscontinuitySequence);
+		const previousLast = info._SpliceLastDiscontinuitySequence;
 		info._SpliceStreamId = identity;
 		info._SpliceBoundarySeq = firstSeq;
 		info._SpliceDiscontinuityOffset = 0;
 		info._NativeSpliceBoundaries?.clear?.();
-		if (hadPreviousIdentity && Number.isFinite(previousLast)) {
+		if (Number.isFinite(previousLast)) {
 			const candidate = _insertBoundaryDiscontinuity(text, firstSeq, firstSeq);
 			const candidateFirst = getDiscontinuityRange(candidate).first;
 			if (Number.isFinite(candidateFirst)) {
@@ -2660,10 +2729,19 @@ function _applyBackupSpliceBridge(info, text, backupMetadata = null, url = "") {
 		firstSeq,
 		info._SpliceDiscontinuityOffset,
 	);
-	const outputLast = getDiscontinuityRange(output).last;
+	const outputRange = getDiscontinuityRange(output);
+	const outputLast = outputRange.last;
 	if (Number.isFinite(outputLast)) {
-		info._SpliceLastDiscontinuitySequence = outputLast;
+		info._SpliceLastDiscontinuitySequence = Math.max(
+			info._SpliceLastDiscontinuitySequence ?? 0,
+			outputLast,
+		);
 	}
+	if (Number.isFinite(outputRange.lastSequence))
+		info._SpliceLastMediaSequence = Math.max(
+			info._SpliceLastMediaSequence ?? 0,
+			outputRange.lastSequence,
+		);
 	return output;
 }
 
@@ -2736,7 +2814,16 @@ function _applyEmptyHoldPlaylistContinuity(
 	const isHold = text.includes(
 		"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
 	);
-	if (!isHold && !info._EmptyHoldTimelineByUrl?.size) return null;
+	if (
+		!isHold &&
+		!info._EmptyHoldTimelineByUrl?.size &&
+		!(
+			info.MediaType === "live" &&
+			backupMetadata?.playlistUrl &&
+			backupMetadata.ambiguous !== true
+		)
+	)
+		return null;
 	const key = _getMediaPlaylistSessionKey(url);
 	if (!key || text.includes("#EXT-X-STREAM-INF")) return null;
 	const previous = info._EmptyHoldTimelineByUrl?.get?.(key) || null;
@@ -2838,8 +2925,15 @@ function _applyEmptyHoldPlaylistContinuity(
 	);
 	let changedSource = previous?.identity !== identity;
 	let sharedTimeline = null;
-	let lastDiscontinuity = -1;
-	let lastPresentedSequence = -1;
+	const firstMappedSource = !info._EmptyHoldTimelineByUrl?.size;
+	let lastDiscontinuity =
+		firstMappedSource && Number.isFinite(info._SpliceLastDiscontinuitySequence)
+			? info._SpliceLastDiscontinuitySequence
+			: -1;
+	let lastPresentedSequence =
+		firstMappedSource && Number.isFinite(info._SpliceLastMediaSequence)
+			? info._SpliceLastMediaSequence
+			: -1;
 	if (changedSource || kind === "backup" || isHold || isOwnedNativeVariant) {
 		for (const candidate of info._EmptyHoldTimelineByUrl?.values?.() || []) {
 			lastDiscontinuity = Math.max(
@@ -2949,7 +3043,8 @@ function _applyEmptyHoldPlaylistContinuity(
 					discontinuityOffset:
 						isHold || (kind === "native" && nativeAnchors.length > 0)
 							? Math.max(0, lastDiscontinuity + 1 - firstDiscontinuity)
-							: (sharedTimeline?.discontinuityOffset ?? lastDiscontinuity + 1),
+							: (sharedTimeline?.discontinuityOffset ??
+								Math.max(0, lastDiscontinuity) + 1),
 					lastSequence: 0,
 					lastDiscontinuity: 0,
 					lastRawFirstSequence: firstSequence,
@@ -3764,6 +3859,7 @@ function _createStreamInfo(context) {
 		_EmptyAdHoldMediaSequence: 0,
 		_EmptyAdHoldDiscontinuitySequence: 0,
 		_EmptyAdHoldProgramDateTime: 0,
+		_EmptyAdHoldWindow: null,
 		_EmptyHoldTimelineByUrl: new Map(),
 		_LivePlaylistTimeline: null,
 		_LastServedPlaylistKind: null,
@@ -3781,6 +3877,7 @@ function _createStreamInfo(context) {
 		_SpliceBoundarySeq: null,
 		_SpliceDiscontinuityOffset: 0,
 		_SpliceLastDiscontinuitySequence: null,
+		_SpliceLastMediaSequence: null,
 		_NativeSpliceBoundaries: new Map(),
 	};
 }

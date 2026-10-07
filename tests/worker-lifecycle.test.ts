@@ -8269,7 +8269,7 @@ describe("page-side M3U8 fallback", () => {
 		expect(first).not.toContain("ad-71.ts");
 		expect(first).toContain("__ttvab_empty_hold_segment.ts");
 		expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:72");
-		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:73");
+		expect(second).toBe(first);
 	});
 
 	it("does not inherit codec ownership when another media context reuses the URL", () => {
@@ -9882,7 +9882,7 @@ describe("page-side M3U8 fallback", () => {
 			}
 			expect(first).toContain("__ttvab_empty_hold_segment.ts");
 			expect(first).toContain("#EXT-X-MEDIA-SEQUENCE:302");
-			expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:303");
+			expect(second).toBe(first);
 			expect(rawFetch).toHaveBeenCalledTimes(2);
 		} finally {
 			window.fetch = originalFetch;
@@ -10503,7 +10503,10 @@ describe("injected worker ad playlist validation", () => {
 				expect(nextHold).not.toContain("/native-");
 				const sequence = (text: string) =>
 					Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
-				expect(sequence(nextHold)).toBeGreaterThan(sequence(held));
+				expect(sequence(nextHold)).toBe(sequence(held));
+				expect(
+					nextHold.match(/__ttvab_empty_hold_segment\.ts[^\n]+/)?.[0],
+				).toBe(held.match(/__ttvab_empty_hold_segment\.ts[^\n]+/)?.[0]);
 				await vi.advanceTimersByTimeAsync(1500);
 				const pending = workerFetch(highUrl).then((response) =>
 					response.text(),

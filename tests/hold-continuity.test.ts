@@ -120,7 +120,7 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
-	it("anchors successive silent holds to the last served live window across rendition requests", async () => {
+	it("shares contiguous silent hold media across simultaneous rendition requests", async () => {
 		const { context, info, serve } = setup();
 		const start = Date.parse("2026-10-07T02:30:10Z");
 		const native = playlist(400).replace(
@@ -138,7 +138,17 @@ describe("empty hold playlist continuity", () => {
 		const times = [first, second, third].map((text) =>
 			Date.parse(text.match(/#EXT-X-PROGRAM-DATE-TIME:(.+)/)?.[1] || ""),
 		);
-		expect(times).toEqual([start + 6000, start + 7024, start + 8048]);
+		expect(times).toEqual([start + 6000, start + 6000, start + 6000]);
+		expect(segments(second)).toEqual(segments(first));
+		expect(segments(third)).toEqual(segments(first));
+		info._EmptyAdHoldWindow.startedAt -= 2048;
+		const advanced = context._createEmptyAdHoldPlaylist(playlist(405), info);
+		const entries = segments(advanced);
+		expect(entries).toHaveLength(3);
+		expect(entries[0]).toEqual(segments(first)[0]);
+		expect(entries[2].sequence).toBe(entries[0].sequence + 2);
+		expect(entries[2].discontinuity).toBe(entries[0].discontinuity);
+		expect(advanced).toContain(new Date(start + 8048).toISOString());
 		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 6000);
 		expect(info._LivePlaylistTimeline.afterHold).toBe(true);
 		context._resetStreamAdState(info, true);
@@ -156,6 +166,155 @@ describe("empty hold playlist continuity", () => {
 			expect(output).toContain("__ttvab_empty_hold_segment.ts");
 		},
 	);
+	it("keeps independently numbered backups and native return continuous without a hold", async () => {
+		const { context, info, serve } = setup();
+		const start = Date.parse("2026-10-07T02:30:00Z");
+		const dated = (sequence: number, offset: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+			);
+		const native = segments(
+			await serve(
+				dated(400, 0).replace(
+					"DISCONTINUITY-SEQUENCE:0",
+					"DISCONTINUITY-SEQUENCE:8",
+				),
+			),
+		);
+		const low = segments(await serve(dated(900, 6000), "autoplay"));
+		const high = segments(await serve(dated(50, 12000), "site"));
+		context._resetStreamAdState(info, true);
+		const returned = segments(await serve(dated(410, 18000)));
+		for (const [previous, next] of [
+			[native, low],
+			[low, high],
+			[high, returned],
+		]) {
+			expect(next[0].sequence).toBe(previous.at(-1).sequence + 1);
+			expect(next[0].discontinuity).toBeGreaterThan(
+				previous.at(-1).discontinuity,
+			);
+		}
+		const request = `${nativeUrl}&_HLS_msn=${returned[0].sequence + 1}&_HLS_part=1`;
+		expect(context._getEmptyHoldUpstreamUrl(info, request)).toContain(
+			"_HLS_msn=411&_HLS_part=1",
+		);
+		expect(segments(await serve(dated(411, 20000))).slice(0, 2)).toEqual(
+			returned.slice(1),
+		);
+	});
+
+	it("keeps a new backup beyond the last offered prefetch discontinuity", async () => {
+		const { serve } = setup();
+		await serve(playlist(400));
+		const low = segments(
+			await serve(
+				`${playlist(403)}\n#EXT-X-DISCONTINUITY\n#EXT-X-TWITCH-PREFETCH:https://edge.example/low-406.ts`,
+				"autoplay",
+			),
+		);
+		const high = segments(await serve(playlist(50), "site"));
+		expect(high[0].sequence).toBe(low.at(-1).sequence + 1);
+		expect(high[0].discontinuity).toBeGreaterThan(low.at(-1).discontinuity);
+	});
+
+	it("seeds the first hold from native history even when another rendition has lower counters", async () => {
+		const { context, info, serve } = setup();
+		const native = segments(
+			await serve(
+				playlist(900).replace(
+					"DISCONTINUITY-SEQUENCE:0",
+					"DISCONTINUITY-SEQUENCE:8",
+				),
+			),
+		);
+		const held = context._applyPlaylistContinuity(
+			info,
+			nativeUrl,
+			context._createEmptyAdHoldPlaylist(playlist(10), info),
+		);
+		expect(segments(held)[0].sequence).toBeGreaterThan(native.at(-1).sequence);
+		expect(segments(held)[0].discontinuity).toBeGreaterThan(
+			native.at(-1).discontinuity,
+		);
+	});
+
+	it("keeps a bounded hold window and starts new media for a new ad cycle", async () => {
+		const { context, info, hold } = setup();
+		const first = segments(await hold());
+		info._EmptyAdHoldWindow.startedAt -= 30720;
+		const later = context._createEmptyAdHoldPlaylist(playlist(400), info);
+		expect(segments(later)).toHaveLength(3);
+		expect(segments(later)[0].sequence).toBe(first[0].sequence + 28);
+		expect(segments(later)[0].discontinuity).toBe(first[0].discontinuity);
+		info.VisibleAdStartedAt++;
+		const nextCycle = context._createEmptyAdHoldPlaylist(playlist(400), info);
+		expect(segments(nextCycle)).toHaveLength(1);
+		expect(segments(nextCycle)[0].sequence).toBeGreaterThan(
+			segments(later).at(-1).sequence,
+		);
+		expect(segments(nextCycle)[0].discontinuity).toBeGreaterThan(
+			segments(later).at(-1).discontinuity,
+		);
+	});
+
+	it("anchors a hold after published trailing parts without counting completed parts twice", async () => {
+		const { context, info, serve } = setup();
+		const start = Date.parse("2026-10-07T02:30:00Z");
+		const native =
+			playlist(400).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXT-X-PART:DURATION=0.5,URI="completed.ts"\n#EXTINF:`,
+			) +
+			'\n#EXT-X-PART:DURATION=0.5,URI="part-403.0.ts"\n#EXT-X-PART:DURATION=0.5,URI="part-403.1.ts"\n#EXT-X-PRELOAD-HINT:TYPE=PART,URI="future.ts"';
+		await serve(native);
+		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 7000);
+		const hold = context._createEmptyAdHoldPlaylist(playlist(403), info);
+		expect(hold).toContain(new Date(start + 7000).toISOString());
+	});
+
+	it.each([false, true])(
+		"derives an earlier program date only inside one discontinuity: %s",
+		async (boundary) => {
+			const { serve } = setup();
+			const start = Date.parse("2026-10-07T02:30:00Z");
+			await serve(
+				playlist(400).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`,
+				),
+			);
+			const candidate = playlist(900).replace(
+				"https://edge.example/clean-900.ts",
+				`https://edge.example/clean-900.ts\n${boundary ? "#EXT-X-DISCONTINUITY\n" : ""}#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 8000).toISOString()}`,
+			);
+			if (boundary)
+				await expect(serve(candidate, "autoplay")).rejects.toMatchObject({
+					name: "AbortError",
+				});
+			else {
+				const output = await serve(candidate, "autoplay");
+				expect(output).toContain(new Date(start + 6000).toISOString());
+				expect(output).toContain("clean-900.ts");
+			}
+		},
+	);
+
+	it("retains original encryption IVs when a hold-free handoff renumbers media", async () => {
+		const { serve } = setup();
+		await serve(playlist(400));
+		const candidate = playlist(10).replace(
+			"#EXTINF:",
+			'#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:',
+		);
+		const output = await serve(candidate, "site");
+		expect(segments(output)[0].sequence).toBe(403);
+		for (let sequence = 10; sequence <= 12; sequence++)
+			expect(output).toContain(
+				`IV=0x${sequence.toString(16).padStart(32, "0")}`,
+			);
+	});
 
 	it("keeps native return in a new discontinuity after a hold-free low-to-high backup transition", async () => {
 		const { context, info, serve } = setup();
@@ -168,7 +327,7 @@ describe("empty hold playlist continuity", () => {
 		await serve(dated(400, start));
 		const low = segments(await serve(dated(403, start + 6000), "autoplay"));
 		const high = segments(await serve(dated(406, start + 12000), "site"));
-		expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
+		expect(info._EmptyHoldTimelineByUrl.size).toBe(1);
 		context._resetStreamAdState(info, true);
 		const nativeText = await serve(dated(409, start + 18000));
 		expect(nativeText).toContain("#EXT-X-DISCONTINUITY\n");
@@ -194,15 +353,17 @@ describe("empty hold playlist continuity", () => {
 			`${otherUrl}&_HLS_msn=901&_HLS_part=0`,
 			dated(901, start + 22000),
 		);
-		expect(info._NativeSpliceBoundaries.size).toBe(2);
+		expect(info._EmptyHoldTimelineByUrl.size).toBe(2);
 		for (let index = 0; index < 33; index++) {
+			const extraUrl = nativeUrl.replace("native", `quality-${index}`);
+			info.Urls[extraUrl] = info.Urls[nativeUrl];
 			context._applyPlaylistContinuity(
 				info,
-				nativeUrl.replace("native", `quality-${index}`),
+				extraUrl,
 				dated(500 + index, start + 22000),
 			);
 		}
-		expect(info._NativeSpliceBoundaries.size).toBe(32);
+		expect(info._EmptyHoldTimelineByUrl.size).toBe(32);
 		context._resetStreamAdState(info);
 		expect(info._SpliceStreamId).toBeNull();
 		expect(info._SpliceLastDiscontinuitySequence).toBeNull();
@@ -263,9 +424,7 @@ describe("empty hold playlist continuity", () => {
 			const next = await context._processM3U8(nativeUrl, ad, fetch);
 			expect(next).toContain("__ttvab_empty_hold_segment.ts");
 			expect(next).not.toContain("clean-400.ts");
-			expect(segments(next)[0].sequence).toBeGreaterThan(
-				segments(first).at(-1).sequence,
-			);
+			expect(segments(next)).toEqual(segments(first));
 			expect(search).toHaveBeenCalledOnce();
 			expect(log.mock.calls.flat().join("\n")).not.toContain(
 				"Returning native playlist to prevent buffer drain",
@@ -387,15 +546,16 @@ describe("empty hold playlist continuity", () => {
 		expect(segments(first)[0].sequence).toBeGreaterThan(
 			segments(native).at(-1)?.sequence || 0,
 		);
-		expect(segments(second)[0].sequence).toBeGreaterThan(
-			segments(first)[0].sequence,
-		);
+		expect(segments(second)).toEqual(segments(first));
 		expect(segments(second)[0].discontinuity).toBeGreaterThanOrEqual(
 			segments(first)[0].discontinuity,
 		);
 		expect(context._applyPlaylistContinuity(info, nativeUrl, secondHold)).toBe(
 			second,
 		);
+		info._EmptyAdHoldWindow.startedAt -= 4096;
+		const advanced = context._createEmptyAdHoldPlaylist(playlist(26), info);
+		context._applyPlaylistContinuity(info, otherUrl, advanced);
 		expect(() =>
 			context._applyPlaylistContinuity(info, otherUrl, firstHold),
 		).toThrow("Retired empty hold recovery playlist");
@@ -955,11 +1115,7 @@ describe("empty hold playlist continuity", () => {
 			const ad = playlist(400, 1, "stitched-ad");
 			const fetch = vi.fn();
 			const first = segments(await context._processM3U8(nativeUrl, ad, fetch));
-			if (usedEmptyHold) {
-				expect(info._EmptyHoldTimelineByUrl.get(nativeUrl).kind).toBe("backup");
-			} else {
-				expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
-			}
+			expect(info._EmptyHoldTimelineByUrl.get(nativeUrl).kind).toBe("backup");
 			sequence++;
 			select();
 			const refreshed = segments(
@@ -1830,5 +1986,59 @@ describe("empty hold playlist continuity", () => {
 		expect(rawFetch).toHaveBeenCalledTimes(3);
 		controller.abort();
 		expect(rawFetch.mock.calls[1][0].signal.aborted).toBe(true);
+	});
+
+	it("retains the clean native date through the owned page fallback hold", async () => {
+		const { context, info } = setup();
+		const url =
+			"https://video-weaver.example.ttvnw.net/native.m3u8?token=owned";
+		const start = Date.parse("2026-10-07T02:30:00Z");
+		let current = playlist(400).replace(
+			"#EXTINF:",
+			`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`,
+		);
+		context.window = context;
+		context.fetch = async () => new Response(current);
+		context.state.CurrentAdMediaKey = null;
+		context.state.CurrentAdChannel = null;
+		context._canServePageSideAvcHold = () => true;
+		context._ensurePageSideFallbackAdCycle = () => info.VisibleAdStartedAt;
+		context._installPageSideM3U8Override();
+		await context.fetch(url);
+		current = playlist(403, 1, "stitched-ad").replace(
+			"#EXTINF:",
+			"#EXT-X-CUE-OUT:30\n#EXTINF:",
+		);
+		context.state.CurrentAdMediaKey = info.MediaKey;
+		const hold = await (await context.fetch(url)).text();
+		expect(hold).toContain(new Date(start + 6000).toISOString());
+		expect(hold).not.toContain("stitched-ad");
+		context.state.CurrentAdMediaKey = null;
+		current = playlist(410).replace(
+			"#EXTINF:",
+			`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 8000).toISOString()}\n#EXTINF:`,
+		);
+		const native = await (await context.fetch(url)).text();
+		expect(segments(native)[0].sequence).toBeGreaterThan(
+			segments(hold).at(-1).sequence,
+		);
+		expect(native).toContain(new Date(start + 8000).toISOString());
+	});
+
+	it("rejects page fallback timing from a response that belongs to an older page generation", async () => {
+		const { context } = setup();
+		const url =
+			"https://video-weaver.example.ttvnw.net/native.m3u8?token=owned";
+		let release: (response: Response) => void;
+		context.window = context;
+		context.fetch = () =>
+			new Promise<Response>((resolve) => {
+				release = resolve;
+			});
+		context._installPageSideM3U8Override();
+		const pending = context.fetch(url);
+		context.state.PagePlaybackContextGeneration++;
+		release(new Response(playlist(400)));
+		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 	});
 });
