@@ -3109,6 +3109,11 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_applyBackupSpliceBridge",
+			helper: "_getMediaPlaylistSessionKey",
+			source: processorSource,
+		},
+		{
 			consumer: "_processM3U8Core",
 			helper: "_hasExplicitAdMetadata",
 			source: processorSource,

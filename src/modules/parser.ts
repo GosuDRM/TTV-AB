@@ -636,6 +636,18 @@ function _createEmptyAdHoldPlaylist(text, info) {
 	);
 	if (info) info._EmptyAdHoldDiscontinuitySequence = discontinuitySequence + 1;
 	headerLines.push(`#EXT-X-DISCONTINUITY-SEQUENCE:${discontinuitySequence}`);
+	const servedEndTime = Number(info?._LivePlaylistTimeline?.lastEndTime) || 0;
+	const previousHoldTime = Number(info?._EmptyAdHoldProgramDateTime) || 0;
+	const holdTime =
+		info?.MediaType === "live" &&
+		Number.isFinite(servedEndTime) &&
+		servedEndTime > 0
+			? Math.max(
+					servedEndTime,
+					previousHoldTime > 0 ? previousHoldTime + 1024 : 0,
+				)
+			: 0;
+	if (info) info._EmptyAdHoldProgramDateTime = holdTime;
 
 	const emptySegmentUrl = new URL(
 		"/__ttvab_empty_hold_segment.ts",
@@ -652,6 +664,9 @@ function _createEmptyAdHoldPlaylist(text, info) {
 		...headerLines,
 		"#EXT-X-DISCONTINUITY",
 		"#EXT-X-KEY:METHOD=NONE",
+		...(holdTime > 0
+			? [`#EXT-X-PROGRAM-DATE-TIME:${new Date(holdTime).toISOString()}`]
+			: []),
 		"#EXTINF:1.024,live",
 		emptySegmentUrl.href,
 	].join("\n");

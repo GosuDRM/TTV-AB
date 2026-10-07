@@ -120,6 +120,95 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it("anchors successive silent holds to the last served live window across rendition requests", async () => {
+		const { context, info, serve } = setup();
+		const start = Date.parse("2026-10-07T02:30:10Z");
+		const native = playlist(400).replace(
+			"#EXTINF:",
+			`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`,
+		);
+		await serve(native);
+		const first = context._createEmptyAdHoldPlaylist(playlist(403), info);
+		await serve(first);
+		const second = context._createEmptyAdHoldPlaylist(playlist(404), info);
+		const otherUrl = nativeUrl.replace("native", "360p");
+		info.Urls[otherUrl] = { Resolution: "640x360", Codecs: codec };
+		context._applyPlaylistContinuity(info, otherUrl, second);
+		const third = context._createEmptyAdHoldPlaylist(playlist(405), info);
+		const times = [first, second, third].map((text) =>
+			Date.parse(text.match(/#EXT-X-PROGRAM-DATE-TIME:(.+)/)?.[1] || ""),
+		);
+		expect(times).toEqual([start + 6000, start + 7024, start + 8048]);
+		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 6000);
+		expect(info._LivePlaylistTimeline.afterHold).toBe(true);
+		context._resetStreamAdState(info, true);
+		expect(info._EmptyAdHoldProgramDateTime).toBe(0);
+	});
+
+	it.each(["vod", "undated"])(
+		"does not invent a silent hold broadcast time for %s media",
+		async (kind) => {
+			const { context, info, serve } = setup();
+			if (kind === "vod") info.MediaType = "vod";
+			await serve(playlist(400));
+			const output = context._createEmptyAdHoldPlaylist(playlist(403), info);
+			expect(output).not.toContain("#EXT-X-PROGRAM-DATE-TIME:");
+			expect(output).toContain("__ttvab_empty_hold_segment.ts");
+		},
+	);
+
+	it("keeps native return in a new discontinuity after a hold-free low-to-high backup transition", async () => {
+		const { context, info, serve } = setup();
+		const start = Date.parse("2026-10-07T02:30:10Z");
+		const dated = (sequence: number, time: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(time).toISOString()}\n#EXTINF:`,
+			);
+		await serve(dated(400, start));
+		const low = segments(await serve(dated(403, start + 6000), "autoplay"));
+		const high = segments(await serve(dated(406, start + 12000), "site"));
+		expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
+		context._resetStreamAdState(info, true);
+		const nativeText = await serve(dated(409, start + 18000));
+		expect(nativeText).toContain("#EXT-X-DISCONTINUITY\n");
+		const native = segments(nativeText);
+		const refreshed = segments(await serve(dated(410, start + 20000)));
+		expect(high[0].discontinuity).toBe(low.at(-1).discontinuity + 1);
+		expect(native[0].discontinuity).toBe(high.at(-1).discontinuity + 1);
+		expect(refreshed[0].discontinuity).toBe(native.at(-1).discontinuity);
+		const otherUrl = nativeUrl.replace("native", "360p");
+		info.Urls[otherUrl] = { Resolution: "640x360", Codecs: codec };
+		for (const sequence of [100, 900]) {
+			const other = context._applyPlaylistContinuity(
+				info,
+				otherUrl,
+				dated(sequence, start + 20000),
+			);
+			expect(segments(other)[0].discontinuity).toBe(
+				native.at(-1).discontinuity,
+			);
+		}
+		context._applyPlaylistContinuity(
+			info,
+			`${otherUrl}&_HLS_msn=901&_HLS_part=0`,
+			dated(901, start + 22000),
+		);
+		expect(info._NativeSpliceBoundaries.size).toBe(2);
+		for (let index = 0; index < 33; index++) {
+			context._applyPlaylistContinuity(
+				info,
+				nativeUrl.replace("native", `quality-${index}`),
+				dated(500 + index, start + 22000),
+			);
+		}
+		expect(info._NativeSpliceBoundaries.size).toBe(32);
+		context._resetStreamAdState(info);
+		expect(info._SpliceStreamId).toBeNull();
+		expect(info._SpliceLastDiscontinuitySequence).toBeNull();
+		expect(info._NativeSpliceBoundaries.size).toBe(0);
+	});
+
 	it("allows a fresh native bridge again after an undated hold finishes", async () => {
 		const { context, info, serve, hold } = setup();
 		await hold();

@@ -176,18 +176,20 @@ function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
 	info._BackupProbation = null;
 	info._EmptyAdHoldMediaSequence = 0;
 	info._EmptyAdHoldDiscontinuitySequence = 0;
+	info._EmptyAdHoldProgramDateTime = 0;
 	if (!preserveEmptyHoldTimelines) {
 		info._EmptyHoldTimelineByUrl?.clear?.();
 		info._LivePlaylistTimeline = null;
 		info._LastServedPlaylistKind = null;
 		info._NativePlaybackMaster = null;
+		info._SpliceStreamId = null;
+		info._SpliceBoundarySeq = null;
+		info._SpliceDiscontinuityOffset = 0;
+		info._SpliceLastDiscontinuitySequence = null;
+		info._NativeSpliceBoundaries?.clear?.();
 	}
 	info._FatalMediaRecoveryRequestId = null;
 	_clearCodecHandoffState(info, null, completedCodecHandoff);
-	info._SpliceStreamId = null;
-	info._SpliceBoundarySeq = null;
-	info._SpliceDiscontinuityOffset = 0;
-	info._SpliceLastDiscontinuitySequence = null;
 	if (
 		endedCodecHandoffId &&
 		__TTVAB_STATE__?.ActiveCodecHandoffId === endedCodecHandoffId &&
@@ -2465,7 +2467,7 @@ function _applyPlaylistContinuity(
 		const aligned = _alignLivePlaylist(info, text, backupMetadata);
 		const output =
 			_applyEmptyHoldPlaylistContinuity(info, url, aligned, backupMetadata) ??
-			_applyBackupSpliceBridge(info, aligned, backupMetadata);
+			_applyBackupSpliceBridge(info, aligned, backupMetadata, url);
 		if (
 			info &&
 			info.MediaType !== "vod" &&
@@ -2561,7 +2563,7 @@ function _applyPlaylistContinuity(
 	}
 }
 
-function _applyBackupSpliceBridge(info, text, backupMetadata = null) {
+function _applyBackupSpliceBridge(info, text, backupMetadata = null, url = "") {
 	if (!info || typeof text !== "string" || !text) return text;
 	if (text.includes("https://www.twitch.tv/__ttvab_empty_hold_segment.ts")) {
 		info._SpliceStreamId = "empty-hold";
@@ -2569,13 +2571,21 @@ function _applyBackupSpliceBridge(info, text, backupMetadata = null) {
 		info._SpliceDiscontinuityOffset = 0;
 		info._SpliceLastDiscontinuitySequence =
 			_parsePlaylistDiscontinuitySequence(text) + 1;
+		info._NativeSpliceBoundaries?.clear?.();
 		return text;
 	}
-	if (!info.IsUsingBackupStream) {
+	const servingBackup = Boolean(info.IsUsingBackupStream);
+	const preserveNativeSplice =
+		info.MediaType === "live" &&
+		__TTVAB_STATE__?.IsAdStrippingEnabled === true &&
+		info._SpliceStreamId &&
+		Number.isFinite(info._SpliceLastDiscontinuitySequence);
+	if (!servingBackup && !preserveNativeSplice) {
 		info._SpliceStreamId = null;
 		info._SpliceBoundarySeq = null;
 		info._SpliceDiscontinuityOffset = 0;
 		info._SpliceLastDiscontinuitySequence = null;
+		info._NativeSpliceBoundaries?.clear?.();
 		return text;
 	}
 	if (!_playlistHasMediaSegments(text)) return text;
@@ -2590,7 +2600,9 @@ function _applyBackupSpliceBridge(info, text, backupMetadata = null) {
 	const sessionIdentity = metadata?.playlistUrl
 		? `|${metadata.sessionUrl || ""}|${metadata.playlistUrl}`
 		: "";
-	const identity = `${metadata?.playerType || info.ActiveBackupPlayerType || "?"}|${metadata?.resolution || info.ActiveBackupResolution || "?"}|${backupCodec}${sessionIdentity}`;
+	const identity = servingBackup
+		? `${metadata?.playerType || info.ActiveBackupPlayerType || "?"}|${metadata?.resolution || info.ActiveBackupResolution || "?"}|${backupCodec}${sessionIdentity}`
+		: `native|${info.UsherBaseUrl || info.MediaKey}`;
 	const firstSeq = _parsePlaylistFirstMediaSequence(text);
 	if (firstSeq == null) return text;
 
@@ -2619,6 +2631,7 @@ function _applyBackupSpliceBridge(info, text, backupMetadata = null) {
 		info._SpliceStreamId = identity;
 		info._SpliceBoundarySeq = firstSeq;
 		info._SpliceDiscontinuityOffset = 0;
+		info._NativeSpliceBoundaries?.clear?.();
 		if (hadPreviousIdentity && Number.isFinite(previousLast)) {
 			const candidate = _insertBoundaryDiscontinuity(text, firstSeq, firstSeq);
 			const candidateFirst = getDiscontinuityRange(candidate).first;
@@ -2628,9 +2641,22 @@ function _applyBackupSpliceBridge(info, text, backupMetadata = null) {
 		}
 	}
 
+	let boundarySequence = info._SpliceBoundarySeq;
+	if (!servingBackup && url) {
+		const key = _getMediaPlaylistSessionKey(url);
+		if (!(info._NativeSpliceBoundaries instanceof Map))
+			info._NativeSpliceBoundaries = new Map();
+		if (!info._NativeSpliceBoundaries.has(key))
+			info._NativeSpliceBoundaries.set(key, firstSeq);
+		boundarySequence = info._NativeSpliceBoundaries.get(key);
+		while (info._NativeSpliceBoundaries.size > 32)
+			info._NativeSpliceBoundaries.delete(
+				info._NativeSpliceBoundaries.keys().next().value,
+			);
+	}
 	const output = _insertBoundaryDiscontinuity(
 		text,
-		info._SpliceBoundarySeq,
+		boundarySequence,
 		firstSeq,
 		info._SpliceDiscontinuityOffset,
 	);
@@ -3737,6 +3763,7 @@ function _createStreamInfo(context) {
 		LoggedBackupAdsByType: null,
 		_EmptyAdHoldMediaSequence: 0,
 		_EmptyAdHoldDiscontinuitySequence: 0,
+		_EmptyAdHoldProgramDateTime: 0,
 		_EmptyHoldTimelineByUrl: new Map(),
 		_LivePlaylistTimeline: null,
 		_LastServedPlaylistKind: null,
@@ -3754,6 +3781,7 @@ function _createStreamInfo(context) {
 		_SpliceBoundarySeq: null,
 		_SpliceDiscontinuityOffset: 0,
 		_SpliceLastDiscontinuitySequence: null,
+		_NativeSpliceBoundaries: new Map(),
 	};
 }
 

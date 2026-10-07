@@ -235,6 +235,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_AdRequestController: null,
 		_EmptyAdHoldMediaSequence: 0,
 		_EmptyAdHoldDiscontinuitySequence: 0,
+		_EmptyAdHoldProgramDateTime: 0,
 		_EmptyHoldTimelineByUrl: new Map(),
 		_LivePlaylistTimeline: null,
 		_LastServedPlaylistKind: null,
@@ -248,6 +249,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_SpliceBoundarySeq: null,
 		_SpliceDiscontinuityOffset: 0,
 		_SpliceLastDiscontinuitySequence: null,
+		_NativeSpliceBoundaries: new Map(),
 		...overrides,
 	};
 }
@@ -899,6 +901,7 @@ describe("_resetStreamAdState", () => {
 			_LoggedWhitelistByType: new Set(["cooldown:site", "whitelist:site"]),
 			_EmptyAdHoldMediaSequence: 12,
 			_EmptyAdHoldDiscontinuitySequence: 5,
+			_EmptyAdHoldProgramDateTime: 5000,
 			_LastServedPlaylistKind: "backup",
 			_LivePlaylistTimeline: {
 				identity: "backup",
@@ -920,6 +923,9 @@ describe("_resetStreamAdState", () => {
 			_SpliceBoundarySeq: 400,
 			_SpliceDiscontinuityOffset: 3,
 			_SpliceLastDiscontinuitySequence: 5,
+			_NativeSpliceBoundaries: new Map([
+				["https://edge.example/native.m3u8", 400],
+			]),
 			_BackupProbation: { type: "site", at: 123 },
 			_ForegroundQualityProbeAppliedAt: 456,
 			_BackupSelectionSequence: 7,
@@ -976,6 +982,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._LoggedWhitelistByType).toBe(null);
 		expect(info._EmptyAdHoldMediaSequence).toBe(0);
 		expect(info._EmptyAdHoldDiscontinuitySequence).toBe(0);
+		expect(info._EmptyAdHoldProgramDateTime).toBe(0);
 		expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
 		expect(info._LivePlaylistTimeline).toBeNull();
 		expect(info._LastServedPlaylistKind).toBeNull();
@@ -991,6 +998,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._SpliceBoundarySeq).toBe(null);
 		expect(info._SpliceDiscontinuityOffset).toBe(0);
 		expect(info._SpliceLastDiscontinuitySequence).toBe(null);
+		expect(info._NativeSpliceBoundaries.size).toBe(0);
 		expect(info._BackupProbation).toBe(null);
 		expect(info._ForegroundQualityProbeAppliedAt).toBe(0);
 		expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(100);
