@@ -3326,76 +3326,85 @@ describe("worker recovery lifecycle", () => {
 		}
 	});
 
-	it("rebuilds native playback after an exact pinned-backup timeline realignment", () => {
-		vi.useFakeTimers();
-		vi.setSystemTime(100001);
-		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
-		Object.assign(state, {
-			PageMediaType: "live",
-			PageChannel: "testchannel",
-			PageVodID: null,
-			PageMediaKey: "live:testchannel",
-			CurrentAdChannel: "testchannel",
-			CurrentAdMediaKey: "live:testchannel",
-			PinnedBackupPlayerType: "site",
-			PinnedBackupPlayerChannel: "testchannel",
-			PinnedBackupPlayerMediaKey: "live:testchannel",
-			ActiveCodecHandoffId: null,
-			ActiveCodecHandoffChannel: null,
-			ActiveCodecHandoffMediaKey: null,
-			AdPodProgressByMediaKey: {
-				"live:testchannel": { cycleStartedAt: 90000 },
-			},
-			StreamInfos: Object.create(null),
-			StreamInfosByUrl: Object.create(null),
-			AdCycleStaleMs: 120000,
-		});
-		const playerTask = vi.fn(() => true);
-		g._doPlayerTask = playerTask;
-		const previousConsumeTimelineRestore =
-			g._consumePinnedBackupTimelineRestore;
-		let timelineRestorePending = true;
-		const consumeTimelineRestore = vi.fn(() => {
-			const shouldReload = timelineRestorePending;
-			timelineRestorePending = false;
-			return shouldReload;
-		});
-		g._consumePinnedBackupTimelineRestore = consumeTimelineRestore;
-		const harness = installWorkerMessageHarness();
-
-		try {
-			harness.worker.emitMessage({
-				key: "NativePlaybackRestored",
-				channel: "testchannel",
-				mediaKey: "live:testchannel",
-				pageChannel: "testchannel",
-				pageMediaKey: "live:testchannel",
-				cycleStartedAt: 90000,
-				restoredAt: 100001,
-				requiresReload: true,
-				refreshAccessToken: false,
+	it.each([
+		{ continuePlayback: false, timelineRestore: true, reload: true },
+		{ continuePlayback: true, timelineRestore: true, reload: true },
+		{ continuePlayback: true, timelineRestore: false, reload: false },
+	])(
+		"keeps the native return uninterrupted unless a timeline rebuild is required: $continuePlayback/$timelineRestore",
+		({ continuePlayback, timelineRestore, reload }) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(100001);
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaType: "live",
+				PageChannel: "testchannel",
+				PageVodID: null,
+				PageMediaKey: "live:testchannel",
+				CurrentAdChannel: "testchannel",
+				CurrentAdMediaKey: "live:testchannel",
+				PinnedBackupPlayerType: "site",
+				PinnedBackupPlayerChannel: "testchannel",
+				PinnedBackupPlayerMediaKey: "live:testchannel",
+				ActiveCodecHandoffId: null,
+				ActiveCodecHandoffChannel: null,
+				ActiveCodecHandoffMediaKey: null,
+				AdPodProgressByMediaKey: {
+					"live:testchannel": { cycleStartedAt: 90000 },
+				},
+				StreamInfos: Object.create(null),
+				StreamInfosByUrl: Object.create(null),
+				AdCycleStaleMs: 120000,
 			});
-
-			expect(playerTask).toHaveBeenCalledOnce();
-			expect(playerTask).toHaveBeenCalledWith(false, true, {
-				reason: "post-ad-native-restore",
-				refreshAccessToken: false,
-				newMediaPlayerInstance: true,
-				channel: "testchannel",
-				mediaKey: "live:testchannel",
-				cycleStartedAt: 90000,
+			const playerTask = vi.fn(() => true);
+			g._doPlayerTask = playerTask;
+			const previousConsumeTimelineRestore =
+				g._consumePinnedBackupTimelineRestore;
+			let timelineRestorePending = timelineRestore;
+			const consumeTimelineRestore = vi.fn(() => {
+				const shouldReload = timelineRestorePending;
+				timelineRestorePending = false;
+				return shouldReload;
 			});
-			expect(consumeTimelineRestore).toHaveBeenCalledOnce();
-			expect(consumeTimelineRestore).toHaveBeenCalledWith(
-				"live:testchannel",
-				90000,
-			);
-			expect(timelineRestorePending).toBe(false);
-		} finally {
-			harness.restore();
-			g._consumePinnedBackupTimelineRestore = previousConsumeTimelineRestore;
-		}
-	});
+			g._consumePinnedBackupTimelineRestore = consumeTimelineRestore;
+			const harness = installWorkerMessageHarness();
+
+			try {
+				harness.worker.emitMessage({
+					key: "NativePlaybackRestored",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					pageChannel: "testchannel",
+					pageMediaKey: "live:testchannel",
+					cycleStartedAt: 90000,
+					restoredAt: 100001,
+					requiresReload: !continuePlayback,
+					continuePlayback,
+					refreshAccessToken: false,
+				});
+
+				expect(playerTask).toHaveBeenCalledOnce();
+				expect(playerTask).toHaveBeenCalledWith(false, reload, {
+					reason: "post-ad-native-restore",
+					...(reload
+						? { refreshAccessToken: false, newMediaPlayerInstance: true }
+						: {}),
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 90000,
+				});
+				expect(consumeTimelineRestore).toHaveBeenCalledOnce();
+				expect(consumeTimelineRestore).toHaveBeenCalledWith(
+					"live:testchannel",
+					90000,
+				);
+				expect(timelineRestorePending).toBe(false);
+			} finally {
+				harness.restore();
+				g._consumePinnedBackupTimelineRestore = previousConsumeTimelineRestore;
+			}
+		},
+	);
 
 	it.each([
 		["an omitted token policy", undefined, true],
@@ -11346,7 +11355,7 @@ describe("injected worker ad playlist validation", () => {
 		},
 	);
 
-	it("keeps an advancing bridge until the HD timeline is ready in the injected worker", async () => {
+	it("keeps an advancing bridge through HD promotion and native return in the injected worker", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(1_000_000);
 		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
@@ -11358,6 +11367,7 @@ describe("injected worker ad playlist validation", () => {
 			`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=${type === "autoplay" ? "640x360" : "1920x1080"},VIDEO="${type === "autoplay" ? "360p" : "1080p60"}",CODECS="avc1.64002a,mp4a.40.2"\n${type === "native" ? variantUrl : `https://edge.example/${type}/index.m3u8`}`;
 		let bridgeOffset = 0;
 		let siteOffset = 0;
+		let nativeHasAds = true;
 		const start = Date.parse("2026-10-06T00:05:30Z");
 		const media = (type: string) => {
 			const offset = type === "site" ? siteOffset : bridgeOffset;
@@ -11383,13 +11393,15 @@ describe("injected worker ad playlist validation", () => {
 						master(new URL(url).searchParams.get("token") || "native"),
 					);
 				}
+				if (url === variantUrl && !nativeHasAds)
+					return new Response(media("native"));
 				if (url === variantUrl)
 					return new Response(
 						media("stitched-ad")
 							.replace(",live", ",stitched-ad")
 							.replace(
 								"#EXTINF",
-								'#EXT-X-DATERANGE:ID="ad",CLASS="twitch-stitched-ad"\n#EXTINF',
+								'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-POD-LENGTH="1",X-TV-TWITCH-AD-POD-POSITION="1"\n#EXTINF',
 							),
 					);
 				return new Response(
@@ -11456,6 +11468,59 @@ describe("injected worker ad playlist validation", () => {
 					String(url).includes("/site/"),
 				),
 			).toHaveLength(3);
+			expect(info.HevcReloadPendingAfterHold).toBe(true);
+			nativeHasAds = false;
+			const restored = () =>
+				(runtime.scope.postMessage as ReturnType<typeof vi.fn>).mock.calls
+					.map(
+						([message]) =>
+							(message as { message: Record<string, unknown> }).message,
+					)
+					.find((message) => message?.key === "NativePlaybackRestored");
+			let output = "";
+			for (let index = 0; index < 60 && !restored(); index++) {
+				vi.setSystemTime(Date.now() + 2000);
+				bridgeOffset += 2000;
+				siteOffset += 2000;
+				output = await (await workerFetch(variantUrl)).text();
+				expect(output).not.toContain("stitched-ad");
+			}
+			expect(output).toContain("/native/");
+			expect(restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: true,
+				refreshAccessToken: false,
+			});
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
+				playlistUrl: variantUrl,
+				reloadAt: 0,
+				consumed: true,
+			});
+			const send = (key: string, value: unknown) =>
+				runtime.deliver(
+					T<(message: Record<string, unknown>) => unknown>(
+						"_createWorkerBridgeMessage",
+					)({ key, value }),
+				);
+			const reloadAt = Date.now();
+			send("PreparePostAdNativeReload", {
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 991000,
+				reason: "ad-recovery",
+				reloadAt,
+				preserveNativeSession: true,
+			});
+			expect(info._PendingPostAdNativeMaster).toMatchObject({
+				reloadAt,
+				consumed: false,
+				reloadCount: 0,
+			});
+			send("ReleasePostAdNativeSession", {
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 991000,
+				reloadAt,
+			});
+			expect(info._PendingPostAdNativeMaster).toBeNull();
 		} finally {
 			harness.restore();
 			vi.clearAllTimers();

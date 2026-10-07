@@ -5832,6 +5832,7 @@ function _hookWorker() {
                 ${_getEmptyHoldUpstreamUrl.toString()}
                 ${_applyEmptyHoldPlaylistContinuity.toString()}
                 ${_alignLivePlaylist.toString()}
+				${_canRestoreNativeByPlaylist.toString()}
                 ${_applyPlaylistContinuity.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}
                 ${_canReloadNativePlayerAfterAd.toString()}
@@ -7945,24 +7946,30 @@ function _hookWorker() {
 								_log(
 									requiresReload
 										? "Native playlist ready after backup hold; requesting player rebuild"
-										: "Native playlist ready after backup hold; checking playback recovery",
+										: data.continuePlayback === true
+											? "Native playlist ready after backup hold; continuing playback without restart"
+											: "Native playlist ready after backup hold; checking playback recovery",
 									"info",
 								);
 								if (typeof _restoreSuppressedMediaAfterAd === "function") {
 									_restoreSuppressedMediaAfterAd(channel, mediaKey);
 								}
-								_runPostAdPlayerTask(!requiresReload, requiresReload, {
-									reason: "post-ad-native-restore",
-									...(requiresReload
-										? {
-												refreshAccessToken: data.refreshAccessToken !== false,
-												newMediaPlayerInstance: true,
-											}
-										: {}),
-									channel,
-									mediaKey,
-									cycleStartedAt: restoredCycleStartedAt,
-								});
+								_runPostAdPlayerTask(
+									!requiresReload && data.continuePlayback !== true,
+									requiresReload,
+									{
+										reason: "post-ad-native-restore",
+										...(requiresReload
+											? {
+													refreshAccessToken: data.refreshAccessToken !== false,
+													newMediaPlayerInstance: true,
+												}
+											: {}),
+										channel,
+										mediaKey,
+										cycleStartedAt: restoredCycleStartedAt,
+									},
+								);
 								_schedulePostAdArtifactCleanup(
 									channel,
 									mediaKey,

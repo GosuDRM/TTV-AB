@@ -2395,6 +2395,64 @@ function _alignLivePlaylist(
 	return output;
 }
 
+function _canRestoreNativeByPlaylist(info, url, text, requestContext) {
+	const target = requestContext?.verifiedNativeRecoveryTarget;
+	const nativeUrl = _getMediaPlaylistSessionKey(url);
+	const native = info?.Urls?.[nativeUrl];
+	const codec = _getVideoCodecIdentity(native?.Codecs);
+	const metadata = info?.BackupPlaylistMetadata?.get?.(
+		info.LastCleanBackupM3U8,
+	);
+	const backupAt = Number(info?.LastCleanBackupAt) || 0;
+	const backupAge = Date.now() - backupAt;
+	if (
+		requestContext?.exactNativeRecoveryOwned !== true ||
+		info?.MediaType !== "live" ||
+		info.IsUsingModifiedM3U8 ||
+		info.EnhancedDecoderCodecFamily ||
+		info.EnhancedDecoderCodec ||
+		info._CodecHandoffPendingId ||
+		info._LastServedPlaylistKind !== "backup" ||
+		!info._LivePlaylistTimeline?.backup ||
+		info._LivePlaylistTimeline.afterHold ||
+		!target ||
+		target.playlistUrl !== nativeUrl ||
+		!native?.Resolution ||
+		target.resolution !== native.Resolution ||
+		_getVideoCodecFamily(codec) !== "avc" ||
+		_getVideoCodecIdentity(target.codec) !== codec ||
+		!metadata?.playerType ||
+		metadata.playerType === "autoplay" ||
+		metadata.ambiguous === true ||
+		metadata.resolution !== native.Resolution ||
+		_getVideoCodecIdentity(metadata.codec) !== codec ||
+		!(Number(info.VisibleAdStartedAt) > 0) ||
+		backupAt < Number(info.VisibleAdStartedAt) ||
+		backupAge < 0 ||
+		backupAge > 5000 ||
+		!text.includes("#EXT-X-PROGRAM-DATE-TIME:") ||
+		text.includes("#EXT-X-MAP:") ||
+		info.LastCleanBackupM3U8.includes("#EXT-X-MAP:") ||
+		info._LivePlaylistTimeline.identity !==
+			JSON.stringify([
+				"backup",
+				metadata.playerType,
+				metadata.resolution,
+				metadata.codec,
+				metadata.sessionUrl,
+				metadata.playlistUrl,
+			])
+	)
+		return false;
+	try {
+		return _playlistHasMediaSegments(
+			_alignLivePlaylist(info, text, null, false),
+		);
+	} catch {
+		return false;
+	}
+}
+
 function _applyPlaylistContinuity(
 	info,
 	url,
@@ -5920,16 +5978,23 @@ async function _processM3U8Core(
 				const backupCodecIdentity = _getVideoCodecIdentity(
 					info.LastCleanBackupCodec,
 				);
+				const continuePlayback = _canRestoreNativeByPlaylist(
+					info,
+					url,
+					text,
+					requestAdContext,
+				);
 				const requiresReload = Boolean(
-					info.HevcReloadPendingAfterHold ||
-						info.IsUsingModifiedM3U8 ||
-						(enhancedDecoderCodecFamily &&
-							(backupCodecFamily !== enhancedDecoderCodecFamily ||
-								!enhancedDecoderCodecIdentity ||
-								backupCodecIdentity !== enhancedDecoderCodecIdentity)),
+					!continuePlayback &&
+						(info.HevcReloadPendingAfterHold ||
+							info.IsUsingModifiedM3U8 ||
+							(enhancedDecoderCodecFamily &&
+								(backupCodecFamily !== enhancedDecoderCodecFamily ||
+									!enhancedDecoderCodecIdentity ||
+									backupCodecIdentity !== enhancedDecoderCodecIdentity))),
 				);
 				const pendingPostAdNativeMaster =
-					requiresReload &&
+					(requiresReload || continuePlayback) &&
 					exactNativeRecoveryOwned &&
 					info.MediaType !== "vod" &&
 					typeof info.EncodingsM3U8 === "string" &&
@@ -5966,7 +6031,7 @@ async function _processM3U8Core(
 								masterServedAt: 0,
 								reloadAt: 0,
 								reloadCount: 0,
-								consumed: false,
+								consumed: continuePlayback,
 							}
 						: null;
 				if (exactNativeRecoveryReady) {
@@ -6006,6 +6071,7 @@ async function _processM3U8Core(
 							restoredAt,
 							fromSilentBackupHold: true,
 							requiresReload,
+							continuePlayback,
 							refreshAccessToken: !exactNativeRecoveryOwned,
 						}),
 					);
