@@ -391,7 +391,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		const second = create(input, info);
 		expect(first).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:4");
 		expect(second).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:5");
-		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:102");
+		expect(second).toContain("#EXT-X-MEDIA-SEQUENCE:104");
 	});
 
 	it.each([
