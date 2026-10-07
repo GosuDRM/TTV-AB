@@ -692,6 +692,63 @@ function setupProbation() {
 }
 
 describe("HD backup probation through playlist polling", () => {
+	it.each(
+		[false, true].flatMap((disabled) =>
+			["site", "embed"].map((nextType) => ({ disabled, nextType })),
+		),
+	)(
+		"keeps the clean bridge until $nextType has media beyond the served boundary with fallback disabled=$disabled",
+		async ({ disabled, nextType }) => {
+			const f = setupProbation();
+			f.state.DisableAutoplayBackup = disabled;
+			if (nextType === "embed")
+				f.state.BackupPlayerTypes = ["site", "embed", "autoplay"];
+			const originalFetch = f.fetch.getMockImplementation();
+			const start = Date.parse("2026-10-06T00:05:30Z");
+			let bridgeOffset = 0;
+			let siteOffset = 0;
+			let embedOffset = 2000;
+			f.fetch.mockImplementation(async (input, options) => {
+				const response = await originalFetch(input, options);
+				const url = new URL(String(input));
+				if (url.hostname !== "cdn.example") return response;
+				const type = url.pathname.split("/")[1];
+				const offset =
+					type === "site"
+						? siteOffset
+						: type === "embed"
+							? embedOffset
+							: bridgeOffset;
+				return new Response(
+					(await response.text())
+						.replaceAll("/site/", `/${type}/`)
+						.replaceAll("400", String(400 + offset / 2000))
+						.replace(
+							"#EXTINF:",
+							`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+						),
+				);
+			});
+			expect(await f.poll()).toContain("/autoplay/360/");
+			f.advance(1600);
+			bridgeOffset = 2000;
+			await expect(f.poll()).resolves.toContain("/autoplay/360/");
+			expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+			expect(f.info.ActiveBackupPlayerType).toBe("autoplay");
+			expect(f.info._LivePlaylistTimeline.lastEndTime).toBe(start + 4000);
+			f.advance(1600);
+			bridgeOffset = 4000;
+			siteOffset = nextType === "site" ? 4000 : 0;
+			embedOffset = 4000;
+			const promoted = await f.poll();
+			expect(promoted).toContain(`/${nextType}/1080/`);
+			expect(promoted).not.toContain("stitched-ad");
+			expect(f.info.LastCleanBackupPlayerType).toBe(nextType);
+			expect(f.info._LivePlaylistTimeline.lastEndTime).toBe(start + 6000);
+			expect(f.tokens).not.toContain("autoplay");
+		},
+	);
+
 	it.each([false, true])(
 		"completes the second HD check after 1.5 seconds with fallback disabled=%s",
 		async (disabled) => {
