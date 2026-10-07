@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.2.1] - 2026-10-08
+
+Fixed
+
+- **Quality Transitions** - Keep new content at clean source boundaries instead of skipping nearly a full segment when stream timings differ slightly.
+- **Ad-Start Buffering** - Keep temporary silent media available between playlist updates while a clean backup loads.
+
 ## [19.2.0] - 2026-10-07
 
 Fixed

@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v19.2.1 - 2026-10-08
+
+- **Quality Transitions** - Keep new content at clean source boundaries instead of skipping nearly a full segment when stream timings differ slightly.
+- **Ad-Start Buffering** - Keep temporary silent media available between playlist updates while a clean backup loads.
+
 ### v19.2.0 - 2026-10-07
 
 - **Quality Transitions** - Prevent playback from freezing when clean backup sessions use different segment numbers, including low-to-high switches without a silent hold.
@@ -84,10 +89,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 - **Ad Transition Playback** - Preserve playback timing through temporary silent holds, preventing a freeze when the clean backup takes over.
 - **Native Return** - Keep the playback timeline continuous after a low-to-high quality change, including breaks that did not need a silent hold.
-
-### v19.1.3 - 2026-10-07
-
-- **Post-Ad Playback** - Return from a compatible HD backup without pausing or restarting playback, while keeping recovery available if playback stalls.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
