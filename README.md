@@ -73,6 +73,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v19.1.2 - 2026-10-07
+
+- **HD Transitions** - Keep the clean backup playing until an HD stream is ready to take over, preventing premature switches that interrupt playback.
+
 ### v19.1.1 - 2026-10-06
 
 - **Backup Quality Stability** - Prevent late playlist refreshes from undoing an HD upgrade or switching playback back to a replaced backup.
@@ -83,11 +87,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Quality Continuity** - Keep returning qualities aligned across different playlist windows and prevent stale numbering after ads.
 - **Hold Compatibility** - Reject incompatible temporary media when a stream requires an initialization map, guarding a possible decoder-failure path reported in [#82](https://github.com/GosuDRM/TTV-AB/issues/82).
 - **Playback Defaults** - Enable Low Quality Fallback and disable Ad Break Timer on installation and every extension update. Later choices are preserved across ordinary restarts.
-
-### v19.0.9 - 2026-10-06
-
-- **Quality Transitions** - Keep playback aligned when returning to a previously idle quality after ads.
-- **Stall Recovery** - Ignore detached players so old freeze reports cannot interrupt current playback.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
