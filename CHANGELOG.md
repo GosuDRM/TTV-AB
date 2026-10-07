@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.1.4] - 2026-10-07
+
+Fixed
+
+- **Ad Transition Playback** - Preserve playback timing through temporary silent holds, preventing a freeze when the clean backup takes over.
+- **Native Return** - Keep the playback timeline continuous after a low-to-high quality change, including breaks that did not need a silent hold.
+
 ## [19.1.3] - 2026-10-07
 
 Fixed
