@@ -4240,6 +4240,40 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		for (const name of stubbed) g[name] = saved[name];
 	});
 
+	it.each([false, true])(
+		"observes a compatible native return without pausing or loading the source, PiP=%s",
+		(pip) => {
+			const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+			state.CurrentAdMediaKey = null;
+			state.CurrentAdChannel = null;
+			if (!pip) {
+				pipElement = null;
+				T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+			}
+			expect(
+				task()(false, false, {
+					reason: "post-ad-native-restore",
+					channel: "testchannel",
+					mediaKey: "live:testchannel",
+					cycleStartedAt,
+				}),
+			).toBe(true);
+			expect(setSrcCalls).toEqual([]);
+			expect(pauseCalls).toBe(0);
+			expect(resumeRetryCalls).toEqual([]);
+			expect(g._PostAdRecoveryTransactionState).toMatchObject({
+				mediaKey: "live:testchannel",
+				cycleStartedAt,
+				initialOperationCompleted: true,
+				acceptedReloadCount: 0,
+				requiresReplacement: false,
+			});
+			expect(workerMessages).not.toContainEqual(
+				expect.objectContaining({ key: "TriggeredPlayerReload" }),
+			);
+		},
+	);
+
 	it("waits for Twitch's asynchronous source load before resuming playback", async () => {
 		const { state } =
 			T<() => { state: { setSrc: unknown } }>("_getPlayerAndState")();
@@ -6228,6 +6262,54 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 	function reloadCalls() {
 		return reloads.filter((entry) => entry.isReload === true);
 	}
+
+	it.each([false, true])(
+		"verifies an uninterrupted native return and rebuilds only if frames stall, stalled=%s",
+		(stalled) => {
+			currentPlayback = makePlayback({
+				currentTime: 10,
+				bufferedEnd: 20,
+				readyState: 4,
+				videoWidth: 1920,
+			});
+			let frames = 100;
+			Object.defineProperty(currentPlayback.video, "getVideoPlaybackQuality", {
+				value: () => ({ totalVideoFrames: frames }),
+				configurable: true,
+			});
+			nowSpy.mockReturnValue(500000);
+			const task = saved.doPlayerTask as (...args: unknown[]) => boolean;
+			expect(
+				task(false, false, {
+					reason: "post-ad-native-restore",
+					channel: "chan",
+					mediaKey: "live:chan",
+					cycleStartedAt: 440000,
+				}),
+			).toBe(true);
+			expect(transaction().initialOperationCompleted).toBe(true);
+			expect(reloads).toEqual([]);
+			expect(sample(500000)).toBe(false);
+			currentPlayback.setCurrentTime(11);
+			if (!stalled) frames += 60;
+			reloadOutcomes.push(true);
+			sample(501000);
+			if (stalled) {
+				expect(transaction().mediaKey).toBe("live:chan");
+				expect(reloadCalls()).toHaveLength(0);
+				sample(502000);
+				expect(reloadCalls()).toHaveLength(1);
+				expect(reloadCalls()[0]).toMatchObject({
+					newMediaPlayerInstance: true,
+					refreshAccessToken: false,
+					cycleStartedAt: 440000,
+				});
+			} else {
+				expect(transaction().mediaKey).toBeNull();
+				expect(reloads).toEqual([]);
+			}
+		},
+	);
 
 	it("gives a fresh exact recovery observation time before rebuilding", () => {
 		const playback = makePlayback();

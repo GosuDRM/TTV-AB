@@ -234,6 +234,146 @@ function setup(withCodecHandoff = true) {
 	};
 }
 
+function setupHdNativeReturn(datedMedia = true) {
+	const f = setup(false);
+	const native = f.info.ResolutionList[1];
+	Object.assign(f.info, {
+		IsUsingModifiedM3U8: false,
+		ExpectedAdPodLength: 2,
+		SustainedNativeResolution: native,
+		ActiveBackupPlayerType: "site",
+		ActiveBackupResolution: native.Resolution,
+		LastCleanBackupPlayerType: "site",
+		LastCleanBackupResolution: native.Resolution,
+	});
+	f.state.PreferredQualityGroup = "1080p60";
+	f.info.BackupEncodingsM3U8Cache.site = {
+		...f.info.BackupEncodingsM3U8Cache.autoplay,
+		m3u8: f.info.BackupEncodingsM3U8Cache.autoplay.m3u8.replace(
+			"640x360",
+			"1920x1080",
+		),
+	};
+	const originalFetch = f.fetch.getMockImplementation();
+	const dated = (text: string) =>
+		datedMedia
+			? text.replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(1791335710000 + Date.now()).toISOString()}\n#EXTINF:`,
+				)
+			: text;
+	f.fetch.mockImplementation(async (input) => {
+		const response = await originalFetch(input);
+		return new Response(dated(await response.text()));
+	});
+	let sequence = 500;
+	const poll = async () => {
+		f.advance(2000);
+		return f.context._processM3U8(
+			nativeUrl,
+			dated(playlist(++sequence, "native")),
+			f.fetch,
+		);
+	};
+	return { ...f, poll, dated };
+}
+
+describe("compatible native playlist return", () => {
+	it.each([false, true])(
+		"returns from an already served HD backup without rebuilding after autoplay, fallback disabled=%s",
+		async (disabled) => {
+			const f = setupHdNativeReturn();
+			f.state.DisableAutoplayBackup = disabled;
+			let output = "";
+			for (let index = 0; index < 40 && !f.restored(); index++) {
+				output = await f.poll();
+			}
+			expect(output).toContain("native-");
+			expect(output).not.toContain("stitched-ad");
+			expect(f.restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: true,
+				refreshAccessToken: false,
+			});
+			expect(f.info.IsHoldingBackupAfterAd).toBe(false);
+			expect(f.info._PendingPostAdNativeMaster).toMatchObject({
+				playlistUrl: nativeUrl,
+				reloadAt: 0,
+				consumed: true,
+			});
+			expect(f.token).not.toHaveBeenCalled();
+		},
+	);
+
+	it("keeps the rebuild when broadcast timing cannot prove a compatible return", async () => {
+		const f = setupHdNativeReturn(false);
+		for (let index = 0; index < 40 && !f.restored(); index++) {
+			await f.poll();
+		}
+		expect(f.restored()).toMatchObject({
+			requiresReload: true,
+			continuePlayback: false,
+			refreshAccessToken: false,
+		});
+	});
+
+	it.each([
+		"unserved session",
+		"codec profile change",
+		"lower resolution",
+		"expired backup",
+		"different native target",
+		"unowned native proof",
+		"initialization map",
+	])("retains decoder recovery for %s", async (condition) => {
+		const f = setupHdNativeReturn();
+		await f.poll();
+		f.advance(2000);
+		const native = f.info.ResolutionList[1];
+		const request = {
+			exactNativeRecoveryOwned: true,
+			verifiedNativeRecoveryTarget: {
+				playlistUrl: nativeUrl,
+				resolution: native.Resolution,
+				codec: native.Codecs,
+			},
+		};
+		let text = f.dated(playlist(800, "native"));
+		const canContinue = () =>
+			f.context._canRestoreNativeByPlaylist(f.info, nativeUrl, text, request);
+		expect(canContinue()).toBe(true);
+		const metadata = f.info.BackupPlaylistMetadata.get(
+			f.info.LastCleanBackupM3U8,
+		);
+		if (condition === "unserved session")
+			metadata.sessionUrl += "&replacement=1";
+		if (condition === "codec profile change") metadata.codec = "avc1.4d401f";
+		if (condition === "lower resolution") metadata.resolution = "640x360";
+		if (
+			condition === "codec profile change" ||
+			condition === "lower resolution"
+		) {
+			f.context._alignLivePlaylist(
+				f.info,
+				f.dated(playlist(200, "backup")),
+				metadata,
+			);
+		}
+		if (condition === "expired backup") f.advance(5001);
+		if (condition === "different native target")
+			request.verifiedNativeRecoveryTarget.playlistUrl = probeUrl;
+		if (condition === "unowned native proof")
+			request.exactNativeRecoveryOwned = false;
+		if (condition === "initialization map")
+			text = text.replace("#EXTINF:", '#EXT-X-MAP:URI="init.mp4"\n#EXTINF:');
+		const timeline = structuredClone(f.info._LivePlaylistTimeline);
+		expect(canContinue()).toBe(false);
+		expect(f.info._LivePlaylistTimeline).toEqual(timeline);
+		expect(f.info.HevcReloadPendingAfterHold).toBe(true);
+		expect(f.restored()).toBeUndefined();
+	});
+});
+
 const reducedNativeUrl = "https://edge.example/360p.m3u8?token=reduced";
 const reducedMasterUrl = masterUrl.replaceAll("owned", "reduced");
 const reducedMaster = [

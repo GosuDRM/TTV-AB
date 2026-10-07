@@ -1347,6 +1347,22 @@ function validateSharedDefinitions() {
 			source: processorSource,
 		},
 		{
+			consumer: "_processM3U8Core",
+			helper: "_canRestoreNativeByPlaylist",
+			source: processorSource,
+		},
+		...[
+			"_getMediaPlaylistSessionKey",
+			"_getVideoCodecIdentity",
+			"_getVideoCodecFamily",
+			"_playlistHasMediaSegments",
+			"_alignLivePlaylist",
+		].map((helper) => ({
+			consumer: "_canRestoreNativeByPlaylist",
+			helper,
+			source: processorSource,
+		})),
+		{
 			consumer: "_alignLivePlaylist",
 			helper: "_parsePlaylistDiscontinuitySequence",
 			source: processorSource,

@@ -6029,6 +6029,11 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 		}
 	}
 
+	if (isTerminalPostAdTask && !isPausePlay && !isReload) {
+		_completePendingPostAdRecoveryOperation();
+		return true;
+	}
+
 	if (isPausePlay) {
 		if (isPipTask && pipContext) {
 			if (pipContext.element.paused || pipContext.element.ended) return false;
