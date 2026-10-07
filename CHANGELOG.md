@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.1.2] - 2026-10-07
+
+Fixed
+
+- **HD Transitions** - Keep the clean backup playing until an HD stream is ready to take over, preventing premature switches that interrupt playback.
+
 ## [19.1.1] - 2026-10-06
 
 Fixed
