@@ -10878,6 +10878,100 @@ describe("injected worker ad playlist validation", () => {
 		},
 	);
 
+	it("does not replay served native prefetches after a delayed ad-start backup search in the injected worker", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+		const variantUrl = "https://video-weaver.example.ttvnw.net/native.m3u8";
+		const start = Date.parse("2026-10-08T01:14:30Z");
+		let ad = false;
+		const media = (
+			type: string,
+			sequence: number,
+			offset: number,
+			count: number,
+		) =>
+			[
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				`#EXT-X-MEDIA-SEQUENCE:${sequence}`,
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}`,
+				...Array.from({ length: count }, (_, index) => [
+					"#EXTINF:2.000,live",
+					`https://edge.example/${type}-${sequence + index}.ts`,
+				]).flat(),
+			].join("\n");
+		const clean = `${media("native", 400, 0, 3)}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/native-403.ts\n#EXT-X-TWITCH-PREFETCH:https://edge.example/native-404.ts`;
+		const nativeFetch = vi.fn(
+			async (input: RequestInfo | URL, options?: RequestInit) => {
+				const url = new URL(String(input));
+				if (url.hostname === "gql.twitch.tv") {
+					await new Promise((resolve) => setTimeout(resolve, 500));
+					const type = JSON.parse(String(options?.body)).variables.playerType;
+					return Response.json({
+						data: {
+							streamPlaybackAccessToken: { signature: "test", value: type },
+						},
+					});
+				}
+				if (url.hostname === "usher.ttvnw.net") {
+					const type = url.searchParams.get("token") || "native";
+					if (type !== "native")
+						await new Promise((resolve) => setTimeout(resolve, 500));
+					return new Response(
+						`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=${type === "native" ? "1920x1080" : "640x360"},CODECS="avc1.64002a,mp4a.40.2"\n${type === "native" ? variantUrl : "https://edge.example/autoplay.m3u8"}`,
+					);
+				}
+				if (String(input) === variantUrl)
+					return new Response(
+						ad
+							? `${media("native", 403, 6000, 2)}\n#EXT-X-DISCONTINUITY\n#EXTINF:2.000,stitched-ad\nhttps://edge.example/stitched-ad.ts`
+							: clean,
+					);
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				return new Response(media("backup", 100, 6000, 5));
+			},
+		);
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+			runtime.scope.Date = Date;
+			runtime.scope.navigator = { languages: ["en-US"], language: "en-US" };
+			runtime.deliverBootstrap();
+			const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaKey: "live:testchannel",
+				PreferredQualityGroup: "1080p60",
+				DisableAutoplayBackup: false,
+				DisableAdSpoofing: true,
+			});
+			const workerFetch = runtime.scope.fetch as typeof fetch;
+			await workerFetch(masterUrl);
+			expect(await (await workerFetch(variantUrl)).text()).toBe(clean);
+			await vi.advanceTimersByTimeAsync(3500);
+			ad = true;
+			const response = workerFetch(variantUrl).then((value) => value.text());
+			await vi.advanceTimersByTimeAsync(2500);
+			const output = await response;
+			expect(output).not.toContain("stitched-ad");
+			expect(output).not.toContain("backup-100.ts");
+			expect(output).not.toContain("backup-101.ts");
+			expect(output).toContain("backup-102.ts");
+			expect(output).toContain("#EXT-X-MEDIA-SEQUENCE:405");
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+			expect(info._LivePlaylistTimeline).toMatchObject({
+				minimumTime: start + 10000,
+			});
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
+		}
+	});
+
 	it.each([
 		"clean",
 		"ads on confirmation",

@@ -1364,6 +1364,31 @@ function validateSharedDefinitions() {
 			helper: "_alignLivePlaylist",
 			source: processorSource,
 		},
+		...[
+			"_applyPlaylistContinuity",
+			"_processM3U8Core",
+			"_commitBackupPlaylist",
+		].map((consumer) => ({
+			consumer,
+			helper: "_observeServedPrefetchTimeline",
+			source: processorSource,
+		})),
+		...[
+			"_getMediaPlaylistSessionKey",
+			"_getExactPlaylistUrlKey",
+			"_getMediaSegmentUriIndex",
+		].map((helper) => ({
+			consumer: "_observeServedPrefetchTimeline",
+			helper,
+			source: processorSource,
+		})),
+		...["_getMediaPlaylistSessionKey", "_getExactPlaylistUrlKey"].map(
+			(helper) => ({
+				consumer: "_applyPlaylistContinuity",
+				helper,
+				source: processorSource,
+			}),
+		),
 		{
 			consumer: "_searchBackupStream",
 			helper: "_alignLivePlaylist",
