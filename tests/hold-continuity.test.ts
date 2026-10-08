@@ -120,6 +120,257 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it("does not replay prefetched native content when the next poll starts an ad", async () => {
+		const { context, info, fetch } = setup();
+		let now = Date.now();
+		context.Date = class extends Date {
+			static now() {
+				return now;
+			}
+		};
+		info.IsShowingAd = false;
+		info.VisibleAdStartedAt = 0;
+		context.state.CurrentAdMediaKey = null;
+		context.state.CurrentAdChannel = null;
+		context.state.DisableAutoplayBackup = false;
+		const start = Date.parse("2026-10-08T01:14:30Z");
+		const dated = (
+			sequence: number,
+			offset: number,
+			count: number,
+			prefix: string,
+		) =>
+			playlist(sequence, count, prefix).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+			);
+		const native = `${dated(400, 0, 3, "native")}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/native-403.ts\n#EXT-X-TWITCH-PREFETCH:https://edge.example/native-404.ts`;
+		expect(await context._processM3U8(nativeUrl, native, fetch)).toBe(native);
+		now += 3500;
+		const backup = dated(100, 6000, 5, "backup");
+		context._findBackupStream = vi.fn(async () => {
+			info.LastCleanBackupM3U8 = backup;
+			info.LastCleanBackupAt = now;
+			info.LastCleanBackupPlayerType = "autoplay";
+			info.LastCleanBackupResolution = "640x360";
+			info.LastCleanBackupCodec = "avc1.4d401f";
+			info.LastCleanBackupCodecFamily = "avc";
+			context._rememberBackupPlaylistMetadata(
+				info,
+				backup,
+				"avc",
+				"avc1.4d401f",
+				{
+					playerType: "autoplay",
+					resolution: "640x360",
+					playlistUrl: "https://edge.example/autoplay.m3u8?session=one",
+					sessionUrl: "https://usher.ttvnw.net/master.m3u8?session=one",
+				},
+			);
+			return { m3u8: backup, type: "autoplay", resolution: "640x360" };
+		});
+		const ad = `${dated(403, 6000, 2, "native")}\n#EXT-X-DISCONTINUITY\n#EXTINF:2.000,stitched-ad\nhttps://edge.example/stitched-ad.ts`;
+		const output = await context._processM3U8(nativeUrl, ad, fetch);
+		expect(output).not.toContain("stitched-ad");
+		expect(output).not.toContain("backup-100.ts");
+		expect(output).not.toContain("backup-101.ts");
+		expect(output).toContain("backup-102.ts");
+		expect(segments(output)[0].sequence).toBe(405);
+		expect(info._LivePlaylistTimeline.minimumTime).toBe(start + 10000);
+	});
+
+	it("uses confirmed prefetch durations without claiming later unserved segments", async () => {
+		const { context, info, serve } = setup();
+		const start = Date.parse("2026-10-08T01:14:30Z");
+		const native = `${playlist(400).replace("#EXTINF:", `#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`)}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-403.ts\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-404.ts`;
+		await serve(native);
+		const confirmed = [
+			"#EXTM3U",
+			"#EXT-X-TARGETDURATION:6",
+			"#EXT-X-MEDIA-SEQUENCE:403",
+			`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 6000).toISOString()}`,
+			"#EXTINF:1.6,live",
+			"https://edge.example/clean-403.ts",
+			"#EXTINF:2.4,live",
+			"https://edge.example/clean-404.ts",
+			"#EXTINF:6,live",
+			"https://edge.example/unserved-405.ts",
+		].join("\r\n");
+		context._observeServedPrefetchTimeline(
+			info,
+			`${nativeUrl}&_HLS_msn=403`,
+			confirmed,
+		);
+		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 10000);
+		const output = await serve(
+			playlist(100, 3, "backup").replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 8000).toISOString()}\n#EXTINF:`,
+			),
+			"autoplay",
+		);
+		expect(output).not.toContain("backup-100.ts");
+		expect(output).toContain("backup-101.ts");
+		expect(output).toContain("backup-102.ts");
+		expect(info._LivePlaylistTimeline.prefetchedSegments).toEqual([]);
+	});
+
+	it.each([
+		"other session",
+		"other segment",
+		"undated",
+		"undated discontinuity",
+		"disabled",
+		"vod",
+	])("does not extend the prefetch boundary from %s media", async (mode) => {
+		const { context, info, serve } = setup();
+		const start = Date.parse("2026-10-08T01:14:30Z");
+		const dated = (sequence: number, offset: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+			);
+		await serve(
+			`${dated(400, 0)}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-403.ts`,
+		);
+		const previous = info._LivePlaylistTimeline;
+		let text = dated(402, 4000);
+		if (mode === "other segment")
+			text = text.replace("clean-403.ts", "other-403.ts");
+		if (mode === "undated")
+			text = text.replace(/#EXT-X-PROGRAM-DATE-TIME:[^\n]+\n/, "");
+		if (mode === "undated discontinuity")
+			text = text.replace(
+				"#EXTINF:2.000,live\nhttps://edge.example/clean-403.ts",
+				"#EXT-X-DISCONTINUITY\n#EXTINF:2.000,live\nhttps://edge.example/clean-403.ts",
+			);
+		if (mode === "disabled") context.state.IsAdStrippingEnabled = false;
+		if (mode === "vod") info.MediaType = "vod";
+		context._observeServedPrefetchTimeline(
+			info,
+			mode === "other session"
+				? nativeUrl.replace("owned", "other")
+				: nativeUrl,
+			text,
+		);
+		expect(info._LivePlaylistTimeline).toBe(previous);
+	});
+
+	it.each(["aborted", "new loader", "new cycle"])(
+		"does not let an %s native request update served prefetch timing",
+		async (mode) => {
+			const { context, info, serve, fetch } = setup();
+			const processCore = context._processM3U8Core;
+			const start = Date.parse("2026-10-08T01:14:30Z");
+			const native = `${playlist(400).replace("#EXTINF:", `#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`)}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/clean-403.ts`;
+			await serve(native);
+			const previous = info._LivePlaylistTimeline;
+			const controller = new AbortController();
+			const requestContext = {
+				backupSearchEpoch: info.BackupSearchEpoch,
+				loaderEpoch: info.NativeRecoveryLoaderEpoch,
+				cycleStartedAt: info.VisibleAdStartedAt,
+			};
+			if (mode === "aborted") controller.abort();
+			if (mode === "new loader") info.NativeRecoveryLoaderEpoch++;
+			if (mode === "new cycle") info.BackupSearchEpoch++;
+			const completed = playlist(403).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 6000).toISOString()}\n#EXTINF:`,
+			);
+			await expect(
+				processCore(
+					nativeUrl,
+					completed,
+					fetch,
+					requestContext,
+					controller.signal,
+				),
+			).rejects.toMatchObject({ name: "AbortError" });
+			expect(info._LivePlaylistTimeline).toBe(previous);
+		},
+	);
+
+	it("keeps exact prefetch ownership across native renditions and bounds retained URLs", async () => {
+		const { context, info } = setup();
+		const start = Date.parse("2026-10-08T01:14:30Z");
+		const dated = playlist(400).replace(
+			"#EXTINF:",
+			`#EXT-X-PROGRAM-DATE-TIME:${new Date(start).toISOString()}\n#EXTINF:`,
+		);
+		for (let index = 0; index < 40; index++) {
+			context._applyPlaylistContinuity(
+				info,
+				`${nativeUrl}&rendition=${index}`,
+				`${dated}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/rendition-${index}.ts`,
+			);
+		}
+		expect(info._LivePlaylistTimeline.prefetchedSegments).toHaveLength(32);
+		const completed = (index: number) =>
+			`#EXTM3U\n#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 6000).toISOString()}\n#EXTINF:2.000,live\nhttps://edge.example/rendition-${index}.ts`;
+		context._observeServedPrefetchTimeline(
+			info,
+			`${nativeUrl}&rendition=0`,
+			completed(0),
+		);
+		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 6000);
+		context._observeServedPrefetchTimeline(
+			info,
+			`${nativeUrl}&rendition=8`,
+			completed(8),
+		);
+		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 8000);
+		context._resetStreamAdState(info);
+		expect(info._LivePlaylistTimeline).toBeNull();
+	});
+
+	it("preserves the served backup prefetch boundary through promotion and native return", async () => {
+		const { context, info, serve } = setup();
+		const start = Date.parse("2026-10-08T01:14:30Z");
+		const dated = (sequence: number, offset: number, prefix: string) =>
+			playlist(sequence, 3, prefix).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+			);
+		await serve(dated(400, 0, "native"));
+		const low = `${dated(100, 6000, "low")}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/low-103.ts\n#EXT-X-TWITCH-PREFETCH:https://edge.example/low-104.ts`;
+		const lowOutput = await serve(low, "autoplay");
+		const metadata = info.BackupPlaylistMetadata.get(low);
+		context._commitBackupPlaylist(
+			info,
+			dated(103, 12000, "low"),
+			1,
+			metadata,
+			true,
+		);
+		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 16000);
+		const high = await serve(
+			`${dated(200, 12000, "high")}\n#EXT-X-TWITCH-PREFETCH:https://edge.example/high-203.ts`,
+			"site",
+		);
+		expect(high).not.toContain("high-200.ts");
+		expect(high).not.toContain("high-201.ts");
+		expect(high).toContain("high-202.ts");
+		expect(segments(high)[0].sequence).toBe(
+			segments(lowOutput).at(-1).sequence + 1,
+		);
+		context._commitBackupPlaylist(
+			info,
+			dated(203, 18000, "high"),
+			2,
+			info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8),
+			true,
+		);
+		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 20000);
+		context._resetStreamAdState(info, true);
+		const native = await serve(dated(600, 18000, "native"));
+		expect(native).not.toContain("native-600.ts");
+		expect(native).toContain("native-601.ts");
+		expect(segments(native)[0].sequence).toBe(
+			segments(high).at(-1).sequence + 1,
+		);
+	});
+
 	it("keeps enough silent media available through the observed early poll and backup delay", async () => {
 		const { context, info, serve } = setup();
 		let now = Date.now();

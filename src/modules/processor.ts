@@ -2193,6 +2193,61 @@ function _insertBoundaryDiscontinuity(
 	return lines.join("\n");
 }
 
+function _observeServedPrefetchTimeline(info, url, text) {
+	const previous = info?._LivePlaylistTimeline;
+	if (
+		info?.MediaType !== "live" ||
+		__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+		!previous?.prefetchedSegments?.length ||
+		typeof text !== "string" ||
+		text.includes("#EXT-X-STREAM-INF")
+	)
+		return;
+	const sourceUrl = _getMediaPlaylistSessionKey(url);
+	const pending = new Set(
+		previous.prefetchedSegments
+			.filter((segment) => segment.sourceUrl === sourceUrl)
+			.map((segment) => segment.url),
+	);
+	if (!pending.size) return;
+	const lines = text.split(/\r?\n/);
+	let time = Number.NaN;
+	let hasExplicitTime = false;
+	let lastEndTime = previous.lastEndTime;
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index];
+		if (line.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
+			time = Date.parse(line.slice(25));
+			hasExplicitTime = true;
+		} else if (line === "#EXT-X-DISCONTINUITY" && !hasExplicitTime) {
+			time = Number.NaN;
+		}
+		if (!line.startsWith("#EXTINF:")) continue;
+		const duration = Number.parseFloat(line.slice(8)) * 1000;
+		const uriIndex = _getMediaSegmentUriIndex(lines, index);
+		if (uriIndex < 0 || !Number.isFinite(duration) || duration <= 0) return;
+		for (let tag = index + 1; tag < uriIndex; tag++) {
+			if (lines[tag].startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
+				time = Date.parse(lines[tag].slice(25));
+				hasExplicitTime = true;
+			} else if (lines[tag] === "#EXT-X-DISCONTINUITY" && !hasExplicitTime) {
+				time = Number.NaN;
+			}
+		}
+		if (
+			Number.isFinite(time) &&
+			pending.has(_getExactPlaylistUrlKey(lines[uriIndex], url))
+		)
+			lastEndTime = Math.max(lastEndTime, time + duration);
+		time += duration;
+		hasExplicitTime = false;
+		index = uriIndex;
+	}
+	if (lastEndTime > previous.lastEndTime) {
+		info._LivePlaylistTimeline = { ...previous, lastEndTime };
+	}
+}
+
 function _alignLivePlaylist(
 	info,
 	text,
@@ -2513,6 +2568,11 @@ function _applyPlaylistContinuity(
 	backupMetadata = null,
 	requestContext = null,
 ) {
+	_observeServedPrefetchTimeline(
+		info,
+		backupMetadata?.playlistUrl || url,
+		text,
+	);
 	const previous = info?._LivePlaylistTimeline;
 	try {
 		const aligned = _alignLivePlaylist(info, text, backupMetadata);
@@ -2609,6 +2669,36 @@ function _applyPlaylistContinuity(
 					: "native";
 		if (info && info._LastServedPlaylistKind !== "hold")
 			info._EmptyAdHoldWindow = null;
+		const timeline = info?._LivePlaylistTimeline;
+		if (
+			timeline &&
+			timeline !== previous &&
+			!timeline.afterHold &&
+			info.MediaType === "live"
+		) {
+			const sourceUrl = _getMediaPlaylistSessionKey(
+				backupMetadata?.playlistUrl || url,
+			);
+			const prefetched = new Map(
+				(timeline.identity === previous?.identity
+					? previous.prefetchedSegments || []
+					: []
+				).map((segment) => [
+					JSON.stringify([segment.sourceUrl, segment.url]),
+					segment,
+				]),
+			);
+			for (const line of output.split(/\r?\n/)) {
+				if (!line.startsWith("#EXT-X-TWITCH-PREFETCH:")) continue;
+				const segmentUrl = _getExactPlaylistUrlKey(line.slice(23), sourceUrl);
+				if (segmentUrl) {
+					const key = JSON.stringify([sourceUrl, segmentUrl]);
+					prefetched.delete(key);
+					prefetched.set(key, { sourceUrl, url: segmentUrl });
+				}
+			}
+			timeline.prefetchedSegments = [...prefetched.values()].slice(-32);
+		}
 		return output;
 	} catch (error) {
 		if (info) info._LivePlaylistTimeline = previous;
@@ -4327,6 +4417,7 @@ function _commitBackupPlaylist(
 	) {
 		return null;
 	}
+	_observeServedPrefetchTimeline(info, metadata.playlistUrl, m3u8);
 	const previousDescription = `${info.LastCleanBackupPlayerType || "none"}@${info.LastCleanBackupResolution || "unknown"}`;
 	info._BackupSelection = {
 		identity,
@@ -5387,6 +5478,7 @@ async function _processM3U8Core(
 		if (!info) throw _createCodecHandoffAbortError(requestSignal);
 	}
 	_assertM3U8RequestContextCurrent(info, requestAdContext, requestSignal);
+	_observeServedPrefetchTimeline(info, url, text);
 	info.LastActivityAt = Date.now();
 
 	const currentAliases = _getPlaylistUrlAliases(url);

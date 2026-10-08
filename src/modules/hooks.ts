@@ -5863,6 +5863,7 @@ function _hookWorker() {
                 ${_getEmptyHoldUpstreamUrl.toString()}
                 ${_applyEmptyHoldPlaylistContinuity.toString()}
                 ${_alignLivePlaylist.toString()}
+                ${_observeServedPrefetchTimeline.toString()}
 				${_canRestoreNativeByPlaylist.toString()}
                 ${_applyPlaylistContinuity.toString()}
                 ${_getNativeRecoveryProbePlayerType.toString()}
