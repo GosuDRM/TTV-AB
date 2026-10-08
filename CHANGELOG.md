@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.2.2] - 2026-10-08
+
+Fixed
+
+- **Ad Transition Replay** - Preserve confirmed timing for prefetched media so ad-start, quality upgrades, and native recovery do not replay those segments.
+
 ## [19.2.1] - 2026-10-08
 
 Fixed

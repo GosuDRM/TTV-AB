@@ -73,6 +73,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v19.2.2 - 2026-10-08
+
+- **Ad Transition Replay** - Preserve confirmed timing for prefetched media so ad-start, quality upgrades, and native recovery do not replay those segments.
+
 ### v19.2.1 - 2026-10-08
 
 - **Quality Transitions** - Keep new content at clean source boundaries instead of skipping nearly a full segment when stream timings differ slightly.
@@ -84,11 +88,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Concurrent Quality Requests** - Share continuous silent hold media across quality requests to prevent gaps and repeated buffering.
 - **Live Timeline** - Preserve source boundaries and account for published partial and prefetched media when switching streams.
 - **Recovery Timing** - Preserve playback timestamps during worker recovery and accept usable playlists whose first timestamp appears after the first segment.
-
-### v19.1.4 - 2026-10-07
-
-- **Ad Transition Playback** - Preserve playback timing through temporary silent holds, preventing a freeze when the clean backup takes over.
-- **Native Return** - Keep the playback timeline continuous after a low-to-high quality change, including breaks that did not need a silent hold.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
