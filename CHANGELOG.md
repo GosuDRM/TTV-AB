@@ -4,6 +4,12 @@ All notable changes to TTV AB will be documented in this file.
 
 ## [20.0.0] - 2026-10-09
 
+Fixed
+
+- **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.
+- **Playlist Recovery** - Accept fresh live updates with wider windows without replaying older segments or stopping playback.
+- **Backup Recovery** - Keep the player informed when its clean backup changes while waiting for native playback to return.
+
 Changed
 
 - **Worker Builds** - Build the playback worker from automatically collected dependencies and minify shipped scripts with esbuild.
@@ -11,12 +17,7 @@ Changed
 - **Worker Messages** - Validate command and event payloads before playback changes, network requests, or heartbeat acknowledgement.
 - **Build Tests** - Test worker dependencies, message validation, and the assembled scripts and worker bootstrap.
 - **Extension Packages** - Exclude development TypeScript and diagnostic modules from installable archives, and fail builds when packaging fails.
-
-Fixed
-
-- **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.
-- **Playlist Recovery** - Accept fresh live updates with wider windows without replaying older segments or stopping playback.
-- **Backup Recovery** - Keep the player informed when its clean backup changes while waiting for native playback to return.
+- **Development Tools** - Update Biome to 2.5.15 and Knip to 6.40.0 for formatting, linting, and unused-code checks.
 
 ## [19.2.2] - 2026-10-08
 
