@@ -82,7 +82,9 @@ function _normalizeMediaKey(value) {
 	return null;
 }
 
-function _normalizePlaybackContext(context) {
+function _normalizePlaybackContext(
+	context: TTVABPlaybackContextInput,
+): TTVABPlaybackContext {
 	const channelName = _normalizeChannelName(
 		context?.ChannelName ?? context?.channelName ?? context?.login ?? null,
 	);
@@ -546,7 +548,7 @@ function _absolutizeMediaPlaylistUrls(
 		.join("\n");
 }
 
-function _createEmptyAdHoldPlaylist(text, info) {
+function _createEmptyAdHoldPlaylist(text, info: Partial<TTVABStreamInfo>) {
 	if (/(?:^|\n)\s*#EXT-X-MAP:/.test(text)) {
 		throw new DOMException(
 			"Transport hold cannot replace media with an initialization map",
@@ -803,7 +805,7 @@ function _isEmptyAdHoldSegmentUrl(url) {
 function _stripAds(
 	text,
 	stripAll,
-	info,
+	info: Partial<TTVABStreamInfo>,
 	_skipAutoForceStrip = false,
 	preserveLiveSegments = false,
 ) {
@@ -1109,7 +1111,11 @@ function _extractPlaylistHeaders(text) {
 	return headers.length > 0 ? headers.join("\n") : "#EXTM3U\n";
 }
 
-function _getStreamVariantInfo(attrs, rawUrl, variantUrl) {
+function _getStreamVariantInfo(
+	attrs: Record<string, string>,
+	rawUrl: string,
+	variantUrl: string,
+): TTVABStreamVariant {
 	const frameRate = Number.parseFloat(attrs?.["FRAME-RATE"]);
 	const bandwidth = Number.parseInt(attrs?.BANDWIDTH, 10);
 	return {
@@ -1217,7 +1223,9 @@ function _getStreamUrl(m3u8, res, baseUrl = null) {
 	return matchUrl || closeUrl || highestUrl || firstUrl;
 }
 
-function _getSortedResolutionList(resolutionList) {
+function _getSortedResolutionList(
+	resolutionList: TTVABStreamVariant[],
+): TTVABStreamVariant[] {
 	return [...resolutionList].sort((a, b) => {
 		const [aw, ah] = String(a?.Resolution || "0x0")
 			.split("x")
@@ -1237,7 +1245,10 @@ function _getSortedResolutionList(resolutionList) {
 	});
 }
 
-function _getResolutionByQualityGroup(resolutionList, qualityGroup) {
+function _getResolutionByQualityGroup(
+	resolutionList: TTVABStreamVariant[],
+	qualityGroup: string | null,
+): TTVABStreamVariant | null {
 	const normalizedQualityGroup =
 		typeof qualityGroup === "string" ? qualityGroup.trim().toLowerCase() : "";
 	if (!normalizedQualityGroup || normalizedQualityGroup === "auto") {
@@ -1288,7 +1299,11 @@ function _getResolutionByQualityGroup(resolutionList, qualityGroup) {
 	);
 }
 
-function _degradeToDecodableResolution(info, entry, resolutionList) {
+function _degradeToDecodableResolution(
+	info: TTVABStreamInfo,
+	entry: TTVABStreamVariant | null,
+	resolutionList: TTVABStreamVariant[],
+): TTVABStreamVariant | null {
 	if (!entry || !info?.IsUsingModifiedM3U8) return entry;
 	if (!_isEnhancedCodecString(entry?.Codecs)) return entry;
 	const heightOf = (candidate) => {
@@ -1315,7 +1330,10 @@ function _degradeToDecodableResolution(info, entry, resolutionList) {
 	return best || entry;
 }
 
-function _getFallbackResolution(info, url) {
+function _getFallbackResolution(
+	info: TTVABStreamInfo,
+	url: string,
+): TTVABStreamVariant | null {
 	const resolutionList = Array.isArray(info?.ResolutionList)
 		? info.ResolutionList.filter(Boolean)
 		: [];
@@ -1402,7 +1420,7 @@ function _isEnhancedCodecString(codecs) {
 	return _isHevcCodecString(c) || c.startsWith("av0");
 }
 
-function _shouldAvoidHevcBackupVariants(info) {
+function _shouldAvoidHevcBackupVariants(info: TTVABStreamInfo) {
 	if (info?.IsUsingModifiedM3U8) return true;
 	const enhancedDecoderCodecFamily = _getVideoCodecFamily(
 		info?.EnhancedDecoderCodecFamily,
@@ -1450,7 +1468,7 @@ function _dropEnhancedVariantLines(lines) {
 }
 
 function _getBackupPlaybackCodec(
-	info,
+	info: TTVABStreamInfo,
 	targetResolution = null,
 	codecOverride = null,
 ) {
@@ -1479,7 +1497,7 @@ function _getBackupPlaybackCodec(
 }
 
 function _stripHevcBackupVariants(
-	info,
+	info: TTVABStreamInfo,
 	m3u8,
 	targetResolution = null,
 	codecFamilyOverride = null,
@@ -1588,7 +1606,10 @@ function _stripHevcBackupVariants(
 	return kept.join("\n");
 }
 
-function _resolvePreferredBackupResolution(info, floorHeight = 360) {
+function _resolvePreferredBackupResolution(
+	info: TTVABStreamInfo,
+	floorHeight = 360,
+) {
 	const resolutionList = Array.isArray(info?.ResolutionList)
 		? info.ResolutionList.filter(Boolean)
 		: [];

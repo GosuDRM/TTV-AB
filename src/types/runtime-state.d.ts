@@ -48,8 +48,6 @@ type TTVABPlaybackState = {
 	PendingTriggeredPlayerReloadCycleStartedAt: number;
 };
 
-type TTVABStreamInfo = ReturnType<typeof _createStreamInfo> & PlainObject;
-
 type TTVABSegmentCodecOwner = {
 	codecFamily: "avc" | "hevc" | "av1" | null;
 	mediaKey: string | null;

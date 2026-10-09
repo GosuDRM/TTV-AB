@@ -28,7 +28,7 @@ const _POST_AD_REMOVABLE_SELECTOR_GROUP =
 	_POST_AD_REMOVABLE_SELECTORS.join(", ");
 const _POST_AD_RESET_SELECTOR_GROUP = _POST_AD_RESET_ONLY_SELECTORS.join(", ");
 let _pendingPostAdArtifactCleanup = null;
-const _pageSideEmptyHoldInfoByUrl = new Map();
+const _pageSideEmptyHoldInfoByUrl = new Map<string, TTVABPagePlaylistState>();
 const _pageSideVariantCodecByUrl = new Map();
 const _pageSidePlaybackOwnerByUrl = new Map();
 const _pageAdCycleControlByMediaKey = new Map();
@@ -460,9 +460,7 @@ function _resetWorkerAdCycleState(value) {
 		0,
 		Number(progress?.cycleStartedAt) || 0,
 	);
-	const streamInfos = Object.values(
-		__TTVAB_STATE__?.StreamInfos || {},
-	) as Array<{ MediaKey?: string | null; VisibleAdStartedAt?: number }>;
+	const streamInfos = Object.values(__TTVAB_STATE__?.StreamInfos || {});
 	const matchingInfos = streamInfos.filter(
 		(info) => _normalizeMediaKey(info?.MediaKey) === mediaKey,
 	);
@@ -762,7 +760,7 @@ function _hookWorkerFetch() {
 		headers: response.headers,
 	});
 	const getValidatedNativeMaster = async (
-		info,
+		info: TTVABStreamInfo,
 		masterText,
 		masterUrl,
 		recoveryResolutions,
@@ -984,7 +982,7 @@ function _hookWorkerFetch() {
 		};
 	};
 	const getPendingPostAdNativeMaster = async (
-		info,
+		info: TTVABStreamInfo,
 		playbackContext,
 		requestSignal,
 		assertRequestCurrent,
@@ -1098,7 +1096,7 @@ function _hookWorkerFetch() {
 		return validated.master;
 	};
 	const getCleanNativeMasterAfterReduction = async (
-		info,
+		info: TTVABStreamInfo,
 		encodings,
 		requestSignal,
 		assertRequestCurrent,
@@ -1646,7 +1644,7 @@ function _hookWorkerFetch() {
 	}
 
 	function _syncStreamInfo(
-		info,
+		info: TTVABStreamInfo,
 		encodings,
 		usherUrl,
 		preserveNativeSession = false,
@@ -4825,7 +4823,12 @@ function _attemptPageSideFallbackTerminalRearm(
 	return true;
 }
 
-function _isPageSideFallbackRecoveryReady(url, text, info, mediaKey) {
+function _isPageSideFallbackRecoveryReady(
+	url,
+	text,
+	info: Partial<TTVABStreamInfo>,
+	mediaKey,
+) {
 	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
 	const podProgress =
 		__TTVAB_STATE__?.AdPodProgressByMediaKey?.[normalizedMediaKey] || null;
@@ -5008,9 +5011,7 @@ function _completePageSideFallbackAdRecovery(mediaKey) {
 		normalizedMediaKey
 			? __TTVAB_STATE__?.ActiveCodecHandoffId || null
 			: null;
-	for (const streamInfo of Object.values(
-		__TTVAB_STATE__?.StreamInfos || {},
-	) as Array<{ MediaKey?: string | null }>) {
+	for (const streamInfo of Object.values(__TTVAB_STATE__?.StreamInfos || {})) {
 		if (_normalizeMediaKey(streamInfo?.MediaKey) !== normalizedMediaKey)
 			continue;
 		_resetStreamAdState(streamInfo, true);

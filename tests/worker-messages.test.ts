@@ -537,3 +537,78 @@ function _eventContractNarrowing(input: unknown) {
 		).toBe(true);
 	});
 });
+
+describe("stream state TypeScript contracts", () => {
+	it("types factory records, nested recovery state, and actual stream consumers", () => {
+		const source = `const _streamContract = _createStreamInfo({ mediaKey: "live:buildtest" });
+const _streamHasNoIndex: string extends keyof TTVABStreamInfo ? false : true = true;
+const _pagePlaylistContract: TTVABPagePlaylistState = { MediaKey: "live:buildtest", MediaType: "live", PageContextGeneration: 1, UsherBaseUrl: "https://example.invalid/native.m3u8", _EmptyAdHoldMediaSequence: 0, _EmptyAdHoldDiscontinuitySequence: 0, _EmptyAdHoldProgramDateTime: 0, _EmptyAdHoldWindow: null, _EmptyHoldTimelineByUrl: new Map(), _LivePlaylistTimeline: null, NumStrippedAdSegments: 0, IsStrippingAdSegments: false };
+_pageSideEmptyHoldInfoByUrl.set("native", _pagePlaylistContract);
+_applyPlaylistContinuity(_pagePlaylistContract, "https://example.invalid/native.m3u8", "#EXTM3U");
+_stripAds("#EXTM3U", false, _pagePlaylistContract);
+type _StreamAnyFields = { [Key in keyof TTVABStreamInfo]-?: 0 extends (1 & TTVABStreamInfo[Key]) ? Key : never }[keyof TTVABStreamInfo];
+const _streamHasNoAnyFields: [_StreamAnyFields] extends [never] ? true : false = true;
+const _streamVariant = _getStreamVariantInfo({ RESOLUTION: "1920x1080", CODECS: "avc1" }, "native.m3u8", "https://example.invalid/native.m3u8");
+_streamContract.ResolutionList.push(_streamVariant);
+_streamContract.Urls[_streamVariant.Url] = _streamVariant;
+_streamContract.SustainedNativeResolution = _streamVariant;
+_streamContract.RequestedAds.add("https://example.invalid/ad.ts");
+_streamContract._BackupSelection = { identity: "site-session", sequence: 1, refreshedSequence: 2 };
+_streamContract.BackupEncodingsM3U8Cache.site = { m3u8: "#EXTM3U", baseUrl: "https://example.invalid/master.m3u8", viewerHeadersOmitted: false, cycleStartedAt: 1000 };
+_streamContract._BackupProbation = { type: "site", at: 1100, cleanChecks: 1, cache: _streamContract.BackupEncodingsM3U8Cache.site, playlistUrl: "https://example.invalid/backup.m3u8", codec: "avc1", resolution: "1920x1080", mediaKey: "live:buildtest", pageMediaKey: "live:buildtest", pageGeneration: 1, cycleStartedAt: 1000, backupSearchEpoch: 1 };
+_streamContract._NativePlaybackMaster = { master: "#EXTM3U", masterUrl: "https://example.invalid/master.m3u8", resolutionList: [_streamVariant], mediaKey: "live:buildtest", pageGeneration: 1, observedAt: 1000 };
+_streamContract._PendingPostAdNativeMaster = { master: "#EXTM3U", masterUrl: "https://example.invalid/master.m3u8", playlistUrl: "https://example.invalid/native.m3u8", codec: "avc1", resolution: "1920x1080", mediaKey: "live:buildtest", cycleStartedAt: 1000, expiresAt: 31000, pageGeneration: 1, masterServedAt: 0, reloadAt: 0, reloadCount: 0, consumed: false };
+_streamContract._PendingNativeReloadConfirmation = { mediaKey: "live:buildtest", pageMediaKey: "live:buildtest", pageGeneration: 1, cycleStartedAt: 1000, reloadAt: 2000, loaderEpoch: 1 };
+_streamContract._PendingNativeReloadConfirmation.confirmed = true;
+_streamContract._BackupSearchPromise = Promise.resolve({ type: "site", m3u8: "#EXTM3U" });
+_streamContract._BackupSearchPromises.set("cycle-1", _streamContract._BackupSearchPromise);
+_streamContract._EmptyAdHoldWindow = { cycleStartedAt: 1000, startedAt: 1000, firstSequence: 10, discontinuity: 2, programDateTime: 1000 };
+_streamContract._EmptyHoldTimelineByUrl.set(_streamVariant.Url, { kind: "native", identity: "native-session", generation: 1, boundarySequence: 10, addBoundary: true, mediaOffset: 1, discontinuityOffset: 2, lastSequence: 12, lastDiscontinuity: 3, lastRawFirstSequence: 10, nativeAnchors: [{ time: 1000, duration: 2000, sequence: 10, discontinuity: 2 }] });
+_streamContract._LivePlaylistTimeline = { identity: "native-session", backup: false, afterHold: false, minimumTime: 1000, lastEndTime: 3000, prefetchedSegments: [{ sourceUrl: _streamVariant.Url, url: "https://example.invalid/next.ts" }] };
+_commitBackupPlaylist(_streamContract, "#EXTM3U", 2, { playerType: "site", playlistUrl: "https://example.invalid/backup.m3u8", sessionUrl: "https://example.invalid/master.m3u8", resolution: "1920x1080", codecFamily: "avc", codec: "avc1" });
+_isBackupProbationCurrent(_streamContract, _streamContract._BackupProbation);
+_applyPlaylistContinuity(_streamContract, _streamVariant.Url, "#EXTM3U");
+_resetStreamAdState(_streamContract, true);
+_invalidateAdCycleAsyncWork(_streamContract);
+_updatePostAdNativeMasterReload(_streamContract, { mediaKey: "live:buildtest", cycleStartedAt: 1000, reloadAt: 2000, preserveNativeSession: true });`;
+		expect(contractDiagnostics(source)).toEqual([]);
+	});
+
+	it("rejects misspelled fields, invalid nested writes, and incomplete ownership records", () => {
+		const info = '__TTVAB_STATE__.StreamInfos["live:buildtest"]';
+		const statements = [
+			'_pageSideEmptyHoldInfoByUrl.get("native").PageContextGeneration = "1";',
+			`${info}.LastCleanBackupPlayrType = "site";`,
+			`${info}.LastCleanBackupM3U8 = 123;`,
+			`${info}._BackupSelection = { identity: "site-session", sequence: "1", refreshedSequence: 2 };`,
+			`${info}.BackupEncodingsM3U8Cache.site.viewerHeadersOmitted = "false";`,
+			`${info}.BackupPlaylistMetadata.set("#EXTM3U", { codecFamily: "audio", codec: null, ambiguous: false });`,
+			`${info}._BackupProbation.pageGeneration = "1";`,
+			`${info}._NativePlaybackMaster = { master: "#EXTM3U", masterUrl: "https://example.invalid/master.m3u8", resolutionList: [] };`,
+			`${info}._PendingPostAdNativeMaster = { master: "#EXTM3U", masterUrl: "https://example.invalid/master.m3u8", playlistUrl: "https://example.invalid/native.m3u8" };`,
+			`${info}._PendingPostAdNativeMaster.loaderEpoch = "1";`,
+			`${info}._PendingNativeReloadConfirmation.confirmed = "true";`,
+			`${info}.RequestedAds.add(123);`,
+			`${info}._BackupSearchPromise = Promise.resolve({ type: "site", m3u8: {} });`,
+			`${info}._NoBackupRecoveryCandidates.get("site").cleanMediaSequence = "10";`,
+			`${info}._EmptyAdHoldWindow.firstSequence = "10";`,
+			`${info}._EmptyHoldTimelineByUrl.get("native").nativeAnchor.duration = "2000";`,
+			`${info}._LivePlaylistTimeline.prefetchedSegments.push({ sourceUrl: 123, url: "https://example.invalid/next.ts" });`,
+			'_createStreamInfo({ mediaKey: "live:buildtest" }).LastCleanBackupM3U8 = 123;',
+			'_getStreamInfoForPlaylist("https://example.invalid/native.m3u8").NativeRecoveryCandidateStage = "unknown";',
+			'_createSyntheticStreamInfo({ mediaKey: "live:buildtest" }).NativeRecoveryLoaderEpoch = "1";',
+			"_createStreamInfo({ mediaKey: 123 });",
+			`_commitBackupPlaylist(${info}, "#EXTM3U", "2", { playerType: "site", playlistUrl: "https://example.invalid/backup.m3u8", sessionUrl: "https://example.invalid/master.m3u8", resolution: "1920x1080", codecFamily: "avc", codec: "avc1" });`,
+			`_isBackupProbationCurrent(${info}, { type: "site", at: 1100, cleanChecks: 1 });`,
+		];
+		const diagnostics = contractDiagnostics(statements.join("\n"));
+		expect([
+			...new Set(diagnostics.map((diagnostic) => diagnostic.line)),
+		]).toEqual(statements.map((_, index) => index + 1));
+		expect(
+			diagnostics.every((diagnostic) =>
+				diagnostic.file?.endsWith("worker-contract-fixture.ts"),
+			),
+		).toBe(true);
+	});
+});
