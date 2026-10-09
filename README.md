@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v20.0.1 - 2026-10-09
+
+- **Stream State Types** - Add explicit stream, backup, and recovery types to catch invalid state updates during development.
+- **Type Checks** - Add regression checks for missing ownership fields and invalid state updates.
+
 ### v20.0.0 - 2026-10-09
 
 - **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.
@@ -80,7 +85,7 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Backup Recovery** - Keep the player informed when its clean backup changes while waiting for native playback to return.
 
 - **Worker Builds** - Build the playback worker from automatically collected dependencies and minify shipped scripts with esbuild.
-- **TypeScript Coverage** - Check all runtime modules and add explicit types for global and stream state, backup selection, recovery records, worker initialization, and messages.
+- **TypeScript Coverage** - Check all runtime modules and add explicit types for global state, worker initialization, and messages.
 - **Worker Messages** - Validate command and event payloads before playback changes, network requests, or heartbeat acknowledgement.
 - **Build Tests** - Test worker dependencies, message validation, and the assembled scripts and worker bootstrap.
 - **Extension Packages** - Exclude development TypeScript and diagnostic modules from installable archives, and fail builds when packaging fails.
@@ -89,11 +94,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 ### v19.2.2 - 2026-10-08
 
 - **Ad Transition Replay** - Preserve confirmed timing for prefetched media so ad-start, quality upgrades, and native recovery do not replay those segments.
-
-### v19.2.1 - 2026-10-08
-
-- **Quality Transitions** - Keep new content at clean source boundaries instead of skipping nearly a full segment when stream timings differ slightly.
-- **Ad-Start Buffering** - Keep temporary silent media available between playlist updates while a clean backup loads.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
