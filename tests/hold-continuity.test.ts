@@ -1877,32 +1877,54 @@ describe("empty hold playlist continuity", () => {
 		},
 	);
 
-	it("accepts an advancing wider native window without replaying its older prefix", async () => {
-		const { context, info, hold, serve } = setup();
-		const start = Date.parse("2026-10-08T15:26:45Z");
-		const dated = (sequence: number, count: number) =>
-			playlist(sequence, count, "native").replace(
-				"#EXTINF:",
-				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + (sequence - 200) * 2000).toISOString()}\n#EXTINF:`,
+	it.each(["LF", "CRLF", "new discontinuity"])(
+		"accepts an advancing wider native window without replaying its older prefix: %s",
+		async (format) => {
+			const { context, info, hold, serve } = setup();
+			const start = Date.parse("2026-10-08T15:26:45Z");
+			const dated = (sequence: number, count: number) =>
+				playlist(sequence, count, "native").replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + (sequence - 200) * 2000).toISOString()}\n#EXTINF:`,
+				);
+			await hold();
+			context._resetStreamAdState(info, true);
+			await serve(dated(200, 2));
+			const narrow = segments(await serve(dated(210, 2)));
+			let incoming = dated(208, 5);
+			if (format === "CRLF") incoming = incoming.replaceAll("\n", "\r\n");
+			if (format === "new discontinuity")
+				incoming = incoming.replace(
+					"#EXTINF:2.000,live\nhttps://edge.example/native-212.ts",
+					`#EXT-X-DISCONTINUITY\n#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 24000).toISOString()}\n#EXTINF:2.000,live\nhttps://edge.example/native-212.ts`,
+				);
+			const expanded = segments(await serve(incoming));
+			expect(expanded.slice(0, 2)).toEqual(narrow);
+			expect(expanded.at(-1).sequence).toBe(narrow.at(-1).sequence + 1);
+			expect(expanded.at(-1).discontinuity).toBe(
+				narrow.at(-1).discontinuity + Number(format === "new discontinuity"),
 			);
-		await hold();
-		context._resetStreamAdState(info, true);
-		await serve(dated(200, 2));
-		const narrow = segments(await serve(dated(210, 2)));
-		const expanded = segments(await serve(dated(208, 5)));
-		expect(expanded.slice(0, 2)).toEqual(narrow);
-		expect(expanded.at(-1).sequence).toBe(narrow.at(-1).sequence + 1);
-		expect(expanded.map((segment) => segment.url)).toEqual(
-			[210, 211, 212].map(
-				(sequence) => `https://edge.example/native-${sequence}.ts`,
-			),
-		);
-		expect(
-			info._EmptyHoldTimelineByUrl.get(nativeUrl).lastRawFirstSequence,
-		).toBe(210);
-	});
+			expect(expanded.map((segment) => segment.url)).toEqual(
+				[210, 211, 212].map(
+					(sequence) => `https://edge.example/native-${sequence}.ts`,
+				),
+			);
+			expect(
+				info._EmptyHoldTimelineByUrl.get(nativeUrl).lastRawFirstSequence,
+			).toBe(210);
+		},
+	);
 
-	it.each(["stale", "time", "duration", "discontinuity", "undated"])(
+	it.each([
+		"stale",
+		"time",
+		"duration",
+		"discontinuity",
+		"undated",
+		"later time",
+		"later duration",
+		"later discontinuity",
+	])(
 		"rejects a wider native window without fresh matching broadcast proof: %s",
 		async (mode) => {
 			const { context, info, hold, serve } = setup();
@@ -1926,6 +1948,23 @@ describe("empty hold playlist continuity", () => {
 				);
 			if (mode === "undated")
 				incoming = incoming.replace(/#EXT-X-PROGRAM-DATE-TIME:.*\n/, "");
+			const laterSegment =
+				"#EXTINF:2.000,live\nhttps://edge.example/native-211.ts";
+			if (mode === "later time")
+				incoming = incoming.replace(
+					laterSegment,
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 23000).toISOString()}\n${laterSegment}`,
+				);
+			if (mode === "later duration")
+				incoming = incoming.replace(
+					laterSegment,
+					laterSegment.replace("2.000", "2.100"),
+				);
+			if (mode === "later discontinuity")
+				incoming = incoming.replace(
+					laterSegment,
+					`#EXT-X-DISCONTINUITY\n#EXT-X-PROGRAM-DATE-TIME:${new Date(start + 22000).toISOString()}\n${laterSegment}`,
+				);
 			const before = JSON.stringify([...info._EmptyHoldTimelineByUrl]);
 			const timeline = info._LivePlaylistTimeline;
 			await expect(serve(incoming)).rejects.toMatchObject({
@@ -1933,6 +1972,66 @@ describe("empty hold playlist continuity", () => {
 			});
 			expect(JSON.stringify([...info._EmptyHoldTimelineByUrl])).toBe(before);
 			expect(info._LivePlaylistTimeline).toBe(timeline);
+		},
+	);
+
+	it.each([false, true])(
+		"preserves native segments when a third rendition joins after a different segment clock (hold: %s)",
+		async (usedHold) => {
+			const { context, info, hold, serve } = setup();
+			const otherUrl = nativeUrl.replace("native", "720p");
+			const thirdUrl = nativeUrl.replace("native", "480p");
+			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+			info.Urls[thirdUrl] = { Resolution: "852x480", Codecs: codec };
+			const start = Date.parse("2026-10-08T15:22:20Z");
+			const dated = (sequence: number, offset: number, prefix: string) =>
+				playlist(sequence, 3, prefix).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+				);
+			if (usedHold) await hold();
+			await serve(playlist(100), "site");
+			context._resetStreamAdState(info, true);
+			let primary = segments(await serve(dated(200, 0, "native")));
+			let other = segments(
+				context._applyPlaylistContinuity(
+					info,
+					otherUrl,
+					dated(300, 500, "other"),
+				),
+			);
+			let third = segments(
+				context._applyPlaylistContinuity(
+					info,
+					thirdUrl,
+					dated(400, 2000, "third"),
+				),
+			);
+			for (let poll = 1; poll <= 5; poll++) {
+				const nextPrimary = segments(
+					await serve(dated(200 + poll, poll * 2000, "native")),
+				);
+				const nextOther = segments(
+					context._applyPlaylistContinuity(
+						info,
+						otherUrl,
+						dated(300 + poll, poll * 2000 + 500, "other"),
+					),
+				);
+				const nextThird = segments(
+					context._applyPlaylistContinuity(
+						info,
+						thirdUrl,
+						dated(400 + poll, (poll + 1) * 2000, "third"),
+					),
+				);
+				expect(nextPrimary.slice(0, 2)).toEqual(primary.slice(1));
+				expect(nextOther.slice(0, 2)).toEqual(other.slice(1));
+				expect(nextThird.slice(0, 2)).toEqual(third.slice(1));
+				primary = nextPrimary;
+				other = nextOther;
+				third = nextThird;
+			}
 		},
 	);
 

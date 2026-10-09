@@ -2399,14 +2399,17 @@ function _alignLivePlaylist(
 		const anchor = nativeTimeline.nativeAnchors?.find(
 			(entry) => entry.sequence === nativeTimeline.lastRawFirstSequence,
 		);
-		const matching =
-			entries[nativeTimeline.lastRawFirstSequence - rawFirstSequence];
 		const lastAnchor = nativeTimeline.nativeAnchor;
 		if (
 			anchor &&
-			matching?.time === anchor.time &&
-			matching.duration === anchor.duration &&
-			matching.discontinuity === anchor.discontinuity &&
+			nativeTimeline.nativeAnchors.every((expected) => {
+				const matching = entries[expected.sequence - rawFirstSequence];
+				return (
+					matching?.time === expected.time &&
+					matching.duration === expected.duration &&
+					matching.discontinuity === expected.discontinuity
+				);
+			}) &&
 			lastAnchor &&
 			rawFirstSequence + entries.length - 1 > lastAnchor.sequence &&
 			entries.at(-1).end > lastAnchor.time + lastAnchor.duration
@@ -3153,12 +3156,24 @@ function _applyEmptyHoldPlaylistContinuity(
 					},
 				)
 			: null;
+	const overlapsPreviousNativeWindow =
+		previous?.identity === identity &&
+		nativeAnchors.some((anchor) =>
+			previous.nativeAnchors?.some(
+				(expected) =>
+					anchor.sequence === expected.sequence &&
+					anchor.time === expected.time &&
+					anchor.duration === expected.duration &&
+					anchor.discontinuity === expected.discontinuity,
+			),
+		);
 	if (
 		previous &&
 		sharedTimeline &&
 		(kind === "native" && nativeAnchors.length > 0
 			? (sharedTimeline.generation || 0) > (previous.generation || 0) ||
 				(sharedNativeAnchor &&
+					!overlapsPreviousNativeWindow &&
 					sharedTimeline.discontinuityOffset > previous.discontinuityOffset)
 			: kind !== "native" &&
 				sharedTimeline.discontinuityOffset > previous.discontinuityOffset)
