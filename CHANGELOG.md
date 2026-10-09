@@ -4,6 +4,14 @@ All notable changes to TTV AB will be documented in this file.
 
 ## [20.0.0] - 2026-10-09
 
+Changed
+
+- **Worker Builds** - Build the playback worker from automatically collected dependencies and minify shipped scripts with esbuild.
+- **TypeScript Coverage** - Check all runtime modules and add explicit types for global state, worker initialization, and messages.
+- **Worker Messages** - Validate command and event payloads before playback changes, network requests, or heartbeat acknowledgement.
+- **Build Tests** - Test worker dependencies, message validation, and the assembled scripts and worker bootstrap.
+- **Extension Packages** - Exclude development TypeScript and diagnostic modules from installable archives, and fail builds when packaging fails.
+
 Fixed
 
 - **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.

@@ -75,6 +75,12 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ### v20.0.0 - 2026-10-09
 
+- **Worker Builds** - Build the playback worker from automatically collected dependencies and minify shipped scripts with esbuild.
+- **TypeScript Coverage** - Check all runtime modules and add explicit types for global state, worker initialization, and messages.
+- **Worker Messages** - Validate command and event payloads before playback changes, network requests, or heartbeat acknowledgement.
+- **Build Tests** - Test worker dependencies, message validation, and the assembled scripts and worker bootstrap.
+- **Extension Packages** - Exclude development TypeScript and diagnostic modules from installable archives, and fail builds when packaging fails.
+
 - **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.
 - **Playlist Recovery** - Accept fresh live updates with wider windows without replaying older segments or stopping playback.
 - **Backup Recovery** - Keep the player informed when its clean backup changes while waiting for native playback to return.
@@ -87,13 +93,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 - **Quality Transitions** - Keep new content at clean source boundaries instead of skipping nearly a full segment when stream timings differ slightly.
 - **Ad-Start Buffering** - Keep temporary silent media available between playlist updates while a clean backup loads.
-
-### v19.2.0 - 2026-10-07
-
-- **Quality Transitions** - Prevent playback from freezing when clean backup sessions use different segment numbers, including low-to-high switches without a silent hold.
-- **Concurrent Quality Requests** - Share continuous silent hold media across quality requests to prevent gaps and repeated buffering.
-- **Live Timeline** - Preserve source boundaries and account for published partial and prefetched media when switching streams.
-- **Recovery Timing** - Preserve playback timestamps during worker recovery and accept usable playlists whose first timestamp appears after the first segment.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
