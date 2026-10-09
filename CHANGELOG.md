@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [20.0.1] - 2026-10-09
+
+Changed
+
+- **Stream State Types** - Add explicit stream, backup, and recovery types to catch invalid state updates during development.
+- **Type Checks** - Add regression checks for missing ownership fields and invalid state updates.
+
 ## [20.0.0] - 2026-10-09
 
 Fixed
@@ -13,7 +20,7 @@ Fixed
 Changed
 
 - **Worker Builds** - Build the playback worker from automatically collected dependencies and minify shipped scripts with esbuild.
-- **TypeScript Coverage** - Check all runtime modules and add explicit types for global and stream state, backup selection, recovery records, worker initialization, and messages.
+- **TypeScript Coverage** - Check all runtime modules and add explicit types for global state, worker initialization, and messages.
 - **Worker Messages** - Validate command and event payloads before playback changes, network requests, or heartbeat acknowledgement.
 - **Build Tests** - Test worker dependencies, message validation, and the assembled scripts and worker bootstrap.
 - **Extension Packages** - Exclude development TypeScript and diagnostic modules from installable archives, and fail builds when packaging fails.
