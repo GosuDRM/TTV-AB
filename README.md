@@ -73,7 +73,7 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
-### v19.2.3 - 2026-10-09
+### v20.0.0 - 2026-10-09
 
 - **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.
 - **Playlist Recovery** - Accept fresh live updates with wider windows without replaying older segments or stopping playback.
