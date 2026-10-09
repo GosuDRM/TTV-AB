@@ -1,5 +1,5 @@
 {
-	"$schema": "https://unpkg.com/knip@6.32.2/schema.json",
+	"$schema": "https://unpkg.com/knip@6.40.0/schema.json",
 	"entry": [
 		"build.ts!",
 		"tools/build-worker.ts!",

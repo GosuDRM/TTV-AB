@@ -12,12 +12,12 @@
 		"url": "https://github.com/GosuDRM/TTV-AB/issues"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.9",
+		"@biomejs/biome": "^2.5.15",
 		"@types/chrome": "^0.1.38",
 		"@types/node": "^25.5.0",
 		"esbuild": "^0.28.2",
 		"happy-dom": "^20.9.0",
-		"knip": "^6.32.2",
+		"knip": "^6.40.0",
 		"typescript": "^6.0.2",
 		"vitest": "^4.1.11"
 	},
