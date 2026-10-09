@@ -407,7 +407,49 @@ function _createWorkerBridgeMessage(message) {
 	};
 }
 
-function _getWorkerBridgeMessage(value) {
+function _hasWorkerMessageFields(
+	value: unknown,
+	fields: Record<string, "string" | "number" | "boolean" | "vod"> = {},
+): value is PlainObject {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const payload = value as PlainObject;
+	const contextFields = {
+		MediaType: "string",
+		mediaType: "string",
+		ChannelName: "string",
+		channelName: "string",
+		login: "string",
+		VodID: "vod",
+		vodID: "vod",
+		videoID: "vod",
+		MediaKey: "string",
+		mediaKey: "string",
+	};
+	for (const [field, kind] of Object.entries({ ...contextFields, ...fields })) {
+		const entry = payload[field];
+		if (entry === undefined) continue;
+		if (kind === "string" && (entry === null || typeof entry === "string"))
+			continue;
+		if (
+			kind === "vod" &&
+			(entry === null ||
+				typeof entry === "string" ||
+				(typeof entry === "number" && Number.isFinite(entry)))
+		)
+			continue;
+		if (kind === "boolean" && typeof entry === "boolean") continue;
+		if (
+			kind === "number" &&
+			typeof entry === "number" &&
+			Number.isFinite(entry)
+		)
+			continue;
+		return false;
+	}
+	return true;
+}
+
+function _getWorkerBridgeMessage(value: unknown) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return null;
 	}
@@ -427,11 +469,217 @@ function _getWorkerBridgeMessage(value) {
 	if (typeof message.key !== "string" || !message.key) {
 		return null;
 	}
+	for (const field of ["channel", "mediaKey", "handoffId"]) {
+		if (message[field] != null && typeof message[field] !== "string") {
+			return null;
+		}
+	}
 
-	return message;
+	return message as TTVABWorkerBridgeMessage;
 }
 
-function _postWorkerBridgeMessage(target, message) {
+function _isWorkerFetchOptions(
+	value: unknown,
+): value is TTVABWorkerFetchOptions {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const options = value as Record<string, unknown>;
+	for (const field of ["method", "referrer", "integrity"]) {
+		if (options[field] !== undefined && typeof options[field] !== "string")
+			return false;
+	}
+	if (options.body != null && typeof options.body !== "string") return false;
+	if (options.keepalive !== undefined && typeof options.keepalive !== "boolean")
+		return false;
+	const enums = {
+		cache: [
+			"default",
+			"no-store",
+			"reload",
+			"no-cache",
+			"force-cache",
+			"only-if-cached",
+		],
+		credentials: ["omit", "same-origin", "include"],
+		mode: ["navigate", "same-origin", "no-cors", "cors"],
+		redirect: ["follow", "error", "manual"],
+		referrerPolicy: [
+			"",
+			"no-referrer",
+			"no-referrer-when-downgrade",
+			"same-origin",
+			"origin",
+			"strict-origin",
+			"origin-when-cross-origin",
+			"strict-origin-when-cross-origin",
+			"unsafe-url",
+		],
+		priority: ["high", "low", "auto"],
+	};
+	for (const [field, values] of Object.entries(enums)) {
+		if (options[field] === undefined) continue;
+		if (typeof options[field] !== "string" || !values.includes(options[field]))
+			return false;
+	}
+	const headers = options.headers;
+	return (
+		headers === undefined ||
+		(Array.isArray(headers)
+			? headers.every(
+					(entry) =>
+						Array.isArray(entry) &&
+						entry.length === 2 &&
+						entry.every((part) => typeof part === "string"),
+				)
+			: headers !== null &&
+				typeof headers === "object" &&
+				Object.values(headers).every((entry) => typeof entry === "string"))
+	);
+}
+
+function _isWorkerEvent(
+	message: PlainObject,
+): message is TTVABReceivedWorkerEvent {
+	if (
+		!_hasWorkerMessageFields(message, {
+			channel: "string",
+			pageChannel: "string",
+			pageMediaKey: "string",
+			pageContextGeneration: "number",
+			cycleStartedAt: "number",
+			handoffId: "string",
+		})
+	)
+		return false;
+	switch (message.key) {
+		case "Pong":
+			return message.value == null;
+		case "CancelFetchRequest":
+			return (
+				_hasWorkerMessageFields(message.value) &&
+				typeof message.value.id === "string"
+			);
+		case "FetchRequest":
+			return (
+				_hasWorkerMessageFields(message.value) &&
+				typeof message.value.id === "string" &&
+				typeof message.value.url === "string" &&
+				(message.value.options == null ||
+					_isWorkerFetchOptions(message.value.options))
+			);
+		case "LogEntry":
+		case "WorkerErrorDiagnostic":
+			return (
+				message.value !== null &&
+				typeof message.value === "object" &&
+				!Array.isArray(message.value)
+			);
+		case "PlaybackWorkerObserved":
+			return _hasWorkerMessageFields(message, {
+				playlistUrl: "string",
+				codec: "string",
+				decoderCodec: "string",
+			});
+		case "PlaybackWorkerBootstrapObserved":
+		case "MediaBootstrapRecoveryNeeded":
+		case "PauseResumePlayer":
+			return true;
+		case "VodAdRequestBlocked":
+			return _hasWorkerMessageFields(message, { sessionID: "string" });
+		case "PreviewMasterRecoveryFailed":
+			return _hasWorkerMessageFields(message, {
+				reason: "string",
+				reportedAt: "number",
+				status: "number",
+			});
+		case "AdBlocked":
+			return _hasWorkerMessageFields(message, {
+				count: "number",
+				delta: "number",
+			});
+		case "AdSecondsBlocked":
+			return (
+				_hasWorkerMessageFields(message, { seconds: "number" }) &&
+				(message.measurements === undefined ||
+					Array.isArray(message.measurements))
+			);
+		case "AdPodProgress":
+			return (
+				_hasWorkerMessageFields(message, {
+					expectedPodLength: "number",
+					maxAdPodPosition: "number",
+					observedZeroAdPodPosition: "boolean",
+					updatedAt: "number",
+				}) &&
+				(message.adIds === undefined ||
+					(Array.isArray(message.adIds) &&
+						message.adIds.every((id) => typeof id === "string")))
+			);
+		case "AdDetected":
+			return _hasWorkerMessageFields(message, {
+				continued: "boolean",
+				detectedAt: "number",
+				playlistUrl: "string",
+				codec: "string",
+			});
+		case "AdEnded":
+			return _hasWorkerMessageFields(message, {
+				endedAt: "number",
+				holdingBackup: "boolean",
+				willReload: "boolean",
+			});
+		case "BackupPlayerTypeSelected":
+			return message.value === null || typeof message.value === "string";
+		case "FatalMediaRecoveryReady":
+			return (
+				_hasWorkerMessageFields(message, {
+					verifiedAt: "number",
+					requiresCodecHandoff: "boolean",
+					backupPlayerType: "string",
+				}) && typeof message.recoveryId === "string"
+			);
+		case "PostAdNativeReloadReady":
+			return _hasWorkerMessageFields(message, {
+				reloadAt: "number",
+				confirmedAt: "number",
+				loaderEpoch: "number",
+			});
+		case "PostAdNativeSession":
+			return _hasWorkerMessageFields(message, {
+				pageGeneration: "number",
+				phase: "string",
+				codec: "string",
+				resolution: "string",
+				reloadAt: "number",
+				expiresAt: "number",
+			});
+		case "NativePlaybackRestored":
+			return _hasWorkerMessageFields(message, {
+				restoredAt: "number",
+				fromSilentBackupHold: "boolean",
+				requiresReload: "boolean",
+				continuePlayback: "boolean",
+				refreshAccessToken: "boolean",
+			});
+		case "ReloadPlayer":
+			return _hasWorkerMessageFields(message, {
+				reason: "string",
+				refreshAccessToken: "boolean",
+				newMediaPlayerInstance: "boolean",
+			});
+		default:
+			return false;
+	}
+}
+
+function _getWorkerEvent(value: unknown): TTVABReceivedWorkerEvent | null {
+	const message = _getWorkerBridgeMessage(value);
+	return message && _isWorkerEvent(message) ? message : null;
+}
+
+function _postWorkerBridgeMessage(
+	target,
+	message: TTVABWorkerCommand | TTVABWorkerEvent,
+) {
 	if (!target || typeof target.postMessage !== "function") {
 		return false;
 	}
@@ -467,7 +715,9 @@ function _rememberDormantWorker(worker) {
 	return true;
 }
 
-function _broadcastWorkers(messages) {
+function _broadcastWorkers(
+	messages: TTVABWorkerCommand | TTVABWorkerCommand[],
+) {
 	const queue = Array.isArray(messages) ? messages : [messages];
 	const workerRefs = Array.isArray(_S.workerRefs) ? _S.workerRefs : [];
 	if (
@@ -732,7 +982,7 @@ function _setPagePlaybackContext(
 	}
 
 	if (options.broadcast !== false && hasChanged) {
-		const messages: Array<{ key: string; value: unknown }> = [
+		const messages: TTVABWorkerCommand[] = [
 			{
 				key: "UpdatePageContext",
 				value: {
@@ -1025,7 +1275,7 @@ function _mergeAdPodProgress(value) {
 		!current ||
 		(incomingCycleStartedAt > 0 &&
 			incomingCycleStartedAt > currentCycleStartedAt);
-	const adIds = new Set(
+	const adIds = new Set<string>(
 		shouldReplace ? [] : Array.isArray(current?.adIds) ? current.adIds : [],
 	);
 	if (Array.isArray(value?.adIds)) {
@@ -1203,7 +1453,7 @@ function _clearAdPodProgress(mediaKey, beforeCycleStartedAt = 0) {
 	return didClear;
 }
 
-function _declareState(scope) {
+function _declareState(scope: { __TTVAB_STATE__?: TTVABRuntimeState }) {
 	scope.__TTVAB_STATE__ = {
 		AdSignifier: _C.AD_SIGNIFIER,
 		BackupPlayerTypes: [..._C.PLAYER_TYPES],
@@ -1386,10 +1636,12 @@ function _incrementAdsBlocked(channel, mediaKey = null) {
 	}
 }
 
-function _createPageScopedWorkerEvent(value = null) {
+function _createPageScopedWorkerEvent(
+	value: TTVABWorkerEvent,
+): TTVABWorkerEvent {
 	const pageEventContext = _getPageScopedPlaybackEventContext();
 	return {
-		...(value && typeof value === "object" ? value : {}),
+		...value,
 		pageChannel: pageEventContext.pageChannel,
 		pageMediaKey: pageEventContext.pageMediaKey,
 		pageContextGeneration: pageEventContext.pageContextGeneration,

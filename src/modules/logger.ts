@@ -170,7 +170,7 @@ function _log(msg, type = "info") {
 		) {
 			self.postMessage({
 				__ttvabWorkerBridge: true,
-				message: { key: "LogEntry", value: entry },
+				message: { key: "LogEntry", value: entry } satisfies TTVABWorkerEvent,
 			});
 		} else {
 			if (!Array.isArray(globalThis.__TTVAB_LOGS__)) {

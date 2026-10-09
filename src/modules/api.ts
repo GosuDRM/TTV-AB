@@ -188,8 +188,8 @@ function _waitForRequestDelay(delayMs, requestSignal = null) {
 }
 
 async function _fetchViaWorkerBridge(
-	url,
-	options,
+	url: string,
+	options: TTVABWorkerFetchOptions & { signal?: AbortSignal },
 	timeoutMs = 5000,
 	requestSignal = null,
 ) {
@@ -257,7 +257,11 @@ async function _fetchViaWorkerBridge(
 					error instanceof Error
 						? error
 						: new Error(
-								String(error?.message || error || "fetch relay failed"),
+								String(
+									(error as { message?: unknown })?.message ||
+										error ||
+										"fetch relay failed",
+								),
 							),
 				);
 			},
@@ -585,7 +589,7 @@ async function _notifyAdComplete(
 					self,
 					_createPageScopedWorkerEvent({
 						key: "AdPodProgress",
-						adIds: Array.from(info.ObservedAdPodIds),
+						adIds: Array.from<string>(info.ObservedAdPodIds),
 						expectedPodLength: Math.max(
 							0,
 							Number(info.ExpectedAdPodLength) || 0,

@@ -1340,6 +1340,43 @@ describe("worker resource cleanup", () => {
 });
 
 describe("worker log ingestion", () => {
+	it("keeps valid duration measurements in a mixed batch within the existing limit", () => {
+		const bridge = vi
+			.spyOn(g, "_sendBridgeMessage")
+			.mockImplementation(() => true);
+		const { worker, restore } = installWorkerMessageHarness();
+		const measurement = {
+			id: "stitched-ad-valid",
+			durationMilliseconds: 30000.9,
+			startDateMilliseconds: 1000,
+		};
+		try {
+			worker.emitMessage({
+				key: "AdSecondsBlocked",
+				mediaKey: "live:testchannel",
+				cycleStartedAt: 1000,
+				measurements: [
+					null,
+					{ id: "stitched-ad-invalid", durationMilliseconds: "30000" },
+					{ ...measurement, durationMilliseconds: 600001 },
+					measurement,
+					...Array(46).fill(null),
+					{ ...measurement, id: "stitched-ad-outside-limit" },
+				],
+			});
+			expect(bridge).toHaveBeenCalledExactlyOnceWith("ttvab-ad-seconds", {
+				measurements: [{ ...measurement, durationMilliseconds: 30000 }],
+				cycleStartedAt: 1000,
+				channel: null,
+				mediaKey: "live:testchannel",
+				pageChannel: null,
+				pageMediaKey: null,
+			});
+		} finally {
+			restore();
+		}
+	});
+
 	it("tags, bounds, normalizes, and redacts worker log entries", () => {
 		delete g.__TTVAB_LOGS__;
 		const { worker, restore } = installWorkerMessageHarness();

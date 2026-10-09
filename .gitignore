@@ -36,6 +36,7 @@ temp/
 .planning/
 tools/*
 !tools/package_chrome.py
+!tools/build-worker.ts
 !tools/resolve_firefox_release.cjs
 .openclaw/
 .codex

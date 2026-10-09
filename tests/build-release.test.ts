@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -48,6 +48,13 @@ function packagingFixture(firefox: boolean, name: string, failure = "") {
 	write("manifest.json", JSON.stringify(manifest(firefox)));
 	write("dist/manifest.json", JSON.stringify(manifest(firefox)));
 	write("dist/background.js", "");
+	write(
+		"dist/src/scripts/background.d.ts",
+		"declare const background: string;",
+	);
+	write("dist/tsconfig.modules.tsbuildinfo", "compiler cache");
+	write("dist/src/popup/popup.js", "globalThis.popupLoaded = true;");
+	write("dist/src/popup/popup.html", '<script src="popup.js"></script>');
 	for (const module of [
 		"constants",
 		"state",
@@ -100,32 +107,42 @@ function packagingFixture(firefox: boolean, name: string, failure = "") {
 		write(file, "stale archive");
 	const exit = vi.fn();
 	const context = createContext({
+		exports: {},
 		__dirname: root,
 		process: { execPath: process.execPath, exit },
 		console: { log: vi.fn(), error: vi.fn() },
 		require: (id: string) =>
-			id === "node:child_process"
+			id === "./tools/build-worker"
 				? {
-						execFileSync: (
-							command: string,
-							args: string[],
-							options: object,
-						) => {
-							if (failure === "missing" && command === "python3") return;
-							if (
-								(failure === "extension" && command === "python3") ||
-								(failure === "source" && command === "zip")
-							) {
-								write(
-									command === "python3" ? archiveNames[0] : archiveNames[2],
-									"partial archive",
-								);
-								throw new Error("fixture packaging failed");
-							}
-							return execFileSync(command, args, { ...options, stdio: "pipe" });
-						},
+						...require(resolve(__dirname, "../build/tools/build-worker.js")),
+						buildWorkerBundle: () => ({ source: "", code: "" }),
+						embedWorkerBundle: (source: string) => source,
 					}
-				: require(id),
+				: id === "node:child_process"
+					? {
+							execFileSync: (
+								command: string,
+								args: string[],
+								options: object,
+							) => {
+								if (failure === "missing" && command === "python3") return;
+								if (
+									(failure === "extension" && command === "python3") ||
+									(failure === "source" && command === "zip")
+								) {
+									write(
+										command === "python3" ? archiveNames[0] : archiveNames[2],
+										"partial archive",
+									);
+									throw new Error("fixture packaging failed");
+								}
+								return execFileSync(command, args, {
+									...options,
+									stdio: "pipe",
+								});
+							},
+						}
+					: require(id),
 	});
 	const code = readFileSync(
 		resolve(__dirname, "../build/build.js"),
@@ -142,6 +159,29 @@ function packagingFixture(firefox: boolean, name: string, failure = "") {
 }
 
 describe("build packaging contract", () => {
+	it("ships runtime files without compiler intermediates", () => {
+		const { root, exit, archiveNames } = packagingFixture(true, "runtime-only");
+		expect(exit).not.toHaveBeenCalled();
+		const files = JSON.parse(
+			execFileSync(
+				"python3",
+				[
+					"-c",
+					"import sys,zipfile,json; print(json.dumps(zipfile.ZipFile(sys.argv[1]).namelist()))",
+					join(root, archiveNames[1]),
+				],
+				{ encoding: "utf8" },
+			),
+		);
+		expect(files).toEqual([
+			"background.js",
+			"manifest.json",
+			"src/popup/popup.html",
+			"src/popup/popup.js",
+			"src/scripts/content.js",
+		]);
+	});
+
 	it("recreates source archives without files deleted since the previous build", () => {
 		const { root, exit, archiveNames, build } = packagingFixture(
 			true,
@@ -206,6 +246,55 @@ describe("build packaging contract", () => {
 				expect(existsSync(join(root, name))).toBe(false);
 		},
 	);
+});
+
+it("rejects core module type errors through the standalone typecheck command", () => {
+	const root = temporaryRoot("typecheck");
+	const packageJson = JSON.parse(
+		readFileSync(resolve(__dirname, "../package.json"), "utf8"),
+	);
+	writeFileSync(
+		join(root, "package.json"),
+		JSON.stringify({ scripts: { typecheck: packageJson.scripts.typecheck } }),
+	);
+	for (const config of [
+		"tsconfig.json",
+		"tsconfig.base.json",
+		"tsconfig.modules.json",
+		"tsconfig.runtime.json",
+		"tsconfig.build.json",
+	]) {
+		const value = JSON.parse(
+			readFileSync(resolve(__dirname, "..", config), "utf8"),
+		);
+		if (config === "tsconfig.base.json") {
+			value.compilerOptions.typeRoots = [
+				resolve(__dirname, "../node_modules/@types"),
+			];
+		}
+		writeFileSync(join(root, config), JSON.stringify(value));
+	}
+	mkdirSync(join(root, "src/modules"), { recursive: true });
+	mkdirSync(join(root, "src/scripts"), { recursive: true });
+	writeFileSync(
+		join(root, "src/modules/invalid.ts"),
+		'const moduleValue: number = "type error";',
+	);
+	writeFileSync(
+		join(root, "src/scripts/background.ts"),
+		"const runtimeValue = 1;",
+	);
+	writeFileSync(join(root, "build.ts"), "const buildValue = 1;");
+	const result = spawnSync("npm", ["run", "typecheck"], {
+		cwd: root,
+		encoding: "utf8",
+		env: {
+			...process.env,
+			PATH: `${resolve(__dirname, "../node_modules/.bin")}${delimiter}${process.env.PATH || ""}`,
+		},
+	});
+	expect(result.status).not.toBe(0);
+	expect(result.stdout).toContain("src/modules/invalid.ts(1,7): error TS2322");
 });
 
 function releaseFixture() {
