@@ -2,7 +2,7 @@
 
 All notable changes to TTV AB will be documented in this file.
 
-## [19.2.3] - 2026-10-09
+## [20.0.0] - 2026-10-09
 
 Fixed
 
