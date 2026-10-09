@@ -439,7 +439,7 @@ async function _getToken(
 	return Response.error();
 }
 
-function _recordAdDurations(textStr, info) {
+function _recordAdDurations(textStr, info: TTVABStreamInfo) {
 	try {
 		if (!textStr || typeof textStr !== "string" || !info) return;
 		const cycleStartedAt = Math.max(0, Number(info.VisibleAdStartedAt) || 0);
@@ -448,7 +448,7 @@ function _recordAdDurations(textStr, info) {
 			info.MeasuredAdIds = new Set();
 		}
 		const measurements = [];
-		const measurementKeys = new Set();
+		const measurementKeys = new Set<string>();
 		for (const line of textStr.split(/\r?\n/)) {
 			if (!line.startsWith("#EXT-X-DATERANGE:")) continue;
 			const attr = _parseAttrs(line.slice("#EXT-X-DATERANGE:".length));
@@ -532,18 +532,7 @@ function _recordAdDurations(textStr, info) {
 
 async function _notifyAdComplete(
 	textStr: string,
-	info?: {
-		SpoofedAdIds?: Set<string>;
-		RecentSpoofedAdIds?: Map<string, number>;
-		ObservedAdPodIds?: Set<string>;
-		ExpectedAdPodLength?: number;
-		MaxObservedAdPodPosition?: number;
-		ObservedZeroAdPodPosition?: boolean;
-		ActiveBackupPlayerType?: string | null;
-		VisibleAdStartedAt?: number;
-		ChannelName?: string | null;
-		MediaKey?: string | null;
-	},
+	info?: TTVABStreamInfo,
 ): Promise<void> {
 	try {
 		if (!textStr || typeof textStr !== "string") return;

@@ -1187,7 +1187,7 @@ function _syncPagePlaybackContext(options = {}) {
 	});
 }
 
-function _invalidateAdCycleAsyncWork(info) {
+function _invalidateAdCycleAsyncWork(info: TTVABStreamInfo) {
 	if (!info) return false;
 	info.BackupSearchEpoch = Math.max(0, Number(info.BackupSearchEpoch) || 0) + 1;
 	info._BackupSearchPromises?.clear?.();
@@ -1306,7 +1306,7 @@ function _mergeAdPodProgress(value) {
 	return entry;
 }
 
-function _applyAdPodProgressToInfo(info, value) {
+function _applyAdPodProgressToInfo(info: TTVABStreamInfo, value) {
 	if (!info) return null;
 	const incomingCycleStartedAt = Math.max(
 		0,
@@ -1392,31 +1392,7 @@ function _clearAdPodProgress(mediaKey, beforeCycleStartedAt = 0) {
 		delete __TTVAB_STATE__.AdPodProgressByMediaKey[normalizedMediaKey];
 		didClear = true;
 	}
-	const streamInfos = Object.values(
-		__TTVAB_STATE__.StreamInfos || {},
-	) as Array<{
-		MediaKey?: string | null;
-		ObservedAdPodIds?: Set<string>;
-		ExpectedAdPodLength?: number;
-		MaxObservedAdPodPosition?: number;
-		ObservedZeroAdPodPosition?: boolean;
-		LastAdPodProgressAt?: number;
-		_IncompletePodCleanStartedAt?: number;
-		_IncompletePodCleanPlaylistCount?: number;
-		_IncompletePodLastMediaSequence?: number | null;
-		_IncompletePodCandidateUrl?: string | null;
-		NativeRecoveryCandidateUrl?: string | null;
-		NativeRecoveryCandidateMediaKey?: string | null;
-		NativeRecoveryCandidateCycleStartedAt?: number;
-		NativeRecoveryCandidateStage?: string | null;
-		NativeRecoveryCandidateStartedAt?: number;
-		NativeRecoveryCandidateCleanCount?: number;
-		NativeRecoveryCandidateLastMediaSequence?: number | null;
-		NativeRecoveryAdPlaylistUrls?: Set<string>;
-		NativeRecoveryAdMediaKey?: string | null;
-		NativeRecoveryAdStartedAt?: number;
-		VisibleAdStartedAt?: number;
-	}>;
+	const streamInfos = Object.values(__TTVAB_STATE__.StreamInfos || {});
 	for (const info of streamInfos) {
 		if (_normalizeMediaKey(info?.MediaKey) !== normalizedMediaKey) continue;
 		if (

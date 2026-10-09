@@ -1,6 +1,6 @@
 // TTV AB - Processor
 
-function _resetNativeRecoveryCandidateState(info) {
+function _resetNativeRecoveryCandidateState(info: TTVABStreamInfo) {
 	if (!info) return;
 	info.NativeRecoveryCandidateUrl = null;
 	info.NativeRecoveryCandidateMediaKey = null;
@@ -11,7 +11,12 @@ function _resetNativeRecoveryCandidateState(info) {
 	info.NativeRecoveryCandidateLastMediaSequence = null;
 }
 
-function _reportPostAdNativeSession(info, phase) {
+function _reportPostAdNativeSession(
+	info: Partial<
+		Pick<TTVABStreamInfo, "ChannelName" | "_PendingPostAdNativeMaster">
+	>,
+	phase,
+) {
 	try {
 		const session = info?._PendingPostAdNativeMaster;
 		if (!session || session.phase === phase) return;
@@ -36,7 +41,11 @@ function _reportPostAdNativeSession(info, phase) {
 	} catch {}
 }
 
-function _updatePostAdNativeMasterReload(info, reload, preparing = false) {
+function _updatePostAdNativeMasterReload(
+	info: TTVABStreamInfo,
+	reload: TTVABReloadContext,
+	preparing = false,
+) {
 	const session = info?._PendingPostAdNativeMaster;
 	if (!session) return;
 	const reloadAt = Math.max(0, Number(reload?.reloadAt) || 0);
@@ -87,7 +96,10 @@ function _updatePostAdNativeMasterReload(info, reload, preparing = false) {
 	}
 }
 
-function _resetStreamAdState(info, preserveEmptyHoldTimelines = false) {
+function _resetStreamAdState(
+	info: TTVABStreamInfo,
+	preserveEmptyHoldTimelines = false,
+) {
 	const wasUsingModifiedM3U8 = Boolean(info?.IsUsingModifiedM3U8);
 	const wasUsingFallbackStream = Boolean(info?.IsUsingFallbackStream);
 	const wasUsingBackupStream = Boolean(info?.IsUsingBackupStream);
@@ -250,7 +262,7 @@ function _getPostAdReentryContinuationMs() {
 }
 
 function _rememberLastAdEnd(
-	info,
+	info: TTVABStreamInfo,
 	endedAt = Date.now(),
 	cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0),
 ) {
@@ -274,7 +286,11 @@ function _rememberLastAdEnd(
 	);
 }
 
-function _doesPlaybackContextMatchInfo(info, mediaKey = null, channel = null) {
+function _doesPlaybackContextMatchInfo(
+	info: TTVABStreamInfo,
+	mediaKey = null,
+	channel = null,
+) {
 	const infoMediaKey = _normalizeMediaKey(info?.MediaKey);
 	const targetMediaKey = _normalizeMediaKey(mediaKey);
 	if (infoMediaKey && targetMediaKey) {
@@ -286,7 +302,7 @@ function _doesPlaybackContextMatchInfo(info, mediaKey = null, channel = null) {
 	return Boolean(infoChannel && targetChannel && infoChannel === targetChannel);
 }
 
-function _isRecentPostAdReentry(info, now = Date.now()) {
+function _isRecentPostAdReentry(info: TTVABStreamInfo, now = Date.now()) {
 	const continuationMs = _getPostAdReentryContinuationMs();
 	if (continuationMs <= 0) return false;
 
@@ -327,7 +343,7 @@ function _getBackupPlayerRetryCooldownMs(reason = "ad-marked") {
 }
 
 function _markBackupPlayerRetryCooldown(
-	info,
+	info: TTVABStreamInfo,
 	playerType,
 	reason = "ad-marked",
 ) {
@@ -340,11 +356,11 @@ function _markBackupPlayerRetryCooldown(
 	return retryAt;
 }
 
-function _clearBackupPlayerRetryCooldown(info, playerType) {
+function _clearBackupPlayerRetryCooldown(info: TTVABStreamInfo, playerType) {
 	info?.FailedBackupPlayerTypes?.delete?.(playerType);
 }
 
-function _isBackupPlayerRetryCoolingDown(info, playerType) {
+function _isBackupPlayerRetryCoolingDown(info: TTVABStreamInfo, playerType) {
 	if (!info?.FailedBackupPlayerTypes?.get || typeof playerType !== "string") {
 		return false;
 	}
@@ -361,7 +377,10 @@ function _isBackupPlayerRetryCoolingDown(info, playerType) {
 	return true;
 }
 
-function _forceClearBackupCooldownsIfStale(info, now = Date.now()) {
+function _forceClearBackupCooldownsIfStale(
+	info: TTVABStreamInfo,
+	now = Date.now(),
+) {
 	const _BACKUP_MAX_STALENESS_MS = 8000;
 	if (!info?.FailedBackupPlayerTypes?.clear) return false;
 	const backupAgeMs = now - (Number(info.LastCleanBackupAt) || 0);
@@ -382,7 +401,11 @@ function _forceClearBackupCooldownsIfStale(info, now = Date.now()) {
 	return true;
 }
 
-function _getEarlyNoBackupRetry(info, startIdx = 0, codecs = null) {
+function _getEarlyNoBackupRetry(
+	info: TTVABStreamInfo,
+	startIdx = 0,
+	codecs = null,
+) {
 	const now = Date.now();
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
@@ -462,7 +485,7 @@ function _getEarlyNoBackupRetry(info, startIdx = 0, codecs = null) {
 }
 
 function _startEarlyNoBackupRetry(
-	info,
+	info: TTVABStreamInfo,
 	realFetch,
 	startIdx,
 	resolution,
@@ -503,7 +526,7 @@ function _startEarlyNoBackupRetry(
 	);
 }
 
-function _getPinnedBackupPlayerTypeForInfo(info) {
+function _getPinnedBackupPlayerTypeForInfo(info: TTVABStreamInfo) {
 	const pinnedType =
 		typeof __TTVAB_STATE__?.PinnedBackupPlayerType === "string" &&
 		__TTVAB_STATE__.PinnedBackupPlayerType
@@ -543,7 +566,10 @@ function _getPinnedBackupPlayerTypeForInfo(info) {
 	return null;
 }
 
-function _getRecentCleanBackupPlayerTypeForInfo(info, now = Date.now()) {
+function _getRecentCleanBackupPlayerTypeForInfo(
+	info: TTVABStreamInfo,
+	now = Date.now(),
+) {
 	const playerType =
 		typeof info?.LastCleanBackupPlayerType === "string" &&
 		info.LastCleanBackupPlayerType
@@ -566,7 +592,7 @@ function _getRecentCleanBackupPlayerTypeForInfo(info, now = Date.now()) {
 	return playerType;
 }
 
-function _recordNativeAdRollType(info, text) {
+function _recordNativeAdRollType(info: TTVABStreamInfo, text) {
 	const mediaKey = _normalizeMediaKey(info?.MediaKey);
 	const cycleStartedAt = Number(info?.VisibleAdStartedAt) || 0;
 	const pageGeneration =
@@ -599,7 +625,7 @@ function _recordNativeAdRollType(info, text) {
 	}
 }
 
-function _isLiveAdAutoplayBackupAllowed(info) {
+function _isLiveAdAutoplayBackupAllowed(info: TTVABStreamInfo) {
 	const context = info?.AdRollContext;
 	return Boolean(
 		__TTVAB_STATE__?.IsAdStrippingEnabled === true &&
@@ -618,7 +644,9 @@ function _isLiveAdAutoplayBackupAllowed(info) {
 	);
 }
 
-function _isAutoplayBackupAvailableForSearch(info = null) {
+function _isAutoplayBackupAvailableForSearch(
+	info: TTVABStreamInfo | null = null,
+) {
 	return Boolean(
 		__TTVAB_STATE__?.DisableAutoplayBackup !== true ||
 			__TTVAB_STATE__?.AllowPreviewEmergencyAutoplayBackup === true ||
@@ -626,7 +654,7 @@ function _isAutoplayBackupAvailableForSearch(info = null) {
 	);
 }
 
-function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
+function _getOrderedBackupPlayerTypes(info: TTVABStreamInfo, startIdx = 0) {
 	const liveAdEmergency =
 		__TTVAB_STATE__?.DisableAutoplayBackup === true &&
 		_isLiveAdAutoplayBackupAllowed(info);
@@ -697,7 +725,10 @@ function _getOrderedBackupPlayerTypes(info, startIdx = 0) {
 		: orderedPlayerTypes;
 }
 
-function _resolvePlaybackResolutionForUrl(info, url = "") {
+function _resolvePlaybackResolutionForUrl(
+	info: TTVABStreamInfo,
+	url = "",
+): TTVABStreamVariant | null {
 	let resolution = null;
 	for (const alias of _getPlaylistUrlAliases(url)) {
 		resolution = info?.Urls?.[alias] || null;
@@ -709,7 +740,10 @@ function _resolvePlaybackResolutionForUrl(info, url = "") {
 	return resolution;
 }
 
-function _getNativeRecoveryMaster(info, forRefresh = false) {
+function _getNativeRecoveryMaster(
+	info: TTVABStreamInfo,
+	forRefresh = false,
+): TTVABNativeMaster | TTVABRetainedNativeMaster {
 	const current = {
 		master: info?.EncodingsM3U8,
 		masterUrl: info?.UsherBaseUrl,
@@ -773,8 +807,15 @@ function _getNativeRecoveryMaster(info, forRefresh = false) {
 	return savedHeight > (currentHeight || availableHeight) ? saved : current;
 }
 
-async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
-	const saved = _getNativeRecoveryMaster(info, true);
+async function _refreshNativeRecoveryMaster(
+	info: TTVABStreamInfo,
+	realFetch,
+	requestSignal,
+) {
+	const saved = _getNativeRecoveryMaster(
+		info,
+		true,
+	) as TTVABRetainedNativeMaster;
 	const cycleStartedAt = Number(info.VisibleAdStartedAt) || 0;
 	if (
 		saved !== info._NativePlaybackMaster ||
@@ -971,7 +1012,7 @@ async function _refreshNativeRecoveryMaster(info, realFetch, requestSignal) {
 }
 
 function _resolveAdBackupTargetResolution(
-	info,
+	info: TTVABStreamInfo,
 	url = "",
 	requestedResolution = null,
 ) {
@@ -1013,7 +1054,10 @@ function _resolveAdBackupTargetResolution(
 	return targetResolution;
 }
 
-function _isBackupProbationCurrent(info, probation = info?._BackupProbation) {
+function _isBackupProbationCurrent(
+	info: TTVABStreamInfo,
+	probation = info?._BackupProbation,
+) {
 	return Boolean(
 		probation?.type &&
 			probation.type !== "autoplay" &&
@@ -1034,7 +1078,7 @@ function _isBackupProbationCurrent(info, probation = info?._BackupProbation) {
 	);
 }
 
-function _isBackupProbationDue(info) {
+function _isBackupProbationDue(info: TTVABStreamInfo) {
 	const probation = info?._BackupProbation;
 	return Boolean(
 		_isBackupProbationCurrent(info, probation) &&
@@ -1048,7 +1092,7 @@ function _isBackupProbationDue(info) {
 	);
 }
 
-function _getPendingForegroundQualityProbeAt(info) {
+function _getPendingForegroundQualityProbeAt(info: TTVABStreamInfo) {
 	const visibleSinceAt = Math.max(
 		0,
 		Number(__TTVAB_STATE__?.PagePlaybackVisibleSinceAt) || 0,
@@ -1096,7 +1140,7 @@ function _getPendingForegroundQualityProbeAt(info) {
 }
 
 function _startPendingBackupQualityProbe(
-	info,
+	info: TTVABStreamInfo,
 	realFetch,
 	currentResolution = null,
 	codecOverride = null,
@@ -1125,7 +1169,7 @@ function _startPendingBackupQualityProbe(
 	return true;
 }
 
-function _recordSustainedNativeResolution(info, url) {
+function _recordSustainedNativeResolution(info: TTVABStreamInfo, url: string) {
 	if (
 		!info ||
 		info.IsShowingAd ||
@@ -1190,7 +1234,7 @@ function _recordSustainedNativeResolution(info, url) {
 }
 
 function _isExactNativeRecoveryCandidateOwned(
-	info,
+	info: TTVABStreamInfo,
 	candidateUrl,
 	candidateIsNative,
 	requestStartMediaKey,
@@ -1263,7 +1307,7 @@ function _isExactNativeRecoveryCandidateOwned(
 }
 
 function _advanceExactNativeRecoveryCandidate(
-	info,
+	info: TTVABStreamInfo,
 	candidateText,
 	candidateUrl,
 	candidateIsNative,
@@ -1368,7 +1412,10 @@ function _advanceExactNativeRecoveryCandidate(
 		: "pending";
 }
 
-function _isNativeRecoveryCodecHandoffReady(info, candidateUrl) {
+function _isNativeRecoveryCodecHandoffReady(
+	info: TTVABStreamInfo,
+	candidateUrl,
+) {
 	const handoffId = info?._CodecHandoffPendingId;
 	if (!handoffId) return true;
 	const mediaKey = _normalizeMediaKey(info.MediaKey);
@@ -1393,7 +1440,7 @@ function _isNativeRecoveryCodecHandoffReady(info, candidateUrl) {
 }
 
 async function _isAdEndStable(
-	info,
+	info: TTVABStreamInfo,
 	realFetch,
 	resolution = null,
 	requestAdContext = null,
@@ -1788,7 +1835,7 @@ async function _isAdEndStable(
 }
 
 function _resetNativeRecoveryReadyState(
-	info,
+	info: TTVABStreamInfo,
 	preserveProbeAt = false,
 	preserveProbeSession = false,
 ) {
@@ -1813,7 +1860,7 @@ function _resetNativeRecoveryReadyState(
 }
 
 function _invalidateNativeRecoveryAfterPlayerReload(
-	info,
+	info: TTVABStreamInfo,
 	advanceLoaderEpoch = false,
 ) {
 	if (!info) return 0;
@@ -1839,12 +1886,12 @@ function _invalidateNativeRecoveryAfterPlayerReload(
 	return Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0);
 }
 
-function _markNativeRecoveryProbeFailed(info) {
+function _markNativeRecoveryProbeFailed(info: TTVABStreamInfo) {
 	info.ConsecutiveFailedNativeProbes =
 		Math.max(0, Number(info?.ConsecutiveFailedNativeProbes) || 0) + 1;
 }
 
-function _markNativeRecoveryReady(info, playerType) {
+function _markNativeRecoveryReady(info: TTVABStreamInfo, playerType) {
 	const nextPlayerType =
 		typeof playerType === "string" && playerType ? playerType : null;
 	if (!info || !nextPlayerType) {
@@ -1864,7 +1911,12 @@ function _markNativeRecoveryReady(info, playerType) {
 	return nextCount;
 }
 
-async function _serveBounceDebouncedPlaylist(info, realFetch, text, now) {
+async function _serveBounceDebouncedPlaylist(
+	info: TTVABStreamInfo,
+	realFetch,
+	text,
+	now,
+) {
 	const lastAdEndBounceAt = Math.max(0, Number(info?.LastAdEndBounceAt) || 0);
 	const bounceDebounceMs = Math.max(
 		3000,
@@ -1963,7 +2015,7 @@ function _getPlaylistUrlAliases(url, baseUrl = null) {
 	return aliases;
 }
 
-function _getStreamInfoForPlaylist(url) {
+function _getStreamInfoForPlaylist(url: string): TTVABStreamInfo | null {
 	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return null;
 	for (const alias of _getPlaylistUrlAliases(url)) {
 		const byUrl = __TTVAB_STATE__.StreamInfosByUrl[alias];
@@ -2193,7 +2245,11 @@ function _insertBoundaryDiscontinuity(
 	return lines.join("\n");
 }
 
-function _observeServedPrefetchTimeline(info, url, text) {
+function _observeServedPrefetchTimeline(
+	info: Partial<TTVABStreamInfo>,
+	url,
+	text,
+) {
 	const previous = info?._LivePlaylistTimeline;
 	if (
 		info?.MediaType !== "live" ||
@@ -2249,7 +2305,7 @@ function _observeServedPrefetchTimeline(info, url, text) {
 }
 
 function _alignLivePlaylist(
-	info,
+	info: Partial<TTVABStreamInfo>,
 	text,
 	backupMetadata = null,
 	commitTimeline = true,
@@ -2541,7 +2597,12 @@ function _alignLivePlaylist(
 	return output;
 }
 
-function _canRestoreNativeByPlaylist(info, url, text, requestContext) {
+function _canRestoreNativeByPlaylist(
+	info: TTVABStreamInfo,
+	url,
+	text,
+	requestContext,
+) {
 	const target = requestContext?.verifiedNativeRecoveryTarget;
 	const nativeUrl = _getMediaPlaylistSessionKey(url);
 	const native = info?.Urls?.[nativeUrl];
@@ -2600,7 +2661,7 @@ function _canRestoreNativeByPlaylist(info, url, text, requestContext) {
 }
 
 function _applyPlaylistContinuity(
-	info,
+	info: Partial<TTVABStreamInfo>,
 	url,
 	text,
 	backupMetadata = null,
@@ -2774,7 +2835,12 @@ function _applyPlaylistContinuity(
 	}
 }
 
-function _applyBackupSpliceBridge(info, text, backupMetadata = null, url = "") {
+function _applyBackupSpliceBridge(
+	info: Partial<TTVABStreamInfo>,
+	text,
+	backupMetadata = null,
+	url = "",
+) {
 	if (!info || typeof text !== "string" || !text) return text;
 	const getDiscontinuityRange = (playlist) => {
 		let current = _parsePlaylistDiscontinuitySequence(playlist);
@@ -2921,7 +2987,7 @@ function _getMediaPlaylistSessionKey(url) {
 	}
 }
 
-function _getEmptyHoldUpstreamUrl(info, url) {
+function _getEmptyHoldUpstreamUrl(info: Partial<TTVABStreamInfo>, url) {
 	if (
 		__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
 		!info?._EmptyHoldTimelineByUrl?.size
@@ -2960,7 +3026,7 @@ function _getEmptyHoldUpstreamUrl(info, url) {
 }
 
 function _applyEmptyHoldPlaylistContinuity(
-	info,
+	info: Partial<TTVABStreamInfo>,
 	url,
 	text,
 	backupMetadata = null,
@@ -3532,7 +3598,7 @@ function _awaitWithRequestSignal(promise, requestSignal = null) {
 }
 
 function _isBackupSearchContextCurrent(
-	info,
+	info: TTVABStreamInfo,
 	backupSearchEpoch,
 	cycleStartedAt,
 ) {
@@ -3555,7 +3621,7 @@ function _isBackupSearchContextCurrent(
 }
 
 async function _canReloadNativePlayerAfterAd(
-	info,
+	info: TTVABStreamInfo,
 	realFetch,
 	resolution = null,
 	requireProbe = false,
@@ -3902,7 +3968,9 @@ async function _canReloadNativePlayerAfterAd(
 	}
 }
 
-function _createStreamInfo(context) {
+function _createStreamInfo(
+	context: TTVABPlaybackContextInput,
+): TTVABStreamInfo {
 	const normalizedContext = _normalizePlaybackContext(context);
 	const ownsCurrentAdMediaKey = Boolean(
 		normalizedContext.MediaKey &&
@@ -4076,7 +4144,10 @@ function _createStreamInfo(context) {
 	};
 }
 
-function _createSyntheticStreamInfo(playbackContext, url = "") {
+function _createSyntheticStreamInfo(
+	playbackContext: TTVABPlaybackContextInput,
+	url = "",
+): TTVABStreamInfo | null {
 	const normalizedContext = _normalizePlaybackContext(playbackContext);
 	if (!normalizedContext.MediaKey) return null;
 
@@ -4097,7 +4168,7 @@ function _createSyntheticStreamInfo(playbackContext, url = "") {
 	return info;
 }
 
-function _buildUsherPlaybackUrl(info, sig, token) {
+function _buildUsherPlaybackUrl(info: TTVABStreamInfo, sig, token) {
 	let usherUrl = null;
 
 	if (typeof info?.UsherBaseUrl === "string" && info.UsherBaseUrl) {
@@ -4140,7 +4211,7 @@ function _getExactPlaylistUrlKey(url, baseUrl = null) {
 }
 
 function _clearCodecHandoffState(
-	info,
+	info: TTVABStreamInfo,
 	handoffId = null,
 	clearDecoderOwnership = true,
 ) {
@@ -4177,7 +4248,7 @@ function _clearCodecHandoffState(
 	return true;
 }
 
-function _markCodecHandoffReloadFailed(info, handoffId) {
+function _markCodecHandoffReloadFailed(info: TTVABStreamInfo, handoffId) {
 	if (
 		!info ||
 		typeof handoffId !== "string" ||
@@ -4193,7 +4264,7 @@ function _markCodecHandoffReloadFailed(info, handoffId) {
 	return true;
 }
 
-function _getActiveCodecHandoffIdForInfo(info) {
+function _getActiveCodecHandoffIdForInfo(info: TTVABStreamInfo) {
 	const visibleCycleStartedAt = Math.max(
 		0,
 		Number(info?.VisibleAdStartedAt) || 0,
@@ -4221,7 +4292,7 @@ function _getActiveCodecHandoffIdForInfo(info) {
 	return null;
 }
 
-function _createCodecHandoffId(info) {
+function _createCodecHandoffId(info: TTVABStreamInfo) {
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	info._CodecHandoffSequence =
 		Math.max(0, Number(info._CodecHandoffSequence) || 0) + 1;
@@ -4250,7 +4321,10 @@ function _getCodecHandoffCycleStartedAt(handoffId) {
 	return Math.max(0, Number(parts[parts.length - 4]) || 0);
 }
 
-function _getCurrentAdBreakStartedAt(mediaKey, info = null) {
+function _getCurrentAdBreakStartedAt(
+	mediaKey,
+	info: TTVABStreamInfo | null = null,
+) {
 	const normalizedMediaKey = _normalizeMediaKey(mediaKey || info?.MediaKey);
 	if (!normalizedMediaKey) return 0;
 	const infoCycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
@@ -4270,7 +4344,11 @@ function _getCurrentAdBreakStartedAt(mediaKey, info = null) {
 	);
 }
 
-function _isCodecHandoffCycleCurrent(mediaKey, cycleStartedAt, info = null) {
+function _isCodecHandoffCycleCurrent(
+	mediaKey,
+	cycleStartedAt,
+	info: TTVABStreamInfo | null = null,
+) {
 	const normalizedMediaKey = _normalizeMediaKey(mediaKey || info?.MediaKey);
 	const currentAdMediaKey = _normalizeMediaKey(
 		__TTVAB_STATE__?.CurrentAdMediaKey,
@@ -4286,7 +4364,7 @@ function _isCodecHandoffCycleCurrent(mediaKey, cycleStartedAt, info = null) {
 }
 
 function _isCodecHandoffAdRecoveryActive(
-	info,
+	info: TTVABStreamInfo,
 	requestWasAdMarked = false,
 	expectedCycleStartedAt = null,
 ) {
@@ -4330,7 +4408,10 @@ function _isCodecHandoffAdRecoveryActive(
 	);
 }
 
-function _requestCodecHandoffReload(info, expectedCycleStartedAt = null) {
+function _requestCodecHandoffReload(
+	info: TTVABStreamInfo,
+	expectedCycleStartedAt = null,
+) {
 	if (
 		!_isCodecHandoffAdRecoveryActive(info, false, expectedCycleStartedAt) ||
 		typeof info?.ModifiedM3U8 !== "string" ||
@@ -4387,7 +4468,10 @@ function _requestCodecHandoffReload(info, expectedCycleStartedAt = null) {
 	return handoffId;
 }
 
-function _getDirectPlaybackResolutionForUrl(info, url = "") {
+function _getDirectPlaybackResolutionForUrl(
+	info: TTVABStreamInfo,
+	url = "",
+): TTVABStreamVariant | null {
 	for (const alias of _getPlaylistUrlAliases(url)) {
 		const resolution = info?.Urls?.[alias] || null;
 		if (resolution) return resolution;
@@ -4395,7 +4479,9 @@ function _getDirectPlaybackResolutionForUrl(info, url = "") {
 	return null;
 }
 
-function _getVideoCodecFamily(codecs) {
+function _getVideoCodecFamily(
+	codecs: string | null,
+): TTVABVideoCodecFamily | null {
 	const value =
 		_getVideoCodecIdentity(codecs) ||
 		(typeof codecs === "string" ? codecs.trim().toLowerCase() : "");
@@ -4490,19 +4576,23 @@ function _getBackupVariantResolution(m3u8, streamUrl, baseUrl = null) {
 	return null;
 }
 
-function _setBackupVariantResolution(info, resolution, activate = false) {
+function _setBackupVariantResolution(
+	info: TTVABStreamInfo,
+	resolution: string | null,
+	activate = false,
+) {
 	const selectedResolution = resolution || null;
 	info.LastCleanBackupResolution = selectedResolution;
 	if (activate) info.ActiveBackupResolution = selectedResolution;
 }
 
 function _commitBackupPlaylist(
-	info,
-	m3u8,
-	sequence,
-	metadata,
+	info: TTVABStreamInfo,
+	m3u8: string,
+	sequence: number,
+	metadata: TTVABBackupVariant,
 	activate = false,
-) {
+): string | null {
 	const identity = JSON.stringify([
 		metadata.playerType,
 		_getExactPlaylistUrlKey(metadata.playlistUrl),
@@ -4565,12 +4655,12 @@ function _commitBackupPlaylist(
 }
 
 function _rememberBackupPlaylistMetadata(
-	info,
-	m3u8,
-	codecFamily = null,
-	codec = null,
-	variant = null,
-) {
+	info: TTVABStreamInfo,
+	m3u8: string,
+	codecFamily: string | null = null,
+	codec: string | null = null,
+	variant: Partial<TTVABBackupVariant> | null = null,
+): string {
 	if (!info || typeof m3u8 !== "string" || !m3u8) return m3u8;
 	if (!(info.BackupPlaylistMetadata instanceof Map)) {
 		info.BackupPlaylistMetadata = new Map();
@@ -4606,7 +4696,7 @@ function _rememberBackupPlaylistMetadata(
 }
 
 function _rememberSegmentCodecOwnership(
-	info,
+	info: TTVABStreamInfo,
 	text,
 	codecFamily = null,
 	exactSegmentUrls = null,
@@ -4685,7 +4775,7 @@ function _rememberSegmentCodecOwnership(
 }
 
 function _isLastCleanNativeForRequest(
-	info,
+	info: TTVABStreamInfo,
 	url,
 	requestCodecs = null,
 	requestIsEnhanced = false,
@@ -4707,7 +4797,7 @@ function _isLastCleanNativeForRequest(
 }
 
 function _getSameRequestCleanNative(
-	info,
+	info: TTVABStreamInfo,
 	url,
 	requestCodecs = null,
 	requestIsEnhanced = false,
@@ -4757,7 +4847,7 @@ function _createCodecHandoffAbortError(requestSignal = null) {
 }
 
 async function _holdRetiringCodecRequest(
-	info,
+	info: TTVABStreamInfo,
 	url,
 	text,
 	requestCodecs,
@@ -4908,7 +4998,7 @@ async function _holdRetiringCodecRequest(
 }
 
 function _assertM3U8RequestContextCurrent(
-	info,
+	info: TTVABStreamInfo,
 	requestAdContext = null,
 	requestSignal = null,
 ) {
@@ -4953,7 +5043,7 @@ function _assertM3U8RequestContextCurrent(
 
 async function _awaitM3U8RequestContext(
 	promise,
-	info,
+	info: TTVABStreamInfo,
 	requestAdContext = null,
 	requestSignal = null,
 ) {
@@ -7637,7 +7727,7 @@ function _getResolvedLqHqHoldMinMs() {
 	);
 }
 
-function _shouldTryAutoplayFirst(info) {
+function _shouldTryAutoplayFirst(info: TTVABStreamInfo) {
 	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
 	if (
 		!(__TTVAB_STATE__?.BackupPlayerTypes || []).includes("autoplay") ||
@@ -7661,7 +7751,7 @@ function _shouldTryAutoplayFirst(info) {
 	);
 }
 
-function _shouldHoldAutoplayBackupDuringAd(info) {
+function _shouldHoldAutoplayBackupDuringAd(info: TTVABStreamInfo) {
 	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
 	if (_isBackupPlayerRetryCoolingDown(info, "autoplay")) return false;
 	const lqHoldMinMs = _getResolvedLqHqHoldMinMs();
@@ -7684,7 +7774,7 @@ function _shouldHoldAutoplayBackupDuringAd(info) {
 	);
 }
 
-function _shouldBridgeHeldAutoplayDuringSearch(info) {
+function _shouldBridgeHeldAutoplayDuringSearch(info: TTVABStreamInfo) {
 	if (_isBackupPlayerRetryCoolingDown(info, "autoplay")) return false;
 	if (info?.ActiveBackupPlayerType !== "autoplay") return false;
 	if (info?.LastCleanBackupPlayerType !== "autoplay") return false;
@@ -7702,14 +7792,14 @@ function _shouldBridgeHeldAutoplayDuringSearch(info) {
 	);
 }
 
-function _getServedBackupBridgeHeight(info) {
+function _getServedBackupBridgeHeight(info: TTVABStreamInfo) {
 	const [, height] = String(info?.LastCleanBackupResolution || "0x0")
 		.split("x")
 		.map(Number);
 	return Number.isFinite(height) && height > 0 ? height : 0;
 }
 
-function _shouldHoldBridgeInsteadOfRotating(info, targetRes) {
+function _shouldHoldBridgeInsteadOfRotating(info: TTVABStreamInfo, targetRes) {
 	if (__TTVAB_STATE__?.DisableAutoplayBackup) return false;
 	if (!_shouldBridgeHeldAutoplayDuringSearch(info)) return false;
 	if ((Number(info?._BackupPinFlipCount) || 0) >= 2) return true;
@@ -7744,12 +7834,12 @@ function _shouldHoldBridgeInsteadOfRotating(info, targetRes) {
 }
 
 async function _refreshHeldAutoplayBackupPlaylist(
-	info,
+	info: TTVABStreamInfo,
 	realFetch,
 	currentResolution = null,
 	codecOverride = null,
 	commitDeadlineAt = 0,
-) {
+): Promise<string | null> {
 	const selectedBackupSequence = info._BackupSelection?.sequence;
 	const selectionSequence =
 		Math.max(0, Number(info._BackupSelectionSequence) || 0) + 1;
@@ -7863,10 +7953,10 @@ async function _refreshHeldAutoplayBackupPlaylist(
 }
 
 async function _refreshActiveBackupMediaPlaylist(
-	info,
+	info: TTVABStreamInfo,
 	realFetch,
 	codecOverride = null,
-) {
+): Promise<string | null> {
 	const selectedBackupSequence = info._BackupSelection?.sequence;
 	const selectionSequence =
 		Math.max(0, Number(info._BackupSelectionSequence) || 0) + 1;
@@ -7977,7 +8067,11 @@ async function _refreshActiveBackupMediaPlaylist(
 	}
 }
 
-async function _prepareFatalMediaRecovery(info, realFetch, request) {
+async function _prepareFatalMediaRecovery(
+	info: TTVABStreamInfo,
+	realFetch,
+	request,
+) {
 	const recoveryId =
 		typeof request?.recoveryId === "string" && request.recoveryId
 			? request.recoveryId
@@ -8118,14 +8212,14 @@ async function _prepareFatalMediaRecovery(info, realFetch, request) {
 }
 
 async function _findBackupStream(
-	info,
+	info: TTVABStreamInfo,
 	realFetch,
 	startIdx = 0,
 	currentResolution = null,
 	codecOverride = null,
 	searchDeadlineAt = 0,
 	earlyRetry = null,
-) {
+): Promise<TTVABBackupSearchResult> {
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	const searchResolution =
@@ -8323,14 +8417,14 @@ async function _findBackupStream(
 }
 
 async function _searchBackupStream(
-	info,
+	info: TTVABStreamInfo,
 	realFetch,
 	startIdx = 0,
 	currentResolution = null,
 	codecOverride = null,
 	searchDeadlineAt = 0,
 	earlyRetry = null,
-) {
+): Promise<TTVABBackupSearchResult> {
 	let backupType = null;
 	let backupM3u8 = null;
 	let timelineProbation = null;

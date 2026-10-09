@@ -228,9 +228,9 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 				{
 					const enabled = data.value === true;
 					if (!enabled) {
-						for (const streamInfo of Object.values<
-							ReturnType<typeof _createStreamInfo> & PlainObject
-						>(__TTVAB_STATE__.StreamInfos)) {
+						for (const streamInfo of Object.values(
+							__TTVAB_STATE__.StreamInfos,
+						)) {
 							_resetStreamAdState(streamInfo);
 						}
 						__TTVAB_STATE__.CurrentAdChannel = null;
@@ -268,9 +268,7 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 						break;
 					}
 					__TTVAB_STATE__.DisableAutoplayBackup = shouldDisableAutoplayBackup;
-					for (const streamInfo of Object.values<
-						ReturnType<typeof _createStreamInfo> & PlainObject
-					>(__TTVAB_STATE__.StreamInfos)) {
+					for (const streamInfo of Object.values(__TTVAB_STATE__.StreamInfos)) {
 						streamInfo._LastBackupSearchCompletedAt = 0;
 					}
 				}
@@ -469,9 +467,9 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 							? data.value.clearHandoffId
 							: null;
 					if (clearHandoffId) {
-						for (const streamInfo of Object.values<
-							ReturnType<typeof _createStreamInfo> & PlainObject
-						>(__TTVAB_STATE__.StreamInfos)) {
+						for (const streamInfo of Object.values(
+							__TTVAB_STATE__.StreamInfos,
+						)) {
 							if (
 								nextCodecHandoffContext.MediaKey &&
 								_normalizeMediaKey(streamInfo?.MediaKey) !==
@@ -527,9 +525,7 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 					) {
 						break;
 					}
-					for (const streamInfo of Object.values<
-						ReturnType<typeof _createStreamInfo> & PlainObject
-					>(__TTVAB_STATE__.StreamInfos)) {
+					for (const streamInfo of Object.values(__TTVAB_STATE__.StreamInfos)) {
 						if (
 							nextCodecHandoffContext.MediaKey &&
 							_normalizeMediaKey(streamInfo?.MediaKey) !==
@@ -620,9 +616,9 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 						__TTVAB_STATE__.ShouldResumeAfterAdMediaKey = null;
 						__TTVAB_STATE__.ShouldResumeAfterAdUntil = 0;
 						if (data.value?.clearAdContext) {
-							for (const streamInfo of Object.values<
-								ReturnType<typeof _createStreamInfo> & PlainObject
-							>(__TTVAB_STATE__.StreamInfos)) {
+							for (const streamInfo of Object.values(
+								__TTVAB_STATE__.StreamInfos,
+							)) {
 								_clearCodecHandoffState(streamInfo);
 							}
 							__TTVAB_STATE__.CurrentAdChannel = null;
@@ -792,9 +788,7 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 					const handoffInfo =
 						(reloadContext.MediaKey &&
 							__TTVAB_STATE__.StreamInfos[reloadContext.MediaKey]) ||
-						Object.values<ReturnType<typeof _createStreamInfo> & PlainObject>(
-							__TTVAB_STATE__.StreamInfos,
-						).find(
+						Object.values(__TTVAB_STATE__.StreamInfos).find(
 							(entry) =>
 								entry?.MediaKey === reloadContext.MediaKey ||
 								(!reloadContext.MediaKey &&
