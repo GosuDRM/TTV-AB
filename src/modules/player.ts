@@ -1146,7 +1146,7 @@ function _syncPagePlaybackVisibilityState(forceHidden = false) {
 	const nextVisibleSinceAt = isHidden
 		? 0
 		: currentVisibleSinceAt || Math.max(1, Date.now());
-	const messages: Array<Record<string, unknown>> = [];
+	const messages: TTVABWorkerCommand[] = [];
 	if (
 		currentVisibleSinceAt !== nextVisibleSinceAt ||
 		previousPageMediaKey !== pageMediaKey

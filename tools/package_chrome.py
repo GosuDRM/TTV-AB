@@ -29,7 +29,13 @@ def main() -> int:
 	if output_path.exists():
 		output_path.unlink()
 
-	files = sorted(path for path in dist_dir.rglob("*") if path.is_file())
+	files = sorted(
+		path
+		for path in dist_dir.rglob("*")
+		if path.is_file()
+		and path.relative_to(dist_dir).parts[:2] != ("src", "modules")
+		and path.suffix not in {".ts", ".tsbuildinfo"}
+	)
 
 	if not files:
 		print("dist/ is empty. Run `npm run build` first.", file=sys.stderr)

@@ -2,6 +2,7 @@
 	"$schema": "https://unpkg.com/knip@6.32.2/schema.json",
 	"entry": [
 		"build.ts!",
+		"tools/build-worker.ts!",
 		"src/types/browser-globals.d.ts!",
 		"src/modules/*.ts!",
 		"src/popup/popup.ts!",

@@ -3,9 +3,28 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const hooksJs = () =>
-	readFileSync(resolve(__dirname, "../dist/src/modules/hooks.js"), "utf8");
+	readFileSync(
+		resolve(__dirname, "../dist/src/modules/hooks.js"),
+		"utf8",
+	).replace(/^const _PLAYBACK_WORKER_SOURCE = .*;$/m, "") +
+	"\n" +
+	workerEntryJs();
 const hooksTs = () =>
-	readFileSync(resolve(__dirname, "../src/modules/hooks.ts"), "utf8");
+	readFileSync(resolve(__dirname, "../src/modules/hooks.ts"), "utf8") +
+	"\n" +
+	readFileSync(resolve(__dirname, "../src/modules/worker-entry.ts"), "utf8");
+const workerEntryJs = () => {
+	const source = readFileSync(
+		resolve(__dirname, "../dist/src/modules/worker-entry.js"),
+		"utf8",
+	);
+	return source.slice(source.indexOf("function _startPlaybackWorker("));
+};
+const workerJs = () =>
+	readFileSync(
+		resolve(__dirname, "../dist/src/modules/playback-worker.js"),
+		"utf8",
+	);
 const initTs = () =>
 	readFileSync(resolve(__dirname, "../src/modules/init.ts"), "utf8");
 const parserJs = () =>
@@ -19,9 +38,9 @@ describe("empty ad segment single source", () => {
 		expect(hooksJs()).not.toContain("data:video/mp2t;base64,");
 	});
 
-	it("worker bootstrap serializes the parser segment constant", () => {
-		expect(hooksJs()).toContain("JSON.stringify(_EMPTY_SEGMENT_URL)");
-		expect(hooksJs()).toContain("JSON.stringify(_EMPTY_HOLD_SEGMENT_URL)");
+	it("worker build includes the parser segment constants", () => {
+		expect(workerJs()).toContain("const _EMPTY_SEGMENT_URL =");
+		expect(workerJs()).toContain("const _EMPTY_HOLD_SEGMENT_URL =");
 	});
 
 	it("direct ad-segment replacement carries decodable AVC and audio media", () => {
@@ -64,7 +83,7 @@ describe("worker message handler hardening", () => {
 			"_getActivePictureInPictureWorkerContext(this, messageContext.MediaKey)",
 		);
 		expect(hooksJs()).toContain("preservedMediaKey");
-		expect(hooksJs()).toContain("case 'ReleasePlaybackContext'");
+		expect(hooksJs()).toContain('case "ReleasePlaybackContext"');
 	});
 
 	it("cycle-fences every same-media post-ad lifecycle action", () => {
@@ -95,14 +114,14 @@ describe("worker message handler hardening", () => {
 	it("seeds playback visibility before workers and serializes foreground recovery", () => {
 		const source = hooksTs();
 		const initSource = initTs();
-		expect(source).toContain(
-			"__TTVAB_STATE__.PagePlaybackVisibleSinceAt = ${JSON.stringify(__TTVAB_STATE__.PagePlaybackVisibleSinceAt)}",
+		expect(source).toMatch(
+			/__TTVAB_STATE__\.PagePlaybackVisibleSinceAt\s*=\s*seed\.state\.PagePlaybackVisibleSinceAt/,
 		);
-		expect(source).toContain("case 'UpdatePagePlaybackVisibleSinceAt':");
-		expect(source).toContain(
-			"${_getPendingForegroundQualityProbeAt.toString()}",
+		expect(source).toContain('case "UpdatePagePlaybackVisibleSinceAt":');
+		expect(workerJs()).toContain(
+			"function _getPendingForegroundQualityProbeAt(",
 		);
-		expect(source).toContain("${_startPendingBackupQualityProbe.toString()}");
+		expect(workerJs()).toContain("function _startPendingBackupQualityProbe(");
 		const visibilityAt = initSource.indexOf(
 			"_syncPagePlaybackVisibilityState();",
 		);
@@ -122,9 +141,9 @@ describe("worker message handler hardening", () => {
 
 	it("invalidates worker ad work before accepting disabled state", () => {
 		const source = hooksJs();
-		const blockStart = source.indexOf("case 'UpdateToggleState':");
+		const blockStart = source.indexOf('case "UpdateToggleState":');
 		const blockEnd = source.indexOf(
-			"case 'UpdateAdSpoofingState':",
+			'case "UpdateAdSpoofingState":',
 			blockStart,
 		);
 		const block = source.slice(blockStart, blockEnd);
@@ -145,14 +164,14 @@ describe("worker message handler hardening", () => {
 
 	it("reconsiders fallback ordering without aborting in-flight media", () => {
 		const source = hooksJs();
-		const blockStart = source.indexOf("case 'UpdateAutoplayBackupState':");
-		const blockEnd = source.indexOf("case 'UpdateAdsBlocked':", blockStart);
+		const blockStart = source.indexOf('case "UpdateAutoplayBackupState":');
+		const blockEnd = source.indexOf('case "UpdateAdsBlocked":', blockStart);
 		const block = source.slice(blockStart, blockEnd);
 
 		expect(blockStart).toBeGreaterThan(-1);
 		expect(blockEnd).toBeGreaterThan(blockStart);
-		expect(block).toContain(
-			"__TTVAB_STATE__.DisableAutoplayBackup === shouldDisableAutoplayBackup",
+		expect(block).toMatch(
+			/__TTVAB_STATE__\.DisableAutoplayBackup\s*===\s*shouldDisableAutoplayBackup/,
 		);
 		expect(block).toContain("streamInfo._LastBackupSearchCompletedAt = 0");
 		expect(block).not.toContain("streamInfo.BackupSearchEpoch =");
@@ -165,19 +184,19 @@ describe("worker message handler hardening", () => {
 
 	it("seeds and updates exact Previews player ownership in workers", () => {
 		const source = hooksJs();
-		expect(source).toContain(
-			"__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup = ${JSON.stringify(__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup === true)}",
+		expect(source).toMatch(
+			/AllowPreviewEmergencyAutoplayBackup:\s*__TTVAB_STATE__\.AllowPreviewEmergencyAutoplayBackup === true/,
 		);
-		const blockStart = source.indexOf("case 'UpdatePageContext':");
+		const blockStart = source.indexOf('case "UpdatePageContext":');
 		const blockEnd = source.indexOf(
-			"case 'UpdatePreferredQualityGroup':",
+			'case "UpdatePreferredQualityGroup":',
 			blockStart,
 		);
 		const block = source.slice(blockStart, blockEnd);
 		expect(blockStart).toBeGreaterThan(-1);
 		expect(blockEnd).toBeGreaterThan(blockStart);
-		expect(block).toContain(
-			"__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup = data.value.allowPreviewEmergencyAutoplayBackup",
+		expect(block).toMatch(
+			/__TTVAB_STATE__\.AllowPreviewEmergencyAutoplayBackup\s*=\s*data\.value\.allowPreviewEmergencyAutoplayBackup/,
 		);
 	});
 
@@ -263,13 +282,13 @@ describe("worker message handler hardening", () => {
 	it("rejects non-terminal ad state updates in disabled workers", () => {
 		const source = hooksJs();
 		expect(source).toMatch(
-			/case 'UpdateCurrentAdContext':[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?nextAdContext\.MediaKey[\s\S]*?break;/,
+			/case "UpdateCurrentAdContext":[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?nextAdContext\.MediaKey[\s\S]*?break;/,
 		);
 		expect(source).toMatch(
-			/case 'UpdateAdPodProgress':[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?break;/,
+			/case "UpdateAdPodProgress":[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?break;/,
 		);
 		expect(source).toMatch(
-			/case 'UpdatePinnedBackupPlayerContext':[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?nextPinnedType[\s\S]*?break;/,
+			/case "UpdatePinnedBackupPlayerContext":[\s\S]*?IsAdStrippingEnabled !== true[\s\S]*?nextPinnedType[\s\S]*?break;/,
 		);
 	});
 
@@ -350,12 +369,12 @@ describe("worker message handler hardening", () => {
 
 	it("gates worker reload acknowledgements before mutating reload state", () => {
 		const source = hooksJs();
-		const blockStart = source.indexOf("case 'TriggeredPlayerReload':");
+		const blockStart = source.indexOf('case "TriggeredPlayerReload":');
 		const blockEnd = source.indexOf("default:", blockStart);
 		const block = source.slice(blockStart, blockEnd);
 		expect(blockStart).toBeGreaterThan(-1);
 		expect(blockEnd).toBeGreaterThan(blockStart);
-		expect(source).toContain("${_isPageLifecycleCycleCurrent.toString()}");
+		expect(workerJs()).toContain("function _isPageLifecycleCycleCurrent(");
 		const gateAt = block.indexOf("_isPageLifecycleCycleCurrent(");
 		const mutateAt = block.indexOf(
 			"__TTVAB_STATE__.HasTriggeredPlayerReload = true",
@@ -468,9 +487,11 @@ describe("worker message handler hardening", () => {
 	});
 
 	it("bootstrap does not serialize tracked worker handles", () => {
-		expect(hooksJs()).toMatch(
-			/JSON\.stringify\(\{\s*\.\.\._S,\s*workers:\s*\[\],\s*workerRefs:\s*\[\]\s*\}\)/,
+		const source = hooksJs();
+		expect(source).toMatch(
+			/sharedState:\s*\{\s*\.\.\._S,\s*workers:\s*\[\],\s*workerRefs:\s*\[\]\s*\}/,
 		);
+		expect(source).toContain("JSON.stringify(workerSeed)");
 	});
 
 	it("installs the fetch hook before inlined blob worker source runs", () => {
@@ -480,7 +501,8 @@ describe("worker message handler hardening", () => {
 		);
 		expect(source).toContain("? _readBlobUrlSync(workerSourceUrl)");
 		expect(source).toContain("inlinedWorkerSource ||");
-		const hookAt = source.indexOf("_hookWorkerFetch();");
+		expect(workerEntryJs()).toContain("_hookWorkerFetch();");
+		const hookAt = source.indexOf("${_PLAYBACK_WORKER_SOURCE}");
 		const originalSourceAt = source.indexOf(
 			"${originalWorkerLoadCode}",
 			hookAt,
@@ -492,14 +514,12 @@ describe("worker message handler hardening", () => {
 	it("seeds variant codec metadata before replacement media fetches", () => {
 		const source = hooksJs();
 		expect(source).toContain("const seedPlaybackCodecEntries =");
-		expect(source).toContain(
-			"const _pageSideVariantCodecByUrl = new Map(${JSON.stringify(seedPlaybackCodecEntries)});",
-		);
+		expect(source).toContain("playbackCodecEntries: seedPlaybackCodecEntries");
 		expect(source).toContain("requestCodec: requestStartCodecs");
 		expect(source).toContain("decoderCodec: observedDecoderCodec");
 		expect(source).toContain("handoffId: observedHandoffId");
-		expect(source).toContain("${_resetWorkerAdCycleState.toString()}");
-		expect(source).toContain("case 'ResetAdCycleState':");
+		expect(workerJs()).toContain("function _resetWorkerAdCycleState(");
+		expect(source).toContain('case "ResetAdCycleState":');
 		expect(source).toContain("playlistUrl: observedPlaylistUrl");
 		expect(source).toContain("codec: observedCodec");
 	});
@@ -608,9 +628,7 @@ describe("enhanced-codec handoff retirement", () => {
 
 	it("seeds active pod progress before the original worker can fetch", () => {
 		const source = hooksJs();
-		const seedAt = source.indexOf(
-			"__TTVAB_STATE__.AdPodProgressByMediaKey = ${JSON.stringify(",
-		);
+		const seedAt = source.indexOf("AdPodProgressByMediaKey:");
 		const hookAt = source.lastIndexOf("_hookWorkerFetch();");
 		expect(source).toContain("const seedAdPodProgress =");
 		expect(seedAt).toBeGreaterThan(-1);

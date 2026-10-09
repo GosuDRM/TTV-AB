@@ -25,8 +25,7 @@ type TTVABDocumentMethod =
 	| ((this: Document, ...args: never[]) => unknown)
 	| null;
 
-// biome-ignore lint/suspicious/noExplicitAny: runtime state is intentionally a dynamic bag shared across injected scripts
-declare const __TTVAB_STATE__: any;
+declare const __TTVAB_STATE__: TTVABRuntimeState;
 declare const TRANSLATIONS: Record<
 	string,
 	PlainObject & {
@@ -60,6 +59,7 @@ interface Element {
 }
 
 interface Window {
+	__TTVAB_STATE__?: TTVABRuntimeState;
 	[key: string]: unknown;
 	ttvabVersion?: number;
 	__TTVAB_NATIVE_VISIBILITY__?: {
