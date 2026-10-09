@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-19.2.2-purple)
+![Version](https://img.shields.io/badge/version-19.2.3-purple)
 ![License](https://img.shields.io/badge/license-MIT--based%20with%20attribution-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-19.2.2-yellow)
+![Chrome](https://img.shields.io/badge/chrome-19.2.3-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -72,6 +72,12 @@ TTV AB checks Twitch's HLS playlists before playback and blocks recognized clien
 The optional **Ad Break Timer** is off by default and can be switched on in the popup. It tracks the current break until it ends; it does not predict when your selected quality will return.
 
 ## 🔔 What's New
+
+### v19.2.3 - 2026-10-09
+
+- **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.
+- **Playlist Recovery** - Accept fresh live updates with wider windows without replaying older segments or stopping playback.
+- **Backup Recovery** - Keep the player informed when its clean backup changes while waiting for native playback to return.
 
 ### v19.2.2 - 2026-10-08
 

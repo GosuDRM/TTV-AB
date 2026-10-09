@@ -346,6 +346,16 @@ describe.each(["preroll", "midroll"])(
 				expect(output).not.toContain("stitched-ad");
 				expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
 				expect(f.info.HevcReloadPendingAfterHold).toBe(true);
+				expect(f.state.PinnedBackupPlayerType).toBe("autoplay");
+				expect(f.context._postWorkerBridgeMessage).toHaveBeenCalledWith(
+					expect.anything(),
+					expect.objectContaining({
+						key: "BackupPlayerTypeSelected",
+						value: "autoplay",
+						mediaKey: f.info.MediaKey,
+						cycleStartedAt: f.info.VisibleAdStartedAt,
+					}),
+				);
 				expect(f.maxInFlight()).toBe(1);
 			},
 		);

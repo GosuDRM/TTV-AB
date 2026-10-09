@@ -914,6 +914,55 @@ describe("empty hold playlist continuity", () => {
 		expect(info.HevcReloadPendingAfterHold).toBe(true);
 	});
 
+	it("updates silent-hold ownership only for the backup actually served", async () => {
+		const { context, info, serve } = setup();
+		context.self = context;
+		context._postWorkerBridgeMessage = vi.fn();
+		context.state.PinnedBackupPlayerType = "site";
+		context.state.PinnedBackupPlayerMediaKey = info.MediaKey;
+		info.IsShowingAd = false;
+		info.IsHoldingBackupAfterAd = true;
+		await serve(playlist(100), "autoplay");
+		expect(context.state.PinnedBackupPlayerType).toBe("autoplay");
+		expect(context._postWorkerBridgeMessage).toHaveBeenCalledExactlyOnceWith(
+			expect.anything(),
+			expect.objectContaining({
+				key: "BackupPlayerTypeSelected",
+				value: "autoplay",
+				mediaKey: info.MediaKey,
+				cycleStartedAt: info.VisibleAdStartedAt,
+				pageMediaKey: info.MediaKey,
+				pageContextGeneration: context.state.PagePlaybackContextGeneration,
+			}),
+		);
+		await serve(playlist(101), "autoplay");
+		expect(context._postWorkerBridgeMessage).toHaveBeenCalledTimes(1);
+		await serve(playlist(200), "embed");
+		expect(context.state.PinnedBackupPlayerType).toBe("embed");
+		expect(context._postWorkerBridgeMessage).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not announce a silent-hold backup rejected by continuity", async () => {
+		const { context, info, serve } = setup();
+		context.self = context;
+		context._postWorkerBridgeMessage = vi.fn();
+		const dated = (sequence: number, seconds: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-10-08T13:09:${seconds}.000Z\n#EXTINF:`,
+			);
+		await serve(dated(100, 20), "site");
+		context.state.PinnedBackupPlayerType = "site";
+		context.state.PinnedBackupPlayerMediaKey = info.MediaKey;
+		info.IsShowingAd = false;
+		info.IsHoldingBackupAfterAd = true;
+		await expect(serve(dated(101, 18), "autoplay")).rejects.toMatchObject({
+			name: "AbortError",
+		});
+		expect(context.state.PinnedBackupPlayerType).toBe("site");
+		expect(context._postWorkerBridgeMessage).not.toHaveBeenCalled();
+	});
+
 	it("shares the new backup generation after only one native request URL reenters a hold", async () => {
 		const { context, info, hold, serve } = setup();
 		await hold();
@@ -1755,6 +1804,135 @@ describe("empty hold playlist continuity", () => {
 			expect(segments(third)[0].sequence).toBe(latest[1].sequence);
 			expect(segments(third)[0].discontinuity).toBe(latest[1].discontinuity);
 			expect(third.split("\n")).not.toContain("#EXT-X-DISCONTINUITY");
+		},
+	);
+
+	it.each(
+		[false, true].flatMap((disabled) =>
+			[false, true].map((usedHold) => ({ disabled, usedHold })),
+		),
+	)(
+		"keeps polling native renditions stable when their segment clocks differ (fallback disabled: $disabled, hold: $usedHold)",
+		async ({ disabled, usedHold }) => {
+			const { context, info, hold, serve } = setup();
+			context.state.DisableAutoplayBackup = disabled;
+			const otherUrl = nativeUrl.replace("native", "720p");
+			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+			const start = Date.parse("2026-10-08T15:22:20Z");
+			const dated = (sequence: number, time: number, prefix: string) =>
+				playlist(sequence, 3, prefix).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + time).toISOString()}\n#EXTINF:`,
+				);
+			if (usedHold) await hold();
+			await serve(playlist(100), "site");
+			context._resetStreamAdState(info, true);
+			let primary = segments(await serve(dated(10828, 0, "primary")));
+			let other = segments(
+				context._applyPlaylistContinuity(
+					info,
+					otherUrl,
+					dated(10852, 500, "other"),
+				),
+			);
+			expect(other[0].sequence).toBeGreaterThan(primary.at(-1).sequence);
+			expect(other[0].discontinuity).toBeGreaterThan(
+				primary.at(-1).discontinuity,
+			);
+			for (let poll = 1; poll <= 5; poll++) {
+				const nextPrimary = segments(
+					await serve(dated(10828 + poll, poll * 2000, "primary")),
+				);
+				const nextOther = segments(
+					context._applyPlaylistContinuity(
+						info,
+						otherUrl,
+						dated(10852 + poll, poll * 2000 + 500, "other"),
+					),
+				);
+				expect(nextPrimary.slice(0, 2)).toEqual(primary.slice(1));
+				expect(nextOther.slice(0, 2)).toEqual(other.slice(1));
+				primary = nextPrimary;
+				other = nextOther;
+			}
+			info.IsShowingAd = true;
+			info.VisibleAdStartedAt = Date.now();
+			await serve(playlist(200), "site", "second-break");
+			context._resetStreamAdState(info, true);
+			primary = segments(await serve(dated(10850, 44000, "primary")));
+			const rejoined = segments(
+				context._applyPlaylistContinuity(
+					info,
+					otherUrl,
+					dated(10874, 44500, "other"),
+				),
+			);
+			expect(rejoined[0].sequence).toBeGreaterThan(primary.at(-1).sequence);
+			expect(rejoined[0].discontinuity).toBeGreaterThan(
+				primary.at(-1).discontinuity,
+			);
+			expect(
+				segments(await serve(dated(10851, 46000, "primary"))).slice(0, 2),
+			).toEqual(primary.slice(1));
+		},
+	);
+
+	it("accepts an advancing wider native window without replaying its older prefix", async () => {
+		const { context, info, hold, serve } = setup();
+		const start = Date.parse("2026-10-08T15:26:45Z");
+		const dated = (sequence: number, count: number) =>
+			playlist(sequence, count, "native").replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + (sequence - 200) * 2000).toISOString()}\n#EXTINF:`,
+			);
+		await hold();
+		context._resetStreamAdState(info, true);
+		await serve(dated(200, 2));
+		const narrow = segments(await serve(dated(210, 2)));
+		const expanded = segments(await serve(dated(208, 5)));
+		expect(expanded.slice(0, 2)).toEqual(narrow);
+		expect(expanded.at(-1).sequence).toBe(narrow.at(-1).sequence + 1);
+		expect(expanded.map((segment) => segment.url)).toEqual(
+			[210, 211, 212].map(
+				(sequence) => `https://edge.example/native-${sequence}.ts`,
+			),
+		);
+		expect(
+			info._EmptyHoldTimelineByUrl.get(nativeUrl).lastRawFirstSequence,
+		).toBe(210);
+	});
+
+	it.each(["stale", "time", "duration", "discontinuity", "undated"])(
+		"rejects a wider native window without fresh matching broadcast proof: %s",
+		async (mode) => {
+			const { context, info, hold, serve } = setup();
+			const start = Date.parse("2026-10-08T15:26:45Z");
+			const dated = (sequence: number, count: number) =>
+				playlist(sequence, count, "native").replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + (sequence - 200) * 2000).toISOString()}\n#EXTINF:`,
+				);
+			await hold();
+			context._resetStreamAdState(info, true);
+			await serve(dated(200, 2));
+			await serve(dated(210, 2));
+			let incoming = dated(208, mode === "stale" ? 4 : 5);
+			if (mode === "time") incoming = incoming.replace("15:27:01", "15:27:00");
+			if (mode === "duration") incoming = incoming.replaceAll("2.000", "2.100");
+			if (mode === "discontinuity")
+				incoming = incoming.replace(
+					"DISCONTINUITY-SEQUENCE:0",
+					"DISCONTINUITY-SEQUENCE:1",
+				);
+			if (mode === "undated")
+				incoming = incoming.replace(/#EXT-X-PROGRAM-DATE-TIME:.*\n/, "");
+			const before = JSON.stringify([...info._EmptyHoldTimelineByUrl]);
+			const timeline = info._LivePlaylistTimeline;
+			await expect(serve(incoming)).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(JSON.stringify([...info._EmptyHoldTimelineByUrl])).toBe(before);
+			expect(info._LivePlaylistTimeline).toBe(timeline);
 		},
 	);
 

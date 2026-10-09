@@ -2253,6 +2253,7 @@ function _alignLivePlaylist(
 	text,
 	backupMetadata = null,
 	commitTimeline = true,
+	url = "",
 ) {
 	if (
 		!info ||
@@ -2279,7 +2280,7 @@ function _alignLivePlaylist(
 			])
 		: `native|${info.UsherBaseUrl || info.MediaKey}`;
 	const changedSource = previous?.identity !== identity || previous?.afterHold;
-	const minimumTime = changedSource
+	let minimumTime = changedSource
 		? backupMetadata || previous?.backup || previous?.afterHold
 			? previous?.lastEndTime || 0
 			: 0
@@ -2378,6 +2379,40 @@ function _alignLivePlaylist(
 				"AbortError",
 			);
 		return text;
+	}
+	const nativeKey = !backupMetadata && _getMediaPlaylistSessionKey(url);
+	const nativeTimeline = nativeKey
+		? info._EmptyHoldTimelineByUrl?.get?.(nativeKey)
+		: null;
+	const rawFirstSequence = _parsePlaylistFirstMediaSequence(text);
+	if (
+		nativeTimeline?.kind === "native" &&
+		Object.hasOwn(info.Urls || {}, nativeKey) &&
+		nativeTimeline.identity ===
+			JSON.stringify([
+				"native",
+				_getExactPlaylistUrlKey(info.UsherBaseUrl) || nativeKey,
+			]) &&
+		rawFirstSequence != null &&
+		rawFirstSequence < nativeTimeline.lastRawFirstSequence
+	) {
+		const anchor = nativeTimeline.nativeAnchors?.find(
+			(entry) => entry.sequence === nativeTimeline.lastRawFirstSequence,
+		);
+		const matching =
+			entries[nativeTimeline.lastRawFirstSequence - rawFirstSequence];
+		const lastAnchor = nativeTimeline.nativeAnchor;
+		if (
+			anchor &&
+			matching?.time === anchor.time &&
+			matching.duration === anchor.duration &&
+			matching.discontinuity === anchor.discontinuity &&
+			lastAnchor &&
+			rawFirstSequence + entries.length - 1 > lastAnchor.sequence &&
+			entries.at(-1).end > lastAnchor.time + lastAnchor.duration
+		) {
+			minimumTime = Math.max(minimumTime, anchor.time);
+		}
 	}
 	let pendingTime = entries.at(-1).end;
 	let offeredEndTime = pendingTime;
@@ -2575,7 +2610,7 @@ function _applyPlaylistContinuity(
 	);
 	const previous = info?._LivePlaylistTimeline;
 	try {
-		const aligned = _alignLivePlaylist(info, text, backupMetadata);
+		const aligned = _alignLivePlaylist(info, text, backupMetadata, true, url);
 		const output =
 			_applyEmptyHoldPlaylistContinuity(info, url, aligned, backupMetadata) ??
 			_applyBackupSpliceBridge(info, aligned, backupMetadata, url);
@@ -2669,6 +2704,36 @@ function _applyPlaylistContinuity(
 					: "native";
 		if (info && info._LastServedPlaylistKind !== "hold")
 			info._EmptyAdHoldWindow = null;
+		if (
+			info?.MediaType === "live" &&
+			info.IsHoldingBackupAfterAd &&
+			__TTVAB_STATE__?.IsAdStrippingEnabled === true &&
+			__TTVAB_STATE__.CurrentAdMediaKey === info.MediaKey &&
+			Number(info.VisibleAdStartedAt) > 0 &&
+			backupMetadata?.playerType &&
+			backupMetadata.playlistUrl &&
+			backupMetadata.ambiguous !== true &&
+			info._LastServedPlaylistKind === "backup" &&
+			_playlistHasMediaSegments(output) &&
+			(__TTVAB_STATE__.PinnedBackupPlayerType !== backupMetadata.playerType ||
+				__TTVAB_STATE__.PinnedBackupPlayerMediaKey !== info.MediaKey)
+		) {
+			__TTVAB_STATE__.PinnedBackupPlayerType = backupMetadata.playerType;
+			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
+			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey;
+			if (typeof self !== "undefined" && self.postMessage) {
+				_postWorkerBridgeMessage(
+					self,
+					_createPageScopedWorkerEvent({
+						key: "BackupPlayerTypeSelected",
+						value: backupMetadata.playerType,
+						channel: info.ChannelName,
+						mediaKey: info.MediaKey,
+						cycleStartedAt: Number(info.VisibleAdStartedAt),
+					}),
+				);
+			}
+		}
 		const timeline = info?._LivePlaylistTimeline;
 		if (
 			timeline &&
@@ -3017,6 +3082,7 @@ function _applyEmptyHoldPlaylistContinuity(
 	);
 	let changedSource = previous?.identity !== identity;
 	let sharedTimeline = null;
+	let lastGeneration = 0;
 	const firstMappedSource = !info._EmptyHoldTimelineByUrl?.size;
 	let lastDiscontinuity =
 		firstMappedSource && Number.isFinite(info._SpliceLastDiscontinuitySequence)
@@ -3028,6 +3094,7 @@ function _applyEmptyHoldPlaylistContinuity(
 			: -1;
 	if (changedSource || kind === "backup" || isHold || isOwnedNativeVariant) {
 		for (const candidate of info._EmptyHoldTimelineByUrl?.values?.() || []) {
+			lastGeneration = Math.max(lastGeneration, candidate.generation || 0);
 			lastDiscontinuity = Math.max(
 				lastDiscontinuity,
 				candidate.lastDiscontinuity,
@@ -3039,52 +3106,40 @@ function _applyEmptyHoldPlaylistContinuity(
 			if (
 				candidate.identity === identity &&
 				(!sharedTimeline ||
-					(isHold
-						? candidate.lastDiscontinuity > sharedTimeline.lastDiscontinuity
-						: candidate.discontinuityOffset >
-							sharedTimeline.discontinuityOffset) ||
-					((isHold
-						? candidate.lastDiscontinuity === sharedTimeline.lastDiscontinuity
-						: candidate.discontinuityOffset ===
-							sharedTimeline.discontinuityOffset) &&
-						(kind === "native" &&
-						candidate.nativeAnchor &&
-						sharedTimeline.nativeAnchor
-							? candidate.nativeAnchor.time > sharedTimeline.nativeAnchor.time
-							: candidate.lastRawFirstSequence >
-								sharedTimeline.lastRawFirstSequence)))
+					(candidate.generation || 0) > (sharedTimeline.generation || 0) ||
+					((candidate.generation || 0) === (sharedTimeline.generation || 0) &&
+						((isHold
+							? candidate.lastDiscontinuity > sharedTimeline.lastDiscontinuity
+							: candidate.discontinuityOffset >
+								sharedTimeline.discontinuityOffset) ||
+							((isHold
+								? candidate.lastDiscontinuity ===
+									sharedTimeline.lastDiscontinuity
+								: candidate.discontinuityOffset ===
+									sharedTimeline.discontinuityOffset) &&
+								(kind === "native" &&
+								candidate.nativeAnchor &&
+								sharedTimeline.nativeAnchor
+									? candidate.nativeAnchor.time >
+										sharedTimeline.nativeAnchor.time
+									: candidate.lastRawFirstSequence >
+										sharedTimeline.lastRawFirstSequence)))))
 			)
 				sharedTimeline = candidate;
 		}
 		if (
-			(kind !== "native" || nativeAnchors.length > 0) &&
-			previous &&
+			kind === "native" &&
+			nativeAnchors.length > 0 &&
 			sharedTimeline &&
-			sharedTimeline.discontinuityOffset > previous.discontinuityOffset
-		)
-			changedSource = true;
-		if (
-			changedSource &&
-			previous &&
-			sharedTimeline &&
-			firstDiscontinuity + sharedTimeline.discontinuityOffset <=
-				previous.lastDiscontinuity
-		)
-			sharedTimeline = null;
-		if (
-			isHold &&
-			(!sharedTimeline || sharedTimeline.lastDiscontinuity < lastDiscontinuity)
+			(sharedTimeline.generation || 0) < lastGeneration
 		) {
 			sharedTimeline = null;
 			changedSource = true;
 		}
 	}
 	let matchingNativeAnchor = null;
-	const sharedNativeAnchor =
-		changedSource &&
-		kind === "native" &&
-		info.MediaType === "live" &&
-		isOwnedNativeVariant
+	let sharedNativeAnchor =
+		kind === "native" && info.MediaType === "live" && isOwnedNativeVariant
 			? (sharedTimeline?.nativeAnchors || [sharedTimeline?.nativeAnchor]).find(
 					(shared) => {
 						if (!shared) return false;
@@ -3098,10 +3153,38 @@ function _applyEmptyHoldPlaylistContinuity(
 					},
 				)
 			: null;
+	if (
+		previous &&
+		sharedTimeline &&
+		(kind === "native" && nativeAnchors.length > 0
+			? (sharedTimeline.generation || 0) > (previous.generation || 0) ||
+				(sharedNativeAnchor &&
+					sharedTimeline.discontinuityOffset > previous.discontinuityOffset)
+			: kind !== "native" &&
+				sharedTimeline.discontinuityOffset > previous.discontinuityOffset)
+	)
+		changedSource = true;
+	if (
+		changedSource &&
+		previous &&
+		sharedTimeline &&
+		firstDiscontinuity + sharedTimeline.discontinuityOffset <=
+			previous.lastDiscontinuity
+	) {
+		sharedTimeline = null;
+		sharedNativeAnchor = null;
+	}
+	if (
+		isHold &&
+		(!sharedTimeline || sharedTimeline.lastDiscontinuity < lastDiscontinuity)
+	) {
+		sharedTimeline = null;
+		changedSource = true;
+	}
 	const sharedSource =
 		kind === "backup" || isHold
 			? sharedTimeline
-			: sharedNativeAnchor
+			: changedSource && sharedNativeAnchor
 				? {
 						...sharedTimeline,
 						mediaOffset:
@@ -3126,6 +3209,7 @@ function _applyEmptyHoldPlaylistContinuity(
 			? {
 					kind,
 					identity,
+					generation: sharedTimeline?.generation ?? lastGeneration + 1,
 					boundarySequence: firstSequence,
 					addBoundary,
 					mediaOffset:
@@ -3144,7 +3228,10 @@ function _applyEmptyHoldPlaylistContinuity(
 			: {
 					...previous,
 					discontinuityOffset:
-						sharedTimeline?.discontinuityOffset ?? previous.discontinuityOffset,
+						kind === "native" && nativeAnchors.length > 0
+							? previous.discontinuityOffset
+							: (sharedTimeline?.discontinuityOffset ??
+								previous.discontinuityOffset),
 				};
 	if (
 		firstSequence < timeline.lastRawFirstSequence ||

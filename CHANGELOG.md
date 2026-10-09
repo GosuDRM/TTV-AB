@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [19.2.3] - 2026-10-09
+
+Fixed
+
+- **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.
+- **Playlist Recovery** - Accept fresh live updates with wider windows without replaying older segments or stopping playback.
+- **Backup Recovery** - Keep the player informed when its clean backup changes while waiting for native playback to return.
+
 ## [19.2.2] - 2026-10-08
 
 Fixed
