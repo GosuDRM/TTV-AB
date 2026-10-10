@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
 	afterEach,
 	beforeAll,
@@ -9,20 +7,9 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { loadModule } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
-
-function loadModule(name: string) {
-	const js = readFileSync(
-		resolve(__dirname, `../dist/src/modules/${name}.js`),
-		"utf8",
-	)
-		.replace(/^"use strict";\s*/m, "")
-		.replace(/^const (_\w+|_C|_S)\s*=/gm, "globalThis.$1 =")
-		.replace(/^let\s+(_\w+)/gm, "globalThis.$1")
-		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function");
-	new Function("globalThis", js)(globalThis);
-}
 
 function T<T>(name: string): T {
 	return g[name] as T;
@@ -42,7 +29,7 @@ beforeAll(() => {
 		"ui",
 		"init",
 	])
-		loadModule(name);
+		loadModule(`../dist/src/modules/${name}.js`);
 });
 
 describe("refresh recovery for a player created before interception", () => {

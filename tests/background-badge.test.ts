@@ -35,6 +35,7 @@ let runtimeMessageListener:
 	| null = null;
 
 function loadBackground() {
+	storageChangeListeners.length = 0;
 	const js = readFileSync(
 		resolve(__dirname, "../dist/src/scripts/background.js"),
 		"utf8",
@@ -118,6 +119,10 @@ beforeEach(() => {
 	g.turboModeEnabled = false;
 	g.turboModeRevision = 0;
 	g.watchStatsSinceAt = 0;
+});
+
+afterEach(async () => {
+	await Promise.all([g.playbackDefaultsMigration, g.persistChain]);
 });
 
 describe("playback defaults migration", () => {

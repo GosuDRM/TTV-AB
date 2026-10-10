@@ -11,27 +11,19 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { loadModule, snapshotGlobals, T } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
 
-function loadModule(modulePath: string) {
-	const js = readFileSync(resolve(__dirname, modulePath), "utf8")
-		.replace(/^"use strict";\s*/m, "")
-		.replace(/^const (_\w+|_C|_S)\s*=/gm, "globalThis.$1 =")
-		.replace(/^let\s+(_\w+)/gm, "globalThis.$1")
-		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function $2");
-	new Function("globalThis", js)(globalThis);
-}
-
 beforeAll(() => {
-	loadModule("../dist/src/modules/constants.js");
-	loadModule("../dist/src/modules/logger.js");
-	loadModule("../dist/src/modules/parser.js");
-	loadModule("../dist/src/modules/state.js");
-	loadModule("../dist/src/modules/api.js");
-	loadModule("../dist/src/modules/processor.js");
-	loadModule("../dist/src/modules/hooks.js");
-	loadModule("../dist/src/modules/worker.js");
+	loadModule("../dist/src/modules/constants.js", true);
+	loadModule("../dist/src/modules/logger.js", true);
+	loadModule("../dist/src/modules/parser.js", true);
+	loadModule("../dist/src/modules/state.js", true);
+	loadModule("../dist/src/modules/api.js", true);
+	loadModule("../dist/src/modules/processor.js", true);
+	loadModule("../dist/src/modules/hooks.js", true);
+	loadModule("../dist/src/modules/worker.js", true);
 });
 
 beforeEach(() => {
@@ -84,12 +76,6 @@ afterEach(() => {
 	delete g._doPlayerTask;
 	delete g._schedulePlaybackRecoveryTimeout;
 });
-
-function T<T>(name: string): T {
-	const fn = (globalThis as Record<string, unknown>)[name];
-	if (typeof fn !== "function") throw new Error(`${name} not loaded`);
-	return fn as T;
-}
 
 function recordTestPlayerReload(mediaKey: string, at = Date.now()) {
 	(g.__TTVAB_STATE__ as Record<string, unknown>).LastPlayerReloadAt = at;
@@ -11919,7 +11905,7 @@ describe("clean-playback reduced master recovery", () => {
 	it.each([false, true])(
 		"logs and counts a real ad after an hour of clean master refreshes with fallback disabled: %s",
 		async (disabled) => {
-			loadModule("../dist/src/modules/logger.js");
+			loadModule("../dist/src/modules/logger.js", true);
 			const log = vi.spyOn(console, "log").mockImplementation(() => {});
 			const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
 			const session = await setup();
@@ -15722,6 +15708,20 @@ describe("worker ad-segment codec ownership", () => {
 });
 
 describe("worker watchdog visibility awareness", () => {
+	const stubbedGlobals = [
+		"_isNativeDocumentHidden",
+		"_isPlaybackPageUnfocused",
+		"_isActivePictureInPicturePlaybackContext",
+		"_getPrimaryMediaElement",
+		"_installPageSideM3U8Override",
+		"_hasUserPauseIntent",
+	];
+	let restoreGlobals: () => void;
+
+	beforeEach(() => {
+		restoreGlobals = snapshotGlobals(stubbedGlobals);
+	});
+
 	function makeTrackedWorker(overrides: Record<string, unknown> = {}) {
 		const worker: Record<string, unknown> = {
 			pings: 0,
@@ -15751,12 +15751,7 @@ describe("worker watchdog visibility awareness", () => {
 
 	afterEach(() => {
 		stopWatchdog();
-		delete g._isNativeDocumentHidden;
-		delete g._isPlaybackPageUnfocused;
-		delete g._isActivePictureInPicturePlaybackContext;
-		delete g._getPrimaryMediaElement;
-		delete g._installPageSideM3U8Override;
-		delete g._hasUserPauseIntent;
+		restoreGlobals();
 	});
 
 	it("never strikes a live ponging worker while the tab is hidden", () => {

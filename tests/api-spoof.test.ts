@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
 	afterEach,
 	beforeAll,
@@ -9,6 +7,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { loadModule, T } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
 let realFetchViaWorkerBridge: unknown;
@@ -21,15 +20,6 @@ type GqlPacket = {
 		};
 	};
 };
-
-function loadModule(modulePath: string) {
-	const js = readFileSync(resolve(__dirname, modulePath), "utf8")
-		.replace(/^"use strict";\s*/m, "")
-		.replace(/^const (_\w+|_C|_S)\s*=/gm, "globalThis.$1 =")
-		.replace(/^let\s+(_\w+)/gm, "globalThis.$1")
-		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function");
-	new Function("globalThis", js)(globalThis);
-}
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
@@ -59,12 +49,6 @@ afterEach(() => {
 	delete g._postWorkerBridgeMessage;
 	delete g._createPageScopedWorkerEvent;
 });
-
-function T<T>(name: string): T {
-	const fn = (globalThis as Record<string, unknown>)[name];
-	if (typeof fn !== "function") throw new Error(`${name} not loaded`);
-	return fn as T;
-}
 
 function adRange(id: number) {
 	return `#EXT-X-DATERANGE:ID="stitched-ad-${id}",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-RADS-TOKEN="rad-${id}",X-TV-TWITCH-AD-POD-LENGTH="2",X-TV-TWITCH-AD-POD-POSITION="${id}",X-TV-TWITCH-AD-DURATION="15.000",X-TV-TWITCH-AD-ROLL-TYPE="PREROLL"`;
