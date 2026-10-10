@@ -4,10 +4,19 @@ All notable changes to TTV AB will be documented in this file.
 
 ## [20.0.1] - 2026-10-09
 
+Fixed
+
+- **Post-Ad Recovery** - Keep bounded recovery active through brief startup playback until video advances steadily, so an early buffer stall does not lose its recovery context.
+- **HD Backup Timing** - Start normal-quality checks when the low-quality dwell ends while keeping the clean backup refreshed.
+- **Backup Ownership** - Keep quality upgrades selected across later playlist refreshes and track the backup actually served.
+- **Test Isolation** - Prevent leftover state, timers, and mocks from affecting other regression checks.
+
 Changed
 
+- **Recovery Logs** - Include buffer, readiness, visibility, and worker details to distinguish playback stalls from suspended or replaced media.
 - **Stream State Types** - Add explicit stream, backup, and recovery types to catch invalid state updates during development.
 - **Type Checks** - Add regression checks for missing ownership fields and invalid state updates.
+- **Test Setup** - Share runtime-loading helpers and run regression checks in normal and shuffled order.
 
 ## [20.0.0] - 2026-10-09
 
