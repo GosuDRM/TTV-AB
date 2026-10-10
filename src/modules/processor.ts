@@ -1139,6 +1139,46 @@ function _getPendingForegroundQualityProbeAt(info: TTVABStreamInfo) {
 		: 0;
 }
 
+function _isInitialBackupQualityProbeDue(info: TTVABStreamInfo) {
+	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	const holdStartedAt = Math.max(0, Number(info?._LqHoldStartAt) || 0);
+	const holdEndsAt = holdStartedAt + _getResolvedLqHqHoldMinMs();
+	const mediaKey = _normalizeMediaKey(info?.MediaKey);
+	if (
+		__TTVAB_STATE__?.DisableAutoplayBackup === true ||
+		__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+		info?.MediaType !== "live" ||
+		!cycleStartedAt ||
+		holdStartedAt < cycleStartedAt ||
+		Date.now() < holdEndsAt ||
+		!info._LastBackupSearchCompletedAt ||
+		info._LastBackupSearchCompletedAt >= holdEndsAt ||
+		!mediaKey ||
+		_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) !== mediaKey ||
+		!_isBackupSearchContextCurrent(
+			info,
+			info.BackupSearchEpoch,
+			cycleStartedAt,
+		) ||
+		info._AdCycleRequestController?.signal?.aborted ||
+		info.ActiveBackupPlayerType !== "autoplay" ||
+		info.LastCleanBackupPlayerType !== "autoplay" ||
+		!info.LastCleanBackupM3U8 ||
+		(Number(info.LastCleanBackupAt) || 0) < cycleStartedAt ||
+		_isBackupPlayerRetryCoolingDown(info, "autoplay") ||
+		info._BackupSearchPromise ||
+		info._BackupSearchPromises?.size > 0
+	)
+		return false;
+	const explicitHeight =
+		Number(
+			String(__TTVAB_STATE__.PreferredQualityGroup || "").match(
+				/^(\d+)p/i,
+			)?.[1],
+		) || 0;
+	return !explicitHeight || explicitHeight > _getServedBackupBridgeHeight(info);
+}
+
 function _startPendingBackupQualityProbe(
 	info: TTVABStreamInfo,
 	realFetch,
@@ -1146,8 +1186,11 @@ function _startPendingBackupQualityProbe(
 	codecOverride = null,
 ) {
 	const foregroundQualityProbeAt = _getPendingForegroundQualityProbeAt(info);
+	const initialQualityProbeDue = _isInitialBackupQualityProbeDue(info);
 	if (
-		(!foregroundQualityProbeAt && !_isBackupProbationDue(info)) ||
+		(!foregroundQualityProbeAt &&
+			!initialQualityProbeDue &&
+			!_isBackupProbationDue(info)) ||
 		info?._BackupSearchPromise ||
 		(Number(info?._BackupSearchPromises?.size) || 0) > 0
 	) {
@@ -1156,16 +1199,36 @@ function _startPendingBackupQualityProbe(
 	_log(
 		foregroundQualityProbeAt
 			? "[Trace] Playback returned to foreground; probing normal-quality backup while the clean bridge keeps refreshing"
-			: "[Trace] Continuing the pending clean backup check while the bridge keeps refreshing",
+			: initialQualityProbeDue
+				? "[Trace] Autoplay dwell completed; probing normal-quality backup while the clean bridge keeps refreshing"
+				: "[Trace] Continuing the pending clean backup check while the bridge keeps refreshing",
 		"info",
 	);
+	const backupSearchEpoch = info.BackupSearchEpoch;
+	const cycleStartedAt = info.VisibleAdStartedAt;
+	const pageMediaKey = __TTVAB_STATE__.PageMediaKey;
+	const pageGeneration = __TTVAB_STATE__.PagePlaybackContextGeneration;
+	const markInitialProbeCompleted = () => {
+		if (
+			initialQualityProbeDue &&
+			__TTVAB_STATE__.PageMediaKey === pageMediaKey &&
+			__TTVAB_STATE__.PagePlaybackContextGeneration === pageGeneration &&
+			!info._AdCycleRequestController?.signal?.aborted &&
+			_isBackupSearchContextCurrent(info, backupSearchEpoch, cycleStartedAt)
+		) {
+			info._LastBackupSearchCompletedAt = Math.max(
+				Number(info._LastBackupSearchCompletedAt) || 0,
+				Date.now(),
+			);
+		}
+	};
 	void _findBackupStream(
 		info,
 		realFetch,
 		0,
 		currentResolution,
 		codecOverride,
-	).catch(() => {});
+	).then(markInitialProbeCompleted, markInitialProbeCompleted);
 	return true;
 }
 
@@ -2770,7 +2833,7 @@ function _applyPlaylistContinuity(
 			info._EmptyAdHoldWindow = null;
 		if (
 			info?.MediaType === "live" &&
-			info.IsHoldingBackupAfterAd &&
+			(info.IsShowingAd || info.IsHoldingBackupAfterAd) &&
 			__TTVAB_STATE__?.IsAdStrippingEnabled === true &&
 			__TTVAB_STATE__.CurrentAdMediaKey === info.MediaKey &&
 			Number(info.VisibleAdStartedAt) > 0 &&
@@ -2778,24 +2841,29 @@ function _applyPlaylistContinuity(
 			backupMetadata.playlistUrl &&
 			backupMetadata.ambiguous !== true &&
 			info._LastServedPlaylistKind === "backup" &&
-			_playlistHasMediaSegments(output) &&
-			(__TTVAB_STATE__.PinnedBackupPlayerType !== backupMetadata.playerType ||
-				__TTVAB_STATE__.PinnedBackupPlayerMediaKey !== info.MediaKey)
+			_playlistHasMediaSegments(output)
 		) {
-			__TTVAB_STATE__.PinnedBackupPlayerType = backupMetadata.playerType;
-			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
-			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey;
-			if (typeof self !== "undefined" && self.postMessage) {
-				_postWorkerBridgeMessage(
-					self,
-					_createPageScopedWorkerEvent({
-						key: "BackupPlayerTypeSelected",
-						value: backupMetadata.playerType,
-						channel: info.ChannelName,
-						mediaKey: info.MediaKey,
-						cycleStartedAt: Number(info.VisibleAdStartedAt),
-					}),
-				);
+			info.ActiveBackupPlayerType = backupMetadata.playerType;
+			info.ActiveBackupResolution = backupMetadata.resolution || null;
+			if (
+				__TTVAB_STATE__.PinnedBackupPlayerType !== backupMetadata.playerType ||
+				__TTVAB_STATE__.PinnedBackupPlayerMediaKey !== info.MediaKey
+			) {
+				__TTVAB_STATE__.PinnedBackupPlayerType = backupMetadata.playerType;
+				__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
+				__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey;
+				if (typeof self !== "undefined" && self.postMessage) {
+					_postWorkerBridgeMessage(
+						self,
+						_createPageScopedWorkerEvent({
+							key: "BackupPlayerTypeSelected",
+							value: backupMetadata.playerType,
+							channel: info.ChannelName,
+							mediaKey: info.MediaKey,
+							cycleStartedAt: Number(info.VisibleAdStartedAt),
+						}),
+					);
+				}
 			}
 		}
 		const timeline = info?._LivePlaylistTimeline;
@@ -6554,7 +6622,9 @@ async function _processM3U8Core(
 			const foregroundQualityProbeAt =
 				_getPendingForegroundQualityProbeAt(info);
 			const foregroundQualityTarget =
-				foregroundQualityProbeAt || _isBackupProbationDue(info)
+				foregroundQualityProbeAt ||
+				_isInitialBackupQualityProbeDue(info) ||
+				_isBackupProbationDue(info)
 					? _resolveAdBackupTargetResolution(info, url) || res
 					: null;
 			const hadNativeRecoveryEvidence =
@@ -6624,7 +6694,11 @@ async function _processM3U8Core(
 				Number(info.LastCleanBackupAt) >=
 					Math.max(0, Number(info.VisibleAdStartedAt) || 0)
 			) {
-				if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
+				if (
+					foregroundQualityProbeAt ||
+					_isInitialBackupQualityProbeDue(info) ||
+					_isBackupProbationDue(info)
+				) {
 					_startPendingBackupQualityProbe(
 						info,
 						realFetch,
@@ -6644,7 +6718,11 @@ async function _processM3U8Core(
 							requestSignal,
 						);
 				if (refreshed) {
-					if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
+					if (
+						foregroundQualityProbeAt ||
+						_isInitialBackupQualityProbeDue(info) ||
+						_isBackupProbationDue(info)
+					) {
 						_startPendingBackupQualityProbe(
 							info,
 							realFetch,
@@ -6993,6 +7071,7 @@ async function _processM3U8Core(
 			Date.now() - info._LastBackupSearchCompletedAt < 15000 &&
 			!_isRecentPostAdReentry(info) &&
 			!_getPendingForegroundQualityProbeAt(info) &&
+			!_isInitialBackupQualityProbeDue(info) &&
 			!_isBackupProbationDue(info)
 		) {
 			const forceRefreshAt =
@@ -7389,7 +7468,11 @@ async function _processM3U8Core(
 							requestSignal,
 						);
 				if (refreshed) {
-					if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
+					if (
+						foregroundQualityProbeAt ||
+						_isInitialBackupQualityProbeDue(info) ||
+						_isBackupProbationDue(info)
+					) {
 						_startPendingBackupQualityProbe(
 							info,
 							realFetch,
@@ -7441,7 +7524,11 @@ async function _processM3U8Core(
 				backupAgeMs >= 0 &&
 				backupAgeMs < 900
 			) {
-				if (foregroundQualityProbeAt || _isBackupProbationDue(info)) {
+				if (
+					foregroundQualityProbeAt ||
+					_isInitialBackupQualityProbeDue(info) ||
+					_isBackupProbationDue(info)
+				) {
 					_startPendingBackupQualityProbe(
 						info,
 						realFetch,
@@ -7482,6 +7569,7 @@ async function _processM3U8Core(
 			} else if (
 				!backupSearchIsInFlight &&
 				(foregroundQualityProbeAt > 0 ||
+					_isInitialBackupQualityProbeDue(info) ||
 					_isBackupProbationDue(info) ||
 					lastBackupSearchCompletedAt <= 0 ||
 					now - lastBackupSearchCompletedAt >= 15000 ||
@@ -7963,7 +8051,14 @@ async function _refreshActiveBackupMediaPlaylist(
 	info._BackupSelectionSequence = selectionSequence;
 	const backupSearchEpoch = Math.max(0, Number(info?.BackupSearchEpoch) || 0);
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
+	const selectedPlayerType =
+		info._BackupSelection &&
+		info.LastCleanBackupM3U8 &&
+		Number(info.LastCleanBackupAt) >= cycleStartedAt
+			? info.LastCleanBackupPlayerType
+			: null;
 	const pt =
+		selectedPlayerType ||
 		(typeof info?.ActiveBackupPlayerType === "string" &&
 			info.ActiveBackupPlayerType) ||
 		(typeof info?.LastCleanBackupPlayerType === "string" &&

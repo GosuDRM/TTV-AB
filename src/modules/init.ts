@@ -646,7 +646,7 @@ function _collectPostAdRecoveryDiagnostics() {
 					expiresAt: transaction.expiresAt,
 					currentTime: transaction.lastCurrentTime,
 					totalVideoFrames: transaction.lastTotalFrames,
-					suspended: transaction.suspendedAt > 0,
+					..._getPostAdRecoveryPlaybackDiagnostics(),
 				}
 			: {}),
 	};

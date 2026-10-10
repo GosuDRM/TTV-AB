@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
 	afterEach,
 	beforeAll,
@@ -9,17 +7,9 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { loadModule, T } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
-
-function loadModule(modulePath: string) {
-	const js = readFileSync(resolve(__dirname, modulePath), "utf8")
-		.replace(/^"use strict";\s*/m, "")
-		.replace(/^const (_\w+|_C|_S)\s*=/gm, "globalThis.$1 =")
-		.replace(/^let\s+(_\w+)/gm, "globalThis.$1")
-		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function");
-	new Function("globalThis", js)(globalThis);
-}
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
@@ -39,20 +29,16 @@ beforeEach(() => {
 		PlayerBufferingDangerZone: 1,
 	};
 	g._broadcastWorkers = () => {};
+	(g._PlayerBufferState as Record<string, unknown>).lastFixTime = 0;
 	resetPinnedState();
 	T<() => void>("_resetPostAdRecoveryTransaction")();
 	T<() => void>("_clearPinnedBackupTimelineRestore")();
 });
 
 afterEach(() => {
+	T<() => void>("_clearPlaybackRecoveryTimeouts")();
 	vi.restoreAllMocks();
 });
-
-function T<T>(name: string): T {
-	const fn = (globalThis as Record<string, unknown>)[name];
-	if (typeof fn !== "function") throw new Error(`${name} not loaded`);
-	return fn as T;
-}
 
 describe("current player lookup", () => {
 	function setReactTree(states: object[]) {
@@ -4230,6 +4216,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 	});
 
 	afterEach(() => {
+		vi.restoreAllMocks();
 		T<() => void>("_clearRecordedUserPauseIntent")();
 		T<() => void>("_resetPostAdRecoveryTransaction")();
 		Object.defineProperty(document, "pictureInPictureElement", {
@@ -6305,6 +6292,10 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 					cycleStartedAt: 440000,
 				});
 			} else {
+				expect(transaction().mediaKey).toBe("live:chan");
+				currentPlayback.setCurrentTime(17.1);
+				frames += 366;
+				expect(sample(507100)).toBe(true);
 				expect(transaction().mediaKey).toBeNull();
 				expect(reloads).toEqual([]);
 			}
@@ -6505,7 +6496,9 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 
 		expect(sample(500000)).toBe(false);
 		playback.setCurrentTime(10.8);
-		expect(sample(500800)).toBe(true);
+		expect(sample(500800)).toBe(false);
+		playback.setCurrentTime(17);
+		expect(sample(507000)).toBe(true);
 		expect(transaction().mediaKey).toBeNull();
 		expect(reloadCalls()).toEqual([]);
 	});
@@ -6578,6 +6571,42 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		}
 	});
 
+	it("records current owned buffer and readiness without retaining replaced media diagnostics", () => {
+		hidden = true;
+		const playback = makePlayback({
+			currentTime: 3.91,
+			bufferedEnd: 4,
+			readyState: 2,
+			videoWidth: 1920,
+		});
+		arm(playback);
+		sample(500000);
+		T<(phase: string) => void>("_recordPostAdRecoveryTransition")(
+			"native-ready",
+		);
+		expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+			currentVideo: true,
+			paused: false,
+			readyState: 2,
+			bufferedEnd: 4,
+			videoWidth: 1920,
+			suspended: true,
+			suspendedReason: "hidden",
+		});
+		expect(
+			(g._PostAdRecoveryDiagnostics as Record<string, unknown>).bufferDuration,
+		).toBeCloseTo(0.09);
+		currentPlayback = makePlayback({ currentTime: 0, readyState: 0 });
+		T<(phase: string) => void>("_recordPostAdRecoveryTransition")("waiting");
+		expect(g._PostAdRecoveryDiagnostics).toMatchObject({
+			currentVideo: false,
+			paused: null,
+			readyState: -1,
+			bufferedEnd: null,
+			bufferDuration: null,
+		});
+	});
+
 	it("logs recovery transitions with ownership and attempt counts without repeating identical milestones", () => {
 		const log = vi.spyOn(g, "_log");
 		for (const key of Object.keys(g._PostAdRecoveryDiagnostics as object)) {
@@ -6619,7 +6648,7 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 	});
 
 	it.each(["unavailable", "appears later", "disappears"])(
-		"labels playhead-only recovery when the frame counter is %s",
+		"labels settled recovery using the available frame evidence when the counter is %s",
 		(availability) => {
 			const log = vi.spyOn(g, "_log");
 			const playback = makePlayback({
@@ -6637,14 +6666,21 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 			expect(sample(500000)).toBe(false);
 			frames = availability === "appears later" ? 530 : undefined;
 			playback.setCurrentTime(10.8);
-			expect(sample(500800)).toBe(true);
+			expect(sample(500800)).toBe(false);
+			playback.setCurrentTime(17);
+			frames = availability === "appears later" ? 900 : undefined;
+			expect(sample(507000)).toBe(true);
 			expect(transaction().mediaKey).toBeNull();
 			expect(log).toHaveBeenCalledWith(
-				"Native playback resumed; playhead is advancing (video-frame proof unavailable)",
+				availability === "appears later"
+					? "Native playback restored; video is advancing"
+					: "Native playback resumed; playhead is advancing (video-frame proof unavailable)",
 				"success",
 			);
 			expect(log).not.toHaveBeenCalledWith(
-				"Native playback restored; video is advancing",
+				availability === "appears later"
+					? "Native playback resumed; playhead is advancing (video-frame proof unavailable)"
+					: "Native playback restored; video is advancing",
 				"success",
 			);
 			expect(reloadCalls()).toEqual([]);
@@ -6687,6 +6723,53 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		);
 	});
 
+	it.each([4, 6])(
+		"keeps the same recovery budget when initial video drains its %s-second buffer",
+		(bufferedEnd) => {
+			const log = vi.spyOn(g, "_log");
+			const playback = makePlayback({
+				currentTime: 0,
+				bufferedEnd,
+				readyState: 4,
+				videoWidth: 1920,
+			});
+			let frames = 0;
+			Object.defineProperty(playback.video, "getVideoPlaybackQuality", {
+				value: () => ({ totalVideoFrames: frames }),
+			});
+			arm(playback);
+			transaction().acceptedReloadCount = 1;
+			transaction().initialOperationCompleted = true;
+			reloadOutcomes.push(true, true);
+			sample(500000);
+			for (let offset = 600; offset <= bufferedEnd * 1000; offset += 600) {
+				playback.setCurrentTime(Math.min(offset / 1000, bufferedEnd - 0.09));
+				frames = Math.floor(playback.video.currentTime * 60);
+				sample(500000 + offset);
+				expect(transaction().mediaKey).toBe("live:chan");
+				expect(transaction().acceptedReloadCount).toBe(1);
+			}
+			playback.setCurrentTime(bufferedEnd - 0.09);
+			frames = Math.floor(playback.video.currentTime * 60);
+			for (let offset = 600; offset <= 2400; offset += 600)
+				sample(500000 + bufferedEnd * 1000 + offset);
+			expect(reloadCalls()).toHaveLength(1);
+			expect(reloadCalls()[0]).toMatchObject({
+				refreshAccessToken: false,
+				newMediaPlayerInstance: true,
+				cycleStartedAt: 440000,
+			});
+			expect(transaction().acceptedReloadCount).toBe(2);
+			expect(log).not.toHaveBeenCalledWith(
+				"Native playback restored; video is advancing",
+				"success",
+			);
+			for (let offset = 3000; offset <= 6000; offset += 600)
+				sample(500000 + bufferedEnd * 1000 + offset);
+			expect(reloadCalls()).toHaveLength(1);
+		},
+	);
+
 	it("finishes post-ad recovery after both the playhead and video frames advance", () => {
 		const log = vi.spyOn(g, "_log");
 		const playback = makePlayback({
@@ -6706,7 +6789,13 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(sample(500800)).toBe(false);
 		frames += 30;
 		playback.setCurrentTime(11.6);
-		expect(sample(501600)).toBe(true);
+		expect(sample(501600)).toBe(false);
+		expect(transaction().mediaKey).toBe("live:chan");
+		for (let elapsed = 600; elapsed <= 6000; elapsed += 600) {
+			playback.setCurrentTime(11.6 + elapsed / 1000);
+			frames += 36;
+			expect(sample(501600 + elapsed)).toBe(elapsed === 6000);
+		}
 		expect(transaction().mediaKey).toBeNull();
 		expect(reloadCalls()).toEqual([]);
 		expect(log).toHaveBeenCalledWith(
@@ -6715,9 +6804,76 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		);
 		expect(g._PostAdRecoveryDiagnostics).toMatchObject({
 			phase: "recovered",
-			totalVideoFrames: 530,
+			totalVideoFrames: 890,
 		});
 	});
+
+	it.each(["replacement", "rewind"])(
+		"restarts stability proof after a playback %s",
+		(change) => {
+			const playback = makePlayback({
+				currentTime: 10,
+				bufferedEnd: 30,
+				readyState: 4,
+				videoWidth: 1920,
+			});
+			arm(playback);
+			sample(500000);
+			playback.setCurrentTime(11);
+			sample(501000);
+			playback.setCurrentTime(15);
+			sample(505000);
+			if (change === "replacement")
+				currentPlayback = makePlayback({
+					currentTime: 0,
+					bufferedEnd: 30,
+					readyState: 4,
+					videoWidth: 1920,
+				});
+			else playback.setCurrentTime(0);
+			expect(sample(505100)).toBe(false);
+			currentPlayback.setCurrentTime(1);
+			expect(sample(506100)).toBe(false);
+			expect(transaction().mediaKey).toBe("live:chan");
+			currentPlayback.setCurrentTime(7.1);
+			expect(sample(512200)).toBe(true);
+			expect(transaction().mediaKey).toBeNull();
+			expect(reloadCalls()).toEqual([]);
+		},
+	);
+
+	it.each(["pause", "navigation", "new cycle", "PiP"])(
+		"preserves ownership and pause gates during stability proof: %s",
+		(change) => {
+			const playback = makePlayback({
+				currentTime: 10,
+				bufferedEnd: 30,
+				readyState: 4,
+				videoWidth: 1920,
+			});
+			arm(playback);
+			sample(500000);
+			playback.setCurrentTime(11);
+			sample(501000);
+			if (change === "pause") userPaused = true;
+			if (change === "navigation") routeCurrent = false;
+			if (change === "new cycle")
+				(
+					g.__TTVAB_STATE__ as Record<string, unknown>
+				).LastAdEndedCycleStartedAt = 450000;
+			if (change === "PiP") pipActive = true;
+			playback.setCurrentTime(18);
+			expect(sample(508000)).toBe(false);
+			expect(transaction().mediaKey).toBe(
+				change === "PiP" ? "live:chan" : null,
+			);
+			expect(
+				(g._PostAdRecoveryTransactionState as Record<string, unknown>)
+					.advancingSinceAt,
+			).toBe(0);
+			expect(reloads).toEqual([]);
+		},
+	);
 
 	it("disarms only after the exact replacement is healthy and advancing", () => {
 		const firstPlayback = makePlayback();
@@ -6737,7 +6893,9 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(transaction().mediaKey).toBe("live:chan");
 
 		replacement.setCurrentTime(10.8);
-		expect(sample(502800)).toBe(true);
+		expect(sample(502800)).toBe(false);
+		replacement.setCurrentTime(17);
+		expect(sample(509000)).toBe(true);
 		expect(transaction().mediaKey).toBeNull();
 		expect(
 			(g.__TTVAB_STATE__ as Record<string, unknown>).ShouldResumeAfterAd,
@@ -6773,7 +6931,9 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		currentPlayback = replacement;
 		expect(sample(501000)).toBe(false);
 		replacement.setCurrentTime(30.8);
-		expect(sample(501800)).toBe(true);
+		expect(sample(501800)).toBe(false);
+		replacement.setCurrentTime(37);
+		expect(sample(508000)).toBe(true);
 		expect(transaction().mediaKey).toBeNull();
 	});
 
@@ -6830,7 +6990,9 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 
 		expect(sample(512100)).toBe(false);
 		playback.setCurrentTime(11.8);
-		expect(sample(512300)).toBe(true);
+		expect(sample(512300)).toBe(false);
+		playback.setCurrentTime(18);
+		expect(sample(518500)).toBe(true);
 		expect(transaction().mediaKey).toBeNull();
 		expect(reloads).toEqual([]);
 	});
@@ -6880,7 +7042,13 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		expect(sample(500000)).toBe(false);
 		playback.setCurrentTime(15);
 		frames = 180;
-		expect(sample(505000)).toBe(true);
+		expect(sample(505000)).toBe(false);
+		playback.setCurrentTime(20);
+		frames = 480;
+		expect(sample(510000)).toBe(false);
+		playback.setCurrentTime(25);
+		frames = 780;
+		expect(sample(515000)).toBe(true);
 		expect(transaction().mediaKey).toBeNull();
 		expect(reloads).toEqual([]);
 	});
@@ -7343,23 +7511,36 @@ describe("channel watch-time tracking", () => {
 		state.channel = "streamerone";
 		state.pendingMs = 7000;
 		state.pendingIntervals = [[nowValue - 7000, nowValue]];
-		vi.spyOn(localStorage, "setItem").mockImplementation(() => {
-			throw new Error("storage unavailable");
+		const setItem = localStorage.setItem;
+		Object.defineProperty(localStorage, "setItem", {
+			configurable: true,
+			writable: true,
+			value: () => {
+				throw new Error("storage unavailable");
+			},
 		});
 
-		flushOnExit()();
+		try {
+			flushOnExit()();
 
-		expect(bridgeMessages).toEqual([
-			{
-				type: "ttvab-watch-time",
-				detail: {
-					channel: "streamerone",
-					seconds: 7,
-					intervals: [[nowValue - 7000, nowValue]],
+			expect(bridgeMessages).toEqual([
+				{
+					type: "ttvab-watch-time",
+					detail: {
+						channel: "streamerone",
+						seconds: 7,
+						intervals: [[nowValue - 7000, nowValue]],
+					},
 				},
-			},
-			{ type: "ttvab-flush-counters", detail: undefined },
-		]);
+				{ type: "ttvab-flush-counters", detail: undefined },
+			]);
+		} finally {
+			Object.defineProperty(localStorage, "setItem", {
+				configurable: true,
+				writable: true,
+				value: setItem,
+			});
+		}
 	});
 });
 

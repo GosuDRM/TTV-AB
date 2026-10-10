@@ -135,6 +135,7 @@ const _POST_AD_RECOVERY_MAX_RELOAD_REQUESTS = 4;
 const _POST_AD_RECOVERY_MAX_ACCEPTED_RELOADS = 2;
 const _POST_AD_RECOVERY_TRANSACTION_TIMEOUT_MS = 30000;
 const _POST_AD_RECOVERY_TERMINAL_SETTLE_MS = 10000;
+const _POST_AD_RECOVERY_STABLE_PLAYBACK_MS = 6000;
 const _IN_AD_FREEZE_DETECT_MS = 5000;
 const _IN_AD_FREEZE_ACTION_REPEAT_MS = 5000;
 const _IN_AD_FREEZE_RELOAD_AFTER_ATTEMPTS = 2;
@@ -164,6 +165,8 @@ const _PostAdRecoveryTransactionState = {
 	lastCurrentTime: 0,
 	lastTotalFrames: -1,
 	stallTicks: 0,
+	advancingSinceAt: 0,
+	advancingSinceTime: 0,
 	reloadRequestCount: 0,
 	acceptedReloadCount: 0,
 	lastReloadRequestAt: 0,
@@ -4624,12 +4627,67 @@ function _handlePostAdGraceWatch(
 	return true;
 }
 
+function _getPostAdRecoveryPlaybackDiagnostics() {
+	const transaction = _PostAdRecoveryTransactionState;
+	const context = {
+		ChannelName: transaction.channel,
+		MediaKey: transaction.mediaKey,
+	};
+	const suspendedReason = _isActivePictureInPicturePlaybackContext(context)
+		? "pip"
+		: _isNativeDocumentHidden(context)
+			? "hidden"
+			: "none";
+	let player = null;
+	let video: HTMLVideoElement | null = null;
+	try {
+		player = _getPlayerAndState().player;
+		const candidate = player?.getHTMLVideoElement?.();
+		if (
+			candidate instanceof HTMLVideoElement &&
+			candidate.isConnected &&
+			candidate === transaction.video &&
+			_isPostAdRecoveryCycleCurrent(
+				transaction.mediaKey,
+				transaction.cycleStartedAt,
+			)
+		)
+			video = candidate;
+	} catch {}
+	const bufferedEnd = video
+		? _getContiguousBufferedEnd(video, Number(video.currentTime) || 0)
+		: null;
+	return {
+		currentVideo: Boolean(video),
+		paused: video
+			? _isPlayerPaused(player, _getPlayerCore(player), video)
+			: null,
+		readyState: video ? Number(video.readyState) : -1,
+		networkState: video ? Number(video.networkState) : -1,
+		bufferedEnd,
+		bufferDuration:
+			video && bufferedEnd !== null
+				? Math.max(0, bufferedEnd - Number(video.currentTime))
+				: null,
+		videoWidth: video ? Number(video.videoWidth) : 0,
+		videoHeight: video ? Number(video.videoHeight) : 0,
+		workerGeneration: Math.max(
+			0,
+			Number(_getPlayerCore(player)?.worker?.__TTVABGeneration) || 0,
+		),
+		advancingSinceAt: transaction.advancingSinceAt,
+		suspended: transaction.suspendedAt > 0,
+		suspendedReason,
+	};
+}
+
 function _recordPostAdRecoveryTransition(phase, reloadResult = null) {
 	try {
 		const transaction = _PostAdRecoveryTransactionState;
 		if (!transaction.mediaKey) return;
 		const pageGeneration =
 			Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0;
+		const playback = _getPostAdRecoveryPlaybackDiagnostics();
 		const transitionChanged =
 			_PostAdRecoveryDiagnostics.mediaKey !== transaction.mediaKey ||
 			_PostAdRecoveryDiagnostics.cycleStartedAt !==
@@ -4667,6 +4725,7 @@ function _recordPostAdRecoveryTransition(phase, reloadResult = null) {
 			expiresAt: transaction.expiresAt,
 			currentTime: transaction.lastCurrentTime,
 			totalVideoFrames: transaction.lastTotalFrames,
+			...playback,
 			...(reloadResult ? { reloadResult } : {}),
 		});
 		if (typeof _checkpointPageDiagnostics === "function") {
@@ -4674,7 +4733,7 @@ function _recordPostAdRecoveryTransition(phase, reloadResult = null) {
 		}
 		if (transitionChanged) {
 			_log(
-				`[Recovery] Post-ad ${phase}: ${transaction.mediaKey}; cycle ${transaction.cycleStartedAt}; page ${pageGeneration}; requests ${transaction.reloadRequestCount}; accepted ${transaction.acceptedReloadCount}; reload ${transaction.requiredNativeReloadAt}; native-ready ${transaction.nativeReloadConfirmedAt}; time ${transaction.lastCurrentTime}; frames ${transaction.lastTotalFrames}; suspended ${transaction.suspendedAt > 0}; result ${reloadResult || "none"}`,
+				`[Recovery] Post-ad ${phase}: ${transaction.mediaKey}; cycle ${transaction.cycleStartedAt}; page ${pageGeneration}; requests ${transaction.reloadRequestCount}; accepted ${transaction.acceptedReloadCount}; reload ${transaction.requiredNativeReloadAt}; native-ready ${transaction.nativeReloadConfirmedAt}; time ${transaction.lastCurrentTime}; frames ${transaction.lastTotalFrames}; suspended ${transaction.suspendedAt > 0}; visibility ${playback.suspendedReason}; current-video ${playback.currentVideo}; paused ${playback.paused}; ready ${playback.readyState}; network ${playback.networkState}; buffer ${playback.bufferDuration}; size ${playback.videoWidth}x${playback.videoHeight}; worker ${playback.workerGeneration}; result ${reloadResult || "none"}`,
 				phase === "source-failed" || phase === "exhausted" ? "warning" : "info",
 			);
 		}
@@ -4750,6 +4809,8 @@ function _resetPostAdRecoveryTransaction() {
 	_PostAdRecoveryTransactionState.cycleStartedAt = 0;
 	_PostAdRecoveryTransactionState.video = null;
 	_PostAdRecoveryTransactionState.observedAt = 0;
+	_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+	_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 	_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 	_PostAdRecoveryTransactionState.lastTotalFrames = -1;
 	_PostAdRecoveryTransactionState.stallTicks = 0;
@@ -4872,6 +4933,8 @@ function _confirmPostAdNativeReload(data = null) {
 	_PostAdRecoveryTransactionState.nativeReloadConfirmedAt = safeConfirmedAt;
 	_PostAdRecoveryTransactionState.video = null;
 	_PostAdRecoveryTransactionState.observedAt = 0;
+	_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+	_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 	_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 	_PostAdRecoveryTransactionState.stallTicks = 0;
 	_PlayerBufferState.postAdUnhealthyCount = 0;
@@ -5080,6 +5143,8 @@ function _requestPostAdRecoveryReload(
 		_PostAdRecoveryTransactionState.acceptedReloadCount++;
 		_PostAdRecoveryTransactionState.video = null;
 		_PostAdRecoveryTransactionState.observedAt = 0;
+		_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+		_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 		_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 		_PostAdRecoveryTransactionState.stallTicks = 0;
 		if (
@@ -5135,6 +5200,8 @@ function _maintainPostAdRecoveryTransactionLifetime() {
 		if (isPictureInPicture) {
 			_PostAdRecoveryTransactionState.video = null;
 			_PostAdRecoveryTransactionState.observedAt = 0;
+			_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+			_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 			_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 			_PostAdRecoveryTransactionState.lastTotalFrames = -1;
 			_PostAdRecoveryTransactionState.stallTicks = 0;
@@ -5150,6 +5217,8 @@ function _maintainPostAdRecoveryTransactionLifetime() {
 		_PostAdRecoveryTransactionState.suspendedAt = 0;
 		_PostAdRecoveryTransactionState.video = null;
 		_PostAdRecoveryTransactionState.observedAt = 0;
+		_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+		_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 		_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 		_PostAdRecoveryTransactionState.lastTotalFrames = -1;
 		_PostAdRecoveryTransactionState.stallTicks = 0;
@@ -5259,13 +5328,17 @@ function _handlePendingPostAdRecovery(
 	} catch {}
 	const isNewObservation =
 		_PostAdRecoveryTransactionState.video !== liveVideo ||
-		!_PostAdRecoveryTransactionState.observedAt;
+		!_PostAdRecoveryTransactionState.observedAt ||
+		liveCurrentTime < _PostAdRecoveryTransactionState.lastCurrentTime - 0.05;
 	if (isNewObservation) {
 		_PostAdRecoveryTransactionState.video = liveVideo;
 		_PostAdRecoveryTransactionState.observedAt = now;
 		_PostAdRecoveryTransactionState.lastCurrentTime = liveCurrentTime;
 		_PostAdRecoveryTransactionState.lastTotalFrames = totalFrames;
 		_PostAdRecoveryTransactionState.stallTicks = 0;
+		_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+		_PostAdRecoveryTransactionState.advancingSinceTime = 0;
+		_PlayerBufferState.postAdUnhealthyCount = 0;
 	}
 	const recoveryAge = now - _PostAdRecoveryTransactionState.observedAt;
 	const canSoftReload = recoveryAge >= _POST_AD_SOFT_RELOAD_DELAY_MS;
@@ -5322,9 +5395,25 @@ function _handlePendingPostAdRecovery(
 					exactNativeReloadIsReady)),
 	);
 	if (hasAdvancingFrames && replacementIsReady) {
-		_finishPostAdRecoveryTransaction(liveCurrentTime, framesVerified);
-		return true;
+		if (!_PostAdRecoveryTransactionState.advancingSinceAt) {
+			_PostAdRecoveryTransactionState.advancingSinceAt = now;
+			_PostAdRecoveryTransactionState.advancingSinceTime = liveCurrentTime;
+			_recordPostAdRecoveryTransition("advancing");
+		}
+		if (
+			now - _PostAdRecoveryTransactionState.advancingSinceAt >=
+				_POST_AD_RECOVERY_STABLE_PLAYBACK_MS &&
+			liveCurrentTime - _PostAdRecoveryTransactionState.advancingSinceTime >=
+				_POST_AD_RECOVERY_STABLE_PLAYBACK_MS / 1000
+		) {
+			_finishPostAdRecoveryTransaction(liveCurrentTime, framesVerified);
+			return true;
+		}
+		_PlayerBufferState.postAdUnhealthyCount = 0;
+		return false;
 	}
+	_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+	_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 	if (hasAdvancingFrames) {
 		_PlayerBufferState.postAdUnhealthyCount = 0;
 		return false;
@@ -5363,6 +5452,8 @@ function _handlePendingPostAdRecovery(
 				_POST_AD_RECOVERY_MAX_RELOAD_REQUESTS,
 	);
 	if (recoveryIsCapped) {
+		if (_PostAdRecoveryDiagnostics.phase !== "waiting")
+			_recordPostAdRecoveryTransition("waiting");
 		return false;
 	}
 	if (
@@ -6181,6 +6272,8 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 			_PostAdRecoveryTransactionState.nativeReloadConfirmedAt = 0;
 			_PostAdRecoveryTransactionState.video = null;
 			_PostAdRecoveryTransactionState.observedAt = 0;
+			_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+			_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 			_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 			_PostAdRecoveryTransactionState.stallTicks = 0;
 		}
@@ -7656,6 +7749,8 @@ function _monitorPlayerBuffering() {
 			} else {
 				_PostAdRecoveryTransactionState.video = null;
 				_PostAdRecoveryTransactionState.observedAt = 0;
+				_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+				_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 				_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 				_PostAdRecoveryTransactionState.lastTotalFrames = -1;
 				_PostAdRecoveryTransactionState.stallTicks = 0;
@@ -7955,6 +8050,8 @@ function _monitorPlayerBuffering() {
 			} else if (_PostAdRecoveryTransactionState.mediaKey) {
 				_PostAdRecoveryTransactionState.video = null;
 				_PostAdRecoveryTransactionState.observedAt = 0;
+				_PostAdRecoveryTransactionState.advancingSinceAt = 0;
+				_PostAdRecoveryTransactionState.advancingSinceTime = 0;
 				_PostAdRecoveryTransactionState.lastCurrentTime = 0;
 				_PostAdRecoveryTransactionState.stallTicks = 0;
 			}

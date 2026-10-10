@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
 	afterEach,
 	beforeAll,
@@ -9,6 +7,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { loadModule } from "./helpers/runtime";
 
 const g = globalThis as unknown as {
 	_adTimerEnabled: boolean;
@@ -41,15 +40,6 @@ const handlers = new Map<string, (detail: unknown) => void>();
 let video: HTMLVideoElement;
 let defaultTimerEnabled: boolean;
 const now = 1800000000000;
-
-function loadModule(modulePath: string) {
-	const js = readFileSync(resolve(__dirname, modulePath), "utf8")
-		.replace(/^"use strict";\s*/m, "")
-		.replace(/^const (_\w+|_C|_S)\s*=/gm, "globalThis.$1 =")
-		.replace(/^let\s+(_\w+)/gm, "globalThis.$1")
-		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function");
-	new Function("globalThis", js)(globalThis);
-}
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/parser.js");

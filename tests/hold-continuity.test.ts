@@ -952,6 +952,14 @@ describe("empty hold playlist continuity", () => {
 				`#EXT-X-PROGRAM-DATE-TIME:2026-10-08T13:09:${seconds}.000Z\n#EXTINF:`,
 			);
 		await serve(dated(100, 20), "site");
+		expect(context._postWorkerBridgeMessage).toHaveBeenCalledExactlyOnceWith(
+			expect.anything(),
+			expect.objectContaining({
+				key: "BackupPlayerTypeSelected",
+				value: "site",
+			}),
+		);
+		context._postWorkerBridgeMessage.mockClear();
 		context.state.PinnedBackupPlayerType = "site";
 		context.state.PinnedBackupPlayerMediaKey = info.MediaKey;
 		info.IsShowingAd = false;

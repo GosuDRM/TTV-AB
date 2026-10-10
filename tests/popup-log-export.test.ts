@@ -9,6 +9,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { T } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -21,12 +22,6 @@ function loadPopup() {
 		.replace(/^const (_\w+)\s*=/gm, "globalThis.$1 =")
 		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function");
 	new Function("globalThis", js)(globalThis);
-}
-
-function T<T>(name: string): T {
-	const value = g[name];
-	if (typeof value !== "function") throw new Error(`${name} not loaded`);
-	return value as T;
 }
 
 beforeAll(() => {

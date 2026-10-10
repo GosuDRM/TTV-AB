@@ -9,17 +9,9 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { loadModule, snapshotGlobals, T } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
-
-function loadModule(modulePath: string) {
-	const js = readFileSync(resolve(__dirname, modulePath), "utf8")
-		.replace(/^"use strict";\s*/m, "")
-		.replace(/^const (_\w+|_C|_S)\s*=/gm, "globalThis.$1 =")
-		.replace(/^let\s+(_\w+)/gm, "globalThis.$1")
-		.replace(/^(async\s+)?function (_\w+)/gm, "globalThis.$2 = $1function");
-	new Function("globalThis", js)(globalThis);
-}
 
 beforeAll(() => {
 	loadModule("../dist/src/modules/constants.js");
@@ -27,6 +19,17 @@ beforeAll(() => {
 	loadModule("../dist/src/modules/parser.js");
 	loadModule("../dist/src/modules/processor.js");
 
+	g.globalThis = g;
+	g.self = g;
+	g.window = g;
+	g.console = { log() {}, warn() {}, error() {}, info() {}, debug() {} };
+	g.__realCanReloadNativePlayerAfterAd = g._canReloadNativePlayerAfterAd;
+	g.__realFindBackupStream = g._findBackupStream;
+	g.__realRefreshActiveBackupMediaPlaylist =
+		g._refreshActiveBackupMediaPlaylist;
+});
+
+beforeEach(() => {
 	g._log = () => {};
 	g._S = {
 		workers: [],
@@ -91,14 +94,6 @@ beforeAll(() => {
 		DisableAutoplayBackup: false,
 		AllowPreviewEmergencyAutoplayBackup: false,
 	};
-	g.globalThis = g;
-	g.self = g;
-	g.window = g;
-	g.console = { log() {}, warn() {}, error() {}, info() {}, debug() {} };
-	g.__realCanReloadNativePlayerAfterAd = g._canReloadNativePlayerAfterAd;
-	g.__realFindBackupStream = g._findBackupStream;
-	g.__realRefreshActiveBackupMediaPlaylist =
-		g._refreshActiveBackupMediaPlaylist;
 });
 
 afterEach(() => {
@@ -115,12 +110,6 @@ afterEach(() => {
 			g.__realRefreshActiveBackupMediaPlaylist;
 	}
 });
-
-function T<T>(name: string): T {
-	const fn = (globalThis as Record<string, unknown>)[name];
-	if (typeof fn !== "function") throw new Error(`${name} not loaded`);
-	return fn as T;
-}
 
 function getState() {
 	return g.__TTVAB_STATE__ as Record<string, unknown>;
@@ -304,6 +293,7 @@ function rememberBackupPlaylistMetadata(
 	m3u8: string,
 	codecFamily: string,
 	codec: string,
+	variant: Record<string, unknown> | null = null,
 ) {
 	return T<
 		(
@@ -311,8 +301,9 @@ function rememberBackupPlaylistMetadata(
 			m3u8: string,
 			codecFamily: string,
 			codec: string,
+			variant: Record<string, unknown> | null,
 		) => string
-	>("_rememberBackupPlaylistMetadata")(info, m3u8, codecFamily, codec);
+	>("_rememberBackupPlaylistMetadata")(info, m3u8, codecFamily, codec, variant);
 }
 
 function activateExactAdCycle(
@@ -5586,7 +5577,18 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			const refreshed = makePlaylist(backupSequence++, 3);
 			info.LastCleanBackupM3U8 = refreshed;
 			info.LastCleanBackupAt = Date.now();
-			return refreshed;
+			return rememberBackupPlaylistMetadata(
+				info,
+				refreshed,
+				"avc",
+				"avc1.64002a",
+				{
+					playlistUrl: "https://edge.example/verified-backup.m3u8",
+					sessionUrl: "https://usher.ttvnw.net/backup.m3u8?token=verified",
+					playerType: "embed",
+					resolution: "1920x1080",
+				},
+			);
 		});
 		g._canReloadNativePlayerAfterAd = nativeProbe;
 		g._getToken = tokenProbe;
@@ -7054,6 +7056,21 @@ describe("_processM3U8 consecutive-midroll continuation fast-refresh", () => {
 });
 
 describe("_processM3U8 rapid reentry cycle ownership", () => {
+	let restoreGlobals: () => void;
+
+	beforeEach(() => {
+		restoreGlobals = snapshotGlobals([
+			"_getStreamInfoForPlaylist",
+			"_notifyAdComplete",
+			"postMessage",
+			"_createPageScopedWorkerEvent",
+			"_postWorkerBridgeMessage",
+			"_findBackupStream",
+		]);
+	});
+
+	afterEach(() => restoreGlobals());
+
 	const mediaUrl =
 		"https://video-weaver.example.ttvnw.net/v1/playlist/rapid-reentry.m3u8";
 	const avcResolution = {

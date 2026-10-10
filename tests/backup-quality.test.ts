@@ -703,6 +703,126 @@ function setupProbation() {
 
 describe("HD backup probation through playlist polling", () => {
 	it.each(
+		[false, true].flatMap((holding) =>
+			[0, 1000].map((nextPollDelay) => ({ holding, nextPollDelay })),
+		),
+	)(
+		"starts the dwell-expiry probe during clean native polls with silent hold=$holding and the next poll after $nextPollDelay ms",
+		async ({ holding, nextPollDelay }) => {
+			const f = setupProbation();
+			f.info.IsShowingAd = !holding;
+			f.info.IsHoldingBackupAfterAd = holding;
+			f.info.SilentBackupHoldStartedAt = 1_000_000;
+			f.info._LqHoldStartAt = 999_000;
+			f.info._LastBackupSearchCompletedAt = 999_000;
+			f.advance(7000);
+			expect(await f.poll(false)).toContain("/autoplay/360/");
+			await f.info._BackupSearchPromise;
+			expect(f.siteRequests()).toHaveLength(1);
+			expect(f.info.ActiveBackupPlayerType).toBe("autoplay");
+			expect(f.info._BackupProbation).toMatchObject({
+				type: "site",
+				cleanChecks: 1,
+			});
+			f.advance(1500);
+			await f.poll(false);
+			await f.info._BackupSearchPromise;
+			expect(f.info.LastCleanBackupPlayerType).toBe("site");
+			f.advance(nextPollDelay);
+			expect(await f.poll(false)).toContain("/site/1080/");
+			expect(f.info.ActiveBackupPlayerType).toBe("site");
+			expect(f.info.ActiveBackupResolution).toBe("1920x1080");
+			expect(f.state.PinnedBackupPlayerType).toBe("site");
+			f.advance(1000);
+			expect(await f.poll(false)).toContain("/site/1080/");
+			expect(f.info.LastCleanBackupPlayerType).toBe("site");
+			expect(f.info.ActiveBackupPlayerType).toBe("site");
+		},
+	);
+
+	it.each([
+		"disabled",
+		"low choice",
+		"vod",
+		"page changed",
+		"ad changed",
+		"old hold",
+		"aborted",
+		"searching",
+	])(
+		"does not bypass the search cache for an ineligible initial HD probe: %s",
+		(reason) => {
+			const f = setupProbation();
+			f.info._LqHoldStartAt = 991_000;
+			f.info._LastBackupSearchCompletedAt = 991_000;
+			if (reason === "disabled") f.state.DisableAutoplayBackup = true;
+			if (reason === "low choice") f.state.PreferredQualityGroup = "360p";
+			if (reason === "vod") f.info.MediaType = "vod";
+			if (reason === "page changed") f.state.PageMediaKey = "live:other";
+			if (reason === "ad changed") f.state.CurrentAdMediaKey = "live:other";
+			if (reason === "old hold") f.info.VisibleAdStartedAt = 992_000;
+			if (reason === "aborted") {
+				f.info._AdCycleRequestController = new AbortController();
+				f.info._AdCycleRequestController.abort();
+			}
+			if (reason === "searching")
+				f.info._BackupSearchPromise = Promise.resolve(null);
+			expect(f.context._isInitialBackupQualityProbeDue(f.info)).toBe(false);
+		},
+	);
+
+	it.each([false, true])(
+		"does not repeat a completed dwell-expiry probe or stamp a newer page, navigation=%s",
+		async (navigate) => {
+			const f = setupProbation();
+			f.info._LqHoldStartAt = 991_000;
+			f.info._LastBackupSearchCompletedAt = 991_000;
+			const pending = deferred();
+			const probe = vi.fn(async () => {
+				await pending.promise;
+				return { type: "autoplay", m3u8: f.info.LastCleanBackupM3U8 };
+			});
+			f.context._findBackupStream = probe;
+			expect(f.context._startPendingBackupQualityProbe(f.info, f.fetch)).toBe(
+				true,
+			);
+			if (navigate) f.state.PagePlaybackContextGeneration++;
+			pending.resolve();
+			await pending.promise;
+			await Promise.resolve();
+			expect(f.info._LastBackupSearchCompletedAt).toBe(
+				navigate ? 991_000 : 1_000_000,
+			);
+			if (!navigate)
+				expect(f.context._startPendingBackupQualityProbe(f.info, f.fetch)).toBe(
+					false,
+				);
+			expect(probe).toHaveBeenCalledOnce();
+		},
+	);
+
+	it("starts the first HD check when the autoplay dwell ends while keeping the bridge refreshed", async () => {
+		const f = setupProbation();
+		f.info._LqHoldStartAt = 999_000;
+		f.info._LastBackupSearchCompletedAt = 999_000;
+		expect(await f.poll()).toContain("/autoplay/360/");
+		f.advance(6999);
+		expect(await f.poll()).toContain("/autoplay/360/");
+		expect(f.siteRequests()).toHaveLength(0);
+		expect(f.info.LastCleanBackupAt).toBe(1_006_999);
+		f.advance(1);
+		expect(await f.poll()).toContain("/autoplay/360/");
+		expect(f.siteRequests()).toHaveLength(1);
+		expect(f.info._BackupProbation).toMatchObject({
+			type: "site",
+			cleanChecks: 1,
+		});
+		f.advance(1500);
+		expect(await f.poll()).toContain("/site/1080/");
+		expect(f.info.ActiveBackupPlayerType).toBe("site");
+	});
+
+	it.each(
 		[false, true].flatMap((disabled) =>
 			["site", "embed"].map((nextType) => ({ disabled, nextType })),
 		),

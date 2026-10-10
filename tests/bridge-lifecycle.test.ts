@@ -224,6 +224,14 @@ describe("pre-freeze diagnostic forwarding", () => {
 						reloadResult: "failure",
 						totalVideoFrames: 500,
 						nativeSessionPhase: "rearmed",
+						currentVideo: true,
+						paused: false,
+						readyState: 2,
+						networkState: 2,
+						bufferedEnd: 4,
+						bufferDuration: 0.09,
+						suspendedReason: "hidden",
+						workerGeneration: 7,
 						nativeSessionWorkerGeneration: 7,
 						nativeSessionCodec: "hev1.1.2.L150.90,mp4a.40.2",
 						nativeSessionResolution: "2560x1440",
@@ -269,10 +277,43 @@ describe("pre-freeze diagnostic forwarding", () => {
 		expect(text).toContain('"totalVideoFrames":500');
 		expect(text).toContain('"isCurrentPlayerWorker":true');
 		expect(text).toContain('"nativeSessionResolution":"2560x1440"');
+		expect(text).toContain('"bufferDuration":0.09');
+		expect(text).toContain('"suspendedReason":"hidden"');
+		expect(text).toContain('"workerGeneration":7');
 		expect(text).toContain('"selectedQuality":"auto"');
 		expect(text).toContain('"qualitySource":"player"');
 		expect(text).toContain('"lowLatencyEnabled":false');
 		expect(text).toContain('"lowLatencySource":"player"');
+	});
+
+	it("bounds post-ad playback diagnostics and keeps unavailable media values unknown", () => {
+		const sanitize = g.sanitizePostAdRecoveryDiagnostics as (
+			value: unknown,
+		) => Record<string, unknown>;
+		const result = sanitize({
+			currentVideo: {},
+			paused: "false",
+			readyState: Infinity,
+			networkState: -2,
+			bufferDuration: "token=secret",
+			bufferedEnd: null,
+			videoWidth: 999999,
+			videoHeight: -1,
+			suspendedReason: "https://example.com/?token=secret",
+			advancingSinceAt: -1,
+		});
+		expect(result).toMatchObject({
+			currentVideo: false,
+			paused: null,
+			readyState: -1,
+			networkState: -1,
+			bufferDuration: null,
+			bufferedEnd: null,
+			videoWidth: 16384,
+			videoHeight: 0,
+			suspendedReason: null,
+		});
+		expect(JSON.stringify(result)).not.toContain("secret");
 	});
 
 	it("bounds quality text and preserves unknown latency instead of coercing it to false", () => {
