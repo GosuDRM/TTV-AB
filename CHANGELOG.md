@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [20.0.2] - 2026-10-12
+
+Fixed
+
+- **Playback Rewinds** - Prevent a returning quality with different segment timing from replaying older content after an ad. Keep ongoing playlist updates stable and preserve new content at the transition.
+
 ## [20.0.1] - 2026-10-09
 
 Fixed
