@@ -2398,7 +2398,7 @@ function _alignLivePlaylist(
 				backupMetadata.playlistUrl,
 			])
 		: `native|${info.UsherBaseUrl || info.MediaKey}`;
-	const changedSource = previous?.identity !== identity || previous?.afterHold;
+	let changedSource = previous?.identity !== identity || previous?.afterHold;
 	let minimumTime = changedSource
 		? backupMetadata || previous?.backup || previous?.afterHold
 			? previous?.lastEndTime || 0
@@ -2503,15 +2503,56 @@ function _alignLivePlaylist(
 	const nativeTimeline = nativeKey
 		? info._EmptyHoldTimelineByUrl?.get?.(nativeKey)
 		: null;
+	const nativeIdentity = JSON.stringify([
+		"native",
+		_getExactPlaylistUrlKey(info.UsherBaseUrl) || nativeKey,
+	]);
+	if (
+		!changedSource &&
+		info.MediaType === "live" &&
+		nativeKey &&
+		Object.hasOwn(info.Urls || {}, nativeKey) &&
+		info._EmptyHoldTimelineByUrl?.size
+	) {
+		const timelines = [...info._EmptyHoldTimelineByUrl.values()];
+		const generation = Math.max(
+			...timelines.map((entry) => entry.generation || 0),
+		);
+		if (
+			nativeTimeline?.identity !== nativeIdentity ||
+			(nativeTimeline.generation || 0) < generation
+		) {
+			const shared = timelines
+				.filter(
+					(entry) =>
+						entry.identity === nativeIdentity &&
+						(entry.generation || 0) === generation,
+				)
+				.sort(
+					(left, right) =>
+						right.discontinuityOffset - left.discontinuityOffset ||
+						(right.nativeAnchor?.time ?? right.lastRawFirstSequence) -
+							(left.nativeAnchor?.time ?? left.lastRawFirstSequence),
+				)[0];
+			const sharesNativeClock = shared?.nativeAnchors?.some((anchor) =>
+				entries.some(
+					(entry) =>
+						entry.time === anchor.time &&
+						entry.duration === anchor.duration &&
+						entry.discontinuity === anchor.discontinuity,
+				),
+			);
+			if (!sharesNativeClock) {
+				minimumTime = Math.max(minimumTime, previous.lastEndTime);
+				changedSource = true;
+			}
+		}
+	}
 	const rawFirstSequence = _parsePlaylistFirstMediaSequence(text);
 	if (
 		nativeTimeline?.kind === "native" &&
 		Object.hasOwn(info.Urls || {}, nativeKey) &&
-		nativeTimeline.identity ===
-			JSON.stringify([
-				"native",
-				_getExactPlaylistUrlKey(info.UsherBaseUrl) || nativeKey,
-			]) &&
+		nativeTimeline.identity === nativeIdentity &&
 		rawFirstSequence != null &&
 		rawFirstSequence < nativeTimeline.lastRawFirstSequence
 	) {
