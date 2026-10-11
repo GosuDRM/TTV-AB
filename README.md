@@ -73,6 +73,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v20.0.2 - 2026-10-12
+
+- **Playback Rewinds** - Prevent a returning quality with different segment timing from replaying older content after an ad. Keep ongoing playlist updates stable and preserve new content at the transition.
+
 ### v20.0.1 - 2026-10-09
 
 - **Post-Ad Recovery** - Keep bounded recovery active through brief startup playback until video advances steadily, so an early buffer stall does not lose its recovery context.
@@ -97,10 +101,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Build Tests** - Test worker dependencies, message validation, and the assembled scripts and worker bootstrap.
 - **Extension Packages** - Exclude development TypeScript and diagnostic modules from installable archives, and fail builds when packaging fails.
 - **Development Tools** - Update Biome to 2.5.15 and Knip to 6.40.0 for formatting, linting, and unused-code checks.
-
-### v19.2.2 - 2026-10-08
-
-- **Ad Transition Replay** - Preserve confirmed timing for prefetched media so ad-start, quality upgrades, and native recovery do not replay those segments.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
