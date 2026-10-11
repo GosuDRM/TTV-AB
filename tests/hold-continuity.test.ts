@@ -1828,7 +1828,7 @@ describe("empty hold playlist continuity", () => {
 			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
 			const start = Date.parse("2026-10-08T15:22:20Z");
 			const dated = (sequence: number, time: number, prefix: string) =>
-				playlist(sequence, 3, prefix).replace(
+				playlist(sequence, prefix === "other" ? 4 : 3, prefix).replace(
 					"#EXTINF:",
 					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + time).toISOString()}\n#EXTINF:`,
 				);
@@ -1858,8 +1858,19 @@ describe("empty hold playlist continuity", () => {
 						dated(10852 + poll, poll * 2000 + 500, "other"),
 					),
 				);
-				expect(nextPrimary.slice(0, 2)).toEqual(primary.slice(1));
-				expect(nextOther.slice(0, 2)).toEqual(other.slice(1));
+				for (const [previous, next] of [
+					[primary, nextPrimary],
+					[other, nextOther],
+				]) {
+					for (const segment of next) {
+						const served = previous.find(({ url }) => url === segment.url);
+						if (served) expect(segment).toEqual(served);
+						else
+							expect(segment.sequence).toBeGreaterThan(
+								previous.at(-1).sequence,
+							);
+					}
+				}
 				primary = nextPrimary;
 				other = nextOther;
 			}
@@ -1879,9 +1890,63 @@ describe("empty hold playlist continuity", () => {
 			expect(rejoined[0].discontinuity).toBeGreaterThan(
 				primary.at(-1).discontinuity,
 			);
-			expect(
-				segments(await serve(dated(10851, 46000, "primary"))).slice(0, 2),
-			).toEqual(primary.slice(1));
+			const refreshed = segments(await serve(dated(10851, 46000, "primary")));
+			for (const segment of refreshed) {
+				const served = primary.find(({ url }) => url === segment.url);
+				if (served) expect(segment).toEqual(served);
+				else expect(segment.sequence).toBeGreaterThan(primary.at(-1).sequence);
+			}
+		},
+	);
+
+	it.each(
+		[false, true].flatMap((usedHold) =>
+			[-234, 234].flatMap((skewMs) =>
+				[4, 15].map((count) => ({ usedHold, skewMs, count })),
+			),
+		),
+	)(
+		"does not replay broadcast content when a differently timed native quality joins after recovery (hold: $usedHold, skew: $skewMs, window: $count)",
+		async ({ usedHold, skewMs, count }) => {
+			const { context, info, hold, serve } = setup();
+			const otherUrl = nativeUrl.replace("native", "720p");
+			info.Urls[otherUrl] = { Resolution: "1280x720", Codecs: codec };
+			const start = Date.parse("2026-10-12T03:56:36Z");
+			const dated = (
+				sequence: number,
+				offset: number,
+				count: number,
+				prefix: string,
+			) =>
+				playlist(sequence, count, prefix).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+				);
+			if (usedHold) await hold();
+			await serve(dated(100, 0, 3, "backup"), "site");
+			context._resetStreamAdState(info, true);
+			const primary = segments(
+				await serve(dated(6872, 6000, count - 1, "native")),
+			);
+			const cutoff = 6000 + (count - 1) * 2000;
+			const joined = context._applyPlaylistContinuity(
+				info,
+				otherUrl,
+				dated(7000, 6000 + skewMs, count, "other"),
+			);
+			expect(segments(joined).map(({ url }) => url)).toEqual([
+				`https://edge.example/other-${7000 + count - 1}.ts`,
+			]);
+			expect(joined).toContain(
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + cutoff + skewMs).toISOString()}`,
+			);
+			expect(segments(joined)[0].sequence).toBe(primary.at(-1).sequence + 1);
+			const refreshed = context._applyPlaylistContinuity(
+				info,
+				otherUrl,
+				dated(7001, 8000 + skewMs, count, "other"),
+			);
+			expect(segments(refreshed)[0]).toEqual(segments(joined)[0]);
 		},
 	);
 
@@ -1993,7 +2058,7 @@ describe("empty hold playlist continuity", () => {
 			info.Urls[thirdUrl] = { Resolution: "852x480", Codecs: codec };
 			const start = Date.parse("2026-10-08T15:22:20Z");
 			const dated = (sequence: number, offset: number, prefix: string) =>
-				playlist(sequence, 3, prefix).replace(
+				playlist(sequence, prefix === "native" ? 3 : 4, prefix).replace(
 					"#EXTINF:",
 					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
 				);
@@ -2017,13 +2082,13 @@ describe("empty hold playlist continuity", () => {
 			);
 			for (let poll = 1; poll <= 5; poll++) {
 				const nextPrimary = segments(
-					await serve(dated(200 + poll, poll * 2000, "native")),
+					await serve(dated(201 + poll, (poll + 1) * 2000, "native")),
 				);
 				const nextOther = segments(
 					context._applyPlaylistContinuity(
 						info,
 						otherUrl,
-						dated(300 + poll, poll * 2000 + 500, "other"),
+						dated(301 + poll, (poll + 1) * 2000 + 500, "other"),
 					),
 				);
 				const nextThird = segments(
@@ -2033,9 +2098,20 @@ describe("empty hold playlist continuity", () => {
 						dated(400 + poll, (poll + 1) * 2000, "third"),
 					),
 				);
-				expect(nextPrimary.slice(0, 2)).toEqual(primary.slice(1));
-				expect(nextOther.slice(0, 2)).toEqual(other.slice(1));
-				expect(nextThird.slice(0, 2)).toEqual(third.slice(1));
+				for (const [previous, next] of [
+					[primary, nextPrimary],
+					[other, nextOther],
+					[third, nextThird],
+				]) {
+					for (const segment of next) {
+						const served = previous.find(({ url }) => url === segment.url);
+						if (served) expect(segment).toEqual(served);
+						else
+							expect(segment.sequence).toBeGreaterThan(
+								previous.at(-1).sequence,
+							);
+					}
+				}
 				primary = nextPrimary;
 				other = nextOther;
 				third = nextThird;
@@ -2141,6 +2217,24 @@ describe("empty hold playlist continuity", () => {
 			if (mode === "vod") info.MediaType = "vod";
 			if (mode === "blocking disabled")
 				context.state.IsAdStrippingEnabled = false;
+			if (
+				[
+					"different time",
+					"different duration",
+					"different discontinuity",
+				].includes(mode)
+			) {
+				const previous = JSON.stringify([...info._EmptyHoldTimelineByUrl]);
+				const timeline = info._LivePlaylistTimeline;
+				expect(() =>
+					context._applyPlaylistContinuity(info, otherUrl, incoming),
+				).toThrow("Live handoff playlist is behind the served broadcast time");
+				expect(JSON.stringify([...info._EmptyHoldTimelineByUrl])).toBe(
+					previous,
+				);
+				expect(info._LivePlaylistTimeline).toBe(timeline);
+				return;
+			}
 			const joined = context._applyPlaylistContinuity(info, otherUrl, incoming);
 			if (mode === "blocking disabled") {
 				expect(joined).toBe(incoming);

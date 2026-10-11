@@ -11302,7 +11302,13 @@ describe("injected worker ad playlist validation", () => {
 
 	it.each(
 		[false, true].flatMap((disabled) =>
-			["same window", "shorter window", "advanced window"].map((window) => ({
+			[
+				"same window",
+				"shorter window",
+				"advanced window",
+				"gap",
+				"overlap",
+			].map((window) => ({
 				disabled,
 				window,
 			})),
@@ -11319,6 +11325,7 @@ describe("injected worker ad playlist validation", () => {
 				"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?token=owned";
 			const mediaUrl = "https://edge.example/native.m3u8?token=owned";
 			const otherUrl = "https://edge.example/720p.m3u8?token=owned";
+			const skewMs = window === "gap" ? 234 : window === "overlap" ? -234 : 0;
 			const master = [
 				"#EXTM3U",
 				'#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="mp4a.40.2,avc1.64002a"',
@@ -11338,7 +11345,7 @@ describe("injected worker ad playlist validation", () => {
 						"#EXT-X-TARGETDURATION:2",
 						`#EXT-X-MEDIA-SEQUENCE:${sequence}`,
 						"#EXT-X-DISCONTINUITY-SEQUENCE:0",
-						`#EXT-X-PROGRAM-DATE-TIME:${new Date(Date.parse("2026-10-06T09:06:20Z") + offset * 2000).toISOString()}`,
+						`#EXT-X-PROGRAM-DATE-TIME:${new Date(Date.parse("2026-10-06T09:06:20Z") + offset * 2000 + (other ? skewMs : 0)).toISOString()}`,
 						...Array.from(
 							{ length: other && window === "shorter window" ? 1 : 3 },
 							(_, index) => [
@@ -11380,11 +11387,19 @@ describe("injected worker ad playlist validation", () => {
 				const sequence = (text: string) =>
 					Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
 				expect(sequence(joined)).toBe(
-					sequence(current) + (window === "advanced window" ? 3 : 1),
+					sequence(current) + (window === "advanced window" || skewMs ? 3 : 1),
 				);
 				expect(joined).toContain("#EXT-X-DISCONTINUITY-SEQUENCE:12");
-				if (window !== "advanced window")
+				if (window !== "advanced window" && !skewMs)
 					expect(joined.split("\n")).not.toContain("#EXT-X-DISCONTINUITY");
+				if (skewMs) {
+					expect(joined).not.toContain(`clean-${6599 + offset}.ts`);
+					expect(joined).not.toContain(`clean-${6600 + offset}.ts`);
+					expect(joined).toContain(`clean-${6601 + offset}.ts`);
+					expect(joined).toContain(
+						`#EXT-X-PROGRAM-DATE-TIME:${new Date(Date.parse("2026-10-06T09:06:20Z") + (offset + 2) * 2000 + skewMs).toISOString()}`,
+					);
+				}
 				expect(joined).not.toContain("__ttvab_empty_hold_segment.ts");
 				if (window === "advanced window") {
 					offset--;
@@ -11399,7 +11414,7 @@ describe("injected worker ad playlist validation", () => {
 					`${otherUrl}&_HLS_msn=${sequence(joined) + 1}&_HLS_part=1`,
 				);
 				expect(String(fetch.mock.calls.at(-1)[0])).toBe(
-					`${otherUrl}&_HLS_msn=${6599 + offset}&_HLS_part=1`,
+					`${otherUrl}&_HLS_msn=${6599 + offset + (skewMs ? 2 : 0)}&_HLS_part=1`,
 				);
 				const messages = (
 					runtime.scope.postMessage as ReturnType<typeof vi.fn>
