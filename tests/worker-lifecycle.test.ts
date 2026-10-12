@@ -11399,6 +11399,41 @@ describe("injected worker ad playlist validation", () => {
 					expect(joined).toContain(
 						`#EXT-X-PROGRAM-DATE-TIME:${new Date(Date.parse("2026-10-06T09:06:20Z") + (offset + 2) * 2000 + skewMs).toISOString()}`,
 					);
+					const logs = (
+						runtime.scope.postMessage as ReturnType<typeof vi.fn>
+					).mock.calls
+						.map(([value]) => value.message)
+						.filter(
+							(message) =>
+								message?.key === "LogEntry" &&
+								message.value.m.startsWith("[Continuity] handoff "),
+						);
+					expect(logs).toHaveLength(1);
+					expect(logs[0].value.l).toBe("warning");
+					expect(
+						JSON.parse(logs[0].value.m.split("handoff ")[1]),
+					).toMatchObject({
+						mediaKey: "live:testchannel",
+						source: "native",
+						resolution: "1280x720",
+						boundaryMs: skewMs,
+						gapMs: Math.max(0, skewMs),
+						overlapMs: Math.max(0, -skewMs),
+						skippedSegments: 2,
+						retainedSegments: 1,
+						servedSequence: sequence(joined),
+					});
+					expect(logs[0].value.m).not.toMatch(/https:|token=|owned/);
+					harness.worker.emitMessage(logs[0]);
+					expect(
+						(g.__TTVAB_LOGS__ as Array<Record<string, unknown>>).at(-1),
+					).toMatchObject({
+						m: logs[0].value.m,
+						l: "warning",
+						w: true,
+						g: 1,
+						k: "live:testchannel",
+					});
 				}
 				expect(joined).not.toContain("__ttvab_empty_hold_segment.ts");
 				if (window === "advanced window") {
