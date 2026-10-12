@@ -1140,7 +1140,7 @@ function _getPendingForegroundQualityProbeAt(info: TTVABStreamInfo) {
 		: 0;
 }
 
-function _isInitialBackupQualityProbeDue(info: TTVABStreamInfo) {
+function _isBackupQualityProbeDue(info: TTVABStreamInfo) {
 	const cycleStartedAt = Math.max(0, Number(info?.VisibleAdStartedAt) || 0);
 	const holdStartedAt = Math.max(0, Number(info?._LqHoldStartAt) || 0);
 	const holdEndsAt = holdStartedAt + _getResolvedLqHqHoldMinMs();
@@ -1153,7 +1153,9 @@ function _isInitialBackupQualityProbeDue(info: TTVABStreamInfo) {
 		holdStartedAt < cycleStartedAt ||
 		Date.now() < holdEndsAt ||
 		!info._LastBackupSearchCompletedAt ||
-		info._LastBackupSearchCompletedAt >= holdEndsAt ||
+		(info._LastBackupSearchCompletedAt >= holdEndsAt &&
+			Date.now() - info._LastBackupSearchCompletedAt <
+				_getBackupPlayerRetryCooldownMs()) ||
 		!mediaKey ||
 		_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) !== mediaKey ||
 		!_isBackupSearchContextCurrent(
@@ -1187,10 +1189,14 @@ function _startPendingBackupQualityProbe(
 	codecOverride = null,
 ) {
 	const foregroundQualityProbeAt = _getPendingForegroundQualityProbeAt(info);
-	const initialQualityProbeDue = _isInitialBackupQualityProbeDue(info);
+	const qualityProbeDue = _isBackupQualityProbeDue(info);
+	const qualityProbeRetry =
+		qualityProbeDue &&
+		Number(info._LastBackupSearchCompletedAt) >=
+			Number(info._LqHoldStartAt) + _getResolvedLqHqHoldMinMs();
 	if (
 		(!foregroundQualityProbeAt &&
-			!initialQualityProbeDue &&
+			!qualityProbeDue &&
 			!_isBackupProbationDue(info)) ||
 		info?._BackupSearchPromise ||
 		(Number(info?._BackupSearchPromises?.size) || 0) > 0
@@ -1200,18 +1206,20 @@ function _startPendingBackupQualityProbe(
 	_log(
 		foregroundQualityProbeAt
 			? "[Trace] Playback returned to foreground; probing normal-quality backup while the clean bridge keeps refreshing"
-			: initialQualityProbeDue
-				? "[Trace] Autoplay dwell completed; probing normal-quality backup while the clean bridge keeps refreshing"
-				: "[Trace] Continuing the pending clean backup check while the bridge keeps refreshing",
+			: qualityProbeRetry
+				? "[Trace] Retrying normal-quality backup while the clean bridge keeps refreshing"
+				: qualityProbeDue
+					? "[Trace] Autoplay dwell completed; probing normal-quality backup while the clean bridge keeps refreshing"
+					: "[Trace] Continuing the pending clean backup check while the bridge keeps refreshing",
 		"info",
 	);
 	const backupSearchEpoch = info.BackupSearchEpoch;
 	const cycleStartedAt = info.VisibleAdStartedAt;
 	const pageMediaKey = __TTVAB_STATE__.PageMediaKey;
 	const pageGeneration = __TTVAB_STATE__.PagePlaybackContextGeneration;
-	const markInitialProbeCompleted = () => {
+	const markQualityProbeCompleted = () => {
 		if (
-			initialQualityProbeDue &&
+			qualityProbeDue &&
 			__TTVAB_STATE__.PageMediaKey === pageMediaKey &&
 			__TTVAB_STATE__.PagePlaybackContextGeneration === pageGeneration &&
 			!info._AdCycleRequestController?.signal?.aborted &&
@@ -1229,7 +1237,7 @@ function _startPendingBackupQualityProbe(
 		0,
 		currentResolution,
 		codecOverride,
-	).then(markInitialProbeCompleted, markInitialProbeCompleted);
+	).then(markQualityProbeCompleted, markQualityProbeCompleted);
 	return true;
 }
 
@@ -2974,12 +2982,17 @@ function _canRestoreNativeByPlaylist(
 			])
 	)
 		return false;
+	const diagnostic: TTVABPlaylistAlignmentDiagnostic = {};
 	try {
 		return _playlistHasMediaSegments(
-			_alignLivePlaylist(info, text, null, false),
+			_alignLivePlaylist(info, text, null, false, "", diagnostic),
 		);
-	} catch {
-		return false;
+	} catch (error) {
+		return Boolean(
+			error?.message ===
+				"Live handoff playlist is behind the served broadcast time" &&
+				diagnostic.lastEndTime > diagnostic.minimumTime,
+		);
 	}
 }
 
@@ -5428,6 +5441,82 @@ async function _processM3U8(
 	requestSignal = null,
 	requestStartContext = null,
 ) {
+	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+	const pageGeneration =
+		Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0;
+	const loaderEpoch = Math.max(
+		0,
+		Number(
+			requestStartContext
+				? requestStartContext.loaderEpoch
+				: _getStreamInfoForPlaylist(url)?.NativeRecoveryLoaderEpoch,
+		) || 0,
+	);
+	const waitMs = Math.min(
+		6000,
+		Math.max(
+			2000,
+			(Number(text?.match?.(/#EXT-X-TARGETDURATION:(\d+)/)?.[1]) || 0) * 1000,
+		),
+	);
+	const deadlineAt = Date.now() + waitMs;
+	let playlist = text;
+	let attemptContext = requestStartContext;
+	for (let refetches = Math.floor(waitMs / 1000) - 1; ; refetches--) {
+		try {
+			return await _processM3U8Attempt(
+				url,
+				playlist,
+				realFetch,
+				requestSignal,
+				attemptContext,
+			);
+		} catch (error) {
+			const info = _getStreamInfoForPlaylist(url);
+			if (
+				error?.message !==
+					"Live handoff playlist is behind the served broadcast time" ||
+				refetches <= 0 ||
+				Date.now() + 1000 >= deadlineAt ||
+				requestSignal?.aborted ||
+				__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+				info?.MediaType !== "live" ||
+				info.IsShowingAd ||
+				info.IsHoldingBackupAfterAd ||
+				Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) !==
+					loaderEpoch ||
+				_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) !== pageMediaKey ||
+				(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0) !==
+					pageGeneration
+			)
+				throw error;
+			await _waitForAbortableDelay(1000, requestSignal);
+			const response = await _fetchWithTimeout(
+				realFetch,
+				url,
+				{ signal: requestSignal },
+				Math.max(1, deadlineAt - Date.now()),
+			).catch(() => null);
+			if (response?.status !== 200) throw error;
+			playlist = await response.text();
+			attemptContext = requestStartContext
+				? {
+						...requestStartContext,
+						cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+						backupSearchEpoch: Math.max(0, Number(info.BackupSearchEpoch) || 0),
+					}
+				: null;
+		}
+	}
+}
+
+async function _processM3U8Attempt(
+	url,
+	text,
+	realFetch,
+	requestSignal = null,
+	requestStartContext = null,
+) {
 	const initialInfo = _getStreamInfoForPlaylist(url);
 	const initialPageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
 	const initialPageGeneration =
@@ -6955,7 +7044,7 @@ async function _processM3U8Core(
 				_getPendingForegroundQualityProbeAt(info);
 			const foregroundQualityTarget =
 				foregroundQualityProbeAt ||
-				_isInitialBackupQualityProbeDue(info) ||
+				_isBackupQualityProbeDue(info) ||
 				_isBackupProbationDue(info)
 					? _resolveAdBackupTargetResolution(info, url) || res
 					: null;
@@ -7028,7 +7117,7 @@ async function _processM3U8Core(
 			) {
 				if (
 					foregroundQualityProbeAt ||
-					_isInitialBackupQualityProbeDue(info) ||
+					_isBackupQualityProbeDue(info) ||
 					_isBackupProbationDue(info)
 				) {
 					_startPendingBackupQualityProbe(
@@ -7052,7 +7141,7 @@ async function _processM3U8Core(
 				if (refreshed) {
 					if (
 						foregroundQualityProbeAt ||
-						_isInitialBackupQualityProbeDue(info) ||
+						_isBackupQualityProbeDue(info) ||
 						_isBackupProbationDue(info)
 					) {
 						_startPendingBackupQualityProbe(
@@ -7403,7 +7492,7 @@ async function _processM3U8Core(
 			Date.now() - info._LastBackupSearchCompletedAt < 15000 &&
 			!_isRecentPostAdReentry(info) &&
 			!_getPendingForegroundQualityProbeAt(info) &&
-			!_isInitialBackupQualityProbeDue(info) &&
+			!_isBackupQualityProbeDue(info) &&
 			!_isBackupProbationDue(info)
 		) {
 			const forceRefreshAt =
@@ -7804,7 +7893,7 @@ async function _processM3U8Core(
 				if (refreshed) {
 					if (
 						foregroundQualityProbeAt ||
-						_isInitialBackupQualityProbeDue(info) ||
+						_isBackupQualityProbeDue(info) ||
 						_isBackupProbationDue(info)
 					) {
 						_startPendingBackupQualityProbe(
@@ -7860,7 +7949,7 @@ async function _processM3U8Core(
 			) {
 				if (
 					foregroundQualityProbeAt ||
-					_isInitialBackupQualityProbeDue(info) ||
+					_isBackupQualityProbeDue(info) ||
 					_isBackupProbationDue(info)
 				) {
 					_startPendingBackupQualityProbe(
@@ -7903,7 +7992,7 @@ async function _processM3U8Core(
 			} else if (
 				!backupSearchIsInFlight &&
 				(foregroundQualityProbeAt > 0 ||
-					_isInitialBackupQualityProbeDue(info) ||
+					_isBackupQualityProbeDue(info) ||
 					_isBackupProbationDue(info) ||
 					lastBackupSearchCompletedAt <= 0 ||
 					now - lastBackupSearchCompletedAt >= 15000 ||
@@ -8919,16 +9008,25 @@ async function _searchBackupStream(
 			"autoplay",
 		];
 	}
-	// this break get deprioritized so clean types get tried first.
 	if (info.LoggedBackupAdsByType && info.LoggedBackupAdsByType.size > 0) {
+		const heldBridgeType =
+			_shouldBridgeHeldAutoplayDuringSearch(info) &&
+			!_shouldHoldAutoplayBackupDuringAd(info)
+				? "autoplay"
+				: null;
 		const clean: string[] = [];
 		const contam: string[] = [];
 		for (const t of playerTypes) {
+			if (t === heldBridgeType) continue;
 			if (info.LoggedBackupAdsByType.has(t)) contam.push(t);
 			else clean.push(t);
 		}
 		if (contam.length > 0 && clean.length > 0) {
-			playerTypes = [...clean, ...contam];
+			playerTypes = [
+				...clean,
+				...contam,
+				...playerTypes.filter((t) => t === heldBridgeType),
+			];
 		}
 	}
 	const resolvedTargetRes =

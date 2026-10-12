@@ -767,7 +767,7 @@ describe("HD backup probation through playlist polling", () => {
 			}
 			if (reason === "searching")
 				f.info._BackupSearchPromise = Promise.resolve(null);
-			expect(f.context._isInitialBackupQualityProbeDue(f.info)).toBe(false);
+			expect(f.context._isBackupQualityProbeDue(f.info)).toBe(false);
 		},
 	);
 
@@ -798,6 +798,60 @@ describe("HD backup probation through playlist polling", () => {
 					false,
 				);
 			expect(probe).toHaveBeenCalledOnce();
+		},
+	);
+
+	it.each([false, true])(
+		"retries HD after an ad-marked check instead of settling on the 360p bridge, silent hold=%s",
+		async (holding) => {
+			const f = setupProbation();
+			f.info.IsShowingAd = !holding;
+			f.info.IsHoldingBackupAfterAd = holding;
+			f.info.SilentBackupHoldStartedAt = 1_000_000;
+			f.info._LqHoldStartAt = 999_000;
+			f.info._LastBackupSearchCompletedAt = 999_000;
+			const log = vi.fn();
+			f.context._log = log;
+			const siteChecks = () =>
+				log.mock.calls.filter(
+					([message]) => message === "[Trace] Checking: site",
+				).length;
+			const originalFetch = f.fetch.getMockImplementation();
+			let siteAdMarked = true;
+			f.fetch.mockImplementation(async (input, options) =>
+				siteAdMarked && String(input).includes("/site/1080")
+					? new Response(media("site", 1080, 400, true))
+					: originalFetch(input, options),
+			);
+			f.advance(7000);
+			expect(await f.poll(!holding)).toContain("/autoplay/360/");
+			await f.info._BackupSearchPromise;
+			await vi.waitFor(
+				() => expect(f.info._LastBackupSearchCompletedAt).toBe(1_007_000),
+				{ timeout: 2000 },
+			);
+			expect(siteChecks()).toBe(1);
+			expect(f.info.LoggedBackupAdsByType.has("site")).toBe(true);
+			expect(f.info.ActiveBackupPlayerType).toBe("autoplay");
+			siteAdMarked = false;
+			f.advance(14_000);
+			expect(await f.poll(!holding)).toContain("/autoplay/360/");
+			await f.info._BackupSearchPromise;
+			expect(siteChecks()).toBe(1);
+			f.advance(1_000);
+			expect(await f.poll(!holding)).toContain("/autoplay/360/");
+			await f.info._BackupSearchPromise;
+			expect(siteChecks()).toBe(2);
+			expect(f.info._BackupProbation).toMatchObject({
+				type: "site",
+				cleanChecks: 1,
+			});
+			f.advance(1500);
+			await f.poll(!holding);
+			await f.info._BackupSearchPromise;
+			f.advance(1000);
+			expect(await f.poll(!holding)).toContain("/site/1080/");
+			expect(f.info.ActiveBackupPlayerType).toBe("site");
 		},
 	);
 

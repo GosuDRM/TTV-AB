@@ -11868,6 +11868,167 @@ describe("injected worker ad playlist validation", () => {
 		},
 	);
 
+	it("returns to native by playlist after waiting for the next native segment in the injected worker", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({
+			preserveBlobSources: true,
+		});
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+		const variantUrl = "https://video-weaver.example.ttvnw.net/native.m3u8";
+		const master = (type: string) =>
+			`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=${type === "autoplay" ? "640x360" : "1920x1080"},VIDEO="${type === "autoplay" ? "360p" : "1080p60"}",CODECS="avc1.64002a,mp4a.40.2"\n${type === "native" ? variantUrl : `https://edge.example/${type}/index.m3u8`}`;
+		let bridgeOffset = 0;
+		let siteOffset = 0;
+		let nativeLagMs = 0;
+		let nativeHasAds = true;
+		const start = Date.parse("2026-10-06T00:05:30Z");
+		const media = (type: string, lagMs = 0) => {
+			const offset = type === "site" ? siteOffset : bridgeOffset;
+			const sequence = 500 + offset / 2000;
+			return `#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${sequence}\n#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset - lagMs).toISOString()}\n#EXTINF:2,live\nhttps://edge.example/${type}/segment-${sequence}.ts`;
+		};
+		const nativeFetch = vi.fn(
+			async (input: RequestInfo | URL, options?: RequestInit) => {
+				const url = String(input);
+				if (url.includes("gql.twitch.tv")) {
+					const body = JSON.parse(String(options?.body));
+					return Response.json({
+						data: {
+							streamPlaybackAccessToken: {
+								signature: "test",
+								value: body.variables.playerType,
+							},
+						},
+					});
+				}
+				if (url.includes("usher.ttvnw.net")) {
+					return new Response(
+						master(new URL(url).searchParams.get("token") || "native"),
+					);
+				}
+				if (url === variantUrl && !nativeHasAds)
+					return new Response(media("native", nativeLagMs));
+				if (url === variantUrl)
+					return new Response(
+						media("stitched-ad")
+							.replace(",live", ",stitched-ad")
+							.replace(
+								"#EXTINF",
+								'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-POD-LENGTH="1",X-TV-TWITCH-AD-POD-POSITION="1"\n#EXTINF',
+							),
+					);
+				return new Response(
+					media(url.includes("/site/") ? "site" : "autoplay"),
+				);
+			},
+		);
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, nativeFetch);
+			runtime.scope.Date = Date;
+			runtime.scope.navigator = { languages: ["en-US"], language: "en-US" };
+			runtime.deliverBootstrap();
+			const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaKey: "live:testchannel",
+				CurrentAdMediaKey: "live:testchannel",
+				PreferredQualityGroup: "1080p60",
+				BackupPlayerTypes: ["site", "autoplay"],
+				DisableAutoplayBackup: false,
+				DisableAdSpoofing: true,
+			});
+			const workerFetch = runtime.scope.fetch as typeof fetch;
+			await workerFetch(masterUrl);
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+			Object.assign(info, {
+				IsShowingAd: true,
+				IsUsingBackupStream: true,
+				VisibleAdStartedAt: 991_000,
+				ActiveBackupPlayerType: "autoplay",
+				LastCleanBackupPlayerType: "autoplay",
+				ActiveBackupResolution: "640x360",
+				LastCleanBackupResolution: "640x360",
+				LastCleanBackupCodec: "avc1.64002a",
+				LastCleanBackupCodecFamily: "avc",
+				LastCleanBackupM3U8: media("autoplay"),
+				LastCleanBackupAt: 999_000,
+				_LqHoldStartAt: 940_000,
+			});
+			(info.BackupEncodingsM3U8Cache as Record<string, unknown>).autoplay = {
+				m3u8: master("autoplay"),
+				baseUrl: masterUrl,
+			};
+			expect(await (await workerFetch(variantUrl)).text()).toContain(
+				"/autoplay/",
+			);
+			await vi.advanceTimersByTimeAsync(1_499);
+			expect(await (await workerFetch(variantUrl)).text()).toContain(
+				"/autoplay/",
+			);
+			await vi.advanceTimersByTimeAsync(1);
+			bridgeOffset = 2000;
+			expect(await (await workerFetch(variantUrl)).text()).toContain(
+				"/autoplay/segment-501.ts",
+			);
+			await vi.advanceTimersByTimeAsync(1500);
+			bridgeOffset = 4000;
+			siteOffset = 4000;
+			expect(await (await workerFetch(variantUrl)).text()).toContain("/site/");
+			expect(info.ActiveBackupPlayerType).toBe("site");
+			expect(info.HevcReloadPendingAfterHold).toBe(true);
+			nativeHasAds = false;
+			nativeLagMs = 1500;
+			const messages = () =>
+				(runtime.scope.postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+					([message]) =>
+						(message as { message: Record<string, unknown> }).message,
+				);
+			const restored = () =>
+				messages().find((message) => message?.key === "NativePlaybackRestored");
+			let output = "";
+			let waitedForNative = false;
+			for (let index = 0; index < 60 && !restored(); index++) {
+				vi.setSystemTime(Date.now() + 2000);
+				bridgeOffset += 2000;
+				siteOffset += 2000;
+				let settled = false;
+				const pending = workerFetch(variantUrl).then(async (response) => {
+					const text = await response.text();
+					settled = true;
+					return text;
+				});
+				for (let step = 0; step < 20 && !settled; step++) {
+					await vi.advanceTimersByTimeAsync(0);
+					if (!settled && restored()) {
+						waitedForNative = true;
+						bridgeOffset += 2000;
+						await vi.advanceTimersByTimeAsync(1000);
+					}
+				}
+				output = await pending;
+				expect(output).not.toContain("stitched-ad");
+			}
+			expect(restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: true,
+				refreshAccessToken: false,
+			});
+			expect(waitedForNative).toBe(true);
+			expect(output).toContain("/native/");
+			expect(output).not.toMatch(/\/(site|autoplay)\//);
+			expect(
+				messages().filter((message) => message?.key === "ReloadPlayer"),
+			).toHaveLength(0);
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
+		}
+	});
+
 	it.each(["avc1.64002a", "hev1.1.2.L150.90", "av01.0.12M.08"])(
 		"passes clean %s Twitch metadata through without starting ad recovery",
 		async (codec) => {

@@ -305,6 +305,44 @@ describe("compatible native playlist return", () => {
 		},
 	);
 
+	it("waits for the next native segment instead of rebuilding when native is just short of the served HD backup", async () => {
+		const f = setupHdNativeReturn();
+		let sequence = 500;
+		const native = () =>
+			playlist(++sequence, "native").replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(1791335710000 + Date.now() - 1500).toISOString()}\n#EXTINF:`,
+			);
+		const originalFetch = f.fetch.getMockImplementation();
+		let refetches = 0;
+		f.fetch.mockImplementation(async (input, options) => {
+			if (String(input) !== nativeUrl || !f.restored())
+				return originalFetch(input, options);
+			refetches++;
+			f.advance(2000);
+			return new Response(native());
+		});
+		f.context._waitForAbortableDelay = vi.fn(async () => {});
+		let output = "";
+		for (let index = 0; index < 40 && !f.restored(); index++) {
+			f.advance(2000);
+			output = await f.context._processM3U8(nativeUrl, native(), f.fetch);
+		}
+		expect(f.restored()).toMatchObject({
+			requiresReload: false,
+			continuePlayback: true,
+			refreshAccessToken: false,
+		});
+		expect(refetches).toBe(1);
+		expect(output).toContain(`native-${sequence + 2}.ts`);
+		expect(output).not.toMatch(/backup-|stitched-ad/);
+		expect(f.info._PendingPostAdNativeMaster).toMatchObject({
+			reloadAt: 0,
+			consumed: true,
+		});
+		expect(f.token).not.toHaveBeenCalled();
+	});
+
 	it("keeps the rebuild when broadcast timing cannot prove a compatible return", async () => {
 		const f = setupHdNativeReturn(false);
 		for (let index = 0; index < 40 && !f.restored(); index++) {
@@ -2154,13 +2192,56 @@ describe("bounded native session preservation", () => {
 			"#EXTINF:",
 			"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:10:00Z\n#EXTINF:",
 		);
+		context._waitForAbortableDelay = vi.fn(async () => {});
+		const refetch = vi.fn(async (input, options) =>
+			String(input) === nativeUrl ? new Response(text) : fetch(input, options),
+		);
 		await expect(
-			context._processM3U8(nativeUrl, text, fetch),
+			context._processM3U8(nativeUrl, text, refetch),
 		).rejects.toMatchObject({ name: "AbortError" });
+		expect(
+			refetch.mock.calls.filter(([input]) => String(input) === nativeUrl),
+		).toHaveLength(1);
 		expect(pending.consumed).not.toBe(true);
 		expect(info._PendingPostAdNativeMaster).toBe(pending);
 		const current = text.replace("18:10:00Z", "18:11:20Z");
 		await context._processM3U8(nativeUrl, current, fetch);
+		expect(pending.consumed).toBe(true);
+	});
+
+	it("waits for the next native window instead of failing a request that is just behind the served backup", async () => {
+		const { context, info, state, fetch, serve, restored } = setup();
+		state.PreferredQualityGroup = "1080p60";
+		for (let index = 0; index < 30 && !restored(); index++) await serve();
+		context.fetch = fetch;
+		context._hookWorkerFetch();
+		await context.fetch(masterUrl.replaceAll("owned", "fresh"));
+		const pending = info._PendingPostAdNativeMaster;
+		info._LivePlaylistTimeline = {
+			identity: "backup",
+			backup: true,
+			minimumTime: 0,
+			lastEndTime: Date.parse("2026-09-20T18:10:05Z"),
+		};
+		const dated = (sequence: number, time: string) =>
+			playlist(sequence, "native").replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-09-20T${time}Z\n#EXTINF:`,
+			);
+		context._waitForAbortableDelay = vi.fn(async () => {});
+		const refetch = vi.fn(async (input, options) =>
+			String(input) === nativeUrl
+				? new Response(dated(2001, "18:10:02"))
+				: fetch(input, options),
+		);
+		const output = await context._processM3U8(
+			nativeUrl,
+			dated(2000, "18:10:00"),
+			refetch,
+		);
+		expect(output).toContain("native-2003.ts");
+		expect(output).not.toContain("native-2002.ts");
+		expect(context._waitForAbortableDelay).toHaveBeenCalledTimes(1);
 		expect(pending.consumed).toBe(true);
 	});
 
