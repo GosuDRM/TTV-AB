@@ -2731,6 +2731,7 @@ function _logPlaylistContinuity(
 	previousMapping: TTVABEmptyHoldTimeline | null,
 	output: string | null,
 	error = null,
+	holdOutput: string | null = null,
 ) {
 	try {
 		if (
@@ -2796,7 +2797,9 @@ function _logPlaylistContinuity(
 				? diagnostic.firstTime - source.lastEndTime
 				: Number.NaN;
 		let event = reason
-			? "rejected"
+			? holdOutput != null
+				? "waiting-for-live-backup"
+				: "rejected"
 			: windowDelta < -50
 				? "window-regression"
 				: diagnostic.changedSource && diagnostic.minimumTime > 0
@@ -2884,6 +2887,10 @@ function _logPlaylistContinuity(
 				rawDiscontinuity: _parsePlaylistDiscontinuitySequence(text),
 				servedDiscontinuity:
 					output == null ? null : _parsePlaylistDiscontinuitySequence(output),
+				holdSequence:
+					holdOutput == null
+						? null
+						: _parsePlaylistFirstMediaSequence(holdOutput),
 				cutoff: rounded(diagnostic.minimumTime),
 				windowStart: rounded(diagnostic.firstTime),
 				windowEnd: rounded(diagnostic.lastEndTime),
@@ -2982,6 +2989,7 @@ function _applyPlaylistContinuity(
 	text,
 	backupMetadata = null,
 	requestContext = null,
+	emptyHoldSource: string | null = null,
 ) {
 	_observeServedPrefetchTimeline(
 		info,
@@ -3172,6 +3180,19 @@ function _applyPlaylistContinuity(
 		return output;
 	} catch (error) {
 		if (info) info._LivePlaylistTimeline = previous;
+		const holdOutput =
+			emptyHoldSource != null &&
+			error?.name === "AbortError" &&
+			error.message ===
+				"Live handoff playlist is behind the served broadcast time"
+				? _applyPlaylistContinuity(
+						info,
+						url,
+						_createEmptyAdHoldPlaylist(emptyHoldSource, info),
+						null,
+						requestContext,
+					)
+				: null;
 		_logPlaylistContinuity(
 			info,
 			url,
@@ -3181,7 +3202,9 @@ function _applyPlaylistContinuity(
 			previousMapping,
 			null,
 			error,
+			holdOutput,
 		);
+		if (holdOutput != null) return holdOutput;
 		throw error;
 	}
 }
@@ -5406,6 +5429,9 @@ async function _processM3U8(
 	requestStartContext = null,
 ) {
 	const initialInfo = _getStreamInfoForPlaylist(url);
+	const initialPageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+	const initialPageGeneration =
+		Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0;
 	const requestStartMediaKey = _normalizeMediaKey(
 		requestStartContext?.mediaKey,
 	);
@@ -5782,12 +5808,40 @@ async function _processM3U8(
 			_assertM3U8RequestContextCurrent(info, requestAdContext, requestSignal);
 			result = _createEmptyAdHoldPlaylist(text, info);
 		}
+		const canContinueEmptyHold = Boolean(
+			info === initialInfo &&
+				info.MediaType === "live" &&
+				__TTVAB_STATE__.IsAdStrippingEnabled === true &&
+				initialPageMediaKey &&
+				initialPageMediaKey ===
+					_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) &&
+				initialPageGeneration ===
+					(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0) &&
+				(info.IsShowingAd || info.IsHoldingBackupAfterAd) &&
+				_isCodecHandoffCycleCurrent(
+					info.MediaKey,
+					requestAdContext.cycleStartedAt,
+					info,
+				) &&
+				info._LastServedPlaylistKind === "hold" &&
+				info._EmptyAdHoldWindow?.cycleStartedAt === info.VisibleAdStartedAt &&
+				requestCodecFamily === "avc" &&
+				!responseHasEnhancedDecoderOwner &&
+				returnedBackupMatchesRequest &&
+				resultBackupMetadata?.playlistUrl &&
+				resultBackupMetadata.ambiguous !== true &&
+				!/(?:^|\n)\s*#EXT-X-MAP:/.test(text) &&
+				!/(?:^|\n)\s*#EXT-X-MAP:/.test(result),
+		);
+		if (canContinueEmptyHold)
+			_assertM3U8RequestContextCurrent(info, requestAdContext, requestSignal);
 		const output = _applyPlaylistContinuity(
 			info,
 			url,
 			result,
 			resultBackupMetadata,
 			requestAdContext,
+			canContinueEmptyHold ? text : null,
 		);
 		if (
 			returnedCachedNative &&
@@ -7604,25 +7658,27 @@ async function _processM3U8Core(
 		) {
 			info.HevcReloadPendingAfterHold = true;
 		}
-		if (backupType) {
-			__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
-			__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
-			__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
-		}
-		if (info.ActiveBackupPlayerType !== backupType) {
-			info.ActiveBackupPlayerType = backupType;
-			_log(`Using backup: ${backupType}`, "info");
-			if (backupType && typeof self !== "undefined" && self.postMessage) {
-				_postWorkerBridgeMessage(
-					self,
-					_createPageScopedWorkerEvent({
-						key: "BackupPlayerTypeSelected",
-						value: backupType,
-						channel: info.ChannelName,
-						mediaKey: info.MediaKey,
-						cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
-					}),
-				);
+		if (info._LastServedPlaylistKind !== "hold") {
+			if (backupType) {
+				__TTVAB_STATE__.PinnedBackupPlayerType = backupType;
+				__TTVAB_STATE__.PinnedBackupPlayerChannel = info.ChannelName || null;
+				__TTVAB_STATE__.PinnedBackupPlayerMediaKey = info.MediaKey || null;
+			}
+			if (info.ActiveBackupPlayerType !== backupType) {
+				info.ActiveBackupPlayerType = backupType;
+				_log(`Using backup: ${backupType}`, "info");
+				if (backupType && typeof self !== "undefined" && self.postMessage) {
+					_postWorkerBridgeMessage(
+						self,
+						_createPageScopedWorkerEvent({
+							key: "BackupPlayerTypeSelected",
+							value: backupType,
+							channel: info.ChannelName,
+							mediaKey: info.MediaKey,
+							cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+						}),
+					);
+				}
 			}
 		}
 
