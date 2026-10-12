@@ -75,6 +75,7 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ### v21.3.0 - 2026-10-13
 
+- **HD Backup Quality** - Keep the selected HD backup during an ad break instead of dropping it to 360p every few seconds while Twitch's quality list is still the low one from a preroll.
 - **Ad Pod Tracking** - Track each ad pod in a break separately, so when a preroll is followed by a midroll the last midroll ad is still reported as watched and the clean backup is kept until that pod has really finished.
 - **Worker Stability** - Keep an error in the extension's own player message handling from being treated as a player crash, which could restart the player and use up recovery attempts.
 - **Recovery Logs** - Log each worker recovery wait once instead of every 5 seconds, so a long wait in a background or paused tab no longer pushes earlier diagnostics out of Generate Log.
