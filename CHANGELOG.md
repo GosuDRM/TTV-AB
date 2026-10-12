@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [20.0.5] - 2026-10-12
+
+Fixed
+
+- **Post-Ad Quality Stability** - Revalidate and retain the native stream when Twitch offers a reduced quality catalog just after playback restarts, preventing a conflicting session from interrupting recovery.
+
+Added
+
+- **Recovery Diagnostics** - Log when a reduced catalog is replaced with verified native qualities while playback is recovering.
+
 ## [20.0.4] - 2026-10-12
 
 Fixed

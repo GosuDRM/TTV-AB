@@ -1,11 +1,11 @@
 # TTV AB
 
-![Version](https://img.shields.io/badge/version-20.0.4-purple)
+![Version](https://img.shields.io/badge/version-20.0.5-purple)
 ![License](https://img.shields.io/badge/license-MIT--based%20with%20attribution-green)
 ![Tests](https://github.com/GosuDRM/TTV-AB/actions/workflows/ci.yml/badge.svg)
 ![Manifest](https://img.shields.io/badge/manifest-v3-blue)
 ![Firefox](https://img.shields.io/amo/v/ttv-ab-twitch-ad-blocker?label=firefox&color=orange)
-![Chrome](https://img.shields.io/badge/chrome-20.0.4-yellow)
+![Chrome](https://img.shields.io/badge/chrome-20.0.5-yellow)
 [![GitHub](https://img.shields.io/badge/GitHub-TTV--AB-black?logo=github)](https://github.com/GosuDRM/TTV-AB)
 
 A lightweight browser extension that blocks Twitch ads on live streams and VODs while keeping playback stable.
@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v20.0.5 - 2026-10-12
+
+- **Post-Ad Quality Stability** - Revalidate and retain the native stream when Twitch offers a reduced quality catalog just after playback restarts, preventing a conflicting session from interrupting recovery.
+- **Recovery Diagnostics** - Log when a reduced catalog is replaced with verified native qualities while playback is recovering.
+
 ### v20.0.4 - 2026-10-12
 
 - **Backup Handoff Stalls** - Keep the temporary silent hold advancing while a clean backup catches up to the live stream. Switch only when fresh content is available, without replaying older segments.
@@ -81,10 +86,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 ### v20.0.3 - 2026-10-12
 
 - **Playback Diagnostics** - Help investigate playback repeats and gaps with source, quality, and transition timing details. Summarize repeated warnings and keep signed stream URLs private.
-
-### v20.0.2 - 2026-10-12
-
-- **Playback Rewinds** - Prevent a returning quality with different segment timing from replaying older content after an ad. Keep ongoing playlist updates stable and preserve new content at the transition.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
