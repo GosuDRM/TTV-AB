@@ -193,6 +193,7 @@ function _resetStreamAdState(
 	if (!preserveEmptyHoldTimelines) {
 		info._EmptyHoldTimelineByUrl?.clear?.();
 		info._LivePlaylistTimeline = null;
+		info._PlaylistContinuityDiagnostics = null;
 		info._LastServedPlaylistKind = null;
 		info._NativePlaybackMaster = null;
 		info._SpliceStreamId = null;
@@ -2373,6 +2374,7 @@ function _alignLivePlaylist(
 	backupMetadata = null,
 	commitTimeline = true,
 	url = "",
+	diagnostic: TTVABPlaylistAlignmentDiagnostic | null = null,
 ) {
 	if (
 		!info ||
@@ -2404,6 +2406,7 @@ function _alignLivePlaylist(
 			? previous?.lastEndTime || 0
 			: 0
 		: previous.minimumTime;
+	if (diagnostic) diagnostic.minimumTime = minimumTime;
 	const lines = text.split(/\r?\n/);
 	const entries = [];
 	let nextTime = Number.NaN;
@@ -2484,6 +2487,10 @@ function _alignLivePlaylist(
 			entry.time = next.time - entry.duration;
 			entry.derived = true;
 		}
+	}
+	if (diagnostic) {
+		diagnostic.firstTime = entries[0].time;
+		diagnostic.lastEndTime = entries.at(-1).end;
 	}
 	if (
 		entries.some(
@@ -2599,6 +2606,10 @@ function _alignLivePlaylist(
 			pendingHasExplicitTime = false;
 		}
 	}
+	if (diagnostic) {
+		diagnostic.changedSource = Boolean(changedSource);
+		diagnostic.minimumTime = minimumTime;
+	}
 	if (text.includes("#EXT-X-SKIP:")) {
 		if (minimumTime)
 			throw new DOMException(
@@ -2683,11 +2694,21 @@ function _alignLivePlaylist(
 		output = lines.join("\n");
 	}
 	if (!commitTimeline) return output;
-	if (changedSource && minimumTime > 0)
-		_log(
-			`[Recovery] Live playlist handoff skipped ${retainedIndex} older segments; boundary ${Math.round(entries[retainedIndex].time - minimumTime)}ms; retained ${entries.length - retainedIndex} segments`,
-			"info",
-		);
+	if (diagnostic) {
+		diagnostic.retainedTime = entries[retainedIndex].time;
+		diagnostic.skippedSegments = retainedIndex;
+		diagnostic.retainedSegments = entries.length - retainedIndex;
+		diagnostic.internalGapMs = 0;
+		diagnostic.internalOverlapMs = 0;
+		for (let index = retainedIndex + 1; index < entries.length; index++) {
+			const delta = entries[index].time - entries[index - 1].end;
+			diagnostic.internalGapMs = Math.max(diagnostic.internalGapMs, delta);
+			diagnostic.internalOverlapMs = Math.max(
+				diagnostic.internalOverlapMs,
+				-delta,
+			);
+		}
+	}
 	info._LivePlaylistTimeline = {
 		identity,
 		backup: Boolean(backupMetadata),
@@ -2699,6 +2720,197 @@ function _alignLivePlaylist(
 		),
 	};
 	return output;
+}
+
+function _logPlaylistContinuity(
+	info: Partial<TTVABStreamInfo>,
+	url: string,
+	text: string,
+	metadata,
+	diagnostic: TTVABPlaylistAlignmentDiagnostic,
+	previousMapping: TTVABEmptyHoldTimeline | null,
+	output: string | null,
+	error = null,
+) {
+	try {
+		if (
+			info?.MediaType !== "live" ||
+			__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+			typeof text !== "string" ||
+			text.includes("#EXT-X-STREAM-INF")
+		)
+			return;
+		info._PlaylistContinuityDiagnostics ??= {
+			nextSourceId: 0,
+			lastServedSourceId: 0,
+			sources: new Map(),
+		};
+		const state = info._PlaylistContinuityDiagnostics;
+		const requestKey = _getMediaPlaylistSessionKey(url);
+		const hold = text.includes(
+			"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+		);
+		const sourceKey = JSON.stringify([
+			requestKey,
+			hold ? "hold" : metadata?.playerType || "native",
+			_getMediaPlaylistSessionKey(metadata?.playlistUrl || url),
+			_getMediaPlaylistSessionKey(metadata?.sessionUrl || info.UsherBaseUrl),
+		]);
+		let source = state.sources.get(sourceKey);
+		if (!source) {
+			source = {
+				id: ++state.nextSourceId,
+				lastEndTime: 0,
+				lastEvent: "",
+				lastLoggedAt: 0,
+				suppressed: 0,
+			};
+			state.sources.set(sourceKey, source);
+			while (state.sources.size > 32)
+				state.sources.delete(state.sources.keys().next().value);
+		}
+		const reasons = {
+			"Live handoff requires unambiguous broadcast timestamps":
+				"ambiguous-timestamps",
+			"Live handoff requires a full dated playlist": "delta-playlist",
+			"Live handoff playlist is behind the served broadcast time":
+				"behind-served-time",
+			"Live handoff requires an explicit byte range": "implicit-byte-range",
+			"Retired empty hold recovery playlist": "retired-window",
+			"Empty hold recovery requires exact backup ownership": "backup-ownership",
+			"Empty hold recovery requires a full playlist": "delta-playlist",
+		};
+		const reason = error
+			? Object.hasOwn(reasons, error.message)
+				? reasons[error.message]
+				: "continuity-error"
+			: null;
+		const mapping = info._EmptyHoldTimelineByUrl?.get(requestKey);
+		const continuingSource = source.id === state.lastServedSourceId;
+		const windowDelta =
+			continuingSource && source.lastEndTime > 0
+				? diagnostic.lastEndTime - source.lastEndTime
+				: Number.NaN;
+		const windowGap =
+			continuingSource && source.lastEndTime > 0
+				? diagnostic.firstTime - source.lastEndTime
+				: Number.NaN;
+		let event = reason
+			? "rejected"
+			: windowDelta < -50
+				? "window-regression"
+				: diagnostic.changedSource && diagnostic.minimumTime > 0
+					? "handoff"
+					: previousMapping &&
+							(mapping?.identity !== previousMapping.identity ||
+								mapping?.generation !== previousMapping.generation)
+						? "remap"
+						: windowGap > 50 || diagnostic.internalGapMs > 50
+							? "timestamp-gap"
+							: diagnostic.internalOverlapMs > 50
+								? "timestamp-overlap"
+								: "";
+		const previousSource = state.lastServedSourceId || null;
+		if (output != null) {
+			state.lastServedSourceId = source.id;
+			if (Number.isFinite(diagnostic.lastEndTime))
+				source.lastEndTime = Math.max(
+					source.lastEndTime,
+					diagnostic.lastEndTime,
+				);
+		}
+		if (!event && source.suppressed > 0) event = "resumed";
+		if (!event) {
+			source.lastEvent = "";
+			return;
+		}
+		const activeCycle =
+			Number(info.VisibleAdStartedAt || info._PageFallbackCycleStartedAt) || 0;
+		const completedCycle =
+			info.MediaKey === __TTVAB_STATE__.LastAdEndedMediaKey
+				? Number(__TTVAB_STATE__.LastAdEndedCycleStartedAt) || 0
+				: 0;
+		const cycle = activeCycle || completedCycle;
+		const pageGeneration =
+			Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0;
+		const eventKey = JSON.stringify([event, reason, cycle, pageGeneration]);
+		const now = Date.now();
+		if (
+			source.lastEvent === eventKey &&
+			now >= source.lastLoggedAt &&
+			now - source.lastLoggedAt < 5000
+		) {
+			source.suppressed = Math.min(1000000, source.suppressed + 1);
+			return;
+		}
+		const native = info.Urls?.[requestKey];
+		const resolution = metadata?.resolution || native?.Resolution;
+		const codec = _getVideoCodecIdentity(metadata?.codec || native?.Codecs);
+		const boundary =
+			diagnostic.minimumTime > 0
+				? diagnostic.retainedTime - diagnostic.minimumTime
+				: Number.NaN;
+		const rounded = (value) =>
+			Number.isFinite(value) ? Math.round(value) : null;
+		_log(
+			`[Continuity] ${event} ${JSON.stringify({
+				mediaKey: _normalizeMediaKey(info.MediaKey),
+				pageMediaKey: _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey),
+				pageGeneration,
+				cycleStartedAt: cycle,
+				cyclePhase: activeCycle ? "active" : completedCycle ? "ended" : "none",
+				loaderEpoch: Number(info.NativeRecoveryLoaderEpoch) || 0,
+				sourceId: source.id,
+				previousSourceId: previousSource,
+				source: hold
+					? "hold"
+					: !metadata
+						? "native"
+						: ["site", "embed", "popout", "mobile_web", "autoplay"].includes(
+									metadata.playerType,
+								)
+							? metadata.playerType
+							: "backup",
+				resolution: /^\d{1,5}x\d{1,5}$/.test(resolution) ? resolution : null,
+				codec: /^(?:avc1|avc3|hev1|hvc1|av01|vp09)[.a-zA-Z0-9]{0,60}$/.test(
+					codec,
+				)
+					? codec
+					: null,
+				reason,
+				rawSequence: _parsePlaylistFirstMediaSequence(text),
+				servedSequence:
+					output == null ? null : _parsePlaylistFirstMediaSequence(output),
+				rawDiscontinuity: _parsePlaylistDiscontinuitySequence(text),
+				servedDiscontinuity:
+					output == null ? null : _parsePlaylistDiscontinuitySequence(output),
+				cutoff: rounded(diagnostic.minimumTime),
+				windowStart: rounded(diagnostic.firstTime),
+				windowEnd: rounded(diagnostic.lastEndTime),
+				windowEndDeltaMs: rounded(windowDelta),
+				windowGapMs: rounded(Math.max(0, windowGap)),
+				boundaryMs: rounded(boundary),
+				gapMs: rounded(Math.max(0, boundary)),
+				overlapMs: rounded(Math.max(0, -boundary)),
+				skippedSegments: diagnostic.skippedSegments ?? null,
+				retainedSegments: diagnostic.retainedSegments ?? null,
+				internalGapMs: rounded(diagnostic.internalGapMs),
+				internalOverlapMs: rounded(diagnostic.internalOverlapMs),
+				suppressed: source.suppressed,
+			})}`,
+			reason ||
+				event === "window-regression" ||
+				windowGap > 50 ||
+				Math.abs(boundary) > 50 ||
+				diagnostic.internalGapMs > 50 ||
+				diagnostic.internalOverlapMs > 50
+				? "warning"
+				: "info",
+		);
+		source.lastEvent = eventKey;
+		source.lastLoggedAt = now;
+		source.suppressed = 0;
+	} catch {}
 }
 
 function _canRestoreNativeByPlaylist(
@@ -2777,8 +2989,19 @@ function _applyPlaylistContinuity(
 		text,
 	);
 	const previous = info?._LivePlaylistTimeline;
+	const previousMapping =
+		info?._EmptyHoldTimelineByUrl?.get(_getMediaPlaylistSessionKey(url)) ||
+		null;
+	const diagnostic: TTVABPlaylistAlignmentDiagnostic = {};
 	try {
-		const aligned = _alignLivePlaylist(info, text, backupMetadata, true, url);
+		const aligned = _alignLivePlaylist(
+			info,
+			text,
+			backupMetadata,
+			true,
+			url,
+			diagnostic,
+		);
 		const output =
 			_applyEmptyHoldPlaylistContinuity(info, url, aligned, backupMetadata) ??
 			_applyBackupSpliceBridge(info, aligned, backupMetadata, url);
@@ -2937,9 +3160,28 @@ function _applyPlaylistContinuity(
 			}
 			timeline.prefetchedSegments = [...prefetched.values()].slice(-32);
 		}
+		_logPlaylistContinuity(
+			info,
+			url,
+			text,
+			backupMetadata,
+			diagnostic,
+			previousMapping,
+			output,
+		);
 		return output;
 	} catch (error) {
 		if (info) info._LivePlaylistTimeline = previous;
+		_logPlaylistContinuity(
+			info,
+			url,
+			text,
+			backupMetadata,
+			diagnostic,
+			previousMapping,
+			null,
+			error,
+		);
 		throw error;
 	}
 }
@@ -3560,12 +3802,6 @@ function _applyEmptyHoldPlaylistContinuity(
 	while (info._EmptyHoldTimelineByUrl.size > 32) {
 		info._EmptyHoldTimelineByUrl.delete(
 			info._EmptyHoldTimelineByUrl.keys().next().value,
-		);
-	}
-	if (changedSource && previous) {
-		_log(
-			`[Recovery] Playlist continuity after empty hold: ${previous.kind} -> ${metadata?.playerType || kind}; media ${firstSequence} -> ${firstSequence + timeline.mediaOffset}; discontinuity ${previous.lastDiscontinuity} -> ${firstDiscontinuity + timeline.discontinuityOffset}`,
-			"info",
 		);
 	}
 	return output.join("\n");
@@ -4233,6 +4469,7 @@ function _createStreamInfo(
 		_EmptyAdHoldWindow: null,
 		_EmptyHoldTimelineByUrl: new Map(),
 		_LivePlaylistTimeline: null,
+		_PlaylistContinuityDiagnostics: null,
 		_LastServedPlaylistKind: null,
 		_FatalMediaRecoveryRequestId: null,
 		_AdCycleRequestController:

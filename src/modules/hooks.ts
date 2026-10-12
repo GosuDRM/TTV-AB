@@ -5401,6 +5401,7 @@ function _installPageSideM3U8Override() {
 						_EmptyAdHoldWindow: null,
 						_EmptyHoldTimelineByUrl: new Map(),
 						_LivePlaylistTimeline: null,
+						_PlaylistContinuityDiagnostics: null,
 						NumStrippedAdSegments: 0,
 						IsStrippingAdSegments: false,
 					};

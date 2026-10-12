@@ -1298,8 +1298,8 @@ describe("empty hold playlist continuity", () => {
 		},
 	);
 
-	it("reports handoff timing once without exposing signed playlist URLs", async () => {
-		const { context, serve } = setup();
+	it("reports accepted handoff timing and source ownership once without exposing signed URLs", async () => {
+		const { context, info, serve } = setup();
 		const log = vi.fn();
 		context._log = log;
 		const dated = (sequence: number, time: string) =>
@@ -1308,14 +1308,266 @@ describe("empty hold playlist continuity", () => {
 				`#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:${time}Z\n#EXTINF:`,
 			);
 		await serve(dated(400, "20.000"));
-		await serve(dated(100, "23.999"), "site", "private-token");
+		const output = await serve(dated(100, "23.999"), "site", "private-token");
 		await serve(dated(101, "25.999"), "site", "private-token");
-		expect(log.mock.calls).toEqual([
-			[
-				"[Recovery] Live playlist handoff skipped 1 older segments; boundary -1ms; retained 2 segments",
-				"info",
-			],
-		]);
+		expect(log).toHaveBeenCalledTimes(1);
+		expect(log.mock.calls[0][1]).toBe("info");
+		expect(log.mock.calls[0][0]).toMatch(/^\[Continuity\] handoff /);
+		expect(JSON.parse(log.mock.calls[0][0].split("handoff ")[1])).toMatchObject(
+			{
+				mediaKey: info.MediaKey,
+				pageMediaKey: info.MediaKey,
+				cycleStartedAt: info.VisibleAdStartedAt,
+				sourceId: 2,
+				previousSourceId: 1,
+				source: "site",
+				resolution: "1920x1080",
+				codec: "avc1.64002a",
+				rawSequence: 100,
+				servedSequence: segments(output)[0].sequence,
+				cutoff: Date.parse("2026-09-20T18:09:26Z"),
+				boundaryMs: -1,
+				gapMs: 0,
+				overlapMs: 1,
+				skippedSegments: 1,
+				retainedSegments: 2,
+			},
+		);
+		expect(JSON.stringify(log.mock.calls)).not.toMatch(
+			/private-token|https:|token=|session=/,
+		);
+	});
+
+	it("summarizes repeated rejected windows and reports recovery without logging candidate probes", async () => {
+		const { context, info, serve } = setup();
+		let now = Date.now();
+		context.Date = class extends Date {
+			static now() {
+				return now;
+			}
+		};
+		const log = vi.fn();
+		context._log = log;
+		const start = Date.parse("2026-09-20T18:09:20Z");
+		const dated = (sequence: number, offset: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+			);
+		await serve(dated(400, 0));
+		const previous = info._LivePlaylistTimeline;
+		const metadata = {
+			playerType: "site",
+			playlistUrl: "https://edge.example/backup.m3u8?token=private",
+			sessionUrl: "https://usher.example/private",
+		};
+		expect(() =>
+			context._alignLivePlaylist(info, dated(100, -6000), metadata, false),
+		).toThrow("behind the served broadcast time");
+		expect(log).not.toHaveBeenCalled();
+		for (let index = 0; index < 4; index++) {
+			expect(() =>
+				context._applyPlaylistContinuity(
+					info,
+					nativeUrl,
+					dated(100, -6000),
+					metadata,
+				),
+			).toThrow("behind the served broadcast time");
+		}
+		expect(info._LivePlaylistTimeline).toBe(previous);
+		expect(log).toHaveBeenCalledTimes(1);
+		expect(log.mock.calls[0][1]).toBe("warning");
+		expect(
+			JSON.parse(log.mock.calls[0][0].split("rejected ")[1]),
+		).toMatchObject({
+			reason: "behind-served-time",
+			cutoff: start + 6000,
+			windowEnd: start,
+			servedSequence: null,
+			servedDiscontinuity: null,
+			boundaryMs: null,
+			suppressed: 0,
+		});
+		now += 5000;
+		expect(() =>
+			context._applyPlaylistContinuity(
+				info,
+				nativeUrl,
+				dated(100, -6000),
+				metadata,
+			),
+		).toThrow();
+		expect(log).toHaveBeenCalledTimes(2);
+		expect(
+			JSON.parse(log.mock.calls[1][0].split("rejected ")[1]).suppressed,
+		).toBe(3);
+		context._applyPlaylistContinuity(
+			info,
+			nativeUrl,
+			dated(101, 6000),
+			metadata,
+		);
+		expect(log).toHaveBeenCalledTimes(3);
+		expect(log.mock.calls[2][0]).toMatch(/^\[Continuity\] handoff /);
+		expect(JSON.stringify(log.mock.calls)).not.toMatch(/https:|private/);
+	});
+
+	it("does not announce an accepted handoff when later sequence validation rejects it", async () => {
+		const { context, serve } = setup();
+		const log = vi.fn();
+		context._log = log;
+		const dated = (sequence: number, seconds: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:${seconds}Z\n#EXTINF:`,
+			);
+		await serve(dated(400, 20));
+		context._applyEmptyHoldPlaylistContinuity = () => {
+			throw new DOMException(
+				"Retired empty hold recovery playlist",
+				"AbortError",
+			);
+		};
+		await expect(serve(dated(100, 26), "site")).rejects.toThrow(
+			"Retired empty hold",
+		);
+		expect(log).toHaveBeenCalledTimes(1);
+		expect(log.mock.calls[0][0]).toMatch(/^\[Continuity\] rejected /);
+		expect(
+			JSON.parse(log.mock.calls[0][0].split("rejected ")[1]),
+		).toMatchObject({ reason: "retired-window", servedSequence: null });
+	});
+
+	it.each([234, -234])(
+		"reports a dated internal boundary of %s ms without changing playlist bytes",
+		async (delta) => {
+			const { context, serve } = setup();
+			const log = vi.fn();
+			context._log = log;
+			const start = Date.parse("2026-09-20T18:09:20Z");
+			let index = 0;
+			const text = playlist(400).replaceAll("#EXTINF:", () => {
+				const time = start + index * 2000 + (index ? delta : 0);
+				index++;
+				return `#EXT-X-PROGRAM-DATE-TIME:${new Date(time).toISOString()}\n#EXTINF:`;
+			});
+			expect(await serve(text)).toBe(text);
+			expect(log).toHaveBeenCalledTimes(1);
+			expect(log.mock.calls[0][1]).toBe("warning");
+			const details = JSON.parse(
+				log.mock.calls[0][0].slice(log.mock.calls[0][0].indexOf("{")),
+			);
+			expect(details.internalGapMs).toBe(Math.max(0, delta));
+			expect(details.internalOverlapMs).toBe(Math.max(0, -delta));
+		},
+	);
+
+	it("keeps diagnostic source history bounded and ignores disabled blocking and VOD", async () => {
+		const { context, info } = setup();
+		const log = vi.fn();
+		context._log = log;
+		for (let index = 0; index < 40; index++)
+			context._applyPlaylistContinuity(
+				info,
+				`${nativeUrl}&source=${index}`,
+				playlist(400 + index),
+			);
+		expect(info._PlaylistContinuityDiagnostics.sources.size).toBe(32);
+		expect(info._PlaylistContinuityDiagnostics.nextSourceId).toBe(40);
+		context._resetStreamAdState(info, true);
+		expect(info._PlaylistContinuityDiagnostics.sources.size).toBe(32);
+		context._resetStreamAdState(info);
+		expect(info._PlaylistContinuityDiagnostics).toBeNull();
+		context.state.IsAdStrippingEnabled = false;
+		context._applyPlaylistContinuity(info, nativeUrl, playlist(100));
+		context.state.IsAdStrippingEnabled = true;
+		info.MediaType = "vod";
+		context._applyPlaylistContinuity(info, nativeUrl, playlist(100));
+		expect(info._PlaylistContinuityDiagnostics).toBeNull();
+		expect(log).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[-2000, "window-regression"],
+		[10000, "timestamp-gap"],
+	])(
+		"reports a same-source window moving by %s ms as %s",
+		async (offset, event) => {
+			const { context, serve } = setup();
+			const log = vi.fn();
+			context._log = log;
+			const start = Date.parse("2026-09-20T18:09:20Z");
+			const dated = (sequence: number, time: number) =>
+				playlist(sequence).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + time).toISOString()}\n#EXTINF:`,
+				);
+			await serve(dated(400, 0));
+			const text = dated(401, Number(offset));
+			expect(await serve(text)).toBe(text);
+			expect(log).toHaveBeenCalledTimes(1);
+			expect(log.mock.calls[0][0]).toMatch(`[Continuity] ${event} `);
+			expect(log.mock.calls[0][1]).toBe("warning");
+			expect(
+				JSON.parse(log.mock.calls[0][0].split(`${event} `)[1]),
+			).toMatchObject({
+				sourceId: 1,
+				previousSourceId: 1,
+				windowEndDeltaMs: Number(offset),
+				windowGapMs: Math.max(0, Number(offset) - 6000),
+			});
+		},
+	);
+
+	it("attributes native return to the ended cycle without treating time filled by backup as a gap", async () => {
+		const { context, info, serve } = setup();
+		const log = vi.fn();
+		context._log = log;
+		const dated = (sequence: number, seconds: number) =>
+			playlist(sequence).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:${seconds}Z\n#EXTINF:`,
+			);
+		await serve(dated(400, 20));
+		await serve(dated(100, 26), "site");
+		const cycle = info.VisibleAdStartedAt;
+		context.state.LastAdEndedMediaKey = info.MediaKey;
+		context.state.LastAdEndedCycleStartedAt = cycle;
+		context._resetStreamAdState(info, true);
+		log.mockClear();
+		await serve(dated(500, 32));
+		expect(log).toHaveBeenCalledTimes(1);
+		expect(log.mock.calls[0][1]).toBe("info");
+		expect(JSON.parse(log.mock.calls[0][0].split("handoff ")[1])).toMatchObject(
+			{
+				cycleStartedAt: cycle,
+				cyclePhase: "ended",
+				source: "native",
+				sourceId: 1,
+				previousSourceId: 2,
+				gapMs: 0,
+				windowGapMs: null,
+				windowEndDeltaMs: null,
+			},
+		);
+	});
+
+	it("keeps source identifiers stable across delivery directives and separates signed sessions", () => {
+		const { context, info } = setup();
+		for (const url of [
+			nativeUrl,
+			`${nativeUrl}&_HLS_msn=100&_HLS_part=1`,
+			`${nativeUrl}&_HLS_skip=YES`,
+		])
+			context._applyPlaylistContinuity(info, url, playlist(400));
+		expect(info._PlaylistContinuityDiagnostics.nextSourceId).toBe(1);
+		context._applyPlaylistContinuity(
+			info,
+			nativeUrl.replace("owned", "another-session"),
+			playlist(400),
+		);
+		expect(info._PlaylistContinuityDiagnostics.nextSourceId).toBe(2);
 	});
 
 	it.each([-51, -126, -235, -238, -500, -999])(
@@ -2667,6 +2919,8 @@ describe("empty hold playlist continuity", () => {
 	it("does not commit continuity from a cancelled response", async () => {
 		const { context, info, hold } = setup();
 		await hold();
+		const log = vi.fn();
+		context._log = log;
 		const before = JSON.stringify([...info._EmptyHoldTimelineByUrl]);
 		const controller = new AbortController();
 		context._processM3U8Core = async () => {
@@ -2677,6 +2931,7 @@ describe("empty hold playlist continuity", () => {
 			context._processM3U8(nativeUrl, playlist(10), vi.fn(), controller.signal),
 		).rejects.toMatchObject({ name: "AbortError" });
 		expect(JSON.stringify([...info._EmptyHoldTimelineByUrl])).toBe(before);
+		expect(log).not.toHaveBeenCalled();
 	});
 
 	it("keeps the degraded page fetch advancing from an owned AVC hold to native", async () => {

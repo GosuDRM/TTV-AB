@@ -228,6 +228,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_EmptyAdHoldWindow: null,
 		_EmptyHoldTimelineByUrl: new Map(),
 		_LivePlaylistTimeline: null,
+		_PlaylistContinuityDiagnostics: null,
 		_LastServedPlaylistKind: null,
 		_FatalMediaRecoveryRequestId: null,
 		_CodecHandoffSequence: 0,
@@ -897,6 +898,11 @@ describe("_resetStreamAdState", () => {
 			_EmptyAdHoldProgramDateTime: 5000,
 			_EmptyAdHoldWindow: { startedAt: 1000, firstSequence: 10 },
 			_LastServedPlaylistKind: "backup",
+			_PlaylistContinuityDiagnostics: {
+				nextSourceId: 2,
+				lastServedSourceId: 2,
+				sources: new Map(),
+			},
 			_LivePlaylistTimeline: {
 				identity: "backup",
 				minimumTime: 1000,
@@ -981,6 +987,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._EmptyAdHoldWindow).toBeNull();
 		expect(info._EmptyHoldTimelineByUrl.size).toBe(0);
 		expect(info._LivePlaylistTimeline).toBeNull();
+		expect(info._PlaylistContinuityDiagnostics).toBeNull();
 		expect(info._LastServedPlaylistKind).toBeNull();
 		expect(info._LastNoBackupProbeAt).toBe(0);
 		expect(info._NoBackupRecoveryCandidates.size).toBe(0);

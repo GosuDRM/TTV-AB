@@ -173,6 +173,33 @@ type TTVABLivePlaylistTimeline = {
 	prefetchedSegments?: { sourceUrl: string; url: string }[];
 };
 
+type TTVABPlaylistAlignmentDiagnostic = {
+	changedSource?: boolean;
+	minimumTime?: number;
+	firstTime?: number;
+	lastEndTime?: number;
+	retainedTime?: number;
+	skippedSegments?: number;
+	retainedSegments?: number;
+	internalGapMs?: number;
+	internalOverlapMs?: number;
+};
+
+type TTVABPlaylistContinuityDiagnostics = {
+	nextSourceId: number;
+	lastServedSourceId: number;
+	sources: Map<
+		string,
+		{
+			id: number;
+			lastEndTime: number;
+			lastEvent: string;
+			lastLoggedAt: number;
+			suppressed: number;
+		}
+	>;
+};
+
 interface TTVABStreamInfo extends TTVABPlaybackContext {
 	IsShowingAd: boolean;
 	LastPlayerReload: number;
@@ -292,6 +319,7 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	_EmptyAdHoldWindow: TTVABEmptyAdHoldWindow | null;
 	_EmptyHoldTimelineByUrl: Map<string, TTVABEmptyHoldTimeline>;
 	_LivePlaylistTimeline: TTVABLivePlaylistTimeline | null;
+	_PlaylistContinuityDiagnostics: TTVABPlaylistContinuityDiagnostics | null;
 	_LastServedPlaylistKind: TTVABPlaylistKind | null;
 	_FatalMediaRecoveryRequestId: string | null;
 	_AdCycleRequestController: AbortController | null;
