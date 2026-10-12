@@ -69,42 +69,6 @@ function getExactPreviewsPlayerFrameContext(value) {
 	}
 }
 
-const RESERVED_ROUTE_SEGMENTS = new Set([
-	"browse",
-	"clip",
-	"clips",
-	"collections",
-	"dashboard",
-	"directory",
-	"downloads",
-	"drops",
-	"embed",
-	"event",
-	"following",
-	"friends",
-	"inventory",
-	"jobs",
-	"manager",
-	"messages",
-	"moderator",
-	"p",
-	"player",
-	"popout",
-	"prime",
-	"products",
-	"search",
-	"settings",
-	"store",
-	"subscriptions",
-	"team",
-	"turbo",
-	"u",
-	"user",
-	"video",
-	"videos",
-	"wallet",
-]);
-
 function isPlainObject(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return false;
@@ -175,56 +139,6 @@ function mergeWatchIntervalMaps(target, source) {
 	return target;
 }
 
-function _getCurrentPlaybackContext() {
-	const segments = window.location.pathname.split("/").filter(Boolean);
-	const firstSegment = segments[0] || null;
-	const lowerFirstSegment = String(firstSegment || "").toLowerCase();
-	if (lowerFirstSegment === "videos" || lowerFirstSegment === "video") {
-		const vodID = normalizeVodID(segments[1] || null);
-		return {
-			channelName: null,
-			mediaKey: buildMediaKey("vod", null, vodID),
-		};
-	}
-
-	if (lowerFirstSegment === "popout") {
-		const channelName = normalizeChannelName(segments[1] || null);
-		const isPlayerRoute = String(segments[2] || "").toLowerCase() === "player";
-		return {
-			channelName: channelName && isPlayerRoute ? channelName : null,
-			mediaKey:
-				channelName && isPlayerRoute
-					? buildMediaKey("live", channelName, null)
-					: null,
-		};
-	}
-
-	if (lowerFirstSegment === "embed" || lowerFirstSegment === "moderator") {
-		const channelName = normalizeChannelName(segments[1] || null);
-		return {
-			channelName,
-			mediaKey: buildMediaKey("live", channelName, null),
-		};
-	}
-
-	if (segments.length !== 1) {
-		return {
-			channelName: null,
-			mediaKey: null,
-		};
-	}
-
-	const normalizedCandidate = normalizeChannelName(firstSegment);
-	const channelName =
-		normalizedCandidate && !RESERVED_ROUTE_SEGMENTS.has(normalizedCandidate)
-			? normalizedCandidate
-			: null;
-	return {
-		channelName,
-		mediaKey: buildMediaKey("live", channelName, null),
-	};
-}
-
 function getMessagePlaybackContext(detail) {
 	const safeDetail = getBridgeMessageDetail(detail);
 	const channelName = normalizeChannelName(
@@ -236,21 +150,6 @@ function getMessagePlaybackContext(detail) {
 			normalizeMediaKey(safeDetail?.pageMediaKey || safeDetail?.mediaKey) ||
 			buildMediaKey("live", channelName, null),
 	};
-}
-
-function _playbackContextsMatch(
-	expectedPlaybackContext,
-	currentPlaybackContext,
-) {
-	if (expectedPlaybackContext?.mediaKey) {
-		return currentPlaybackContext.mediaKey === expectedPlaybackContext.mediaKey;
-	}
-	if (expectedPlaybackContext?.channelName) {
-		return (
-			currentPlaybackContext.channelName === expectedPlaybackContext.channelName
-		);
-	}
-	return true;
 }
 
 const BRIDGE_PORT_INIT_MESSAGE = "ttvab-bridge-port-init";
