@@ -9949,6 +9949,7 @@ async function _searchBackupStream(
 														cleanChecks: requiredCleanHolds,
 													};
 										_clearBackupPlayerRetryCooldown(info, pt);
+										info.LoggedBackupAdsByType?.delete(pt);
 										backupType = pt;
 										backupM3u8 = m3u8;
 										if (
@@ -9983,6 +9984,7 @@ async function _searchBackupStream(
 											break;
 										}
 										_clearBackupPlayerRetryCooldown(info, pt);
+										info.LoggedBackupAdsByType?.delete(pt);
 										backupType = pt;
 										backupM3u8 = m3u8;
 										if (
