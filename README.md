@@ -73,6 +73,17 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v21.3.0 - 2026-10-13
+
+- **Ad Pod Tracking** - Track each ad pod in a break separately, so when a preroll is followed by a midroll the last midroll ad is still reported as watched and the clean backup is kept until that pod has really finished.
+- **Worker Stability** - Keep an error in the extension's own player message handling from being treated as a player crash, which could restart the player and use up recovery attempts.
+- **Recovery Logs** - Log each worker recovery wait once instead of every 5 seconds, so a long wait in a background or paused tab no longer pushes earlier diagnostics out of Generate Log.
+- **Worker Watchdog** - Keep checking every player's heartbeat when another watchdog check fails, so one error can no longer stop crash detection.
+- **Navigation Safety** - Keep Twitch's page navigation working if the extension's own navigation tracking hits an error, and stop removing other extensions' navigation hooks when the page is hidden.
+- **Ad Break Summaries** - Show how playback returned to the stream in the log summary for ad breaks that end normally, not only after a silent backup hold.
+- **Code Cleanup** - Remove an unused player helper left over from an older version.
+- **Monitor Efficiency** - Check the page's player once per playback monitor pass instead of twice on pages without a stream.
+
 ### v21.0.5 - 2026-10-13
 
 - **1440p Ad Break Freezes** - Keep every verified quality option when Twitch shortens the quality list just before an ad on HEVC or AV1 1440p streams, so playback switches to a clean backup instead of freezing for up to a minute and the quality menu is no longer cut down to 1440p only.
@@ -82,12 +93,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 - **HD Backup Retention** - Keep a clean HD backup playing after it proves itself during an ad break, instead of dropping back to 360p because it had shown ads earlier in the same break.
 - **Firefox Startup Error** - Stop Firefox from logging an XML parsing error while the player starts.
-
-### v21.0.3 - 2026-10-13
-
-- **Backup Stream Rewinds** - Stop the stream from jumping back a few seconds each time an ad break switches to a fresh backup session, which repeated every few seconds when backups kept receiving ads ([#88](https://github.com/GosuDRM/TTV-AB/issues/88)).
-- **Ad Break Reporting** - Recognize ad markers when Twitch lists their details in a different order or uses Windows line endings, so ad progress is still tracked and ad completion is still reported.
-- **Code Cleanup** - Remove unused route helpers left over from an older version, keeping a single list of non-channel Twitch pages so the two copies can no longer drift apart.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

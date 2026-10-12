@@ -2,6 +2,22 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [21.3.0] - 2026-10-13
+
+Fixed
+
+- **Ad Pod Tracking** - Track each ad pod in a break separately, so when a preroll is followed by a midroll the last midroll ad is still reported as watched and the clean backup is kept until that pod has really finished.
+- **Worker Stability** - Keep an error in the extension's own player message handling from being treated as a player crash, which could restart the player and use up recovery attempts.
+- **Recovery Logs** - Log each worker recovery wait once instead of every 5 seconds, so a long wait in a background or paused tab no longer pushes earlier diagnostics out of Generate Log.
+- **Worker Watchdog** - Keep checking every player's heartbeat when another watchdog check fails, so one error can no longer stop crash detection.
+- **Navigation Safety** - Keep Twitch's page navigation working if the extension's own navigation tracking hits an error, and stop removing other extensions' navigation hooks when the page is hidden.
+- **Ad Break Summaries** - Show how playback returned to the stream in the log summary for ad breaks that end normally, not only after a silent backup hold.
+
+Changed
+
+- **Code Cleanup** - Remove an unused player helper left over from an older version.
+- **Monitor Efficiency** - Check the page's player once per playback monitor pass instead of twice on pages without a stream.
+
 ## [21.0.5] - 2026-10-13
 
 Fixed
