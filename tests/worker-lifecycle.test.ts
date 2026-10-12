@@ -12072,6 +12072,105 @@ describe("clean-playback reduced master recovery", () => {
 		};
 	}
 
+	async function consumeNativeSession(
+		session: Awaited<ReturnType<typeof setup>>,
+	) {
+		Object.assign(session.state, {
+			LastAdEndedAt: Date.now(),
+			LastAdEndedMediaKey: mediaKey,
+			LastAdEndedCycleStartedAt: Date.now() - 10000,
+		});
+		const pending = {
+			master: session.fullMaster,
+			masterUrl,
+			playlistUrl: session.variants[0].url,
+			mediaKey,
+			cycleStartedAt: session.state.LastAdEndedCycleStartedAt,
+			expiresAt: Date.now() + 30000,
+			pageGeneration: Number(session.state.PagePlaybackContextGeneration) || 0,
+			masterServedAt: 0,
+			reloadAt: Date.now(),
+			reloadCount: 1,
+			consumed: false,
+		};
+		session.info._PendingPostAdNativeMaster = pending;
+		const response = session.fetch(newerUrl).then((result) => result.text());
+		await vi.advanceTimersByTimeAsync(2500);
+		expect(await response).toContain(session.variants[0].url);
+		session.control.probing = false;
+		await session.fetch(session.variants[0].url);
+		expect(pending.consumed).toBe(true);
+		session.control.probing = true;
+		session.rawFetch.mockClear();
+		session.control.looks.clear();
+		return pending;
+	}
+
+	it.each(["avc1.64002a", "hev1.1.2.L150.90", "av01.0.12M.08"])(
+		"keeps the recovering %s session after its first media response and a reduced master",
+		async (codec) => {
+			const session = await setup("1080p60", codec);
+			try {
+				const pending = await consumeNativeSession(session);
+				const snapshot = { ...pending };
+				const loaderEpoch = session.info.NativeRecoveryLoaderEpoch;
+				const response = session
+					.fetch(reducedUrl)
+					.then((result) => result.text());
+				await vi.advanceTimersByTimeAsync(2500);
+				const output = await response;
+				for (const { url } of session.variants) expect(output).toContain(url);
+				expect(output).not.toContain("token=reduced");
+				expect(session.info.UsherBaseUrl).toBe(masterUrl);
+				expect(session.info.NativeRecoveryLoaderEpoch).toBe(loaderEpoch);
+				expect(session.info._PendingPostAdNativeMaster).toBe(pending);
+				expect(pending).toEqual(snapshot);
+				expect(session.rawFetch).toHaveBeenCalledTimes(11);
+				for (const { url } of session.variants)
+					expect(session.control.looks.get(url)).toBe(2);
+				session.control.probing = false;
+				expect(
+					await (await session.fetch(session.variants[0].url)).text(),
+				).toContain("segment-");
+				session.runtime.deliver(
+					T<(message: Record<string, unknown>) => unknown>(
+						"_createWorkerBridgeMessage",
+					)({
+						key: "ReleasePostAdNativeSession",
+						value: {
+							mediaKey,
+							cycleStartedAt: pending.cycleStartedAt,
+							reloadAt: pending.reloadAt,
+						},
+					}),
+				);
+				expect(session.info._PendingPostAdNativeMaster).toBeNull();
+			} finally {
+				session.restore();
+			}
+		},
+	);
+
+	it("rechecks consumed native qualities for new ads before retaining their master", async () => {
+		const session = await setup();
+		try {
+			await consumeNativeSession(session);
+			session.control.probe = (url, look) =>
+				session.variants.slice(0, 3).some((variant) => variant.url === url)
+					? new Response(playlist(600 + look, look === 2))
+					: null;
+			const response = session
+				.fetch(reducedUrl)
+				.then((result) => result.text());
+			await vi.advanceTimersByTimeAsync(2500);
+			expect(await response).toBe(session.lowMaster);
+			expect(session.control.looks.get(session.variants[0].url)).toBe(2);
+			expect(session.info._PendingPostAdNativeMaster).toBeNull();
+		} finally {
+			session.restore();
+		}
+	});
+
 	it.each([
 		["1080p60", "avc1.64002a"],
 		["auto", "avc1.64002a"],
@@ -12394,11 +12493,16 @@ describe("clean-playback reduced master recovery", () => {
 		}
 	});
 
-	it.each(["abort", "navigate", "generation", "newer-master"])(
-		"rejects delayed quality results after %s",
-		async (condition) => {
+	it.each(
+		["abort", "navigate", "generation", "newer-master"].flatMap((condition) =>
+			[false, true].map((consumed) => ({ condition, consumed })),
+		),
+	)(
+		"rejects delayed quality results after $condition with consumed recovery: $consumed",
+		async ({ condition, consumed }) => {
 			const session = await setup();
 			try {
+				if (consumed) await consumeNativeSession(session);
 				const controller = new AbortController();
 				const response = session
 					.fetch(reducedUrl, { signal: controller.signal })

@@ -1126,7 +1126,8 @@ function _hookWorkerFetch() {
 					!info.IsUsingFallbackStream &&
 					!info.IsUsingModifiedM3U8 &&
 					!_getActiveCodecHandoffIdForInfo(info) &&
-					!info._PendingPostAdNativeMaster &&
+					(!info._PendingPostAdNativeMaster ||
+						info._PendingPostAdNativeMaster.consumed === true) &&
 					saved &&
 					info._NativePlaybackMaster?.master === saved.master &&
 					info._NativePlaybackMaster?.masterUrl === saved.masterUrl &&
@@ -1211,7 +1212,14 @@ function _hookWorkerFetch() {
 				)
 			)
 				return null;
-			return { master: validated.master, masterUrl: saved.masterUrl };
+			return {
+				master: validated.master,
+				masterUrl: saved.masterUrl,
+				preserveNativeSession: Boolean(
+					info._PendingPostAdNativeMaster?.consumed === true &&
+						info._PendingPostAdNativeMaster.masterUrl === saved.masterUrl,
+				),
+			};
 		} catch {
 			assertRequestCurrent();
 			return null;
@@ -2229,7 +2237,7 @@ function _hookWorkerFetch() {
 				if (recoveredNativeMaster) {
 					encodings = recoveredNativeMaster.master;
 					_log(
-						"[Recovery] Preserved live-validated native qualities after a reduced master",
+						`[Recovery] Preserved live-validated native qualities after a reduced master${recoveredNativeMaster.preserveNativeSession ? " while post-ad playback is recovering" : ""}`,
 						"success",
 					);
 				}
@@ -2254,6 +2262,7 @@ function _hookWorkerFetch() {
 						info,
 						encodings,
 						recoveredNativeMaster?.masterUrl || url,
+						recoveredNativeMaster?.preserveNativeSession === true,
 					);
 					commitMasterRequest(requestMediaKey, requestSequence);
 					info.LastActivityAt = Date.now();
