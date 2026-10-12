@@ -768,7 +768,6 @@ function _hookWorkerFetch() {
 		requestSignal,
 		assertCurrent,
 		expiresAt,
-		codecFamily = null,
 	) => {
 		const masterLines = masterText.split(/\r?\n/);
 		const initialPlaylistUrls = [...selectedVariants.values()];
@@ -817,10 +816,7 @@ function _hookWorkerFetch() {
 				const { index, attrs, height, url: candidateUrl } = candidate;
 				const recordResult = (reason) =>
 					qualityResults.set(index, `${height}p:${reason}`);
-				if (
-					!_getVideoCodecIdentity(attrs.CODECS) ||
-					(codecFamily && _getVideoCodecFamily(attrs.CODECS) !== codecFamily)
-				) {
+				if (!_getVideoCodecIdentity(attrs.CODECS)) {
 					recordResult("unknown-codec");
 					continue;
 				}
@@ -1197,7 +1193,6 @@ function _hookWorkerFetch() {
 					if (!isCurrent()) throw _createRequestAbortError(requestSignal);
 				},
 				now + 2500,
-				codecFamily,
 			);
 			assertRequestCurrent();
 			if (
