@@ -73,6 +73,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v20.0.3 - 2026-10-12
+
+- **Playback Diagnostics** - Help investigate playback repeats and gaps with source, quality, and transition timing details. Summarize repeated warnings and keep signed stream URLs private.
+
 ### v20.0.2 - 2026-10-12
 
 - **Playback Rewinds** - Prevent a returning quality with different segment timing from replaying older content after an ad. Keep ongoing playlist updates stable and preserve new content at the transition.
@@ -88,19 +92,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Stream State Types** - Add explicit stream, backup, and recovery types to catch invalid state updates during development.
 - **Type Checks** - Add regression checks for missing ownership fields and invalid state updates.
 - **Test Setup** - Share runtime-loading helpers and run regression checks in normal and shuffled order.
-
-### v20.0.0 - 2026-10-09
-
-- **Quality Switching** - Keep playlist numbering stable when native qualities use different segment timings after ads.
-- **Playlist Recovery** - Accept fresh live updates with wider windows without replaying older segments or stopping playback.
-- **Backup Recovery** - Keep the player informed when its clean backup changes while waiting for native playback to return.
-
-- **Worker Builds** - Build the playback worker from automatically collected dependencies and minify shipped scripts with esbuild.
-- **TypeScript Coverage** - Check all runtime modules and add explicit types for global state, worker initialization, and messages.
-- **Worker Messages** - Validate command and event payloads before playback changes, network requests, or heartbeat acknowledgement.
-- **Build Tests** - Test worker dependencies, message validation, and the assembled scripts and worker bootstrap.
-- **Extension Packages** - Exclude development TypeScript and diagnostic modules from installable archives, and fail builds when packaging fails.
-- **Development Tools** - Update Biome to 2.5.15 and Knip to 6.40.0 for formatting, linting, and unused-code checks.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
@@ -150,6 +141,7 @@ After rebuilding, reload the extension from that page and refresh your Twitch ta
 ## 💬 Support
 
 - Found a bug? [Open an issue](https://github.com/GosuDRM/TTV-AB/issues)
+- For playback repeats or gaps, use **Generate Log** in the affected tab after the issue occurs. `[Continuity]` entries record accepted transitions, rejected windows, and timestamp gaps or overlaps, with numbered sources instead of signed URLs. Repeated matching events are summarized at most once every five seconds. These playlist timestamps do not prove what was played or whether audio stayed in sync; include when you noticed the issue.
 - Want to contribute? Pull requests are welcome
 - If TTV AB saves you from ads, consider supporting development:
 

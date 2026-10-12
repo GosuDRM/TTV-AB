@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [20.0.3] - 2026-10-12
+
+Added
+
+- **Playback Diagnostics** - Help investigate playback repeats and gaps with source, quality, and transition timing details. Summarize repeated warnings and keep signed stream URLs private.
+
 ## [20.0.2] - 2026-10-12
 
 Fixed
