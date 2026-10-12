@@ -2,6 +2,14 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [21.0.1] - 2026-10-12
+
+Fixed
+
+- **Native Stream Return** - Switch back to Twitch's own stream without restarting the player when it is just short of where the HD backup left off, waiting a moment for fresh video instead.
+- **Playlist Retries** - Wait briefly for fresh video when a playlist update arrives slightly behind, instead of failing the request and making the player stall while it retries.
+- **HD Backup Retries** - Keep retrying HD backups while the low-quality backup plays, so a break no longer stays at 360p after an HD source showed ads once.
+
 ## [21.0.0] - 2026-10-12
 
 Fixed
