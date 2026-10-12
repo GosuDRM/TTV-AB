@@ -130,6 +130,58 @@ describe("backup session and fallback ownership through the processor", () => {
 			expect(info.LastCleanBackupM3U8).not.toContain("twitch-ad-quartile");
 		},
 	);
+	it("keeps refreshing the selected HD variant while the native catalog is still low", async () => {
+		const { context, info, state } = setup();
+		state.DisableAutoplayBackup = true;
+		state.BackupPlayerTypes = ["site"];
+		info.IsShowingAd = true;
+		info.VisibleAdStartedAt = Date.now() - 1000;
+		state.CurrentAdMediaKey = info.MediaKey;
+		info.ResolutionList = [
+			{
+				Name: "360p",
+				Resolution: "640x360",
+				FrameRate: 30,
+				Codecs: "avc1.4D401F,mp4a.40.2",
+			},
+		];
+		const siteMaster = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=60,CODECS="avc1.4D401F,mp4a.40.2",VIDEO="720p60"',
+			"https://cdn.example/site/clean/720.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,FRAME-RATE=30,CODECS="avc1.4D401F,mp4a.40.2",VIDEO="360p30"',
+			"https://cdn.example/site/clean/360.m3u8",
+		].join("\n");
+		info.BackupEncodingsM3U8Cache.site = {
+			m3u8: siteMaster,
+			baseUrl: info.UsherBaseUrl,
+		};
+		let sequence = 100;
+		const requested: string[] = [];
+		const fetch = vi.fn(async (url: string) => {
+			requested.push(url);
+			if (url.includes("usher.ttvnw.net")) return new Response(siteMaster);
+			const rendition = url.includes("/720.m3u8") ? "720" : "360";
+			return new Response(media(`site-${rendition}`, "clean", sequence));
+		});
+		const result = await context._findBackupStream(info, fetch, 0, {
+			Name: "720p60",
+			Resolution: "1280x720",
+			FrameRate: 60,
+		});
+		expect(result.type).toBe("site");
+		expect(info.LastCleanBackupResolution).toBe("1280x720");
+		requested.length = 0;
+		sequence = 101;
+		const refreshed = await context._refreshActiveBackupMediaPlaylist(
+			info,
+			fetch,
+		);
+		expect(refreshed).toContain("site-720/clean/segment-101.ts");
+		expect(requested).toEqual(["https://cdn.example/site/clean/720.m3u8"]);
+		expect(info.LastCleanBackupResolution).toBe("1280x720");
+	});
+
 	it.each([
 		"#EXTM3U\n#EXTINF:2,live",
 		"#EXTM3U\n#EXT-X-PART:DURATION=0.5",
