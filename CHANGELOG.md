@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [21.0.5] - 2026-10-13
+
+Fixed
+
+- **1440p Ad Break Freezes** - Keep every verified quality option when Twitch shortens the quality list just before an ad on HEVC or AV1 1440p streams, so playback switches to a clean backup instead of freezing for up to a minute and the quality menu is no longer cut down to 1440p only.
+- **Silent Hold Stalls** - Stop an old stall report from sidelining a healthy backup when an ad break moves into its silent hold, which caused repeated freezes while Twitch kept serving ads.
+
 ## [21.0.4] - 2026-10-13
 
 Fixed
