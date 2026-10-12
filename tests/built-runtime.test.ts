@@ -69,14 +69,26 @@ function loadBuiltPage() {
 
 		terminate() {}
 	}
+	const blobReadMimeTypes: string[] = [];
 	class TestXMLHttpRequest {
 		responseText = "";
+		url = "";
+		mimeType = "";
 
 		open(_method: string, url: string) {
-			this.responseText = sources.get(url) || "";
+			this.url = url;
 		}
 
-		send() {}
+		overrideMimeType(mimeType: string) {
+			this.mimeType = mimeType;
+		}
+
+		send() {
+			blobReadMimeTypes.push(this.mimeType);
+			this.responseText = this.mimeType.startsWith("text/plain")
+				? sources.get(this.url) || ""
+				: "";
+		}
 	}
 	const rawPageFetch = vi.fn(async () => new Response("page response"));
 	Object.assign(page, {
@@ -95,6 +107,7 @@ function loadBuiltPage() {
 	return {
 		page,
 		rawPageFetch,
+		blobReadMimeTypes,
 		state: page.eval("__TTVAB_STATE__") as Record<string, unknown>,
 		createBlob: (source: string) =>
 			TestURL.createObjectURL(new TestBlob([source])),
@@ -307,13 +320,17 @@ describe("shipped content script and worker", () => {
 	});
 
 	it("hooks before blob bootstrap and preserves one hook when its source is copied", () => {
-		const { createBlob, createWorker } = loadBuiltPage();
+		const { createBlob, createWorker, blobReadMimeTypes } = loadBuiltPage();
 		const originalUrl = createBlob(
 			'self.bootFetch = self.fetch; self.postMessage({ key: "OriginalWorkerBooted", mediaKey: __TTVAB_STATE__.PageMediaKey });',
 		);
 		const worker = createWorker(originalUrl);
 		const copiedWorker = createWorker(createBlob(worker.source));
 		expect(copiedWorker.source).toBe(worker.source);
+		expect(blobReadMimeTypes).toEqual([
+			"text/plain; charset=utf-8",
+			"text/plain; charset=utf-8",
+		]);
 		for (const candidate of [worker, copiedWorker]) {
 			const rawFetch = vi.fn(async () => new Response("worker response"));
 			const { scope, listeners } = startBuiltWorker(candidate, rawFetch);

@@ -858,6 +858,16 @@ describe("HD backup probation through playlist polling", () => {
 			f.advance(1000);
 			expect(await f.poll(!holding)).toContain("/site/1080/");
 			expect(f.info.ActiveBackupPlayerType).toBe("site");
+			expect(f.info.LoggedBackupAdsByType.has("site")).toBe(false);
+			f.advance(15_000);
+			expect(await f.poll(!holding)).toContain("/site/1080/");
+			await f.info._BackupSearchPromise;
+			expect(f.info.ActiveBackupPlayerType).toBe("site");
+			expect(f.info.LastCleanBackupPlayerType).toBe("site");
+			expect(log).not.toHaveBeenCalledWith(
+				"[Trace] Backup search order: autoplay, site",
+				"info",
+			);
 		},
 	);
 
