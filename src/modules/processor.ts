@@ -3554,6 +3554,7 @@ function _applyEmptyHoldPlaylistContinuity(
 	let sequence = firstSequence;
 	let firstDiscontinuity = null;
 	let lastSequence = null;
+	let lastSegmentSequence = null;
 	let discontinuity = _parsePlaylistDiscontinuitySequence(text);
 	const baseDiscontinuity = discontinuity;
 	const nativeAnchors = [];
@@ -3573,6 +3574,7 @@ function _applyEmptyHoldPlaylistContinuity(
 		if (line.startsWith("#EXTINF:")) {
 			segmentDuration = Number.parseFloat(line.slice(8)) * 1000;
 			segmentSequence = sequence;
+			lastSegmentSequence = sequence;
 		} else if (line && !line.startsWith("#") && segmentSequence !== null) {
 			if (Number.isFinite(segmentTime) && segmentDuration > 0)
 				nativeAnchors.push({
@@ -3770,6 +3772,23 @@ function _applyEmptyHoldPlaylistContinuity(
 		(changedSource
 			? Boolean(!isHold && firstDiscontinuity === baseDiscontinuity)
 			: previous.addBoundary);
+	const servedTimeline = info._LivePlaylistTimeline;
+	const continuesServedBackupNumbering = Boolean(
+		changedSource &&
+			!sharedSource &&
+			kind === "backup" &&
+			previous?.kind === "backup" &&
+			previous.identity !== identity &&
+			typeof previous.lastSegmentSequence === "number" &&
+			info._LastServedPlaylistKind === "backup" &&
+			servedTimeline?.identity === identity &&
+			servedTimeline.minimumTime > 0 &&
+			nativeAnchors[0]?.sequence === firstSequence &&
+			Math.abs(nativeAnchors[0].time - servedTimeline.minimumTime) <= 50 &&
+			firstSequence + previous.mediaOffset > previous.lastSegmentSequence &&
+			firstSequence + previous.mediaOffset <= previous.lastSequence + 1 &&
+			lastPresentedSequence <= previous.lastSequence,
+	);
 	const timeline = sharedSource
 		? { ...sharedSource }
 		: changedSource
@@ -3779,8 +3798,9 @@ function _applyEmptyHoldPlaylistContinuity(
 					generation: sharedTimeline?.generation ?? lastGeneration + 1,
 					boundarySequence: firstSequence,
 					addBoundary,
-					mediaOffset:
-						lastPresentedSequence >= 0
+					mediaOffset: continuesServedBackupNumbering
+						? previous.mediaOffset
+						: lastPresentedSequence >= 0
 							? lastPresentedSequence + 1 - firstSequence
 							: 0,
 					discontinuityOffset:
@@ -3927,6 +3947,11 @@ function _applyEmptyHoldPlaylistContinuity(
 		timeline.lastSequence,
 		lastSequence + timeline.mediaOffset,
 	);
+	if (lastSegmentSequence != null)
+		timeline.lastSegmentSequence = Math.max(
+			timeline.lastSegmentSequence ?? -1,
+			lastSegmentSequence + timeline.mediaOffset,
+		);
 	timeline.lastDiscontinuity = Math.max(
 		timeline.lastDiscontinuity,
 		discontinuity + timeline.discontinuityOffset,
