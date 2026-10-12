@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v20.0.4 - 2026-10-12
+
+- **Backup Handoff Stalls** - Keep the temporary silent hold advancing while a clean backup catches up to the live stream. Switch only when fresh content is available, without replaying older segments.
+- **Backup Wait Diagnostics** - Log when a backup is behind the live boundary and which hold sequence is being served, with repeated warnings summarized.
+
 ### v20.0.3 - 2026-10-12
 
 - **Playback Diagnostics** - Help investigate playback repeats and gaps with source, quality, and transition timing details. Summarize repeated warnings and keep signed stream URLs private.
@@ -80,18 +85,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 ### v20.0.2 - 2026-10-12
 
 - **Playback Rewinds** - Prevent a returning quality with different segment timing from replaying older content after an ad. Keep ongoing playlist updates stable and preserve new content at the transition.
-
-### v20.0.1 - 2026-10-09
-
-- **Post-Ad Recovery** - Keep bounded recovery active through brief startup playback until video advances steadily, so an early buffer stall does not lose its recovery context.
-- **HD Backup Timing** - Start normal-quality checks when the low-quality dwell ends while keeping the clean backup refreshed.
-- **Backup Ownership** - Keep quality upgrades selected across later playlist refreshes and track the backup actually served.
-- **Test Isolation** - Prevent leftover state, timers, and mocks from affecting other regression checks.
-
-- **Recovery Logs** - Include buffer, readiness, visibility, and worker details to distinguish playback stalls from suspended or replaced media.
-- **Stream State Types** - Add explicit stream, backup, and recovery types to catch invalid state updates during development.
-- **Type Checks** - Add regression checks for missing ownership fields and invalid state updates.
-- **Test Setup** - Share runtime-loading helpers and run regression checks in normal and shuffled order.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
