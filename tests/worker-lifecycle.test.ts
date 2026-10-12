@@ -12233,6 +12233,7 @@ describe("clean-playback reduced master recovery", () => {
 		quality = "1080p60",
 		codec = "avc1.64002a",
 		heights = [1080, 720, 480, 360, 160],
+		lowerCodec = codec,
 	) {
 		vi.useFakeTimers();
 		vi.setSystemTime(200000);
@@ -12246,11 +12247,11 @@ describe("clean-playback reduced master recovery", () => {
 			"#EXTM3U\n" +
 			variants
 				.map(
-					({ height, url }) =>
-						`#EXT-X-STREAM-INF:RESOLUTION=${height * 2}x${height},VIDEO="${height}p60",CODECS="mp4a.40.2,${codec}"\n${url}`,
+					({ height, url }, index) =>
+						`#EXT-X-STREAM-INF:RESOLUTION=${height * 2}x${height},VIDEO="${height}p60",CODECS="mp4a.40.2,${index === 0 ? codec : lowerCodec}"\n${url}`,
 				)
 				.join("\n");
-		const lowMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="mp4a.40.2,${codec}"\nhttps://edge.example/360.m3u8?token=reduced`;
+		const lowMaster = `#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=640x360,CODECS="mp4a.40.2,${lowerCodec}"\nhttps://edge.example/360.m3u8?token=reduced`;
 		const control = {
 			probing: false,
 			delayMs: 500,
@@ -12411,17 +12412,20 @@ describe("clean-playback reduced master recovery", () => {
 	});
 
 	it.each([
-		["1080p60", "avc1.64002a"],
-		["auto", "avc1.64002a"],
-		["1440p60", "hev1.1.2.L150.90"],
-		["1440p60", "av01.0.12M.08"],
+		["1080p60", "avc1.64002a", "avc1.64002a"],
+		["auto", "avc1.64002a", "avc1.64002a"],
+		["1440p60", "hev1.1.2.L150.90", "hev1.1.2.L150.90"],
+		["1440p60", "av01.0.12M.08", "av01.0.12M.08"],
+		["1440p60", "hev1.1.2.L150.90", "avc1.64002a"],
+		["1440p60", "av01.0.12M.08", "avc1.64002a"],
 	])(
-		"keeps live-validated native qualities after a later reduced master with %s and %s",
-		async (quality, codec) => {
+		"keeps live-validated native qualities after a later reduced master with %s, %s top and %s lower variants",
+		async (quality, codec, lowerCodec) => {
 			const session = await setup(
 				quality,
 				codec,
 				quality === "1440p60" ? [1440, 1080, 720, 480, 360] : undefined,
+				lowerCodec,
 			);
 			try {
 				const response = session
@@ -12436,6 +12440,12 @@ describe("clean-playback reduced master recovery", () => {
 				expect(session.info.UsherBaseUrl).toBe(masterUrl);
 				expect(session.info.IsShowingAd).toBe(false);
 				expect(session.info._PendingPostAdNativeMaster).toBeNull();
+				if (lowerCodec !== codec) {
+					expect(session.info.ModifiedM3U8).toContain(session.variants[1].url);
+					expect(session.info.ModifiedM3U8).not.toContain(
+						session.variants[0].url,
+					);
+				}
 			} finally {
 				session.restore();
 			}
