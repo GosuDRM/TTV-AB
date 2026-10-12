@@ -2718,6 +2718,7 @@ function _readBlobUrlSync(blobUrl) {
 		if (typeof XMLHttpRequest !== "function") return null;
 		const xhr = new XMLHttpRequest();
 		xhr.open("GET", blobUrl, false);
+		xhr.overrideMimeType("text/plain; charset=utf-8");
 		xhr.send(null);
 		return typeof xhr.responseText === "string" && xhr.responseText
 			? xhr.responseText
