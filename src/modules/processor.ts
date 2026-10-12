@@ -8325,6 +8325,16 @@ async function _processM3U8Core(
 			if (!recentPostEscapeReload) {
 				info.PostEscapeReloadCounterproductive = false;
 			}
+			if (
+				!isSilentBackupHoldEnd &&
+				info._PlaylistContinuityDiagnostics?.adBreak
+			)
+				info._PlaylistContinuityDiagnostics.adBreak.nativeReturn =
+					shouldReloadPlayer
+						? `player ${needsHardReload ? "rebuild" : "reload"} (${reloadKind})`
+						: shouldPauseResumePlayer
+							? "pause/resume"
+							: "direct switch";
 			_postWorkerBridgeMessage(
 				self,
 				_createPageScopedWorkerEvent({
