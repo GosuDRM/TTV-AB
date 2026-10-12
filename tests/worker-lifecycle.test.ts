@@ -10692,6 +10692,158 @@ describe("injected worker ad playlist validation", () => {
 		},
 	);
 
+	it("keeps the injected worker hold advancing while a 1080p to 360p handoff waits for fresh media", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+		const nativeUrl = "https://video-weaver.example.ttvnw.net/native.m3u8";
+		const lowUrl = "https://edge.example/autoplay/index.m3u8";
+		const start = Date.parse("2026-10-12T03:45:24.423Z");
+		let ad = false;
+		let fresh = false;
+		let backupPolls = 0;
+		const tokens: string[] = [];
+		const media = (backup: boolean) => {
+			const offset = backup && fresh ? 1 : 0;
+			return [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:5",
+				`#EXT-X-MEDIA-SEQUENCE:${690 + offset}`,
+				"#EXT-X-DISCONTINUITY-SEQUENCE:0",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset * 4167).toISOString()}`,
+				...Array.from({ length: 7 }, (_, index) => [
+					"#EXTINF:4.167,live",
+					`https://edge.example/${backup ? "backup" : "native"}-${690 + offset + index}.ts`,
+				]).flat(),
+			].join("\n");
+		};
+		const fetch = vi.fn(
+			async (input: RequestInfo | URL, options?: RequestInit) => {
+				const url = new URL(String(input));
+				if (url.hostname === "gql.twitch.tv") {
+					const type = JSON.parse(String(options?.body)).variables.playerType;
+					tokens.push(type);
+					await new Promise((resolve) => setTimeout(resolve, 1500));
+					return Response.json({
+						data: {
+							streamPlaybackAccessToken: { signature: "test", value: type },
+						},
+					});
+				}
+				if (url.hostname === "usher.ttvnw.net") {
+					const backup = url.searchParams.get("token") === "autoplay";
+					return new Response(
+						`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=${backup ? "640x360" : "1920x1080"},VIDEO="${backup ? "360p" : "1080p60"}",CODECS="avc1.64002a,mp4a.40.2"\n${backup ? lowUrl : nativeUrl}`,
+					);
+				}
+				if (url.href === lowUrl) {
+					backupPolls++;
+					return new Response(media(true));
+				}
+				if (url.href === nativeUrl) {
+					return new Response(
+						ad
+							? [
+									"#EXTM3U",
+									"#EXT-X-TARGETDURATION:5",
+									"#EXT-X-MEDIA-SEQUENCE:697",
+									'#EXT-X-DATERANGE:ID="midroll",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"',
+									"#EXT-X-TWITCH-PREFETCH:https://edge.example/stitched-ad-697.ts",
+								].join("\n")
+							: media(false),
+					);
+				}
+				return new Response(null, { status: 503 });
+			},
+		);
+		try {
+			const runtime = startHarnessWorkerRuntime(harness.worker, fetch);
+			runtime.scope.Date = Date;
+			runtime.scope.navigator = { languages: ["en-US"], language: "en-US" };
+			runtime.deliverBootstrap();
+			const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+			Object.assign(state, {
+				PageMediaKey: "live:testchannel",
+				PreferredQualityGroup: "1080p60",
+				DisableAutoplayBackup: false,
+				DisableAdSpoofing: true,
+			});
+			const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
+			await workerFetch(masterUrl);
+			expect(await (await workerFetch(nativeUrl)).text()).toContain(
+				"native-696.ts",
+			);
+			await vi.advanceTimersByTimeAsync(2500);
+			ad = true;
+			const first = await (await workerFetch(nativeUrl)).text();
+			expect(first).toContain("__ttvab_empty_hold_segment.ts");
+			const sequence = (text: string) =>
+				Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
+			let previous = sequence(first);
+			await vi.advanceTimersByTimeAsync(1500);
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+			expect(info.LastCleanBackupResolution).toBe("640x360");
+			const messages = () =>
+				(runtime.scope.postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+					([value]) => value.message,
+				);
+			for (let poll = 0; poll < 5; poll++) {
+				await vi.advanceTimersByTimeAsync(1100);
+				const output = await (await workerFetch(nativeUrl)).text();
+				expect(output).toContain("__ttvab_empty_hold_segment.ts");
+				expect(output).not.toMatch(/backup-|stitched-ad|native-/);
+				expect(sequence(output)).toBeGreaterThan(previous);
+				previous = sequence(output);
+				expect(info._LastServedPlaylistKind).toBe("hold");
+				expect(state.PinnedBackupPlayerType).toBeNull();
+			}
+			expect(backupPolls).toBeGreaterThanOrEqual(5);
+			expect(tokens).toEqual(["autoplay"]);
+			expect(
+				messages().filter(
+					(message) => message.key === "BackupPlayerTypeSelected",
+				),
+			).toHaveLength(0);
+			const waiting = messages().filter(
+				(message) =>
+					message.key === "LogEntry" &&
+					message.value.m.startsWith("[Continuity] waiting-for-live-backup "),
+			);
+			expect(waiting).toHaveLength(1);
+			expect(waiting[0].value.m).not.toMatch(/https:|token=/);
+			harness.worker.emitMessage(waiting[0]);
+			expect(
+				(g.__TTVAB_LOGS__ as Array<Record<string, unknown>>).at(-1),
+			).toMatchObject({ m: waiting[0].value.m, g: 1, k: "live:testchannel" });
+			fresh = true;
+			await vi.advanceTimersByTimeAsync(1100);
+			const joined = await (await workerFetch(nativeUrl)).text();
+			expect(joined).toContain("backup-697.ts");
+			expect(joined).not.toMatch(
+				/backup-69[0-6]\.ts|stitched-ad|__ttvab_empty_hold/,
+			);
+			expect(sequence(joined)).toBe(previous + 3);
+			expect(state.PinnedBackupPlayerType).toBe("autoplay");
+			expect(info.HevcReloadPendingAfterHold).toBe(true);
+			expect(
+				messages().filter(
+					(message) => message.key === "BackupPlayerTypeSelected",
+				),
+			).toHaveLength(1);
+			expect(
+				messages().filter((message) => message.key === "ReloadPlayer"),
+			).toHaveLength(0);
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
+		}
+	});
+
 	it.each([
 		{ backupOffset: 0, enhancedCodec: "" },
 		{ backupOffset: 8509, enhancedCodec: "" },

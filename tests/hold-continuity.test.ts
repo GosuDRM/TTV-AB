@@ -120,6 +120,216 @@ function setup() {
 }
 
 describe("empty hold playlist continuity", () => {
+	it.each(["autoplay", "site"])(
+		"keeps the hold advancing until the selected %s backup reaches fresh broadcast content",
+		async (type) => {
+			const { context, info, fetch, serve, hold } = setup();
+			let now = Date.now();
+			context.Date = class extends Date {
+				static now() {
+					return now;
+				}
+			};
+			context.self = context;
+			context._postWorkerBridgeMessage = vi.fn();
+			context._log = vi.fn();
+			context.state.DisableAutoplayBackup = type !== "autoplay";
+			const core = context._processM3U8Core;
+			const start = Date.parse("2026-10-12T03:45:24.423Z");
+			const dated = (sequence: number, offset: number, prefix: string) =>
+				playlist(sequence, 7, prefix)
+					.replaceAll("#EXTINF:2.000", "#EXTINF:4.167")
+					.replace("TARGETDURATION:2", "TARGETDURATION:5")
+					.replace(
+						"#EXTINF:",
+						`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+					);
+			await serve(dated(690, 0, "native"));
+			const firstHold = segments(await hold());
+			const holdWindow = info._EmptyAdHoldWindow;
+			context._processM3U8Core = core;
+			let offset = 0;
+			let selection = 0;
+			const select = () =>
+				context._commitBackupPlaylist(
+					info,
+					dated(690 + offset, offset * 4167, "backup"),
+					++selection,
+					{
+						playerType: type,
+						resolution: type === "autoplay" ? "640x360" : "1920x1080",
+						codecFamily: "avc",
+						codec: "avc1.4d401f",
+						playlistUrl: `https://edge.example/${type}.m3u8?token=private`,
+						sessionUrl: "https://usher.ttvnw.net/master.m3u8?token=private",
+					},
+				);
+			context._findBackupStream = vi.fn(async () => ({
+				type,
+				m3u8: select(),
+			}));
+			context._refreshActiveBackupMediaPlaylist = vi.fn(async () => select());
+			const ad = playlist(697, 3, "stitched-ad").replaceAll(
+				",live",
+				",stitched-ad",
+			);
+			const held = [];
+			for (let poll = 0; poll < 5; poll++) {
+				now += 1100;
+				const output = await context._processM3U8(nativeUrl, ad, fetch);
+				expect(output).toContain("__ttvab_empty_hold_segment.ts");
+				expect(output).not.toMatch(/backup-|stitched-ad/);
+				held.push(segments(output));
+				expect(info._EmptyAdHoldWindow).toBe(holdWindow);
+				expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 7 * 4167);
+				expect(info._LastServedPlaylistKind).toBe("hold");
+				expect(context.state.PinnedBackupPlayerType).toBeNull();
+			}
+			expect(held[0][0].sequence).toBe(firstHold[0].sequence + 1);
+			for (let poll = 1; poll < held.length; poll++) {
+				expect(held[poll][0].sequence).toBe(held[poll - 1][0].sequence + 1);
+				expect(held[poll][0].url).toBe(held[poll - 1][1].url);
+			}
+			expect(context._refreshActiveBackupMediaPlaylist).toHaveBeenCalledTimes(
+				4,
+			);
+			expect(context._postWorkerBridgeMessage).not.toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ key: "BackupPlayerTypeSelected" }),
+			);
+			const waiting = context._log.mock.calls
+				.map(([message]) => message)
+				.filter((message) =>
+					message.startsWith("[Continuity] waiting-for-live-backup "),
+				);
+			expect(waiting).toHaveLength(1);
+			expect(waiting[0]).not.toMatch(/https:|token=|private/);
+			expect(
+				JSON.parse(waiting[0].split("waiting-for-live-backup ")[1]),
+			).toMatchObject({
+				mediaKey: info.MediaKey,
+				source: type,
+				reason: "behind-served-time",
+				servedSequence: null,
+				holdSequence: held[0][0].sequence,
+			});
+			offset = 1;
+			now += 1100;
+			const output = await context._processM3U8(nativeUrl, ad, fetch);
+			expect(output).not.toMatch(/__ttvab_empty_hold_segment|stitched-ad/);
+			expect(segments(output)).toHaveLength(1);
+			expect(segments(output)[0]).toMatchObject({
+				url: "https://edge.example/backup-697.ts",
+				sequence: held.at(-1).at(-1).sequence + 1,
+			});
+			expect(info._LastServedPlaylistKind).toBe("backup");
+			expect(info._EmptyAdHoldWindow).toBeNull();
+			expect(context.state.PinnedBackupPlayerType).toBe(type);
+			expect(context._postWorkerBridgeMessage).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({
+					key: "BackupPlayerTypeSelected",
+					value: type,
+				}),
+			);
+		},
+	);
+
+	it.each(["navigation", "page generation", "new cycle", "loader", "abort"])(
+		"does not advance a hold for a delayed backup after %s",
+		async (mode) => {
+			const { context, info, serve, hold, fetch } = setup();
+			const native = playlist(400).replace(
+				"#EXTINF:",
+				"#EXT-X-PROGRAM-DATE-TIME:2026-10-12T03:45:24Z\n#EXTINF:",
+			);
+			await serve(native);
+			await hold();
+			const before = JSON.stringify(info._EmptyAdHoldWindow);
+			const sequence = info._EmptyAdHoldMediaSequence;
+			const backup = native.replaceAll("clean-", "backup-");
+			context._rememberBackupPlaylistMetadata(info, backup, "avc", codec, {
+				playerType: "autoplay",
+				playlistUrl: "https://edge.example/autoplay.m3u8?session=owned",
+			});
+			let complete: (value: string) => void;
+			context._processM3U8Core = () =>
+				new Promise((resolve) => {
+					complete = resolve;
+				});
+			const controller = new AbortController();
+			const pending = context._processM3U8(
+				nativeUrl,
+				native,
+				fetch,
+				controller.signal,
+			);
+			const rejected = expect(pending).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			if (mode === "navigation") context.state.PageMediaKey = "live:other";
+			if (mode === "page generation")
+				context.state.PagePlaybackContextGeneration++;
+			if (mode === "new cycle") info.VisibleAdStartedAt++;
+			if (mode === "loader") info.NativeRecoveryLoaderEpoch++;
+			if (mode === "abort") controller.abort();
+			complete(backup);
+			await rejected;
+			expect(JSON.stringify(info._EmptyAdHoldWindow)).toBe(before);
+			expect(info._EmptyAdHoldMediaSequence).toBe(sequence);
+		},
+	);
+
+	it.each([
+		"HEVC",
+		"AV1",
+		"native map",
+		"backup map",
+		"no hold",
+		"ambiguous timestamps",
+	])(
+		"does not substitute a transport hold for a rejected %s handoff",
+		async (mode) => {
+			const { context, info, serve, hold, fetch } = setup();
+			const native = playlist(400).replace(
+				"#EXTINF:",
+				"#EXT-X-PROGRAM-DATE-TIME:2026-10-12T03:45:24Z\n#EXTINF:",
+			);
+			await serve(native);
+			if (mode !== "no hold") await hold();
+			const before = JSON.stringify(info._EmptyAdHoldWindow);
+			let backup = native.replaceAll("clean-", "backup-");
+			const mapped = (text: string) =>
+				text.replace("#EXTINF:", '#EXT-X-MAP:URI="init.mp4"\n#EXTINF:');
+			if (mode === "backup map") backup = mapped(backup);
+			if (mode === "ambiguous timestamps")
+				backup = `${backup}\n#EXT-X-DISCONTINUITY\n#EXTINF:2,live\nhttps://edge.example/undated.ts`;
+			const backupCodec =
+				mode === "HEVC"
+					? "hev1.1.6.L153.B0"
+					: mode === "AV1"
+						? "av01.0.13M.08"
+						: codec;
+			info.Urls[nativeUrl].Codecs = backupCodec;
+			if (mode === "HEVC" || mode === "AV1")
+				info.EnhancedDecoderCodec = backupCodec;
+			context._rememberBackupPlaylistMetadata(info, backup, null, backupCodec, {
+				playerType: "autoplay",
+				playlistUrl: "https://edge.example/autoplay.m3u8?session=owned",
+			});
+			context._processM3U8Core = async () => backup;
+			await expect(
+				context._processM3U8(
+					nativeUrl,
+					mode === "native map" ? mapped(native) : native,
+					fetch,
+				),
+			).rejects.toMatchObject({ name: "AbortError" });
+			expect(JSON.stringify(info._EmptyAdHoldWindow)).toBe(before);
+			expect(info.HevcReloadPendingAfterHold).toBe(false);
+		},
+	);
+
 	it("does not replay prefetched native content when the next poll starts an ad", async () => {
 		const { context, info, fetch } = setup();
 		let now = Date.now();
@@ -1233,9 +1443,9 @@ describe("empty hold playlist continuity", () => {
 		const start = Date.parse("2026-09-20T18:09:48Z");
 		await serve(dated(400, start));
 		await hold();
-		await expect(
-			serve(dated(100, start - 20000), "autoplay"),
-		).rejects.toMatchObject({ name: "AbortError" });
+		const waiting = await serve(dated(100, start - 20000), "autoplay");
+		expect(waiting).toContain("__ttvab_empty_hold_segment.ts");
+		expect(waiting).not.toContain("clean-");
 		expect(info.HevcReloadPendingAfterHold).toBe(false);
 		const output = await serve(dated(110, start + 2000, 4), "autoplay");
 		expect(output).not.toContain("clean-110.ts");
