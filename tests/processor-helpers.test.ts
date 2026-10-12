@@ -6041,20 +6041,19 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		async (counterproductive, nativeReturn) => {
 			const info = setupCsaiEscapeAdEnd({
 				PostEscapeReloadCounterproductive: counterproductive,
-				_PlaylistContinuityDiagnostics: {
-					nextSourceId: 1,
-					lastServedSourceId: 1,
-					sources: new Map(),
-					adBreak: {
-						cycleStartedAt: Date.now() - 10000,
-						steps: [{ at: Date.now() - 9000, source: "embed 1920x1080" }],
-						dropped: 0,
-						nativeReturn: null,
-					},
-				},
 			});
-			info.VisibleAdStartedAt =
-				info._PlaylistContinuityDiagnostics.adBreak.cycleStartedAt;
+			const cycleStartedAt = Number(info.VisibleAdStartedAt);
+			info._PlaylistContinuityDiagnostics = {
+				nextSourceId: 1,
+				lastServedSourceId: 1,
+				sources: new Map(),
+				adBreak: {
+					cycleStartedAt,
+					steps: [{ at: cycleStartedAt + 1000, source: "embed 1920x1080" }],
+					dropped: 0,
+					nativeReturn: null,
+				},
+			};
 			g._canReloadNativePlayerAfterAd = async () => true;
 			const log = vi.fn();
 			g._log = log;
