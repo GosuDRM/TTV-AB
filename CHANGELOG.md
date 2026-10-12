@@ -2,6 +2,17 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [21.0.3] - 2026-10-13
+
+Fixed
+
+- **Backup Stream Rewinds** - Stop the stream from jumping back a few seconds each time an ad break switches to a fresh backup session, which repeated every few seconds when backups kept receiving ads ([#88](https://github.com/GosuDRM/TTV-AB/issues/88)).
+- **Ad Break Reporting** - Recognize ad markers when Twitch lists their details in a different order or uses Windows line endings, so ad progress is still tracked and ad completion is still reported.
+
+Changed
+
+- **Code Cleanup** - Remove unused route helpers left over from an older version, keeping a single list of non-channel Twitch pages so the two copies can no longer drift apart.
+
 ## [21.0.2] - 2026-10-12
 
 Fixed

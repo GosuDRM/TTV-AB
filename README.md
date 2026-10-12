@@ -73,6 +73,12 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v21.0.3 - 2026-10-13
+
+- **Backup Stream Rewinds** - Stop the stream from jumping back a few seconds each time an ad break switches to a fresh backup session, which repeated every few seconds when backups kept receiving ads ([#88](https://github.com/GosuDRM/TTV-AB/issues/88)).
+- **Ad Break Reporting** - Recognize ad markers when Twitch lists their details in a different order or uses Windows line endings, so ad progress is still tracked and ad completion is still reported.
+- **Code Cleanup** - Remove unused route helpers left over from an older version, keeping a single list of non-channel Twitch pages so the two copies can no longer drift apart.
+
 ### v21.0.2 - 2026-10-12
 
 - **Worker Recovery** - Give a player crash its own restart attempt when it follows a recovered player, instead of giving up because an earlier wait for the player had already run out.
@@ -86,10 +92,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Native Stream Return** - Switch back to Twitch's own stream without restarting the player when it is just short of where the HD backup left off, waiting a moment for fresh video instead.
 - **Playlist Retries** - Wait briefly for fresh video when a playlist update arrives slightly behind, instead of failing the request and making the player stall while it retries.
 - **HD Backup Retries** - Keep retrying HD backups while the low-quality backup plays, so a break no longer stays at 360p after an HD source showed ads once.
-
-### v21.0.0 - 2026-10-12
-
-- **Silent Hold Stalls** - Keep every temporary silent hold segment listed long enough for the player to load it, so long ad breaks no longer freeze on a black screen while a clean backup catches up.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
