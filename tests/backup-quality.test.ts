@@ -360,6 +360,26 @@ describe.each(["preroll", "midroll"])(
 			},
 		);
 
+		it("keeps a healthy backup during the silent hold when the stall report predates its selection", async () => {
+			const f = setupEmergencyBridge(roll);
+			f.control.normalClean = true;
+			const initial = f.poll();
+			await vi.advanceTimersByTimeAsync(1500);
+			expect(await initial).toContain("/site/1080/");
+			await vi.advanceTimersByTimeAsync(2000);
+			f.state.BackupSearchForceRefreshAt =
+				f.info._LastBackupSearchCompletedAt - 1;
+			f.info.IsShowingAd = false;
+			f.info.IsHoldingBackupAfterAd = true;
+			f.info.SilentBackupHoldStartedAt = Date.now();
+			const response = f.poll();
+			await vi.advanceTimersByTimeAsync(2000);
+			expect(await response).toContain("/site/1080/");
+			expect(f.tokens).toEqual(["site"]);
+			expect(f.info.FailedBackupPlayerTypes.has("site")).toBe(false);
+			expect(f.state.BackupSearchForceRefreshAt).toBe(0);
+		});
+
 		it("rejects renewed ads on the emergency bridge instead of replaying an expired clean snapshot", async () => {
 			const f = setupEmergencyBridge(roll);
 			const initial = f.poll();
