@@ -868,8 +868,15 @@ function _initToggleListener() {
 
 function _hookSpaNavigation() {
 	const sync = () => {
-		_syncPagePlaybackContext({ broadcast: true });
-		_clearAdTimerOverlay();
+		try {
+			_syncPagePlaybackContext({ broadcast: true });
+			_clearAdTimerOverlay();
+		} catch (error) {
+			_log(
+				`Navigation sync failed: ${error?.message ?? String(error)}`,
+				"warning",
+			);
+		}
 	};
 	const originalPushState = history.pushState;
 	const hookedPushState = function (...args) {
@@ -894,6 +901,11 @@ function _hookSpaNavigation() {
 	const uninstall = () => {
 		if (!isHooked) return;
 		_clearAdTimerOverlay();
+		if (
+			history.pushState !== hookedPushState ||
+			history.replaceState !== hookedReplaceState
+		)
+			return;
 		window.removeEventListener("popstate", sync);
 		history.pushState = originalPushState;
 		history.replaceState = originalReplaceState;
