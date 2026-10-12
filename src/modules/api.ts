@@ -537,9 +537,14 @@ async function _notifyAdComplete(
 	try {
 		if (!textStr || typeof textStr !== "string") return;
 
-		const matches = [
-			...textStr.matchAll(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/g),
-		];
+		const matches = [];
+		for (const line of textStr.split(/\r?\n/)) {
+			if (!line.startsWith("#EXT-X-DATERANGE:")) continue;
+			const attr = _parseAttrs(line.slice("#EXT-X-DATERANGE:".length));
+			if (typeof attr.ID === "string" && attr.ID.startsWith("stitched-ad-")) {
+				matches.push(attr);
+			}
+		}
 		const podLenMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
 		const parsedPodLength = podLenMatch
 			? Number.parseInt(podLenMatch[1], 10)
@@ -556,9 +561,8 @@ async function _notifyAdComplete(
 			if (!(info.ObservedAdPodIds instanceof Set)) {
 				info.ObservedAdPodIds = new Set();
 			}
-			for (const match of matches) {
-				const idMatch = match[1].match(/^ID="([^"]+)"/);
-				if (idMatch?.[1]) info.ObservedAdPodIds.add(idMatch[1]);
+			for (const attr of matches) {
+				info.ObservedAdPodIds.add(attr.ID);
 			}
 			if (hasExplicitPodLength) {
 				info.ExpectedAdPodLength = Math.max(
@@ -622,16 +626,15 @@ async function _notifyAdComplete(
 			if (hasExplicitPodLength && spoofedSet && spoofedSet.size >= podLength) {
 				break;
 			}
-			const idMatch = matches[i][1].match(/^ID="([^"]+)"/);
-			const stitchedAdId = idMatch ? idMatch[1] : "";
-			if (stitchedAdId && recentSpoofedSet?.has?.(stitchedAdId)) {
+			const attr = matches[i];
+			const stitchedAdId = attr.ID;
+			if (recentSpoofedSet?.has?.(stitchedAdId)) {
 				spoofedSet?.add?.(stitchedAdId);
 				continue;
 			}
-			if (spoofedSet && stitchedAdId && spoofedSet.has(stitchedAdId)) {
+			if (spoofedSet?.has(stitchedAdId)) {
 				continue;
 			}
-			const attr = _parseAttrs(matches[i][1]);
 			const radToken = attr["X-TV-TWITCH-AD-RADS-TOKEN"];
 			if (!radToken) {
 				if (i === 0 && !__TTVAB_STATE__.LoggedAdSpoofNoToken) {
