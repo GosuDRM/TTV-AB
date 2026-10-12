@@ -73,6 +73,12 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v21.0.1 - 2026-10-12
+
+- **Native Stream Return** - Switch back to Twitch's own stream without restarting the player when it is just short of where the HD backup left off, waiting a moment for fresh video instead.
+- **Playlist Retries** - Wait briefly for fresh video when a playlist update arrives slightly behind, instead of failing the request and making the player stall while it retries.
+- **HD Backup Retries** - Keep retrying HD backups while the low-quality backup plays, so a break no longer stays at 360p after an HD source showed ads once.
+
 ### v21.0.0 - 2026-10-12
 
 - **Silent Hold Stalls** - Keep every temporary silent hold segment listed long enough for the player to load it, so long ad breaks no longer freeze on a black screen while a clean backup catches up.
@@ -81,11 +87,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 - **Post-Ad Quality Stability** - Revalidate and retain the native stream when Twitch offers a reduced quality catalog just after playback restarts, preventing a conflicting session from interrupting recovery.
 - **Recovery Diagnostics** - Log when a reduced catalog is replaced with verified native qualities while playback is recovering.
-
-### v20.0.4 - 2026-10-12
-
-- **Backup Handoff Stalls** - Keep the temporary silent hold advancing while a clean backup catches up to the live stream. Switch only when fresh content is available, without replaying older segments.
-- **Backup Wait Diagnostics** - Log when a backup is behind the live boundary and which hold sequence is being served, with repeated warnings summarized.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
