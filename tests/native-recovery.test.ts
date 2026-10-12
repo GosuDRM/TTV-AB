@@ -323,11 +323,23 @@ describe("compatible native playlist return", () => {
 			return new Response(native());
 		});
 		f.context._waitForAbortableDelay = vi.fn(async () => {});
+		const log = vi.fn();
+		f.context._log = log;
 		let output = "";
 		for (let index = 0; index < 40 && !f.restored(); index++) {
 			f.advance(2000);
 			output = await f.context._processM3U8(nativeUrl, native(), f.fetch);
 		}
+		const messages = log.mock.calls.map(([message]) => message);
+		expect(messages).toContain(
+			"[Trace] Native playlist verified clean after silent backup hold; restoring native stream by playlist",
+		);
+		expect(messages).toContain(
+			"[Continuity] native catch-up served fresh media after 2.0s (1 refetch) for live:testchannel",
+		);
+		expect(
+			messages.find((message) => message.startsWith("[Break] ended ")),
+		).toMatch(/ -> native 1920x1080 @\d+\.\ds; native return by playlist$/);
 		expect(f.restored()).toMatchObject({
 			requiresReload: false,
 			continuePlayback: true,
@@ -345,9 +357,14 @@ describe("compatible native playlist return", () => {
 
 	it("keeps the rebuild when broadcast timing cannot prove a compatible return", async () => {
 		const f = setupHdNativeReturn(false);
+		const log = vi.fn();
+		f.context._log = log;
 		for (let index = 0; index < 40 && !f.restored(); index++) {
 			await f.poll();
 		}
+		expect(log.mock.calls.map(([message]) => message)).toContain(
+			"[Trace] Native playlist verified clean after silent backup hold; reloading player after backup hold (backup not being served)",
+		);
 		expect(f.restored()).toMatchObject({
 			requiresReload: true,
 			continuePlayback: false,
@@ -2193,12 +2210,18 @@ describe("bounded native session preservation", () => {
 			"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:10:00Z\n#EXTINF:",
 		);
 		context._waitForAbortableDelay = vi.fn(async () => {});
+		const log = vi.fn();
+		context._log = log;
 		const refetch = vi.fn(async (input, options) =>
 			String(input) === nativeUrl ? new Response(text) : fetch(input, options),
 		);
 		await expect(
 			context._processM3U8(nativeUrl, text, refetch),
 		).rejects.toMatchObject({ name: "AbortError" });
+		expect(log).toHaveBeenCalledWith(
+			"[Continuity] native catch-up gave up; failing the request after 0.0s (1 refetch) for live:testchannel",
+			"warning",
+		);
 		expect(
 			refetch.mock.calls.filter(([input]) => String(input) === nativeUrl),
 		).toHaveLength(1);

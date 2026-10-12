@@ -842,6 +842,12 @@ describe("HD backup probation through playlist polling", () => {
 			expect(await f.poll(!holding)).toContain("/autoplay/360/");
 			await f.info._BackupSearchPromise;
 			expect(siteChecks()).toBe(2);
+			expect(
+				log.mock.calls.filter(
+					([message]) =>
+						message === "[Trace] Backup search order: site, autoplay",
+				),
+			).toHaveLength(2);
 			expect(f.info._BackupProbation).toMatchObject({
 				type: "site",
 				cleanChecks: 1,
@@ -854,6 +860,19 @@ describe("HD backup probation through playlist polling", () => {
 			expect(f.info.ActiveBackupPlayerType).toBe("site");
 		},
 	);
+
+	it("logs the backup search order with remaining cooldowns", async () => {
+		const f = setupProbation();
+		const log = vi.fn();
+		f.context._log = log;
+		f.info.FailedBackupPlayerTypes.set("site", Date.now() + 11_500);
+		await f.context._findBackupStream(f.info, f.fetch);
+		expect(log).toHaveBeenCalledWith(
+			"[Trace] Backup search order: site (cooling 12s), autoplay",
+			"info",
+		);
+		expect(log).not.toHaveBeenCalledWith("[Trace] Checking: site", "info");
+	});
 
 	it("starts the first HD check when the autoplay dwell ends while keeping the bridge refreshed", async () => {
 		const f = setupProbation();
