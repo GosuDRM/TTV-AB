@@ -1333,6 +1333,7 @@ function _applyAdPodProgressToInfo(info: TTVABStreamInfo, value) {
 	const nextCycleStartedAt = Math.max(0, Number(entry.cycleStartedAt) || 0);
 	if (nextCycleStartedAt > 0 && nextCycleStartedAt !== previousCycleStartedAt) {
 		_invalidateAdCycleAsyncWork(info);
+		info.CurrentAdPod = null;
 	}
 	if (!(info.ObservedAdPodIds instanceof Set)) {
 		info.ObservedAdPodIds = new Set();
@@ -1408,6 +1409,7 @@ function _clearAdPodProgress(mediaKey, beforeCycleStartedAt = 0) {
 		info.ExpectedAdPodLength = 0;
 		info.MaxObservedAdPodPosition = 0;
 		info.ObservedZeroAdPodPosition = false;
+		info.CurrentAdPod = null;
 		info.LastAdPodProgressAt = 0;
 		info._IncompletePodCleanStartedAt = 0;
 		info._IncompletePodCleanPlaylistCount = 0;

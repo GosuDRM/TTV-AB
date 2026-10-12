@@ -132,6 +132,7 @@ function _resetStreamAdState(
 	info.ExpectedAdPodLength = 0;
 	info.MaxObservedAdPodPosition = 0;
 	info.ObservedZeroAdPodPosition = false;
+	info.CurrentAdPod = null;
 	info.LastAdPodProgressAt = 0;
 	info._IncompletePodCleanStartedAt = 0;
 	info._IncompletePodCleanPlaylistCount = 0;
@@ -1554,19 +1555,30 @@ async function _isAdEndStable(
 		info.CleanPlaylistCount >= minCleanPlaylists && elapsed >= graceMs;
 	const slowPathReady = maxWaitMs > 0 && elapsed >= maxWaitMs;
 
+	const currentPod = info.CurrentAdPod?.length > 0 ? info.CurrentAdPod : null;
 	const expectedPodLength = Math.max(
 		0,
-		Math.trunc(Number(info.ExpectedAdPodLength) || 0),
+		Math.trunc(
+			Number(currentPod ? currentPod.length : info.ExpectedAdPodLength) || 0,
+		),
 	);
-	const observedPodAds =
-		info.ObservedAdPodIds instanceof Set ? info.ObservedAdPodIds.size : 0;
+	const observedPodAds = currentPod
+		? currentPod.adIds.size
+		: info.ObservedAdPodIds instanceof Set
+			? info.ObservedAdPodIds.size
+			: 0;
 	const maxObservedPodPosition = Math.max(
 		0,
-		Math.trunc(Number(info.MaxObservedAdPodPosition) || 0),
+		Math.trunc(
+			Number(
+				currentPod ? currentPod.maxPosition : info.MaxObservedAdPodPosition,
+			) || 0,
+		),
 	);
 	const observedTerminalPodPosition = Boolean(
 		expectedPodLength > 0 &&
-			(info.ObservedZeroAdPodPosition === true
+			(currentPod?.zeroPosition === true ||
+			info.ObservedZeroAdPodPosition === true
 				? maxObservedPodPosition + 1 >= expectedPodLength
 				: maxObservedPodPosition >= expectedPodLength),
 	);
@@ -4523,6 +4535,7 @@ function _createStreamInfo(
 			Number(podProgress?.maxAdPodPosition) || 0,
 		),
 		ObservedZeroAdPodPosition: podProgress?.observedZeroAdPodPosition === true,
+		CurrentAdPod: null,
 		LastAdPodProgressAt: Math.max(
 			0,
 			Number(podProgress?.updatedAt) || 0,

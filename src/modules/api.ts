@@ -530,6 +530,62 @@ function _recordAdDurations(textStr, info: TTVABStreamInfo) {
 	} catch {}
 }
 
+function _assignAdPods(info: TTVABStreamInfo, matches, fallbackLength) {
+	const pods = new Map<string, TTVABAdPod | null>();
+	const seenBefore =
+		info.ObservedAdPodIds instanceof Set ? info.ObservedAdPodIds : null;
+	for (const attr of matches) {
+		const adId = attr.ID;
+		const parsedPosition = Number.parseInt(
+			attr["X-TV-TWITCH-AD-POD-POSITION"],
+			10,
+		);
+		const position =
+			Number.isFinite(parsedPosition) && parsedPosition >= 0
+				? parsedPosition
+				: null;
+		let pod = info.CurrentAdPod;
+		if (!pod?.adIds.has(adId)) {
+			if (seenBefore?.has(adId)) continue;
+			const length =
+				Number.parseInt(attr["X-TV-TWITCH-AD-POD-LENGTH"], 10) ||
+				fallbackLength;
+			const key = `${String(attr["X-TV-TWITCH-AD-ROLL-TYPE"] || "").toLowerCase()}|${length}`;
+			const podIsFull = Boolean(
+				pod && pod.length > 0 && pod.adIds.size >= pod.length,
+			);
+			if (
+				podIsFull &&
+				pod.key === key &&
+				position !== null &&
+				position > pod.maxPosition
+			) {
+				pods.set(adId, null);
+				continue;
+			}
+			if (!pod || pod.key !== key || podIsFull) {
+				pod = {
+					key,
+					length,
+					adIds: new Set(),
+					spoofedAdIds: new Set(),
+					maxPosition: 0,
+					zeroPosition: false,
+					completeSent: false,
+				};
+				info.CurrentAdPod = pod;
+			}
+			pod.adIds.add(adId);
+		}
+		if (position !== null) {
+			pod.maxPosition = Math.max(pod.maxPosition, position);
+			if (position === 0) pod.zeroPosition = true;
+		}
+		pods.set(adId, pod);
+	}
+	return pods;
+}
+
 async function _notifyAdComplete(
 	textStr: string,
 	info?: TTVABStreamInfo,
@@ -557,6 +613,14 @@ async function _notifyAdComplete(
 		);
 		const maxParsedPodPosition = Math.max(0, ...parsedPodPositions);
 		const observedZeroAdPodPosition = parsedPodPositions.includes(0);
+		const pods =
+			info && matches.length > 0
+				? _assignAdPods(
+						info,
+						matches,
+						hasExplicitPodLength ? parsedPodLength : 0,
+					)
+				: new Map<string, TTVABAdPod | null>();
 		if (info && matches.length > 0) {
 			if (!(info.ObservedAdPodIds instanceof Set)) {
 				info.ObservedAdPodIds = new Set();
@@ -615,17 +679,12 @@ async function _notifyAdComplete(
 		const spoofedSet = info?.SpoofedAdIds || null;
 		const recentSpoofedSet = info?.RecentSpoofedAdIds || null;
 		const podLength = hasExplicitPodLength ? parsedPodLength : matches.length;
-		if (hasExplicitPodLength && spoofedSet && spoofedSet.size >= podLength) {
-			return;
-		}
 		let newSpoofed = 0;
 		let firstRollType = "";
 		let podCompleteSent = false;
+		let lastSpoofedPod: TTVABAdPod | null = null;
 
 		for (let i = 0; i < matches.length; i++) {
-			if (hasExplicitPodLength && spoofedSet && spoofedSet.size >= podLength) {
-				break;
-			}
 			const attr = matches[i];
 			const stitchedAdId = attr.ID;
 			if (recentSpoofedSet?.has?.(stitchedAdId)) {
@@ -633,6 +692,9 @@ async function _notifyAdComplete(
 				continue;
 			}
 			if (spoofedSet?.has(stitchedAdId)) {
+				continue;
+			}
+			if (pods.has(stitchedAdId) && pods.get(stitchedAdId) === null) {
 				continue;
 			}
 			const radToken = attr["X-TV-TWITCH-AD-RADS-TOKEN"];
@@ -654,6 +716,7 @@ async function _notifyAdComplete(
 			);
 			const adDuration =
 				parseInt(attr["X-TV-TWITCH-AD-DURATION"] || "0", 10) || 0;
+			const pod = pods.get(stitchedAdId) || null;
 			const payload = {
 				stitched: true,
 				ad_id: stitchedAdId,
@@ -666,7 +729,7 @@ async function _notifyAdComplete(
 				visible: true,
 				duration: adDuration,
 				ad_position: adPosition,
-				total_ads: podLength,
+				total_ads: pod?.length || podLength,
 			};
 
 			const makePacket = (event: string, extra?: Record<string, unknown>) => ({
@@ -688,6 +751,8 @@ async function _notifyAdComplete(
 			});
 
 			if (spoofedSet && stitchedAdId) spoofedSet.add(stitchedAdId);
+			pod?.spoofedAdIds.add(stitchedAdId);
+			if (pod) lastSpoofedPod = pod;
 			const batch = [
 				makePacket("video_ad_impression"),
 				makePacket("video_ad_quartile_complete", { quartile: 1 }),
@@ -697,10 +762,14 @@ async function _notifyAdComplete(
 			];
 			if (
 				!spoofedSet ||
-				(hasExplicitPodLength && spoofedSet.size === podLength)
+				(pod &&
+					pod.length > 0 &&
+					!pod.completeSent &&
+					pod.spoofedAdIds.size >= pod.length)
 			) {
 				batch.push(makePacket("video_ad_pod_complete"));
 				podCompleteSent = true;
+				if (pod) pod.completeSent = true;
 			}
 
 			const headers: Record<string, string> = {
@@ -748,10 +817,14 @@ async function _notifyAdComplete(
 		}
 
 		if (newSpoofed > 0) {
-			const total = spoofedSet ? spoofedSet.size : newSpoofed;
+			const total = lastSpoofedPod
+				? lastSpoofedPod.spoofedAdIds.size
+				: spoofedSet
+					? spoofedSet.size
+					: newSpoofed;
 			const src = info?.ActiveBackupPlayerType || "primary";
 			_log(
-				`[Trace] Spoofed ad completion for ${newSpoofed} new ad(s) (${total}/${podLength} pod) — roll: ${firstRollType}, src: ${src}, pod-complete: ${podCompleteSent ? "yes" : "no"}`,
+				`[Trace] Spoofed ad completion for ${newSpoofed} new ad(s) (${total}/${lastSpoofedPod?.length || podLength} pod) — roll: ${firstRollType}, src: ${src}, pod-complete: ${podCompleteSent ? "yes" : "no"}`,
 				"info",
 			);
 		}
