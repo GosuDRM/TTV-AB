@@ -2205,48 +2205,6 @@ function _getSecondaryPlayerLaunchDescriptorFromUrl(rawUrl) {
 	};
 }
 
-function _getSecondaryPlayerLaunchDescriptorFromTarget(target) {
-	if (!(target instanceof Element)) {
-		return null;
-	}
-
-	const anchor = target.closest?.("a[href]");
-	const fromAnchorUrl = _getSecondaryPlayerLaunchDescriptorFromUrl(
-		anchor?.getAttribute?.("href") || "",
-	);
-	if (fromAnchorUrl) {
-		return fromAnchorUrl;
-	}
-
-	const controlTarget =
-		target.closest?.(
-			'button, [role="button"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [aria-label], [data-a-target]',
-		) || target;
-	const label = [
-		controlTarget?.getAttribute?.("aria-label") || "",
-		controlTarget?.getAttribute?.("data-a-target") || "",
-		controlTarget?.textContent || "",
-	]
-		.join(" ")
-		.toLowerCase();
-	const isPipControl =
-		label.includes("picture-in-picture") ||
-		label.includes("picture in picture") ||
-		/\bpip\b/.test(label) ||
-		label.includes("mini player");
-	if (!isPipControl) {
-		return null;
-	}
-
-	return {
-		kind: "pip",
-		channel: _normalizePlayerChannel(__TTVAB_STATE__.PageChannel) || null,
-		mediaKey:
-			_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey) ||
-			_resolvePlayerMediaKey(__TTVAB_STATE__.PageChannel, null),
-	};
-}
-
 function _beginSecondaryPlayerHandoff(
 	descriptor,
 	options: { pauseSource?: boolean; sourceWasPlaying?: boolean } = {},
@@ -2629,7 +2587,6 @@ function _monitorPlaybackIntent() {
 		_playbackIntentMonitorTimer = null;
 		let nextDelay = _PLAYBACK_INTENT_MONITOR_DELAY_MS;
 		try {
-			const hasRelevantContext = _hasPlaybackIntentMonitorRelevantContext();
 			const currentMediaKey = _normalizeMediaKey(__TTVAB_STATE__.PageMediaKey);
 			const observedMedia = _PlaybackIntentState.observedMedia;
 			const didLoseObservedMedia = Boolean(
@@ -2642,10 +2599,6 @@ function _monitorPlaybackIntent() {
 			const hiddenSyncDelay = Math.max(idleSyncDelay, 5000);
 			const syncDelay = isHidden ? hiddenSyncDelay : idleSyncDelay;
 			const now = Date.now();
-			if (!hasRelevantContext) {
-				_syncPrimaryMediaPlaybackIntent();
-				nextDelay = syncDelay;
-			}
 			if (
 				currentMediaKey !== lastSyncedMediaKey ||
 				didLoseObservedMedia ||
