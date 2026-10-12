@@ -2,6 +2,19 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [21.0.2] - 2026-10-12
+
+Fixed
+
+- **Worker Recovery** - Give a player crash its own restart attempt when it follows a recovered player, instead of giving up because an earlier wait for the player had already run out.
+- **Device ID Sync** - Pass a changed Twitch device ID to running players so backup stream requests keep using the current one.
+- **Test Reliability** - Allow more time for full-project type checks so slow build machines do not fail them by chance.
+
+Added
+
+- **Ad Break Summaries** - Log one line per ad break listing each source served, when it started, and how playback returned to the stream, making stalls and long low-quality periods easier to diagnose.
+- **Recovery Diagnostics** - Explain why the player was restarted after an ad, show the backup search order with remaining cooldowns, and report whether waiting for a late playlist update succeeded.
+
 ## [21.0.1] - 2026-10-12
 
 Fixed

@@ -73,6 +73,14 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v21.0.2 - 2026-10-12
+
+- **Worker Recovery** - Give a player crash its own restart attempt when it follows a recovered player, instead of giving up because an earlier wait for the player had already run out.
+- **Device ID Sync** - Pass a changed Twitch device ID to running players so backup stream requests keep using the current one.
+- **Test Reliability** - Allow more time for full-project type checks so slow build machines do not fail them by chance.
+- **Ad Break Summaries** - Log one line per ad break listing each source served, when it started, and how playback returned to the stream, making stalls and long low-quality periods easier to diagnose.
+- **Recovery Diagnostics** - Explain why the player was restarted after an ad, show the backup search order with remaining cooldowns, and report whether waiting for a late playlist update succeeded.
+
 ### v21.0.1 - 2026-10-12
 
 - **Native Stream Return** - Switch back to Twitch's own stream without restarting the player when it is just short of where the HD backup left off, waiting a moment for fresh video instead.
@@ -82,11 +90,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 ### v21.0.0 - 2026-10-12
 
 - **Silent Hold Stalls** - Keep every temporary silent hold segment listed long enough for the player to load it, so long ad breaks no longer freeze on a black screen while a clean backup catches up.
-
-### v20.0.5 - 2026-10-12
-
-- **Post-Ad Quality Stability** - Revalidate and retain the native stream when Twitch offers a reduced quality catalog just after playback restarts, preventing a conflicting session from interrupting recovery.
-- **Recovery Diagnostics** - Log when a reduced catalog is replaced with verified native qualities while playback is recovering.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
