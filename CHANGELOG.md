@@ -2,6 +2,13 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [21.0.4] - 2026-10-13
+
+Fixed
+
+- **HD Backup Retention** - Keep a clean HD backup playing after it proves itself during an ad break, instead of dropping back to 360p because it had shown ads earlier in the same break.
+- **Firefox Startup Error** - Stop Firefox from logging an XML parsing error while the player starts.
+
 ## [21.0.3] - 2026-10-13
 
 Fixed

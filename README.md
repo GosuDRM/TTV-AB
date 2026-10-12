@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v21.0.4 - 2026-10-13
+
+- **HD Backup Retention** - Keep a clean HD backup playing after it proves itself during an ad break, instead of dropping back to 360p because it had shown ads earlier in the same break.
+- **Firefox Startup Error** - Stop Firefox from logging an XML parsing error while the player starts.
+
 ### v21.0.3 - 2026-10-13
 
 - **Backup Stream Rewinds** - Stop the stream from jumping back a few seconds each time an ad break switches to a fresh backup session, which repeated every few seconds when backups kept receiving ads ([#88](https://github.com/GosuDRM/TTV-AB/issues/88)).
@@ -86,12 +91,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Test Reliability** - Allow more time for full-project type checks so slow build machines do not fail them by chance.
 - **Ad Break Summaries** - Log one line per ad break listing each source served, when it started, and how playback returned to the stream, making stalls and long low-quality periods easier to diagnose.
 - **Recovery Diagnostics** - Explain why the player was restarted after an ad, show the backup search order with remaining cooldowns, and report whether waiting for a late playlist update succeeded.
-
-### v21.0.1 - 2026-10-12
-
-- **Native Stream Return** - Switch back to Twitch's own stream without restarting the player when it is just short of where the HD backup left off, waiting a moment for fresh video instead.
-- **Playlist Retries** - Wait briefly for fresh video when a playlist update arrives slightly behind, instead of failing the request and making the player stall while it retries.
-- **HD Backup Retries** - Keep retrying HD backups while the low-quality backup plays, so a break no longer stays at 360p after an HD source showed ads once.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
