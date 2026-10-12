@@ -185,10 +185,18 @@ describe("empty hold playlist continuity", () => {
 				expect(info._LastServedPlaylistKind).toBe("hold");
 				expect(context.state.PinnedBackupPlayerType).toBeNull();
 			}
-			expect(held[0][0].sequence).toBe(firstHold[0].sequence + 1);
+			expect(held[0][0]).toEqual(firstHold[0]);
+			expect(held[0].at(-1).sequence).toBe(firstHold.at(-1).sequence + 1);
 			for (let poll = 1; poll < held.length; poll++) {
-				expect(held[poll][0].sequence).toBe(held[poll - 1][0].sequence + 1);
-				expect(held[poll][0].url).toBe(held[poll - 1][1].url);
+				expect(held[poll].at(-1).sequence).toBe(
+					held[poll - 1].at(-1).sequence + 1,
+				);
+				expect(held[poll - 1]).toEqual(
+					expect.arrayContaining(held[poll].slice(0, -1)),
+				);
+				expect(held[poll][0].sequence).toBeLessThan(
+					held[poll - 1].at(-1).sequence,
+				);
 			}
 			expect(context._refreshActiveBackupMediaPlaylist).toHaveBeenCalledTimes(
 				4,
@@ -683,11 +691,11 @@ describe("empty hold playlist continuity", () => {
 		info._EmptyAdHoldWindow.startedAt -= 2048;
 		const advanced = context._createEmptyAdHoldPlaylist(playlist(405), info);
 		const entries = segments(advanced);
-		expect(entries).toHaveLength(3);
-		expect(entries[0]).toEqual(segments(first)[2]);
-		expect(entries[2].sequence).toBe(entries[0].sequence + 2);
-		expect(entries[2].discontinuity).toBe(entries[0].discontinuity);
-		expect(advanced).toContain(new Date(start + 8048).toISOString());
+		expect(entries).toHaveLength(5);
+		expect(entries.slice(0, 3)).toEqual(segments(first));
+		expect(entries[4].sequence).toBe(entries[0].sequence + 4);
+		expect(entries[4].discontinuity).toBe(entries[0].discontinuity);
+		expect(advanced).toContain(new Date(start + 10096).toISOString());
 		expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 6000);
 		expect(info._LivePlaylistTimeline.afterHold).toBe(true);
 		context._resetStreamAdState(info, true);
@@ -779,14 +787,52 @@ describe("empty hold playlist continuity", () => {
 		);
 	});
 
+	it("keeps every hold slot listed until a client polling at the target duration can fetch it", async () => {
+		const { context, info, serve } = setup();
+		const source = playlist(400).replace(
+			"TARGETDURATION:2",
+			"TARGETDURATION:5",
+		);
+		const first = segments(
+			await serve(context._createEmptyAdHoldPlaylist(source, info)),
+		);
+		expect(first).toHaveLength(3);
+		let previous = first;
+		let elapsed = 0;
+		for (let poll = 0; poll < 8; poll++) {
+			elapsed += 5500;
+			info._EmptyAdHoldWindow.startedAt -= 5500;
+			const next = segments(
+				await serve(context._createEmptyAdHoldPlaylist(source, info)),
+			);
+			expect(next[0].sequence).toBeLessThanOrEqual(
+				previous.at(-1).sequence + 1,
+			);
+			expect(next.at(-1).sequence).toBe(
+				first[0].sequence + Math.floor(elapsed / 1024) + 2,
+			);
+			expect(next.length).toBeLessThanOrEqual(15);
+			expect(new Set(next.map((entry) => entry.url)).size).toBe(next.length);
+			previous = next;
+		}
+		expect(previous).toHaveLength(15);
+		expect(previous[0].discontinuity).toBe(first[0].discontinuity);
+	});
+
 	it("keeps a bounded hold window and starts new media for a new ad cycle", async () => {
 		const { context, info, hold } = setup();
 		const first = segments(await hold());
 		info._EmptyAdHoldWindow.startedAt -= 30720;
 		const later = context._createEmptyAdHoldPlaylist(playlist(400), info);
-		expect(segments(later)).toHaveLength(3);
-		expect(segments(later)[0].sequence).toBe(first[0].sequence + 30);
+		expect(segments(later)).toHaveLength(6);
+		expect(segments(later)[0].sequence).toBe(first[0].sequence + 27);
+		expect(segments(later).at(-1).sequence).toBe(first[0].sequence + 32);
 		expect(segments(later)[0].discontinuity).toBe(first[0].discontinuity);
+		const unbounded = context._createEmptyAdHoldPlaylist(
+			playlist(400).replace("TARGETDURATION:2", "TARGETDURATION:600"),
+			info,
+		);
+		expect(segments(unbounded)).toHaveLength(32);
 		info.VisibleAdStartedAt++;
 		const nextCycle = context._createEmptyAdHoldPlaylist(playlist(400), info);
 		expect(segments(nextCycle)).toHaveLength(3);
