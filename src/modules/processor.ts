@@ -8709,7 +8709,40 @@ async function _refreshActiveBackupMediaPlaylist(
 		codecOverride,
 	);
 	if (!compatibleMaster) return null;
-	const streamUrl = _getStreamUrl(compatibleMaster, targetRes, encBaseUrl);
+	const selectedMetadata =
+		info.BackupPlaylistMetadata instanceof Map && info.LastCleanBackupM3U8
+			? info.BackupPlaylistMetadata.get(info.LastCleanBackupM3U8) || null
+			: null;
+	const heightOf = (resolution) =>
+		Number(String(resolution || "").split("x")[1]) || 0;
+	const selectedHeight = heightOf(
+		selectedMetadata?.playlistUrl
+			? _getBackupVariantResolution(
+					compatibleMaster,
+					selectedMetadata.playlistUrl,
+					encBaseUrl,
+				)
+			: null,
+	);
+	const targetHeight = heightOf(targetRes?.Resolution);
+	const explicitHeight =
+		Number(
+			String(__TTVAB_STATE__?.PreferredQualityGroup || "").match(
+				/^(\d+)p/i,
+			)?.[1],
+		) || 0;
+	const selectedPlaylistUrl =
+		selectedMetadata?.playerType === pt &&
+		selectedMetadata.ambiguous !== true &&
+		selectedHeight > 0 &&
+		selectedMetadata.sessionUrl === _getExactPlaylistUrlKey(encBaseUrl) &&
+		targetHeight <= selectedHeight &&
+		!(explicitHeight > 0 && explicitHeight < selectedHeight)
+			? selectedMetadata.playlistUrl
+			: null;
+	const streamUrl =
+		selectedPlaylistUrl ||
+		_getStreamUrl(compatibleMaster, targetRes, encBaseUrl);
 	if (!streamUrl) return null;
 	const selectedCodecFamily = _getBackupVariantCodecFamily(
 		compatibleMaster,
