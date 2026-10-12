@@ -407,6 +407,68 @@ describe("_notifyAdComplete", () => {
 		expect(payloads.every((payload) => payload.total_ads === 2)).toBe(true);
 	});
 
+	it("tracks and spoofs stitched ads whose ID is not the first attribute", async () => {
+		const notify =
+			T<
+				(
+					text: string,
+					info: Record<string, unknown> & { SpoofedAdIds: Set<string> },
+				) => Promise<void>
+			>("_notifyAdComplete");
+		const batches: GqlPacket[][] = [];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: Record<string, unknown>,
+		) => {
+			batches.push(JSON.parse(String(options.body || "[]")) as GqlPacket[]);
+			return new Response(null, { status: 200 });
+		};
+		const capture = captureWorkerMessages();
+		const info = {
+			SpoofedAdIds: new Set<string>(),
+			ObservedAdPodIds: new Set<string>(),
+			ExpectedAdPodLength: 0,
+			VisibleAdStartedAt: 777,
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		};
+		const reordered = (id: number) =>
+			`#EXT-X-DATERANGE:CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-POD-POSITION="${id}",X-TV-TWITCH-AD-RADS-TOKEN="rad-${id}",ID="stitched-ad-${id}",X-TV-TWITCH-AD-POD-LENGTH="2",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"`;
+
+		try {
+			await notify(["#EXTM3U", reordered(0), reordered(1)].join("\r\n"), info);
+		} finally {
+			capture.restore();
+		}
+
+		expect([...info.ObservedAdPodIds]).toEqual([
+			"stitched-ad-0",
+			"stitched-ad-1",
+		]);
+		expect(capture.messages[0]).toMatchObject({
+			key: "AdPodProgress",
+			adIds: ["stitched-ad-0", "stitched-ad-1"],
+			expectedPodLength: 2,
+		});
+		const impressions = batches
+			.flat()
+			.filter(
+				(packet) =>
+					packet.variables?.input?.eventName === "video_ad_impression",
+			);
+		expect(
+			impressions.map((packet) => [
+				JSON.parse(String(packet.variables?.input?.eventPayload)).ad_id,
+				(packet.variables?.input as { radToken?: string } | undefined)
+					?.radToken,
+			]),
+		).toEqual([
+			["stitched-ad-0", "rad-0"],
+			["stitched-ad-1", "rad-1"],
+		]);
+		expect([...info.SpoofedAdIds]).toEqual(["stitched-ad-0", "stitched-ad-1"]);
+	});
+
 	it("keeps spoofing later ads across polls when no pod length is declared", async () => {
 		const notify =
 			T<

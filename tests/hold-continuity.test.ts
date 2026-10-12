@@ -590,6 +590,75 @@ describe("empty hold playlist continuity", () => {
 		);
 	});
 
+	it("does not replay prefetched media when an ad-marked backup is replaced by a new session", async () => {
+		const { serve } = setup();
+		const start = Date.parse("2026-10-12T16:15:00Z");
+		const dated = (sequence: number, prefix: string, timeIndex = sequence) =>
+			playlist(sequence, 3, prefix).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + (timeIndex - 100) * 2000).toISOString()}\n#EXTINF:`,
+			);
+		const prefetch = (prefix: string, first: number) =>
+			[first, first + 1]
+				.map(
+					(sequence) =>
+						`\n#EXT-X-TWITCH-PREFETCH:https://edge.example/${prefix}-${sequence}.ts`,
+				)
+				.join("");
+		const numberOf = (text: string, name: string) =>
+			segments(text).find((entry) => entry.url.endsWith(`/${name}.ts`))
+				?.sequence;
+		await serve(dated(100, "native"));
+		const first = await serve(
+			dated(101, "a") + prefetch("a", 104),
+			"autoplay",
+			"one",
+		);
+		const second = await serve(
+			dated(102, "b") + prefetch("b", 105),
+			"autoplay",
+			"two",
+		);
+		expect(second).not.toContain("b-103.ts");
+		expect(numberOf(second, "b-104")).toBe(numberOf(first, "a-104"));
+		expect(numberOf(second, "b-105")).toBe(numberOf(first, "a-105"));
+		expect(numberOf(second, "b-106")).toBe(numberOf(first, "a-105") + 1);
+		expect(segments(second)[0].discontinuity).toBe(
+			segments(first).at(-1).discontinuity + 1,
+		);
+		const refreshed = await serve(
+			dated(103, "b") + prefetch("b", 106),
+			"autoplay",
+			"two",
+		);
+		expect(numberOf(refreshed, "b-105")).toBe(numberOf(first, "a-105"));
+		const third = await serve(
+			dated(104, "c") + prefetch("c", 107),
+			"autoplay",
+			"three",
+		);
+		expect(third).not.toContain("c-105.ts");
+		expect(numberOf(third, "c-106")).toBe(numberOf(refreshed, "b-106"));
+		expect(numberOf(third, "c-107")).toBe(numberOf(refreshed, "b-107"));
+
+		const unaligned = setup();
+		await unaligned.serve(dated(100, "native"));
+		const offered = await unaligned.serve(
+			dated(101, "a") + prefetch("a", 104),
+			"autoplay",
+			"one",
+		);
+		const renumbered = await unaligned.serve(
+			dated(502, "b", 102) + prefetch("b", 505),
+			"autoplay",
+			"two",
+		);
+		expect(segments(renumbered)[0].url).toContain("b-504.ts");
+		expect(segments(renumbered)[0].sequence).toBe(
+			segments(offered).at(-1).sequence + 1,
+		);
+	});
+
 	it("keeps enough silent media available through the observed early poll and backup delay", async () => {
 		const { context, info, serve } = setup();
 		let now = Date.now();
