@@ -149,6 +149,16 @@ type TTVABNativeTimelineAnchor = {
 
 type TTVABPlaylistKind = "hold" | "backup" | "native";
 
+type TTVABAdPod = {
+	key: string;
+	length: number;
+	adIds: Set<string>;
+	spoofedAdIds: Set<string>;
+	maxPosition: number;
+	zeroPosition: boolean;
+	completeSent: boolean;
+};
+
 type TTVABEmptyHoldTimeline = {
 	kind: TTVABPlaylistKind;
 	identity: string;
@@ -226,6 +236,7 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	ExpectedAdPodLength: number;
 	MaxObservedAdPodPosition: number;
 	ObservedZeroAdPodPosition: boolean;
+	CurrentAdPod: TTVABAdPod | null;
 	LastAdPodProgressAt: number;
 	_IncompletePodCleanStartedAt: number;
 	_IncompletePodCleanPlaylistCount: number;
