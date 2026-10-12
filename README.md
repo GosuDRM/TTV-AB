@@ -73,6 +73,10 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v21.0.0 - 2026-10-12
+
+- **Silent Hold Stalls** - Keep every temporary silent hold segment listed long enough for the player to load it, so long ad breaks no longer freeze on a black screen while a clean backup catches up.
+
 ### v20.0.5 - 2026-10-12
 
 - **Post-Ad Quality Stability** - Revalidate and retain the native stream when Twitch offers a reduced quality catalog just after playback restarts, preventing a conflicting session from interrupting recovery.
@@ -82,10 +86,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 - **Backup Handoff Stalls** - Keep the temporary silent hold advancing while a clean backup catches up to the live stream. Switch only when fresh content is available, without replaying older segments.
 - **Backup Wait Diagnostics** - Log when a backup is behind the live boundary and which hold sequence is being served, with repeated warnings summarized.
-
-### v20.0.3 - 2026-10-12
-
-- **Playback Diagnostics** - Help investigate playback repeats and gaps with source, quality, and transition timing details. Summarize repeated warnings and keep signed stream URLs private.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
