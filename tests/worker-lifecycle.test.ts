@@ -9,6 +9,7 @@ import {
 	describe,
 	expect,
 	it,
+	type Mock,
 	vi,
 } from "vitest";
 import { loadModule, snapshotGlobals, T } from "./helpers/runtime";
@@ -447,6 +448,50 @@ function startHarnessWorkerRuntime(
 		},
 	};
 }
+
+it("keeps a failing command handler from surfacing as a worker crash", () => {
+	vi.useFakeTimers();
+	T<(scope: object) => void>("_declareState")(g);
+	const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+	try {
+		const runtime = startHarnessWorkerRuntime(
+			harness.worker,
+			vi.fn(async () => new Response("unavailable", { status: 503 })),
+		);
+		runtime.deliverBootstrap();
+		Object.defineProperty(
+			runtime.scope.__TTVAB_STATE__ as object,
+			"AdPodProgressByMediaKey",
+			{
+				configurable: true,
+				get() {
+					throw new Error("broken pod state");
+				},
+			},
+		);
+		const command = T<(message: Record<string, unknown>) => unknown>(
+			"_createWorkerBridgeMessage",
+		)({
+			key: "ClearAdPodProgress",
+			value: { mediaKey: "live:testchannel", beforeCycleStartedAt: 1 },
+		});
+		expect(() => runtime.deliver(command)).not.toThrow();
+		expect(
+			JSON.stringify((runtime.scope.postMessage as Mock).mock.calls),
+		).toContain("Worker command ClearAdPodProgress failed: broken pod state");
+		const ping = T<(message: Record<string, unknown>) => unknown>(
+			"_createWorkerBridgeMessage",
+		)({ key: "Ping", value: null });
+		(runtime.scope.postMessage as Mock).mockClear();
+		runtime.deliver(ping);
+		expect(
+			JSON.stringify((runtime.scope.postMessage as Mock).mock.calls),
+		).toContain("Pong");
+	} finally {
+		harness.restore();
+		vi.clearAllTimers();
+	}
+});
 
 it.each([false, true])(
 	"preserves encrypted segment bytes in the injected worker (blocking=%s)",
@@ -6605,6 +6650,9 @@ describe("worker recovery lifecycle", () => {
 			MediaKey: "live:testchannel",
 		});
 		g._hasUserPauseIntent = () => paused;
+		const previousLog = g._log;
+		const log = vi.fn();
+		g._log = log;
 		const playerTask = vi.fn(() => {
 			recordTestPlayerReload("live:testchannel");
 			return true;
@@ -6637,6 +6685,13 @@ describe("worker recovery lifecycle", () => {
 			expect(recoveryState.phase).toBe("waiting-user-pause");
 			expect(recoveryState.attempts).toBe(0);
 			expect(playerTask).not.toHaveBeenCalled();
+			expect(
+				log.mock.calls.filter(
+					([message]) =>
+						message ===
+						"Deferring worker recovery while playback is manually paused",
+				),
+			).toHaveLength(1);
 
 			paused = false;
 			vi.advanceTimersByTime(5000);
@@ -6653,6 +6708,7 @@ describe("worker recovery lifecycle", () => {
 			} else {
 				g._hasUserPauseIntent = previousPauseIntent;
 			}
+			g._log = previousLog;
 		}
 	});
 
@@ -16307,6 +16363,49 @@ describe("worker watchdog visibility awareness", () => {
 	afterEach(() => {
 		stopWatchdog();
 		restoreGlobals();
+	});
+
+	it("keeps pinging every worker when an earlier watchdog step or worker check throws", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const previousUnhookedCheck = g._checkUnhookedPlayer;
+		const previousLog = g._log;
+		const log = vi.fn();
+		g._log = log;
+		g._checkUnhookedPlayer = () => {
+			throw new Error("broken player tree");
+		};
+		const brokenWorker = makeTrackedWorker();
+		Object.defineProperty(brokenWorker, "__TTVABIntentionallyTerminated", {
+			get() {
+				throw new Error("broken worker");
+			},
+		});
+		const markPong =
+			T<(worker: Record<string, unknown>, now?: number) => void>(
+				"_markWorkerPong",
+			);
+		const worker = makeTrackedWorker();
+		worker.postMessage = () => {
+			(worker.pings as number)++;
+			markPong(worker);
+		};
+		try {
+			startWatchdog();
+			vi.advanceTimersByTime(50000);
+			expect(worker.pings).toBe(10);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+			expect(
+				log.mock.calls.filter(([message]) =>
+					String(message).startsWith("Worker watchdog step failed:"),
+				),
+			).toHaveLength(4);
+		} finally {
+			(g._S as { workers: unknown[] }).workers.length = 0;
+			g._log = previousLog;
+			if (previousUnhookedCheck === undefined) delete g._checkUnhookedPlayer;
+			else g._checkUnhookedPlayer = previousUnhookedCheck;
+		}
 	});
 
 	it("never strikes a live ponging worker while the tab is hidden", () => {

@@ -165,6 +165,25 @@ function makePlayback() {
 	return { sample, video, worker, player, state };
 }
 
+describe("playback intent monitor cadence", () => {
+	it("syncs the primary media once per tick on a page without a player", async () => {
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PageMediaType: null,
+			PageChannel: null,
+			PageMediaKey: null,
+		});
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue({
+			player: null,
+			state: null,
+		});
+		vi.spyOn(g, "_getPrimaryMediaElement").mockReturnValue(null);
+		const sync = vi.spyOn(g, "_syncPrimaryMediaPlaybackIntent");
+		run("_monitorPlaybackIntent");
+		await vi.advanceTimersByTimeAsync(30000);
+		expect(sync).toHaveBeenCalledTimes(11);
+	});
+});
+
 describe("clean live playback failure recovery", () => {
 	it.each([0, 3])(
 		"rebuilds once after advancing playback becomes persistently empty with media error %s",

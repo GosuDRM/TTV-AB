@@ -131,6 +131,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		ExpectedAdPodLength: 0,
 		MaxObservedAdPodPosition: 0,
 		ObservedZeroAdPodPosition: false,
+		CurrentAdPod: null,
 		LastAdPodProgressAt: 0,
 		_IncompletePodCleanStartedAt: 0,
 		_IncompletePodCleanPlaylistCount: 0,
@@ -882,6 +883,15 @@ describe("_resetStreamAdState", () => {
 			ExpectedAdPodLength: 4,
 			MaxObservedAdPodPosition: 3,
 			ObservedZeroAdPodPosition: true,
+			CurrentAdPod: {
+				key: "midroll|4",
+				length: 4,
+				adIds: new Set(["stitched-ad-1"]),
+				spoofedAdIds: new Set(["stitched-ad-1"]),
+				maxPosition: 3,
+				zeroPosition: true,
+				completeSent: false,
+			},
 			LastAdPodProgressAt: 5000,
 			_IncompletePodCleanStartedAt: 4000,
 			_IncompletePodCleanPlaylistCount: 7,
@@ -972,6 +982,7 @@ describe("_resetStreamAdState", () => {
 		expect(info.ExpectedAdPodLength).toBe(0);
 		expect(info.MaxObservedAdPodPosition).toBe(0);
 		expect(info.ObservedZeroAdPodPosition).toBe(false);
+		expect(info.CurrentAdPod).toBe(null);
 		expect(info.LastAdPodProgressAt).toBe(0);
 		expect(info._IncompletePodCleanStartedAt).toBe(0);
 		expect(info._IncompletePodCleanPlaylistCount).toBe(0);
@@ -6022,6 +6033,47 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		expect(out).toContain("seg100.ts");
 	});
 
+	it.each([
+		[false, "player reload (post-escape)"],
+		[true, "pause/resume"],
+	])(
+		"names the native return in the ad break summary when a counterproductive reload is %s",
+		async (counterproductive, nativeReturn) => {
+			const info = setupCsaiEscapeAdEnd({
+				PostEscapeReloadCounterproductive: counterproductive,
+				_PlaylistContinuityDiagnostics: {
+					nextSourceId: 1,
+					lastServedSourceId: 1,
+					sources: new Map(),
+					adBreak: {
+						cycleStartedAt: Date.now() - 10000,
+						steps: [{ at: Date.now() - 9000, source: "embed 1920x1080" }],
+						dropped: 0,
+						nativeReturn: null,
+					},
+				},
+			});
+			info.VisibleAdStartedAt =
+				info._PlaylistContinuityDiagnostics.adBreak.cycleStartedAt;
+			g._canReloadNativePlayerAfterAd = async () => true;
+			const log = vi.fn();
+			g._log = log;
+
+			await processM3U8()(NATIVE_URL, makePlaylist(100, 3), () =>
+				Promise.reject(new Error("unexpected fetch")),
+			);
+
+			const summary = log.mock.calls
+				.map(([message]) => String(message))
+				.find((message) => message.startsWith("[Break] ended "));
+			expect(summary).toMatch(
+				new RegExp(
+					`embed 1920x1080 @1\\.0s -> native @\\d+\\.\\ds; native return by ${nativeReturn.replace(/[()/]/g, "\\$&")}$`,
+				),
+			);
+		},
+	);
+
 	it("learns a post-escape reload is counterproductive when another ad break ends right after it", async () => {
 		const info = setupCsaiEscapeAdEnd({
 			LastAdEndReloadAt: Date.now() - 5000,
@@ -6725,6 +6777,74 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 			).toMatchObject({ requiresReload: false });
 		} finally {
 			g._canReloadNativePlayerAfterAd = previousNativeProbe;
+		}
+	});
+
+	it("keeps holding through a midroll pod that follows a preroll pod in the same break", async () => {
+		const midrollIds = Array.from(
+			{ length: 7 },
+			(_, position) => `stitched-ad-mid-${position}`,
+		);
+		const info = setupHold({
+			PendingAdEndAt: Date.now() - 5000,
+			CleanPlaylistCount: 2,
+			ExpectedAdPodLength: 8,
+			ObservedAdPodIds: new Set(["stitched-ad-pre-0", ...midrollIds]),
+			MaxObservedAdPodPosition: 6,
+			ObservedZeroAdPodPosition: true,
+			CurrentAdPod: {
+				key: "midroll|8",
+				length: 8,
+				adIds: new Set(midrollIds),
+				spoofedAdIds: new Set(midrollIds),
+				maxPosition: 6,
+				zeroPosition: true,
+				completeSent: false,
+			},
+			EnhancedDecoderCodecFamily: "hevc",
+			EnhancedDecoderCodec: "hev1.1.6.L153.B0",
+			LastCleanBackupCodecFamily: "hevc",
+			LastCleanBackupCodec: "hev1.1.6.l153.b0",
+			ActiveBackupResolution: "2560x1440",
+		});
+		g._postWorkerBridgeMessage = vi.fn();
+		const previousNativeProbe = g._canReloadNativePlayerAfterAd;
+		g._canReloadNativePlayerAfterAd = vi.fn(async () => true);
+		const previousLog = g._log;
+		const log = vi.fn();
+		g._log = log;
+
+		try {
+			let output = await processM3U8()(NATIVE_URL, makePlaylist(300, 3), () =>
+				Promise.reject(new Error("no fetch expected")),
+			);
+			info.NativeRecoveryCandidateStartedAt = Date.now() - 11000;
+			for (let index = 1; index < 8; index++) {
+				output = await processM3U8()(
+					NATIVE_URL,
+					makePlaylist(300 + index, 3),
+					() => Promise.reject(new Error("no fetch expected")),
+				);
+			}
+
+			expect(output).toContain("seg50.ts");
+			expect(info.IsHoldingBackupAfterAd).toBe(true);
+			expect(
+				(
+					g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>
+				).mock.calls.some(
+					(call) =>
+						(call[1] as Record<string, unknown>)?.key ===
+						"NativePlaybackRestored",
+				),
+			).toBe(false);
+			expect(log).toHaveBeenCalledWith(
+				"[Trace] Declared ad pod still active (7/8); holding clean backup stream",
+				"info",
+			);
+		} finally {
+			g._canReloadNativePlayerAfterAd = previousNativeProbe;
+			g._log = previousLog;
 		}
 	});
 
