@@ -407,6 +407,97 @@ describe("_notifyAdComplete", () => {
 		expect(payloads.every((payload) => payload.total_ads === 2)).toBe(true);
 	});
 
+	it.each([
+		{
+			label: "a preroll pod followed by an eight-ad midroll pod",
+			pods: [
+				{ roll: "PREROLL", prefix: "pre", length: 1 },
+				{ roll: "MIDROLL", prefix: "mid", length: 8 },
+			],
+		},
+		{
+			label: "two consecutive midroll pods of the same length",
+			pods: [
+				{ roll: "MIDROLL", prefix: "first", length: 2 },
+				{ roll: "MIDROLL", prefix: "second", length: 2 },
+			],
+		},
+	])(
+		"reports every ad and completes each pod once for $label",
+		async ({ pods }) => {
+			const notify =
+				T<(text: string, info: Record<string, unknown>) => Promise<void>>(
+					"_notifyAdComplete",
+				);
+			const batches: GqlPacket[][] = [];
+			g._fetchViaWorkerBridge = async (
+				_url: string,
+				options: Record<string, unknown>,
+			) => {
+				batches.push(JSON.parse(String(options.body || "[]")) as GqlPacket[]);
+				return new Response(null, { status: 200 });
+			};
+			const ads = pods.flatMap(({ roll, prefix, length }) =>
+				Array.from(
+					{ length },
+					(_, position) =>
+						`#EXT-X-DATERANGE:ID="stitched-ad-${prefix}-${position}",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-RADS-TOKEN="rad-${prefix}-${position}",X-TV-TWITCH-AD-POD-LENGTH="${length}",X-TV-TWITCH-AD-POD-POSITION="${position}",X-TV-TWITCH-AD-ROLL-TYPE="${roll}"`,
+				),
+			);
+			const info = {
+				SpoofedAdIds: new Set<string>(),
+				RecentSpoofedAdIds: new Map<string, number>(),
+				ObservedAdPodIds: new Set<string>(),
+				ExpectedAdPodLength: 0,
+				MaxObservedAdPodPosition: 0,
+				ObservedZeroAdPodPosition: false,
+				CurrentAdPod: null,
+				ActiveBackupPlayerType: "autoplay",
+			};
+
+			for (let end = 1; end <= ads.length; end++) {
+				await notify(
+					["#EXTM3U", ...ads.slice(Math.max(0, end - 3), end)].join("\n"),
+					info,
+				);
+			}
+
+			const events = batches.map((batch) =>
+				batch.map((packet) => {
+					const input = packet.variables?.input;
+					return {
+						event: input?.eventName,
+						payload: JSON.parse(String(input?.eventPayload || "{}")) as {
+							ad_id?: string;
+							total_ads?: number;
+						},
+					};
+				}),
+			);
+			const impressions = events
+				.flat()
+				.filter(({ event }) => event === "video_ad_impression");
+			expect(impressions.map(({ payload }) => payload.ad_id)).toEqual(
+				ads.map((line) => line.match(/ID="([^"]+)"/)?.[1]),
+			);
+			expect(impressions.map(({ payload }) => payload.total_ads)).toEqual(
+				pods.flatMap(({ length }) => Array(length).fill(length)),
+			);
+			const completedAfter = events
+				.filter((batch) =>
+					batch.some(({ event }) => event === "video_ad_pod_complete"),
+				)
+				.map(
+					(batch) =>
+						batch.find(({ event }) => event === "video_ad_impression")?.payload
+							.ad_id,
+				);
+			expect(completedAfter).toEqual(
+				pods.map(({ prefix, length }) => `stitched-ad-${prefix}-${length - 1}`),
+			);
+		},
+	);
+
 	it("tracks and spoofs stitched ads whose ID is not the first attribute", async () => {
 		const notify =
 			T<
