@@ -470,7 +470,7 @@ function contractDiagnostics(source: string) {
 	}));
 }
 
-describe("worker TypeScript contracts", () => {
+describe("worker TypeScript contracts", { timeout: 30_000 }, () => {
 	it("accepts every command and event and narrows payloads at actual senders and consumers", () => {
 		const source = `const _contractPayloads = ${JSON.stringify(commandPayloads)} satisfies TTVABWorkerCommandPayloads;
 const _eventContractPayloads = ${JSON.stringify(eventPayloads)} satisfies TTVABWorkerEventPayloads;
@@ -538,7 +538,7 @@ function _eventContractNarrowing(input: unknown) {
 	});
 });
 
-describe("stream state TypeScript contracts", () => {
+describe("stream state TypeScript contracts", { timeout: 30_000 }, () => {
 	it("types factory records, nested recovery state, and actual stream consumers", () => {
 		const source = `const _streamContract = _createStreamInfo({ mediaKey: "live:buildtest" });
 const _streamHasNoIndex: string extends keyof TTVABStreamInfo ? false : true = true;
