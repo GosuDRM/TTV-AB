@@ -7245,9 +7245,17 @@ async function _processM3U8Core(
 			}
 			const forceRefreshAt =
 				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
-			const stalledDuringHold = forceRefreshAt > 0;
+			if (forceRefreshAt > 0) __TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
+			const stalledDuringHold = Boolean(
+				forceRefreshAt > 0 &&
+					forceRefreshAt <= now &&
+					forceRefreshAt >=
+						Math.max(
+							Number(info.VisibleAdStartedAt) || 0,
+							Number(info._LastBackupSearchCompletedAt) || 0,
+						),
+			);
 			if (stalledDuringHold) {
-				__TTVAB_STATE__.BackupSearchForceRefreshAt = 0;
 				const stalledType =
 					info.ActiveBackupPlayerType || info.LastCleanBackupPlayerType || null;
 				if (stalledType) {
