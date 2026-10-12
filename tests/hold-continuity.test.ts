@@ -220,6 +220,7 @@ describe("empty hold playlist continuity", () => {
 				reason: "behind-served-time",
 				servedSequence: null,
 				holdSequence: held[0][0].sequence,
+				holdLastSequence: held[0].at(-1).sequence,
 			});
 			offset = 1;
 			now += 1100;
@@ -1793,9 +1794,18 @@ describe("empty hold playlist continuity", () => {
 		context._resetStreamAdState(info, true);
 		log.mockClear();
 		await serve(dated(500, 32));
-		expect(log).toHaveBeenCalledTimes(1);
-		expect(log.mock.calls[0][1]).toBe("info");
-		expect(JSON.parse(log.mock.calls[0][0].split("handoff ")[1])).toMatchObject(
+		expect(log).toHaveBeenCalledTimes(2);
+		expect(log.mock.calls[0]).toEqual([
+			expect.stringMatching(
+				new RegExp(
+					`^\\[Break\\] ended live:testchannel cycle ${cycle}: native 1920x1080 @-?\\d+\\.\\ds -> site 1920x1080 @\\d+\\.\\ds -> native 1920x1080 @\\d+\\.\\ds$`,
+				),
+			),
+			"info",
+		]);
+		expect(info._PlaylistContinuityDiagnostics.adBreak).toBeNull();
+		expect(log.mock.calls[1][1]).toBe("info");
+		expect(JSON.parse(log.mock.calls[1][0].split("handoff ")[1])).toMatchObject(
 			{
 				cycleStartedAt: cycle,
 				cyclePhase: "ended",

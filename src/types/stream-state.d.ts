@@ -185,6 +185,13 @@ type TTVABPlaylistAlignmentDiagnostic = {
 	internalOverlapMs?: number;
 };
 
+type TTVABAdBreakTimeline = {
+	cycleStartedAt: number;
+	steps: { at: number; source: string }[];
+	dropped: number;
+	nativeReturn: string | null;
+};
+
 type TTVABPlaylistContinuityDiagnostics = {
 	nextSourceId: number;
 	lastServedSourceId: number;
@@ -198,6 +205,7 @@ type TTVABPlaylistContinuityDiagnostics = {
 			suppressed: number;
 		}
 	>;
+	adBreak?: TTVABAdBreakTimeline | null;
 };
 
 interface TTVABStreamInfo extends TTVABPlaybackContext {
