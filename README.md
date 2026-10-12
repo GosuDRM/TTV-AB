@@ -73,6 +73,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v21.0.5 - 2026-10-13
+
+- **1440p Ad Break Freezes** - Keep every verified quality option when Twitch shortens the quality list just before an ad on HEVC or AV1 1440p streams, so playback switches to a clean backup instead of freezing for up to a minute and the quality menu is no longer cut down to 1440p only.
+- **Silent Hold Stalls** - Stop an old stall report from sidelining a healthy backup when an ad break moves into its silent hold, which caused repeated freezes while Twitch kept serving ads.
+
 ### v21.0.4 - 2026-10-13
 
 - **HD Backup Retention** - Keep a clean HD backup playing after it proves itself during an ad break, instead of dropping back to 360p because it had shown ads earlier in the same break.
@@ -83,14 +88,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Backup Stream Rewinds** - Stop the stream from jumping back a few seconds each time an ad break switches to a fresh backup session, which repeated every few seconds when backups kept receiving ads ([#88](https://github.com/GosuDRM/TTV-AB/issues/88)).
 - **Ad Break Reporting** - Recognize ad markers when Twitch lists their details in a different order or uses Windows line endings, so ad progress is still tracked and ad completion is still reported.
 - **Code Cleanup** - Remove unused route helpers left over from an older version, keeping a single list of non-channel Twitch pages so the two copies can no longer drift apart.
-
-### v21.0.2 - 2026-10-12
-
-- **Worker Recovery** - Give a player crash its own restart attempt when it follows a recovered player, instead of giving up because an earlier wait for the player had already run out.
-- **Device ID Sync** - Pass a changed Twitch device ID to running players so backup stream requests keep using the current one.
-- **Test Reliability** - Allow more time for full-project type checks so slow build machines do not fail them by chance.
-- **Ad Break Summaries** - Log one line per ad break listing each source served, when it started, and how playback returned to the stream, making stalls and long low-quality periods easier to diagnose.
-- **Recovery Diagnostics** - Explain why the player was restarted after an ad, show the backup search order with remaining cooldowns, and report whether waiting for a late playlist update succeeded.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
