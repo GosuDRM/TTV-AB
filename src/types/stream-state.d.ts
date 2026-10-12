@@ -158,6 +158,7 @@ type TTVABEmptyHoldTimeline = {
 	mediaOffset: number;
 	discontinuityOffset: number;
 	lastSequence: number;
+	lastSegmentSequence?: number;
 	lastDiscontinuity: number;
 	lastRawFirstSequence: number;
 	nativeAnchor?: TTVABNativeTimelineAnchor | null;
