@@ -2,6 +2,12 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [21.0.0] - 2026-10-12
+
+Fixed
+
+- **Silent Hold Stalls** - Keep every temporary silent hold segment listed long enough for the player to load it, so long ad breaks no longer freeze on a black screen while a clean backup catches up.
+
 ## [20.0.5] - 2026-10-12
 
 Fixed
