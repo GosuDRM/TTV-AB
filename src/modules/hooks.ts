@@ -2698,7 +2698,10 @@ function _syncStoredDeviceId() {
 			deviceId &&
 			/^[a-f0-9]{8,64}$/i.test(deviceId)
 		) {
-			__TTVAB_STATE__.GQLDeviceID = deviceId;
+			if (__TTVAB_STATE__.GQLDeviceID !== deviceId) {
+				__TTVAB_STATE__.GQLDeviceID = deviceId;
+				_broadcastWorkers({ key: "UpdateDeviceId", value: deviceId });
+			}
 			return deviceId;
 		}
 		if (typeof deviceId === "string" && deviceId) {
@@ -4082,6 +4085,10 @@ function _recoverCrashedWorker(
 	if (recoveryState.timerID !== null) {
 		clearTimeout(recoveryState.timerID);
 		recoveryState.timerID = null;
+	}
+	if (recoveryState.phase === "stabilizing") {
+		recoveryState.playerWaitDeadlineAt = 0;
+		recoveryState.playerWaitSuspendedAt = 0;
 	}
 	recoveryState.context = recoveryContext;
 	recoveryState.activeEpoch = ++_workerRecoveryEpoch;
