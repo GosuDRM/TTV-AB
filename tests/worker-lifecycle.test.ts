@@ -7045,6 +7045,29 @@ describe("worker recovery readiness and replacement races", () => {
 		expect(g._showWorkerRecoveryNotice).toHaveBeenCalledOnce();
 	});
 
+	it("gives a crash after a proven replacement its own reload instead of the expired player wait", () => {
+		crash();
+		vi.advanceTimersByTime(31000);
+		expect(recovery().phase).toBe("exhausted");
+		expect(recovery().attempts).toBe(0);
+		const healthy = replacement();
+		T<(worker: object, context: object) => boolean>(
+			"_beginExhaustedWorkerRecoveryStabilization",
+		)(healthy, context);
+		expect(recovery().phase).toBe("stabilizing");
+		vi.advanceTimersByTime(20000);
+		g._doPlayerTask = vi.fn(() => {
+			recordTestPlayerReload(context.MediaKey);
+			return true;
+		});
+		crash(healthy);
+		expect(recovery().playerWaitDeadlineAt).toBe(0);
+		vi.advanceTimersByTime(1000);
+		expect(recovery().phase).toBe("awaiting-successor");
+		expect(g._doPlayerTask).toHaveBeenCalledOnce();
+		expect(recovery().attempts).toBe(1);
+	});
+
 	it("does not extend an expired player wait for another unproven starting worker", () => {
 		crash();
 		vi.advanceTimersByTime(25000);
@@ -8217,6 +8240,57 @@ describe("MAIN GQL response classification", () => {
 			expect(state.LastNativePlaybackAccessTokenPlayerType).toBe(null);
 			expect(nativeFetch).toHaveBeenCalledTimes(2);
 		} finally {
+			window.fetch = originalFetch;
+			xhrPrototype.open = originalOpen;
+			if (originalRealFetch === undefined) {
+				delete scopedWindow.__TTVAB_REAL_FETCH__;
+			} else {
+				scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+			}
+		}
+	});
+
+	it("forwards a changed device ID to running workers once", async () => {
+		const originalFetch = window.fetch;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const xhrPrototype = window.XMLHttpRequest.prototype;
+		const originalOpen = xhrPrototype.open;
+		const nativeFetch = vi.fn(async () => new Response("{}", { status: 200 }));
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.GQLDeviceID = "aaaaaaaa";
+		const worker = { postMessage: vi.fn() };
+		(g._S as { workers: unknown[] }).workers.push(worker);
+		window.fetch = nativeFetch as typeof fetch;
+		localStorage.setItem("unique_id", "bbbbbbbb");
+		const request = () =>
+			window.fetch(gqlUrl, {
+				method: "POST",
+				headers: { "X-Device-Id": "bbbbbbbb" },
+				body: JSON.stringify({ operationName: "ChannelShell" }),
+			});
+		const deviceUpdates = () =>
+			worker.postMessage.mock.calls.filter(
+				([envelope]) => envelope?.message?.key === "UpdateDeviceId",
+			);
+
+		try {
+			T<() => void>("_hookMainFetch")();
+			await request();
+			await request();
+
+			expect(state.GQLDeviceID).toBe("bbbbbbbb");
+			expect(deviceUpdates()).toEqual([
+				[
+					{
+						__ttvabWorkerBridge: true,
+						message: { key: "UpdateDeviceId", value: "bbbbbbbb" },
+					},
+				],
+			]);
+		} finally {
+			localStorage.removeItem("unique_id");
 			window.fetch = originalFetch;
 			xhrPrototype.open = originalOpen;
 			if (originalRealFetch === undefined) {
