@@ -3020,6 +3020,7 @@ function _getWorkerRecoveryState(context, create = true) {
 			terminalRearmAttemptedAt: 0,
 			hiddenLastMediaTime: -1,
 			hiddenLastMediaRef: null,
+			waitLog: "",
 			timerID: null,
 			phase: "idle",
 		};
@@ -4105,6 +4106,7 @@ function _recoverCrashedWorker(
 	recoveryState.successorDeadlineAt = 0;
 	recoveryState.hiddenLastMediaTime = -1;
 	recoveryState.hiddenLastMediaRef = null;
+	recoveryState.waitLog = "";
 	recoveryState.phase = "scheduled";
 	worker.__TTVABRecoveryEpoch = recoveryState.activeEpoch;
 	if (recoveryContextIsCurrent) {
@@ -4146,6 +4148,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		recoveryState.expectedAfterGeneration = recoveryState.failedGeneration;
 		recoveryState.hiddenLastMediaTime = -1;
 		recoveryState.hiddenLastMediaRef = null;
+		recoveryState.waitLog = "";
 		recoveryState.phase = "scheduled";
 		worker.__TTVABRecoveryEpoch = recoveryState.activeEpoch;
 	}
@@ -4211,6 +4214,11 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 		);
 		recoveryState.timerID = timerID;
 		return true;
+	};
+	const logWait = (message) => {
+		if (recoveryState.waitLog === message) return;
+		recoveryState.waitLog = message;
+		_log(message, "info");
 	};
 	const retryRecovery = () => {
 		if (!recoveryIsCurrent()) return;
@@ -4354,10 +4362,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				Date.now() + HW_HIDDEN_STALE_MIN_MS,
 			);
 			recoveryState.phase = "waiting-user-pause";
-			_log(
-				"Deferring worker recovery while playback is manually paused",
-				"info",
-			);
+			logWait("Deferring worker recovery while playback is manually paused");
 			scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
 			return;
 		}
@@ -4410,7 +4415,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				: null;
 			if (!playbackDead) {
 				suspendPlayerWait();
-				_log("Deferring worker recovery reload until tab is visible", "info");
+				logWait("Deferring worker recovery reload until tab is visible");
 				scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
 				return;
 			}
@@ -4444,7 +4449,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			)
 		) {
 			recoveryState.phase = "waiting-worker";
-			_log("Waiting for replacement worker playback confirmation", "info");
+			logWait("Waiting for replacement worker playback confirmation");
 			scheduleRecovery(runRecovery, HW_WATCHDOG_INTERVAL_MS);
 			return;
 		}
@@ -4457,7 +4462,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				0,
 				HW_RECOVERY_COOLDOWN_MS - (now - lastRecoveryReloadAt),
 			);
-			_log("Deferring worker recovery reload (cooldown)", "info");
+			logWait("Deferring worker recovery reload (cooldown)");
 			scheduleRecovery(runRecovery, remainingCooldown);
 			return;
 		}
@@ -4494,6 +4499,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 				reloadDispatchedAt >= dispatchStartedAt,
 		);
 		if (didDispatchReload) {
+			recoveryState.waitLog = "";
 			_recordWorkerRecoveryAttempt(recoveryContext, reloadDispatchedAt);
 			recoveryState.lastReloadAt = reloadDispatchedAt;
 			worker.__TTVABRestartAttempts = recoveryState.attempts;
@@ -4549,157 +4555,172 @@ let _workerWatchdogID: ReturnType<typeof setInterval> | null = null;
 function _startWorkerWatchdog() {
 	if (_workerWatchdogID !== null) return;
 	let lastCheckedAt = Date.now();
+	let reportedErrors = 0;
+	const runStep = (step) => {
+		try {
+			step();
+		} catch (error) {
+			if (reportedErrors >= 4) return;
+			reportedErrors += 1;
+			_log(
+				`Worker watchdog step failed: ${error?.message ?? String(error)}`,
+				"warning",
+			);
+		}
+	};
 	_workerWatchdogID = setInterval(() => {
 		const now = Date.now();
 		const elapsed = now - lastCheckedAt;
 		lastCheckedAt = now;
-		if (typeof _checkUnhookedPlayer === "function") _checkUnhookedPlayer();
+		if (typeof _checkUnhookedPlayer === "function")
+			runStep(_checkUnhookedPlayer);
 		if (typeof _checkPostAdRecoveryNotice === "function")
-			_checkPostAdRecoveryNotice();
-		if (typeof _checkpointPageDiagnostics === "function") {
-			_checkpointPageDiagnostics();
-		}
+			runStep(_checkPostAdRecoveryNotice);
+		if (typeof _checkpointPageDiagnostics === "function")
+			runStep(_checkpointPageDiagnostics);
 		for (const worker of _S.workers) {
-			if (!worker || worker.__TTVABIntentionallyTerminated) continue;
-			if (worker.__TTVABCrashed) continue;
-			const workerContext = _getWorkerPlaybackContext(worker, {
-				MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
-				ChannelName: __TTVAB_STATE__?.PageChannel || "",
-				VodID: __TTVAB_STATE__?.PageVodID || "",
-				MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
-			});
-			const isHidden = _isWorkerLifecycleThrottled(workerContext);
-			const schedulingGraceMs = isHidden
-				? HW_HIDDEN_STALE_MIN_MS
-				: HW_PONG_TIMEOUT_MS;
-			if (elapsed < 0 || elapsed > schedulingGraceMs) {
-				worker.__TTVABMissedPongs = 0;
-				worker.__TTVABLastPingSentAt = now;
-				worker.__TTVABHiddenHeartbeatMediaTime = -1;
-				worker.__TTVABHiddenHeartbeatMediaRef = null;
-				worker.__TTVABHiddenHeartbeatMissingSamples = 0;
-				try {
-					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
-				} catch {}
-				continue;
-			}
-			const lastSeen =
-				worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
-			const lastPingSentAt = Math.max(
-				0,
-				Number(worker.__TTVABLastPingSentAt) || 0,
-			);
-			const hasUnansweredPing = lastPingSentAt > lastSeen;
-			if (!hasUnansweredPing) {
-				worker.__TTVABLastPingSentAt = now;
-			}
-			let hiddenPlaybackStopped = false;
-			const workerContextIsCurrent = !_isPlaybackContextMismatch(
-				workerContext,
-				_getPlaybackContextFromUrl(window.location.href),
-			);
-			const workerContextIsActivePip = Boolean(
-				typeof _isActivePictureInPicturePlaybackContext === "function" &&
-					_isActivePictureInPicturePlaybackContext(workerContext),
-			);
-			const hiddenHeartbeatIsStale = Boolean(
-				isHidden &&
-					hasUnansweredPing &&
-					now - lastSeen >= HW_PONG_TIMEOUT_MS &&
-					now - lastPingSentAt >= HW_PONG_TIMEOUT_MS &&
-					(workerContextIsCurrent || workerContextIsActivePip),
-			);
-			const hasUserPauseIntent =
-				hiddenHeartbeatIsStale &&
-				typeof _hasUserPauseIntent === "function" &&
-				_hasUserPauseIntent(workerContext.ChannelName, workerContext.MediaKey);
-			if (hiddenHeartbeatIsStale && hasUserPauseIntent) {
-				worker.__TTVABMissedPongs = 0;
-				worker.__TTVABHiddenHeartbeatMediaTime = -1;
-				worker.__TTVABHiddenHeartbeatMediaRef = null;
-				worker.__TTVABHiddenHeartbeatMissingSamples = 0;
-				try {
-					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
-				} catch {}
-				continue;
-			}
-			if (hiddenHeartbeatIsStale && !hasUserPauseIntent) {
-				const hiddenMedia =
-					typeof _getPrimaryMediaElement === "function"
-						? _getPrimaryMediaElement()
-						: null;
-				if (hiddenMedia instanceof HTMLMediaElement) {
-					const mediaTime = Number(hiddenMedia.currentTime) || 0;
-					hiddenPlaybackStopped = Boolean(
-						worker.__TTVABHiddenHeartbeatMediaRef?.deref?.() === hiddenMedia &&
-							worker.__TTVABHiddenHeartbeatMediaTime >= 0 &&
-							mediaTime >= worker.__TTVABHiddenHeartbeatMediaTime &&
-							mediaTime <= worker.__TTVABHiddenHeartbeatMediaTime + 0.2,
-					);
-					worker.__TTVABHiddenHeartbeatMediaTime = mediaTime;
-					worker.__TTVABHiddenHeartbeatMediaRef = new WeakRef(hiddenMedia);
-					worker.__TTVABHiddenHeartbeatMissingSamples = 0;
-				} else {
-					worker.__TTVABHiddenHeartbeatMediaTime = -1;
-					worker.__TTVABHiddenHeartbeatMediaRef = null;
-					worker.__TTVABHiddenHeartbeatMissingSamples =
-						Math.max(
-							0,
-							Number(worker.__TTVABHiddenHeartbeatMissingSamples) || 0,
-						) + 1;
-					hiddenPlaybackStopped =
-						worker.__TTVABHiddenHeartbeatMissingSamples >= 2;
-				}
-			} else {
-				worker.__TTVABHiddenHeartbeatMediaTime = -1;
-				worker.__TTVABHiddenHeartbeatMediaRef = null;
-				worker.__TTVABHiddenHeartbeatMissingSamples = 0;
-			}
-			if (hiddenPlaybackStopped) {
-				_recoverCrashedWorker(
-					worker,
-					workerContext,
-					"Worker unresponsive while hidden playback stopped advancing",
-					"warning",
-				);
-				continue;
-			}
-			if (
-				now - lastSeen > HW_PONG_TIMEOUT_MS &&
-				hasUnansweredPing &&
-				now - lastPingSentAt > HW_PONG_TIMEOUT_MS
-			) {
-				const missedPongs =
-					Math.max(0, Number(worker.__TTVABMissedPongs) || 0) + 1;
-				worker.__TTVABMissedPongs = missedPongs;
-				const missedPongLimit = isHidden
-					? HW_MAX_MISSED_PONGS_HIDDEN
-					: HW_MAX_MISSED_PONGS;
-				const hiddenStaleSatisfied =
-					!isHidden || now - lastSeen > HW_HIDDEN_STALE_MIN_MS;
-				if (missedPongs < missedPongLimit || !hiddenStaleSatisfied) {
-					_log(
-						`Worker heartbeat late (${missedPongs}/${missedPongLimit}); pinging again`,
-						"info",
-					);
-					try {
-						_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
-					} catch {}
-					continue;
-				}
-				_recoverCrashedWorker(
-					worker,
-					workerContext,
-					"Worker unresponsive (no pong)",
-					"warning",
-				);
-				continue;
-			}
+			runStep(() => checkWorker(worker, now, elapsed));
+		}
+	}, HW_WATCHDOG_INTERVAL_MS);
+	function checkWorker(worker, now, elapsed) {
+		if (!worker || worker.__TTVABIntentionallyTerminated) return;
+		if (worker.__TTVABCrashed) return;
+		const workerContext = _getWorkerPlaybackContext(worker, {
+			MediaType: __TTVAB_STATE__?.PageMediaType || "channel",
+			ChannelName: __TTVAB_STATE__?.PageChannel || "",
+			VodID: __TTVAB_STATE__?.PageVodID || "",
+			MediaKey: __TTVAB_STATE__?.PageMediaKey || "",
+		});
+		const isHidden = _isWorkerLifecycleThrottled(workerContext);
+		const schedulingGraceMs = isHidden
+			? HW_HIDDEN_STALE_MIN_MS
+			: HW_PONG_TIMEOUT_MS;
+		if (elapsed < 0 || elapsed > schedulingGraceMs) {
+			worker.__TTVABMissedPongs = 0;
+			worker.__TTVABLastPingSentAt = now;
+			worker.__TTVABHiddenHeartbeatMediaTime = -1;
+			worker.__TTVABHiddenHeartbeatMediaRef = null;
+			worker.__TTVABHiddenHeartbeatMissingSamples = 0;
 			try {
 				_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
 			} catch {}
+			return;
 		}
-	}, HW_WATCHDOG_INTERVAL_MS);
+		const lastSeen = worker.__TTVABLastPongAt || worker.__TTVABCreatedAt || now;
+		const lastPingSentAt = Math.max(
+			0,
+			Number(worker.__TTVABLastPingSentAt) || 0,
+		);
+		const hasUnansweredPing = lastPingSentAt > lastSeen;
+		if (!hasUnansweredPing) {
+			worker.__TTVABLastPingSentAt = now;
+		}
+		let hiddenPlaybackStopped = false;
+		const workerContextIsCurrent = !_isPlaybackContextMismatch(
+			workerContext,
+			_getPlaybackContextFromUrl(window.location.href),
+		);
+		const workerContextIsActivePip = Boolean(
+			typeof _isActivePictureInPicturePlaybackContext === "function" &&
+				_isActivePictureInPicturePlaybackContext(workerContext),
+		);
+		const hiddenHeartbeatIsStale = Boolean(
+			isHidden &&
+				hasUnansweredPing &&
+				now - lastSeen >= HW_PONG_TIMEOUT_MS &&
+				now - lastPingSentAt >= HW_PONG_TIMEOUT_MS &&
+				(workerContextIsCurrent || workerContextIsActivePip),
+		);
+		const hasUserPauseIntent =
+			hiddenHeartbeatIsStale &&
+			typeof _hasUserPauseIntent === "function" &&
+			_hasUserPauseIntent(workerContext.ChannelName, workerContext.MediaKey);
+		if (hiddenHeartbeatIsStale && hasUserPauseIntent) {
+			worker.__TTVABMissedPongs = 0;
+			worker.__TTVABHiddenHeartbeatMediaTime = -1;
+			worker.__TTVABHiddenHeartbeatMediaRef = null;
+			worker.__TTVABHiddenHeartbeatMissingSamples = 0;
+			try {
+				_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+			} catch {}
+			return;
+		}
+		if (hiddenHeartbeatIsStale && !hasUserPauseIntent) {
+			const hiddenMedia =
+				typeof _getPrimaryMediaElement === "function"
+					? _getPrimaryMediaElement()
+					: null;
+			if (hiddenMedia instanceof HTMLMediaElement) {
+				const mediaTime = Number(hiddenMedia.currentTime) || 0;
+				hiddenPlaybackStopped = Boolean(
+					worker.__TTVABHiddenHeartbeatMediaRef?.deref?.() === hiddenMedia &&
+						worker.__TTVABHiddenHeartbeatMediaTime >= 0 &&
+						mediaTime >= worker.__TTVABHiddenHeartbeatMediaTime &&
+						mediaTime <= worker.__TTVABHiddenHeartbeatMediaTime + 0.2,
+				);
+				worker.__TTVABHiddenHeartbeatMediaTime = mediaTime;
+				worker.__TTVABHiddenHeartbeatMediaRef = new WeakRef(hiddenMedia);
+				worker.__TTVABHiddenHeartbeatMissingSamples = 0;
+			} else {
+				worker.__TTVABHiddenHeartbeatMediaTime = -1;
+				worker.__TTVABHiddenHeartbeatMediaRef = null;
+				worker.__TTVABHiddenHeartbeatMissingSamples =
+					Math.max(
+						0,
+						Number(worker.__TTVABHiddenHeartbeatMissingSamples) || 0,
+					) + 1;
+				hiddenPlaybackStopped =
+					worker.__TTVABHiddenHeartbeatMissingSamples >= 2;
+			}
+		} else {
+			worker.__TTVABHiddenHeartbeatMediaTime = -1;
+			worker.__TTVABHiddenHeartbeatMediaRef = null;
+			worker.__TTVABHiddenHeartbeatMissingSamples = 0;
+		}
+		if (hiddenPlaybackStopped) {
+			_recoverCrashedWorker(
+				worker,
+				workerContext,
+				"Worker unresponsive while hidden playback stopped advancing",
+				"warning",
+			);
+			return;
+		}
+		if (
+			now - lastSeen > HW_PONG_TIMEOUT_MS &&
+			hasUnansweredPing &&
+			now - lastPingSentAt > HW_PONG_TIMEOUT_MS
+		) {
+			const missedPongs =
+				Math.max(0, Number(worker.__TTVABMissedPongs) || 0) + 1;
+			worker.__TTVABMissedPongs = missedPongs;
+			const missedPongLimit = isHidden
+				? HW_MAX_MISSED_PONGS_HIDDEN
+				: HW_MAX_MISSED_PONGS;
+			const hiddenStaleSatisfied =
+				!isHidden || now - lastSeen > HW_HIDDEN_STALE_MIN_MS;
+			if (missedPongs < missedPongLimit || !hiddenStaleSatisfied) {
+				_log(
+					`Worker heartbeat late (${missedPongs}/${missedPongLimit}); pinging again`,
+					"info",
+				);
+				try {
+					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+				} catch {}
+				return;
+			}
+			_recoverCrashedWorker(
+				worker,
+				workerContext,
+				"Worker unresponsive (no pong)",
+				"warning",
+			);
+			return;
+		}
+		try {
+			_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
+		} catch {}
+	}
 	_log("Worker watchdog started", "info");
 }
 

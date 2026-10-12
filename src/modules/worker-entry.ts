@@ -203,7 +203,7 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 	__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt =
 		seed.state.PendingTriggeredPlayerReloadCycleStartedAt;
 
-	self.addEventListener("message", (e: MessageEvent<unknown>) => {
+	const handleCommand = (e: MessageEvent<unknown>) => {
 		const data = _getWorkerCommand(e.data);
 		if (!data) return;
 
@@ -882,6 +882,16 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 				break;
 			default:
 				break;
+		}
+	};
+	self.addEventListener("message", (e: MessageEvent<unknown>) => {
+		try {
+			handleCommand(e);
+		} catch (error) {
+			_log(
+				`Worker command ${_getWorkerCommand(e.data)?.key || "unknown"} failed: ${error?.message ?? String(error)}`,
+				"warning",
+			);
 		}
 	});
 
