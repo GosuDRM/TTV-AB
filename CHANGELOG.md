@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [20.0.4] - 2026-10-12
+
+Fixed
+
+- **Backup Handoff Stalls** - Keep the temporary silent hold advancing while a clean backup catches up to the live stream. Switch only when fresh content is available, without replaying older segments.
+
+Added
+
+- **Backup Wait Diagnostics** - Log when a backup is behind the live boundary and which hold sequence is being served, with repeated warnings summarized.
+
 ## [20.0.3] - 2026-10-12
 
 Added
