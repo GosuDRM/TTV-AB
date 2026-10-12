@@ -10782,7 +10782,9 @@ describe("injected worker ad playlist validation", () => {
 			expect(first).toContain("__ttvab_empty_hold_segment.ts");
 			const sequence = (text: string) =>
 				Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
-			let previous = sequence(first);
+			const lastSequence = (text: string) =>
+				sequence(text) + (text.match(/^#EXTINF:/gm)?.length ?? 0) - 1;
+			let previous = lastSequence(first);
 			await vi.advanceTimersByTimeAsync(1500);
 			const info = (
 				state.StreamInfos as Record<string, Record<string, unknown>>
@@ -10797,8 +10799,9 @@ describe("injected worker ad playlist validation", () => {
 				const output = await (await workerFetch(nativeUrl)).text();
 				expect(output).toContain("__ttvab_empty_hold_segment.ts");
 				expect(output).not.toMatch(/backup-|stitched-ad|native-/);
-				expect(sequence(output)).toBeGreaterThan(previous);
-				previous = sequence(output);
+				expect(sequence(output)).toBeLessThanOrEqual(previous + 1);
+				expect(lastSequence(output)).toBeGreaterThan(previous);
+				previous = lastSequence(output);
 				expect(info._LastServedPlaylistKind).toBe("hold");
 				expect(state.PinnedBackupPlayerType).toBeNull();
 			}
@@ -10827,7 +10830,7 @@ describe("injected worker ad playlist validation", () => {
 			expect(joined).not.toMatch(
 				/backup-69[0-6]\.ts|stitched-ad|__ttvab_empty_hold/,
 			);
-			expect(sequence(joined)).toBe(previous + 3);
+			expect(sequence(joined)).toBe(previous + 1);
 			expect(state.PinnedBackupPlayerType).toBe("autoplay");
 			expect(info.HevcReloadPendingAfterHold).toBe(true);
 			expect(
@@ -10980,9 +10983,10 @@ describe("injected worker ad playlist validation", () => {
 					expect(output).not.toBeNull();
 					await pending;
 					expect(output).toContain("__ttvab_empty_hold_segment.ts");
-					const sequence = Number(
-						output.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1],
-					);
+					const sequence =
+						Number(output.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]) +
+						(output.match(/^#EXTINF:/gm)?.length ?? 0) -
+						1;
 					expect(sequence).toBeGreaterThan(lastSequence);
 					lastSequence = sequence;
 					await vi.advanceTimersByTimeAsync(1000);

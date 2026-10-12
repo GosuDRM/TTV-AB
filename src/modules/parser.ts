@@ -651,8 +651,17 @@ function _createEmptyAdHoldPlaylist(text, info: Partial<TTVABStreamInfo>) {
 		};
 		if (info) info._EmptyAdHoldWindow = holdWindow;
 	}
-	const firstSlot = Math.floor((now - holdWindow.startedAt) / 1024);
-	const lastSlot = firstSlot + 2;
+	const targetDuration = Number(
+		headerLines
+			.find((line) => line.startsWith("#EXT-X-TARGETDURATION:"))
+			?.slice(22),
+	);
+	const windowSlots = Math.min(
+		32,
+		Math.max(3, Math.ceil((targetDuration * 3000) / 1024) || 0),
+	);
+	const lastSlot = Math.floor((now - holdWindow.startedAt) / 1024) + 2;
+	const firstSlot = Math.max(0, lastSlot - windowSlots + 1);
 	const firstSequence = holdWindow.firstSequence + firstSlot;
 	const nextHoldSequence = holdWindow.firstSequence + lastSlot;
 	if (info) {
