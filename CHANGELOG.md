@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [22.0.2] - 2026-10-14
+
+Fixed
+
+- **Playback While Away** - Stop the check for frozen video after an ad break from pausing or reloading the stream while the tab is hidden, since browsers stop drawing video in background tabs on purpose.
+- **Media Keys** - Keep a pause from keyboard media keys, headset buttons, or system media controls while Twitch is out of focus, instead of resuming the stream on its own.
+- **Background Resume** - Retry restarting playback a few times after a quick pause in a hidden tab, so the stream no longer stays paused until you return.
+- **HD Switch With Several Sources** - Keep each HD source's clean time while sources take turns falling slightly behind the 360p backup, so long breaks can still switch to HD instead of staying at 360p.
+
 ## [22.0.1] - 2026-10-13
 
 Fixed

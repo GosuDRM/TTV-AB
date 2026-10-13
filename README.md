@@ -73,6 +73,13 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v22.0.2 - 2026-10-14
+
+- **Playback While Away** - Stop the check for frozen video after an ad break from pausing or reloading the stream while the tab is hidden, since browsers stop drawing video in background tabs on purpose.
+- **Media Keys** - Keep a pause from keyboard media keys, headset buttons, or system media controls while Twitch is out of focus, instead of resuming the stream on its own.
+- **Background Resume** - Retry restarting playback a few times after a quick pause in a hidden tab, so the stream no longer stays paused until you return.
+- **HD Switch With Several Sources** - Keep each HD source's clean time while sources take turns falling slightly behind the 360p backup, so long breaks can still switch to HD instead of staying at 360p.
+
 ### v22.0.1 - 2026-10-13
 
 - **Faster Return After Long Breaks** - Return to Twitch's own stream about 8 seconds sooner after a break whose ads have all played, when ad markers did not come back during it. Breaks where ads came back or the ad count is unknown keep the full checks.
@@ -100,18 +107,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Fewer Backup Requests** - Wait longer before checking a backup source again when it keeps showing ads in the same break, cutting repeated requests during long breaks.
 - **Quieter Ad Break Logs** - Log repeated ad break states and returning ad markers only when they change, with a running count, and move per-source search lines to debug output.
 - **Page Efficiency** - Skip page changes that cannot contain an ad video and reuse the known player during ad breaks, reducing work in busy chats.
-
-### v21.3.0 - 2026-10-13
-
-- **HD Backup Quality** - Keep the selected HD backup during an ad break instead of dropping it to 360p every few seconds while Twitch's quality list is still the low one from a preroll.
-- **Ad Pod Tracking** - Track each ad pod in a break separately, so when a preroll is followed by a midroll the last midroll ad is still reported as watched and the clean backup is kept until that pod has really finished.
-- **Worker Stability** - Keep an error in the extension's own player message handling from being treated as a player crash, which could restart the player and use up recovery attempts.
-- **Recovery Logs** - Log each worker recovery wait once instead of every 5 seconds, so a long wait in a background or paused tab no longer pushes earlier diagnostics out of Generate Log.
-- **Worker Watchdog** - Keep checking every player's heartbeat when another watchdog check fails, so one error can no longer stop crash detection.
-- **Navigation Safety** - Keep Twitch's page navigation working if the extension's own navigation tracking hits an error, and stop removing other extensions' navigation hooks when the page is hidden.
-- **Ad Break Summaries** - Show how playback returned to the stream in the log summary for ad breaks that end normally, not only after a silent backup hold.
-- **Code Cleanup** - Remove an unused player helper left over from an older version.
-- **Monitor Efficiency** - Check the page's player once per playback monitor pass instead of twice on pages without a stream.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
