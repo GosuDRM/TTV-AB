@@ -1222,6 +1222,7 @@ function _invalidateAdCycleAsyncWork(info: TTVABStreamInfo) {
 	info._BackupSearchStartToken = null;
 	info._LastBackupSearchCompletedAt = 0;
 	info._BackupProbation = null;
+	info._BackupProbationByType?.clear();
 	info.BackupPlaylistMetadata?.clear?.();
 	info.LastCleanBackupM3U8 = null;
 	info.LastCleanBackupResolution = null;

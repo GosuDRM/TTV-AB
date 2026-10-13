@@ -369,6 +369,7 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	_LoggedOfflineTransition?: boolean;
 	_LqHoldStartAt?: number;
 	_BackupProbation?: TTVABBackupProbation | null;
+	_BackupProbationByType?: Map<string, TTVABBackupProbation> | null;
 	_AdRequestController?: AbortController | null;
 	_BackupPinFlipCount?: number;
 }
