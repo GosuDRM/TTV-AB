@@ -189,6 +189,7 @@ function _resetStreamAdState(
 	info._LoggedOfflineTransition = false;
 	info._LqHoldStartAt = 0;
 	info._BackupProbation = null;
+	info._BackupProbationByType?.clear();
 	info._EmptyAdHoldMediaSequence = 0;
 	info._EmptyAdHoldDiscontinuitySequence = 0;
 	info._EmptyAdHoldProgramDateTime = 0;
@@ -10220,7 +10221,16 @@ async function _searchBackupStream(
 										promotionPolicy.allowSelectedPromotion &&
 										!autoplayWasUnavailableDuringSearch
 									) {
-										const probation = info._BackupProbation;
+										const rememberedProbation =
+											info._BackupProbationByType?.get(pt) || null;
+										const probation =
+											info._BackupProbation?.type === pt
+												? info._BackupProbation
+												: rememberedProbation &&
+														Date.now() - rememberedProbation.at <=
+															_BACKUP_BRIDGE_PROMOTION_CLEAN_SPAN_MS
+													? rememberedProbation
+													: null;
 										const sameCandidate = Boolean(
 											_isBackupProbationCurrent(info, probation) &&
 												probation.type === pt &&
@@ -10265,6 +10275,11 @@ async function _searchBackupStream(
 											cycleStartedAt,
 											backupSearchEpoch,
 										};
+										if (pt !== "autoplay") {
+											if (!(info._BackupProbationByType instanceof Map))
+												info._BackupProbationByType = new Map();
+											info._BackupProbationByType.set(pt, nextProbation);
+										}
 										if (
 											pt !== "autoplay" &&
 											_shouldBridgeHeldAutoplayDuringSearch(info)
@@ -10364,6 +10379,7 @@ async function _searchBackupStream(
 														at: 0,
 														cleanChecks: requiredCleanHolds,
 													};
+										if (pt !== "autoplay") info._BackupProbationByType?.clear();
 										_clearBackupPlayerRetryCooldown(info, pt);
 										info.LoggedBackupAdsByType?.delete(pt);
 										backupType = pt;
@@ -10440,6 +10456,7 @@ async function _searchBackupStream(
 									if (info._BackupProbation?.type === pt) {
 										info._BackupProbation = null;
 									}
+									info._BackupProbationByType?.delete(pt);
 									if (promotionPolicy.reason === "ad-marked") {
 										if (wasCleanCandidate) rejectedActiveAdSession = true;
 										if (wasServedCandidate) {
@@ -10529,6 +10546,8 @@ async function _searchBackupStream(
 					) {
 						info._BackupProbation = null;
 					}
+					if (info._BackupProbationByType?.get(pt)?.cache === activeCacheEntry)
+						info._BackupProbationByType.delete(pt);
 					if (info.BackupEncodingsM3U8Cache[pt] === activeCacheEntry) {
 						info.BackupEncodingsM3U8Cache[pt] = null;
 					}
