@@ -3185,9 +3185,18 @@ function _getNativePlaylistReturnBlocker(
 			? null
 			: "no native media";
 	} catch (error) {
+		const catchUpMs =
+			Math.min(
+				6000,
+				Math.max(
+					2000,
+					(Number(text.match(/#EXT-X-TARGETDURATION:(\d+)/)?.[1]) || 0) * 1000,
+				),
+			) - 1000;
 		return error?.message ===
 			"Live handoff playlist is behind the served broadcast time"
-			? diagnostic.lastEndTime > diagnostic.minimumTime
+			? diagnostic.minimumTime - diagnostic.lastEndTime <
+				Math.min(2000, catchUpMs)
 				? null
 				: "native behind served backup"
 			: "ambiguous native timing";
