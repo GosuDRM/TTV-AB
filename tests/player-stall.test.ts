@@ -1121,11 +1121,70 @@ describe("_doPlayerTask ad-recovery reload backoff", () => {
 		expect(result).toBe(true);
 		expect(pauseCalls).toEqual([player]);
 		expect(playCalls).toHaveLength(0);
-		expect(scheduledCalls).toHaveLength(0);
+		expect(scheduledCalls.map((args) => (args as unknown[])[1])).toEqual([
+			120, 500, 1500, 3000,
+		]);
 
 		await Promise.resolve();
 
 		expect(playCalls).toEqual([player]);
+	});
+
+	it("retries a hidden pause nudge until playback restarts, respecting a later user pause", () => {
+		let paused = false;
+		const player = {
+			isPaused: () => paused,
+			getHTMLVideoElement: () => null,
+			pause: () => {
+				paused = true;
+			},
+			play: () => {},
+		};
+		const playerState = { props: { content: { type: "live" } } };
+		const scheduled: Array<() => void> = [];
+		const plays: unknown[] = [];
+		g._getPlayerAndState = () => ({ player, state: playerState });
+		g._getPlayerCore = () => ({
+			get paused() {
+				return paused;
+			},
+		});
+		g._getActivePictureInPicturePlaybackContext = () => null;
+		g._isNativeDocumentHidden = () => true;
+		g._isPlaybackRecoveryContextCurrent = () => true;
+		g._shouldSuppressAutomaticPlaybackResume = () => false;
+		g._playPlaybackTarget = (target: unknown) => {
+			plays.push(target);
+			return true;
+		};
+		g._schedulePlaybackRecoveryTimeout = (callback: () => void) => {
+			scheduled.push(callback);
+			return 1;
+		};
+		g.__TTVAB_STATE__ = {
+			PageChannel: "testchannel",
+			PageMediaKey: "live:testchannel",
+		};
+		T<
+			(
+				isPausePlay: boolean,
+				isReload: boolean,
+				options?: Record<string, unknown>,
+			) => unknown
+		>("_doPlayerTask")(true, false, { reason: "buffer-recovery" });
+		expect(paused).toBe(true);
+		expect(scheduled).toHaveLength(4);
+		scheduled[0]();
+		expect(plays).toEqual([player]);
+		const state = g._PlaybackIntentState as Record<string, unknown>;
+		const previousUserPause = state.userPausedMediaKey;
+		state.userPausedMediaKey = "live:testchannel";
+		try {
+			scheduled[1]();
+			expect(plays).toEqual([player]);
+		} finally {
+			state.userPausedMediaKey = previousUserPause;
+		}
 	});
 
 	it("does not resume a replacement visit after a queued hidden pause nudge", async () => {
@@ -7739,6 +7798,71 @@ describe("_checkPostBreakWedge (post-break decoder wedge watchdog)", () => {
 			{ nudge: false, reload: true },
 		]);
 		expect(wedgeState().remainingEvals).toBe(0);
+	});
+
+	it("does not treat a hidden tab's suspended video decoding as a wedge", () => {
+		const previousHidden = g._isNativeDocumentHidden;
+		let hidden = true;
+		g._isNativeDocumentHidden = () => hidden;
+		try {
+			let time = 100;
+			let frames = 5000;
+			const video = makeWedgeVideo({
+				currentTime: () => time,
+				totalFrames: () => frames,
+			});
+			for (let i = 0; i < 30; i++) {
+				time += 5;
+				expect(checkWedge()(video, time)).toBe(false);
+			}
+			expect(taskCalls).toEqual([]);
+			expect(wedgeState().remainingEvals).toBe(40);
+			hidden = false;
+			expect(checkWedge()(video, time)).toBe(false);
+			for (let i = 0; i < 3; i++) {
+				time += 0.6;
+				frames += 36;
+				expect(checkWedge()(video, time)).toBe(false);
+			}
+			expect(taskCalls).toEqual([]);
+			expect(wedgeState().remainingEvals).toBe(0);
+		} finally {
+			g._isNativeDocumentHidden = previousHidden;
+		}
+	});
+
+	it("restarts wedge evidence after the tab was hidden and still detects a visible wedge", () => {
+		const previousHidden = g._isNativeDocumentHidden;
+		let hidden = false;
+		g._isNativeDocumentHidden = () => hidden;
+		try {
+			let time = 100;
+			const video = makeWedgeVideo({
+				currentTime: () => time,
+				totalFrames: () => 5000,
+			});
+			checkWedge()(video, time);
+			for (let i = 0; i < 4; i++) {
+				time += 0.6;
+				checkWedge()(video, time);
+			}
+			expect(wedgeState().evidenceCount).toBe(4);
+			hidden = true;
+			time += 5;
+			expect(checkWedge()(video, time)).toBe(false);
+			expect(wedgeState().evidenceCount).toBe(0);
+			hidden = false;
+			expect(checkWedge()(video, time)).toBe(false);
+			for (let i = 0; i < 5; i++) {
+				time += 0.6;
+				expect(checkWedge()(video, time)).toBe(false);
+			}
+			time += 0.6;
+			expect(checkWedge()(video, time)).toBe(true);
+			expect(taskCalls).toEqual([{ nudge: true, reload: false }]);
+		} finally {
+			g._isNativeDocumentHidden = previousHidden;
+		}
 	});
 
 	it("disarms an ended PiP ad watchdog before it can sample the new route", () => {
