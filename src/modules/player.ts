@@ -7908,12 +7908,21 @@ function _monitorPlayerBuffering() {
 					player.getHTMLVideoElement()?.ended &&
 					__TTVAB_STATE__.IsBufferFixEnabled
 				) {
-					_log(
-						"Player hit end of stream during live playback. Recovering...",
-						"warning",
-					);
-					_doPlayerTask(false, true, { reason: "buffer-recovery" });
-					_PlayerBufferState.lastFixTime = Date.now();
+					if (
+						!(
+							typeof _isLiveStreamEndedForContext === "function" &&
+							_isLiveStreamEndedForContext({ MediaKey: currentMediaKey })
+						) &&
+						_PlayerBufferState.lastFixTime <=
+							Date.now() - _getLowLatencyMinRepeatDelay(playerCore)
+					) {
+						_log(
+							"Player hit end of stream during live playback. Recovering...",
+							"warning",
+						);
+						_doPlayerTask(false, true, { reason: "buffer-recovery" });
+						_PlayerBufferState.lastFixTime = Date.now();
+					}
 				} else if (
 					_PlayerBufferState.postAdGraceUntil > 0 &&
 					(playerContentType === "live" || playerContentType === "rerun") &&
