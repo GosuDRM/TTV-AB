@@ -76,6 +76,8 @@ const _PAGE_LOG_TEXT_ENCODER =
 	typeof TextEncoder === "function" ? new TextEncoder() : null;
 const _workerFailureDiagnostics: PlainObject[] = [];
 let _lastDiagnosticCheckpointAt = 0;
+let _lastDiagnosticCheckpointLogCount = -1;
+let _lastDiagnosticCheckpointLogTail = null;
 
 function _recordWorkerFailureDiagnostic(
 	worker,
@@ -161,7 +163,23 @@ function _checkpointPageDiagnostics(force = false) {
 		}
 		const now = Date.now();
 		if (!force && now - _lastDiagnosticCheckpointAt < 15000) return false;
+		const logs = Array.isArray(globalThis.__TTVAB_LOGS__)
+			? (globalThis.__TTVAB_LOGS__ as PlainObject[])
+			: [];
+		const logCount =
+			Math.trunc(_getSafePageLogNumber(globalThis.__TTVAB_LOGS_DROPPED__, 0)) +
+			logs.length;
+		const logTail = logs.at(-1) || null;
+		if (
+			!force &&
+			logCount === _lastDiagnosticCheckpointLogCount &&
+			logTail === _lastDiagnosticCheckpointLogTail &&
+			now - _lastDiagnosticCheckpointAt < 60000
+		)
+			return false;
 		_lastDiagnosticCheckpointAt = now;
+		_lastDiagnosticCheckpointLogCount = logCount;
+		_lastDiagnosticCheckpointLogTail = logTail;
 		const collected = _collectPageLogEntries(64, 24 * 1024, false, true);
 		return _sendBridgeMessage("ttvab-diagnostic-checkpoint", {
 			capturedAt: now,
