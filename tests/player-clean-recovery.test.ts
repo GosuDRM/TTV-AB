@@ -442,3 +442,75 @@ describe("playback intent after a connected player replacement", () => {
 		);
 	});
 });
+
+describe("buffer monitor connectivity and ended streams", () => {
+	function trackReloads() {
+		const reloads: number[] = [];
+		const nudges: number[] = [];
+		vi.spyOn(g, "_doPlayerTask").mockImplementation(
+			(isPausePlay: unknown, isReload: unknown) => {
+				if (isReload) reloads.push(Date.now());
+				else if (isPausePlay) nudges.push(Date.now());
+				return true;
+			},
+		);
+		return { reloads, nudges };
+	}
+
+	it("spaces live end-of-stream reloads and skips them once the stream is known to have ended", async () => {
+		const playback = makePlayback();
+		Object.defineProperty(playback.video, "ended", {
+			get: () => true,
+			configurable: true,
+		});
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue(playback);
+		const { reloads } = trackReloads();
+		let streamEnded = false;
+		g._isLiveStreamEndedForContext = vi.fn(
+			(context: { MediaKey?: string }) =>
+				streamEnded && context?.MediaKey === "live:testchannel",
+		);
+		try {
+			run("_monitorPlayerBuffering");
+			await vi.advanceTimersByTimeAsync(20000);
+			expect(reloads.length).toBeGreaterThan(0);
+			expect(reloads.length).toBeLessThanOrEqual(3);
+			for (let index = 1; index < reloads.length; index++)
+				expect(reloads[index] - reloads[index - 1]).toBeGreaterThanOrEqual(
+					8000,
+				);
+			streamEnded = true;
+			const before = reloads.length;
+			await vi.advanceTimersByTimeAsync(60000);
+			expect(reloads).toHaveLength(before);
+		} finally {
+			delete g._isLiveStreamEndedForContext;
+		}
+	});
+
+	it("holds stall fixes while the browser is offline and resumes them once it is back online", async () => {
+		const playback = makePlayback();
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue(playback);
+		const { reloads, nudges } = trackReloads();
+		let online = true;
+		Object.defineProperty(navigator, "onLine", {
+			configurable: true,
+			get: () => online,
+		});
+		try {
+			run("_monitorPlayerBuffering");
+			await vi.advanceTimersByTimeAsync(3000);
+			online = false;
+			playback.sample.advancing = false;
+			await vi.advanceTimersByTimeAsync(60000);
+			expect(reloads).toEqual([]);
+			expect(nudges).toEqual([]);
+			expect((g._PlayerBufferState as Record<string, number>).numSame).toBe(0);
+			online = true;
+			await vi.advanceTimersByTimeAsync(15000);
+			expect(reloads.length + nudges.length).toBeGreaterThan(0);
+		} finally {
+			delete (navigator as unknown as Record<string, unknown>).onLine;
+		}
+	});
+});

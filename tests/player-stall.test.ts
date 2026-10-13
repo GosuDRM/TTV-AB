@@ -1542,11 +1542,26 @@ describe("_checkInAdPlayheadFreeze", () => {
 		check()(player);
 		expect(seeks).toEqual([]);
 
-		nowSpy.mockReturnValue(105500);
-		check()(player);
+		const previousLog = g._log;
+		const log = vi.fn();
+		g._log = log;
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const previousPinned = state.PinnedBackupPlayerType;
+		state.PinnedBackupPlayerType = "autoplay";
+		try {
+			nowSpy.mockReturnValue(105500);
+			check()(player);
+		} finally {
+			g._log = previousLog;
+			state.PinnedBackupPlayerType = previousPinned;
+		}
 		expect(seeks).toHaveLength(1);
 		expect(seeks[0]).toBeCloseTo(1464.45, 2);
 		expect(playerTaskCalls).toEqual([]);
+		expect(log).toHaveBeenCalledWith(
+			"In-ad playhead frozen 5.5s at 1463.93s; seeking 0.47s past buffered gap (buffered 1400.00-1463.97, 1464.40-1466.01; backup autoplay)",
+			"warning",
+		);
 	});
 
 	it.each([1272.892125, 1273.024, 1273.06])(
