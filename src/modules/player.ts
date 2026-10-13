@@ -1811,6 +1811,26 @@ function _hookMediaSessionPlaybackIntent() {
 		return false;
 	}
 	window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__ = true;
+	const getMediaSessionTarget = () => {
+		const pipContext = _getActivePictureInPicturePlaybackContext();
+		return {
+			target:
+				pipContext?.element ||
+				_getPlayerAndState().player ||
+				_getPrimaryMediaElement(),
+			channel: pipContext?.ChannelName || __TTVAB_STATE__?.PageChannel,
+			mediaKey: pipContext?.MediaKey || __TTVAB_STATE__?.PageMediaKey,
+		};
+	};
+	try {
+		mediaSession.setActionHandler("pause", () => {
+			_pausePlaybackTarget(getMediaSessionTarget().target);
+		});
+		mediaSession.setActionHandler("play", () => {
+			const { target, channel, mediaKey } = getMediaSessionTarget();
+			_playPlaybackTarget(target, channel, mediaKey);
+		});
+	} catch {}
 	return true;
 }
 
