@@ -27,4 +27,9 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run test:shuffle
+      - name: Test in a random order
+        run: |
+          seed=$((RANDOM * 32768 + RANDOM))
+          echo "Shuffle seed: $seed (rerun with: npx vitest run --sequence.shuffle --sequence.seed=$seed)"
+          npx vitest run --sequence.shuffle --sequence.seed="$seed"
       - run: npm run knip
