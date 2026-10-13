@@ -4727,10 +4727,16 @@ function _startWorkerWatchdog() {
 			const hiddenStaleSatisfied =
 				!isHidden || now - lastSeen > HW_HIDDEN_STALE_MIN_MS;
 			if (missedPongs < missedPongLimit || !hiddenStaleSatisfied) {
-				_log(
-					`Worker heartbeat late (${missedPongs}/${missedPongLimit}); pinging again`,
-					"info",
-				);
+				if (missedPongs < missedPongLimit)
+					_log(
+						`Worker heartbeat late (${missedPongs}/${missedPongLimit}); pinging again`,
+						"info",
+					);
+				else if (missedPongs === missedPongLimit)
+					_log(
+						"Worker heartbeat late while hidden; waiting up to 90s before recovery",
+						"info",
+					);
 				try {
 					_postWorkerBridgeMessage(worker, { key: "Ping", value: null });
 				} catch {}
