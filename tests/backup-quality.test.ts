@@ -901,7 +901,9 @@ describe("HD backup probation through playlist polling", () => {
 			"[Trace] Backup search order: site (cooling 12s), autoplay",
 			"info",
 		);
-		expect(log).not.toHaveBeenCalledWith("[Trace] Checking: site", "info");
+		expect(
+			log.mock.calls.some(([message]) => message === "[Trace] Checking: site"),
+		).toBe(false);
 	});
 
 	it("starts the first HD check when the autoplay dwell ends while keeping the bridge refreshed", async () => {

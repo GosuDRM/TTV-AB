@@ -55,6 +55,116 @@ describe("main-owned declared ad pod progress", () => {
 		expect(info.ExpectedAdPodLength).toBe(2);
 	});
 
+	it("tracks the current pod separately when a midroll follows a preroll in one break", () => {
+		const merge = T<
+			(value: Record<string, unknown>) => Record<string, unknown> | null
+		>("_mergeAdPodProgress");
+		const apply = T<
+			(
+				info: Record<string, unknown>,
+				value: Record<string, unknown>,
+			) => Record<string, unknown> | null
+		>("_applyAdPodProgressToInfo");
+		const context = {
+			mediaType: "live",
+			channelName: "testchannel",
+			mediaKey: "live:testchannel",
+			cycleStartedAt: 1000,
+		};
+		const pod = (key: string, length: number, adIds: string[]) => ({
+			key,
+			length,
+			adIds,
+			maxPosition: adIds.length - 1,
+			zeroPosition: true,
+		});
+		merge({
+			...context,
+			adIds: ["pre-0"],
+			expectedPodLength: 1,
+			pod: pod("preroll|1", 1, ["pre-0"]),
+		});
+		merge({
+			...context,
+			adIds: ["pre-0", "mid-0"],
+			expectedPodLength: 8,
+			pod: pod("midroll|8", 8, ["mid-0"]),
+		});
+		const merged = merge({
+			...context,
+			adIds: ["pre-0", "mid-0", "mid-1"],
+			expectedPodLength: 8,
+			pod: pod("midroll|8", 8, ["mid-1"]),
+		});
+		expect(merged?.adIds).toEqual(["pre-0", "mid-0", "mid-1"]);
+		expect(merged?.pod).toEqual({
+			key: "midroll|8",
+			length: 8,
+			adIds: ["mid-0", "mid-1"],
+			maxPosition: 0,
+			zeroPosition: true,
+		});
+
+		const replacementWorkerInfo: Record<string, unknown> = {
+			MediaType: "live",
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+			ObservedAdPodIds: new Set<string>(),
+			ExpectedAdPodLength: 0,
+			CurrentAdPod: null,
+		};
+		apply(replacementWorkerInfo, merged || {});
+		const seededPod = replacementWorkerInfo.CurrentAdPod as {
+			key: string;
+			length: number;
+			adIds: Set<string>;
+			spoofedAdIds: Set<string>;
+			completeSent: boolean;
+		};
+		expect(seededPod.key).toBe("midroll|8");
+		expect([...seededPod.adIds]).toEqual(["mid-0", "mid-1"]);
+		expect(seededPod.spoofedAdIds.size).toBe(0);
+		expect(seededPod.completeSent).toBe(false);
+
+		const next = merge({
+			...context,
+			adIds: ["pre-0", "mid-0", "mid-1", "second-0"],
+			expectedPodLength: 2,
+			pod: pod("midroll|2", 2, ["second-0"]),
+		});
+		expect((next?.pod as { adIds: string[] } | undefined)?.adIds).toEqual([
+			"second-0",
+		]);
+	});
+
+	it("rejects malformed pod snapshots in progress messages", () => {
+		const isPodSnapshot = T<(value: unknown) => boolean>("_isAdPodSnapshot");
+		expect(isPodSnapshot(undefined)).toBe(true);
+		expect(isPodSnapshot(null)).toBe(true);
+		expect(
+			isPodSnapshot({
+				key: "midroll|2",
+				length: 2,
+				adIds: ["a"],
+				maxPosition: 0,
+				zeroPosition: true,
+			}),
+		).toBe(true);
+		expect(isPodSnapshot({ key: "midroll|2", length: 2, adIds: [1] })).toBe(
+			false,
+		);
+		expect(isPodSnapshot("pod")).toBe(false);
+		expect(
+			isPodSnapshot({
+				key: "x".repeat(65),
+				length: 2,
+				adIds: [],
+				maxPosition: 0,
+				zeroPosition: false,
+			}),
+		).toBe(false);
+	});
+
 	it("replaces an older cycle and ignores late progress from it", () => {
 		const merge = T<
 			(value: Record<string, unknown>) => Record<string, unknown> | null

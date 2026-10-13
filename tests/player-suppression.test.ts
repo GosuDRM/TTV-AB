@@ -127,6 +127,41 @@ describe("_ensureIndependentVideoAdStyle", () => {
 	});
 });
 
+describe("_handleIndependentVideoAdMutations", () => {
+	it("ignores attribute changes on elements that cannot be an ad video", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const previousEnabled = state.IsAdStrippingEnabled;
+		state.IsAdStrippingEnabled = true;
+		const handled: unknown[] = [];
+		const previous = g._suppressIndependentVideoAdsForNode;
+		g._suppressIndependentVideoAdsForNode = (node: unknown) => {
+			handled.push(node);
+			return 0;
+		};
+		const image = document.createElement("img");
+		const video = document.createElement("video");
+		const source = document.createElement("source");
+		const container = document.createElement("div");
+		try {
+			T<(records: unknown[]) => void>("_handleIndependentVideoAdMutations")([
+				{ type: "attributes", target: image, attributeName: "src" },
+				{ type: "attributes", target: container, attributeName: "aria-label" },
+				{ type: "attributes", target: video, attributeName: "src" },
+				{ type: "attributes", target: source, attributeName: "src" },
+				{
+					type: "attributes",
+					target: container,
+					attributeName: "data-ttvab-independent-ad-container",
+				},
+			]);
+			expect(handled).toEqual([video, source, container]);
+		} finally {
+			g._suppressIndependentVideoAdsForNode = previous;
+			state.IsAdStrippingEnabled = previousEnabled;
+		}
+	});
+});
+
 describe("_suppressIndependentVideoAdsInDocument", () => {
 	const suppress = () =>
 		T<(root?: ParentNode) => number>("_suppressIndependentVideoAdsInDocument");

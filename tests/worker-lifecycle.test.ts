@@ -9478,6 +9478,59 @@ describe("page-side M3U8 fallback", () => {
 		}
 	});
 
+	it("keeps degraded-mode recovery closed while the current pod is incomplete after an earlier pod", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const isReady = T<
+			(
+				url: string,
+				text: string,
+				info: Record<string, unknown>,
+				mediaKey: string,
+			) => boolean
+		>("_isPageSideFallbackRecoveryReady");
+		const getRecoveryState = T<
+			(context: Record<string, unknown>) => Record<string, unknown>
+		>("_getWorkerRecoveryState");
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageMediaType = "live";
+		state.PageChannel = "testchannel";
+		state.PageMediaKey = "live:testchannel";
+		state.CurrentAdMediaKey = "live:testchannel";
+		state.AdEndMinCleanPlaylists = 3;
+		state.AdEndGraceMs = 500;
+		state.AdPodProgressByMediaKey = {
+			"live:testchannel": {
+				cycleStartedAt: 90000,
+				adIds: ["pre-0", "mid-0", "mid-1"],
+				expectedPodLength: 3,
+				pod: {
+					key: "midroll|3",
+					length: 3,
+					adIds: ["mid-0", "mid-1"],
+					maxPosition: 1,
+					zeroPosition: true,
+				},
+			},
+		};
+		getRecoveryState({ MediaKey: "live:testchannel" }).phase = "exhausted";
+		const url =
+			"https://video-weaver.example.ttvnw.net/v1/playlist/pod.m3u8?session=ad";
+		confirmPlaybackOwner("live:testchannel", url, "avc1.64002A", 90000);
+		const info: Record<string, unknown> = {};
+
+		for (let i = 0; i < 20; i++) {
+			const playlist = [
+				"#EXTM3U",
+				`#EXT-X-MEDIA-SEQUENCE:${900 + i}`,
+				"#EXTINF:2.000,",
+				"native.ts",
+			].join("\n");
+			expect(isReady(url, playlist, info, "live:testchannel")).toBe(false);
+			vi.advanceTimersByTime(2000);
+		}
+	});
+
 	it("uses terminal pod position to complete fallback recovery with missing ad IDs", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);

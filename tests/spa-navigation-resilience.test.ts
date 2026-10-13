@@ -64,4 +64,30 @@ describe("_hookSpaNavigation resilience", () => {
 			history.pushState = ours;
 		}
 	});
+
+	it("clears the ad timer only when navigation changes the playing media", () => {
+		const scoped = globalThis as Record<string, unknown>;
+		const previousState = scoped.__TTVAB_STATE__;
+		const previousClear = g._clearAdTimerOverlay;
+		const clearOverlay = vi.fn();
+		g._clearAdTimerOverlay = clearOverlay;
+		scoped.__TTVAB_STATE__ = { PageMediaKey: "live:first" };
+		g._syncPagePlaybackContext = () => {
+			const channel = window.location.pathname.split("/")[1];
+			(scoped.__TTVAB_STATE__ as Record<string, unknown>).PageMediaKey =
+				`live:${channel}`;
+			return null;
+		};
+		try {
+			history.replaceState(null, "", "/first");
+			T<() => void>("_hookSpaNavigation")();
+			history.replaceState({ scroll: 1 }, "", "/first?ref=sidebar");
+			expect(clearOverlay).not.toHaveBeenCalled();
+			history.pushState(null, "", "/second");
+			expect(clearOverlay).toHaveBeenCalledOnce();
+		} finally {
+			scoped.__TTVAB_STATE__ = previousState;
+			g._clearAdTimerOverlay = previousClear;
+		}
+	});
 });

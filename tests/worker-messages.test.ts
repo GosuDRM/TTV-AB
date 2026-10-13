@@ -81,6 +81,7 @@ const eventPayloads = {
 	},
 	AdEnded: { endedAt: 2000, holdingBackup: true, willReload: false },
 	BackupPlayerTypeSelected: { value: "site" },
+	LiveStreamStatus: { ended: true, observedAt: 2000 },
 	FatalMediaRecoveryReady: {
 		recoveryId: "recovery-1000",
 		verifiedAt: 1200,
@@ -208,6 +209,8 @@ describe("worker event boundary", () => {
 		{ key: "AdPodProgress", adIds: ["ad-1", {}] },
 		{ key: "AdPodProgress", expectedPodLength: "2" },
 		{ key: "BackupPlayerTypeSelected", value: {} },
+		{ key: "LiveStreamStatus", ended: "true", mediaKey: "live:buildtest" },
+		{ key: "LiveStreamStatus", ended: true },
 		{ key: "PlaybackWorkerObserved", decoderCodec: [] },
 		{ key: "PlaybackWorkerBootstrapObserved", vodID: {} },
 		{ key: "MediaBootstrapRecoveryNeeded", cycleStartedAt: Infinity },

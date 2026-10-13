@@ -361,6 +361,118 @@ describe("manual refresh after bounded post-ad recovery", () => {
 	});
 });
 
+describe("ended live streams", () => {
+	it("does not restart the player for a live stream that has ended", () => {
+		const savedStateObject = g.__TTVAB_STATE__;
+		T<(scope: typeof globalThis) => void>("_declareState")(globalThis);
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const savedLog = g._log;
+		const savedRestart = g._attemptWorkerRestart;
+		const log = vi.fn();
+		const restart = vi.fn();
+		g._log = log;
+		g._attemptWorkerRestart = restart;
+		const isEnded = g._isLiveStreamEndedForContext as (
+			context: Record<string, unknown>,
+		) => boolean;
+		const context = {
+			MediaType: "live",
+			ChannelName: "endedchannel",
+			MediaKey: "live:endedchannel",
+		};
+		try {
+			Object.assign(state, {
+				PageMediaType: "live",
+				PageChannel: "endedchannel",
+				PageMediaKey: "live:endedchannel",
+				EndedLiveMediaKey: "live:endedchannel",
+				EndedLiveAt: Date.now(),
+			});
+			expect(isEnded(context)).toBe(true);
+			expect(isEnded({ ...context, MediaKey: "live:other" })).toBe(false);
+			const worker = {
+				__TTVABGeneration: 4,
+				__TTVABCreatedAt: Date.now() - 60000,
+				__TTVABPageMediaKey: "live:endedchannel",
+			};
+			expect(
+				(
+					g._recoverCrashedWorker as (
+						worker: Record<string, unknown>,
+						context: Record<string, unknown>,
+						message: string,
+					) => boolean
+				)(worker, context, "Worker unresponsive (no pong)"),
+			).toBe(true);
+			expect(worker).toMatchObject({ __TTVABCrashed: true });
+			expect(restart).not.toHaveBeenCalled();
+			expect(log).toHaveBeenCalledWith(
+				"Live stream has ended; not restarting the player for it",
+				"info",
+			);
+
+			state.EndedLiveAt = Date.now() - 600001;
+			expect(isEnded(context)).toBe(false);
+		} finally {
+			g.__TTVAB_STATE__ = savedStateObject;
+			g._log = savedLog;
+			g._attemptWorkerRestart = savedRestart;
+		}
+	});
+});
+
+describe("page-side fallback lifetime", () => {
+	it("removes the page-side fallback only after every recovery has settled", async () => {
+		const savedStateObject = g.__TTVAB_STATE__;
+		T<(scope: typeof globalThis) => void>("_declareState")(globalThis);
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const savedFetch = window.fetch;
+		const savedRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const savedActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+		const states = g._WorkerRecoveryStates as Map<
+			string,
+			Record<string, unknown>
+		>;
+		const savedStates = new Map(states);
+		const savedLog = g._log;
+		g._log = () => {};
+		const pageFetch = vi.fn(async () => new Response("page"));
+		window.fetch = pageFetch as typeof fetch;
+		scopedWindow.__TTVAB_REAL_FETCH__ = null;
+		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+		states.clear();
+		const remove = g._removePageSideM3U8OverrideWhenRecovered as () => boolean;
+		try {
+			(g._installPageSideM3U8Override as () => void)();
+			const fallbackFetch = window.fetch;
+			expect(fallbackFetch).not.toBe(pageFetch);
+			states.set("live:other", { phase: "exhausted", activeEpoch: 0 });
+			expect(remove()).toBe(false);
+			expect(window.fetch).toBe(fallbackFetch);
+			states.set("live:other", { phase: "idle", activeEpoch: 0 });
+			expect(remove()).toBe(true);
+			expect(window.fetch).toBe(pageFetch);
+			expect(scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE).toBe(false);
+			expect(remove()).toBe(false);
+
+			(g._installPageSideM3U8Override as () => void)();
+			const laterWrapper = async (...args: Parameters<typeof fetch>) =>
+				(window.fetch as typeof fetch)(...args);
+			window.fetch = laterWrapper as typeof fetch;
+			expect(remove()).toBe(false);
+			expect(window.fetch).toBe(laterWrapper);
+		} finally {
+			window.fetch = savedFetch;
+			scopedWindow.__TTVAB_REAL_FETCH__ = savedRealFetch;
+			scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = savedActive;
+			states.clear();
+			for (const [key, value] of savedStates) states.set(key, value);
+			g._log = savedLog;
+			g.__TTVAB_STATE__ = savedStateObject;
+		}
+	});
+});
+
 describe("worker failure evidence survives retirement", () => {
 	beforeEach(() => {
 		(g._workerFailureDiagnostics as unknown[]).length = 0;

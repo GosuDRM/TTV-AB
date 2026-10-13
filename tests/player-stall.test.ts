@@ -40,6 +40,93 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
+describe("picture-in-picture channel changes", () => {
+	it("follows a raid or channel change inside an open picture-in-picture window", () => {
+		const savedState = g.__TTVAB_STATE__;
+		const savedLookup = g._getPlayerAndState;
+		const savedRelease = g._releasePlaybackContext;
+		const released: unknown[] = [];
+		g._releasePlaybackContext = (context: unknown) => {
+			released.push(context);
+			return true;
+		};
+		const video = document.createElement("video");
+		document.body.appendChild(video);
+		Object.defineProperty(document, "pictureInPictureElement", {
+			configurable: true,
+			get: () => video,
+		});
+		const firstWorker = {};
+		const raidWorker = {};
+		let content = { type: "live", channelLogin: "firstchannel" };
+		let worker: object = firstWorker;
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => video, core: { worker } },
+			state: { props: { content } },
+		});
+		g.__TTVAB_STATE__ = {
+			PageMediaType: "live",
+			PageChannel: "otherpage",
+			PageMediaKey: "live:otherpage",
+			PagePlaybackContextGeneration: 3,
+		};
+		const refresh = T<() => boolean>("_refreshActivePictureInPictureContext");
+		const active = T<() => Record<string, unknown> | null>(
+			"_getActivePictureInPicturePlaybackContext",
+		);
+		try {
+			T<(element: HTMLVideoElement) => unknown>(
+				"_setActivePictureInPicturePlaybackContext",
+			)(video);
+			expect(active()?.MediaKey).toBe("live:firstchannel");
+			expect(refresh()).toBe(false);
+
+			content = { type: "live", channelLogin: "raidtarget" };
+			worker = raidWorker;
+			expect(refresh()).toBe(true);
+			expect(active()?.MediaKey).toBe("live:raidtarget");
+			expect((active()?.workerRef as WeakRef<object> | null)?.deref()).toBe(
+				raidWorker,
+			);
+			expect(released).toEqual([
+				expect.objectContaining({ MediaKey: "live:firstchannel" }),
+			]);
+			expect(refresh()).toBe(false);
+		} finally {
+			T<() => void>("_clearActivePictureInPicturePlaybackContext")();
+			Object.defineProperty(document, "pictureInPictureElement", {
+				configurable: true,
+				get: () => null,
+			});
+			video.remove();
+			g.__TTVAB_STATE__ = savedState;
+			g._getPlayerAndState = savedLookup;
+			g._releasePlaybackContext = savedRelease;
+		}
+	});
+});
+
+describe("buffer monitor reset", () => {
+	it("reads the low-latency repeat delay from the cached player without walking the page again", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		const lookup = vi.spyOn(g, "_getPlayerAndState");
+		g._cachedPlayerRef = {
+			player: { core: { state: { lowLatencyModeEnabled: true } } },
+		};
+		try {
+			T<(cooldownMs?: number) => void>("_resetPlayerBufferMonitorState")(500);
+			expect(lookup).not.toHaveBeenCalled();
+			expect(
+				(g._PlayerBufferState as Record<string, unknown>).lastFixTime,
+			).toBe(100000 - 1500);
+		} finally {
+			g._cachedPlayerRef = null;
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("current player lookup", () => {
 	function setReactTree(states: object[]) {
 		type ReactNode = { stateNode: object; sibling: ReactNode | null };

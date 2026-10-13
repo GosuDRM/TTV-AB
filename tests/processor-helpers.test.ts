@@ -138,6 +138,8 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		_IncompletePodLastMediaSequence: null,
 		_IncompletePodCandidateUrl: null,
 		FailedBackupPlayerTypes: new Map<string, number>(),
+		BackupAdMarkedCounts: new Map<string, number>(),
+		_ReportedLiveStreamEnded: null,
 		LastSessionNeutralBackupProbeCycleStartedAt: 0,
 		ActiveBackupPlayerType: null,
 		ActiveBackupResolution: null,
@@ -156,6 +158,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		IsHoldingBackupAfterAd: false,
 		SilentBackupHoldStartedAt: 0,
 		LastSilentBackupHoldLogAt: 0,
+		LastSilentBackupHoldLogMessage: null,
 		LastNativeRecoveryHoldLogAt: 0,
 		LastNativeRecoveryProbeAt: 0,
 		LastNativeRecoveryReadyPlayerType: null,
@@ -6704,6 +6707,63 @@ describe("_processM3U8 silent-hold stall rotation", () => {
 		return info;
 	}
 
+	it("logs each silent hold state once instead of every poll", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		const info = setupHold({ LastSilentBackupHoldLogAt: 0 });
+		const previousLog = g._log;
+		const log = vi.fn();
+		g._log = log;
+		const adMarked = [
+			"#EXTM3U",
+			"#EXT-X-VERSION:7",
+			"#EXT-X-TARGETDURATION:2",
+			"#EXT-X-MEDIA-SEQUENCE:300",
+			'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad"',
+			"#EXTINF:2.000,live",
+			"native-live-300.ts",
+		].join("\n");
+		const holdLines = () =>
+			log.mock.calls.filter(([message]) =>
+				String(message).includes("during silent backup hold"),
+			).length;
+		try {
+			for (let poll = 0; poll < 20; poll++) {
+				vi.setSystemTime(1_000_000 + poll * 2000);
+				info.LastCleanBackupAt = Date.now();
+				await processM3U8()(NATIVE_URL, adMarked, () =>
+					Promise.reject(new Error("no fetch expected")),
+				);
+			}
+			expect(holdLines()).toBe(1);
+			vi.setSystemTime(1_000_000 + 62_000);
+			info.LastCleanBackupAt = Date.now();
+			await processM3U8()(NATIVE_URL, adMarked, () =>
+				Promise.reject(new Error("no fetch expected")),
+			);
+			expect(holdLines()).toBe(2);
+		} finally {
+			g._log = previousLog;
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		[1, true],
+		[2, true],
+		[3, false],
+		[9, false],
+		[10, true],
+		[11, false],
+		[20, true],
+	])("bounds ad-end bounce logging at bounce %s", (bounces, logged) => {
+		expect(
+			T<(info: Record<string, unknown>) => boolean>("_shouldLogAdEndBounce")({
+				AdEndConfirmEscalation: bounces,
+			}),
+		).toBe(logged);
+	});
+
 	it("keeps the backup through an incomplete declared pod and restores only after stable confirmation", async () => {
 		const info = setupHold({
 			PendingAdEndAt: Date.now() - 5000,
@@ -7957,7 +8017,148 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 		}
 	});
 
-	it("uses the exact pre-ad native URL across master-map churn without minting site sessions", async () => {
+	it.each([{ podLength: 1, holdPolls: 1 }])(
+		"uses the exact pre-ad native URL across master-map churn without minting site sessions",
+		async ({ podLength, holdPolls }) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(200000);
+			const probe = stubProbe(() => true);
+			const url =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/native.m3u8?token=player";
+			const info = makePendingInfo({
+				ExpectedAdPodLength: podLength,
+				ObservedAdPodIds: new Set(podLength > 0 ? ["stitched-ad-1"] : []),
+				VisibleAdStartedAt: 100000,
+				LastCleanBackupM3U8: makePlaylist(50, 3),
+				LastCleanBackupPlayerType: "autoplay",
+				ActiveBackupPlayerType: "autoplay",
+				ActiveBackupResolution: "640x360",
+				SustainedNativeResolution: {
+					Resolution: "1920x1080",
+					Codecs: "avc1.64002a",
+				},
+			});
+			ownExactNativeUrl(info, url);
+			activateExactAdCycle(info, 100000);
+			const context = exactRequestContext(info, 100000);
+			info.LastCleanNativeM3U8 = makePlaylist(90, 3);
+			info.LastCleanNativeUrl = url;
+			info.LastCleanNativeCodec = "avc1.64002a";
+			info.LastCleanNativePlaylistAt = 99000;
+			info.Urls = Object.create(null);
+			try {
+				for (let index = 0; index < 8; index++) {
+					vi.setSystemTime(200000 + index * 2000);
+					const result = await fn()(
+						info,
+						null,
+						null,
+						context,
+						null,
+						makePlaylist(100 + index, 3),
+						url,
+						true,
+					);
+					expect(result).toBe(index === 7 ? "ended-with-backup-hold" : "wait");
+				}
+				expect(probe.calls.count).toBe(0);
+
+				info.IsShowingAd = false;
+				info.IsHoldingBackupAfterAd = true;
+				const results: string[] = [];
+				for (let index = 0; index < holdPolls; index++) {
+					vi.setSystemTime(216000 + index * 2000);
+					const result = await fn()(
+						info,
+						null,
+						null,
+						context,
+						null,
+						makePlaylist(108 + index, 3),
+						url,
+						true,
+					);
+					results.push(result);
+				}
+				expect(results.at(-1)).toBe("ended");
+				expect(results.slice(0, -1).every((result) => result === "wait")).toBe(
+					true,
+				);
+				expect(probe.calls.count).toBe(0);
+				expect(info.NativeRecoveryCandidateStage).toBe("hold");
+				expect(info.NativeRecoveryCandidateCleanCount).toBe(
+					podLength > 0 ? 8 : 7,
+				);
+			} finally {
+				probe.restore();
+				vi.useRealTimers();
+			}
+		},
+	);
+
+	it.each([
+		{
+			label: "complete",
+			expected: 1,
+			observed: ["stitched-ad-1"],
+			ready: true,
+		},
+		{
+			label: "incomplete",
+			expected: 2,
+			observed: ["stitched-ad-1"],
+			ready: false,
+		},
+		{ label: "unknown", expected: 0, observed: [], ready: false },
+	])(
+		"continues the visible clean proof into the hold only for a $label pod",
+		({ expected, observed, ready }) => {
+			const url =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/native.m3u8?token=player";
+			const info = makePendingInfo({
+				ExpectedAdPodLength: expected,
+				ObservedAdPodIds: new Set(observed),
+				VisibleAdStartedAt: 100000,
+				IsShowingAd: false,
+				IsHoldingBackupAfterAd: true,
+			});
+			ownExactNativeUrl(info, url);
+			activateExactAdCycle(info, 100000);
+			Object.assign(info, {
+				NativeRecoveryCandidateUrl: T<(value: string) => string>(
+					"_getMediaPlaylistSessionKey",
+				)(url),
+				NativeRecoveryCandidateMediaKey: info.MediaKey,
+				NativeRecoveryCandidateCycleStartedAt: 100000,
+				NativeRecoveryCandidateStage: "visible",
+				NativeRecoveryCandidateStartedAt: Date.now() - 12000,
+				NativeRecoveryCandidateCleanCount: 7,
+				NativeRecoveryCandidateLastMediaSequence: 107,
+			});
+			const result = T<
+				(
+					info: Record<string, unknown>,
+					text: string,
+					url: string,
+					isNative: boolean,
+					mediaKey: string,
+					cycleStartedAt: number,
+				) => string
+			>("_advanceExactNativeRecoveryCandidate")(
+				info,
+				makePlaylist(108, 3),
+				url,
+				true,
+				String(info.MediaKey),
+				100000,
+			);
+			expect(result).toBe(ready ? "ready" : "pending");
+			expect(info.NativeRecoveryCandidateStage).toBe("hold");
+			expect(info.NativeRecoveryCandidateCleanCount).toBe(ready ? 8 : 0);
+		},
+	);
+
+	it("restarts the hold proof when ads return after a complete pod's visible proof", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(200000);
 		const probe = stubProbe(() => true);
@@ -7971,55 +8172,30 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 			LastCleanBackupPlayerType: "autoplay",
 			ActiveBackupPlayerType: "autoplay",
 			ActiveBackupResolution: "640x360",
-			SustainedNativeResolution: {
-				Resolution: "1920x1080",
-				Codecs: "avc1.64002a",
-			},
 		});
 		ownExactNativeUrl(info, url);
 		activateExactAdCycle(info, 100000);
 		const context = exactRequestContext(info, 100000);
-		info.LastCleanNativeM3U8 = makePlaylist(90, 3);
-		info.LastCleanNativeUrl = url;
-		info.LastCleanNativeCodec = "avc1.64002a";
-		info.LastCleanNativePlaylistAt = 99000;
 		info.Urls = Object.create(null);
+		const poll = (sequence: number, text = makePlaylist(sequence, 3)) =>
+			fn()(info, null, null, context, null, text, url, true);
 		try {
 			for (let index = 0; index < 8; index++) {
 				vi.setSystemTime(200000 + index * 2000);
-				const result = await fn()(
-					info,
-					null,
-					null,
-					context,
-					null,
-					makePlaylist(100 + index, 3),
-					url,
-					true,
-				);
-				expect(result).toBe(index === 7 ? "ended-with-backup-hold" : "wait");
+				await poll(100 + index);
 			}
-			expect(probe.calls.count).toBe(0);
-
 			info.IsShowingAd = false;
 			info.IsHoldingBackupAfterAd = true;
-			for (let index = 0; index < 8; index++) {
-				vi.setSystemTime(216000 + index * 2000);
-				const result = await fn()(
-					info,
-					null,
-					null,
-					context,
-					null,
-					makePlaylist(108 + index, 3),
-					url,
-					true,
-				);
-				expect(result).toBe(index === 7 ? "ended" : "wait");
-			}
+			vi.setSystemTime(216000);
+			const adMarked = makePlaylist(108, 3).replace(
+				"#EXTINF:",
+				'#EXT-X-DATERANGE:ID="stitched-ad-2",CLASS="twitch-stitched-ad",START-DATE="2026-10-13T00:00:00.000Z"\n#EXTINF:',
+			);
+			expect(await poll(108, adMarked)).toBe("wait");
+			expect(info.NativeRecoveryCandidateCleanCount).toBe(0);
+			vi.setSystemTime(218000);
+			expect(await poll(109)).toBe("wait");
 			expect(probe.calls.count).toBe(0);
-			expect(info.NativeRecoveryCandidateStage).toBe("hold");
-			expect(info.NativeRecoveryCandidateCleanCount).toBe(7);
 		} finally {
 			probe.restore();
 			vi.useRealTimers();
@@ -8373,6 +8549,83 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 	});
 });
 
+describe("_reportLiveStreamStatus", () => {
+	it("reports when a live stream ends and when it plays again, once per change", () => {
+		const posted: Array<Record<string, unknown>> = [];
+		const previousPost = g._postWorkerBridgeMessage;
+		const previousCreate = g._createPageScopedWorkerEvent;
+		const previousPostMessage = g.postMessage;
+		g.postMessage = () => {};
+		g._postWorkerBridgeMessage = (_target: unknown, message: unknown) => {
+			posted.push(message as Record<string, unknown>);
+		};
+		g._createPageScopedWorkerEvent = (value: unknown) => value;
+		const report = T<(info: Record<string, unknown>, text: string) => boolean>(
+			"_reportLiveStreamStatus",
+		);
+		const info = makeInfo();
+		const ended = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:9\n#EXT-X-ENDLIST";
+		try {
+			expect(report(info, makePlaylist(1, 3))).toBe(true);
+			expect(report(info, makePlaylist(2, 3))).toBe(false);
+			expect(report(info, ended)).toBe(true);
+			expect(report(info, ended)).toBe(false);
+			expect(report(info, "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:10")).toBe(false);
+			expect(report(info, makePlaylist(11, 3))).toBe(true);
+			expect(posted.map((message) => message.ended)).toEqual([
+				false,
+				true,
+				false,
+			]);
+			expect(posted[1]).toMatchObject({
+				key: "LiveStreamStatus",
+				mediaKey: "live:testchannel",
+			});
+			expect(
+				report(makeInfo({ MediaType: "vod", MediaKey: "vod:1" }), ended),
+			).toBe(false);
+			expect(
+				report(info, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlive.m3u8"),
+			).toBe(false);
+		} finally {
+			g._postWorkerBridgeMessage = previousPost;
+			g._createPageScopedWorkerEvent = previousCreate;
+			g.postMessage = previousPostMessage;
+		}
+	});
+});
+
+describe("_markBackupPlayerRetryCooldown escalation", () => {
+	it("waits longer for a backup type that keeps showing ads in the same break", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		const mark = T<
+			(info: Record<string, unknown>, type: string, reason?: string) => number
+		>("_markBackupPlayerRetryCooldown");
+		const clear = T<(info: Record<string, unknown>, type: string) => void>(
+			"_clearBackupPlayerRetryCooldown",
+		);
+		const info = makeInfo();
+		try {
+			const delays = Array.from(
+				{ length: 6 },
+				() => mark(info, "site", "ad-marked") - Date.now(),
+			);
+			expect(delays).toEqual([15000, 15000, 30000, 30000, 60000, 60000]);
+			expect(mark(info, "autoplay", "ad-marked") - Date.now()).toBe(15000);
+			expect(mark(info, "site", "stalled") - Date.now()).toBe(10000);
+			clear(info, "site");
+			expect(mark(info, "site", "ad-marked") - Date.now()).toBe(15000);
+			mark(info, "embed", "ad-marked");
+			mark(info, "embed", "ad-marked");
+			T<(info: Record<string, unknown>) => void>("_resetStreamAdState")(info);
+			expect(mark(info, "embed", "ad-marked") - Date.now()).toBe(15000);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () => {
 	const fn = () =>
 		T<
@@ -8459,6 +8712,28 @@ describe("_canReloadNativePlayerAfterAd (serialization and stale results)", () =
 			expect(results).toEqual([false, false, false, true]);
 			expect(chain.tokenCalls.count).toBe(1);
 			expect(chain.mediaCalls.count).toBe(4);
+		} finally {
+			chain.restore();
+		}
+	});
+
+	it("does not count clean probes awaiting confirmation as failed probes", async () => {
+		const chain = stubProbeChain(
+			async () => new Response("{}", { status: 200 }),
+		);
+		try {
+			const info = makeInfo({
+				IsUsingBackupStream: true,
+				ConsecutiveFailedNativeProbes: 4,
+			});
+			activateExactAdCycle(info);
+			const failedAfterEach: number[] = [];
+			for (let i = 0; i < 4; i++) {
+				info.LastNativeRecoveryProbeAt = 0;
+				await fn()(info, null);
+				failedAfterEach.push(Number(info.ConsecutiveFailedNativeProbes));
+			}
+			expect(failedAfterEach).toEqual([4, 4, 4, 0]);
 		} finally {
 			chain.restore();
 		}
@@ -9810,6 +10085,8 @@ describe("_processM3U8Core explicit ad metadata", () => {
 		declareAvcPlaybackUrl(info, url);
 		const previousGetInfo = g._getStreamInfoForPlaylist;
 		const previousFind = g._findBackupStream;
+		const previousNotify = g._notifyAdComplete;
+		g._notifyAdComplete = async () => {};
 		g._getStreamInfoForPlaylist = () => info;
 		g._findBackupStream = vi.fn(async () => ({
 			type: null,
@@ -9839,6 +10116,7 @@ describe("_processM3U8Core explicit ad metadata", () => {
 		} finally {
 			g._getStreamInfoForPlaylist = previousGetInfo;
 			g._findBackupStream = previousFind;
+			g._notifyAdComplete = previousNotify;
 		}
 	});
 

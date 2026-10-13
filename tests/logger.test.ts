@@ -155,6 +155,32 @@ describe("_log capture buffer", () => {
 		expect(entries[entries.length - 1].m).toBe("line 1299");
 	});
 
+	it("keeps errors and ad break milestones that fall out of the trimmed buffer", () => {
+		const scoped = globalThis as Record<string, unknown>;
+		delete scoped.__TTVAB_LOGS_DROPPED__;
+		delete scoped.__TTVAB_LOG_MILESTONES__;
+		try {
+			log()("v21.3.1 loaded", "info");
+			log()("[Break] ended live:test cycle 1: autoplay 640x360 @2.0s", "info");
+			log()("Worker command Ping failed: broken", "error");
+			for (let i = 0; i < 1300; i++) log()(`line ${i}`, "info");
+			expect(buffer().map((entry) => entry.m)).not.toContain("v21.3.1 loaded");
+			expect(
+				(scoped.__TTVAB_LOG_MILESTONES__ as Array<{ m: string }>).map(
+					(entry) => entry.m,
+				),
+			).toEqual([
+				"v21.3.1 loaded",
+				"[Break] ended live:test cycle 1: autoplay 640x360 @2.0s",
+				"Worker command Ping failed: broken",
+			]);
+			expect(scoped.__TTVAB_LOGS_DROPPED__).toBe(1303 - buffer().length);
+		} finally {
+			delete scoped.__TTVAB_LOGS_DROPPED__;
+			delete scoped.__TTVAB_LOG_MILESTONES__;
+		}
+	});
+
 	it("recovers when the page clobbers the buffer global", () => {
 		(globalThis as Record<string, unknown>).__TTVAB_LOGS__ = "corrupted";
 		expect(() => log()("after corruption", "info")).not.toThrow();
@@ -293,6 +319,102 @@ describe("_formatLogText", () => {
 
 	it("caps formatted output at 4000 characters", () => {
 		expect(format()("x".repeat(5000))).toHaveLength(4000);
+	});
+
+	it("redacts credentials before console output as well as capture", () => {
+		const source = [
+			"https://viewer:private-password@example.com/live.m3u8",
+			"access_token=private-access refresh_token=private-refresh",
+			'token="private-first\\" private-tail" safe=visible',
+			"to\u200bken=private-obfuscated",
+		].join("\n");
+		const { logger, messages, workerConsole } = makeWorkerLogger();
+		logger.log(source);
+		const captured = JSON.stringify(messages);
+		const printed = String(vi.mocked(workerConsole.log).mock.calls[0]?.[0]);
+		for (const output of [captured, printed]) {
+			expect(output).not.toContain("private-");
+			expect(output).toContain("https://example.com/live.m3u8");
+			expect(output).toContain("safe=visible");
+		}
+	});
+
+	it("redacts structured secrets without reading their values", () => {
+		const readSecret = vi.fn(() => ({ nested: "private-nested" }));
+		const value = {
+			get token() {
+				return readSecret();
+			},
+			authorization: ["private-array"],
+			accessToken: "private-access",
+			safe: "visible",
+		};
+		const output = format()(value);
+		expect(readSecret).not.toHaveBeenCalled();
+		expect(output).not.toContain("private-");
+		expect(output).toContain('"safe":"visible"');
+	});
+
+	it("retains Error details and redacts their stack and cause", () => {
+		const error = new TypeError("failed token=private-message", {
+			cause: new Error("cause access_token=private-cause"),
+		});
+		error.stack =
+			"TypeError: failed\n    at https://viewer:private-password@example.com/player.js:7:9";
+		const output = format()(error);
+		expect(output).toContain("TypeError");
+		expect(output).toContain("failed");
+		expect(output).toContain("player.js:7:9");
+		expect(output).toContain("cause");
+		expect(output).not.toContain("private-");
+	});
+
+	it("redacts structured text before JSON escapes its credentials", () => {
+		const output = format()({
+			message: 'failed token="private-first\\" private-tail" safe=visible',
+			stack: "failed to\u0000ken=private-hidden\n    at player.js:7:9",
+		});
+		expect(output).not.toContain("private-");
+		expect(output).toContain("safe=visible");
+		expect(output).toContain("player.js:7:9");
+		expect(format()(output)).toBe(output);
+	});
+
+	it("redacts encoded URL credential keys without changing safe parameters", () => {
+		const source =
+			"https://video.example/live.m3u8?%74oken=private-token&to%E2%80%8Bken=private-hidden&allow_source=true#refresh_token=private-refresh";
+		const output = format()(source);
+		expect(output).not.toContain("private-");
+		expect(output).toContain("allow_source=true");
+		expect(format()(output)).toBe(output);
+	});
+
+	it("stops reading object values when the text budget is exhausted", () => {
+		const readValue = vi.fn(() => "x".repeat(1000));
+		const value = {};
+		for (let index = 0; index < 24; index++) {
+			Object.defineProperty(value, `field${index}`, {
+				enumerable: true,
+				get: readValue,
+			});
+		}
+		expect(format()(value).length).toBeLessThanOrEqual(4000);
+		expect(readValue.mock.calls.length).toBeLessThanOrEqual(6);
+	});
+
+	it("bounds traversal when long property names collide after truncation", () => {
+		const value = Object.fromEntries(
+			Array.from({ length: 1000 }, (_, index) => [
+				`${"key".repeat(40)}${index}`,
+				index,
+			]),
+		);
+		const getDescriptor = vi.fn(Reflect.getOwnPropertyDescriptor);
+		const output = format()(
+			new Proxy(value, { getOwnPropertyDescriptor: getDescriptor }),
+		);
+		expect(output).toContain("Additional properties omitted");
+		expect(getDescriptor.mock.calls.length).toBeLessThanOrEqual(50);
 	});
 });
 
