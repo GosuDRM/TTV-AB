@@ -1687,7 +1687,7 @@ describe("_findBackupStream fresh-session probation", () => {
 				cleanChecks: 1,
 			});
 
-			nowSpy.mockReturnValue(1_002_100);
+			nowSpy.mockReturnValue(1_006_100);
 			const second = await findBackupStream()(
 				info,
 				sweep.realFetch,
@@ -2197,8 +2197,28 @@ describe("_findBackupStream fresh-session probation", () => {
 				0,
 				currentResolution,
 			);
-			expect(second.type).toBe("site");
-			expect(second.m3u8).toBe(sitePlaylist);
+			expect(second).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(info._BackupProbation).toMatchObject({
+				type: "site",
+				at: 1_001_600,
+				startedAt: 1_000_000,
+				cleanChecks: 2,
+			});
+
+			nowSpy.mockReturnValue(1_003_200);
+			expect(
+				await findBackupStream()(info, realFetch, 0, currentResolution),
+			).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+
+			nowSpy.mockReturnValue(1_006_000);
+			const promoted = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(promoted.type).toBe("site");
+			expect(promoted.m3u8).toBe(sitePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
 			expect(info._BackupProbation).toMatchObject({
 				type: "site",
@@ -2252,9 +2272,149 @@ describe("_findBackupStream fresh-session probation", () => {
 				Date.now(),
 			);
 			expect(info._BackupProbation).toBe(null);
+			expect(info._BackupPinFlipCount || 0).toBe(0);
 		} finally {
 			nowSpy.mockRestore();
 			restore();
+		}
+	});
+
+	it("never promotes a probationed session that turns ad-marked before it has stayed clean long enough", async () => {
+		let siteMedia = sitePlaylist;
+		const { tokenCalls, realFetch, restore } = setupSweep(() => siteMedia);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			for (const at of [1_000_000, 1_001_600, 1_003_200]) {
+				nowSpy.mockReturnValue(at);
+				expect(
+					await findBackupStream()(info, realFetch, 0, currentResolution),
+				).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			}
+			expect(info._BackupProbation).toMatchObject({ cleanChecks: 3 });
+			siteMedia = adPlaylist;
+			nowSpy.mockReturnValue(1_004_800);
+			const rejected = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(rejected).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(info.LastCleanBackupPlayerType).toBe("autoplay");
+			expect(info._BackupProbation).toBe(null);
+			expect(info._BackupPinFlipCount || 0).toBe(0);
+			expect(tokenCalls).toEqual(["site"]);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("completes a fresh session's probation while an older session of the same type is cooling down", async () => {
+		let siteMedia = adPlaylist;
+		const { tokenCalls, realFetch, restore } = setupSweep(() => siteMedia);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const info = makeHoldInfo();
+			info.BackupEncodingsM3U8Cache = {
+				site: masterPlaylist("site"),
+				autoplay: masterPlaylist("autoplay"),
+			};
+			let staleSessionChecked = false;
+			const sweepFetch = async (url: string) => {
+				if (String(url).includes("/site/") && !staleSessionChecked) {
+					staleSessionChecked = true;
+					siteMedia = sitePlaylist;
+					return new Response(adPlaylist, { status: 200 });
+				}
+				return realFetch(url);
+			};
+			const first = await findBackupStream()(
+				info,
+				sweepFetch,
+				0,
+				currentResolution,
+			);
+			expect(first).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(tokenCalls).toEqual(["site"]);
+			const cooldownRetryAt = info.FailedBackupPlayerTypes.get("site");
+			expect(cooldownRetryAt).toBeGreaterThan(1_010_000);
+			expect(info._BackupProbation).toMatchObject({
+				type: "site",
+				cleanChecks: 1,
+				cooldownRetryAt,
+			});
+			expect(info._BackupPinFlipCount || 0).toBe(0);
+
+			nowSpy.mockReturnValue(1_001_600);
+			expect(T<(info: unknown) => boolean>("_isBackupProbationDue")(info)).toBe(
+				true,
+			);
+			for (const at of [1_001_600, 1_003_200, 1_004_800]) {
+				nowSpy.mockReturnValue(at);
+				expect(
+					await findBackupStream()(info, sweepFetch, 0, currentResolution),
+				).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			}
+			nowSpy.mockReturnValue(1_006_400);
+			const promoted = await findBackupStream()(
+				info,
+				sweepFetch,
+				0,
+				currentResolution,
+			);
+			expect(promoted).toEqual({ type: "site", m3u8: sitePlaylist });
+			expect(tokenCalls).toEqual(["site"]);
+			expect(info.FailedBackupPlayerTypes.has("site")).toBe(false);
+		} finally {
+			nowSpy.mockRestore();
+			restore();
+		}
+	});
+
+	it("keeps the cooldown when the cooled-down type's probation session is replaced", () => {
+		const info = makeHoldInfo();
+		const cache = masterPlaylist("site");
+		info.BackupEncodingsM3U8Cache = { site: cache };
+		const exempt = T<(info: unknown) => boolean>(
+			"_isBackupProbationCooldownExempt",
+		);
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		try {
+			const retryAt = T<(info: unknown, pt: string, reason: string) => number>(
+				"_markBackupPlayerRetryCooldown",
+			)(info, "site", "ad-marked");
+			info._BackupProbation = {
+				type: "site",
+				at: 1_000_000,
+				startedAt: 1_000_000,
+				cooldownRetryAt: retryAt,
+				cleanChecks: 1,
+				cache,
+				playlistUrl: "https://cdn.example/site/index.m3u8",
+				codec: null,
+				resolution: "1280x720",
+				mediaKey: "live:testchannel",
+				pageMediaKey: getState().PageMediaKey,
+				pageGeneration: Number(getState().PagePlaybackContextGeneration) || 0,
+				cycleStartedAt: 991_000,
+				backupSearchEpoch: info.BackupSearchEpoch,
+			};
+			expect(exempt(info)).toBe(true);
+			nowSpy.mockReturnValue(1_000_500);
+			T<(info: unknown, pt: string, reason: string) => number>(
+				"_markBackupPlayerRetryCooldown",
+			)(info, "site", "ad-marked");
+			expect(exempt(info)).toBe(false);
+			info.FailedBackupPlayerTypes.set("site", retryAt);
+			expect(exempt(info)).toBe(true);
+			info.BackupEncodingsM3U8Cache = {
+				site: masterPlaylist("site").replace("index.m3u8", "fresh.m3u8"),
+			};
+			expect(exempt(info)).toBe(false);
+		} finally {
+			nowSpy.mockRestore();
 		}
 	});
 
@@ -2355,7 +2515,7 @@ describe("_findBackupStream fresh-session probation", () => {
 			expect(info._ForegroundQualityProbeAppliedAt).toBe(999_500);
 			expect(info._BackupProbation).toMatchObject({ type: "site" });
 
-			nowSpy.mockReturnValue(1_001_600);
+			nowSpy.mockReturnValue(1_006_000);
 			const second = await findBackupStream()(info, realFetch, 0, target360);
 			expect(second).toEqual({ type: "site", m3u8: sitePlaylist });
 			expect(tokenCalls).toEqual(["site"]);
@@ -2483,8 +2643,22 @@ describe("_findBackupStream fresh-session probation", () => {
 				0,
 				currentResolution,
 			);
-			expect(third.type).toBe("site");
-			expect(third.m3u8).toBe(sitePlaylist);
+			expect(third).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+			expect(info._BackupProbation).toMatchObject({
+				type: "site",
+				at: 1_003_200,
+				cleanChecks: 3,
+			});
+
+			nowSpy.mockReturnValue(1_006_000);
+			const fourth = await findBackupStream()(
+				info,
+				realFetch,
+				0,
+				currentResolution,
+			);
+			expect(fourth.type).toBe("site");
+			expect(fourth.m3u8).toBe(sitePlaylist);
 			expect(tokenCalls).toEqual(["site"]);
 			expect(info._BackupProbation).toMatchObject({
 				type: "site",
@@ -5648,20 +5822,20 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 			expect(refreshBackup.mock.calls.length).toBeGreaterThan(0);
 
 			let restoredOutput = "";
-			for (let index = 0; index < 8; index++) {
+			for (let index = 0; index < 5; index++) {
 				vi.setSystemTime(616000 + index * 2000);
 				restoredOutput = await processM3U8()(
 					NATIVE_URL,
 					makePlaylist(200 + index, 3),
 					() => Promise.reject(new Error("unexpected fetch")),
 				);
-				if (index < 7) {
+				if (index < 4) {
 					expect(restoredOutput).not.toContain(`seg${200 + index}.ts`);
 				}
 			}
-			expect(restoredOutput).toContain("seg207.ts");
+			expect(restoredOutput).toContain("seg204.ts");
 			expect(info.IsHoldingBackupAfterAd).toBe(false);
-			expect(info.LastCleanNativeM3U8).toContain("seg207.ts");
+			expect(info.LastCleanNativeM3U8).toContain("seg204.ts");
 			expect(info.LastCleanNativeUrl).toBe(NATIVE_URL);
 			expect(info.NativeRecoveryAdPlaylistUrls).toEqual(new Set());
 			expect(nativeProbe).not.toHaveBeenCalled();
@@ -5682,7 +5856,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 				playlistUrl: NATIVE_URL,
 				mediaKey: "live:testchannel",
 				cycleStartedAt: 590000,
-				expiresAt: 660000,
+				expiresAt: 654000,
 			});
 			const rebuiltSessionPlaylist = makePlaylist(300, 3);
 			Object.assign(info._PendingPostAdNativeMaster, {
@@ -8155,6 +8329,80 @@ describe("_isAdEndStable (escalating confirmation)", () => {
 			expect(result).toBe(ready ? "ready" : "pending");
 			expect(info.NativeRecoveryCandidateStage).toBe("hold");
 			expect(info.NativeRecoveryCandidateCleanCount).toBe(ready ? 8 : 0);
+		},
+	);
+
+	it.each([
+		{
+			label: "complete pod without bounces",
+			complete: true,
+			bounces: 0,
+			readyAt: 3,
+		},
+		{
+			label: "complete pod after two bounces",
+			complete: true,
+			bounces: 2,
+			readyAt: 5,
+		},
+		{
+			label: "complete pod after many bounces",
+			complete: true,
+			bounces: 9,
+			readyAt: 7,
+		},
+		{ label: "unknown pod", complete: false, bounces: 0, readyAt: 7 },
+	])(
+		"sizes the silent hold exact native window for a $label",
+		({ complete, bounces, readyAt }) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(200000);
+			const url =
+				"https://video-weaver.example.ttvnw.net/v1/playlist/native.m3u8?token=player";
+			const info = makePendingInfo({
+				ExpectedAdPodLength: complete ? 9 : 0,
+				ObservedAdPodIds: new Set(
+					complete
+						? Array.from({ length: 9 }, (_, index) => `stitched-ad-${index}`)
+						: [],
+				),
+				VisibleAdStartedAt: 100000,
+				IsShowingAd: false,
+				IsHoldingBackupAfterAd: true,
+				AdEndConfirmEscalation: bounces,
+			});
+			ownExactNativeUrl(info, url);
+			activateExactAdCycle(info, 100000);
+			const advance = T<
+				(
+					info: Record<string, unknown>,
+					text: string,
+					url: string,
+					isNative: boolean,
+					mediaKey: string,
+					cycleStartedAt: number,
+				) => string
+			>("_advanceExactNativeRecoveryCandidate");
+			try {
+				const results: string[] = [];
+				for (let index = 0; index <= 7; index++) {
+					vi.setSystemTime(200000 + index * 2000);
+					results.push(
+						advance(
+							info,
+							makePlaylist(300 + index, 3),
+							url,
+							true,
+							String(info.MediaKey),
+							100000,
+						),
+					);
+				}
+				expect(results.indexOf("ready")).toBe(readyAt);
+				expect(info.NativeRecoveryCandidateStage).toBe("hold");
+			} finally {
+				vi.useRealTimers();
+			}
 		},
 	);
 
@@ -13013,5 +13261,86 @@ describe("_prepareFatalMediaRecovery", () => {
 		expect(
 			(g._postWorkerBridgeMessage as ReturnType<typeof vi.fn>).mock.calls[0][1],
 		).toMatchObject({ recoveryId: secondRequest.recoveryId });
+	});
+});
+
+describe("_getAdStartBackupWaitDeadline (bounded backup wait before the first hold)", () => {
+	const deadline = () =>
+		T<(info: Record<string, unknown>, text: string) => number>(
+			"_getAdStartBackupWaitDeadline",
+		);
+	const media = (targetDuration: number) =>
+		`#EXTM3U\n#EXT-X-TARGETDURATION:${targetDuration}\n#EXT-X-MEDIA-SEQUENCE:10\n#EXTINF:2.000,live\nhttps://edge.example/a.ts`;
+	const eligibleInfo = (overrides: Record<string, unknown> = {}) =>
+		makeInfo({
+			IsShowingAd: true,
+			VisibleAdStartedAt: 100000,
+			_LastServedPlaylistKind: "native",
+			_EmptyAdHoldWindow: null,
+			_BackupSearchStartedAt: 100000,
+			...overrides,
+		});
+
+	beforeEach(() => {
+		(g.__TTVAB_STATE__ as Record<string, unknown>).IsAdStrippingEnabled = true;
+	});
+
+	it.each([
+		[1, 102000],
+		[2, 102000],
+		[5, 105000],
+		[6, 106000],
+		[10, 106000],
+	])(
+		"waits one target duration (%ss) bounded to 2-6 seconds",
+		(targetDuration, expected) => {
+			expect(deadline()(eligibleInfo(), media(targetDuration))).toBe(expected);
+		},
+	);
+
+	it("waits for an already selected current-cycle backup without a search in flight", () => {
+		expect(
+			deadline()(
+				eligibleInfo({ _BackupSearchStartedAt: 0, LastCleanBackupAt: 100500 }),
+				media(6),
+			),
+		).toBe(106000);
+	});
+
+	it.each([
+		["no visible ad cycle", { VisibleAdStartedAt: 0 }],
+		["a VOD", { MediaType: "vod" }],
+		["no ad on screen", { IsShowingAd: false }],
+		["the post-ad backup hold", { IsHoldingBackupAfterAd: true }],
+		["an enhanced decoder", { EnhancedDecoderCodecFamily: "hevc" }],
+		["an AVC fallback master", { IsUsingModifiedM3U8: true }],
+		["a pending codec handoff", { _CodecHandoffPendingId: "handoff" }],
+		["a hold already served", { _LastServedPlaylistKind: "hold" }],
+		["a backup already served", { _LastServedPlaylistKind: "backup" }],
+		["nothing served yet", { _LastServedPlaylistKind: null }],
+		[
+			"a current-cycle hold window",
+			{ _EmptyAdHoldWindow: { cycleStartedAt: 100000 } },
+		],
+		[
+			"no backup search or current-cycle backup",
+			{ _BackupSearchStartedAt: 0, LastCleanBackupAt: 99000 },
+		],
+	])("does not wait with %s", (_label, overrides) => {
+		expect(deadline()(eligibleInfo(overrides), media(6))).toBe(0);
+	});
+
+	it("does not wait for media with an initialization map or with blocking off", () => {
+		expect(
+			deadline()(
+				eligibleInfo(),
+				media(6).replace(
+					"#EXT-X-MEDIA-SEQUENCE",
+					'#EXT-X-MAP:URI="init.mp4"\n#EXT-X-MEDIA-SEQUENCE',
+				),
+			),
+		).toBe(0);
+		(g.__TTVAB_STATE__ as Record<string, unknown>).IsAdStrippingEnabled = false;
+		expect(deadline()(eligibleInfo(), media(6))).toBe(0);
 	});
 });

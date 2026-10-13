@@ -1946,7 +1946,8 @@ describe("empty hold playlist continuity", () => {
 	);
 
 	it("rejects a completed short segment within the handoff tolerance", async () => {
-		const { serve } = setup();
+		const { context, info, serve } = setup();
+		context._waitForAbortableDelay = vi.fn(async () => {});
 		await serve(
 			playlist(400).replace(
 				"#EXTINF:",
@@ -1959,9 +1960,10 @@ describe("empty hold playlist continuity", () => {
 				"#EXTINF:",
 				"#EXT-X-PROGRAM-DATE-TIME:2026-09-20T18:09:25.980Z\n#EXTINF:",
 			);
-		await expect(serve(stale, "site")).rejects.toMatchObject({
-			name: "AbortError",
-		});
+		const output = await serve(stale, "site");
+		expect(output).toContain("__ttvab_empty_hold_segment.ts");
+		expect(output).not.toContain("clean-100.ts");
+		expect(info._LastServedPlaylistKind).toBe("hold");
 	});
 
 	it.each(["backup", "native", "hold"])(

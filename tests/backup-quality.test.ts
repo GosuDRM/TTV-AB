@@ -574,7 +574,7 @@ describe.each(["preroll", "midroll"])(
 				type: "site",
 				cleanChecks: 1,
 			});
-			await vi.advanceTimersByTimeAsync(1500);
+			await vi.advanceTimersByTimeAsync(6000);
 			const secondCheck = f.poll();
 			await vi.advanceTimersByTimeAsync(1000);
 			const promoted = await secondCheck;
@@ -744,9 +744,12 @@ describe("HD backup probation through playlist polling", () => {
 				type: "site",
 				cleanChecks: 1,
 			});
-			f.advance(1500);
-			await f.poll(false);
-			await f.info._BackupSearchPromise;
+			for (let look = 0; look < 4; look++) {
+				expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+				f.advance(1500);
+				await f.poll(false);
+				await f.info._BackupSearchPromise;
+			}
 			expect(f.info.LastCleanBackupPlayerType).toBe("site");
 			f.advance(nextPollDelay);
 			expect(await f.poll(false)).toContain("/site/1080/");
@@ -872,9 +875,11 @@ describe("HD backup probation through playlist polling", () => {
 				type: "site",
 				cleanChecks: 1,
 			});
-			f.advance(1500);
-			await f.poll(!holding);
-			await f.info._BackupSearchPromise;
+			for (let look = 0; look < 4; look++) {
+				f.advance(1500);
+				await f.poll(!holding);
+				await f.info._BackupSearchPromise;
+			}
 			f.advance(1000);
 			expect(await f.poll(!holding)).toContain("/site/1080/");
 			expect(f.info.ActiveBackupPlayerType).toBe("site");
@@ -922,6 +927,10 @@ describe("HD backup probation through playlist polling", () => {
 			type: "site",
 			cleanChecks: 1,
 		});
+		for (let look = 0; look < 3; look++) {
+			f.advance(1500);
+			expect(await f.poll()).toContain("/autoplay/360/");
+		}
 		f.advance(1500);
 		expect(await f.poll()).toContain("/site/1080/");
 		expect(f.info.ActiveBackupPlayerType).toBe("site");
@@ -971,21 +980,35 @@ describe("HD backup probation through playlist polling", () => {
 			expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
 			expect(f.info.ActiveBackupPlayerType).toBe("autoplay");
 			expect(f.info._LivePlaylistTimeline.lastEndTime).toBe(start + 4000);
+			const promotionOffset = nextType === "site" ? 8000 : 10000;
+			for (let offset = 4000; offset < promotionOffset; offset += 2000) {
+				f.advance(1600);
+				bridgeOffset = offset;
+				siteOffset = nextType === "site" ? offset : 0;
+				embedOffset = offset;
+				await expect(f.poll()).resolves.toContain("/autoplay/360/");
+				expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+				expect(f.info._LivePlaylistTimeline.lastEndTime).toBe(
+					start + offset + 2000,
+				);
+			}
 			f.advance(1600);
-			bridgeOffset = 4000;
-			siteOffset = nextType === "site" ? 4000 : 0;
-			embedOffset = 4000;
+			bridgeOffset = promotionOffset;
+			siteOffset = nextType === "site" ? promotionOffset : 0;
+			embedOffset = promotionOffset;
 			const promoted = await f.poll();
 			expect(promoted).toContain(`/${nextType}/1080/`);
 			expect(promoted).not.toContain("stitched-ad");
 			expect(f.info.LastCleanBackupPlayerType).toBe(nextType);
-			expect(f.info._LivePlaylistTimeline.lastEndTime).toBe(start + 6000);
+			expect(f.info._LivePlaylistTimeline.lastEndTime).toBe(
+				start + promotionOffset + 2000,
+			);
 			expect(f.tokens).not.toContain("autoplay");
 		},
 	);
 
 	it.each([false, true])(
-		"completes the second HD check after 1.5 seconds with fallback disabled=%s",
+		"checks HD again after 1.5 seconds and promotes once it has stayed clean for 6 seconds with fallback disabled=%s",
 		async (disabled) => {
 			const f = setupProbation();
 			await f.poll();
@@ -999,8 +1022,23 @@ describe("HD backup probation through playlist polling", () => {
 			await f.poll();
 			expect(f.siteRequests()).toHaveLength(1);
 			f.advance(1);
-			expect(await f.poll()).toContain("/site/1080/");
+			expect(await f.poll()).toContain("/autoplay/360/");
 			expect(f.siteRequests()).toHaveLength(2);
+			expect(f.info._BackupProbation).toMatchObject({
+				type: "site",
+				startedAt: 1_000_000,
+				cleanChecks: 2,
+			});
+			f.advance(1_500);
+			expect(await f.poll()).toContain("/autoplay/360/");
+			f.advance(1_500);
+			expect(await f.poll()).toContain("/autoplay/360/");
+			f.advance(1_499);
+			expect(await f.poll()).toContain("/autoplay/360/");
+			expect(f.siteRequests()).toHaveLength(4);
+			f.advance(1);
+			expect(await f.poll()).toContain("/site/1080/");
+			expect(f.siteRequests()).toHaveLength(5);
 			expect(f.info.ActiveBackupPlayerType).toBe("site");
 		},
 	);
@@ -1008,11 +1046,13 @@ describe("HD backup probation through playlist polling", () => {
 	it("continues probation while clean native polls still wait for ad-end proof", async () => {
 		const f = setupProbation();
 		await f.poll();
-		f.advance(1_600);
-		const held = await f.poll(false);
-		expect(held).toContain("/autoplay/360/");
-		await f.info._BackupSearchPromise;
-		expect(f.siteRequests()).toHaveLength(2);
+		for (let look = 0; look < 4; look++) {
+			f.advance(1_600);
+			const held = await f.poll(false);
+			expect(held).toContain("/autoplay/360/");
+			await f.info._BackupSearchPromise;
+		}
+		expect(f.siteRequests().length).toBeGreaterThanOrEqual(5);
 		expect(f.info.LastCleanBackupPlayerType).toBe("site");
 	});
 
@@ -1092,7 +1132,7 @@ describe("HD backup probation through playlist polling", () => {
 	it("coalesces overlapping second checks while refreshing the bridge", async () => {
 		const f = setupProbation();
 		await f.poll();
-		f.advance(1_600);
+		f.advance(6_000);
 		const entered = deferred();
 		const release = deferred();
 		const originalFetch = f.fetch.getMockImplementation();
@@ -1130,7 +1170,7 @@ describe("HD backup probation through playlist polling", () => {
 		});
 		await f.context._findBackupStream(f.info, f.fetch);
 		expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
-		f.advance(1_500);
+		f.advance(4_500);
 		expect(await f.poll()).toContain("/site/1080/");
 	});
 
@@ -1187,10 +1227,18 @@ describe("HD backup probation through playlist polling", () => {
 		const probationAt = f.info._BackupProbation.at;
 		const second = f.poll();
 		await vi.advanceTimersByTimeAsync(2_000);
-		expect(await second).toContain("/site/1080/");
+		expect(await second).toContain("/autoplay/360/");
 		expect(siteRequestTimes).toHaveLength(2);
 		expect(siteRequestTimes[1] - probationAt).toBeGreaterThanOrEqual(1_500);
 		expect(siteRequestTimes[1] - probationAt).toBeLessThan(4_000);
+		let promoted = "";
+		for (let look = 0; look < 4 && !promoted.includes("/site/1080/"); look++) {
+			const next = f.poll();
+			await vi.advanceTimersByTimeAsync(2_000);
+			promoted = await next;
+		}
+		expect(promoted).toContain("/site/1080/");
+		expect(siteRequestTimes.at(-1) - probationAt).toBeGreaterThanOrEqual(6_000);
 		expect(f.tokens).toEqual(["site"]);
 	});
 });
@@ -1756,7 +1804,7 @@ describe("codec ordering and backup quality ownership", () => {
 			await lateStarted.promise;
 			gate.resolve();
 			await high;
-			now += 2000;
+			now += 6000;
 			await context._findBackupStream(info, fetch, 0, info.ResolutionList[1]);
 			expect(info.LastCleanBackupPlayerType).toBe("site");
 			lateGate.resolve();
@@ -1800,7 +1848,7 @@ describe("codec ordering and backup quality ownership", () => {
 			now += 9000;
 			await context._findBackupStream(info, fetch, 0, target);
 			expect(info.LastCleanBackupPlayerType).toBe("autoplay");
-			now += 2000;
+			now += 6000;
 			const started = deferred();
 			const gate = deferred();
 			const high = context._processM3U8(

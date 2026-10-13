@@ -10702,33 +10702,51 @@ describe("injected worker ad playlist validation", () => {
 				await workerFetch(masterUrl);
 				await workerFetch(highUrl);
 				ads = true;
-				const held = await (await workerFetch(lowUrl)).text();
+				let lowSettled = false;
+				const low = workerFetch(lowUrl)
+					.then((response) => response.text())
+					.then((text) => {
+						lowSettled = true;
+						return text;
+					});
 				await vi.advanceTimersByTimeAsync(1000);
-				const nextHold = await (await workerFetch(highUrl)).text();
-				expect(nextHold).toContain("__ttvab_empty_hold_segment.ts");
-				expect(nextHold).not.toContain("/native-");
+				const bridge = await (await workerFetch(highUrl)).text();
+				expect(bridge).toContain("/native-402.ts");
+				expect(bridge).not.toMatch(/CUE-OUT|__ttvab_empty_hold_segment/);
+				await vi.advanceTimersByTimeAsync(400);
+				expect(lowSettled).toBe(false);
+				await vi.advanceTimersByTimeAsync(1100);
+				expect(lowSettled).toBe(true);
+				const lowOutput = await low;
+				const high = await (await workerFetch(highUrl)).text();
 				const sequence = (text: string) =>
 					Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
-				expect(sequence(nextHold)).toBe(sequence(held));
-				expect(
-					nextHold.match(/__ttvab_empty_hold_segment\.ts[^\n]+/)?.[0],
-				).toBe(held.match(/__ttvab_empty_hold_segment\.ts[^\n]+/)?.[0]);
-				await vi.advanceTimersByTimeAsync(1500);
-				const pending = workerFetch(highUrl).then((response) =>
-					response.text(),
-				);
-				await vi.advanceTimersByTimeAsync(600);
-				const backup = await pending;
-				expect(backup).toContain("/backup-");
-				expect(backup).not.toContain("/native-");
-				expect(backup).not.toContain("__ttvab_empty_hold_segment.ts");
-				expect(sequence(backup)).toBeGreaterThan(sequence(nextHold));
+				for (const output of [lowOutput, high]) {
+					expect(output).toContain("/backup-");
+					expect(output).not.toContain("/native-");
+					expect(output).not.toContain("__ttvab_empty_hold_segment.ts");
+				}
+				expect(sequence(high)).toBe(sequence(lowOutput));
+				expect(sequence(lowOutput)).toBeGreaterThan(402);
 				expect(tokens).toEqual(["site"]);
-				const messages = (
+				const posted = (
 					runtime.scope.postMessage as ReturnType<typeof vi.fn>
-				).mock.calls.map(([value]) => value.message?.key);
+				).mock.calls.map(([value]) => value.message);
+				const messages = posted.map((message) => message?.key);
 				expect(messages.filter((key) => key === "AdBlocked")).toHaveLength(1);
 				expect(messages).not.toContain("ReloadPlayer");
+				expect(
+					posted
+						.filter((message) => message?.key === "LogEntry")
+						.map((message) => message.value.m)
+						.filter((message) =>
+							message.startsWith("[Continuity] ad-start backup wait "),
+						),
+				).toEqual([
+					expect.stringMatching(
+						/^\[Continuity\] ad-start backup wait served the live backup after 2\.\ds for live:testchannel$/,
+					),
+				]);
 			} finally {
 				harness.restore();
 				vi.clearAllTimers();
@@ -10859,7 +10877,7 @@ describe("injected worker ad playlist validation", () => {
 					type: "site",
 					cleanChecks: 1,
 				});
-				await vi.advanceTimersByTimeAsync(1500);
+				await vi.advanceTimersByTimeAsync(6000);
 				const promotion = poll();
 				await vi.advanceTimersByTimeAsync(1000);
 				const promoted = await promotion;
@@ -10961,23 +10979,44 @@ describe("injected worker ad playlist validation", () => {
 			);
 			await vi.advanceTimersByTimeAsync(2500);
 			ad = true;
-			const first = await (await workerFetch(nativeUrl)).text();
+			let firstSettled = false;
+			const pendingFirst = workerFetch(nativeUrl)
+				.then((response) => response.text())
+				.then((text) => {
+					firstSettled = true;
+					return text;
+				});
+			await vi.advanceTimersByTimeAsync(4500);
+			expect(firstSettled).toBe(false);
+			const info = (
+				state.StreamInfos as Record<string, Record<string, unknown>>
+			)["live:testchannel"];
+			expect(info.LastCleanBackupResolution).toBe("640x360");
+			expect(info._LastServedPlaylistKind).toBe("native");
+			await vi.advanceTimersByTimeAsync(600);
+			const first = await pendingFirst;
 			expect(first).toContain("__ttvab_empty_hold_segment.ts");
+			expect(first).not.toMatch(/backup-|stitched-ad|native-/);
 			const sequence = (text: string) =>
 				Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
 			const lastSequence = (text: string) =>
 				sequence(text) + (text.match(/^#EXTINF:/gm)?.length ?? 0) - 1;
 			let previous = lastSequence(first);
-			await vi.advanceTimersByTimeAsync(1500);
-			const info = (
-				state.StreamInfos as Record<string, Record<string, unknown>>
-			)["live:testchannel"];
-			expect(info.LastCleanBackupResolution).toBe("640x360");
 			const messages = () =>
 				(runtime.scope.postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
 					([value]) => value.message,
 				);
-			for (let poll = 0; poll < 5; poll++) {
+			expect(
+				messages()
+					.filter((message) => message.key === "LogEntry")
+					.map((message) => message.value.m)
+					.filter((message) =>
+						message.startsWith("[Continuity] ad-start backup wait "),
+					),
+			).toEqual([
+				"[Continuity] ad-start backup wait gave up; serving the silent hold after 5.0s for live:testchannel",
+			]);
+			for (let poll = 0; poll < 4; poll++) {
 				await vi.advanceTimersByTimeAsync(1100);
 				const output = await (await workerFetch(nativeUrl)).text();
 				expect(output).toContain("__ttvab_empty_hold_segment.ts");
@@ -11029,6 +11068,206 @@ describe("injected worker ad playlist validation", () => {
 			vi.clearAllTimers();
 		}
 	});
+
+	function setupAdStartBackupWait() {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		T<(scope: Record<string, unknown>) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		const masterUrl =
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8";
+		const nativeUrl = "https://video-weaver.example.ttvnw.net/native.m3u8";
+		const lowUrl = "https://edge.example/autoplay/index.m3u8";
+		const start = Date.parse("2026-10-12T03:45:24.423Z");
+		const control = { ad: false, fresh: false, nativeFetches: 0 };
+		const media = (backup: boolean) => {
+			const offset = backup && control.fresh ? 1 : 0;
+			return [
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:5",
+				`#EXT-X-MEDIA-SEQUENCE:${690 + offset}`,
+				"#EXT-X-DISCONTINUITY-SEQUENCE:0",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset * 4167).toISOString()}`,
+				...Array.from({ length: 7 }, (_, index) => [
+					"#EXTINF:4.167,live",
+					`https://edge.example/${backup ? "backup" : "native"}-${690 + offset + index}.ts`,
+				]).flat(),
+			].join("\n");
+		};
+		const fetch = vi.fn(
+			async (input: RequestInfo | URL, options?: RequestInit) => {
+				const url = new URL(String(input));
+				if (url.hostname === "gql.twitch.tv") {
+					const type = JSON.parse(String(options?.body)).variables.playerType;
+					await new Promise((resolve) => setTimeout(resolve, 1500));
+					return Response.json({
+						data: {
+							streamPlaybackAccessToken: { signature: "test", value: type },
+						},
+					});
+				}
+				if (url.hostname === "usher.ttvnw.net") {
+					const backup = url.searchParams.get("token") === "autoplay";
+					return new Response(
+						`#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=${backup ? "640x360" : "1920x1080"},VIDEO="${backup ? "360p" : "1080p60"}",CODECS="avc1.64002a,mp4a.40.2"\n${backup ? lowUrl : nativeUrl}`,
+					);
+				}
+				if (url.href === lowUrl) return new Response(media(true));
+				if (url.href === nativeUrl) {
+					control.nativeFetches++;
+					return new Response(
+						control.ad
+							? [
+									"#EXTM3U",
+									"#EXT-X-TARGETDURATION:5",
+									"#EXT-X-MEDIA-SEQUENCE:697",
+									'#EXT-X-DATERANGE:ID="midroll",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"',
+									"#EXT-X-TWITCH-PREFETCH:https://edge.example/stitched-ad-697.ts",
+								].join("\n")
+							: media(false),
+					);
+				}
+				return new Response(null, { status: 503 });
+			},
+		);
+		const runtime = startHarnessWorkerRuntime(harness.worker, fetch);
+		runtime.scope.Date = Date;
+		runtime.scope.navigator = { languages: ["en-US"], language: "en-US" };
+		runtime.deliverBootstrap();
+		const state = runtime.scope.__TTVAB_STATE__ as Record<string, unknown>;
+		Object.assign(state, {
+			PageMediaKey: "live:testchannel",
+			PreferredQualityGroup: "1080p60",
+			DisableAutoplayBackup: false,
+			DisableAdSpoofing: true,
+		});
+		const workerFetch = runtime.scope.fetch as typeof globalThis.fetch;
+		const messages = () =>
+			(runtime.scope.postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+				([value]) => value.message,
+			);
+		const logs = (prefix: string) =>
+			messages()
+				.filter((message) => message.key === "LogEntry")
+				.map((message) => message.value.m)
+				.filter((message) => message.startsWith(prefix));
+		const info = () =>
+			(state.StreamInfos as Record<string, Record<string, unknown>>)[
+				"live:testchannel"
+			];
+		return {
+			harness,
+			control,
+			state,
+			workerFetch,
+			masterUrl,
+			nativeUrl,
+			messages,
+			logs,
+			info,
+		};
+	}
+
+	it("serves a catching-up backup at the served end instead of starting a silent hold", async () => {
+		const f = setupAdStartBackupWait();
+		try {
+			await f.workerFetch(f.masterUrl);
+			expect(await (await f.workerFetch(f.nativeUrl)).text()).toContain(
+				"native-696.ts",
+			);
+			await vi.advanceTimersByTimeAsync(2500);
+			f.control.ad = true;
+			let settled = false;
+			const pending = f
+				.workerFetch(f.nativeUrl)
+				.then((response) => response.text())
+				.then((text) => {
+					settled = true;
+					return text;
+				});
+			await vi.advanceTimersByTimeAsync(2000);
+			expect(settled).toBe(false);
+			expect(f.info().LastCleanBackupResolution).toBe("640x360");
+			expect(f.info()._LastServedPlaylistKind).toBe("native");
+			expect(f.state.PinnedBackupPlayerType).toBeNull();
+			expect(
+				f
+					.messages()
+					.filter((message) => message.key === "BackupPlayerTypeSelected"),
+			).toHaveLength(0);
+			f.control.fresh = true;
+			await vi.advanceTimersByTimeAsync(1100);
+			expect(settled).toBe(true);
+			const output = await pending;
+			expect(output).not.toMatch(
+				/__ttvab_empty_hold|stitched-ad|native-|backup-69[0-6]\.ts/,
+			);
+			expect(output).toContain("backup-697.ts");
+			expect(output).toContain("#EXT-X-MEDIA-SEQUENCE:697");
+			expect(output.split("\n")).toContain("#EXT-X-DISCONTINUITY");
+			expect(f.info()._LastServedPlaylistKind).toBe("backup");
+			expect(f.info()._EmptyAdHoldWindow).toBeNull();
+			expect(f.state.PinnedBackupPlayerType).toBe("autoplay");
+			expect(
+				f
+					.messages()
+					.filter((message) => message.key === "BackupPlayerTypeSelected"),
+			).toHaveLength(1);
+			expect(f.control.nativeFetches).toBeGreaterThan(2);
+			expect(f.logs("[Continuity] ad-start backup wait ")).toEqual([
+				expect.stringMatching(
+					/^\[Continuity\] ad-start backup wait served the live backup after \d\.\ds for live:testchannel$/,
+				),
+			]);
+			expect(f.logs("[Continuity] waiting-for-live-backup ")).toHaveLength(0);
+		} finally {
+			f.harness.restore();
+			vi.clearAllTimers();
+		}
+	});
+
+	it.each(["abort", "navigation"])(
+		"stops the ad-start backup wait on %s without serving the backup",
+		async (change) => {
+			const f = setupAdStartBackupWait();
+			try {
+				await f.workerFetch(f.masterUrl);
+				await f.workerFetch(f.nativeUrl);
+				await vi.advanceTimersByTimeAsync(2500);
+				f.control.ad = true;
+				const controller = new AbortController();
+				const pending = f
+					.workerFetch(f.nativeUrl, { signal: controller.signal })
+					.then(
+						(response) => response.text(),
+						(error) => error,
+					);
+				await vi.advanceTimersByTimeAsync(1200);
+				if (change === "abort") controller.abort();
+				else
+					f.state.PagePlaybackContextGeneration =
+						Number(f.state.PagePlaybackContextGeneration) + 1;
+				f.control.fresh = true;
+				await vi.advanceTimersByTimeAsync(2000);
+				expect(await pending).toMatchObject({ name: "AbortError" });
+				expect(f.info()._LastServedPlaylistKind).toBe("native");
+				expect(f.info()._EmptyAdHoldWindow).toBeNull();
+				expect(f.state.PinnedBackupPlayerType).toBeNull();
+				expect(f.logs("[Continuity] ad-start backup wait ")).toEqual(
+					change === "abort"
+						? []
+						: [
+								expect.stringMatching(
+									/^\[Continuity\] ad-start backup wait stopped; failing the request after \d\.\ds for live:testchannel$/,
+								),
+							],
+				);
+			} finally {
+				f.harness.restore();
+				vi.clearAllTimers();
+			}
+		},
+	);
 
 	it.each([
 		{ backupOffset: 0, enhancedCodec: "" },
@@ -11971,18 +12210,24 @@ describe("injected worker ad playlist validation", () => {
 				expect(waiting).toContain("/autoplay/segment-501.ts");
 				expect(waiting).not.toContain("stitched-ad");
 				expect(info.ActiveBackupPlayerType).toBe("autoplay");
-				await vi.advanceTimersByTimeAsync(1500);
-				bridgeOffset = 4000;
-				siteOffset = 4000;
-				expect(await (await workerFetch(variantUrl)).text()).toContain(
-					"/site/",
-				);
+				let promoted = "";
+				const promotionPolls: string[] = [];
+				for (let look = 0; look < 6 && !promoted.includes("/site/"); look++) {
+					await vi.advanceTimersByTimeAsync(1500);
+					bridgeOffset += 2000;
+					siteOffset = bridgeOffset;
+					promoted = await (await workerFetch(variantUrl)).text();
+					promotionPolls.push(
+						promoted.includes("/site/") ? "site" : "autoplay",
+					);
+				}
+				expect(promotionPolls).toEqual(["autoplay", "autoplay", "site"]);
 				expect(info.ActiveBackupPlayerType).toBe("site");
 				expect(
 					nativeFetch.mock.calls.filter(([url]) =>
 						String(url).includes("/site/"),
 					),
-				).toHaveLength(3);
+				).toHaveLength(5);
 				expect(info.HevcReloadPendingAfterHold).toBe(true);
 				nativeHasAds = false;
 				const restored = () =>
@@ -12157,10 +12402,16 @@ describe("injected worker ad playlist validation", () => {
 			expect(await (await workerFetch(variantUrl)).text()).toContain(
 				"/autoplay/segment-501.ts",
 			);
-			await vi.advanceTimersByTimeAsync(1500);
-			bridgeOffset = 4000;
-			siteOffset = 4000;
-			expect(await (await workerFetch(variantUrl)).text()).toContain("/site/");
+			let promoted = "";
+			const promotionPolls: string[] = [];
+			for (let look = 0; look < 6 && !promoted.includes("/site/"); look++) {
+				await vi.advanceTimersByTimeAsync(1500);
+				bridgeOffset += 2000;
+				siteOffset = bridgeOffset;
+				promoted = await (await workerFetch(variantUrl)).text();
+				promotionPolls.push(promoted.includes("/site/") ? "site" : "autoplay");
+			}
+			expect(promotionPolls).toEqual(["autoplay", "autoplay", "site"]);
 			expect(info.ActiveBackupPlayerType).toBe("site");
 			expect(info.HevcReloadPendingAfterHold).toBe(true);
 			nativeHasAds = false;
