@@ -7057,6 +7057,18 @@ function _checkPostBreakWedge(
 		_disarmPostBreakWedgeWatch();
 		return false;
 	}
+	if (
+		_isNativeDocumentHidden({
+			ChannelName: safeChannel,
+			MediaKey: safeMediaKey,
+		})
+	) {
+		_PostBreakWedgeState.lastCurrentTime = -1;
+		_PostBreakWedgeState.lastTotalFrames = -1;
+		_PostBreakWedgeState.evidenceCount = 0;
+		_PostBreakWedgeState.healthyCount = 0;
+		return false;
+	}
 	let totalFrames = -1;
 	try {
 		totalFrames = Number(video.getVideoPlaybackQuality()?.totalVideoFrames);
