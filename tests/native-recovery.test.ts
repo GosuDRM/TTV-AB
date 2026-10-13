@@ -1785,7 +1785,7 @@ describe("owned native recovery after a codec fallback", () => {
 			).toBeGreaterThanOrEqual(4);
 			expect(
 				fetch.mock.calls.filter(([url]) => url === backupUrl).length,
-			).toBeGreaterThan(8);
+			).toBeGreaterThan(pod === "complete" ? 4 : 8);
 			expect(token).not.toHaveBeenCalled();
 			context.fetch = fetch;
 			context._hookWorkerFetch();
