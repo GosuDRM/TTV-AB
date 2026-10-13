@@ -4484,6 +4484,18 @@ function _getContiguousBufferedEnd(video, currentTime) {
 	return 0;
 }
 
+function _describeBufferedRanges(video) {
+	const ranges = [];
+	try {
+		const count = Math.min(6, Number(video?.buffered?.length) || 0);
+		for (let index = 0; index < count; index++)
+			ranges.push(
+				`${video.buffered.start(index).toFixed(2)}-${video.buffered.end(index).toFixed(2)}`,
+			);
+	} catch {}
+	return ranges.length > 0 ? ranges.join(", ") : "none";
+}
+
 function _seekPastBufferedGap(video, currentTime) {
 	if (!video || !(video.buffered?.length > 1)) return 0;
 	for (let bi = 0; bi < video.buffered.length; bi++) {
@@ -4524,10 +4536,11 @@ function _trySeekPastFrozenBufferGap(video, currentTime, readyState) {
 		return false;
 	}
 
+	const bufferedRanges = _describeBufferedRanges(video);
 	const jumped = _seekPastBufferedGap(video, currentTime);
 	if (jumped > 0) {
 		_log(
-			`Frozen playhead at ${currentTime.toFixed(3)}s with buffered gap; seeking ${jumped.toFixed(2)}s past it`,
+			`Frozen playhead at ${currentTime.toFixed(3)}s with buffered gap; seeking ${jumped.toFixed(2)}s past it (buffered ${bufferedRanges})`,
 			"warning",
 		);
 		_PlayerBufferState.gapJumpStuckTicks = 0;
@@ -6921,12 +6934,13 @@ function _checkInAdPlayheadFreeze(player, channel = null, mediaKey = null) {
 	const bufferDrained =
 		contiguousEnd - currentTime <
 		_getLowLatencyDangerZone(_getPlayerCore(player));
+	const bufferedRanges = _describeBufferedRanges(video);
 	const gapJumped = bufferDrained
 		? _seekPastBufferedGap(video, currentTime)
 		: 0;
 	if (gapJumped > 0) {
 		_log(
-			`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s; seeking ${gapJumped.toFixed(2)}s past buffered gap`,
+			`In-ad playhead frozen ${frozenSeconds}s at ${currentTime.toFixed(2)}s; seeking ${gapJumped.toFixed(2)}s past buffered gap (buffered ${bufferedRanges}; backup ${__TTVAB_STATE__?.PinnedBackupPlayerType || "none"})`,
 			"warning",
 		);
 		_resetInAdFreezeState(safeMediaKey);
