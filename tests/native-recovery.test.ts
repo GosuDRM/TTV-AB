@@ -305,54 +305,100 @@ describe("compatible native playlist return", () => {
 		},
 	);
 
-	it("waits for the next native segment instead of rebuilding when native is just short of the served HD backup", async () => {
+	it.each([
+		{
+			lagMs: 1500,
+			targetDuration: 2,
+			refetchCount: 1,
+			label: "its newest segment crosses",
+		},
+		{
+			lagMs: 3500,
+			targetDuration: 6,
+			refetchCount: 2,
+			label: "it trails by 1.5 seconds",
+		},
+	])(
+		"waits for the next native segment instead of rebuilding when native is just short of the served HD backup ($label)",
+		async ({ lagMs, targetDuration, refetchCount }) => {
+			const f = setupHdNativeReturn();
+			let sequence = 500;
+			const native = () =>
+				playlist(++sequence, "native")
+					.replace(
+						"#EXT-X-TARGETDURATION:2",
+						`#EXT-X-TARGETDURATION:${targetDuration}`,
+					)
+					.replace(
+						"#EXTINF:",
+						`#EXT-X-PROGRAM-DATE-TIME:${new Date(1791335710000 + Date.now() - lagMs).toISOString()}\n#EXTINF:`,
+					);
+			const originalFetch = f.fetch.getMockImplementation();
+			let refetches = 0;
+			f.fetch.mockImplementation(async (input, options) => {
+				if (String(input) !== nativeUrl || !f.restored())
+					return originalFetch(input, options);
+				refetches++;
+				f.advance(2000);
+				return new Response(native());
+			});
+			f.context._waitForAbortableDelay = vi.fn(async () => {});
+			const log = vi.fn();
+			f.context._log = log;
+			let output = "";
+			for (let index = 0; index < 40 && !f.restored(); index++) {
+				f.advance(2000);
+				output = await f.context._processM3U8(nativeUrl, native(), f.fetch);
+			}
+			const messages = log.mock.calls.map(([message]) => message);
+			expect(messages).toContain(
+				"[Trace] Native playlist verified clean after silent backup hold; restoring native stream by playlist",
+			);
+			expect(messages).toContain(
+				`[Continuity] native catch-up served fresh media after ${(refetchCount * 2).toFixed(1)}s (${refetchCount} refetch${refetchCount === 1 ? "" : "es"}) for live:testchannel`,
+			);
+			expect(
+				messages.find((message) => message.startsWith("[Break] ended ")),
+			).toMatch(/ -> native 1920x1080 @\d+\.\ds; native return by playlist$/);
+			expect(f.restored()).toMatchObject({
+				requiresReload: false,
+				continuePlayback: true,
+				refreshAccessToken: false,
+			});
+			expect(refetches).toBe(refetchCount);
+			expect(output).toContain(`native-${sequence + 2}.ts`);
+			expect(output).not.toMatch(/backup-|stitched-ad/);
+			expect(f.info._PendingPostAdNativeMaster).toMatchObject({
+				reloadAt: 0,
+				consumed: true,
+			});
+			expect(f.token).not.toHaveBeenCalled();
+		},
+	);
+
+	it("keeps the rebuild when native trails the served HD backup by more than a segment", async () => {
 		const f = setupHdNativeReturn();
 		let sequence = 500;
 		const native = () =>
 			playlist(++sequence, "native").replace(
 				"#EXTINF:",
-				`#EXT-X-PROGRAM-DATE-TIME:${new Date(1791335710000 + Date.now() - 1500).toISOString()}\n#EXTINF:`,
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(1791335710000 + Date.now() - 7000).toISOString()}\n#EXTINF:`,
 			);
-		const originalFetch = f.fetch.getMockImplementation();
-		let refetches = 0;
-		f.fetch.mockImplementation(async (input, options) => {
-			if (String(input) !== nativeUrl || !f.restored())
-				return originalFetch(input, options);
-			refetches++;
-			f.advance(2000);
-			return new Response(native());
-		});
 		f.context._waitForAbortableDelay = vi.fn(async () => {});
 		const log = vi.fn();
 		f.context._log = log;
-		let output = "";
 		for (let index = 0; index < 40 && !f.restored(); index++) {
 			f.advance(2000);
-			output = await f.context._processM3U8(nativeUrl, native(), f.fetch);
+			await f.context._processM3U8(nativeUrl, native(), f.fetch);
 		}
-		const messages = log.mock.calls.map(([message]) => message);
-		expect(messages).toContain(
-			"[Trace] Native playlist verified clean after silent backup hold; restoring native stream by playlist",
+		expect(log.mock.calls.map(([message]) => message)).toContain(
+			"[Trace] Native playlist verified clean after silent backup hold; reloading player after backup hold (native behind served backup)",
 		);
-		expect(messages).toContain(
-			"[Continuity] native catch-up served fresh media after 2.0s (1 refetch) for live:testchannel",
-		);
-		expect(
-			messages.find((message) => message.startsWith("[Break] ended ")),
-		).toMatch(/ -> native 1920x1080 @\d+\.\ds; native return by playlist$/);
 		expect(f.restored()).toMatchObject({
-			requiresReload: false,
-			continuePlayback: true,
+			requiresReload: true,
+			continuePlayback: false,
 			refreshAccessToken: false,
 		});
-		expect(refetches).toBe(1);
-		expect(output).toContain(`native-${sequence + 2}.ts`);
-		expect(output).not.toMatch(/backup-|stitched-ad/);
-		expect(f.info._PendingPostAdNativeMaster).toMatchObject({
-			reloadAt: 0,
-			consumed: true,
-		});
-		expect(f.token).not.toHaveBeenCalled();
 	});
 
 	it("keeps the rebuild when broadcast timing cannot prove a compatible return", async () => {

@@ -16781,6 +16781,44 @@ describe("worker watchdog visibility awareness", () => {
 		}
 	});
 
+	it("logs each late heartbeat once and a single hidden wait line before the 90 second recovery", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(100000);
+		g._isNativeDocumentHidden = () => true;
+		const media = document.createElement("video");
+		Object.defineProperty(media, "currentTime", {
+			configurable: true,
+			get: () => (Date.now() - 100000) / 1000,
+		});
+		g._getPrimaryMediaElement = () => media;
+		g._installPageSideM3U8Override = () => {};
+		g._doPlayerTask = vi.fn(() => false);
+		const previousLog = g._log;
+		const log = vi.fn();
+		g._log = log;
+		const worker = makeTrackedWorker();
+		try {
+			startWatchdog();
+			vi.advanceTimersByTime(90000);
+			const lateLogs = log.mock.calls
+				.map(([message]) => String(message))
+				.filter((message) => message.startsWith("Worker heartbeat late"));
+			expect(lateLogs).toEqual([
+				"Worker heartbeat late (1/6); pinging again",
+				"Worker heartbeat late (2/6); pinging again",
+				"Worker heartbeat late (3/6); pinging again",
+				"Worker heartbeat late (4/6); pinging again",
+				"Worker heartbeat late (5/6); pinging again",
+				"Worker heartbeat late while hidden; waiting up to 90s before recovery",
+			]);
+			expect(worker.__TTVABCrashed).toBeUndefined();
+			vi.advanceTimersByTime(10000);
+			expect(worker.__TTVABCrashed).toBe(true);
+		} finally {
+			g._log = previousLog;
+		}
+	});
+
 	it("recovers a silent hidden worker when playback stops advancing", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(100000);

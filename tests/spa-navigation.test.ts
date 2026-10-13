@@ -86,7 +86,36 @@ describe("bounded diagnostic checkpoints", () => {
 		).toBeLessThanOrEqual(24 * 1024);
 		expect(detail.entries.at(-1).t).toBe(1000);
 		vi.advanceTimersByTime(15000);
+		expect(checkpoint()).toBe(false);
+		(g.__TTVAB_LOGS__ as Array<Record<string, unknown>>).push({
+			t: 1001,
+			l: "info",
+			m: "new entry",
+		});
 		expect(checkpoint()).toBe(true);
+		expect(send.mock.calls.at(-1)[1].entries.at(-1).t).toBe(1001);
+	});
+
+	it("skips unchanged watchdog checkpoints for up to a minute", () => {
+		const checkpoint = T<(force?: boolean) => boolean>(
+			"_checkpointPageDiagnostics",
+		);
+		const send = g._sendBridgeMessage as ReturnType<typeof vi.fn>;
+		expect(checkpoint()).toBe(true);
+		for (let elapsed = 15000; elapsed < 60000; elapsed += 15000) {
+			vi.advanceTimersByTime(15000);
+			expect(checkpoint()).toBe(false);
+		}
+		vi.advanceTimersByTime(15000);
+		expect(checkpoint()).toBe(true);
+		expect(send).toHaveBeenCalledTimes(2);
+		const logs = g.__TTVAB_LOGS__ as Array<Record<string, unknown>>;
+		logs.splice(0, 1);
+		logs.push({ t: 1001, l: "info", m: "trimmed and replaced" });
+		vi.advanceTimersByTime(15000);
+		expect(checkpoint()).toBe(true);
+		expect(checkpoint(true)).toBe(true);
+		expect(send).toHaveBeenCalledTimes(4);
 	});
 
 	it("flushes a failure immediately after an ordinary checkpoint", () => {
