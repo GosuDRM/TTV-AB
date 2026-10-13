@@ -128,6 +128,7 @@ function _resetStreamAdState(
 		}
 	}
 	info.SpoofedAdIds?.clear?.();
+	info.BackupAdMarkedCounts?.clear?.();
 	info.ObservedAdPodIds?.clear?.();
 	info.ExpectedAdPodLength = 0;
 	info.MaxObservedAdPodPosition = 0;
@@ -154,6 +155,7 @@ function _resetStreamAdState(
 	info.IsHoldingBackupAfterAd = false;
 	info.SilentBackupHoldStartedAt = 0;
 	info.LastSilentBackupHoldLogAt = 0;
+	info.LastSilentBackupHoldLogMessage = null;
 	info.LastNativeRecoveryHoldLogAt = 0;
 	info.NativeRecoveryProbeStreamUrl = null;
 	info.NativeRecoveryProbeMediaKey = null;
@@ -353,13 +355,25 @@ function _markBackupPlayerRetryCooldown(
 		return 0;
 	}
 
-	const retryAt = Date.now() + _getBackupPlayerRetryCooldownMs(reason);
+	let cooldownMs = _getBackupPlayerRetryCooldownMs(reason);
+	if (reason === "ad-marked" && playerType !== "autoplay") {
+		if (!(info.BackupAdMarkedCounts instanceof Map)) {
+			info.BackupAdMarkedCounts = new Map();
+		}
+		const adMarkedCount =
+			Math.max(0, Number(info.BackupAdMarkedCounts.get(playerType)) || 0) + 1;
+		info.BackupAdMarkedCounts.set(playerType, adMarkedCount);
+		if (adMarkedCount >= 5) cooldownMs = Math.max(cooldownMs, 60000);
+		else if (adMarkedCount >= 3) cooldownMs = Math.max(cooldownMs, 30000);
+	}
+	const retryAt = Date.now() + cooldownMs;
 	info.FailedBackupPlayerTypes.set(playerType, retryAt);
 	return retryAt;
 }
 
 function _clearBackupPlayerRetryCooldown(info: TTVABStreamInfo, playerType) {
 	info?.FailedBackupPlayerTypes?.delete?.(playerType);
+	info?.BackupAdMarkedCounts?.delete?.(playerType);
 }
 
 function _isBackupPlayerRetryCoolingDown(info: TTVABStreamInfo, playerType) {
@@ -1204,16 +1218,21 @@ function _startPendingBackupQualityProbe(
 	) {
 		return false;
 	}
-	_log(
-		foregroundQualityProbeAt
-			? "[Trace] Playback returned to foreground; probing normal-quality backup while the clean bridge keeps refreshing"
-			: qualityProbeRetry
-				? "[Trace] Retrying normal-quality backup while the clean bridge keeps refreshing"
-				: qualityProbeDue
-					? "[Trace] Autoplay dwell completed; probing normal-quality backup while the clean bridge keeps refreshing"
-					: "[Trace] Continuing the pending clean backup check while the bridge keeps refreshing",
-		"info",
+	const hdRetriesCapped = Boolean(
+		__TTVAB_STATE__?.DisableAutoplayBackup !== true &&
+			(Number(info._BackupPinFlipCount) || 0) >= 2,
 	);
+	if (!hdRetriesCapped)
+		_log(
+			foregroundQualityProbeAt
+				? "[Trace] Playback returned to foreground; probing normal-quality backup while the clean bridge keeps refreshing"
+				: qualityProbeRetry
+					? "[Trace] Retrying normal-quality backup while the clean bridge keeps refreshing"
+					: qualityProbeDue
+						? "[Trace] Autoplay dwell completed; probing normal-quality backup while the clean bridge keeps refreshing"
+						: "[Trace] Continuing the pending clean backup check while the bridge keeps refreshing",
+			"info",
+		);
 	const backupSearchEpoch = info.BackupSearchEpoch;
 	const cycleStartedAt = info.VisibleAdStartedAt;
 	const pageMediaKey = __TTVAB_STATE__.PageMediaKey;
@@ -1379,6 +1398,32 @@ function _isExactNativeRecoveryCandidateOwned(
 	);
 }
 
+function _isCurrentAdPodComplete(info: TTVABStreamInfo) {
+	const pod = info?.CurrentAdPod?.length > 0 ? info.CurrentAdPod : null;
+	const expectedLength = Math.max(
+		0,
+		Math.trunc(Number(pod ? pod.length : info?.ExpectedAdPodLength) || 0),
+	);
+	if (expectedLength <= 0) return false;
+	const observedAds = pod
+		? pod.adIds.size
+		: info.ObservedAdPodIds instanceof Set
+			? info.ObservedAdPodIds.size
+			: 0;
+	const maxPosition = Math.max(
+		0,
+		Math.trunc(
+			Number(pod ? pod.maxPosition : info.MaxObservedAdPodPosition) || 0,
+		),
+	);
+	const zeroBased =
+		pod?.zeroPosition === true || info.ObservedZeroAdPodPosition === true;
+	return (
+		observedAds >= expectedLength ||
+		(zeroBased ? maxPosition + 1 : maxPosition) >= expectedLength
+	);
+}
+
 function _advanceExactNativeRecoveryCandidate(
 	info: TTVABStreamInfo,
 	candidateText,
@@ -1422,14 +1467,21 @@ function _advanceExactNativeRecoveryCandidate(
 		return "pending";
 	}
 
+	const continuesVisibleProof = Boolean(
+		stage === "hold" &&
+			info.NativeRecoveryCandidateStage === "visible" &&
+			_isCurrentAdPodComplete(info),
+	);
 	const sameCandidate = Boolean(
 		info.NativeRecoveryCandidateUrl === exactCandidateUrl &&
 			info.NativeRecoveryCandidateMediaKey === mediaKey &&
 			Math.max(0, Number(info.NativeRecoveryCandidateCycleStartedAt) || 0) ===
 				cycleStartedAt &&
-			info.NativeRecoveryCandidateStage === stage,
+			(info.NativeRecoveryCandidateStage === stage || continuesVisibleProof),
 	);
-	if (!sameCandidate) {
+	if (sameCandidate) {
+		info.NativeRecoveryCandidateStage = stage;
+	} else {
 		_resetNativeRecoveryCandidateState(info);
 		info.NativeRecoveryCandidateUrl = exactCandidateUrl;
 		info.NativeRecoveryCandidateMediaKey = mediaKey;
@@ -1512,6 +1564,14 @@ function _isNativeRecoveryCodecHandoffReady(
 	);
 }
 
+function _shouldLogAdEndBounce(info: TTVABStreamInfo) {
+	const bounces = Math.max(
+		0,
+		Math.trunc(Number(info?.AdEndConfirmEscalation) || 0),
+	);
+	return bounces <= 2 || bounces % 10 === 0;
+}
+
 async function _isAdEndStable(
 	info: TTVABStreamInfo,
 	realFetch,
@@ -1534,7 +1594,9 @@ async function _isAdEndStable(
 		info.PendingAdEndAt = now;
 		info.CleanPlaylistCount = 0;
 		info.AdEndMarkerBounceLogged = false;
-		_log("[Trace] Candidate ad end detected", "info");
+		if (_shouldLogAdEndBounce(info)) {
+			_log("[Trace] Candidate ad end detected", "info");
+		}
 	}
 
 	info.CleanPlaylistCount =
@@ -4452,7 +4514,6 @@ async function _canReloadNativePlayerAfterAd(
 
 		const readyCount = _markNativeRecoveryReady(info, nativePlayerType);
 		if (readyCount < requiredCleanProbes) {
-			_markNativeRecoveryProbeFailed(info);
 			_log(
 				`[Trace] Native recovery ready (${nativePlayerType}) ${readyCount}/${requiredCleanProbes}`,
 				"info",
@@ -4535,7 +4596,20 @@ function _createStreamInfo(
 			Number(podProgress?.maxAdPodPosition) || 0,
 		),
 		ObservedZeroAdPodPosition: podProgress?.observedZeroAdPodPosition === true,
-		CurrentAdPod: null,
+		CurrentAdPod: (() => {
+			const pod = _getAdPodSnapshot(podProgress?.pod);
+			return pod
+				? {
+						key: pod.key,
+						length: pod.length,
+						adIds: new Set(pod.adIds),
+						spoofedAdIds: new Set<string>(),
+						maxPosition: pod.maxPosition,
+						zeroPosition: pod.zeroPosition,
+						completeSent: false,
+					}
+				: null;
+		})(),
 		LastAdPodProgressAt: Math.max(
 			0,
 			Number(podProgress?.updatedAt) || 0,
@@ -4547,6 +4621,8 @@ function _createStreamInfo(
 		_IncompletePodCandidateUrl: null,
 		MeasuredAdIds: new Set(),
 		FailedBackupPlayerTypes: new Map(),
+		BackupAdMarkedCounts: new Map(),
+		_ReportedLiveStreamEnded: null,
 		LastSessionNeutralBackupProbeCycleStartedAt: 0,
 		Urls: Object.create(null),
 		ResolutionList: [],
@@ -4585,6 +4661,7 @@ function _createStreamInfo(
 		IsHoldingBackupAfterAd: false,
 		SilentBackupHoldStartedAt: 0,
 		LastSilentBackupHoldLogAt: 0,
+		LastSilentBackupHoldLogMessage: null,
 		LastNativeRecoveryProbeAt: 0,
 		BackupVariantUrls: new Set(),
 		EnhancedBackupVariantUrls: new Set(),
@@ -6264,6 +6341,34 @@ async function _processM3U8Attempt(
 	}
 }
 
+function _reportLiveStreamStatus(info: TTVABStreamInfo, text) {
+	if (
+		info?.MediaType !== "live" ||
+		typeof text !== "string" ||
+		text.includes("#EXT-X-STREAM-INF")
+	)
+		return false;
+	const ended = text.includes("#EXT-X-ENDLIST");
+	if (!ended && !_playlistHasMediaSegments(text)) return false;
+	if (info._ReportedLiveStreamEnded === ended) return false;
+	info._ReportedLiveStreamEnded = ended;
+	if (ended) {
+		_log("[Trace] Live stream ended; Twitch's playlist is final", "info");
+	}
+	if (typeof self === "undefined" || !self.postMessage) return true;
+	_postWorkerBridgeMessage(
+		self,
+		_createPageScopedWorkerEvent({
+			key: "LiveStreamStatus",
+			ended,
+			observedAt: Date.now(),
+			channel: info.ChannelName,
+			mediaKey: info.MediaKey,
+		}),
+	);
+	return true;
+}
+
 async function _processM3U8Core(
 	url,
 	text,
@@ -6357,6 +6462,8 @@ async function _processM3U8Core(
 				_playlistHasKnownAdSegments(text) ||
 				__TTVAB_STATE__.SimulatedAdsDepth > 0),
 	);
+
+	if (!isBackupUrl) _reportLiveStreamStatus(info, text);
 
 	if (isBackupUrl && !backupPlaylistHasAds) {
 		return text;
@@ -6685,12 +6792,14 @@ async function _processM3U8Core(
 		info.IsHoldingBackupAfterAd = false;
 		info.SilentBackupHoldStartedAt = 0;
 		info.LastSilentBackupHoldLogAt = 0;
+		info.LastSilentBackupHoldLogMessage = null;
 		info.ConsecutiveFailedNativeProbes = 0;
 		__TTVAB_STATE__.CurrentAdChannel = info.ChannelName;
 		__TTVAB_STATE__.CurrentAdMediaKey = info.MediaKey;
 		__TTVAB_STATE__.LastAdDetectedAt = now;
 		info.FailedBackupPlayerTypes?.clear?.();
 		if (cycleChanged) {
+			info.BackupAdMarkedCounts?.clear?.();
 			info.AdRollContext = null;
 			info._AdCycleRequestController?.abort?.();
 			info._AdCycleRequestController =
@@ -6868,6 +6977,7 @@ async function _processM3U8Core(
 		info.IsHoldingBackupAfterAd = true;
 		info.SilentBackupHoldStartedAt = enteredAt;
 		info.LastSilentBackupHoldLogAt = enteredAt;
+		info.LastSilentBackupHoldLogMessage = null;
 		info.IsUsingBackupStream = true;
 		info.ActiveBackupPlayerType = heldBackupPlayerType;
 		info.ActiveBackupResolution = heldBackupResolution || null;
@@ -7237,24 +7347,19 @@ async function _processM3U8Core(
 			const holdElapsed =
 				now - Math.max(0, Number(info.SilentBackupHoldStartedAt) || 0);
 			const holdMaxMs = _getResolvedSilentBackupHoldMaxMs();
+			const holdMaxReached = holdMaxMs > 0 && holdElapsed >= holdMaxMs;
+			const holdLogMessage = holdMaxReached
+				? "[Trace] Silent backup hold max duration reached; keeping clean backup until native recovery verifies clean"
+				: hasAds
+					? "[Trace] Native playlist still ad-marked during silent backup hold; continuing clean backup stream"
+					: "[Trace] Native recovery not yet stable during silent backup hold; continuing clean backup stream";
 			if (
-				holdMaxMs > 0 &&
-				holdElapsed >= holdMaxMs &&
-				now - lastLogAt >= 15000
+				info.LastSilentBackupHoldLogMessage !== holdLogMessage ||
+				now - lastLogAt >= 60000
 			) {
 				info.LastSilentBackupHoldLogAt = now;
-				_log(
-					"[Trace] Silent backup hold max duration reached; keeping clean backup until native recovery verifies clean",
-					"warning",
-				);
-			} else if (now - lastLogAt >= 15000) {
-				info.LastSilentBackupHoldLogAt = now;
-				_log(
-					hasAds
-						? "[Trace] Native playlist still ad-marked during silent backup hold; continuing clean backup stream"
-						: "[Trace] Native recovery not yet stable during silent backup hold; continuing clean backup stream",
-					hasAds ? "warning" : "info",
-				);
+				info.LastSilentBackupHoldLogMessage = holdLogMessage;
+				_log(holdLogMessage, holdMaxReached || hasAds ? "warning" : "info");
 			}
 			const forceRefreshAt =
 				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
@@ -7367,6 +7472,7 @@ async function _processM3U8Core(
 		info.IsHoldingBackupAfterAd = false;
 		info.SilentBackupHoldStartedAt = 0;
 		info.LastSilentBackupHoldLogAt = 0;
+		info.LastSilentBackupHoldLogMessage = null;
 		_log(
 			"[Trace] Silent backup hold lost cached backup; resuming visible ad recovery",
 			"warning",
@@ -7452,7 +7558,12 @@ async function _processM3U8Core(
 			info.LastAdEndBounceAt = now;
 			info.AdEndConfirmEscalation =
 				(Number(info.AdEndConfirmEscalation) || 0) + 1;
-			_log("[Trace] Ad markers returned before ad-end stabilized", "info");
+			if (_shouldLogAdEndBounce(info)) {
+				_log(
+					`[Trace] Ad markers returned before ad-end stabilized${info.AdEndConfirmEscalation > 1 ? ` (${info.AdEndConfirmEscalation} times this break)` : ""}`,
+					"info",
+				);
+			}
 		}
 
 		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
@@ -9444,7 +9555,7 @@ async function _searchBackupStream(
 				foregroundQualityProbeAttempted = true;
 				info._ForegroundQualityProbeAppliedAt = foregroundQualityProbeAt;
 			}
-			_log(`[Trace] Checking: ${pt}`, "info");
+			_log(`[Trace] Checking: ${pt}`, "debug");
 			let retryWithoutViewerHeaders = false;
 
 			for (let j = 0; j < 2 || retryWithoutViewerHeaders; j++) {

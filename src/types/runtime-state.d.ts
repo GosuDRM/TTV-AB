@@ -1,4 +1,13 @@
+type TTVABAdPodSnapshot = {
+	key: string;
+	length: number;
+	adIds: string[];
+	maxPosition: number;
+	zeroPosition: boolean;
+};
+
 type TTVABAdPodProgress = {
+	pod?: TTVABAdPodSnapshot | null;
 	adIds: string[];
 	expectedPodLength: number;
 	maxAdPodPosition: number;
@@ -89,6 +98,8 @@ interface TTVABRuntimeState extends TTVABPlaybackState {
 	LastPlayerReloadAt: number;
 	LastPlayerReloadAtByMediaKey: Record<string, number>;
 	LastAdDetectedAt: number;
+	EndedLiveMediaKey: string | null;
+	EndedLiveAt: number;
 	LastAdRecoveryReloadAt: number;
 	LastAdRecoveryResumeAt: number;
 	ShouldResumeAfterAd: boolean;
@@ -117,7 +128,8 @@ interface TTVABRuntimeState extends TTVABPlaybackState {
 	_AdRecoveryConsecutiveFailures: number;
 	LoggedAdSpoofNoMatch: boolean;
 	LoggedAdSpoofNoToken: boolean;
-	LoggedAdSpoofBadStatus: boolean;
+	AdSpoofFailureCount: number;
+	LastAdSpoofFailureLogAt: number;
 	RequestMediaBootstrapRecovery?: (
 		context: TTVABPlaybackContextInput,
 		cycleStartedAt: number,

@@ -53,7 +53,8 @@ function _isWorkerCommand(message: PlainObject): message is TTVABWorkerCommand {
 				}) &&
 				(value.adIds === undefined ||
 					(Array.isArray(value.adIds) &&
-						value.adIds.every((id) => typeof id === "string")))
+						value.adIds.every((id) => typeof id === "string"))) &&
+				_isAdPodSnapshot(value.pod)
 			);
 		case "ClearAdPodProgress":
 			return (

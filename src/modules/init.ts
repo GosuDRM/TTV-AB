@@ -262,44 +262,14 @@ function _collectPageLogEntries(
 			const isMilestone = Boolean(
 				retainRecoveryMilestones &&
 					milestones.size < 12 &&
-					typeof source.m === "string" &&
-					/Ad blocked!|Ad detected, blocking|Using backup:|Native playlist (?:verified clean|ready)|Native playback restored|Post-ad recovery reached|Player still stalling after ad|Player source reload failed/.test(
-						source.m.slice(0, 4000),
-					),
+					((typeof source.m === "string" &&
+						/Ad blocked!|Ad detected, blocking|Using backup:|Native playlist (?:verified clean|ready)|Native playback restored|Post-ad recovery reached|Player still stalling after ad|Player source reload failed/.test(
+							source.m.slice(0, 4000),
+						)) ||
+						_isPageLogMilestone(source)),
 			);
 			if (entries.length >= maxEntries && !isMilestone) continue;
-			const rawTimestamp = _getSafePageLogNumber(source.t, 0);
-			const timestamp =
-				rawTimestamp >= 0 && rawTimestamp <= 8640000000000000
-					? Math.trunc(rawTimestamp)
-					: 0;
-			const rawLevel =
-				typeof source.l === "string"
-					? _getSafePageLogString(source.l, 16).toLowerCase()
-					: "info";
-			const level = ["debug", "info", "success", "warning", "error"].includes(
-				rawLevel,
-			)
-				? rawLevel
-				: "info";
-			const message =
-				typeof source.m === "string"
-					? _getSafePageLogString(source.m, 4000)
-					: "[Invalid log message]";
-			const entry: PlainObject = { t: timestamp, l: level, m: message };
-			if (source.w === true) {
-				entry.w = true;
-				const generation = Math.max(
-					0,
-					Math.min(1000000, Math.trunc(_getSafePageLogNumber(source.g, 0))),
-				);
-				if (generation > 0) entry.g = generation;
-				const mediaKey =
-					typeof source.k === "string"
-						? _getSafePageLogString(source.k, 160).replace(/\n/g, "")
-						: "";
-				if (mediaKey) entry.k = mediaKey;
-			}
+			const entry = _toPageLogExportEntry(source);
 			const entryBytes = _getPageLogEntryByteLength(entry);
 			if (retainRecoveryMilestones && entryBytes + 2 > maxBytes) continue;
 			if (retainRecoveryMilestones && isMilestone) {
@@ -330,11 +300,79 @@ function _collectPageLogEntries(
 		} catch {}
 	}
 	entries.reverse();
+	const bufferedEntries = entries.length;
+	if (!retainRecoveryMilestones) {
+		const droppedEntries = Math.max(
+			0,
+			Math.trunc(_getSafePageLogNumber(globalThis.__TTVAB_LOGS_DROPPED__, 0)),
+		);
+		const earlierEntries: PlainObject[] = [];
+		try {
+			const trimmedMilestones = Array.isArray(
+				globalThis.__TTVAB_LOG_MILESTONES__,
+			)
+				? globalThis.__TTVAB_LOG_MILESTONES__.slice(-40)
+				: [];
+			for (const source of trimmedMilestones) {
+				if (!source || typeof source !== "object" || Array.isArray(source))
+					continue;
+				const entry = _toPageLogExportEntry(source);
+				const entryBytes = _getPageLogEntryByteLength(entry);
+				if (usedBytes + entryBytes > maxBytes) break;
+				earlierEntries.push(entry);
+				usedBytes += entryBytes;
+			}
+		} catch {}
+		if (droppedEntries > 0) {
+			earlierEntries.push({
+				t: Number(entries[0]?.t ?? earlierEntries.at(-1)?.t) || 0,
+				l: "info",
+				m: `[Log] ${droppedEntries} older entries were trimmed from this tab's log${earlierEntries.length > 0 ? `; ${earlierEntries.length} error and ad break milestones from them are kept above` : ""}`,
+			});
+		}
+		entries.unshift(...earlierEntries);
+	}
 
 	return {
 		entries,
-		truncatedEntries: Math.max(0, length - entries.length),
+		truncatedEntries: Math.max(0, length - bufferedEntries),
 	};
+}
+
+function _toPageLogExportEntry(source: PlainObject): PlainObject {
+	const rawTimestamp = _getSafePageLogNumber(source.t, 0);
+	const timestamp =
+		rawTimestamp >= 0 && rawTimestamp <= 8640000000000000
+			? Math.trunc(rawTimestamp)
+			: 0;
+	const rawLevel =
+		typeof source.l === "string"
+			? _getSafePageLogString(source.l, 16).toLowerCase()
+			: "info";
+	const level = ["debug", "info", "success", "warning", "error"].includes(
+		rawLevel,
+	)
+		? rawLevel
+		: "info";
+	const message =
+		typeof source.m === "string"
+			? _getSafePageLogString(source.m, 4000)
+			: "[Invalid log message]";
+	const entry: PlainObject = { t: timestamp, l: level, m: message };
+	if (source.w === true) {
+		entry.w = true;
+		const generation = Math.max(
+			0,
+			Math.min(1000000, Math.trunc(_getSafePageLogNumber(source.g, 0))),
+		);
+		if (generation > 0) entry.g = generation;
+		const mediaKey =
+			typeof source.k === "string"
+				? _getSafePageLogString(source.k, 160).replace(/\n/g, "")
+				: "";
+		if (mediaKey) entry.k = mediaKey;
+	}
+	return entry;
 }
 
 function _getSafePageLogUrl() {
@@ -867,10 +905,15 @@ function _initToggleListener() {
 }
 
 function _hookSpaNavigation() {
+	const getPageMediaKey = () =>
+		typeof __TTVAB_STATE__ === "undefined"
+			? null
+			: (__TTVAB_STATE__?.PageMediaKey ?? null);
 	const sync = () => {
 		try {
+			const previousMediaKey = getPageMediaKey();
 			_syncPagePlaybackContext({ broadcast: true });
-			_clearAdTimerOverlay();
+			if (getPageMediaKey() !== previousMediaKey) _clearAdTimerOverlay();
 		} catch (error) {
 			_log(
 				`Navigation sync failed: ${error?.message ?? String(error)}`,

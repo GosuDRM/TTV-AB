@@ -3,17 +3,84 @@
 let _debugLogging = false;
 
 function _formatLogText(value) {
+	const controlCharacters =
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: Strip control characters before credential matching.
+		/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g;
+	const sensitiveKey =
+		/^(?:auth(?:orization)?|bearer|clientid|clientintegrity|clientsession(?:id)?|cookie|setcookie|deviceid|did|integrity|nauth(?:sig)?|oauth(?:token)?|accesstoken|refreshtoken|session(?:id)?|sig(?:nature)?|token|uniqueid|userid|uid|xauthtoken|xcsrftoken|xdeviceid)$/i;
+	const redact = (source) =>
+		source
+			.slice(0, 4000)
+			.replace(controlCharacters, "")
+			.replace(/(?:blob:)?https?:\/\/[^\s<>"']+/gi, (rawUrl) => {
+				if (!rawUrl.includes("@")) return rawUrl;
+				try {
+					const blob = rawUrl.toLowerCase().startsWith("blob:");
+					const url = new URL(blob ? rawUrl.slice(5) : rawUrl);
+					if (!url.username && !url.password) return rawUrl;
+					url.username = "";
+					url.password = "";
+					return `${blob ? "blob:" : ""}${url.href}`;
+				} catch {
+					return "[redacted-url]";
+				}
+			})
+			.replace(
+				/([?&#])([^=&#\s"'<>]+)=([^&#\s"'<>]*)/g,
+				(match, separator, key) => {
+					try {
+						return sensitiveKey.test(
+							decodeURIComponent(key)
+								.replace(controlCharacters, "")
+								.replace(/[-_\s]/g, ""),
+						)
+							? `${separator}${key}=[redacted]`
+							: match;
+					} catch {
+						return `${separator}${key}=[redacted]`;
+					}
+				},
+			)
+			.replace(
+				/(\b(?:cookie|set[-_ ]?cookie)\b["']?\s*:\s*["']?)[^\r\n"']+/gi,
+				"$1[redacted]",
+			)
+			.replace(
+				/(\b(?:auth(?:orization)?|client[-_ ]?id|client[-_ ]?integrity|client[-_ ]?session(?:[-_ ]?id)?|device[-_ ]?id|did|integrity|nauth(?:sig)?|oauth(?:[-_ ]?token)?|access[-_ ]?token|refresh[-_ ]?token|session(?:[-_ ]?id)?|sig(?:nature)?|token|unique[-_ ]?id|user[-_ ]?id|uid|x[-_ ]?auth[-_ ]?token|x[-_ ]?csrf[-_ ]?token|x[-_ ]?device[-_ ]?id)\b["']?\s*[:=]\s*)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|(?:basic\s+|bearer\s+|oauth\s+)?[^,&\s}"']+)/gi,
+				(_match, prefix, credential) => {
+					const quote = credential[0];
+					return `${prefix}${quote === '"' || quote === "'" ? `${quote}[redacted]${quote}` : "[redacted]"}`;
+				},
+			)
+			.replace(/\b(basic|bearer|oauth)\s+[a-z0-9._~+/=-]+/gi, "$1 [redacted]")
+			.slice(0, 4000);
 	let text = "[Unserializable log value]";
 	try {
+		if (
+			typeof value === "string" &&
+			value.length <= 4000 &&
+			/^\s*(?:\{|\[\s*[[{"\d-])/.test(value)
+		) {
+			try {
+				value = JSON.parse(value);
+			} catch {}
+		}
 		if (typeof value === "string") {
 			text = value;
 		} else if (value && typeof value === "object") {
 			const seen = new WeakSet();
 			let remainingNodes = 96;
+			let remainingCharacters = 4000;
 			const normalize = (nestedValue, depth) => {
+				if (remainingCharacters <= 0) return "[Truncated]";
 				if (nestedValue === null) return null;
 				if (typeof nestedValue === "string") {
-					return nestedValue.slice(0, 1000);
+					const bounded = nestedValue.slice(
+						0,
+						Math.min(1000, remainingCharacters),
+					);
+					remainingCharacters -= bounded.length;
+					return redact(bounded);
 				}
 				if (
 					typeof nestedValue === "number" ||
@@ -52,6 +119,10 @@ function _formatLogText(value) {
 					const itemCount = Math.min(24, length);
 					const result = [];
 					for (let index = 0; index < itemCount; index += 1) {
+						if (remainingCharacters <= 0) {
+							result.push("[Truncated]");
+							break;
+						}
 						try {
 							result.push(normalize(nestedValue[index], depth + 1));
 						} catch {
@@ -65,22 +136,44 @@ function _formatLogText(value) {
 				}
 				const result = Object.create(null);
 				let propertyCount = 0;
+				const appendProperty = (rawKey) => {
+					const key = redact(String(rawKey).slice(0, 120));
+					propertyCount += 1;
+					if (Object.hasOwn(result, key)) return;
+					remainingCharacters -= key.length;
+					if (
+						sensitiveKey.test(
+							key.replace(controlCharacters, "").replace(/[-_\s]/g, ""),
+						)
+					) {
+						result[key] = "[redacted]";
+					} else {
+						try {
+							result[key] = normalize(nestedValue[rawKey], depth + 1);
+						} catch {
+							result[key] = "[Unserializable log value]";
+						}
+					}
+				};
+				try {
+					const tag = Object.prototype.toString.call(nestedValue);
+					if (tag === "[object Error]" || tag === "[object DOMException]") {
+						for (const key of ["name", "message", "stack", "cause"]) {
+							if (remainingCharacters <= 0) break;
+							if (key in nestedValue) appendProperty(key);
+						}
+					}
+				} catch {}
 				try {
 					for (const rawKey in nestedValue) {
-						if (propertyCount >= 24) {
+						if (propertyCount >= 24 || remainingCharacters <= 0) {
 							result["[Truncated]"] = "Additional properties omitted";
 							break;
 						}
 						if (!Object.hasOwn(nestedValue, rawKey)) {
 							continue;
 						}
-						const key = String(rawKey).slice(0, 120);
-						try {
-							result[key] = normalize(nestedValue[rawKey], depth + 1);
-						} catch {
-							result[key] = "[Unserializable log value]";
-						}
-						propertyCount += 1;
+						appendProperty(rawKey);
 					}
 				} catch {
 					if (propertyCount === 0) return "[Unserializable log value]";
@@ -93,7 +186,8 @@ function _formatLogText(value) {
 				normalized === "[Unserializable log value]"
 					? normalized
 					: JSON.stringify(normalized);
-			text = typeof serialized === "string" ? serialized : String(value);
+			if (typeof serialized === "string") return serialized.slice(0, 4000);
+			text = String(value);
 		} else {
 			text = String(value);
 		}
@@ -104,26 +198,43 @@ function _formatLogText(value) {
 	}
 
 	try {
-		text = String(text).slice(0, 4000);
-		text = text
-			.replace(
-				/([?&](?:auth(?:orization)?|bearer|client[-_]?integrity|client[-_]?session(?:[-_]?id)?|cookie|device[-_]?id|integrity|nauth(?:sig)?|oauth(?:_token)?|session(?:[-_]?id)?|sig(?:nature)?|token|unique[-_]?id|x[-_]?auth[-_]?token|x[-_]?csrf[-_]?token|x[-_]?device[-_]?id)=)[^&#\s"'<>]*/gi,
-				"$1[redacted]",
-			)
-			.replace(
-				/(\b(?:cookie|set[-_ ]?cookie)\b["']?\s*:\s*["']?)[^\r\n"']+/gi,
-				"$1[redacted]",
-			)
-			.replace(
-				/(\b(?:auth(?:orization)?|client[-_ ]?integrity|client[-_ ]?session(?:[-_ ]?id)?|device[-_ ]?id|integrity|nauth(?:sig)?|oauth(?:_token)?|session(?:[-_ ]?id)?|sig(?:nature)?|token|unique[-_ ]?id|x[-_ ]?auth[-_ ]?token|x[-_ ]?csrf[-_ ]?token|x[-_ ]?device[-_ ]?id)\b["']?\s*[:=]\s*["']?)(?:basic\s+|bearer\s+|oauth\s+)?[^,&\s}"']+/gi,
-				"$1[redacted]",
-			)
-			.replace(/\b(basic|bearer|oauth)\s+[a-z0-9._~+/=-]+/gi, "$1 [redacted]")
-			.slice(0, 4000);
+		text = redact(String(text));
 	} catch {
 		text = "[Unserializable log value]";
 	}
 	return text;
+}
+
+const _PAGE_LOG_MILESTONE_PATTERN =
+	/\bv\d+\.\d+\.\d+ loaded|Stream initialized:|Ad detected, blocking|Ad blocked!|\[Break\] (?:ended|superseded)|Native playback restored|Post-ad recovery reached|Worker #g\d+ error|Worker restart limit reached|Worker recovery timed out/;
+
+function _isPageLogMilestone(entry) {
+	return Boolean(
+		entry?.l === "error" ||
+			(typeof entry?.m === "string" &&
+				_PAGE_LOG_MILESTONE_PATTERN.test(entry.m.slice(0, 300))),
+	);
+}
+
+function _appendPageLogEntry(entry) {
+	if (!Array.isArray(globalThis.__TTVAB_LOGS__)) {
+		globalThis.__TTVAB_LOGS__ = [];
+	}
+	const buffer = globalThis.__TTVAB_LOGS__;
+	buffer.push(entry);
+	if (buffer.length <= 1200) return;
+	const trimmed = buffer.splice(0, buffer.length - 1000);
+	globalThis.__TTVAB_LOGS_DROPPED__ =
+		Math.max(0, Number(globalThis.__TTVAB_LOGS_DROPPED__) || 0) +
+		trimmed.length;
+	if (!Array.isArray(globalThis.__TTVAB_LOG_MILESTONES__)) {
+		globalThis.__TTVAB_LOG_MILESTONES__ = [];
+	}
+	const milestones = globalThis.__TTVAB_LOG_MILESTONES__;
+	for (const trimmedEntry of trimmed) {
+		if (_isPageLogMilestone(trimmedEntry)) milestones.push(trimmedEntry);
+	}
+	if (milestones.length > 40) milestones.splice(0, milestones.length - 40);
 }
 
 function _enableDebugLogging() {
@@ -173,14 +284,7 @@ function _log(msg, type = "info") {
 				message: { key: "LogEntry", value: entry } satisfies TTVABWorkerEvent,
 			});
 		} else {
-			if (!Array.isArray(globalThis.__TTVAB_LOGS__)) {
-				globalThis.__TTVAB_LOGS__ = [];
-			}
-			const buffer = globalThis.__TTVAB_LOGS__;
-			buffer.push(entry);
-			if (buffer.length > 1200) {
-				buffer.splice(0, buffer.length - 1000);
-			}
+			_appendPageLogEntry(entry);
 		}
 	} catch {}
 	if (level === "debug" && !debugEnabled) return;

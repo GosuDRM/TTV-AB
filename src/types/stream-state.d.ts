@@ -244,6 +244,8 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	_IncompletePodCandidateUrl: string | null;
 	MeasuredAdIds: Set<string>;
 	FailedBackupPlayerTypes: Map<string, number>;
+	BackupAdMarkedCounts?: Map<string, number>;
+	_ReportedLiveStreamEnded?: boolean | null;
 	LastSessionNeutralBackupProbeCycleStartedAt: number;
 	Urls: Record<string, TTVABStreamVariant>;
 	ResolutionList: TTVABStreamVariant[];
@@ -282,6 +284,7 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	IsHoldingBackupAfterAd: boolean;
 	SilentBackupHoldStartedAt: number;
 	LastSilentBackupHoldLogAt: number;
+	LastSilentBackupHoldLogMessage: string | null;
 	LastNativeRecoveryProbeAt: number;
 	BackupVariantUrls: Set<string>;
 	EnhancedBackupVariantUrls: Set<string>;
