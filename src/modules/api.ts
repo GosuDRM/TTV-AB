@@ -337,6 +337,7 @@ async function _getToken(
 			? Math.max(0, deadlineAt - Date.now())
 			: Number.POSITIVE_INFINITY;
 
+	let attemptsMade = 0;
 	for (let attempt = 0; attempt <= maxRetries; attempt++) {
 		if (requestSignal?.aborted) {
 			throw _createRequestAbortError(requestSignal);
@@ -351,9 +352,10 @@ async function _getToken(
 		}
 
 		try {
+			attemptsMade++;
 			_log(
 				`[Trace] Requesting token for ${playerType} (${logTarget})${omitViewerHeaders ? " without viewer headers" : ""}${attempt > 0 ? ` retry ${attempt}` : ""}`,
-				"info",
+				omitViewerHeaders || attempt > 0 ? "info" : "debug",
 			);
 			const acceptLanguage =
 				navigator?.languages?.join(",") || navigator?.language || "en-US";
@@ -393,7 +395,7 @@ async function _getToken(
 					if (requestSignal?.aborted) {
 						throw _createRequestAbortError(requestSignal);
 					}
-					_log(`Spoof relay error: ${bridgeError.message}`, "warning");
+					_log(`Token relay error: ${bridgeError.message}`, "warning");
 				}
 			}
 
@@ -409,7 +411,10 @@ async function _getToken(
 				);
 			}
 
-			_log(`[Trace] Token response: ${res.status}`, "info");
+			_log(
+				`[Trace] Token response: ${res.status}`,
+				res.status === 200 ? "debug" : "warning",
+			);
 			return res;
 		} catch (e) {
 			if (requestSignal?.aborted) {
@@ -418,6 +423,7 @@ async function _getToken(
 			lastError = e;
 			if (
 				attempt < maxRetries &&
+				remainingDeadlineMs() > 0 &&
 				(e.name === "AbortError" ||
 					e.name === "TimeoutError" ||
 					e.message?.includes("timeout"))
@@ -433,7 +439,7 @@ async function _getToken(
 	}
 
 	_log(
-		`Token fetch failed after ${maxRetries + 1} attempts: ${lastError?.message}`,
+		`Token fetch failed after ${attemptsMade} attempt${attemptsMade === 1 ? "" : "s"}${remainingDeadlineMs() <= 0 ? " (deadline reached)" : ""}: ${lastError?.message ?? "no response"}`,
 		"error",
 	);
 	return Response.error();
@@ -528,6 +534,22 @@ function _recordAdDurations(textStr, info: TTVABStreamInfo) {
 			}
 		}
 	} catch {}
+}
+
+function _reportAdCompletionFailure(reason: string) {
+	const now = Date.now();
+	__TTVAB_STATE__.AdSpoofFailureCount =
+		Math.max(0, Number(__TTVAB_STATE__.AdSpoofFailureCount) || 0) + 1;
+	const lastLoggedAt = Math.max(
+		0,
+		Number(__TTVAB_STATE__.LastAdSpoofFailureLogAt) || 0,
+	);
+	if (lastLoggedAt > 0 && now - lastLoggedAt < 600000) return;
+	__TTVAB_STATE__.LastAdSpoofFailureLogAt = now;
+	_log(
+		`notifyAdComplete: ${reason} (${__TTVAB_STATE__.AdSpoofFailureCount} failed report${__TTVAB_STATE__.AdSpoofFailureCount === 1 ? "" : "s"} so far); Twitch may be rejecting or rate-limiting ad completion reports`,
+		"warning",
+	);
 }
 
 function _assignAdPods(info: TTVABStreamInfo, matches, fallbackLength) {
@@ -656,6 +678,7 @@ async function _notifyAdComplete(
 							Number(info.MaxObservedAdPodPosition) || 0,
 						),
 						observedZeroAdPodPosition: info.ObservedZeroAdPodPosition === true,
+						pod: _getAdPodSnapshot(info.CurrentAdPod),
 						cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
 						channel: info.ChannelName || null,
 						mediaKey: info.MediaKey || null,
@@ -729,7 +752,13 @@ async function _notifyAdComplete(
 				visible: true,
 				duration: adDuration,
 				ad_position: adPosition,
-				total_ads: pod?.length || podLength,
+				total_ads:
+					pod?.length ||
+					Math.max(
+						podLength,
+						pod ? pod.adIds.size : 0,
+						pod ? pod.maxPosition + (pod.zeroPosition ? 1 : 0) : 0,
+					),
 			};
 
 			const makePacket = (event: string, extra?: Record<string, unknown>) => ({
@@ -799,19 +828,17 @@ async function _notifyAdComplete(
 				5000,
 			)
 				.then((response: Response | null) => {
-					if (
-						response &&
-						response.status !== 200 &&
-						!__TTVAB_STATE__.LoggedAdSpoofBadStatus
-					) {
-						__TTVAB_STATE__.LoggedAdSpoofBadStatus = true;
-						_log(
-							`notifyAdComplete: GQL response status ${response.status} — spoof may be rejected/rate-limited`,
-							"warning",
+					if (response && response.status !== 200) {
+						_reportAdCompletionFailure(
+							`GQL response status ${response.status}`,
 						);
 					}
 				})
-				.catch(() => {});
+				.catch((error) => {
+					_reportAdCompletionFailure(
+						error?.message ? String(error.message) : "request failed",
+					);
+				});
 
 			newSpoofed++;
 		}
@@ -824,7 +851,7 @@ async function _notifyAdComplete(
 					: newSpoofed;
 			const src = info?.ActiveBackupPlayerType || "primary";
 			_log(
-				`[Trace] Spoofed ad completion for ${newSpoofed} new ad(s) (${total}/${lastSpoofedPod?.length || podLength} pod) — roll: ${firstRollType}, src: ${src}, pod-complete: ${podCompleteSent ? "yes" : "no"}`,
+				`[Trace] Spoofed ad completion for ${newSpoofed} new ad(s) (${total}/${lastSpoofedPod?.length || (hasExplicitPodLength ? podLength : "?")} pod) — roll: ${firstRollType}, src: ${src}, pod-complete: ${podCompleteSent ? "yes" : "no"}`,
 				"info",
 			);
 		}

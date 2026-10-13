@@ -897,7 +897,9 @@ function _resetPlayerBufferMonitorState(cooldownMs = 0) {
 		typeof __TTVAB_STATE__ !== "undefined" && __TTVAB_STATE__
 			? Number(
 					_getLowLatencyMinRepeatDelay(
-						_getPlayerCore(_getPlayerAndState().player),
+						_getPlayerCore(
+							_cachedPlayerRef?.player || _getPlayerAndState().player,
+						),
 					),
 				) || 0
 			: 0;
@@ -1318,6 +1320,60 @@ function _handlePictureInPictureExit(event) {
 	} finally {
 		_clearActivePictureInPicturePlaybackContext(event.target);
 	}
+}
+
+function _refreshActivePictureInPictureContext() {
+	const activeContext = _getActivePictureInPicturePlaybackContext();
+	const element = activeContext?.element;
+	if (
+		!(element instanceof HTMLVideoElement) ||
+		document.pictureInPictureElement !== element
+	)
+		return false;
+	const { player, state } = _getPlayerAndState();
+	if (player?.getHTMLVideoElement?.() !== element) return false;
+	const content = state?.props?.content;
+	const context = _normalizePlaybackContext({
+		MediaType: content?.type,
+		ChannelName: content?.channelLogin,
+		VodID: content?.vodID,
+	});
+	if (!context.MediaKey) return false;
+	const worker = _getPlayerCore(player)?.worker || null;
+	const workerChanged = Boolean(
+		worker &&
+			typeof worker === "object" &&
+			activeContext.workerRef?.deref?.() !== worker,
+	);
+	if (context.MediaKey === activeContext.MediaKey && !workerChanged)
+		return false;
+	_setActivePictureInPicturePlaybackContext(element, {
+		...context,
+		workerRef:
+			worker && typeof worker === "object" ? new WeakRef(worker) : null,
+		pageMediaKey: _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey),
+		pageContextGeneration: Math.max(
+			0,
+			Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0,
+		),
+	});
+	if (context.MediaKey !== activeContext.MediaKey) {
+		if (_PlaybackIntentState.secondaryPlayerHandoffKind === "pip") {
+			_PlaybackIntentState.secondaryPlayerHandoffChannel = context.ChannelName;
+			_PlaybackIntentState.secondaryPlayerHandoffMediaKey = context.MediaKey;
+		}
+		if (
+			activeContext.MediaKey !==
+			_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey)
+		) {
+			_releasePlaybackContext(activeContext);
+		}
+		_log(
+			`[Trace] Picture-in-picture switched from ${activeContext.MediaKey} to ${context.MediaKey}`,
+			"info",
+		);
+	}
+	return true;
 }
 
 function _setActivePictureInPicturePlaybackContext(
@@ -2599,6 +2655,9 @@ function _monitorPlaybackIntent() {
 			const hiddenSyncDelay = Math.max(idleSyncDelay, 5000);
 			const syncDelay = isHidden ? hiddenSyncDelay : idleSyncDelay;
 			const now = Date.now();
+			if (_PlaybackIntentState.pictureInPictureElement) {
+				_refreshActivePictureInPictureContext();
+			}
 			if (
 				currentMediaKey !== lastSyncedMediaKey ||
 				didLoseObservedMedia ||
@@ -3438,7 +3497,13 @@ function _handleIndependentVideoAdMutations(records) {
 	if (!_isIndependentVideoAdGuardEnabled()) return;
 	for (const record of records) {
 		if (record.type === "attributes") {
-			_suppressIndependentVideoAdsForNode(record.target);
+			if (
+				record.attributeName === _INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE ||
+				record.target instanceof HTMLVideoElement ||
+				record.target instanceof HTMLSourceElement
+			) {
+				_suppressIndependentVideoAdsForNode(record.target);
+			}
 			continue;
 		}
 		for (const node of record.addedNodes) {

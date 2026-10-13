@@ -429,26 +429,64 @@ function _buildTabLogSection(tab, index, result, maxCharacters) {
     if (result.entries.length === 0 && !result.error) {
         lines.push("(no TTV AB log entries captured in this tab)");
     }
-    else {
-        for (const entry of result.entries) {
-            lines.push(_formatLogEntryLine(entry));
+    const safeMax = Math.max(0, Math.trunc(Number(maxCharacters) || 0));
+    const marker = "\n...(tab section truncated by the export size limit)...\n";
+    const header = `${lines.join("\n")}\n`;
+    if (header.length > safeMax) {
+        return {
+            text: safeMax <= marker.length
+                ? marker.slice(0, safeMax)
+                : `${header.slice(0, safeMax - marker.length)}${marker}`,
+            truncated: true,
+        };
+    }
+    const omissionNote = (count) => count > 0
+        ? `(${count} older log entries omitted by the export size limit)\n`
+        : "";
+    const previousOmissions = Math.max(0, Math.trunc(result.truncatedEntries) || 0);
+    const entryLines = [];
+    let usedCharacters = header.length;
+    let omitted = previousOmissions;
+    let truncated = false;
+    let newestLine = "";
+    let footer = omissionNote(previousOmissions);
+    for (let index = result.entries.length - 1; index >= 0; index--) {
+        const line = _formatLogEntryLine(result.entries[index]);
+        if (index === result.entries.length - 1)
+            newestLine = line;
+        if (usedCharacters + line.length + 1 + footer.length > safeMax) {
+            truncated = true;
+            omitted = previousOmissions + index + 1;
+            break;
+        }
+        entryLines.push(line);
+        usedCharacters += line.length + 1;
+    }
+    if (truncated) {
+        footer = omissionNote(omitted) + marker;
+        while (entryLines.length > 0 && usedCharacters + footer.length > safeMax) {
+            usedCharacters -= entryLines[entryLines.length - 1].length + 1;
+            entryLines.pop();
+            omitted++;
+            footer = omissionNote(omitted) + marker;
+        }
+        if (entryLines.length === 0 && newestLine) {
+            const partialFooter = omissionNote(omitted - 1) + marker;
+            const available = safeMax - usedCharacters - partialFooter.length - 1;
+            if (available > 0) {
+                entryLines.push(newestLine.slice(0, available));
+                footer = partialFooter;
+            }
         }
     }
-    if (result.truncatedEntries > 0) {
-        lines.push(`(${result.truncatedEntries} older log entries omitted by the export size limit)`);
-    }
-    lines.push("");
-    const text = lines.join("\n");
-    const safeMax = Math.max(0, Math.trunc(Number(maxCharacters) || 0));
-    if (text.length <= safeMax)
-        return { text, truncated: false };
-    const marker = "\n...(tab section truncated by the export size limit)...\n";
-    if (safeMax <= marker.length) {
-        return { text: marker.slice(0, safeMax), truncated: true };
-    }
+    const text = header +
+        (entryLines.length > 0 ? `${entryLines.reverse().join("\n")}\n` : "") +
+        footer;
     return {
-        text: `${text.slice(0, safeMax - marker.length)}${marker}`,
-        truncated: true,
+        text: text.length <= safeMax
+            ? text
+            : `${text.slice(0, safeMax - marker.length)}${marker}`,
+        truncated: truncated || text.length > safeMax,
     };
 }
 async function _buildLogExport(isCancelled = () => false) {

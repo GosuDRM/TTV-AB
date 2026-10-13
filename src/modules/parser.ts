@@ -45,6 +45,19 @@ const _RESERVED_ROUTE_SEGMENTS = new Set([
 	"wallet",
 ]);
 
+function _getAdPodSnapshot(pod) {
+	if (!pod?.adIds || !(Number(pod.length) > 0)) return null;
+	return {
+		key: String(pod.key || "").slice(0, 64),
+		length: Math.max(0, Math.trunc(Number(pod.length) || 0)),
+		adIds: Array.from(pod.adIds as Iterable<string>)
+			.filter((adId) => typeof adId === "string" && adId)
+			.slice(-50),
+		maxPosition: Math.max(0, Math.trunc(Number(pod.maxPosition) || 0)),
+		zeroPosition: pod.zeroPosition === true,
+	};
+}
+
 function _normalizeChannelName(value) {
 	if (typeof value !== "string") return null;
 	const trimmed = value.trim().toLowerCase();

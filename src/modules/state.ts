@@ -407,6 +407,24 @@ function _createWorkerBridgeMessage(message) {
 	};
 }
 
+function _isAdPodSnapshot(value) {
+	return Boolean(
+		value == null ||
+			(typeof value === "object" &&
+				!Array.isArray(value) &&
+				typeof value.key === "string" &&
+				value.key.length <= 64 &&
+				typeof value.length === "number" &&
+				Number.isFinite(value.length) &&
+				typeof value.maxPosition === "number" &&
+				Number.isFinite(value.maxPosition) &&
+				typeof value.zeroPosition === "boolean" &&
+				Array.isArray(value.adIds) &&
+				value.adIds.length <= 50 &&
+				value.adIds.every((id) => typeof id === "string")),
+	);
+}
+
 function _hasWorkerMessageFields(
 	value: unknown,
 	fields: Record<string, "string" | "number" | "boolean" | "vod"> = {},
@@ -612,7 +630,8 @@ function _isWorkerEvent(
 				}) &&
 				(message.adIds === undefined ||
 					(Array.isArray(message.adIds) &&
-						message.adIds.every((id) => typeof id === "string")))
+						message.adIds.every((id) => typeof id === "string"))) &&
+				_isAdPodSnapshot(message.pod)
 			);
 		case "AdDetected":
 			return _hasWorkerMessageFields(message, {
@@ -629,6 +648,12 @@ function _isWorkerEvent(
 			});
 		case "BackupPlayerTypeSelected":
 			return message.value === null || typeof message.value === "string";
+		case "LiveStreamStatus":
+			return (
+				typeof message.ended === "boolean" &&
+				typeof message.mediaKey === "string" &&
+				_hasWorkerMessageFields(message, { observedAt: "number" })
+			);
 		case "FatalMediaRecoveryReady":
 			return (
 				_hasWorkerMessageFields(message, {
@@ -1242,6 +1267,28 @@ function _invalidateAdCycleAsyncWork(info: TTVABStreamInfo) {
 	return true;
 }
 
+function _isSameAdPod(current, incoming) {
+	if (!current || !incoming || current.key !== incoming.key) return false;
+	const currentIds = new Set(current.adIds);
+	return (
+		incoming.adIds.some((adId) => currentIds.has(adId)) ||
+		currentIds.size < current.length
+	);
+}
+
+function _mergeAdPodSnapshot(current, incoming) {
+	const next = _getAdPodSnapshot(incoming);
+	const previous = _getAdPodSnapshot(current);
+	if (!next) return previous;
+	if (!_isSameAdPod(previous, next)) return next;
+	return {
+		...next,
+		adIds: Array.from(new Set([...previous.adIds, ...next.adIds])).slice(-50),
+		maxPosition: Math.max(previous.maxPosition, next.maxPosition),
+		zeroPosition: previous.zeroPosition || next.zeroPosition,
+	};
+}
+
 function _mergeAdPodProgress(value) {
 	const context = _normalizePlaybackContext(value);
 	const mediaKey = context.MediaKey;
@@ -1284,6 +1331,7 @@ function _mergeAdPodProgress(value) {
 		}
 	}
 	const entry = {
+		pod: _mergeAdPodSnapshot(shouldReplace ? null : current?.pod, value?.pod),
 		adIds: Array.from(adIds).slice(-50),
 		expectedPodLength: Math.max(
 			shouldReplace ? 0 : Math.max(0, Number(current?.expectedPodLength) || 0),
@@ -1340,6 +1388,28 @@ function _applyAdPodProgressToInfo(info: TTVABStreamInfo, value) {
 	}
 	for (const adId of entry.adIds) {
 		info.ObservedAdPodIds.add(adId);
+	}
+	const sharedPod = _getAdPodSnapshot(entry.pod);
+	if (sharedPod) {
+		const localPod = info.CurrentAdPod?.length > 0 ? info.CurrentAdPod : null;
+		if (localPod && _isSameAdPod(_getAdPodSnapshot(localPod), sharedPod)) {
+			for (const adId of sharedPod.adIds) localPod.adIds.add(adId);
+			localPod.maxPosition = Math.max(
+				localPod.maxPosition,
+				sharedPod.maxPosition,
+			);
+			localPod.zeroPosition = localPod.zeroPosition || sharedPod.zeroPosition;
+		} else if (!localPod || localPod.adIds.size >= localPod.length) {
+			info.CurrentAdPod = {
+				key: sharedPod.key,
+				length: sharedPod.length,
+				adIds: new Set(sharedPod.adIds),
+				spoofedAdIds: new Set(),
+				maxPosition: sharedPod.maxPosition,
+				zeroPosition: sharedPod.zeroPosition,
+				completeSent: false,
+			};
+		}
 	}
 	info.ExpectedAdPodLength = Math.max(
 		Math.max(0, Number(info.ExpectedAdPodLength) || 0),
@@ -1474,6 +1544,8 @@ function _declareState(scope: { __TTVAB_STATE__?: TTVABRuntimeState }) {
 		LastPlayerReloadAt: 0,
 		LastPlayerReloadAtByMediaKey: Object.create(null),
 		LastAdDetectedAt: 0,
+		EndedLiveMediaKey: null,
+		EndedLiveAt: 0,
 		LastAdEndedAt: 0,
 		LastAdEndedChannel: null,
 		LastAdEndedMediaKey: null,
@@ -1535,7 +1607,8 @@ function _declareState(scope: { __TTVAB_STATE__?: TTVABRuntimeState }) {
 		DisableAutoplayBackup: false,
 		LoggedAdSpoofNoMatch: false,
 		LoggedAdSpoofNoToken: false,
-		LoggedAdSpoofBadStatus: false,
+		AdSpoofFailureCount: 0,
+		LastAdSpoofFailureLogAt: 0,
 	};
 }
 

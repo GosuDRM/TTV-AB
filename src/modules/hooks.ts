@@ -3076,6 +3076,7 @@ function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
 	state.terminalRearmCycleStartedAt = 0;
 	state.terminalRearmAttemptedAt = 0;
 	state.phase = "idle";
+	_removePageSideM3U8OverrideWhenRecovered();
 }
 
 function _getWorkerPlaybackObservationAt(worker, context, bootstrap = false) {
@@ -3992,6 +3993,19 @@ function _scheduleTerminatedPlaybackWorkerRecovery(
 	return true;
 }
 
+function _isLiveStreamEndedForContext(context) {
+	const mediaKey = _normalizeMediaKey(
+		_normalizePlaybackContext(context).MediaKey,
+	);
+	const endedAt = Math.max(0, Number(__TTVAB_STATE__?.EndedLiveAt) || 0);
+	return Boolean(
+		mediaKey?.startsWith("live:") &&
+			mediaKey === _normalizeMediaKey(__TTVAB_STATE__?.EndedLiveMediaKey) &&
+			endedAt > 0 &&
+			Date.now() - endedAt < 600000,
+	);
+}
+
 function _recoverCrashedWorker(
 	worker,
 	pagePlaybackContext,
@@ -4076,6 +4090,10 @@ function _recoverCrashedWorker(
 			"Ignoring non-playback worker crash while the playback worker is healthy",
 			"info",
 		);
+		return true;
+	}
+	if (_isLiveStreamEndedForContext(recoveryContext)) {
+		_log("Live stream has ended; not restarting the player for it", "info");
 		return true;
 	}
 	const recoveryState = _getWorkerRecoveryState(recoveryContext);
@@ -4310,6 +4328,15 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			recoveryState.activeEpoch = 0;
 			recoveryState.phase = "cancelled";
 			_log("Skipping stale worker recovery after navigation", "info");
+			return;
+		}
+		if (_isLiveStreamEndedForContext(recoveryContext)) {
+			recoveryState.activeEpoch = 0;
+			recoveryState.phase = "cancelled";
+			if (typeof _clearWorkerRecoveryNotice === "function") {
+				_clearWorkerRecoveryNotice(recoveryContext.MediaKey);
+			}
+			_log("Live stream has ended; cancelling worker recovery", "info");
 			return;
 		}
 		if (
@@ -4867,20 +4894,26 @@ function _isPageSideFallbackRecoveryReady(
 		__TTVAB_STATE__?.AdPodProgressByMediaKey?.[normalizedMediaKey] || null;
 	const cycleStartedAt = Math.max(0, Number(podProgress?.cycleStartedAt) || 0);
 	if (!normalizedMediaKey || cycleStartedAt <= 0 || !info) return false;
+	const pod = _getAdPodSnapshot(podProgress?.pod);
 	const expectedPodLength = Math.max(
 		0,
-		Math.trunc(Number(podProgress?.expectedPodLength) || 0),
+		Math.trunc(Number(pod ? pod.length : podProgress?.expectedPodLength) || 0),
 	);
-	const observedPodLength = Array.isArray(podProgress?.adIds)
-		? new Set(podProgress.adIds.filter(Boolean)).size
-		: 0;
+	const observedPodLength = pod
+		? pod.adIds.length
+		: Array.isArray(podProgress?.adIds)
+			? new Set(podProgress.adIds.filter(Boolean)).size
+			: 0;
 	const maxAdPodPosition = Math.max(
 		0,
-		Math.trunc(Number(podProgress?.maxAdPodPosition) || 0),
+		Math.trunc(
+			Number(pod ? pod.maxPosition : podProgress?.maxAdPodPosition) || 0,
+		),
 	);
 	const observedTerminalPodPosition = Boolean(
 		expectedPodLength > 0 &&
-			(podProgress?.observedZeroAdPodPosition === true
+			(pod?.zeroPosition === true ||
+			podProgress?.observedZeroAdPodPosition === true
 				? maxAdPodPosition + 1 >= expectedPodLength
 				: maxAdPodPosition >= expectedPodLength),
 	);
@@ -5295,6 +5328,8 @@ function _ensurePageSideFallbackAdCycle(url, _codec = null, playlistText = "") {
 	return cycleStartedAt;
 }
 
+let _pageSideM3U8OverrideRemover: (() => boolean) | null = null;
+
 function _installPageSideM3U8Override() {
 	if (window.__TTVAB_M3U8_FALLBACK_ACTIVE) return;
 	window.__TTVAB_M3U8_FALLBACK_ACTIVE = true;
@@ -5314,7 +5349,7 @@ function _installPageSideM3U8Override() {
 		return !enabled;
 	};
 
-	window.fetch = async function (...args) {
+	const fallbackFetch = async function (...args) {
 		if (shouldPassThrough()) {
 			return realFetch.apply(this, args);
 		}
@@ -5540,6 +5575,33 @@ function _installPageSideM3U8Override() {
 			throw error;
 		}
 	};
+	window.fetch = fallbackFetch;
+	_pageSideM3U8OverrideRemover = () => {
+		if (window.fetch !== fallbackFetch) return false;
+		window.fetch = realFetch;
+		window.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+		_pageSideEmptyHoldInfoByUrl.clear();
+		_pageSideM3U8OverrideRemover = null;
+		_log(
+			"Removed page-side M3U8 protection after the replacement player stayed healthy",
+			"info",
+		);
+		return true;
+	};
+}
+
+function _removePageSideM3U8OverrideWhenRecovered() {
+	if (typeof _pageSideM3U8OverrideRemover !== "function") return false;
+	for (const state of _WorkerRecoveryStates.values()) {
+		if (
+			state?.activeEpoch ||
+			state?.phase === "exhausted" ||
+			state?.phase === "waiting-pip" ||
+			state?.phase === "degraded-pip"
+		)
+			return false;
+	}
+	return _pageSideM3U8OverrideRemover();
 }
 
 function _rememberPageSideVariantCodecs(text, baseUrl) {
@@ -6270,9 +6332,6 @@ function _hookWorker() {
 									typeof entry === "object" &&
 									!Array.isArray(entry)
 								) {
-									if (!Array.isArray(globalThis.__TTVAB_LOGS__)) {
-										globalThis.__TTVAB_LOGS__ = [];
-									}
 									const rawTimestamp =
 										typeof entry.t === "number" ? entry.t : Number.NaN;
 									const timestamp =
@@ -6288,8 +6347,7 @@ function _hookWorker() {
 									const workerGeneration = Number.isFinite(rawGeneration)
 										? Math.min(1000000, Math.max(0, Math.trunc(rawGeneration)))
 										: 0;
-									const buffer = globalThis.__TTVAB_LOGS__ as PlainObject[];
-									buffer.push({
+									_appendPageLogEntry({
 										t: timestamp,
 										l:
 											typeof entry.l === "string"
@@ -6303,9 +6361,6 @@ function _hookWorker() {
 										g: workerGeneration,
 										k: _normalizeMediaKey(this.__TTVABPageMediaKey),
 									});
-									if (buffer.length > 1200) {
-										buffer.splice(0, buffer.length - 1000);
-									}
 								}
 							} catch {}
 							break;
@@ -6710,6 +6765,7 @@ function _hookWorker() {
 								expectedPodLength: data.expectedPodLength,
 								maxAdPodPosition: data.maxAdPodPosition,
 								observedZeroAdPodPosition: data.observedZeroAdPodPosition,
+								pod: data.pod,
 								cycleStartedAt: data.cycleStartedAt,
 							});
 							if (!progress || !data.mediaKey) {
@@ -6726,6 +6782,25 @@ function _hookWorker() {
 									...progress,
 								},
 							});
+							break;
+						}
+						case "LiveStreamStatus": {
+							const statusMediaKey = _normalizeMediaKey(data.mediaKey);
+							if (
+								isStalePlaybackEvent(data) ||
+								!statusMediaKey?.startsWith("live:")
+							)
+								break;
+							if (data.ended === true) {
+								__TTVAB_STATE__.EndedLiveMediaKey = statusMediaKey;
+								__TTVAB_STATE__.EndedLiveAt = Date.now();
+							} else if (
+								_normalizeMediaKey(__TTVAB_STATE__.EndedLiveMediaKey) ===
+								statusMediaKey
+							) {
+								__TTVAB_STATE__.EndedLiveMediaKey = null;
+								__TTVAB_STATE__.EndedLiveAt = 0;
+							}
 							break;
 						}
 						case "BackupPlayerTypeSelected": {
