@@ -1850,6 +1850,76 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 		}
 	});
 
+	it("handles media keys itself when Twitch registers no media-session controls", () => {
+		const savedMediaSession = Object.getOwnPropertyDescriptor(
+			navigator,
+			"mediaSession",
+		);
+		const savedPatched = window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__;
+		const savedPlayerAndState = g._getPlayerAndState;
+		const savedPip = g._getActivePictureInPicturePlaybackContext;
+		const handlers = new Map<
+			string,
+			((details: { action: string }) => void) | null
+		>();
+		const mediaSession = {
+			setActionHandler(
+				action: string,
+				handler: ((details: { action: string }) => void) | null,
+			) {
+				handlers.set(action, handler);
+			},
+		};
+		const player = {
+			pause: vi.fn(() => {
+				isPaused = true;
+				video.dispatchEvent(new Event("pause"));
+			}),
+			play: vi.fn(() => {
+				isPaused = false;
+			}),
+		};
+		Object.defineProperty(navigator, "mediaSession", {
+			value: mediaSession,
+			configurable: true,
+		});
+		window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__ = false;
+		g._getPlayerAndState = () => ({ player, state: null });
+		g._getActivePictureInPicturePlaybackContext = () => null;
+
+		try {
+			expect(T<() => boolean>("_hookMediaSessionPlaybackIntent")()).toBe(true);
+			expect([...handlers.keys()].sort()).toEqual(["pause", "play"]);
+			const intentState = g._PlaybackIntentState as Record<string, unknown>;
+
+			handlers.get("pause")?.({ action: "pause" });
+			expect(player.pause).toHaveBeenCalledOnce();
+			expect(resumeCalls).toHaveLength(0);
+			expect(intentState.userPausedMediaKey).toBe("live:testchannel");
+			expect(intentState.userPausedHadExplicitInteraction).toBe(true);
+
+			handlers.get("play")?.({ action: "play" });
+			expect(player.play).toHaveBeenCalledOnce();
+			expect(intentState.userPausedMediaKey).toBeNull();
+
+			const pageHandler = vi.fn();
+			mediaSession.setActionHandler("pause", pageHandler);
+			handlers.get("pause")?.({ action: "pause" });
+			expect(pageHandler).toHaveBeenCalledOnce();
+			expect(player.pause).toHaveBeenCalledOnce();
+			expect(intentState.userPausedMediaKey).toBe("live:testchannel");
+		} finally {
+			g._getPlayerAndState = savedPlayerAndState;
+			g._getActivePictureInPicturePlaybackContext = savedPip;
+			if (savedMediaSession) {
+				Object.defineProperty(navigator, "mediaSession", savedMediaSession);
+			} else {
+				delete (navigator as unknown as Record<string, unknown>).mediaSession;
+			}
+			window.__TTVAB_MEDIA_SESSION_PLAYBACK_INTENT_PATCHED__ = savedPatched;
+		}
+	});
+
 	it("uses the existing ad resume intent gate for an unfocused ad-time pause", () => {
 		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
 		state.CurrentAdMediaKey = "live:testchannel";

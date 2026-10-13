@@ -1007,6 +1007,96 @@ describe("HD backup probation through playlist polling", () => {
 		},
 	);
 
+	it("keeps each source's clean history while sources take turns falling behind the served timeline", async () => {
+		const f = setupProbation();
+		f.state.BackupPlayerTypes = ["site", "embed", "autoplay"];
+		const log = vi.fn();
+		f.context._log = log;
+		const originalFetch = f.fetch.getMockImplementation();
+		const start = Date.parse("2026-10-06T00:05:30Z");
+		const offsets = { bridge: 0, site: 0, embed: 0 };
+		f.fetch.mockImplementation(async (input, options) => {
+			const response = await originalFetch(input, options);
+			const url = new URL(String(input));
+			if (url.hostname !== "cdn.example") return response;
+			const type = url.pathname.split("/")[1];
+			const offset =
+				type === "site"
+					? offsets.site
+					: type === "embed"
+						? offsets.embed
+						: offsets.bridge;
+			return new Response(
+				(await response.text())
+					.replaceAll("/site/", `/${type}/`)
+					.replaceAll("400", String(400 + offset / 2000))
+					.replace(
+						"#EXTINF:",
+						`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + offset).toISOString()}\n#EXTINF:`,
+					),
+			);
+		});
+		expect(await f.poll()).toContain("/autoplay/360/");
+		expect(f.info._BackupProbation).toMatchObject({
+			type: "site",
+			startedAt: 1_000_000,
+		});
+		const turns: Array<{ behind: "site" | "embed"; probation: string }> = [
+			{ behind: "site", probation: "embed" },
+			{ behind: "embed", probation: "site" },
+			{ behind: "site", probation: "embed" },
+		];
+		for (const [index, turn] of turns.entries()) {
+			f.advance(1600);
+			offsets.bridge = 2000 * (index + 1);
+			offsets.site = offsets.bridge - (turn.behind === "site" ? 2000 : 0);
+			offsets.embed = offsets.bridge - (turn.behind === "embed" ? 2000 : 0);
+			expect(await f.poll()).toContain("/autoplay/360/");
+			expect(f.info.LastCleanBackupPlayerType).toBe("autoplay");
+			expect(f.info._BackupProbation.type).toBe(turn.probation);
+		}
+		expect(f.info._BackupProbation).toMatchObject({
+			type: "embed",
+			startedAt: 1_001_600,
+		});
+		expect(f.info._BackupProbationByType.get("site")).toMatchObject({
+			startedAt: 1_000_000,
+			cleanChecks: 4,
+		});
+		f.advance(1600);
+		offsets.bridge = 8000;
+		offsets.site = 8000;
+		offsets.embed = 6000;
+		const promoted = await f.poll();
+		expect(promoted).toContain("/site/1080/");
+		expect(promoted).not.toContain("stitched-ad");
+		expect(f.info.LastCleanBackupPlayerType).toBe("site");
+		expect(f.info._BackupProbationByType.size).toBe(0);
+		expect(f.tokens).not.toContain("autoplay");
+	});
+
+	it("restarts a source's clean history after it turns ad-marked", async () => {
+		const f = setupProbation();
+		await f.poll();
+		f.advance(1_600);
+		await f.poll();
+		expect(f.info._BackupProbationByType.get("site")).toMatchObject({
+			startedAt: 1_000_000,
+			cleanChecks: 2,
+		});
+		const originalFetch = f.fetch.getMockImplementation();
+		if (!originalFetch) throw new Error("Missing network fixture");
+		f.fetch.mockImplementation(async (url, options) =>
+			String(url).includes("/site/")
+				? new Response(media("site", 1080, 401, true))
+				: originalFetch(url, options),
+		);
+		f.advance(1_600);
+		expect(await f.poll()).toContain("/autoplay/360/");
+		expect(f.info._BackupProbation).toBeNull();
+		expect(f.info._BackupProbationByType.has("site")).toBe(false);
+	});
+
 	it.each([false, true])(
 		"checks HD again after 1.5 seconds and promotes once it has stayed clean for 6 seconds with fallback disabled=%s",
 		async (disabled) => {

@@ -223,6 +223,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		BackupSearchEpoch: 0,
 		_ForegroundQualityProbeAppliedAt: 0,
 		_BackupProbation: null,
+		_BackupProbationByType: null,
 		_BackupPinFlipCount: 0,
 		_LoggedOfflineTransition: false,
 		_AdRequestController: null,
@@ -941,6 +942,7 @@ describe("_resetStreamAdState", () => {
 				["https://edge.example/native.m3u8", 400],
 			]),
 			_BackupProbation: { type: "site", at: 123 },
+			_BackupProbationByType: new Map([["embed", { type: "embed", at: 123 }]]),
 			_ForegroundQualityProbeAppliedAt: 456,
 			_BackupSelectionSequence: 7,
 			_BackupSelection: { sequence: 7, identity: "old", refreshedSequence: 7 },
@@ -1018,6 +1020,7 @@ describe("_resetStreamAdState", () => {
 		expect(info._SpliceLastMediaSequence).toBeNull();
 		expect(info._NativeSpliceBoundaries.size).toBe(0);
 		expect(info._BackupProbation).toBe(null);
+		expect(info._BackupProbationByType.size).toBe(0);
 		expect(info._ForegroundQualityProbeAppliedAt).toBe(0);
 		expect(info.LastSessionNeutralBackupProbeCycleStartedAt).toBe(100);
 	});
