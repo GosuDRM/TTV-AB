@@ -37,7 +37,8 @@ beforeEach(() => {
 		ClientIntegrityHeader: null,
 		ClientVersion: null,
 		ClientSession: null,
-		LoggedAdSpoofBadStatus: false,
+		AdSpoofFailureCount: 0,
+		LastAdSpoofFailureLogAt: 0,
 	};
 	g._postWorkerBridgeMessage = () => true;
 	g._createPageScopedWorkerEvent = (message: Record<string, unknown>) =>
@@ -293,6 +294,13 @@ describe("_notifyAdComplete", () => {
 				expectedPodLength: 2,
 				maxAdPodPosition: 1,
 				observedZeroAdPodPosition: false,
+				pod: {
+					key: "preroll|2",
+					length: 2,
+					adIds: ["stitched-ad-1"],
+					maxPosition: 1,
+					zeroPosition: false,
+				},
 				cycleStartedAt: 123456,
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
@@ -498,6 +506,48 @@ describe("_notifyAdComplete", () => {
 		},
 	);
 
+	it("keeps reporting rejected ad completion requests with a running count", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000_000);
+		const log = vi.fn();
+		g._log = log;
+		const notify =
+			T<(text: string, info: Record<string, unknown>) => Promise<void>>(
+				"_notifyAdComplete",
+			);
+		let status = 403;
+		g._fetchViaWorkerBridge = async () => {
+			if (status === 0) throw new Error("fetch relay timeout");
+			return new Response(null, { status });
+		};
+		const failures = () =>
+			log.mock.calls
+				.map(([message]) => String(message))
+				.filter((message) => message.startsWith("notifyAdComplete:"));
+		try {
+			for (const id of [1, 2]) {
+				await notify(["#EXTM3U", adRange(id)].join("\n"), {
+					SpoofedAdIds: new Set<string>(),
+				});
+			}
+			await vi.advanceTimersByTimeAsync(0);
+			expect(failures()).toEqual([
+				"notifyAdComplete: GQL response status 403 (1 failed report so far); Twitch may be rejecting or rate-limiting ad completion reports",
+			]);
+			vi.setSystemTime(1_000_000 + 600_000);
+			status = 0;
+			await notify(["#EXTM3U", adRange(3)].join("\n"), {
+				SpoofedAdIds: new Set<string>(),
+			});
+			await vi.advanceTimersByTimeAsync(0);
+			expect(failures().at(-1)).toBe(
+				"notifyAdComplete: fetch relay timeout (3 failed reports so far); Twitch may be rejecting or rate-limiting ad completion reports",
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("tracks and spoofs stitched ads whose ID is not the first attribute", async () => {
 		const notify =
 			T<
@@ -608,6 +658,38 @@ describe("_notifyAdComplete", () => {
 			);
 
 		expect(impressionIds).toEqual(["stitched-ad-1", "stitched-ad-2"]);
+	});
+
+	it("reports the best known ad count when no pod length is declared", async () => {
+		const notify =
+			T<(text: string, info: Record<string, unknown>) => Promise<void>>(
+				"_notifyAdComplete",
+			);
+		const log = vi.fn();
+		g._log = log;
+		const payloads: Array<{ total_ads?: number }> = [];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: Record<string, unknown>,
+		) => {
+			for (const packet of JSON.parse(
+				String(options.body || "[]"),
+			) as GqlPacket[]) {
+				if (packet.variables?.input?.eventName === "video_ad_impression") {
+					payloads.push(
+						JSON.parse(String(packet.variables.input.eventPayload || "{}")),
+					);
+				}
+			}
+			return new Response(null, { status: 200 });
+		};
+		const info = { SpoofedAdIds: new Set<string>(), CurrentAdPod: null };
+		await notify(["#EXTM3U", adRangeNoPodLength(1)].join("\n"), info);
+		await notify(["#EXTM3U", adRangeNoPodLength(3)].join("\n"), info);
+		expect(payloads.map((payload) => payload.total_ads)).toEqual([1, 3]);
+		expect(
+			log.mock.calls.some(([message]) => String(message).includes("(2/? pod)")),
+		).toBe(true);
 	});
 
 	it("never sends pod_complete when no pod length is declared", async () => {
@@ -938,6 +1020,73 @@ describe("_getToken (exhausted-failure sentinel)", () => {
 		const res = await getToken("somechannel", "site", timeoutFetch);
 		expect(attempts).toBe(3);
 		expect(res.status).toBe(0);
+	});
+
+	it("reports the attempts actually made and keeps routine token traffic out of the console", async () => {
+		const getToken =
+			T<
+				(
+					ctx: unknown,
+					playerType: string,
+					realFetch: unknown,
+					omitViewerHeaders?: boolean,
+					requestDeadlineAt?: number,
+				) => Promise<Response>
+			>("_getToken");
+		const log = vi.fn();
+		g._log = log;
+		g._fetchViaWorkerBridge = async () => {
+			throw new Error("fetch relay timeout");
+		};
+		await getToken(
+			"somechannel",
+			"site",
+			async () => {
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				const err = new Error("The operation was aborted.");
+				err.name = "AbortError";
+				throw err;
+			},
+			false,
+			Date.now() + 5,
+		);
+		const failed = log.mock.calls.find(([message]) =>
+			String(message).startsWith("Token fetch failed"),
+		);
+		expect(String(failed?.[0])).toMatch(
+			/^Token fetch failed after 1 attempt \(deadline reached\): /,
+		);
+		expect(log).toHaveBeenCalledWith(
+			"Token relay error: fetch relay timeout",
+			"warning",
+		);
+		expect(
+			log.mock.calls.some(([message]) =>
+				String(message).startsWith("Token fetch retry"),
+			),
+		).toBe(false);
+
+		log.mockClear();
+		g._fetchViaWorkerBridge = async () => new Response("{}", { status: 200 });
+		await getToken("somechannel", "site", async () => new Response("{}"));
+		expect(log).toHaveBeenCalledWith(
+			"[Trace] Requesting token for site (somechannel)",
+			"debug",
+		);
+		expect(log).toHaveBeenCalledWith("[Trace] Token response: 200", "debug");
+		log.mockClear();
+		g._fetchViaWorkerBridge = async () => new Response("{}", { status: 403 });
+		await getToken(
+			"somechannel",
+			"embed",
+			async () => new Response("{}"),
+			true,
+		);
+		expect(log).toHaveBeenCalledWith(
+			"[Trace] Requesting token for embed (somechannel) without viewer headers",
+			"info",
+		);
+		expect(log).toHaveBeenCalledWith("[Trace] Token response: 403", "warning");
 	});
 
 	it("does not retry or fall through to direct fetch after route cancellation", async () => {

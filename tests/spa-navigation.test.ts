@@ -171,6 +171,71 @@ describe("_collectPageLogEntries", () => {
 		delete g.__TTVAB_LOGS__;
 	});
 
+	it("lists milestones kept from trimmed history before the buffered entries", () => {
+		g._captureIndependentVideoAdDiagnostics = () => {};
+		g.__TTVAB_LOGS_DROPPED__ = 250;
+		g.__TTVAB_LOG_MILESTONES__ = [
+			{ t: 1, l: "info", m: "[Break] ended live:test cycle 1: hold @0.0s" },
+			{ t: 2, l: "error", m: "Worker #g1 error: broken" },
+		];
+		g.__TTVAB_LOGS__ = [{ t: 10, l: "info", m: "newest" }];
+		try {
+			const full = T<
+				() => {
+					entries: Array<{ t: number; m: string }>;
+					truncatedEntries: number;
+				}
+			>("_collectPageLogEntries")();
+			expect(full.entries.map((entry) => entry.m)).toEqual([
+				"[Break] ended live:test cycle 1: hold @0.0s",
+				"Worker #g1 error: broken",
+				"[Log] 250 older entries were trimmed from this tab's log; 2 error and ad break milestones from them are kept above",
+				"newest",
+			]);
+			expect(full.entries[2].t).toBe(10);
+			expect(full.truncatedEntries).toBe(0);
+			const checkpoint = T<
+				(
+					count: number,
+					bytes: number,
+					capture: boolean,
+					retain: boolean,
+				) => { entries: Array<{ m: string }> }
+			>("_collectPageLogEntries")(64, 24 * 1024, false, true);
+			expect(checkpoint.entries.map((entry) => entry.m)).toEqual(["newest"]);
+		} finally {
+			delete g.__TTVAB_LOGS_DROPPED__;
+			delete g.__TTVAB_LOG_MILESTONES__;
+		}
+	});
+
+	it("retains ad break summaries and errors in bounded checkpoints", () => {
+		g.__TTVAB_LOGS__ = [
+			{ t: 1, l: "info", m: "[Break] ended live:test cycle 1: hold @0.0s" },
+			{ t: 2, l: "error", m: "Worker command Ping failed: broken" },
+			...Array.from({ length: 100 }, (_, index) => ({
+				t: index + 3,
+				l: "info",
+				m: "Checking: site",
+			})),
+		];
+		const checkpoint = T<
+			(
+				count: number,
+				bytes: number,
+				capture: boolean,
+				retain: boolean,
+			) => { entries: Array<{ m: string }> }
+		>("_collectPageLogEntries")(64, 24 * 1024, false, true);
+		expect(checkpoint.entries).toHaveLength(64);
+		expect(checkpoint.entries.map((entry) => entry.m)).toEqual(
+			expect.arrayContaining([
+				"[Break] ended live:test cycle 1: hold @0.0s",
+				"Worker command Ping failed: broken",
+			]),
+		);
+	});
+
 	it("takes a live independent-video snapshot before exporting the buffer", () => {
 		g._captureIndependentVideoAdDiagnostics = () => {
 			(g.__TTVAB_LOGS__ as unknown[]).push({

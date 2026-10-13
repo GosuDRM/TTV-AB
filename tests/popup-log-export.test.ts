@@ -253,6 +253,90 @@ describe("popup log formatting", () => {
 		);
 	});
 
+	it("keeps the newest evidence without formatting the discarded history", () => {
+		const readOldMessage = vi.fn(() => "old history ".repeat(100));
+		const entries = Array.from({ length: 1000 }, (_, index) => ({
+			t: index + 1,
+			l: "info",
+			get m() {
+				return readOldMessage();
+			},
+		}));
+		const build = T<
+			(...args: unknown[]) => { text: string; truncated: boolean }
+		>("_buildTabLogSection");
+		const result = build(
+			{ url: "https://www.twitch.tv/channel" },
+			0,
+			{
+				entries: [
+					...entries,
+					{ t: 1001, l: "warning", m: "backup stopped advancing" },
+					{ t: 1002, l: "error", m: "latest worker failure" },
+				],
+				context: null,
+				error: null,
+				truncatedEntries: 3,
+			},
+			1000,
+		);
+		expect(result.truncated).toBe(true);
+		expect(result.text.length).toBeLessThanOrEqual(1000);
+		expect(result.text).toContain("backup stopped advancing");
+		expect(result.text).toContain("latest worker failure");
+		expect(result.text.indexOf("backup stopped advancing")).toBeLessThan(
+			result.text.indexOf("latest worker failure"),
+		);
+		expect(result.text).toContain("1003 older log entries omitted");
+		expect(readOldMessage.mock.calls.length).toBeLessThanOrEqual(2);
+	});
+
+	it("keeps every entry when the complete section fits exactly", () => {
+		const build = T<
+			(...args: unknown[]) => { text: string; truncated: boolean }
+		>("_buildTabLogSection");
+		const tab = { url: "https://www.twitch.tv/channel" };
+		const collected = {
+			entries: [
+				{ t: 1, l: "info", m: "first" },
+				{ t: 2, l: "error", m: "latest" },
+			],
+			context: null,
+			error: null,
+			truncatedEntries: 0,
+		};
+		const complete = build(tab, 0, collected, 10000);
+		expect(build(tab, 0, collected, complete.text.length)).toEqual(complete);
+	});
+
+	it.each([0, 20, 300, 500, 1000])(
+		"bounds a single oversized entry at %s characters",
+		(limit) => {
+			const build = T<
+				(...args: unknown[]) => { text: string; truncated: boolean }
+			>("_buildTabLogSection");
+			const result = build(
+				{ url: "https://www.twitch.tv/channel" },
+				0,
+				{
+					entries: [{ t: 1, l: "error", m: "latest failure ".repeat(200) }],
+					context: null,
+					error: null,
+					truncatedEntries: 0,
+				},
+				limit,
+			);
+			expect(result.text.length).toBeLessThanOrEqual(limit);
+			expect(result.truncated).toBe(true);
+			if (limit >= 300) {
+				expect(result.text).toContain("tab section truncated");
+			}
+			if (limit >= 500) {
+				expect(result.text).toContain("latest failure");
+			}
+		},
+	);
+
 	it("writes explicit collection failures and hard-bounds each tab section", () => {
 		const build = T<
 			(
