@@ -6209,6 +6209,12 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 			})
 		) {
 			queueMicrotask(resumePausedPlayer);
+			_scheduleResumeRetries(
+				taskChannel,
+				taskMediaKey,
+				_HIDDEN_VISIBILITY_RESUME_RETRY_DELAYS_MS,
+				{ cycleStartedAt: requestedCycleStartedAt },
+			);
 		} else {
 			_schedulePlaybackRecoveryTimeout(
 				resumePausedPlayer,
