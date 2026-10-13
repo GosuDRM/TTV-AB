@@ -73,6 +73,13 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v22.0.1 - 2026-10-13
+
+- **Faster Return After Long Breaks** - Return to Twitch's own stream about 8 seconds sooner after a break whose ads have all played, when ad markers did not come back during it. Breaks where ads came back or the ad count is unknown keep the full checks.
+- **Midroll Black Screen** - Wait a few seconds for the clean backup to catch up at the start of a midroll instead of playing several seconds of black video, so the stream continues from where it left off.
+- **HD Backups During Long Breaks** - Keep checking a new HD source when an older session of the same source just showed ads, and stop counting HD sources that were never played toward the retry limit, so long breaks no longer stay at 360p.
+- **Fewer Quality Jumps** - Switch from the 360p backup to HD only after the HD source has stayed clean for 6 seconds, so sources that start showing ads moments later no longer bounce the video between HD and 360p.
+
 ### v22.0.0 - 2026-10-13
 
 - **Faster Return After Ads** - Return to Twitch's own stream about 15 seconds sooner after a break whose ads have all played, by reusing the clean checks already made instead of repeating them while the backup is held. Breaks with an unknown or unfinished ad count keep the full checks.
@@ -105,11 +112,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Ad Break Summaries** - Show how playback returned to the stream in the log summary for ad breaks that end normally, not only after a silent backup hold.
 - **Code Cleanup** - Remove an unused player helper left over from an older version.
 - **Monitor Efficiency** - Check the page's player once per playback monitor pass instead of twice on pages without a stream.
-
-### v21.0.5 - 2026-10-13
-
-- **1440p Ad Break Freezes** - Keep every verified quality option when Twitch shortens the quality list just before an ad on HEVC or AV1 1440p streams, so playback switches to a clean backup instead of freezing for up to a minute and the quality menu is no longer cut down to 1440p only.
-- **Silent Hold Stalls** - Stop an old stall report from sidelining a healthy backup when an ad break moves into its silent hold, which caused repeated freezes while Twitch kept serving ads.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

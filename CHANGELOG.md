@@ -2,6 +2,15 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [22.0.1] - 2026-10-13
+
+Fixed
+
+- **Faster Return After Long Breaks** - Return to Twitch's own stream about 8 seconds sooner after a break whose ads have all played, when ad markers did not come back during it. Breaks where ads came back or the ad count is unknown keep the full checks.
+- **Midroll Black Screen** - Wait a few seconds for the clean backup to catch up at the start of a midroll instead of playing several seconds of black video, so the stream continues from where it left off.
+- **HD Backups During Long Breaks** - Keep checking a new HD source when an older session of the same source just showed ads, and stop counting HD sources that were never played toward the retry limit, so long breaks no longer stay at 360p.
+- **Fewer Quality Jumps** - Switch from the 360p backup to HD only after the HD source has stayed clean for 6 seconds, so sources that start showing ads moments later no longer bounce the video between HD and 360p.
+
 ## [22.0.0] - 2026-10-13
 
 Fixed
