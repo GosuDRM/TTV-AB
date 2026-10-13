@@ -2,6 +2,20 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [22.0.3] - 2026-10-14
+
+Fixed
+
+- **Ended Stream Reloads** - Stop reloading the player every couple of seconds when a live stream ends, and space out end-of-stream recovery like the other playback fixes.
+- **Offline Playback** - Pause the stall fixes while the browser is offline instead of pausing and reloading the player during a connection drop, so playback resumes from its buffer once the connection is back.
+- **Quieter Background Logs** - Log a hidden tab's late worker heartbeat once per step instead of repeating it past the limit while waiting before recovery.
+- **Smoother Return From HD Backups** - Return to Twitch's own stream without rebuilding the player when it trails the HD backup by less than a segment, by waiting a moment for the next segment instead of reloading for several seconds.
+
+Changed
+
+- **Diagnostic Saves** - Save the crash diagnostics snapshot only when the log has changed, or at most once a minute, instead of every 15 seconds.
+- **Buffer Gap Diagnostics** - Show the player's buffered ranges and the active backup in the log when playback jumps over a gap in its buffer, to help trace short freezes at the start of a break.
+
 ## [22.0.2] - 2026-10-14
 
 Fixed
