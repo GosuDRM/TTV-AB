@@ -7826,6 +7826,19 @@ function _monitorPlayerBuffering() {
 			hasPendingPostAdRecovery = false;
 		}
 
+		if (typeof navigator !== "undefined" && navigator.onLine === false) {
+			_resetCleanPlaybackFailureSamples();
+			_resetHiddenCleanLiveStallState(currentMediaKey);
+			_PlayerBufferState.numSame = 0;
+			_PlayerBufferState.liveEdgeStarveCount = 0;
+			_PlayerBufferState.fixAttempts = 0;
+			_PlayerBufferState.gapJumpStuckTicks = 0;
+			_PlayerBufferState.gapJumpLastPosition = -1;
+			_PostBreakWedgeState.lastCurrentTime = -1;
+			_PostBreakWedgeState.lastTotalFrames = -1;
+			_PostBreakWedgeState.evidenceCount = 0;
+			return nextDelay;
+		}
 		const playerAndState = _getPlayerAndState();
 		const currentPlayer =
 			playerAndState.player && playerAndState.state
