@@ -1094,6 +1094,22 @@ function _isBackupProbationCurrent(
 	);
 }
 
+const _BACKUP_BRIDGE_PROMOTION_CLEAN_SPAN_MS = 6000;
+
+function _isBackupProbationCooldownExempt(
+	info: TTVABStreamInfo,
+	probation = info?._BackupProbation,
+	playerType = probation?.type,
+) {
+	return Boolean(
+		probation?.type === playerType &&
+			Number(probation.cooldownRetryAt) > 0 &&
+			Number(info?.FailedBackupPlayerTypes?.get?.(playerType)) ===
+				Number(probation.cooldownRetryAt) &&
+			_isBackupProbationCurrent(info, probation),
+	);
+}
+
 function _isBackupProbationDue(info: TTVABStreamInfo) {
 	const probation = info?._BackupProbation;
 	return Boolean(
@@ -1102,7 +1118,8 @@ function _isBackupProbationDue(info: TTVABStreamInfo) {
 			Date.now() - probation.at >= 1500 &&
 			(info.ActiveBackupPlayerType === "autoplay" ||
 				info.LastCleanBackupPlayerType === "autoplay") &&
-			!_isBackupPlayerRetryCoolingDown(info, probation.type) &&
+			(!_isBackupPlayerRetryCoolingDown(info, probation.type) ||
+				_isBackupProbationCooldownExempt(info, probation)) &&
 			!info._BackupSearchPromise &&
 			!(info._BackupSearchPromises?.size > 0),
 	);
@@ -9546,6 +9563,16 @@ async function _searchBackupStream(
 			];
 		}
 	}
+	const probationType =
+		!earlyRetry && _isBackupProbationCurrent(info)
+			? info._BackupProbation.type
+			: null;
+	if (probationType && playerTypes.includes(probationType)) {
+		playerTypes = [
+			probationType,
+			...playerTypes.filter((playerType) => playerType !== probationType),
+		];
+	}
 	const resolvedTargetRes =
 		currentResolution ||
 		_getFallbackResolution(info, "") ||
@@ -9727,6 +9754,7 @@ async function _searchBackupStream(
 			if (
 				!earlyRetry &&
 				_isBackupPlayerRetryCoolingDown(info, pt) &&
+				!_isBackupProbationCooldownExempt(info, info._BackupProbation, pt) &&
 				!(codecPass > 0 && failedExactCodecPlayerTypes.has(pt))
 			) {
 				if (!info._LoggedWhitelistByType) {
@@ -10211,9 +10239,19 @@ async function _searchBackupStream(
 												probation.at > 0 &&
 												Date.now() - probation.at < 1500,
 										);
+										const probationStartedAt = sameCandidate
+											? Number(probation.startedAt) || probation.at
+											: Date.now();
 										const nextProbation = {
 											type: pt,
 											at: checkedTooSoon ? probation.at : Date.now(),
+											startedAt: probationStartedAt,
+											cooldownRetryAt: sameCandidate
+												? Number(probation.cooldownRetryAt) || 0
+												: isFreshM3u8 &&
+														_isBackupPlayerRetryCoolingDown(info, pt)
+													? Number(info.FailedBackupPlayerTypes.get(pt)) || 0
+													: 0,
 											cleanChecks: checkedTooSoon
 												? priorCleanHolds
 												: priorCleanHolds + 1,
@@ -10261,7 +10299,13 @@ async function _searchBackupStream(
 												!sameCandidate ||
 												checkedTooSoon ||
 												priorCleanHolds < requiredCleanHolds);
-										if (needsSecondLook) {
+										const needsStableBridgeLook = Boolean(
+											!needsSecondLook &&
+												pt !== "autoplay" &&
+												Date.now() - probationStartedAt <
+													_BACKUP_BRIDGE_PROMOTION_CLEAN_SPAN_MS,
+										);
+										if (needsSecondLook || needsStableBridgeLook) {
 											const bridgedProbe =
 												await _awaitBackupProbeBeforeDeadline(
 													_refreshHeldAutoplayBackupPlaylist(
@@ -10282,15 +10326,21 @@ async function _searchBackupStream(
 											const bridged = bridgedProbe.value;
 											if (bridged) {
 												info._BackupProbation = nextProbation;
-												_log(
-													`[Trace] Fresh ${pt} session held for a second clean check; continuing clean autoplay bridge`,
-													"info",
-												);
+												if (needsSecondLook)
+													_log(
+														`[Trace] Fresh ${pt} session held for a second clean check; continuing clean autoplay bridge`,
+														"info",
+													);
+												else if (priorCleanHolds === requiredCleanHolds)
+													_log(
+														`[Trace] Holding ${pt} until it has stayed clean for ${_BACKUP_BRIDGE_PROMOTION_CLEAN_SPAN_MS / 1000}s; continuing clean autoplay bridge`,
+														"info",
+													);
 												backupType = "autoplay";
 												backupM3u8 = bridged;
 												break;
 											}
-											if (isSessionNeutralCandidate) {
+											if (needsSecondLook && isSessionNeutralCandidate) {
 												info._BackupProbation = nextProbation;
 												break;
 											}
@@ -10378,17 +10428,21 @@ async function _searchBackupStream(
 									if (isExactEnhancedPass) {
 										failedExactCodecPlayerTypes.add(pt);
 									}
-									const wasCleanCandidate =
+									const wasServedCandidate =
 										pt !== "autoplay" &&
 										!isFreshM3u8 &&
-										(pt === info.ActiveBackupPlayerType ||
+										pt === info.ActiveBackupPlayerType;
+									const wasCleanCandidate =
+										wasServedCandidate ||
+										(pt !== "autoplay" &&
+											!isFreshM3u8 &&
 											info._BackupProbation?.type === pt);
 									if (info._BackupProbation?.type === pt) {
 										info._BackupProbation = null;
 									}
 									if (promotionPolicy.reason === "ad-marked") {
-										if (wasCleanCandidate) {
-											rejectedActiveAdSession = true;
+										if (wasCleanCandidate) rejectedActiveAdSession = true;
+										if (wasServedCandidate) {
 											info._BackupPinFlipCount =
 												(Number(info._BackupPinFlipCount) || 0) + 1;
 										}
