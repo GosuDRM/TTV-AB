@@ -56,6 +56,8 @@ type TTVABBackupSearchResult = {
 type TTVABBackupProbation = {
 	type: string;
 	at: number;
+	startedAt?: number;
+	cooldownRetryAt?: number;
 	cleanChecks: number;
 	cache: TTVABBackupMaster;
 	playlistUrl: string;
