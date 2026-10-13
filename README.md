@@ -73,6 +73,27 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v22.0.0 - 2026-10-13
+
+- **Faster Return After Ads** - Return to Twitch's own stream about 15 seconds sooner after a break whose ads have all played, by reusing the clean checks already made instead of repeating them while the backup is held. Breaks with an unknown or unfinished ad count keep the full checks.
+- **Stream Return Checks** - Stop counting clean checks of Twitch's own stream as failures while they wait for confirmation, which could keep playback on the backup stream after the break had ended and log it as still showing ads.
+- **Log Privacy** - Hide more types of private values, such as access tokens, from the console and from exported logs.
+- **Error Details** - Preserve error types, messages, stack traces, and causes in diagnostic logs, with privacy filtering and size limits.
+- **Recent Debug Logs** - Keep the newest failure messages when a tab's export reaches the size limit, with an explicit count of omitted entries.
+- **Log History** - Keep errors and ad break summaries in Generate Log after a long session pushes older entries out, and show how many older entries were trimmed.
+- **Token Request Logs** - Report how many backup token attempts were actually made, and name relay failures correctly instead of calling them spoofing errors.
+- **Ad Pod Tracking After Recovery** - Keep counting ads per pod when a replacement player takes over or the backup recovery mode is active, so a preroll before a midroll no longer makes the midroll look finished early.
+- **Picture-in-Picture Channel Changes** - Follow a raid or channel change inside an open Picture-in-Picture window, so watch time, ad handling and reloads apply to the channel actually playing.
+- **Recovery Cleanup** - Switch off the backup recovery mode once a replacement player has stayed healthy, instead of keeping it for the rest of the page.
+- **Ended Streams** - Stop treating a live stream that has ended as a player crash, so the extension no longer reloads the player up to three times or shows the Refresh tab notice when a streamer goes offline.
+- **Ad Break Timer** - Stop the ad break timer from flickering when Twitch updates the page address without changing the stream.
+- **Ad Completion Reports** - Keep reporting rejected ad completion reports every 10 minutes with a running count, and report the best known ad count when Twitch does not say how many ads a break has.
+- **Logging Efficiency** - Stop reading object values and formatting older log entries once their size limits are reached.
+- **Quieter Console** - Show routine successful backup token requests only in debug output and Generate Log, while failures and unusual responses still appear in the console.
+- **Fewer Backup Requests** - Wait longer before checking a backup source again when it keeps showing ads in the same break, cutting repeated requests during long breaks.
+- **Quieter Ad Break Logs** - Log repeated ad break states and returning ad markers only when they change, with a running count, and move per-source search lines to debug output.
+- **Page Efficiency** - Skip page changes that cannot contain an ad video and reuse the known player during ad breaks, reducing work in busy chats.
+
 ### v21.3.0 - 2026-10-13
 
 - **HD Backup Quality** - Keep the selected HD backup during an ad break instead of dropping it to 360p every few seconds while Twitch's quality list is still the low one from a preroll.
@@ -89,11 +110,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 - **1440p Ad Break Freezes** - Keep every verified quality option when Twitch shortens the quality list just before an ad on HEVC or AV1 1440p streams, so playback switches to a clean backup instead of freezing for up to a minute and the quality menu is no longer cut down to 1440p only.
 - **Silent Hold Stalls** - Stop an old stall report from sidelining a healthy backup when an ad break moves into its silent hold, which caused repeated freezes while Twitch kept serving ads.
-
-### v21.0.4 - 2026-10-13
-
-- **HD Backup Retention** - Keep a clean HD backup playing after it proves itself during an ad break, instead of dropping back to 360p because it had shown ads earlier in the same break.
-- **Firefox Startup Error** - Stop Firefox from logging an XML parsing error while the player starts.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
