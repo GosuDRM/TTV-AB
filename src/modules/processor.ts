@@ -1523,9 +1523,16 @@ function _advanceExactNativeRecoveryCandidate(
 			Math.trunc(Number(info.NativeRecoveryCandidateCleanCount) || 0),
 		) + 1;
 	const maximumEscalation = 4;
+	const escalation =
+		stage === "hold" && _isCurrentAdPodComplete(info)
+			? Math.min(
+					maximumEscalation,
+					Math.max(0, Math.trunc(Number(info.AdEndConfirmEscalation) || 0)),
+				)
+			: maximumEscalation;
 	const requiredCleanPlaylists =
-		_getResolvedAdEndMinCleanPlaylists() + maximumEscalation;
-	const requiredCleanMs = _getResolvedAdEndGraceMs() + maximumEscalation * 2500;
+		_getResolvedAdEndMinCleanPlaylists() + escalation;
+	const requiredCleanMs = _getResolvedAdEndGraceMs() + escalation * 2500;
 	return info.NativeRecoveryCandidateCleanCount >= requiredCleanPlaylists &&
 		Date.now() -
 			Math.max(
