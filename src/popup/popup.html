@@ -743,14 +743,14 @@
             background: rgba(145, 70, 255, 0.35);
         }
 
-        #adTimerInfoIcon {
+        button.info-icon {
             border: none;
             padding: 0;
             font-family: inherit;
             vertical-align: middle;
         }
 
-        #adTimerInfoIcon:focus-visible {
+        .info-icon:focus-visible {
             outline: 2px solid currentColor;
             outline-offset: 2px;
         }
@@ -780,15 +780,12 @@
             padding: 20px 22px;
             width: 260px;
             max-width: 90%;
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
             font-size: 13px;
             line-height: 1.5;
             box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
             text-align: center;
-        }
-
-        :where(#adTimerTooltip) .modal-box {
-            max-height: calc(100vh - 32px);
-            overflow-y: auto;
         }
 
         .modal-box p {
@@ -820,6 +817,11 @@
 
         .modal-close:hover {
             background: #772CE8;
+        }
+
+        .modal-close:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
         }
 
         .toggle {
@@ -1234,6 +1236,11 @@
         .lang-selector:focus {
             border-color: #9146FF;
             box-shadow: 0 0 8px rgba(145, 70, 255, 0.3);
+        }
+
+        .lang-selector:focus-visible {
+            outline: 2px solid rgba(145, 70, 255, 0.85);
+            outline-offset: 2px;
         }
 
         .footer-text {
@@ -1986,8 +1993,13 @@
         html[data-theme="retro"] .status-text {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             font-size: 13px;
-            color: var(--r-cyan);
-            text-shadow: 0 0 6px rgba(47, 240, 230, 0.55);
+            color: #8cf59a;
+            text-shadow: 0 0 6px rgba(140, 245, 154, 0.55);
+        }
+
+        html[data-theme="retro"] .status-text.disabled {
+            color: #9a93a8;
+            text-shadow: none;
         }
 
         html[data-theme="retro"] .counter-value {
@@ -1998,8 +2010,8 @@
         }
 
         html[data-theme="retro"] .time-saved-value {
-            color: var(--r-magenta);
-            text-shadow: 0 0 8px rgba(255, 61, 180, 0.55);
+            color: #ffb15c;
+            text-shadow: 0 0 8px rgba(255, 177, 92, 0.55);
         }
 
         html[data-theme="retro"] .status-dot {
@@ -2473,6 +2485,7 @@
 
             html[data-theme="retro"] body::after,
             html[data-theme="retro"] .title,
+            html[data-theme="retro"] .description-text,
             html[data-theme="retro"] .status-dot,
             html[data-theme="retro"] .donate-btn,
             .theme-dot.active {
@@ -2484,6 +2497,10 @@
             html[data-theme="retro"] .donate-btn:hover,
             html[data-theme="retro"] .donate-btn:focus-visible {
                 transform: none;
+            }
+
+            html[data-theme="retro"] .theme-dot.active {
+                animation: none;
             }
         }
     </style>
@@ -2652,7 +2669,8 @@
         <div class="toggle-row">
             <div class="toggle-label-row">
                 <label class="toggle-label" for="adSpoofingToggle" data-i18n="adSpoofing">Ad Spoofing</label>
-                <span class="info-icon" id="adSpoofingInfoIcon" aria-label="What is Ad Spoofing?">i</span>
+                <button type="button" class="info-icon" id="adSpoofingInfoIcon" aria-label="About Ad Spoofing"
+                    aria-haspopup="dialog" aria-controls="adSpoofingTooltip" aria-expanded="false">i</button>
             </div>
             <label class="toggle">
                 <input type="checkbox" id="adSpoofingToggle" checked disabled aria-label="Ad Spoofing">
@@ -2662,7 +2680,8 @@
         <div class="toggle-row">
             <div class="toggle-label-row">
                 <label class="toggle-label" for="autoplayBackupToggle" data-i18n="autoplayBackup">Low Quality Fallback</label>
-                <span class="info-icon" id="autoplayBackupInfoIcon" aria-label="About Low Quality Fallback">i</span>
+                <button type="button" class="info-icon" id="autoplayBackupInfoIcon" aria-label="About Low Quality Fallback"
+                    aria-haspopup="dialog" aria-controls="autoplayBackupTooltip" aria-expanded="false">i</button>
             </div>
             <label class="toggle">
                 <input type="checkbox" id="autoplayBackupToggle" checked disabled aria-label="Low Quality Fallback">
@@ -2804,19 +2823,19 @@
 
     <!-- Modals at root level to prevent overflow clipping by container and flexbox positioning bugs -->
     <div class="modal-overlay" id="adSpoofingTooltip" hidden>
-        <div class="modal-box">
-            <p><strong data-i18n="adSpoofing">Ad Spoofing</strong></p>
-            <p data-i18n="adSpoofingDesc">When TTV AB blocks an ad, this option sends Twitch the same impression, progress, and completion events that the Twitch player normally reports. The goal is to make the blocked ad break look completed without playing the ad.</p>
-            <p data-i18n="adSpoofingFootnote">This sends extra requests to Twitch and does not block ads by itself. If you turn it off, only these signals stop; ad blocking keeps working normally.</p>
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="adSpoofingModalTitle">
+            <p><strong id="adSpoofingModalTitle" data-i18n="adSpoofing">Ad Spoofing</strong></p>
+            <p data-i18n="adSpoofingDesc">When TTV AB blocks an ad, this sends Twitch the impression, progress, and completion events its player normally reports, and outside midrolls requests the ad's segments in the background, so the break looks completed without playing the ad.</p>
+            <p data-i18n="adSpoofingFootnote">It does not block ads by itself. Turning it off stops only these requests; ad blocking keeps working.</p>
             <button type="button" class="modal-close" id="adSpoofingModalClose" data-i18n="adSpoofingGotIt">Got it</button>
         </div>
     </div>
 
     <div class="modal-overlay" id="autoplayBackupTooltip" hidden>
-        <div class="modal-box">
-            <p><strong data-i18n="autoplayBackup">Low Quality Fallback</strong></p>
-            <p data-i18n="autoplayBackupDesc">Enabled by default. When enabled, can start with a fast, ad-free autoplay stream, usually at 360p, then check for a verified higher-quality backup without reloading the player.</p>
-            <p data-i18n="autoplayBackupWarning">When off, normal-quality sources are tried first. If none is clean during a preroll or midroll, a temporary clean low-quality stream can play while higher quality is checked.</p>
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="autoplayBackupModalTitle">
+            <p><strong id="autoplayBackupModalTitle" data-i18n="autoplayBackup">Low Quality Fallback</strong></p>
+            <p data-i18n="autoplayBackupDesc">On by default. During an ad break, starts the ad-free stream sooner, usually at 360p, then switches to a verified higher-quality backup without restarting the player. If the break ends at 360p, the player restarts once to return to full quality.</p>
+            <p data-i18n="autoplayBackupWarning">When off, normal-quality sources are tried first. If none is ad-free during a preroll or midroll, a low-quality stream can still play temporarily while higher quality is checked. Ad breaks can take a few seconds longer to show video.</p>
             <button type="button" class="modal-close" id="autoplayBackupModalClose" data-i18n="autoplayBackupGotIt">Got it</button>
         </div>
     </div>
@@ -2824,8 +2843,8 @@
     <div class="modal-overlay" id="adTimerTooltip" hidden>
         <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="adTimerModalTitle">
             <p><strong id="adTimerModalTitle" data-i18n="adTimer">Ad Break Timer</strong></p>
-            <p data-i18n="adTimerDetails">Off by default. Shows a small timer in the top-right corner of the stream during an ad break. It shows how long the break has been running and disappears when the break ends.</p>
-            <p data-i18n="adTimerFootnote">The timer shows how long the ad break has been running. It does not predict when higher video quality will return. Ad blocking and playback work the same with the timer on or off.</p>
+            <p data-i18n="adTimerDetails">Off by default. Shows a small timer in the stream's top-right corner during an ad break, counting how long it has run. It disappears when the break ends.</p>
+            <p data-i18n="adTimerFootnote">It does not predict when full quality returns, and turning it on or off does not change ad blocking or playback.</p>
             <button type="button" class="modal-close" id="adTimerModalClose" data-i18n="adTimerGotIt">Got it</button>
         </div>
     </div>
