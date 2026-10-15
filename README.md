@@ -73,6 +73,18 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v23.0.0 - 2026-10-15
+
+- **Midroll Rewind** - Continue the backup stream from exactly where the live stream left off when a midroll starts, instead of jumping back a few seconds and replaying them with Twitch Low Latency on. Switching to another backup during the break and returning to the live stream afterwards continue the same way.
+- **Midroll Start** - Switch to the backup stream as soon as it is ready when a midroll starts, instead of waiting a few seconds for its next segment or showing a short black screen. Switching to HD during the break and returning to the live stream afterwards no longer wait for the next segment either.
+- **Slow Connections** - Wait twice as long before each repeated reload when the player keeps running out of video, so a slow connection that needs a few seconds per segment is no longer stuck reloading every few seconds. A truly stuck player is still reloaded, and the shorter wait returns after five minutes without such a reload.
+- **Ad Spoofing Toggle** - Stop downloading ad segments for Twitch while Ad Spoofing is off, download them one at a time instead of cancelling the previous one, and stop downloading them for the rest of a midroll once it is identified, so a slow connection keeps more bandwidth for the stream when it starts on an ad.
+- **Ad Completion Reports** - Count a report that Twitch answers with an error as failed instead of sent, and stop a replacement player started during an ad break from reporting the same ads again.
+- **Previews for Twitch Quality** - Follow the player quality set by the Previews for Twitch extension, and ask it to re-apply that quality after the player reloads, so the stream no longer drops to Twitch's saved quality after an ad break.
+- **Midroll Start Diagnostics** - Log one line per midroll that starts without ad segments, showing what the stream offered and whether playback waited for a backup, reused the last clean playlist, or showed the silent hold. Also log when the player cancels a request that is waiting for a backup and when a background backup search fails.
+- **Ad Break Type Diagnostics** - Name the ad break type, preroll or midroll, in each ad break summary, and log when the type cannot be recorded because the page is on other media.
+- **Ad Spoofing Diagnostics** - Say in the log that ad completion reports were sent rather than completed, show which stream is playing at the time, and warn once per ad break, instead of once per session, when Twitch's ad markers cannot be reported.
+
 ### v22.0.3 - 2026-10-14
 
 - **Ended Stream Reloads** - Stop reloading the player every couple of seconds when a live stream ends, and space out end-of-stream recovery like the other playback fixes.
@@ -88,13 +100,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Media Keys** - Keep a pause from keyboard media keys, headset buttons, or system media controls while Twitch is out of focus, instead of resuming the stream on its own.
 - **Background Resume** - Retry restarting playback a few times after a quick pause in a hidden tab, so the stream no longer stays paused until you return.
 - **HD Switch With Several Sources** - Keep each HD source's clean time while sources take turns falling slightly behind the 360p backup, so long breaks can still switch to HD instead of staying at 360p.
-
-### v22.0.1 - 2026-10-13
-
-- **Faster Return After Long Breaks** - Return to Twitch's own stream about 8 seconds sooner after a break whose ads have all played, when ad markers did not come back during it. Breaks where ads came back or the ad count is unknown keep the full checks.
-- **Midroll Black Screen** - Wait a few seconds for the clean backup to catch up at the start of a midroll instead of playing several seconds of black video, so the stream continues from where it left off.
-- **HD Backups During Long Breaks** - Keep checking a new HD source when an older session of the same source just showed ads, and stop counting HD sources that were never played toward the retry limit, so long breaks no longer stay at 360p.
-- **Fewer Quality Jumps** - Switch from the 360p backup to HD only after the HD source has stayed clean for 6 seconds, so sources that start showing ads moments later no longer bounce the video between HD and 360p.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
