@@ -2,6 +2,39 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [23.0.1] - 2026-10-15
+
+Fixed
+
+- **Settings After Updates** - Keep your Low Quality Fallback and Ad Break Timer choices when TTV AB updates instead of resetting them with every release.
+- **Setting Explanations** - Shorten and update the Ad Spoofing, Low Quality Fallback, and Ad Break Timer explanations in all 12 languages. Ad Spoofing now mentions the ad segment requests it controls, and Low Quality Fallback explains the one player restart after a break that ends at 360p and the slower start to breaks when it is off.
+- **Explanation Scrolling** - Let every setting explanation scroll in a short popup so its Got it button stays reachable.
+- **Keyboard Access** - Open the Ad Spoofing and Low Quality Fallback explanations from the keyboard with their names read in your language, close any explanation with Escape, and show a clear focus ring on the language selector and Got it buttons.
+- **Reduced Motion** - Stop the Retro theme's description shimmer and theme dot pulse and the achievement toast's animations when your system asks for reduced motion.
+- **Achievement Toast Flicker** - Stop the achievement toast from briefly reappearing just before it disappears.
+- **Ukrainian Store Listing** - Fix a double space in the extension name and a misspelled word in the description.
+- **Channel Ad Breaks** - Show a channel's real number of ad breaks in its details instead of a third of it.
+- **New Channels in Statistics** - Keep new channels in your statistics once 100 channels are tracked, making room from the channels you have not watched for the longest time while always keeping your top five.
+- **Statistics in Embedded Players** - Keep counting ads and watch time in Twitch players embedded on other sites when the browser blocks their site storage, instead of losing them.
+- **VOD Watch Time** - Count watch time for VODs and credit blocked VOD ads to the channel that streamed them. TTV AB asks Twitch once which channel a VOD belongs to.
+- **Delayed Statistics** - Record statistics delivered after a browser restart on the day they happened instead of the day they arrived.
+- **Time Zone Changes** - Keep today's statistics when you move to an earlier time zone or your clock goes back.
+- **Time Saved Display** - Show Time Saved in whole seconds.
+
+Added
+
+- **Low Quality Fallback Diagnostics** - Log once per ad break when Low Quality Fallback is off and the break is not identified as a preroll or midroll, which leaves the 360p fallback unavailable.
+- **Individual Ads** - Count each blocked ad as well as each ad break, shown in a channel's details and the daily chart. Ads blocked before this update are not included.
+- **Daily History** - Hover a day in the chart to see its ad breaks, ads, Time Saved, and watch time.
+- **Reset Statistics** - Clear your counters, history, channel statistics, and achievements from the Statistics panel after confirming, without changing your settings.
+- **Export Statistics** - Save your statistics as a JSON file from the Statistics panel.
+
+Changed
+
+- **Retro Colors** - Show Time Saved in light orange, and the Status text in light green when active and gray when inactive, in the Retro theme.
+- **Last 7 Days** - Show the last 7 days in the chart instead of starting over every Monday, and leave today out of the daily average since the day is not over.
+- **Fewer Statistics Writes** - Save watch time once a minute instead of every 15 seconds and save only what changed, so the browser writes to disk less often.
+
 ## [23.0.0] - 2026-10-15
 
 Fixed

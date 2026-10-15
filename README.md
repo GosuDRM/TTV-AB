@@ -38,7 +38,7 @@ A lightweight browser extension that blocks Twitch ads on live streams and VODs 
 - ✅ Optional Ad Break Timer in the stream's top-right corner, disabled by default
 - ✅ Optional Turbo Mode that pauses new statistics and achievements while preserving existing history and all ad-blocking controls
 - ✅ Persistent, live-updating Ads Blocked and Time Saved totals
-- ✅ Statistics dashboard with weekly charts, detailed per-channel history, and **12 Achievement Badges**
+- ✅ Statistics dashboard with a 7-day chart, detailed per-channel history, JSON export, reset, and **12 Achievement Badges**
 - ✅ Language selector, with 12 languages supported (EN, ES, FR, DE, PT, IT, JA, KO, ZH-CN, ZH-TW, RU, UK)
 - ✅ Built-in Generate Log tool that creates a local, privacy-filtered diagnostic file for bug reports
 - ✅ Accessible Manifest V3 popup with Retro and Neon themes
@@ -74,6 +74,31 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v23.0.1 - 2026-10-15
+
+- **Settings After Updates** - Keep your Low Quality Fallback and Ad Break Timer choices when TTV AB updates instead of resetting them with every release.
+- **Setting Explanations** - Shorten and update the Ad Spoofing, Low Quality Fallback, and Ad Break Timer explanations in all 12 languages. Ad Spoofing now mentions the ad segment requests it controls, and Low Quality Fallback explains the one player restart after a break that ends at 360p and the slower start to breaks when it is off.
+- **Explanation Scrolling** - Let every setting explanation scroll in a short popup so its Got it button stays reachable.
+- **Keyboard Access** - Open the Ad Spoofing and Low Quality Fallback explanations from the keyboard with their names read in your language, close any explanation with Escape, and show a clear focus ring on the language selector and Got it buttons.
+- **Reduced Motion** - Stop the Retro theme's description shimmer and theme dot pulse and the achievement toast's animations when your system asks for reduced motion.
+- **Achievement Toast Flicker** - Stop the achievement toast from briefly reappearing just before it disappears.
+- **Ukrainian Store Listing** - Fix a double space in the extension name and a misspelled word in the description.
+- **Channel Ad Breaks** - Show a channel's real number of ad breaks in its details instead of a third of it.
+- **New Channels in Statistics** - Keep new channels in your statistics once 100 channels are tracked, making room from the channels you have not watched for the longest time while always keeping your top five.
+- **Statistics in Embedded Players** - Keep counting ads and watch time in Twitch players embedded on other sites when the browser blocks their site storage, instead of losing them.
+- **VOD Watch Time** - Count watch time for VODs and credit blocked VOD ads to the channel that streamed them. TTV AB asks Twitch once which channel a VOD belongs to.
+- **Delayed Statistics** - Record statistics delivered after a browser restart on the day they happened instead of the day they arrived.
+- **Time Zone Changes** - Keep today's statistics when you move to an earlier time zone or your clock goes back.
+- **Time Saved Display** - Show Time Saved in whole seconds.
+- **Low Quality Fallback Diagnostics** - Log once per ad break when Low Quality Fallback is off and the break is not identified as a preroll or midroll, which leaves the 360p fallback unavailable.
+- **Individual Ads** - Count each blocked ad as well as each ad break, shown in a channel's details and the daily chart. Ads blocked before this update are not included.
+- **Daily History** - Hover a day in the chart to see its ad breaks, ads, Time Saved, and watch time.
+- **Reset Statistics** - Clear your counters, history, channel statistics, and achievements from the Statistics panel after confirming, without changing your settings.
+- **Export Statistics** - Save your statistics as a JSON file from the Statistics panel.
+- **Retro Colors** - Show Time Saved in light orange, and the Status text in light green when active and gray when inactive, in the Retro theme.
+- **Last 7 Days** - Show the last 7 days in the chart instead of starting over every Monday, and leave today out of the daily average since the day is not over.
+- **Fewer Statistics Writes** - Save watch time once a minute instead of every 15 seconds and save only what changed, so the browser writes to disk less often.
+
 ### v23.0.0 - 2026-10-15
 
 - **Midroll Rewind** - Continue the backup stream from exactly where the live stream left off when a midroll starts, instead of jumping back a few seconds and replaying them with Twitch Low Latency on. Switching to another backup during the break and returning to the live stream afterwards continue the same way.
@@ -94,13 +119,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Smoother Return From HD Backups** - Return to Twitch's own stream without rebuilding the player when it trails the HD backup by less than a segment, by waiting a moment for the next segment instead of reloading for several seconds.
 - **Diagnostic Saves** - Save the crash diagnostics snapshot only when the log has changed, or at most once a minute, instead of every 15 seconds.
 - **Buffer Gap Diagnostics** - Show the player's buffered ranges and the active backup in the log when playback jumps over a gap in its buffer, to help trace short freezes at the start of a break.
-
-### v22.0.2 - 2026-10-14
-
-- **Playback While Away** - Stop the check for frozen video after an ad break from pausing or reloading the stream while the tab is hidden, since browsers stop drawing video in background tabs on purpose.
-- **Media Keys** - Keep a pause from keyboard media keys, headset buttons, or system media controls while Twitch is out of focus, instead of resuming the stream on its own.
-- **Background Resume** - Retry restarting playback a few times after a quick pause in a hidden tab, so the stream no longer stays paused until you return.
-- **HD Switch With Several Sources** - Keep each HD source's clean time while sources take turns falling slightly behind the 360p backup, so long breaks can still switch to HD instead of staying at 360p.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

@@ -20,6 +20,7 @@ To provide those features, the Extension may:
 - Read and temporarily adjust Twitch playback preferences, such as selected video quality and low-latency mode, so they can be restored after automatic player recovery.
 - Send simulated ad impression, quartile, and pod-completion events to Twitch when Ad Spoofing is enabled. These events can include Twitch ad identifiers, creative and campaign identifiers, a Twitch-provided ad-reporting token, ad duration and position, and available Twitch session headers. While Ad Spoofing is enabled, the Extension also requests a blocked ad's media segments from Twitch outside midrolls, one at a time, and discards them. Ad Spoofing is enabled by default and can be disabled in the Extension popup.
 - Send a channel login to Twitch while that channel's statistics details are open, so the popup can request its profile image and current live status. The profile image is then loaded from Twitch's image delivery network.
+- Send a VOD ID to Twitch once while that VOD plays, so local statistics can credit its watch time and blocked ads to the channel that streamed it.
 
 These requests are sent only to Twitch-related HTTPS endpoints for the functions described above. Twitch-provided credentials are kept in memory as needed for playback and are not intentionally saved in extension storage or included in exported diagnostic logs.
 
@@ -30,8 +31,9 @@ The Extension uses browser-local extension storage and bounded entries in Twitch
 - The Ad Blocking enable/disable toggle, plus the Ad Spoofing, Low Quality Fallback, and Turbo Mode settings.
 - The selected language and popup theme.
 - Local UI data such as welcome/donation reminder dismissal timing and related presentation state.
-- The persistent "Ads Blocked" counter and recent daily totals.
-- Per-channel statistics, including channel login, first-seen and last-seen times, watch time, ads blocked, measured ad duration, and Time Saved.
+- The persistent "Ads Blocked" counter and recent daily totals of ad breaks, individual ads, Time Saved, and watch time.
+- Per-channel statistics, including channel login, first-seen, last-seen, and last-activity times, watch time, ad breaks and individual ads blocked, measured ad duration, and Time Saved.
+- The time statistics were last reset.
 - Unlocked achievement identifiers.
 - A bounded cache of Twitch channel profile image URLs and fetch times.
 - Bounded retry and deduplication records used to prevent local statistics from being lost or counted twice after a tab or background process closes unexpectedly.
@@ -55,6 +57,8 @@ The popup and in-page notices contain links to Twitch, GitHub, and Ko-fi. These 
 ## 6. Retention and Control
 
 Settings and statistics remain in browser-local storage until they are cleared or the Extension is uninstalled. Daily history, caches, and delivery-safety records are bounded or periodically pruned. Small reminder and pending statistics-delivery records stored under Twitch's site storage can be removed by clearing site data for twitch.tv.
+
+**Reset** in the Statistics panel clears the counters, daily history, per-channel statistics, and achievements after you confirm, and keeps your settings. **Export** saves your statistics as a JSON file on your device; it is never uploaded.
 
 Enabling Turbo Mode pauses future statistics and achievement updates, clears pending local statistics delivery, and keeps existing history stored for when Turbo Mode is disabled. Disabling Ad Spoofing stops future simulated ad-event and ad-segment requests. Clearing the Extension's browser storage removes its saved settings, statistics, achievements, and channel image cache.
 
