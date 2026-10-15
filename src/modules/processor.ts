@@ -5592,15 +5592,23 @@ function _getAdStartBackupWaitDeadline(info: TTVABStreamInfo, text) {
 	);
 }
 
+function _shouldDeferAdStartHold(
+	info: TTVABStreamInfo,
+	text,
+	requestAdContext = null,
+) {
+	return (
+		requestAdContext?.awaitAdStartBackup === true &&
+		_getAdStartBackupWaitDeadline(info, text) - Date.now() > 250
+	);
+}
+
 function _deferAdStartHold(
 	info: TTVABStreamInfo,
 	text,
 	requestAdContext = null,
 ) {
-	if (
-		requestAdContext?.awaitAdStartBackup === true &&
-		_getAdStartBackupWaitDeadline(info, text) - Date.now() > 250
-	)
+	if (_shouldDeferAdStartHold(info, text, requestAdContext))
 		throw new DOMException(_AD_START_BACKUP_WAIT_MESSAGE, "AbortError");
 }
 
@@ -5877,146 +5885,157 @@ async function _processM3U8(
 				(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0) !==
 					pageGeneration,
 		);
+	let adStartWaitLogged = false;
 	const logAdStartWait = (stopped = false) => {
-		if (!adStartWaitStartedAt) return;
+		if (!adStartWaitStartedAt || adStartWaitLogged) return;
+		adStartWaitLogged = true;
 		const info = _getStreamInfoForPlaylist(url);
 		const servedKind = stopped ? null : info?._LastServedPlaylistKind;
 		_log(
-			`[Continuity] ad-start backup wait ${stopped ? "stopped; failing the request" : servedKind === "hold" ? "gave up; serving the silent hold" : servedKind === "backup" ? "served the live backup" : "served native media"} after ${((Date.now() - adStartWaitStartedAt) / 1000).toFixed(1)}s for ${_normalizeMediaKey(info?.MediaKey) || "unknown media"}`,
+			`[Continuity] ad-start backup wait ${stopped ? (requestSignal?.aborted ? "cancelled by the player" : "stopped; failing the request") : servedKind === "hold" ? "gave up; serving the silent hold" : servedKind === "backup" ? "served the live backup" : "served native media"} after ${((Date.now() - adStartWaitStartedAt) / 1000).toFixed(1)}s for ${_normalizeMediaKey(info?.MediaKey) || "unknown media"}`,
 			stopped || servedKind === "hold" ? "warning" : "info",
 		);
 	};
-	for (let refetches = Math.floor(waitMs / 1000) - 1; ; refetches--) {
-		try {
-			const output = await _processM3U8Attempt(
-				url,
-				playlist,
-				realFetch,
-				requestSignal,
-				attemptContext,
-				awaitAdStartBackup,
-			);
-			logAdStartWait();
-			logCatchUp("served fresh media", "info");
-			return output;
-		} catch (error) {
-			const info = _getStreamInfoForPlaylist(url);
-			const adStartHoldDeferred = Boolean(
-				awaitAdStartBackup && error?.message === _AD_START_BACKUP_WAIT_MESSAGE,
-			);
-			const adStartDeadlineAt =
-				awaitAdStartBackup &&
-				(adStartHoldDeferred ||
-					(error?.message ===
-						"Live handoff playlist is behind the served broadcast time" &&
-						info?.IsShowingAd === true))
-					? _getAdStartBackupWaitDeadline(info, playlist)
-					: 0;
-			if (adStartHoldDeferred || adStartDeadlineAt > 0) {
-				adStartWaitStartedAt ||= Date.now();
-				awaitAdStartBackup = false;
-				adStartWaitAttempts++;
-				refetches++;
-				if (adStartWaitLostOwnership(info)) {
-					logAdStartWait(true);
-					throw error;
-				}
-				if (adStartWaitAttempts < 8 && adStartDeadlineAt - Date.now() > 250) {
-					if (info._BackupSearchPromise !== watchedBackupSearch) {
-						watchedBackupSearch = info._BackupSearchPromise || null;
-						watchedBackupSearchSettled = !watchedBackupSearch;
-						watchedBackupSearchDone = watchedBackupSearch
-							? Promise.resolve(watchedBackupSearch).then(
-									() => {
-										watchedBackupSearchSettled = true;
-									},
-									() => {
-										watchedBackupSearchSettled = true;
-									},
-								)
-							: null;
-					}
-					const delay = _waitForAbortableDelay(
-						Math.min(1000, adStartDeadlineAt - Date.now()),
-						requestSignal,
-					);
-					await (watchedBackupSearchSettled
-						? delay
-						: Promise.race([delay, watchedBackupSearchDone]));
-					const response = await _fetchWithTimeout(
-						realFetch,
-						url,
-						{ signal: requestSignal },
-						Math.max(1, adStartDeadlineAt - Date.now()),
-					).catch(() => null);
-					const refreshed =
-						response?.status === 200
-							? await response.text().catch(() => null)
-							: null;
+	try {
+		for (let refetches = Math.floor(waitMs / 1000) - 1; ; refetches--) {
+			try {
+				const output = await _processM3U8Attempt(
+					url,
+					playlist,
+					realFetch,
+					requestSignal,
+					attemptContext,
+					awaitAdStartBackup,
+				);
+				logAdStartWait();
+				logCatchUp("served fresh media", "info");
+				return output;
+			} catch (error) {
+				const info = _getStreamInfoForPlaylist(url);
+				const adStartHoldDeferred = Boolean(
+					awaitAdStartBackup &&
+						error?.message === _AD_START_BACKUP_WAIT_MESSAGE,
+				);
+				const adStartDeadlineAt =
+					awaitAdStartBackup &&
+					(adStartHoldDeferred ||
+						(error?.message ===
+							"Live handoff playlist is behind the served broadcast time" &&
+							info?.IsShowingAd === true))
+						? _getAdStartBackupWaitDeadline(info, playlist)
+						: 0;
+				if (adStartHoldDeferred || adStartDeadlineAt > 0) {
+					adStartWaitStartedAt ||= Date.now();
+					awaitAdStartBackup = false;
+					adStartWaitAttempts++;
+					refetches++;
 					if (adStartWaitLostOwnership(info)) {
 						logAdStartWait(true);
 						throw error;
 					}
-					if (typeof refreshed === "string") {
-						playlist = refreshed;
-						awaitAdStartBackup = true;
-						attemptContext = requestStartContext
-							? {
-									...requestStartContext,
-									cycleStartedAt: Math.max(
-										0,
-										Number(info.VisibleAdStartedAt) || 0,
-									),
-									backupSearchEpoch: Math.max(
-										0,
-										Number(info.BackupSearchEpoch) || 0,
-									),
-								}
-							: null;
+					if (adStartWaitAttempts < 8 && adStartDeadlineAt - Date.now() > 250) {
+						if (info._BackupSearchPromise !== watchedBackupSearch) {
+							watchedBackupSearch = info._BackupSearchPromise || null;
+							watchedBackupSearchSettled = !watchedBackupSearch;
+							watchedBackupSearchDone = watchedBackupSearch
+								? Promise.resolve(watchedBackupSearch).then(
+										() => {
+											watchedBackupSearchSettled = true;
+										},
+										() => {
+											watchedBackupSearchSettled = true;
+										},
+									)
+								: null;
+						}
+						const delay = _waitForAbortableDelay(
+							Math.min(1000, adStartDeadlineAt - Date.now()),
+							requestSignal,
+						);
+						await (watchedBackupSearchSettled
+							? delay
+							: Promise.race([delay, watchedBackupSearchDone]));
+						const response = await _fetchWithTimeout(
+							realFetch,
+							url,
+							{ signal: requestSignal },
+							Math.max(1, adStartDeadlineAt - Date.now()),
+						).catch(() => null);
+						const refreshed =
+							response?.status === 200
+								? await response.text().catch(() => null)
+								: null;
+						if (adStartWaitLostOwnership(info)) {
+							logAdStartWait(true);
+							throw error;
+						}
+						if (typeof refreshed === "string") {
+							playlist = refreshed;
+							awaitAdStartBackup = true;
+							attemptContext = requestStartContext
+								? {
+										...requestStartContext,
+										cycleStartedAt: Math.max(
+											0,
+											Number(info.VisibleAdStartedAt) || 0,
+										),
+										backupSearchEpoch: Math.max(
+											0,
+											Number(info.BackupSearchEpoch) || 0,
+										),
+									}
+								: null;
+						}
 					}
+					continue;
 				}
-				continue;
+				if (
+					error?.message !==
+						"Live handoff playlist is behind the served broadcast time" ||
+					refetches <= 0 ||
+					Date.now() + 1000 >= deadlineAt ||
+					requestSignal?.aborted ||
+					__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
+					info?.MediaType !== "live" ||
+					info.IsShowingAd ||
+					info.IsHoldingBackupAfterAd ||
+					Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) !==
+						loaderEpoch ||
+					_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) !== pageMediaKey ||
+					(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0) !==
+						pageGeneration
+				) {
+					logCatchUp("gave up; failing the request", "warning");
+					throw error;
+				}
+				await _waitForAbortableDelay(1000, requestSignal);
+				refetched++;
+				const response = await _fetchWithTimeout(
+					realFetch,
+					url,
+					{ signal: requestSignal },
+					Math.max(1, deadlineAt - Date.now()),
+				).catch(() => null);
+				if (response?.status !== 200) {
+					logCatchUp("could not refetch; failing the request", "warning");
+					throw error;
+				}
+				playlist = await response.text();
+				attemptContext = requestStartContext
+					? {
+							...requestStartContext,
+							cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+							backupSearchEpoch: Math.max(
+								0,
+								Number(info.BackupSearchEpoch) || 0,
+							),
+						}
+					: null;
 			}
-			if (
-				error?.message !==
-					"Live handoff playlist is behind the served broadcast time" ||
-				refetches <= 0 ||
-				Date.now() + 1000 >= deadlineAt ||
-				requestSignal?.aborted ||
-				__TTVAB_STATE__?.IsAdStrippingEnabled !== true ||
-				info?.MediaType !== "live" ||
-				info.IsShowingAd ||
-				info.IsHoldingBackupAfterAd ||
-				Math.max(0, Number(info.NativeRecoveryLoaderEpoch) || 0) !==
-					loaderEpoch ||
-				_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) !== pageMediaKey ||
-				(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0) !==
-					pageGeneration
-			) {
-				logCatchUp("gave up; failing the request", "warning");
-				throw error;
-			}
-			await _waitForAbortableDelay(1000, requestSignal);
-			refetched++;
-			const response = await _fetchWithTimeout(
-				realFetch,
-				url,
-				{ signal: requestSignal },
-				Math.max(1, deadlineAt - Date.now()),
-			).catch(() => null);
-			if (response?.status !== 200) {
-				logCatchUp("could not refetch; failing the request", "warning");
-				throw error;
-			}
-			playlist = await response.text();
-			attemptContext = requestStartContext
-				? {
-						...requestStartContext,
-						cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
-						backupSearchEpoch: Math.max(0, Number(info.BackupSearchEpoch) || 0),
-					}
-				: null;
 		}
+	} catch (error) {
+		logAdStartWait(true);
+		throw error;
 	}
 }
 
@@ -7927,6 +7946,55 @@ async function _processM3U8Core(
 			return text;
 		}
 
+		let startIdx = 0;
+		if (
+			info.LastPlayerReload >
+			Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
+		) {
+			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
+		}
+		const startPrewarmBackupSearch = () => {
+			if (info._BackupSearchStartedAt || info.IsUsingFallbackStream) return;
+			const searchStartToken = {};
+			const searchStartEpoch = Math.max(0, Number(info.BackupSearchEpoch) || 0);
+			const searchCycleStartedAt = Math.max(
+				0,
+				Number(info.VisibleAdStartedAt) || 0,
+			);
+			info._BackupSearchStartToken = searchStartToken;
+			info._BackupSearchStartedAt = Date.now();
+			const finishSearch = (result = null) => {
+				if (
+					info._BackupSearchStartToken !== searchStartToken ||
+					Math.max(0, Number(info.BackupSearchEpoch) || 0) !== searchStartEpoch
+				)
+					return;
+				info._BackupSearchStartToken = null;
+				info._BackupSearchStartedAt = 0;
+				if (
+					result?.m3u8 &&
+					_isBackupSearchContextCurrent(
+						info,
+						searchStartEpoch,
+						searchCycleStartedAt,
+					)
+				)
+					info._LastBackupSearchCompletedAt = Date.now();
+			};
+			_findBackupStream(
+				info,
+				realFetch,
+				startIdx,
+				_resolveAdBackupTargetResolution(info, url) || res,
+			).then(finishSearch, (error) => {
+				finishSearch();
+				_log(
+					`[Recovery] Background backup search failed: ${error?.message ?? String(error)}`,
+					"warning",
+				);
+			});
+		};
+
 		if (!info.CsaiOnlyThisBreak && !info.IsUsingModifiedM3U8) {
 			let hasNonLiveSegment = false;
 			const segLines = text.split("\n");
@@ -7941,49 +8009,63 @@ async function _processM3U8Core(
 			}
 			if (!hasNonLiveSegment) {
 				info.CsaiOnlyThisBreak = true;
-				_log("[Trace] CSAI fast path — returning stripped native", "info");
-				if (!info._BackupSearchStartedAt && !info.IsUsingFallbackStream) {
-					const res = _resolveAdBackupTargetResolution(info, url);
-					const searchStartToken = {};
-					const searchStartEpoch = Math.max(
-						0,
-						Number(info.BackupSearchEpoch) || 0,
-					);
-					info._BackupSearchStartToken = searchStartToken;
-					info._BackupSearchStartedAt = Date.now();
-					const clearOwnedSearchStart = () => {
-						if (
-							info._BackupSearchStartToken === searchStartToken &&
-							Math.max(0, Number(info.BackupSearchEpoch) || 0) ===
-								searchStartEpoch
-						) {
-							info._BackupSearchStartToken = null;
-							info._BackupSearchStartedAt = 0;
-						}
-					};
-					_findBackupStream(info, realFetch, 0, res)
-						.then(clearOwnedSearchStart)
-						.catch(clearOwnedSearchStart);
-				}
-				const cleanNativeBridge = _isRecentPostAdReentry(info)
+				startPrewarmBackupSearch();
+				const requestCodecs = directResolution?.Codecs || res?.Codecs || null;
+				const recentReentry = _isRecentPostAdReentry(info);
+				const cleanNativeBridge = recentReentry
 					? null
 					: _getSameRequestCleanNative(
 							info,
 							url,
-							directResolution?.Codecs || res?.Codecs || null,
+							requestCodecs,
 							isEnhancedCodec,
 							2000,
 						);
-				if (cleanNativeBridge) {
-					return cleanNativeBridge;
-				}
-				if (
-					!isEnhancedCodec &&
-					_getVideoCodecFamily(directResolution?.Codecs || res?.Codecs) ===
-						"avc"
-				)
-					_deferAdStartHold(info, text, requestAdContext);
-				return _stripAds(text, false, info);
+				const waitsForBackup = Boolean(
+					!cleanNativeBridge &&
+						!isEnhancedCodec &&
+						_getVideoCodecFamily(requestCodecs) === "avc" &&
+						_shouldDeferAdStartHold(info, text, requestAdContext),
+				);
+				const stripped =
+					cleanNativeBridge || waitsForBackup
+						? null
+						: _stripAds(text, false, info);
+				const cleanAgeMs =
+					Date.now() - (Number(info.LastCleanNativePlaylistAt) || 0);
+				const bridgeRefusal = recentReentry
+					? "post-ad re-entry"
+					: info._LastServedPlaylistKind === "hold" ||
+							info._LastServedPlaylistKind === "backup"
+						? `already serving ${info._LastServedPlaylistKind}`
+						: !info.LastCleanNativePlaylistAt
+							? "no clean playlist yet"
+							: _getExactPlaylistUrlKey(info.LastCleanNativeUrl) !==
+									_getExactPlaylistUrlKey(url)
+								? "last clean playlist was another rendition"
+								: cleanAgeMs > 2000
+									? `last clean playlist ${(cleanAgeMs / 1000).toFixed(1)}s old`
+									: "cached playlist does not match this request";
+				_log(
+					`[CSAI] Ad markers before any non-live segment (${_describeAdMarkedPlaylist(text, shouldIncludeCachedAdSegments)}): ${
+						cleanNativeBridge
+							? `bridging with the last clean playlist (${(cleanAgeMs / 1000).toFixed(1)}s old)`
+							: `${
+									waitsForBackup
+										? `waiting up to ${((_getAdStartBackupWaitDeadline(info, text) - Date.now()) / 1000).toFixed(1)}s for a live backup`
+										: stripped.includes(
+													"https://www.twitch.tv/__ttvab_empty_hold_segment.ts",
+												)
+											? "serving the silent hold"
+											: "serving the stream with ad segments removed"
+								}; no clean bridge (${bridgeRefusal})`
+					}`,
+					"info",
+				);
+				if (cleanNativeBridge) return cleanNativeBridge;
+				if (waitsForBackup)
+					throw new DOMException(_AD_START_BACKUP_WAIT_MESSAGE, "AbortError");
+				return stripped;
 			}
 		}
 
@@ -7996,29 +8078,7 @@ async function _processM3U8Core(
 				2000,
 			) !== null;
 		if (hasCleanNative && !_isRecentPostAdReentry(info)) {
-			if (!info._BackupSearchStartedAt && !info.IsUsingFallbackStream) {
-				const prewarmTargetRes = _resolveAdBackupTargetResolution(info, url);
-				const searchStartToken = {};
-				const searchStartEpoch = Math.max(
-					0,
-					Number(info.BackupSearchEpoch) || 0,
-				);
-				info._BackupSearchStartToken = searchStartToken;
-				info._BackupSearchStartedAt = Date.now();
-				const clearOwnedSearchStart = () => {
-					if (
-						info._BackupSearchStartToken === searchStartToken &&
-						Math.max(0, Number(info.BackupSearchEpoch) || 0) ===
-							searchStartEpoch
-					) {
-						info._BackupSearchStartToken = null;
-						info._BackupSearchStartedAt = 0;
-					}
-				};
-				_findBackupStream(info, realFetch, 0, prewarmTargetRes)
-					.then(clearOwnedSearchStart)
-					.catch(clearOwnedSearchStart);
-			}
+			startPrewarmBackupSearch();
 			const prewarmedBackupReady =
 				typeof info.LastCleanBackupM3U8 === "string" &&
 				info.LastCleanBackupM3U8 &&
@@ -8055,14 +8115,6 @@ async function _processM3U8Core(
 		) {
 			_deferAdStartHold(info, text, requestAdContext);
 			return _stripAds(text, false, info);
-		}
-
-		let startIdx = 0;
-		if (
-			info.LastPlayerReload >
-			Date.now() - __TTVAB_STATE__.PlayerReloadMinimalRequestsTime
-		) {
-			startIdx = __TTVAB_STATE__.PlayerReloadMinimalRequestsPlayerIndex;
 		}
 
 		const earlyBackupRetry = _getEarlyNoBackupRetry(
