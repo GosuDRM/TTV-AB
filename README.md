@@ -62,12 +62,13 @@ TTV AB checks Twitch's HLS playlists before playback and blocks recognized clien
 
 - Checks alternative Twitch sources one at a time, using a fresh clean native playlist or a compatible silent hold while searching
 - Plays only verified, playable, ad-free backups, refreshes them during the break, and rotates stalled sources
+- Continues each switch between sources, including the return to native, from the point the live stream reached, so playback does not jump back
 - Returns to native playback after repeated clean checks for the same stream and break, then restores quality and audio settings
 - Keeps recovery tied to the current player across background tabs and Picture-in-Picture, respecting explicit pauses
 
 **Low Quality Fallback** is on by default, allowing a clean 360p bridge sooner while higher-quality sources are checked. Turning it off prioritizes normal-quality sources; prerolls and midrolls may still use a temporary clean low-quality bridge if those sources fail. Other sources may still offer lower qualities.
 
-**Ad Spoofing** sends Twitch progress and completion signals for blocked ads. Turning it off leaves ad blocking active.
+**Ad Spoofing** sends Twitch progress and completion signals for blocked ads and, outside midrolls, requests the blocked ad's segments in the background. Turning it off stops both and leaves ad blocking active.
 
 The optional **Ad Break Timer** is off by default and can be switched on in the popup. It tracks the current break until it ends; it does not predict when your selected quality will return.
 
@@ -105,44 +106,31 @@ _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
 ## 🛠️ Development
 
-Clone the repository or your fork, using `main` for Chrome or `firefox` for Firefox. Install Node.js 22 and Python 3, then run these commands from the repository folder:
+Use the `main` branch for Chrome or `firefox` for Firefox. With Node.js 22 and Python 3 installed, `npm ci` installs dependencies and `npm run build` creates `dist/` and the browser packages.
 
-```sh
-npm ci
-npm run build
-```
-
-Make changes in the TypeScript source:
+Edit the TypeScript source, never `dist/`:
 
 - `src/modules/`: stream handling, ad blocking, and playback recovery
-- `src/scripts/`: background tasks and communication with the page
-- `src/popup/`: popup controls, themes, and translations
+- `src/scripts/`: background script and page bridge
+- `src/popup/`: popup, themes, and translations
 - `tests/`: regression tests
 
-Keep changes focused and add a regression test when fixing a bug. The build generates `dist/`; edit the source files rather than the compiled output. After source edits, run the checks in this order because tests read `dist/`:
+Tests read `dist/`, so build before running the checks:
 
 ```sh
-npm run build
-npm test
-npm run test:shuffle
-npm run lint
-npm run typecheck
-npm run knip
+npm run build && npm test && npm run test:shuffle && npm run lint && npm run typecheck && npm run knip
 ```
 
-Load your build to try it locally:
+To try a build, [load `dist/` unpacked](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked) in Chrome, or [load `dist/manifest.json` as a temporary add-on](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/) in Firefox. After each rebuild, reload the extension and refresh the Twitch tab.
 
-- **Chrome:** Open `chrome://extensions`, enable Developer mode, then [Load unpacked](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked) and select `dist/`.
-- **Firefox:** Open `about:debugging`, select This Firefox, then [Load Temporary Add-on](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/) and select `dist/manifest.json`.
-
-After rebuilding, reload the extension from that page and refresh your Twitch tab. For playback changes, check the affected scenario on Twitch too. In your pull request, explain the change, the checks you ran, and anything you could not verify.
+Keep pull requests focused, add a regression test for each bug fix, check playback changes on Twitch, and list what you tested and what you could not.
 
 <details>
 <summary>Build and release notes</summary>
 
-- **Firefox popup files:** If the build reports that tracked popup files are out of sync, copy `popup.js` and `translations.js` from `dist/src/popup/` into `src/popup/`, then rerun the build and checks.
-- **Packages:** The manifest determines which browser archives the build creates alongside `dist/`. Packaging errors stop the build.
-- **Releases:** Annotated release tags must include `Firefox-Commit: <full SHA>` for the validated Firefox commit. The release workflow builds Firefox from that exact commit.
+- **Firefox popup files:** The `firefox` branch tracks compiled `src/popup/popup.js` and `translations.js`. If the build reports them out of sync, copy both from `dist/src/popup/` and rebuild.
+- **Packages:** The manifest decides which archives the build creates. Packaging errors stop the build.
+- **Releases:** Annotated release tags include `Firefox-Commit: <full SHA>`, and the release workflow builds Firefox from that commit.
 
 </details>
 
