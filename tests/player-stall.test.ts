@@ -7481,7 +7481,12 @@ describe("channel watch-time tracking", () => {
 	it("sends a watch-time delta once the flush threshold accrues", () => {
 		g._getPrimaryMediaElement = () => makeWatchVideo();
 		track()(false);
-		for (let i = 0; i < 16; i++) {
+		for (let i = 0; i < 59; i++) {
+			nowValue += 1000;
+			track()(false);
+		}
+		expect(bridgeMessages).toEqual([]);
+		for (let i = 0; i < 2; i++) {
 			nowValue += 1000;
 			track()(false);
 		}
@@ -7489,8 +7494,8 @@ describe("channel watch-time tracking", () => {
 		expect(bridgeMessages[0].type).toBe("ttvab-watch-time");
 		expect(bridgeMessages[0].detail).toEqual({
 			channel: "streamerone",
-			seconds: 15,
-			intervals: [[nowValue - 16000, nowValue - 1000]],
+			seconds: 60,
+			intervals: [[nowValue - 61000, nowValue - 1000]],
 		});
 		expect(watchState().pendingMs).toBe(1000);
 	});
@@ -7575,7 +7580,7 @@ describe("channel watch-time tracking", () => {
 		});
 		(g.__TTVAB_STATE__ as Record<string, unknown>).PageChannel = "streamertwo";
 		track()(true);
-		for (let i = 0; i < 16; i++) {
+		for (let i = 0; i < 61; i++) {
 			nowValue += 1000;
 			track()(true);
 		}
@@ -7584,8 +7589,8 @@ describe("channel watch-time tracking", () => {
 			type: "ttvab-watch-time",
 			detail: {
 				channel: "streamerone",
-				seconds: 15,
-				intervals: [[nowValue - 16000, nowValue - 1000]],
+				seconds: 60,
+				intervals: [[nowValue - 61000, nowValue - 1000]],
 			},
 		});
 	});
@@ -7707,6 +7712,95 @@ describe("channel watch-time tracking", () => {
 				value: setItem,
 			});
 		}
+	});
+
+	describe("VOD owner attribution", () => {
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		let originalRealFetch: unknown;
+		const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+		beforeEach(() => {
+			originalRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		});
+
+		afterEach(() => {
+			scopedWindow.__TTVAB_REAL_FETCH__ = originalRealFetch;
+		});
+
+		it("credits VOD watch time to the VOD owner once its channel resolves", async () => {
+			const fetchMock = vi.fn(async () => ({
+				ok: true,
+				json: async () => ({
+					data: { video: { owner: { login: "VodOwner" } } },
+				}),
+			}));
+			scopedWindow.__TTVAB_REAL_FETCH__ = fetchMock;
+			g.__TTVAB_STATE__ = {
+				PageMediaType: "vod",
+				PageChannel: null,
+				PageMediaKey: "vod:424242",
+			};
+			watchState().ownedMediaKey = "vod:424242";
+			g._getPrimaryMediaElement = () => makeWatchVideo();
+
+			track()(false);
+			expect(watchState().channel).toBeNull();
+			await settle();
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const [url, init] = fetchMock.mock.calls[0] as unknown as [
+				string,
+				{ body: string },
+			];
+			expect(url).toBe("https://gql.twitch.tv/gql");
+			expect(JSON.parse(init.body).variables).toEqual({ id: "424242" });
+
+			track()(false);
+			for (let i = 0; i < 61; i++) {
+				nowValue += 1000;
+				track()(false);
+			}
+			expect(bridgeMessages[0]).toEqual({
+				type: "ttvab-watch-time",
+				detail: {
+					channel: "vodowner",
+					seconds: 60,
+					intervals: [[nowValue - 61000, nowValue - 1000]],
+				},
+			});
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+
+		it("looks a VOD owner up once at a time and retries a failure after a minute", async () => {
+			let finishLookup: (value: unknown) => void = () => {};
+			const fetchMock = vi.fn(
+				() =>
+					new Promise((resolve) => {
+						finishLookup = resolve;
+					}),
+			);
+			scopedWindow.__TTVAB_REAL_FETCH__ = fetchMock;
+			const lookup = T<(mediaKey: unknown) => string | null>(
+				"_getVodOwnerChannel",
+			);
+
+			expect(lookup("live:streamerone")).toBeNull();
+			expect(lookup("vod:515151")).toBeNull();
+			await settle();
+			expect(lookup("vod:515151")).toBeNull();
+			await settle();
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+
+			finishLookup({ ok: false });
+			await settle();
+			expect(lookup("vod:515151")).toBeNull();
+			await settle();
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+
+			nowValue += 60000;
+			expect(lookup("vod:515151")).toBeNull();
+			await settle();
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+		});
 	});
 });
 

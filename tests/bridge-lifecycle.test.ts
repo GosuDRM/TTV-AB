@@ -1246,7 +1246,7 @@ describe("measured ad duration batching", () => {
 		expect((g.pendingAdMeasurements as Map<string, unknown>).size).toBe(0);
 	});
 
-	it("keeps legacy aggregates separate from new per-ad records", () => {
+	it("ignores retired aggregate seconds and keeps per-ad records", () => {
 		handlePageMessage({
 			type: "ttvab-ad-seconds",
 			detail: {
@@ -1270,10 +1270,8 @@ describe("measured ad duration batching", () => {
 		const persistedDetails = runtimeMessages
 			.filter((message) => message.type === "ttvab-persist-counters")
 			.map((message) => message.detail as Record<string, unknown>);
-		expect(persistedDetails).toHaveLength(2);
-		expect(persistedDetails[0]).toMatchObject({ adSecondsDelta: 30 });
-		expect(persistedDetails[0]).not.toHaveProperty("adMeasurements");
-		expect(persistedDetails[1]).toMatchObject({
+		expect(persistedDetails).toHaveLength(1);
+		expect(persistedDetails[0]).toMatchObject({
 			adMeasurements: [
 				expect.objectContaining({
 					id: "stitched-ad-current",
@@ -1281,7 +1279,7 @@ describe("measured ad duration batching", () => {
 				}),
 			],
 		});
-		expect(persistedDetails[1]).not.toHaveProperty("adSecondsDelta");
+		expect(persistedDetails[0]).not.toHaveProperty("adSecondsDelta");
 	});
 });
 
@@ -1886,5 +1884,93 @@ describe("runtime log collection lifecycle", () => {
 				entries: [expect.objectContaining({ m: "current" })],
 			}),
 		);
+	});
+});
+
+describe("statistics transport hardening", () => {
+	function denyLocalStorage() {
+		const descriptor = Object.getOwnPropertyDescriptor(
+			globalThis,
+			"localStorage",
+		);
+		Object.defineProperty(globalThis, "localStorage", {
+			configurable: true,
+			get() {
+				throw new DOMException(
+					"Access is denied for this document.",
+					"SecurityError",
+				);
+			},
+		});
+		return () => {
+			if (descriptor)
+				Object.defineProperty(globalThis, "localStorage", descriptor);
+		};
+	}
+
+	it("still persists and confirms counts when page storage access is denied", () => {
+		const restore = denyLocalStorage();
+		try {
+			handlePageMessage({
+				type: "ttvab-ad-blocked",
+				detail: { count: 9, delta: 1, channel: "somestreamer" },
+			});
+			expect(() =>
+				(g.flushCounters as (options?: unknown) => void)(),
+			).not.toThrow();
+		} finally {
+			restore();
+		}
+		expect(runtimeMessages.map((message) => message.type)).toEqual([
+			"ttvab-persist-counters",
+			"ttvab-confirm-counter-flush",
+		]);
+		expect(runtimeMessages[0].detail).toMatchObject({
+			adsDelta: 1,
+			channelDeltas: { somestreamer: 1 },
+		});
+		expect(g.pendingAdsDelta).toBe(0);
+	});
+
+	it("replays nothing and does not throw when page storage is denied at startup", () => {
+		const restore = denyLocalStorage();
+		try {
+			expect((g.readPersistedCounterFlushes as () => unknown[])()).toEqual([]);
+			expect(() =>
+				(g.replayPersistedCounterFlushes as () => void)(),
+			).not.toThrow();
+		} finally {
+			restore();
+		}
+	});
+
+	it("drops pending counts when statistics are reset", () => {
+		handlePageMessage({
+			type: "ttvab-ad-blocked",
+			detail: { count: 5, delta: 1, channel: "somestreamer" },
+		});
+		handlePageMessage({
+			type: "ttvab-watch-time",
+			detail: { channel: "somestreamer", seconds: 30, intervals: [[1, 30001]] },
+		});
+		storageChangeListener?.(
+			{ ttvStatsResetAt: { newValue: Date.now() } },
+			"local",
+		);
+		(g.flushCounters as (options?: unknown) => void)();
+		expect(runtimeMessages).toEqual([]);
+	});
+
+	it("queues only the explicit ad delta and ignores count-only messages", () => {
+		handlePageMessage({
+			type: "ttvab-ad-blocked",
+			detail: { count: 40, channel: "somestreamer" },
+		});
+		expect(g.pendingAdsDelta).toBe(0);
+		handlePageMessage({
+			type: "ttvab-ad-blocked",
+			detail: { count: 40, delta: 1, channel: "somestreamer" },
+		});
+		expect(g.pendingAdsDelta).toBe(1);
 	});
 });

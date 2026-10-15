@@ -189,7 +189,7 @@ function setup(turboMode = true) {
 describe("watch-time delivery across Turbo boundaries", () => {
 	it("credits only the second watched after Turbo was disabled, preserving stored history", async () => {
 		const app = setup();
-		app.watch(14);
+		app.watch(59);
 		app.toggle(false);
 		app.watch(1);
 		await app.flush();
@@ -199,7 +199,7 @@ describe("watch-time delivery across Turbo boundaries", () => {
 
 	it("does not infer watch time from a paused gap spanning the Turbo boundary", async () => {
 		const app = setup();
-		app.watch(14);
+		app.watch(59);
 		app.page.video.paused = true;
 		app.track();
 		app.toggle(false);
@@ -213,21 +213,21 @@ describe("watch-time delivery across Turbo boundaries", () => {
 
 	it("preserves complete watch batches when statistics stay enabled", async () => {
 		const app = setup(false);
-		app.watch(30);
+		app.watch(120);
 		await app.flush();
-		expect(app.stored.ttvStats.channels.testchannel.watchSeconds).toBe(630);
+		expect(app.stored.ttvStats.channels.testchannel.watchSeconds).toBe(720);
 	});
 
 	it("keeps fractional watch intervals aligned across a regular flush and page exit", async () => {
 		const app = setup(false);
-		for (let i = 0; i < 26; i++) {
+		for (let i = 0; i < 101; i++) {
 			app.advance(600);
 			app.track();
 		}
 		app.advance(500);
 		runInContext("_flushWatchTimeOnPageExit()", app.page);
 		await app.flush();
-		expect(app.stored.ttvStats.channels.testchannel.watchSeconds).toBe(616);
+		expect(app.stored.ttvStats.channels.testchannel.watchSeconds).toBe(661);
 	});
 
 	it("discards watch intervals journaled on exit during Turbo even after background state is lost", async () => {

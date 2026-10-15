@@ -301,10 +301,25 @@ describe.each(["preroll", "midroll"])(
 			async (roll) => {
 				const f = setupEmergencyBridge(roll);
 				f.control.roll = roll;
+				f.context._log = vi.fn();
 				const response = f.poll();
 				await vi.advanceTimersByTimeAsync(7500);
 				expect(await response).toContain("__ttvab_empty_hold_segment.ts");
 				expect(f.tokens).toEqual(["site", "embed", "popout", "mobile_web"]);
+				f.poll();
+				await vi.advanceTimersByTimeAsync(16000);
+				expect(
+					vi
+						.mocked(f.context._log)
+						.mock.calls.filter(([message]) =>
+							String(message).startsWith("[Trace] Low Quality Fallback is off"),
+						),
+				).toEqual([
+					[
+						"[Trace] Low Quality Fallback is off and this ad break is not identified as a preroll or midroll (no roll type recorded); the 360p fallback is unavailable",
+						"warning",
+					],
+				]);
 			},
 		);
 

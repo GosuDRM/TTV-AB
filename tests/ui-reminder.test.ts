@@ -112,3 +112,37 @@ describe("donation reminder randomized scheduling", () => {
 		vi.restoreAllMocks();
 	});
 });
+
+describe("achievement toast motion", () => {
+	beforeEach(() => {
+		g._log = () => {};
+		delete (window as unknown as Record<string, unknown>).__TTVAB_UI_FLAGS__;
+		document.getElementById("ttvab-achievement")?.remove();
+		document.getElementById("ttvab-achievement-style")?.remove();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		document.getElementById("ttvab-achievement")?.remove();
+	});
+
+	it("stops its animations for reduced motion and keeps the hidden end state until removal", async () => {
+		vi.useFakeTimers();
+		T<(id: string) => void>("_showAchievementUnlocked")("channels_50");
+		const toast = document.getElementById("ttvab-achievement");
+		const css = document.getElementById("ttvab-achievement-style")?.textContent;
+		expect(toast).not.toBeNull();
+		expect(css).toContain(
+			"#ttvab-achievement.leaving{animation:ttvab-ach-pop .5s ease reverse forwards}",
+		);
+		expect(css).toContain(
+			"@media (prefers-reduced-motion:reduce){#ttvab-achievement,#ttvab-achievement .ach-icon,#ttvab-achievement .ach-name{animation:none}#ttvab-achievement.leaving{animation:none;visibility:hidden}}",
+		);
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(toast?.classList.contains("leaving")).toBe(true);
+		expect(toast?.style.animation).toBe("");
+		expect(toast?.isConnected).toBe(true);
+		await vi.advanceTimersByTimeAsync(500);
+		expect(toast?.isConnected).toBe(false);
+	});
+});
