@@ -1,8 +1,10 @@
 type PlainObject = Record<string, unknown>;
 type TTVABChannelEntry = {
 	ads: number;
+	measuredAds: number;
 	firstSeen: number;
 	lastSeen: number;
+	lastActive: number;
 	watchSeconds: number;
 	adMilliseconds: number;
 };
@@ -10,6 +12,9 @@ type TTVABChannelMap = Record<string, TTVABChannelEntry>;
 type TTVABChannelDeltaMap = Record<string, number>;
 type TTVABDailyStatsEntry = {
 	ads: number;
+	measuredAds: number;
+	adMilliseconds: number;
+	watchSeconds: number;
 };
 type TTVABDailyStatsMap = Record<string, TTVABDailyStatsEntry>;
 type TTVABStatsState = {
@@ -17,6 +22,7 @@ type TTVABStatsState = {
 	channels: TTVABChannelMap;
 	achievements: string[];
 	adMillisecondsSaved: number;
+	measuredAds: number;
 };
 type TTVABVisibilityGetter =
 	| ((this: Document, ...args: never[]) => unknown)

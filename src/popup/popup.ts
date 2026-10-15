@@ -1274,6 +1274,27 @@ document.addEventListener("DOMContentLoaded", () => {
 	const channelModalPulse = document.getElementById(
 		"channelModalPulse",
 	) as HTMLElement | null;
+	const statsExportButton = document.getElementById(
+		"statsExportButton",
+	) as HTMLButtonElement | null;
+	const statsResetButton = document.getElementById(
+		"statsResetButton",
+	) as HTMLButtonElement | null;
+	const resetStatsOverlay = document.getElementById(
+		"resetStatsOverlay",
+	) as HTMLDivElement | null;
+	const resetStatsText = document.getElementById(
+		"resetStatsText",
+	) as HTMLParagraphElement | null;
+	const resetStatsConfirm = document.getElementById(
+		"resetStatsConfirm",
+	) as HTMLButtonElement | null;
+	const resetStatsCancel = document.getElementById(
+		"resetStatsCancel",
+	) as HTMLButtonElement | null;
+	const resetStatsClose = document.getElementById(
+		"resetStatsClose",
+	) as HTMLButtonElement | null;
 	const requiredElements = {
 		toggle,
 		statusDot,
@@ -1339,6 +1360,13 @@ document.addEventListener("DOMContentLoaded", () => {
 		channelModalSince,
 		channelModalLast,
 		channelModalPulse,
+		statsExportButton,
+		statsResetButton,
+		resetStatsOverlay,
+		resetStatsText,
+		resetStatsConfirm,
+		resetStatsCancel,
+		resetStatsClose,
 	};
 	for (const [name, element] of Object.entries(requiredElements)) {
 		if (element) continue;
@@ -1622,6 +1650,14 @@ document.addEventListener("DOMContentLoaded", () => {
 		const authorLabel = String(t.authorLinkLabel ?? "Open GosuDRM on GitHub");
 		authorLink.title = authorLabel;
 		authorLink.setAttribute("aria-label", authorLabel);
+		const exportLabel = String(
+			t.exportStatsLabel ?? "Export statistics as a JSON file",
+		);
+		statsExportButton.title = exportLabel;
+		statsExportButton.setAttribute("aria-label", exportLabel);
+		const resetLabel = String(t.resetStatsConfirm ?? "Reset statistics");
+		statsResetButton.title = resetLabel;
+		statsResetButton.setAttribute("aria-label", resetLabel);
 		updateTurboCopy(t);
 	}
 
@@ -1841,6 +1877,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		if (!channelModalOverlay.hidden) {
 			hideChannelModal();
 		}
+		hideResetStatsDialog();
 	});
 
 	logDialogGenerate.addEventListener("click", () => {
@@ -2180,7 +2217,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			},
 		);
 
-		animateStatValue(channelModalAds, entry.ads, (value) =>
+		animateStatValue(channelModalAds, entry.measuredAds, (value) =>
 			formatNumber(value),
 		);
 		animateStatValue(channelModalWatch, entry.watchSeconds, (value) =>
@@ -2189,7 +2226,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		animateStatValue(channelModalSaved, entry.adMilliseconds, (value) =>
 			formatTimeSaved(value),
 		);
-		animateStatValue(channelModalBreaks, Math.ceil(entry.ads / 3), (value) =>
+		animateStatValue(channelModalBreaks, entry.ads, (value) =>
 			formatNumber(value),
 		);
 
@@ -2353,6 +2390,8 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	const MAX_CHANNELS = 100;
+	const TOP_CHANNEL_COUNT = 5;
+	const MAX_FUTURE_TIMESTAMP_MS = 2 * 24 * 60 * 60 * 1000;
 
 	const ACHIEVEMENTS = [
 		{
@@ -2447,16 +2486,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function formatTimeSaved(milliseconds) {
-		const safeMilliseconds = normalizeCount(milliseconds);
-		const hours = Math.floor(safeMilliseconds / 3600000);
-		const minutes = Math.floor((safeMilliseconds % 3600000) / 60000);
-		const secondsWithinMinute = (safeMilliseconds % 60000) / 1000;
-		const secondsText = Number.isInteger(secondsWithinMinute)
-			? String(secondsWithinMinute)
-			: secondsWithinMinute.toFixed(3).replace(/0+$/, "");
-		if (hours > 0) return `${hours}h ${minutes}m ${secondsText}s`;
-		if (minutes > 0) return `${minutes}m ${secondsText}s`;
-		return `${secondsText}s`;
+		const totalSeconds = Math.floor(normalizeCount(milliseconds) / 1000);
+		const hours = Math.floor(totalSeconds / 3600);
+		const minutes = Math.floor((totalSeconds % 3600) / 60);
+		const seconds = totalSeconds % 60;
+		if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+		if (minutes > 0) return `${minutes}m ${seconds}s`;
+		return `${seconds}s`;
 	}
 
 	function normalizeCount(value) {
@@ -2499,15 +2535,17 @@ document.addEventListener("DOMContentLoaded", () => {
 		const numericValue = Number(value);
 		if (!Number.isFinite(numericValue) || numericValue <= 0) return 0;
 		const timestamp = Math.trunc(numericValue);
-		return timestamp > Date.now() + 5 * 60 * 1000 ? 0 : timestamp;
+		return timestamp > Date.now() + MAX_FUTURE_TIMESTAMP_MS ? 0 : timestamp;
 	}
 
 	function normalizeChannelEntry(value): TTVABChannelEntry {
 		if (typeof value === "number" || typeof value === "string") {
 			return {
 				ads: normalizeCount(value),
+				measuredAds: 0,
 				firstSeen: 0,
 				lastSeen: 0,
+				lastActive: 0,
 				watchSeconds: 0,
 				adMilliseconds: 0,
 			};
@@ -2518,8 +2556,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			: normalizeCount(safeValue.adSeconds) * 1000;
 		return {
 			ads: normalizeCount(safeValue.ads),
+			measuredAds: normalizeCount(safeValue.measuredAds),
 			firstSeen: normalizeTimestamp(safeValue.firstSeen),
 			lastSeen: normalizeTimestamp(safeValue.lastSeen),
+			lastActive: normalizeTimestamp(safeValue.lastActive),
 			watchSeconds: normalizeCount(safeValue.watchSeconds),
 			adMilliseconds,
 		};
@@ -2534,12 +2574,18 @@ document.addEventListener("DOMContentLoaded", () => {
 		);
 		return {
 			ads: target.ads + incoming.ads,
+			measuredAds: target.measuredAds + incoming.measuredAds,
 			firstSeen:
 				firstSeenCandidates.length > 0 ? Math.min(...firstSeenCandidates) : 0,
 			lastSeen: Math.max(target.lastSeen, incoming.lastSeen),
+			lastActive: Math.max(target.lastActive, incoming.lastActive),
 			watchSeconds: target.watchSeconds + incoming.watchSeconds,
 			adMilliseconds: target.adMilliseconds + incoming.adMilliseconds,
 		};
+	}
+
+	function getChannelActivityAt(entry: TTVABChannelEntry) {
+		return Math.max(entry.lastActive, entry.lastSeen, entry.firstSeen);
 	}
 
 	function normalizeChannelsMap(value) {
@@ -2559,16 +2605,31 @@ document.addEventListener("DOMContentLoaded", () => {
 		if (channelEntries.length <= MAX_CHANNELS) {
 			return normalized;
 		}
-		channelEntries.sort((a, b) => {
-			const countDiff = normalizeCount(b[1].ads) - normalizeCount(a[1].ads);
-			if (countDiff !== 0) return countDiff;
-			const watchDiff =
-				normalizeCount(b[1].watchSeconds) - normalizeCount(a[1].watchSeconds);
-			return watchDiff !== 0 ? watchDiff : a[0].localeCompare(b[0]);
-		});
+		const keptChannels = new Set(
+			channelEntries
+				.filter(([, entry]) => entry.ads > 0)
+				.sort((a, b) => b[1].ads - a[1].ads || a[0].localeCompare(b[0]))
+				.slice(0, TOP_CHANNEL_COUNT)
+				.map(([channelName]) => channelName),
+		);
+		const recentChannels = channelEntries
+			.filter(([channelName]) => !keptChannels.has(channelName))
+			.sort(
+				(a, b) =>
+					getChannelActivityAt(b[1]) - getChannelActivityAt(a[1]) ||
+					b[1].ads - a[1].ads ||
+					b[1].watchSeconds - a[1].watchSeconds ||
+					a[0].localeCompare(b[0]),
+			);
+		for (const [channelName] of recentChannels.slice(
+			0,
+			MAX_CHANNELS - keptChannels.size,
+		)) {
+			keptChannels.add(channelName);
+		}
 		const trimmed = createChannelsMap();
-		for (const [channelName, entry] of channelEntries.slice(0, MAX_CHANNELS)) {
-			trimmed[channelName] = entry;
+		for (const [channelName, entry] of channelEntries) {
+			if (keptChannels.has(channelName)) trimmed[channelName] = entry;
 		}
 		return trimmed;
 	}
@@ -2578,12 +2639,17 @@ document.addEventListener("DOMContentLoaded", () => {
 			return createDailyStatsMap();
 		}
 		const normalized = createDailyStatsMap();
-		const todayKey = getDateKey();
+		const latestDateKey = getDateKey(
+			new Date(Date.now() + MAX_FUTURE_TIMESTAMP_MS),
+		);
 		for (const [dateKey, entry] of Object.entries(value)) {
-			if (!parseDateKey(dateKey) || dateKey > todayKey) continue;
+			if (!parseDateKey(dateKey) || dateKey > latestDateKey) continue;
 			const safeEntry = isPlainObject(entry) ? entry : {};
 			normalized[dateKey] = {
 				ads: normalizeCount(safeEntry.ads),
+				measuredAds: normalizeCount(safeEntry.measuredAds),
+				adMilliseconds: normalizeCount(safeEntry.adMilliseconds),
+				watchSeconds: normalizeCount(safeEntry.watchSeconds),
 			};
 		}
 		return normalized;
@@ -2594,16 +2660,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	function getLast7Days() {
-		const startOfWeek = new Date();
-		startOfWeek.setHours(0, 0, 0, 0);
-		const dayOfWeek = startOfWeek.getDay();
-		const daysSinceMonday = (dayOfWeek + 6) % 7;
-		startOfWeek.setDate(startOfWeek.getDate() - daysSinceMonday);
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
 		const days = [];
-		for (let i = 0; i < 7; i++) {
-			const d = new Date(startOfWeek);
-			d.setDate(startOfWeek.getDate() + i);
-			days.push(getDateKey(d));
+		for (let offset = 6; offset >= 0; offset--) {
+			const day = new Date(today);
+			day.setDate(today.getDate() - offset);
+			days.push(getDateKey(day));
 		}
 		return days;
 	}
@@ -2615,37 +2678,36 @@ document.addEventListener("DOMContentLoaded", () => {
 				: ({} as TTVABDailyStatsMap);
 		const t = getTranslations();
 		const days = getLast7Days();
-		const todayKey = getDateKey();
-		const parsedDays = days.map((dayKey) => parseDateKey(dayKey));
-		const values = days.map((d) => {
-			if (d > todayKey) return 0;
-			return normalizeCount(safeDailyData[d]?.ads);
-		});
+		const entries = days.map((dayKey) => safeDailyData[dayKey]);
+		const values = entries.map((entry) => normalizeCount(entry?.ads));
 		const max = Math.max(...values, 1);
-		const completedDayCount = Math.max(
-			1,
-			days.filter((dayKey) => dayKey <= todayKey).length,
-		);
+		const completedDayValues = values.slice(0, -1);
 		const avg = Math.round(
-			values.reduce((a, b) => a + b, 0) / completedDayCount,
+			completedDayValues.reduce((a, b) => a + b, 0) / completedDayValues.length,
 		);
 		const formatter = new Intl.DateTimeFormat(getLocaleTag(), {
 			weekday: "short",
 		});
 
 		weeklyChart.replaceChildren();
-		for (const [index, value] of values.entries()) {
+		for (const [index, dayKey] of days.entries()) {
+			const value = values[index];
+			const entry = entries[index];
 			const height = value > 0 ? Math.max((value / max) * 100, 8) : 0;
-			const dayName = parsedDays[index]
-				? formatter.format(parsedDays[index])
-				: "?";
+			const parsedDay = parseDateKey(dayKey);
+			const dayName = parsedDay ? formatter.format(parsedDay) : "?";
+			const details = [
+				`${String(t.chartBreaks ?? "Ad breaks")}: ${formatNumber(value)}`,
+				`${String(t.chartAds ?? "Ads")}: ${formatNumber(entry?.measuredAds)}`,
+				`${String(t.timeSaved ?? "Time Saved")}: ${formatTimeSaved(entry?.adMilliseconds)}`,
+				`${String(t.channelModalWatch ?? "Watch time")}: ${formatWatchTime(entry?.watchSeconds)}`,
+			];
 			const bar = document.createElement("div");
 			bar.className = "chart-bar";
 			bar.style.height = `${height}%`;
-			const summary = `${dayName}: ${formatNumber(value)}`;
-			bar.title = summary;
+			bar.title = [dayName, ...details].join("\n");
 			bar.setAttribute("role", "img");
-			bar.setAttribute("aria-label", summary);
+			bar.setAttribute("aria-label", `${dayName}: ${details.join(", ")}`);
 			weeklyChart.append(bar);
 		}
 
@@ -2710,8 +2772,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			const countDiff = normalizeCount(b[1].ads) - normalizeCount(a[1].ads);
 			return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
 		});
-		const top5 = entries.slice(0, 5);
-		for (const [index, entry] of top5.entries()) {
+		for (const [index, entry] of entries
+			.slice(0, TOP_CHANNEL_COUNT)
+			.entries()) {
 			channelList.append(
 				createChannelItem(
 					`${index + 1}.`,
@@ -2837,11 +2900,35 @@ document.addEventListener("DOMContentLoaded", () => {
 			if (!channelModalOverlay.hidden) {
 				hideChannelModal();
 			}
+			resetStatsOverlay.hidden = true;
 		}
 		updateTurboCopy();
 		if (turboModeReady && !turboModeEnabled && (!wasReady || wasEnabled)) {
 			loadStatistics();
 		}
+	}
+
+	function readStatisticsSnapshot(result) {
+		const safeResult = (result || {}) as PlainObject;
+		const stats = isPlainObject(safeResult.ttvStats)
+			? safeResult.ttvStats
+			: ({} as PlainObject);
+		const adMillisecondsSaved = Object.hasOwn(stats, "adMillisecondsSaved")
+			? normalizeCount(stats.adMillisecondsSaved)
+			: normalizeCount(stats.adSecondsSaved) * 1000;
+		return {
+			ttvAdsBlocked: normalizeCount(safeResult.ttvAdsBlocked),
+			ttvStats: {
+				daily: normalizeDailyStatsMap(stats.daily),
+				channels: normalizeChannelsMap(stats.channels),
+				achievements: normalizeAchievementList(
+					stats.achievements,
+					adMillisecondsSaved,
+				),
+				adMillisecondsSaved,
+				measuredAds: normalizeCount(stats.measuredAds),
+			},
+		};
 	}
 
 	function loadStatistics() {
@@ -2855,20 +2942,14 @@ document.addEventListener("DOMContentLoaded", () => {
 					chrome.runtime.lastError.message,
 				);
 			}
-			const safeResult = (result || {}) as PlainObject;
-			const stats = isPlainObject(safeResult.ttvStats)
-				? safeResult.ttvStats
-				: ({} as PlainObject);
-			const daily = normalizeDailyStatsMap(stats.daily);
-			const channels = normalizeChannelsMap(stats.channels);
-			const measuredMilliseconds = Object.hasOwn(stats, "adMillisecondsSaved")
-				? normalizeCount(stats.adMillisecondsSaved)
-				: normalizeCount(stats.adSecondsSaved) * 1000;
-			const achievements = normalizeAchievementList(
-				stats.achievements,
-				measuredMilliseconds,
-			);
-			const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
+			const snapshot = readStatisticsSnapshot(result);
+			const {
+				daily,
+				channels,
+				achievements,
+				adMillisecondsSaved: measuredMilliseconds,
+			} = snapshot.ttvStats;
+			const adsCount = snapshot.ttvAdsBlocked;
 			let channelCount = 0;
 			for (const entry of Object.values(channels)) {
 				if (normalizeCount(entry?.ads) > 0) channelCount++;
@@ -2888,6 +2969,103 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 		return true;
 	}
+
+	function getStatisticsExportFilename() {
+		const stamp = new Date()
+			.toISOString()
+			.replace(/[:.]/g, "-")
+			.replace("T", "_")
+			.slice(0, 19);
+		return `ttv-ab-statistics-${stamp}.json`;
+	}
+
+	function exportStatistics() {
+		if (!turboModeReady || turboModeEnabled) return;
+		chrome.storage.local.get(["ttvStats", "ttvAdsBlocked"], (result) => {
+			if (chrome.runtime.lastError) {
+				console.error(
+					"[TTV AB] Statistics export read error:",
+					chrome.runtime.lastError.message,
+				);
+				return;
+			}
+			let version: string | null = null;
+			try {
+				version = chrome.runtime?.getManifest?.()?.version || null;
+			} catch {}
+			const exportText = JSON.stringify(
+				{
+					exportedAt: new Date().toISOString(),
+					version,
+					...readStatisticsSnapshot(result),
+				},
+				null,
+				2,
+			);
+			const anchor = document.createElement("a");
+			anchor.href = `data:application/json;charset=utf-8,${encodeURIComponent(exportText)}`;
+			anchor.download = getStatisticsExportFilename();
+			document.body.appendChild(anchor);
+			try {
+				anchor.click();
+			} finally {
+				anchor.remove();
+			}
+		});
+	}
+
+	let resetStatisticsInProgress = false;
+
+	function openResetStatsDialog() {
+		if (!turboModeReady || turboModeEnabled) return;
+		resetStatsText.textContent = String(getTranslations().resetStatsText ?? "");
+		resetStatsConfirm.disabled = resetStatisticsInProgress;
+		resetStatsOverlay.hidden = false;
+		resetStatsCancel.focus();
+	}
+
+	function hideResetStatsDialog() {
+		if (resetStatsOverlay.hidden) return;
+		resetStatsOverlay.hidden = true;
+		if (!statsResetButton.closest("[inert]")) statsResetButton.focus();
+	}
+
+	function resetStatistics() {
+		if (resetStatisticsInProgress) return;
+		resetStatisticsInProgress = true;
+		resetStatsConfirm.disabled = true;
+		chrome.runtime.sendMessage(
+			{ type: "ttvab-reset-statistics" },
+			(response) => {
+				resetStatisticsInProgress = false;
+				resetStatsConfirm.disabled = false;
+				const errorMessage =
+					chrome.runtime.lastError?.message ||
+					(isPlainObject(response) && response.ok === true
+						? null
+						: String(
+								(response as PlainObject | undefined)?.error || "no response",
+							));
+				if (!errorMessage) {
+					hideResetStatsDialog();
+					return;
+				}
+				console.error("[TTV AB] Statistics reset failed:", errorMessage);
+				resetStatsText.textContent = String(
+					getTranslations().resetStatsFailed ?? "",
+				);
+			},
+		);
+	}
+
+	statsExportButton.addEventListener("click", exportStatistics);
+	statsResetButton.addEventListener("click", openResetStatsDialog);
+	resetStatsConfirm.addEventListener("click", resetStatistics);
+	resetStatsCancel.addEventListener("click", hideResetStatsDialog);
+	resetStatsClose.addEventListener("click", hideResetStatsDialog);
+	resetStatsOverlay.addEventListener("click", (event) => {
+		if (event.target === resetStatsOverlay) hideResetStatsDialog();
+	});
 
 	function setToggleRowOpacity(element, enabled) {
 		const opacity = enabled ? "1" : "0.4";
