@@ -68,6 +68,7 @@ const eventPayloads = {
 	},
 	AdPodProgress: {
 		adIds: ["stitched-ad-1"],
+		reportedAdIds: ["stitched-ad-1"],
 		expectedPodLength: 2,
 		maxAdPodPosition: 1,
 		observedZeroAdPodPosition: true,
@@ -207,6 +208,8 @@ describe("worker event boundary", () => {
 		{ key: "AdSecondsBlocked", measurements: {} },
 		{ key: "AdSecondsBlocked", seconds: "22" },
 		{ key: "AdPodProgress", adIds: ["ad-1", {}] },
+		{ key: "AdPodProgress", reportedAdIds: ["ad-1", 2] },
+		{ key: "AdPodProgress", reportedAdIds: "ad-1" },
 		{ key: "AdPodProgress", expectedPodLength: "2" },
 		{ key: "BackupPlayerTypeSelected", value: {} },
 		{ key: "LiveStreamStatus", ended: "true", mediaKey: "live:buildtest" },
@@ -293,6 +296,7 @@ const commandPayloads = {
 	UpdateAdPodProgress: {
 		mediaKey: "live:buildtest",
 		adIds: ["ad-1"],
+		reportedAdIds: ["ad-1"],
 		expectedPodLength: 2,
 		maxAdPodPosition: 1,
 		observedZeroAdPodPosition: true,
@@ -403,6 +407,7 @@ describe("worker command boundary", () => {
 		{ key: "UpdatePageContext", value: { mediaKey: {} } },
 		{ key: "UpdatePageContext", value: { playbackContextGeneration: "2" } },
 		{ key: "UpdateAdPodProgress", value: { adIds: ["ad-1", {}] } },
+		{ key: "UpdateAdPodProgress", value: { reportedAdIds: [null] } },
 		{ key: "UpdateAdPodProgress", value: { cycleStartedAt: Infinity } },
 		{ key: "ClearAdPodProgress", value: {} },
 		{ key: "PrepareFatalMediaRecovery", value: { recoveryId: {} } },

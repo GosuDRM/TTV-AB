@@ -648,15 +648,233 @@ describe("empty hold playlist continuity", () => {
 			"autoplay",
 			"one",
 		);
-		const renumbered = await unaligned.serve(
+		const joined = await unaligned.serve(
 			dated(502, "b", 102) + prefetch("b", 505),
 			"autoplay",
 			"two",
 		);
-		expect(segments(renumbered)[0].url).toContain("b-504.ts");
-		expect(segments(renumbered)[0].sequence).toBe(
-			segments(offered).at(-1).sequence + 1,
+		expect(segments(joined)[0].url).toContain("b-504.ts");
+		expect(numberOf(joined, "b-504")).toBe(numberOf(offered, "a-104"));
+		expect(numberOf(joined, "b-505")).toBe(numberOf(offered, "a-105"));
+		expect(numberOf(joined, "b-506")).toBe(numberOf(offered, "a-105") + 1);
+	});
+
+	describe("source changes at the served end", () => {
+		const start = Date.parse("2026-10-14T06:30:27.646Z");
+		const dated = (
+			sequence: number,
+			prefix: string,
+			timeIndex = sequence,
+			shiftMs = 0,
+		) =>
+			playlist(sequence, 3, prefix).replace(
+				"#EXTINF:",
+				`#EXT-X-PROGRAM-DATE-TIME:${new Date(start + (timeIndex - 100) * 2000 + shiftMs).toISOString()}\n#EXTINF:`,
+			);
+		const prefetch = (prefix: string, first: number) =>
+			[first, first + 1]
+				.map(
+					(sequence) =>
+						`\n#EXT-X-TWITCH-PREFETCH:https://edge.example/${prefix}-${sequence}.ts`,
+				)
+				.join("");
+		const numberOf = (text: string, name: string) =>
+			segments(text).find((entry) => entry.url.endsWith(`/${name}.ts`))
+				?.sequence;
+
+		it.each([
+			["shares", 101],
+			["does not share", 5201],
+		])(
+			"starts a backup that %s native numbering in the slots native prefetch already used",
+			async (_numbering, backupFirst) => {
+				const { context, info, serve } = setup();
+				context._log = vi.fn();
+				const native = await serve(
+					dated(100, "native") + prefetch("native", 103),
+				);
+				const backup = await serve(
+					dated(backupFirst, "a", 101) + prefetch("a", backupFirst + 3),
+					"autoplay",
+				);
+				expect(backup).not.toContain(`a-${backupFirst + 1}.ts`);
+				expect(numberOf(backup, `a-${backupFirst + 2}`)).toBe(
+					numberOf(native, "native-103"),
+				);
+				expect(numberOf(backup, `a-${backupFirst + 3}`)).toBe(
+					numberOf(native, "native-104"),
+				);
+				expect(numberOf(backup, `a-${backupFirst + 4}`)).toBe(
+					numberOf(native, "native-104") + 1,
+				);
+				expect(segments(backup)[0].discontinuity).toBeGreaterThan(
+					segments(native).at(-1).discontinuity,
+				);
+				const handoff = JSON.parse(
+					String(
+						vi
+							.mocked(context._log)
+							.mock.calls.find(([message]) =>
+								String(message).startsWith("[Continuity] handoff "),
+							)?.[0],
+					).slice("[Continuity] handoff ".length),
+				);
+				expect(handoff).toMatchObject({
+					cutoffSequence: numberOf(native, "native-102"),
+					servedSequence: numberOf(native, "native-103"),
+				});
+				expect(info._LivePlaylistTimeline.lastEndSequence).toBe(
+					numberOf(backup, `a-${backupFirst + 2}`),
+				);
+			},
 		);
+
+		it("returns to native after a backup in the slots backup prefetch already used", async () => {
+			const { context, info, serve } = setup();
+			await serve(dated(100, "native"));
+			const backup = await serve(dated(101, "a") + prefetch("a", 104), "site");
+			context._resetStreamAdState(info, true);
+			const native = await serve(
+				dated(102, "native", 102, 235) + prefetch("native", 105),
+			);
+			expect(native).not.toContain("native-103.ts");
+			expect(numberOf(native, "native-104")).toBe(numberOf(backup, "a-104"));
+			expect(numberOf(native, "native-106")).toBe(
+				numberOf(backup, "a-105") + 1,
+			);
+			expect(segments(native)[0].discontinuity).toBeGreaterThan(
+				segments(backup).at(-1).discontinuity,
+			);
+		});
+
+		it("joins after prefetch confirmed by a later poll of the old source", async () => {
+			const { context, info, serve } = setup();
+			const native = await serve(
+				dated(100, "native") + prefetch("native", 103),
+			);
+			context._observeServedPrefetchTimeline(
+				info,
+				nativeUrl,
+				dated(101, "native"),
+			);
+			expect(info._LivePlaylistTimeline.lastEndTime).toBe(start + 8000);
+			expect(info._LivePlaylistTimeline.lastEndSequence).toBe(
+				numberOf(native, "native-103"),
+			);
+			const backup = await serve(
+				dated(102, "a") + prefetch("a", 105),
+				"autoplay",
+			);
+			expect(backup).not.toContain("a-103.ts");
+			expect(numberOf(backup, "a-104")).toBe(numberOf(native, "native-104"));
+		});
+
+		it("keeps numbering after served prefetch when the backup starts a full segment after the served end", async () => {
+			const { serve } = setup();
+			const native = await serve(
+				dated(100, "native") + prefetch("native", 103),
+			);
+			const backup = await serve(dated(104, "a"), "autoplay");
+			expect(segments(backup)[0].url).toContain("a-104.ts");
+			expect(segments(backup)[0].sequence).toBe(
+				segments(native).at(-1).sequence + 1,
+			);
+		});
+
+		it("keeps numbering after a silent hold", async () => {
+			const { context, info, serve } = setup();
+			await serve(dated(100, "native") + prefetch("native", 103));
+			const hold = await serve(
+				context._createEmptyAdHoldPlaylist(playlist(103), info),
+			);
+			const backup = await serve(dated(101, "a"), "autoplay");
+			expect(backup).not.toContain("__ttvab_empty_hold_segment.ts");
+			expect(segments(backup)[0].sequence).toBe(
+				segments(hold).at(-1).sequence + 1,
+			);
+		});
+
+		it.each([
+			["shares", 100],
+			["does not share", 5200],
+		])(
+			"starts a backup that %s native numbering through its prefetch when it is level with the served end",
+			async (_numbering, backupFirst) => {
+				const { context, serve } = setup();
+				context._log = vi.fn();
+				const native = await serve(
+					dated(100, "native") + prefetch("native", 103),
+				);
+				const backup = await serve(
+					dated(backupFirst, "a", 100) + prefetch("a", backupFirst + 3),
+					"autoplay",
+				);
+				expect(backup).not.toContain(`a-${backupFirst + 1}.ts`);
+				expect(numberOf(backup, `a-${backupFirst + 2}`)).toBe(
+					numberOf(native, "native-102"),
+				);
+				expect(numberOf(backup, `a-${backupFirst + 3}`)).toBe(
+					numberOf(native, "native-103"),
+				);
+				expect(numberOf(backup, `a-${backupFirst + 4}`)).toBe(
+					numberOf(native, "native-104"),
+				);
+				expect(segments(backup)[0].discontinuity).toBeGreaterThan(
+					segments(native).at(-1).discontinuity,
+				);
+				const handoff = JSON.parse(
+					String(
+						vi
+							.mocked(context._log)
+							.mock.calls.find(([message]) =>
+								String(message).startsWith("[Continuity] handoff "),
+							)?.[0],
+					).slice("[Continuity] handoff ".length),
+				);
+				expect(handoff).toMatchObject({
+					cutoffSequence: numberOf(native, "native-102"),
+					servedSequence: numberOf(native, "native-102"),
+					boundaryMs: 0,
+					overlapMs: 0,
+				});
+			},
+		);
+
+		it("keeps waiting for a level backup that lists no prefetch", async () => {
+			const { context, info, serve } = setup();
+			await serve(dated(100, "native") + prefetch("native", 103));
+			const level = dated(100, "a");
+			context._rememberBackupPlaylistMetadata(info, level, "avc", codec, {
+				playerType: "autoplay",
+				resolution: "1920x1080",
+				playlistUrl: "https://edge.example/autoplay.m3u8?session=one",
+				sessionUrl: "https://usher.ttvnw.net/master.m3u8?session=one",
+			});
+			const timeline = info._LivePlaylistTimeline;
+			expect(() =>
+				context._applyPlaylistContinuity(
+					info,
+					nativeUrl,
+					level,
+					info.BackupPlaylistMetadata.get(level),
+				),
+			).toThrow("Live handoff playlist is behind the served broadcast time");
+			expect(info._LivePlaylistTimeline).toBe(timeline);
+		});
+
+		it("returns to native through its prefetch when it is level with the backup", async () => {
+			const { context, info, serve } = setup();
+			await serve(dated(100, "native"));
+			const backup = await serve(dated(101, "a") + prefetch("a", 104), "site");
+			context._resetStreamAdState(info, true);
+			const native = await serve(
+				dated(101, "native") + prefetch("native", 104),
+			);
+			expect(native).not.toContain("native-102.ts");
+			expect(numberOf(native, "native-103")).toBe(numberOf(backup, "a-103"));
+			expect(numberOf(native, "native-104")).toBe(numberOf(backup, "a-104"));
+			expect(numberOf(native, "native-105")).toBe(numberOf(backup, "a-105"));
+		});
 	});
 
 	it("keeps enough silent media available through the observed early poll and backup delay", async () => {

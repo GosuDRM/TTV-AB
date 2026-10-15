@@ -2724,6 +2724,11 @@ describe("_monitorPlayerBuffering clean-live player ownership", () => {
 			prevAdContext: false,
 			prevAdMediaKey: null,
 		});
+		Object.assign(g._PlayerBufferState as object, {
+			liveEdgeReloadCount: 0,
+			liveEdgeReloadAt: 0,
+			liveEdgeReloadMediaKey: null,
+		});
 		g.__TTVAB_STATE__ = {
 			PageMediaType: "live",
 			PageChannel: "testchannel",
