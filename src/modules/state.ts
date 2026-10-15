@@ -616,7 +616,7 @@ function _isWorkerEvent(
 			});
 		case "AdSecondsBlocked":
 			return (
-				_hasWorkerMessageFields(message, { seconds: "number" }) &&
+				_hasWorkerMessageFields(message) &&
 				(message.measurements === undefined ||
 					Array.isArray(message.measurements))
 			);

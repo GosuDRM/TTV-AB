@@ -188,7 +188,6 @@ type TTVABWorkerEventPayloads = {
 			durationMilliseconds: number;
 			startDateMilliseconds?: number;
 		}[];
-		seconds?: number;
 	};
 	AdPodProgress: Partial<TTVABAdPodProgress>;
 	AdDetected: {
@@ -252,6 +251,6 @@ type TTVABReceivedWorkerEvent = {
 					};
 				}
 			: Key extends "AdSecondsBlocked"
-				? { measurements?: unknown[]; seconds?: number }
+				? { measurements?: unknown[] }
 				: TTVABWorkerEventPayloads[Key]);
 }[keyof TTVABWorkerEventPayloads];

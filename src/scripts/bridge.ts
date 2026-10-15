@@ -375,8 +375,6 @@ const MAX_WATCH_MESSAGE_SECONDS = 600;
 const MAX_PENDING_WATCH_SECONDS = 7200;
 const WATCH_FLUSH_DELAY_MS = 5000;
 
-const MAX_AD_SECONDS_MESSAGE = 3600;
-const MAX_PENDING_AD_SECONDS = 14400;
 const MAX_AD_MEASUREMENTS_MESSAGE = 50;
 const MAX_PENDING_AD_MEASUREMENTS = 50;
 
@@ -384,8 +382,6 @@ let pendingAdsDelta = 0;
 let pendingAdChannels = createChannelsMap();
 let pendingWatchSeconds = createChannelsMap();
 let pendingWatchIntervals = createChannelsMap();
-let pendingAdSeconds = 0;
-let pendingChannelAdSeconds = createChannelsMap();
 let pendingAdMeasurements = new Map();
 let flushTimeout = null;
 let didMigrateLegacyPersistedCounterFlushes = false;
@@ -495,14 +491,6 @@ function normalizePersistedCounterFlushEntry(value) {
 		safeValue?.watchDeltas,
 	);
 	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
-	const adSecondsDelta = Math.min(
-		normalizeCount(safeValue?.adSecondsDelta),
-		MAX_PENDING_AD_SECONDS,
-	);
-	const channelAdSecondsDeltas = mergeChannelDeltaMaps(
-		createChannelsMap(),
-		safeValue?.channelAdSecondsDeltas,
-	);
 	const adMeasurements = normalizeAdMeasurements(
 		safeValue?.adMeasurements,
 		null,
@@ -511,10 +499,7 @@ function normalizePersistedCounterFlushEntry(value) {
 
 	if (
 		!flushId ||
-		(adsDelta <= 0 &&
-			!hasWatchDeltas &&
-			adSecondsDelta <= 0 &&
-			adMeasurements.length === 0)
+		(adsDelta <= 0 && !hasWatchDeltas && adMeasurements.length === 0)
 	) {
 		return null;
 	}
@@ -532,14 +517,18 @@ function normalizePersistedCounterFlushEntry(value) {
 			safeValue.watchIntervals,
 		);
 	}
-	if (adSecondsDelta > 0) {
-		entry.adSecondsDelta = adSecondsDelta;
-		entry.channelAdSecondsDeltas = channelAdSecondsDeltas;
-	}
 	if (adMeasurements.length > 0) {
 		entry.adMeasurements = adMeasurements;
 	}
 	return entry;
+}
+
+function getFlushJournalStorage(): Storage | null {
+	try {
+		return typeof localStorage === "undefined" ? null : localStorage;
+	} catch {
+		return null;
+	}
 }
 
 function getPersistedCounterFlushStorageKey(flushId) {
@@ -550,17 +539,15 @@ function getPersistedCounterFlushStorageKey(flushId) {
 }
 
 function migrateLegacyPersistedCounterFlushes() {
-	if (
-		didMigrateLegacyPersistedCounterFlushes ||
-		typeof localStorage === "undefined"
-	) {
+	const storage = getFlushJournalStorage();
+	if (didMigrateLegacyPersistedCounterFlushes || !storage) {
 		return;
 	}
 	didMigrateLegacyPersistedCounterFlushes = true;
 
 	let legacyEntries = [];
 	try {
-		const rawValue = localStorage.getItem(LEGACY_PERSISTED_COUNTER_FLUSHES_KEY);
+		const rawValue = storage.getItem(LEGACY_PERSISTED_COUNTER_FLUSHES_KEY);
 		if (!rawValue) {
 			return;
 		}
@@ -575,17 +562,18 @@ function migrateLegacyPersistedCounterFlushes() {
 		const storageKey = getPersistedCounterFlushStorageKey(safeEntry?.flushId);
 		if (!safeEntry || !storageKey) continue;
 		try {
-			localStorage.setItem(storageKey, JSON.stringify(safeEntry));
+			storage.setItem(storageKey, JSON.stringify(safeEntry));
 		} catch {}
 	}
 
 	try {
-		localStorage.removeItem(LEGACY_PERSISTED_COUNTER_FLUSHES_KEY);
+		storage.removeItem(LEGACY_PERSISTED_COUNTER_FLUSHES_KEY);
 	} catch {}
 }
 
 function readPersistedCounterFlushes() {
-	if (typeof localStorage === "undefined") {
+	const storage = getFlushJournalStorage();
+	if (!storage) {
 		return [];
 	}
 
@@ -598,8 +586,8 @@ function readPersistedCounterFlushes() {
 	const storageKeys = [];
 
 	try {
-		for (let index = 0; index < localStorage.length; index++) {
-			const storageKey = localStorage.key(index);
+		for (let index = 0; index < storage.length; index++) {
+			const storageKey = storage.key(index);
 			if (
 				typeof storageKey === "string" &&
 				storageKey.startsWith(PERSISTED_COUNTER_FLUSH_KEY_PREFIX)
@@ -610,7 +598,7 @@ function readPersistedCounterFlushes() {
 
 		const normalized = [];
 		for (const storageKey of storageKeys) {
-			const rawValue = localStorage.getItem(storageKey);
+			const rawValue = storage.getItem(storageKey);
 			if (!rawValue) {
 				continue;
 			}
@@ -619,7 +607,7 @@ function readPersistedCounterFlushes() {
 			try {
 				parsed = JSON.parse(rawValue);
 			} catch {
-				localStorage.removeItem(storageKey);
+				storage.removeItem(storageKey);
 				continue;
 			}
 
@@ -632,20 +620,20 @@ function readPersistedCounterFlushes() {
 				!expectedStorageKey ||
 				seenFlushIds.has(safeEntry.flushId)
 			) {
-				localStorage.removeItem(storageKey);
+				storage.removeItem(storageKey);
 				continue;
 			}
 			if (
 				safeEntry.createdAt < minCreatedAt ||
 				safeEntry.createdAt > maxCreatedAt
 			) {
-				localStorage.removeItem(storageKey);
+				storage.removeItem(storageKey);
 				continue;
 			}
 			if (storageKey !== expectedStorageKey) {
-				localStorage.removeItem(storageKey);
+				storage.removeItem(storageKey);
 				try {
-					localStorage.setItem(expectedStorageKey, JSON.stringify(safeEntry));
+					storage.setItem(expectedStorageKey, JSON.stringify(safeEntry));
 				} catch {}
 			}
 			normalized.push(safeEntry);
@@ -659,7 +647,7 @@ function readPersistedCounterFlushes() {
 		);
 		if (overflowCount > 0) {
 			for (const overflowEntry of normalized.slice(0, overflowCount)) {
-				localStorage.removeItem(
+				storage.removeItem(
 					getPersistedCounterFlushStorageKey(overflowEntry.flushId),
 				);
 			}
@@ -675,12 +663,13 @@ function persistCounterFlushForReplay(entry) {
 	const safeEntry = normalizePersistedCounterFlushEntry(entry);
 	if (!safeEntry) return false;
 	const storageKey = getPersistedCounterFlushStorageKey(safeEntry.flushId);
-	if (!storageKey || typeof localStorage === "undefined") {
+	const storage = getFlushJournalStorage();
+	if (!storageKey || !storage) {
 		return false;
 	}
 
 	try {
-		localStorage.setItem(storageKey, JSON.stringify(safeEntry));
+		storage.setItem(storageKey, JSON.stringify(safeEntry));
 		return readPersistedCounterFlushes();
 	} catch {
 		return false;
@@ -690,9 +679,11 @@ function persistCounterFlushForReplay(entry) {
 function clearPersistedCounterFlush(flushId) {
 	const safeFlushId = normalizeFlushId(flushId);
 	const storageKey = getPersistedCounterFlushStorageKey(safeFlushId);
-	if (!storageKey || typeof localStorage === "undefined") return false;
+	if (!storageKey) return false;
+	const storage = getFlushJournalStorage();
+	if (!storage) return true;
 	try {
-		localStorage.removeItem(storageKey);
+		storage.removeItem(storageKey);
 		return true;
 	} catch {
 		return false;
@@ -968,8 +959,6 @@ function resetPendingCounters() {
 	pendingAdChannels = createChannelsMap();
 	pendingWatchSeconds = createChannelsMap();
 	pendingWatchIntervals = createChannelsMap();
-	pendingAdSeconds = 0;
-	pendingChannelAdSeconds = createChannelsMap();
 	pendingAdMeasurements = new Map();
 }
 
@@ -1005,48 +994,10 @@ function broadcastState() {
 	});
 }
 
-function reconcilePendingDelta(kind, nextStoredCount) {
-	const safeStoredCount = normalizeCount(nextStoredCount);
-	if (kind === "ads") {
-		const previousStoredCount = normalizeCount(bridgeState.storedAdsCount);
-		if (safeStoredCount < previousStoredCount) {
-			pendingAdsDelta = 0;
-			pendingAdChannels = createChannelsMap();
-			pendingAdSeconds = 0;
-			pendingChannelAdSeconds = createChannelsMap();
-			pendingAdMeasurements = new Map();
-		}
-		bridgeState.storedAdsCount = safeStoredCount;
-	}
-}
-
-function queueTotalDelta(kind, nextTotal) {
-	const safeNextTotal = normalizeCount(nextTotal);
-	if (kind === "ads") {
-		const queuedTotal =
-			normalizeCount(bridgeState.storedAdsCount) +
-			normalizeCount(pendingAdsDelta);
-		const delta = safeNextTotal - queuedTotal;
-		const safeDelta = Math.min(Math.max(delta, 0), MAX_MESSAGE_DELTA);
-		if (safeDelta > 0) {
-			pendingAdsDelta += safeDelta;
-		}
-		return safeDelta;
-	}
-	return 0;
-}
-
-function queueExplicitDelta(kind, delta) {
-	const safeDelta = Math.min(
-		Math.max(normalizeCount(delta), 0),
-		MAX_MESSAGE_DELTA,
-	);
-	if (safeDelta <= 0) return 0;
-	if (kind === "ads") {
-		pendingAdsDelta += safeDelta;
-		return safeDelta;
-	}
-	return 0;
+function queueAdsDelta(delta) {
+	const safeDelta = Math.min(normalizeCount(delta), MAX_MESSAGE_DELTA);
+	if (safeDelta > 0) pendingAdsDelta += safeDelta;
+	return safeDelta;
 }
 
 function scheduleFlush(delay = FLUSH_DELAY_MS) {
@@ -1075,19 +1026,12 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 	const channelDeltas = pendingAdChannels;
 	const watchDeltas = pendingWatchSeconds;
 	const watchIntervals = pendingWatchIntervals;
-	const adSecondsDelta = pendingAdSeconds;
-	const channelAdSecondsDeltas = pendingChannelAdSeconds;
 	const adMeasurements = Array.from(pendingAdMeasurements.values());
 
 	resetPendingCounters();
 
 	const hasWatchDeltas = Object.keys(watchDeltas).length > 0;
-	if (
-		adsDelta === 0 &&
-		!hasWatchDeltas &&
-		adSecondsDelta === 0 &&
-		adMeasurements.length === 0
-	) {
+	if (adsDelta === 0 && !hasWatchDeltas && adMeasurements.length === 0) {
 		return;
 	}
 
@@ -1101,10 +1045,6 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 		detail.watchDeltas = watchDeltas;
 		if (Object.keys(watchIntervals).length > 0)
 			detail.watchIntervals = watchIntervals;
-	}
-	if (adSecondsDelta > 0) {
-		detail.adSecondsDelta = adSecondsDelta;
-		detail.channelAdSecondsDeltas = channelAdSecondsDeltas;
 	}
 	if (adMeasurements.length > 0) {
 		detail.adMeasurements = adMeasurements;
@@ -1120,7 +1060,6 @@ function flushCounters(options: { fireAndForget?: boolean } = {}) {
 function hasPendingCounters() {
 	return (
 		pendingAdsDelta > 0 ||
-		pendingAdSeconds > 0 ||
 		pendingAdMeasurements.size > 0 ||
 		Object.keys(pendingWatchSeconds).length > 0
 	);
@@ -1201,13 +1140,15 @@ function handleStorageChanges(changes, namespace) {
 			});
 		}
 	}
+	if (changes.ttvStatsResetAt) {
+		resetPendingCounters();
+	}
 	if (changes.ttvAdsBlocked) {
 		storageChangeVersions.ttvAdsBlocked += 1;
 		const nextAdsCount = normalizeCount(changes.ttvAdsBlocked.newValue);
 		const previousAdsCount = bridgeState.storedAdsCount;
 		bridgeState.storedAdsCount = nextAdsCount;
 		if (bridgeState.turboMode) return;
-		reconcilePendingDelta("ads", nextAdsCount);
 		if (bridgeStateReady && nextAdsCount !== previousAdsCount) {
 			sendToPage("ttvab-init-count", {
 				count: nextAdsCount,
@@ -1418,15 +1359,12 @@ function handlePageBridgeMessage(rawMessage) {
 		return;
 	}
 	if (message.type === "ttvab-ad-blocked") {
-		if (!detail || !Number.isFinite(detail.count)) return;
+		if (!detail || !Number.isFinite(detail.delta)) return;
 		const eventPlaybackContext = getMessagePlaybackContext(detail);
 		const blockedChannel = normalizeChannelName(
 			detail.channel || eventPlaybackContext.channelName,
 		);
-		const delta =
-			Number.isFinite(detail.delta) && normalizeCount(detail.delta) > 0
-				? queueExplicitDelta("ads", detail.delta)
-				: queueTotalDelta("ads", detail.count);
+		const delta = queueAdsDelta(detail.delta);
 		if (blockedChannel && delta > 0) {
 			pendingAdChannels[blockedChannel] =
 				normalizeCount(pendingAdChannels[blockedChannel]) + delta;
@@ -1450,9 +1388,6 @@ function handlePageBridgeMessage(rawMessage) {
 			measurementContext,
 			MAX_AD_MEASUREMENTS_MESSAGE,
 		);
-		if (measurements.length > 0 && pendingAdSeconds > 0) {
-			flushCounters();
-		}
 		for (const measurement of measurements) {
 			const measurementKey = getAdMeasurementKey(measurement);
 			if (!measurementKey || pendingAdMeasurements.has(measurementKey)) {
@@ -1465,28 +1400,7 @@ function handlePageBridgeMessage(rawMessage) {
 				pendingAdMeasurements.delete(oldestKey);
 			}
 		}
-		const measuredSeconds =
-			measurements.length > 0
-				? 0
-				: Math.min(normalizeCount(detail?.seconds), MAX_AD_SECONDS_MESSAGE);
-		if (measuredSeconds > 0) {
-			if (pendingAdMeasurements.size > 0) {
-				flushCounters();
-			}
-			pendingAdSeconds = Math.min(
-				pendingAdSeconds + measuredSeconds,
-				MAX_PENDING_AD_SECONDS,
-			);
-			const measuredChannel = normalizeChannelName(detail?.channel);
-			if (measuredChannel) {
-				pendingChannelAdSeconds[measuredChannel] = Math.min(
-					normalizeCount(pendingChannelAdSeconds[measuredChannel]) +
-						measuredSeconds,
-					MAX_PENDING_AD_SECONDS,
-				);
-			}
-		}
-		if (measurements.length > 0 || measuredSeconds > 0) {
+		if (measurements.length > 0) {
 			scheduleFlush();
 		}
 		return;

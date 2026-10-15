@@ -7240,8 +7240,86 @@ const _WatchTimeState = {
 	lastTickAt: 0,
 };
 const _WATCH_TICK_MAX_GAP_MS = 5000;
-const _WATCH_FLUSH_THRESHOLD_MS = 15000;
+const _WATCH_FLUSH_THRESHOLD_MS = 60000;
 const _WATCH_COUNTER_FLUSH_STORAGE_KEY_PREFIX = "ttvab_pending_counter_flush:";
+const _VOD_OWNER_CACHE_LIMIT = 32;
+const _VOD_OWNER_RETRY_MS = 60000;
+const _VOD_OWNER_TIMEOUT_MS = 4000;
+const _VodOwnerByVodID = new Map<
+	string,
+	{ channel: string | null; checkedAt: number; pending: boolean }
+>();
+
+function _getVodOwnerChannel(mediaKey) {
+	const normalizedMediaKey = _normalizeMediaKey(mediaKey);
+	if (!normalizedMediaKey?.startsWith("vod:")) return null;
+	const vodID = normalizedMediaKey.slice(4);
+	const cached = _VodOwnerByVodID.get(vodID);
+	if (cached?.channel) return cached.channel;
+	if (
+		cached &&
+		(cached.pending || Date.now() - cached.checkedAt < _VOD_OWNER_RETRY_MS)
+	) {
+		return null;
+	}
+	const record = { channel: null, checkedAt: Date.now(), pending: true };
+	_VodOwnerByVodID.delete(vodID);
+	_VodOwnerByVodID.set(vodID, record);
+	while (_VodOwnerByVodID.size > _VOD_OWNER_CACHE_LIMIT) {
+		const oldestVodID = _VodOwnerByVodID.keys().next().value;
+		if (oldestVodID === undefined) break;
+		_VodOwnerByVodID.delete(oldestVodID);
+	}
+	const controller =
+		typeof AbortController === "function" ? new AbortController() : null;
+	const timeoutId = setTimeout(
+		() => controller?.abort(),
+		_VOD_OWNER_TIMEOUT_MS,
+	);
+	const realFetch = window.__TTVAB_REAL_FETCH__ || window.fetch;
+	Promise.resolve()
+		.then(() =>
+			realFetch.call(window, "https://gql.twitch.tv/gql", {
+				method: "POST",
+				signal: controller?.signal,
+				headers: {
+					"Client-ID": _C.CLIENT_ID,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					query: "query($id: ID!) { video(id: $id) { owner { login } } }",
+					variables: { id: vodID },
+				}),
+			}),
+		)
+		.then((response) => (response?.ok ? response.json() : null))
+		.then((payload) => {
+			record.channel = _normalizeChannelName(
+				payload?.data?.video?.owner?.login,
+			);
+		})
+		.catch(() => {})
+		.finally(() => {
+			clearTimeout(timeoutId);
+			record.pending = false;
+			record.checkedAt = Date.now();
+		});
+	return null;
+}
+
+function _getWatchTimeChannel(context) {
+	return (
+		_normalizePlayerChannel(context?.ChannelName) ||
+		_getVodOwnerChannel(context?.MediaKey)
+	);
+}
+
+function _getPageWatchTimeChannel() {
+	return _getWatchTimeChannel({
+		ChannelName: __TTVAB_STATE__?.PageChannel,
+		MediaKey: __TTVAB_STATE__?.PageMediaKey,
+	});
+}
 
 function _isCurrentPreviewsPlayerContext() {
 	try {
@@ -7346,20 +7424,18 @@ function _getWatchTimePlaybackElement(channel = null) {
 	if (!safeChannel) return null;
 	const pipContext = _getActivePictureInPicturePlaybackContext();
 	if (
-		_normalizePlayerChannel(pipContext?.ChannelName) === safeChannel &&
-		pipContext?.element instanceof HTMLMediaElement
+		pipContext?.element instanceof HTMLMediaElement &&
+		_getWatchTimeChannel(pipContext) === safeChannel
 	) {
 		return pipContext.element;
 	}
+	const pageChannel = _getPageWatchTimeChannel();
 	const pipVideo = _getPictureInPictureVideo();
-	if (
-		pipVideo &&
-		_normalizePlayerChannel(__TTVAB_STATE__?.PageChannel) === safeChannel
-	) {
+	if (pipVideo && pageChannel === safeChannel) {
 		return pipVideo;
 	}
 	if (_isCurrentPreviewsPlayerContext()) return null;
-	if (_normalizePlayerChannel(__TTVAB_STATE__?.PageChannel) !== safeChannel) {
+	if (pageChannel !== safeChannel) {
 		return null;
 	}
 	if (
@@ -7446,11 +7522,10 @@ function _trackChannelWatchTime(isHidden) {
 	const mediaType = pipContext?.MediaType || __TTVAB_STATE__?.PageMediaType;
 	const channel =
 		(!isPreviewsPlayer || pipVideo) &&
-		typeof (pipContext?.ChannelName || __TTVAB_STATE__?.PageChannel) ===
-			"string" &&
-		(pipContext?.ChannelName || __TTVAB_STATE__.PageChannel) &&
 		(mediaType === "live" || mediaType === "vod")
-			? pipContext?.ChannelName || __TTVAB_STATE__.PageChannel
+			? pipContext
+				? _getWatchTimeChannel(pipContext)
+				: _getPageWatchTimeChannel()
 			: null;
 
 	if (channel !== _WatchTimeState.channel) {

@@ -6437,7 +6437,8 @@ function _hookWorker() {
 										? Math.max(1, Math.trunc(data.delta))
 										: 1,
 									channel:
-										typeof data.channel === "string" ? data.channel : null,
+										(typeof data.channel === "string" && data.channel) ||
+										_getAdOwnerChannel(data.mediaKey),
 									mediaKey:
 										typeof data.mediaKey === "string" ? data.mediaKey : null,
 									pageChannel: data.pageChannel || null,
@@ -6501,20 +6502,7 @@ function _hookWorker() {
 								_sendBridgeMessage("ttvab-ad-seconds", {
 									measurements,
 									cycleStartedAt: Math.max(0, Number(data.cycleStartedAt) || 0),
-									channel: data.channel || null,
-									mediaKey: data.mediaKey || null,
-									pageChannel: data.pageChannel || null,
-									pageMediaKey: data.pageMediaKey || null,
-								});
-								break;
-							}
-							const measuredSeconds = Number.isFinite(data.seconds)
-								? Math.max(0, Math.trunc(data.seconds))
-								: 0;
-							if (measuredSeconds > 0) {
-								_sendBridgeMessage("ttvab-ad-seconds", {
-									seconds: measuredSeconds,
-									channel: data.channel || null,
+									channel: data.channel || _getAdOwnerChannel(data.mediaKey),
 									mediaKey: data.mediaKey || null,
 									pageChannel: data.pageChannel || null,
 									pageMediaKey: data.pageMediaKey || null,
@@ -7803,6 +7791,12 @@ function _getPageVodAdMediaKey() {
 	return __TTVAB_STATE__.PageMediaType === "vod" ? pageMediaKey : null;
 }
 
+function _getAdOwnerChannel(mediaKey) {
+	return typeof _getVodOwnerChannel === "function"
+		? _getVodOwnerChannel(mediaKey)
+		: null;
+}
+
 function _recordBlockedVodAdRequest(request) {
 	const mediaKey = _normalizeMediaKey(request?.mediaKey);
 	if (
@@ -7830,7 +7824,8 @@ function _recordBlockedVodAdRequest(request) {
 		if (oldestKey === undefined) break;
 		_blockedVodAdCountExpirations.delete(oldestKey);
 	}
-	if (shouldIncrement) _incrementAdsBlocked(null, mediaKey);
+	if (shouldIncrement)
+		_incrementAdsBlocked(_getAdOwnerChannel(mediaKey), mediaKey);
 	_log("Blocked client-side VOD ad request", "success");
 	return shouldIncrement;
 }
