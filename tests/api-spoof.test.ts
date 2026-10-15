@@ -548,6 +548,157 @@ describe("_notifyAdComplete", () => {
 		}
 	});
 
+	it("counts a 200 response that carries GraphQL errors as a failed report", async () => {
+		const log = vi.fn();
+		g._log = log;
+		const notify =
+			T<(text: string, info: Record<string, unknown>) => Promise<void>>(
+				"_notifyAdComplete",
+			);
+		g._fetchViaWorkerBridge = async () =>
+			Response.json([
+				{
+					errors: [
+						{
+							message: 'PersistedQueryNotFound <token="secret">',
+							extensions: { code: "PERSISTED_QUERY_NOT_FOUND" },
+						},
+					],
+				},
+			]);
+		await notify(["#EXTM3U", adRange(1)].join("\n"), {
+			SpoofedAdIds: new Set<string>(),
+		});
+		for (let index = 0; index < 5; index++) await Promise.resolve();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(
+			log.mock.calls
+				.map(([message]) => String(message))
+				.filter((message) => message.startsWith("notifyAdComplete:")),
+		).toEqual([
+			"notifyAdComplete: GQL error PersistedQueryNotFound tokensecret (1 failed report so far); Twitch may be rejecting or rate-limiting ad completion reports",
+		]);
+	});
+
+	it("does not count a successful GraphQL response as a failure", async () => {
+		const log = vi.fn();
+		g._log = log;
+		const notify =
+			T<(text: string, info: Record<string, unknown>) => Promise<void>>(
+				"_notifyAdComplete",
+			);
+		g._fetchViaWorkerBridge = async () =>
+			Response.json([{ data: { recordAdEvent: { error: null } } }]);
+		await notify(["#EXTM3U", adRange(1)].join("\n"), {
+			SpoofedAdIds: new Set<string>(),
+			ActiveBackupPlayerType: "autoplay",
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const messages = log.mock.calls.map(([message]) => String(message));
+		expect(
+			messages.filter((message) => message.startsWith("notifyAdComplete:")),
+		).toEqual([]);
+		expect(messages).toContain(
+			"[Trace] Sent ad completion for 1 new ad(s) (1/2 pod) — roll: preroll, serving: autoplay, pod-complete: no",
+		);
+	});
+
+	it("warns about missing ad metadata once per ad break", async () => {
+		const log = vi.fn();
+		g._log = log;
+		g._fetchViaWorkerBridge = async () => new Response(null, { status: 200 });
+		const notify =
+			T<(text: string, info: Record<string, unknown>) => Promise<void>>(
+				"_notifyAdComplete",
+			);
+		const info: Record<string, unknown> = {
+			SpoofedAdIds: new Set<string>(),
+			_LoggedWhitelistByType: null,
+		};
+		const noMatch =
+			'#EXTM3U\n#EXT-X-DATERANGE:ID="csai-1",CLASS="twitch-ad",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"';
+		const noToken =
+			'#EXTM3U\n#EXT-X-DATERANGE:ID="stitched-ad-9",CLASS="twitch-stitched-ad"';
+		const warnings = () =>
+			log.mock.calls
+				.map(([message]) => String(message))
+				.filter((message) => message.startsWith("notifyAdComplete:"));
+		for (const text of [noMatch, noMatch, noToken, noToken])
+			await notify(text, info);
+		expect(warnings()).toHaveLength(2);
+		expect(warnings()[0]).toMatch(
+			/^notifyAdComplete: no stitched-ad DATERANGE match in this ad break; no completion reports sent\./,
+		);
+		expect(warnings()[1]).toMatch(
+			/^notifyAdComplete: matched DATERANGE but no RADS token in this ad break; no completion report sent\./,
+		);
+		info._LoggedWhitelistByType = null;
+		await notify(noMatch, info);
+		await notify(noToken, info);
+		expect(warnings()).toHaveLength(4);
+	});
+
+	it("shares reported ad IDs so a replacement worker does not report them again", async () => {
+		const sent: string[] = [];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: { body: string },
+		) => {
+			for (const packet of JSON.parse(options.body) as GqlPacket[]) {
+				const payload = JSON.parse(
+					packet.variables?.input?.eventPayload || "{}",
+				);
+				if (packet.variables?.input?.eventName === "video_ad_impression")
+					sent.push(payload.ad_id);
+			}
+			return new Response(null, { status: 200 });
+		};
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return true;
+		};
+		const notify =
+			T<(text: string, info: Record<string, unknown>) => Promise<void>>(
+				"_notifyAdComplete",
+			);
+		const makeWorkerInfo = () => ({
+			SpoofedAdIds: new Set<string>(),
+			ObservedAdPodIds: new Set<string>(),
+			ExpectedAdPodLength: 0,
+			MaxObservedAdPodPosition: 0,
+			ObservedZeroAdPodPosition: false,
+			VisibleAdStartedAt: 5000,
+			ChannelName: "testchannel",
+			MediaKey: "live:testchannel",
+		});
+		await notify(["#EXTM3U", adRange(1)].join("\n"), makeWorkerInfo());
+		expect(sent).toEqual(["stitched-ad-1"]);
+		expect(messages.at(-1)).toMatchObject({
+			key: "AdPodProgress",
+			adIds: ["stitched-ad-1"],
+			reportedAdIds: ["stitched-ad-1"],
+		});
+		(g.__TTVAB_STATE__ as Record<string, unknown>).AdPodProgressByMediaKey = {
+			"live:testchannel": {
+				adIds: ["stitched-ad-1"],
+				reportedAdIds: ["stitched-ad-1"],
+				cycleStartedAt: 5000,
+			},
+		};
+		await notify(
+			["#EXTM3U", adRange(1), adRange(2)].join("\n"),
+			makeWorkerInfo(),
+		);
+		expect(sent).toEqual(["stitched-ad-1", "stitched-ad-2"]);
+		expect(messages.at(-1)).toMatchObject({
+			reportedAdIds: ["stitched-ad-2"],
+		});
+	});
+
 	it("tracks and spoofs stitched ads whose ID is not the first attribute", async () => {
 		const notify =
 			T<

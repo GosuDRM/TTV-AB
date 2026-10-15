@@ -190,6 +190,46 @@ describe("main-owned declared ad pod progress", () => {
 		});
 	});
 
+	it("keeps the ads already reported for a cycle across workers and drops them for a newer cycle", () => {
+		const merge = T<
+			(value: Record<string, unknown>) => Record<string, unknown> | null
+		>("_mergeAdPodProgress");
+		const context = {
+			mediaType: "live",
+			channelName: "testchannel",
+			mediaKey: "live:testchannel",
+			expectedPodLength: 2,
+		};
+
+		expect(
+			merge({ ...context, cycleStartedAt: 1000, adIds: ["ad-1"] }),
+		).not.toHaveProperty("reportedAdIds");
+		merge({
+			...context,
+			cycleStartedAt: 1000,
+			adIds: ["ad-1"],
+			reportedAdIds: ["ad-1"],
+		});
+		expect(
+			merge({
+				...context,
+				cycleStartedAt: 1000,
+				adIds: ["ad-2"],
+				reportedAdIds: ["ad-2", 3],
+			}),
+		).toMatchObject({ reportedAdIds: ["ad-1", "ad-2"] });
+		expect(
+			merge({
+				...context,
+				cycleStartedAt: 1000,
+				reportedAdIds: Array.from({ length: 60 }, (_, index) => `x-${index}`),
+			})?.reportedAdIds,
+		).toHaveLength(50);
+		expect(
+			merge({ ...context, cycleStartedAt: 2000, adIds: ["ad-3"] }),
+		).not.toHaveProperty("reportedAdIds");
+	});
+
 	it("replaces an active pod when a replacement worker reports a newer exact cycle", () => {
 		const merge = T<
 			(value: Record<string, unknown>) => Record<string, unknown> | null

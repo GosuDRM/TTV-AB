@@ -514,3 +514,189 @@ describe("buffer monitor connectivity and ended streams", () => {
 		}
 	});
 });
+
+describe("live-edge starvation reload escalation", () => {
+	function makeStarvedPlayback() {
+		const playback = makePlayback();
+		playback.sample.advancing = false;
+		Object.defineProperties(playback.video, {
+			buffered: {
+				get: () => ({
+					length: 1,
+					start: () => 0,
+					end: () => Number(playback.video.currentTime),
+				}),
+				configurable: true,
+			},
+			readyState: { get: () => 2, configurable: true },
+		});
+		Object.defineProperty(playback.player.core.state, "bufferedPosition", {
+			get: () => Number(playback.video.currentTime),
+			configurable: true,
+		});
+		playback.player.getBufferDuration = () => 0;
+		return playback;
+	}
+
+	function trackStarvationReloads() {
+		const reloads: number[] = [];
+		vi.spyOn(g, "_doPlayerTask").mockImplementation(
+			(_isPausePlay: unknown, isReload: unknown) => {
+				if (isReload) reloads.push(Date.now());
+				return true;
+			},
+		);
+		return reloads;
+	}
+
+	it("waits twice as long before each repeated starvation reload, up to four times the first wait", async () => {
+		const playback = makeStarvedPlayback();
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue(playback);
+		const reloads = trackStarvationReloads();
+		run("_monitorPlayerBuffering");
+		await vi.advanceTimersByTimeAsync(140000);
+		expect(reloads.length).toBeGreaterThanOrEqual(5);
+		const gaps = reloads.slice(1).map((at, index) => at - reloads[index]);
+		expect(gaps[0]).toBeGreaterThan(20000);
+		expect(gaps[0]).toBeLessThan(25000);
+		expect(gaps[1]).toBeGreaterThan(gaps[0] + 12000);
+		expect(Math.abs(gaps[2] - gaps[1])).toBeLessThan(1500);
+		expect(Math.abs(gaps[3] - gaps[2])).toBeLessThan(1500);
+		expect(
+			vi
+				.mocked(g._log)
+				.mock.calls.filter(([message]) =>
+					String(message).startsWith("Persistent live-edge starvation"),
+				)
+				.map(
+					([message]) =>
+						String(message).match(/recent starvation reloads (\d)/)?.[1],
+				),
+		).toEqual(["0", "1", "2", "2", "2"].slice(0, reloads.length));
+	});
+
+	it("returns to the short wait after five minutes without a starvation reload or on another stream", async () => {
+		const playback = makeStarvedPlayback();
+		vi.spyOn(g, "_getPlayerAndState").mockReturnValue(playback);
+		const reloads = trackStarvationReloads();
+		run("_monitorPlayerBuffering");
+		await vi.advanceTimersByTimeAsync(60000);
+		expect(reloads).toHaveLength(2);
+		playback.sample.advancing = true;
+		await vi.advanceTimersByTimeAsync(300000);
+		expect(reloads).toHaveLength(2);
+		playback.sample.advancing = false;
+		const resumedAt = Date.now();
+		await vi.advanceTimersByTimeAsync(20000);
+		expect(reloads).toHaveLength(3);
+		expect(reloads[2] - resumedAt).toBeLessThan(16000);
+		const state = g._PlayerBufferState as Record<string, unknown>;
+		state.liveEdgeReloadMediaKey = "live:otherchannel";
+		state.liveEdgeReloadCount = 2;
+		state.liveEdgeReloadAt = Date.now();
+		const before = reloads.length;
+		await vi.advanceTimersByTimeAsync(18000);
+		expect(reloads.length).toBe(before + 1);
+	});
+});
+
+describe("Previews for Twitch quality interop", () => {
+	function postPreviewsQuality(
+		selected: unknown,
+		fallback: unknown = null,
+		source: Window | null = window,
+		origin = window.location.origin,
+	) {
+		window.dispatchEvent(
+			new MessageEvent("message", {
+				data: {
+					type: "tp_setTTVQuality",
+					selected_quality: selected,
+					fallback_quality: fallback,
+				},
+				origin,
+				source,
+			}),
+		);
+	}
+
+	beforeEach(() => {
+		g._PreviewsQualityMessage = null;
+		run("_hookPreviewsQualityChoice");
+	});
+
+	afterEach(() => {
+		g._PreviewsQualityMessage = null;
+	});
+
+	it("follows the quality Previews applies to the main player", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		localStorage.setItem(
+			"video-quality",
+			JSON.stringify({ default: "720p60" }),
+		);
+		run("_syncPreferredQualityGroup");
+		expect(state.PreferredQualityGroup).toBe("720p60");
+		postPreviewsQuality("chunked", "1080p60");
+		expect(state.PreferredQualityGroup).toBe("chunked");
+		expect(g._broadcastWorkers).toHaveBeenLastCalledWith({
+			key: "UpdatePreferredQualityGroup",
+			value: "chunked",
+		});
+		run("_syncPreferredQualityGroup");
+		expect(state.PreferredQualityGroup).toBe("chunked");
+		postPreviewsQuality("lowest");
+		expect(state.PreferredQualityGroup).toBe("160p");
+		postPreviewsQuality("1080p60");
+		expect(state.PreferredQualityGroup).toBe("1080p60");
+		postPreviewsQuality("auto");
+		expect(state.PreferredQualityGroup).toBe("720p60");
+		localStorage.removeItem("video-quality");
+		postPreviewsQuality("1080p60");
+		postPreviewsQuality("auto");
+		expect(state.PreferredQualityGroup).toBeNull();
+	});
+
+	it("ignores malformed values and messages from other windows or origins", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		localStorage.setItem(
+			"video-quality",
+			JSON.stringify({ default: "720p60" }),
+		);
+		run("_syncPreferredQualityGroup");
+		postPreviewsQuality("1080p60", null, null);
+		postPreviewsQuality("1080p60", null, window, "https://evil.example");
+		postPreviewsQuality("<script>");
+		postPreviewsQuality(1080);
+		expect(state.PreferredQualityGroup).toBe("720p60");
+		expect(g._PreviewsQualityMessage).toBeNull();
+	});
+
+	it("asks Previews to re-apply its quality after a TTV AB player reload restores preferences", () => {
+		const post = vi.spyOn(window, "postMessage").mockImplementation(() => {});
+		const snapshot = run<Record<string, unknown>>(
+			"_capturePlayerPreferenceSnapshot",
+			null,
+			null,
+			{ channel: "testchannel", mediaKey: "live:testchannel" },
+		);
+		run("_restorePlayerPreferenceSnapshot", snapshot, {
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+		});
+		expect(post).not.toHaveBeenCalled();
+		postPreviewsQuality("chunked", "1080p60");
+		run("_restorePlayerPreferenceSnapshot", snapshot, {
+			channel: "testchannel",
+			mediaKey: "live:testchannel",
+		});
+		expect(post).toHaveBeenCalledWith(
+			{
+				type: "tp_setTTVQuality",
+				selected_quality: "chunked",
+				fallback_quality: "1080p60",
+			},
+			window.location.origin,
+		);
+	});
+});

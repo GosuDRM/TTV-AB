@@ -9958,6 +9958,257 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 		expect(findCalls.length).toBe(1);
 	});
 
+	it("starts the CSAI search like the request path after a reload and records the found backup", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativeUrl: bridgeUrl,
+			LastCleanNativePlaylistAt: Date.now(),
+			LastPlayerReload: Date.now(),
+		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		g._getStreamInfoForPlaylist = () => info;
+		const findCalls: unknown[][] = [];
+		let finish!: (value: unknown) => void;
+		g._findBackupStream = (...args: unknown[]) => {
+			findCalls.push(args);
+			return new Promise((resolve) => {
+				finish = resolve;
+			});
+		};
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
+		const state = getState();
+		const previousReloadTime = state.PlayerReloadMinimalRequestsTime;
+		const previousReloadIndex = state.PlayerReloadMinimalRequestsPlayerIndex;
+		state.PlayerReloadMinimalRequestsTime = 1500;
+		state.PlayerReloadMinimalRequestsPlayerIndex = 4;
+		try {
+			expect(await core(bridgeUrl, csaiOnlyAdNative, fetchStub)).toBe(
+				cleanNative,
+			);
+			expect(findCalls).toHaveLength(1);
+			expect(findCalls[0]?.[2]).toBe(4);
+			expect(findCalls[0]?.[3]).toBeTruthy();
+			expect(Number(info._LastBackupSearchCompletedAt) || 0).toBe(0);
+			finish({ type: "site", m3u8: makePlaylist(50, 3) });
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(Number(info._BackupSearchStartedAt) || 0).toBe(0);
+			expect(Number(info._LastBackupSearchCompletedAt)).toBeGreaterThan(0);
+		} finally {
+			state.PlayerReloadMinimalRequestsTime = previousReloadTime;
+			state.PlayerReloadMinimalRequestsPlayerIndex = previousReloadIndex;
+		}
+	});
+
+	it("logs a failed CSAI backup search and lets the next request search again", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativeUrl: bridgeUrl,
+			LastCleanNativePlaylistAt: Date.now(),
+		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = () => Promise.reject(new Error("token refused"));
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
+		const log = vi.fn();
+		const previousLog = g._log;
+		g._log = log;
+		try {
+			await core(bridgeUrl, csaiOnlyAdNative, fetchStub);
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(Number(info._BackupSearchStartedAt) || 0).toBe(0);
+			expect(Number(info._LastBackupSearchCompletedAt) || 0).toBe(0);
+			expect(log).toHaveBeenCalledWith(
+				"[Recovery] Background backup search failed: token refused",
+				"warning",
+			);
+			expect(log).toHaveBeenCalledWith(
+				"[CSAI] Ad markers before any non-live segment (live 1, other 0, prefetch 0, known ad 1, classes twitch-stitched-ad): bridging with the last clean playlist (0.0s old)",
+				"info",
+			);
+		} finally {
+			g._log = previousLog;
+		}
+	});
+
+	it("requests ad segments one at a time and only with Ad Spoofing on", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativeUrl: bridgeUrl,
+			LastCleanNativePlaylistAt: Date.now(),
+		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = () => new Promise(() => {});
+		const requested: { url: string; signal: AbortSignal }[] = [];
+		const finishes: (() => void)[] = [];
+		const realFetch = vi.fn(
+			(url: string, options: { signal: AbortSignal }) =>
+				new Promise<Response>((resolve) => {
+					requested.push({ url: String(url), signal: options.signal });
+					finishes.push(() => resolve(new Response("ad")));
+				}),
+		);
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
+		const state = getState();
+		const previousSpoofing = state.DisableAdSpoofing;
+		const nextAd = adLadenNative.replace(
+			"https://edge.example/stitched-ad-99.ts",
+			"https://edge.example/stitched-ad-100.ts",
+		);
+		try {
+			state.DisableAdSpoofing = true;
+			await core(bridgeUrl, adLadenNative, realFetch);
+			expect(requested).toEqual([]);
+			state.DisableAdSpoofing = false;
+			await core(bridgeUrl, adLadenNative, realFetch);
+			expect(requested.map(({ url }) => url)).toEqual([
+				"https://edge.example/stitched-ad-99.ts",
+			]);
+			await core(bridgeUrl, nextAd, realFetch);
+			expect(requested).toHaveLength(1);
+			expect(requested[0]?.signal.aborted).toBe(false);
+			finishes[0]?.();
+			for (let index = 0; index < 5; index++) await Promise.resolve();
+			await core(bridgeUrl, nextAd, realFetch);
+			expect(requested.map(({ url }) => url)).toEqual([
+				"https://edge.example/stitched-ad-99.ts",
+				"https://edge.example/stitched-ad-100.ts",
+			]);
+			expect(requested[0]?.signal.aborted).toBe(false);
+		} finally {
+			state.DisableAdSpoofing = previousSpoofing;
+		}
+	});
+
+	it("keeps a break identified as a midroll for later playlists without the roll type", async () => {
+		const info = makeInfo({
+			LastCleanNativeM3U8: cleanNative,
+			LastCleanNativeUrl: bridgeUrl,
+			LastCleanNativePlaylistAt: Date.now(),
+		});
+		declareAvcPlaybackUrl(info, bridgeUrl);
+		g._getStreamInfoForPlaylist = () => info;
+		g._findBackupStream = () => new Promise(() => {});
+		const realFetch = vi.fn(() => new Promise<Response>(() => {}));
+		const core =
+			T<(url: string, text: string, realFetch: unknown) => Promise<string>>(
+				"_processM3U8Core",
+			);
+		const state = getState();
+		const previousSpoofing = state.DisableAdSpoofing;
+		try {
+			state.DisableAdSpoofing = false;
+			await core(
+				bridgeUrl,
+				adLadenNative.replace(
+					'CLASS="twitch-stitched-ad"',
+					'CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-ROLL-TYPE="MIDROLL"',
+				),
+				realFetch,
+			);
+			expect(info.IsMidroll).toBe(true);
+			await core(bridgeUrl, adLadenNative, realFetch);
+			expect(info.IsMidroll).toBe(true);
+			expect(realFetch).not.toHaveBeenCalled();
+		} finally {
+			state.DisableAdSpoofing = previousSpoofing;
+		}
+	});
+
+	it("logs once when the roll type cannot be recorded because the page is on other media", () => {
+		const state = getState();
+		const previousPageMediaKey = state.PageMediaKey;
+		const log = vi.fn();
+		const previousLog = g._log;
+		g._log = log;
+		try {
+			const info = makeInfo({
+				MediaType: "live",
+				MediaKey: "live:testchannel",
+				VisibleAdStartedAt: 1000,
+			});
+			state.PageMediaKey = "live:otherchannel";
+			const preroll =
+				'#EXTM3U\n#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",X-TV-TWITCH-AD-ROLL-TYPE="PREROLL"';
+			T<(info: unknown, text: string) => void>("_recordNativeAdRollType")(
+				info,
+				preroll,
+			);
+			T<(info: unknown, text: string) => void>("_recordNativeAdRollType")(
+				info,
+				preroll,
+			);
+			expect(info.AdRollContext).toBeNull();
+			expect(log.mock.calls).toEqual([
+				[
+					"[Trace] Ad roll type not recorded for live:testchannel: the page is on live:otherchannel",
+					"warning",
+				],
+			]);
+			state.PageMediaKey = "live:testchannel";
+			T<(info: unknown, text: string) => void>("_recordNativeAdRollType")(
+				info,
+				preroll,
+			);
+			expect(info.AdRollContext).toMatchObject({ rollType: "preroll" });
+		} finally {
+			state.PageMediaKey = previousPageMediaKey;
+			g._log = previousLog;
+		}
+	});
+
+	it("names the roll type in the break summary", () => {
+		const log = vi.fn();
+		const previousLog = g._log;
+		g._log = log;
+		try {
+			const info = makeInfo({
+				MediaType: "live",
+				MediaKey: "live:testchannel",
+				VisibleAdStartedAt: 5000,
+				AdRollContext: {
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 5000,
+					pageGeneration: 0,
+					rollType: "preroll",
+				},
+			});
+			const diagnostics = {
+				nextSourceId: 0,
+				lastServedSourceId: 0,
+				sources: new Map(),
+			};
+			const record =
+				T<(info: unknown, state: unknown, source: string) => void>(
+					"_recordAdBreakStep",
+				);
+			record(info, diagnostics, "autoplay 640x360");
+			info.VisibleAdStartedAt = 0;
+			info.AdRollContext = null;
+			record(info, diagnostics, "native 1920x1080");
+			expect(
+				log.mock.calls.find(([message]) =>
+					String(message).startsWith("[Break] ended "),
+				)?.[0],
+			).toMatch(
+				/^\[Break\] ended live:testchannel cycle 5000 \(preroll\): autoplay 640x360 @-?\d+\.\ds -> native 1920x1080 @-?\d+\.\ds$/,
+			);
+		} finally {
+			g._log = previousLog;
+		}
+	});
+
 	it("keeps a fresh exact native bridge flowing when CSAI stripping would create an empty media segment", async () => {
 		const info = makeInfo({
 			LastCleanNativeM3U8: cleanNative,

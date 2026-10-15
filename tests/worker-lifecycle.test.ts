@@ -10718,7 +10718,9 @@ describe("injected worker ad playlist validation", () => {
 				await vi.advanceTimersByTimeAsync(1100);
 				expect(lowSettled).toBe(true);
 				const lowOutput = await low;
-				const high = await (await workerFetch(highUrl)).text();
+				const highPending = workerFetch(highUrl);
+				await vi.advanceTimersByTimeAsync(600);
+				const high = await (await highPending).text();
 				const sequence = (text: string) =>
 					Number(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1]);
 				for (const output of [lowOutput, high]) {
@@ -10744,8 +10746,16 @@ describe("injected worker ad playlist validation", () => {
 						),
 				).toEqual([
 					expect.stringMatching(
-						/^\[Continuity\] ad-start backup wait served the live backup after 2\.\ds for live:testchannel$/,
+						/^\[Continuity\] ad-start backup wait served the live backup after 1\.\ds for live:testchannel$/,
 					),
+				]);
+				expect(
+					posted
+						.filter((message) => message?.key === "LogEntry")
+						.map((message) => message.value.m)
+						.filter((message) => message.startsWith("[CSAI] ")),
+				).toEqual([
+					"[CSAI] Ad markers before any non-live segment (live 3, other 0, prefetch 0, known ad 0, classes none): waiting up to 2.0s for a live backup; no clean bridge (last clean playlist was another rendition)",
 				]);
 			} finally {
 				harness.restore();
@@ -11253,15 +11263,13 @@ describe("injected worker ad playlist validation", () => {
 				expect(f.info()._LastServedPlaylistKind).toBe("native");
 				expect(f.info()._EmptyAdHoldWindow).toBeNull();
 				expect(f.state.PinnedBackupPlayerType).toBeNull();
-				expect(f.logs("[Continuity] ad-start backup wait ")).toEqual(
-					change === "abort"
-						? []
-						: [
-								expect.stringMatching(
-									/^\[Continuity\] ad-start backup wait stopped; failing the request after \d\.\ds for live:testchannel$/,
-								),
-							],
-				);
+				expect(f.logs("[Continuity] ad-start backup wait ")).toEqual([
+					expect.stringMatching(
+						change === "abort"
+							? /^\[Continuity\] ad-start backup wait cancelled by the player after \d\.\ds for live:testchannel$/
+							: /^\[Continuity\] ad-start backup wait stopped; failing the request after \d\.\ds for live:testchannel$/,
+					),
+				]);
 			} finally {
 				f.harness.restore();
 				vi.clearAllTimers();
