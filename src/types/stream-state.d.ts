@@ -210,6 +210,7 @@ type TTVABAdBreakTimeline = {
 	steps: { at: number; source: string }[];
 	dropped: number;
 	nativeReturn: string | null;
+	rollType?: string | null;
 };
 
 type TTVABPlaylistContinuityDiagnostics = {

@@ -614,13 +614,26 @@ function _recordNativeAdRollType(info: TTVABStreamInfo, text) {
 	const cycleStartedAt = Number(info?.VisibleAdStartedAt) || 0;
 	const pageGeneration =
 		Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0;
-	if (
-		info?.MediaType !== "live" ||
-		!mediaKey ||
-		cycleStartedAt <= 0 ||
-		_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) !== mediaKey
-	)
+	if (info?.MediaType !== "live" || !mediaKey || cycleStartedAt <= 0) return;
+	const pageMediaKey = _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey);
+	if (pageMediaKey !== mediaKey) {
+		const mismatchKey = `roll-type-page-mismatch:${cycleStartedAt}`;
+		if (
+			/X-TV-TWITCH-AD-ROLL-TYPE="(?:PREROLL|MIDROLL|preroll|midroll)"/.test(
+				text,
+			) &&
+			!info._LoggedWhitelistByType?.has?.(mismatchKey)
+		) {
+			if (!(info._LoggedWhitelistByType instanceof Set))
+				info._LoggedWhitelistByType = new Set();
+			info._LoggedWhitelistByType.add(mismatchKey);
+			_log(
+				`[Trace] Ad roll type not recorded for ${mediaKey}: the page is on ${pageMediaKey || "no media"}`,
+				"warning",
+			);
+		}
 		return;
+	}
 	const previous = info.AdRollContext;
 	let rollType =
 		previous?.mediaKey === mediaKey &&
@@ -3100,6 +3113,11 @@ function _recordAdBreakStep(
 				nativeReturn: null,
 			};
 		}
+		if (
+			info.AdRollContext?.cycleStartedAt === cycleStartedAt &&
+			info.AdRollContext.rollType
+		)
+			state.adBreak.rollType = info.AdRollContext.rollType;
 		const steps = state.adBreak.steps;
 		if (steps.at(-1)?.source === source) return;
 		if (steps.length >= 12) {
@@ -3127,7 +3145,7 @@ function _logAdBreakSummary(
 		)
 		.join(" -> ");
 	_log(
-		`[Break] ${outcome} ${_normalizeMediaKey(info.MediaKey)} cycle ${timeline.cycleStartedAt}: ${path || "no media served"}${timeline.dropped > 0 ? ` (${timeline.dropped} earlier steps omitted)` : ""}${timeline.nativeReturn ? `; native return by ${timeline.nativeReturn}` : ""}`,
+		`[Break] ${outcome} ${_normalizeMediaKey(info.MediaKey)} cycle ${timeline.cycleStartedAt}${timeline.rollType ? ` (${timeline.rollType})` : ""}: ${path || "no media served"}${timeline.dropped > 0 ? ` (${timeline.dropped} earlier steps omitted)` : ""}${timeline.nativeReturn ? `; native return by ${timeline.nativeReturn}` : ""}`,
 		"info",
 	);
 }
@@ -7124,6 +7142,7 @@ async function _processM3U8Core(
 		if (cycleChanged) {
 			info.BackupAdMarkedCounts?.clear?.();
 			info.AdRollContext = null;
+			info.IsMidroll = false;
 			info._AdCycleRequestController?.abort?.();
 			info._AdCycleRequestController =
 				typeof AbortController === "function" ? new AbortController() : null;
@@ -7889,7 +7908,13 @@ async function _processM3U8Core(
 			}
 		}
 
-		info.IsMidroll = text.includes('"MIDROLL"') || text.includes('"midroll"');
+		info.IsMidroll = Boolean(
+			info.IsMidroll ||
+				text.includes('"MIDROLL"') ||
+				text.includes('"midroll"') ||
+				(info.AdRollContext?.rollType === "midroll" &&
+					info.AdRollContext.cycleStartedAt === info.VisibleAdStartedAt),
+		);
 
 		if (!res) {
 			_log(
@@ -7898,7 +7923,11 @@ async function _processM3U8Core(
 			);
 		}
 
-		if (!info.IsMidroll) {
+		if (
+			!info.IsMidroll &&
+			!__TTVAB_STATE__.DisableAdSpoofing &&
+			!info._AdRequestController
+		) {
 			const textStr = typeof text === "string" ? text : "";
 			const lines = textStr.replace(/\r/g, "").split("\n");
 			for (let j = 0; j < lines.length; j++) {
@@ -7918,16 +7947,19 @@ async function _processM3U8Core(
 					!info.RequestedAds.has(mediaUrl)
 				) {
 					info.RequestedAds.add(mediaUrl);
-					if (info._AdRequestController) {
-						info._AdRequestController.abort();
-					}
 					const controller = new AbortController();
 					info._AdRequestController = controller;
+					const release = () => {
+						if (info._AdRequestController === controller)
+							info._AdRequestController = null;
+					};
 					try {
 						realFetch(mediaUrl, { signal: controller.signal })
 							.then((r) => r.blob())
-							.catch(() => {});
-					} catch {}
+							.then(release, release);
+					} catch {
+						release();
+					}
 					break;
 				}
 			}
