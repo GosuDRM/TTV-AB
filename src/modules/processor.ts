@@ -2431,16 +2431,17 @@ function _observeServedPrefetchTimeline(
 	)
 		return;
 	const sourceUrl = _getMediaPlaylistSessionKey(url);
-	const pending = new Set(
+	const pending = new Map(
 		previous.prefetchedSegments
 			.filter((segment) => segment.sourceUrl === sourceUrl)
-			.map((segment) => segment.url),
+			.map((segment) => [segment.url, segment.sequence]),
 	);
 	if (!pending.size) return;
 	const lines = text.split(/\r?\n/);
 	let time = Number.NaN;
 	let hasExplicitTime = false;
 	let lastEndTime = previous.lastEndTime;
+	let lastEndSequence = previous.lastEndSequence ?? null;
 	for (let index = 0; index < lines.length; index++) {
 		const line = lines[index];
 		if (line.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
@@ -2461,17 +2462,23 @@ function _observeServedPrefetchTimeline(
 				time = Number.NaN;
 			}
 		}
+		const segmentUrl = _getExactPlaylistUrlKey(lines[uriIndex], url);
 		if (
 			Number.isFinite(time) &&
-			pending.has(_getExactPlaylistUrlKey(lines[uriIndex], url))
-		)
-			lastEndTime = Math.max(lastEndTime, time + duration);
+			pending.has(segmentUrl) &&
+			time + duration > lastEndTime
+		) {
+			lastEndTime = time + duration;
+			lastEndSequence = Number.isSafeInteger(pending.get(segmentUrl))
+				? pending.get(segmentUrl)
+				: null;
+		}
 		time += duration;
 		hasExplicitTime = false;
 		index = uriIndex;
 	}
 	if (lastEndTime > previous.lastEndTime) {
-		info._LivePlaylistTimeline = { ...previous, lastEndTime };
+		info._LivePlaylistTimeline = { ...previous, lastEndTime, lastEndSequence };
 	}
 }
 
@@ -2713,9 +2720,18 @@ function _alignLivePlaylist(
 			pendingHasExplicitTime = false;
 		}
 	}
+	const minimumSequence =
+		changedSource &&
+		!previous?.afterHold &&
+		minimumTime > 0 &&
+		minimumTime === previous?.lastEndTime &&
+		Number.isSafeInteger(previous.lastEndSequence)
+			? previous.lastEndSequence
+			: null;
 	if (diagnostic) {
 		diagnostic.changedSource = Boolean(changedSource);
 		diagnostic.minimumTime = minimumTime;
+		diagnostic.minimumSequence = minimumSequence;
 	}
 	if (text.includes("#EXT-X-SKIP:")) {
 		if (minimumTime)
@@ -2726,12 +2742,23 @@ function _alignLivePlaylist(
 		return text;
 	}
 	const handoffToleranceMs = 50;
-	const retainedIndex = entries.findIndex(
+	let retainedIndex = entries.findIndex(
 		(entry) =>
 			entry.end > minimumTime &&
 			(entry.time >= minimumTime - handoffToleranceMs ||
 				minimumTime - entry.time < entry.end - minimumTime),
 	);
+	const joinsAtServedEnd = Boolean(
+		retainedIndex < 0 &&
+			Number.isSafeInteger(minimumSequence) &&
+			(backupMetadata || previous?.backup) &&
+			Math.abs(entries.at(-1).end - minimumTime) <= handoffToleranceMs &&
+			lines
+				.slice(blockStart)
+				.some((line) => line.startsWith("#EXT-X-TWITCH-PREFETCH:")),
+	);
+	if (joinsAtServedEnd) retainedIndex = entries.length - 1;
+	if (diagnostic) diagnostic.joinsAtServedEnd = joinsAtServedEnd;
 	if (retainedIndex < 0)
 		throw new DOMException(
 			"Live handoff playlist is behind the served broadcast time",
@@ -2802,7 +2829,9 @@ function _alignLivePlaylist(
 	}
 	if (!commitTimeline) return output;
 	if (diagnostic) {
-		diagnostic.retainedTime = entries[retainedIndex].time;
+		diagnostic.retainedTime = joinsAtServedEnd
+			? entries[retainedIndex].end
+			: entries[retainedIndex].time;
 		diagnostic.skippedSegments = retainedIndex;
 		diagnostic.retainedSegments = entries.length - retainedIndex;
 		diagnostic.internalGapMs = 0;
@@ -2816,15 +2845,20 @@ function _alignLivePlaylist(
 			);
 		}
 	}
+	const lastEndTime = entries.reduce(
+		(end, entry) => Math.max(end, entry.end),
+		Math.max(previous?.lastEndTime || 0, offeredEndTime),
+	);
 	info._LivePlaylistTimeline = {
 		identity,
 		backup: Boolean(backupMetadata),
 		afterHold: false,
 		minimumTime,
-		lastEndTime: entries.reduce(
-			(end, entry) => Math.max(end, entry.end),
-			Math.max(previous?.lastEndTime || 0, offeredEndTime),
-		),
+		lastEndTime,
+		lastEndSequence:
+			lastEndTime === previous?.lastEndTime
+				? (previous.lastEndSequence ?? null)
+				: null,
 	};
 	return output;
 }
@@ -3016,6 +3050,9 @@ function _logPlaylistContinuity(
 							(holdOutput.match(/^#EXTINF:/gm)?.length || 1) -
 							1,
 				cutoff: rounded(diagnostic.minimumTime),
+				cutoffSequence: Number.isSafeInteger(diagnostic.minimumSequence)
+					? diagnostic.minimumSequence
+					: null,
 				windowStart: rounded(diagnostic.firstTime),
 				windowEnd: rounded(diagnostic.lastEndTime),
 				windowEndDeltaMs: rounded(windowDelta),
@@ -3230,9 +3267,21 @@ function _applyPlaylistContinuity(
 			url,
 			diagnostic,
 		);
+		const mapped = _applyEmptyHoldPlaylistContinuity(
+			info,
+			url,
+			aligned,
+			backupMetadata,
+			diagnostic.minimumSequence,
+			diagnostic.joinsAtServedEnd === true,
+		);
+		if (mapped == null && diagnostic.joinsAtServedEnd)
+			throw new DOMException(
+				"Live handoff playlist is behind the served broadcast time",
+				"AbortError",
+			);
 		const output =
-			_applyEmptyHoldPlaylistContinuity(info, url, aligned, backupMetadata) ??
-			_applyBackupSpliceBridge(info, aligned, backupMetadata, url);
+			mapped ?? _applyBackupSpliceBridge(info, aligned, backupMetadata, url);
 		if (
 			info &&
 			info.MediaType !== "vod" &&
@@ -3377,13 +3426,33 @@ function _applyPlaylistContinuity(
 					segment,
 				]),
 			);
+			let sequence = _parsePlaylistFirstMediaSequence(output) ?? 0;
+			let time = Number.NaN;
+			let duration = null;
+			let hasExplicitTime = false;
 			for (const line of output.split(/\r?\n/)) {
-				if (!line.startsWith("#EXT-X-TWITCH-PREFETCH:")) continue;
-				const segmentUrl = _getExactPlaylistUrlKey(line.slice(23), sourceUrl);
-				if (segmentUrl) {
-					const key = JSON.stringify([sourceUrl, segmentUrl]);
-					prefetched.delete(key);
-					prefetched.set(key, { sourceUrl, url: segmentUrl });
+				if (line.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) {
+					time = Date.parse(line.slice(25));
+					hasExplicitTime = true;
+				} else if (line === "#EXT-X-DISCONTINUITY") {
+					if (!hasExplicitTime) time = Number.NaN;
+				} else if (line.startsWith("#EXTINF:")) {
+					duration = Number.parseFloat(line.slice(8)) * 1000;
+				} else if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+					const segmentUrl = _getExactPlaylistUrlKey(line.slice(23), sourceUrl);
+					if (segmentUrl) {
+						const key = JSON.stringify([sourceUrl, segmentUrl]);
+						prefetched.delete(key);
+						prefetched.set(key, { sourceUrl, url: segmentUrl, sequence });
+					}
+					sequence++;
+				} else if (line && !line.startsWith("#") && duration !== null) {
+					if (Math.abs(time + duration - timeline.lastEndTime) < 1)
+						timeline.lastEndSequence = sequence;
+					time += duration;
+					duration = null;
+					hasExplicitTime = false;
+					sequence++;
 				}
 			}
 			timeline.prefetchedSegments = [...prefetched.values()].slice(-32);
@@ -3624,6 +3693,8 @@ function _applyEmptyHoldPlaylistContinuity(
 	url,
 	text,
 	backupMetadata = null,
+	servedEndSequence: number | null = null,
+	retainsServedEndSegment = false,
 ) {
 	if (
 		!info ||
@@ -3897,6 +3968,26 @@ function _applyEmptyHoldPlaylistContinuity(
 			firstSequence + previous.mediaOffset <= previous.lastSequence + 1 &&
 			lastPresentedSequence <= previous.lastSequence,
 	);
+	const joinsServedEnd = Boolean(
+		changedSource &&
+			!sharedSource &&
+			!isHold &&
+			Number.isSafeInteger(servedEndSequence) &&
+			servedEndSequence >= 0 &&
+			servedEndSequence <= lastPresentedSequence &&
+			info._LastServedPlaylistKind !== "hold" &&
+			(kind === "backup" || info._LastServedPlaylistKind === "backup") &&
+			servedTimeline?.afterHold === false &&
+			servedTimeline.minimumTime > 0 &&
+			nativeAnchors[0]?.sequence === firstSequence &&
+			nativeAnchors[0].time - servedTimeline.minimumTime <
+				nativeAnchors[0].duration,
+	);
+	if (retainsServedEndSegment && !joinsServedEnd)
+		throw new DOMException(
+			"Live handoff playlist is behind the served broadcast time",
+			"AbortError",
+		);
 	const timeline = sharedSource
 		? { ...sharedSource }
 		: changedSource
@@ -3906,11 +3997,15 @@ function _applyEmptyHoldPlaylistContinuity(
 					generation: sharedTimeline?.generation ?? lastGeneration + 1,
 					boundarySequence: firstSequence,
 					addBoundary,
-					mediaOffset: continuesServedBackupNumbering
-						? previous.mediaOffset
-						: lastPresentedSequence >= 0
-							? lastPresentedSequence + 1 - firstSequence
-							: 0,
+					mediaOffset: joinsServedEnd
+						? servedEndSequence +
+							Number(!retainsServedEndSegment) -
+							firstSequence
+						: continuesServedBackupNumbering
+							? previous.mediaOffset
+							: lastPresentedSequence >= 0
+								? lastPresentedSequence + 1 - firstSequence
+								: 0,
 					discontinuityOffset:
 						isHold || (kind === "native" && nativeAnchors.length > 0)
 							? Math.max(0, lastDiscontinuity + 1 - firstDiscontinuity)
