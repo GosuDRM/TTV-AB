@@ -1274,9 +1274,7 @@ if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
-	if (details.reason === "install" || details.reason === "update") {
-		void migratePlaybackDefaults(true);
-	}
+	if (details.reason === "install") void migratePlaybackDefaults(true);
 });
 
 void migratePlaybackDefaults();
