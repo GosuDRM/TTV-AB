@@ -23,6 +23,9 @@ const _PlayerBufferState = {
 	lastFixTime: 0,
 	fixAttempts: 0,
 	liveEdgeStarveCount: 0,
+	liveEdgeReloadCount: 0,
+	liveEdgeReloadAt: 0,
+	liveEdgeReloadMediaKey: null as string | null,
 	gapJumpLastPosition: -1,
 	gapJumpStuckTicks: 0,
 	postAdUnhealthyCount: 0,
@@ -123,6 +126,7 @@ const _AD_RESUME_INTENT_WINDOW_MS = 15000;
 const _AD_TRANSIENT_PAUSE_CLEAR_WINDOW_MS = 1750;
 const _PLAYER_BUFFER_LIVE_EDGE_EPSILON = 0.35;
 const _PLAYER_BUFFER_LIVE_EDGE_RELOAD_COUNT = 12;
+const _PLAYER_BUFFER_LIVE_EDGE_RELOAD_DECAY_MS = 300000;
 const _PLAYER_BUFFER_STEADY_DELAY_MS = 900;
 const _POST_AD_UNHEALTHY_RELOAD_COUNT = 3;
 const _POST_AD_RECOVERY_RELOAD_COOLDOWN_MS = 1800;
@@ -8048,12 +8052,21 @@ function _monitorPlayerBuffering() {
 							);
 						}
 
+						const sinceStarvationReloadMs =
+							Date.now() - _PlayerBufferState.liveEdgeReloadAt;
+						const recentStarvationReloads =
+							_PlayerBufferState.liveEdgeReloadMediaKey === currentMediaKey &&
+							sinceStarvationReloadMs >= 0 &&
+							sinceStarvationReloadMs < _PLAYER_BUFFER_LIVE_EDGE_RELOAD_DECAY_MS
+								? Math.min(2, _PlayerBufferState.liveEdgeReloadCount)
+								: 0;
 						if (
 							_PlayerBufferState.liveEdgeStarveCount >=
-							_PLAYER_BUFFER_LIVE_EDGE_RELOAD_COUNT
+							_PLAYER_BUFFER_LIVE_EDGE_RELOAD_COUNT *
+								2 ** recentStarvationReloads
 						) {
 							_log(
-								`Persistent live-edge starvation detected; reloading player (pos=${position}, edge=${liveEdgeDistance.toFixed(3)}s, readyState=${readyState})`,
+								`Persistent live-edge starvation detected; reloading player (pos=${position}, edge=${liveEdgeDistance.toFixed(3)}s, readyState=${readyState}, recent starvation reloads ${recentStarvationReloads})`,
 								"warning",
 							);
 							_doPlayerTask(false, true, {
@@ -8061,6 +8074,10 @@ function _monitorPlayerBuffering() {
 							});
 							_PlayerBufferState.lastFixTime = Date.now();
 							_PlayerBufferState.liveEdgeStarveCount = 0;
+							_PlayerBufferState.liveEdgeReloadCount =
+								recentStarvationReloads + 1;
+							_PlayerBufferState.liveEdgeReloadAt = Date.now();
+							_PlayerBufferState.liveEdgeReloadMediaKey = currentMediaKey;
 						}
 					} else if (
 						(!__TTVAB_STATE__.PlayerBufferingPrerollCheckEnabled ||
