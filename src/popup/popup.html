@@ -1726,6 +1726,22 @@
             box-shadow: 0 4px 14px rgba(145, 70, 255, 0.35);
         }
 
+        .log-dialog-btn.danger {
+            background: rgba(224, 36, 94, 0.14);
+            border-color: rgba(224, 36, 94, 0.55);
+            color: #ffb3c8;
+        }
+
+        .stats-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .stats-actions .log-dialog-btn {
+            padding: 6px 10px;
+            font-size: 11px;
+        }
+
         .log-dialog-btn:hover {
             filter: brightness(1.15);
         }
@@ -2586,7 +2602,7 @@
                 <div class="stats-content">
             <!-- Weekly Chart -->
             <div class="stats-section">
-                <div class="stats-section-title">📈 <span data-i18n="last7Days">This Week</span></div>
+                <div class="stats-section-title">📈 <span data-i18n="last7Days">Last 7 Days</span></div>
                 <div class="chart-container" id="weeklyChart">
                     <div class="chart-bar" style="height: 0%;"></div>
                     <div class="chart-bar" style="height: 0%;"></div>
@@ -2652,6 +2668,13 @@
                         aria-label="Globetrotter - Blocked ads on 50 channels!">🗺️</button>
                 </div>
                 <div class="next-achievement" id="nextAchievement" aria-live="polite" aria-atomic="true">Next: <span class="next-achievement-name">⚔️ Ad Slayer</span></div>
+            </div>
+            <div class="stats-section stats-actions">
+                <button type="button" class="log-dialog-btn" id="statsExportButton" data-i18n="exportStats"
+                    title="Export statistics as a JSON file" aria-label="Export statistics as a JSON file">Export</button>
+                <button type="button" class="log-dialog-btn danger" id="statsResetButton" data-i18n="resetStats"
+                    aria-haspopup="dialog" aria-controls="resetStatsOverlay" title="Reset statistics"
+                    aria-label="Reset statistics">Reset</button>
             </div>
                 </div>
             </div>
@@ -2775,6 +2798,22 @@
             </div>
             <button type="button" class="channel-modal-visit" id="channelModalVisit"
                 data-i18n="channelModalVisit">Visit channel</button>
+        </div>
+    </div>
+
+    <div class="log-dialog-overlay" id="resetStatsOverlay" hidden>
+        <div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="resetStatsTitle"
+            aria-describedby="resetStatsText">
+            <button type="button" class="log-dialog-close" id="resetStatsClose" aria-label="Close">×</button>
+            <div class="log-dialog-title" id="resetStatsTitle" data-i18n="resetStatsTitle">Reset statistics?</div>
+            <p class="log-dialog-text" id="resetStatsText" data-i18n="resetStatsText" aria-live="polite">This permanently
+                clears ad counts, time saved, watch time, channel history, and achievements. Your settings stay as they
+                are.</p>
+            <div class="log-dialog-actions">
+                <button type="button" class="log-dialog-btn danger" id="resetStatsConfirm"
+                    data-i18n="resetStatsConfirm">Reset statistics</button>
+                <button type="button" class="log-dialog-btn" id="resetStatsCancel" data-i18n="resetStatsCancel">Cancel</button>
+            </div>
         </div>
     </div>
 

@@ -8,10 +8,6 @@ function getDateKey(date = new Date()) {
 	return `${year}-${month}-${day}`;
 }
 
-function getTodayKey() {
-	return getDateKey(new Date());
-}
-
 function normalizeCount(value) {
 	const numericValue =
 		typeof value === "string" && value.trim() !== "" ? Number(value) : value;
@@ -24,6 +20,7 @@ const BADGE_BACKGROUND_COLOR = "#E0245E";
 const BADGE_TEXT_COLOR = "#FFFFFF";
 const TURBO_MODE_STORAGE_KEY = "ttvTurboMode";
 const WATCH_STATS_SINCE_STORAGE_KEY = "ttvWatchStatsSinceAt";
+const STATS_RESET_AT_STORAGE_KEY = "ttvStatsResetAt";
 const PLAYBACK_DEFAULTS_MIGRATION_KEY = "ttvPlaybackDefaultsV2Applied";
 let playbackDefaultsMigration: Promise<void> | null = null;
 let playbackDefaultsResetRequested = false;
@@ -146,20 +143,23 @@ const MAX_AD_MILLISECONDS_PER_FLUSH = 14400000;
 const MAX_AD_MEASUREMENTS_PER_FLUSH = 50;
 const MAX_RECENT_AD_MEASUREMENTS = 1000;
 const RECENT_AD_MEASUREMENT_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const MAX_FUTURE_TIMESTAMP_MS = 2 * 24 * 60 * 60 * 1000;
 
 function normalizeTimestamp(value) {
 	const numericValue = Number(value);
 	if (!Number.isFinite(numericValue) || numericValue <= 0) return 0;
 	const timestamp = Math.trunc(numericValue);
-	return timestamp > Date.now() + 5 * 60 * 1000 ? 0 : timestamp;
+	return timestamp > Date.now() + MAX_FUTURE_TIMESTAMP_MS ? 0 : timestamp;
 }
 
 function normalizeChannelEntry(value): TTVABChannelEntry {
 	if (typeof value === "number" || typeof value === "string") {
 		return {
 			ads: normalizeCount(value),
+			measuredAds: 0,
 			firstSeen: 0,
 			lastSeen: 0,
+			lastActive: 0,
 			watchSeconds: 0,
 			adMilliseconds: 0,
 		};
@@ -170,8 +170,10 @@ function normalizeChannelEntry(value): TTVABChannelEntry {
 		: normalizeCount(safeValue.adSeconds) * 1000;
 	return {
 		ads: normalizeCount(safeValue.ads),
+		measuredAds: normalizeCount(safeValue.measuredAds),
 		firstSeen: normalizeTimestamp(safeValue.firstSeen),
 		lastSeen: normalizeTimestamp(safeValue.lastSeen),
+		lastActive: normalizeTimestamp(safeValue.lastActive),
 		watchSeconds: normalizeCount(safeValue.watchSeconds),
 		adMilliseconds,
 	};
@@ -186,12 +188,18 @@ function mergeChannelEntries(
 	);
 	return {
 		ads: target.ads + incoming.ads,
+		measuredAds: target.measuredAds + incoming.measuredAds,
 		firstSeen:
 			firstSeenCandidates.length > 0 ? Math.min(...firstSeenCandidates) : 0,
 		lastSeen: Math.max(target.lastSeen, incoming.lastSeen),
+		lastActive: Math.max(target.lastActive, incoming.lastActive),
 		watchSeconds: target.watchSeconds + incoming.watchSeconds,
 		adMilliseconds: target.adMilliseconds + incoming.adMilliseconds,
 	};
+}
+
+function getChannelActivityAt(entry: TTVABChannelEntry) {
+	return Math.max(entry.lastActive, entry.lastSeen, entry.firstSeen);
 }
 
 function countAdBlockedChannels(channels: TTVABChannelMap) {
@@ -242,16 +250,31 @@ function normalizeChannelsMap(value) {
 	if (channelEntries.length <= MAX_CHANNELS) {
 		return normalized;
 	}
-	channelEntries.sort((a, b) => {
-		const countDiff = normalizeCount(b[1].ads) - normalizeCount(a[1].ads);
-		if (countDiff !== 0) return countDiff;
-		const watchDiff =
-			normalizeCount(b[1].watchSeconds) - normalizeCount(a[1].watchSeconds);
-		return watchDiff !== 0 ? watchDiff : a[0].localeCompare(b[0]);
-	});
+	const keptChannels = new Set(
+		channelEntries
+			.filter(([, entry]) => entry.ads > 0)
+			.sort((a, b) => b[1].ads - a[1].ads || a[0].localeCompare(b[0]))
+			.slice(0, TOP_CHANNEL_COUNT)
+			.map(([channelName]) => channelName),
+	);
+	const recentChannels = channelEntries
+		.filter(([channelName]) => !keptChannels.has(channelName))
+		.sort(
+			(a, b) =>
+				getChannelActivityAt(b[1]) - getChannelActivityAt(a[1]) ||
+				b[1].ads - a[1].ads ||
+				b[1].watchSeconds - a[1].watchSeconds ||
+				a[0].localeCompare(b[0]),
+		);
+	for (const [channelName] of recentChannels.slice(
+		0,
+		MAX_CHANNELS - keptChannels.size,
+	)) {
+		keptChannels.add(channelName);
+	}
 	const trimmed = createChannelsMap();
-	for (const [channelName, entry] of channelEntries.slice(0, MAX_CHANNELS)) {
-		trimmed[channelName] = entry;
+	for (const [channelName, entry] of channelEntries) {
+		if (keptChannels.has(channelName)) trimmed[channelName] = entry;
 	}
 	return trimmed;
 }
@@ -282,12 +305,17 @@ function normalizeDailyStatsMap(value) {
 		return createDailyStatsMap();
 	}
 	const normalized = createDailyStatsMap();
-	const todayKey = getTodayKey();
+	const latestDateKey = getDateKey(
+		new Date(Date.now() + MAX_FUTURE_TIMESTAMP_MS),
+	);
 	for (const [dateKey, entry] of Object.entries(value)) {
-		if (!isValidDateKey(dateKey) || dateKey > todayKey) continue;
+		if (!isValidDateKey(dateKey) || dateKey > latestDateKey) continue;
 		const safeEntry: PlainObject = isPlainObject(entry) ? entry : {};
 		normalized[dateKey] = {
 			ads: normalizeCount(safeEntry.ads),
+			measuredAds: normalizeCount(safeEntry.measuredAds),
+			adMilliseconds: normalizeCount(safeEntry.adMilliseconds),
+			watchSeconds: normalizeCount(safeEntry.watchSeconds),
 		};
 	}
 	return normalized;
@@ -312,6 +340,7 @@ const ACHIEVEMENT_IDS = new Set(
 );
 
 const MAX_CHANNELS = 100;
+const TOP_CHANNEL_COUNT = 5;
 const PROCESSED_FLUSH_STORAGE_KEY = "ttvProcessedCounterFlushes";
 const UNCONFIRMED_FLUSH_STORAGE_KEY = "ttvUnconfirmedCounterFlushes";
 const RECENT_AD_MEASUREMENTS_STORAGE_KEY = "ttvRecentAdMeasurements";
@@ -620,6 +649,7 @@ function normalizeStatsState(value): TTVABStatsState {
 			adMillisecondsSaved,
 		),
 		adMillisecondsSaved,
+		measuredAds: normalizeCount(safeStats.measuredAds),
 	};
 }
 
@@ -716,24 +746,8 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		safeDetail?.adMeasurements,
 		MAX_AD_MEASUREMENTS_PER_FLUSH,
 	);
-	const legacyAdMillisecondsDelta =
-		adMeasurements.length > 0
-			? 0
-			: Math.min(
-					normalizeCount(safeDetail?.adSecondsDelta) * 1000,
-					MAX_AD_MILLISECONDS_PER_FLUSH,
-				);
-	const legacyChannelAdSecondsDeltas =
-		legacyAdMillisecondsDelta > 0
-			? normalizeWatchDeltaMap(safeDetail?.channelAdSecondsDeltas)
-			: createChannelDeltaMap();
 
-	if (
-		adsDelta <= 0 &&
-		!hasWatchDeltas &&
-		legacyAdMillisecondsDelta <= 0 &&
-		adMeasurements.length === 0
-	) {
+	if (adsDelta <= 0 && !hasWatchDeltas && adMeasurements.length === 0) {
 		return { ok: true, counts: null, newUnlocks: [] };
 	}
 
@@ -742,6 +756,7 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		"ttvStats",
 		TURBO_MODE_STORAGE_KEY,
 		WATCH_STATS_SINCE_STORAGE_KEY,
+		STATS_RESET_AT_STORAGE_KEY,
 		PROCESSED_FLUSH_STORAGE_KEY,
 		UNCONFIRMED_FLUSH_STORAGE_KEY,
 		RECENT_AD_MEASUREMENTS_STORAGE_KEY,
@@ -753,9 +768,16 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 	) {
 		return createTurboCounterResponse();
 	}
+	const baseAds = normalizeCount(stored.ttvAdsBlocked);
+	const statsResetAt = normalizeCount(stored[STATS_RESET_AT_STORAGE_KEY]);
+	const createdAt = normalizeTimestamp(safeDetail?.createdAt);
+	if (createdAt > 0 && createdAt < statsResetAt) {
+		return { ok: true, counts: { ads: baseAds }, newUnlocks: [] };
+	}
 	const watchSinceAt = Math.max(
 		watchStatsSinceAt,
 		normalizeCount(stored[WATCH_STATS_SINCE_STORAGE_KEY]),
+		statsResetAt,
 	);
 	for (const channel of Object.keys(watchDeltas)) {
 		const intervals = safeDetail?.watchIntervals?.[channel];
@@ -783,7 +805,6 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 			Math.floor(milliseconds / 1000),
 		);
 	}
-	const baseAds = normalizeCount(stored.ttvAdsBlocked);
 	const processedFlushes = normalizeProcessedFlushMap(
 		stored[PROCESSED_FLUSH_STORAGE_KEY],
 	);
@@ -809,39 +830,28 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		stored[RECENT_AD_MEASUREMENTS_STORAGE_KEY],
 	);
 	const now = Date.now();
-	const today = getTodayKey();
-
-	if (adsDelta > 0) {
-		if (!stats.daily[today]) {
-			stats.daily[today] = { ads: 0 };
-		}
-		stats.daily[today].ads = normalizeCount(stats.daily[today].ads) + adsDelta;
-	}
-	pruneDailyStats(stats);
 
 	for (const [channelName, channelDelta] of Object.entries(channelDeltas)) {
 		const entry = normalizeChannelEntry(stats.channels[channelName]);
-		entry.ads += normalizeCount(channelDelta);
+		entry.ads += channelDelta;
 		if (entry.firstSeen <= 0) {
 			entry.firstSeen = now;
 		}
 		entry.lastSeen = now;
+		entry.lastActive = now;
 		stats.channels[channelName] = entry;
 	}
+	let watchSecondsDelta = 0;
 	for (const [channelName, watchDelta] of Object.entries(watchDeltas)) {
 		if (watchDelta <= 0) continue;
 		const entry = normalizeChannelEntry(stats.channels[channelName]);
-		entry.watchSeconds += normalizeCount(watchDelta);
+		entry.watchSeconds += watchDelta;
+		entry.lastActive = now;
 		stats.channels[channelName] = entry;
+		watchSecondsDelta += watchDelta;
 	}
-	let adMillisecondsDelta = legacyAdMillisecondsDelta;
-	const channelAdMillisecondsDeltas = createChannelDeltaMap();
-	for (const [channelName, secondsDelta] of Object.entries(
-		legacyChannelAdSecondsDeltas,
-	)) {
-		channelAdMillisecondsDeltas[channelName] =
-			normalizeCount(secondsDelta) * 1000;
-	}
+	let adMillisecondsDelta = 0;
+	let measuredAdsDelta = 0;
 	for (const measurement of adMeasurements) {
 		const measurementKey = getScopedAdMeasurementKey(measurement, sourceTabId);
 		if (!measurementKey) continue;
@@ -857,41 +867,56 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		}
 		recentAdMeasurements[measurementKey] = now;
 		adMillisecondsDelta += measurement.durationMilliseconds;
+		measuredAdsDelta++;
 		if (measurement.channel) {
-			channelAdMillisecondsDeltas[measurement.channel] =
-				normalizeCount(channelAdMillisecondsDeltas[measurement.channel]) +
-				measurement.durationMilliseconds;
+			const entry = normalizeChannelEntry(stats.channels[measurement.channel]);
+			entry.adMilliseconds += measurement.durationMilliseconds;
+			entry.measuredAds++;
+			entry.lastActive = now;
+			stats.channels[measurement.channel] = entry;
 		}
+	}
+	if (adsDelta <= 0 && watchSecondsDelta <= 0 && measuredAdsDelta <= 0) {
+		return { ok: true, counts: { ads: baseAds }, newUnlocks: [] };
 	}
 	recentAdMeasurements = normalizeRecentAdMeasurements(recentAdMeasurements);
-	if (adMillisecondsDelta > 0) {
-		stats.adMillisecondsSaved =
-			normalizeCount(stats.adMillisecondsSaved) + adMillisecondsDelta;
-		for (const [channelName, millisecondsDelta] of Object.entries(
-			channelAdMillisecondsDeltas,
-		)) {
-			const entry = normalizeChannelEntry(stats.channels[channelName]);
-			entry.adMilliseconds += normalizeCount(millisecondsDelta);
-			stats.channels[channelName] = entry;
-		}
-	}
+	stats.adMillisecondsSaved += adMillisecondsDelta;
+	stats.measuredAds += measuredAdsDelta;
+	const eventDateKey = getDateKey(
+		new Date(createdAt > 0 ? Math.min(createdAt, now) : now),
+	);
+	const dailyEntry = stats.daily[eventDateKey] || {
+		ads: 0,
+		measuredAds: 0,
+		adMilliseconds: 0,
+		watchSeconds: 0,
+	};
+	dailyEntry.ads += adsDelta;
+	dailyEntry.measuredAds += measuredAdsDelta;
+	dailyEntry.adMilliseconds += adMillisecondsDelta;
+	dailyEntry.watchSeconds += watchSecondsDelta;
+	stats.daily[eventDateKey] = dailyEntry;
+	pruneDailyStats(stats);
 	stats.channels = normalizeChannelsMap(stats.channels);
 
 	const newUnlocks = applyAchievementUnlocks(stats, nextAds);
-	const nextUnconfirmedFlushes = flushId
-		? recordUnconfirmedFlush(unconfirmedFlushes, flushId, safeDetail?.createdAt)
-		: unconfirmedFlushes;
+	const updates: PlainObject = { ttvStats: stats };
+	if (adsDelta > 0) updates.ttvAdsBlocked = nextAds;
+	if (flushId) {
+		updates[UNCONFIRMED_FLUSH_STORAGE_KEY] = recordUnconfirmedFlush(
+			unconfirmedFlushes,
+			flushId,
+			safeDetail?.createdAt,
+		);
+	}
+	if (adMeasurements.length > 0) {
+		updates[RECENT_AD_MEASUREMENTS_STORAGE_KEY] = recentAdMeasurements;
+	}
 	if (turboModeEnabled) {
 		return createTurboCounterResponse();
 	}
 
-	await storageLocalSet({
-		ttvAdsBlocked: nextAds,
-		ttvStats: stats,
-		[PROCESSED_FLUSH_STORAGE_KEY]: processedFlushes,
-		[UNCONFIRMED_FLUSH_STORAGE_KEY]: nextUnconfirmedFlushes,
-		[RECENT_AD_MEASUREMENTS_STORAGE_KEY]: recentAdMeasurements,
-	});
+	await storageLocalSet(updates);
 
 	return {
 		ok: true,
@@ -900,6 +925,15 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 		},
 		newUnlocks,
 	};
+}
+
+async function resetStatistics() {
+	await storageLocalSet({
+		ttvAdsBlocked: 0,
+		ttvStats: normalizeStatsState(null),
+		[STATS_RESET_AT_STORAGE_KEY]: Date.now(),
+	});
+	return { ok: true };
 }
 
 async function confirmCounterFlush(detail) {
@@ -1160,6 +1194,14 @@ chrome.tabs?.onUpdated?.addListener((tabId, change) => {
 		clearDiagnosticCheckpoint(tabId);
 });
 
+function isPopupPageSender(sender) {
+	return (
+		typeof sender?.url === "string" &&
+		sender.url.split(/[?#]/, 1)[0] ===
+			chrome.runtime.getURL("src/popup/popup.html")
+	);
+}
+
 chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 	if (sender?.id !== chrome.runtime.id) {
 		return undefined;
@@ -1171,11 +1213,23 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 		});
 		return true;
 	}
+	if (message?.type === "ttvab-reset-statistics") {
+		if (!isPopupPageSender(sender)) return undefined;
+		enqueuePersist(async () => {
+			try {
+				return await resetStatistics();
+			} catch (error) {
+				return {
+					ok: false,
+					error: error instanceof Error ? error.message : String(error),
+				};
+			}
+		}, message.type).then(sendResponse);
+		return true;
+	}
 	if (
 		message?.type === "ttvab-get-diagnostic-checkpoint" &&
-		typeof sender?.url === "string" &&
-		sender.url.split(/[?#]/, 1)[0] ===
-			chrome.runtime.getURL("src/popup/popup.html")
+		isPopupPageSender(sender)
 	) {
 		const detail = getMessageDetail(message.detail);
 		const tabId = detail?.tabId;
