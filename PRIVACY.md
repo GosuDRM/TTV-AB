@@ -1,6 +1,6 @@
 # Privacy Policy for TTV AB
 
-**Last Updated:** August 29, 2026
+**Last Updated:** October 15, 2026
 
 This Privacy Policy explains how TTV AB ("the Extension") handles data while you use Twitch.
 
@@ -18,7 +18,7 @@ To provide those features, the Extension may:
 
 - Request playback access tokens, playlists, and media from Twitch services and Twitch media delivery networks. These requests can include the current channel name or VOD ID, requested player type, browser language, and Twitch-provided authorization, integrity, device, client-version, and session headers already used by the Twitch page.
 - Read and temporarily adjust Twitch playback preferences, such as selected video quality and low-latency mode, so they can be restored after automatic player recovery.
-- Send simulated ad impression, quartile, and pod-completion events to Twitch when Ad Spoofing is enabled. These events can include Twitch ad identifiers, creative and campaign identifiers, a Twitch-provided ad-reporting token, ad duration and position, and available Twitch session headers. Ad Spoofing is enabled by default and can be disabled in the Extension popup.
+- Send simulated ad impression, quartile, and pod-completion events to Twitch when Ad Spoofing is enabled. These events can include Twitch ad identifiers, creative and campaign identifiers, a Twitch-provided ad-reporting token, ad duration and position, and available Twitch session headers. While Ad Spoofing is enabled, the Extension also requests a blocked ad's media segments from Twitch outside midrolls, one at a time, and discards them. Ad Spoofing is enabled by default and can be disabled in the Extension popup.
 - Send a channel login to Twitch while that channel's statistics details are open, so the popup can request its profile image and current live status. The profile image is then loaded from Twitch's image delivery network.
 
 These requests are sent only to Twitch-related HTTPS endpoints for the functions described above. Twitch-provided credentials are kept in memory as needed for playback and are not intentionally saved in extension storage or included in exported diagnostic logs.
@@ -56,7 +56,7 @@ The popup and in-page notices contain links to Twitch, GitHub, and Ko-fi. These 
 
 Settings and statistics remain in browser-local storage until they are cleared or the Extension is uninstalled. Daily history, caches, and delivery-safety records are bounded or periodically pruned. Small reminder and pending statistics-delivery records stored under Twitch's site storage can be removed by clearing site data for twitch.tv.
 
-Enabling Turbo Mode pauses future statistics and achievement updates, clears pending local statistics delivery, and keeps existing history stored for when Turbo Mode is disabled. Disabling Ad Spoofing stops future simulated ad-event requests. Clearing the Extension's browser storage removes its saved settings, statistics, achievements, and channel image cache.
+Enabling Turbo Mode pauses future statistics and achievement updates, clears pending local statistics delivery, and keeps existing history stored for when Turbo Mode is disabled. Disabling Ad Spoofing stops future simulated ad-event and ad-segment requests. Clearing the Extension's browser storage removes its saved settings, statistics, achievements, and channel image cache.
 
 ## 7. Browser Permissions
 
