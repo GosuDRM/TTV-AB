@@ -854,6 +854,47 @@ function _createPopupToggleController(options) {
         write,
     };
 }
+function _createInfoModal(icon, overlay, closeButton, onClose = null) {
+    let returnFocusTo = icon;
+    const setVisible = (visible, confirmed = false) => {
+        overlay.hidden = !visible;
+        overlay.classList.toggle("visible", visible);
+        icon.setAttribute("aria-expanded", String(visible));
+        if (visible) {
+            closeButton.focus();
+            return;
+        }
+        onClose?.(confirmed);
+        returnFocusTo.focus();
+    };
+    const open = (opener = icon) => {
+        returnFocusTo = opener;
+        setVisible(true);
+    };
+    icon.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (overlay.hidden)
+            open();
+        else
+            setVisible(false);
+    });
+    closeButton.addEventListener("click", () => setVisible(false, true));
+    overlay.addEventListener("click", (event) => {
+        if (event.target === overlay)
+            setVisible(false);
+    });
+    overlay.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab")
+            return;
+        event.preventDefault();
+        closeButton.focus();
+    });
+    return {
+        open,
+        close: () => setVisible(false),
+        isOpen: () => !overlay.hidden,
+    };
+}
 document.addEventListener("DOMContentLoaded", () => {
     const isLogExportPage = _isLogExportPage();
     document.documentElement.classList.toggle("log-export-page", isLogExportPage);
@@ -907,6 +948,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const adTimerInfoIcon = document.getElementById("adTimerInfoIcon");
     const adTimerTooltip = document.getElementById("adTimerTooltip");
     const adTimerModalClose = document.getElementById("adTimerModalClose");
+    const adSpoofingInfoIcon = document.getElementById("adSpoofingInfoIcon");
+    const adSpoofingTooltip = document.getElementById("adSpoofingTooltip");
+    const adSpoofingModalClose = document.getElementById("adSpoofingModalClose");
+    const autoplayBackupInfoIcon = document.getElementById("autoplayBackupInfoIcon");
+    const autoplayBackupTooltip = document.getElementById("autoplayBackupTooltip");
+    const autoplayBackupModalClose = document.getElementById("autoplayBackupModalClose");
     const turboModeToggle = document.getElementById("turboModeToggle");
     const turboModeDescription = document.getElementById("turboModeDescription");
     const statusCounters = document.getElementById("statusCounters");
@@ -939,6 +986,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const channelModalSince = document.getElementById("channelModalSince");
     const channelModalLast = document.getElementById("channelModalLast");
     const channelModalPulse = document.getElementById("channelModalPulse");
+    const statsExportButton = document.getElementById("statsExportButton");
+    const statsResetButton = document.getElementById("statsResetButton");
+    const resetStatsOverlay = document.getElementById("resetStatsOverlay");
+    const resetStatsText = document.getElementById("resetStatsText");
+    const resetStatsConfirm = document.getElementById("resetStatsConfirm");
+    const resetStatsCancel = document.getElementById("resetStatsCancel");
+    const resetStatsClose = document.getElementById("resetStatsClose");
     const requiredElements = {
         toggle,
         statusDot,
@@ -966,6 +1020,12 @@ document.addEventListener("DOMContentLoaded", () => {
         adTimerInfoIcon,
         adTimerTooltip,
         adTimerModalClose,
+        adSpoofingInfoIcon,
+        adSpoofingTooltip,
+        adSpoofingModalClose,
+        autoplayBackupInfoIcon,
+        autoplayBackupTooltip,
+        autoplayBackupModalClose,
         turboModeToggle,
         turboModeDescription,
         statusCounters,
@@ -998,6 +1058,13 @@ document.addEventListener("DOMContentLoaded", () => {
         channelModalSince,
         channelModalLast,
         channelModalPulse,
+        statsExportButton,
+        statsResetButton,
+        resetStatsOverlay,
+        resetStatsText,
+        resetStatsConfirm,
+        resetStatsCancel,
+        resetStatsClose,
     };
     for (const [name, element] of Object.entries(requiredElements)) {
         if (element)
@@ -1216,9 +1283,17 @@ document.addEventListener("DOMContentLoaded", () => {
         adTimerToggle.setAttribute("aria-label", String(t.adTimer ?? "Ad Break Timer"));
         adTimerToggle.title = String(t.adTimerDesc ??
             "Shows how long the ad break has been running over the stream.");
-        const adTimerInfoLabel = String(t.adTimerInfoLabel ?? "About Ad Break Timer");
-        adTimerInfoIcon.title = adTimerInfoLabel;
-        adTimerInfoIcon.setAttribute("aria-label", adTimerInfoLabel);
+        for (const [infoIcon, label] of [
+            [adTimerInfoIcon, t.adTimerInfoLabel ?? "About Ad Break Timer"],
+            [adSpoofingInfoIcon, t.adSpoofingInfoLabel ?? "About Ad Spoofing"],
+            [
+                autoplayBackupInfoIcon,
+                t.autoplayBackupInfoLabel ?? "About Low Quality Fallback",
+            ],
+        ]) {
+            infoIcon.title = String(label);
+            infoIcon.setAttribute("aria-label", String(label));
+        }
         achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
         footerText.textContent = String(t.footerBy ?? " — by ");
         const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
@@ -1227,6 +1302,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const authorLabel = String(t.authorLinkLabel ?? "Open GosuDRM on GitHub");
         authorLink.title = authorLabel;
         authorLink.setAttribute("aria-label", authorLabel);
+        const exportLabel = String(t.exportStatsLabel ?? "Export statistics as a JSON file");
+        statsExportButton.title = exportLabel;
+        statsExportButton.setAttribute("aria-label", exportLabel);
+        const resetLabel = String(t.resetStatsConfirm ?? "Reset statistics");
+        statsResetButton.title = resetLabel;
+        statsResetButton.setAttribute("aria-label", resetLabel);
         updateTurboCopy(t);
     }
     function openIssuesPage() {
@@ -1381,8 +1462,9 @@ document.addEventListener("DOMContentLoaded", () => {
     window.addEventListener("keydown", (event) => {
         if (event.key !== "Escape")
             return;
-        if (!adTimerTooltip.hidden) {
-            setAdTimerModalVisible(false);
+        for (const modal of infoModals) {
+            if (modal.isOpen())
+                modal.close();
         }
         if (!isLogExportPage && !logDialogOverlay.hidden) {
             hideLogDialog(true);
@@ -1390,6 +1472,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!channelModalOverlay.hidden) {
             hideChannelModal();
         }
+        hideResetStatsDialog();
     });
     logDialogGenerate.addEventListener("click", () => {
         if (logDialogGenerate.disabled || logExportInProgress)
@@ -1703,10 +1786,10 @@ document.addEventListener("DOMContentLoaded", () => {
             rank: formatNumber(Math.max(1, rank)),
             total: formatNumber(Math.max(1, rankedEntries.length)),
         });
-        animateStatValue(channelModalAds, entry.ads, (value) => formatNumber(value));
+        animateStatValue(channelModalAds, entry.measuredAds, (value) => formatNumber(value));
         animateStatValue(channelModalWatch, entry.watchSeconds, (value) => formatWatchTime(value));
         animateStatValue(channelModalSaved, entry.adMilliseconds, (value) => formatTimeSaved(value));
-        animateStatValue(channelModalBreaks, Math.ceil(entry.ads / 3), (value) => formatNumber(value));
+        animateStatValue(channelModalBreaks, entry.ads, (value) => formatNumber(value));
         const sharePercent = latestAdsTotal > 0
             ? Math.min(100, Math.round((entry.ads / latestAdsTotal) * 100))
             : 0;
@@ -1846,6 +1929,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
     const MAX_CHANNELS = 100;
+    const TOP_CHANNEL_COUNT = 5;
+    const MAX_FUTURE_TIMESTAMP_MS = 2 * 24 * 60 * 60 * 1000;
     const ACHIEVEMENTS = [
         {
             id: "first_block",
@@ -1932,18 +2017,15 @@ document.addEventListener("DOMContentLoaded", () => {
         ];
     }
     function formatTimeSaved(milliseconds) {
-        const safeMilliseconds = normalizeCount(milliseconds);
-        const hours = Math.floor(safeMilliseconds / 3600000);
-        const minutes = Math.floor((safeMilliseconds % 3600000) / 60000);
-        const secondsWithinMinute = (safeMilliseconds % 60000) / 1000;
-        const secondsText = Number.isInteger(secondsWithinMinute)
-            ? String(secondsWithinMinute)
-            : secondsWithinMinute.toFixed(3).replace(/0+$/, "");
+        const totalSeconds = Math.floor(normalizeCount(milliseconds) / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
         if (hours > 0)
-            return `${hours}h ${minutes}m ${secondsText}s`;
+            return `${hours}h ${minutes}m ${seconds}s`;
         if (minutes > 0)
-            return `${minutes}m ${secondsText}s`;
-        return `${secondsText}s`;
+            return `${minutes}m ${seconds}s`;
+        return `${seconds}s`;
     }
     function normalizeCount(value) {
         const numericValue = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
@@ -1979,14 +2061,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!Number.isFinite(numericValue) || numericValue <= 0)
             return 0;
         const timestamp = Math.trunc(numericValue);
-        return timestamp > Date.now() + 5 * 60 * 1000 ? 0 : timestamp;
+        return timestamp > Date.now() + MAX_FUTURE_TIMESTAMP_MS ? 0 : timestamp;
     }
     function normalizeChannelEntry(value) {
         if (typeof value === "number" || typeof value === "string") {
             return {
                 ads: normalizeCount(value),
+                measuredAds: 0,
                 firstSeen: 0,
                 lastSeen: 0,
+                lastActive: 0,
                 watchSeconds: 0,
                 adMilliseconds: 0,
             };
@@ -1997,8 +2081,10 @@ document.addEventListener("DOMContentLoaded", () => {
             : normalizeCount(safeValue.adSeconds) * 1000;
         return {
             ads: normalizeCount(safeValue.ads),
+            measuredAds: normalizeCount(safeValue.measuredAds),
             firstSeen: normalizeTimestamp(safeValue.firstSeen),
             lastSeen: normalizeTimestamp(safeValue.lastSeen),
+            lastActive: normalizeTimestamp(safeValue.lastActive),
             watchSeconds: normalizeCount(safeValue.watchSeconds),
             adMilliseconds,
         };
@@ -2007,11 +2093,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const firstSeenCandidates = [target.firstSeen, incoming.firstSeen].filter((timestamp) => timestamp > 0);
         return {
             ads: target.ads + incoming.ads,
+            measuredAds: target.measuredAds + incoming.measuredAds,
             firstSeen: firstSeenCandidates.length > 0 ? Math.min(...firstSeenCandidates) : 0,
             lastSeen: Math.max(target.lastSeen, incoming.lastSeen),
+            lastActive: Math.max(target.lastActive, incoming.lastActive),
             watchSeconds: target.watchSeconds + incoming.watchSeconds,
             adMilliseconds: target.adMilliseconds + incoming.adMilliseconds,
         };
+    }
+    function getChannelActivityAt(entry) {
+        return Math.max(entry.lastActive, entry.lastSeen, entry.firstSeen);
     }
     function normalizeChannelsMap(value) {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -2031,16 +2122,24 @@ document.addEventListener("DOMContentLoaded", () => {
         if (channelEntries.length <= MAX_CHANNELS) {
             return normalized;
         }
-        channelEntries.sort((a, b) => {
-            const countDiff = normalizeCount(b[1].ads) - normalizeCount(a[1].ads);
-            if (countDiff !== 0)
-                return countDiff;
-            const watchDiff = normalizeCount(b[1].watchSeconds) - normalizeCount(a[1].watchSeconds);
-            return watchDiff !== 0 ? watchDiff : a[0].localeCompare(b[0]);
-        });
+        const keptChannels = new Set(channelEntries
+            .filter(([, entry]) => entry.ads > 0)
+            .sort((a, b) => b[1].ads - a[1].ads || a[0].localeCompare(b[0]))
+            .slice(0, TOP_CHANNEL_COUNT)
+            .map(([channelName]) => channelName));
+        const recentChannels = channelEntries
+            .filter(([channelName]) => !keptChannels.has(channelName))
+            .sort((a, b) => getChannelActivityAt(b[1]) - getChannelActivityAt(a[1]) ||
+            b[1].ads - a[1].ads ||
+            b[1].watchSeconds - a[1].watchSeconds ||
+            a[0].localeCompare(b[0]));
+        for (const [channelName] of recentChannels.slice(0, MAX_CHANNELS - keptChannels.size)) {
+            keptChannels.add(channelName);
+        }
         const trimmed = createChannelsMap();
-        for (const [channelName, entry] of channelEntries.slice(0, MAX_CHANNELS)) {
-            trimmed[channelName] = entry;
+        for (const [channelName, entry] of channelEntries) {
+            if (keptChannels.has(channelName))
+                trimmed[channelName] = entry;
         }
         return trimmed;
     }
@@ -2049,13 +2148,16 @@ document.addEventListener("DOMContentLoaded", () => {
             return createDailyStatsMap();
         }
         const normalized = createDailyStatsMap();
-        const todayKey = getDateKey();
+        const latestDateKey = getDateKey(new Date(Date.now() + MAX_FUTURE_TIMESTAMP_MS));
         for (const [dateKey, entry] of Object.entries(value)) {
-            if (!parseDateKey(dateKey) || dateKey > todayKey)
+            if (!parseDateKey(dateKey) || dateKey > latestDateKey)
                 continue;
             const safeEntry = isPlainObject(entry) ? entry : {};
             normalized[dateKey] = {
                 ads: normalizeCount(safeEntry.ads),
+                measuredAds: normalizeCount(safeEntry.measuredAds),
+                adMilliseconds: normalizeCount(safeEntry.adMilliseconds),
+                watchSeconds: normalizeCount(safeEntry.watchSeconds),
             };
         }
         return normalized;
@@ -2064,16 +2166,13 @@ document.addEventListener("DOMContentLoaded", () => {
         timeSaved.textContent = formatTimeSaved(latestMeasuredMilliseconds);
     }
     function getLast7Days() {
-        const startOfWeek = new Date();
-        startOfWeek.setHours(0, 0, 0, 0);
-        const dayOfWeek = startOfWeek.getDay();
-        const daysSinceMonday = (dayOfWeek + 6) % 7;
-        startOfWeek.setDate(startOfWeek.getDate() - daysSinceMonday);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
         const days = [];
-        for (let i = 0; i < 7; i++) {
-            const d = new Date(startOfWeek);
-            d.setDate(startOfWeek.getDate() + i);
-            days.push(getDateKey(d));
+        for (let offset = 6; offset >= 0; offset--) {
+            const day = new Date(today);
+            day.setDate(today.getDate() - offset);
+            days.push(getDateKey(day));
         }
         return days;
     }
@@ -2083,32 +2182,33 @@ document.addEventListener("DOMContentLoaded", () => {
             : {};
         const t = getTranslations();
         const days = getLast7Days();
-        const todayKey = getDateKey();
-        const parsedDays = days.map((dayKey) => parseDateKey(dayKey));
-        const values = days.map((d) => {
-            if (d > todayKey)
-                return 0;
-            return normalizeCount(safeDailyData[d]?.ads);
-        });
+        const entries = days.map((dayKey) => safeDailyData[dayKey]);
+        const values = entries.map((entry) => normalizeCount(entry?.ads));
         const max = Math.max(...values, 1);
-        const completedDayCount = Math.max(1, days.filter((dayKey) => dayKey <= todayKey).length);
-        const avg = Math.round(values.reduce((a, b) => a + b, 0) / completedDayCount);
+        const completedDayValues = values.slice(0, -1);
+        const avg = Math.round(completedDayValues.reduce((a, b) => a + b, 0) / completedDayValues.length);
         const formatter = new Intl.DateTimeFormat(getLocaleTag(), {
             weekday: "short",
         });
         weeklyChart.replaceChildren();
-        for (const [index, value] of values.entries()) {
+        for (const [index, dayKey] of days.entries()) {
+            const value = values[index];
+            const entry = entries[index];
             const height = value > 0 ? Math.max((value / max) * 100, 8) : 0;
-            const dayName = parsedDays[index]
-                ? formatter.format(parsedDays[index])
-                : "?";
+            const parsedDay = parseDateKey(dayKey);
+            const dayName = parsedDay ? formatter.format(parsedDay) : "?";
+            const details = [
+                `${String(t.chartBreaks ?? "Ad breaks")}: ${formatNumber(value)}`,
+                `${String(t.chartAds ?? "Ads")}: ${formatNumber(entry?.measuredAds)}`,
+                `${String(t.timeSaved ?? "Time Saved")}: ${formatTimeSaved(entry?.adMilliseconds)}`,
+                `${String(t.channelModalWatch ?? "Watch time")}: ${formatWatchTime(entry?.watchSeconds)}`,
+            ];
             const bar = document.createElement("div");
             bar.className = "chart-bar";
             bar.style.height = `${height}%`;
-            const summary = `${dayName}: ${formatNumber(value)}`;
-            bar.title = summary;
+            bar.title = [dayName, ...details].join("\n");
             bar.setAttribute("role", "img");
-            bar.setAttribute("aria-label", summary);
+            bar.setAttribute("aria-label", `${dayName}: ${details.join(", ")}`);
             weeklyChart.append(bar);
         }
         chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), {
@@ -2162,8 +2262,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const countDiff = normalizeCount(b[1].ads) - normalizeCount(a[1].ads);
             return countDiff !== 0 ? countDiff : a[0].localeCompare(b[0]);
         });
-        const top5 = entries.slice(0, 5);
-        for (const [index, entry] of top5.entries()) {
+        for (const [index, entry] of entries
+            .slice(0, TOP_CHANNEL_COUNT)
+            .entries()) {
             channelList.append(createChannelItem(`${index + 1}.`, entry[0], formatNumber(normalizeCount(entry[1].ads)), entry[0]));
         }
     }
@@ -2268,11 +2369,31 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!channelModalOverlay.hidden) {
                 hideChannelModal();
             }
+            resetStatsOverlay.hidden = true;
         }
         updateTurboCopy();
         if (turboModeReady && !turboModeEnabled && (!wasReady || wasEnabled)) {
             loadStatistics();
         }
+    }
+    function readStatisticsSnapshot(result) {
+        const safeResult = (result || {});
+        const stats = isPlainObject(safeResult.ttvStats)
+            ? safeResult.ttvStats
+            : {};
+        const adMillisecondsSaved = Object.hasOwn(stats, "adMillisecondsSaved")
+            ? normalizeCount(stats.adMillisecondsSaved)
+            : normalizeCount(stats.adSecondsSaved) * 1000;
+        return {
+            ttvAdsBlocked: normalizeCount(safeResult.ttvAdsBlocked),
+            ttvStats: {
+                daily: normalizeDailyStatsMap(stats.daily),
+                channels: normalizeChannelsMap(stats.channels),
+                achievements: normalizeAchievementList(stats.achievements, adMillisecondsSaved),
+                adMillisecondsSaved,
+                measuredAds: normalizeCount(stats.measuredAds),
+            },
+        };
     }
     function loadStatistics() {
         if (!turboModeReady || turboModeEnabled)
@@ -2284,17 +2405,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (chrome.runtime.lastError) {
                 console.error("[TTV AB] Popup stats read error:", chrome.runtime.lastError.message);
             }
-            const safeResult = (result || {});
-            const stats = isPlainObject(safeResult.ttvStats)
-                ? safeResult.ttvStats
-                : {};
-            const daily = normalizeDailyStatsMap(stats.daily);
-            const channels = normalizeChannelsMap(stats.channels);
-            const measuredMilliseconds = Object.hasOwn(stats, "adMillisecondsSaved")
-                ? normalizeCount(stats.adMillisecondsSaved)
-                : normalizeCount(stats.adSecondsSaved) * 1000;
-            const achievements = normalizeAchievementList(stats.achievements, measuredMilliseconds);
-            const adsCount = normalizeCount(safeResult.ttvAdsBlocked);
+            const snapshot = readStatisticsSnapshot(result);
+            const { daily, channels, achievements, adMillisecondsSaved: measuredMilliseconds, } = snapshot.ttvStats;
+            const adsCount = snapshot.ttvAdsBlocked;
             let channelCount = 0;
             for (const entry of Object.values(channels)) {
                 if (normalizeCount(entry?.ads) > 0)
@@ -2313,6 +2426,89 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         return true;
     }
+    function getStatisticsExportFilename() {
+        const stamp = new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")
+            .replace("T", "_")
+            .slice(0, 19);
+        return `ttv-ab-statistics-${stamp}.json`;
+    }
+    function exportStatistics() {
+        if (!turboModeReady || turboModeEnabled)
+            return;
+        chrome.storage.local.get(["ttvStats", "ttvAdsBlocked"], (result) => {
+            if (chrome.runtime.lastError) {
+                console.error("[TTV AB] Statistics export read error:", chrome.runtime.lastError.message);
+                return;
+            }
+            let version = null;
+            try {
+                version = chrome.runtime?.getManifest?.()?.version || null;
+            }
+            catch { }
+            const exportText = JSON.stringify({
+                exportedAt: new Date().toISOString(),
+                version,
+                ...readStatisticsSnapshot(result),
+            }, null, 2);
+            const anchor = document.createElement("a");
+            anchor.href = `data:application/json;charset=utf-8,${encodeURIComponent(exportText)}`;
+            anchor.download = getStatisticsExportFilename();
+            document.body.appendChild(anchor);
+            try {
+                anchor.click();
+            }
+            finally {
+                anchor.remove();
+            }
+        });
+    }
+    let resetStatisticsInProgress = false;
+    function openResetStatsDialog() {
+        if (!turboModeReady || turboModeEnabled)
+            return;
+        resetStatsText.textContent = String(getTranslations().resetStatsText ?? "");
+        resetStatsConfirm.disabled = resetStatisticsInProgress;
+        resetStatsOverlay.hidden = false;
+        resetStatsCancel.focus();
+    }
+    function hideResetStatsDialog() {
+        if (resetStatsOverlay.hidden)
+            return;
+        resetStatsOverlay.hidden = true;
+        if (!statsResetButton.closest("[inert]"))
+            statsResetButton.focus();
+    }
+    function resetStatistics() {
+        if (resetStatisticsInProgress)
+            return;
+        resetStatisticsInProgress = true;
+        resetStatsConfirm.disabled = true;
+        chrome.runtime.sendMessage({ type: "ttvab-reset-statistics" }, (response) => {
+            resetStatisticsInProgress = false;
+            resetStatsConfirm.disabled = false;
+            const errorMessage = chrome.runtime.lastError?.message ||
+                (isPlainObject(response) && response.ok === true
+                    ? null
+                    : String(response?.error || "no response"));
+            if (!errorMessage) {
+                hideResetStatsDialog();
+                return;
+            }
+            console.error("[TTV AB] Statistics reset failed:", errorMessage);
+            resetStatsText.textContent = String(getTranslations().resetStatsFailed ?? "");
+        });
+    }
+    statsExportButton.addEventListener("click", exportStatistics);
+    statsResetButton.addEventListener("click", openResetStatsDialog);
+    resetStatsConfirm.addEventListener("click", resetStatistics);
+    resetStatsCancel.addEventListener("click", hideResetStatsDialog);
+    resetStatsClose.addEventListener("click", hideResetStatsDialog);
+    resetStatsOverlay.addEventListener("click", (event) => {
+        if (event.target === resetStatsOverlay)
+            hideResetStatsDialog();
+    });
     function setToggleRowOpacity(element, enabled) {
         const opacity = enabled ? "1" : "0.4";
         const row = element.closest(".toggle-row");
@@ -2391,120 +2587,35 @@ document.addEventListener("DOMContentLoaded", () => {
     adTimerToggle.addEventListener("change", () => {
         popupToggleController.write("adTimer", adTimerToggle.checked);
     });
-    function setAdTimerModalVisible(visible) {
-        adTimerTooltip.hidden = !visible;
-        adTimerTooltip.classList.toggle("visible", visible);
-        adTimerInfoIcon.setAttribute("aria-expanded", String(visible));
-        if (visible)
-            adTimerModalClose.focus();
-        else
-            adTimerInfoIcon.focus();
-    }
-    adTimerInfoIcon.addEventListener("click", () => {
-        setAdTimerModalVisible(adTimerTooltip.hidden);
-    });
-    adTimerModalClose.addEventListener("click", () => {
-        setAdTimerModalVisible(false);
-    });
-    adTimerTooltip.addEventListener("click", (event) => {
-        if (event.target === adTimerTooltip)
-            setAdTimerModalVisible(false);
-    });
-    adTimerTooltip.addEventListener("keydown", (event) => {
-        if (event.key !== "Tab")
-            return;
-        event.preventDefault();
-        adTimerModalClose.focus();
-    });
-    const adSpoofingInfoIcon = document.getElementById("adSpoofingInfoIcon");
-    const adSpoofingTooltip = document.getElementById("adSpoofingTooltip");
-    if (adSpoofingInfoIcon && adSpoofingTooltip) {
-        adSpoofingInfoIcon.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const isVisible = adSpoofingTooltip.classList.contains("visible");
-            if (isVisible) {
-                adSpoofingTooltip.hidden = true;
-                adSpoofingTooltip.classList.remove("visible");
-            }
-            else {
-                adSpoofingTooltip.hidden = false;
-                adSpoofingTooltip.classList.add("visible");
-            }
-        });
-        adSpoofingTooltip.addEventListener("click", (e) => {
-            if (e.target === adSpoofingTooltip) {
-                adSpoofingTooltip.hidden = true;
-                adSpoofingTooltip.classList.remove("visible");
-            }
-        });
-        const modalClose = document.getElementById("adSpoofingModalClose");
-        if (modalClose) {
-            modalClose.addEventListener("click", () => {
-                adSpoofingTooltip.hidden = true;
-                adSpoofingTooltip.classList.remove("visible");
-            });
-        }
-    }
+    const adTimerModal = _createInfoModal(adTimerInfoIcon, adTimerTooltip, adTimerModalClose);
+    const adSpoofingModal = _createInfoModal(adSpoofingInfoIcon, adSpoofingTooltip, adSpoofingModalClose);
     adSpoofingToggle.addEventListener("change", () => {
         popupToggleController.write("adSpoofing", adSpoofingToggle.checked);
     });
-    let bypassAutoplayBackupWarning = false;
     let isAutoplayBackupWarningContext = false;
-    const autoplayBackupInfoIcon = document.getElementById("autoplayBackupInfoIcon");
-    const autoplayBackupTooltip = document.getElementById("autoplayBackupTooltip");
-    if (autoplayBackupInfoIcon && autoplayBackupTooltip) {
-        autoplayBackupInfoIcon.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const isVisible = autoplayBackupTooltip.classList.contains("visible");
-            if (isVisible) {
-                autoplayBackupTooltip.hidden = true;
-                autoplayBackupTooltip.classList.remove("visible");
-            }
-            else {
-                isAutoplayBackupWarningContext = false;
-                autoplayBackupTooltip.hidden = false;
-                autoplayBackupTooltip.classList.add("visible");
-            }
-        });
-        autoplayBackupTooltip.addEventListener("click", (e) => {
-            if (e.target === autoplayBackupTooltip) {
-                autoplayBackupTooltip.hidden = true;
-                autoplayBackupTooltip.classList.remove("visible");
-            }
-        });
-    }
-    if (autoplayBackupToggle) {
-        autoplayBackupToggle.addEventListener("change", () => {
-            const disabling = !autoplayBackupToggle.checked;
-            if (disabling && !bypassAutoplayBackupWarning) {
-                autoplayBackupToggle.checked = true;
-                if (autoplayBackupTooltip) {
-                    isAutoplayBackupWarningContext = true;
-                    autoplayBackupTooltip.hidden = false;
-                    autoplayBackupTooltip.classList.add("visible");
-                }
-                else {
-                    console.error("[TTV AB] Autoplay backup tooltip modal element not found in DOM");
-                }
-                return;
-            }
-            bypassAutoplayBackupWarning = false;
-            popupToggleController.write("autoplayBackup", autoplayBackupToggle.checked);
-        });
-        const autoplayBackupModalClose = document.getElementById("autoplayBackupModalClose");
-        if (autoplayBackupModalClose && autoplayBackupTooltip) {
-            autoplayBackupModalClose.addEventListener("click", () => {
-                autoplayBackupTooltip.hidden = true;
-                autoplayBackupTooltip.classList.remove("visible");
-                if (isAutoplayBackupWarningContext && autoplayBackupToggle.checked) {
-                    bypassAutoplayBackupWarning = true;
-                    autoplayBackupToggle.checked = false;
-                    autoplayBackupToggle.dispatchEvent(new Event("change"));
-                }
-                isAutoplayBackupWarningContext = false;
-            });
+    const autoplayBackupModal = _createInfoModal(autoplayBackupInfoIcon, autoplayBackupTooltip, autoplayBackupModalClose, (confirmed) => {
+        const disableConfirmed = confirmed &&
+            isAutoplayBackupWarningContext &&
+            autoplayBackupToggle.checked;
+        isAutoplayBackupWarningContext = false;
+        if (!disableConfirmed)
+            return;
+        autoplayBackupToggle.checked = false;
+        popupToggleController.write("autoplayBackup", false);
+    });
+    const infoModals = [adTimerModal, adSpoofingModal, autoplayBackupModal];
+    autoplayBackupInfoIcon.addEventListener("click", () => {
+        isAutoplayBackupWarningContext = false;
+    });
+    autoplayBackupToggle.addEventListener("change", () => {
+        if (!autoplayBackupToggle.checked) {
+            autoplayBackupToggle.checked = true;
+            isAutoplayBackupWarningContext = true;
+            autoplayBackupModal.open(autoplayBackupToggle);
+            return;
         }
-    }
+        popupToggleController.write("autoplayBackup", true);
+    });
     function parseTransitionTimeToMs(value) {
         const trimmedValue = String(value || "").trim();
         if (!trimmedValue)
@@ -2649,6 +2760,7 @@ document.addEventListener("DOMContentLoaded", () => {
             : "color 0.3s ease";
         if (toggleType === "adblock") {
             statusDot.classList.toggle("disabled", !enabled);
+            statusText.classList.toggle("disabled", !enabled);
             statusText.textContent = String(enabled ? t.active : t.inactive);
         }
         if (!showTransientMessage) {
