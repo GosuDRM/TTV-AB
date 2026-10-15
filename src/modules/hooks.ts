@@ -6768,6 +6768,7 @@ function _hookWorker() {
 								vodID: __TTVAB_STATE__.PageVodID,
 								mediaKey: data.mediaKey || null,
 								adIds: data.adIds,
+								reportedAdIds: data.reportedAdIds,
 								expectedPodLength: data.expectedPodLength,
 								maxAdPodPosition: data.maxAdPodPosition,
 								observedZeroAdPodPosition: data.observedZeroAdPodPosition,

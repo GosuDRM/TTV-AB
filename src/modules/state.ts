@@ -631,6 +631,9 @@ function _isWorkerEvent(
 				(message.adIds === undefined ||
 					(Array.isArray(message.adIds) &&
 						message.adIds.every((id) => typeof id === "string"))) &&
+				(message.reportedAdIds === undefined ||
+					(Array.isArray(message.reportedAdIds) &&
+						message.reportedAdIds.every((id) => typeof id === "string"))) &&
 				_isAdPodSnapshot(message.pod)
 			);
 		case "AdDetected":
@@ -1331,9 +1334,24 @@ function _mergeAdPodProgress(value) {
 			if (typeof adId === "string" && adId) adIds.add(adId);
 		}
 	}
+	const reportedAdIds = new Set<string>(
+		shouldReplace
+			? []
+			: Array.isArray(current?.reportedAdIds)
+				? current.reportedAdIds
+				: [],
+	);
+	if (Array.isArray(value?.reportedAdIds)) {
+		for (const adId of value.reportedAdIds) {
+			if (typeof adId === "string" && adId) reportedAdIds.add(adId);
+		}
+	}
 	const entry = {
 		pod: _mergeAdPodSnapshot(shouldReplace ? null : current?.pod, value?.pod),
 		adIds: Array.from(adIds).slice(-50),
+		...(reportedAdIds.size
+			? { reportedAdIds: Array.from(reportedAdIds).slice(-50) }
+			: {}),
 		expectedPodLength: Math.max(
 			shouldReplace ? 0 : Math.max(0, Number(current?.expectedPodLength) || 0),
 			Math.max(0, Number(value?.expectedPodLength) || 0),

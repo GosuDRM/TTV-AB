@@ -663,197 +663,250 @@ async function _notifyAdComplete(
 			info.ObservedZeroAdPodPosition = Boolean(
 				info.ObservedZeroAdPodPosition === true || observedZeroAdPodPosition,
 			);
-			if (typeof self !== "undefined" && self.postMessage) {
-				_postWorkerBridgeMessage(
-					self,
-					_createPageScopedWorkerEvent({
-						key: "AdPodProgress",
-						adIds: Array.from<string>(info.ObservedAdPodIds),
-						expectedPodLength: Math.max(
-							0,
-							Number(info.ExpectedAdPodLength) || 0,
-						),
-						maxAdPodPosition: Math.max(
-							0,
-							Number(info.MaxObservedAdPodPosition) || 0,
-						),
-						observedZeroAdPodPosition: info.ObservedZeroAdPodPosition === true,
-						pod: _getAdPodSnapshot(info.CurrentAdPod),
-						cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
-						channel: info.ChannelName || null,
-						mediaKey: info.MediaKey || null,
-					}),
-				);
-			}
 		}
-		if (__TTVAB_STATE__.DisableAdSpoofing) return;
-		if (matches.length === 0) {
-			if (!__TTVAB_STATE__.LoggedAdSpoofNoMatch) {
-				__TTVAB_STATE__.LoggedAdSpoofNoMatch = true;
-				const dateRangeLine = textStr.match(/#EXT-X-DATERANGE:[^\n]{0,200}/);
-				_log(
-					`notifyAdComplete: no stitched-ad DATERANGE match. Sample DATERANGE: ${dateRangeLine ? dateRangeLine[0] : "none found"}`,
-					"warning",
-				);
+		const reportedAdIds: string[] = [];
+		const postProgress = () => {
+			if (
+				!info ||
+				matches.length === 0 ||
+				typeof self === "undefined" ||
+				!self.postMessage
+			)
+				return;
+			_postWorkerBridgeMessage(
+				self,
+				_createPageScopedWorkerEvent({
+					key: "AdPodProgress",
+					adIds: Array.from<string>(info.ObservedAdPodIds),
+					...(reportedAdIds.length ? { reportedAdIds } : {}),
+					expectedPodLength: Math.max(0, Number(info.ExpectedAdPodLength) || 0),
+					maxAdPodPosition: Math.max(
+						0,
+						Number(info.MaxObservedAdPodPosition) || 0,
+					),
+					observedZeroAdPodPosition: info.ObservedZeroAdPodPosition === true,
+					pod: _getAdPodSnapshot(info.CurrentAdPod),
+					cycleStartedAt: Math.max(0, Number(info.VisibleAdStartedAt) || 0),
+					channel: info.ChannelName || null,
+					mediaKey: info.MediaKey || null,
+				}),
+			);
+		};
+		const warnOncePerBreak = (key) => {
+			if (!info) {
+				if (__TTVAB_STATE__[key]) return false;
+				__TTVAB_STATE__[key] = true;
+				return true;
 			}
-			return;
-		}
-
-		const spoofedSet = info?.SpoofedAdIds || null;
-		const recentSpoofedSet = info?.RecentSpoofedAdIds || null;
-		const podLength = hasExplicitPodLength ? parsedPodLength : matches.length;
-		let newSpoofed = 0;
-		let firstRollType = "";
-		let podCompleteSent = false;
-		let lastSpoofedPod: TTVABAdPod | null = null;
-
-		for (let i = 0; i < matches.length; i++) {
-			const attr = matches[i];
-			const stitchedAdId = attr.ID;
-			if (recentSpoofedSet?.has?.(stitchedAdId)) {
-				spoofedSet?.add?.(stitchedAdId);
-				continue;
-			}
-			if (spoofedSet?.has(stitchedAdId)) {
-				continue;
-			}
-			if (pods.has(stitchedAdId) && pods.get(stitchedAdId) === null) {
-				continue;
-			}
-			const radToken = attr["X-TV-TWITCH-AD-RADS-TOKEN"];
-			if (!radToken) {
-				if (i === 0 && !__TTVAB_STATE__.LoggedAdSpoofNoToken) {
-					__TTVAB_STATE__.LoggedAdSpoofNoToken = true;
+			if (!(info._LoggedWhitelistByType instanceof Set))
+				info._LoggedWhitelistByType = new Set();
+			if (info._LoggedWhitelistByType.has(key)) return false;
+			info._LoggedWhitelistByType.add(key);
+			return true;
+		};
+		try {
+			if (__TTVAB_STATE__.DisableAdSpoofing) return;
+			if (matches.length === 0) {
+				if (warnOncePerBreak("LoggedAdSpoofNoMatch")) {
+					const dateRangeLine = textStr.match(/#EXT-X-DATERANGE:[^\n]{0,200}/);
 					_log(
-						`notifyAdComplete: matched DATERANGE but no RADS token. Attributes: ${Object.keys(attr).join(", ")}`,
+						`notifyAdComplete: no stitched-ad DATERANGE match in this ad break; no completion reports sent. Sample DATERANGE: ${dateRangeLine ? dateRangeLine[0] : "none found"}`,
 						"warning",
 					);
 				}
-				continue;
+				return;
 			}
-			const rollType = (attr["X-TV-TWITCH-AD-ROLL-TYPE"] || "").toLowerCase();
-			if (!firstRollType) firstRollType = rollType;
-			const adPosition = parseInt(
-				attr["X-TV-TWITCH-AD-POD-POSITION"] || String(i),
-				10,
+			const sharedReportedAdIds = new Set(
+				__TTVAB_STATE__.AdPodProgressByMediaKey?.[
+					_normalizeMediaKey(info?.MediaKey)
+				]?.reportedAdIds || [],
 			);
-			const adDuration =
-				parseInt(attr["X-TV-TWITCH-AD-DURATION"] || "0", 10) || 0;
-			const pod = pods.get(stitchedAdId) || null;
-			const payload = {
-				stitched: true,
-				ad_id: stitchedAdId,
-				roll_type: rollType,
-				creative_id: attr["X-TV-TWITCH-AD-CREATIVE-ID"] || "",
-				order_id: attr["X-TV-TWITCH-AD-ORDER-ID"] || "",
-				line_item_id: attr["X-TV-TWITCH-AD-LINE-ITEM-ID"] || "",
-				player_mute: false,
-				player_volume: 1.0,
-				visible: true,
-				duration: adDuration,
-				ad_position: adPosition,
-				total_ads:
-					pod?.length ||
-					Math.max(
-						podLength,
-						pod ? pod.adIds.size : 0,
-						pod ? pod.maxPosition + (pod.zeroPosition ? 1 : 0) : 0,
-					),
-			};
 
-			const makePacket = (event: string, extra?: Record<string, unknown>) => ({
-				operationName: "ClientSideAdEventHandling_RecordAdEvent",
-				variables: {
-					input: {
-						eventName: event,
-						eventPayload: JSON.stringify({ ...payload, ...extra }),
-						radToken,
-					},
-				},
-				extensions: {
-					persistedQuery: {
-						version: 1,
-						sha256Hash:
-							"7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b",
-					},
-				},
-			});
+			const spoofedSet = info?.SpoofedAdIds || null;
+			const recentSpoofedSet = info?.RecentSpoofedAdIds || null;
+			const podLength = hasExplicitPodLength ? parsedPodLength : matches.length;
+			let newSpoofed = 0;
+			let firstRollType = "";
+			let podCompleteSent = false;
+			let lastSpoofedPod: TTVABAdPod | null = null;
 
-			if (spoofedSet && stitchedAdId) spoofedSet.add(stitchedAdId);
-			pod?.spoofedAdIds.add(stitchedAdId);
-			if (pod) lastSpoofedPod = pod;
-			const batch = [
-				makePacket("video_ad_impression"),
-				makePacket("video_ad_quartile_complete", { quartile: 1 }),
-				makePacket("video_ad_quartile_complete", { quartile: 2 }),
-				makePacket("video_ad_quartile_complete", { quartile: 3 }),
-				makePacket("video_ad_quartile_complete", { quartile: 4 }),
-			];
-			if (
-				!spoofedSet ||
-				(pod &&
-					pod.length > 0 &&
-					!pod.completeSent &&
-					pod.spoofedAdIds.size >= pod.length)
-			) {
-				batch.push(makePacket("video_ad_pod_complete"));
-				podCompleteSent = true;
-				if (pod) pod.completeSent = true;
-			}
-
-			const headers: Record<string, string> = {
-				"Client-ID": _C.CLIENT_ID,
-				"X-Device-Id": __TTVAB_STATE__.GQLDeviceID || "oauth",
-			};
-			if (__TTVAB_STATE__.AuthorizationHeader) {
-				headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
-			}
-			if (__TTVAB_STATE__.ClientIntegrityHeader) {
-				headers["Client-Integrity"] = __TTVAB_STATE__.ClientIntegrityHeader;
-			}
-			if (__TTVAB_STATE__.ClientVersion) {
-				headers["Client-Version"] = __TTVAB_STATE__.ClientVersion;
-			}
-			if (__TTVAB_STATE__.ClientSession) {
-				headers["Client-Session-Id"] = __TTVAB_STATE__.ClientSession;
-			}
-
-			_fetchViaWorkerBridge(
-				_GQL_URL,
-				{
-					method: "POST",
-					headers,
-					body: JSON.stringify(batch),
-				},
-				5000,
-			)
-				.then((response: Response | null) => {
-					if (response && response.status !== 200) {
-						_reportAdCompletionFailure(
-							`GQL response status ${response.status}`,
+			for (let i = 0; i < matches.length; i++) {
+				const attr = matches[i];
+				const stitchedAdId = attr.ID;
+				if (
+					recentSpoofedSet?.has?.(stitchedAdId) ||
+					sharedReportedAdIds.has(stitchedAdId)
+				) {
+					spoofedSet?.add?.(stitchedAdId);
+					continue;
+				}
+				if (spoofedSet?.has(stitchedAdId)) {
+					continue;
+				}
+				if (pods.has(stitchedAdId) && pods.get(stitchedAdId) === null) {
+					continue;
+				}
+				const radToken = attr["X-TV-TWITCH-AD-RADS-TOKEN"];
+				if (!radToken) {
+					if (warnOncePerBreak("LoggedAdSpoofNoToken")) {
+						_log(
+							`notifyAdComplete: matched DATERANGE but no RADS token in this ad break; no completion report sent. Attributes: ${Object.keys(attr).join(", ")}`,
+							"warning",
 						);
 					}
-				})
-				.catch((error) => {
-					_reportAdCompletionFailure(
-						error?.message ? String(error.message) : "request failed",
-					);
+					continue;
+				}
+				const rollType = (attr["X-TV-TWITCH-AD-ROLL-TYPE"] || "").toLowerCase();
+				if (!firstRollType) firstRollType = rollType;
+				const adPosition = parseInt(
+					attr["X-TV-TWITCH-AD-POD-POSITION"] || String(i),
+					10,
+				);
+				const adDuration =
+					parseInt(attr["X-TV-TWITCH-AD-DURATION"] || "0", 10) || 0;
+				const pod = pods.get(stitchedAdId) || null;
+				const payload = {
+					stitched: true,
+					ad_id: stitchedAdId,
+					roll_type: rollType,
+					creative_id: attr["X-TV-TWITCH-AD-CREATIVE-ID"] || "",
+					order_id: attr["X-TV-TWITCH-AD-ORDER-ID"] || "",
+					line_item_id: attr["X-TV-TWITCH-AD-LINE-ITEM-ID"] || "",
+					player_mute: false,
+					player_volume: 1.0,
+					visible: true,
+					duration: adDuration,
+					ad_position: adPosition,
+					total_ads:
+						pod?.length ||
+						Math.max(
+							podLength,
+							pod ? pod.adIds.size : 0,
+							pod ? pod.maxPosition + (pod.zeroPosition ? 1 : 0) : 0,
+						),
+				};
+
+				const makePacket = (
+					event: string,
+					extra?: Record<string, unknown>,
+				) => ({
+					operationName: "ClientSideAdEventHandling_RecordAdEvent",
+					variables: {
+						input: {
+							eventName: event,
+							eventPayload: JSON.stringify({ ...payload, ...extra }),
+							radToken,
+						},
+					},
+					extensions: {
+						persistedQuery: {
+							version: 1,
+							sha256Hash:
+								"7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b",
+						},
+					},
 				});
 
-			newSpoofed++;
-		}
+				if (spoofedSet && stitchedAdId) spoofedSet.add(stitchedAdId);
+				pod?.spoofedAdIds.add(stitchedAdId);
+				if (pod) lastSpoofedPod = pod;
+				const batch = [
+					makePacket("video_ad_impression"),
+					makePacket("video_ad_quartile_complete", { quartile: 1 }),
+					makePacket("video_ad_quartile_complete", { quartile: 2 }),
+					makePacket("video_ad_quartile_complete", { quartile: 3 }),
+					makePacket("video_ad_quartile_complete", { quartile: 4 }),
+				];
+				if (
+					!spoofedSet ||
+					(pod &&
+						pod.length > 0 &&
+						!pod.completeSent &&
+						pod.spoofedAdIds.size >= pod.length)
+				) {
+					batch.push(makePacket("video_ad_pod_complete"));
+					podCompleteSent = true;
+					if (pod) pod.completeSent = true;
+				}
 
-		if (newSpoofed > 0) {
-			const total = lastSpoofedPod
-				? lastSpoofedPod.spoofedAdIds.size
-				: spoofedSet
-					? spoofedSet.size
-					: newSpoofed;
-			const src = info?.ActiveBackupPlayerType || "primary";
-			_log(
-				`[Trace] Spoofed ad completion for ${newSpoofed} new ad(s) (${total}/${lastSpoofedPod?.length || (hasExplicitPodLength ? podLength : "?")} pod) — roll: ${firstRollType}, src: ${src}, pod-complete: ${podCompleteSent ? "yes" : "no"}`,
-				"info",
-			);
+				const headers: Record<string, string> = {
+					"Client-ID": _C.CLIENT_ID,
+					"X-Device-Id": __TTVAB_STATE__.GQLDeviceID || "oauth",
+				};
+				if (__TTVAB_STATE__.AuthorizationHeader) {
+					headers.Authorization = __TTVAB_STATE__.AuthorizationHeader;
+				}
+				if (__TTVAB_STATE__.ClientIntegrityHeader) {
+					headers["Client-Integrity"] = __TTVAB_STATE__.ClientIntegrityHeader;
+				}
+				if (__TTVAB_STATE__.ClientVersion) {
+					headers["Client-Version"] = __TTVAB_STATE__.ClientVersion;
+				}
+				if (__TTVAB_STATE__.ClientSession) {
+					headers["Client-Session-Id"] = __TTVAB_STATE__.ClientSession;
+				}
+
+				_fetchViaWorkerBridge(
+					_GQL_URL,
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify(batch),
+					},
+					5000,
+				)
+					.then(async (response: Response | null) => {
+						if (!response) return;
+						if (response.status !== 200) {
+							_reportAdCompletionFailure(
+								`GQL response status ${response.status}`,
+							);
+							return;
+						}
+						let payload = null;
+						try {
+							payload = JSON.parse(await response.text());
+						} catch {
+							return;
+						}
+						const error = (Array.isArray(payload) ? payload : [payload])
+							.flatMap((entry) =>
+								Array.isArray(entry?.errors) ? entry.errors : [],
+							)
+							.at(0);
+						if (error)
+							_reportAdCompletionFailure(
+								`GQL error ${
+									String(error?.message || error?.extensions?.code || "unknown")
+										.replace(/[^\w .:-]/g, "")
+										.slice(0, 80) || "unknown"
+								}`,
+							);
+					})
+					.catch((error) => {
+						_reportAdCompletionFailure(
+							error?.message ? String(error.message) : "request failed",
+						);
+					});
+
+				reportedAdIds.push(stitchedAdId);
+				newSpoofed++;
+			}
+
+			if (newSpoofed > 0) {
+				const total = lastSpoofedPod
+					? lastSpoofedPod.spoofedAdIds.size
+					: spoofedSet
+						? spoofedSet.size
+						: newSpoofed;
+				const serving = info?.ActiveBackupPlayerType || "native";
+				_log(
+					`[Trace] Sent ad completion for ${newSpoofed} new ad(s) (${total}/${lastSpoofedPod?.length || (hasExplicitPodLength ? podLength : "?")} pod) — roll: ${firstRollType}, serving: ${serving}, pod-complete: ${podCompleteSent ? "yes" : "no"}`,
+					"info",
+				);
+			}
+		} finally {
+			postProgress();
 		}
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

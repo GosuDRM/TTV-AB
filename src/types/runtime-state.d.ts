@@ -9,6 +9,7 @@ type TTVABAdPodSnapshot = {
 type TTVABAdPodProgress = {
 	pod?: TTVABAdPodSnapshot | null;
 	adIds: string[];
+	reportedAdIds?: string[];
 	expectedPodLength: number;
 	maxAdPodPosition: number;
 	observedZeroAdPodPosition: boolean;
