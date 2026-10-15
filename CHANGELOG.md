@@ -2,6 +2,23 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [23.0.0] - 2026-10-15
+
+Fixed
+
+- **Midroll Rewind** - Continue the backup stream from exactly where the live stream left off when a midroll starts, instead of jumping back a few seconds and replaying them with Twitch Low Latency on. Switching to another backup during the break and returning to the live stream afterwards continue the same way.
+- **Midroll Start** - Switch to the backup stream as soon as it is ready when a midroll starts, instead of waiting a few seconds for its next segment or showing a short black screen. Switching to HD during the break and returning to the live stream afterwards no longer wait for the next segment either.
+- **Slow Connections** - Wait twice as long before each repeated reload when the player keeps running out of video, so a slow connection that needs a few seconds per segment is no longer stuck reloading every few seconds. A truly stuck player is still reloaded, and the shorter wait returns after five minutes without such a reload.
+- **Ad Spoofing Toggle** - Stop downloading ad segments for Twitch while Ad Spoofing is off, download them one at a time instead of cancelling the previous one, and stop downloading them for the rest of a midroll once it is identified, so a slow connection keeps more bandwidth for the stream when it starts on an ad.
+- **Ad Completion Reports** - Count a report that Twitch answers with an error as failed instead of sent, and stop a replacement player started during an ad break from reporting the same ads again.
+- **Previews for Twitch Quality** - Follow the player quality set by the Previews for Twitch extension, and ask it to re-apply that quality after the player reloads, so the stream no longer drops to Twitch's saved quality after an ad break.
+
+Added
+
+- **Midroll Start Diagnostics** - Log one line per midroll that starts without ad segments, showing what the stream offered and whether playback waited for a backup, reused the last clean playlist, or showed the silent hold. Also log when the player cancels a request that is waiting for a backup and when a background backup search fails.
+- **Ad Break Type Diagnostics** - Name the ad break type, preroll or midroll, in each ad break summary, and log when the type cannot be recorded because the page is on other media.
+- **Ad Spoofing Diagnostics** - Say in the log that ad completion reports were sent rather than completed, show which stream is playing at the time, and warn once per ad break, instead of once per session, when Twitch's ad markers cannot be reported.
+
 ## [22.0.3] - 2026-10-14
 
 Fixed
