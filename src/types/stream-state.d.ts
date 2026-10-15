@@ -183,12 +183,19 @@ type TTVABLivePlaylistTimeline = {
 	afterHold: boolean;
 	minimumTime: number;
 	lastEndTime: number;
-	prefetchedSegments?: { sourceUrl: string; url: string }[];
+	lastEndSequence?: number | null;
+	prefetchedSegments?: {
+		sourceUrl: string;
+		url: string;
+		sequence?: number | null;
+	}[];
 };
 
 type TTVABPlaylistAlignmentDiagnostic = {
 	changedSource?: boolean;
 	minimumTime?: number;
+	minimumSequence?: number | null;
+	joinsAtServedEnd?: boolean;
 	firstTime?: number;
 	lastEndTime?: number;
 	retainedTime?: number;
