@@ -524,7 +524,9 @@ function _ensureAchievementToastStyles() {
 		"#ttvab-achievement .ach-content{display:flex;flex-direction:column;gap:2px}" +
 		"#ttvab-achievement .ach-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#9146FF;font-weight:600}" +
 		"#ttvab-achievement .ach-name{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#9146FF 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:ttvab-ach-shine 2s linear infinite}" +
-		"#ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}";
+		"#ttvab-achievement .ach-desc{font-size:12px;color:#aaa;margin-top:2px}" +
+		"#ttvab-achievement.leaving{animation:ttvab-ach-pop .5s ease reverse forwards}" +
+		"@media (prefers-reduced-motion:reduce){#ttvab-achievement,#ttvab-achievement .ach-icon,#ttvab-achievement .ach-name{animation:none}#ttvab-achievement.leaving{animation:none;visibility:hidden}}";
 	document.head?.appendChild(style);
 }
 
@@ -571,7 +573,7 @@ function _showAchievementUnlocked(achievementId) {
 		uiFlags.achievementDismissTimer = setTimeout(() => {
 			uiFlags.achievementDismissTimer = null;
 			if (toast.isConnected) {
-				toast.style.animation = "ttvab-ach-pop .5s ease reverse";
+				toast.classList.add("leaving");
 				if (uiFlags.achievementRemoveTimer)
 					clearTimeout(uiFlags.achievementRemoveTimer);
 				uiFlags.achievementRemoveTimer = setTimeout(() => {

@@ -1018,6 +1018,49 @@ function _createPopupToggleController(options) {
 	};
 }
 
+function _createInfoModal(
+	icon: HTMLElement,
+	overlay: HTMLElement,
+	closeButton: HTMLElement,
+	onClose: ((confirmed: boolean) => void) | null = null,
+) {
+	let returnFocusTo: HTMLElement = icon;
+	const setVisible = (visible: boolean, confirmed = false) => {
+		overlay.hidden = !visible;
+		overlay.classList.toggle("visible", visible);
+		icon.setAttribute("aria-expanded", String(visible));
+		if (visible) {
+			closeButton.focus();
+			return;
+		}
+		onClose?.(confirmed);
+		returnFocusTo.focus();
+	};
+	const open = (opener: HTMLElement = icon) => {
+		returnFocusTo = opener;
+		setVisible(true);
+	};
+	icon.addEventListener("click", (event) => {
+		event.stopPropagation();
+		if (overlay.hidden) open();
+		else setVisible(false);
+	});
+	closeButton.addEventListener("click", () => setVisible(false, true));
+	overlay.addEventListener("click", (event) => {
+		if (event.target === overlay) setVisible(false);
+	});
+	overlay.addEventListener("keydown", (event) => {
+		if (event.key !== "Tab") return;
+		event.preventDefault();
+		closeButton.focus();
+	});
+	return {
+		open,
+		close: () => setVisible(false),
+		isOpen: () => !overlay.hidden,
+	};
+}
+
 document.addEventListener("DOMContentLoaded", () => {
 	const isLogExportPage = _isLogExportPage();
 	document.documentElement.classList.toggle("log-export-page", isLogExportPage);
@@ -1116,6 +1159,24 @@ document.addEventListener("DOMContentLoaded", () => {
 	) as HTMLDivElement | null;
 	const adTimerModalClose = document.getElementById(
 		"adTimerModalClose",
+	) as HTMLButtonElement | null;
+	const adSpoofingInfoIcon = document.getElementById(
+		"adSpoofingInfoIcon",
+	) as HTMLButtonElement | null;
+	const adSpoofingTooltip = document.getElementById(
+		"adSpoofingTooltip",
+	) as HTMLDivElement | null;
+	const adSpoofingModalClose = document.getElementById(
+		"adSpoofingModalClose",
+	) as HTMLButtonElement | null;
+	const autoplayBackupInfoIcon = document.getElementById(
+		"autoplayBackupInfoIcon",
+	) as HTMLButtonElement | null;
+	const autoplayBackupTooltip = document.getElementById(
+		"autoplayBackupTooltip",
+	) as HTMLDivElement | null;
+	const autoplayBackupModalClose = document.getElementById(
+		"autoplayBackupModalClose",
 	) as HTMLButtonElement | null;
 	const turboModeToggle = document.getElementById(
 		"turboModeToggle",
@@ -1240,6 +1301,12 @@ document.addEventListener("DOMContentLoaded", () => {
 		adTimerInfoIcon,
 		adTimerTooltip,
 		adTimerModalClose,
+		adSpoofingInfoIcon,
+		adSpoofingTooltip,
+		adSpoofingModalClose,
+		autoplayBackupInfoIcon,
+		autoplayBackupTooltip,
+		autoplayBackupModalClose,
 		turboModeToggle,
 		turboModeDescription,
 		statusCounters,
@@ -1536,11 +1603,17 @@ document.addEventListener("DOMContentLoaded", () => {
 			t.adTimerDesc ??
 				"Shows how long the ad break has been running over the stream.",
 		);
-		const adTimerInfoLabel = String(
-			t.adTimerInfoLabel ?? "About Ad Break Timer",
-		);
-		adTimerInfoIcon.title = adTimerInfoLabel;
-		adTimerInfoIcon.setAttribute("aria-label", adTimerInfoLabel);
+		for (const [infoIcon, label] of [
+			[adTimerInfoIcon, t.adTimerInfoLabel ?? "About Ad Break Timer"],
+			[adSpoofingInfoIcon, t.adSpoofingInfoLabel ?? "About Ad Spoofing"],
+			[
+				autoplayBackupInfoIcon,
+				t.autoplayBackupInfoLabel ?? "About Low Quality Fallback",
+			],
+		] as const) {
+			infoIcon.title = String(label);
+			infoIcon.setAttribute("aria-label", String(label));
+		}
 		achievementsTitle.textContent = `🏆 ${String(t.achievements ?? "Achievements")}`;
 		footerText.textContent = String(t.footerBy ?? " — by ");
 		const repoLabel = String(t.repoLinkLabel ?? "Open TTV AB on GitHub");
@@ -1759,8 +1832,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	window.addEventListener("keydown", (event) => {
 		if (event.key !== "Escape") return;
-		if (!adTimerTooltip.hidden) {
-			setAdTimerModalVisible(false);
+		for (const modal of infoModals) {
+			if (modal.isOpen()) modal.close();
 		}
 		if (!isLogExportPage && !logDialogOverlay.hidden) {
 			hideLogDialog(true);
@@ -2903,131 +2976,51 @@ document.addEventListener("DOMContentLoaded", () => {
 		popupToggleController.write("adTimer", adTimerToggle.checked);
 	});
 
-	function setAdTimerModalVisible(visible) {
-		adTimerTooltip.hidden = !visible;
-		adTimerTooltip.classList.toggle("visible", visible);
-		adTimerInfoIcon.setAttribute("aria-expanded", String(visible));
-		if (visible) adTimerModalClose.focus();
-		else adTimerInfoIcon.focus();
-	}
-
-	adTimerInfoIcon.addEventListener("click", () => {
-		setAdTimerModalVisible(adTimerTooltip.hidden);
-	});
-	adTimerModalClose.addEventListener("click", () => {
-		setAdTimerModalVisible(false);
-	});
-	adTimerTooltip.addEventListener("click", (event) => {
-		if (event.target === adTimerTooltip) setAdTimerModalVisible(false);
-	});
-	adTimerTooltip.addEventListener("keydown", (event) => {
-		if (event.key !== "Tab") return;
-		event.preventDefault();
-		adTimerModalClose.focus();
-	});
-
-	const adSpoofingInfoIcon = document.getElementById("adSpoofingInfoIcon");
-	const adSpoofingTooltip = document.getElementById("adSpoofingTooltip");
-	if (adSpoofingInfoIcon && adSpoofingTooltip) {
-		adSpoofingInfoIcon.addEventListener("click", (e) => {
-			e.stopPropagation();
-			const isVisible = adSpoofingTooltip.classList.contains("visible");
-			if (isVisible) {
-				adSpoofingTooltip.hidden = true;
-				adSpoofingTooltip.classList.remove("visible");
-			} else {
-				adSpoofingTooltip.hidden = false;
-				adSpoofingTooltip.classList.add("visible");
-			}
-		});
-		adSpoofingTooltip.addEventListener("click", (e) => {
-			if (e.target === adSpoofingTooltip) {
-				adSpoofingTooltip.hidden = true;
-				adSpoofingTooltip.classList.remove("visible");
-			}
-		});
-		const modalClose = document.getElementById("adSpoofingModalClose");
-		if (modalClose) {
-			modalClose.addEventListener("click", () => {
-				adSpoofingTooltip.hidden = true;
-				adSpoofingTooltip.classList.remove("visible");
-			});
-		}
-	}
+	const adTimerModal = _createInfoModal(
+		adTimerInfoIcon,
+		adTimerTooltip,
+		adTimerModalClose,
+	);
+	const adSpoofingModal = _createInfoModal(
+		adSpoofingInfoIcon,
+		adSpoofingTooltip,
+		adSpoofingModalClose,
+	);
 
 	adSpoofingToggle.addEventListener("change", () => {
 		popupToggleController.write("adSpoofing", adSpoofingToggle.checked);
 	});
 
-	let bypassAutoplayBackupWarning = false;
 	let isAutoplayBackupWarningContext = false;
-
-	const autoplayBackupInfoIcon = document.getElementById(
-		"autoplayBackupInfoIcon",
+	const autoplayBackupModal = _createInfoModal(
+		autoplayBackupInfoIcon,
+		autoplayBackupTooltip,
+		autoplayBackupModalClose,
+		(confirmed) => {
+			const disableConfirmed =
+				confirmed &&
+				isAutoplayBackupWarningContext &&
+				autoplayBackupToggle.checked;
+			isAutoplayBackupWarningContext = false;
+			if (!disableConfirmed) return;
+			autoplayBackupToggle.checked = false;
+			popupToggleController.write("autoplayBackup", false);
+		},
 	);
-	const autoplayBackupTooltip = document.getElementById(
-		"autoplayBackupTooltip",
-	);
-	if (autoplayBackupInfoIcon && autoplayBackupTooltip) {
-		autoplayBackupInfoIcon.addEventListener("click", (e) => {
-			e.stopPropagation();
-			const isVisible = autoplayBackupTooltip.classList.contains("visible");
-			if (isVisible) {
-				autoplayBackupTooltip.hidden = true;
-				autoplayBackupTooltip.classList.remove("visible");
-			} else {
-				isAutoplayBackupWarningContext = false;
-				autoplayBackupTooltip.hidden = false;
-				autoplayBackupTooltip.classList.add("visible");
-			}
-		});
-		autoplayBackupTooltip.addEventListener("click", (e) => {
-			if (e.target === autoplayBackupTooltip) {
-				autoplayBackupTooltip.hidden = true;
-				autoplayBackupTooltip.classList.remove("visible");
-			}
-		});
-	}
+	const infoModals = [adTimerModal, adSpoofingModal, autoplayBackupModal];
+	autoplayBackupInfoIcon.addEventListener("click", () => {
+		isAutoplayBackupWarningContext = false;
+	});
 
-	if (autoplayBackupToggle) {
-		autoplayBackupToggle.addEventListener("change", () => {
-			const disabling = !autoplayBackupToggle.checked;
-			if (disabling && !bypassAutoplayBackupWarning) {
-				autoplayBackupToggle.checked = true;
-				if (autoplayBackupTooltip) {
-					isAutoplayBackupWarningContext = true;
-					autoplayBackupTooltip.hidden = false;
-					autoplayBackupTooltip.classList.add("visible");
-				} else {
-					console.error(
-						"[TTV AB] Autoplay backup tooltip modal element not found in DOM",
-					);
-				}
-				return;
-			}
-			bypassAutoplayBackupWarning = false;
-			popupToggleController.write(
-				"autoplayBackup",
-				autoplayBackupToggle.checked,
-			);
-		});
-
-		const autoplayBackupModalClose = document.getElementById(
-			"autoplayBackupModalClose",
-		);
-		if (autoplayBackupModalClose && autoplayBackupTooltip) {
-			autoplayBackupModalClose.addEventListener("click", () => {
-				autoplayBackupTooltip.hidden = true;
-				autoplayBackupTooltip.classList.remove("visible");
-				if (isAutoplayBackupWarningContext && autoplayBackupToggle.checked) {
-					bypassAutoplayBackupWarning = true;
-					autoplayBackupToggle.checked = false;
-					autoplayBackupToggle.dispatchEvent(new Event("change"));
-				}
-				isAutoplayBackupWarningContext = false;
-			});
+	autoplayBackupToggle.addEventListener("change", () => {
+		if (!autoplayBackupToggle.checked) {
+			autoplayBackupToggle.checked = true;
+			isAutoplayBackupWarningContext = true;
+			autoplayBackupModal.open(autoplayBackupToggle);
+			return;
 		}
-	}
+		popupToggleController.write("autoplayBackup", true);
+	});
 
 	function parseTransitionTimeToMs(value) {
 		const trimmedValue = String(value || "").trim();
@@ -3197,6 +3190,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			: "color 0.3s ease";
 		if (toggleType === "adblock") {
 			statusDot.classList.toggle("disabled", !enabled);
+			statusText.classList.toggle("disabled", !enabled);
 			statusText.textContent = String(enabled ? t.active : t.inactive);
 		}
 		if (!showTransientMessage) {
