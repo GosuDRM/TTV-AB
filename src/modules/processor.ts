@@ -9904,6 +9904,35 @@ async function _searchBackupStream(
 				...passPlayerTypes.filter((pt) => pt !== "autoplay"),
 				...passPlayerTypes.filter((pt) => pt === "autoplay"),
 			];
+		} else if (
+			__TTVAB_STATE__?.DisableAutoplayBackup === true &&
+			__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup !== true &&
+			info.MediaType === "live" &&
+			cycleStartedAt > 0 &&
+			(__TTVAB_STATE__.BackupPlayerTypes || []).includes("autoplay")
+		) {
+			const rollContext = info.AdRollContext;
+			const logKey = `lqf-off-unidentified:${cycleStartedAt}`;
+			if (!(info._LoggedWhitelistByType instanceof Set))
+				info._LoggedWhitelistByType = new Set();
+			if (!info._LoggedWhitelistByType.has(logKey)) {
+				info._LoggedWhitelistByType.add(logKey);
+				_log(
+					`[Trace] Low Quality Fallback is off and this ad break is not identified as a preroll or midroll (${
+						!rollContext?.rollType
+							? "no roll type recorded"
+							: rollContext.mediaKey !== _normalizeMediaKey(info.MediaKey) ||
+									rollContext.mediaKey !==
+										_normalizeMediaKey(__TTVAB_STATE__.PageMediaKey)
+								? "the page is on other media"
+								: rollContext.pageGeneration !==
+										(Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0)
+									? "the page reloaded since it was identified"
+									: "the break changed since it was identified"
+					}); the 360p fallback is unavailable`,
+					"warning",
+				);
+			}
 		}
 		const isDoingMinimalRequests =
 			startIdx > 0 &&
