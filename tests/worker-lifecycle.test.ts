@@ -8128,6 +8128,20 @@ describe("VOD request ownership and cancellation", () => {
 			1,
 		);
 	});
+
+	it("credits a blocked VOD ad request to the resolved VOD owner", () => {
+		const savedOwnerLookup = g._getVodOwnerChannel;
+		g._getVodOwnerChannel = (mediaKey: string) =>
+			mediaKey === "vod:2827992810" ? "vodowner" : null;
+		try {
+			T<(request: Record<string, unknown>) => void>(
+				"_recordBlockedVodAdRequest",
+			)({ mediaKey: "vod:2827992810", sessionID: "owner-session" });
+			expect(increment).toHaveBeenLastCalledWith("vodowner", "vod:2827992810");
+		} finally {
+			g._getVodOwnerChannel = savedOwnerLookup;
+		}
+	});
 });
 
 describe("MAIN GQL response classification", () => {

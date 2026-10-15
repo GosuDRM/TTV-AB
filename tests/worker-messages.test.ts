@@ -140,7 +140,7 @@ describe("worker event boundary", () => {
 	it.each([
 		{ key: "Pong" },
 		{ key: "AdBlocked" },
-		{ key: "AdSecondsBlocked", seconds: 22 },
+		{ key: "AdSecondsBlocked" },
 		{ key: "AdDetected", channel: "buildtest" },
 		{ key: "AdEnded", mediaKey: "live:buildtest" },
 		{ key: "ReloadPlayer", mediaKey: "live:buildtest" },
@@ -206,7 +206,6 @@ describe("worker event boundary", () => {
 		{ key: "AdBlocked", count: "3" },
 		{ key: "AdBlocked", delta: Infinity },
 		{ key: "AdSecondsBlocked", measurements: {} },
-		{ key: "AdSecondsBlocked", seconds: "22" },
 		{ key: "AdPodProgress", adIds: ["ad-1", {}] },
 		{ key: "AdPodProgress", reportedAdIds: ["ad-1", 2] },
 		{ key: "AdPodProgress", reportedAdIds: "ad-1" },

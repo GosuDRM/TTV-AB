@@ -155,7 +155,7 @@ describe("playback defaults migration", () => {
 	});
 
 	it.each(["install", "update"])(
-		"applies %s defaults together while preserving other settings and history",
+		"applies defaults together on %s before the current defaults were recorded, preserving other settings and history",
 		async (reason) => {
 			const unrelated = {
 				ttvAdblockEnabled: false,
@@ -172,14 +172,14 @@ describe("playback defaults migration", () => {
 							ttvAutoplayBackupEnabled: false,
 							ttvAdTimerEnabled: true,
 							ttvPlaybackDefaultsV1Applied: true,
-							ttvPlaybackDefaultsV2Applied: true,
 						}
 					: {}),
 			};
 			const write = vi.spyOn(api().storage.local, "set");
 			expect(runtimeInstalledListener).toBeTypeOf("function");
 			runtimeInstalledListener?.({ reason });
-			await g.playbackDefaultsMigration;
+			await ((g.playbackDefaultsMigration as Promise<void> | null) ??
+				migrate());
 			expect(write).toHaveBeenCalledTimes(1);
 			expect(write).toHaveBeenCalledWith(
 				{
@@ -199,27 +199,41 @@ describe("playback defaults migration", () => {
 		},
 	);
 
-	it("preserves later user choices across restarts and resets both defaults on every update", async () => {
+	it("preserves later user choices across restarts and extension updates", async () => {
 		await migrate();
 		const write = vi.spyOn(api().storage.local, "set");
+		storageData.ttvAutoplayBackupEnabled = false;
+		storageData.ttvAdTimerEnabled = true;
 		for (let updates = 0; updates < 2; updates++) {
-			storageData.ttvAutoplayBackupEnabled = false;
-			storageData.ttvAdTimerEnabled = true;
 			await migrate();
-			expect(write).toHaveBeenCalledTimes(updates);
 			runtimeInstalledListener?.({ reason: "update" });
 			await g.playbackDefaultsMigration;
-			expect(write).toHaveBeenCalledTimes(updates + 1);
-			expect(storageData).toEqual({
-				ttvAutoplayBackupEnabled: true,
-				ttvAdTimerEnabled: false,
-				ttvPlaybackDefaultsV2Applied: true,
-			});
 		}
+		expect(write).not.toHaveBeenCalled();
+		expect(storageData).toEqual({
+			ttvAutoplayBackupEnabled: false,
+			ttvAdTimerEnabled: true,
+			ttvPlaybackDefaultsV2Applied: true,
+		});
+	});
+
+	it("applies both defaults again on a fresh install", async () => {
+		storageData = {
+			ttvAutoplayBackupEnabled: false,
+			ttvAdTimerEnabled: true,
+			ttvPlaybackDefaultsV2Applied: true,
+		};
+		runtimeInstalledListener?.({ reason: "install" });
+		await g.playbackDefaultsMigration;
+		expect(storageData).toEqual({
+			ttvAutoplayBackupEnabled: true,
+			ttvAdTimerEnabled: false,
+			ttvPlaybackDefaultsV2Applied: true,
+		});
 	});
 
 	it.each([false, true])(
-		"coalesces startup and update into one defaults write with prior migration %s",
+		"coalesces startup and install into one defaults write with prior migration %s",
 		async (alreadyMigrated) => {
 			let finish: (data: Record<string, unknown>) => void = () => {};
 			const read = vi
@@ -229,7 +243,7 @@ describe("playback defaults migration", () => {
 				});
 			const write = vi.spyOn(api().storage.local, "set");
 			const first = migrate();
-			runtimeInstalledListener?.({ reason: "update" });
+			runtimeInstalledListener?.({ reason: "install" });
 			expect(migrate()).toBe(first);
 			expect(read).toHaveBeenCalledTimes(1);
 			finish({ ttvPlaybackDefaultsV2Applied: alreadyMigrated });
@@ -244,15 +258,17 @@ describe("playback defaults migration", () => {
 		},
 	);
 
-	it.each(["chrome_update", "browser_update", "shared_module_update"])(
-		"does not reset preferences for %s events",
-		async (reason) => {
-			const read = vi.spyOn(api().storage.local, "get");
-			runtimeInstalledListener?.({ reason });
-			expect(read).not.toHaveBeenCalled();
-			expect(storageData).toEqual({});
-		},
-	);
+	it.each([
+		"update",
+		"chrome_update",
+		"browser_update",
+		"shared_module_update",
+	])("does not reset preferences for %s events", async (reason) => {
+		const read = vi.spyOn(api().storage.local, "get");
+		runtimeInstalledListener?.({ reason });
+		expect(read).not.toHaveBeenCalled();
+		expect(storageData).toEqual({});
+	});
 
 	it.each(["get", "set"] as const)(
 		"reports a failed storage %s and retries without falsely recording completion",
@@ -739,8 +755,10 @@ describe("channel stats schema and watch-time persistence", () => {
 		const result = normalize({ somestreamer: 7 });
 		expect(result.somestreamer).toEqual({
 			ads: 7,
+			measuredAds: 0,
 			firstSeen: 0,
 			lastSeen: 0,
+			lastActive: 0,
 			watchSeconds: 0,
 			adMilliseconds: 0,
 		});
@@ -762,7 +780,7 @@ describe("channel stats schema and watch-time persistence", () => {
 		expect(entry.lastSeen).toBeGreaterThanOrEqual(entry.firstSeen);
 	});
 
-	it("persists watch-only deltas without touching the ads total or daily series", async () => {
+	it("persists watch-only deltas into watch history without touching the ads total", async () => {
 		setStorage({ ttvAdsBlocked: 10 });
 		const response = await persist()({
 			flushId: "flush:test:watch-0001",
@@ -775,7 +793,14 @@ describe("channel stats schema and watch-time persistence", () => {
 		expect(stats.channels.somestreamer.watchSeconds).toBe(120);
 		expect(stats.channels.somestreamer.ads).toBe(0);
 		expect(stats.channels.somestreamer.firstSeen).toBe(0);
-		expect(Object.keys(stats.daily).length).toBe(0);
+		expect(stats.daily).toEqual({
+			[(g.getDateKey as () => string)()]: {
+				ads: 0,
+				measuredAds: 0,
+				adMilliseconds: 0,
+				watchSeconds: 120,
+			},
+		});
 	});
 
 	it("accumulates watch time on top of an existing migrated count", async () => {
@@ -1158,7 +1183,7 @@ describe("measured ad duration persistence", () => {
 		);
 	});
 
-	it("migrates legacy seconds and caps a legacy flush at the existing ceiling", async () => {
+	it("migrates stored legacy seconds and ignores retired flush seconds", async () => {
 		storageData = {
 			ttvStats: {
 				adSecondsSaved: 12,
@@ -1171,8 +1196,9 @@ describe("measured ad duration persistence", () => {
 			channelDeltas: { somestreamer: 1 },
 			adSecondsDelta: 999999,
 		});
-		expect(stats().adMillisecondsSaved).toBe(14412000);
+		expect(stats().adMillisecondsSaved).toBe(12000);
 		expect(stats().channels.somestreamer.adMilliseconds).toBe(3000);
+		expect(stats().channels.somestreamer.ads).toBe(1);
 	});
 
 	it("uses only measured duration for time-based achievements", () => {
@@ -1202,18 +1228,16 @@ describe("measured ad duration persistence", () => {
 		).toEqual(["time_1h"]);
 	});
 
-	it("keeps legacy seconds-only flushes compatible without touching the ads total", async () => {
+	it("ignores retired seconds-only flushes without writing statistics", async () => {
 		storageData = { ttvAdsBlocked: 7 };
-		await persist()({
+		const response = await persist()({
 			flushId: "flush:test:legacy-0002",
 			adsDelta: 0,
 			adSecondsDelta: 30,
 			channelAdSecondsDeltas: { somestreamer: 30 },
 		});
-		expect(storageData.ttvAdsBlocked).toBe(7);
-		expect(stats().adMillisecondsSaved).toBe(30000);
-		expect(stats().channels.somestreamer.adMilliseconds).toBe(30000);
-		expect(stats().channels.somestreamer.ads).toBe(0);
+		expect(response).toEqual({ ok: true, counts: null, newUnlocks: [] });
+		expect(storageData).toEqual({ ttvAdsBlocked: 7 });
 	});
 
 	it("does not add a legacy aggregate when a measurement record is present", async () => {
@@ -1399,5 +1423,254 @@ describe("diagnostic checkpoints outside Twitch tabs", () => {
 		expect(await retain()).toEqual({ ok: false });
 		const result = await send("ttvab-persist-counters", { adsDelta: 1 });
 		expect(result.ok).toBe(true);
+	});
+});
+
+describe("statistics history, eviction, and reset", () => {
+	const DAY_MS = 24 * 60 * 60 * 1000;
+	const persist = (detail: Record<string, unknown>, tabId: number | null = 7) =>
+		(
+			g.persistCounterDelta as (
+				detail: unknown,
+				sourceTabId: number | null,
+			) => Promise<Record<string, unknown>>
+		)(detail, tabId);
+	const dateKey = (timestamp: number) =>
+		(g.getDateKey as (date: Date) => string)(new Date(timestamp));
+	const stats = () =>
+		storageData.ttvStats as {
+			daily: Record<string, Record<string, number>>;
+			channels: Record<string, Record<string, number>>;
+			measuredAds: number;
+			adMillisecondsSaved: number;
+		};
+	const popupSender = {
+		id: "ttvab-test",
+		url: "moz-extension://ttvab-test/src/popup/popup.html",
+	};
+	function send(message: unknown, source: Record<string, unknown>) {
+		return new Promise<unknown>((resolveResponse) => {
+			if (!runtimeMessageListener) throw new Error("Missing runtime listener");
+			const handled = runtimeMessageListener(message, source, resolveResponse);
+			if (handled !== true) resolveResponse(undefined);
+		});
+	}
+
+	beforeEach(() => {
+		(g.chrome as Record<string, Record<string, unknown>>).runtime.getURL = (
+			path: string,
+		) => `moz-extension://ttvab-test/${path}`;
+	});
+
+	it("keeps a new channel and the top five by ads when evicting past 100 channels", async () => {
+		const now = Date.now();
+		const channels: Record<string, unknown> = {};
+		for (let i = 0; i < 100; i++) {
+			const lastSeen = now - (400 - i) * DAY_MS;
+			channels[`oldchannel${i}`] = {
+				ads: i < 5 ? 500 + i : 1,
+				firstSeen: lastSeen,
+				lastSeen,
+				watchSeconds: 60,
+				adMilliseconds: 0,
+			};
+		}
+		storageData = {
+			ttvAdsBlocked: 3000,
+			ttvStats: { daily: {}, channels, achievements: [] },
+		};
+
+		await persist({
+			flushId: "flush:test:evict-0001",
+			createdAt: now,
+			adsDelta: 1,
+			channelDeltas: { brandnewchannel: 1 },
+		});
+
+		const kept = stats().channels;
+		expect(Object.keys(kept)).toHaveLength(100);
+		expect(kept).toHaveProperty("brandnewchannel");
+		for (let i = 0; i < 5; i++) expect(kept).toHaveProperty(`oldchannel${i}`);
+		expect(kept).not.toHaveProperty("oldchannel5");
+		expect(kept).toHaveProperty("oldchannel6");
+	});
+
+	it("counts each newly measured ad once per channel, in total, and per day", async () => {
+		const measurement = (id: string) => ({
+			id,
+			durationMilliseconds: 30000,
+			startDateMilliseconds: 1000,
+			mediaKey: "live:somestreamer",
+			channel: "somestreamer",
+		});
+		await persist({
+			flushId: "flush:test:measured-0001",
+			createdAt: Date.now(),
+			adMeasurements: [
+				measurement("stitched-ad-a"),
+				measurement("stitched-ad-b"),
+			],
+		});
+		await persist({
+			flushId: "flush:test:measured-0002",
+			createdAt: Date.now(),
+			adMeasurements: [
+				measurement("stitched-ad-b"),
+				measurement("stitched-ad-c"),
+			],
+		});
+
+		expect(stats().measuredAds).toBe(3);
+		expect(stats().adMillisecondsSaved).toBe(90000);
+		expect(stats().channels.somestreamer).toMatchObject({
+			ads: 0,
+			measuredAds: 3,
+			adMilliseconds: 90000,
+		});
+		expect(stats().daily[dateKey(Date.now())]).toEqual({
+			ads: 0,
+			measuredAds: 3,
+			adMilliseconds: 90000,
+			watchSeconds: 0,
+		});
+	});
+
+	it("credits a VOD measurement to the channel it carries", async () => {
+		await persist({
+			flushId: "flush:test:measured-vod1",
+			createdAt: Date.now(),
+			adMeasurements: [
+				{
+					id: "stitched-ad-vod",
+					durationMilliseconds: 15000,
+					mediaKey: "vod:123456",
+					channel: "vodowner",
+				},
+			],
+		});
+		expect(stats().channels.vodowner).toMatchObject({
+			measuredAds: 1,
+			adMilliseconds: 15000,
+		});
+	});
+
+	it("records a flush on the day it was created", async () => {
+		const createdAt = Date.now() - 2 * DAY_MS;
+		await persist({
+			flushId: "flush:test:replay-0001",
+			createdAt,
+			adsDelta: 2,
+			channelDeltas: { somestreamer: 2 },
+		});
+		expect(stats().daily[dateKey(createdAt)].ads).toBe(2);
+		expect(stats().daily).not.toHaveProperty(dateKey(Date.now()));
+	});
+
+	it("keeps daily history a timezone change moved ahead of today", () => {
+		const normalize = g.normalizeDailyStatsMap as (
+			value: unknown,
+		) => Record<string, unknown>;
+		const tomorrow = dateKey(Date.now() + DAY_MS);
+		const farFuture = dateKey(Date.now() + 5 * DAY_MS);
+		expect(
+			Object.keys(
+				normalize({ [tomorrow]: { ads: 1 }, [farFuture]: { ads: 1 } }),
+			),
+		).toEqual([tomorrow]);
+	});
+
+	it("writes only the storage keys a watch-only flush changes", async () => {
+		storageData = { ttvAdsBlocked: 5 };
+		const writes: Array<Record<string, unknown>> = [];
+		const storageLocal = (
+			g.chrome as { storage: { local: Record<string, unknown> } }
+		).storage.local;
+		const originalSet = storageLocal.set as (
+			value: Record<string, unknown>,
+			callback: () => void,
+		) => void;
+		storageLocal.set = (
+			value: Record<string, unknown>,
+			callback: () => void,
+		) => {
+			writes.push(value);
+			originalSet(value, callback);
+		};
+		try {
+			await persist({
+				flushId: "flush:test:watch-keys1",
+				createdAt: Date.now(),
+				watchDeltas: { somestreamer: 30 },
+			});
+		} finally {
+			storageLocal.set = originalSet;
+		}
+		expect(writes.map((value) => Object.keys(value).sort())).toEqual([
+			["ttvStats", "ttvUnconfirmedCounterFlushes"],
+		]);
+	});
+
+	it("resets statistics only for the popup and drops work created before the reset", async () => {
+		const now = Date.now();
+		storageData = {
+			ttvAdsBlocked: 42,
+			ttvTurboMode: false,
+			ttvStats: {
+				channels: { somestreamer: { ads: 42, watchSeconds: 600 } },
+				daily: { [dateKey(now)]: { ads: 3 } },
+				achievements: ["first_block"],
+				adMillisecondsSaved: 90000,
+				measuredAds: 3,
+			},
+		};
+
+		expect(
+			await send(
+				{ type: "ttvab-reset-statistics" },
+				{
+					id: "ttvab-test",
+					url: "https://www.twitch.tv/somestreamer",
+					tab: { id: 1 },
+				},
+			),
+		).toBeUndefined();
+		expect(storageData.ttvAdsBlocked).toBe(42);
+
+		expect(await send({ type: "ttvab-reset-statistics" }, popupSender)).toEqual(
+			{
+				ok: true,
+			},
+		);
+		const resetAt = storageData.ttvStatsResetAt as number;
+		expect(resetAt).toBeGreaterThanOrEqual(now);
+		expect(storageData.ttvAdsBlocked).toBe(0);
+		expect(stats()).toEqual({
+			daily: {},
+			channels: {},
+			achievements: [],
+			adMillisecondsSaved: 0,
+			measuredAds: 0,
+		});
+
+		await persist({
+			flushId: "flush:test:pre-reset01",
+			createdAt: resetAt - 1,
+			adsDelta: 1,
+			channelDeltas: { somestreamer: 1 },
+		});
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(resetAt + 10000);
+		await persist({
+			flushId: "flush:test:straddle01",
+			createdAt: resetAt + 1,
+			watchDeltas: { somestreamer: 20 },
+			watchIntervals: { somestreamer: [[resetAt - 15000, resetAt + 5000]] },
+		});
+		vi.useRealTimers();
+		expect(storageData.ttvAdsBlocked).toBe(0);
+		expect(stats().channels.somestreamer).toMatchObject({
+			ads: 0,
+			watchSeconds: 5,
+		});
 	});
 });

@@ -52,7 +52,7 @@ function loadToggleController() {
 	if (start < 0 || end <= start) throw new Error("toggle controller not found");
 	new Function(
 		"globalThis",
-		`${javascript.slice(start, end)}\nglobalThis._createPopupToggleController = _createPopupToggleController;`,
+		`${javascript.slice(start, end)}\nglobalThis._createPopupToggleController = _createPopupToggleController;\nglobalThis._createInfoModal = _createInfoModal;`,
 	)(globalThis);
 }
 
@@ -78,6 +78,9 @@ function loadPopupExplanations() {
 		{
 			adSpoofingDesc: string;
 			adSpoofingFootnote: string;
+			adSpoofingInfoLabel: string;
+			autoplayBackupInfoLabel: string;
+			adTimerInfoLabel: string;
 			adTimerDesc: string;
 			adTimerDetails: string;
 			adTimerFootnote: string;
@@ -730,6 +733,150 @@ describe("popup toggle authority", () => {
 	});
 });
 
+describe("popup info dialogs", () => {
+	function makeModal(onClose: ((confirmed: boolean) => void) | null = null) {
+		document.body.innerHTML = `
+			<button id="opener">toggle</button>
+			<button id="icon" aria-expanded="false">i</button>
+			<div id="overlay" hidden><div id="box"><button id="close">Got it</button></div></div>`;
+		const byId = (id: string) => document.getElementById(id) as HTMLElement;
+		const create = g._createInfoModal as (
+			icon: HTMLElement,
+			overlay: HTMLElement,
+			close: HTMLElement,
+			onClose?: ((confirmed: boolean) => void) | null,
+		) => {
+			open: (opener?: HTMLElement) => void;
+			close: () => void;
+			isOpen: () => boolean;
+		};
+		const modal = create(byId("icon"), byId("overlay"), byId("close"), onClose);
+		return { modal, byId };
+	}
+
+	it("opens from the info button, keeps focus on the dialog, and returns it", () => {
+		const closes: boolean[] = [];
+		const { modal, byId } = makeModal((confirmed) => closes.push(confirmed));
+		byId("icon").click();
+		expect(modal.isOpen()).toBe(true);
+		expect(byId("overlay").classList.contains("visible")).toBe(true);
+		expect(byId("icon").getAttribute("aria-expanded")).toBe("true");
+		expect(document.activeElement).toBe(byId("close"));
+		const tab = new KeyboardEvent("keydown", {
+			key: "Tab",
+			bubbles: true,
+			cancelable: true,
+		});
+		byId("close").dispatchEvent(tab);
+		expect(tab.defaultPrevented).toBe(true);
+		expect(document.activeElement).toBe(byId("close"));
+		byId("close").click();
+		expect(modal.isOpen()).toBe(false);
+		expect(byId("icon").getAttribute("aria-expanded")).toBe("false");
+		expect(document.activeElement).toBe(byId("icon"));
+		expect(closes).toEqual([true]);
+	});
+
+	it("cancels on an outside click or close() and returns focus to the opener", () => {
+		const closes: boolean[] = [];
+		const { modal, byId } = makeModal((confirmed) => closes.push(confirmed));
+		modal.open(byId("opener"));
+		byId("box").click();
+		expect(modal.isOpen()).toBe(true);
+		byId("overlay").click();
+		expect(modal.isOpen()).toBe(false);
+		expect(document.activeElement).toBe(byId("opener"));
+		modal.open(byId("opener"));
+		modal.close();
+		expect(document.activeElement).toBe(byId("opener"));
+		byId("icon").click();
+		modal.close();
+		expect(document.activeElement).toBe(byId("icon"));
+		expect(closes).toEqual([false, false, false]);
+	});
+
+	it("marks every info button and dialog for assistive technology and localizes its label", () => {
+		const { html, translations } = loadPopupExplanations();
+		for (const [name, labelKey] of [
+			["adSpoofing", "adSpoofingInfoLabel"],
+			["autoplayBackup", "autoplayBackupInfoLabel"],
+			["adTimer", "adTimerInfoLabel"],
+		] as const) {
+			expect(html).toMatch(
+				new RegExp(
+					`<button type="button" class="info-icon" id="${name}InfoIcon" aria-label="[^"]+"\\s+aria-haspopup="dialog" aria-controls="${name}Tooltip" aria-expanded="false">i</button>`,
+				),
+			);
+			expect(html).toContain(
+				`<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="${name}ModalTitle">`,
+			);
+			expect(html).toContain(`<strong id="${name}ModalTitle"`);
+			for (const translation of Object.values(translations))
+				expect(translation[labelKey].trim()).not.toBe("");
+		}
+		expect(html).not.toMatch(/<span class="info-icon"/);
+	});
+
+	it("stops every popup animation when reduced motion is requested", () => {
+		const { html } = loadPopupExplanations();
+		const css = (html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? "").replace(
+			/\/\*[\s\S]*?\*\//g,
+			"",
+		);
+		const normalize = (selector: string) =>
+			selector.replace(/\s+/g, " ").trim();
+		const reduced = new Set<string>();
+		const animated = new Set<string>();
+		let depth = 0;
+		let inReduced = false;
+		for (const match of css.matchAll(/([^{}]*)\{([^{}]*)\}|([^{}]*)\{|\}/g)) {
+			if (match[3] !== undefined) {
+				depth++;
+				if (match[3].includes("prefers-reduced-motion: reduce"))
+					inReduced = true;
+				continue;
+			}
+			if (match[0] === "}") {
+				depth--;
+				if (depth === 0) inReduced = false;
+				continue;
+			}
+			const selectors = match[1].split(",").map(normalize);
+			const body = match[2];
+			if (selectors[0].startsWith("@") || /^(from|to|\d+%)/.test(selectors[0]))
+				continue;
+			if (inReduced && /animation:\s*none/.test(body))
+				for (const selector of selectors) reduced.add(selector);
+			else if (!inReduced && /animation:\s*(?!none)[\w-]/.test(body))
+				for (const selector of selectors) animated.add(selector);
+		}
+		expect(animated.size).toBeGreaterThan(15);
+		expect([...animated].filter((selector) => !reduced.has(selector))).toEqual(
+			[],
+		);
+	});
+
+	it("lets every dialog scroll and shows a focus ring on its close button and the language selector", () => {
+		const { html } = loadPopupExplanations();
+		const rule = (selector: string) =>
+			html.match(
+				new RegExp(
+					`\\n {8}${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`,
+				),
+			)?.[1] ?? "";
+		expect(rule(".modal-box")).toContain("max-height: calc(100vh - 32px);");
+		expect(rule(".modal-box")).toContain("overflow-y: auto;");
+		expect(html).not.toContain(":where(#adTimerTooltip) .modal-box");
+		for (const selector of [
+			".modal-close:focus-visible",
+			".lang-selector:focus-visible",
+		])
+			expect(rule(selector)).toContain(
+				"outline: 2px solid rgba(145, 70, 255, 0.85);",
+			);
+	});
+});
+
 describe("popup setting explanations", () => {
 	it("describes the optional timer as off by default without an elapsed label", () => {
 		const { html, translations } = loadPopupExplanations();
@@ -764,13 +911,17 @@ describe("popup setting explanations", () => {
 			"impression, progress, and completion events",
 		);
 		expect(english.adSpoofingDesc).toContain("without playing the ad");
-		expect(english.adSpoofingFootnote).toContain("extra requests to Twitch");
+		expect(english.adSpoofingDesc).toContain(
+			"outside midrolls requests the ad's segments in the background",
+		);
 		expect(english.adSpoofingFootnote).toContain(
 			"does not block ads by itself",
 		);
 		expect(english.adSpoofingFootnote).toContain(
-			"ad blocking keeps working normally",
+			"Turning it off stops only these requests",
 		);
+		expect(english.adSpoofingFootnote).not.toMatch(/signals stop/);
+		expect(english.adSpoofingFootnote).toContain("ad blocking keeps working");
 		expect(html).toContain(
 			`data-i18n="adSpoofingDesc">${english.adSpoofingDesc}</p>`,
 		);
@@ -784,28 +935,29 @@ describe("popup setting explanations", () => {
 		const { html, translations } = loadPopupExplanations();
 		const english = translations.en;
 
-		expect(english.autoplayBackupDesc).toContain("Enabled by default.");
-		expect(english.autoplayBackupDesc).toContain(
-			"fast, ad-free autoplay stream",
-		);
+		expect(english.autoplayBackupDesc).toContain("On by default.");
 		expect(english.autoplayBackupDesc).toContain("usually at 360p");
 		expect(english.autoplayBackupDesc).toContain(
-			"then check for a verified higher-quality backup",
+			"switches to a verified higher-quality backup without restarting the player",
 		);
 		expect(english.autoplayBackupDesc).toContain(
-			"without reloading the player",
+			"If the break ends at 360p, the player restarts once",
 		);
+		expect(english.autoplayBackupDesc).not.toMatch(/autoplay/i);
 		expect(english.autoplayBackupWarning).toContain(
 			"normal-quality sources are tried first",
 		);
 		expect(english.autoplayBackupWarning).toContain(
-			"If none is clean during a preroll or midroll",
+			"If none is ad-free during a preroll or midroll",
 		);
 		expect(english.autoplayBackupWarning).toContain(
-			"temporary clean low-quality stream",
+			"low-quality stream can still play temporarily",
 		);
 		expect(english.autoplayBackupWarning).toContain(
 			"while higher quality is checked",
+		);
+		expect(english.autoplayBackupWarning).toContain(
+			"Ad breaks can take a few seconds longer to show video.",
 		);
 		expect(english.autoplayBackupWarning).not.toMatch(/preview/i);
 		expect(html).toContain(
