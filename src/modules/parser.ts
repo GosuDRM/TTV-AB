@@ -470,6 +470,35 @@ function _playlistHasKnownAdSegments(
 	return _playlistLinesHaveKnownAdSegments(text.split("\n"), options);
 }
 
+function _describeAdMarkedPlaylist(text, includeCached = false) {
+	const lines = typeof text === "string" ? text.split(/\r?\n/) : [];
+	let live = 0;
+	let other = 0;
+	let prefetch = 0;
+	let knownAd = 0;
+	const classes = new Set();
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index];
+		if (line.startsWith("#EXTINF:")) {
+			if (line.includes(",live")) live++;
+			else other++;
+			if (
+				_isKnownAdSegmentUrl(lines[_getMediaSegmentUriIndex(lines, index)], {
+					includeCached,
+				})
+			)
+				knownAd++;
+		} else if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
+			prefetch++;
+			if (_isKnownAdSegmentUrl(line.slice(23), { includeCached })) knownAd++;
+		} else if (line.startsWith("#EXT-X-DATERANGE:") && classes.size < 4) {
+			const name = _parseAttrs(line).CLASS;
+			if (/^[a-z0-9-]{1,40}$/i.test(name || "")) classes.add(name);
+		}
+	}
+	return `live ${live}, other ${other}, prefetch ${prefetch}, known ad ${knownAd}, classes ${[...classes].join("/") || "none"}`;
+}
+
 function _absolutizePlaylistUrl(
 	rawUrl,
 	baseUrl = null,
