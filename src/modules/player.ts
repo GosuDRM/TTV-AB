@@ -630,6 +630,60 @@ function _readConfiguredQualityGroup() {
 }
 
 let _lastQualityGroupSyncAt = 0;
+let _PreviewsQualityMessage: {
+	selected: string;
+	fallback: string | null;
+} | null = null;
+let _previewsQualityHooked = false;
+
+function _normalizePreviewsQuality(value) {
+	const quality = typeof value === "string" ? value.trim() : "";
+	return /^(?:chunked|lowest|\d{3,4}p(?:\d{2,3})?)$/i.test(quality)
+		? quality
+		: null;
+}
+
+function _getPreviewsQualityGroup() {
+	const selected = _PreviewsQualityMessage?.selected || null;
+	return selected?.toLowerCase() === "lowest" ? "160p" : selected;
+}
+
+function _hookPreviewsQualityChoice() {
+	if (_previewsQualityHooked || typeof window === "undefined") return;
+	_previewsQualityHooked = true;
+	window.addEventListener("message", (event) => {
+		const data = event?.data;
+		if (
+			event.source !== window ||
+			event.origin !== window.location.origin ||
+			data?.type !== "tp_setTTVQuality"
+		)
+			return;
+		const selected = _normalizePreviewsQuality(data.selected_quality);
+		_PreviewsQualityMessage = selected
+			? { selected, fallback: _normalizePreviewsQuality(data.fallback_quality) }
+			: null;
+		_lastQualityGroupSyncAt = Date.now();
+		_syncPreferredQualityGroup(true);
+	});
+}
+
+function _reapplyPreviewsQualityChoice() {
+	if (!_PreviewsQualityMessage) return false;
+	try {
+		window.postMessage(
+			{
+				type: "tp_setTTVQuality",
+				selected_quality: _PreviewsQualityMessage.selected,
+				fallback_quality: _PreviewsQualityMessage.fallback,
+			},
+			window.location.origin,
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 function _syncPreferredQualityGroupThrottled() {
 	const now = Date.now();
@@ -638,10 +692,11 @@ function _syncPreferredQualityGroupThrottled() {
 	return _syncPreferredQualityGroup();
 }
 
-function _syncPreferredQualityGroup() {
+function _syncPreferredQualityGroup(allowClear = false) {
 	if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return false;
-	const nextQualityGroup = _readConfiguredQualityGroup();
-	if (!nextQualityGroup) return false;
+	const nextQualityGroup =
+		_getPreviewsQualityGroup() || _readConfiguredQualityGroup() || null;
+	if (!nextQualityGroup && !allowClear) return false;
 	if (__TTVAB_STATE__.PreferredQualityGroup === nextQualityGroup) {
 		return false;
 	}
@@ -2662,6 +2717,7 @@ function _monitorPlaybackIntent() {
 	let lastSyncedMediaKey = null;
 	let lastSyncAttemptAt = 0;
 	_initPlaybackControlInteractionMonitor();
+	_hookPreviewsQualityChoice();
 
 	function check() {
 		_playbackIntentMonitorTimer = null;
@@ -5757,6 +5813,7 @@ function _restorePlayerPreferenceSnapshot(
 			localStorage.setItem(key, String(value));
 		}
 		_restorePlayerMediaPreferenceSnapshot(snapshot.__mediaState, options);
+		_reapplyPreviewsQualityChoice();
 	} catch (err) {
 		_log(`Preference restore failed: ${err.message}`, "warning");
 		return false;
