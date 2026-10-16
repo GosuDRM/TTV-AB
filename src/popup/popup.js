@@ -164,6 +164,201 @@ function _getLogExportBrowser(navigatorInfo = navigator) {
     catch { }
     return "unknown";
 }
+function _awaitLogExportValue(promise, timeoutMs, fallback) {
+    let timer = null;
+    return Promise.race([
+        promise.catch(() => fallback),
+        new Promise((resolve) => {
+            timer = setTimeout(() => resolve(fallback), Math.max(0, timeoutMs));
+        }),
+    ]).finally(() => {
+        if (timer !== null)
+            clearTimeout(timer);
+    });
+}
+function _getLogExportOsFromUserAgent(userAgent) {
+    if (/Android/i.test(userAgent))
+        return "Android";
+    if (/CrOS/.test(userAgent))
+        return "ChromeOS";
+    if (/iPhone|iPad|iPod/.test(userAgent))
+        return "iOS";
+    if (/Windows NT 10\.0/.test(userAgent))
+        return "Windows 10 or 11";
+    if (/Windows/.test(userAgent))
+        return "Windows";
+    if (/Macintosh|Mac OS X/.test(userAgent))
+        return "macOS";
+    if (/Linux/.test(userAgent))
+        return "Linux";
+    return "unknown";
+}
+async function _getLogExportOperatingSystem(navigatorInfo = navigator, timeoutMs = 1000) {
+    let fallback = "unknown";
+    try {
+        fallback = _getLogExportOsFromUserAgent(_sanitizeLogExportText(navigatorInfo?.userAgent, 1024));
+        const userAgentData = navigatorInfo?.userAgentData;
+        if (typeof userAgentData?.getHighEntropyValues !== "function") {
+            return fallback;
+        }
+        const values = await _awaitLogExportValue(Promise.resolve(userAgentData.getHighEntropyValues([
+            "platformVersion",
+            "architecture",
+            "bitness",
+        ])), timeoutMs, null);
+        const pick = (value, pattern) => typeof value === "string" && pattern.test(value) ? value : "";
+        const platform = pick(values?.platform ?? userAgentData.platform, /^[A-Za-z][A-Za-z ]{0,23}$/);
+        if (!platform)
+            return fallback;
+        const version = pick(values?.platformVersion, /^\d{1,4}(?:\.\d{1,6}){0,3}$/);
+        const architecture = pick(values?.architecture, /^[a-z0-9_]{1,16}$/i);
+        const bitness = pick(values?.bitness, /^\d{2}$/);
+        const windowsMajor = Number.parseInt(version, 10);
+        const name = platform === "Windows" && version
+            ? windowsMajor >= 13
+                ? "Windows 11"
+                : windowsMajor >= 1
+                    ? "Windows 10"
+                    : "Windows 8.1 or earlier"
+            : `${platform}${version ? ` ${version}` : ""}`;
+        return architecture
+            ? `${name} (${architecture}${bitness ? ` ${bitness}-bit` : ""})`
+            : name;
+    }
+    catch {
+        return fallback;
+    }
+}
+const _LOG_EXPORT_DECODER_PROBES = [
+    ["AVC", 'video/mp4; codecs="avc1.64002A"'],
+    ["HEVC", 'video/mp4; codecs="hev1.1.6.L150.90"'],
+    ["AV1", 'video/mp4; codecs="av01.0.12M.10"'],
+];
+async function _getLogExportDecoderSupport(environment = {
+    mediaSource: typeof MediaSource === "function" ? MediaSource : null,
+    mediaCapabilities: typeof navigator !== "undefined" ? navigator.mediaCapabilities : null,
+}, timeoutMs = 1000) {
+    const results = await Promise.all(_LOG_EXPORT_DECODER_PROBES.map(async ([name, contentType]) => {
+        let support = "unknown";
+        try {
+            if (typeof environment.mediaSource?.isTypeSupported === "function") {
+                support = environment.mediaSource.isTypeSupported(contentType)
+                    ? "yes"
+                    : "no";
+            }
+        }
+        catch { }
+        try {
+            if (typeof environment.mediaCapabilities?.decodingInfo === "function") {
+                const info = await _awaitLogExportValue(Promise.resolve(environment.mediaCapabilities.decodingInfo({
+                    type: "media-source",
+                    video: {
+                        contentType,
+                        width: 1920,
+                        height: 1080,
+                        bitrate: 6000000,
+                        framerate: 60,
+                    },
+                })), timeoutMs, null);
+                if (info && typeof info.supported === "boolean") {
+                    support = !info.supported
+                        ? "no"
+                        : info.powerEfficient === true
+                            ? "yes (power efficient)"
+                            : "yes";
+                }
+            }
+        }
+        catch { }
+        return `${name} ${support}`;
+    }));
+    return results.join(" | ");
+}
+function _formatLogExportLocalTime(date = new Date()) {
+    if (!Number.isFinite(date.getTime()))
+        return "unknown";
+    const pad = (value) => String(value).padStart(2, "0");
+    const offsetMinutes = -date.getTimezoneOffset();
+    const absoluteOffset = Math.abs(offsetMinutes);
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())} UTC${offsetMinutes < 0 ? "-" : "+"}${pad(Math.floor(absoluteOffset / 60))}:${pad(absoluteOffset % 60)}`;
+}
+function _readLogExportExtensionSettings(timeoutMs = 1000) {
+    const unavailable = "unavailable";
+    if (typeof chrome?.storage?.local?.get !== "function") {
+        return Promise.resolve(unavailable);
+    }
+    return _awaitLogExportValue(new Promise((resolve) => {
+        try {
+            chrome.storage.local.get(["ttvAdTimerEnabled", "ttvTurboMode"], (result) => {
+                if (chrome.runtime.lastError || !result) {
+                    resolve(unavailable);
+                    return;
+                }
+                resolve(`Ad Break Timer ${result.ttvAdTimerEnabled === true ? "enabled" : "disabled"} | Turbo ${result.ttvTurboMode === true ? "enabled" : "disabled"}`);
+            });
+        }
+        catch {
+            resolve(unavailable);
+        }
+    }), timeoutMs, unavailable);
+}
+function _hasTwitchSiteAccess(timeoutMs = 1000) {
+    if (typeof chrome?.permissions?.contains !== "function") {
+        return Promise.resolve(null);
+    }
+    return _awaitLogExportValue(new Promise((resolve) => {
+        try {
+            chrome.permissions.contains({ origins: ["*://*.twitch.tv/*"] }, (granted) => {
+                resolve(chrome.runtime.lastError || typeof granted !== "boolean"
+                    ? null
+                    : granted);
+            });
+        }
+        catch {
+            resolve(null);
+        }
+    }), timeoutMs, null);
+}
+function _getLogExportTabHint(tab, error) {
+    const tabState = tab;
+    if (tabState.discarded === true) {
+        return "The browser unloaded this tab to save memory. Reload it, reproduce the issue, and export again.";
+    }
+    if (tabState.frozen === true) {
+        return "The browser froze this background tab. Switch to it, then export again.";
+    }
+    if (error === "content-script-unavailable" ||
+        error === "page-bridge-unavailable") {
+        return "Refresh this tab, reproduce the issue, and export again. This happens when TTV AB was updated or reloaded after the tab opened, or when the browser paused the tab.";
+    }
+    return null;
+}
+function _getBugReportUrl(baseUrl, version, browser, os) {
+    let url;
+    try {
+        url = new URL(baseUrl);
+    }
+    catch {
+        url = new URL("https://github.com/GosuDRM/TTV-AB/issues/new");
+    }
+    if (url.origin !== "https://github.com" || !url.pathname.endsWith("/new")) {
+        return url.href;
+    }
+    url.searchParams.set("template", "bug_report.yml");
+    for (const [field, value, maxLength] of [
+        ["version", version, 32],
+        ["browser", browser, 96],
+        ["os", os, 96],
+    ]) {
+        const safeValue = _sanitizeLogExportText(value, maxLength)
+            .replace(/\n/g, " ")
+            .trim();
+        if (safeValue && safeValue !== "unknown") {
+            url.searchParams.set(field, safeValue);
+        }
+    }
+    return url.href;
+}
 function _formatLogContextLines(value) {
     if (!value || typeof value !== "object" || Array.isArray(value))
         return [];
@@ -239,6 +434,15 @@ function _formatLogContextLines(value) {
         ? ` (${media.lowLatencySource})`
         : "";
     lines.push(`Selected video quality: ${selectedQuality}${qualitySource}`, `Playing video quality: ${currentQuality} | Resolution: ${resolution}`, `Twitch Low Latency: ${lowLatency}${lowLatencySource}`);
+    const workerRecovery = context.workerRecovery;
+    if (workerRecovery && typeof workerRecovery === "object") {
+        const phase = typeof workerRecovery.phase === "string" &&
+            /^[a-z-]{1,24}$/.test(workerRecovery.phase)
+            ? workerRecovery.phase
+            : "unknown";
+        const attempts = Math.max(0, Math.min(10, Math.trunc(Number(workerRecovery.attempts) || 0)));
+        lines.push(`Worker recovery: ${phase}, ${attempts}/3 reloads used | Degraded page-side fallback: ${workerRecovery.degradedFallback === true ? "on" : "off"}`);
+    }
     if (Array.isArray(context.workers)) {
         lines.push(`Workers: ${_stringifyLogExportValue(context.workers)}`);
     }
@@ -426,6 +630,9 @@ function _buildTabLogSection(tab, index, result, maxCharacters) {
     if (result.error) {
         lines.push(`(collection failed: ${_describeLogCollectionError(result.error)})`);
     }
+    const tabHint = _getLogExportTabHint(tab, result.error);
+    if (tabHint)
+        lines.push(`(${tabHint})`);
     if (result.entries.length === 0 && !result.error) {
         lines.push("(no TTV AB log entries captured in this tab)");
     }
@@ -491,13 +698,30 @@ function _buildTabLogSection(tab, index, result, maxCharacters) {
 }
 async function _buildLogExport(isCancelled = () => false) {
     const manifestVersion = chrome.runtime.getManifest?.()?.version || "?";
+    const exportedAt = new Date();
+    const [operatingSystem, decoderSupport, extensionSettings, siteAccess] = await Promise.all([
+        _getLogExportOperatingSystem(),
+        _getLogExportDecoderSupport(),
+        _readLogExportExtensionSettings(),
+        _hasTwitchSiteAccess(),
+    ]);
+    if (isCancelled())
+        return "";
     const headerLines = [
         "TTV AB debug log",
         `Version: ${manifestVersion}`,
         `Browser: ${_getLogExportBrowser()}`,
-        `Exported: ${new Date().toISOString()}`,
+        `OS: ${operatingSystem}`,
+        `Decoder support: ${decoderSupport}`,
+        `Extension settings: ${extensionSettings}`,
+        `Site access: ${siteAccess === true ? "granted" : siteAccess === false ? "not granted" : "unknown"}`,
+        `Exported: ${exportedAt.toISOString()}`,
+        `Local time: ${_formatLogExportLocalTime(exportedAt)}`,
         "",
     ];
+    if (siteAccess === false) {
+        headerLines.push("TTV AB is not allowed to run on twitch.tv, so it cannot block ads or collect logs there.", "Allow site access for twitch.tv in the browser's extension settings, reload Twitch, then export again.", "");
+    }
     const queryResult = await _queryTwitchTabs();
     if (isCancelled())
         return "";
@@ -1310,8 +1534,15 @@ document.addEventListener("DOMContentLoaded", () => {
         statsResetButton.setAttribute("aria-label", resetLabel);
         updateTurboCopy(t);
     }
+    let issueEnvironment = {
+        browser: _getLogExportBrowser(),
+        os: _getLogExportOsFromUserAgent(_sanitizeLogExportText(navigator.userAgent, 1024)),
+    };
+    void _getLogExportOperatingSystem().then((os) => {
+        issueEnvironment = { ...issueEnvironment, os };
+    });
     function openIssuesPage() {
-        const issuesUrl = reportBugLink.href || "https://github.com/GosuDRM/TTV-AB/issues";
+        const issuesUrl = _getBugReportUrl(reportBugLink.href, chrome.runtime.getManifest?.()?.version || "", issueEnvironment.browser, issueEnvironment.os);
         if (isLogExportPage) {
             window.location.assign(issuesUrl);
             return;
@@ -1371,21 +1602,30 @@ document.addEventListener("DOMContentLoaded", () => {
             logDialogGenerate.textContent = getLogExportPageText("logExportRetry", "logDialogGenerate", "Try again");
             return;
         }
-        logDialogTitle.textContent = getLogExportPageText("logExportSavedTitle", "reportBugLabel", "Debug log saved");
-        logDialogText.textContent = getLogExportPageText("logExportSavedText", "logDialogText", "Attach the saved file to your GitHub issue, then continue to GitHub.");
-        logDialogGenerate.hidden = true;
+        if (state === "downloaded") {
+            logDialogTitle.textContent = getLogExportPageText("logExportDownloadedTitle", "logExportSavedTitle", "Debug log downloaded");
+            logDialogText.textContent = getLogExportPageText("logExportDownloadedText", "logExportSavedText", "Find the file in your Downloads folder and attach it to your GitHub issue, then continue to GitHub.");
+            logDialogGenerate.textContent = getLogExportPageText("logExportSaveAgain", "logExportSave", "Save again");
+        }
+        else {
+            logDialogTitle.textContent = getLogExportPageText("logExportSavedTitle", "reportBugLabel", "Debug log saved");
+            logDialogText.textContent = getLogExportPageText("logExportSavedText", "logDialogText", "Attach the saved file to your GitHub issue, then continue to GitHub.");
+            logDialogGenerate.hidden = true;
+        }
         logDialogSkip.classList.add("primary");
         logDialogSkip.textContent = getLogExportPageText("logExportOpenIssue", "reportBugLabel", "Continue to GitHub");
     }
-    function setLogExportFailure(error) {
+    function setLogExportFailure(error, localizedMessage = null) {
         const rawMessage = error instanceof Error ? error.message : String(error || "");
         const message = _sanitizeLogExportText(rawMessage, 240)
             .replace(/\n/g, " ")
             .trim();
         applyLogExportPageState("failed");
-        logDialogText.textContent = message
-            ? `Log export failed: ${message}`
-            : "Log export failed. Try again.";
+        logDialogText.textContent =
+            localizedMessage ||
+                (message
+                    ? getLogExportPageText("logExportFailedDetail", null, "Log export failed: {error}").replace("{error}", message)
+                    : getLogExportPageText("logExportFailedText", null, "Log export failed. Try again."));
     }
     function prepareLogExport() {
         if (logExportInProgress)
@@ -1479,7 +1719,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         if (!isLogExportPage) {
             if (!_openLogExportPage()) {
-                setLogExportFailure(new Error("Unable to open the log export tab."));
+                setLogExportFailure(null, getLogExportPageText("logExportOpenFailed", null, "Could not open the log export tab."));
             }
             else {
                 hideLogDialog(true);
@@ -1513,7 +1753,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (generation !== logExportGeneration)
                 return;
-            applyLogExportPageState("saved");
+            applyLogExportPageState(handle ? "saved" : "downloaded");
             logDialogSkip.focus();
         })
             .catch((error) => {
@@ -2018,9 +2258,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     function formatTimeSaved(milliseconds) {
         const totalSeconds = Math.floor(normalizeCount(milliseconds) / 1000);
-        const hours = Math.floor(totalSeconds / 3600);
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
+        if (days > 0)
+            return `${days}d ${hours}h ${minutes}m ${seconds}s`;
         if (hours > 0)
             return `${hours}h ${minutes}m ${seconds}s`;
         if (minutes > 0)
