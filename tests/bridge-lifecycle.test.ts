@@ -91,6 +91,7 @@ beforeEach(() => {
 	(g.clearScheduledRetryFlush as () => boolean)();
 	(g.inFlightPersistRequests as Set<unknown>).clear();
 	g.persistWorkGeneration = 0;
+	g.extensionContextInvalidated = false;
 	(g.clearPersistedFlushRecovery as () => void)();
 	if (g.flushTimeout) {
 		clearTimeout(g.flushTimeout as ReturnType<typeof setTimeout>);
@@ -1108,6 +1109,62 @@ describe("counter retry bounds", () => {
 		}
 	});
 
+	it("stops retrying and keeps the journal once the extension is reloaded", () => {
+		vi.useFakeTimers();
+		const previousSendPersistPayload = g.sendPersistPayload;
+		const sent: string[] = [];
+		g.sendPersistPayload = (
+			payload: { detail: { flushId: string } },
+			_success: unknown,
+			onFailure: (error: string) => void,
+		) => {
+			sent.push(payload.detail.flushId);
+			onFailure("Extension context invalidated.");
+		};
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const flushIds = [
+			"flush:test:invalidated-0001",
+			"flush:test:invalidated-0002",
+		];
+		const dispatch = g.dispatchPersistPayload as (
+			value: unknown,
+			options: unknown,
+		) => void;
+
+		try {
+			for (const flushId of flushIds) {
+				dispatch(
+					{
+						type: "ttvab-persist-counters",
+						detail: {
+							flushId,
+							createdAt: Date.now(),
+							adsDelta: 0,
+							channelDeltas: {},
+							watchDeltas: { somestreamer: 1 },
+						},
+					},
+					{ retryOnFailure: true },
+				);
+			}
+			vi.advanceTimersByTime(10 * 60000);
+
+			expect(sent).toEqual([flushIds[0]]);
+			expect(errorSpy).not.toHaveBeenCalled();
+			expect(warnSpy).toHaveBeenCalledTimes(1);
+			expect((g.retryFlushEntries as Map<string, unknown>).size).toBe(0);
+			expect(g.persistedFlushRecoveryTimeout).toBeNull();
+			for (const flushId of flushIds) {
+				expect(
+					localStorage.getItem(`ttvab_pending_counter_flush:${flushId}`),
+				).not.toBeNull();
+			}
+		} finally {
+			g.sendPersistPayload = previousSendPersistPayload;
+		}
+	});
+
 	it("hard-caps simultaneous retry entries", () => {
 		vi.useFakeTimers();
 		const schedule = g.scheduleRetryFlush as (
@@ -1420,11 +1477,49 @@ describe("log export sanitization", () => {
 			JSON.stringify(result.entries),
 		).byteLength;
 
-		expect(result.entries.length).toBeLessThanOrEqual(1000);
+		expect(result.entries.length).toBeLessThan(input.length);
 		expect(byteLength).toBeLessThanOrEqual(2 * 1024 * 1024 + 2);
 		expect(result.truncatedEntries + result.entries.length).toBe(input.length);
 		expect(String(result.entries.at(-1)?.m)).toMatch(/^1099:/);
 		expect(String(result.entries[0]?.m)).not.toMatch(/^0:/);
+
+		const short = Array.from({ length: 3100 }, (_, index) => ({
+			t: index,
+			l: "info",
+			m: `line ${index}`,
+			w: false,
+		}));
+		const counted = sanitize(short);
+		expect(counted.entries).toHaveLength(3000);
+		expect(counted.truncatedEntries).toBe(100);
+		expect(counted.entries[0]?.m).toBe("line 100");
+		expect(counted.entries.at(-1)?.m).toBe("line 3099");
+	});
+
+	it("whitelists the worker recovery summary", () => {
+		const sanitize = g.sanitizeLogContext as (
+			value: unknown,
+		) => Record<string, unknown>;
+		expect(
+			sanitize({
+				workerRecovery: {
+					degradedFallback: true,
+					phase: "exhausted",
+					attempts: 3.7,
+				},
+			}).workerRecovery,
+		).toEqual({ degradedFallback: true, phase: "exhausted", attempts: 3 });
+		expect(
+			sanitize({
+				workerRecovery: {
+					degradedFallback: "yes",
+					phase: "exhausted\nforged",
+					attempts: 999,
+					extra: "token=secret",
+				},
+			}).workerRecovery,
+		).toEqual({ degradedFallback: false, phase: "unknown", attempts: 10 });
+		expect(sanitize({}).workerRecovery).toBeNull();
 	});
 
 	it("whitelists and bounds the structured page context", () => {

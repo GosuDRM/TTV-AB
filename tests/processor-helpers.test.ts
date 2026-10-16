@@ -143,6 +143,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		LastSessionNeutralBackupProbeCycleStartedAt: 0,
 		ActiveBackupPlayerType: null,
 		ActiveBackupResolution: null,
+		_AdBreakMeasurement: null,
 		SustainedNativeResolution: null,
 		SustainedNativeResolutionAt: 0,
 		SustainedNativeResolutionStartedAt: 0,
@@ -2698,6 +2699,268 @@ describe("_findBackupStream fresh-session probation", () => {
 			nowSpy.mockRestore();
 			restore();
 		}
+	});
+
+	describe("held autoplay bridge refreshed during an HQ retry", () => {
+		const newerBridgePlaylist = bridgePlaylist.replace(
+			"autoplay-live-1.ts",
+			"autoplay-live-2.ts",
+		);
+
+		const searchBackupStream = () =>
+			T<
+				(
+					info: Record<string, unknown>,
+					realFetch: (url: string) => Promise<Response>,
+					startIdx?: number,
+					currentResolution?: Record<string, unknown>,
+				) => Promise<{ type: string | null; m3u8: string | null }>
+			>("_searchBackupStream");
+		const refreshHeldAutoplay = () =>
+			T<
+				(
+					info: Record<string, unknown>,
+					realFetch: (url: string) => Promise<Response>,
+					currentResolution: Record<string, unknown>,
+				) => Promise<string | null>
+			>("_refreshHeldAutoplayBackupPlaylist");
+
+		async function runRetry(bridgeRefreshAgeMs: number) {
+			const { realFetch, restore } = setupSweep(() => adPlaylist);
+			const state = getState();
+			const previousPageMediaKey = state.PageMediaKey;
+			const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+			const logs: Array<[string, string | undefined]> = [];
+			try {
+				state.DisableAutoplayBackup = true;
+				state.PageMediaKey = "live:testchannel";
+				const info = makeHoldInfo();
+				info.IsUsingBackupStream = true;
+				info.AdRollContext = {
+					mediaKey: "live:testchannel",
+					cycleStartedAt: 991_000,
+					pageGeneration: 0,
+					rollType: "preroll",
+				};
+				const seeded = await searchBackupStream()(
+					info,
+					realFetch,
+					0,
+					currentResolution,
+				);
+				expect(seeded).toEqual({ type: "autoplay", m3u8: bridgePlaylist });
+				let concurrentRefresh: Promise<string | null> | null = null;
+				const racingFetch = async (url: string) => {
+					if (String(url).includes("/autoplay/") && !concurrentRefresh) {
+						concurrentRefresh = refreshHeldAutoplay()(
+							info,
+							async () => new Response(newerBridgePlaylist, { status: 200 }),
+							currentResolution,
+						);
+						await concurrentRefresh;
+						nowSpy.mockReturnValue(1_000_000 + bridgeRefreshAgeMs);
+					}
+					return realFetch(url);
+				};
+				g._log = (message: string, level?: string) =>
+					logs.push([message, level]);
+				const result = await searchBackupStream()(
+					info,
+					racingFetch,
+					0,
+					currentResolution,
+				);
+				expect(await concurrentRefresh).toBe(newerBridgePlaylist);
+				return { info, result, logs };
+			} finally {
+				nowSpy.mockRestore();
+				state.PageMediaKey = previousPageMediaKey;
+				restore();
+			}
+		}
+
+		it("returns the newer fresh refresh and logs the outcome", async () => {
+			const { info, result, logs } = await runRetry(200);
+
+			expect(result).toEqual({ type: "autoplay", m3u8: newerBridgePlaylist });
+			expect(info.LastCleanBackupM3U8).toBe(newerBridgePlaylist);
+			expect(logs).toContainEqual([
+				"[Trace] Kept autoplay @ 640x360; a newer refresh of it committed during this search",
+				"info",
+			]);
+		});
+
+		it("logs but does not serve a newer refresh older than 900 ms", async () => {
+			const { info, result, logs } = await runRetry(1500);
+
+			expect(result).toEqual({ type: null, m3u8: null });
+			expect(info.LastCleanBackupM3U8).toBe(newerBridgePlaylist);
+			expect(logs).toContainEqual([
+				"[Trace] Kept autoplay @ 640x360; a newer refresh of it committed during this search 1500ms ago, too old to serve",
+				"info",
+			]);
+		});
+	});
+
+	describe("per-source time budget", () => {
+		const searchBackupStream = () =>
+			T<
+				(
+					info: Record<string, unknown>,
+					realFetch: (url: string) => Promise<Response>,
+					startIdx?: number,
+					currentResolution?: Record<string, unknown>,
+				) => Promise<{ type: string | null; m3u8: string | null }>
+			>("_searchBackupStream");
+
+		function setupTwoSources(hangingToken: (signal: AbortSignal) => unknown) {
+			const state = getState();
+			const previous = {
+				types: state.BackupPlayerTypes,
+				getToken: g._getToken,
+				extract: g._extractPlaybackAccessToken,
+			};
+			const signals = new Map<string, AbortSignal>();
+			let activePlayerType = "";
+			state.BackupPlayerTypes = ["site", "embed"];
+			state.PageMediaKey = "live:testchannel";
+			g._extractPlaybackAccessToken = () => ({
+				signature: "sig",
+				value: "token",
+			});
+			g._getToken = (
+				_info: unknown,
+				playerType: string,
+				_fetch: unknown,
+				_omitViewerHeaders: unknown,
+				_deadlineAt: unknown,
+				signal: AbortSignal,
+			) => {
+				activePlayerType = playerType;
+				signals.set(playerType, signal);
+				return playerType === "site"
+					? hangingToken(signal)
+					: Promise.resolve(new Response("{}", { status: 200 }));
+			};
+			const realFetch = async (url: string) =>
+				String(url).includes("usher.ttvnw.net")
+					? new Response(masterPlaylist(activePlayerType), { status: 200 })
+					: String(url).includes(`/${activePlayerType}/`)
+						? new Response(sitePlaylist, { status: 200 })
+						: new Response(null, { status: 404 });
+			const logs: Array<[string, string | undefined]> = [];
+			g._log = (message: string, level?: string) => logs.push([message, level]);
+			const info = makeInfo({ IsShowingAd: true });
+			activateExactAdCycle(info, 991_000);
+			const restore = () => {
+				state.BackupPlayerTypes = previous.types;
+				g._getToken = previous.getToken;
+				g._extractPlaybackAccessToken = previous.extract;
+			};
+			return { info, realFetch, signals, logs, restore };
+		}
+
+		it("cancels a source that hangs and moves on to the next one", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(1_000_000);
+			const { info, realFetch, signals, logs, restore } = setupTwoSources(
+				() => new Promise(() => {}),
+			);
+			try {
+				const pending = searchBackupStream()(
+					info,
+					realFetch,
+					0,
+					currentResolution,
+				);
+				await vi.advanceTimersByTimeAsync(7999);
+				expect(signals.has("embed")).toBe(false);
+				await vi.advanceTimersByTimeAsync(1);
+				const result = await pending;
+
+				expect(result).toEqual({ type: "embed", m3u8: sitePlaylist });
+				expect(signals.get("site")?.aborted).toBe(true);
+				expect(signals.get("embed")?.aborted).toBe(false);
+				expect(logs).toContainEqual([
+					"[Trace] site did not answer within 8s; checking the next source",
+					"warning",
+				]);
+			} finally {
+				restore();
+				vi.useRealTimers();
+			}
+		});
+
+		it("logs why a search stopped when the page changes mid-request", async () => {
+			let releaseToken: (response: Response) => void = () => {};
+			const { info, realFetch, logs, restore } = setupTwoSources(
+				() =>
+					new Promise<Response>((resolve) => {
+						releaseToken = resolve;
+					}),
+			);
+			try {
+				const pending = searchBackupStream()(
+					info,
+					realFetch,
+					0,
+					currentResolution,
+				);
+				await Promise.resolve();
+				getState().PageMediaKey = "live:otherchannel";
+				releaseToken(new Response("{}", { status: 200 }));
+
+				expect(await pending).toEqual({ type: null, m3u8: null });
+				expect(
+					logs.find(([message]) =>
+						message.startsWith("[Trace] Backup search stopped after "),
+					),
+				).toEqual([
+					expect.stringMatching(
+						/^\[Trace\] Backup search stopped after \d+\.\ds because the page changed$/,
+					),
+					"debug",
+				]);
+			} finally {
+				restore();
+			}
+		});
+	});
+
+	it("does not describe a cleared backup from the previous break as the one being replaced", () => {
+		const logs: string[] = [];
+		g._log = (message: string) => logs.push(message);
+		const info = makeInfo({
+			IsShowingAd: true,
+			LastCleanBackupPlayerType: "site",
+			LastCleanBackupM3U8: null,
+			LastCleanBackupResolution: null,
+		});
+		activateExactAdCycle(info, 991_000);
+
+		T<
+			(
+				info: Record<string, unknown>,
+				m3u8: string,
+				sequence: number,
+				metadata: Record<string, unknown>,
+			) => string | null
+		>("_commitBackupPlaylist")(info, sitePlaylist, 1, {
+			playlistUrl: "https://cdn.example/site/index.m3u8",
+			sessionUrl: "https://usher.ttvnw.net/site.m3u8",
+			playerType: "site",
+			resolution: "1280x720",
+			codecFamily: "avc",
+			codec: "avc1.64002a",
+		});
+
+		expect(
+			logs.find((message) =>
+				message.startsWith("[Recovery] Backup selection committed:"),
+			),
+		).toMatch(
+			/^\[Recovery\] Backup selection committed: none@unknown -> site@1280x720;/,
+		);
 	});
 });
 
@@ -6247,7 +6510,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 				.find((message) => message.startsWith("[Break] ended "));
 			expect(summary).toMatch(
 				new RegExp(
-					`embed 1920x1080 @1\\.0s -> native @\\d+\\.\\ds; native return by ${nativeReturn.replace(/[()/]/g, "\\$&")}$`,
+					`embed 1920x1080 @1\\.0s -> native @\\d+\\.\\ds; native return by ${nativeReturn.replace(/[()/]/g, "\\$&")}; measured \\d+ ads? \\(\\d+\\.\\ds\\)$`,
 				),
 			);
 		},
@@ -10194,6 +10457,12 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 					"_recordAdBreakStep",
 				);
 			record(info, diagnostics, "autoplay 640x360");
+			info._AdBreakMeasurement = {
+				cycleStartedAt: 5000,
+				ads: 2,
+				milliseconds: 45500,
+				unmeasuredAdIds: new Set(["5000:stitched-ad-3"]),
+			};
 			info.VisibleAdStartedAt = 0;
 			info.AdRollContext = null;
 			record(info, diagnostics, "native 1920x1080");
@@ -10202,7 +10471,7 @@ describe("backup search pre-warm during the clean-native bridge", () => {
 					String(message).startsWith("[Break] ended "),
 				)?.[0],
 			).toMatch(
-				/^\[Break\] ended live:testchannel cycle 5000 \(preroll\): autoplay 640x360 @-?\d+\.\ds -> native 1920x1080 @-?\d+\.\ds$/,
+				/^\[Break\] ended live:testchannel cycle 5000 \(preroll\): autoplay 640x360 @-?\d+\.\ds -> native 1920x1080 @-?\d+\.\ds; measured 2 ads \(45\.5s\), 1 without a usable duration$/,
 			);
 		} finally {
 			g._log = previousLog;

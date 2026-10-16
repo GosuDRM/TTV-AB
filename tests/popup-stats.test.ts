@@ -172,6 +172,27 @@ describe("popup statistics", () => {
 		);
 	});
 
+	it.each([
+		[86399999, "23h 59m 59s"],
+		[86400000, "1d 0h 0m 0s"],
+		[911045000, "10d 13h 4m 5s"],
+	])("shows Time Saved of %i ms as %s", async (milliseconds, expected) => {
+		storageData = {
+			ttvAdsBlocked: 1,
+			ttvStats: {
+				daily: {},
+				channels: {},
+				achievements: [],
+				adMillisecondsSaved: milliseconds,
+				measuredAds: 1,
+			},
+		};
+		mountPopup();
+		await settle();
+
+		expect(element("timeSaved").textContent).toBe(expected);
+	});
+
 	it("shows real ads and ad breaks separately in the channel modal", async () => {
 		storageData = {
 			ttvAdsBlocked: 9,
@@ -275,5 +296,70 @@ describe("popup statistics", () => {
 		element("statsExportButton").click();
 		expect(element("resetStatsOverlay").hidden).toBe(true);
 		expect(click).not.toHaveBeenCalled();
+	});
+});
+
+describe("bug report flow", () => {
+	afterEach(() => {
+		window.history.replaceState(null, "", "/");
+	});
+
+	it("opens a new GitHub issue prefilled with the environment", async () => {
+		mountPopup();
+		await settle();
+
+		element("reportBugLink").click();
+		element("logDialogSkip").click();
+
+		const create = (g.chrome as { tabs: { create: ReturnType<typeof vi.fn> } })
+			.tabs.create;
+		expect(create).toHaveBeenCalledTimes(1);
+		const url = new URL(create.mock.calls[0][0].url);
+		expect(url.origin + url.pathname).toBe(
+			"https://github.com/GosuDRM/TTV-AB/issues/new",
+		);
+		expect(url.searchParams.get("template")).toBe("bug_report.yml");
+		expect(url.searchParams.get("version")).toBe("23.0.1");
+	});
+
+	it("says a fallback download started and offers to save again", async () => {
+		window.history.replaceState(null, "", "/?ttvab-log-export=1");
+		(g.chrome as { tabs: { query: unknown } }).tabs.query = vi.fn(
+			(_query, callback: (tabs: unknown[]) => void) => callback([]),
+		);
+		const click = vi
+			.spyOn(HTMLAnchorElement.prototype, "click")
+			.mockImplementation(() => {});
+		mountPopup();
+		await settle();
+		expect(element("logDialogTitle").textContent).toBe("Debug log ready");
+
+		element("logDialogGenerate").click();
+		await settle();
+
+		expect(click).toHaveBeenCalledTimes(1);
+		expect(element("logDialogTitle").textContent).toBe("Debug log downloaded");
+		expect(element("logDialogText").textContent).toContain("Downloads folder");
+		expect(element("logDialogGenerate").hidden).toBe(false);
+		expect(element("logDialogGenerate").textContent).toBe("Save again");
+
+		element("logDialogGenerate").click();
+		await settle();
+		expect(click).toHaveBeenCalledTimes(2);
+	});
+
+	it("shows log export failures in the chosen language", async () => {
+		window.history.replaceState(null, "", "/?ttvab-log-export=1");
+		localStorage.setItem("ttvab_lang", "es");
+		(g.chrome as { runtime: { getManifest: unknown } }).runtime.getManifest =
+			() => {
+				throw new Error("boom");
+			};
+		mountPopup();
+		await settle();
+
+		expect(element("logDialogText").textContent).toBe(
+			"No se pudo exportar el registro: boom",
+		);
 	});
 });

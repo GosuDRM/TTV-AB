@@ -359,7 +359,9 @@ describe("compatible native playlist return", () => {
 			);
 			expect(
 				messages.find((message) => message.startsWith("[Break] ended ")),
-			).toMatch(/ -> native 1920x1080 @\d+\.\ds; native return by playlist$/);
+			).toMatch(
+				/ -> native 1920x1080 @\d+\.\ds; native return by playlist; measured \d+ ads? \(\d+\.\ds\)(?:, \d+ without a usable duration)?$/,
+			);
 			expect(f.restored()).toMatchObject({
 				requiresReload: false,
 				continuePlayback: true,
@@ -399,6 +401,27 @@ describe("compatible native playlist return", () => {
 			continuePlayback: false,
 			refreshAccessToken: false,
 		});
+	});
+
+	it("names the pause/resume return and why the playlist return was refused", async () => {
+		const f = setupHdNativeReturn(false);
+		f.info.HevcReloadPendingAfterHold = false;
+		const log = vi.fn();
+		f.context._log = log;
+		for (let index = 0; index < 40 && !f.restored(); index++) {
+			await f.poll();
+		}
+		expect(f.restored()).toMatchObject({
+			requiresReload: false,
+			continuePlayback: false,
+		});
+		expect(
+			log.mock.calls
+				.map(([message]) => message)
+				.find((message) => message.startsWith("[Break] ended ")),
+		).toMatch(
+			/ -> native 1920x1080 @\d+\.\ds; native return by pause\/resume \(backup not being served\); measured \d+ ads? \(\d+\.\ds\)(?:, \d+ without a usable duration)?$/,
+		);
 	});
 
 	it("keeps the rebuild when broadcast timing cannot prove a compatible return", async () => {
@@ -1110,6 +1133,9 @@ describe("owned native recovery after a codec fallback", () => {
 			const now = Date.now();
 			vi.useFakeTimers();
 			vi.setSystemTime(now);
+			context.Date = Date;
+			context.setTimeout = setTimeout;
+			context.clearTimeout = clearTimeout;
 			target.mockResolvedValueOnce(new Response(playlist(900, "retained")));
 			const response = new Response(playlist(901, "retained"));
 			vi.spyOn(response, "arrayBuffer").mockImplementation(
@@ -2124,6 +2150,9 @@ describe("bounded native session preservation", () => {
 			const now = Date.now();
 			vi.useFakeTimers();
 			vi.setSystemTime(now);
+			context.Date = Date;
+			context.setTimeout = setTimeout;
+			context.clearTimeout = clearTimeout;
 			let active = 0;
 			let peak = 0;
 			let sequence = 2000;
@@ -2185,6 +2214,9 @@ describe("bounded native session preservation", () => {
 		const now = Date.now();
 		vi.useFakeTimers();
 		vi.setSystemTime(now);
+		context.Date = Date;
+		context.setTimeout = setTimeout;
+		context.clearTimeout = clearTimeout;
 		context.fetch = (input) =>
 			String(input) === lowerUrl
 				? new Promise<Response>(() => {})
@@ -2387,6 +2419,9 @@ describe("bounded native session preservation", () => {
 		const now = Date.now();
 		vi.useFakeTimers();
 		vi.setSystemTime(now);
+		context.Date = Date;
+		context.setTimeout = setTimeout;
+		context.clearTimeout = clearTimeout;
 		target.mockImplementation(() => new Promise<Response>(() => {}));
 		context.fetch = fetch;
 		context._hookWorkerFetch();

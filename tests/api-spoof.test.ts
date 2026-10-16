@@ -194,6 +194,110 @@ describe("_recordAdDurations", () => {
 		expect(info.MeasuredAdIds.has("123456:stitched-ad-retry")).toBe(true);
 	});
 
+	it("measures an ad that declares only an end date", () => {
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return true;
+		};
+
+		record()(
+			'#EXT-X-DATERANGE:ID="stitched-ad-end",CLASS="twitch-stitched-ad",START-DATE="2026-10-16T10:00:00.000Z",END-DATE="2026-10-16T10:00:30.250Z"',
+			makeInfo(),
+		);
+
+		expect(messages.map((message) => message.measurements)).toEqual([
+			[
+				{
+					id: "stitched-ad-end",
+					durationMilliseconds: 30250,
+					startDateMilliseconds: Date.parse("2026-10-16T10:00:00.000Z"),
+				},
+			],
+		]);
+	});
+
+	it("logs once per break when the two declared durations disagree and uses the standard one", () => {
+		const logs: string[] = [];
+		g._log = (message: string) => logs.push(message);
+		const messages: Array<Record<string, unknown>> = [];
+		g._postWorkerBridgeMessage = (
+			_target: unknown,
+			message: Record<string, unknown>,
+		) => {
+			messages.push(message);
+			return true;
+		};
+		const info = makeInfo();
+
+		record()(
+			[
+				'#EXT-X-DATERANGE:ID="stitched-ad-a",DURATION=30.000,X-TV-TWITCH-AD-DURATION="15"',
+				'#EXT-X-DATERANGE:ID="stitched-ad-b",DURATION=20.000,X-TV-TWITCH-AD-DURATION="10"',
+				'#EXT-X-DATERANGE:ID="stitched-ad-c",DURATION=12.200,X-TV-TWITCH-AD-DURATION="12"',
+			].join("\n"),
+			info,
+		);
+
+		expect(logs).toEqual([
+			"[Trace] stitched-ad-a declares DURATION 30.0s but X-TV-TWITCH-AD-DURATION 15.0s; Time Saved uses 30.0s",
+		]);
+		expect(
+			(messages[0].measurements as Array<{ durationMilliseconds: number }>).map(
+				(measurement) => measurement.durationMilliseconds,
+			),
+		).toEqual([30000, 20000, 12200]);
+	});
+
+	it("totals the delivered ads per break and tracks ads still missing a duration", () => {
+		let accept = false;
+		g._postWorkerBridgeMessage = () => accept;
+		const info = makeInfo() as ReturnType<typeof makeInfo> & {
+			_AdBreakMeasurement?: {
+				cycleStartedAt: number;
+				ads: number;
+				milliseconds: number;
+				unmeasuredAdIds: Set<string>;
+			};
+		};
+		const pending = '#EXT-X-DATERANGE:ID="stitched-ad-late"';
+		const ready = '#EXT-X-DATERANGE:ID="stitched-ad-late",DURATION="15.5"';
+		const second = '#EXT-X-DATERANGE:ID="stitched-ad-next",DURATION="30"';
+
+		record()(pending, info);
+		expect(info._AdBreakMeasurement).toMatchObject({
+			cycleStartedAt: 123456,
+			ads: 0,
+			milliseconds: 0,
+		});
+		expect([...(info._AdBreakMeasurement?.unmeasuredAdIds || [])]).toEqual([
+			"123456:stitched-ad-late",
+		]);
+
+		record()(ready, info);
+		expect(info._AdBreakMeasurement?.ads).toBe(0);
+		accept = true;
+		record()(`${ready}\n${second}`, info);
+		record()(`${pending}\n${second}`, info);
+
+		expect(info._AdBreakMeasurement).toMatchObject({
+			ads: 2,
+			milliseconds: 45500,
+		});
+		expect(info._AdBreakMeasurement?.unmeasuredAdIds.size).toBe(0);
+
+		info.VisibleAdStartedAt = 654321;
+		record()(second, info);
+		expect(info._AdBreakMeasurement).toMatchObject({
+			cycleStartedAt: 654321,
+			ads: 1,
+			milliseconds: 30000,
+		});
+	});
+
 	it("bounds each worker message and delivers the remaining records on the next poll", () => {
 		const messages: Array<Record<string, unknown>> = [];
 		g._postWorkerBridgeMessage = (

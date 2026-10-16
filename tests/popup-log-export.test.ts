@@ -189,8 +189,307 @@ describe("popup log formatting", () => {
 		expect(source).toContain('logDialog.setAttribute("role", "main");');
 		expect(source).toContain('logDialog.removeAttribute("aria-modal");');
 		expect(source).toContain('applyLogExportPageState("ready");');
-		expect(source).toContain('applyLogExportPageState("saved");');
+		expect(source).toContain(
+			'applyLogExportPageState(handle ? "saved" : "downloaded");',
+		);
+		expect(html).toContain(
+			'id="reportBugLink" href="https://github.com/GosuDRM/TTV-AB/issues/new"',
+		);
 		expect(source).toMatch(/hideLogDialog\(true\);\s+window\.close\(\);/);
+	});
+
+	it.each([
+		[
+			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:144.0) Gecko/20100101 Firefox/144.0",
+			"macOS",
+		],
+		[
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/144.0",
+			"Windows 10 or 11",
+		],
+		["Mozilla/5.0 (X11; Linux x86_64) Firefox/144.0", "Linux"],
+		["Mozilla/5.0 (Android 15; Mobile; rv:144.0) Firefox/144.0", "Android"],
+		["Mozilla/5.0 (X11; CrOS x86_64 16000.0.0) Chrome/141.0", "ChromeOS"],
+		["unrecognized", "unknown"],
+	])(
+		"names the operating system from the user agent %s",
+		async (userAgent, expected) => {
+			expect(
+				await T<(value: unknown) => Promise<string>>(
+					"_getLogExportOperatingSystem",
+				)({ userAgent }),
+			).toBe(expected);
+		},
+	);
+
+	it.each([
+		["macOS", "15.1.0", "arm", "64", "macOS 15.1.0 (arm 64-bit)"],
+		["Windows", "15.0.0", "x86", "64", "Windows 11 (x86 64-bit)"],
+		["Windows", "10.0.0", "x86", "64", "Windows 10 (x86 64-bit)"],
+		["Linux", "", "x86", "", "Linux (x86)"],
+	])(
+		"uses client hints for %s %s",
+		async (platform, platformVersion, architecture, bitness, expected) => {
+			const getHighEntropyValues = vi.fn(async () => ({
+				platform,
+				platformVersion,
+				architecture,
+				bitness,
+			}));
+			expect(
+				await T<(value: unknown) => Promise<string>>(
+					"_getLogExportOperatingSystem",
+				)({
+					userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+					userAgentData: { platform, getHighEntropyValues },
+				}),
+			).toBe(expected);
+			expect(getHighEntropyValues).toHaveBeenCalledWith([
+				"platformVersion",
+				"architecture",
+				"bitness",
+			]);
+		},
+	);
+
+	it("falls back to the user agent when client hints are unsafe, rejected, or slow", async () => {
+		const os = T<(value: unknown, timeoutMs?: number) => Promise<string>>(
+			"_getLogExportOperatingSystem",
+		);
+		const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)";
+		expect(
+			await os({
+				userAgent,
+				userAgentData: {
+					getHighEntropyValues: async () => ({
+						platform: "macOS\nprivate",
+						platformVersion: "15",
+					}),
+				},
+			}),
+		).toBe("macOS");
+		expect(
+			await os({
+				userAgent,
+				userAgentData: {
+					getHighEntropyValues: () => Promise.reject(new Error("denied")),
+				},
+			}),
+		).toBe("macOS");
+		expect(
+			await os(
+				{
+					userAgent,
+					userAgentData: { getHighEntropyValues: () => new Promise(() => {}) },
+				},
+				5,
+			),
+		).toBe("macOS");
+	});
+
+	it("reports decoder support with power efficiency when the browser describes it", async () => {
+		const support = T<(value: unknown) => Promise<string>>(
+			"_getLogExportDecoderSupport",
+		);
+		expect(
+			await support({
+				mediaSource: {
+					isTypeSupported: (type: string) => !type.includes("hev1"),
+				},
+				mediaCapabilities: {
+					decodingInfo: async ({
+						video,
+					}: {
+						video: { contentType: string };
+					}) =>
+						video.contentType.includes("av01")
+							? Promise.reject(new Error("unsupported query"))
+							: {
+									supported: true,
+									powerEfficient: video.contentType.includes("hev1"),
+								},
+				},
+			}),
+		).toBe("AVC yes | HEVC yes (power efficient) | AV1 yes");
+		expect(await support({})).toBe("AVC unknown | HEVC unknown | AV1 unknown");
+	});
+
+	it.each([
+		[-480, "2026-10-16 05:46:39 UTC+08:00"],
+		[330, "2026-10-16 05:46:39 UTC-05:30"],
+		[0, "2026-10-16 05:46:39 UTC+00:00"],
+	])("formats local time with offset %i", (offset, expected) => {
+		const date = {
+			getTime: () => 1,
+			getTimezoneOffset: () => offset,
+			getFullYear: () => 2026,
+			getMonth: () => 9,
+			getDate: () => 16,
+			getHours: () => 5,
+			getMinutes: () => 46,
+			getSeconds: () => 39,
+		};
+		expect(
+			T<(value: unknown) => string>("_formatLogExportLocalTime")(date),
+		).toBe(expected);
+	});
+
+	it("records OS, decoders, settings, site access, and local time in the header", async () => {
+		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+		chromeState.tabs.query = vi.fn((_query, callback) => callback([]));
+		g.chrome = {
+			...chromeState,
+			storage: {
+				local: {
+					get: (_keys: string[], callback: (value: unknown) => void) =>
+						callback({ ttvAdTimerEnabled: true, ttvTurboMode: false }),
+				},
+			},
+			permissions: {
+				contains: (_value: unknown, callback: (granted: boolean) => void) =>
+					callback(false),
+			},
+		};
+		try {
+			const output = await T<() => Promise<string>>("_buildLogExport")();
+			const lines = output.split("\n");
+			expect(lines).toContain(
+				"Extension settings: Ad Break Timer enabled | Turbo disabled",
+			);
+			expect(lines).toContain("Site access: not granted");
+			expect(output).toContain(
+				"Allow site access for twitch.tv in the browser's extension settings, reload Twitch, then export again.",
+			);
+			expect(lines.some((line) => line.startsWith("OS: "))).toBe(true);
+			expect(
+				lines.some((line) => line.startsWith("Decoder support: AVC ")),
+			).toBe(true);
+			expect(
+				lines.some((line) =>
+					/^Local time: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC[+-]\d{2}:\d{2}$/.test(
+						line,
+					),
+				),
+			).toBe(true);
+		} finally {
+			g.chrome = chromeState;
+		}
+	});
+
+	it.each([
+		[{ id: 1, discarded: true }, null, "The browser unloaded this tab"],
+		[{ id: 1, frozen: true }, null, "The browser froze this background tab"],
+		[
+			{ id: 1 },
+			"content-script-unavailable",
+			"Refresh this tab, reproduce the issue, and export again.",
+		],
+	])("explains why a tab could not be read: %o %s", (tab, error, hint) => {
+		const section = T<
+			(
+				tab: unknown,
+				index: number,
+				result: unknown,
+				maxCharacters: number,
+			) => { text: string }
+		>("_buildTabLogSection")(
+			{ url: "https://www.twitch.tv/somestreamer", ...tab },
+			0,
+			{ entries: [], context: null, error, truncatedEntries: 0 },
+			100000,
+		);
+		expect(section.text).toContain(hint);
+	});
+
+	it("does not add a tab hint when collection succeeded", () => {
+		const section = T<
+			(
+				tab: unknown,
+				index: number,
+				result: unknown,
+				maxCharacters: number,
+			) => { text: string }
+		>("_buildTabLogSection")(
+			{ id: 1, url: "https://www.twitch.tv/somestreamer" },
+			0,
+			{
+				entries: [{ t: 1, l: "info", m: "ok" }],
+				context: null,
+				error: null,
+				truncatedEntries: 0,
+			},
+			100000,
+		);
+		expect(section.text).not.toContain("Refresh this tab");
+	});
+
+	it("prefills a new GitHub issue with the environment", () => {
+		const build =
+			T<(base: string, version: string, browser: string, os: string) => string>(
+				"_getBugReportUrl",
+			);
+		const url = new URL(
+			build(
+				"https://github.com/GosuDRM/TTV-AB/issues/new",
+				"23.0.2",
+				"Google Chrome 141.0.0.0",
+				"macOS 15.1.0 (arm 64-bit)\nextra",
+			),
+		);
+		expect(url.origin + url.pathname).toBe(
+			"https://github.com/GosuDRM/TTV-AB/issues/new",
+		);
+		expect(Object.fromEntries(url.searchParams)).toEqual({
+			template: "bug_report.yml",
+			version: "23.0.2",
+			browser: "Google Chrome 141.0.0.0",
+			os: "macOS 15.1.0 (arm 64-bit) extra",
+		});
+		expect(
+			new URL(
+				build(
+					"https://github.com/GosuDRM/TTV-AB/issues/new",
+					"",
+					"unknown",
+					"unknown",
+				),
+			).search,
+		).toBe("?template=bug_report.yml");
+		expect(
+			build("https://github.com/GosuDRM/TTV-AB/issues", "1", "b", "o"),
+		).toBe("https://github.com/GosuDRM/TTV-AB/issues");
+		expect(build("https://example.com/new", "1", "b", "o")).toBe(
+			"https://example.com/new",
+		);
+	});
+
+	it("shows the worker recovery phase and degraded mode", () => {
+		const format = T<(value: unknown) => string[]>("_formatLogContextLines");
+		expect(
+			format({
+				workerRecovery: {
+					degradedFallback: true,
+					phase: "exhausted",
+					attempts: 3,
+				},
+			}),
+		).toContain(
+			"Worker recovery: exhausted, 3/3 reloads used | Degraded page-side fallback: on",
+		);
+		expect(
+			format({
+				workerRecovery: {
+					degradedFallback: false,
+					phase: "Bad Phase",
+					attempts: -2,
+				},
+			}),
+		).toContain(
+			"Worker recovery: unknown, 0/3 reloads used | Degraded page-side fallback: off",
+		);
+		expect(format({}).some((line) => line.startsWith("Worker recovery:"))).toBe(
+			false,
+		);
 	});
 
 	it("formats malformed timestamps and multiline worker ownership safely", () => {
