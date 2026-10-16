@@ -1,6 +1,6 @@
 # Privacy Policy for TTV AB
 
-**Last Updated:** October 15, 2026
+**Last Updated:** October 16, 2026
 
 This Privacy Policy explains how TTV AB ("the Extension") handles data while you use Twitch.
 
@@ -44,15 +44,15 @@ Per-channel statistics reveal which Twitch channels were watched, but this data 
 
 While a Twitch tab is open, the Extension keeps a bounded diagnostic log in that tab's memory. When you explicitly choose **Generate Log**, the Extension collects sanitized diagnostics from a bounded number of open Twitch tabs and saves them as a text file on your device.
 
-The exported file can include Twitch page paths, channel or VOD identifiers, timestamps, Extension settings, ad-cycle and backup-stream state, worker status, and video playback or buffering details. The exporter removes URL query strings and is designed to redact credentials, tokens, session values, sensitive headers, blob identifiers, and oversized values.
+The exported file can include Twitch page paths, channel or VOD identifiers, timestamps and your local time zone offset, Extension settings, whether the Extension can access twitch.tv, your browser and operating system names and versions (and, in Chromium browsers, the processor architecture), which video formats your browser can decode, ad-cycle and backup-stream state, worker and recovery status, and video playback or buffering details. The exporter removes URL query strings and is designed to redact credentials, tokens, session values, sensitive headers, blob identifiers, and oversized values.
 
-Diagnostic logs are never uploaded automatically. After a log is saved, the Extension opens the GitHub Issues page, but you decide whether to attach or share the file. Because a log can still contain channel names and playback details, review it before sharing it publicly.
+Diagnostic logs are never uploaded automatically. After a log is saved, the Extension can open a new GitHub bug report, but you decide whether to attach or share the file. Because a log can still contain channel names and playback details, review it before sharing it publicly.
 
 ## 5. External Links and Services
 
 The Extension does not include third-party analytics, tracking, advertising, or data-broker SDKs.
 
-The popup and in-page notices contain links to Twitch, GitHub, and Ko-fi. These pages open only after a related user action. GitHub Issues opens as part of the Generate Log flow after you successfully save a diagnostic log. The Extension does not append locally stored statistics or settings to those links. Once an external page opens, that service's own privacy policy applies.
+The popup and in-page notices contain links to Twitch, GitHub, and Ko-fi. These pages open only after a related user action. A new GitHub bug report opens when you choose to continue to GitHub from the Report a bug dialog. That link fills in the Extension version, browser name and version, and operating system so you can review them in the report form before submitting; nothing is sent until you submit the report on GitHub. The Extension does not append locally stored statistics, settings, or channel information to any link. Once an external page opens, that service's own privacy policy applies.
 
 ## 6. Retention and Control
 
