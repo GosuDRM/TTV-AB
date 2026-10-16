@@ -900,10 +900,11 @@ function _findReactNodesByConstraints(
 	const found = new Array(constraints.length).fill(null);
 	if (!root) return found;
 	let remaining = requiredCount;
+	const DomNode = typeof Node === "function" ? Node : null;
 
 	function visit(node) {
 		const stateNode = node.stateNode;
-		if (stateNode) {
+		if (stateNode && !(DomNode && stateNode instanceof DomNode)) {
 			for (let i = 0; i < constraints.length; i++) {
 				if (found[i] === null && constraints[i](stateNode)) {
 					found[i] = stateNode;

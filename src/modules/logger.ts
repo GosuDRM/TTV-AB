@@ -1,5 +1,6 @@
 // TTV AB - Logger
 
+// biome-ignore lint/style/useConst: tests and local debugging reassign this flag to print debug lines
 let _debugLogging = false;
 
 function _formatLogText(value) {
@@ -222,8 +223,8 @@ function _appendPageLogEntry(entry) {
 	}
 	const buffer = globalThis.__TTVAB_LOGS__;
 	buffer.push(entry);
-	if (buffer.length <= 1200) return;
-	const trimmed = buffer.splice(0, buffer.length - 1000);
+	if (buffer.length <= 3600) return;
+	const trimmed = buffer.splice(0, buffer.length - 3000);
 	globalThis.__TTVAB_LOGS_DROPPED__ =
 		Math.max(0, Number(globalThis.__TTVAB_LOGS_DROPPED__) || 0) +
 		trimmed.length;
@@ -235,11 +236,6 @@ function _appendPageLogEntry(entry) {
 		if (_isPageLogMilestone(trimmedEntry)) milestones.push(trimmedEntry);
 	}
 	if (milestones.length > 40) milestones.splice(0, milestones.length - 40);
-}
-
-function _enableDebugLogging() {
-	_debugLogging = true;
-	_log("Debug logging enabled", "debug");
 }
 
 function _log(msg, type = "info") {

@@ -253,6 +253,12 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	_IncompletePodLastMediaSequence: number | null;
 	_IncompletePodCandidateUrl: string | null;
 	MeasuredAdIds: Set<string>;
+	_AdBreakMeasurement: {
+		cycleStartedAt: number;
+		ads: number;
+		milliseconds: number;
+		unmeasuredAdIds: Set<string>;
+	} | null;
 	FailedBackupPlayerTypes: Map<string, number>;
 	BackupAdMarkedCounts?: Map<string, number>;
 	_ReportedLiveStreamEnded?: boolean | null;
@@ -335,9 +341,6 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	_ForegroundQualityProbeAppliedAt: number;
 	ConsecutiveFailedNativeProbes: number;
 	_LoggedWhitelistByType: Set<string> | null;
-	_BackupSearchCount: number;
-	_BackupSearchErrorCount: number;
-	_BackupSearchFailCount: number;
 	LastAdEndReloadAt: number;
 	LastAdEndReloadKind: string | null;
 	PostEscapeReloadCounterproductive: boolean;

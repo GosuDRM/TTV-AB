@@ -453,6 +453,24 @@ function _recordAdDurations(textStr, info: TTVABStreamInfo) {
 		if (!(info.MeasuredAdIds instanceof Set)) {
 			info.MeasuredAdIds = new Set();
 		}
+		if (info._AdBreakMeasurement?.cycleStartedAt !== cycleStartedAt) {
+			info._AdBreakMeasurement = {
+				cycleStartedAt,
+				ads: 0,
+				milliseconds: 0,
+				unmeasuredAdIds: new Set(),
+			};
+		}
+		const breakMeasurement = info._AdBreakMeasurement;
+		const parseSeconds = (value) => {
+			const text = String(value || "");
+			return /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : 0;
+		};
+		const parseDate = (value) => {
+			const text = String(value || "");
+			const parsed = text.length <= 64 ? Date.parse(text) : Number.NaN;
+			return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
+		};
 		const measurements = [];
 		const measurementKeys = new Set<string>();
 		for (const line of textStr.split(/\r?\n/)) {
@@ -468,35 +486,53 @@ function _recordAdDurations(textStr, info: TTVABStreamInfo) {
 				continue;
 			}
 			const measurementKey = `${cycleStartedAt}:${stitchedAdId}`;
-			const standardDurationText = String(attr.DURATION || "");
-			const twitchDurationText = String(attr["X-TV-TWITCH-AD-DURATION"] || "");
-			const standardDurationSeconds = /^\d+(?:\.\d+)?$/.test(
-				standardDurationText,
-			)
-				? Number(standardDurationText)
-				: 0;
-			const durationText =
-				standardDurationSeconds > 0 ? standardDurationText : twitchDurationText;
-			if (!/^\d+(?:\.\d+)?$/.test(durationText)) continue;
-			const durationSeconds = Number(durationText);
-			const durationMilliseconds = Math.round(durationSeconds * 1000);
+			const standardDurationSeconds = parseSeconds(attr.DURATION);
+			const twitchDurationSeconds = parseSeconds(
+				attr["X-TV-TWITCH-AD-DURATION"],
+			);
+			const startDateMilliseconds = parseDate(attr["START-DATE"]);
+			const endDateMilliseconds = parseDate(attr["END-DATE"]);
+			const durationMilliseconds =
+				standardDurationSeconds > 0
+					? Math.round(standardDurationSeconds * 1000)
+					: twitchDurationSeconds > 0
+						? Math.round(twitchDurationSeconds * 1000)
+						: startDateMilliseconds > 0 &&
+								endDateMilliseconds > startDateMilliseconds
+							? endDateMilliseconds - startDateMilliseconds
+							: 0;
+			const occurrenceKey = startDateMilliseconds
+				? `${measurementKey}:${startDateMilliseconds}`
+				: measurementKey;
 			if (
 				!Number.isFinite(durationMilliseconds) ||
 				durationMilliseconds <= 0 ||
 				durationMilliseconds > 600000
 			) {
+				if (
+					!info.MeasuredAdIds.has(occurrenceKey) &&
+					breakMeasurement.unmeasuredAdIds.size < 50
+				)
+					breakMeasurement.unmeasuredAdIds.add(occurrenceKey);
 				continue;
 			}
-			const startDateText = String(attr["START-DATE"] || "");
-			const parsedStartDate =
-				startDateText.length <= 64 ? Date.parse(startDateText) : Number.NaN;
-			const startDateMilliseconds =
-				Number.isSafeInteger(parsedStartDate) && parsedStartDate > 0
-					? parsedStartDate
-					: 0;
-			const occurrenceKey = startDateMilliseconds
-				? `${measurementKey}:${startDateMilliseconds}`
-				: measurementKey;
+			breakMeasurement.unmeasuredAdIds.delete(occurrenceKey);
+			if (
+				standardDurationSeconds > 0 &&
+				twitchDurationSeconds > 0 &&
+				Math.abs(standardDurationSeconds - twitchDurationSeconds) >= 0.5
+			) {
+				const mismatchKey = `ad-duration-mismatch:${cycleStartedAt}`;
+				if (!(info._LoggedWhitelistByType instanceof Set))
+					info._LoggedWhitelistByType = new Set();
+				if (!info._LoggedWhitelistByType.has(mismatchKey)) {
+					info._LoggedWhitelistByType.add(mismatchKey);
+					_log(
+						`[Trace] ${stitchedAdId} declares DURATION ${standardDurationSeconds.toFixed(1)}s but X-TV-TWITCH-AD-DURATION ${twitchDurationSeconds.toFixed(1)}s; Time Saved uses ${standardDurationSeconds.toFixed(1)}s`,
+						"info",
+					);
+				}
+			}
 			if (
 				info.MeasuredAdIds.has(occurrenceKey) ||
 				measurementKeys.has(occurrenceKey)
@@ -524,6 +560,10 @@ function _recordAdDurations(textStr, info: TTVABStreamInfo) {
 				}),
 			);
 			if (!didPost) return;
+			breakMeasurement.ads += measurements.length;
+			for (const measurement of measurements) {
+				breakMeasurement.milliseconds += measurement.durationMilliseconds;
+			}
 			for (const measurementKey of measurementKeys) {
 				info.MeasuredAdIds.add(measurementKey);
 			}

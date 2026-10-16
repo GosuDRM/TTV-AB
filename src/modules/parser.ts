@@ -491,7 +491,7 @@ function _describeAdMarkedPlaylist(text, includeCached = false) {
 		} else if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
 			prefetch++;
 			if (_isKnownAdSegmentUrl(line.slice(23), { includeCached })) knownAd++;
-		} else if (line.startsWith("#EXT-X-DATERANGE:") && classes.size < 4) {
+		} else if (line.startsWith("#EXT-X-DATERANGE:") && classes.size < 8) {
 			const name = _parseAttrs(line).CLASS;
 			if (/^[a-z0-9-]{1,40}$/i.test(name || "")) classes.add(name);
 		}
