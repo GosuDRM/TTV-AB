@@ -74,6 +74,27 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v23.0.2 - 2026-10-16
+
+- **Backup Search Outcome** - Finish a backup search with the backup a newer refresh just updated, and log it, instead of ending silently with no result when that refresh lands during the search.
+- **Statistics After Extension Updates** - Stop retrying to save statistics, and filling the console with errors, in tabs left open during an update or reload. Those statistics are saved once you refresh the page.
+- **Slow Backup Sources** - Give up on a backup source that does not answer within 8 seconds, cancel its requests, and check the next source, so one slow Twitch request no longer keeps an ad break on the silent hold.
+- **Time Saved for More Ads** - Count ads that Twitch marks with an end time instead of a duration, so they are no longer missing from Time Saved.
+- **Log Download Message** - Say that the debug log download started and where to find it, with a Save again button, in browsers that download the file directly, instead of claiming the file was saved.
+- **Translated Log Errors** - Show debug log export errors in your language.
+- **Leaving Recovery Mode** - Turn off the emergency playlist protection once playback works again, also after you switch channels, after a crash on a page without a stream, or when another script has wrapped the page's network requests, instead of keeping it on until you refresh the tab.
+- **Recovery Notice** - Keep the refresh notice on screen until you come back to a background tab, and show it in your browser's language.
+- **Reduced Quality List Diagnostics** - Show how many qualities Twitch offered, the highest one, which Twitch player asked for them, and whether the page was visible when the full quality list is restored after Twitch sends a shorter one.
+- **Return to Live Diagnostics** - Log when the stream returns after an ad break with a quick pause and resume, and why the smoother playlist return was not possible.
+- **Backup Search Diagnostics** - Log why a backup search stopped early, and stop naming the previous break's backup as the one being replaced when a new break starts.
+- **Time Saved Diagnostics** - Show how many ads each ad break added to Time Saved and for how long in the log, note ads Twitch did not give a usable duration, and log when Twitch declares two different durations for an ad.
+- **Debug Log Details** - Record your operating system, which video codecs your browser can decode, your Ad Break Timer and Turbo settings, whether the extension can access twitch.tv, and your local time in debug logs, and explain why a Twitch tab could not be read.
+- **Bug Report Form** - Open a new GitHub bug report with your version, browser, and operating system already filled in.
+- **Recovery Status in Debug Logs** - Show the current recovery stage, how many of the three player restarts were used, and whether the emergency playlist protection is on.
+- **Lighter Player Checks** - Skip plain page elements when looking for Twitch's player, so the regular playback checks use less CPU while you watch.
+- **Long Time Saved Totals** - Show Time Saved in days, hours, minutes, and seconds once it passes a day.
+- **Longer Debug Logs** - Keep the last 3,000 events per tab instead of 1,000, so a debug log covers more ad breaks.
+
 ### v23.0.1 - 2026-10-15
 
 - **Settings After Updates** - Keep your Low Quality Fallback and Ad Break Timer choices when TTV AB updates instead of resetting them with every release.
@@ -110,15 +131,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Midroll Start Diagnostics** - Log one line per midroll that starts without ad segments, showing what the stream offered and whether playback waited for a backup, reused the last clean playlist, or showed the silent hold. Also log when the player cancels a request that is waiting for a backup and when a background backup search fails.
 - **Ad Break Type Diagnostics** - Name the ad break type, preroll or midroll, in each ad break summary, and log when the type cannot be recorded because the page is on other media.
 - **Ad Spoofing Diagnostics** - Say in the log that ad completion reports were sent rather than completed, show which stream is playing at the time, and warn once per ad break, instead of once per session, when Twitch's ad markers cannot be reported.
-
-### v22.0.3 - 2026-10-14
-
-- **Ended Stream Reloads** - Stop reloading the player every couple of seconds when a live stream ends, and space out end-of-stream recovery like the other playback fixes.
-- **Offline Playback** - Pause the stall fixes while the browser is offline instead of pausing and reloading the player during a connection drop, so playback resumes from its buffer once the connection is back.
-- **Quieter Background Logs** - Log a hidden tab's late worker heartbeat once per step instead of repeating it past the limit while waiting before recovery.
-- **Smoother Return From HD Backups** - Return to Twitch's own stream without rebuilding the player when it trails the HD backup by less than a segment, by waiting a moment for the next segment instead of reloading for several seconds.
-- **Diagnostic Saves** - Save the crash diagnostics snapshot only when the log has changed, or at most once a minute, instead of every 15 seconds.
-- **Buffer Gap Diagnostics** - Show the player's buffered ranges and the active backup in the log when playback jumps over a gap in its buffer, to help trace short freezes at the start of a break.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 

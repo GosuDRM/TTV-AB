@@ -2,6 +2,35 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [23.0.2] - 2026-10-16
+
+Fixed
+
+- **Backup Search Outcome** - Finish a backup search with the backup a newer refresh just updated, and log it, instead of ending silently with no result when that refresh lands during the search.
+- **Statistics After Extension Updates** - Stop retrying to save statistics, and filling the console with errors, in tabs left open during an update or reload. Those statistics are saved once you refresh the page.
+- **Slow Backup Sources** - Give up on a backup source that does not answer within 8 seconds, cancel its requests, and check the next source, so one slow Twitch request no longer keeps an ad break on the silent hold.
+- **Time Saved for More Ads** - Count ads that Twitch marks with an end time instead of a duration, so they are no longer missing from Time Saved.
+- **Log Download Message** - Say that the debug log download started and where to find it, with a Save again button, in browsers that download the file directly, instead of claiming the file was saved.
+- **Translated Log Errors** - Show debug log export errors in your language.
+- **Leaving Recovery Mode** - Turn off the emergency playlist protection once playback works again, also after you switch channels, after a crash on a page without a stream, or when another script has wrapped the page's network requests, instead of keeping it on until you refresh the tab.
+- **Recovery Notice** - Keep the refresh notice on screen until you come back to a background tab, and show it in your browser's language.
+
+Added
+
+- **Reduced Quality List Diagnostics** - Show how many qualities Twitch offered, the highest one, which Twitch player asked for them, and whether the page was visible when the full quality list is restored after Twitch sends a shorter one.
+- **Return to Live Diagnostics** - Log when the stream returns after an ad break with a quick pause and resume, and why the smoother playlist return was not possible.
+- **Backup Search Diagnostics** - Log why a backup search stopped early, and stop naming the previous break's backup as the one being replaced when a new break starts.
+- **Time Saved Diagnostics** - Show how many ads each ad break added to Time Saved and for how long in the log, note ads Twitch did not give a usable duration, and log when Twitch declares two different durations for an ad.
+- **Debug Log Details** - Record your operating system, which video codecs your browser can decode, your Ad Break Timer and Turbo settings, whether the extension can access twitch.tv, and your local time in debug logs, and explain why a Twitch tab could not be read.
+- **Bug Report Form** - Open a new GitHub bug report with your version, browser, and operating system already filled in.
+- **Recovery Status in Debug Logs** - Show the current recovery stage, how many of the three player restarts were used, and whether the emergency playlist protection is on.
+
+Changed
+
+- **Lighter Player Checks** - Skip plain page elements when looking for Twitch's player, so the regular playback checks use less CPU while you watch.
+- **Long Time Saved Totals** - Show Time Saved in days, hours, minutes, and seconds once it passes a day.
+- **Longer Debug Logs** - Keep the last 3,000 events per tab instead of 1,000, so a debug log covers more ad breaks.
+
 ## [23.0.1] - 2026-10-15
 
 Fixed
