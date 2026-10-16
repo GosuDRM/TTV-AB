@@ -69,7 +69,7 @@ function _getTrustedBridgeMessageDetail(value) {
 	return value;
 }
 
-const _PAGE_LOG_EXPORT_MAX_ENTRIES = 1000;
+const _PAGE_LOG_EXPORT_MAX_ENTRIES = 3000;
 const _PAGE_LOG_EXPORT_MAX_BYTES = 2 * 1024 * 1024;
 const _PREVIEW_FAILURE_LOG_MAX_ENTRIES = 64;
 const _PAGE_LOG_TEXT_ENCODER =
@@ -269,7 +269,7 @@ function _collectPageLogEntries(
 	const entries: PlainObject[] = [];
 	const milestones = new Set<PlainObject>();
 	let usedBytes = 2;
-	const oldestIndex = Math.max(0, length - 1200);
+	const oldestIndex = Math.max(0, length - 3600);
 	for (let index = length - 1; index >= oldestIndex; index -= 1) {
 		if (entries.length >= maxEntries && !retainRecoveryMilestones) break;
 		try {
@@ -634,6 +634,7 @@ function _collectPageLogContext() {
 				typeof _canRefreshUnhookedPlayer === "function" &&
 					_canRefreshUnhookedPlayer(state?.PageMediaKey),
 			),
+			workerRecovery: _collectWorkerRecoveryDiagnostics(state),
 			pageMediaKey:
 				_getSafePageLogString(state?.PageMediaKey, 160).replace(/\n/g, "") ||
 				null,
@@ -679,6 +680,38 @@ function _collectPageLogContext() {
 	} catch {
 		return null;
 	}
+}
+
+function _collectWorkerRecoveryDiagnostics(state) {
+	let recoveryState = null;
+	try {
+		recoveryState =
+			typeof _getWorkerRecoveryState === "function"
+				? _getWorkerRecoveryState(
+						{
+							MediaType: state?.PageMediaType,
+							ChannelName: state?.PageChannel,
+							VodID: state?.PageVodID,
+							MediaKey: state?.PageMediaKey,
+						},
+						false,
+					)
+				: null;
+	} catch {}
+	return {
+		degradedFallback: window.__TTVAB_M3U8_FALLBACK_ACTIVE === true,
+		phase: _getSafePageLogString(recoveryState?.phase || "idle", 24).replace(
+			/\n/g,
+			"",
+		),
+		attempts: Math.max(
+			0,
+			Math.min(
+				10,
+				Math.trunc(_getSafePageLogNumber(recoveryState?.attempts, 0)),
+			),
+		),
+	};
 }
 
 function _collectPostAdRecoveryDiagnostics() {
@@ -897,14 +930,6 @@ function _initToggleListener() {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;
 		_setAdTimerEnabled(safeDetail.enabled);
-	});
-
-	_onInternalMessage("ttvab-toggle-debug", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
-		if (typeof safeDetail?.enabled !== "boolean") return;
-		if (safeDetail.enabled && typeof _enableDebugLogging === "function") {
-			_enableDebugLogging();
-		}
 	});
 
 	_onInternalMessage("ttvab-collect-logs", (detail) => {

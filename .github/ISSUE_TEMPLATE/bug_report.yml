@@ -1,0 +1,69 @@
+name: Bug report
+description: Report an ad that got through, a freeze, a black screen, a quality drop, or another problem.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. In the TTV AB popup, choose **Report a bug** and then **Generate log file**, and attach the saved file below. The log shows what happened during each ad break; tokens and signed links are removed from it.
+  - type: dropdown
+    id: problem
+    attributes:
+      label: What happened?
+      options:
+        - An ad played
+        - The stream froze or buffered
+        - Black or purple screen
+        - Video quality stayed low
+        - Audio was missing, doubled, or out of sync
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What did you see, on which channel, and roughly when (with your time zone)? Does it happen on every ad break?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TTV AB version
+      placeholder: "23.0.2"
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: "Google Chrome 141, Firefox 144"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11, macOS 15, Linux"
+    validations:
+      required: true
+  - type: dropdown
+    id: fallback
+    attributes:
+      label: Low Quality Fallback
+      options:
+        - Enabled (default)
+        - Disabled
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log
+      description: Drag the saved ttv-ab-logs file here. If you could not generate one, say why.
+  - type: textarea
+    id: extensions
+    attributes:
+      label: Other extensions
+      description: List any other ad blockers or Twitch extensions you use, such as uBlock Origin or 7TV.

@@ -160,9 +160,152 @@ function _getNextReminderDelayMs() {
 	);
 }
 
+const _WORKER_RECOVERY_NOTICE_TEXT = {
+	en: {
+		unhooked:
+			"Refresh this tab to start ad blocking on the current player. Chat will reconnect and picture-in-picture will close.",
+		postAd:
+			"Playback did not recover after ads. Refresh this tab to restart the stream. Chat will reconnect and picture-in-picture will close.",
+		crash:
+			"TTV AB could not restart Twitch's player worker. If playback remains stuck, refresh this tab. Chat will reconnect and picture-in-picture will close.",
+		refresh: "Refresh tab",
+		dismiss: "Dismiss",
+	},
+	es: {
+		unhooked:
+			"Actualiza esta pestaña para empezar a bloquear anuncios en el reproductor actual. El chat se volverá a conectar y se cerrará el modo imagen en imagen.",
+		postAd:
+			"La reproducción no se recuperó después de los anuncios. Actualiza esta pestaña para reiniciar la transmisión. El chat se volverá a conectar y se cerrará el modo imagen en imagen.",
+		crash:
+			"TTV AB no pudo reiniciar el proceso del reproductor de Twitch. Si la reproducción sigue atascada, actualiza esta pestaña. El chat se volverá a conectar y se cerrará el modo imagen en imagen.",
+		refresh: "Actualizar pestaña",
+		dismiss: "Descartar",
+	},
+	fr: {
+		unhooked:
+			"Actualisez cet onglet pour bloquer les publicités dans le lecteur actuel. Le chat se reconnectera et le mode image dans l’image se fermera.",
+		postAd:
+			"La lecture n’a pas repris après les publicités. Actualisez cet onglet pour relancer le stream. Le chat se reconnectera et le mode image dans l’image se fermera.",
+		crash:
+			"TTV AB n’a pas pu redémarrer le processus du lecteur Twitch. Si la lecture reste bloquée, actualisez cet onglet. Le chat se reconnectera et le mode image dans l’image se fermera.",
+		refresh: "Actualiser l’onglet",
+		dismiss: "Ignorer",
+	},
+	de: {
+		unhooked:
+			"Lade diesen Tab neu, um Werbung im aktuellen Player zu blockieren. Der Chat verbindet sich neu und Bild-in-Bild wird geschlossen.",
+		postAd:
+			"Die Wiedergabe hat sich nach der Werbung nicht erholt. Lade diesen Tab neu, um den Stream neu zu starten. Der Chat verbindet sich neu und Bild-in-Bild wird geschlossen.",
+		crash:
+			"TTV AB konnte den Player-Prozess von Twitch nicht neu starten. Wenn die Wiedergabe hängen bleibt, lade diesen Tab neu. Der Chat verbindet sich neu und Bild-in-Bild wird geschlossen.",
+		refresh: "Tab neu laden",
+		dismiss: "Schließen",
+	},
+	pt: {
+		unhooked:
+			"Atualize esta aba para começar a bloquear anúncios no player atual. O chat vai reconectar e o picture-in-picture será fechado.",
+		postAd:
+			"A reprodução não se recuperou depois dos anúncios. Atualize esta aba para reiniciar a transmissão. O chat vai reconectar e o picture-in-picture será fechado.",
+		crash:
+			"O TTV AB não conseguiu reiniciar o processo do player da Twitch. Se a reprodução continuar travada, atualize esta aba. O chat vai reconectar e o picture-in-picture será fechado.",
+		refresh: "Atualizar aba",
+		dismiss: "Dispensar",
+	},
+	it: {
+		unhooked:
+			"Aggiorna questa scheda per bloccare la pubblicità nel player attuale. La chat si riconnetterà e il picture-in-picture verrà chiuso.",
+		postAd:
+			"La riproduzione non è ripresa dopo la pubblicità. Aggiorna questa scheda per riavviare la diretta. La chat si riconnetterà e il picture-in-picture verrà chiuso.",
+		crash:
+			"TTV AB non è riuscito a riavviare il processo del player di Twitch. Se la riproduzione resta bloccata, aggiorna questa scheda. La chat si riconnetterà e il picture-in-picture verrà chiuso.",
+		refresh: "Aggiorna scheda",
+		dismiss: "Chiudi",
+	},
+	ja: {
+		unhooked:
+			"このタブを再読み込みすると、現在のプレイヤーで広告ブロックが始まります。チャットは再接続され、ピクチャー・イン・ピクチャーは閉じます。",
+		postAd:
+			"広告の後に再生が回復しませんでした。このタブを再読み込みして配信を再開してください。チャットは再接続され、ピクチャー・イン・ピクチャーは閉じます。",
+		crash:
+			"TTV AB は Twitch のプレイヤー処理を再起動できませんでした。再生が止まったままの場合は、このタブを再読み込みしてください。チャットは再接続され、ピクチャー・イン・ピクチャーは閉じます。",
+		refresh: "タブを再読み込み",
+		dismiss: "閉じる",
+	},
+	ko: {
+		unhooked:
+			"이 탭을 새로 고치면 현재 플레이어에서 광고 차단이 시작됩니다. 채팅이 다시 연결되고 PIP 모드가 닫힙니다.",
+		postAd:
+			"광고 후 재생이 복구되지 않았습니다. 이 탭을 새로 고쳐 방송을 다시 시작하세요. 채팅이 다시 연결되고 PIP 모드가 닫힙니다.",
+		crash:
+			"TTV AB가 Twitch 플레이어 프로세스를 다시 시작하지 못했습니다. 재생이 계속 멈춰 있으면 이 탭을 새로 고치세요. 채팅이 다시 연결되고 PIP 모드가 닫힙니다.",
+		refresh: "탭 새로 고침",
+		dismiss: "닫기",
+	},
+	zh_CN: {
+		unhooked:
+			"刷新此标签页即可在当前播放器中开始拦截广告。聊天会重新连接，画中画会关闭。",
+		postAd:
+			"广告结束后播放未能恢复。请刷新此标签页以重新开始直播。聊天会重新连接，画中画会关闭。",
+		crash:
+			"TTV AB 无法重启 Twitch 的播放器进程。如果播放仍然卡住，请刷新此标签页。聊天会重新连接，画中画会关闭。",
+		refresh: "刷新标签页",
+		dismiss: "关闭",
+	},
+	zh_TW: {
+		unhooked:
+			"重新整理此分頁即可在目前的播放器中開始封鎖廣告。聊天室會重新連線，子母畫面會關閉。",
+		postAd:
+			"廣告結束後播放未能恢復。請重新整理此分頁以重新開始直播。聊天室會重新連線，子母畫面會關閉。",
+		crash:
+			"TTV AB 無法重新啟動 Twitch 的播放器程序。如果播放仍然卡住，請重新整理此分頁。聊天室會重新連線，子母畫面會關閉。",
+		refresh: "重新整理分頁",
+		dismiss: "關閉",
+	},
+	ru: {
+		unhooked:
+			"Обновите эту вкладку, чтобы начать блокировку рекламы в текущем плеере. Чат переподключится, а режим «картинка в картинке» закроется.",
+		postAd:
+			"Воспроизведение не восстановилось после рекламы. Обновите эту вкладку, чтобы перезапустить трансляцию. Чат переподключится, а режим «картинка в картинке» закроется.",
+		crash:
+			"TTV AB не удалось перезапустить процесс плеера Twitch. Если воспроизведение всё ещё зависло, обновите эту вкладку. Чат переподключится, а режим «картинка в картинке» закроется.",
+		refresh: "Обновить вкладку",
+		dismiss: "Закрыть",
+	},
+	uk: {
+		unhooked:
+			"Оновіть цю вкладку, щоб почати блокування реклами в поточному плеєрі. Чат перепідключиться, а режим «картинка в картинці» закриється.",
+		postAd:
+			"Відтворення не відновилося після реклами. Оновіть цю вкладку, щоб перезапустити трансляцію. Чат перепідключиться, а режим «картинка в картинці» закриється.",
+		crash:
+			"TTV AB не вдалося перезапустити процес плеєра Twitch. Якщо відтворення досі зависло, оновіть цю вкладку. Чат перепідключиться, а режим «картинка в картинці» закриється.",
+		refresh: "Оновити вкладку",
+		dismiss: "Закрити",
+	},
+};
+
+function _getWorkerRecoveryNoticeText() {
+	const candidates = [
+		...(Array.isArray(navigator?.languages) ? navigator.languages : []),
+		navigator?.language,
+	];
+	for (const candidate of candidates) {
+		const language = String(candidate || "").toLowerCase();
+		if (!language) continue;
+		if (language.startsWith("zh")) {
+			return /tw|hk|mo|hant/.test(language)
+				? _WORKER_RECOVERY_NOTICE_TEXT.zh_TW
+				: _WORKER_RECOVERY_NOTICE_TEXT.zh_CN;
+		}
+		const text = _WORKER_RECOVERY_NOTICE_TEXT[language.split(/[-_]/)[0]];
+		if (text) return text;
+	}
+	return _WORKER_RECOVERY_NOTICE_TEXT.en;
+}
+
 let _workerRecoveryNoticeMediaKey: string | null = null;
 let _workerRecoveryNoticeDismissTimer: ReturnType<typeof setTimeout> | null =
 	null;
+let _workerRecoveryNoticeVisibilityListener: (() => void) | null = null;
 
 function _clearWorkerRecoveryNotice(mediaKey = null, reason = null) {
 	if (
@@ -178,6 +321,13 @@ function _clearWorkerRecoveryNotice(mediaKey = null, reason = null) {
 	if (_workerRecoveryNoticeDismissTimer !== null) {
 		clearTimeout(_workerRecoveryNoticeDismissTimer);
 		_workerRecoveryNoticeDismissTimer = null;
+	}
+	if (_workerRecoveryNoticeVisibilityListener) {
+		document.removeEventListener(
+			"visibilitychange",
+			_workerRecoveryNoticeVisibilityListener,
+		);
+		_workerRecoveryNoticeVisibilityListener = null;
 	}
 	const notice = document.getElementById("ttvab-worker-recovery");
 	if (!mediaKey || notice?.dataset.mediaKey === mediaKey) notice?.remove();
@@ -238,16 +388,17 @@ function _showWorkerRecoveryNotice(mediaKey, reason = "crash") {
 	notice.setAttribute("role", "status");
 	notice.style.cssText =
 		"position:fixed;bottom:20px;right:20px;z-index:2147483647;max-width:360px;padding:16px;border:1px solid #9146ff;border-radius:8px;background:#18181b;color:#efeff1;font:14px/1.5 sans-serif;box-shadow:0 4px 16px #0008";
+	const text = _getWorkerRecoveryNoticeText();
 	const message = document.createElement("p");
 	message.textContent = isUnhooked
-		? "Refresh this tab to start ad blocking on the current player. Chat will reconnect and picture-in-picture will close."
+		? text.unhooked
 		: isPostAd
-			? "Playback did not recover after ads. Refresh this tab to restart the stream. Chat will reconnect and picture-in-picture will close."
-			: "TTV AB could not restart Twitch's player worker. If playback remains stuck, refresh this tab. Chat will reconnect and picture-in-picture will close.";
+			? text.postAd
+			: text.crash;
 	message.style.margin = "0 0 12px";
 	const refresh = document.createElement("button");
 	refresh.type = "button";
-	refresh.textContent = "Refresh tab";
+	refresh.textContent = text.refresh;
 	refresh.style.cssText =
 		"padding:6px 12px;border:0;border-radius:4px;background:#9146ff;color:white;cursor:pointer;font:inherit";
 	refresh.onclick = () => {
@@ -259,7 +410,7 @@ function _showWorkerRecoveryNotice(mediaKey, reason = "crash") {
 	};
 	const dismiss = document.createElement("button");
 	dismiss.type = "button";
-	dismiss.textContent = "Dismiss";
+	dismiss.textContent = text.dismiss;
 	dismiss.style.cssText =
 		"margin-left:8px;padding:6px 12px;border:0;border-radius:4px;background:#303036;color:#efeff1;cursor:pointer;font:inherit";
 	dismiss.onclick = () => _clearWorkerRecoveryNotice(mediaKey);
@@ -268,11 +419,30 @@ function _showWorkerRecoveryNotice(mediaKey, reason = "crash") {
 	_workerRecoveryNoticeMediaKey = mediaKey;
 	recoveryState.noticeShownAt = noticeShownAt;
 	if (isUnhooked) return;
-	const timerID = setTimeout(() => {
-		if (_workerRecoveryNoticeDismissTimer !== timerID) return;
-		_clearWorkerRecoveryNotice(mediaKey);
-	}, 3000);
-	_workerRecoveryNoticeDismissTimer = timerID;
+	const startDismissTimer = () => {
+		const timerID = setTimeout(() => {
+			if (_workerRecoveryNoticeDismissTimer !== timerID) return;
+			_clearWorkerRecoveryNotice(mediaKey);
+		}, 3000);
+		_workerRecoveryNoticeDismissTimer = timerID;
+	};
+	const isHidden = () =>
+		typeof _isNativeDocumentHidden === "function"
+			? _isNativeDocumentHidden()
+			: document.visibilityState === "hidden";
+	if (!isHidden()) {
+		startDismissTimer();
+		return;
+	}
+	const onVisible = () => {
+		if (isHidden() || _workerRecoveryNoticeVisibilityListener !== onVisible)
+			return;
+		document.removeEventListener("visibilitychange", onVisible);
+		_workerRecoveryNoticeVisibilityListener = null;
+		startDismissTimer();
+	};
+	_workerRecoveryNoticeVisibilityListener = onVisible;
+	document.addEventListener("visibilitychange", onVisible);
 }
 
 function _showDonation() {

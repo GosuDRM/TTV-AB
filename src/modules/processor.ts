@@ -1109,6 +1109,7 @@ function _isBackupProbationCurrent(
 }
 
 const _BACKUP_BRIDGE_PROMOTION_CLEAN_SPAN_MS = 6000;
+const _BACKUP_CANDIDATE_ATTEMPT_BUDGET_MS = 8000;
 
 function _isBackupProbationCooldownExempt(
 	info: TTVABStreamInfo,
@@ -3144,8 +3145,15 @@ function _logAdBreakSummary(
 				`${step.source} @${((step.at - timeline.cycleStartedAt) / 1000).toFixed(1)}s`,
 		)
 		.join(" -> ");
+	const measurement =
+		info._AdBreakMeasurement?.cycleStartedAt === timeline.cycleStartedAt
+			? info._AdBreakMeasurement
+			: null;
+	const measuredAds = Math.max(0, Number(measurement?.ads) || 0);
+	const unmeasuredAds = measurement?.unmeasuredAdIds?.size || 0;
+	const measuredSummary = `measured ${measuredAds} ad${measuredAds === 1 ? "" : "s"} (${(Math.max(0, Number(measurement?.milliseconds) || 0) / 1000).toFixed(1)}s)${unmeasuredAds > 0 ? `, ${unmeasuredAds} without a usable duration` : ""}`;
 	_log(
-		`[Break] ${outcome} ${_normalizeMediaKey(info.MediaKey)} cycle ${timeline.cycleStartedAt}${timeline.rollType ? ` (${timeline.rollType})` : ""}: ${path || "no media served"}${timeline.dropped > 0 ? ` (${timeline.dropped} earlier steps omitted)` : ""}${timeline.nativeReturn ? `; native return by ${timeline.nativeReturn}` : ""}`,
+		`[Break] ${outcome} ${_normalizeMediaKey(info.MediaKey)} cycle ${timeline.cycleStartedAt}${timeline.rollType ? ` (${timeline.rollType})` : ""}: ${path || "no media served"}${timeline.dropped > 0 ? ` (${timeline.dropped} earlier steps omitted)` : ""}${timeline.nativeReturn ? `; native return by ${timeline.nativeReturn}` : ""}; ${measuredSummary}`,
 		"info",
 	);
 }
@@ -4250,6 +4258,7 @@ async function _fetchWithTimeout(
 async function _awaitBackupProbeBeforeDeadline<T>(
 	promise: PromiseLike<T> | T,
 	deadlineAt = 0,
+	onTimeout: (() => void) | null = null,
 ): Promise<{ completed: true; value: T } | { completed: false; value: null }> {
 	const deadline = Math.max(0, Number(deadlineAt) || 0);
 	if (deadline <= 0) {
@@ -4258,11 +4267,12 @@ async function _awaitBackupProbeBeforeDeadline<T>(
 	const remainingMs = deadline - Date.now();
 	if (remainingMs <= 0) {
 		Promise.resolve(promise).catch(() => {});
+		onTimeout?.();
 		return { completed: false, value: null };
 	}
 	let timeoutId = null;
 	try {
-		return await Promise.race([
+		const result = await Promise.race([
 			Promise.resolve(promise).then((value): { completed: true; value: T } => ({
 				completed: true,
 				value,
@@ -4274,6 +4284,8 @@ async function _awaitBackupProbeBeforeDeadline<T>(
 				);
 			}),
 		]);
+		if (!result.completed) onTimeout?.();
+		return result;
 	} finally {
 		if (timeoutId !== null) clearTimeout(timeoutId);
 	}
@@ -4767,6 +4779,7 @@ function _createStreamInfo(
 		_IncompletePodLastMediaSequence: null,
 		_IncompletePodCandidateUrl: null,
 		MeasuredAdIds: new Set(),
+		_AdBreakMeasurement: null,
 		FailedBackupPlayerTypes: new Map(),
 		BackupAdMarkedCounts: new Map(),
 		_ReportedLiveStreamEnded: null,
@@ -4849,9 +4862,6 @@ function _createStreamInfo(
 		_ForegroundQualityProbeAppliedAt: 0,
 		ConsecutiveFailedNativeProbes: 0,
 		_LoggedWhitelistByType: null,
-		_BackupSearchCount: 0,
-		_BackupSearchErrorCount: 0,
-		_BackupSearchFailCount: 0,
 		LastAdEndReloadAt: 0,
 		LastAdEndReloadKind: null,
 		PostEscapeReloadCounterproductive: false,
@@ -5353,7 +5363,9 @@ function _commitBackupPlaylist(
 		return null;
 	}
 	_observeServedPrefetchTimeline(info, metadata.playlistUrl, m3u8);
-	const previousDescription = `${info.LastCleanBackupPlayerType || "none"}@${info.LastCleanBackupResolution || "unknown"}`;
+	const previousDescription = info.LastCleanBackupM3U8
+		? `${info.LastCleanBackupPlayerType || "none"}@${info.LastCleanBackupResolution || "unknown"}`
+		: "none@unknown";
 	info._BackupSelection = {
 		identity,
 		sequence:
@@ -7555,7 +7567,7 @@ async function _processM3U8Core(
 					? `player rebuild (${playlistReturnBlocker})`
 					: continuePlayback
 						? "playlist"
-						: "direct switch";
+						: `pause/resume (${playlistReturnBlocker})`;
 				if (info._PlaylistContinuityDiagnostics?.adBreak)
 					info._PlaylistContinuityDiagnostics.adBreak.nativeReturn =
 						nativeReturn;
@@ -9452,6 +9464,51 @@ async function _prepareFatalMediaRecovery(
 	return true;
 }
 
+function _whitelistBackupVariants(
+	info: TTVABStreamInfo,
+	master: string,
+	baseUrl: string,
+	playerType: string,
+) {
+	const lines = master.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]?.trim();
+		if (
+			line &&
+			!line.startsWith("#") &&
+			(line.endsWith(".m3u8") || line.includes("://"))
+		) {
+			try {
+				const variantUrl = new URL(line, baseUrl).href;
+				const variantIsEnhanced = Boolean(
+					i > 0 &&
+						lines[i - 1]?.startsWith("#EXT-X-STREAM-INF") &&
+						_isEnhancedCodecString(_parseAttrs(lines[i - 1]).CODECS),
+				);
+				info.BackupVariantUrls?.add(variantUrl);
+				info.BackupVariantPlayerTypes?.set?.(
+					_getExactPlaylistUrlKey(variantUrl),
+					playerType,
+				);
+				for (const alias of _getPlaylistUrlAliases(variantUrl)) {
+					info.BackupVariantUrls?.add(alias);
+					if (variantIsEnhanced) {
+						info.EnhancedBackupVariantUrls?.add(alias);
+					}
+				}
+			} catch {}
+		}
+	}
+	while (info.BackupVariantUrls.size > 200) {
+		const first = info.BackupVariantUrls.values().next().value;
+		if (first !== undefined) {
+			info.BackupVariantUrls.delete(first);
+			info.EnhancedBackupVariantUrls?.delete(first);
+			info.BackupVariantPlayerTypes?.delete?.(first);
+		} else break;
+	}
+}
+
 async function _findBackupStream(
 	info: TTVABStreamInfo,
 	realFetch,
@@ -9634,10 +9691,13 @@ async function _findBackupStream(
 			!_shouldHoldAutoplayBackupDuringAd(info)
 		) {
 			searchPromise.catch(() => {});
+			let bridgeWaitTimeoutId = null;
 			const raced = await Promise.race([
 				searchPromise,
-				new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
-			]);
+				new Promise<null>((resolve) => {
+					bridgeWaitTimeoutId = setTimeout(() => resolve(null), 1000);
+				}),
+			]).finally(() => clearTimeout(bridgeWaitTimeoutId));
 			if (raced?.m3u8) return raced;
 			const bridged = await _refreshHeldAutoplayBackupPlaylist(
 				info,
@@ -9706,8 +9766,36 @@ async function _searchBackupStream(
 	const markRetryCooldown = (playerType, reason) => {
 		if (!earlyRetry) _markBackupPlayerRetryCooldown(info, playerType, reason);
 	};
-	if (!searchIsCurrent() || searchDeadlineExceeded()) {
+	const searchStartedAt = Date.now();
+	const stopSearch = (): TTVABBackupSearchResult => {
+		if (!earlyRetry) {
+			const reason = searchDeadlineExceeded()
+				? "its deadline passed"
+				: requestSignal?.aborted
+					? "the ad break ended"
+					: selectionSequence < (info._BackupSelection?.sequence || 0)
+						? "a newer backup selection replaced it"
+						: pageMediaKey !==
+									_normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) ||
+								pageGeneration !==
+									(Number(__TTVAB_STATE__?.PagePlaybackContextGeneration) || 0)
+							? "the page changed"
+							: !_isBackupSearchContextCurrent(
+										info,
+										backupSearchEpoch,
+										cycleStartedAt,
+									)
+								? "the ad break changed"
+								: "it was superseded";
+			_log(
+				`[Trace] Backup search stopped after ${((Date.now() - searchStartedAt) / 1000).toFixed(1)}s because ${reason}`,
+				"debug",
+			);
+		}
 		return { type: null, m3u8: null };
+	};
+	if (!searchIsCurrent() || searchDeadlineExceeded()) {
+		return stopSearch();
 	}
 	if (!earlyRetry) _forceClearBackupCooldownsIfStale(info);
 	const previousPlaylistUrl = earlyRetry?.candidate.playlistUrl || null;
@@ -9801,7 +9889,7 @@ async function _searchBackupStream(
 		codecPass++
 	) {
 		if (!searchIsCurrent() || searchDeadlineExceeded()) {
-			return { type: null, m3u8: null };
+			return stopSearch();
 		}
 		const codecSelection = codecSearchPasses[codecPass];
 		const codecFamily = _getVideoCodecFamily(codecSelection);
@@ -9959,7 +10047,7 @@ async function _searchBackupStream(
 
 		for (let pi = 0; !backupM3u8 && pi < passPlayerTypes.length; pi++) {
 			if (!searchIsCurrent() || searchDeadlineExceeded()) {
-				return { type: null, m3u8: null };
+				return stopSearch();
 			}
 			if (isExactEnhancedPass && Date.now() >= exactCodecProbeDeadlineAt) {
 				break;
@@ -9993,11 +10081,37 @@ async function _searchBackupStream(
 				info._ForegroundQualityProbeAppliedAt = foregroundQualityProbeAt;
 			}
 			_log(`[Trace] Checking: ${pt}`, "debug");
+			const typeBudgetAt = Date.now() + _BACKUP_CANDIDATE_ATTEMPT_BUDGET_MS;
+			const typeDeadlineAt =
+				probeDeadlineAt > 0
+					? Math.min(probeDeadlineAt, typeBudgetAt)
+					: typeBudgetAt;
+			const typeController =
+				typeof AbortController === "function" ? new AbortController() : null;
+			const typeSignal =
+				typeController &&
+				requestSignal &&
+				typeof AbortSignal !== "undefined" &&
+				typeof AbortSignal.any === "function"
+					? AbortSignal.any([requestSignal, typeController.signal])
+					: typeController && !requestSignal
+						? typeController.signal
+						: requestSignal;
+			let typeTimedOut = false;
+			const onTypeTimeout = () => {
+				typeController?.abort();
+				if (typeTimedOut || typeDeadlineAt !== typeBudgetAt) return;
+				typeTimedOut = true;
+				_log(
+					`[Trace] ${pt} did not answer within ${_BACKUP_CANDIDATE_ATTEMPT_BUDGET_MS / 1000}s; checking the next source`,
+					"warning",
+				);
+			};
 			let retryWithoutViewerHeaders = false;
 
 			for (let j = 0; j < 2 || retryWithoutViewerHeaders; j++) {
 				if (!searchIsCurrent() || searchDeadlineExceeded()) {
-					return { type: null, m3u8: null };
+					return stopSearch();
 				}
 				if (
 					pt === "autoplay" &&
@@ -10054,23 +10168,25 @@ async function _searchBackupStream(
 								pt,
 								realFetch,
 								omitViewerHeaders,
-								probeDeadlineAt,
-								requestSignal,
+								typeDeadlineAt,
+								typeSignal,
 							),
-							probeDeadlineAt,
+							typeDeadlineAt,
+							onTypeTimeout,
 						);
 						if (!searchIsCurrent()) {
-							return { type: null, m3u8: null };
+							return stopSearch();
 						}
 						if (!tokenProbe.completed) break;
 						const tokenRes = tokenProbe.value;
 						if (tokenRes.status === 200) {
 							const tokenBodyProbe = await _awaitBackupProbeBeforeDeadline(
 								tokenRes.json(),
-								probeDeadlineAt,
+								typeDeadlineAt,
+								onTypeTimeout,
 							);
 							if (!searchIsCurrent()) {
-								return { type: null, m3u8: null };
+								return stopSearch();
 							}
 							if (!tokenBodyProbe.completed) break;
 							if (
@@ -10093,22 +10209,24 @@ async function _searchBackupStream(
 								}
 								const masterProbe = await _awaitBackupProbeBeforeDeadline(
 									_fetchWithTimeout(realFetch, usherUrl.href, {
-										signal: requestSignal,
+										signal: typeSignal,
 									}),
-									probeDeadlineAt,
+									typeDeadlineAt,
+									onTypeTimeout,
 								);
 								if (!searchIsCurrent()) {
-									return { type: null, m3u8: null };
+									return stopSearch();
 								}
 								if (!masterProbe.completed) break;
 								const encRes = masterProbe.value;
 								if (encRes.status === 200) {
 									const masterBodyProbe = await _awaitBackupProbeBeforeDeadline(
 										encRes.text(),
-										probeDeadlineAt,
+										typeDeadlineAt,
+										onTypeTimeout,
 									);
 									if (!searchIsCurrent()) {
-										return { type: null, m3u8: null };
+										return stopSearch();
 									}
 									if (!masterBodyProbe.completed) break;
 									if (
@@ -10149,39 +10267,7 @@ async function _searchBackupStream(
 										isSessionNeutralCandidate = omitViewerHeaders;
 									}
 
-									const lines = enc.split("\n");
-									for (let i = 0; i < lines.length; i++) {
-										const line = lines[i]?.trim();
-										if (
-											line &&
-											!line.startsWith("#") &&
-											(line.endsWith(".m3u8") || line.includes("://"))
-										) {
-											try {
-												const variantUrl = new URL(line, encBaseUrl).href;
-												const variantIsEnhanced = Boolean(
-													i > 0 &&
-														lines[i - 1]?.startsWith("#EXT-X-STREAM-INF") &&
-														_isEnhancedCodecString(
-															_parseAttrs(lines[i - 1]).CODECS,
-														),
-												);
-												info.BackupVariantUrls?.add(variantUrl);
-												info.BackupVariantPlayerTypes?.set?.(
-													_getExactPlaylistUrlKey(variantUrl),
-													pt,
-												);
-												for (const alias of _getPlaylistUrlAliases(
-													variantUrl,
-												)) {
-													info.BackupVariantUrls?.add(alias);
-													if (variantIsEnhanced) {
-														info.EnhancedBackupVariantUrls?.add(alias);
-													}
-												}
-											} catch {}
-										}
-									}
+									_whitelistBackupVariants(info, enc, encBaseUrl, pt);
 									if (!info._LoggedWhitelistByType) {
 										info._LoggedWhitelistByType = new Set();
 									}
@@ -10190,14 +10276,6 @@ async function _searchBackupStream(
 										_log(
 											`[Trace] Whitelisted variants for ${pt} (Total: ${info.BackupVariantUrls.size})`,
 										);
-									}
-									while (info.BackupVariantUrls.size > 200) {
-										const first = info.BackupVariantUrls.values().next().value;
-										if (first !== undefined) {
-											info.BackupVariantUrls.delete(first);
-											info.EnhancedBackupVariantUrls?.delete(first);
-											info.BackupVariantPlayerTypes?.delete?.(first);
-										} else break;
 									}
 								} else {
 									_log(`Usher failed for ${pt}: ${encRes.status}`, "warning");
@@ -10230,54 +10308,16 @@ async function _searchBackupStream(
 						}
 					} catch (e) {
 						if (!searchIsCurrent()) {
-							return { type: null, m3u8: null };
+							return stopSearch();
 						}
 						_log(`Backup error: ${e.message}`, "error");
 						markRetryCooldown(pt, "error");
-						info._BackupSearchErrorCount =
-							(info._BackupSearchErrorCount || 0) + 1;
 					}
 				}
 
 				if (enc) {
 					if (!isFreshM3u8) {
-						const lines = enc.split("\n");
-						for (let i = 0; i < lines.length; i++) {
-							const line = lines[i]?.trim();
-							if (
-								line &&
-								!line.startsWith("#") &&
-								(line.endsWith(".m3u8") || line.includes("://"))
-							) {
-								try {
-									const variantUrl = new URL(line, encBaseUrl).href;
-									const variantIsEnhanced = Boolean(
-										i > 0 &&
-											lines[i - 1]?.startsWith("#EXT-X-STREAM-INF") &&
-											_isEnhancedCodecString(_parseAttrs(lines[i - 1]).CODECS),
-									);
-									info.BackupVariantUrls?.add(variantUrl);
-									info.BackupVariantPlayerTypes?.set?.(
-										_getExactPlaylistUrlKey(variantUrl),
-										pt,
-									);
-									for (const alias of _getPlaylistUrlAliases(variantUrl)) {
-										info.BackupVariantUrls?.add(alias);
-										if (variantIsEnhanced) {
-											info.EnhancedBackupVariantUrls?.add(alias);
-										}
-									}
-								} catch {}
-							}
-						}
-						while (info.BackupVariantUrls.size > 200) {
-							const first = info.BackupVariantUrls.values().next().value;
-							if (first !== undefined) {
-								info.BackupVariantUrls.delete(first);
-								info.EnhancedBackupVariantUrls?.delete(first);
-								info.BackupVariantPlayerTypes?.delete?.(first);
-							} else break;
-						}
+						_whitelistBackupVariants(info, enc, encBaseUrl, pt);
 					}
 					try {
 						if (
@@ -10322,22 +10362,24 @@ async function _searchBackupStream(
 							}
 							const streamProbe = await _awaitBackupProbeBeforeDeadline(
 								_fetchWithTimeout(realFetch, streamUrl, {
-									signal: requestSignal,
+									signal: typeSignal,
 								}),
-								probeDeadlineAt,
+								typeDeadlineAt,
+								onTypeTimeout,
 							);
 							if (!searchIsCurrent()) {
-								return { type: null, m3u8: null };
+								return stopSearch();
 							}
 							if (!streamProbe.completed) break;
 							const streamRes = streamProbe.value;
 							if (streamRes.status === 200) {
 								const streamBodyProbe = await _awaitBackupProbeBeforeDeadline(
 									streamRes.text(),
-									probeDeadlineAt,
+									typeDeadlineAt,
+									onTypeTimeout,
 								);
 								if (!searchIsCurrent()) {
-									return { type: null, m3u8: null };
+									return stopSearch();
 								}
 								if (!streamBodyProbe.completed) break;
 								if (
@@ -10351,7 +10393,7 @@ async function _searchBackupStream(
 									streamRes.url || streamUrl,
 								);
 								if (!searchIsCurrent()) {
-									return { type: null, m3u8: null };
+									return stopSearch();
 								}
 								if (m3u8) {
 									const candidateIsPlayable = _playlistHasMediaSegments(m3u8);
@@ -10550,7 +10592,7 @@ async function _searchBackupStream(
 													probeDeadlineAt,
 												);
 											if (!searchIsCurrent()) {
-												return { type: null, m3u8: null };
+												return stopSearch();
 											}
 											if (!bridgedProbe.completed) {
 												break;
@@ -10578,7 +10620,7 @@ async function _searchBackupStream(
 											}
 										}
 										if (!searchIsCurrent()) {
-											return { type: null, m3u8: null };
+											return stopSearch();
 										}
 										if (
 											isExactEnhancedPass &&
@@ -10611,7 +10653,27 @@ async function _searchBackupStream(
 												codec: selectedCodecIdentity,
 											})
 										) {
-											return { type: null, m3u8: null };
+											if (!searchIsCurrent()) {
+												return stopSearch();
+											}
+											const refreshedAt = Number(info.LastCleanBackupAt) || 0;
+											const refreshedAgeMs = Date.now() - refreshedAt;
+											const canReuseRefresh = Boolean(
+												info.LastCleanBackupPlayerType === pt &&
+													info.LastCleanBackupM3U8 &&
+													refreshedAt >= cycleStartedAt &&
+													refreshedAgeMs >= 0 &&
+													refreshedAgeMs < 900,
+											);
+											_log(
+												`[Trace] Kept ${pt} @ ${selectedResolution || "unknown"}; a newer refresh of it committed during this search${canReuseRefresh ? "" : ` ${Math.round(refreshedAgeMs)}ms ago, too old to serve`}`,
+												"info",
+											);
+											if (!canReuseRefresh) {
+												return { type: null, m3u8: null };
+											}
+											backupM3u8 = info.LastCleanBackupM3U8;
+											break;
 										}
 										_log(
 											`[Trace] Selected: ${pt} @ ${selectedResolution || "unknown"}`,
@@ -10646,7 +10708,7 @@ async function _searchBackupStream(
 												codec: selectedCodecIdentity,
 											})
 										) {
-											return { type: null, m3u8: null };
+											return stopSearch();
 										}
 										_log(
 											`[Trace] Selected (minimal): ${pt} @ ${selectedResolution || "unknown"}`,
@@ -10655,7 +10717,7 @@ async function _searchBackupStream(
 										break;
 									}
 									if (!searchIsCurrent()) {
-										return { type: null, m3u8: null };
+										return stopSearch();
 									}
 									markRetryCooldown(pt, promotionPolicy.reason);
 									if (isExactEnhancedPass) {
@@ -10740,22 +10802,20 @@ async function _searchBackupStream(
 						}
 					} catch (e) {
 						if (!searchIsCurrent()) {
-							return { type: null, m3u8: null };
+							return stopSearch();
 						}
 						_log(`Stream error: ${e.message}`, "warning");
 						markRetryCooldown(pt, "stream-error");
 						if (isExactEnhancedPass) {
 							failedExactCodecPlayerTypes.add(pt);
 						}
-						info._BackupSearchErrorCount =
-							(info._BackupSearchErrorCount || 0) + 1;
 						invalidateCache = true;
 					}
 				}
 
 				if (invalidateCache) {
 					if (!searchIsCurrent()) {
-						return { type: null, m3u8: null };
+						return stopSearch();
 					}
 					if (
 						info._BackupProbation?.cache === activeCacheEntry &&
@@ -10780,7 +10840,7 @@ async function _searchBackupStream(
 	}
 
 	if (!searchIsCurrent() || searchDeadlineExceeded()) {
-		return { type: null, m3u8: null };
+		return stopSearch();
 	}
 	if (foregroundQualityProbeAt > 0 && !foregroundQualityProbeAttempted) {
 		info._ForegroundQualityProbeAppliedAt = foregroundQualityProbeAt;
@@ -10790,9 +10850,6 @@ async function _searchBackupStream(
 			info.BackupEncodingsM3U8Cache[backupType] = earlyRetry.candidate.cache;
 		}
 		info._NoBackupRecoveryCandidates?.clear?.();
-		info._BackupSearchCount = (info._BackupSearchCount || 0) + 1;
-	} else {
-		info._BackupSearchFailCount = (info._BackupSearchFailCount || 0) + 1;
 	}
 
 	return { type: backupType, m3u8: backupM3u8 };

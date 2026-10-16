@@ -1154,16 +1154,15 @@ function _hookWorkerFetch() {
 			_hasExplicitAdMetadata(encodings)
 		)
 			return null;
+		const reducedVariants = encodings
+			.split(/\r?\n/)
+			.filter((line) => line.startsWith("#EXT-X-STREAM-INF:"));
 		const reducedHeight = Math.max(
 			0,
-			...encodings
-				.split(/\r?\n/)
-				.filter((line) => line.startsWith("#EXT-X-STREAM-INF:"))
-				.map(
-					(line) =>
-						Number(String(_parseAttrs(line).RESOLUTION || "").split("x")[1]) ||
-						0,
-				),
+			...reducedVariants.map(
+				(line) =>
+					Number(String(_parseAttrs(line).RESOLUTION || "").split("x")[1]) || 0,
+			),
 		);
 		const nativeHeight =
 			Number(String(nativeVariant.Resolution || "").split("x")[1]) || 0;
@@ -1210,6 +1209,8 @@ function _hookWorkerFetch() {
 			return {
 				master: validated.master,
 				masterUrl: saved.masterUrl,
+				reducedVariantCount: reducedVariants.length,
+				reducedHeight,
 				preserveNativeSession: Boolean(
 					info._PendingPostAdNativeMaster?.consumed === true &&
 						info._PendingPostAdNativeMaster.masterUrl === saved.masterUrl,
@@ -2231,8 +2232,19 @@ function _hookWorkerFetch() {
 				assertMasterRequestCurrent();
 				if (recoveredNativeMaster) {
 					encodings = recoveredNativeMaster.master;
+					let requestPlayerType = "unknown";
+					try {
+						const tokenPlayerType = JSON.parse(
+							new URL(url).searchParams.get("token") || "null",
+						)?.player_type;
+						if (
+							typeof tokenPlayerType === "string" &&
+							/^[a-z_-]{1,40}$/i.test(tokenPlayerType)
+						)
+							requestPlayerType = tokenPlayerType;
+					} catch {}
 					_log(
-						`[Recovery] Preserved live-validated native qualities after a reduced master${recoveredNativeMaster.preserveNativeSession ? " while post-ad playback is recovering" : ""}`,
+						`[Recovery] Preserved live-validated native qualities after a reduced master (${recoveredNativeMaster.reducedVariantCount} offered up to ${recoveredNativeMaster.reducedHeight}p; page ${Number(__TTVAB_STATE__.PagePlaybackVisibleSinceAt) > 0 ? "visible" : "hidden"}; player ${requestPlayerType})${recoveredNativeMaster.preserveNativeSession ? " while post-ad playback is recovering" : ""}`,
 						"success",
 					);
 				}
@@ -3076,7 +3088,7 @@ function _resetWorkerRecoveryStateIfStable(worker, context, now = Date.now()) {
 	state.terminalRearmCycleStartedAt = 0;
 	state.terminalRearmAttemptedAt = 0;
 	state.phase = "idle";
-	_removePageSideM3U8OverrideWhenRecovered();
+	_removePageSideM3U8OverrideWhenRecovered(worker, now);
 }
 
 function _getWorkerPlaybackObservationAt(worker, context, bootstrap = false) {
@@ -3276,6 +3288,7 @@ function _markWorkerPong(worker, now = Date.now()) {
 	) {
 		_beginExhaustedWorkerRecoveryStabilization(worker, workerContext, now);
 		_resetWorkerRecoveryStateIfStable(worker, workerContext, now);
+		_removePageSideM3U8OverrideWhenRecovered(worker, now);
 	}
 }
 
@@ -5335,10 +5348,12 @@ function _ensurePageSideFallbackAdCycle(url, _codec = null, playlistText = "") {
 }
 
 let _pageSideM3U8OverrideRemover: (() => boolean) | null = null;
+let _pageSideM3U8OverrideInstalledAt = 0;
 
 function _installPageSideM3U8Override() {
 	if (window.__TTVAB_M3U8_FALLBACK_ACTIVE) return;
 	window.__TTVAB_M3U8_FALLBACK_ACTIVE = true;
+	_pageSideM3U8OverrideInstalledAt = Date.now();
 	_log("Installing page-side M3U8 protection during worker recovery", "info");
 
 	const realFetch = window.fetch;
@@ -5355,8 +5370,9 @@ function _installPageSideM3U8Override() {
 		return !enabled;
 	};
 
+	let retired = false;
 	const fallbackFetch = async function (...args) {
-		if (shouldPassThrough()) {
+		if (retired || shouldPassThrough()) {
 			return realFetch.apply(this, args);
 		}
 		const [urlOrRequest] = args;
@@ -5583,25 +5599,70 @@ function _installPageSideM3U8Override() {
 	};
 	window.fetch = fallbackFetch;
 	_pageSideM3U8OverrideRemover = () => {
-		if (window.fetch !== fallbackFetch) return false;
-		window.fetch = realFetch;
+		const unwrapped = window.fetch === fallbackFetch;
+		if (unwrapped) window.fetch = realFetch;
+		retired = true;
 		window.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+		_pageSideM3U8OverrideInstalledAt = 0;
 		_pageSideEmptyHoldInfoByUrl.clear();
 		_pageSideM3U8OverrideRemover = null;
 		_log(
-			"Removed page-side M3U8 protection after the replacement player stayed healthy",
+			unwrapped
+				? "Removed page-side M3U8 protection after playback recovered"
+				: "Turned off page-side M3U8 protection after playback recovered; another script wrapped fetch, so requests now pass straight through",
 			"info",
 		);
 		return true;
 	};
 }
 
-function _removePageSideM3U8OverrideWhenRecovered() {
+function _isWorkerRecoveryStateForActivePlayback(state) {
+	const context = _normalizePlaybackContext(state?.context);
+	const pageContext = _normalizePlaybackContext({
+		MediaType: __TTVAB_STATE__?.PageMediaType,
+		ChannelName: __TTVAB_STATE__?.PageChannel,
+		VodID: __TTVAB_STATE__?.PageVodID,
+		MediaKey: __TTVAB_STATE__?.PageMediaKey,
+	});
+	return Boolean(
+		(pageContext.MediaKey || pageContext.ChannelName) &&
+			(state?.contextKey === _getWorkerRecoveryContextKey(pageContext) ||
+				!_isPlaybackContextMismatch(context, pageContext) ||
+				(typeof _isActivePictureInPicturePlaybackContext === "function" &&
+					_isActivePictureInPicturePlaybackContext(context))),
+	);
+}
+
+function _removePageSideM3U8OverrideWhenRecovered(
+	worker = null,
+	now = Date.now(),
+) {
 	if (typeof _pageSideM3U8OverrideRemover !== "function") return false;
+	if (worker) {
+		const workerContext = _getWorkerPlaybackContext(worker);
+		const workerMediaKey = _normalizeMediaKey(workerContext.MediaKey);
+		const observationAt = _getWorkerPlaybackObservationAt(
+			worker,
+			workerContext,
+		);
+		if (
+			!workerMediaKey ||
+			(workerMediaKey !== _normalizeMediaKey(__TTVAB_STATE__?.PageMediaKey) &&
+				!(
+					typeof _isActivePictureInPicturePlaybackContext === "function" &&
+					_isActivePictureInPicturePlaybackContext(workerContext)
+				)) ||
+			!_isWorkerHeartbeatHealthy(worker, now, workerContext) ||
+			observationAt <= _pageSideM3U8OverrideInstalledAt
+		)
+			return false;
+	}
 	for (const state of _WorkerRecoveryStates.values()) {
+		if (!_isWorkerRecoveryStateForActivePlayback(state)) continue;
 		if (
 			state?.activeEpoch ||
 			state?.phase === "exhausted" ||
+			state?.phase === "stabilizing" ||
 			state?.phase === "waiting-pip" ||
 			state?.phase === "degraded-pip"
 		)

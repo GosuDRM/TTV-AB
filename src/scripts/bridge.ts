@@ -391,6 +391,7 @@ const inFlightPersistRequests = new Set<string | symbol>();
 let persistWorkGeneration = 0;
 let persistedFlushRecoveryTimeout = null;
 let persistedFlushRecoveryAttempt = 0;
+let extensionContextInvalidated = false;
 
 function normalizeFlushId(value) {
 	if (typeof value !== "string") return null;
@@ -763,7 +764,8 @@ function clearPersistedFlushRecovery() {
 }
 
 function schedulePersistedFlushRecovery(hasPersistedWork = false) {
-	if (persistedFlushRecoveryTimeout) return false;
+	if (persistedFlushRecoveryTimeout || extensionContextInvalidated)
+		return false;
 	const hasExhaustedMemoryRetry = Array.from(retryFlushEntries.values()).some(
 		(entry) => !entry.timeoutId,
 	);
@@ -897,6 +899,7 @@ function dispatchPersistPayload(
 			schedulePersistedFlushRecovery(persistedFlushes.length > 0);
 		}
 	}
+	if (extensionContextInvalidated) return false;
 
 	sendPersistPayload(
 		payload,
@@ -909,6 +912,10 @@ function dispatchPersistPayload(
 			}
 		},
 		(errorMessage) => {
+			if (String(errorMessage).includes("Extension context invalidated")) {
+				stopPersistingAfterExtensionReload();
+				return;
+			}
 			if (!retryOnFailure || workGeneration !== persistWorkGeneration) {
 				return;
 			}
@@ -918,6 +925,16 @@ function dispatchPersistPayload(
 		},
 	);
 	return true;
+}
+
+function stopPersistingAfterExtensionReload() {
+	if (extensionContextInvalidated) return;
+	extensionContextInvalidated = true;
+	clearScheduledRetryFlush();
+	clearPersistedFlushRecovery();
+	console.warn(
+		"[TTV AB] Extension was reloaded or updated; refresh this page to save its statistics",
+	);
 }
 
 function replayPersistedCounterFlushes() {
@@ -1461,7 +1478,7 @@ type PendingLogCollection = {
 };
 const pendingLogCollections = new Map<string, PendingLogCollection>();
 const LOG_COLLECT_TIMEOUT_MS = 5000;
-const MAX_LOG_EXPORT_ENTRIES = 1000;
+const MAX_LOG_EXPORT_ENTRIES = 3000;
 const MAX_LOG_EXPORT_BYTES = 2 * 1024 * 1024;
 const LOG_TEXT_ENCODER =
 	typeof TextEncoder === "function" ? new TextEncoder() : null;
@@ -1833,6 +1850,18 @@ function sanitizePostAdRecoveryDiagnostics(value) {
 	};
 }
 
+function sanitizeWorkerRecoveryDiagnostics(value) {
+	if (!isPlainObject(value)) return null;
+	return {
+		degradedFallback: value.degradedFallback === true,
+		phase:
+			typeof value.phase === "string" && /^[a-z-]{1,24}$/.test(value.phase)
+				? value.phase
+				: "unknown",
+		attempts: Math.trunc(sanitizeLogContextNumber(value.attempts, 0, 10, 0)),
+	};
+}
+
 function sanitizeLogContext(value) {
 	if (!isPlainObject(value)) return null;
 	const context = value;
@@ -1857,6 +1886,7 @@ function sanitizeLogContext(value) {
 		pageVersion: sanitizeLogString(context.pageVersion, 32),
 		pageGeneration: sanitizeLogGeneration(context.pageGeneration),
 		unhookedPlayer: context.unhookedPlayer === true,
+		workerRecovery: sanitizeWorkerRecoveryDiagnostics(context.workerRecovery),
 		workerFailures: Array.isArray(context.workerFailures)
 			? context.workerFailures
 					.slice(-8)
