@@ -97,6 +97,115 @@ function addSuppressed(connected: boolean) {
 	return media;
 }
 
+describe("_findReactNodesByConstraints", () => {
+	type Fiber = {
+		stateNode: unknown;
+		child: Fiber | null;
+		sibling: Fiber | null;
+	};
+	const find = () =>
+		T<
+			(
+				root: Fiber | null,
+				constraints: Array<(node: Record<string, unknown>) => unknown>,
+				requiredCount?: number,
+			) => unknown[]
+		>("_findReactNodesByConstraints");
+	const fiber = (stateNode: unknown, ...children: Fiber[]): Fiber => {
+		const node: Fiber = { stateNode, child: null, sibling: null };
+		for (const child of children.reverse()) {
+			child.sibling = node.child;
+			node.child = child;
+		}
+		return node;
+	};
+	const playerConstraints = [
+		(node: Record<string, unknown>) =>
+			node.setPlayerActive &&
+			(node.props as Record<string, unknown> | undefined)?.mediaPlayerInstance,
+		(node: Record<string, unknown>) =>
+			node.setSrc && node.setInitialPlaybackSettings,
+		(node: Record<string, unknown>) =>
+			(node.state as Record<string, Record<string, unknown>> | undefined)
+				?.videoPlayerInstance?.playerMode !== undefined,
+	];
+	const makeWrapper = (name: string) => ({
+		name,
+		setPlayerActive() {},
+		props: { mediaPlayerInstance: { name } },
+	});
+	const makePlayerState = (name: string) => ({
+		name,
+		setSrc() {},
+		setInitialPlaybackSettings() {},
+	});
+
+	it("finds components nested under page elements without inspecting the elements", () => {
+		const wrapper = makeWrapper("primary");
+		const playerState = makePlayerState("primary");
+		const container = document.createElement("div");
+		const inspected: unknown[] = [];
+		const tree = fiber(
+			{},
+			fiber(container, fiber(document.createTextNode("live"))),
+			fiber(
+				document.createElement("section"),
+				fiber({ props: {} }),
+				fiber(
+					wrapper,
+					fiber(document.createElement("video"), fiber(playerState)),
+				),
+			),
+		);
+
+		const found = find()(
+			tree,
+			[
+				(node) => {
+					inspected.push(node);
+					return playerConstraints[0](node);
+				},
+				playerConstraints[1],
+				playerConstraints[2],
+			],
+			2,
+		);
+
+		expect(found).toEqual([wrapper, playerState, null]);
+		expect(inspected.some((node) => node instanceof Node)).toBe(false);
+	});
+
+	it("returns the first player in tree order when two players are mounted", () => {
+		const first = makeWrapper("first");
+		const firstState = makePlayerState("first");
+		const second = makeWrapper("second");
+		const secondState = makePlayerState("second");
+		const tree = fiber(
+			document.createElement("main"),
+			fiber(document.createElement("div"), fiber(first, fiber(firstState))),
+			fiber(second, fiber(secondState)),
+		);
+
+		expect(find()(tree, playerConstraints, 2)).toEqual([
+			first,
+			firstState,
+			null,
+		]);
+	});
+
+	it("still reports a missing player when only page elements carry player-like fields", () => {
+		const video = document.createElement("video");
+		Object.assign(video, {
+			setPlayerActive() {},
+			props: { mediaPlayerInstance: {} },
+		});
+		const tree = fiber({}, fiber(video), fiber(document.createElement("div")));
+
+		expect(find()(tree, playerConstraints, 2)).toEqual([null, null, null]);
+		expect(find()(null, playerConstraints, 2)).toEqual([null, null, null]);
+	});
+});
+
 describe("_ensureIndependentVideoAdStyle", () => {
 	const ensure = () => T<() => boolean>("_ensureIndependentVideoAdStyle");
 

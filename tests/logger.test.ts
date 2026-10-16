@@ -145,14 +145,14 @@ describe("_log capture buffer", () => {
 		expect(buffer().map((e) => e.m)).toContain("visible debug");
 	});
 
-	it("caps the buffer near 1000 entries instead of growing forever", () => {
-		for (let i = 0; i < 1300; i++) {
+	it("caps the buffer near 3000 entries instead of growing forever", () => {
+		for (let i = 0; i < 3700; i++) {
 			log()(`line ${i}`, "info");
 		}
 		const entries = buffer();
-		expect(entries.length).toBeLessThanOrEqual(1200);
-		expect(entries.length).toBeGreaterThanOrEqual(1000);
-		expect(entries[entries.length - 1].m).toBe("line 1299");
+		expect(entries.length).toBeLessThanOrEqual(3600);
+		expect(entries.length).toBeGreaterThanOrEqual(3000);
+		expect(entries[entries.length - 1].m).toBe("line 3699");
 	});
 
 	it("keeps errors and ad break milestones that fall out of the trimmed buffer", () => {
@@ -163,7 +163,7 @@ describe("_log capture buffer", () => {
 			log()("v21.3.1 loaded", "info");
 			log()("[Break] ended live:test cycle 1: autoplay 640x360 @2.0s", "info");
 			log()("Worker command Ping failed: broken", "error");
-			for (let i = 0; i < 1300; i++) log()(`line ${i}`, "info");
+			for (let i = 0; i < 3700; i++) log()(`line ${i}`, "info");
 			expect(buffer().map((entry) => entry.m)).not.toContain("v21.3.1 loaded");
 			expect(
 				(scoped.__TTVAB_LOG_MILESTONES__ as Array<{ m: string }>).map(
@@ -174,7 +174,7 @@ describe("_log capture buffer", () => {
 				"[Break] ended live:test cycle 1: autoplay 640x360 @2.0s",
 				"Worker command Ping failed: broken",
 			]);
-			expect(scoped.__TTVAB_LOGS_DROPPED__).toBe(1303 - buffer().length);
+			expect(scoped.__TTVAB_LOGS_DROPPED__).toBe(3703 - buffer().length);
 		} finally {
 			delete scoped.__TTVAB_LOGS_DROPPED__;
 			delete scoped.__TTVAB_LOG_MILESTONES__;

@@ -12606,7 +12606,7 @@ describe("clean-playback reduced master recovery", () => {
 	const mediaKey = "live:testchannel";
 	const masterUrl =
 		"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8?sig=owned";
-	const reducedUrl = masterUrl.replace("owned", "reduced");
+	const reducedUrl = `${masterUrl.replace("owned", "reduced")}&token=${encodeURIComponent(JSON.stringify({ player_type: "site" }))}`;
 	const newerUrl = masterUrl.replace("owned", "newer");
 	const playlist = (sequence: number, ad = false) =>
 		`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${sequence}\n${ad ? '#EXT-X-DATERANGE:ID="ad",CLASS="twitch-stitched-ad"\n' : ""}#EXTINF:2,live\nhttps://edge.example/segment-${sequence}.ts`;
@@ -12822,6 +12822,17 @@ describe("clean-playback reduced master recovery", () => {
 				expect(session.info.UsherBaseUrl).toBe(masterUrl);
 				expect(session.info.IsShowingAd).toBe(false);
 				expect(session.info._PendingPostAdNativeMaster).toBeNull();
+				const postMessage = session.runtime.scope.postMessage as ReturnType<
+					typeof vi.fn
+				>;
+				expect(
+					postMessage.mock.calls
+						.map(([value]) => value?.message as Record<string, unknown>)
+						.filter((message) => message?.key === "LogEntry")
+						.map((message) => (message.value as Record<string, unknown>).m),
+				).toContain(
+					"[Recovery] Preserved live-validated native qualities after a reduced master (1 offered up to 360p; page hidden; player site)",
+				);
 				if (lowerCodec !== codec) {
 					expect(session.info.ModifiedM3U8).toContain(session.variants[1].url);
 					expect(session.info.ModifiedM3U8).not.toContain(

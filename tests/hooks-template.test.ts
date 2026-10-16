@@ -233,7 +233,7 @@ describe("worker message handler hardening", () => {
 			'_onInternalMessage("ttvab-toggle-autoplay-backup"',
 		);
 		const blockEnd = source.indexOf(
-			'_onInternalMessage("ttvab-toggle-debug"',
+			'_onInternalMessage("ttvab-toggle-ad-timer"',
 			blockStart,
 		);
 		const block = source.slice(blockStart, blockEnd);

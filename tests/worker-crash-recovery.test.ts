@@ -361,6 +361,45 @@ describe("manual refresh after bounded post-ad recovery", () => {
 	});
 });
 
+describe("worker recovery in the page log", () => {
+	it("reports the current channel's recovery phase, reloads used, and degraded mode", () => {
+		const savedState = g.__TTVAB_STATE__;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const savedActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+		const states = g._WorkerRecoveryStates as Map<
+			string,
+			Record<string, unknown>
+		>;
+		g.__TTVAB_STATE__ = {
+			PageMediaKey: "live:logchannel",
+			PageChannel: "logchannel",
+			PageMediaType: "live",
+		};
+		try {
+			const collect = T<(state: unknown) => Record<string, unknown>>(
+				"_collectWorkerRecoveryDiagnostics",
+			);
+			scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+			expect(collect(g.__TTVAB_STATE__)).toEqual({
+				degradedFallback: false,
+				phase: "idle",
+				attempts: 0,
+			});
+			states.set("live:logchannel", { phase: "exhausted", attempts: 3 });
+			scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = true;
+			expect(collect(g.__TTVAB_STATE__)).toEqual({
+				degradedFallback: true,
+				phase: "exhausted",
+				attempts: 3,
+			});
+		} finally {
+			states.delete("live:logchannel");
+			scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = savedActive;
+			g.__TTVAB_STATE__ = savedState;
+		}
+	});
+});
+
 describe("ended live streams", () => {
 	it("does not restart the player for a live stream that has ended", () => {
 		const savedStateObject = g.__TTVAB_STATE__;
@@ -422,9 +461,19 @@ describe("ended live streams", () => {
 });
 
 describe("page-side fallback lifetime", () => {
-	it("removes the page-side fallback only after every recovery has settled", async () => {
+	type FallbackFixture = {
+		states: Map<string, Record<string, unknown>>;
+		pageFetch: ReturnType<typeof vi.fn>;
+		logs: string[];
+		install: () => void;
+		remove: (worker?: unknown) => boolean;
+		pageState: Record<string, unknown>;
+	};
+
+	async function withFallback(run: (fixture: FallbackFixture) => unknown) {
 		const savedStateObject = g.__TTVAB_STATE__;
 		T<(scope: typeof globalThis) => void>("_declareState")(globalThis);
+		const pageState = g.__TTVAB_STATE__ as Record<string, unknown>;
 		const scopedWindow = window as unknown as Record<string, unknown>;
 		const savedFetch = window.fetch;
 		const savedRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
@@ -435,32 +484,24 @@ describe("page-side fallback lifetime", () => {
 		>;
 		const savedStates = new Map(states);
 		const savedLog = g._log;
-		g._log = () => {};
+		const logs: string[] = [];
+		g._log = (message: string) => logs.push(message);
 		const pageFetch = vi.fn(async () => new Response("page"));
 		window.fetch = pageFetch as typeof fetch;
 		scopedWindow.__TTVAB_REAL_FETCH__ = null;
 		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
 		states.clear();
-		const remove = g._removePageSideM3U8OverrideWhenRecovered as () => boolean;
 		try {
-			(g._installPageSideM3U8Override as () => void)();
-			const fallbackFetch = window.fetch;
-			expect(fallbackFetch).not.toBe(pageFetch);
-			states.set("live:other", { phase: "exhausted", activeEpoch: 0 });
-			expect(remove()).toBe(false);
-			expect(window.fetch).toBe(fallbackFetch);
-			states.set("live:other", { phase: "idle", activeEpoch: 0 });
-			expect(remove()).toBe(true);
-			expect(window.fetch).toBe(pageFetch);
-			expect(scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE).toBe(false);
-			expect(remove()).toBe(false);
-
-			(g._installPageSideM3U8Override as () => void)();
-			const laterWrapper = async (...args: Parameters<typeof fetch>) =>
-				(window.fetch as typeof fetch)(...args);
-			window.fetch = laterWrapper as typeof fetch;
-			expect(remove()).toBe(false);
-			expect(window.fetch).toBe(laterWrapper);
+			await run({
+				states,
+				pageFetch,
+				logs,
+				pageState,
+				install: g._installPageSideM3U8Override as () => void,
+				remove: g._removePageSideM3U8OverrideWhenRecovered as (
+					worker?: unknown,
+				) => boolean,
+			});
 		} finally {
 			window.fetch = savedFetch;
 			scopedWindow.__TTVAB_REAL_FETCH__ = savedRealFetch;
@@ -470,6 +511,148 @@ describe("page-side fallback lifetime", () => {
 			g._log = savedLog;
 			g.__TTVAB_STATE__ = savedStateObject;
 		}
+	}
+
+	const recoveryState = (mediaKey: string, phase: string, activeEpoch = 0) => ({
+		contextKey: mediaKey,
+		context: {
+			MediaType: "live",
+			ChannelName: mediaKey.slice(5),
+			MediaKey: mediaKey,
+		},
+		phase,
+		activeEpoch,
+	});
+
+	const healthyWorker = (mediaKey: string, observedAt = Date.now() + 1) => ({
+		__TTVABGeneration: 4,
+		__TTVABPageMediaKey: mediaKey,
+		__TTVABFirstPongAt: Date.now(),
+		__TTVABLastPongAt: Date.now(),
+		__TTVABPlaybackObservedAtByMediaKey: new Map([[mediaKey, observedAt]]),
+	});
+
+	it("keeps the fallback while the current channel is recovering, exhausted, or stabilizing", async () => {
+		await withFallback(({ states, pageFetch, pageState, install, remove }) => {
+			pageState.PageMediaKey = "live:current";
+			pageState.PageChannel = "current";
+			install();
+			const fallbackFetch = window.fetch;
+			expect(fallbackFetch).not.toBe(pageFetch);
+			for (const [phase, activeEpoch] of [
+				["exhausted", 0],
+				["stabilizing", 0],
+				["scheduled", 3],
+			] as const) {
+				states.set(
+					"live:current",
+					recoveryState("live:current", phase, activeEpoch),
+				);
+				expect(remove()).toBe(false);
+				expect(window.fetch).toBe(fallbackFetch);
+			}
+			states.set("live:current", recoveryState("live:current", "idle"));
+			expect(remove()).toBe(true);
+			expect(window.fetch).toBe(pageFetch);
+			expect(
+				(window as unknown as Record<string, unknown>)
+					.__TTVAB_M3U8_FALLBACK_ACTIVE,
+			).toBe(false);
+			expect(remove()).toBe(false);
+		});
+	});
+
+	it("leaves degraded mode on another channel once its own worker is healthy", async () => {
+		await withFallback(({ states, pageFetch, pageState, install, remove }) => {
+			pageState.PageMediaKey = "live:first";
+			pageState.PageChannel = "first";
+			install();
+			states.set("live:first", recoveryState("live:first", "exhausted"));
+			states.get("live:first").attempts = 3;
+			pageState.PageMediaKey = "live:second";
+			pageState.PageChannel = "second";
+
+			expect(remove(healthyWorker("live:second", 1))).toBe(false);
+			expect(remove(healthyWorker("live:first"))).toBe(false);
+			expect(window.fetch).not.toBe(pageFetch);
+
+			expect(remove(healthyWorker("live:second"))).toBe(true);
+			expect(window.fetch).toBe(pageFetch);
+			expect(states.get("live:first")).toMatchObject({
+				phase: "exhausted",
+				attempts: 3,
+			});
+		});
+	});
+
+	it("leaves degraded mode after a crash that had no exact channel", async () => {
+		await withFallback(({ states, pageFetch, pageState, remove, logs }) => {
+			pageState.PageMediaKey = null;
+			const worker = {
+				__TTVABGeneration: 2,
+				__TTVABCreatedAt: Date.now() - 1000,
+			};
+			expect(
+				(
+					g._recoverCrashedWorker as (
+						worker: Record<string, unknown>,
+						context: Record<string, unknown>,
+						message: string,
+					) => boolean
+				)(worker, {}, "Worker unresponsive (no pong)"),
+			).toBe(true);
+			expect(window.fetch).not.toBe(pageFetch);
+			expect(states.size).toBe(0);
+			expect(logs).toContain(
+				"Skipping worker recovery reload without an exact playback context",
+			);
+
+			pageState.PageMediaKey = "live:later";
+			pageState.PageChannel = "later";
+			pageState.PageMediaType = "live";
+			(g._markWorkerPong as (worker: unknown, now?: number) => void)(
+				healthyWorker("live:later"),
+				Date.now() + 1,
+			);
+			expect(window.fetch).toBe(pageFetch);
+			expect(remove()).toBe(false);
+		});
+	});
+
+	it("turns into a pass-through when another script wrapped fetch afterwards", async () => {
+		await withFallback(
+			async ({ pageFetch, pageState, install, remove, logs }) => {
+				pageState.PageMediaKey = "live:current";
+				pageState.PageChannel = "current";
+				pageState.IsAdStrippingEnabled = true;
+				const adPlaylist = [
+					"#EXTM3U",
+					'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad"',
+					"#EXTINF:2.000,",
+					"https://edge.example/stitched-ad-1.ts",
+				].join("\n");
+				const upstream = new Response(adPlaylist);
+				pageFetch.mockImplementation(async () => upstream);
+				install();
+				const retiredFallback = window.fetch;
+				const laterWrapper = vi.fn(async () => new Response("later"));
+				window.fetch = laterWrapper as unknown as typeof fetch;
+
+				expect(remove()).toBe(true);
+				expect(window.fetch).toBe(laterWrapper);
+				expect(
+					(window as unknown as Record<string, unknown>)
+						.__TTVAB_M3U8_FALLBACK_ACTIVE,
+				).toBe(false);
+				expect(logs).toContain(
+					"Turned off page-side M3U8 protection after playback recovered; another script wrapped fetch, so requests now pass straight through",
+				);
+				const response = await retiredFallback(
+					"https://video-weaver.example.hls.ttvnw.net/v1/playlist/a.m3u8",
+				);
+				expect(response).toBe(upstream);
+			},
+		);
 	});
 });
 
@@ -1174,5 +1357,146 @@ describe("crashed worker recovery with the real player task", () => {
 		expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
 		vi.advanceTimersByTime(1);
 		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
+	});
+});
+
+describe("worker recovery notice", () => {
+	const notice = () => document.getElementById("ttvab-worker-recovery");
+	let hidden = false;
+	let savedVisibility: unknown;
+	let states: Map<string, Record<string, unknown>>;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		history.replaceState(null, "", "/testchannel");
+		g.__TTVAB_STATE__ = {
+			IsAdStrippingEnabled: true,
+			PageMediaKey: "live:testchannel",
+			PageChannel: "testchannel",
+			PageMediaType: "live",
+			PagePlaybackContextGeneration: 2,
+		};
+		hidden = false;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		savedVisibility = scopedWindow.__TTVAB_NATIVE_VISIBILITY__;
+		scopedWindow.__TTVAB_NATIVE_VISIBILITY__ = { hidden: () => hidden };
+		states = g._WorkerRecoveryStates as Map<string, Record<string, unknown>>;
+		states.set("live:testchannel", {
+			contextKey: "live:testchannel",
+			context: { MediaType: "live", ChannelName: "testchannel" },
+			phase: "exhausted",
+			activeEpoch: 0,
+			noticeShownAt: 0,
+		});
+	});
+
+	afterEach(() => {
+		T<() => void>("_clearWorkerRecoveryNotice")();
+		states.delete("live:testchannel");
+		(window as unknown as Record<string, unknown>).__TTVAB_NATIVE_VISIBILITY__ =
+			savedVisibility;
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	const show = () =>
+		T<(mediaKey: string, reason?: string) => void>("_showWorkerRecoveryNotice")(
+			"live:testchannel",
+		);
+
+	it("waits until the tab is visible before starting the 3-second expiry", () => {
+		hidden = true;
+		show();
+		vi.advanceTimersByTime(60000);
+		expect(notice()).not.toBeNull();
+
+		document.dispatchEvent(new Event("visibilitychange"));
+		vi.advanceTimersByTime(60000);
+		expect(notice()).not.toBeNull();
+
+		hidden = false;
+		document.dispatchEvent(new Event("visibilitychange"));
+		vi.advanceTimersByTime(2999);
+		expect(notice()).not.toBeNull();
+		vi.advanceTimersByTime(1);
+		expect(notice()).toBeNull();
+	});
+
+	it("stops waiting for visibility once the notice is dismissed", () => {
+		hidden = true;
+		const removeListener = vi.spyOn(document, "removeEventListener");
+		show();
+		notice()?.querySelectorAll("button")[1]?.click();
+
+		expect(notice()).toBeNull();
+		expect(removeListener).toHaveBeenCalledWith(
+			"visibilitychange",
+			expect.any(Function),
+		);
+	});
+
+	it.each([
+		[["es-MX", "en"], "Actualizar pestaña", "Descartar"],
+		[["zh-HK"], "重新整理分頁", "關閉"],
+		[["zh-Hans-CN"], "刷新标签页", "关闭"],
+		[["nl-NL", "de-DE"], "Tab neu laden", "Schließen"],
+		[["nl-NL"], "Refresh tab", "Dismiss"],
+	])(
+		"shows the notice in the browser language %j",
+		(languages, refresh, dismiss) => {
+			vi.spyOn(navigator, "languages", "get").mockReturnValue(languages);
+			show();
+			const buttons = notice()?.querySelectorAll("button") || [];
+			expect(buttons[0]?.textContent).toBe(refresh);
+			expect(buttons[1]?.textContent).toBe(dismiss);
+			expect(notice()?.querySelector("p")?.textContent).toBeTruthy();
+		},
+	);
+});
+
+describe("leaving degraded mode from the worker heartbeat", () => {
+	it("removes the fallback when the new channel's worker answers its heartbeat", () => {
+		const savedStateObject = g.__TTVAB_STATE__;
+		T<(scope: typeof globalThis) => void>("_declareState")(globalThis);
+		const pageState = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const scopedWindow = window as unknown as Record<string, unknown>;
+		const savedFetch = window.fetch;
+		const savedRealFetch = scopedWindow.__TTVAB_REAL_FETCH__;
+		const savedActive = scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE;
+		const savedLog = g._log;
+		g._log = () => {};
+		const pageFetch = vi.fn(async () => new Response("page"));
+		window.fetch = pageFetch as typeof fetch;
+		scopedWindow.__TTVAB_REAL_FETCH__ = null;
+		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
+		try {
+			pageState.PageMediaKey = "live:firstchannel";
+			(g._installPageSideM3U8Override as () => void)();
+			pageState.PageMediaKey = "live:secondchannel";
+			pageState.PageChannel = "secondchannel";
+			pageState.PageMediaType = "live";
+			const worker = {
+				__TTVABGeneration: 9,
+				__TTVABPageMediaKey: "live:secondchannel",
+				__TTVABFirstPongAt: Date.now(),
+				__TTVABLastPongAt: Date.now(),
+				__TTVABPlaybackObservedAtByMediaKey: new Map([
+					["live:secondchannel", Date.now() + 1],
+				]),
+			};
+			expect(window.fetch).not.toBe(pageFetch);
+			(g._markWorkerPong as (worker: unknown, now?: number) => void)(
+				worker,
+				Date.now() + 1,
+			);
+			expect(window.fetch).toBe(pageFetch);
+			expect(scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE).toBe(false);
+		} finally {
+			window.fetch = savedFetch;
+			scopedWindow.__TTVAB_REAL_FETCH__ = savedRealFetch;
+			scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = savedActive;
+			g._log = savedLog;
+			g.__TTVAB_STATE__ = savedStateObject;
+		}
 	});
 });

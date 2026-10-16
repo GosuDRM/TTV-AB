@@ -108,6 +108,29 @@ describe("_hasExplicitAdMetadata", () => {
 	});
 });
 
+describe("_describeAdMarkedPlaylist", () => {
+	it("keeps the ad class visible after the usual Twitch metadata classes", () => {
+		const playlist = [
+			"#EXTM3U",
+			...[
+				"timestamp",
+				"twitch-session",
+				"twitch-assignment",
+				"twitch-stream-source",
+				"twitch-stitched-ad",
+			].map((name, index) => `#EXT-X-DATERANGE:ID="d${index}",CLASS="${name}"`),
+			"#EXTINF:2.000,live",
+			"https://edge.example/live-1.ts",
+		].join("\n");
+
+		expect(
+			T<(text: string) => string>("_describeAdMarkedPlaylist")(playlist),
+		).toBe(
+			"live 1, other 0, prefetch 0, known ad 0, classes timestamp/twitch-session/twitch-assignment/twitch-stream-source/twitch-stitched-ad",
+		);
+	});
+});
+
 describe("_isKnownAdSegmentUrl", () => {
 	const fn = () =>
 		T<(url: string, opts?: { includeCached?: boolean }) => boolean>(

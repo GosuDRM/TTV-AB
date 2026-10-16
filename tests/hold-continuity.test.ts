@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const source = ["constants", "state", "parser", "api", "processor", "hooks"]
 	.map((name) =>
@@ -52,6 +52,30 @@ function segments(text: string) {
 		}
 	}
 	return entries;
+}
+
+afterEach(() => {
+	vi.useRealTimers();
+});
+
+function useFakeClock(context: Record<string, unknown>) {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+	Object.assign(context, { Date, setTimeout, clearTimeout });
+}
+
+async function settleOnFakeClock<T>(promise: Promise<T>) {
+	let settled = false;
+	promise.then(
+		() => {
+			settled = true;
+		},
+		() => {
+			settled = true;
+		},
+	);
+	for (let step = 0; !settled && step < 200; step++)
+		await vi.advanceTimersByTimeAsync(250);
+	return promise;
 }
 
 function setup() {
@@ -1266,6 +1290,7 @@ describe("empty hold playlist continuity", () => {
 		"keeps the hold flowing after another rendition retires the native bridge with disabled=$disabled and dated=$dated",
 		async ({ disabled, dated }) => {
 			const { context, info, fetch } = setup();
+			useFakeClock(context);
 			let now = Date.now();
 			context.Date = class extends Date {
 				static now() {
@@ -1292,9 +1317,13 @@ describe("empty hold playlist continuity", () => {
 			const log = vi.fn();
 			context._log = log;
 			const ad = clean.replace("#EXTINF:", "#EXT-X-CUE-OUT:30\n#EXTINF:");
-			const first = await context._processM3U8(otherUrl, ad, fetch);
+			const first = await settleOnFakeClock(
+				context._processM3U8(otherUrl, ad, fetch),
+			);
 			now += 1000;
-			const next = await context._processM3U8(nativeUrl, ad, fetch);
+			const next = await settleOnFakeClock(
+				context._processM3U8(nativeUrl, ad, fetch),
+			);
 			expect(next).toContain("__ttvab_empty_hold_segment.ts");
 			expect(next).not.toContain("clean-400.ts");
 			expect(segments(next)).toEqual(segments(first));
@@ -1309,6 +1338,7 @@ describe("empty hold playlist continuity", () => {
 		"rechecks a cached native response after a concurrent rendition starts a hold: %s",
 		async (owner) => {
 			const { context, info, fetch } = setup();
+			useFakeClock(context);
 			context.state.CurrentAdMediaKey = null;
 			context.state.CurrentAdChannel = null;
 			info.IsShowingAd = false;
@@ -1347,17 +1377,21 @@ describe("empty hold playlist continuity", () => {
 				fetch,
 				controller.signal,
 			);
-			await ready;
-			const held = await context._processM3U8(otherUrl, ad, fetch);
+			await settleOnFakeClock(ready);
+			const held = await settleOnFakeClock(
+				context._processM3U8(otherUrl, ad, fetch),
+			);
 			if (owner === "aborted") controller.abort();
 			if (owner === "new cycle") info.BackupSearchEpoch++;
 			if (owner === "new loader") info.NativeRecoveryLoaderEpoch++;
 			release();
 			if (owner !== "current") {
-				await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+				await expect(settleOnFakeClock(pending)).rejects.toMatchObject({
+					name: "AbortError",
+				});
 				return;
 			}
-			const output = await pending;
+			const output = await settleOnFakeClock(pending);
 			expect(output).toContain("__ttvab_empty_hold_segment.ts");
 			expect(output).not.toContain("clean-400.ts");
 			expect(segments(output)).toEqual(segments(held));
@@ -2085,7 +2119,7 @@ describe("empty hold playlist continuity", () => {
 		expect(log.mock.calls[0]).toEqual([
 			expect.stringMatching(
 				new RegExp(
-					`^\\[Break\\] ended live:testchannel cycle ${cycle}: native 1920x1080 @-?\\d+\\.\\ds -> site 1920x1080 @\\d+\\.\\ds -> native 1920x1080 @\\d+\\.\\ds$`,
+					`^\\[Break\\] ended live:testchannel cycle ${cycle}: native 1920x1080 @-?\\d+\\.\\ds -> site 1920x1080 @\\d+\\.\\ds -> native 1920x1080 @\\d+\\.\\ds; measured 0 ads \\(0\\.0s\\)$`,
 				),
 			),
 			"info",
@@ -2242,6 +2276,7 @@ describe("empty hold playlist continuity", () => {
 
 	it("keeps the first CSAI hold beyond the native window already offered to the player", async () => {
 		const { context, info, serve } = setup();
+		useFakeClock(context);
 		info.IsShowingAd = false;
 		info.VisibleAdStartedAt = 0;
 		context.state.CurrentAdMediaKey = null;
@@ -2253,7 +2288,9 @@ describe("empty hold playlist continuity", () => {
 		info.LastCleanNativePlaylistAt = Date.now() - 3000;
 		context._findBackupStream = vi.fn(() => new Promise(() => {}));
 		const ad = playlist(401).replace("#EXTINF:", "#EXT-X-CUE-OUT:30\n#EXTINF:");
-		const output = await context._processM3U8(nativeUrl, ad, vi.fn());
+		const output = await settleOnFakeClock(
+			context._processM3U8(nativeUrl, ad, vi.fn()),
+		);
 		const hold = segments(output)[0];
 		expect(info.CsaiOnlyThisBreak).toBe(true);
 		expect(hold.url).toContain("__ttvab_empty_hold_segment.ts");
