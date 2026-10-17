@@ -464,7 +464,12 @@ describe("compatible native playlist return", () => {
 		};
 		let text = f.dated(playlist(800, "native"));
 		const canContinue = () =>
-			f.context._canRestoreNativeByPlaylist(f.info, nativeUrl, text, request);
+			!f.context._getNativePlaylistReturnBlocker(
+				f.info,
+				nativeUrl,
+				text,
+				request,
+			);
 		expect(canContinue()).toBe(true);
 		const metadata = f.info.BackupPlaylistMetadata.get(
 			f.info.LastCleanBackupM3U8,

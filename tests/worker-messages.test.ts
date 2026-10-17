@@ -80,14 +80,13 @@ const eventPayloads = {
 		playlistUrl: "https://example.invalid/native.m3u8",
 		codec: "avc1",
 	},
-	AdEnded: { endedAt: 2000, holdingBackup: true, willReload: false },
+	AdEnded: { endedAt: 2000, holdingBackup: true },
 	BackupPlayerTypeSelected: { value: "site" },
 	LiveStreamStatus: { ended: true, observedAt: 2000 },
 	FatalMediaRecoveryReady: {
 		recoveryId: "recovery-1000",
 		verifiedAt: 1200,
 		requiresCodecHandoff: true,
-		backupPlayerType: "site",
 	},
 	PostAdNativeReloadReady: {
 		reloadAt: 2000,
@@ -104,7 +103,6 @@ const eventPayloads = {
 	},
 	NativePlaybackRestored: {
 		restoredAt: 2100,
-		fromSilentBackupHold: true,
 		requiresReload: false,
 		continuePlayback: true,
 		refreshAccessToken: false,
@@ -489,7 +487,7 @@ __TTVAB_STATE__.AdRecoveryReloadCooldownMs = 30000;
 __TTVAB_STATE__.ShouldResumeAfterAd = true;
 __TTVAB_STATE__.LastPlayerReloadAtByMediaKey["live:buildtest"] = 1000;
 __TTVAB_STATE__.AdSegmentCache.set("https://example.invalid/ad.ts", 1000);
-__TTVAB_STATE__.SegmentCodecOwners.set("https://example.invalid/live.ts", { codecFamily: "avc", mediaKey: "live:buildtest", recordedAt: 1000, ambiguous: false });
+__TTVAB_STATE__.SegmentCodecOwners.set("https://example.invalid/live.ts", { codecFamily: "avc", mediaKey: "live:buildtest", ambiguous: false });
 __TTVAB_STATE__.PendingFetchRequests.get("fetch-1")?.resolve({ id: "fetch-1", body: "response" });
 void __TTVAB_STATE__.PrepareFatalMediaRecovery?.({ recoveryId: "recovery-1", mediaKey: "live:buildtest", cycleStartedAt: 1000 });
 __TTVAB_STATE__.StreamInfos["live:buildtest"] = _createStreamInfo({ mediaKey: "live:buildtest" });
@@ -527,7 +525,7 @@ function _eventContractNarrowing(input: unknown) {
 			'__TTVAB_STATE__.ShouldResumeAfterAd = "false";',
 			'__TTVAB_STATE__.LastPlayerReloadAtByMediaKey["live:buildtest"] = true;',
 			'__TTVAB_STATE__.AdSegmentCache.set("https://example.invalid/ad.ts", "1000");',
-			'__TTVAB_STATE__.SegmentCodecOwners.set("https://example.invalid/live.ts", { codecFamily: "audio", mediaKey: "live:buildtest", recordedAt: 1000, ambiguous: false });',
+			'__TTVAB_STATE__.SegmentCodecOwners.set("https://example.invalid/live.ts", { codecFamily: "audio", mediaKey: "live:buildtest", ambiguous: false });',
 			'__TTVAB_STATE__.PendingFetchRequests.get("fetch-1")?.resolve({ id: "fetch-1", body: {} });',
 			"__TTVAB_STATE__.PrepareFatalMediaRecovery?.({ recoveryId: 123 });",
 			'__TTVAB_STATE__.StreamInfos["live:buildtest"].MediaKey = 123;',
@@ -549,7 +547,7 @@ describe("stream state TypeScript contracts", { timeout: 30_000 }, () => {
 	it("types factory records, nested recovery state, and actual stream consumers", () => {
 		const source = `const _streamContract = _createStreamInfo({ mediaKey: "live:buildtest" });
 const _streamHasNoIndex: string extends keyof TTVABStreamInfo ? false : true = true;
-const _pagePlaylistContract: TTVABPagePlaylistState = { MediaKey: "live:buildtest", MediaType: "live", PageContextGeneration: 1, UsherBaseUrl: "https://example.invalid/native.m3u8", _EmptyAdHoldMediaSequence: 0, _EmptyAdHoldDiscontinuitySequence: 0, _EmptyAdHoldProgramDateTime: 0, _EmptyAdHoldWindow: null, _EmptyHoldTimelineByUrl: new Map(), _LivePlaylistTimeline: null, NumStrippedAdSegments: 0, IsStrippingAdSegments: false };
+const _pagePlaylistContract: TTVABPagePlaylistState = { MediaKey: "live:buildtest", MediaType: "live", PageContextGeneration: 1, UsherBaseUrl: "https://example.invalid/native.m3u8", _EmptyAdHoldMediaSequence: 0, _EmptyAdHoldDiscontinuitySequence: 0, _EmptyAdHoldProgramDateTime: 0, _EmptyAdHoldWindow: null, _EmptyHoldTimelineByUrl: new Map(), _LivePlaylistTimeline: null, NumStrippedAdSegments: 0 };
 _pageSideEmptyHoldInfoByUrl.set("native", _pagePlaylistContract);
 _applyPlaylistContinuity(_pagePlaylistContract, "https://example.invalid/native.m3u8", "#EXTM3U");
 _stripAds("#EXTM3U", false, _pagePlaylistContract);

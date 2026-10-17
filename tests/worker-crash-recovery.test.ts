@@ -874,40 +874,29 @@ describe("crashed worker recovery with the real player task", () => {
 		)(worker, context, "Worker crashed: index out of bounds");
 	}
 
-	function exhaust() {
-		crash();
-		vi.advanceTimersByTime(31000);
+	const recoveryState = () =>
+		T<(context: unknown) => Record<string, unknown>>("_getWorkerRecoveryState")(
+			context,
+		);
+
+	function advanceUntilExhausted() {
+		for (
+			let step = 0;
+			step < 300 && recoveryState().phase !== "exhausted";
+			step++
+		) {
+			vi.advanceTimersByTime(1000);
+		}
+		expect(recoveryState().phase).toBe("exhausted");
 	}
 
-	it("does not treat setSrc success on the cached dead worker as a restart", () => {
-		exhaust();
-		expect(setSrc).not.toHaveBeenCalled();
-		expect(
-			T<(key: string) => number>("_getPlayerReloadAtForMediaKey")(
-				context.MediaKey,
-			),
-		).toBe(0);
-		const state = T<(context: unknown) => Record<string, unknown>>(
-			"_getWorkerRecoveryState",
-		)(context);
-		expect(state.phase).toBe("exhausted");
-		expect(state.attempts).toBe(0);
-		expect(document.querySelectorAll("#ttvab-worker-recovery")).toHaveLength(1);
-		expect(refresh).not.toHaveBeenCalled();
-		vi.advanceTimersByTime(120000);
-		expect(setSrc).not.toHaveBeenCalled();
-		expect(refresh).not.toHaveBeenCalled();
-	});
-
-	it("accepts Twitch's delayed replacement without reloading or showing a refresh warning", () => {
+	function exhaust() {
 		crash();
-		vi.advanceTimersByTime(12000);
-		const recovery = T<(context: unknown) => Record<string, unknown>>(
-			"_getWorkerRecoveryState",
-		)(context);
-		expect(recovery.phase).toBe("waiting-player");
-		expect(recovery.attempts).toBe(0);
-		const successor = {
+		advanceUntilExhausted();
+	}
+
+	function healthySuccessor() {
+		return {
 			__TTVABGeneration: 2,
 			__TTVABCreatedAt: Date.now(),
 			__TTVABPageMediaKey: context.MediaKey,
@@ -917,9 +906,69 @@ describe("crashed worker recovery with the real player task", () => {
 				[context.MediaKey, Date.now()],
 			]),
 		};
+	}
+
+	it("restarts a crashed current core automatically and confirms the replacement worker", () => {
+		crash();
+		vi.advanceTimersByTime(1000);
+		expect(setSrc).toHaveBeenCalledExactlyOnceWith({
+			isNewMediaPlayerInstance: true,
+			refreshAccessToken: true,
+		});
+		const recovery = recoveryState();
+		expect(recovery).toMatchObject({
+			phase: "awaiting-successor",
+			attempts: 1,
+		});
+		const successor = healthySuccessor();
 		player.core.worker = successor;
 		(g._S as { workers: unknown[] }).workers = [successor];
-		vi.advanceTimersByTime(4000);
+		vi.advanceTimersByTime(1000);
+		expect(recovery.phase).toBe("stabilizing");
+		expect(recovery.stableGeneration).toBe(2);
+		expect(setSrc).toHaveBeenCalledOnce();
+		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("reloads a crashed core only once before asking for a refresh", () => {
+		exhaust();
+		expect(setSrc).toHaveBeenCalledOnce();
+		expect(recoveryState().attempts).toBe(1);
+		expect(document.querySelectorAll("#ttvab-worker-recovery")).toHaveLength(1);
+		expect(refresh).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(300000);
+		expect(setSrc).toHaveBeenCalledOnce();
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("does not reload a successor that crashes before recovery proves it stable", () => {
+		crash();
+		vi.advanceTimersByTime(1000);
+		const successor = healthySuccessor();
+		player.core.worker = successor;
+		(g._S as { workers: unknown[] }).workers = [successor];
+		vi.advanceTimersByTime(1000);
+		expect(recoveryState().phase).toBe("stabilizing");
+		T<(worker: unknown, context: unknown, message: string) => void>(
+			"_recoverCrashedWorker",
+		)(successor, context, "Successor crashed before stabilizing");
+		advanceUntilExhausted();
+		expect(document.querySelectorAll("#ttvab-worker-recovery")).toHaveLength(1);
+		vi.advanceTimersByTime(300000);
+		expect(setSrc).toHaveBeenCalledOnce();
+		expect(recoveryState().attempts).toBe(1);
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("accepts Twitch's own replacement without reloading or showing a refresh warning", () => {
+		crash();
+		vi.advanceTimersByTime(500);
+		const successor = healthySuccessor();
+		player.core.worker = successor;
+		(g._S as { workers: unknown[] }).workers = [successor];
+		vi.advanceTimersByTime(500);
+		const recovery = recoveryState();
 		expect(recovery.phase).toBe("stabilizing");
 		expect(recovery.stableGeneration).toBe(2);
 		expect(recovery.attempts).toBe(0);
@@ -991,10 +1040,10 @@ describe("crashed worker recovery with the real player task", () => {
 		markPong(successor, Date.now());
 		expect(recovery.phase).toBe("stabilizing");
 		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
-		expect(setSrc).not.toHaveBeenCalled();
+		expect(setSrc).toHaveBeenCalledOnce();
 	});
 
-	it("offers bounded crash recovery on a visible unfocused page even while its playhead advances", () => {
+	it("runs bounded crash recovery on a visible unfocused page even while its playhead advances", () => {
 		vi.spyOn(g, "_isPlaybackPageUnfocused").mockReturnValue(true);
 		vi.spyOn(g, "_isNativeDocumentHidden").mockReturnValue(false);
 		const video = document.createElement("video");
@@ -1002,21 +1051,22 @@ describe("crashed worker recovery with the real player task", () => {
 			get: () => Date.now() / 1000,
 		});
 		vi.spyOn(g, "_getPrimaryMediaElement").mockReturnValue(video);
-		exhaust();
-		expect(setSrc).not.toHaveBeenCalled();
+		crash();
+		vi.advanceTimersByTime(1000);
+		expect(setSrc).toHaveBeenCalledOnce();
+		expect(recoveryState().attempts).toBe(1);
+		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
 		expect(refresh).not.toHaveBeenCalled();
-		expect(document.querySelectorAll("#ttvab-worker-recovery")).toHaveLength(1);
-		expect(
-			T<(context: unknown) => Record<string, unknown>>(
-				"_getWorkerRecoveryState",
-			)(context).attempts,
-		).toBe(0);
 	});
 
-	it.each(["buffer-recovery", "ad-recovery", "manual"])(
+	it.each(["buffer-recovery", "ad-recovery", "manual", "worker-recovery"])(
 		"rejects %s source loads after worker recovery exhausts",
 		(reason) => {
 			exhaust();
+			const recoveryLoads = setSrc.mock.calls.length;
+			const reloadAt = T<(key: string) => number>(
+				"_getPlayerReloadAtForMediaKey",
+			)(context.MediaKey);
 			for (let attempt = 0; attempt < 12; attempt++) {
 				expect(
 					T<(pause: boolean, reload: boolean, options: unknown) => boolean>(
@@ -1025,13 +1075,13 @@ describe("crashed worker recovery with the real player task", () => {
 				).toBe(false);
 				vi.advanceTimersByTime(15000);
 			}
-			expect(setSrc).not.toHaveBeenCalled();
+			expect(setSrc).toHaveBeenCalledTimes(recoveryLoads);
 			expect(refresh).not.toHaveBeenCalled();
 			expect(
 				T<(key: string) => number>("_getPlayerReloadAtForMediaKey")(
 					context.MediaKey,
 				),
-			).toBe(0);
+			).toBe(reloadAt);
 		},
 	);
 
@@ -1045,29 +1095,33 @@ describe("crashed worker recovery with the real player task", () => {
 		expect(setSrc).not.toHaveBeenCalled();
 	});
 
-	it("does not pause and resume a dead core as an alternative recovery", () => {
-		worker.__TTVABCrashed = true;
-		const pause = vi.spyOn(g, "_pausePlaybackTarget").mockReturnValue(true);
-		const play = vi.spyOn(g, "_playPlaybackTarget").mockReturnValue(true);
-		expect(
-			T<(pause: boolean, reload: boolean, options: unknown) => boolean>(
-				"_doPlayerTask",
-			)(true, false, { reason: "buffer-recovery" }),
-		).toBe(false);
-		vi.advanceTimersByTime(1000);
-		expect(pause).not.toHaveBeenCalled();
-		expect(play).not.toHaveBeenCalled();
-	});
+	it.each(["buffer-recovery", "worker-recovery"])(
+		"does not pause and resume a dead core for %s",
+		(reason) => {
+			worker.__TTVABCrashed = true;
+			const pause = vi.spyOn(g, "_pausePlaybackTarget").mockReturnValue(true);
+			const play = vi.spyOn(g, "_playPlaybackTarget").mockReturnValue(true);
+			expect(
+				T<(pause: boolean, reload: boolean, options: unknown) => boolean>(
+					"_doPlayerTask",
+				)(true, false, { reason }),
+			).toBe(false);
+			vi.advanceTimersByTime(1000);
+			expect(pause).not.toHaveBeenCalled();
+			expect(play).not.toHaveBeenCalled();
+		},
+	);
 
 	it("allows buffer repair on a replacement core even after the old worker exhausted recovery", () => {
 		exhaust();
+		const recoveryLoads = setSrc.mock.calls.length;
 		player.core.worker = { __TTVABGeneration: 2 };
 		expect(
 			T<(pause: boolean, reload: boolean, options: unknown) => boolean>(
 				"_doPlayerTask",
 			)(false, true, { reason: "buffer-recovery" }),
 		).toBe(true);
-		expect(setSrc).toHaveBeenCalledOnce();
+		expect(setSrc).toHaveBeenCalledTimes(recoveryLoads + 1);
 	});
 
 	it("refreshes only after an explicit click for the still-exhausted current page", () => {
@@ -1130,15 +1184,13 @@ describe("crashed worker recovery with the real player task", () => {
 
 	it("expires the warning after 3 seconds without authorizing more recovery", () => {
 		exhaust();
-		const recovery = T<(context: unknown) => Record<string, unknown>>(
-			"_getWorkerRecoveryState",
-		)(context);
+		const recovery = recoveryState();
 		vi.advanceTimersByTime(2999);
 		expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
 		vi.advanceTimersByTime(1);
 		expect(recovery.phase).toBe("exhausted");
-		expect(recovery.attempts).toBe(0);
-		expect(setSrc).not.toHaveBeenCalled();
+		expect(recovery.attempts).toBe(1);
+		expect(setSrc).toHaveBeenCalledOnce();
 		expect(refresh).not.toHaveBeenCalled();
 		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
 	});
@@ -1166,9 +1218,10 @@ describe("crashed worker recovery with the real player task", () => {
 		T<(worker: unknown, context: unknown, message: string) => void>(
 			"_recoverCrashedWorker",
 		)(failedSuccessor, context, "Successor failed before recovery stabilized");
-		expect(recovery.attempts).toBe(0);
+		advanceUntilExhausted();
+		expect(recovery.attempts).toBe(1);
 		expect(recovery.lastAttemptAt).toBe(lastAttempt);
-		expect(setSrc).not.toHaveBeenCalled();
+		expect(setSrc).toHaveBeenCalledOnce();
 		expect(refresh).not.toHaveBeenCalled();
 		expect(document.getElementById("ttvab-worker-recovery")).toBeNull();
 	});
@@ -1247,8 +1300,13 @@ describe("crashed worker recovery with the real player task", () => {
 		scopedWindow.__TTVAB_REAL_FETCH__ = null;
 		scopedWindow.__TTVAB_M3U8_FALLBACK_ACTIVE = false;
 		try {
-			crash();
-			vi.advanceTimersByTime(31000);
+			const playerAndState = vi.mocked(
+				g._getPlayerAndState as () => Record<string, unknown>,
+			);
+			const availablePlayer = playerAndState();
+			playerAndState.mockReturnValue({ player: null, state: null });
+			exhaust();
+			playerAndState.mockReturnValue(availablePlayer);
 			expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
 			for (let index = 0; index < 6; index++) {
 				await expect(window.fetch(mediaUrl)).rejects.toMatchObject({
@@ -1312,9 +1370,10 @@ describe("crashed worker recovery with the real player task", () => {
 		T<(worker: unknown, context: unknown, message: string) => void>(
 			"_recoverCrashedWorker",
 		)(successor, context, "Later independent failure");
-		vi.advanceTimersByTime(31000);
+		advanceUntilExhausted();
 		expect(document.getElementById("ttvab-worker-recovery")).not.toBeNull();
-		expect(recovery.attempts).toBe(0);
+		expect(recovery.attempts).toBe(1);
+		expect(setSrc).toHaveBeenCalledTimes(2);
 	});
 
 	it("does not let an earlier notice expiry clear the next notice", () => {

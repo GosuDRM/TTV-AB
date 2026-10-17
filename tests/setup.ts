@@ -17,7 +17,6 @@ beforeAll(() => {
 		AdSignifier: "stitched",
 		BackupPlayerTypes: ["embed", "popout", "autoplay"],
 		AdSegmentCache: new Map<string, number>(),
-		AllSegmentsAreAdSegments: false,
 		IsAdStrippingEnabled: true,
 		CurrentAdChannel: null,
 		CurrentAdMediaKey: null,

@@ -43,7 +43,6 @@ beforeEach(() => {
 		BackupPlayerTypes: ["embed", "popout", "autoplay"],
 		AdSegmentCache: new Map<string, number>(),
 		SegmentCodecOwners: new Map<string, Record<string, unknown>>(),
-		AllSegmentsAreAdSegments: false,
 		IsAdStrippingEnabled: true,
 		CurrentAdChannel: null,
 		CurrentAdMediaKey: null,
@@ -71,7 +70,6 @@ beforeEach(() => {
 		PendingTriggeredPlayerReloadMediaKey: null,
 		PendingTriggeredPlayerReloadAt: 0,
 		PendingTriggeredPlayerReloadCycleStartedAt: 0,
-		IsBufferFixEnabled: true,
 		DisableAdSpoofing: false,
 		AdEndMinCleanPlaylists: 3,
 		AdEndGraceMs: 500,
@@ -81,7 +79,6 @@ beforeEach(() => {
 		PinnedBackupStallDetectionMs: 3000,
 		PinnedBackupStallPollMs: 1500,
 		BackupSearchForceRefreshAt: 0,
-		LastPinnedBackupStallDetectedAt: 0,
 		SilentBackupHoldMaxMs: 120000,
 		SimulatedAdsDepth: 0,
 		LqHqHoldMinMs: 8000,
@@ -149,12 +146,10 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
 		SustainedNativeResolutionStartedAt: 0,
 		IsMidroll: false,
 		AdRollContext: null,
-		IsStrippingAdSegments: false,
 		CsaiOnlyThisBreak: false,
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
-		AdEndMarkerBounceLogged: false,
 		VisibleAdStartedAt: 0,
 		IsHoldingBackupAfterAd: false,
 		SilentBackupHoldStartedAt: 0,
@@ -5837,7 +5832,6 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		const messages = sentMessages();
 		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({
 			holdingBackup: true,
-			willReload: false,
 		});
 		expect(messages.some((m) => m.key === "ReloadPlayer")).toBe(false);
 		expect(info.IsHoldingBackupAfterAd).toBe(true);
@@ -5957,7 +5951,6 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 				messages.find((message) => message.key === "AdEnded"),
 			).toMatchObject({
 				holdingBackup: false,
-				willReload: true,
 			});
 			expect(
 				messages.find((message) => message.key === "ReloadPlayer"),
@@ -6467,7 +6460,6 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		const messages = sentMessages();
 		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({
 			holdingBackup: false,
-			willReload: true,
 		});
 		expect(messages.find((m) => m.key === "ReloadPlayer")).toMatchObject({
 			reason: "post-escape",
@@ -6545,7 +6537,6 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		const messages = sentMessages();
 		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({
 			holdingBackup: false,
-			willReload: true,
 		});
 		expect(messages.find((m) => m.key === "ReloadPlayer")).toMatchObject({
 			reason: "post-escape",
@@ -6565,9 +6556,7 @@ describe("_processM3U8 ad-end reload decision (CSAI escape)", () => {
 		);
 
 		const messages = sentMessages();
-		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({
-			willReload: false,
-		});
+		expect(messages.find((m) => m.key === "AdEnded")).toMatchObject({});
 		expect(messages.some((m) => m.key === "ReloadPlayer")).toBe(false);
 		expect(messages.some((m) => m.key === "PauseResumePlayer")).toBe(true);
 		expect(info.PostEscapeReloadCounterproductive).toBe(false);
@@ -11214,7 +11203,6 @@ describe("enhanced-codec handoff in _processM3U8", () => {
 				mediaKey: "live:testchannel",
 				ambiguous: false,
 			});
-			expect(Number(owners.get(exactKey)?.recordedAt)).toBeGreaterThan(0);
 		},
 	);
 

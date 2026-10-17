@@ -95,7 +95,7 @@ describe("_hasExplicitAdMetadata", () => {
 	);
 	it("preserves a clean Twitch playlist with session, source, trigger and prefetch metadata", () => {
 		expect(fn()(cleanTwitchPlaylist)).toBe(false);
-		const info = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false };
+		const info = { NumStrippedAdSegments: 0 };
 		expect(
 			T<(text: string, all: boolean, info: object) => string>("_stripAds")(
 				cleanTwitchPlaylist,
@@ -103,7 +103,6 @@ describe("_hasExplicitAdMetadata", () => {
 				info,
 			),
 		).toBe(cleanTwitchPlaylist);
-		expect(info.IsStrippingAdSegments).toBe(false);
 		expect(info.NumStrippedAdSegments).toBe(0);
 	});
 });
@@ -185,13 +184,12 @@ describe("ad media URI coverage", () => {
 			expect(
 				T<(text: string) => boolean>("_playlistHasKnownAdSegments")(playlist),
 			).toBe(true);
-			const info = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false };
+			const info = { NumStrippedAdSegments: 0 };
 			const output = T<(text: string, all: boolean, info: object) => string>(
 				"_stripAds",
 			)(playlist, false, info);
 			expect(output).toContain("https://edge/clean.ts");
 			expect(output).not.toContain("/_404/");
-			expect(info.IsStrippingAdSegments).toBe(true);
 		},
 	);
 
@@ -358,9 +356,7 @@ describe("_stripAds (empty-playlist recovery)", () => {
 	it("serves an empty hold segment when stripping leaves nothing and no clean backup is cached", () => {
 		const st = getState();
 		const originalSimulated = st.SimulatedAdsDepth;
-		const originalAllSegments = st.AllSegmentsAreAdSegments;
 		st.SimulatedAdsDepth = 0;
-		st.AllSegmentsAreAdSegments = false;
 
 		const adPlaylist = [
 			"#EXTM3U",
@@ -399,7 +395,6 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		expect(nextResult).toBe(result);
 
 		st.SimulatedAdsDepth = originalSimulated;
-		st.AllSegmentsAreAdSegments = originalAllSegments;
 	});
 
 	it("advances discontinuity ownership as earlier hold boundaries leave the playlist", () => {

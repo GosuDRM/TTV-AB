@@ -3694,7 +3694,6 @@ describe("worker recovery lifecycle", () => {
 				pageMediaKey: "live:testchannel",
 				cycleStartedAt: 90000,
 				endedAt: 100001,
-				willReload: true,
 				holdingBackup: false,
 			});
 			expect(state.ShouldResumeAfterAd).toBe(true);
@@ -3845,7 +3844,6 @@ describe("worker recovery lifecycle", () => {
 				...context,
 				endedAt: 180000,
 				handoffId,
-				willReload: true,
 				holdingBackup: false,
 			});
 			harness.worker.emitMessage({
@@ -3926,7 +3924,6 @@ describe("worker recovery lifecycle", () => {
 				pageMediaKey: "live:testchannel",
 				cycleStartedAt: 190000,
 				endedAt: 200001,
-				willReload: false,
 				holdingBackup: false,
 			});
 			harness.worker.emitMessage({
@@ -4966,6 +4963,7 @@ describe("worker recovery lifecycle", () => {
 				newMediaPlayerInstance: true,
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
+				allowCrashedWorkerReload: true,
 			});
 		} finally {
 			if (previousGetPlaybackContext === undefined) {
@@ -16340,7 +16338,6 @@ describe("worker ad-segment codec ownership", () => {
 				{
 					codecFamily: "avc",
 					mediaKey: "live:testchannel",
-					recordedAt: 100,
 					ambiguous: false,
 				},
 			],
@@ -16403,7 +16400,6 @@ describe("worker ad-segment codec ownership", () => {
 				{
 					codecFamily: "avc",
 					mediaKey: "live:testchannel",
-					recordedAt: 100,
 					ambiguous: false,
 				},
 			],
@@ -16467,7 +16463,6 @@ describe("worker ad-segment codec ownership", () => {
 			owner: {
 				codecFamily: "hevc",
 				mediaKey: "live:testchannel",
-				recordedAt: 100,
 				ambiguous: false,
 			},
 		},
@@ -16478,7 +16473,6 @@ describe("worker ad-segment codec ownership", () => {
 			owner: {
 				codecFamily: "av1",
 				mediaKey: "live:testchannel",
-				recordedAt: 100,
 				ambiguous: false,
 			},
 		},
@@ -16495,7 +16489,6 @@ describe("worker ad-segment codec ownership", () => {
 			owner: {
 				codecFamily: null,
 				mediaKey: null,
-				recordedAt: 100,
 				ambiguous: true,
 			},
 		},
@@ -16559,7 +16552,6 @@ describe("worker ad-segment codec ownership", () => {
 				{
 					codecFamily: "avc",
 					mediaKey: "live:testchannel",
-					recordedAt: 100,
 					ambiguous: false,
 				},
 			],
@@ -16619,7 +16611,6 @@ describe("worker ad-segment codec ownership", () => {
 					{
 						codecFamily: "avc",
 						mediaKey: "live:testchannel",
-						recordedAt: 100,
 						ambiguous: false,
 					},
 				],
@@ -17230,6 +17221,7 @@ describe("worker watchdog visibility awareness", () => {
 				newMediaPlayerInstance: true,
 				channel: "testchannel",
 				mediaKey: "live:testchannel",
+				allowCrashedWorkerReload: true,
 			});
 		} finally {
 			if (previousGetPlaybackContext === undefined) {

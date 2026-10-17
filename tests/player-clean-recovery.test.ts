@@ -9,6 +9,10 @@ import {
 	it,
 	vi,
 } from "vitest";
+import {
+	stopPlaybackIntentMonitor,
+	stopPlayerBufferMonitor,
+} from "./helpers/player-monitors";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -54,8 +58,8 @@ beforeEach(() => {
 		CurrentAdChannel: null,
 		PinnedBackupPlayerType: null,
 	});
-	run("_stopPlayerBufferMonitor");
-	run("_stopPlaybackIntentMonitor", true);
+	stopPlayerBufferMonitor();
+	stopPlaybackIntentMonitor(true);
 	run("_clearCachedPrimaryMediaElement");
 	run("_resetPostAdRecoveryTransaction");
 	run("_clearRecordedUserPauseIntent");
@@ -83,8 +87,8 @@ afterEach(() => {
 	const errors = vi
 		.mocked(g._log)
 		.mock.calls.filter(([, level]) => level === "error");
-	run("_stopPlayerBufferMonitor");
-	run("_stopPlaybackIntentMonitor", true);
+	stopPlayerBufferMonitor();
+	stopPlaybackIntentMonitor(true);
 	run("_clearPendingPlayerPreferenceRestore");
 	run("_clearPlaybackRecoveryTimeouts");
 	window.removeEventListener(
@@ -268,7 +272,6 @@ describe("clean live playback failure recovery", () => {
 	it.each([
 		"paused",
 		"disabled",
-		"buffer fix disabled",
 		"hidden",
 		"PiP",
 		"handoff",
@@ -305,7 +308,6 @@ describe("clean live playback failure recovery", () => {
 			playback.video.dispatchEvent(new Event("pause"));
 		}
 		if (condition === "disabled") state.IsAdStrippingEnabled = false;
-		if (condition === "buffer fix disabled") state.IsBufferFixEnabled = false;
 		if (condition === "hidden")
 			vi.mocked(g._isNativeDocumentHidden).mockReturnValue(true);
 		if (condition === "PiP")
