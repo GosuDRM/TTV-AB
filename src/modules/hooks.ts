@@ -2081,15 +2081,6 @@ function _hookWorkerFetch() {
 					return true;
 				};
 
-				if (
-					__TTVAB_STATE__.RewriteNativePlaybackAccessToken === true &&
-					__TTVAB_STATE__.ForceAccessTokenPlayerType
-				) {
-					const urlObj = new URL(url);
-					urlObj.searchParams.delete("parent_domains");
-					url = urlObj.toString();
-				}
-
 				let response: Response;
 				try {
 					response = await realFetch.apply(
@@ -4542,7 +4533,6 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 			recoveryState.waitLog = "";
 			_recordWorkerRecoveryAttempt(recoveryContext, reloadDispatchedAt);
 			recoveryState.lastReloadAt = reloadDispatchedAt;
-			worker.__TTVABRestartAttempts = recoveryState.attempts;
 		}
 		if (!recoveryIsCurrent()) return;
 		if (!didDispatchReload) {
@@ -5493,7 +5483,6 @@ function _installPageSideM3U8Override() {
 						_LivePlaylistTimeline: null,
 						_PlaylistContinuityDiagnostics: null,
 						NumStrippedAdSegments: 0,
-						IsStrippingAdSegments: false,
 					};
 					_pageSideEmptyHoldInfoByUrl.set(timelineKey, emptyHoldInfo);
 					while (_pageSideEmptyHoldInfoByUrl.size > 20) {
@@ -5715,7 +5704,6 @@ function _stripM3U8Ads(text, emptyHoldInfo = null) {
 		_EmptyAdHoldMediaSequence: 0,
 		_EmptyAdHoldDiscontinuitySequence: 0,
 		NumStrippedAdSegments: 0,
-		IsStrippingAdSegments: false,
 	};
 	return _stripAds(text, false, info);
 }
@@ -7623,11 +7611,6 @@ function _hookWorker() {
 					}
 				});
 
-				const _workerUrl = url;
-				const workerOpts = opts;
-				this.__TTVABWorkerUrl = _workerUrl;
-				this.__TTVABWorkerOpts = workerOpts;
-
 				this.addEventListener("error", (e) => {
 					if (typeof _recordWorkerFailureDiagnostic === "function") {
 						_recordWorkerFailureDiagnostic(
@@ -7649,7 +7632,6 @@ function _hookWorker() {
 				this.__TTVABLastPongAt = Date.now();
 				this.__TTVABFirstPongAt = 0;
 				this.__TTVABGeneration = ++_workerGeneration;
-				this.__TTVABRestartAttempts = 0;
 				this.__TTVABMissedPongs = 0;
 				this.__TTVABLastPingSentAt = 0;
 				_rememberWorkerPageContext(this, pagePlaybackContext);
@@ -7936,57 +7918,6 @@ function _hookMainFetch() {
 			_broadcastWorkers(updates);
 		}
 	};
-	const rewritePlaybackAccessTokenBody = (bodyText) => {
-		if (typeof bodyText !== "string" || !bodyText) {
-			return { bodyText, changed: false };
-		}
-
-		try {
-			const forceType =
-				__TTVAB_STATE__.ForceAccessTokenPlayerType || "autoplay";
-			if (
-				!forceType ||
-				__TTVAB_STATE__.RewriteNativePlaybackAccessToken !== true
-			) {
-				return { bodyText, changed: false };
-			}
-
-			const parsed = JSON.parse(bodyText);
-			const operations = Array.isArray(parsed) ? parsed : [parsed];
-			let changed = false;
-			let previousPlayerType = null;
-
-			for (const op of operations) {
-				if (op?.operationName !== "PlaybackAccessToken") continue;
-				if (!op.variables || typeof op.variables !== "object") continue;
-				if (typeof op.variables.playerType === "string") {
-					if (op.variables.playerType !== forceType) {
-						previousPlayerType = previousPlayerType || op.variables.playerType;
-						op.variables.playerType = forceType;
-						changed = true;
-					}
-					const expectedPlatform = forceType === "autoplay" ? "android" : "web";
-					if (op.variables.platform !== expectedPlatform) {
-						op.variables.platform = expectedPlatform;
-						changed = true;
-					}
-				}
-			}
-
-			if (changed) {
-				_log(
-					`Replaced native PlaybackAccessToken player type '${previousPlayerType}' with '${forceType}'`,
-					"info",
-				);
-				return {
-					bodyText: JSON.stringify(parsed),
-					changed: true,
-				};
-			}
-		} catch {}
-
-		return { bodyText, changed: false };
-	};
 	const isPictureInPicturePlaybackAccessTokenBody = (bodyText) => {
 		if (
 			typeof bodyText !== "string" ||
@@ -8129,39 +8060,19 @@ function _hookMainFetch() {
 						const text = await effectiveRequest.clone().text();
 						shouldSkipPlaybackAccessTokenState =
 							isPictureInPicturePlaybackAccessTokenBody(text);
-						if (!shouldSkipPlaybackAccessTokenState) {
-							const rewritten = rewritePlaybackAccessTokenBody(text);
-							shouldInspectPlaybackAccessTokenResponse =
-								processGqlBody(rewritten.bodyText) !== "unrelated";
-							if (rewritten.changed) {
-								nextArgs = [
-									new Request(effectiveRequest, {
-										body: rewritten.bodyText,
-									}),
-								];
-							} else if (effectiveRequest !== url || args.length !== 1) {
-								nextArgs = [effectiveRequest];
-							}
-						} else {
-							shouldInspectPlaybackAccessTokenResponse = false;
-							if (effectiveRequest !== url || args.length !== 1) {
-								nextArgs = [effectiveRequest];
-							}
+						shouldInspectPlaybackAccessTokenResponse =
+							!shouldSkipPlaybackAccessTokenState &&
+							processGqlBody(text) !== "unrelated";
+						if (effectiveRequest !== url || args.length !== 1) {
+							nextArgs = [effectiveRequest];
 						}
 					} catch (_e) {}
 				} else if (typeof opts?.body === "string") {
 					shouldSkipPlaybackAccessTokenState =
 						isPictureInPicturePlaybackAccessTokenBody(opts.body);
-					if (!shouldSkipPlaybackAccessTokenState) {
-						const rewritten = rewritePlaybackAccessTokenBody(opts.body);
-						shouldInspectPlaybackAccessTokenResponse =
-							processGqlBody(rewritten.bodyText) !== "unrelated";
-						if (rewritten.changed) {
-							nextArgs = [url, { ...(opts || {}), body: rewritten.bodyText }];
-						}
-					} else {
-						shouldInspectPlaybackAccessTokenResponse = false;
-					}
+					shouldInspectPlaybackAccessTokenResponse =
+						!shouldSkipPlaybackAccessTokenState &&
+						processGqlBody(opts.body) !== "unrelated";
 				}
 
 				if (headers) {

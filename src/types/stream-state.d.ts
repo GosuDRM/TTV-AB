@@ -12,10 +12,7 @@ type TTVABStreamVariant = {
 	FrameRate: number;
 	Bandwidth: number;
 	Codecs: string;
-	Audio: string;
 	Name: string;
-	Subtitles: string;
-	Video: string;
 	RawUrl: string;
 	Url: string;
 };
@@ -290,11 +287,9 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	IsMidroll: boolean;
 	AdRollContext: TTVABAdRollContext | null;
 	CsaiOnlyThisBreak: boolean;
-	IsStrippingAdSegments: boolean;
 	NumStrippedAdSegments: number;
 	PendingAdEndAt: number;
 	CleanPlaylistCount: number;
-	AdEndMarkerBounceLogged: boolean;
 	AdEndConfirmEscalation: number;
 	VisibleAdStartedAt: number;
 	IsHoldingBackupAfterAd: boolean;
@@ -398,5 +393,4 @@ type TTVABPagePlaylistState = Partial<TTVABStreamInfo> &
 		| "_EmptyHoldTimelineByUrl"
 		| "_LivePlaylistTimeline"
 		| "NumStrippedAdSegments"
-		| "IsStrippingAdSegments"
 	> & { PageContextGeneration: number };

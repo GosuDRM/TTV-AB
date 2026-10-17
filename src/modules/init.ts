@@ -877,24 +877,6 @@ function _initToggleListener() {
 		);
 	});
 
-	_onInternalMessage("ttvab-toggle-buffer-fix", (detail) => {
-		const safeDetail = _getTrustedBridgeMessageDetail(detail);
-		if (typeof safeDetail?.enabled !== "boolean") return;
-		const enabled = safeDetail.enabled;
-		if (__TTVAB_STATE__.IsBufferFixEnabled === enabled) return;
-		__TTVAB_STATE__.IsBufferFixEnabled = enabled;
-		if (!enabled && typeof _resetPlayerBufferMonitorState === "function") {
-			_resetPlayerBufferMonitorState();
-		}
-		if (enabled && typeof _ensurePlaybackMonitorsRunning === "function") {
-			_ensurePlaybackMonitorsRunning(true);
-		}
-		_log(
-			`Buffer fix ${enabled ? "enabled" : "disabled"}`,
-			enabled ? "success" : "warning",
-		);
-	});
-
 	_onInternalMessage("ttvab-toggle-ad-spoofing", (detail) => {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);
 		if (typeof safeDetail?.enabled !== "boolean") return;

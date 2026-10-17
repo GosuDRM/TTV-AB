@@ -994,9 +994,6 @@ function broadcastState() {
 	sendToPage("ttvab-toggle", {
 		enabled: Boolean(bridgeState.enabled),
 	});
-	sendToPage("ttvab-toggle-buffer-fix", {
-		enabled: true,
-	});
 	sendToPage("ttvab-toggle-ad-spoofing", {
 		enabled: Boolean(bridgeState.adSpoofingEnabled),
 	});

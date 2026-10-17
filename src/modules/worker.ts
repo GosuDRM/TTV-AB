@@ -2,18 +2,6 @@
 
 type WorkerConstructor = new (...args: unknown[]) => Worker;
 
-function _getWasmJs(url) {
-	try {
-		const req = new XMLHttpRequest();
-		req.open("GET", url, false);
-		req.overrideMimeType("text/plain; charset=utf-8");
-		req.send();
-		return req.responseText;
-	} catch {
-		return "";
-	}
-}
-
 function _cleanWorker(W: WorkerConstructor): WorkerConstructor {
 	const CleanWorker = class extends W {};
 	const proto = CleanWorker.prototype;

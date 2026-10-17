@@ -97,7 +97,6 @@ interface Worker {
 	__TTVABRecoveryEpoch?: number;
 	__TTVABTerminatedAt?: number;
 	__TTVABTerminationRecoveryTimer?: ReturnType<typeof setTimeout> | null;
-	__TTVABRestartAttempts?: number;
 	__TTVABMissedPongs?: number;
 	__TTVABLastPingSentAt?: number;
 	__TTVABHiddenHeartbeatMediaTime?: number;
@@ -108,6 +107,4 @@ interface Worker {
 	__TTVABPageVodID?: string | null;
 	__TTVABPageMediaKey?: string | null;
 	__TTVABFetchControllers?: Map<string, AbortController>;
-	__TTVABWorkerUrl?: string;
-	__TTVABWorkerOpts?: unknown;
 }

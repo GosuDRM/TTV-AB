@@ -145,11 +145,9 @@ function _resetStreamAdState(
 	info.IsMidroll = false;
 	info.AdRollContext = null;
 	info.CsaiOnlyThisBreak = false;
-	info.IsStrippingAdSegments = false;
 	info.NumStrippedAdSegments = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
-	info.AdEndMarkerBounceLogged = false;
 	info.ConsecutiveFailedNativeProbes = 0;
 	info.VisibleAdStartedAt = 0;
 	info.IsHoldingBackupAfterAd = false;
@@ -1632,7 +1630,6 @@ async function _isAdEndStable(
 	if (!info.PendingAdEndAt) {
 		info.PendingAdEndAt = now;
 		info.CleanPlaylistCount = 0;
-		info.AdEndMarkerBounceLogged = false;
 		if (_shouldLogAdEndBounce(info)) {
 			_log("[Trace] Candidate ad end detected", "info");
 		}
@@ -2061,7 +2058,6 @@ function _invalidateNativeRecoveryAfterPlayerReload(
 	info.NativeRecoveryAdStartedAt = 0;
 	info.PendingAdEndAt = 0;
 	info.CleanPlaylistCount = 0;
-	info.AdEndMarkerBounceLogged = false;
 	info.LastNativeRecoveryHoldLogAt = 0;
 	info._IncompletePodCleanStartedAt = 0;
 	info._IncompletePodCleanPlaylistCount = 0;
@@ -3158,15 +3154,6 @@ function _logAdBreakSummary(
 	);
 }
 
-function _canRestoreNativeByPlaylist(
-	info: TTVABStreamInfo,
-	url,
-	text,
-	requestContext,
-) {
-	return !_getNativePlaylistReturnBlocker(info, url, text, requestContext);
-}
-
 function _getNativePlaylistReturnBlocker(
 	info: TTVABStreamInfo,
 	url,
@@ -4197,18 +4184,7 @@ function _applyEmptyHoldPlaylistContinuity(
 }
 
 function _getNativeRecoveryProbePlayerType() {
-	const forcedPlayerType =
-		__TTVAB_STATE__?.RewriteNativePlaybackAccessToken === true &&
-		typeof __TTVAB_STATE__?.ForceAccessTokenPlayerType === "string" &&
-		__TTVAB_STATE__.ForceAccessTokenPlayerType.trim()
-			? __TTVAB_STATE__.ForceAccessTokenPlayerType.trim()
-			: null;
-
-	return (
-		forcedPlayerType ||
-		__TTVAB_STATE__?.LastNativePlaybackAccessTokenPlayerType ||
-		"site"
-	);
+	return __TTVAB_STATE__?.LastNativePlaybackAccessTokenPlayerType || "site";
 }
 
 async function _fetchWithTimeout(
@@ -4811,11 +4787,9 @@ function _createStreamInfo(
 		IsMidroll: false,
 		AdRollContext: null,
 		CsaiOnlyThisBreak: false,
-		IsStrippingAdSegments: false,
 		NumStrippedAdSegments: 0,
 		PendingAdEndAt: 0,
 		CleanPlaylistCount: 0,
-		AdEndMarkerBounceLogged: false,
 		AdEndConfirmEscalation: ownsCurrentAdCycle ? 4 : 0,
 		VisibleAdStartedAt: visibleAdStartedAt,
 		IsHoldingBackupAfterAd: false,
@@ -5489,13 +5463,11 @@ function _rememberSegmentCodecOwnership(
 				? {
 						codecFamily: null,
 						mediaKey: null,
-						recordedAt: Date.now(),
 						ambiguous: true,
 					}
 				: {
 						codecFamily: normalizedCodecFamily,
 						mediaKey: _normalizeMediaKey(info.MediaKey),
-						recordedAt: Date.now(),
 						ambiguous: false,
 					},
 		);
@@ -6874,7 +6846,6 @@ async function _processM3U8Core(
 						handoffId: endedCodecHandoffId,
 						cycleStartedAt: endedCycleStartedAt,
 						endedAt: Date.now(),
-						willReload: shouldReloadPlayer,
 					}),
 				);
 				if (shouldReloadPlayer) {
@@ -7597,7 +7568,6 @@ async function _processM3U8Core(
 							mediaKey: info.MediaKey,
 							cycleStartedAt: restoredCycleStartedAt,
 							restoredAt,
-							fromSilentBackupHold: true,
 							requiresReload,
 							continuePlayback,
 							refreshAccessToken: !exactNativeRecoveryOwned,
@@ -7657,7 +7627,6 @@ async function _processM3U8Core(
 						handoffId: endedCodecHandoffId,
 						cycleStartedAt: visibleAdStartedAt,
 						endedAt: adEndedAt,
-						willReload: false,
 						holdingBackup: true,
 					}),
 				);
@@ -7683,7 +7652,6 @@ async function _processM3U8Core(
 			if (hasAds && hadNativeRecoveryEvidence) {
 				info.PendingAdEndAt = 0;
 				info.CleanPlaylistCount = 0;
-				info.AdEndMarkerBounceLogged = false;
 				info.LastNativeRecoveryHoldLogAt = 0;
 				info.LastAdEndBounceAt = now;
 				info.AdEndConfirmEscalation =
@@ -7893,7 +7861,6 @@ async function _processM3U8Core(
 		if (hadNativeRecoveryEvidence) {
 			info.PendingAdEndAt = 0;
 			info.CleanPlaylistCount = 0;
-			info.AdEndMarkerBounceLogged = false;
 			info.LastNativeRecoveryHoldLogAt = 0;
 			_resetNativeRecoveryReadyState(info, true, true);
 
@@ -8864,7 +8831,6 @@ async function _processM3U8Core(
 					handoffId: endedCodecHandoffId,
 					cycleStartedAt: endedCycleStartedAt,
 					endedAt: adEndedAt,
-					willReload: shouldReloadPlayer,
 					holdingBackup: isSilentBackupHoldEnd,
 				}),
 			);
@@ -9455,8 +9421,6 @@ async function _prepareFatalMediaRecovery(
 				cycleStartedAt: requestedCycleStartedAt,
 				verifiedAt,
 				requiresCodecHandoff,
-				backupPlayerType:
-					info.LastCleanBackupPlayerType || info.ActiveBackupPlayerType || null,
 			}),
 		);
 	}
