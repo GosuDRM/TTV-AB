@@ -4515,6 +4515,7 @@ function _attemptWorkerRestart(worker, pagePlaybackContext) {
 					newMediaPlayerInstance: true,
 					channel: recoveryContext.ChannelName,
 					mediaKey: recoveryContext.MediaKey,
+					allowCrashedWorkerReload: recoveryState.attempts === 0,
 				}) === true;
 		} catch (recoveryErr) {
 			_log(
