@@ -904,7 +904,7 @@ function _initToggleListener() {
 		});
 		_log(
 			`Low quality fallback ${enabled ? "enabled" : "disabled"}`,
-			enabled ? "success" : "warning",
+			enabled ? "success" : "info",
 		);
 	});
 
