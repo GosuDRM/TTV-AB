@@ -196,14 +196,13 @@ type TTVABWorkerEventPayloads = {
 		playlistUrl?: string | null;
 		codec?: string | null;
 	};
-	AdEnded: { endedAt?: number; holdingBackup?: boolean; willReload?: boolean };
+	AdEnded: { endedAt?: number; holdingBackup?: boolean };
 	BackupPlayerTypeSelected: { value: string | null };
 	LiveStreamStatus: { ended: boolean; observedAt?: number };
 	FatalMediaRecoveryReady: {
 		recoveryId: string;
 		verifiedAt?: number;
 		requiresCodecHandoff?: boolean;
-		backupPlayerType?: string | null;
 	};
 	PostAdNativeReloadReady: {
 		reloadAt?: number;
@@ -220,7 +219,6 @@ type TTVABWorkerEventPayloads = {
 	};
 	NativePlaybackRestored: {
 		restoredAt?: number;
-		fromSilentBackupHold?: boolean;
 		requiresReload?: boolean;
 		continuePlayback?: boolean;
 		refreshAccessToken?: boolean;

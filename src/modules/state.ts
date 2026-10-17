@@ -647,7 +647,6 @@ function _isWorkerEvent(
 			return _hasWorkerMessageFields(message, {
 				endedAt: "number",
 				holdingBackup: "boolean",
-				willReload: "boolean",
 			});
 		case "BackupPlayerTypeSelected":
 			return message.value === null || typeof message.value === "string";
@@ -662,7 +661,6 @@ function _isWorkerEvent(
 				_hasWorkerMessageFields(message, {
 					verifiedAt: "number",
 					requiresCodecHandoff: "boolean",
-					backupPlayerType: "string",
 				}) && typeof message.recoveryId === "string"
 			);
 		case "PostAdNativeReloadReady":
@@ -683,7 +681,6 @@ function _isWorkerEvent(
 		case "NativePlaybackRestored":
 			return _hasWorkerMessageFields(message, {
 				restoredAt: "number",
-				fromSilentBackupHold: "boolean",
 				requiresReload: "boolean",
 				continuePlayback: "boolean",
 				refreshAccessToken: "boolean",
@@ -1525,11 +1522,6 @@ function _declareState(scope: { __TTVAB_STATE__?: TTVABRuntimeState }) {
 		AdSignifier: _C.AD_SIGNIFIER,
 		BackupPlayerTypes: [..._C.PLAYER_TYPES],
 		FallbackPlayerType: _C.FALLBACK_TYPE,
-		ForceAccessTokenPlayerType: _C.FORCE_TYPE,
-		RewriteNativePlaybackAccessToken:
-			_C.REWRITE_NATIVE_PLAYBACK_ACCESS_TOKEN ?? false,
-		PlayerBufferingDoPlayerReload:
-			_C.PLAYER_BUFFERING_DO_PLAYER_RELOAD ?? false,
 		PlayerReloadMinimalRequestsTime: _C.RELOAD_TIME,
 		PlayerReloadMinimalRequestsPlayerIndex: Math.max(
 			0,
@@ -1553,7 +1545,6 @@ function _declareState(scope: { __TTVAB_STATE__?: TTVABRuntimeState }) {
 		PinnedBackupStallDetectionMs: _C.PINNED_BACKUP_STALL_DETECTION_MS ?? 3000,
 		PinnedBackupStallPollMs: _C.PINNED_BACKUP_STALL_POLL_MS ?? 1500,
 		BackupSearchForceRefreshAt: 0,
-		LastPinnedBackupStallDetectedAt: 0,
 		LqHqHoldMinMs: _C.LQ_HQ_HOLD_MIN_MS ?? 8000,
 		HasTriggeredPlayerReload: false,
 		PendingTriggeredPlayerReloadChannel: null,
@@ -1594,16 +1585,12 @@ function _declareState(scope: { __TTVAB_STATE__?: TTVABRuntimeState }) {
 		SimulatedAdsDepth: 0,
 		V2API: false,
 		IsAdStrippingEnabled: true,
-		IsBufferFixEnabled: _C.BUFFERING_FIX,
 		AdSegmentCache: new Map(),
 		SegmentCodecOwners: new Map(),
 		PlayerBufferingDelay: 600,
 		PlayerBufferingSameStateCount: 5,
 		PlayerBufferingDangerZone: 1,
 		PlayerBufferingMinRepeatDelay: 8000,
-		PlayerBufferingPrerollCheckEnabled: false,
-		PlayerBufferingPrerollCheckOffset: 5,
-		AllSegmentsAreAdSegments: false,
 		PlaybackAccessTokenHash: null,
 		LastNativePlaybackAccessTokenPlayerType: null,
 		PageMediaType: null,

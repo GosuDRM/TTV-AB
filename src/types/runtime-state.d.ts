@@ -61,7 +61,6 @@ type TTVABPlaybackState = {
 type TTVABSegmentCodecOwner = {
 	codecFamily: "avc" | "hevc" | "av1" | null;
 	mediaKey: string | null;
-	recordedAt: number;
 	ambiguous: boolean;
 };
 
@@ -74,9 +73,6 @@ interface TTVABRuntimeState extends TTVABPlaybackState {
 	AdSignifier: string;
 	BackupPlayerTypes: string[];
 	FallbackPlayerType: string;
-	ForceAccessTokenPlayerType: string | null;
-	RewriteNativePlaybackAccessToken: boolean;
-	PlayerBufferingDoPlayerReload: boolean;
 	PlayerReloadMinimalRequestsTime: number;
 	PlayerReloadMinimalRequestsPlayerIndex: number;
 	PlayerReloadDebounceMs: number;
@@ -94,7 +90,6 @@ interface TTVABRuntimeState extends TTVABPlaybackState {
 	PinnedBackupStallDetectionMs: number;
 	PinnedBackupStallPollMs: number;
 	BackupSearchForceRefreshAt: number;
-	LastPinnedBackupStallDetectedAt: number;
 	LqHqHoldMinMs: number;
 	LastPlayerReloadAt: number;
 	LastPlayerReloadAtByMediaKey: Record<string, number>;
@@ -111,16 +106,12 @@ interface TTVABRuntimeState extends TTVABPlaybackState {
 	StreamInfosByUrl: Record<string, TTVABStreamInfo>;
 	SimulatedAdsDepth: number;
 	V2API: boolean;
-	IsBufferFixEnabled: boolean;
 	AdSegmentCache: Map<string, number>;
 	SegmentCodecOwners: Map<string, TTVABSegmentCodecOwner>;
 	PlayerBufferingDelay: number;
 	PlayerBufferingSameStateCount: number;
 	PlayerBufferingDangerZone: number;
 	PlayerBufferingMinRepeatDelay: number;
-	PlayerBufferingPrerollCheckEnabled: boolean;
-	PlayerBufferingPrerollCheckOffset: number;
-	AllSegmentsAreAdSegments: boolean;
 	PagePlaybackRouteKey: string | null;
 	HasResolvedAdsCountState: boolean;
 	PendingInitialAdsBlockedDelta: number;

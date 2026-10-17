@@ -869,9 +869,7 @@ function _stripAds(
 	const hasExplicitAdMetadata = _hasExplicitAdMetadata(text);
 	const hasKnownAdSegments = _playlistLinesHaveKnownAdSegments(lines);
 	const forceStripAllSegments =
-		stripAll ||
-		__TTVAB_STATE__.AllSegmentsAreAdSegments ||
-		(hasExplicitAdMetadata && !hasKnownAdSegments);
+		stripAll || (hasExplicitAdMetadata && !hasKnownAdSegments);
 	const canPreserveLiveSegments =
 		preserveLiveSegments && !(hasExplicitAdMetadata && !hasKnownAdSegments);
 
@@ -952,10 +950,7 @@ function _stripAds(
 	}
 
 	const shouldStrip =
-		(hasExplicitAdMetadata ||
-			hasKnownAdSegments ||
-			stripAll ||
-			__TTVAB_STATE__.AllSegmentsAreAdSegments) &&
+		(hasExplicitAdMetadata || hasKnownAdSegments || stripAll) &&
 		(adSegmentCount > 0 || forceStripAllSegments);
 	let previousSegmentEndIndex = -1;
 
@@ -1071,8 +1066,6 @@ function _stripAds(
 		}
 	}
 
-	info.IsStrippingAdSegments = stripped;
-
 	const now = Date.now();
 	if (
 		!globalThis._lastAdCachePrune ||
@@ -1174,10 +1167,7 @@ function _getStreamVariantInfo(
 		FrameRate: Number.isFinite(frameRate) ? frameRate : 0,
 		Bandwidth: Number.isFinite(bandwidth) ? Math.max(0, bandwidth) : 0,
 		Codecs: String(attrs.CODECS || ""),
-		Audio: String(attrs.AUDIO || ""),
 		Name: String(attrs.VIDEO || ""),
-		Subtitles: String(attrs.SUBTITLES || ""),
-		Video: String(attrs.VIDEO || ""),
 		RawUrl: rawUrl,
 		Url: variantUrl,
 	};
