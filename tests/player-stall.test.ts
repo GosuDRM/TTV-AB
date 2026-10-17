@@ -7,6 +7,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { stopPlayerBufferMonitor } from "./helpers/player-monitors";
 import { loadModule, T } from "./helpers/runtime";
 
 const g = globalThis as Record<string, unknown>;
@@ -22,10 +23,8 @@ beforeAll(() => {
 beforeEach(() => {
 	g._log = () => {};
 	g.__TTVAB_STATE__ = {
-		IsBufferFixEnabled: true,
 		PinnedBackupPlayerType: "autoplay",
 		BackupSearchForceRefreshAt: 0,
-		LastPinnedBackupStallDetectedAt: 0,
 		PlayerBufferingDangerZone: 1,
 	};
 	g._broadcastWorkers = () => {};
@@ -2351,7 +2350,6 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 			CurrentAdMediaKey: "live:testchannel",
 			PinnedBackupPlayerType: null,
 			PinnedBackupStallPollMs: 0,
-			IsBufferFixEnabled: true,
 			PlayerBufferingDelay: 600,
 		};
 		T<(element: HTMLVideoElement, context: Record<string, unknown>) => unknown>(
@@ -2635,7 +2633,7 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 	});
 
 	afterEach(() => {
-		T<(resetBufferState?: boolean) => void>("_stopPlayerBufferMonitor")(false);
+		stopPlayerBufferMonitor(false);
 		for (const video of mountedVideos) video.remove();
 		mountedVideos.length = 0;
 		window.removeEventListener(
@@ -2716,7 +2714,7 @@ describe("_monitorPlayerBuffering clean-live player ownership", () => {
 		savedGlobals = Object.fromEntries(
 			replacedGlobals.map((name) => [name, g[name]]),
 		);
-		T<() => void>("_stopPlayerBufferMonitor")();
+		stopPlayerBufferMonitor();
 		T<() => void>("_clearActivePictureInPicturePlaybackContext")();
 		T<() => void>("_clearCachedPrimaryMediaElement")();
 		T<() => void>("_disarmPostBreakWedgeWatch")();
@@ -2736,7 +2734,6 @@ describe("_monitorPlayerBuffering clean-live player ownership", () => {
 			CurrentAdChannel: null,
 			CurrentAdMediaKey: null,
 			PinnedBackupPlayerType: null,
-			IsBufferFixEnabled: true,
 			PlayerBufferingDelay: 600,
 			PlayerBufferingSameStateCount: 5,
 			PlayerBufferingMinRepeatDelay: 8000,
@@ -2756,7 +2753,7 @@ describe("_monitorPlayerBuffering clean-live player ownership", () => {
 	});
 
 	afterEach(() => {
-		T<() => void>("_stopPlayerBufferMonitor")();
+		stopPlayerBufferMonitor();
 		T<() => void>("_clearCachedPrimaryMediaElement")();
 		window.removeEventListener(
 			"pagehide",
@@ -2838,7 +2835,7 @@ describe("_monitorPlayerBuffering clean-live player ownership", () => {
 		},
 	);
 
-	it.each(["paused", "dead worker", "disabled", "secondary handoff"])(
+	it.each(["paused", "dead worker", "secondary handoff"])(
 		"does not recover a replacement during %s",
 		(guard) => {
 			currentPlayback = makePlayback(false);
@@ -2851,9 +2848,6 @@ describe("_monitorPlayerBuffering clean-live player ownership", () => {
 				Object.assign(currentPlayback.player.core, {
 					worker: { __TTVABCrashed: true },
 				});
-			} else if (guard === "disabled") {
-				(g.__TTVAB_STATE__ as Record<string, unknown>).IsBufferFixEnabled =
-					false;
 			} else {
 				g._shouldSuppressAutomaticPlaybackResume = () => true;
 			}
@@ -2922,7 +2916,7 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 		savedGlobals = Object.fromEntries(
 			replacedGlobals.map((name) => [name, g[name]]),
 		);
-		T<(resetBufferState?: boolean) => void>("_stopPlayerBufferMonitor")(false);
+		stopPlayerBufferMonitor(false);
 		T<() => void>("_resetPostAdRecoveryTransaction")();
 		T<() => void>("_resetPostAdRecoveryMonitorSamples")();
 		tasks = [];
@@ -2966,7 +2960,6 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 			ShouldResumeAfterAdChannel: "testchannel",
 			ShouldResumeAfterAdMediaKey: "live:testchannel",
 			ShouldResumeAfterAdUntil: 515000,
-			IsBufferFixEnabled: true,
 			PlayerBufferingDelay: 600,
 			LastAdRecoveryReloadAt: 0,
 			LastAdRecoveryResumeAt: 0,
@@ -3018,7 +3011,7 @@ describe("_monitorPlayerBuffering post-ad transaction ordering", () => {
 	});
 
 	afterEach(() => {
-		T<(resetBufferState?: boolean) => void>("_stopPlayerBufferMonitor")(false);
+		stopPlayerBufferMonitor(false);
 		window.removeEventListener(
 			"pagehide",
 			g._flushWatchTimeOnPageExit as EventListener,
@@ -6275,7 +6268,6 @@ describe("_handlePendingPostAdRecovery (no-frame rebuild gating)", () => {
 		videos = [];
 		nowSpy = vi.spyOn(Date, "now");
 		g.__TTVAB_STATE__ = {
-			IsBufferFixEnabled: true,
 			PageMediaType: "live",
 			PageChannel: "chan",
 			PageMediaKey: "live:chan",

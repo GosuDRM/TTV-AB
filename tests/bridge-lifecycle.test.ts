@@ -644,7 +644,6 @@ describe("settings initialization lifecycle", () => {
 
 		expect(port.messages).toEqual([
 			{ type: "ttvab-toggle", detail: { enabled: true } },
-			{ type: "ttvab-toggle-buffer-fix", detail: { enabled: true } },
 			{ type: "ttvab-toggle-ad-spoofing", detail: { enabled: true } },
 			{ type: "ttvab-toggle-autoplay-backup", detail: { enabled: false } },
 			{ type: "ttvab-toggle-ad-timer", detail: { enabled: true } },

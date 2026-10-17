@@ -296,7 +296,7 @@ describe("worker message handler hardening", () => {
 		const source = initTs();
 		const listenerStart = source.indexOf('_onInternalMessage("ttvab-toggle"');
 		const listenerEnd = source.indexOf(
-			'_onInternalMessage("ttvab-toggle-buffer-fix"',
+			'_onInternalMessage("ttvab-toggle-ad-spoofing"',
 			listenerStart,
 		);
 		const listener = source.slice(listenerStart, listenerEnd);

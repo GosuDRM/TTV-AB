@@ -9,6 +9,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { stopPlayerBufferMonitor } from "./helpers/player-monitors";
 
 const g = globalThis as Record<string, unknown>;
 
@@ -62,7 +63,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	expect(g._log).not.toHaveBeenCalledWith(expect.anything(), "error");
-	run("_stopPlayerBufferMonitor");
+	stopPlayerBufferMonitor();
 	run("_clearPendingPlayerPreferenceRestore");
 	window.removeEventListener(
 		"pagehide",
