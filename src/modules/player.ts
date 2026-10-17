@@ -159,6 +159,7 @@ type PlayerTaskOptions = {
 	channel?: string | null;
 	mediaKey?: string | null;
 	cycleStartedAt?: number | null;
+	allowCrashedWorkerReload?: boolean;
 };
 const _PostAdRecoveryTransactionState = {
 	channel: null as string | null,
@@ -6052,6 +6053,12 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 	if (
 		!isPipTask &&
 		(isPausePlay || isReload) &&
+		!(
+			isReload &&
+			!isPausePlay &&
+			reason === "worker-recovery" &&
+			options.allowCrashedWorkerReload === true
+		) &&
 		_isPlayerWorkerUnavailable(player)
 	) {
 		return false;
