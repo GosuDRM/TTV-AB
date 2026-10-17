@@ -2,6 +2,16 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [23.0.3] - 2026-10-17
+
+Fixed
+
+- **Player Crash Recovery** - Reload the player once by itself when Twitch's video player crashes, instead of waiting and then asking you to refresh the tab. If that reload does not bring the stream back, the refresh notice appears without another reload, so a crash can never start a reload loop.
+
+Changed
+
+- **Smaller Extension** - Remove code that never ran, including an unused player-type override that inspected every Twitch request, so pages load less code and Twitch requests skip a needless check.
+
 ## [23.0.2] - 2026-10-16
 
 Fixed

@@ -74,6 +74,11 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
+### v23.0.3 - 2026-10-17
+
+- **Player Crash Recovery** - Reload the player once by itself when Twitch's video player crashes, instead of waiting and then asking you to refresh the tab. If that reload does not bring the stream back, the refresh notice appears without another reload, so a crash can never start a reload loop.
+- **Smaller Extension** - Remove code that never ran, including an unused player-type override that inspected every Twitch request, so pages load less code and Twitch requests skip a needless check.
+
 ### v23.0.2 - 2026-10-16
 
 - **Backup Search Outcome** - Finish a backup search with the backup a newer refresh just updated, and log it, instead of ending silently with no result when that refresh lands during the search.
@@ -119,18 +124,6 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Retro Colors** - Show Time Saved in light orange, and the Status text in light green when active and gray when inactive, in the Retro theme.
 - **Last 7 Days** - Show the last 7 days in the chart instead of starting over every Monday, and leave today out of the daily average since the day is not over.
 - **Fewer Statistics Writes** - Save watch time once a minute instead of every 15 seconds and save only what changed, so the browser writes to disk less often.
-
-### v23.0.0 - 2026-10-15
-
-- **Midroll Rewind** - Continue the backup stream from exactly where the live stream left off when a midroll starts, instead of jumping back a few seconds and replaying them with Twitch Low Latency on. Switching to another backup during the break and returning to the live stream afterwards continue the same way.
-- **Midroll Start** - Switch to the backup stream as soon as it is ready when a midroll starts, instead of waiting a few seconds for its next segment or showing a short black screen. Switching to HD during the break and returning to the live stream afterwards no longer wait for the next segment either.
-- **Slow Connections** - Wait twice as long before each repeated reload when the player keeps running out of video, so a slow connection that needs a few seconds per segment is no longer stuck reloading every few seconds. A truly stuck player is still reloaded, and the shorter wait returns after five minutes without such a reload.
-- **Ad Spoofing Toggle** - Stop downloading ad segments for Twitch while Ad Spoofing is off, download them one at a time instead of cancelling the previous one, and stop downloading them for the rest of a midroll once it is identified, so a slow connection keeps more bandwidth for the stream when it starts on an ad.
-- **Ad Completion Reports** - Count a report that Twitch answers with an error as failed instead of sent, and stop a replacement player started during an ad break from reporting the same ads again.
-- **Previews for Twitch Quality** - Follow the player quality set by the Previews for Twitch extension, and ask it to re-apply that quality after the player reloads, so the stream no longer drops to Twitch's saved quality after an ad break.
-- **Midroll Start Diagnostics** - Log one line per midroll that starts without ad segments, showing what the stream offered and whether playback waited for a backup, reused the last clean playlist, or showed the silent hold. Also log when the player cancels a request that is waiting for a backup and when a background backup search fails.
-- **Ad Break Type Diagnostics** - Name the ad break type, preroll or midroll, in each ad break summary, and log when the type cannot be recorded because the page is on other media.
-- **Ad Spoofing Diagnostics** - Say in the log that ad completion reports were sent rather than completed, show which stream is playing at the time, and warn once per ad break, instead of once per session, when Twitch's ad markers cannot be reported.
 
 _See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes._
 
