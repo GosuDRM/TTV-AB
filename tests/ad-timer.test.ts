@@ -360,3 +360,17 @@ describe("ad break timer", () => {
 		expect(g._broadcastWorkers).not.toHaveBeenCalled();
 	});
 });
+
+describe("Low Quality Fallback toggle log", () => {
+	it.each([
+		[false, "Low quality fallback disabled", "info"],
+		[true, "Low quality fallback enabled", "success"],
+	])("logs enabled=%s without a console warning", (enabled, message, level) => {
+		handlers.get("ttvab-toggle-autoplay-backup")?.({ enabled });
+		expect(g._log).toHaveBeenCalledExactlyOnceWith(message, level);
+		expect(g._broadcastWorkers).toHaveBeenCalledExactlyOnceWith({
+			key: "UpdateAutoplayBackupState",
+			value: !enabled,
+		});
+	});
+});
