@@ -74,9 +74,12 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 
 ## 🔔 What's New
 
-### v23.0.3 - 2026-10-17
+### v24.0.0 - 2026-10-21
 
-- **Player Crash Recovery** - Reload the player once by itself when Twitch's video player crashes, instead of waiting and then asking you to refresh the tab. If that reload does not bring the stream back, the refresh notice appears without another reload, so a crash can never start a reload loop.
+- **Side and Chat Video Ads** - Hide and mute Twitch's updated side and chat video ads even when they use a different video host or a custom label. ([#93](https://github.com/GosuDRM/TTV-AB/issues/93))
+- **Leftover Ad Panels** - Collapse the surrounding panel and timer after a side or chat video ad is hidden, so an empty black panel does not cover the stream or chat.
+- **Low Quality Fallback Logging** - Log disabling Low Quality Fallback as a setting change, so it no longer creates a misleading warning on the browser's extension Errors page.
+- **Player Crash Recovery** - Attempt one automatic reload through a crashed player to restore the stream. If the player remains crashed, show the refresh notice without repeatedly reloading it.
 - **Smaller Extension** - Remove code that never ran, including an unused player-type override that inspected every Twitch request, so pages load less code and Twitch requests skip a needless check.
 
 ### v23.0.2 - 2026-10-16
