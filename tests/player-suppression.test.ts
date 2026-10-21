@@ -228,10 +228,10 @@ describe("_ensureIndependentVideoAdStyle", () => {
 		expect(ensure()()).toBe(true);
 		const style = document.getElementById("ttvab-independent-video-ad-style");
 		expect(style?.textContent).toContain(
-			'.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"])',
+			'.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"],video[data-ttvab-independent-ad-suppressed="true"])',
 		);
 		expect(style?.textContent).toContain(
-			'.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"])',
+			'.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"],video[data-ttvab-independent-ad-suppressed="true"])',
 		);
 	});
 });
@@ -653,6 +653,154 @@ describe("_suppressIndependentVideoAdsInDocument", () => {
 		expect(primary.video.muted).toBe(false);
 	});
 
+	function makeHiddenLabelAd(labelText: string, labelHidden = true) {
+		const slot = document.createElement("div");
+		const label = document.createElement("span");
+		label.id = "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6";
+		label.hidden = labelHidden;
+		label.textContent = labelText;
+		const ad = makeVideo(null);
+		ad.video.setAttribute("aria-labelledby", label.id);
+		ad.video.src = "https://cdn.example.com/advertiser-creative.mp4";
+		slot.append(label, ad.video);
+		document.body.appendChild(slot);
+		return ad;
+	}
+
+	it("suppresses and restores an existing video when its hidden label reference changes", () => {
+		const primary = makeVideo(null);
+		primary.video.src = "blob:https://www.twitch.tv/primary-player";
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => primary.video },
+		});
+		const ad = makeHiddenLabelAd("Video Advertisement");
+		const labelId = ad.video.getAttribute("aria-labelledby") as string;
+		ad.video.removeAttribute("aria-labelledby");
+		expect(suppress()()).toBe(0);
+		expect(T<() => boolean>("_installIndependentVideoAdObserver")()).toBe(true);
+		const observer = (
+			g._IndependentVideoAdSuppressionState as {
+				observer: MutationObserver;
+			}
+		).observer;
+		const handleMutations = T<(records: MutationRecord[]) => void>(
+			"_handleIndependentVideoAdMutations",
+		);
+
+		try {
+			ad.video.setAttribute("aria-labelledby", labelId);
+			handleMutations(observer.takeRecords());
+			expect(ad.video.style.getPropertyValue("display")).toBe("none");
+			expect(ad.video.muted).toBe(true);
+			expect(ad.video.volume).toBe(0);
+
+			ad.video.removeAttribute("aria-labelledby");
+			handleMutations(observer.takeRecords());
+			expect(ad.video.style.getPropertyValue("display")).toBe("");
+			expect(ad.video.muted).toBe(false);
+			expect(ad.video.volume).toBe(1);
+			expect(primary.video.muted).toBe(false);
+		} finally {
+			observer.disconnect();
+		}
+	});
+
+	it.each(["insertion", "visibility", "id"])(
+		"updates suppression when the sibling label changes through %s",
+		(change) => {
+			const primary = makeVideo(null);
+			g._getPlayerAndState = () => ({
+				player: { getHTMLVideoElement: () => primary.video },
+			});
+			const ad = makeHiddenLabelAd("Video Advertisement");
+			const slot = ad.video.parentElement as HTMLElement;
+			const label = slot.querySelector("span") as HTMLElement;
+			const labelId = label.id;
+			const setLabelActive = (active: boolean) => {
+				if (change === "insertion") {
+					if (active) slot.appendChild(label);
+					else label.remove();
+				} else if (change === "visibility") {
+					label.hidden = active;
+				} else {
+					label.id = active ? labelId : "unrelated-label";
+				}
+			};
+			setLabelActive(false);
+			expect(suppress()()).toBe(0);
+			T<() => boolean>("_installIndependentVideoAdObserver")();
+			const observer = (
+				g._IndependentVideoAdSuppressionState as {
+					observer: MutationObserver;
+				}
+			).observer;
+			const handleMutations = T<(records: MutationRecord[]) => void>(
+				"_handleIndependentVideoAdMutations",
+			);
+
+			try {
+				setLabelActive(true);
+				handleMutations(observer.takeRecords());
+				expect(ad.video.style.getPropertyValue("display")).toBe("none");
+				expect(ad.video.muted).toBe(true);
+				expect(ad.video.volume).toBe(0);
+
+				setLabelActive(false);
+				handleMutations(observer.takeRecords());
+				expect(ad.video.style.getPropertyValue("display")).toBe("");
+				expect(ad.video.muted).toBe(false);
+				expect(ad.video.volume).toBe(1);
+				expect(slot.hasAttribute("data-ttvab-independent-ad-container")).toBe(
+					false,
+				);
+				expect(primary.video.muted).toBe(false);
+			} finally {
+				observer.disconnect();
+			}
+		},
+	);
+
+	it("hides Twitch's ad player video labelled by a hidden sibling on any host or label text", () => {
+		const primary = makeVideo(null);
+		primary.video.src = "blob:https://www.twitch.tv/primary-player";
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => primary.video },
+		});
+		const defaultLabelAd = makeHiddenLabelAd("Video Advertisement");
+		const altTextAd = makeHiddenLabelAd("Star Trek: Strange New Worlds");
+
+		expect(suppress()()).toBe(2);
+		for (const ad of [defaultLabelAd, altTextAd]) {
+			expect(ad.video.style.getPropertyValue("display")).toBe("none");
+			expect(ad.video.muted).toBe(true);
+			expect(ad.video.volume).toBe(0);
+		}
+		expect(primary.video.muted).toBe(false);
+		expect(primary.video.style.getPropertyValue("display")).toBe("");
+	});
+
+	it("leaves videos labelled by a visible element, a blob source, or an unresolved primary player", () => {
+		const primary = makeVideo(null);
+		primary.video.src = "blob:https://www.twitch.tv/primary-player";
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => primary.video },
+		});
+		const visibleLabel = makeHiddenLabelAd("Video Advertisement", false);
+		const blobBacked = makeHiddenLabelAd("Video Advertisement");
+		blobBacked.video.src = "blob:https://www.twitch.tv/backup-stream";
+
+		expect(suppress()()).toBe(0);
+
+		const unresolved = makeHiddenLabelAd("Video Advertisement");
+		g._getPlayerAndState = () => ({ player: null });
+
+		expect(suppress()()).toBe(0);
+		for (const video of [visibleLabel, blobBacked, unresolved]) {
+			expect(video.video.style.getPropertyValue("display")).toBe("");
+			expect(video.video.muted).toBe(false);
+		}
+	});
+
 	it("never hides labeled blob-backed media so a misdirected player lookup cannot black out the stream", () => {
 		const other = makeVideo(null);
 		g._getPlayerAndState = () => ({
@@ -749,6 +897,57 @@ describe("independent video ad container collapse", () => {
 				.querySelector("main")
 				?.hasAttribute("data-ttvab-independent-ad-container"),
 		).toBe(false);
+	});
+
+	it("collapses the whole side ad panel for Twitch's hidden-label ad player on any host", () => {
+		const root = mount(`
+			<main>
+				<div class="stream-display-ad__wrapper"></div>
+				<div>
+					<div style="position: absolute; transition: visibility 0.25s;">
+						<div id="panel" class="Layout-sc-1xcs6mc-0" style="position: absolute; background: black;">
+							<div id="portal" class="Layout-sc-1xcs6mc-0">
+								<div style="background-color: black; height: 100%; width: 100%;">
+									<span id="a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" hidden>Video Advertisement</span>
+									<video src="https://cdn.example.com/advertiser-creative.mp4" aria-labelledby="a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" crossorigin="anonymous"></video>
+								</div>
+							</div>
+							<div class="Layout-sc-1xcs6mc-0">Ad 0:12</div>
+						</div>
+					</div>
+				</div>
+			</main>
+		`);
+		const primary = document.createElement("video");
+		primary.src = "blob:https://www.twitch.tv/primary-player";
+		g._getPlayerAndState = () => ({
+			player: { getHTMLVideoElement: () => primary },
+		});
+		T<() => boolean>("_ensureIndependentVideoAdStyle")();
+		const panelRule = (
+			document.getElementById("ttvab-independent-video-ad-style")
+				?.textContent || ""
+		)
+			.split("}")
+			.find((rule) => rule.startsWith(".stream-display-ad__wrapper"))
+			?.split("{")[0];
+
+		try {
+			expect(panelRule).toBeTruthy();
+			expect(root.querySelector(panelRule as string)).toBeNull();
+			expect(suppress()()).toBe(1);
+
+			expect(
+				root
+					.querySelector("#portal")
+					?.getAttribute("data-ttvab-independent-ad-container"),
+			).toBe("true");
+			expect(root.querySelector(panelRule as string)).toBe(
+				root.querySelector("#panel"),
+			);
+		} finally {
+			document.getElementById("ttvab-independent-video-ad-style")?.remove();
+		}
 	});
 
 	it("stops at the chat shell so chat stays visible", () => {
@@ -1122,6 +1321,9 @@ describe("_installIndependentVideoAdObserver", () => {
 				attributes: true,
 				attributeFilter: [
 					"aria-label",
+					"aria-labelledby",
+					"hidden",
+					"id",
 					"src",
 					"data-ttvab-independent-ad-container",
 				],

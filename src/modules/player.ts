@@ -2894,6 +2894,7 @@ const _INDEPENDENT_VIDEO_AD_LOG_SOURCE_LIMIT = 512;
 const _INDEPENDENT_VIDEO_AD_LOG_CHILD_SOURCE_LIMIT = 4;
 const _INDEPENDENT_VIDEO_AD_LOG_ATTRIBUTES = [
 	"aria-label",
+	"aria-labelledby",
 	"role",
 	"data-a-target",
 	"data-test-selector",
@@ -2935,8 +2936,8 @@ function _ensureIndependentVideoAdStyle() {
 	style.textContent = [
 		'video[data-ttvab-independent-ad-suppressed="true"]{display:none!important;visibility:hidden!important;pointer-events:none!important}',
 		'[data-ttvab-independent-ad-container="true"]{display:none!important}',
-		'.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"]){display:none!important}',
-		'.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"]){display:none!important}',
+		'.stream-display-ad__wrapper + div > div[style^="position:"] > div[class^="Layout-sc-"]:has(video[src^="https://m.media-amazon.com"],video[data-ttvab-independent-ad-suppressed="true"]){display:none!important}',
+		'.chat-shell > div[class^="Layout-sc-"] > div[style^="transition:"]:has(video[src^="https://m.media-amazon.com"],video[data-ttvab-independent-ad-suppressed="true"]){display:none!important}',
 	].join("");
 	document.head.appendChild(style);
 	return true;
@@ -2986,8 +2987,25 @@ function _hasKnownIndependentVideoAdSource(media) {
 	return false;
 }
 
+function _hasHiddenSiblingVideoLabel(media) {
+	const labelId = media.getAttribute("aria-labelledby");
+	if (!labelId || !media.parentElement) return false;
+	for (const sibling of media.parentElement.children) {
+		if (
+			sibling !== media &&
+			sibling.id === labelId &&
+			sibling instanceof HTMLElement &&
+			sibling.hidden
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function _hasIndependentVideoAdLabel(media) {
 	if (!(media instanceof HTMLVideoElement)) return false;
+	if (_hasHiddenSiblingVideoLabel(media)) return true;
 	const label = media.getAttribute("aria-label")?.trim().toLowerCase();
 	if (!label) return false;
 	return (
@@ -3549,6 +3567,7 @@ function _suppressIndependentVideoAdsForNode(node) {
 function _handleIndependentVideoAdMutations(records) {
 	if (!_isIndependentVideoAdGuardEnabled()) return;
 	for (const record of records) {
+		let labelParent = null;
 		if (record.type === "attributes") {
 			if (
 				record.attributeName === _INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE ||
@@ -3556,11 +3575,26 @@ function _handleIndependentVideoAdMutations(records) {
 				record.target instanceof HTMLSourceElement
 			) {
 				_suppressIndependentVideoAdsForNode(record.target);
+			} else if (
+				(record.attributeName === "hidden" || record.attributeName === "id") &&
+				record.target instanceof HTMLElement
+			) {
+				labelParent = record.target.parentElement;
 			}
-			continue;
+		} else {
+			for (const node of record.addedNodes) {
+				_suppressIndependentVideoAdsForNode(node);
+			}
+			labelParent = record.target;
 		}
-		for (const node of record.addedNodes) {
-			_suppressIndependentVideoAdsForNode(node);
+		if (!(labelParent instanceof Element)) continue;
+		for (const sibling of labelParent.children) {
+			if (
+				sibling instanceof HTMLVideoElement &&
+				sibling.hasAttribute("aria-labelledby")
+			) {
+				_suppressIndependentVideoAd(sibling);
+			}
 		}
 	}
 	_pruneIndependentVideoAdSuppressions();
@@ -3576,6 +3610,9 @@ function _installIndependentVideoAdObserver() {
 		attributes: true,
 		attributeFilter: [
 			"aria-label",
+			"aria-labelledby",
+			"hidden",
+			"id",
 			"src",
 			_INDEPENDENT_VIDEO_AD_CONTAINER_ATTRIBUTE,
 		],
