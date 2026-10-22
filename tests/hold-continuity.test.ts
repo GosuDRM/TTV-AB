@@ -1778,6 +1778,265 @@ describe("empty hold playlist continuity", () => {
 		},
 	);
 
+	describe("sessions whose timestamps disagree", () => {
+		function clockSetup() {
+			const { context, info } = setup();
+			const base = Date.parse("2026-10-19T11:42:28Z");
+			let now = base - 2000;
+			context.Date = class extends Date {
+				static now() {
+					return now;
+				}
+			};
+			const datedEndingAt = (sequence: number, end: number, prefix: string) =>
+				playlist(sequence, 3, prefix).replace(
+					"#EXTINF:",
+					`#EXT-X-PROGRAM-DATE-TIME:${new Date(end - 6000).toISOString()}\n#EXTINF:`,
+				);
+			const backup = { playerType: "autoplay", sessionUrl: "fresh" };
+			const look = (text: string, metadata: unknown = null) => {
+				try {
+					context._alignLivePlaylist(info, text, metadata, false);
+				} catch {}
+			};
+			return {
+				context,
+				info,
+				base,
+				datedEndingAt,
+				backup,
+				look,
+				advance: (ms: number) => {
+					now += ms;
+				},
+			};
+		}
+
+		it("joins a backup at its live edge when the served native clock runs ahead of the viewer's clock", () => {
+			const { context, info, base, datedEndingAt, backup, look, advance } =
+				clockSetup();
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(399, base + 8000, "native"),
+			);
+			advance(2000);
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(400, base + 10000, "native"),
+			);
+			look(datedEndingAt(100, base - 2000, "backup"), backup);
+			expect(() =>
+				context._alignLivePlaylist(
+					info,
+					datedEndingAt(100, base - 2000, "backup"),
+					backup,
+				),
+			).toThrow("Live handoff playlist is behind the served broadcast time");
+
+			advance(2000);
+			const diagnostic: Record<string, unknown> = {};
+			const output = context._alignLivePlaylist(
+				info,
+				datedEndingAt(101, base, "backup"),
+				backup,
+				true,
+				"",
+				diagnostic,
+			);
+
+			expect(diagnostic.clockShiftMs).toBe(12000);
+			expect(output).toContain("backup-103.ts");
+			expect(output).not.toContain("backup-102.ts");
+			expect(info._LivePlaylistTimeline.minimumTime).toBe(base - 2000);
+		});
+
+		it("keeps a genuinely late backup behind when both clocks agree with the viewer", () => {
+			const { context, info, base, datedEndingAt, backup, look, advance } =
+				clockSetup();
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(399, base - 4000, "native"),
+			);
+			look(datedEndingAt(99, base - 16000, "backup"), backup);
+			advance(2000);
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(400, base - 2000, "native"),
+			);
+			const diagnostic: Record<string, unknown> = {};
+
+			expect(() =>
+				context._alignLivePlaylist(
+					info,
+					datedEndingAt(100, base - 14000, "backup"),
+					backup,
+					false,
+					"",
+					diagnostic,
+				),
+			).toThrow("Live handoff playlist is behind the served broadcast time");
+			expect(diagnostic.clockShiftMs).toBe(0);
+		});
+
+		it("does not shift sessions that share a clock ahead of the viewer", () => {
+			const { context, info, base, datedEndingAt, backup, look, advance } =
+				clockSetup();
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(399, base + 1000, "native"),
+			);
+			look(datedEndingAt(100, base + 3000, "backup"), backup);
+			advance(2000);
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(400, base + 3000, "native"),
+			);
+			const diagnostic: Record<string, unknown> = {};
+
+			const output = context._alignLivePlaylist(
+				info,
+				datedEndingAt(101, base + 5000, "backup"),
+				backup,
+				false,
+				"",
+				diagnostic,
+			);
+
+			expect(diagnostic.clockShiftMs).toBe(0);
+			expect(output).toContain("backup-103.ts");
+			expect(output).not.toContain("backup-102.ts");
+		});
+
+		it("waits for a source's newest segment to advance before trusting its edge", () => {
+			const { context, info, base, datedEndingAt, backup, advance } =
+				clockSetup();
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(399, base + 8000, "native"),
+			);
+			advance(2000);
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(400, base + 10000, "native"),
+			);
+			advance(3900);
+			const diagnostic: Record<string, unknown> = {};
+
+			expect(() =>
+				context._alignLivePlaylist(
+					info,
+					datedEndingAt(100, base - 2000, "backup"),
+					backup,
+					false,
+					"",
+					diagnostic,
+				),
+			).toThrow("Live handoff playlist is behind the served broadcast time");
+			expect(diagnostic.clockShiftMs).toBe(0);
+		});
+
+		it("serves the backup within a segment instead of holding until its clock catches up", async () => {
+			const { context, info, fetch, serve } = setup();
+			let now = Date.parse("2026-10-19T11:42:28Z");
+			context.Date = class extends Date {
+				static now() {
+					return now;
+				}
+			};
+			context.self = context;
+			context._postWorkerBridgeMessage = vi.fn();
+			context._log = vi.fn();
+			context.state.DisableAutoplayBackup = false;
+			const core = context._processM3U8Core;
+			const grid = (lastEnd: number, prefix: string, sequence: number) =>
+				playlist(sequence, 7, prefix)
+					.replaceAll("#EXTINF:2.000", "#EXTINF:4.167")
+					.replace("TARGETDURATION:2", "TARGETDURATION:5")
+					.replace(
+						"#EXTINF:",
+						`#EXT-X-PROGRAM-DATE-TIME:${new Date(lastEnd - 7 * 4167).toISOString()}\n#EXTINF:`,
+					);
+			const backupOrigin = now - 2000;
+			now -= 4167;
+			await serve(grid(now + 10000, "native", 689));
+			now += 4167;
+			await serve(grid(now + 10000, "native", 690));
+			info.VisibleAdStartedAt = now - 6000;
+			context._processM3U8Core = core;
+			let selection = 0;
+			const select = () => {
+				const advanced = Math.floor((now - 2000 - backupOrigin) / 4167);
+				return context._commitBackupPlaylist(
+					info,
+					grid(backupOrigin + advanced * 4167, "backup", 690 + advanced),
+					++selection,
+					{
+						playerType: "autoplay",
+						resolution: "640x360",
+						codecFamily: "avc",
+						codec: "avc1.4d401f",
+						playlistUrl: "https://edge.example/autoplay.m3u8?token=private",
+						sessionUrl: "https://usher.ttvnw.net/master.m3u8?token=private",
+					},
+				);
+			};
+			context._findBackupStream = vi.fn(async () => ({
+				type: "autoplay",
+				m3u8: select(),
+			}));
+			context._refreshActiveBackupMediaPlaylist = vi.fn(async () => select());
+			const ad = playlist(697, 3, "stitched-ad").replaceAll(
+				",live",
+				",stitched-ad",
+			);
+			let output = "";
+			for (
+				let poll = 0;
+				poll < 6 && info._LastServedPlaylistKind !== "backup";
+				poll++
+			) {
+				now += 1100;
+				output = await context._processM3U8(nativeUrl, ad, fetch);
+			}
+
+			expect(info._LastServedPlaylistKind).toBe("backup");
+			expect(output).not.toMatch(/stitched-ad/);
+			expect(segments(output).map((segment) => segment.url)).toEqual([
+				"https://edge.example/backup-697.ts",
+			]);
+		});
+
+		it("does not replay a served backup when the returning native clock runs ahead", () => {
+			const { context, info, base, datedEndingAt, backup, look, advance } =
+				clockSetup();
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(99, base - 4000, "backup"),
+				backup,
+			);
+			look(datedEndingAt(399, base + 8000, "native"));
+			advance(2000);
+			context._alignLivePlaylist(
+				info,
+				datedEndingAt(100, base - 2000, "backup"),
+				backup,
+			);
+			const diagnostic: Record<string, unknown> = {};
+
+			expect(() =>
+				context._alignLivePlaylist(
+					info,
+					datedEndingAt(400, base + 10000, "native"),
+					null,
+					false,
+					"",
+					diagnostic,
+				),
+			).toThrow("Live handoff playlist is behind the served broadcast time");
+			expect(diagnostic.clockShiftMs).toBe(-12000);
+		});
+	});
+
 	it.each(["vod", "disabled", "undated"])(
 		"preserves %s playlist timing",
 		async (mode) => {
