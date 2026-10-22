@@ -1481,6 +1481,67 @@ describe("worker recovery notice", () => {
 		expect(notice()).toBeNull();
 	});
 
+	const withFullscreenElement = (element: Element) => {
+		let fullscreen: Element | null = element;
+		Object.defineProperty(document, "fullscreenElement", {
+			configurable: true,
+			get: () => fullscreen,
+		});
+		return () => {
+			fullscreen = null;
+			document.dispatchEvent(new Event("fullscreenchange"));
+		};
+	};
+
+	it("shows the notice inside the fullscreen player and moves it out with it", () => {
+		const player = document.createElement("div");
+		document.body.append(player);
+		try {
+			const exitFullscreen = withFullscreenElement(player);
+			show();
+			expect(notice()?.parentElement).toBe(player);
+			vi.advanceTimersByTime(2999);
+			exitFullscreen();
+			expect(notice()?.parentElement).toBe(document.body);
+			vi.advanceTimersByTime(1);
+			expect(notice()).toBeNull();
+		} finally {
+			delete (document as unknown as Record<string, unknown>).fullscreenElement;
+			player.remove();
+		}
+	});
+
+	it("waits to start the 3-second expiry while a video fills the screen", () => {
+		const video = document.createElement("video");
+		document.body.append(video);
+		try {
+			const exitFullscreen = withFullscreenElement(video);
+			show();
+			vi.advanceTimersByTime(60000);
+			expect(notice()).not.toBeNull();
+			exitFullscreen();
+			vi.advanceTimersByTime(2999);
+			expect(notice()?.parentElement).toBe(document.body);
+			vi.advanceTimersByTime(1);
+			expect(notice()).toBeNull();
+		} finally {
+			delete (document as unknown as Record<string, unknown>).fullscreenElement;
+			video.remove();
+		}
+	});
+
+	it("stops watching fullscreen changes once the notice is dismissed", () => {
+		const removeListener = vi.spyOn(document, "removeEventListener");
+		show();
+		notice()?.querySelectorAll("button")[1]?.click();
+
+		expect(notice()).toBeNull();
+		expect(removeListener).toHaveBeenCalledWith(
+			"fullscreenchange",
+			expect.any(Function),
+		);
+	});
+
 	it("stops waiting for visibility once the notice is dismissed", () => {
 		hidden = true;
 		const removeListener = vi.spyOn(document, "removeEventListener");
@@ -1493,6 +1554,30 @@ describe("worker recovery notice", () => {
 			expect.any(Function),
 		);
 	});
+
+	it.each([
+		["de", "", ["ja-JP"], "Tab neu laden", "de"],
+		["auto", "es-ES", ["ja-JP"], "Actualizar pestaña", "es-ES"],
+		["auto", "zh-Hans-HK", [], "刷新标签页", "zh-Hans-HK"],
+		["constructor", "", ["it-IT"], "Aggiorna scheda", "it-IT"],
+	])(
+		"uses the popup language choice %s with browser language %s before the website languages",
+		(choice, uiLanguage, languages, refresh, lang) => {
+			vi.spyOn(navigator, "languages", "get").mockReturnValue(languages);
+			T<(choice: string, uiLanguage: string) => void>(
+				"_setPageLanguagePreference",
+			)(choice, uiLanguage);
+			try {
+				show();
+				expect(notice()?.querySelector("button")?.textContent).toBe(refresh);
+				expect(notice()?.lang).toBe(lang);
+			} finally {
+				T<(choice: string, uiLanguage: string) => void>(
+					"_setPageLanguagePreference",
+				)("auto", "");
+			}
+		},
+	);
 
 	it.each([
 		[["es-MX", "en"], "Actualizar pestaña", "Descartar"],

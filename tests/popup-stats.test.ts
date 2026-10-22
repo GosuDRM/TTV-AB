@@ -71,6 +71,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+	storageData = {};
 	storageListeners = [];
 	runtimeMessages = [];
 	runtimeResponse = { ok: true };
@@ -128,6 +129,106 @@ beforeEach(() => {
 afterEach(() => {
 	vi.restoreAllMocks();
 	document.body.innerHTML = "";
+});
+
+describe("popup language", () => {
+	const selector = () => element<HTMLSelectElement>("langSelector");
+
+	it("copies an older popup-only choice into shared extension storage", async () => {
+		localStorage.setItem("ttvab_lang", "es");
+		mountPopup();
+		await settle();
+
+		expect(storageData.ttvLanguage).toBe("es");
+		expect(selector().value).toBe("es");
+	});
+
+	it("prefers the shared choice over the popup's copy", async () => {
+		storageData = { ttvLanguage: "de" };
+		mountPopup();
+		await settle();
+
+		expect(selector().value).toBe("de");
+		expect(document.documentElement.lang).toBe("de");
+		expect(localStorage.getItem("ttvab_lang")).toBe("de");
+	});
+
+	it("saves a new choice for Twitch pages and follows changes from other tabs", async () => {
+		mountPopup();
+		await settle();
+		selector().value = "ja";
+		selector().dispatchEvent(new Event("change"));
+		expect(storageData.ttvLanguage).toBe("ja");
+
+		for (const listener of storageListeners)
+			listener({ ttvLanguage: { oldValue: "ja", newValue: "ru" } }, "local");
+		expect(selector().value).toBe("ru");
+		expect(document.documentElement.lang).toBe("ru");
+		expect(document.querySelector('[data-i18n="last7Days"]')?.textContent).toBe(
+			(g.TRANSLATIONS as Record<string, { last7Days: string }>).ru.last7Days,
+		);
+	});
+
+	it("follows a language change in the open log export tab", async () => {
+		window.history.replaceState(null, "", "/?ttvab-log-export=1");
+		try {
+			mountPopup();
+			await settle();
+			for (const listener of storageListeners)
+				listener({ ttvLanguage: { oldValue: "en", newValue: "it" } }, "local");
+			expect(document.documentElement.lang).toBe("it");
+		} finally {
+			window.history.replaceState(null, "", "/");
+		}
+	});
+
+	it("names the language Auto picked", async () => {
+		localStorage.setItem("ttvab_lang", "auto");
+		vi.spyOn(navigator, "languages", "get").mockReturnValue(["ja-JP"]);
+		mountPopup();
+		await settle();
+
+		expect(element("langAutoOption").textContent).toBe("🌐 自動 (日本語)");
+		expect(document.documentElement.lang).toBe("ja");
+	});
+
+	it.each([
+		["zh-Hans-HK", "zh-CN"],
+		["zh-HK", "zh-TW"],
+		["pt-PT", "pt"],
+	])("matches the browser language %s", async (browserLanguage, htmlLang) => {
+		localStorage.setItem("ttvab_lang", "auto");
+		vi.spyOn(navigator, "languages", "get").mockReturnValue([browserLanguage]);
+		mountPopup();
+		await settle();
+
+		expect(document.documentElement.lang).toBe(htmlLang);
+	});
+
+	it.each(["constructor", "__proto__", "toString"])(
+		"resets the stored value %s to Auto",
+		async (stored) => {
+			localStorage.setItem("ttvab_lang", stored);
+			mountPopup();
+			await settle();
+
+			expect(selector().value).toBe("auto");
+			expect(localStorage.getItem("ttvab_lang")).toBe("auto");
+		},
+	);
+
+	it("labels each language option with its flag and its own language", () => {
+		mountPopup();
+		const options = [...selector().options].filter(
+			(option) => option.value !== "auto",
+		);
+		expect(options.every((option) => option.lang)).toBe(true);
+		expect(
+			options.every((option) =>
+				/^[\u{1F1E6}-\u{1F1FF}]{2} \S/u.test(option.text),
+			),
+		).toBe(true);
+	});
 });
 
 describe("popup statistics", () => {
@@ -211,6 +312,38 @@ describe("popup statistics", () => {
 		element("channelList").querySelector<HTMLElement>(".channel-item")?.click();
 		expect(element("channelModalAds").textContent).toBe("31");
 		expect(element("channelModalBreaks").textContent).toBe("9");
+	});
+
+	it("formats durations and the channel share in the chosen language", async () => {
+		localStorage.setItem("ttvab_lang", "fr");
+		storageData = {
+			ttvLanguage: "fr",
+			ttvAdsBlocked: 9,
+			ttvStats: {
+				daily: {},
+				channels: { somestreamer: { ads: 4, watchSeconds: 60 } },
+				achievements: [],
+				adMillisecondsSaved: 90500,
+				measuredAds: 1,
+			},
+		};
+		mountPopup();
+		await settle();
+
+		const unit = (value: number, name: string) =>
+			new Intl.NumberFormat("fr", {
+				style: "unit",
+				unit: name,
+				unitDisplay: "narrow",
+			}).format(value);
+		expect(element("timeSaved").textContent).toBe(
+			`${unit(1, "minute")} ${unit(30, "second")}`,
+		);
+		expect(element("timeSaved").textContent).not.toBe("1m 30s");
+		element("channelList").querySelector<HTMLElement>(".channel-item")?.click();
+		expect(element("channelModalSharePct").textContent).toBe(
+			new Intl.NumberFormat("fr", { style: "percent" }).format(0.44),
+		);
 	});
 
 	it("exports normalized statistics as a JSON download", async () => {

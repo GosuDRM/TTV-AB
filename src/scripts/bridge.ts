@@ -344,6 +344,7 @@ const bridgeState = {
 	adTimerEnabled: false,
 	turboMode: false,
 	storedAdsCount: 0,
+	language: "auto",
 };
 const storageChangeVersions = {
 	ttvAdblockEnabled: 0,
@@ -352,6 +353,7 @@ const storageChangeVersions = {
 	ttvAdTimerEnabled: 0,
 	ttvTurboMode: 0,
 	ttvAdsBlocked: 0,
+	ttvLanguage: 0,
 };
 const INITIAL_STORAGE_KEYS = [
 	"ttvAdblockEnabled",
@@ -360,6 +362,7 @@ const INITIAL_STORAGE_KEYS = [
 	"ttvAdTimerEnabled",
 	"ttvTurboMode",
 	"ttvAdsBlocked",
+	"ttvLanguage",
 ];
 let initialStorageReadGeneration = 0;
 let initialStorageReadFastRetries = 0;
@@ -1003,8 +1006,37 @@ function broadcastState() {
 	sendToPage("ttvab-toggle-ad-timer", {
 		enabled: bridgeState.adTimerEnabled === true,
 	});
+	sendStatsPausedToPage();
 	sendToPage("ttvab-init-count", {
 		count: normalizeCount(bridgeState.storedAdsCount),
+	});
+	sendLanguageToPage();
+}
+
+function sendStatsPausedToPage() {
+	sendToPage("ttvab-stats-paused", { paused: bridgeState.turboMode === true });
+}
+
+function normalizeLanguageChoice(value) {
+	return typeof value === "string" &&
+		/^(auto|[a-z]{2}(_[A-Z]{2})?)$/.test(value)
+		? value
+		: "auto";
+}
+
+function getBrowserUiLanguage() {
+	try {
+		const uiLanguage = chrome.i18n?.getUILanguage?.();
+		return typeof uiLanguage === "string" ? uiLanguage.slice(0, 35) : "";
+	} catch {
+		return "";
+	}
+}
+
+function sendLanguageToPage() {
+	sendToPage("ttvab-language", {
+		choice: bridgeState.language,
+		uiLanguage: getBrowserUiLanguage(),
 	});
 }
 
@@ -1142,10 +1174,23 @@ function handleStorageChanges(changes, namespace) {
 			});
 		}
 	}
+	if (changes.ttvLanguage) {
+		storageChangeVersions.ttvLanguage += 1;
+		const previousLanguage = bridgeState.language;
+		bridgeState.language = normalizeLanguageChoice(
+			changes.ttvLanguage.newValue,
+		);
+		if (bridgeStateReady && bridgeState.language !== previousLanguage) {
+			sendLanguageToPage();
+		}
+	}
 	if (changes.ttvTurboMode) {
 		storageChangeVersions.ttvTurboMode += 1;
 		const wasTurboMode = bridgeState.turboMode;
 		bridgeState.turboMode = changes.ttvTurboMode.newValue === true;
+		if (bridgeStateReady && bridgeState.turboMode !== wasTurboMode) {
+			sendStatsPausedToPage();
+		}
 		if (bridgeState.turboMode && !wasTurboMode) {
 			discardCounterWorkForTurboMode();
 		} else if (bridgeStateReady && wasTurboMode && !bridgeState.turboMode) {
@@ -1282,6 +1327,9 @@ function readInitialStorageState() {
 			}
 			if (storageChangeVersions.ttvTurboMode === readVersions.ttvTurboMode) {
 				bridgeState.turboMode = result.ttvTurboMode === true;
+			}
+			if (storageChangeVersions.ttvLanguage === readVersions.ttvLanguage) {
+				bridgeState.language = normalizeLanguageChoice(result.ttvLanguage);
 			}
 			if (storageChangeVersions.ttvAdsBlocked === readVersions.ttvAdsBlocked) {
 				bridgeState.storedAdsCount = normalizeCount(result.ttvAdsBlocked);

@@ -12,22 +12,6 @@
             box-sizing: border-box;
         }
 
-        @font-face {
-            font-family: 'Press Start 2P';
-            font-style: normal;
-            font-weight: 400;
-            font-display: swap;
-            src: url('../../assets/fonts/PressStart2P.woff2') format('woff2');
-        }
-
-        @font-face {
-            font-family: 'VT323';
-            font-style: normal;
-            font-weight: 400;
-            font-display: swap;
-            src: url('../../assets/fonts/VT323.woff2') format('woff2');
-        }
-
         html {
             width: 320px;
             max-width: 100vw;
@@ -2556,7 +2540,11 @@
         <div class="turbo-card-copy">
             <span class="turbo-icon" aria-hidden="true">⚡</span>
             <span class="turbo-card-text">
-                <label class="turbo-title" for="turboModeToggle" data-i18n="turboMode">Turbo Mode</label>
+                <span class="toggle-label-row">
+                    <label class="turbo-title" for="turboModeToggle" data-i18n="turboMode">Turbo Mode</label>
+                    <button type="button" class="info-icon" id="turboModeInfoIcon" aria-label="About Turbo Mode"
+                        aria-haspopup="dialog" aria-controls="turboModeTooltip" aria-expanded="false">i</button>
+                </span>
                 <span class="turbo-description" id="turboModeDescription" aria-live="polite" aria-atomic="true">Statistics and achievements are active.</span>
             </span>
         </div>
@@ -2840,18 +2828,18 @@
         <select id="langSelector" class="lang-selector" title="Language" aria-label="Language"
             aria-describedby="descriptionText">
             <option value="auto" id="langAutoOption">🌐 Auto</option>
-            <option value="en">🇬🇧 English</option>
-            <option value="es">🇪🇸 Español</option>
-            <option value="fr">🇫🇷 Français</option>
-            <option value="de">🇩🇪 Deutsch</option>
-            <option value="pt">🇵🇹 Português</option>
-            <option value="it">🇮🇹 Italiano</option>
-            <option value="ja">🇯🇵 日本語</option>
-            <option value="ko">🇰🇷 한국어</option>
-            <option value="zh_CN">🇨🇳 简体中文</option>
-            <option value="zh_TW">🇹🇼 繁體中文</option>
-            <option value="ru">🇷🇺 Русский</option>
-            <option value="uk">🇺🇦 Українська</option>
+            <option value="en" lang="en">🇬🇧 English</option>
+            <option value="es" lang="es">🇪🇸 Español</option>
+            <option value="fr" lang="fr">🇫🇷 Français</option>
+            <option value="de" lang="de">🇩🇪 Deutsch</option>
+            <option value="pt" lang="pt-BR">🇧🇷 Português</option>
+            <option value="it" lang="it">🇮🇹 Italiano</option>
+            <option value="ja" lang="ja">🇯🇵 日本語</option>
+            <option value="ko" lang="ko">🇰🇷 한국어</option>
+            <option value="zh_CN" lang="zh-CN">🇨🇳 简体中文</option>
+            <option value="zh_TW" lang="zh-TW">🇹🇼 繁體中文</option>
+            <option value="ru" lang="ru">🇷🇺 Русский</option>
+            <option value="uk" lang="uk">🇺🇦 Українська</option>
         </select>
         <span><a href="https://github.com/GosuDRM/TTV-AB" target="_blank" rel="noopener noreferrer" id="repoLink"
                 class="author-link footer-text" title="Open TTV AB on GitHub" aria-label="Open TTV AB on GitHub">TTV
@@ -2876,6 +2864,15 @@
             <p data-i18n="autoplayBackupDesc">On by default. During an ad break, starts the ad-free stream sooner, usually at 360p, then switches to a verified higher-quality backup without restarting the player. If the break ends at 360p, the player restarts once to return to full quality.</p>
             <p data-i18n="autoplayBackupWarning">When off, normal-quality sources are tried first. If none is ad-free during a preroll or midroll, a low-quality stream can still play temporarily while higher quality is checked. Ad breaks can take a few seconds longer to show video.</p>
             <button type="button" class="modal-close" id="autoplayBackupModalClose" data-i18n="autoplayBackupGotIt">Got it</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="turboModeTooltip" hidden>
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="turboModeModalTitle">
+            <p><strong id="turboModeModalTitle" data-i18n="turboMode">Turbo Mode</strong></p>
+            <p data-i18n="turboModeDetails">Off by default. Pauses statistics, achievements, and the count on the toolbar icon, for example if you have Twitch Turbo and see no ads, or simply don't want the counters.</p>
+            <p data-i18n="turboModeFootnote">Ad blocking and every other setting keep working. Your existing statistics are kept, and counting continues from them when you turn Turbo Mode off. Nothing that happens while it is on is added later.</p>
+            <button type="button" class="modal-close" id="turboModeModalClose" data-i18n="turboModeGotIt">Got it</button>
         </div>
     </div>
 

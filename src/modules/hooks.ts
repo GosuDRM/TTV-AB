@@ -6498,7 +6498,12 @@ function _hookWorker() {
 								_emitInternalMessage("ttvab-ad-blocked", detail);
 								_sendBridgeMessage("ttvab-ad-blocked", detail);
 							}
-							_log(`Ad blocked! Total: ${_S.adsBlocked}`, "success");
+							_log(
+								typeof _isPageStatsPaused === "function" && _isPageStatsPaused()
+									? "Ad blocked! Statistics are paused"
+									: `Ad blocked! Total: ${_S.adsBlocked}`,
+								"success",
+							);
 							break;
 						case "AdSecondsBlocked": {
 							if (isStalePlaybackEvent(data)) {

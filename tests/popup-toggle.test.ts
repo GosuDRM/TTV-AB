@@ -801,6 +801,7 @@ describe("popup info dialogs", () => {
 			["adSpoofing", "adSpoofingInfoLabel"],
 			["autoplayBackup", "autoplayBackupInfoLabel"],
 			["adTimer", "adTimerInfoLabel"],
+			["turboMode", "turboModeInfoLabel"],
 		] as const) {
 			expect(html).toMatch(
 				new RegExp(

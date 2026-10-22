@@ -71,6 +71,10 @@ describe("popup log formatting", () => {
 		],
 		["Mozilla/5.0 Chrome/140.0.0.0 OPR/122.0.0.0", "Opera 122.0.0.0"],
 		["Mozilla/5.0 Chrome/140.0.0.0 Vivaldi/7.6.0.0", "Vivaldi 7.6.0.0"],
+		[
+			"Mozilla/5.0 Chrome/150.0.0.0 YaBrowser/26.8.1.1111 Yowser/2.5",
+			"Yandex Browser 26.8.1.1111",
+		],
 		["unrecognized browser", "unknown"],
 	])("identifies the reported browser from %s", (userAgent, expected) => {
 		expect(
@@ -104,6 +108,19 @@ describe("popup log formatting", () => {
 				},
 			}),
 		).toBe("Google Chrome 140.0.7339.80");
+		expect(
+			browser({
+				userAgent: "Mozilla/5.0 Chrome/150.0.0.0",
+				userAgentData: {
+					brands: [
+						{ brand: "Not;A=Brand", version: "8" },
+						{ brand: "Chromium", version: "150" },
+						{ brand: "YaBrowser", version: "26.8" },
+						{ brand: "Yowser", version: "2.5" },
+					],
+				},
+			}),
+		).toBe("Yandex Browser 26.8");
 		expect(
 			browser({
 				userAgentData: {
@@ -166,6 +183,23 @@ describe("popup log formatting", () => {
 			url: "moz-extension://ttv-ab/src/popup/popup.html?ttvab-log-export=1",
 			active: true,
 		});
+	});
+
+	it("counts the fallback window as opened when the tabs API is unavailable", () => {
+		const chromeState = g.chrome as Record<string, Record<string, unknown>>;
+		const savedCreate = chromeState.tabs.create;
+		chromeState.tabs.create = undefined;
+		const open = vi.spyOn(window, "open").mockReturnValue(null);
+		try {
+			expect(T<() => boolean>("_openLogExportPage")()).toBe(true);
+			expect(open).toHaveBeenCalledWith(
+				"moz-extension://ttv-ab/src/popup/popup.html?ttvab-log-export=1",
+				"_blank",
+				"noopener,noreferrer",
+			);
+		} finally {
+			chromeState.tabs.create = savedCreate;
+		}
 	});
 
 	it("uses one dedicated export page and closes the originating popup", () => {

@@ -58,7 +58,8 @@ function _openLogExportPage() {
 			return true;
 		}
 	} catch {}
-	return window.open(url, "_blank", "noopener,noreferrer") !== null;
+	window.open(url, "_blank", "noopener,noreferrer");
+	return true;
 }
 
 function _releaseLogExportUrl() {
@@ -162,6 +163,7 @@ function _getLogExportBrowser(
 			["Opera", /OPR\/([\d.]+)/],
 			["Vivaldi", /Vivaldi\/([\d.]+)/],
 			["Brave", /Brave\/([\d.]+)/],
+			["Yandex Browser", /YaBrowser\/([\d.]+)/],
 			["Firefox", /Firefox\/([\d.]+)/],
 		];
 		for (const [name, pattern] of browsers) {
@@ -178,6 +180,7 @@ function _getLogExportBrowser(
 				"Opera",
 				"Vivaldi",
 				"Brave",
+				"YaBrowser",
 				"Google Chrome",
 				"Chromium",
 			]) {
@@ -189,7 +192,8 @@ function _getLogExportBrowser(
 					(name === "Google Chrome" || name === "Chromium") && chromiumVersion
 						? chromiumVersion
 						: brand.version;
-				return `${name} ${version.slice(0, 64)}`;
+				const label = name === "YaBrowser" ? "Yandex Browser" : name;
+				return `${label} ${version.slice(0, 64)}`;
 			}
 		}
 		if (chromiumVersion)
@@ -1453,6 +1457,15 @@ document.addEventListener("DOMContentLoaded", () => {
 	const adTimerToggle = document.getElementById(
 		"adTimerToggle",
 	) as HTMLInputElement | null;
+	const turboModeInfoIcon = document.getElementById(
+		"turboModeInfoIcon",
+	) as HTMLButtonElement | null;
+	const turboModeTooltip = document.getElementById(
+		"turboModeTooltip",
+	) as HTMLDivElement | null;
+	const turboModeModalClose = document.getElementById(
+		"turboModeModalClose",
+	) as HTMLButtonElement | null;
 	const adTimerInfoIcon = document.getElementById(
 		"adTimerInfoIcon",
 	) as HTMLButtonElement | null;
@@ -1632,6 +1645,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		autoplayBackupModalClose,
 		turboModeToggle,
 		turboModeDescription,
+		turboModeInfoIcon,
+		turboModeTooltip,
+		turboModeModalClose,
 		statusCounters,
 		turboStatsShell,
 		donateButton,
@@ -1707,6 +1723,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 
 	const LANG_KEY = "ttvab_lang";
+	const LANGUAGE_STORAGE_KEY = "ttvLanguage";
+	const SHORT_TIME_UNIT_LANGUAGES = new Set(["de", "ja"]);
+	const unitFormatters = new Map<string, Intl.NumberFormat>();
 
 	function getStoredLanguage() {
 		try {
@@ -1720,33 +1739,42 @@ document.addEventListener("DOMContentLoaded", () => {
 	function setStoredLanguage(language) {
 		try {
 			localStorage.setItem(LANG_KEY, language);
-			return true;
 		} catch (error) {
 			console.error("[TTV AB] Popup language write error:", error);
 			return false;
 		}
+		try {
+			chrome.storage.local.set({ [LANGUAGE_STORAGE_KEY]: language }, () => {
+				if (chrome.runtime.lastError) {
+					console.error(
+						"[TTV AB] Popup language sync error:",
+						chrome.runtime.lastError.message,
+					);
+				}
+			});
+		} catch (error) {
+			console.error("[TTV AB] Popup language sync error:", error);
+		}
+		return true;
 	}
 
 	function normalizeLanguage(language) {
 		const candidate = String(language || "").trim();
 		if (!candidate || candidate.toLowerCase() === "auto") return null;
 		const normalizedCandidate = candidate.replace(/-/g, "_");
-		if (TRANSLATIONS[normalizedCandidate]) {
+		if (Object.hasOwn(TRANSLATIONS, normalizedCandidate)) {
 			return normalizedCandidate;
 		}
 		const lowerCandidate = candidate.toLowerCase();
 		if (lowerCandidate.startsWith("zh")) {
 			const normalized =
-				lowerCandidate.includes("tw") ||
-				lowerCandidate.includes("hk") ||
-				lowerCandidate.includes("mo") ||
-				lowerCandidate.includes("hant")
+				!/hans/.test(lowerCandidate) && /hant|tw|hk|mo/.test(lowerCandidate)
 					? "zh_TW"
 					: "zh_CN";
-			return TRANSLATIONS[normalized] ? normalized : null;
+			return Object.hasOwn(TRANSLATIONS, normalized) ? normalized : null;
 		}
 		const base = lowerCandidate.split(/[-_]/)[0];
-		return TRANSLATIONS[base] ? base : null;
+		return Object.hasOwn(TRANSLATIONS, base) ? base : null;
 	}
 
 	function normalizeLocaleTag(language) {
@@ -1807,6 +1835,28 @@ document.addEventListener("DOMContentLoaded", () => {
 			return normalizeLocaleTag(saved) || getLang().replace(/_/g, "-");
 		}
 		return getAutoLanguageState().localeTag;
+	}
+
+	function formatDuration(parts) {
+		const localeTag = getLocaleTag();
+		const unitDisplay = SHORT_TIME_UNIT_LANGUAGES.has(getLang())
+			? "short"
+			: "narrow";
+		return parts
+			.map(([value, unit]) => {
+				const key = `${localeTag}|${unitDisplay}|${unit}`;
+				let formatter = unitFormatters.get(key);
+				if (!formatter) {
+					formatter = new Intl.NumberFormat(localeTag, {
+						style: "unit",
+						unit,
+						unitDisplay,
+					});
+					unitFormatters.set(key, formatter);
+				}
+				return formatter.format(value);
+			})
+			.join(" ");
 	}
 
 	function formatTemplate(template, values) {
@@ -1902,7 +1952,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		langSelector.title = String(t.language ?? "Language");
 		langSelector.setAttribute("aria-label", String(t.language ?? "Language"));
 		langSelector.setAttribute("aria-describedby", "descriptionText");
-		langAutoOption.textContent = `🌐 ${String(t.autoLanguage ?? "Auto")}`;
+		const detectedLanguage = langSelector.querySelector(
+			`option[value="${getAutoLanguageState().language}"]`,
+		);
+		langAutoOption.textContent = `🌐 ${String(t.autoLanguage ?? "Auto")} (${detectedLanguage?.textContent?.replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || "English"})`;
 		const accessibleVersion = String(versionText.textContent || "")
 			.replace(/^v/i, "")
 			.trim();
@@ -1935,6 +1988,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		);
 		for (const [infoIcon, label] of [
 			[adTimerInfoIcon, t.adTimerInfoLabel ?? "About Ad Break Timer"],
+			[turboModeInfoIcon, t.turboModeInfoLabel ?? "About Turbo Mode"],
 			[adSpoofingInfoIcon, t.adSpoofingInfoLabel ?? "About Ad Spoofing"],
 			[
 				autoplayBackupInfoIcon,
@@ -2358,11 +2412,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	function formatWatchTime(seconds) {
 		const safeSeconds = normalizeCount(seconds);
-		if (safeSeconds < 60) return `${safeSeconds}s`;
+		if (safeSeconds < 60) return formatDuration([[safeSeconds, "second"]]);
 		const hours = Math.floor(safeSeconds / 3600);
 		const minutes = Math.floor((safeSeconds % 3600) / 60);
-		if (hours > 0) return `${hours}h ${minutes}m`;
-		return `${minutes}m`;
+		if (hours > 0)
+			return formatDuration([
+				[hours, "hour"],
+				[minutes, "minute"],
+			]);
+		return formatDuration([[minutes, "minute"]]);
 	}
 
 	const AVATAR_CACHE_KEY = "ttvChannelAvatars";
@@ -2585,7 +2643,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			latestAdsTotal > 0
 				? Math.min(100, Math.round((entry.ads / latestAdsTotal) * 100))
 				: 0;
-		channelModalSharePct.textContent = `${sharePercent}%`;
+		channelModalSharePct.textContent = new Intl.NumberFormat(getLocaleTag(), {
+			style: "percent",
+			maximumFractionDigits: 0,
+		}).format(sharePercent / 100);
 		channelModalShareBar.style.width = "0%";
 		requestAnimationFrame(() => {
 			channelModalShareBar.style.width = `${Math.max(sharePercent, entry.ads > 0 ? 2 : 0)}%`;
@@ -2667,6 +2728,46 @@ document.addEventListener("DOMContentLoaded", () => {
 	let selectedLanguage = currentLang;
 	applyTranslations(getLang());
 
+	function adoptSharedLanguage(value) {
+		const lang = value === "auto" ? "auto" : normalizeLanguage(value) || "auto";
+		if (lang === selectedLanguage) return;
+		try {
+			localStorage.setItem(LANG_KEY, lang);
+		} catch {}
+		selectedLanguage = lang;
+		langSelector.value = lang;
+		unitFormatters.clear();
+		applyTranslations(getLang());
+		if (!isLogExportPage) {
+			loadStatistics();
+			updateStatus(toggle.checked);
+		}
+	}
+
+	try {
+		const languageAtRead = selectedLanguage;
+		chrome.storage.local.get([LANGUAGE_STORAGE_KEY], (result) => {
+			if (chrome.runtime.lastError || selectedLanguage !== languageAtRead) {
+				return;
+			}
+			const shared = result?.[LANGUAGE_STORAGE_KEY];
+			if (typeof shared === "string") {
+				adoptSharedLanguage(shared);
+			} else {
+				setStoredLanguage(selectedLanguage);
+			}
+		});
+		chrome.storage.onChanged.addListener((changes, namespace) => {
+			if (namespace !== "local") return;
+			const change = changes[LANGUAGE_STORAGE_KEY];
+			if (change && typeof change.newValue === "string") {
+				adoptSharedLanguage(change.newValue);
+			}
+		});
+	} catch (error) {
+		console.error("[TTV AB] Popup language sync error:", error);
+	}
+
 	try {
 		const manifest = chrome.runtime?.getManifest?.();
 		if (manifest?.version && versionText) {
@@ -2703,9 +2804,8 @@ document.addEventListener("DOMContentLoaded", () => {
 			return;
 		}
 		selectedLanguage = lang;
-		const effectiveLang =
-			lang === "auto" ? getAutoLanguageState().language : lang;
-		applyTranslations(effectiveLang);
+		unitFormatters.clear();
+		applyTranslations(getLang());
 		loadStatistics();
 		updateStatus(toggle.checked);
 	});
@@ -2842,10 +2942,14 @@ document.addEventListener("DOMContentLoaded", () => {
 		const hours = Math.floor((totalSeconds % 86400) / 3600);
 		const minutes = Math.floor((totalSeconds % 3600) / 60);
 		const seconds = totalSeconds % 60;
-		if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s`;
-		if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-		if (minutes > 0) return `${minutes}m ${seconds}s`;
-		return `${seconds}s`;
+		const parts: [number, string][] = [
+			[days, "day"],
+			[hours, "hour"],
+			[minutes, "minute"],
+			[seconds, "second"],
+		];
+		const firstPart = parts.findIndex(([value]) => value > 0);
+		return formatDuration(parts.slice(firstPart === -1 ? 3 : firstPart));
 	}
 
 	function normalizeCount(value) {
@@ -3512,6 +3616,11 @@ document.addEventListener("DOMContentLoaded", () => {
 		adTimerTooltip,
 		adTimerModalClose,
 	);
+	const turboModeModal = _createInfoModal(
+		turboModeInfoIcon,
+		turboModeTooltip,
+		turboModeModalClose,
+	);
 	const adSpoofingModal = _createInfoModal(
 		adSpoofingInfoIcon,
 		adSpoofingTooltip,
@@ -3538,7 +3647,12 @@ document.addEventListener("DOMContentLoaded", () => {
 			popupToggleController.write("autoplayBackup", false);
 		},
 	);
-	const infoModals = [adTimerModal, adSpoofingModal, autoplayBackupModal];
+	const infoModals = [
+		turboModeModal,
+		adTimerModal,
+		adSpoofingModal,
+		autoplayBackupModal,
+	];
 	autoplayBackupInfoIcon.addEventListener("click", () => {
 		isAutoplayBackupWarningContext = false;
 	});

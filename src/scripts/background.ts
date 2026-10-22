@@ -912,10 +912,6 @@ async function persistCounterDelta(detail, sourceTabId = null) {
 	if (adMeasurements.length > 0) {
 		updates[RECENT_AD_MEASUREMENTS_STORAGE_KEY] = recentAdMeasurements;
 	}
-	if (turboModeEnabled) {
-		return createTurboCounterResponse();
-	}
-
 	await storageLocalSet(updates);
 
 	return {
