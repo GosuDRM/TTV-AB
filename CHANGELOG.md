@@ -2,6 +2,18 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [24.0.1] - 2026-10-22
+
+Fixed
+
+- **Background Tab CPU Usage** - Stop Twitch tabs opened in the background from using a full CPU core while Brave Shields blocks trackers and ads. TTV AB no longer tries to start playback the browser has not started yet, which kept Twitch's player in a rapid play and pause loop until you viewed the tab. ([#94](https://github.com/GosuDRM/TTV-AB/issues/94))
+- **Unopened Tabs Under Brave** - Treat Twitch tabs you have not opened yet as background tabs even when Brave Shields reports them as visible, so TTV AB checks them less often.
+- **Black Screen at Ad Breaks** - Shorten the black screen at the start of ad breaks on streams whose timestamps run ahead of real time, and stop skipping or replaying part of the stream when switching to and from the backup. ([#92](https://github.com/GosuDRM/TTV-AB/issues/92))
+
+Added
+
+- **Timestamp Diagnostics** - Show in debug logs how far TTV AB shifted the timing when it lined up two Twitch sources whose timestamps disagree.
+
 ## [24.0.0] - 2026-10-21
 
 Fixed
