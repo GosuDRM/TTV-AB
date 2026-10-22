@@ -547,7 +547,7 @@ describe("stream state TypeScript contracts", { timeout: 30_000 }, () => {
 	it("types factory records, nested recovery state, and actual stream consumers", () => {
 		const source = `const _streamContract = _createStreamInfo({ mediaKey: "live:buildtest" });
 const _streamHasNoIndex: string extends keyof TTVABStreamInfo ? false : true = true;
-const _pagePlaylistContract: TTVABPagePlaylistState = { MediaKey: "live:buildtest", MediaType: "live", PageContextGeneration: 1, UsherBaseUrl: "https://example.invalid/native.m3u8", _EmptyAdHoldMediaSequence: 0, _EmptyAdHoldDiscontinuitySequence: 0, _EmptyAdHoldProgramDateTime: 0, _EmptyAdHoldWindow: null, _EmptyHoldTimelineByUrl: new Map(), _LivePlaylistTimeline: null, NumStrippedAdSegments: 0 };
+const _pagePlaylistContract: TTVABPagePlaylistState = { MediaKey: "live:buildtest", MediaType: "live", PageContextGeneration: 1, UsherBaseUrl: "https://example.invalid/native.m3u8", _EmptyAdHoldMediaSequence: 0, _EmptyAdHoldDiscontinuitySequence: 0, _EmptyAdHoldProgramDateTime: 0, _EmptyAdHoldWindow: null, _EmptyHoldTimelineByUrl: new Map(), _LivePlaylistTimeline: null, _LiveEdgeObservations: new Map(), NumStrippedAdSegments: 0 };
 _pageSideEmptyHoldInfoByUrl.set("native", _pagePlaylistContract);
 _applyPlaylistContinuity(_pagePlaylistContract, "https://example.invalid/native.m3u8", "#EXTM3U");
 _stripAds("#EXTM3U", false, _pagePlaylistContract);

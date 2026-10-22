@@ -200,6 +200,7 @@ type TTVABPlaylistAlignmentDiagnostic = {
 	retainedSegments?: number;
 	internalGapMs?: number;
 	internalOverlapMs?: number;
+	clockShiftMs?: number;
 };
 
 type TTVABAdBreakTimeline = {
@@ -350,6 +351,10 @@ interface TTVABStreamInfo extends TTVABPlaybackContext {
 	_EmptyAdHoldWindow: TTVABEmptyAdHoldWindow | null;
 	_EmptyHoldTimelineByUrl: Map<string, TTVABEmptyHoldTimeline>;
 	_LivePlaylistTimeline: TTVABLivePlaylistTimeline | null;
+	_LiveEdgeObservations: Map<
+		string,
+		{ end: number; at: number; advanced: boolean }
+	>;
 	_PlaylistContinuityDiagnostics: TTVABPlaylistContinuityDiagnostics | null;
 	_LastServedPlaylistKind: TTVABPlaylistKind | null;
 	_FatalMediaRecoveryRequestId: string | null;
@@ -392,5 +397,6 @@ type TTVABPagePlaylistState = Partial<TTVABStreamInfo> &
 		| "_EmptyAdHoldWindow"
 		| "_EmptyHoldTimelineByUrl"
 		| "_LivePlaylistTimeline"
+		| "_LiveEdgeObservations"
 		| "NumStrippedAdSegments"
 	> & { PageContextGeneration: number };

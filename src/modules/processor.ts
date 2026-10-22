@@ -195,6 +195,7 @@ function _resetStreamAdState(
 	if (!preserveEmptyHoldTimelines) {
 		info._EmptyHoldTimelineByUrl?.clear?.();
 		info._LivePlaylistTimeline = null;
+		info._LiveEdgeObservations?.clear?.();
 		info._PlaylistContinuityDiagnostics = null;
 		info._LastServedPlaylistKind = null;
 		info._NativePlaybackMaster = null;
@@ -2630,6 +2631,40 @@ function _alignLivePlaylist(
 			);
 		return text;
 	}
+	if (!(info._LiveEdgeObservations instanceof Map))
+		info._LiveEdgeObservations = new Map();
+	const edgeObservations = info._LiveEdgeObservations;
+	const newestEnd = entries.at(-1).end;
+	const observedEdge = edgeObservations.get(identity);
+	if (!observedEdge || newestEnd > observedEdge.end) {
+		edgeObservations.delete(identity);
+		edgeObservations.set(identity, {
+			end: newestEnd,
+			at: Date.now(),
+			advanced: Boolean(observedEdge),
+		});
+		while (edgeObservations.size > 32)
+			edgeObservations.delete(edgeObservations.keys().next().value);
+	}
+	const edgeOffset = (key) => {
+		const observation = edgeObservations.get(key);
+		return observation?.advanced
+			? observation.end - observation.at
+			: Number.NaN;
+	};
+	const candidateEdge = edgeOffset(identity);
+	const previousEdge = previous ? edgeOffset(previous.identity) : Number.NaN;
+	const clockShift =
+		previous &&
+		previous.identity !== identity &&
+		((previousEdge > 1000 && candidateEdge <= 0) ||
+			(candidateEdge > 1000 && previousEdge <= 0))
+			? previousEdge - candidateEdge
+			: 0;
+	const previousEndTime = previous ? previous.lastEndTime - clockShift : 0;
+	if (clockShift && minimumTime > 0 && minimumTime === previous.lastEndTime)
+		minimumTime = previousEndTime;
+	if (diagnostic) diagnostic.clockShiftMs = clockShift;
 	const nativeKey = !backupMetadata && _getMediaPlaylistSessionKey(url);
 	const nativeTimeline = nativeKey
 		? info._EmptyHoldTimelineByUrl?.get?.(nativeKey)
@@ -2734,7 +2769,7 @@ function _alignLivePlaylist(
 		changedSource &&
 		!previous?.afterHold &&
 		minimumTime > 0 &&
-		minimumTime === previous?.lastEndTime &&
+		minimumTime === previousEndTime &&
 		Number.isSafeInteger(previous.lastEndSequence)
 			? previous.lastEndSequence
 			: null;
@@ -2857,7 +2892,7 @@ function _alignLivePlaylist(
 	}
 	const lastEndTime = entries.reduce(
 		(end, entry) => Math.max(end, entry.end),
-		Math.max(previous?.lastEndTime || 0, offeredEndTime),
+		Math.max(previousEndTime, offeredEndTime),
 	);
 	info._LivePlaylistTimeline = {
 		identity,
@@ -2866,7 +2901,7 @@ function _alignLivePlaylist(
 		minimumTime,
 		lastEndTime,
 		lastEndSequence:
-			lastEndTime === previous?.lastEndTime
+			previous && lastEndTime === previousEndTime
 				? (previous.lastEndSequence ?? null)
 				: null,
 	};
@@ -3074,6 +3109,7 @@ function _logPlaylistContinuity(
 				retainedSegments: diagnostic.retainedSegments ?? null,
 				internalGapMs: rounded(diagnostic.internalGapMs),
 				internalOverlapMs: rounded(diagnostic.internalOverlapMs),
+				clockShiftMs: rounded(diagnostic.clockShiftMs),
 				suppressed: source.suppressed,
 			})}`,
 			reason ||
@@ -4850,6 +4886,7 @@ function _createStreamInfo(
 		_EmptyAdHoldWindow: null,
 		_EmptyHoldTimelineByUrl: new Map(),
 		_LivePlaylistTimeline: null,
+		_LiveEdgeObservations: new Map(),
 		_PlaylistContinuityDiagnostics: null,
 		_LastServedPlaylistKind: null,
 		_FatalMediaRecoveryRequestId: null,
