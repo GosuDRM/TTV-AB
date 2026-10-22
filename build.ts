@@ -1,4 +1,6 @@
 // TTV AB - Build Script
+
+import ts from "typescript";
 import {
 	buildWorkerBundle,
 	embedWorkerBundle,
@@ -25,14 +27,88 @@ type TranslationLocale = Record<string, unknown> & {
 	>;
 };
 const RUNTIME_TSCONFIGS = ["tsconfig.modules.json", "tsconfig.runtime.json"];
-const STATIC_ROOT_FILES = [
+const DIST_STATIC_FILES = ["manifest.json", "LICENSE", "PRIVACY.md"];
+const DIST_STATIC_DIRECTORIES = ["assets/icons", "_locales"];
+const SOURCE_ARCHIVE_ENTRIES = [
 	"manifest.json",
 	"CHANGELOG.md",
 	"LICENSE",
 	"PRIVACY.md",
 	"README.md",
+	"assets",
+	"_locales",
+	"src",
+	"tests",
+	"tools",
+	"package.json",
+	"package-lock.json",
+	"tsconfig.json",
+	"tsconfig.base.json",
+	"tsconfig.build.json",
+	"tsconfig.modules.json",
+	"tsconfig.runtime.json",
+	"build.ts",
+	"biome.json",
+	"vitest.config.mts",
+	"knip.json",
+	".gitignore",
+	".editorconfig",
 ];
-const STATIC_ROOT_DIRECTORIES = ["assets", "_locales"];
+const UNBUNDLED_MODULES = ["worker-entry.js", "playback-worker.js"];
+const PAGE_SCRIPT_PATHS = [
+	"src/scripts/bridge.js",
+	"src/scripts/background.js",
+	"src/popup/popup.js",
+];
+const ALLOWED_MANIFEST_KEYS = [
+	"action",
+	"background",
+	"browser_specific_settings",
+	"content_scripts",
+	"default_locale",
+	"description",
+	"homepage_url",
+	"host_permissions",
+	"icons",
+	"manifest_version",
+	"minimum_chrome_version",
+	"name",
+	"permissions",
+	"short_name",
+	"version",
+];
+const GECKO_ID = "{71e91189-9cd2-4e46-895d-bcc38f0053c4}";
+const MIN_FIREFOX_MAIN_WORLD_VERSION = 128;
+const MAX_LOCALE_NAME_LENGTH = 75;
+const MAX_LOCALE_DESCRIPTION_LENGTH = 132;
+const RELEASE_DATE_PATTERN = "\\d{4}-\\d{2}-\\d{2}";
+const REQUIRED_POPUP_IDS = [
+	"enableToggle",
+	"statusDot",
+	"statusText",
+	"adsBlockedCount",
+	"timeSaved",
+	"statsToggle",
+	"statsPanel",
+	"weeklyChart",
+	"chartAvg",
+	"channelList",
+	"achievementsGrid",
+	"achievementsProgress",
+	"nextAchievement",
+	"langSelector",
+	"langAutoOption",
+	"descriptionText",
+	"versionText",
+	"achievementsTitle",
+	"footerText",
+	"infoText",
+	"donateBtn",
+	"repoLink",
+	"authorLink",
+];
+const PYTHON =
+	process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
 
 const MODULE_ORDER = [
 	"constants.js",
@@ -51,24 +127,14 @@ const MODULE_ORDER = [
 function readVersionSources() {
 	const constantsPath = path.join(MODULES_DIR, "constants.js");
 	const constantsContent = fs.readFileSync(constantsPath, "utf8");
-	const constantsMatch = constantsContent.match(/VERSION:\s*['"]([^'"]+)['"]/);
+	const constantsMatch = constantsContent.match(
+		/\bVERSION:\s*['"]([^'"]+)['"]/,
+	);
 	const internalMatch = constantsContent.match(/INTERNAL_VERSION:\s*(\d+)/);
-	let packageVersion = "0.0.0";
-	let manifestVersion = "0.0.0";
-
-	try {
-		const packageJson = JSON.parse(
-			fs.readFileSync(path.join(SOURCE_ROOT, "package.json"), "utf8"),
-		);
-		packageVersion = packageJson.version || packageVersion;
-	} catch {}
-
-	try {
-		const manifest = JSON.parse(
-			fs.readFileSync(path.join(SOURCE_ROOT, "manifest.json"), "utf8"),
-		);
-		manifestVersion = manifest.version || manifestVersion;
-	} catch {}
+	const packageVersion = readPackageVersion();
+	const manifestVersion =
+		JSON.parse(fs.readFileSync(path.join(SOURCE_ROOT, "manifest.json"), "utf8"))
+			.version || "0.0.0";
 
 	return {
 		constantsVersion: constantsMatch?.[1] || null,
@@ -76,6 +142,21 @@ function readVersionSources() {
 		packageVersion,
 		manifestVersion,
 	};
+}
+
+function readPackageVersion() {
+	return (
+		JSON.parse(fs.readFileSync(path.join(SOURCE_ROOT, "package.json"), "utf8"))
+			.version || "0.0.0"
+	);
+}
+
+function getPackageOutputs(version) {
+	return [
+		path.join(SOURCE_ROOT, `ttv-ab-${version}-chrome-store.zip`),
+		path.join(SOURCE_ROOT, `ttv-ab-${version}.xpi`),
+		path.join(SOURCE_ROOT, `ttv-ab-${version}-source.zip`),
+	];
 }
 
 function deriveInternalVersion(version) {
@@ -89,27 +170,42 @@ function getVersion() {
 	return constantsVersion || packageVersion || "0.0.0";
 }
 
-function extractLiteral(source, startToken, openChar, closeChar) {
-	const start = source.indexOf(startToken);
-	if (start === -1) return null;
-	const openIndex = source.indexOf(openChar, start);
-	if (openIndex === -1) return null;
-	let depth = 0;
-	for (let i = openIndex; i < source.length; i++) {
-		if (source[i] === openChar) depth++;
-		else if (source[i] === closeChar) {
-			depth--;
-			if (depth === 0) {
-				return source.slice(openIndex, i + 1);
-			}
+function findDeclarationText(source, name) {
+	const sourceFile = ts.createSourceFile(
+		"source.js",
+		source,
+		ts.ScriptTarget.Latest,
+		true,
+		ts.ScriptKind.JS,
+	);
+	let text = null;
+	const visit = (node) => {
+		if (text !== null) return;
+		if (
+			ts.isFunctionDeclaration(node) &&
+			node.name?.text === name &&
+			node.body
+		) {
+			text = node.body.getText(sourceFile);
+			return;
 		}
-	}
-	return null;
+		if (
+			ts.isVariableDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			node.name.text === name &&
+			node.initializer
+		) {
+			text = node.initializer.getText(sourceFile);
+			return;
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(sourceFile);
+	return text;
 }
 
 function normalizeCodeSnippet(code) {
 	return String(code || "")
-		.replace(/\/\/.*$/gm, "")
 		.replace(/\s+/g, " ")
 		.trim();
 }
@@ -128,29 +224,92 @@ function copyDirectoryToDist(relativePath) {
 }
 
 function prepareDistStaticFiles() {
-	for (const relativePath of STATIC_ROOT_FILES) {
+	for (const relativePath of DIST_STATIC_FILES) {
 		copyFileToDist(relativePath);
 	}
-	for (const relativePath of STATIC_ROOT_DIRECTORIES) {
+	for (const relativePath of DIST_STATIC_DIRECTORIES) {
 		copyDirectoryToDist(relativePath);
 	}
 }
 
+function loadPopupTranslations(): Record<string, TranslationLocale> {
+	const translationsSource = fs.readFileSync(
+		path.join(DIST_DIR, "src", "popup", "translations.js"),
+		"utf8",
+	);
+	return Function(`${translationsSource}; return TRANSLATIONS;`)();
+}
+
+function assertModulesBundled() {
+	const unbundled = fs
+		.readdirSync(MODULES_DIR)
+		.filter(
+			(file) =>
+				file.endsWith(".js") &&
+				!MODULE_ORDER.includes(file) &&
+				!UNBUNDLED_MODULES.includes(file),
+		);
+	if (unbundled.length > 0) {
+		throw new Error(
+			`Compiled modules missing from MODULE_ORDER: ${unbundled.join(", ")}`,
+		);
+	}
+}
+
+function getReleaseSection(source, headingPrefix) {
+	const start = source.indexOf(headingPrefix);
+	if (start === -1) return "";
+	const next = source.indexOf(headingPrefix, start + headingPrefix.length);
+	return source.slice(start, next === -1 ? source.length : next);
+}
+
+function findDisallowedReleaseWording(text) {
+	if (text.includes("\u2014")) return "em dash";
+	if (/picture/i.test(text.replace(/picture-(?:in|by)-picture/gi, ""))) {
+		return '"picture" for the video';
+	}
+	return null;
+}
+
+function findUnsafeHtmlSinks(source) {
+	const sinks = [];
+	for (const match of source.matchAll(
+		/\b(outerHTML\s*\+?=|insertAdjacentHTML\s*\(|document\.write(?:ln)?\s*\()/g,
+	)) {
+		sinks.push(match[1]);
+	}
+	for (const match of source.matchAll(/\binnerHTML\s*(\+?=)(?!=)\s*/g)) {
+		const valueStart = match.index + match[0].length;
+		const valueEnd =
+			source[valueStart] === "`" ? source.indexOf("`", valueStart + 1) : -1;
+		const value = valueEnd === -1 ? "" : source.slice(valueStart, valueEnd);
+		if (match[1] !== "=" || valueEnd === -1 || value.includes("${")) {
+			sinks.push(
+				`innerHTML ${match[1]} ${source.slice(valueStart, valueStart + 40)}`,
+			);
+		}
+	}
+	return sinks;
+}
+
+function findMissingPopupReferences(popupHtmlSource) {
+	const popupDir = path.join(DIST_DIR, "src", "popup");
+	const references = [
+		...popupHtmlSource.matchAll(/\b(?:src|href)="([^"]+)"/g),
+		...popupHtmlSource.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/g),
+	].map((match) => match[1].trim());
+	return references.filter(
+		(reference) =>
+			!/^(?:[a-z][a-z0-9+.-]*:|#|\/\/)/i.test(reference) &&
+			!fs.existsSync(path.resolve(popupDir, reference.split(/[?#]/)[0])),
+	);
+}
+
 function syncPopupHtmlFallbacks() {
 	const popupHtmlPath = path.join(SOURCE_ROOT, "src", "popup", "popup.html");
-	const translationsPath = path.join(
-		DIST_DIR,
-		"src",
-		"popup",
-		"translations.js",
-	);
 	const outputPopupHtmlPath = path.join(DIST_DIR, "src", "popup", "popup.html");
 	const popupHtmlSource = fs.readFileSync(popupHtmlPath, "utf8");
-	const translationsSource = fs.readFileSync(translationsPath, "utf8");
-	const translations = Function(
-		`${translationsSource}; return TRANSLATIONS;`,
-	)();
-	const english = translations.en || {};
+	const english = loadPopupTranslations().en || {};
 	const chartTitle = String(english.last7Days || "This Week");
 	const chartAverage = String(english.avgPerDay || "avg: {avg}/day").replace(
 		"{avg}",
@@ -167,8 +326,15 @@ function syncPopupHtmlFallbacks() {
 			"\n",
 			eol,
 		);
+	const chartSectionPattern =
+		/ {12}<div class="stats-section">\r?\n {16}<div class="stats-section-title">📈 <span data-i18n="last7Days">[\s\S]*?<\/div>\r?\n {16}<div class="chart-avg" id="chartAvg">[\s\S]*?<\/div>\r?\n {12}<\/div>/;
+	if (!chartSectionPattern.test(popupHtmlSource)) {
+		throw new Error(
+			"Popup weekly chart fallback markup changed; update syncPopupHtmlFallbacks",
+		);
+	}
 	const syncedPopupHtmlSource = popupHtmlSource.replace(
-		/ {12}<div class="stats-section">\r?\n {16}<div class="stats-section-title">📈 <span data-i18n="last7Days">[\s\S]*?<\/div>\r?\n {16}<div class="chart-avg" id="chartAvg">[\s\S]*?<\/div>\r?\n {12}<\/div>/,
+		chartSectionPattern,
 		expectedChartSection,
 	);
 	fs.mkdirSync(path.dirname(outputPopupHtmlPath), { recursive: true });
@@ -188,6 +354,35 @@ function validateSharedDefinitions() {
 		fs.readFileSync(path.join(SOURCE_ROOT, "package-lock.json"), "utf8"),
 	);
 	const canonicalRepoUrl = "https://github.com/GosuDRM/TTV-AB";
+	const unexpectedManifestKeys = Object.keys(manifest).filter(
+		(key) => !ALLOWED_MANIFEST_KEYS.includes(key),
+	);
+	if (unexpectedManifestKeys.length > 0) {
+		throw new Error(
+			`Manifest has unreviewed keys: ${unexpectedManifestKeys.join(", ")}`,
+		);
+	}
+	const gecko = manifest.browser_specific_settings?.gecko;
+	if (gecko?.id !== GECKO_ID) {
+		throw new Error(
+			`Manifest gecko id must stay ${GECKO_ID} so Firefox users keep receiving updates: ${gecko?.id || "missing"}`,
+		);
+	}
+	if (
+		!(
+			Number.parseInt(gecko.strict_min_version, 10) >=
+			MIN_FIREFOX_MAIN_WORLD_VERSION
+		)
+	) {
+		throw new Error(
+			`Manifest gecko strict_min_version must be at least ${MIN_FIREFOX_MAIN_WORLD_VERSION} for MAIN-world content scripts: ${gecko.strict_min_version || "missing"}`,
+		);
+	}
+	if (!Array.isArray(gecko.data_collection_permissions?.required)) {
+		throw new Error(
+			"Manifest gecko data_collection_permissions.required must be declared",
+		);
+	}
 	if (
 		manifest.default_locale &&
 		!fs.existsSync(path.join(DIST_DIR, "_locales", manifest.default_locale))
@@ -223,6 +418,11 @@ function validateSharedDefinitions() {
 				`Manifest background service_worker is missing: ${manifest.background.service_worker}`,
 			);
 		}
+	}
+	if (!(Number.parseInt(manifest.minimum_chrome_version, 10) >= 111)) {
+		throw new Error(
+			`Manifest minimum_chrome_version must be at least 111 for MAIN-world content scripts: ${manifest.minimum_chrome_version || "missing"}`,
+		);
 	}
 	if (manifest.action?.default_title !== "__MSG_extName__") {
 		throw new Error(
@@ -293,27 +493,20 @@ function validateSharedDefinitions() {
 			all_frames: true,
 		},
 	];
-	const comparableContentScripts = (manifest.content_scripts || []).map(
-		({
-			matches = [],
-			js = [],
-			run_at = null,
-			world = null,
-			all_frames = false,
-		}) => ({
-			matches: [...matches],
-			js: [...js],
-			run_at,
-			world,
-			all_frames,
-		}),
-	);
+	const canonicalJson = (value) =>
+		JSON.stringify(value, (_key, nested) =>
+			nested && typeof nested === "object" && !Array.isArray(nested)
+				? Object.fromEntries(
+						Object.entries(nested).sort(([a], [b]) => a.localeCompare(b)),
+					)
+				: nested,
+		);
 	if (
-		JSON.stringify(comparableContentScripts) !==
-		JSON.stringify(expectedContentScripts)
+		canonicalJson(manifest.content_scripts || []) !==
+		canonicalJson(expectedContentScripts)
 	) {
 		throw new Error(
-			`Manifest content_scripts drift detected: ${JSON.stringify(comparableContentScripts)}`,
+			`Manifest content_scripts drift detected: ${JSON.stringify(manifest.content_scripts || [])}`,
 		);
 	}
 	if (
@@ -380,12 +573,6 @@ function validateSharedDefinitions() {
 	const bridgePath = path.join(DIST_DIR, "src", "scripts", "bridge.js");
 	const backgroundPath = path.join(DIST_DIR, "src", "scripts", "background.js");
 	const uiPath = path.join(DIST_DIR, "src", "modules", "ui.js");
-	const translationsPath = path.join(
-		DIST_DIR,
-		"src",
-		"popup",
-		"translations.js",
-	);
 	const initPath = path.join(DIST_DIR, "src", "modules", "init.js");
 	const hooksPath = path.join(DIST_DIR, "src", "modules", "hooks.js");
 	const statePath = path.join(DIST_DIR, "src", "modules", "state.js");
@@ -408,6 +595,14 @@ function validateSharedDefinitions() {
 				`Locale ${localeDir} is missing extName or extDesc in messages.json`,
 			);
 		}
+		if (
+			messages.extName.message.length > MAX_LOCALE_NAME_LENGTH ||
+			messages.extDesc.message.length > MAX_LOCALE_DESCRIPTION_LENGTH
+		) {
+			throw new Error(
+				`Locale ${localeDir} extName/extDesc exceed the store limits of ${MAX_LOCALE_NAME_LENGTH}/${MAX_LOCALE_DESCRIPTION_LENGTH} characters`,
+			);
+		}
 	}
 	if (!readmeSource.includes(canonicalRepoUrl)) {
 		throw new Error("README is missing the canonical repository URL");
@@ -417,16 +612,52 @@ function validateSharedDefinitions() {
 	}
 	if (
 		!readmeSource.includes(`version-${constantsVersion}-`) ||
-		!readmeSource.includes(`### v${constantsVersion}`)
+		!readmeSource.includes(`chrome-${constantsVersion}-`)
 	) {
 		throw new Error(
-			`README version markers are out of sync with ${constantsVersion}`,
+			`README version badges are out of sync with ${constantsVersion}`,
 		);
 	}
-	if (!changelogSource.includes(`## [${constantsVersion}]`)) {
+	const whatsNewStart = readmeSource.indexOf("## 🔔 What's New");
+	const whatsNewEnd = readmeSource.indexOf("\n## ", whatsNewStart + 1);
+	const readmeWhatsNew =
+		whatsNewStart === -1
+			? ""
+			: readmeSource.slice(
+					whatsNewStart,
+					whatsNewEnd === -1 ? readmeSource.length : whatsNewEnd,
+				);
+	const readmeReleaseHeadings = [...readmeWhatsNew.matchAll(/^### v.*$/gm)].map(
+		(match) => match[0],
+	);
+	if (
+		readmeReleaseHeadings.length !== 3 ||
+		!new RegExp(
+			`^### v${constantsVersion.replaceAll(".", "\\.")} - ${RELEASE_DATE_PATTERN}$`,
+		).test(readmeReleaseHeadings[0])
+	) {
 		throw new Error(
-			`CHANGELOG top version markers are out of sync with ${constantsVersion}`,
+			`README What's New must list exactly the three latest releases, starting with ### v${constantsVersion} - YYYY-MM-DD: ${readmeReleaseHeadings.join(" | ") || "none"}`,
 		);
+	}
+	const changelogTopHeading = changelogSource.match(/^## \[.*$/m)?.[0] || "";
+	if (
+		!new RegExp(
+			`^## \\[${constantsVersion.replaceAll(".", "\\.")}\\] - ${RELEASE_DATE_PATTERN}$`,
+		).test(changelogTopHeading)
+	) {
+		throw new Error(
+			`CHANGELOG must start with ## [${constantsVersion}] - YYYY-MM-DD: ${changelogTopHeading || "missing"}`,
+		);
+	}
+	for (const [name, text] of [
+		["README.md", readmeSource],
+		["CHANGELOG.md latest release", getReleaseSection(changelogSource, "## [")],
+	]) {
+		const wording = findDisallowedReleaseWording(text);
+		if (wording) {
+			throw new Error(`${name} must not use ${wording}`);
+		}
 	}
 	if (
 		!readmeSource.includes("Ads Blocked") ||
@@ -523,31 +754,13 @@ function validateSharedDefinitions() {
 			`Popup version badge must ship with a static synced fallback label/value: ${expectedPopupVersionMarkup}`,
 		);
 	}
-	for (const requiredPopupId of [
-		"enableToggle",
-		"statusDot",
-		"statusText",
-		"adsBlockedCount",
-		"timeSaved",
-		"statsToggle",
-		"statsPanel",
-		"weeklyChart",
-		"chartAvg",
-		"channelList",
-		"achievementsGrid",
-		"achievementsProgress",
-		"nextAchievement",
-		"langSelector",
-		"langAutoOption",
-		"descriptionText",
-		"versionText",
-		"achievementsTitle",
-		"footerText",
-		"infoText",
-		"donateBtn",
-		"repoLink",
-		"authorLink",
-	]) {
+	const missingPopupReferences = findMissingPopupReferences(popupHtmlSource);
+	if (missingPopupReferences.length > 0) {
+		throw new Error(
+			`Popup HTML references missing files: ${missingPopupReferences.join(", ")}`,
+		);
+	}
+	for (const requiredPopupId of REQUIRED_POPUP_IDS) {
 		if (!popupHtmlSource.includes(`id="${requiredPopupId}"`)) {
 			throw new Error(`Popup HTML is missing required id: ${requiredPopupId}`);
 		}
@@ -555,17 +768,8 @@ function validateSharedDefinitions() {
 	const bridgeSource = fs.readFileSync(bridgePath, "utf8");
 	const backgroundSource = fs.readFileSync(backgroundPath, "utf8");
 	const uiSource = fs.readFileSync(uiPath, "utf8");
-	const translationsSource = fs.readFileSync(translationsPath, "utf8");
-	const translationsContext: {
-		TRANSLATIONS?: Record<string, TranslationLocale>;
-	} = {};
-	Function(
-		"context",
-		`${translationsSource}; context.TRANSLATIONS = TRANSLATIONS;`,
-	)(translationsContext);
-	const translationEntries = Object.entries(
-		translationsContext.TRANSLATIONS || {},
-	);
+	const translations = loadPopupTranslations();
+	const translationEntries = Object.entries(translations);
 	const flattenTranslationKeys = (value, prefix = "") => {
 		let keys = [];
 		for (const [key, nested] of Object.entries(value || {})) {
@@ -578,7 +782,7 @@ function validateSharedDefinitions() {
 		}
 		return keys;
 	};
-	const baseTranslations = translationsContext.TRANSLATIONS?.en || {};
+	const baseTranslations = translations.en || {};
 	const baseTranslationKeys = new Set(flattenTranslationKeys(baseTranslations));
 	const placeholderPattern = /\{(\w+)\}/g;
 	const getPlaceholders = (value) => {
@@ -641,35 +845,22 @@ function validateSharedDefinitions() {
 		);
 	}
 
-	const backgroundGetDateKeyLiteral = extractLiteral(
+	const backgroundGetDateKeyLiteral = findDeclarationText(
 		backgroundSource,
-		"function getDateKey(",
-		"{",
-		"}",
+		"getDateKey",
 	);
-	const popupGetDateKeyLiteral = extractLiteral(
+	const popupGetDateKeyLiteral = findDeclarationText(popupSource, "getDateKey");
+	const popupAchievementsLiteral = findDeclarationText(
 		popupSource,
-		"function getDateKey(",
-		"{",
-		"}",
+		"ACHIEVEMENTS",
 	);
-	const popupAchievementsLiteral = extractLiteral(
-		popupSource,
-		"const ACHIEVEMENTS =",
-		"[",
-		"]",
-	);
-	const backgroundAchievementsLiteral = extractLiteral(
+	const backgroundAchievementsLiteral = findDeclarationText(
 		backgroundSource,
-		"const ACHIEVEMENTS =",
-		"[",
-		"]",
+		"ACHIEVEMENTS",
 	);
-	const uiAchievementInfoLiteral = extractLiteral(
+	const uiAchievementInfoLiteral = findDeclarationText(
 		uiSource,
-		"const _ACHIEVEMENT_INFO =",
-		"{",
-		"}",
+		"_ACHIEVEMENT_INFO",
 	);
 
 	if (
@@ -696,9 +887,6 @@ function validateSharedDefinitions() {
 		`return (${backgroundAchievementsLiteral});`,
 	)();
 	const uiAchievementInfo = Function(`return (${uiAchievementInfoLiteral});`)();
-	const translations = Function(
-		`${translationsSource}; return TRANSLATIONS;`,
-	)() as Record<string, TranslationLocale>;
 
 	const popupComparable = popupAchievements.map(({ id, threshold, type }) => ({
 		id,
@@ -734,6 +922,65 @@ function validateSharedDefinitions() {
 	for (const achievement of popupAchievements) {
 		if (uiAchievementInfo[achievement.id]?.icon !== achievement.icon) {
 			throw new Error(`UI achievement icon mismatch for ${achievement.id}`);
+		}
+	}
+
+	const pageTextLiteral = findDeclarationText(uiSource, "_PAGE_TEXT");
+	const pageAchievementTextLiteral = findDeclarationText(
+		uiSource,
+		"_PAGE_ACHIEVEMENT_TEXT",
+	);
+	if (!pageTextLiteral || !pageAchievementTextLiteral) {
+		throw new Error("ui.js is missing _PAGE_TEXT or _PAGE_ACHIEVEMENT_TEXT");
+	}
+	const pageText = Function(`return (${pageTextLiteral});`)();
+	const pageAchievementText = Function(
+		`return (${pageAchievementTextLiteral});`,
+	)();
+	const popupLanguages = Object.keys(translations).sort();
+	for (const [name, table] of [
+		["_PAGE_TEXT", pageText],
+		["_PAGE_ACHIEVEMENT_TEXT", pageAchievementText],
+	]) {
+		if (
+			JSON.stringify(Object.keys(table).sort()) !==
+			JSON.stringify(popupLanguages)
+		) {
+			throw new Error(
+				`ui.js ${name} languages are out of sync with popup translations`,
+			);
+		}
+	}
+	const pageTextKeys = Object.keys(pageText.en).sort();
+	for (const [language, strings] of Object.entries(pageText)) {
+		if (
+			JSON.stringify(Object.keys(strings).sort()) !==
+			JSON.stringify(pageTextKeys)
+		) {
+			throw new Error(
+				`ui.js _PAGE_TEXT ${language} keys are out of sync with en`,
+			);
+		}
+		for (const key of pageTextKeys) {
+			const placeholders = (value) =>
+				JSON.stringify(
+					[...String(value).matchAll(/\{(\w+)\}/g)]
+						.map((match) => match[1])
+						.sort(),
+				);
+			if (placeholders(strings[key]) !== placeholders(pageText.en[key])) {
+				throw new Error(
+					`ui.js _PAGE_TEXT ${language}.${key} placeholders differ from en`,
+				);
+			}
+		}
+		if (
+			JSON.stringify(pageAchievementText[language]) !==
+			JSON.stringify(translations[language].achievementsMap)
+		) {
+			throw new Error(
+				`ui.js _PAGE_ACHIEVEMENT_TEXT ${language} is out of sync with popup achievement translations`,
+			);
 		}
 	}
 
@@ -805,35 +1052,22 @@ function validateSharedDefinitions() {
 		}
 	}
 
-	const popupNormalizeCount = extractLiteral(
+	const popupNormalizeCount = findDeclarationText(
 		popupSource,
-		"function normalizeCount(",
-		"{",
-		"}",
+		"normalizeCount",
 	);
-	const popupFormatNumber = extractLiteral(
+	const popupFormatNumber = findDeclarationText(popupSource, "formatNumber");
+	const popupUpdateTimeSaved = findDeclarationText(
 		popupSource,
-		"function formatNumber(",
-		"{",
-		"}",
+		"updateTimeSaved",
 	);
-	const popupUpdateTimeSaved = extractLiteral(
-		popupSource,
-		"function updateTimeSaved(",
-		"{",
-		"}",
-	);
-	const backgroundNormalizeCount = extractLiteral(
+	const backgroundNormalizeCount = findDeclarationText(
 		backgroundSource,
-		"function normalizeCount(",
-		"{",
-		"}",
+		"normalizeCount",
 	);
-	const stateNormalizeCount = extractLiteral(
+	const stateNormalizeCount = findDeclarationText(
 		stateSource,
-		"function _normalizeCount(",
-		"{",
-		"}",
+		"_normalizeCount",
 	);
 	if (
 		!popupNormalizeCount ||
@@ -843,10 +1077,8 @@ function validateSharedDefinitions() {
 		!stateNormalizeCount ||
 		normalizeCodeSnippet(popupNormalizeCount) !==
 			normalizeCodeSnippet(backgroundNormalizeCount) ||
-		normalizeCodeSnippet(popupNormalizeCount).replace(
-			"function normalizeCount(value)",
-			"function _normalizeCount(value)",
-		) !== normalizeCodeSnippet(stateNormalizeCount) ||
+		normalizeCodeSnippet(popupNormalizeCount) !==
+			normalizeCodeSnippet(stateNormalizeCount) ||
 		!popupFormatNumber.includes("normalizeCount(num)") ||
 		!popupUpdateTimeSaved.includes("latestMeasuredMilliseconds")
 	) {
@@ -855,40 +1087,36 @@ function validateSharedDefinitions() {
 		);
 	}
 
-	for (const source of [popupSource, uiSource]) {
+	const pageSideSources = [
+		...fs
+			.readdirSync(MODULES_DIR)
+			.filter((file) => file.endsWith(".js") && file !== "playback-worker.js")
+			.map((file) => [
+				`src/modules/${file}`,
+				fs.readFileSync(path.join(MODULES_DIR, file), "utf8"),
+			]),
+		...PAGE_SCRIPT_PATHS.map((relativePath) => [
+			relativePath,
+			fs.readFileSync(path.join(DIST_DIR, relativePath), "utf8"),
+		]),
+	];
+	for (const [name, source] of pageSideSources) {
 		for (const match of source.matchAll(/window\.open\(([\s\S]*?)\);/g)) {
 			if (
 				match[1].includes('"_blank"') &&
 				!match[1].includes("noopener,noreferrer")
 			) {
 				throw new Error(
-					"Found unsafe window.open call without noopener,noreferrer",
+					`${name} has a window.open call without noopener,noreferrer`,
 				);
 			}
 		}
-	}
-	const dynamicPopupInnerHtmlCount = (
-		popupSource.match(/innerHTML\s*=\s*`[^`]*\$\{/g) || []
-	).length;
-	const dynamicUiInnerHtmlCount = (
-		uiSource.match(/innerHTML\s*=\s*`[^`]*\$\{/g) || []
-	).length;
-	const dynamicPopupTitleAttrCount = (popupSource.match(/title="\$\{/g) || [])
-		.length;
-	if (
-		dynamicPopupInnerHtmlCount !== 0 ||
-		dynamicUiInnerHtmlCount !== 0 ||
-		dynamicPopupTitleAttrCount !== 0
-	) {
-		throw new Error(
-			`Unexpected dynamic HTML footprint: popupInner=${dynamicPopupInnerHtmlCount}, uiInner=${dynamicUiInnerHtmlCount}, popupTitle=${dynamicPopupTitleAttrCount}`,
-		);
-	}
-	for (const [name, source] of [
-		["init.js", initSource],
-		["ui.js", uiSource],
-		["bridge.js", bridgeSource],
-	]) {
+		const unsafeHtmlSinks = findUnsafeHtmlSinks(source);
+		if (unsafeHtmlSinks.length > 0) {
+			throw new Error(
+				`${name} writes dynamic HTML: ${unsafeHtmlSinks.join(" | ")}`,
+			);
+		}
 		const messageListenerCount = (
 			source.match(/window\.addEventListener\("message"/g) || []
 		).length;
@@ -901,9 +1129,28 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
+	const dynamicPopupTitleAttrCount = (popupSource.match(/title="\$\{/g) || [])
+		.length;
+	if (dynamicPopupTitleAttrCount !== 0) {
+		throw new Error(
+			`Popup builds ${dynamicPopupTitleAttrCount} title attributes from dynamic HTML`,
+		);
+	}
+	const contentSource = fs.readFileSync(OUTPUT_FILE, "utf8");
+	for (const forbidden of [
+		/\b(?:chrome|browser)\s*\??\.\s*(?:runtime|storage|tabs|action|i18n|scripting|permissions)\b/,
+		/\b(?:chrome|moz)-extension:\/\//,
+	]) {
+		if (forbidden.test(contentSource)) {
+			throw new Error(
+				`MAIN-world content.js must not use extension APIs or URLs: ${forbidden}`,
+			);
+		}
+	}
 	for (const [name, source] of [
 		["popup.js", popupSource],
 		["bridge.js", bridgeSource],
+		["background.js", backgroundSource],
 	]) {
 		const storageListenerCount = (
 			source.match(/chrome\.storage\.onChanged\.addListener/g) || []
@@ -936,11 +1183,9 @@ function validateSharedDefinitions() {
 	const popupBoundDomIds = new Set(
 		popupElementBindings.map(([, , domId]) => domId),
 	);
-	const requiredElementsLiteral = extractLiteral(
+	const requiredElementsLiteral = findDeclarationText(
 		popupSource,
-		"const requiredElements =",
-		"{",
-		"}",
+		"requiredElements",
 	);
 	if (!requiredElementsLiteral) {
 		throw new Error("Popup script is missing the requiredElements guard map");
@@ -958,31 +1203,7 @@ function validateSharedDefinitions() {
 			);
 		}
 	}
-	for (const requiredPopupId of [
-		"enableToggle",
-		"statusDot",
-		"statusText",
-		"adsBlockedCount",
-		"timeSaved",
-		"statsToggle",
-		"statsPanel",
-		"weeklyChart",
-		"chartAvg",
-		"channelList",
-		"achievementsGrid",
-		"achievementsProgress",
-		"nextAchievement",
-		"langSelector",
-		"langAutoOption",
-		"descriptionText",
-		"versionText",
-		"achievementsTitle",
-		"footerText",
-		"infoText",
-		"donateBtn",
-		"repoLink",
-		"authorLink",
-	]) {
+	for (const requiredPopupId of REQUIRED_POPUP_IDS) {
 		if (!popupBoundDomIds.has(requiredPopupId)) {
 			throw new Error(
 				`Popup startup guard is missing a top-level binding for ${requiredPopupId}`,
@@ -1046,13 +1267,11 @@ function validateSharedDefinitions() {
 		);
 	}
 
-	const sharedReservedRoutesLiteral = extractLiteral(
+	const sharedReservedRoutesLiteral = findDeclarationText(
 		parserSource,
-		"const _RESERVED_ROUTE_SEGMENTS = new Set([",
-		"[",
-		"]",
+		"_RESERVED_ROUTE_SEGMENTS",
 	);
-	if (!sharedReservedRoutesLiteral) {
+	if (!sharedReservedRoutesLiteral?.startsWith("new Set([")) {
 		throw new Error("Shared reserved route list is missing from parser.js");
 	}
 	if (
@@ -1178,7 +1397,16 @@ function build() {
 	console.log("Building TTV AB...\n");
 
 	try {
+		for (const output of getPackageOutputs(readPackageVersion())) {
+			fs.rmSync(output, { force: true });
+		}
+		if (fs.existsSync(path.join(SOURCE_ROOT, "src", "scripts", "content.js"))) {
+			throw new Error(
+				"src/scripts/content.js must not exist; content.js is generated in dist",
+			);
+		}
 		compileTypeScriptSources();
+		assertModulesBundled();
 		const workerBundle = buildWorkerBundle(MODULES_DIR, MODULE_ORDER);
 		fs.writeFileSync(
 			path.join(MODULES_DIR, "playback-worker.js"),
@@ -1246,16 +1474,11 @@ _init();
 		) {
 			throw new Error("Manifest must identify exactly one browser background");
 		}
-		const chromeZip = path.join(
-			SOURCE_ROOT,
-			`ttv-ab-${version}-chrome-store.zip`,
-		);
-		const xpiFile = path.join(SOURCE_ROOT, `ttv-ab-${version}.xpi`);
-		const sourceZip = path.join(SOURCE_ROOT, `ttv-ab-${version}-source.zip`);
-		const outputs = isFirefox ? [chromeZip, xpiFile, sourceZip] : [chromeZip];
+		const outputs = getPackageOutputs(version);
+		const [chromeZip, xpiFile, sourceZip] = outputs;
 		for (const output of outputs) fs.rmSync(output, { force: true });
 		try {
-			execFileSync("python3", ["tools/package_chrome.py"], {
+			execFileSync(PYTHON, ["tools/package_chrome.py"], {
 				cwd: SOURCE_ROOT,
 				stdio: "inherit",
 			});
@@ -1265,40 +1488,14 @@ _init();
 			if (isFirefox) {
 				fs.renameSync(chromeZip, xpiFile);
 				console.log(`  Created ${path.basename(xpiFile)}`);
-				const sourceFiles = [
-					...STATIC_ROOT_FILES,
-					...STATIC_ROOT_DIRECTORIES,
-					"src",
-					"tests",
-					"tools",
-					"package.json",
-					"package-lock.json",
-					"tsconfig.json",
-					"tsconfig.base.json",
-					"tsconfig.build.json",
-					"tsconfig.modules.json",
-					"tsconfig.runtime.json",
-					"build.ts",
-					"biome.json",
-					"vitest.config.mts",
-					"knip.json",
-					".gitignore",
-					".editorconfig",
-				];
 				execFileSync(
-					"zip",
+					PYTHON,
 					[
-						"-r",
-						sourceZip,
-						...sourceFiles,
-						"-x",
-						"node_modules/*",
-						"dist/*",
-						".git/*",
-						"*.xpi",
-						"*.zip",
+						"tools/package_source.py",
+						path.basename(sourceZip),
+						...SOURCE_ARCHIVE_ENTRIES,
 					],
-					{ cwd: SOURCE_ROOT, stdio: "pipe" },
+					{ cwd: SOURCE_ROOT, stdio: "inherit" },
 				);
 				if (!fs.existsSync(sourceZip) || fs.statSync(sourceZip).size === 0) {
 					throw new Error("Source packaging did not create an archive");
@@ -1312,6 +1509,7 @@ _init();
 	} catch (err) {
 		console.error("\nBuild failed:");
 		console.error(`  ${err.message}`);
+		if (err?.name !== "Error" && err?.stack) console.error(err.stack);
 		process.exit(1);
 	}
 }
