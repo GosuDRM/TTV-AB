@@ -7,6 +7,22 @@ import sys
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
+EXCLUDED_NAMES = {
+	".DS_Store",
+	".Spotlight-V100",
+	".Trashes",
+	"__MACOSX",
+	"__pycache__",
+	"Thumbs.db",
+	"desktop.ini",
+}
+
+
+def is_packaged_path(relative_path: Path) -> bool:
+	return not any(
+		part in EXCLUDED_NAMES or part.startswith("._") for part in relative_path.parts
+	) and not relative_path.name.endswith(("~", ".swp"))
+
 
 def main() -> int:
 	repo_root = Path(__file__).resolve().parents[1]
@@ -35,6 +51,7 @@ def main() -> int:
 		if path.is_file()
 		and path.relative_to(dist_dir).parts[:2] != ("src", "modules")
 		and path.suffix not in {".ts", ".tsbuildinfo"}
+		and is_packaged_path(path.relative_to(dist_dir))
 	)
 
 	if not files:

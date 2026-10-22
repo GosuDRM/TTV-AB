@@ -3,8 +3,10 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -37,13 +39,72 @@ afterEach(() => {
 		rmSync(root, { recursive: true, force: true });
 });
 
-function packagingFixture(firefox: boolean, name: string, failure = "") {
-	const root = temporaryRoot(name);
-	const write = (file: string, text = "fixture") => {
+function writer(root: string) {
+	return (file: string, text = "fixture") => {
 		const target = join(root, file);
 		mkdirSync(resolve(target, ".."), { recursive: true });
 		writeFileSync(target, text);
 	};
+}
+
+function zipEntries(archive: string): string[] {
+	return JSON.parse(
+		execFileSync(
+			"python3",
+			[
+				"-c",
+				"import sys,zipfile,json; print(json.dumps(zipfile.ZipFile(sys.argv[1]).namelist()))",
+				archive,
+			],
+			{ encoding: "utf8" },
+		),
+	);
+}
+
+function loadBuildContext(
+	root: string,
+	options: {
+		exit?: ReturnType<typeof vi.fn>;
+		execFile?: (command: string, args: string[], options: object) => unknown;
+	} = {},
+) {
+	const context = createContext({
+		exports: {},
+		__dirname: root,
+		process: {
+			execPath: process.execPath,
+			exit: options.exit || vi.fn(),
+			env: {},
+			platform: "linux",
+		},
+		console: { log: vi.fn(), error: vi.fn() },
+		require: (id: string) =>
+			id === "./tools/build-worker"
+				? {
+						...require(resolve(__dirname, "../build/tools/build-worker.js")),
+						buildWorkerBundle: () => ({ source: "", code: "" }),
+						embedWorkerBundle: (source: string) => source,
+					}
+				: id === "node:child_process" && options.execFile
+					? { execFileSync: options.execFile }
+					: require(id),
+	});
+	const code = readFileSync(
+		resolve(__dirname, "../build/build.js"),
+		"utf8",
+	).replace(/\bbuild\(\);\s*$/, "");
+	runInContext(code, context);
+	return context;
+}
+
+function packagingFixture(
+	firefox: boolean,
+	name: string,
+	failure = "",
+	setup?: (write: (file: string, text?: string) => void, root: string) => void,
+) {
+	const root = temporaryRoot(name);
+	const write = writer(root);
 	write("package.json", JSON.stringify({ version }));
 	write("manifest.json", JSON.stringify(manifest(firefox)));
 	write("dist/manifest.json", JSON.stringify(manifest(firefox)));
@@ -70,6 +131,8 @@ function packagingFixture(firefox: boolean, name: string, failure = "") {
 	]) {
 		write(`dist/src/modules/${module}.js`, "");
 	}
+	if (failure === "module") write("dist/src/modules/unlisted.js", "");
+	if (failure === "source-content") write("src/scripts/content.js", "");
 	for (const file of [
 		"CHANGELOG.md",
 		"LICENSE",
@@ -94,10 +157,12 @@ function packagingFixture(firefox: boolean, name: string, failure = "") {
 	]) {
 		write(file);
 	}
-	write(
-		"tools/package_chrome.py",
-		readFileSync(resolve(__dirname, "../tools/package_chrome.py"), "utf8"),
-	);
+	for (const tool of ["package_chrome.py", "package_source.py"]) {
+		write(
+			`tools/${tool}`,
+			readFileSync(resolve(__dirname, `../tools/${tool}`), "utf8"),
+		);
+	}
 	const archiveNames = [
 		`ttv-ab-${version}-chrome-store.zip`,
 		`ttv-ab-${version}.xpi`,
@@ -105,51 +170,37 @@ function packagingFixture(firefox: boolean, name: string, failure = "") {
 	];
 	for (const file of firefox ? archiveNames : archiveNames.slice(0, 1))
 		write(file, "stale archive");
+	setup?.(write, root);
 	const exit = vi.fn();
-	const context = createContext({
-		exports: {},
-		__dirname: root,
-		process: { execPath: process.execPath, exit },
-		console: { log: vi.fn(), error: vi.fn() },
-		require: (id: string) =>
-			id === "./tools/build-worker"
-				? {
-						...require(resolve(__dirname, "../build/tools/build-worker.js")),
-						buildWorkerBundle: () => ({ source: "", code: "" }),
-						embedWorkerBundle: (source: string) => source,
-					}
-				: id === "node:child_process"
-					? {
-							execFileSync: (
-								command: string,
-								args: string[],
-								options: object,
-							) => {
-								if (failure === "missing" && command === "python3") return;
-								if (
-									(failure === "extension" && command === "python3") ||
-									(failure === "source" && command === "zip")
-								) {
-									write(
-										command === "python3" ? archiveNames[0] : archiveNames[2],
-										"partial archive",
-									);
-									throw new Error("fixture packaging failed");
-								}
-								return execFileSync(command, args, {
-									...options,
-									stdio: "pipe",
-								});
-							},
-						}
-					: require(id),
+	const context = loadBuildContext(root, {
+		exit,
+		execFile: (command: string, args: string[], options: object) => {
+			const script = command === "python3" ? args[0] : null;
+			if (failure === "missing" && script === "tools/package_chrome.py") return;
+			if (
+				(failure === "extension" && script === "tools/package_chrome.py") ||
+				(failure === "source" && script === "tools/package_source.py")
+			) {
+				write(
+					script === "tools/package_chrome.py"
+						? archiveNames[0]
+						: archiveNames[2],
+					"partial archive",
+				);
+				throw new Error("fixture packaging failed");
+			}
+			return execFileSync(command, args, {
+				...options,
+				stdio: "pipe",
+			});
+		},
 	});
-	const code = readFileSync(
-		resolve(__dirname, "../build/build.js"),
-		"utf8",
-	).replace(/\bbuild\(\);\s*$/, "");
-	runInContext(code, context);
-	context.compileTypeScriptSources = () => {};
+	context.compileTypeScriptSources =
+		failure === "compile"
+			? () => {
+					throw new Error("fixture compile failed");
+				}
+			: () => {};
 	context.prepareDistStaticFiles = () => {};
 	context.syncPopupHtmlFallbacks = () => {};
 	context.validateSharedDefinitions = () => {};
@@ -159,20 +210,20 @@ function packagingFixture(firefox: boolean, name: string, failure = "") {
 }
 
 describe("build packaging contract", () => {
-	it("ships runtime files without compiler intermediates", () => {
-		const { root, exit, archiveNames } = packagingFixture(true, "runtime-only");
-		expect(exit).not.toHaveBeenCalled();
-		const files = JSON.parse(
-			execFileSync(
-				"python3",
-				[
-					"-c",
-					"import sys,zipfile,json; print(json.dumps(zipfile.ZipFile(sys.argv[1]).namelist()))",
-					join(root, archiveNames[1]),
-				],
-				{ encoding: "utf8" },
-			),
+	it("ships runtime files without compiler intermediates or system metadata", () => {
+		const { root, exit, archiveNames } = packagingFixture(
+			true,
+			"runtime-only",
+			"",
+			(write) => {
+				write("dist/.DS_Store");
+				write("dist/src/popup/._popup.js");
+				write("dist/__MACOSX/src/popup/popup.js");
+				write("dist/src/popup/Thumbs.db");
+			},
 		);
+		expect(exit).not.toHaveBeenCalled();
+		const files = zipEntries(join(root, archiveNames[1]));
 		expect(files).toEqual([
 			"background.js",
 			"manifest.json",
@@ -233,19 +284,109 @@ describe("build packaging contract", () => {
 		},
 	);
 
-	it.each(["extension", "source", "missing"])(
-		"fails and removes stale/partial artifacts when %s packaging fails",
-		(failure) => {
-			const { root, exit, archiveNames } = packagingFixture(
-				true,
-				"generic-checkout",
-				failure,
-			);
-			expect(exit).toHaveBeenCalledWith(1);
-			for (const name of archiveNames)
-				expect(existsSync(join(root, name))).toBe(false);
-		},
-	);
+	it("archives only tracked source files from a git checkout", () => {
+		const { root, exit, archiveNames } = packagingFixture(
+			true,
+			"git-checkout",
+			"",
+			(write, fixtureRoot) => {
+				const git = (...args: string[]) =>
+					execFileSync(
+						"git",
+						[
+							"-c",
+							"user.name=Build Test",
+							"-c",
+							"user.email=build@example.invalid",
+							"-c",
+							"commit.gpgsign=false",
+							...args,
+						],
+						{ cwd: fixtureRoot, stdio: "pipe" },
+					);
+				git("init", "-b", "firefox");
+				git("add", "-A");
+				git("commit", "-m", "fixture");
+				write("src/untracked.ts", "local scratch file");
+				write("tests/.DS_Store");
+			},
+		);
+		expect(exit).not.toHaveBeenCalled();
+		const files = zipEntries(join(root, archiveNames[2]));
+		expect(files).toContain("src/source.ts");
+		expect(files).toContain("tools/package_source.py");
+		expect(files).not.toContain("src/untracked.ts");
+		expect(files).not.toContain("tests/.DS_Store");
+	});
+
+	it("leaves system metadata out of source archives outside git", () => {
+		const { root, exit, archiveNames } = packagingFixture(
+			true,
+			"plain-folder",
+			"",
+			(write) => {
+				write("src/.DS_Store");
+				write("tests/._test.ts");
+				write("tools/__pycache__/package_chrome.cpython-314.pyc");
+			},
+		);
+		expect(exit).not.toHaveBeenCalled();
+		const files = zipEntries(join(root, archiveNames[2]));
+		expect(files).toContain("src/source.ts");
+		expect(
+			files.filter((file) => /(^|\/)(\.DS_Store|\._|__pycache__)/.test(file)),
+		).toEqual([]);
+	});
+
+	it("copies only the files the extension uses into dist", () => {
+		const root = temporaryRoot("static-files");
+		const write = writer(root);
+		for (const file of [
+			"package.json",
+			"manifest.json",
+			"LICENSE",
+			"PRIVACY.md",
+			"README.md",
+			"CHANGELOG.md",
+			"assets/icons/icon16.png",
+			"assets/popup2.png",
+			"assets/pipeline.svg",
+			"_locales/en/messages.json",
+		])
+			write(file);
+		loadBuildContext(root).prepareDistStaticFiles();
+		const dist = join(root, "dist");
+		const files = readdirSync(dist, { recursive: true })
+			.map(String)
+			.filter((file) => statSync(join(dist, file)).isFile())
+			.map((file) => file.split("\\").join("/"))
+			.sort();
+		expect(files).toEqual([
+			"LICENSE",
+			"PRIVACY.md",
+			"_locales/en/messages.json",
+			"assets/icons/icon16.png",
+			"manifest.json",
+		]);
+	});
+
+	it.each([
+		"extension",
+		"source",
+		"missing",
+		"compile",
+		"module",
+		"source-content",
+	])("fails and removes stale/partial artifacts when %s fails", (failure) => {
+		const { root, exit, archiveNames } = packagingFixture(
+			true,
+			"generic-checkout",
+			failure,
+		);
+		expect(exit).toHaveBeenCalledWith(1);
+		for (const name of archiveNames)
+			expect(existsSync(join(root, name))).toBe(false);
+	});
 });
 
 it("rejects core module type errors through the standalone typecheck command", () => {
