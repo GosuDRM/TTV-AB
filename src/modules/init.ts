@@ -914,6 +914,24 @@ function _initToggleListener() {
 		_setAdTimerEnabled(safeDetail.enabled);
 	});
 
+	_onInternalMessage("ttvab-stats-paused", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (typeof safeDetail?.paused !== "boolean") return;
+		_setPageStatsPaused(safeDetail.paused);
+	});
+
+	_onInternalMessage("ttvab-language", (detail) => {
+		const safeDetail = _getTrustedBridgeMessageDetail(detail);
+		if (
+			typeof safeDetail?.choice !== "string" ||
+			typeof safeDetail.uiLanguage !== "string" ||
+			safeDetail.choice.length > 16 ||
+			safeDetail.uiLanguage.length > 35
+		)
+			return;
+		_setPageLanguagePreference(safeDetail.choice, safeDetail.uiLanguage);
+	});
+
 	_onInternalMessage("ttvab-collect-logs", (detail) => {
 		const safeDetail = _getTrustedBridgeMessageDetail(detail);
 		const requestId =

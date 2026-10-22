@@ -181,7 +181,7 @@ describe("ad break timer", () => {
 		expect(overlay()).toBeNull();
 	});
 
-	it("defaults off and toggles during a break without playback messages or timers", () => {
+	it("defaults off and toggles during a break without playback messages or lingering timers", () => {
 		expect(g._adTimerEnabled).toBe(false);
 		g._updateAdTimerOverlay();
 		expect(overlay()).toBeNull();
@@ -192,9 +192,10 @@ describe("ad break timer", () => {
 		expect(overlay()?.style.top).toBe("62px");
 		expect(overlay()?.style.right).toBe(`${window.innerWidth - 810 + 12}px`);
 		expect(g._broadcastWorkers).not.toHaveBeenCalled();
-		expect(vi.getTimerCount()).toBe(0);
+		expect(vi.getTimerCount()).toBe(1);
 		toggle(false);
 		expect(overlay()).toBeNull();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("ignores non-boolean settings", () => {
@@ -221,6 +222,8 @@ describe("ad break timer", () => {
 		}
 		expect(g.__TTVAB_STATE__).toEqual(originalState);
 		expect(g._broadcastWorkers).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(1);
+		toggle(false);
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
@@ -349,7 +352,8 @@ describe("ad break timer", () => {
 		toggle(true);
 		vi.mocked(video.getBoundingClientRect).mockReturnValue({
 			...video.getBoundingClientRect(),
-			top: -100,
+			top: -420,
+			bottom: 30,
 		});
 		g._updateAdTimerOverlay();
 		expect(overlay()).toBeNull();
@@ -358,6 +362,111 @@ describe("ad break timer", () => {
 		};
 		expect(() => g._updateAdTimerOverlay()).not.toThrow();
 		expect(g._broadcastWorkers).not.toHaveBeenCalled();
+	});
+});
+
+describe("ad break timer updates", () => {
+	const setHidden = (hidden: boolean) => {
+		g._isNativeDocumentHidden = () => hidden;
+	};
+
+	afterEach(() => {
+		delete g._isNativeDocumentHidden;
+		g._setPageLanguagePreference("auto", "");
+	});
+
+	it("advances exactly once per second while the break is shown", () => {
+		toggle(true);
+		const seen = [overlay()?.textContent];
+		for (let i = 0; i < 4; i++) {
+			vi.advanceTimersToNextTimer();
+			seen.push(overlay()?.textContent);
+		}
+		expect(seen).toEqual([
+			"Ad break · 1:23",
+			"Ad break · 1:24",
+			"Ad break · 1:25",
+			"Ad break · 1:26",
+			"Ad break · 1:27",
+		]);
+		expect(vi.getTimerCount()).toBe(1);
+	});
+
+	it("disappears within a second of the break ending", () => {
+		toggle(true);
+		g.__TTVAB_STATE__.CurrentAdMediaKey = null;
+		vi.advanceTimersByTime(1100);
+		expect(overlay()).toBeNull();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("pauses its updates in a background tab and catches up when the tab returns", () => {
+		setHidden(true);
+		toggle(true);
+		expect(vi.getTimerCount()).toBe(0);
+		vi.advanceTimersByTime(40000);
+		expect(overlay()?.textContent).toBe("Ad break · 1:23");
+
+		setHidden(false);
+		window.dispatchEvent(new Event("visibilitychange"));
+		expect(overlay()?.textContent).toBe("Ad break · 2:03");
+		expect(vi.getTimerCount()).toBe(1);
+	});
+
+	it("still refreshes when another script stops visibility events at the document", () => {
+		const swallow = (event: Event) => event.stopImmediatePropagation();
+		document.addEventListener("visibilitychange", swallow, true);
+		try {
+			setHidden(true);
+			toggle(true);
+			vi.advanceTimersByTime(5000);
+			setHidden(false);
+			document.dispatchEvent(new Event("visibilitychange"));
+			expect(overlay()?.textContent).toBe("Ad break · 1:28");
+		} finally {
+			document.removeEventListener("visibilitychange", swallow, true);
+		}
+	});
+
+	it("moves into the fullscreen player as soon as fullscreen starts", () => {
+		toggle(true);
+		const player = document.createElement("div");
+		document.body.append(player);
+		player.append(video);
+		Object.defineProperty(document, "fullscreenElement", {
+			value: player,
+			configurable: true,
+		});
+		document.dispatchEvent(new Event("fullscreenchange"));
+		expect(overlay()?.parentElement).toBe(player);
+	});
+
+	it("stops listening for page changes once the timer is hidden", () => {
+		toggle(true);
+		const remove = vi.spyOn(window, "removeEventListener");
+		toggle(false);
+		expect(remove).toHaveBeenCalledWith(
+			"visibilitychange",
+			expect.any(Function),
+			true,
+		);
+	});
+
+	it("marks its text with the language it is written in", () => {
+		g._setPageLanguagePreference("de", "");
+		toggle(true);
+		expect(overlay()?.lang).toBe("de");
+		expect(overlay()?.textContent).toBe("Werbepause · 1:23");
+	});
+
+	it("stays at the visible top of a stream that is partly scrolled out of view", () => {
+		vi.mocked(video.getBoundingClientRect).mockReturnValue({
+			...video.getBoundingClientRect(),
+			top: -100,
+			bottom: 350,
+		});
+		toggle(true);
+		expect(overlay()?.style.top).toBe("12px");
 	});
 });
 

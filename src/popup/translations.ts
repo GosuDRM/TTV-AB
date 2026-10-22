@@ -12,6 +12,12 @@ const TRANSLATIONS = {
 		turboMode: "Turbo Mode",
 		turboModeEnabled: "Statistics and achievements are paused.",
 		turboModeDisabled: "Statistics and achievements are active.",
+		turboModeInfoLabel: "About Turbo Mode",
+		turboModeDetails:
+			"Off by default. Pauses statistics, achievements, and the count on the toolbar icon, for example if you have Twitch Turbo and see no ads, or simply don't want the counters.",
+		turboModeFootnote:
+			"Ad blocking and every other setting keep working. Your existing statistics are kept, and counting continues from them when you turn Turbo Mode off. Nothing that happens while it is on is added later.",
+		turboModeGotIt: "Got it",
 		last7Days: "Last 7 Days",
 		topChannels: "Top Channels",
 		topChannelsDesc: "Channels where you've blocked the most ads",
@@ -134,6 +140,12 @@ const TRANSLATIONS = {
 		turboMode: "Modo Turbo",
 		turboModeEnabled: "Las estadísticas y los logros están en pausa.",
 		turboModeDisabled: "Las estadísticas y los logros están activos.",
+		turboModeInfoLabel: "Acerca del modo Turbo",
+		turboModeDetails:
+			"Desactivado de forma predeterminada. Pausa las estadísticas, los logros y el contador del icono de la barra de herramientas; útil, por ejemplo, si tienes Twitch Turbo y no ves anuncios, o si simplemente no quieres los contadores.",
+		turboModeFootnote:
+			"El bloqueo de anuncios y el resto de opciones siguen funcionando. Tus estadísticas actuales se conservan y el recuento continúa desde ellas cuando desactivas el modo Turbo. No se añade después nada de lo ocurrido mientras estaba activado.",
+		turboModeGotIt: "Entendido",
 		last7Days: "Últimos 7 días",
 		topChannels: "Canales principales",
 		topChannelsDesc: "Canales donde más anuncios has bloqueado",
@@ -160,7 +172,7 @@ const TRANSLATIONS = {
 		autoplayBackupDesc:
 			"Activado por defecto. Durante una pausa publicitaria, empieza antes el directo sin anuncios, normalmente a 360p, y después cambia a un respaldo verificado de mayor calidad sin reiniciar el reproductor. Si la pausa termina en 360p, el reproductor se reinicia una vez para volver a la calidad completa.",
 		autoplayBackupWarning:
-			"Al desactivarlo, se prueban primero las fuentes de calidad normal. Si ninguna está libre de anuncios durante un preroll o midroll, puede reproducirse temporalmente un flujo de baja calidad mientras se comprueba una calidad superior. Las pausas publicitarias pueden tardar unos segundos más en mostrar vídeo.",
+			"Al desactivarlo, se prueban primero las fuentes de calidad normal. Si ninguna está libre de anuncios durante un preroll o midroll, puede reproducirse temporalmente una emisión de baja calidad mientras se comprueba una calidad superior. Las pausas publicitarias pueden tardar unos segundos más en mostrar vídeo.",
 		autoplayBackupGotIt: "Entendido",
 		stable: "Estable",
 		changesInstantly: "Los cambios se aplican al instante",
@@ -172,7 +184,7 @@ const TRANSLATIONS = {
 		supportDeveloper: "Apoyar a GosuDRM",
 		repoLinkLabel: "Abrir TTV AB en GitHub",
 		authorLinkLabel: "Abrir GosuDRM en GitHub",
-		reportBugLabel: "Reportar un error",
+		reportBugLabel: "Informar de un error",
 		topChannelsTapHint: "Haz clic en un canal para ver estadísticas detalladas",
 		channelModalWatch: "Tiempo de visualización",
 		channelModalBreaks: "Pausas publicitarias evitadas",
@@ -204,7 +216,7 @@ const TRANSLATIONS = {
 		logExportReadyText:
 			"Guarda el archivo y adjúntalo a tu incidencia de GitHub. No se sube nada automáticamente.",
 		logExportSave: "Guardar archivo de registro",
-		logExportContinue: "Continuar a GitHub sin un registro",
+		logExportContinue: "Continuar a GitHub sin registro",
 		logExportFailedTitle: "No se pudo preparar el registro de depuración",
 		logExportRetry: "Intentar de nuevo",
 		logExportSavedTitle: "Registro de depuración guardado",
@@ -270,6 +282,12 @@ const TRANSLATIONS = {
 		turboMode: "Mode Turbo",
 		turboModeEnabled: "Les statistiques et les succès sont en pause.",
 		turboModeDisabled: "Les statistiques et les succès sont actifs.",
+		turboModeInfoLabel: "À propos du mode Turbo",
+		turboModeDetails:
+			"Désactivé par défaut. Met en pause les statistiques, les succès et le compteur de l’icône de la barre d’outils, par exemple si vous avez Twitch Turbo et ne voyez pas de pubs, ou si vous ne voulez simplement pas de compteurs.",
+		turboModeFootnote:
+			"Le blocage des pubs et tous les autres réglages continuent de fonctionner. Vos statistiques actuelles sont conservées et le décompte reprend à partir d’elles quand vous désactivez le mode Turbo. Rien de ce qui se passe pendant qu’il est activé n’est ajouté ensuite.",
+		turboModeGotIt: "Compris",
 		last7Days: "7 derniers jours",
 		topChannels: "Chaînes principales",
 		topChannelsDesc: "Chaînes où vous avez bloqué le plus de pubs",
@@ -299,7 +317,7 @@ const TRANSLATIONS = {
 			"Désactivée, cette option privilégie les sources de qualité normale. Si aucune n’est sans publicité pendant un pré-roll ou un mid-roll, un flux de faible qualité peut être utilisé temporairement pendant la vérification d’une qualité supérieure. Les pauses publicitaires peuvent mettre quelques secondes de plus à afficher la vidéo.",
 		autoplayBackupGotIt: "Compris",
 		stable: "Stable",
-		changesInstantly: "Les changements s'appliquent instantanément",
+		changesInstantly: "Les changements s’appliquent instantanément",
 		noDataYet: "Pas encore de données",
 		allUnlocked: "Tout est débloqué !",
 		next: "Suivant",
@@ -314,7 +332,7 @@ const TRANSLATIONS = {
 		channelModalWatch: "Temps de visionnage",
 		channelModalBreaks: "Coupures pub évitées",
 		channelModalShare: "Part de tous les blocages",
-		channelModalSince: "Bloque depuis",
+		channelModalSince: "Premier blocage",
 		channelModalLast: "Dernière pub bloquée",
 		channelModalVisit: "Visiter la chaîne",
 		channelModalRank: "n° {rank} sur {total}",
@@ -332,7 +350,7 @@ const TRANSLATIONS = {
 			"Impossible de réinitialiser les statistiques. Réessayez.",
 		logDialogTitle: "Joindre les journaux de débogage ?",
 		logDialogText:
-			"Le fichier contient les événements récents de l'extension et un contexte limité de lecture et de page provenant de vos onglets Twitch ouverts. Rien n'est envoyé.",
+			"Le fichier contient les événements récents de l’extension et un contexte limité de lecture et de page provenant de vos onglets Twitch ouverts. Rien n’est envoyé.",
 		logDialogGenerate: "Générer le fichier journal",
 		logDialogSkip: "Non merci, ouvrir GitHub",
 		logExportPreparingTitle: "Préparation de votre journal de débogage",
@@ -379,11 +397,11 @@ const TRANSLATIONS = {
 			},
 			time_1h: {
 				name: "Gagne-temps",
-				desc: "Vous avez économisé 1 heure de pubs !",
+				desc: "Vous avez évité 1 heure de pubs !",
 			},
 			time_10h: {
 				name: "Maître du temps",
-				desc: "Vous avez économisé 10 heures de pubs !",
+				desc: "Vous avez évité 10 heures de pubs !",
 			},
 			channels_5: {
 				name: "Explorateur",
@@ -413,6 +431,12 @@ const TRANSLATIONS = {
 		turboMode: "Turbo-Modus",
 		turboModeEnabled: "Statistiken und Erfolge sind pausiert.",
 		turboModeDisabled: "Statistiken und Erfolge sind aktiv.",
+		turboModeInfoLabel: "Über den Turbo-Modus",
+		turboModeDetails:
+			"Standardmäßig ausgeschaltet. Pausiert Statistiken, Erfolge und den Zähler am Symbol in der Symbolleiste, etwa wenn du Twitch Turbo hast und keine Werbung siehst oder die Zähler einfach nicht möchtest.",
+		turboModeFootnote:
+			"Die Werbeblockierung und alle anderen Einstellungen funktionieren weiter. Deine bisherigen Statistiken bleiben erhalten, und die Zählung läuft beim Ausschalten des Turbo-Modus von dort aus weiter. Was in der Zwischenzeit passiert, wird nicht nachträglich hinzugefügt.",
+		turboModeGotIt: "Verstanden",
 		last7Days: "Letzte 7 Tage",
 		topChannels: "Top-Kanäle",
 		topChannelsDesc: "Kanäle, auf denen du die meiste Werbung blockiert hast",
@@ -433,8 +457,8 @@ const TRANSLATIONS = {
 		adTimerFootnote:
 			"Er sagt nicht voraus, wann die volle Qualität zurückkehrt, und das Ein- oder Ausschalten ändert weder die Werbeblockierung noch die Wiedergabe.",
 		adTimerGotIt: "Verstanden",
-		autoplayBackup: "Fallback geringer Qualität",
-		autoplayBackupInfoLabel: "Über den Fallback geringer Qualität",
+		autoplayBackup: "Fallback mit niedriger Qualität",
+		autoplayBackupInfoLabel: "Über den Fallback mit niedriger Qualität",
 		autoplayBackupDesc:
 			"Standardmäßig aktiviert. Während einer Werbepause startet der werbefreie Stream schneller, meist in 360p, und wechselt dann ohne Neustart des Players zu einem geprüften Backup mit besserer Qualität. Endet die Pause noch in 360p, startet der Player einmal neu, um zur vollen Qualität zurückzukehren.",
 		autoplayBackupWarning:
@@ -452,7 +476,7 @@ const TRANSLATIONS = {
 		authorLinkLabel: "GosuDRM auf GitHub öffnen",
 		reportBugLabel: "Fehler melden",
 		topChannelsTapHint: "Klicke auf einen Kanal für detaillierte Statistiken",
-		channelModalWatch: "Sehzeit",
+		channelModalWatch: "Zuschauzeit",
 		channelModalBreaks: "Überstandene Werbepausen",
 		channelModalShare: "Anteil aller Blockierungen",
 		channelModalSince: "Blockiert seit",
@@ -466,7 +490,7 @@ const TRANSLATIONS = {
 		resetStats: "Zurücksetzen",
 		resetStatsTitle: "Statistiken zurücksetzen?",
 		resetStatsText:
-			"Dadurch werden Werbezähler, Zeitersparnis, Sehzeit, Kanalverlauf und Erfolge dauerhaft gelöscht. Deine Einstellungen bleiben erhalten.",
+			"Dadurch werden Werbezähler, Zeitersparnis, Zuschauzeit, Kanalverlauf und Erfolge dauerhaft gelöscht. Deine Einstellungen bleiben erhalten.",
 		resetStatsConfirm: "Statistiken zurücksetzen",
 		resetStatsCancel: "Abbrechen",
 		resetStatsFailed:
@@ -516,7 +540,7 @@ const TRANSLATIONS = {
 				desc: "Du hast 100 Werbeanzeigen blockiert!",
 			},
 			block_500: {
-				name: "Sentinel",
+				name: "Wachposten",
 				desc: "Du hast 500 Werbeanzeigen blockiert!",
 			},
 			block_1000: {
@@ -563,6 +587,12 @@ const TRANSLATIONS = {
 		turboMode: "Modo Turbo",
 		turboModeEnabled: "As estatísticas e conquistas estão pausadas.",
 		turboModeDisabled: "As estatísticas e conquistas estão ativas.",
+		turboModeInfoLabel: "Sobre o Modo Turbo",
+		turboModeDetails:
+			"Desativado por padrão. Pausa as estatísticas, as conquistas e o contador no ícone da barra de ferramentas, por exemplo se você tem Twitch Turbo e não vê anúncios ou simplesmente não quer os contadores.",
+		turboModeFootnote:
+			"O bloqueio de anúncios e todas as outras configurações continuam funcionando. Suas estatísticas atuais são mantidas, e a contagem continua a partir delas quando você desativa o Modo Turbo. Nada do que acontecer enquanto ele estiver ativado é adicionado depois.",
+		turboModeGotIt: "Entendi",
 		last7Days: "Últimos 7 dias",
 		topChannels: "Principais canais",
 		topChannelsDesc: "Canais em que você mais bloqueou anúncios",
@@ -622,27 +652,27 @@ const TRANSLATIONS = {
 		resetStatsCancel: "Cancelar",
 		resetStatsFailed:
 			"Não foi possível redefinir as estatísticas. Tente novamente.",
-		logDialogTitle: "Anexar registros de depuração?",
+		logDialogTitle: "Anexar logs de depuração?",
 		logDialogText:
-			"O arquivo inclui eventos recentes da extensão e contexto limitado de reprodução e página das abas do Twitch abertas. Nada é enviado.",
+			"O arquivo inclui eventos recentes da extensão e contexto limitado de reprodução e página das abas abertas da Twitch. Nada é enviado.",
 		logDialogGenerate: "Gerar arquivo de log",
 		logDialogSkip: "Não, obrigado, abrir o GitHub",
 		logExportPreparingTitle: "Preparando seu log de depuração",
 		logExportPreparingAction: "Preparando...",
 		logExportReadyTitle: "Log de depuração pronto",
 		logExportReadyText:
-			"Salve o arquivo e anexe-o ao seu problema no GitHub. Nada é enviado automaticamente.",
+			"Salve o arquivo e anexe-o à sua issue no GitHub. Nada é enviado automaticamente.",
 		logExportSave: "Salvar arquivo de log",
 		logExportContinue: "Continuar para o GitHub sem um log",
 		logExportFailedTitle: "Não foi possível preparar o log de depuração",
 		logExportRetry: "Tentar novamente",
 		logExportSavedTitle: "Log de depuração salvo",
 		logExportSavedText:
-			"Anexe o arquivo salvo ao seu problema no GitHub e continue no GitHub.",
+			"Anexe o arquivo salvo à sua issue no GitHub e continue no GitHub.",
 		logExportOpenIssue: "Continuar para o GitHub",
 		logExportDownloadedTitle: "Log de depuração baixado",
 		logExportDownloadedText:
-			"Encontre o arquivo na sua pasta Downloads, anexe-o ao seu problema no GitHub e continue no GitHub.",
+			"Encontre o arquivo na sua pasta Downloads, anexe-o à sua issue no GitHub e continue no GitHub.",
 		logExportSaveAgain: "Salvar novamente",
 		logExportFailedText: "Falha ao exportar o log. Tente novamente.",
 		logExportFailedDetail: "Falha ao exportar o log: {error}",
@@ -698,6 +728,12 @@ const TRANSLATIONS = {
 		turboMode: "Modalità Turbo",
 		turboModeEnabled: "Statistiche e obiettivi sono in pausa.",
 		turboModeDisabled: "Statistiche e obiettivi sono attivi.",
+		turboModeInfoLabel: "Informazioni sulla modalità Turbo",
+		turboModeDetails:
+			"Disattivata per impostazione predefinita. Mette in pausa statistiche, obiettivi e il contatore sull’icona della barra degli strumenti, ad esempio se hai Twitch Turbo e non vedi pubblicità o semplicemente non vuoi i contatori.",
+		turboModeFootnote:
+			"Il blocco degli annunci e tutte le altre impostazioni continuano a funzionare. Le statistiche attuali vengono conservate e il conteggio riprende da lì quando disattivi la modalità Turbo. Nulla di ciò che accade mentre è attiva viene aggiunto in seguito.",
+		turboModeGotIt: "Capito",
 		last7Days: "Ultimi 7 giorni",
 		topChannels: "Canali principali",
 		topChannelsDesc: "Canali in cui hai bloccato più annunci",
@@ -718,7 +754,7 @@ const TRANSLATIONS = {
 			"Disattivato per impostazione predefinita. Mostra un piccolo timer nell’angolo in alto a destra della diretta durante una pausa pubblicitaria, indicando da quanto dura. Scompare quando la pausa finisce.",
 		adTimerFootnote:
 			"Non prevede quando tornerà la qualità piena, e attivarlo o disattivarlo non cambia il blocco degli annunci né la riproduzione.",
-		adTimerGotIt: "Ho capito",
+		adTimerGotIt: "Capito",
 		autoplayBackup: "Riserva a bassa qualità",
 		autoplayBackupInfoLabel: "Informazioni sulla riserva a bassa qualità",
 		autoplayBackupDesc:
@@ -737,10 +773,11 @@ const TRANSLATIONS = {
 		repoLinkLabel: "Apri TTV AB su GitHub",
 		authorLinkLabel: "Apri GosuDRM su GitHub",
 		reportBugLabel: "Segnala un bug",
-		topChannelsTapHint: "Clicca su un canale per statistiche dettagliate",
+		topChannelsTapHint:
+			"Clicca su un canale per vedere le statistiche dettagliate",
 		channelModalWatch: "Tempo di visione",
 		channelModalBreaks: "Pause pubblicitarie superate",
-		channelModalShare: "Quota di tutti i blocchi",
+		channelModalShare: "Percentuale sul totale dei blocchi",
 		channelModalSince: "Blocco attivo dal",
 		channelModalLast: "Ultimo annuncio bloccato",
 		channelModalVisit: "Visita il canale",
@@ -798,7 +835,7 @@ const TRANSLATIONS = {
 			block_1000: { name: "Leggenda", desc: "Hai bloccato 1000 annunci!" },
 			block_5000: { name: "Mitico", desc: "Hai bloccato 5000 annunci!" },
 			time_1h: {
-				name: "Salva-tempo",
+				name: "Salvatempo",
 				desc: "Hai evitato 1 ora di annunci!",
 			},
 			time_10h: {
@@ -833,6 +870,12 @@ const TRANSLATIONS = {
 		turboMode: "ターボモード",
 		turboModeEnabled: "統計と実績は一時停止中です。",
 		turboModeDisabled: "統計と実績は有効です。",
+		turboModeInfoLabel: "ターボモードについて",
+		turboModeDetails:
+			"初期設定ではオフです。統計、実績、ツールバーのアイコンのカウンターを一時停止します。Twitch Turbo を利用していて広告が表示されない場合や、カウンターが不要な場合に便利です。",
+		turboModeFootnote:
+			"広告ブロックやその他の設定はすべて引き続き機能します。これまでの統計はそのまま残り、ターボモードをオフにするとそこからカウントが再開されます。オンの間の記録が後から追加されることはありません。",
+		turboModeGotIt: "わかりました",
 		last7Days: "過去7日間",
 		topChannels: "上位チャンネル",
 		topChannelsDesc: "最も多く広告をブロックしたチャンネル",
@@ -844,9 +887,9 @@ const TRANSLATIONS = {
 			"TTV AB が広告をブロックすると、Twitch プレーヤーが通常送信する広告の表示、進行状況、完了の各イベントを代わりに送信し、ミッドロール以外では広告のセグメントをバックグラウンドで取得します。広告を再生せずに、その広告ブレイクが完了済みとして扱われるようにする機能です。",
 		adSpoofingFootnote:
 			"この機能自体は広告をブロックしません。無効にしても停止するのはこれらのリクエストだけで、広告ブロックは引き続き機能します。",
-		adSpoofingGotIt: "了解",
+		adSpoofingGotIt: "わかりました",
 		adTimer: "広告タイマー",
-		adTimerDesc: "配信上に広告休憩の経過時間を表示します。",
+		adTimerDesc: "広告中の経過時間を配信画面に表示します。",
 		adTimerInfoLabel: "広告タイマーについて",
 		adTimerDetails:
 			"初期設定ではオフです。広告中は配信画面の右上に小さなタイマーを表示し、広告が始まってからの経過時間を示します。広告が終わると消えます。",
@@ -856,19 +899,19 @@ const TRANSLATIONS = {
 		autoplayBackup: "低画質フォールバック",
 		autoplayBackupInfoLabel: "低画質フォールバックについて",
 		autoplayBackupDesc:
-			"既定では有効です。広告中は広告のない配信を早めに開始し（通常は 360p）、プレーヤーを再起動せずに、確認済みのより高画質なバックアップへ切り替えます。360p のまま広告が終わった場合は、元の画質に戻すためにプレーヤーが一度再起動します。",
+			"初期設定では有効です。広告中は広告のない配信を早めに開始し（通常は 360p）、プレーヤーを再起動せずに、確認済みのより高画質なバックアップへ切り替えます。360p のまま広告が終わった場合は、元の画質に戻すためにプレーヤーが一度再起動します。",
 		autoplayBackupWarning:
-			"オフの場合は通常画質の配信を先に確認します。プリロールやミッドロールの広告中に広告のない配信が見つからなければ、高画質を確認する間、一時的に低画質の配信を再生できます。広告中に映像が表示されるまで、数秒長くかかることがあります。",
-		autoplayBackupGotIt: "了解",
+			"オフの場合は通常画質の配信を先に確認します。プリロールやミッドロールの広告中に広告のない配信が見つからなければ、高画質を確認する間、一時的に低画質の配信が再生されることがあります。広告中に映像が表示されるまで、数秒長くかかることがあります。",
+		autoplayBackupGotIt: "わかりました",
 		stable: "安定版",
 		changesInstantly: "変更はすぐに反映されます",
 		noDataYet: "まだデータがありません",
 		allUnlocked: "すべて達成済み！",
 		next: "次",
-		descriptionText: "Twitch.tv向けに作られた軽量で強力な広告ブロッカー",
-		supportDeveloper: "GosuDRMを支援",
-		repoLinkLabel: "GitHubでTTV ABを開く",
-		authorLinkLabel: "GitHubでGosuDRMを開く",
+		descriptionText: "Twitch.tv 向けに作られた軽量で強力な広告ブロッカー",
+		supportDeveloper: "GosuDRM を支援",
+		repoLinkLabel: "GitHub で TTV AB を開く",
+		authorLinkLabel: "GitHub で GosuDRM を開く",
 		reportBugLabel: "バグを報告する",
 		topChannelsTapHint: "チャンネルをクリックすると詳細統計を表示",
 		channelModalWatch: "視聴時間",
@@ -881,7 +924,7 @@ const TRANSLATIONS = {
 		chartBreaks: "広告ブレイク",
 		chartAds: "広告",
 		exportStats: "エクスポート",
-		exportStatsLabel: "統計をJSONファイルとしてエクスポート",
+		exportStatsLabel: "統計を JSON ファイルとしてエクスポート",
 		resetStats: "リセット",
 		resetStatsTitle: "統計をリセットしますか？",
 		resetStatsText:
@@ -892,9 +935,9 @@ const TRANSLATIONS = {
 			"統計をリセットできませんでした。もう一度お試しください。",
 		logDialogTitle: "デバッグログを添付しますか？",
 		logDialogText:
-			"ファイルには、開いているTwitchタブの最近の拡張機能イベントと、限定的な再生およびページ情報が含まれます。何もアップロードされません。",
+			"ファイルには、開いている Twitch タブの最近の拡張機能イベントと、限定的な再生およびページ情報が含まれます。何もアップロードされません。",
 		logDialogGenerate: "ログファイルを生成",
-		logDialogSkip: "いいえ、GitHubを開く",
+		logDialogSkip: "いいえ、GitHub を開く",
 		logExportPreparingTitle: "デバッグログを準備しています",
 		logExportPreparingAction: "準備中...",
 		logExportReadyTitle: "デバッグログの準備ができました",
@@ -956,7 +999,7 @@ const TRANSLATIONS = {
 				desc: "5チャンネルで広告をブロックしました！",
 			},
 			channels_20: {
-				name: "アドベンチャラー",
+				name: "冒険者",
 				desc: "20チャンネルで広告をブロックしました！",
 			},
 			block_10000: {
@@ -964,7 +1007,7 @@ const TRANSLATIONS = {
 				desc: "広告を10,000件ブロックしました！",
 			},
 			channels_50: {
-				name: "グローブトロッター",
+				name: "世界旅行者",
 				desc: "50チャンネルで広告をブロックしました！",
 			},
 		},
@@ -979,6 +1022,12 @@ const TRANSLATIONS = {
 		turboMode: "터보 모드",
 		turboModeEnabled: "통계와 업적이 일시 중지되었습니다.",
 		turboModeDisabled: "통계와 업적이 활성화되어 있습니다.",
+		turboModeInfoLabel: "터보 모드 안내",
+		turboModeDetails:
+			"기본 설정은 꺼짐입니다. 통계, 업적, 툴바 아이콘의 카운터를 일시 중지합니다. Twitch Turbo를 사용해 광고가 나오지 않거나 카운터가 필요 없을 때 유용합니다.",
+		turboModeFootnote:
+			"광고 차단과 다른 모든 설정은 계속 작동합니다. 기존 통계는 그대로 유지되며, 터보 모드를 끄면 그 시점부터 다시 집계됩니다. 켜져 있는 동안의 기록은 나중에 추가되지 않습니다.",
+		turboModeGotIt: "확인",
 		last7Days: "최근 7일",
 		topChannels: "상위 채널",
 		topChannelsDesc: "광고를 가장 많이 차단한 채널",
@@ -1004,7 +1053,7 @@ const TRANSLATIONS = {
 		autoplayBackupDesc:
 			"기본적으로 켜져 있습니다. 광고 중에 광고 없는 스트림을 더 빨리 시작하고(보통 360p), 플레이어를 다시 시작하지 않고 검증된 더 높은 화질의 백업으로 전환합니다. 360p 상태로 광고가 끝나면 원래 화질로 돌아가기 위해 플레이어가 한 번 다시 시작됩니다.",
 		autoplayBackupWarning:
-			"끄면 일반 화질 소스를 먼저 확인합니다. 프리롤이나 미드롤 중에 광고 없는 소스를 찾지 못하면, 더 높은 화질을 확인하는 동안 저화질 스트림을 임시로 재생할 수 있습니다. 광고 시간에 영상이 표시되기까지 몇 초 더 걸릴 수 있습니다.",
+			"끄면 일반 화질 소스를 먼저 확인합니다. 프리롤이나 미드롤 중에 광고 없는 소스를 찾지 못하면, 더 높은 화질을 확인하는 동안 저화질 스트림이 임시로 재생될 수 있습니다. 광고 시간에 영상이 표시되기까지 몇 초 더 걸릴 수 있습니다.",
 		autoplayBackupGotIt: "확인",
 		stable: "안정판",
 		changesInstantly: "변경 사항이 즉시 적용됩니다",
@@ -1016,7 +1065,7 @@ const TRANSLATIONS = {
 		repoLinkLabel: "GitHub에서 TTV AB 열기",
 		authorLinkLabel: "GitHub에서 GosuDRM 열기",
 		reportBugLabel: "버그 신고하기",
-		topChannelsTapHint: "채널을 클릭하면 상세 통계를 볼 수 있어요",
+		topChannelsTapHint: "채널을 클릭하면 상세 통계를 볼 수 있습니다",
 		channelModalWatch: "시청 시간",
 		channelModalBreaks: "넘긴 광고 구간",
 		channelModalShare: "전체 차단 중 비중",
@@ -1046,16 +1095,16 @@ const TRANSLATIONS = {
 		logExportReadyText:
 			"파일을 저장한 다음 GitHub 이슈에 첨부하세요. 자동으로 업로드되지 않습니다.",
 		logExportSave: "로그 파일 저장",
-		logExportContinue: "로그 없이 GitHub로 계속",
+		logExportContinue: "로그 없이 GitHub로 이동",
 		logExportFailedTitle: "디버그 로그를 준비하지 못했습니다",
 		logExportRetry: "다시 시도",
 		logExportSavedTitle: "디버그 로그 저장 완료",
 		logExportSavedText:
-			"저장한 파일을 GitHub 이슈에 첨부한 다음 GitHub로 계속하세요.",
-		logExportOpenIssue: "GitHub로 계속",
+			"저장한 파일을 GitHub 이슈에 첨부한 다음 GitHub로 이동하세요.",
+		logExportOpenIssue: "GitHub로 이동",
 		logExportDownloadedTitle: "디버그 로그 다운로드 완료",
 		logExportDownloadedText:
-			"다운로드 폴더에서 파일을 찾아 GitHub 이슈에 첨부한 다음 GitHub로 계속하세요.",
+			"다운로드 폴더에서 파일을 찾아 GitHub 이슈에 첨부한 다음 GitHub로 이동하세요.",
 		logExportSaveAgain: "다시 저장",
 		logExportFailedText: "로그 내보내기에 실패했습니다. 다시 시도하세요.",
 		logExportFailedDetail: "로그 내보내기에 실패했습니다: {error}",
@@ -1069,7 +1118,7 @@ const TRANSLATIONS = {
 			first_block: { name: "광고 사냥꾼", desc: "첫 광고를 차단했습니다!" },
 			block_10: { name: "블로커", desc: "광고 10개를 차단했습니다!" },
 			block_100: { name: "수호자", desc: "광고 100개를 차단했습니다!" },
-			block_500: { name: "센티널", desc: "광고 500개를 차단했습니다!" },
+			block_500: { name: "파수꾼", desc: "광고 500개를 차단했습니다!" },
 			block_1000: { name: "전설", desc: "광고 1000개를 차단했습니다!" },
 			block_5000: { name: "신화", desc: "광고 5000개를 차단했습니다!" },
 			time_1h: { name: "시간 절약가", desc: "광고 시간 1시간을 절약했습니다!" },
@@ -1102,6 +1151,12 @@ const TRANSLATIONS = {
 		turboMode: "Turbo 模式",
 		turboModeEnabled: "统计和成就已暂停。",
 		turboModeDisabled: "统计和成就已启用。",
+		turboModeInfoLabel: "关于 Turbo 模式",
+		turboModeDetails:
+			"默认关闭。暂停统计、成就和工具栏图标上的计数，适合已开通 Twitch Turbo、看不到广告，或不需要这些计数的用户。",
+		turboModeFootnote:
+			"广告拦截和其他所有设置都会继续工作。现有统计会保留，关闭 Turbo 模式后会在此基础上继续计数。开启期间的记录不会在之后补算。",
+		turboModeGotIt: "知道了",
 		last7Days: "最近 7 天",
 		topChannels: "主要频道",
 		topChannelsDesc: "你拦截广告最多的频道",
@@ -1127,7 +1182,7 @@ const TRANSLATIONS = {
 		autoplayBackupDesc:
 			"默认开启。广告时段内会更快开始播放无广告直播（通常为 360p），然后在不重启播放器的情况下切换到经过验证的更高画质备选流。如果广告时段结束时仍为 360p，播放器会重启一次以恢复完整画质。",
 		autoplayBackupWarning:
-			"关闭时会优先尝试正常画质的来源。如果片头广告或插播广告期间没有无广告来源，可以临时播放低画质直播，同时检查更高画质。广告时段可能需要多等几秒才会显示视频。",
+			"关闭时会优先尝试正常画质的来源。如果片头广告或插播广告期间没有无广告来源，可能会临时播放低画质直播，同时检查更高画质。广告时段可能需要多等几秒才会显示视频。",
 		autoplayBackupGotIt: "知道了",
 		stable: "稳定版",
 		changesInstantly: "更改会立即生效",
@@ -1213,6 +1268,12 @@ const TRANSLATIONS = {
 		turboMode: "Turbo 模式",
 		turboModeEnabled: "統計與成就已暫停。",
 		turboModeDisabled: "統計與成就已啟用。",
+		turboModeInfoLabel: "關於 Turbo 模式",
+		turboModeDetails:
+			"預設為關閉。暫停統計、成就和工具列圖示上的計數，適合已訂閱 Twitch Turbo、看不到廣告，或不需要這些計數的使用者。",
+		turboModeFootnote:
+			"廣告攔截和其他所有設定都會繼續運作。現有統計會保留，關閉 Turbo 模式後會從這裡繼續計數。開啟期間的記錄不會在之後補算。",
+		turboModeGotIt: "知道了",
 		last7Days: "最近 7 天",
 		topChannels: "主要頻道",
 		topChannelsDesc: "你攔截廣告最多的頻道",
@@ -1226,19 +1287,19 @@ const TRANSLATIONS = {
 			"此功能本身不會攔截廣告。停用後只會停止這些請求，廣告攔截仍會正常運作。",
 		adSpoofingGotIt: "知道了",
 		adTimer: "廣告計時器",
-		adTimerDesc: "在直播畫面上顯示廣告時段已持續的時間。",
+		adTimerDesc: "在實況畫面上顯示廣告時段已持續的時間。",
 		adTimerInfoLabel: "關於廣告計時器",
 		adTimerDetails:
-			"預設為關閉。廣告時段內會在直播畫面右上角顯示一個小計時器，顯示廣告已經持續多久，並在廣告時段結束後消失。",
+			"預設為關閉。廣告時段內會在實況畫面右上角顯示一個小計時器，顯示廣告已經持續多久，並在廣告時段結束後消失。",
 		adTimerFootnote:
-			"它無法預測何時恢復完整畫質，開啟或關閉計時器都不會影響廣告封鎖和播放。",
+			"它無法預測何時恢復完整畫質，開啟或關閉計時器都不會影響廣告攔截和播放。",
 		adTimerGotIt: "知道了",
 		autoplayBackup: "低畫質備選串流",
 		autoplayBackupInfoLabel: "關於低畫質備選串流",
 		autoplayBackupDesc:
-			"預設開啟。廣告時段內會更快開始播放無廣告直播（通常為 360p），再於不重新啟動播放器的情況下切換到經過驗證的較高畫質備選串流。如果廣告時段結束時仍為 360p，播放器會重新啟動一次以恢復完整畫質。",
+			"預設開啟。廣告時段內會更快開始播放無廣告實況（通常為 360p），再於不重新啟動播放器的情況下切換到經過驗證的較高畫質備選串流。如果廣告時段結束時仍為 360p，播放器會重新啟動一次以恢復完整畫質。",
 		autoplayBackupWarning:
-			"關閉時會優先嘗試正常畫質的來源。如果片頭廣告或插播廣告期間沒有無廣告來源，可以暫時播放低畫質直播，同時檢查更高畫質。廣告時段可能需要多等幾秒才會顯示影片。",
+			"關閉時會優先嘗試正常畫質的來源。如果片頭廣告或插播廣告期間沒有無廣告來源，可能會暫時播放低畫質實況，同時檢查更高畫質。廣告時段可能需要多等幾秒才會顯示影片。",
 		autoplayBackupGotIt: "知道了",
 		stable: "穩定版",
 		changesInstantly: "變更會立即生效",
@@ -1250,8 +1311,8 @@ const TRANSLATIONS = {
 		repoLinkLabel: "在 GitHub 上開啟 TTV AB",
 		authorLinkLabel: "在 GitHub 上開啟 GosuDRM",
 		reportBugLabel: "回報錯誤",
-		topChannelsTapHint: "點擊頻道查看詳細統計",
-		channelModalWatch: "觀看時長",
+		topChannelsTapHint: "點選頻道查看詳細統計",
+		channelModalWatch: "觀看時間",
 		channelModalBreaks: "躲過的廣告時段",
 		channelModalShare: "佔全部攔截的比例",
 		channelModalSince: "攔截開始於",
@@ -1269,31 +1330,31 @@ const TRANSLATIONS = {
 		resetStatsConfirm: "重設統計資料",
 		resetStatsCancel: "取消",
 		resetStatsFailed: "無法重設統計資料，請再試一次。",
-		logDialogTitle: "附加偵錯日誌？",
+		logDialogTitle: "附加偵錯記錄？",
 		logDialogText:
 			"檔案包含已開啟的 Twitch 分頁中的近期擴充功能事件，以及有限的播放和頁面資訊。不會上傳任何內容。",
-		logDialogGenerate: "產生日誌檔案",
+		logDialogGenerate: "產生記錄檔",
 		logDialogSkip: "不用了，開啟 GitHub",
-		logExportPreparingTitle: "正在準備偵錯日誌",
+		logExportPreparingTitle: "正在準備偵錯記錄",
 		logExportPreparingAction: "正在準備...",
-		logExportReadyTitle: "偵錯日誌已準備完成",
+		logExportReadyTitle: "偵錯記錄已準備完成",
 		logExportReadyText:
 			"儲存檔案，然後將其附加到 GitHub Issue。不會自動上傳任何內容。",
-		logExportSave: "儲存日誌檔案",
-		logExportContinue: "不附加日誌，繼續前往 GitHub",
-		logExportFailedTitle: "無法準備偵錯日誌",
+		logExportSave: "儲存記錄檔",
+		logExportContinue: "不附加記錄，繼續前往 GitHub",
+		logExportFailedTitle: "無法準備偵錯記錄",
 		logExportRetry: "重試",
-		logExportSavedTitle: "偵錯日誌已儲存",
+		logExportSavedTitle: "偵錯記錄已儲存",
 		logExportSavedText:
 			"將已儲存的檔案附加到 GitHub Issue，然後繼續前往 GitHub。",
 		logExportOpenIssue: "繼續前往 GitHub",
-		logExportDownloadedTitle: "偵錯日誌已下載",
+		logExportDownloadedTitle: "偵錯記錄已下載",
 		logExportDownloadedText:
 			"在「下載」資料夾中找到該檔案，將其附加到 GitHub Issue，然後繼續前往 GitHub。",
 		logExportSaveAgain: "再次儲存",
-		logExportFailedText: "日誌匯出失敗，請再試一次。",
-		logExportFailedDetail: "日誌匯出失敗：{error}",
-		logExportOpenFailed: "無法開啟日誌匯出分頁。",
+		logExportFailedText: "記錄匯出失敗，請再試一次。",
+		logExportFailedDetail: "記錄匯出失敗：{error}",
+		logExportOpenFailed: "無法開啟記錄匯出分頁。",
 		versionLabel: "版本 {version}",
 		avgPerDay: "平均：{avg}/天",
 		footerBy: " — 作者：",
@@ -1324,6 +1385,12 @@ const TRANSLATIONS = {
 		turboMode: "Турборежим",
 		turboModeEnabled: "Статистика и достижения приостановлены.",
 		turboModeDisabled: "Статистика и достижения активны.",
+		turboModeInfoLabel: "О турборежиме",
+		turboModeDetails:
+			"По умолчанию выключен. Приостанавливает статистику, достижения и счётчик на значке панели инструментов. Пригодится, например, если у вас Twitch Turbo и вы не видите рекламы или вам просто не нужны счётчики.",
+		turboModeFootnote:
+			"Блокировка рекламы и все остальные настройки продолжают работать. Текущая статистика сохраняется, и после выключения турборежима подсчёт продолжится с неё. То, что происходило, пока он был включён, позже не добавляется.",
+		turboModeGotIt: "Понятно",
 		last7Days: "Последние 7 дней",
 		topChannels: "Топ-каналы",
 		topChannelsDesc: "Каналы, где вы заблокировали больше всего рекламы",
@@ -1356,7 +1423,7 @@ const TRANSLATIONS = {
 		changesInstantly: "Изменения применяются мгновенно",
 		noDataYet: "Пока нет данных",
 		allUnlocked: "Всё разблокировано!",
-		next: "Далее",
+		next: "Следующее",
 		descriptionText:
 			"Лёгкий и мощный блокировщик рекламы, созданный специально для Twitch.tv",
 		supportDeveloper: "Поддержать GosuDRM",
@@ -1438,7 +1505,7 @@ const TRANSLATIONS = {
 				desc: "Вы заблокировали 5000 объявлений!",
 			},
 			time_1h: {
-				name: "Экономитель времени",
+				name: "Бережливый",
 				desc: "Вы сэкономили 1 час на рекламе!",
 			},
 			time_10h: {
@@ -1473,9 +1540,15 @@ const TRANSLATIONS = {
 		turboMode: "Турборежим",
 		turboModeEnabled: "Статистику й досягнення призупинено.",
 		turboModeDisabled: "Статистика й досягнення активні.",
+		turboModeInfoLabel: "Про турборежим",
+		turboModeDetails:
+			"За замовчуванням вимкнено. Призупиняє статистику, досягнення й лічильник на значку панелі інструментів. Знадобиться, наприклад, якщо у вас Twitch Turbo і ви не бачите реклами або вам просто не потрібні лічильники.",
+		turboModeFootnote:
+			"Блокування реклами та всі інші налаштування й далі працюють. Наявна статистика зберігається, і після вимкнення турборежиму підрахунок продовжиться з неї. Те, що відбувалося, поки він був увімкнений, пізніше не додається.",
+		turboModeGotIt: "Зрозуміло",
 		last7Days: "Останні 7 днів",
 		topChannels: "Топ-канали",
-		topChannelsDesc: "Канали, де ви заблокували більше всього реклами",
+		topChannelsDesc: "Канали, де ви заблокували найбільше реклами",
 		achievements: "Досягнення",
 		adBlocking: "Блокування реклами",
 		adSpoofing: "Підміна реклами",
@@ -1483,7 +1556,7 @@ const TRANSLATIONS = {
 		adSpoofingDesc:
 			"Коли TTV AB блокує рекламу, ця функція надсилає Twitch ті самі події показу, прогресу та завершення, які зазвичай передає програвач, а поза мідроллами запитує у фоні сегменти реклами. Так заблокований рекламний блок може вважатися завершеним без відтворення реклами.",
 		adSpoofingFootnote:
-			"Сама функція рекламу не блокує. Якщо її вимкнути, припиняться лише ці запити, а блокування реклами продовжить працювати.",
+			"Сама функція рекламу не блокує. Якщо її вимкнути, припиняться лише ці запити, а блокування реклами й далі працюватиме.",
 		adSpoofingGotIt: "Зрозуміло",
 		adTimer: "Таймер реклами",
 		adTimerDesc:
@@ -1503,9 +1576,9 @@ const TRANSLATIONS = {
 		autoplayBackupGotIt: "Зрозуміло",
 		stable: "Стабільна",
 		changesInstantly: "Зміни застосовуються миттєво",
-		noDataYet: "Поки немає даних",
-		allUnlocked: "Все розблоковано!",
-		next: "Далі",
+		noDataYet: "Ще немає даних",
+		allUnlocked: "Усе розблоковано!",
+		next: "Наступне",
 		descriptionText:
 			"Легкий та потужний блокувальник реклами, створений спеціально для Twitch.tv",
 		supportDeveloper: "Підтримати GosuDRM",
@@ -1515,8 +1588,8 @@ const TRANSLATIONS = {
 		topChannelsTapHint: "Натисніть на канал, щоб побачити детальну статистику",
 		channelModalWatch: "Час перегляду",
 		channelModalBreaks: "Пережиті рекламні паузи",
-		channelModalShare: "Доля від усіх блокувань",
-		channelModalSince: "Блокується з",
+		channelModalShare: "Частка від усіх блокувань",
+		channelModalSince: "Блокування з",
 		channelModalLast: "Остання заблокована реклама",
 		channelModalVisit: "Відкрити канал",
 		channelModalRank: "№{rank} з {total}",
@@ -1587,12 +1660,12 @@ const TRANSLATIONS = {
 				desc: "Ви заблокували 5000 оголошень!",
 			},
 			time_1h: {
-				name: "Заощаджувач часу",
-				desc: "Ви зекономили 1 годину на рекламі!",
+				name: "Ощадливий",
+				desc: "Ви заощадили 1 годину на рекламі!",
 			},
 			time_10h: {
-				name: "Мастер часу",
-				desc: "Ви зекономили 10 годин на рекламі!",
+				name: "Майстер часу",
+				desc: "Ви заощадили 10 годин на рекламі!",
 			},
 			channels_5: {
 				name: "Дослідник",

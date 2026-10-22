@@ -138,6 +138,7 @@ beforeEach(() => {
 		ttvAdTimerEnabled: 0,
 		ttvTurboMode: 0,
 		ttvAdsBlocked: 0,
+		ttvLanguage: 0,
 	});
 	Object.assign(g.bridgeState as Record<string, unknown>, {
 		enabled: true,
@@ -146,6 +147,7 @@ beforeEach(() => {
 		adTimerEnabled: true,
 		turboMode: false,
 		storedAdsCount: 0,
+		language: "auto",
 	});
 	(g.pendingPageMessages as unknown[]).length = 0;
 });
@@ -500,6 +502,7 @@ describe("settings initialization lifecycle", () => {
 				ttvAutoplayBackupEnabled: { oldValue: true, newValue: false },
 				ttvAdTimerEnabled: { oldValue: false, newValue: true },
 				ttvTurboMode: { oldValue: false, newValue: true },
+				ttvLanguage: { oldValue: "auto", newValue: "de" },
 			},
 			"local",
 		);
@@ -510,6 +513,7 @@ describe("settings initialization lifecycle", () => {
 			ttvAdTimerEnabled: false,
 			ttvTurboMode: false,
 			ttvAdsBlocked: 7,
+			ttvLanguage: "ja",
 		});
 
 		expect(g.bridgeStateReady).toBe(true);
@@ -520,6 +524,7 @@ describe("settings initialization lifecycle", () => {
 			adTimerEnabled: true,
 			turboMode: true,
 			storedAdsCount: 7,
+			language: "de",
 		});
 	});
 
@@ -590,7 +595,10 @@ describe("settings initialization lifecycle", () => {
 			turboMode: true,
 			storedAdsCount: 46,
 		});
-		expect(port.messages).toEqual([]);
+		expect(port.messages).toEqual([
+			{ type: "ttvab-stats-paused", detail: { paused: true } },
+		]);
+		port.messages.length = 0;
 		expect(g.pendingAdsDelta).toBe(0);
 		expect(g.pendingAdSeconds).toBe(0);
 		expect(g.pendingWatchSeconds).toEqual({});
@@ -622,6 +630,7 @@ describe("settings initialization lifecycle", () => {
 			"local",
 		);
 		expect(port.messages).toEqual([
+			{ type: "ttvab-stats-paused", detail: { paused: false } },
 			{ type: "ttvab-init-count", detail: { count: 46 } },
 		]);
 		handlePageMessage({
@@ -629,6 +638,38 @@ describe("settings initialization lifecycle", () => {
 			detail: { count: 47, delta: 1, channel: "somestreamer" },
 		});
 		expect(g.pendingAdsDelta).toBe(1);
+	});
+
+	it("sends the chosen and browser language to the page when they change", () => {
+		const chromeState = g.chrome as Record<string, unknown>;
+		chromeState.i18n = { getUILanguage: () => "de-DE" };
+		try {
+			g.bridgeStateReady = true;
+			const port = makePagePort();
+			g.pageBridgePort = port;
+			g.pageBridgeConnected = true;
+			const change = (newValue: unknown) =>
+				storageChangeListener?.(
+					{ ttvLanguage: { oldValue: null, newValue } },
+					"local",
+				);
+
+			change("ja");
+			change("ja");
+			change("<b>");
+			expect(port.messages).toEqual([
+				{
+					type: "ttvab-language",
+					detail: { choice: "ja", uiLanguage: "de-DE" },
+				},
+				{
+					type: "ttvab-language",
+					detail: { choice: "auto", uiLanguage: "de-DE" },
+				},
+			]);
+		} finally {
+			delete chromeState.i18n;
+		}
 	});
 
 	it("seeds the preserved count in Turbo without broadcasting a Turbo control", () => {
@@ -647,7 +688,12 @@ describe("settings initialization lifecycle", () => {
 			{ type: "ttvab-toggle-ad-spoofing", detail: { enabled: true } },
 			{ type: "ttvab-toggle-autoplay-backup", detail: { enabled: false } },
 			{ type: "ttvab-toggle-ad-timer", detail: { enabled: true } },
+			{ type: "ttvab-stats-paused", detail: { paused: true } },
 			{ type: "ttvab-init-count", detail: { count: 46 } },
+			{
+				type: "ttvab-language",
+				detail: { choice: "auto", uiLanguage: "" },
+			},
 		]);
 		expect(
 			port.messages.some((message) => message.type.includes("turbo")),
