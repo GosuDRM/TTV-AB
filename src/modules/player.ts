@@ -1105,6 +1105,7 @@ function _getDocumentPrototypeMethod(propertyName) {
 }
 
 function _getNativeDocumentVisibilityState() {
+	if (_hasPageNeverBeenVisible()) return "hidden";
 	const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
 	const visibilityStateGetter =
 		typeof nativeVisibility?.visibilityState === "function"
@@ -1139,6 +1140,7 @@ function _isNativeDocumentFocused() {
 }
 
 function _isNativeVisibilityHidden() {
+	if (_hasPageNeverBeenVisible()) return true;
 	const nativeVisibility = window.__TTVAB_NATIVE_VISIBILITY__;
 	for (const [propertyName, capturedGetter] of [
 		["hidden", nativeVisibility?.hidden],
@@ -1156,6 +1158,17 @@ function _isNativeVisibilityHidden() {
 		} catch {}
 	}
 	return document.hidden === true;
+}
+
+function _hasPageNeverBeenVisible() {
+	try {
+		const entries = performance.getEntriesByType("visibility-state");
+		return (
+			entries.length > 0 && !entries.some((entry) => entry.name === "visible")
+		);
+	} catch {
+		return false;
+	}
 }
 
 function _isNativeDocumentHidden(context = null) {
@@ -2447,6 +2460,9 @@ function _pausePlaybackTarget(target) {
 
 function _playPlaybackTarget(target, channel = null, mediaKey = null) {
 	if (_hasUserPauseIntent(channel, mediaKey)) {
+		return false;
+	}
+	if (_hasPageNeverBeenVisible()) {
 		return false;
 	}
 
@@ -3828,6 +3844,12 @@ function _resumePrimaryPlaybackIfPaused(channel = null, mediaKey = null) {
 		return false;
 	}
 	if (_shouldSuppressAutomaticPlaybackResume(safeChannel, safeMediaKey)) {
+		return false;
+	}
+	if (
+		_getPlaybackMediaElementForContext(safeChannel, safeMediaKey)?.played
+			?.length === 0
+	) {
 		return false;
 	}
 	if (_resumeActivePlayerIfPaused(safeChannel, safeMediaKey)) {

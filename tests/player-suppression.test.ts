@@ -2271,6 +2271,184 @@ describe("_syncPrimaryMediaPlaybackIntent (unfocused pause recovery)", () => {
 	});
 });
 
+describe("automatic resume of media that never played", () => {
+	let video: HTMLVideoElement;
+	let paused: boolean;
+	let playedRanges: number;
+	let visibilityEntries: Array<{ name: string }>;
+	let player: {
+		play: ReturnType<typeof vi.fn>;
+		isPaused: () => boolean;
+		getHTMLVideoElement: () => HTMLVideoElement;
+	};
+	let originalUnfocused: unknown;
+
+	beforeEach(() => {
+		T<() => void>("_clearObservedPlaybackIntentMedia")();
+		T<() => void>("_clearCachedPrimaryMediaElement")();
+		video = document.createElement("video");
+		paused = true;
+		playedRanges = 0;
+		visibilityEntries = [];
+		Object.defineProperty(video, "paused", {
+			get: () => paused,
+			configurable: true,
+		});
+		Object.defineProperty(video, "ended", {
+			get: () => false,
+			configurable: true,
+		});
+		Object.defineProperty(video, "played", {
+			get: () => ({ length: playedRanges }),
+			configurable: true,
+		});
+		document.body.appendChild(video);
+		player = {
+			play: vi.fn(() => {
+				if (playedRanges > 0) {
+					paused = false;
+					return;
+				}
+				if (player.play.mock.calls.length > 5) return;
+				paused = false;
+				video.dispatchEvent(new Event("play"));
+				paused = true;
+				video.dispatchEvent(new Event("pause"));
+			}),
+			isPaused: () => paused,
+			getHTMLVideoElement: () => video,
+		};
+		g._getPlayerAndState = () => ({
+			player,
+			state: { props: { content: { type: "live" } } },
+		});
+		vi.spyOn(performance, "getEntriesByType").mockImplementation(((
+			type: string,
+		) =>
+			type === "visibility-state"
+				? visibilityEntries
+				: []) as typeof performance.getEntriesByType);
+		originalUnfocused = g._isPlaybackPageUnfocused;
+		g._isPlaybackPageUnfocused = () => true;
+		g.__TTVAB_STATE__ = {
+			CurrentAdMediaKey: null,
+			CurrentAdChannel: null,
+			PageMediaType: "live",
+			PageMediaKey: "live:testchannel",
+			PageChannel: "testchannel",
+			ShouldResumeAfterAd: false,
+			ShouldResumeAfterAdChannel: null,
+			ShouldResumeAfterAdMediaKey: null,
+			ShouldResumeAfterAdUntil: 0,
+		};
+		const intentState = g._PlaybackIntentState as Record<string, unknown>;
+		intentState.userPausedMediaKey = null;
+		intentState.userPausedAt = 0;
+		intentState.lastProgrammaticPauseAt = 0;
+		intentState.lastPlaybackControlInteractionAt = 0;
+		intentState.lastPlaybackControlInteractionMediaKey = null;
+	});
+
+	afterEach(() => {
+		T<() => void>("_clearObservedPlaybackIntentMedia")();
+		T<() => void>("_clearCachedPrimaryMediaElement")();
+		video.remove();
+		vi.restoreAllMocks();
+		g._isPlaybackPageUnfocused = originalUnfocused;
+	});
+
+	function emulateTwitchGesturePause() {
+		T<() => void>("_syncPrimaryMediaPlaybackIntent")();
+		paused = false;
+		video.dispatchEvent(new Event("play"));
+		paused = true;
+		video.dispatchEvent(new Event("pause"));
+	}
+
+	it("does not answer Twitch's gesture-capture pause with another play while unfocused", () => {
+		visibilityEntries = [{ name: "hidden" }, { name: "visible" }];
+
+		emulateTwitchGesturePause();
+
+		expect(player.play).not.toHaveBeenCalled();
+	});
+
+	it("still resumes an unfocused pause of media that has already played", () => {
+		visibilityEntries = [{ name: "hidden" }, { name: "visible" }];
+		playedRanges = 1;
+
+		emulateTwitchGesturePause();
+
+		expect(player.play).toHaveBeenCalledOnce();
+		expect(paused).toBe(false);
+	});
+
+	it("keeps automatic resumes away from a page that has never been shown", () => {
+		visibilityEntries = [{ name: "hidden" }];
+
+		expect(
+			T<(channel: string, mediaKey: string) => boolean>(
+				"_resumeActivePlayerIfPaused",
+			)("testchannel", "live:testchannel"),
+		).toBe(false);
+		expect(player.play).not.toHaveBeenCalled();
+
+		visibilityEntries = [{ name: "hidden" }, { name: "visible" }];
+		playedRanges = 1;
+
+		expect(
+			T<(channel: string, mediaKey: string) => boolean>(
+				"_resumeActivePlayerIfPaused",
+			)("testchannel", "live:testchannel"),
+		).toBe(true);
+		expect(player.play).toHaveBeenCalledOnce();
+	});
+
+	it("keeps resuming when the browser has no visibility timeline", () => {
+		playedRanges = 1;
+
+		expect(
+			T<(channel: string, mediaKey: string) => boolean>(
+				"_resumeActivePlayerIfPaused",
+			)("testchannel", "live:testchannel"),
+		).toBe(true);
+		expect(player.play).toHaveBeenCalledOnce();
+	});
+});
+
+describe("pages that have never been shown", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	function mockVisibilityTimeline(names: string[]) {
+		vi.spyOn(performance, "getEntriesByType").mockImplementation(((
+			type: string,
+		) =>
+			type === "visibility-state"
+				? names.map((name) => ({ name }))
+				: []) as typeof performance.getEntriesByType);
+	}
+
+	it("counts as hidden even when the page reports itself visible", () => {
+		mockVisibilityTimeline(["hidden"]);
+
+		expect(T<() => boolean>("_isNativeVisibilityHidden")()).toBe(true);
+		expect(T<() => string>("_getNativeDocumentVisibilityState")()).toBe(
+			"hidden",
+		);
+	});
+
+	it("falls back to the page's own state once it has been shown", () => {
+		mockVisibilityTimeline(["hidden", "visible"]);
+
+		expect(T<() => boolean>("_isNativeVisibilityHidden")()).toBe(false);
+		expect(T<() => string>("_getNativeDocumentVisibilityState")()).toBe(
+			"visible",
+		);
+	});
+});
+
 describe("_hookVisibilityState (focus and page lifecycle)", () => {
 	let guardCalls: unknown[][];
 	let originalGuard: unknown;
