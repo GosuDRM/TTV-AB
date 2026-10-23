@@ -101,6 +101,7 @@ The optional **Ad Break Timer** is off by default and can be switched on in the 
 - **Leaving Clip Pages** - Stop restarting the stream after you leave a clip page when the next page's player is already set up for ad blocking.
 - **Debug Log Errors During Recovery** - Stop logging cancelled stream requests as errors while TTV AB protects playback after its player recovery runs out, so Generate Log keeps the real errors and ad break history.
 - **Quieter Debug Log During Ad Breaks** - Log a missing fresh backup or an ad break with nothing left to play once per ad break instead of every few seconds, and log a failed backup lookup as a warning instead of an error, so Generate Log keeps more of the ad break history.
+- **Going Offline During Ad Breaks** - Wait for your connection to return before fixing a stalled stream during an ad break, instead of using up the limited player reloads and backup stream retries while offline.
 
 ### v24.0.2 - 2026-10-22
 
