@@ -128,7 +128,9 @@ function _updateAdTimerOverlay() {
 		const host = fullscreen || document.body;
 		if (overlay.parentElement !== host) host.appendChild(overlay);
 		overlay.style.top = `${visibleTop + 12}px`;
-		overlay.style.right = `${Math.max(0, window.innerWidth - rect.right) + 12}px`;
+		const viewportWidth =
+			document.documentElement?.clientWidth || window.innerWidth;
+		overlay.style.right = `${Math.max(0, viewportWidth - rect.right) + 12}px`;
 		const elapsedMs = now - cycleStartedAt;
 		const seconds = Math.floor(elapsedMs / 1000);
 		const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -264,6 +266,7 @@ function _isReminderMomentQuiet() {
 		document.body &&
 			!hidden &&
 			!document.fullscreenElement &&
+			!document.getElementById("ttvab-worker-recovery") &&
 			!__TTVAB_STATE__?.CurrentAdMediaKey,
 	);
 }
@@ -926,7 +929,13 @@ function _getPageLanguage() {
 	]) {
 		const language = _matchLanguageCode(candidate, _PAGE_TEXT);
 		if (language) {
-			return { language, localeTag: String(candidate).replace(/_/g, "-") };
+			let localeTag = language.replace(/_/g, "-");
+			try {
+				localeTag =
+					Intl.getCanonicalLocales(String(candidate).replace(/_/g, "-"))[0] ||
+					localeTag;
+			} catch {}
+			return { language, localeTag };
 		}
 	}
 	return { language: "en", localeTag: "en" };
@@ -1173,11 +1182,6 @@ function _attemptDonationReminder(uiFlags: UiFlags, attempt: number) {
 		}
 		uiFlags.donationScheduled = false;
 		const since = state.since;
-		state.shownCount += 1;
-		state.nextAt = now + _getReminderIntervalMs(state);
-		state.baseline = Math.max(0, Math.trunc(count));
-		state.since = now;
-		_writeReminderState(state);
 
 		const toast = document.createElement("div");
 		toast.id = "ttvab-reminder";
@@ -1238,6 +1242,11 @@ function _attemptDonationReminder(uiFlags: UiFlags, attempt: number) {
 			?.setAttribute("aria-label", text.dismiss);
 
 		document.body.appendChild(toast);
+		state.shownCount += 1;
+		state.nextAt = now + _getReminderIntervalMs(state);
+		state.baseline = Math.max(0, Math.trunc(count));
+		state.since = now;
+		_writeReminderState(state);
 
 		const reminderClose = toast.querySelector("#ttvab-reminder-close");
 		if (reminderClose instanceof HTMLElement) {
@@ -1288,12 +1297,16 @@ function _showWelcome() {
 		if (uiFlags.welcomeScheduled || _getUiStorageItem(_FIRST_RUN_KEY)) return;
 
 		uiFlags.welcomeScheduled = true;
-		_setUiStorageItem(_FIRST_RUN_KEY, "true");
 		if (uiFlags.welcomeDelayTimer) clearTimeout(uiFlags.welcomeDelayTimer);
 		uiFlags.welcomeDelayTimer = setTimeout(() => {
 			uiFlags.welcomeDelayTimer = null;
 			uiFlags.welcomeScheduled = false;
-			if (document.getElementById("ttvab-welcome") || !document.body) return;
+			if (
+				_getUiStorageItem(_FIRST_RUN_KEY) ||
+				document.getElementById("ttvab-welcome") ||
+				!document.body
+			)
+				return;
 			const toast = document.createElement("div");
 			toast.id = "ttvab-welcome";
 			toast.innerHTML = `
@@ -1347,6 +1360,7 @@ function _showWelcome() {
 				?.setAttribute("aria-label", text.dismiss);
 
 			document.body.appendChild(toast);
+			_setUiStorageItem(_FIRST_RUN_KEY, "true");
 
 			const closeHandler = () => {
 				toast.style.animation = "ttvab-welcome-out .3s ease forwards";
@@ -1426,10 +1440,15 @@ function _ensureAchievementToastStyles() {
 
 function _showAchievementUnlocked(achievementId) {
 	try {
-		if (window.top !== window) return;
+		if (
+			window.top !== window ||
+			_pageStatsPaused ||
+			typeof achievementId !== "string" ||
+			!Object.hasOwn(_ACHIEVEMENT_INFO, achievementId)
+		)
+			return;
 		const uiFlags = _getUiFlags();
 		const ach = _ACHIEVEMENT_INFO[achievementId];
-		if (!ach) return;
 
 		if (!document.body) return;
 		_ensureAchievementToastStyles();
