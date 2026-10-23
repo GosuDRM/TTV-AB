@@ -31,14 +31,10 @@ let _bridgeTokenRequestCount = 0;
 let _bridgePortAttachedAt = 0;
 
 function _createBridgeSessionToken() {
-	const values = new Uint8Array(24);
-	if (globalThis.crypto?.getRandomValues) {
-		globalThis.crypto.getRandomValues(values);
-		return Array.from(values, (value) =>
-			value.toString(16).padStart(2, "0"),
-		).join("");
-	}
-	return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+	const values = globalThis.crypto.getRandomValues(new Uint8Array(24));
+	return Array.from(values, (value) =>
+		value.toString(16).padStart(2, "0"),
+	).join("");
 }
 
 function _getBridgeSessionToken() {
@@ -764,13 +760,14 @@ function _broadcastWorkers(
 			return false;
 		seenWorkers.add(worker);
 		let isAlive = true;
+		const getPlaybackContext = () =>
+			typeof _getWorkerPlaybackContext === "function"
+				? _getWorkerPlaybackContext(worker)
+				: null;
+		let workerPlaybackContext = getPlaybackContext();
 		for (const message of queue) {
 			try {
 				const targetMediaKey = _normalizeMediaKey(message?.targetMediaKey);
-				const workerPlaybackContext =
-					typeof _getWorkerPlaybackContext === "function"
-						? _getWorkerPlaybackContext(worker)
-						: null;
 				const requiresExactTarget =
 					message?.key === "UpdatePagePlaybackVisibleSinceAt";
 				if (
@@ -809,6 +806,7 @@ function _broadcastWorkers(
 						typeof _rememberWorkerPageContext === "function"
 					) {
 						_rememberWorkerPageContext(worker, message.value);
+						workerPlaybackContext = getPlaybackContext();
 					}
 				}
 				if (!_postWorkerBridgeMessage(worker, message)) {
@@ -1181,16 +1179,15 @@ function _recordPlayerReloadAt(mediaKey, at = Date.now()) {
 			),
 		].filter(Boolean),
 	);
-	let reloadMediaKeys = Object.keys(
+	const reloadMediaKeys = Object.keys(
 		__TTVAB_STATE__.LastPlayerReloadAtByMediaKey,
 	);
+	let excessMediaKeys = reloadMediaKeys.length - _MAX_PLAYER_RELOAD_MEDIA_KEYS;
 	for (const candidateMediaKey of reloadMediaKeys) {
-		if (reloadMediaKeys.length <= _MAX_PLAYER_RELOAD_MEDIA_KEYS) break;
+		if (excessMediaKeys <= 0) break;
 		if (protectedMediaKeys.has(candidateMediaKey)) continue;
 		delete __TTVAB_STATE__.LastPlayerReloadAtByMediaKey[candidateMediaKey];
-		reloadMediaKeys = reloadMediaKeys.filter(
-			(mediaKeyEntry) => mediaKeyEntry !== candidateMediaKey,
-		);
+		excessMediaKeys--;
 	}
 	return normalizedAt;
 }
