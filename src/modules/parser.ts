@@ -337,25 +337,42 @@ function _parseAttrs(str) {
 }
 
 function _getServerTime(m3u8) {
-	if (__TTVAB_STATE__.V2API) {
-		const match = m3u8.match(
+	return (
+		m3u8.match(
 			/#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="([^"]+)"/,
-		);
-		return match?.[1] ?? null;
-	}
-	const match = m3u8.match(/SERVER-TIME="([0-9.]+)"/);
-	return match?.[1] ?? null;
+		)?.[1] ??
+		m3u8.match(/SERVER-TIME="([0-9.]+)"/)?.[1] ??
+		null
+	);
 }
 
 function _replaceServerTime(m3u8, time) {
 	if (!time) return m3u8;
-	if (__TTVAB_STATE__.V2API) {
-		return m3u8.replace(
-			/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/,
-			`$1${time}$2`,
-		);
+	const sessionDataPattern =
+		/(#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE=")[^"]+(")/;
+	if (sessionDataPattern.test(m3u8)) {
+		return m3u8.replace(sessionDataPattern, `$1${time}$2`);
 	}
 	return m3u8.replace(/(SERVER-TIME=")[0-9.]+(")/, `$1${time}$2`);
+}
+
+function _logOncePerAdBreak(
+	info: Partial<TTVABStreamInfo>,
+	key: string,
+	message: string,
+	level = "info",
+) {
+	const cycleStartedAt =
+		Number(info?.VisibleAdStartedAt) ||
+		Number(info?._PageFallbackCycleStartedAt) ||
+		0;
+	const breakKey = `${key}:${Math.max(0, cycleStartedAt)}`;
+	if (!(info._LoggedWhitelistByType instanceof Set)) {
+		info._LoggedWhitelistByType = new Set();
+	}
+	if (info._LoggedWhitelistByType.has(breakKey)) return;
+	info._LoggedWhitelistByType.add(breakKey);
+	_log(message, level);
 }
 
 function _hasExplicitAdMetadata(text) {
@@ -490,7 +507,12 @@ function _describeAdMarkedPlaylist(text, includeCached = false) {
 				knownAd++;
 		} else if (line.startsWith("#EXT-X-TWITCH-PREFETCH:")) {
 			prefetch++;
-			if (_isKnownAdSegmentUrl(line.slice(23), { includeCached })) knownAd++;
+			if (
+				_isKnownAdSegmentUrl(line.slice("#EXT-X-TWITCH-PREFETCH:".length), {
+					includeCached,
+				})
+			)
+				knownAd++;
 		} else if (line.startsWith("#EXT-X-DATERANGE:") && classes.size < 8) {
 			const name = _parseAttrs(line).CLASS;
 			if (/^[a-z0-9-]{1,40}$/i.test(name || "")) classes.add(name);
@@ -874,7 +896,6 @@ function _stripAds(
 		preserveLiveSegments && !(hasExplicitAdMetadata && !hasKnownAdSegments);
 
 	let adSegmentCount = 0;
-	let _liveSegmentCount = 0;
 	let mediaSequence = BigInt(
 		text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1] || "0",
 	);
@@ -925,11 +946,7 @@ function _stripAds(
 				isKnownAdSegment ||
 				(forceStripAllSegments &&
 					(!canPreserveLiveSegments || !line.includes(",live")));
-			if (isAdSegment) {
-				adSegmentCount++;
-			} else {
-				_liveSegmentCount++;
-			}
+			if (isAdSegment) adSegmentCount++;
 		}
 		if (
 			_isMediaPartLine(line) ||
@@ -941,11 +958,7 @@ function _stripAds(
 				: _getTaggedPlaylistUri(line);
 			const isAdSegment =
 				forceStripAllSegments || _isKnownAdSegmentUrl(partUrl);
-			if (isAdSegment) {
-				adSegmentCount++;
-			} else {
-				_liveSegmentCount++;
-			}
+			if (isAdSegment) adSegmentCount++;
 		}
 	}
 
@@ -1080,12 +1093,9 @@ function _stripAds(
 		for (const k of staleKeys) {
 			__TTVAB_STATE__.AdSegmentCache.delete(k);
 		}
-		if (__TTVAB_STATE__.AdSegmentCache.size > 1000) {
-			let evicted = 0;
-			for (const url of __TTVAB_STATE__.AdSegmentCache.keys()) {
-				if (++evicted > 200) break;
-				__TTVAB_STATE__.AdSegmentCache.delete(url);
-			}
+		for (const url of __TTVAB_STATE__.AdSegmentCache.keys()) {
+			if (__TTVAB_STATE__.AdSegmentCache.size <= 1000) break;
+			__TTVAB_STATE__.AdSegmentCache.delete(url);
 		}
 	}
 
@@ -1111,7 +1121,9 @@ function _stripAds(
 
 	if (!hasRemainingSegments && strippedMediaEntryCount > 0) {
 		const hold = _createEmptyAdHoldPlaylist(text, info);
-		_log(
+		_logOncePerAdBreak(
+			info,
+			"empty-after-strip",
 			"[Recovery] Empty playlist after stripping ads; serving advancing empty hold segment",
 			"warning",
 		);
@@ -1143,13 +1155,6 @@ function _extractPlaylistHeaders(text) {
 			break;
 		}
 		if (_hasExplicitAdMetadata(line)) continue;
-		if (
-			line?.includes("X-TV-TWITCH-AD") ||
-			line?.includes("EXT-X-CUE-OUT") ||
-			line?.includes("SCTE35-OUT")
-		) {
-			continue;
-		}
 		headers.push(line);
 	}
 	return headers.length > 0 ? headers.join("\n") : "#EXTM3U\n";

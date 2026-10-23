@@ -1998,13 +1998,6 @@ async function _isAdEndStable(
 			return "wait";
 		}
 
-		if (info.IsHoldingBackupAfterAd) {
-			_log(
-				"[Trace] Silent backup hold has no cached backup; waiting for native-ready proof",
-				"warning",
-			);
-			return "wait";
-		}
 		_log(
 			failedProbeCapHit
 				? "[Trace] Native recovery still ad-marked after failed-probe cap; forcing ad end to prevent offline state"
@@ -4247,7 +4240,6 @@ async function _fetchWithTimeout(
 		});
 		const body = await response.arrayBuffer();
 		const nullBodyStatus =
-			response.status === 101 ||
 			response.status === 204 ||
 			response.status === 205 ||
 			response.status === 304;
@@ -4702,7 +4694,7 @@ async function _canReloadNativePlayerAfterAd(
 		_resetNativeRecoveryReadyState(info, true);
 		_markNativeRecoveryProbeFailed(info);
 		_log(
-			`[Trace] Native recovery probe error for ${nativePlayerType}: ${err.message}`,
+			`[Trace] Native recovery probe error for ${nativePlayerType}: ${err?.message ?? String(err)}`,
 			"warning",
 		);
 		return false;
@@ -7821,7 +7813,9 @@ async function _processM3U8Core(
 				}
 			}
 			info.IsUsingBackupStream = false;
-			_log(
+			_logOncePerAdBreak(
+				info,
+				"stale-hold-backup",
 				"[Trace] Fresh backup unavailable during silent hold; refusing to replay an expired media snapshot",
 				"warning",
 			);
@@ -7933,7 +7927,9 @@ async function _processM3U8Core(
 		);
 
 		if (!res) {
-			_log(
+			_logOncePerAdBreak(
+				info,
+				"missing-resolution",
 				`Missing resolution info for ${url}; using generic fallback`,
 				"warning",
 			);
@@ -8544,7 +8540,7 @@ async function _processM3U8Core(
 		if (adEndState === "wait") {
 			const backupAgeMs = Date.now() - (Number(info.LastCleanBackupAt) || 0);
 			const backupIsFromCurrentCycle =
-				Number(info.LastCleanBackupAt) > Number(info.VisibleAdStartedAt);
+				Number(info.LastCleanBackupAt) >= Number(info.VisibleAdStartedAt);
 			const stallRequestedAt =
 				Number(__TTVAB_STATE__?.BackupSearchForceRefreshAt) || 0;
 			const stalledDuringWait = Boolean(
@@ -8761,7 +8757,9 @@ async function _processM3U8Core(
 				info.IsUsingBackupStream = false;
 				info._LastBackupSearchCompletedAt = 0;
 				_findBackupStream(info, realFetch, 0, res).catch(() => {});
-				_log(
+				_logOncePerAdBreak(
+					info,
+					"stale-hold-media",
 					"[Trace] Silent backup hold has no fresh media; serving an advancing empty hold while refresh continues",
 					"warning",
 				);
@@ -10311,7 +10309,7 @@ async function _searchBackupStream(
 						if (!searchIsCurrent()) {
 							return stopSearch();
 						}
-						_log(`Backup error: ${e.message}`, "error");
+						_log(`Backup error: ${e?.message ?? String(e)}`, "warning");
 						markRetryCooldown(pt, "error");
 					}
 				}
@@ -10407,17 +10405,11 @@ async function _searchBackupStream(
 										__TTVAB_STATE__.SimulatedAdsDepth === 0 ||
 										configuredPlayerTypeIndex >=
 											__TTVAB_STATE__.SimulatedAdsDepth - 1;
-									const promotionPolicy =
-										typeof _getFallbackPromotionPolicy === "function"
-											? _getFallbackPromotionPolicy({
-													candidateHasAds,
-													candidateIsPlayable,
-													simulatedAdsDepthSatisfied,
-												})
-											: {
-													allowSelectedPromotion: false,
-													reason: "policy-unavailable",
-												};
+									const promotionPolicy = _getFallbackPromotionPolicy({
+										candidateHasAds,
+										candidateIsPlayable,
+										simulatedAdsDepthSatisfied,
+									});
 									if (earlyRetry && promotionPolicy.allowSelectedPromotion) {
 										const mediaSequence =
 											_parsePlaylistFirstMediaSequence(m3u8);
@@ -10805,7 +10797,7 @@ async function _searchBackupStream(
 						if (!searchIsCurrent()) {
 							return stopSearch();
 						}
-						_log(`Stream error: ${e.message}`, "warning");
+						_log(`Stream error: ${e?.message ?? String(e)}`, "warning");
 						markRetryCooldown(pt, "stream-error");
 						if (isExactEnhancedPass) {
 							failedExactCodecPlayerTypes.add(pt);

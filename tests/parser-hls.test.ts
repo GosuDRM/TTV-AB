@@ -740,3 +740,124 @@ describe("_stripAds (empty-playlist recovery)", () => {
 		};
 	}
 });
+
+describe("parser log and cache bounds", () => {
+	const strip = () =>
+		T<
+			(text: string, stripAll: boolean, info: Record<string, unknown>) => string
+		>("_stripAds");
+	const allAdPlaylist = [
+		"#EXTM3U",
+		"#EXT-X-VERSION:3",
+		"#EXT-X-TARGETDURATION:2",
+		"#EXT-X-MEDIA-SEQUENCE:0",
+		"#EXTINF:2.0,",
+		"https://edge/stitched-ad-1.ts",
+		"#EXTINF:2.0,",
+		"https://edge/stitched-ad-2.ts",
+	].join("\n");
+	const holdInfo = (extra: Record<string, unknown>) => ({
+		MediaKey: "live:testchannel",
+		MediaType: "live",
+		NumStrippedAdSegments: 0,
+		_EmptyAdHoldMediaSequence: 0,
+		_EmptyAdHoldDiscontinuitySequence: 0,
+		...extra,
+	});
+
+	it.each([
+		["worker", { VisibleAdStartedAt: 1000 }, { VisibleAdStartedAt: 2000 }],
+		[
+			"page-side fallback",
+			{ _PageFallbackCycleStartedAt: 1000 },
+			{ _PageFallbackCycleStartedAt: 2000 },
+		],
+	])(
+		"logs an emptied playlist once per %s ad break",
+		(_label, firstBreak, nextBreak) => {
+			const previousLog = g._log;
+			const logs: string[] = [];
+			g._log = (message: string) => logs.push(message);
+			try {
+				const info = holdInfo(firstBreak);
+				for (let poll = 0; poll < 3; poll++) {
+					expect(strip()(allAdPlaylist, false, info)).toContain(
+						"__ttvab_empty_hold_segment.ts",
+					);
+				}
+				Object.assign(info, nextBreak);
+				strip()(allAdPlaylist, false, info);
+			} finally {
+				g._log = previousLog;
+			}
+			expect(
+				logs.filter((message) =>
+					message.includes("Empty playlist after stripping ads"),
+				),
+			).toHaveLength(2);
+		},
+	);
+
+	it("reads either server time format whatever the last master's API version", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const previous = state.V2API;
+		const getTime = T<(m: string) => string | null>("_getServerTime");
+		const setTime = T<(m: string, t: string) => string>("_replaceServerTime");
+		const sessionData =
+			'#EXTM3U\n#EXT-X-SESSION-DATA:DATA-ID="SERVER-TIME",VALUE="1700000000.5"';
+		const twitchInfo =
+			'#EXTM3U\n#EXT-X-TWITCH-INFO:SERVER-TIME="1700000001.25"';
+		try {
+			for (const v2 of [false, true]) {
+				state.V2API = v2;
+				expect(getTime(sessionData)).toBe("1700000000.5");
+				expect(getTime(twitchInfo)).toBe("1700000001.25");
+				expect(setTime(sessionData, "42")).toContain('VALUE="42"');
+				expect(setTime(twitchInfo, "43")).toContain('SERVER-TIME="43"');
+			}
+		} finally {
+			state.V2API = previous;
+		}
+	});
+
+	it("trims the ad segment cache to its cap, oldest first", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		const previousCache = state.AdSegmentCache;
+		const previousPrune = g._lastAdCachePrune;
+		const cache = new Map<string, number>();
+		const now = Date.now();
+		for (let index = 0; index < 1500; index++) {
+			cache.set(`https://edge/old-${index}.ts`, now);
+		}
+		state.AdSegmentCache = cache;
+		g._lastAdCachePrune = 0;
+		try {
+			strip()(
+				"#EXTM3U\n#EXTINF:2.0,live\nhttps://edge/clean.ts",
+				false,
+				holdInfo({}),
+			);
+			expect(cache.size).toBe(1000);
+			expect(cache.has("https://edge/old-499.ts")).toBe(false);
+			expect(cache.has("https://edge/old-500.ts")).toBe(true);
+		} finally {
+			state.AdSegmentCache = previousCache;
+			g._lastAdCachePrune = previousPrune;
+		}
+	});
+
+	it("drops ad metadata from playlist headers", () => {
+		const headers = T<(text: string) => string>("_extractPlaylistHeaders")(
+			[
+				"#EXTM3U",
+				"#EXT-X-TARGETDURATION:2",
+				'#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad"',
+				"#EXT-X-CUE-OUT:DURATION=15",
+				"#EXT-X-SCTE35-OUT:0xFC",
+				"#EXTINF:2.0,",
+				"https://edge/seg.ts",
+			].join("\n"),
+		);
+		expect(headers).toBe("#EXTM3U\n#EXT-X-TARGETDURATION:2");
+	});
+});
