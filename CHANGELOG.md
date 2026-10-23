@@ -2,6 +2,36 @@
 
 All notable changes to TTV AB will be documented in this file.
 
+## [25.0.0] - 2026-10-23
+
+Fixed
+
+- **Missed Ad Counts at Startup** - Keep blocked ads, ad durations, and crash diagnostics that a Twitch tab reports while the extension is still connecting to it. They could be lost when the page was busy loading.
+- **Slow Loading With Saved Statistics** - Send statistics saved by earlier tabs without rereading all of them for each entry, so Twitch tabs with a backlog of saved statistics no longer stall while loading.
+- **Statistics After an Extension Update** - Save statistics from Twitch tabs left open through an update every 15 minutes and when the tab closes, instead of every minute, so long sessions no longer push out older saved watch time.
+- **Generate Log on a Slow Tab** - Keep a Twitch tab connected when it takes too long to answer Generate Log, so its statistics and setting changes keep arriving afterward.
+- **Generate Log on Cancelled Navigation** - Keep collecting logs from a tab when leaving the page is cancelled.
+- **Settings at Browser Startup** - Use your saved settings as soon as the browser provides them, even when that takes more than a second, instead of running with default settings for 30 seconds or more.
+- **Channel Statistics for Unusual Events** - Count blocked ads and ad durations for the channel you are watching when an event carries an unreadable channel name, instead of leaving them out of channel statistics and Time Saved.
+- **Ad Count Badge After Restart** - Show the blocked-ad count on the toolbar icon as soon as the browser starts, instead of leaving it blank until you open Twitch or the popup.
+- **Less Background Activity** - Stop waking the extension every time a page loads or changes in any tab, so it uses less CPU and battery while you browse other sites.
+- **Resetting Statistics While Busy** - Reset statistics even while many statistic updates are waiting to be saved, instead of failing with a "busy" error.
+- **Watch Time From Older Saves** - Leave out watch time from older saved statistics without playback timing when it was recorded before Turbo Mode was turned off or statistics were reset.
+- **Limit on Saved Ad Counts** - Ignore implausibly large blocked-ad counts in a single update, so a damaged saved entry cannot inflate your totals.
+- **Generate Log Snapshot Order** - Keep the newest diagnostic snapshot when browser storage answers slowly, instead of letting an older one overwrite it.
+- **Escape on the Debug Log Page** - Stop pressing Escape on the debug log page from causing an error.
+- **Setting Change Confirmation** - Always show the short Active or Inactive confirmation after changing a setting, which some browsers skipped.
+- **Steady Channel Details** - Keep the channel details window steady while a stream plays, instead of restarting its counters and share bar from zero about once a minute.
+- **Focus in Statistics** - Keep focus on the same channel and keep chart tooltips open when statistics update.
+- **Reset Dialog While Resetting** - Keep the reset dialog open until the reset finishes, so a failure message is always shown.
+- **Statistics Export Errors** - Show "Export failed" on the Export button when statistics cannot be read, instead of doing nothing.
+- **Dialog Navigation** - Keep Tab focus inside the reset, debug log, and channel dialogs.
+- **Channel Avatar Cache** - Keep every channel's saved avatar when you open two channels in quick succession.
+- **Ad Pod Completion Reports** - Report an ad pod as watched when a replacement player or a restarted ad break reports its last ad, instead of leaving the pod unfinished because earlier ads were reported before.
+- **Leaving Clip Pages** - Stop restarting the stream after you leave a clip page when the next page's player is already set up for ad blocking.
+- **Debug Log Errors During Recovery** - Stop logging cancelled stream requests as errors while TTV AB protects playback after its player recovery runs out, so Generate Log keeps the real errors and ad break history.
+- **Quieter Debug Log During Ad Breaks** - Log a missing fresh backup or an ad break with nothing left to play once per ad break instead of every few seconds, and log a failed backup lookup as a warning instead of an error, so Generate Log keeps more of the ad break history.
+
 ## [24.0.2] - 2026-10-22
 
 Fixed
