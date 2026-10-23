@@ -30,6 +30,22 @@ function makeWorkerLogger(
 			messages.push(message);
 		},
 	};
+	const declarations = [
+		"_LOG_CONTROL_CHARACTERS",
+		"_LOG_KEY_SEPARATORS",
+		"_LOG_SENSITIVE_KEY",
+		"_LOG_URL",
+		"_LOG_URL_PARAMETER",
+		"_LOG_COOKIE_HEADER",
+		"_LOG_CREDENTIAL_ASSIGNMENT",
+		"_LOG_SCHEME_CREDENTIAL",
+		"_isSensitiveLogKey",
+		"_redactLogText",
+		"_formatLogText",
+		"_log",
+	]
+		.map((name) => `const ${name} = ${String(g[name])};`)
+		.join("\n");
 	const factory = new Function(
 		"_C",
 		"self",
@@ -38,8 +54,7 @@ function makeWorkerLogger(
 		"globalThis",
 		`
 			let _debugLogging = false;
-			const _formatLogText = ${T<(...args: unknown[]) => string>("_formatLogText").toString()};
-			const _log = ${T<(...args: unknown[]) => void>("_log").toString()};
+			${declarations}
 			return {
 				log: _log,
 			};
@@ -181,6 +196,28 @@ describe("_log capture buffer", () => {
 		}
 	});
 
+	it("caps the buffer by total characters while keeping the newest lines", () => {
+		const scoped = globalThis as Record<string, unknown>;
+		delete scoped.__TTVAB_LOGS_DROPPED__;
+		try {
+			for (let i = 0; i < 1000; i++) {
+				log()(`line ${i} ${"x".repeat(3990)}`, "info");
+			}
+			const entries = buffer();
+			const characters = entries.reduce(
+				(total, entry) => total + String(entry.m).length,
+				0,
+			);
+			expect(characters).toBeLessThanOrEqual(3000000);
+			expect(entries.length).toBeLessThan(1000);
+			expect(String(entries.at(-1)?.m)).toMatch(/^line 999 /);
+			expect(scoped.__TTVAB_LOGS_DROPPED__).toBe(1000 - entries.length);
+		} finally {
+			delete scoped.__TTVAB_LOGS_DROPPED__;
+			delete scoped.__TTVAB_LOG_MILESTONES__;
+		}
+	});
+
 	it("recovers when the page clobbers the buffer global", () => {
 		(globalThis as Record<string, unknown>).__TTVAB_LOGS__ = "corrupted";
 		expect(() => log()("after corruption", "info")).not.toThrow();
@@ -315,6 +352,22 @@ describe("_formatLogText", () => {
 		]) {
 			expect(output).not.toContain(secret);
 		}
+	});
+
+	it.each([
+		["auth token object key", { authToken: "private-auth-object" }],
+		["auth-token object key", { "auth-token": "private-auth-dashed" }],
+		["auth token JSON text", '{"login":"viewer","authToken":"private-json"}x'],
+		["auth_token URL parameter", "https://x.tv/p?auth_token=private-url&ok=1"],
+		["password text", "password=private-password"],
+		["password object key", { passwd: "private-passwd" }],
+		["API key object key", { apiKey: "private-api-key" }],
+		["API key header", "x-api-key: private-header"],
+		["client secret text", "client_secret=private-client-secret"],
+	])("redacts %s", (_name, value) => {
+		const output = format()(value);
+		expect(output).not.toContain("private-");
+		expect(output).toContain("[redacted]");
 	});
 
 	it("caps formatted output at 4000 characters", () => {

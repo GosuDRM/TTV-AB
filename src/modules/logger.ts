@@ -3,58 +3,62 @@
 // biome-ignore lint/style/useConst: tests and local debugging reassign this flag to print debug lines
 let _debugLogging = false;
 
+const _LOG_CONTROL_CHARACTERS =
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: Strip control characters before credential matching.
+	/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g;
+const _LOG_KEY_SEPARATORS = /[-_\s]/g;
+const _LOG_SENSITIVE_KEY =
+	/^(?:auth(?:orization|token)?|apikey|apitoken|bearer|clientid|clientintegrity|clientsecret|clientsession(?:id)?|cookie|setcookie|deviceid|did|integrity|nauth(?:sig)?|oauth(?:token)?|accesstoken|passw(?:or)?d|refreshtoken|secret|session(?:id)?|sig(?:nature)?|token|uniqueid|userid|uid|xapikey|xauthtoken|xcsrftoken|xdeviceid)$/i;
+const _LOG_URL = /(?:blob:)?https?:\/\/[^\s<>"']+/gi;
+const _LOG_URL_PARAMETER = /([?&#])([^=&#\s"'<>]+)=([^&#\s"'<>]*)/g;
+const _LOG_COOKIE_HEADER =
+	/(\b(?:cookie|set[-_ ]?cookie)\b["']?\s*:\s*["']?)[^\r\n"']+/gi;
+const _LOG_CREDENTIAL_ASSIGNMENT =
+	/(\b(?:auth(?:orization)?|auth[-_ ]?token|api[-_ ]?(?:key|token)|client[-_ ]?id|client[-_ ]?integrity|client[-_ ]?secret|client[-_ ]?session(?:[-_ ]?id)?|device[-_ ]?id|did|integrity|nauth(?:sig)?|oauth(?:[-_ ]?token)?|access[-_ ]?token|passw(?:or)?d|refresh[-_ ]?token|secret|session(?:[-_ ]?id)?|sig(?:nature)?|token|unique[-_ ]?id|user[-_ ]?id|uid|x[-_ ]?auth[-_ ]?token|x[-_ ]?csrf[-_ ]?token|x[-_ ]?device[-_ ]?id)\b["']?\s*[:=]\s*)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|(?:basic\s+|bearer\s+|oauth\s+)?[^,&\s}"']+)/gi;
+const _LOG_SCHEME_CREDENTIAL = /\b(basic|bearer|oauth)\s+[a-z0-9._~+/=-]+/gi;
+
+function _isSensitiveLogKey(key) {
+	return _LOG_SENSITIVE_KEY.test(
+		key.replace(_LOG_CONTROL_CHARACTERS, "").replace(_LOG_KEY_SEPARATORS, ""),
+	);
+}
+
+function _redactLogText(source) {
+	return source
+		.slice(0, 4000)
+		.replace(_LOG_CONTROL_CHARACTERS, "")
+		.replace(_LOG_URL, (rawUrl) => {
+			if (!rawUrl.includes("@")) return rawUrl;
+			try {
+				const blob = rawUrl.toLowerCase().startsWith("blob:");
+				const url = new URL(blob ? rawUrl.slice(5) : rawUrl);
+				if (!url.username && !url.password) return rawUrl;
+				url.username = "";
+				url.password = "";
+				return `${blob ? "blob:" : ""}${url.href}`;
+			} catch {
+				return "[redacted-url]";
+			}
+		})
+		.replace(_LOG_URL_PARAMETER, (match, separator, key) => {
+			try {
+				return _isSensitiveLogKey(decodeURIComponent(key))
+					? `${separator}${key}=[redacted]`
+					: match;
+			} catch {
+				return `${separator}${key}=[redacted]`;
+			}
+		})
+		.replace(_LOG_COOKIE_HEADER, "$1[redacted]")
+		.replace(_LOG_CREDENTIAL_ASSIGNMENT, (_match, prefix, credential) => {
+			const quote = credential[0];
+			return `${prefix}${quote === '"' || quote === "'" ? `${quote}[redacted]${quote}` : "[redacted]"}`;
+		})
+		.replace(_LOG_SCHEME_CREDENTIAL, "$1 [redacted]")
+		.slice(0, 4000);
+}
+
 function _formatLogText(value) {
-	const controlCharacters =
-		// biome-ignore lint/suspicious/noControlCharactersInRegex: Strip control characters before credential matching.
-		/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g;
-	const sensitiveKey =
-		/^(?:auth(?:orization)?|bearer|clientid|clientintegrity|clientsession(?:id)?|cookie|setcookie|deviceid|did|integrity|nauth(?:sig)?|oauth(?:token)?|accesstoken|refreshtoken|session(?:id)?|sig(?:nature)?|token|uniqueid|userid|uid|xauthtoken|xcsrftoken|xdeviceid)$/i;
-	const redact = (source) =>
-		source
-			.slice(0, 4000)
-			.replace(controlCharacters, "")
-			.replace(/(?:blob:)?https?:\/\/[^\s<>"']+/gi, (rawUrl) => {
-				if (!rawUrl.includes("@")) return rawUrl;
-				try {
-					const blob = rawUrl.toLowerCase().startsWith("blob:");
-					const url = new URL(blob ? rawUrl.slice(5) : rawUrl);
-					if (!url.username && !url.password) return rawUrl;
-					url.username = "";
-					url.password = "";
-					return `${blob ? "blob:" : ""}${url.href}`;
-				} catch {
-					return "[redacted-url]";
-				}
-			})
-			.replace(
-				/([?&#])([^=&#\s"'<>]+)=([^&#\s"'<>]*)/g,
-				(match, separator, key) => {
-					try {
-						return sensitiveKey.test(
-							decodeURIComponent(key)
-								.replace(controlCharacters, "")
-								.replace(/[-_\s]/g, ""),
-						)
-							? `${separator}${key}=[redacted]`
-							: match;
-					} catch {
-						return `${separator}${key}=[redacted]`;
-					}
-				},
-			)
-			.replace(
-				/(\b(?:cookie|set[-_ ]?cookie)\b["']?\s*:\s*["']?)[^\r\n"']+/gi,
-				"$1[redacted]",
-			)
-			.replace(
-				/(\b(?:auth(?:orization)?|client[-_ ]?id|client[-_ ]?integrity|client[-_ ]?session(?:[-_ ]?id)?|device[-_ ]?id|did|integrity|nauth(?:sig)?|oauth(?:[-_ ]?token)?|access[-_ ]?token|refresh[-_ ]?token|session(?:[-_ ]?id)?|sig(?:nature)?|token|unique[-_ ]?id|user[-_ ]?id|uid|x[-_ ]?auth[-_ ]?token|x[-_ ]?csrf[-_ ]?token|x[-_ ]?device[-_ ]?id)\b["']?\s*[:=]\s*)("(?:\\.|[^"\\])*(?:"|$)|'(?:\\.|[^'\\])*(?:'|$)|(?:basic\s+|bearer\s+|oauth\s+)?[^,&\s}"']+)/gi,
-				(_match, prefix, credential) => {
-					const quote = credential[0];
-					return `${prefix}${quote === '"' || quote === "'" ? `${quote}[redacted]${quote}` : "[redacted]"}`;
-				},
-			)
-			.replace(/\b(basic|bearer|oauth)\s+[a-z0-9._~+/=-]+/gi, "$1 [redacted]")
-			.slice(0, 4000);
 	let text = "[Unserializable log value]";
 	try {
 		if (
@@ -81,7 +85,7 @@ function _formatLogText(value) {
 						Math.min(1000, remainingCharacters),
 					);
 					remainingCharacters -= bounded.length;
-					return redact(bounded);
+					return _redactLogText(bounded);
 				}
 				if (
 					typeof nestedValue === "number" ||
@@ -138,15 +142,11 @@ function _formatLogText(value) {
 				const result = Object.create(null);
 				let propertyCount = 0;
 				const appendProperty = (rawKey) => {
-					const key = redact(String(rawKey).slice(0, 120));
+					const key = _redactLogText(String(rawKey).slice(0, 120));
 					propertyCount += 1;
 					if (Object.hasOwn(result, key)) return;
 					remainingCharacters -= key.length;
-					if (
-						sensitiveKey.test(
-							key.replace(controlCharacters, "").replace(/[-_\s]/g, ""),
-						)
-					) {
+					if (_isSensitiveLogKey(key)) {
 						result[key] = "[redacted]";
 					} else {
 						try {
@@ -199,7 +199,7 @@ function _formatLogText(value) {
 	}
 
 	try {
-		text = redact(String(text));
+		text = _redactLogText(String(text));
 	} catch {
 		text = "[Unserializable log value]";
 	}
@@ -217,14 +217,44 @@ function _isPageLogMilestone(entry) {
 	);
 }
 
+const _PAGE_LOG_MAX_CHARACTERS = 3000000;
+const _PAGE_LOG_TRIM_CHARACTERS = 2500000;
+let _pageLogBuffer: unknown[] | null = null;
+let _pageLogBufferCharacters = 0;
+
+function _getPageLogEntryCharacters(entry) {
+	return typeof entry?.m === "string" ? entry.m.length : 0;
+}
+
 function _appendPageLogEntry(entry) {
 	if (!Array.isArray(globalThis.__TTVAB_LOGS__)) {
 		globalThis.__TTVAB_LOGS__ = [];
 	}
 	const buffer = globalThis.__TTVAB_LOGS__;
+	if (buffer !== _pageLogBuffer) {
+		_pageLogBuffer = buffer;
+		_pageLogBufferCharacters = 0;
+		for (const retained of buffer) {
+			_pageLogBufferCharacters += _getPageLogEntryCharacters(retained);
+		}
+	}
 	buffer.push(entry);
-	if (buffer.length <= 3600) return;
-	const trimmed = buffer.splice(0, buffer.length - 3000);
+	_pageLogBufferCharacters += _getPageLogEntryCharacters(entry);
+	if (
+		buffer.length <= 3600 &&
+		_pageLogBufferCharacters <= _PAGE_LOG_MAX_CHARACTERS
+	)
+		return;
+	let trimCount = 0;
+	while (
+		trimCount < buffer.length - 1 &&
+		(buffer.length - trimCount > 3000 ||
+			_pageLogBufferCharacters > _PAGE_LOG_TRIM_CHARACTERS)
+	) {
+		_pageLogBufferCharacters -= _getPageLogEntryCharacters(buffer[trimCount]);
+		trimCount += 1;
+	}
+	const trimmed = buffer.splice(0, trimCount);
 	globalThis.__TTVAB_LOGS_DROPPED__ =
 		Math.max(0, Number(globalThis.__TTVAB_LOGS_DROPPED__) || 0) +
 		trimmed.length;
