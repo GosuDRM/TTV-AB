@@ -769,7 +769,8 @@ function _broadcastWorkers(
 			try {
 				const targetMediaKey = _normalizeMediaKey(message?.targetMediaKey);
 				const requiresExactTarget =
-					message?.key === "UpdatePagePlaybackVisibleSinceAt";
+					message?.key === "UpdatePagePlaybackVisibleSinceAt" ||
+					message?.key === "ReleasePlaybackContext";
 				if (
 					targetMediaKey &&
 					((requiresExactTarget &&
