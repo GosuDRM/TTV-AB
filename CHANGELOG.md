@@ -21,6 +21,7 @@ Fixed
 - **Limit on Saved Ad Counts** - Ignore implausibly large blocked-ad counts in a single update, so a damaged saved entry cannot inflate your totals.
 - **Watch Time From Older Saves** - Leave out watch time from older saved statistics without playback timing when it was recorded before Turbo Mode was turned off or statistics were reset.
 - **Generate Log on a Slow Tab** - Keep a Twitch tab connected when it takes too long to answer Generate Log, so its statistics and setting changes keep arriving afterward.
+- **Pop-ups Over the Recovery Notice** - Wait to show pop-ups in the corner of the Twitch page while the playback recovery notice is on screen, instead of covering it.
 - **Setting Change Confirmation** - Always show the short Active or Inactive confirmation after changing a setting, which some browsers skipped.
 - **Steady Channel Details** - Keep the channel details window steady while a stream plays, instead of restarting its counters and share bar from zero about once a minute.
 - **Reset Dialog While Resetting** - Keep the reset dialog open until the reset finishes, so a failure message is always shown.
@@ -28,6 +29,10 @@ Fixed
 - **Focus in Statistics** - Keep focus on the same channel and keep chart tooltips open when statistics update.
 - **Dialog Navigation** - Keep Tab focus inside the reset, debug log, and channel dialogs.
 - **Channel Avatar Cache** - Keep every channel's saved avatar when you open two channels in quick succession.
+- **Welcome Message After a Quick Reload** - Show the welcome message after installing even when you reload Twitch within two seconds, instead of skipping it.
+- **Ad Break Timer Position** - Line the Ad Break Timer up with the video's right edge when the page shows a scrollbar.
+- **Private Details in Debug Logs** - Hide more private details in generated logs, so a shared log stays private.
+- **Debug Log Memory** - Limit how much memory the debug log uses in a Twitch tab when it records many long lines.
 - **Generate Log on Cancelled Navigation** - Keep collecting logs from a tab when leaving the page is cancelled.
 - **Generate Log Snapshot Order** - Keep the newest diagnostic snapshot when browser storage answers slowly, instead of letting an older one overwrite it.
 - **Debug Log Errors During Recovery** - Stop logging cancelled stream requests as errors while TTV AB protects playback after its player recovery runs out, so Generate Log keeps the real errors and ad break history.
