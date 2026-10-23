@@ -4006,3 +4006,73 @@ describe("worker and page-side hook bounds", () => {
 		);
 	});
 });
+
+describe("page state helpers", () => {
+	it("caps reload times at 32 media keys while keeping the page's key", () => {
+		const { context } = setup();
+		context.state.PageMediaKey = "live:protected";
+		context.state.CurrentAdMediaKey = null;
+		context.state.LastPlayerReloadAtByMediaKey = Object.create(null);
+		context._recordPlayerReloadAt("live:protected", 1);
+		for (let index = 0; index < 40; index++) {
+			context._recordPlayerReloadAt(`live:channel${index}`, index + 2);
+		}
+
+		const keys = Object.keys(context.state.LastPlayerReloadAtByMediaKey);
+		expect(keys).toHaveLength(32);
+		expect(keys[0]).toBe("live:protected");
+		expect(keys).not.toContain("live:channel8");
+		expect(keys).toContain("live:channel9");
+		expect(keys.at(-1)).toBe("live:channel39");
+	});
+
+	it("routes targeted messages by the context an earlier message just set", () => {
+		const { context } = setup();
+		const worker = {
+			postMessage: vi.fn(),
+			__TTVABPageMediaKey: "live:previous",
+		};
+		context.testWorker = worker;
+		runInContext("_S.workers = [testWorker];", context);
+
+		context._broadcastWorkers([
+			{
+				key: "UpdatePageContext",
+				value: {
+					mediaType: "live",
+					channelName: "next",
+					mediaKey: "live:next",
+					playbackContextGeneration: 2,
+				},
+			},
+			{
+				key: "UpdateCurrentAdContext",
+				targetMediaKey: "live:next",
+				value: null,
+			},
+			{
+				key: "UpdateCurrentAdContext",
+				targetMediaKey: "live:previous",
+				value: null,
+			},
+		]);
+
+		expect(
+			worker.postMessage.mock.calls.map(([envelope]) => [
+				envelope.message.key,
+				envelope.message.targetMediaKey ?? null,
+			]),
+		).toEqual([
+			["UpdatePageContext", null],
+			["UpdateCurrentAdContext", "live:next"],
+		]);
+	});
+
+	it("creates unique 48-character hex bridge tokens", () => {
+		const { context } = setup();
+		context.crypto = globalThis.crypto;
+		const first = context._createBridgeSessionToken();
+		expect(first).toMatch(/^[0-9a-f]{48}$/);
+		expect(context._createBridgeSessionToken()).not.toBe(first);
+	});
+});
