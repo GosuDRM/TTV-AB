@@ -1443,3 +1443,121 @@ describe("_getToken (exhausted-failure sentinel)", () => {
 		}
 	});
 });
+
+describe("ad completion pod accounting", () => {
+	function captureEvents() {
+		const events: Array<{ event: string; adId: string; position: unknown }> =
+			[];
+		g._fetchViaWorkerBridge = async (
+			_url: string,
+			options: { body: string },
+		) => {
+			for (const packet of JSON.parse(options.body) as GqlPacket[]) {
+				const payload = JSON.parse(
+					packet.variables?.input?.eventPayload || "{}",
+				);
+				events.push({
+					event: String(packet.variables?.input?.eventName),
+					adId: payload.ad_id,
+					position: payload.ad_position,
+				});
+			}
+			return new Response(null, { status: 200 });
+		};
+		return events;
+	}
+	const notify = () =>
+		T<(text: string, info?: Record<string, unknown>) => Promise<void>>(
+			"_notifyAdComplete",
+		);
+	const makeInfo = (extra: Record<string, unknown> = {}) => ({
+		SpoofedAdIds: new Set<string>(),
+		ObservedAdPodIds: new Set<string>(),
+		ExpectedAdPodLength: 0,
+		MaxObservedAdPodPosition: 0,
+		ObservedZeroAdPodPosition: false,
+		VisibleAdStartedAt: 5000,
+		ChannelName: "testchannel",
+		MediaKey: "live:testchannel",
+		...extra,
+	});
+	const podCompletes = (events: Array<{ event: string; adId: string }>) =>
+		events
+			.filter(({ event }) => event === "video_ad_pod_complete")
+			.map(({ adId }) => adId);
+
+	it("completes a pod whose earlier ads a replaced worker reported", async () => {
+		const events = captureEvents();
+		await notify()(["#EXTM3U", adRange(1)].join("\n"), makeInfo());
+		(g.__TTVAB_STATE__ as Record<string, unknown>).AdPodProgressByMediaKey = {
+			"live:testchannel": {
+				adIds: ["stitched-ad-1"],
+				reportedAdIds: ["stitched-ad-1"],
+				cycleStartedAt: 5000,
+			},
+		};
+		await notify()(["#EXTM3U", adRange(1), adRange(2)].join("\n"), makeInfo());
+		expect(podCompletes(events)).toEqual(["stitched-ad-2"]);
+	});
+
+	it("completes a pod that resumes after an early cycle reset", async () => {
+		const events = captureEvents();
+		const info = makeInfo({
+			RecentSpoofedAdIds: new Map<string, number>([["stitched-ad-1", 1]]),
+		});
+		await notify()(["#EXTM3U", adRange(1), adRange(2)].join("\n"), info);
+		expect(
+			events
+				.filter(({ event }) => event === "video_ad_impression")
+				.map(({ adId }) => adId),
+		).toEqual(["stitched-ad-2"]);
+		expect(podCompletes(events)).toEqual(["stitched-ad-2"]);
+	});
+
+	it("uses the ad's index when its declared position is not a number", async () => {
+		const events = captureEvents();
+		await notify()(
+			[
+				"#EXTM3U",
+				adRange(1).replace(
+					'X-TV-TWITCH-AD-POD-POSITION="1"',
+					'X-TV-TWITCH-AD-POD-POSITION="first"',
+				),
+			].join("\n"),
+			makeInfo(),
+		);
+		expect(events[0]).toMatchObject({
+			event: "video_ad_impression",
+			position: 0,
+		});
+	});
+
+	it("sends nothing without stream info", async () => {
+		const events = captureEvents();
+		await notify()(["#EXTM3U", adRange(1)].join("\n"));
+		expect(events).toEqual([]);
+	});
+});
+
+describe("_extractPlaybackAccessToken", () => {
+	const extract = () =>
+		T<(payload: unknown) => Record<string, unknown>>(
+			"_extractPlaybackAccessToken",
+		);
+
+	it("finds a token and ignores unrelated objects with a value field", () => {
+		expect(
+			extract()({
+				data: {
+					streamPlaybackAccessToken: { signature: "sig", value: "token" },
+				},
+			}),
+		).toEqual({ signature: "sig", value: "token" });
+		expect(
+			extract()({ data: { user: { setting: { value: "dark" } } } }),
+		).toMatchObject({ hasAnySignature: false, hasAnyValue: false });
+		expect(
+			extract()({ data: { streamPlaybackAccessToken: { value: "token" } } }),
+		).toMatchObject({ hasAnySignature: false, hasAnyValue: true });
+	});
+});
