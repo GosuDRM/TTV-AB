@@ -1011,21 +1011,28 @@ function _createPopupToggleController(options) {
         if (!changes || typeof changes !== "object")
             return false;
         let changed = false;
+        const confirmedWrites = [];
         for (const name of _POPUP_TOGGLE_NAMES) {
             const storageKey = _POPUP_TOGGLE_STORAGE_KEYS[name];
             if (!Object.hasOwn(changes, storageKey))
                 continue;
             revisions[name]++;
-            values[name] = normalizeValue(name, changes[storageKey]?.newValue);
+            const nextValue = normalizeValue(name, changes[storageKey]?.newValue);
             if (pending[name]) {
+                if (nextValue === values[name])
+                    confirmedWrites.push(name);
                 writeSequences[name]++;
                 pending[name] = false;
                 clearWriteTimeout(name);
             }
+            values[name] = nextValue;
             changed = true;
         }
         if (changed)
             render();
+        for (const name of confirmedWrites) {
+            options.onWriteSuccess?.(name, values[name]);
+        }
         return changed;
     }
     function write(name, enabled) {
@@ -1122,6 +1129,27 @@ function _createInfoModal(icon, overlay, closeButton, onClose = null) {
         close: () => setVisible(false),
         isOpen: () => !overlay.hidden,
     };
+}
+function _keepFocusInDialog(overlay) {
+    overlay.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab")
+            return;
+        const focusable = Array.from(overlay.querySelectorAll("button, a[href], select, input, [tabindex]:not([tabindex='-1'])")).filter((element) => !element.closest("[hidden]") &&
+            !element.disabled);
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (!first) {
+            event.preventDefault();
+        }
+        else if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        }
+        else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    });
 }
 document.addEventListener("DOMContentLoaded", () => {
     const isLogExportPage = _isLogExportPage();
@@ -1335,6 +1363,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const LANGUAGE_STORAGE_KEY = "ttvLanguage";
     const SHORT_TIME_UNIT_LANGUAGES = new Set(["de", "ja"]);
     const unitFormatters = new Map();
+    const numberFormatters = new Map();
     function getStoredLanguage() {
         try {
             return localStorage.getItem(LANG_KEY);
@@ -1742,21 +1771,6 @@ document.addEventListener("DOMContentLoaded", () => {
             hideLogDialog(true);
         }
     });
-    window.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape")
-            return;
-        for (const modal of infoModals) {
-            if (modal.isOpen())
-                modal.close();
-        }
-        if (!isLogExportPage && !logDialogOverlay.hidden) {
-            hideLogDialog(true);
-        }
-        if (!channelModalOverlay.hidden) {
-            hideChannelModal();
-        }
-        hideResetStatsDialog();
-    });
     logDialogGenerate.addEventListener("click", () => {
         if (logDialogGenerate.disabled || logExportInProgress)
             return;
@@ -1829,16 +1843,21 @@ document.addEventListener("DOMContentLoaded", () => {
             return false;
         }
     }
-    function animateStatValue(element, targetValue, formatter) {
+    const statAnimations = new WeakMap();
+    function animateStatValue(element, targetValue, formatter, animate = true) {
         const target = normalizeCount(targetValue);
         const format = typeof formatter === "function" ? formatter : (value) => String(value);
-        if (prefersReducedMotion() || target <= 0) {
+        const animation = {};
+        statAnimations.set(element, animation);
+        if (!animate || prefersReducedMotion() || target <= 0) {
             element.textContent = format(target);
             return;
         }
         const durationMs = 550;
         const startedAt = performance.now();
         const step = (now) => {
+            if (statAnimations.get(element) !== animation)
+                return;
             const progress = Math.min(1, (now - startedAt) / durationMs);
             const eased = 1 - (1 - progress) ** 3;
             element.textContent = format(Math.round(target * eased));
@@ -1936,12 +1955,25 @@ document.addEventListener("DOMContentLoaded", () => {
             .sort((a, b) => normalizeCount(b[1].fetchedAt) -
             normalizeCount(a[1].fetchedAt))
             .slice(0, AVATAR_CACHE_MAX_ENTRIES);
-        try {
-            chrome.storage.local.set({ [AVATAR_CACHE_KEY]: Object.fromEntries(entries) }, () => {
-                void chrome.runtime.lastError;
-            });
-        }
-        catch { }
+        return new Promise((resolve) => {
+            try {
+                chrome.storage.local.set({ [AVATAR_CACHE_KEY]: Object.fromEntries(entries) }, () => {
+                    void chrome.runtime.lastError;
+                    resolve();
+                });
+            }
+            catch {
+                resolve();
+            }
+        });
+    }
+    let avatarCacheUpdate = Promise.resolve();
+    function storeChannelAvatar(channelName, url) {
+        avatarCacheUpdate = avatarCacheUpdate.then(async () => {
+            const cache = await readAvatarCache();
+            cache[channelName] = { url, fetchedAt: Date.now() };
+            await writeAvatarCache(cache);
+        });
     }
     function fetchAvatarFromTwitch(channelName) {
         const controller = new AbortController();
@@ -1983,10 +2015,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const fetchedUrl = await fetchAvatarFromTwitch(channelName);
         avatarMemoryCache.set(channelName, fetchedUrl);
-        if (fetchedUrl) {
-            cache[channelName] = { url: fetchedUrl, fetchedAt: Date.now() };
-            writeAvatarCache(cache);
-        }
+        if (fetchedUrl)
+            storeChannelAvatar(channelName, fetchedUrl);
         return fetchedUrl;
     }
     function applyChannelAvatar(channelName) {
@@ -2054,7 +2084,7 @@ document.addEventListener("DOMContentLoaded", () => {
         })
             .catch(() => { });
     }
-    function fillChannelModal(channelName) {
+    function fillChannelModal(channelName, animate = true) {
         const entry = normalizeChannelEntry(latestChannelStats[channelName]);
         const rankedEntries = Object.entries(latestChannelStats)
             .filter(([, candidate]) => normalizeCount(normalizeChannelEntry(candidate).ads) > 0)
@@ -2072,10 +2102,10 @@ document.addEventListener("DOMContentLoaded", () => {
             rank: formatNumber(Math.max(1, rank)),
             total: formatNumber(Math.max(1, rankedEntries.length)),
         });
-        animateStatValue(channelModalAds, entry.measuredAds, (value) => formatNumber(value));
-        animateStatValue(channelModalWatch, entry.watchSeconds, (value) => formatWatchTime(value));
-        animateStatValue(channelModalSaved, entry.adMilliseconds, (value) => formatTimeSaved(value));
-        animateStatValue(channelModalBreaks, entry.ads, (value) => formatNumber(value));
+        animateStatValue(channelModalAds, entry.measuredAds, formatNumber, animate);
+        animateStatValue(channelModalWatch, entry.watchSeconds, formatWatchTime, animate);
+        animateStatValue(channelModalSaved, entry.adMilliseconds, formatTimeSaved, animate);
+        animateStatValue(channelModalBreaks, entry.ads, formatNumber, animate);
         const sharePercent = latestAdsTotal > 0
             ? Math.min(100, Math.round((entry.ads / latestAdsTotal) * 100))
             : 0;
@@ -2083,10 +2113,16 @@ document.addEventListener("DOMContentLoaded", () => {
             style: "percent",
             maximumFractionDigits: 0,
         }).format(sharePercent / 100);
-        channelModalShareBar.style.width = "0%";
-        requestAnimationFrame(() => {
-            channelModalShareBar.style.width = `${Math.max(sharePercent, entry.ads > 0 ? 2 : 0)}%`;
-        });
+        const shareWidth = `${Math.max(sharePercent, entry.ads > 0 ? 2 : 0)}%`;
+        if (animate) {
+            channelModalShareBar.style.width = "0%";
+            requestAnimationFrame(() => {
+                channelModalShareBar.style.width = shareWidth;
+            });
+        }
+        else {
+            channelModalShareBar.style.width = shareWidth;
+        }
         channelModalSince.textContent = formatChannelDate(entry.firstSeen);
         channelModalLast.textContent = formatRelativeTime(entry.lastSeen);
     }
@@ -2109,7 +2145,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function refreshOpenChannelModal() {
         if (!openChannelModalName || channelModalOverlay.hidden)
             return;
-        fillChannelModal(openChannelModalName);
+        fillChannelModal(openChannelModalName, false);
     }
     channelModalClose.addEventListener("click", () => {
         hideChannelModal();
@@ -2526,7 +2562,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const formatter = new Intl.DateTimeFormat(getLocaleTag(), {
             weekday: "short",
         });
-        weeklyChart.replaceChildren();
+        const existingBars = weeklyChart.children.length === days.length
+            ? Array.from(weeklyChart.children)
+            : null;
+        if (!existingBars)
+            weeklyChart.replaceChildren();
         for (const [index, dayKey] of days.entries()) {
             const value = values[index];
             const entry = entries[index];
@@ -2539,13 +2579,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 `${String(t.timeSaved ?? "Time Saved")}: ${formatTimeSaved(entry?.adMilliseconds)}`,
                 `${String(t.channelModalWatch ?? "Watch time")}: ${formatWatchTime(entry?.watchSeconds)}`,
             ];
-            const bar = document.createElement("div");
+            const bar = existingBars?.[index] ?? document.createElement("div");
             bar.className = "chart-bar";
             bar.style.height = `${height}%`;
             bar.title = [dayName, ...details].join("\n");
             bar.setAttribute("role", "img");
             bar.setAttribute("aria-label", `${dayName}: ${details.join(", ")}`);
-            weeklyChart.append(bar);
+            if (!existingBars)
+                weeklyChart.append(bar);
         }
         chartAvg.textContent = formatTemplate(String(t.avgPerDay ?? ""), {
             avg: formatNumber(avg),
@@ -2571,6 +2612,7 @@ document.addEventListener("DOMContentLoaded", () => {
         count.textContent = countText;
         item.append(left, count);
         if (channelKey) {
+            item.dataset.channel = channelKey;
             item.classList.add("channel-item-clickable");
             item.setAttribute("role", "button");
             item.setAttribute("tabindex", "0");
@@ -2588,10 +2630,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     function renderChannels(channelsData) {
         const entries = Object.entries(channelsData || {}).filter(([, entry]) => normalizeCount(entry?.ads) > 0);
+        const focusedItem = document.activeElement;
+        const focusedChannel = focusedItem instanceof HTMLElement && channelList.contains(focusedItem)
+            ? focusedItem.dataset.channel || ""
+            : null;
+        const restoreFocus = () => {
+            if (focusedChannel === null)
+                return;
+            const items = Array.from(channelList.querySelectorAll("[data-channel]"));
+            const nextItem = items.find((item) => item.dataset.channel === focusedChannel) ||
+                items[0];
+            (nextItem || statsToggle).focus({ preventScroll: true });
+        };
         channelList.replaceChildren();
         if (entries.length === 0) {
             const t = TRANSLATIONS[getLang()] || TRANSLATIONS.en;
             channelList.append(createChannelItem("-", String(t.noDataYet ?? ""), "-"));
+            restoreFocus();
             return;
         }
         entries.sort((a, b) => {
@@ -2603,6 +2658,7 @@ document.addEventListener("DOMContentLoaded", () => {
             .entries()) {
             channelList.append(createChannelItem(`${index + 1}.`, entry[0], formatNumber(normalizeCount(entry[1].ads)), entry[0]));
         }
+        restoreFocus();
     }
     function renderAchievements(unlocked, adsBlocked, channelCount) {
         const safeUnlocked = Array.isArray(unlocked)
@@ -2770,35 +2826,65 @@ document.addEventListener("DOMContentLoaded", () => {
             .slice(0, 19);
         return `ttv-ab-statistics-${stamp}.json`;
     }
+    let statisticsExportFailureTimeout = null;
+    function applyStatisticsExportLabel(failed) {
+        const t = getTranslations();
+        const text = String(failed ? t.exportStatsFailed : t.exportStats);
+        const label = failed
+            ? text
+            : String(t.exportStatsLabel ?? "Export statistics as a JSON file");
+        statsExportButton.textContent = text;
+        statsExportButton.title = label;
+        statsExportButton.setAttribute("aria-label", label);
+    }
+    function showStatisticsExportFailure(error) {
+        console.error("[TTV AB] Statistics export failed:", error);
+        applyStatisticsExportLabel(true);
+        if (statisticsExportFailureTimeout) {
+            clearTimeout(statisticsExportFailureTimeout);
+        }
+        statisticsExportFailureTimeout = setTimeout(() => {
+            statisticsExportFailureTimeout = null;
+            applyStatisticsExportLabel(false);
+        }, 3000);
+    }
     function exportStatistics() {
         if (!turboModeReady || turboModeEnabled)
             return;
-        chrome.storage.local.get(["ttvStats", "ttvAdsBlocked"], (result) => {
-            if (chrome.runtime.lastError) {
-                console.error("[TTV AB] Statistics export read error:", chrome.runtime.lastError.message);
-                return;
-            }
-            let version = null;
-            try {
-                version = chrome.runtime?.getManifest?.()?.version || null;
-            }
-            catch { }
-            const exportText = JSON.stringify({
-                exportedAt: new Date().toISOString(),
-                version,
-                ...readStatisticsSnapshot(result),
-            }, null, 2);
-            const anchor = document.createElement("a");
-            anchor.href = `data:application/json;charset=utf-8,${encodeURIComponent(exportText)}`;
-            anchor.download = getStatisticsExportFilename();
-            document.body.appendChild(anchor);
-            try {
-                anchor.click();
-            }
-            finally {
-                anchor.remove();
-            }
-        });
+        try {
+            chrome.storage.local.get(["ttvStats", "ttvAdsBlocked"], (result) => {
+                if (chrome.runtime.lastError) {
+                    showStatisticsExportFailure(chrome.runtime.lastError.message);
+                    return;
+                }
+                let version = null;
+                try {
+                    version = chrome.runtime?.getManifest?.()?.version || null;
+                }
+                catch { }
+                const anchor = document.createElement("a");
+                try {
+                    const exportText = JSON.stringify({
+                        exportedAt: new Date().toISOString(),
+                        version,
+                        ...readStatisticsSnapshot(result),
+                    }, null, 2);
+                    anchor.href = `data:application/json;charset=utf-8,${encodeURIComponent(exportText)}`;
+                    anchor.download = getStatisticsExportFilename();
+                    document.body.appendChild(anchor);
+                    anchor.click();
+                }
+                catch (error) {
+                    showStatisticsExportFailure(error);
+                }
+                finally {
+                    anchor.remove();
+                }
+            });
+        }
+        catch (error) {
+            showStatisticsExportFailure(error);
+        }
     }
     let resetStatisticsInProgress = false;
     function openResetStatsDialog() {
@@ -2810,31 +2896,50 @@ document.addEventListener("DOMContentLoaded", () => {
         resetStatsCancel.focus();
     }
     function hideResetStatsDialog() {
-        if (resetStatsOverlay.hidden)
+        if (resetStatsOverlay.hidden || resetStatisticsInProgress)
             return;
         resetStatsOverlay.hidden = true;
         if (!statsResetButton.closest("[inert]"))
             statsResetButton.focus();
     }
+    function setResetStatisticsInProgress(inProgress) {
+        resetStatisticsInProgress = inProgress;
+        resetStatsConfirm.disabled = inProgress;
+        resetStatsCancel.disabled = inProgress;
+        resetStatsClose.disabled = inProgress;
+    }
+    function finishResetStatistics(errorMessage) {
+        setResetStatisticsInProgress(false);
+        if (!errorMessage) {
+            hideResetStatsDialog();
+            return;
+        }
+        console.error("[TTV AB] Statistics reset failed:", errorMessage);
+        resetStatsText.textContent = String(getTranslations().resetStatsFailed ?? "");
+    }
     function resetStatistics() {
         if (resetStatisticsInProgress)
             return;
-        resetStatisticsInProgress = true;
-        resetStatsConfirm.disabled = true;
-        chrome.runtime.sendMessage({ type: "ttvab-reset-statistics" }, (response) => {
-            resetStatisticsInProgress = false;
-            resetStatsConfirm.disabled = false;
-            const errorMessage = chrome.runtime.lastError?.message ||
-                (isPlainObject(response) && response.ok === true
-                    ? null
-                    : String(response?.error || "no response"));
-            if (!errorMessage) {
-                hideResetStatsDialog();
-                return;
-            }
-            console.error("[TTV AB] Statistics reset failed:", errorMessage);
-            resetStatsText.textContent = String(getTranslations().resetStatsFailed ?? "");
-        });
+        setResetStatisticsInProgress(true);
+        try {
+            chrome.runtime.sendMessage({ type: "ttvab-reset-statistics" }, (response) => {
+                finishResetStatistics(chrome.runtime.lastError?.message ||
+                    (isPlainObject(response) && response.ok === true
+                        ? null
+                        : String(response?.error ||
+                            "no response")));
+            });
+        }
+        catch (error) {
+            finishResetStatistics(error instanceof Error ? error.message : String(error));
+        }
+    }
+    for (const overlay of [
+        resetStatsOverlay,
+        logDialogOverlay,
+        channelModalOverlay,
+    ]) {
+        _keepFocusInDialog(overlay);
     }
     statsExportButton.addEventListener("click", exportStatistics);
     statsResetButton.addEventListener("click", openResetStatsDialog);
@@ -2948,6 +3053,21 @@ document.addEventListener("DOMContentLoaded", () => {
     ];
     autoplayBackupInfoIcon.addEventListener("click", () => {
         isAutoplayBackupWarningContext = false;
+    });
+    window.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape")
+            return;
+        for (const modal of infoModals) {
+            if (modal.isOpen())
+                modal.close();
+        }
+        if (!logDialogOverlay.hidden) {
+            hideLogDialog(true);
+        }
+        if (!channelModalOverlay.hidden) {
+            hideChannelModal();
+        }
+        hideResetStatsDialog();
     });
     autoplayBackupToggle.addEventListener("change", () => {
         if (!autoplayBackupToggle.checked) {
@@ -3130,7 +3250,13 @@ document.addEventListener("DOMContentLoaded", () => {
         updateStatus(initialToggleSnapshot.values.adblock, false);
     }
     function formatNumber(num) {
-        return new Intl.NumberFormat(getLocaleTag()).format(normalizeCount(num));
+        const localeTag = getLocaleTag();
+        let formatter = numberFormatters.get(localeTag);
+        if (!formatter) {
+            formatter = new Intl.NumberFormat(localeTag);
+            numberFormatters.set(localeTag, formatter);
+        }
+        return formatter.format(normalizeCount(num));
     }
     function animateCounter(element, newValue) {
         element.textContent = formatNumber(normalizeCount(newValue));

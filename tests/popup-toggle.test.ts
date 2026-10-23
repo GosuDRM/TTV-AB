@@ -237,7 +237,29 @@ describe("popup toggle authority", () => {
 		harness.writes[1].finish(null);
 		expect(harness.controller.getSnapshot().values.adTimer).toBe(false);
 		expect(harness.controller.getSnapshot().available.adTimer).toBe(true);
-		expect(harness.successes).toEqual([{ name: "adTimer", enabled: false }]);
+		expect(harness.successes).toEqual([
+			{ name: "adTimer", enabled: true },
+			{ name: "adTimer", enabled: false },
+		]);
+	});
+
+	it("confirms a pending write when its own storage change arrives first", () => {
+		vi.useFakeTimers();
+		const harness = makeHarness();
+		harness.controller.start();
+		harness.reads[0].finish({});
+		harness.controller.write("adSpoofing", false);
+
+		harness.controller.applyStorageChanges({
+			ttvAdSpoofingEnabled: { newValue: false },
+		});
+		expect(harness.successes).toEqual([{ name: "adSpoofing", enabled: false }]);
+		expect(harness.controller.getSnapshot().pending.adSpoofing).toBe(false);
+
+		harness.writes[0].finish(null);
+		vi.advanceTimersByTime(5000);
+		expect(harness.successes).toHaveLength(1);
+		expect(harness.reads).toHaveLength(1);
 	});
 
 	it("keeps controls unavailable and preserves events newer than the initial read", () => {
