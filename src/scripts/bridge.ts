@@ -87,10 +87,6 @@ function getBridgeMessageData(value) {
 	return isPlainObject(value) ? value : null;
 }
 
-function getBridgeMessageDetail(value) {
-	return isPlainObject(value) ? value : null;
-}
-
 function createChannelsMap() {
 	return Object.create(null);
 }
@@ -140,14 +136,15 @@ function mergeWatchIntervalMaps(target, source) {
 }
 
 function getMessagePlaybackContext(detail) {
-	const safeDetail = getBridgeMessageDetail(detail);
-	const channelName = normalizeChannelName(
-		safeDetail?.pageChannel || safeDetail?.channel,
-	);
+	const safeDetail = getBridgeMessageData(detail);
+	const channelName =
+		normalizeChannelName(safeDetail?.pageChannel) ||
+		normalizeChannelName(safeDetail?.channel);
 	return {
 		channelName,
 		mediaKey:
-			normalizeMediaKey(safeDetail?.pageMediaKey || safeDetail?.mediaKey) ||
+			normalizeMediaKey(safeDetail?.pageMediaKey) ||
+			normalizeMediaKey(safeDetail?.mediaKey) ||
 			buildMediaKey("live", channelName, null),
 	};
 }
@@ -161,6 +158,7 @@ const PREVIEW_FAILURE_DIAGNOSTIC_FORWARD_MESSAGE =
 	"ttvab-preview-failure-diagnostic-forward";
 const BRIDGE_HANDSHAKE_RETRY_MS = 75;
 const FLUSH_DELAY_MS = 200;
+const ORPHANED_COUNTER_FLUSH_DELAY_MS = 15 * 60 * 1000;
 const MAX_FLUSH_RETRY_DELAY_MS = 2000;
 const INITIAL_STORAGE_READ_TIMEOUT_MS = 1000;
 const INITIAL_STORAGE_FAST_RETRY_MS = 250;
@@ -173,35 +171,22 @@ const PERSISTED_FLUSH_RECOVERY_MAX_DELAY_MS = 5 * 60 * 1000;
 const pendingPageMessages = [];
 const MAX_PENDING_PAGE_MESSAGES = 64;
 let pageBridgePort = null;
+const supersededPageBridgePorts = [];
 let pageBridgeConnected = false;
 let handshakeRetryTimeout = null;
 let bridgeSessionToken = null;
 let bridgeStateReady = false;
 
-function queuePendingPageMessage(message, prioritize = false) {
+function queuePendingPageMessage(message) {
 	if (!message || typeof message !== "object") return;
-	if (prioritize) {
-		pendingPageMessages.unshift(message);
-	} else {
-		pendingPageMessages.push(message);
-	}
+	pendingPageMessages.push(message);
 	while (pendingPageMessages.length > MAX_PENDING_PAGE_MESSAGES) {
-		if (prioritize) {
-			const dropped = pendingPageMessages.pop();
-			if (dropped?.type) {
-				console.warn(
-					"[TTV AB] Bridge queue full, dropped message:",
-					dropped.type,
-				);
-			}
-		} else {
-			const dropped = pendingPageMessages.shift();
-			if (dropped?.type) {
-				console.warn(
-					"[TTV AB] Bridge queue full, dropped message:",
-					dropped.type,
-				);
-			}
+		const dropped = pendingPageMessages.shift();
+		if (dropped?.type) {
+			console.warn(
+				"[TTV AB] Bridge queue full, dropped message:",
+				dropped.type,
+			);
 		}
 	}
 }
@@ -226,11 +211,11 @@ function setBridgeSessionToken(value) {
 function flushPageMessages() {
 	if (!pageBridgeConnected || !pageBridgePort) return;
 	while (pendingPageMessages.length > 0) {
-		const nextMessage = pendingPageMessages[0];
+		const nextMessage = pendingPageMessages.shift();
 		try {
 			pageBridgePort.postMessage(nextMessage);
-			pendingPageMessages.shift();
 		} catch {
+			console.warn("[TTV AB] Bridge could not send message:", nextMessage.type);
 			pageBridgeConnected = false;
 			startBridgeHandshake();
 			return;
@@ -249,8 +234,8 @@ function sendToPage(type, detail = null) {
 		pageBridgePort.postMessage(message);
 		return true;
 	} catch {
+		console.warn("[TTV AB] Bridge could not send message:", type);
 		pageBridgeConnected = false;
-		queuePendingPageMessage(message, true);
 		startBridgeHandshake();
 		return false;
 	}
@@ -267,18 +252,32 @@ function bindPageBridgePort(port) {
 	if (pageBridgePort === port) return true;
 	if (pageBridgeConnected && pageBridgePort) return false;
 	if (pageBridgePort) {
-		try {
-			pageBridgePort.close();
-		} catch {}
+		supersededPageBridgePorts.push(pageBridgePort);
+		while (supersededPageBridgePorts.length > MAX_HANDSHAKE_RETRIES) {
+			closePageBridgePort(supersededPageBridgePorts.shift());
+		}
 	}
 	pageBridgePort = port;
 	const boundPort = port;
 	boundPort.addEventListener("message", (event) => {
-		if (pageBridgePort !== boundPort) return;
-		handlePageBridgeMessage(event.data);
+		const type = getBridgeMessageData(event.data)?.type;
+		if (
+			pageBridgePort === boundPort ||
+			(supersededPageBridgePorts.includes(boundPort) &&
+				type !== BRIDGE_READY_MESSAGE &&
+				type !== "ttvab-logs")
+		) {
+			handlePageBridgeMessage(event.data);
+		}
 	});
 	boundPort.start?.();
 	return true;
+}
+
+function closePageBridgePort(port) {
+	try {
+		port?.close?.();
+	} catch {}
 }
 
 const MAX_HANDSHAKE_RETRIES = 20;
@@ -293,6 +292,7 @@ function startBridgeHandshake() {
 	}
 	if (handshakeRetryCount >= MAX_HANDSHAKE_RETRIES) {
 		handshakeRetryCount = 0;
+		clearHandshakeRetryTimeout();
 		handshakeRetryTimeout = setTimeout(() => {
 			startBridgeHandshake();
 		}, 30000);
@@ -324,7 +324,7 @@ function handleBridgeTokenRequest(event) {
 	if (event.source !== window) return;
 	const message = getBridgeMessageData(event.data);
 	if (message?.type !== BRIDGE_TOKEN_REQUEST_MESSAGE) return;
-	const detail = getBridgeMessageDetail(message.detail);
+	const detail = getBridgeMessageData(message.detail);
 	if (!setBridgeSessionToken(detail?.token)) return;
 	event.stopImmediatePropagation?.();
 	startBridgeHandshake();
@@ -415,8 +415,8 @@ function createCounterFlushId() {
 }
 
 function normalizeAdMeasurement(value, fallbackContext = null) {
-	const safeValue = getBridgeMessageDetail(value);
-	const safeFallback = getBridgeMessageDetail(fallbackContext);
+	const safeValue = getBridgeMessageData(value);
+	const safeFallback = getBridgeMessageData(fallbackContext);
 	const id =
 		typeof safeValue?.id === "string" &&
 		safeValue.id.startsWith("stitched-ad-") &&
@@ -432,11 +432,12 @@ function normalizeAdMeasurement(value, fallbackContext = null) {
 	const startDateMilliseconds = Number.isSafeInteger(rawStartDateMilliseconds)
 		? Math.max(0, rawStartDateMilliseconds)
 		: 0;
-	const mediaKey = normalizeMediaKey(
-		safeValue?.mediaKey || safeFallback?.mediaKey,
-	);
+	const mediaKey =
+		normalizeMediaKey(safeValue?.mediaKey) ||
+		normalizeMediaKey(safeFallback?.mediaKey);
 	const channel =
-		normalizeChannelName(safeValue?.channel || safeFallback?.channel) ||
+		normalizeChannelName(safeValue?.channel) ||
+		normalizeChannelName(safeFallback?.channel) ||
 		(mediaKey?.startsWith("live:") ? mediaKey.slice(5) : null);
 	if (!id || !mediaKey || durationMilliseconds <= 0) return null;
 	return {
@@ -449,10 +450,9 @@ function normalizeAdMeasurement(value, fallbackContext = null) {
 }
 
 function getAdMeasurementKey(measurement) {
-	const safeMeasurement = normalizeAdMeasurement(measurement);
-	return safeMeasurement
-		? `${safeMeasurement.mediaKey}\n${safeMeasurement.id}\n${normalizeCount(
-				safeMeasurement.startDateMilliseconds,
+	return measurement
+		? `${measurement.mediaKey}\n${measurement.id}\n${normalizeCount(
+				measurement.startDateMilliseconds,
 			)}`
 		: null;
 }
@@ -479,7 +479,7 @@ function normalizeAdMeasurements(
 }
 
 function normalizePersistedCounterFlushEntry(value) {
-	const safeValue = getBridgeMessageDetail(value);
+	const safeValue = getBridgeMessageData(value);
 	const flushId = normalizeFlushId(safeValue?.flushId);
 	const adsDelta = normalizeCount(safeValue?.adsDelta);
 	const createdAtValue = Number(safeValue?.createdAt);
@@ -573,6 +573,19 @@ function migrateLegacyPersistedCounterFlushes() {
 	try {
 		storage.removeItem(LEGACY_PERSISTED_COUNTER_FLUSHES_KEY);
 	} catch {}
+}
+
+function hasPersistedCounterFlushes() {
+	const storage = getFlushJournalStorage();
+	if (!storage) return false;
+	try {
+		for (let index = 0; index < storage.length; index++) {
+			if (storage.key(index)?.startsWith(PERSISTED_COUNTER_FLUSH_KEY_PREFIX)) {
+				return true;
+			}
+		}
+	} catch {}
+	return false;
 }
 
 function readPersistedCounterFlushes() {
@@ -712,10 +725,7 @@ function handlePersistSuccess(response, flushId = null) {
 	const safeFlushId = normalizeFlushId(flushId);
 	if (safeFlushId && clearPersistedCounterFlush(safeFlushId)) {
 		confirmCounterFlush(safeFlushId);
-		if (
-			readPersistedCounterFlushes().length === 0 &&
-			retryFlushEntries.size === 0
-		) {
+		if (!hasPersistedCounterFlushes() && retryFlushEntries.size === 0) {
 			clearPersistedFlushRecovery();
 		} else {
 			schedulePersistedFlushRecovery();
@@ -774,7 +784,7 @@ function schedulePersistedFlushRecovery(hasPersistedWork = false) {
 	);
 	if (
 		!hasPersistedWork &&
-		readPersistedCounterFlushes().length === 0 &&
+		!hasPersistedCounterFlushes() &&
 		!hasExhaustedMemoryRetry
 	) {
 		persistedFlushRecoveryAttempt = 0;
@@ -810,11 +820,7 @@ function scheduleRetryFlush(payload, flushId) {
 			retryCount: MAX_FLUSH_RETRY_ATTEMPTS,
 			timeoutId: null,
 		});
-		while (retryFlushEntries.size > MAX_RETRY_FLUSH_ENTRIES) {
-			const oldestFlushId = retryFlushEntries.keys().next().value;
-			if (oldestFlushId === undefined) break;
-			clearScheduledRetryFlush(oldestFlushId);
-		}
+		trimRetryFlushEntries();
 		schedulePersistedFlushRecovery();
 		return false;
 	}
@@ -840,17 +846,21 @@ function scheduleRetryFlush(payload, flushId) {
 	);
 	retryFlushEntries.delete(safeFlushId);
 	retryFlushEntries.set(safeFlushId, nextEntry);
+	trimRetryFlushEntries();
+	return true;
+}
+
+function trimRetryFlushEntries() {
 	while (retryFlushEntries.size > MAX_RETRY_FLUSH_ENTRIES) {
 		const oldestFlushId = retryFlushEntries.keys().next().value;
 		if (oldestFlushId === undefined) break;
 		clearScheduledRetryFlush(oldestFlushId);
 	}
-	return true;
 }
 
 function sendPersistPayload(payload, onSuccess, onFailure) {
 	const flushId = normalizeFlushId(
-		getBridgeMessageDetail(payload?.detail)?.flushId,
+		getBridgeMessageData(payload?.detail)?.flushId,
 	);
 	const requestKey = flushId ? `${payload.type}:${flushId}` : Symbol();
 	if (inFlightPersistRequests.has(requestKey)) return false;
@@ -885,10 +895,10 @@ function sendPersistPayload(payload, onSuccess, onFailure) {
 
 function dispatchPersistPayload(
 	payload,
-	options: { retryOnFailure?: boolean } = {},
+	options: { retryOnFailure?: boolean; journaled?: boolean } = {},
 ) {
 	const retryOnFailure = options.retryOnFailure === true;
-	const safeDetail = getBridgeMessageDetail(payload?.detail);
+	const safeDetail = getBridgeMessageData(payload?.detail);
 	const flushId = normalizeFlushId(safeDetail?.flushId);
 	if (bridgeState.turboMode) {
 		clearScheduledRetryFlush(flushId);
@@ -896,7 +906,7 @@ function dispatchPersistPayload(
 		return false;
 	}
 	const workGeneration = persistWorkGeneration;
-	if (flushId) {
+	if (flushId && options.journaled !== true) {
 		const persistedFlushes = persistCounterFlushForReplay(safeDetail);
 		if (persistedFlushes) {
 			schedulePersistedFlushRecovery(persistedFlushes.length > 0);
@@ -954,7 +964,7 @@ function replayPersistedCounterFlushes() {
 				type: "ttvab-persist-counters",
 				detail: pendingFlush,
 			},
-			{ retryOnFailure: false },
+			{ retryOnFailure: false, journaled: true },
 		);
 	}
 	for (const [flushId, retryEntry] of retryFlushEntries) {
@@ -1057,7 +1067,9 @@ function scheduleFlush(delay = FLUSH_DELAY_MS) {
 			flushTimeout = null;
 			flushCounters();
 		},
-		Math.max(0, delay),
+		extensionContextInvalidated
+			? ORPHANED_COUNTER_FLUSH_DELAY_MS
+			: Math.max(0, delay),
 	);
 }
 
@@ -1280,13 +1292,7 @@ function readInitialStorageState() {
 	try {
 		chrome.storage.local.get(INITIAL_STORAGE_KEYS, (result) => {
 			const readError = chrome.runtime.lastError;
-			if (
-				bridgeStateReady ||
-				generation !== initialStorageReadGeneration ||
-				!initialStorageReadInFlight
-			) {
-				return;
-			}
+			if (bridgeStateReady) return;
 			if (readError || !isPlainObject(result)) {
 				failInitialStorageRead(
 					generation,
@@ -1367,7 +1373,7 @@ function handlePageBridgeMessage(rawMessage) {
 	const message = getBridgeMessageData(rawMessage);
 	if (!message) return;
 	if (message.type === BRIDGE_READY_MESSAGE) {
-		const detail = getBridgeMessageDetail(message.detail);
+		const detail = getBridgeMessageData(message.detail);
 		if (detail?.token !== getBridgeSessionToken()) {
 			return;
 		}
@@ -1411,7 +1417,7 @@ function handlePageBridgeMessage(rawMessage) {
 		return;
 	}
 
-	const detail = getBridgeMessageDetail(message.detail);
+	const detail = getBridgeMessageData(message.detail);
 	if (
 		bridgeState.turboMode &&
 		(message.type === "ttvab-ad-blocked" ||
@@ -1423,9 +1429,8 @@ function handlePageBridgeMessage(rawMessage) {
 	if (message.type === "ttvab-ad-blocked") {
 		if (!detail || !Number.isFinite(detail.delta)) return;
 		const eventPlaybackContext = getMessagePlaybackContext(detail);
-		const blockedChannel = normalizeChannelName(
-			detail.channel || eventPlaybackContext.channelName,
-		);
+		const blockedChannel =
+			normalizeChannelName(detail.channel) || eventPlaybackContext.channelName;
 		const delta = queueAdsDelta(detail.delta);
 		if (blockedChannel && delta > 0) {
 			pendingAdChannels[blockedChannel] =
@@ -2170,9 +2175,7 @@ function invalidatePageBridgeAfterLogFailure(error) {
 	const stalePort = pageBridgePort;
 	pageBridgeConnected = false;
 	pageBridgePort = null;
-	try {
-		stalePort?.close?.();
-	} catch {}
+	closePageBridgePort(stalePort);
 	failPendingLogCollections(error);
 	startBridgeHandshake();
 }
@@ -2207,8 +2210,13 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 	logCollectionSequence = (logCollectionSequence + 1) % 1000000;
 	const requestId = `logs-${Date.now()}-${logCollectionSequence}-${Math.random().toString(36).slice(2, 10)}`;
 	const timer = setTimeout(() => {
-		if (!pendingLogCollections.has(requestId)) return;
-		invalidatePageBridgeAfterLogFailure("page-response-timeout");
+		const pending = pendingLogCollections.get(requestId);
+		if (!pending) return;
+		pendingLogCollections.delete(requestId);
+		respondToLogCollection(pending.respond, {
+			ok: false,
+			error: "page-response-timeout",
+		});
 	}, LOG_COLLECT_TIMEOUT_MS);
 	pendingLogCollections.set(requestId, { respond: sendResponse, timer });
 	try {
@@ -2223,4 +2231,4 @@ chrome.runtime.onMessage.addListener((rawMessage, sender, sendResponse) => {
 });
 
 window.addEventListener("pagehide", handleBridgePageExit, true);
-window.addEventListener("beforeunload", handleBridgePageExit, true);
+window.addEventListener("beforeunload", flushPendingCountersOnPageExit, true);
