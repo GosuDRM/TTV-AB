@@ -2406,6 +2406,49 @@ describe("_monitorPlayerBuffering active-ad player ownership", () => {
 		expect(g._checkFatalAdMediaRecovery).toHaveBeenCalledWith(pagePlayer);
 	});
 
+	it("holds in-ad stall recovery while offline without replenishing re-searches", () => {
+		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
+		Object.assign(g.__TTVAB_STATE__ as object, {
+			PinnedBackupPlayerType: "site",
+			PinnedBackupPlayerMediaKey: "live:testchannel",
+			PinnedBackupStallPollMs: 100,
+		});
+		const suppress = vi.fn(() => 0);
+		const freeze = vi.fn();
+		g._suppressCompetingMediaDuringAd = suppress;
+		g._checkInAdPlayheadFreeze = freeze;
+		const pinned = vi
+			.spyOn(g, "_checkPinnedBackupStall")
+			.mockImplementation(() => {});
+		const checkFatal = g._checkFatalAdMediaRecovery as ReturnType<typeof vi.fn>;
+		const stallState = g._PinnedBackupStallState as Record<string, number>;
+		stallState.forceRefreshCount = 3;
+		stallState.firstObservedAt = Date.now();
+		let online = false;
+		Object.defineProperty(navigator, "onLine", {
+			configurable: true,
+			get: () => online,
+		});
+		try {
+			T<() => void>("_monitorPlayerBuffering")();
+			vi.advanceTimersByTime(6000);
+			expect(suppress).toHaveBeenCalled();
+			expect(checkFatal).not.toHaveBeenCalled();
+			expect(freeze).not.toHaveBeenCalled();
+			expect(pinned).not.toHaveBeenCalled();
+			expect(stallState.forceRefreshCount).toBe(3);
+			expect(stallState.firstObservedAt).toBe(0);
+
+			online = true;
+			vi.advanceTimersByTime(600);
+			expect(checkFatal).toHaveBeenCalledWith(pagePlayer);
+			expect(freeze).toHaveBeenCalled();
+			expect(pinned).toHaveBeenCalled();
+		} finally {
+			delete (navigator as unknown as Record<string, unknown>).onLine;
+		}
+	});
+
 	it("checks the replacement player when Twitch remounts during the same ad", () => {
 		T<() => unknown>("_clearActivePictureInPicturePlaybackContext")();
 		const checkFatal = g._checkFatalAdMediaRecovery as ReturnType<typeof vi.fn>;

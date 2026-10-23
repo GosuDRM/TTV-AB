@@ -261,7 +261,9 @@ describe.each([false, true])("latency mode %s recovery", (mode) => {
 				if (condition === "growing buffer") sample.end += 0.5;
 				vi.advanceTimersByTime(900);
 			}
-			expect(task).toHaveBeenCalledWith(true, false);
+			expect(task).toHaveBeenCalledWith(true, false, {
+				reason: "buffer-recovery",
+			});
 			expect(task).toHaveBeenCalledWith(false, true, {
 				reason: "buffer-recovery",
 			});
@@ -310,13 +312,15 @@ describe.each([false, true])("latency mode %s recovery", (mode) => {
 		run("_monitorPlayerBuffering");
 		vi.advanceTimersByTime(10000);
 		if (mode) {
-			expect(task).toHaveBeenCalledWith(true, false);
+			expect(task).toHaveBeenCalledWith(true, false, {
+				reason: "buffer-recovery",
+			});
 			expect(task).not.toHaveBeenCalledWith(false, true, expect.anything());
 		} else {
 			expect(task).toHaveBeenCalledWith(false, true, {
 				reason: "buffer-recovery",
 			});
-			expect(task).not.toHaveBeenCalledWith(true, false);
+			expect(task).not.toHaveBeenCalledWith(true, false, expect.anything());
 		}
 	});
 
