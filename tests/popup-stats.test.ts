@@ -430,6 +430,192 @@ describe("popup statistics", () => {
 		expect(element("resetStatsOverlay").hidden).toBe(true);
 		expect(click).not.toHaveBeenCalled();
 	});
+
+	function statsWithChannels(channels: Record<string, unknown>) {
+		return {
+			ttvAdsBlocked: 10,
+			ttvStats: {
+				daily: {},
+				channels,
+				achievements: [],
+				adMillisecondsSaved: 0,
+			},
+		};
+	}
+
+	function updateStatistics(next: Record<string, unknown>) {
+		Object.assign(storageData, next);
+		for (const listener of storageListeners) {
+			listener(
+				{
+					ttvStats: { newValue: next.ttvStats },
+					ttvAdsBlocked: { newValue: next.ttvAdsBlocked },
+				},
+				"local",
+			);
+		}
+	}
+
+	it("updates open channel details in place instead of replaying the animation", async () => {
+		window.matchMedia = ((query: string) => ({
+			matches: false,
+			media: query,
+			addEventListener() {},
+			removeEventListener() {},
+		})) as unknown as typeof window.matchMedia;
+		storageData = statsWithChannels({ somestreamer: { ads: 4 } });
+		mountPopup();
+		await settle();
+		vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 0);
+
+		element("channelList").querySelector<HTMLElement>(".channel-item")?.click();
+		expect(element("channelModalShareBar").style.width).toBe("0%");
+		updateStatistics(statsWithChannels({ somestreamer: { ads: 5 } }));
+
+		expect(element("channelModalBreaks").textContent).toBe("5");
+		expect(element("channelModalShareBar").style.width).toBe("50%");
+	});
+
+	it("keeps keyboard focus and chart bars across statistic updates", async () => {
+		storageData = statsWithChannels({
+			firststreamer: { ads: 6 },
+			secondstreamer: { ads: 4 },
+		});
+		mountPopup();
+		await settle();
+		element("statsToggle").click();
+		const firstBar = element("weeklyChart").children[0];
+		element("channelList")
+			.querySelector<HTMLElement>('[data-channel="secondstreamer"]')
+			?.focus();
+
+		updateStatistics(
+			statsWithChannels({
+				firststreamer: { ads: 6 },
+				secondstreamer: { ads: 5 },
+			}),
+		);
+
+		expect((document.activeElement as HTMLElement).dataset.channel).toBe(
+			"secondstreamer",
+		);
+		expect(element("weeklyChart").children[0]).toBe(firstBar);
+	});
+
+	it("keeps the reset dialog open until the background answers", async () => {
+		storageData = { ttvAdsBlocked: 5, ttvStats: {} };
+		let answer: ((response: unknown) => void) | null = null;
+		(g.chrome as { runtime: { sendMessage: unknown } }).runtime.sendMessage = (
+			_message: unknown,
+			callback: (response: unknown) => void,
+		) => {
+			answer = callback;
+		};
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		mountPopup();
+		await settle();
+
+		element("statsResetButton").click();
+		element<HTMLButtonElement>("resetStatsConfirm").click();
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+		element("resetStatsOverlay").click();
+		expect(element("resetStatsOverlay").hidden).toBe(false);
+		expect(element<HTMLButtonElement>("resetStatsCancel").disabled).toBe(true);
+
+		answer?.({ ok: false, error: "busy" });
+		expect(element("resetStatsOverlay").hidden).toBe(false);
+		expect(element("resetStatsText").textContent).toBe(
+			"Could not reset statistics. Try again.",
+		);
+		expect(element<HTMLButtonElement>("resetStatsCancel").disabled).toBe(false);
+	});
+
+	it("shows a statistics export failure on the button", async () => {
+		storageData = { ttvAdsBlocked: 1, ttvStats: {} };
+		mountPopup();
+		await settle();
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		vi.useFakeTimers();
+		const runtime = (
+			g.chrome as { runtime: { lastError: { message: string } | null } }
+		).runtime;
+		const storage = (
+			g.chrome as {
+				storage: { local: { get: (keys: string[], cb: () => void) => void } };
+			}
+		).storage.local;
+		storage.get = (_keys, callback) => {
+			runtime.lastError = { message: "storage unavailable" };
+			try {
+				callback();
+			} finally {
+				runtime.lastError = null;
+			}
+		};
+
+		try {
+			element("statsExportButton").click();
+			expect(element("statsExportButton").textContent).toBe("Export failed");
+			vi.advanceTimersByTime(3000);
+			expect(element("statsExportButton").textContent).toBe("Export");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps Tab focus inside the reset dialog", async () => {
+		storageData = { ttvAdsBlocked: 5, ttvStats: {} };
+		mountPopup();
+		await settle();
+		element("statsToggle").click();
+		element("statsResetButton").click();
+		expect(document.activeElement).toBe(element("resetStatsCancel"));
+
+		element("resetStatsCancel").dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+		);
+		expect(document.activeElement).toBe(element("resetStatsClose"));
+		element("resetStatsClose").dispatchEvent(
+			new KeyboardEvent("keydown", {
+				key: "Tab",
+				shiftKey: true,
+				bubbles: true,
+			}),
+		);
+		expect(document.activeElement).toBe(element("resetStatsCancel"));
+	});
+
+	it("keeps both channel avatars when two lookups finish together", async () => {
+		storageData = statsWithChannels({
+			firststreamer: { ads: 6 },
+			secondstreamer: { ads: 4 },
+		});
+		vi.spyOn(window, "fetch").mockImplementation(async (_url, init) => {
+			const login = JSON.parse(String(init?.body)).variables.login;
+			return new Response(
+				JSON.stringify({
+					data: {
+						user: {
+							profileImageURL: `https://static-cdn.jtvnw.net/${login}.png`,
+						},
+					},
+				}),
+			);
+		});
+		mountPopup();
+		await settle();
+
+		for (const channel of ["firststreamer", "secondstreamer"]) {
+			element("channelList")
+				.querySelector<HTMLElement>(`[data-channel="${channel}"]`)
+				?.click();
+		}
+		await settle();
+
+		expect(Object.keys(storageData.ttvChannelAvatars as object).sort()).toEqual(
+			["firststreamer", "secondstreamer"],
+		);
+	});
 });
 
 describe("bug report flow", () => {
@@ -479,6 +665,20 @@ describe("bug report flow", () => {
 		element("logDialogGenerate").click();
 		await settle();
 		expect(click).toHaveBeenCalledTimes(2);
+	});
+
+	it("ignores Escape on the log export page", async () => {
+		window.history.replaceState(null, "", "/?ttvab-log-export=1");
+		(g.chrome as { tabs: { query: unknown } }).tabs.query = vi.fn(
+			(_query, callback: (tabs: unknown[]) => void) => callback([]),
+		);
+		mountPopup();
+		await settle();
+
+		expect(() =>
+			window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })),
+		).not.toThrow();
+		expect(element("logDialogOverlay").hidden).toBe(false);
 	});
 
 	it("shows log export failures in the chosen language", async () => {
