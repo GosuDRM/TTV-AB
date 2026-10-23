@@ -5,16 +5,14 @@ const _GQL_URL = "https://gql.twitch.tv/gql";
 function _collectPlaybackAccessTokenSources(payload) {
 	const queue = Array.isArray(payload) ? [...payload] : [payload];
 	const seen = new Set();
-	const tokenSources = [];
+	const tokenSources = new Set<PlainObject>();
 
 	const pushTokenSource = (value) => {
-		if (!value || typeof value !== "object" || tokenSources.includes(value))
-			return;
-		tokenSources.push(value);
+		if (value && typeof value === "object") tokenSources.add(value);
 	};
 
-	while (queue.length > 0) {
-		const current = queue.shift();
+	for (let index = 0; index < queue.length; index++) {
+		const current = queue[index];
 		if (!current || typeof current !== "object" || seen.has(current)) continue;
 		seen.add(current);
 
@@ -25,10 +23,10 @@ function _collectPlaybackAccessTokenSources(payload) {
 
 		if (
 			current?.__typename === "PlaybackAccessToken" ||
-			typeof current?.signature === "string" ||
-			typeof current?.sig === "string" ||
-			typeof current?.value === "string" ||
-			typeof current?.token === "string"
+			((typeof current?.signature === "string" ||
+				typeof current?.sig === "string") &&
+				(typeof current?.value === "string" ||
+					typeof current?.token === "string"))
 		) {
 			pushTokenSource(current);
 		}
@@ -39,7 +37,7 @@ function _collectPlaybackAccessTokenSources(payload) {
 		}
 	}
 
-	return tokenSources;
+	return Array.from(tokenSources);
 }
 
 function _summarizePlaybackAccessTokenPayload(payload) {
@@ -124,10 +122,7 @@ function _createFetchRelayResponse(payload, requestUrl = null) {
 
 	const body = payload.body ?? "";
 	const nullBodyStatus =
-		payload.status === 101 ||
-		payload.status === 204 ||
-		payload.status === 205 ||
-		payload.status === 304;
+		payload.status === 204 || payload.status === 205 || payload.status === 304;
 	const response = new Response(nullBodyStatus ? null : body, {
 		status: payload.status,
 		statusText: payload.statusText,
@@ -650,10 +645,11 @@ function _assignAdPods(info: TTVABStreamInfo, matches, fallbackLength) {
 
 async function _notifyAdComplete(
 	textStr: string,
-	info?: TTVABStreamInfo,
+	info: TTVABStreamInfo,
 ): Promise<void> {
 	try {
-		if (!textStr || typeof textStr !== "string") return;
+		if (!textStr || typeof textStr !== "string" || !info) return;
+		if (!(info.SpoofedAdIds instanceof Set)) info.SpoofedAdIds = new Set();
 
 		const matches = [];
 		for (const line of textStr.split(/\r?\n/)) {
@@ -676,14 +672,14 @@ async function _notifyAdComplete(
 		const maxParsedPodPosition = Math.max(0, ...parsedPodPositions);
 		const observedZeroAdPodPosition = parsedPodPositions.includes(0);
 		const pods =
-			info && matches.length > 0
+			matches.length > 0
 				? _assignAdPods(
 						info,
 						matches,
 						hasExplicitPodLength ? parsedPodLength : 0,
 					)
 				: new Map<string, TTVABAdPod | null>();
-		if (info && matches.length > 0) {
+		if (matches.length > 0) {
 			if (!(info.ObservedAdPodIds instanceof Set)) {
 				info.ObservedAdPodIds = new Set();
 			}
@@ -707,7 +703,6 @@ async function _notifyAdComplete(
 		const reportedAdIds: string[] = [];
 		const postProgress = () => {
 			if (
-				!info ||
 				matches.length === 0 ||
 				typeof self === "undefined" ||
 				!self.postMessage
@@ -733,11 +728,6 @@ async function _notifyAdComplete(
 			);
 		};
 		const warnOncePerBreak = (key) => {
-			if (!info) {
-				if (__TTVAB_STATE__[key]) return false;
-				__TTVAB_STATE__[key] = true;
-				return true;
-			}
 			if (!(info._LoggedWhitelistByType instanceof Set))
 				info._LoggedWhitelistByType = new Set();
 			if (info._LoggedWhitelistByType.has(key)) return false;
@@ -758,12 +748,12 @@ async function _notifyAdComplete(
 			}
 			const sharedReportedAdIds = new Set(
 				__TTVAB_STATE__.AdPodProgressByMediaKey?.[
-					_normalizeMediaKey(info?.MediaKey)
+					_normalizeMediaKey(info.MediaKey)
 				]?.reportedAdIds || [],
 			);
 
-			const spoofedSet = info?.SpoofedAdIds || null;
-			const recentSpoofedSet = info?.RecentSpoofedAdIds || null;
+			const spoofedSet = info.SpoofedAdIds;
+			const recentSpoofedSet = info.RecentSpoofedAdIds || null;
 			const podLength = hasExplicitPodLength ? parsedPodLength : matches.length;
 			let newSpoofed = 0;
 			let firstRollType = "";
@@ -777,10 +767,11 @@ async function _notifyAdComplete(
 					recentSpoofedSet?.has?.(stitchedAdId) ||
 					sharedReportedAdIds.has(stitchedAdId)
 				) {
-					spoofedSet?.add?.(stitchedAdId);
+					spoofedSet.add(stitchedAdId);
+					pods.get(stitchedAdId)?.spoofedAdIds.add(stitchedAdId);
 					continue;
 				}
-				if (spoofedSet?.has(stitchedAdId)) {
+				if (spoofedSet.has(stitchedAdId)) {
 					continue;
 				}
 				if (pods.has(stitchedAdId) && pods.get(stitchedAdId) === null) {
@@ -798,12 +789,16 @@ async function _notifyAdComplete(
 				}
 				const rollType = (attr["X-TV-TWITCH-AD-ROLL-TYPE"] || "").toLowerCase();
 				if (!firstRollType) firstRollType = rollType;
-				const adPosition = parseInt(
-					attr["X-TV-TWITCH-AD-POD-POSITION"] || String(i),
+				const declaredPosition = Number.parseInt(
+					attr["X-TV-TWITCH-AD-POD-POSITION"],
 					10,
 				);
+				const adPosition =
+					Number.isFinite(declaredPosition) && declaredPosition >= 0
+						? declaredPosition
+						: i;
 				const adDuration =
-					parseInt(attr["X-TV-TWITCH-AD-DURATION"] || "0", 10) || 0;
+					Number.parseInt(attr["X-TV-TWITCH-AD-DURATION"] || "0", 10) || 0;
 				const pod = pods.get(stitchedAdId) || null;
 				const payload = {
 					stitched: true,
@@ -847,7 +842,7 @@ async function _notifyAdComplete(
 					},
 				});
 
-				if (spoofedSet && stitchedAdId) spoofedSet.add(stitchedAdId);
+				spoofedSet.add(stitchedAdId);
 				pod?.spoofedAdIds.add(stitchedAdId);
 				if (pod) lastSpoofedPod = pod;
 				const batch = [
@@ -858,11 +853,10 @@ async function _notifyAdComplete(
 					makePacket("video_ad_quartile_complete", { quartile: 4 }),
 				];
 				if (
-					!spoofedSet ||
-					(pod &&
-						pod.length > 0 &&
-						!pod.completeSent &&
-						pod.spoofedAdIds.size >= pod.length)
+					pod &&
+					pod.length > 0 &&
+					!pod.completeSent &&
+					pod.spoofedAdIds.size >= pod.length
 				) {
 					batch.push(makePacket("video_ad_pod_complete"));
 					podCompleteSent = true;
@@ -936,10 +930,8 @@ async function _notifyAdComplete(
 			if (newSpoofed > 0) {
 				const total = lastSpoofedPod
 					? lastSpoofedPod.spoofedAdIds.size
-					: spoofedSet
-						? spoofedSet.size
-						: newSpoofed;
-				const serving = info?.ActiveBackupPlayerType || "native";
+					: spoofedSet.size;
+				const serving = info.ActiveBackupPlayerType || "native";
 				_log(
 					`[Trace] Sent ad completion for ${newSpoofed} new ad(s) (${total}/${lastSpoofedPod?.length || (hasExplicitPodLength ? podLength : "?")} pod) — roll: ${firstRollType}, serving: ${serving}, pod-complete: ${podCompleteSent ? "yes" : "no"}`,
 					"info",
