@@ -154,64 +154,26 @@ function _getWorkerCommand(value: unknown): TTVABWorkerCommand | null {
 
 function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 	_declareState(self);
-	__TTVAB_STATE__.GQLDeviceID = seed.state.GQLDeviceID;
-	__TTVAB_STATE__.AuthorizationHeader = seed.state.AuthorizationHeader;
-	__TTVAB_STATE__.ClientIntegrityHeader = seed.state.ClientIntegrityHeader;
-	__TTVAB_STATE__.ClientVersion = seed.state.ClientVersion;
-	__TTVAB_STATE__.ClientSession = seed.state.ClientSession;
-	__TTVAB_STATE__.PlaybackAccessTokenHash = seed.state.PlaybackAccessTokenHash;
-	__TTVAB_STATE__.LastNativePlaybackAccessTokenPlayerType =
-		seed.state.LastNativePlaybackAccessTokenPlayerType;
-	__TTVAB_STATE__.CurrentAdChannel = seed.state.CurrentAdChannel;
-	__TTVAB_STATE__.CurrentAdMediaKey = seed.state.CurrentAdMediaKey;
-	__TTVAB_STATE__.AdPodProgressByMediaKey = seed.state.AdPodProgressByMediaKey;
-	__TTVAB_STATE__.LastAdEndedAt = seed.state.LastAdEndedAt;
-	__TTVAB_STATE__.LastAdEndedChannel = seed.state.LastAdEndedChannel;
-	__TTVAB_STATE__.LastAdEndedMediaKey = seed.state.LastAdEndedMediaKey;
-	__TTVAB_STATE__.LastAdEndedCycleStartedAt =
-		seed.state.LastAdEndedCycleStartedAt;
-	__TTVAB_STATE__.PinnedBackupPlayerType = seed.state.PinnedBackupPlayerType;
-	__TTVAB_STATE__.PinnedBackupPlayerChannel =
-		seed.state.PinnedBackupPlayerChannel;
-	__TTVAB_STATE__.PinnedBackupPlayerMediaKey =
-		seed.state.PinnedBackupPlayerMediaKey;
-	__TTVAB_STATE__.ActiveCodecHandoffId = seed.state.ActiveCodecHandoffId;
-	__TTVAB_STATE__.ActiveCodecHandoffChannel =
-		seed.state.ActiveCodecHandoffChannel;
-	__TTVAB_STATE__.ActiveCodecHandoffMediaKey =
-		seed.state.ActiveCodecHandoffMediaKey;
-	__TTVAB_STATE__.IsAdStrippingEnabled = seed.state.IsAdStrippingEnabled;
-	__TTVAB_STATE__.DisableAdSpoofing = seed.state.DisableAdSpoofing;
-	__TTVAB_STATE__.DisableAutoplayBackup = seed.state.DisableAutoplayBackup;
-	__TTVAB_STATE__.PageMediaType = seed.state.PageMediaType;
-	__TTVAB_STATE__.PageChannel = seed.state.PageChannel;
-	__TTVAB_STATE__.PageVodID = seed.state.PageVodID;
-	__TTVAB_STATE__.PageMediaKey = seed.state.PageMediaKey;
-	__TTVAB_STATE__.PagePlaybackContextGeneration =
-		seed.state.PagePlaybackContextGeneration;
-	__TTVAB_STATE__.AllowPreviewEmergencyAutoplayBackup =
-		seed.state.AllowPreviewEmergencyAutoplayBackup;
-	__TTVAB_STATE__.PagePlaybackVisibleSinceAt =
-		seed.state.PagePlaybackVisibleSinceAt;
-	__TTVAB_STATE__.PreferredQualityGroup = seed.state.PreferredQualityGroup;
-	__TTVAB_STATE__.PlayerHasPlayedOnce = seed.state.PlayerHasPlayedOnce;
-	__TTVAB_STATE__.PlayerIsPlaying = seed.state.PlayerIsPlaying;
-	__TTVAB_STATE__.HasTriggeredPlayerReload =
-		seed.state.HasTriggeredPlayerReload;
-	__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel =
-		seed.state.PendingTriggeredPlayerReloadChannel;
-	__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey =
-		seed.state.PendingTriggeredPlayerReloadMediaKey;
-	__TTVAB_STATE__.PendingTriggeredPlayerReloadAt =
-		seed.state.PendingTriggeredPlayerReloadAt;
-	__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt =
-		seed.state.PendingTriggeredPlayerReloadCycleStartedAt;
+	Object.assign(__TTVAB_STATE__, seed.state);
 
+	const loggedRejectedCommandKeys = new Set<string>();
 	const handleCommand = (e: MessageEvent<unknown>) => {
-		const data = _getWorkerCommand(e.data);
-		if (!data) return;
+		const message = _getWorkerBridgeMessage(e.data);
+		if (!message) return;
 
 		e.stopImmediatePropagation?.();
+		if (!_isWorkerCommand(message)) {
+			const rejectedKey = message.key.slice(0, 64);
+			if (
+				loggedRejectedCommandKeys.size < 32 &&
+				!loggedRejectedCommandKeys.has(rejectedKey)
+			) {
+				loggedRejectedCommandKeys.add(rejectedKey);
+				_log(`Worker command ${rejectedKey} rejected`, "warning");
+			}
+			return;
+		}
+		const data = message;
 		switch (data.key) {
 			case "UpdateClientVersion":
 				__TTVAB_STATE__.ClientVersion = data.value;
@@ -639,7 +601,7 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 							__TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
 						}
 					}
-					const prevMediaKey = data.value?.previousMediaKey || null;
+					const prevMediaKey = _normalizeMediaKey(data.value?.previousMediaKey);
 					if (prevMediaKey && prevMediaKey !== preservedMediaKey) {
 						_clearAdPodProgress(prevMediaKey);
 					}
@@ -715,6 +677,22 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 						__TTVAB_STATE__.ActiveCodecHandoffChannel = null;
 						__TTVAB_STATE__.ActiveCodecHandoffMediaKey = null;
 					}
+					if (__TTVAB_STATE__.LastAdEndedMediaKey === releasedMediaKey) {
+						__TTVAB_STATE__.LastAdEndedAt = 0;
+						__TTVAB_STATE__.LastAdEndedChannel = null;
+						__TTVAB_STATE__.LastAdEndedMediaKey = null;
+						__TTVAB_STATE__.LastAdEndedCycleStartedAt = 0;
+					}
+					if (
+						__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey ===
+						releasedMediaKey
+					) {
+						__TTVAB_STATE__.HasTriggeredPlayerReload = false;
+						__TTVAB_STATE__.PendingTriggeredPlayerReloadChannel = null;
+						__TTVAB_STATE__.PendingTriggeredPlayerReloadMediaKey = null;
+						__TTVAB_STATE__.PendingTriggeredPlayerReloadAt = 0;
+						__TTVAB_STATE__.PendingTriggeredPlayerReloadCycleStartedAt = 0;
+					}
 					if (
 						__TTVAB_STATE__.ShouldResumeAfterAdMediaKey === releasedMediaKey
 					) {
@@ -742,14 +720,17 @@ function _startPlaybackWorker(seed: TTVABWorkerSeed) {
 				break;
 			case "PreparePostAdNativeReload":
 				_updatePostAdNativeMasterReload(
-					__TTVAB_STATE__.StreamInfos[data.value?.mediaKey],
+					__TTVAB_STATE__.StreamInfos[_normalizeMediaKey(data.value?.mediaKey)],
 					data.value,
 					true,
 				);
 				break;
 			case "ReleasePostAdNativeSession":
 				{
-					const info = __TTVAB_STATE__.StreamInfos[data.value?.mediaKey];
+					const info =
+						__TTVAB_STATE__.StreamInfos[
+							_normalizeMediaKey(data.value?.mediaKey)
+						];
 					const session = info?._PendingPostAdNativeMaster;
 					const confirmation = info?._PendingNativeReloadConfirmation;
 					if (

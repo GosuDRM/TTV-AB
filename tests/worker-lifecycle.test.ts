@@ -438,8 +438,8 @@ function startHarnessWorkerRuntime(
 	runInContext(worker.source, createContext(scope));
 	return {
 		scope,
-		deliver: (message: unknown) => {
-			for (const listener of listeners) listener({ data: message });
+		deliver: (message: unknown, event: Record<string, unknown> = {}) => {
+			for (const listener of listeners) listener({ ...event, data: message });
 		},
 		deliverBootstrap: (startIndex = 0) => {
 			for (const message of worker.messages.slice(startIndex)) {
@@ -492,6 +492,138 @@ it("keeps a failing command handler from surfacing as a worker crash", () => {
 		vi.clearAllTimers();
 	}
 });
+
+it("applies every seeded playback field in the injected worker", () => {
+	vi.useFakeTimers();
+	T<(scope: object) => void>("_declareState")(g);
+	Object.assign(g.__TTVAB_STATE__ as object, {
+		ClientVersion: "seed-version",
+		DisableAdSpoofing: true,
+		PlayerIsPlaying: true,
+		PagePlaybackVisibleSinceAt: 1234,
+		PreferredQualityGroup: "1080p60",
+	});
+	const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+	try {
+		const runtime = startHarnessWorkerRuntime(
+			harness.worker,
+			vi.fn(async () => new Response("unavailable", { status: 503 })),
+		);
+		const seedStart = harness.worker.source.lastIndexOf("})({") + 3;
+		const seed = JSON.parse(
+			harness.worker.source
+				.slice(seedStart)
+				.split("\n")[0]
+				.replace(/\);\s*$/, ""),
+		) as { state: Record<string, unknown> };
+		const workerState = runtime.scope.__TTVAB_STATE__ as Record<
+			string,
+			unknown
+		>;
+		expect(seed.state).toMatchObject({
+			ClientVersion: "seed-version",
+			PagePlaybackVisibleSinceAt: 1234,
+			PreferredQualityGroup: "1080p60",
+		});
+		for (const [key, value] of Object.entries(seed.state)) {
+			expect(workerState[key], key).toEqual(value);
+		}
+	} finally {
+		harness.restore();
+		vi.clearAllTimers();
+	}
+});
+
+it("swallows and logs a rejected command once without forwarding it", () => {
+	vi.useFakeTimers();
+	T<(scope: object) => void>("_declareState")(g);
+	const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+	try {
+		const runtime = startHarnessWorkerRuntime(
+			harness.worker,
+			vi.fn(async () => new Response("unavailable", { status: 503 })),
+		);
+		runtime.deliverBootstrap();
+		const workerState = runtime.scope.__TTVAB_STATE__ as Record<
+			string,
+			unknown
+		>;
+		const enabled = workerState.IsAdStrippingEnabled;
+		const invalid = T<(message: Record<string, unknown>) => unknown>(
+			"_createWorkerBridgeMessage",
+		)({ key: "UpdateToggleState", value: "false" });
+		const stop = vi.fn();
+		(runtime.scope.postMessage as Mock).mockClear();
+		runtime.deliver(invalid, { stopImmediatePropagation: stop });
+		runtime.deliver(invalid, { stopImmediatePropagation: stop });
+		expect(stop).toHaveBeenCalledTimes(2);
+		expect(workerState.IsAdStrippingEnabled).toBe(enabled);
+		expect(
+			JSON.stringify((runtime.scope.postMessage as Mock).mock.calls).split(
+				"Worker command UpdateToggleState rejected",
+			),
+		).toHaveLength(2);
+		const twitchMessage = { id: 1, funcName: "load" };
+		runtime.deliver(twitchMessage, { stopImmediatePropagation: stop });
+		expect(stop).toHaveBeenCalledTimes(2);
+	} finally {
+		harness.restore();
+		vi.clearAllTimers();
+	}
+});
+
+it.each(["live:pipchannel", "live:otherchannel"])(
+	"clears released post-ad worker state only for its stream (%s)",
+	(releasedMediaKey) => {
+		vi.useFakeTimers();
+		T<(scope: object) => void>("_declareState")(g);
+		const harness = installWorkerMessageHarness({ preserveBlobSources: true });
+		try {
+			const runtime = startHarnessWorkerRuntime(
+				harness.worker,
+				vi.fn(async () => new Response("unavailable", { status: 503 })),
+			);
+			runtime.deliverBootstrap();
+			const workerState = runtime.scope.__TTVAB_STATE__ as Record<
+				string,
+				unknown
+			>;
+			Object.assign(workerState, {
+				LastAdEndedAt: 5000,
+				LastAdEndedChannel: "pipchannel",
+				LastAdEndedMediaKey: "live:pipchannel",
+				LastAdEndedCycleStartedAt: 4000,
+				HasTriggeredPlayerReload: true,
+				PendingTriggeredPlayerReloadChannel: "pipchannel",
+				PendingTriggeredPlayerReloadMediaKey: "live:pipchannel",
+				PendingTriggeredPlayerReloadAt: 6000,
+				PendingTriggeredPlayerReloadCycleStartedAt: 4000,
+			});
+			runtime.deliver(
+				T<(message: Record<string, unknown>) => unknown>(
+					"_createWorkerBridgeMessage",
+				)({
+					key: "ReleasePlaybackContext",
+					value: { mediaKey: releasedMediaKey },
+				}),
+			);
+			const released = releasedMediaKey === "live:pipchannel";
+			expect(workerState).toMatchObject({
+				LastAdEndedAt: released ? 0 : 5000,
+				LastAdEndedMediaKey: released ? null : "live:pipchannel",
+				LastAdEndedCycleStartedAt: released ? 0 : 4000,
+				HasTriggeredPlayerReload: !released,
+				PendingTriggeredPlayerReloadMediaKey: released
+					? null
+					: "live:pipchannel",
+				PendingTriggeredPlayerReloadAt: released ? 0 : 6000,
+			});
+		} finally {
+			harness.restore();
+			vi.clearAllTimers();
+		}
+	},
+);
 
 it.each([false, true])(
 	"preserves encrypted segment bytes in the injected worker (blocking=%s)",
@@ -2565,6 +2697,40 @@ describe("worker recovery lifecycle", () => {
 			});
 			expect(worker.postMessage).toHaveBeenCalledOnce();
 			expect(auxiliary.postMessage).toHaveBeenCalledTimes(2);
+		} finally {
+			g._getActivePictureInPicturePlaybackContext = previous;
+		}
+	});
+
+	it("releases a closed PiP stream only to the worker that owns it", () => {
+		const state = g.__TTVAB_STATE__ as Record<string, unknown>;
+		state.PageChannel = null;
+		state.PageMediaKey = null;
+		const pipWorker = { postMessage: vi.fn() };
+		const carouselWorker = { postMessage: vi.fn() };
+		const otherWorker = {
+			postMessage: vi.fn(),
+			__TTVABPageMediaKey: "live:otherchannel",
+		};
+		const previous = g._getActivePictureInPicturePlaybackContext;
+		g._getActivePictureInPicturePlaybackContext = () => ({
+			MediaKey: "live:pipchannel",
+			workerRef: new WeakRef(pipWorker),
+		});
+		(g._S as { workers: unknown[] }).workers = [
+			pipWorker,
+			carouselWorker,
+			otherWorker,
+		];
+		try {
+			T<(message: Record<string, unknown>) => void>("_broadcastWorkers")({
+				key: "ReleasePlaybackContext",
+				targetMediaKey: "live:pipchannel",
+				value: { mediaKey: "live:pipchannel" },
+			});
+			expect(pipWorker.postMessage).toHaveBeenCalledOnce();
+			expect(carouselWorker.postMessage).not.toHaveBeenCalled();
+			expect(otherWorker.postMessage).not.toHaveBeenCalled();
 		} finally {
 			g._getActivePictureInPicturePlaybackContext = previous;
 		}

@@ -114,9 +114,7 @@ describe("worker message handler hardening", () => {
 	it("seeds playback visibility before workers and serializes foreground recovery", () => {
 		const source = hooksTs();
 		const initSource = initTs();
-		expect(source).toMatch(
-			/__TTVAB_STATE__\.PagePlaybackVisibleSinceAt\s*=\s*seed\.state\.PagePlaybackVisibleSinceAt/,
-		);
+		expect(source).toMatch(/Object\.assign\(__TTVAB_STATE__,\s*seed\.state\)/);
 		expect(source).toContain('case "UpdatePagePlaybackVisibleSinceAt":');
 		expect(workerJs()).toContain(
 			"function _getPendingForegroundQualityProbeAt(",

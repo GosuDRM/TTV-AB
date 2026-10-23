@@ -6600,6 +6600,7 @@ function _doPlayerTask(isPausePlay, isReload, options: PlayerTaskOptions = {}) {
 
 		_broadcastWorkers({
 			key: "TriggeredPlayerReload",
+			targetMediaKey: taskMediaKey,
 			value: {
 				mediaType: __TTVAB_STATE__?.PageMediaType ?? null,
 				channelName: taskChannel,

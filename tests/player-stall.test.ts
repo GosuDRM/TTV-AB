@@ -4642,6 +4642,7 @@ describe("_doPlayerTask (pip reload policy)", () => {
 		expect(setSrcCalls).toHaveLength(2);
 		expect(workerMessages.at(-1)).toMatchObject({
 			key: "TriggeredPlayerReload",
+			targetMediaKey: "live:testchannel",
 			value: {
 				reason: "codec-handoff",
 				handoffId: codecHandoffId,
