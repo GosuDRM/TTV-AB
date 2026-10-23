@@ -30,6 +30,7 @@ const _POST_AD_RESET_SELECTOR_GROUP = _POST_AD_RESET_ONLY_SELECTORS.join(", ");
 let _pendingPostAdArtifactCleanup = null;
 const _pageSideEmptyHoldInfoByUrl = new Map<string, TTVABPagePlaylistState>();
 const _pageSideVariantCodecByUrl = new Map();
+const _MAX_PAGE_SIDE_VARIANT_CODECS = 200;
 const _pageSidePlaybackOwnerByUrl = new Map();
 const _pageAdCycleControlByMediaKey = new Map();
 const _trackedExtensionBlobUrls = new Set<string>();
@@ -368,7 +369,7 @@ function _rememberPageSidePlaybackOwner(
 		if (oldest === undefined) break;
 		_pageSidePlaybackOwnerByUrl.delete(oldest);
 	}
-	while (_pageSideVariantCodecByUrl.size > 40) {
+	while (_pageSideVariantCodecByUrl.size > _MAX_PAGE_SIDE_VARIANT_CODECS) {
 		const oldest = _pageSideVariantCodecByUrl.keys().next().value;
 		if (oldest === undefined) break;
 		_pageSideVariantCodecByUrl.delete(oldest);
@@ -712,6 +713,61 @@ function _hookWorkerErrorDiagnostics() {
 	});
 }
 
+function _filterMasterToSelectedVariants(
+	masterLines: string[],
+	baseUrl: string,
+	isSelectedVariant: (index: number, line: string, uri: string) => boolean,
+) {
+	const selectedMediaGroups = new Set();
+	for (let index = 0; index < masterLines.length; index++) {
+		const line = masterLines[index];
+		if (
+			!line?.startsWith("#EXT-X-STREAM-INF") ||
+			!isSelectedVariant(index, line, masterLines[index + 1]?.trim())
+		)
+			continue;
+		const attrs = _parseAttrs(line);
+		for (const group of [
+			attrs.AUDIO,
+			attrs.VIDEO,
+			attrs.SUBTITLES,
+			attrs["CLOSED-CAPTIONS"],
+		]) {
+			if (group && group !== "NONE") selectedMediaGroups.add(group);
+		}
+	}
+	const selectedMasterLines = [];
+	for (let index = 0; index < masterLines.length; index++) {
+		const line = masterLines[index];
+		const trimmedLine = line?.trim();
+		if (line?.startsWith("#EXT-X-STREAM-INF")) {
+			const uri = masterLines[index + 1]?.trim();
+			if (isSelectedVariant(index, line, uri)) {
+				selectedMasterLines.push(line, _absolutizePlaylistUrl(uri, baseUrl));
+			}
+			index++;
+			continue;
+		}
+		if (line?.startsWith("#EXT-X-I-FRAME-STREAM-INF")) continue;
+		if (line?.startsWith("#EXT-X-MEDIA:")) {
+			const mediaAttrs = _parseAttrs(line);
+			if (!selectedMediaGroups.has(mediaAttrs["GROUP-ID"])) continue;
+			if (mediaAttrs.URI) return null;
+		}
+		if (trimmedLine && !trimmedLine.startsWith("#")) continue;
+		if (typeof line !== "string" || !line.includes('URI="')) {
+			selectedMasterLines.push(line);
+			continue;
+		}
+		selectedMasterLines.push(
+			line.replace(/URI="([^"]+)"/g, (_match, value) => {
+				return `URI="${_absolutizePlaylistUrl(value, baseUrl)}"`;
+			}),
+		);
+	}
+	return selectedMasterLines.join("\n");
+}
+
 function _hookWorkerFetch() {
 	_log("Installing worker fetch hook", "info");
 	const realFetch = fetch;
@@ -922,51 +978,12 @@ function _hookWorkerFetch() {
 			"info",
 		);
 		assertCurrent();
-		const selectedMediaGroups = new Set();
-		for (const index of selectedVariants.keys()) {
-			const attrs = _parseAttrs(masterLines[index]);
-			for (const group of [
-				attrs.AUDIO,
-				attrs.VIDEO,
-				attrs.SUBTITLES,
-				attrs["CLOSED-CAPTIONS"],
-			]) {
-				if (group && group !== "NONE") selectedMediaGroups.add(group);
-			}
-		}
-		const selectedMasterLines = [];
-		for (let index = 0; index < masterLines.length; index++) {
-			const line = masterLines[index];
-			const trimmedLine = line?.trim();
-			if (line?.startsWith("#EXT-X-STREAM-INF")) {
-				const uri = masterLines[index + 1]?.trim();
-				if (selectedVariants.has(index)) {
-					selectedMasterLines.push(
-						line,
-						_absolutizePlaylistUrl(uri, masterUrl),
-					);
-				}
-				index++;
-				continue;
-			}
-			if (line?.startsWith("#EXT-X-I-FRAME-STREAM-INF")) continue;
-			if (line?.startsWith("#EXT-X-MEDIA:")) {
-				const mediaAttrs = _parseAttrs(line);
-				if (!selectedMediaGroups.has(mediaAttrs["GROUP-ID"])) continue;
-				if (mediaAttrs.URI) return null;
-			}
-			if (trimmedLine && !trimmedLine.startsWith("#")) continue;
-			if (typeof line !== "string" || !line.includes('URI="')) {
-				selectedMasterLines.push(line);
-				continue;
-			}
-			selectedMasterLines.push(
-				line.replace(/URI="([^"]+)"/g, (_match, value) => {
-					return `URI="${_absolutizePlaylistUrl(value, masterUrl)}"`;
-				}),
-			);
-		}
-		const master = selectedMasterLines.join("\n");
+		const master = _filterMasterToSelectedVariants(
+			masterLines,
+			masterUrl,
+			(index) => selectedVariants.has(index),
+		);
+		if (master === null) return null;
 		return {
 			master,
 			playlistUrls: [
@@ -1374,7 +1391,7 @@ function _hookWorkerFetch() {
 	function _pruneStreamInfos() {
 		if (typeof __TTVAB_STATE__ === "undefined" || !__TTVAB_STATE__) return;
 		const keys = Object.keys(__TTVAB_STATE__.StreamInfos);
-		if (keys.length > 5) {
+		if (keys.length >= 5) {
 			const oldKey = keys.sort(
 				(a, b) =>
 					(__TTVAB_STATE__.StreamInfos[a]?.LastActivityAt || 0) -
@@ -1589,49 +1606,14 @@ function _hookWorkerFetch() {
 		}
 		if (!selectedVariantLine || !selectedVariantUri) return null;
 
-		const selectedVariantAttrs = _parseAttrs(selectedVariantLine);
-		const selectedMediaGroups = new Set(
-			[
-				selectedVariantAttrs.AUDIO,
-				selectedVariantAttrs.VIDEO,
-				selectedVariantAttrs.SUBTITLES,
-				selectedVariantAttrs["CLOSED-CAPTIONS"],
-			].filter((value) => value && value !== "NONE"),
+		const master = _filterMasterToSelectedVariants(
+			masterLines,
+			cachedMasterUrl,
+			(_index, line, uri) =>
+				line === selectedVariantLine && uri === selectedVariantUri,
 		);
-		const selectedMasterLines = [];
-		for (let index = 0; index < masterLines.length; index++) {
-			const line = masterLines[index];
-			const trimmedLine = line?.trim();
-			if (line?.startsWith("#EXT-X-STREAM-INF")) {
-				const uri = masterLines[index + 1]?.trim();
-				if (line === selectedVariantLine && uri === selectedVariantUri) {
-					selectedMasterLines.push(
-						line,
-						_absolutizePlaylistUrl(uri, cachedMasterUrl),
-					);
-				}
-				index++;
-				continue;
-			}
-			if (line?.startsWith("#EXT-X-I-FRAME-STREAM-INF")) continue;
-			if (line?.startsWith("#EXT-X-MEDIA:")) {
-				const mediaAttrs = _parseAttrs(line);
-				if (!selectedMediaGroups.has(mediaAttrs["GROUP-ID"])) continue;
-				if (mediaAttrs.URI) return null;
-			}
-			if (trimmedLine && !trimmedLine.startsWith("#")) continue;
-			if (typeof line !== "string" || !line.includes('URI="')) {
-				selectedMasterLines.push(line);
-				continue;
-			}
-			selectedMasterLines.push(
-				line.replace(/URI="([^"]+)"/g, (_match, value) => {
-					return `URI="${_absolutizePlaylistUrl(value, cachedMasterUrl)}"`;
-				}),
-			);
-		}
-		const master = selectedMasterLines.join("\n");
 		if (
+			master === null ||
 			!master.includes(selectedVariantLine) ||
 			!master.includes(exactValidatedStreamUrl)
 		) {
@@ -1942,20 +1924,12 @@ function _hookWorkerFetch() {
 					emptyHoldDecoderFamily === "hevc" ||
 					emptyHoldDecoderFamily === "av1"
 				) {
-					const emptyHoldRequestSignal =
-						opts?.signal ||
-						(typeof Request !== "undefined" && resource instanceof Request
-							? resource.signal
-							: null);
-					throw _createCodecHandoffAbortError(emptyHoldRequestSignal);
+					throw _createCodecHandoffAbortError(playbackRequestOwner.signal);
 				}
 				return await _getEmptyAdHoldResponse(
 					url,
 					realFetch,
-					opts?.signal ||
-						(typeof Request !== "undefined" && resource instanceof Request
-							? resource.signal
-							: null),
+					playbackRequestOwner.signal,
 				);
 			}
 			const segmentCodecOwners = __TTVAB_STATE__.SegmentCodecOwners;
@@ -1994,12 +1968,7 @@ function _hookWorkerFetch() {
 					}
 					return response;
 				}
-				const segmentRequestSignal =
-					opts?.signal ||
-					(typeof Request !== "undefined" && resource instanceof Request
-						? resource.signal
-						: null);
-				throw _createCodecHandoffAbortError(segmentRequestSignal);
+				throw _createCodecHandoffAbortError(playbackRequestOwner.signal);
 			}
 
 			const playbackContext = /\.m3u8(?:$|[?#])/i.test(url)
@@ -2015,11 +1984,7 @@ function _hookWorkerFetch() {
 					Number(__TTVAB_STATE__.PagePlaybackContextGeneration) || 0,
 				);
 				const requestSequence = ++masterRequestSequence;
-				const requestSignal =
-					opts?.signal ||
-					(typeof Request !== "undefined" && resource instanceof Request
-						? resource.signal
-						: null);
+				const requestSignal = playbackRequestOwner.signal;
 				const assertMasterRequestCurrent = () => {
 					if (
 						requestSignal?.aborted ||
@@ -2323,12 +2288,7 @@ function _hookWorkerFetch() {
 								getResponseInit(response),
 							);
 						}
-						const masterRequestSignal =
-							opts?.signal ||
-							(typeof Request !== "undefined" && resource instanceof Request
-								? resource.signal
-								: null);
-						throw _createCodecHandoffAbortError(masterRequestSignal);
+						throw _createCodecHandoffAbortError(playbackRequestOwner.signal);
 					}
 					reportPlaybackWorkerBootstrapObserved(
 						playbackContext,
@@ -2410,11 +2370,7 @@ function _hookWorkerFetch() {
 					requestStartDecoderCodecFamily === "hevc" ||
 						requestStartDecoderCodecFamily === "av1",
 				);
-				const mediaRequestSignal =
-					opts?.signal ||
-					(typeof Request !== "undefined" && resource instanceof Request
-						? resource.signal
-						: null);
+				const mediaRequestSignal = playbackRequestOwner.signal;
 				const response = await realFetch.apply(
 					this,
 					getFetchArgs(
@@ -2503,12 +2459,7 @@ function _hookWorkerFetch() {
 					);
 					try {
 						if (responseActivatedCodecIsolation) {
-							const activatedRequestSignal =
-								opts?.signal ||
-								(typeof Request !== "undefined" && resource instanceof Request
-									? resource.signal
-									: null);
-							throw _createCodecHandoffAbortError(activatedRequestSignal);
+							throw _createCodecHandoffAbortError(playbackRequestOwner.signal);
 						}
 						const processedText = await _processM3U8(
 							url,
@@ -2582,12 +2533,9 @@ function _hookWorkerFetch() {
 						);
 						if (!requestWasAdMarked) {
 							if (failedNeedsCodecIsolation) {
-								const failedRequestSignal =
-									opts?.signal ||
-									(typeof Request !== "undefined" && resource instanceof Request
-										? resource.signal
-										: null);
-								throw _createCodecHandoffAbortError(failedRequestSignal);
+								throw _createCodecHandoffAbortError(
+									playbackRequestOwner.signal,
+								);
 							}
 							reportSuccessfulMediaResponse();
 							return new Response(
@@ -2611,20 +2559,10 @@ function _hookWorkerFetch() {
 								),
 						);
 						if (failedRequestIsEnhanced) {
-							const failedRequestSignal =
-								opts?.signal ||
-								(typeof Request !== "undefined" && resource instanceof Request
-									? resource.signal
-									: null);
-							throw _createCodecHandoffAbortError(failedRequestSignal);
+							throw _createCodecHandoffAbortError(playbackRequestOwner.signal);
 						}
 						if (!failedInfo) {
-							const failedRequestSignal =
-								opts?.signal ||
-								(typeof Request !== "undefined" && resource instanceof Request
-									? resource.signal
-									: null);
-							throw _createCodecHandoffAbortError(failedRequestSignal);
+							throw _createCodecHandoffAbortError(playbackRequestOwner.signal);
 						}
 						const failedRequestCodecFamily =
 							requestStartCodecFamily ||
@@ -2632,12 +2570,7 @@ function _hookWorkerFetch() {
 								_getDirectPlaybackResolutionForUrl(failedInfo, url)?.Codecs,
 							);
 						if (failedRequestCodecFamily !== "avc") {
-							const failedRequestSignal =
-								opts?.signal ||
-								(typeof Request !== "undefined" && resource instanceof Request
-									? resource.signal
-									: null);
-							throw _createCodecHandoffAbortError(failedRequestSignal);
+							throw _createCodecHandoffAbortError(playbackRequestOwner.signal);
 						}
 						const failClosedPlaylist = _stripAds(text, true, failedInfo);
 						reportSuccessfulMediaResponse();
@@ -5581,10 +5514,12 @@ function _installPageSideM3U8Override() {
 			_log("Page-side fallback: stripped ads from M3U8", "info");
 			return getContinuousResponse(stripped);
 		} catch (error) {
-			_log(
-				`Page-side M3U8 inspection failed for ${urlStr}: ${error?.message ?? String(error)}`,
-				"error",
-			);
+			if (error?.name !== "AbortError") {
+				_log(
+					`Page-side M3U8 inspection failed for ${urlStr}: ${error?.message ?? String(error)}`,
+					"error",
+				);
+			}
 			throw error;
 		}
 	};
@@ -5683,7 +5618,7 @@ function _rememberPageSideVariantCodecs(text, baseUrl) {
 			remembered = true;
 		}
 	}
-	while (_pageSideVariantCodecByUrl.size > 200) {
+	while (_pageSideVariantCodecByUrl.size > _MAX_PAGE_SIDE_VARIANT_CODECS) {
 		const oldest = _pageSideVariantCodecByUrl.keys().next().value;
 		if (oldest === undefined) break;
 		_pageSideVariantCodecByUrl.delete(oldest);
@@ -5982,25 +5917,6 @@ function _hookWorker() {
 						ChannelName: message?.channel || message?.pageChannel || null,
 						VodID: message?.vodID || null,
 					});
-				const isPlaybackContextMismatch = (expectedContext, currentContext) => {
-					const normalizedExpectedContext =
-						_normalizePlaybackContext(expectedContext);
-					const normalizedCurrentContext =
-						_normalizePlaybackContext(currentContext);
-					if (normalizedExpectedContext.MediaKey) {
-						return (
-							normalizedCurrentContext.MediaKey !==
-							normalizedExpectedContext.MediaKey
-						);
-					}
-					if (normalizedExpectedContext.ChannelName) {
-						return (
-							normalizedCurrentContext.ChannelName !==
-							normalizedExpectedContext.ChannelName
-						);
-					}
-					return false;
-				};
 				const isStalePageContextEvent = (message: TTVABWorkerEventContext) => {
 					if (message.pageContextGeneration === undefined) return false;
 					const pipContext = _getActivePictureInPictureWorkerContext(
@@ -6036,7 +5952,7 @@ function _hookWorker() {
 					) {
 						return false;
 					}
-					return isPlaybackContextMismatch(
+					return _isPlaybackContextMismatch(
 						messageContext,
 						getCurrentPageContext(),
 					);
@@ -7853,7 +7769,7 @@ function _recordBlockedVodAdRequest(request) {
 		__TTVAB_STATE__.IsAdStrippingEnabled !== true ||
 		!mediaKey?.startsWith("vod:")
 	)
-		return;
+		return false;
 	const sessionID =
 		typeof request.sessionID === "string" && request.sessionID.length <= 512
 			? request.sessionID

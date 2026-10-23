@@ -3875,3 +3875,134 @@ describe("empty hold playlist continuity", () => {
 		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 	});
 });
+
+describe("worker and page-side hook bounds", () => {
+	it("does not log a cancelled page-side playlist request as an error", async () => {
+		const { context } = setup();
+		const log = vi.fn();
+		context._log = log;
+		const url = "https://video-weaver.example.ttvnw.net/native.m3u8?token=x";
+		let failure: Error = new DOMException("Request cancelled", "AbortError");
+		context.window = context;
+		context.fetch = vi.fn(async () => {
+			throw failure;
+		});
+		context._installPageSideM3U8Override();
+
+		await expect(context.fetch(url)).rejects.toMatchObject({
+			name: "AbortError",
+		});
+		expect(log.mock.calls.filter(([, level]) => level === "error")).toEqual([]);
+
+		failure = new TypeError("Failed to fetch");
+		await expect(context.fetch(url)).rejects.toMatchObject({
+			name: "TypeError",
+		});
+		expect(log).toHaveBeenCalledWith(
+			expect.stringContaining("Page-side M3U8 inspection failed"),
+			"error",
+		);
+	});
+
+	it("filters a master to the selected variants and their media groups", () => {
+		const { context } = setup();
+		const base = "https://usher.example/channel/master.m3u8";
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-SESSION-DATA:DATA-ID="x",URI="session.json"',
+			'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="hi",NAME="hi",AUTOSELECT=YES',
+			'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="lo",NAME="lo",AUTOSELECT=YES',
+			'#EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2",AUDIO="hi"',
+			"1080p.m3u8",
+			'#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=640x360,CODECS="avc1.4D401E,mp4a.40.2",AUDIO="lo"',
+			"360p.m3u8",
+			'#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=100000,URI="iframe.m3u8"',
+		];
+		const filter = (
+			lines: string[],
+			isSelected: (index: number) => boolean,
+		): string | null =>
+			context._filterMasterToSelectedVariants(lines, base, isSelected);
+
+		expect(filter(master, (index) => index === 4)).toBe(
+			[
+				"#EXTM3U",
+				'#EXT-X-SESSION-DATA:DATA-ID="x",URI="https://usher.example/channel/session.json"',
+				master[2],
+				master[4],
+				"https://usher.example/channel/1080p.m3u8",
+			].join("\n"),
+		);
+
+		const external = [...master];
+		external[2] =
+			'#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="hi",NAME="hi",URI="hi.m3u8"';
+		expect(filter(external, (index) => index === 4)).toBeNull();
+		expect(filter(external, (index) => index === 6)).toContain(
+			"https://usher.example/channel/360p.m3u8",
+		);
+	});
+
+	it("keeps a large master's variant codecs after a playback observation", () => {
+		const { context } = setup();
+		const variantUrl = (index: number) =>
+			`https://video-weaver.example.ttvnw.net/v${index}.m3u8?token=${index}`;
+		const master = [
+			"#EXTM3U",
+			...Array.from({ length: 20 }, (_, index) => [
+				'#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS="avc1.4D401F,mp4a.40.2"',
+				variantUrl(index),
+			]).flat(),
+		].join("\n");
+		const size = () =>
+			runInContext("_pageSideVariantCodecByUrl.size", context) as number;
+
+		context._rememberPageSideVariantCodecs(
+			master,
+			"https://usher.ttvnw.net/api/channel/hls/testchannel.m3u8",
+		);
+		const learned = size();
+		expect(learned).toBeGreaterThan(40);
+
+		context._rememberPageSidePlaybackOwner(
+			"live:testchannel",
+			variantUrl(0),
+			"avc1.4D401F",
+			0,
+			{ confirmedPlayback: true, workerGeneration: 1 },
+		);
+		expect(size()).toBe(learned);
+	});
+
+	it("keeps at most five stream infos when another stream starts", async () => {
+		const { context } = setup();
+		runInContext(
+			"for (const key of Object.keys(state.StreamInfos)) delete state.StreamInfos[key];",
+			context,
+		);
+		context.fetch = vi.fn(async (input: unknown) => {
+			const channel = String(input).match(/hls\/(\w+)\.m3u8/)?.[1];
+			return new Response(
+				`#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720,CODECS="avc1.4D401F,mp4a.40.2"\nhttps://video-weaver.example.ttvnw.net/${channel}.m3u8`,
+			);
+		});
+		context._hookWorkerFetch();
+
+		for (let index = 0; index < 6; index++) {
+			await context.fetch(
+				`https://usher.ttvnw.net/api/channel/hls/channel${index}.m3u8?token=x`,
+			);
+		}
+		const keys = Object.keys(context.state.StreamInfos);
+		expect(keys).toHaveLength(5);
+		expect(keys).toContain("live:channel5");
+	});
+
+	it("reports an ignored VOD ad request as not counted", () => {
+		const { context } = setup();
+		context.state.IsAdStrippingEnabled = false;
+		expect(context._recordBlockedVodAdRequest({ mediaKey: "vod:123" })).toBe(
+			false,
+		);
+	});
+});

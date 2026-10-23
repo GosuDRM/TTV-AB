@@ -217,7 +217,10 @@ describe("worker message handler hardening", () => {
 		expect(block).toContain("_playlistHasKnownAdSegments(validatedMedia");
 		expect(block).toContain("_stripHevcBackupVariants(");
 		expect(block).toContain("exactValidatedStreamUrl");
-		expect(block).toContain("selectedMasterLines");
+		expect(block).toContain("_filterMasterToSelectedVariants(");
+		expect(block).toContain(
+			"line === selectedVariantLine && uri === selectedVariantUri",
+		);
 		expect(block).toContain("validationDeadlineAt");
 		expect(block).toContain("_PreviewMasterFallbackRetryAt");
 		expect(source).toContain("throw retryError");
@@ -568,7 +571,7 @@ describe("enhanced-codec handoff retirement", () => {
 		expect(hooksJs()).toContain("_stripAds(text, true, failedInfo)");
 		expect(hooksJs()).toContain("const failedRequestIsEnhanced =");
 		expect(hooksJs()).toContain(
-			"throw _createCodecHandoffAbortError(failedRequestSignal)",
+			"throw _createCodecHandoffAbortError(playbackRequestOwner.signal)",
 		);
 		expect(hooksJs()).not.toContain("_createEmptyAdHoldPlaylist(text, null)");
 	});
