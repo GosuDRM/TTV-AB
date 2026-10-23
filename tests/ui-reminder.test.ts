@@ -65,6 +65,7 @@ describe("donation reminder", () => {
 		vi.useRealTimers();
 		vi.restoreAllMocks();
 		reminder()?.remove();
+		document.getElementById("ttvab-worker-recovery")?.remove();
 		delete g._isNativeDocumentHidden;
 		delete (document as unknown as Record<string, unknown>).fullscreenElement;
 		for (const key of [STATE_KEY, NEXT_KEY, LAST_KEY, CADENCE_KEY])
@@ -163,6 +164,14 @@ describe("donation reminder", () => {
 					CurrentAdMediaKey: "live:test",
 				}),
 		],
+		[
+			"a playback recovery notice is showing",
+			() => {
+				const notice = document.createElement("div");
+				notice.id = "ttvab-worker-recovery";
+				document.body.append(notice);
+			},
+		],
 	])("keeps the reminder for later while %s", (_name, block) => {
 		saveState({});
 		setCount(25);
@@ -242,11 +251,114 @@ describe("donation reminder", () => {
 		},
 	);
 
+	it("keeps its schedule when the reminder fails to appear", () => {
+		saveState({});
+		setCount(25);
+		vi.spyOn(document.body, "appendChild").mockImplementationOnce(() => {
+			throw new Error("blocked");
+		});
+		load();
+
+		expect(reminder()).toBeNull();
+		expect(state()).toMatchObject({ nextAt: NOW - 1, shownCount: 0 });
+	});
+
+	it("falls back to the matched language for an invalid language tag", () => {
+		const setLanguage = T<(choice: string, uiLanguage: string) => void>(
+			"_setPageLanguagePreference",
+		);
+		saveState({});
+		setCount(25);
+		setLanguage("en-x-!!", "");
+		try {
+			load();
+		} finally {
+			setLanguage("auto", "");
+		}
+
+		expect(reminder()?.lang).toBe("en");
+		expect(reminder()?.querySelector(".sub")?.textContent).toContain("25");
+		expect(state().shownCount).toBe(1);
+	});
+
 	it("repairs a corrupted far-future date instead of never showing", () => {
 		saveState({ nextAt: NOW + 400 * DAY });
 		T<() => void>("_showDonation")();
 
 		expect(state().nextAt).toBe(NOW + 14 * DAY);
+	});
+});
+
+describe("welcome message", () => {
+	const FIRST_RUN_KEY = "ttvab_first_run_shown";
+	const welcome = () => document.getElementById("ttvab-welcome");
+	const resetPage = () => {
+		vi.clearAllTimers();
+		delete (window as unknown as Record<string, unknown>).__TTVAB_UI_FLAGS__;
+	};
+
+	beforeEach(() => {
+		g._log = () => {};
+		vi.useFakeTimers();
+		resetPage();
+		localStorage.removeItem(FIRST_RUN_KEY);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		welcome()?.remove();
+		localStorage.removeItem(FIRST_RUN_KEY);
+	});
+
+	it("still shows after a reload before it appeared", () => {
+		T<() => void>("_showWelcome")();
+		vi.advanceTimersByTime(1000);
+		resetPage();
+		expect(localStorage.getItem(FIRST_RUN_KEY)).toBeNull();
+
+		T<() => void>("_showWelcome")();
+		vi.advanceTimersByTime(2000);
+		expect(welcome()).not.toBeNull();
+		expect(localStorage.getItem(FIRST_RUN_KEY)).toBe("true");
+	});
+
+	it("does not show again when another tab showed it first", () => {
+		T<() => void>("_showWelcome")();
+		localStorage.setItem(FIRST_RUN_KEY, "true");
+		vi.advanceTimersByTime(2000);
+		expect(welcome()).toBeNull();
+	});
+});
+
+describe("achievement toast guards", () => {
+	const toast = () => document.getElementById("ttvab-achievement");
+
+	beforeEach(() => {
+		g._log = () => {};
+		delete (window as unknown as Record<string, unknown>).__TTVAB_UI_FLAGS__;
+		toast()?.remove();
+	});
+
+	afterEach(() => {
+		T<(paused: boolean) => void>("_setPageStatsPaused")(false);
+		toast()?.remove();
+	});
+
+	it.each(["constructor", "toString", "__proto__"])(
+		"ignores the inherited name %s",
+		(id) => {
+			T<(id: string) => void>("_showAchievementUnlocked")(id);
+			expect(toast()).toBeNull();
+		},
+	);
+
+	it("stays hidden while statistics are paused", () => {
+		T<(paused: boolean) => void>("_setPageStatsPaused")(true);
+		T<(id: string) => void>("_showAchievementUnlocked")("first_block");
+		expect(toast()).toBeNull();
+		T<(paused: boolean) => void>("_setPageStatsPaused")(false);
+		T<(id: string) => void>("_showAchievementUnlocked")("first_block");
+		expect(toast()).not.toBeNull();
 	});
 });
 

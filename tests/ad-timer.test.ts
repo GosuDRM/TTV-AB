@@ -181,6 +181,16 @@ describe("ad break timer", () => {
 		expect(overlay()).toBeNull();
 	});
 
+	it("lines up with the video's right edge when the page shows a scrollbar", () => {
+		vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(
+			window.innerWidth - 15,
+		);
+		toggle(true);
+		expect(overlay()?.style.right).toBe(
+			`${window.innerWidth - 15 - 810 + 12}px`,
+		);
+	});
+
 	it("defaults off and toggles during a break without playback messages or lingering timers", () => {
 		expect(g._adTimerEnabled).toBe(false);
 		g._updateAdTimerOverlay();
