@@ -101,8 +101,6 @@ beforeEach(() => {
 	g.pendingAdChannels = Object.create(null);
 	g.pendingWatchSeconds = Object.create(null);
 	g.pendingWatchIntervals = Object.create(null);
-	g.pendingAdSeconds = 0;
-	g.pendingChannelAdSeconds = Object.create(null);
 	g.pendingAdMeasurements = new Map();
 	const pending = g.pendingLogCollections as Map<
 		string,
@@ -116,6 +114,7 @@ beforeEach(() => {
 		clearTimeout(g.handshakeRetryTimeout as ReturnType<typeof setTimeout>);
 	}
 	g.handshakeRetryTimeout = null;
+	(g.supersededPageBridgePorts as unknown[]).length = 0;
 	g.pageBridgePort = null;
 	g.pageBridgeConnected = false;
 	g.bridgeSessionToken = null;
@@ -571,10 +570,21 @@ describe("settings initialization lifecycle", () => {
 		g.pageBridgePort = port;
 		g.pageBridgeConnected = true;
 
+		const measurement = (id: string) => ({
+			id,
+			durationMilliseconds: 15000,
+			mediaKey: "live:somestreamer",
+			channel: "somestreamer",
+		});
 		handlePageMessage({
 			type: "ttvab-ad-blocked",
 			detail: { count: 47, delta: 1, channel: "somestreamer" },
 		});
+		handlePageMessage({
+			type: "ttvab-ad-seconds",
+			detail: { measurements: [measurement("stitched-ad-before-turbo")] },
+		});
+		expect((g.pendingAdMeasurements as Map<string, unknown>).size).toBe(1);
 		const flush = {
 			...makeExitFlush(),
 			flushId: "flush:test:turbo-0001",
@@ -600,7 +610,6 @@ describe("settings initialization lifecycle", () => {
 		]);
 		port.messages.length = 0;
 		expect(g.pendingAdsDelta).toBe(0);
-		expect(g.pendingAdSeconds).toBe(0);
 		expect(g.pendingWatchSeconds).toEqual({});
 		expect((g.pendingAdMeasurements as Map<string, unknown>).size).toBe(0);
 		expect(g.flushTimeout).toBeNull();
@@ -612,7 +621,7 @@ describe("settings initialization lifecycle", () => {
 		});
 		handlePageMessage({
 			type: "ttvab-ad-seconds",
-			detail: { seconds: 30, channel: "somestreamer" },
+			detail: { measurements: [measurement("stitched-ad-during-turbo")] },
 		});
 		handlePageMessage({
 			type: "ttvab-watch-time",
@@ -621,7 +630,7 @@ describe("settings initialization lifecycle", () => {
 		handlePageMessage({ type: "ttvab-flush-counters" });
 
 		expect(g.pendingAdsDelta).toBe(0);
-		expect(g.pendingAdSeconds).toBe(0);
+		expect((g.pendingAdMeasurements as Map<string, unknown>).size).toBe(0);
 		expect(g.pendingWatchSeconds).toEqual({});
 		expect(runtimeMessages).toEqual([]);
 
@@ -700,7 +709,7 @@ describe("settings initialization lifecycle", () => {
 		).toBe(false);
 	});
 
-	it("times out a stalled read and ignores its late callback", () => {
+	it("times out a stalled read but accepts its late result over the retry", () => {
 		vi.useFakeTimers();
 		const readCallbacks: StorageGetCallback[] = [];
 		storageGetImplementation = (_keys, callback) => {
@@ -726,13 +735,53 @@ describe("settings initialization lifecycle", () => {
 		expect(g.initialStorageReadInFlight).toBe(true);
 
 		finishStorageRead(readCallbacks[0], { ttvAdblockEnabled: false });
-		expect(g.bridgeStateReady).toBe(false);
-		expect((g.bridgeState as { enabled: boolean }).enabled).toBe(true);
-
-		finishStorageRead(readCallbacks[1], { ttvAdblockEnabled: true });
 		expect(g.bridgeStateReady).toBe(true);
+		expect((g.bridgeState as { enabled: boolean }).enabled).toBe(false);
 		expect(g.initialStorageReadInFlight).toBe(false);
 		expect(g.initialStorageReadTimer).toBeNull();
+
+		finishStorageRead(readCallbacks[1], { ttvAdblockEnabled: true });
+		expect((g.bridgeState as { enabled: boolean }).enabled).toBe(false);
+		vi.advanceTimersByTime(60000);
+		expect(readCallbacks).toHaveLength(2);
+	});
+
+	it("cancels the pending retry when a timed-out read resolves late", () => {
+		vi.useFakeTimers();
+		const readCallbacks: StorageGetCallback[] = [];
+		storageGetImplementation = (_keys, callback) => {
+			readCallbacks.push(callback);
+		};
+		vi.spyOn(console, "error").mockImplementation(() => {});
+
+		(g.readInitialStorageState as () => void)();
+		vi.advanceTimersByTime(1100);
+		expect(g.initialStorageReadTimer).not.toBeNull();
+		finishStorageRead(readCallbacks[0], { ttvAdblockEnabled: false });
+
+		expect(g.bridgeStateReady).toBe(true);
+		expect(g.initialStorageReadTimer).toBeNull();
+		vi.advanceTimersByTime(60000);
+		expect(readCallbacks).toHaveLength(1);
+	});
+
+	it("ignores a late failure from a timed-out read while its retry runs", () => {
+		vi.useFakeTimers();
+		const readCallbacks: StorageGetCallback[] = [];
+		storageGetImplementation = (_keys, callback) => {
+			readCallbacks.push(callback);
+		};
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		(g.readInitialStorageState as () => void)();
+		vi.advanceTimersByTime(1250);
+		expect(readCallbacks).toHaveLength(2);
+		finishStorageRead(readCallbacks[0], undefined, "storage unavailable");
+
+		expect(errorSpy).toHaveBeenCalledTimes(1);
+		expect(g.initialStorageReadInFlight).toBe(true);
+		finishStorageRead(readCallbacks[1], { ttvAdblockEnabled: true });
+		expect(g.bridgeStateReady).toBe(true);
 	});
 
 	it("uses three fast retries then one recurring slow recovery timer", () => {
@@ -1852,7 +1901,7 @@ describe("runtime log collection lifecycle", () => {
 		);
 	});
 
-	it("times out all concurrent requests and invalidates the stale port", () => {
+	it("times out each concurrent request without dropping the connected port", () => {
 		vi.useFakeTimers();
 		const port = makePagePort();
 		g.pageBridgePort = port;
@@ -1877,9 +1926,9 @@ describe("runtime log collection lifecycle", () => {
 		});
 		expect(firstResponse).toHaveBeenCalledTimes(1);
 		expect(secondResponse).toHaveBeenCalledTimes(1);
-		expect(port.close).toHaveBeenCalledTimes(1);
-		expect(g.pageBridgeConnected).toBe(false);
-		expect(g.pageBridgePort).toBeNull();
+		expect(port.close).not.toHaveBeenCalled();
+		expect(g.pageBridgeConnected).toBe(true);
+		expect(g.pageBridgePort).toBe(port);
 		expect((g.pendingLogCollections as Map<string, unknown>).size).toBe(0);
 		for (const requestId of staleRequestIds) {
 			handlePageMessage({
@@ -1928,11 +1977,11 @@ describe("runtime log collection lifecycle", () => {
 
 	it("collects again after a replacement port completes the handshake", () => {
 		vi.useFakeTimers();
-		const stalePort = makePagePort();
+		const stalePort = makePagePort(true);
 		g.pageBridgePort = stalePort;
 		g.pageBridgeConnected = true;
 		requestRuntimeLogs(vi.fn());
-		vi.advanceTimersByTime(5000);
+		expect(g.pageBridgePort).toBeNull();
 
 		const token = "0123456789abcdef0123456789abcdef";
 		const replacementPort = makePagePort();
@@ -2112,5 +2161,196 @@ describe("statistics transport hardening", () => {
 			detail: { count: 40, delta: 1, channel: "somestreamer" },
 		});
 		expect(g.pendingAdsDelta).toBe(1);
+	});
+});
+
+describe("page bridge handshake races", () => {
+	const token = "0123456789abcdef0123456789abcdef";
+	const bindPort = (port: unknown) =>
+		(g.bindPageBridgePort as (value: unknown) => boolean)(port);
+
+	it("keeps counts the page flushed into a port superseded by a handshake retry", () => {
+		g.bridgeSessionToken = token;
+		const firstPort = makePagePort();
+		const retryPort = makePagePort();
+		expect(bindPort(firstPort)).toBe(true);
+		expect(bindPort(retryPort)).toBe(true);
+
+		firstPort.emitMessage({
+			type: "ttvab-ad-blocked",
+			detail: { delta: 1, channel: "somestreamer" },
+		});
+		firstPort.emitMessage({ type: "ttvab-bridge-ready", detail: { token } });
+
+		expect(g.pendingAdsDelta).toBe(1);
+		expect(g.pageBridgeConnected).toBe(false);
+		expect(firstPort.close).not.toHaveBeenCalled();
+
+		retryPort.emitMessage({ type: "ttvab-bridge-ready", detail: { token } });
+		expect(g.pageBridgeConnected).toBe(true);
+		expect(g.pageBridgePort).toBe(retryPort);
+	});
+
+	it("bounds superseded ports and closes the oldest", () => {
+		g.bridgeSessionToken = token;
+		const ports = Array.from({ length: 22 }, () => makePagePort());
+		for (const port of ports) bindPort(port);
+
+		expect(g.supersededPageBridgePorts).toHaveLength(20);
+		expect(ports[0].close).toHaveBeenCalledTimes(1);
+		expect(ports[1].close).not.toHaveBeenCalled();
+		expect(g.pageBridgePort).toBe(ports[21]);
+	});
+
+	it("drops a message the page port rejects instead of retrying it forever", () => {
+		vi.spyOn(console, "warn").mockImplementation(() => {});
+		const port = makePagePort(true);
+		g.pageBridgePort = port;
+		g.pageBridgeConnected = true;
+		const pending = g.pendingPageMessages as Array<Record<string, unknown>>;
+		pending.push({ type: "first" }, { type: "second" });
+
+		(g.flushPageMessages as () => void)();
+		expect(pending).toEqual([{ type: "second" }]);
+		expect(g.pageBridgeConnected).toBe(false);
+
+		g.pageBridgeConnected = true;
+		expect(
+			(g.sendToPage as (type: string) => boolean)("ttvab-init-count"),
+		).toBe(false);
+		expect(pending).toEqual([{ type: "second" }]);
+	});
+
+	it("fails pending log collections on pagehide but not on a cancellable beforeunload", () => {
+		const port = makePagePort();
+		g.pageBridgePort = port;
+		g.pageBridgeConnected = true;
+		const response = vi.fn();
+		requestRuntimeLogs(response);
+		handlePageMessage({
+			type: "ttvab-ad-blocked",
+			detail: { delta: 1, channel: "somestreamer" },
+		});
+
+		window.dispatchEvent(new Event("beforeunload"));
+		expect(response).not.toHaveBeenCalled();
+		expect(runtimeMessages[0]?.type).toBe("ttvab-persist-counters");
+
+		window.dispatchEvent(new Event("pagehide"));
+		expect(response).toHaveBeenCalledWith({
+			ok: false,
+			error: "page-message-failed",
+		});
+	});
+});
+
+describe("counter journal replay and orphaned tabs", () => {
+	function journalFlush(index: number) {
+		const flush = {
+			...makeExitFlush(),
+			flushId: `flush:test:replay-${String(index).padStart(4, "0")}`,
+		};
+		localStorage.setItem(
+			`ttvab_pending_counter_flush:${flush.flushId}`,
+			JSON.stringify(flush),
+		);
+	}
+
+	it("replays the journal with one scan and no rewrites", () => {
+		for (let index = 0; index < 20; index++) journalFlush(index);
+		const originalRead = g.readPersistedCounterFlushes as () => unknown[];
+		const read = vi.fn(originalRead);
+		g.readPersistedCounterFlushes = read;
+		const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+		try {
+			(g.replayPersistedCounterFlushes as () => void)();
+		} finally {
+			g.readPersistedCounterFlushes = originalRead;
+		}
+
+		expect(read).toHaveBeenCalledTimes(1);
+		expect(setItem).not.toHaveBeenCalled();
+		expect(
+			runtimeMessages.filter(
+				(message) => message.type === "ttvab-persist-counters",
+			),
+		).toHaveLength(20);
+		expect(
+			runtimeMessages.filter(
+				(message) => message.type === "ttvab-confirm-counter-flush",
+			),
+		).toHaveLength(20);
+		expect(originalRead()).toHaveLength(0);
+		expect(g.persistedFlushRecoveryTimeout).toBeNull();
+	});
+
+	it("journals an orphaned tab's counts in 15-minute batches and on exit", () => {
+		vi.useFakeTimers();
+		g.extensionContextInvalidated = true;
+		const read = g.readPersistedCounterFlushes as () => Array<{
+			watchDeltas: Record<string, number>;
+		}>;
+
+		for (let minute = 0; minute < 5; minute++) {
+			handlePageMessage({
+				type: "ttvab-watch-time",
+				detail: { channel: "somestreamer", seconds: 60 },
+			});
+			vi.advanceTimersByTime(60000);
+		}
+		expect(read()).toHaveLength(0);
+
+		vi.advanceTimersByTime(10 * 60000);
+		expect(read()).toHaveLength(1);
+		expect(read()[0].watchDeltas).toEqual({ somestreamer: 300 });
+
+		handlePageMessage({
+			type: "ttvab-watch-time",
+			detail: { channel: "somestreamer", seconds: 60 },
+		});
+		handlePageMessage({ type: "ttvab-flush-counters" });
+		expect(read()).toHaveLength(2);
+		expect(runtimeMessages).toEqual([]);
+	});
+});
+
+describe("statistic field fallbacks", () => {
+	it("falls back to the page channel when the event channel is invalid", () => {
+		handlePageMessage({
+			type: "ttvab-ad-blocked",
+			detail: {
+				delta: 1,
+				channel: "not a channel",
+				pageChannel: "somestreamer",
+			},
+		});
+		expect(g.pendingAdChannels).toEqual({ somestreamer: 1 });
+	});
+
+	it("falls back to the message media key when a measurement's key is invalid", () => {
+		handlePageMessage({
+			type: "ttvab-ad-seconds",
+			detail: {
+				mediaKey: "live:somestreamer",
+				measurements: [
+					{
+						id: "stitched-ad-fallback",
+						durationMilliseconds: 15000,
+						mediaKey: "not-a-media-key",
+					},
+				],
+			},
+		});
+		expect(
+			Array.from((g.pendingAdMeasurements as Map<string, unknown>).values()),
+		).toEqual([
+			{
+				id: "stitched-ad-fallback",
+				durationMilliseconds: 15000,
+				mediaKey: "live:somestreamer",
+				channel: "somestreamer",
+			},
+		]);
 	});
 });
